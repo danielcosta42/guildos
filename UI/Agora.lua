@@ -111,14 +111,10 @@ function Agora:NeedsMe()
 
     if GuildOS:IsOfficer() then
         local tt = GuildOS.TrialTracker
-        if tt and tt.GetActiveTrials and tt.GetDaysRemaining then
-            local n = 0
-            for _, trial in ipairs(tt:GetActiveTrials()) do
-                -- Whole days, rounded down: 0 is less than a day left.
-                local left = tt:GetDaysRemaining(trial.key)
-                if left ~= nil and left <= 0 then n = n + 1 end
-            end
-            if n > 0 then add(urgent, string.format(L["%d trials expiring"], n), "trials") end
+        -- The trials ready to review, the count the login line and the digest give (#249).
+        if tt and tt.CountReady then
+            local n = tt:CountReady()
+            if n > 0 then add(urgent, string.format(L["%d trial(s) ready to review"], n), "trials") end
         end
 
         local gm = GuildOS.GuildManager
@@ -136,8 +132,14 @@ function Agora:NeedsMe()
 
         local rs = GuildOS.RecruitScanner
         if rs and rs.GetInbox then
+            -- Only replies newer than the last look at the inbox are waiting: counting every one
+            -- ever stored, the row never went away (issue #311).
+            local readAt = tonumber(GuildOS.db and GuildOS.db.recruitScanner
+                and GuildOS.db.recruitScanner.inboxReadAt) or 0
             local n = 0
-            for _ in pairs(rs:GetInbox()) do n = n + 1 end
+            for _, e in ipairs(rs:GetInbox()) do
+                if type(e) == "table" and (tonumber(e.ts) or 0) > readAt then n = n + 1 end
+            end
             if n > 0 then add(normal, string.format(L["%d applicants waiting"], n), "recruitment", "scanner") end
         end
     end
@@ -186,7 +188,7 @@ function Agora:Activity(limit)
     end
     for _, e in ipairs(db.lootHistory or {}) do
         add(e.timestamp, string.format(L["%s received %s"], e.player or "?", e.itemLink or e.itemName or "?"), "loot",
-            nil, e.playerKey)
+            "history", e.playerKey)
     end
     for _, e in ipairs((db.milestones and db.milestones.events) or {}) do
         if e.type == "ding" then
@@ -262,7 +264,7 @@ end
 
 local function stamp(ts)
     if now() - ts < 86400 then return date("%H:%M", ts) end
-    return date("%a", ts)
+    return GuildOS:LocalDate("%a", ts)
 end
 
 local function acquireRow(list, i)
@@ -410,7 +412,7 @@ function GuildOS:CreateNowPanel(panel, win)
     local function paint()
         if raid then
             local comp = GuildOS.Calendar:GetComposition(raid)
-            raidMeta:SetText((raid.title or "?") .. DOT .. date("%a %H:%M", raid.when)
+            raidMeta:SetText((raid.title or "?") .. DOT .. GuildOS:LocalDate("%a %H:%M", raid.when)
                 .. DOT .. string.format(L["%d going"], comp.yes))
         else
             raidMeta:SetText(L["No raid scheduled."])
@@ -443,6 +445,7 @@ function GuildOS:CreateNowPanel(panel, win)
     end
 
     local function refresh()
+        local t = GuildOS.Perf:Start()
         GuildOS:SafeCall(function()
             raid = Agora:NextRaid()
             loading = Agora:RosterLoading()
@@ -450,6 +453,7 @@ function GuildOS:CreateNowPanel(panel, win)
             feed = Agora:Activity(MAX_FEED)
             paint()
         end)
+        GuildOS.Perf:Stop("window now tab", t)
     end
     panel.Refresh = refresh
 
@@ -484,5 +488,9 @@ function GuildOS:CreateNowPanel(panel, win)
         end
     end)
     GuildOS.Compat.RegisterEvent(panel, "GUILD_ROSTER_UPDATE")
-    panel:SetScript("OnEvent", function() if panel:IsVisible() then refresh() end end)
+    -- At most once every ROSTER_GAP seconds on a roster update (issue #324).
+    local function visibleRefresh()
+        if panel:IsVisible() then refresh() end
+    end
+    panel:SetScript("OnEvent", function() GuildOS:Coalesce("agora", GuildOS.ROSTER_GAP, visibleRefresh) end)
 end

@@ -7,7 +7,8 @@ local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
 
--- Retail has no loot suite (ADR-0026): its welcome and officer step say what it does have.
+-- Retail has no loot master and no attunements (ADR-0026): its welcome, getting-started, privacy and
+-- officer steps say what it does have (issues #177, #185: the wishlist and the Loot settings are retail's).
 local RETAIL = GuildOS.Client.isRetail
 
 local STEPS = {
@@ -19,7 +20,8 @@ local STEPS = {
     },
     {
         title = L["Getting started"],
-        body  = L["Open it anytime with /guildos, the minimap button, or a key binding. Click any guildmate to see their full character — gear, professions and attunements."],
+        body  = RETAIL and L["Open it anytime with /guildos, the minimap button, or a key binding. Click any guildmate to see their full character — gear, spec and professions."]
+            or L["Open it anytime with /guildos, the minimap button, or a key binding. Click any guildmate to see their full character — gear, professions and attunements."],
     },
     {
         title = L["The guild button"],
@@ -28,7 +30,8 @@ local STEPS = {
     },
     {
         title = L["Data & privacy"],
-        body  = L["Guild OS shares your gear, professions, attunements, spec and wishlist with guildmates running the addon, so everyone sees the same roster. Officer notes and trials stay officer-only."],
+        body  = RETAIL and L["Guild OS shares your gear, professions, spec and wishlist with guildmates running the addon, so everyone sees the same roster. Officer notes and trials stay officer-only."]
+            or L["Guild OS shares your gear, professions, attunements, spec and wishlist with guildmates running the addon, so everyone sees the same roster. Officer notes and trials stay officer-only."],
     },
     {
         title = L["Your raid roles"],
@@ -37,7 +40,7 @@ local STEPS = {
     },
     {
         title = L["Officer tools"],
-        body  = RETAIL and L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers."]
+        body  = RETAIL and L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers. In Settings -> Loot, choose how the guild hands out loot: free roll, Wishlist or DKP."]
             or L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers. In Settings -> Loot, choose how the guild hands out loot: /roll, TMB, Wishlist or DKP."],
         officer = true,
     },

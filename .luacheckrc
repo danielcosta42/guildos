@@ -66,12 +66,20 @@ read_globals = {
     "C_Texture",        -- atlas lookups for the interface styles (#122)
     "C_ChatInfo",
     "C_GuildInfo",
+    "C_AddOnProfiler",  -- the game's addon CPU meter, read by Compat.AddOnCPU (#324)
     "C_Map",
     "C_QuestLog",
     "C_Item",        -- Compat wrappers, preferred over the old globals (issue #10)
     "C_Spell",
     "C_UnitAuras",
     "C_PlayerInfo",
+    -- Retail's Mythic+, the Great Vault and the week it counts (issue #187).
+    "C_MythicPlus",
+    "C_ChallengeMode",
+    "C_WeeklyRewards",
+    "C_DateAndTime",                         -- also the seconds to the reset, a self-test's (guildos-web#199)
+    "C_Calendar",                            -- the game's own calendar, in Compat only (guildos-web specs/075, #263)
+    "GetWeaponEnchantInfo",                  -- my weapon's temporary enchant (the consumable check, #187)
 
     -- WoW API: Unit functions
     "UnitName",
@@ -108,6 +116,7 @@ read_globals = {
     "GetInventoryItemTexture",
     "GetInventoryItemQuality",
     "GetItemInfo",
+    "GetItemInfoInstant",
     "GetItemCount",
     "GetSpellInfo",
     "GetSpellTexture",
@@ -140,11 +149,27 @@ read_globals = {
     "ChannelModerator",
     "SetChannelOwner",
     "ChatFrame_AddMessageEventFilter",
+    -- The allied guilds' /g drawn as a line of /g (issue #344).
+    "ChatFrame_ContainsMessageGroup",
+    "IsIgnored",
+    "CHAT_GUILD_GET",
+    "CHAT_TIMESTAMP_FORMAT",
+    "BetterDate",
+    "NUM_CHAT_WINDOWS",
+    -- The alliance's hidden channel and the /g it carries (issue #348).
+    "JoinTemporaryChannel",
+    "ChatFrame_RemoveChannel",
+    "GetChatWindowChannels",
+    "ChatFrame1EditBox",
+    "ChatEdit_ParseText",
+    "ChatFrame_MessageEventHandler",
+    "ChatFrameUtil",
     "ChatFrame_SendTell",
 
     -- WoW API: Social & Group
     "InviteUnit",
     "InviteByName",
+    "UninviteUnit",
     "TargetUnit",
     "InspectUnit",
     "NotifyInspect",
@@ -215,6 +240,10 @@ read_globals = {
     "C_Traits",
     "C_SpecializationInfo",                  -- retail's spec (ADR-0026)
     "GetSpecializationInfoForSpecID",
+    "C_PaperDollInfo",                       -- retail: an inspected average item level (issue #184)
+    -- Retail: the character sheet's ratings (Compat.SecondaryStats, issue #184).
+    "GetCritChance", "GetRangedCritChance", "GetSpellCritChance", "GetHaste", "GetMasteryEffect",
+    "GetCombatRatingBonus", "GetVersatilityBonus", "CR_VERSATILITY_DAMAGE_DONE",
     "GetProfessions",
     "GetProfessionInfo",
     "IsPlayerSpell",
@@ -224,6 +253,12 @@ read_globals = {
     "C_Secrets",
     "C_RestrictedActions",
     "GetNormalizedRealmName",
+    "GetCurrentRegion",                      -- the companion payload's region on retail (issue #182)
+    "GetAutoCompleteRealms",                 -- retail: the realms a guild can invite from (guild finder, specs/071)
+    "FACTION_HORDE",                         -- the client's own words for the two factions
+    "FACTION_ALLIANCE",
+    "GetGuildLogoInfo",                      -- the guild tabard's colours and emblem (issue #213)
+    "GetGuildTabardFiles",                   -- and its six files, where the border's style is (issue #213)
     "C_XMLUtil",
     "GetRealmName",
     "GetPlayerInfoByGUID",
@@ -231,6 +266,7 @@ read_globals = {
     "Minimap",
     "GetCursorPosition",
     "GetTime",
+    "debugprofilestop", -- the client's milliseconds, for GuildOS.Perf (#324)
     "GetServerTime",
     "ReloadUI",
     "InCombatLockdown",
@@ -247,8 +283,12 @@ read_globals = {
     "GetZoneText",       -- Call to Arms: where the caller is (#108)
     "GetSubZoneText",
     "GetNumGroupMembers",
+    "GetRealZoneText",     -- an instance's name by map id (issue #341)
+    "GetFileIDFromPath",   -- whether the client has a texture file (issue #341)
     "IsInGroup",
     "IsInRaid",
+    "C_InstanceEncounter",
+    "IsEncounterInProgress",                 -- the deprecated spelling, as a fallback in Compat
     "UnitIsGroupLeader",
     "UnitIsGroupAssistant",
     "GetRaidRosterInfo",
@@ -276,6 +316,23 @@ read_globals = {
     "ContainerFrameItemButton_OnModifiedClick",    -- bag button modifier-click handler
     "GetUnitName",
     "TradeFrameRecipientNameText",
+
+    -- WoW API: the Encounter Journal (retail wishlist, issue #185; Core/Compat.lua only)
+    "EJ_SelectInstance",
+    "EJ_SelectEncounter",
+    "EJ_GetNumLoot",
+    "EJ_GetLootFilter",
+    "EJ_SetLootFilter",
+    "EJ_GetEncounterInfo",
+    "EJ_GetInstanceInfo",
+    "C_EncounterJournal",
+    "EncounterJournal",
+
+    -- WoW API: trading a personal item (retail loot council, issue #185; Core/Compat.lua only)
+    "C_TooltipInfo",
+    "GetTradePlayerItemLink",
+    "LE_GAME_ERR_TRADE_COMPLETE",
+    "ERR_TRADE_COMPLETE",
 
     -- WoW API: Party
     "C_PartyInfo",
@@ -315,11 +372,13 @@ read_globals = {
     "LOCALIZED_CLASS_NAMES_MALE",
     "FACTION_BAR_COLORS",
     "RAID_CLASS_COLORS",
+    "ERR_CHAT_PLAYER_NOT_FOUND_S",
     "ERR_GUILD_INVITE_S",
 
     -- Guild notes
     "GuildRosterSetPublicNote",
     "CanEditPublicNote",
+    "CanViewOfficerNote",
 
     -- The chat frame's raid-icon words ({skull}, {star}…, localized), issue #64
     "ICON_TAG_LIST",

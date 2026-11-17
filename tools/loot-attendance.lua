@@ -56,6 +56,7 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/CoreManager.lua")
 dofile(ADDON .. "/Modules/RaidTracker.lua")
+dofile(ADDON .. "/Modules/LootRule.lua")
 dofile(ADDON .. "/Modules/LootMaster.lua")
 GuildOS.db = { settings = {}, members = {}, altLinks = {}, cores = {}, lootHistory = {},
   lootMaster = { minAttendancePct = 75, attTiebreaker = true },

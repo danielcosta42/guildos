@@ -2,6 +2,546 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.28.0] - 2026-11-17
+
+### Added
+- The calendar can now repeat an event every year, for birthdays and anniversaries; the next date is always on the calendar.
+
+
+## [1.27.0] - 2026-11-16
+
+### Added
+- Raids > Cores lists each roster's groups under it, and a group's header names its roster and whether its points go to the roster's pool.
+- Raid groups split from a larger roster on guildos.me (e.g. Karazhan groups of a 25) now get their own raid nights in game, and a group set to use the roster's pool earns and spends points there.
+
+
+## [1.26.1] - 2026-11-16
+
+### Fixed
+- The Web tab no longer says a current companion is out of date, and says when site raids only reach the calendar from an officer's client; the event editor says events made in game do not post to Discord.
+- Members now see the New Event button as soon as the officers' event ranks reach them, and a client from 1.12 or older can no longer turn the event ranks into officer ranks.
+- The prompt to link your own characters as alts no longer comes back at every login for characters that are already linked, and Link now really links them, also when no officer is online.
+
+
+## [1.26.0] - 2026-11-16
+
+### Added
+- The core sign-up window shows one card per core with its schedule, leader, loot rule and your request state, and Cancel request is always visible.
+- Raid Cores: the list shows each core's size, fill and origin (Discord or this game only); a core opens on Roster, Requests, Rule and Config, with role meters, the role picked from a list, the night's guests, and fields that say when they are saved.
+- The loot popup now shows what you wear in that slot, where you stand in the loot rule (reserve, wishlist place, +1, points and entry cost) and which rule is being played.
+- The master looter now works from one loot table: the boss's items and their state, the candidates in the rule's order with why each is there, the decision spelled out, and the Award button names the winner.
+- Loot is now one window for every member, with Rule, Accounts, Lists and History tabs; officers edit the loot rule and points there, and every loot setting lives in that one place.
+- A dropdown list now picks among several values where a button used to cycle through them, and Save buttons say when what is in the box was saved.
+- Raid Cores: in a guild linked to guildos.me, a player added to a Discord core in the game is a guest of the night: kept apart from the core's members and its composition, gone when the raid session ends unless marked to stay, and shared with the other officers.
+- Raid Cores: in a guild linked to guildos.me, cores are created on Discord (/core criar) and no longer in the game; a core renamed on Discord is renamed in the game on the next import, nights and points included; after 30 days with no cores from the site, officers can choose to create cores in the game again.
+- Raid Cores: officers can paste the cores code from guildos.me into the website roster box (/gos roster) to receive the guild's Discord cores without the web companion; the upload now tells guildos.me which cores the game has.
+
+### Fixed
+- Undoing an award after its core was renamed now gives the points back to that core instead of the guild's own pool.
+- A core can no longer be created or renamed with a | or a control character in its name, a name longer than 48 bytes, or the names constructor, prototype or __proto__.
+- The Loot window's rule editor and award row now wrap at narrow window widths instead of running past the edge.
+
+
+## [1.25.0] - 2026-11-15
+
+### Added
+- Alliances are now set up the GreenWall way: an officer of each guild pastes the same alliance code once in Alliance > Setup, and Guild OS hands it to every member of the guild. No ambassadors, and nobody in particular has to be online.
+- Allied guild chat now travels on a hidden, password-protected channel: each player's own line of /g is carried as they send it and shows in the other guilds' guild chat exactly like a line of guild chat, tagged with the guild it came from.
+- Allied guilds now keep syncing rosters, calendars and crafters without depending on ambassadors.
+
+
+## [1.24.0] - 2026-11-15
+
+### Added
+- Alliances: every guild's /g now shows in the other guilds' guild chat, in the guild chat colour, tagged with the guild it came from and with a clickable name. Turn it off on the Alliance chat panel (Allied /g) or with `/gos ally gchat off`.
+- Alliances: guilds now keep syncing rosters, calendars and signups when the members carrying the sync are not ambassadors.
+
+
+## [1.23.0] - 2026-11-15
+
+### Added
+- Loot rules: every loot system is now built from the same blocks (who may ask, how to ask, the order between candidates, who decides, what an award costs, per-item exceptions), for the guild or for each raid core (Raid Cores > Config), which can also just follow the guild's.
+- The Master Loot window now lists rollers in exactly the order the winner is picked, and the winner line says what decided (officer priority, fewer items received, attendance) when it was not the roll.
+- Loot rolls can now be answered by a button in the roll popup, with the roll drawn by the loot master's addon, so WoW: Forever raids no longer depend on /roll lines in chat. The loot master can type in the answer of a raider without the addon.
+- Officers can edit the roll popup's answers in Settings > Loot: rename the buttons, add or remove answers, choose whether each asks for a roll or a bid, what share of the item's price it pays, and how long raiders have to answer.
+- New loot systems: MS > OS +1 with a counter that resets each raid night, DKP bidding (open, or sealed at second price), Suicide Kings, Karma, SR+, zero-sum DKP, a weighted score, and a loot council that votes in a GuildOS window, by guild rank or by name, optionally anonymous.
+- DKP gets a points cap, named reasons to earn with weekly caps, decay rounding and a cost to enter a roll with a partial refund for whoever loses. Awards for being on time, staying to the end and attending the raid are paid once an officer switches them on in Settings > Loot.
+- EPGP is now a loot system of its own, with GP per item by slot and item level, EP/GP priority, minimum EP and decay on both sides.
+- Loot rules can have per-item exceptions: send recipes, mounts, bind-on-equip items or unclaimed items straight to a bank character or the disenchanter, or give specific items, bosses or raids their own order.
+- A raid's loot rule set on guildos.me applies in game for that raid night.
+- Every award now records why the winner got the item (the candidates in order, what decided, the council's votes), and the record goes to the site with the loot history.
+- A raider's first roll for an item now stands: rolling again no longer changes the number.
+- The disenchant button no longer charges points to anyone.
+- Fixed a freeze when the addon read data from the website containing a very small number.
+
+
+## [1.22.0] - 2026-11-14
+
+### Added
+- New Groups tab: your guild's own group finder. Browse the game's dungeons, raids and other activities as tiles, list yourself as looking for one or several of them with the roles you play, or form a group with its open spots by role.
+- Guildmates ask a group for a spot with one click; the leader invites or declines from the queue, the spot closes when the player joins, and the listing comes down by itself when the group is complete. `/gos avail` opens the tab.
+
+
+## [1.21.5] - 2026-11-12
+
+### Fixed
+- Weekday and month names in dates (calendar, Dashboard, Now, alliance and guild chat) now follow your game's language instead of always showing in English.
+- Officers can choose which event types (Raid, Dungeon, PvP, Farm, Social, Other) members below officer rank may create, next to "Who creates events"; officers can always create every type. Older versions of the addon don't know the setting and still accept every type.
+- On WoW: Forever, a Dungeon event offers a list of the game's dungeons to pick from, or "Other" to type a name.
+
+
+## [1.21.4] - 2026-11-12
+
+### Fixed
+- Dungeon clears and level milestones now reach the guild's Journal and guildos.me even when the moment they happened was missed (#327)
+
+
+## [1.21.3] - 2026-11-12
+
+### Fixed
+- Guild OS no longer fills the chat with "No player named ... is currently playing" when an allied guild's member it was syncing with has just logged off (#326)
+
+
+## [1.21.2] - 2026-11-12
+
+### Fixed
+- Fixed "action blocked" errors in Blizzard's gamepad mode on WoW: Forever: Guild OS confirmation dialogs no longer use the game's shared popup frames
+
+
+## [1.21.1] - 2026-11-12
+
+### Fixed
+- Each client now answers the guild's data requests at most once every two minutes (a /gos sync within 15 seconds) instead of every officer re-sending everything on every request, the heaviest traffic Guild OS made in a big guild.
+- A burst of guild roster updates now costs one pass every five seconds instead of four passes per update.
+- New /gos perf (also Audit > Sync) shows where Guild OS spends its time since login, with the game's own addon CPU meter where the client has one; /gos perf reset zeroes it.
+
+
+## [1.21.0] - 2026-11-12
+
+### Added
+- lib ChehulNet v1.4.0, o GuildOS repassa os acampamentos do Warmth (#316)
+
+
+## [1.20.1] - 2026-11-10
+
+### Fixed
+- The recruiter inbox no longer keeps saying applicants are waiting: opening it marks replies as read, a Clear button empties it and replies older than 14 days go away.
+- /gos sync now tells you, a few seconds later, how many guildmates sent their data and how many have Guild OS, and Audit > Sync counts the messages received, stored and dropped.
+- The export to guildos.me now carries the guild's officer ranks, so the site treats the same ranks as officers.
+
+
+## [1.20.0] - 2026-11-10
+
+### Added
+- lib ChehulNet v1.3.0, menos chance de bloqueio do diretório (#305)
+
+
+## [1.19.0] - 2026-11-09
+
+### Added
+- The raid plan from guildos.me (boss notes, your tasks and the loot rules) now shows in game, and a raid leader can say a boss's note in raid chat with one click.
+
+
+## [1.18.0] - 2026-11-09
+
+### Added
+- The companion export now carries points, wishlists, loot priorities, soft reserves and TMB lists to guildos.me.
+- An emptied wishlist now reaches guildos.me as cleared.
+
+
+## [1.17.0] - 2026-11-09
+
+### Added
+- "Fit to plan" (Web panel and /gos roster trim) removes from the raid whoever is not in the roster planned on guildos.me, after asking and naming them; the leader and the bench stay.
+
+
+## [1.16.0] - 2026-11-09
+
+### Added
+- A core that comes from guildos.me can no longer be deleted or renamed in game; the core panel says where those are changed. A core created in game says it exists only on this client.
+
+
+## [1.15.0] - 2026-11-09
+
+### Added
+- lib ChehulNet v1.2.0, repasse com deduplicação e alcance medido (#299)
+
+
+## [1.14.1] - 2026-11-09
+
+### Fixed
+- In DKP, the winner announced is now the one with the most DKP, as the Master Loot window shows.
+- The last loot award can be undone, from the Master Loot window or with /gos lm undo: the item leaves the loot history and the points it cost are given back.
+- A new core's points start from the guild's settings, and switching the Loot Tracker off now stops recording loot.
+
+
+## [1.14.0] - 2026-11-09
+
+### Added
+- On WoW: Forever, an Onyxia's Lair night is now linked to the raid planned on guildos.me, and no Forever night is ever mistaken for TBC's Hyjal Summit.
+
+
+## [1.13.2] - 2026-11-09
+
+### Fixed
+- The founding letter and the journal are now on by default on WoW: Forever, so the guild's founding and its dungeons reach guildos.me and its founding achievements can be earned. Whoever switched them off keeps them off.
+
+
+## [1.13.1] - 2026-11-09
+
+### Fixed
+- The network reaches other guilds again: the server began refusing the hidden channel the addons used to find each other, and they now find each other through the players they already hear. Nothing shows in chat.
+
+
+## [1.13.0] - 2026-11-08
+
+### Added
+- Dungeon events in the calendar now offer a 5-player size.
+- Officers can let more ranks create calendar events ("Who creates events", next to the officer ranks); a creator who is not an officer changes only their own events. Members need this version to see events created by non-officers.
+
+
+## [1.12.0] - 2026-11-08
+
+### Added
+- Calendar events can repeat: every week, every 2 weeks, every day, every other day, every month on the same weekday (like the 3rd Friday) or on the same day (#267)
+- Officers get an alert when someone calls the officers in guild chat; it can be turned off in Settings > Mentions (#266)
+- New option for the alt tag in guild chat: the short [Main] on an alt and [M] on a main, as Guild Roster Manager did (#269)
+- The guildmates-in-your-zone dots under the minimap can now be turned off in Settings (#271)
+- The welcome message stopped silently when its text had a | character; saving now says why the game would refuse it, and a failed send is reported (#270)
+- The recruiting screen no longer hides buttons or overlaps labels in languages with longer words, like French (#265)
+- Changelogs are now in English (#272)
+
+
+## [1.11.0] - 2026-11-08
+
+### Added
+- a lib ChehulNet vem de um repo só, com lock no CI; ChehulNet v12 estima a rede (#280)
+
+
+## [1.10.3] - 2026-11-08
+
+### Fixed
+- o whisper do diretório não imprime mais 'No player named' no chat de todos (#278)
+
+
+## [1.10.2] - 2026-11-08
+
+### Fixed
+- a malha passa da guilda no Forever: o diretório do canal ChehulNet leva o realm por whisper (#276)
+
+
+## [1.10.1] - 2026-11-08
+
+### Fixed
+- a aba Engajamento não estoura mais a pilha numa guilda grande (#274)
+
+
+## [1.10.0] - 2026-11-07
+
+### Added
+- o evento do jogo leva a raide no horário com que foi criada (#263)
+- o estado da raide no calendário do jogo, no calendário do addon (#263)
+- pôr, atualizar e tirar a raide do calendário do jogo (#263)
+- a marca e o estado da raide no calendário do jogo (#263)
+- o calendário do jogo no Compat (#263)
+
+### Fixed
+- o addon não oferece tirar a raide do calendário do jogo, que recusa (#263)
+- da revisão final do calendário do jogo (#263)
+
+
+## [1.9.5] - 2026-11-05
+
+### Fixed
+- em combate o atalho da guilda abre só a janela da Blizzard, nunca as duas (#261)
+
+
+## [1.9.4] - 2026-11-05
+
+### Fixed
+- fora do Anniversary o addon não escreve mais a nota pública: o Forever bloqueia C_GuildInfo.SetNote (#259)
+
+
+## [1.9.3] - 2026-11-05
+
+### Fixed
+- fora do Anniversary o addon não oferece mais convite para a guilda: o Forever recusa a chamada, a macro e a linha no chat (#256)
+- no Forever o convite vai para a caixa do chat como /ginvite, e o Enter do jogador envia: a macro de botão seguro também é bloqueada (#256)
+- convidar para a guilda pelo /ginvite de um botão seguro, que o Forever ainda deixa (#256)
+
+
+## [1.9.2] - 2026-11-05
+
+### Fixed
+- a aba de Recrutamento de quem virou oficial depois de logar abre como a de membro e pede /reload (#255)
+
+
+## [1.9.1] - 2026-11-04
+
+### Fixed
+- o addon aparece com o escudo na lista de addons (#253)
+
+
+## [1.9.0] - 2026-11-04
+
+### Added
+- a exportação leva o main de cada alt (#251)
+
+
+## [1.8.0] - 2026-11-03
+
+### Added
+- o trial da guilda, com a duração escolhida pelos oficiais e trial automático para quem entra (#249)
+
+
+## [1.7.1] - 2026-11-03
+
+### Fixed
+- ChehulNet v10, sem whisper para cada peer novo fora do grupo e nível do HELLO validado (#247)
+
+
+## [1.7.0] - 2026-11-02
+
+### Added
+- /gos probe channel com botão na Auditoria, a rota por canal desligada e os contadores do recrutamento (#245)
+- o lado da guilda — aviso, lista de pedidos, convite pelo clique e joinRequests no export v13 (#245)
+- o pedido de quem está sem guilda — formulário, envio repetido, resposta e fila para o companion (#245)
+- o gossip por whisper que leva o anúncio além da zona e do layer de quem grita (#245)
+- a tela de quem está sem guilda para achar uma, com filtros, cartão e horário no relógio dele (#245)
+
+### Fixed
+- a tentativa atrasada do canal antigo não apaga o nome da sonda em andamento, agora com teste (#245)
+- o nome do canal da sonda só sai quando o canal foi visto saindo, com tentativas limitadas (#245)
+- no Forever o officer é reconhecido pelo nome inteiro, nas duas grafias do roster (#245)
+- no retail o gossip não repassa guilda de reino que não pode convidar (#245)
+- um anúncio da lista com o nome da guilda não ganha a exceção da própria guilda (#245)
+- NaN e inf vindos da rede não passam por nenhuma checagem nem chegam a uma tabela salva (#245)
+- o officer é reconhecido com hífen no remetente, e a Auditoria mostra quem foi recusado (#245)
+- cada cliente oferece só o que serve à sua facção e região (#245)
+- a Auditoria atualiza depois do veredito da sonda de canal (#245)
+- cartão sem slug não promete o que o companion não vai levar (#245)
+- o Whisper do cartão usa o hífen, o mesmo da lista do officer (#245)
+- quem convida sem ser officer não vê Recusar e sabe por que a linha fica aberta (#245)
+- o pedido do jogo que vem no bloco continua sendo do jogo (#245)
+- as treze classes do retail cabem no anúncio (#245)
+- o anúncio do officer pausa em instância e em lockdown (#245)
+- o teste de whisper tenta algumas vezes e um eco atrasado ainda vale (#245)
+- o pedido do site avisa o officer quando o rank é conhecido, uma vez por linha nova (#245)
+- o canal que um /reload deixou aberto sai no início, com atraso, e antes da sonda seguinte (#245)
+- o corte do cache solta a versão mais velha e nunca o anúncio da própria guilda (#245)
+- a lista do companion entra no gossip e chega a quem não tem companion (#245)
+- a guilda guarda o próprio anúncio, com o officer por GUILD, e o membro vira alvo do pedido (#245)
+- a tentativa pulada da sonda é um estado próprio, o filtro lê o canal numerado, o canal aberto sai no /reload e o gameId pede o nome inteiro (#245)
+- pedido decidido renasce pelo id do jogo e a confirmação do convite pede o nome inteiro (#245)
+- formulário e aviso do pedido — cartão sem slug, linha para toda recusa, fila do companion, janela do convite, textos do mockup e plurais nas nove línguas (#245)
+- pedido sem slug, decisão só de officer, id do site, pedido decidido que renasce, convite só fechado pela linha do jogo, nome do reino no retail, contato do ct, caixa do nome, db errado e linha corrompida (#245)
+- um par não toma o lugar do anúncio da própria guilda no cache (#245)
+- os tickers do beacon rodam isolados, e um erro do cliente não derruba a rodada (#245)
+- o anúncio novo cruza o cache cheio, e uma lista de nomes não toma as rodadas de quem ouvi (#245)
+- a tela da guilda fiel ao mock, com listas de verdade, uma guilda por mundo e classes validadas (#245)
+
+### Other
+- wip: o anúncio completo com selo, ainda sem revisão (#245)
+
+
+## [Unreleased]
+
+### Added
+- o recrutamento: o anúncio sela e cruza zonas por sussurro (gossip), a tela de quem está sem guilda acha uma e pede para entrar, e o officer vê os pedidos, convida pelo clique e decide (#245)
+- o pedido sai do jogo pela fila do companion quando nenhum sussurro chega, e os pedidos da guilda vão no export v13 (#245)
+- `/gos probe channel`, com botão na Auditoria: entra num canal temporário, tenta mandar por timer e por clique, ouve o próprio eco e sai (#245)
+- a Auditoria mostra rodadas, anúncios por origem, pares, descartes, a grafia do teste de sussurro, os pedidos e o resultado do canal (#245)
+
+### Fixed
+- um pedido decidido com a pessoa offline não renasce aberto quando ela volta pelo jogo (#245)
+- a confirmação do convite pede o nome inteiro: "Ana" não fecha o pedido de "Ana Lima" (#245)
+
+## [1.6.0] - 2026-11-02
+
+### Added
+- o mural de LFG é visto por quem não está com ele aberto: aviso ligado e anúncio no chat da guilda (#243)
+
+### Fixed
+- da revisão: o aviso não depende do chat, a linha só sai do botão do mural e a pausa sobrevive ao /reload (#243)
+
+
+## [1.5.0] - 2026-11-01
+
+### Added
+- o pacote do próprio personagem para o companion
+
+### Fixed
+- o painel Web não promete que nada sai do jogo
+
+
+## [1.4.0] - 2026-11-01
+
+### Added
+- duas séries de insígnias, pela facção do personagem (guildos-web#309)
+- a insígnia de Renome no jogo (guildos-web#309)
+
+### Fixed
+- a facção secreta não é lida (guildos-web#309)
+
+
+## [1.3.1] - 2026-10-31
+
+### Fixed
+- o que protege quem instala no dia 4 — a noite sobrevive ao /reload, a rolagem lê o nome inteiro, o coreano é lido (#169, #118, #106, #48, #170, #171)
+
+
+## [1.3.0] - 2026-10-31
+
+### Added
+- o painel de prontidão com núcleo, função, filtros e composição (#220)
+
+
+## [1.2.2] - 2026-10-31
+
+### Fixed
+- uma corrida de cinco é uma masmorra na semana do Diário (#297)
+
+
+## [1.2.1] - 2026-10-31
+
+### Fixed
+- da revisão do addon — o subtítulo sem 0–0 e o que o cabeçalho promete (#235)
+- da revisão do addon — o último chefe depois do fim ainda completa a corrida (#235)
+- o fim de cada masmorra é o chefe que o jogo conta (#235)
+
+
+## [1.2.0] - 2026-10-31
+
+### Added
+- as conquistas e a preparação da guilda no jogo (#216, #217)
+- o GOSGILD1 no jogo — a fundação do site e as linhas do guildos.me no resumo (#215)
+
+### Fixed
+- da revisão do addon — o que já foi dito não repete, a guilda ativada fica ativada, o resumo cresce e o cartão diz o que fazer (#215, #216, #217)
+- o site manda quem foi adicionado à mão, nunca o motivo (#215)
+
+
+## [1.1.0] - 2026-10-30
+
+### Added
+- Diário e Fundação desligados até o teste de 4/11, e nada novo derruba o upload (#232)
+- fatias no Dashboard — quantos grupos e raides dá para formar com quem está no 60 (#230)
+- o tabardo da guilda lido do jogo vai no export (#213)
+- titular e reserva no núcleo, a composição só com titulares e as vagas abertas (#212)
+- a aba Diário, os marcos de 10 em 10 no resumo e o aviso de primeira masmorra (#211)
+- as masmorras novas do Forever no diário — DungeonLog e o catálogo (#210)
+- o selo de fundador no roster e no membro, e a fundação no resumo do login (#209)
+- a carta de fundação — o GM registra o dia em que a guilda nasceu e os fundadores saem dele (#208)
+- a contagem até as raides no Dashboard e o nível no painel de prontidão (#207)
+- o diário — cada personagem escreve o que aconteceu com ele, a guilda guarda e o export leva (payload v12) (#205)
+
+### Fixed
+- da revisão das chaves — ligar sem /reload não quebra o roster, e desligada a fundação não publica (#232)
+- da revisão do núcleo — o link leva a reserva, o oficial marca titular e reserva no núcleo do jogo, e a lista e as vagas contam direito (#212)
+- da revisão do Diário — as primeiras da guilda guardadas à parte e sem quem pediu para não ser nomeado, o resumo lido do diário com as masmorras, e a aba ausente fora do Forever (#211)
+- da revisão do registro de masmorras — a run acaba ao sair depois do clear, no logout e em outra instância, e é de um personagem só (#210)
+- da revisão do selo — quem sai perde o selo e não recupera sozinho, e o aniversário diz completou (#209)
+- da revisão da fundação — só o GM decide e o mais novo vence, repete no sync, nada fora do banco da guilda (#208)
+- da revisão da contagem — dias inteiros como o site, o card sem vazar texto e o só-nível na coluna do item level (#207)
+- da revisão da prontidão — o carimbo do mínimo vai no export e zero também apaga (#206)
+- no Forever a prontidão começa no nível 60, e o oficial define o item level mínimo da guilda (#206)
+- da revisão do diário — a chave de quem escreveu no formato deste cliente, só os campos do tipo, e o opt-out na linha de cada personagem (#205)
+
+### Other
+- merge: a main (1.0.3) na pilha do roteiro
+
+
+## [1.0.3] - 2026-10-30
+
+### Fixed
+- as opções de Loot Rules não ficam mais uma em cima da outra (#228)
+
+
+## [1.0.2] - 2026-10-29
+
+### Fixed
+- a opção de mostrar offline não é o roster (#203)
+- um inspect não é a ficha de um guildmate (#203)
+- só o roster inteiro diz quem saiu (#203)
+- quem sai da guilda some de tudo sozinho, sem botão de prune (#203)
+
+
+## [1.0.1] - 2026-10-28
+
+### Fixed
+- a sessão fundida não volta do broadcast de outro oficial, e o "merged 1 duplicate raid session(s)" para de repetir a cada 5 minutos (#197)
+
+
+## [1.0.0] - 2026-10-25
+
+### Added
+- GuildOS 1.0 — o início oficial, com o lançamento do WoW: Forever (#195)
+
+
+## [0.85.0] - 2026-10-23
+
+### Added
+- o addon em italiano — o itIT com todas as strings que o código pede, nos termos do cliente italiano da Blizzard (#186)
+- no retail as boas-vindas e o Sobre falam da wishlist, e o passo do oficial das configurações de loot (#185)
+- Mítica+ e o Grande Cofre no retail — a pedra-chave, a pontuação e o cofre da semana de cada um, na ficha e numa coluna do roster (#187)
+- os consumíveis do Midnight no retail — frasco, comida, runa e o óleo da arma, lidos fora de combate; o que o jogo esconde nunca é falta (#187)
+- o conselho de loot por troca no retail — oferecer, responder, entregar e registrar quando a troca acontece (#185)
+- a wishlist volta no retail, com os itens das raides de Midnight lidos do Diário de Encontros (#185)
+- os pontos voltam no retail, e o sistema de loot do oficial chega a cada membro (#185)
+
+### Fixed
+- o grau da scorribanda em italiano é Grado, não Livello, que é o da chave (#186)
+- da revisão — o relógio de quem oferece um pouco adiantado ainda vale para a hora do drop, e o teste da espera do roll a partir do envio (#185)
+- da terceira revisão — a resposta de quem recebeu a entrega fica, a rolagem sai depois da resposta, a hora do drop dentro da janela e o link mais estrito (#185)
+- no retail a wishlist só entra de um membro da guilda pela GUILD (#185)
+- da revisão — um D só vale para uma entrega que o cliente viu, a rolagem é a do servidor, a linha leva a hora do drop e o link tem de ser um só (#185)
+- da revisão — o ready check que termina em combate não apaga as leituras, e sem leitura não se anuncia All OK (#187)
+- da revisão — o fim do ready check lê de novo, um 41º buff deixa a lista parcial, o cofre só depois do WEEKLY_REWARDS_UPDATE e os testes que faltavam (#187)
+- da revisão — a troca demorada ainda registra, a rolagem livre só vale onde a guilda rola, o D leva quem entregou e a cobrança sai uma vez, links inteiros, e a wishlist do retail na ficha e na aba (#185)
+- no retail um nome digitado na janela de pontos guarda o próprio reino (#185)
+- a semana do lockout vira no reset da região, não na terça 00:00 UTC, nos três jogos (guildos-web#199)
+
+### Changed
+- o contexto do conselho fica só com a presença, que é o que a janela mostra (#185)
+
+
+## [0.84.0] - 2026-10-22
+
+### Added
+- no retail a presença conta como o site — Normal e Heroico na mesma semana são dois lockouts (#182)
+- no retail o loot pessoal tem histórico — ENCOUNTER_LOOT_RECEIVED na sessão de raide, a aba Loot, a equidade, os exports e o loot no envio (#183)
+- a spec da aliança vai com o specID e aparece na língua de quem lê (#184)
+- os canais de recrutamento de um cliente italiano no retail (#184)
+- no retail o addon fala com o guildos.me — payload v10, roster v3 e os núcleos pelo reino da guilda (#182)
+- a ficha do membro no retail — atributo primário, vigor, crítico, aceleração, maestria e versatilidade (#184)
+- o item level no inspect e a troca de spec na hora, no retail (#184)
+- o núcleo no retail — os buffs da raide pela lista do Raid Tools e o papel pela spec (#184)
+
+### Fixed
+- da revisão — /gos unban não tira um ban antigo já vencido no lugar do que vale, e o painel do /who marca pelo nome inteiro (#184)
+- da segunda revisão — o /who sussurra quem listou, /gos unban diz quando não havia o que tirar e um banimento vencido não esconde o antigo (#184)
+- da segunda revisão — a carência que acaba no LFR ou em outra raide não tira o último snapshot, e o loot conta onde os snapshots contam (#183)
+- da revisão — o banimento tira a linha que mostra, os chamadores passam o nome inteiro, o export do roster sem sintonia e a ficha sem número quebrado (#184)
+- da revisão — o loot pessoal só da guilda, nunca na carência nem em outra dificuldade, com o nome inteiro, e o LFR na carência fica fora da sessão (#183)
+- da revisão — o leitor de JSON sai do SoftRes para todo cliente, o nome do site é o mesmo em todo oficial, e o grupo pula quem é segredo (#182)
+- o ChehulNet não lê o reino como sobrenome no retail (#184)
+- homônimos de reino conectado no retail — banimento, inspetor de grupo, rank, log do roster e raide da guilda (#184)
+- os restos de conteúdo do TBC somem onde o módulo não existe (#184)
+- da revisão — a troca de dificuldade leva junto o núcleo que o oficial escolheu (#177)
+- da revisão — Heroico depois do Normal é sessão nova, /gos trial com texto depois do nome, e os textos do retail que ainda falavam de loot (#177)
+- o que a revisão do retail deixou para depois (#177)
+
+
+## [0.83.0] - 2026-10-18
+
+### Added
+- a lista de membros com as colunas que cada um liga, desliga e reordena (#178)
+
+### Fixed
+- da revisão — a spec desenha o que foi lido mesmo se o sync a tirar antes do próximo refresh, e o painel aberto acompanha o que é oferecido (#178)
+- da revisão — a tabela segue o que o leitor pode ver sem redimensionar, spec pela árvore e célula vazia por último em toda coluna (#178)
+
+
 ## [0.82.0] - 2026-10-18
 
 ### Added

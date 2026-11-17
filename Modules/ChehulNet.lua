@@ -7,7 +7,7 @@
 --
 -- Transport is LibChehulMesh (_G.ChehulMesh): presence rides guild + group + SAY
 -- proximity AND the realm-wide dedicated channel, so a HELLO reaches the whole
--- realm/faction, not just your guild. Discovery is two-way (reply on first contact).
+-- realm/faction, not just your guild. A group answers on first contact; the rest meet on the heartbeat.
 --
 -- v3: the HELLO now carries the sender's LAYER (mapID:zoneUID) so the whole mesh is
 -- layer-aware, not just PartyLens users. Addons with real layer detection (PartyLens)
@@ -27,8 +27,37 @@
 -- addon-message sender arrives), not by UnitName's first name: v7 took its own HELLO for a peer's
 -- and answered itself. ALERT_SENDERS names the operator's characters in full, and a v8 loading
 -- after a v7 adds them to the list it finds.
+-- v9: retail. There UnitFullName's second slot is the realm, whatever ShouldDisplaySurname says, so
+-- a retail client knows itself by UnitName: v8 could read "Name Realm" as a name and surname.
+-- v10: launch day. A HELLO heard on a wide bus (GUILD, SAY, YELL) is no longer answered by whisper:
+-- 500 clients on a realm would send each other some 125k whispers after a restart, and the peer's
+-- own heartbeat brings the same news within HELLO_INTERVAL. A group's audience is bounded, so a
+-- groupmate is still answered at once. A HELLO's level counts only as a whole number from 1 to 255.
+-- v11: DIAG, for the backoffice (the CehulNet addon). "DIAG|<id>|<sent>" on ChehulPing is answered by
+-- whisper "DIAGR|<id>|<arrivalDist>|k=v;k=v": the lib versions this client runs, the mesh's counters,
+-- its layer, instance and chat lockdown, plus what each host adds through CN:RegisterDiag(tag, fn).
+-- Only the operator's characters (ALERT_SENDERS) are answered, each id once; one heard on a wide bus
+-- waits a random 0-DIAG_JITTER seconds, so a census never lands as one burst. ALERT_SENDERS gains
+-- "Chehul Lightdrizzle", the operator's character on WoW: Forever.
+-- v12: the DIAG also says the client's guild, how many peers it heard on GUILD within PEER_TTL (gpeers) and how
+-- many of those are in the mesh's directory (gdir). The directory lists only clients with LibChehulMesh v5+, and a
+-- guild is where an older client is still heard; so the backoffice can estimate the whole network from the
+-- directory and the share each guild has updated. A peer remembers when it was last heard on GUILD (gts), since a
+-- HELLO whispered through the directory comes in later and would otherwise hide that.
+-- v13 (chehulnet#1): the Forever server refused the directory's channel, and LibChehulMesh v7 reaches outside the
+-- guild through peers it heard instead. The DIAG says how many fresh peers the mesh knows (view) and why the
+-- directory is refused (dirx, empty when it is not).
+-- v14 (chehulnet#3): LibChehulMesh v8 relays realm items and needs to know which peers take the relay. The HELLO's
+-- caps carry the mesh version (mv=), and a HELLO heard tells the mesh the peer's addons and version (Mesh:Tag), so
+-- a host can ask the mesh for the peers running it (Mesh:Peers(tag)). The DIAG says how many confirmed links the
+-- mesh holds (links), how many peers take the relay (v8), what the relay did (rl=in/out/fwd/guild/dup) and the
+-- last traces (trace=id:seconds:hops,..., newest first). CN:Trace() sends a trace by the relay; the backoffice reads
+-- its reach in the DIAGs.
+-- v15 (chehulnet#5): LibChehulMesh v9 brakes when its whispers keep finding nobody and keeps one directory per
+-- ruleset. The DIAG says how many "No player named" the mesh got within its window (nf), whether the brake is on
+-- (trip), which channel the directory uses (dirch) and how old its list is in seconds (dirage, empty before a read).
 
-local VERSION = 8
+local VERSION = 15
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -41,6 +70,7 @@ CN.PREFIX         = "ChehulNet"
 CN.PROTO          = "CHN1"
 CN.HELLO_INTERVAL = 180 -- re-announce presence this often (seconds)
 CN.PEER_TTL       = 600 -- forget a peer not heard within this
+CN.REPLY_ON       = { PARTY = true, RAID = true, INSTANCE_CHAT = true } -- buses a new peer is answered on
 
 CN.peers     = CN.peers or {}     -- [shortName] = { addons=set, class, level, caps, mapID, zoneUID, ts }
 CN.providers = CN.providers or {} -- [tag] = { caps=function|nil, onPeer=function|nil }
@@ -48,10 +78,19 @@ CN.layer     = CN.layer or { mapID = 0, zoneUID = 0 } -- built-in detection (non
 
 local Mesh = _G.ChehulMesh -- shared transport (loaded before this file)
 
+-- A retail client: the mainline project past interface 100000, the two signals GuildOS's
+-- Client.isRetail reads (WoW: Forever may answer the mainline id; its interface is 16001). This
+-- file ships identical in other addons and cannot ask GuildOS, so it reads them itself (v9).
+local function IsRetail()
+    local interface = GetBuildInfo and select(4, GetBuildInfo())
+    return WOW_PROJECT_MAINLINE ~= nil and WOW_PROJECT_ID == WOW_PROJECT_MAINLINE and (tonumber(interface) or 0) >= 100000
+end
+
 -- My own name as every addon-message sender writes it. On WoW: Forever UnitName gives the first
--- name only, and UnitFullName returns the first name and the surname apart (the realm, elsewhere).
+-- name only, and UnitFullName returns the first name and the surname apart (the realm, elsewhere;
+-- never a surname on retail, as GuildOS's Client.has.surnames says).
 local function MyShortName()
-    if C_PlayerInfo and C_PlayerInfo.ShouldDisplaySurname and C_PlayerInfo.ShouldDisplaySurname() then
+    if not IsRetail() and C_PlayerInfo and C_PlayerInfo.ShouldDisplaySurname and C_PlayerInfo.ShouldDisplaySurname() then
         local first, surname = UnitFullName("player")
         local secret = issecretvalue and (issecretvalue(first) or issecretvalue(surname))
         if not secret and first and surname and surname ~= "" then
@@ -72,6 +111,9 @@ end
 
 local function MergedCaps()
     local parts = {}
+    if Mesh and tonumber(Mesh.version) then
+        parts[1] = "mv=" .. Mesh.version -- v14: the relay goes in an envelope only to peers whose mesh takes it
+    end
     for _, p in pairs(CN.providers) do
         if p.caps then
             local ok, c = pcall(p.caps)
@@ -158,6 +200,14 @@ function CN:Prune()
     end
 end
 
+-- A level off the network: a whole number in range or nothing (tonumber lets "inf" and "nan" through).
+local function HelloLevel(level)
+    local n = tonumber(level)
+    if n and n >= 1 and n <= 255 and n == math.floor(n) then
+        return n
+    end
+end
+
 -- Inbound HELLO (routed here by LibChehulMesh for our prefix).
 local function OnHello(payload, sender, dist)
     if type(payload) ~= "string" or not sender then
@@ -181,19 +231,24 @@ local function OnHello(payload, sender, dist)
         local m, z = strsplit(":", layer)
         mapID, zoneUID = tonumber(m) or 0, tonumber(z) or 0
     end
-    local isNew = CN.peers[short] == nil
+    if Mesh and Mesh.Tag then
+        pcall(Mesh.Tag, Mesh, sender, set, caps and ("," .. caps):match(",mv=(%d+)")) -- v14
+    end
+    local old = CN.peers[short]
+    local isNew = old == nil
     CN.peers[short] = {
         addons  = set,
         class   = (class ~= "" and class) or nil,
-        level   = tonumber(level),
+        level   = HelloLevel(level),
         caps    = caps or "",
         mapID   = mapID,
         zoneUID = zoneUID,
         ts      = time(),
+        gts     = (dist == "GUILD") and time() or (old and old.gts) or nil, -- last heard on GUILD (v12)
     }
-    -- Reply once to a newcomer we heard via broadcast (not a whisper), so discovery
-    -- is two-way. Their whispered reply arrives as dist "WHISPER" -> no ping-pong.
-    if isNew and dist ~= "WHISPER" and Mesh then
+    -- Reply once to a newcomer heard in the group, so discovery there is two-way at once. Wider
+    -- buses wait for the heartbeat; a whispered reply arrives as "WHISPER" -> no ping-pong.
+    if isNew and CN.REPLY_ON[dist] and Mesh then
         Mesh:Whisper(CN.PREFIX, CN:BuildHello(), sender)
     end
     for _, p in pairs(CN.providers) do
@@ -263,6 +318,91 @@ end
 -- <arrivalDist> so you can SEE which bus reached this peer.
 -- ---------------------------------------------------------------------------
 CN.PING_PREFIX = "ChehulPing"
+CN.DIAG_JITTER = 4                  -- seconds a DIAG heard on a wide bus may wait before its answer
+CN.diag        = CN.diag or {}      -- [tag] = fn() -> "k=v;k=v" (host-specific health, v11)
+CN.diagSeen    = CN.diagSeen or {}  -- [id] = true: each DIAG id is answered once
+CN._t0         = CN._t0 or (GetTime and GetTime()) or 0
+
+-- A host adds its own health to the DIAG answer (keys go out prefixed with the tag).
+function CN:RegisterDiag(tag, fn)
+    if type(tag) == "string" and tag ~= "" and type(fn) == "function" then
+        CN.diag[tag] = fn
+    end
+end
+
+function CN:BuildDiag()
+    local s = (Mesh and Mesh.stats) or {}
+    local ace = LibStub and LibStub("AceComm-3.0", true)
+    local ctl = _G.ChatThrottleLib
+    local mapID, zoneUID = CN:MyLayer()
+    local build = GetBuildInfo and select(2, GetBuildInfo())
+    local lock = C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown()
+    local map = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    local peers = 0
+    for _ in pairs(CN.peers) do
+        peers = peers + 1
+    end
+    local parts = {
+        "cn=" .. CN.version, "mesh=" .. ((Mesh and Mesh.version) or 0), "ace=" .. (ace and 1 or 0),
+        "ctl=" .. ((ctl and ctl.version) or 0), "ctlq=" .. ((ctl and ctl.bQueueing) and 1 or 0),
+        "tags=" .. LocalTags(), "ok=" .. (s.ok or 0), "fail=" .. (s.fail or 0), "recv=" .. (s.recv or 0),
+        "yell=" .. (s.yell or 0), "rq=" .. (s.realmQueued or 0), "rs=" .. (s.realmSent or 0),
+        "rd=" .. (s.realmDropped or 0), "qn=" .. ((Mesh and Mesh._realmQueueCount) or 0), "peers=" .. peers,
+        "layer=" .. (mapID or 0) .. ":" .. (zoneUID or 0), "map=" .. (tonumber(map) or 0),
+        "inst=" .. ((IsInInstance and IsInInstance()) and 1 or 0), "lock=" .. (lock and 1 or 0),
+        "up=" .. math.floor(((GetTime and GetTime()) or 0) - CN._t0), "build=" .. tostring(build or "?"),
+        "refused=" .. (s.refused or 0), "dirSent=" .. (s.dirSent or 0),
+        "dir=" .. ((Mesh and Mesh.dir and Mesh.dir.count) or 0),
+        "view=" .. ((Mesh and Mesh.PeerCount and Mesh:PeerCount()) or 0),
+        "dirx=" .. (tostring((Mesh and Mesh.dir and Mesh.dir.refused) or ""):gsub("[|;=]", " ")),
+        "links=" .. ((Mesh and Mesh.LinkCount and Mesh:LinkCount()) or 0),
+        "nf=" .. ((Mesh and Mesh.NotFoundCount and Mesh:NotFoundCount()) or 0),
+        "trip=" .. ((Mesh and Mesh.Tripped and Mesh:Tripped()) and 1 or 0),
+        "dirch=" .. (tostring((Mesh and Mesh.dir and Mesh.dir.channel) or ""):gsub("[|;=]", " ")),
+        "dirage=" .. ((Mesh and Mesh.dir and tonumber(Mesh.dir.at)) and (time() - Mesh.dir.at) or ""),
+        "v8=" .. ((Mesh and Mesh.V8Count and Mesh:V8Count()) or 0),
+        "rl=" .. table.concat({ s.rlIn or 0, s.rlOut or 0, s.rlFwd or 0, s.rlGuild or 0, s.rlDup or 0 }, "/"),
+        "trace=" .. (function()
+            local out = {}
+            for i, t in ipairs(CN.traces) do out[i] = table.concat({ t.id, t.secs, t.hops }, ":") end
+            return table.concat(out, ",")
+        end)(),
+    }
+    local dead = {}
+    for dist in pairs((Mesh and Mesh.dead) or {}) do
+        dead[#dead + 1] = dist
+    end
+    table.sort(dead)
+    parts[#parts + 1] = "dead=" .. table.concat(dead, "+")
+    -- v12: the guild, its peers heard on GUILD, and how many of them are in the directory.
+    local guild = IsInGuild and IsInGuild() and GetGuildInfo and GetGuildInfo("player")
+    local inDir = {}
+    for _, name in ipairs((Mesh and Mesh.dir and Mesh.dir.names) or {}) do
+        inDir[(Ambiguate and Ambiguate(name, "short")) or name] = true
+    end
+    local gpeers, gdir, cutoff = 0, 0, time() - CN.PEER_TTL
+    for name, p in pairs(CN.peers) do
+        if (p.gts or 0) >= cutoff then
+            gpeers = gpeers + 1
+            if inDir[name] then
+                gdir = gdir + 1
+            end
+        end
+    end
+    parts[#parts + 1] = "guild=" .. ((type(guild) == "string" and guild:gsub("[|;=]", " ")) or "")
+    parts[#parts + 1] = "gpeers=" .. gpeers
+    parts[#parts + 1] = "gdir=" .. gdir
+    for tag, fn in pairs(CN.diag) do
+        local ok, extra = pcall(fn)
+        if ok and type(extra) == "string" then
+            for kv in extra:gmatch("[^;]+") do
+                parts[#parts + 1] = tag .. "." .. (kv:gsub("|", " "))
+            end
+        end
+    end
+    return table.concat(parts, ";")
+end
+
 local function OnPing(payload, sender, dist)
     if type(payload) ~= "string" or not sender or not Mesh then
         return
@@ -271,6 +411,20 @@ local function OnPing(payload, sender, dist)
     if kind == "PING" then
         Mesh:Whisper(CN.PING_PREFIX,
             table.concat({ "PONG", id or "?", sent or "0", dist or "?" }, "|"), sender)
+    elseif kind == "DIAG" and id and id ~= "" and not CN.diagSeen[id] then
+        local short = (Ambiguate and Ambiguate(sender, "short")) or sender
+        if not CN.ALERT_SENDERS[short:lower()] then
+            return -- only the operator's backoffice is told a node's health
+        end
+        CN.diagSeen[id] = true
+        local function answer()
+            Mesh:Whisper(CN.PING_PREFIX, table.concat({ "DIAGR", id, dist or "?", CN:BuildDiag() }, "|"), sender)
+        end
+        if dist == "WHISPER" or not (C_Timer and C_Timer.After) then
+            answer()
+        else
+            C_Timer.After(math.random() * CN.DIAG_JITTER, answer)
+        end
     end
 end
 
@@ -289,7 +443,7 @@ CN.alertSeen = CN.alertSeen or {} -- [key]=true, dedupe re-broadcasts within a s
 -- On WoW: Forever a name is "First Surname", unique per region: the first name alone is anybody's.
 -- Added to whatever an older copy left, which is what a v8 loading after a v7 finds.
 CN.ALERT_SENDERS = CN.ALERT_SENDERS or {}
-for _, name in ipairs({ "chehul", "chehul costa", "chehul druida", "chehul shammy" }) do
+for _, name in ipairs({ "chehul", "chehul costa", "chehul druida", "chehul shammy", "chehul lightdrizzle" }) do
     CN.ALERT_SENDERS[name] = true
 end
 
@@ -401,6 +555,45 @@ local function OnAlert(payload, sender)
 end
 
 -- ---------------------------------------------------------------------------
+-- Trace (v14): the operator sends one item by the relay; each client keeps the last one it took (id, seconds on the
+-- way, hops left), and the backoffice's DIAG census reads the reach. A relayed trace's origin is claimed, so a
+-- forged one cannot be told from the operator's: the DIAG keeps the last TRACE_KEEP fresh ones (TRACE_AGE) and the
+-- backoffice looks for the id it sent. One whispered or said on GUILD (an authentic sender) is kept only from the operator. Server time on
+-- both ends, so the seconds are the way and not two clocks apart.
+-- ---------------------------------------------------------------------------
+CN.TRACE_PREFIX = "ChehulTrace"
+CN.TRACE_KEEP   = 5
+CN.TRACE_AGE    = 600 -- a trace sent longer ago than this is stale: a forger cannot replay old ones
+CN.traces       = CN.traces or {}
+
+local function Now()
+    return (GetServerTime and GetServerTime()) or time()
+end
+
+function CN:Trace()
+    if not (Mesh and Mesh.Realm) then return nil end
+    local id = string.format("%x", math.random(0, 0x7fffffff))
+    local payload = table.concat({ "TR1", id, tostring(Now()) }, "|")
+    Mesh:Guild(CN.TRACE_PREFIX, payload)
+    Mesh:Realm(CN.TRACE_PREFIX, payload, CN.TRACE_PREFIX, true)
+    return id
+end
+
+local function OnTrace(payload, sender, dist, _, hops)
+    if type(payload) ~= "string" or type(sender) ~= "string" then return end
+    if issecretvalue and (issecretvalue(payload) or issecretvalue(sender)) then return end
+    local id, sent = payload:match("^TR1|(%x+)|(%d+)$")
+    local short = (Ambiguate and Ambiguate(sender, "short")) or sender
+    if not id or #id > 8 or (dist ~= "RELAY" and not CN.ALERT_SENDERS[short:lower()]) then return end
+    if math.abs(Now() - tonumber(sent)) > CN.TRACE_AGE then return end
+    for _, t in ipairs(CN.traces) do
+        if t.id == id then return end -- the first copy is the one that counts
+    end
+    table.insert(CN.traces, 1, { id = id, secs = math.max(0, Now() - tonumber(sent)), hops = tonumber(hops) or "-" })
+    CN.traces[CN.TRACE_KEEP + 1] = nil
+end
+
+-- ---------------------------------------------------------------------------
 -- Bootstrap: register our receive handler with the mesh + start on login. Also drive
 -- the built-in layer detector off target/mouseover (a no-op when a provider is set).
 -- ---------------------------------------------------------------------------
@@ -408,6 +601,8 @@ if Mesh then
     Mesh:Register(CN.PREFIX, OnHello)
     Mesh:Register(CN.PING_PREFIX, OnPing)
     Mesh:Register(CN.ALERT_PREFIX, OnAlert)
+    Mesh:Register(CN.TRACE_PREFIX, OnTrace)
+    if Mesh.Relayable then Mesh:Relayable(CN.TRACE_PREFIX) end
 end
 
 CN.frame = CN.frame or CreateFrame("Frame")

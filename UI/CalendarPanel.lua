@@ -121,8 +121,9 @@ local function buildEditor()
     sizeBtn.sizeVal = DEFAULT_SIZE
     sizeBtn:SetScript("OnClick", function()
         local idx = 1
-        for i, v in ipairs(SIZES) do if v == sizeBtn.sizeVal then idx = i break end end
-        sizeBtn.sizeVal = SIZES[(idx % #SIZES) + 1]
+        local sizes = CAL().SizesFor(f.kind, SIZES)   -- a dungeon is five (issue #283)
+        for i, v in ipairs(sizes) do if v == sizeBtn.sizeVal then idx = i break end end
+        sizeBtn.sizeVal = sizes[(idx % #sizes) + 1]
         sizeBtn.label:SetText(tostring(sizeBtn.sizeVal))
     end)
 
@@ -130,19 +131,28 @@ local function buildEditor()
     local kindLbl = UI:CreateText(f, L["Type"], 10, C.silver.r, C.silver.g, C.silver.b)
     kindLbl:SetPoint("TOPLEFT", 14, -84)
     local kindPills = {}
+    local refreshDungeon   -- the dungeon picker beside the title (#308), built with the title below
     local function refreshKinds()
         for _, p in ipairs(kindPills) do
             local col = kindColor(p.kind)
+            -- A kind this rank may not create (#308) stays in its place, dimmed and not clickable.
+            local mayPick = CAL():MayCreateKind(p.kind)
+            if mayPick then p:Enable() else p:Disable() end
             if p.kind == f.kind then
                 p:SetBackdropColor(col.r * 0.34, col.g * 0.34, col.b * 0.34, 0.95)
                 p:SetBackdropBorderColor(col.r, col.g, col.b, 0.9)
                 p.fs:SetTextColor(col.r, col.g, col.b)
+            elseif not mayPick then
+                p:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.4)
+                p:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.15)
+                p.fs:SetTextColor(C.disabled.r, C.disabled.g, C.disabled.b)
             else
                 p:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.9)
                 p:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
                 p.fs:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
             end
         end
+        if refreshDungeon then refreshDungeon() end
     end
     do
         local kinds = (CAL() and CAL().KINDS) or { "RAID", "DUNGEON", "PVP", "FARM", "SOCIAL", "OTHER" }
@@ -155,24 +165,121 @@ local function buildEditor()
             GuildOS:ApplyFont(fs, 10)
             fs:SetPoint("CENTER"); fs:SetText(kindLabel(k))
             p.fs = fs; p.kind = k
-            p:SetScript("OnClick", function() f.kind = k; refreshKinds() end)
+            p:SetScript("OnClick", function()
+                f.kind = k; refreshKinds()
+                -- A size the new kind does not offer moves to one it does: a dungeon's five, or back to the raid default.
+                local sizes = CAL().SizesFor(k, SIZES)
+                local fits = false
+                for _, v in ipairs(sizes) do if v == sizeBtn.sizeVal then fits = true end end
+                if not fits then
+                    sizeBtn.sizeVal = (k == "DUNGEON") and sizes[1] or DEFAULT_SIZE
+                    sizeBtn.label:SetText(tostring(sizeBtn.sizeVal))
+                end
+            end)
             kindPills[#kindPills + 1] = p
         end
     end
     refreshKinds()
 
     local titleBox = fieldBox(14, -128, 332, L["Title"], false, 60)
+
+    -- A Dungeon event picks its dungeon from the game's list (#308), the one guildos.me offers, or
+    -- "Other" and types it: the pick is the title. The list opens beside the editor.
+    local dungeonBtn = UI:CreateButton(f, L["Pick a dungeon"], 104, 22)
+    dungeonBtn:SetPoint("TOPLEFT", 242, -142)
+    local dungeonList
+    local function hideDungeonList() if dungeonList then dungeonList:Hide() end end
+    local function pickDungeon(name)
+        if name then
+            titleBox:SetText(name)
+        else
+            -- Other: a name the list put there gives way to the one typed.
+            for _, n in ipairs(CAL():DungeonChoices()) do
+                if strtrim(titleBox:GetText() or "") == n then titleBox:SetText("") end
+            end
+            titleBox:SetFocus()
+        end
+        hideDungeonList()
+    end
+    local function buildDungeonList()
+        local list = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        list:SetFrameStrata("DIALOG")
+        list:SetFrameLevel(f:GetFrameLevel() + 10)
+        list:SetPoint("TOPLEFT", f, "TOPRIGHT", 4, 0)
+        list:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        list:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+        list:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+        local choices = CAL():DungeonChoices()
+        for i, name in ipairs(choices) do
+            local b = UI:CreateButton(list, name, 196, 20)
+            b:SetPoint("TOPLEFT", 6, -6 - (i - 1) * 22)
+            b:SetScript("OnClick", function() pickDungeon(name) end)
+        end
+        local other = UI:CreateButton(list, L["Other (type a name)"], 196, 20)
+        other:SetPoint("TOPLEFT", 6, -6 - #choices * 22)
+        other:SetScript("OnClick", function() pickDungeon(nil) end)
+        list:SetSize(208, 12 + (#choices + 1) * 22)
+        list:Hide()
+        return list
+    end
+    dungeonBtn:SetScript("OnClick", function()
+        dungeonList = dungeonList or buildDungeonList()
+        dungeonList:SetShown(not dungeonList:IsShown())
+    end)
+    -- Only for a dungeon, and only where the game has a list (WoW: Forever); the title makes room.
+    refreshDungeon = function()
+        local show = f.kind == "DUNGEON" and #CAL():DungeonChoices() > 0
+        dungeonBtn:SetShown(show)
+        titleBox:SetWidth(show and 222 or 332)
+        if not show then hideDungeonList() end
+    end
     local descBox  = fieldBox(14, -178, 332, L["Description (optional)"], true, 500)
+
+    -- Repeating (#267). A new event cycles through the repeats its date allows; an event of a series
+    -- offers to change every later date instead.
+    local repLbl = UI:CreateText(f, L["Repeat"], 10, C.silver.r, C.silver.g, C.silver.b)
+    repLbl:SetPoint("TOPLEFT", 14, -284)
+    local repBtn = UI:CreateButton(f, "", 260, 22)
+    repBtn:SetPoint("TOPLEFT", 70, -280)
+    local laterCb = UI:CreateCheckbox(f, L["Change every later date in this series"], 18)
+    laterCb:SetPoint("TOPLEFT", 14, -282)
+    local REPEATS = (CAL() and CAL().REPEATS) or { "none" }
+    f.rep = "none"
+    local function repDate()
+        local y, m, d = parseDate(dateBox:GetText())
+        return y and noon(y, m, d) or nil
+    end
+    local function repLabel(rep)
+        local ts = repDate()
+        local r = (ts and CAL() and CAL().RepeatOf) and CAL().RepeatOf(rep, ts) or { wday = 1, nth = 1, day = 1 }
+        if rep == "weekly" then return string.format(L["Every week on %s"], WEEKDAYS[r.wday]) end
+        if rep == "biweekly" then return string.format(L["Every 2 weeks on %s"], WEEKDAYS[r.wday]) end
+        if rep == "daily" then return L["Every day"] end
+        if rep == "everyother" then return L["Every other day"] end
+        if rep == "monthnth" then return string.format(L["Every month, %s"], WEEKDAYS[r.wday] .. " #" .. r.nth) end
+        if rep == "monthday" then return string.format(L["Every month on day %d"], r.day) end
+        if rep == "yearly" then return string.format(L["Every year on %s"], ts and (GuildOS:LocalDate("%d %b", ts):gsub("^0", "")) or "") end
+        return L["Does not repeat"]
+    end
+    local function refreshRep() repBtn.label:SetText(repLabel(f.rep)) end
+    repBtn:SetScript("OnClick", function()
+        local idx = 1
+        for i, v in ipairs(REPEATS) do if v == f.rep then idx = i break end end
+        f.rep = REPEATS[(idx % #REPEATS) + 1]
+        refreshRep()
+    end)
+    dateBox:HookScript("OnTextChanged", refreshRep)
+    local REP_ROW = 32   -- the room the repeat row takes
 
     -- Alliance sharing. The whole block only exists while this guild is in a
     -- pact: with no alliance there is nothing to share with, and an unexplained
     -- checkbox is worse than no checkbox.
     local shareCb = UI:CreateCheckbox(f, L["Share with the alliance"], 18)
-    shareCb:SetPoint("TOPLEFT", 14, -276)
+    shareCb:SetPoint("TOPLEFT", 14, -276 - REP_ROW)
     local shareHint = UI:CreateText(f,
         L["Allied guilds see this event and can request a slot. Unchecked, it stays in the guild."],
         9, C.textDim.r, C.textDim.g, C.textDim.b)
-    shareHint:SetPoint("TOPLEFT", 34, -296)
+    shareHint:SetPoint("TOPLEFT", 34, -296 - REP_ROW)
     shareHint:SetWidth(310)
     shareHint:SetJustifyH("LEFT")
     shareHint:SetWordWrap(true)
@@ -181,6 +288,15 @@ local function buildEditor()
     saveBtn:SetPoint("BOTTOMLEFT", 14, 14)
     local cancelBtn = UI:CreateButton(f, L["Cancel"], 80, 24)
     cancelBtn:SetPoint("LEFT", saveBtn, "RIGHT", 8, 0)
+
+    -- An event made here never becomes a raid on the site or a Discord post (spec 075 in guildos-web):
+    -- said where it is made, since "the bot didn't post my dungeon" is the question it answers.
+    local HINT_ROW = 28
+    local gameOnly = UI:CreateText(f, L["Events made here stay in the game. For signups on Discord, create the raid on guildos.me or with /raid create."], 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    gameOnly:SetPoint("BOTTOMLEFT", saveBtn, "TOPLEFT", 0, 6)
+    gameOnly:SetWidth(332)
+    gameOnly:SetJustifyH("LEFT")
+    gameOnly:SetWordWrap(true)
     cancelBtn:SetScript("OnClick", function() f:Hide() end)
 
     local function commit()
@@ -193,9 +309,14 @@ local function buildEditor()
         local when = time({ year = y, month = m, day = d, hour = hh, min = mm })
         local inAlliance = GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil
         local share = inAlliance and shareCb.checkbox:GetChecked() or nil
-        if f.editId then
+        if f.editId and f.inSeries and laterCb.checkbox:GetChecked() then
+            CAL():UpdateSeries(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind, share)
+        elseif f.editId then
             CAL():Update(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "",
                 f.kind, share)
+        elseif f.rep ~= "none" then
+            CAL():CreateSeries(title, when, sizeBtn.sizeVal, descBox:GetText() or "",
+                f.kind, share and true or false, f.rep)
         else
             CAL():Create(title, when, sizeBtn.sizeVal, descBox:GetText() or "",
                 f.kind, share and true or false)
@@ -211,7 +332,10 @@ local function buildEditor()
         f.editId = event and event.id or nil
         titleFS:SetText(event and L["Edit Event"] or L["New Event"])
         saveBtn.label:SetText(event and L["Save"] or L["Create"])
-        f.kind = (event and event.kind and KIND_COLOR[event.kind]) and event.kind or "RAID"
+        -- A new event starts on a kind this rank creates (#308): a raid, else the first one open.
+        local first = CAL():MayCreateKind("RAID") and "RAID" or CAL():CreatableKinds()[1] or "RAID"
+        f.kind = (event and event.kind and KIND_COLOR[event.kind]) and event.kind or first
+        hideDungeonList()
         refreshKinds()
         local y, m, d, hh, mm, size, title, note
         if event then
@@ -220,15 +344,23 @@ local function buildEditor()
             size, title, note = event.size or DEFAULT_SIZE, event.title or "", event.note or ""
         else
             y = math.floor(dk / 10000); m = math.floor((dk % 10000) / 100); d = dk % 100
-            hh, mm, size, title, note = 20, 0, DEFAULT_SIZE, "", ""
+            hh, mm, size, title, note = 20, 0, CAL().SizesFor(f.kind, { DEFAULT_SIZE })[1], "", ""
         end
         local inAlliance = GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil
         shareCb:SetShown(inAlliance)
         shareHint:SetShown(inAlliance)
-        f:SetHeight(inAlliance and 392 or 336)
+        f:SetHeight((inAlliance and 392 or 336) + REP_ROW + HINT_ROW)
+        -- New: pick a repeat. An event of a series: change only it, or every later date too.
+        f.inSeries = event and type(event.series) == "table" or false
+        f.rep = "none"
+        repLbl:SetShown(not event)
+        repBtn:SetShown(not event)
+        laterCb:SetShown(f.inSeries)
+        laterCb.checkbox:SetChecked(false)
         shareCb.checkbox:SetChecked((event and event.shareAlliance) and true or false)
 
         dateBox:SetText(string.format("%04d-%02d-%02d", y, m, d))
+        refreshRep()
         timeBox:SetText(string.format("%02d:%02d", hh, mm))
         sizeBtn.sizeVal = size; sizeBtn.label:SetText(tostring(size))
         titleBox:SetText(title)
@@ -246,7 +378,7 @@ local function openEditor(dk, event)
 end
 
 -- Delete confirmation (standard Blizzard popup; avoids accidental loss).
-StaticPopupDialogs["GUILDOS_CALENDAR_DELETE"] = {
+GuildOS.Dialogs["GUILDOS_CALENDAR_DELETE"] = {
     text = L["Remove \"%s\" from the calendar? This cannot be undone."],
     button1 = YES, button2 = NO,
     OnAccept = function(self, data)
@@ -258,8 +390,25 @@ StaticPopupDialogs["GUILDOS_CALENDAR_DELETE"] = {
     preferredIndex = 3,
 }
 local function confirmDelete(e)
-    local dlg = StaticPopup_Show("GUILDOS_CALENDAR_DELETE", e.title or "?", nil, e.id)
+    local dlg = GuildOS:ShowDialog("GUILDOS_CALENDAR_DELETE", e.title or "?", nil, e.id)
     if dlg then dlg.data = e.id end   -- some clients pass data via dialog.data
+end
+
+-- Ending a series from one date on (#267): the earlier dates stay.
+GuildOS.Dialogs["GUILDOS_CALENDAR_END_SERIES"] = {
+    text = L["End \"%s\" from this date on? Earlier dates stay."],
+    button1 = YES, button2 = NO,
+    OnAccept = function(self, data)
+        local id = data
+        if id == nil and self then id = self.data end
+        if id then CAL():EndSeries(id) end
+    end,
+    timeout = 0, whileDead = true, hideOnEscape = true, showAlert = true,
+    preferredIndex = 3,
+}
+local function confirmEndSeries(e)
+    local dlg = GuildOS:ShowDialog("GUILDOS_CALENDAR_END_SERIES", e.title or "?", nil, e.id)
+    if dlg then dlg.data = e.id end
 end
 
 ----------------------------------------------------------------------
@@ -335,7 +484,7 @@ function GuildOS:CreateCalendarSub(panel)
         if not W or W < 120 then W = 1000 end
         local cellW = math.floor((W - GRID_X - 12) / COLS)
 
-        monthLabel:SetText(date("%b %Y", noon(f.viewYear, f.viewMonth, 1)))
+        monthLabel:SetText(GuildOS:LocalDate(L["%b %Y"], noon(f.viewYear, f.viewMonth, 1)))
 
         for i = 1, COLS do
             f.wdFS[i]:ClearAllPoints()
@@ -405,14 +554,16 @@ function GuildOS:CreateCalendarSub(panel)
     ------------------------------------------------------------------
     function f.RenderDetail(byDay)
         local isOfficer = GuildOS:IsOfficer()
+        -- The guild's ranks (issue #283), and a kind left open to this one (#308).
+        local canCreate = GuildOS:MayCreateEvents() and #CAL():CreatableKinds() > 0
         local sel = f.selectedKey
         if sel then
             local y = math.floor(sel / 10000); local m = math.floor((sel % 10000) / 100); local d = sel % 100
-            detailLabel:SetText(date("%A, %d %b %Y", noon(y, m, d)))
+            detailLabel:SetText(GuildOS:LocalDate(L["%A, %d %b %Y"], noon(y, m, d)))
         else
             detailLabel:SetText(L["Select a day"])
         end
-        f.newBtn:SetShown(isOfficer and sel ~= nil)
+        f.newBtn:SetShown(canCreate and sel ~= nil)
 
         local child = f.child
         for _, c in pairs({ child:GetChildren() }) do c:Hide() end
@@ -421,6 +572,17 @@ function GuildOS:CreateCalendarSub(panel)
 
         local evs = (sel and byDay and byDay[sel]) or {}
         local yy = 0
+        -- The game's own calendar (guildos-web specs/075, #263), read once for the day's raids from the
+        -- site: its guild events over the inbox's window, and the inbox. WoW: Forever only.
+        local GC = GuildOS.GameCalendar
+        local gameOn = GC ~= nil and GuildOS.Compat.CalendarAvailable()
+        local gameEvents, inbox   -- gameEvents stays nil until the game has read its calendar
+        if gameOn then
+            GuildOS.Compat.CalendarRequest()
+            local now = GetServerTime()
+            gameEvents = GuildOS.Compat.CalendarGuildEvents(now - GC.GRACE - 86400, now + (GC.WINDOW_DAYS + 1) * 86400)
+            inbox = GuildOS.CompanionImport and GuildOS.CompanionImport:InboxInfo()
+        end
         -- Per-day render is wrapped so a single malformed event can't blank the
         -- whole list; any failure is surfaced inline instead.
         local okAll, errAll = pcall(function()
@@ -436,10 +598,12 @@ function GuildOS:CreateCalendarSub(panel)
             -- A gold [A] rather than a globe glyph: the skin fonts have no symbol
             -- coverage and unicode marks render as a box in these fonts.
             local shareMark = e.shareAlliance and "  |cffEDCC7B[A]|r" or ""
-            local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. "|cffFFFFFF" .. (e.title or "") .. "|r  |cff888888(" .. (e.size or DEFAULT_SIZE) .. ")|r" .. shareMark,
+            local inSeries = type(e.series) == "table"
+            local repMark = inSeries and ("  |cff888888" .. L["(repeats)"] .. "|r") or ""
+            local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. "|cffFFFFFF" .. (e.title or "") .. "|r  |cff888888(" .. (e.size or DEFAULT_SIZE) .. ")|r" .. shareMark .. repMark,
                 12, C.gold.r, C.gold.g, C.gold.b)
             head:SetPoint("TOPLEFT", 4, -yy)
-            if isOfficer then
+            if CAL():MayManage(e) then
                 local ev = e
                 local delBtn = UI:CreateButton(child, L["Delete"], 58, 18)
                 delBtn:SetPoint("TOPRIGHT", -4, -yy)
@@ -447,6 +611,12 @@ function GuildOS:CreateCalendarSub(panel)
                 local editBtn = UI:CreateButton(child, L["Edit"], 48, 18)
                 editBtn:SetPoint("RIGHT", delBtn, "LEFT", -6, 0)
                 editBtn:SetScript("OnClick", function() openEditor(nil, ev) end)
+                if inSeries then
+                    -- This date and every later one of the series go (#267).
+                    local endBtn = UI:CreateButton(child, L["End series"], 80, 18)
+                    endBtn:SetPoint("RIGHT", editBtn, "LEFT", -6, 0)
+                    endBtn:SetScript("OnClick", function() confirmEndSeries(ev) end)
+                end
             end
             yy = yy + 20
 
@@ -471,11 +641,26 @@ function GuildOS:CreateCalendarSub(panel)
                 -- last one they got.
                 local where = L["Sign up in Discord or on the website."]
                 if (tonumber(e.signupsAt) or 0) > 0 then
-                    where = where .. " " .. string.format(L["(as of %s)"], date("%a %H:%M", e.signupsAt))
+                    where = where .. " " .. string.format(L["(as of %s)"], GuildOS:LocalDate("%a %H:%M", e.signupsAt))
                 end
                 local whereFS = UI:CreateText(child, where, 10, C.silver.r, C.silver.g, C.silver.b)
                 whereFS:SetPoint("TOPLEFT", 6, -yy)
                 yy = yy + 16
+                -- Whether it is in the game's own calendar, and for an officer the click that changes it.
+                if gameOn then
+                    local view = GC:ViewFor(e, gameEvents, inbox)
+                    if view.text then
+                        local stateFS = UI:CreateText(child, view.text, 10, C.gold.r, C.gold.g, C.gold.b)
+                        stateFS:SetPoint("TOPLEFT", 6, -yy)
+                        if view.action then
+                            local evId, action = e.id, view.action
+                            local gameBtn = UI:CreateButton(child, view.label, 200, 18)
+                            gameBtn:SetPoint("TOPRIGHT", -4, -yy)
+                            gameBtn:SetScript("OnClick", function() GC:Act(evId, action) end)
+                        end
+                        yy = yy + 20
+                    end
+                end
                 -- An allied seat is approved in the game, and goes with the ones coming.
                 local answers = CAL():WebSignups(e)
                 for _, r in pairs(e.rsvps or {}) do
@@ -583,7 +768,7 @@ function GuildOS:CreateCalendarSub(panel)
         end
 
         if sel and #evs == 0 then
-            local none = UI:CreateText(child, isOfficer and L["No events. Use New Event to add one."] or L["No events this day."],
+            local none = UI:CreateText(child, canCreate and L["No events. Use New Event to add one."] or L["No events this day."],
                 10, C.silver.r, C.silver.g, C.silver.b)
             none:SetPoint("TOPLEFT", 4, -4)
         end

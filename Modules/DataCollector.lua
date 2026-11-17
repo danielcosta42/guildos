@@ -105,6 +105,14 @@ function DataCollector:CollectMyData()
     -- Collect basic stats
     data.stats = self:CollectStats()
 
+    -- Retail: my keystone, my Mythic+ rating and my weekly vault (issue #187). What the client cannot
+    -- give yet keeps what was read before, never blanked.
+    if GuildOS.MythicPlus then
+        local mplus, vault = GuildOS.MythicPlus:Collect()
+        data.mplus = mplus or data.mplus
+        data.vault = vault or data.vault
+    end
+
     -- Collect own spec (requires talents to be loaded)
     local specMissing = false
     if GuildOS.SpecChecker then
@@ -128,8 +136,13 @@ function DataCollector:CollectMyData()
     -- I own (equipped + bags), NOT just what's equipped now — so officers can see who
     -- can field a Nature/Frost/Shadow set (Hydross, Mother Shahraz...) even when it's
     -- sitting in bags. Only my OWN client can see my bags, so each player reports their
-    -- own; it rides the normal member-data sync.
-    data.resistances = self:CollectResistances()
+    -- own; it rides the normal member-data sync. Not where the game has no resistance gear
+    -- (retail: the Resistances module is absent; issue #184).
+    data.resistances = GuildOS.Resistances and self:CollectResistances() or nil
+
+    -- Not named on Discord (issue #205): the choice is the guild database's, which every character
+    -- of the account in this guild shares, so each one's own row says it — the export reads the row.
+    if GuildOS.Journal then data.feedOptOut = GuildOS.Journal:IsOptedOut() end
 
     GuildOS.db.members[key] = data
     GuildOS.db.myData = data
@@ -452,53 +465,54 @@ local function RegisterProf(canonical, isPrimary, names, isGathering)
     end
 end
 
--- English, Portuguese (BR), Spanish, French, German, Russian, Korean, Chinese
+-- English, Portuguese (BR), Spanish, French, German, Russian, Korean, Chinese, and Italian (#186): the
+-- itIT client's own SkillLine names (wago.tools DB2, read 23 Oct 2026). Italian has no Poisons skill line.
 RegisterProf("Alchemy", true, {
-    "Alchemy", "Alquimia", "Alchimie", "Alchemie",
+    "Alchemy", "Alquimia", "Alchimie", "Alchemie", "Alchimia",
     "Алхимия", "연금술", "炼金术", "鍊金術",
 })
 RegisterProf("Blacksmithing", true, {
-    "Blacksmithing", "Ferraria", "Herrería", "Forge", "Schmiedekunst",
+    "Blacksmithing", "Ferraria", "Herrería", "Forge", "Schmiedekunst", "Forgiatura",
     "Кузнечное дело", "대장기술", "锻造", "鍛造",
 })
 RegisterProf("Enchanting", true, {
-    "Enchanting", "Encantamento", "Encantamiento", "Enchantement", "Verzauberkunst",
+    "Enchanting", "Encantamento", "Encantamiento", "Enchantement", "Verzauberkunst", "Incantamento",
     "Наложение чар", "마법부여", "附魔",
 })
 RegisterProf("Engineering", true, {
-    "Engineering", "Engenharia", "Ingeniería", "Ingénierie", "Ingenieurskunst",
+    "Engineering", "Engenharia", "Ingeniería", "Ingénierie", "Ingenieurskunst", "Ingegneria",
     "Инженерное дело", "기계공학", "工程学", "工程學",
 })
 RegisterProf("Herbalism", true, {
-    "Herbalism", "Herborismo", "Herboristería", "Herboristerie", "Kräuterkunde",
+    "Herbalism", "Herborismo", "Herboristería", "Herboristerie", "Kräuterkunde", "Erbalismo",
     "Травничество", "약초채집", "草药学", "草藥學",
 }, true)
 RegisterProf("Jewelcrafting", true, {
-    "Jewelcrafting", "Joalheria", "Joyería", "Joaillerie", "Juwelenschleifen",
+    "Jewelcrafting", "Joalheria", "Joyería", "Joaillerie", "Juwelenschleifen", "Oreficeria",
     "Ювелирное дело", "보석세공", "珠宝加工", "珠寶設計",
 })
 RegisterProf("Leatherworking", true, {
-    "Leatherworking", "Couraria", "Peletería", "Travail du cuir", "Lederverarbeitung",
+    "Leatherworking", "Couraria", "Peletería", "Travail du cuir", "Lederverarbeitung", "Conciatura",
     "Кожевничество", "가죽세공", "制皮", "製皮",
 })
 RegisterProf("Mining", true, {
-    "Mining", "Mineração", "Minería", "Minage", "Bergbau",
+    "Mining", "Mineração", "Minería", "Minage", "Bergbau", "Estrazione",
     "Горное дело", "채광", "采矿", "採礦",
 }, true)
 RegisterProf("Skinning", true, {
-    "Skinning", "Esfolamento", "Desuello", "Dépeçage", "Kürschnerei",
+    "Skinning", "Esfolamento", "Desuello", "Dépeçage", "Kürschnerei", "Scuoiatura",
     "Снятие шкур", "무두질", "剥皮", "剝皮",
 }, true)
 RegisterProf("Tailoring", true, {
-    "Tailoring", "Alfaiataria", "Sastrería", "Couture", "Schneiderei",
+    "Tailoring", "Alfaiataria", "Sastrería", "Couture", "Schneiderei", "Sartoria",
     "Портняжное дело", "재봉술", "裁缝", "裁縫",
 })
 RegisterProf("Cooking", false, {
-    "Cooking", "Culinária", "Cocina", "Cuisine", "Kochkunst",
+    "Cooking", "Culinária", "Cocina", "Cuisine", "Kochkunst", "Cucina",
     "Кулинария", "요리", "烹饪", "烹飪",
 })
 RegisterProf("First Aid", false, {
-    "First Aid", "Primeiros Socorros", "Primeros auxilios", "Secourisme", "Erste Hilfe",
+    "First Aid", "Primeiros Socorros", "Primeros auxilios", "Secourisme", "Erste Hilfe", "Primo Soccorso",
     "Первая помощь", "응급치료", "急救",
 })
 RegisterProf("Fishing", false, {
@@ -554,6 +568,8 @@ end
 ----------------------------------------------------------------------
 -- Collect basic stats
 ----------------------------------------------------------------------
+local PRIMARY_STAT_KEYS = { [1] = "strength", [2] = "agility", [4] = "intellect" }  -- UnitStat's numbering
+
 function DataCollector:CollectStats()
     -- While stats are restricted they are secret: left out, never serialised or compared.
     local function readable(v)
@@ -567,6 +583,18 @@ function DataCollector:CollectStats()
     end
     local stats = {}
     stats.health = readable(UnitHealthMax("player"))
+    -- Retail's character sheet (issue #184): the spec's primary stat, stamina and the four ratings.
+    -- Its UnitStat has no fifth stat (spirit), and mana is one spec's resource among many.
+    if GuildOS.Client.isRetail then
+        local primary = GuildOS.Compat.PrimaryStat()
+        if primary then
+            stats.primary = PRIMARY_STAT_KEYS[primary]
+            stats[stats.primary] = base(primary)
+        end
+        stats.stamina = base(3)
+        for k, v in pairs(GuildOS.Compat.SecondaryStats() or {}) do stats[k] = v end
+        return stats
+    end
     stats.mana = readable(UnitPowerMax("player", 0)) -- Mana
 
     -- Base stats
@@ -582,14 +610,16 @@ end
 ----------------------------------------------------------------------
 -- Store data received from another player
 ----------------------------------------------------------------------
+-- Returns true once stored, else false and why ("rejected", "stale"): CommSystem counts both
+-- (issue #312).
 function DataCollector:StoreReceivedData(playerKey, data)
-    if not data or type(data) ~= "table" then return end
-    if not data.name or not data.class then return end
+    if not data or type(data) ~= "table" then return false, "rejected" end
+    if not data.name or not data.class then return false, "rejected" end
 
     -- Timestamp check: skip if incoming data is older than what we have
     local existing = GuildOS.db.members[playerKey] or {}
     if existing.lastUpdate and data.lastUpdate and data.lastUpdate < existing.lastUpdate then
-        return
+        return false, "stale"
     end
 
     -- Snapshot prior state for milestone detection BEFORE the merge mutates
@@ -658,6 +688,7 @@ function DataCollector:StoreReceivedData(playerKey, data)
     -- activated at least once, and RefreshRosterUI nil-guards for that and
     -- also covers the floating roster window.
     GuildOS:RefreshRosterUI()
+    return true
 end
 
 ----------------------------------------------------------------------
@@ -727,9 +758,22 @@ function DataCollector:GetBroadcastData()
         clean.prefRoles = GuildOS.db.profile.prefRoles
     end
 
+    -- Not named on Discord (issue #205): always a boolean on WoW: Forever, so turning it off clears
+    -- what the receivers kept — StoreReceivedData copies every key, false included.
+    if GuildOS.Journal then
+        clean.feedOptOut = GuildOS.Journal:IsOptedOut()
+    end
+
+    -- Retail's Mythic+ and vault (issue #187): StoreReceivedData merges them like any field. Absent
+    -- from a client without the module, or before mine has read them; never null.
+    if GuildOS.MythicPlus then
+        clean.mplus = myData.mplus
+        clean.vault = myData.vault
+    end
+
     -- Include resistance gear (small { fire,nature,frost,shadow,arcane } table).
     -- StoreReceivedData merges every key generically, so the receiver stores it too.
-    if myData.resistances then
+    if myData.resistances and GuildOS.Resistances then
         clean.resistances = myData.resistances
     end
 

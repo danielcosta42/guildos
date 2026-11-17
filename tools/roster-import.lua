@@ -93,13 +93,7 @@ dofile(ADDON .. "/Core/Compat.lua")
 function GuildOS:Print(...) print(...) end
 
 dofile(ADDON .. "/Libs/LibDeflate.lua")
-
--- SoftResSystem owns the JSON decoder the import reuses. Loading the whole file
--- would drag in tooltip hooks, so lift just the decoder the same way it exports it.
-local softres = io.open(ADDON .. "/Modules/SoftResSystem.lua"):read("*a")
-local decoderSrc = softres:match("(local function JsonDecode.-\nend\n)")
-assert(decoderSrc, "could not find JsonDecode in SoftResSystem.lua")
-GuildOS.JsonDecode = assert(loadstring(decoderSrc .. "\nreturn JsonDecode"))()
+-- The JSON decoder the import reuses came with Core/Utils.lua above (issue #182).
 
 dofile(ADDON .. "/Modules/CompanionExport.lua")
 dofile(ADDON .. "/Modules/CompanionImport.lua")
@@ -246,3 +240,12 @@ GetRealmName = realRealm
 GetNormalizedRealmName = nil
 GuildOS.Client.isAnniversary = true
 print("forever: the whole name is the name")
+
+-- What ships is empty: the file is the companion's, and a confirmation committed in it tells every new
+-- install about a companion it never ran (issue #169). Read from git, since a checkout that plays is
+-- where the companion writes.
+local shipped = io.popen('git -C "' .. ADDON .. '" show HEAD:Inbox.lua'):read("*a")
+local inbox = {}
+setfenv(assert(loadstring(shipped)), inbox)()
+assert(type(inbox.GuildOSInbox) == "table" and next(inbox.GuildOSInbox) == nil, "the committed Inbox.lua carries a roster")
+assert(inbox.GuildOSInboxAck == nil, "the committed Inbox.lua carries a companion's confirmation")

@@ -41,8 +41,10 @@ RaidTracker.RAID_INSTANCES = {
 -- "Magtheridon's Lair" there was enough to lose a night. Keys are shared
 -- deliberately, they are short, and neither side ever translates them.
 --
--- Only the nine the site plans. A vanilla raid has no key because the site has no
--- catalogue entry for it, and stamping one would be inventing a raid.
+-- Only the ones the site plans: TBC's nine and Midnight's four, by map id (the eighth
+-- answer of GetInstanceInfo; retail's names arrive in the player's language, issue #182).
+-- A vanilla raid has no key because the site has no catalogue entry for it, and stamping
+-- one would be inventing a raid.
 RaidTracker.RAID_KEYS = {
     [532] = "kara",
     [544] = "mag",
@@ -53,7 +55,29 @@ RaidTracker.RAID_KEYS = {
     [534] = "hyjal",
     [564] = "bt",
     [580] = "swp",
+    [2912] = "midnight-voidspire",  -- The Voidspire
+    [2939] = "midnight-dreamrift",  -- The Dreamrift
+    [2913] = "midnight-queldanas",  -- March on Quel'Danas
+    [3004] = "midnight-abyss",      -- The Venomous Abyss
 }
+
+-- WoW: Forever's raids, by map id and the site's key (packages/wow, forever.ts), apart from the table
+-- above: Forever reuses Classic's map ids, and 534 there must never be stamped as TBC's Hyjal (issue
+-- #291). Onyxia's Lair is the only map the client has yet; Barrow Deeps and Forever's Hyjal Summit get
+-- theirs when they open on 9 December, and until then their nights go up with no raidId, which the
+-- site matches by the instance's name as it always has.
+RaidTracker.FOREVER_RAID_KEYS = {
+    [249] = "forever-onyxia",
+}
+
+-- The site's key for the instance the game put this character in, in this game's own table.
+function RaidTracker:RaidKeyOf(instanceID)
+    local client = GuildOS.Client
+    if client and not client.isAnniversary and not client.isRetail then
+        return self.FOREVER_RAID_KEYS[instanceID]
+    end
+    return self.RAID_KEYS[instanceID]
+end
 
 -- Raids that count for attendance (25-man progression)
 RaidTracker.RAID_25MAN = {
@@ -73,12 +97,15 @@ RaidTracker.RAID_25MAN = {
 -- so does every tier after.
 RaidTracker.FOREVER_PROGRESSION_SIZE = 20
 -- Retail (ADR-0026): what counts is the difficulty, and every one tracked is progression. Normal,
--- Heroic and Mythic; Raid Finder, timewalking and the legacy sizes are not tracked at all.
-RaidTracker.RETAIL_TRACKED = { [14] = true, [15] = true, [16] = true }
+-- Heroic and Mythic; Raid Finder, timewalking and the legacy sizes are not tracked at all. Each with
+-- the letter a session shows (issue #177).
+RaidTracker.RETAIL_TRACKED = { [14] = "N", [15] = "H", [16] = "M" }
 local function isRetail() return GuildOS.Client and GuildOS.Client.isRetail end
 
-function RaidTracker:Is25Man(instanceID, size)
-    if isRetail() then return true end
+-- Retail by the session's `difficulty`: a night with none (relayed by an addon before issue #177)
+-- does not count, as on guildos.me (issue #182).
+function RaidTracker:Is25Man(instanceID, size, difficulty)
+    if isRetail() then return self.RETAIL_TRACKED[tonumber(difficulty)] ~= nil end
     if GuildOS.Client and not GuildOS.Client.isAnniversary then
         return (tonumber(size) or 0) >= self.FOREVER_PROGRESSION_SIZE
     end
@@ -88,22 +115,34 @@ end
 -- Whether a raid instance is tracked at all: on Anniversary the ones RAID_INSTANCES knows, on
 -- WoW: Forever every raid, whose ids nobody has yet (issue #90); on retail by difficulty.
 function RaidTracker:IsTracked(instanceID, difficultyID)
-    if isRetail() then return self.RETAIL_TRACKED[difficultyID] == true end
+    if isRetail() then return self.RETAIL_TRACKED[difficultyID] ~= nil end
     if GuildOS.Client and not GuildOS.Client.isAnniversary then return true end
     return self.RAID_INSTANCES[instanceID] ~= nil
 end
 
+-- The words that say "players" after the 25 in each locale's label, so retail's label names the
+-- difficulties and no size: "25 jogadores" is "N/H/M", never "N/H/M jogadores" (issue #177).
+-- Italian, a retail-only client, says "25 giocatori" (#186).
+local SIZE_WORDS = { "%-man", "er", " jogadores", " jugadores", " joueurs", " giocatori", " чел%.", " ?인", " ?人" }
+
 -- A "25-man" label as this game says it: unchanged on Anniversary, "20+" on WoW: Forever, where
--- the 20- and 40-player raids are the ones that count (issue #90). It works on the translated
--- text, which every locale writes with the digits ("25er", "25 jogadores", "à 25").
+-- the 20- and 40-player raids are the ones that count (issue #90), the difficulties on retail. It
+-- works on the translated text, which every locale writes with the digits ("25er", "25 jogadores",
+-- "à 25").
 function RaidTracker:ProgLabel(text)
     if isRetail() and type(text) == "string" then
-        return (text:gsub("25%-man", "N/H/M"):gsub("25", "N/H/M"))
+        for _, word in ipairs(SIZE_WORDS) do text = text:gsub("25" .. word, "N/H/M") end
+        return (text:gsub("25", "N/H/M"))
     end
     if GuildOS.Client and not GuildOS.Client.isAnniversary and type(text) == "string" then
         return (text:gsub("25%-man", "20+ man"):gsub("25", "20+"))
     end
     return text
+end
+
+-- The letter of a session's retail difficulty, "N", "H" or "M"; nil anywhere else (issue #177).
+function RaidTracker:DifficultyLabel(session)
+    return type(session) == "table" and self.RETAIL_TRACKED[session.difficulty] or nil
 end
 
 RaidTracker.currentRaid = nil
@@ -126,16 +165,64 @@ function RaidTracker:GetPenalties(groupTag)
     return (GuildOS.CoreManager and GuildOS.CoreManager:GetPenalties(groupTag or "")) or self.PENALTIES
 end
 
--- TBC weekly reset epoch: 2006-01-03 00:00 UTC (a known Tuesday)
-local TUESDAY_EPOCH = 1136246400
-local WEEK_SECS     = 7 * 86400
+-- The weekly raid reset of each region, as a moment it happened: the client's own
+-- Cfg_Regions.Raidorigin, rows 1 to 4, the same in retail 12.1.5.70448 and 70529, WoW: Forever
+-- 1.60.1.70450 and 70532 and TBC Anniversary 2.5.6.70006 (wago.tools/db2/Cfg_Regions, read on
+-- 22 Oct 2026). Every reset since is that moment plus whole weeks, in UTC. The week used to start
+-- on Tuesday 00:00 UTC, which put a Monday-night raid in Brasília, after 21:00, and a Tuesday-night
+-- raid in Europe in the week after their own (guildos-web#199). guildos.me keeps the same table (its
+-- packages/wow/src/reset.ts), and tools/attendance-parity.lua holds the two together.
+RaidTracker.RESET_ORIGIN = {
+    us = 1127228400,  -- Tuesday 20 Sep 2005, 15:00 UTC: the Americas, and Oceania with them
+    kr = 1135810800,  -- Wednesday 28 Dec 2005, 23:00 UTC: Thursday 08:00 in Seoul
+    eu = 1135742400,  -- Wednesday 28 Dec 2005, 04:00 UTC
+    tw = 1135810800,  -- Wednesday 28 Dec 2005, 23:00 UTC: Thursday 07:00 in Taipei
+}
+local WEEK_SECS = 7 * 86400
+
+-- The origin of this client's region; the Americas' when the client does not say (China, a test
+-- client), which is also what guildos.me falls back to.
+function RaidTracker:ResetOrigin()
+    local region = GuildOS.Compat and GuildOS.Compat.Region and GuildOS.Compat.Region()
+    return self.RESET_ORIGIN[region] or self.RESET_ORIGIN.us
+end
 
 ----------------------------------------------------------------------
--- Returns the TBC reset week number for a given server timestamp.
--- Week boundaries fall on Tuesday 00:00 UTC.
+-- The lockout week a server timestamp falls in: two nights with one number share a lockout.
+-- Counted from the region's weekly reset (guildos-web#199). Every place that buckets lockouts or
+-- groups sessions by week asks this.
 ----------------------------------------------------------------------
 function RaidTracker:GetWeekNum(timestamp)
-    return math.floor(((timestamp or 0) - TUESDAY_EPOCH) / WEEK_SECS)
+    return math.floor(((timestamp or 0) - self:ResetOrigin()) / WEEK_SECS)
+end
+
+-- The moment a week from GetWeekNum starts: its region's reset.
+function RaidTracker:WeekStart(weekNum)
+    return self:ResetOrigin() + weekNum * WEEK_SECS
+end
+
+-- /gos selftest: the table against the client's own count of the seconds to the weekly reset,
+-- where the client has one. A cross-check, never the source: the week is the table's (guildos-web#199).
+function RaidTracker:_RegisterTests()
+    if not GuildOS.SelfTest then return end
+    GuildOS.SelfTest:Register("raidtracker.weekly_reset", function()
+        local left = GuildOS.Compat.SecondsUntilWeeklyReset()
+        if not left then return true end
+        local now = GetServerTime()
+        local gap = self:WeekStart(self:GetWeekNum(now) + 1) - (now + left)
+        if math.abs(gap) <= 60 then return true end
+        return false, string.format("the %s reset is %+.1f h off the client's", GuildOS.Compat.Region() or "us", gap / 3600)
+    end)
+end
+
+-- A session's lockout: its core, its instance and its reset week; on retail its difficulty too,
+-- since Normal and Heroic in one week are two lockouts, as in the game. Only a retail session has
+-- a difficulty, so every other key is the one it always was. guildos.me builds the same key
+-- (its lib/attendance.ts lockoutKey; issue #182).
+function RaidTracker:LockoutKey(session)
+    local key = (session.groupTag or "") .. "|" .. (session.instanceID or 0) .. "_" .. self:GetWeekNum(session.startTime or 0)
+    local difficulty = tonumber(session.difficulty)
+    return difficulty and (key .. "_d" .. difficulty) or key
 end
 
 function RaidTracker:Initialize()
@@ -153,6 +240,7 @@ function RaidTracker:Initialize()
 
     -- One-time migration: detect old flat attendance structure and rebuild
     self:MigrateAttendanceIfNeeded()
+    self:_RegisterTests()
 
     local frame = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(frame, "ZONE_CHANGED_NEW_AREA")
@@ -188,15 +276,30 @@ function RaidTracker:Initialize()
             frame:UnregisterEvent("PLAYER_ENTERING_WORLD")
         end
     end)
+
+    -- Here and not on PLAYER_ENTERING_WORLD: a cold login that waits for the guild's name gets here
+    -- after that event. Nothing starts a session until this is done, or it would replace the open one.
+    self.resuming = true
+    C_Timer.After(1, function() RaidTracker:ResumeAtLogin(15) end)
 end
 
 function RaidTracker:CheckZone()
+    if self.resuming then return end   -- ResumeAtLogin asks when it is done
     local _, instanceType, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
     if instanceType == "raid" and self:IsTracked(instanceID, difficultyID) then
-        -- We're inside a raid instance
+        -- We're inside a raid instance. On retail the same raid on another difficulty is another
+        -- lockout: Heroic after Normal is a new session, never the Normal one resumed (issue #177).
+        local same = self.currentRaid and self.currentRaid.instanceID == instanceID
+            and (not isRetail() or self.currentRaid.difficulty == tonumber(difficultyID))
+        -- Another difficulty of the same raid: an officer's core pick, made in the raid or on the
+        -- run-back, carries over to the new session, as after a /reload (issue #177).
+        local rtDB = GuildOS.db.raidTracker
+        local pick = rtDB and rtDB.corePick
+        local keep = not same and self.currentRaid and self.currentRaid.instanceID == instanceID
+            and (self.gracePick or (type(pick) == "table" and pick.instanceID == instanceID and pick.tag)) or nil
         if self.endTimer then
             -- There was a pending end-of-session timer
-            if self.currentRaid and self.currentRaid.instanceID == instanceID then
+            if same then
                 -- Same raid: cancel the pending end and resume
                 self.endTimer:Cancel()
                 self.endTimer = nil
@@ -210,11 +313,18 @@ function RaidTracker:CheckZone()
                 self:TakeSnapshot("raid_resumed")
                 return
             else
-                -- Different raid: end the old session immediately then start new
+                -- Different raid: end the old session immediately then start new. Asked before the
+                -- timer is cleared: the group here is not the old session's (issue #183).
+                local away = self:ElsewhereInGrace()
                 self.endTimer:Cancel()
                 self.endTimer = nil
-                self:EndSession()
+                self:EndSession(away)
             end
+        elseif isRetail() and self.trackingActive and not same then
+            self:EndSession()
+        end
+        if keep and rtDB then
+            rtDB.corePick = { instanceID = instanceID, tag = keep, char = GuildOS.Compat.PlayerName(), at = GetServerTime() }
         end
         if not self.trackingActive then
             self:StartSession(instanceID)
@@ -226,8 +336,10 @@ function RaidTracker:CheckZone()
             -- This covers wipes (zone to graveyard + run back) and short DCs.
             GuildOS:Print(L["|cffFFAA00Left raid zone — session ends in 20 min if you don't return.|r"])
             self.endTimer = C_Timer.NewTimer(1200, function()
+                -- Where the twenty minutes ran out, asked while the grace still stands (issue #183).
+                local away = RaidTracker:ElsewhereInGrace()
                 self.endTimer = nil
-                RaidTracker:EndSession()
+                RaidTracker:EndSession(away)
             end)
         end
     end
@@ -250,10 +362,11 @@ function RaidTracker:StartSession(instanceID)
     -- an instance name and a clock. It is a hint, not a claim — the site verifies the raid
     -- belongs to this guild before believing any of it.
     local raidId
-    local key = self.RAID_KEYS[instanceID]
+    local key = self:RaidKeyOf(instanceID)
     if key and GuildOS.CompanionImport then
         GuildOS:SafeCall(function()
-            raidId = GuildOS.CompanionImport:RaidFor(key, now)
+            -- On retail a raid planned on another difficulty is another night (issue #182).
+            raidId = GuildOS.CompanionImport:RaidFor(key, now, isRetail() and tonumber(difficultyID) or nil)
         end)
     end
 
@@ -285,9 +398,14 @@ function RaidTracker:StartSession(instanceID)
         encounters = {},
         players = {},
     }
+    if rtDB then   -- this very table: whatever a /reload finds is the session as it stood (issue #170)
+        rtDB.openSession, rtDB.openChar = self.currentRaid, GuildOS.Compat.PlayerName()
+    end
     -- On Forever the size is what decides whether the night counts, so it is said (issue #90).
     local said = raidName
-    if isRetail() and type(difficultyName) == "string" and difficultyName ~= "" then
+    -- Midnight may keep the name secret, and a secret is never compared or joined (issue #177).
+    if isRetail() and type(difficultyName) == "string" and not GuildOS.Compat.IsSecret(difficultyName)
+        and difficultyName ~= "" then
         said = raidName .. " (" .. difficultyName .. ")"
     elseif GuildOS.Client and not GuildOS.Client.isAnniversary and self.currentRaid.size then
         said = raidName .. " (" .. self.currentRaid.size .. ")"
@@ -295,13 +413,73 @@ function RaidTracker:StartSession(instanceID)
     GuildOS:Print(L["Raid tracking started: |cffFFD700"] .. said .. "|r")
     if kept then self:SayPicked() end
     self:TakeSnapshot("session_start")
+    self:StartSnapshots()
+end
 
-    -- Periodic snapshots every 5 minutes
+-- Periodic snapshots every 5 minutes
+function RaidTracker:StartSnapshots()
     self.snapshotTimer = C_Timer.NewTicker(300, function()
         if self.trackingActive then
             self:TakeSnapshot("periodic")
         end
     end)
+end
+
+-- How long a night in progress can be picked back up after its last snapshot: the grace period
+-- plus the five minutes that snapshot can be old.
+local OPEN_HOLD = 1500
+
+-- A session used to be saved only when it ended, so a /reload or a logout lost all it had noted
+-- (issue #170). It now sits in the saved table while it runs. Back in time, on the same character,
+-- it goes on, and CheckZone gives it its grace if this is outside the raid. Otherwise it ends where
+-- its last snapshot left it: another raid, a later day or an alt are no part of that night.
+function RaidTracker:ReopenSession()
+    local rtDB = GuildOS.db.raidTracker
+    local open = rtDB and rtDB.openSession
+    if type(open) ~= "table" or self.currentRaid then return end
+    self.currentRaid, self.trackingActive = open, true
+    local last = open.snapshots[#open.snapshots]
+    local lastAt = last and last.time or open.startTime
+    -- A boss pulled before the /reload and still going keeps its row for ENCOUNTER_END; any other is
+    -- over, or the next pull of that boss would read as the same fight.
+    if not GuildOS.Compat.IsEncounterInProgress() then
+        for _, enc in ipairs(open.encounters) do enc.endTime = enc.endTime or lastAt end
+    end
+    local _, instanceType, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
+    local elsewhere = instanceType == "raid" and (instanceID ~= open.instanceID
+        or (open.difficulty ~= nil and tonumber(difficultyID) ~= open.difficulty))
+    if elsewhere or rtDB.openChar ~= GuildOS.Compat.PlayerName() or GetServerTime() - lastAt > OPEN_HOLD then
+        local pick = rtDB.corePick   -- StartSession judges it, as after any /reload (#99, #177)
+        self:EndSession(true, lastAt)
+        rtDB.corePick = pick
+        return
+    end
+    self.coreSettled = rtDB.corePick ~= nil or #open.encounters > 0 or nil
+    -- A core picked on the run-back was this session's only in memory (gracePick).
+    local active = self:GetCurrentGroup()
+    if active ~= (open.groupTag or "") then
+        if instanceType == "raid" then
+            self:PickCore(active)
+            self:SayPicked()
+        else
+            self.gracePick = active
+        end
+    end
+    self:StartSnapshots()
+    GuildOS:Print(L["|cffFFAA00Raid resumed — session continuing.|r"])
+    if instanceType == "raid" then self:TakeSnapshot("raid_resumed") end
+end
+
+-- Whether a session that ends here was a guild's asks who is in the guild, and a second after a
+-- login the roster may not be here yet: an open session waits for it, two seconds at a time.
+function RaidTracker:ResumeAtLogin(tries)
+    if GuildOS.db.raidTracker.openSession and tries > 0 and not GuildOS:WholeRoster() then
+        C_Timer.After(2, function() RaidTracker:ResumeAtLogin(tries - 1) end)
+        return
+    end
+    self.resuming = nil
+    self:ReopenSession()
+    self:CheckZone()
 end
 
 function RaidTracker:IsGuildRaid(session)
@@ -320,13 +498,15 @@ function RaidTracker:IsGuildRaid(session)
         if memberData then
             guildCount = guildCount + 1
         else
-            -- Fallback: scan guild roster for this name
+            -- Fallback: scan guild roster for this name; on retail for the whole key, since a
+            -- guildmate's namesake on another connected realm is not one (issue #184).
+            local retail = GuildOS.Client.isRetail
             local numMembers = GetNumGuildMembers() or 0
             for i = 1, numMembers do
                 local fullName = GetGuildRosterInfo(i)
                 if fullName then
                     local short = fullName:match("^([^-]+)") or fullName
-                    if short == name then
+                    if (retail and GuildOS:KeyOfRosterName(fullName) == key) or (not retail and short == name) then
                         guildCount = guildCount + 1
                         break
                     end
@@ -340,14 +520,19 @@ function RaidTracker:IsGuildRaid(session)
     return (guildCount / total) >= 0.5
 end
 
-function RaidTracker:EndSession()
+-- End the current session and save it. `away` (retail, ElsewhereInGrace when the grace ran out or another
+-- raid began; ReopenSession): the group this client stands in is not the session's, so no last snapshot of
+-- it (issue #183). `at`: when it ended, if that was not now.
+function RaidTracker:EndSession(away, at)
     if not self.currentRaid then return end
     -- An officer's pick is its session's: the next raid is asked afresh (issue #99).
     self.gracePick = nil
-    if GuildOS.db.raidTracker then GuildOS.db.raidTracker.corePick = nil end
+    if GuildOS.db.raidTracker then
+        GuildOS.db.raidTracker.corePick, GuildOS.db.raidTracker.openSession = nil, nil
+    end
 
-    self:TakeSnapshot("session_end")
-    local endTime = GetServerTime()
+    if not away then self:TakeSnapshot("session_end") end
+    local endTime = at or GetServerTime()
     self.currentRaid.endTime = endTime
     self.currentRaid.duration = endTime - (self.currentRaid.startTime or endTime)
     self.trackingActive = false
@@ -375,12 +560,18 @@ function RaidTracker:EndSession()
         self.currentRaid.isGuildRaid = true
         -- Rebuild from scratch so lockout-dedup logic always applies
         self:RebuildAttendanceFromSessions()
+        -- The points a raid night gives beyond its bosses: on time, to the end, the raid (issue #309).
+        if GuildOS.Points and GuildOS.Points.OnRaidEnd then GuildOS.Points:OnRaidEnd(self.currentRaid) end
     else
         self.currentRaid.isGuildRaid = false
         GuildOS:Print(L["|cffFF9900Raid ended — less than 50% guild members, attendance not counted.|r"])
     end
 
     GuildOS:Print(L["Raid tracking ended: |cffFFD700"] .. self.currentRaid.name .. "|r")
+    -- The night's guests leave with it, but those marked to stay (issue #340).
+    if GuildOS.CoreManager and GuildOS.CoreManager.EndNight then
+        GuildOS:SafeCall(GuildOS.CoreManager.EndNight, GuildOS.CoreManager, self.currentRaid.groupTag, self.currentRaid)
+    end
     self.currentRaid = nil
 
     -- Broadcast updated raid data to all officer clients
@@ -389,8 +580,21 @@ function RaidTracker:EndSession()
     end)
 end
 
+-- Retail: whether this client, while the session waits out its grace, stands in another instance or in
+-- the session's raid on another difficulty (Raid Finder queued after the guild's Heroic, a dungeon). That
+-- group and those bosses are not the session's (issue #183). The open world is the run-back, still the
+-- raid's group, as before; Forever and Anniversary never ask.
+function RaidTracker:ElsewhereInGrace()
+    local session = self.currentRaid
+    if not (isRetail() and self.endTimer and session) then return false end
+    local _, instanceType, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
+    if instanceType == "none" then return false end
+    return instanceID ~= session.instanceID
+        or (session.difficulty ~= nil and tonumber(difficultyID) ~= session.difficulty)
+end
+
 function RaidTracker:TakeSnapshot(reason)
-    if not self.currentRaid then return end
+    if not self.currentRaid or self:ElsewhereInGrace() then return end
 
     local members = {}
     local numMembers = GetNumGroupMembers()
@@ -408,7 +612,7 @@ function RaidTracker:TakeSnapshot(reason)
                     name = name,
                     class = classFile or "UNKNOWN",
                     online = UnitIsConnected(unit),
-                    hasConsumes = self:CheckPlayerConsumes(unit),
+                    hasConsumes = self:CheckPlayerConsumes(unit, key),
                 }
                 self.currentRaid.players[key] = true
             end
@@ -418,11 +622,29 @@ function RaidTracker:TakeSnapshot(reason)
     -- Include self
     local myName = GuildOS.Compat.PlayerName()
     local myKey = GuildOS:GetPlayerKey(myName)
+    -- Who leads the raid now: whose client pays what the raid's end gives (Points:RaidEndPayer). Kept
+    -- from the last snapshot that saw one, since the raid is often disbanded before the session closes.
+    if isRaid and UnitIsGroupLeader then
+        local mine = UnitIsGroupLeader("player")
+        if not GuildOS.Compat.IsSecret(mine) and mine then
+            self.currentRaid.leader = myKey
+        else
+            for i = 1, numMembers do
+                local unit = "raid" .. i
+                local leads = UnitExists(unit) and UnitIsGroupLeader(unit)
+                if not GuildOS.Compat.IsSecret(leads) and leads and not GuildOS.Compat.IsPlayer(unit) then
+                    local name, realm = GuildOS.Compat.UnitIdentity(unit)
+                    if name then self.currentRaid.leader = GuildOS:GetPlayerKey(name, realm) end
+                    break
+                end
+            end
+        end
+    end
     members[myKey] = {
         name = myName,
         class = select(2, UnitClass("player")),
         online = true,
-        hasConsumes = self:CheckPlayerConsumes("player"),
+        hasConsumes = self:CheckPlayerConsumes("player", myKey),
     }
     self.currentRaid.players[myKey] = true
 
@@ -448,42 +670,13 @@ function RaidTracker:TakeSnapshot(reason)
 end
 
 ----------------------------------------------------------------------
--- Check if a unit has at least flask/elixir + food active
+-- Whether a raider has their flask (or TBC's battle elixir) and food at this snapshot: the
+-- checker's verdict, true or false, and on retail nil when the client could not read it (issue
+-- #187). Where the game has no checker (WoW: Forever), true: nobody is docked for what is not read.
 ----------------------------------------------------------------------
-function RaidTracker:CheckPlayerConsumes(unit)
+function RaidTracker:CheckPlayerConsumes(unit, key)
     if not GuildOS.ConsumableChecker then return true end
-
-    local CC = GuildOS.ConsumableChecker
-    local hasFlaskOrElixir = false
-    local hasFood = false
-
-    -- Check flask
-    for buffID in pairs(CC.CONSUMABLES.flask.buffs) do
-        if CC:UnitHasBuff(unit, buffID) then
-            hasFlaskOrElixir = true
-            break
-        end
-    end
-
-    -- If no flask, check battle elixir as alternative
-    if not hasFlaskOrElixir then
-        for buffID in pairs(CC.CONSUMABLES.battleElixir.buffs) do
-            if CC:UnitHasBuff(unit, buffID) then
-                hasFlaskOrElixir = true
-                break
-            end
-        end
-    end
-
-    -- Check food
-    for buffID in pairs(CC.CONSUMABLES.food.buffs) do
-        if CC:UnitHasBuff(unit, buffID) then
-            hasFood = true
-            break
-        end
-    end
-
-    return hasFlaskOrElixir and hasFood
+    return GuildOS.ConsumableChecker:RaidVerdict(unit, key)
 end
 
 -- A boss name the client keeps secret (Midnight's Secret Values, ADR-0026) can be passed along but not
@@ -494,7 +687,7 @@ local function readableName(name)
 end
 
 function RaidTracker:OnEncounterStart(encounterID, encounterName)
-    if not self.currentRaid then return end
+    if not self.currentRaid or self:ElsewhereInGrace() then return end
     encounterName = readableName(encounterName)
     self:TakeSnapshot("encounter_start")
     -- Guard: ignore duplicate ENCOUNTER_START for the same fight (can fire twice
@@ -514,7 +707,7 @@ function RaidTracker:OnEncounterStart(encounterID, encounterName)
 end
 
 function RaidTracker:OnEncounterEnd(encounterID, encounterName, success)
-    if not self.currentRaid then return end
+    if not self.currentRaid or self:ElsewhereInGrace() then return end
     encounterName = readableName(encounterName)
     self:TakeSnapshot("encounter_end")
 
@@ -548,12 +741,17 @@ end
 
 function RaidTracker:SetGroupTag(name)
     name = name or ""
+    local systemBefore = GuildOS.GetLootSystem and GuildOS:GetLootSystem()
     self.currentGroupTag = name
     if GuildOS.db and GuildOS.db.raidTracker then
         GuildOS.db.raidTracker.currentGroupTag = name
     end
     -- Loot rules cached from the old core's config follow the new one (issue #99).
     if GuildOS.LootMaster and GuildOS.LootMaster.LoadCfg then GuildOS.LootMaster:LoadCfg() end
+    -- And what the loot system shows, when the new core runs another one (issue #338).
+    if systemBefore and GuildOS:GetLootSystem() ~= systemBefore and GuildOS.OnLootSystemChanged then
+        GuildOS:OnLootSystemChanged()
+    end
 end
 
 -- An officer picking the active core (Raid Core's "Set Active"), issue #99.
@@ -648,8 +846,7 @@ function RaidTracker:GetTotalSessions(groupTag)
         if session.isGuildRaid ~= false then
             local sg = session.groupTag or ""
             if not groupTag or sg == groupTag then
-                local key = sg .. "|" .. (session.instanceID or 0) .. "_" .. self:GetWeekNum(session.startTime or 0)
-                seen[key] = true
+                seen[self:LockoutKey(session)] = true
             end
         end
     end
@@ -663,11 +860,10 @@ function RaidTracker:GetTotal25ManSessions(groupTag)
     local seen = {}
     for _, session in pairs(GuildOS.db.raidTracker.sessions) do
         -- isGuildRaid ~= false: include old sessions without the flag (legacy data)
-        if session.isGuildRaid ~= false and self:Is25Man(session.instanceID, session.size) then
+        if session.isGuildRaid ~= false and self:Is25Man(session.instanceID, session.size, session.difficulty) then
             local sg = session.groupTag or ""
             if not groupTag or sg == groupTag then
-                local key = sg .. "|" .. session.instanceID .. "_" .. self:GetWeekNum(session.startTime or 0)
-                seen[key] = true
+                seen[self:LockoutKey(session)] = true
             end
         end
     end
@@ -690,9 +886,12 @@ end
 
 -- With no core given, the core where the player has the most nights that count: one where they raid
 -- most can be a 10, whose nights never count on Forever, and would read 0% (#134).
-function RaidTracker:GetAttendance25ManPercent(playerKey, groupTag)
+-- `totals`, optional, keeps each core's count across calls: the roster asks once per member (#178),
+-- and counting walks every session.
+function RaidTracker:GetAttendance25ManPercent(playerKey, groupTag, totals)
     if not groupTag then groupTag = self:GetPlayerGroup(playerKey, "raids25") end
-    local total = self:GetTotal25ManSessions(groupTag)
+    local total = totals and totals[groupTag] or self:GetTotal25ManSessions(groupTag)
+    if totals then totals[groupTag] = total end
     if total == 0 then return 0 end
     local att = self:GetAttendance(playerKey, groupTag)
     local raids25 = att.raids25 or 0
@@ -730,7 +929,7 @@ function RaidTracker:GetRecentSessions(limit, only25, guildOnly)
         -- guildOnly: exclude sessions explicitly marked as non-guild raids.
         -- Sessions without the flag (legacy data) are treated as guild raids.
         local skipNonGuild = guildOnly and session.isGuildRaid == false
-        if not skipNonGuild and (not only25 or self:Is25Man(session.instanceID, session.size)) then
+        if not skipNonGuild and (not only25 or self:Is25Man(session.instanceID, session.size, session.difficulty)) then
             table.insert(sessions, { id = id, data = session })
         end
     end
@@ -754,6 +953,12 @@ end
 function RaidTracker:MergeDuplicateSessions()
     local sessions = GuildOS.db.raidTracker.sessions
     if not sessions then return 0 end
+    -- What this client folded away. A peer whose copy of the kept session is older does not fold
+    -- the same pair, and re-sends the other half every five minutes: taken back, it was merged and
+    -- announced again, forever (issue #197). Kept here only: sent as a tombstone, it would make that
+    -- peer drop a half whose players its own copy does not have.
+    local merged = GuildOS.db.raidTracker.mergedSessions
+    if merged == nil then merged = {}; GuildOS.db.raidTracker.mergedSessions = merged end
 
     local MERGE_WINDOW = 1800  -- 30 min: covers wipe→run-back; separates distinct raid attempts
     local ENC_PROX    = 300   -- 5 min proximity = same encounter event
@@ -792,7 +997,8 @@ function RaidTracker:MergeDuplicateSessions()
     local byInstance = {}
     for id, s in pairs(sessions) do
         if s and s.instanceID then
-            local bucketKey = (s.groupTag or "") .. "|" .. s.instanceID
+            -- A retail raid's Normal and Heroic are two lockouts, never one session (issue #177).
+            local bucketKey = (s.groupTag or "") .. "|" .. s.instanceID .. "|" .. (s.difficulty or "")
             if not byInstance[bucketKey] then
                 byInstance[bucketKey] = {}
             end
@@ -890,6 +1096,7 @@ function RaidTracker:MergeDuplicateSessions()
                         end
 
                         sessions[b.id] = nil
+                        merged[b.id] = a.id
                         totalMerged = totalMerged + 1
                         changed = true
                         break
@@ -909,9 +1116,10 @@ end
 
 ----------------------------------------------------------------------
 -- Rebuild attendance table from scratch using saved sessions.
--- Sessions are grouped by lockout (groupTag + instanceID + reset week)
--- so that multiple sessions in the same raid week count as ONE event,
--- and Core 1 / Core 2 lockouts are tracked independently.
+-- Sessions are grouped by lockout (groupTag + instanceID + reset week, and
+-- retail's difficulty: `LockoutKey`) so that multiple sessions in the same
+-- raid week count as ONE event, and Core 1 / Core 2 lockouts are tracked
+-- independently.
 ----------------------------------------------------------------------
 function RaidTracker:RebuildAttendanceFromSessions()
     GuildOS.db.raidTracker.attendance = {}
@@ -921,13 +1129,13 @@ function RaidTracker:RebuildAttendanceFromSessions()
     for _, session in pairs(GuildOS.db.raidTracker.sessions) do
         -- isGuildRaid ~= false: include old sessions without the flag (legacy data)
         if session.isGuildRaid ~= false then
-            local weekNum    = self:GetWeekNum(session.startTime or 0)
             local groupTag   = session.groupTag or ""
-            -- Each group+instance+week is its own lockout; groups never share a lockout
-            local lockoutKey = groupTag .. "|" .. (session.instanceID or 0) .. "_" .. weekNum
+            -- Each group+instance+week (+difficulty) is its own lockout; groups never share a lockout
+            local lockoutKey = self:LockoutKey(session)
             if not lockouts[lockoutKey] then
                 lockouts[lockoutKey] = {
                     instanceID = session.instanceID,
+                    difficulty = tonumber(session.difficulty),
                     groupTag   = groupTag,
                     sessions   = {},
                 }
@@ -998,11 +1206,13 @@ function RaidTracker:UpdateAttendanceForLockout(lockout)
         if lastSnap and lastSnap.members and not lastSnap.members[playerKey] then
             score = score - penalties.LEFT_EARLY
         end
+        -- A snapshot whose consumables the client could not read (retail, nil) counts for the player:
+        -- unknown is never missing, and the site counts the same way (CompanionExport's chits; #187).
         local consumeChecks, consumeHits = 0, 0
         for _, snap in ipairs(allSnapshots) do
             if snap.members and snap.members[playerKey] then
                 consumeChecks = consumeChecks + 1
-                if snap.members[playerKey].hasConsumes then
+                if snap.members[playerKey].hasConsumes ~= false then
                     consumeHits = consumeHits + 1
                 end
             end
@@ -1013,7 +1223,7 @@ function RaidTracker:UpdateAttendanceForLockout(lockout)
         score = math.max(0, math.min(100, score))
         groupAtt[playerKey].totalScore = groupAtt[playerKey].totalScore + score
 
-        if self:Is25Man(instanceID, size) then
+        if self:Is25Man(instanceID, size, lockout.difficulty) then
             groupAtt[playerKey].raids25      = (groupAtt[playerKey].raids25 or 0) + 1
             groupAtt[playerKey].totalScore25 = (groupAtt[playerKey].totalScore25 or 0) + score
         end
@@ -1114,6 +1324,7 @@ function RaidTracker:BroadcastRaidData()
             instanceID = session.instanceID,
             name       = session.name,
             size       = session.size,   -- issue #90
+            difficulty = session.difficulty,   -- retail, issue #177
             -- A pug night stays one on every officer's client: without it a peer counted it
             -- as a guild raid and exported it as one.
             isGuildRaid = session.isGuildRaid,
@@ -1198,17 +1409,27 @@ function RaidTracker:HandleIncoming(data)
     end
 
     -- Merge sessions: add any session we don't already have,
-    -- but never re-insert sessions that have been tombstoned.
+    -- but never re-insert sessions that have been tombstoned or that we merged away (issue #197).
+    -- A folded half comes back only when the session it went into is gone here (a peer deleted
+    -- it), or its night would be lost. Each fold points to an earlier id, so the walk ends.
+    local merged = raidDB.mergedSessions or {}
+    local function foldedHere(id)
+        local into = merged[id]
+        while into and not raidDB.sessions[into] do into = merged[into] end
+        return into ~= nil
+    end
     for sessionID, session in pairs(payload.sessions or {}) do
         -- A copy relayed by an officer on an older addon lost what that addon did not know to
-        -- send: the size and the pug-night mark. The next copy that carries them fills them in.
+        -- send: the size, the pug-night mark and the difficulty. The next copy that carries them
+        -- fills them in.
         local mine = raidDB.sessions[sessionID]
         if type(mine) == "table" and type(session) == "table" then
             local sz = tonumber(session.size)
             if mine.size == nil and sz and sz > 0 then mine.size = sz end
+            if mine.difficulty == nil then mine.difficulty = tonumber(session.difficulty) end
             if mine.isGuildRaid == nil and session.isGuildRaid ~= nil then mine.isGuildRaid = session.isGuildRaid == true end
         end
-        if not deleted[sessionID] and not raidDB.sessions[sessionID] then
+        if not deleted[sessionID] and not raidDB.sessions[sessionID] and not foldedHere(sessionID) then
             if type(session) == "table" and type(session.players) == "table" then
                 session.players = GuildOS:LocalizeMemberTable(session.players)   -- issue #97
             end

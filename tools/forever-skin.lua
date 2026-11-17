@@ -40,7 +40,7 @@ local HANDOFF = {
   line = "#2a2733", lineHi = "#6f6878", text = "#ece7e0", textSoft = "#a9a2b0",
   label = "#97909f", labelDim = "#6f6878", disabled = "#4b4553", gold = "#d9a94f",
   goldHover = "#e3b968", goldActive = "#c4943f", onGold = "#17130a",
-  ok = "#7dd88f", danger = "#ef7b72", warn = "#e89a5a", epic = "#a86fe0",
+  ok = "#7dd88f", danger = "#ef7b72", warn = "#e89a5a", info = "#5b93cf", epic = "#a86fe0",
 }
 for key, want in pairs(HANDOFF) do
   check(C[key] and hex(C[key]) == want, key .. " is " .. want .. " (got " .. (C[key] and hex(C[key]) or "nil") .. ")")
@@ -52,7 +52,7 @@ local LEGACY = {
   silver = "textSoft", textDim = "label", border = "line", separator = "line",
   accent = "gold", headerBg = "panel", bg0 = "well", bg1 = "well", bg2 = "panel",
   panelDark = "well", row1 = "well", row2 = "bg", rowHover = "panel",
-  red = "danger", green = "ok", online = "ok", offline = "disabled",
+  red = "danger", green = "ok", blue = "info", online = "ok", offline = "disabled",
 }
 for key, token in pairs(LEGACY) do
   check(C[key] and hex(C[key]) == HANDOFF[token], key .. " resolves to " .. token)
@@ -68,7 +68,7 @@ check(hex(C.white) == "#ffffff", "white stays pure for vertex resets")
 check(hex(C.accentSoft) == HANDOFF.gold and near(C.accentSoft.a, 0.14), "accentSoft is a faint gold wash")
 check(near(C.accentDim.r, C.gold.r * 0.54) and near(C.accentDim.g, C.gold.g * 0.54) and near(C.accentDim.b, C.gold.b * 0.54),
   "accentDim is gold dimmed on every channel")
-check(C.shadow == nil and C.info == nil and C.blue == nil, "shadow, info and blue, which nothing drew, are gone")
+check(C.shadow == nil, "the shadow, which nothing draws any more, is gone")
 check(C.darkGold == nil, "darkGold, which nothing used, is gone")
 
 -- ── 3. Violet only means epic, in the palette and in the source ─────────

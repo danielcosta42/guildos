@@ -79,7 +79,7 @@ Condensed spec + plan + tasks.
   - **PugInspector:** alt links and notes found under the rule's key, and the live sources' realm (none, a normalized-only client, Anniversary).
   - **Export:** guild key, author, `realm` field and every member key, with a published record found under its key.
   - **A roster that suffixes names on a client with only a normalized realm:** with `GetRealmName()` nil or `""`, the export's author, guild key, realm and rows, my own message, `GetMemberRecord` and a received broadcast all use the roster's `Name-Suffix`.
-  - **Disclosed, not solved:** the §2.3 state (a roster that suffixes names, both realm functions empty) is pinned as it behaves today: bare keys for me, loot, rolls, `/gos trial` and member records; suffixed roster rows and broadcasts; my own suffixed message not recognised.
+  - **Disclosed, not solved:** the §2.3 state (a roster that suffixes names, both realm functions empty) is pinned as it behaves today: bare keys for me, loot, rolls and member records; `/gos trial` follows the roster's key since issue #177, as `/gos note` already did; suffixed roster rows and broadcasts; my own suffixed message not recognised.
   - **Source scan:** every Lua file in the TOC must be on disk. None builds a `.. "-" ..` join (either quote), a `"%s-%s"` format, or a literal fallback from `GetRealmName()`, `GetNormalizedRealmName()` or `GetClientRealm()`, apart from the six joins that are not member keys or only join with a realm, and the two sentinel fallbacks.
 - It fails on 0.53.0's code, at the first rule check.
 - **`tools/roster-import.lua`** now runs the real rule instead of a copy of it.

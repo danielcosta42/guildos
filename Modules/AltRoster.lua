@@ -32,6 +32,24 @@ function AltRoster:GetAltTag(key, links)
     return string.format(GuildOS.L["alt of %s"], shortName(m))
 end
 
+function AltRoster:HasAlts(key, links)
+    links = links or (GuildOS.db and GuildOS.db.altLinks) or {}
+    for _, main in pairs(links) do
+        if main == key then return true end
+    end
+    return false
+end
+
+-- Guild Roster Manager's tag (#269): "[Floyd]" on an alt of Floyd, "[M]" on a main with alts, nil
+-- on somebody with neither.
+function AltRoster:ShortTag(key, links)
+    links = links or (GuildOS.db and GuildOS.db.altLinks) or {}
+    local m = links[key]
+    if m then return "[" .. shortName(m) .. "]" end
+    if self:HasAlts(key, links) then return GuildOS.L["[M]"] end
+    return nil
+end
+
 -- roster: array of member keys present in the guild. Returns groups keyed
 -- by canonical main, the count of unique mains (unique players) and total
 -- chars observed.

@@ -116,7 +116,7 @@ local function BuildBulletinSub(panel)
             textFS:SetJustifyH("LEFT")
             local th = textFS:GetStringHeight() or 14
             local meta = UI:CreateText(child,
-                "|cff888888" .. (m.author or "?") .. " · " .. date("%m/%d %H:%M", m.ts or 0) .. "|r",
+                "|cff888888" .. (m.author or "?") .. " · " .. GuildOS:DateText(m.ts or 0, " %H:%M") .. "|r",
                 9, C.textDim.r, C.textDim.g, C.textDim.b)
             meta:SetPoint("TOPLEFT", 4, -(y + th + 2))
             if isOfficer then
@@ -272,7 +272,7 @@ local function BuildCallToArmsSub(panel)
     recentHead:SetPoint("TOPLEFT", hear, "BOTTOMLEFT", 0, -10)
     -- /gos avail: who in the guild is free for a group, and listing yourself (#142).
     if GuildOS.LFGBoard then
-        local boardBtn = UI:CreateButton(panel, L["LFG Board"], 180, 18)
+        local boardBtn = UI:CreateButton(panel, L["Groups"], 180, 18)
         boardBtn:SetPoint("LEFT", recentHead, "RIGHT", 12, 0)
         boardBtn:SetScript("OnClick", function() GuildOS.LFGBoard:Show() end)
     end
@@ -604,11 +604,16 @@ function GuildOS:CreateGuildChatFeed(panel)
             else
                 b.icon:Hide()
             end
-            b.nameFS:SetText(g.name or "?")
+            -- A line from an allied guild (issue #344) says which one, in its colour.
+            local who = g.name or "?"
+            if g.guild and GuildOS.Alliance then
+                who = "|cff" .. GuildOS.Alliance.GuildColorHex(g.guild) .. "[" .. g.guild .. "]|r " .. who
+            end
+            b.nameFS:SetText(who)
             b.nameFS:SetTextColor(GuildOS:GetClassColor(class))
             -- The log outlives the session: a line from another day says which day.
             local t = tonumber(g.t)
-            b.timeFS:SetText(t and date(date("%Y%m%d", t) == today and "%H:%M" or "%a %H:%M", t) or "")
+            b.timeFS:SetText(t and GuildOS:LocalDate(date("%Y%m%d", t) == today and "%H:%M" or "%a %H:%M", t) or "")
             b.bodyFS:SetWidth(width - 44)
             b.bodyFS:SetText(table.concat(g.lines, "\n"))
             local h = math.max(34, (b.bodyFS:GetStringHeight() or 12) + 28)
@@ -732,93 +737,3 @@ function GuildOS:CreateGuildHub(parent, _mainFrame)
     end)
 end
 
-----------------------------------------------------------------------
--- DKP panel (standings + officer controls), embedded as a main tab.
-----------------------------------------------------------------------
-function GuildOS:CreateDKPPanel(parent, _mainFrame)
-    local summary = UI:CreateText(parent, "", 11, C.gold.r, C.gold.g, C.gold.b)
-    summary:SetPoint("TOPLEFT", 12, -10)
-
-    local openBtn = UI:CreateButton(parent, L["More..."], 90, 22)
-    openBtn:SetPoint("TOPRIGHT", -12, -8)
-    openBtn:SetScript("OnClick", function() if GuildOS.ShowPointsFrame then GuildOS:ShowPointsFrame() end end)
-
-    local controlsTop = -34
-    if GuildOS:IsOfficer() then
-        local nameInput = makeInput(parent, 150, false)
-        nameInput:SetPoint("TOPLEFT", 12, -32)
-        local amtInput = makeInput(parent, 60, false)
-        amtInput:SetPoint("LEFT", nameInput, "RIGHT", 6, 0)
-        amtInput:SetNumeric(true); amtInput:SetMaxLetters(6)
-        local reasonInput = makeInput(parent, 180, false)
-        reasonInput:SetPoint("LEFT", amtInput, "RIGHT", 6, 0)
-        local function doAdjust(sign)
-            local nm = strtrim(nameInput:GetText() or "")
-            local amt = tonumber(amtInput:GetText())
-            if nm == "" or not amt or amt == 0 or not GuildOS.Points then return end
-            GuildOS.Points:Adjust(GuildOS:GetPlayerKey(nm, GetRealmName()), sign * math.abs(amt),
-                strtrim(reasonInput:GetText() or ""), sign > 0 and "award" or "spend")
-            amtInput:SetText(""); reasonInput:SetText(""); nameInput:ClearFocus()
-        end
-        local awardBtn = UI:CreateButton(parent, L["Award"], 64, 24)
-        awardBtn:SetPoint("LEFT", reasonInput, "RIGHT", 8, 0)
-        awardBtn:SetScript("OnClick", function() doAdjust(1) end)
-        local chargeBtn = UI:CreateButton(parent, L["Charge"], 64, 24)
-        chargeBtn:SetPoint("LEFT", awardBtn, "RIGHT", 6, 0)
-        chargeBtn:SetScript("OnClick", function() doAdjust(-1) end)
-        controlsTop = -64
-    end
-
-    local header = CreateFrame("Frame", nil, parent)
-    header:SetPoint("TOPLEFT", 12, controlsTop)
-    header:SetPoint("TOPRIGHT", -12, controlsTop)
-    header:SetHeight(16)
-    local function hcol(txt, px)
-        local fs = UI:CreateHeaderText(header, txt, 9)
-        fs:SetPoint("LEFT", px, 0)
-    end
-    hcol(L["MEMBER"], 4)
-    hcol(L["CURRENT"], 250)
-    hcol(L["EARNED"], 330)
-    hcol(L["SPENT"], 410)
-
-    local holder = CreateFrame("Frame", nil, parent)
-    holder:SetPoint("TOPLEFT", 12, controlsTop - 18)
-    holder:SetPoint("BOTTOMRIGHT", -12, 10)
-    local scroll, child = UI:CreateScrollFrame(holder, "GuildOSDKPTabScroll")
-    scroll:SetAllPoints()
-
-    local function refresh()
-        clear(child)
-        child:SetWidth(holder:GetWidth() - 12)
-        if GuildOS.Points then
-            local mode = GuildOS.Points:GetMode()
-            summary:SetText(string.format(L["Mode: %s  ·  click More for decay / raid award / history"], mode))
-        end
-        local list = (GuildOS.Points and GuildOS.Points:GetStandings()) or {}
-        local y = 0
-        for idx, s in ipairs(list) do
-            local row = CreateFrame("Frame", nil, child)
-            row:SetSize(child:GetWidth(), 22)
-            row:SetPoint("TOPLEFT", 0, -y)
-            local cr, cg, cb = GuildOS:GetClassColor(s.class)
-            local nameFS = UI:CreateText(row, idx .. ". " .. s.name, 11, cr, cg, cb)
-            nameFS:SetPoint("LEFT", 4, 0)
-            local cur = UI:CreateText(row, tostring(s.current), 11, C.gold.r, C.gold.g, C.gold.b)
-            cur:SetPoint("LEFT", 250, 0)
-            local earn = UI:CreateText(row, tostring(s.earned), 10, C.green.r, C.green.g, C.green.b)
-            earn:SetPoint("LEFT", 330, 0)
-            local spent = UI:CreateText(row, tostring(s.spent), 10, C.silver.r, C.silver.g, C.silver.b)
-            spent:SetPoint("LEFT", 410, 0)
-            y = y + 23
-        end
-        if #list == 0 then
-            local empty = UI:CreateText(child, L["No points recorded yet."], 11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 4, -4)
-        end
-        child:SetHeight(math.max(1, y))
-    end
-
-    parent.RefreshActive = refresh
-    parent:SetScript("OnShow", refresh)
-end

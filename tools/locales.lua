@@ -1,8 +1,8 @@
--- Every one of the game's ten languages, complete and safe to format (issue #104), read straight
--- from the code and the Locales files.
+-- Every one of the game's eleven languages, complete and safe to format (issues #104, #186), read
+-- straight from the code and the Locales files.
 --
--- The game (TBC Anniversary and WoW: Forever) runs in enUS, deDE, esES, esMX, frFR, ptBR, ruRU,
--- koKR, zhCN and zhTW, by the product config's supported_locales. English is the key itself;
+-- TBC Anniversary and WoW: Forever run in enUS, deDE, esES, esMX, frFR, ptBR, ruRU, koKR, zhCN and
+-- zhTW, by the product config's supported_locales; retail adds itIT (#186). English is the key itself;
 -- esMX reads esES's file. For each other language this loads its file the way the client does
 -- (GetLocale answering that language) and checks, for every string the code asks for:
 --   * there is a translation, so a string added in English fails here until it is translated;
@@ -94,7 +94,7 @@ end
 local function strings(locale)
   GuildOS = { L = {} }
   function GetLocale() return locale end
-  for _, f in ipairs({ "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW" }) do
+  for _, f in ipairs({ "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW", "itIT" }) do
     local path = ADDON .. "/Locales/" .. f .. ".lua"
     if read(path) then dofile(path) end
   end
@@ -128,7 +128,7 @@ local function sameShape(key, val)
 end
 
 -- A key written twice in one file: the later silently wins, and the earlier is dead.
-for _, f in ipairs({ "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW" }) do
+for _, f in ipairs({ "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW", "itIT" }) do
   local seen, dups = {}, {}
   for key in ("\n" .. (read(ADDON .. "/Locales/" .. f .. ".lua") or "")):gmatch('\nL%["(.-)"%] =') do
     if seen[key] then dups[#dups + 1] = key end
@@ -137,7 +137,7 @@ for _, f in ipairs({ "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zh
   check(#dups == 0, f .. ": no key written twice (" .. table.concat(dups, ", ") .. ")")
 end
 
-local GAME = { "deDE", "esES", "esMX", "frFR", "ptBR", "ruRU", "koKR", "zhCN", "zhTW" }
+local GAME = { "deDE", "esES", "esMX", "frFR", "ptBR", "ruRU", "koKR", "zhCN", "zhTW", "itIT" }
 for _, locale in ipairs(GAME) do
   local L = strings(locale)
   local missing, broken = 0, {}
@@ -166,7 +166,7 @@ check(next(mx) ~= nil and es["Data collected."] ~= nil and mx["Data collected."]
 
 -- ── The TOC loads every file ───────────────────────────────────────────
 local toc = read(ADDON .. "/GuildOS.toc") or ""
-for _, f in ipairs({ "Locale", "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW" }) do
+for _, f in ipairs({ "Locale", "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW", "itIT" }) do
   check(toc:find("Locales[\\/]" .. f .. "%.lua"), "the TOC loads Locales/" .. f .. ".lua")
 end
 
@@ -174,4 +174,4 @@ if #fails > 0 then
   for _, f in ipairs(fails) do io.stderr:write("FAIL: " .. f .. "\n") end
   os.exit(1)
 end
-print(("locales: %d checks passed, %d strings in every one of the game's ten languages"):format(checks, nUsed))
+print(("locales: %d checks passed, %d strings in every one of the game's eleven languages"):format(checks, nUsed))

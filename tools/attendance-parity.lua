@@ -21,12 +21,30 @@
 -- the Forever fixture instead, the same nights moved into raids nobody listed:
 --
 --   luajit -e 'ADDON="." FOREVER=true' tools/attendance-parity.lua > .../apps/web/test/fixtures/attendance-parity-forever.json
+--
+-- Retail counts by difficulty, and Normal and Heroic in one week are two lockouts (issue #182).
+-- With RETAIL set it prints the retail fixture: the same nights as the site's parity test moves
+-- them (apps/web/test/parity.test.ts), each night TBC counted at a difficulty retail counts, one per
+-- place, and Karazhan, the 10, at none. Same lockouts, same chances, so it checks that the answers
+-- are TBC's to the digit, and then the retail rules on nights of their own:
+--
+--   luajit -e 'ADDON="." RETAIL=true' tools/attendance-parity.lua > .../apps/web/test/fixtures/attendance-parity-retail.json
+--
+-- The lockout week is the region's, from its weekly reset (guildos-web#199): the fixtures above are the
+-- Americas', Tuesday 15:00 UTC. With REGION set to "eu" it prints the same nights counted from
+-- Europe's, Wednesday 04:00 UTC, where Core 3's Tuesday night is the last of its week, not the first
+-- of the next:
+--
+--   luajit -e 'ADDON="." REGION="eu"' tools/attendance-parity.lua > .../apps/web/test/fixtures/attendance-parity-eu.json
 ADDON = ADDON or "."
+REGION = REGION or "us"
 package.path = ADDON .. "/?.lua;" .. package.path
 
 GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }) }
 function GuildOS:Print() end
 function GuildOS:IsOfficer() return true end
+-- The client's region, as Compat reads it from GetCurrentRegion().
+GuildOS.Compat = { Region = function() return REGION end }
 
 -- ── the WoW surface RaidTracker touches at load ───────────────────────
 function GetServerTime() return 1754380000 end
@@ -70,8 +88,12 @@ GuildOS.CoreManager = {
 --   * a ten-man, which moves nobody's denominator but does decide their core
 --   * a night marked not-a-guild-raid, which counts for nothing at all
 --   * somebody who raids with two cores and belongs to the busier one
+--   * nights either side of a region's weekly reset, a core of their own (guildos-web#199)
+--
+-- Every other night sits between Wednesday 23:00 and Tuesday 15:00 UTC, inside the week of every
+-- region, so the answers are the same whichever reset counts them.
 ----------------------------------------------------------------------
-local T = 1754380000        -- a Tuesday evening
+local T = 1754524800        -- Thursday 7 Aug 2025, 00:00 UTC: Wednesday 21:00 in Brasília
 local HOUR, DAY, WEEK = 3600, 86400, 604800
 
 local function snap(at, members) return { time = at, reason = "tick", members = members } end
@@ -166,6 +188,21 @@ night(T + 5 * WEEK, { startTime = T + 5 * WEEK, snapshots = {
 } })
 SESSIONS[T + 5 * WEEK].players["Mesclada-Firemaw"] = true
 
+-- Either side of the weekly reset (guildos-web#199), in a core of their own so nobody else's number moves.
+-- Gruul three times: Wednesday night in Brasília (Thursday 00:00 UTC), Monday night in Brasília
+-- (Tuesday 01:00 UTC) and Tuesday night in Paris (20:00 UTC, 22:00 there in October). In the Americas,
+-- which reset on Tuesday at 15:00 UTC, Monday's is Wednesday's lockout and Tuesday's the next one; in
+-- Europe, which resets on Wednesday at 04:00 UTC, all three are one. Counted from Tuesday 00:00 UTC
+-- they were Wednesday's alone and Monday's with Tuesday's, which neither region plays.
+local R = T + 8 * WEEK
+for _, n in ipairs({ { R, "Quarta" }, { R + 5 * DAY + HOUR, "Segunda" }, { R + 5 * DAY + 20 * HOUR, "Terca" } }) do
+  local at, key = n[1], n[2] .. "-Firemaw"
+  night(at, { groupTag = "Core 3", startTime = at, snapshots = {
+    snap(at,        { [key] = who(n[2], true, true) }),
+    snap(at + HOUR, { [key] = who(n[2], true, true) }),
+  } })
+end
+
 -- WoW: Forever: the same nights in raids nobody listed, told apart by the size the game gave.
 -- Gruul's place is a 20, Magtheridon's a 40 and Karazhan's a 10, so the size decides exactly as
 -- TBC's ids did; and one more 20, recorded with no size, counts for nothing (issue #90).
@@ -183,6 +220,59 @@ if FOREVER then
   night(T + 6 * WEEK, { instanceID = 9001, name = "Hyjal Summit", startTime = T + 6 * WEEK, snapshots = {
     snap(T + 6*WEEK, { ["Beto-Firemaw"] = who("Beto", true, true) }),
   } })
+end
+
+-- Retail (issue #182): the nights the site's parity test moves to N/H/M, with the answers it expects,
+-- which are the TBC ones; then the retail rules on nights of their own, as the site's test has them.
+if RETAIL then
+  local function fail(what)
+    io.stderr:write("FAIL: " .. what .. "\n")
+    os.exit(1)
+  end
+  local function percents(sessions)
+    GuildOS.db = { raidTracker = { sessions = sessions, attendance = {}, deletedSessions = {} } }
+    RT:RebuildAttendanceFromSessions()
+    local out = {}
+    for _, s in pairs(sessions) do
+      for key in pairs(s.players) do out[key] = RT:GetAttendance25ManPercent(key) end
+    end
+    return out
+  end
+  local tbc = percents(SESSIONS)
+  GuildOS.Client = { isRetail = true }
+  -- The site's DIFFICULTY_OF: one difficulty per place, so a week's recordings of a place stay one lockout.
+  local DIFFICULTY_OF = { [565] = 14, [544] = 15, [548] = 16, [550] = 14, [534] = 15, [564] = 16, [580] = 14 }
+  for _, s in pairs(SESSIONS) do s.difficulty = RT.RAID_25MAN[s.instanceID] and DIFFICULTY_OF[s.instanceID] or nil end
+  for key, p in pairs(percents(SESSIONS)) do
+    if p ~= tbc[key] then fail(("%s is %d%% at N/H/M and %d%% under TBC's rule"):format(key, p, tbc[key])) end
+  end
+
+  -- Nights of retail's own, at one place in one week (T + 7 weeks is a Thursday, mid-week everywhere).
+  local W = T + 7 * WEEK
+  local function nights(list)
+    local out = {}
+    for _, n in ipairs(list) do
+      local members, players = {}, {}
+      for _, key in ipairs(n[3]) do members[key], players[key] = who(key, true, true), true end
+      out[n[2]] = { instanceID = n[4] or 2912, difficulty = n[1], groupTag = "", startTime = n[2],
+                    players = players, snapshots = { snap(n[2], members), snap(n[2] + HOUR, members) } }
+    end
+    return out
+  end
+  local p = percents(nights({ { 14, W, { "Ana", "Bia" } }, { 15, W + 2 * DAY, { "Ana" } } }))
+  if not (RT:GetTotal25ManSessions() == 2 and p.Ana == 100 and p.Bia == 50) then
+    fail("Normal and Heroic of one raid in one week are two lockouts, and Bia missed the Heroic")
+  end
+  p = percents(nights({ { 14, W, { "Ana", "Bia" } }, { 14, W + 2 * DAY, { "Ana" } } }))
+  if not (RT:GetTotal25ManSessions() == 1 and p.Ana == 100 and p.Bia == 90) then
+    fail("the same two nights at one difficulty are one lockout, which Bia left early")
+  end
+  percents(nights({ { 15, W, { "Ana" }, 1592 } }))
+  if RT:GetTotal25ManSessions() ~= 1 then fail("an old raid at N/H/M counts") end
+  for _, d in ipairs({ 17, false }) do
+    percents(nights({ { d or nil, W, { "Ana" } } }))
+    if RT:GetTotal25ManSessions() ~= 0 then fail("a night at " .. tostring(d) .. " does not count") end
+  end
 end
 
 GuildOS.db = { raidTracker = { sessions = SESSIONS, attendance = {}, deletedSessions = {} } }
@@ -203,6 +293,9 @@ table.sort(names)
 
 local out = { "{" }
 
+-- Whose reset counted the weeks, which the site counts them from too.
+out[#out + 1] = '"region":' .. q(REGION) .. ','
+
 -- The nights, in the shape CompanionExport puts on the wire.
 out[#out + 1] = '"sessions":['
 local ids = {}
@@ -222,7 +315,7 @@ for i, id in ipairs(ids) do
         n = n + 1
         first = first or sn.time
         last = sn.time
-        if m.hasConsumes then hits = hits + 1 end
+        if m.hasConsumes ~= false then hits = hits + 1 end   -- unread counts for the player (#187)
       end
     end
     -- Same rule CompanionExport uses: somebody in `players` and in no frame travels
@@ -231,10 +324,11 @@ for i, id in ipairs(ids) do
       '{"key":%s,"snapshots":%d,"first":%d,"last":%d,"chits":%d}',
       q(key), n, first or s.startTime, last or s.startTime, hits)
   end
-  -- `size` only when the night has one, as CompanionExport sends it (issue #90).
+  -- `size` and `difficulty` only when the night has one, as CompanionExport sends them (issues #90, #182).
   out[#out + 1] = string.format(
-    '{"instanceID":%d,%s"groupTag":%s,"guildRaid":%s,"startTime":%d,"players":[%s]}%s',
-    s.instanceID, s.size and string.format('"size":%d,', s.size) or "", q(s.groupTag),
+    '{"instanceID":%d,%s%s"groupTag":%s,"guildRaid":%s,"startTime":%d,"players":[%s]}%s',
+    s.instanceID, s.size and string.format('"size":%d,', s.size) or "",
+    s.difficulty and string.format('"difficulty":%d,', s.difficulty) or "", q(s.groupTag),
     (s.isGuildRaid == false) and "false" or "true",
     s.startTime, table.concat(players, ","), (i < #ids) and "," or "")
 end

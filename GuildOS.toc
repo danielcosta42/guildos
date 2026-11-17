@@ -2,9 +2,10 @@
 ## Title: |cffFFD700Guild OS|r |cff888888Guild Manager|r
 ## Notes: Guild manager for WoW: Forever and Retail: roster, raid attendance, cores, recruitment and professions
 ## Author: Chehul (danielcosta42)
-## Version: 0.82.0
+## Version: 1.28.0
 ## SavedVariables: GuildOSDB
 ## DefaultState: enabled
+## IconTexture: Interface\AddOns\GuildOS\Media\minimap-logo
 ## X-License: MIT
 ## X-Category: Guild
 ## X-Website: https://github.com/danielcosta42/GuildOS
@@ -39,6 +40,7 @@ Locales\ruRU.lua
 Locales\koKR.lua
 Locales\zhCN.lua
 Locales\zhTW.lua
+Locales\itIT.lua
 
 Core\Core.lua
 Core\Compat.lua
@@ -64,6 +66,7 @@ Modules\SyncService.lua
 Modules\Alliance.lua
 Modules\AllianceSync.lua
 Modules\AllianceChat.lua
+Modules\AllianceLink.lua
 Modules\GuildChat.lua
 Modules\RosterLog.lua
 Modules\BanList.lua
@@ -74,7 +77,9 @@ Modules\SoftResSystem.lua
 Modules\CoreManager.lua
 Modules\RaidTracker.lua
 Modules\LootTracker.lua
+Modules\LootRule.lua
 Modules\LootMaster.lua
+Modules\LootCouncil.lua
 Modules\RecipeTracker.lua
 Modules\CraftNet.lua
 Data\ProfCatalogForever.lua
@@ -83,7 +88,10 @@ Modules\Professions.lua
 Modules\ProfSync.lua
 Modules\Look.lua
 Modules\ProfDirectory.lua
+Modules\ChehulGossip.lua
+Modules\GuildFinder.lua
 Modules\RecruitBeacon.lua
+Modules\JoinRequests.lua
 Modules\RecruitScanner.lua
 Modules\OfficerNotes.lua
 Modules\RaiderRoster.lua
@@ -92,6 +100,7 @@ Modules\AltAutoDetect.lua
 Modules\ChatTweaks.lua
 Modules\TrialTracker.lua
 Modules\GuildManager.lua
+Modules\RosterColumns.lua
 Modules\ModPresets.lua
 Modules\GearAudit.lua
 Modules\Readiness.lua
@@ -99,7 +108,9 @@ Modules\Resistances.lua
 Modules\ExportImport.lua
 Modules\CompanionExport.lua
 Modules\CompanionImport.lua
+Modules\RaidPlan.lua
 Modules\Points.lua
+Modules\TradeCouncil.lua
 Modules\LootEquity.lua
 Modules\Digest.lua
 Modules\Backup.lua
@@ -107,16 +118,27 @@ Modules\Bulletin.lua
 Modules\CallToArms.lua
 Modules\Polls.lua
 Modules\Calendar.lua
+Modules\GameCalendar.lua
 Modules\Milestones.lua
+Modules\Journal.lua
+Modules\Founding.lua
+Modules\Activation.lua
+Modules\Achievements.lua
+Data\ForeverDungeons.lua
+Modules\DungeonLog.lua
 Modules\Search.lua
 Modules\RaidTools.lua
+Data\ConsumablesRetail.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua
+Modules\MythicPlus.lua
 Modules\GuildAnalytics.lua
 Modules\Mentions.lua
 Modules\NoteCommand.lua
 Modules\LevelQuery.lua
 Modules\LFGBoard.lua
+Data\GroupActivities.lua
+Modules\Groups.lua
 Modules\GuildMap.lua
 Modules\PugInspector.lua
 
@@ -125,6 +147,7 @@ UI\Helpers.lua
 UI\StylePreview.lua
 UI\Layout.lua
 UI\WebPanel.lua
+UI\RaidPlanPanel.lua
 UI\FeatureRegistry.lua
 UI\Window.lua
 UI\Agora.lua
@@ -134,14 +157,19 @@ UI\RecipesPanel.lua
 UI\ProfessionsPanel.lua
 UI\CraftFinder.lua
 UI\RecruitBeacon.lua
+UI\GuildFinder.lua
+UI\JoinRequests.lua
 UI\CalendarPanel.lua
 UI\FeaturePanels.lua
+UI\LootWindow.lua
 UI\RosterFrame.lua
 UI\MemberDetail.lua
 UI\CorePanel.lua
 UI\ManagementPanel.lua
 UI\AuditPanel.lua
 UI\PointsPanel.lua
+UI\TradeCouncil.lua
+UI\LootCouncil.lua
 UI\CommunityPanel.lua
 UI\AlliancePanel.lua
 UI\RaidToolsPanel.lua
@@ -149,5 +177,9 @@ UI\GuildMap.lua
 UI\Minimap.lua
 UI\PugInspector.lua
 UI\Onboarding.lua
+UI\Founding.lua
+UI\JournalPanel.lua
+UI\AchievementsPanel.lua
+UI\GroupsPanel.lua
 UI\RaidHUD.lua
 UI\Features.lua

@@ -10,7 +10,7 @@ local UI = GuildOS.UI
 local L  = GuildOS.L
 
 -- Tabs, in window order ----------------------------------------------
--- `retail = false`: not on retail (ADR-0026), where loot is personal and guildos.me takes no guild yet.
+-- `retail = false`: not on retail (ADR-0026), which has no Master Loot: the loot master (issue #185).
 UI:RegisterFeature({
     id = "home", label = L["Now"], order = 5, core = true,
     build = function(c, win) GuildOS:CreateNowPanel(c, win) end,
@@ -27,21 +27,24 @@ UI:RegisterFeature({
     build = function(c, win) GuildOS:CreateRaidHubPanel(c, win) end,
 })
 
+-- One Loot window for every member (issue #346): the rule, the accounts, the lists and the history.
+-- On retail too since issue #183: the history and the equity of personal loot, no soft reserves.
 UI:RegisterFeature({
-    id = "loot", label = L["Loot"], order = 30, officerOnly = true, retail = false,
-    build = function(c, win) GuildOS:CreateLootPanel(c, win) end,
+    id = "loot", label = L["Loot"], order = 30,
+    subs = { "rule", "accounts", "lists", "history" },
+    build = function(c, win) GuildOS:CreateLootWindow(c, win) end,
 })
 
+-- The DKP and the guild's wishlists are the Loot window's Accounts and Lists (issue #346): their
+-- switches stay in Settings, and /gos open dkp or wishlist opens the sub-tab.
 UI:RegisterFeature({
-    id = "dkp", label = L["DKP"], order = 35, retail = false,
+    id = "dkp", label = L["DKP"], order = 35, tab = false, opens = { "loot", "accounts" },   -- retail too since #185
     condition = function() return GuildOS:LootSystemShowsDKP() end,
-    build = function(c, win) GuildOS:CreateDKPPanel(c, win) end,
 })
 
 UI:RegisterFeature({
-    id = "wishlist", label = L["Wishlist"], order = 38, retail = false,
+    id = "wishlist", label = L["Wishlist"], order = 38, tab = false, opens = { "loot", "lists" },   -- retail too since #185
     condition = function() return GuildOS:IsOfficer() and GuildOS:LootSystemShowsWishlist() end,
-    build = function(c, win) GuildOS:CreateWishlistGuildPanel(c, win) end,
 })
 
 -- On WoW: Forever the Professions panel (issue #33) takes the Recipes tab: the whole catalog,
@@ -58,6 +61,26 @@ UI:RegisterFeature({
     id = "guild", label = L["Guild"], order = 50,
     subs = { "calendar", "activity", "cta" },
     build = function(c, win) GuildOS:CreateGuildHub(c, win) end,
+})
+
+-- The guild's own group finder (issue #341): what is being formed, who is looking, and the game's
+-- activities as tiles. /gos avail opens it.
+UI:RegisterFeature({
+    id = "groups", label = L["Groups"], order = 52,
+    subs = { "active", "dungeon", "raid", "other" },
+    build = function(c, win) GuildOS:CreateGroupsPanel(c, win) end,
+})
+
+-- WoW: Forever only (issue #211): the guild's journal, where the module exists.
+UI:RegisterFeature({
+    id = "journal", label = L["Journal"], order = 55, tbc = false, retail = false, restart = true,
+    build = function(c, win) GuildOS:CreateJournalPanel(c, win) end,
+})
+
+-- WoW: Forever only (issue #216): what the guild earned, as guildos.me says it.
+UI:RegisterFeature({
+    id = "achievements", label = L["Achievements"], order = 56, tbc = false, retail = false,
+    build = function(c, win) GuildOS:CreateAchievementsPanel(c, win) end,
 })
 
 UI:RegisterFeature({
@@ -84,7 +107,7 @@ UI:RegisterFeature({
 })
 
 UI:RegisterFeature({
-    id = "web", label = L["Web"], order = 95, retail = false,
+    id = "web", label = L["Web"], order = 95,   -- on retail too since issue #182
     -- Not officerOnly: publishing is each player's own choice, and the
     -- guild's picture on the site gets better the more members opt in. The
     -- raid actions gate themselves on raid leadership instead.
@@ -98,19 +121,23 @@ UI:RegisterFeature({
 
 -- Background modules: a Settings toggle and nothing else ------------
 -- `tbc`: TBC content, listed only on TBC Anniversary (ADR-0014). `retail`: false when not on retail.
-local function background(id, label, desc, officerOnly, tbc, retail)
+-- `forever`: false when not on WoW: Forever (issue #187).
+local function background(id, label, desc, officerOnly, tbc, retail, forever)
     UI:RegisterFeature({
         id = id, label = label, desc = desc,
-        tab = false, officerOnly = officerOnly, tbc = tbc, retail = retail,
+        tab = false, officerOnly = officerOnly, tbc = tbc, retail = retail, forever = forever,
         module = id,
     })
 end
 
 background("raidTracker",       L["Raid Tracker"],       L["Track raid attendance, penalties, and sessions"], true)
-background("lootTracker",       L["Loot Tracker"],       L["Record loot drops from boss kills"], nil, nil, false)
+background("lootTracker",       L["Loot Tracker"],       L["Record loot drops from boss kills"])  -- personal loot on retail (#183)
 background("lootMaster",        L["Loot Master"],        L["Master Loot with wishlist auto-council"], nil, nil, false)
-background("consumableChecker", L["Consumable Checker"], L["Scan raid for missing flasks/food/elixirs"], nil, true)
+-- Anniversary's and retail's (Midnight's flask, food and rune; issue #187); WoW: Forever has none.
+background("consumableChecker", L["Consumable Checker"], L["Scan raid for missing flasks/food/elixirs"], nil, nil, nil, false)
 background("raidHUD",           L["Raid CD Tracker"],    L["Floating tracker for raid cooldowns and consumable check"], nil, true)
 background("trialTracker",      L["Trial Tracker"],      L["Track trial member progress (officer)"], true)
 background("officerNotes",      L["Officer Notes"],      L["Private notes on guild members (officer)"], true)
 background("commSystem",        L["Comm System"],        L["Sync member data between addon users"])
+-- WoW: Forever only: on by default since issue #289 (was off until tested, #232).
+background("founding",          L["Founding"],           L["The guild's founding and its founding members"], nil, false, false)

@@ -13,10 +13,11 @@ local function SaveOfficerNote(data, text)
     if not data or text == "" or not GuildOS.OfficerNotes then return end
     if GuildOS.OfficerNotes:AddNote(data.key, text) then
         GuildOS:Print(L["Note added for "] .. data.name)
+        GuildOS:RefreshRosterUI()   -- the GOS NOTE column (#178)
     end
 end
 
-StaticPopupDialogs["GUILDOS_OFFICER_NOTE"] = {
+GuildOS.Dialogs["GUILDOS_OFFICER_NOTE"] = {
     text = L["Officer note for %s"],
     button1 = L["Save"], button2 = CANCEL,
     hasEditBox = true, maxLetters = 200,
@@ -46,7 +47,7 @@ local function SavePublicNote(data, text)
     GuildOS.NoteCommand:Set(data.name, data.realm, strtrim(text))
 end
 
-StaticPopupDialogs["GUILDOS_PUBLIC_NOTE"] = {
+GuildOS.Dialogs["GUILDOS_PUBLIC_NOTE"] = {
     text = L["Note for %s, which everyone in the guild sees"],
     button1 = L["Save"], button2 = CANCEL,
     -- The game's cap on a public note. Letters here; the bytes are capped when it opens, below.
@@ -72,7 +73,7 @@ StaticPopupDialogs["GUILDOS_PUBLIC_NOTE"] = {
 -- Opens the public note's box with the note as it reads now, filled in after the popup is up: when
 -- `data` reaches OnShow differs between clients, and the box should never open empty over a note.
 local function ShowPublicNote(data)
-    local dialog = StaticPopup_Show("GUILDOS_PUBLIC_NOTE", data.name, nil, { name = data.name, realm = data.realm })
+    local dialog = GuildOS:ShowDialog("GUILDOS_PUBLIC_NOTE", data.name, nil, { name = data.name, realm = data.realm })
     local box = dialog and GuildOS.Compat.PopupEditBox(dialog)
     if box then
         -- The write cuts at 31 bytes; a box that takes 31 letters would let an accented or Cyrillic
@@ -98,31 +99,222 @@ local function CompareVersions(a, b)
     return 0
 end
 
--- Column definitions.
+-- Every column the table can draw (issue #178). Which of them show, and in what order, is each
+-- account's (Modules/RosterColumns.lua); Member is always first.
+--   label     the header; `name`, the line in the Columns panel
 --   min       narrowest the column may be drawn
 --   weight    share of any leftover width (0 = never grows past min)
---   priority  drop order as the window narrows; lowest goes first
---   required  never dropped, whatever the width
--- Resolved per resize by UI:ResolveColumns (UI/Layout.lua), so the table
--- follows its window instead of assuming the old fixed 1236px frame.
+--   align     of the header and the cell
+--   asc       the first click sorts A to Z (otherwise highest first)
+--   offered   whether this reader may show it here (nil = always)
+--   value     (data, ctx) -> the sort value, filled into data.cols only for the columns shown or
+--             sorted by; nil sorts last. The first eight draw themselves in UpdateRosterRow, the
+--             rest through
+--   text      (value, data) -> the cell's text and, optionally, its colour
+--   prepare   (ctx) once per refresh, before any value: an index where a per-row read would scan
+-- Resolved per resize by UI:ResolveColumns (UI/Layout.lua): the rightmost shown column goes first
+-- as the window narrows, and only Member is never dropped.
 --
 -- The former unlabelled 20px "status" column folded into `name`: the
 -- online dot is drawn inside the name cell, so it is not something the
 -- user can lose to a narrow window.
---
--- Attunements and Attendance live in their own dedicated places (member
--- detail / Raids tab / KPI card), so they are intentionally omitted here to
--- keep the roster table clean.
+local DASH = "|cff666666-|r"
+local function textOr(s) return (s and s ~= "") and s or nil end
+local function officer() return GuildOS:IsOfficer() end
+local function enabled(feature) return GuildOS:IsFeatureEnabled(feature) end
+local ROLE_TINT = { TANK = C.blue, HEALER = C.green, DPS = C.red }
+local ROLE_LETTER = { TANK = "T", HEALER = "H", DPS = "D" }
+local ROLE_ORDER = { "TANK", "HEALER", "DPS" }
+local function versionNumber(v)
+    local a, b, c = strsplit(".", v or "")
+    return (tonumber(a) or 0) * 1e6 + (tonumber(b) or 0) * 1e3 + (tonumber(c) or 0)
+end
+
 local COLUMNS = {
-    { key = "name",        label = L["MEMBER"],      min = 150, weight = 3, priority = 100, required = true, align = "LEFT" },
-    { key = "level",       label = L["LVL"],         min = 34,  weight = 0, priority = 95,  required = true, align = "CENTER" },
-    { key = "class",       label = L["CLASS"],       min = 74,  weight = 1, priority = 90,  required = true, align = "LEFT" },
-    { key = "avgIlvl",     label = L["iLVL"],        min = 46,  weight = 0, priority = 80,  align = "CENTER" },
-    { key = "race",        label = L["RACE"],        min = 70,  weight = 1, priority = 60,  align = "LEFT" },
-    { key = "lastSeen",    label = L["LAST SEEN"],   min = 78,  weight = 1, priority = 50,  align = "RIGHT" },
-    { key = "professions", label = L["PROFESSIONS"], min = 160, weight = 2, priority = 40,  align = "LEFT" },
-    { key = "zone",        label = L["ZONE"],        min = 120, weight = 2, priority = 30,  align = "LEFT" },
+    { key = "name",        label = L["MEMBER"],      name = L["Member"],      min = 150, weight = 3, align = "LEFT", asc = true },
+    { key = "level",       label = L["LVL"],         name = L["Level"],       min = 34,  weight = 0, align = "CENTER" },
+    { key = "class",       label = L["CLASS"],       name = L["Class"],       min = 74,  weight = 1, align = "LEFT" },
+    { key = "avgIlvl",     label = L["iLVL"],        name = L["Item level"],  min = 46,  weight = 0, align = "CENTER",
+      value = function(d) return d.avgIlvl > 0 and d.avgIlvl or nil end },
+    { key = "race",        label = L["RACE"],        name = L["Race"],        min = 70,  weight = 1, align = "LEFT",
+      value = function(d) return textOr(d.race) end },
+    { key = "lastSeen",    label = L["LAST SEEN"],   name = L["Last seen"],   min = 78,  weight = 1, align = "RIGHT",
+      value = function(d) return d.lastUpdate > 0 and d.lastUpdate or nil end },
+    { key = "professions", label = L["PROFESSIONS"], name = L["Professions"], min = 160, weight = 2, align = "LEFT", asc = true,
+      value = function(d)
+          local names = {}
+          for _, p in ipairs(d.professions or {}) do
+              if p.isPrimary then names[#names + 1] = L[p.name] end
+          end
+          return textOr(table.concat(names, " "))
+      end },
+    { key = "zone",        label = L["ZONE"],        name = L["Zone"],        min = 120, weight = 2, align = "LEFT", asc = true,
+      value = function(d) return d.isOnline and textOr(d.zone) or nil end },
+
+    -- The game's own, for every member.
+    { key = "note",        label = L["NOTE"],         name = L["Public note"],  min = 120, weight = 2, align = "LEFT", asc = true,
+      value = function(d) return textOr(d.note) end,
+      text = function(v) return v, C.silver end },
+    { key = "officerNote", label = L["OFFICER NOTE"], name = L["Officer note"], min = 120, weight = 2, align = "LEFT", asc = true,
+      offered = function() return GuildOS.Compat.CanViewOfficerNote() end,
+      value = function(d) return textOr(d.officerNote) end,
+      text = function(v) return v, C.silver end },
+    { key = "rank",        label = L["RANK"],         name = L["Rank"],         min = 80,  weight = 1, align = "LEFT", asc = true,
+      value = function(d) return d.rankIndex end,
+      text = function(_, d) return d.rank, C.silver end },
+    -- The game's last login, so it answers for members without the addon too; Last seen is the
+    -- addon's last snapshot of them.
+    { key = "offline",     label = L["OFFLINE"],      name = L["Offline for"],  min = 84,  weight = 0, align = "RIGHT",
+      offered = function() return GuildOS.GuildManager ~= nil end,
+      value = function(d)
+          if d.isOnline then return 0 end
+          return GuildOS.GuildManager:GetDaysOffline(d.index)
+      end,
+      text = function(v, d)
+          if d.isOnline then return L["|cff4CFF4CNow|r"] end
+          return GuildOS:TimeAgo(time() - math.floor(v * 86400)), C.silver
+      end },
+
+    -- What Guild OS syncs: only members who run it.
+    { key = "spec",        label = L["SPEC"],         name = L["Spec"],         min = 90,  weight = 1, align = "LEFT", asc = true,
+      offered = function() return GuildOS.SpecChecker ~= nil end,
+      -- By the tree, so a spec groups together; the points follow it, where a narrow cell cuts.
+      -- The points ride on the row: a scroll redraws it without a refresh, after a sync may have
+      -- taken the spec away.
+      value = function(d)
+          local m = GuildOS.db.members[d.key]
+          local spec = m and m.spec
+          d.specPoints = spec and type(spec.points) == "table" and #spec.points > 0 and table.concat(spec.points, "/") or nil
+          return spec and textOr(GuildOS.SpecChecker:SpecName(spec)) or nil
+      end,
+      text = function(v, d)
+          return d.specPoints and (v .. " " .. d.specPoints) or v, C.silver
+      end },
+    { key = "roles",       label = L["ROLES"],        name = L["Roles"],        min = 50,  weight = 0, align = "CENTER", asc = true,
+      offered = function() return GuildOS.RaiderRoster ~= nil end,
+      value = function(d)
+          local roles, s = GuildOS.RaiderRoster:EffectiveRoles(d.key), ""
+          for _, r in ipairs(ROLE_ORDER) do
+              if roles[r] then s = s .. ROLE_LETTER[r] end
+          end
+          return textOr(s)
+      end,
+      text = function(v, d)
+          if not d.isOnline then return v end   -- greyed like the rest of an offline row
+          local out = ""
+          for _, r in ipairs(ROLE_ORDER) do
+              local t = ROLE_TINT[r]
+              if v:find(ROLE_LETTER[r], 1, true) then out = out .. GuildOS:ColorText(ROLE_LETTER[r], t.r, t.g, t.b) end
+          end
+          return out
+      end },
+    { key = "main",        label = L["MAIN"],         name = L["Main or alt"],  min = 90,  weight = 1, align = "LEFT", asc = true,
+      offered = function() return GuildOS.AltRoster ~= nil end,
+      prepare = function(ctx)
+          ctx.links = GuildOS.db.altLinks or {}
+          ctx.hasAlts = {}
+          for _, main in pairs(ctx.links) do ctx.hasAlts[main] = true end
+      end,
+      value = function(d, ctx)
+          local main = ctx.links[d.key]
+          if main then return main:match("^([^-]+)") or main end
+          return ctx.hasAlts[d.key] and L["Main"] or nil
+      end,
+      text = function(v) return v, C.silver end },
+    { key = "version",     label = L["VERSION"],      name = L["Addon version"], min = 56, weight = 0, align = "CENTER",
+      value = function(d) return d.addonVersion and versionNumber(d.addonVersion) or nil end,
+      text = function(_, d)
+          return d.addonVersion, CompareVersions(d.addonVersion, GuildOS.VERSION) < 0 and C.red or C.silver
+      end },
+    { key = "enchants",    label = L["ENCHANTS"],     name = L["Missing enchants"], min = 84, weight = 0, align = "CENTER",
+      offered = function() return GuildOS.GearAudit ~= nil end,
+      value = function(d) return d.gear and #GuildOS.GearAudit:MissingEnchants(d.gear) or nil end,
+      text = function(v) return v, v > 0 and C.red or C.green end },
+    -- Retail (issue #187): the rating in the game's colour, then the keystone's level. By the rating.
+    { key = "mplus",       label = L["M+"],           name = L["Mythic+ rating and keystone"], min = 70, weight = 0, align = "CENTER",
+      offered = function() return GuildOS.MythicPlus ~= nil end,
+      value = function(d)
+          d.keyLevel = GuildOS.MythicPlus:KeyLevel(d.mplus)
+          return GuildOS.MythicPlus:Rating(d.mplus)
+      end,
+      text = function(v, d)
+          local r, g, b = GuildOS.Compat.RatingColor(v)
+          local text = d.keyLevel and (v .. " |cff999999+" .. d.keyLevel .. "|r") or tostring(v)
+          return text, r and { r = r, g = g, b = b } or C.gold
+      end },
+
+    -- The modules'.
+    { key = "attendance",  label = L["ATT."],         name = L["Attendance"],   min = 50,  weight = 0, align = "CENTER",
+      offered = function() return GuildOS.RaidTracker ~= nil and enabled("raidTracker") end,
+      prepare = function(ctx) ctx.totals = {} end,
+      value = function(d, ctx) return GuildOS.RaidTracker:GetAttendance25ManPercent(d.key, nil, ctx.totals) end,
+      text = function(v)
+          if v == 0 then return DASH end
+          return v .. "%", v >= 75 and C.green or (v >= 50 and C.gold or C.red)
+      end },
+    { key = "core",        label = L["CORE"],         name = L["Core"],         min = 90,  weight = 1, align = "LEFT", asc = true,
+      offered = function() return GuildOS.CoreManager ~= nil end,
+      prepare = function(ctx)
+          ctx.cores = {}
+          for _, coreName in ipairs(GuildOS.CoreManager:GetSortedNames()) do
+              for key in pairs(GuildOS.CoreManager:GetMembers(coreName)) do
+                  local list = ctx.cores[key] or {}
+                  list[#list + 1] = coreName
+                  ctx.cores[key] = list
+              end
+          end
+      end,
+      value = function(d, ctx) return ctx.cores[d.key] and table.concat(ctx.cores[d.key], " / ") or nil end,
+      text = function(v) return v, C.gold end },
+    { key = "dkp",         label = L["DKP"],          name = L["DKP"],          min = 50,  weight = 0, align = "CENTER",
+      offered = function() return GuildOS:LootSystemShowsDKP() end,
+      value = function(d) return GuildOS.Points:Get(d.key) end,
+      text = function(v) return v, C.gold end },
+    { key = "loot",        label = L["LOOT"],         name = L["Loot received"], min = 46, weight = 0, align = "CENTER",
+      offered = function() return GuildOS.LootTracker ~= nil and enabled("lootTracker") end,
+      prepare = function(ctx)
+          ctx.loot = {}
+          for _, e in ipairs(GuildOS.db.lootHistory or {}) do
+              if e.playerKey then ctx.loot[e.playerKey] = (ctx.loot[e.playerKey] or 0) + 1 end
+          end
+      end,
+      value = function(d, ctx) return ctx.loot[d.key] or 0 end,
+      text = function(v) return v, C.silver end },
+
+    -- Officers only.
+    { key = "trial",       label = L["TRIAL"],        name = L["Trial days left"], min = 64, weight = 0, align = "CENTER",
+      offered = function() return GuildOS.TrialTracker ~= nil and enabled("trialTracker") and officer() end,
+      value = function(d) return GuildOS.TrialTracker:GetDaysRemaining(d.key) end,
+      text = function(v) return v .. "d", v > 14 and C.green or (v > 7 and C.gold or C.red) end },
+    { key = "gosNote",     label = L["GOS NOTE"],     name = L["Guild OS officer note"], min = 140, weight = 2, align = "LEFT", asc = true,
+      offered = function() return GuildOS.OfficerNotes ~= nil and enabled("officerNotes") and officer() end,
+      value = function(d)
+          local newest = GuildOS.OfficerNotes:GetNotes(d.key)[1]   -- AddNote inserts at the front
+          return newest and textOr(newest.text) or nil
+      end,
+      text = function(v) return v, C.silver end },
 }
+local COLUMN_BY_KEY = {}
+for _, c in ipairs(COLUMNS) do COLUMN_BY_KEY[c.key] = c end
+
+-- Whether this reader may choose a column here. Member is not a choice.
+local function offered(key)
+    local c = COLUMN_BY_KEY[key]
+    if not c or key == "name" then return false end
+    return not c.offered or c.offered()
+end
+
+-- What UI:ResolveColumns lays out: Member, then the reader's columns, each worth one less than the
+-- one on its left so the rightmost goes first. Also the keys in one string, to tell when it changed.
+local function ChosenColumns()
+    local spec = { { key = "name", min = COLUMN_BY_KEY.name.min, weight = COLUMN_BY_KEY.name.weight, priority = 100, required = true } }
+    local keys = GuildOS.RosterColumns:Visible(offered)
+    for i, key in ipairs(keys) do
+        local c = COLUMN_BY_KEY[key]
+        spec[#spec + 1] = { key = key, min = c.min, weight = c.weight, priority = 100 - i }
+    end
+    return spec, table.concat(keys, ",")
+end
 
 -- KPI cards resolve through the same primitive, so they disappear in a
 -- deliberate order instead of running off the right edge. Listed in
@@ -154,6 +346,8 @@ local KPI_MARGIN = 12
 -- Global frame names must stay unique if a builder ever runs twice. The
 -- first instance keeps the historical names so nothing that hardcodes them breaks.
 local rosterInstances = 0
+-- Every roster panel built, so a change of columns lays them all out again (#178).
+local rosterPanels = {}
 -- Same reason as rosterInstances: the recruitment builder also runs once
 -- per container, and its scroll frame needs a globally unique name.
 local recruitInstances = 0
@@ -282,6 +476,8 @@ function GuildOS:CreateRosterPanel(parent, host)
     host = host or parent
     rosterInstances = rosterInstances + 1
     local uid = rosterInstances > 1 and tostring(rosterInstances) or ""
+    rosterPanels[#rosterPanels + 1] = parent
+    parent:HookScript("OnHide", function() GuildOS:HideColumnsPanel() end)
 
     ----------------------------------------------------------------
     -- KPI band (summary cards across the top)
@@ -388,24 +584,33 @@ function GuildOS:CreateRosterPanel(parent, host)
     local offlineBtn = UI:CreateButton(statsBar, L["Show Offline"], 100, 22)
     offlineBtn:SetPoint("RIGHT", -12, 0)
     offlineBtn.isToggled = true
-    offlineBtn:SetScript("OnClick", function(self)
-        self.isToggled = not self.isToggled
-        GuildOS.db.settings.showOffline = self.isToggled
-        if self.isToggled then
-            self.label:SetText(L["Show Offline"])
-            self:SetBaseColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.92)
+    local function paintOffline(on)
+        offlineBtn.isToggled = on
+        if on then
+            offlineBtn.label:SetText(L["Show Offline"])
+            offlineBtn:SetBaseColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.92)
         else
-            self.label:SetText(L["Online Only"])
-            self:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
+            offlineBtn.label:SetText(L["Online Only"])
+            offlineBtn:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         end
+    end
+    offlineBtn:SetScript("OnClick", function(self)
+        paintOffline(not self.isToggled)
+        GuildOS.db.settings.showOffline = self.isToggled
         host:RefreshRoster()
     end)
+    if not GuildOS.db.settings.showOffline then paintOffline(false) end   -- saved from the last session
     host.offlineBtn = offlineBtn
+
+    -- Which columns, in what order (#178). A right click on the header opens the same panel.
+    local columnsBtn = UI:CreateButton(statsBar, L["Columns"], 80, 22)
+    columnsBtn:SetPoint("RIGHT", offlineBtn, "LEFT", -10, 0)
+    columnsBtn:SetScript("OnClick", function(self) GuildOS:ToggleColumnsPanel(self) end)
 
     -- Search box
     local searchBox = CreateFrame("EditBox", "GuildOSSearchBox" .. uid, statsBar, "BackdropTemplate")
     searchBox:SetSize(160, 22)
-    searchBox:SetPoint("RIGHT", offlineBtn, "LEFT", -10, 0)
+    searchBox:SetPoint("RIGHT", columnsBtn, "LEFT", -10, 0)
     searchBox:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -450,6 +655,10 @@ function GuildOS:CreateRosterPanel(parent, host)
     -- way in here too (#137).
     local analyticsBtn = UI:CreateButton(statsBar, L["Analytics"], 90, 22)
     analyticsBtn:SetPoint("RIGHT", searchBox, "LEFT", -10, 0)
+    -- The summary stops short of the buttons instead of running under them in a narrow window.
+    resultText:SetPoint("RIGHT", analyticsBtn, "LEFT", -10, 0)
+    resultText:SetJustifyH("LEFT")
+    resultText:SetWordWrap(false)
     analyticsBtn:SetScript("OnClick", function()
         if GuildOS.GuildAnalytics then GuildOS.GuildAnalytics:Show() end
     end)
@@ -465,13 +674,20 @@ function GuildOS:CreateRosterPanel(parent, host)
     headerBg:SetAllPoints()
     headerBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
 
-    -- Header buttons are built once and repositioned by the layout pass;
-    -- x and width come from ResolveColumns, never from a constant.
+    -- A right click anywhere on the header opens the Columns panel, between the labels too.
+    headerFrame:EnableMouse(true)
+    headerFrame:SetScript("OnMouseUp", function(self, button)
+        if button == "RightButton" then GuildOS:ToggleColumnsPanel(self) end
+    end)
+
+    -- Header buttons are built once, one per column there is, and placed or hidden by the layout
+    -- pass; x and width come from ResolveColumns, never from a constant.
     host.headerButtons = {}
     for _, col in ipairs(COLUMNS) do
         do
             local btn = CreateFrame("Button", nil, headerFrame)
             btn:SetHeight(HEADER_HEIGHT)
+            btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
             local text = UI:CreateHeaderText(btn, col.label, 10)
             if col.align == "CENTER" then
@@ -491,13 +707,17 @@ function GuildOS:CreateRosterPanel(parent, host)
             sortArrow:Hide()
             btn.sortArrow = sortArrow
 
-            btn:SetScript("OnClick", function()
+            btn:SetScript("OnClick", function(self, button)
+                if button == "RightButton" then
+                    GuildOS:ToggleColumnsPanel(self)
+                    return
+                end
                 local db = GuildOS.db.settings
                 if db.sortBy == col.key then
                     db.sortAsc = not db.sortAsc
                 else
                     db.sortBy = col.key
-                    db.sortAsc = (col.key == "name")
+                    db.sortAsc = col.asc or false
                 end
                 host:RefreshRoster()
             end)
@@ -798,6 +1018,12 @@ function GuildOS:CreateRosterPanel(parent, host)
     host.searchFilter = ""
 
     function host:RefreshRoster()
+        -- What this reader may see changes under an open window (the loot system, a feature, the
+        -- officer rank): the table is laid out again when it would choose other columns now (#178).
+        if self.colSig and select(2, ChosenColumns()) ~= self.colSig then
+            UI:Relayout(parent)
+            GuildOS:RefreshColumnsPanel()
+        end
         self:BuildMemberList()
         self:UpdateSortIndicators()
         self:UpdateRows()
@@ -811,6 +1037,17 @@ function GuildOS:CreateRosterPanel(parent, host)
         local showOffline = GuildOS.db.settings.showOffline
         local filter = self.searchFilter and strlower(strtrim(self.searchFilter)) or ""
         local levelMatch = (filter ~= "" and GuildOS.LevelQuery) and GuildOS.LevelQuery:Parse(filter) or nil
+
+        -- Only the values a cell draws, and the one sorted by, are worth reading (#178).
+        local sortBy = GuildOS.db.settings.sortBy or "level"
+        local wanted, ctx, sortCol = {}, {}, nil
+        for _, col in ipairs(COLUMNS) do
+            if col.value and ((col.text and self.colKeys and self.colKeys[col.key]) or (col.key == sortBy and offered(col.key))) then
+                wanted[#wanted + 1] = col
+                if col.prepare then col.prepare(ctx) end
+                if col.key == sortBy then sortCol = col end
+            end
+        end
 
         -- Get guild roster info
         local numMembers = GetNumGuildMembers()
@@ -858,7 +1095,7 @@ function GuildOS:CreateRosterPanel(parent, host)
                     -- Merge with stored addon data
                     local addonData = GuildOS.db.members[key] or {}
 
-                    table.insert(members, {
+                    local entry = {
                         index = i,
                         key = key,
                         name = displayName,
@@ -883,6 +1120,8 @@ function GuildOS:CreateRosterPanel(parent, host)
                             or (GuildOS.Professions and GuildOS.Professions:LegacyList(key)),
                         attunements = addonData.attunements,
                         stats = addonData.stats,
+                        mplus = addonData.mplus,   -- retail (issue #187)
+                        vault = addonData.vault,
                         race = addonData.race or "",
                         lastUpdate = addonData.lastUpdate or 0,
                         lastSync = addonData.lastSync or 0,
@@ -891,14 +1130,29 @@ function GuildOS:CreateRosterPanel(parent, host)
                         -- one, so an update shows up before CommSystem re-syncs.
                         addonVersion = (GuildOS.Mesh and GuildOS.Mesh:GetPeerVersion(displayName)) or addonData.addonVersion,
                         hasAddonData = (addonData.lastUpdate ~= nil and addonData.lastUpdate ~= 0),
-                    })
+                        cols = {},
+                    }
+                    for _, col in ipairs(wanted) do entry.cols[col.key] = col.value(entry, ctx) end
+                    members[#members + 1] = entry
                 end
             end
         end
 
         -- Sort
-        local sortBy = GuildOS.db.settings.sortBy or "level"
         local sortAsc = GuildOS.db.settings.sortAsc
+
+        -- A column's sort keys, once: lower-cased text, and all of it text when synced data mixed
+        -- numbers in, since comparing a number with a string raises.
+        if sortCol then
+            local anyText = false
+            for _, m in ipairs(members) do
+                if type(m.cols[sortBy]) == "string" then anyText = true break end
+            end
+            for _, m in ipairs(members) do
+                local v = m.cols[sortBy]
+                m.sortKey = (anyText and v ~= nil) and tostring(v):lower() or v
+            end
+        end
 
         table.sort(members, function(a, b)
             -- Online always first
@@ -907,22 +1161,19 @@ function GuildOS:CreateRosterPanel(parent, host)
             end
 
             local va, vb
-            if sortBy == "name" then
+            if sortCol then
+                va, vb = a.sortKey, b.sortKey
+                -- An empty cell goes last, whichever way the column is sorted.
+                if va == nil or vb == nil then
+                    if va == vb then return a.name:lower() < b.name:lower() end
+                    return va ~= nil
+                end
+            elseif sortBy == "name" then
                 va, vb = a.name:lower(), b.name:lower()
             elseif sortBy == "level" then
                 va, vb = a.level, b.level
             elseif sortBy == "class" then
                 va, vb = a.classDisplay:lower(), b.classDisplay:lower()
-            elseif sortBy == "race" then
-                va, vb = a.race:lower(), b.race:lower()
-            elseif sortBy == "avgIlvl" then
-                va, vb = a.avgIlvl, b.avgIlvl
-            elseif sortBy == "lastSeen" then
-                va, vb = a.lastUpdate, b.lastUpdate
-            elseif sortBy == "attendance" then
-                local pa = GuildOS.RaidTracker and GuildOS.RaidTracker:GetAttendance25ManPercent(a.key) or 0
-                local pb = GuildOS.RaidTracker and GuildOS.RaidTracker:GetAttendance25ManPercent(b.key) or 0
-                va, vb = pa, pb
             else
                 va, vb = a.level, b.level
             end
@@ -1004,8 +1255,9 @@ function GuildOS:CreateRosterPanel(parent, host)
         -- Average 25-man raid attendance across known members
         local attSum, attCount = 0, 0
         if GuildOS.RaidTracker and GuildOS.RaidTracker.GetAttendance25ManPercent then
+            local totals = {}   -- each core's count once, not once per member
             for key in pairs(GuildOS.db.members) do
-                local p = GuildOS.RaidTracker:GetAttendance25ManPercent(key)
+                local p = GuildOS.RaidTracker:GetAttendance25ManPercent(key, nil, totals)
                 if p and p > 0 then
                     attSum = attSum + p
                     attCount = attCount + 1
@@ -1065,17 +1317,20 @@ function GuildOS:CreateRosterPanel(parent, host)
 
         -- Table columns.
         local tableW = w - RAIL_WIDTH - ROW_INSET - SCROLL_GUTTER
-        local layout = UI:ResolveColumns(COLUMNS, tableW, COL_GAP)
+        local spec
+        spec, host.colSig = ChosenColumns()
+        local layout = UI:ResolveColumns(spec, tableW, COL_GAP)
         host.colLayout = layout
+        host.colKeys = {}
+        for _, btn in pairs(host.headerButtons) do btn:Hide() end
         for _, col in ipairs(layout) do
             local btn = host.headerButtons[col.key]
-            if btn then
-                btn:SetShown(col.shown)
-                if col.shown then
-                    btn:ClearAllPoints()
-                    btn:SetPoint("LEFT", ROW_INSET + col.x, 0)
-                    btn:SetWidth(col.w)
-                end
+            if btn and col.shown then
+                host.colKeys[col.key] = true
+                btn:Show()
+                btn:ClearAllPoints()
+                btn:SetPoint("LEFT", ROW_INSET + col.x, 0)
+                btn:SetWidth(col.w)
             end
         end
 
@@ -1170,14 +1425,27 @@ function CreateRosterRow(parent, rowIndex, uid)
         professions = { row.profText },
         zone        = { row.zoneText },
     }
+    -- One plain cell per column that draws through its `text` (#178).
+    row.textCells = {}
+    for _, col in ipairs(COLUMNS) do
+        if col.text then
+            local fs = cell(11, col.align)
+            row.textCells[col.key] = fs
+            row.cells[col.key] = { fs }
+        end
+    end
 
     -- Reposition every cell from a resolved layout. Runs once per row per
-    -- resize, never per data update.
+    -- resize, never per data update. A column the layout does not name is
+    -- one the reader has not chosen, so everything starts hidden.
     function row:ApplyColumns(layout)
+        for _, group in pairs(self.cells) do
+            for _, el in ipairs(group) do el:Hide() end
+        end
         for _, col in ipairs(layout) do
             local group = self.cells[col.key]
-            if group then
-                for _, el in ipairs(group) do el:SetShown(col.shown) end
+            if group and col.shown then
+                for _, el in ipairs(group) do el:Show() end
             end
         end
         -- addonDot has its own visibility rule (set per member in
@@ -1208,6 +1476,7 @@ function CreateRosterRow(parent, rowIndex, uid)
         place("lastSeen",    self.lastSeenText)
         place("professions", self.profText)
         place("zone",        self.zoneText)
+        for key, fs in pairs(self.textCells) do place(key, fs) end
     end
 
     -- Hover effects
@@ -1279,7 +1548,9 @@ function UpdateRosterRow(row, data, rowIndex)
     -- Name (class-colored, grayscale if offline)
     local cr, cg, cb = GuildOS:GetClassColor(data.class)
     local nr, ng, nb = textColor(cr, cg, cb)
-    row.nameText:SetText(data.name)
+    -- A founding member's scroll (WoW: Forever, issue #209).
+    local founder = GuildOS.Founding and data.key and GuildOS.Founding:IsFounder(data.key)
+    row.nameText:SetText(founder and (data.name .. " " .. GuildOS.Founding.BADGE) or data.name)
     row.nameText:SetTextColor(nr, ng, nb)
 
     -- Addon data indicator. __hasAddon is remembered so a later layout
@@ -1357,6 +1628,141 @@ function UpdateRosterRow(row, data, rowIndex)
     else
         row.lastSeenText:SetText("-")
     end
+
+    -- The columns that draw through `text` (#178); a cell the reader has not chosen has no value.
+    for key, fs in pairs(row.textCells) do
+        if fs:IsShown() then
+            local v = data.cols[key]
+            if v == nil then
+                fs:SetText(DASH)
+            else
+                local s, colour = COLUMN_BY_KEY[key].text(v, data)
+                colour = colour or C.white
+                fs:SetText(s)
+                fs:SetTextColor(textColor(colour.r, colour.g, colour.b))
+            end
+        end
+    end
+end
+
+----------------------------------------------------------------------
+-- Columns panel (#178): a box per column this reader may show, the shown ones first and in their
+-- order with ▲▼, then the rest. Opened from the toolbar's Columns button and by a right click on
+-- the header. The choice is the account's (Modules/RosterColumns.lua).
+----------------------------------------------------------------------
+local columnsPanel
+local PANEL_TOP, PANEL_ROW, PANEL_BOTTOM = 58, 22, 46
+
+local function RelayoutRosters()
+    for _, p in ipairs(rosterPanels) do UI:Relayout(p) end
+end
+
+local function BuildColumnsPanel()
+    local f = CreateFrame("Frame", "GuildOSColumnsPanel", UIParent, "BackdropTemplate")
+    f:SetWidth(280)
+    f:SetFrameStrata("DIALOG")
+    f:SetClampedToScreen(true)
+    f:EnableMouse(true)
+    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    UI:StylePopup(f)
+    tinsert(UISpecialFrames, "GuildOSColumnsPanel")
+
+    UI:CreateTitle(f, L["Columns"], 14):SetPoint("TOPLEFT", 14, -12)
+    local close = UI:CreateCloseButton(f)
+    close:SetPoint("TOPRIGHT", -6, -6)
+    close:SetScript("OnClick", function() f:Hide() end)
+    local hint = UI:CreateText(f, L["Saved for every character on this account."], 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    hint:SetPoint("TOPLEFT", 14, -34)
+
+    local rows = {}
+    local function arrow(row, texture, x, delta)
+        local b = CreateFrame("Button", nil, row)
+        b:SetSize(18, 18)
+        b:SetPoint("RIGHT", x, 0)
+        b:SetNormalTexture(texture)
+        b:SetHighlightTexture(texture)
+        b:SetScript("OnClick", function()
+            GuildOS.RosterColumns:Move(row.key, delta, offered)
+            f:Refresh()
+            RelayoutRosters()
+        end)
+        return b
+    end
+    local function rowAt(i)
+        if rows[i] then return rows[i] end
+        local row = CreateFrame("Frame", nil, f)
+        row:SetSize(252, PANEL_ROW)
+        row:SetPoint("TOPLEFT", 14, -(PANEL_TOP + (i - 1) * PANEL_ROW))
+        row.box = UI:CreateCheckbox(row, "", 18)
+        row.box:SetPoint("LEFT", 0, 0)
+        row.box.checkbox.onChanged = function(_, checked)
+            GuildOS.RosterColumns:SetShown(row.key, checked and true or false)
+            f:Refresh()
+            RelayoutRosters()
+        end
+        row.up = arrow(row, "Interface\\BUTTONS\\Arrow-Up-Up", -20, -1)
+        row.down = arrow(row, "Interface\\BUTTONS\\Arrow-Down-Up", 0, 1)
+        rows[i] = row
+        return row
+    end
+
+    local reset = UI:CreateButton(f, L["Restore defaults"], 140, 22)
+    reset:SetPoint("BOTTOMLEFT", 14, 12)
+    reset:SetScript("OnClick", function()
+        GuildOS.RosterColumns:Reset()
+        f:Refresh()
+        RelayoutRosters()
+    end)
+
+    -- Member first and fixed, then the shown columns in order, then everything else on offer.
+    function f:Refresh()
+        local shown = GuildOS.RosterColumns:Visible(offered)
+        local list, isShown = { "name" }, { name = true }
+        for _, k in ipairs(shown) do list[#list + 1] = k; isShown[k] = true end
+        for _, c in ipairs(COLUMNS) do
+            if not isShown[c.key] and offered(c.key) then list[#list + 1] = c.key end
+        end
+        for i, key in ipairs(list) do
+            local row = rowAt(i)
+            row.key = key
+            row.box.label:SetText(COLUMN_BY_KEY[key].name)
+            row.box.checkbox:SetChecked(isShown[key])
+            row.box.checkbox:SetEnabled(key ~= "name")
+            -- Member is the first place, so the first column after it has nowhere up to go.
+            row.up:SetShown(isShown[key] and i > 2)
+            row.down:SetShown(isShown[key] and key ~= "name" and i <= #shown)
+            row:Show()
+        end
+        for i = #list + 1, #rows do rows[i]:Hide() end
+        self:SetHeight(PANEL_TOP + #list * PANEL_ROW + PANEL_BOTTOM)
+    end
+
+    f:Hide()
+    return f
+end
+
+function GuildOS:ToggleColumnsPanel(anchor)
+    columnsPanel = columnsPanel or BuildColumnsPanel()
+    if columnsPanel:IsShown() and columnsPanel.anchor == anchor then
+        columnsPanel:Hide()
+        return
+    end
+    columnsPanel.anchor = anchor
+    columnsPanel:ClearAllPoints()
+    columnsPanel:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -4)
+    columnsPanel:Refresh()
+    columnsPanel:Show()
+end
+
+function GuildOS:HideColumnsPanel()
+    if columnsPanel then columnsPanel:Hide() end
+end
+
+-- An open panel follows what the reader may see, as the table does.
+function GuildOS:RefreshColumnsPanel()
+    if columnsPanel and columnsPanel:IsShown() then columnsPanel:Refresh() end
 end
 
 ----------------------------------------------------------------------
@@ -1372,7 +1778,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
     if level == 2 and menuList == "SETRANK" then
         local GM = GuildOS.GuildManager
         if not GM then return end
-        local currentRank = GM:GetRankIndex(data.name)
+        local currentRank = GM:GetRankIndex(data.fullName or data.name)   -- the realm tells namesakes apart (#184)
         for _, rank in ipairs(GM:GetRanks()) do
             -- Skip Guild Master (rank 0): GuildPromote cannot grant GM rank.
             if rank.index > 0 then
@@ -1533,7 +1939,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
             info.func = function()
                 -- A box to type it in (issue #49): only printing the slash command left a Forever
                 -- officer with a command that read "Lethaniel" for "Lethaniel Blightwood".
-                StaticPopup_Show("GUILDOS_OFFICER_NOTE", data.name, nil, { key = data.key, name = data.name })
+                GuildOS:ShowDialog("GUILDOS_OFFICER_NOTE", data.name, nil, { key = data.key, name = data.name })
             end
             UIDropDownMenu_AddButton(info, level)
         end
@@ -1566,6 +1972,11 @@ function ShowRowTooltip(row)
     GameTooltip:AddLine(data.name, cr, cg, cb)
     GameTooltip:AddLine(string.format(L["Level %d %s %s"], data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
     GameTooltip:AddLine(data.rank, C.gold.r, C.gold.g, C.gold.b)
+
+    -- What this member earned for the guild (issue #216).
+    for _, title in ipairs(GuildOS.Achievements and GuildOS.Achievements:Of(data.key) or {}) do
+        GameTooltip:AddLine(title, C.gold.r, C.gold.g, C.gold.b)
+    end
 
     -- First seen by Guild OS (approximate "member since")
     local firstSeen = GuildOS.GetFirstSeen and GuildOS:GetFirstSeen(data.key)
@@ -1662,9 +2073,8 @@ function ShowRowTooltip(row)
     end
 
     -- Wishlist info (native)
-    if GuildOS.db.guildWishlists then
-        local gKey = strlower(data.name or "")
-        local wData = GuildOS.db.guildWishlists[gKey]
+    if GuildOS.db.guildWishlists and GuildOS.Wishlist then
+        local wData = GuildOS.Wishlist:ListFor(data.key, data.name)   -- by the whole key on retail (#185)
         if wData and wData.wishlist and #wData.wishlist > 0 then
             local wColor = GuildOS.Wishlist and GuildOS.Wishlist.TypeColors.wishlist or { r=0.3, g=0.7, b=1.0 }
             GameTooltip:AddLine(" ")
@@ -1892,7 +2302,9 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
             local attStr = "-"
             local attR, attG, attB = 0.35, 0.35, 0.35
             if GuildOS.RaidTracker then
-                local pKey = GuildOS:GetPlayerKey(charData.name or charKey, GetRealmName())
+                -- On retail a list's name is its owner's whole key already (issue #185).
+                local pKey = GuildOS.Client.isRetail and charData.name
+                    or GuildOS:GetPlayerKey(charData.name or charKey, GetRealmName())
                 local attVal = GuildOS.RaidTracker:GetAttendance25ManPercent(pKey) or 0
                 if attVal > 0 then
                     attStr = attVal .. "%"
@@ -2219,9 +2631,12 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     local uid = recruitInstances > 1 and tostring(recruitInstances) or ""
 
     ----------------------------------------------------------------
-    -- Member view (non-officer): read-only recruitment status
+    -- Member view (non-officer): read-only recruitment status. Also an officer whose recruitment
+    -- never started: the db and the officer modules are settled at login, so somebody who joined,
+    -- founded or was promoted after it has no db.recruitment until a /reload (#255).
     ----------------------------------------------------------------
-    if not GuildOS:IsOfficer() then
+    local lateOfficer = GuildOS:IsOfficer() and not GuildOS.db.recruitment
+    if lateOfficer or not GuildOS:IsOfficer() then
         -- Status badge
         local statusLabel = UI:CreateTitle(parent, "", 15)
         statusLabel:SetPoint("TOPLEFT", 20, -15)
@@ -2299,7 +2714,8 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             end
 
             if not info or info.enabled == nil then
-                statusLabel:SetText("|cff888888" .. L["No recruitment data received yet."] .. "|r")
+                statusLabel:SetText("|cff888888" .. (lateOfficer and L["You became an officer after logging in. Type /reload to manage recruiting."]
+                    or L["No recruitment data received yet."]) .. "|r")
                 updatedLabel:SetText("")
                 discordText:SetText("—")
                 msgText:SetText("")
@@ -2417,8 +2833,25 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- right (an attached Save button, say).
     local flex = {}
     local function flexWidth(widget, left, reserve)
-        flex[#flex + 1] = { widget = widget, left = left, reserve = reserve or 0 }
+        local entry = { widget = widget, left = left, reserve = reserve or 0 }
+        flex[#flex + 1] = entry
+        return entry
     end
+
+    -- The controls start after the widest row label in this client's language, never before x = 140
+    -- where they always were (#265): a fixed column put "Membres qui aident :" over its own button.
+    local measure = UI:CreateText(parent, "", 11, 1, 1, 1)
+    local labelWidths = {}
+    for _, text in ipairs({ L["Status:"], L["Interval (sec):"], L["Members who help:"], L["Channels:"],
+        L["Other channel:"], L["Keyword:"], L["Min level:"], L["Classes:"], L["Not confirmed:"],
+        L["Auto-Welcome:"], L["Discord:"] }) do
+        measure:SetText(text)
+        labelWidths[#labelWidths + 1] = measure:GetStringWidth() or 0
+    end
+    measure:Hide()
+    local COL = UI.LabelColumn(labelWidths, 30, 12, 140)
+    local GRID = COL - 12   -- the button grids sat 12 px left of the column
+    local SIDE = COL + 160  -- a button beside a status line
 
     local yOff = -15
 
@@ -2453,10 +2886,10 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- Status + toggle
     RowLabel(L["Status:"], yOff)
     local statusText = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
-    statusText:SetPoint("TOPLEFT", 140, yOff)
+    statusText:SetPoint("TOPLEFT", COL, yOff)
 
     local toggleBtn = UI:CreateButton(parent, L["Enable"], 80, 22)
-    toggleBtn:SetPoint("TOPLEFT", 300, yOff + 3)
+    toggleBtn:SetPoint("TOPLEFT", SIDE, yOff + 3)
 
     -- Manual send button
     local sendNowBtn = UI:CreateButton(parent, L["Send Now"], 100, 22)
@@ -2492,7 +2925,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     RowLabel(L["Interval (sec):"], yOff)
     local intervalBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     intervalBox:SetSize(80, 22)
-    intervalBox:SetPoint("TOPLEFT", 140, yOff)
+    intervalBox:SetPoint("TOPLEFT", COL, yOff)
     intervalBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     intervalBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     intervalBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
@@ -2519,7 +2952,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- member past it is never asked (#150). Each click moves one member rank down, then back to every rank.
     RowLabel(L["Members who help:"], yOff)
     local rankBtn = UI:CreateButton(parent, "", 160, 22)
-    rankBtn:SetPoint("TOPLEFT", 140, yOff + 3)
+    rankBtn:SetPoint("TOPLEFT", COL, yOff + 3)
     local function rankText()
         local limit = GuildOS.db.recruitment.postMaxRank
         if limit == nil then return L["Any rank"] end
@@ -2553,7 +2986,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         local col = (i - 1) % CHAN_PER_ROW
         local row = math.floor((i - 1) / CHAN_PER_ROW)
         local btn = UI:CreateButton(parent, ch, 130, 22)
-        btn:SetPoint("TOPLEFT", 128 + col * 136, yOff + 2 - row * 26)
+        btn:SetPoint("TOPLEFT", GRID + col * 136, yOff + 2 - row * 26)
         btn._ch = ch
         btn:SetScript("OnClick", function()
             local chs = GuildOS.db.recruitment.channels
@@ -2584,13 +3017,17 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- Channels beyond the three presets (issue #59): one box adds, a chip per channel removes.
     RowLabel(L["Other channel:"], yOff)
     local chanBox = MakeBox(130, false, 31)
-    chanBox:SetPoint("TOPLEFT", 140, yOff)
+    chanBox:SetPoint("TOPLEFT", COL, yOff)
     local CUSTOM_MAX, CUSTOM_PER_ROW = 6, 3
     local customBtns = {}
     local customMore = UI:CreateText(parent, "", 10, 0.6, 0.6, 0.65)
     local function isPreset(name)
         return GuildOS.Recruitment:HasChannel(CHAN_LIST, name)
     end
+    -- Everything below the custom channels hangs from `below` (set up after the chips), which sits
+    -- under the chip rows actually shown (#265).
+    local below, belowY, yEnd, chanHint
+    local placeBelow = function() end
     local function refreshCustomChans()
         local shown = 0
         for _, ch in ipairs(GuildOS.db.recruitment.channels) do
@@ -2608,6 +3045,9 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             if not isPreset(ch) then custom = custom + 1 end
         end
         customMore:SetText(custom > CUSTOM_MAX and string.format(L["+%d more (/gos recruit channel list)"], custom - CUSTOM_MAX) or "")
+        -- "Click a channel below" only with a channel below (#265).
+        if chanHint then chanHint:SetShown(shown > 0) end
+        placeBelow(shown, custom > CUSTOM_MAX)
     end
     UI:AttachSaveButton(chanBox, function(box)
         if GuildOS.Recruitment:AddChannel(GuildOS.db.recruitment.channels, box:GetText()) then
@@ -2618,14 +3058,15 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             GuildOS:Print(L["Already posting to: |cffFFFFFF"] .. strtrim(box:GetText()) .. "|r")
         end
     end, { text = L["Add"] })
-    local chanHint = UI:CreateText(parent, L["Click a channel below to stop posting to it."], 10, 0.6, 0.6, 0.65)
+    chanHint = UI:CreateText(parent, L["Click a channel below to stop posting to it."], 10, 0.6, 0.6, 0.65)
+    chanHint:Hide()
     chanHint:SetPoint("LEFT", chanBox.saveButton, "RIGHT", 8, 0)
     yOff = yOff - 28
     for i = 1, CUSTOM_MAX do
         local col = (i - 1) % CUSTOM_PER_ROW
         local row = math.floor((i - 1) / CUSTOM_PER_ROW)
         local b = UI:CreateButton(parent, "", 130, 22)
-        b:SetPoint("TOPLEFT", 128 + col * 136, yOff + 2 - row * 26)
+        b:SetPoint("TOPLEFT", GRID + col * 136, yOff + 2 - row * 26)
         b:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         b:SetScript("OnClick", function(self)
             GuildOS.Recruitment:RemoveChannel(GuildOS.db.recruitment.channels, self._ch)
@@ -2635,15 +3076,29 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         b:Hide()
         customBtns[i] = b
     end
-    yOff = yOff - 4 - math.ceil(CUSTOM_MAX / CUSTOM_PER_ROW) * 26
-    customMore:SetPoint("TOPLEFT", 128, yOff + 4)
-    yOff = yOff - 12
+    local chipsTop = yOff
+    below = CreateFrame("Frame", nil, recruitContent)
+    below:SetHeight(1)
+    placeBelow = function(shown, more)
+        local bottom = chipsTop - UI.ChipRowsHeight(shown, CUSTOM_PER_ROW, 26)
+        customMore:ClearAllPoints()
+        customMore:SetPoint("TOPLEFT", recruitContent, "TOPLEFT", GRID, bottom + 4)
+        belowY = bottom - (more and 10 or 0)
+        below:ClearAllPoints()
+        below:SetPoint("TOPLEFT", recruitContent, "TOPLEFT", 0, belowY)
+        below:SetPoint("TOPRIGHT", recruitContent, "TOPRIGHT", 0, belowY)
+        if yEnd then recruitContent:SetHeight(math.max(1, -(belowY + yEnd) + 60)) end
+    end
+    placeBelow(0, false)
+    -- From here on the stack builds into `below`, its y measured from there.
+    parent = below
+    yOff = -12
 
     -- Message
     RowLabel(L["Message:"], yOff)
     local msgBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     msgBox:SetHeight(40)
-    flexWidth(msgBox, 30, 66)   -- 66 = the attached Save button
+    local msgFlex = flexWidth(msgBox, 30, 66)
     msgBox:SetPoint("TOPLEFT", 30, yOff - 18)
     msgBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     msgBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
@@ -2657,12 +3112,16 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     local function commitMsg(box)
         local txt = box:GetText()
         if txt and txt ~= "" then
+            -- Same as the welcome's (#270): the game refuses the text, the ad never goes out.
+            local problem = GuildOS.Recruitment.ChatTextProblem(txt)
+            if problem then return GuildOS:Print(problem) end
             GuildOS.db.recruitment.message = txt
             GuildOS:Print(L["Recruitment message updated."])
         end
     end
     msgBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     UI:AttachSaveButton(msgBox, commitMsg)
+    msgFlex.reserve = UI.ReserveFor(msgBox.saveButton, 6)   -- "Enregistrer" is wider than "Save" (#265)
     yOff = yOff - 68
 
     -- Broadcast button
@@ -2691,7 +3150,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
 
     RowLabel(L["Keyword:"], yOff)
     local kwBox = MakeBox(120, false, R.KEYWORD_MAX)
-    kwBox:SetPoint("TOPLEFT", 140, yOff)
+    kwBox:SetPoint("TOPLEFT", COL, yOff)
     UI:AttachSaveButton(kwBox, function(box)
         local cfg = aiCfg()
         if not cfg then return end
@@ -2703,7 +3162,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
 
     RowLabel(L["Min level:"], yOff)
     local lvlBox = MakeBox(50, true, 2)
-    lvlBox:SetPoint("TOPLEFT", 140, yOff)
+    lvlBox:SetPoint("TOPLEFT", COL, yOff)
     UI:AttachSaveButton(lvlBox, function(box)
         local cfg = aiCfg()
         if not cfg then return end
@@ -2733,7 +3192,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         local row = math.floor((i - 1) / CLASS_PER_ROW)
         local name = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class
         local b = UI:CreateButton(parent, name, 130, 22)
-        b:SetPoint("TOPLEFT", 128 + col * 136, yOff + 2 - row * 26)
+        b:SetPoint("TOPLEFT", GRID + col * 136, yOff + 2 - row * 26)
         b._class = class
         b:SetScript("OnClick", function(self)
             local cfg = aiCfg()
@@ -2745,12 +3204,12 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end
     local classRows = math.ceil(#R.CLASSES / CLASS_PER_ROW)
     local classHint = UI:CreateText(parent, L["None selected = any class."], 10, 0.6, 0.6, 0.65)
-    classHint:SetPoint("TOPLEFT", 128, yOff - classRows * 26)
+    classHint:SetPoint("TOPLEFT", GRID, yOff - classRows * 26)
     yOff = yOff - classRows * 26 - 22
 
     RowLabel(L["Not confirmed:"], yOff)
     local fbBtn = UI:CreateButton(parent, "", 120, 22)
-    fbBtn:SetPoint("TOPLEFT", 140, yOff + 3)
+    fbBtn:SetPoint("TOPLEFT", COL, yOff + 3)
     local function refreshFallback()
         local cfg = aiCfg()
         fbBtn.label:SetText((cfg and cfg.whoFallback == "invite") and L["Invite them"] or L["Skip them"])
@@ -2765,8 +3224,8 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     fbHint:SetPoint("LEFT", fbBtn, "RIGHT", 8, 0)
     yOff = yOff - 28
 
-    local aiNote = UI:CreateText(parent, GuildOS.Compat.NeedsClick()
-        and L["On WoW: Forever each invite waits for your click in a popup, and level and class are not checked."]
+    local aiNote = UI:CreateText(parent, not GuildOS.Client.isAnniversary
+        and L["This game does not let an addon invite: the auto-invite works on TBC Anniversary only."]
         or L["Banned players are never invited. Level and class filters are checked with /who."], 10, 0.6, 0.6, 0.65)
     aiNote:SetPoint("TOPLEFT", 30, yOff)
     flexWidth(aiNote, 30)
@@ -2789,10 +3248,10 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- Welcome status + toggle
     RowLabel(L["Auto-Welcome:"], yOff)
     local welcomeStatusText = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
-    welcomeStatusText:SetPoint("TOPLEFT", 140, yOff)
+    welcomeStatusText:SetPoint("TOPLEFT", COL, yOff)
 
     local welcomeToggle = UI:CreateButton(parent, L["Enable"], 80, 22)
-    welcomeToggle:SetPoint("TOPLEFT", 300, yOff + 3)
+    welcomeToggle:SetPoint("TOPLEFT", SIDE, yOff + 3)
 
     local function UpdateWelcomeStatus()
         local s = GuildOS.db.recruitment
@@ -2819,8 +3278,8 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     RowLabel(L["Discord:"], yOff)
     local discordBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     discordBox:SetHeight(22)
-    flexWidth(discordBox, 140, 66)
-    discordBox:SetPoint("TOPLEFT", 140, yOff)
+    local discordFlex = flexWidth(discordBox, COL, 66)
+    discordBox:SetPoint("TOPLEFT", COL, yOff)
     discordBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     discordBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     discordBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
@@ -2838,13 +3297,14 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end
     discordBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     UI:AttachSaveButton(discordBox, commitDiscord)
+    discordFlex.reserve = UI.ReserveFor(discordBox.saveButton, 6)
     yOff = yOff - 28
 
     -- Welcome message
     RowLabel(L["Welcome Msg:"], yOff)
     local welcomeBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     welcomeBox:SetHeight(40)
-    flexWidth(welcomeBox, 30, 66)
+    local welcomeFlex = flexWidth(welcomeBox, 30, 66)
     welcomeBox:SetPoint("TOPLEFT", 30, yOff - 18)
     welcomeBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     welcomeBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
@@ -2858,12 +3318,16 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     local function commitWelcome(box)
         local txt = box:GetText()
         if txt and txt ~= "" then
+            -- A text the game would refuse is not kept: the welcome would just never come (#270).
+            local problem = GuildOS.Recruitment.ChatTextProblem(txt)
+            if problem then return GuildOS:Print(problem) end
             GuildOS.db.recruitment.welcomeMessage = txt
             GuildOS:Print(L["Welcome message updated."])
         end
     end
     welcomeBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     UI:AttachSaveButton(welcomeBox, commitWelcome)
+    welcomeFlex.reserve = UI.ReserveFor(welcomeBox.saveButton, 6)
 
     ----------------------------------------------------------------
     -- Recruitment Beacon (Chehul mesh) — realm/city-wide ad, officer-only
@@ -2872,9 +3336,9 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     yOff = SectionHeader(L["Recruitment Beacon (mesh)"], yOff)
     RowLabel(L["Status:"], yOff)
     local beaconStatus = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
-    beaconStatus:SetPoint("TOPLEFT", 140, yOff)
+    beaconStatus:SetPoint("TOPLEFT", COL, yOff)
     local editBeaconBtn = UI:CreateButton(parent, L["Edit Beacon"], 130, 22)
-    editBeaconBtn:SetPoint("TOPLEFT", 300, yOff + 3)
+    editBeaconBtn:SetPoint("TOPLEFT", SIDE, yOff + 3)
     editBeaconBtn:SetScript("OnClick", function()
         if GuildOS.ShowRecruitBeacon then GuildOS:ShowRecruitBeacon() end
     end)
@@ -2889,6 +3353,33 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     UpdateBeaconStatus()
     local beaconHint = UI:CreateText(parent, L["Lives in the mesh and keeps circulating even when you're offline."], 10, 0.6, 0.6, 0.65)
     beaconHint:SetPoint("TOPLEFT", 30, yOff - 22)
+
+    ----------------------------------------------------------------
+    -- Join requests: people with no guild who asked this one to take them
+    ----------------------------------------------------------------
+    -- Not where the module never starts (Anniversary): a section with nothing behind it.
+    local UpdateRequestsStatus = function() end
+    if GuildOS.JoinRequests and not GuildOS.Client.isAnniversary then
+        yOff = yOff - 66
+        yOff = SectionHeader(L["Join requests"], yOff)
+        RowLabel(L["Status:"], yOff)
+        local requestsStatus = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
+        requestsStatus:SetPoint("TOPLEFT", COL, yOff)
+        local requestsBtn = UI:CreateButton(parent, L["Open the list"], 130, 22)
+        requestsBtn:SetPoint("TOPLEFT", SIDE, yOff + 3)
+        requestsBtn:SetScript("OnClick", function()
+            if GuildOS.ShowJoinRequests then GuildOS:ShowJoinRequests() end
+        end)
+        UpdateRequestsStatus = function()
+            -- A damaged row must not take the whole tab down with it.
+            local ok, n = pcall(GuildOS.JoinRequests.OpenCount, GuildOS.JoinRequests)
+            n = ok and n or 0
+            requestsStatus:SetText(n > 0 and GuildOS:JoinRequestsOpenText(n) or L["|cff888888None|r"])
+        end
+        UpdateRequestsStatus()
+        local requestsHint = UI:CreateText(parent, L["Players who asked your guild to take them, from the game or from guildos.me."], 10, 0.6, 0.6, 0.65)
+        requestsHint:SetPoint("TOPLEFT", 30, yOff - 22)
+    end
 
     ----------------------------------------------------------------
     -- Refresh function for the "Recruiting" sub-tab. Registered into
@@ -2910,6 +3401,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         UpdateRecruitStatus()
         UpdateWelcomeStatus()
         UpdateBeaconStatus()
+        UpdateRequestsStatus()
     end
     root.subPanels.recruiting = { panel = recruitingSub, refresh = recruitingRefresh }
 
@@ -2922,22 +3414,25 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- the scroll content's width. The stack's own height is fixed by how
     -- far yOff walked, which is what gives the scroll frame its range.
     ----------------------------------------------------------------
-    local stackHeight = math.max(1, -yOff + 60)
+    yEnd = yOff
+    local function stackHeight() return math.max(1, -((belowY or 0) + yOff) + 60) end
     UI:MakeResponsive(root, function(_, w, _)
         bar:SetWidth(math.max(180, w - 20))
         UI:FlowBar(bar, subTabList, { gap = 4, rowGap = 4, rowH = 28 })
 
         local contentW = math.max(200, w - 24)
-        recruitContent:SetSize(contentW, stackHeight)
+        recruitContent:SetSize(contentW, stackHeight())
         for _, f in ipairs(flex) do
             f.widget:SetWidth(math.max(80, contentW - f.left - f.reserve - 10))
         end
         -- The tab's OnShow fills every box while recruitContent is still 1x1 and the flexible
         -- ones have no width, and an edit box filled before it is laid out shows nothing until
         -- its cursor moves (#158).
-        for _, child in ipairs({ recruitContent:GetChildren() }) do
-            if child:GetObjectType() == "EditBox" and not child:HasFocus() then
-                child:SetCursorPosition(0)
+        for _, holder in ipairs({ recruitContent, below }) do
+            for _, child in ipairs({ holder:GetChildren() }) do
+                if child:GetObjectType() == "EditBox" and not child:HasFocus() then
+                    child:SetCursorPosition(0)
+                end
             end
         end
     end)

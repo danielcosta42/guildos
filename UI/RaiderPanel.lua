@@ -35,8 +35,8 @@ end
 local NAME_X, ROLE_X, GEAR_X, ILVL_X, SPEC_X, NOTE_X = 6, 160, 276, 360, 414, 524
 local ROW_H = 26
 
--- Officer note editor (shared StaticPopup; data = playerKey).
-StaticPopupDialogs["GUILDOS_RAIDER_NOTE"] = {
+-- Officer note editor (data = playerKey).
+GuildOS.Dialogs["GUILDOS_RAIDER_NOTE"] = {
     text = L["Officer note for %s"],
     button1 = L["Save"], button2 = CANCEL,
     hasEditBox = true, maxLetters = 120,
@@ -287,12 +287,13 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
             -- Synced enrichment (read-only)
             local ilvl = mem and mem.avgIlvl or 0
             row.ilvlFS:SetText(ilvl > 0 and tostring(ilvl) or "—")
-            local spec = mem and mem.spec and mem.spec.tree
+            local spec = mem and GuildOS.SpecChecker and GuildOS.SpecChecker:SpecName(mem.spec)
             row.specFS:SetText((spec and spec ~= "") and spec or "—")
 
             -- Note
-            local hasNote = rec.note and rec.note ~= ""
-            row.noteFS:SetText(hasNote and rec.note or (isOfficer and L["+ add note"] or "—"))
+            local note = isOfficer and rec.note or ""
+            local hasNote = note ~= ""
+            row.noteFS:SetText(hasNote and note or (isOfficer and L["+ add note"] or "—"))
             row.noteFS:SetTextColor(hasNote and C.text.r or C.textDim.r,
                                     hasNote and C.text.g or C.textDim.g,
                                     hasNote and C.text.b or C.textDim.b)
@@ -301,7 +302,7 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
                 row.noteBtn:EnableMouse(true)
                 row.noteBtn:SetScript("OnClick", function()
                     -- 4th arg → dialog.data, delivered to OnShow/OnAccept.
-                    local dlg = StaticPopup_Show("GUILDOS_RAIDER_NOTE", nm, nil, key)
+                    local dlg = GuildOS:ShowDialog("GUILDOS_RAIDER_NOTE", nm, nil, key)
                     if dlg then dlg.data = key end
                 end)
             else

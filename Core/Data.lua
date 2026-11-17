@@ -36,6 +36,7 @@ local T = {
     ok       = rgb(0.490, 0.847, 0.561),  -- #7dd88f present, online, confirmed
     danger   = rgb(0.937, 0.482, 0.447),  -- #ef7b72 absence, penalty, kick, ban, error
     warn     = rgb(0.910, 0.604, 0.353),  -- #e89a5a a score between ok and danger
+    info     = rgb(0.357, 0.576, 0.812),  -- #5b93cf the tank role, a link to the site, sync
     epic     = rgb(0.659, 0.435, 0.878),  -- #a86fe0 epic item quality, nothing else
 }
 
@@ -48,7 +49,7 @@ GuildOS.Colors = {
     text = T.text, textSoft = T.textSoft, label = T.label, labelDim = T.labelDim,
     disabled = T.disabled,
     gold = T.gold, goldHover = T.goldHover, goldActive = T.goldActive, onGold = T.onGold,
-    ok = T.ok, danger = T.danger, warn = T.warn, epic = T.epic,
+    ok = T.ok, danger = T.danger, warn = T.warn, info = T.info, epic = T.epic,
 
     -- Legacy keys. Screens older than the Forever skin still read these; each
     -- one points at the token that plays its role now. New code uses the tokens.
@@ -70,6 +71,7 @@ GuildOS.Colors = {
     rowHover   = alias(T.panel),
     red        = alias(T.danger),
     green      = alias(T.ok),
+    blue       = alias(T.info),
     online     = alias(T.ok),
     offline    = alias(T.disabled),
 }
@@ -81,7 +83,7 @@ local ALIASES = {
     accent = { "gold" }, accentDim = { "gold", dim = ACCENT_DIM }, accentSoft = { "gold", a = ACCENT_WASH },
     headerBg = { "panel" }, bg0 = { "well" }, bg1 = { "well" }, bg2 = { "panel" }, panelDark = { "well" },
     row1 = { "well" }, row2 = { "bg" }, rowHover = { "panel" },
-    red = { "danger" }, green = { "ok" }, online = { "ok" }, offline = { "disabled" },
+    red = { "danger" }, green = { "ok" }, blue = { "info" }, online = { "ok" }, offline = { "disabled" },
 }
 
 -- Re-point the named tokens in place, then every legacy key from its token.

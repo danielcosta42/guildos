@@ -7,11 +7,15 @@
 Guild OS replaces the default guild frame with a modern, feature-rich management hub that automatically collects and shares gear, professions, attunements, TMB wishlists, raid attendance, loot history and stats across your guild — no inspection required.
 
 > **Clients:** WoW TBC Anniversary (Interface 20506), WoW: Forever (16001) and Retail, Midnight (120105) — one build
-> serves all three. On Retail the loot suite (retail is personal loot) and guildos.me are left out.
+> serves all three. Retail has no Master Loot: the loot history records what each guildmate received from a boss, a
+> guildmate offers an item they can still trade to the raid's loot council (`/gos offer`) and the trade to the winner is
+> recorded as the award; DKP/EPGP and wishlists (Midnight's raid items from the Encounter Journal) work as on Forever.
+> Retail also checks Midnight's consumables and shows each member's Mythic+ rating, keystone and Great Vault.
+> guildos.me takes retail guilds too.
 
 [![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 
-> **Help, bugs and the WoW: Forever beta:** join the [GuildOS support server on Discord](https://discord.gg/8XA6gmNjja).
+> **Help, bugs and ideas:** join the [GuildOS support server on Discord](https://discord.gg/8XA6gmNjja).
 
 ---
 
@@ -68,10 +72,17 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 - View recent sessions and per-member attendance in the Raids tab
 
 ### Consumable Checker
-- Scans all raid members for expected TBC consumable buffs
-- Checks 5 categories: Flask, Food, Weapon Buff, Battle Elixir, Guardian Elixir
+- Scans all raid members for expected consumable buffs (TBC Anniversary and Retail; not on WoW: Forever)
+- TBC: Flask, Food, Weapon Buff, Battle Elixir, Guardian Elixir
+- Retail: Midnight's flask, food and augment rune, and your own weapon oil, read out of combat (on the ready check);
+  what the game keeps hidden is unknown, never missing
 - Reports which categories each player is missing
 - Integrates with attendance scoring
+
+### Mythic+ and the Great Vault (Retail)
+- Each member's own client sends their Mythic+ rating, their keystone and their Great Vault for the week (raid,
+  dungeons, delves and world)
+- Shown on the member sheet and in an optional M+ roster column
 
 ### Loot Tracker
 - Automatically records every Rare+ item looted in raids and dungeons
@@ -84,9 +95,11 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 - Notes are synced between officers in real time via addon comms
 
 ### Trial Tracker (Officer Only)
-- Track trial/recruit members with configurable trial periods (default 30 days)
-- Records start date, sponsor, status (trial/approved/denied/expired), and evaluation notes
-- Auto-expires overdue trials and alerts officers
+- Track trial/recruit members; the trial length is the guild's (1 to 90 days, 30 until an officer changes it in the
+  Trials tab), and a new length applies to running trials too
+- Optionally, every new member starts as a trial on its own (off by default; nobody already in the guild is affected)
+- Records start date, sponsor, status (trial/ready to review/approved/denied), and evaluation notes
+- Trials whose time is up show as "ready to review" and officers are told at login
 
 ### Officer Rank Configuration (Officer Only)
 - Configure which guild ranks are considered "officers" directly from the Settings tab
@@ -107,12 +120,20 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 - **Guild invite** via `/guildos recruit invite <Player>`
 - Full configuration UI in the Recruitment tab: message, interval, channels, welcome text, Discord link
 
+### Groups (the guild's own group finder)
+- **Activities as tiles**: this client's dungeons and raids, plus quests, world bosses, PvP and farming, each with its level range and how many groups and players it has right now
+- **I am looking**: list yourself for one or several activities, with the roles you play (tank, healer, damage), a note and for how long
+- **Form a group**: publish a group with its open spots by role; guildmates ask for a spot with one click, and only the leader hears it
+- **The queue**: the leader invites or declines from the group's card; the spot closes when the player joins, and with no spot left the listing comes down by itself
+- No server: it all travels on the guild's addon channel, expires on its own and reaches whoever logs in later. `/gos avail` opens it
+
 ### Tab System
 | Tab | Access |
 |---|---|
 | Roster | All members |
 | TMB Loot | All members |
 | Raids | All members |
+| Groups | All members |
 | Loot | All members |
 | Trials | Officers only |
 | Recruitment | Officers only |
@@ -129,6 +150,7 @@ Pressing **J** (or however you open the guild frame) opens Guild OS instead of t
 | `/guildos` or `/gos` | Toggle the roster window |
 | `/guildos scan` | Re-collect your local character data |
 | `/guildos sync` | Broadcast your data to the guild |
+| `/guildos avail` | Open the Groups tab; `/guildos avail tank <text>` lists you, `/guildos avail off` delists you |
 | `/guildos reset` | Wipe saved data and reload |
 
 

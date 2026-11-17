@@ -156,9 +156,12 @@ function Frame:GetRegions()
   for _, c in ipairs(self.children) do if isRegion(c) then out[#out + 1] = c end end
   return unpack(out)
 end
-function Frame:IsEnabled() return true end
+function Frame:IsEnabled() return self.disabled ~= true end
+function Frame:Enable() self.disabled = nil end
+function Frame:Disable() self.disabled = true end
+function Frame:SetFocus() self.focused = true end
 function Frame:IsMouseOver() return false end
-for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "SetBackdrop",
+for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "Raise", "SetBackdrop",
   "SetBackdropBorderColor", "SetTexture", "SetTexCoord", "SetBlendMode", "SetAlpha", "SetShadowOffset",
   "SetShadowColor", "SetJustifyH", "SetWordWrap", "SetTextInsets", "SetAutoFocus", "SetMaxLetters", "ClearFocus",
   "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetMultiLine", "SetHorizTile", "SetVertTile" }) do
@@ -214,6 +217,10 @@ end
 
 local NOW = 1757800000
 function GetServerTime() return NOW end
+-- Each read is a minute after the last, so no roster update here is held as part of a burst
+-- (GuildOS:Coalesce, issue #324; tools/coalesce.lua tests the holding).
+local clock = 0
+function GetTime() clock = clock + 60; return clock end
 time = function(t) if t then return os.time(t) end return NOW end
 date = os.date
 function GetBuildInfo() return "2.5.6", "1", "", 20506 end
@@ -232,6 +239,7 @@ function GuildInvite() end
 GuildFrame = newFrame("Frame", UIParent)
 GuildFrame:Hide()
 function ToggleGuildFrame() end
+function InCombatLockdown() return false end
 function HideUIPanel(frame) frame:Hide() end
 Minimap = newFrame("Frame", UIParent)
 Minimap.w, Minimap.h = 140, 140
@@ -292,6 +300,7 @@ GuildOS.Calendar = {
   GetComposition = function(_, e) return { yes = e.yes or 0 } end,
   MyRsvp = function(_, e) return e.mine end,
   GetEvents = function() return {} end,
+  CreatableKinds = function() return { "RAID" } end,   -- the kinds this rank creates (#308)
 }
 
 -- Panel builders record what they built and, where the real one does, expose
@@ -307,12 +316,13 @@ local function builder(name, withSub)
     end
   end
 end
-for _, n in ipairs({ "CreateRosterPanel", "CreateLootPanel", "CreateDKPPanel", "CreateWishlistGuildPanel",
+-- The Loot window took the Loot, DKP and Wishlist tabs' panels (issue #346), with sub-tabs.
+for _, n in ipairs({ "CreateRosterPanel",
   "CreateRecipesPanel", "CreateTrialsPanel", "CreateWebPanel", "CreateSettingsPanel", "CreateDashboardPanel" }) do
   builder(n)
 end
 for _, n in ipairs({ "CreateRaidHubPanel", "CreateGuildHub", "CreateAlliancePanel", "CreateRecruitmentPanel",
-  "CreateManagementPanel" }) do
+  "CreateManagementPanel", "CreateLootWindow" }) do
   builder(n, true)
 end
 
@@ -432,6 +442,14 @@ pressJ()
 check(f:IsShown(), "and the one after opens it again")
 pressJ()
 check(not f:IsShown(), "and closes it again")
+-- In combat the game will not let an addon hide Blizzard's frame: the key opens that one alone (#261).
+local inCombat = InCombatLockdown
+InCombatLockdown = function() return true end
+pressJ()
+check(GuildFrame:IsShown() and not f:IsShown(), "in combat the guild key opens Blizzard's frame alone, never both")
+pressJ()
+check(not GuildFrame:IsShown() and not f:IsShown(), "and the next press closes it")
+InCombatLockdown = inCombat
 local native
 for _, c in ipairs(GuildFrame.children) do if c.kind == "Button" and c.text == "Guild OS" then native = c end end
 check(native ~= nil, "Blizzard's guild frame carries a Guild OS button")
@@ -497,10 +515,25 @@ GuildOS.State.startup.failedFeatures.alliance = nil
 officer = false
 f:UpdateTabVisibility()
 printed = {}
-check(not UI:OpenWindow("loot") and said("Loot is officer-only."), "an officer-only tab refuses a member")
-check(not listed(f, "loot") and not listed(f, "management"), "a member sees no officer tabs")
+check(not UI:OpenWindow("management") and said("Leadership is officer-only."), "an officer-only tab refuses a member")
+check(not listed(f, "management") and not listed(f, "trials"), "a member sees no officer tabs")
+-- The Loot window is every member's since issue #346 (it was officer-only): a raider reads the rule.
+check(listed(f, "loot") and UI:IsFeatureAllowed(UI:GetFeature("loot")), "a member has the Loot tab")
 officer = true
 f:UpdateTabVisibility()
+
+-- A tab this client does not have says so, not that it is officer-only (issue #177).
+-- Every tab is retail's since issue #185, so one is marked `retail = false` for the check.
+GuildOS.Client.isRetail = true
+UI:GetFeature("dkp").retail = false
+printed = {}
+check(not UI:OpenWindow("dkp") and said("Not available on this client."), "a tab retail does not have says it is not on this client")
+UI:GetFeature("dkp").retail = nil
+-- The loot tab is retail's since issue #183, the DKP and wishlist tabs since issue #185.
+for _, id in ipairs({ "loot", "dkp", "wishlist" }) do
+  check(not UI:IsFeatureAbsent(UI:GetFeature(id)), "the " .. id .. " tab is on retail")
+end
+GuildOS.Client.isRetail = nil
 
 do
   local before = f.activeTab
@@ -633,10 +666,10 @@ do
   flush()
   officer = false
   fire(f, "OnEvent", "GROUP_ROSTER_UPDATE")
-  check(not listed(f, "loot"), "a group change re-checks the tabs")
+  check(not listed(f, "management"), "a group change re-checks the tabs")
   officer = true
   fire(f, "OnEvent", "PARTY_LOOT_METHOD_CHANGED")
-  check(listed(f, "loot"), "so does a loot-method change")
+  check(listed(f, "management"), "so does a loot-method change")
   roster = {}
   f:RefreshTitle()
   check(f.metaText.text == "Chama · \226\128\148", "while the roster loads, a dash instead of 0 online")
@@ -646,6 +679,15 @@ end
 
 do
   local function footShown(key) return f.footItems[key].shown end
+  -- Off Anniversary the game lets no addon invite (#256): no invite field, the rest as ever. What the
+  -- field does is Anniversary's, read below with the client switched to it.
+  local wasAnniversary = GuildOS.Client.isAnniversary
+  GuildOS.Client.isAnniversary = false
+  f:LayoutFooter(1000)
+  check(not footShown("invite") and footShown("search") and footShown("sync") and footShown("cores") and footShown("blizzard"),
+    "off Anniversary the footer has no invite field")
+  GuildOS.Client.isAnniversary = true
+  f:LayoutFooter(1000)
   check(footShown("search") and footShown("sync") and footShown("invite") and footShown("cores") and footShown("blizzard"),
     "at 1000px the footer holds every action and the invite field")
   check(point(f.footItems.search) == "LEFT,10,0", "starting 10px in")
@@ -685,6 +727,7 @@ do
   f:LayoutFooter(420)
   check(not footShown("cores") and footShown("search") and footShown("sync") and footShown("invite"),
     "then Core Sign-up; search, sync and invite stay longest")
+  GuildOS.Client.isAnniversary = wasAnniversary
   f:LayoutFooter(1000)
 end
 
@@ -846,21 +889,26 @@ check(A:OnlineCount() == 2 and not A:RosterLoading(), "online counts the roster"
 check(A:LastSync() == nil, "no sync, no time")
 
 GuildOS.TrialTracker = {
-  GetActiveTrials = function() return { { key = "t1" }, { key = "t2" }, { key = "t3" } } end,
-  -- Whole days, rounded down, like TrialTracker:GetDaysRemaining.
-  GetDaysRemaining = function(_, k) return ({ t1 = 0, t2 = 1, t3 = 5 })[k] end,
+  -- The trials ready to review, as TrialTracker:CountReady counts them (#249).
+  CountReady = function() return 1 end,
 }
 GuildOS.GuildManager = {
   DEFAULT_INACTIVE_DAYS = 30,
   GetInactiveMembers = function() return { 1, 2, 3, 4 } end,
   GetSuggestions = function() return { trialsReady = { 1 }, promoteCandidates = { 1, 2 } } end,
 }
-GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
+-- The scanner's reply inbox: n replies that arrived at NOW (issue #311).
+local function replies(n)
+  local list = {}
+  for i = 1, n do list[i] = { name = "R" .. i, msg = "hi", ts = NOW } end
+  return { GetInbox = function() return list end }
+end
+GuildOS.RecruitScanner = replies(2)
 do
   local needs = A:NeedsMe()
   check(#needs == 5, "an officer's five kinds of work")
-  check(needs[1].text == "1 trials expiring" and needs[1].urgent and needs[1].id == "trials",
-    "urgent first: a trial with under a day left, not one with a whole day")
+  check(needs[1].text == "1 trial(s) ready to review" and needs[1].urgent and needs[1].id == "trials",
+    "urgent first: the trials ready to review")
   check(needs[2].text == "You have not answered: Karazhan" and not needs[2].urgent and needs[2].id == "guild"
     and needs[2].sub == "calendar" and needs[2].filter == KARAZHAN, "an unanswered raid this week opens the calendar on its day")
   check(needs[3].text == "4 inactive over 30d" and needs[3].id == "management" and needs[3].sub == "inactive",
@@ -869,6 +917,21 @@ do
     "suggestions open on suggestions and count promotions: a ready trial is already the trials row")
   check(needs[5].text == "2 applicants waiting" and needs[5].id == "recruitment" and needs[5].sub == "scanner",
     "applicants open the scanner")
+end
+-- Opening the inbox reads it: what was there stops waiting, a reply after it waits (issue #311).
+do
+  GuildOS.db.recruitScanner = { inboxReadAt = NOW }
+  check(#A:NeedsMe() == 4, "replies the officer has seen are not applicants waiting")
+  local seen = replies(2)
+  local list = seen.GetInbox()
+  list[#list + 1] = { name = "Late", msg = "still recruiting?", ts = NOW + 5 }
+  GuildOS.RecruitScanner = seen
+  local needs = A:NeedsMe()
+  check(needs[5] and needs[5].text == "1 applicants waiting", "only a reply after the last look is waiting")
+  GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
+  GuildOS.db.recruitScanner = nil
+  check(#A:NeedsMe() == 4, "an entry with no time is not an applicant")
+  GuildOS.RecruitScanner = replies(2)
 end
 events[3].mine = { status = "yes" }
 check(#A:NeedsMe() == 4, "an answered raid needs nothing")
@@ -928,8 +991,8 @@ do
   check(#A:Activity(2) == 2 and A:Activity(2)[1].ts == feed[1].ts, "the limit keeps the newest")
   officer = false
   local mine = A:Activity()
-  check(mine[1].id == "roster" and mine[1].sub == nil and mine[6].id == "roster",
-    "a member's rows open the roster where the owner is officer-only")
+  check(mine[1].id == "roster" and mine[1].sub == nil and mine[6].id == "loot",
+    "a member's rows open the roster where the owner is officer-only, and loot the Loot window, every member's since #346")
   officer = true
 
   local saved = { GuildOS.db.rosterLog, GuildOS.db.lootHistory, GuildOS.db.milestones, GuildOS.db.raidTracker }
@@ -1002,7 +1065,7 @@ check(now.openCalendar.shown and now.openCalendar.variant == "primary", "and a p
 local needRows, feedRows = now.needsList.rows, now.feedList.rows
 check(visible(now.needsList) == 5 and now.needsList.h == 2 + 5 * 26 and needRows[1].h == 26, "five 26px rows of what needs me")
 check(needRows[1].mark.shown and needRows[1].mark.w == 6 and needRows[1].mark.h == 6
-  and needRows[1].mark.color[1] == C.danger.r and needRows[1].text.text == "1 trials expiring",
+  and needRows[1].mark.color[1] == C.danger.r and needRows[1].text.text == "1 trial(s) ready to review",
   "urgent rows carry the 6px danger mark")
 check(needRows[2].mark.color[1] == C.gold.r and needRows[2].mark.color[2] == C.gold.g, "the others the gold one")
 check(point(needRows[1]) == "TOPLEFT,1,-1" and point(needRows[2]) == "TOPLEFT,1,-27",
@@ -1052,7 +1115,7 @@ do
 end
 
 do
-  GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2, c = 3 } end }
+  GuildOS.RecruitScanner = replies(3)
   for _ = 1, 9 do nowTicker.fn() end
   check(needRows[5].text.text == "2 applicants waiting", "between refreshes the lists stay as they were")
   nowTicker.fn()
@@ -1062,7 +1125,7 @@ do
   check(now.clock.text == "4:11:38", "every tick moves the clock")
   NOW = NOW - 60
   check(now.events.GUILD_ROSTER_UPDATE, "Now listens for roster updates")
-  GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
+  GuildOS.RecruitScanner = replies(2)
   fire(now, "OnEvent", "GUILD_ROSTER_UPDATE")
   check(needRows[5].text.text == "2 applicants waiting", "and refreshes on one")
 end
@@ -1071,10 +1134,10 @@ fire(needRows[3], "OnClick")
 check(f.activeTab == "management" and selected[#selected] == "CreateManagementPanel:inactive",
   "a row opens its screen on its sub-tab")
 check(nowTicker.cancelled, "leaving Now stops its clock")
-GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2, c = 3, d = 4 } end }
+GuildOS.RecruitScanner = replies(4)
 fire(now, "OnEvent", "GUILD_ROSTER_UPDATE")
 check(needRows[5].text.text == "2 applicants waiting", "off screen, a roster update does not refresh Now")
-GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
+GuildOS.RecruitScanner = replies(2)
 UI:OpenWindow("home")
 fire(needRows[2], "OnClick")
 check(f.activeTab == "guild" and selected[#selected] == "CreateGuildHub:calendar:" .. KARAZHAN,
@@ -1199,6 +1262,50 @@ do
     "and drawn: that month's name and the day's heading")
   UI:OpenWindow("guild", "calendar")
   check(cal.selectedKey == 20260115, "opening the calendar without a day leaves the selection alone")
+
+  -- The event editor (#308): only the kinds this rank creates, and a dungeon from the game's list.
+  -- Calendar's own rules are tools/event-kinds.lua's.
+  local Cal = GuildOS.Calendar
+  Cal.KINDS, Cal.REPEATS = { "RAID", "DUNGEON", "PVP", "FARM", "SOCIAL", "OTHER" }, { "none" }
+  Cal.SizesFor = function(k, sizes) return k == "DUNGEON" and { 5 } or sizes end
+  Cal.KindLabel = function(_, k) return k end
+  Cal.MayCreateKind = function(_, k) return k == "DUNGEON" or k == "SOCIAL" end
+  Cal.CreatableKinds = function() return { "DUNGEON", "SOCIAL" } end
+  Cal.DungeonChoices = function() return { "Ruins of Lordaeron", "Scholomance" } end
+  tinsert = tinsert or table.insert
+  fire(cal.newBtn, "OnClick")
+  local ed = _G.GuildOSEventEditor
+  check(ed and ed.shown, "New Event opens the editor")
+  local pills, picker, titleBox = {}, nil, nil
+  local isKind = {}
+  for _, k in ipairs(Cal.KINDS) do isKind[k] = true end
+  for _, c in ipairs(ed.children) do
+    if c.fs and isKind[c.kind] then pills[c.kind] = c end   -- a pill keeps its kind where the stub keeps its type
+    if c.label and c.label.text == "Pick a dungeon" then picker = c end
+    if c.kind == "EditBox" and (c.w == 332 or c.w == 222) then titleBox = titleBox or c end   -- the title, first
+  end
+  check(pills.RAID and pills.RAID.disabled and pills.DUNGEON and not pills.DUNGEON.disabled,
+    "a kind this rank does not create is there, and cannot be picked")
+  check(picker and picker.shown and titleBox and titleBox.w == 222,
+    "it starts on the first kind it creates, a dungeon, with the list beside the title")
+  fire(picker, "OnClick")
+  local list
+  for _, c in ipairs(ed.children) do
+    if c ~= picker and c.children and #c.children == 3 and c.strata == "DIALOG" then list = c end
+  end
+  check(list and list.shown, "the list opens beside the editor")
+  local rows = {}
+  for _, b in ipairs(list.children) do if b.label then rows[#rows + 1] = b end end
+  check(#rows == 3 and rows[1].label.text == "Ruins of Lordaeron" and rows[3].label.text == "Other (type a name)",
+    "the game's dungeons, then Other")
+  fire(rows[2], "OnClick")
+  check(titleBox.text == "Scholomance" and not list.shown, "a pick is the title")
+  fire(picker, "OnClick")
+  fire(rows[3], "OnClick")
+  check(titleBox.text == "" and titleBox.focused, "Other clears a picked name and asks for one")
+  fire(pills.SOCIAL, "OnClick")
+  check(not picker.shown and titleBox.w == 332, "another kind has no list")
+  ed:Hide()
   win:Hide()
 end
 

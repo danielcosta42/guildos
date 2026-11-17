@@ -52,9 +52,12 @@ end
 ----------------------------------------------------------------------
 -- Roster / rank lookups
 ----------------------------------------------------------------------
--- Guild roster index for a short or full player name (realm-stripped match).
+-- Guild roster index for a short or full player name (realm-stripped match). On retail a guild
+-- spans connected realms and namesakes share it: the whole name wins, a short one only when it is
+-- the only one (Compat.FindGuildRosterIndex; issue #184).
 function GuildManager:GetRosterIndex(name)
     if not name or name == "" then return nil end
+    if GuildOS.Client.isRetail then return (GuildOS.Compat.FindGuildRosterIndex(name)) end
     local short = name:match("^([^-]+)") or name
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
@@ -231,11 +234,10 @@ end
 function GuildManager:GetSuggestions()
     local trialsReady, promoteCandidates = {}, {}
 
-    -- Trials whose duration has elapsed → officer should approve / deny.
+    -- Trials ready to review (their end, from the guild's length, has passed) → officer should approve / deny.
     if GuildOS.TrialTracker then
         for _, t in ipairs(GuildOS.TrialTracker:GetActiveTrials()) do
-            local daysRem = GuildOS.TrialTracker:GetDaysRemaining(t.key)
-            if daysRem ~= nil and daysRem <= 0 then
+            if GuildOS.TrialTracker:IsReady(t.data) then
                 local progress = GuildOS.TrialTracker:GetProgress(t.key)
                 local att = GuildOS.RaidTracker and GuildOS.RaidTracker:GetAttendance25ManPercent(t.key) or 0
                 local short = t.key:match("^([^-]+)") or t.key

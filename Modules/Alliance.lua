@@ -48,6 +48,13 @@ local function shortName(name)
     return (Ambiguate and Ambiguate(name or "", "short")) or name
 end
 
+-- A spec as the reader says it: on retail by its id, in this client's language, the sender's tree
+-- name otherwise (SpecChecker:SpecName; issue #184).
+local function specLabel(spec)
+    if GuildOS.SpecChecker then return GuildOS.SpecChecker:SpecName(spec) end
+    return spec.tree
+end
+
 ----------------------------------------------------------------------
 -- Pure helpers. Everything below this line is deterministic and pinned by
 -- /gos selftest, because several of these MUST agree across clients.
@@ -458,8 +465,23 @@ end
 ----------------------------------------------------------------------
 -- Live state
 ----------------------------------------------------------------------
+-- The pact. The alliance code the guild's officers saved (Modules/AllianceLink.lua,
+-- issue #348) comes first: every member holds it, nobody has to send it across
+-- guilds. Without one, the pact made by invitation between ambassadors.
 function Alliance:Get()
+    local link = GuildOS.AllianceLink
+    local fromInfo = link and GuildOS.db and link:Pact()
+    if fromInfo then
+        return fromInfo
+    end
     return (GuildOS.db and GuildOS.db.alliance) or nil
+end
+
+-- Is the pact in force the alliance code? Then it changes only in Alliance >
+-- Setup, and the ops that build a pact by whisper do nothing.
+function Alliance.InLink()
+    local link = GuildOS.AllianceLink
+    return (link and GuildOS.db and link:Active()) and true or false
 end
 
 function Alliance:MyGuildName()
@@ -511,6 +533,39 @@ function Alliance:GuildOfSender(sender, pact)
         end
     end
     return nil
+end
+
+-- Pure. The guild a data op from `sender` speaks for under the alliance
+-- code, or nil: the guild it names must be in the pact, not ours, not
+-- blocked, and the proof must be the one the key makes for that sender.
+function Alliance.VerifyProof(pact, claimed, proof, sender, myGuild)
+    if type(pact) ~= "table" or type(pact.guilds) ~= "table" or type(claimed) ~= "string" then
+        return nil
+    end
+    if claimed == myGuild or not pact.guilds[claimed] or (pact.blocked and pact.blocked[claimed]) then
+        return nil
+    end
+    if type(proof) ~= "string" or proof ~= GuildOS.AllianceLink.Proof(pact.key, sender) then
+        return nil
+    end
+    return claimed
+end
+
+-- The member guild a character is on the synced roster of, or nil. Never our
+-- own guild, and never a guild that left the pact. Only the data ops take it
+-- (see OnMessage): the pact's own ops stay with the ambassadors.
+function Alliance:GuildOfRosterMember(name)
+    local sync = GuildOS.AllianceSync
+    local short = shortName(name or ""):lower()
+    if not sync or not sync.MemberIndex or short == "" then
+        return nil
+    end
+    local hit = sync:MemberIndex()[short]
+    local guild = hit and hit.guild
+    if not guild or guild == self:MyGuildName() or not self:IsMemberGuild(guild) then
+        return nil
+    end
+    return guild
 end
 
 -- Every online guildmate we know runs Guild OS, as "Name-Realm" keys. This is
@@ -591,7 +646,7 @@ function Alliance:MemberInfo(name)
         guild       = hit.guild,
         class       = row.c,
         level       = row.l,
-        spec        = row.s,
+        spec        = specLabel({ specID = tonumber(row.si), tree = row.s }),
         professions = row.p,
         attunements = row.a,
         main        = row.m,
@@ -599,9 +654,11 @@ function Alliance:MemberInfo(name)
 end
 
 -- A player of `guildName` we have positive evidence is online RIGHT NOW, so a
--- whisper does not print "No player named X is currently playing" to the user.
--- Evidence comes from the realm-wide presence mesh, where Guild OS clients in an
--- alliance advertise their guild (see Mesh:BuildCaps).
+-- whisper is not spent on somebody gone. Evidence comes from the realm-wide
+-- presence mesh, where Guild OS clients in an alliance advertise their guild
+-- (see Mesh:BuildCaps). It is up to ChehulNet.PEER_TTL old: whoever logged
+-- off since still gets the whisper, and Alliance:Send hides the "No player
+-- named" line that answers it.
 function Alliance:PeerTarget(guildName)
     if not guildName or guildName == "" then
         return nil
@@ -622,17 +679,30 @@ function Alliance:PeerTarget(guildName)
 end
 
 ----------------------------------------------------------------------
--- Sending
+-- Sending. Every op of the alliance leaves here, so here is where its target is
+-- noted: somebody who logged off a moment ago, which presence cannot rule out,
+-- costs the user no "No player named" line in the chat (issue #326).
 ----------------------------------------------------------------------
 function Alliance:Send(op, tbl, target)
     local mesh = _G.ChehulMesh
     if not mesh or not target or target == "" then
         return false
     end
+    -- Under the alliance code nobody is on a list of names, so every
+    -- op says which guild it speaks for and proves it read the key (issue #348).
+    local pact = self:Get()
+    if pact and pact.source == "link" and type(tbl) == "table" then
+        local signed = {}
+        for k, v in pairs(tbl) do signed[k] = v end
+        signed._g = self:MyGuildName()
+        signed._k = GuildOS.AllianceLink.Proof(pact.key, GuildOS.Compat.PlayerName())
+        tbl = signed
+    end
     local blob = Alliance.Encode(tbl)
     if not blob then
         return false
     end
+    GuildOS:NoteWhisper(target)
     return mesh:Whisper(self.PREFIX, self.PROTO .. "|" .. op .. "|" .. blob, target) and true or false
 end
 
@@ -685,6 +755,9 @@ end
 -- Officer actions
 ----------------------------------------------------------------------
 function Alliance:Create(tag, name)
+    if Alliance.InLink() then
+        return false, L["This alliance is set in Alliance > Setup. Change it there."]
+    end
     if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
@@ -717,6 +790,9 @@ function Alliance:Create(tag, name)
 end
 
 function Alliance:Invite(officerName)
+    if Alliance.InLink() then
+        return false, L["This alliance is set in Alliance > Setup. Change it there."]
+    end
     if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
@@ -753,6 +829,9 @@ function Alliance:Invite(officerName)
 end
 
 function Alliance:Leave()
+    if Alliance.InLink() then
+        return false, L["This alliance is set in Alliance > Setup. Change it there."]
+    end
     local pact = self:Get()
     if not pact then
         return false, L["This guild is not in an alliance yet."]
@@ -783,6 +862,9 @@ function Alliance:Leave()
 end
 
 function Alliance:RemoveGuild(guildName)
+    if Alliance.InLink() then
+        return false, L["This alliance is set in Alliance > Setup. Change it there."]
+    end
     local pact = self:Get()
     if not pact then
         return false, L["This guild is not in an alliance yet."]
@@ -876,6 +958,19 @@ function Alliance:OnMessage(payload, sender, dist)
         return
     end
 
+    -- Under the alliance code (issue #348) nothing builds or changes the pact by
+    -- whisper, and a data op is believed for the guild it names only with the
+    -- proof made from the key and the sender's own name.
+    local pact = self:Get()
+    if pact and pact.source == "link" then
+        local fn = Alliance.ops[op]
+        local guild = Alliance.VerifyProof(pact, data._g, data._k, sender, self:MyGuildName())
+        if fn and guild then
+            GuildOS:SafeCall(fn, data, sender, guild)
+        end
+        return
+    end
+
     -- INV and ACK are the two ops that CANNOT be gated on pact membership: an
     -- invite arrives before any pact exists, and the accepting guild is by
     -- definition not in our pact yet. Their authority comes from a human
@@ -900,6 +995,14 @@ function Alliance:OnMessage(payload, sender, dist)
     end
 
     local senderGuild = self:GuildOfSender(sender)
+    -- The pact itself (PACT, LEAVE, EJECT) is the ambassadors' alone. The data
+    -- ops are sent by the bridge, which is anybody online, so for those a name on
+    -- a member guild's synced roster speaks for that guild too: until now a
+    -- HEAD from a bridge that was not an ambassador was dropped here, and the
+    -- guilds only synced while ambassadors happened to be both ends (issue #344).
+    if not senderGuild and Alliance.ops[op] then
+        senderGuild = self:GuildOfRosterMember(sender)
+    end
     if not senderGuild or self:IsBlocked(senderGuild) then
         return
     end
@@ -961,7 +1064,7 @@ function Alliance:_OnInvite(raw, sender)
         return
     end
 
-    StaticPopup_Show("GUILDOS_ALLY_INVITE",
+    GuildOS:ShowDialog("GUILDOS_ALLY_INVITE",
         string.format(L["%s of %s invites your guild into the alliance %s."],
             short, theirGuild, pact.name or pact.tag),
         nil, { pact = pact, sender = sender })
@@ -1145,6 +1248,9 @@ function Alliance:_MyEntry()
 end
 
 function Alliance:AddAmbassador(name)
+    if Alliance.InLink() then
+        return false, L["This alliance is set in Alliance > Setup. Change it there."]
+    end
     local entry = self:_MyEntry()
     if not entry then
         return false, L["This guild is not in an alliance yet."]
@@ -1174,6 +1280,9 @@ function Alliance:AddAmbassador(name)
 end
 
 function Alliance:RemoveAmbassador(name)
+    if Alliance.InLink() then
+        return false, L["This alliance is set in Alliance > Setup. Change it there."]
+    end
     local entry = self:_MyEntry()
     if not entry then
         return false, L["This guild is not in an alliance yet."]
@@ -1198,6 +1307,9 @@ function Alliance:RemoveAmbassador(name)
 end
 
 function Alliance:ClaimAmbassador()
+    if Alliance.InLink() then
+        return false, L["This alliance is set in Alliance > Setup. Change it there."]
+    end
     local entry = self:_MyEntry()
     if not entry then
         return false, L["This guild is not in an alliance yet."]
@@ -1277,7 +1389,7 @@ function Alliance:SpeakerInfo(name)
             guild       = myGuild,
             class       = m.class,
             level       = m.level,
-            spec        = type(m.spec) == "table" and m.spec.tree or nil,
+            spec        = type(m.spec) == "table" and specLabel(m.spec) or nil,
             professions = profs,
             attunements = att,
             main        = mainKey and (mainKey:match("^([^-]+)") or mainKey) or nil,
@@ -1417,6 +1529,10 @@ function Alliance:CanAdminister()
     if not pact or not GuildOS:IsOfficer() then
         return false
     end
+    -- Under the alliance code there are no ambassadors: the guild's officers speak for it.
+    if pact.source == "link" then
+        return true
+    end
     return Alliance.IsAmbassador(pact, self:MyGuildName(), GuildOS.Compat.PlayerName())
 end
 
@@ -1446,6 +1562,9 @@ end
 -- found. Still ends in the normal human-approved invite flow.
 ----------------------------------------------------------------------
 function Alliance:RequestJoin(tag, officerName)
+    if Alliance.InLink() then
+        return false, L["This alliance is set in Alliance > Setup. Change it there."]
+    end
     if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
@@ -1500,6 +1619,9 @@ end
 -- false, reason, "needContact" when nobody from that alliance is visible, so
 -- the UI can ask for a name only then instead of always.
 function Alliance:JoinWithToken(token, contactName)
+    if Alliance.InLink() then
+        return false, L["This alliance is set in Alliance > Setup. Change it there."]
+    end
     if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
@@ -1538,6 +1660,9 @@ function Alliance:JoinWithToken(token, contactName)
 end
 
 function Alliance:JoinWithCode(tag, code, contactName)
+    if Alliance.InLink() then
+        return false, L["This alliance is set in Alliance > Setup. Change it there."]
+    end
     if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
@@ -1625,6 +1750,9 @@ function Alliance:JoinToken()
 end
 
 function Alliance:RegenerateCode()
+    if Alliance.InLink() then
+        return false, L["This alliance is set in Alliance > Setup. Change it there."]
+    end
     local pact = self:Get()
     if not pact then
         return false, L["This guild is not in an alliance yet."]
@@ -1657,7 +1785,7 @@ function Alliance:_OnJoinRequest(data, sender)
         return
     end
     self._reqPrompts[shortName(sender):lower()] = now
-    StaticPopup_Show("GUILDOS_ALLY_REQUEST",
+    GuildOS:ShowDialog("GUILDOS_ALLY_REQUEST",
         string.format(L["%s of %s asks to join the alliance. Invite them?"],
             shortName(sender), guild),
         nil, { sender = sender })
@@ -1993,6 +2121,17 @@ function Alliance:HandleCommand(args)
         if ok then
             GuildOS:Print(string.format(L["No longer ignoring %s."], rest))
         end
+    elseif verb == "gchat" then
+        -- The allied guilds' /g (issue #344): on, off, or how it is doing.
+        local chat, agc = GuildOS.AllianceChat, GuildOS.AllianceLink
+        if not chat or not agc then return end
+        local sub = rest:lower()
+        if sub == "on" or sub == "off" then
+            chat:Prefs().guildBridge = (sub == "on")
+        end
+        GuildOS:Print((chat:Prefs().guildBridge and L["Allied /g: shown"] or L["Allied /g: hidden"])
+            .. " · " .. agc:StatusLine())
+        return
     else
         return GuildOS:Print(L["Usage: /gos ally [create|invite|code|join|request|amb|leave|kick|block|unblock]"])
     end
@@ -2006,10 +2145,10 @@ end
 -- Lifecycle
 ----------------------------------------------------------------------
 local function registerPopups()
-    if StaticPopupDialogs["GUILDOS_ALLY_INVITE"] then
+    if GuildOS.Dialogs["GUILDOS_ALLY_INVITE"] then
         return
     end
-    StaticPopupDialogs["GUILDOS_ALLY_INVITE"] = {
+    GuildOS.Dialogs["GUILDOS_ALLY_INVITE"] = {
         text = "%s",
         button1 = L["Accept"],
         button2 = L["Decline"],
@@ -2024,7 +2163,7 @@ local function registerPopups()
         hideOnEscape = true,
         preferredIndex = 3,
     }
-    StaticPopupDialogs["GUILDOS_ALLY_REQUEST"] = {
+    GuildOS.Dialogs["GUILDOS_ALLY_REQUEST"] = {
         text = "%s",
         button1 = L["Invite"],
         button2 = L["Decline"],

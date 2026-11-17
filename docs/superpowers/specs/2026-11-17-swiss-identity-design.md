@@ -23,7 +23,7 @@ Everything lands in `Core/Data.lua`, `UI/Helpers.lua` and the window's title bar
 | 4 | `lineHi` | #3a3646 (1.63:1 on bg) | #6f6878 (3.56:1), the control border at rest |
 | 5 | `danger` | #cf5b52 | #ef7b72 (7.03:1 on bg) |
 | 6 | New tokens | | `warn` #e89a5a, `goldHover` #e3b968, `goldActive` #c4943f |
-| 7 | Removed | `info`, `blue`, `shadow` | nothing reads them |
+| 7 | Removed | `shadow` | nothing reads it; `info` and its alias `blue` stay, the tank role uses them |
 | 8 | Primary button | gold fill, additive glow, label drops 1px | flat gold, `goldHover`, `goldActive`; Sans Medium 12 |
 | 9 | Secondary button, checkbox | `line` border, `lineHi` on hover | `lineHi` at rest, `label` on hover |
 | 10 | Popup | 12px drop shadow | no shadow; `StylePopup` sets the `lineHi` border, the caller keeps the background |

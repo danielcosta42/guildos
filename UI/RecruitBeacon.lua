@@ -91,7 +91,7 @@ end
 local ROLES   = { "TANK", "HEALER", "DPS" }
 local CLASSES = GuildOS.Client.classes   -- thirteen on retail
 local FOCUS   = { "RAID", "PVP", "CASUAL", "LEVELING", "SOCIAL", "RP" }
-local LANGS   = { "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW" }
+local LANGS   = { "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW", "itIT" }
 local NEEDS   = {}
 for _, t in ipairs(ROLES)   do NEEDS[#NEEDS + 1] = t end
 for _, t in ipairs(CLASSES) do NEEDS[#NEEDS + 1] = t end

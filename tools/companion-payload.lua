@@ -12,6 +12,10 @@
 --
 -- Regenerate the fixture whenever the payload changes shape, and expect the
 -- web test to need updating with it — that is the point.
+--
+-- With PACK set it prints the character's own pack instead (the site's specs/070):
+--
+--   lua5.1 -e 'ADDON="."; PACK=true' tools/companion-payload.lua > /tmp/addon-pack.txt
 ADDON = ADDON or "."
 package.path = ADDON .. "/?.lua;" .. package.path
 
@@ -28,15 +32,18 @@ function GetGuildRosterInfo(i)
   if not r then return nil end
   return r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11]
 end
-function GetGuildInfo() return "Raid Guild" end
+function GetGuildInfo() return "Raid Guild", "Guild Master", 0 end
 -- The module hangs a PLAYER_LOGOUT frame off the file scope so the payload
--- lands in SavedVariables for the desktop companion. Nothing here fires it;
--- the stub only has to let the file load.
+-- lands in SavedVariables for the desktop companion. The stub keeps the handler,
+-- so the pack's checks below fire the real one.
+local logoutHandler
 function CreateFrame()
-  return { RegisterEvent = function() end, SetScript = function() end }
+  return { RegisterEvent = function() end, SetScript = function(_, _, fn) logoutHandler = fn end }
 end
 function GetRealmName() return "Firemaw" end
 function UnitName() return "Chehul" end
+function UnitClass() return "Hunter", "HUNTER" end
+function UnitLevel() return 70 end
 function time() return 1754400000 end
 function GetServerTime() return 1754400000 end
 
@@ -143,8 +150,12 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")  -- the real member-key rule (issue #8), not a copy of it
 function GuildOS:GetSetting(key) return self.db.settings[key] end
 function GuildOS:SetSetting(key, v) self.db.settings[key] = v end
+-- Core/Core.lua's answer; the pack's checks below say when it is no.
+local onGuildDB = true
+function GuildOS:IsOnGuildDB() return onGuildDB end
 
-GuildOS.GearAudit = { GetEnchantableSlots = function() return { 1, 3, 5, 7, 8, 9, 10, 15, 16 } end }
+-- The real audit: the export asks it which slot needs an enchant, as the member sheet does (issue #182).
+dofile(ADDON .. "/Modules/GearAudit.lua")
 
 GuildOS.RaidTracker = {
   GetAttendance25ManPercent = function(_, key)
@@ -219,6 +230,49 @@ GuildOS.Client.isAnniversary = false
 assert(GuildOS.Companion:BuildPayload().game == "FOREVER", "a Forever client did not say so")
 GuildOS.Client.isAnniversary = true
 
+-- v12 (issue #213): the guild's tabard as the game draws it, never on Anniversary, in the shape the
+-- site reads: colours as whole bytes, the emblem's style and the six files.
+GetGuildLogoInfo = function() return 33.2, 220, 255.4, 0, 0, 0, 255, 254.6, 1, 0, 42 end
+GetGuildTabardFiles = function() return 1, 2, 3, 4, 5, 6 end
+assert(GuildOS.Companion:BuildPayload().tabard == nil, "no tabard on Anniversary")
+GuildOS.Client.isAnniversary = false
+local tabardJson = GuildOS.Companion.EncodeJson(GuildOS.Companion:BuildPayload().tabard)
+assert(tabardJson == '{"background":[33,220,255],"border":[0,0,0],"emblem":[255,255,1],"emblemStyle":42,"files":[1,2,3,4,5,6]}',
+  "the tabard's shape: " .. tabardJson)
+GuildOS.Client.isAnniversary = true
+GetGuildLogoInfo, GetGuildTabardFiles = nil, nil
+
+-- Nothing new costs the upload (issue #232): a field that fails is left out and said, the roster still
+-- goes up; and what is switched off is not even asked.
+do
+  local recorded, asked = {}, 0
+  local on = { journal = true, founding = true }
+  GuildOS.RecordError = function(_, msg) recorded[#recorded + 1] = msg end
+  GuildOS.IsFeatureEnabled = function(_, id) return on[id] == true end
+  local boom = function() asked = asked + 1; error("no such thing on this client") end
+  GuildOS.Journal = { ForExport = boom, IsOptedOut = function() return false end }
+  GuildOS.Founding = { ForExport = boom, JoinedAtOf = function() return nil end }
+  local tabard = GuildOS.Compat.GuildTabard
+  GuildOS.Compat.GuildTabard = boom
+  GuildOS.Client.isAnniversary = false
+  local payload = assert(GuildOS.Companion:BuildPayload(), "the upload went with its new fields")
+  assert(#payload.members > 0, "the roster still goes up")
+  assert(payload.journal == nil and payload.founding == nil and payload.tabard == nil, "what failed is left out")
+  assert(#recorded == 3, "and each one is in /guildos errors: " .. #recorded)
+  GuildOS.Compat.GuildTabard = function() return nil end
+  on.journal, on.founding, asked = false, false, 0
+  payload = assert(GuildOS.Companion:BuildPayload())
+  assert(asked == 0 and payload.journal == nil and payload.founding == nil, "switched off: not asked, and absent")
+  on.journal, on.founding = true, true
+  GuildOS.Journal = { ForExport = function() return { { id = "x" } } end, IsOptedOut = function() return false end }
+  GuildOS.Founding = { ForExport = function() return { revision = 1 } end, JoinedAtOf = function() return nil end }
+  payload = assert(GuildOS.Companion:BuildPayload())
+  assert(#payload.journal == 1 and payload.founding.revision == 1, "switched on: they go")
+  GuildOS.Compat.GuildTabard = tabard
+  GuildOS.Journal, GuildOS.Founding, GuildOS.IsFeatureEnabled, GuildOS.RecordError = nil, nil, nil, nil
+  GuildOS.Client.isAnniversary = true
+end
+
 -- v7 (issue #35): on Forever each member carries the profession model's lines by skill-line
 -- ID -- rank, max, specialization and the recipes they know, or only the line for a member
 -- known from the guild roster. Absent where there is no model, or no record of the member.
@@ -289,6 +343,86 @@ assert(GuildOS.Companion:BuildPayload().sessions[1].size == 20, "a night's size 
 GuildOS.db.raidTracker.sessions[NIGHT].size = nil
 GuildOS.Client.isAnniversary = true
 
+-- v10 (issue #182) is retail's: the region, the guild's home realm and each session's difficulty
+-- (tools/retail-site.lua). The other games send what they sent at v9: no region, no difficulty.
+assert(anniversary.v >= 13, "the payload that carries joinRequests is v13")
+-- v13 (guildos#245): what the guild holds of the people who asked to join; absent without any (tools/join-requests.lua
+-- runs the rest of it), and a bug in it is left out of the export alone.
+assert(anniversary.joinRequests == nil, "no joinRequests without the module, and none without requests")
+GuildOS.JoinRequests = { ForExport = function() return { { id = "abc123DEF4", character = "Marta Vilar", at = NOW, status = "open" } } end }
+assert(GuildOS.Companion:BuildPayload().joinRequests[1].id == "abc123DEF4", "joinRequests rides the export")
+GuildOS.JoinRequests = { ForExport = function() error("boom") end }
+GuildOS.RecordError = function() end
+local survived = GuildOS.Companion:BuildPayload()
+GuildOS.RecordError = nil
+assert(survived.joinRequests == nil and survived.members and survived.v == 16, "a failing joinRequests is left out and the rest goes")
+GuildOS.JoinRequests = nil
+
+-- v14 (issue #251, the site's #392): a linked alt carries `main`, its main's key exactly as altLinks holds it, the
+-- same form as its own `key`. A main and anybody nobody linked carry no `main` key at all: not false, not "".
+assert(anniversary.v == 16, "the payload is v16")
+
+-- v16 (issue #313, the site's #495): the guild's officer threshold rides the export with the officers' stamp,
+-- and only once somebody in the guild chose it. Without the stamp the client holds its own default, and
+-- saying it would put a guess over a real choice on the site.
+do
+  local s = GuildOS.db.settings
+  local max, at, NOW = s.officerMaxRank, s.officerMaxRankAt, GetServerTime()
+  s.officerMaxRank, s.officerMaxRankAt = 2, nil
+  assert(GuildOS.Companion:BuildPayload().officerRanks == nil, "no stamp, no officerRanks: the site keeps its default")
+  s.officerMaxRankAt = NOW - 60
+  local r = GuildOS.Companion:BuildPayload().officerRanks
+  assert(r and r.max == 2 and r.at == NOW - 60, "the chosen threshold goes with its stamp")
+  assert(GuildOS.Companion.EncodeJson(GuildOS.Companion:BuildPayload()):find('"officerRanks":{', 1, true), "and reaches the wire")
+  s.officerMaxRank = 12
+  assert(GuildOS.Companion:BuildPayload().officerRanks == nil, "a rank the game has not (0..9) is never sent")
+  s.officerMaxRank, s.officerMaxRankAt = max, at
+end
+do
+  local function lines()
+    local by, json = {}, {}
+    for _, m in ipairs(GuildOS.Companion:BuildPayload().members) do
+      by[m.key], json[m.key] = m, GuildOS.Companion.EncodeJson(m)
+    end
+    return by, json
+  end
+  local function noMain(by, json, key) return by[key].main == nil and not json[key]:find('"main"', 1, true) end
+
+  local by, json = lines()
+  for key in pairs(by) do assert(noMain(by, json, key), "no altLinks at all: no main for " .. key) end
+
+  GuildOS.db.altLinks = { ["Fulano-Firemaw"] = "Chehul-Firemaw" }
+  by, json = lines()
+  assert(by["Fulano-Firemaw"].main == "Chehul-Firemaw", "a linked alt carries its main's key")
+  assert(json["Fulano-Firemaw"]:find('"main":"Chehul-Firemaw"', 1, true), "as a plain string on the wire")
+  assert(noMain(by, json, "Chehul-Firemaw"), "the main itself carries no main")
+  assert(noMain(by, json, "Semdados-Firemaw"), "a member who is nobody's alt carries no main")
+
+  -- What links nobody: a link to itself, an empty one, one that is not a key.
+  GuildOS.db.altLinks = { ["Fulano-Firemaw"] = "Fulano-Firemaw", ["Semdados-Firemaw"] = "", ["Chehul-Firemaw"] = 7 }
+  by, json = lines()
+  for key in pairs(by) do assert(noMain(by, json, key), "a link that links nobody sends no main for " .. key) end
+  GuildOS.db.altLinks = nil
+end
+-- v12 (issue #205) starts the WoW: Forever guild feed: no journal outside Forever (tools/journal.lua).
+assert(anniversary.journal == nil, "no journal on TBC Anniversary")
+
+-- v11 (issue #203): the site reads "not listed" as "left the guild" only from a whole roster.
+assert(anniversary.rosterComplete == true, "a whole roster says so")
+-- "Show Offline Members" off is still the whole guild when every row answers: retail 12.1.5 gave
+-- all 943 rows of a guild with 10 online.
+GetGuildRosterShowOffline = function() return false end
+assert(GuildOS.Companion:BuildPayload().rosterComplete == true, "the window's option is not the roster")
+local fulano = table.remove(ROSTER, 2)
+local n = #ROSTER + 1
+GetNumGuildMembers = function() return n end
+assert(GuildOS.Companion:BuildPayload().rosterComplete == nil, "a roster with a row missing is not whole")
+GetNumGuildMembers = function() return #ROSTER end
+table.insert(ROSTER, 2, fulano)
+GetGuildRosterShowOffline = nil
+assert(anniversary.region == nil and anniversary.sessions[1].difficulty == nil and anniversary.realm == "Firemaw",
+  "Anniversary sends no region and no difficulty, and its realm is the client's")
+
 for _, m in ipairs(anniversary.members) do
   if m.key == "Chehul-Firemaw" then
     assert(#m.professions == 2 and m.professions[1].name == "Leatherworking" and m.professions[2].name == "Skinning",
@@ -296,10 +430,432 @@ for _, m in ipairs(anniversary.members) do
   end
 end
 
+-- The pack (the site's specs/070). The switch is off by default because the export carries the whole
+-- guild, so a member who installs the app would send nothing. With it off the addon writes only its own
+-- character. One GOSCOMP1: string per file, whichever it is: the app lifts the first match, and an
+-- officer's upload must never pick the pack.
+local packText
+do
+  local Companion, LD, WIRE = GuildOS.Companion, LibStub("LibDeflate"), "GOSCOMP1:"
+  local PLAYER, NOW = "Chehul-Firemaw", 1754400000
+
+  local function opened(text)
+    assert(type(text) == "string" and text:sub(1, #WIRE) == WIRE, "not a GOSCOMP1: string: " .. tostring(text))
+    local json = LD:DecompressDeflate(LD:DecodeForPrint(text:sub(#WIRE + 1)))
+    return assert(GuildOS.JsonDecode(json)), json
+  end
+  -- The app's own regex over everything that reaches the file.
+  local function onDisk(t, found)
+    found = found or {}
+    for _, v in pairs(t) do
+      if type(v) == "table" then
+        onDisk(v, found)
+      elseif type(v) == "string" then
+        for s in v:gmatch("GOSCOMP1:[a-zA-Z0-9()]+") do found[#found + 1] = s end
+      end
+    end
+    return found
+  end
+  local function logout() logoutHandler(nil, "PLAYER_LOGOUT") end
+  local function switch(on) GuildOS.db.settings.companion = on end
+
+  local saved = GuildOS.db.settings.companion
+  local mine = GuildOS.db.members[PLAYER]
+  GuildOSDB = { ["Raid Guild-Firemaw"] = GuildOS.db }
+
+  -- Off, in a guild: the pack, on the schedule and in the field the export uses.
+  switch(false)
+  logout()
+  local files = onDisk(GuildOSDB)
+  assert(#files == 1 and files[1] == GuildOSDB.__companion, "switch off: one string, in __companion: " .. #files)
+  assert(files[1] == files[1]:match("^GOSCOMP1:[a-zA-Z0-9()]+$"), "the app's regex lifts the whole string")
+  local pack, json = opened(files[1])
+  assert(pack.self == true and pack.fmt == "GOSCOMP1" and pack.v == 16 and pack.count == 1, "it says it is the pack")
+  assert(pack.guildKey == "Raid Guild-Firemaw" and pack.guildName == "Raid Guild" and pack.realm == "Firemaw"
+    and pack.game == "ANNIVERSARY", "it names the guild and the game, as the site's upload picks by them")
+  assert(pack.exportedBy == PLAYER and pack.exportedAt == NOW and pack.addonVersion == GuildOS.VERSION, "and who, when, which addon")
+  assert(#pack.members == 1 and pack.members[1].key == PLAYER and pack.members[1].lastUpdate == mine.lastUpdate,
+    "one line, mine, with the stamp the site's guard reads")
+  for _, field in ipairs({ "sessions", "deletedSessions", "attendanceRules", "journal", "tabard", "founding",
+                           "guildConfig", "rosterComplete", "region", "officerRanks" }) do
+    assert(pack[field] == nil and not json:find('"' .. field .. '"', 1, true), "the pack carries no " .. field)
+  end
+  -- `loot` is the one key it cannot leave out: the decoder (packages/goscomp's assertPayload) refuses a
+  -- payload with no list, and "same decoder as today" is the contract.
+  assert(json:find('"loot":[]', 1, true) and #pack.loot == 0, "an empty loot list, for the decoder: no loot")
+  -- Not "the guild publishes": the Web panel's "last written" and Activation's publish step read this.
+  assert(GuildOSDB.__companionAt == nil, "the pack does not stamp __companionAt")
+
+  -- The line is the export's own, byte for byte, not a copy of how it is built.
+  local line
+  for _, m in ipairs(Companion:BuildPayload().members) do
+    if m.key == PLAYER then line = Companion.EncodeJson(m) end
+  end
+  assert(line and json:find(line, 1, true), "the pack's line is the export's line")
+
+  -- v14: whose alt somebody is stays the officers' to say. The export says it of me, my own pack never does.
+  GuildOS.db.altLinks = { [PLAYER] = "Fulano-Firemaw" }
+  local exported
+  for _, m in ipairs(Companion:BuildPayload().members) do
+    if m.key == PLAYER then exported = m end
+  end
+  assert(exported and exported.main == "Fulano-Firemaw", "the export says whose alt I am")
+  logout()
+  local packed, packJson = opened(GuildOSDB.__companion)
+  assert(packed.self == true and packed.members[1].key == PLAYER, "the pack is mine")
+  assert(packed.members[1].main == nil and not packJson:find('"main"', 1, true), "and it carries no main")
+  GuildOS.db.altLinks = nil
+
+  -- The guild roster need not be loaded: a quick relog has none, and it is the person's own client.
+  local rosterSize = GetNumGuildMembers
+  GetNumGuildMembers = function() return 0 end
+  GuildOSDB.__companion = nil
+  logout()
+  assert(opened(GuildOSDB.__companion).members[1].key == PLAYER, "the pack needs no guild roster")
+  GetNumGuildMembers = rosterSize
+
+  -- Not in a guild: nothing written, and what was there stays.
+  local guildInfo = GetGuildInfo
+  local before = GuildOSDB.__companion
+  GetGuildInfo = function() return nil end
+  logout()
+  assert(GuildOSDB.__companion == before, "out of a guild the last string stays")
+  GuildOSDB.__companion = nil
+  logout()
+  assert(GuildOSDB.__companion == nil, "out of a guild nothing is written")
+  GetGuildInfo = guildInfo
+
+  -- A db that is not this guild's reads as "off" whatever the guild chose: at a cold login that never
+  -- resolved, or on a character who joined mid-session (#150). A pack there would replace an officer's export.
+  onGuildDB = false
+  GuildOSDB.__companion = "GOSCOMP1:anOfficersExport"
+  logout()
+  assert(GuildOSDB.__companion == "GOSCOMP1:anOfficersExport", "off the guild's db nothing is written")
+  onGuildDB = true
+  GuildOSDB.__companion = nil
+
+  -- A client that has not read itself yet has nothing to say.
+  GuildOS.db.members[PLAYER] = nil
+  logout()
+  assert(GuildOSDB.__companion == nil, "no record of me: no pack")
+  GuildOS.db.members[PLAYER] = { lastUpdate = 0, avgIlvl = 0 }
+  logout()
+  assert(GuildOSDB.__companion == nil, "a record nothing was read into: no pack")
+  GuildOS.db.members[PLAYER] = mine
+
+  -- Absent, not empty: a default that travels is a claim, and the site would write it.
+  local avgIlvl, gear, professions = mine.avgIlvl, mine.gear, mine.professions
+  mine.avgIlvl, mine.gear, mine.professions = 0, nil, nil
+  GetGuildInfo = function() return "Raid Guild" end
+  logout()
+  local m = opened(GuildOSDB.__companion).members[1]
+  assert(m.avgIlvl == nil, "a cold item cache sends no average, not a zero")
+  assert(m.gear == nil and m.enchants == nil and m.professions == nil, "what was not read is absent")
+  assert(m.rank == nil and m.rankIndex == nil, "a rank nobody gave is absent, not \"\" and 0, which reads Guild Master")
+  mine.avgIlvl, mine.gear, mine.professions = avgIlvl, gear, professions
+  GetGuildInfo = guildInfo
+
+  -- WoW: Forever: the key comes from Compat.PlayerName. UnitName gives the first name alone there, and a
+  -- key built on it is nobody's line on the site (issue #26).
+  local surnames = GuildOS.Client.has.surnames
+  UnitFullName = function() return "Chehul", "Costa" end
+  GuildOS.Client.isAnniversary, GuildOS.Client.has.surnames = false, true
+  GuildOS.db.members["Chehul Costa-Firemaw"] = mine
+  logout()
+  local forever = opened(GuildOSDB.__companion)
+  assert(forever.game == "FOREVER" and forever.members[1].key == "Chehul Costa-Firemaw"
+    and forever.members[1].name == "Chehul Costa" and forever.exportedBy == "Chehul Costa-Firemaw",
+    "on Forever the line is the whole name's: " .. forever.members[1].key)
+  assert(forever.founding == nil and forever.journal == nil and forever.tabard == nil, "and Forever's guild fields stay out")
+  GuildOS.db.members["Chehul Costa-Firemaw"] = nil
+  GuildOS.Client.isAnniversary, GuildOS.Client.has.surnames, UnitFullName = true, surnames, nil
+
+  -- On: the export replaces the pack, and the pack is gone.
+  switch(true)
+  logout()
+  files = onDisk(GuildOSDB)
+  local whole = opened(files[1])
+  assert(#files == 1 and whole.self == nil and #whole.members == #ROSTER and whole.rosterComplete == true,
+    "switch on: the whole export and no pack")
+  assert(GuildOSDB.__companionAt == NOW, "and it stamps when it was written, as it always has")
+  -- Off again: the pack replaces the export.
+  switch(false)
+  logout()
+  files = onDisk(GuildOSDB)
+  assert(#files == 1 and opened(files[1]).self == true and #opened(files[1]).members == 1, "switch off: the pack and no export")
+
+  -- On, and the export cannot be built: a pack left over from when it was off is not the good payload
+  -- the writer keeps, it is what an officer's upload must never pick.
+  local build = Companion.Build
+  local function boom() error("no such thing on this client") end
+  switch(true)
+  Companion.Build = boom
+  logout()
+  assert(#onDisk(GuildOSDB) == 0, "switch on, no export: the pack does not stay")
+  Companion.Build = build
+  logout()
+  local good = GuildOSDB.__companion
+  assert(opened(good).self == nil, "the export is back")
+  Companion.Build = boom
+  logout()
+  assert(GuildOSDB.__companion == good, "and a failed build still keeps a good export, as it always has")
+  Companion.Build = function() return nil, "nobody in the guild has shared anything yet" end
+  logout()
+  assert(GuildOSDB.__companion == good, "as does one with nothing to say")
+  Companion.Build = build
+
+  -- Wrapped: an error in the pack costs nothing, and the switch's path never reaches it.
+  switch(false)
+  logout()
+  before = GuildOSDB.__companion
+  local level = UnitLevel
+  UnitLevel = boom
+  assert(pcall(logout), "an error in the pack does not leave the handler")
+  assert(GuildOSDB.__companion == before, "and leaves the file as it was")
+  UnitLevel = level
+  local buildSelf, asked = Companion.BuildSelf, 0
+  Companion.BuildSelf = function() asked = asked + 1; error("no such thing on this client") end
+  switch(true)
+  logout()
+  assert(asked == 0 and opened(GuildOSDB.__companion).self == nil, "with the switch on the pack is not even asked")
+  Companion.BuildSelf = buildSelf
+
+  packText = assert(Companion:BuildSelf())
+  switch(saved)
+  GuildOSDB = nil
+end
+
+-- v15 (issue #295): the loot book, each set behind its module and its own pcall.
+do
+  local on = {}
+  local recorded = {}
+  GuildOS.IsFeatureEnabled = function(_, id) return on[id] == true end
+  GuildOS.RecordError = function(_, msg) recorded[#recorded + 1] = msg end
+  assert(GuildOS.Companion:BuildPayload().lootBook == nil, "every loot module off: no book at all")
+  on = { dkp = true, wishlist = true, loot = true }
+
+  GuildOS.Points = { KeyOf = function(_, name) return GuildOS:GetPlayerKey(name, GetRealmName()) end }
+  GuildOS.Wishlist, GuildOS.SoftRes = {}, {}
+  GuildOS.db.points = { mode = "dkp", standings = {
+    ["Fulano-Firemaw"] = { name = "Fulano", class = "PRIEST", current = 40, earned = 90, spent = 50 },
+  }, log = { { ts = 1754300000 }, { ts = 1754390000 } } }
+  GuildOS.db.cores = {
+    ["Core 2"] = { name = "Core 2", discordTag = "site-core-2", points = { mode = "epgp", standings = {
+      ["Chehul-Firemaw"] = { name = "Chehul", class = "HUNTER", current = 12, earned = 12, spent = 0 } }, log = {} },
+      lootMaster = { tmbList = { { player = "Chehul", item = "Dragonspine Trophy", priority = 1 } } } },
+  }
+  GuildOS.db.wishlists = { ["Chehul-Firemaw"] = { { itemId = 28830, order = 2 }, { itemId = 29434, order = 1, isOffspec = true } } }
+  GuildOS.db.guildWishlists = {
+    fulano = { name = "Fulano", class = "PRIEST", wishlist = { { itemId = 28823, order = 1 } } },
+    -- heard of me from another client: my own list wins
+    chehul = { name = "Chehul", class = "HUNTER", wishlist = { { itemId = 1, order = 1 } } },
+  }
+  GuildOS.db.lootPrios = { [28830] = { { name = "Fulano", order = 2 }, { name = "Chehul", order = 1 } } }
+  GuildOS.db.softRes = { items = { [28830] = { { name = "Fulano", class = "PRIEST", note = "", plusOnes = 1 } },
+    [29434] = { { name = "Chehul", class = "", note = "bis", plusOnes = 0, hard = true } } },
+    meta = { importedAt = 1754395000, source = "gargul", listId = "abc" } }
+
+  local book = GuildOS.Companion:BuildPayload().lootBook
+  assert(book.points.complete == true and #book.points.pools == 2, "points: the guild's pool and each core's")
+  local guild, core2 = book.points.pools[1], book.points.pools[2]
+  assert(guild.core == "" and guild.tag == nil and guild.at == 1754390000, "the guild's pool, stamped with its newest entry")
+  assert(guild.standings[1].key == "Fulano-Firemaw" and guild.standings[1].current == 40 and guild.standings[1].spent == 50, "standings travel whole")
+  assert(core2.core == "Core 2" and core2.tag == "site-core-2" and core2.mode == "epgp" and core2.at == 0, "a site core carries its tag; no entries, no stamp")
+  assert(book.wishlists.complete == false, "wishlists: only what this client heard, never complete")
+  assert(#book.wishlists.lists == 2, "one list per character")
+  local mine = book.wishlists.lists[1]
+  assert(mine.key == "Chehul-Firemaw" and #mine.items == 2 and mine.items[1].itemId == 29434 and mine.items[1].offspec == true,
+    "my own list over the one I heard of me, in its order")
+  assert(book.wishlists.lists[2].key == "Fulano-Firemaw" and book.wishlists.lists[2].items[1].itemId == 28823, "a guildmate's, by key")
+  assert(book.prios.complete and book.prios.items[1].itemId == 28830 and book.prios.items[1].order[1] == "Chehul", "priorities in their order")
+  assert(book.reserves.complete and book.reserves.at == 1754395000 and book.reserves.source == "gargul" and #book.reserves.items == 2, "the reserve import, stamped")
+  assert(book.reserves.items[2].hard == true and book.reserves.items[2].note == "bis" and book.reserves.items[1].note == nil, "hard reserves and notes; empty notes absent")
+  assert(book.tmb.pools[1].core == "Core 2" and book.tmb.pools[1].entries[1].item == "Dragonspine Trophy", "TMB lists, by core")
+
+  -- A module off: its set is absent, not empty. One that fails: absent, recorded, and the rest goes up.
+  on.wishlist = false
+  book = GuildOS.Companion:BuildPayload().lootBook
+  assert(book.wishlists == nil and book.prios == nil and book.points ~= nil, "wishlist off: no wishlists, no priorities")
+  on.wishlist = true
+  local reserves = GuildOS.Companion.BookReserves
+  GuildOS.Companion.BookReserves = function() error("boom") end
+  local p = GuildOS.Companion:BuildPayload()
+  assert(p.lootBook.reserves == nil and p.lootBook.points and #p.members > 0, "a set that fails costs only itself")
+  assert(recorded[#recorded]:find("lootBook.reserves", 1, true), "and goes to /guildos errors")
+  GuildOS.Companion.BookReserves = reserves
+  GuildOS.db.softRes = { items = {}, meta = {} }
+  assert(#GuildOS.Companion:BuildPayload().lootBook.reserves.items == 0, "an emptied reserve list is empty, and complete")
+  GuildOS.db.softRes.items[29434] = { { name = "Chehul", class = "", note = "bis", plusOnes = 0, hard = true } }
+  -- The size a guild of 60 makes, every set full: well inside the 4 MB the site takes.
+  local saved = { GuildOS.db.points, GuildOS.db.cores, GuildOS.db.wishlists, GuildOS.db.guildWishlists, GuildOS.db.lootPrios, GuildOS.db.softRes }
+  local big = { mode = "dkp", standings = {}, log = {} }
+  GuildOS.db.cores, GuildOS.db.guildWishlists, GuildOS.db.lootPrios = {}, {}, {}
+  GuildOS.db.softRes = { items = {}, meta = { importedAt = 1754395000, source = "gargul", listId = "x" } }
+  for i = 1, 60 do
+    local name = "Raider" .. i
+    big.standings[name .. "-Firemaw"] = { name = name, class = "WARRIOR", current = i * 7, earned = i * 9, spent = i * 2 }
+    local wl = {}
+    for j = 1, 50 do wl[j] = { itemId = 28000 + i * 50 + j, order = j } end
+    GuildOS.db.guildWishlists[name:lower()] = { name = name, class = "WARRIOR", wishlist = wl }
+    GuildOS.db.softRes.items[30000 + i] = { { name = name, class = "WARRIOR", note = "", plusOnes = 0 } }
+  end
+  for c = 1, 3 do
+    local tmb = {}
+    for j = 1, 300 do tmb[j] = { player = "Raider" .. (j % 60 + 1), item = "Item number " .. j, priority = j % 5 + 1 } end
+    GuildOS.db.cores["Core " .. c] = { name = "Core " .. c, points = big, lootMaster = { tmbList = tmb } }
+  end
+  for j = 1, 400 do GuildOS.db.lootPrios[29000 + j] = { { name = "Raider1", order = 1 }, { name = "Raider2", order = 2 } } end
+  GuildOS.db.points = big
+  local bigText = assert(GuildOS.Companion:Build())
+  io.stderr:write(("loot book, a guild of 60 full: %d chars on the wire\n"):format(#bigText))
+  assert(#bigText < 1024 * 1024, "a full guild's book stays far under the 4 MB the site takes")
+  GuildOS.db.points, GuildOS.db.cores, GuildOS.db.wishlists, GuildOS.db.guildWishlists, GuildOS.db.lootPrios, GuildOS.db.softRes = unpack(saved)
+  GuildOS.db.wishlists = { ["Chehul-Firemaw"] = {} }
+  local emptied = GuildOS.Companion:BookWishlists().lists
+  assert(emptied[1].key == "Chehul-Firemaw" and #emptied[1].items == 0, "my own emptied list goes up empty, so the site clears it")
+  GuildOS.db.wishlists = { ["Chehul-Firemaw"] = { { itemId = 28830, order = 1 } } }
+  GuildOS.RecordError = nil
+  -- Kept on for the string below, so the site's fixture decodes a real book.
+end
+
+-- `why` on a loot entry (issue #336, the site's #517): additive within v16. An entry the history keeps
+-- a record for carries it, in the documented shape and nothing else; an entry without one, and every
+-- other field of the one with it, is exactly what a reader from before was sent.
+do
+  local history = GuildOS.LootTracker.GetHistory()
+  local plain = GuildOS.Companion:BuildPayload()
+  local plainJson = GuildOS.Companion.EncodeJson(plain.loot)
+  assert(not plainJson:find('"why"', 1, true), "no record kept: no `why` on any entry")
+  local kept = history[1]
+  local saved = GuildOS.LootTracker.GetHistory
+  GuildOS.LootTracker.GetHistory = function()
+    local out = {}
+    for i, e in ipairs(history) do out[i] = e end
+    local with = {}
+    for k, v in pairs(kept) do with[k] = v end
+    with.why = {
+      v = 1, rule = "softres", ruleAt = 1791000000, decidedBy = "council", exception = "Thunderfury",
+      candidates = {
+        { name = "Chehul", answer = "MS", roll = 41, bid = 0, values = { softres = 1, ["account:plus1"] = 0, attendance = 96 } },
+        { name = "Rias", answer = "MS", roll = 12, bid = 0, asked = "MS" },
+        { name = "Kawa", answer = "OS", asked = "MS", roll = 7, bid = 0 },
+      },
+      votes = { anon = false, quorum = 2, cast = { { by = "Kawa", ["for"] = "Chehul" } }, tally = { Chehul = 2, Rias = 1 } },
+      debug = { "never sent" },
+    }
+    out[1] = with
+    return out
+  end
+  local payload = GuildOS.Companion:BuildPayload()
+  local why = payload.loot[1].why
+  assert(payload.v == 16, "additive: the payload's version does not move")
+  assert(GuildOS.Companion.EncodeJson(why) == '{"candidates":[{"answer":"MS","bid":0,"name":"Chehul","roll":41,'
+    .. '"values":{"account:plus1":0,"attendance":96,"softres":1}},{"answer":"MS","bid":0,"name":"Rias","roll":12},'
+    .. '{"answer":"OS","asked":"MS","bid":0,"name":"Kawa","roll":7}],'
+    .. '"decidedBy":"council","exception":"Thunderfury","rule":"softres","ruleAt":1791000000,"v":1,'
+    .. '"votes":{"anon":false,"cast":[{"by":"Kawa","for":"Chehul"}],"quorum":2,"tally":{"Chehul":2,"Rias":1}}}',
+    "the entry carries `why` in the documented shape: " .. GuildOS.Companion.EncodeJson(why))
+  assert(why.debug == nil, "and nothing the shape does not name")
+  assert(why.candidates[2].asked == nil and why.candidates[3].asked == "MS",
+    "`asked` goes out only where it differs from `answer`")
+  local long = GuildOS.Companion.LootWhy({ v = 1, rule = "custom", decidedBy = "ml", candidates = {
+    { name = "Kawa", answer = "OS", asked = string.rep("a", 300) }, { name = "Rias", answer = "OS", asked = 7 } } })
+  assert(#long.candidates[1].asked == 48 and long.candidates[2].asked == nil, "cut to the 48 bytes of a key, and only when it is text")
+  for i = 2, #payload.loot do assert(payload.loot[i].why == nil, "an entry with no record carries none") end
+  -- A reader from before never looks at `why`: without it the list is the one it always got.
+  payload.loot[1].why = nil
+  assert(GuildOS.Companion.EncodeJson(payload.loot) == plainJson, "every other field of every entry is as before")
+  -- An anonymous council: who voted for whom never leaves.
+  local anon = GuildOS.Companion.LootWhy({ v = 1, rule = "council", decidedBy = "council", candidates = {},
+    votes = { anon = true, quorum = 2, cast = { { by = "Kawa", ["for"] = "Chehul" } }, tally = { Chehul = 2 } } })
+  assert(anon.votes.cast == nil and anon.votes.tally.Chehul == 2 and GuildOS.Companion.EncodeJson(anon.candidates) == "[]",
+    "anonymous: the tally alone")
+  -- What a saved file may hold is not trusted: a record that is no record is left out, a figure that is no number is 0.
+  assert(GuildOS.Companion.LootWhy("x") == nil, "a record that is no table is none")
+  local odd = GuildOS.Companion.LootWhy({ v = "1", rule = string.rep("r", 300), ruleAt = 0 / 0, candidates = { "x",
+    { name = 7, roll = "a", values = { softres = 1 / 0, [3] = 1 } } }, votes = { tally = {} } })
+  assert(odd.ruleAt == 0 and #odd.rule == 48 and #odd.candidates == 1 and odd.candidates[1].roll == 0
+    and odd.candidates[1].values == nil and odd.votes.tally == nil, "odd figures and texts are held to the shape")
+  local many = { v = 1, candidates = {} }
+  for i = 1, 30 do many.candidates[i] = { name = "P" .. i } end
+  assert(#GuildOS.Companion.LootWhy(many).candidates == 10, "ten candidates at most")
+  GuildOS.LootTracker.GetHistory = saved
+end
+
+-- `coreReceipt` (issue #347, the site's #519): additive within v16, behind the Raids module and its own
+-- pcall, in exactly the shape the site reads, every figure a plain integer.
+do
+  local on, recorded = { raids = true }, {}
+  local enabled = GuildOS.IsFeatureEnabled
+  GuildOS.IsFeatureEnabled = function(_, id) return on[id] == true end
+  GuildOS.RecordError = function(_, msg) recorded[#recorded + 1] = msg end
+  local savedCores, savedLink = GuildOS.db.cores, GuildOS.db.coreLink
+  GuildOS.db.cores = {
+    ["Núcleo Alfa"] = { name = "Núcleo Alfa", discordTag = "nucleo-alfa", raidSize = 20, importedAt = 1754390000.7,
+      members = { ["Ana-Firemaw"] = { name = "Ana", src = "discord" }, ["Bia-Firemaw"] = { name = "Bia", src = "discord" },
+                  ["Pug-Firemaw"] = { name = "Pug" } },
+      guests = { ["Zed-Firemaw"] = { name = "Pugzão", stay = false }, ["Yan-Firemaw"] = { name = "Yan", stay = true } } },
+    ["So no jogo"] = { name = "So no jogo", raidSize = 10, importedAt = 1754000000, members = { ["Ana-Firemaw"] = { name = "Ana" } } },
+  }
+  GuildOS.db.coreLink = { importedAt = 1754390000 }
+  local payload = GuildOS.Companion:BuildPayload()
+  local json = GuildOS.Companion.EncodeJson(payload.coreReceipt)
+  assert(json == '{"at":1754400000,"cores":[{"fromDiscord":2,"guests":["Pugzão","Yan"],"importedAt":1754390000,"members":3,'
+    .. '"name":"Núcleo Alfa","size":20,"tag":"nucleo-alfa"},{"fromDiscord":0,"guests":[],"importedAt":0,"members":1,'
+    .. '"name":"So no jogo","size":10,"tag":""}],"linkedAt":1754390000}', "the receipt's documented shape: " .. json)
+  assert(payload.v == 16, "additive: the payload's version does not move")
+  -- A reader from before never looks at it: without it the payload is the one it always got.
+  local withJson = GuildOS.Companion.EncodeJson(payload)
+  payload.coreReceipt = nil
+  on.raids = false
+  local before = GuildOS.Companion:BuildPayload()
+  assert(before.coreReceipt == nil, "the Raids module off: no receipt at all")
+  assert(GuildOS.Companion.EncodeJson(before) == GuildOS.Companion.EncodeJson(payload), "every other field is as before")
+  assert(#withJson > #GuildOS.Companion.EncodeJson(before), "and the receipt is one more field beside them")
+  on.raids = true
+  -- Never linked: 0. Caps: 50 cores, 40 guests, names of 48 bytes cut on a character.
+  GuildOS.db.coreLink = nil
+  GuildOS.db.cores = {}
+  local long = string.rep("a", 47) .. "ã" .. "bbb"
+  for i = 1, 60 do
+    local guests = {}
+    for j = 1, 45 do guests["G" .. j .. "-Firemaw"] = { name = string.format("G%02d", j) } end
+    GuildOS.db.cores[string.format("Core %02d", i)] = { raidSize = 1 / 0, importedAt = 0 / 0, discordTag = "c" .. i,
+      members = {}, guests = guests }
+  end
+  GuildOS.db.cores[long] = { raidSize = 25, members = {}, guests = { ["X-Firemaw"] = { name = string.rep("é", 30) } } }
+  local r = GuildOS.Companion:BuildPayload().coreReceipt
+  assert(r.linkedAt == 0, "a client that never imported says 0")
+  assert(#r.cores == 50, "at most 50 cores")
+  assert(#r.cores[1].guests == 40 and r.cores[1].guests[40] == "G40", "at most 40 guests, in order")
+  -- Rewritten (review of #347): a size of 0 is one the site's door refuses whole (size is 1..40).
+  assert(r.cores[1].size == 1 and r.cores[1].importedAt == 0, "a figure that is no finite number is the least the site reads")
+  GuildOS.db.cores = { [long] = GuildOS.db.cores[long] }
+  r = GuildOS.Companion:BuildPayload().coreReceipt
+  assert(#r.cores[1].name == 47 and r.cores[1].name == string.rep("a", 47), "a name cut to 48 bytes, never inside a character")
+  assert(#r.cores[1].guests[1] == 48 and r.cores[1].guests[1] == string.rep("é", 24), "and a guest's")
+  GuildOS.db.cores = { Big = { raidSize = 25, importedAt = 1e300, discordTag = "big", members = {} } }
+  json = GuildOS.Companion.EncodeJson(GuildOS.Companion:BuildPayload().coreReceipt)
+  -- The cap is 2^32 - 1, the site's CLOCK_MAX (guildos-web lib/core-receipt.ts, site #519: past 2038).
+  assert(json:find('"importedAt":4294967295', 1, true) and not json:find("[eE][%+%-]?%d"), "plain integers, never an exponent: " .. json)
+  -- One that fails costs only itself, and goes to /guildos errors.
+  local receipt = GuildOS.Companion.CoreReceipt
+  GuildOS.Companion.CoreReceipt = function() error("boom") end
+  local p = GuildOS.Companion:BuildPayload()
+  assert(p.coreReceipt == nil and #p.members > 0 and p.loot, "a receipt that fails is left out; the roster still goes up")
+  assert(recorded[#recorded]:find("coreReceipt", 1, true), "and goes to /guildos errors")
+  GuildOS.Companion.CoreReceipt = receipt
+  GuildOS.db.cores, GuildOS.db.coreLink = savedCores, savedLink
+  GuildOS.RecordError = nil
+  GuildOS.IsFeatureEnabled = enabled   -- the loot book stays on for the string below
+end
+
+-- The string printed below carries one alt (v14), so the site's fixture decodes a real `main`.
+GuildOS.db.altLinks = { ["Fulano-Firemaw"] = "Chehul-Firemaw" }
 local text, countOrErr = GuildOS.Companion:Build()
 if not text then
   io.stderr:write("BUILD FAILED: " .. tostring(countOrErr) .. "\n")
   os.exit(1)
 end
 io.stderr:write("members: " .. tostring(countOrErr) .. "  chars: " .. #text .. "\n")
-io.write(text)
+io.write(PACK and packText or text)

@@ -24,30 +24,80 @@ end
 ----------------------------------------------------------------------
 -- Pure helpers (deterministic, unit-tested via /gos selftest)
 ----------------------------------------------------------------------
+-- The key a ban is filed under: the name alone, lower case, on WoW: Forever (no realms) and TBC
+-- Anniversary (as it always was). On retail a guild spans connected realms and two players there
+-- can share a name, so the key keeps the realm, normalized, lower case; a name without one is on
+-- this client's realm (issue #184).
 function BanList:_NormalizeKey(name)
     if not name or name == "" then return "" end
+    if GuildOS.Client.isRetail then return (GuildOS:KeyOfRosterName(name) or ""):lower() end
     local short = name:match("^([^-]+)") or name
     return short:lower()
 end
 
-function BanList:Get(name, store)
+-- A ban in force at `now`: neither lifted nor a temporary one run out.
+local function inForce(e, now)
+    return e ~= nil and not e.removed and not (e.expiry and e.expiry <= now)
+end
+
+-- The ban a name points at, and the key it is filed under. On retail a ban in force under the
+-- whole key, else one filed under the name alone before issue #184, which holds for that name on
+-- every realm (lifting the whole key's ban, or its running out, does not lift it), else the whole
+-- key's entry, lifted, run out or absent. A name without a realm is this realm's: never a guess at
+-- a namesake elsewhere.
+function BanList:_Find(name, store, now)
     store = store or GuildOS.db.banList or {}
-    return store[self:_NormalizeKey(name)]
+    now = now or GetServerTime()
+    local key = self:_NormalizeKey(name)
+    local held = store[key]
+    if key == "" or not GuildOS.Client.isRetail or inForce(held, now) then return key, held end
+    local short = (name:match("^([^-]+)") or name):lower()
+    local old = store[short]
+    if inForce(old, now) then return short, old end
+    return key, held
+end
+
+-- The key `Remove` lifts for a name an officer typed: elsewhere the name alone. On retail a
+-- name with a realm is that whole key; one without is the standing ban filed under the name
+-- alone before issue #184 when it is still in force, else this realm's (issue #184).
+function BanList:_RemovalKey(name, store, now)
+    store = store or GuildOS.db.banList or {}
+    local key = self:_NormalizeKey(name)
+    if not GuildOS.Client.isRetail or key == "" or name:find("-", 1, true) then return key end
+    local old = store[name:lower()]
+    if inForce(old, now or GetServerTime()) then return name:lower() end
+    return key
+end
+
+function BanList:Get(name, store, now)
+    if not name or name == "" then return nil end
+    local _, entry = self:_Find(name, store, now)
+    return entry
+end
+
+-- How a ban names somebody, and how a name the game hands over is looked up: with the realm on
+-- retail, where a name that comes without one is on this client's realm; the name alone elsewhere.
+function BanList:_Who(name)
+    if GuildOS.Client.isRetail then return GuildOS:KeyOfRosterName(name) end
+    return name:match("^([^-]+)") or name
 end
 
 function BanList:IsBanned(name, now, store)
-    local e = self:Get(name, store)
-    if not e or e.removed then return false end
     now = now or GetServerTime()
-    if e.expiry and e.expiry <= now then return false end
-    return true
+    return inForce(self:Get(name, store, now), now)
 end
 
+-- The standing bans, newest first, each a copy carrying the `key` it is filed under: the list
+-- removes a row by that key (RemoveKey), never by its name (issue #184).
 function BanList:List(store)
     store = store or GuildOS.db.banList or {}
     local out = {}
-    for _, e in pairs(store) do
-        if not e.removed then out[#out + 1] = e end
+    for key, e in pairs(store) do
+        if not e.removed then
+            local row = { key = key }
+            for f, v in pairs(e) do row[f] = v end
+            out[#out + 1] = row
+        end
     end
     table.sort(out, function(a, b) return (a.ts or 0) > (b.ts or 0) end)
     return out
@@ -81,7 +131,7 @@ function BanList:Add(name, reason, durationSec)
     if key == "" then return false end
     local now = GetServerTime()
     local entry = {
-        name    = name:match("^([^-]+)") or name,
+        name    = self:_Who(name),
         reason  = strtrim(reason or "") ~= "" and strtrim(reason) or L["(no reason)"],
         author  = GuildOS.Compat.PlayerName(),
         ts      = now,
@@ -93,12 +143,20 @@ function BanList:Add(name, reason, durationSec)
     return true
 end
 
+-- Lift a ban by the name an officer typed (/gos unban; `_RemovalKey`). False when none stands there.
 function BanList:Remove(name)
-    if not GuildOS:IsOfficer() then return false end
-    local key = self:_NormalizeKey(name)
+    if not name or name == "" then return false end
+    return self:RemoveKey(self:_RemovalKey(name))
+end
+
+-- Lift the ban filed under `key`, exactly that one: the ban list's own rows (issue #184). False,
+-- and nothing written, when no ban stands there (none, or already lifted): `/gos unban` says so.
+function BanList:RemoveKey(key)
+    if not GuildOS:IsOfficer() or not key or key == "" then return false end
     local existing = GuildOS.db.banList[key]
+    if not existing or existing.removed then return false end
     local tomb = {
-        name = (existing and existing.name) or (name:match("^([^-]+)") or name),
+        name = existing.name or key,
         author = GuildOS.Compat.PlayerName(), ts = GetServerTime(), removed = true,
     }
     GuildOS.db.banList[key] = tomb
@@ -184,7 +242,7 @@ function BanList:_ParseJoin(sysMsg)
             or sysMsg:match("(.+) has joined the guild%.")
     end
     if not name then return nil end
-    return name:match("^([^-]+)") or name
+    return self:_Who(name)   -- with the realm on retail, where it tells namesakes apart (#184)
 end
 
 function BanList:_SetupDetection()
@@ -205,11 +263,13 @@ function BanList:_SetupDetection()
                 BanList:_Alert(BanList:Get(joiner))
             end
         elseif event == "CHAT_MSG_WHISPER" then
-            local sender = arg2 and (arg2:match("^([^-]+)") or arg2)
-            if sender and BanList:IsBanned(sender) and not BanList._whisperCd[sender] then
+            -- The whole sender: on retail the realm tells two namesakes apart (#184).
+            local who = arg2 and BanList:_Who(arg2)
+            local sender = who and BanList:_NormalizeKey(who)
+            if sender and sender ~= "" and BanList:IsBanned(who) and not BanList._whisperCd[sender] then
                 BanList._whisperCd[sender] = true
                 GuildOS.Compat.After(60, function() BanList._whisperCd[sender] = nil end)
-                BanList:_Alert(BanList:Get(sender))
+                BanList:_Alert(BanList:Get(who))
             end
         end
     end)
@@ -222,7 +282,9 @@ function BanList:_SetupDetection()
         -- (docs/forever/README.md), and the unit token itself can be secret,
         -- which UnitClass refuses outright (#116). UnitIdentity answers nothing
         -- for either. Reachable only since the hook started landing on that client.
-        local name = unit and GuildOS.Compat.UnitIdentity(unit)
+        local name, realm
+        if unit then name, realm = GuildOS.Compat.UnitIdentity(unit) end
+        name = name and GuildOS:GetPlayerKey(name, realm)   -- with its realm on retail (#184)
         if name and BanList:IsBanned(name) then
             local e = BanList:Get(name)
             tt:AddLine("\226\155\148 " .. L["BANNED"] .. " — " ..
@@ -241,7 +303,8 @@ function BanList:_RegisterTests()
 
     S:Register("banlist.normalize", function()
         local k = BanList:_NormalizeKey("Thrall-Benediction")
-        if k ~= "thrall" then return false, "got " .. tostring(k) end
+        local want = GuildOS.Client.isRetail and "thrall-benediction" or "thrall"   -- the realm stays on retail (#184)
+        if k ~= want then return false, "got " .. tostring(k) end
         return true
     end)
 
@@ -278,7 +341,7 @@ function BanList:_RegisterTests()
 
     S:Register("banlist.parse_join", function()
         local n = BanList:_ParseJoin("Grefer has joined the guild.")
-        if n ~= "Grefer" then return false, "got " .. tostring(n) end
+        if n ~= BanList:_Who("Grefer") then return false, "got " .. tostring(n) end   -- realm and all on retail (#184)
         return true
     end)
 

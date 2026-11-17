@@ -253,6 +253,22 @@ function UI:MakeResponsive(container, layoutFn)
     end
 end
 
+-- Lay a responsive container out again although its size did not change (#178: the roster's
+-- columns were chosen). A hidden one does it on its next show.
+function UI:Relayout(container)
+    if not container.__layout then return end
+    if container:IsVisible() then
+        C_Timer.After(0, function()
+            local w, h = container:GetWidth(), container:GetHeight()
+            if w and h and w >= 1 and h >= 1 then
+                GuildOS:SafeCall(function() container.__layout(container, w, h) end)
+            end
+        end)
+    else
+        container.__layoutDone = false
+    end
+end
+
 ----------------------------------------------------------------------
 -- The resize ladder (issue #14, handoff §6). The window reorganises its
 -- content by the width of the panel hosting the table (its content area,

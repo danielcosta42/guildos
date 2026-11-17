@@ -71,4 +71,40 @@ evt = R:_ParseSystem("Bob has demoted Alice to Initiate.")
 check(evt and evt.action == "demote" and evt.author == "Bob" and evt.target == "Alice" and evt.detail == "Initiate", "an English demotion")
 check(R:_ParseSystem("Alice has come online.") == nil, "an online notice is nothing")
 
+-- ── The game's own strings, build 1.60.1.70707, with their grammar (issue #106) ──
+local KO_ROLL = "%s님이 주사위를 굴려 %d|1이;가; 나왔습니다. (%d-%d)"
+a = M("철수님이 주사위를 굴려 57이 나왔습니다. (1-100)", KO_ROLL)
+check(a and a[1] == "철수" and a[2] == "57" and a[3] == "1" and a[4] == "100", "koKR: a roll, whichever particle the number took")
+a = M("철수님이 주사위를 굴려 100가 나왔습니다. (1-100)", KO_ROLL)
+check(a and a[2] == "100", "koKR: the other particle too")
+a = M("영희가 철수를 길드에서 추방했습니다.", "%2$s|1이;가; %1$s|1을;를; 길드에서 추방했습니다.")
+check(a and a[1] == "철수" and a[2] == "영희", "koKR: a kick, the names without their particles")
+a = M("가가가 나나를 길드에서 추방했습니다.", "%2$s|1이;가; %1$s|1을;를; 길드에서 추방했습니다.")
+check(a and a[1] == "나나" and a[2] == "가가", "koKR: a name ending like a particle loses only the particle")
+a = M("철수님이 영희님의 등급을 부관으로 올렸습니다.", "%s님이 %s님의 등급을 %s|1으로;로; 올렸습니다.")
+check(a and a[1] == "철수" and a[2] == "영희" and a[3] == "부관", "koKR: a promotion, the rank without its particle")
+a = M("Ольга исключает из гильдии Бориса.", "%2$s исключает из гильдии |3-3(%1$s).")
+check(a and a[1] == "Бориса" and a[2] == "Ольга", "ruRU: a declined name is read as the game wrote it")
+a = M("Ольга производит Бориса в звание \"Рыцарь\".", "%s производит |3-3(%s) в звание \"%s\".")
+check(a and a[1] == "Ольга" and a[2] == "Бориса" and a[3] == "Рыцарь", "ruRU: a promotion")
+a = M("Alice a rétrogradé Bob au grade d'Initié.", "%s a rétrogradé %s au grade |2 %s.")
+check(a and a[1] == "Alice" and a[2] == "Bob" and a[3] == "Initié", "frFR: a demotion, the rank without d'")
+a = M("Alice a rétrogradé Bob au grade de Recrue.", "%s a rétrogradé %s au grade |2 %s.")
+check(a and a[3] == "Recrue", "frFR: and without de")
+a = M("철수掷出57（1-100）", "%s掷出%d（%d-%d）")
+check(a and a[1] == "철수" and a[2] == "57", "zhCN: a roll, in full-width brackets")
+a = M("Alice würfelt. Ergebnis: 57 (1-100)", "%1$s würfelt. Ergebnis: %2$d (%3$d-%4$d)")
+check(a and a[1] == "Alice", "deDE: a roll, numbered")
+check(M("Material für die Schmiede abgeschlossen.", "%1$s wurde von %2$s aus der Gilde geworfen.") == nil,
+  "deDE: the quest line of issue #118 is no guild message")
+
+-- ── Dates: the order is the client language's (issue #170) ────────────────
+date = os.date
+local LAUNCH = os.time({ year = 2026, month = 11, day = 4, hour = 12 })
+for lang, want in pairs({ ptBR = "04/11", deDE = "04/11", enGB = "04/11", enUS = "11/04", koKR = "11/04", zhTW = "11/04" }) do
+  GetLocale = function() return lang end
+  check(GuildOS:DateText(LAUNCH) == want, lang .. ": " .. GuildOS:DateText(LAUNCH))
+  check(GuildOS:DateText(LAUNCH, "/%Y") == want .. "/2026", lang .. ": what comes after it follows")
+end
+
 print(("localized-messages: %d checks passed"):format(checks))

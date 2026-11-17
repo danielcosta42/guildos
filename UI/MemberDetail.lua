@@ -19,6 +19,38 @@ local STATS_LIST = {
     { label = L["INT"], key = "intellect" },
     { label = L["SPI"], key = "spirit"    },
 }
+-- Retail's sheet (issue #184): the spec's primary stat, named by which one it is, stamina and the
+-- four ratings in percent. No spirit, and no mana bar for most specs.
+local PRIMARY_LABEL = { strength = L["STR"], agility = L["AGI"], intellect = L["INT"] }
+if GuildOS.Client.isRetail then
+    STATS_LIST = {
+        { label = L["HP"],      key = "health", color = "green" },
+        { primary = true },
+        { label = L["STA"],     key = "stamina" },
+        { label = L["Crit"],    key = "crit",        pct = true },
+        { label = L["Haste"],   key = "haste",       pct = true },
+        { label = L["Mastery"], key = "mastery",     pct = true },
+        { label = L["Vers"],    key = "versatility", pct = true },
+    }
+end
+
+-- The stat cells a member's sheet draws, as { label, text, color }: the primary entry becomes the
+-- stat the member sent (left out when they sent none), a rating reads in percent. A value the client
+-- hid, or one from a guildmate's broadcast that is not a number, shows as "—": it is not a 0 (issue #170),
+-- and it does not stop the sheet (issue #184).
+function GuildOS:MemberStatCells(stats)
+    local out = {}
+    if type(stats) ~= "table" then return out end
+    for _, s in ipairs(STATS_LIST) do
+        local label, key = s.label, s.key
+        if s.primary then label, key = PRIMARY_LABEL[stats.primary], stats.primary end
+        if label then
+            local v = tonumber(stats[key])
+            out[#out + 1] = { label = label, text = v and (s.pct and string.format("%.1f%%", v) or tostring(v)) or "—", color = s.color }
+        end
+    end
+    return out
+end
 
 ----------------------------------------------------------------------
 -- Widget pool for PopulateDetail.
@@ -249,7 +281,9 @@ function PopulateDetail(frame, data)
     frame.classIconFrame:SetBackdropBorderColor(cr, cg, cb, 0.9)
 
     -- Name
-    frame.nameText:SetText(data.name)
+    -- A founding member's scroll and since when (WoW: Forever, issue #209).
+    local founder = GuildOS.Founding and data.key and GuildOS.Founding:Founders()[data.key]
+    frame.nameText:SetText(founder and (data.name .. " " .. GuildOS.Founding.BADGE) or data.name)
     frame.nameText:SetTextColor(cr, cg, cb)
 
     -- Info line
@@ -265,6 +299,9 @@ function PopulateDetail(frame, data)
     -- currently broadcasting on the mesh (e.g. "· PartyLens"). Empty if none.
     if GuildOS.Mesh then
         infoLine = infoLine .. GuildOS.Mesh:PresenceSuffix(data.name)
+    end
+    if founder then
+        infoLine = infoLine .. "  |  " .. string.format(L["Founding member · joined %s"], date("!%Y-%m-%d", founder.joinedAt))
     end
     frame.infoText:SetText(infoLine)
 
@@ -431,7 +468,7 @@ function PopulateDetail(frame, data)
         statsGrid:Show()
 
         local colWidth = (contentWidth - 20) / 4
-        for i, stat in ipairs(STATS_LIST) do
+        for i, stat in ipairs(GuildOS:MemberStatCells(data.stats)) do
             local col = ((i - 1) % 4)
             local row = math.floor((i - 1) / 4)
             local sc = stat.color and C[stat.color] or C.white
@@ -447,11 +484,59 @@ function PopulateDetail(frame, data)
             GuildOS:ApplyFont(value, 11)
             value:SetPoint("LEFT", label, "RIGHT", 4, 0)
             value:SetTextColor(sc.r, sc.g, sc.b)
-            value:SetText(tostring(data.stats[stat.key] or 0))
+            value:SetText(stat.text)
             value:Show()
         end
 
         yOff = yOff - 50
+    end
+
+    ----------------------------------------------------------------
+    -- Section: Mythic+ and the Great Vault (retail, issue #187): what the member's own client sent.
+    -- A guildmate without Guild OS sent nothing, and has no section.
+    ----------------------------------------------------------------
+    local MP = GuildOS.MythicPlus
+    if MP and (type(data.mplus) == "table" or type(data.vault) == "table") then
+        local function cell(label, text, x, y, color)
+            local l = _pFS(child)
+            GuildOS:ApplyFont(l, 9)
+            l:SetPoint("TOPLEFT", x, y)
+            l:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
+            l:SetText(label)
+            l:Show()
+            local v = _pFS(child)
+            GuildOS:ApplyFont(v, 11)
+            v:SetPoint("LEFT", l, "RIGHT", 4, 0)
+            color = color or C.white
+            v:SetTextColor(color.r, color.g, color.b)
+            v:SetText(text)
+            v:Show()
+        end
+
+        yOff = CreateSectionHeader(child, L["MYTHIC+"], yOff, contentWidth)
+        yOff = yOff - 5
+        local rating = MP:Rating(data.mplus)
+        local r, g, b = GuildOS.Compat.RatingColor(rating)
+        cell(L["Rating"], rating and tostring(rating) or "\226\128\148", 10, yOff, r and { r = r, g = g, b = b } or C.gold)
+        cell(L["Keystone"], MP:KeystoneText(data.mplus) or L["none"], 10 + (contentWidth - 20) / 3, yOff)
+        yOff = yOff - 26
+
+        yOff = CreateSectionHeader(child, L["GREAT VAULT"], yOff, contentWidth)
+        yOff = yOff - 5
+        local cells, why = MP:VaultCells(data.vault, GuildOS.Compat.WeekStart())
+        if cells then
+            for i, c in ipairs(cells) do
+                cell(c.label, c.text, 10 + (i - 1) * (contentWidth - 20) / 3, yOff)
+            end
+        else
+            local none = _pFS(child)
+            GuildOS:ApplyFont(none, 11)
+            none:SetPoint("TOPLEFT", 15, yOff)
+            none:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
+            none:SetText(why == "old" and L["Not updated since the weekly reset."] or L["No vault data yet."])
+            none:Show()
+        end
+        yOff = yOff - 26
     end
 
     ----------------------------------------------------------------
@@ -530,8 +615,8 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     -- Section: Wishlist (nativa)
     ----------------------------------------------------------------
-    local guildKey = strlower(data.name or "")
-    local wishData = GuildOS.db.guildWishlists and GuildOS.db.guildWishlists[guildKey]
+    -- By the whole key on retail, where a list is filed under it (issue #185).
+    local wishData = GuildOS.Wishlist and GuildOS.Wishlist:ListFor(playerKey, data.name)
     if wishData and wishData.wishlist and #wishData.wishlist > 0 then
         yOff = yOff - 10
         local wishHeader = L["WISHLIST  --  "] .. #wishData.wishlist .. L[" item(s)"]
@@ -586,7 +671,7 @@ function PopulateDetail(frame, data)
             GuildOS:ApplyFont(lastStr, 10)
             lastStr:SetPoint("TOPLEFT", 15, yOff - 5)
             lastStr:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            lastStr:SetText(L["Last raid: "] .. date("%m/%d/%Y", att.lastRaid))
+            lastStr:SetText(L["Last raid: "] .. GuildOS:DateText(att.lastRaid, "/%Y"))
             lastStr:Show()
             yOff = yOff - 20
         end
@@ -615,7 +700,7 @@ function PopulateDetail(frame, data)
             -- GetItemInfo accepts itemLink directly, so no need to parse the ID.
             local localItemName = GuildOS.Compat.GetItemInfo(entry.itemLink or entry.itemId or 0)
             local displayName = localItemName or entry.itemName or "?"
-            local dateStr = entry.timestamp and (" |cffAAAAAA" .. date("%m/%d", entry.timestamp) .. "|r") or ""
+            local dateStr = entry.timestamp and (" |cffAAAAAA" .. GuildOS:DateText(entry.timestamp) .. "|r") or ""
             local raidStr = entry.raid and entry.raid ~= "" and (" |cff888888(" .. entry.raid .. ")|r") or ""
             itemStr:SetText(string.format("|cff%02x%02x%02x%s|r%s%s",
                 qColor.r * 255, qColor.g * 255, qColor.b * 255,
@@ -641,8 +726,12 @@ function PopulateDetail(frame, data)
             yOff = yOff - 10
             local daysRem = GuildOS.TrialTracker:GetDaysRemaining(playerKey)
             local daysSince = GuildOS.TrialTracker:GetDaysSinceStart(playerKey)
-            local trialStr = L["TRIAL STATUS  --  "] .. (trial.status or "?"):upper()
-            if daysRem then trialStr = trialStr .. "  (" .. daysRem .. L[" days left)"] end
+            -- The state worked out from the start and the guild's length, not the word stored (#249).
+            local state = GuildOS.TrialTracker:GetState(playerKey)
+            local stateText = ({ trial = L["TRIAL"], review = L["READY TO REVIEW"], left = L["LEFT THE GUILD"],
+                approved = L["APPROVED"], denied = L["DENIED"] })[state] or tostring(trial.status or "?"):upper()
+            local trialStr = L["TRIAL STATUS  --  "] .. stateText
+            if daysRem and state == "trial" then trialStr = trialStr .. "  (" .. daysRem .. L[" days left)"] end
             yOff = CreateSectionHeader(child, trialStr, yOff, contentWidth)
 
             local infoStr = _pFS(child)
@@ -667,15 +756,17 @@ function PopulateDetail(frame, data)
                 ilvlText:SetText(ilvlStr)
                 ilvlText:Show()
 
-                -- Attunement progress
-                local attColor = progress.attDelta > 0 and C.green or C.silver
-                local attStr = format(L["Attunements: %d/%d >> %d/%d  (+%d)"], progress.startAttDone, progress.attTotal, progress.currentAttDone, progress.attTotal, progress.attDelta)
-                local attText = _pFS(child)
-                GuildOS:ApplyFont(attText, 10)
-                attText:SetPoint("TOPLEFT", contentWidth / 2, yOff - 3)
-                attText:SetTextColor(attColor.r, attColor.g, attColor.b)
-                attText:SetText(attStr)
-                attText:Show()
+                -- Attunement progress, where the game has attunements (TBC, ADR-0014; issue #184)
+                if GuildOS.AttunementTracker then
+                    local attColor = progress.attDelta > 0 and C.green or C.silver
+                    local attStr = format(L["Attunements: %d/%d >> %d/%d  (+%d)"], progress.startAttDone, progress.attTotal, progress.currentAttDone, progress.attTotal, progress.attDelta)
+                    local attText = _pFS(child)
+                    GuildOS:ApplyFont(attText, 10)
+                    attText:SetPoint("TOPLEFT", contentWidth / 2, yOff - 3)
+                    attText:SetTextColor(attColor.r, attColor.g, attColor.b)
+                    attText:SetText(attStr)
+                    attText:Show()
+                end
                 yOff = yOff - 16
             end
 
@@ -696,7 +787,7 @@ function PopulateDetail(frame, data)
                     noteFS:SetWidth(contentWidth - 40)
                     noteFS:SetJustifyH("LEFT")
                     noteFS:SetWordWrap(true)
-                    local dateStr = note.timestamp and date("%m/%d %H:%M", note.timestamp) or ""
+                    local dateStr = note.timestamp and GuildOS:DateText(note.timestamp, " %H:%M") or ""
                     noteFS:SetText(format("|cffAAAAAA[%s %s]|r %s", note.author or "?", dateStr, note.text or ""))
                     noteFS:Show()
                     yOff = yOff - (noteFS:GetStringHeight() + 4)
@@ -788,7 +879,7 @@ function PopulateDetail(frame, data)
             noteStr:SetWidth(contentWidth - 30)
             noteStr:SetJustifyH("LEFT")
             noteStr:SetWordWrap(true)
-            local dateStr = note.timestamp and date("%m/%d", note.timestamp) or ""
+            local dateStr = note.timestamp and GuildOS:DateText(note.timestamp) or ""
             noteStr:SetText("|cffAAAAAA[" .. (note.author or "?") .. " " .. dateStr .. "]|r " .. (note.text or ""))
             noteStr:Show()
             yOff = yOff - (noteStr:GetStringHeight() + 4)
@@ -812,17 +903,22 @@ function PopulateDetail(frame, data)
         yOff = CreateSectionHeader(child, L["LINKED CHARACTERS"] .. hdrSuffix, yOff, contentWidth)
         yOff = yOff - 5
 
-        local noteLabel = _pFS(child)
-        GuildOS:ApplyFont(noteLabel, 9)
-        noteLabel:SetPoint("TOPLEFT", 12, yOff)
-        noteLabel:SetWidth(contentWidth - 24)
-        noteLabel:SetJustifyH("LEFT")
-        noteLabel:SetWordWrap(true)
-        noteLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
-        noteLabel:SetText(GuildOS:IsOfficer() and L["Linked chars share attunements account-wide."]
-            or L["Add your own alts (any account). An officer's client applies them guild-wide."])
-        noteLabel:Show()
-        yOff = yOff - noteLabel:GetStringHeight() - 6
+        -- The officer's note is about attunements: none where the game has none (issue #184).
+        local noteText = not GuildOS:IsOfficer()
+            and L["Add your own alts (any account). An officer's client applies them guild-wide."]
+            or (GuildOS.AttunementTracker and L["Linked chars share attunements account-wide."])
+        if noteText then
+            local noteLabel = _pFS(child)
+            GuildOS:ApplyFont(noteLabel, 9)
+            noteLabel:SetPoint("TOPLEFT", 12, yOff)
+            noteLabel:SetWidth(contentWidth - 24)
+            noteLabel:SetJustifyH("LEFT")
+            noteLabel:SetWordWrap(true)
+            noteLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
+            noteLabel:SetText(noteText)
+            noteLabel:Show()
+            yOff = yOff - noteLabel:GetStringHeight() - 6
+        end
 
         -- /gos myalts: on your own sheet, find your characters in the guild and offer to link them (#142).
         if isSelfManage and GuildOS.AltAutoDetect then
@@ -1009,10 +1105,6 @@ end
 -- Create a gear slot row (with enchant & gem display)
 ----------------------------------------------------------------------
 
--- Slots where missing enchant is a serious issue: this game's (Midnight's on retail, ADR-0026).
-local ENCHANT_WARNING_SLOTS = {}
-for _, slot in ipairs(GuildOS.Client.enchantSlots) do ENCHANT_WARNING_SLOTS[slot] = true end
-
 function CreateGearRow(parent, slotId, item, yOff, width)
     local ROW_H = 26
     local subRowH = 14
@@ -1111,7 +1203,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
             enchText:SetText(L["Enchanted"])
             enchText:Show()
             hasExtra = true
-        elseif ENCHANT_WARNING_SLOTS[slotId] then
+        elseif GuildOS.GearAudit and GuildOS.GearAudit:NeedsEnchant(slotId, item) then   -- ADR-0026, #177
             local warnText = _pFS(parent)
             GuildOS:ApplyFont(warnText, 9)
             warnText:SetPoint("TOPLEFT", 106, enchantY)

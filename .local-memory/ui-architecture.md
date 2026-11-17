@@ -69,7 +69,7 @@ C.row1, C.row2, C.rowHover    -- cores de linha alternadas
 C.accent                      -- cópia de C.gold (o único destaque)
 C.gold                        -- dourado: wordmark, botão primário, regra da aba ativa
 C.online, C.offline           -- status de jogador
-C.danger, C.warn, C.ok        -- feedback (C.red e C.green são aliases)
+C.danger, C.warn, C.ok, C.info -- feedback (C.red, C.green e C.blue são aliases)
 C.panel, C.panelDark          -- backgrounds
 C.border, C.separator         -- bordas e separadores
 ```

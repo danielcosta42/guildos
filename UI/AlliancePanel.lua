@@ -140,7 +140,7 @@ local function BuildOverview(panel)
                     or string.format(L["%dmin apart"], mins)
                 local head = UI:CreateText(content, string.format(
                     "%s  %s  |cff888888x|r  %s  |cff8888aa%s|r  |cff666666%s|r",
-                    date("%a %H:%M", c.mine.when), c.mine.title or "?",
+                    GuildOS:LocalDate("%a %H:%M", c.mine.when), c.mine.title or "?",
                     c.theirs.title or "?", c.theirs.guild or "?", gapText),
                     11, C.text.r, C.text.g, C.text.b)
                 head:SetPoint("TOPLEFT", 10, -y)
@@ -261,7 +261,7 @@ local function BuildOverview(panel)
                 local ev = events[i]
                 local size = tonumber(ev.size) or GuildOS.Client.defaultRaidSize   -- from another guild
                 local full = (ev.yes or 0) >= size
-                local when = date("%a %H:%M", ev.when)
+                local when = GuildOS:LocalDate("%a %H:%M", ev.when)
                 local fs = UI:CreateText(content, string.format("%s  %s  |cff888888%s  %d/%d|r",
                     when, ev.title or "?", ev.guild or "?", ev.yes or 0, size),
                     11, C.text.r, C.text.g, C.text.b)
@@ -461,7 +461,7 @@ function GuildOS:ShowAllyCard(name, guild, anchor)
     setShown(f.ban, canModerate)
     if canModerate then
         f.ban:SetScript("OnClick", function()
-            StaticPopup_Show("GUILDOS_ALLY_BAN",
+            GuildOS:ShowDialog("GUILDOS_ALLY_BAN",
                 string.format(L["Ban %s from the alliance channel? They cannot rejoin until unbanned."], name),
                 nil, { name = name })
         end)
@@ -494,6 +494,9 @@ local function BuildChat(panel)
     hideBtn:SetPoint("RIGHT", sysBtn, "LEFT", -6, 0)
     local clearBtn = UI:CreateButton(panel, L["Clear"], 70, 20)
     clearBtn:SetPoint("RIGHT", hideBtn, "LEFT", -6, 0)
+    -- The allied guilds' /g in our guild chat (issue #344).
+    local gchatBtn = UI:CreateButton(panel, L["Allied /g"], 120, 20)
+    gchatBtn:SetPoint("RIGHT", clearBtn, "LEFT", -6, 0)
 
     local holder = CreateFrame("Frame", nil, panel)
     holder:SetPoint("TOPLEFT", 0, -28)
@@ -638,6 +641,11 @@ local function BuildChat(panel)
         if p then p.hideDefault = not p.hideDefault end
         refresh()
     end)
+    gchatBtn:SetScript("OnClick", function()
+        local p = CHAT() and CHAT():Prefs()
+        if p then p.guildBridge = not p.guildBridge end
+        refresh()
+    end)
 
     refresh = function()
         local chat = CHAT()
@@ -653,6 +661,7 @@ local function BuildChat(panel)
         local prefs = chat:Prefs()
         sysBtn.label:SetText(prefs.system and L["Events: on"] or L["Events: off"])
         hideBtn.label:SetText(prefs.hideDefault and L["Default chat: hidden"] or L["Default chat: shown"])
+        gchatBtn.label:SetText(prefs.guildBridge and L["Allied /g: shown"] or L["Allied /g: hidden"])
         status:SetText(chat:IsConnected()
             and string.format(L["%s connected"], chat:ChannelName() or "?")
             or (chat:Prefs().chat and L["connecting..."] or L["not connected"]))
@@ -1305,7 +1314,7 @@ local function BuildManage(panel)
 
     removeBtn:SetScript("OnClick", function()
         local guild = removeBox:GetText()
-        StaticPopup_Show("GUILDOS_ALLY_REMOVE",
+        GuildOS:ShowDialog("GUILDOS_ALLY_REMOVE",
             string.format(L["Remove %s from the alliance?"], guild), nil,
             { guild = guild, after = function() removeBox:SetText(""); refresh() end })
     end)
@@ -1318,7 +1327,7 @@ local function BuildManage(panel)
     end)
 
     leaveBtn:SetScript("OnClick", function()
-        StaticPopup_Show("GUILDOS_ALLY_LEAVE",
+        GuildOS:ShowDialog("GUILDOS_ALLY_LEAVE",
             L["Leave the alliance? Your guild stops sharing and stops receiving."], nil,
             { after = function() refresh() end })
     end)
@@ -1428,12 +1437,127 @@ local function BuildManage(panel)
 end
 
 ----------------------------------------------------------------------
+-- Setup: the alliance code, the GreenWall way (issue #348). One code, the same
+-- in every guild; an officer saves it and the guild hands it to every member.
+----------------------------------------------------------------------
+local function BuildSetup(panel)
+    local LINK = function() return GuildOS.AllianceLink end
+
+    local hdr = UI:CreateHeaderText(panel, L["Alliance code"], 11)
+    hdr:SetPoint("TOPLEFT", 6, -10)
+    local status = UI:CreateText(panel, "", 11, C.text.r, C.text.g, C.text.b)
+    status:SetPoint("TOPLEFT", 6, -32)
+    status:SetJustifyH("LEFT")
+
+    local tagLbl = UI:CreateText(panel, L["Tag (letters and numbers)"], 10,
+        C.textDim.r, C.textDim.g, C.textDim.b)
+    tagLbl:SetPoint("TOPLEFT", 6, -58)
+    local tagBox = makeInput(panel, 110)
+    tagBox:SetPoint("TOPLEFT", 6, -74)
+    local guildsLbl = UI:CreateText(panel, L["Guilds, separated by ;"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    guildsLbl:SetPoint("TOPLEFT", 6, -104)
+    local guildsBox = makeInput(panel, 420)
+    guildsBox:SetPoint("TOPLEFT", 6, -120)
+    local genBtn = UI:CreateButton(panel, L["Generate"], 110, 24)
+    genBtn:SetPoint("LEFT", guildsBox, "RIGHT", 8, 0)
+
+    local lineBox = makeInput(panel, 540)
+    lineBox:SetPoint("TOPLEFT", 6, -156)
+    lineBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    local writeBtn = UI:CreateButton(panel, L["Save for the guild"], 170, 24)
+    writeBtn:SetPoint("TOPLEFT", 6, -188)
+    local removeBtn = UI:CreateButton(panel, L["Turn off for the guild"], 170, 24)
+    removeBtn:SetPoint("LEFT", writeBtn, "RIGHT", 8, 0)
+
+    local hint = UI:CreateText(panel, L["Paste this same code in Alliance > Setup in every guild of the alliance and save. Guild OS hands it to every member of the guild: no ambassadors, nobody in particular has to be online."],
+        10, C.textDim.r, C.textDim.g, C.textDim.b)
+    hint:SetPoint("TOPLEFT", 6, -222)
+    hint:SetWidth(540)
+    hint:SetJustifyH("LEFT")
+    hint:SetWordWrap(true)
+    addFlexHint(hint)
+
+    local refresh
+    local function say(ok, err)
+        if not ok and err then GuildOS:Print(err) end
+    end
+
+    genBtn:SetScript("OnClick", function()
+        local link = LINK()
+        if not link then return end
+        local names = {}
+        for name in (guildsBox:GetText() .. ";"):gmatch("([^;]*);") do
+            name = strtrim(name)
+            if name ~= "" then names[#names + 1] = name end
+        end
+        local mine = ALLY() and ALLY():MyGuildName()
+        local has = false
+        for _, n in ipairs(names) do if n == mine then has = true end end
+        if mine and not has then table.insert(names, 1, mine) end
+        local tag = GuildOS.Alliance.NormalizeTag(tagBox:GetText())
+        if tag == "" or #names < 2 then
+            GuildOS:Print(L["Name at least two guilds, this one included."])
+            return
+        end
+        -- The same tag keeps its key, so the guilds already set need nothing new but the list.
+        local cfg = link:Config()
+        local key = (cfg and cfg.tag == tag) and cfg.key or link.NewKey()
+        lineBox:SetText(link.Build(tag, key, names))
+        lineBox:HighlightText()
+    end)
+    writeBtn:SetScript("OnClick", function()
+        local link = LINK()
+        if not link then return end
+        local ok, err = link:SetCode(strtrim(lineBox:GetText() or ""))
+        say(ok, err)
+        if ok then GuildOS:Print(L["Saved. The guild gets it now."]) end
+        refresh()
+    end)
+    removeBtn:SetScript("OnClick", function()
+        local link = LINK()
+        if not link then return end
+        say(link:SetCode(nil))
+        refresh()
+    end)
+
+    refresh = function()
+        local link = LINK()
+        if not link then return end
+        local cfg = link:Config()
+        local mine = ALLY() and ALLY():MyGuildName()
+        if cfg and mine and cfg.guilds[mine] then
+            status:SetText(string.format(L["Active: %s, %d guilds."], cfg.tag, #cfg.order))
+        elseif cfg then
+            status:SetText(L["The code does not name this guild."])
+        else
+            status:SetText(L["No alliance set up for this guild."])
+        end
+        local officer = GuildOS:IsOfficer()
+        for _, w in ipairs({ tagLbl, tagBox, guildsLbl, guildsBox, genBtn, lineBox, writeBtn, removeBtn, hint }) do
+            setShown(w, officer)
+        end
+        if not officer then return end
+        if not lineBox:HasFocus() then
+            local line = link:Suggest()
+            local parsed = line and link.Parse(line)
+            lineBox:SetText(line or "")
+            if parsed and tagBox:GetText() == "" then
+                tagBox:SetText(parsed.tag)
+                guildsBox:SetText(table.concat(parsed.order, "; "))
+            end
+        end
+        if link:Config() then removeBtn:Enable() else removeBtn:Disable() end
+    end
+    return refresh
+end
+
+----------------------------------------------------------------------
 -- Confirmations
 ----------------------------------------------------------------------
 local function registerPopups()
-    if StaticPopupDialogs["GUILDOS_ALLY_REMOVE"] then return end
+    if GuildOS.Dialogs["GUILDOS_ALLY_REMOVE"] then return end
 
-    StaticPopupDialogs["GUILDOS_ALLY_REMOVE"] = {
+    GuildOS.Dialogs["GUILDOS_ALLY_REMOVE"] = {
         text = "%s", button1 = L["Remove"], button2 = L["Cancel"],
         OnAccept = function(self)
             local d = self and self.data
@@ -1445,7 +1569,7 @@ local function registerPopups()
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
 
-    StaticPopupDialogs["GUILDOS_ALLY_BAN"] = {
+    GuildOS.Dialogs["GUILDOS_ALLY_BAN"] = {
         text = "%s", button1 = L["Ban"], button2 = L["Cancel"],
         OnAccept = function(self)
             local d = self and self.data
@@ -1456,7 +1580,7 @@ local function registerPopups()
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
 
-    StaticPopupDialogs["GUILDOS_ALLY_LEAVE"] = {
+    GuildOS.Dialogs["GUILDOS_ALLY_LEAVE"] = {
         text = "%s", button1 = L["Leave"], button2 = L["Cancel"],
         OnAccept = function(self)
             local ok, err = GuildOS.Alliance:Leave()
@@ -1478,6 +1602,7 @@ local SUBTABS = {
     { key = "bulletin", label = L["Bulletin"], needsPact = true },
     { key = "chat",     label = L["Chat"],     needsPact = true },
     { key = "overview", label = L["Overview"] },
+    { key = "setup",    label = L["Setup"] },
     { key = "manage",   label = L["Manage"] },
 }
 
@@ -1543,7 +1668,7 @@ function GuildOS:CreateAlliancePanel(parent, _mainFrame)
 
     local builders = {
         chat = BuildChat, overview = BuildOverview,
-        bulletin = BuildBulletin, manage = BuildManage,
+        bulletin = BuildBulletin, manage = BuildManage, setup = BuildSetup,
     }
     flexHints = {}
     for _, t in ipairs(SUBTABS) do

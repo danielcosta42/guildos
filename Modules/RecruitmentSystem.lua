@@ -133,13 +133,18 @@ end
 -- GetChannelName("LookingForGroup") is 0 on a French client (issue #112). A zone channel goes by
 -- its shortcut ("Commerce" for "Commerce - Hurlevent"), LookingForGroup by its name: they differ
 -- only on Forever in Russian. Forever has no GuildRecruitment channel, and its Spanish
--- LookingForGroup is BuscarGrupo.
+-- LookingForGroup is BuscarGrupo. Retail's table (12.1.5.70448) names both as Forever does and has
+-- no GuildRecruitment either (issue #177). Only retail is in Italian (`retail`): Commercio and
+-- CercaGruppo; Forever's (1.60.1.70450, 70532) and Anniversary's (2.5.6.70006) itIT rows are the
+-- English ones (issue #184).
 Recruitment.CHANNELS = {
     { enUS = "Trade", deDE = "Handel", esES = "Comercio", esMX = "Comercio", frFR = "Commerce",
-      ptBR = "Comércio", ruRU = "Торговля", koKR = "거래", zhCN = "交易", zhTW = "交易" },
+      ptBR = "Comércio", ruRU = "Торговля", koKR = "거래", zhCN = "交易", zhTW = "交易",
+      retail = { itIT = "Commercio" } },
     { enUS = "LookingForGroup", deDE = "SucheNachGruppe", esES = "BuscandoGrupo", esMX = "BuscarGrupo",
       frFR = "RechercheDeGroupe", ptBR = "ProcurandoGrupo", ruRU = "ПоискСпутников", koKR = "파티찾기",
-      zhCN = "寻求组队", zhTW = "尋求組隊", forever = { esES = "BuscarGrupo", ruRU = "Поиск спутников" } },
+      zhCN = "寻求组队", zhTW = "尋求組隊", forever = { esES = "BuscarGrupo", ruRU = "Поиск спутников" },
+      retail = { itIT = "CercaGruppo" } },
     { enUS = "GuildRecruitment", deDE = "Gildenrekrutierung", esES = "BuscaHermandad", esMX = "BuscaHermandad",
       frFR = "RecrutementDeGuilde", ptBR = "RecrutamentoDeGuilda", ruRU = "Гильдии", koKR = "길드모집",
       zhCN = "公会招募", zhTW = "公會招募", anniversaryOnly = true },
@@ -147,7 +152,8 @@ Recruitment.CHANNELS = {
 
 local function channelFor(c)
     local loc = GetLocale and GetLocale() or "enUS"
-    return (not GuildOS.Client.isAnniversary and c.forever and c.forever[loc]) or c[loc] or c.enUS
+    return (GuildOS.Client.isRetail and c.retail and c.retail[loc])
+        or (not GuildOS.Client.isAnniversary and c.forever and c.forever[loc]) or c[loc] or c.enUS
 end
 
 -- This client's preset channels, in order.
@@ -166,7 +172,7 @@ function Recruitment:ChannelName(name)
     local n = tostring(name or ""):lower()
     for _, c in ipairs(self.CHANNELS) do
         if GuildOS.Client.isAnniversary or not c.anniversaryOnly then
-            for _, names in ipairs({ c, c.forever or {} }) do
+            for _, names in ipairs({ c, c.forever or {}, c.retail or {} }) do
                 for _, v in pairs(names) do
                     if type(v) == "string" and v:lower() == n then return channelFor(c) end
                 end
@@ -353,7 +359,7 @@ function Recruitment:RegisterAutoInviteEvent()
         if GuildOS.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
         local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
         if not cfg or not cfg.enabled then return end
-        if not CanGuildInvite() then return end
+        if not GuildOS.Compat.AddonMayInvite() then return end   -- Anniversary only (#256)
         if not Recruitment:_MatchKeyword(msg, cfg.keyword) then return end
         local sender = author and (author:match("^([^-]+)") or author)
         if sender and sender ~= "" then
@@ -362,21 +368,15 @@ function Recruitment:RegisterAutoInviteEvent()
     end)
 end
 
--- An invite the whisper earned. On WoW: Forever the game only invites from a click, so the
--- name waits in the auto-invite popup for the officer (issue #61); elsewhere it goes now.
--- `full` is the name exactly as the whisper carried it, which is what an Alt-click's link
--- invites with; Forever invites with it.
-function Recruitment:_DoInvite(name, full)
-    if GuildOS.Compat.NeedsClick() then
-        self:QueueInvite(name, full)
-        return
-    end
+-- An invite the whisper earned. Only TBC Anniversary gets here (#256): the popup that held it for a
+-- click on WoW: Forever (#61) went with the invite the game took away from addons there.
+function Recruitment:_DoInvite(name)
     self:_InviteNow(name)
 end
 
 function Recruitment:_InviteNow(name, full)
     local cfg = GuildOS.db.recruitment.autoInvite
-    GuildInvite(full or name)
+    if not GuildOS.Compat.GuildInvite(full or name) then return end
     if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(name) end
     self:_MarkInvited(name, GetServerTime(), cfg.cooldownSec)
     GuildOS:Print(string.format(L["Auto-invited |cffFFFFFF%s|r to the guild."], name))
@@ -384,8 +384,9 @@ end
 
 function Recruitment:_HandleKeywordWhisper(sender, author)
     local cfg = GuildOS.db.recruitment.autoInvite
-    -- Ban gate (BanList already alerts on a banned whisper)
-    if GuildOS.BanList and GuildOS.BanList:IsBanned(sender) then return end
+    -- Ban gate (BanList already alerts on a banned whisper). The whole sender: on retail the realm
+    -- tells a banned namesake from this realm's (issue #184).
+    if GuildOS.BanList and GuildOS.BanList:IsBanned(author or sender) then return end
     -- Cooldown
     if self:_OnInviteCooldown(sender, GetServerTime()) then return end
     -- Filters need a /who, which Forever runs only from a click: there the officer's click on
@@ -399,8 +400,8 @@ function Recruitment:_HandleKeywordWhisper(sender, author)
 end
 
 ----------------------------------------------------------------------
--- What waits for a click on WoW: Forever (issue #61): the welcome for whoever joined, and the
--- invites whispers asked for. A queue each, so a burst of joins or whispers is one popup.
+-- What waits for a click on WoW: Forever (issue #61): the welcome for whoever joined. A queue, so a
+-- burst of joins is one popup.
 ----------------------------------------------------------------------
 local function addOnce(list, name, entry)
     for _, n in ipairs(list) do
@@ -416,12 +417,41 @@ function Recruitment:QueueWelcome(name)
     self:ShowWelcomePopup()
 end
 
--- The click: one welcome in guild chat for everyone waiting. False when nobody is.
+-- Why the game would refuse `msg` as a chat line, in the reader's words, or nil (#270). A "|" that is
+-- not one of the game's own codes ("Welcome! | have fun") raises inside SendChatMessage, and the
+-- welcome then never came, with nothing said.
+function Recruitment.ChatTextProblem(msg)
+    if type(msg) ~= "string" or strtrim(msg) == "" then return L["Nothing to send."] end
+    if msg:find("|", 1, true) then return L["The game refuses the || character in a chat message. Use / or - instead."] end
+    if msg:find("[\r\n]") then return L["A chat message has one line."] end
+    if #msg > 255 then return L["The game sends at most 255 characters."] end
+    return nil
+end
+
+-- The one way a welcome reaches guild chat, clicked (Forever) or on its own (Anniversary): the text
+-- is checked first and a send the game raises on is said, never lost (#270). True when it went.
+function Recruitment:SendWelcomeText(msg, who)
+    local problem = Recruitment.ChatTextProblem(msg)
+    if problem then
+        GuildOS:Print(string.format(L["The welcome was not sent: %s"], problem))
+        return false
+    end
+    local ok, err = pcall(SendChatMessage, msg, "GUILD")
+    if not ok then
+        GuildOS:Print(string.format(L["The welcome was not sent: %s"], tostring(err)))
+        return false
+    end
+    if who then GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. who .. L["|r in guild chat."]) end
+    return true
+end
+
+-- The click: one welcome in guild chat for everyone waiting. False when nobody is, or when the
+-- game would not take the text: whoever waits keeps waiting for the fixed one.
 function Recruitment:SendPendingWelcome()
     local list = self._pendingWelcomes
     local msg = GuildOS.db.recruitment and GuildOS.db.recruitment.welcomeMessage
     if not list or #list == 0 or not msg or msg == "" then return false end
-    SendChatMessage(msg, "GUILD")
+    if not self:SendWelcomeText(msg) then return false end
     GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. table.concat(list, ", ") .. L["|r in guild chat."])
     self._pendingWelcomes = {}
     return true
@@ -444,40 +474,6 @@ end
 
 function Recruitment:DismissPendingWelcome()
     self._pendingWelcomes = {}
-end
-
-function Recruitment:QueueInvite(name, full)
-    self._pendingInvites = self._pendingInvites or {}
-    if addOnce(self._pendingInvites, name, { name = name, full = full }) then
-        GuildOS:Print(string.format(L["|cffFFFFFF%s|r whispered the keyword: invite them from the popup."], name))
-    end
-    self:ShowInvitePopup()
-end
-
--- The click: invite the one the popup shows, and only that one: on Forever the click is the
--- only check there is. If they were banned since they were queued (a ban can arrive from
--- another officer meanwhile) or already invited, they are dropped and the next waits for its
--- own click. Returns how many are left.
-function Recruitment:InviteNext()
-    local list = self._pendingInvites or {}
-    local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
-    local e = table.remove(list, 1)
-    if not (e and cfg) then return #list end
-    if GuildOS.BanList and GuildOS.BanList:IsBanned(e.name) then
-        GuildOS:Print(string.format(L["|cffFFFFFF%s|r is banned: not invited."], e.name))
-    elseif not self:_OnInviteCooldown(e.name, GetServerTime()) then
-        self:_InviteNow(e.name, e.full)
-    end
-    return #list
-end
-
--- Skipped: not invited, and not asked about again until the cooldown runs out.
-function Recruitment:SkipNext()
-    local list = self._pendingInvites or {}
-    local e = table.remove(list, 1)
-    local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
-    if e and cfg then self:_MarkInvited(e.name, GetServerTime(), cfg.cooldownSec) end
-    return #list
 end
 
 -- Async /who lookup, one query at a time. Fail-safe: on timeout / no result,
@@ -1189,35 +1185,6 @@ function Recruitment:ShowWelcomePopup()
     f.note:SetText((GuildOS.db.recruitment and GuildOS.db.recruitment.welcomeMessage) or "")
     f:Fit()
     f:Show()
-    -- An invite popup already up moves under this one instead of being covered by it.
-    if self.invitePopup and self.invitePopup:IsShown() then self:ShowInvitePopup() end
-end
-
-function Recruitment:ShowInvitePopup()
-    local f = self.invitePopup
-    if not f then
-        f = ActionPopup(L["Auto-Invite"], -300, L["Invite"], L["Skip"])
-        f.okBtn:SetScript("OnClick", function() Recruitment:InviteNext(); Recruitment:ShowInvitePopup() end)
-        f.laterBtn:SetScript("OnClick", function() Recruitment:SkipNext(); Recruitment:ShowInvitePopup() end)
-        self.invitePopup = f
-    end
-    local list = self._pendingInvites or {}
-    if #list == 0 then f:Hide() return end
-    local line = string.format(L["|cffFFFFFF%s|r whispered the keyword."], list[1].name)
-    if #list > 1 then line = line .. " " .. string.format(L["(+%d waiting)"], #list - 1) end
-    f.line:SetText(line)
-    f.note:SetText(L["On WoW: Forever the game only invites from a click, and level and class are not checked."])
-    f:Fit()
-    if not f.moved then
-        f:ClearAllPoints()
-        local w = self.welcomePopup
-        if w and w:IsShown() then
-            f:SetPoint("TOP", w, "BOTTOM", 0, -8)
-        else
-            f:SetPoint("TOP", UIParent, "TOP", 0, -300)
-        end
-    end
-    f:Show()
 end
 
 ----------------------------------------------------------------------
@@ -1371,7 +1338,10 @@ function Recruitment:HandleCommand(args)
     elseif cmd == "msg" or cmd == "message" then
         table.remove(args, 1)
         local newMsg = table.concat(args, " ")
-        if newMsg and newMsg ~= "" then
+        local problem = newMsg ~= "" and Recruitment.ChatTextProblem(newMsg)
+        if problem then
+            GuildOS:Print(problem)
+        elseif newMsg and newMsg ~= "" then
             GuildOS.db.recruitment.message = newMsg
             GuildOS:Print(L["Recruitment message set to: |cffFFFFFF"] .. newMsg .. "|r")
         else
@@ -1442,7 +1412,10 @@ function Recruitment:HandleCommand(args)
             table.remove(args, 1)
             table.remove(args, 1)
             local newMsg = table.concat(args, " ")
-            if newMsg and newMsg ~= "" then
+            local problem = newMsg ~= "" and Recruitment.ChatTextProblem(newMsg)
+            if problem then
+                GuildOS:Print(problem)
+            elseif newMsg and newMsg ~= "" then
                 GuildOS.db.recruitment.welcomeMessage = newMsg
                 GuildOS:Print(L["Welcome message set to: |cffFFFFFF"] .. newMsg .. "|r")
             else
@@ -1466,9 +1439,10 @@ function Recruitment:HandleCommand(args)
                 GuildOS:Print(L["|cffFF4444You don't have permission to invite.|r"])
                 return
             end
-            GuildInvite(target)
-            if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(target) end
-            GuildOS:Print(L["Guild invite sent to |cffFFFFFF"] .. target .. "|r.")
+            if GuildOS.Compat.GuildInvite(target) then
+                if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(target) end
+                GuildOS:Print(L["Guild invite sent to |cffFFFFFF"] .. target .. "|r.")
+            end
         else
             GuildOS:Print(L["Usage: /guildos recruit invite <PlayerName>"])
         end
@@ -1666,8 +1640,7 @@ function Recruitment:RegisterWelcomeEvent()
                     -- popup stays up until this officer sends or dismisses it.
                     Recruitment:QueueWelcome(newMember)
                 else
-                    SendChatMessage(welcomeMsg, "GUILD")
-                    GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. newMember .. L["|r in guild chat."])
+                    Recruitment:SendWelcomeText(welcomeMsg, newMember)
                 end
             end
         end)

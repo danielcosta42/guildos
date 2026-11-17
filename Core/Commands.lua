@@ -48,11 +48,15 @@ local function printHelp()
     helpHeader(L["Raid and loot"])
     if GuildOS.LootMaster then helpLine("/gos lm", L["Master Loot helper status"]) end  -- not on retail (ADR-0026)
     if GuildOS.Points then helpLine("/gos points", L["Points and DKP window"]) end
-    if GuildOS.ConsumableChecker then  -- TBC content (ADR-0014)
+    if GuildOS.TradeCouncil then   -- retail's loot council by trade (issue #185)
+        helpLine("/gos offer [item]", L["Offer a tradeable item to the raid, or open the loot council"])
+    end
+    if GuildOS.ConsumableChecker then  -- Anniversary and retail, not Forever (ADR-0014, issue #187)
         helpLine("/gos cons",      L["Check raid consumables"])
     end
     helpLine("/gos specs",         L["Scan group talent specs"])
-    helpLine("/gos export <what>", L["Export roster, attendance or loot"])
+    helpLine("/gos export <what>", GuildOS.LootTracker and L["Export roster, attendance or loot"]
+        or L["Export roster or attendance"])   -- the loot history is on retail too since issue #183
     if GuildOS.Companion then helpLine("/gos web [on|off]", L["Copy your guild into the web companion"]) end
     if GuildOS.CompanionImport then helpLine("/gos roster", L["Bring the raid roster in from the website"]) end
 
@@ -70,8 +74,10 @@ local function printHelp()
     helpLine("/gos sync",     L["Force a full data sync"])
     helpLine("/gos selftest", L["Run the built-in self test"])
     helpLine("/gos errors",   L["Show recent errors"])
-    helpLine("/gos probe",    L["Record this client's facts for the Forever beta"])
+    helpLine("/gos perf [reset]", L["Where Guild OS spends its time since login, or zero the counters"])
+    helpLine("/gos probe",    L["Record this client's facts for support"])
     helpLine("/gos probe chat", L["Post two test lines in guild chat to see whether an addon may post on its own"])
+    helpLine("/gos probe channel", L["Join a temporary channel to see whether an addon message may go through one"])
     helpLine("/gos style preview", L["Show the Forever style's pieces side by side"])
     helpLine("/gos debug",    L["Toggle debug output"])
 
@@ -168,10 +174,11 @@ function GuildOS:EraseGuildData()
     ReloadUI()
 end
 
--- The verbs of what retail does not have (ADR-0026): loot is personal there and guildos.me takes no
--- retail guild yet. Each module is absent, so its verb says so rather than doing nothing or raising.
-local RETAIL_ABSENT = { "^points$", "^dkp$", "^equity$", "^lootequity$", "^lm$", "^lm%s", "^lootmaster$",
-    "^web", "^companion", "^roster", "^wish", "^softres" }
+-- The verbs of what retail does not have (ADR-0026): no Master Loot, and no soft reserves (softres.it
+-- runs Classic raids only). Each module is absent, so its verb says so rather than doing nothing or
+-- raising. The site's verbs (web, companion, roster) are retail's too since issue #182, equity since
+-- issue #183, and points, dkp and wish since issue #185.
+local RETAIL_ABSENT = { "^lm$", "^lm%s", "^lootmaster$", "^softres" }
 
 local function absentHere(msg)
     if not GuildOS.Client.isRetail then return false end
@@ -202,6 +209,11 @@ local function handleCommand(msg)
         if GuildOS.CommSystem then
             GuildOS.CommSystem:FullSync()
         end
+    elseif msg == "perf" then
+        GuildOS.Perf:Print()
+    elseif msg == "perf reset" then
+        GuildOS.Perf:Reset()
+        GuildOS:Print(L["Performance counters zeroed."])
     elseif msg == "points" or msg == "dkp" then
         if GuildOS.ShowPointsFrame then
             GuildOS:ShowPointsFrame()
@@ -304,8 +316,13 @@ local function handleCommand(msg)
         -- Officer: compose/toggle the guild recruitment beacon.
         if GuildOS.ShowRecruitBeacon then GuildOS:ShowRecruitBeacon() end
     elseif msg == "lfg" or msg == "recruiting" then
-        -- Anyone: browse guilds recruiting nearby (heard over the mesh).
-        if GuildOS.ShowRecruitInbox then GuildOS:ShowRecruitInbox() end
+        -- Anyone: browse guilds recruiting nearby. With no guild, on Forever and retail, that is the
+        -- guild finder; otherwise the inbox of what was heard over the mesh.
+        if IsInGuild() then
+            if GuildOS.ShowRecruitInbox then GuildOS:ShowRecruitInbox() end
+        else
+            GuildOS:OpenGuildFinder()
+        end
     elseif msg == "map" or msg == "guildmap" then
         -- Anyone: open the live guild map (world map pins + list overlay).
         if GuildOS.ToggleGuildMap then GuildOS:ToggleGuildMap() end
@@ -324,17 +341,16 @@ local function handleCommand(msg)
         GuildOS:SetSetting("hijackGuildButton", on)
         GuildOS:Print(on and L["Guild button now opens Guild OS."]
             or L["Guild button now opens the Blizzard guild UI. Open Guild OS from the minimap button."])
-    elseif msg == "prune" then
-        local removed = GuildOS:PruneStaleData()
-        GuildOS:Print(string.format(L["Pruned %d member(s) who left the guild."], removed))
     elseif msg == "debug" then
         GuildOS.Logger.debug = not GuildOS.Logger.debug
         GuildOS:Print(GuildOS.Logger.debug and L["Debug mode ON."] or L["Debug mode OFF."])
     elseif msg == "resscan" then
         -- Diagnostic: run the resistance scan (equipped + bags) and print the max
         -- wearable per school, so the tooltip-based read can be verified in-game.
-        local r = GuildOS.DataCollector and GuildOS.DataCollector:CollectResistances()
-        if r then
+        local r = GuildOS.Resistances and GuildOS.DataCollector and GuildOS.DataCollector:CollectResistances()
+        if not GuildOS.Resistances then
+            GuildOS:Print(L["Not available on this client."])   -- no resistance gear on retail (#184)
+        elseif r then
             GuildOS:Print(string.format(
                 "Resistances (max wearable) - Shadow %d | Nature %d | Frost %d | Fire %d | Arcane %d",
                 r.shadow or 0, r.nature or 0, r.frost or 0, r.fire or 0, r.arcane or 0))
@@ -359,6 +375,9 @@ local function handleCommand(msg)
     elseif msg == "probe chat" then
         -- Whether chat from a timer gets through, measured (issue #75).
         if GuildOS.Probe then GuildOS.Probe:RunChat() end
+    elseif msg == "probe channel" then
+        -- Whether an addon message may go through a created channel, measured (specs/071-o-recrutamento).
+        if GuildOS.Probe then GuildOS.Probe:RunChannel() end
     elseif msg == "reset" then
         GuildOS:EraseGuildData()
     elseif msg:match("^recruit") then
@@ -376,6 +395,11 @@ local function handleCommand(msg)
             if results then
                 local missing = GuildOS.ConsumableChecker:GetMissingCount(results)
                 GuildOS:Print(string.format(L["Consumable check done. %d players missing buffs."], missing))
+                -- Retail: what the client could not read is said apart, never counted as missing (#187).
+                local unknown = GuildOS.ConsumableChecker:GetUnknownCount(results)
+                if unknown > 0 then
+                    GuildOS:Print(string.format(L["%d could not be read (out of range, or hidden by the game)."], unknown))
+                end
             end
         else
             GuildOS:Print(L["Not available on this client."])
@@ -387,10 +411,14 @@ local function handleCommand(msg)
             GuildOS:Print(L["Not available on this client."])
         end
     elseif msg:match("^trial") then
-        local rest = msg:gsub("^trial%s*", "")
+        -- The roster's key, so a guildmate on a connected realm is found as the roster menu finds
+        -- them: the whole rest when it is somebody (two words on Forever), else the first word, as
+        -- it always was (issue #177).
+        local rest = strtrim((msg:gsub("^trial%s*", "")))
+        local key = GuildOS:RosterKey(rest)
         local name = rest:match("^(%S+)")
-        if name and GuildOS.TrialTracker then
-            local key = GuildOS:GetPlayerKey(name)
+        if not key and name then key = GuildOS:RosterKey(name) or GuildOS:GetPlayerKey(name) end
+        if key and GuildOS.TrialTracker then
             GuildOS.TrialTracker:AddTrial(key)
         else
             GuildOS:Print(L["Usage: /guildos trial <PlayerName>"])
@@ -410,6 +438,22 @@ local function handleCommand(msg)
         else
             GuildOS:Print(L["Usage: /guildos note <PlayerName> <text>"])
         end
+    elseif msg == "offer" or msg:match("^offer%s") then
+        -- /gos offer [item link]: retail's loot council by trade (issue #185); the link keeps its case.
+        local link = strtrim((msg:gsub("^offer%s*", "")))
+        if not GuildOS.TradeCouncil then
+            GuildOS:Print(L["Not available on this client."])
+        elseif link == "" then
+            GuildOS:ShowTradeCouncil()
+        else
+            GuildOS.TradeCouncil:Offer(link)
+        end
+    elseif msg == "lm undo" then
+        -- /guildos lm undo - take the last award back (issue #294), as the Master Loot window's button
+        if GuildOS.LootMaster then
+            local award, why = GuildOS.LootMaster:UndoLastAward()
+            GuildOS:Print(award and string.format(L["|cffFFD700Undone:|r %s"], award.link) or why)
+        end
     elseif msg == "lm" or msg == "lootmaster" then
         local status = GuildOS:LootMasterStatus()
         if status then GuildOS:Print(status) end
@@ -427,7 +471,7 @@ local function handleCommand(msg)
             GuildOS:ShowWebString()
         end
     elseif msg:match("^roster") then
-        -- /guildos roster [invite|groups] — the roster the website planned.
+        -- /guildos roster [invite|groups|trim] — the roster the website planned.
         local I = GuildOS.CompanionImport
         local sub = I and msg:match("^roster%s+(%S+)")
         if not I then
@@ -440,6 +484,12 @@ local function handleCommand(msg)
             local moved, err = I:OrganizeGroups()
             if err then GuildOS:Print(err)
             else GuildOS:Print(string.format(L["Moved %d into their groups."], moved)) end
+        elseif sub == "trim" then
+            -- Out of the group whoever is not in the plan, after asking (issue #292).
+            I:AskTrim()
+        elseif sub == "plan" and GuildOS.RaidPlan then
+            -- The night's notes, tasks and loot rules from the site (issue #296).
+            GuildOS.RaidPlan:Show()
         else
             GuildOS:ShowImportPopup()
         end
@@ -453,7 +503,7 @@ local function handleCommand(msg)
             end
         end
     elseif msg:match("^export") then
-        -- /guildos export <roster|attendance|loot|readiness|standings> [csv|tsv|discord]
+        -- /guildos export <roster|attendance|loot|readiness|standings|equity> [csv|tsv|discord]
         local rest = strtrim((msg:gsub("^export%s*", "")))
         local dataset, fmt = rest:match("^(%S*)%s*(%S*)$")
         dataset = (dataset and dataset ~= "") and dataset or "roster"
@@ -464,8 +514,10 @@ local function handleCommand(msg)
         end
         if text then
             GuildOS:ShowExportPopup(string.format("%s (%s)", title or L["Export"], fmt), text)
-        else
-            GuildOS:Print(L["Usage: /guildos export <roster|attendance|loot|readiness|standings> [csv|tsv|discord]"])
+        elseif title == "absent" then
+            GuildOS:Print(L["Not available on this client."])
+        elseif GuildOS.Exporter then
+            GuildOS:Print(string.format(L["Usage: /guildos export <%s> [csv|tsv|discord]"], GuildOS.Exporter:Names()))
         end
     elseif msg:match("^wish") then
         if not GuildOS:IsOfficer() then
@@ -552,6 +604,8 @@ local function handleCommand(msg)
         else
             GuildOS:Print(L["Not available on this client."])
         end
+    elseif msg == "attune dumpquests" and not GuildOS.AttunementTracker then
+        GuildOS:Print(L["Not available on this client."])   -- TBC's attunement quests (issue #184)
     elseif msg == "attune dumpquests" then
         -- Dumps all completed quest IDs in the TBC attunement range.
         -- Covers T4/T5/T6 + some headroom for anniversary-specific hidden flags.
@@ -636,6 +690,8 @@ local function handleCommand(msg)
         local name = strtrim((msg:gsub("^unban%s+", "")))
         if name ~= "" and GuildOS.BanList and GuildOS.BanList:Remove(name) then
             GuildOS:Print(L["Unbanned "] .. name)
+        elseif name ~= "" and GuildOS.BanList and GuildOS:IsOfficer() then
+            GuildOS:Print(string.format(L["No ban to lift for %s."], name))   -- nothing stood there (#184)
         end
     elseif msg == "banlist" then
         GuildOS.UI:OpenWindow("management", "ban")
@@ -681,7 +737,7 @@ local function handleCommand(msg)
         local id  = msg:match("^open%s+(%S+)")
         local sub = msg:match("^open%s+%S+%s+(%S+)")
         local def = id and GuildOS.UI and GuildOS.UI.GetFeature and GuildOS.UI:GetFeature(id)
-        if def and def.tab then
+        if def and (def.tab or def.opens) then
             GuildOS.UI:OpenWindow(id, sub)
         else
             GuildOS:Print(L["Usage: /gos open <feature>. Try /gos open roster."])

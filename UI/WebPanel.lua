@@ -50,7 +50,7 @@ local function stamp(at)
     if not at or at <= 0 then return L["never"] end
     local dt = (GetServerTime() or time()) - at
     if dt < 120 then return L["just now"] end
-    return date("%d/%m %H:%M", at)
+    return GuildOS:DateText(at, " %H:%M")
 end
 
 local function writtenAgo()
@@ -158,7 +158,7 @@ function GuildOS:CreateWebPanel(parent, _win)
     countText:SetJustifyH("LEFT")
     countText:SetWordWrap(true)
     ackText:SetJustifyH("LEFT")
-    ackText:SetWordWrap(false)
+    ackText:SetWordWrap(true)   -- the no-ack lines say what to do, and run past one row
 
     local publishBtn  = UI:CreateButton(panel, L["Publish now"], 120, BTN_H)
     local publishWhy  = UI:CreateText(panel, "", 9, C.gold.r, C.gold.g, C.gold.b)
@@ -189,6 +189,10 @@ function GuildOS:CreateWebPanel(parent, _win)
     local bringBtn  = UI:CreateButton(panel, L["Bring roster"], 110, BTN_H)
     local inviteBtn = UI:CreateButton(panel, L["Invite"], 90, BTN_H)
     local groupsBtn = UI:CreateButton(panel, L["Groups"], 90, BTN_H)
+    -- Out of the group whoever is not in the plan, after a confirmation naming them (issue #292).
+    local trimBtn   = UI:CreateButton(panel, L["Fit to plan"], 100, BTN_H)
+    -- The night's plan from the site: notes, tasks and loot rules (issue #296).
+    local planBtn   = UI:CreateButton(panel, L["Raid plan"], 90, BTN_H)
     local raidWhy   = UI:CreateText(panel, "", 9, C.gold.r, C.gold.g, C.gold.b)
     raidWhy:SetJustifyH("LEFT")
     raidWhy:SetWordWrap(true)
@@ -309,6 +313,14 @@ function GuildOS:CreateWebPanel(parent, _win)
         panel:Refresh()
     end)
 
+    planBtn:SetScript("OnClick", function() GuildOS.RaidPlan:Show() end)
+
+    trimBtn:SetScript("OnClick", function()
+        local I = GuildOS.CompanionImport
+        if I then I:AskTrim() end
+        panel:Refresh()
+    end)
+
     groupsBtn:SetScript("OnClick", function()
         local I = GuildOS.CompanionImport
         if not I then return end
@@ -374,8 +386,9 @@ function GuildOS:CreateWebPanel(parent, _win)
         if on then
             -- Build walks the whole guild, so it runs here and nowhere else.
             local _, count = co:Build()
+            -- A retail region the site has no world for says so here (issue #182).
             countText:SetText(type(count) == "number"
-                and string.format(L["%d members go out next time"], count) or "")
+                and string.format(L["%d members go out next time"], count) or co:Refused() or "")
             writtenText:SetText(string.format(L["Last written: %s"], writtenAgo()))
 
             -- The companion's side of the round trip, and the only place in the
@@ -389,9 +402,15 @@ function GuildOS:CreateWebPanel(parent, _win)
 
             local dim, gold = C.textDim, C.gold
             if not ackAt then
-                -- A companion from before this existed never writes the value at
-                -- all, so its absence is the signature of an old one.
-                ackText:SetText(string.format(L["Companion out of date. Download it again at %s"], SITE))
+                -- No ack: a companion that wrote blocks without one has no guild link for this
+                -- folder; an empty inbox is the one the addon package ships, not written over yet.
+                local msg
+                if I and I:InboxHasBlocks() then
+                    msg = L["The companion is working, but none of its guild links sends this guild's raids here. Link the guild at %s"]
+                else
+                    msg = L["No word from the companion yet. If it is running, wait a few minutes; if not, download it at %s"]
+                end
+                ackText:SetText(string.format(msg, SITE))
                 ackText:SetTextColor(gold.r, gold.g, gold.b)
             elseif (GetServerTime() or time()) - ackAt > ACK_STALE then
                 ackText:SetText(string.format(L["The companion has sent nothing since %s"], stamp(ackAt)))
@@ -401,9 +420,15 @@ function GuildOS:CreateWebPanel(parent, _win)
                 ackText:SetTextColor(dim.r, dim.g, dim.b)
             end
 
-            publishNote:SetText(L["Writes and reloads the interface. The companion sends it on from your PC."])
+            -- Only an officer's client puts the site's raids on the guild calendar (UpsertWebRaid).
+            local note = L["Writes and reloads the interface. The companion sends it on from your PC."]
+            if not GuildOS:IsOfficer() then
+                note = note .. "\n" .. L["Raids from the site go on the calendar from an officer's client. Your rank is above the guild's officer ranks, so here they only show in this tab."]
+            end
+            publishNote:SetText(note)
         else
-            countText:SetText(L["Nothing leaves the game while this is off."])
+            -- The guild's: a member's own pack goes out with the switch off, through their own companion.
+            countText:SetText(L["The guild's data stays in the game while this is off."])
             writtenText:SetText("")
             ackText:SetText("")
             publishNote:SetText("")
@@ -422,7 +447,7 @@ function GuildOS:CreateWebPanel(parent, _win)
             raidTitle:SetText(title)
             local when = tonumber(roster.startsAt) or 0
             if when > 0 then
-                raidWhen:SetText(string.format("%s · %s", date("%a %H:%M", when),
+                raidWhen:SetText(string.format("%s · %s", GuildOS:LocalDate("%a %H:%M", when),
                     fmtCountdown(when - (GetServerTime() or time()))))
             else
                 raidWhen:SetText("")
@@ -473,13 +498,16 @@ function GuildOS:CreateWebPanel(parent, _win)
         -- when clicked is the exact failure this panel exists to remove.
         local invOk, invWhy = false, L["Import a roster first."]
         local grpOk, grpWhy = false, L["Import a roster first."]
+        local trimOk = false
         if I then
             invOk, invWhy = I:CanInvite()
             grpOk, grpWhy = I:CanOrganize()
+            trimOk = I:CanTrim()
         end
         setEnabled(bringBtn, on)
         setEnabled(inviteBtn, invOk and true or false)
         setEnabled(groupsBtn, grpOk and true or false)
+        setEnabled(trimBtn, trimOk and true or false)
 
         -- One reason line, not three: show the first thing standing in the
         -- way, so the officer gets one instruction instead of a wall.
@@ -551,7 +579,7 @@ function GuildOS:CreateWebPanel(parent, _win)
         y = y + ROW_H
         if ackText:IsShown() then
             place(ackText); ackText:SetWidth(inner)
-            y = y + ROW_H
+            y = y + math.max(ROW_H, math.ceil(ackText:GetStringHeight() or 0) + 2)
         end
         y = y + GAP
 
@@ -566,7 +594,7 @@ function GuildOS:CreateWebPanel(parent, _win)
             publishWhy:SetWidth(math.max(60, inner - 128))
             y = y + BTN_H + 2
             place(publishNote); publishNote:SetWidth(inner)
-            y = y + ROW_H * 2 + GAP
+            y = y + math.max(ROW_H * 2, math.ceil(publishNote:GetStringHeight() or 0) + 2) + GAP
         end
 
         y = y + SECTION
@@ -596,6 +624,10 @@ function GuildOS:CreateWebPanel(parent, _win)
         inviteBtn:SetPoint("LEFT", bringBtn, "RIGHT", 6, 0)
         groupsBtn:ClearAllPoints()
         groupsBtn:SetPoint("LEFT", inviteBtn, "RIGHT", 6, 0)
+        trimBtn:ClearAllPoints()
+        trimBtn:SetPoint("LEFT", groupsBtn, "RIGHT", 6, 0)
+        planBtn:ClearAllPoints()
+        planBtn:SetPoint("LEFT", trimBtn, "RIGHT", 6, 0)
         y = y + BTN_H + 2
         place(raidWhy); raidWhy:SetWidth(inner)
         y = y + ROW_H

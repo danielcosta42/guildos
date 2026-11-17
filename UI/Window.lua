@@ -29,7 +29,7 @@ local RULE_H       = 28
 local RULE_PAD     = 6
 local TAB_GAP      = 2
 local TAB_MIN_W    = 48
-local TAB_TEXT_PAD = 20
+local TAB_TEXT_PAD = 18      -- 20 until the Groups tab (#341): an officer's sixteen tabs still fit at 1000px
 local MORE_W       = 36
 local FOOT_H       = 22
 local FOOT_PAD     = 10
@@ -201,8 +201,7 @@ local function inviteField(parent)
             GuildOS:Print(L["Enter a player name to invite."])
             return
         end
-        GuildInvite(target)
-        GuildOS:Print(string.format(L["Guild invite sent to %s."], target))
+        if GuildOS.Compat.GuildInvite(target) then GuildOS:Print(string.format(L["Guild invite sent to %s."], target)) end
         box:SetText("")
     end
     btn:SetScript("OnClick", function() invite(); box:ClearFocus() end)
@@ -504,7 +503,7 @@ local function createWindow()
         for _, item in ipairs(FOOTER) do
             local frame = self.footItems[item.key]
             frame:Hide()
-            if item.key ~= "invite" or CanGuildInvite() then
+            if item.key ~= "invite" or GuildOS.Compat.AddonMayInvite() then   -- Anniversary only (#256)
                 spec[#spec + 1] = { key = item.key, min = frame:GetWidth(), weight = 0, priority = item.priority }
             end
         end
@@ -525,7 +524,11 @@ local function createWindow()
         GuildOS:SafeCall(function()
             local A = UI.Agora
             local online = A:RosterLoading() and DASH or string.format(L["%d online"], A:OnlineCount())
-            meta:SetText((GetGuildInfo("player") or "Guild OS") .. DOT .. online)
+            local level = GuildOS.Achievements and GuildOS.Achievements:Renown()
+            local badge = level and GuildOS.Achievements:Insignia()
+            local renown = level and (DOT .. (badge and ("|T" .. badge .. ":14:14|t ") or "")
+                .. string.format(L["renown %d"], level)) or ""
+            meta:SetText((GetGuildInfo("player") or "Guild OS") .. DOT .. online .. renown)
             local last = A:LastSync()
             sync:SetText(last and string.format(L["sync %s"], GuildOS:TimeAgo(last)) or L["not synced yet"])
             -- The three numbers walk the officer work, so only while they show.
@@ -655,9 +658,13 @@ local function createWindow()
     GuildOS.Compat.RegisterEvent(f, "RAID_ROSTER_UPDATE")
     GuildOS.Compat.RegisterEvent(f, "PARTY_LOOT_METHOD_CHANGED")
     GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
+    -- The title counts who is online over the whole roster: at most once every ROSTER_GAP (issue #324).
+    local function shownTitle()
+        if f:IsShown() then f:RefreshTitle() end
+    end
     f:SetScript("OnEvent", function(self, event)
         if event == "GUILD_ROSTER_UPDATE" then
-            if self:IsShown() then self:RefreshTitle() end
+            GuildOS:Coalesce("windowTitle", GuildOS.ROSTER_GAP, shownTitle)
         else
             self:UpdateTabVisibility()
         end
@@ -686,10 +693,22 @@ end
 -- every entry point uses. Returns true when the tab opened.
 function UI:OpenWindow(id, sub, filter)
     local def = self:GetFeature(id)
+    -- A feature that lives in another tab's sub-tab (issue #346: DKP, the wishlists) opens it.
+    if def and not def.tab and def.opens then
+        if self:IsFeatureAbsent(def) then
+            GuildOS:Print(L["Not available on this client."])
+            return false
+        end
+        return self:OpenWindow(def.opens[1], sub or def.opens[2], filter)
+    end
     if not (def and def.tab) then return false end
     -- Checked here with their own messages, before the tab gate that covers
-    -- all three: a disabled feature, a failed one and a rank refusal read
-    -- differently to the player.
+    -- all four: an absent feature, a disabled one, a failed one and a rank
+    -- refusal read differently to the player.
+    if self:IsFeatureAbsent(def) then
+        GuildOS:Print(L["Not available on this client."])
+        return false
+    end
     if not GuildOS:IsFeatureEnabled(id) then
         GuildOS:Print(string.format(L["%s is disabled in Settings."], def.label))
         return false

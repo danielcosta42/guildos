@@ -46,8 +46,9 @@ GuildOS.Client = {
     defaultRaidSize = isAnniversary and 25 or 20,
     classes = isRetail and RETAIL_CLASSES or CLASSIC_CLASSES,
     -- Where a missing enchant is a real problem: TBC's nine slots (Forever's too), Midnight's
-    -- head, shoulder, chest, feet, both rings and the weapon; cloak and wrist enchants are gone.
-    enchantSlots = isRetail and { 1, 3, 5, 8, 11, 12, 16 } or { 1, 3, 5, 7, 8, 9, 10, 15, 16 },
+    -- head, shoulder, chest, legs (spellthread, armor kit), feet, both rings and both weapons;
+    -- cloak and wrist enchants are gone. An off hand counts only as a weapon (issue #177).
+    enchantSlots = isRetail and { 1, 3, 5, 7, 8, 11, 12, 16, 17 } or { 1, 3, 5, 7, 8, 9, 10, 15, 16 },
     has = {
         secrets = issecretvalue ~= nil,
         chatLockdown = (C_ChatInfo and C_ChatInfo.InChatMessagingLockdown) ~= nil,
@@ -81,6 +82,73 @@ function Compat.UnitIdentity(unit)
     local _, classFile = UnitClass(unit)
     if Compat.IsSecret(name, realm, classFile) then return end
     return name, realm, classFile
+end
+
+-- Whether a boss fight is going on. The global is a deprecation fallback on all three clients, kept by a
+-- CVar and bound for removal; the addon asks the namespace first and takes no for an answer without either.
+function Compat.IsEncounterInProgress()
+    local ask = C_InstanceEncounter and C_InstanceEncounter.IsEncounterInProgress or IsEncounterInProgress
+    return ask ~= nil and ask() == true
+end
+
+-- The region this client plays in, as guildos.me writes it, from GetCurrentRegion(): 1 the Americas
+-- ("us"), 2 Korea, 3 Europe, 4 Taiwan. Nil for any other answer (China, a test client), which the site
+-- has no world for, with the number the client gave (issue #182).
+local REGIONS = { [1] = "us", [2] = "kr", [3] = "eu", [4] = "tw" }
+function Compat.Region()
+    local id = GetCurrentRegion and GetCurrentRegion()
+    if Compat.IsSecret(id) then return nil end
+    return REGIONS[id], id
+end
+
+-- The realms a character here can be invited from: its own and the ones connected to it (retail's
+-- GetAutoCompleteRealms; Forever has no realms and answers nothing). A guild on any other realm
+-- cannot invite this character, so the guild finder leaves it out (specs/071). Names as the client
+-- writes them, never nil.
+function Compat.ConnectedRealms()
+    local out = {}
+    local own = GetRealmName and GetRealmName()
+    if type(own) == "string" and own ~= "" and not Compat.IsSecret(own) then out[1] = own end
+    local linked = GetAutoCompleteRealms and GetAutoCompleteRealms()
+    if type(linked) == "table" then
+        for _, name in ipairs(linked) do
+            if type(name) == "string" and name ~= "" and not Compat.IsSecret(name) then out[#out + 1] = name end
+        end
+    end
+    return out
+end
+
+-- The guild's tabard as the game draws it (issue #213; read in game on retail 2026-10-29, Forever's API is
+-- the same): GetGuildLogoInfo's three colours as bytes and the emblem's style, and GetGuildTabardFiles'
+-- six files, whose last two are the border (its style is only in them). Nil with no guild, no tabard,
+-- no such call or anything secret: the site turns this into its own code (specs/060).
+function Compat.GuildTabard()
+    if not (GetGuildLogoInfo and GetGuildTabardFiles) then return nil end
+    local logo = { GetGuildLogoInfo() }
+    local files = { GetGuildTabardFiles() }
+    if #logo < 11 or #files < 6 then return nil end
+    for i = 1, 11 do
+        if i ~= 10 and (Compat.IsSecret(logo[i]) or type(logo[i]) ~= "number") then return nil end
+    end
+    for i = 1, 6 do
+        if Compat.IsSecret(files[i]) or type(files[i]) ~= "number" or files[i] <= 0 then return nil end
+    end
+    local byte = function(v) return math.max(0, math.min(255, math.floor(v + 0.5))) end
+    return {
+        emblemStyle = logo[11],
+        background = { byte(logo[1]), byte(logo[2]), byte(logo[3]) },
+        border = { byte(logo[4]), byte(logo[5]), byte(logo[6]) },
+        emblem = { byte(logo[7]), byte(logo[8]), byte(logo[9]) },
+        files = { files[1], files[2], files[3], files[4], files[5], files[6] },
+    }
+end
+
+-- The client's own count of the seconds to its region's weekly reset; nil where the client has no
+-- such call. Only RaidTracker's self-test reads it, against the reset table (guildos-web#199).
+function Compat.SecondsUntilWeeklyReset()
+    local left = C_DateAndTime and C_DateAndTime.GetSecondsUntilWeeklyReset and C_DateAndTime.GetSecondsUntilWeeklyReset()
+    if Compat.IsSecret(left) then return nil end
+    return tonumber(left)
 end
 
 -- My own name the way the guild roster and every addon-message sender write it. WoW: Forever
@@ -147,6 +215,29 @@ function Compat.NewTicker(interval, fn, iterations)
         return C_Timer.NewTicker(interval, fn, iterations)
     end
     return nil
+end
+
+--- The game's own meter of an addon's CPU (C_AddOnProfiler, retail 11.0.2 on), in ms a frame:
+--- { recent, session, peak, all } (`all` is every addon together), or nil where the client has none
+--- or answers with nothing (issue #324). Each value may be nil on its own.
+function Compat.AddOnCPU(addon)
+    local P = C_AddOnProfiler
+    local M = Enum and Enum.AddOnProfilerMetric
+    if type(P) ~= "table" or type(M) ~= "table" or type(P.GetAddOnMetric) ~= "function" then return nil end
+    -- A metric this client lacks reaches the API as nil, which raises: pcall makes that a nil too.
+    local function read(fn, ...)
+        if type(fn) ~= "function" then return nil end
+        local ok, v = pcall(fn, ...)
+        return ok and tonumber(v) or nil
+    end
+    local out = {
+        recent  = read(P.GetAddOnMetric, addon, M.RecentAverageTime),
+        session = read(P.GetAddOnMetric, addon, M.SessionAverageTime),
+        peak    = read(P.GetAddOnMetric, addon, M.PeakTime),
+        all     = read(P.GetOverallMetric, M.RecentAverageTime),
+    }
+    if not (out.recent or out.session) then return nil end
+    return out
 end
 
 -- Send a /who query (C_FriendList on BCC/modern; legacy global fallback)
@@ -281,8 +372,19 @@ function Compat.OpenWorldMap()
 end
 
 -- Whether this client may edit guild public notes
+-- Whether Guild OS may write a member's public note. Only TBC Anniversary lets an addon: WoW: Forever
+-- 1.60.1.70790 forbids C_GuildInfo.SetNote to addons (ADDON_ACTION_FORBIDDEN on the roster's Add note,
+-- 2026-11-05), as it forbids GuildInvite (#256), and retail runs the same API (#259).
 function Compat.CanEditPublicNote()
+    if not GuildOS.Client.isAnniversary then return false end
     if CanEditPublicNote then return CanEditPublicNote() and true or false end
+    return false
+end
+
+-- Whether this client may read guild officer notes. Without it the roster answers "" for every one.
+function Compat.CanViewOfficerNote()
+    if C_GuildInfo and C_GuildInfo.CanViewOfficerNote then return C_GuildInfo.CanViewOfficerNote() and true or false end
+    if CanViewOfficerNote then return CanViewOfficerNote() and true or false end
     return false
 end
 
@@ -333,7 +435,7 @@ end
 -- 2.5.6 documents C_GuildInfo.SetNote(guid, note, isPublic) and not the old
 -- GuildRosterSetPublicNote(index, note), which stays as the fallback (issue #5).
 function Compat.SetGuildPublicNote(name, text, realm)
-    if not (CanEditPublicNote and CanEditPublicNote()) then return false, "no-permission" end
+    if not Compat.CanEditPublicNote() then return false, "no-permission" end
     local idx, why = Compat.FindGuildRosterIndex(name, realm)
     if not idx then return false, why end
     -- Member-authored text: strip UI escapes and cap without splitting a
@@ -465,6 +567,15 @@ function Compat.GetItemInfo(item)
     if GetItemInfo then return GetItemInfo(item) end
 end
 
+-- Whether an item is a weapon, from its id alone (no item cache needed); nil when the client
+-- cannot say. A shield or an off-hand frill takes no enchant on retail (issue #177).
+function Compat.IsWeapon(item)
+    local instant = C_Item and C_Item.GetItemInfoInstant or GetItemInfoInstant
+    if not (instant and item) then return nil end
+    local _, _, _, _, _, classID = instant(item)
+    return classID == 2   -- Enum.ItemClass.Weapon
+end
+
 -- An item's level as it is worn. On retail (ADR-0026) upgrades, crafting and the track an item
 -- dropped from move it away from GetItemInfo's base level, `base`, which every other client keeps.
 function Compat.ItemLevel(link, base)
@@ -483,6 +594,61 @@ function Compat.AverageItemLevel()
     equipped = tonumber(equipped)
     if not equipped or equipped <= 0 then return nil end
     return math.floor(equipped)
+end
+
+-- An inspected unit's equipped average as the game computes it, on retail (issue #184): the item
+-- level of a guildmate who has no Guild OS to send theirs. Needs INSPECT_READY first. Nil
+-- elsewhere, before the inspect has the gear, or when the client keeps it secret.
+function Compat.InspectItemLevel(unit)
+    if not (GuildOS.Client.isRetail and C_PaperDollInfo and C_PaperDollInfo.GetInspectItemLevel) then return nil end
+    local level = C_PaperDollInfo.GetInspectItemLevel(unit)
+    if Compat.IsSecret(level) then return nil end
+    level = tonumber(level)
+    if not level or level <= 0 then return nil end
+    return math.floor(level)
+end
+
+-- The primary stat my spec plays on, as UnitStat numbers it (1 strength, 2 agility, 4 intellect),
+-- on retail (issue #184); nil elsewhere, or before there is a spec.
+function Compat.PrimaryStat()
+    local S = GuildOS.Client.isRetail and C_SpecializationInfo
+    local index = S and S.GetSpecialization and S.GetSpecialization()
+    if Compat.IsSecret(index) or not index or index == 0 then return nil end
+    local stat = select(6, S.GetSpecializationInfo(index))
+    if Compat.IsSecret(stat) then return nil end
+    stat = tonumber(stat)
+    if stat == 1 or stat == 2 or stat == 4 then return stat end
+    return nil
+end
+
+local SPELL_SCHOOLS = 7                                -- MAX_SPELL_SCHOOLS; school 1 is physical
+local CR_VERSATILITY = CR_VERSATILITY_DAMAGE_DONE or 29 -- the rating PaperDollFrame shows
+
+-- My ratings as the retail character sheet shows them, in percent to two decimals (issue #184):
+-- crit the way PaperDollFrame takes it (the best of melee, ranged and the weakest spell school),
+-- haste, mastery, and versatility's damage bonus. Nil elsewhere, where the sheet has the classic
+-- stats. A rating the client cannot give, or keeps secret, is left out.
+function Compat.SecondaryStats()
+    if not GuildOS.Client.isRetail then return nil end
+    local function read(fn, ...)
+        local v = fn and fn(...)
+        if Compat.IsSecret(v) then return nil end
+        return tonumber(v)
+    end
+    local function round(v) return v and math.floor(v * 100 + 0.5) / 100 end
+    local spell
+    for school = 2, SPELL_SCHOOLS do
+        local v = read(GetSpellCritChance, school)
+        if v and (not spell or v < spell) then spell = v end
+    end
+    local crit
+    for _, v in pairs({ spell, read(GetRangedCritChance), read(GetCritChance) }) do   -- pairs skips the nils
+        if not crit or v > crit then crit = v end
+    end
+    local vers = read(GetCombatRatingBonus, CR_VERSATILITY)
+    if vers then vers = vers + (read(GetVersatilityBonus, CR_VERSATILITY) or 0) end
+    return { crit = round(crit), haste = round(read(GetHaste)), mastery = round(read(GetMasteryEffect)),
+             versatility = round(vers) }
 end
 
 -- C_Spell.GetSpellInfo returns a table; every caller reads the old global's order.
@@ -510,6 +676,138 @@ function Compat.UnitBuff(unit, index)
             a.sourceUnit, a.isStealable, a.nameplateShowPersonal, a.spellId
     end
     if UnitBuff then return UnitBuff(unit, index) end
+end
+
+----------------------------------------------------------------------
+-- Retail: the raid's consumables (issue #187)
+----------------------------------------------------------------------
+local MAX_AURAS = 40   -- buffs read per unit; retail has no such cap, so one more means the list is partial
+
+local function inCombat() return InCombatLockdown ~= nil and InCombatLockdown() and true or false end
+
+-- The spell ids of a unit's buffs, for the consumable check, and whether the list is all of them.
+-- Midnight keeps auras secret in combat and in instances: a buff the client keeps secret, or a unit
+-- token, is passed over and the list is partial, and a partial list can show a buff is there but
+-- never that one is missing; so is one with a buff past the MAX_AURAS read. Nil, nothing read: in
+-- combat (the check runs out of it, at the ready check and before the pull), while the client says
+-- auras are secret, without the aura API, or for a unit showing no buff at all, whose auras have not
+-- reached this client.
+function Compat.UnitBuffIDs(unit)
+    if Compat.IsSecret(unit) or inCombat() then return nil end
+    local secrets = C_Secrets and C_Secrets.ShouldAurasBeSecret
+    if secrets then
+        local secret = secrets()
+        if Compat.IsSecret(secret) or secret then return nil end
+    end
+    local get = C_UnitAuras and C_UnitAuras.GetBuffDataByIndex
+    if not get then return nil end
+    local ids, complete = {}, true
+    for i = 1, MAX_AURAS + 1 do
+        local a = get(unit, i)
+        local present = Compat.IsSecret(a) or type(a) == "table"
+        if not present then break end
+        if i > MAX_AURAS or Compat.IsSecret(a) then
+            complete = false
+        else
+            local id = a.spellId
+            if Compat.IsSecret(id) or not tonumber(id) then complete = false else ids[#ids + 1] = id end
+        end
+    end
+    if #ids == 0 and complete then return nil end
+    return ids, complete
+end
+
+-- Whether my main hand carries a temporary enchant (an oil, a stone, a shaman's imbue), on retail:
+-- true or false; nil elsewhere, in combat, or when the client keeps it secret. Only mine: nobody
+-- else's temporary enchant reaches this client (issue #187).
+function Compat.MainHandTempEnchant()
+    if not (GuildOS.Client.isRetail and GetWeaponEnchantInfo) or inCombat() then return nil end
+    local has = GetWeaponEnchantInfo()
+    if Compat.IsSecret(has) then return nil end
+    return has and true or false
+end
+
+----------------------------------------------------------------------
+-- Retail: Mythic+ and the Great Vault (issue #187)
+----------------------------------------------------------------------
+
+-- Ask the client for this season's Mythic+ data; CHALLENGE_MODE_MAPS_UPDATE says it has arrived.
+function Compat.RequestMythicPlus()
+    if GuildOS.Client.isRetail and C_MythicPlus and C_MythicPlus.RequestMapInfo then C_MythicPlus.RequestMapInfo() end
+end
+
+-- My Mythic+ this season, on retail: { rating, key = { map, level } }, the key left out when I hold
+-- none. Nil elsewhere, or when the client cannot say or keeps any of it secret, so a guildmate keeps
+-- what I sent before rather than a wrong answer (issue #187).
+function Compat.MythicPlus()
+    if not GuildOS.Client.isRetail then return nil end
+    local CM, MP = C_ChallengeMode, C_MythicPlus
+    local rating = CM and CM.GetOverallDungeonScore and CM.GetOverallDungeonScore()
+    if Compat.IsSecret(rating) or not tonumber(rating) then return nil end
+    local map = MP and MP.GetOwnedKeystoneChallengeMapID and MP.GetOwnedKeystoneChallengeMapID()
+    local level = MP and MP.GetOwnedKeystoneLevel and MP.GetOwnedKeystoneLevel()
+    if Compat.IsSecret(map, level) then return nil end
+    local out = { rating = math.floor(tonumber(rating) + 0.5) }
+    map, level = tonumber(map), tonumber(level)
+    if map and level and map > 0 and level > 0 then out.key = { map = map, level = level } end
+    return out
+end
+
+-- A Mythic+ dungeon's name in the reader's language, from its challenge map id; nil when unknown.
+function Compat.ChallengeMapName(map)
+    local get = C_ChallengeMode and C_ChallengeMode.GetMapUIInfo
+    if not (get and tonumber(map)) then return nil end
+    local name = get(tonumber(map))
+    if Compat.IsSecret(name) or type(name) ~= "string" or name == "" then return nil end
+    return name
+end
+
+-- The colour the game gives a Mythic+ rating, as r, g, b; nil when the client cannot say.
+function Compat.RatingColor(score)
+    local get = C_ChallengeMode and C_ChallengeMode.GetDungeonScoreRarityColor
+    if not (get and tonumber(score)) then return nil end
+    local c = get(tonumber(score))
+    if Compat.IsSecret(c) or type(c) ~= "table" or Compat.IsSecret(c.r, c.g, c.b) or not tonumber(c.r) then return nil end
+    return c.r, c.g, c.b
+end
+
+-- The Great Vault's rows by Enum.WeeklyRewardChestThresholdType, with 12.1.5's numbers for a client
+-- that does not name them. The world row is the delves' (a delve tier is its level).
+local VAULT_TYPES = { Raid = { "raid", 3 }, Activities = { "dungeon", 1 }, World = { "world", 6 } }
+
+-- My Great Vault this week, on retail: one { row, progress, threshold, level } per slot of the raid,
+-- dungeon and world rows. Nil elsewhere, before the client has the activities (WEEKLY_REWARDS_UPDATE),
+-- or when it keeps any of them secret (issue #187).
+function Compat.WeeklyActivities()
+    local get = GuildOS.Client.isRetail and C_WeeklyRewards and C_WeeklyRewards.GetActivities
+    if not get then return nil end
+    local enum = Enum and Enum.WeeklyRewardChestThresholdType or {}
+    local rowOf = {}
+    for name, v in pairs(VAULT_TYPES) do rowOf[tonumber(enum[name]) or v[2]] = v[1] end
+    local list = get()
+    if Compat.IsSecret(list) or type(list) ~= "table" then return nil end
+    local out = {}
+    for _, a in ipairs(list) do
+        if Compat.IsSecret(a) or type(a) ~= "table" then return nil end
+        if Compat.IsSecret(a.type, a.progress, a.threshold, a.level) then return nil end
+        local row = rowOf[a.type]
+        if row then
+            out[#out + 1] = { row = row, progress = tonumber(a.progress) or 0, threshold = tonumber(a.threshold) or 0,
+                              level = tonumber(a.level) or 0 }
+        end
+    end
+    return #out > 0 and out or nil
+end
+
+-- When this week began, by the server's clock: the weekly reset this client's region had last. Nil
+-- where the client cannot say (issue #187). The Great Vault's week, which is the game's own, so it is
+-- asked of the client; RaidTracker:WeekStart(n) is the lockout week from the region table, which the
+-- site shares and the self-test holds against this client (guildos-web#199).
+function Compat.WeekStart()
+    local get = C_DateAndTime and C_DateAndTime.GetWeeklyResetStartTime
+    local at = get and get()
+    if Compat.IsSecret(at) then return nil end
+    return tonumber(at)
 end
 
 function Compat.GetContainerNumSlots(bag)
@@ -542,6 +840,280 @@ function Compat.UseContainerItem(bag, slot)
 end
 
 ----------------------------------------------------------------------
+-- The Encounter Journal (retail, issue #185)
+----------------------------------------------------------------------
+
+-- A raid's loot as the Encounter Journal lists it: { { itemID, name, link, encounterID, boss } },
+-- every class's, plus the raid's name and whether every row had its name yet (the journal fills a list
+-- in as its data arrives, EJ_LOOT_DATA_RECIEVED). The journal's selection is the player's too: nothing
+-- is read while it is open ("busy"), and its class and slot filters and the instance it last showed are
+-- put back after. Nil on a client without the journal (Forever's has none of these).
+function Compat.JournalLoot(journalInstanceID)
+    local J = C_EncounterJournal
+    if not (EJ_SelectInstance and EJ_GetNumLoot and J and J.GetLootInfoByIndex) then return nil end
+    local open = EncounterJournal and EncounterJournal.IsShown and EncounterJournal:IsShown()
+    if open then return nil, "busy" end
+    local prevClass, prevSpec
+    if EJ_GetLootFilter then prevClass, prevSpec = EJ_GetLootFilter() end
+    local prevSlot = J.GetSlotFilter and J.GetSlotFilter()
+    EJ_SelectInstance(journalInstanceID)
+    if EJ_SetLootFilter then EJ_SetLootFilter(0, 0) end      -- 0, 0: every class, every spec
+    if J.ResetSlotFilter then J.ResetSlotFilter() end
+    local raid = EJ_GetInstanceInfo and EJ_GetInstanceInfo(journalInstanceID)
+    local items, complete = {}, true
+    for i = 1, EJ_GetNumLoot() or 0 do
+        local info = J.GetLootInfoByIndex(i)
+        if info and tonumber(info.itemID) then
+            if not info.name then complete = false end
+            items[#items + 1] = {
+                itemID = info.itemID, name = info.name, link = info.link, encounterID = info.encounterID,
+                boss = info.encounterID and EJ_GetEncounterInfo and EJ_GetEncounterInfo(info.encounterID) or nil,
+            }
+        end
+    end
+    if #items == 0 then complete = false end
+    if EJ_SetLootFilter and prevClass then EJ_SetLootFilter(prevClass, prevSpec or 0) end
+    if prevSlot and J.SetSlotFilter then J.SetSlotFilter(prevSlot) end
+    local shown = EncounterJournal and EncounterJournal.instanceID
+    if shown then
+        EJ_SelectInstance(shown)
+        if EncounterJournal.encounterID and EJ_SelectEncounter then EJ_SelectEncounter(EncounterJournal.encounterID) end
+    end
+    return items, complete, raid
+end
+
+----------------------------------------------------------------------
+-- Trading a personal item (retail, issue #185)
+----------------------------------------------------------------------
+
+-- The tooltip line that says how long an item can still be traded (Enum.TooltipDataLineType, 36 in
+-- 12.1.5's documentation).
+local TRADE_TIME_LINE = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.TradeTimeRemaining or 36
+local TRADE_SLOTS = 6   -- MAX_TRADE_ITEMS is 7: the last slot is "will not be traded"
+
+-- Lua patterns that read a duration format ("%d |4hour:hours;") back: each grammatical form, the
+-- longest first, then the format as written. Lower case, as the text is read lower case.
+local function durationPatterns(fmt)
+    if type(fmt) ~= "string" or fmt == "" then return {} end
+    local function pattern(s)
+        local escaped = s:lower():gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")
+        return (escaped:gsub("%%%%d", "(%%d+)"))
+    end
+    local out = {}
+    local pre, forms, post = fmt:match("^(.-)|4([^;]*);(.*)$")
+    if pre then
+        local list = {}
+        for f in forms:gmatch("[^:]+") do list[#list + 1] = f end
+        table.sort(list, function(a, b) return #a > #b end)
+        for _, f in ipairs(list) do out[#out + 1] = pattern(pre .. f .. post) end
+    end
+    out[#out + 1] = pattern(fmt)
+    return out
+end
+
+-- The seconds a trade-time line names, read with the client's own duration strings, so in any language:
+-- "... for the next 1 hour 52 min." Nil when no part of it can be read.
+local DURATIONS = {
+    { 3600, { "INT_SPELL_DURATION_HOURS", "D_HOURS" } },
+    { 60,   { "INT_SPELL_DURATION_MIN", "D_MINUTES" } },
+    { 1,    { "INT_SPELL_DURATION_SEC", "D_SECONDS" } },
+}
+function Compat.TradeSeconds(text)
+    if type(text) ~= "string" then return nil end
+    text = text:lower()
+    local total, found = 0, false
+    for _, unit in ipairs(DURATIONS) do
+        local done = false
+        for _, global in ipairs(unit[2]) do
+            for _, pat in ipairs(durationPatterns(_G[global])) do
+                local n = tonumber(text:match(pat))
+                if n then total, found, done = total + n * unit[1], true, true break end
+            end
+            if done then break end
+        end
+    end
+    return found and total or nil
+end
+
+-- How long an item in my bags can still be traded: "timed", with the seconds when the line can be read
+-- and the line itself; "free" when the item is not bound at all; "bound" when it can no longer be
+-- traded. Nil on a client without the retail tooltip data, or for a slot with nothing in it. A personal
+-- item's trade window is only on its tooltip, a line of type TradeTimeRemaining.
+function Compat.TradeTimeLeft(bag, slot)
+    local info = Compat.GetContainerItemInfo(bag, slot)
+    if not info or Compat.IsSecret(info.isBound) then return nil end
+    if not info.isBound then return "free" end
+    local getter = C_TooltipInfo and C_TooltipInfo.GetBagItem
+    local data = getter and getter(bag, slot)
+    if type(data) ~= "table" or type(data.lines) ~= "table" then return nil end
+    for _, line in ipairs(data.lines) do
+        if not Compat.IsSecret(line.type) and line.type == TRADE_TIME_LINE then
+            local text = line.leftText
+            if Compat.IsSecret(text) or type(text) ~= "string" then return "timed" end
+            return "timed", Compat.TradeSeconds(text), text
+        end
+    end
+    return "bound"
+end
+
+-- Who the open trade window is with: name and realm (nil realm: this one), or nothing when the client
+-- does not say or keeps it secret.
+function Compat.TradePartner()
+    local name, realm = UnitName("NPC")
+    if Compat.IsSecret(name, realm) or type(name) ~= "string" or name == "" then return nil end
+    return name, realm
+end
+
+-- The links of what I have put in the trade window, slot by slot.
+function Compat.TradeItemLinks()
+    local out = {}
+    if not GetTradePlayerItemLink then return out end
+    for i = 1, TRADE_SLOTS do
+        local link = GetTradePlayerItemLink(i)
+        if type(link) == "string" and not Compat.IsSecret(link) then out[#out + 1] = link end
+    end
+    return out
+end
+
+-- Whether a UI_INFO_MESSAGE says a trade has just gone through ("Trade complete.").
+function Compat.IsTradeComplete(messageType, message)
+    if Compat.IsSecret(messageType, message) then return false end
+    if LE_GAME_ERR_TRADE_COMPLETE ~= nil and messageType == LE_GAME_ERR_TRADE_COMPLETE then return true end
+    return ERR_TRADE_COMPLETE ~= nil and message == ERR_TRADE_COMPLETE
+end
+
+-- An item's equip location ("INVTYPE_HEAD"), with no item cache needed; nil when it is not worn or the
+-- client cannot say.
+function Compat.EquipLoc(item)
+    local instant = C_Item and C_Item.GetItemInfoInstant or GetItemInfoInstant
+    if not (instant and item) then return nil end
+    local _, _, _, equipLoc = instant(item)
+    if type(equipLoc) ~= "string" or equipLoc == "" then return nil end
+    return equipLoc
+end
+
+-- The server's /roll low-high: the line everybody in the group sees (CHAT_MSG_SYSTEM, RANDOM_ROLL_RESULT).
+-- False on a client without it.
+function Compat.RandomRoll(low, high)
+    if not RandomRoll then return false end
+    return (pcall(RandomRoll, low, high))
+end
+
+-- Say a line in a chat channel: retail's C_ChatInfo.SendChatMessage, else the global. Nothing while the
+-- client holds chat in lockdown (Midnight, during an encounter); returns whether it went.
+function Compat.SendChatMessage(text, chatType)
+    if Compat.IsSecret(text) or (Compat.InChatLockdown and Compat.InChatLockdown()) then return false end
+    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+    if not send then return false end
+    return (pcall(send, text, chatType))
+end
+
+-- Lets `fn` hide lines of a chat event from every chat frame: retail moved the filter to ChatFrameUtil, and
+-- the global is a deprecation fallback there. False on a client with neither.
+function Compat.AddChatFilter(event, fn)
+    local add = (ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter) or ChatFrame_AddMessageEventFilter
+    if not add then return false end
+    add(event, fn)
+    return true
+end
+
+-- Does a chat frame show a message group ("GUILD")? Retail moved the check to ChatFrameUtil; a client with
+-- neither is read from the frame's own list (issue #344).
+function Compat.ChatFrameShows(frame, group)
+    if not frame then return false end
+    local has = (ChatFrameUtil and ChatFrameUtil.ContainsMessageGroup) or ChatFrame_ContainsMessageGroup
+    if has then
+        local ok, yes = pcall(has, frame, group)
+        return ok and yes and true or false
+    end
+    for _, g in ipairs(frame.messageTypeList or {}) do
+        if g == group then return true end
+    end
+    return false
+end
+
+-- A line in a custom channel by its number. The game takes it only from a key press, so this is only ever
+-- called from one (issue #348). Nothing in a chat lockdown.
+function Compat.SendChannelMessage(text, index)
+    if not index or index == 0 or Compat.IsSecret(text) then return false end
+    if Compat.InChatLockdown and Compat.InChatLockdown() then return false end
+    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+    if not send then return false end
+    return (pcall(send, text, "CHANNEL", nil, index))
+end
+
+-- Join a channel with a password without the client saving it for the next login (issue #348).
+function Compat.JoinPrivateChannel(name, password)
+    local join = JoinTemporaryChannel or JoinChannelByName
+    if not join or not name then return false end
+    return (pcall(join, name, password))
+end
+
+-- Take a channel out of every chat frame that lists it, so its lines never print there (issue #348).
+function Compat.RemoveChannelFromFrames(name)
+    local remove = (ChatFrameUtil and ChatFrameUtil.RemoveChannel) or ChatFrame_RemoveChannel
+    if not remove or not GetChatWindowChannels or not name then return 0 end
+    local n = 0
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do
+        local frame = _G["ChatFrame" .. i]
+        local list = { GetChatWindowChannels(i) }
+        for j = 1, #list, 2 do
+            if type(list[j]) == "string" and list[j]:lower() == name:lower() and frame then
+                if pcall(remove, frame, list[j]) then n = n + 1 end
+            end
+        end
+    end
+    return n
+end
+
+-- `fn(chatType, text)` for every line the player sends from a chat box, called inside the key press that
+-- sends it (a post-hook of the box's ParseText), which is what lets `fn` post to a channel. Patch 1.15.9 and
+-- retail 11 moved ParseText onto each box; older clients have the global (issue #348).
+function Compat.HookChatSend(fn)
+    local function onParse(box, send)
+        if send ~= 1 or not box or not box.GetAttribute then return end
+        local chatType, text = box:GetAttribute("chatType"), box:GetText()
+        if Compat.IsSecret(chatType, text) then return end
+        if type(text) == "string" and text:match("%S") then fn(chatType, text) end
+    end
+    if ChatFrame1EditBox and ChatFrame1EditBox.ParseText then
+        local n = 0
+        for i = 1, (NUM_CHAT_WINDOWS or 10) do
+            local box = _G["ChatFrame" .. i .. "EditBox"]
+            if box and box.ParseText then
+                hooksecurefunc(box, "ParseText", onParse)
+                n = n + 1
+            end
+        end
+        return n > 0
+    end
+    if ChatEdit_ParseText then
+        hooksecurefunc("ChatEdit_ParseText", onParse)
+        return true
+    end
+    return false
+end
+
+-- Hand `frame` a chat event as if the game had sent it, through the frame's own handler, so the line is
+-- drawn exactly as the game draws that event (issue #348). False when the frame has no handler or it errored.
+function Compat.ReplayChatEvent(frame, event, ...)
+    if not frame then return false end
+    local handler = ChatFrame_MessageEventHandler
+    if type(handler) ~= "function" and frame.GetScript then handler = frame:GetScript("OnEvent") end
+    if type(handler) ~= "function" then return false end
+    return (pcall(handler, frame, event, ...))
+end
+
+-- Is `name` on the player's ignore list? C_FriendList where it exists, the old global elsewhere (issue #344).
+function Compat.IsIgnored(name)
+    if type(name) ~= "string" or name == "" or Compat.IsSecret(name) then return false end
+    local is = (C_FriendList and C_FriendList.IsIgnored) or IsIgnored
+    if not is then return false end
+    local ok, yes = pcall(is, name)
+    return ok and yes and true or false
+end
+
+----------------------------------------------------------------------
 -- Talents and skill lines (issue #10)
 -- nil, "no-api" when the client has no such function, so own-character
 -- collection leaves the field out instead of raising.
@@ -571,6 +1143,78 @@ function Compat.InviteUnit(name)
     if InviteByName then return InviteByName(name) end
 end
 
+-- An instance's name in the player's own language, by its map id, or nil where the client does not
+-- know the instance (issue #341). Never a secret value: it is shown and compared.
+function Compat.InstanceName(mapID)
+    if not GetRealZoneText or type(mapID) ~= "number" then return nil end
+    local ok, name = pcall(GetRealZoneText, mapID)
+    if ok and type(name) == "string" and name ~= "" and not Compat.IsSecret(name) then return name end
+    return nil
+end
+
+-- Whether the client has this texture file. A path it does not have draws a green square, so art
+-- that is only a guess at the client's files is drawn when this answers true and never otherwise:
+-- with no way to ask, the answer is no (issue #341).
+function Compat.TextureExists(path)
+    if not GetFileIDFromPath or type(path) ~= "string" then return false end
+    local ok, id = pcall(GetFileIDFromPath, path)
+    return ok and type(id) == "number" and id > 0
+end
+
+-- Who is in my party or raid besides me, as a set of player keys, and how many of us there are (1
+-- alone). A member whose name the client will not tell yet is counted and not named. On WoW: Forever
+-- nobody has seen whether a unit's name carries the surname, joined or in the realm's slot (issue
+-- #48), so each member is also there under "~" and their first name, for Compat.InGroup (issue #341).
+function Compat.GroupRoster()
+    local members, count = {}, 1
+    local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0
+    if n <= 1 then return members, count end
+    local raid = IsInRaid and IsInRaid()
+    local surnames = GuildOS.Client.has.surnames
+    local me = Compat.PlayerName()
+    count = n
+    for i = 1, raid and n or (n - 1) do
+        local name, second = Compat.UnitIdentity((raid and "raid" or "party") .. i)
+        if type(name) == "string" and name ~= "" then
+            if type(second) ~= "string" or second == "" then second = nil end
+            local whole, realm = name, second
+            if surnames then
+                whole, realm = (second and not name:find(" ", 1, true)) and (name .. " " .. second) or name, nil
+            end
+            if whole ~= me then
+                local key = GuildOS:GetPlayerKey(whole, realm or GetRealmName())
+                if key then members[key] = true end
+                if surnames then members["~" .. (whole:match("^%S+") or whole)] = true end
+            end
+        end
+    end
+    return members, count
+end
+
+-- Whether I may invite somebody: alone, the group's leader, or a raid's assistant (issue #341).
+function Compat.CanInvite()
+    local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0
+    if n <= 1 then return true end
+    if UnitIsGroupLeader and UnitIsGroupLeader("player") then return true end
+    return (UnitIsGroupAssistant and UnitIsGroupAssistant("player")) and true or false
+end
+
+-- Whether the player of this key is in a roster Compat.GroupRoster gave. On WoW: Forever the first
+-- name decides when the whole name does not match: a guildmate who shares it would read as there,
+-- and a spot left open by mistake is worse than one closed a moment early.
+function Compat.InGroup(members, key)
+    if members[key] then return true end
+    if not GuildOS.Client.has.surnames then return false end
+    return members["~" .. (key:match("^([^%s%-]+)") or key)] == true
+end
+
+-- Remove somebody from the group: C_PartyInfo's where the client has it, the old global otherwise
+-- (issue #292, as InviteUnit above).
+function Compat.UninviteUnit(name)
+    if C_PartyInfo and C_PartyInfo.UninviteUnit then return C_PartyInfo.UninviteUnit(name) end
+    if UninviteUnit then return UninviteUnit(name) end
+end
+
 -- r, g, b, hex for an item quality: C_Item's, or the old global's, or white (issue #43).
 function Compat.GetItemQualityColor(quality)
     if C_Item and C_Item.GetItemQualityColor then return C_Item.GetItemQualityColor(quality) end
@@ -585,7 +1229,8 @@ function Compat.GetItemCount(item, includeBank)
     return 0
 end
 
--- A StaticPopup's edit box. Anniversary keeps it at `editBox`; WoW: Forever's popup (the
+-- A dialog's edit box. GuildOS's own dialog (GuildOS:ShowDialog, #315) keeps it at `editBox`, as
+-- Anniversary's StaticPopup did; WoW: Forever's popup (the
 -- retail one) at `EditBox`, behind `GetEditBox()`, with `editBox` nil (issue #49).
 function Compat.PopupEditBox(dialog)
     if not dialog then return nil end
@@ -634,6 +1279,15 @@ function Compat.SpecOf(unit)
     local _, name, _, _, role = GetSpecializationInfoForSpecID(id)
     if Compat.IsSecret(name, role) then return nil end
     return id, name, role
+end
+
+-- A retail spec's name in the reader's language, from its id: a spec synced from a guildmate's
+-- client arrives in theirs (issue #177). Nil when the client cannot say.
+function Compat.SpecName(id)
+    if not (tonumber(id) and GetSpecializationInfoForSpecID) then return nil end
+    local _, name = GetSpecializationInfoForSpecID(id)
+    if Compat.IsSecret(name) or type(name) ~= "string" or name == "" then return nil end
+    return name
 end
 
 function Compat.GetNumSkillLines()
@@ -923,7 +1577,11 @@ end
 local send
 
 local function onResult(msg, didSend, result)
-    if didSend or result == SUCCESS then return end
+    if didSend or result == SUCCESS then
+        -- What has to follow the message, once it is really out (the loot council's /roll, issue #185).
+        if msg.onSent then pcall(msg.onSent) end
+        return
+    end
     if result == LOCKDOWN then return hold(msg) end
     -- ChatThrottleLib re-queues AddonMessageThrottle on its own path; a message sent now retries it here.
     local throttled = result == CHANNEL_THROTTLE or (msg.now and result == ADDON_THROTTLE)
@@ -971,6 +1629,23 @@ function Compat.NeedsClick()
     return not GuildOS.Client.isAnniversary
 end
 
+-- A guild invite (#256). Only TBC Anniversary lets an addon invite to the guild. WoW: Forever
+-- 1.60.1.70790 refused all three ways one has, in game on 2026-11-04: GuildInvite itself, which is only
+-- C_GuildInfo.Invite there (ADDON_ACTION_FORBIDDEN, from a click too); a secure button running a
+-- /ginvite the addon wrote (MACRO_ACTION_BLOCKED); and that line left in the chat box for the player's
+-- Enter (blocked, and the box stayed tainted until a /reload). Retail runs the same API. So off
+-- Anniversary nothing offers an invite, and what still asks for one is told the /ginvite line to type.
+function Compat.AddonMayInvite()
+    return GuildOS.Client.isAnniversary == true and CanGuildInvite() == true
+end
+
+function Compat.GuildInvite(name)
+    if type(name) ~= "string" or name == "" then return false end
+    if GuildOS.Client.isAnniversary then GuildInvite(name); return true end
+    GuildOS:Print(string.format(GuildOS.L["Type /ginvite %s to invite them."], name))
+    return false
+end
+
 -- Does the server show this channel without raid icons? It is the ChatChannels table's
 -- DisableRaidIcons flag, which the chat event hands the client as suppressRaidIcons. On WoW:
 -- Forever (1.60.1.70170) that is General 1, Trade 2, LocalDefense 22, Services 42 and
@@ -992,8 +1667,228 @@ function Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)
 end
 
 -- Send an addon message now, past ChatThrottleLib's queue, with the same results: loot, whose timers start at send.
-function Compat.SendAddonMessageNow(prefix, text, channel, target)
-    queue({ prefix = prefix, text = text, channel = channel, target = target, prio = "ALERT", now = true, tries = 1 })
+-- `onSent`, optional, runs once the message has really gone out: not while a lockdown holds it or a
+-- throttle retries it, and never for one that is dropped.
+function Compat.SendAddonMessageNow(prefix, text, channel, target, onSent)
+    queue({ prefix = prefix, text = text, channel = channel, target = target, prio = "ALERT", now = true, tries = 1,
+            onSent = onSent })
+end
+
+----------------------------------------------------------------------
+-- Created channels. A channel is joined by name and addressed by the number the game gives it; both
+-- calls are the same on retail and WoW: Forever, and neither is trusted to exist or to answer.
+----------------------------------------------------------------------
+
+-- Joins `name`, creating it when nobody has. True when the call went; the number comes from ChannelId.
+function Compat.JoinChannel(name)
+    if not JoinChannelByName then return false end
+    return (pcall(JoinChannelByName, name))
+end
+
+-- The number of the channel `name` as this client has it, 0 when it is not joined (or the game keeps it secret).
+function Compat.ChannelId(name)
+    if not GetChannelName then return 0 end
+    local ok, id = pcall(GetChannelName, name)
+    id = ok and not Compat.IsSecret(id) and tonumber(id) or 0
+    return id
+end
+
+-- Leaves `name`. True when the call went, whether or not the channel was joined.
+function Compat.LeaveChannel(name)
+    if not LeaveChannelByName then return false end
+    return (pcall(LeaveChannelByName, name))
+end
+
+----------------------------------------------------------------------
+-- The game's own calendar (guildos-web specs/075, guildos#263). Measured on WoW: Forever 1.60.1.70790:
+-- reading is free; creating and editing need a hardware event (from a timer the game raises
+-- ADDON_ACTION_BLOCKED); a guild event with sign-up is the only guild kind there is (no announcements,
+-- not even for the GM). The calendar keeps the realm's clock; the site and the rest of the addon keep
+-- UTC epochs. TBC Anniversary and retail were not measured, so nothing is offered there.
+----------------------------------------------------------------------
+local QUARTER_HOUR = 900
+local DAY = 86400
+
+-- Days since 1970-01-01 for a civil date, and back (H. Hinnant's algorithm): plain arithmetic, so the
+-- PC's own time zone never enters a calendar sum.
+local function daysFromCivil(y, m, d)
+    if m <= 2 then y = y - 1 end
+    local era = math.floor(y / 400)
+    local yoe = y - era * 400
+    local doy = math.floor((153 * ((m + 9) % 12) + 2) / 5) + d - 1
+    local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy
+    return era * 146097 + doe - 719468
+end
+
+local function civilFromDays(z)
+    z = z + 719468
+    local era = math.floor(z / 146097)
+    local doe = z - era * 146097
+    local yoe = math.floor((doe - math.floor(doe / 1460) + math.floor(doe / 36524) - math.floor(doe / 146096)) / 365)
+    local doy = doe - (365 * yoe + math.floor(yoe / 4) - math.floor(yoe / 100))
+    local mp = math.floor((5 * doy + 2) / 153)
+    local d = doy - math.floor((153 * mp + 2) / 5) + 1
+    local m = mp < 10 and mp + 3 or mp - 9
+    local y = yoe + era * 400
+    if m <= 2 then y = y + 1 end
+    return y, m, d
+end
+
+local function fieldsAsEpoch(y, m, d, h, mi)
+    return daysFromCivil(y, m, d) * DAY + (h or 0) * 3600 + (mi or 0) * 60
+end
+
+function Compat.CalendarAvailable()
+    local client = GuildOS.Client or {}
+    return not client.isAnniversary and not client.isRetail
+        and type(C_Calendar) == "table" and type(C_Calendar.AddEvent) == "function"
+end
+
+-- How far the realm's clock is from UTC, in seconds, to the quarter hour (the two clocks are read a
+-- moment apart).
+function Compat.RealmOffset()
+    local now = C_DateAndTime and C_DateAndTime.GetCurrentCalendarTime and C_DateAndTime.GetCurrentCalendarTime()
+    if type(now) ~= "table" then return 0 end
+    local diff = fieldsAsEpoch(now.year, now.month, now.monthDay, now.hour, now.minute) - GetServerTime()
+    return math.floor(diff / QUARTER_HOUR + 0.5) * QUARTER_HOUR
+end
+
+--- The date and the time a UTC instant has on the realm's calendar.
+function Compat.RealmClock(epochUtc)
+    local realm = epochUtc + Compat.RealmOffset()
+    local days = math.floor(realm / DAY)
+    local rest = realm - days * DAY
+    local y, m, d = civilFromDays(days)
+    return { year = y, month = m, day = d, hour = math.floor(rest / 3600), minute = math.floor((rest % 3600) / 60) }
+end
+
+--- The UTC instant of a date and time on the realm's calendar.
+function Compat.EpochOfRealm(t)
+    return fieldsAsEpoch(t.year, t.month, t.day, t.hour, t.minute) - Compat.RealmOffset()
+end
+
+local GUILD_KINDS = { GUILD_EVENT = true, GUILD_ANNOUNCEMENT = true }
+local CALENDAR_REQUEST_EVERY = 60   -- seconds between two requests for the calendar's events
+
+-- The game hands its calendar over only after OpenCalendar, and answers with CALENDAR_UPDATE_EVENT_LIST.
+-- Until that first answer the events are unknown, never none: an empty read would show every raid as
+-- missing from the game and invite a second event. Asking is kept apart from reading, so reading inside
+-- that event's own handler never asks again (a request loop).
+local calendarRead, lastCalendarRequest = false, nil
+Compat._calendarListeners = {}
+local calendarWatch = CreateFrame("Frame")
+Compat.RegisterEvent(calendarWatch, "CALENDAR_UPDATE_EVENT_LIST")
+calendarWatch:SetScript("OnEvent", function()
+    calendarRead = true
+    for _, fn in ipairs(Compat._calendarListeners) do pcall(fn) end
+end)
+
+--- Asks the game for its calendar's events, at most once a CALENDAR_REQUEST_EVERY seconds.
+function Compat.CalendarRequest()
+    if not Compat.CalendarAvailable() then return end
+    local now = GetTime()
+    if lastCalendarRequest and now - lastCalendarRequest < CALENDAR_REQUEST_EVERY then return end
+    lastCalendarRequest = now
+    pcall(C_Calendar.OpenCalendar)
+end
+
+--- Calls `fn` each time the game's calendar answers with its events.
+function Compat.OnCalendarUpdate(fn)
+    Compat._calendarListeners[#Compat._calendarListeners + 1] = fn
+end
+
+--- The guild's events between two UTC instants, holidays and personal events left out:
+--- { offset, day, index, title, calendarType, startsAt }; nil while the game has not read its calendar
+--- yet (Compat.CalendarRequest asks). The calendar reads months relative to the one its window shows, so
+--- the offsets are worked out from that month, never assumed to start at today's.
+function Compat.CalendarGuildEvents(fromEpoch, toEpoch)
+    local out = {}
+    if not Compat.CalendarAvailable() then return out end
+    if not calendarRead then return nil end
+    local okShown, shown = pcall(C_Calendar.GetMonthInfo, 0)
+    if not okShown or type(shown) ~= "table" then return out end
+    local base = shown.year * 12 + shown.month - 1
+    local first, last = Compat.RealmClock(fromEpoch), Compat.RealmClock(toEpoch)
+    for idx = first.year * 12 + first.month - 1, last.year * 12 + last.month - 1 do
+        local offset = idx - base
+        local okInfo, info = pcall(C_Calendar.GetMonthInfo, offset)
+        for day = 1, (okInfo and type(info) == "table" and info.numDays or 0) do
+            local okN, n = pcall(C_Calendar.GetNumDayEvents, offset, day)
+            for index = 1, (okN and tonumber(n) or 0) do
+                local okE, e = pcall(C_Calendar.GetDayEvent, offset, day, index)
+                if okE and type(e) == "table" and GUILD_KINDS[e.calendarType] and type(e.startTime) == "table"
+                    and not Compat.IsSecret(e.title) then
+                    local s = e.startTime
+                    local startsAt = Compat.EpochOfRealm({ year = s.year, month = s.month, day = s.monthDay, hour = s.hour, minute = s.minute })
+                    if startsAt >= fromEpoch and startsAt <= toEpoch then
+                        out[#out + 1] = { offset = offset, day = day, index = index, title = tostring(e.title),
+                                          calendarType = e.calendarType, startsAt = startsAt }
+                    end
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- The event being edited, onto the calendar's date and time: the raid's clock as it was created when
+-- the site gave one (guildos-web #411: the guild reads the game's calendar as its Discord's time, so the
+-- numbers typed there go in as they are), else the instant on the realm's clock.
+local function setEventWhen(spec)
+    local t = type(spec.clock) == "table" and spec.clock or Compat.RealmClock(spec.startsAt)
+    C_Calendar.EventSetDate(t.month, t.day, t.year)
+    C_Calendar.EventSetTime(t.hour, t.minute)
+end
+
+--- A guild event with sign-up: { title, description, startsAt }. Only from a click; true, or false
+--- and why. The answer from the server comes later, as CALENDAR_UPDATE_ERROR or a new event.
+function Compat.CalendarCreateGuildEvent(spec)
+    if not Compat.CalendarAvailable() then return false, "unavailable" end
+    local ok, err = pcall(function()
+        C_Calendar.CreateGuildSignUpEvent()
+        C_Calendar.EventSetTitle(spec.title)
+        C_Calendar.EventSetDescription(spec.description or "")
+        setEventWhen(spec)
+        local raid = Enum and Enum.CalendarEventType and Enum.CalendarEventType.Raid
+        if raid and C_Calendar.EventSetType then C_Calendar.EventSetType(raid) end
+        C_Calendar.AddEvent()
+    end)
+    if not ok then return false, tostring(err) end
+    return true
+end
+
+--- Opens the event at `where` ({ offset, day, index }) for editing; the game answers CALENDAR_OPEN_EVENT.
+function Compat.CalendarOpenEvent(where)
+    if not Compat.CalendarAvailable() then return false, "unavailable" end
+    local ok, res = pcall(C_Calendar.OpenEvent, where.offset, where.day, where.index)
+    if not ok then return false, tostring(res) end
+    return res ~= false
+end
+
+--- The event the game has open for editing, as { title, startsAt }, or nil.
+function Compat.CalendarOpenedEvent()
+    if not Compat.CalendarAvailable() or not C_Calendar.GetEventInfo then return nil end
+    local ok, info = pcall(C_Calendar.GetEventInfo)
+    if not ok or type(info) ~= "table" or type(info.title) ~= "string" or Compat.IsSecret(info.title) then return nil end
+    local t = info.time
+    if type(t) ~= "table" then return nil end
+    return { title = info.title,
+             startsAt = Compat.EpochOfRealm({ year = t.year, month = t.month, day = t.monthDay, hour = t.hour, minute = t.minute }) }
+end
+
+--- Saves { title, startsAt, description } onto the open event, from a click, and closes it. With no
+--- description the one in the game stays as people wrote it.
+function Compat.CalendarApplyEdit(spec)
+    if not Compat.CalendarAvailable() then return false, "unavailable" end
+    local ok, err = pcall(function()
+        C_Calendar.EventSetTitle(spec.title)
+        if spec.description ~= nil then C_Calendar.EventSetDescription(spec.description) end
+        setEventWhen(spec)
+        C_Calendar.UpdateEvent()
+    end)
+    pcall(C_Calendar.CloseEvent)
+    if not ok then return false, tostring(err) end
+    return true
 end
 
 -- Sends what a lockdown held, in order, one at a time: a message that raises is recorded and the
@@ -1011,3 +1906,62 @@ local flusher = CreateFrame("Frame")
 Compat.RegisterEvent(flusher, "PLAYER_REGEN_ENABLED")
 Compat.RegisterEvent(flusher, "ZONE_CHANGED_NEW_AREA")
 flusher:SetScript("OnEvent", function() Compat.FlushHeldMessages() end)
+
+----------------------------------------------------------------------
+-- Names the site keeps (review of #347), and the cut that keeps them whole: here, beside the client's
+-- own text rules, so CoreManager and CompanionExport (and every stubbed check that loads them) have
+-- them without Utils.
+----------------------------------------------------------------------
+-- `s` cut to `maxBytes` bytes, never through the middle of a character.
+function GuildOS:Utf8Cut(s, maxBytes)
+    s = tostring(s or "")
+    if #s <= maxBytes then return s end
+    local cut = maxBytes
+    while cut > 0 and (s:byte(cut + 1) or 0) >= 0x80 and s:byte(cut + 1) < 0xC0 do cut = cut - 1 end
+    return s:sub(1, cut)
+end
+
+-- Whether `s` is well-formed UTF-8: no stray continuation byte, no character cut short, no overlong
+-- form, no surrogate (what the site's decoder would turn into U+FFFD, three bytes longer).
+function GuildOS:IsUtf8(s)
+    local i, n = 1, #s
+    while i <= n do
+        local c = s:byte(i)
+        local need
+        local lo, hi = 0x80, 0xBF
+        if c < 0x80 then need = 0
+        elseif c >= 0xC2 and c <= 0xDF then need = 1
+        elseif c == 0xE0 then need, lo = 2, 0xA0
+        elseif c == 0xED then need, hi = 2, 0x9F
+        elseif c >= 0xE1 and c <= 0xEF then need = 2
+        elseif c == 0xF0 then need, lo = 3, 0x90
+        elseif c >= 0xF1 and c <= 0xF3 then need = 3
+        elseif c == 0xF4 then need, hi = 3, 0x8F
+        else return false end
+        for j = 1, need do
+            local b = s:byte(i + j)
+            if not b or b < (j == 1 and lo or 0x80) or b > (j == 1 and hi or 0xBF) then return false end
+        end
+        i = i + need + 1
+    end
+    return true
+end
+
+-- The words every object already has as a key on the site (guildos-web lib/core-receipt.ts PROTO_KEYS):
+-- a core or a guest named so is refused there.
+local PROTO_WORDS = { __proto__ = true, constructor = true, prototype = true }
+
+-- Why `s` cannot be a name the site keeps for a core or a guest (guildos-web lib/core-receipt.ts
+-- `isName`): "empty", "long" (over `maxBytes`, 48 by default), "char" (a `|`, a control character or
+-- broken UTF-8) or "word" (constructor, prototype, __proto__). nil when it can.
+function GuildOS:NameProblem(s, maxBytes)
+    if type(s) ~= "string" then return "empty" end
+    -- Blank as JavaScript's trim() sees it: ASCII spaces, no-break and the other Unicode spaces.
+    local bare = s:gsub("[%s]", ""):gsub("\194\160", ""):gsub("\225\154\128", ""):gsub("\226\128[\128-\138\168\169\175]", "")
+        :gsub("\226\129\159", ""):gsub("\227\128\128", ""):gsub("\239\187\191", "")
+    if bare == "" then return "empty" end
+    if #s > (maxBytes or 48) then return "long" end
+    if s:find("[%c|]") or not self:IsUtf8(s) then return "char" end
+    if PROTO_WORDS[s] then return "word" end
+    return nil
+end

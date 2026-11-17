@@ -154,6 +154,18 @@ Readable records only; eight maps and 57 encounters are still encrypted (see abo
 - **Other new maps:** Dalaran City, Zephras Isle, Hyjal Crater (arena), Battle for Gilneas and Darkspear Islands
   (battlegrounds), and a winter Warsong Gulch.
 - **6,715 item ids** that Classic Era does not have. The same ten classes.
+- **Build 1.60.1.70707 (2026-10-30, product `wowf`):** the five dungeons beyond the four below, and both new raids, still have
+  no `Map` or `DungeonEncounter` row. Half-Pint Tavern left the readable maps. What the client does name:
+  - **Onyxia's Lair** is map 249, 40 players, encounter 1084. Blizzard's raid overview says level 60, the Drakefire Amulet
+    in the bags, and 9 December.
+  - **Blizzard's counts:** The Barrow Deeps has 8 bosses and Hyjal Summit 13, neither with an attunement.
+  - **Kill statistics** (`Achievement`, category 14821) name who ends a place: Rath'mael (Ruins of Lordaeron), Shade of the
+    Archmage and Lyn the Ignored (City of Dalaran), Durgen Dirgehammer (Hall of Thanes), Blazeroar (Alcaz Prison), Nanaya,
+    Cinder, Bolt and Snowtalon (Shaper's Terrace), The Wild King (Hyjal Summit), Sonya Darkhallow (Barrow Deeps). Their
+    criteria trees are still empty, so no encounter id comes with them.
+  - **Raid and dungeon names in every language** come from those strings and from `AreaTable`, before the maps themselves.
+  - **The table's `OrderIndex` is not a route:** it ended City of Dalaran on Mana Wraith, and Ruins of Lordaeron on Bjork
+    (issue #235). The way through and its end are in `Data/ForeverDungeons.lua`.
 - **The beta:** 2026-09-17 to 2026-10-21, level cap 30, no raids. Launch 2026-11-04; raids 2026-12-09.
 - **Chat lines, guild invites and /who need a click.** `SendChatMessage` is `HasRestrictions` in every beta build's API
   documentation, 69893 included, and on Anniversary 2.5.6 too, so the flag says nothing about when it started to bite.
@@ -181,8 +193,13 @@ Readable records only; eight maps and 57 encounters are still encrypted (see abo
 
 ## Still for the game to answer
 
-- **Chat lockdown.** When it starts on Forever: combat, instances, encounters? This decides how often roll capture
-  and mention alerts go quiet.
+- **Chat lockdown.** When it starts on Forever. Public reports from retail 12.0 put
+  `C_ChatInfo.InChatMessagingLockdown()` on during an instance encounter, an active Mythic+ or a live PvP match, not in
+  ordinary combat; nothing has been read on Forever yet. If that holds, a `/roll` is readable once the boss is dead and
+  roll capture works there; a roll line arriving secret while a roll is open tells the master looter so, once. The test
+  is in issue #48: four moments in a dungeon, and `/console addonChatRestrictionsForced 1` forces it to try that message.
+- **Who rolled.** Whether the `/roll` line carries the surname, and what `UnitName("raidN")` gives.
+  `LootMaster:WholeRollerName` takes the surname joined, apart or missing, on either side (issue #48).
 - **Group members' identity.** Whether it is restricted outside instances.
 - **`GetRaidRosterInfo`.** Whether its names come back secret too. It is not in the documentation's secret list,
   and RaidTools, PugInspector, LootMaster's master looter, CompanionImport and RaidHUD read names from it.

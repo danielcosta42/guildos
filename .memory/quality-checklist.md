@@ -59,6 +59,8 @@ Run through this checklist before calling `task_complete` on any implementation.
 ## Output & UX
 
 - [ ] No unsolicited chat output
+- [ ] Every addon whisper calls `GuildOS:NoteWhisper(target)` right before it sends, or a target who just logged off
+      prints "No player named" in the chat (#326; `tools/whisper-not-found.lua` fails otherwise)
 - [ ] Debug output guarded by `GuildOS.Logger.debug`
 - [ ] Officer-gated features check `GuildOS:IsOfficer()` before acting
 

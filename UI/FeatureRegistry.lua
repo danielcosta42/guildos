@@ -56,8 +56,7 @@ function UI:AllFeatures(scope)
         local def = self.features[id]
         local ok = true
         if def.officerOnly and not GuildOS:IsOfficer() then ok = false end
-        if ok and def.tbc and not GuildOS.Client.isAnniversary then ok = false end  -- TBC content (ADR-0014)
-        if ok and def.retail == false and GuildOS.Client.isRetail then ok = false end  -- not on retail (ADR-0026)
+        if ok and self:IsFeatureAbsent(def) then ok = false end
         if ok and def.condition and not def.condition() then ok = false end
         if ok and scope and not def[scope] then ok = false end
         if ok then out[#out + 1] = def end
@@ -74,6 +73,17 @@ function UI:VisibleFeatures(scope)
     return out
 end
 
+-- Whether this client has no such feature at all: TBC content outside Anniversary (ADR-0014),
+-- what retail leaves out (ADR-0026), what WoW: Forever has no content for (`forever = false`: the
+-- consumable check, issue #187). Absent, not refused, so an opener says so (issue #177).
+function UI:IsFeatureAbsent(def)
+    local client = GuildOS.Client
+    return (def.tbc and not client.isAnniversary)
+        or (def.tbc == false and client.isAnniversary)
+        or (def.retail == false and client.isRetail)
+        or (def.forever == false and not client.isAnniversary and not client.isRetail) or false
+end
+
 ----------------------------------------------------------------------
 -- May this player open this feature right now? The single gate every
 -- opener asks: the window's tabs, UI:OpenWindow and the slash verb.
@@ -81,8 +91,7 @@ end
 ----------------------------------------------------------------------
 function UI:IsFeatureAllowed(def)
     if not def then return false end
-    if def.tbc and not GuildOS.Client.isAnniversary then return false end  -- TBC content (ADR-0014)
-    if def.retail == false and GuildOS.Client.isRetail then return false end  -- not on retail (ADR-0026)
+    if self:IsFeatureAbsent(def) then return false end
     if not GuildOS:IsFeatureEnabled(def.id) then return false end
     -- A tab whose module failed to start would error while it builds.
     if GuildOS:FeatureStartFailed(def.id) then return false end
@@ -162,7 +171,7 @@ function UI:_RegisterFeatureTests()
         return true
     end)
 
-    -- The companion's tests: only where it exists, never on retail (ADR-0026).
+    -- The companion's tests: only where it exists (on retail too since issue #182).
     if GuildOS.CompanionImport then
         -- The Web panel greys a button and prints the reason beside it, while the
         -- slash command refuses with the same words. Both read these predicates,

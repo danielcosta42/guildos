@@ -5,9 +5,10 @@
 -- WoW: Forever is in the Classic family but has none of the TBC content, and
 -- no WOW_PROJECT_ID of its own yet. This proves GuildOS.Client recognises TBC
 -- Anniversary only by its project id and its interface together, reports each
--- capability from the API behind it, and that attunements, consumables, the
--- raid cooldown HUD toggle and the wishlist raid catalogue exist only there,
--- without touching the player's own toggles.
+-- capability from the API behind it, and that attunements, the raid cooldown
+-- HUD toggle and the wishlist raid catalogue exist only there, and the
+-- consumable check there and on retail (issue #187), without touching the
+-- player's own toggles.
 --
 -- ponytail: the audit sub-tab filter, the HUD gates, the member detail
 -- attunement section, the /gos help lines, the Settings consumable test and
@@ -134,7 +135,7 @@ for _, c in ipairs(GuildOS.Client.classes) do RETAIL_CLASSES[c] = true end
 for _, c in ipairs({ "WARRIOR", "DRUID", "DEATHKNIGHT", "DEMONHUNTER", "MONK", "EVOKER" }) do
   check(RETAIL_CLASSES[c], c .. " is a retail class")
 end
-check(table.concat(GuildOS.Client.enchantSlots, ",") == "1,3,5,8,11,12,16", "Midnight's enchant slots")
+check(table.concat(GuildOS.Client.enchantSlots, ",") == "1,3,5,7,8,11,12,16,17", "Midnight's enchant slots")
 client(setmetatable({ project = 1, mainline = 1 }, { __index = FOREVER }))
 check(GuildOS.Client.isRetail == false and GuildOS.Client.game == "FOREVER" and GuildOS.Client.maxLevel == 60,
   "a 1.60 client answering the mainline id is Forever")
@@ -204,18 +205,23 @@ for _, case in ipairs(CLIENTS) do
   GuildOS.AttunementTracker, GuildOS.ConsumableChecker, GuildOS.Wishlist = nil, nil, nil
   GuildOS.State.startup.failed = {}
   dofile(ADDON .. "/Modules/AttunementTracker.lua")
+  GuildOS.ConsumableCatalog = nil
+  dofile(ADDON .. "/Data/ConsumablesRetail.lua")
   dofile(ADDON .. "/Modules/ConsumableChecker.lua")
   dofile(ADDON .. "/Modules/WishlistSystem.lua")
   dofile(ADDON .. "/Modules/RaidTools.lua")
   local on = case.tbc and " exists on " or " does not exist on "
+  -- Consumables: TBC's table on Anniversary, Midnight's on retail (issue #187); none on Forever.
+  local cons = case.tbc or case.retail == true
   check((GuildOS.AttunementTracker ~= nil) == case.tbc, "the attunement tracker" .. on .. case.label)
-  check((GuildOS.ConsumableChecker ~= nil) == case.tbc, "the consumable checker" .. on .. case.label)
+  check((GuildOS.ConsumableChecker ~= nil) == cons,
+    "the consumable checker" .. (cons and " exists on " or " does not exist on ") .. case.label)
   check(GuildOS:StartModule({ "AttunementTracker" }) == case.tbc
-    and GuildOS:StartModule({ "ConsumableChecker", feature = "consumableChecker" }) == case.tbc,
-    "the TBC modules start only where they exist (" .. case.label .. ")")
+    and GuildOS:StartModule({ "ConsumableChecker", feature = "consumableChecker" }) == cons,
+    "the attunement and consumable modules start only where they exist (" .. case.label .. ")")
   check(next(GuildOS.State.startup.failed) == nil, "nothing is recorded as failed to start on " .. case.label)
-  -- Retail is personal loot only: the wishlist is absent there (issue #165).
-  check((GuildOS.Wishlist ~= nil) == not case.retail, "the wishlist " .. (case.retail and "does not exist" or "exists") .. " on " .. case.label)
+  -- The wishlist is everywhere; retail's items come from its Encounter Journal (issue #185).
+  check(GuildOS.Wishlist ~= nil, "the wishlist exists on " .. case.label)
   if GuildOS.Wishlist then
     GuildOS.Wishlist:RebuildItemIndex()
     check(GuildOS.Wishlist:GetItemInterest(WISHED) ~= nil, "a wished item is searchable on " .. case.label)
@@ -246,18 +252,30 @@ local function listed(id)
 end
 for _, case in ipairs(CLIENTS) do
   client(case.c)
-  for _, id in ipairs({ "consumableChecker", "raidHUD" }) do
-    check(listed(id) == case.tbc, id .. (case.tbc and " is listed on " or " is not listed on ") .. case.label)
-    check(UI:IsFeatureAllowed(UI:GetFeature(id)) == case.tbc,
-      id .. (case.tbc and " is allowed on " or " is refused on ") .. case.label)
-  end
+  check(listed("raidHUD") == case.tbc, "raidHUD" .. (case.tbc and " is listed on " or " is not listed on ") .. case.label)
+  check(UI:IsFeatureAllowed(UI:GetFeature("raidHUD")) == case.tbc,
+    "raidHUD" .. (case.tbc and " is allowed on " or " is refused on ") .. case.label)
+  -- The consumable check: Anniversary's and retail's, never Forever's (issue #187).
+  local cons = case.tbc or case.retail == true
+  check(listed("consumableChecker") == cons,
+    "consumableChecker" .. (cons and " is listed on " or " is not listed on ") .. case.label)
+  check(UI:IsFeatureAllowed(UI:GetFeature("consumableChecker")) == cons,
+    "consumableChecker" .. (cons and " is allowed on " or " is refused on ") .. case.label)
   check(listed("raidTracker"), "raidTracker stays listed on " .. case.label)
-  -- Loot and the site: everywhere but retail (issue #165).
-  for _, id in ipairs({ "loot", "dkp", "wishlist", "web", "lootMaster", "lootTracker" }) do
+  -- Master Loot: everywhere but retail, which has none (issue #165). Points and the wishlist are
+  -- retail's too since issue #185.
+  for _, id in ipairs({ "lootMaster" }) do
     check(listed(id) == not case.retail, id .. (case.retail and " is not listed on " or " stays listed on ") .. case.label)
     check(UI:IsFeatureAllowed(UI:GetFeature(id)) == not case.retail,
       id .. (case.retail and " is refused on " or " is allowed on ") .. case.label)
   end
+  -- The loot history and its tab (issue #183), points and the wishlist (issue #185): everywhere,
+  -- retail included.
+  for _, id in ipairs({ "loot", "lootTracker", "dkp", "wishlist" }) do
+    check(listed(id) and UI:IsFeatureAllowed(UI:GetFeature(id)), id .. " is listed and allowed on " .. case.label)
+  end
+  -- The site: everywhere, retail included since issue #182.
+  check(listed("web") and UI:IsFeatureAllowed(UI:GetFeature("web")), "web is listed and allowed on " .. case.label)
   check(GuildOS.db.settings.modules.consumableChecker == true and GuildOS.db.settings.modules.raidHUD == nil,
     "the player's own toggles are untouched on " .. case.label)
 end

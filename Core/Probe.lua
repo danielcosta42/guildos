@@ -19,7 +19,7 @@ local LIST_MAX = 10            -- missing names printed before the list is cut
 Probe.APIS = {
     -- Global functions
     "Ambiguate", "CanEditGuildInfo", "CanEditMOTD", "CanEditPublicNote", "CanGuildDemote", "CanGuildInvite",
-    "CanGuildPromote", "CanGuildRemove", "CanInspect", "ChannelBan", "ChannelKick", "ChannelModerator",
+    "CanGuildPromote", "CanGuildRemove", "CanInspect", "CanViewOfficerNote", "ChannelBan", "ChannelKick", "ChannelModerator",
     "ChatFrame_AddMessageEventFilter", "ChatFrame_OpenChat", "ChatFrame_SendTell", "CloseDropDownMenus",
     "CombatLogGetCurrentEventInfo", "CreateColor", "CreateFrame", "FauxScrollFrame_GetOffset",
     "FauxScrollFrame_OnVerticalScroll", "FauxScrollFrame_Update", "GetBuildInfo", "GetChannelName",
@@ -38,7 +38,7 @@ Probe.APIS = {
     "IsQuestFlaggedCompleted", "IsShiftKeyDown", "JoinChannelByName", "LeaveChannelByName", "NotifyInspect",
     "PlaySound", "RaidNotice_AddMessage", "RandomRoll", "ReloadUI", "SendChatMessage", "SendWho",
     "SetChannelOwner", "SetGuildInfoText", "SetGuildTabardTextures", "SetRaidSubgroup", "SetWhoToUI",
-    "ShowUIPanel", "StaticPopup_Show", "TargetUnit", "ToggleDropDownMenu", "ToggleGuildFrame", "ToggleWorldMap",
+    "ShowUIPanel", "TargetUnit", "ToggleDropDownMenu", "ToggleGuildFrame", "ToggleWorldMap",
     "UIDropDownMenu_AddButton", "UIDropDownMenu_CreateInfo", "UIDropDownMenu_Initialize", "UIFrameFadeIn",
     "UnitBuff", "UnitClass", "UnitExists", "UnitFactionGroup", "UnitFullName", "UnitGUID", "UnitHealthMax", "UnitIsConnected",
     "UnitIsGroupAssistant", "UnitIsGroupLeader", "UnitIsPlayer", "UnitIsUnit", "UnitLevel", "UnitName", "UnitPlayerControlled",
@@ -51,7 +51,7 @@ Probe.APIS = {
     "C_Container.GetContainerItemLink", "C_Container.GetContainerNumSlots", "C_Container.UseContainerItem",
     "C_FriendList.GetNumWhoResults", "C_FriendList.GetWhoInfo", "C_FriendList.SendWho", "C_FriendList.SetWhoToUi",
     "C_NameUtil.ReplaceSurnameSeparatorWithLinkSeparator",
-    "C_GuildInfo.GuildRoster", "C_GuildInfo.SetNote", "C_Map.GetBestMapForUnit", "C_Map.GetMapInfo",
+    "C_GuildInfo.CanViewOfficerNote", "C_GuildInfo.GuildRoster", "C_GuildInfo.SetNote", "C_Map.GetBestMapForUnit", "C_Map.GetMapInfo",
     "C_Map.GetPlayerMapPosition", "C_PartyInfo.GetLootMethod", "C_PartyInfo.InviteUnit", "C_PlayerInfo.ShouldDisplaySurname",
     "C_QuestLog.GetTitleForQuestID", "C_QuestLog.IsQuestFlaggedCompleted", "C_Timer.After", "C_Timer.NewTicker",
     "C_Timer.NewTimer",
@@ -61,7 +61,7 @@ Probe.APIS = {
     -- Frames, tables and constants
     "UIParent", "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "Minimap",
     "WorldMapFrame", "GuildFrame", "CommunitiesFrame", "DEFAULT_CHAT_FRAME", "RaidWarningFrame",
-    "TradeFrameRecipientNameText", "UISpecialFrames", "StaticPopupDialogs", "SlashCmdList", "ChatTypeInfo",
+    "TradeFrameRecipientNameText", "UISpecialFrames", "SlashCmdList", "ChatTypeInfo",
     "GameFontNormalSmall", "STANDARD_TEXT_FONT", "RAID_CLASS_COLORS", "CLASS_ICON_TCOORDS",
     "LOCALIZED_CLASS_NAMES_MALE", "SOUNDKIT", "RANDOM_ROLL_RESULT", "RESISTANCE2_NAME", "RESISTANCE3_NAME",
     "RESISTANCE4_NAME", "RESISTANCE5_NAME", "RESISTANCE6_NAME",
@@ -72,6 +72,7 @@ Probe.APIS = {
     "C_Traits.GetConfigInfo", "C_TradeSkillUI.GetAllProfessionTradeSkillLines", "C_TradeSkillUI.GetBaseProfessionInfo",
     -- WoW: Forever professions (issue #31).
     "GetProfessions", "GetProfessionInfo", "IsPlayerSpell", "C_TradeSkillUI.GetAllRecipeIDs",
+    "C_InstanceEncounter.IsEncounterInProgress", "IsEncounterInProgress",
     "C_TradeSkillUI.GetRecipeInfo", "C_TradeSkillUI.IsDataSourceChanging", "C_Club.GetGuildClubId", "C_Club.GetMemberInfo",
     -- The guild's chat as the server keeps it (issue #126).
     "C_Club.GetStreams", "C_Club.GetMessageRanges", "C_Club.GetMessagesBefore", "C_Club.FocusStream",
@@ -82,6 +83,31 @@ Probe.APIS = {
     -- can hook and not read, so both are asked for.
     "TooltipDataProcessor.AddTooltipPostCall", "TooltipUtil.GetDisplayedItem",
     "TooltipUtil.GetDisplayedSpell", "TooltipUtil.GetDisplayedUnit",
+    -- Retail (ADR-0026): the spec the client names, the item level as worn and the game's own
+    -- average, a weapon told from a shield by id, and the realm keys are spelt with (issue #177).
+    "C_SpecializationInfo.GetSpecialization", "C_SpecializationInfo.GetSpecializationInfo",
+    "C_SpecializationInfo.GetInspectSpecialization", "GetSpecializationInfoForSpecID",
+    "C_Item.GetDetailedItemLevelInfo", "GetAverageItemLevel", "C_Item.GetItemInfoInstant", "GetNormalizedRealmName",
+    -- Retail (issue #184): an inspected guildmate's average item level, and the character sheet's ratings.
+    "C_PaperDollInfo.GetInspectItemLevel", "GetCritChance", "GetRangedCritChance", "GetSpellCritChance", "GetHaste",
+    "GetMasteryEffect", "GetCombatRatingBonus", "GetVersatilityBonus",
+    -- The lockout week (guildos-web#199): the region whose reset counts it, and the client's own count of
+    -- the seconds to that reset, which the self-test compares with the table.
+    "GetCurrentRegion", "C_DateAndTime.GetSecondsUntilWeeklyReset",
+    -- Retail (issue #187): the raid's consumables read from its auras, whether the client keeps them
+    -- secret, my weapon's oil.
+    "C_UnitAuras.GetBuffDataByIndex", "C_Secrets.ShouldAurasBeSecret", "GetWeaponEnchantInfo",
+    -- Retail (issue #187): my keystone and rating, a dungeon named, the Great Vault and the week.
+    "C_MythicPlus.RequestMapInfo", "C_MythicPlus.GetOwnedKeystoneChallengeMapID", "C_MythicPlus.GetOwnedKeystoneLevel",
+    "C_ChallengeMode.GetOverallDungeonScore", "C_ChallengeMode.GetMapUIInfo", "C_ChallengeMode.GetDungeonScoreRarityColor",
+    "C_WeeklyRewards.GetActivities", "Enum.WeeklyRewardChestThresholdType", "C_DateAndTime.GetWeeklyResetStartTime",
+    -- Retail (issue #185): the wishlist's items from the Encounter Journal.
+    "EJ_SelectInstance", "EJ_SelectEncounter", "EJ_GetNumLoot", "EJ_GetLootFilter", "EJ_SetLootFilter",
+    "EJ_GetEncounterInfo", "EJ_GetInstanceInfo", "C_EncounterJournal.GetLootInfoByIndex",
+    "C_EncounterJournal.GetSlotFilter", "C_EncounterJournal.ResetSlotFilter", "C_EncounterJournal.SetSlotFilter",
+    -- Retail (issue #185): the loot council by trade, a personal item's trade window on its tooltip.
+    "C_TooltipInfo.GetBagItem", "GetTradePlayerItemLink", "Enum.TooltipDataLineType", "ERR_TRADE_COMPLETE",
+    "INT_SPELL_DURATION_HOURS", "INT_SPELL_DURATION_MIN",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.
@@ -99,15 +125,20 @@ Probe.SCRIPTS = { "OnTooltipSetItem", "OnTooltipSetSpell", "OnTooltipSetUnit", "
 -- Every event the addon's own files register. tools/probe.lua fails when the
 -- source registers one that is not listed here.
 Probe.EVENTS = {
-    "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "ADDON_LOADED", "CHANNEL_UI_UPDATE", "CHARACTER_POINTS_CHANGED", "CHAT_MSG_ADDON", "CHAT_MSG_CHANNEL",
+    "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "ADDON_LOADED",
+    "CALENDAR_CLOSE_EVENT", "CALENDAR_NEW_EVENT", "CALENDAR_UPDATE_ERROR", "CALENDAR_UPDATE_EVENT_LIST",   -- the game's calendar (#263)
+    "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_MAPS_UPDATE",
+    "CHANNEL_UI_UPDATE", "CHARACTER_POINTS_CHANGED", "CHAT_MSG_ADDON", "CHAT_MSG_CHANNEL",
     "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER", "CHAT_MSG_SKILL", "CHAT_MSG_SYSTEM", "CHAT_MSG_WHISPER", "CLUB_MESSAGE_ADDED",
     "CLUB_MESSAGE_HISTORY_RECEIVED", "CLUB_STREAM_ADDED", "CLUB_STREAM_REMOVED", "CLUB_STREAMS_LOADED",
-    "COMBAT_LOG_EVENT_UNFILTERED", "CRAFT_SHOW", "ENCOUNTER_END", "ENCOUNTER_START", "GET_ITEM_INFO_RECEIVED",
+    "COMBAT_LOG_EVENT_UNFILTERED", "CRAFT_SHOW", "EJ_LOOT_DATA_RECIEVED", "ENCOUNTER_END", "ENCOUNTER_LOOT_RECEIVED", "ENCOUNTER_START", "GET_ITEM_INFO_RECEIVED",
     "GROUP_ROSTER_UPDATE", "GUILD_ROSTER_UPDATE", "INSPECT_READY", "LOOT_CLOSED", "LOOT_OPENED",
-    "MACRO_ACTION_BLOCKED", "MACRO_ACTION_FORBIDDEN", "PARTY_LOOT_METHOD_CHANGED", "PLAYER_ENTERING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_GUILD_UPDATE",
-    "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_TALENT_UPDATE",
-    "PLAYER_TARGET_CHANGED", "QUEST_TURNED_IN", "RAID_ROSTER_UPDATE", "SKILL_LINES_CHANGED",
-    "TRADE_ACCEPT_UPDATE", "TRADE_SHOW", "TRADE_SKILL_SHOW", "UPDATE_MOUSEOVER_UNIT", "WHO_LIST_UPDATE",
+    "MACRO_ACTION_BLOCKED", "MACRO_ACTION_FORBIDDEN", "PARTY_LOOT_METHOD_CHANGED", "PLAYER_ENTERING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_GUILD_UPDATE", "PLAYER_LEVEL_UP",
+    "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_TALENT_UPDATE",
+    "PLAYER_TARGET_CHANGED", "QUEST_TURNED_IN", "RAID_ROSTER_UPDATE", "READY_CHECK", "READY_CHECK_FINISHED",
+    "SKILL_LINES_CHANGED",
+    "TRADE_ACCEPT_UPDATE", "TRADE_PLAYER_ITEM_CHANGED", "TRADE_SHOW", "TRADE_SKILL_SHOW", "UI_INFO_MESSAGE",
+    "UPDATE_MOUSEOVER_UNIT", "WEEKLY_REWARDS_UPDATE", "WHO_LIST_UPDATE",
     "ZONE_CHANGED_NEW_AREA",
 }
 
@@ -259,12 +290,21 @@ local function names(list)
     return table.concat(shown, ", ") .. (#list > LIST_MAX and ", ..." or "")
 end
 
+-- The game this client was taken for, by name (issue #177): the probe on retail said only
+-- "TBC Anniversary: no".
+local GAME_NAMES = { ANNIVERSARY = "TBC Anniversary", FOREVER = "WoW: Forever", RETAIL = "Retail" }
+local function gameName(c)
+    c = c or {}
+    local game = c.game or (c.isAnniversary and "ANNIVERSARY") or (c.isRetail and "RETAIL") or "FOREVER"
+    return GAME_NAMES[game] or tostring(game)
+end
+
 function Probe:PrintSummary(r)
     local b = r.build
     GuildOS:Print(string.format(L["Probe: build %s (%s), interface %s, project %s."],
         tostring(first(b)), tostring(b[2]), tostring(b[4]), tostring(r.projectId)))
-    GuildOS:Print(string.format(L["TBC Anniversary: %s. Secret Values restricted: %s. Chat lockdown here: %s (%s)."],
-        answer(r.client and r.client.isAnniversary or false), answer(r.secrets.restricted),
+    GuildOS:Print(string.format(L["Client: %s. Secret Values restricted: %s. Chat lockdown here: %s (%s)."],
+        gameName(r.client), answer(r.secrets.restricted),
         answer(first(r.chat.lockdown)), tostring(r.chat.instance[2] or first(r.chat.instance))))
     GuildOS:Print(string.format(L["Missing: %d of %d APIs, %d of %d events."],
         #r.missingApis, #self.APIS + #self.TEMPLATES + #self.SCRIPTS, #r.missingEvents, #self.EVENTS))
@@ -442,4 +482,168 @@ function Probe:FinishChat()
             answer(run.needsClick), answer(run.assumesClick)))
     end
     GuildOS:Print(L["Saved in GuildOSDB.probeChat. Type /reload to write it to disk."])
+end
+
+----------------------------------------------------------------------
+-- /gos probe channel (specs/071-o-recrutamento in guildos-web)
+-- Whether an addon message may go through a created channel, measured: the one thing the recruitment's
+-- beacon would use to reach past the zone and the layer that YELL stops at. The probe joins a temporary
+-- channel of its own, sends one message from the command (the Enter behind it is the key press) and one
+-- from a timer, listens for its own text coming back, leaves, and keeps the result in
+-- GuildOSDB.probeChannel = { timer, click, timerSkipped, clickSkipped, heard = { timer, click }, joined, left, at }:
+-- timer and click are true (the game took the message), false (it was tried and the game did not) or nil
+-- (never tried, and <how>Skipped says why: the channel had no number yet), and heard says it came back through
+-- the channel. The channel always ends, whatever went wrong, and nothing is said in any chat but the player's
+-- own window. GuildOSDB.probeChannelOpen holds the running channel's name, so that one a /reload cut short goes.
+----------------------------------------------------------------------
+local CHANNEL_WAIT = 15        -- seconds until the verdict: long enough to press the command a second time
+Probe.CHANNEL_WAIT = CHANNEL_WAIT   -- the Audit panel reads the result one second after it
+local CHANNEL_TIMER_AT = 2
+local STALE_WAIT = 15          -- seconds after login before a channel a /reload left behind can be left
+local STALE_AGAIN = 10         -- seconds until a leave is looked at, and tried again if the channel is still there
+local STALE_TRIES = 5          -- leaves at most, per login or run
+
+-- The join and leave lines of the probe's channel are the player's own business, and none needs reading.
+-- The client hands the channel as "5. GOSProbe1234" and its base name ninth, so either one names it.
+local function hideChannelNotice(_, _, _, _, _, channel, _, _, _, _, base)
+    local name = Probe._channelName
+    if not name or GuildOS.Compat.IsSecret(channel, base) then return false end
+    if type(base) == "string" and base == name then return true end
+    return type(channel) == "string" and channel:find(name, 1, true) ~= nil
+end
+
+-- A run that a /reload cut short leaves its channel joined: the name was kept in GuildOSDB, and it goes now.
+-- The name of the probe that is running is no leftover: the wait below can come due in the middle of a run.
+-- The game may drop a leave that comes from a timer, and says nothing, so the name is cleared only once the
+-- channel is seen gone, on a later try. STALE_TRIES leaves at most: what is still there then keeps its name
+-- for the next login or the next key press. `stale` and `try` are for the tries after the first.
+function Probe:LeaveStaleChannel(stale, try)
+    stale = stale or (GuildOSDB and GuildOSDB.probeChannelOpen)
+    try = try or 1
+    if type(stale) ~= "string" or (self._channel and self._channel.name == stale) then return end
+    local Compat = GuildOS.Compat
+    if try > 1 and Compat.ChannelId(stale) <= 0 then
+        if GuildOSDB and GuildOSDB.probeChannelOpen == stale then GuildOSDB.probeChannelOpen = nil end
+        return
+    end
+    if try > STALE_TRIES then return end
+    Compat.LeaveChannel(stale)
+    Compat.After(STALE_AGAIN, function() GuildOS:SafeCall(Probe.LeaveStaleChannel, Probe, stale, try + 1) end)
+end
+
+-- Started with the modules. At PLAYER_LOGIN the game has not joined the character's channels yet, and
+-- leaving one then would do nothing: the wait is for the game.
+function Probe:Initialize()
+    GuildOS.Compat.After(STALE_WAIT, function() GuildOS:SafeCall(Probe.LeaveStaleChannel, Probe) end)
+end
+
+-- One attempt to send `how` ("click" or "timer"). A channel with no number yet is not a refusal by the
+-- game: it is an attempt that did not happen, recorded as its own state (`<how>Skipped`) and never as false.
+function Probe:ChannelAttempt(run, how)
+    local Compat = GuildOS.Compat
+    pcall(function()
+        local id = Compat.ChannelId(run.name)
+        if id <= 0 then
+            if not run[how] then run[how .. "Skipped"] = "no channel number" end
+            return
+        end
+        run.joined = true
+        run[how .. "Skipped"] = nil
+        run.sentTry[how] = true
+        Compat.SendAddonMessageNow(PREFIX, run.texts[how], "CHANNEL", id, function() run[how] = true end)
+    end)
+end
+
+function Probe:RunChannel()
+    if InCombatLockdown and InCombatLockdown() then
+        GuildOS:Print(L["The probe does not run in combat. Try again after the fight."])
+        return nil
+    end
+    local running = self._channel
+    if running then
+        -- A second press, from a new key press: the click that was skipped for want of a number gets its
+        -- attempt now, and this is the one that counts.
+        if running.click or not running.clickSkipped then
+            GuildOS:Print(L["The channel probe is already running."])
+            return nil
+        end
+        self:ChannelAttempt(running, "click")
+        return running
+    end
+
+    local Compat = GuildOS.Compat
+    local name = "GOSProbe" .. math.random(1000, 9999)
+    local run = {
+        name = name, heard = { timer = false, click = false }, joined = false, sentTry = {},
+        texts = { click = name .. " click", timer = name .. " timer" },
+    }
+    self._channel, self._channelName = run, name
+    -- The verdict first of all: whatever raises below, the channel still ends.
+    Compat.After(CHANNEL_WAIT, function() Probe:FinishChannel(run) end)
+
+    pcall(function()
+        if not self._noticeFilter then self._noticeFilter = Compat.AddChatFilter("CHAT_MSG_CHANNEL_NOTICE", hideChannelNotice) end
+        self._channelFrame = self._channelFrame or CreateFrame("Frame")
+        self._channelFrame:SetScript("OnEvent", function(_, _, prefix, text, dist)
+            if Compat.IsSecret(prefix, text, dist) then return end
+            for how, own in pairs(run.texts) do
+                if prefix == PREFIX and text == own and dist == "CHANNEL" then run.heard[how] = true end
+            end
+        end)
+        Compat.RegisterEvent(self._channelFrame, "CHAT_MSG_ADDON")
+        pcall(Compat.RegisterAddonPrefix, PREFIX)
+        -- The name kept here is all that is left of a run a /reload cut short: it goes before this one replaces it.
+        self:LeaveStaleChannel()
+        if type(GuildOSDB) == "table" then GuildOSDB.probeChannelOpen = name end
+        Compat.JoinChannel(name)
+    end)
+
+    GuildOS:Print(L["Channel probe: a temporary channel is joined and one message goes through it from the command and one from a timer. The verdict follows in a few seconds."])
+    self:ChannelAttempt(run, "click")
+    if run.clickSkipped then
+        GuildOS:Print(L["The channel has no number yet: press the command or the button again within a few seconds. The second press is the one that counts."])
+    end
+    Compat.After(CHANNEL_TIMER_AT, function()
+        if Probe._channel == run then self:ChannelAttempt(run, "timer") end   -- never after the verdict
+    end)
+    return run
+end
+
+function Probe:FinishChannel(run)
+    if self._channel ~= run then return end
+    self._channel = nil
+    local Compat = GuildOS.Compat
+    pcall(function() self._channelFrame:UnregisterEvent("CHAT_MSG_ADDON") end)
+    if Compat.ChannelId(run.name) > 0 then run.joined = true end
+    local left = Compat.LeaveChannel(run.name)
+    -- This leave comes from a timer too: its name goes only once the channel has, and this is its second try.
+    self:LeaveStaleChannel(run.name, 2)
+    local clockOk, now = pcall(GetServerTime)
+    -- timer and click are true (the game took it), false (it was tried and the game did not) or nil
+    -- (never tried: <how>Skipped says why).
+    local function outcomeOf(how)
+        if run[how] then return true end
+        if run.sentTry[how] then return false end
+        return nil
+    end
+    local result = { timer = outcomeOf("timer"), click = outcomeOf("click"),
+                     timerSkipped = run.timerSkipped, clickSkipped = run.clickSkipped,
+                     heard = run.heard, joined = run.joined, left = left, at = (clockOk and now) or 0 }
+    if not GuildOSDB then GuildOSDB = {} end
+    GuildOSDB.probeChannel = result
+
+    if not result.joined then
+        GuildOS:Print(L["The channel could not be joined."])
+    end
+    local labels = { click = L["the message sent from the command"], timer = L["the message sent from a timer"] }
+    for _, how in ipairs({ "click", "timer" }) do
+        local outcome
+        if result[how] == nil then
+            outcome = L["not tried: the channel had no number yet"]
+        else
+            outcome = not result[how] and L["not sent"] or result.heard[how] and L["came back"] or L["did not come back"]
+        end
+        GuildOS:Print(string.format("  %s: %s", labels[how], outcome))
+    end
+    GuildOS:Print(L["Saved in GuildOSDB.probeChannel. Type /reload to write it to disk."])
 end

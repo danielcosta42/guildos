@@ -27,6 +27,9 @@ CommSystem.MSG_TYPES = {
     SYNC_V2   = "SV",    -- SyncService v2 versioned envelope (points/events/bank/polls)
     RECRUIT_INFO = "RI", -- Recruitment status broadcast (officer → all members)
     LFG       = "LG",    -- member self-declared LFG availability (sender bound)
+    -- NOT "LP": that code is the wishlist's loot prio, matched by its literal further down.
+    LFG_GROUP = "GF",    -- a group being formed (sender bound; GUILD only; issue #341)
+    LFG_JOIN  = "GJ",    -- a request for a spot and its answer (WHISPER only; issue #341)
     RECRUIT_STATS = "RE",-- self-reported recruitment engagement (sender bound; officers aggregate).
                          -- NOT "RS": that code is already RESPONSE above; "RE" is the free code.
     MAP_POS   = "MP",    -- live guild-map position (sender bound; GUILD-only; clamped)
@@ -42,7 +45,11 @@ function CommSystem:Initialize()
     GuildOS.Compat.RegisterEvent(frame, "CHAT_MSG_ADDON")
     frame:SetScript("OnEvent", function(_, _, prefix, msg, channel, sender)
         if prefix == GuildOS.PREFIX then
+            -- Timed by the type it carried (issue #324); a chunk still waiting for the rest says "chunk".
+            local st, t = GuildOS.State.comm, GuildOS.Perf:Start()
+            st.recvKind = nil
             CommSystem:OnMessageReceived(msg, channel, sender)
+            GuildOS.Perf:Stop("guild sync in " .. (st.recvKind or "chunk"), t, #msg)
         end
     end)
 
@@ -67,8 +74,18 @@ function CommSystem:Initialize()
                         GuildOS.Recruitment:BroadcastStatus(true)
                     end)
                 end
-                -- And the guild's officer threshold, for a client that missed the change (issue #81).
-                C_Timer.After(15, function() GuildOS:PublishOfficerMaxRank() end)
+                -- And the guild's officer threshold, for a client that missed the change (issue #81),
+                -- and on retail its loot system (issue #185).
+                C_Timer.After(15, function()
+                    GuildOS:PublishOfficerMaxRank()
+                    GuildOS:PublishEventMaxRank()   -- who creates events (issue #283)
+                    if GuildOS.Calendar then GuildOS.Calendar:PublishMemberKinds() end   -- and which kinds (issue #308)
+                    GuildOS:PublishLootSystem()
+                    if GuildOS.CoreManager then GuildOS.CoreManager:PublishAllLoot() end   -- each core's own (issue #338)
+                    if GuildOS.Readiness then GuildOS.Readiness:PublishMinIlvl() end  -- Forever (issue #206)
+                    if GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") then GuildOS.Founding:Publish() end  -- Forever (issue #208)
+                    if GuildOS.TrialTracker then GuildOS.TrialTracker:PublishConfig() end  -- the trials' length and switch (#249)
+                end)
             end
         end
     end)
@@ -77,8 +94,9 @@ function CommSystem:Initialize()
     -- The 300s ticker above only broadcasts our own data; without this a client
     -- that missed a peer's one broadcast would never re-pull it within the
     -- session. Kept on a separate 10-min timer; the 0-15s jitter spreads the
-    -- guild-wide REQUEST fan-out across clients (each peer's response is itself
-    -- throttled to once per THROTTLE_INTERVAL, so this cannot storm the channel).
+    -- guild-wide REQUEST fan-out across clients. Only a peer's own data was throttled
+    -- (THROTTLE_INTERVAL), and an officer's backfills went out on every request until
+    -- each peer answered once per ANSWER_GAP (issue #324).
     C_Timer.NewTicker(600, function()
         if IsInGuild() then
             C_Timer.After(math.random() * 15, function()
@@ -116,14 +134,70 @@ CommSystem.CHUNK_SIZE = 230  -- Leave room for chunk header + "M:xxxx:nn:nn:"
 CommSystem.pendingMessages = {}  -- [sender] = { chunks = {}, total = 0, received = 0 }
 
 ----------------------------------------------------------------------
+-- Member-data counters (issue #312). Every drop on the way from a guildmate's broadcast to
+-- db.members was silent, so "sync does nothing" could not be told apart from "nobody sent".
+-- Per sender, this session only: what arrived, what was stored, what was dropped and why.
+-- A message lost before its type is known (it would not decode, decompress or reassemble)
+-- counts as dropped too, whatever it carried, so the Audit line says "messages", not member data.
+----------------------------------------------------------------------
+CommSystem.MAX_STAT_SENDERS = 200   -- a busy guild's worth; past it only the totals grow
+CommSystem.syncStats = { senders = {}, nSenders = 0, received = 0, stored = 0, dropped = 0, reasons = {} }
+
+function CommSystem:_CountPayload(sender, outcome, reason)
+    local st = self.syncStats
+    local s = st.senders[sender or "?"]
+    if not s and st.nSenders < self.MAX_STAT_SENDERS then
+        s = { received = 0, stored = 0, dropped = 0, reasons = {} }
+        st.senders[sender or "?"] = s
+        st.nSenders = st.nSenders + 1
+    end
+    st.received = st.received + 1
+    if s then s.received = s.received + 1 end
+    if outcome == "stored" then
+        st.stored = st.stored + 1
+        if s then s.stored = s.stored + 1 end
+        -- The sync the player asked for counts members, not messages.
+        if self._syncWindow and sender then self._syncWindow[sender] = true end
+    else
+        reason = reason or "rejected"
+        st.dropped = st.dropped + 1
+        st.reasons[reason] = (st.reasons[reason] or 0) + 1
+        if s then
+            s.dropped = s.dropped + 1
+            s.reasons[reason] = (s.reasons[reason] or 0) + 1
+        end
+    end
+end
+
+-- The session's counters: totals, the reason most drops had (or nil), and the per-sender table.
+function CommSystem:SyncCounters()
+    local st = self.syncStats
+    local top, topN = nil, 0
+    for r, n in pairs(st.reasons) do
+        if n > topN or (n == topN and top and r < top) then top, topN = r, n end
+    end
+    return { received = st.received, stored = st.stored, dropped = st.dropped,
+             topReason = top, topCount = topN, senders = st.senders }
+end
+
+-- How a drop reason reads to the player (Audit > Sync).
+CommSystem.DROP_REASON_TEXT = {
+    decode = L["could not decode"], decompress = L["could not decompress"], chunks = L["chunks lost"],
+    rejected = L["missing name or class"], stale = L["older than stored"],
+}
+
+----------------------------------------------------------------------
 -- Send a message to guild (with chunking for large payloads)
 ----------------------------------------------------------------------
-function CommSystem:SendMessage(msgType, data, target, priority)
+-- `kind`, optional, names it in /gos perf (SyncService passes its domain); else the type does.
+function CommSystem:SendMessage(msgType, data, target, priority, kind)
     local payload = msgType .. ":" .. (data or "")
 
     -- Compress
+    local t = GuildOS.Perf:Start()
     local compressed = LibDeflate:CompressDeflate(payload)
     local encoded = LibDeflate:EncodeForWoWAddonChannel(compressed)
+    GuildOS.Perf:Stop("guild sync out " .. (kind or msgType), t, #encoded)
 
     local len = #encoded
     if len <= 250 then
@@ -149,6 +223,7 @@ end
 
 function CommSystem:SendRaw(msg, target, priority)
     if target then
+        GuildOS:NoteWhisper(target) -- a guildmate gone since they asked answers "No player named" (issue #326)
         GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, "WHISPER", target, "NORMAL")
     else
         GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, "GUILD", nil, priority or "BULK")
@@ -185,10 +260,15 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
 
         local key = sender .. ":" .. msgId
         if not self.pendingMessages[key] then
-            self.pendingMessages[key] = { chunks = {}, total = total, received = 0 }
-            -- Timeout: clean up after 30s
+            local started = { chunks = {}, total = total, received = 0 }
+            self.pendingMessages[key] = started
+            -- Timeout: clean up after 30s. Still waiting then, a chunk was lost: counted, not
+            -- silent (issue #312). A finished message has left the table already.
             C_Timer.After(30, function()
-                self.pendingMessages[key] = nil
+                if self.pendingMessages[key] == started then
+                    self.pendingMessages[key] = nil
+                    self:_CountPayload(sender, "dropped", "chunks")
+                end
             end)
         end
 
@@ -215,15 +295,17 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
     end
 
     -- Decode and decompress
+    -- A message that fails here is lost with its type unknown: counted (issue #312).
     local decoded = LibDeflate:DecodeForWoWAddonChannel(encoded)
-    if not decoded then return end
+    if not decoded then self:_CountPayload(sender, "dropped", "decode"); return end
 
     local decompressed = LibDeflate:DecompressDeflate(decoded)
-    if not decompressed then return end
+    if not decompressed then self:_CountPayload(sender, "dropped", "decompress"); return end
 
     -- Parse message type
     local msgType, data = decompressed:match("^(%w+):(.*)$")
     if not msgType then return end
+    GuildOS.State.comm.recvKind = msgType   -- for /gos perf; SyncService narrows SV to its domain
 
     if msgType == CommSystem.MSG_TYPES.BROADCAST then
         self:HandleBroadcast(sender, data)
@@ -237,7 +319,7 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         self:HandleVersionCheck(sender, data)
     elseif msgType == "WL" then
         if GuildOS.Wishlist then
-            GuildOS.Wishlist:HandleWishlistBroadcast(sender, data)
+            GuildOS.Wishlist:HandleWishlistBroadcast(sender, data, channel)
         end
     elseif msgType == "LP" then
         -- Officer-set priorities, stored by everyone: only an officer's, over GUILD, replace them.
@@ -278,12 +360,18 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
                     if la ~= lm then localized[la] = lm end   -- one split person is not their own alt
                 end
                 GuildOS.db.altLinks = localized
+                -- A member's own claim the list lacks goes back on top of it (#353).
+                if GuildOS.AltAutoDetect then GuildOS.AltAutoDetect:OnOfficerLinks() end
             end
         end
     elseif msgType == CommSystem.MSG_TYPES.SELF_ALT then
         if GuildOS.AltAutoDetect then GuildOS.AltAutoDetect:HandleSelfClaim(sender, data) end
     elseif msgType == CommSystem.MSG_TYPES.LFG then
-        if GuildOS.LFGBoard then GuildOS.LFGBoard:HandleEntry(sender, data) end
+        if GuildOS.LFGBoard then GuildOS.LFGBoard:HandleEntry(sender, data, channel) end
+    elseif msgType == CommSystem.MSG_TYPES.LFG_GROUP then
+        if GuildOS.Groups then GuildOS.Groups:HandleGroup(sender, data, channel) end
+    elseif msgType == CommSystem.MSG_TYPES.LFG_JOIN then
+        if GuildOS.Groups then GuildOS.Groups:HandleJoin(sender, data, channel) end
     elseif msgType == CommSystem.MSG_TYPES.RAID_DATA then
         if GuildOS:IsOfficer() and channel == "GUILD" and GuildOS:IsOfficerByName(sender) and GuildOS.RaidTracker then
             GuildOS.RaidTracker:HandleIncoming(data)
@@ -383,7 +471,7 @@ end
 ----------------------------------------------------------------------
 function CommSystem:HandleBroadcast(sender, data)
     local ok, playerData = LibSerialize:Deserialize(data)
-    if not ok or type(playerData) ~= "table" then return end
+    if not ok or type(playerData) ~= "table" then self:_CountPayload(sender, "dropped", "decode"); return end
 
     -- Build player key: the payload's realm, else the client's, as in 0.53.0. Only a client with no
     -- realm at all takes the sender's own suffix, so it agrees with a roster that suffixes names (issue #8).
@@ -396,22 +484,55 @@ function CommSystem:HandleBroadcast(sender, data)
     playerData.name = name
     local key = GuildOS:GetPlayerKey(name, realm)
 
-    -- Store the data
-    GuildOS.DataCollector:StoreReceivedData(key, playerData)
+    -- Store the data, and count what became of it (issue #312).
+    local stored, why = GuildOS.DataCollector:StoreReceivedData(key, playerData)
+    self:_CountPayload(sender, stored and "stored" or "dropped", why)
 end
 
 ----------------------------------------------------------------------
 -- Request data from all online guildies
 ----------------------------------------------------------------------
-function CommSystem:RequestAllData()
+-- `now` (a /gos sync) asks to be answered within NOW_GAP rather than ANSWER_GAP.
+function CommSystem:RequestAllData(now)
     if not IsInGuild() then return end
-    self:SendMessage(self.MSG_TYPES.REQUEST, "ALL")
+    self:SendMessage(self.MSG_TYPES.REQUEST, now and "NOW" or "ALL")
 end
 
 ----------------------------------------------------------------------
 -- Handle data request
 ----------------------------------------------------------------------
-function CommSystem:HandleRequest(_sender, _data)
+-- How often this client answers (issue #324). Every client answered every request and every officer
+-- re-sent its ~36 backfills each time, with three requests a login and one a client every ten minutes,
+-- all decoded by the whole guild, and an officer of a 700-member guild reported high CPU. A request inside
+-- the window gets one answer at its end, so nothing asked goes unanswered. A /gos sync (NOW) waits
+-- NOW_GAP at most, so its report still counts who answered. A client before #324 sends ALL for
+-- everything, and answers NOW as it answers ALL.
+CommSystem.ANSWER_GAP = 120
+CommSystem.NOW_GAP = 15
+
+local function answer(self)
+    local st = GuildOS.State.comm
+    st.answeredAt, st.answerDue = GetTime(), nil
+    GuildOS.Perf:Count("guild sync request answered")
+    self:_Answer()
+end
+
+function CommSystem:HandleRequest(_sender, data)
+    local st = GuildOS.State.comm
+    GuildOS.Perf:Count("guild sync request")
+    local now = GetTime()
+    local gap = data == "NOW" and self.NOW_GAP or self.ANSWER_GAP
+    if not st.answeredAt or now - st.answeredAt >= gap then return answer(self) end
+    GuildOS.Perf:Count("guild sync request held")
+    local at = st.answeredAt + gap
+    if st.answerDue and st.answerDue <= at then return end   -- an answer comes by then already
+    st.answerDue = at
+    GuildOS.Compat.After(at - now, function()
+        if st.answerDue == at then answer(self) end   -- else answered meanwhile, or brought forward
+    end)
+end
+
+function CommSystem:_Answer()
     -- Respond with a broadcast to the GUILD channel instead of a direct
     -- WHISPER to the sender.  Using WHISPER caused "No player named X"
     -- spam whenever the requester logged off between their REQUEST and our
@@ -446,9 +567,18 @@ function CommSystem:HandleRequest(_sender, _data)
             end)
         end
 
-        -- And the guild's officer threshold (issue #81)
+        -- And the guild's officer threshold (issue #81), and on retail its loot system (issue #185)
         if GuildOS:IsOfficer() then
-            C_Timer.After(3, function() GuildOS:PublishOfficerMaxRank() end)
+            C_Timer.After(3, function()
+                GuildOS:PublishOfficerMaxRank()
+                GuildOS:PublishEventMaxRank()   -- who creates events (issue #283)
+                if GuildOS.Calendar then GuildOS.Calendar:PublishMemberKinds() end   -- and which kinds (issue #308)
+                GuildOS:PublishLootSystem()
+                if GuildOS.CoreManager then GuildOS.CoreManager:PublishAllLoot() end   -- each core's own (issue #338)
+                if GuildOS.Readiness then GuildOS.Readiness:PublishMinIlvl() end  -- Forever (issue #206)
+                if GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") then GuildOS.Founding:Publish() end  -- Forever (issue #208)
+                if GuildOS.TrialTracker then GuildOS.TrialTracker:PublishConfig() end  -- the trials' length and switch (#249)
+            end)
         end
 
         -- Share the guild recruitment config so alts/late-loggers reliably get
@@ -474,6 +604,12 @@ function CommSystem:HandleRequest(_sender, _data)
         if GuildOS.LFGBoard and GuildOS.LFGBoard:AmAvailable() then
             C_Timer.After(3.5, function()
                 GuildOS.LFGBoard:Rebroadcast()
+            end)
+        end
+        -- And a leader with the group they are forming (issue #341), for the same reason.
+        if GuildOS.Groups and GuildOS.Groups:Mine() then
+            C_Timer.After(4, function()
+                GuildOS.Groups:Rebroadcast()
             end)
         end
 
@@ -570,16 +706,18 @@ function CommSystem:FullSync()
     -- Broadcast own member data (gear, professions, attunements, recipes)
     self:BroadcastMyData()
 
-    -- Request fresh data from all online guild members
-    self:RequestAllData()
+    -- Request fresh data from all online guild members, answered within NOW_GAP (issue #324)
+    self:RequestAllData(true)
 
     if not GuildOS:IsOfficer() then
         GuildOS:Print(L["Syncing data with guild..."])
+        self:_ReportSyncLater()
         return
     end
 
     -- Officer-only staggered broadcasts
     GuildOS:Print(L["Syncing all guild data (officer mode)..."])
+    self:_ReportSyncLater()
 
     C_Timer.After(1, function()
         self:BroadcastAltLinks()
@@ -604,6 +742,34 @@ function CommSystem:FullSync()
     end)
 end
 
+-- A sync that only ever said "Syncing..." left the player guessing (issue #312): once the guild
+-- has had time to answer, say how many members' data came in and how many have the addon. 20 s:
+-- peers wait up to 3 s to answer and a big guild's chunked replies are throttled after that.
+CommSystem.SYNC_REPORT_DELAY = 20
+
+function CommSystem:_ReportSyncLater()
+    self._syncWindow = {}
+    local window = self._syncWindow
+    GuildOS.Compat.After(self.SYNC_REPORT_DELAY, function()
+        -- A later sync started meanwhile has its own window and reports instead.
+        if self._syncWindow ~= window then return end
+        self._syncWindow = nil
+        self:ReportSync(window)
+    end)
+end
+
+function CommSystem:ReportSync(window)
+    local arrived = 0
+    for _ in pairs(window or {}) do arrived = arrived + 1 end
+    local _, withAddon = self:GetSyncHealth()
+    GuildOS:Print(string.format(L["Sync: data from %d member(s) arrived; %d member(s) have Guild OS."],
+        arrived, withAddon or 0))
+    if arrived == 0 then
+        GuildOS:Print(L["No member data arrived. Check that guildmates with Guild OS are online, then type /guildos errors to see what failed."])
+    end
+    return arrived, withAddon
+end
+
 ----------------------------------------------------------------------
 -- Sync health: who is running Guild OS, who is on an outdated version,
 -- and when each member last synced data. Drives the Audit > Sync view.
@@ -623,7 +789,7 @@ function CommSystem:GetSyncHealth()
             local d = GuildOS.db.members[key]
             local has = (d and d.lastUpdate and d.lastUpdate > 0) and true or false
             local ver = d and d.addonVersion or nil
-            local isOld = (has and ver and ver ~= cur) and true or false
+            local isOld = (has and ver and GuildOS.Mesh.CompareVersions(ver, cur) < 0) and true or false
             if has then withAddon = withAddon + 1 end
             if isOld then outdated = outdated + 1 end
             rows[#rows + 1] = {

@@ -22,6 +22,8 @@ local GLOBALS = {
   "GuildRoster", "RegisterAddonMessagePrefix", "SendAddonMessage", "SendAddonMessageLogged",
   -- Moved to C_PartyInfo / C_Item, and the globals gone on WoW: Forever (issue #43).
   "InviteUnit", "InviteByName", "GetItemQualityColor", "GetItemCount",
+  -- Forbidden to addons on WoW: Forever 1.60.1.70790: Compat.GuildInvite (issue #256).
+  "GuildInvite",
   -- What a tooltip is showing: the Classic readers, and the data type the retail client
   -- registers by (issue #19). Reading one behind Compat's back is a feature that goes quiet
   -- on the other client, which is the failure this guard exists to make loud.
@@ -35,7 +37,11 @@ local API_ONLY = { GuildRoster = true, RegisterAddonMessagePrefix = true, SendAd
 local COMPAT_SOURCES = { ["GuildOS.Compat"] = true, ["GuildOS.Compat"] = true, ["self.Compat"] = true }
 -- Namespaces and the library only Compat may touch: flagged wherever the name appears (an alias included).
 local NAMESPACES = { "C_Item", "C_Spell", "C_UnitAuras", "C_Container", "C_TradeSkillUI", "C_Club", "ChatThrottleLib",
-                     "TooltipUtil", "TooltipDataProcessor", "C_ClassTalents", "C_Traits" }
+                     "TooltipUtil", "TooltipDataProcessor", "C_ClassTalents", "C_Traits",
+                     -- Retail's Mythic+ and Great Vault (issue #187).
+                     "C_MythicPlus", "C_ChallengeMode", "C_WeeklyRewards", "C_Calendar",
+                     -- The game's addon CPU meter, retail 11.0.2 on (issue #324).
+                     "C_AddOnProfiler" }
 
 -- Blank comments and strings, keeping every newline so line numbers stay true.
 local function blank(src)

@@ -232,7 +232,7 @@ local function ShowCard(e, anchor, who, repaint)
 
     card.icon.icon:SetTexture(recipeIcon(e))
     card.title:SetText(e.name)
-    card.subtitle:SetText(string.format("%s  ·  %d–%d", D.DisplayName(e.line), e.yellow, e.grey))
+    card.subtitle:SetText(D.DisplayName(e.line) .. (e.grey > 0 and string.format("  ·  %d–%d", e.yellow, e.grey) or ""))
 
     local outLink = e.out and e.out > 0 and select(2, GuildOS.Compat.GetItemInfo(e.out))
     local values = {
@@ -602,7 +602,8 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
                     row.icon:SetTexture(recipeIcon(e))
                     row.t1:SetText(e.name)
                     row.t1:SetTextColor(C.white.r, C.white.g, C.white.b)
-                    row.t2:SetText(string.format("|cff%s%d|r–|cff888888%d|r", hex(C.gold), e.yellow, e.grey))
+                    -- A few recipes give no skill: the client's table says 0 for both.
+                    row.t2:SetText(e.grey > 0 and string.format("|cff%s%d|r–|cff888888%d|r", hex(C.gold), e.yellow, e.grey) or "")
                     row.t3:SetText(whoText(e.crafters, state.who))
                     row.t4:SetText(requiresText(e))
                     row.t4:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)

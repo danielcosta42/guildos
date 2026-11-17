@@ -15,11 +15,9 @@
 --
 -- Business logic only — UI calls Build() and shows the result.
 ----------------------------------------------------------------------
--- Not on retail: guildos.me takes no retail guild yet (ADR-0026). Absent there, not switched off.
-if GuildOS.Client.isRetail then return end
-
 local Companion = {}
 GuildOS.Companion = Companion
+local L = GuildOS.L
 
 -- The marker on the wire carries a colon; the `fmt` field inside the payload
 -- does not. They are two different things and the web checks both.
@@ -43,8 +41,30 @@ local FMT = "GOSCOMP1"
 -- (issue #35, the site's specs/037). 8 adds `look` on WoW: Forever: the {option, choice}
 -- pairs a member's addon read in the barber's chair (issue #37, the site's specs/038). 9 adds
 -- each session's `size`, the raid size the game gave on the way in: on WoW: Forever it is what
--- decides whether a night counts for attendance (issue #90).
-local PAYLOAD_VERSION = 9
+-- decides whether a night counts for attendance (issue #90). 10 is retail's: the `region`, the guild's
+-- home realm in `guildKey` and `realm` (never the exporter's), and each session's `difficulty`, 14
+-- Normal, 15 Heroic, 16 Mythic (issue #182, the site's specs/056). Forever and Anniversary send what
+-- they sent at 9. 11 adds `rosterComplete`, true only when `members` is the whole guild
+-- (GuildOS:WholeRoster): the one upload the site may read "not listed" from as "left the guild"
+-- (issue #203, the site's #229). Absent otherwise. 12 starts what WoW: Forever's guild feed reads (the
+-- site's #238, contract #246): `journal`, what happened to each character as that character's own
+-- client wrote it down (issue #205), and each member's `feedOptOut`, true for whoever asked not to be
+-- named on Discord. The founding, the readiness threshold and the tabard join it in the same version.
+-- The character's own pack (BuildSelf) is this same version: `self` is one more absent field, and an
+-- export gains nothing by the pack existing. 13 adds `joinRequests`, what the guild's client holds of
+-- the people who asked to join (the site's specs/071, issue guildos#245): absent without any. 14 adds
+-- each member's `main`, the key of the character an officer linked them to as an alt (`db.altLinks`,
+-- issue #251, the site's #392), in the same form as the member's own `key`: absent for a main and for
+-- anybody nobody linked, and never in the pack, where nobody says whose alt they are. 15 adds
+-- `lootBook`, what the guild's loot runs on beyond the history (issue #295, the site's #460): see
+-- lootBook() below. Absent with every loot module off. 16 adds `officerRanks`, the guild's officer
+-- threshold as the officers set it ({ max, at }, issue #313, the site's #495): ranks 0..max are
+-- officers. Absent until somebody in the guild chose one, so the site keeps its default.
+-- Within 16, each loot entry may carry `why`, the record of how the item was awarded (issue #336, the
+-- site's #517; see lootWhy() below): one more absent field, which a reader from before never looks at.
+-- Also within 16, `coreReceipt`: the cores as this game has them, for the site to show what differs
+-- (issue #347, the site's #519; see coreReceipt() below). Absent with the Raids module off.
+local PAYLOAD_VERSION = 16
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -70,7 +90,9 @@ end
 local function jsonNumber(n)
     if n ~= n or n == math.huge or n == -math.huge then return "0" end
     -- Integers must not go out as "5.0": the web side reads counts and ids.
-    if n == math.floor(n) then return string.format("%d", n) end
+    -- "%.0f", not "%d": "%d" goes through a C long, 32 bits on Windows, where a time past 2038 (the
+    -- receipt's, up to 2^32 - 1) would come out negative; every whole double is written exactly.
+    if n == math.floor(n) then return string.format("%.0f", n) end
     return string.format("%.4g", n)
 end
 
@@ -113,20 +135,22 @@ Companion.EncodeJson = encode
 -- Per-member pieces
 ----------------------------------------------------------------------
 
--- Slots where a missing enchant is a real problem in TBC. Same list the
--- audit panel uses — one source, so the site and the in-game audit can
--- never disagree about who is missing what.
+-- Slots where a missing enchant is a real problem in this game. Same list and
+-- the same question the audit panel asks — one source, so the site and the
+-- in-game audit can never disagree about who is missing what.
 local function enchantSummary(gear)
     if not gear then return nil end
-    local slots = GuildOS.GearAudit and GuildOS.GearAudit:GetEnchantableSlots()
+    local audit = GuildOS.GearAudit
+    local slots = audit and audit:GetEnchantableSlots()
     if not slots then return nil end
 
     local missing, checked = {}, 0
     for _, slotId in ipairs(slots) do
         local item = gear[slotId]
         -- Only an equipped slot can be missing an enchant. An empty slot is a
-        -- different problem and saying "unenchanted" about it would be wrong.
-        if item and item.name and item.name ~= "" then
+        -- different problem and saying "unenchanted" about it would be wrong. On
+        -- retail an off hand that is a shield or a frill takes none (issue #182).
+        if audit:NeedsEnchant(slotId, item) then
             checked = checked + 1
             if not (item.enchantId and item.enchantId > 0) then
                 missing[#missing + 1] = GuildOS.SlotNames[slotId] or ("Slot " .. slotId)
@@ -225,6 +249,16 @@ local function craftingFor(key)
     return out
 end
 
+-- v14: the main an officer linked this character to, as `db.altLinks` holds it ([altKey] = mainKey,
+-- officer-maintained and synced, keyed the way `key` is). Nil -- the key absent -- for a main, for
+-- anybody nobody linked, and for a link to itself or anything that is not a key, which links nobody.
+local function mainOf(key)
+    local links = GuildOS.db.altLinks
+    local main = type(links) == "table" and links[key] or nil
+    if type(main) ~= "string" or main == "" or main == key then return nil end
+    return main
+end
+
 local function professionsFor(data)
     local out = {}
     for _, p in ipairs(data.professions or {}) do
@@ -271,8 +305,9 @@ local function rollUpPlayers(session, startTime)
             -- ratio: `RaidTracker:UpdateAttendanceForLockout` docks the score when
             -- consumables show up in under half the snapshots that saw the person.
             -- "At least once" cannot answer that, so the site could never arrive at
-            -- the same number the game shows.
-            if m.hasConsumes then p.chits = (p.chits or 0) + 1 end
+            -- the same number the game shows. A snapshot whose consumables retail could
+            -- not read (nil) counts as the addon counts it, for the player (issue #187).
+            if m.hasConsumes ~= false then p.chits = (p.chits or 0) + 1 end
         end
     end
 
@@ -371,6 +406,9 @@ local function raidSessions()
                 -- The raid's size as the game gave it on the way in: on WoW: Forever, 20 and up
                 -- is what counts for attendance (issue #90). Absent for a night recorded before.
                 size = tonumber(s.size),
+                -- Retail's difficulty, 14, 15 or 16: Normal and Heroic the same week are two
+                -- lockouts (issue #182). Absent everywhere else, where a session never has one.
+                difficulty = tonumber(s.difficulty),
                 -- Only when false, mirroring the addon's own `isGuildRaid ~= false`:
                 -- every session recorded before the flag existed is a guild raid, and
                 -- absent has to keep meaning that on the far side too. Attendance
@@ -408,13 +446,14 @@ end
 ----------------------------------------------------------------------
 -- The switch
 --
--- Everything that crosses between the game and the site goes through here —
--- this export today, roster import tomorrow. Guarding the module rather than
--- each caller means a new entry point cannot forget to ask.
+-- Everything of the guild's that crosses between the game and the site goes
+-- through here — this export today, roster import tomorrow. Guarding the module
+-- rather than each caller means a new entry point cannot forget to ask.
 --
 -- Off by default. The payload carries the whole guild's gear, attunements and
 -- attendance, and a guild that does not use the site should not have that one
--- mistyped command away.
+-- mistyped command away. The one thing that does not ask is BuildSelf, which
+-- carries none of that; it says why.
 ----------------------------------------------------------------------
 function Companion:IsEnabled()
     return GuildOS:GetSetting("companion") == true
@@ -424,13 +463,518 @@ function Companion:SetEnabled(on)
     GuildOS:SetSetting("companion", on and true or false)
 end
 
+-- Why this client publishes nothing, or nil when it may. A retail guild's world on the site is its
+-- region, and a region the site has none for (China, a test client) is refused here rather than at
+-- the site's door, where nobody in game would read why (issue #182). Build returns it as its error;
+-- the Web panel shows it.
+function Companion:Refused()
+    if not GuildOS.Client.isRetail or GuildOS.Compat.Region() then return nil end
+    return L["guildos.me takes no guild from this client's region: nothing is published."]
+end
+
 ----------------------------------------------------------------------
 -- Payload
 ----------------------------------------------------------------------
+-- A field newer than the client that tested it: if it fails it is left out, and goes to
+-- /guildos errors. The roster, the raids and the loot still go up (issue #232).
+local function optional(what, fn, ...)
+    local ok, value = pcall(fn, ...)
+    if ok then return value end
+    GuildOS:RecordError("export " .. what .. ": " .. tostring(value))
+    return nil
+end
+
+-- One person's line. The one place it is built, so the export and the character's own pack
+-- can never tell the site two different things about somebody.
+--
+-- Everybody on the guild roster, including whoever has never published.
+--
+-- This used to send only clients that had synced, and the reason was
+-- sound: a row built from the guild roster alone carries a level and a
+-- class and nothing the site cannot already guess, and it would look
+-- confirmed while being nothing of the sort.
+--
+-- What that cost only became visible against real data. One guild
+-- published 34 members and 48 different people were recorded raiding,
+-- overlapping by five — and the site had no way to tell "our member who
+-- has not installed it" from "somebody who is not in the guild". Those
+-- are different conversations, and both were invisible.
+--
+-- `lastUpdate = 0` carries it, the same trick as `snapshots = 0`: a value
+-- that already exists saying one more thing, with no field of its own.
+-- The site marks those rows, and that mark is the condition for sending
+-- them at all — without it this recreates exactly what the filter avoided.
+local function memberLine(key, short, classFile, level, rankName, rankIndex)
+    -- Nothing published means no record at all, so everything below reads
+    -- through an empty table rather than guarding each field.
+    local data = GuildOS.db.members[key] or {}
+    local att = GuildOS.RaidTracker
+        and GuildOS.RaidTracker:GetAttendance25ManPercent(key) or 0
+    -- Absent, not [], for a client that published without a skill-line API (issue #10).
+    -- A row that never published, and every Anniversary record, keeps its list.
+    local professions = professionsFor(data)
+    if (tonumber(data.lastUpdate) or 0) > 0 and data.professions == nil then professions = nil end
+
+    return {
+        key = key,
+        -- Name, class, level and rank come from the guild roster, so they are
+        -- known for everybody. Everything after them comes from the person's
+        -- own client and is absent until it has spoken.
+        name = short,
+        class = classFile or "",
+        race = data.race or "",
+        level = level or 0,
+        rank = rankName or "",
+        rankIndex = rankIndex or 0,
+        avgIlvl = math.floor(tonumber(data.avgIlvl) or 0),
+        lastUpdate = math.floor(tonumber(data.lastUpdate) or 0),
+        spec = data.spec,
+        prefRoles = data.prefRoles or {},
+        professions = professions,
+        attunements = attunementsFor(key),
+        att25 = tonumber(att) or 0,
+        enchants = enchantSummary(data.gear),
+        -- v5. Absent for anybody whose client has never published, which is
+        -- most of a guild's roster and is the honest answer for them.
+        gear = gearFor(data),
+        sex = data.sex,
+        raceToken = data.raceToken,
+        crafting = craftingFor(key),
+        -- v8. Absent until the member has sat in a barber's chair with the addon.
+        look = type(data.look) == "table" and data.look or nil,
+        -- v12. Only ever true: absent is "name me" (issue #205).
+        feedOptOut = data.feedOptOut == true or nil,
+        -- v12, WoW: Forever: when they say they joined, their own claim only (issue #208).
+        joinedAt = GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") and GuildOS.Founding:JoinedAtOf(key) or nil,
+        -- v14 (issue #251): whose alt this is, the main's key; absent for everybody else.
+        main = mainOf(key),
+    }
+end
+
+-- What every string says about itself: which guild, which game, who wrote it and when. The site
+-- picks the guild and refuses the wrong game from these, whichever string it was handed.
+local function envelope(guildName, count, members)
+    local retail = GuildOS.Client.isRetail
+    -- The guild's realm: on retail its home realm, never the exporter's, so officers on two connected
+    -- realms publish one guild (issue #182). Elsewhere this client's, as it always was.
+    local guildRealm = retail and GuildOS:GuildRealm() or GuildOS:GetClientRealm()
+    return {
+        fmt = FMT,
+        v = PAYLOAD_VERSION,
+        guildKey = GuildOS:GetPlayerKey(guildName, guildRealm), -- same rule: "Guild-Realm", or the name alone
+        guildName = guildName,
+        realm = guildRealm,
+        -- The client, not a guess about it: TBC Anniversary and retail are recognised positively
+        -- and everything else is Forever (ADR-0026).
+        game = GuildOS.Client.isAnniversary and "ANNIVERSARY" or retail and "RETAIL" or "FOREVER",
+        -- Retail only: the same realm name is two realms in two regions (issue #182).
+        region = retail and GuildOS.Compat.Region() or nil,
+        exportedAt = math.floor(time()),
+        exportedBy = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()),
+        addonVersion = GuildOS.VERSION or "0",
+        count = count,
+        members = members,
+    }
+end
+
+----------------------------------------------------------------------
+-- The loot book (v15, issue #295, the site's #460): what the guild's loot runs on, beyond the history.
+--
+--   lootBook = {
+--     points    = { complete = true,  pools = { { core, tag?, mode, at, standings = { {key,name,class,current,earned,spent} } } } },
+--     wishlists = { complete = false, lists = { { key, name, class, items = { {itemId, order, offspec?} } } } },
+--                   (this account's own characters' lists even when emptied, so a clear reaches the site)
+--     prios     = { complete = true,  items = { { itemId, order = { name, ... } } } },
+--     reserves  = { complete = true,  source, listId, at, items = { {itemId, name, class?, note?, plusOnes, hard?} } },
+--     tmb       = { complete = true,  pools = { { core, tag?, entries = { {player, item, priority} } } } },
+--   }
+--
+-- Each set is its own optional(): one that fails is left out and the rest goes up (#232). A set whose
+-- module is off is absent, never empty: absent tells the site nothing, empty tells it the set was
+-- cleared. `complete` says whether what is missing from the set may be read as gone: this client holds
+-- every pool, the officers' whole priority list and the whole reserve import, but only the wishlists it
+-- has heard. `core` is "" for the guild's own pool, `tag` the site's core when the game core is one.
+-- `at` is the record's own time where the game keeps one (the newest points entry, the reserve
+-- import); the site takes the export's time for the rest.
+----------------------------------------------------------------------
+local BOOK_MAX = { standings = 1000, lists = 300, items = 60, prios = 600, reserves = 1500, tmb = 1500 }
+
+local function keyOf(name)
+    if GuildOS.Points then return GuildOS.Points:KeyOf(name) end
+    return GuildOS:GetPlayerKey(name, GetRealmName())
+end
+
+local function clip(s, n) return tostring(s or ""):sub(1, n) end
+
+local function pointsPool(core, tag, pool)
+    local at, standings = 0, {}
+    for _, e in ipairs(pool.log or {}) do
+        local ts = tonumber(e.ts) or 0
+        if ts > at then at = ts end
+    end
+    for key, s in pairs(pool.standings or {}) do
+        if #standings >= BOOK_MAX.standings then break end
+        standings[#standings + 1] = {
+            key = key, name = s.name or key, class = s.class or "",
+            current = tonumber(s.current) or 0, earned = tonumber(s.earned) or 0, spent = tonumber(s.spent) or 0,
+        }
+    end
+    table.sort(standings, function(a, b) return a.key < b.key end)
+    return { core = core, tag = tag, mode = pool.mode or "dkp", at = math.floor(at), standings = standings }
+end
+
+local function corePools(each)
+    local names = {}
+    for name in pairs(GuildOS.db.cores or {}) do names[#names + 1] = name end
+    table.sort(names)
+    for _, name in ipairs(names) do
+        local core = GuildOS.db.cores[name]
+        if type(core) == "table" then each(name, core.discordTag, core) end
+    end
+end
+
+function Companion:BookPoints()
+    local pools = {}
+    if GuildOS.db.points then pools[1] = pointsPool("", nil, GuildOS.db.points) end
+    corePools(function(name, tag, core)
+        if type(core.points) == "table" then pools[#pools + 1] = pointsPool(name, tag, core.points) end
+    end)
+    return { complete = true, pools = pools }
+end
+
+local function wishItems(list)
+    local items = {}
+    for _, e in ipairs(list or {}) do
+        local id = tonumber(e.itemId)
+        if id and id > 0 and #items < BOOK_MAX.items then
+            items[#items + 1] = { itemId = id, order = tonumber(e.order) or (#items + 1), offspec = e.isOffspec and true or nil }
+        end
+    end
+    table.sort(items, function(a, b) return a.order < b.order end)
+    return items
+end
+
+function Companion:BookWishlists()
+    local byKey = {}
+    -- What this client heard from the guild, then this account's own characters over it.
+    for _, entry in pairs(GuildOS.db.guildWishlists or {}) do
+        if type(entry) == "table" and type(entry.name) == "string" and entry.name ~= "" then
+            local key = keyOf(entry.name)
+            if key then byKey[key] = { key = key, name = entry.name, class = entry.class or "", items = wishItems(entry.wishlist) } end
+        end
+    end
+    -- My own go up even emptied: that is how the site hears a list was cleared. Heard ones only with items.
+    for key, list in pairs(GuildOS.db.wishlists or {}) do
+        local member = GuildOS.db.members and GuildOS.db.members[key]
+        byKey[key] = {
+            key = key, name = member and member.name or key,
+            class = member and member.class or "", items = wishItems(list), own = true,
+        }
+    end
+    local lists = {}
+    for _, l in pairs(byKey) do
+        if #l.items > 0 or l.own then
+            l.own = nil
+            lists[#lists + 1] = l
+        end
+    end
+    table.sort(lists, function(a, b) return a.key < b.key end)
+    while #lists > BOOK_MAX.lists do lists[#lists] = nil end
+    return { complete = false, lists = lists }
+end
+
+function Companion:BookPrios()
+    local items = {}
+    for itemId, list in pairs(GuildOS.db.lootPrios or {}) do
+        local id = tonumber(itemId)
+        if id and id > 0 and type(list) == "table" then
+            local ranked = {}
+            for _, e in ipairs(list) do
+                if type(e) == "table" and type(e.name) == "string" and e.name ~= "" then ranked[#ranked + 1] = e end
+            end
+            table.sort(ranked, function(a, b) return (tonumber(a.order) or 99) < (tonumber(b.order) or 99) end)
+            local order = {}
+            for i, e in ipairs(ranked) do order[i] = clip(e.name, 64) end
+            if #order > 0 then items[#items + 1] = { itemId = id, order = order } end
+        end
+    end
+    table.sort(items, function(a, b) return a.itemId < b.itemId end)
+    while #items > BOOK_MAX.prios do items[#items] = nil end
+    return { complete = true, items = items }
+end
+
+function Companion:BookReserves()
+    local sr = GuildOS.db.softRes or {}
+    local meta = sr.meta or {}
+    local items = {}
+    local ids = {}
+    for itemId in pairs(sr.items or {}) do
+        if tonumber(itemId) then ids[#ids + 1] = tonumber(itemId) end
+    end
+    table.sort(ids)
+    for _, id in ipairs(ids) do
+        for _, e in ipairs(sr.items[id] or sr.items[tostring(id)] or {}) do
+            if #items < BOOK_MAX.reserves and type(e.name) == "string" and e.name ~= "" then
+                items[#items + 1] = {
+                    itemId = id, name = clip(e.name, 64), class = e.class ~= "" and e.class or nil,
+                    note = e.note ~= "" and e.note and clip(e.note, 200) or nil,
+                    plusOnes = tonumber(e.plusOnes) or 0, hard = e.hard and true or nil,
+                }
+            end
+        end
+    end
+    return {
+        complete = true, source = meta.source or "", listId = clip(meta.listId, 100),
+        at = math.floor(tonumber(meta.importedAt) or 0), items = items,
+    }
+end
+
+function Companion:BookTMB()
+    local pools, total = {}, 0
+    corePools(function(name, tag, core)
+        local list = core.lootMaster and core.lootMaster.tmbList
+        if type(list) ~= "table" then return end
+        local entries = {}
+        for _, e in ipairs(list) do
+            if total < BOOK_MAX.tmb and type(e) == "table" and e.player and e.item then
+                total = total + 1
+                entries[#entries + 1] = { player = clip(e.player, 64), item = clip(e.item, 120), priority = tonumber(e.priority) or 1 }
+            end
+        end
+        pools[#pools + 1] = { core = name, tag = tag, entries = entries }
+    end)
+    return { complete = true, pools = pools }
+end
+
+-- v16 (issue #313): which ranks are officers, as the guild chose it. Only with its stamp: a client that
+-- never heard the guild's choice holds its own default, and saying it would overwrite a real choice on
+-- the site with a guess. The stamp is the officers' own, so the site keeps the newest whichever
+-- officer's upload lands last, as the clients do between themselves (Core's OnOfficerMaxRankSync).
+local function officerRanks()
+    local s = GuildOS.db and GuildOS.db.settings
+    local max, at = s and s.officerMaxRank, s and tonumber(s.officerMaxRankAt)
+    if type(max) ~= "number" or max ~= math.floor(max) or max < 0 or max > 9 then return nil end
+    if not (at and at > 0 and at < math.huge) then return nil end
+    return { max = max, at = math.floor(at) }
+end
+
+-- The loot book, each set behind its module's switch; nil when this client has none of them on.
+local function lootBook()
+    local book, any = {}, false
+    local function enabled(id) return GuildOS.IsFeatureEnabled ~= nil and GuildOS:IsFeatureEnabled(id) end
+    local function put(field, on, fn)
+        if not on then return end
+        local v = optional("lootBook." .. field, fn, Companion)
+        if v then book[field] = v; any = true end
+    end
+    put("points", GuildOS.Points and enabled("dkp"), Companion.BookPoints)
+    put("wishlists", GuildOS.Wishlist and enabled("wishlist"), Companion.BookWishlists)
+    put("prios", GuildOS.Wishlist and enabled("wishlist"), Companion.BookPrios)
+    put("reserves", GuildOS.SoftRes and enabled("loot"), Companion.BookReserves)
+    put("tmb", GuildOS.CoreManager and enabled("loot"), Companion.BookTMB)
+    return any and book or nil
+end
+
+-- The record of why an item was awarded (issue #336, the site's #517), as it goes up: `why` on a loot
+-- entry. Written field by field from what the history keeps, so nothing but the shape below ever
+-- leaves, whatever a saved file holds:
+--   { v, rule, ruleAt, decidedBy, exception?, candidates = [ { name, answer, roll, bid, values? } ],
+--     votes? = { anon, quorum, cast? = [ { by, for } ], tally? = { [name] = n } } }
+-- An empty map is left out (this encoder writes an empty table as a list).
+local WHY_MAX = 200             -- loot entries of one upload that carry a record
+local WHY_CANDIDATES = 10
+local WHY_VOTES = 40
+local WHY_TEXT = 48             -- bytes of a name or a key in it: the site reads none longer (guildos-web#517)
+local WHY_VALUES = 12           -- figures per candidate, the site's limit too
+
+-- Cut to `max` bytes, never through the middle of a character.
+local function cutText(v, max)
+    local s = tostring(v or "")
+    if #s <= max then return s end
+    local cut = max
+    while cut > 0 and s:byte(cut + 1) and s:byte(cut + 1) >= 128 and s:byte(cut + 1) < 192 do cut = cut - 1 end
+    return s:sub(1, cut)
+end
+
+-- Cut to WHY_TEXT bytes, never through the middle of a character.
+local function whyText(v)
+    return cutText(v, WHY_TEXT)
+end
+
+local function whyNumber(v)
+    local n = GuildOS.Finite(v)
+    return n or 0
+end
+
+local function lootWhy(why)
+    if type(why) ~= "table" then return nil end
+    local out = {
+        v = whyNumber(why.v), rule = whyText(why.rule), ruleAt = math.floor(whyNumber(why.ruleAt)),
+        decidedBy = whyText(why.decidedBy), candidates = {},
+    }
+    if type(why.exception) == "string" and why.exception ~= "" then out.exception = whyText(why.exception) end
+    for _, c in ipairs(type(why.candidates) == "table" and why.candidates or {}) do
+        if type(c) == "table" and #out.candidates < WHY_CANDIDATES then
+            local cand = { name = whyText(c.name), answer = whyText(c.answer), roll = whyNumber(c.roll), bid = whyNumber(c.bid) }
+            -- What the candidate clicked, when a filter read it as another answer: only then.
+            if type(c.asked) == "string" and c.asked ~= "" and c.asked ~= c.answer then cand.asked = whyText(c.asked) end
+            local values, kept = nil, 0
+            for k, v in pairs(type(c.values) == "table" and c.values or {}) do
+                if type(k) == "string" and GuildOS.Finite(v) and kept < WHY_VALUES then
+                    values = values or {}
+                    values[whyText(k)] = whyNumber(v)
+                    kept = kept + 1
+                end
+            end
+            cand.values = values
+            out.candidates[#out.candidates + 1] = cand
+        end
+    end
+    local votes = why.votes
+    if type(votes) == "table" then
+        local v = { anon = votes.anon == true, quorum = math.floor(whyNumber(votes.quorum)) }
+        if not v.anon then
+            v.cast = {}
+            for _, vote in ipairs(type(votes.cast) == "table" and votes.cast or {}) do
+                if type(vote) == "table" and #v.cast < WHY_VOTES then
+                    v.cast[#v.cast + 1] = { by = whyText(vote.by), ["for"] = whyText(vote["for"]) }
+                end
+            end
+        end
+        local tally
+        for name, n in pairs(type(votes.tally) == "table" and votes.tally or {}) do
+            if type(name) == "string" and GuildOS.Finite(n) then
+                tally = tally or {}
+                tally[whyText(name)] = math.floor(whyNumber(n))
+            end
+        end
+        v.tally = tally
+        out.votes = v
+    end
+    return out
+end
+Companion.LootWhy = lootWhy
+
+-- The receipt of the cores (issue #347, the site's #519): what this client has of each core, so the site
+-- can say "in the game: 19 of 20, 2 h ago" and show the difference both ways, changing nothing itself.
+--   coreReceipt = { at, linkedAt, cores = [ { tag, name, size, members, fromDiscord, guests = [name], importedAt } ] }
+-- `linkedAt` is when this client last imported a GOSCORE1 for the guild (0: never); `tag` is "" and
+-- `importedAt` 0 for a core only in the game. Every figure a whole number, held to RECEIPT_INT: the site's
+-- decoder and this addon's read plain integers, never an exponent.
+local RECEIPT_CORES = 50
+local RECEIPT_GUESTS = 40
+local RECEIPT_TEXT = 48          -- bytes of a core's name or a guest's
+local RECEIPT_TAG = 40           -- bytes of a core's tag
+local RECEIPT_SIZE = 40          -- the largest raid size the site reads
+local RECEIPT_MEMBERS = 1000     -- the most members one core is said to hold
+-- The largest figure written: 2^32 - 1, a time until 2106. The site reads up to it (guildos-web
+-- lib/core-receipt.ts CLOCK_MAX, site #519) and keeps the time as a timestamp, so nothing ends in 2038.
+local RECEIPT_INT = 4294967295
+
+local function receiptInt(v, max)
+    local n = GuildOS.Finite(v) or 0
+    return math.max(0, math.min(max or RECEIPT_INT, math.floor(n)))
+end
+
+-- A tag the site reads: its slug, lowercase words of letters and digits joined by "-".
+local function receiptTag(tag)
+    if tag == "" then return true end
+    return #tag <= RECEIPT_TAG and tag:find("^[a-z0-9%-]+$") ~= nil and not tag:find("^%-") and not tag:find("%-$")
+        and not tag:find("%-%-") and tag ~= "constructor" and tag ~= "prototype"
+end
+
+-- The night's guests of one core by the name the site shows (a list of names, no two alike): the name
+-- each was added under, or, when two keys share it (a pug of another realm, retail's connected-realm
+-- namesakes), the key with its realm for both. A name the site would refuse is left out and counted.
+local function receiptGuests(guestsOf)
+    local shown, byName = {}, {}
+    for key, rec in pairs(guestsOf) do
+        if type(key) == "string" then
+            local name = cutText(type(rec) == "table" and type(rec.name) == "string" and rec.name or "", RECEIPT_TEXT)
+            if GuildOS:NameProblem(name, RECEIPT_TEXT) then name = key:match("^([^-]+)") or key end
+            shown[key] = name
+            byName[name] = (byName[name] or 0) + 1
+        end
+    end
+    local keys = {}
+    for key in pairs(shown) do keys[#keys + 1] = key end
+    table.sort(keys)
+    local out, seen, left = {}, {}, 0
+    for _, key in ipairs(keys) do
+        local name = shown[key]
+        if byName[name] > 1 then name = key end
+        name = cutText(name, RECEIPT_TEXT)
+        if GuildOS:NameProblem(name, RECEIPT_TEXT) or seen[name] then
+            left = left + 1
+        else
+            seen[name] = true
+            out[#out + 1] = name
+        end
+    end
+    table.sort(out)
+    while #out > RECEIPT_GUESTS do table.remove(out) end
+    return out, left
+end
+
+-- Never anything the site's door refuses (guildos-web lib/core-receipt.ts `cleanReceipt`, which reads the
+-- receipt whole or drops it): a core whose name the site would refuse, or whose name cut to the site's
+-- length is one already sent, and a guest the same, are left out, and /gos errors says how many.
+local function coreReceipt()
+    local cores = GuildOS.db.cores or {}
+    local names = {}
+    for name, core in pairs(cores) do
+        if type(name) == "string" and type(core) == "table" then names[#names + 1] = name end
+    end
+    table.sort(names)
+    local CM = GuildOS.CoreManager
+    local out, sentNames, sentTags = {}, {}, {}
+    local leftCores, leftGuests = 0, 0
+    for _, name in ipairs(names) do
+        if #out >= RECEIPT_CORES then break end
+        local core = cores[name]
+        local shown = cutText(name, RECEIPT_TEXT)
+        local tag = type(core.discordTag) == "string" and core.discordTag or ""
+        if GuildOS:NameProblem(shown, RECEIPT_TEXT) or sentNames[shown] or not receiptTag(tag) or (tag ~= "" and sentTags[tag]) then
+            leftCores = leftCores + 1
+        else
+            sentNames[shown] = true
+            if tag ~= "" then sentTags[tag] = true end
+            local members, fromDiscord = 0, 0
+            for _, rec in pairs(type(core.members) == "table" and core.members or {}) do
+                members = members + 1
+                if type(rec) == "table" and rec.src == "discord" then fromDiscord = fromDiscord + 1 end
+            end
+            local guests, left = receiptGuests(type(core.guests) == "table" and core.guests or {})
+            leftGuests = leftGuests + left
+            local size = CM and CM.GetRaidSize and CM:GetRaidSize(name) or core.raidSize
+            members = receiptInt(members, RECEIPT_MEMBERS)
+            out[#out + 1] = {
+                tag = tag, name = shown, size = math.max(1, receiptInt(size, RECEIPT_SIZE)),
+                members = members, fromDiscord = math.min(members, receiptInt(fromDiscord)), guests = guests,
+                importedAt = tag ~= "" and receiptInt(core.importedAt) or 0,
+            }
+        end
+    end
+    if leftCores + leftGuests > 0 then
+        GuildOS:RecordError(string.format("export coreReceipt: %d core(s) and %d guest(s) left out, named as the site refuses",
+            leftCores, leftGuests))
+    end
+    local link = GuildOS.db.coreLink
+    return {
+        at = math.max(1, receiptInt(GetServerTime())),
+        linkedAt = receiptInt(type(link) == "table" and link.importedAt),
+        cores = out,
+    }
+end
+Companion.CoreReceipt = coreReceipt
+
 function Companion:BuildPayload()
     local guildName = GetGuildInfo("player")
     if not guildName then return nil, "not in a guild" end
+    local refused = self:Refused()
+    if refused then return nil, refused end
     local realm = GuildOS:GetClientRealm()
+    local retail = GuildOS.Client.isRetail
 
     local members, count = {}, 0
     local n = GetNumGuildMembers() or 0
@@ -441,75 +985,27 @@ function Companion:BuildPayload()
             local short = fullName:match("^([^-]+)") or fullName
             local memberRealm = fullName:match("-(.+)$") or realm
             local key = GuildOS:GetPlayerKey(short, memberRealm)
-            local data = GuildOS.db.members[key]
-
-            -- Everybody on the guild roster, including whoever has never published.
-            --
-            -- This used to send only clients that had synced, and the reason was
-            -- sound: a row built from the guild roster alone carries a level and a
-            -- class and nothing the site cannot already guess, and it would look
-            -- confirmed while being nothing of the sort.
-            --
-            -- What that cost only became visible against real data. One guild
-            -- published 34 members and 48 different people were recorded raiding,
-            -- overlapping by five — and the site had no way to tell "our member who
-            -- has not installed it" from "somebody who is not in the guild". Those
-            -- are different conversations, and both were invisible.
-            --
-            -- `lastUpdate = 0` carries it, the same trick as `snapshots = 0`: a value
-            -- that already exists saying one more thing, with no field of its own.
-            -- The site marks those rows, and that mark is the condition for sending
-            -- them at all — without it this recreates exactly what the filter avoided.
-
-            -- Nothing published means no record at all, so everything below reads
-            -- through an empty table rather than guarding each field.
-            data = data or {}
             count = count + 1
-            local att = GuildOS.RaidTracker
-                and GuildOS.RaidTracker:GetAttendance25ManPercent(key) or 0
-            -- Absent, not [], for a client that published without a skill-line API (issue #10).
-            -- A row that never published, and every Anniversary record, keeps its list.
-            local professions = professionsFor(data)
-            if (tonumber(data.lastUpdate) or 0) > 0 and data.professions == nil then professions = nil end
-
-            members[count] = {
-                key = key,
-                -- Name, class, level and rank come from the guild roster, so they are
-                -- known for everybody. Everything after them comes from the person's
-                -- own client and is absent until it has spoken.
-                name = short,
-                class = classFile or "",
-                race = data.race or "",
-                level = level or 0,
-                rank = rankName or "",
-                rankIndex = rankIndex or 0,
-                avgIlvl = math.floor(tonumber(data.avgIlvl) or 0),
-                lastUpdate = math.floor(tonumber(data.lastUpdate) or 0),
-                spec = data.spec,
-                prefRoles = data.prefRoles or {},
-                professions = professions,
-                attunements = attunementsFor(key),
-                att25 = tonumber(att) or 0,
-                enchants = enchantSummary(data.gear),
-                -- v5. Absent for anybody whose client has never published, which is
-                -- most of a guild's roster and is the honest answer for them.
-                gear = gearFor(data),
-                sex = data.sex,
-                raceToken = data.raceToken,
-                crafting = craftingFor(key),
-                -- v8. Absent until the member has sat in a barber's chair with the addon.
-                look = type(data.look) == "table" and data.look or nil,
-            }
+            members[count] = memberLine(key, short, classFile, level, rankName, rankIndex)
         end
     end
 
-    local loot = {}
+    local loot, whys = {}, 0
     if GuildOS.LootTracker then
         for _, e in ipairs(GuildOS.LootTracker:GetHistory(500) or {}) do
             -- The history stores an item link, not an id; the site wants the id
             -- so it can build its own tooltip link.
             local itemId = tonumber(e.itemId or (e.itemLink and e.itemLink:match("item:(%d+)"))) or 0
+            -- Why it was awarded (issue #336, the site's #517): additive, absent on an entry that has
+            -- none, and on every entry past the newest that may carry it. A record that cannot be
+            -- written costs only itself.
+            local why
+            if e.why ~= nil and whys < WHY_MAX then
+                why = optional("loot.why", lootWhy, e.why)
+                if why then whys = whys + 1 end
+            end
             loot[#loot + 1] = {
+                why = why,
                 playerKey = e.playerKey or "",
                 player = e.player or "",
                 itemId = itemId,
@@ -523,25 +1019,56 @@ function Companion:BuildPayload()
 
     local sessions, deletedSessions = raidSessions()
 
-    return {
-        fmt = FMT,
-        v = PAYLOAD_VERSION,
-        guildKey = GuildOS:GetPlayerKey(guildName, realm), -- same rule: "Guild-Realm", or the name alone
-        guildName = guildName,
-        realm = realm,
-        -- The client, not a guess about it: TBC Anniversary and retail are recognised positively
-        -- and everything else is Forever (ADR-0026). Retail never gets here: this module is absent there.
-        game = GuildOS.Client.isAnniversary and "ANNIVERSARY" or GuildOS.Client.isRetail and "RETAIL" or "FOREVER",
-        exportedAt = math.floor(time()),
-        exportedBy = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()),
-        addonVersion = GuildOS.VERSION or "0",
-        count = count,
-        members = members,
-        loot = loot,
-        sessions = sessions,
-        deletedSessions = deletedSessions,
-        attendanceRules = attendanceRules(sessions),
-    }
+    local payload = envelope(guildName, count, members)
+    payload.rosterComplete = GuildOS:WholeRoster() and true or nil
+    payload.loot = loot
+    payload.sessions = sessions
+    payload.deletedSessions = deletedSessions
+    payload.attendanceRules = attendanceRules(sessions)
+    -- v12, WoW: Forever only: absent where the module does not exist (issue #205).
+    payload.journal = GuildOS.Journal and GuildOS:IsFeatureEnabled("journal")
+        and optional("journal", GuildOS.Journal.ForExport, GuildOS.Journal) or nil
+    -- v12: the guild's tabard as the game draws it, absent without one (issue #213). Not on TBC
+    -- Anniversary, whose guilds the site's tabard contest is not for.
+    payload.tabard = not GuildOS.Client.isAnniversary and optional("tabard", GuildOS.Compat.GuildTabard) or nil
+    -- v12, WoW: Forever only: absent until the GM records it (issue #208).
+    payload.founding = GuildOS.Founding and GuildOS:IsFeatureEnabled("founding")
+        and optional("founding", GuildOS.Founding.ForExport, GuildOS.Founding) or nil
+    -- v12, WoW: Forever only (issue #206): only from a client that has heard the guild's choice,
+    -- since an empty one tells the site the minimum was cleared — and with its stamp, so the site
+    -- keeps the newest, whichever officer's upload lands last.
+    payload.guildConfig = not GuildOS.Client.isAnniversary and not retail and GuildOS.Readiness
+        and GuildOS.Readiness:MinIlvlKnown()
+        and { readyMinIlvl = GuildOS.Readiness:GetMinIlvl(), readyMinIlvlAt = GuildOS.db.settings.readyMinIlvlAt } or nil
+    -- v13 (specs/071, guildos#245): who asked to join and what was decided. Optional: a bug in it must
+    -- never keep the roster, the raids and the loot from going up.
+    payload.joinRequests = GuildOS.JoinRequests
+        and optional("joinRequests", GuildOS.JoinRequests.ForExport, GuildOS.JoinRequests) or nil
+    -- v15 (#295): points, wishlists, priorities, reserves and TMB lists. Never in the pack.
+    payload.lootBook = lootBook()
+    payload.officerRanks = officerRanks()
+    -- Within 16 (#347): the cores as the game has them. Never in the pack.
+    payload.coreReceipt = GuildOS.IsFeatureEnabled ~= nil and GuildOS:IsFeatureEnabled("raids")
+        and optional("coreReceipt", Companion.CoreReceipt) or nil
+    return payload
+end
+
+-- The wire format at the top of this file, in one place, for the export and the pack.
+local function onTheWire(payload, prefix)
+    local LibDeflate = LibStub and LibStub("LibDeflate", true)
+    if not LibDeflate then return nil, "LibDeflate not available" end
+
+    local json = encode(payload)
+    local compressed = LibDeflate:CompressDeflate(json, { level = 9 })
+    if not compressed then return nil, "compression failed" end
+
+    return (prefix or WIRE_PREFIX) .. LibDeflate:EncodeForPrint(compressed)
+end
+
+-- Any other string the site reads with the same wire (GOSOUTB1: the join requests of a character with no
+-- guild): `prefix` with the marker and its colon. Nil and why when it cannot be made.
+function Companion:Pack(prefix, payload)
+    return onTheWire(payload, prefix)
 end
 
 ----------------------------------------------------------------------
@@ -556,14 +1083,64 @@ function Companion:Build()
         return nil, "nobody in the guild has shared anything yet"
     end
 
-    local LibDeflate = LibStub and LibStub("LibDeflate", true)
-    if not LibDeflate then return nil, "LibDeflate not available" end
+    local text, why = onTheWire(payload)
+    if not text then return nil, why end
+    return text, payload.count
+end
 
-    local json = encode(payload)
-    local compressed = LibDeflate:CompressDeflate(json, { level = 9 })
-    if not compressed then return nil, "compression failed" end
+----------------------------------------------------------------------
+-- The character's own pack (the site's specs/070)
+--
+-- Deliberately outside Companion:IsEnabled(). The switch exists for the guild's
+-- data: it is off by default because the export carries everybody's gear,
+-- attunements and attendance. This carries one line, the player's own, into a
+-- file on the player's own PC, and it only ever leaves that PC when somebody is
+-- logged into the companion. Behind the switch, a member who installs the app
+-- and signs in would send nothing at all.
+--
+-- The wire format and the decoder are the export's. `self = true` says what it
+-- is, and it has none of what only an officer's upload may say: no loot, nights,
+-- founding, guild settings or `rosterComplete`, without which nobody is read as
+-- having left. The site takes from it only what specs/070 lets a member write.
+----------------------------------------------------------------------
 
-    return WIRE_PREFIX .. LibDeflate:EncodeForPrint(compressed), payload.count
+-- My own line as a GOSCOMP1: string, or nil and why. Asks the switch nothing.
+function Companion:BuildSelf()
+    local guildName, rankName, rankIndex = GetGuildInfo("player")
+    -- The guild's db and not merely a guild: a db that never resolved reads the switch as off
+    -- whatever the guild chose, and writing here would replace that officer's export with this.
+    if not guildName or not GuildOS:IsOnGuildDB() then return nil, "not in a guild" end
+    local refused = self:Refused()
+    if refused then return nil, refused end
+
+    -- Compat.PlayerName, never UnitName: on WoW: Forever that is the first name alone, and the
+    -- site has no such line (issue #26). No guild roster either: this client knows all of it
+    -- about itself, and a quick relog has no roster loaded.
+    local name = GuildOS.Compat.PlayerName()
+    local key = GuildOS:GetPlayerKey(name)
+    local mine = key and GuildOS.db.members[key]
+    -- Nothing read yet is nothing to say, and the site's guard would refuse the stamp anyway.
+    if not mine or (tonumber(mine.lastUpdate) or 0) <= 0 then return nil, "this character has not been read yet" end
+
+    local _, classFile = UnitClass("player")
+    local line = memberLine(key, name, classFile, UnitLevel("player"), rankName, rankIndex)
+    -- A roster's line has a value in every column; one client speaking for itself says what it
+    -- knows. A rank nobody gave would read 0, the Guild Master, and a cold item cache's average
+    -- of 0 would overwrite a real one on the site. Absent, both of them keep what is there.
+    line.rank, line.rankIndex = rankName, rankIndex
+    if line.avgIlvl == 0 then line.avgIlvl = nil end
+    -- Whose alt somebody is, is the officers' to say (altLinks), never a character's about itself.
+    line.main = nil
+
+    local payload = envelope(guildName, 1, { line })
+    payload.self = true
+    -- The one empty field here, and it cannot be absent: the decoder (packages/goscomp's
+    -- assertPayload) refuses a payload with no list. Empty carries no loot, and costs no change there.
+    payload.loot = {}
+
+    local text, why = onTheWire(payload)
+    if not text then return nil, why end
+    return text, payload.count
 end
 
 ----------------------------------------------------------------------
@@ -574,14 +1151,15 @@ end
 -- desktop companion watches that file and uploads what it finds, which is
 -- the whole point: nobody has to remember to copy a string on raid night.
 --
--- The build is wrapped. A payload that fails on the way out must never be
+-- One GOSCOMP1: string per file, and that is why the pack shares the export's
+-- field: the app lifts the first match it finds, so with the two side by side
+-- an officer's upload could pick the pack. Switch on, the export and no pack;
+-- switch off, the pack and no export.
+--
+-- The builds are wrapped. A payload that fails on the way out must never be
 -- the reason someone's client hangs on logout.
 ----------------------------------------------------------------------
-local writer = CreateFrame("Frame")
-writer:RegisterEvent("PLAYER_LOGOUT")
-writer:SetScript("OnEvent", function()
-    if not GuildOSDB or not Companion:IsEnabled() then return end
-
+local function writeExport()
     local ok, text = pcall(Companion.Build, Companion)
     -- Build answers nil for the ordinary cases as well — logged out on a
     -- guildless alt, nobody has published anything yet. Keeping the previous
@@ -592,5 +1170,30 @@ writer:SetScript("OnEvent", function()
         -- does that and never reports back, so the Web panel can only ever
         -- say "last written".
         GuildOSDB.__companionAt = time()
+        GuildOSDB.__companionSelf = nil
+    elseif GuildOSDB.__companionSelf then
+        -- Unless the previous string is a pack from before the switch went on, which is
+        -- no good payload: it is what an officer's upload must never pick.
+        GuildOSDB.__companion, GuildOSDB.__companionSelf = nil, nil
     end
+end
+
+local function writePack()
+    local ok, text = pcall(Companion.BuildSelf, Companion)
+    if ok and type(text) == "string" then
+        GuildOSDB.__companion = text
+        -- No __companionAt: the Web panel's "last written" and Activation's publish
+        -- step read it as the guild publishing, and a pack is not that.
+        GuildOSDB.__companionSelf = true
+    end
+end
+
+local writer = CreateFrame("Frame")
+writer:RegisterEvent("PLAYER_LOGOUT")
+writer:SetScript("OnEvent", function()
+    if not GuildOSDB then return end
+    -- The queue of a character with no guild: its own string, for the companion to take to the site.
+    -- Its own pcall, and first: nothing about it may keep the export from being written.
+    if GuildOS.JoinRequests and GuildOS.JoinRequests.WriteWire then pcall(GuildOS.JoinRequests.WriteWire, GuildOS.JoinRequests) end
+    if Companion:IsEnabled() then writeExport() else writePack() end
 end)

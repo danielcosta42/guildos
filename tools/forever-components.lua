@@ -96,6 +96,7 @@ local fades = {}
 UIFrameFadeIn = function(frame, duration) fades[#fades + 1] = { frame = frame, duration = duration } end
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 GuildOS = {
+  Dialogs = {},   -- Core/Core.lua's, which Core/Style.lua writes its reload question into (#315)
   Compat = { After = function() end },
   L = setmetatable({}, { __index = function(_, k) return k end }),
 }

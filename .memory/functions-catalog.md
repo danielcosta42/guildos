@@ -39,9 +39,10 @@ Locale data files: `Locales/enUS.lua` (master/stub — English is implicit via m
 |---|---|
 | `GuildOS.Logger.Debug/Info/Warn(msg)` | Structured logger; Debug gated by `GuildOS.Logger.debug` (toggle via `/guildos debug`) |
 | `GuildOS:SafeCall(fn, ...)` | pcall wrapper; captures errors to `GuildOS.State.errors` ring (view via `/guildos errors`) |
-| `GuildOS:PruneStaleData()` | Manual (`/guildos prune`) removal of cached data for members who left the guild |
+| `GuildOS:WholeRoster()` | The guild roster's names, or nil while it is not the whole guild (not loaded, or a row the client did not answer): what acts on "not on the roster" asks here (issue #203) |
+| `GuildOS:DropDeparted()` | On every roster update: drops the member row, first-seen, professions, recipes and wishlist of whoever left the guild (issue #203); history and officer records stay |
 | `GuildOS:ShowOnboarding()` / `:MaybeShowOnboarding()` | First-run welcome wizard (once; `settings.onboarded`) |
-| Slash: `/guildos minimap | debug | errors | prune` | Toggle minimap button / debug / dump errors / prune left members |
+| Slash: `/guildos minimap | debug | errors` | Toggle minimap button / debug / dump errors |
 
 Branding: user-facing text says "Guild OS" and the commands are `/guildos` and `/gos`; the old name, its global alias, saved variable, comm prefix and slash commands are gone (#120).
 
@@ -68,7 +69,8 @@ Removed: `GuildOS.ACCENT_PRESETS`, `GuildOS:ApplyTheme()`.
 
 | Symbol | Description |
 |---|---|
-| `UI:OpenWindow(id, sub, filter)` | The one opener: refuses an unknown id or a background module, then says disabled / could not start / officer-only; shows the window, unfolds it when the saved fold says so, opens tab `id` (remembered), then `panel.SelectSub(sub, filter)`; true when the tab opened (ADR-0016) |
+| `UI:IsFeatureAbsent(def)` | Whether this client has no such feature at all: `tbc` outside Anniversary, `retail = false` on retail, `forever = false` on WoW: Forever (the consumable check, issue #187). `AllFeatures`, `IsFeatureAllowed` and `OpenWindow` ask it (ADR-0026, issue #177) |
+| `UI:OpenWindow(id, sub, filter)` | The one opener: refuses an unknown id or a background module, then says not on this client / disabled / could not start / officer-only; shows the window, unfolds it when the saved fold says so, opens tab `id` (remembered), then `panel.SelectSub(sub, filter)`; true when the tab opened (ADR-0016) |
 | `UI:ToggleMain()` | Shows or hides the window on the remembered tab |
 | `UI:GetMainWindow()` | The window (`GuildOS.RosterFrame`, frame `GuildOSWindow`), created on first use; nil before the saved data loads |
 | `UI:ApplyScale()` / `UI:OnFeatureToggled()` | Pushes `uiScale` onto the window / re-checks its tabs after a Settings toggle |
@@ -101,10 +103,15 @@ Removed: `UI.Hub`, `UI:CreateWindow`, `UI:ToggleWindow`, `UI:IsWindowOpen`, `UI:
 |---|---|
 | `GuildOS:GetClientRealm()` | The client's realm for keys: `GetRealmName()`, else `GetNormalizedRealmName()`, else nil ("" counts as nothing); on retail the normalized one first, spaces and hyphens removed (ADR-0026) |
 | `GuildOS:KeyOfRosterName(full)` | The key of a guild roster line's name: "Bob-Gallywix" with its own realm, "Bob" on this client's; through `GetPlayerKey`, so normalized on retail. The core picker and the retail officer check use it (ADR-0026) |
+| `GuildOS:GuildRealm()` | The realm a guild is from: on retail its home realm (`GetGuildInfo`'s fourth answer, else this character's), normalized; elsewhere `GetRealmName()`. The guild's database key and the companion payload's `guildKey`/`realm` (ADR-0026, issue #182) |
 | `GuildOS:RealmBound()` | Whether a realm is part of who somebody is: true on Anniversary and retail (connected realms), false on Forever; true with no `GuildOS.Client`. The one test the key rules and the start-up rekeys read (ADR-0026) |
 | `GuildOS:GetPlayerKey(name, realm)` | The one member-key rule: an empty realm counts as absent and the client's fills it; with a realm "Name-Realm", without one the name alone (ADR-0018). On WoW: Forever the passed realm is ignored and the client's always used, since a guild's clients answer different realm names (issue #95) Retail keeps the caller's realm, normalized (ADR-0026). |
 | `GuildOS:RekeyMembersToThisRealm()` | Forever only, at `DataCollector:Initialize`: moves `db.members` records keyed with another client's realm to this client's key; the newer `lastUpdate` wins (a tie keeps the one already there) and the older one's fields fill the winner's gaps (issue #95) |
-| `PugInspector:Classify(name, srcs)` | Builds its table key with `GetPlayerKey` when the name or the sources give a realm, else the bare name (issue #95) |
+| `PugInspector:Classify(name, srcs)` | Builds its table key with `GetPlayerKey` when the name or the sources give a realm, else the bare name (issue #95). On retail the ban, the guild membership (`srcs.guildKeys`, whole keys) and the ex-member check (`_LastRosterAction`, whole keys) go by that key, so a namesake on another connected realm is somebody else; `_GroupMembers` keeps a party member's realm and skips a secret raid name (issue #184) |
+| `BanList:_NormalizeKey(name)` / `_Find(name, store)` / `_Who(name)` | A ban's key: the name alone, lower case, on Forever and Anniversary; on retail the whole key (`KeyOfRosterName`, lower case; a name without a realm is this realm's). `_Find` (behind `Get` and `IsBanned`) takes a standing ban under the whole key, else a standing one filed under the name alone before issue #184 (holds on every realm, also once the whole key's is lifted), else the whole key's entry. `_Who` is how a ban names somebody and how a name from the game (whisper, join, tooltip) is looked up: with its realm on retail (issue #184) |
+| `BanList:List()` / `RemoveKey(key)` / `Remove(name)` / `_RemovalKey(name)` | `List` returns copies of the standing bans, each with the `key` it is filed under; the ban list's x lifts that row with `RemoveKey`. `Remove` (`/gos unban`) lifts `_RemovalKey`: on retail a name with a realm is that key, a bare one the standing ban by name alone first, else this realm's. Both return false and write nothing when no ban stands at the key, and `/gos unban` then says "No ban to lift for %s." (issue #184). `_Find` skips a whole key's ban that ran out, as one lifted |
+| `RecruitScanner:Addr(cand)` | Who a /who candidate is to the scanner: on retail the whole name /who gave (`cand.full`), elsewhere the name alone. The selection, the row's label and the whisper's target use it; cooldowns and replies are keyed by `KeyOfRosterName` on retail; `WhisperSelected` checks the ban again at the click (issue #184) |
+| `RosterLog:_NormShort(name)` | Who a log event is about: the short name; on retail the whole key, so officers on different realms file one event under one id (issue #184) |
 | `GuildOS:LocalMemberKey(key)` | A member key another client built, as this client keys it: on Forever rebuilt from its name with this client's realm (`ally:` keys left alone); elsewhere unchanged (issue #97) |
 | `GuildOS:LocalizeMemberTable(t, merge)` | `t` rekeyed with `LocalMemberKey`; `merge(held, incoming)` settles two records for one member and only sees two tables; a record beats a non-record, and with no merge the first record stays (issue #97) |
 | `GuildOS:LocalizeStoredMemberTables()` | Forever only, at `DataCollector:Initialize`, once per database (`db.storedKeysLocalized` holds the realm it ran for), each table its own `SafeCall` step: rekeys stored attendance (not the old flat format), sessions' players and snapshots, officer notes, trials, raiders, alt links (a self-link dropped), DKP standings (summed, starting points once) and core rosters and sign-ups (issue #97) |
@@ -127,14 +134,21 @@ join, `"%s-%s"` format or literal realm fallback fails the test.
 | `Compat.GetNumTalentTabs(isInspect)` / `GetNumTalents` / `GetTalentInfo` | The talent globals; the counts return `nil, "no-api"` when the client has none |
 | `Compat.InviteUnit(name)` | Group invite: `C_PartyInfo.InviteUnit`, else `InviteUnit`, else `InviteByName`; nothing on a client with none (issue #43) |
 | `Compat.GetItemQualityColor(quality)` / `Compat.GetItemCount(item, includeBank)` | `C_Item`'s, else the old global's; white / 0 with neither (issue #43) |
-| `Compat.PopupEditBox(dialog)` | A StaticPopup's edit box: `GetEditBox()` / `EditBox` on WoW: Forever, `editBox` on Anniversary (issue #49) |
+| `Compat.PopupEditBox(dialog)` | A dialog's edit box (`editBox` on GuildOS's own, #315); on a game popup: `GetEditBox()` / `EditBox` on WoW: Forever, `editBox` on Anniversary (issue #49) |
 | `Compat.TraitTreeNodes()` | WoW: Forever's talent tree: `{ {x = posX, points = ranksPurchased}, ... }` for the active config; `nil, "no-api"` with no trait API, `nil, "no-config"` before talents load (issue #41) |
 | `Compat.SpecOf(unit)` | Retail: a unit's spec as `specID, name, role` (`"TANK"`, `"HEALER"`, `"DAMAGER"`), localized by the client; `"player"` read directly, any other unit from its inspect. Nil before there is one or when the client keeps it secret (ADR-0026) |
 | `Compat.ItemLevel(link, base)` | An item's level as worn: `C_Item.GetDetailedItemLevelInfo` on retail, `base` (GetItemInfo's) everywhere else (ADR-0026) |
+| `Compat.IsWeapon(item)` | Whether an item id is a weapon (`GetItemInfoInstant`'s class 2), no cache needed; nil when the client cannot say. A retail off hand needs an enchant only as one (issue #177) |
+| `Compat.Region()` | The client's region as guildos.me writes it, from `GetCurrentRegion()`: `"us"`, `"kr"`, `"eu"` or `"tw"`; nil (and the number) for any other answer (issue #182) |
+| `Compat.SecondsUntilWeeklyReset()` | The client's own count of the seconds to its region's weekly reset (`C_DateAndTime.GetSecondsUntilWeeklyReset`); nil without the call or when secret. Only RaidTracker's self-test reads it (guildos-web#199) |
+| `Compat.SpecName(id)` | A retail spec's name in the reader's language from its id (`GetSpecializationInfoForSpecID`); nil when the client cannot say or keeps it secret (issue #177) |
 | `Compat.AverageItemLevel()` | Retail: my equipped average as the game shows it, floored; nil elsewhere, where the addon averages its own slots (ADR-0026) |
+| `Compat.InspectItemLevel(unit)` | Retail: an inspected unit's equipped average (`C_PaperDollInfo.GetInspectItemLevel`), floored, after INSPECT_READY; nil elsewhere, before the inspect has the gear, or when secret (issue #184) |
+| `Compat.PrimaryStat()` | Retail: my spec's primary stat as UnitStat numbers it (1, 2 or 4), from `GetSpecializationInfo`'s sixth return; nil elsewhere or before a spec (issue #184) |
+| `Compat.SecondaryStats()` | Retail: `{ crit, haste, mastery, versatility }` in percent, two decimals: crit as the character sheet takes it (best of melee, ranged and the weakest spell school), versatility's damage rating plus its bonus; a rating the client cannot give or keeps secret is left out; nil elsewhere (issue #184) |
 | `Compat.GetNumSkillLines()` / `GetSkillLineInfo(i)` | The skill-line globals; the count returns `nil, "no-api"` when the client has none |
 | `Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)` | Through ChatThrottleLib (BULK by default), acting on the result: a lockdown holds it and every later send until combat ends, the zone changes or a 2-second poll finds it lifted (200 at most, oldest dropped); a channel throttle retries after 1, 2, 4 and 8 s; any other failure, or a message the client would refuse (prefix over 16 bytes, text over 255, no channel, unknown priority), is recorded once per reason and dropped (ADR-0019) |
-| `Compat.SendAddonMessageNow(prefix, text, channel, target)` | Sent at once past ChatThrottleLib's queue with the same results, and an AddonMessageThrottle (which ChatThrottleLib would have re-queued) retried after 1, 2, 4 and 8 s: loot messages, whose roll timers start at send |
+| `Compat.SendAddonMessageNow(prefix, text, channel, target, onSent)` | Sent at once past ChatThrottleLib's queue with the same results, and an AddonMessageThrottle (which ChatThrottleLib would have re-queued) retried after 1, 2, 4 and 8 s: loot messages, whose roll timers start at send. `onSent`, optional, runs once the message has really gone out (never while held or retried, never for one dropped): the loot council's `/roll` (issue #185) |
 | `Compat.FlushHeldMessages()` | Sends what a lockdown held, in order and one at a time under pcall (one that raises is recorded, the rest still go); while it lasts, each is held again |
 | `Compat.ChannelHidesRaidIcons(name, number)` | Does the server show this channel without raid icons (ChatChannels DisableRaidIcons → the chat event's `suppressRaidIcons`)? On WoW: Forever General 1, Trade 2, LocalDefense 22, Services 42, TradeLocal 46, by zone channel id from `C_ChatInfo.GetChannelInfoFromIdentifier` (name, else the number as a string, as Blizzard's own UI looks it up); on Anniversary no channel (issue #64) |
 | `Compat.SetWhoToUI(toApi)` / `Compat.WhoExact(name)` | `/who` on both clients: `C_FriendList.SetWhoToUi` (lower-case i, its real name everywhere) first; `WhoExact` builds each client's own exact filter: `WHO_TAG_EXACT .. C_NameUtil.ReplaceSurnameSeparatorWithLinkSeparator(name)` on Forever, `WHO_TAG_EXACT .. name` on Anniversary, else `n-"Name"`. Giving the flag back leaves it on while Blizzard's Who list is open (issue #71) |
@@ -179,7 +193,10 @@ Removed: `Compat.NewTimer`.
 | `GuildOS:ReportStartup()` | One localized chat line when start-up had failures or misses; silent otherwise |
 | `GuildOS:RecordError(msg)` | Pushes a message into the `/guildos errors` ring (shared by SafeCall and start-up) |
 | `GuildOS:OnEnterWorld(isInitialLogin, isReloadingUi)` | Collects/broadcasts data on initial login or reload only |
-| `GuildOS:OnGuildRosterUpdate()` | Refreshes roster frame on GUILD_ROSTER_UPDATE / PLAYER_GUILD_UPDATE |
+| `GuildOS:OnGuildRosterUpdate()` | GUILD_ROSTER_UPDATE / PLAYER_GUILD_UPDATE: through `Coalesce("roster", ROSTER_GAP)` (5 s), the passes over the whole roster (RecordFirstSeen, DropDeparted, TrialTracker:ScanRoster) and the roster frame; counted and timed in `GuildOS.Perf` (issue #324) |
+| `GuildOS:Coalesce(name, gap, fn)` | Runs `fn` now, or when `name` ran under `gap` s ago holds it and runs the last `fn` handed once at the window's end; nothing then if nothing came. True when it ran now. Session state in `State.coalesce` (ADR-0031) |
+| `GuildOS.Perf:Start()` / `:Stop(label, t0, bytes)` / `:Count(label)` | Calls, ms (from `debugprofilestop`, absent off the game: then only counts), worst ms and bytes per label in `State.perf` since login or the last reset (issue #324) |
+| `GuildOS.Perf:Lines()` / `:Print()` / `:Reset()` | What `/gos perf` and Audit > Sync show: the game's profiler (`Compat.AddOnCPU`) or a line saying the client has none, then every label by time spent; `/gos perf reset` and the Audit button zero it |
 | `GuildOS:HookGuildFrame()` | `hooksecurefunc` on ToggleGuildFrame (never replaced: replacing taints the social frame). After Blizzard's toggle: its frame came up and Guild OS is closed → hide it (HideUIPanel) and open Guild OS; came up while Guild OS is open → hide it and close Guild OS (the key's second press, issue #66); went down → close Guild OS too. `_suppressGuildHijack` (OpenBlizzardGuildUI) skips it |
 | `GuildOS:ToggleRoster()` | Opens or closes the Guild OS window (`UI:ToggleMain`); guildless, opens the recruitment finder instead |
 | `GuildOS:IsFrontDoorShown()` / `GuildOS:HideFrontDoor()` | Whether the window is on screen / closes it; the guild-frame hook mirrors Blizzard's open and close onto them |
@@ -207,6 +224,7 @@ Removed: `Compat.NewTimer`.
 | `GuildOS:CheckAndDismissProfessionReminder()` | Fades-out reminder when all profs are fresh |
 | `GuildOS:DismissProfessionReminder()` | Immediately hides and clears the profession reminder banner |
 | `GuildOS:ShowExportPopup(titleStr, text)` | Creates copyable text export popup |
+| `GuildOS.Dialogs[name]` / `GuildOS:ShowDialog(name, textArg1, textArg2, data)` | Every confirmation and note box. Definitions keep StaticPopup's field names; the frame is GuildOS's own (`UI/Helpers.lua`) and returns with `data`, `data2`, `editBox`. **Never `StaticPopup_Show` / `StaticPopupDialogs`:** the game's popup frames are shared, an addon's dialog taints them, and WoW: Forever's gamepad UI is blocked from then on (#315; `tools/dialog.lua` fails on either name) |
 | `GuildOS:GetSetting(key)` | Config accessor — reads `GuildOS.db.settings[key]` (Rule 8) |
 | `GuildOS:SetSetting(key, value)` | Config mutator — writes `GuildOS.db.settings[key]` (Rule 8) |
 | `GuildOS:ShowsItemTooltipInfo(tooltip)` | Gate for the guild lines on item tooltips (crafters, wishlist, soft res): setting `itemTooltip` = `"always"` / `"shift"` / `"off"`; a clicked chat link (`ItemRefTooltip`) passes in shift mode |
@@ -218,6 +236,7 @@ Removed: `Compat.NewTimer`.
 | `GuildOS.Compat.IsQuestComplete(questId)` | Guards `C_QuestLog.IsQuestFlaggedCompleted` / `IsQuestFlaggedCompleted` fallback (Rule 4) |
 | `GuildOS.Compat.After(delay, fn)` | Guards `C_Timer.After` (Rule 4) |
 | `GuildOS.Compat.NewTicker(interval, fn, iterations)` | Guards `C_Timer.NewTicker` (Rule 4) |
+| `GuildOS.Compat.AddOnCPU(addon)` | The game's addon CPU meter (`C_AddOnProfiler`, retail 11.0.2 on): `{ recent, session, peak, all }` ms a frame, each possibly nil, or nil without the API or when it answers nothing; `C_AddOnProfiler` is a Compat-only namespace in `tools/compat-guard.lua` (issue #324) |
 | `GuildOS.Compat.RegisterEvent(frame, event, expected)` | `RegisterEvent` that tolerates an event the client does not know; records the miss (`GuildOS:RecordMissing`) and returns false. `expected` marks an event only some clients ever had: recorded, but not a start-up problem (ADR-0012, ADR-0020) |
 | `GuildOS.Compat.HookTooltip(tooltip, script, fn)` | `HookScript` where the tooltip has `script`, else one `TooltipDataProcessor.AddTooltipPostCall` per script and function, answering only for the tooltips that asked and never for a forbidden one; `fn(tooltip, data)` on both. Nil tooltip skipped silently, a client with neither path recorded (ADR-0012, ADR-0020) |
 | `GuildOS.Compat.TooltipItem(tooltip)` / `TooltipSpell` / `TooltipUnit` | What the tooltip is showing: the frame's own `GetItem`/`GetSpell`/`GetUnit` first, then `TooltipUtil.GetDisplayed*`. Name and link, name and spell id, name and unit; the retail client adds a third return (ADR-0020) |
@@ -252,9 +271,9 @@ Removed: `Compat.NewTimer`.
 | `DataCollector:GetCanonicalProfName(localizedName)` | Returns canonical English name from PROF_LOOKUP. That is what is stored and synced; every screen shows it as `L[name]` (issue #114), and `tools/locales.lua` counts each RegisterProf name, so a profession without a translation fails CI |
 | `DataCollector:IsKnownProfession(name)` | Returns true if name is in PROF_LOOKUP |
 | `DataCollector:IsGatheringProfession(name)` | Returns PROF_LOOKUP[name].isGathering |
-| `DataCollector:CollectStats()` | Collects health/mana/STR/AGI/STA/INT/SPI via UnitStat |
+| `DataCollector:CollectStats()` | Collects health/mana/STR/AGI/STA/INT/SPI via UnitStat; on retail health, the spec's primary stat (`primary` names it), stamina and `Compat.SecondaryStats`'s four ratings, never a fifth UnitStat (issue #184). The resistance scan in `CollectMyData` and its broadcast run only where `GuildOS.Resistances` exists (absent on retail) |
 | `DataCollector:StoreReceivedData(playerKey, data)` | Merges received data with timestamp check; handles recipes separately |
-| `DataCollector:GetBroadcastData()` | Returns clean copy (gear/prof/attunements/spec/recipes/addonVersion) for broadcast |
+| `DataCollector:GetBroadcastData()` | Returns clean copy (gear/prof/attunements/spec/recipes/addonVersion) for broadcast; on retail `mplus` and `vault` too (issue #187) |
 
 ---
 
@@ -275,13 +294,14 @@ Removed: `Compat.NewTimer`.
 | Function | Description |
 |---|---|
 | `CommSystem:Initialize()` | Registers CHAT_MSG_ADDON, starts 5-min sync ticker |
-| `CommSystem:SendMessage(msgType, data, target, priority)` | Compress, encode, chunk, send |
-| `CommSystem:SendRaw(msg, target, priority)` | Sends one sync message through `Compat.SendAddonMessage`: guild at BULK or the given priority, whisper at NORMAL (ADR-0019) |
+| `CommSystem:SendMessage(msgType, data, target, priority, kind)` | Compress, encode, chunk, send; the compression timed in `GuildOS.Perf` as `guild sync out <kind or msgType>` (SyncService passes `SV <domain>`) |
+| `CommSystem:SendRaw(msg, target, priority)` | Sends one sync message through `Compat.SendAddonMessage`: guild at BULK or the given priority, whisper at NORMAL (ADR-0019), its target noted first (`GuildOS:NoteWhisper`, issue #326) |
 | `CommSystem:OnMessageReceived(msg, _, sender)` | Reassembles chunks, decompresses, routes by MSG_TYPE |
 | `CommSystem:BroadcastMyData()` | Throttled (5s) broadcast of local player data |
 | `CommSystem:HandleBroadcast(sender, data)` | Deserializes and stores received player data |
-| `CommSystem:RequestAllData()` | Sends REQUEST "ALL" to guild |
-| `CommSystem:HandleRequest(_sender, _data)` | Responds with BroadcastMyData (staggered) |
+| `CommSystem:RequestAllData(now)` | Sends REQUEST "ALL" to guild, "NOW" from a /gos sync (`FullSync`) |
+| `CommSystem:HandleRequest(_sender, data)` | One answer per window: at once when the last was `ANSWER_GAP` (120 s) ago, `NOW_GAP` (15 s) for a NOW; else held and answered once at the window's end, a NOW bringing it forward (`State.comm.answeredAt` / `answerDue`, ADR-0031, issue #324) |
+| `CommSystem:_Answer()` | The answer itself (staggered 0-3 s): own data, and an officer's alt links, trials, raid data, guild settings, raider roster and backfills; members also their recruitment relay, LFG, engagement and map position |
 | `CommSystem:HandleResponse(sender, data)` | Delegates to HandleBroadcast |
 | `CommSystem:HandlePing(sender)` | Responds with PONG + version |
 | `CommSystem:HandleVersionCheck(_sender, data)` | Prints notice on version mismatch |
@@ -312,7 +332,7 @@ Removed: `Compat.NewTimer`.
 | `Recruitment:QueueInvite(name, full)` / `InviteNext()` / `SkipNext()` | WoW: Forever: a keyword whisper's invite waits in `ShowInvitePopup`, keeping the whisper's own name (`full`, what an Alt-click's link invites with). Invite acts on the one shown only: banned since queued → dropped with a note, on cooldown → dropped, else `_InviteNow(name, full)`. Skip marks the cooldown. No `/who` filter there (issue #61) |
 | `RecruitScanner:WhisperSelected(names)` / `WhisperNext()` / `PendingWhispers()` | On Forever the batch's first whisper goes out in the confirm click and the rest wait in `_whisperQueue`, one per click on "Whisper next"; a name goes on cooldown when it is actually whispered; `Scan()` drops an unfinished batch. Anniversary keeps the 1.5s timed whispers (issue #61) |
 | `Recruitment:AddChannel(list, name)` / `RemoveChannel(list, name)` | Recruitment channels, listed once whatever the case; used by `/gos recruit channel` and the Channels row (issue #59) |
-| `Recruitment:PresetChannels()` / `ChannelName(name)` / `HasChannel(list, name)` | Trade, LookingForGroup and GuildRecruitment (Anniversary only) as this client names them, from the game's ChatChannels table per language (`Recruitment.CHANNELS`; Forever esES LFG is BuscarGrupo). `ChannelName` turns a preset named in any language into this client's name, at post time, so an English default or an officer's channels from another language still post; Add/Remove/Has compare through it, and a channel saved in two languages is posted to once (issue #112). LookingForGroup goes by its name, zone channels by their shortcut (they differ only on Forever ruRU); on Forever GuildRecruitment is not a preset |
+| `Recruitment:PresetChannels()` / `ChannelName(name)` / `HasChannel(list, name)` | Trade, LookingForGroup and GuildRecruitment (Anniversary only) as this client names them, from the game's ChatChannels table per language (`Recruitment.CHANNELS`; Forever esES LFG is BuscarGrupo). `ChannelName` turns a preset named in any language into this client's name, at post time, so an English default or an officer's channels from another language still post; Add/Remove/Has compare through it, and a channel saved in two languages is posted to once (issue #112). LookingForGroup goes by its name, zone channels by their shortcut (they differ only on Forever ruRU); on Forever GuildRecruitment is not a preset. A `retail` sub-table holds what only retail names: the Italian client's Commercio and CercaGruppo (issue #184) |
 | `Recruitment:RegisterWelcomeEvent()` | Initialises roster snapshot, creates CHAT_MSG_SYSTEM frame — delegates to DetectGuildJoin/HandleGuildJoin (Rule 10) |
 | `Recruitment:DetectGuildJoin(msg)` | Pure pattern match: returns new member name from system message, or nil |
 | `Recruitment:HandleGuildJoin(newMember)` | All welcome business logic: dedup, delay, WELCOME_CLAIM comm, SendChatMessage (Rule 10) |
@@ -326,11 +346,11 @@ Removed: `Compat.NewTimer`.
 | `Wishlist:Initialize()` | DB setup, data migration, rebuilds index, hooks tooltips |
 | `Wishlist:RebuildItemIndex()` | Builds itemId→{wishers} index from guildWishlists |
 | `Wishlist:GetItemInterest(itemId)` | Returns itemIndex[itemId] entries |
-| `Wishlist:GetItemName(itemId)` | Returns GetItemInfo name or "Item #N" |
+| `Wishlist:GetItemName(itemId)` | Returns `ItemFacts`'s name (GetItemInfo, else the journal's on retail) or "Item #N" |
 | `Wishlist:GetItemQuality(itemId)` | Returns GetItemInfo quality or 1 |
 | `Wishlist:GetMyList()` | Lazily creates and returns per-character wishlist table |
 | `Wishlist:AddToWishlist(itemId, itemLink, isOffspec)` | Adds/updates item, broadcasts |
-| `Wishlist:IsItemDelivered(itemId)` | Checks lootHistory for ML award of item to self |
+| `Wishlist:IsItemDelivered(itemId)` | Checks lootHistory for ML award of item to self; on retail any row of mine (personal loot, or an award recorded by trade, issue #185) |
 | `Wishlist:RemoveFromWishlist(itemId)` | Removes item if not delivered, reorders, broadcasts |
 | `Wishlist:ReorderWishlist(itemId, direction)` | Swaps item with neighbor, broadcasts |
 | `Wishlist:BroadcastMyWishlist()` | Stores locally + sends "WL" comm message |
@@ -346,18 +366,25 @@ Removed: `Compat.NewTimer`.
 | Function | Description |
 |---|---|
 | `RaidTracker:Is25Man(instanceID)` | Returns true if instanceID is in RAID_25MAN table |
-| `RaidTracker:GetWeekNum(timestamp)` | Floor division from TBC Tuesday epoch |
+| `GuildOS:DateText(timestamp, rest)` | Day and month in the order the client's language writes them, then `rest` (" %H:%M", "/%Y"): every date on screen (#170) |
+| `LootMaster:WholeRollerName(roller, name, surname)` | Forever: the whole name when a /roll line and a unit are one person, whichever side has the surname; nil if not (#48). Alone it hands out an item only when exactly one candidate matches |
+| `RaidTracker:ReopenSession()` / `ResumeAtLogin(tries)` / `StartSnapshots()` | The night in progress lives in `raidTracker.openSession`: a /reload or a logout picks it back up within `OPEN_HOLD` on the same character, or ends it at its last snapshot (#170). `CheckZone` waits for this (`resuming`) |
+| `RaidTracker:GetWeekNum(timestamp)` / `WeekStart(weekNum)` / `ResetOrigin()` | The lockout week a timestamp falls in, counted from this client's region's weekly reset; the moment a week starts; that region's origin. `RESET_ORIGIN` is the client's `Cfg_Regions.Raidorigin` (us Tuesday 15:00 UTC, eu Wednesday 04:00, kr and tw Wednesday 23:00), the region `Compat.Region()`'s, the Americas when the client does not say. Lockouts, attendance and the raids panel's week groups all ask it; the site's `resetWeek` is the same table (guildos-web#199) |
+| `RaidTracker:_RegisterTests()` | `/gos selftest`'s `raidtracker.weekly_reset`: the table's next reset against `Compat.SecondsUntilWeeklyReset()`, within a minute; passes where the client has no such call (guildos-web#199) |
+| `RaidTracker:LockoutKey(session)` | A session's lockout: `groupTag|instanceID_week`, plus `_d<difficulty>` on retail (Normal and Heroic in one week are two lockouts), the site's `lockoutKey`. The rebuild and both lockout counts use it (issue #182) |
 | `RaidTracker:Initialize()` | DB setup, migration, registers zone/roster/encounter events |
 | `RaidTracker:CheckZone()` | Manages session start/resume/end based on GetInstanceInfo |
 | `RaidTracker:StartSession(instanceID)` | Creates currentRaid table, starts 5-min snapshot ticker |
 | `RaidTracker:IsGuildRaid(session)` | Returns true if ≥50% players are in guild DB/roster |
-| `RaidTracker:EndSession()` | Finalizes session, discards if <10min, saves |
+| `RaidTracker:EndSession(away)` | Finalizes session, discards if <10min, saves. `away` (retail: `ElsewhereInGrace()`, asked before the grace timer is cleared, when the grace runs out or another raid begins) skips the `session_end` snapshot of a group that is not the session's (issue #183) |
+| `RaidTracker:ElsewhereInGrace()` | Retail only: while the session waits out its grace, whether this client stands in another instance or the session's raid on another difficulty (Raid Finder after the guild's Heroic, a dungeon). The open world (the run-back) is not elsewhere. `TakeSnapshot`, `OnEncounterStart` and `OnEncounterEnd` return at once when it is, `EndSession` takes no last snapshot, and `LootTracker` records no loot (issue #183) |
 | `RaidTracker:TakeSnapshot(reason)` | Captures raid roster with consume check into snapshots |
-| `RaidTracker:CheckPlayerConsumes(unit)` | Checks flask/elixir/food buffs via ConsumableChecker |
+| `RaidTracker:CheckPlayerConsumes(unit, key)` | A snapshot's `hasConsumes`: `ConsumableChecker:RaidVerdict` (true, false, or on retail nil when unread), true without the checker (Forever). The score counts a snapshot not known to be without (`~= false`) as a hit, as CompanionExport's `chits` does (issue #187) |
 | `RaidTracker:OnEncounterStart(encounterID, encounterName)` | Records encounter, guards duplicates |
 | `RaidTracker:OnEncounterEnd(encounterID, encounterName, success)` | Updates encounter end/success |
 | `RaidTracker:GetCurrentGroup()` | Returns currentGroupTag string |
-| `RaidTracker:Is25Man(instanceID, size)` / `IsTracked(instanceID)` / `ProgLabel(text)` | Whether a night counts for progression: by id on Anniversary (`RAID_25MAN`), by the session's `size` (20 and up) on WoW: Forever; whether a raid is tracked (RAID_INSTANCES on Anniversary, every raid on Forever); a "25-man" label as the game says it ("20+" on Forever) (ADR-0024, issue #90) |
+| `RaidTracker:Is25Man(instanceID, size, difficulty)` / `IsTracked(instanceID)` / `ProgLabel(text)` | Whether a night counts for progression: by id on Anniversary (`RAID_25MAN`), by the session's `size` (20 and up) on WoW: Forever, by its `difficulty` (14, 15, 16; none does not count) on retail (issue #182); whether a raid is tracked (RAID_INSTANCES on Anniversary, every raid on Forever); a "25-man" label as the game says it ("20+" on Forever, "N/H/M" with no size word on retail) (ADR-0024, issue #90, #177) |
+| `RaidTracker:DifficultyLabel(session)` | Retail: a session's difficulty as "N", "H" or "M" (`RETAIL_TRACKED`); nil elsewhere. The raids panel shows it on each group, and a raid's difficulties are separate groups and never merge into one session; the raid sync carries `difficulty` (issue #177) |
 | `RaidTracker:SetGroupTag(name)` | Sets group tag in memory and DB, and re-reads the loot rules (`LootMaster:LoadCfg`) (issue #99) |
 | `RaidTracker:DetectCore(group, reason)` | After each snapshot inside the raid, until settled: the core whose roster covers `group` (`CoreManager:CoreForGroup`) becomes the active core and the session's, named in chat when it first appears or changes; `encounter_start` settles it; never in the grace period or on `session_end` (ADR-0023, issue #99) |
 | `RaidTracker:PickCore(name)` | An officer's pick (CorePanel's Set Active): sets the active core. Inside a raid it also moves the session, settles detection and is kept in `db.raidTracker.corePick` for that character and instance while the raid goes on (refreshed by each snapshot, lapsing 30 min after the last; cleared by `EndSession`), so a /reload keeps it; on a run-back it waits in `gracePick` for the raid to resume; outside any raid it drops a kept pick (ADR-0023, issue #99) |
@@ -372,6 +399,18 @@ Removed: `Compat.NewTimer`.
 | `CoreManager:IsFromDiscord(core)` | Whether the Discord owns the core now (`discordTag`): the core panel then hides Rename, the raid format and the "x" on the Discord's members (ADR-0025) |
 | `CoreManager:ImportInbox()` | From `Initialize`, once the guild's db is known: imports the inbox's GOSCORE1 unless older than the lists the guild applied, prints one line when something changed or, once, why the inbox was ignored (another guild's, companion off), and keeps every core's list in `GuildOS.State.discordCores` to send (ADR-0025, #138) |
 | `CoreManager:SendDiscordChanges()` | From OFFICER_START, once the rank says officer: sends each Discord core's whole list (`core.roster`, action `discordList`, which clients before #138 ignore) or its release (action `discord`, `tag = false`), with how new the lists are (`at`, the site's time when it sends one) and, for a core linked by hand, when (`linkAt`), once (ADR-0025, #138) |
+| `CoreManager:ImportPackage(data, ackAt)` | The one path a GOSCORE1 takes into the guild, from the inbox (`ImportInbox`) or pasted (`ImportPasted`): whose it is (nil, whose, "guild"/"realm"), the site's clock over a PC's (nil, nil, "older" for an undated package once a dated one came), `ImportFromSite`, the chat line, `db.coreLink.importedAt`, and the lists kept for `SendDiscordChanges`; returns the cores, unlinked, stale (ADR-0036, #347) |
+| `CoreManager:ImportPasted(raw)` | A GOSCORE1 an officer pasted into the roster box: officer only, read by `CompanionImport.ReadCores`, imported by `ImportPackage`, sent to the officers online at once; returns the count of cores, nil and the line to show, or nil and why (not an officer, damaged, another guild, another realm or game, older) (ADR-0036, #347) |
+| `CompanionImport.ReadCores(raw)` / `IsCoresCode(raw)` | A GOSCORE1 string (inbox or pasted, spaces and breaks dropped, marker found anywhere) decoded when its body is in the companion's alphabet and under 256 KB and carries `fmt` GOSCORE1 with a `cores` list, else nil; `IsCoresCode` says a pasted text is cores, not a roster. `Load` hands such a text to `CoreManager:ImportPasted` and returns its third value, the line to show (ADR-0036, #347) |
+| `Companion.CoreReceipt()` | `coreReceipt` in the upload (within v16, behind the Raids module, its own `optional`): `{ at, linkedAt, cores = [ { tag, name, size, members, fromDiscord, guests, importedAt } ] }`, 50 cores, 40 guests, names of 48 bytes cut on a character, every figure an integer 0..2^32-1 (ADR-0036, #347) |
+| `CoreManager:IsLinked()` / `LinkSeenAt()` / `IsLinkQuiet()` / `HasDiscordCores()` / `MigrateLink()` | Whether the guild's cores are the site's (`db.coreLink.since`: set by an import or another officer's list with cores, cleared by an empty package, the last release heard, or `CreateInGameAgain`); how fresh the newest package is (`seenAt`: the inbox's ack, a paste's now, another officer's `seenAt`); quiet after 30 days without one; a guild from before the link is linked at `Initialize` by its tags (ADR-0036, #339) |
+| `CoreManager:Create(name)` / `GetCore(name)` | `Create` is the panel's: refused in a linked guild with the sentence saying to create on Discord (`/core criar`). `GetCore` makes no core for an unknown name in a linked guild, so the raid's tag, a sign-up or another officer's `update` roster make none; the import and the `discord`/`discordList` actions make theirs through the local `newCore` (ADR-0036, #339) |
+| `CoreManager:TellQuietLink()` / `CreateInGameAgain()` | From OFFICER_START: a linked guild with no package for 30 days is told once per package seen. `CreateInGameAgain` (officer, linked): every Discord core released as an empty package would, `releasedAt` = the guild's mark so packages up to it are older (`isStale`), the releases sent with `off = true` so other officers take the same mark; a later site package links again (ADR-0036, #339) |
+| `CoreManager:LootRuleFromSite(core)` | In a linked guild, a Discord core whose rule the site sends (the roster in hand, `db.companionRoster.lootRule`): `SetLootRule`/`SetLootSystem` refuse it and the Config tab shows the sentence instead of the choices (ADR-0036, #339) |
+| `CoreManager:TakesGuests(core)` / `AddToRoster(key, info, core)` | An officer's "add" in the core roster: on a Discord core of a linked guild a guest of the night (`AddGuest`, sent as a change), anywhere else a member (`AddMember` + `BroadcastRoster`, as before); returns "guest"/"member" or false and why (ADR-0036, #340) |
+| `CoreManager:GetGuests(core)` / `AddGuest(key, info, core, stay)` / `AddGuestByName(text, role, core)` / `RemoveGuest(key, core)` / `SetGuestStay(key, core, stay)` | `core.guests[key] = { name, class, role, note, stay, at, by }`, apart from the members: never on a core that does not exist, never somebody already a member, at most 40; by name for a pug outside the guild ("Name" or "Name-Realm", no escapes). Each change goes to the officers as `core.roster`/`guests` `{ coreName, tag, put, gone }` (ADR-0036, #340) |
+| `CoreManager:RaidRoster(core)` / `EndNight(core)` | The night's raid: members and guests by key; `CoreForGroup` counts both. `EndNight` (from `RaidTracker:EndSession`, only for a session kept, not one discarded as too short) sends away every guest not marked to stay and tells the officers who left (ADR-0036, #340) |
+| `CoreManager:MigrateGuests(core?)` / `OnGuestsSync(d)` | Whoever is on a Discord core of a linked guild with no `src = "discord"` becomes a guest marked to stay (at `Initialize`, after every own import and every heard `discordList`); a guest the Discord's list then has becomes a member (`SyncDiscordCore`). `OnGuestsSync`: an officer's change lands on the core holding its tag, else of its name, makes no core, puts and takes off only whom it names, every field checked (key ≤ 64 bytes, name ≤ 48, note ≤ 120, known class, playable role, boolean stay, finite time), never past 40 (ADR-0036, #340) |
 | `CompanionImport:ReadInbox()` / `CalendarFromInbox()` | The inbox in two halves (#146): the roster as soon as the guild's db is known (`InitModules`), the site's raids on the calendar once the rank is (officer start-up). The Web panel's raid is the soonest one somebody answered; an unanswered raid still goes on the calendar |
 | `Calendar:IsWebEvent(e)` / `WebSignups(e)` / `UpsertWebRaid(roster, answeredAt)` | A raid planned on the site (`web:<raidId>`) carries the site's answers (`signups`: yes, pending, tentative, wait, no) and when the site gave them (`signupsAt`, the companion's ack, clamped to now); the list only moves forward, on the way out and in `OnSync`, and goes out again only when the answers changed (the ack moves every hour). Assumes a companion from 1.2.0, whose ack is the site's last answer; on 1.1.0 it was the last accepted upload. `GetComposition` counts it (plus allied seats); the calendar, the Dashboard and the Agora offer no in-game RSVP for it (#146) |
 | `CompanionImport:CoresFromInbox()` | The inbox's GOSCORE1, decoded (nil when absent or damaged), whether the companion is on, and when the inbox was written (`GuildOSInboxAck.at`) (ADR-0025, #138) |
@@ -387,13 +426,14 @@ Removed: `Compat.NewTimer`.
 | `RaidTracker:GetPenalties(groupTag)` | The late / left-early / no-consumables weights a raid of that group is scored with: `CoreManager:GetPenalties` (the core's own, else the guild's in `db.attendancePenalties` — raids outside a core and cores that set none — else 10). Every score and every screen reads it; `RaidTracker.PENALTIES` is only the defaults (issue #55) |
 | `CoreManager:RaidSizes()` / `NextRaidSize(size)` / `RaidTargets(size)` / `GetRaidSize(core)` / `SetRaidSize(core, size)` | The raid formats a core plans for, per game: 10 and 25 on Anniversary (default 25), 10, 20 and 40 on WoW: Forever (default 20); a saved size the game lacks reads as the default; `RaidTargets` is the T/H/M/R composition, which sums to the size (issue #89). The default comes from `GuildOS.Client.defaultRaidSize`, which the calendar uses too, with `GuildOS.Client.raidSizes` (10/25/40 or 10/20/40). On Forever, `CLASS_DEFAULT_ROLE` puts every class on damage first and `GetComposition` lists no raid buffs, as the site's Forever catalogue (issue #92) |
 | `CoreManager.CLASS_ROLES` / `RolesFor(class)` / `RoleFor(class, role)` | The roles each class can play, the same in both games (the site's lists); `RolesFor` in tank/healer/melee/ranged order; `RoleFor` keeps a role the class can play, else the class's own (`CLASS_DEFAULT_ROLE`). The sign-up window offers `RolesFor` (no buttons for a one-role class), `BroadcastSignup(core, note, role)` sends the pick, and the officer storing a sign-up takes the class the guild roster gives (`GetMemberRecord`, the server's), else a known payload class, else warrior, and runs the role through `RoleFor`. `/gos signup <core> [tank|healer|melee|ranged] [note]` takes a role word too (`ROLE_WORDS`); the window keeps a typed note across a role click (issue #94) |
+| `CoreManager:DefaultRole(class, key)` / `SpecRole(spec)` / `MELEE_SPECS` / `RoleFor(class, role, key)` / `GetRoleForClass(class, key)` | The role a member starts in: on retail their scanned spec's (`SpecRole`: TANK/HEALER, DAMAGER as `mdps` when `MELEE_SPECS` has the id — ChrSpecialization 12.1.5.70448 Flags bit 0x4 — else `rdps`) when the class can play it, else `CLASS_DEFAULT_ROLE`. `RoleFor` falls back to it with the member's key; the sign-up window, `BroadcastSignup`, the officer storing a sign-up, the Discord import and the core screen's member picker pass the key (issue #184). On retail `GetComposition`'s `buffStatus` is `RaidTools:ResolveCoverage(RaidTools.BUFFS, …)` (issue #184) |
 | `RaidTracker:UpdateAttendanceForLockout(lockout)` | Computes and stores attendance for a single lockout |
 | `RaidTracker:DeleteSession(sessionID)` | Deletes session, tombstones, broadcasts (officer only) |
 | `RaidTracker:BroadcastDeleteSession(sessionID)` | Sends RAID_DELETE comm message |
 | `RaidTracker:HandleDeleteIncoming(data)` | Applies incoming session deletion and tombstone |
 | `RaidTracker:CountTable(t)` | Counts entries in a table |
 | `RaidTracker:BroadcastRaidData()` | Sends compact attendance + session metadata (officer only) |
-| `RaidTracker:HandleIncoming(data)` | Merges incoming raid data; handles migration, tombstones, dedup |
+| `RaidTracker:HandleIncoming(data)` | Merges incoming raid data; handles migration, tombstones, dedup; never takes back a session merged away here (#197) |
 | `RaidTracker:ExportForTMB(groupTag)` | Exports attendance as TMB-compatible JSON string |
 | `RaidTracker:MigrateAttendanceIfNeeded()` | Detects old flat attendance format and triggers rebuild |
 | `RaidTracker:GetSnapshotScore(sessionData, playerKey)` | Returns score, wasLate, leftEarly, noConsumes, consumeHits, consumeChecks for a player in a session (Rule 10) |
@@ -404,8 +444,10 @@ Removed: `Compat.NewTimer`.
 
 | Function | Description |
 |---|---|
-| `LootTracker:Initialize()` | Ensures lootHistory DB table exists |
+| `LootTracker:Initialize()` | Ensures lootHistory DB table exists; on retail registers `ENCOUNTER_LOOT_RECEIVED` (issue #183) |
 | `LootTracker:RecordMLAward(entry)` | Prepends entry to lootHistory, caps at 500 |
+| `LootTracker:RecordTradeAward(award)` / `DropOf(playerKey, itemId)` | Retail (issue #185): an award by trade, `{ itemLink, itemId, holder, winner, timestamp, raid, instanceID }`. The holder's own row of that drop (`DropOf`: same item, within two hours, not awarded) becomes the winner's, with `awarded = true` and `from` = the holder, so one item is one row; with none (this client missed the drop) a new row, put where its time falls. Either way stamped with `timestamp`, the drop's time the offer carried, so every client writes the same row. Returns the row |
+| `LootTracker:OnEncounterLoot(encounterID, itemID, itemLink, quantity, playerName, className)` | Retail only (issue #183): one guildmate's personal loot, every guildmate's and not only mine, recorded in an ML award's shape (`player` and `playerKey` both the whole `Name-Realm` by their own realm, `itemId`, `encounterID`, no `fromML`) when a tracked raid session is the instance and the difficulty this client stands in, in its grace too (as its snapshots are) and the Loot Tracker is on. Skipped whole when any field is secret, the player is not on the guild roster by that key (`Compat.FindGuildRosterIndex`, then `KeyOfRosterName`: a connected-realm guildmate counts, a namesake from elsewhere does not), under Rare (the cached quality, else the link's `\|cnIQn:`, else 4), or a re-fire of the same boss, item and player within 5 minutes |
 | `LootTracker:GetHistory(limit)` | Returns first N entries from lootHistory |
 | `LootTracker:GetPlayerLoot(playerKey, limit)` | Filters lootHistory by player key |
 | `LootTracker:GetLootCount(playerKey)` | Counts items received by player |
@@ -512,23 +554,37 @@ Removed: `Compat.NewTimer`.
 | Function | Description |
 |---|---|
 | `TrialTracker:Initialize()` | Ensures trials DB table; migrates old records |
-| `TrialTracker:AddTrial(playerKey, sponsor)` | Creates trial entry, takes initial snapshot, broadcasts |
+| `TrialTracker.ValidDays(v)` | A trial length in whole days (1–90, a number or digits typed), else nil: never clamped (#249) |
+| `TrialTracker:GetDays()` / `IsAutoOn()` | The guild's length (`settings.trialDays`, 30 until an officer chooses) and its switch for new members (`settings.trialAuto`, off by default) |
+| `TrialTracker:SetDays(v)` / `SetAuto(on)` | Officer only: stamped (`trialDaysAt` / `trialAutoAt`) and published; SetDays answers `false, "officer"\|"range"`; turning the switch on resets the roster baseline |
+| `TrialTracker:PublishConfig()` / `OnConfigSync(env)` | `guildcfg`/`trialdays` `{ days }` and `trialauto` `{ on }`, re-sent on the officers' regular sync and request answers; newest stamp wins, a tie keeps the shorter length and the switch off; no `max`, so a client before #249 ignores both. A change taken redraws an open Trials panel (`RefreshUI`) |
+| `TrialTracker:RefreshUI()` | Calls `uiRefresh`, which the Trials panel sets when built (redraws only while shown); after OnConfigSync and HandleIncoming |
+| `TrialTracker:IsUnresolved(trial)` | Status `trial`, or `expired` (written only by clients before #249): nobody decided yet |
+| `TrialTracker:HasLeft(trial)` | `leftAt` set: an undecided trial whose member was missing from an officer's last whole roster (a field, not a status, so old clients carry it); cleared when they are back |
+| `TrialTracker:EndOf(trial)` / `IsReady(trial, now)` | The end is `startDate` + the guild's length, worked out on every read (the stored `endDate` is written for old clients, never read); ready to review = unresolved, not left, and past it |
+| `TrialTracker:GetState(playerKey)` / `CountReady()` | `"trial"`, `"review"`, `"left"`, `"approved"`, `"denied"` (or the stored word), nil for nobody; how many are ready to review (nobody who left) |
+| `TrialTracker:AddTrial(playerKey, sponsor)` | Creates trial entry (endDate = start + the guild's length, for old clients; over an older record it keeps that record's notes), takes initial snapshot, broadcasts |
 | `TrialTracker:UpdateStatus(playerKey, newStatus)` | Updates status, records resolvedDate/By |
 | `TrialTracker:AddTrialNote(playerKey, text)` | Appends note to trial, broadcasts |
 | `TrialTracker:GetTrial(playerKey)` | Returns trial data or nil |
-| `TrialTracker:GetAllTrials()` | Returns all trials sorted by startDate desc |
-| `TrialTracker:GetActiveTrials()` | Returns status=trial entries sorted by startDate desc |
-| `TrialTracker:IsTrial(playerKey)` | Returns true if player has active trial status |
-| `TrialTracker:GetDaysRemaining(playerKey)` | Returns floor of (endDate - now) / 86400 |
+| `TrialTracker:GetAllTrials()` | Every trial, ready to review first, then running, then decided and left the guild (each entry's `group` 1/2/3), each by startDate desc |
+| `TrialTracker:GetActiveTrials()` | The unresolved trials of members still here (running and ready to review), by startDate desc |
+| `TrialTracker:IsTrial(playerKey)` | True while the player's trial is unresolved (running, ready to review, or left meanwhile) |
+| `TrialTracker:GetDaysRemaining(playerKey)` | Whole days to the derived end, rounded down, 0 once ready to review; nil for a decided trial and for one whose member left |
 | `TrialTracker:GetDaysSinceStart(playerKey)` | Returns floor of (now - startDate) / 86400 |
-| `TrialTracker:CheckExpired()` | Marks trials past endDate as expired, notifies officers |
+| `TrialTracker:CheckReady()` | At an officer's login (OFFICER_START `after`): one chat line when trials are ready to review; writes no status |
+| `TrialTracker:MayAutoTrial(playerKey, onOfficerRank)` | Whether a newcomer becomes a trial here: switch on, an officer's client with `trialTracker` on and the guild's db, not me, not an officer rank, and no trial record in any state (a rejoiner after a decision is the officers', by hand) |
+| `TrialTracker:OnJoin(name)` | From RosterLog's join line: with the switch on, on an officer's client with the tracker on, only asks for a fresh roster (`Compat.GuildRoster`). The line's name never becomes a key (Forever may spell it otherwise than the roster) |
+| `TrialTracker:Arm()` | Core's MODULE_START, every login and /reload: opens the settle window (`SETTLE_SECONDS`, 60) in which ScanRoster neither compares nor touches the baseline, then runs it once by itself through `Compat.After` |
+| `TrialTracker:ScanRoster()` / `ResetBaseline()` | The only path that starts an automatic trial (sponsor `AUTO_SPONSOR`, "Guild OS"). On every GUILD_ROSTER_UPDATE, an officer's client only (an alt on the same account never reads or writes it): the whole roster against `db.trialBaseline` (keys, kept between sessions, only ever grows); newcomers are added and become trials (one TR for all) once there is a baseline that shares somebody and this character's last look was an officer's (`db.trialScannedAsOfficer`, by character; a look as no officer clears it, and the next look as one only records); undecided trials missing from the roster get `leftAt`, cleared when back; nothing moves in the settle window, until the roster is whole and the rank known. ResetBaseline drops it so the next look only records; on a non-officer client it only sets `db.trialBaselinePending`, which the next officer's look honours as record-only and clears |
+| `TrialTracker:OnLeave(name)` | From RosterLog's leave and kick lines, officer only: the one way a key leaves the baseline, so coming back is joining again |
 | `TrialTracker:RemoveTrial(playerKey)` | Nils trial entry, broadcasts |
 | `TrialTracker:TakeSnapshot(playerKey)` | Records avgIlvl, attunements, professions, level snapshot |
 | `TrialTracker:GetProgress(playerKey)` | Returns delta table (ilvlDelta, attunement deltas, etc.) |
-| `TrialTracker:UpdateSnapshots()` | Auto-snapshots active trials if last snapshot >1 day (officer only) |
+| `TrialTracker:UpdateSnapshots()` | Auto-snapshots unresolved trials if last snapshot >1 day (officer only) |
 | `TrialTracker:BroadcastTrials()` | Serializes and sends "TR" comm message (officer only) |
 | `TrialTracker:HandleIncoming(data)` | Merges incoming trials: missing=accept, same=merge notes, newer=replace |
-| `TrialTracker:Merge(existing, incoming)` | The trial to keep: latest activity (start, last note, resolution) wins, a tie merges notes and keeps more snapshots; used on receipt and by the stored-key migration (issue #97) |
+| `TrialTracker:Merge(existing, incoming)` | The trial to keep. Both undecided: the earlier start, both copies' notes, the longer snapshots (a later officer's catch-up restarts nothing, #249). An automatic undecided copy (sponsor "Guild OS") against an approved or denied one: the decision, whatever the dates, notes merged. Otherwise, a decided copy involved: latest activity (start, last note, resolution) wins, a tie merges notes and keeps more snapshots; used on receipt and by the stored-key migration (issue #97) |
 | `TrialTracker:MergeNotes(existing, incoming)` | Merges notes by author:timestamp, re-sorts |
 
 ---
@@ -540,7 +596,7 @@ Removed: `Compat.NewTimer`.
 | `GuildManager:Initialize()` | Ensures `db.managementLog` ring buffer exists |
 | `GuildManager:CanPromote()` / `:CanDemote()` / `:CanKick()` | Nil-guarded wrappers over CanGuildPromote/Demote/Remove |
 | `GuildManager:CanSetMOTD()` / `:CanSetGuildInfo()` | Nil-guarded wrappers over CanEditMOTD/CanEditGuildInfo |
-| `GuildManager:GetRosterIndex(name)` | Guild roster index for a short/full name (realm-stripped match) |
+| `GuildManager:GetRosterIndex(name)` | Guild roster index for a short/full name (realm-stripped match, the first hit); on retail `Compat.FindGuildRosterIndex` (the whole name wins, a short one only when unique; issue #184) |
 | `GuildManager:GetRankIndex(name)` | Current 0-based rank index for a player name |
 | `GuildManager:GetRanks()` | Ordered `{index, name}` rank list (GuildControl 1-based → 0-based) |
 | `GuildManager:GetRankName(rankIndex)` | Display name for a 0-based rank index |
@@ -566,7 +622,8 @@ Removed: `Compat.NewTimer`.
 | `AttunementTracker:GetGuildColumns()` | Raid attunements that require a quest chain (grid columns) |
 | `AttunementTracker:GetGuildMatrix()` | (cols, rows) guild attunement matrix, sorted attuned-first |
 | `GearAudit:GetGuildEnchantAudit()` | Rows of members with equipped-but-unenchanted slots |
-| `GearAudit:GetEnchantableSlots()` | Slot IDs that should be enchanted in TBC |
+| `GearAudit:GetEnchantableSlots()` | Slot IDs that should be enchanted, this game's (`Client.enchantSlots`) |
+| `GearAudit:NeedsEnchant(slotId, item)` | Whether an equipped item in that slot should carry an enchant: the game's slot, and an off hand only as a weapon. `MissingEnchants` and the member sheet's "Not enchanted" ask it (issue #177) |
 | `LootTracker:GetGuildLootEquity()` | Items received vs attendance per member (dry/over-fed) |
 | `RaidTracker:GetMissedStreak(key, group, cap)` | Consecutive recent 25-man guild raids missed |
 | `CommSystem:GetSyncHealth()` | (rows, withAddon, outdated) addon adoption / version / last sync |
@@ -585,12 +642,18 @@ Removed: `Compat.NewTimer`.
 
 | Function | Description |
 |---|---|
-| `ConsumableChecker:Initialize()` | Ensures consumableChecks DB table exists |
-| `ConsumableChecker:CheckRaid()` | Checks all connected raid members for flask/food/elixirs |
+| `ConsumableChecker:Initialize()` | Ensures consumableChecks DB table exists; on retail registers READY_CHECK and READY_CHECK_FINISHED (issue #187) |
+| `ConsumableChecker:CheckRaid(quiet)` | Checks all connected raid members: TBC's five categories on Anniversary; on retail flask, food, rune (by the catalog's spell ids) and my own weapon, each raider's row with `buffs`, `missing` and `unknown` (never read: out of range, secret, in combat; the weapon only for me). `quiet` says nothing outside a raid |
+| `ConsumableChecker:OnReadyCheck()` | Retail: a quiet `CheckRaid` when the ready check starts and when it ends (whoever eats in answer is read with the food on), for the screens and for the pull's snapshot |
+| `ConsumableChecker:Tally(results)` | The popup's tally: `problems` (raiders missing something), `total`, `ready`, `unread` (retail: unread raiders are neither) |
+| `ConsumableChecker:ReadUnit(unit)` | Retail: per category the buff's spell id (true for my weapon), false when every buff was read and none is it, nil when unknown (`Compat.UnitBuffIDs` partial or nil) |
+| `ConsumableChecker:RaidVerdict(unit, key)` | The snapshot's verdict: TBC's flask-or-battle-elixir and food on Anniversary (boolean); on retail flask and food, true/false when read, else the reading `Remember`ed out of combat in the last 600 s (the ready check before the pull), else nil |
+| `ConsumableChecker:Remember(key, on)` / `Recent(key)` | Retail: a raider's verdict kept in `GuildOS.State.consumables.reads` with `GetTime()`, and read back within 600 s; a nil verdict never wipes a kept one |
+| `ConsumableChecker:GetUnknownCount(results)` | Raiders with something unread (retail); `/gos cons` and the popup say it apart, never as missing |
 | `ConsumableChecker:UnitHasBuff(unit, spellID, nameHint)` | Scans UnitBuff(1..40), matches by spellId or name |
 | `ConsumableChecker:GetLastResults()` | Returns lastCheck.results or db.consumableChecks.lastResults |
 | `ConsumableChecker:GetMissingCount(results)` | Counts players with non-empty missing array |
-| `ConsumableChecker:ReportToChat(channel)` | Sends missing consumables report to raid channel |
+| `ConsumableChecker:ReportToChat(channel)` | Sends missing consumables report to raid channel; nothing in an encounter's chat lockdown, which would drop it (issue #187) |
 
 ---
 
@@ -605,11 +668,14 @@ Removed: `Compat.NewTimer`.
 | `SpecChecker:CollectOwnTraitSpec()` | WoW: Forever: points per classic tree from the trait tree; `nil, "no-points"` / `"no-config"` / `"no-trees"` while there is nothing to read; the collector does not hold the snapshot open for them, the periodic collect picks the spec up |
 | `SpecChecker:RetailSpec(unit)` | Retail: `{ tree = name, specID, role, scannedAt }` from `Compat.SpecOf`, or `nil, "no-spec"`; `CollectOwnSpec` and the inspect path use it there, and `GetSpecLabel` shows the name alone (ADR-0026) |
 | `SpecChecker.ColumnPoints(nodes)` | Pure: splits `{x, points}` nodes into the three classic trees (gap > 1200 starts a tree; the three biggest groups are the trees, a stray node counts for the nearest) and returns their points left to right, or nil |
-| `SpecChecker:GetSpecLabel(memberKey)` | Returns "41/5/15  (Protection)" string or nil |
+| `SpecChecker:GetSpecLabel(memberKey)` | Returns "41/5/15  (Protection)" string or nil; on retail the spec's name alone, by `SpecName` |
+| `SpecChecker:SpecName(spec)` | A spec record's name as the reader says it: by `specID` through `Compat.SpecName` on retail (a synced spec arrives in the sender's language), the stored `tree` elsewhere. The roster's spec column and the raiders panel read it (issue #177) |
 | `SpecChecker:ScanGroup()` | Builds inspect queue from group members |
 | `SpecChecker:ProcessNextInspect()` | Pops queue, calls NotifyInspect or skips if unreachable |
-| `SpecChecker:OnInspectReady()` | Reads inspected unit's talents (isInspect=true), stores spec |
-| `SpecChecker:Initialize()` | Registers INSPECT_READY, schedules own spec collection after 3s |
+| `SpecChecker:OnInspectReady()` | Reads inspected unit's talents (isInspect=true), stores spec; on retail also the inspected average item level (`Compat.InspectItemLevel`, `KeepInspectedItemLevel`) |
+| `SpecChecker:KeepInspectedItemLevel(rec, ilvl)` | Retail: sets `rec.avgIlvl` unless the member's own broadcast (`lastUpdate`) is at least as new; `lastUpdate` is left alone (issue #184) |
+| `SpecChecker:OnSpecChanged(unit)` | Retail, on `PLAYER_SPECIALIZATION_CHANGED` for `"player"`: after a second, `CommSystem:BroadcastMyData(true)` (it collects first); a burst sends once (issue #184) |
+| `SpecChecker:Initialize()` | Registers INSPECT_READY (and PLAYER_SPECIALIZATION_CHANGED on retail), schedules own spec collection after 3s |
 
 ---
 
@@ -626,6 +692,9 @@ Removed: `Compat.NewTimer`.
 | `UI:CreateHeaderText(parent, text, size)` | Column header: IBM Plex Mono Medium 10 (`colHeader`) in `label` |
 | `UI:CreateButton(parent, text, width, height)` | Button, secondary by default (1px `lineHi` border, paper label in Plex Sans Medium 12); 26px unless a height is given; see `SetButtonVariant`. A label that spills past it (inside 2px margins) grows it to the label + 16px, at creation and on every later `btn.label:SetText`; a label that fits leaves the width alone, and it never shrinks (issue #28) |
 | `UI:CreateCheckbox(parent, labelText, size)` | 14px `well` box, 1px border, solid 8px gold mark; `checkbox.onChanged(cb, checked)` |
+| `UI:CreateDropdown(parent, width, height)` | #346, ADR-0037: the one dropdown. A `CreateButton` showing the value chosen, with a drawn arrow; a click opens one shared list (`GuildOSDropdownList`, FULLSCREEN_DIALOG, `StylePopup`) anchored under it, ten rows tall then scrolled; a row click chooses, a click outside (a transparent sheet under the list), Escape (UISpecialFrames) or the button hiding closes it. No typing. `dd:SetOptions({ { value, text, color?, disabled? } })`, `dd:SetValue(v)` (silent), `dd:GetValue()`, `dd:Select(v)` (sets and calls `dd.onSelect(dd, v)`), `dd:SetPlaceholder(text)`, `dd:Open()` / `dd:Close()`. Use it wherever a control picks one of more than two values, never a button that cycles |
+| `UI:DropdownOpenFor()` / `UI:CloseDropdown()` | #346: the dropdown whose list is open (nil when none); close it from code |
+| `UI:AttachSaveButton(editBox, onSave, opts)` | An inline Save button sharing Enter's commit. `opts.state` (#346): it reads "Saved" and is disabled until the text is typed in, then "Save" until the commit |
 | `UI:CreateCloseButton(parent)` | × in `label`; paper on a `popup` square with a `lineHi` border when hovered |
 | `UI:SkinScrollBar(scrollFrame, scrollName)` | Hides the default buttons; 8px `well` track, `lineHi` thumb (`label` on hover) |
 | `UI:CreateScrollFrame(parent, name)` | UIPanelScrollFrameTemplate + child + skinned scrollbar |
@@ -648,6 +717,20 @@ Removed: `Compat.NewTimer`.
 | `UpdateRosterRow(row, data, i)` | Populates row: class color, ilvl, attunements, attendance |
 | `ShowRowTooltip(row)` | Shows rich hover tooltip with spec, gear, attunements, wishlist |
 | `GuildOS:ShowMemberContextMenu(_anchor, memberData)` | Opens right-click context menu for a member row |
+| `GuildOS:ToggleColumnsPanel(anchor)` / `HideColumnsPanel()` | The Columns panel (#178): a box per column `offered` to this reader, the shown ones in order with ▲▼, Restore defaults; every change re-lays out every roster panel (`UI:Relayout`) |
+
+`COLUMNS` is every column there is (#178). A column with `value(data, ctx)` fills `data.cols[key]` in `BuildMemberList`, only when shown or sorted by, and sorts generically, an empty cell last; one with `text(v, data)` draws in a plain cell (`row.textCells`); `prepare(ctx)` builds a per-refresh index; `offered()` hides it from readers who may not see it. Priority follows the reader's order (`ChosenColumns`), so the rightmost goes first; only Member is required.
+
+## RosterColumns.lua — GuildOS.RosterColumns (issue #178)
+
+| Function | Description |
+|---|---|
+| `RosterColumns:Visible(offered)` | The shown column keys in order (`GuildOSDB.rosterColumns`, the account's; nil = `DEFAULT`), skipping any `offered(key)` refuses. Anything stored but a list of strings reads as the default; repeats and `name` are dropped |
+| `RosterColumns:SetShown(key, on)` | On appends at the end, off removes; `name` is refused |
+| `RosterColumns:Move(key, delta, offered)` | One place left or right, past columns not offered; stops at the ends |
+| `RosterColumns:Reset()` | Back to the default (stores nil) |
+
+Also: `Compat.CanViewOfficerNote()`, `GearAudit:MissingEnchants(gear)` (slot names; shared with the audit), `RaidTracker:GetAttendance25ManPercent(key, group, totals)` (optional per-core memo), `UI:Relayout(container)` (now if visible, else on next show).
 
 ---
 
@@ -659,8 +742,8 @@ Removed: `Compat.NewTimer`.
 | `GuildOS:RefreshRaidsPanel(...)` | Rebuilds grouped session list and attendance table |
 | `GuildOS:CreateLootPanel(parent, _mainFrame)` | Creates Loot History tab with column headers + scroll |
 | `GuildOS:RefreshLootPanel(content, countText)` | Rebuilds loot history rows |
-| `GuildOS:CreateTrialsPanel(parent, _mainFrame)` | Creates Trial Members tab |
-| `GuildOS:RefreshTrialsPanel(parent)` | Rebuilds trials list with expandable detail rows |
+| `GuildOS:CreateTrialsPanel(parent, _mainFrame)` | Creates Trial Members tab, with the guild's trial length box and the new-members switch on top (#249) |
+| `GuildOS:RefreshTrialsPanel(parent)` | Rebuilds trials list with expandable detail rows: ready to review first (gold wash, "READY TO REVIEW"), approve/deny on every unresolved trial |
 | `GuildOS:CreateSettingsPanel(parent, _mainFrame)` | Creates Settings tab with scroll content area |
 | `GuildOS:RefreshSettingsPanel(content)` | Populates settings: module toggles, LM options, test functions |
 | `GuildOS:ShowWishlistFrame()` | Creates or shows personal wishlist standalone frame |
@@ -846,3 +929,295 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `CTA:ShowPopup(e)` / `Answer(id)` | One popup at a time (newest wins, hides after 30s, sound unless `ctaSound` is off); "On my way" publishes `cta`/`going` once, and is hidden on the caller's own call |
 
 `cta` is in `SyncService.OFFICER_DOMAINS` (only an officer over GUILD may call); `going` is in `MEMBER_ACTIONS.cta` — member actions are keyed by domain and taken only over GUILD, or a member's `guildcfg` dressed as an RSVP made them an officer. The Guild hub's "Call to Arms" sub-tab (`BuildCallToArmsSub`) sends, lists recent calls with their own "On my way", and holds each player's settings; its rows flow and wrap (`flow`), and it repaints only while visible; `/gos cta [type] [message]` sends or opens it.
+
+## Retail content, elsewhere (issue #184)
+
+| Symbol | Description |
+|---|---|
+| `AllianceSync._BuildRoster` row `si` | The spec's id beside its name (`s`); `Alliance:MemberInfo` and `SpeakerInfo` show it through `SpecChecker:SpecName`, the sender's name when there is no id or the client cannot name it |
+| `Exporter:RosterData()` / `ReadinessData()` / `GuildOS:ExportRoster()` | The Attunements / Attune column only with `GuildOS.AttunementTracker`, MissingConsumes only with `GuildOS.ConsumableChecker`; `ExportRoster` is the Audit > Sync tab's text |
+| `GuildOS:MemberStatCells(stats)` | UI/MemberDetail.lua: the member sheet's cells as `{ label, text, color }`, the client's list (retail: HP, the primary stat the member sent, STA, the four ratings in percent); a value that is not a number shows 0, stats that are not a table draw nothing (issue #184) |
+| Ban checks outside BanList | The keyword whisper (`author`), the invite popup's click (`e.full`) and the /who scanner (`cand.full`, /who's `fullName`) hand `IsBanned` the whole name (issue #184) |
+| The leftovers' gates | A trial's attunement progress (member sheet, trials list), the officer's linked-characters note, the readiness raid target and its ATTUNE column ask `GuildOS.AttunementTracker`; the "no consumables" penalty (raid settings, a core's penalties, the attendance tooltip, the session detail's NO CONS column) and readiness's CONSUMES column ask `GuildOS.ConsumableChecker`; `/gos attune dumpquests` and `/gos resscan` say "Not available on this client." without their module |
+
+## Retail on guildos.me (issue #182)
+
+| Symbol | Description |
+|---|---|
+| `CompanionExport` payload v10 | Retail's: `game = "RETAIL"`, `region` (`Compat.Region`), `guildKey` and `realm` from `GuildOS:GuildRealm()` (never the exporter's), each session's `difficulty` (14, 15, 16). Forever and Anniversary send v9's bytes under `v = 10`. The enchant summary asks `GearAudit:NeedsEnchant` |
+| `Companion:Refused()` | Why this client publishes nothing, or nil: on retail, a region the site has no world for. `BuildPayload`/`Build` return it as their error; the Web panel shows it |
+| `CompanionImport:Parse(raw)` | GOSROST v3: the roster's `difficulty`. On retail each member's and signup's `name` is its `Name-Realm` key, the same on every officer's client (the calendar's list of answers matches across connected realms); it is cut by `PlainName` only to invite |
+| `CompanionImport:RaidFor(instanceKey, when, difficulty)` | The planned raid covering the night; when the night and the planned raid both have a difficulty they must agree (retail) |
+| `CompanionImport:Rescued(roster)` / `InviteAll()` / `OrganizeGroups()` | `Rescued` maps a signup's name to the name the guildmate is kept by (`Name-Realm` on retail; a name two connected realms have is not rescued). On retail the invite and the groups know who is in the raid by name and realm; a raid member the client keeps secret is passed over |
+| `RaidTracker.RAID_KEYS` | Midnight's four raids by map id: 2912 `midnight-voidspire`, 2939 `midnight-dreamrift`, 2913 `midnight-queldanas`, 3004 `midnight-abyss` |
+| `GuildOS.JsonDecode(s)` | The addon's one JSON decoder, in Core/Utils.lua so every client has it: SoftRes (absent on retail) reads Gargul's JSON with it, the companion import the site's |
+| `tools/retail-site.lua` | Payload v10, GOSROST v3 back into the game, the invite, the groups, the difficulty match and GOSCORE's home realm, under a retail client on a connected realm, with the modules loaded in TOC order (SoftRes absent) |
+
+## Retail: consumables, Mythic+ and the Great Vault (issue #187)
+
+| Symbol | Description |
+|---|---|
+| `Compat.UnitBuffIDs(unit)` | A unit's buff spell ids and whether the list is all of them (`C_UnitAuras.GetBuffDataByIndex`): a secret aura or id is passed over and the list is partial, as it is when a forty-first buff is there; nil (nothing read) in combat, while `C_Secrets.ShouldAurasBeSecret()`, for a secret unit token, without the API, or when the unit shows no buff at all |
+| `Compat.MainHandTempEnchant()` | Retail: whether my main hand has a temporary enchant (`GetWeaponEnchantInfo`); nil elsewhere, in combat or secret |
+| `Compat.RequestMythicPlus()` | Retail: `C_MythicPlus.RequestMapInfo()`; CHALLENGE_MODE_MAPS_UPDATE answers |
+| `Compat.MythicPlus()` | Retail: `{ rating, key = { map, level } }` (`C_ChallengeMode.GetOverallDungeonScore`, `C_MythicPlus.GetOwnedKeystone*`), the key left out when none is held; nil elsewhere, or when anything is secret |
+| `Compat.ChallengeMapName(map)` / `Compat.RatingColor(score)` | A Mythic+ dungeon's name in the reader's language (`GetMapUIInfo`); a rating's colour as r, g, b (`GetDungeonScoreRarityColor`) |
+| `Compat.WeeklyActivities()` | Retail: the Great Vault's raid, dungeon and world slots as `{ row, progress, threshold, level }` (`C_WeeklyRewards.GetActivities`, rows by `Enum.WeeklyRewardChestThresholdType`, 12.1.5's 3/1/6 without it); nil before the activities arrive or when any field is secret |
+| `Compat.WeekStart()` | When this week began by the server's clock (`C_DateAndTime.GetWeeklyResetStartTime`), or nil. The Great Vault's "this week", the game's own; the lockout week is `RaidTracker:GetWeekNum`/`WeekStart`'s table (guildos-web#199) |
+| `GuildOS.ConsumableCatalog` | Data/ConsumablesRetail.lua, generated by `tools/consumable_catalog.py` from 12.1.5.70448: `flask`, `rune`, `food` buff spell ids, retail only |
+| `MythicPlus:Initialize()` / `OnEvent(event)` | Registers CHALLENGE_MODE_MAPS_UPDATE (sets `GuildOS.State.mythicPlus.ready`), CHALLENGE_MODE_COMPLETED and WEEKLY_REWARDS_UPDATE (sets `vaultReady`); each schedules one member broadcast 2 s later |
+| `MythicPlus:Collect()` | My `mplus` (only once the season's data has arrived) and my vault summed and stamped (only once the vault's has); `CollectMyData` keeps the old value for whichever is nil |
+| `MythicPlus:SumVault(slots, at)` | `{ at, raid/dungeon/world = { n, best } }`: slots open and the best level (a raid by difficulty rank, LFR lowest) |
+| `MythicPlus:Rating(mplus)` / `KeyLevel(mplus)` / `KeystoneText(mplus)` | A stored record read defensively: the rating, the key's level, "<dungeon> +N" in the reader's language |
+| `MythicPlus:VaultCells(vault, weekStart)` | The sheet's three cells `{ label, text }` ("2/3 · H", "+12", "Tier 8"); nil, "old" for a vault from before this week's reset |
+| Roster column `mplus` | UI/RosterFrame.lua: the rating in the game's colour and the key's level, offered only with `GuildOS.MythicPlus`; not in `RosterColumns.DEFAULT` |
+| Member sheet | UI/MemberDetail.lua: MYTHIC+ (rating, keystone) and GREAT VAULT, only with the module and the member's own data |
+| `Readiness:GetReport(targetShort)` | `missCons` is the count known missing, nil when nothing was read (never "all missing"); a raider is matched by key, and only off retail by name too (issue #187) |
+| `tools/retail-consumables.lua` / `tools/retail-mplus.lua` / `tools/consumable_catalog.py` | The harnesses and the generator (its self-test runs on `tools/consumable-catalog-fixture/`) |
+
+## Retail loot distribution (issue #185)
+
+| Symbol | Description |
+|---|---|
+| `GuildOS:LootSystemsHere()` / `LootSystemLabel(sys)` | The loot systems this client offers (TMB, Classic only, is `retail = false`), and a system's button name: on retail "rolls" is "Free roll" |
+| `GuildOS:PublishLootSystem()` / `OnLootSystemSync(env)` | Retail only: an officer's loot system goes out on `guildcfg`/`lootsys`, stamped (`settings.lootSystemAt`) when it changes and again with the officer threshold on the regular sync; every client keeps the newest stamp, and two in one second settle on the same system everywhere; a system retail does not offer, or a secret, is turned away. Forever keeps it each client's own |
+| `GuildOS:DisplayKey(key)` | Core/Utils.lua: a guildmate's key as it reads on screen: the name alone on this character's realm, the whole `Name-Realm` otherwise (the loot council's names, issue #185) |
+| `GuildOS:IsGuildmate(playerKey)` | Core/Utils.lua: whether a whole key is on the guild roster (`Compat.FindGuildRosterIndex`, then `KeyOfRosterName`): a connected-realm guildmate is, a namesake from elsewhere is not. LootTracker and TradeCouncil use it |
+| `Points:MakeEntry(...)` | On retail the entry's `name` is the whole key, as the loot history names a guildmate |
+| `Points:KeyOf(name)` | The key a name typed in the points window means: `KeyOfRosterName` on retail (a realm typed is kept, none is this realm's), `GetPlayerKey(name, GetRealmName())` elsewhere, as before |
+| `Points:OnBossKill(name)` | Awards nothing while the pool is not set up (the module switched off, so never initialized) |
+| `Compat.JournalLoot(journalInstanceID)` | Retail: a raid's loot from the Encounter Journal, `{ { itemID, name, link, encounterID, boss } }`, every class's (`EJ_SetLootFilter(0, 0)`, slot filter reset), plus whether every row had its name, and the raid's name. Nothing while the journal is open ("busy"); the class and slot filters and the instance (and boss) the journal last showed are put back. Nil without the journal |
+| `Wishlist.JOURNAL_RAIDS` / `LoadJournal(force)` / `OnJournalData()` | Midnight's raids by journal instance (1307, 1314, 1308, 1320), read into `Wishlist.catalog`; read again 2 s after `EJ_LOOT_DATA_RECIEVED` until every list is whole |
+| `Wishlist:CatalogEntry(itemId)` / `ItemFacts(itemId)` | The journal's `{ name, link, raid, boss }`; an item's name, link and quality, the client's when cached, else the journal's (quality from the link's `\|cnIQn:`, else 4). The wishlist and prio searches use it |
+| `Wishlist:ListFor(key, name)` | A guildmate's synced list: by the whole key on retail, by the name elsewhere. The roster tooltip uses it |
+| Retail wishlist keys | `BroadcastMyWishlist` sends my whole key as the name; `HandleWishlistBroadcast(sender, data, channel)` files a list under its sender's whole key (`KeyOfRosterName(sender)`), never the name it carries, and only from a guildmate over GUILD (CommSystem passes the channel) |
+| `Compat.TradeSeconds(text)` | The seconds a trade-time line names, read with the client's own duration strings (`INT_SPELL_DURATION_*`, `D_*`; every `\|4` plural form, longest first, lower case); nil when nothing can be read |
+| `Compat.TradeTimeLeft(bag, slot)` | `"timed"` with the seconds and the line (the tooltip's `TradeTimeRemaining` line, `C_TooltipInfo.GetBagItem`), `"free"` when not bound, `"bound"` when no longer tradeable; nil without the retail tooltip data, for an empty slot, or a secret |
+| `Compat.TradePartner()` / `TradeItemLinks()` / `IsTradeComplete(type, msg)` | The trade window's other player (`UnitName("NPC")`), what I put in its six slots (`GetTradePlayerItemLink`), and whether a `UI_INFO_MESSAGE` is "Trade complete." (`LE_GAME_ERR_TRADE_COMPLETE`, else `ERR_TRADE_COMPLETE`) |
+| `Compat.EquipLoc(item)` / `Compat.SendChatMessage(text, chatType)` / `Compat.RandomRoll(low, high)` | An item's equip location with no cache (`GetItemInfoInstant`); a chat line through `C_ChatInfo.SendChatMessage`, else the global, never in a chat lockdown (false then); the server's `/roll` |
+| `TradeCouncil` (Modules/TradeCouncil.lua) | Retail only. Prefix `GuildOSTC` over RAID: `O\|id\|free\|secs\|drop\|link`, `A\|id\|choice\|link`, `W\|id\|winner`, `X\|id`, `D\|id\|winner\|by`; only a guildmate's message (`IsGuildmate`), never a secret, a link only when it is one item link (no control character; colour `\|cffRRGGBB` or `\|cnIQn:`; inside the brackets no `\|` but the crafted-quality atlas at a chat icon's size, and no bracket). An incoming offer is a free roll only when this client's loot system is; its drop time is believed only within two hours and a minute back to now, else the offer's. State in `GuildOS.State.tradeCouncil` (the offers, each with its `awards[by] = winner`; the trade; a sequence for the rolls) |
+| `TradeCouncil:Offer(link)` | Offer a tradeable item from my bags (`FindInBags`: this link, else the same item still tradeable) to the raid: needs a raid and an active loot system; refused when the item is gone, bound or already offered; `free` when the guild's system is the free roll; expires with its trade window (two hours when unreadable). Opens the council |
+| `TradeCouncil:Answer(id, choice)` / `Award(id, winner)` / `Withdraw(id)` | Need, Greed or Pass with `EquippedFor` (the lower of a pair, nothing for an empty slot); a first Need or Greed sends the answer, then the server's `/roll 1-100` once the answer has really gone out (`SendAddonMessageNow`'s `onSent`); none in a chat lockdown, nor once an award names me (it says so; every other client ignores the change too). An award by an officer, or the holder of a free offer, to a guildmate who answered Need or Greed, kept as `awards[me]`, announced in raid chat (printed in a lockdown); a withdrawal by the holder or an officer |
+| `TradeCouncil:Ranked(o)` / `OnSystemMessage(text)` / `Wishers(o)` / `WishOrder(itemId, key)` / `Context(key)` | Answers ranked Need, Greed, Pass, then DKP points or wishlist place by the guild's system, then the server's roll, an answer whose roll was not seen last. A 1-100 roll line (`RANDOM_ROLL_RESULT`, `MatchFormat`) is the roll of its player's earliest answer still waiting for one, within 10 s after it; earlier, other ranges, late rolls and second answers bind nothing. Who wished for the item; attendance of the raid's core |
+| `TradeCouncil:MyTradeableItems()` / `MyOfferFor(link)` / `MayIAward(o)` / `MayIWithdraw(o)` / `IsMine(o)` / `Get(id)` / `OpenOffers()` | My Rare-and-up items with a trade window open, soonest first; the open offer of mine for a link; the permissions; one offer; the open ones, oldest first, a run-out one closed on the way |
+| `TradeCouncil:OnTradeShow()` / `SnapshotTrade()` / `OnInfoMessage(type, msg)` / `OnTradeDone(partner, links)` | The trade: its partner (told what to put in when they won), what I hand over (kept from `TRADE_PLAYER_ITEM_CHANGED`/`TRADE_ACCEPT_UPDATE`), and "Trade complete." however long the other player took: an offered item to its award's winner is `Complete`d and `D` sent with the award as the holder saw it (winner, who gave it); to anyone else nothing is recorded, it says so and the offer is withdrawn |
+| `TradeCouncil:Complete(o)` / `Charge(o)` | Into the loot history (`RecordTradeAward` at the offer's drop time, the tracked session's raid); the officer named as giver charges the item's cost under DKP with one, only for the award that client gave (`awards[me] == winner`); once. A holder's `D` is believed for an award this client saw given (`awards[by] == winner`), or, under a free roll, the holder's own to a guildmate who answered Need or Greed; the winner still in the guild; also on an offer this client closed a minute early |
+| `GuildOS:ShowTradeCouncil(offerId)` / `RefreshTradeCouncil()` | UI/TradeCouncil.lua: the loot council window (the raid's offers, my tradeable items with Offer, the offer picked with Need/Greed/Pass, the ranked answers with Award, Withdraw); `/gos offer`, Settings' quick access "Loot Council" and every incoming offer open it |
+| `tools/retail-points.lua` / `retail-wishlist.lua` / `retail-loot-council.lua` / `trade-council-ui.lua` | The harnesses of issue #185 |
+
+## v1.1 — Journal (#205, guildos.me #238)
+
+| Function | Purpose |
+|---|---|
+| `Journal` (Modules/Journal.lua) | WoW: Forever only. What happened to this character, by its own client: `GuildOS.db.journal.entries` (whole guild, 30 days, 1,000), `seq`. Domain `journal` (GUILD only, sent at ChatThrottleLib's NORMAL priority, ahead of member data, #327): `add` `{entry}`, `snap` `{entries}`; taken only from its subject (the sender's key, built as CoreManager files a sign-up) and only in range |
+| `Journal:Complete(id, bosses)` | The way through finished after the end: my clear becomes a full one, in the entry and in the firsts (#235) |
+| `Readiness:WithSeats(rows)` / `Readiness.Filtered(rows, core, status)` / `Composition(rows, core)` / `Compositions(rows, core)` | The readiness panel on Forever (#220): each row's seats, the filters, and what a core has at the cap, titulars only, against its size's targets |
+| `Journal:Add(type, data)` / `OnLevelUp(level)` | Write down, keep and publish an entry about me (`<myKey>:<seq>`, `GetServerTime()`); `PLAYER_LEVEL_UP` writes `member.level` `{level}` at 10–50 and `member.level60` `{}` at the cap: no name, the roster names people |
+| `Journal:OnSync(env, sender)` / `Snap()` / `Prune(now)` | Entries from the guild, kept with only their type's fields and the subject's key localized (`LocalMemberKey`: each Forever client answers its own realm, #95); my last week again at login (30 s) and every 10 minutes while online (#327); oldest out past 30 days and 1,000 |
+| `Journal:GetSince(ts)` / `ForExport()` | Entries after `ts`; the export's `journal` (payload v12) |
+| `Journal:IsOptedOut()` / `SetOptedOut(on)` | Not named on Discord: `db.profile.feedOptOut`, mirrored on my member row, always a boolean in the broadcast, `feedOptOut` (true only) in the export; Settings' checkbox |
+| `tools/journal.lua` | The harness of issue #205 |
+| `tools/journal-delivery.lua` | The harness of issue #327: the real ChatThrottleLib on a turned clock; a clear leaves ahead of a member-data queue, and reaches an officer who logs in after it |
+
+## v1.1 — Readiness on WoW: Forever (#206, guildos.me #241)
+
+| Function | Purpose |
+|---|---|
+| `Readiness.ForeverStatus(r, minIlvl, cap)` | Pure: below the cap `notready`/`level`; no gear data `ready` by level only; under the guild's minimum `warn`/`ilvl`; an enchant missing `warn`/`enchants`; else `ready`. The cases are guildos.me's too (`tools/readiness-forever.lua`) |
+| `Readiness:GetReport()` | On Forever every row is ruled by `ForeverStatus` and carries `level`, `reason`, `levelOnly`; the attunement path stays for Anniversary |
+| `Readiness.FOREVER_RAIDS` | Barrow Deeps 10, Hyjal Summit 20, Onyxia's Lair 40, `opensAt` 9 Dec 2026 00:00 UTC |
+| `Readiness:GetMinIlvl()` / `MinIlvlKnown()` / `SetMinIlvl(n)` / `PublishMinIlvl()` / `OnMinIlvlSync(env)` | The guild's minimum item level for a 60: `settings.readyMinIlvl` + `readyMinIlvlAt`, set by an officer (nil clears), `guildcfg`/`readymin` stamped, newest wins and a tie keeps the lower; republished on the officers' regular sync; exported as `guildConfig.readyMinIlvl` (v12) only by a client that has heard it. Settings > officer: "Readiness" |
+| `Readiness.Slices(atCap)` | What the guild can form with who is at the cap (the same as guildos.me's): `{ dungeons, raids = { { size, count } }, short, shortSize }`. Pure. |
+| `Readiness:Countdown(rows, now)` | WoW: Forever, until a week after the raids open (#207): `{ opensAt, open, days, cap, cores = up to 3 { name, size, ready } largest first (titulars at the cap, nobody who left), guild = { ready, enough, short }, me }`. `UI/Dashboard.lua` draws it in the readiness card's place; the readiness panel shows the level and sorts by it within a status |
+
+## v1.2 — The guild's block (#215, guildos.me #259)
+
+| Function | Purpose |
+|---|---|
+| `CompanionImport:GuildBlock()` | The inbox's GOSGILD1, decoded, for this guild, under a week old and with the companion on; nil otherwise. Shown, never run |
+| `CompanionImport:FeedLines()` | The block's feed, with `\|` and line breaks taken out again |
+| `Founding:FromSite()` | The site's founding by the same order as `OnSync`; the GM's client then publishes it, nobody else's does. Runs with `PublishSelf`, after `founding` starts |
+| `Digest:MarkFeedSeen(now)` | What the login digest showed from the site, kept 14 days in `db.digest.feedSeen`. `Build` adds "From guildos.me", five lines at most, and passes `told` so `Milestones` and `Founding` leave out their own line for the same event |
+
+## v1.2 — Achievements and activation (#216, #217, guildos.me #245, #244)
+
+| Function | Purpose |
+|---|---|
+| `Achievements` (Modules/Achievements.lua) | WoW: Forever only. Reads the block's `achievements`: `Data()`, `Renown()`, `Earned()`, `Next()`, `Of(key)`, `Unseen()`/`MarkSeen()` (`db.digest.achievementsSeen`: `at` is the fact's date, not comparable with the last login), `GetDigestLines(told)`, `NextLine()`. Titles come ready; no catalogue, no rule |
+| `Activation` (Modules/Activation.lua) | WoW: Forever only. `Read(now)`: `publish` and `members` the client knows, `bot`, `account` and `run` from the block. `ShouldShow(now)` for the GM and officers, `Hide(now)` for 30 days, `GetDigestLine(now)` every 3 days, `Celebrate()` once. `db.activation` holds only `hiddenUntil`, `remindedAt`, `celebrated` |
+| `CompanionImport.Inert(text)` | Text off the network with `\|` and line breaks out |
+| `GuildOS:CreateAchievementsPanel(parent)` | The tab; `UI/Dashboard.lua` has the setup card |
+
+## v1.1 — Founding (#208, guildos.me #240)
+
+| Function | Purpose |
+|---|---|
+| `Founding` (Modules/Founding.lua) | WoW: Forever only. `db.founding` `{ foundedAt, source, declaredBy, recordedAt, windowDays, manual, revision }`; `db.foundingJoins[key] = { joinedAt, src }`; `db.foundingSuggested`; `db.foundingPrompt` |
+| `Founding.ValidDay(t, now)` / `WindowEnd(foundedAt)` | 00:00 UTC, from the launch (`FIRST_DAY`, 4 Nov 2026) to today; the window ends at the last second of the 14th day after |
+| `Founding:Record(day, source)` / `Suggest(day)` / `Publish()` / `OnSync(env, sender)` | The GM records (revision + 1), an officer suggests; officer domain `founding` (`set` with `rev`, `suggest`); highest revision wins, `declaredBy` localized |
+| `Founding:MyJoinedAt()` / `PublishSelf()` / `OnSelf(env, sender)` / `JoinedAtOf(key)` | My own join date (`firstSeen` until a probe finds the game's, #214), published at login on `foundingSelf` (GUILD only), filed under its sender |
+| `Founding:Founders()` / `IsFounder(key)` / `ForExport()` | Worked out the same everywhere: the GM, today's roster with a join date (claim, else this client's `firstSeen`) inside the window, and manual additions; the export's `founding` (v12) |
+| `Founding:ShouldPrompt(now)` / `Later(now)` / `SuggestedDay(now)` | The letter to the GM while nothing is recorded: three times at most, a day apart; offers an officer's suggestion, else the earliest `firstSeen`, else today |
+| `GuildOS:ShowFoundingLetter(prompted)` / `MaybeShowFoundingLetter()` | UI/Founding.lua: the letter (day with ‹ ›, record or suggest, later); at login after the onboarding; Settings > officer: "Record founding" / "Suggest founding date to your GM" |
+| `tools/founding.lua` | The harness of issue #208 |
+| `Founding.BADGE` / `Founding:Forget()` / `Founding.AddMonths(t, n)` / `Founding:GetDigestLines(since, now)` | The founder's scroll by the name in the roster and the member card (with "joined"); the founders are cached 5 s (`Forget` on any change); months in UTC with no time zone; the digest's founders since the last login (3 at most, never me), the window's days left or its closing, and the guild's 1/3/6/12-month anniversaries (#209) |
+
+## v1.1 — Dungeon log (#210, guildos.me #242)
+
+| Function | Purpose |
+|---|---|
+| `GuildOS.ForeverDungeons` (Data/ForeverDungeons.lua) | `forever-dungeons.v1`: by instance id, `{ id, name, final, bosses }` from DB2 1.60.1.70685; `final` provisional (last `OrderIndex`) until the launch build (#214); Half-Pint Tavern missing, Manor Mistmantle with no boss |
+| `DungeonLog:OnZone(now)` / `OnEncounterEnd(encounterID, success)` | WoW: Forever only. A run (`db.dungeonRun`: instance, runId, kills, cleared, leftAt) opens in a catalogued `party` instance, survives 15 min away, ends in another; the final boss's death writes one `dungeon.clear` `{ dungeonId, dungeonName, bosses, fullClear, runId }` into the Journal. Secret or unknown encounters count nothing |
+| `tools/dungeon-log.lua` | The harness of issue #210 |
+
+## v1.1 — The Journal tab (#211, guildos.me #242)
+
+| Function | Purpose |
+|---|---|
+| `Journal:Mine()` / `GuildFirsts()` / `ThisWeek(now)` / `IsFirstClear(entry)` | My entries newest first; each dungeon's first clear with everyone within 120 s; the week's milestones, members who reached one, clears — collective only, no ranking; whether a clear is the first this client knows of |
+| `GuildOS:CreateJournalPanel(parent)` | UI/JournalPanel.lua, the "Journal" tab (Forever: `condition` = the module exists): this week, guild firsts, your journal |
+| `Milestones:Check` on Forever | Also records `level` at every ten levels below the cap (the highest crossed); `GetDigestLines` groups them per level, three names or a count; the ding fallback is the client's cap |
+| DungeonLog's toast | "First clear of X for <guild>!" when `Journal:IsFirstClear` — hopeful and local; guildos.me decides the real first |
+
+## v1.1 — Titular and reserve (#212, guildos.me #243)
+
+| Function | Purpose |
+|---|---|
+| core member `status` | `"bench"` for a reserve, nil for a titular (every older record); from the site's `GOSCORE1` (`status`, guildos-web #249) on the Discord's records, kept by `AddMember`, carried in the officers' `discordList` |
+| `CoreManager:GetComposition` | Titulars only; `bench` counts the reserves |
+| `CoreManager:OpenSlots(coreName)` | Per role, the target for the size less the titulars playing it; `total` = size less titulars. The core panel shows them, reserves dimmed below the titulars |
+| `Achievements:Insignia()` | The renown level's insignia as guildos.me says it: the texture in `Media/renown-<series>-<n>.tga`, in the series of the character's faction, the highest the addon carries past that, and the title, ready in the guild's language |
+| `Compat.IsEncounterInProgress()` | Whether a boss fight is going on: `C_InstanceEncounter` first, then the deprecated global, and no with neither |
+| `Compat.GuildTabard()` | The guild's tabard as the game draws it (#213): `GetGuildLogoInfo`'s colours as bytes and emblem style, `GetGuildTabardFiles`' six files; nil without one or with anything secret. Exported as `tabard` (v12) off TBC Anniversary; guildos.me turns it into its `GT1` code |
+
+## The character's own pack (guildos.me #323, ADR-0028)
+
+| Function | Purpose |
+|---|---|
+| `Companion:BuildSelf()` | My own line as a `GOSCOMP1:` string, or nil and why: same wire format and decoder as the export, `members` with one line (the export's own, built by the same local `memberLine`), `self = true`, `count = 1` and an empty `loot` the decoder requires. No sessions, journal, tabard, founding, guildConfig or rosterComplete, and its line has no `main` (v14). Asks `Refused` and `IsOnGuildDB`, never the switch. Nil on a character not read yet. Needs no guild roster. The key comes from `Compat.PlayerName()` |
+| `CompanionExport` payload v14 | Each member row carries `main` (local `mainOf(key)`): `db.altLinks[key]`, the main's key in the same form as the row's `key`, when it is a non-empty string other than the row's own key; absent otherwise, and always absent in `BuildSelf`'s line (issue #251, guildos.me #392) |
+| The logout writer | One `GOSCOMP1:` string per file, in `GuildOSDB.__companion`: with the switch on the export, as ever, with it off the pack. Only the export stamps `__companionAt`; `__companionSelf` says the field holds a pack, so a failed export takes a leftover pack away instead of keeping it |
+
+
+## Recruitment (guildos.me #071, #245, ADR-0029)
+
+| Function | Purpose |
+|---|---|
+| `Gossip:Initialize()` / `:Beacon()` / `:Round()` | Starts the whisper gossip (not on Anniversary): the whisper test after login, the beacon every `BEACON_SECONDS`, a round of digests every `ROUND_SECONDS` plus jitter. `:Beacon()` ends on the created channel when `Gossip.CHANNEL` is on, on `mesh:Realm` (YELL) when it is off |
+| `Gossip:Topic(name, spec)` / `:On(op, fn)` / `:Receive(payload, sender, dist)` | A topic says what it holds (`digest`, `want`, `pull`, `push(payload, sender, dist)`); `:On` routes a payload's first field; RecruitBeacon's one mesh handler hands everything to `:Receive` |
+| `Gossip:Note(sender, guild, officer)` / `:Peers()` / `:PeerFor(guild)` | Peers heard in the last `PEER_FRESH` seconds; an officer of the guild asked about, else a member |
+| `Gossip:CanWhisper()` / `:WhisperName(name)` / `:Whisper(name, payload)` | A whisper of ours has come back this session; the name in the spelling that did; the send, with the error line of a name tried hidden (`GuildOS:NoteWhisper`, issue #326) |
+| `Gossip:Quiet()` | Inside an instance or in a chat lockdown, where the gossip runs: never on Anniversary. `RB:Broadcast` pauses on it |
+| `Gossip:IsOfficerSender(sender)` | Whether a sender is an officer, for what only an officer may say over GUILD. On WoW: Forever one scan of the roster, whole name against whole name, lower case with hyphens as spaces and this client's own realm off the end; elsewhere `IsOfficerByName`. `RB:IngestCR3` and `JR:OnCRA` ask it |
+| `Gossip:Stats()` | `{ rounds, adsIn, adsOut, dropped, peers, whisper, officerRefused }`; `whisper` is the spelling the test kept, `false` for none; `officerRefused` the senders the officer check refuses right now |
+| `Gossip:Audit()` | What the Audit panel shows: `{ gossip, requests, channel, at }`, each part read alone in a `pcall`, a copy in `GuildOSDB.recruitAudit`; `channel` is `GuildOSDB.probeChannel` or `false` |
+| `Gossip.CHANNEL` / `Gossip.CHANNEL_NAME` | The beacon's route by a created channel (`false`, `"GuildOSNet"`): only a new version turns it on |
+| `JR:Send(ad, note)` / `:Outbox()` / `:Latest(ad)` / `:Status(id)` / `:Deliver(e)` / `:Tick()` / `:WriteWire()` | The guildless side: ask a guild (three open at most, one per guild), the queue in `GuildOSDB.recruitOutbox`, where a request stands (`stored`, `officer`, `member`, `invited`, `declined`, `expired`), one delivery round, the `GOSOUTB1` on logout |
+| `JR:OnCRQ()` / `:OnCRA()` / `:Decide(id, status)` / `:CanDecide()` / `:CanInvite(id)` / `:Invite(id)` | The guild's side: a row per request in `db.joinRequests` (found by id, then by the game's id kept as `gameId`), a decision only an officer makes (`:CanDecide`, and `:Decide` prints why it refused) and only an officer's word over GUILD counts, Invite from a click only and open to whoever the game lets invite, the row closed by the game's `ERR_GUILD_INVITE_S` line |
+| `JR:List()` / `:OpenCount()` / `:Refresh()` / `:ForExport()` / `:Listen(fn)` | The rows, open ones first; the site's block read into them, a new row `unheard` until an officer's client reads it (also run from `OFFICER_START`, when the rank is known); the export's optional `joinRequests`; a screen asks to hear changes |
+| `JR:Stats()` / `JR:Audit()` | Drops by name and by guild, invites sent and invite lines confirmed; and with them the open rows and this character's asked / delivered |
+| `Compat.JoinChannel(name)` / `Compat.ChannelId(name)` / `Compat.LeaveChannel(name)` | A created channel by name and its number (0 when not joined or secret), each call guarded |
+| `Probe:RunChannel()` / `:FinishChannel(run)` | `/gos probe channel` (button in Audit > Sync): joins `GOSProbe<n>`, sends from the command and from a timer on `GuildOSProbe`, counts its own echo on `CHAT_MSG_ADDON`, leaves after `Probe.CHANNEL_WAIT` (15) seconds whatever happened (the verdict is scheduled before anything can raise), `GuildOSDB.probeChannel = { timer, click, timerSkipped, clickSkipped, heard = { timer, click }, joined, left, at }`: true, false, or nil with `<how>Skipped` saying why it was never tried. A second press while it runs retries a skipped click. Refuses in combat; hides the channel's own join and leave notices |
+| `Probe:Initialize()` / `:LeaveStaleChannel(stale, try)` | In `MODULE_START`: `STALE_WAIT` seconds after login leaves the channel a `/reload` left behind, whose name is in `GuildOSDB.probeChannelOpen`, and clears the name only once the channel is seen gone, `STALE_TRIES` leaves at most. `:RunChannel` and `:FinishChannel` go through it too; a running probe's own channel is no leftover |
+| `RB:IngestCR3(payload, sender, dist)` | A CR3 off the network, true when kept or renewed. The guild's own ad only over GUILD from an officer (`Gossip:IsOfficerSender`) |
+| `RB:SeedOwnAd()` | The guild's own ad out of `GOSGILD1` into its slot, whatever sat there |
+| `RB:Cache3()` / `:Prune3()` / `:Heard3()` / `:AdToPayload(ad)` | `db.recruitAds`, keyed by the name; the cap takes the soonest to expire, then the oldest version, and never the guild's own ad; the ads heard minus my guild's, as copies; an ad as a CR3 |
+| `RB:Broadcast()` | An officer, every `BROADCAST_INTERVAL`: the site's ad as CR3 and CR2 over GUILD and CR2 by YELL, or the `/gos beacon` one. Pauses on `Gossip:Quiet()` |
+| `GF:Normalize(raw)` / `:FromCR2(r)` / `.Text(v, max)` | Every source into one ad shape, the site's `GosrecrAd` plus `heard` and `verified`; text inert, one line, cut by character |
+| `GF:AddSource(name, fn)` / `:Directory()` / `.HeardAds()` / `.HeardCR3()` / `:All()` | The sources: the CR2 cache, the site's list (verified, normalized once per decoded list) and the CR3 cache; every live ad, one per guild |
+| `GF:Context()` / `:Saved()` / `:SetFilter(key, value)` / `:Current()` / `:Matches(ad, f, offset)` / `:Rank(items, by)` / `:Ads(filters, offset)` | Where the player is, the filters kept in `GuildOSDB.guildFinder`, one ad against them, the site's order, and every ad this player can act on |
+| `GF:UtcOffset()` / `:LocalTimes(ad, offset)` / `:Touches(ad, offset)` / `:Schedule(ad, offset)` | Raid nights from UTC onto the player's clock, the day and period pairs they touch, and the line a card reads |
+| `GF:ClientLocale()` / `:Available()` / `:Worlds(f)` / `:WorldParts(w)` / `:UpdatedAgo()` / `:Initialize()` | The client's language on the site's nine, whether the finder is for this client (never Anniversary), the worlds on offer, how old the list is, and the minimap's light at the first guild of the session |
+| `GF:Reaches(ad, place)` | Whether an ad is worth passing on from `place` (`GF:Context()`): the player's own faction and region, any ruleset, and on retail a realm that can invite; no faction is a guild with no roster and goes; what cannot be judged does not |
+| `Import:RecruitDirectory()` / `:OwnRecruitAd()` / `:SiteJoinRequests()` | The inbox's `GOSRECR1` (public, read with the companion on or off, three days at most, this client's game); the guild's own ad out of `GOSGILD1`, nil past its `x`; the block's `joinRequests`, cleaned, with their `source` |
+| `Companion:Pack(prefix, payload)` | Any other string the site reads with the export's wire: today the `GOSOUTB1` of a character with no guild |
+| `Compat.AddChatFilter(event, fn)` / `Compat.ConnectedRealms()` | A chat message filter where the client keeps it (`ChatFrameUtil` on retail), false with none; this realm and the ones connected to it, the realms that can invite this character |
+| `GuildOS:WhisperTarget(name)` | The name as `/w` takes it: the hyphen where the game spells a surname with a space. Both screens' Whisper button |
+| `GuildOS:NoteWhisper(name)` | Core/Utils.lua, issue #326: every addon whisper of GuildOS calls it right before it sends (`Alliance:Send`, `CraftNet`'s answer, `CommSystem:SendRaw` with a target, `Gossip:Whisper` and the whisper test). The client's `ERR_CHAT_PLAYER_NOT_FOUND_S` line for that name is hidden for 30 s, each line hidden renewing it (a long message answers once per part); names compare with no case, hyphens as spaces, and also without what follows the last hyphen. True when a filter is there. `tools/whisper-not-found.lua` fails on an addon whisper that does not call it |
+| `GuildOS:HideWhisperErrors()` / `GuildOS:OnWhisperNotFound(fn)` | The one `CHAT_MSG_SYSTEM` filter for those lines, put in once (true when the client has a chat filter; the gossip whispers only then); `fn(name)` for each line hidden, as the game spelled the name, maybe once per chat frame: the gossip drops that peer. A secret line is left alone, a filter that breaks lets the line through and is recorded once. State in `GuildOS.State.whispers` |
+| `GuildOS.Finite(v)` | A number off the network, or nil: never NaN or inf, which `tonumber` takes as text. Every number on a recruitment network path goes through it |
+| `GuildOS:ShowGuildFinder()` / `:GuildFinderHeard()` / `:ShowJoinForm(ad)` | `UI/GuildFinder.lua`: the screen of a character with no guild, the minimap's light, and the request form with where the request stands |
+| `GuildOS:ShowJoinRequests()` / `:JoinRequestsHeard(r)` / `:JoinRequestsOpenText(n)` / `:SetMinimapAlert(on)` | `UI/JoinRequests.lua`: the officer's list, the notice, its count, and the ring on the minimap button |
+## The game's own calendar — Compat + GameCalendar.lua (guildos-web specs/075, issue #263)
+| `Compat.CalendarAvailable()` | True only on WoW: Forever with `C_Calendar.AddEvent` (Anniversary and retail not measured) |
+| `Compat.RealmOffset()` / `Compat.RealmClock(epochUtc)` / `Compat.EpochOfRealm(t)` | The realm's clock against UTC, to the quarter hour; an instant as `{ year, month, day, hour, minute }` on it, and back. Plain day arithmetic, the PC's zone never enters |
+| `Compat.CalendarGuildEvents(fromEpoch, toEpoch)` | Guild events (`GUILD_EVENT`, `GUILD_ANNOUNCEMENT`) between two instants as `{ offset, day, index, title, calendarType, startsAt }`; offsets from the month the calendar's window shows |
+| `Compat.CalendarCreateGuildEvent(spec)` / `Compat.CalendarOpenEvent(where)` / `Compat.CalendarApplyEdit(spec)` | A guild event with sign-up from `{ title, description, startsAt }`, open one for editing, save onto the open one and close it; `ok, err`, never raising. Create and edit only from a click |
+| `GameCalendar.Marker(raidId)` / `.RaidIdIn(description)` / `.RaidIdOf(webEvent)` | `guildos:<raidId>`, the mark a game event carries; read back out of a description; the site id of a `web:` event |
+| `GameCalendar.SpecFor(webEvent)` | The game event a site raid becomes: title cut to `TITLE_MAX` (31) letters, never through a multi-byte one; description ending in the whole mark within `DESC_MAX` (255) |
+| `GameCalendar.Match(webEvent, nativeEvents)` / `.StateOf(webEvent, nativeEvents, inbox)` | The raid's game event (by `webEvent.game` when put there, else by title and hour); `gone` (missing from an inbox under `INBOX_CAP` 10, inside `WINDOW_DAYS` 28 and `GRACE` 3 h), `absent`, `stale`, `present` |
+| `GameCalendar:CanAct()` / `:Put(eventId, done)` / `:Refresh(eventId, done)` / `:IsOpenFor(eventId)` | The clicks, officer and WoW: Forever only: put a `web:` raid in the game's calendar; bring it in line in two clicks (the first opens it and returns `"opened"`, the second saves). Never removes: the game refuses an addon that, so a raid gone from the site says to delete it by hand. `done(ok, message)` once, when the game answers (`CALENDAR_NEW_EVENT` / list update / `CALENDAR_UPDATE_ERROR`, in the game's own words) or after 6 s of silence; the identity is kept only once the game shows it. |
+| `Calendar:SetGameEvent(id, game)` | What a `web:` raid was put in the game's calendar as (`{ title, at }`, `false` once taken out), stamped `gameAt` and published with the event (`wireOf`). `OnSync` keeps the newer `gameAt` (held to now) and an update without one keeps what was there |
+| `Import:InboxInfo()` | `{ ids = { [raidId] = true }, count = n }` of the inbox's site raids, nil when none was read this session |
+| `GameCalendar.ViewOf(state, hasNative, canAct, isOpen)` / `:ViewFor(webEvent, nativeEvents, inbox)` / `:Act(eventId, action)` | What the addon's calendar shows for a site raid (`{ text, action, label }`: put / refresh, with Confirm on the second click / take, only for whoever may act) and the button's click: runs the action, prints what came of it and redraws. `UI/CalendarPanel.lua` reads the game's events and the inbox once per day drawn and only draws |
+| `Compat.CalendarRequest()` / `Compat.OnCalendarUpdate(fn)` | Asks the game for its calendar at most once a minute (apart from reading, so a read inside the answer's handler never asks again); calls `fn` on each `CALENDAR_UPDATE_EVENT_LIST`. `Compat.CalendarGuildEvents` returns nil, unknown, until the first answer |
+| `Compat.CalendarOpenedEvent()` | The event the game has open for editing as `{ title, startsAt }`, or nil. `Compat.CalendarApplyEdit` leaves the description alone when the spec has none |
+| `GameCalendar:IsWaiting(eventId)` | An action on this raid is waiting for the game's answer: nothing else starts on it, and the panel shows "waiting" with no button. `Match` tries the stored identity exactly, then within an hour (summer time), then the site's; Put refuses next to a same-named event no other raid holds; `StateOf` says gone only against an inbox at least as new as the raid's `signupsAt`, inside its own window; `Import:InboxInfo()` carries `at` and is nil with the companion off or the inbox a day old |
+| `Calendar` `cleanClock` / `e.clock` | A site raid's time on the clock it was created on (`GOSROST1.clock`, guildos-web #411), kept on the `web:` event, sent with it (`wireOf`) and cleaned in `OnSync`; a new clock is a change. `GameCalendar.SpecFor` hands it to the game as its numbers (`Compat.CalendarCreateGuildEvent`/`ApplyEdit` take `spec.clock` over the realm's clock), and its instant for matching is `Compat.EpochOfRealm(clock)` |
+| `Mentions:_OfficerWords()` / `Mentions:_OfficerCall(msg, words)` | #266: the words that call the officers (English plus the client's `L["officer, officers"]`), and the first one a guild line says as a whole word. The hook asks only in guild chat, only for an officer with `officerCall` on |
+| `AltRoster:HasAlts(key, links)` / `AltRoster:ShortTag(key, links)` | #269: whether a key is somebody's main; Guild Roster Manager's tag, `[Main]` on an alt and `L["[M]"]` on a main with alts, nil otherwise. ChatTweaks writes it instead of "(alt of X)" when `altShort` is on |
+| `Recruitment.ChatTextProblem(msg)` | #270: why the game would refuse a chat line (a lone `|`, a line break, over 255 characters, empty), localized, or nil. Checked when the welcome or the recruiting message is saved and before the welcome is sent; a send that raises is reported, never lost |
+| `GuildMap:IsMinimapDots()` / `GuildMap:SetMinimapDots(on)` | #271: the guildmates-in-your-zone dots under the minimap, on unless turned off (`db.guildMapPrefs.minimapDots`); setting redraws at once through `uiRefresh` |
+| `UI.LabelColumn(widths, left, gap, floor)` / `UI.ReserveFor(button, gap)` | #265: pure; where a labelled form's controls start (past the widest label, never before `floor`), and the room a box keeps for its own Save button. The recruiting screen measures its labels in the client's language with them |
+| `Calendar:CreateSeries(title, when, size, note, kind, share, rep)` / `:TopUpSeries()` / `:UpdateSeries(id, ...)` / `:EndSeries(id)` / `Calendar._Occurrences(rule, first, from, to, cap)` / `Calendar.RepeatOf(rep, first)` | #267: events that repeat (`Calendar.REPEATS`: weekly, biweekly, daily, everyother, monthnth, monthday). A series is plain events, one per date, id `<series>:<YYYYMMDD>`, each carrying `series = { id, rep, first, hour, min, untilT? }`; the next 28 days are held, an officer's client fills the rest in 20 s after login. Update changes a date and every later one (each keeps its day, takes the new hour); End deletes from a date on and marks the earlier ones with `untilT`. The rule off the guild channel is cleaned |
+| `Calendar:EndedSeries()` / `Calendar:IsSeriesEnded(sid)` | #267: series ended (`db.calendar.ended`, kept 365 days). EndSeries marks it and publishes a `delete` of the series id with `series = true`; OnSync keeps the mark, drops a new date of an ended series, and keeps a date's rule when a client before this edits it without one. TopUpSeries skips ended series and series whose dates read another hour on this client's clock; it runs from OFFICER_START |
+| `Recruitment:SendWelcomeText(msg, who)` | #270: the one way a welcome reaches guild chat, clicked (Forever) or on its own (Anniversary): `ChatTextProblem` first, `pcall` around the send, the reason said; true when it went |
+| `GuildOS:LocalDate(fmt, timestamp)` | #307: `date()` with the weekday and the month (`%a %A %b %B`) from the translations (`L["Mon"]`, `L["Monday"]`, `L["Nov"]`, `L["November"]`; `"May"` one key for both); every other conversion is `date()`'s. A whole date's layout is passed as an L key (`L["%A, %d %b %Y"]`, `L["%b %Y"]`, `L["%a %d %b, %H:%M"]`), which a language may reorder or write with `%B`. `tools/date-names.lua` fails on a `date()` whose format names a day or a month. In Core/Core.lua, which every harness loads |
+| `Calendar.CleanKinds(list)` / `Calendar:MemberKinds()` / `:KindOpenToMembers(kind)` / `:MayCreateKind(kind)` / `:CreatableKinds()` | #308: the kinds the ranks below the officers create (`settings.eventKinds`, a list in `KINDS` order; nil = every kind). `MayCreateKind` is true for an officer, else for a rank that creates events (#283) and a kind open to members; `CreatableKinds` is the editor's pills and gates its New Event button |
+| `Calendar:SetMemberKinds(list)` / `:PublishMemberKinds()` / `:OnMemberKindsSync(env)` | #308: an officer's choice, stamped `settings.eventKindsAt` and sent on `guildcfg`/`eventkinds` as `{ kinds }` (no `max`, which a client before this would read as the officer threshold); re-sent with the ranks (CommSystem's sync and request answer); newest wins, a tie settles on the fewer kinds, then on the list that, joined in `KINDS` order, sorts first as text (`DUNGEON` before `RAID`); held to 5 min ahead. Create and CreateSeries refuse a kind not open to this rank and Update a switch to one; an event kept at its kind stays its creator's to edit, reschedule and end. OnSync drops a non-officer's create/update of a closed kind unless the event is held here already with that kind (cancel and delete stay theirs) |
+| `Calendar:DungeonChoices()` | #308: the Dungeon event's pick list: `ForeverDungeons.byInstance` with a boss to clear, by name, then `ForeverDungeons.classic` (guildos.me's `bookableDungeons`, #491). Empty off WoW: Forever, where the title is typed. The editor shows "Pick a dungeon" beside the title for a dungeon; a pick is the title, "Other (type a name)" clears a picked one and focuses the title |
+
+## Groups: the guild's group finder — LFGBoard.lua, Groups.lua, Data/GroupActivities.lua, UI/GroupsPanel.lua (#341, ADR-0035)
+
+| Function | What it does |
+|---|---|
+| `GuildOS.GroupActivities` / `:Sections(cat)` | The catalogue for the client it loaded on: `sections` (`cat` = `dungeon`, `raid`, `other`; `title`; `items`) and `byId`. An item is `{ id, name, map?, min?, max?, size, art?, cat }`; the id is what crosses the wire, the name is English and matched by nothing |
+| `LFGBoard:SetAvailable(role, note, ttl, toGuild, roles, acts)` / `:Mine()` / `:MyKey()` | My listing. `roles` (a subset of `THD`) decides `role`, the one field a client before #341 reads; `acts` is up to six activity ids. Both go out in `LG` beside the old fields |
+| `LFGBoard:_SanitizeRoles(v)` / `:_SanitizeAct(id)` / `:_SanitizeActs(list)` / `:_LegacyRole(roles)` | Pure. Letters of `ROLE_LETTERS` in that order; an id of lowercase letters, digits and hyphens up to 32 bytes (an unknown one is kept: a newer version's); up to six, each once; the single role or `ANY` |
+| `LFGBoard:ActivityName(id)` / `:Describe(entry)` / `:RoleName(role)` / `:DurationName(seconds)` | What is shown: the game's own instance name by map id (`Compat.InstanceName`), the catalogue's otherwise, "Another activity" for an unknown id; "Deadmines, Gnomeregan: note" |
+| `LFGBoard:Pref(key)` / `:SetPref(key, value)` | The panel's saved choices (`postToGuild`, `allianceScope`, `roles`, `lastMode`), typed; the panel never writes `db.lfgPrefs` itself |
+| `LFGBoard:_SayInGuild(role, note, acts, line)` | The one line in guild chat, five minutes apart; `line` is the whole line when Groups speaks, so a leader's group and their own listing share the cooldown |
+| `LFGBoard:Show()` | Opens the Groups tab on Active (`/gos avail`, Guild › Call to Arms). The popup is gone |
+| `Groups:Create(act, need, note, ttl, toGuild)` / `:Disband()` / `:Mine()` / `:Rebroadcast()` | My group, one a leader, in `db.lfgGroups[myKey]`: `{ act, note, need = { T, H, D }, n, max, ts, ttl }`. Create returns nil and a reason for no activity, no open spot or a party I do not lead (`Compat.CanInvite`), empties the queue when the activity changes (`_CloseQueue`), delists me from the board and takes my own requests back; Disband tells the queue it closed |
+| `Groups:_Publish()` | Sends my group as it is now, or `{ clear }`, on `GF`; at most one every 6 s, a change inside the window going out once at its end, so a receiver's 5 s cooldown never drops the last word |
+| `Groups:HandleGroup(sender, data, channel)` | GUILD only; keyed by the sender; a `clear` of a listing held is never rate-limited; `_BuildGroup` sanitises (activity required, ttl clamped, age only backwards, size 2-40, spots whole and within the room); stores `from` for the whisper back |
+| `Groups:RequestSpot(leaderKey, role)` / `:CancelRequest(leaderKey)` / `:Asked(leaderKey)` | The asker: a whisper `GJ { role }` to the leader (`_SendAsk`: one every 3 s a leader, the last word going out when the window ends) for a role with a spot open; `{ cancel }` takes it back. Session only (`State.groups.asked`) |
+| `Groups:HandleJoin(sender, data, channel)` | WHISPER only. A leader's `{ decline }` (or `closed`) to what I asked; an asker's `{ cancel }`; or a request, kept only when I lead a group, the sender is on the guild roster by their whole name, the role has a spot and the queue (20) has room, declined otherwise |
+| `Groups:Requests()` / `:Invite(key)` / `:Decline(key)` | The leader's queue, oldest first; Invite calls `Compat.InviteUnit` and marks the row, Decline whispers the refusal |
+| `Groups:OnGroupRoster(members, count)` | GROUP_ROSTER_UPDATE: a queued player now in my group closes the spot of their role; a seat taken by hand caps the spots at the seats left; no spot left, or a full group, takes the listing down. On the asker's side, being in the group of a leader I asked delists me and takes my other requests back |
+| `Groups:ActiveList(store, now, onlineSet)` / `:Counts(now, onlineSet)` / `:NeedText(need)` / `:SizeOf(act)` | The cards, the tiles' counts (`{ [act] = { groups, seekers } }`), "1 Tank, 2 DPS", and a group's size from the catalogue |
+| `Compat.InstanceName(mapID)` / `Compat.TextureExists(path)` / `Compat.GroupRoster()` / `Compat.InGroup(members, key)` | An instance's localized name or nil; whether the client has a texture file (art is drawn only then: a missing path is a green square); who is in my party or raid, as keys, and how many; membership, by first name on WoW: Forever when the whole name does not match (#48) |
+| `GuildOS:CreateGroupsPanel(parent)` | The tab: sub-tabs Active, Dungeons, Raids, Quests and more (`parent.SelectSub`), one scroll area repainted from pools (no frame is created twice), and one composer popup with two modes. `tools/groups-panel.lua` builds and clicks it |
+
+## The Loot window — UI/LootWindow.lua, UI/PointsPanel.lua (#346, ADR-0037)
+
+| Function | What it does |
+|---|---|
+| `GuildOS:CreateLootWindow(container)` | The `loot` tab, every member's: sub-tabs Rule · Accounts · Lists · History (`container.SelectSub(sub, coreName)`, `ActiveSub()`, `panels`), each built the first time it is shown |
+| `GuildOS:RefreshLootRuleTab(content, scope)` | The Rule tab drawn for a core (`""` the guild; nil keeps the last, else `DefaultLootScope`): the selector, the model as a list (officers), the loot master's settings (`LootMaster:SetLootSetting`), `BuildLootRuleEditor`, and "how players will read it" (`LootRule:Describe`) for everyone |
+| `GuildOS:BuildLootRuleEditor(content, yOff, coreName, redraw)` | The answers' editor (#334), moved here from Settings > Loot; what an answer asks for, the price, a counter's reset, who decides (with a council) and an exception's kind, category and destination are dropdowns |
+| `GuildOS:ShowLootRuleEditor(coreName)` | Opens the Rule tab on that core (it was a window of its own) |
+| `GuildOS:DrawLootPointer(content, y, scope, x)` | "Loot: <rule> — Open Loot": what Settings > Loot and the core's Config tab keep; `content.lootPointer` is the button |
+| `GuildOS:DefaultLootScope()` | The raid's active core when it is one, else `""` |
+| `GuildOS:BuildLootAccounts(panel)` / `GuildOS:ShowPointsFrame(coreName)` | The Accounts tab: core and account dropdowns, the award row (`Points:AwardRow`), Award Raid / Apply Decay / Sync, the standings (columns by `ResolveColumns`) and the movements (dropped below 640 px), and "Account settings" (`Points:SetConfigKey`, `SetMode`, the named reasons). Every read on the core picked (`Points:InCore`). `ShowPointsFrame` opens it (`/gos points`, `/gos dkp`) |
+| `GuildOS:RefreshLootPanel(content, countText, header)` / `:RefreshLootEquity(...)` | The History tab's tables, rows pooled, columns dropped by priority |
+| `GuildOS.MarkToggle(btn, on)` | One of a pair of view buttons, lit in gold |
+| `UI:OpenWindow(id, sub, filter)` | A feature with `tab = false, opens = { tab, sub }` (`dkp`, `wishlist`) opens that sub-tab |
+| `LootRule:Describe(rule, seconds)` | `{ who, how, order = {…}, decide, exceptions }`: the rule in sentences |
+| `LootRule:SavedAt(coreName)` | When an officer last saved the core's (or guild's) own rule; 0 for a loot system's |
+| `LootRule:Compared(c, rule)` / `LootRule:DecidingEntry(a, b, rule)` | The figures each criterion compared (the award record's); the order entry that put `a` before `b` |
+| `LootMaster:SetLootSetting(key, value, scope)` / `:LootSettings(scope)` | One loot setting of a core (`""` the guild's), checked (duration 5-120, attendance 0-100, threshold 2-5, switches, trimmed names) and written where `CoreManager:SetLootConfigKey` writes; the cache reloads. Returns the value or nil and why |
+| `Points:AwardRow(spec)` | `{ name, reason, times, amount, note, charge }`: a named reason `times` over (to its weekly cap) or typed points; nil and `"name"`, `"amount"` or `"reason"` |
+| `Points:SetConfigKey(key, value, coreName)` | One of the points' settings of a pool, whole and not negative (percentages to 100), switches, the decay's rounding; broadcast |
+| `LootMaster:ShowLootFrame(items)` / `:ShowRollFrame()` / `:RefreshRollFrame()` / `:LootTable()` / `:BuildLootTable()` | #346: ONE window, `GuildOSLootTable` (it was the 680×440 loot frame and the 520×350 roll tracker; `lootFrame` and `rollFrame` both point at it), built once, resizable (min 600×360). Left: the boss's items (`lootItems`) with `ItemState`, the night's awards (`NightAwards`) and Undo. Right: the item picked, the "answer for someone" strip (name, the rule's answers in a dropdown, the bid, Enter answer, the loot master's own first two answers), the candidates in the rule's order (`TableCandidates`; columns by `ResolveColumns`: # · player · answer · why they are here · +1 · att · roll), the decision (`DecisionText`) and Award to X (the label is `awardBtn.label`) · End now / Open roll · Disenchant · Cancel. A row click picks another winner. Who disenchants and the wishlist council are the Rule tab's |
+| `LootMaster:TableCandidates(item)` / `:InterestFor(itemId)` | The rows of the table: the roll's answers sorted by the rule (a pass last) with the first, or before a roll who has the item on a list, the first of them in the group and how many share that place |
+| `LootMaster:DecisionText(sorted, rule, ended)` | "Chehul wins: both reserved the item (Rias too), and their roll 41 beats Rias's 17." — what the first two share that reads as a reason, then the clause of `LootRule:DecidingEntry`; "leads" while the answers are open |
+| `LootMaster:WhyHere(c, rule)` | A candidate's "why they are here": a filter that read their answer as another (`FilterReason`), then each figure of the order beside the answer and the roll |
+| `LootMaster:NightAwards(core)` / `:ItemState(item)` | Tonight's awards (12 h, undone ones left out); an item's state: `awarded` (to whom), `rolling` / `ended` (how many asked), `exception` (bank, disenchant or its name) or `queued` |
+| `LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)` | #346: the raider's popup, 380 wide: "Loot", the clock (m:ss) and ×; the item and `ItemLine`; what the player wears there (`EquippedFor`) and the item levels it gains; "where you stand in this rule" as badges (`Standing`) and the points line; the rule's buttons (`BuildAnswerControls(f, ask, link, width, foot)`, first answer primary, Pass ghost) or MS / OS / Pass by /roll for a loot master from before; the line that names the rule; a 3px timer bar |
+| `LootMaster:Standing(itemId, rule)` | `{ reserved, hard, prio, wishlist, counters = { { name, value } }, points, entry, refund }`: the player on that item in the rule |
+| `LootMaster:EquippedFor(itemLink)` / `:ItemLine(itemLink)` | What the player wears in the item's slot and the item-level difference (nil when the slot is not worn or unknown); "Head · Cloth · item level 76" |
+| `GuildOS:CreateCoresPanel(panel)` | #346: Raids › Cores. Left: the cores (`row.coreName`, `row.sub` "10 · 9 of 10 · from Discord"), how cores are born (linked: the sentence and "Received from the site …"; else name + Create). Right: the header (name, origin badge, "active in the raid" or Set Active, Rename/Delete for a game core), sub-tabs Roster · Requests (n) · Rule · Config (`CreateTab`). Roster: role meters, members table (`ResolveColumns`: member · role (a dropdown, `CoreManager:SetMemberRole`) · place · origin · presence · actions), the Discord's waiting people, guests of the night, invite from the guild (a dropdown) or by name. Rule: `DrawLootPointer` and the rule in sentences. Config: the format (dropdown for 3+ sizes), the Discord link (dropdown), penalties (Save with state), raid leader ranks |
+| `CoreManager:SetMemberRole(key, role, core)` / `:SetMemberBench(key, bench, core)` / `:MemberPresence(key, core)` | #346: what the roster's controls did to the record themselves: a member's role (one of the four) and titular/reserve (not for a Discord core's own people), told with the roster; presence in percent (RaidTracker) |
+| `GuildOS:ShowCoreSignupFrame()` | #346: one card a core: name, size and where the player stands (starter, reserve, "request sent 3h ago", missing roles, full) always in sight; when it raids and who leads it (`core.schedule`, `core.leader` when the site sends them, else "no … set"); "Loot: <rule>" and the player's presence; the role coverage; a note and Ask for a place (primary) or Cancel request (danger, no hover needed); See the rule (Loot window). `f.states[core]` is each card's state |
+| `CoreManager:SignupState(core, playerKey)` | #346: `{ member, bench, pending (ts), missing = { tank, healer, mdps, rdps }, full, schedule, leader, presence }` for the card |

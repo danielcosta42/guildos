@@ -65,7 +65,8 @@ function RaidTools:GetSource()
         local n = GetNumGroupMembers() or 0
         for i = 1, n do
             local name, _, _, _, _, classFile = GetRaidRosterInfo(i)
-            if name then
+            -- A member the client keeps secret cannot be matched or counted (issue #184).
+            if name and not GuildOS.Compat.IsSecret(name, classFile) then
                 list[#list + 1] = { name = name:match("^([^-]+)") or name, class = classFile or "" }
             end
         end
