@@ -2906,3 +2906,4 @@ L["The companion is working, but none of its guild links sends this guild's raid
 L["No word from the companion yet. If it is running, wait a few minutes; if not, download it at %s"] = "尚未收到夥伴程式的消息。如果它正在執行，請等幾分鐘；否則請在 %s 下載"
 L["Raids from the site go on the calendar from an officer's client. Your rank is above the guild's officer ranks, so here they only show in this tab."] = "網站上的團隊透過幹部的用戶端進入行事曆。你的階級不在公會幹部階級內，所以這裡只在此分頁顯示。"
 L["Events made here stay in the game. For signups on Discord, create the raid on guildos.me or with /raid create."] = "在這裡建立的活動只留在遊戲中。若要在 Discord 報名，請在 guildos.me 或用 /raid create 建立團隊。"
+L["Every year on %s"] = "每年 %s"

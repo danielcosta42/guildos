@@ -3050,3 +3050,4 @@ L["The companion is working, but none of its guild links sends this guild's raid
 L["No word from the companion yet. If it is running, wait a few minutes; if not, download it at %s"] = "Ancora nulla dal companion. Se è aperto, attendi qualche minuto; altrimenti scaricalo da %s"
 L["Raids from the site go on the calendar from an officer's client. Your rank is above the guild's officer ranks, so here they only show in this tab."] = "Le incursioni del sito entrano nel calendario dal client di un ufficiale. Il tuo grado è sopra i gradi da ufficiale della gilda, quindi qui compaiono solo in questa scheda."
 L["Events made here stay in the game. For signups on Discord, create the raid on guildos.me or with /raid create."] = "Gli eventi creati qui restano nel gioco. Per le iscrizioni su Discord, crea l'incursione su guildos.me o con /raid create."
+L["Every year on %s"] = "Ogni anno il %s"

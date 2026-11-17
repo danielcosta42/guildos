@@ -220,4 +220,35 @@ Cal:OnSync({ act = "create", rev = 1, data = { event = { id = "S3:20261221", tit
 local s3 = Cal:GetEvents()["S3:20261221"].series
 check(s3 and s3.rep == "monthday" and s3.hour == nil and s3.untilT == nil, "a good rule is kept, its bad numbers are not")
 
+-- ── Every year (#358) ─────────────────────────────────────────────────
+local bday = at(2027, 3, 9, 20)
+local y = dates("yearly", bday, bday, at(2030, 12, 31, 23))
+check(#y == 4 and y[1] == "2027-03-09 20:00" and y[4] == "2030-03-09 20:00", "every year: the same day and hour")
+local leap = at(2028, 2, 29, 20)
+local l = dates("yearly", leap, leap, at(2032, 12, 31, 23))
+check(l[2] == "2029-02-28 20:00" and l[5] == "2032-02-29 20:00", "29 February falls on the 28th in a year without it")
+NOW = at(2026, 11, 20, 12)
+local nb = Cal:CreateSeries("Birthday: Ana", bday, 40, "", "OTHER", false, "yearly")
+local ybs = {}
+for id, ev in pairs(Cal:GetEvents()) do if ev.series and ev.series.rep == "yearly" then ybs[#ybs + 1] = ev end end
+check(nb == 1 and #ybs == 1 and ybs[1].when == bday, "four months ahead, the one date is on the calendar, and only it")
+local ysid = ybs[1].series.id
+NOW = at(2027, 3, 10, 12)
+local tu = Cal:TopUpSeries(); check(tu >= 1 and Cal:GetEvents()[ysid .. ":20280309"], "once it has passed, next year's goes on")
+local ones = 0
+for id in pairs(Cal:GetEvents()) do if id:find("^" .. ysid) then ones = ones + 1 end end
+check(ones == 2, "and only that one")
+Cal:Delete(ysid .. ":20280309")
+NOW = at(2027, 6, 1, 12)                  -- the tombstone is older than 30 days, the date still ahead
+Cal:PruneTombstones()
+Cal:TopUpSeries()
+check(not Cal:GetEvents()[ysid .. ":20280309"],
+  "a yearly date deleted months ahead stays deleted: its tombstone lasts until its day")
+NOW = at(2028, 3, 12, 12)
+Cal:PruneTombstones()
+check(not Cal:IsDeleted(ysid .. ":20280309"), "and goes once the day has passed")
+Cal:OnSync({ act = "create", rev = 1, data = { event = { id = "S9:20271224", title = "t", when = NOW + 86400,
+  series = { id = "S9", rep = "yearly", first = NOW } } } }, "Other-Firemaw")
+check(Cal:GetEvents()["S9:20271224"].series.rep == "yearly", "a yearly rule off the guild channel is kept")
+
 print("repeating-events: " .. checks .. " checks passed")
