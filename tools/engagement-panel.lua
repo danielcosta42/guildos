@@ -133,29 +133,40 @@ nameOf1 = nil
 find(engage)
 check(nameOf1 == "Renamed", "opening the tab draws what came in meanwhile")
 
--- Leadership > Ranks, drawn while every frame still reads a width of 0 (#371: the tab showed nothing).
--- Rows sized from content:GetWidth() came out negative; held by both sides they take the list's width.
+-- Leadership > Ranks (#371). Built row by row, a 943-member guild was a 26,000px scroll child the client
+-- did not draw at all, and each roster update stacked another 943 frames on it (3,764 after four, seen in
+-- game). Now only the rows that fit exist, refilled from the roster on every refresh and scroll.
 local roster = {}
-for i = 1, 5 do roster[i] = { "Member" .. i .. "-Realm", "Rank", 1, 60, nil, nil, nil, nil, true, nil, "MAGE" } end
+for i = 1, 943 do roster[i] = { "Member" .. i .. "-Realm", "Rank", 1, 60, nil, nil, nil, nil, true, nil, "MAGE" } end
 function GetNumGuildMembers() return #roster end
 function GetGuildRosterInfo(i) return unpack(roster[i]) end
-function Frame:GetWidth() return 0 end
-function Frame:SetWidth(w) self.w = w end
-function Frame:SetSize(w, h) self.w, self.h = w, h end
-function Frame:SetPoint(p) local t = rawget(self, "points") or {}; t[p] = true; rawset(self, "points", t) end
+function GuildOS:GetClassColor() return 1, 1, 1 end
+local fauxTotal, fauxShown
+FauxScrollFrame_Update = function(_, total, shown) fauxTotal, fauxShown = total, shown end
+FauxScrollFrame_GetOffset = function() return 0 end
+FauxScrollFrame_OnVerticalScroll = function() end
 function GuildOS:SafeCall(fn, ...) return true, fn(...) end   -- let a failing refresh raise here
+local beforeRanks = created
 parent.SelectSub("ranks")
-local held, negative = 0, 0
-local function scan(f)
+local firstRanks = created
+for _ = 1, 4 do parent.SelectSub("ranks") end
+check(created == firstRanks, "four more roster updates make no new frames (" .. (created - firstRanks) .. " made)")
+check(firstRanks - beforeRanks < 200, "a 943-member guild gets the rows that fit, not one per member ("
+  .. (firstRanks - beforeRanks) .. " frames)")
+local named, firstName = 0, nil
+local function scanRanks(f)
   for _, c in ipairs(f.children) do
-    if type(rawget(c, "w")) == "number" and c.w < 0 then negative = negative + 1 end
-    local pts = rawget(c, "points")
-    if type(pts) == "table" and pts.TOPLEFT and pts.TOPRIGHT then held = held + 1 end
-    scan(c)
+    local fs = rawget(c, "nameFS")
+    if fs and rawget(c, "shown") and rawget(fs, "text") then
+      named = named + 1
+      firstName = firstName or fs.text
+    end
+    scanRanks(c)
   end
 end
-scan(parent.subPanels.ranks.panel)
-check(held == 5, "every member's rank row hangs by both sides (" .. held .. ")")
-check(negative == 0, "and no frame on Ranks gets a negative width (" .. negative .. ")")
+scanRanks(parent.subPanels.ranks.panel)
+check(fauxTotal == 943 and fauxShown == 14 and named == 14,
+  "the list knows all 943 and fills the 14 rows a 400px list holds (" .. named .. ")")
+check(firstName == "Member1", "sorted by rank, then name")
 
 print("engagement-panel: " .. checks .. " checks passed")

@@ -127,6 +127,48 @@ end
 ----------------------------------------------------------------------
 -- RANKS sub-panel — promote / demote roster members
 ----------------------------------------------------------------------
+-- A list that draws only the rows that fit, as Members and Professions do (FauxScrollFrame): one frame per
+-- visible line, refilled from `data` on every scroll and refresh. Ranks built the whole guild row by row:
+-- a 26,000px scroll child the client did not draw at all, and each roster update stacked another 943
+-- frames on it (3,764 after four, #371). createRow(parent) makes a row's parts once; fillRow(row, item, i)
+-- writes an item into it.
+local function MakeVirtualList(holder, name, rowStep, createRow, fillRow)
+    local scroll = CreateFrame("ScrollFrame", name, holder, "FauxScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 0, 0)
+    scroll:SetPoint("BOTTOMRIGHT", GUTTER, 0)   -- the bar in the margin, past the rows' right edge
+    UI:SkinScrollBar(scroll, name)
+    local list = { data = {}, rows = {} }
+    function list:Update()
+        local shown = math.max(0, math.floor((holder:GetHeight() or 0) / rowStep))
+        for i = #self.rows + 1, shown do
+            local row = createRow(holder)
+            row:SetPoint("TOPLEFT", 0, -((i - 1) * rowStep))
+            row:SetPoint("TOPRIGHT", 0, -((i - 1) * rowStep))
+            self.rows[i] = row
+        end
+        FauxScrollFrame_Update(scroll, #self.data, shown, rowStep)
+        local offset = FauxScrollFrame_GetOffset(scroll) or 0
+        for i, row in ipairs(self.rows) do
+            local item = i <= shown and self.data[offset + i]
+            if item then
+                fillRow(row, item, offset + i)
+                row:Show()
+            else
+                row:Hide()
+            end
+        end
+    end
+    function list:SetData(data)
+        self.data = data or {}
+        self:Update()
+    end
+    scroll:SetScript("OnVerticalScroll", function(self, offset)
+        FauxScrollFrame_OnVerticalScroll(self, offset, rowStep, function() list:Update() end)
+    end)
+    holder:HookScript("OnSizeChanged", function() list:Update() end)
+    return list
+end
+
 local function BuildRanksSub(panel)
     local note = UI:CreateText(panel,
         L["Rank changes are Blizzard-protected: the arrow buttons open the official guild panel for you to confirm."],
@@ -136,14 +178,58 @@ local function BuildRanksSub(panel)
     local listHolder = CreateFrame("Frame", nil, panel)
     listHolder:SetPoint("TOPLEFT", 0, -(14 + GAP))
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
-    local _, content = MakeScrollList(listHolder, "GuildOSMgmtRanksScroll")
+
+    local empty = UI:CreateText(listHolder, L["Roster empty or unavailable."], 11, C.silver.r, C.silver.g, C.silver.b)
+    empty:SetPoint("TOPLEFT", 0, -4)
+    empty:Hide()
+
+    local function createRow(parent)
+        local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+        row:SetHeight(ROW_H)
+        row:SetBackdrop({ bgFile = WHITE })
+        row.nameFS = UI:CreateText(row, "", 11)
+        row.nameFS:SetPoint("LEFT", 8, 0)
+        row.rankFS = UI:CreateText(row, "", 10, C.silver.r, C.silver.g, C.silver.b)
+        row.rankFS:SetPoint("LEFT", 180, 0)
+        row.lvlFS = UI:CreateText(row, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        row.lvlFS:SetPoint("LEFT", 340, 0)
+        -- Demote one step (higher rankIndex), promote one (lower). Shown where the rank may.
+        row.downBtn = UI:CreateButton(row, "|TInterface\\BUTTONS\\Arrow-Down-Up:14:14|t", 26, 18)
+        row.downBtn:SetPoint("RIGHT", -8, 0)
+        row.downBtn:SetScript("OnClick", function()
+            GuildOS.GuildManager:Demote(row.member.fullName)
+            GuildOS.GuildManager:RefreshUI()
+        end)
+        row.upBtn = UI:CreateButton(row, "|TInterface\\BUTTONS\\Arrow-Up-Up:14:14|t", 26, 18)
+        row.upBtn:SetPoint("RIGHT", -38, 0)
+        row.upBtn:SetScript("OnClick", function()
+            GuildOS.GuildManager:Promote(row.member.fullName)
+            GuildOS.GuildManager:RefreshUI()
+        end)
+        return row
+    end
+
+    local canPromote, canDemote = false, false
+    local function fillRow(row, m, idx)
+        row.member = m
+        local alt = (idx % 2 == 0) and C.row1 or C.row2
+        row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
+        local cr, cg, cb = GuildOS:GetClassColor(m.class)
+        local dim = m.online and 1 or 0.55
+        row.nameFS:SetText(m.name)
+        row.nameFS:SetTextColor(cr * dim, cg * dim, cb * dim)
+        row.rankFS:SetText(m.rankName)
+        row.lvlFS:SetText(L["Lv "] .. m.level)
+        row.downBtn:SetShown(canDemote)
+        row.upBtn:SetShown(canPromote)
+    end
+
+    local list = MakeVirtualList(listHolder, "GuildOSMgmtRanksScroll", ROW_H + 2, createRow, fillRow)
 
     return function()
-        ClearContent(content)
-
         local GM = GuildOS.GuildManager
-        local canPromote = GM:CanPromote()
-        local canDemote = GM:CanDemote()
+        canPromote = GM:CanPromote() and true or false
+        canDemote = GM:CanDemote() and true or false
 
         -- Collect roster, sort by rank then name.
         local members = {}
@@ -167,48 +253,8 @@ local function BuildRanksSub(panel)
             return a.name:lower() < b.name:lower()
         end)
 
-        local yOff = 0
-        for idx, m in ipairs(members) do
-            local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = GuildOS:GetClassColor(m.class)
-
-            local nameFS = UI:CreateText(row, m.name, 11, cr, cg, cb)
-            nameFS:SetPoint("LEFT", 8, 0)
-            if not m.online then nameFS:SetTextColor(cr * 0.55, cg * 0.55, cb * 0.55) end
-
-            local rankFS = UI:CreateText(row, m.rankName, 10, C.silver.r, C.silver.g, C.silver.b)
-            rankFS:SetPoint("LEFT", 180, 0)
-
-            local lvlFS = UI:CreateText(row, L["Lv "] .. m.level, 9, C.textDim.r, C.textDim.g, C.textDim.b)
-            lvlFS:SetPoint("LEFT", 340, 0)
-
-            -- Demote one step (higher rankIndex). Hidden if no permission.
-            if canDemote then
-                local downBtn = UI:CreateButton(row, "|TInterface\\BUTTONS\\Arrow-Down-Up:14:14|t", 26, 18)
-                downBtn:SetPoint("RIGHT", -8, 0)
-                downBtn:SetScript("OnClick", function()
-                    GuildOS.GuildManager:Demote(m.fullName)
-                    GuildOS.GuildManager:RefreshUI()
-                end)
-            end
-            -- Promote one step (lower rankIndex).
-            if canPromote then
-                local upBtn = UI:CreateButton(row, "|TInterface\\BUTTONS\\Arrow-Up-Up:14:14|t", 26, 18)
-                upBtn:SetPoint("RIGHT", -38, 0)
-                upBtn:SetScript("OnClick", function()
-                    GuildOS.GuildManager:Promote(m.fullName)
-                    GuildOS.GuildManager:RefreshUI()
-                end)
-            end
-
-            yOff = yOff + ROW_H + 2
-        end
-
-        if #members == 0 then
-            local empty = UI:CreateText(content, L["Roster empty or unavailable."], 11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 0, -4)
-        end
-        content:SetHeight(math.max(1, yOff))
+        empty:SetShown(#members == 0)
+        list:SetData(members)
     end
 end
 
@@ -235,52 +281,56 @@ local function BuildInactiveSub(panel)
     local listHolder = CreateFrame("Frame", nil, panel)
     listHolder:SetPoint("TOPLEFT", 0, -(22 + GAP + 2))
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
-    local _, content = MakeScrollList(listHolder, "GuildOSMgmtInactiveScroll")
+    -- Drawn as Ranks is (MakeVirtualList): only the rows that fit, refilled on scroll (#371).
+    local empty = UI:CreateText(listHolder, L["No inactive members in this period."], 11, C.silver.r, C.silver.g, C.silver.b)
+    empty:SetPoint("TOPLEFT", 0, -4)
+    empty:Hide()
+
+    local canKick = false
+    local function createRow(parent)
+        local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+        row:SetHeight(ROW_H)
+        row:SetBackdrop({ bgFile = WHITE })
+        row.nameFS = UI:CreateText(row, "", 11)
+        row.nameFS:SetPoint("LEFT", 8, 0)
+        row.rankFS = UI:CreateText(row, "", 10, C.silver.r, C.silver.g, C.silver.b)
+        row.rankFS:SetPoint("LEFT", 180, 0)
+        row.lvlFS = UI:CreateText(row, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        row.lvlFS:SetPoint("LEFT", 320, 0)
+        row.daysFS = UI:CreateText(row, "", 10)
+        row.daysFS:SetPoint("LEFT", 390, 0)
+        row.kickBtn = UI:CreateButton(row, L["Remove"], 70, 18)
+        row.kickBtn:SetPoint("RIGHT", -8, 0)
+        row.kickBtn:SetScript("OnClick", function()
+            GuildOS.GuildManager:ConfirmKick(row.member.fullName)
+        end)
+        return row
+    end
+    local function fillRow(row, m, idx)
+        row.member = m
+        local alt = (idx % 2 == 0) and C.row1 or C.row2
+        row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
+        local cr, cg, cb = GuildOS:GetClassColor(m.class)
+        row.nameFS:SetText(m.name)
+        row.nameFS:SetTextColor(cr, cg, cb)
+        row.rankFS:SetText(m.rankName or "?")
+        row.lvlFS:SetText(L["Lv "] .. m.level)
+        -- Status: long gone is `danger`, gone a while `warn` (gold is no status colour, #371).
+        local daysColor = m.daysOffline >= 60 and C.red or C.warn
+        row.daysFS:SetText(m.daysOffline .. L["d offline"])
+        row.daysFS:SetTextColor(daysColor.r, daysColor.g, daysColor.b)
+        row.kickBtn:SetShown(canKick)
+    end
+    local rows = MakeVirtualList(listHolder, "GuildOSMgmtInactiveScroll", ROW_H + 2, createRow, fillRow)
 
     local refresh
     refresh = function()
-        ClearContent(content)
-
         local GM = GuildOS.GuildManager
-        local canKick = GM:CanKick()
+        canKick = GM:CanKick() and true or false
         local list = GM:GetInactiveMembers(panel.threshold)
         summary:SetText(format(L["%d member(s)"], #list))
-
-        local yOff = 0
-        for idx, m in ipairs(list) do
-            local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = GuildOS:GetClassColor(m.class)
-
-            local nameFS = UI:CreateText(row, m.name, 11, cr, cg, cb)
-            nameFS:SetPoint("LEFT", 8, 0)
-
-            local rankFS = UI:CreateText(row, m.rankName or "?", 10, C.silver.r, C.silver.g, C.silver.b)
-            rankFS:SetPoint("LEFT", 180, 0)
-
-            local lvlFS = UI:CreateText(row, L["Lv "] .. m.level, 9, C.textDim.r, C.textDim.g, C.textDim.b)
-            lvlFS:SetPoint("LEFT", 320, 0)
-
-            -- Status: long gone is `danger`, gone a while `warn` (gold is no status colour, #371).
-            local daysColor = m.daysOffline >= 60 and C.red or C.warn
-            local daysFS = UI:CreateText(row, m.daysOffline .. L["d offline"], 10, daysColor.r, daysColor.g, daysColor.b)
-            daysFS:SetPoint("LEFT", 390, 0)
-
-            if canKick then
-                local kickBtn = UI:CreateButton(row, L["Remove"], 70, 18)
-                kickBtn:SetPoint("RIGHT", -8, 0)
-                kickBtn:SetScript("OnClick", function()
-                    GuildOS.GuildManager:ConfirmKick(m.fullName)
-                end)
-            end
-
-            yOff = yOff + ROW_H + 2
-        end
-
-        if #list == 0 then
-            local empty = UI:CreateText(content, L["No inactive members in this period."], 11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 0, -4)
-        end
-        content:SetHeight(math.max(1, yOff))
+        empty:SetShown(#list == 0)
+        rows:SetData(list)
     end
 
     local function apply()
