@@ -674,6 +674,13 @@ function Compat.CursorHasItem()
     return (GetCursorInfo and GetCursorInfo() ~= nil) and true or false
 end
 
+-- What the cursor holds, as GetCursorInfo says it: its type ("item", "guildbankitem", ...) and id.
+function Compat.CursorInfo()
+    if not GetCursorInfo then return nil end
+    local ok, kind, id = pcall(GetCursorInfo)
+    if ok then return kind, id end
+end
+
 function Compat.ClearCursor()
     if ClearCursor then ClearCursor() end
 end

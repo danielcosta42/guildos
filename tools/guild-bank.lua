@@ -43,6 +43,7 @@ local NOW, CLOCK = 1790000000, 1000
 function GetServerTime() return NOW end
 function GetTime() return CLOCK end
 time = function() return NOW end
+date = os.date
 function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 C_Timer = { After = function() end, NewTicker = function() end }
 function GetNumGuildMembers() return 0 end
@@ -168,6 +169,15 @@ dropNow = function(tab, slot)
   local slots = BANK.tabs[tab].slots
   if not cursor then
     local s = slots[slot]
+    if s and BANK.slowPickup then
+      -- The server confirms the pickup late: the cursor shows the item only then (or never).
+      BANK.pickups = (BANK.pickups or 0) + 1
+      local lost = BANK.loseEvery and BANK.pickups % BANK.loseEvery == 0
+      GuildOS.Compat.After(BANK.slowPickup, function()
+        if not lost and not cursor then cursor = { tab = tab, slot = slot, c = s.c, at = CLOCK } end
+      end)
+      return
+    end
     if s then
       cursor = { tab = tab, slot = slot, c = s.c, at = CLOCK }
       -- The game also says the slots changed on a pickup, and that word can come after the drop.
@@ -755,6 +765,28 @@ check(GuildOS.State.gbank.noSwap == true, "and a refused swap is remembered for 
 BANK.extraDrops = 0
 organizeWith("direct", crowded)
 check((BANK.extraDrops or 0) == 0, "no drop is sent again while the server is still answering one")
+
+-- Pickups the server confirms late (1.2 s), one in five never: the drop waits for the item, none is
+-- lost, nothing is left in hand, and a pickup never taken is in the log, with its item.
+do
+  fresh()
+  local tab = addTab("Raid", -1)
+  crowded(BANK.tabs[tab].slots)
+  BANK.swap, BANK.slowPickup, BANK.loseEvery = "direct", 1.2, 5
+  Bank:OnEvent("GUILDBANKFRAME_OPENED")
+  Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
+  runTimers()
+  BANK.extraDrops = 0
+  check(Bank:StartSort(tab), "a run starts on a slow bank")
+  runTimers()
+  BANK.swap, BANK.slowPickup, BANK.loseEvery = nil, nil, nil
+  local got = BANK.tabs[tab].slots
+  check(Bank:SortState() == nil and cursor == nil and (BANK.extraDrops or 0) == 0, "slow pickups: the run ends, nothing in hand, no drop sent twice")
+  check(got[1] and got[1].id == 22832, "and the tab is in order")
+  local log = table.concat(Bank:Store().trace or {}, "\n")
+  check(log:find("PROBLEM pickup not taken", 1, true) and log:find("(id ", 1, true), "a pickup never taken is logged with its item")
+  Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+end
 
 -- ── Typing an item ──────────────────────────────────────────────────────
 check(Bank:ParseItemInput(linkOf(22854)) == 22854 and Bank:ParseItemInput("22832") == 22832, "a link or an id names its item")

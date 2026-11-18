@@ -51,7 +51,10 @@ local REDROP_RTT = 2             -- times the run's usual answer time
 local RTT_START = 0.6            -- seconds an answer is taken to take, before the run measured one
 local CAP_RAMP = 6               -- moves landed in a row before one more may fly
 local VERIFY_MAX = 2             -- seconds a drop may wait for the game to say the slots changed
-local HOLD_MAX = 0.8             -- the drop goes then, even when the client never says it holds it
+-- The pickup also goes through the server: the cursor can take more than 0.8 s to show the item
+-- (in game, #380). The drop waits for it; a drop sent before is lost, and the item then lands in hand.
+local PICKUP_MAX = 2             -- seconds the cursor may take to show a picked-up item
+local TRACE_KEEP = 400           -- lines of the organize log kept in the saved variables
 local DROP_FAILS = 6             -- drops the server refused in a row before a run stops
 local LOCK_TIMEOUT = 8           -- seconds a slot may stay locked before the run gives up
 local INFO_WAIT = 3              -- seconds to wait for item names before a run starts anyway
@@ -1128,6 +1131,7 @@ end
 -- session, to moving through free slots.
 function GuildBank:Resync(run, p)
     local s = state()
+    if p then self:Problem(p.swap and "swap did not land" or "move did not land", p, GetTime() - p.at) end
     if p and p.swap and p.inHand and run.swaps then
         run.swaps, s.noSwap = false, true   -- noSwap: what the last run found, for the tests and /gos bank debug
         self:Trace("the bank refused a swap: moving through free slots from now on")
@@ -1167,7 +1171,17 @@ function GuildBank:SortStep()
     local held = run.holding
     if held then
         local waited = now_ - held.at
-        if (GuildOS.Compat.CursorHasItem() and waited >= HOLD_MIN) or waited >= HOLD_MAX then
+        local inHand = GuildOS.Compat.CursorHasItem()
+        if not inHand and waited >= PICKUP_MAX then
+            -- The pickup was never taken: nothing to drop. Note what it was, let go, try again.
+            run.holding = nil
+            self:Problem("pickup not taken", held, waited)
+            if GuildOS.Compat.CursorHasItem() then GuildOS.Compat.ClearCursor() end
+            run.fails = (run.fails or 0) + 1
+            if run.fails >= DROP_FAILS then return self:StopSort("refused") end
+            return again(backoff(run.fails))
+        end
+        if inHand and (held.sameFrame or waited >= HOLD_MIN) then
             run.holding = nil
             -- Whether the pickup was taken: a swap is judged refused only when the item was in hand.
             held.inHand = GuildOS.Compat.CursorHasItem()
@@ -1182,8 +1196,9 @@ function GuildBank:SortStep()
             held.at = now_
             run.pending[#run.pending + 1] = held
             run.busy[held.move.from], run.busy[held.move.to] = true, true
-            self:Trace("drop %d -> %d%s (held %.2fs, %d in flight)", held.move.from, held.move.to,
-                held.swap and " (swap)" or "", waited, #run.pending)
+            held.held = waited
+            self:Trace("drop %d -> %d%s (held %.2fs%s)", held.move.from, held.move.to,
+                held.swap and " (swap)" or "", waited, held.sameFrame and ", same frame" or "")
         end
         return again(POLL)
     end
@@ -1229,9 +1244,9 @@ function GuildBank:SortStep()
                 self:Trace("drops in the pickup's frame are not taken here: waiting for the cursor from now on")
             end
             p.redrops = (p.redrops or 0) + 1
+            self:Problem("still in hand after the drop", p, now_ - p.at)
             p.at = now_
             GuildOS.Compat.GuildBankPickup(tab, t)
-            self:Trace("still in hand: drop on %d again (%d)", t, p.redrops)
             return again(POLL)
         elseif free and now_ - p.at >= VERIFY_MAX then
             -- Still in hand: drop it again where it was going, before giving the move up.
@@ -1260,7 +1275,12 @@ function GuildBank:SortStep()
                 return again(POLL)
             end
         end
-        if #run.pending == 0 then GuildOS.Compat.ClearCursor() end
+        if #run.pending == 0 then
+            local ctype, cid = GuildOS.Compat.CursorInfo()
+            self:Keep(string.format("PROBLEM an item arrived in hand late (cursor %s %s): let go", tostring(ctype), tostring(cid)))
+            self:Trace("an item arrived in hand late: let go")
+            GuildOS.Compat.ClearCursor()
+        end
         return again(POLL)
     end
 
@@ -1330,8 +1350,12 @@ function GuildBank:SortStep()
     else
         GuildOS.Compat.GuildBankPickup(tab, move.from)
     end
-    self:Trace("%s %d (x%s) for %d", move.op, move.from, tostring(move.count or src.c), move.to)
-    run.holding = { move = move, at = now_ - HOLD_MAX, swap = dst ~= nil and dst.k ~= src.k }
+    local real = slots[move.from]
+    run.holding = { move = move, at = now_, swap = dst ~= nil and dst.k ~= src.k,
+                    item = real and { id = real.id, l = real.l, c = real.c },
+                    other = slots[move.to] and { id = slots[move.to].id, l = slots[move.to].l, c = slots[move.to].c } }
+    self:Trace("%s %d (x%s) for %d: %s", move.op, move.from, tostring(move.count or src.c), move.to,
+        self:Describe(run.holding.item))
     -- The cursor already holds it: drop in the same frame, as BankStack does, unless this session saw
     -- such a drop not taken. Otherwise the next steps drop it once the cursor shows it.
     if s.sameFrame ~= false and GuildOS.Compat.CursorHasItem() then
@@ -1341,7 +1365,6 @@ function GuildBank:SortStep()
         run.current = move
         return self:SortStep()
     end
-    run.holding.at = now_
     run.moves = run.moves + 1
     if run.moves > run.total then run.total = run.moves end
     run.current = move
@@ -1368,7 +1391,39 @@ local STOP_TEXT = {
 
 -- What the organize run does, step by step, while /gos bank debug is on.
 function GuildBank:Trace(fmt, ...)
-    if state().debug then GuildOS:Print("|cff888888[bank]|r " .. string.format(fmt, ...)) end
+    if not state().debug then return end
+    local line = string.format(fmt, ...)
+    GuildOS:Print("|cff888888[bank]|r " .. line)
+    self:Keep(line)
+end
+
+-- Keep one line in the organize log (saved variables, so it can be read after the session).
+function GuildBank:Keep(line)
+    local db = self:Store()
+    db.trace = db.trace or {}
+    db.trace[#db.trace + 1] = (date and date("%H:%M:%S ") or "") .. line
+    while #db.trace > TRACE_KEEP do table.remove(db.trace, 1) end
+end
+
+-- An item as the log names it: name, id, count, class and subclass, quality.
+function GuildBank:Describe(it)
+    if not it or not it.id then return "nothing" end
+    local info = self:ItemInfo(it.id, it.l)
+    return string.format("%s (id %d, x%d, class %s/%s, q%s)", info.name or "?", it.id, it.c or 0,
+        tostring(info.classID), tostring(info.subClassID), tostring(info.quality))
+end
+
+-- A move that went wrong, always kept in the log (and shown while /gos bank debug is on): what it
+-- moved, from where to where, what was there, how long it waited and what the cursor said.
+function GuildBank:Problem(what, h, waited)
+    local m = h.move
+    local ctype, cid = GuildOS.Compat.CursorInfo()
+    local line = string.format("PROBLEM %s: tab %s, %d -> %d%s, %s onto %s, waited %.2fs (held %.2fs%s), cursor %s %s",
+        what, tostring(state().sort and state().sort.tab), m.from, m.to, h.swap and " (swap)" or "",
+        self:Describe(h.item), self:Describe(h.other), waited or 0, h.held or 0, h.sameFrame and ", same frame" or "",
+        tostring(ctype), tostring(cid))
+    if state().debug then GuildOS:Print("|cffff8800[bank]|r " .. line) end
+    self:Keep(line)
 end
 
 function GuildBank:StopSort(reason)
@@ -1475,6 +1530,17 @@ function GuildBank:HandleCommand(args)
         local s = state()
         s.debug = not s.debug
         GuildOS:Print(s.debug and L["Bank debug on: each move of an organize run is printed."] or L["Bank debug off."])
+    elseif verb == "log" then
+        local db = self:Store()
+        if args[2] == "clear" then
+            db.trace = {}
+            GuildOS:Print(L["Bank log cleared."])
+            return
+        end
+        local lines = db.trace or {}
+        local n = math.min(#lines, tonumber(args[2]) or 30)
+        GuildOS:Print(string.format(L["Last %d lines of the bank log (all of it is in WTF\\...\\SavedVariables\\GuildOS.lua):"], n))
+        for i = #lines - n + 1, #lines do GuildOS:Print(lines[i]) end
     elseif verb == "stop" then
         self:StopSort("cancel")
     elseif verb == "sync" then

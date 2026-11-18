@@ -3233,3 +3233,5 @@ L["Bank debug on: each move of an organize run is printed."] = "Diagnostic de la
 L["Bank debug off."] = "Diagnostic de la banque désactivé."
 L["Tab %d is full: free one slot and it can be put in order."] = "L'onglet %d est plein : libérez un emplacement et il pourra être rangé."
 L["This tab is full: free one slot and it can be put in order."] = "Cet onglet est plein : libérez un emplacement et il pourra être rangé."
+L["Bank log cleared."] = "Journal de la banque effacé."
+L["Last %d lines of the bank log (all of it is in WTF\\...\\SavedVariables\\GuildOS.lua):"] = "%d dernières lignes du journal de la banque (tout est dans WTF\\...\\SavedVariables\\GuildOS.lua) :"

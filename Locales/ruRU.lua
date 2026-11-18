@@ -3113,3 +3113,5 @@ L["Bank debug on: each move of an organize run is printed."] = "Отладка �
 L["Bank debug off."] = "Отладка банка выключена."
 L["Tab %d is full: free one slot and it can be put in order."] = "Вкладка %d заполнена: освободите одну ячейку, и её можно будет упорядочить."
 L["This tab is full: free one slot and it can be put in order."] = "Эта вкладка заполнена: освободите одну ячейку, и её можно будет упорядочить."
+L["Bank log cleared."] = "Журнал банка очищен."
+L["Last %d lines of the bank log (all of it is in WTF\\...\\SavedVariables\\GuildOS.lua):"] = "Последние %d строк журнала банка (весь журнал в WTF\\...\\SavedVariables\\GuildOS.lua):"

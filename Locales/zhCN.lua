@@ -3113,3 +3113,5 @@ L["Bank debug on: each move of an organize run is printed."] = "银行诊断已�
 L["Bank debug off."] = "银行诊断已关闭。"
 L["Tab %d is full: free one slot and it can be put in order."] = "标签页 %d 已满：空出一格即可整理。"
 L["This tab is full: free one slot and it can be put in order."] = "此标签页已满：空出一格即可整理。"
+L["Bank log cleared."] = "银行日志已清除。"
+L["Last %d lines of the bank log (all of it is in WTF\\...\\SavedVariables\\GuildOS.lua):"] = "银行日志的最后 %d 行（全部在 WTF\\...\\SavedVariables\\GuildOS.lua）："

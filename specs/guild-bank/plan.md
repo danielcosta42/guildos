@@ -99,3 +99,11 @@ again while the server was still answering (an item shows on the cursor until th
 drop is now tried again only after twice the run's measured answer time (0.6 s at least), and only
 while both its slots still show what they held before it. Swaps are tried afresh each run: that log
 ran without them, from an earlier run's refusal.
+
+Fifth in-game log: the pickup goes through the server too, and the cursor sometimes took over 0.8 s
+to show the item; the drop, sent at 0.8 s regardless, was lost and the item landed in hand later.
+The drop now waits for the cursor (2 s at most); a pickup never taken is let go and tried again.
+Every problem (pickup not taken, still in hand, move or swap not landed, item arriving in hand late)
+is kept in `GuildOS.db.guildBank.trace` (400 lines, in the saved variables) with the item's name, id,
+count, class, subclass and quality, the slots, the waits and what `GetCursorInfo` said;
+`/gos bank log [n]` prints the last lines, `/gos bank log clear` empties it.

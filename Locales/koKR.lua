@@ -3113,3 +3113,5 @@ L["Bank debug on: each move of an organize run is printed."] = "은행 진단 �
 L["Bank debug off."] = "은행 진단 꺼짐."
 L["Tab %d is full: free one slot and it can be put in order."] = "탭 %d이(가) 가득 찼습니다: 한 칸을 비우면 정리할 수 있습니다."
 L["This tab is full: free one slot and it can be put in order."] = "이 탭은 가득 찼습니다: 한 칸을 비우면 정리할 수 있습니다."
+L["Bank log cleared."] = "은행 로그를 지웠습니다."
+L["Last %d lines of the bank log (all of it is in WTF\\...\\SavedVariables\\GuildOS.lua):"] = "은행 로그 마지막 %d줄 (전체는 WTF\\...\\SavedVariables\\GuildOS.lua):"

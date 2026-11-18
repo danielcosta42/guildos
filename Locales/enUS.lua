@@ -1156,3 +1156,5 @@ L["Bank debug on: each move of an organize run is printed."] = "Bank debug on: e
 L["Bank debug off."] = "Bank debug off."
 L["Tab %d is full: free one slot and it can be put in order."] = "Tab %d is full: free one slot and it can be put in order."
 L["This tab is full: free one slot and it can be put in order."] = "This tab is full: free one slot and it can be put in order."
+L["Bank log cleared."] = "Bank log cleared."
+L["Last %d lines of the bank log (all of it is in WTF\\...\\SavedVariables\\GuildOS.lua):"] = "Last %d lines of the bank log (all of it is in WTF\\...\\SavedVariables\\GuildOS.lua):"
