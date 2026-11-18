@@ -1191,6 +1191,14 @@ function Compat.GroupRoster()
     return members, count
 end
 
+-- Turn my party into a raid (issue #378): C_PartyInfo's where the client has it, the old global
+-- otherwise. False where neither exists or the game refuses.
+function Compat.ConvertToRaid()
+    local convert = (C_PartyInfo and C_PartyInfo.ConvertToRaid) or ConvertToRaid
+    if not convert then return false end
+    return (pcall(convert))
+end
+
 -- Whether I may invite somebody: alone, the group's leader, or a raid's assistant (issue #341).
 function Compat.CanInvite()
     local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0

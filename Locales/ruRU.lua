@@ -2978,3 +2978,12 @@ L["by %s"] = "игрок: %s"
 L["Choose your style"] = "Выберите стиль"
 L["How should Guild OS look? You can change it later in %s > %s."] = "Как должен выглядеть Guild OS? Это можно изменить позже: %s > %s."
 L["Finish and reload"] = "Готово и перезагрузить"
+
+-- Groups: the party forms itself, a notice for the guild, the line again in guild chat (#378)
+L[" Whisper me \"inv\" for an invite."] = " Шепните мне \"inv\" для приглашения."
+L["Inviting %s, who whispered for a spot."] = "Приглашаю %s: попросил место шёпотом."
+L["Group notices |cff4CFF4Con|r."] = "Уведомления о группах |cff4CFF4Cвкл|r."
+L["Group notices |cffFF4444off|r."] = "Уведомления о группах |cffFF4444выкл|r."
+L["Invite whoever asks"] = "Приглашать всех, кто просит"
+L["Ask as %s"] = "Попросить как %s"
+L["Show a small notice when a guildmate forms a group for my level"] = "Показывать небольшое уведомление, когда согильдиец собирает группу моего уровня"

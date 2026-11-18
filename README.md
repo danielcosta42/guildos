@@ -125,6 +125,9 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 - **I am looking**: list yourself for one or several activities, with the roles you play (tank, healer, damage), a note and for how long
 - **Form a group**: publish a group with its open spots by role; guildmates ask for a spot with one click, and only the leader hears it
 - **The queue**: the leader invites or declines from the group's card; the spot closes when the player joins, and with no spot left the listing comes down by itself
+- **The party forms itself**: with "Invite whoever asks" on, each request is an invite at once, and a guildmate without the addon whispers the leader `inv` (or `+`) to get one; a raid-sized group turns the party into a raid as soon as somebody joins. With it off, the leader answers from a small notice, tab closed
+- **A discreet notice**: when a guildmate forms a group for your level, a small card at the top of the screen offers a spot in your role and goes away by itself (never in combat or while you are in a group; `/gos avail toast off` or Settings to turn it off)
+- **Said again in guild chat**: a group listed with "Also post in guild chat" repeats its line every 10 minutes with how full it is, until it fills or comes down
 - No server: it all travels on the guild's addon channel, expires on its own and reaches whoever logs in later. `/gos avail` opens it
 
 ### Tab System
@@ -150,7 +153,7 @@ Pressing **J** (or however you open the guild frame) opens Guild OS instead of t
 | `/guildos` or `/gos` | Toggle the roster window |
 | `/guildos scan` | Re-collect your local character data |
 | `/guildos sync` | Broadcast your data to the guild |
-| `/guildos avail` | Open the Groups tab; `/guildos avail tank <text>` lists you, `/guildos avail off` delists you |
+| `/guildos avail` | Open the Groups tab; `/guildos avail tank <text>` lists you, `/guildos avail off` delists you, `/guildos avail toast on\|off` the notice for new groups |
 | `/guildos reset` | Wipe saved data and reload |
 
 

@@ -3098,3 +3098,12 @@ L["by %s"] = "par %s"
 L["Choose your style"] = "Choisissez votre style"
 L["How should Guild OS look? You can change it later in %s > %s."] = "Quel style pour Guild OS ? Vous pourrez le changer plus tard dans %s > %s."
 L["Finish and reload"] = "Terminer et recharger"
+
+-- Groups: the party forms itself, a notice for the guild, the line again in guild chat (#378)
+L[" Whisper me \"inv\" for an invite."] = " Chuchotez-moi \"inv\" pour une invitation."
+L["Inviting %s, who whispered for a spot."] = "Invitation de %s, qui a chuchoté pour une place."
+L["Group notices |cff4CFF4Con|r."] = "Avis de groupe |cff4CFF4Cactivés|r."
+L["Group notices |cffFF4444off|r."] = "Avis de groupe |cffFF4444désactivés|r."
+L["Invite whoever asks"] = "Inviter quiconque demande"
+L["Ask as %s"] = "Demander en %s"
+L["Show a small notice when a guildmate forms a group for my level"] = "Afficher un petit avis quand un membre de la guilde forme un groupe de mon niveau"

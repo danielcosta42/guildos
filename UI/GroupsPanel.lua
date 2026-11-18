@@ -207,7 +207,7 @@ end
 local function buildComposer()
     local B, G = GuildOS.LFGBoard, GuildOS.Groups
     local f = CreateFrame("Frame", "GuildOSGroupComposer", UIParent, "BackdropTemplate")
-    f:SetSize(380, 372)
+    f:SetSize(380, 398)
     f:SetPoint("CENTER")
     f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(f) })
     f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
@@ -317,6 +317,12 @@ local function buildComposer()
     chat.checkbox.onChanged = function(_, checked) B:SetPref("postToGuild", checked and true or false) end
     y = y - 26
 
+    -- A group's own (#378): whoever asks, with the addon or by whispering "inv", is invited at once.
+    local auto = UI:CreateCheckbox(f, L["Invite whoever asks"], 18)
+    auto:SetPoint("TOPLEFT", PAD - 2, y)
+    auto.checkbox.onChanged = function(_, checked) B:SetPref("autoInvite", checked and true or false) end
+    y = y - 26
+
     local hint = UI:CreateText(f, "", 11, C.danger.r, C.danger.g, C.danger.b)
     hint:SetPoint("TOPLEFT", PAD, y)
     hint:SetWidth(f:GetWidth() - PAD * 2)
@@ -339,6 +345,7 @@ local function buildComposer()
             actText:SetText(f.act and B:ActivityName(f.act) or L["Pick what the group is for."])
         end
         onlyBtn:SetShown(seek and #f.acts > 1 and f.picked ~= nil)
+        auto:SetShown(not seek)
         for _, letter in ipairs(LETTERS) do
             chips[letter]:SetShown(seek)
             steppers[letter]:SetShown(not seek)
@@ -420,6 +427,7 @@ local function buildComposer()
         local current = (mode == "group" and group) or (mode == "seek" and mine) or nil
         note:SetText(current and current.note or "")
         chat.checkbox:SetChecked(B:Pref("postToGuild") and true or false)
+        auto.checkbox:SetChecked(B:Pref("autoInvite") and true or false)
         hint:SetText("")
         self.mode = mode
         paint()
@@ -434,6 +442,105 @@ end
 local function openComposer(act, mode)
     composer = composer or buildComposer()
     composer:Open(act, mode)
+end
+
+----------------------------------------------------------------------
+-- The notice (#378): a small card at the top of the screen that goes away by itself. Two kinds,
+-- which Modules/Groups.lua decides: a guildmate formed a group I fit ("group"), or somebody asks for
+-- a spot in mine and I do not invite whoever asks ("request"). One at a time: the newer replaces it.
+----------------------------------------------------------------------
+local TOAST_W, TOAST_H = 300, 66
+local TOAST_SECONDS = { group = 12, request = 30 }
+local toast
+
+local function buildToast()
+    local t = CreateFrame("Button", "GuildOSGroupsToast", UIParent, "BackdropTemplate")
+    t:SetSize(TOAST_W, TOAST_H)
+    t:SetPoint("TOP", 0, -110)
+    t:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = UI:Edge(t) })
+    t:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 0.96)
+    t:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+    t:SetFrameStrata("DIALOG")
+    t:SetMovable(true)
+    t:RegisterForDrag("LeftButton")
+    t:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    t:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    t.title = UI:CreateTitle(t, "", 12)
+    t.title:SetPoint("TOPLEFT", 10, -8)
+    t.title:SetWidth(TOAST_W - 40)
+    t.title:SetJustifyH("LEFT")
+    t.title:SetWordWrap(false)
+    t.body = UI:CreateText(t, "", 11)
+    t.body:SetPoint("TOPLEFT", 10, -26)
+    t.body:SetWidth(TOAST_W - 20)
+    t.body:SetJustifyH("LEFT")
+    t.body:SetWordWrap(false)
+    local close = UI:CreateCloseButton(t)
+    close:SetPoint("TOPRIGHT", -4, -4)
+    close:SetScript("OnClick", function() t:Hide() end)
+    t.primary = UI:SetButtonVariant(UI:CreateButton(t, "", 110, 20), "primary")
+    t.primary:SetPoint("BOTTOMRIGHT", -8, 8)
+    t.secondary = UI:CreateButton(t, "", 90, 20)
+    t.secondary:SetPoint("RIGHT", t.primary, "LEFT", -6, 0)
+    -- The card itself opens the tab, where the rest is.
+    t:SetScript("OnClick", function(self)
+        self:Hide()
+        GuildOS.LFGBoard:Show()
+    end)
+    t:Hide()
+    return t
+end
+
+local function fitButton(b, text)
+    b.label:SetText(text)
+    b:SetWidth(math.max(70, math.ceil(b.label:GetStringWidth()) + 20))
+end
+
+-- n = { kind, key, name, act?, need?, note?, role? }, from Modules/Groups.lua.
+function GuildOS:GroupsToast(n)
+    if not (n and n.kind and TOAST_SECONDS[n.kind]) then return end
+    local B, G = GuildOS.LFGBoard, GuildOS.Groups
+    toast = toast or buildToast()
+    local key = n.key
+    if n.kind == "group" then
+        local role = G:BestRole(n.need, B:Pref("roles") or "")
+        toast.title:SetText(L["Groups being formed"])
+        local body = string.format("%s: %s", n.name, B:ActivityName(n.act)) .. DOT ..
+            string.format(L["open: %s"], G:NeedText(n.need))
+        toast.body:SetText(body)
+        fitButton(toast.primary, string.format(L["Ask as %s"], B:RoleName(ROLE_OF[role] or "ANY")))
+        toast.primary:SetShown(role ~= nil)
+        toast.primary:SetScript("OnClick", function()
+            toast:Hide()
+            if role then G:RequestSpot(key, role) end
+        end)
+        fitButton(toast.secondary, L["Whisper"])
+        toast.secondary:SetScript("OnClick", function()
+            toast:Hide()
+            whisper(n.name)
+        end)
+    else
+        toast.title:SetText(L["Asking for a spot"])
+        toast.body:SetText(string.format(L["%s asks for a spot in your group as %s."], n.name,
+            B:RoleName(ROLE_OF[n.role])))
+        fitButton(toast.primary, L["Invite"])
+        toast.primary:Show()
+        toast.primary:SetScript("OnClick", function()
+            toast:Hide()
+            G:Invite(key)
+        end)
+        fitButton(toast.secondary, L["Decline"])
+        toast.secondary:SetScript("OnClick", function()
+            toast:Hide()
+            G:Decline(key)
+        end)
+    end
+    local shownAt = GetTime()
+    toast.shownAt = shownAt
+    toast:Show()
+    GuildOS.Compat.After(TOAST_SECONDS[n.kind], function()
+        if toast and toast.shownAt == shownAt then toast:Hide() end
+    end)
 end
 
 ----------------------------------------------------------------------

@@ -2978,3 +2978,12 @@ L["by %s"] = "%s 달성자"
 L["Choose your style"] = "스타일 선택"
 L["How should Guild OS look? You can change it later in %s > %s."] = "Guild OS를 어떤 모습으로 볼까요? 나중에 %s > %s에서 바꿀 수 있습니다."
 L["Finish and reload"] = "완료 후 다시 불러오기"
+
+-- Groups: the party forms itself, a notice for the guild, the line again in guild chat (#378)
+L[" Whisper me \"inv\" for an invite."] = " 초대를 원하면 \"inv\"라고 귓속말하세요."
+L["Inviting %s, who whispered for a spot."] = "귓속말로 자리를 요청한 %s 님을 초대합니다."
+L["Group notices |cff4CFF4Con|r."] = "파티 알림 |cff4CFF4C켜짐|r."
+L["Group notices |cffFF4444off|r."] = "파티 알림 |cffFF4444꺼짐|r."
+L["Invite whoever asks"] = "요청하는 사람 모두 초대"
+L["Ask as %s"] = "%s(으)로 요청"
+L["Show a small notice when a guildmate forms a group for my level"] = "길드원이 내 레벨에 맞는 파티를 모을 때 작은 알림 표시"

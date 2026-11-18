@@ -21,7 +21,8 @@ local ENTRY_COOLDOWN = 5   -- accept at most one entry per sender per 5s
 local GUILD_LINE_COOLDOWN = 300   -- at most one line in guild chat per 5 minutes
 
 LFGBoard.DEFAULTS = { notify = true, postToGuild = true, lastRole = "ANY", lastNote = "",
-                      lastTtl = DEFAULT_TTL, allianceScope = false, roles = "", lastMode = "seek" }
+                      lastTtl = DEFAULT_TTL, allianceScope = false, roles = "", lastMode = "seek",
+                      autoInvite = true, toast = true }
 LFGBoard.ROLES    = { "ANY", "TANK", "HEALER", "DPS" }
 -- The roles of a listing since issue #341: a subset of these letters, in this order. `role` above
 -- still goes out beside it, which is all a client before #341 reads.
@@ -502,13 +503,15 @@ end
 -- line when Modules/Groups.lua speaks for a group: one cooldown for both, so a leader cannot say two.
 function LFGBoard:_SayInGuild(role, note, acts, line)
     local prefs, now = GuildOS.db.lfgPrefs, GetServerTime()
-    if not IsInGuild() or now - (prefs.lastGuildLine or 0) < GUILD_LINE_COOLDOWN then return end
+    if not IsInGuild() or now - (prefs.lastGuildLine or 0) < GUILD_LINE_COOLDOWN then return false end
     if not line then
         line = role == "ANY" and L["[Guild OS] LFG"] or string.format(L["[Guild OS] LFG as %s"], roleDisplay(role))
         local what = self:Describe({ acts = acts, note = note })
         if what ~= "" then line = line .. ": " .. what end
     end
-    if GuildOS.Compat.SendChatMessage(line, "GUILD") then prefs.lastGuildLine = now end
+    if not GuildOS.Compat.SendChatMessage(line, "GUILD") then return false end
+    prefs.lastGuildLine = now
+    return true
 end
 
 local function durationDisplay(seconds)
@@ -538,7 +541,8 @@ end
 
 -- The few choices the Groups tab keeps between sessions. The panel asks and tells through these two:
 -- it never writes the saved table itself.
-local PREFS = { postToGuild = "boolean", allianceScope = "boolean", roles = "string", lastMode = "string" }
+local PREFS = { postToGuild = "boolean", allianceScope = "boolean", roles = "string", lastMode = "string",
+                autoInvite = "boolean", toast = "boolean" }
 function LFGBoard:Pref(key)
     local prefs = GuildOS.db and GuildOS.db.lfgPrefs
     return prefs and PREFS[key] and prefs[key]
@@ -586,11 +590,11 @@ function LFGBoard:_ParseAvailArgs(args, rest, defaultRole)
     -- by if you need a healer" would delist instead of post. notify keeps
     -- taking its on/off value.
     if (first == "off" or first == "stop") and #args == 1 then return "clear" end
-    if first == "notify" then
+    if first == "notify" or first == "toast" then
         local v = args[2] and args[2]:lower()
-        if v == "on" then return "notify", nil, nil, true end
-        if v == "off" then return "notify", nil, nil, false end
-        return "notify"
+        if v == "on" then return first, nil, nil, true end
+        if v == "off" then return first, nil, nil, false end
+        return first
     end
     -- Only a leading token counts as a role, so "need 2 dps" stays all note.
     local role, note = ROLE_TOKENS[first], rest
@@ -608,6 +612,10 @@ function LFGBoard:HandleCommand(args, rest)
     elseif action == "notify" then
         if value ~= nil then prefs.notify = value end
         GuildOS:Print(prefs.notify and L["LFG notify |cff4CFF4Con|r."] or L["LFG notify |cffFF4444off|r."])
+    elseif action == "toast" then
+        -- The small notice when a guildmate forms a group (#378).
+        if value ~= nil then prefs.toast = value end
+        GuildOS:Print(prefs.toast ~= false and L["Group notices |cff4CFF4Con|r."] or L["Group notices |cffFF4444off|r."])
     elseif action == "set" then
         -- Print the stored entry, so the confirmation shows the sanitized note
         -- and the clamped duration that guildmates will actually see.
@@ -755,6 +763,8 @@ function LFGBoard:_RegisterTests()
         if action ~= "notify" or value ~= nil then return false, "bare notify reports only" end
         action, _, _, value = LFGBoard:_ParseAvailArgs({ "notify", "on" }, "notify on")
         if action ~= "notify" or value ~= true then return false, "notify on -> true" end
+        action, _, _, value = LFGBoard:_ParseAvailArgs({ "toast", "off" }, "toast off")
+        if action ~= "toast" or value ~= false then return false, "toast off -> false (#378)" end
         action, _, _, value = LFGBoard:_ParseAvailArgs({ "notify", "off" }, "notify off")
         if action ~= "notify" or value ~= false then return false, "notify off -> false" end
         return true

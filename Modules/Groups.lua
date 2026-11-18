@@ -20,6 +20,12 @@ local GROUP_COOLDOWN = 5     -- accept at most one listing per sender per 5s
 local JOIN_COOLDOWN  = 2     -- and one request per sender per 2s
 local ASK_EVERY      = 3     -- so an asker never sends two requests inside the cooldown above
 local PUBLISH_EVERY  = 6     -- so a leader never sends two inside the cooldown above
+local ANNOUNCE_EVERY = 600   -- a listed group says it again in guild chat every 10 minutes (#378)
+local WHISPER_COOLDOWN = 10  -- one "inv" a sender every 10 s (#378)
+local LEVEL_SLACK    = 5     -- levels past an activity's range it still reads as mine (as the tiles)
+local PARTY_MAX      = 5
+-- What a guildmate with no addon whispers a leader for an invite (#378): the whole message, any case.
+local INVITE_WORDS = { inv = true, invite = true, ["+"] = true, ["+1"] = true }
 local LETTERS = { "T", "H", "D" }
 local ROLE_OF = { T = "TANK", H = "HEALER", D = "DPS" }
 
@@ -32,7 +38,8 @@ local function myKey() return board():MyKey() end
 local function state()
     local s = GuildOS.State.groups
     if not s then
-        s = { requests = {}, asked = {}, askedAt = {}, askPending = {}, groupCd = {}, joinCd = {}, lastPublish = 0 }
+        s = { requests = {}, asked = {}, askedAt = {}, askPending = {}, groupCd = {}, joinCd = {}, whisperCd = {},
+              lastPublish = 0 }
         GuildOS.State.groups = s
     end
     return s
@@ -45,9 +52,23 @@ function Groups:Initialize()
     if not self.frame then
         self.frame = CreateFrame("Frame")
         GuildOS.Compat.RegisterEvent(self.frame, "GROUP_ROSTER_UPDATE")
-        self.frame:SetScript("OnEvent", function() GuildOS:SafeCall(Groups.OnGroupRoster, Groups) end)
+        GuildOS.Compat.RegisterEvent(self.frame, "CHAT_MSG_WHISPER")
+        self.frame:SetScript("OnEvent", function(_, event, text, sender)
+            if event == "CHAT_MSG_WHISPER" then
+                GuildOS:SafeCall(Groups.OnWhisper, Groups, text, sender)
+            else
+                GuildOS:SafeCall(Groups.OnGroupRoster, Groups)
+            end
+        end)
+        -- Once a minute is enough for a line every ten (#378).
+        self.ticker = GuildOS.Compat.NewTicker(60, function() GuildOS:SafeCall(Groups.Tick, Groups) end)
     end
     self:_RegisterTests()
+end
+
+local function pref(key)
+    local prefs = GuildOS.db and GuildOS.db.lfgPrefs
+    return prefs and prefs[key]
 end
 
 ----------------------------------------------------------------------
@@ -67,6 +88,33 @@ function Groups:SizeOf(act)
     local cat = GuildOS.GroupActivities
     local it = cat and cat.byId[act]
     return (it and it.size) or SIZE_DEFAULT
+end
+
+-- Whether an activity is one for a player of this level: inside its range, give or take LEVEL_SLACK,
+-- and any level for one with no range. An id this client does not know is nobody's (#378).
+function Groups:FitsLevel(act, level)
+    local cat = GuildOS.GroupActivities
+    local it = cat and cat.byId[act]
+    if not it then return false end
+    if not it.min or not level then return true end
+    return level >= it.min - LEVEL_SLACK and level <= (it.max or it.min) + LEVEL_SLACK
+end
+
+-- The role I would ask for in a group that needs `need`: the first of mine it has a spot for, or,
+-- with no roles of mine set, the first spot it has. nil when it has none for me.
+function Groups:BestRole(need, myRoles)
+    myRoles = myRoles or ""
+    for _, k in ipairs(LETTERS) do
+        if (myRoles == "" or myRoles:find(k, 1, true)) and ((need and need[k]) or 0) > 0 then return k end
+    end
+    return nil
+end
+
+-- Whether a whisper is a request for an invite: one of INVITE_WORDS, alone (#378).
+function Groups:_IsInviteWord(text)
+    if type(text) ~= "string" then return false end
+    local word = text:match("^%s*(%S+)%s*$")
+    return word ~= nil and INVITE_WORDS[word:lower()] == true
 end
 
 -- The open spots of a listing: a whole number per role, and never more in all than `room`, the
@@ -270,15 +318,38 @@ function Groups:Create(act, need, note, ttl, toGuild)
     local waiting = {}
     for key in pairs(state().asked) do waiting[#waiting + 1] = key end
     for _, key in ipairs(waiting) do self:CancelRequest(key) end
+    -- The line is said again every ANNOUNCE_EVERY while the group is up (#378); the flag stays here,
+    -- it never crosses the wire (payloadOf).
+    g.announce = toGuild and true or nil
+    -- A line the five-minute cooldown held back is tried again on the next tick.
     if toGuild then
-        local name, spots = B:ActivityName(act), self:NeedText(need)
-        local line = string.format(L["[Guild OS] Group for %s, looking for %s"], name, spots)
-        if g.note ~= "" then line = line .. ": " .. g.note end
-        B:_SayInGuild(nil, nil, nil, line)
+        g.announcedAt = B:_SayInGuild(nil, nil, nil, self:_GuildLine(g)) and g.ts or (g.ts - ANNOUNCE_EVERY)
     end
     self:_Publish()
     B:Refresh()
     return g
+end
+
+-- The line in guild chat for a group: what for, how full, the spots, the note, and, when I invite
+-- whoever asks, the word that gets a guildmate with no addon an invite (#378).
+function Groups:_GuildLine(g)
+    local name = string.format("%s (%d/%d)", board():ActivityName(g.act), g.n or 1, g.max or SIZE_DEFAULT)
+    local line = string.format(L["[Guild OS] Group for %s, looking for %s"], name, self:NeedText(g.need))
+    if g.note and g.note ~= "" then line = line .. ": " .. g.note end
+    if pref("autoInvite") then line = line .. L[" Whisper me \"inv\" for an invite."] end
+    return line
+end
+
+-- Once a minute: a group listed with "also post in guild chat" says it again every ANNOUNCE_EVERY,
+-- with the spots it has by then. A line the cooldown or the game held back is tried next minute.
+function Groups:Tick(now)
+    local g = self:Mine()
+    if not g or not g.announce or self:OpenSpots(g.need) == 0 then return false end
+    now = now or GetServerTime()
+    if now - (g.announcedAt or g.ts or 0) < ANNOUNCE_EVERY then return false end
+    if not board():_SayInGuild(nil, nil, nil, self:_GuildLine(g)) then return false end
+    g.announcedAt = now
+    return true
 end
 
 -- Empty my queue. Whoever was waiting is told the group closed, which is not a refusal.
@@ -332,12 +403,33 @@ function Groups:HandleGroup(sender, data, channel)
         store[key] = g
         -- What I asked, I asked of the group that was listed.
         if not wasActive or was.act ~= g.act then state().asked[key] = nil end
-        local prefs = GuildOS.db.lfgPrefs
-        if age == 0 and not wasActive and prefs and prefs.notify and key ~= myKey() then
-            GuildOS:Print(string.format(L["%s is forming a group for %s."], short, board():ActivityName(g.act)))
-        end
+        if age == 0 and not wasActive and key ~= myKey() then self:_Announce(key, short, g) end
     end
     board():Refresh()
+end
+
+-- Whether a new group is worth a notice on screen (#378): one this client knows, for my level, and
+-- me free to take it: out of combat, in no group, leading none. The rest still reach the board.
+function Groups:_ShouldToast(g, level, inCombat, inGroup)
+    if pref("toast") == false or inCombat or inGroup or self:Mine() then return false end
+    return self:FitsLevel(g.act, level) and self:BestRole(g.need, board():Pref("roles") or "") ~= nil
+end
+
+-- A guildmate just listed a group: a small notice that goes away by itself where it fits me, the
+-- chat line of #341 otherwise (when notices in chat are on).
+function Groups:_Announce(key, short, g)
+    local inGroup = (GetNumGroupMembers and (GetNumGroupMembers() or 0) > 1) or false
+    local inCombat = (InCombatLockdown and InCombatLockdown()) and true or false
+    if GuildOS.GroupsToast and self:_ShouldToast(g, UnitLevel and UnitLevel("player"), inCombat, inGroup) then
+        GuildOS:SafeCall(GuildOS.GroupsToast, GuildOS, { kind = "group", key = key, name = short, act = g.act,
+            need = g.need, note = g.note })
+        return "toast"
+    end
+    if pref("notify") then
+        GuildOS:Print(string.format(L["%s is forming a group for %s."], short, board():ActivityName(g.act)))
+        return "chat"
+    end
+    return nil
 end
 
 ----------------------------------------------------------------------
@@ -403,12 +495,44 @@ function Groups:Requests()
     return out
 end
 
+-- A party for a group larger than one becomes a raid as soon as it can (two in it), so the sixth
+-- invite never meets a full party (#378). Only the leader can, and the game says so itself.
+function Groups:_RaidUp(g, count)
+    g = g or self:Mine()
+    if not g or g.max <= PARTY_MAX then return false end
+    if count == nil then count = select(2, GuildOS.Compat.GroupRoster()) end
+    if count < 2 or (IsInRaid and IsInRaid()) then return false end
+    if not (UnitIsGroupLeader and UnitIsGroupLeader("player")) then return false end
+    return GuildOS.Compat.ConvertToRaid()
+end
+
 function Groups:Invite(key)
     local r = state().requests[key]
     if not r then return false end
     r.state = "invited"
+    self:_RaidUp()
     GuildOS.Compat.InviteUnit(r.from)
     board():Refresh()
+    return true
+end
+
+-- A whisper from a guildmate with no addon: "inv" gets an invite into my listed group while it has
+-- a spot and I invite whoever asks (#378). Only from somebody on the roster, never one already in
+-- the group, at most once a sender every WHISPER_COOLDOWN. `schedule` is injectable for the tests.
+function Groups:OnWhisper(text, sender, schedule)
+    if GuildOS.Compat.IsSecret(text, sender) or type(sender) ~= "string" then return false end
+    if not self:_IsInviteWord(text) or not pref("autoInvite") then return false end
+    local g = self:Mine()
+    if not g or self:OpenSpots(g.need) == 0 or not GuildOS.Compat.CanInvite() then return false end
+    local key, shown = GuildOS:RosterKey(sender)
+    if not key or key == myKey() then return false end
+    local short = shown or sender:match("^([^-]+)") or sender
+    local members = GuildOS.Compat.GroupRoster()
+    if GuildOS.Compat.InGroup(members, key) then return false end
+    if rateLimited(state().whisperCd, key, WHISPER_COOLDOWN, schedule) then return false end
+    self:_RaidUp(g)
+    GuildOS.Compat.InviteUnit(sender)
+    GuildOS:Print(string.format(L["Inviting %s, who whispered for a spot."], short))
     return true
 end
 
@@ -465,6 +589,14 @@ function Groups:HandleJoin(sender, data, channel)
         if not known then
             GuildOS:Print(string.format(L["%s asks for a spot in your group as %s."], short,
                 board():RoleName(ROLE_OF[role])))
+            -- Invite whoever asks (#378): the party forms as the requests arrive. Otherwise the leader
+            -- answers from a notice, with the tab closed.
+            if pref("autoInvite") then
+                self:Invite(key)
+            elseif GuildOS.GroupsToast then
+                GuildOS:SafeCall(GuildOS.GroupsToast, GuildOS, { kind = "request", key = key, name = short,
+                    role = role })
+            end
         end
     end
     board():Refresh()
@@ -507,8 +639,9 @@ function Groups:OnGroupRoster(members, count)
             self:Disband()
             GuildOS:Print(L["Your group is complete: the listing came down."])
             changed = false
-        elseif changed then
-            self:_Publish()
+        else
+            self:_RaidUp(g, count)
+            if changed then self:_Publish() end
         end
     end
 

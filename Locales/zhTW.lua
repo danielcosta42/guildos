@@ -2978,3 +2978,12 @@ L["by %s"] = "由 %s 達成"
 L["Choose your style"] = "選擇你的風格"
 L["How should Guild OS look? You can change it later in %s > %s."] = "Guild OS 要用什麼外觀？之後可以在 %s > %s 中變更。"
 L["Finish and reload"] = "完成並重新載入"
+
+-- Groups: the party forms itself, a notice for the guild, the line again in guild chat (#378)
+L[" Whisper me \"inv\" for an invite."] = " 密語我 \"inv\" 即可獲得邀請。"
+L["Inviting %s, who whispered for a spot."] = "正在邀請密語求位的 %s。"
+L["Group notices |cff4CFF4Con|r."] = "組隊提示 |cff4CFF4C開啟|r。"
+L["Group notices |cffFF4444off|r."] = "組隊提示 |cffFF4444關閉|r。"
+L["Invite whoever asks"] = "邀請所有申請者"
+L["Ask as %s"] = "以%s申請"
+L["Show a small notice when a guildmate forms a group for my level"] = "公會成員組建適合我等級的隊伍時顯示小提示"

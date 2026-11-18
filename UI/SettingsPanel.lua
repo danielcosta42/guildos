@@ -578,6 +578,9 @@ PAGES.chat = function(F, isOfficer)
         F:Check(L["Tell me when a guildmate posts on the LFG board"], nil,
             function() return GuildOS.db.lfgPrefs.notify end,
             function(checked) GuildOS.db.lfgPrefs.notify = checked end)
+        F:Check(L["Show a small notice when a guildmate forms a group for my level"], nil,
+            function() return GuildOS.db.lfgPrefs.toast ~= false end,
+            function(checked) GuildOS.db.lfgPrefs.toast = checked and true or false end)
     end
 end
 

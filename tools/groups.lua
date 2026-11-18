@@ -107,6 +107,8 @@ local function fresh()
   Board._cd = nil
   Board:Initialize()
   Groups:Initialize()
+  -- The tests of #341 answer each request by hand; #378's turn this back on where they test it.
+  GuildOS.db.lfgPrefs.autoInvite = false
   said, wire, printed, invited, timers = {}, {}, {}, {}, {}
   PARTY = {}
   CLOCK = CLOCK + 1000   -- past every publish window
@@ -144,7 +146,7 @@ check(out and out.to == nil and out.p.act == "steamvault" and out.p.age == 0 and
   "it goes to the guild, with its age and never a timestamp")
 check(out.priority == "NORMAL", "ahead of the bulk sync, so two listings never leave back to back")
 check(#said == 1 and said[1].chan == "GUILD"
-  and said[1].msg == "[Guild OS] Group for The Steamvault, looking for 1 Tank, 1 Healer, 2 DPS: ab",
+  and said[1].msg == "[Guild OS] Group for The Steamvault (1/5), looking for 1 Tank, 1 Healer, 2 DPS: ab",
   "and one line in guild chat: " .. tostring(said[1] and said[1].msg))
 
 fresh()
@@ -497,6 +499,136 @@ do
   check(not GuildOS.Compat.InGroup(members, GuildOS:GetPlayerKey("Lethaniel Blightwood", "Realm")), "elsewhere only the whole name counts")
   has.surnames = was
 end
+
+-- ── The party forms itself (#378) ───────────────────────────────────────
+local toasts = {}
+GuildOS.GroupsToast = function(_, n) toasts[#toasts + 1] = n end
+local converted = 0
+function ConvertToRaid() converted = converted + 1 end
+
+-- Invite whoever asks
+fresh()
+GuildOS.db.lfgPrefs.autoInvite = true
+Groups:Create("steamvault", { T = 1, D = 1 }, "", 3600, false)
+Groups:HandleJoin("Bea-Realm", { role = "T" }, "WHISPER")
+check(invited[1] == "Bea-Realm" and Groups:Requests()[1].state == "invited", "a request is an invite at once")
+check(#toasts == 0, "and the leader gets no notice to answer")
+runTimers()
+Groups:HandleJoin("Bea-Realm", { role = "T" }, "WHISPER")
+check(#invited == 1, "asking again is not a second invite")
+
+-- Without it, the leader answers from a notice
+fresh()
+toasts = {}
+Groups:Create("steamvault", { T = 1, D = 1 }, "", 3600, false)
+Groups:HandleJoin("Bea-Realm", { role = "D" }, "WHISPER")
+check(#invited == 0 and #toasts == 1 and toasts[1].kind == "request" and toasts[1].key == key("Bea")
+  and toasts[1].role == "D", "with invites by hand the request is a notice for the leader")
+
+-- "inv" by whisper, for a guildmate with no addon
+check(Groups:_IsInviteWord("inv") and Groups:_IsInviteWord("  INV ") and Groups:_IsInviteWord("+1")
+  and Groups:_IsInviteWord("invite"), "inv, invite, + and +1 are asking for an invite")
+check(not Groups:_IsInviteWord("inv pls") and not Groups:_IsInviteWord("invalid") and not Groups:_IsInviteWord(nil),
+  "a sentence, another word or nothing is not")
+fresh()
+check(not Groups:OnWhisper("inv", "Bea-Realm"), "with no group listed a whisper is just a whisper")
+Groups:Create("steamvault", { T = 1, D = 1 }, "", 3600, false)
+check(not Groups:OnWhisper("inv", "Bea-Realm") and #invited == 0, "and with invites by hand, too")
+GuildOS.db.lfgPrefs.autoInvite = true
+check(not Groups:OnWhisper("inv", "Zed-Realm") and #invited == 0, "nobody outside the guild is invited")
+check(not Groups:OnWhisper("hello", "Bea-Realm") and #invited == 0, "a whisper that asks nothing invites nobody")
+check(Groups:OnWhisper("inv", "Bea-Realm") and invited[1] == "Bea-Realm", "a guildmate who whispers inv is invited")
+check(printed[#printed] and printed[#printed]:find("Bea", 1, true) ~= nil, "and the leader is told who: " .. tostring(printed[#printed]))
+check(not Groups:OnWhisper("inv", "Bea-Realm") and #invited == 1, "whispering it again inside the cooldown does nothing")
+runTimers()
+PARTY = { "Bea" }
+check(not Groups:OnWhisper("inv", "Bea-Realm") and #invited == 1, "nor once already in the group")
+PARTY = {}
+Groups:Disband()
+check(not Groups:OnWhisper("inv", "Cid-Realm"), "a group taken down invites nobody")
+
+-- A raid-sized group turns the party into a raid
+fresh()
+converted = 0
+Groups:Create("karazhan", { T = 2, H = 2, D = 5 }, "", 3600, false)
+Groups:OnGroupRoster()
+check(converted == 0, "alone there is no party to convert")
+PARTY = { "Bea" }
+Groups:OnGroupRoster()
+check(converted == 1, "a raid's group becomes a raid as soon as somebody joins")
+leader = false
+PARTY = { "Bea", "Cid" }
+Groups:OnGroupRoster()
+check(converted == 1, "only the leader converts")
+leader = true
+fresh()
+converted = 0
+Groups:Create("steamvault", { T = 1, D = 2 }, "", 3600, false)
+PARTY = { "Bea" }
+Groups:OnGroupRoster()
+check(converted == 0, "a dungeon's party stays a party")
+
+-- The line in guild chat, again every ten minutes
+fresh()
+GuildOS.db.lfgPrefs.autoInvite = true
+Groups:Create("steamvault", { T = 1, D = 2 }, "SP", 3600, true)
+check(#said == 1 and said[1].msg:find('Whisper me "inv"', 1, true), "inviting whoever asks, the line says how")
+NOW = NOW + 300
+check(not Groups:Tick() and #said == 1, "five minutes on it says nothing again")
+NOW = NOW + 300
+check(Groups:Tick() and #said == 2 and said[2].msg:find("(1/5)", 1, true), "ten minutes on it does")
+NOW = NOW + 100
+check(not Groups:Tick() and #said == 2, "and then waits ten more")
+PARTY = { "Bea" }
+Groups:OnGroupRoster()
+NOW = NOW + 500
+check(Groups:Tick() and said[3].msg:find("(2/5)", 1, true), "with how full the group is by then")
+fresh()
+Groups:Create("steamvault", { T = 1 }, "", 3600, false)
+check(not Groups:Tick(NOW + 600) and #said == 0, "a group listed without the box is never said in chat")
+fresh()
+Board:SetAvailable(nil, "x", 3600, true, "T", {})
+Groups:Create("steamvault", { T = 1 }, "", 3600, true)
+check(#said == 1, "the five-minute cooldown holds the group's first line back")
+NOW = NOW + 60
+check(Groups:Tick() == false, "the next tick still waits on it")
+NOW = NOW + 240
+check(Groups:Tick() and #said == 2, "and the line goes out once the cooldown is over")
+fresh()
+Groups:Create("steamvault", { T = 1 }, "", 3600, true)
+Groups:Disband()
+NOW = NOW + 600
+check(not Groups:Tick(), "a group taken down stops saying it")
+
+-- A guildmate's new group: a notice where it fits me, the chat line otherwise
+fresh()
+toasts = {}
+local function listing(act, need) return Groups:_BuildGroup({ act = act, need = need, ttl = 3600 }, NOW) end
+check(Groups:FitsLevel("steamvault", 70) and Groups:FitsLevel("steamvault", 63) and not Groups:FitsLevel("steamvault", 62),
+  "an activity fits a level inside its range, give or take five")
+check(not Groups:FitsLevel("not-an-activity", 70), "an unknown activity fits nobody")
+check(Groups:BestRole({ T = 0, H = 1, D = 2 }, "D") == "D" and Groups:BestRole({ T = 1, D = 2 }, "") == "T"
+  and Groups:BestRole({ T = 1 }, "H") == nil, "the role asked is the first of mine with a spot")
+local dm = listing("steamvault", { T = 1, D = 1 })
+check(Groups:_ShouldToast(dm, 70, false, false), "a group for my level, free, gets a notice")
+check(not Groups:_ShouldToast(dm, 50, false, false), "not one for another level")
+check(not Groups:_ShouldToast(dm, 70, true, false), "not in combat")
+check(not Groups:_ShouldToast(dm, 70, false, true), "not in a group")
+Board:SetPref("roles", "H")
+check(not Groups:_ShouldToast(dm, 70, false, false), "not with no spot for any role of mine")
+Board:SetPref("roles", "")
+GuildOS.db.lfgPrefs.toast = false
+check(not Groups:_ShouldToast(dm, 70, false, false), "and not with the notices off")
+GuildOS.db.lfgPrefs.toast = true
+Groups:Create("steamvault", { T = 1 }, "", 3600, false)
+check(not Groups:_ShouldToast(dm, 70, false, false), "nor while I lead a group of my own")
+Groups:Disband()
+check(Groups:_Announce(key("Bea"), "Bea", Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 3600 }, NOW)) == "toast"
+  and toasts[1].kind == "group" and toasts[1].act == "karazhan" and #printed == 0,
+  "a new group that fits a level-less client is a notice, not a chat line")
+GuildOS.db.lfgPrefs.toast = false
+check(Groups:_Announce(key("Bea"), "Bea", dm) == "chat" and #printed == 1, "with the notices off it is the chat line")
+GuildOS.GroupsToast = nil
 
 -- ── The catalogue of each client ────────────────────────────────────────
 local function catalogue(client)
