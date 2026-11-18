@@ -193,6 +193,21 @@ local function BuildFrame()
     backBtn:SetScript("OnClick", function()
         if f.step > 1 then f.step = f.step - 1; render() end
     end)
+    -- The game refuses a reload in combat (ADDON_ACTION_BLOCKED, seen in game): finished then, the wizard
+    -- closes as ever and the style's reload is offered the moment combat ends, behind the click of the
+    -- same dialog Settings uses (#375).
+    local afterCombat = CreateFrame("Frame")
+    afterCombat:SetScript("OnEvent", function(self)
+        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        -- The style saved by then, not the wizard's: a replay or Settings during the fight may have changed it.
+        local want = type(GuildOSDB) == "table" and GuildOSDB.style or nil
+        if want and want ~= Style:Current() then
+            GuildOS:ShowDialog("GUILDOS_STYLE_RELOAD",
+                string.format(L["Reload the interface now to use the %s style?"], Style:Name(want)))
+        end
+    end)
+    f.afterCombat = afterCombat
+
     nextBtn:SetScript("OnClick", function()
         if f.step < #f.steps then
             f.step = f.step + 1
@@ -202,7 +217,14 @@ local function BuildFrame()
             f:Hide()
             -- The style picked on the first step, if it is not the one on screen: its reload, now that the
             -- wizard is done and nothing of it is lost (#375).
-            if f.chosen ~= nil and f.chosen ~= f.startStyle then ReloadUI() end
+            if f.chosen ~= nil and f.chosen ~= f.startStyle then
+                if InCombatLockdown() then
+                    GuildOS:Print(L["Can't reload during combat."])
+                    afterCombat:RegisterEvent("PLAYER_REGEN_ENABLED")
+                else
+                    ReloadUI()
+                end
+            end
         end
     end)
 

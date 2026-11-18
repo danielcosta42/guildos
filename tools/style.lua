@@ -580,8 +580,10 @@ check(boxArt == 0 and fbox.backdrop and fbox.backdrop.edgeFile ~= nil,
 -- Where the client draws both styles the wizard's first step is the style: two cards, the one on screen
 -- chosen. A pick is saved at once; the reload it needs comes only when the wizard is finished, and only
 -- when the style changed.
+local inCombat = false
 local function onboarding(opts)
   S = load(opts); S:Resolve()
+  function InCombatLockdown() return inCombat end
   function GuildOS:CreateRolePicker(parent)
     local f = CreateFrame("Frame", nil, parent)
     f.refresh = function() end
@@ -645,6 +647,25 @@ check(finish(ob) == "Finish and reload", "and finishing reloads to apply it")
 local sp = ob.settingsBtn.points[1]
 check(sp and sp[1] == "BOTTOMRIGHT" and sp[2] == ob.nextBtn and sp[3] == "BOTTOMLEFT",
   "Open Settings sits beside the last button, so a longer Finish never covers it")
+
+-- Finished in combat: the game refuses a reload then (ADDON_ACTION_BLOCKED, seen in game). The wizard
+-- closes and says why, and the reload is offered, behind a click, the moment combat ends.
+ob = onboarding({ db = {} })
+inCombat = true
+cardsShown = shownCards(ob)
+cardsShown[2].scripts.OnClick(cardsShown[2])
+finish(ob)
+ob.nextBtn.scripts.OnClick(ob.nextBtn)
+check(not popups.reloaded and GuildOS.db.settings.onboarded == true and not ob.shown and said("Can't reload during combat."),
+  "finished in combat: the wizard closes, nothing reloads, and it says why")
+inCombat = false
+ob.afterCombat.scripts.OnEvent(ob.afterCombat, "PLAYER_REGEN_ENABLED")
+check(popups[#popups] and popups[#popups].which == "GUILDOS_STYLE_RELOAD" and popups[#popups].text:find("WoW: Forever", 1, true),
+  "when combat ends, the reload is offered for the style picked")
+local offered = #popups
+GuildOSDB.style = "guildos"   -- picked back to the style on screen before combat ended
+ob.afterCombat.scripts.OnEvent(ob.afterCombat, "PLAYER_REGEN_ENABLED")
+check(#popups == offered, "a saved style that is the one on screen by then offers no reload")
 
 ob = onboarding({ db = {}, noArt = true })
 check(ob.title.text == "Welcome to Guild OS" and not shownCards(ob)[1], "a client with one style has no style step")
