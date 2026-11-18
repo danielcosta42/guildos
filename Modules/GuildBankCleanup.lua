@@ -247,12 +247,15 @@ function Cleanup:Rows()
         local sell, req, ilvl = GuildOS.Compat.ItemValue(e.l or e.id)
         local d = demand[e.id]
         -- How long it has sat: since its last deposit in the ledger; with none there, at least as
-        -- long as the ledger reaches back, or as long as this client has seen it.
-        local since = deposits[e.id] or math.min(ledgerFrom or t, db.seen[e.key] or t)
+        -- long as the ledger reaches back, or as long as this client has seen it. Not before the
+        -- ledger started over has DEMAND_DAYS of withdrawals again: those went with the old one,
+        -- so until then nothing is known to be untouched.
+        local since = deposits[e.id]
+            or math.max(math.min(ledgerFrom or t, db.seen[e.key] or t), (db.ledgerSince or 0) + (DEMAND_DAYS - STALE_DAYS) * 86400)
         local level = (req and req > 1) and req or ilvl
         local it = { have = e.total, quality = info.quality, classID = info.classID, level = level,
             lowBelow = lowBelow, need = B:NeedOf(e.id), demandLines = d and d.lines or 0,
-            requested = requested[e.id], days = math.floor((t - since) / 86400) }
+            requested = requested[e.id], days = math.max(0, math.floor((t - since) / 86400)) }
         local verdict, n, reasons = Cleanup.Judge(it)
         local ah = GuildOS.Compat.AuctionPrice(e.id)
         local unit = sell or 0
