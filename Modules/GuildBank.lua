@@ -101,7 +101,7 @@ function GuildBank:IsMe(name) return sameName(name, GuildOS.Compat.PlayerName())
 local function state()
     local s = GuildOS.State.gbank
     if not s then
-        s = { open = false, queried = {}, answered = {}, queue = {}, lastSlotsAt = 0, lastPublish = 0, answer = nil, sort = nil,
+        s = { open = false, queried = {}, answered = {}, queue = {}, touched = {}, lastSlotsAt = 0, lastPublish = 0, answer = nil, sort = nil,
               index = nil, infoWait = {}, rank = {} }
         GuildOS.State.gbank = s
     end
@@ -191,7 +191,7 @@ function GuildBank:OnOpen()
     local s = state()
     if s.open then return end   -- the second event of the pair
     s.open = true
-    s.queried, s.answered, s.queue, s.waiting = {}, {}, {}, nil
+    s.queried, s.answered, s.queue, s.waiting, s.touched = {}, {}, {}, nil, {}
     s.openId = (s.openId or 0) + 1
     self:QueryAll()
     if self.bankOpened then GuildOS:SafeCall(self.bankOpened) end
@@ -247,10 +247,10 @@ function GuildBank:QueryNext()
         -- shows, is loaded. An empty one that is neither is left as the guild knew it.
         if s.openId == openId and s.waiting == tab then
             s.waiting = nil
-            local loaded = GuildOS.Compat.GuildBankCurrentTab() == tab
+            -- Only items prove a tab loaded: the tab on show reads empty too until it is.
+            local loaded = false
             for i = 1, SLOTS do
-                if loaded then break end
-                if GuildOS.Compat.GuildBankSlot(tab, i) then loaded = true end
+                if GuildOS.Compat.GuildBankSlot(tab, i) then loaded = true; break end
             end
             if loaded then s.answered[tab] = GetTime() end
             self:Trace("tab %d: no word from the game; %s", tab, loaded and "its items are there, read" or "empty, left as known")
@@ -334,10 +334,10 @@ function GuildBank:ReadOpenTabs(publish)
         -- A tab is read only once the server answered its own query: before that the game answers
         -- an empty tab, and an empty tab would wipe what the guild knew.
         local slots = (viewable and s.answered[tab]) and self:ReadTab(tab) or nil
-        -- An empty read never wipes a tab the guild saw holding items, unless it is the tab the
-        -- bank is showing: its slots are surely loaded.
+        -- An empty read never wipes a tab the guild saw holding items (a tab not yet loaded reads
+        -- empty), unless this client emptied it itself, organizing or taking stacks out.
         if slots and next(slots) == nil and db.tabs[tab] and next(db.tabs[tab].slots or {}) ~= nil
-            and GuildOS.Compat.GuildBankCurrentTab() ~= tab then
+            and not s.touched[tab] then
             slots = nil
         end
         if slots then
@@ -1083,6 +1083,8 @@ function GuildBank:StartSort(tabs)
         elseif #tabs == 1 then GuildOS:Print(why); return false end
     end
     if #queue == 0 then GuildOS:Print(L["No tab here you may organize."]); return false end
+    -- Never with the cleanup taking stacks out: both move the bank.
+    if GuildOS.GuildBankCleanup and GuildOS.GuildBankCleanup:IsWithdrawing() then return false end
     if GuildOS.Compat.InCombat() then GuildOS:Print(L["Not in combat."]); return false end
     -- Swaps first, unless the bank refused one this session or the player switched them off.
     -- Swaps first, every run: one refused (or a pickup that failed and looked like one) must not
@@ -1114,6 +1116,7 @@ function GuildBank:NextSortTab()
     run.tab, run.moves, run.merged, run.lockedSince, run.fails, run.holding = tab, 0, 0, nil, 0, nil
     run.pending, run.busy, run.cap, run.clean, run.model, run.rank, run.stack = {}, {}, CAP_START, 0, nil, {}, {}
     run.cooldown = run.cooldown or COOLDOWN_START   -- kept across the tabs of one run
+    s.touched[tab] = true
     GuildOS.Compat.SetGuildBankCurrentTab(tab)
     GuildOS.Compat.QueryGuildBankTab(tab)
     -- Item names first, so the order does not change mid-run as they load.
@@ -1284,6 +1287,9 @@ function GuildBank:SortStep()
             p.at = now_
             GuildOS.Compat.GuildBankPickup(tab, t)
             return again(POLL)
+        elseif now_ - p.at >= LOCK_TIMEOUT then
+            -- Locked (or unanswered) for too long: give the move up, whatever the slots say.
+            return self:Resync(run, p)
         elseif free and now_ - p.at >= VERIFY_MAX then
             -- Still in hand: drop it again where it was going, before giving the move up.
             if GuildOS.Compat.CursorHasItem() and (p.redrops or 0) < REDROP_TRIES then

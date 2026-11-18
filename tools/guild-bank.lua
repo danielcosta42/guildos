@@ -37,7 +37,8 @@ function hooksecurefunc() end
 function GetBuildInfo() return "2.5.6", "60000", "", 20506 end
 WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 5
 function GetRealmName() return "Realm" end
-function UnitName() return "Ana" end
+PLAYER = "Ana"
+function UnitName() return PLAYER end
 function UnitClass() return "Warrior", "WARRIOR" end
 local NOW, CLOCK = 1790000000, 1000
 function GetServerTime() return NOW end
@@ -941,7 +942,7 @@ check(CL:WithdrawMarked(), "taking out starts")
 runTimers()
 check(not CL:IsWithdrawing(), "and ends")
 check(slC[1] == nil and slC[2] == nil and slC[3] and slC[3].c == 30, "the marked whole stacks left the bank")
-local outs = CL:Store().clean.out
+local outs = CL:Mine().out
 check(outs[4500] == 7 and outs[4501] == 1, "what came out is noted for selling")
 check(CL:Store().clean.marks[tostring(4500)] == nil, "and their marks are done")
 
@@ -968,6 +969,61 @@ check(CL:DepositOwed(), "the owed gold is deposited")
 check(BANK.money == bankBefore + 25 * 7 + 1500 + 25 * 3 and CL:Owed() == 0, "all of it, and nothing is owed")
 Bank:OnEvent("GUILDBANKFRAME_CLOSED")
 ROSTER_LEVELS = {}
+
+-- ── The cleanup: regressions from the pre-merge review ──────────────────
+do
+  -- A stack swapped for another item of the same count while the run waits is not taken; an
+  -- organize run cannot start while stacks are coming out.
+  fresh()
+  officer, officers = true, { Ana = true }
+  local tab = addTab("Raid", -1)
+  local sl = BANK.tabs[tab].slots
+  sl[1] = { id = 4500, c = 7 }
+  sl[2] = { id = 4500, c = 7 }
+  sl[3] = { id = 4504, c = 7 }       -- a scroll, same count, not marked
+  Bank:OnEvent("GUILDBANKFRAME_OPENED")
+  Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
+  runTimers()
+  BAG = {}
+  check(CL:SetMark("4500", true), "the grey stacks are marked")
+  wire = {}
+  check(CL:WithdrawMarked(), "taking out starts")
+  check(not Bank:StartSort(tab), "and no organize run starts meanwhile")
+  -- Before the second stack goes, someone puts the scroll where it was.
+  sl[2], sl[3] = sl[3], nil
+  runTimers()
+  local scrolls = 0
+  for k = 1, 16 do if BAG[k] and BAG[k].id == 4504 then scrolls = scrolls + BAG[k].c end end
+  check(scrolls == 0 and sl[2] and sl[2].id == 4504, "the unmarked scroll in its place stays in the bank")
+  check(CL:Mine().out[4500] == 7, "only the stack that really came out may be sold")
+  check(last("gbankclean", "snap") ~= nil, "the marks left go to the other officers when the run stops")
+
+  -- Another character of the account sells nothing of it.
+  MERCHANT = true
+  CL:OnEvent("MERCHANT_SHOW")
+  PLAYER = "Alt"
+  BAG[12] = { id = 4500, c = 7 }     -- the alt's own grey stack
+  local altList = CL:ToSell()
+  check(next(altList) == nil, "an alt's own items are never sold as the bank's")
+  PLAYER = "Ana"
+
+  -- The vendor closing mid-run still owes what was sold.
+  MONEY = 0
+  check(CL:SellOut(), "selling starts")
+  CL:OnEvent("MERCHANT_CLOSED")
+  MERCHANT = nil
+  runTimers()
+  check(CL:Owed() == 25 * 7, "what was sold before the vendor closed is owed, at the vendor's price")
+  Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+end
+
+-- "Slots freed" counts stacks, not tabs.
+do
+  fresh()
+  Bank:ApplySnapshot({ tabs = { [1] = { ts = NOW - 10, s = "1,4500,5;2,4500,5;3,4500,5" } } }, "Bea")
+  local _, _, slots = CL:Summary(CL:Rows())
+  check(slots == 3, "three grey stacks free three slots")
+end
 
 -- ── Typing an item ──────────────────────────────────────────────────────
 fresh()

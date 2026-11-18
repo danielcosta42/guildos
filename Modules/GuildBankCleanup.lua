@@ -22,6 +22,7 @@ local AH_FACTOR = 3           -- an auction price this many times the vendor's: 
 local WITHDRAW_GAP = 0.6      -- seconds between two stacks taken out of the bank
 local WITHDRAW_WAIT = 3       -- seconds a stack may take to leave the bank
 local SELL_GAP = 0.2          -- seconds between two stacks sold to a vendor
+local OUT_DAYS = 14           -- days what came out stays sellable; after that it is the player's
 local BAGS = { 0, 1, 2, 3, 4 }
 local SLOTS = 98
 
@@ -49,11 +50,25 @@ end
 function Cleanup:Store()
     local db = Bank():Store()
     db.seen = db.seen or {}
-    db.clean = db.clean or { marks = {}, out = {}, toDeposit = 0 }
+    db.clean = db.clean or { marks = {} }
     db.clean.marks = db.clean.marks or {}
-    db.clean.out = db.clean.out or {}
-    db.clean.toDeposit = db.clean.toDeposit or 0
+    db.clean.chars = db.clean.chars or {}
     return db
+end
+
+-- What this character took out of the bank and still has to sell, and the gold it owes the bank.
+-- Per character: the saved variables are the account's, and an alt must never sell its own items
+-- as the bank's. What came out is forgotten after OUT_DAYS.
+function Cleanup:Mine()
+    local chars = self:Store().clean.chars
+    local key = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()) or "?"
+    local me = chars[key]
+    if not me then
+        me = { out = {}, toDeposit = 0, outAt = now() }
+        chars[key] = me
+    end
+    if next(me.out) and now() - (me.outAt or 0) > OUT_DAYS * 86400 then me.out = {} end
+    return me
 end
 
 function Cleanup:Initialize()
@@ -76,7 +91,7 @@ function Cleanup:OnEvent(event)
         if self.merchantOpened then GuildOS:SafeCall(self.merchantOpened) end
     elseif event == "MERCHANT_CLOSED" then
         s.merchant = false
-        s.selling = nil
+        if s.selling then self:SellStep() end   -- closes the run; what it sold is already owed
         if self.merchantClosed then GuildOS:SafeCall(self.merchantClosed) end
     end
 end
@@ -219,6 +234,13 @@ function Cleanup:Rows()
     for _, r in pairs(db.requests or {}) do if r.st == "open" then requested[r.item] = true end end
     local t = now()
     local lowBelow = self:LowBelow()
+    local stacks = {}
+    for _, tab in pairs(db.tabs or {}) do
+        for _, sl in pairs(tab.slots or {}) do
+            local k = B.KeyOf(sl)
+            stacks[k] = (stacks[k] or 0) + 1
+        end
+    end
     local rows = {}
     for _, e in ipairs(index.list) do
         local info = B:ItemInfo(e.id, e.l)
@@ -238,7 +260,7 @@ function Cleanup:Rows()
         rows[#rows + 1] = { key = e.key, id = e.id, l = e.l, have = e.total, tabs = e.tabs, verdict = verdict,
             out = n, reasons = reasons, vendor = unit * n, vendorEach = unit, ah = ah and ah * n or nil,
             where = where, days = it.days, taken = it.demandLines, marked = db.clean.marks[e.key] ~= nil,
-            noValue = sell ~= nil and unit == 0, level = level }
+            noValue = sell ~= nil and unit == 0, level = level, stacks = stacks[e.key] or 0 }
     end
     local order = { sell = 1, review = 2, keep = 3 }
     table.sort(rows, function(a, b)
@@ -257,9 +279,7 @@ function Cleanup:Summary(rows)
         if r.verdict == "sell" then
             items = items + 1
             value = value + math.max(r.vendor, r.ah or 0)
-            if r.out >= r.have then
-                for _ in pairs(r.tabs or {}) do slots = slots + 1 end
-            end
+            if r.out >= r.have then slots = slots + (r.stacks or 0) end
         end
     end
     return items, value, slots
@@ -384,11 +404,24 @@ function Cleanup:WithdrawMarked()
     if s.withdraw then return false end
     if not Bank():IsOpen() then GuildOS:Print(L["Open the guild bank first."]); return false end
     if not GuildOS:IsOfficer() then GuildOS:Print(L["|cffFF4444Officers only.|r"]); return false end
+    if Bank():SortState() then return false end   -- never with an organize run: both move the bank
     local queue = self:Queue()
     if #queue == 0 then GuildOS:Print(L["Nothing marked to take out here."]); return false end
     s.withdraw = { queue = queue, done = 0, total = #queue }
     self:WithdrawStep()
     return true
+end
+
+-- How many of an item the bags hold.
+local function bagCount(id)
+    local n = 0
+    for _, bag in ipairs(BAGS) do
+        for slot = 1, GuildOS.Compat.GetContainerNumSlots(bag) do
+            local info = GuildOS.Compat.GetContainerItemInfo(bag, slot)
+            if info and info.itemID == id then n = n + (info.stackCount or 1) end
+        end
+    end
+    return n
 end
 
 function Cleanup:WithdrawStep()
@@ -397,55 +430,71 @@ function Cleanup:WithdrawStep()
     if not run then return end
     if not Bank():IsOpen() then return self:StopWithdraw(L["Stopped: the bank was closed."]) end
     if GuildOS.Compat.InCombat() then return self:StopWithdraw(L["Stopped: you entered combat."]) end
+    local again = function(d) GuildOS.Compat.After(d, function() GuildOS:SafeCall(Cleanup.WithdrawStep, Cleanup) end) end
     local cur = run.current
     if cur then
-        local _, count = GuildOS.Compat.GuildBankSlot(cur.tab, cur.slot)
-        if count and GetTime() - cur.at < WITHDRAW_WAIT then
-            GuildOS.Compat.After(0.1, function() GuildOS:SafeCall(Cleanup.WithdrawStep, Cleanup) end)
-            return
-        end
+        -- It came out when the bags hold that many more of it; never just because the slot emptied
+        -- (someone else may have moved it).
+        local gained = bagCount(cur.id) - cur.bagBefore
+        if gained < cur.c and GetTime() - cur.at < WITHDRAW_WAIT then return again(0.1) end
         run.current = nil
-        if not count then
-            -- Out of the bank and in the bags: it may now be sold.
-            local outs = self:Store().clean.out
-            outs[cur.id] = (outs[cur.id] or 0) + cur.c
-            local marks = self:Store().clean.marks
-            local m = marks[cur.key]
+        if gained >= cur.c then
+            local mine = self:Mine()
+            mine.out[cur.id] = (mine.out[cur.id] or 0) + cur.c
+            mine.outAt = now()
+            local m = self:Store().clean.marks[cur.key]
             if m and m.n then
                 m.n = m.n - cur.c
-                if m.n <= 0 then marks[cur.key] = nil end
-            elseif m then
-                marks[cur.key] = nil
+                if m.n <= 0 then self:Store().clean.marks[cur.key] = nil end
             end
-            run.done = run.done + 1
+            run.done, run.changed = run.done + 1, true
+            local bs = GuildOS.State.gbank
+            if bs and bs.touched then bs.touched[cur.tab], bs.answered[cur.tab] = true, GetTime() end
         else
-            return self:StopWithdraw(L["Stopped: the bank did not let that stack out. Your rank's withdrawals may be spent."])
+            local _, count = GuildOS.Compat.GuildBankSlot(cur.tab, cur.slot)
+            if count then
+                return self:StopWithdraw(L["Stopped: the bank did not let that stack out. Your rank's withdrawals may be spent."])
+            end
+            -- The slot emptied but nothing reached the bags: someone moved it. Skip it.
         end
         Bank():Refresh()
     end
     local nextOne = table.remove(run.queue, 1)
     if not nextOne then
-        self:Broadcast()
         return self:StopWithdraw(string.format(L["%d stacks taken out. Sell them at any vendor with the Guild OS button."], run.done))
     end
     if freeBagSlots() == 0 then return self:StopWithdraw(L["Stopped: your bags are full."]) end
-    local _, count = GuildOS.Compat.GuildBankSlot(nextOne.tab, nextOne.slot)
-    if count ~= nextOne.c then
-        -- The bank changed under us: skip this stack.
-        GuildOS.Compat.After(WITHDRAW_GAP, function() GuildOS:SafeCall(Cleanup.WithdrawStep, Cleanup) end)
-        return
+    -- Still the marked item, in the same amount: the bank may have changed since the queue was made.
+    local now_ = Bank():ReadTab(nextOne.tab)[nextOne.slot]
+    if not now_ or Bank().KeyOf(now_) ~= nextOne.key or now_.c ~= nextOne.c or now_.locked then
+        return again(WITHDRAW_GAP)
     end
     if GuildOS.Compat.GuildBankCurrentTab() ~= nextOne.tab then GuildOS.Compat.SetGuildBankCurrentTab(nextOne.tab) end
+    nextOne.bagBefore = bagCount(nextOne.id)
     GuildOS.Compat.GuildBankAutoStore(nextOne.tab, nextOne.slot)
     nextOne.at = GetTime()
     run.current = nextOne
     Bank():Refresh()
-    GuildOS.Compat.After(WITHDRAW_GAP, function() GuildOS:SafeCall(Cleanup.WithdrawStep, Cleanup) end)
+    again(WITHDRAW_GAP)
 end
 
 function Cleanup:StopWithdraw(msg)
     local s = state()
+    local run = s.withdraw
     s.withdraw = nil
+    if run and run.changed then
+        -- A mark for every stack is done once none is left in the tabs this player sees.
+        local marks = self:Store().clean.marks
+        local left = {}
+        for tab = 1, math.min(GuildOS.Compat.GuildBankTabCount(), 8) do
+            for _, sl in pairs(Bank():ReadTab(tab)) do left[Bank().KeyOf(sl)] = true end
+        end
+        for key, m in pairs(marks) do
+            if not m.n and not left[key] then marks[key] = nil end
+        end
+        -- The other officers learn what is left to take, stopped early or not.
+        self:Broadcast()
+    end
     if msg then GuildOS:Print(msg) end
     Bank():Refresh()
 end
@@ -454,39 +503,48 @@ end
 -- Selling what came out (at a vendor), and the gold back in (at the bank)
 ----------------------------------------------------------------------
 
--- What came out of the bank and is still in the bags: { [id] = count }, and the vendor value.
-function Cleanup:ToSell()
-    local outs = self:Store().clean.out
-    local inBags, value = {}, 0
+-- The stacks in the bags that may be sold as the bank's: never more of an item than this character
+-- took out and still holds (what left the bags since is forgotten), and only whole stacks of it, so
+-- a stack merged with the player's own copies stays. { bag, slot, id, c } and their vendor value.
+function Cleanup:Sellable()
+    local mine = self:Mine()
+    local held = {}
+    for id in pairs(mine.out) do held[id] = bagCount(id) end
+    for id, n in pairs(mine.out) do
+        if held[id] < n then mine.out[id] = held[id] > 0 and held[id] or nil end
+    end
+    local left, list, value = {}, {}, 0
+    for id, n in pairs(mine.out) do left[id] = n end
     for _, bag in ipairs(BAGS) do
         for slot = 1, GuildOS.Compat.GetContainerNumSlots(bag) do
             local info = GuildOS.Compat.GetContainerItemInfo(bag, slot)
             local id = info and info.itemID
-            if id and outs[id] and not info.hasNoValue then
-                inBags[id] = (inBags[id] or 0) + (info.stackCount or 1)
+            local c = info and (info.stackCount or 1)
+            if id and left[id] and left[id] >= c and not info.hasNoValue then
+                left[id] = left[id] - c
+                list[#list + 1] = { bag = bag, slot = slot, id = id, c = c, locked = info.isLocked }
+                value = value + (GuildOS.Compat.ItemValue(id) or 0) * c
             end
-        end
-    end
-    local list = {}
-    for id, n in pairs(outs) do
-        local c = math.min(n, inBags[id] or 0)
-        if c > 0 then
-            list[id] = c
-            value = value + (GuildOS.Compat.ItemValue(id) or 0) * c
         end
     end
     return list, value
 end
 
+-- What the vendor bar offers: { [id] = count } and the vendor value.
+function Cleanup:ToSell()
+    local list, value = self:Sellable()
+    local byId = {}
+    for _, x in ipairs(list) do byId[x.id] = (byId[x.id] or 0) + x.c end
+    return byId, value
+end
+
 function Cleanup:IsMerchantOpen() return state().merchant == true end
 
--- Sell, one stack at a time, only what came out of the bank: never more of an item than came out,
--- so a member's own copies stay.
+-- Sell, one stack at a time, only what came out of the bank.
 function Cleanup:SellOut()
     local s = state()
-    if not s.merchant then return false end
-    if s.selling then return false end
-    s.selling = { before = GuildOS.Compat.PlayerMoney(), sold = 0 }
+    if not s.merchant or s.selling then return false end
+    s.selling = { sold = 0, made = 0 }
     self:SellStep()
     return true
 end
@@ -494,38 +552,35 @@ end
 function Cleanup:SellStep()
     local s = state()
     local run = s.selling
-    if not run or not s.merchant then return end
-    local outs = self:Store().clean.out
-    for _, bag in ipairs(BAGS) do
-        for slot = 1, GuildOS.Compat.GetContainerNumSlots(bag) do
-            local info = GuildOS.Compat.GetContainerItemInfo(bag, slot)
-            local id = info and info.itemID
-            local c = info and (info.stackCount or 1)
-            if id and outs[id] and outs[id] >= c and not info.isLocked and not info.hasNoValue then
-                outs[id] = outs[id] - c
-                if outs[id] <= 0 then outs[id] = nil end
-                GuildOS.Compat.UseContainerItem(bag, slot)
-                run.sold = run.sold + 1
+    if not run then return end
+    local mine = self:Mine()
+    if s.merchant then
+        for _, x in ipairs(self:Sellable()) do
+            if not x.locked then
+                mine.out[x.id] = mine.out[x.id] - x.c
+                if mine.out[x.id] <= 0 then mine.out[x.id] = nil end
+                GuildOS.Compat.UseContainerItem(x.bag, x.slot)
+                -- Owed as it is sold, at the vendor's price: what the player spends meanwhile, or a
+                -- vendor closed mid-run, never changes it.
+                local made = (GuildOS.Compat.ItemValue(x.id) or 0) * x.c
+                mine.toDeposit = (mine.toDeposit or 0) + made
+                run.sold, run.made = run.sold + 1, run.made + made
                 GuildOS.Compat.After(SELL_GAP, function() GuildOS:SafeCall(Cleanup.SellStep, Cleanup) end)
                 return
             end
         end
     end
-    -- Done: the gold it made is owed to the bank.
-    GuildOS.Compat.After(SELL_GAP, function()
-        local gained = math.max(0, GuildOS.Compat.PlayerMoney() - run.before)
-        local db = self:Store()
-        db.clean.toDeposit = (db.clean.toDeposit or 0) + gained
-        s.selling = nil
+    s.selling = nil
+    if run.sold > 0 then
         GuildOS:Print(string.format(L["Sold %d stacks for %s. Deposit it the next time you open the guild bank."], run.sold,
-            Cleanup.MoneyText(gained)))
-        if self.merchantRefresh then GuildOS:SafeCall(self.merchantRefresh) end
-        Bank():Refresh()
-    end)
+            Cleanup.MoneyText(run.made)))
+    end
+    if self.merchantRefresh then GuildOS:SafeCall(self.merchantRefresh) end
+    Bank():Refresh()
 end
 
 -- The gold the cleanup made, owed to the bank.
-function Cleanup:Owed() return self:Store().clean.toDeposit or 0 end
+function Cleanup:Owed() return self:Mine().toDeposit or 0 end
 
 -- Put it in (at the bank), never more than the player has.
 function Cleanup:DepositOwed()
@@ -533,7 +588,7 @@ function Cleanup:DepositOwed()
     local owed = math.min(self:Owed(), GuildOS.Compat.PlayerMoney())
     if owed <= 0 then return false end
     GuildOS.Compat.DepositGuildBankMoney(owed)
-    self:Store().clean.toDeposit = self:Owed() - owed
+    self:Mine().toDeposit = self:Owed() - owed
     GuildOS:Print(string.format(L["Deposited %s from the cleanup."], Cleanup.MoneyText(owed)))
     Bank():Refresh()
     return true
