@@ -44,6 +44,12 @@ globals = {
 
 -- Globals that the addon READS (WoW environment)
 read_globals = {
+    -- WoW API: the guild bank (issue #380), called only from Core/Compat.lua
+    "C_GuildBank", "GetNumGuildBankTabs", "GetGuildBankTabInfo", "GetGuildBankItemInfo", "GetGuildBankItemLink",
+    "QueryGuildBankTab", "QueryGuildBankLog", "GetGuildBankMoney", "GetNumGuildBankTransactions",
+    "GetGuildBankTransaction", "GetNumGuildBankMoneyTransactions", "GetGuildBankMoneyTransaction",
+    "PickupGuildBankItem", "SplitGuildBankItem", "GetCurrentGuildBankTab", "SetCurrentGuildBankTab",
+    "MAX_GUILDBANK_TABS", "CursorHasItem", "ClearCursor", "GuildBankFrame", "ChatEdit_InsertLink",
     -- WoW API: Frames & UI
     "CreateFrame",
     "CreateColor",

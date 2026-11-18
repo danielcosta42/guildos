@@ -230,6 +230,14 @@ local function handleCommand(msg)
         if GuildOS.Backup then GuildOS.Backup:ShowExport() end
     elseif msg == "restore" then
         if GuildOS.Backup then GuildOS.Backup:ShowRestore() end
+    elseif msg == "bank" or msg:match("^bank%s") then
+        -- /gos bank [sort [all] | stop | sync | need]: the guild bank (issue #380)
+        if GuildOS.GuildBank then
+            local a = {}
+            for w in msg:gmatch("%S+") do a[#a + 1] = w end
+            table.remove(a, 1)
+            GuildOS.GuildBank:HandleCommand(a)
+        end
     elseif msg == "bulletin" or msg == "board" then
         if GuildOS.Bulletin then GuildOS.Bulletin:Show() end
     elseif msg == "cta" or msg:match("^cta%s") then

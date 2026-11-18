@@ -1,0 +1,427 @@
+-- The guild bank (issue #380), run against the real Core/Core.lua, Core/Compat.lua, Core/Utils.lua,
+-- Modules/GuildBankPlan.lua and Modules/GuildBank.lua, with the game's bank played by a stub that
+-- moves, merges, splits and locks items as the server does.
+--
+-- The planner always ends, and ends in the order it promised, losing nothing; a picture travels
+-- and only newer tabs replace older ones; a received picture, ledger line, need or request is
+-- cleaned and clamped; the ledger never counts a line twice and keeps two equal deposits apart;
+-- requests are keyed by their sender and closed only by an officer or their author; organizing
+-- runs only where the rank withdraws without limit, and puts a real tab in order.
+--
+--   luajit -e 'ADDON="."' tools/guild-bank.lua
+--
+-- Exits 1 on the first failed check.
+ADDON = ADDON or "."
+
+local checks = 0
+local function check(cond, what)
+  checks = checks + 1
+  if not cond then
+    io.stderr:write("FAIL: " .. what .. "\n")
+    os.exit(1)
+  end
+end
+
+DEFAULT_CHAT_FRAME = { AddMessage = function() end }
+UIParent = {}
+RAID_CLASS_COLORS = {}
+local function widget()
+  local w = { scripts = {} }
+  return setmetatable(w, { __index = function(_, k)
+    if k == "SetScript" then return function(self, name, fn) self.scripts[name] = fn end end
+    return function() end
+  end })
+end
+function CreateFrame() return widget() end
+function hooksecurefunc() end
+function GetBuildInfo() return "2.5.6", "60000", "", 20506 end
+WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 5
+function GetRealmName() return "Realm" end
+function UnitName() return "Ana" end
+function UnitClass() return "Warrior", "WARRIOR" end
+local NOW, CLOCK = 1790000000, 1000
+function GetServerTime() return NOW end
+function GetTime() return CLOCK end
+time = function() return NOW end
+function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+C_Timer = { After = function() end, NewTicker = function() end }
+function GetNumGuildMembers() return 0 end
+function IsInGuild() return true end
+function GetLocale() return "enUS" end
+
+-- ── The items the stub knows ────────────────────────────────────────────
+-- id = { name, quality, classID, subClassID, stack }
+local ITEMS = {
+  [22854] = { "Flask of Relentless Assault", 1, 0, 3, 20 },
+  [22861] = { "Flask of Blinding Light", 1, 0, 3, 20 },
+  [22832] = { "Super Mana Potion", 1, 0, 1, 20 },
+  [23445] = { "Fel Iron Bar", 1, 7, 7, 20 },
+  [21877] = { "Netherweave Cloth", 1, 7, 5, 20 },
+  [23440] = { "Dawnstone", 3, 3, 1, 20 },
+  [28555] = { "Seamaiden's Pendant", 4, 4, 0, 1 },
+  [30000] = { "Pattern: Example", 3, 9, 2, 1 },
+}
+local function idOf(item)
+  if type(item) == "number" then return item end
+  if type(item) == "string" then return tonumber(item:match("item:(%d+)")) or tonumber(item) end
+end
+local function linkOf(id) return "|cffffffff|Hitem:" .. id .. "::::::::70:::::|h[" .. ITEMS[id][1] .. "]|h|r" end
+function GetItemInfoInstant(item)
+  local id = idOf(item)
+  local it = id and ITEMS[id]
+  if not it then return nil end
+  return id, "", "", "", "icon" .. id, it[3], it[4]
+end
+function GetItemInfo(item)
+  local id = idOf(item)
+  local it = id and ITEMS[id]
+  if not it then return nil end
+  return it[1], linkOf(id), it[2], 100, 1, "", "", it[5]
+end
+
+-- ── The server's bank ──────────────────────────────────────────────────
+local BANK
+local cursor
+local function resetBank()
+  BANK = { tabs = {}, money = 1234567, log = {}, moneyLog = {}, current = 1, leader = false }
+  cursor = nil
+end
+local function addTab(name, remaining, canDeposit)
+  BANK.tabs[#BANK.tabs + 1] = { name = name, slots = {}, remaining = remaining or -1, canDeposit = canDeposit ~= false }
+  return #BANK.tabs
+end
+function GetNumGuildBankTabs() return #BANK.tabs end
+function GetGuildBankTabInfo(tab)
+  local t = BANK.tabs[tab]
+  if not t then return nil end
+  return t.name, "tabicon" .. tab, true, t.canDeposit, t.remaining, t.remaining
+end
+function GetGuildBankItemInfo(tab, slot)
+  local s = BANK.tabs[tab] and BANK.tabs[tab].slots[slot]
+  if not s then return nil, 0 end
+  return "icon" .. s.id, s.c, s.locked
+end
+function GetGuildBankItemLink(tab, slot)
+  local s = BANK.tabs[tab] and BANK.tabs[tab].slots[slot]
+  return s and linkOf(s.id) or nil
+end
+function QueryGuildBankTab() end
+function QueryGuildBankLog() end
+function GetGuildBankMoney() return BANK.money end
+function GetCurrentGuildBankTab() return BANK.current end
+function SetCurrentGuildBankTab(tab) BANK.current = tab end
+function IsGuildLeader() return BANK.leader end
+function CursorHasItem() return cursor ~= nil end
+function ClearCursor() cursor = nil end
+function InCombatLockdown() return false end
+local moves = 0
+function PickupGuildBankItem(tab, slot)
+  local slots = BANK.tabs[tab].slots
+  if not cursor then
+    local s = slots[slot]
+    if s then cursor = { tab = tab, slot = slot, c = s.c } end
+    return
+  end
+  local from = BANK.tabs[cursor.tab].slots[cursor.slot]
+  local to = slots[slot]
+  local n = cursor.c
+  local per = ITEMS[from.id][5]
+  if not to then
+    if n == from.c then slots[slot], BANK.tabs[cursor.tab].slots[cursor.slot] = from, nil
+    else slots[slot] = { id = from.id, c = n }; from.c = from.c - n end
+  elseif to.id == from.id then
+    local take = math.min(n, per - to.c)
+    to.c = to.c + take
+    from.c = from.c - take
+    if from.c <= 0 then BANK.tabs[cursor.tab].slots[cursor.slot] = nil end
+  else
+    check(n == from.c, "the planner never drops part of a stack on another item")
+    slots[slot], BANK.tabs[cursor.tab].slots[cursor.slot] = from, to
+  end
+  moves = moves + 1
+  cursor = nil
+end
+function SplitGuildBankItem(tab, slot, count)
+  local s = BANK.tabs[tab].slots[slot]
+  check(s and count >= 1 and count <= s.c, "a split takes no more than the slot holds")
+  cursor = { tab = tab, slot = slot, c = count }
+end
+
+GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
+dofile(ADDON .. "/Core/Core.lua")
+dofile(ADDON .. "/Core/Compat.lua")
+dofile(ADDON .. "/Core/Utils.lua")
+
+-- Timers are held and run by hand; the clock moves with them.
+local timers = {}
+GuildOS.Compat.After = function(d, fn) timers[#timers + 1] = { at = CLOCK + (d or 0), fn = fn } end
+local function runTimers(limit)
+  local n = 0
+  while #timers > 0 and n < (limit or 100000) do
+    table.sort(timers, function(a, b) return a.at < b.at end)
+    local t = table.remove(timers, 1)
+    if t.at > CLOCK then CLOCK = t.at end
+    t.fn()
+    n = n + 1
+  end
+end
+
+local wire = {}
+local officers = { Ana = true }
+local revs = {}
+GuildOS.SyncService = {
+  handlers = {},
+  On = function(self, d, fn) self.handlers[d] = fn end,
+  Publish = function(_, d, act, data, opts) wire[#wire + 1] = { d = d, act = act, data = data, rev = opts and opts.rev } end,
+  GetRevision = function(_, d, k) return revs[d .. k] or 0 end,
+  NextRevision = function(_, d, k) revs[d .. k] = (revs[d .. k] or 0) + 1; return revs[d .. k] end,
+  ShouldApply = function(_, d, k, rev) return (rev or 0) > (revs[d .. k] or 0) end,
+  SetRevision = function(_, d, k, rev) revs[d .. k] = rev end,
+}
+local officer = true
+GuildOS.IsOfficer = function() return officer end
+GuildOS.IsOfficerByName = function(_, n) return officers[n] == true end
+local printed = {}
+GuildOS.Print = function(_, msg) printed[#printed + 1] = msg end
+GuildOS.Compat.HookTooltip = function() return true end
+
+dofile(ADDON .. "/Modules/GuildBankPlan.lua")
+dofile(ADDON .. "/Modules/GuildBank.lua")
+local Plan, Bank = GuildOS.GuildBankPlan, GuildOS.GuildBank
+
+local function deliver(msg, sender)
+  GuildOS.SyncService.handlers[msg.d]({ act = msg.act, data = msg.data, rev = msg.rev }, sender)
+end
+local function last(d, act)
+  for i = #wire, 1, -1 do if wire[i].d == d and (not act or wire[i].act == act) then return wire[i] end end
+end
+local function fresh()
+  GuildOS.db = { settings = {}, members = {} }
+  GuildOS.State.gbank = nil
+  revs, wire, printed, timers = {}, {}, {}, {}
+  resetBank()
+  Bank:Initialize()
+  timers = {}
+end
+
+-- ── The planner ─────────────────────────────────────────────────────────
+math.randomseed(380)
+for trial = 1, 400 do
+  local slots, rank, stack = {}, {}, {}
+  local nkeys = math.random(1, 10)
+  for k = 1, nkeys do
+    rank["k" .. k] = Plan.SortKey({ id = k, classID = math.random(0, 15), subClassID = math.random(0, 4),
+      quality = math.random(0, 5), name = math.random() < 0.7 and ("n" .. math.random(1, 3)) or nil })
+    stack["k" .. k] = ({ 1, 5, 20, 200 })[math.random(1, 4)]
+  end
+  local before = {}
+  for i = 1, 98 do
+    if math.random() < 0.6 then
+      local k = "k" .. math.random(1, nkeys)
+      slots[i] = { k = k, c = math.random(1, stack[k]) }
+      before[k] = (before[k] or 0) + slots[i].c
+    end
+  end
+  local n = 0
+  while true do
+    local m = Plan.PlanMove(slots, 98, rank, stack)
+    if not m then break end
+    Plan.Apply(slots, m, stack)
+    n = n + 1
+    if n > 1000 then break end
+  end
+  check(n <= 1000, "a run ends (trial " .. trial .. ")")
+  local target = Plan.Target(slots, 98, rank, stack)
+  local after = {}
+  for i = 1, 98 do
+    local s, w = slots[i], target[i]
+    check((s == nil) == (w == nil) and (not s or (s.k == w.k and s.c == w.c)), "a run ends in the target order")
+    if s then after[s.k] = (after[s.k] or 0) + s.c end
+  end
+  for k, v in pairs(before) do check(after[k] == v, "a run loses nothing") end
+end
+check(Plan.GroupOf(0) == "consumable" and Plan.GroupOf(7) == "trade" and Plan.GroupOf(4) == "gear"
+  and Plan.GroupOf(nil) == "other", "items fall in their groups")
+check(Plan.SortKey({ id = 1, classID = 0, name = "b" }) < Plan.SortKey({ id = 2, classID = 7, name = "a" }),
+  "consumables sort before trade goods")
+check(Plan.SortKey({ id = 1, classID = 0, quality = 4, name = "z" }) < Plan.SortKey({ id = 2, classID = 0, quality = 1, name = "a" }),
+  "the better quality first within a kind")
+check(Plan.SortKey({ id = 9, classID = 0, name = "a" }) < Plan.SortKey({ id = 1, classID = 0 }),
+  "an item with no name yet sorts after the named ones, by id")
+
+-- ── The picture on the wire ─────────────────────────────────────────────
+local enc = Bank._encodeSlots({ [1] = { id = 22854, c = 20 }, [98] = { id = 28555, c = 1, l = "item:28555:0:0" } })
+local dec = Bank._decodeSlots(enc)
+check(dec[1].id == 22854 and dec[1].c == 20 and dec[98].l == "item:28555:0:0", "a tab's slots travel as they are")
+dec = Bank._decodeSlots("0,1,1;99,1,1;5,0,1;6,1,0;7,1,5000;8,123,4,item:1;bad;9,22854,3,|cffEVIL")
+local nslots = 0
+for _ in pairs(dec) do nslots = nslots + 1 end
+check(nslots == 2 and dec[8] and dec[8].l == "item:1" and dec[9] and dec[9].l == nil,
+  "a slot out of range, an empty count, a huge count and a link with escapes are dropped")
+
+fresh()
+local changed = Bank:ApplySnapshot({ tabs = { [1] = { n = "Flasks|r", ts = NOW - 100, by = "Bea", s = "1,22854,20" },
+  [9] = { ts = NOW, s = "1,1,1" }, [2] = { ts = NOW + 99999, s = "1,1,1" } }, m = 500, mt = NOW - 100 }, "Bea")
+local db = Bank:Store()
+check(changed and db.tabs[1] and db.tabs[1].slots[1].c == 20 and db.tabs[1].name == "Flasksr",
+  "a received tab is kept, its name cleaned")
+check(db.tabs[9] == nil and db.tabs[2] == nil, "a tab past the last one, or from the future, is refused")
+check(not Bank:ApplySnapshot({ tabs = { [1] = { ts = NOW - 200, s = "1,22832,5" } } }, "Cid") and db.tabs[1].slots[1].id == 22854,
+  "an older tab never replaces a newer one")
+Bank:ApplySnapshot({ tabs = { [1] = { ts = NOW - 50, s = "1,22832,5;2,22832,7" } } }, "Cid")
+check(db.tabs[1].slots[1].id == 22832 and Bank:CountOf(22832) == 12 and Bank:CountOf(22854) == 0,
+  "a newer tab replaces the older, and the counts follow")
+
+-- ── Asking and answering ────────────────────────────────────────────────
+wire = {}
+GuildOS.SyncService.handlers.gbank({ act = "ask", data = { ts = 0, lt = 0 } }, "Dan")
+check(last("gbank", "snap") == nil, "an answer waits")
+GuildOS.SyncService.handlers.gbank({ act = "snap", data = { tabs = { [1] = { ts = NOW - 50, s = "" } } } }, "Eva")
+runTimers()
+check(last("gbank", "snap") == nil, "somebody else's answer as new as ours cancels ours")
+GuildOS.SyncService.handlers.gbank({ act = "ask", data = { ts = 0, lt = 0 } }, "Dan")
+runTimers()
+check(last("gbank", "snap") ~= nil, "with no other answer, ours goes out")
+wire = {}
+GuildOS.SyncService.handlers.gbank({ act = "ask", data = { ts = NOW, lt = NOW } }, "Dan")
+runTimers()
+check(last("gbank", "snap") == nil, "nobody answers an ask for nothing newer")
+
+-- ── The ledger ──────────────────────────────────────────────────────────
+fresh()
+local function line(h, ty, n, id, c) return { t = NOW - h * 3600, ty = ty, n = n, id = id, c = c } end
+local read1 = { line(5, "d", "Bea", 23445, 20), line(3, "d", "Bea", 23445, 20), line(3, "d", "Bea", 23445, 20), line(1, "w", "Cid", 22854, 2) }
+check(Bank:MergeStream(1, read1) == 4, "a first read adds all its lines, two equal deposits included")
+NOW = NOW + 2 * 3600
+local function shifted(list, hours)
+  local out = {}
+  for _, e in ipairs(list) do out[#out + 1] = { t = e.t + hours * 3600, ty = e.ty, n = e.n, id = e.id, c = e.c } end
+  return out
+end
+-- The same lines read two hours later, each "hours ago" rounded a little differently, and one new.
+local read2 = shifted({ read1[2], read1[3], read1[4] }, 1)
+read2[#read2 + 1] = line(0, "d", "Dan", 21877, 20)
+check(Bank:MergeStream(1, read2) == 1, "a later read adds only what is new")
+check(Bank:MergeStream(1, read2) == 0, "the same read again adds nothing")
+check(Bank:MergeStream(1, { read1[1], read1[2] }) == 0, "an old read arriving late adds nothing")
+local c = Bank:Contributions(30)
+check(c.Bea and c.Bea.di == 60 and c.Cid.wi == 2 and c.Dan.di == 20, "contributions sum each member's lines")
+check(Bank:MergeStream(0, { { t = NOW, ty = "d", n = "Eva", g = 50000 } }) == 1 and Bank:Contributions(7).Eva.dg == 50000,
+  "the money log is its own stream")
+-- A shared read is cleaned before it is merged.
+wire = {}
+GuildOS.SyncService.handlers.gbank({ act = "log", data = { reads = { { k = 99, list = { line(0, "d", "X", 1, 1) } },
+  { k = 2, list = { { t = NOW + 999999, ty = "d", n = "X", id = 1, c = 1 }, { t = NOW, ty = "zz" },
+    { t = NOW, ty = "d", n = "Fae|r", id = 21877, c = 1e9 } } } } } }, "Fae")
+local s2 = Bank:Stream(2)
+check(#Bank:Stream(99) == 0 and #s2 == 1 and s2[1].n == "Faer" and s2[1].c == 1000,
+  "a shared ledger read loses lines for no tab, from the future or of no kind, and clamps the rest")
+
+-- ── Needs ───────────────────────────────────────────────────────────────
+fresh()
+officer = true
+check(Bank:SetNeed(22854, 60, "raid") and Bank:NeedOf(22854) == 60, "an officer sets a need")
+local msg = last("gbankneed", "snap")
+check(msg and msg.rev == 1, "and it goes out with a revision")
+officer = false
+check(not Bank:SetNeed(22854, 10) and Bank:NeedOf(22854) == 60, "a member does not change a need")
+revs = {}
+GuildOS.SyncService.handlers.gbankneed({ act = "snap", rev = 5, data = { needs = { [22832] = { n = 1e12 }, [0] = { n = 5 }, [21877] = { n = -1 } } } }, "Ana")
+check(Bank:NeedOf(22832) == 100000 and Bank:NeedOf(0) == nil and Bank:NeedOf(21877) == nil and Bank:NeedOf(22854) == nil,
+  "received needs replace ours, clamped and cleaned")
+GuildOS.SyncService.handlers.gbankneed({ act = "snap", rev = 4, data = { needs = {} } }, "Ana")
+check(Bank:NeedOf(22832) == 100000, "an older revision is ignored")
+
+-- ── Requests ────────────────────────────────────────────────────────────
+fresh()
+officer = false
+GuildOS.SyncService.handlers.gbankreq({ act = "new", data = { id = "R1", who = "Ana", item = 22854, n = 3, st = "done" } }, "Bea")
+local r = Bank:Requests().R1
+check(r and r.who == "Bea" and r.st == "open", "a request belongs to its sender and arrives open, whatever it says")
+GuildOS.SyncService.handlers.gbankreq({ act = "set", data = { id = "R1", st = "done" } }, "Cid")
+check(r.st == "open", "a member who is no officer cannot fill it")
+GuildOS.SyncService.handlers.gbankreq({ act = "set", data = { id = "R1", st = "cancelled" } }, "Cid")
+check(r.st == "open", "nor cancel somebody else's")
+GuildOS.SyncService.handlers.gbankreq({ act = "set", data = { id = "R1", st = "done" } }, "Ana")
+check(r.st == "done" and r.by == "Ana", "an officer fills it")
+check(Bank:Request(22832, 5, "heals") and last("gbankreq", "new").data.who == "Ana", "I ask, under my own name")
+
+-- ── Organizing a real tab ───────────────────────────────────────────────
+fresh()
+local free = addTab("Raid", -1)
+local limited = addTab("Mats", 5)
+local t1 = BANK.tabs[free].slots
+t1[3] = { id = 23445, c = 7 }
+t1[10] = { id = 22854, c = 5 }
+t1[20] = { id = 23445, c = 13 }
+t1[21] = { id = 28555, c = 1 }
+t1[40] = { id = 22854, c = 20 }
+t1[41] = { id = 22854, c = 9 }
+t1[55] = { id = 23440, c = 4 }
+t1[70] = { id = 22832, c = 20 }
+t1[97] = { id = 30000, c = 1 }
+BANK.tabs[limited].slots[1] = { id = 21877, c = 20 }
+Bank:OnEvent("GUILDBANKFRAME_OPENED")
+Bank:OnEvent("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", 10)
+check(Bank:IsOpen(), "the bank opens")
+CLOCK = CLOCK + 1
+Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
+runTimers()
+check(Bank:Store().tabs[free] and Bank:Store().tabs[free].slots[3].c == 7, "opening the bank reads the tabs")
+check(last("gbank", "snap") ~= nil, "and shares them")
+
+check(select(1, Bank:CanOrganize(free)) == true, "a tab with no withdrawal limit may be organized")
+local ok, why = Bank:CanOrganize(limited)
+check(not ok and why and why ~= "", "a tab with limited withdrawals may not, with a reason")
+BANK.leader = true
+check(select(1, Bank:CanOrganize(limited)) == true, "except by the guild master")
+BANK.leader = false
+check(#Bank:OrganizableTabs() == 1, "only the tabs I may organize are offered")
+
+local preview, planned = Bank:Preview(free)
+check(planned > 0 and #preview == 7, "the preview merges into seven stacks")
+
+moves = 0
+check(Bank:StartSort({ free, limited }), "a run starts on what may be organized")
+runTimers()
+check(Bank:SortState() == nil, "the run ends by itself")
+local got = BANK.tabs[free].slots
+local want = { { 22832, 20 }, { 22854, 20 }, { 22854, 14 }, { 23445, 20 }, { 23440, 4 }, { 30000, 1 }, { 28555, 1 } }
+-- Consumables (the potion, subclass 1, before the flasks, 3), trade goods, the gem, the recipe, then the gear.
+local okOrder = true
+for i, w in ipairs(want) do
+  if not (got[i] and got[i].id == w[1] and got[i].c == w[2]) then okOrder = false end
+end
+for i = #want + 1, 98 do if got[i] then okOrder = false end end
+check(okOrder, "the real tab ends merged and in order")
+check(BANK.tabs[limited].slots[1].c == 20, "a tab the rank may not organize is left alone")
+check(moves > 0 and cursor == nil, "the moves were made and nothing is left on the cursor")
+local said = table.concat(printed, "\n")
+check(said:find("Tab 1 organized", 1, true) ~= nil, "the run says what it did")
+
+-- Closing the bank mid-run stops it.
+t1 = BANK.tabs[free].slots
+t1[1], t1[98] = t1[98], t1[1]
+t1[60] = { id = 22854, c = 1 }
+check(Bank:StartSort(free), "a second run starts")
+Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+runTimers()
+check(Bank:SortState() == nil and not Bank:IsOpen(), "closing the bank stops the run")
+
+-- A slot that stays locked stops it instead of looping.
+Bank:OnEvent("GUILDBANKFRAME_OPENED")
+CLOCK = CLOCK + 1
+Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
+runTimers()
+BANK.tabs[free].slots[5] = { id = 23445, c = 1, locked = true }
+check(Bank:StartSort(free), "a third run starts")
+runTimers()
+check(Bank:SortState() == nil and table.concat(printed, "\n"):find("did not answer", 1, true) ~= nil,
+  "a slot that never unlocks stops the run, with a reason")
+
+-- ── Typing an item ──────────────────────────────────────────────────────
+check(Bank:ParseItemInput(linkOf(22854)) == 22854 and Bank:ParseItemInput("22832") == 22832, "a link or an id names its item")
+check(Bank:ParseItemInput("fel iron") == 23445 and Bank:ParseItemInput("Nothing at all") == nil,
+  "a name the bank holds names its item; any other names none")
+
+print(string.format("guild-bank: %d checks passed", checks))
