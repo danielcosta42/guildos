@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.31.0] - 2026-11-18
+
+### Added
+- Guild bank cleanup for officers: what to sell or keep and why, with its value; marked items come out at the bank, sell at a vendor and the gold goes back in (#380)
+- Settings switch the guild bank's tooltip line and its bar under the game's bank (#380)
+- A Bank tab shows the guild bank from anywhere, organizes tabs at the bank, keeps the full ledger, and tracks stock targets and item requests (#380)
+
+
+## [1.30.0] - 2026-11-18
+
+### Added
+- a aba Agora fica sem caixas, com a contagem grande e seis cartões iguais; o rodapé fica só com links e versão, com Buscar e Sincronizar na barra de título, Convidar em Membros e Inscrição no Core em Raides; e a tabela de Membros ganha linhas de 24px e a borda dourada na selecionada (#377)
+- o addon avisa no chat quando um colega de guilda usa uma versão mais nova do Guild OS, sempre a mais nova que já viu (#377)
+
+### Fixed
+- no WoW: Forever, salvar a mensagem do dia abre o painel de guilda do jogo, que é o único que pode mudá-la (#377)
+
+
 ## [1.29.0] - 2026-11-18
 
 ### Added

@@ -84,6 +84,17 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
   dungeons, delves and world)
 - Shown on the member sheet and in an optional M+ roster column
 
+### Guild Bank
+- **Seen from anywhere**: whoever opens the bank with Guild OS shares it; every member sees every tab summed, grouped by
+  category, searchable and sortable, with gold, free slots and who read it when
+- **Tabs as the game draws them**, with an **Organized** view that shows the tab in order without moving anything
+- **Organize for real** at the bank: merges stacks and sorts a tab (or every tab you may), one move at a time, with
+  pause and stop; only where your rank withdraws without limit, or as guild master
+- **Ledger** kept past the game's 25 lines, without double counting; the bank's gold over 30 days; top contributors
+- **Needs**: officers set how many of each item the bank should hold; everyone sees what is short, a shopping list
+- **Requests**: ask the officers for an item; they fill or decline it
+- Item tooltips show how many the bank holds; `/gos bank [sort [all] | stop | sync | need]`
+
 ### Loot Tracker
 - Automatically records every Rare+ item looted in raids and dungeons
 - Stores item link, recipient, timestamp, raid name, and quantity

@@ -15,7 +15,7 @@ end
 local _raidFilter25 = true
 
 ----------------------------------------------------------------------
--- Core Sign-up Frame — footer button opens this for any player
+-- Core Sign-up Frame: the Raids tab's button and /gos signup open it, for any player (#377)
 ----------------------------------------------------------------------
 local _coreSignupFrame = nil
 

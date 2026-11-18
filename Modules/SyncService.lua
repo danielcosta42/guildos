@@ -43,6 +43,8 @@ SyncService.OFFICER_DOMAINS = {
     guildcfg  = true,  -- the guild's officer threshold (issue #81), on retail its loot system (#185), its trials (#249)
     founding  = true,  -- WoW: Forever's founding and an officer's suggested date (issue #208)
     allylink  = true,  -- the alliance code an officer saved (issue #348); ask/have are member relays
+    gbankneed = true,  -- how much of each item the guild bank should hold (issue #380)
+    gbankclean = true, -- what officers marked to take out of the guild bank and sell (issue #380)
 }
 
 -- Domains outside OFFICER_DOMAINS whose handlers trust IsOfficerByName(sender) themselves.
@@ -52,6 +54,8 @@ SyncService.GUILD_ONLY_DOMAINS = {
     ["core.roster"] = true,  -- CoreManager's officer roster updates
     journal        = true,   -- each member's own journal (#205): from the guild, never a whisper
     foundingSelf   = true,   -- each member's own join date (#208), filed under its sender
+    gbank          = true,   -- the guild bank's picture, its ledger and asks for them (#380)
+    gbankreq       = true,   -- a member's request for an item; officers close it (#380)
 }
 
 -- Actions any guild member may perform inside an officer domain, over GUILD. Keyed by domain:

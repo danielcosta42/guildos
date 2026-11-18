@@ -151,9 +151,20 @@ function GuildManager:Kick(name)
 end
 
 -- Set the guild Message of the Day.
+-- On WoW: Forever only the game's own guild panel may set it: an addon's GuildSetMOTD is
+-- ADDON_ACTION_FORBIDDEN, seen in game (#377). There the panel opens instead, as for a rank change.
+function GuildManager:MOTDNeedsGamePanel()
+    return GuildOS.Client and GuildOS.Client.game == "FOREVER" or false
+end
+
 function GuildManager:SetMOTD(text)
     if not self:CanSetMOTD() then
         GuildOS:Print(L["|cffFF4444No permission to edit the MOTD.|r"])
+        return false
+    end
+    if self:MOTDNeedsGamePanel() then
+        GuildOS:Print(L["On WoW: Forever only the game's guild panel can change the message of the day."])
+        self:OpenNativeGuild()
         return false
     end
     if GuildSetMOTD then GuildSetMOTD(text or "") end

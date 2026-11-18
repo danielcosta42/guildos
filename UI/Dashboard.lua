@@ -1,19 +1,34 @@
 ----------------------------------------------------------------------
--- Guild OS - Home Dashboard
--- The home cards beside the Now column (UI/Agora.lua): a grid that surfaces the most useful
--- at-a-glance info (next raid + your RSVP, your readiness, guild pulse,
--- recruitment, your loot, the guild's chat), each card clicking through to
--- its full tab. Everything is read from existing modules; nothing here
--- owns state. Refreshes on show.
+-- Guild OS - Home cards
+-- The Now tab's grid (UI/Agora.lua places it): six equal cards (#377, the
+-- approved sketch Agora.dc.html) that surface the most useful at-a-glance
+-- info: the next event and your answer, your readiness (on WoW: Forever, the
+-- countdown to the raids), the guild's pulse, recruitment, your loot and the
+-- guild's chat, each clicking through to its full tab. A card is a `panel`
+-- surface with a 1px line, its title in Mono, 12px inside. Everything is
+-- read from existing modules; nothing here owns state. Refreshes on show.
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
 
--- Font-safe status marks (the skin fonts lack many symbol glyphs, so use the native
--- Indicator textures instead of unicode ticks/dots — see the circle-glyph bug).
-local TICK  = "|TInterface\\COMMON\\Indicator-Green:12|t "
-local CROSS = "|TInterface\\COMMON\\Indicator-Red:12|t "
+local WHITE      = "Interface\\Buttons\\WHITE8x8"
+local PAD        = 12    -- inside a card (the sketch's .card)
+local HDR_H      = 12    -- a card's title line (Mono 10)
+local STACK      = 8     -- between a card's blocks
+local BODY_TOP   = PAD + HDR_H + STACK
+local CARD_H     = 164   -- a card under the column: the height it has in the default 1000x620 window
+local CARD_MIN_H = 150   -- beside the column, never shorter: the tab scrolls instead
+local CARD_MIN_W = 240   -- two side by side only while each keeps this, or the RSVP buttons wrap
+local SETUP_H    = 150
+local GUTTER     = 12    -- when the grid is drawn alone (Agora passes its own)
+local MARK       = 6     -- the status square (Indicator textures are game art, not the identity's)
+local ROW_H      = 24
+local LINE_H     = 16    -- a line of the raids countdown
+local DASH       = "\226\128\148"   -- a number not known yet
+local DOT        = " \194\183 "
+
+local RSVP = { { L["Going"], "yes" }, { L["Tentative"], "tentative" }, { L["Absent"], "no" } }
 
 local function CAL() return GuildOS.Calendar end
 local function nowT() return (GetServerTime and GetServerTime()) or time() end
@@ -42,8 +57,44 @@ local function truncate(s, n)
     return GuildOS:Utf8Head(s, n - 1) .. "..."   -- by characters, never half of one (#104)
 end
 
+-- A text in a card body at (x, y): Sans 12 unless a role says otherwise, one line cut at `w`
+-- unless it wraps.
+local function text(body, s, x, y, w, col, role, wrap)
+    local fs = UI:CreateText(body, s, 12, col.r, col.g, col.b)
+    if role then GuildOS:ApplyFont(fs, nil, role) end
+    fs:SetPoint("TOPLEFT", x, -y)
+    if w then fs:SetWidth(math.max(1, w)) end
+    fs:SetWordWrap(wrap == true)
+    fs:SetJustifyH("LEFT")
+    return fs
+end
+
+-- A status line: a 6px square in `col`, then the words in `ink`.
+local function markLine(body, col, ink, s, y, w, x)
+    x = x or 0
+    local sq = body:CreateTexture(nil, "ARTWORK")
+    sq:SetTexture(WHITE)
+    sq:SetSize(MARK, MARK)
+    sq:SetPoint("TOPLEFT", x, -(y + 4))
+    sq:SetVertexColor(col.r, col.g, col.b, 1)
+    return text(body, s, x + MARK + 8, y, w - MARK - 8, ink)
+end
+
+-- A button as wide as its label plus the sketch's padding on each side: CreateButton only grows one
+-- whose label spills, so a short label sat against its edges.
+local function fit(b, pad)
+    b:SetWidth(math.ceil(b.label:GetStringWidth() or 0) + 2 * pad)
+    return b
+end
+
+-- A link-style button (the sketch's "b g": 4px either side of its mono label).
+local function ghost(parent, label)
+    return fit(UI:SetButtonVariant(UI:CreateButton(parent, label, 40, 26), "ghost"), 4)
+end
+
 ----------------------------------------------------------------------
--- Build the dashboard into a tab panel; return its refresh fn.
+-- Build the cards into `panel` (Agora's grid frame); return the refresh fn.
+-- panel.Layout(w, h, fill, gutter) places them and returns the height used.
 ----------------------------------------------------------------------
 function GuildOS:CreateDashboardPanel(panel)
     local f = CreateFrame("Frame", nil, panel)
@@ -52,22 +103,29 @@ function GuildOS:CreateDashboardPanel(panel)
     -- A card opens its tab, and the sub-tab when it names one.
     local function goTab(tabKey, subKey) UI:OpenWindow(tabKey, subKey) end
 
-    -- Card = dark panel with a gold header + a body frame + click-through. A card whose body
+    -- Card = a `panel` surface with a Mono title + a body frame + click-through. A card whose body
     -- takes clicks itself (the chat: a link, the box) opens its tab from the arrow alone.
     local function makeCard(title, tabKey, subKey, arrowOnly)
-        local card = UI:CreateDarkPanel(f)
-        card:SetFrameLevel((f:GetFrameLevel() or 1) + 2)
-        local hdr = UI:CreateHeaderText(card, title, 11)
-        hdr:SetPoint("TOPLEFT", 12, -9)
+        local card = UI:CreatePanel(f, nil, (f:GetFrameLevel() or 1) + 1)
+        card:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1)
+        local hdr = UI:CreateHeaderText(card, title)
+        hdr:SetPoint("TOPLEFT", PAD, -PAD)
+        -- One line, short of the arrow: a long translation cuts, never runs into it (#148).
+        hdr:SetPoint("RIGHT", card, "RIGHT", -(PAD + 16), 0)
+        hdr:SetWordWrap(false)
+        hdr:SetJustifyH("LEFT")
         card.hdr = hdr
 
-        local arrow = UI:CreateText(card, ">", 13, C.silver.r, C.silver.g, C.silver.b)
-        arrow:SetPoint("TOPRIGHT", -10, -8)
+        local arrow = UI:CreateText(card, ">", 12, C.label.r, C.label.g, C.label.b)
+        arrow:SetPoint("TOPRIGHT", -PAD, -(PAD - 2))
+        arrow:SetShown(tabKey ~= nil)
+        card.arrow = arrow
 
         local body = CreateFrame("Frame", nil, card)
-        body:SetPoint("TOPLEFT", 12, -28)
-        body:SetPoint("BOTTOMRIGHT", -10, 10)
+        body:SetPoint("TOPLEFT", PAD, -BODY_TOP)
+        body:SetPoint("BOTTOMRIGHT", -PAD, PAD)
         card.body = body
+        card.innerW, card.innerH = 1, 1
 
         if tabKey then
             local hit = card
@@ -80,13 +138,14 @@ function GuildOS:CreateDashboardPanel(panel)
                 card:EnableMouse(true)
                 card:SetScript("OnMouseUp", function() goTab(tabKey, subKey) end)
             end
+            -- Hovered, a card lights its border as a secondary button does: gold is for selection.
             hit:SetScript("OnEnter", function()
-                card:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
-                arrow:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+                card:SetBackdropBorderColor(C.label.r, C.label.g, C.label.b, 1)
+                arrow:SetTextColor(C.text.r, C.text.g, C.text.b)
             end)
             hit:SetScript("OnLeave", function()
-                card:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-                arrow:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+                card:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+                arrow:SetTextColor(C.label.r, C.label.g, C.label.b)
             end)
         end
         return card
@@ -100,96 +159,102 @@ function GuildOS:CreateDashboardPanel(panel)
     -- The guild's chat (#126), where "Guild activity" repeated the Activity column beside it.
     local cChat     = makeCard(L["GUILD CHAT"],      "guild",       "chat", true)
     local chatRefresh = GuildOS:CreateGuildChatFeed(cChat.body)
-    -- The guild's setup, for its GM and officers (issue #217). WoW: Forever only.
+    -- The guild's setup, for its GM and officers (issue #217), over the grid while due. WoW: Forever only.
     local cSetup = GuildOS.Activation and makeCard(L["SET UP GUILD OS FOR YOUR GUILD"]) or nil
+    if cSetup then cSetup:Hide() end   -- frames are born shown: only Layout decides it is due
+    local grid = { cNext, cReady, cPulse, cRecruit, cLoot, cChat }
 
     ------------------------------------------------------------------
     -- Card fills (each clears its body and rebuilds from live data)
     ------------------------------------------------------------------
-    local function fillNext(body)
+    local function fillNext(card)
+        local body, w = card.body, card.innerW
         clearBody(body)
-        local e = CAL() and CAL():NextEvent()
+        local cal = CAL()
+        local e = cal and cal:NextEvent()
         if not e then
-            local none = UI:CreateText(body, L["No upcoming events scheduled."], 11, C.silver.r, C.silver.g, C.silver.b)
-            none:SetPoint("TOPLEFT", 2, -2)
+            text(body, L["No upcoming events scheduled."], 0, 0, w, C.textSoft, nil, true)
             return
         end
-        local kindTxt = (CAL().KindLabel and CAL():KindLabel(e.kind)) or ""
-        local title = UI:CreateText(body, "|cffFFFFFF" .. truncate(e.title or "?", 34) .. "|r", 14, C.gold.r, C.gold.g, C.gold.b)
-        title:SetPoint("TOPLEFT", 2, -2)
-        local sub = UI:CreateText(body, string.format("%s  ·  %s  ·  |cff9AA0AA%s|r",
-            GuildOS:LocalDate(L["%a %d %b, %H:%M"], e.when), fmtCountdown((e.when or 0) - nowT()), kindTxt),
-            10, C.silver.r, C.silver.g, C.silver.b)
-        sub:SetPoint("TOPLEFT", 2, -24)
-
-        local comp = CAL():GetComposition(e)
-        local compFS = UI:CreateText(body, string.format(L["%d going · %d tentative  |  %dT %dH %dD"],
-            comp.yes, comp.tentative, comp.roles.TANK, comp.roles.HEALER, comp.roles.DPS),
-            10, C.textDim.r, C.textDim.g, C.textDim.b)
-        compFS:SetPoint("TOPLEFT", 2, -42)
+        local kindTxt = (cal.KindLabel and cal:KindLabel(e.kind)) or ""
+        -- An officer typed it, and it may have come over the wire (#377).
+        text(body, truncate(GuildOS:SanitizeUserText(e.title or "?"), 34), 0, 0, w, C.text, "sectionTitle")
+        local when = GuildOS:LocalDate(L["%a %d %b, %H:%M"], e.when) .. DOT .. fmtCountdown((e.when or 0) - nowT())
+        if kindTxt ~= "" then when = when .. DOT .. kindTxt end
+        text(body, when, 0, 18, w, C.label, "caption")
+        local comp = cal:GetComposition(e)
+        text(body, string.format(L["%d going · %d tentative  |  %dT %dH %dD"],
+            comp.yes, comp.tentative, comp.roles.TANK, comp.roles.HEALER, comp.roles.DPS), 0, 38, w, C.textSoft, "tableNum")
 
         -- A raid planned on the site is answered there: no buttons of the game's own (#146).
-        if CAL():IsWebEvent(e) then
-            local where = UI:CreateText(body, L["Sign up in Discord or on the website."], 10, C.silver.r, C.silver.g, C.silver.b)
-            where:SetPoint("TOPLEFT", 2, -66)
+        if cal:IsWebEvent(e) then
+            local where = text(body, L["Sign up in Discord or on the website."], 0, 0, w, C.textSoft, nil, true)
+            where:ClearAllPoints()
+            where:SetPoint("BOTTOMLEFT", 0, 0)
             return
         end
 
-        -- Quick RSVP row (keeps the player's current role).
-        local mine = CAL():MyRsvp(e)
+        -- The answer, along the card's foot (keeps the player's current role). Until it is given,
+        -- "Going" is the screen's one primary (the sketch); once given, that answer is the selected one.
+        local mine = cal:MyRsvp(e)
         local role = (mine and mine.role) or "DPS"
-        local myLbl = UI:CreateText(body, L["You:"], 10, C.silver.r, C.silver.g, C.silver.b)
-        myLbl:SetPoint("TOPLEFT", 2, -66)
-        local function rsvpBtn(text, status, anchor, xoff, col)
-            local b = UI:CreateButton(body, text, 58, 20)
-            if anchor then b:SetPoint("LEFT", anchor, "RIGHT", xoff, 0)
-            else b:SetPoint("TOPLEFT", 40, -64) end
-            if mine and mine.status == status then
-                b:SetBaseColor(col.r * 0.34, col.g * 0.34, col.b * 0.34, 0.95)
-            end
-            b:SetScript("OnClick", function() CAL():Rsvp(e.id, status, role); f.Refresh() end)
-            return b
+        local bar = CreateFrame("Frame", nil, body)
+        bar:SetPoint("BOTTOMLEFT", 0, 0)
+        bar:SetWidth(math.max(1, w))
+        local buttons = {}
+        for _, opt in ipairs(RSVP) do
+            local b = UI:CreateButton(bar, opt[1], 40, 26)
+            if not mine and opt[2] == "yes" then UI:SetButtonVariant(b, "primary") end
+            fit(b, 12)
+            UI:SetSelected(b, mine ~= nil and mine.status == opt[2])
+            b:SetScript("OnClick", function() cal:Rsvp(e.id, opt[2], role); f.Refresh() end)
+            b.status = opt[2]
+            buttons[#buttons + 1] = b
         end
-        local bYes = rsvpBtn(L["Going"],     "yes",       nil, 0,  C.online)
-        local bTen = rsvpBtn(L["Tentative"], "tentative", bYes, 6, C.gold)
-        rsvpBtn(L["Absent"], "no", bTen, 6, C.red)
+        -- A translation too long for one row wraps the buttons rather than running out of the card.
+        UI:FlowBar(bar, buttons, { gap = STACK, rowGap = 4, rowH = 26 })
+        card.rsvp = buttons
     end
 
-    local function fillReady(body, myRow)
+    local function fillReady(card, myRow)
+        local body, w = card.body, card.innerW
         clearBody(body)
         if not myRow then
-            local none = UI:CreateText(body, L["No readiness data yet — open the roster to sync."], 10, C.silver.r, C.silver.g, C.silver.b)
-            none:SetPoint("TOPLEFT", 2, -2); none:SetWidth(body:GetWidth() - 4); none:SetJustifyH("LEFT")
+            text(body, L["No readiness data yet — open the roster to sync."], 0, 0, w, C.textSoft, nil, true)
             return
         end
         local y = 0
-        local function line(ok, txt, warnTxt)
-            local fs = UI:CreateText(body, (ok and TICK or CROSS) .. (ok and txt or (warnTxt or txt)), 11, C.text.r, C.text.g, C.text.b)
-            fs:SetPoint("TOPLEFT", 2, -y); y = y + 20
-        end
-        -- Attunements
+        -- Attunements: a bar and its percentage, as in the sketch.
         if (myRow.attTotal or 0) > 0 then
-            line(myRow.attDone >= myRow.attTotal,
-                string.format(L["Attunements (%d/%d)"], myRow.attDone, myRow.attTotal),
-                string.format(L["Attunements (%d/%d)"], myRow.attDone, myRow.attTotal))
+            local frac = myRow.attDone / myRow.attTotal
+            text(body, string.format(L["Attunements (%d/%d)"], myRow.attDone, myRow.attTotal), 0, 0, w - 44, C.text)
+            local pct = text(body, string.format("%d%%", math.floor(frac * 100 + 0.5)), 0, 0, 40, C.label, "caption")
+            pct:ClearAllPoints()
+            pct:SetPoint("TOPRIGHT", 0, -2)
+            pct:SetJustifyH("RIGHT")
+            local bar = UI:CreateProgressBar(body, math.max(1, w), 8)
+            bar:SetPoint("TOPLEFT", 0, -18)
+            bar:SetProgress(frac)
+            y = 18 + 8 + STACK
         end
-        -- Enchants
+        -- Each check a square: ok when it is done, warn (square and words) when it is not.
+        local function tick(ok, okText, warnText)
+            markLine(body, ok and C.ok or C.warn, ok and C.text or C.warn, ok and okText or warnText, y, w)
+            y = y + 14 + STACK
+        end
         if myRow.hasGear then
-            line((myRow.missEnch or 0) == 0, L["Enchants complete"],
-                string.format(L["Enchants: %d missing"], myRow.missEnch or 0))
+            tick((myRow.missEnch or 0) == 0, L["Enchants complete"], string.format(L["Enchants: %d missing"], myRow.missEnch or 0))
         end
         -- Consumables (nil = never checked this raid)
         if myRow.missCons ~= nil then
-            line(myRow.missCons == 0, L["Consumables stocked"],
-                string.format(L["Consumables: %d missing"], myRow.missCons))
+            tick(myRow.missCons == 0, L["Consumables stocked"], string.format(L["Consumables: %d missing"], myRow.missCons))
         end
         -- Overall verdict
         local verdict, vcol
-        if myRow.status == "ready" then verdict, vcol = L["You're raid-ready!"], C.online
-        elseif myRow.status == "warn" or myRow.status == "notready" then verdict, vcol = L["Needs attention"], C.gold
-        else verdict, vcol = L["Not enough data yet"], C.silver end
-        local v = UI:CreateText(body, verdict, 11, vcol.r, vcol.g, vcol.b)
-        v:SetPoint("TOPLEFT", 2, -(y + 4))
+        if myRow.status == "ready" then verdict, vcol = L["You're raid-ready!"], C.ok
+        elseif myRow.status == "warn" or myRow.status == "notready" then verdict, vcol = L["Needs attention"], C.warn
+        else verdict, vcol = L["Not enough data yet"], C.textSoft end
+        text(body, verdict, 0, y, w, vcol, "memberName")
     end
 
     -- WoW: Forever, until a week after the raids open (issue #207): the countdown in the readiness
@@ -202,24 +267,20 @@ function GuildOS:CreateDashboardPanel(panel)
             or cd.days == 1 and L["RAIDS OPEN IN 1 DAY"]
             or string.format(L["RAIDS OPEN IN %d DAYS"], cd.days)
         card.hdr:SetText(title)
-        -- One line, short of the arrow: a long translation cuts, never runs into it (#148).
-        card.hdr:SetWidth(math.max(1, card:GetWidth() - 44)); card.hdr:SetWordWrap(false); card.hdr:SetJustifyH("LEFT")
-        local w = body:GetWidth()
+        local w = card.innerW
         local y = 0
         local function line(label, value, frac)
-            local name = UI:CreateText(body, label, 11, C.text.r, C.text.g, C.text.b)
-            name:SetPoint("TOPLEFT", 2, -y)
-            name:SetWidth(math.floor(w * 0.36)); name:SetWordWrap(false); name:SetJustifyH("LEFT")
-            local val = UI:CreateText(body, value, 10, C.textDim.r, C.textDim.g, C.textDim.b)
-            val:SetPoint("TOPLEFT", math.floor(w * 0.38), -y)
+            local valX = math.floor(w * 0.38)
             local barW = frac and math.max(20, math.floor(w * 0.22)) or 0
-            val:SetWidth(math.max(1, w - math.floor(w * 0.38) - barW - 8)); val:SetWordWrap(false); val:SetJustifyH("LEFT")
+            text(body, label, 0, y, math.floor(w * 0.36), C.text)
+            local val = text(body, value, valX, y + 1, w - valX - barW - (frac and 8 or 0), C.textSoft)
+            GuildOS:ApplyFont(val, 11)
             if frac then
-                local bar = UI:CreateProgressBar(body, barW, 6)
-                bar:SetPoint("TOPRIGHT", -2, -(y + 4))
+                local bar = UI:CreateProgressBar(body, barW, 8)
+                bar:SetPoint("TOPRIGHT", 0, -(y + 3))
                 bar:SetProgress(frac)
             end
-            y = y + 20
+            y = y + LINE_H
         end
         for _, c in ipairs(cd.cores) do
             line(c.name, string.format(L["%d / %d at %d"], c.ready, c.size, cd.cap), c.ready / c.size)
@@ -253,7 +314,9 @@ function GuildOS:CreateDashboardPanel(panel)
         end
     end
 
-    local function fillPulse(body, rows)
+    -- Three metric chips (members, online, average item level), and the raid-ready count under them.
+    local function fillPulse(card, rows)
+        local body, w = card.body, card.innerW
         clearBody(body)
         local total, online, iSum, iN = 0, 0, 0, 0
         for _, r in ipairs(rows or {}) do
@@ -264,42 +327,41 @@ function GuildOS:CreateDashboardPanel(panel)
         local avgIlvl = iN > 0 and math.floor(iSum / iN) or 0
 
         -- Raid-ready = max-level members (70, or 60 on Forever), counted straight from the guild
-        -- roster so offline members count too — a stable, motivating number even
-        -- with the guild offline. Level is a roster field known for everyone, so
-        -- this needs no synced data. (Future: also gate on attunement.)
+        -- roster so offline members count too: a stable, motivating number even with the guild
+        -- offline. Level is a roster field known for everyone, so this needs no synced data.
         local ready = 0
-        local n = GetNumGuildMembers() or 0
-        for i = 1, n do
+        for i = 1, GetNumGuildMembers() or 0 do
             local _, _, _, level = GetGuildRosterInfo(i)
             if (level or 0) >= GuildOS.Client.maxLevel then ready = ready + 1 end
         end
         local stats = {
-            { string.format("%d", online),  L["online"],     C.online },
-            { string.format("%d", total),   L["members"],    C.text },
-            { avgIlvl > 0 and tostring(avgIlvl) or "—", L["avg iLvl"], C.gold },
-            { string.format("%d", ready),   L["raid-ready"], C.accent },
+            { tostring(total), L["members"] },
+            { tostring(online), L["online"] },
+            { avgIlvl > 0 and tostring(avgIlvl) or DASH, L["avg iLvl"] },
         }
-        local colW = math.floor((body:GetWidth()) / 2)
+        local chipW = math.max(34, math.floor((w - 2 * PAD) / 3))
+        card.chips = {}
         for i, s in ipairs(stats) do
-            local col = (i - 1) % 2
-            local row = math.floor((i - 1) / 2)
-            local val = UI:CreateText(body, s[1], 18, s[3].r, s[3].g, s[3].b)
-            val:SetPoint("TOPLEFT", col * colW + 2, -(row * 42))
-            local lbl = UI:CreateText(body, s[2], 9, C.textDim.r, C.textDim.g, C.textDim.b)
-            lbl:SetPoint("TOPLEFT", col * colW + 2, -(row * 42 + 22))
+            local chip = UI:CreateMetricChip(body, s[1], s[2])
+            chip:SetPoint("TOPLEFT", (i - 1) * (chipW + PAD), -4)
+            chip:SetWidth(chipW)
             -- Its own column and one line: "prêts pour le raid" ran out of the card (#148).
-            lbl:SetWidth(math.max(1, colW - 4))
-            lbl:SetWordWrap(false)
-            lbl:SetJustifyH("LEFT")
+            chip.label:SetWidth(chipW)
+            chip.label:SetWordWrap(false)
+            chip.label:SetJustifyH("LEFT")
+            card.chips[i] = chip
         end
+        local foot = text(body, string.format(L["%d raid-ready"], ready), 0, 0, w, C.label, "caption")
+        foot:ClearAllPoints()
+        foot:SetPoint("BOTTOMLEFT", 0, 0)
     end
 
-    local function fillRecruit(body)
+    local function fillRecruit(card)
+        local body, w = card.body, card.innerW
         clearBody(body)
         -- Switched off in Settings, no popup will come: say so instead of offering one (issue #84).
         if not GuildOS:IsFeatureEnabled("recruitment") then
-            local off = UI:CreateText(body, L["The Recruitment module is off. Turn it on in Settings > Modules."], 10, C.silver.r, C.silver.g, C.silver.b)
-            off:SetPoint("TOPLEFT", 2, -2); off:SetWidth(body:GetWidth() - 4); off:SetJustifyH("LEFT")
+            text(body, L["The Recruitment module is off. Turn it on in Settings > Modules."], 0, 0, w, C.textSoft, nil, true)
             return
         end
         local info = GuildOS.db and GuildOS.db.guildRecruitment
@@ -307,46 +369,56 @@ function GuildOS:CreateDashboardPanel(panel)
         if not info or not info.enabled or not info.message or info.message == "" then
             local txt = isOfficer and L["Recruitment is off. Set it up in the Recruitment tab."]
                                    or L["Your guild isn't recruiting right now."]
-            local none = UI:CreateText(body, txt, 10, C.silver.r, C.silver.g, C.silver.b)
-            none:SetPoint("TOPLEFT", 2, -2); none:SetWidth(body:GetWidth() - 4); none:SetJustifyH("LEFT")
+            text(body, txt, 0, 0, w, C.textSoft, nil, true)
             return
         end
-        local status = UI:CreateText(body, "|TInterface\\COMMON\\Indicator-Green:12|t |cff4CFF4C" .. L["Guild is recruiting"] .. "|r", 12, C.text.r, C.text.g, C.text.b)
-        status:SetPoint("TOPLEFT", 2, -2)
-        local msg = UI:CreateText(body, "\"" .. truncate(info.message, 90) .. "\"", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        msg:SetPoint("TOPLEFT", 2, -22); msg:SetWidth(body:GetWidth() - 4); msg:SetJustifyH("LEFT")
+        text(body, L["Guild is recruiting"], 0, 0, w, C.text, "memberName")
+        -- An officer's text, relayed member to member (#377).
+        text(body, "\"" .. truncate(GuildOS:SanitizeUserText(info.message), 90) .. "\"", 0, 22, w, C.textSoft, nil, true)
 
+        local b
         if isOfficer then
-            local b = UI:CreateButton(body, L["Broadcast now"], 110, 20)
-            b:SetPoint("BOTTOMLEFT", 2, 2)
+            b = ghost(body, L["Broadcast now"])
             b:SetScript("OnClick", function() if GuildOS.Recruitment then GuildOS.Recruitment:BroadcastStatus() end end)
         elseif GuildOS.Recruitment and GuildOS.Recruitment:MemberMayPost() then
             -- Opt-in (#150): only an explicit choice helps; a member past the officers' rank is not offered it.
             local participating = GuildOS.db.recruitParticipate == true
-            local b = UI:CreateButton(body, participating and L["Helping"] or L["Help spread it"], 120, 20)
-            if participating then b:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.9) end
-            b:SetPoint("BOTTOMLEFT", 2, 2)
+            b = ghost(body, participating and L["Helping"] or L["Help spread it"])
+            UI:SetSelected(b, participating)
             b:SetScript("OnClick", function()
                 if GuildOS.Recruitment then GuildOS.Recruitment:SetParticipation(not participating) end
                 f.Refresh()
             end)
         end
+        if b then b:SetPoint("BOTTOMLEFT", 0, 0) end
+        card.action = b
     end
 
-    local function fillLoot(body)
+    -- My last items, one 24px row each with the raid on the right, as many as the card holds.
+    local function fillLoot(card)
+        local body, w = card.body, card.innerW
         clearBody(body)
         local items = GuildOS.LootTracker and GuildOS.LootTracker:GetPlayerLoot(myKey(), 4) or {}
         if #items == 0 then
-            local none = UI:CreateText(body, L["No loot recorded for you yet."], 10, C.silver.r, C.silver.g, C.silver.b)
-            none:SetPoint("TOPLEFT", 2, -2)
+            text(body, L["No loot recorded for you yet."], 0, 0, w, C.textSoft, nil, true)
             return
         end
-        local y = 0
-        for _, it in ipairs(items) do
-            local where = (it.raid and it.raid ~= "") and ("  |cff777777" .. truncate(it.raid, 16) .. "|r") or ""
-            local fs = UI:CreateText(body, "|cffEDCC7B*|r " .. (it.itemLink or it.itemName or "?") .. where, 11, C.text.r, C.text.g, C.text.b)
-            fs:SetPoint("TOPLEFT", 2, -y); fs:SetWidth(body:GetWidth() - 4); fs:SetJustifyH("LEFT")
-            y = y + 18
+        local n = math.max(1, math.min(#items, UI:ResolveRows(card.innerH, ROW_H, 0)))
+        local whereW = math.floor(w * 0.34)
+        for i = 1, n do
+            local it, y = items[i], (i - 1) * ROW_H
+            text(body, it.itemLink or it.itemName or "?", 0, y + 5, w - whereW - 8, C.text)
+            if it.raid and it.raid ~= "" then
+                local where = text(body, it.raid, 0, 0, whereW, C.label, "caption")
+                where:ClearAllPoints()
+                where:SetPoint("TOPRIGHT", 0, -(y + 7))
+                where:SetJustifyH("RIGHT")
+            end
+            if i < n then
+                local rule = UI:CreateSeparator(body)
+                rule:SetPoint("TOPLEFT", 0, -(y + ROW_H))
+                rule:SetPoint("TOPRIGHT", 0, -(y + ROW_H))
+            end
         end
     end
 
@@ -359,83 +431,112 @@ function GuildOS:CreateDashboardPanel(panel)
         run = { L["First group run"] },
     }
     local function fillSetup(card, state)
-        local body = card.body
+        local body, w = card.body, card.innerW
         clearBody(body)
         local A = GuildOS.Activation
-        local count = UI:CreateText(body, string.format("%d / %d", state.done, #A.STEPS), 11, C.gold.r, C.gold.g, C.gold.b)
-        count:SetPoint("TOPLEFT", 2, -2)
-        local hide = UI:CreateButton(body, L["Hide"], 56, 18)
-        hide:SetPoint("TOPRIGHT", -18, 0)
+        local count = text(body, string.format("%d / %d", state.done, #A.STEPS), 0, 2, nil, C.text, "tableNum")
+        local hide = ghost(body, L["Hide"])
+        hide:SetPoint("TOPRIGHT", 0, 4)
         hide:SetScript("OnClick", function() A:Hide(GetServerTime()); f.Refresh() end)
-        local w = math.floor(body:GetWidth() / 2)
+        local half = math.floor(w / 2)
         for i, id in ipairs(A.STEPS) do
             local step = SETUP[id]
             local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
-            local text = (state.steps[id] and TICK or CROSS) .. step[1]
-            local fs = UI:CreateText(body, text, 11, C.text.r, C.text.g, C.text.b)
-            fs:SetPoint("TOPLEFT", 2 + col * w, -(22 + row * 18))
-            fs:SetWidth(math.max(1, w - 8)); fs:SetWordWrap(false); fs:SetJustifyH("LEFT")
-            if step[2] and not state.steps[id] then
+            local done = state.steps[id]
+            local fs = markLine(body, done and C.ok or C.lineHi, C.text, step[1], 26 + row * 18, half - 8, col * half)
+            if step[2] and not done then
                 local b = CreateFrame("Button", nil, body)
                 b:SetAllPoints(fs)
                 b:SetScript("OnClick", function() goTab(step[2]) end)
             end
         end
-        local how = UI:CreateText(body, L["The bot and the character are set up on guildos.me/start. A group run is a dungeon cleared by 3 members with the addon."], 10, C.silver.r, C.silver.g, C.silver.b)
-        how:SetPoint("TOPLEFT", 2, -76)
-        how:SetWidth(math.max(1, body:GetWidth() - 4)); how:SetWordWrap(false); how:SetJustifyH("LEFT")
+        text(body, L["The bot and the character are set up on guildos.me/start. A group run is a dungeon cleared by 3 members with the addon."],
+            0, 84, w, C.textSoft)
         if state.staleDays then
-            local old = UI:CreateText(body, string.format(L["Verified %d days ago · log out once to update"], state.staleDays), 10, C.silver.r, C.silver.g, C.silver.b)
+            local old = text(body, string.format(L["Verified %d days ago · log out once to update"], state.staleDays),
+                0, 0, nil, C.label, "caption")
+            old:ClearAllPoints()
             old:SetPoint("LEFT", count, "RIGHT", 10, 0)
         end
     end
 
     ------------------------------------------------------------------
-    -- Layout (responsive) + fill
+    -- Layout: equal cells, and the fill
     ------------------------------------------------------------------
-    function f.Refresh()
-        local W = f:GetWidth();  if not W or W < 200 then W = 1000 end
-        local H = f:GetHeight(); if not H or H < 200 then H = 520 end
-        local M, G = 12, 10
-        local innerW = W - 2 * M
+    local function setupDue()
+        if not cSetup then return false end
+        local A = GuildOS.Activation
+        local ok, show = GuildOS:SafeCall(A.ShouldShow, A, GetServerTime())
+        return ok and show or false
+    end
 
-        -- The guild's setup, above everything while it is due (issue #217). A failure leaves the
-        -- Dashboard as it was.
-        local top = M
+    -- What Agora last asked for, so a refresh lays the cards out the same way.
+    local last = nil
+    panel.dash = { cards = grid, setup = cSetup }
+
+    -- Place the cards in `w`: two columns while each keeps CARD_MIN_W, else one; every cell the same
+    -- size (#377). With `fill`, the rows share `h` out (beside the column), never under CARD_MIN_H;
+    -- otherwise each is CARD_H (under the column). The setup card, while due, spans the grid's top.
+    -- Returns the height used.
+    function panel.Layout(w, h, fill, gutter)
+        last = { w = w, h = h, fill = fill, gutter = gutter }
+        local g = gutter or GUTTER
+        local top = 0
+        local due = setupDue()
         if cSetup then
-            local A = GuildOS.Activation
-            local ok, show = GuildOS:SafeCall(A.ShouldShow, A, GetServerTime())
-            cSetup:SetShown(ok and show or false)
-            if ok and show then
-                cSetup:ClearAllPoints(); cSetup:SetPoint("TOPLEFT", M, -M); cSetup:SetSize(innerW, 128)
-                GuildOS:SafeCall(fillSetup, cSetup, A:Read(GetServerTime()))
-                top = M + 128 + G
+            local was = cSetup:IsShown()
+            cSetup:SetShown(due)
+            if due then
+                cSetup:ClearAllPoints()
+                cSetup:SetPoint("TOPLEFT", 0, 0)
+                cSetup:SetSize(w, SETUP_H)
+                cSetup.innerW, cSetup.innerH = w - 2 * PAD, SETUP_H - BODY_TOP - PAD
+                top = SETUP_H + g
+                -- Due on the 10s repaint, not only on a tab open: filled as it comes, never empty (#377).
+                if not was then GuildOS:SafeCall(fillSetup, cSetup, GuildOS.Activation:Read(GetServerTime())) end
             end
         end
+        -- No loot card without the tracker; retail has it since issue #183.
+        cLoot:SetShown(GuildOS.LootTracker ~= nil)
+        local shown = {}
+        for _, card in ipairs(grid) do
+            if card:IsShown() then shown[#shown + 1] = card end
+        end
+        local cols = ((w - g) / 2 >= CARD_MIN_W) and 2 or 1
+        local cw = math.floor((w - g * (cols - 1)) / cols)
+        local rows = math.ceil(#shown / cols)
+        local ch = CARD_H
+        if fill and h then ch = math.max(CARD_MIN_H, math.floor((h - top - g * (rows - 1)) / rows)) end
+        for i, card in ipairs(shown) do
+            local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
+            card:ClearAllPoints()
+            card:SetPoint("TOPLEFT", col * (cw + g), -(top + row * (ch + g)))
+            card:SetSize(cw, ch)
+            card.innerW, card.innerH = math.max(1, cw - 2 * PAD), math.max(1, ch - BODY_TOP - PAD)
+        end
+        panel.dash.cols, panel.dash.cardW, panel.dash.cardH = cols, cw, ch
+        return top + rows * ch + math.max(0, rows - 1) * g
+    end
 
-        -- Row 1: Next Raid (wider) + Readiness
-        local r1h = 126
-        local leftW = math.floor((innerW - G) * 0.56)
-        local rightW = innerW - G - leftW
-        cNext:ClearAllPoints();  cNext:SetPoint("TOPLEFT", M, -top);                 cNext:SetSize(leftW, r1h)
-        cReady:ClearAllPoints(); cReady:SetPoint("TOPLEFT", M + leftW + G, -top);    cReady:SetSize(rightW, r1h)
+    local lastHeight
+    function f.Refresh()
+        -- Drawn alone (no Agora yet), the panel's own size, one column of three.
+        local l = last or {}
+        local w = l.w or panel:GetWidth() or 0
+        if w < 200 then w = 640 end
+        local h = l.h
+        if l.fill == nil and not h then h = panel:GetHeight() or 0; if h < 200 then h = 516 end end
+        local fill = l.fill
+        if fill == nil then fill = true end
+        local used = panel.Layout(w, h, fill, l.gutter)
+        -- The guild's setup came or went: the grid's height changed, so Agora places it again.
+        if lastHeight and used ~= lastHeight and panel.relayout then panel.relayout() end
+        lastHeight = used
 
-        -- Row 2: Pulse + Recruitment + Loot. No loot card without the tracker; retail has it since issue #183.
-        local hasLoot = GuildOS.LootTracker ~= nil
-        local r2y = top + r1h + G
-        local r2h = 120
-        local cols = hasLoot and 3 or 2
-        local w3 = math.floor((innerW - (cols - 1) * G) / cols)
-        cPulse:ClearAllPoints();   cPulse:SetPoint("TOPLEFT", M, -r2y);                       cPulse:SetSize(w3, r2h)
-        cRecruit:ClearAllPoints(); cRecruit:SetPoint("TOPLEFT", M + w3 + G, -r2y)
-        cRecruit:SetSize(hasLoot and w3 or innerW - (w3 + G), r2h)
-        cLoot:ClearAllPoints();    cLoot:SetPoint("TOPLEFT", M + 2 * (w3 + G), -r2y);         cLoot:SetSize(innerW - 2 * (w3 + G), r2h)
-        cLoot:SetShown(hasLoot)
-
-        -- Row 3: the guild's chat (full width, fills remaining height)
-        local r3y = r2y + r2h + G
-        local r3h = math.max(90, H - r3y - M)
-        cChat:ClearAllPoints(); cChat:SetPoint("TOPLEFT", M, -r3y); cChat:SetSize(innerW, r3h)
+        -- A failure leaves the rest of the cards as they were (issue #217).
+        if cSetup and cSetup:IsShown() then
+            GuildOS:SafeCall(fillSetup, cSetup, GuildOS.Activation:Read(GetServerTime()))
+        end
 
         -- One readiness scan powers both the readiness + pulse cards.
         local rows = GuildOS.Readiness and GuildOS.Readiness:GetReport() or {}
@@ -443,27 +544,26 @@ function GuildOS:CreateDashboardPanel(panel)
         local myRow
         for _, r in ipairs(rows) do if r.name == myShort then myRow = r break end end
 
-        fillNext(cNext.body)
-        -- If the countdown fails, the card it replaced: the rest of the Dashboard still draws (issue #232).
+        fillNext(cNext)
+        -- If the countdown fails, the card it replaced: the rest of the cards still draw (issue #232).
         local R, ok, countdown = GuildOS.Readiness, false, nil
         if R and R.Countdown then ok, countdown = GuildOS:SafeCall(R.Countdown, R, rows, GetServerTime()) end
         if not (ok and countdown and GuildOS:SafeCall(fillCountdown, cReady, countdown)) then
             cReady.hdr:SetText(L["YOUR READINESS"])
-            fillReady(cReady.body, myRow)
+            fillReady(cReady, myRow)
         end
-        fillPulse(cPulse.body, rows)
-        fillRecruit(cRecruit.body)
-        if hasLoot then fillLoot(cLoot.body) end
+        fillPulse(cPulse, rows)
+        fillRecruit(cRecruit)
+        if cLoot:IsShown() then fillLoot(cLoot) end
         chatRefresh()
     end
 
     -- Refresh whenever the tab becomes visible.
     panel:HookScript("OnShow", function() GuildOS:SafeCall(f.Refresh) end)
 
-    -- ...and when the container is resized, because f.Refresh is what lays
-    -- the cards out. It also runs a readiness scan, which is far too heavy
-    -- for the once-per-frame rate a grip drag produces, so this debounces
-    -- and ignores changes too small to move a card.
+    -- ...and when Agora resizes the grid, because the fills size their text to the cards. A fill
+    -- runs a readiness scan, far too heavy for the once-per-frame rate a grip drag produces, so
+    -- this debounces and ignores changes too small to move a card.
     local lastW, pending = nil, false
     UI:MakeResponsive(panel, function(_, w)
         if lastW and math.abs(w - lastW) < 8 then return end

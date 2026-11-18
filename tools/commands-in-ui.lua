@@ -84,12 +84,14 @@ local IN_UI = {
   mergeraids  = { { "UI/AuditPanel.lua", "GuildOS:MergeRaidSessions()" } },
   specs       = { { "UI/AuditPanel.lua", "GuildOS.SpecChecker:ScanGroup()" } },
   attune      = { { "UI/AuditPanel.lua", "BuildAttuneSub" } },
-  signup      = { { "UI/Window.lua", "GuildOS:ShowCoreSignupFrame()" } },
+  signup      = { { "UI/RosterFrame.lua", "GuildOS:ShowCoreSignupFrame()" } },   -- the Raids screen's button (#377)
   ban         = { { "UI/ManagementPanel.lua", "GuildOS.BanList:Add(" } },
   mentions    = { { "UI/SettingsPanel.lua", "GuildOS.Mentions:PrintLog()" },
                   { "UI/SettingsPanel.lua", 'GuildOS.Mentions:HandleCommand({ "clearwords" })' } },
   notecmd     = { { "UI/SettingsPanel.lua", "GuildOS.db.noteCommand.enabled = checked" } },
   avail       = { { "UI/CommunityPanel.lua", "GuildOS.LFGBoard:Show()" } },
+  -- The Bank tab (issue #380); its sort and stop are the bar under the game's bank.
+  bank        = { { "UI/Features.lua", 'id = "bank"' }, { "UI/GuildBankPanel.lua", "B:StartSort(B:OrganizableTabs())" } },
   ally        = { { "UI/AlliancePanel.lua", "ALLY():Create(" }, { "UI/AlliancePanel.lua", "ALLY():RequestJoin(" } },
 }
 local ALIAS = {

@@ -504,10 +504,14 @@ local function BuildMotdSub(panel)
         if not motdBox:HasFocus() then motdBox:SetText(GM:GetMOTD()) end
         if not infoBox:HasFocus() then infoBox:SetText(GM:GetGuildInfo()) end
 
-        local canMotd = GM:CanSetMOTD()
-        if canMotd then motdBox:Enable() else motdBox:Disable() end
+        -- On WoW: Forever the game's own panel changes it (#377): the field only shows it, and the
+        -- button opens that panel.
+        local canMotd, viaGame = GM:CanSetMOTD(), GM:MOTDNeedsGamePanel()
+        if canMotd and not viaGame then motdBox:Enable() else motdBox:Disable() end
         motdBtn:SetShown(canMotd)
-        motdNote:SetText(canMotd and "" or L["|cff888888No permission to edit the MOTD.|r"])
+        motdBtn.label:SetText(viaGame and L["Edit in guild panel"] or L["Save MOTD"])
+        motdNote:SetText(not canMotd and L["|cff888888No permission to edit the MOTD.|r"]
+            or viaGame and L["On WoW: Forever only the game's guild panel can change the message of the day."] or "")
 
         local canInfo = GM:CanSetGuildInfo()
         if canInfo then infoBox:Enable() else infoBox:Disable() end
