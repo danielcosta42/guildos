@@ -1229,7 +1229,19 @@ local function buildCleanup(p)
     list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -GAP, GAP)
     list:SetEmptyText(emptyBankText())
 
+    local gate = UI:CreateText(p, L["Only officers decide what leaves the bank. Ask an officer, or set your guild's officer ranks in Settings."],
+        12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    gate:SetPoint("TOPLEFT", 0, -GAP)
+    gate:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
+    gate:SetJustifyH("LEFT")
+    local parts = { blurb, filters, clear, markAll, head, list }
+    for _, c in ipairs(chips) do parts[#parts + 1] = c end
+
     p.Draw = function()
+        local officer = GuildOS:IsOfficer()
+        gate:SetShown(not officer)
+        for _, part in ipairs(parts) do part:SetShown(officer) end
+        if not officer then return end
         local rows = CL:Rows()
         local items, value, slots = CL:Summary(rows)
         chips[1]:SetValue(tostring(items))
@@ -1263,8 +1275,9 @@ function GuildOS:CreateGuildBankPanel(container, _mainFrame)
         { key = "needs",     label = L["Needs"],     build = buildNeeds },
         { key = "requests",  label = L["Requests"],  build = buildRequests },
         -- Officers only: what to take out and sell.
-        { key = "cleanup",   label = L["Cleanup"],   build = buildCleanup,
-          absent = not (GuildOS:IsOfficer() and GuildOS.GuildBankCleanup) },
+        -- Always there (the officer check runs when it draws: the roster may not be in when the window
+        -- is built); a member sees why it is empty.
+        { key = "cleanup",   label = L["Cleanup"],   build = buildCleanup, absent = not GuildOS.GuildBankCleanup },
     }
     local panels, tabs, built = {}, {}, {}
     local active
@@ -1363,7 +1376,14 @@ local function buildBar()
     local CL = GuildOS.GuildBankCleanup
     local take = UI:CreateButton(bar, L["Take out marked"], 130, BAR_H - 4)
     take:SetPoint("RIGHT", open, "LEFT", -6, 0)
-    take:SetScript("OnClick", function() if CL then CL:WithdrawMarked() end end)
+    take:SetScript("OnClick", function(self)
+        if not CL then return end
+        if self.mode == "open" then
+            if UI.OpenWindow then UI:OpenWindow("bank", "cleanup") end
+        else
+            CL:WithdrawMarked()
+        end
+    end)
     local deposit = UI:CreateButton(bar, "", 120, BAR_H - 4)
     UI:SetButtonVariant(deposit, "primary")
     deposit:SetPoint("RIGHT", take, "LEFT", -6, 0)
@@ -1430,8 +1450,15 @@ local function buildBar()
         local officer = CL and GuildOS:IsOfficer()
         local marked = officer and CL:MarkedCount() or 0
         local owed = officer and CL:Owed() or 0
-        take:SetShown(marked > 0 and not run)
-        take.label:SetText(CL and CL:IsWithdrawing() and L["Taking out…"] or string.format(L["Take out marked (%d)"], marked))
+        take:SetShown(officer and not run and true or false)
+        if marked > 0 or (CL and CL:IsWithdrawing()) then
+            take.label:SetText(CL:IsWithdrawing() and L["Taking out…"] or string.format(L["Take out marked (%d)"], marked))
+            take.mode = "take"
+        elseif officer then
+            local items = CL:Summary(CL:Rows())
+            take.label:SetText(string.format(L["Cleanup (%d)"], items))
+            take.mode = "open"
+        end
         take:SetEnabled(not (CL and CL:IsWithdrawing()))
         deposit:SetShown(owed > 0 and not run)
         deposit.label:SetText(string.format(L["Deposit %s"], CL and CL.MoneyText(owed) or ""))

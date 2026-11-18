@@ -287,6 +287,12 @@ panel.SelectSub("requests")
 lay(panel)
 check(shows(panel, "Super Mana Potion") and shows(panel, "open"), "requests list what was asked")
 
+officer = false
+panel.SelectSub("cleanup")
+lay(panel)
+check(shows(panel, "Only officers decide what leaves the bank.") and not shows(panel, "To sell"), "a member sees why the cleanup is not theirs")
+officer = true
+panel.SelectSub("inventory")
 panel.SelectSub("cleanup")
 lay(panel)
 check(shows(panel, "To sell") and shows(panel, "Gold back"), "the cleanup shows what selling would make")
@@ -306,6 +312,9 @@ check(bar == nil or bar.shown ~= false, "the bar docks when the bank opens")
 local docked
 walk(UIParent, function(f) if f.label and f.label.text == "Organize tab" then docked = f end end)
 check(docked ~= nil, "the bar offers to organize the tab")
+local cleanBtn
+walk(UIParent, function(f) if f.label and type(f.label.text) == "string" and f.label.text:find("^Cleanup %(") and f.shown then cleanBtn = f end end)
+check(cleanBtn ~= nil, "an officer's bar offers the cleanup, with how many items it would sell")
 check(docked.enabled == true, "on a tab whose rank withdraws without limit")
 TABS[1][2] = 5
 Bank:Refresh()
