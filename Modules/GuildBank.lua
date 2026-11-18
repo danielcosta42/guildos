@@ -39,8 +39,12 @@ local HIST_MAX = 300             -- ledger lines sent in one answer
 local MOVE_DELAY = 0.45          -- seconds between two moves (what sorters found the server takes)
 local HOLD_MIN = 0.05            -- seconds between picking an item up and dropping it, at least
 local POLL = 0.03                -- seconds between two looks while waiting on the game
-local CAP_START = 2              -- moves in flight at once, at first
-local CAP_MAX = 4                -- moves in flight at once, at most
+-- One move in flight at a time: the guild bank takes no second operation while one is pending (a
+-- pickup then fails and the item stays in hand, as seen in game, #380; BankStack waits likewise).
+local CAP_START = 1              -- moves in flight at once, at first
+local CAP_MAX = 1                -- moves in flight at once, at most
+local REDROP_TRIES = 3           -- drops tried again while the item stays on the cursor
+local REDROP_AFTER = 0.25        -- seconds an item may stay in hand after its drop before it is dropped again
 local CAP_RAMP = 6               -- moves landed in a row before one more may fly
 local VERIFY_MAX = 2             -- seconds a drop may wait for the game to say the slots changed
 local HOLD_MAX = 0.8             -- the drop goes then, even when the client never says it holds it
@@ -1117,7 +1121,7 @@ end
 -- session, to moving through free slots.
 function GuildBank:Resync(run, p)
     local s = state()
-    if p and p.swap and run.swaps then
+    if p and p.swap and p.inHand and run.swaps then
         run.swaps, s.noSwap = false, true
         self:Trace("the bank refused a swap: moving through free slots from now on")
     else
@@ -1158,6 +1162,8 @@ function GuildBank:SortStep()
         local waited = now_ - held.at
         if (GuildOS.Compat.CursorHasItem() and waited >= HOLD_MIN) or waited >= HOLD_MAX then
             run.holding = nil
+            -- Whether the pickup was taken: a swap is judged refused only when the item was in hand.
+            held.inHand = GuildOS.Compat.CursorHasItem()
             GuildOS.Compat.GuildBankPickup(tab, held.move.to)
             Plan.Apply(run.model, held.move, run.stack)
             local f, t = run.model[held.move.from], run.model[held.move.to]
@@ -1197,8 +1203,30 @@ function GuildBank:SortStep()
             if p.swap and run.swapDirect == nil and not GuildOS.Compat.CursorHasItem() then run.swapDirect = true end
             run.clean = (run.clean or 0) + 1
             if run.clean >= CAP_RAMP and run.cap < CAP_MAX then run.cap, run.clean = run.cap + 1, 0 end
+            if p.sameFrame and not p.redrops then s.sameFrame = true end
             self:Trace("landed %d -> %d (%.2fs)", f, t, now_ - p.at)
+        elseif not lockedAt[t] and now_ - p.at >= REDROP_AFTER and GuildOS.Compat.CursorHasItem()
+            and (p.redrops or 0) < REDROP_TRIES then
+            -- Still in hand after its drop (a drop the game did not take): drop it again. A drop in the
+            -- same frame as its pickup that was not taken: this client wants a moment between them.
+            if p.sameFrame and s.sameFrame ~= false then
+                s.sameFrame = false
+                self:Trace("drops in the pickup's frame are not taken here: waiting for the cursor from now on")
+            end
+            p.redrops = (p.redrops or 0) + 1
+            p.at = now_
+            GuildOS.Compat.GuildBankPickup(tab, t)
+            self:Trace("still in hand: drop on %d again (%d)", t, p.redrops)
+            return again(POLL)
         elseif free and now_ - p.at >= VERIFY_MAX then
+            -- Still in hand: drop it again where it was going, before giving the move up.
+            if GuildOS.Compat.CursorHasItem() and (p.redrops or 0) < REDROP_TRIES then
+                p.redrops = (p.redrops or 0) + 1
+                p.at = now_
+                GuildOS.Compat.GuildBankPickup(tab, t)
+                self:Trace("still in hand: drop on %d again (%d)", t, p.redrops)
+                return again(POLL)
+            end
             return self:Resync(run, p)
         else
             i = i + 1
@@ -1288,7 +1316,17 @@ function GuildBank:SortStep()
         GuildOS.Compat.GuildBankPickup(tab, move.from)
     end
     self:Trace("%s %d (x%s) for %d", move.op, move.from, tostring(move.count or src.c), move.to)
-    run.holding = { move = move, at = now_, swap = dst ~= nil and dst.k ~= src.k }
+    run.holding = { move = move, at = now_ - HOLD_MAX, swap = dst ~= nil and dst.k ~= src.k }
+    -- The cursor already holds it: drop in the same frame, as BankStack does, unless this session saw
+    -- such a drop not taken. Otherwise the next steps drop it once the cursor shows it.
+    if s.sameFrame ~= false and GuildOS.Compat.CursorHasItem() then
+        run.holding.sameFrame = true
+        run.moves = run.moves + 1
+        if run.moves > run.total then run.total = run.moves end
+        run.current = move
+        return self:SortStep()
+    end
+    run.holding.at = now_
     run.moves = run.moves + 1
     if run.moves > run.total then run.total = run.moves end
     run.current = move

@@ -80,3 +80,16 @@ two slots do not show the expected result within 2 s sends the run back to the r
 a time. Until a swap has landed with nothing handed back on the cursor, a swap flies alone. Measured
 on the stub (90 items shuffled, 0.3 s server lag): 68 s before, 19 s now with swaps; 76 s → 26 s
 through free slots.
+
+### What BankStack does, and back to one move at a time
+
+The third in-game log showed the pipelined run's pickups failing while another move was in flight
+(the cursor never took the item; items were left in hand). BankStack (kemayo/wow-bankstack, core.lua)
+keeps the guild bank to one move at a time ("guild bank sucks", 0.4 s between moves), drops in the
+same frame as the pickup when the cursor shows the item, checks each move by the item ids its two
+slots should hold (3 s at most), and drops again while the item stays in hand. The run now does the
+same: one move in flight; the drop in the pickup's frame, unless this session saw such a drop not
+taken (then it waits for the cursor, as before); an item still in hand 0.25 s after its drop is
+dropped again (3 times); a swap counts as refused only when the item was in hand. When filling a slot
+by a swap, the planner takes the source whose own place wants what the slot holds, so one swap puts
+both in place.

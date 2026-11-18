@@ -155,14 +155,21 @@ function Plan.PlanMove(slots, size, rank, stack, swaps, busy)
             -- the same item (the drop merges, the remainder stays behind: a swap in effect); or,
             -- where the client swaps, onto anything else.
             elseif not cur or (cur.k == want.k and cur.c < want.c) or (swaps and cur.k ~= want.k) then
-                local found = false
+                -- Of the slots holding what goes here, the best is one where what is here belongs:
+                -- the swap then puts both in place at once.
+                local found, pick = false, nil
                 for j = i + 1, size do
                     local s = slots[j]
                     if s and s.k == want.k and s.c == want.c then
-                        if not (busy and busy[j]) then return { op = "move", from = j, to = i } end
                         found = true
+                        if not (busy and busy[j]) then
+                            local home = target[j]
+                            if cur and home and home.k == cur.k and home.c == cur.c then pick = j; break end
+                            pick = pick or j
+                        end
                     end
                 end
+                if pick then return { op = "move", from = pick, to = i } end
                 if not found and not busy then return nil end   -- not reachable once every merge is made
                 waiting = true
             else
