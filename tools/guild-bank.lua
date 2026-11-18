@@ -505,6 +505,55 @@ Bank:StartSort(tabS)
 runTimers()
 check(moves == plain, "stopping and starting again at once runs one loop")
 
+-- Reads received from the guild line up just as my own do.
+fresh()
+local shared = {}
+for i = 1, 25 do shared[i] = { t = NOW - (i <= 12 and 2 or 1) * 3600, ty = "d", n = "Bea", id = 23445, c = i } end
+GuildOS.SyncService.handlers.gbank({ act = "log", data = { reads = { { k = 4, list = shared } } } }, "Bea")
+local later = {}
+for i = 2, 25 do later[#later + 1] = shared[i] end
+later[#later + 1] = { t = NOW, ty = "d", n = "Cid", id = 21877, c = 7 }
+GuildOS.SyncService.handlers.gbank({ act = "log", data = { reads = { { k = 4, list = later } } } }, "Cid")
+check(#Bank:Stream(4) == 26, "a shared read adds only its new line")
+
+-- A member's "reqs" never cancels an officer's answer.
+fresh()
+officer = true
+Bank:Request(22854, 1)
+wire = {}
+GuildOS.SyncService.handlers.gbank({ act = "ask", data = { ts = 0, lt = 0, rq = 0 } }, "Dan")
+GuildOS.SyncService.handlers.gbank({ act = "reqs", data = { req = {}, mark = 1e15 } }, "Cid")
+runTimers()
+check(last("gbank", "reqs") ~= nil, "a member's answer cannot silence the officer's")
+
+-- One member cannot fill the request list.
+fresh()
+for i = 1, 30 do
+  GuildOS.SyncService.handlers.gbankreq({ act = "new", data = { id = "F" .. i, item = 22854, n = 1 } }, "Bea")
+end
+local mine = 0
+for _, x in pairs(Bank:Requests()) do if x.who == "Bea" then mine = mine + 1 end end
+check(mine == 10, "a member keeps at most ten open requests")
+for _ = 1, 12 do Bank:Request(22832, 1) end
+local own = 0
+for _, x in pairs(Bank:Requests()) do if Bank:IsMe(x.who) then own = own + 1 end end
+check(own == 10, "and so do I")
+
+-- A tab that does not answer ends the queries, so no late answer is taken for the next tab.
+fresh()
+addTab("A", -1); addTab("B", -1); addTab("C", -1)
+BANK.tabs[1].slots[1] = { id = 23445, c = 1 }
+Bank:ApplySnapshot({ tabs = { [2] = { ts = NOW - 99, s = "1,21877,3" }, [3] = { ts = NOW - 99, s = "1,21877,4" } } }, "Bea")
+Bank:OnEvent("GUILDBANKFRAME_OPENED")
+Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")       -- tab 1 answers
+runTimers()                                     -- tab 2 never does: the rest is not asked
+Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")       -- tab 2's late answer
+runTimers()
+check(Bank:Store().tabs[3].slots[1].c == 4, "a late answer never marks the next tab answered")
+-- An empty read does not wipe a tab seen full unless the bank shows it.
+check(Bank:Store().tabs[2].slots[1].c == 3, "nor does an empty read wipe a tab seen holding items")
+Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+
 -- ── Typing an item ──────────────────────────────────────────────────────
 check(Bank:ParseItemInput(linkOf(22854)) == 22854 and Bank:ParseItemInput("22832") == 22832, "a link or an id names its item")
 check(Bank:ParseItemInput("fel iron") == 23445 and Bank:ParseItemInput("Nothing at all") == nil,

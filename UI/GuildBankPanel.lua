@@ -793,6 +793,13 @@ local function buildLedger(p)
             local okKind = st.kind == "all" or (st.kind == "gold" and e.k == 0) or (st.kind ~= "gold" and e.k ~= 0 and e.ty == st.kind)
             if okKind and (st.who == "" or (e.n and e.n:lower():find(st.who, 1, true))) then rows[#rows + 1] = e end
         end
+        -- Newest first by time; lines of one time keep the order they arrived in.
+        local order = {}
+        for i, e in ipairs(rows) do order[e] = i end
+        table.sort(rows, function(a, b)
+            if (a.t or 0) ~= (b.t or 0) then return (a.t or 0) > (b.t or 0) end
+            return order[a] < order[b]
+        end)
         list:SetData(rows)
 
         local db = B:Store()

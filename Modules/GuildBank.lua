@@ -44,6 +44,7 @@ local STUCK_TRIES = 3            -- the same move this many times with nothing c
 local MAX_MOVES = 400            -- a run never makes more moves than this
 local REQ_KEEP_DAYS = 14         -- closed requests are kept this long
 local REQ_MAX = 100              -- requests kept
+local REQ_OPEN_PER = 10          -- open requests one member may have
 local NOTE_MAX = 80              -- characters of a request's or need's note
 local NEED_MAX = 60              -- needs kept
 
@@ -158,6 +159,7 @@ function GuildBank:OnOpen()
     if s.open then return end   -- the second event of the pair
     s.open = true
     s.queried, s.answered, s.queue, s.waiting = {}, {}, {}, nil
+    s.openId = (s.openId or 0) + 1
     self:QueryAll()
     if self.bankOpened then GuildOS:SafeCall(self.bankOpened) end
     self:Refresh()
@@ -205,9 +207,13 @@ function GuildBank:QueryNext()
     s.queried[tab] = GetTime()
     GuildOS.Compat.QueryGuildBankTab(tab)
     GuildOS.Compat.QueryGuildBankLog(tab)
+    local openId = s.openId
     GuildOS.Compat.After(QUERY_TIMEOUT, function()
-        if s.waiting == tab then
+        -- No answer: the rest is not asked either, so a late answer can never be taken for the
+        -- next tab's. What answered is read now.
+        if s.openId == openId and s.waiting == tab then
             s.waiting = nil
+            s.queue = {}
             self:QueryNext()
         end
     end)
@@ -287,8 +293,14 @@ function GuildBank:ReadOpenTabs(publish)
         local name, icon, viewable = GuildOS.Compat.GuildBankTabInfo(tab)
         -- A tab is read only once the server answered its own query: before that the game answers
         -- an empty tab, and an empty tab would wipe what the guild knew.
-        if viewable and s.answered[tab] then
-            local slots = self:ReadTab(tab)
+        local slots = (viewable and s.answered[tab]) and self:ReadTab(tab) or nil
+        -- An empty read never wipes a tab the guild saw holding items, unless it is the tab the
+        -- bank is showing: its slots are surely loaded.
+        if slots and next(slots) == nil and db.tabs[tab] and next(db.tabs[tab].slots or {}) ~= nil
+            and GuildOS.Compat.GuildBankCurrentTab() ~= tab then
+            slots = nil
+        end
+        if slots then
             for _, v in pairs(slots) do v.locked = nil end
             db.tabs[tab] = { name = name, icon = icon, ts = t, by = me, slots = slots }
             changed = true
@@ -645,7 +657,10 @@ local function cleanRead(read, limit)
                 t2 = tonumber(e.t2) and math.floor(e.t2) or nil }
         end
     end
-    table.sort(out, function(a, b) return a.t < b.t end)
+    -- In time order, lines of one time kept in the order sent (table.sort is not stable).
+    for i, e in ipairs(out) do e.seq = i end
+    table.sort(out, function(a, b) if a.t ~= b.t then return a.t < b.t end return a.seq < b.seq end)
+    for _, e in ipairs(out) do e.seq = nil end
     return k, out
 end
 
@@ -676,8 +691,9 @@ function GuildBank:OnSync(env, sender)
         if type(data.req) == "table" and GuildOS:IsOfficerByName(sender) then
             self:MergeRequests(data.req)
             self:Refresh()
+            -- Another officer answered as new as we would have: our answer is not needed.
+            if s.reqAnswer and (GuildOS.Finite(data.mark) or 0) >= s.reqAnswer then s.reqAnswer = nil end
         end
-        if s.reqAnswer and (GuildOS.Finite(data.mark) or 0) >= s.reqAnswer then s.reqAnswer = nil end
     elseif env.act == "ask" then
         self:OnAsk(data, sender)
     end
@@ -688,7 +704,9 @@ function GuildBank:Marks()
     local ledger = self:Store().ledger
     local newestReq = 0
     for _, r in pairs(self:Store().requests) do newestReq = math.max(newestReq, r.at or 0) end
-    return (self:Newest()), (ledger[#ledger] and ledger[#ledger].t or 0), newestReq
+    local newestLine = 0
+    for _, e in ipairs(ledger) do if (e.t or 0) > newestLine then newestLine = e.t end end
+    return (self:Newest()), newestLine, newestReq
 end
 
 -- Ask the guild for what is newer than what this client has.
@@ -862,6 +880,12 @@ end
 function GuildBank:Request(id, n, note)
     id, n = tonumber(id), tonumber(n)
     if not id or id <= 0 or id >= MAX_ITEM_ID or not n or n <= 0 then return false end
+    local open = 0
+    for _, x in pairs(self:Store().requests) do if x.st == "open" and self:IsMe(x.who) then open = open + 1 end end
+    if open >= REQ_OPEN_PER then
+        GuildOS:Print(string.format(L["You already have %d open requests."], open))
+        return false
+    end
     local r = { id = newId(), who = keyName(GuildOS.Compat.PlayerName()), item = id, n = math.min(math.floor(n), MAX_COUNT),
                 note = cleanText(note, NOTE_MAX), ts = now(), at = now(), st = "open" }
     self:Store().requests[r.id] = r
@@ -902,7 +926,9 @@ function GuildBank:OnRequestSync(env, sender)
     if env.act == "new" then
         -- Only the author's own request: the key is the sender, never what the payload says.
         local r = cleanRequest(data, sender)
-        if r and not reqs[r.id] then
+        local open = 0
+        for _, x in pairs(reqs) do if x.st == "open" and sameName(x.who, sender) then open = open + 1 end end
+        if r and not reqs[r.id] and open < REQ_OPEN_PER then
             r.st, r.by = "open", nil
             reqs[r.id] = r
             self:PruneRequests()
@@ -949,7 +975,11 @@ function GuildBank:PruneRequests()
         if r.st ~= "open" and (r.at or 0) < cutoff then reqs[id] = nil else list[#list + 1] = r end
     end
     if #list > REQ_MAX then
-        table.sort(list, function(a, b) return (a.at or 0) < (b.at or 0) end)
+        -- Closed ones go first, then the oldest.
+        table.sort(list, function(a, b)
+            if (a.st == "open") ~= (b.st == "open") then return a.st ~= "open" end
+            return (a.at or 0) < (b.at or 0)
+        end)
         for i = 1, #list - REQ_MAX do reqs[list[i].id] = nil end
     end
 end

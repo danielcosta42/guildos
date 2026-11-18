@@ -3107,3 +3107,4 @@ L["How many the guild bank holds, and what it still needs."] = "公會銀行有�
 L["Guild OS bar under the guild bank"] = "公會銀行下方的 Guild OS 欄"
 L["Organize the tab you are on, or every tab your rank may, from the bank itself."] = "在銀行裡直接整理目前標籤頁，或你的會階允許的所有標籤頁。"
 L["Guild bank: open, organize the tab, ask for it, what it needs"] = "公會銀行：打開、整理標籤頁、請求資料、缺什麼"
+L["You already have %d open requests."] = "你已有 %d 個待處理的申請。"

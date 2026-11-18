@@ -3107,3 +3107,4 @@ L["How many the guild bank holds, and what it still needs."] = "Сколько �
 L["Guild OS bar under the guild bank"] = "Панель Guild OS под банком гильдии"
 L["Organize the tab you are on, or every tab your rank may, from the bank itself."] = "Упорядочьте открытую вкладку или все, что позволяет звание, прямо в банке."
 L["Guild bank: open, organize the tab, ask for it, what it needs"] = "Банк гильдии: открыть, упорядочить вкладку, запросить, чего не хватает"
+L["You already have %d open requests."] = "У вас уже %d открытых запросов."

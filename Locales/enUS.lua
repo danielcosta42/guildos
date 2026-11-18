@@ -1150,3 +1150,4 @@ L["How many the guild bank holds, and what it still needs."] = "How many the gui
 L["Guild OS bar under the guild bank"] = "Guild OS bar under the guild bank"
 L["Organize the tab you are on, or every tab your rank may, from the bank itself."] = "Organize the tab you are on, or every tab your rank may, from the bank itself."
 L["Guild bank: open, organize the tab, ask for it, what it needs"] = "Guild bank: open, organize the tab, ask for it, what it needs"
+L["You already have %d open requests."] = "You already have %d open requests."

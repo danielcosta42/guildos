@@ -3227,3 +3227,4 @@ L["How many the guild bank holds, and what it still needs."] = "Wie viel die Gil
 L["Guild OS bar under the guild bank"] = "Guild OS-Leiste unter der Gildenbank"
 L["Organize the tab you are on, or every tab your rank may, from the bank itself."] = "Ordne das offene Fach oder alle, die dein Rang darf, direkt in der Bank."
 L["Guild bank: open, organize the tab, ask for it, what it needs"] = "Gildenbank: öffnen, Fach ordnen, anfragen, was fehlt"
+L["You already have %d open requests."] = "Du hast bereits %d offene Anfragen."

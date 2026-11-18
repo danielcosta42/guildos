@@ -3107,3 +3107,4 @@ L["How many the guild bank holds, and what it still needs."] = "公会银行有�
 L["Guild OS bar under the guild bank"] = "公会银行下方的 Guild OS 栏"
 L["Organize the tab you are on, or every tab your rank may, from the bank itself."] = "在银行里直接整理当前标签页，或你的会阶允许的所有标签页。"
 L["Guild bank: open, organize the tab, ask for it, what it needs"] = "公会银行：打开、整理标签页、请求数据、缺什么"
+L["You already have %d open requests."] = "你已有 %d 个待处理的申请。"
