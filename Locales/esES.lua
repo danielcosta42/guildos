@@ -3310,3 +3310,4 @@ L["Guild OS %s is out, you have %s. Update it on CurseForge."] = "Ya salió Guil
 L["On WoW: Forever only the game's guild panel can change the message of the day."] = "En WoW: Forever solo el panel de hermandad del juego puede cambiar el mensaje del día."
 L["Edit in guild panel"] = "Editar en el panel de hermandad"
 L["%d raid-ready"] = "%d listos"
+L["The soft reserve sheet is hidden: nothing was said in chat."] = "La hoja de reservas está oculta: no se dijo nada en el chat."

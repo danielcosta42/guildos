@@ -226,10 +226,36 @@ function SoftRes:GetDB()
     return GuildOS.db and GuildOS.db.softRes
 end
 
+-- The reserves in force: the site's while its raid's night lasts (never copied into db.softRes), else
+-- the imported sheet's. Every reader goes through here.
+function SoftRes:ActiveItems()
+    local site = GuildOS.SiteLoot and GuildOS.SiteLoot:Reserves()
+    if site then return site.items end
+    local db = self:GetDB()
+    return db and db.items
+end
+
 -- Raw list of reservers for an item (all players, any status)
 function SoftRes:GetReserves(itemId)
-    local db = self:GetDB()
-    return (db and db.items[itemId]) or {}
+    local items = self:ActiveItems()
+    return (items and items[itemId]) or {}
+end
+
+-- A sheet the site hides from the raiders (R8): the roll and the loot master's window still use it.
+function SoftRes:Hidden()
+    local site = GuildOS.SiteLoot and GuildOS.SiteLoot:Reserves()
+    return site ~= nil and site.hidden == true
+end
+
+-- `list` cut to the player's own reserves when the sheet is hidden, whole otherwise.
+function SoftRes:OwnOnly(list)
+    if not self:Hidden() then return list end
+    local me = strlower(GuildOS.Compat.PlayerName() or "")
+    local out = {}
+    for _, e in ipairs(list) do
+        if strlower(e.name or "") == me then out[#out + 1] = e end
+    end
+    return out
 end
 
 -- Returns reservers enriched with an inRaid flag, in-raid players first
@@ -276,10 +302,10 @@ end
 
 -- All items that have at least one reservation, sorted by itemId
 function SoftRes:GetAllItems()
-    local db = self:GetDB()
-    if not db then return {} end
+    local items = self:ActiveItems()
+    if not items then return {} end
     local out = {}
-    for itemId, list in pairs(db.items) do
+    for itemId, list in pairs(items) do
         out[#out+1] = { itemId = itemId, count = #list }
     end
     table.sort(out, function(a, b) return a.itemId < b.itemId end)
@@ -319,7 +345,7 @@ function SoftRes:HookTooltips()
         if not link then return end
         local itemId = tonumber(link:match("item:(%d+)"))
         if not itemId then return end
-        local reserves = SoftRes:GetReservesForDisplay(itemId)
+        local reserves = SoftRes:OwnOnly(SoftRes:GetReservesForDisplay(itemId))
         if #reserves == 0 then return end
 
         tt:AddLine(" ")

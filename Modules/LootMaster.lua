@@ -783,12 +783,23 @@ function LootMaster:ResolveWishlistCouncil(itemId)
 end
 
 ----------------------------------------------------------------------
+-- The officers' prio list of an item in force: the site's while its raid's night lasts (a whole-table
+-- swap, never copied into db.lootPrios), else the game's. The second value says it came from the site,
+-- where tied people share a place; the game's places are positions.
+----------------------------------------------------------------------
+function LootMaster:PrioListFor(itemId)
+    if not itemId then return nil end
+    local site = GuildOS.SiteLoot and GuildOS.SiteLoot:Prios()
+    if site then return site[itemId], true end
+    return GuildOS.db and GuildOS.db.lootPrios and GuildOS.db.lootPrios[itemId], false
+end
+
+----------------------------------------------------------------------
 -- Resolve officer prio list for an item: returns ordered list of entries
 -- currently in raid, in prio order. Returns nil if no prio data.
 ----------------------------------------------------------------------
 function LootMaster:ResolvePrioList(itemId)
-    if not GuildOS.db or not GuildOS.db.lootPrios then return nil end
-    local prioList = GuildOS.db.lootPrios[itemId]
+    local prioList = self:PrioListFor(itemId)
     if not prioList or #prioList == 0 then return nil end
 
     -- Build set of players currently in raid
@@ -1138,6 +1149,11 @@ function LootMaster:AnnounceSoftReserves(itemId)
     if not GuildOS.SoftRes or not itemId or itemId == 0 then return end
     local srList = GuildOS.SoftRes:GetInRaidReserves(itemId)
     if #srList == 0 then return end
+    -- A sheet the site hides from the raiders is not read out to them: only the master looter is told.
+    if GuildOS.SoftRes:Hidden() then
+        GuildOS:Print(L["The soft reserve sheet is hidden: nothing was said in chat."])
+        return
+    end
     local names = {}
     for _, e in ipairs(srList) do names[#names+1] = e.name end
     self:SafeSendChat(format(L["[SR] Soft reserved by: %s"], table.concat(names, ", ")), "RAID")
@@ -1495,14 +1511,12 @@ function LootMaster:RegisterRollNow(name, rollType, roll, extra)
 
     -- Officer prio lookup
     local prioOrder = nil
-    if GuildOS.db and GuildOS.db.lootPrios and self.activeLoot.itemId then
-        local prioList = GuildOS.db.lootPrios[self.activeLoot.itemId]
-        if prioList then
-            for idx, entry in ipairs(prioList) do
-                if strlower(entry.name or "") == strlower(name) then
-                    prioOrder = idx
-                    break
-                end
+    local prioList, fromSite = self:PrioListFor(self.activeLoot.itemId)
+    if prioList then
+        for idx, entry in ipairs(prioList) do
+            if strlower(entry.name or "") == strlower(name) then
+                prioOrder = fromSite and entry.order or idx
+                break
             end
         end
     end
@@ -3837,9 +3851,9 @@ function LootMaster:Standing(itemId, rule)
             if strlower(e.name or "") == strlower(me) then out.reserved, out.hard = true, e.hard or false end
         end
     end
-    local prios = itemId and GuildOS.db and GuildOS.db.lootPrios and GuildOS.db.lootPrios[itemId]
+    local prios, fromSite = self:PrioListFor(itemId)
     for i, e in ipairs(prios or {}) do
-        if strlower(e.name or "") == strlower(me) then out.prio = i end
+        if strlower(e.name or "") == strlower(me) then out.prio = fromSite and e.order or i end
     end
     local interest = itemId and GuildOS.Wishlist and GuildOS.Wishlist:GetItemInterest(itemId)
     for _, e in ipairs(interest or {}) do

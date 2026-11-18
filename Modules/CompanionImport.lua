@@ -296,6 +296,8 @@ function Import:Parse(raw)
     -- People paste with a stray newline or a leading space; find the marker
     -- rather than insisting the string starts with it.
     raw = raw:sub(raw:find(WIRE_PREFIX, 1, true) + #WIRE_PREFIX)
+    -- Over the cap is refused before the whitespace strip copies the body.
+    if #raw > ROSTER_MAX then return nil, L["The roster string is damaged. Copy it again."] end
 
     if not (LibStub and LibStub("LibDeflate", true)) then return nil, L["LibDeflate not available."] end
     -- The same gate a GOSCORE1 body passes (ReadCores): the alphabet the companion lets into Inbox.lua
@@ -539,7 +541,7 @@ function Import:ConsumeInbox()
     -- readers choose between the two, and a night without the site's data leaves nothing behind.
     local loot = soonest.loot
     GuildOS.db.siteLoot = loot and {
-        raidId = soonest.raidId, startsAt = soonest.startsAt,
+        raidId = soonest.raidId, startsAt = soonest.startsAt, at = time(),
         softres = loot.softres, prios = loot.prios, wishlists = loot.wishlists,
     } or nil
     return true, #soonest.members

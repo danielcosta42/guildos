@@ -29,6 +29,7 @@ local isRetail = GuildOS.Client.isRetail
 local function storeKey(key, name)
     return strlower((isRetail and key or name) or "")
 end
+Wishlist.StoreKey = storeKey
 
 function Wishlist:Initialize()
     if not GuildOS.db.wishlists then
@@ -236,7 +237,36 @@ end
 ----------------------------------------------------------------------
 function Wishlist:GetItemInterest(itemId)
     if not self.itemIndex then return nil end
-    return self.itemIndex[itemId]
+    local site = GuildOS.SiteLoot and GuildOS.SiteLoot:Wishlists()
+    if not site then return self.itemIndex[itemId] end
+    return self:InterestTonight(itemId, site)
+end
+
+-- A raid from the site: for each person the site holds a list of, that list; for everybody else the
+-- game's, so a person the site has none of keeps their own and nobody is listed twice. Built per
+-- question from the tables as they are: the persistent index is never rebuilt from the site's data.
+function Wishlist:InterestTonight(itemId, site)
+    local out = {}
+    local function add(charData)
+        for _, item in ipairs(charData.wishlist or {}) do
+            if item.itemId == itemId then
+                out[#out + 1] = {
+                    name = charData.name or "", class = charData.class or "", type = "wishlist",
+                    order = item.order, isOffspec = item.isOffspec,
+                }
+                break
+            end
+        end
+    end
+    for key, charData in pairs(GuildOS.db and GuildOS.db.guildWishlists or {}) do
+        if not site[key] then add(charData) end
+    end
+    for _, charData in pairs(site) do add(charData) end
+    table.sort(out, function(a, b)
+        if (a.order or 999) ~= (b.order or 999) then return (a.order or 999) < (b.order or 999) end
+        return a.name < b.name
+    end)
+    return out
 end
 
 ----------------------------------------------------------------------
@@ -467,7 +497,7 @@ function Wishlist:HookTooltips()
         local itemId = tonumber(link:match("item:(%d+)"))
         if not itemId then return end
 
-        local entries = self.itemIndex[itemId]
+        local entries = self:GetItemInterest(itemId)
         if not entries or #entries == 0 then return end
 
         tooltip:AddLine(" ")

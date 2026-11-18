@@ -3189,3 +3189,4 @@ L["Guild OS %s is out, you have %s. Update it on CurseForge."] = "Guild OS %s �
 L["On WoW: Forever only the game's guild panel can change the message of the day."] = "WoW: Forever에서는 게임의 길드 창에서만 오늘의 메시지를 바꿀 수 있습니다."
 L["Edit in guild panel"] = "길드 창에서 편집"
 L["%d raid-ready"] = "%d명 공격대 준비됨"
+L["The soft reserve sheet is hidden: nothing was said in chat."] = "예약 목록이 숨겨져 있어 채팅에는 아무것도 알리지 않았습니다."

@@ -876,6 +876,16 @@ local function buildLists(panel)
         srImportBtn:SetShown(officer)
         srClearBtn:SetShown(officer)
         local items = GuildOS.SoftRes:GetAllItems()
+        -- A sheet the site hides from the raiders: everyone but the loot master reads only their own.
+        local ownOnly = GuildOS.SoftRes:Hidden() and not (officer
+            or (GuildOS.LootMaster and GuildOS.LootMaster:IsMasterLooter()))
+        if ownOnly then
+            local mine = {}
+            for _, entry in ipairs(items) do
+                if #GuildOS.SoftRes:OwnOnly(GuildOS.SoftRes:GetReserves(entry.itemId)) > 0 then mine[#mine + 1] = entry end
+            end
+            items = mine
+        end
         srCount:SetText(#items .. " " .. L["items"])
         local layout = UI:ResolveColumns(srCols, math.max(1, srContent:GetWidth() or 0), 8)
         for key, fs in pairs(srHead) do
@@ -907,6 +917,7 @@ local function buildLists(panel)
             local itemName = GuildOS.Compat.GetItemInfo(entry.itemId)
             row.item:SetText(itemName or ("Item #" .. entry.itemId))
             local reserves = GuildOS.SoftRes:GetReservesForDisplay(entry.itemId)
+            if ownOnly then reserves = GuildOS.SoftRes:OwnOnly(reserves) end
             local inRaid, names = 0, {}
             for _, r in ipairs(reserves) do
                 if r.inRaid then inRaid = inRaid + 1 end

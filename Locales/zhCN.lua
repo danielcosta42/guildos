@@ -3189,3 +3189,4 @@ L["Guild OS %s is out, you have %s. Update it on CurseForge."] = "Guild OS %s �
 L["On WoW: Forever only the game's guild panel can change the message of the day."] = "在 WoW: Forever 中，只有游戏自带的公会面板能修改公会今日信息。"
 L["Edit in guild panel"] = "在公会面板中编辑"
 L["%d raid-ready"] = "%d 人可开团"
+L["The soft reserve sheet is hidden: nothing was said in chat."] = "预留名单已隐藏：未在聊天中发送任何内容。"
