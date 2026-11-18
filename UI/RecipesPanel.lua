@@ -21,7 +21,7 @@ local COLUMNS = {
 local COL_GAP    = 10
 local ROW_INSET  = 10   -- x of the first cell inside a row
 local SIDE_MARGIN = 10  -- panel edge to the list
-local ROW_GUTTER = 10   -- rows stop short of the scrollbar
+local ROW_GUTTER = UI.SCROLL_GUTTER   -- rows stop clear of the scrollbar (#371)
 local TOP_PAD    = 8    -- panel top to the top bar
 local TITLE_H    = 26   -- title + search row, above the profession filters
 local HEADER_H   = 24   -- column header strip
@@ -91,28 +91,9 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     local countText = UI:CreateText(topBar, "", 10, C.silver.r, C.silver.g, C.silver.b)
     countText:SetPoint("LEFT", title, "RIGHT", 12, 0)
 
-    -- Search box
-    local searchBox = CreateFrame("EditBox", "GuildOSRecipeSearch", topBar, "BackdropTemplate")
-    searchBox:SetSize(220, 24)
+    -- Search box: the shared field, with its own hint while empty (#371).
+    local searchBox = UI:CreateInput(topBar, 220, 24, { max = 50, placeholder = L["Search recipes..."] })
     searchBox:SetPoint("TOPRIGHT", 0, 0)
-    searchBox:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    searchBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    searchBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(searchBox, 11)
-    searchBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    searchBox:SetTextInsets(8, 8, 0, 0)
-    searchBox:SetAutoFocus(false)
-    searchBox:SetMaxLetters(50)
-
-    local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(searchPlaceholder, 11)
-    searchPlaceholder:SetPoint("LEFT", 8, 0)
-    searchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
-    searchPlaceholder:SetText(L["Search recipes..."])
 
     -- Realm-wide crafter finder (guild + mesh) — opens the CraftFinder popup.
     local realmBtn = UI:CreateButton(topBar, L["Find a Crafter"], 120, 24)
@@ -139,70 +120,47 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         countText:SetText(string.format(L["|cff888888%d results|r"], #state.results))
     end
 
+    -- The chosen filter carries the shared selection mark (#371), not a tinted fill.
+    local function PaintFilters()
+        for _, fb in ipairs(filterButtons) do UI:SetSelected(fb, fb.profName == state.profFilter) end
+    end
+
+    -- A filter is a shared button: "All" by name, a profession by its icon, or by its first letters
+    -- in its colour where the client has no icon for it.
     local function CreateFilterButton(profName)
-        local btn = CreateFrame("Button", nil, filterRow, "BackdropTemplate")
-        btn:SetHeight(22)
-        btn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-        btn:SetBackdropColor(0.100, 0.100, 0.130, 1.0)
+        local isAll = profName == "All"
+        local iconTex = not isAll and PROF_ICONS[profName] or nil
+        local text = (isAll and L["All"]) or (iconTex and "") or GuildOS:Utf8Head(L[profName], 3)
+        local btn = UI:CreateButton(filterRow, text, isAll and 40 or 26, 22)
         btn.profName = profName
 
         local icon
-        local label = btn:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(label, 10)
-
-        if profName == "All" then
-            btn:SetWidth(40)
-            label:SetPoint("CENTER")
-            label:SetText(L["All"])
-            label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-        else
-            local iconTex = PROF_ICONS[profName]
-            if iconTex then
-                icon = btn:CreateTexture(nil, "ARTWORK")
-                icon:SetSize(16, 16)
-                icon:SetPoint("CENTER")
-                icon:SetTexture(iconTex)
-            else
-                label:SetPoint("CENTER")
-                label:SetText(GuildOS:Utf8Head(L[profName], 3))
-                local pc = PROF_COLORS[profName] or C.silver
-                label:SetTextColor(pc.r, pc.g, pc.b)
-            end
-            btn:SetWidth(26)
+        if iconTex then
+            icon = btn:CreateTexture(nil, "ARTWORK")
+            icon:SetSize(16, 16)
+            icon:SetPoint("CENTER")
+            icon:SetTexture(iconTex)
+        elseif not isAll then
+            local pc = PROF_COLORS[profName] or C.silver
+            btn.baseLabelColor = { pc.r, pc.g, pc.b }
         end
-
-        btn.label = label
         btn.icon = icon
         -- Position comes from UI:FlowBar, which wraps the row when the
         -- window is too narrow to hold every profession on one line.
 
         btn:SetScript("OnClick", function()
             state.profFilter = profName
-            -- Update active state visuals
-            for _, fb in ipairs(filterButtons) do
-                if fb.profName == state.profFilter then
-                    fb:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
-                else
-                    fb:SetBackdropColor(0.100, 0.100, 0.130, 1.0)
-                end
-            end
+            PaintFilters()
             RefreshResults()
             panel:UpdateRows()
         end)
-        btn:SetScript("OnEnter", function(self)
-            if state.profFilter ~= self.profName then
-                self:SetBackdropColor(C.line.r, C.line.g, C.line.b, 1.0)
-            end
+        -- Hooked, not set: the button's own hover state lives on OnEnter and OnLeave.
+        btn:HookScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:SetText(L[profName], 1, 1, 1)
             GameTooltip:Show()
         end)
-        btn:SetScript("OnLeave", function(self)
-            if state.profFilter ~= self.profName then
-                self:SetBackdropColor(0.100, 0.100, 0.130, 1.0)
-            end
-            GameTooltip:Hide()
-        end)
+        btn:HookScript("OnLeave", function() GameTooltip:Hide() end)
 
         table.insert(filterButtons, btn)
         return btn
@@ -226,43 +184,29 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         end
 
         -- Mark active
-        for _, fb in ipairs(filterButtons) do
-            if fb.profName == state.profFilter then
-                fb:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
-            end
-        end
+        PaintFilters()
 
         -- New buttons need placing straight away; the layout pass only
         -- runs on resize.
         if panel.Relayout then panel:Relayout() end
     end
 
-    searchBox:SetScript("OnTextChanged", function(self)
+    -- Hooked, not set: the field keeps its own Escape, focus and hint handlers.
+    searchBox:HookScript("OnTextChanged", function(self)
         local text = self:GetText()
-        if text and text ~= "" then
-            searchPlaceholder:Hide()
-        else
-            searchPlaceholder:Show()
-        end
         state.query = text or ""
         RefreshResults()
         panel:UpdateRows()
     end)
-    searchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
 
     ----------------------------------------------------------------
     -- Column headers
     ----------------------------------------------------------------
-    local headerFrame = CreateFrame("Frame", nil, panel)
+    -- The shared table header (#371): no fill, a 1px rule under the column labels.
+    local headerFrame = UI:CreateTableHeader(panel, HEADER_H)
     headerFrame:SetPoint("TOPLEFT", topBar, "BOTTOMLEFT", 0, -4)
     headerFrame:SetPoint("TOPRIGHT", topBar, "BOTTOMRIGHT", 0, -4)
-    headerFrame:SetHeight(HEADER_H)
-
-    local headerBg = headerFrame:CreateTexture(nil, "BACKGROUND")
-    headerBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    headerBg:SetAllPoints()
-    headerBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
 
     -- Header cells are positioned by the layout pass, keyed the same way
     -- the row cells are so the two can never drift apart.
@@ -361,7 +305,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
 
         -- Whisper button
         local whisperBtn = UI:CreateButton(row, L["Whisper"], 60, 20)
-        whisperBtn:SetPoint("RIGHT", -4, 0)
+        whisperBtn:SetPoint("RIGHT", 0, 0)
         whisperBtn:SetFrameLevel(row:GetFrameLevel() + 2)
         whisperBtn:Hide()
         row.whisperBtn = whisperBtn
@@ -454,7 +398,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
 
                 -- Recipe name
                 row.recipeName:SetText(entry.name or "?")
-                row.recipeName:SetTextColor(C.white.r, C.white.g, C.white.b)
+                row.recipeName:SetTextColor(C.text.r, C.text.g, C.text.b)
 
                 -- Profession
                 local iconPath = PROF_ICONS[entry.profName]
@@ -474,7 +418,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
                 for _, crafter in ipairs(entry.crafters or {}) do
                     local memberData = GuildOS.db.members[crafter.playerKey]
                     local pClass = memberData and memberData.class
-                    local cc = pClass and GuildOS.ClassColors[pClass] or C.white
+                    local cc = pClass and GuildOS.ClassColors[pClass] or C.text
                     local hex = string.format("%02x%02x%02x", cc.r * 255, cc.g * 255, cc.b * 255)
                     local alpha = crafter.isOnline and "" or "|cff666666"
                     local resetAlpha = crafter.isOnline and "" or "|r"
@@ -523,10 +467,12 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     infoBar:SetPoint("BOTTOMRIGHT", -10, 8)
     infoBar:SetHeight(24)
 
-    local infoText = UI:CreateText(infoBar, "", 9, 0.5, 0.5, 0.6)
+    local infoText = UI:CreateText(infoBar, "", 10, C.label.r, C.label.g, C.label.b)
     infoText:SetPoint("LEFT", 0, 0)
 
-    local scanHint = UI:CreateText(infoBar, L["Open your tradeskill window to share your recipes"], 9, C.accentDim.r, C.accentDim.g, C.accentDim.b)
+    -- A hint, in `textSoft`: not the dimmed gold it used to be (#371).
+    local scanHint = UI:CreateText(infoBar, L["Open your tradeskill window to share your recipes"], 10,
+        C.textSoft.r, C.textSoft.g, C.textSoft.b)
     scanHint:SetPoint("RIGHT", 0, 0)
 
     ----------------------------------------------------------------

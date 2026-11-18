@@ -226,7 +226,7 @@ function Style:_PaintFlat(frame, role)
         return "flat"
     end
     local c = roleColor(role)
-    frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(frame) })
     frame:SetBackdropColor(c.r, c.g, c.b, 1)
     frame:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
     return "flat"
@@ -294,7 +294,7 @@ function Style:_PaintNine(frame, art, role)
         for _, t in pairs(p) do t:SetShown(not small) end
         local C, fill = GuildOS.Colors, roleColor(role)
         if small then
-            frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+            frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(frame) })
             frame:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
         else
             frame:SetBackdrop({ bgFile = WHITE })

@@ -105,6 +105,7 @@ function Frame:Disable() self.enabled = false; if self.scripts.OnDisable then se
 function Frame:SetEnabled(v) if v then self:Enable() else self:Disable() end end
 function Frame:IsEnabled() return self.enabled end
 function Frame:IsMouseOver() return false end
+function Frame:HasFocus() return false end   -- the shared field's hint asks it (UI:CreateInput, #371)
 function Frame:SetChecked(v) self.checked = v and true or nil end
 function Frame:GetChecked() return self.checked end
 function Frame:SetTexture(t) self.texture = t end
@@ -326,6 +327,7 @@ local function loadModules()
   GuildOS.Wishlist = { GetItemInterest = function() return nil end }   -- what the Lists tab and the popup read
   GuildOS.LootMasterStatus = function() return "Master Loot: Lead" end   -- Core/Commands.lua's
   dofile(ADDON .. "/UI/FeaturePanels.lua")
+  dofile(ADDON .. "/UI/SettingsPanel.lua")
   dofile(ADDON .. "/UI/LootWindow.lua")
   dofile(ADDON .. "/UI/PointsPanel.lua")
   dofile(ADDON .. "/UI/CorePanel.lua")
@@ -378,6 +380,38 @@ local function lootTab(UI)
   check(#tagged(rule, "isScope") == 1, "and a selector: the guild or a core")
   check(shows(rule, "Who may ask.") and shows(rule, "Who takes it.") and shows(rule, "The higher roll"),
     "and the rule as players will read it, in the rule's order")
+
+  -- Retail's loot council by trade (issue #185) has its one button on the Rule tab since #367, on the
+  -- terms Settings' quick button had: its module exists (retail only: Modules/TradeCouncil.lua returns
+  -- early anywhere else) and GuildOS runs the guild's loot. Every member's, as it was.
+  do
+    dofile(ADDON .. "/Modules/TradeCouncil.lua")
+    check(GuildOS.TradeCouncil == nil and #buttons(rule, "Loot Council") == 0 and rule.content.councilButton == nil,
+      "no loot council on this client, and no button for it on the Rule tab")
+    local opened = 0
+    GuildOS.TradeCouncil = {}   -- the module, as retail has it
+    GuildOS.ShowTradeCouncil = function() opened = opened + 1 end
+    rule.Draw("")
+    local council = buttons(rule, "Loot Council")
+    check(#council == 1 and council[1] == rule.content.councilButton and council[1].variant == "secondary",
+      "with the module: one Loot Council button on the Rule tab, a secondary one")
+    click(rule, "Loot Council")
+    check(opened == 1, "which opens the loot council")
+    officer = false
+    rule.Draw("")
+    check(#buttons(rule, "Loot Council") == 1, "a member has it too: offering an item, answering one")
+    officer = true
+    local sys = GuildOS.db.settings.lootSystem
+    GuildOS.db.settings.lootSystem = "external"
+    rule.Draw("")
+    check(not GuildOS:LootSystemActive() and #buttons(rule, "Loot Council") == 0 and rule.content.councilButton == nil,
+      "none while the guild's loot is another addon's (External / Off)")
+    GuildOS.db.settings.lootSystem = sys
+    GuildOS.TradeCouncil, GuildOS.ShowTradeCouncil = nil, nil
+    rule.Draw("")
+    check(#buttons(rule, "Loot Council") == 0, "and none again without the module")
+  end
+
   local wl = tagged(rule, "lootKey", "wishlistOnlyMode")
   check(#wl == 1, "the wishlist-only switch is here, once")
   wl[1].onChanged(wl[1], true)
@@ -475,19 +509,20 @@ local function lootTab(UI)
     acc.SetScope("Alpha")
   end
 
-  -- Settings > Loot and the core's Config tab only point here.
-  local settings = newFrame("Frame", UIParent)
-  settings:SetSize(560, 900)
-  GuildOS:RefreshSettingsPanel(settings, "loot")
-  check(#buttons(settings, "Open Loot") == 1, "Settings > Loot says where the loot settings are")
+  -- The loot settings live here alone: no page of Settings has one, nor a pointer, since #367.
+  -- (Modules holds only the features' on/off switches, and needs the registry this file does not load.)
   local LOOT_CONTROLS = { "Wishlist Auto-Council", "Roll Duration", "Rarity threshold", "Disenchanter", "Bank character",
     "Points per boss", "Min. Attendance", "Auto-announce", "LOOT SYSTEM", "LOOT MASTER", "Wishlist-only mode",
     "Roll duration", "Loot threshold", "Mode:" }
-  for _, label in ipairs(LOOT_CONTROLS) do
-    check(not shows(settings, label), "Settings has no \"" .. label .. "\" left")
+  for _, page in ipairs({ "profile", "interface", "chat", "rules", "data" }) do
+    local settings = newFrame("Frame", UIParent)
+    settings:SetSize(560, 900)
+    GuildOS:RefreshSettingsPanel(settings, page)
+    check(#buttons(settings, "Open Loot") == 0, "Settings > " .. page .. " has no pointer to the loot settings")
+    for _, label in ipairs(LOOT_CONTROLS) do
+      check(not shows(settings, label), "Settings > " .. page .. " has no \"" .. label .. "\"")
+    end
   end
-  click(settings, "Open Loot")
-  check(UI_OPENED[1] == "loot" and UI_OPENED[2] == "rule" and UI_OPENED[3] == "", "its button opens the Rule tab on the guild")
 
   local cores = newFrame("Frame", UIParent)
   cores:SetSize(780, 540)

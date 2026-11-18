@@ -76,6 +76,7 @@ GuildOS.UI = setmetatable({
   end,
 }, { __index = function() return function() return stub end end })
 dofile(ADDON .. "/UI/FeaturePanels.lua")
+dofile(ADDON .. "/UI/SettingsPanel.lua")
 
 local published = {}
 GuildOS.SyncService = { Publish = function(_, dom, act, data, opts)
@@ -87,7 +88,8 @@ local function open(settings, rank)
   GuildOS.db = { settings = settings }
   settings.modules = settings.modules or {}
   buttons, boxes, printed, published = {}, {}, {}, {}
-  local ok, err = pcall(GuildOS.RefreshSettingsPanel, GuildOS, stub, "officer")
+  -- A fresh frame each time: Settings builds a page once per frame and only re-reads it after (#367).
+  local ok, err = pcall(GuildOS.RefreshSettingsPanel, GuildOS, setmetatable({}, getmetatable(stub)), "rules")
   check(ok, "the officer settings draw (" .. tostring(err) .. ")")
 end
 local function shareButton()

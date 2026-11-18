@@ -53,6 +53,8 @@ function Achievements:Earned()
                 title = plain(e.title),
                 at = tonumber(e.at) or 0,
                 key = type(e.key) == "string" and GuildOS:LocalMemberKey(e.key) or nil,
+                -- What it asks, for the tooltip (#373), once the site sends it; absent today.
+                rule = type(e.rule) == "string" and plain(e.rule) or nil,
             }
         end
     end
@@ -65,7 +67,8 @@ function Achievements:Next()
     for _, e in ipairs(a and type(a.next) == "table" and a.next or {}) do
         local current, target = type(e) == "table" and tonumber(e.current), type(e) == "table" and tonumber(e.target)
         if current and target and target > 0 and type(e.title) == "string" then
-            out[#out + 1] = { title = plain(e.title), current = current, target = target }
+            out[#out + 1] = { title = plain(e.title), current = current, target = target,
+                rule = type(e.rule) == "string" and plain(e.rule) or nil }
         end
     end
     return out

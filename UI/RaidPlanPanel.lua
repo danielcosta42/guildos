@@ -17,17 +17,17 @@ local function popup(name, w, h, title)
     local f = CreateFrame("Frame", name, UIParent, "BackdropTemplate")
     f:SetSize(w, h)
     f:SetPoint("CENTER")
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-    UI:StylePopup(f)
+    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
+    f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
+    UI:StylePopup(f)   -- the popup's lineHi border
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", function(self) self:StartMoving() end)
     f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-    f.title = UI:CreateText(f, title, 13, C.gold.r, C.gold.g, C.gold.b)
+    -- The shared title, in `text`: gold is for selection, not a heading (#371).
+    f.title = UI:CreateTitle(f, title, 14)
     f.title:SetPoint("TOPLEFT", PAD, -10)
     local close = UI:CreateCloseButton(f)
     close:SetPoint("TOPRIGHT", -4, -4)
@@ -45,18 +45,21 @@ local function build()
     local f = popup("GuildOSRaidPlan", W, H, L["Raid plan"])
     f.sub = UI:CreateText(f, "", 10, C.silver.r, C.silver.g, C.silver.b)
     f.sub:SetPoint("TOPLEFT", PAD, -28)
+    -- The frame reaches the scroll gutter past the content's right edge, and the child (fixed: the
+    -- popup is) is the content's width, so the "Say in raid" buttons stop clear of the bar (#371).
     f.scroll, f.child = UI:CreateScrollFrame(f, "GuildOSRaidPlanScroll")
     f.scroll:SetPoint("TOPLEFT", PAD, -46)
-    f.scroll:SetPoint("BOTTOMRIGHT", -PAD - 18, PAD)
-    f.child:SetWidth(W - 2 * PAD - 22)
+    f.scroll:SetPoint("BOTTOMRIGHT", -PAD + UI.SCROLL_GUTTER, PAD)
+    f.child:SetWidth(W - 2 * PAD)
     f.texts, f.buttons = {}, {}
-    f.status = UI:CreateText(f, "", 10, C.gold.r, C.gold.g, C.gold.b)
+    f.status = UI:CreateText(f, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     f.status:SetPoint("BOTTOMLEFT", PAD, 2)
     return f
 end
 
--- A text from the pool, laid at `y` in the content, full width; returns the y below it.
-local function line(f, i, y, text, size, color)
+-- A text from the pool, laid at `y` in the content, full width; returns the y below it. `role`: a
+-- heading takes the section title's font (#371).
+local function line(f, i, y, text, size, color, role)
     local fs = f.texts[i]
     if not fs then
         fs = UI:CreateText(f.child, "", size)
@@ -64,7 +67,7 @@ local function line(f, i, y, text, size, color)
         fs:SetWordWrap(true)
         f.texts[i] = fs
     end
-    GuildOS:ApplyFont(fs, size)
+    GuildOS:ApplyFont(fs, size, role)
     fs:SetTextColor(color.r, color.g, color.b)
     fs:SetWidth(f.child:GetWidth())
     fs:ClearAllPoints()
@@ -85,8 +88,9 @@ local function sayButton(f, i, y, boss)
     b:SetScript("OnClick", function()
         local said, err = Plan:Announce(boss)
         f.status:SetText(err or string.format(L["Said the note for %s in raid chat."], boss))
+        -- Status: said is `ok`, not said a `warn` (gold is no status colour, #371).
         if said and said > 0 then f.status:SetTextColor(C.green.r, C.green.g, C.green.b)
-        else f.status:SetTextColor(C.gold.r, C.gold.g, C.gold.b) end
+        else f.status:SetTextColor(C.warn.r, C.warn.g, C.warn.b) end
     end)
     b:Show()
 end
@@ -100,22 +104,26 @@ function Plan:Show()
     local plan, roster = self:Current()
     f.sub:SetText(roster and roster.title or "")
     local y, n, nb = 0, 0, 0
-    local function add(text, size, color)
+    local function add(text, size, color, role)
         n = n + 1
-        y = line(f, n, y, text, size, color)
+        y = line(f, n, y, text, size, color, role)
+    end
+    -- A heading of the plan (the loot rules, a boss): the section title's font and colour (#371).
+    local function heading(text)
+        add(text, 14, C.text, "sectionTitle")
     end
     -- The rule the raid plays by, or why this client does not play by it (the site's #516).
     local ruleLine, ruleWarning = self:LootRuleLine()
     if ruleLine then
-        add(ruleLine, 12, ruleWarning and C.red or C.gold)
+        add(ruleLine, 12, ruleWarning and C.red or C.text)
         y = y + 4
     end
     if not plan then
         add(L["No plan for this raid yet: it comes from guildos.me with the roster."], 11, C.silver)
     else
         if plan.loot then
-            add(L["Loot rules"] .. (plan.loot.system and (": " .. (Plan.LOOT[plan.loot.system] or plan.loot.system)) or ""), 12, C.gold)
-            if plan.loot.rules then add(plan.loot.rules, 11, C.white) end
+            heading(L["Loot rules"] .. (plan.loot.system and (": " .. (Plan.LOOT[plan.loot.system] or plan.loot.system)) or ""))
+            if plan.loot.rules then add(plan.loot.rules, 11, C.text) end
             y = y + 6
         end
         local leader = self:CanAnnounce()
@@ -124,10 +132,11 @@ function Plan:Show()
                 nb = nb + 1
                 sayButton(f, nb, y, boss)
             end
-            add(boss, 12, C.gold)
+            heading(boss)
+            -- Mine says so in words and in `ok`; no marker in front of it (#371).
             for _, a in ipairs(self:TasksFor(boss)) do
                 local mine = self:IsMine(a)
-                add((mine and ("> " .. L["Your task"] .. ": ") or (a.name .. ": ")) .. self:TaskLine(a), 11, mine and C.green or C.white)
+                add((mine and (L["Your task"] .. ": ") or (a.name .. ": ")) .. self:TaskLine(a), 11, mine and C.green or C.text)
             end
             local note = self:NoteFor(boss)
             if note then add(note, 10, C.silver) end
@@ -148,7 +157,7 @@ function Plan:ShowTask(boss)
         task = popup("GuildOSRaidPlanTask", 320, 150, "")
         task:ClearAllPoints()
         task:SetPoint("TOP", 0, -140)
-        task.body = UI:CreateText(task, "", 11, C.white.r, C.white.g, C.white.b)
+        task.body = UI:CreateText(task, "", 11, C.text.r, C.text.g, C.text.b)
         task.body:SetPoint("TOPLEFT", PAD, -32)
         task.body:SetWidth(320 - 2 * PAD)
         task.body:SetJustifyH("LEFT")
