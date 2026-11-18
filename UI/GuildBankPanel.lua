@@ -888,8 +888,13 @@ local function buildNeeds(p, panel)
     announce:SetScript("OnClick", function()
         local lines = B:ShoppingList()
         if #lines == 0 then return end
-        local text = L["Guild bank needs: "] .. table.concat(lines, ", ")
-        if #text > ANNOUNCE_MAX then text = text:sub(1, ANNOUNCE_MAX - 3) .. "..." end
+        -- Whole lines only: a cut through an item link breaks the message.
+        local text = L["Guild bank needs: "]
+        for i, line in ipairs(lines) do
+            local piece = (i > 1 and ", " or "") .. line
+            if #text + #piece > ANNOUNCE_MAX then text = text .. " …"; break end
+            text = text .. piece
+        end
         SendChatMessage(text, "GUILD")
     end)
 

@@ -347,7 +347,7 @@ check(r.st == "done" and r.by == "Ana", "an officer fills it")
 GuildOS.SyncService.handlers.gbankreq({ act = "new", data = { id = "R2", item = 22854, n = 1 } }, "Bea")
 GuildOS.SyncService.handlers.gbankreq({ act = "set", data = { id = "R2", st = "cancelled" } }, "Bea-Realm")
 check(Bank:Requests().R2.st == "cancelled", "its author cancels it, whichever way the name comes")
-check(Bank:Request(22832, 5, "heals") and last("gbankreq", "new").data.who == "Ana", "I ask, under my own name")
+check(Bank:Request(22832, 5, "heals") and Bank:IsMe(last("gbankreq", "new").data.who), "I ask, under my own name")
 
 -- ── Organizing a real tab ───────────────────────────────────────────────
 fresh()
@@ -421,6 +421,89 @@ check(Bank:StartSort(free), "a third run starts")
 runTimers()
 check(Bank:SortState() == nil and table.concat(printed, "\n"):find("did not answer", 1, true) ~= nil,
   "a slot that never unlocks stops the run, with a reason")
+
+-- ── Regressions from the review ────────────────────────────────────────
+-- A full log whose lines share hours is lined up again on the next read, however often.
+fresh()
+local window = {}
+for i = 1, 25 do window[i] = { t = NOW - (i <= 12 and 2 or 1) * 3600, ty = "d", n = "Bea", id = 23445, c = i } end
+check(Bank:MergeStream(3, window) == 25, "a full log is taken whole the first time")
+for round = 1, 3 do
+  local nextRead = {}
+  for i = 2, 25 do nextRead[#nextRead + 1] = window[i] end
+  nextRead[#nextRead + 1] = { t = NOW, ty = "d", n = "Cid", id = 21877, c = 100 + round }
+  check(Bank:MergeStream(3, nextRead) == 1, "the next read adds only its new line (round " .. round .. ")")
+  window = nextRead
+end
+check(#Bank:Stream(3) == 28, "and the stream holds every line once")
+
+-- Requests a member sends in a backfill are ignored; an officer's are taken, with times clamped.
+fresh()
+officers = { Ana = true }
+GuildOS.SyncService.handlers.gbankreq({ act = "new", data = { id = "Q1", item = 22854, n = 2 } }, "Bea")
+GuildOS.SyncService.handlers.gbank({ act = "reqs", data = { req = { Q1 = { id = "Q1", who = "Cid", item = 22854, n = 2,
+  st = "done", by = "Ana", at = NOW + 1e9 } } } }, "Cid")
+check(Bank:Requests().Q1.st == "open" and Bank:Requests().Q1.who == "Bea", "a member's backfill changes no request")
+GuildOS.SyncService.handlers.gbank({ act = "hist", data = { reads = {}, req = { Q1 = { id = "Q1", who = "Cid", item = 22854,
+  n = 2, st = "done", by = "Ana", at = NOW + 10 } } } }, "Cid")
+check(Bank:Requests().Q1.st == "open", "nor does a ledger answer that carries requests")
+GuildOS.SyncService.handlers.gbank({ act = "reqs", data = { req = { Q2 = { id = "Q2", who = "Dan", item = 22832, n = 1,
+  st = "open", at = NOW + 1e9, ts = NOW + 1e9 } } } }, "Ana")
+check(Bank:Requests().Q2 and Bank:Requests().Q2.at <= NOW and Bank:Requests().Q2.ts <= NOW,
+  "an officer's backfill is taken, its times no later than now")
+
+-- A picture's tab count is the last reader's, not the highest ever claimed.
+Bank:ApplySnapshot({ tabs = { [1] = { ts = NOW - 10, s = "" } }, nt = 8 }, "Eva")
+Bank:ApplySnapshot({ tabs = { [1] = { ts = NOW - 5, s = "" } }, nt = 3 }, "Eva")
+check(Bank:Store().numTabs == 3, "a forged tab count passes with the next read")
+
+-- A tab the server never answered keeps what the guild knew of it.
+fresh()
+local one = addTab("Raid", -1)
+local two = addTab("Mats", -1)
+BANK.tabs[one].slots[1] = { id = 23445, c = 5 }
+Bank:ApplySnapshot({ tabs = { [two] = { n = "Mats", ts = NOW - 999, s = "1,21877,20" } } }, "Bea")
+Bank:OnEvent("GUILDBANKFRAME_OPENED")
+Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")   -- tab 1 answers; tab 2 never does
+runTimers()
+check(Bank:Store().tabs[one].slots[1].c == 5, "the tab that answered is read")
+check(Bank:Store().tabs[two].slots[1] and Bank:Store().tabs[two].slots[1].id == 21877, "the one that did not keeps its old picture")
+Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+
+-- Pausing and resuming at once runs one loop, not two: the run takes the moves a plain run takes.
+local function layout(slots)
+  slots[2] = { id = 23445, c = 3 }; slots[9] = { id = 22854, c = 4 }; slots[15] = { id = 23445, c = 11 }
+  slots[33] = { id = 22832, c = 20 }; slots[60] = { id = 22854, c = 16 }; slots[61] = { id = 28555, c = 1 }
+end
+local function organizeOnce(fidget)
+  fresh()
+  local tab = addTab("Raid", -1)
+  layout(BANK.tabs[tab].slots)
+  Bank:OnEvent("GUILDBANKFRAME_OPENED")
+  Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
+  runTimers()
+  moves = 0
+  check(Bank:StartSort(tab), "a run starts")
+  if fidget then
+    for _ = 1, 3 do Bank:PauseSort(true); Bank:PauseSort(false) end
+  end
+  runTimers()
+  return moves
+end
+local plain = organizeOnce(false)
+check(plain > 0 and organizeOnce(true) == plain, "pausing and resuming never doubles the moves")
+fresh()
+local tabS = addTab("Raid", -1)
+layout(BANK.tabs[tabS].slots)
+Bank:OnEvent("GUILDBANKFRAME_OPENED")
+Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
+runTimers()
+moves = 0
+Bank:StartSort(tabS)
+Bank:StopSort("cancel")
+Bank:StartSort(tabS)
+runTimers()
+check(moves == plain, "stopping and starting again at once runs one loop")
 
 -- ── Typing an item ──────────────────────────────────────────────────────
 check(Bank:ParseItemInput(linkOf(22854)) == 22854 and Bank:ParseItemInput("22832") == 22832, "a link or an id names its item")

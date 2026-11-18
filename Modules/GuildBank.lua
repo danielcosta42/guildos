@@ -25,6 +25,7 @@ local MAX_TABS = 8               -- the most any client has
 local MAX_COUNT = 1000           -- the most one slot can hold (a stack of 1000 reagents on retail)
 local MAX_ITEM_ID = 10000000     -- above any item id the game has
 local QUERY_GAP = 0.35           -- seconds between tab queries when the bank opens
+local QUERY_TIMEOUT = 3          -- seconds a tab's query may go unanswered before it is skipped
 local READ_AFTER = 1.5           -- seconds after the last query before the tabs are read
 local LOG_KEEP = 2000            -- ledger lines kept
 local MONEY_KEEP = 120           -- money readings kept
@@ -66,7 +67,7 @@ function GuildBank:IsMe(name) return sameName(name, GuildOS.Compat.PlayerName())
 local function state()
     local s = GuildOS.State.gbank
     if not s then
-        s = { open = false, queried = {}, lastSlotsAt = 0, lastPublish = 0, answer = nil, sort = nil,
+        s = { open = false, queried = {}, answered = {}, queue = {}, lastSlotsAt = 0, lastPublish = 0, answer = nil, sort = nil,
               index = nil, infoWait = {}, rank = {} }
         GuildOS.State.gbank = s
     end
@@ -125,7 +126,14 @@ function GuildBank:OnEvent(event, arg)
         if GuildOS.Compat.IsGuildBankerInteraction(arg) then self:OnClose() end
     elseif event == "GUILDBANKBAGSLOTS_CHANGED" or event == "GUILDBANK_ITEM_LOCK_CHANGED" then
         s.lastSlotsAt = GetTime()
-        if s.open and not s.sort then
+        -- The answer to the tab being asked: only now does that tab read true (an empty tab read
+        -- before its answer would wipe what the guild knew of it).
+        if event == "GUILDBANKBAGSLOTS_CHANGED" and s.waiting then
+            s.answered[s.waiting] = GetTime()
+            s.waiting = nil
+            GuildOS.Compat.After(QUERY_GAP, function() GuildBank:QueryNext() end)
+        end
+        if s.open and not s.sort and not s.waiting and #s.queue == 0 then
             GuildOS:Coalesce("gbank.reread", 2, function() GuildOS:SafeCall(GuildBank.ReadOpenTabs, GuildBank, false) end)
         end
     elseif event == "GUILDBANKLOG_UPDATE" then
@@ -149,7 +157,7 @@ function GuildBank:OnOpen()
     local s = state()
     if s.open then return end   -- the second event of the pair
     s.open = true
-    s.queried = {}
+    s.queried, s.answered, s.queue, s.waiting = {}, {}, {}, nil
     self:QueryAll()
     if self.bankOpened then GuildOS:SafeCall(self.bankOpened) end
     self:Refresh()
@@ -167,30 +175,41 @@ end
 
 function GuildBank:IsOpen() return state().open end
 
--- Ask the server for every tab this player may see, and every log, a little apart.
+-- Ask the server for every tab this player may see, one at a time: the next is asked once the
+-- last one answered (or did not, in QUERY_TIMEOUT), then the logs and money are read.
 function GuildBank:QueryAll()
     local s = state()
     local n = GuildOS.Compat.GuildBankTabCount()
-    local delay = 0
+    s.queue = {}
     for tab = 1, math.min(n, MAX_TABS) do
         local _, _, viewable = GuildOS.Compat.GuildBankTabInfo(tab)
-        if viewable then
-            GuildOS.Compat.After(delay, function()
-                if not s.open then return end
-                GuildOS.Compat.QueryGuildBankTab(tab)
-                GuildOS.Compat.QueryGuildBankLog(tab)
-                s.queried[tab] = GetTime()
-            end)
-            delay = delay + QUERY_GAP
-        end
+        if viewable then s.queue[#s.queue + 1] = tab end
     end
-    GuildOS.Compat.After(delay, function()
-        if s.open then GuildOS.Compat.QueryGuildBankLog(GuildOS.Compat.GuildBankMaxTabs() + 1) end
-    end)
-    GuildOS.Compat.After(delay + READ_AFTER, function()
-        if not s.open then return end
-        GuildOS:SafeCall(GuildBank.ReadOpenTabs, GuildBank, true)
-        GuildOS:SafeCall(GuildBank.ReadLogs, GuildBank)
+    if not s.waiting then self:QueryNext() end
+end
+
+function GuildBank:QueryNext()
+    local s = state()
+    if not s.open or s.waiting then return end
+    local tab = table.remove(s.queue, 1)
+    if not tab then
+        GuildOS.Compat.QueryGuildBankLog(GuildOS.Compat.GuildBankMaxTabs() + 1)
+        GuildOS.Compat.After(READ_AFTER, function()
+            if not s.open then return end
+            GuildOS:SafeCall(GuildBank.ReadOpenTabs, GuildBank, true)
+            GuildOS:SafeCall(GuildBank.ReadLogs, GuildBank)
+        end)
+        return
+    end
+    s.waiting = tab
+    s.queried[tab] = GetTime()
+    GuildOS.Compat.QueryGuildBankTab(tab)
+    GuildOS.Compat.QueryGuildBankLog(tab)
+    GuildOS.Compat.After(QUERY_TIMEOUT, function()
+        if s.waiting == tab then
+            s.waiting = nil
+            self:QueryNext()
+        end
     end)
 end
 
@@ -266,10 +285,9 @@ function GuildBank:ReadOpenTabs(publish)
     db.numTabs = count
     for tab = 1, count do
         local name, icon, viewable = GuildOS.Compat.GuildBankTabInfo(tab)
-        local asked = s.queried[tab]
-        -- A tab is read only once the server answered after it was asked: before that the game
-        -- answers an empty tab, and an empty tab would wipe what the guild knew.
-        if viewable and asked and s.lastSlotsAt >= asked then
+        -- A tab is read only once the server answered its own query: before that the game answers
+        -- an empty tab, and an empty tab would wipe what the guild knew.
+        if viewable and s.answered[tab] then
             local slots = self:ReadTab(tab)
             for _, v in pairs(slots) do v.locked = nil end
             db.tabs[tab] = { name = name, icon = icon, ts = t, by = me, slots = slots }
@@ -356,10 +374,9 @@ function GuildBank:MergeStream(k, list)
             added = added + 1
         end
     end
-    if added > 0 then
-        table.sort(ledger, function(a, b) return (a.t or 0) < (b.t or 0) end)
-        while #ledger > LOG_KEEP do table.remove(ledger, 1) end
-    end
+    -- Kept in the order read, never re-sorted: lines of one hour share a time, and a sort would
+    -- shuffle them so the next read no longer lines up with the end.
+    while #ledger > LOG_KEEP do table.remove(ledger, 1) end
     return added
 end
 
@@ -583,7 +600,9 @@ function GuildBank:ApplySnapshot(data, sender)
     for tab, t in pairs(data.tabs) do
         tab = tonumber(tab)
         local ts = GuildOS.Finite(type(t) == "table" and t.ts)
-        if tab and tab >= 1 and tab <= MAX_TABS and tab == math.floor(tab) and ts and ts <= limit then
+        if ts and ts > limit then ts = nil end   -- from the future: refused
+        if ts then ts = math.min(ts, now()) end   -- a little ahead (clocks differ): taken as now
+        if tab and tab >= 1 and tab <= MAX_TABS and tab == math.floor(tab) and ts then
             local mine = db.tabs[tab]
             if not mine or ts > (mine.ts or 0) then
                 db.tabs[tab] = { name = cleanText(t.n, 40), icon = tonumber(t.ic) or (type(t.ic) == "string" and #t.ic < 200 and t.ic) or nil,
@@ -593,8 +612,9 @@ function GuildBank:ApplySnapshot(data, sender)
         end
     end
     local nt = tonumber(data.nt)
-    if nt and nt >= 0 and nt <= MAX_TABS then
-        db.numTabs = math.max(db.numTabs or 0, nt)
+    -- The tab count of whoever read last: a bought tab shows, a forged count passes with the next read.
+    if changed and nt and nt >= 0 and nt <= MAX_TABS and nt == math.floor(nt) then
+        db.numTabs = nt
     end
     local m, mt = GuildOS.Finite(data.m), GuildOS.Finite(data.mt)
     if m and mt and m >= 0 and mt <= limit and mt > (db.moneyTs or 0) then
@@ -648,9 +668,16 @@ function GuildBank:OnSync(env, sender)
             local k, list = cleanRead(read, limit)
             if k and #list > 0 then added = added + self:MergeStream(k, list) end
         end
-        if type(data.req) == "table" then self:MergeRequests(data.req, sender) end
         if added > 0 then self:Refresh() end
         if env.act == "hist" and s.answer then s.answer.hist = nil end
+    elseif env.act == "reqs" then
+        -- Requests a member missed, only from an officer: a member could otherwise close or rewrite
+        -- anyone's request in a backfill.
+        if type(data.req) == "table" and GuildOS:IsOfficerByName(sender) then
+            self:MergeRequests(data.req)
+            self:Refresh()
+        end
+        if s.reqAnswer and (GuildOS.Finite(data.mark) or 0) >= s.reqAnswer then s.reqAnswer = nil end
     elseif env.act == "ask" then
         self:OnAsk(data, sender)
     end
@@ -679,8 +706,26 @@ function GuildBank:OnAsk(data, sender)
     local theirTs, theirLt = GuildOS.Finite(data.ts) or 0, GuildOS.Finite(data.lt) or 0
     local wantSnap = ts > theirTs and ts or nil
     local wantHist = lt > theirLt + 3600 and theirLt or nil
-    if GuildOS:IsOfficer() and GuildOS.SyncService:GetRevision("gbankneed", "needs") > 0 then
-        GuildOS.Compat.After(ANSWER_MIN + math.random() * (ANSWER_MAX - ANSWER_MIN), function() GuildBank:BroadcastNeeds(true) end)
+    if GuildOS:IsOfficer() then
+        local rev = GuildOS.SyncService:GetRevision("gbankneed", "needs")
+        local _, _, rq = self:Marks()
+        local theirRq = GuildOS.Finite(data.rq) or 0
+        -- One officer answers each: any other officer's answer as new cancels ours.
+        if rev > 0 and not s.needAnswer then
+            s.needAnswer = rev
+            GuildOS.Compat.After(ANSWER_MIN + math.random() * (ANSWER_MAX - ANSWER_MIN), function()
+                if s.needAnswer then s.needAnswer = nil; GuildBank:BroadcastNeeds(true) end
+            end)
+        end
+        if rq > theirRq and not s.reqAnswer then
+            s.reqAnswer = rq
+            GuildOS.Compat.After(ANSWER_MIN + math.random() * (ANSWER_MAX - ANSWER_MIN), function()
+                if s.reqAnswer then
+                    s.reqAnswer = nil
+                    GuildOS.SyncService:Publish("gbank", "reqs", { req = GuildBank:Store().requests, mark = rq }, { priority = "BULK" })
+                end
+            end)
+        end
     end
     if not (wantSnap or wantHist) or s.answer then return end
     s.answer = { snap = wantSnap, hist = wantHist and true or nil }
@@ -708,7 +753,7 @@ function GuildBank:PublishHistory(since)
     for _, r in ipairs(reads) do
         while #r.list > HIST_MAX do table.remove(r.list, 1) end
     end
-    GuildOS.SyncService:Publish("gbank", "hist", { reads = reads, req = self:Store().requests }, { priority = "BULK" })
+    GuildOS.SyncService:Publish("gbank", "hist", { reads = reads }, { priority = "BULK" })
 end
 
 ----------------------------------------------------------------------
@@ -758,6 +803,8 @@ end
 function GuildBank:OnNeedSync(env)
     local SS = GuildOS.SyncService
     if env.act ~= "snap" or type(env.data) ~= "table" or type(env.data.needs) ~= "table" then return end
+    local s = state()
+    if s.needAnswer and (env.rev or 0) >= s.needAnswer then s.needAnswer = nil end
     if not SS:ShouldApply("gbankneed", "needs", env.rev) then return end
     local out, count = {}, 0
     for id, v in pairs(env.data.needs) do
@@ -815,7 +862,7 @@ end
 function GuildBank:Request(id, n, note)
     id, n = tonumber(id), tonumber(n)
     if not id or id <= 0 or id >= MAX_ITEM_ID or not n or n <= 0 then return false end
-    local r = { id = newId(), who = GuildOS.Compat.PlayerName(), item = id, n = math.min(math.floor(n), MAX_COUNT),
+    local r = { id = newId(), who = keyName(GuildOS.Compat.PlayerName()), item = id, n = math.min(math.floor(n), MAX_COUNT),
                 note = cleanText(note, NOTE_MAX), ts = now(), at = now(), st = "open" }
     self:Store().requests[r.id] = r
     self:PruneRequests()
@@ -843,7 +890,8 @@ local function cleanRequest(v, who)
     if not (id and item and item > 0 and item < MAX_ITEM_ID and n and n >= 1) then return nil end
     local st = REQ_STATES[v.st] and v.st or "open"
     return { id = id, who = who or cleanText(v.who, 60), item = item, n = math.min(math.floor(n), MAX_COUNT),
-             note = cleanText(v.note, NOTE_MAX), ts = GuildOS.Finite(v.ts) or now(), at = GuildOS.Finite(v.at) or now(),
+             note = cleanText(v.note, NOTE_MAX), ts = math.min(GuildOS.Finite(v.ts) or now(), now()),
+             at = math.min(GuildOS.Finite(v.at) or now(), now()),
              st = st, by = cleanText(v.by, 60) }
 end
 
@@ -876,7 +924,7 @@ end
 -- Requests a member who logged in missed, from an answer: kept where newer than ours. A request's
 -- author and state come as the answering member saw them; a state only an officer may set is taken
 -- only while the request names an officer who set it.
-function GuildBank:MergeRequests(list, _)
+function GuildBank:MergeRequests(list)
     local reqs = self:Store().requests
     local changed = false
     for _, v in pairs(list) do
@@ -964,6 +1012,17 @@ function GuildBank:StartSort(tabs)
     return true
 end
 
+-- The next step of `run`, in `d` seconds. Each schedule supersedes the one before: a step left over
+-- from a pause, a stop or a run before this one finds the run moved on and does nothing, so two
+-- loops never issue moves together.
+local function schedule(run, d)
+    run.tick = (run.tick or 0) + 1
+    local tick = run.tick
+    GuildOS.Compat.After(d, function()
+        if state().sort == run and run.tick == tick then GuildOS:SafeCall(GuildBank.SortStep, GuildBank) end
+    end)
+end
+
 function GuildBank:NextSortTab()
     local s = state()
     local run = s.sort
@@ -980,7 +1039,7 @@ function GuildBank:NextSortTab()
     for _ in pairs(slots) do run.used = run.used + 1 end
     run.started = GetTime()
     run.waitUntil = run.started + INFO_WAIT
-    GuildOS.Compat.After(MOVE_DELAY, function() GuildOS:SafeCall(GuildBank.SortStep, GuildBank) end)
+    schedule(run, MOVE_DELAY)
 end
 
 local function allNamed(self, slots)
@@ -1001,7 +1060,7 @@ function GuildBank:SortStep()
     if not s.open then return self:StopSort("closed") end
     if GuildOS.Compat.InCombat() then return self:StopSort("combat") end
     local tab = run.tab
-    local again = function(d) GuildOS.Compat.After(d, function() GuildOS:SafeCall(GuildBank.SortStep, GuildBank) end) end
+    local again = function(d) schedule(run, d) end
     if GuildOS.Compat.CursorHasItem() then
         GuildOS.Compat.ClearCursor()
         return again(LOCK_WAIT)
@@ -1060,7 +1119,7 @@ function GuildBank:PauseSort(paused)
     local run = state().sort
     if not run then return end
     run.paused = paused and true or nil
-    if not paused then GuildOS.Compat.After(MOVE_DELAY, function() GuildOS:SafeCall(GuildBank.SortStep, GuildBank) end) end
+    if not paused then schedule(run, MOVE_DELAY) end
     self:Refresh()
 end
 
@@ -1083,7 +1142,6 @@ function GuildBank:StopSort(reason)
     end
     if reason ~= "done" then GuildOS:Print(L[STOP_TEXT[reason] or STOP_TEXT.cancel]) end
     s.lastSlotsAt = GetTime()
-    for tab in pairs(s.queried) do s.queried[tab] = GetTime() - 1 end
     GuildOS.Compat.After(READ_AFTER, function() GuildOS:SafeCall(GuildBank.ReadOpenTabs, GuildBank, true) end)
     self:Refresh()
 end
