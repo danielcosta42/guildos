@@ -82,6 +82,13 @@ function Frame:GetChecked() return self.checked end
 function Frame:SetTexture(t) self.texture = t end
 function Frame:SetScrollChild(c) self.scrollChild = c end
 function Frame:SetBackdropBorderColor(r, g, b) self.border = { r, g, b } end
+-- What the activity cards (#373) are read back by: where a frame is, which art a texture holds.
+function Frame:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = { ... } end
+function Frame:ClearAllPoints() self.points = {} end
+function Frame:SetAtlas(name) self.atlas, self.texture = name, nil end
+function Frame:SetTexCoord(...) self.coords = { ... } end
+function Frame:SetBackdropColor(r, g, b, a) self.bg = { r, g, b, a } end
+function Frame:SetDesaturated(v) self.desaturated = v and true or false end
 
 UIParent = newFrame("Frame")
 function CreateFrame(kind, _, parent) return newFrame(kind, parent) end
@@ -110,12 +117,13 @@ function SendChatMessage() end
 local invited, tells = {}, {}
 function InviteUnit(name) invited[#invited + 1] = name end
 function ChatFrame_SendTell(name) tells[#tells + 1] = name end
--- The guild: everybody online, so every listing shows.
-local ROSTER = { { "Bea-Realm", "PRIEST" }, { "Cid-Realm", "PRIEST" }, { "Dan-Realm", "PRIEST" }, { "Ana-Realm", "PRIEST" } }
+-- The guild: everybody online, so every listing shows. The third field is the level (#373).
+local ROSTER = { { "Bea-Realm", "PRIEST" }, { "Cid-Realm", "PRIEST" }, { "Dan-Realm", "PRIEST", 68 },
+                 { "Ana-Realm", "PRIEST" }, { "Eve-Realm", "MAGE", 69 }, { "Fay-Realm", "PRIEST", 62 } }
 function GetNumGuildMembers() return #ROSTER end
 function GetGuildRosterInfo(i)
   local m = ROSTER[i]
-  if m then return m[1], "Rank", 1, 70, "Priest", "Zone", "", "", true, 0, m[2] end
+  if m then return m[1], "Rank", 1, m[3] or 70, "Priest", "Zone", "", "", true, 0, m[2] end
 end
 
 GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
@@ -295,7 +303,7 @@ check(Groups:Mine() == nil, "Take down removes my group")
 -- Somebody else's group, and who is looking
 Groups:HandleGroup("Cid-Realm", { act = "karazhan", need = { T = 1, D = 2 }, note = "first night", ttl = 3600 }, "GUILD")
 Board:HandleEntry("Dan-Realm", { roles = "TD", acts = { "karazhan" }, note = "until 23h", ttl = 3600 })
-check(shows(panel, "first night") and shows(panel, "open: 1 Tank, 2 DPS"), "a group shows its note and its open spots")
+check(shows(panel, "first night") and shows(panel, "missing 1 Tank, 2 DPS"), "a group shows its note and what it is missing")
 check(#buttons(panel, "Tank") == 1 and #buttons(panel, "DPS") == 1 and #buttons(panel, "Healer") == 0,
   "and offers the roles it has a spot for, and no other")
 check(shows(panel, "Karazhan: until 23h") and shows(panel, "Tank, DPS"), "a player looking shows the activities, the note and the roles")
@@ -323,11 +331,143 @@ check(Board:Pref("roles") == "THD" and play.T.on and play.D.on and play.H.on, "t
 play.T.scripts.OnClick(play.T)
 check(Board:Pref("roles") == "HD" and not play.T.on, "and a second click takes one back")
 
+-- ── Activity cards (#373) ───────────────────────────────────────────────
+local function visible(root, pred)
+  local out = {}
+  walk(root, function(f) if f:IsVisible() and pred(f) then out[#out + 1] = f end end)
+  return out
+end
+local function cards(root) return visible(root, function(f) return f.slots ~= nil and f.lead ~= nil end) end
+local function cardOf(root, title)
+  for _, c in ipairs(cards(root)) do if c.title.text == title then return c end end
+end
+-- A card's seats as drawn: how many are taken, and the roles of the open ones in order.
+local function seatsOf(card)
+  local filled, open = 0, {}
+  for _, s in ipairs(card.slots) do
+    if s:IsShown() then
+      if s.filled then filled = filled + 1 else open[#open + 1] = s.role end
+    end
+  end
+  return filled, table.concat(open)
+end
+local function seekerRows(root) return visible(root, function(f) return f.roleIcons ~= nil end) end
+local function rowOf(rows, name)
+  for _, r in ipairs(rows) do if r.name.text:find(name, 1, true) then return r end end
+end
+local function chipsOf(root)
+  local out = {}
+  walk(root, function(f) if f.kind == "Button" and f.letter and f:IsVisible() and f.scripts.OnClick then out[f.letter] = f end end)
+  return out
+end
+
+-- This client has no role art: every role keeps its letter.
+for _, letter in ipairs({ "T", "H", "D" }) do
+  check(play[letter].label.text == letter and not play[letter].icon.shown, "with no role art the " .. letter .. " toggle keeps its letter")
+end
+
+-- One card per group being formed, its seats as its listing counts them
+Groups:HandleGroup("Eve-Realm", { act = "steamvault", need = { H = 1 }, n = 3, ttl = 3600 }, "GUILD")
+Board:HandleEntry("Fay-Realm", { roles = "H", acts = { "steamvault" }, ttl = 3600 })
+panel.SelectSub("active")
+check(#cards(panel) == 2, "one card per group being formed (" .. #cards(panel) .. ")")
+local kc, sc = cardOf(panel, "Karazhan"), cardOf(panel, "The Steamvault")
+check(kc ~= nil and sc ~= nil, "each card names its activity")
+local taken, open = seatsOf(kc)
+check(taken == 1 and open == "TDD", "a card's seats: its leader, then one per open spot by role (" .. taken .. " " .. open .. ")")
+taken, open = seatsOf(sc)
+check(taken == 3 and open == "H", "and another group's seats are its own (" .. taken .. " " .. open .. ")")
+check(kc.range.text == "70" and sc.range.text == "68\226\128\14770", "a card shows its activity's level range")
+check(kc.lead.text == "led by |cff" .. GuildOS:GetClassColorHex("PRIEST") .. "Cid|r", "and who leads it, in their class colour")
+check(kc.when.text:find("1/10", 1, true) and kc.when.text:find("60m", 1, true), "how full it is and for how long")
+check(shows(kc, "missing 1 Tank, 2 DPS") and shows(sc, "missing 1 Healer"), "and what it is missing")
+check(#buttons(sc, "Healer") == 1 and #buttons(sc, "Tank") == 0 and #buttons(sc, "Whisper") == 1,
+  "a card keeps its Join action for the roles it has open")
+for _, s in ipairs(kc.slots) do
+  if s:IsShown() and not s.filled then check(s.mark.text == s.role, "with no role art an open seat shows its letter") end
+end
+
+-- One row per player looking
+local rows = seekerRows(panel)
+check(#rows == 2, "one row per player looking (" .. #rows .. ")")
+local dan, fay = rowOf(rows, "Dan"), rowOf(rows, "Fay")
+check(dan.level.text == "Lv 68" and fay.level.text == "Lv 62", "a row says the player's level, from the roster")
+check(dan.roles.text == "Tank, DPS" and fay.roles.text == "Healer", "with no role art the roles are spelled out")
+check(dan.what.text == "Karazhan: until 23h" and fay.what.text == "The Steamvault", "and what they want")
+check(#buttons(dan, "Invite") == 1 and not dan.class.shown, "the row keeps its Invite, and shows no class icon the client lacks")
+
+-- Dungeons opens on the tiles of my level
+local function yOf(f) return -f.points[1][3] end
+local function sectionTiles(root, title)
+  local heads, tiles = {}, {}
+  walk(root, function(f)
+    if f:IsVisible() and type(f.title) == "table" and f.title.rule ~= nil then heads[#heads + 1] = f end
+    if f:IsVisible() and f.kind == "Button" and type(f.title) == "string" then tiles[#tiles + 1] = f end
+  end)
+  table.sort(heads, function(a, b) return yOf(a) < yOf(b) end)
+  local top, bottom, first
+  for i, h in ipairs(heads) do
+    if h.title.text == title then
+      top, bottom, first = yOf(h), heads[i + 1] and yOf(heads[i + 1]) or math.huge, i == 1
+    end
+  end
+  if not top then return nil end
+  local out = {}
+  for _, t in ipairs(tiles) do
+    if yOf(t) > top and yOf(t) < bottom then out[#out + 1] = t end
+  end
+  return out, first
+end
+local function inRange(level)
+  local want, seen = {}, {}
+  for _, s in ipairs(GuildOS.GroupActivities:Sections("dungeon")) do
+    for _, it in ipairs(s.items) do
+      if it.min and level >= it.min and level <= it.max and not seen[it.id] then
+        seen[it.id] = true
+        want[#want + 1] = Board:ActivityName(it.id)
+      end
+    end
+  end
+  table.sort(want)
+  return want
+end
+local function names(tiles)
+  local out = {}
+  for _, t in ipairs(tiles) do out[#out + 1] = t.title end
+  table.sort(out)
+  return out
+end
+for _, level in ipairs({ 70, 60 }) do
+  UnitLevel = function() return level end
+  panel.SelectSub("dungeon")
+  local got, first = sectionTiles(panel, "For your level")
+  local want = inRange(level)
+  check(#want > 0 and got ~= nil and first, "at level " .. level .. " Dungeons opens on For your level")
+  check(table.concat(names(got), ",") == table.concat(want, ","),
+    "holding exactly the tiles whose range has level " .. level .. ": " .. table.concat(names(got), ","))
+  for _, t in ipairs(got) do check(t.alpha == 1, "every tile for my level is lit") end
+end
+UnitLevel = function() return 70 end
+panel.SelectSub("dungeon")
+local vaultHere
+for _, t in ipairs((sectionTiles(panel, "For your level"))) do if t.title == "The Steamvault" then vaultHere = t end end
+check(vaultHere.groups.text == "1 forming" and vaultHere.seekers.text == "1 looking", "a tile for my level says who wants to go")
+vaultHere.scripts.OnClick(vaultHere)
+check(composer:IsShown() and composer.picked == "steamvault", "and opens the composer on its activity, as every tile")
+composer:Hide()
+UnitLevel = function() return 5 end
+panel.SelectSub("dungeon")
+check(not shows(panel, "For your level"), "a level no dungeon has shows no For your level")
+UnitLevel = function() return 70 end
+panel.SelectSub("raid")
+check(not shows(panel, "For your level"), "and Raids has none")
+
 -- A repaint reuses what it drew
 panel.SelectSub("active")
 local settled = created
 for _ = 1, 5 do
   panel.SelectSub("dungeon")
+  panel.SelectSub("raid")
   panel.SelectSub("active")
 end
 check(created == settled, "repainting creates no frame it already has (" .. (created - settled) .. " new)")
@@ -339,5 +479,108 @@ Board:HandleEntry("Bea-Realm", { roles = "H", ttl = 3600 })
 panel:Show()
 panel.scripts.OnShow(panel)
 check(shows(panel, "Bea"), "what arrived while the tab was closed is there when it opens")
+
+-- ── The game's role icons (#373) ────────────────────────────────────────
+-- The client's art is asked once a load, so each client below loads the panel again.
+local function build()
+  local p = newFrame("Frame", UIParent)
+  p:SetSize(900, 600)
+  GuildOS:CreateGroupsPanel(p)
+  walk(p, function(f) if f.kind == "ScrollFrame" then f:SetSize(860, 500) end end)
+  p.scripts.OnShow(p)
+  return p
+end
+local function near(a, b)
+  if not a or #a ~= #b then return false end
+  for i = 1, #b do if math.abs(a[i] - b[i]) > 1e-6 then return false end end
+  return true
+end
+-- A fresh panel makes each tab's frames on its first visit: visit them all once, then count.
+local function settles(p, what)
+  p.SelectSub("dungeon")
+  p.SelectSub("raid")
+  p.SelectSub("active")
+  local before = created
+  for _ = 1, 3 do
+    p.SelectSub("dungeon")
+    p.SelectSub("raid")
+    p.SelectSub("active")
+  end
+  check(created == before, what .. ": repainting creates no frame it already has (" .. (created - before) .. " new)")
+end
+
+-- A client with the group finder's atlases (and every file, so the activity art draws too)
+local ATLAS = { T = "groupfinder-icon-role-large-tank", H = "groupfinder-icon-role-large-heal", D = "groupfinder-icon-role-large-dps" }
+C_Texture = { GetAtlasInfo = function(name)
+  for _, a in pairs(ATLAS) do if a == name then return { width = 32, height = 32 } end end
+end }
+CLASS_ICON_TCOORDS = { PRIEST = { 0.5, 0.75, 0.25, 0.5 }, MAGE = { 0.25, 0.5, 0, 0.25 } }
+function GetFileIDFromPath() return 1 end
+for _, it in pairs(GuildOS.GroupActivities.byId) do it.artOk = nil end
+dofile(ADDON .. "/UI/GroupsPanel.lua")
+panel:Hide()
+local iconPanel = build()
+
+local ic = chipsOf(iconPanel)
+for letter, atlas in pairs(ATLAS) do
+  check(ic[letter].icon.shown and ic[letter].icon.atlas == atlas and ic[letter].label.text == "",
+    "with the atlases a role toggle is the game's icon, not its letter: " .. atlas)
+end
+check(ic.H.__selected and ic.D.__selected and not ic.T.__selected, "the roles I play are marked selected")
+check(ic.T.icon.desaturated and not ic.H.icon.desaturated, "and a role I do not play is greyed")
+ic.T.scripts.OnClick(ic.T)
+check(Board:Pref("roles") == "THD" and ic.T.__selected and not ic.T.icon.desaturated, "a click on an icon toggles its role")
+ic.T.scripts.OnClick(ic.T)
+
+local ikc = cardOf(iconPanel, "Karazhan")
+check(ikc.art.shown and ikc.art.texture == "Interface\\LFGFrame\\UI-LFG-BACKGROUND-Karazhan"
+  and near(ikc.art.coords, { 0, 1, 0.08, 0.72 }), "a card's band is its activity's art, cut as the tiles cut it")
+taken, open = seatsOf(ikc)
+check(taken == 1 and open == "TDD", "the icons change no seat")
+for _, s in ipairs(ikc.slots) do
+  if s:IsShown() and s.filled then
+    check(not s.icon.shown and s.mark.text == "", "a taken seat names no role: the listing does not say whose")
+  elseif s:IsShown() then
+    check(s.icon.shown and s.icon.atlas == ATLAS[s.role] and s.mark.text == "", "an open seat is its role's icon")
+  end
+end
+rows = seekerRows(iconPanel)
+check(#rows == 3, "one row per player looking (" .. #rows .. ")")
+dan = rowOf(rows, "Dan")
+local shownIcons = {}
+for _, t in ipairs(dan.roleIcons) do if t.shown then shownIcons[#shownIcons + 1] = t.atlas end end
+check(#shownIcons == 2 and shownIcons[1] == ATLAS.T and shownIcons[2] == ATLAS.D and dan.roles.text == "",
+  "a row's roles are the game's icons")
+check(dan.class.shown and dan.class.texture:find("UI-CharacterCreate-Classes", 1, true)
+  and near(dan.class.coords, CLASS_ICON_TCOORDS.PRIEST), "and its class is the game's class icon")
+local bea = rowOf(rows, "Bea")
+check(bea.roleIcons[1].shown and not bea.roleIcons[2].shown, "a player with one role shows one icon")
+settles(iconPanel, "with icons")
+
+-- A client with only the LFG frame's file: Blizzard's own cut of it (GetTexCoordsForRole)
+C_Texture = nil
+function GetFileIDFromPath(path) if path == "Interface\\LFGFrame\\UI-LFG-ICON-ROLES" then return 1 end end
+dofile(ADDON .. "/UI/GroupsPanel.lua")
+iconPanel:Hide()
+local filePanel = build()
+local fc, cell = chipsOf(filePanel), 67 / 256
+check(fc.T.icon.texture == "Interface\\LFGFrame\\UI-LFG-ICON-ROLES" and near(fc.T.icon.coords, { 0, cell, cell, 2 * cell })
+  and near(fc.H.icon.coords, { cell, 2 * cell, 0, cell }) and near(fc.D.icon.coords, { cell, 2 * cell, cell, 2 * cell }),
+  "without the atlases the role icons come from the LFG frame's file")
+check(fc.T.label.text == "" and fc.T.icon.shown, "and still stand in for the letter")
+settles(filePanel, "with the file")
+
+-- The WoW: Forever style: the same screen on its palette
+C_Texture = { GetAtlasInfo = function() return { width = 32, height = 32 } end }
+GuildOSDB = { style = "forever" }
+check(GuildOS.Style:Resolve() == "forever", "the Forever style resolves where the client has its art")
+dofile(ADDON .. "/UI/GroupsPanel.lua")
+filePanel:Hide()
+local foreverPanel = build()
+check(#cards(foreverPanel) == 2 and #seekerRows(foreverPanel) == 3, "in the Forever style the cards and rows are the same")
+check(chipsOf(foreverPanel).T.icon.atlas == ATLAS.T, "with the Forever client's role atlases")
+foreverPanel.SelectSub("dungeon")
+check(sectionTiles(foreverPanel, "For your level") ~= nil, "and Dungeons opens on For your level")
+settles(foreverPanel, "in the Forever style")
 
 print(checks .. " checks ok")

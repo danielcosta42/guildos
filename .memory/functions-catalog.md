@@ -53,12 +53,12 @@ Branding: user-facing text says "Guild OS" and the commands are `/guildos` and `
 | Symbol | Description |
 |---|---|
 | `GuildOS.Colors.<token>` | Handoff tokens: `bg`, `panel`, `popup`, `well`, `line`, `lineHi`, `text`, `textSoft`, `label`, `labelDim`, `disabled`, `gold`, `onGold`, `ok`, `danger`, `info`, `epic`. Legacy keys (`silver`, `accent`, `border`…) are copies of the token that plays their role (ADR-0013) |
-| `GuildOS.Fonts` | Files `serif`, `serifStrong`, `mono`, `monoStrong`; roles `wordmark`, `windowTitle`, `sectionTitle`, `body`, `memberName`, `itemName`, `caption`, `tableNum`, `colHeader`, `metricValue`, `countdown`, `badge` as `{ file, size }`; `normal`/`number` alias `mono` |
+| `GuildOS.Fonts` | Files `sans`, `sansMedium`, `sansStrong`, `mono`, `monoStrong`; roles `wordmark`, `windowTitle`, `sectionTitle`, `body`, `memberName`, `itemName`, `button`, `caption`, `tableNum`, `colHeader`, `metricValue`, `countdown`, `badge` as `{ file, size }`; `normal` aliases `sans`, `number` aliases `mono` |
 | `GuildOS:ChipLabel(text, maxBytes)` | A removable chip's label: the text cut to `maxBytes` (14) on a character boundary (`SanitizeUserText`), `..` only when something was cut, then `  x` (issue #59) |
 | `UI:SetChipText(btn, text, width)` | Sets a chip's label from `ChipLabel`, shortening it until it fits `width` in the font drawing it, and keeps the chip at `width` (issue #59) |
-| `GuildOS:ApplyFont(fontString, size, role)` | Sets a font: a role wins, else Spectral from 14px and IBM Plex Mono below (clamped to 10px); never outlined; falls back to `STANDARD_TEXT_FONT` only when `SetFont` returns false. With `GuildOSDB.font == "game"` (account-wide, Settings > General, issue #57) every text uses `STANDARD_TEXT_FONT` at the same size |
-| `GuildOS.UI:SetButtonVariant(btn, variant)` | Switches a `CreateButton` button to `"primary"` (gold fill, `glow-gold.tga`), `"secondary"` (default), `"ghost"` (underlined label) or `"danger"`; returns the button |
-| `GuildOS.UI:CreateMetricChip(parent, value, caption, size)` | Metric chip: mono value, 1px gold rule (34px), `labelDim` caption; `chip:SetValue(text)` |
+| `GuildOS:ApplyFont(fontString, size, role)` | Sets a font: a role wins, else IBM Plex Sans (clamped to 11px; a mono role to 10px); never outlined; falls back to `STANDARD_TEXT_FONT` only when `SetFont` returns false. With `GuildOSDB.font == "game"` (account-wide, Settings > General, issue #57) every text uses `STANDARD_TEXT_FONT` at the same size |
+| `GuildOS.UI:SetButtonVariant(btn, variant)` | Switches a `CreateButton` button to `"primary"` (flat gold fill, `goldHover`/`goldActive`), `"secondary"` (default), `"ghost"` (mono 11, underlined label) or `"danger"`; returns the button |
+| `GuildOS.UI:CreateMetricChip(parent, value, caption, size)` | Metric chip: 1px gold rule across the top, mono 24 value, `label` caption; `chip:SetValue(text)` |
 | `GuildOS.UI:_ButtonState(btn, state)` | Internal: paints `"rest"`, `"hover"`, `"pressed"` or `"disabled"` for the button's variant, in the same frame |
 
 Removed: `GuildOS.ACCENT_PRESETS`, `GuildOS:ApplyTheme()`.
@@ -687,10 +687,10 @@ Removed: `Compat.NewTimer`.
 | `UI:CreateDarkPanel(parent, name, level)` | Darker sub-panel variant |
 | `UI:CreateAccentLine(parent, thickness)` | Horizontal accent-colored texture strip |
 | `UI:CreateSeparator(parent)` | Dim separator line texture |
-| `UI:CreateTitle(parent, text, size)` | Window title: Spectral 16 in `text` (paper), no outline or shadow |
-| `UI:CreateText(parent, text, size, r, g, b)` | Body or table text, font by size through `ApplyFont` (mono below 14px); paper unless a colour is given |
+| `UI:CreateTitle(parent, text, size)` | Window title: IBM Plex Sans SemiBold 16 in `text` (paper), no outline or shadow |
+| `UI:CreateText(parent, text, size, r, g, b)` | Body or table text, IBM Plex Sans through `ApplyFont` (11px floor); paper unless a colour is given |
 | `UI:CreateHeaderText(parent, text, size)` | Column header: IBM Plex Mono Medium 10 (`colHeader`) in `label` |
-| `UI:CreateButton(parent, text, width, height)` | Button, secondary by default (1px `line` border, paper label); 26px unless a height is given; see `SetButtonVariant`. A label that spills past it (inside 2px margins) grows it to the label + 16px, at creation and on every later `btn.label:SetText`; a label that fits leaves the width alone, and it never shrinks (issue #28) |
+| `UI:CreateButton(parent, text, width, height)` | Button, secondary by default (1px `lineHi` border, paper label in Plex Sans Medium 12); 26px unless a height is given; see `SetButtonVariant`. A label that spills past it (inside 2px margins) grows it to the label + 16px, at creation and on every later `btn.label:SetText`; a label that fits leaves the width alone, and it never shrinks (issue #28) |
 | `UI:CreateCheckbox(parent, labelText, size)` | 14px `well` box, 1px border, solid 8px gold mark; `checkbox.onChanged(cb, checked)` |
 | `UI:CreateDropdown(parent, width, height)` | #346, ADR-0037: the one dropdown. A `CreateButton` showing the value chosen, with a drawn arrow; a click opens one shared list (`GuildOSDropdownList`, FULLSCREEN_DIALOG, `StylePopup`) anchored under it, ten rows tall then scrolled; a row click chooses, a click outside (a transparent sheet under the list), Escape (UISpecialFrames) or the button hiding closes it. No typing. `dd:SetOptions({ { value, text, color?, disabled? } })`, `dd:SetValue(v)` (silent), `dd:GetValue()`, `dd:Select(v)` (sets and calls `dd.onSelect(dd, v)`), `dd:SetPlaceholder(text)`, `dd:Open()` / `dd:Close()`. Use it wherever a control picks one of more than two values, never a button that cycles |
 | `UI:DropdownOpenFor()` / `UI:CloseDropdown()` | #346: the dropdown whose list is open (nil when none); close it from code |
@@ -700,7 +700,7 @@ Removed: `Compat.NewTimer`.
 | `UI:CreateScrollFrame(parent, name)` | UIPanelScrollFrameTemplate + child + skinned scrollbar |
 | `UI:CreateIcon(parent, size, iconPath)` | Bordered icon frame with inner texture |
 | `UI:SetIconQuality(iconFrame, quality)` | Sets icon border color to quality color |
-| `UI:CreateProgressBar(parent, width, height, ramp)` | Progress bar with frame:SetProgress(value) method. Gold while in progress, ok when complete; `ramp = true` for scores that can be bad (ok ≥80%, gold ≥60%, danger below) |
+| `UI:CreateProgressBar(parent, width, height, ramp)` | Progress bar with frame:SetProgress(value) method. `textSoft` while in progress, ok when complete; `ramp = true` for scores that can be bad (ok ≥80%, warn ≥60%, danger below) |
 
 ---
 

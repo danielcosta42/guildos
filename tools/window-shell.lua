@@ -114,6 +114,10 @@ function Frame:SetFrameLevel(l) self.level = l end
 function Frame:GetFrameLevel() return self.level end
 function Frame:SetScale(s) self.scale = s end
 function Frame:GetScale() return self.scale end
+function Frame:GetEffectiveScale() return (self.scale or 1) * (self.parent and self.parent:GetEffectiveScale() or 1) end
+function Frame:SetBackdrop(b) self.backdrop, self.backdropInfo = b, b end
+function Frame:GetBackdropColor() if self.bg then return unpack(self.bg) end end
+function Frame:GetBackdropBorderColor() end
 function Frame:RegisterEvent(e) self.events[e] = true end
 function Frame:SetAtlas(name) self.atlas = name end
 function Frame:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
@@ -160,8 +164,9 @@ function Frame:IsEnabled() return self.disabled ~= true end
 function Frame:Enable() self.disabled = nil end
 function Frame:Disable() self.disabled = true end
 function Frame:SetFocus() self.focused = true end
+function Frame:HasFocus() return self.focused == true end
 function Frame:IsMouseOver() return false end
-for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "Raise", "SetBackdrop",
+for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "Raise",
   "SetBackdropBorderColor", "SetTexture", "SetTexCoord", "SetBlendMode", "SetAlpha", "SetShadowOffset",
   "SetShadowColor", "SetJustifyH", "SetWordWrap", "SetTextInsets", "SetAutoFocus", "SetMaxLetters", "ClearFocus",
   "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetMultiLine", "SetHorizTile", "SetVertTile" }) do
@@ -279,6 +284,9 @@ end
 GuildOS.Style:Resolve()
 dofile(ADDON .. "/Core/Commands.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
+-- Core/Utils.lua's UTF-8 head; this harness loads Utils further down. The calendar editor's kind
+-- buttons shorten a long label with it (#371).
+function GuildOS:Utf8Head(s, n) return tostring(s):sub(1, n) end
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/UI/FeatureRegistry.lua")
 local UI, C = GuildOS.UI, GuildOS.Colors
@@ -316,9 +324,10 @@ local function builder(name, withSub)
     end
   end
 end
--- The Loot window took the Loot, DKP and Wishlist tabs' panels (issue #346), with sub-tabs.
+-- The Loot window took the Loot, DKP and Wishlist tabs' panels (issue #346), with sub-tabs. The
+-- Recruitment tab took Trials, the Guild tab Journal and Achievements (issue #367).
 for _, n in ipairs({ "CreateRosterPanel",
-  "CreateRecipesPanel", "CreateTrialsPanel", "CreateWebPanel", "CreateSettingsPanel", "CreateDashboardPanel" }) do
+  "CreateRecipesPanel", "CreateWebPanel", "CreateSettingsPanel", "CreateDashboardPanel" }) do
   builder(n)
 end
 for _, n in ipairs({ "CreateRaidHubPanel", "CreateGuildHub", "CreateAlliancePanel", "CreateRecruitmentPanel",
@@ -485,6 +494,17 @@ check(selected[#selected] == "CreateManagementPanel:ban", "/gos banlist lands on
 slash("calendar")
 check(f.activeTab == "guild" and selected[#selected] == "CreateGuildHub:calendar", "/gos calendar lands on the calendar")
 check(built.CreateManagementPanel == 1 and built.CreateGuildHub == 1, "each panel builds once, the first time it opens")
+-- Trials, Journal and Achievements are sub-tabs since issue #367: their names open the tab that hosts
+-- them, on their sub-tab.
+slash("open trials")
+check(f.activeTab == "recruitment" and selected[#selected] == "CreateRecruitmentPanel:trials",
+  "/gos open trials opens Recruitment on its Trials sub-tab")
+slash("open journal")
+check(f.activeTab == "guild" and selected[#selected] == "CreateGuildHub:journal",
+  "/gos open journal opens Guild on its Journal sub-tab")
+check(UI:OpenWindow("achievements") and f.activeTab == "guild" and selected[#selected] == "CreateGuildHub:achievements",
+  "and Achievements on its own")
+check(built.CreateGuildHub == 1 and built.CreateRecruitmentPanel == 1, "through the one panel each tab builds")
 printed = {}
 slash("open nope")
 check(said("Usage: /gos open <feature>"), "/gos open with an unknown tab shows its usage")
@@ -497,6 +517,18 @@ check(not UI:OpenWindow("nope") and not UI:OpenWindow("raidTracker"), "OpenWindo
 resize(f, 1000, 620)
 check(listed(f, "recipes") and listed(f, "loot") and listed(f, "alliance"), "available features have tabs")
 check(not listed(f, "tbcOnly"), "a feature this client does not support gets no tab")
+for _, id in ipairs({ "trials", "journal", "achievements" }) do
+  check(tabOf(f, id) == nil and not UI:GetFeature(id).tab and UI:GetFeature(id).opens,
+    id .. " has no tab of its own: it is a sub-tab (#367)")
+end
+check(UI:GetFeature("trials").opens[1] == "recruitment" and UI:GetFeature("trials").opens[2] == "trials"
+  and UI:GetFeature("trials").officerOnly, "Trials is Recruitment's, for officers")
+for _, id in ipairs({ "journal", "achievements" }) do
+  local d = UI:GetFeature(id)
+  check(d.opens[1] == "guild" and d.opens[2] == id and d.tbc == false and d.retail == false,
+    id .. " is Guild's, on WoW: Forever only")
+end
+check(UI:GetFeature("journal").restart, "the journal still asks for a reload when switched")
 
 GuildOS:SetFeatureEnabled("recipes", false)
 printed = {}
@@ -516,7 +548,10 @@ officer = false
 f:UpdateTabVisibility()
 printed = {}
 check(not UI:OpenWindow("management") and said("Leadership is officer-only."), "an officer-only tab refuses a member")
-check(not listed(f, "management") and not listed(f, "trials"), "a member sees no officer tabs")
+check(not listed(f, "management"), "a member sees no officer tabs")
+check(not UI:IsFeatureAllowed(UI:GetFeature("trials")), "nor the officers' Trials sub-tab")
+printed = {}
+check(not UI:OpenWindow("trials") and said("Trials is officer-only."), "and /gos open trials tells a member why")
 -- The Loot window is every member's since issue #346 (it was officer-only): a raider reads the rule.
 check(listed(f, "loot") and UI:IsFeatureAllowed(UI:GetFeature("loot")), "a member has the Loot tab")
 officer = true
@@ -543,11 +578,11 @@ do
   check(GuildOS.State.startup.failed["Tab:boom"], "and /guildos errors lists it as Tab:boom")
 end
 
-UI:OpenWindow("trials")
-GuildOS:SetFeatureEnabled("trials", false)
-check(f.activeTab == "home" and not f.tabPanels.trials.shown and f.tabPanels.home.shown,
+UI:OpenWindow("management")
+GuildOS:SetFeatureEnabled("management", false)
+check(f.activeTab == "home" and not f.tabPanels.management.shown and f.tabPanels.home.shown,
   "switching off the open tab's feature falls back to Now")
-GuildOS:SetFeatureEnabled("trials", true)
+GuildOS:SetFeatureEnabled("management", true)
 
 -- ── Geometry and persistence ────────────────────────────────────────────
 do
@@ -581,6 +616,19 @@ GuildOS.db.settings.window, GuildOS.db.settings.uiScale = nil, 2
 GuildOS.RosterFrame = nil
 f = UI:GetMainWindow()
 check(f.scale == 2 and f.w == 800 and f.h == 450, "the UI scale applies, and the default size fits the scaled screen")
+-- Its border is sized after the scale, not before (#369): 0.5 makes 1 unit 0.7 of a 1080p pixel.
+PixelUtil = { GetNearestPixelSize = function(units, scale, min)
+  local factor = 768 / 1080
+  return math.max(min or 0, math.floor(units * scale / factor + 0.5)) * factor / scale
+end }
+GuildOS.db.settings.uiScale = 0.5
+GuildOS.RosterFrame = nil
+f = UI:GetMainWindow()
+if STYLE ~= "forever" then
+  check(f.backdrop and math.abs(f.backdrop.edgeSize * f:GetEffectiveScale() * 1080 / 768 - 1) < 1e-9,
+    "the window's border is one screen pixel at its own scale")
+end
+PixelUtil = nil
 GuildOS.db.settings.uiScale = 1.1
 UI:ApplyScale()
 check(f.scale == 1.1, "changing the UI scale rescales the window")
@@ -602,15 +650,15 @@ do
     if c.kind == "Texture" and c.layer == "BACKGROUND" then barBg = c end
   end
   check(wordmark and wordmark.font.file == face(F.wordmark.file) and wordmark.font.size == 18 and same(wordmark.color, C.gold),
-    "left: the gold wordmark, GuildOS, in its Spectral face")
+    "left: the gold wordmark, GuildOS, in its own face")
   if STYLE == "forever" then
     -- The metal frame's top edge is the bar: a band over it met the frame's corner off true (#148).
     check(not barBg, "in the Forever style the title bar paints no band of its own")
   else
     check(barBg and same(barBg.color, C.panel), "the title bar sits on panel")
   end
-  check(same(f.metaText.color, C.labelDim) and same(f.syncText.color, C.label) and f.metaText.font.file == face(F.mono)
-    and f.syncText.font.size == 10, "the meta line in labelDim and the sync time in label, both mono 10")
+  check(same(f.metaText.color, C.label) and same(f.syncText.color, C.label) and f.metaText.font.file == face(F.mono)
+    and f.syncText.font.size == 10, "the meta line and the sync time in label, both mono 10")
   local label = tabOf(f, "roster").label
   check(label.font.file == face(F.mono) and label.font.size == 11, "tab labels are mono 11")
   local ruleLine
@@ -1225,6 +1273,9 @@ do
   dofile(ADDON .. "/Modules/GuildChat.lua")
   GuildOS.CallToArms:Initialize()
   dofile(ADDON .. "/UI/CommunityPanel.lua")
+  -- The Guild tab's Journal and Achievements sub-tabs draw with the real panels (#367).
+  dofile(ADDON .. "/UI/JournalPanel.lua")
+  dofile(ADDON .. "/UI/AchievementsPanel.lua")
   GuildOS.RosterFrame, GuildOS.db.settings.window = nil, nil
   local win = UI:GetMainWindow()
   local when = os.time({ year = 2026, month = 1, day = 15, hour = 21 })
@@ -1238,17 +1289,20 @@ do
   for _, c in ipairs(guild.children) do if c.bg then bar = c end end
   guild:SetSize(800, 500)   -- a window of ordinary width: six tabs wrap only below it (#124)
   flush()
-  local subTabs, open = 0, nil
+  local subTabs, visibleSubs, open = 0, {}, nil
   for _, c in ipairs(bar and bar.children or {}) do
     if c.underline then
       subTabs = subTabs + ((c.underline.h == 1) and 1 or -100)
+      if c.shown then visibleSubs[#visibleSubs + 1] = c.label.text end
       if c.isActive then open = c end
     end
   end
   check(bar and bar.h == 28 and same(bar.bg.color, C.panel), "the Guild tab's sub-tab bar is 28px on panel")
-  check(subTabs == 6 and open and open.label.text == "Calendar"
+  check(subTabs == 8 and #visibleSubs == 8 and visibleSubs[1] == "Achievements" and visibleSubs[7] == "Chat"
+    and visibleSubs[8] == "Journal" and open and open.label.text == "Calendar"
     and (open.underline.shown or (STYLE == "forever" and open.__styleTab)),
-    "its six sub-tabs (Chat is the sixth, #124) carry a 1px gold rule, shown under the open one")
+    "its eight sub-tabs on WoW: Forever (Achievements first, #373; Chat the seventh; Journal last) "
+      .. "carry a 1px gold rule, shown under the open one")
   check(cal.viewYear == 2026 and cal.viewMonth == 1 and cal.selectedKey == 20260115,
     "showing the raid's month, with its day selected")
   local function drawn(text)
@@ -1286,6 +1340,15 @@ do
   end
   check(pills.RAID and pills.RAID.disabled and pills.DUNGEON and not pills.DUNGEON.disabled,
     "a kind this rank does not create is there, and cannot be picked")
+  -- Six fixed 52px places inside the 360px editor, labels never marked as removable chips (#371).
+  local placed, chipX = 0, false
+  for i, k in ipairs(Cal.KINDS) do
+    local p = pills[k]
+    local pt = p and p.points[1]
+    if p and p.w == 52 and pt and pt[2] == 14 + (i - 1) * 55 then placed = placed + 1 end
+    if p and p.label.text:find("x$") then chipX = true end
+  end
+  check(placed == #Cal.KINDS and not chipX, "the kinds sit in six 52px places, no chip's x on any")
   check(picker and picker.shown and titleBox and titleBox.w == 222,
     "it starts on the first kind it creates, a dungeon, with the list beside the title")
   fire(picker, "OnClick")
@@ -1307,6 +1370,122 @@ do
   check(not picker.shown and titleBox.w == 332, "another kind has no list")
   ed:Hide()
   win:Hide()
+end
+
+-- The Journal and the Achievements, the Guild tab's last two sub-tabs on WoW: Forever (#367): each
+-- offered while its feature is here and on, built the first time it opens, redrawn on its own OnShow,
+-- and a deep link to one that is not offered lands on the calendar.
+do
+  local reads = { journal = 0, achievements = 0 }
+  GuildOS.Journal = {
+    ThisWeek = function() reads.journal = reads.journal + 1; return { milestones = 2, members = 1, clears = 3 } end,
+    GuildFirsts = function() return {} end,
+    Mine = function() return {} end,
+  }
+  GuildOS.Achievements = { Renown = function() reads.achievements = reads.achievements + 1 end }
+  GuildOS.RosterFrame, GuildOS.db.settings.window = nil, nil
+  local win = UI:GetMainWindow()
+  check(UI:OpenWindow("guild"), "the real Guild tab opens")
+  local guild = win.tabPanels.guild
+  local bar
+  for _, c in ipairs(guild.children) do if c.bg then bar = c end end
+  local function subTab(label)
+    for _, c in ipairs(bar.children) do
+      if c.underline and c.label.text == label then return c end
+    end
+  end
+  local journal, achievements = guild.subPanels.journal, guild.subPanels.achievements
+  check(subTab("Journal").shown and subTab("Achievements").shown, "Journal and Achievements are offered on WoW: Forever")
+  check(guild.activeSub == "achievements" and achievements.built and achievements.panel.shown
+    and subTab("Achievements").isActive, "Guild opens on Achievements, its first sub-tab on WoW: Forever (#373)")
+  check(not journal.built and not journal.panel.shown, "and the Journal is not built before it opens")
+
+  check(UI:OpenWindow("journal") and win.activeTab == "guild" and guild.activeSub == "journal",
+    "/gos open journal lands on the Guild tab's Journal")
+  check(journal.built and journal.panel.shown and not guild.subPanels.calendar.panel.shown
+    and subTab("Journal").isActive and reads.journal > 0, "built there, shown alone, its tab marked, drawn")
+  local before = reads.journal
+  journal.panel:Hide()
+  journal.panel:Show()
+  check(reads.journal > before, "the Journal's own OnShow redraws it as a sub-panel")
+  before = reads.journal
+  win:Hide()
+  win:Show()
+  check(reads.journal > before and guild.activeSub == "journal", "and so does the window opening again on it")
+
+  check(UI:OpenWindow("achievements") and guild.activeSub == "achievements" and achievements.built
+    and achievements.panel.shown and not journal.panel.shown, "/gos open achievements lands on its sub-tab")
+  before = reads.achievements
+  achievements.panel:Hide()
+  achievements.panel:Show()
+  check(reads.achievements > before, "and its own OnShow redraws it too")
+
+  -- Switched off in Settings: no tab, and the deep link says so as a tab's does.
+  GuildOS:SetFeatureEnabled("journal", false)
+  win:Hide()
+  win:Show()
+  check(not subTab("Journal").shown and subTab("Achievements").shown, "a journal switched off has no sub-tab")
+  printed = {}
+  check(not UI:OpenWindow("journal") and said("Journal is disabled in Settings.") and not journal.panel.shown,
+    "and its deep link refuses, saying why")
+  -- A sub-tab that went stale on screen still falls back: a click asks again.
+  guild.SelectSub("journal")
+  check(guild.activeSub == "achievements" and achievements.panel.shown and not journal.panel.shown,
+    "selecting it anyway lands where Guild opens, Achievements")
+  guild.SelectSub("achievements")
+  GuildOS:SetFeatureEnabled("achievements", false)
+  win:Hide()
+  win:Show()
+  check(guild.activeSub == "calendar" and not subTab("Achievements").shown,
+    "the open sub-tab switched off falls back to the calendar the next time the tab shows")
+  GuildOS:SetFeatureEnabled("journal", true)
+  GuildOS:SetFeatureEnabled("achievements", true)
+
+  -- A module that failed to start: its deep link says so, as its tab did (issue #367).
+  local startFailed = GuildOS.FeatureStartFailed
+  GuildOS.FeatureStartFailed = function(_, id) return id == "journal" end
+  printed = {}
+  check(not UI:OpenWindow("journal") and said("Journal could not start on this client."),
+    "a journal that failed to start says so")
+  GuildOS.FeatureStartFailed = startFailed
+
+  -- A lazy sub-tab whose builder errors is recorded and refused for the session, and the hub falls
+  -- back to the calendar, in a hub of its own so the one above keeps its Achievements.
+  local realAchievements = GuildOS.CreateAchievementsPanel
+  GuildOS.CreateAchievementsPanel = function() error("boom") end
+  local hub = newFrame("Frame", UIParent)
+  hub:SetSize(800, 500)
+  GuildOS:CreateGuildHub(hub)
+  local errors = #(GuildOS.State.errors or {})
+  printed = {}
+  hub.SelectSub("achievements")
+  check(hub.activeSub == "calendar" and hub.subPanels.calendar.panel.shown and not hub.subPanels.achievements.panel.shown,
+    "an Achievements builder that errors lands on the calendar")
+  check(said("Achievements could not start on this client.") and #(GuildOS.State.errors or {}) > errors,
+    "saying so, and recording the error")
+  printed = {}
+  hub.SelectSub("achievements")
+  check(hub.activeSub == "calendar" and #printed == 0, "and is refused, quietly, for the rest of the session")
+  GuildOS.CreateAchievementsPanel = realAchievements
+  guild.SelectSub("nope")
+  check(guild.activeSub == "achievements", "a sub-tab the hub does not have lands where Guild opens, Achievements (#373)")
+
+  -- Not on TBC Anniversary nor retail: the tabs are not there, and the deep links say so.
+  for _, other in ipairs({ "isAnniversary", "isRetail" }) do
+    GuildOS.Client[other] = true
+    win:Hide()
+    win:Show()
+    check(not subTab("Journal").shown and not subTab("Achievements").shown,
+      "no Journal nor Achievements sub-tab where " .. other)
+    printed = {}
+    check(not UI:OpenWindow("journal") and not UI:OpenWindow("achievements") and said("Not available on this client."),
+      "and their deep links say they are not on this client (" .. other .. ")")
+    guild.SelectSub("journal")
+    check(guild.activeSub == "calendar", "nor does the hub open one there (" .. other .. ")")
+    GuildOS.Client[other] = nil
+  end
+  win:Hide()
+  GuildOS.Journal, GuildOS.Achievements = nil, nil
 end
 
 -- The Call to Arms tab (issue #108), through the real Helpers.
@@ -1351,9 +1530,9 @@ do
   win:Hide()
   CTA.recent[1].title = "Later"
   CTA.uiRefresh()
-  check(not find(p, "|cffFF8800Later|r  Go"), "with the window closed, an answer arriving repaints nothing")
+  check(not find(p, "Later  Go"), "with the window closed, an answer arriving repaints nothing")
   UI:OpenWindow("guild", "cta")
-  check(find(p, "|cffFF8800Later|r  Go"), "it catches up when the tab opens")
+  check(find(p, "Later  Go"), "it catches up when the tab opens")
   win:Hide()
   CTA.recent = {}
 
@@ -1371,7 +1550,7 @@ do
   saved[1] = { id = "c1", name = "A very long template nam", text = "x", kind = "pvp" }
   for i = 2, CTA.TEMPLATES_MAX do saved[i] = { id = "c" .. i, name = "t" .. i, text = "x", kind = "rally" } end
   win, p = open()
-  local wb = find(p, "> World Boss")
+  local wb = find(p, "World Boss")   -- the chosen template is marked by UI:SetSelected, not "> " (#371)
   local row = wb.parent.parent
   local function laid()
     local cells, lines = {}, {}

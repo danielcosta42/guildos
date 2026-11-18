@@ -1,10 +1,13 @@
 ----------------------------------------------------------------------
 -- Guild OS - UI Helpers
--- Reusable factories for the GuildOS style (design handoff §3-5 and §8;
--- docs/superpowers/specs/2026-09-14-forever-skin-design.md): opaque
--- surfaces told apart by a 1px line, gold as the only accent, IBM Plex
--- Mono for labels and numbers, and state changes that land in the same
--- frame. Public names, signatures and fields are unchanged from Obsidian.
+-- Reusable factories for the GuildOS style (Swiss Modernism 2.0;
+-- docs/superpowers/specs/2026-11-17-swiss-identity-design.md): flat opaque
+-- surfaces told apart by a 1px line, no glow and no shadow, gold only for
+-- the primary button, focus, selection, the active tab and the metric rule,
+-- IBM Plex Sans for words and Plex Mono for numbers and labels, and state
+-- changes that land in the same frame. Public names, signatures and fields
+-- are unchanged from Obsidian, except CreateDropShadow, frame.dropShadow and
+-- btn.glow, which went with the shadow and the glow (#361).
 -- The interface style (Core/Style.lua, #122) paints each surface and control through them.
 ----------------------------------------------------------------------
 local Helpers = {}
@@ -13,24 +16,21 @@ GuildOS.UI = Helpers
 local C = GuildOS.Colors
 local Style = GuildOS.Style
 local WHITE = "Interface\\Buttons\\WHITE8x8"
-local MEDIA = "Interface\\AddOns\\GuildOS\\Media\\"
 
 local BUTTON_HEIGHT  = 26    -- default button height (handoff §8)
-local GLOW_BLEED     = 20    -- px the primary button's glow reaches past its edges
-local GLOW_ALPHA     = 0.5   -- strength of that glow
-local HOVER_LIFT     = 0.08  -- white added over gold while a primary button is hovered
-local PRESSED_DARKEN = 0.85  -- gold under the cursor while a primary button is held
 local DANGER_WASH    = 0.12  -- danger tint behind a hovered danger button
 local DISABLED_GOLD  = 0.35  -- alpha of a disabled primary button or checkbox mark
-local SHADOW_SIZE    = 12    -- px a popup's shadow reaches past its edges
-local SHADOW_ALPHA   = C.shadow.a  -- darkest point of that shadow: the texture's own peak
 local FADE_MAX       = 0.1   -- seconds; the only motion the skin allows
 local SCROLL_WIDTH   = 8
+-- The scroll bar sits inside its frame's right edge (2px in, SCROLL_WIDTH wide): content keeps this
+-- much clear on the right, so nothing runs under it (#371). Layout's BindScrollChildWidth applies it.
+Helpers.SCROLL_GUTTER = SCROLL_WIDTH + 4
 local CHECK_BOX      = 14
 local CHECK_MARK     = 8
 local PROGRESS_OK    = 0.8   -- at or above: ok
-local PROGRESS_WARN  = 0.6   -- at or above: gold; below: danger
-local CHIP_RULE      = 34    -- px width of the gold rule under a metric value
+local PROGRESS_WARN  = 0.6   -- at or above: warn; below: danger
+local CHIP_MIN       = 34    -- px: a metric chip is never narrower than this
+local CHIP_PAD       = 8     -- px between a metric chip's gold rule and its value
 
 -- A FontString with the skin's text settings: font by size (GuildOS:ApplyFont),
 -- no outline, no shadow.
@@ -61,6 +61,72 @@ local function fitToLabel(frame)
 end
 
 ----------------------------------------------------------------------
+-- Pixels (issue #369)
+----------------------------------------------------------------------
+
+-- `n` interface units (1 by default) in `region`'s scale, rounded to whole screen pixels and never
+-- under one. A 1-unit line is under a pixel when the interface is scaled down, and the game then rounds
+-- both of its ends to the same pixel: the side of a box, or a rule, vanishes.
+function Helpers:Px(region, n)
+    n = n or 1
+    if not (PixelUtil and PixelUtil.GetNearestPixelSize and region and region.GetEffectiveScale) then return n end
+    return PixelUtil.GetNearestPixelSize(n, region:GetEffectiveScale(), 1)
+end
+
+-- What keeps a pixel when the scale changes: frame -> "edge" (its backdrop's edge), texture -> "Height"/"Width".
+local hairlines = setmetatable({}, { __mode = "k" })
+
+-- The backdrop edge size for `frame`: one screen pixel. Use it as `edgeSize = GuildOS.UI:Edge(f)`.
+function Helpers:Edge(frame)
+    hairlines[frame] = "edge"
+    return self:Px(frame)
+end
+
+-- Make a texture a one-pixel rule across its other side: dim "Height" (default) or "Width".
+function Helpers:Hairline(tex, dim)
+    dim = dim or "Height"
+    hairlines[tex] = dim
+    tex["Set" .. dim](tex, self:Px(tex))
+    return tex
+end
+
+-- Hang a texture one screen pixel outside its parent on every side: a border behind a fill. A 1-unit
+-- offset rounds to nothing on the right and bottom when the interface is scaled down.
+function Helpers:Outset(tex)
+    hairlines[tex] = "outset"
+    local px = self:Px(tex)
+    tex:SetPoint("TOPLEFT", -px, px)
+    tex:SetPoint("BOTTOMRIGHT", px, -px)
+    return tex
+end
+
+-- Size every line again after the interface, the window or the screen changes scale (Core.lua's
+-- event frame calls it on login, UI_SCALE_CHANGED and DISPLAY_SIZE_CHANGED; ApplyScale for the window).
+function Helpers:RefreshHairlines()
+    for region, kind in pairs(hairlines) do
+        local px = self:Px(region)
+        if kind == "outset" then
+            region:SetPoint("TOPLEFT", -px, px)
+            region:SetPoint("BOTTOMRIGHT", px, -px)
+        elseif kind ~= "edge" then
+            region["Set" .. kind](region, px)
+        else
+            local info = region.backdropInfo
+            if info and info.edgeFile and info.edgeSize ~= px then
+                local r, g, b, a = region:GetBackdropColor()
+                local er, eg, eb, ea = region:GetBackdropBorderColor()
+                local copy = {}
+                for k, v in pairs(info) do copy[k] = v end
+                copy.edgeSize = px
+                region:SetBackdrop(copy)
+                if r then region:SetBackdropColor(r, g, b, a) end
+                if er then region:SetBackdropBorderColor(er, eg, eb, ea) end
+            end
+        end
+    end
+end
+
+----------------------------------------------------------------------
 -- Surfaces
 ----------------------------------------------------------------------
 
@@ -81,63 +147,6 @@ function Helpers:CreateDarkPanel(parent, name, level)
     return f
 end
 
--- Soft shadow behind a popup (elevation 4). Eight pieces of
--- Media/drop-shadow.tga around the frame and none under it, so it holds at
--- any size. `spread` is the reach in px; `alpha` scales the texture's peak.
-function Helpers:CreateDropShadow(frame, spread, alpha)
-    spread = spread or SHADOW_SIZE
-    local strength = math.min(1, (alpha or SHADOW_ALPHA) / SHADOW_ALPHA)
-    -- Parented to the frame so it shows, hides and moves with it; the lower
-    -- level keeps it behind, and it sits entirely outside the frame's rectangle.
-    local s = CreateFrame("Frame", nil, frame)
-    s:SetFrameLevel(math.max(0, frame:GetFrameLevel() - 1))
-    s:SetAllPoints(frame)
-
-    local function piece(left, right, top, bottom)
-        local tex = s:CreateTexture(nil, "BACKGROUND")
-        tex:SetTexture(MEDIA .. "drop-shadow.tga")
-        tex:SetTexCoord(left, right, top, bottom)
-        tex:SetAlpha(strength)
-        return tex
-    end
-
-    -- Corners: one quadrant of the radial each, its centre on the frame's corner.
-    local tl = piece(0, 0.5, 0, 0.5)
-    tl:SetSize(spread, spread)
-    tl:SetPoint("BOTTOMRIGHT", frame, "TOPLEFT")
-    local tr = piece(0.5, 1, 0, 0.5)
-    tr:SetSize(spread, spread)
-    tr:SetPoint("BOTTOMLEFT", frame, "TOPRIGHT")
-    local bl = piece(0, 0.5, 0.5, 1)
-    bl:SetSize(spread, spread)
-    bl:SetPoint("TOPRIGHT", frame, "BOTTOMLEFT")
-    local br = piece(0.5, 1, 0.5, 1)
-    br:SetSize(spread, spread)
-    br:SetPoint("TOPLEFT", frame, "BOTTOMRIGHT")
-
-    -- Edges: a thin slice through the middle of the radial, stretched along the side.
-    local MID_A, MID_B = 0.49, 0.51
-    local top = piece(MID_A, MID_B, 0, 0.5)
-    top:SetPoint("BOTTOMLEFT", frame, "TOPLEFT")
-    top:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT")
-    top:SetHeight(spread)
-    local bottom = piece(MID_A, MID_B, 0.5, 1)
-    bottom:SetPoint("TOPLEFT", frame, "BOTTOMLEFT")
-    bottom:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT")
-    bottom:SetHeight(spread)
-    local left = piece(0, 0.5, MID_A, MID_B)
-    left:SetPoint("TOPRIGHT", frame, "TOPLEFT")
-    left:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT")
-    left:SetWidth(spread)
-    local right = piece(0.5, 1, MID_A, MID_B)
-    right:SetPoint("TOPLEFT", frame, "TOPRIGHT")
-    right:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT")
-    right:SetWidth(spread)
-
-    frame.dropShadow = s
-    return s
-end
-
 -- Fade a frame in when shown. Capped at 0.1s: the skin allows no other motion.
 function Helpers:EnableFadeIn(frame, duration)
     duration = math.min(duration or FADE_MAX, FADE_MAX)
@@ -147,12 +156,14 @@ function Helpers:EnableFadeIn(frame, duration)
     end)
 end
 
--- Give a popup its elevation: the drop shadow and the short fade-in. Does NOT
--- touch backdrop colours; callers set those from the palette. `opts.noSheen`
--- is accepted and ignored (the skin has no sheen).
+-- Give a popup its elevation: a `lineHi` border and the short fade-in. The
+-- background stays the caller's. There is no shadow, so `opts.noShadow`,
+-- `shadowSize`, `shadowAlpha` and `noSheen` are accepted and ignored.
 function Helpers:StylePopup(frame, opts)
     opts = opts or {}
-    if not opts.noShadow then self:CreateDropShadow(frame, opts.shadowSize, opts.shadowAlpha) end
+    if frame.SetBackdropBorderColor then
+        frame:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    end
     if not opts.noFade then self:EnableFadeIn(frame, opts.fadeDuration) end
     Style:Paint(frame, "popup")
     return frame
@@ -163,7 +174,7 @@ end
 function Helpers:CreateAccentLine(parent, thickness)
     local line = parent:CreateTexture(nil, "ARTWORK")
     line:SetTexture(WHITE)
-    line:SetHeight(thickness or 2)
+    if (thickness or 2) == 1 then Helpers:Hairline(line) else line:SetHeight(thickness or 2) end
     line:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
     line.__solidColor = C.gold
     return line
@@ -173,7 +184,7 @@ end
 function Helpers:CreateSeparator(parent)
     local line = parent:CreateTexture(nil, "ARTWORK")
     line:SetTexture(WHITE)
-    line:SetHeight(1)
+    Helpers:Hairline(line)
     line:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
     return line
 end
@@ -182,15 +193,15 @@ end
 -- Text
 ----------------------------------------------------------------------
 
--- Create a window title: Spectral from 14px, paper.
+-- Create a window title: IBM Plex Sans SemiBold, paper.
 function Helpers:CreateTitle(parent, text, size)
-    local fs = newText(parent, size or 16)
+    local fs = newText(parent, size or 16, "windowTitle")
     fs:SetTextColor(C.text.r, C.text.g, C.text.b)
     fs:SetText(text or "")
     return fs
 end
 
--- Create body or table text: IBM Plex Mono below 14px, paper unless a colour is given.
+-- Create body or table text: IBM Plex Sans, paper unless a colour is given.
 function Helpers:CreateText(parent, text, size, r, g, b)
     local fs = newText(parent, size or 12)
     fs:SetTextColor(r or C.text.r, g or C.text.g, b or C.text.b)
@@ -198,12 +209,133 @@ function Helpers:CreateText(parent, text, size, r, g, b)
     return fs
 end
 
--- Create a column or section header: IBM Plex Mono Medium in `label`.
+-- Create a column header: IBM Plex Mono Medium in `label`. A section of a screen takes
+-- CreateSectionTitle instead.
 function Helpers:CreateHeaderText(parent, text, size)
     local fs = newText(parent, size or 10, "colHeader")
     fs:SetTextColor(C.label.r, C.label.g, C.label.b)
     fs:SetText(text or "")
     return fs
+end
+
+----------------------------------------------------------------------
+-- One of each screen part (#371): every screen takes these, none draws its own
+----------------------------------------------------------------------
+
+-- Space between blocks, and under a sub-tab bar before a screen's first line. A screen's content
+-- starts flush with the sub-tab bar's left edge (x = 0) and ends GAP short of the right one.
+Helpers.GAP = 8
+
+-- A section title as Settings draws it: Sans SemiBold 14 in `text`. Any section but a screen's first
+-- has a 1px `line` rule 12px above it, from the title's left to the parent's right edge, so leave
+-- about 20px over a later one. Returns the title; title.rule is that rule.
+function Helpers:CreateSectionTitle(parent, text, first)
+    local fs = newText(parent, nil, "sectionTitle")
+    fs:SetTextColor(C.text.r, C.text.g, C.text.b)
+    fs:SetJustifyH("LEFT")
+    fs:SetText(text or "")
+    if not first then
+        local rule = self:CreateSeparator(parent)
+        rule:SetPoint("BOTTOMLEFT", fs, "TOPLEFT", 0, 12)
+        rule:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
+        fs.rule = rule
+    end
+    return fs
+end
+
+-- A text field: `well` fill, 1px `lineHi` border that turns gold while typing, Sans 12 (Plex Mono for
+-- numbers) inset 6px, Escape lets go. opts: numeric, max, multiline, placeholder (a hint shown while
+-- empty), justify. Hook its scripts with HookScript: SetScript on the focus ones would drop the border.
+function Helpers:CreateInput(parent, width, height, opts)
+    opts = opts or {}
+    local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
+    box:SetSize(width or 160, height or 22)
+    -- The style paints a one-line field, as the fields it replaced were painted: flat, or in WoW: Forever
+    -- the game's search-box art (#122). That art is a 22px bar: a multi-line box (export, import) scaled
+    -- to it would be a giant blurred search bar, so it stays flat. Only a flat box takes the lineHi border.
+    local look = not opts.multiline and Style:Paint(box, "input")
+    if look ~= "art" then
+        box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = self:Edge(box) })
+        box:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+        box:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    end
+    box:SetTextInsets(6, 6, opts.multiline and 4 or 0, opts.multiline and 4 or 0)
+    GuildOS:ApplyFont(box, 12, opts.numeric and "tableNum" or nil)
+    box:SetTextColor(C.text.r, C.text.g, C.text.b)
+    if opts.justify then box:SetJustifyH(opts.justify) end
+    box:SetAutoFocus(false)
+    if opts.multiline then box:SetMultiLine(true) end
+    if opts.numeric then box:SetNumeric(true) end
+    if opts.max then box:SetMaxLetters(opts.max) end
+    box:HookScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    box:HookScript("OnEditFocusGained", function(self) self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1) end)
+    box:HookScript("OnEditFocusLost", function(self) self:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1) end)
+    if opts.placeholder then
+        local ph = newText(box, 12)
+        ph:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        ph:SetPoint(opts.multiline and "TOPLEFT" or "LEFT", 6, opts.multiline and -4 or 0)
+        ph:SetText(opts.placeholder)
+        local function sync() ph:SetShown((box:GetText() or "") == "" and not box:HasFocus()) end
+        box:HookScript("OnTextChanged", sync)
+        box:HookScript("OnEditFocusGained", sync)
+        box:HookScript("OnEditFocusLost", sync)
+        sync()
+        box.placeholder = ph
+    end
+    return box
+end
+
+-- A multi-line field. A multi-line EditBox takes the height of its text, so given 56px and left empty
+-- it shrinks to one line (the poll's options box and the MOTD did, #371). The field is a frame of the
+-- asked size, flat in every style, with the EditBox inside; a click anywhere on it starts typing, and
+-- text past its bottom is clipped. Place and size the area; read, write and script `area.edit`.
+-- opts: max, placeholder.
+function Helpers:CreateTextArea(parent, width, height, opts)
+    opts = opts or {}
+    local area = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    area:SetSize(width or 160, height or 56)
+    area:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = self:Edge(area) })
+    area:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+    area:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    if area.SetClipsChildren then area:SetClipsChildren(true) end
+    local edit = CreateFrame("EditBox", nil, area)
+    edit:SetPoint("TOPLEFT", 6, -4)
+    edit:SetPoint("TOPRIGHT", -6, -4)
+    edit:SetMultiLine(true)
+    edit:SetAutoFocus(false)
+    GuildOS:ApplyFont(edit, 12)
+    edit:SetTextColor(C.text.r, C.text.g, C.text.b)
+    if opts.max then edit:SetMaxLetters(opts.max) end
+    edit:HookScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    edit:HookScript("OnEditFocusGained", function() area:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1) end)
+    edit:HookScript("OnEditFocusLost", function() area:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1) end)
+    area:SetScript("OnClick", function() if edit:IsEnabled() then edit:SetFocus() end end)
+    if opts.placeholder then
+        local ph = newText(area, 12)
+        ph:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        ph:SetPoint("TOPLEFT", 6, -4)
+        ph:SetText(opts.placeholder)
+        local function sync() ph:SetShown((edit:GetText() or "") == "" and not edit:HasFocus()) end
+        edit:HookScript("OnTextChanged", sync)
+        edit:HookScript("OnEditFocusGained", sync)
+        edit:HookScript("OnEditFocusLost", sync)
+        sync()
+        area.placeholder = ph
+    end
+    area.edit = edit
+    return area
+end
+
+-- A table's header row: 22px, no fill, a 1px `line` rule along its bottom. Put the column labels on
+-- it with CreateHeaderText and anchor it by its top corners; the first row sits right under it.
+function Helpers:CreateTableHeader(parent, height)
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetHeight(height or 22)
+    local rule = self:CreateSeparator(f)
+    rule:SetPoint("BOTTOMLEFT", 0, 0)
+    rule:SetPoint("BOTTOMRIGHT", 0, 0)
+    f.rule = rule
+    return f
 end
 
 ----------------------------------------------------------------------
@@ -219,56 +351,56 @@ function Helpers:_ButtonState(btn, state)
     local base, text, border = btn.baseColor, btn.baseLabelColor, btn.baseBorder
     local r, g, b, a = base[1], base[2], base[3], base[4]
     local tr, tg, tb = text[1], text[2], text[3]
-    local dy = 0
 
     if state == "disabled" then
         tr, tg, tb = C.disabled.r, C.disabled.g, C.disabled.b
         if variant == "primary" then a = DISABLED_GOLD end
     elseif state == "hover" then
         if variant == "primary" then
-            r, g, b = math.min(1, r + HOVER_LIFT), math.min(1, g + HOVER_LIFT), math.min(1, b + HOVER_LIFT)
+            r, g, b = C.goldHover.r, C.goldHover.g, C.goldHover.b
+            border = C.goldHover
         elseif variant == "danger" then
             r, g, b, a = C.danger.r, C.danger.g, C.danger.b, DANGER_WASH
         else
             tr, tg, tb = C.text.r, C.text.g, C.text.b
-            if variant == "secondary" then border = C.lineHi end
+            if variant == "secondary" then border = C.label end
         end
     elseif state == "pressed" then
         if variant == "primary" then
-            r, g, b = r * PRESSED_DARKEN, g * PRESSED_DARKEN, b * PRESSED_DARKEN
-            dy = -1
+            r, g, b = C.goldActive.r, C.goldActive.g, C.goldActive.b
+            border = C.goldActive
         elseif variant ~= "ghost" then
             r, g, b, a = C.popup.r, C.popup.g, C.popup.b, 1
         end
     end
 
+    -- Selected (Helpers:SetSelected): gold border and gold label, through hover and press (#371).
+    -- Disabled, it keeps the border: an event's kind the rank may no longer pick still shows as its kind.
+    if btn.__selected and variant ~= "primary" then
+        border = C.gold
+        if state ~= "disabled" then tr, tg, tb = C.gold.r, C.gold.g, C.gold.b end
+    end
+
     btn:SetBackdropColor(r, g, b, a)
     if border then
-        btn:SetBackdropBorderColor(border.r, border.g, border.b, 1)
+        btn:SetBackdropBorderColor(border.r, border.g, border.b, (variant == "primary" and a) or 1)
     else
         btn:SetBackdropBorderColor(0, 0, 0, 0)
     end
     btn.label:SetTextColor(tr, tg, tb)
-    -- Only a primary button moves its label, and only by the press: other
-    -- buttons may have had their label re-anchored by the screen that owns them.
-    if variant == "primary" then
-        btn.label:ClearAllPoints()
-        btn.label:SetPoint("CENTER", 0, dy)
-    end
     if btn.underline then btn.underline:SetVertexColor(tr, tg, tb, 1) end
-    if btn.glow then btn.glow:SetShown(variant == "primary" and state ~= "disabled") end
 end
 
--- Create a button. Secondary by default (1px `line` border, paper text on no
+-- Create a button. Secondary by default (1px `lineHi` border, paper text on no
 -- fill); Helpers:SetButtonVariant switches it to primary, ghost or danger.
 -- Toggle buttons keep calling btn:SetBaseColor so a resting colour survives
 -- the hover; setting btn.baseLabelColor does the same for the label.
 function Helpers:CreateButton(parent, text, width, height)
     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
     btn:SetSize(width or 120, height or BUTTON_HEIGHT)
-    btn:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    btn:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(btn) })
 
-    local label = newText(btn, 11)
+    local label = newText(btn, nil, "button")
     label:SetPoint("CENTER")
     label:SetText(text or "")
     btn.label = label
@@ -277,7 +409,7 @@ function Helpers:CreateButton(parent, text, width, height)
     btn.variant = "secondary"
     btn.baseColor = { C.well.r, C.well.g, C.well.b, 0 }
     btn.baseLabelColor = { C.text.r, C.text.g, C.text.b }
-    btn.baseBorder = C.line
+    btn.baseBorder = C.lineHi
 
     function btn:SetBaseColor(r, g, b, a)
         self.baseColor = { r, g, b, a or 1 }
@@ -306,9 +438,19 @@ function Helpers:CreateButton(parent, text, width, height)
     return btn
 end
 
--- Switch a button to one of the handoff's variants: "primary" (gold fill
--- with a glow; one per screen), "secondary", "ghost" (underlined label, no
--- border) or "danger". Returns the button.
+-- Mark a button as the chosen one of a set (a filter, a mode, a model): gold border and gold label,
+-- the identity's only selection mark (#371). No ">" prefix, no tinted fill.
+function Helpers:SetSelected(btn, on)
+    btn.__selected = on and true or nil
+    if btn.label then
+        self:_ButtonState(btn, not btn:IsEnabled() and "disabled" or (btn.__hovered and "hover") or "rest")
+    end
+    return btn
+end
+
+-- Switch a button to one of the variants: "primary" (flat gold fill; one per
+-- screen), "secondary", "ghost" (mono label, underlined, no border) or
+-- "danger". Returns the button.
 function Helpers:SetButtonVariant(btn, variant)
     variant = variant or "secondary"
     btn.variant = variant
@@ -318,27 +460,22 @@ function Helpers:SetButtonVariant(btn, variant)
         btn.baseColor = { C.gold.r, C.gold.g, C.gold.b, 1 }
         btn.baseLabelColor = { C.onGold.r, C.onGold.g, C.onGold.b }
         btn.baseBorder = C.gold
-        GuildOS:ApplyFont(label, 11, "colHeader")  -- IBM Plex Mono Medium
-        if not btn.__forever and not btn.glow then
-            local glow = btn:CreateTexture(nil, "BACKGROUND", nil, -8)
-            glow:SetTexture(MEDIA .. "glow-gold.tga")
-            glow:SetBlendMode("ADD")
-            glow:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, GLOW_ALPHA)
-            glow:SetPoint("TOPLEFT", -GLOW_BLEED, GLOW_BLEED)
-            glow:SetPoint("BOTTOMRIGHT", GLOW_BLEED, -GLOW_BLEED)
-            btn.glow = glow
-        end
+        GuildOS:ApplyFont(label, nil, "button")  -- IBM Plex Sans Medium
     else
         Style:UnskinButton(btn)
-        GuildOS:ApplyFont(label, 11)
+        if variant == "ghost" then
+            GuildOS:ApplyFont(label, 11, "caption")  -- IBM Plex Mono, a link
+        else
+            GuildOS:ApplyFont(label, nil, "button")
+        end
         local ink = (variant == "ghost" and C.label) or (variant == "danger" and C.danger) or C.text
         btn.baseLabelColor = { ink.r, ink.g, ink.b }
         btn.baseColor = { C.well.r, C.well.g, C.well.b, 0 }
-        btn.baseBorder = (variant == "danger" and C.danger) or (variant ~= "ghost" and C.line) or nil
+        btn.baseBorder = (variant == "danger" and C.danger) or (variant ~= "ghost" and C.lineHi) or nil
         if variant == "ghost" and not btn.underline then
             local u = btn:CreateTexture(nil, "ARTWORK")
             u:SetTexture(WHITE)
-            u:SetHeight(1)
+            Helpers:Hairline(u)
             u:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -3)
             u:SetPoint("TOPRIGHT", label, "BOTTOMRIGHT", 0, -3)
             btn.underline = u
@@ -431,7 +568,7 @@ end
 
 ----------------------------------------------------------------------
 -- A removable chip's text (issue #59): GuildOS:ChipLabel, shortened until it fits `width`
--- in the font that draws it (GuildOS's mono or the game's, #57), so the chip never grows
+-- in the font that draws it (GuildOS's own or the game's, #57), so the chip never grows
 -- over its neighbour and a click lands on the entry it shows.
 ----------------------------------------------------------------------
 function Helpers:SetChipText(btn, text, width)
@@ -462,11 +599,10 @@ function Helpers:CreateCheckbox(parent, labelText, size)
     cb:SetSize(CHECK_BOX, CHECK_BOX)
     cb:SetPoint("LEFT", math.floor((size - CHECK_BOX) / 2), 0)
 
-    -- A texture one pixel larger on every side, under the fill, is the border.
+    -- A texture one screen pixel larger on every side, under the fill, is the border (#369).
     local border = cb:CreateTexture(nil, "BACKGROUND", nil, 0)
     border:SetTexture(WHITE)
-    border:SetPoint("TOPLEFT", -1, 1)
-    border:SetPoint("BOTTOMRIGHT", 1, -1)
+    Helpers:Outset(border)
     local fill = cb:CreateTexture(nil, "BACKGROUND", nil, 1)
     fill:SetTexture(WHITE)
     fill:SetAllPoints()
@@ -486,7 +622,7 @@ function Helpers:CreateCheckbox(parent, labelText, size)
         -- GetChecked() returns true or nil (never false) in TBC.
         mark:SetShown(cb:GetChecked() and true or false)
         mark:SetAlpha(enabled and 1 or DISABLED_GOLD)
-        local edge = (not enabled and C.disabled) or (cb.__hovered and C.lineHi) or C.line
+        local edge = (not enabled and C.disabled) or (cb.__hovered and C.label) or C.lineHi
         border:SetVertexColor(edge.r, edge.g, edge.b, 1)
     end
 
@@ -512,7 +648,7 @@ function Helpers:CreateCheckbox(parent, labelText, size)
     cb:HookScript("OnEnable", paint)
     paint()
 
-    local label = newText(frame, 11)
+    local label = newText(frame, nil, "body")
     label:SetPoint("LEFT", cb, "RIGHT", 6, 0)
     label:SetTextColor(C.text.r, C.text.g, C.text.b)
     label:SetText(labelText or "")
@@ -550,7 +686,8 @@ local function dropdownArrow(btn)
     for i, w in ipairs({ 7, 5, 3, 1 }) do
         local t = btn:CreateTexture(nil, "OVERLAY")
         t:SetTexture(WHITE)
-        t:SetSize(w, 1)
+        t:SetWidth(w)
+        Helpers:Hairline(t)
         t:SetPoint("RIGHT", btn, "RIGHT", -(6 + (7 - w) / 2), 2 - i)
         rows[i] = t
     end
@@ -574,6 +711,10 @@ local function buildDropdownList()
     f:SetFrameLevel(20)
     f:EnableMouse(true)
     f:SetClampedToScreen(true)
+    -- Its own surface: StylePopup only borders a backdrop its caller made, and with none the options
+    -- floated over whatever was under them (#371).
+    f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = Helpers:Edge(f) })
+    f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
     Helpers:StylePopup(f, { noFade = true })
     f:Hide()
     table.insert(UISpecialFrames, "GuildOSDropdownList")   -- Escape closes it
@@ -720,7 +861,7 @@ end
 function Helpers:CreateCloseButton(parent)
     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
     btn:SetSize(20, 20)
-    btn:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    btn:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(btn) })
     btn:SetBackdropColor(0, 0, 0, 0)
     btn:SetBackdropBorderColor(0, 0, 0, 0)
 
@@ -818,11 +959,14 @@ function Helpers:SkinScrollBar(scrollFrame, scrollName)
         local thumbHeight = math.max(20, trackHeight * (trackHeight / (trackHeight + max - min + 1)))
         thumb:SetHeight(thumbHeight)
 
+        -- Nothing to scroll: no thumb and no empty track either (#371).
         if max <= min then
             thumb:Hide()
+            track:Hide()
             return
         end
         thumb:Show()
+        track:Show()
         local ratio = (val - min) / (max - min)
         local travel = trackHeight - thumbHeight
         thumb:ClearAllPoints()
@@ -861,7 +1005,7 @@ function Helpers:CreateIcon(parent, size, iconPath)
     size = size or 32
     local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     frame:SetSize(size + 4, size + 4)
-    frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(frame) })
     frame:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
     frame:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
 
@@ -884,28 +1028,22 @@ function Helpers:SetIconQuality(iconFrame, quality)
     iconFrame:SetBackdropBorderColor(color.r, color.g, color.b, 1)
 end
 
--- Create a badge: mono 10 in a 1px frame. A gold badge (the officer mark) is
--- the only filled one, gold with `onGold` text; a danger badge takes a danger
--- frame; any other colour is text on a `line` frame. Defaults to `label`.
+-- Create a badge: mono 10 in a 1px frame, never filled. A danger badge takes
+-- a danger frame; any other colour is text on a `line` frame. Gold is not a
+-- badge colour (the officer mark included), so gold reads as `label`, the default.
 function Helpers:CreateBadge(parent, text, color)
     local b = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
-    local fs = newText(b, 10)
+    b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(b) })
+    local fs = newText(b, nil, "badge")
     fs:SetPoint("CENTER", 0, 0)
     b.label = fs
 
     local function paint(col)
-        col = col or C.label
-        if col == C.gold or col == C.accent then
-            b:SetBackdropColor(C.gold.r, C.gold.g, C.gold.b, 1)
-            b:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1)
-            fs:SetTextColor(C.onGold.r, C.onGold.g, C.onGold.b)
-        else
-            local edge = (col == C.danger or col == C.red) and col or C.line
-            b:SetBackdropColor(0, 0, 0, 0)
-            b:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1)
-            fs:SetTextColor(col.r, col.g, col.b)
-        end
+        if not col or col == C.gold or col == C.accent then col = C.label end
+        local edge = (col == C.danger or col == C.red) and col or C.line
+        b:SetBackdropColor(0, 0, 0, 0)
+        b:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1)
+        fs:SetTextColor(col.r, col.g, col.b)
     end
 
     paint(color)
@@ -920,17 +1058,17 @@ function Helpers:CreateBadge(parent, text, color)
 end
 
 -- Create an 8px progress bar: `well` track, 1px `line` frame, solid fill.
--- By default the fill is gold while in progress and ok when complete:
+-- By default the fill is `textSoft` while in progress and ok when complete:
 -- progress toward a goal (a profession rank, an attunement) is not a
--- failure. Pass `ramp = true` for a score that can be bad (attendance):
--- ok at 80% and up, gold from 60%, danger below.
+-- failure, and gold is not a status. Pass `ramp = true` for a score that can
+-- be bad (attendance): ok at 80% and up, warn from 60%, danger below.
 function Helpers:CreateProgressBar(parent, width, height, ramp)
     width = width or 100
     height = height or 8
 
     local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     frame:SetSize(width, height)
-    frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(frame) })
     frame:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
     frame:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
 
@@ -950,9 +1088,9 @@ function Helpers:CreateProgressBar(parent, width, height, ramp)
         self.bar:SetWidth(math.max(1, (w - 2) * value))
         local col
         if ramp then
-            col = (value >= PROGRESS_OK and C.ok) or (value >= PROGRESS_WARN and C.gold) or C.danger
+            col = (value >= PROGRESS_OK and C.ok) or (value >= PROGRESS_WARN and C.warn) or C.danger
         else
-            col = (value >= 1 and C.ok) or C.gold
+            col = (value >= 1 and C.ok) or C.textSoft
         end
         self.bar:SetVertexColor(col.r, col.g, col.b, 1)
     end
@@ -961,27 +1099,28 @@ function Helpers:CreateProgressBar(parent, width, height, ramp)
     return frame
 end
 
--- Create a metric chip: a mono value, a 1px gold rule and a `labelDim`
--- caption under it. Never a box. chip:SetValue(text) updates the number.
+-- Create a metric chip: a 1px gold rule across the top, a mono value under it
+-- and a `label` caption under that. Never a box. chip:SetValue(text) updates the number.
 function Helpers:CreateMetricChip(parent, value, caption, size)
     local chip = CreateFrame("Frame", nil, parent)
-    local v = newText(chip, size, "metricValue")
-    v:SetPoint("TOPLEFT")
+    local rule = self:CreateAccentLine(chip, 1)
+    rule:SetPoint("TOPLEFT")
+    rule:SetPoint("TOPRIGHT")
+
+    local px = size or GuildOS.Fonts.metricValue.size
+    local v = newText(chip, px, "metricValue")
+    v:SetPoint("TOPLEFT", 0, -(1 + CHIP_PAD))
     v:SetTextColor(C.text.r, C.text.g, C.text.b)
     v:SetText(value or "")
 
-    local rule = self:CreateAccentLine(chip, 1)
-    rule:SetWidth(CHIP_RULE)
-    rule:SetPoint("TOPLEFT", v, "BOTTOMLEFT", 0, -3)
-
-    local l = newText(chip, 10, "caption")
-    l:SetPoint("TOPLEFT", rule, "BOTTOMLEFT", 0, -3)
-    l:SetTextColor(C.labelDim.r, C.labelDim.g, C.labelDim.b)
+    local l = newText(chip, nil, "caption")
+    l:SetPoint("TOPLEFT", v, "BOTTOMLEFT", 0, -2)
+    l:SetTextColor(C.label.r, C.label.g, C.label.b)
     l:SetText(caption or "")
 
     chip.value, chip.rule, chip.label = v, rule, l
     function chip:SetValue(t) self.value:SetText(t or "") end
-    chip:SetSize(math.max(CHIP_RULE, v:GetStringWidth() or 0, l:GetStringWidth() or 0), (size or 22) + 20)
+    chip:SetSize(math.max(CHIP_MIN, v:GetStringWidth() or 0, l:GetStringWidth() or 0), px + CHIP_PAD + 20)
     return chip
 end
 
@@ -1013,16 +1152,16 @@ end
 -- Tabs
 ----------------------------------------------------------------------
 
--- Create a tab: `label` text at rest, paper when hovered or active, and a 2px
--- gold rule under the active one; `sub` makes it a sub-tab, with a 1px rule.
--- No box around it.
+-- Create a tab: mono `label` text at rest, paper when hovered, and the active
+-- one gold with a 2px gold rule under it; `sub` makes it a sub-tab, with a
+-- 1px rule. No box around it.
 function Helpers:CreateTab(parent, text, width, sub)
     local tab = CreateFrame("Button", nil, parent, "BackdropTemplate")
     tab:SetSize(width or 100, 28)
-    tab:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    tab:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(tab) })
     tab:SetBackdropBorderColor(0, 0, 0, 0)
 
-    local label = newText(tab, 11)
+    local label = newText(tab, 11, "caption")
     label:SetPoint("CENTER")
     label:SetText(text or "")
     tab.label = label
@@ -1030,7 +1169,7 @@ function Helpers:CreateTab(parent, text, width, sub)
 
     local underline = tab:CreateTexture(nil, "OVERLAY")
     underline:SetTexture(WHITE)
-    underline:SetHeight(sub and 1 or 2)
+    if sub then Helpers:Hairline(underline) else underline:SetHeight(2) end
     underline:SetPoint("BOTTOMLEFT", 2, 0)
     underline:SetPoint("BOTTOMRIGHT", -2, 0)
     underline:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
@@ -1039,11 +1178,12 @@ function Helpers:CreateTab(parent, text, width, sub)
     Style:SkinTab(tab)
 
     local function paint(self, hovered)
-        local ink = (self.isActive or hovered) and C.text or C.label
+        -- The Forever tab art marks the open tab itself; the gold label and rule are the flat style's mark.
+        local flatActive = self.isActive and not self.__styleTab
+        local ink = (flatActive and C.gold) or ((self.isActive or hovered) and C.text) or C.label
         self:SetBackdropColor(0, 0, 0, 0)
         self.label:SetTextColor(ink.r, ink.g, ink.b)
-        -- The Forever tab art marks the open tab itself; the gold rule is the flat style's mark.
-        self.underline:SetShown((self.isActive and not self.__styleTab) and true or false)
+        self.underline:SetShown(flatActive and true or false)
         if self.__styleTab then Style:TabState(self) end
     end
 

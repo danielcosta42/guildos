@@ -92,7 +92,7 @@ check(shown(texts, "Guild is recruiting") and shown(buttons, "Broadcast now"), "
 -- ── 2. Module off: says so, offers nothing ──────────────────────────────
 for _, who in ipairs({ { 5, "a member" }, { 0, "an officer" } }) do
   show({ recruitment = false }, who[1])
-  check(shown(texts, "The Recruitment module is off. Turn it on in Settings > General > Modules."),
+  check(shown(texts, "The Recruitment module is off. Turn it on in Settings > Modules."),
     "module off: " .. who[2] .. " is told the module is off and where to turn it on")
   check(not shown(texts, "Guild is recruiting") and not shown(buttons, "Helping")
     and not shown(buttons, "Help spread it") and not shown(buttons, "Broadcast now"),

@@ -176,7 +176,7 @@ local function inviteField(parent)
     local box = CreateFrame("EditBox", nil, holder, "BackdropTemplate")
     box:SetSize(130, 18)
     box:SetPoint("LEFT", 0, 0)
-    box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(box) })
     box:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
     box:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
     GuildOS:ApplyFont(box, 10)
@@ -188,7 +188,7 @@ local function inviteField(parent)
     local hint = box:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(hint, 10)
     hint:SetPoint("LEFT", 6, 0)
-    hint:SetTextColor(C.labelDim.r, C.labelDim.g, C.labelDim.b)
+    hint:SetTextColor(C.label.r, C.label.g, C.label.b)
     hint:SetText(L["Player name..."])
     box:SetScript("OnTextChanged", function(self) hint:SetShown((self:GetText() or "") == "") end)
 
@@ -232,6 +232,7 @@ local function createWindow()
     end
     f:Hide()
     f:SetScale(GuildOS:GetSetting("uiScale") or 1)
+    UI:RefreshHairlines()   -- its border was sized before the scale (#369)
     UI:RestoreWindowGeometry(f)
     f.tabs, f.tabPanels, f.overflow, f.footItems = {}, {}, {}, {}
 
@@ -299,7 +300,7 @@ local function createWindow()
     sync:SetJustifyH("RIGHT")
     f.syncText = sync
 
-    local meta = text(10, "caption", C.labelDim)
+    local meta = text(10, "caption", C.label)
     meta:SetPoint("LEFT", wordmark, "RIGHT", 10, 0)
     meta:SetPoint("RIGHT", sync, "LEFT", -10, 0)
     meta:SetJustifyH("LEFT")
@@ -699,6 +700,19 @@ function UI:OpenWindow(id, sub, filter)
             GuildOS:Print(L["Not available on this client."])
             return false
         end
+        -- Said as a tab says it (issue #367: Trials, the Journal and Achievements became sub-tabs).
+        if not GuildOS:IsFeatureEnabled(id) then
+            GuildOS:Print(string.format(L["%s is disabled in Settings."], def.label))
+            return false
+        end
+        if GuildOS:FeatureStartFailed(id) then
+            GuildOS:Print(string.format(L["%s could not start on this client. Type /guildos errors for details."], def.label))
+            return false
+        end
+        if def.officerOnly and not GuildOS:IsOfficer() then
+            GuildOS:Print(string.format(L["%s is officer-only."], def.label))
+            return false
+        end
         return self:OpenWindow(def.opens[1], sub or def.opens[2], filter)
     end
     if not (def and def.tab) then return false end
@@ -740,6 +754,7 @@ end
 function UI:ApplyScale()
     local f = GuildOS.RosterFrame
     if f then f:SetScale(GuildOS:GetSetting("uiScale") or 1) end
+    self:RefreshHairlines()
 end
 
 -- A feature turned off in Settings loses its tab at once.

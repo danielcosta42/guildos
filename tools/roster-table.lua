@@ -99,7 +99,8 @@ for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "SetBackdrop"
   "ClearFocus", "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetVertexColor", "SetDesaturated",
   "SetFrameStrata", "EnableMouse", "SetMovable", "RegisterForDrag", "SetColorTexture", "SetAtlas", "SetScale",
   "SetHorizTile", "SetVertTile", "SetResizeBounds", "SetClipsChildren", "SetScrollChild", "RegisterEvent",
-  "SetDrawLayer", "SetFontObject", "SetSpacing", "SetNonSpaceWrap", "SetIndentedWordWrap", "SetMaxLines" }) do
+  "SetDrawLayer", "SetFontObject", "SetSpacing", "SetNonSpaceWrap", "SetIndentedWordWrap", "SetMaxLines",
+  "HasFocus" }) do   -- the shared field's placeholder asks whether it has the focus (#371)
   Frame[name] = function() end
 end
 
@@ -422,6 +423,114 @@ do
   end
   check(says(panel, "/reload"), "and tells them to /reload")
   GuildOS.IsOfficer = isOfficer
+end
+
+-- ── Recruitment: the Trials sub-tab, an officer's (#367) ────────────────
+-- The Trials tab became the officers' third sub-tab, offered while the registry allows the trials
+-- feature (switched on, started, officerOnly), built the first time it opens, and a deep link to it
+-- that is not offered lands on Recruiting.
+do
+  dofile(ADDON .. "/UI/FeatureRegistry.lua")
+  dofile(ADDON .. "/UI/Features.lua")
+  dofile(ADDON .. "/Modules/RecruitmentSystem.lua")   -- the officers' view reads its channels and checks
+  -- What the officers' form calls on its boxes and nothing above did.
+  for _, name in ipairs({ "SetMultiLine" }) do Frame[name] = Frame[name] or function() end end
+  local UI = GuildOS.UI
+  local isOfficer, officer = GuildOS.IsOfficer, true
+  function GuildOS:IsOfficer() return officer end
+  GuildOS.db.settings = GuildOS.db.settings or {}
+  GuildOS.db.settings.modules = {}
+  GuildOS.db.recruitment = { interval = 120, message = "", discord = "", welcomeMessage = "", channels = {} }
+  local trialsBuilt, trialsDrawn = 0, 0
+  local createTrials = GuildOS.CreateTrialsPanel
+  function GuildOS:CreateTrialsPanel(p)
+    trialsBuilt = trialsBuilt + 1
+    p:SetScript("OnShow", function() trialsDrawn = trialsDrawn + 1 end)
+  end
+
+  local panel = CreateFrame("Frame", nil, UIParent)
+  panel:Hide()
+  local ok, err = pcall(GuildOS.CreateRecruitmentPanel, GuildOS, panel, panel)
+  check(ok, "an officer's recruitment tab builds: " .. tostring(err))
+  local tabs = {}
+  local function collect(f)
+    for _, c in ipairs(f.children) do
+      if c.underline and c.label then tabs[c.label.text] = c end
+      collect(c)
+    end
+  end
+  collect(panel)
+  check(tabs.Recruiting and tabs.Scanner and tabs.Trials, "Recruiting, Scanner and Trials are its sub-tabs")
+  panel:SetSize(900, 500)
+  panel:Show()
+  flush()
+  local trials = panel.subPanels.trials
+  check(tabs.Trials.shown and panel.activeSub == "recruiting" and trialsBuilt == 0,
+    "an officer is offered Trials, and it is not built before it opens")
+  panel.SelectSub("trials")
+  check(panel.activeSub == "trials" and trials.panel.shown and not panel.subPanels.recruiting.panel.shown
+    and trialsBuilt == 1 and trialsDrawn == 1 and tabs.Trials.isActive,
+    "a deep link opens Trials: built once, its own OnShow draws it, shown alone, its tab marked")
+  panel.SelectSub("scanner")
+  panel.SelectSub("trials")
+  check(trialsBuilt == 1 and trialsDrawn == 2, "opened again it is not built again, and its OnShow redraws it")
+
+  -- Switched off in Settings: no tab, and the deep link lands on Recruiting.
+  GuildOS:SetFeatureEnabled("trials", false)
+  panel:Hide()
+  panel:Show()
+  check(not tabs.Trials.shown and panel.activeSub == "recruiting" and not trials.panel.shown,
+    "Trials switched off has no sub-tab, and the open one falls back to Recruiting")
+  panel.SelectSub("trials")
+  check(panel.activeSub == "recruiting", "and its deep link lands on Recruiting")
+  GuildOS:SetFeatureEnabled("trials", true)
+  -- A trial tracker that failed to start takes the sub-tab down with it, as it did the tab.
+  GuildOS.State.startup.failedFeatures.trials = "TrialTracker"
+  panel.SelectSub("trials")
+  check(panel.activeSub == "recruiting", "a trial tracker that failed to start offers no Trials")
+  GuildOS.State.startup.failedFeatures.trials = nil
+
+  -- A rank that is no longer an officer's: not offered, even on the officers' view built earlier.
+  officer = false
+  panel:Hide()
+  panel:Show()
+  panel.SelectSub("trials")
+  check(not tabs.Trials.shown and panel.activeSub == "recruiting", "Trials is for officers only")
+  check(not UI:IsFeatureAllowed(UI:GetFeature("trials")), "as the registry says")
+  -- A member's view has no sub-tabs at all: the deep link opens the tab as it is.
+  local member = CreateFrame("Frame", nil, UIParent)
+  check(pcall(GuildOS.CreateRecruitmentPanel, GuildOS, member, member) and member.SelectSub == nil,
+    "a member's recruitment tab has no Trials to open")
+  officer = true
+  panel.SelectSub("trials")
+  check(panel.activeSub == "trials" and tabs.Trials and trialsBuilt == 1, "an officer again: Trials is back")
+
+  -- Promoted after logging in: the officers' view waits for a /reload, and a link to Trials says so.
+  local said, print0 = {}, GuildOS.Print
+  GuildOS.Print = function(_, m) said[#said + 1] = tostring(m) end
+  local recruitment = GuildOS.db.recruitment
+  GuildOS.db.recruitment = nil
+  local late = CreateFrame("Frame", nil, UIParent)
+  check(pcall(GuildOS.CreateRecruitmentPanel, GuildOS, late, late) and late.SelectSub, "a late officer's tab takes a deep link")
+  late.SelectSub("trials")
+  check(said[#said] == "You became an officer after logging in. Type /reload to manage recruiting.",
+    "and a link to Trials says what to do")
+  GuildOS.db.recruitment = recruitment
+
+  -- A Trials builder that errors is recorded and refused, and the tab stays on Recruiting (issue #367).
+  function GuildOS:CreateTrialsPanel() error("boom") end
+  local broken = CreateFrame("Frame", nil, UIParent)
+  check(pcall(GuildOS.CreateRecruitmentPanel, GuildOS, broken, broken), "an officer's tab builds with a broken Trials")
+  broken:SetSize(900, 500)
+  broken.SelectSub("trials")
+  check(broken.activeSub == "recruiting" and broken.subPanels.recruiting.panel.shown and broken.subPanels.trials.failed,
+    "a Trials that errors leaves the tab on Recruiting")
+  check(said[#said] == "Trials could not start on this client. Type /guildos errors for details.", "saying so")
+  broken.SelectSub("trials")
+  check(broken.activeSub == "recruiting", "and is refused from then on")
+  GuildOS.Print = print0
+
+  GuildOS.CreateTrialsPanel, GuildOS.IsOfficer = createTrials, isOfficer
 end
 
 print(("roster-table: %d checks passed"):format(checks))

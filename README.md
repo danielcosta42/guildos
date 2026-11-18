@@ -57,7 +57,7 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 
 ### TMB Integration (That's My BiS)
 - Import TMB CSV exports with wishlist, prio, and received loot data
-- Tooltip integration — hover any item to see who has it on their wishlist (Settings → General: always, only while holding Shift, or off)
+- Tooltip integration: hover any item to see who has it on their wishlist (Settings → Interface: always, only while holding Shift, or off)
 - Syncs imported TMB data between officers via addon comms
 - Dedicated TMB Loot tab for browsing all imported data
 
@@ -95,14 +95,14 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 - Notes are synced between officers in real time via addon comms
 
 ### Trial Tracker (Officer Only)
-- Track trial/recruit members; the trial length is the guild's (1 to 90 days, 30 until an officer changes it in the
-  Trials tab), and a new length applies to running trials too
+- Track trial/recruit members; the trial length is the guild's (1 to 90 days, 30 until an officer changes it in
+  Recruitment → Trials), and a new length applies to running trials too
 - Optionally, every new member starts as a trial on its own (off by default; nobody already in the guild is affected)
 - Records start date, sponsor, status (trial/ready to review/approved/denied), and evaluation notes
 - Trials whose time is up show as "ready to review" and officers are told at login
 
 ### Officer Rank Configuration (Officer Only)
-- Configure which guild ranks are considered "officers" directly from the Settings tab
+- Configure which guild ranks are considered "officers" in Settings → Guild rules
 - Checkboxes for each guild rank — GM is always locked as officer
 - Changes take effect immediately; only current officers can modify this setting
 - Synced across all addon instances in the guild
@@ -135,7 +135,7 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 | Raids | All members |
 | Groups | All members |
 | Loot | All members |
-| Trials | Officers only |
+| Recruitment → Trials | Officers only |
 | Recruitment | Officers only |
 
 ### Guild Frame Hook
@@ -213,7 +213,7 @@ Builds between releases are posted as a GitHub pre-release and announced on the
 ## Notes
 
 - **SendChatMessage to channels** (LookingForGroup, Trade, etc.) requires a hardware click due to Blizzard restrictions. Guild OS handles this by showing a clickable popup notification instead of sending automatically.
-- Officer permission is determined by configurable guild rank threshold (default: rank ≤ 2). Adjustable in the Settings tab by current officers.
+- Officer permission is determined by configurable guild rank threshold (default: rank ≤ 2). Adjustable in Settings → Guild rules by current officers.
 - Data is stored per-guild in `GuildOSDB` SavedVariables (isolated per guild name+realm).
 - Account-wide attunements require officers to manually link a player's alt characters via the Member Detail panel.
 

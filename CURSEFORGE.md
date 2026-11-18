@@ -78,7 +78,7 @@ throttled, with everyone else in the guild running Guild OS. The more of your gu
 
 - **It speaks Forever.** Names with surnames and no realms, the new professions, the retail tooltip, and the Secret
   Values the client keeps private: Guild OS skips what it is not allowed to read instead of throwing errors at you.
-- **It can look like Forever.** Settings → Style switches every window, button and tab to Forever's own art and the
+- **It can look like Forever.** Settings → Interface switches every window, button and tab to Forever's own art and the
   game's font. Guild OS's dark theme stays the default.
 - **Professions are back.** Who makes what, and what nobody in the guild covers yet, read from Forever's
   professions. Recipes are shared once a member opens their profession window.
@@ -143,7 +143,7 @@ Not on retail: the master loot (retail has none) and soft reserves (softres.it r
 
 ## 💰 Loot master and DKP
 
-An officer picks the guild's loot system in Settings: **/roll MS/OS**, **wishlists**, **DKP / points**, or **off** when Gargul
+An officer picks the guild's loot system in the Loot window: **/roll MS/OS**, **wishlists**, **DKP / points**, or **off** when Gargul
 or RCLootCouncil already handles it, and then Guild OS stays completely out of the way. On retail the same points and
 wishlists run beside the loot council by trade (above); the loot master and soft reserves are Forever's only.
 
@@ -232,7 +232,7 @@ No. The roster shows every member either way. Gear, professions and attendance f
 Guild OS, so the more of the guild has it, the more complete it gets.
 
 **Can we keep Gargul or RCLootCouncil for loot?**
-Yes. Set the loot system to *off* in Settings and Guild OS leaves loot alone while the roster, attendance and
+Yes. Set the loot system to *off* in the Loot window and Guild OS leaves loot alone while the roster, attendance and
 everything else keep working.
 
 **Does it do DKP?**

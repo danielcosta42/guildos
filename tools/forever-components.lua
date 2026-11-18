@@ -3,11 +3,11 @@
 --
 -- The factories decide every state colour in code: rest, hover, pressed and
 -- disabled, for the primary, secondary, ghost and danger buttons, the
--- checkbox, the tab, the close button, badges, the scrollbar, icons, the drop
--- shadow, the fade and the progress bar. This proves each state lands on the
+-- checkbox, the tab, the close button, badges, the scrollbar, icons, the
+-- popup, the fade and the progress bar. This proves each state lands on the
 -- design handoff's token and size, that the
 -- contracts older screens rely on still hold (a caller's button height, a
--- toggle's resting colour, a checkbox's onChanged), that only the primary
+-- toggle's resting colour, a checkbox's onChanged), that no
 -- button glows and that text is never outlined.
 --
 --   luajit -e 'ADDON="."' tools/forever-components.lua
@@ -118,25 +118,26 @@ local parent = CreateFrame("Frame")
 local b = UI:CreateButton(parent, "cancelar")
 check(b.h == 26, "a button defaults to 26px")
 check(UI:CreateButton(parent, "salvar", 80, 22).h == 22, "a caller's own button height is kept")
-check(same(b.border, C.line, 1) and b.bg[4] == 0, "secondary at rest: line border, no fill")
+check(same(b.border, C.lineHi, 1) and b.bg[4] == 0, "secondary at rest: lineHi border, no fill")
 check(same(b.label.color, C.text), "secondary label is paper")
-check(b.label.font.file == F.mono and b.label.font.flags == "", "a button label is mono and not outlined")
+check(b.label.font.file == F.sansMedium and b.label.font.size == 12 and b.label.font.flags == "",
+  "a button label is Plex Sans Medium 12 and not outlined")
 b:Fire("OnEnter")
-check(same(b.border, C.lineHi, 1), "secondary hover: lineHi border")
+check(same(b.border, C.label, 1), "secondary hover: label border")
 b:Fire("OnMouseDown")
 check(same(b.bg, C.popup, 1), "secondary pressed: popup fill")
 b:Fire("OnLeave")
-check(same(b.border, C.line, 1) and b.bg[4] == 0, "leaving restores the resting state")
+check(same(b.border, C.lineHi, 1) and b.bg[4] == 0, "leaving restores the resting state")
 
 local up = UI:CreateButton(parent, "subir")
 up:Fire("OnMouseDown")
 up.mouseOver = false
 up:Fire("OnMouseUp")
-check(same(up.border, C.line, 1) and up.bg[4] == 0, "releasing away from the button returns it to rest")
+check(same(up.border, C.lineHi, 1) and up.bg[4] == 0, "releasing away from the button returns it to rest")
 up:Fire("OnMouseDown")
 up.mouseOver = true
 up:Fire("OnMouseUp")
-check(same(up.border, C.lineHi, 1) and up.bg[4] == 0, "releasing over the button leaves it hovered, not pressed")
+check(same(up.border, C.label, 1) and up.bg[4] == 0, "releasing over the button leaves it hovered, not pressed")
 
 local toggle = UI:CreateButton(parent, "filtro")
 toggle:Fire("OnEnter")
@@ -150,42 +151,34 @@ check(same(b.label.color, C.disabled), "disabled: the label turns disabled")
 b:Fire("OnEnter")
 check(same(b.label.color, C.disabled), "hovering a disabled button does not light it")
 b:Enable()
-check(same(b.label.color, C.text) and same(b.border, C.line, 1), "enabling repaints the resting state")
+check(same(b.label.color, C.text) and same(b.border, C.lineHi, 1), "enabling repaints the resting state")
 
 -- ── Primary ─────────────────────────────────────────────────────────────
 local p = UI:SetButtonVariant(UI:CreateButton(parent, "dar loot"), "primary")
 check(same(p.bg, C.gold, 1) and same(p.label.color, C.onGold), "primary at rest: gold fill, onGold label")
 check(same(p.border, C.gold, 1), "primary at rest: gold border")
-check(p.glow and p.glow.shown and p.glow.blend == "ADD" and p.glow.file:find("glow%-gold%.tga") ~= nil,
-  "primary carries the additive gold glow")
-check(same(p.glow.color, C.gold, 0.5), "the glow is gold at half strength")
-check(p.glow.layer == "BACKGROUND" and p.glow.sublevel == -8, "the glow draws under the button's own fill")
-local g1, g2 = p.glow.points[1], p.glow.points[2]
-check(g1 and g1[1] == "TOPLEFT" and g1[2] == -20 and g1[3] == 20
-  and g2 and g2[1] == "BOTTOMRIGHT" and g2[2] == 20 and g2[3] == -20, "the glow reaches 20px past every edge")
-check(p.label.font.file == F.monoStrong and p.label.font.size == 11, "primary label is mono Medium 11")
+check(p.glow == nil, "primary is flat: no glow")
+check(p.label.font.file == F.sansMedium and p.label.font.size == 12, "primary label is Plex Sans Medium 12")
+local restPts = p.label.points
 p:Fire("OnEnter")
-check(near(p.bg[1], math.min(1, C.gold.r + 0.08)) and near(p.bg[2], math.min(1, C.gold.g + 0.08))
-  and near(p.bg[3], math.min(1, C.gold.b + 0.08)), "primary hover lifts every gold channel by 0.08")
+check(same(p.bg, C.goldHover, 1) and same(p.border, C.goldHover, 1), "primary hover: goldHover fill and border")
 p:Fire("OnMouseDown")
-local pt = p.label.points[#p.label.points]
-check(pt and pt[3] == -1 and near(p.bg[1], C.gold.r * 0.85) and near(p.bg[2], C.gold.g * 0.85)
-  and near(p.bg[3], C.gold.b * 0.85), "primary pressed: every gold channel darker, label 1px down")
+check(same(p.bg, C.goldActive, 1) and same(p.border, C.goldActive, 1), "primary pressed: goldActive fill and border")
+check(p.label.points == restPts and #restPts == 1 and restPts[1][1] == "CENTER" and restPts[1][3] == nil,
+  "pressing a primary button leaves its label where it is")
 p.mouseOver = true
 p:Fire("OnMouseUp")
-local upPt = p.label.points[#p.label.points]
-check(upPt and upPt[3] == 0 and near(p.bg[1], math.min(1, C.gold.r + 0.08)),
-  "releasing a primary button over it: label back up, hover gold")
+check(same(p.bg, C.goldHover, 1), "releasing a primary button over it: hover gold")
 p:Fire("OnLeave")
-local restPt = p.label.points[#p.label.points]
-check(restPt and restPt[3] == 0 and same(p.bg, C.gold, 1), "the cursor leaving a primary button: label up, resting gold")
+check(same(p.bg, C.gold, 1) and same(p.border, C.gold, 1), "the cursor leaving a primary button: resting gold")
 p:Disable()
-check(near(p.bg[4], 0.35) and not p.glow.shown, "disabled primary: gold at 35%, no glow")
+check(near(p.bg[4], 0.35) and near(p.border[4], 0.35), "disabled primary: gold at 35%, its border too")
 
 -- ── Ghost and danger ────────────────────────────────────────────────────
 local g = UI:SetButtonVariant(UI:CreateButton(parent, "ver histórico"), "ghost")
 check(g.border[4] == 0 and same(g.label.color, C.label) and g.underline and g.underline.shown,
   "ghost: no border, label text, underline")
+check(g.label.font.file == F.mono and g.label.font.size == 11, "a ghost label is mono 11, a link")
 g:Fire("OnEnter")
 check(same(g.label.color, C.text) and same(g.underline.color, C.text, 1), "ghost hover: paper label and underline")
 g:Fire("OnMouseDown")
@@ -202,16 +195,17 @@ d:Fire("OnMouseDown")
 check(same(d.bg, C.popup, 1), "danger pressed: popup fill")
 d:Disable()
 check(same(d.label.color, C.disabled) and d.bg[4] == 0, "disabled danger: disabled label, no fill")
-check(not (d.glow and d.glow.shown), "only the primary button glows")
+check(d.glow == nil, "no button glows")
 UI:SetButtonVariant(g, "secondary")
-check(not g.underline.shown and same(g.border, C.line, 1), "a ghost switched back to secondary loses its underline")
+check(not g.underline.shown and same(g.border, C.lineHi, 1) and g.label.font.file == F.sansMedium,
+  "a ghost switched back to secondary loses its underline and its mono")
 
 -- ── Checkbox ────────────────────────────────────────────────────────────
 local cbf = UI:CreateCheckbox(parent, "anotar o chat", 18)
 local cb = cbf.checkbox
 local cbBorder = cb.textures[1]
 check(cb.w == 14 and cb.h == 14, "the checkbox box is 14px")
-check(not cb.checkMark.shown and same(cbBorder.color, C.line, 1), "unchecked at rest: no mark, line border")
+check(not cb.checkMark.shown and same(cbBorder.color, C.lineHi, 1), "unchecked at rest: no mark, lineHi border")
 local cbFill = cb.textures[2]
 check(same(cbFill.color, C.well, 1), "the checkbox box is well")
 cb:Fire("OnMouseDown")
@@ -219,9 +213,9 @@ check(same(cbFill.color, C.popup, 1), "checkbox pressed: popup fill")
 cb:Fire("OnMouseUp")
 check(same(cbFill.color, C.well, 1), "checkbox released: well again")
 cb:Fire("OnEnter")
-check(same(cbBorder.color, C.lineHi, 1), "checkbox hover: lineHi border")
+check(same(cbBorder.color, C.label, 1), "checkbox hover: label border")
 cb:Fire("OnLeave")
-check(same(cbBorder.color, C.line, 1), "checkbox leave: line border again")
+check(same(cbBorder.color, C.lineHi, 1), "checkbox leave: lineHi border again")
 
 local seen
 cb.onChanged = function(_, checked) seen = checked end
@@ -241,7 +235,8 @@ check(same(cbBorder.color, C.disabled, 1), "hovering a disabled checkbox does no
 
 -- ── Badges ──────────────────────────────────────────────────────────────
 local officer = UI:CreateBadge(parent, "oficial", C.gold)
-check(same(officer.bg, C.gold, 1) and same(officer.label.color, C.onGold), "the officer badge is the only filled one")
+check(officer.bg[4] == 0 and same(officer.border, C.line, 1) and same(officer.label.color, C.label),
+  "the officer badge is neutral: gold is not a badge colour")
 local plain = UI:CreateBadge(parent, "raider")
 check(plain.bg[4] == 0 and same(plain.border, C.line, 1) and same(plain.label.color, C.label),
   "a plain badge: label text in a line frame")
@@ -252,14 +247,17 @@ local trial = UI:CreateBadge(parent, "trial 8/10", C.ok)
 check(same(trial.border, C.line, 1) and same(trial.label.color, C.ok), "any other colour: coloured text in a line frame")
 -- Legacy keys are copies of their token, so older screens passing them must still match.
 local legacyGold = UI:CreateBadge(parent, "oficial", C.accent)
-check(same(legacyGold.bg, C.gold, 1) and same(legacyGold.label.color, C.onGold), "a badge in the legacy accent is filled like gold")
+check(legacyGold.bg[4] == 0 and same(legacyGold.label.color, C.label), "a badge in the legacy accent is neutral too")
 local legacyRed = UI:CreateBadge(parent, "falta", C.red)
 check(same(legacyRed.border, C.danger, 1) and same(legacyRed.label.color, C.danger), "a badge in the legacy red gets the danger frame")
-plain:SetText("oficial", C.gold)
-check(same(plain.bg, C.gold, 1) and same(plain.label.color, C.onGold) and plain.label.text == "oficial",
+plain:SetText("falta", C.danger)
+check(same(plain.border, C.danger, 1) and same(plain.label.color, C.danger) and plain.label.text == "falta",
   "SetText with a colour repaints the badge")
 plain:SetText("raider")
-check(same(plain.bg, C.gold, 1) and plain.label.text == "raider", "SetText without a colour keeps the badge's paint")
+check(same(plain.border, C.danger, 1) and plain.label.text == "raider", "SetText without a colour keeps the badge's paint")
+for _, badge in ipairs({ officer, plain, absent, trial, legacyGold, legacyRed }) do
+  check(badge.bg[4] == 0, "no badge is ever filled")
+end
 
 -- ── Progress bar ────────────────────────────────────────────────────────
 local goal = UI:CreateProgressBar(parent, 100)
@@ -271,16 +269,16 @@ goal:SetProgress(1)
 check(goal.bar.w == 198, "the fill follows the bar's width after a resize (issue #33)")
 goal:SetWidth(100)
 goal:SetProgress(0.31)
-check(same(goal.bar.color, C.gold, 1), "progress toward a goal is gold, never danger")
+check(same(goal.bar.color, C.textSoft, 1), "progress toward a goal is textSoft, never gold or danger")
 goal:SetProgress(0.99)
-check(same(goal.bar.color, C.gold, 1), "an unfinished goal stays gold")
+check(same(goal.bar.color, C.textSoft, 1), "an unfinished goal stays textSoft")
 goal:SetProgress(1)
 check(same(goal.bar.color, C.ok, 1), "a completed goal is ok")
 
 local score = UI:CreateProgressBar(parent, 100, 8, true)
 for _, case in ipairs({
-  { 0.85, C.ok, "85%" }, { 0.8, C.ok, "exactly 80%" }, { 0.7999, C.gold, "just under 80%" },
-  { 0.6, C.gold, "exactly 60%" }, { 0.5999, C.danger, "just under 60%" }, { 0.31, C.danger, "31%" },
+  { 0.85, C.ok, "85%" }, { 0.8, C.ok, "exactly 80%" }, { 0.7999, C.warn, "just under 80%" },
+  { 0.6, C.warn, "exactly 60%" }, { 0.5999, C.danger, "just under 60%" }, { 0.31, C.danger, "31%" },
 }) do
   score:SetProgress(case[1])
   check(same(score.bar.color, case[2], 1), "a score bar at " .. case[3])
@@ -289,23 +287,24 @@ end
 -- ── Tab ─────────────────────────────────────────────────────────────────
 local tab = UI:CreateTab(parent, "roster")
 check(tab.h == 28 and not tab.underline.shown and same(tab.label.color, C.label), "tab at rest: label text, no rule")
+check(tab.label.font.file == F.mono and tab.label.font.size == 11, "a tab label is mono 11")
 tab:Fire("OnEnter")
 check(same(tab.label.color, C.text) and not tab.underline.shown, "tab hover: paper, still no rule")
 tab:Fire("OnLeave")
 tab:SetActive(true)
-check(tab.underline.shown and tab.underline.h == 2 and same(tab.underline.color, C.gold, 1) and same(tab.label.color, C.text),
-  "active tab: paper and a 2px gold rule")
+check(tab.underline.shown and tab.underline.h == 2 and same(tab.underline.color, C.gold, 1) and same(tab.label.color, C.gold),
+  "active tab: gold label and a 2px gold rule")
 tab:Fire("OnMouseDown")
 check(same(tab.bg, C.panel, 1), "tab pressed: panel fill")
 tab.mouseOver = false
 tab:Fire("OnMouseUp")
 check(tab.bg[4] == 0 and tab.underline.shown, "tab released: no fill, the active rule stays")
 tab:Fire("OnEnter")
-check(tab.underline.shown and same(tab.label.color, C.text), "an active tab keeps its rule while hovered")
+check(tab.underline.shown and same(tab.label.color, C.gold), "an active tab keeps its rule and gold while hovered")
 tab.mouseOver = true
 tab:Fire("OnMouseDown")
 tab:Fire("OnMouseUp")
-check(tab.bg[4] == 0 and same(tab.label.color, C.text), "a click released over the tab: no fill, still lit")
+check(tab.bg[4] == 0 and same(tab.label.color, C.gold), "a click released over the tab: no fill, still gold")
 
 -- ── Scrollbar ───────────────────────────────────────────────────────────
 local scrollFrame = CreateFrame("ScrollFrame")
@@ -326,10 +325,11 @@ check(same(scrollBar.customThumb.color, C.lineHi, 1), "scrollbar leave: the thum
 
 -- ── Text ────────────────────────────────────────────────────────────────
 local title = UI:CreateTitle(parent, "Roster da guilda")
-check(title.font.file == F.serif and title.font.size == 16 and same(title.color, C.text), "window title: Spectral 16, paper")
+check(title.font.file == F.sansStrong and title.font.size == 16 and same(title.color, C.text),
+  "window title: Plex Sans SemiBold 16, paper")
 local small = UI:CreateText(parent, "offline", 9)
-check(small.font.file == F.mono and small.font.size == 10 and small.font.flags == "" and small.shadow[1] == 0,
-  "small text: mono at 10px, no outline, no shadow")
+check(small.font.file == F.sans and small.font.size == 11 and small.font.flags == "" and small.shadow[1] == 0,
+  "small text: sans at 11px, no outline, no shadow")
 local head = UI:CreateHeaderText(parent, "membro")
 check(head.font.file == F.monoStrong and head.font.size == 10 and same(head.color, C.label),
   "a header: mono Medium 10 in label")
@@ -356,41 +356,11 @@ check(same(close.bg, C.popup, 1) and same(close.border, C.lineHi, 1) and same(cl
 close:Fire("OnLeave")
 check(close.bg[4] == 0 and close.border[4] == 0 and same(close.x.color, C.label), "close leave: back to rest")
 
--- ── Drop shadow: eight pieces that fade outward ─────────────────────────
+-- ── Popup: no shadow, a lineHi border ───────────────────────────────────
 local pop = CreateFrame("Frame")
-UI:StylePopup(pop, { noSheen = true })
-local shadow = pop.dropShadow
-check(shadow and #shadow.textures == 8, "a popup shadow is eight pieces around the frame")
--- piece order: top-left, top-right, bottom-left, bottom-right, top, bottom, left, right
-local EXPECT = {
-  { { 0, 0.5, 0, 0.5 },       { "BOTTOMRIGHT", "TOPLEFT" } },
-  { { 0.5, 1, 0, 0.5 },       { "BOTTOMLEFT", "TOPRIGHT" } },
-  { { 0, 0.5, 0.5, 1 },       { "TOPRIGHT", "BOTTOMLEFT" } },
-  { { 0.5, 1, 0.5, 1 },       { "TOPLEFT", "BOTTOMRIGHT" } },
-  { { 0.49, 0.51, 0, 0.5 },   { "BOTTOMLEFT", "TOPLEFT" } },
-  { { 0.49, 0.51, 0.5, 1 },   { "TOPLEFT", "BOTTOMLEFT" } },
-  { { 0, 0.5, 0.49, 0.51 },   { "TOPRIGHT", "TOPLEFT" } },
-  { { 0.5, 1, 0.49, 0.51 },   { "TOPLEFT", "TOPRIGHT" } },
-}
-for i, want in ipairs(EXPECT) do
-  local t = shadow.textures[i]
-  local c, pnt = t.coords, t.points[1]
-  check(t.file:find("drop%-shadow%.tga") ~= nil, "shadow piece " .. i .. " uses the shadow texture")
-  check(c and near(c[1], want[1][1]) and near(c[2], want[1][2]) and near(c[3], want[1][3]) and near(c[4], want[1][4]),
-    "shadow piece " .. i .. " takes the quadrant whose centre touches the frame")
-  check(pnt and pnt[1] == want[2][1] and pnt[2] == pop and pnt[3] == want[2][2],
-    "shadow piece " .. i .. " sits outside the frame, against its edge")
-  check(near(t.alpha, 1), "shadow piece " .. i .. " is at full strength by default")
-end
-local soft = CreateFrame("Frame")
-UI:CreateDropShadow(soft, 10, C.shadow.a / 2)
-check(near(soft.dropShadow.textures[1].alpha, 0.5) and soft.dropShadow.textures[1].w == 10,
-  "a lighter, shorter shadow scales the pieces")
-local reach = shadow.textures
-for i = 1, 4 do
-  check(reach[i].w == 12 and reach[i].h == 12, "shadow corner " .. i .. " reaches 12px")
-end
-check(reach[5].h == 12 and reach[6].h == 12 and reach[7].w == 12 and reach[8].w == 12, "the shadow edges reach 12px")
+UI:StylePopup(pop, { noSheen = true, shadowSize = 16 })
+check(pop.dropShadow == nil and UI.CreateDropShadow == nil, "a popup has no shadow, whatever the caller asks")
+check(same(pop.border, C.lineHi, 1), "a popup: lineHi border")
 
 -- ── Fade: the only motion, 0.1s at most ─────────────────────────────────
 pop:Fire("OnShow")
@@ -402,17 +372,20 @@ check(fades[#fades].frame == slow and near(fades[#fades].duration, 0.1), "no fad
 
 -- ── Metric chip ─────────────────────────────────────────────────────────
 local chip = UI:CreateMetricChip(parent, "41", "membros")
-check(chip.value.font.file == F.mono and chip.value.font.size == 22
-  and chip.rule.w == 34 and chip.rule.h == 1 and same(chip.rule.color, C.gold, 1)
-  and chip.label.font.file == F.mono and chip.label.font.size == 10 and same(chip.label.color, C.labelDim),
-  "a metric chip: mono 22 value, 34px gold rule, mono 10 labelDim caption")
+check(chip.value.font.file == F.mono and chip.value.font.size == 24
+  and chip.rule.h == 1 and same(chip.rule.color, C.gold, 1)
+  and chip.label.font.file == F.mono and chip.label.font.size == 10 and same(chip.label.color, C.label),
+  "a metric chip: mono 24 value, 1px gold rule, mono 10 label caption")
+local r1, r2 = chip.rule.points[1], chip.rule.points[2]
+check(r1 and r1[1] == "TOPLEFT" and r2 and r2[1] == "TOPRIGHT", "the rule runs across the top of the chip")
+check(chip.value.points[1][1] == "TOPLEFT" and chip.value.points[1][3] == -9, "the value sits 8px under the rule")
 
 -- ── Sub-tabs (issue #14) ────────────────────────────────────────────────
 local subTab = UI:CreateTab(parent, "sessões", 110, true)
 check(subTab.underline.h == 1, "a sub-tab's active rule is 1px")
 check(UI:CreateTab(parent, "roster").underline.h == 2, "a tab's active rule stays 2px")
 subTab:SetActive(true)
-check(subTab.underline.shown and same(subTab.label.color, C.text), "an active sub-tab: paper label over its rule")
+check(subTab.underline.shown and same(subTab.label.color, C.gold), "an active sub-tab: gold label over its rule")
 local subBar = UI:StyleSubTabBar(CreateFrame("Frame"))
 check(subBar.bg and subBar.bg.layer == "BACKGROUND" and same(subBar.bg.color, C.panel, 1), "a sub-tab bar sits on panel")
 

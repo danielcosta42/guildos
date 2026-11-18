@@ -1058,6 +1058,15 @@ GuildOS.UI = setmetatable({
     return b
   end,
   CreateCheckbox = function() return widget({ checkbox = widget() }) end,
+  -- The loot windows' boxes are the shared field since #371: an EditBox of `widgets`, its scripts hooked.
+  CreateInput = function()
+    local w = CreateFrame("EditBox")
+    w.HookScript = function(self, name, fn)
+      local prev = self.scripts[name]
+      self.scripts[name] = prev and function(...) prev(...); fn(...) end or fn
+    end
+    return w
+  end,
   AttachSaveButton = function(_, box, onSave)
     box.saveButton = widget({ text = "Save" })
     box.save = function(text) box.text = text; onSave(box) end

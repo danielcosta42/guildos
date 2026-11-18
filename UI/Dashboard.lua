@@ -298,7 +298,7 @@ function GuildOS:CreateDashboardPanel(panel)
         clearBody(body)
         -- Switched off in Settings, no popup will come: say so instead of offering one (issue #84).
         if not GuildOS:IsFeatureEnabled("recruitment") then
-            local off = UI:CreateText(body, L["The Recruitment module is off. Turn it on in Settings > General > Modules."], 10, C.silver.r, C.silver.g, C.silver.b)
+            local off = UI:CreateText(body, L["The Recruitment module is off. Turn it on in Settings > Modules."], 10, C.silver.r, C.silver.g, C.silver.b)
             off:SetPoint("TOPLEFT", 2, -2); off:SetWidth(body:GetWidth() - 4); off:SetJustifyH("LEFT")
             return
         end

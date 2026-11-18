@@ -247,7 +247,7 @@ local function newCard(parent, title)
     local card = UI:CreatePanel(parent)
     card:SetFrameLevel(parent:GetFrameLevel() + 1)
     card:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1)
-    card.title = newText(card, 15, "sectionTitle", C.text)
+    card.title = newText(card, nil, "sectionTitle", C.text)
     card.title:SetPoint("TOPLEFT", CARD_PAD, -CARD_PAD)
     card.title:SetText(title)
     return card
@@ -286,7 +286,7 @@ local function acquireRow(list, i)
     r.mark:SetSize(MARK, MARK)
     r.mark:SetPoint("LEFT", 8, 0)
 
-    r.time = newText(r, 10, "caption", C.labelDim)
+    r.time = newText(r, 10, "caption", C.label)
     r.time:SetPoint("LEFT", 8, 0)
     r.time:SetWidth(TIME_W)
 

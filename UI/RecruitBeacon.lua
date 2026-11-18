@@ -54,7 +54,7 @@ local function StylePopupFrame(name, w, h)
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -67,21 +67,13 @@ local function StylePopupFrame(name, w, h)
     return f
 end
 
--- A labelled EditBox row; returns the editbox.
+-- A labelled field row; returns the field. The label is a form label in the text colour and the
+-- field the shared one (#371).
 local function MakeInput(parent, y, labelText, width)
-    local lbl = UI:CreateText(parent, labelText, 10, C.silver.r, C.silver.g, C.silver.b)
+    local lbl = UI:CreateText(parent, labelText, 10, C.text.r, C.text.g, C.text.b)
     lbl:SetPoint("TOPLEFT", 12, y)
-    local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    box:SetSize(width, 22)
+    local box = UI:CreateInput(parent, width, 22)
     box:SetPoint("TOPLEFT", 12, y - 14)
-    box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    box:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(box, 11)
-    box:SetTextColor(C.white.r, C.white.g, C.white.b)
-    box:SetTextInsets(8, 8, 0, 0)
-    box:SetAutoFocus(false)
-    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     return box
 end
 
@@ -116,46 +108,33 @@ local function BuildComposer()
     f.refreshers = {}
 
     -- A wrapped grid of toggle buttons bound to a list field of the ad
-    -- (needs / focus / langs). Returns the bottom y so sections flow.
+    -- (needs / focus / langs). Returns the bottom y so sections flow. A token the ad has is the
+    -- selected button (UI:SetSelected, #371), not a fill in its class colour.
     local function Grid(labelText, tokens, field, startY)
         if labelText ~= "" then
-            local lbl = UI:CreateText(f, labelText, 10, C.silver.r, C.silver.g, C.silver.b)
+            local lbl = UI:CreateText(f, labelText, 10, C.text.r, C.text.g, C.text.b)
             lbl:SetPoint("TOPLEFT", 12, startY)
         end
         local btns, refresh = {}, nil
         local x, y = 12, startY - 14
         for _, tok in ipairs(tokens) do
-            local btn = CreateFrame("Button", nil, f, "BackdropTemplate")
-            btn:SetSize(56, 20)
+            local btn = UI:CreateButton(f, TokenLabel(tok), 56, 20)
+            -- A label wider than the button grows it ("Hexenmeister"): the row flows on its real width.
+            if x > 12 and x + btn:GetWidth() > 398 then x = 12; y = y - 24 end
             btn:SetPoint("TOPLEFT", x, y)
-            btn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-            local fs = btn:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(fs, 9)
-            fs:SetPoint("CENTER")
-            fs:SetText(TokenLabel(tok))
-            btn.token = tok; btn.fs = fs
+            btn.token = tok
             btn:SetScript("OnClick", function()
                 ToggleTok(RB():GetAd()[field], tok)
                 RB():MarkEdited()
                 if refresh then refresh() end
             end)
             btns[#btns + 1] = btn
-            x = x + 62
-            if x > 360 then x = 12; y = y - 24 end
+            x = x + btn:GetWidth() + 6
         end
         refresh = function()
             local list = RB():GetAd()[field]
             for _, btn in ipairs(btns) do
-                if HasTok(list, btn.token) then
-                    local r, g, b = TokenColor(btn.token)
-                    btn:SetBackdropColor(r * 0.35, g * 0.35, b * 0.35, 0.95)
-                    btn:SetBackdropBorderColor(r, g, b, 0.9)
-                    btn.fs:SetTextColor(1, 1, 1)
-                else
-                    btn:SetBackdropColor(0.10, 0.10, 0.13, 1.0)
-                    btn:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-                    btn.fs:SetTextColor(0.55, 0.55, 0.55)
-                end
+                UI:SetSelected(btn, HasTok(list, btn.token))
             end
         end
         f.refreshers[#f.refreshers + 1] = refresh
@@ -168,7 +147,7 @@ local function BuildComposer()
     y = Grid(L["Languages:"], LANGS, "langs", y - 10)
 
     -- Live-for (TTL) cycle button — how long the ad keeps relaying after we log off.
-    local ttlLbl = UI:CreateText(f, L["Live for (days):"], 10, C.silver.r, C.silver.g, C.silver.b)
+    local ttlLbl = UI:CreateText(f, L["Live for (days):"], 10, C.text.r, C.text.g, C.text.b)
     ttlLbl:SetPoint("TOPLEFT", 12, y - 10)
     local ttlBtn = UI:CreateButton(f, "7", 50, 20)
     ttlBtn:SetPoint("LEFT", ttlLbl, "RIGHT", 8, -1)
@@ -183,15 +162,16 @@ local function BuildComposer()
     y = y - 34
 
     -- Days + note
+    -- Hooked: SetScript would drop the shared field's own handlers (#371).
     local daysBox = MakeInput(f, y, L["Raid days / times:"], 386)
-    daysBox:SetScript("OnTextChanged", function(self) RB():SetAdField("days", self:GetText() or "") end)
+    daysBox:HookScript("OnTextChanged", function(self) RB():SetAdField("days", self:GetText() or "") end)
     y = y - 42
     local noteBox = MakeInput(f, y, L["Short note:"], 386)
     noteBox:SetMaxLetters(120)
-    noteBox:SetScript("OnTextChanged", function(self) RB():SetAdField("note", self:GetText() or "") end)
+    noteBox:HookScript("OnTextChanged", function(self) RB():SetAdField("note", self:GetText() or "") end)
 
-    -- Reach hint + broadcast
-    local hint = UI:CreateText(f, L["Yelled zone-wide (cities) + your guild while enabled."], 9, C.accentDim.r, C.accentDim.g, C.accentDim.b)
+    -- Reach hint + broadcast: the hint over the button it explains, a note in textSoft, not gold (#371)
+    local hint = UI:CreateText(f, L["Yelled zone-wide (cities) + your guild while enabled."], 9, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     hint:SetPoint("BOTTOMLEFT", 12, 40)
 
     local castBtn = UI:CreateButton(f, L["Broadcast now"], 120, 24)
@@ -261,7 +241,10 @@ local function BuildInbox()
         row = CreateFrame("Frame", nil, f, "BackdropTemplate")
         row:SetSize(410, INBOX_ROW_H - 4)
         row:SetPoint("TOPLEFT", 10, LIST_TOP - (i - 1) * INBOX_ROW_H)
-        row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(row) })
+        -- A card of the list: the well with a 1px line (#371); the backdrop's own colour is white.
+        row:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+        row:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
 
         row.guildFS = row:CreateFontString(nil, "OVERLAY")
         GuildOS:ApplyFont(row.guildFS, 12)
