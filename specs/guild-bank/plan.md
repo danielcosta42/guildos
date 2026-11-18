@@ -70,3 +70,13 @@ says the slots changed when an item is picked up, and that word arrived after th
 now judged by the tab alone: it landed once the tab differs from before it, unlocked, and reads the
 same twice in a row; unchanged for 2 s, refused. An item left on the cursor is let go before any
 wait on a lock, since its slot stays locked until the cursor lets go.
+
+### Pipelined (faster)
+
+Moves go out back to back instead of one per server round trip. The run keeps a model of the tab as
+it will be and plans on it; the planner skips slots a move in flight still uses (`busy`) and offers
+the next independent move. Up to 2 moves fly at first, up to 4 after 6 in a row land; any move whose
+two slots do not show the expected result within 2 s sends the run back to the real tab, one move at
+a time. Until a swap has landed with nothing handed back on the cursor, a swap flies alone. Measured
+on the stub (90 items shuffled, 0.3 s server lag): 68 s before, 19 s now with swaps; 76 s → 26 s
+through free slots.

@@ -89,7 +89,7 @@ end
 
 -- The first merge left: two stacks of one item that are not full. The bigger takes from the smaller
 -- (ties: the earlier slot takes, the later slot gives), so the item ends in as few slots as it can.
-local function nextMerge(slots, size, stack)
+local function nextMerge(slots, size, stack, busy)
     local partial = {}
     for i = 1, size do
         local s = slots[i]
@@ -102,9 +102,12 @@ local function nextMerge(slots, size, stack)
             end
         end
     end
-    local best
+    local best, blocked
     for k, list in pairs(partial) do
-        if #list >= 2 then
+        local touched = false
+        if busy then for _, i in ipairs(list) do if busy[i] then touched = true end end end
+        if #list >= 2 and touched then blocked = true end
+        if #list >= 2 and not touched then
             local to, from = list[1], list[1]
             for _, i in ipairs(list) do
                 if slots[i].c > slots[to].c then to = i end
@@ -119,7 +122,7 @@ local function nextMerge(slots, size, stack)
             end
         end
     end
-    return best
+    return best, blocked
 end
 
 -- The next move that brings the tab closer to Plan.Target, or nil when it already holds it.
@@ -134,40 +137,53 @@ end
 -- ordered: nil, "full".
 -- `swaps`: the client does swap (a drop on another item trades the two): then the slot is filled
 -- straight from where its item is, one move per misplaced stack, and no free slot is needed.
-function Plan.PlanMove(slots, size, rank, stack, swaps)
-    local merge = nextMerge(slots, size, stack)
+-- `busy`: slots a move in flight still uses (the pipelined run). They are neither touched nor
+-- waited on: the next move that does not need one is returned, or nil, "busy" when every move left
+-- needs one.
+function Plan.PlanMove(slots, size, rank, stack, swaps, busy)
+    local merge, blocked = nextMerge(slots, size, stack, busy)
     if merge then return merge end
+    if blocked then return nil, "busy" end
     local target = Plan.Target(slots, size, rank, stack)
+    local waiting = false
     for i, want in ipairs(target) do
         local cur = slots[i]
         if not (cur and cur.k == want.k and cur.c == want.c) then
+            if busy and busy[i] then
+                waiting = true
             -- Fill it straight from where its stack is: into an empty slot; onto a smaller stack of
             -- the same item (the drop merges, the remainder stays behind: a swap in effect); or,
             -- where the client swaps, onto anything else.
-            if not cur or (cur.k == want.k and cur.c < want.c) or (swaps and cur.k ~= want.k) then
+            elseif not cur or (cur.k == want.k and cur.c < want.c) or (swaps and cur.k ~= want.k) then
+                local found = false
                 for j = i + 1, size do
                     local s = slots[j]
                     if s and s.k == want.k and s.c == want.c then
-                        return { op = "move", from = j, to = i }
+                        if not (busy and busy[j]) then return { op = "move", from = j, to = i } end
+                        found = true
                     end
                 end
-                return nil   -- not reachable once every merge is made; never loop on it
-            end
-            -- Move what is in the way out: home if its place is free, else to the end of the tab.
-            local park
-            for k = i + 1, size do
-                local w = target[k]
-                if not slots[k] and w and w.k == cur.k and w.c == cur.c then park = k; break end
-            end
-            if not park then
-                for k = size, i + 1, -1 do
-                    if not slots[k] then park = k; break end
+                if not found and not busy then return nil end   -- not reachable once every merge is made
+                waiting = true
+            else
+                -- Move what is in the way out: home if its place is free, else to the end of the tab.
+                local park
+                for k = i + 1, size do
+                    local w = target[k]
+                    if not slots[k] and not (busy and busy[k]) and w and w.k == cur.k and w.c == cur.c then park = k; break end
                 end
+                if not park then
+                    for k = size, i + 1, -1 do
+                        if not slots[k] and not (busy and busy[k]) then park = k; break end
+                    end
+                end
+                if park then return { op = "move", from = i, to = park } end
+                if not busy then return nil, "full" end
+                waiting = true
             end
-            if not park then return nil, "full" end
-            return { op = "move", from = i, to = park }
         end
     end
+    if waiting then return nil, "busy" end
     return nil
 end
 

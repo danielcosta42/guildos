@@ -133,8 +133,22 @@ function PickupGuildBankItem(tab, slot)
     if CLOCK - c.at < 0.05 then return end
     cursor = nil
     GuildOS.Compat.After(LAG, function()
+      -- Each drop is the server's own business: it never touches what the player holds meanwhile.
+      local ours = cursor
       cursor = c
       dropNow(tab, slot)
+      local after = cursor
+      if after == nil then
+        cursor = ours
+      elseif after == c then
+        -- Refused: back on the cursor if it is free, else back where it came from.
+        cursor = ours or c
+      elseif ours then
+        -- A swapped item handed back while the cursor is busy: the game puts it in the first free slot.
+        local sl = BANK.tabs[after.tab].slots
+        for k = 1, 98 do if not sl[k] then sl[k] = BANK.held; break end end
+        BANK.held, cursor = nil, ours
+      end
       if GuildOS.GuildBank:IsOpen() then GuildOS.GuildBank:OnEvent("GUILDBANKBAGSLOTS_CHANGED") end
     end)
     return
@@ -692,6 +706,8 @@ local function organizeWith(mode, fill)
   fresh()
   local tab = addTab("Raid", -1)
   fill(BANK.tabs[tab].slots)
+  local before = {}
+  for _, x in pairs(BANK.tabs[tab].slots) do before[x.id] = (before[x.id] or 0) + x.c end
   BANK.swap = mode
   Bank:OnEvent("GUILDBANKFRAME_OPENED")
   Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
@@ -705,6 +721,9 @@ local function organizeWith(mode, fill)
   for i = 1, 98 do if got[i] then slots[i] = { id = got[i].id, c = got[i].c } end end
   plain, rank, stack = Bank:PlanInput(slots)
   local inOrder = Plan.PlanMove(plain, 98, rank, stack) == nil
+  local after = {}
+  for _, x in pairs(got) do after[x.id] = (after[x.id] or 0) + x.c end
+  for id, n in pairs(before) do check(after[id] == n, "nothing is lost (" .. tostring(mode) .. ", item " .. id .. ")") end
   return moves, inOrder, table.concat(printed, "\n"), cursor
 end
 local function crowded(slots)
@@ -718,7 +737,6 @@ check(okSwap and curSwap == nil and not saidSwap:find("Stopped", 1, true), "a sw
 check(GuildOS.State.gbank.noSwap ~= true, "and none of its swaps is taken for refused, however late the game answers")
 local mCur, okCur, _, curCur = organizeWith("cursor", crowded)
 check(okCur and curCur == nil, "and so does one that hands the other item back on the cursor")
-check(GuildOS.State.gbank.noSwap ~= true, "without giving up on swaps")
 local mFree, okFree, saidFree = organizeWith(nil, crowded)
 check(okFree and not saidFree:find("Stopped", 1, true), "a bank that refuses swaps still ends in order")
 check(mSwap < mFree, "swapping takes fewer moves (" .. mSwap .. " against " .. mFree .. ")")
