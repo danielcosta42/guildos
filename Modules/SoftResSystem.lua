@@ -247,9 +247,18 @@ function SoftRes:Hidden()
     return site ~= nil and site.hidden == true
 end
 
--- `list` cut to the player's own reserves when the sheet is hidden, whole otherwise.
+-- Who reads the other players' reserves: everybody unless the site hides the sheet (R8), and then the
+-- master looter and the officers. Tooltips and the tab go through here; a RAID-chat line never reveals a
+-- hidden sheet at all (it asks Hidden).
+function SoftRes:OthersVisible()
+    if not self:Hidden() then return true end
+    local lm = GuildOS.LootMaster
+    return (GuildOS.IsOfficer and GuildOS:IsOfficer() or lm and lm:IsMasterLooter()) and true or false
+end
+
+-- `list` cut to the player's own reserves when the others' are not theirs to read, whole otherwise.
 function SoftRes:OwnOnly(list)
-    if not self:Hidden() then return list end
+    if self:OthersVisible() then return list end
     local me = strlower(GuildOS.Compat.PlayerName() or "")
     local out = {}
     for _, e in ipairs(list) do

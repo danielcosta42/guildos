@@ -33,7 +33,8 @@ function UnitClass() return "Chehul", "WARRIOR" end
 function GetRealmName() return "Firemaw" end
 function GetNumGuildMembers() return 0 end
 function GetGuildRosterInfo() end
-function GetServerTime() return 1795000000 end
+local SERVER = 1795000000
+function GetServerTime() return SERVER end
 time = os.time
 
 local registry = {}
@@ -145,9 +146,10 @@ fresh({ FIXTURE })
 local before = gameTables()
 check(Import:ConsumeInbox() == true, "the inbox is taken")
 local site = GuildOS.db.siteLoot
-check(site and site.raidId == "raid-556-fixture" and site.startsAt == 1795000000, "db.siteLoot is the soonest raid's")
-check(site.softres.items[30106][1].hard == true and site.softres.hidden == true, "with the reserves")
-check(site.prios[30104][2].name == "Rias" and site.wishlists["dora"].name == "Dora", "the prios and the wishlists")
+local entry = site and site.raids and site.raids["raid-556-fixture"]
+check(entry and entry.startsAt == 1795000000 and site.at == time(), "db.siteLoot holds the raid by its id, stamped with the read")
+check(entry.softres.items[30106][1].hard == true and entry.softres.hidden == true, "with the reserves")
+check(entry.prios[30104][2].name == "Rias" and entry.wishlists["dora"].name == "Dora", "the prios and the wishlists")
 check(gameTables() == before, "the game's own tables are untouched")
 check(Import:ConsumeInbox() == false, "an unchanged inbox is skipped")
 
@@ -158,18 +160,29 @@ check(GuildOS.db.siteLoot == nil, "and leaves db.siteLoot nil")
 check(Import:Parse(V5).loot == nil, "roster.loot is nil with none of the three")
 check(gameTables() == before, "tables untouched")
 
--- The soonest raid decides: a later one with loot does not stand in for it, and a roster that moves to a
--- raid with none clears what was kept.
+-- One entry per raid, from every roster of the inbox, replaced by raidId; a raid the inbox stops listing
+-- keeps its entry until its night is over (R14), and one that lists it without loot takes it away.
 fresh({ wire('{"fmt":"GOSROST1","v":6,"raidId":"early","startsAt":1000,"members":[{"name":"Ana","class":"MAGE"}]}'), FIXTURE })
 Import:ConsumeInbox()
-check(GuildOS.db.companionRoster.raidId == "early" and GuildOS.db.siteLoot == nil, "the soonest raid's loot, nil when it has none")
-GuildOS.db.siteLoot = { raidId = "stale" }
-_G.GuildOSInbox = { FIXTURE }
-Import:ConsumeInbox()
-check(GuildOS.db.siteLoot.raidId == "raid-556-fixture", "a new inbox replaces it")
+check(GuildOS.db.companionRoster.raidId == "early", "the soonest roster is still the one in hand")
+check(GuildOS.db.siteLoot.raids["raid-556-fixture"] and GuildOS.db.siteLoot.raids.early == nil,
+  "and the loot of a later raid is kept all the same, a raid with none has no entry")
+GuildOS.db.siteLoot.raids.old = { startsAt = SERVER - 9 * 3600, softres = { items = {} } }
+GuildOS.db.siteLoot.raids.tonight = { startsAt = SERVER - 3600, softres = { items = {} } }
 _G.GuildOSInbox = { V5 }
 Import:ConsumeInbox()
-check(GuildOS.db.siteLoot == nil, "and a roster with none clears it")
+local kept = GuildOS.db.siteLoot.raids
+check(kept["raid-556-fixture"] and kept.tonight, "an inbox that no longer lists a raid keeps it while its night lasts")
+check(kept.old == nil, "and drops what is past its window")
+_G.GuildOSInbox = { wire('{"fmt":"GOSROST1","v":6,"raidId":"raid-556-fixture","startsAt":1795000000,"members":[{"name":"Ana","class":"MAGE"}]}') }
+Import:ConsumeInbox()
+check(GuildOS.db.siteLoot.raids["raid-556-fixture"] == nil, "a raid listed again with none loses its entry")
+SERVER = SERVER + 9 * 3600
+_G.GuildOSInbox = { V5, FIXTURE:sub(1, -1) .. "" }
+Import._lastInbox = nil
+Import:ConsumeInbox()
+check(GuildOS.db.siteLoot and GuildOS.db.siteLoot.raids.tonight == nil, "later, the night is over and goes")
+SERVER = 1795000000
 
 -- ── 3. Refusals ──────────────────────────────────────────────────────
 local function inboxOf(raw)
@@ -254,6 +267,6 @@ check(lootOf('"prios":[],"wishlists":[],"softres":{"soft":[],"hard":[]}') == nil
 
 -- Through the inbox: a refused field means no siteLoot, and no exception.
 check(inboxOf(roster(wishlist(61))) == nil and GuildOS.db.companionRoster, "ConsumeInbox: the roster, without the loot")
-check(inboxOf(roster(wishlist(2))).wishlists.ana, "ConsumeInbox: and with it when it holds")
+check(inboxOf(roster(wishlist(2))).raids.r1.wishlists.ana, "ConsumeInbox: and with it when it holds")
 
 print(("site-loot: %d checks passed"):format(checks))

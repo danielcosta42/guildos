@@ -55,12 +55,14 @@ RAID_CLASS_COLORS = {}
 function hooksecurefunc() end
 function GetBuildInfo() return "2.5.6", "60000", "", 20506 end
 WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 5
-function GetInstanceInfo() return "Karazhan", "raid", 9, "", 10, 0, false, 532 end
+local instance = 532   -- Karazhan; another number is another place
+function GetInstanceInfo() return "Karazhan", "raid", 9, "", 10, 0, false, instance end
 function GetRealmName() return "Realm" end
 local NOW = 1791000000
 local clock = NOW
 function GetServerTime() return clock end
-function time() return clock end
+local skew = 0   -- this PC's clock against the realm's
+function time() return clock + skew end
 function GetTime() return 100 end
 date = os.date
 function IsInGuild() return true end
@@ -163,10 +165,10 @@ function GuildOS:ShowsItemTooltipInfo() return true end
 local LINK = "|cffa335ee|Hitem:28770::::::::70:::::|h[Nathrezim Mindblade]|h|r"
 local function K(name) return GuildOS:GetPlayerKey(name) end
 
--- What the site holds for the night, in the addon's own shapes.
+-- What the site holds for the night of raid r1, in the addon's own shapes, one entry per raid.
 local function siteNight(over)
   local s = {
-    raidId = "r1", startsAt = NOW, at = NOW,
+    startsAt = NOW, instanceKey = "kara",
     softres = { items = { [ITEM] = { { name = "Ana", class = "MAGE", note = "", plusOnes = 0, hard = true } } } },
     prios = { [ITEM] = { { name = "Bo", class = "MAGE", order = 1 }, { name = "Ana", class = "MAGE", order = 2 } } },
     wishlists = {
@@ -175,8 +177,13 @@ local function siteNight(over)
     },
   }
   for k, v in pairs(over or {}) do s[k] = v end
-  GuildOS.db.siteLoot = s
+  GuildOS.db.siteLoot = { at = time(), raids = { r1 = s } }
   return s
+end
+local function site() return GuildOS.db.siteLoot.raids.r1 end
+local function officerView(on)   -- whether this client is an officer / the master looter
+  GuildOS.IsOfficer = function() return on end
+  LM.IsMasterLooter = function() return on end
 end
 local function names(list)
   local out = {}
@@ -260,16 +267,16 @@ clock = NOW
 
 -- ── 3. A hidden sheet ────────────────────────────────────────────────
 siteNight()
-GuildOS.db.siteLoot.softres.hidden = true
+site().softres.hidden = true
 said, printed = {}, {}
 LM:AnnounceSoftReserves(ITEM)
 check(#said == 0, "hidden: nothing said in chat")
 check(#printed == 1, "hidden: the master looter is told, locally, that it was not")
-GuildOS.db.siteLoot.softres.hidden = nil
+site().softres.hidden = nil
 said, printed = {}, {}
 LM:AnnounceSoftReserves(ITEM)
 check(#said == 1 and said[1]:find("Ana", 1, true) and #printed == 0, "not hidden: announced as ever")
-GuildOS.db.siteLoot.softres.hidden = true
+site().softres.hidden = true
 
 local function tooltipLines()
   local lines, hooks = {}, {}
@@ -283,14 +290,18 @@ local function tooltipLines()
   GuildOS.Compat.HookTooltip, GuildOS.Compat.TooltipItem = old, oldItem
   return table.concat(lines, "\n")
 end
-check(not tooltipLines():find("Ana", 1, true), "hidden: Ana's reserve is not in the tooltip of Lead")
+officerView(false)
+check(not tooltipLines():find("Ana", 1, true), "hidden: Ana's reserve is not in the tooltip of a raider")
+check(not SR:OthersVisible(), "hidden: the others' reserves are not a raider's to read")
 GuildOS.Compat.PlayerName = function() return "Ana" end
 check(tooltipLines():find("Ana", 1, true), "hidden: but a player's own reserve still shows")
 GuildOS.Compat.PlayerName = saved
+officerView(true)
+check(SR:OthersVisible() and tooltipLines():find("Ana", 1, true), "hidden: the master looter and the officers read them")
 c = roll()
 check(c("Ana").softRes and c("Ana").softRes.hard, "hidden: the roll still sees the reserve")
 check(names(SR:GetInRaidReserves(ITEM)) == "Ana", "hidden: and the loot master's window")
-GuildOS.db.siteLoot.softres.hidden = nil
+site().softres.hidden = nil
 check(tooltipLines():find("Ana", 1, true), "visible: the tooltip lists it")
 
 -- ── 4. The game's tables after the nights ───────────────────────────
@@ -324,7 +335,7 @@ do
   local LD = LibStub("LibDeflate")
   local function wire(json) return "GOSROST1:" .. LD:EncodeForPrint(LD:CompressDeflate(json)) end
   _G.GuildOSInbox = { wire('{"fmt":"GOSROST1","v":6,"raidId":"rx","title":"T","startsAt":' .. NOW
-    .. ',"instanceKey":"karazhan","members":[{"key":"Ana","name":"Ana","class":"MAGE"}],'
+    .. ',"instanceKey":"kara","members":[{"key":"Ana","name":"Ana","class":"MAGE"}],'
     .. '"wishlists":[{"key":"Ana-Realm","name":"Ana","class":"MAGE","items":[{"id":28770,"o":1}]}]}') }
   _G.GuildOSInboxAck, GuildOS.CompanionImport._lastInbox, GuildOS.db.settings.companion = nil, nil, true
   GuildOS.db.siteLoot = nil
@@ -341,6 +352,153 @@ do
 end
 for _, k in ipairs({ "softRes", "lootPrios", "wishlists", "guildWishlists" }) do
   check(same(GuildOS.db[k], BEFORE[k]), k .. " is still what it was after the inbox too")
+end
+
+
+-- ── 6. Two raids of the guild in one window: each is its own sheet ───
+do
+  local function entry(who, startsAt)
+    return { startsAt = startsAt, instanceKey = "kara",
+      softres = { items = { [ITEM] = { { name = who, class = "MAGE", note = "", plusOnes = 0 } } } } }
+  end
+  GuildOS.db.siteLoot = { at = time(), raids = { first = entry("Ana", NOW), second = entry("Bo", NOW + 1800) } }
+  clock = NOW + 2700
+  check(names(SR:GetReserves(ITEM)) == "Bo", "two raids: closer to the second's start, it is the second's sheet")
+  clock = NOW - 3000
+  check(names(SR:GetReserves(ITEM)) == "Ana", "and earlier, the first's: nobody is shut out by the other raid's reserves")
+  local id = SL:ActiveRaid()
+  check(id == "first", "the active raid is named")
+  clock = NOW + 2700
+  c = roll()
+  check(c("Bo").softRes and c("Ana").softRes == nil, "a roll of the second raid reads the second's reserves only")
+  instance = 565
+  check(not SL:Active() and SL:Reserves() == nil, "in another instance the site sheets are not used")
+  instance = 532
+  check(SL:ListsFromSite("ana") == false and SL:PriosFromSite() == false, "no list of anybody's in those entries")
+  clock = NOW
+end
+
+-- ── 7. A /reload past the site's three hours keeps the night ─────────
+do
+  siteNight()
+  clock = NOW + 4 * 3600
+  local LD = LibStub("LibDeflate")
+  local function wire(json) return "GOSROST1:" .. LD:EncodeForPrint(LD:CompressDeflate(json)) end
+  -- The companion's next write: the started raid is not served any more, next week's is.
+  _G.GuildOSInbox = { wire('{"fmt":"GOSROST1","v":6,"raidId":"r2","title":"T","startsAt":' .. (NOW + 7 * 86400)
+    .. ',"instanceKey":"kara","members":[{"key":"Ana","name":"Ana","class":"MAGE"}]}') }
+  _G.GuildOSInboxAck, GuildOS.CompanionImport._lastInbox, GuildOS.db.settings.companion = nil, nil, true
+  GuildOS.CompanionImport:ConsumeInbox()
+  check(GuildOS.db.siteLoot and GuildOS.db.siteLoot.raids.r1, "the raid the inbox stopped listing is kept")
+  check(SL:Active() and names(SR:GetReserves(ITEM)) == "Ana", "and still the night's sheet at four hours in")
+  clock = NOW + 9 * 3600
+  GuildOS.CompanionImport._lastInbox = nil
+  _G.GuildOSInbox[2] = nil
+  GuildOS.CompanionImport:ConsumeInbox()
+  check(GuildOS.db.siteLoot == nil, "once its night is over it goes, and with nothing else the table is nil")
+  clock = NOW
+end
+
+-- ── 8. The window is the realm's clock, not this PC's ────────────────
+do
+  siteNight()
+  for _, off in ipairs({ -3 * 3600, 3 * 3600 }) do
+    skew = off
+    check(SL:Active() and names(SR:GetReserves(ITEM)) == "Ana", "the PC clock " .. off .. "s off: the realm says it is the night")
+    clock = NOW + 9 * 3600
+    check(not SL:Active(), "and the realm's nine hours later is not")
+    clock = NOW
+  end
+  skew = 0
+end
+
+-- ── 9. A hidden sheet never reaches the raid's chat ──────────────────
+do
+  local rule = GuildOS.LootRule
+  siteNight({ prios = {}, wishlists = {} })
+  site().softres.hidden = true
+  officerView(true)
+  said, printed = {}, {}
+  LM.activeLoot, LM.rolls = nil, {}
+  LM.lootWindowOpen = false
+  LM:AnnounceItem(LINK, nil)
+  LM:RegisterRoll("Ana", "MS", 90)
+  LM:RegisterRoll("Bo", "MS", 10)
+  said = {}
+  LM:EndRolling(true)
+  local line = table.concat(said, "\n")
+  check(line:find("[WINNER]", 1, true) and line:find("Ana", 1, true), "hidden: a winner is announced")
+  check(not line:find("Reserve", 1, true) and not line:find("reserve", 1, true), "hidden: without saying it was a reserve: " .. line)
+  site().softres.hidden = nil
+  said = {}
+  LM.activeLoot, LM.rolls = nil, {}
+  LM:AnnounceItem(LINK, nil)
+  LM:RegisterRoll("Ana", "MS", 90)
+  LM:RegisterRoll("Bo", "MS", 10)
+  said = {}
+  LM:EndRolling(true)
+  check(table.concat(said, "\n"):find("Reserve", 1, true), "visible: the winner line says it as it always did")
+
+  -- The filter that keeps somebody out of a roll for not having reserved.
+  local answerFor = rule.AnswerFor
+  rule.AnswerFor = function() return nil, { k = "reserved" } end
+  site().softres.hidden = true
+  LM.activeLoot, LM.rolls = nil, {}
+  LM:AnnounceItem(LINK, nil)
+  said = {}
+  LM:RegisterRoll("Cy", "MS", 10)
+  check(#said == 0 and LM.rolls[K("Cy")] == nil, "hidden: nobody is told in the raid's chat that the item was not reserved")
+  site().softres.hidden = nil
+  LM.activeLoot, LM.rolls = nil, {}
+  LM:AnnounceItem(LINK, nil)
+  said = {}
+  LM:RegisterRoll("Cy", "MS", 10)
+  check(table.concat(said, "\n"):find("not reserved", 1, true), "visible: they are")
+  rule.AnswerFor = answerFor
+end
+
+-- ── 10. A tie in the site's priorities is not a direct award ─────────
+do
+  siteNight({ softres = false, wishlists = false,
+    prios = { [ITEM] = { { name = "Ana", class = "MAGE", order = 1 }, { name = "Bo", class = "MAGE", order = 1 },
+                         { name = "Cy", class = "MAGE", order = 2 } } } })
+  GuildOS.db.settings.lootSystem = "wishlist"
+  local restricted, direct
+  local oldR, oldA = LM.StartRestrictedRoll, LM.AutoCouncilAward
+  LM.StartRestrictedRoll = function(_, tied) restricted = tied end
+  LM.AutoCouncilAward = function(_, top) direct = top end
+  LM.activeLoot, LM.rolls = nil, {}
+  LM:AnnounceItem(LINK, nil)
+  check(restricted and #restricted == 2 and direct == nil, "a tie at the top of the site's priorities: a roll among the tied, no direct award")
+  check(restricted[1].name == "Ana" and restricted[2].name == "Bo", "the tied, and only them")
+  -- Without a tie the top one is still prompted.
+  siteNight({ softres = false, wishlists = false,
+    prios = { [ITEM] = { { name = "Ana", class = "MAGE", order = 1 }, { name = "Bo", class = "MAGE", order = 2 } } } })
+  restricted, direct = nil, nil
+  LM.activeLoot, LM.rolls = nil, {}
+  LM:AnnounceItem(LINK, nil)
+  check(restricted == nil and direct and direct.name == "Ana", "no tie: the top prio is offered the award")
+  -- The game's list is in positions: it never ties.
+  GuildOS.db.siteLoot = nil
+  restricted, direct = nil, nil
+  LM.activeLoot, LM.rolls = nil, {}
+  LM:AnnounceItem(LINK, nil)
+  check(restricted == nil and direct and direct.name == "Cy", "the game's own list, as before")
+  LM.StartRestrictedRoll, LM.AutoCouncilAward = oldR, oldA
+  GuildOS.db.settings.lootSystem = "rolls"
+end
+
+-- ── 11. The screens read what the roll reads ─────────────────────────
+do
+  siteNight()
+  check(LM:AllPrios()[ITEM][1].name == "Bo", "the prio screens: the site's list tonight")
+  check(WL:ListFor("Ana-Realm", "Ana").wishlist[1].order == 1 and WL:AllLists().ana.wishlist[1].order == 1
+    and WL:AllLists().dee, "the wishlist screens: the site's for its people, the game's for the rest")
+  GuildOS.db.siteLoot = nil
+  check(LM:AllPrios()[ITEM][1].name == "Cy" and WL:ListFor("Ana-Realm", "Ana").wishlist[1].order == 3, "and the game's otherwise")
+end
+for _, k in ipairs({ "softRes", "lootPrios", "wishlists", "guildWishlists" }) do
+  check(same(GuildOS.db[k], BEFORE[k]), k .. " is still what it was after all of it")
 end
 
 print("site-night: " .. checks .. " checks passed")

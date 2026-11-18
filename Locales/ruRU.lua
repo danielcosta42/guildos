@@ -3190,3 +3190,4 @@ L["On WoW: Forever only the game's guild panel can change the message of the day
 L["Edit in guild panel"] = "Изменить в окне гильдии"
 L["%d raid-ready"] = "%d готовы к рейду"
 L["The soft reserve sheet is hidden: nothing was said in chat."] = "Список резервов скрыт: в чат ничего не отправлено."
+L["Tonight the reserves come from the site."] = "Сегодня резервы берутся с сайта."

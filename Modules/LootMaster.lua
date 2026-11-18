@@ -794,6 +794,20 @@ function LootMaster:PrioListFor(itemId)
     return GuildOS.db and GuildOS.db.lootPrios and GuildOS.db.lootPrios[itemId], false
 end
 
+-- Whether the site hides tonight's soft reserve sheet from the raiders: then no line in the raid's chat
+-- may say who reserved, or that anybody did.
+function LootMaster:SheetHidden()
+    local S = GuildOS.SoftRes
+    return S ~= nil and S.Hidden ~= nil and S:Hidden() or false
+end
+
+-- Every item's prio list in force, for the screens that list them all: the site's while its raid's
+-- night lasts, else the game's.
+function LootMaster:AllPrios()
+    local site = GuildOS.SiteLoot and GuildOS.SiteLoot:Prios()
+    return site or (GuildOS.db and GuildOS.db.lootPrios) or {}
+end
+
 ----------------------------------------------------------------------
 -- Resolve officer prio list for an item: returns ordered list of entries
 -- currently in raid, in prio order. Returns nil if no prio data.
@@ -959,7 +973,18 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
         local prioList = self:ResolvePrioList(itemId)
         if prioList then
             local topPrio = prioList[1]
-            if wishlistOnly then
+            -- The site's priorities can tie (same rank); the game's list is in positions and never does.
+            -- A tie at the top is for those people to roll, not a direct award to whoever sorts first.
+            local _, fromSite = self:PrioListFor(itemId)
+            local tied = {}
+            if fromSite then
+                for _, e in ipairs(prioList) do
+                    if e.order == topPrio.order then tied[#tied + 1] = e end
+                end
+            end
+            if wishlistOnly and #tied >= 2 then
+                self:StartRestrictedRoll(tied, prioList, itemLink, lootSlot, itemId)
+            elseif wishlistOnly then
                 -- Direct award prompt for top prio player
                 local council = self:ResolveWishlistCouncil(itemId) or {}
                 self:AnnounceSoftReserves(itemId)
@@ -1150,7 +1175,7 @@ function LootMaster:AnnounceSoftReserves(itemId)
     local srList = GuildOS.SoftRes:GetInRaidReserves(itemId)
     if #srList == 0 then return end
     -- A sheet the site hides from the raiders is not read out to them: only the master looter is told.
-    if GuildOS.SoftRes:Hidden() then
+    if self:SheetHidden() then
         GuildOS:Print(L["The soft reserve sheet is hidden: nothing was said in chat."])
         return
     end
@@ -1581,6 +1606,8 @@ function LootMaster:RegisterRollNow(name, rollType, roll, extra)
     local asked = rollType   -- what was clicked, before a filter reads it as another answer
     local answer, filter = GuildOS.LootRule:AnswerFor(cand, rollType, rule)
     if filter and not answer then
+        -- "Not reserved" in the raid's chat would tell a hidden sheet's reserves (R12).
+        if filter.k == "reserved" and self:SheetHidden() then return end
         sayOnce("out|" .. filter.k .. "|" .. tostring(filter.acct or ""), self:BlockedLine(name, filter, cand, rule))
         return
     end
@@ -2029,14 +2056,18 @@ function LootMaster:EndRolling(byClick)
         if winner.prioOrder then
             wishStr = string.format(L[" [Official Prio #%d]"], winner.prioOrder)
         elseif winner.softRes then
-            wishStr = winner.softRes.hard and L[" [Hard Reserve]"] or L[" [Soft Reserve]"]
+            -- Not said in the raid's chat when the site hides the sheet (R12).
+            if not self:SheetHidden() then
+                wishStr = winner.softRes.hard and L[" [Hard Reserve]"] or L[" [Soft Reserve]"]
+            end
         elseif winner.wishlist then
             wishStr = string.format(L[" [Wishlist #%d]"], winner.wishlist.order)
         end
         -- What put the winner ahead of the next candidate, when it was not the roll itself.
         local decided = GuildOS.LootRule:DecidedBy(winner, sorted[2], rule)
         self.activeLoot.decidedBy = decided
-        if decided and decided ~= "roll" and wishStr == "" then
+        local reserveWhy = decided == "softres" or decided == "hardres"
+        if decided and decided ~= "roll" and wishStr == "" and not (reserveWhy and self:SheetHidden()) then
             wishStr = string.format(L[" [by %s]"], GuildOS.LootRule:Label(decided))
         end
         -- The answer by its button's name, and what it asked for: the roll, the bid, or neither (#334).

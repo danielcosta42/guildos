@@ -123,8 +123,20 @@ end
 
 -- A guildmate's synced list, by their member key and name (the right one for this client).
 function Wishlist:ListFor(key, name)
+    local sk = storeKey(key, name)
+    local site = GuildOS.SiteLoot and GuildOS.SiteLoot:WishlistOf(sk)
+    if site then return site end
     local guild = GuildOS.db and GuildOS.db.guildWishlists
-    return guild and guild[storeKey(key, name)]
+    return guild and guild[sk]
+end
+
+-- Every guildmate's list as the screens show them: the game's synced ones, and for each person the
+-- site holds a list of in the raid in hand, the site's. A new table; neither source is written.
+function Wishlist:AllLists()
+    local out = {}
+    for k, v in pairs(GuildOS.db and GuildOS.db.guildWishlists or {}) do out[k] = v end
+    for k, v in pairs(GuildOS.SiteLoot and GuildOS.SiteLoot:Wishlists() or {}) do out[k] = v end
+    return out
 end
 
 ----------------------------------------------------------------------

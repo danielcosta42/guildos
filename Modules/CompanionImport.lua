@@ -281,6 +281,11 @@ function Import.ReadSiteLoot(data)
     return any and loot or nil
 end
 
+-- The window around a planned raid's start that counts as that raid's night (RaidFor, and how long a
+-- raid's site loot is kept). Written on both sides on purpose; see the note at RaidFor.
+local MATCH_EARLY = 2 * 3600
+local MATCH_LATE = 8 * 3600
+
 local ROSTER_MAX = 524288   -- characters of a GOSROST1 body: ten raids with full lists stay well under it
 
 --- Returns (roster, err). roster = { title, instance, startsAt, members = {...} }
@@ -539,11 +544,25 @@ function Import:ConsumeInbox()
     -- What the site holds for that night, already in the addon's own shapes. Kept apart from db.softRes,
     -- db.lootPrios and db.guildWishlists, which are the game's and are never written from here: the
     -- readers choose between the two, and a night without the site's data leaves nothing behind.
-    local loot = soonest.loot
-    GuildOS.db.siteLoot = loot and {
-        raidId = soonest.raidId, startsAt = soonest.startsAt, at = time(),
-        softres = loot.softres, prios = loot.prios, wishlists = loot.wishlists,
-    } or nil
+    -- One entry per raid, from every roster of the inbox (two groups of a guild can raid in one window),
+    -- replaced by raidId. A raid the inbox no longer lists keeps its entry until its night is over: the
+    -- site stops serving a started raid after a few hours, and a /reload in the middle must not take
+    -- the night's reserves away. Entries past their window are dropped.
+    local kept, now = {}, GetServerTime()
+    local old = GuildOS.db.siteLoot
+    for id, e in pairs(type(old) == "table" and type(old.raids) == "table" and old.raids or {}) do
+        if type(e) == "table" and now <= (tonumber(e.startsAt) or 0) + MATCH_LATE then kept[id] = e end
+    end
+    for _, roster in ipairs(raids) do
+        local loot = roster.loot
+        if type(roster.raidId) == "string" then
+            kept[roster.raidId] = loot and {
+                startsAt = roster.startsAt, instanceKey = roster.instanceKey, difficulty = roster.difficulty,
+                softres = loot.softres, prios = loot.prios, wishlists = loot.wishlists,
+            } or nil
+        end
+    end
+    GuildOS.db.siteLoot = next(kept) and { at = time(), raids = kept } or nil
     return true, #soonest.members
 end
 
@@ -682,19 +701,16 @@ end
 -- Keys, never names. Matching "Magtheridon" against "Magtheridon's Lair" across two
 -- codebases is what lost every Magtheridon night the site ever received.
 ----------------------------------------------------------------------
-local MATCH_EARLY = 2 * 3600
-local MATCH_LATE = 8 * 3600
-
 --- Returns the raidId of the planned raid covering `when` in `instanceKey`, or nil. On retail
 --- `difficulty` is the night's (14, 15, 16): a raid planned on another one is another lockout,
 --- so when both say one they must agree (issue #182).
-function Import:RaidFor(instanceKey, when, difficulty)
+function Import:RaidFor(instanceKey, when, difficulty, list)
     if type(instanceKey) ~= "string" or instanceKey == "" then return nil end
     when = tonumber(when) or 0
     difficulty = tonumber(difficulty)
 
     local best, bestGap
-    for _, r in ipairs((GuildOS.db and GuildOS.db.companionRaids) or {}) do
+    for _, r in ipairs(list or (GuildOS.db and GuildOS.db.companionRaids) or {}) do
         if r.instanceKey == instanceKey and not (difficulty and r.difficulty and r.difficulty ~= difficulty) then
             local gap = when - (r.startsAt or 0)
             if gap >= -MATCH_EARLY and gap <= MATCH_LATE then

@@ -848,6 +848,9 @@ local function buildLists(panel)
     srImportBtn:SetPoint("TOPLEFT", 0, 0)
     local srClearBtn = UI:CreateButton(srView, L["Clear"], 70, 22)
     srClearBtn:SetPoint("LEFT", srImportBtn, "RIGHT", 6, 0)
+    local srFromSite = UI:CreateText(srView, L["Tonight the reserves come from the site."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    srFromSite:SetPoint("LEFT", srClearBtn, "RIGHT", 10, 0)
+    srFromSite:Hide()
     local srCount = UI:CreateText(srView, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     srCount:SetPoint("TOPRIGHT", -GAP, -4)
     -- The table's header row: the shared one, no fill and a 1px rule under it (#371).
@@ -877,8 +880,13 @@ local function buildLists(panel)
         srClearBtn:SetShown(officer)
         local items = GuildOS.SoftRes:GetAllItems()
         -- A sheet the site hides from the raiders: everyone but the loot master reads only their own.
-        local ownOnly = GuildOS.SoftRes:Hidden() and not (officer
-            or (GuildOS.LootMaster and GuildOS.LootMaster:IsMasterLooter()))
+        local ownOnly = not GuildOS.SoftRes:OthersVisible()
+        -- The site's sheet is the night's: importing over it or clearing it would change nothing tonight.
+        local fromSite = GuildOS.SiteLoot and GuildOS.SiteLoot:Reserves() ~= nil
+        for _, b in ipairs({ srImportBtn, srClearBtn }) do
+            if fromSite then b:Disable() else b:Enable() end
+        end
+        srFromSite:SetShown(fromSite)
         if ownOnly then
             local mine = {}
             for _, entry in ipairs(items) do
