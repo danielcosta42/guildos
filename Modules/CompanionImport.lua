@@ -151,6 +151,138 @@ function Import.ReadLootRule(rule)
     return ok and copy or false
 end
 
+-- The raid's soft reserves, priorities and wishlists, as the site sends them (GOSROST1 v6, guildos-web
+-- #556; this repo's #385). The inbox is untrusted input, so every field is bounded and cleaned here and
+-- converted to the addon's own shapes, which lets a reader swap one of its tables for one of these:
+--   softres   = { items = { [itemId] = { {name, class, note, plusOnes, hard?} } }, hidden = true|nil }
+--   prios     = { [itemId] = { {name, class, order} } }
+--   wishlists = { [lowerKey] = { name, class, wishlist = { {itemId, order, isOffspec} } } }
+-- A field that fails its bounds is refused whole and becomes nil; the roster and the other fields go on.
+-- Nothing here writes a table of the game's own (db.softRes, db.lootPrios, db.guildWishlists).
+local SITE_LOOT = {
+    softEntries = 1500, softItems = 20, hardEntries = 200,
+    prioItems = 600, prioPeople = 40, prioRank = 100,
+    wishItems = 60, wishPeople = 1000,
+    id = 2147483647, name = 64, class = 20, note = 140,
+}
+local function siteInt(v, lo, hi)
+    if type(v) ~= "number" or v ~= v or v ~= math.floor(v) or v < lo or v > hi then error("int") end
+    return v
+end
+local function siteList(v, max)
+    if type(v) ~= "table" or #v > max then error("list") end
+    return v
+end
+-- Text off the network, for a line of ours: inert, no control character, trimmed, cut to `max` bytes
+-- without splitting a UTF-8 character. nil when nothing is left.
+local function siteText(v, max)
+    if type(v) ~= "string" then return nil end
+    local s = strtrim((Import.Inert(v):gsub("%c", " ")))
+    if #s > max then
+        local cut = max
+        while cut > 0 do
+            local b = s:byte(cut + 1)
+            if not (b and b >= 0x80 and b <= 0xBF) then break end
+            cut = cut - 1
+        end
+        s = s:sub(1, cut)
+    end
+    return s ~= "" and s or nil
+end
+-- A name is a bound, not a note: one too long is not a person's, so the field is refused.
+local function siteName(v)
+    if type(v) == "string" and #v > SITE_LOOT.name then error("name") end
+    return siteText(v, SITE_LOOT.name) or error("name")
+end
+local function siteClass(v)
+    return siteText(v, SITE_LOOT.class) or ""
+end
+
+local function readSoftres(sr)
+    local items, any = {}, false
+    for _, e in ipairs(siteList(sr.soft or {}, SITE_LOOT.softEntries)) do
+        if type(e) ~= "table" then error("entry") end
+        local name, class, note = siteName(e.name), siteClass(e.class), siteText(e.note, SITE_LOOT.note) or ""
+        for _, id in ipairs(siteList(e.items or {}, SITE_LOOT.softItems)) do
+            siteInt(id, 1, SITE_LOOT.id)
+            items[id] = items[id] or {}
+            table.insert(items[id], { name = name, class = class, note = note, plusOnes = 0 })
+            any = true
+        end
+    end
+    -- A fixed reserve is what SoftRes:LoadFromParsed makes of Gargul's hardreserves: named by `for`,
+    -- no class, no +1, `hard`. One for nobody says nothing and is passed over, as it is there.
+    for _, h in ipairs(siteList(sr.hard or {}, SITE_LOOT.hardEntries)) do
+        if type(h) ~= "table" then error("entry") end
+        local id = siteInt(h.id, 1, SITE_LOOT.id)
+        local who = siteText(h["for"], SITE_LOOT.name)
+        if who then
+            items[id] = items[id] or {}
+            table.insert(items[id], { name = Import.PlainName(who), class = "", note = siteText(h.note, SITE_LOOT.note) or "",
+                plusOnes = 0, hard = true })
+            any = true
+        end
+    end
+    return any and { items = items, hidden = sr.hidden == true or nil } or nil
+end
+
+local function readPrios(list)
+    local prios, any = {}, false
+    for _, p in ipairs(siteList(list, SITE_LOOT.prioItems)) do
+        if type(p) ~= "table" then error("entry") end
+        local id = siteInt(p.id, 1, SITE_LOOT.id)
+        local order = {}
+        for _, o in ipairs(siteList(p.order or {}, SITE_LOOT.prioPeople)) do
+            if type(o) ~= "table" then error("entry") end
+            order[#order + 1] = { name = siteName(o.name), class = siteClass(o.class), order = siteInt(o.rank, 1, SITE_LOOT.prioRank) }
+        end
+        if #order > 0 then
+            prios[id] = order
+            any = true
+        end
+    end
+    return any and prios or nil
+end
+
+local function readWishlists(list)
+    local out, any = {}, false
+    for _, w in ipairs(siteList(list, SITE_LOOT.wishPeople)) do
+        if type(w) ~= "table" then error("entry") end
+        local entry = { key = type(w.key) == "string" and siteText(w.key, SITE_LOOT.name) or nil, name = siteName(w.name) }
+        local wishlist = {}
+        for _, it in ipairs(siteList(w.items or {}, SITE_LOOT.wishItems)) do
+            if type(it) ~= "table" then error("entry") end
+            wishlist[#wishlist + 1] = { itemId = siteInt(it.id, 1, SITE_LOOT.id), order = siteInt(it.o, 1, SITE_LOOT.wishItems),
+                isOffspec = it.x == true }
+        end
+        if #wishlist > 0 then
+            -- The key the game's own guild wishlists are kept by: the lowercased name, whole on retail.
+            out[strlower(nameOf(entry))] = { name = nameOf(entry), class = siteClass(w.class), wishlist = wishlist }
+            any = true
+        end
+    end
+    return any and out or nil
+end
+
+-- { softres, prios, wishlists } of a decoded GOSROST1, or nil when none of them reads.
+function Import.ReadSiteLoot(data)
+    local loot, any = {}, false
+    local fields = { softres = readSoftres, prios = readPrios, wishlists = readWishlists }
+    for field, read in pairs(fields) do
+        local raw = data[field]
+        if type(raw) == "table" then
+            local ok, got = pcall(read, raw)
+            if ok and got then
+                loot[field] = got
+                any = true
+            end
+        end
+    end
+    return any and loot or nil
+end
+
+local ROSTER_MAX = 524288   -- characters of a GOSROST1 body: ten raids with full lists stay well under it
+
 --- Returns (roster, err). roster = { title, instance, startsAt, members = {...} }
 function Import:Parse(raw)
     if not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then
@@ -166,6 +298,12 @@ function Import:Parse(raw)
     raw = raw:sub(raw:find(WIRE_PREFIX, 1, true) + #WIRE_PREFIX)
 
     if not (LibStub and LibStub("LibDeflate", true)) then return nil, L["LibDeflate not available."] end
+    -- The same gate a GOSCORE1 body passes (ReadCores): the alphabet the companion lets into Inbox.lua
+    -- and a length no roster reaches, before anything is decoded. A pasted code may carry breaks.
+    raw = raw:gsub("%s+", "")
+    if raw == "" or #raw > ROSTER_MAX or raw:find("[^A-Za-z0-9()]") then
+        return nil, L["The roster string is damaged. Copy it again."]
+    end
     local data = unwrap(raw, "GOSROST1")
     if not data then return nil, L["The roster string is damaged. Copy it again."] end
 
@@ -228,6 +366,8 @@ function Import:Parse(raw)
         clock = type(data.clock) == "table" and data.clock or nil,
         members = members,
         signups = signups,
+        -- v6 (the site's #556): the raid's reserves, priorities and wishlists, nil when none is sent or read.
+        loot = Import.ReadSiteLoot(data),
     }
 end
 
@@ -394,6 +534,14 @@ function Import:ConsumeInbox()
     self._webRaids = raids
     GuildOS.db.companionRoster = soonest
     GuildOS.db.companionRaids = planned
+    -- What the site holds for that night, already in the addon's own shapes. Kept apart from db.softRes,
+    -- db.lootPrios and db.guildWishlists, which are the game's and are never written from here: the
+    -- readers choose between the two, and a night without the site's data leaves nothing behind.
+    local loot = soonest.loot
+    GuildOS.db.siteLoot = loot and {
+        raidId = soonest.raidId, startsAt = soonest.startsAt,
+        softres = loot.softres, prios = loot.prios, wishlists = loot.wishlists,
+    } or nil
     return true, #soonest.members
 end
 
