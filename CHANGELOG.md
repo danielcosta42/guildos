@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.33.0] - 2026-11-18
+
+### Added
+- a limpeza do banco acontece toda numa gaveta ao lado do banco do jogo, aberta pelo botão Cleanup da barra: marcar, tirar e devolver o gold sem abrir o Guild OS (#384)
+
+
 ## [1.32.1] - 2026-11-18
 
 ### Fixed
