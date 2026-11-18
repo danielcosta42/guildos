@@ -113,6 +113,7 @@ function SetCurrentGuildBankTab(tab) BANK.current = tab end
 function IsGuildLeader() return BANK.leader end
 function CursorHasItem() return cursor ~= nil end
 function ClearCursor()
+  if cursor and cursor.ghost then return end   -- the server has it; nothing to let go
   -- A swapped-out item on the cursor goes back where the game finds room: the first empty slot.
   if cursor and cursor.held then
     local slots = BANK.tabs[cursor.tab].slots
@@ -128,13 +129,21 @@ local moves = 0
 local LAG = 0.3
 local dropNow
 function PickupGuildBankItem(tab, slot)
+  -- While the server works on a drop, the item still shows on the cursor; another drop then is
+  -- one too many (counted, ignored).
+  if cursor and cursor.ghost then
+    BANK.extraDrops = (BANK.extraDrops or 0) + 1
+    return
+  end
   if cursor and GuildOS and GuildOS.GuildBank and not BANK.instant then
     local c = cursor
     if CLOCK - c.at < 0.05 then return end
-    cursor = nil
+    local ghost = { ghost = c, tab = c.tab, slot = c.slot, c = c.c, at = c.at }
+    cursor = ghost
     GuildOS.Compat.After(LAG, function()
       -- Each drop is the server's own business: it never touches what the player holds meanwhile.
       local ours = cursor
+      if ours == ghost then ours = nil end
       cursor = c
       dropNow(tab, slot)
       local after = cursor
@@ -741,6 +750,11 @@ local mFree, okFree, saidFree = organizeWith(nil, crowded)
 check(okFree and not saidFree:find("Stopped", 1, true), "a bank that refuses swaps still ends in order")
 check(mSwap < mFree, "swapping takes fewer moves (" .. mSwap .. " against " .. mFree .. ")")
 check(GuildOS.State.gbank.noSwap == true, "and a refused swap is remembered for the session")
+
+-- The item shows in hand while the server answers: the run never drops it again meanwhile.
+BANK.extraDrops = 0
+organizeWith("direct", crowded)
+check((BANK.extraDrops or 0) == 0, "no drop is sent again while the server is still answering one")
 
 -- ── Typing an item ──────────────────────────────────────────────────────
 check(Bank:ParseItemInput(linkOf(22854)) == 22854 and Bank:ParseItemInput("22832") == 22832, "a link or an id names its item")

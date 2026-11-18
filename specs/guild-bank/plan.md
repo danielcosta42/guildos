@@ -93,3 +93,9 @@ taken (then it waits for the cursor, as before); an item still in hand 0.25 s af
 dropped again (3 times); a swap counts as refused only when the item was in hand. When filling a slot
 by a swap, the planner takes the source whose own place wants what the slot holds, so one swap puts
 both in place.
+
+Fourth in-game log: the tab ended in order (75 moves); the "still in hand" lines were drops sent
+again while the server was still answering (an item shows on the cursor until then, 0.4–0.8 s). A
+drop is now tried again only after twice the run's measured answer time (0.6 s at least), and only
+while both its slots still show what they held before it. Swaps are tried afresh each run: that log
+ran without them, from an earlier run's refusal.

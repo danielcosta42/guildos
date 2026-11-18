@@ -44,7 +44,11 @@ local POLL = 0.03                -- seconds between two looks while waiting on t
 local CAP_START = 1              -- moves in flight at once, at first
 local CAP_MAX = 1                -- moves in flight at once, at most
 local REDROP_TRIES = 3           -- drops tried again while the item stays on the cursor
-local REDROP_AFTER = 0.25        -- seconds an item may stay in hand after its drop before it is dropped again
+-- An item shows on the cursor until the server answers its drop (0.4 to 0.8 s in game): a drop is
+-- tried again only well past the answers this run has seen, never during one.
+local REDROP_MIN = 0.6           -- seconds after a drop before it may be tried again, at least
+local REDROP_RTT = 2             -- times the run's usual answer time
+local RTT_START = 0.6            -- seconds an answer is taken to take, before the run measured one
 local CAP_RAMP = 6               -- moves landed in a row before one more may fly
 local VERIFY_MAX = 2             -- seconds a drop may wait for the game to say the slots changed
 local HOLD_MAX = 0.8             -- the drop goes then, even when the client never says it holds it
@@ -550,7 +554,7 @@ function GuildBank:Preview(tab)
     if not t then return nil end
     local plain, rank, stack = self:PlanInput(t.slots or {})
     local target = Plan.Target(plain, SLOTS, rank, stack)
-    local moves, why = Plan.CountMoves(plain, SLOTS, rank, stack, MAX_MOVES, not state().noSwap and GuildOS:GetSetting("gbankSwap") ~= false)
+    local moves, why = Plan.CountMoves(plain, SLOTS, rank, stack, MAX_MOVES, GuildOS:GetSetting("gbankSwap") ~= false)
     local byKey = {}
     for _, s in pairs(t.slots or {}) do byKey[keyOf(s)] = s end
     local out = {}
@@ -1055,8 +1059,11 @@ function GuildBank:StartSort(tabs)
     if #queue == 0 then GuildOS:Print(L["No tab here you may organize."]); return false end
     if GuildOS.Compat.InCombat() then GuildOS:Print(L["Not in combat."]); return false end
     -- Swaps first, unless the bank refused one this session or the player switched them off.
-    local swaps = not s.noSwap and GuildOS:GetSetting("gbankSwap") ~= false
+    -- Swaps first, every run: one refused (or a pickup that failed and looked like one) must not
+    -- cost every later run its swaps.
+    local swaps = GuildOS:GetSetting("gbankSwap") ~= false
     s.sort = { queue = queue, tab = nil, moves = 0, total = 0, merged = 0, before = 0, report = {}, swaps = swaps }
+    self:Trace("organizing %d tab(s), swaps %s", #queue, swaps and "on" or "off")
     self:NextSortTab()
     return true
 end
@@ -1122,7 +1129,7 @@ end
 function GuildBank:Resync(run, p)
     local s = state()
     if p and p.swap and p.inHand and run.swaps then
-        run.swaps, s.noSwap = false, true
+        run.swaps, s.noSwap = false, true   -- noSwap: what the last run found, for the tests and /gos bank debug
         self:Trace("the bank refused a swap: moving through free slots from now on")
     else
         run.fails = (run.fails or 0) + 1
@@ -1165,6 +1172,9 @@ function GuildBank:SortStep()
             -- Whether the pickup was taken: a swap is judged refused only when the item was in hand.
             held.inHand = GuildOS.Compat.CursorHasItem()
             GuildOS.Compat.GuildBankPickup(tab, held.move.to)
+            local of, ot = run.model[held.move.from], run.model[held.move.to]
+            held.origFrom = of and { k = of.k, c = of.c } or nil
+            held.origTo = ot and { k = ot.k, c = ot.c } or nil
             Plan.Apply(run.model, held.move, run.stack)
             local f, t = run.model[held.move.from], run.model[held.move.to]
             held.expectFrom = f and { k = f.k, c = f.c } or nil
@@ -1204,8 +1214,13 @@ function GuildBank:SortStep()
             run.clean = (run.clean or 0) + 1
             if run.clean >= CAP_RAMP and run.cap < CAP_MAX then run.cap, run.clean = run.cap + 1, 0 end
             if p.sameFrame and not p.redrops then s.sameFrame = true end
+            if not p.redrops then
+                local took = now_ - p.at
+                run.rtt = (run.rtt or RTT_START) * 0.7 + took * 0.3
+            end
             self:Trace("landed %d -> %d (%.2fs)", f, t, now_ - p.at)
-        elseif not lockedAt[t] and now_ - p.at >= REDROP_AFTER and GuildOS.Compat.CursorHasItem()
+        elseif not lockedAt[t] and now_ - p.at >= math.max(REDROP_MIN, REDROP_RTT * (run.rtt or RTT_START))
+            and GuildOS.Compat.CursorHasItem() and sameSlot(plain[f], p.origFrom) and sameSlot(plain[t], p.origTo)
             and (p.redrops or 0) < REDROP_TRIES then
             -- Still in hand after its drop (a drop the game did not take): drop it again. A drop in the
             -- same frame as its pickup that was not taken: this client wants a moment between them.
