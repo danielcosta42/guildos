@@ -1131,55 +1131,71 @@ function GuildBank:SortStep()
         return again(POLL)
     end
     local slots = self:ReadTab(tab)
-    for _, sl in pairs(slots) do
-        if sl.locked then
-            run.lockedSince = run.lockedSince or GetTime()
-            if GetTime() - run.lockedSince > LOCK_TIMEOUT then return self:StopSort("stuck") end
-            return again(POLL)
-        end
-    end
-    run.lockedSince = nil
+    local locked = false
+    for _, sl in pairs(slots) do if sl.locked then locked = true; break end end
 
-    -- 3. Did the last move land?
+    -- 3. Did the last move land? Judged by the tab itself, never by an event: the game also says
+    -- the slots changed when an item is picked up, and that word can arrive after the drop. A move
+    -- landed once the tab differs from before it, unlocked, the same on two looks in a row (so a
+    -- swap is not read half done). Nothing changed in VERIFY_MAX: refused.
     local v = run.verify
     if v then
-        if GetTime() - v.at < SETTLE_MIN then return again(POLL) end
-        -- The client shows a slot's new content only once the server answers, with
-        -- GUILDBANKBAGSLOTS_CHANGED: read before it, the tab still shows the old one, and a move that
-        -- landed looks refused.
-        if s.lastSlotsAt < v.at and GetTime() - v.at < VERIFY_MAX then return again(POLL) end
+        local now_ = GetTime()
+        local enc = encodeSlots(slots)
+        local changed = enc ~= v.mark
+        if changed and not locked then
+            if enc ~= v.seen then
+                v.seen = enc
+                return again(POLL)
+            end
+        elseif now_ - v.at < VERIFY_MAX then
+            return again(POLL)
+        elseif locked and not GuildOS.Compat.CursorHasItem() and now_ - v.at < LOCK_TIMEOUT then
+            return again(POLL)
+        end
         run.verify = nil
         local at = slots[v.move.to]
-        local landed = at ~= nil and keyOf(at) == v.key and (v.toKey ~= v.key or at.c > (v.toC or 0))
-        -- The tab changed all the same (someone else moved something, the game merged otherwise):
-        -- that is progress, not a refusal; the next plan starts from what is there.
-        local changed = encodeSlots(slots) ~= v.mark
+        local landed = changed and at ~= nil and keyOf(at) == v.key
         if GuildOS.Compat.CursorHasItem() then
             if landed and not slots[v.move.from] then
                 -- A swap that hands the other item back on the cursor: it goes where ours came from.
                 GuildOS.Compat.GuildBankPickup(tab, v.move.from)
                 self:Trace("the swapped item goes to %d", v.move.from)
+                run.verify = { move = { from = -1, to = v.move.from }, at = GetTime(), key = "?", mark = enc }
                 return again(SETTLE_MIN)
             end
+            -- Still on the cursor: the drop was refused. It goes back where it came from.
             GuildOS.Compat.ClearCursor()
         end
-        if landed or changed then
+        if changed then
             run.fails = 0
+            self:Trace(landed and "landed (%.2fs)" or "the tab changed (%.2fs)", now_ - v.at)
+            return again(POLL)
         elseif v.swap and run.swaps then
             run.swaps, s.noSwap = false, true
             self:Trace("the bank refused a swap: moving through free slots from now on")
             return again(POLL)
-        else
+        elseif v.key ~= "?" then
             run.fails = (run.fails or 0) + 1
             self:Trace("the move did not land (%d in a row)", run.fails)
             if run.fails >= DROP_FAILS then return self:StopSort("refused") end
             return again(backoff(run.fails))
         end
+        return again(POLL)
     end
+
+    -- An item left on the cursor locks its slot until the cursor lets go: let go first.
     if GuildOS.Compat.CursorHasItem() then
         GuildOS.Compat.ClearCursor()
         return again(POLL)
     end
+    if locked then
+        run.lockedSince = run.lockedSince or GetTime()
+        if GetTime() - run.lockedSince > LOCK_TIMEOUT then return self:StopSort("stuck") end
+        return again(POLL)
+    end
+    run.lockedSince = nil
+
     if not allNamed(self, slots) and GetTime() < (run.waitUntil or 0) then return again(POLL) end
 
     local plain, rank, stack = self:PlanInput(slots)

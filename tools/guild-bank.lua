@@ -145,7 +145,13 @@ dropNow = function(tab, slot)
   local slots = BANK.tabs[tab].slots
   if not cursor then
     local s = slots[slot]
-    if s then cursor = { tab = tab, slot = slot, c = s.c, at = CLOCK } end
+    if s then
+      cursor = { tab = tab, slot = slot, c = s.c, at = CLOCK }
+      -- The game also says the slots changed on a pickup, and that word can come after the drop.
+      GuildOS.Compat.After(0.2, function()
+        if GuildOS.GuildBank:IsOpen() then GuildOS.GuildBank:OnEvent("GUILDBANKBAGSLOTS_CHANGED") end
+      end)
+    end
     return
   end
   -- As in the game: the server confirms a pickup a moment later, and a drop in the same frame is
@@ -709,8 +715,10 @@ local function crowded(slots)
 end
 local mSwap, okSwap, saidSwap, curSwap = organizeWith("direct", crowded)
 check(okSwap and curSwap == nil and not saidSwap:find("Stopped", 1, true), "a swapping bank ends in order")
+check(GuildOS.State.gbank.noSwap ~= true, "and none of its swaps is taken for refused, however late the game answers")
 local mCur, okCur, _, curCur = organizeWith("cursor", crowded)
 check(okCur and curCur == nil, "and so does one that hands the other item back on the cursor")
+check(GuildOS.State.gbank.noSwap ~= true, "without giving up on swaps")
 local mFree, okFree, saidFree = organizeWith(nil, crowded)
 check(okFree and not saidFree:find("Stopped", 1, true), "a bank that refuses swaps still ends in order")
 check(mSwap < mFree, "swapping takes fewer moves (" .. mSwap .. " against " .. mFree .. ")")

@@ -64,3 +64,9 @@ A drop is judged only after the game says the slots changed (`GUILDBANKBAGSLOTS_
 2 s): read before it, the client still shows the old tab, and a move that landed looked refused
 (the in-game log of 2026-11-18 showed every move landing and the run stopping at the sixth). A tab
 that changed in any way since the pickup counts as progress.
+
+Second in-game log (2026-11-18): the swap landed, and was still judged refused. The game also
+says the slots changed when an item is picked up, and that word arrived after the drop. A move is
+now judged by the tab alone: it landed once the tab differs from before it, unlocked, and reads the
+same twice in a row; unchanged for 2 s, refused. An item left on the cursor is let go before any
+wait on a lock, since its slot stays locked until the cursor lets go.
