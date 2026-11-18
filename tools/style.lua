@@ -576,4 +576,78 @@ for _, c in ipairs(fbox.children) do if c.atlas then boxArt = boxArt + 1 end end
 check(boxArt == 0 and fbox.backdrop and fbox.backdrop.edgeFile ~= nil,
   "a multi-line box stays flat: the 22px search-bar art is not stretched over it")
 
+-- ── 12. The onboarding asks the style first (#375) ─────────────────────
+-- Where the client draws both styles the wizard's first step is the style: two cards, the one on screen
+-- chosen. A pick is saved at once; the reload it needs comes only when the wizard is finished, and only
+-- when the style changed.
+local function onboarding(opts)
+  S = load(opts); S:Resolve()
+  function GuildOS:CreateRolePicker(parent)
+    local f = CreateFrame("Frame", nil, parent)
+    f.refresh = function() end
+    return f
+  end
+  function GuildOS:IsOfficer() return false end
+  GuildOS.onboardingFrame = nil
+  dofile(ADDON .. "/UI/Onboarding.lua")
+  GuildOS:ShowOnboarding()
+  return GuildOS.onboardingFrame
+end
+local Cn
+local function shownCards(f)
+  local out = {}
+  for _, c in ipairs(f.styleCards) do if c.shown then out[#out + 1] = c end end
+  return out
+end
+local function finish(f)
+  while f.step < #f.steps do f.nextBtn.scripts.OnClick(f.nextBtn) end
+  return f.nextBtn.label.text
+end
+
+local ob = onboarding({ db = {} })
+Cn = GuildOS.Colors
+check(ob.title.text == "Choose your style" and ob.stepLbl.text == "Step 1 of " .. #ob.steps,
+  "with both styles, the wizard's first step is the style")
+local cardsShown = shownCards(ob)
+check(#cardsShown == 2 and cardsShown[1].id == "guildos" and cardsShown[2].id == "forever",
+  "two cards, GuildOS then WoW: Forever")
+check(same(cardsShown[1].border, Cn.gold) and not same(cardsShown[2].border, Cn.gold), "the style on screen is the chosen one")
+check(cardsShown[2].sample.__three ~= nil and cardsShown[1].sample.backdrop ~= nil,
+  "each card shows a sample: the game's red button, a flat one")
+cardsShown[2].scripts.OnClick(cardsShown[2])
+check(GuildOSDB.style == "forever" and same(cardsShown[2].border, Cn.gold) and not same(cardsShown[1].border, Cn.gold),
+  "picking WoW: Forever saves it and marks its card")
+check(not popups.reloaded, "and reloads nothing yet")
+ob.nextBtn.scripts.OnClick(ob.nextBtn)
+check(ob.title.text == "Welcome to Guild OS" and not shownCards(ob)[1], "the next step is the welcome, without the cards")
+check(finish(ob) == "Finish and reload" and not popups.reloaded, "the last button says it will reload")
+ob.nextBtn.scripts.OnClick(ob.nextBtn)
+check(popups.reloaded and GuildOS.db.settings.onboarded == true and not ob.shown,
+  "Finish closes the wizard, marks it done, then reloads")
+
+ob = onboarding({ db = {} })
+cardsShown = shownCards(ob)
+cardsShown[2].scripts.OnClick(cardsShown[2])
+cardsShown[1].scripts.OnClick(cardsShown[1])
+check(finish(ob) == "Finish", "picked back to the style on screen, the last button just finishes")
+ob.nextBtn.scripts.OnClick(ob.nextBtn)
+check(not popups.reloaded and GuildOS.db.settings.onboarded == true, "and nothing reloads")
+
+-- A style applied in Settings with "Later" on its reload, then the welcome replayed: that style is the
+-- chosen card, and finishing reloads to it.
+ob = onboarding({ db = {} })
+GuildOSDB.style = "forever"
+GuildOS:ShowOnboarding()
+cardsShown = shownCards(ob)
+check(same(cardsShown[2].border, Cn.gold) and not same(cardsShown[1].border, Cn.gold),
+  "a style saved but not reloaded yet is the chosen card")
+check(finish(ob) == "Finish and reload", "and finishing reloads to apply it")
+local sp = ob.settingsBtn.points[1]
+check(sp and sp[1] == "BOTTOMRIGHT" and sp[2] == ob.nextBtn and sp[3] == "BOTTOMLEFT",
+  "Open Settings sits beside the last button, so a longer Finish never covers it")
+
+ob = onboarding({ db = {}, noArt = true })
+check(ob.title.text == "Welcome to Guild OS" and not shownCards(ob)[1], "a client with one style has no style step")
+check(finish(ob) == "Finish", "and finishes without a reload")
+
 print(("style: %d checks passed"):format(checks))
