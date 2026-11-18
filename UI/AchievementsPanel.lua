@@ -73,9 +73,10 @@ local function tierOf(title)
 end
 
 -- What was earned, as rows, the most recently added to first:
---   { kind = "series", name, tiers = { { n, label } ... } ascending, following = { n, label, entry } or nil, at }
---   { kind = "group",  name = prefix, parts = { ... } in the order they were earned, at }
---   { kind = "single", name = title, at }
+--   { kind = "series", name, tiers = { { n, label, entry } ... } ascending, following = { n, label, entry } or nil, at }
+--   { kind = "group",  name = prefix, parts = { ... } in the order they were earned, partEntries (alike), at }
+--   { kind = "single", name = title, entry, at }
+-- Each `entry` is the achievement as Earned()/Next() gave it, for its tooltip (#373).
 -- `at` is the newest of the row's. `following` is the series' next tier when Next() holds it.
 function GuildOS:AchievementCollection(earned, nearest)
     -- The tiers being worked on, by series.
@@ -107,9 +108,9 @@ function GuildOS:AchievementCollection(earned, nearest)
             if name then
                 row.kind, row.name, row.tiers, row.has = "series", name, {}, {}
             elseif prefix then
-                row.kind, row.name, row.parts, row.has = "group", prefix, {}, {}
+                row.kind, row.name, row.parts, row.partEntries, row.has = "group", prefix, {}, {}, {}
             else
-                row.kind, row.name = "single", title
+                row.kind, row.name, row.entry = "single", title, e
             end
             rows[#rows + 1] = row
             if key then byKey[key] = row end
@@ -118,10 +119,11 @@ function GuildOS:AchievementCollection(earned, nearest)
         row.order = math.min(row.order, i)
         if row.kind == "series" and not row.has[n] then
             row.has[n] = true
-            row.tiers[#row.tiers + 1] = { n = n, label = roman(n) }
+            row.tiers[#row.tiers + 1] = { n = n, label = roman(n), entry = e }
         elseif row.kind == "group" and not row.has[part] then
             row.has[part] = true
             row.parts[#row.parts + 1] = part
+            row.partEntries[#row.partEntries + 1] = e
         end
     end
 
@@ -148,6 +150,57 @@ end
 ----------------------------------------------------------------------
 -- The tab
 ----------------------------------------------------------------------
+
+-- A member's name in their class colour, from the roster this client keeps; the key's name otherwise.
+local function memberName(key)
+    local m = GuildOS.db and GuildOS.db.members and GuildOS.db.members[key]
+    local name = (type(m) == "table" and m.name) or tostring(key):match("^([^-]+)") or tostring(key)
+    local cls = type(m) == "table" and m.class
+    if cls then
+        local r, g, b = GuildOS:GetClassColor(cls)
+        if r then return string.format("|cff%02x%02x%02x%s|r", r * 255, g * 255, b * 255, name) end
+    end
+    return name
+end
+
+-- An achievement in the game's tooltip (#373, as approved): its title, what it asks when the site sends
+-- that, then when and by whom it was earned, or how far along it is.
+local function showTip(owner, e)
+    if not (GameTooltip and type(e) == "table") then return end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(e.title or "", C.text.r, C.text.g, C.text.b)
+    if type(e.rule) == "string" and e.rule ~= "" then
+        GameTooltip:AddLine(e.rule, C.textSoft.r, C.textSoft.g, C.textSoft.b, true)
+    end
+    local target = tonumber(e.target)
+    if target and target > 0 then
+        local current = math.floor(tonumber(e.current) or 0)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(string.format("%d / %d  (%d%%)", current, math.floor(target), math.floor(current / target * 100 + 0.5)),
+            C.text.r, C.text.g, C.text.b)
+    elseif (tonumber(e.at) or 0) > 0 then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(string.format(L["Earned %s"], day(e.at)), C.label.r, C.label.g, C.label.b)
+        if e.key then GameTooltip:AddLine(string.format(L["by %s"], memberName(e.key)), C.label.r, C.label.g, C.label.b) end
+    end
+    GameTooltip:Show()
+end
+
+-- A group's tooltip ("Desbravadores"): its name, then each part with the day it was earned.
+local function showGroupTip(owner, row)
+    if not GameTooltip then return end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(row.name or "", C.text.r, C.text.g, C.text.b)
+    for i, part in ipairs(row.parts or {}) do
+        local e = row.partEntries and row.partEntries[i]
+        local at = e and tonumber(e.at) or 0
+        GameTooltip:AddDoubleLine(part, at > 0 and day(at) or "", C.textSoft.r, C.textSoft.g, C.textSoft.b,
+            C.label.r, C.label.g, C.label.b)
+    end
+    GameTooltip:Show()
+end
+
+local function hideTip() if GameTooltip then GameTooltip:Hide() end end
 
 -- Frames made as the screen needs them and kept: a redraw takes them again instead of making more.
 local function newPool(make)
@@ -218,7 +271,23 @@ function GuildOS:CreateAchievementsPanel(parent)
         GuildOS:ApplyFont(fs, nil, "tableNum")
         return fs
     end)
-    local pills = newPool(function() return UI:CreateBadge(content, "") end)
+    -- A pill shows its tier's tooltip; above the row's own hover area, so the pill wins under the cursor.
+    local pills = newPool(function()
+        local p = UI:CreateBadge(content, "")
+        p:SetFrameLevel((content:GetFrameLevel() or 1) + 2)
+        p:EnableMouse(true)
+        p:SetScript("OnEnter", function(self) showTip(self, self.entry) end)
+        p:SetScript("OnLeave", hideTip)
+        return p
+    end)
+    -- A row's hover area, under its text and pills: the row's tooltip anywhere else on it.
+    local hits = newPool(function()
+        local f = CreateFrame("Frame", nil, content)
+        f:SetFrameLevel((content:GetFrameLevel() or 1) + 1)
+        f:EnableMouse(true)
+        f:SetScript("OnLeave", hideTip)
+        return f
+    end)
     -- A nearest card: a panel with the title (two lines at most), the bar, and how far along.
     local cards = newPool(function()
         local card = UI:CreatePanel(content)
@@ -235,6 +304,9 @@ function GuildOS:CreateAchievementsPanel(parent)
         card.count:SetPoint("BOTTOMRIGHT", -CARD_PAD, CARD_PAD)
         card.count:SetJustifyH("RIGHT")
         card.bar = UI:CreateProgressBar(card, CARD_MIN, BAR_H)
+        card:EnableMouse(true)
+        card:SetScript("OnEnter", function(self) showTip(self, self.entry) end)
+        card:SetScript("OnLeave", hideTip)
         return card
     end)
     -- What the harness reads back: the cards and the earned rows as drawn.
@@ -336,6 +408,7 @@ function GuildOS:CreateAchievementsPanel(parent)
                 card:SetPoint("TOPRIGHT", 0, -top)
             end
             card:SetHeight(CARD_H)
+            card.entry = n
             card.title:SetText(n.title)
 
             local current, target = tonumber(n.current) or 0, tonumber(n.target) or 0
@@ -393,8 +466,10 @@ function GuildOS:CreateAchievementsPanel(parent)
                 -- frame, dim beside them, so the collection shows what comes next. No gold: a pill is
                 -- not a selection.
                 local tiers = {}
-                for _, t in ipairs(r.tiers) do tiers[#tiers + 1] = { label = t.label, earned = true } end
-                if r.following then tiers[#tiers + 1] = { label = r.following.label, earned = false } end
+                for _, t in ipairs(r.tiers) do tiers[#tiers + 1] = { label = t.label, earned = true, entry = t.entry } end
+                if r.following then
+                    tiers[#tiers + 1] = { label = r.following.label, earned = false, entry = r.following.entry }
+                end
                 local avail = W > 0 and (W - x - COL_W - GAP) or math.huge
                 local px, py = x, 0
                 for _, t in ipairs(tiers) do
@@ -405,12 +480,23 @@ function GuildOS:CreateAchievementsPanel(parent)
                     if px > x and px + pw > x + avail then px, py = x, py + PILL_H + PILL_GAP end
                     pill:SetPoint("TOPLEFT", px, -(y + py) + 1)   -- 1px up: centred on the 12px name
                     pill.earned = t.earned
+                    pill.entry = t.entry
                     drawn.pills[#drawn.pills + 1] = pill
                     px = px + pw + PILL_GAP
                 end
                 h = math.max(h, py + PILL_H - 1)
             end
         end
+        -- The row's tooltip: a single's own, a series' newest tier, or a group's parts with their days.
+        local hit = hits:Take()
+        hit:SetPoint("TOPLEFT", 0, -y)
+        hit:SetPoint("TOPRIGHT", 0, -y)
+        hit:SetHeight(math.max(h, 14))
+        hit:SetScript("OnEnter", function(self)
+            if r.kind == "group" then showGroupTip(self, r)
+            else showTip(self, r.kind == "single" and r.entry or (r.tiers[#r.tiers] or {}).entry) end
+        end)
+        drawn.hit = hit
         content.rows[#content.rows + 1] = drawn
         y = y + math.max(h, 14) + ROW_GAP
     end
@@ -421,6 +507,7 @@ function GuildOS:CreateAchievementsPanel(parent)
         texts:Reset()
         numbers:Reset()
         pills:Reset()
+        hits:Reset()
         cards:Reset()
         insignia:Hide()
         nameFS:Hide()

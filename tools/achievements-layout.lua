@@ -63,6 +63,7 @@ local function newRegion(kind, parent)
         self.scripts[a[1]] = prev and function(...) prev(...); a[2](...) end or a[2]
       elseif k == "CreateTexture" or k == "CreateFontString" then
         local t = newRegion(k, self); t.layer = a[2]; return t
+      elseif k == "SetFrameLevel" then self.level = a[1]
       elseif k == "GetFrameLevel" then return 1
       end
     end
@@ -419,5 +420,73 @@ for _, style in ipairs({ "guildos", "forever" }) do
     style .. ": nothing earned: EARNED says so")
   check(#errors == 0, style .. ": no errors along the way (" .. table.concat(errors, "; ") .. ")")
 end
+
+-- ── 3. Tooltips (#373, as approved) ────────────────────────────────────
+-- Each achievement shows, under the cursor, its title, what it asks when the site sends that, then when
+-- and by whom it was earned, or how far along it is. A group lists its parts with their days.
+load("guildos")
+local C = GuildOS.Colors
+local tip = {}
+GameTooltip = {
+  SetOwner = function(_, owner) tip = { owner = owner, lines = {} } end,
+  AddLine = function(_, text, r, g, b) tip.lines[#tip.lines + 1] = { text = text, color = { r, g, b } } end,
+  AddDoubleLine = function(_, left, right) tip.lines[#tip.lines + 1] = { text = left, right = right } end,
+  Show = function() tip.shown = true end,
+  Hide = function() tip.shown = false end,
+}
+GuildOS.db.members = GuildOS.db.members or {}
+GuildOS.db.members["Ana-Realm"] = { name = "Ana", class = "MAGE" }
+local earnedTip = {}
+for i, e in ipairs(EARNED) do earnedTip[i] = { id = e.id, title = e.title, at = e.at } end
+earnedTip[2].rule, earnedTip[2].key = "Receitas diferentes conhecidas pela guilda: 400", "Ana-Realm"   -- Biblioteca Viva III
+local nextTip = { { title = "Oficina Completa II", current = 3, target = 5, rule = "Alguem em cada uma das 6 profissoes" } }
+local tipTab = build(data({ Earned = function() return earnedTip end, Next = function() return nextTip end }), 900)
+local function rowNamed(name)
+  for _, d in ipairs(tipTab.content.rows) do if d.name.text == name then return d end end
+end
+
+local bv = rowNamed("Biblioteca Viva")
+local pillIII = bv and bv.pills[3]
+check(pillIII and pillIII.scripts.OnEnter and pillIII.scripts.OnLeave, "a tier's pill answers the cursor")
+pillIII.scripts.OnEnter(pillIII)
+check(tip.shown and tip.owner == pillIII and tip.lines[1].text == "Biblioteca Viva III" and same(tip.lines[1].color, C.text)
+  and tip.lines[2].text == "Receitas diferentes conhecidas pela guilda: 400" and same(tip.lines[2].color, C.textSoft),
+  "its tooltip: the tier's title, then what it asks")
+check(tip.lines[4].text == "Earned " .. ymd(EARNED[2].at) and tip.lines[5].text:find("Ana", 1, true)
+  and tip.lines[5].text:find("^by "), "then when it was earned and by whom")
+pillIII.scripts.OnLeave(pillIII)
+check(not tip.shown, "and it goes when the cursor leaves")
+local pillI = bv.pills[1]
+pillI.scripts.OnEnter(pillI)
+check(tip.lines[1].text == "Biblioteca Viva I" and tip.lines[3].text == "Earned " .. ymd(EARNED[11].at) and #tip.lines == 3,
+  "each pill is its own tier; without a rule or a member, just the title and the day")
+
+local oficina = rowNamed("Oficina Completa")
+local following = oficina and oficina.pills[#oficina.pills]
+check(following and not following.earned, "the series' next tier is a pill too")
+following.scripts.OnEnter(following)
+check(tip.lines[1].text == "Oficina Completa II" and tip.lines[2].text == nextTip[1].rule and tip.lines[4].text == "3 / 5  (60%)",
+  "the next tier's pill tells how far along it is")
+
+local card = tipTab.content.cards[1]
+card.scripts.OnEnter(card)
+check(tip.owner == card and tip.lines[1].text == "Oficina Completa II" and tip.lines[4].text == "3 / 5  (60%)",
+  "a nearest card shows the same")
+
+local group = rowNamed("Desbravadores")
+group.hit.scripts.OnEnter(group.hit)
+check(tip.lines[1].text == "Desbravadores" and #tip.lines == 4 and tip.lines[2].text == "Ruins of Lordaeron"
+  and tip.lines[2].right == ymd(EARNED[12].at) and tip.lines[4].text == "Excavation Site: Wetlands",
+  "a group's row lists its parts, oldest first, each with its day")
+
+local single = rowNamed("Bandeira Hasteada")
+single.hit.scripts.OnEnter(single.hit)
+check(tip.lines[1].text == "Bandeira Hasteada" and tip.lines[3].text == "Earned " .. ymd(EARNED[8].at),
+  "a single's row shows its own")
+bv.hit.scripts.OnEnter(bv.hit)
+check(tip.lines[1].text == "Biblioteca Viva III", "a series' row, off its pills, shows its newest tier")
+check(bv.hit.points[1][1] == "TOPLEFT" and bv.hit.points[2][1] == "TOPRIGHT" and pillIII.level and bv.hit.level
+  and pillIII.level > bv.hit.level, "the row's hover area spans it, under the pills, so a pill wins under the cursor")
+GameTooltip = nil
 
 print(("achievements-layout: %d checks passed"):format(checks))

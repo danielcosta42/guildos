@@ -1298,10 +1298,10 @@ do
     end
   end
   check(bar and bar.h == 28 and same(bar.bg.color, C.panel), "the Guild tab's sub-tab bar is 28px on panel")
-  check(subTabs == 8 and #visibleSubs == 8 and visibleSubs[6] == "Chat" and visibleSubs[7] == "Journal"
-    and visibleSubs[8] == "Achievements" and open and open.label.text == "Calendar"
+  check(subTabs == 8 and #visibleSubs == 8 and visibleSubs[1] == "Achievements" and visibleSubs[7] == "Chat"
+    and visibleSubs[8] == "Journal" and open and open.label.text == "Calendar"
     and (open.underline.shown or (STYLE == "forever" and open.__styleTab)),
-    "its eight sub-tabs on WoW: Forever (Chat the sixth, #124; Journal and Achievements the last two, #367) "
+    "its eight sub-tabs on WoW: Forever (Achievements first, #373; Chat the seventh; Journal last) "
       .. "carry a 1px gold rule, shown under the open one")
   check(cal.viewYear == 2026 and cal.viewMonth == 1 and cal.selectedKey == 20260115,
     "showing the raid's month, with its day selected")
@@ -1396,8 +1396,9 @@ do
   end
   local journal, achievements = guild.subPanels.journal, guild.subPanels.achievements
   check(subTab("Journal").shown and subTab("Achievements").shown, "Journal and Achievements are offered on WoW: Forever")
-  check(not journal.built and not achievements.built and not journal.panel.shown,
-    "and neither is built before it opens")
+  check(guild.activeSub == "achievements" and achievements.built and achievements.panel.shown
+    and subTab("Achievements").isActive, "Guild opens on Achievements, its first sub-tab on WoW: Forever (#373)")
+  check(not journal.built and not journal.panel.shown, "and the Journal is not built before it opens")
 
   check(UI:OpenWindow("journal") and win.activeTab == "guild" and guild.activeSub == "journal",
     "/gos open journal lands on the Guild tab's Journal")
@@ -1429,8 +1430,8 @@ do
     "and its deep link refuses, saying why")
   -- A sub-tab that went stale on screen still falls back: a click asks again.
   guild.SelectSub("journal")
-  check(guild.activeSub == "calendar" and guild.subPanels.calendar.panel.shown and not journal.panel.shown,
-    "selecting it anyway lands on the calendar")
+  check(guild.activeSub == "achievements" and achievements.panel.shown and not journal.panel.shown,
+    "selecting it anyway lands where Guild opens, Achievements")
   guild.SelectSub("achievements")
   GuildOS:SetFeatureEnabled("achievements", false)
   win:Hide()
@@ -1467,7 +1468,7 @@ do
   check(hub.activeSub == "calendar" and #printed == 0, "and is refused, quietly, for the rest of the session")
   GuildOS.CreateAchievementsPanel = realAchievements
   guild.SelectSub("nope")
-  check(guild.activeSub == "calendar", "a sub-tab the hub does not have lands on the calendar")
+  check(guild.activeSub == "achievements", "a sub-tab the hub does not have lands where Guild opens, Achievements (#373)")
 
   -- Not on TBC Anniversary nor retail: the tabs are not there, and the deep links say so.
   for _, other in ipairs({ "isAnniversary", "isRetail" }) do

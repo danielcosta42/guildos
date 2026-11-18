@@ -680,8 +680,10 @@ end
 ----------------------------------------------------------------------
 -- `feature`: offered only while that feature may open here (UI:IsFeatureAllowed: present on this
 -- client, switched on, started), and built the first time it opens. The Journal and Achievements
--- tabs became the last two (issue #367); both are WoW: Forever's.
+-- tabs became the last two (issue #367); both are WoW: Forever's. Achievements leads the bar and is
+-- where Guild opens wherever it is offered (#373); elsewhere Guild opens on Calendar.
 local HUB_SUBTABS = {
+    { key = "achievements", label = L["Achievements"], feature = "achievements" },
     { key = "calendar", label = L["Calendar"] },
     { key = "activity", label = L["Activity"] },
     { key = "bulletin", label = L["Bulletin"] },
@@ -689,9 +691,7 @@ local HUB_SUBTABS = {
     { key = "polls",    label = L["Polls"] },
     { key = "chat",     label = L["Chat"] },
     { key = "journal",      label = L["Journal"],      feature = "journal" },
-    { key = "achievements", label = L["Achievements"], feature = "achievements" },
 }
-local HUB_DEFAULT = "calendar"
 
 -- `failed`: this hub's lazy sub-tabs whose builder errored (issue #367), refused for the session.
 local function hubOffers(key, failed)
@@ -702,9 +702,14 @@ local function hubOffers(key, failed)
     return false
 end
 
+-- Where Guild opens: Achievements where this client has it and it started, else Calendar (#373).
+local function hubDefault(failed)
+    return hubOffers("achievements", failed) and "achievements" or "calendar"
+end
+
 function GuildOS:CreateGuildHub(parent, _mainFrame)
     parent.subPanels = {}
-    parent.activeSub = HUB_DEFAULT
+    parent.activeSub = hubDefault()
 
     -- Anchored on the left only: UI:FlowBar reads GetWidth to wrap, and a frame pinned on both
     -- sides reports a stale width in the frame its container was resized (as ManagementPanel).
@@ -750,9 +755,9 @@ function GuildOS:CreateGuildHub(parent, _mainFrame)
     -- A sub-tab not offered (switched off, or not on this client) falls back to the calendar, deep
     -- links included.
     local function selectSub(key, filter)
-        if not hubOffers(key, failed) then key = HUB_DEFAULT end
+        if not hubOffers(key, failed) then key = hubDefault(failed) end
         build(key)
-        if failed[key] then key = HUB_DEFAULT; build(key) end   -- its builder just errored
+        if failed[key] then key = hubDefault(failed); build(key) end   -- its builder just errored
         parent.activeSub = key
         for k, info in pairs(parent.subPanels) do info.panel:SetShown(k == key) end
         for k, btn in pairs(subTabBtns) do btn:SetActive(k == key) end
@@ -803,7 +808,7 @@ function GuildOS:CreateGuildHub(parent, _mainFrame)
 
     parent:SetScript("OnShow", function()
         layoutTabs()
-        selectSub(parent.activeSub or HUB_DEFAULT)
+        selectSub(parent.activeSub or hubDefault(failed))
     end)
     UI:MakeResponsive(parent, function(_, w)
         bar:SetWidth(math.max(TAB_MIN_W, w - 20))
