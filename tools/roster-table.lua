@@ -99,7 +99,8 @@ for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "SetBackdrop"
   "ClearFocus", "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetVertexColor", "SetDesaturated",
   "SetFrameStrata", "EnableMouse", "SetMovable", "RegisterForDrag", "SetColorTexture", "SetAtlas", "SetScale",
   "SetHorizTile", "SetVertTile", "SetResizeBounds", "SetClipsChildren", "SetScrollChild", "RegisterEvent",
-  "SetDrawLayer", "SetFontObject", "SetSpacing", "SetNonSpaceWrap", "SetIndentedWordWrap", "SetMaxLines" }) do
+  "SetDrawLayer", "SetFontObject", "SetSpacing", "SetNonSpaceWrap", "SetIndentedWordWrap", "SetMaxLines",
+  "HasFocus" }) do   -- the shared field's placeholder asks whether it has the focus (#371)
   Frame[name] = function() end
 end
 

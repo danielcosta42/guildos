@@ -107,6 +107,13 @@ local function load(game)
       local w = widget(); w.kind = "Button"; w.label = widget(); w.label.text = text
       made[#made + 1] = w
       return w
+    end,
+    -- The note box is the shared field since #371: an EditBox of `made` too, its scripts hooked.
+    CreateInput = function()
+      local w = widget(); w.kind = "EditBox"
+      function w:HookScript(k, fn) self.scripts[k] = fn end
+      made[#made + 1] = w
+      return w
     end },
     { __index = function() return function() return stub end end })
   dofile(ADDON .. "/UI/FeaturePanels.lua")

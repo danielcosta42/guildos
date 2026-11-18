@@ -176,7 +176,7 @@ local function inviteField(parent)
     local box = CreateFrame("EditBox", nil, holder, "BackdropTemplate")
     box:SetSize(130, 18)
     box:SetPoint("LEFT", 0, 0)
-    box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(box) })
     box:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
     box:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
     GuildOS:ApplyFont(box, 10)
@@ -232,6 +232,7 @@ local function createWindow()
     end
     f:Hide()
     f:SetScale(GuildOS:GetSetting("uiScale") or 1)
+    UI:RefreshHairlines()   -- its border was sized before the scale (#369)
     UI:RestoreWindowGeometry(f)
     f.tabs, f.tabPanels, f.overflow, f.footItems = {}, {}, {}, {}
 
@@ -753,6 +754,7 @@ end
 function UI:ApplyScale()
     local f = GuildOS.RosterFrame
     if f then f:SetScale(GuildOS:GetSetting("uiScale") or 1) end
+    self:RefreshHairlines()
 end
 
 -- A feature turned off in Settings loses its tab at once.

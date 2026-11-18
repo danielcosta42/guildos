@@ -1030,7 +1030,7 @@ function Recruitment:CreatePopupFrame()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1043,11 +1043,12 @@ function Recruitment:CreatePopupFrame()
     f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     f:Hide()
 
-    -- Title: brand + localized subtitle ("Guild OS  ·  Recruitment").
+    -- Title: brand + localized subtitle ("Guild OS  ·  Recruitment"), in the text colour: gold is the
+    -- selection's, the primary button's and the active tab's (#371).
     local title = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(title, 13)
     title:SetPoint("TOPLEFT", PAD, -12)
-    title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    title:SetTextColor(C.text.r, C.text.g, C.text.b)
     title:SetText("Guild OS  |cff6c6c78" .. L["Recruitment"] .. "|r")
 
     local sep = UI:CreateSeparator(f)
@@ -1095,9 +1096,10 @@ function Recruitment:CreatePopupFrame()
     f.hint = hint
 
     -- Postar (the send): a hardware OnClick so SendChatMessage to a channel works.
+    -- The popup's one action is its primary button, not a green fill (#371).
     local postBtn = UI:CreateButton(f, L["Post"], 120, 26)
     postBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -5, 14)
-    postBtn:SetBaseColor(C.online.r * 0.30, C.online.g * 0.30, C.online.b * 0.30, 0.9)
+    UI:SetButtonVariant(postBtn, "primary")
     postBtn:SetScript("OnClick", function()
         Recruitment:DoSendRecruitmentMessage()
         f:Hide()
@@ -1123,7 +1125,7 @@ local function ActionPopup(title, y, okText, laterText)
     local f = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     f:SetSize(WIDTH, 120)
     f:SetPoint("TOP", UIParent, "TOP", 0, y)
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
     f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
     f:SetFrameStrata("DIALOG")
@@ -1138,7 +1140,7 @@ local function ActionPopup(title, y, okText, laterText)
     local t = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(t, 13)
     t:SetPoint("TOPLEFT", PAD, -12)
-    t:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    t:SetTextColor(C.text.r, C.text.g, C.text.b)   -- the text colour, as the recruit popup's (#371)
     t:SetText("Guild OS  |cff6c6c78" .. title .. "|r")
     local sep = UI:CreateSeparator(f)
     sep:SetPoint("TOPLEFT", PAD, -30)
@@ -1160,7 +1162,7 @@ local function ActionPopup(title, y, okText, laterText)
 
     f.okBtn = UI:CreateButton(f, okText, 140, 26)
     f.okBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -5, 12)
-    f.okBtn:SetBaseColor(C.online.r * 0.30, C.online.g * 0.30, C.online.b * 0.30, 0.9)
+    UI:SetButtonVariant(f.okBtn, "primary")   -- the click the popup carries, not a green fill (#371)
     f.laterBtn = UI:CreateButton(f, laterText, 140, 26)
     f.laterBtn:SetPoint("BOTTOMLEFT", f, "BOTTOM", 5, 12)
     -- Grow to the text, like the recruit popup: the note is the line the click posts.

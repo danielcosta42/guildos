@@ -286,6 +286,9 @@ function RecruitScanner:BuildInto(container)
 
     local UI = GuildOS.UI
     local C = GuildOS.Colors
+    -- UI.GAP (#371), read the way Layout.lua reads UI.SCROLL_GUTTER: a stubbed UI in the tools
+    -- answers something else for it.
+    local GAP = type(UI.GAP) == "number" and UI.GAP or 8
     local f = container
     -- Forward-declared: the button handlers below close over this LOCAL
     -- (not a shared self.uiRefresh) so each container's controls always
@@ -298,8 +301,8 @@ function RecruitScanner:BuildInto(container)
     -- controls are ever created for them.
     f.isOfficer = GuildOS:IsOfficer()
     if not f.isOfficer then
-        local notice = UI:CreateText(f, L["Officers only."], 12, C.silver.r, C.silver.g, C.silver.b)
-        notice:SetPoint("TOPLEFT", 16, -50)
+        local notice = UI:CreateText(f, L["Officers only."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        notice:SetPoint("TOPLEFT", 0, -GAP)
     else
         self._selected = self._selected or {}
         self._view = self._view or "results"
@@ -307,50 +310,47 @@ function RecruitScanner:BuildInto(container)
         cfg.classes = cfg.classes or {}
 
         ------------------------------------------------------------
-        -- Row 1 — filters bar: Min level / Max level / Class / Scan,
-        -- with a right-aligned "N found" count.
+        -- Every row starts flush with the container's left edge (the Recruitment sub-tab bar's), the
+        -- first UI.GAP under its top, and stops UI.GAP short of its right (#371): they sat 12px in.
         ------------------------------------------------------------
-        local minLbl = UI:CreateText(f, L["Min level"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
-        minLbl:SetPoint("TOPLEFT", 12, -12)
-        local minBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
-        minBox:SetSize(32, 20)
+        local ROW1_Y = -GAP
+        local BTN_H = 24
+
+        ------------------------------------------------------------
+        -- Row 1: filters bar. Min level / Max level / Class / Scan, and the count the scan found right
+        -- after it. The level fields are the shared field (#371): they had the gold Blizzard border.
+        ------------------------------------------------------------
+        local minLbl = UI:CreateText(f, L["Min level"], 11, C.text.r, C.text.g, C.text.b)
+        minLbl:SetPoint("LEFT", f, "TOPLEFT", 0, ROW1_Y - BTN_H / 2)
+        local minBox = UI:CreateInput(f, 36, 22, { numeric = true, max = 2 })
         minBox:SetPoint("LEFT", minLbl, "RIGHT", 6, 0)
-        minBox:SetAutoFocus(false)
-        minBox:SetNumeric(true)
-        minBox:SetMaxLetters(2)
         minBox:SetText(tostring(cfg.minLevel or 0))
-        minBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
         local function commitMin(s)
             cfg.minLevel = math.max(0, math.min(GuildOS.Client.maxLevel, tonumber(s:GetText()) or 0))
             s:SetText(tostring(cfg.minLevel))
             s:ClearFocus()
         end
         minBox:SetScript("OnEnterPressed", commitMin)
-        minBox:SetScript("OnEditFocusLost", commitMin)
+        minBox:HookScript("OnEditFocusLost", commitMin)
 
-        local maxLbl = UI:CreateText(f, L["Max level"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
+        local maxLbl = UI:CreateText(f, L["Max level"], 11, C.text.r, C.text.g, C.text.b)
         maxLbl:SetPoint("LEFT", minBox, "RIGHT", 14, 0)
-        local maxBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
-        maxBox:SetSize(32, 20)
+        local maxBox = UI:CreateInput(f, 36, 22, { numeric = true, max = 2 })
         maxBox:SetPoint("LEFT", maxLbl, "RIGHT", 6, 0)
-        maxBox:SetAutoFocus(false)
-        maxBox:SetNumeric(true)
-        maxBox:SetMaxLetters(2)
         local cap = GuildOS.Client.maxLevel
         maxBox:SetText(tostring(math.min(cfg.maxLevel or cap, cap)))
-        maxBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
         local function commitMax(s)
             cfg.maxLevel = math.max(0, math.min(cap, tonumber(s:GetText()) or cap))
             s:SetText(tostring(cfg.maxLevel))
             s:ClearFocus()
         end
         maxBox:SetScript("OnEnterPressed", commitMax)
-        maxBox:SetScript("OnEditFocusLost", commitMax)
+        maxBox:HookScript("OnEditFocusLost", commitMax)
 
         -- Class cycle button: Any -> the 9 TBC classes -> Any. Reuses the
         -- class order already defined for the recruitment beacon instead
         -- of duplicating the list here.
-        local classBtn = UI:CreateButton(f, "", 132, 24)
+        local classBtn = UI:CreateButton(f, "", 132, BTN_H)
         classBtn:SetPoint("LEFT", maxBox, "RIGHT", 14, 0)
         local function currentClass()
             return next(cfg.classes)
@@ -378,7 +378,7 @@ function RecruitScanner:BuildInto(container)
         paintClassBtn()
         f.classBtn = classBtn
 
-        local scanBtn = UI:CreateButton(f, L["Scan"], 90, 24)
+        local scanBtn = UI:CreateButton(f, L["Scan"], 90, BTN_H)
         scanBtn:SetPoint("LEFT", classBtn, "RIGHT", 14, 0)
         scanBtn:SetScript("OnClick", function()
             RecruitScanner:Scan(function()
@@ -389,23 +389,25 @@ function RecruitScanner:BuildInto(container)
         end)
         f.scanBtn = scanBtn
 
-        local foundText = UI:CreateText(f, string.format(L["%d found"], 0), 11, C.silver.r, C.silver.g, C.silver.b)
-        foundText:SetPoint("TOPRIGHT", -16, -14)
+        local foundText = UI:CreateText(f, string.format(L["%d found"], 0), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        foundText:SetPoint("LEFT", scanBtn, "RIGHT", 12, 0)
         f.foundText = foundText
 
         ------------------------------------------------------------
         -- Separator under the filters bar.
         ------------------------------------------------------------
+        local SEP1_Y = ROW1_Y - BTN_H - GAP
         local sep1 = UI:CreateSeparator(f)
-        sep1:SetPoint("TOPLEFT", 12, -46)
-        sep1:SetPoint("TOPRIGHT", -12, -46)
+        sep1:SetPoint("TOPLEFT", 0, SEP1_Y)
+        sep1:SetPoint("TOPRIGHT", -GAP, SEP1_Y)
 
         ------------------------------------------------------------
-        -- Row 2 — view toggle: Results / Inbox tabs (left) and a
+        -- Row 2: view toggle. Results / Inbox tabs (left) and a
         -- Select-all checkbox + "N selected" count (right).
         ------------------------------------------------------------
+        local TAB_Y, TAB_H = SEP1_Y - GAP, 28
         local resultsTab = UI:CreateTab(f, L["Results"], 90)
-        resultsTab:SetPoint("TOPLEFT", 12, -54)
+        resultsTab:SetPoint("TOPLEFT", 0, TAB_Y)
         resultsTab:SetScript("OnClick", function()
             self._view = "results"
             GuildOS:SafeCall(refresh)
@@ -428,8 +430,8 @@ function RecruitScanner:BuildInto(container)
         f.clearBtn = clearBtn
 
         local selectedText = UI:CreateText(f, string.format(L["%d selected"], 0), 11,
-            C.textDim.r, C.textDim.g, C.textDim.b)
-        selectedText:SetPoint("TOPRIGHT", -16, -60)
+            C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        selectedText:SetPoint("RIGHT", f, "TOPRIGHT", -GAP, TAB_Y - TAB_H / 2)
         f.selectedText = selectedText
 
         local selectAllCb = UI:CreateCheckbox(f, L["Select all"], 16)
@@ -439,7 +441,7 @@ function RecruitScanner:BuildInto(container)
         -- floating 200px past the label, per the ScrollFrame-gotcha-style
         -- lesson of not trusting a helper's default frame bounds.
         selectAllCb:SetWidth(16 + 6 + (selectAllCb.label:GetStringWidth() or 50) + 4)
-        selectAllCb:SetPoint("TOPRIGHT", selectedText, "TOPLEFT", -14, 0)
+        selectAllCb:SetPoint("RIGHT", selectedText, "LEFT", -14, 0)
         selectAllCb.checkbox.onChanged = function(_, checked)
             local results = RecruitScanner:GetResults()
             for _, cand in ipairs(results) do
@@ -451,49 +453,44 @@ function RecruitScanner:BuildInto(container)
         f.selectAllCb = selectAllCb
 
         ------------------------------------------------------------
-        -- Row 3 — column header (Results view only) + separator. X
-        -- offsets are HDR (the holder's 12px inset; the scroll child is
-        -- flush with the holder, no extra inset) plus the matching row
-        -- column offset used below, so headers line up with the data.
+        -- Row 3: column header (Results view only). The shared header (#371): no band, its 1px rule
+        -- under it, the column labels the table's. Its x offsets are the rows' below, the scroll
+        -- child being flush with the holder, so headers line up with the data.
         ------------------------------------------------------------
-        local HDR = 12
-        local hName = UI:CreateText(f, L["PLAYER"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        hName:SetPoint("TOPLEFT", HDR + 30, -92)
-        local hLvl = UI:CreateText(f, L["LVL"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        hLvl:SetPoint("TOPLEFT", HDR + 240, -92)
-        local hClass = UI:CreateText(f, L["CLASS"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        hClass:SetPoint("TOPLEFT", HDR + 290, -92)
-        local hZone = UI:CreateText(f, L["ZONE"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        hZone:SetPoint("TOPLEFT", HDR + 410, -92)
-        local sep2 = UI:CreateSeparator(f)
-        sep2:SetPoint("TOPLEFT", 12, -110)
-        sep2:SetPoint("TOPRIGHT", -12, -110)
-        f.colHeader = { hName, hLvl, hClass, hZone, sep2 }
+        local HEADER_Y = TAB_Y - TAB_H - 4
+        local colHeader = UI:CreateTableHeader(f)
+        colHeader:SetPoint("TOPLEFT", 0, HEADER_Y)
+        colHeader:SetPoint("TOPRIGHT", -GAP, HEADER_Y)
+        UI:CreateHeaderText(colHeader, L["PLAYER"]):SetPoint("LEFT", 30, 0)
+        UI:CreateHeaderText(colHeader, L["LVL"]):SetPoint("LEFT", 240, 0)
+        UI:CreateHeaderText(colHeader, L["CLASS"]):SetPoint("LEFT", 290, 0)
+        UI:CreateHeaderText(colHeader, L["ZONE"]):SetPoint("LEFT", 410, 0)
+        f.colHeader = { colHeader }
 
         ------------------------------------------------------------
-        -- Row 4 (THE HERO) — scroll list. Anchored TOPLEFT/TOPRIGHT just
-        -- below the column header and BOTTOMLEFT/BOTTOMRIGHT just above
-        -- the footer, so it fills the middle and grows with the window.
+        -- Row 4 (THE HERO): scroll list. Hung just below the column header and just above the
+        -- footer, so it fills the middle and grows with the window.
         -- ScrollFrame gotcha: CreateScrollFrame does NOT anchor the
-        -- scroll frame itself — SetAllPoints() here, or content is
-        -- clipped to 0x0.
+        -- scroll frame itself: SetAllPoints() here, or content is
+        -- clipped to 0x0. The child keeps the frame's width less the bar's gutter (#371).
         ------------------------------------------------------------
+        local FOOTER_H = 94
         local holder = CreateFrame("Frame", nil, f)
-        holder:SetPoint("TOPLEFT", 12, -118)
-        holder:SetPoint("TOPRIGHT", -12, -118)
-        holder:SetPoint("BOTTOMLEFT", 12, 100)
-        holder:SetPoint("BOTTOMRIGHT", -12, 100)
+        holder:SetPoint("TOPLEFT", colHeader, "BOTTOMLEFT", 0, -2)
+        holder:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -GAP, FOOTER_H)
         local scroll, child = UI:CreateScrollFrame(holder, "GuildOSRecruitScannerScroll")
         scroll:SetAllPoints()
+        UI:BindScrollChildWidth(scroll, child)
         f.child = child
         f.holder = holder
 
         ------------------------------------------------------------
-        -- Footer — fixed at the container bottom: template label/hint,
-        -- full-width template box, Whisper-selected button.
+        -- Footer: fixed at the container bottom. The template's label, the
+        -- full-width template box (the shared field, in its font, #371), and under it the tokens
+        -- it takes and the Whisper-selected button.
         ------------------------------------------------------------
         local whisperBtn = UI:CreateButton(f, string.format(L["Whisper selected (%d)"], 0), 190, 28)
-        whisperBtn:SetPoint("BOTTOMRIGHT", -16, 12)
+        whisperBtn:SetPoint("BOTTOMRIGHT", -GAP, GAP)
         whisperBtn:SetScript("OnClick", function()
             -- WoW: Forever: the last batch's whispers go out one per click (issue #61).
             if RecruitScanner:PendingWhispers() > 0 then
@@ -509,27 +506,22 @@ function RecruitScanner:BuildInto(container)
         end)
         f.whisperBtn = whisperBtn
 
-        local tmplBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
-        tmplBox:SetHeight(24)
-        tmplBox:SetPoint("BOTTOMLEFT", 12, 48)
-        tmplBox:SetPoint("BOTTOMRIGHT", -12, 48)
-        tmplBox:SetAutoFocus(false)
-        tmplBox:SetMaxLetters(255)
+        local tmplBox = UI:CreateInput(f, 200, 22, { max = 255 })
+        tmplBox:SetPoint("BOTTOMLEFT", 0, 44)
+        tmplBox:SetPoint("BOTTOMRIGHT", -GAP, 44)
         tmplBox:SetText(cfg.template or "")
-        tmplBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
         local function commitTemplate(s)
             cfg.template = s:GetText()
             s:ClearFocus()
         end
         tmplBox:SetScript("OnEnterPressed", commitTemplate)
-        tmplBox:SetScript("OnEditFocusLost", commitTemplate)
+        tmplBox:HookScript("OnEditFocusLost", commitTemplate)
 
-        local tmplLbl = UI:CreateText(f, L["Message template"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
+        local tmplLbl = UI:CreateText(f, L["Message template"], 11, C.text.r, C.text.g, C.text.b)
         tmplLbl:SetPoint("BOTTOMLEFT", tmplBox, "TOPLEFT", 0, 6)
-        local dot = UI:CreateText(f, "·", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        dot:SetPoint("LEFT", tmplLbl, "RIGHT", 6, 0)
-        local hint = UI:CreateText(f, L["Tokens: [player] [class] [level]"], 9, C.silver.r, C.silver.g, C.silver.b)
-        hint:SetPoint("LEFT", dot, "RIGHT", 6, 0)
+        -- The tokens under the box they fill, left-aligned (#371): they trailed its label after a dot.
+        local hint = UI:CreateText(f, L["Tokens: [player] [class] [level]"], 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        hint:SetPoint("TOPLEFT", tmplBox, "BOTTOMLEFT", 0, -6)
     end
 
     refresh = function()
@@ -578,7 +570,6 @@ function RecruitScanner:BuildInto(container)
         local child = f.child
         for _, c in pairs({ child:GetChildren() }) do c:Hide() end
         for _, r in pairs({ child:GetRegions() }) do r:Hide() end
-        child:SetWidth(f.holder:GetWidth() - 12)
 
         local y = 0
         if isResults then
@@ -632,7 +623,8 @@ function RecruitScanner:BuildInto(container)
         else -- inbox
             local inbox = RecruitScanner:GetInbox()
             for _, entry in ipairs(inbox) do
-                local nameFS = UI:CreateText(child, entry.name or "?", 11, C.gold.r, C.gold.g, C.gold.b)
+                -- A name in the text colour: gold is the selection's (#371).
+                local nameFS = UI:CreateText(child, entry.name or "?", 11, C.text.r, C.text.g, C.text.b)
                 nameFS:SetPoint("TOPLEFT", 4, -y)
                 nameFS:SetWidth(88)
                 nameFS:SetJustifyH("LEFT")
@@ -683,7 +675,7 @@ function RecruitScanner:Show()
         -- a usable height.
         f:SetSize(760, 520)
         f:SetPoint("CENTER")
-        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
         f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
         f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
         UI:StylePopup(f)
@@ -700,15 +692,14 @@ function RecruitScanner:Show()
         close:SetPoint("TOPRIGHT", -8, -8)
         close:SetScript("OnClick", function() f:Hide() end)
 
-        -- BuildInto()'s filters bar starts at a fixed TOPLEFT(12,-12) of
-        -- whatever container it's given, which is correct for the
-        -- title-less RosterFrame sub-tab it was designed for but would
-        -- run straight under this popup's title text if handed `f`
-        -- directly. Give it its own body frame below the title/close row
-        -- instead — same idiom as RosterFrame's bar+sub-panel split.
+        -- BuildInto() lays its rows flush with the container's left edge, UI.GAP under its top
+        -- and UI.GAP short of its right and bottom (#371), which is right for the RosterFrame
+        -- sub-tab it was designed for but would run straight into this popup's edges and under
+        -- its title if handed `f` directly. Give it its own body frame below the title/close row,
+        -- inset like the title, the same idiom as RosterFrame's bar+sub-panel split.
         local body = CreateFrame("Frame", nil, f)
-        body:SetPoint("TOPLEFT", 0, -36)
-        body:SetPoint("BOTTOMRIGHT", 0, 0)
+        body:SetPoint("TOPLEFT", 16, -36)
+        body:SetPoint("BOTTOMRIGHT", -8, 8)
         self.frame = f
         self.body = body
     end

@@ -21,6 +21,10 @@ local _coreSignupFrame = nil
 
 local WHITE8 = "Interface\\Buttons\\WHITE8x8"
 
+-- The space between blocks and under a sub-tab bar (UI.GAP, #371), read the way Layout.lua reads
+-- UI.SCROLL_GUTTER: a stubbed UI in the tools answers a function for it.
+local GAP = type(UI.GAP) == "number" and UI.GAP or 8
+
 -- A numeric cell: IBM Plex Mono through the tableNum role (#363).
 local function Num(fs)
     GuildOS:ApplyFont(fs, nil, "tableNum")
@@ -172,7 +176,7 @@ local function RefreshCoreSignupFrame()
             rlbl:SetText(string.format("%s:%d/%d", rd.short, cnt, rd.target))
             if isMine then
                 local ul = content:CreateTexture(nil, "ARTWORK")
-                ul:SetTexture(WHITE8); ul:SetHeight(1)
+                ul:SetTexture(WHITE8); GuildOS.UI:Hairline(ul, "Height")
                 ul:SetPoint("TOPLEFT", rx, y - 16)
                 ul:SetWidth(44)
                 ul:SetVertexColor(rcol.r, rcol.g, rcol.b, 0.7)
@@ -183,23 +187,11 @@ local function RefreshCoreSignupFrame()
         -- The action: a note and Ask for a place, or Cancel request; nothing to do once on the core.
         local capCore = coreName
         if not st.member then
-            local noteInp = CreateFrame("EditBox", nil, content, "BackdropTemplate")
-            noteInp:SetSize(math.max(90, math.min(160, W - rx - 150)), 22)
+            -- The shared field, its hint the component's placeholder (#371).
+            local noteInp = UI:CreateInput(content, math.max(90, math.min(160, W - rx - 150)), 22,
+                { max = 80, placeholder = L["Note (optional)"] })
             noteInp:SetPoint("TOPRIGHT", -(CARD_PAD + 124), y + 2)
-            if GuildOS.Style then GuildOS.Style:Paint(noteInp, "input") end
-            GuildOS:ApplyFont(noteInp, 10)
-            noteInp:SetTextColor(C.text.r, C.text.g, C.text.b)
-            noteInp:SetTextInsets(6, 6, 0, 0)
-            noteInp:SetAutoFocus(false)
-            noteInp:SetMaxLetters(80)
-            noteInp:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-            local ph = noteInp:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(ph, 9)
-            ph:SetPoint("LEFT", 6, 0)
-            ph:SetTextColor(C.labelDim.r, C.labelDim.g, C.labelDim.b)
-            ph:SetText(L["Note (optional)"])
-            noteInp:SetScript("OnTextChanged", function(self)
-                if self:GetText() ~= "" then ph:Hide() else ph:Show() end
+            noteInp:HookScript("OnTextChanged", function(self)
                 f.notes[capCore] = self:GetText()   -- kept across a redraw, such as a role click (#94)
             end)
             noteInp:SetText(f.notes[coreName] or "")
@@ -291,7 +283,7 @@ local function BuildCoreSignupFrame()
         for i = #roles, 1, -1 do
             local role = roles[i]
             local b = CreateFrame("Button", nil, f, "BackdropTemplate")
-            b:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize=1 })
+            b:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize = GuildOS.UI:Edge(b) })
             b.lbl = b:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(b.lbl, 10)
             b.lbl:SetPoint("CENTER")
@@ -349,70 +341,89 @@ end
 ----------------------------------------------------------------------
 -- RAID ATTENDANCE PANEL
 ----------------------------------------------------------------------
-function GuildOS:CreateRaidsPanel(parent, _mainFrame)
-    local scrollParent = CreateFrame("Frame", nil, parent)
-    scrollParent:SetPoint("TOPLEFT", 10, -10)
-    scrollParent:SetPoint("BOTTOMRIGHT", -10, 10)
+-- The attendance table's columns, shared by its header and its rows (#371: the header left the scroll
+-- child so it stays put while the rows scroll).
+local ATT_COLS = { player = 6, group = 145, pct = 240, raids = 295, avg = 355, last = 450, form = 540 }
+local ATT_LIST_H = 200   -- px the attendance list keeps under the sessions while there are sessions
 
-    -- Title
-    local title = UI:CreateTitle(scrollParent, L["Raid Attendance"], 14)
+function GuildOS:CreateRaidsPanel(parent, _mainFrame)
+    -- Flush with the sub-tab bar's left edge, the first line UI.GAP under it (#371).
+    local scrollParent = CreateFrame("Frame", nil, parent)
+    scrollParent:SetPoint("TOPLEFT", 0, -GAP)
+    scrollParent:SetPoint("BOTTOMRIGHT", -GAP, GAP)
+
+    local title = UI:CreateSectionTitle(scrollParent, L["Raid Attendance"], true)
     title:SetPoint("TOPLEFT", 0, 0)
 
-    -- Status text
-    local statusText = UI:CreateText(scrollParent, "", 10, C.silver.r, C.silver.g, C.silver.b)
-    statusText:SetPoint("TOPLEFT", 200, -4)
+    -- The count and the tracker's state, under the title they qualify: it floated beside it at x = 200 (#371).
+    local statusText = UI:CreateText(scrollParent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    statusText:SetPoint("TOPLEFT", 0, -22)
 
     ----------------------------------------------------------------
-    -- Sessions section (top ~40%)
+    -- Sessions section
     ----------------------------------------------------------------
+    local FILTER_Y, LIST_TOP = -40, -40 - 20 - GAP
     local sessionsLabel = UI:CreateHeaderText(scrollParent, L["Sessions"], 11)
-    sessionsLabel:SetPoint("TOPLEFT", 0, -28)
+    sessionsLabel:SetPoint("LEFT", scrollParent, "TOPLEFT", 0, FILTER_Y - 10)
 
-    -- Filter toggle buttons
-    local filterAllBtn  = UI:CreateButton(scrollParent, L["All"], 58, 18)
-    local filter25Btn   = UI:CreateButton(scrollParent, Prog(L["25-man"]), 62, 18)
+    -- The filter: the shown one marked by UI:SetSelected, as every choice of a set (#371).
+    -- LockHighlight drew nothing on these flat buttons, so neither looked chosen.
+    local filterAllBtn  = UI:CreateButton(scrollParent, L["All"], 58, 20)
+    local filter25Btn   = UI:CreateButton(scrollParent, Prog(L["25-man"]), 62, 20)
     filterAllBtn:SetPoint("LEFT", sessionsLabel, "RIGHT", 10, 0)
     filter25Btn:SetPoint("LEFT", filterAllBtn,   "RIGHT",  4, 0)
 
-    local sessionScroll = CreateFrame("ScrollFrame", "GuildOSRaidSessionScroll", scrollParent, "UIPanelScrollFrameTemplate")
-    sessionScroll:SetPoint("TOPLEFT",     0,   -50)
-    sessionScroll:SetPoint("BOTTOMRIGHT", -10, 250)
-    UI:SkinScrollBar(sessionScroll, "GuildOSRaidSessionScroll")
-
-    local sessionContent = CreateFrame("Frame", nil, sessionScroll)
+    local sessionScroll, sessionContent = UI:CreateScrollFrame(scrollParent, "GuildOSRaidSessionScroll")
     sessionContent:SetSize(1, 1)
-    sessionScroll:SetScrollChild(sessionContent)
     UI:BindScrollChildWidth(sessionScroll, sessionContent)
 
     ----------------------------------------------------------------
-    -- Attendance section (bottom ~50%)
+    -- Attendance section: a section title, a table header that stays put, the rows that scroll
     ----------------------------------------------------------------
-    local attLabel = UI:CreateHeaderText(scrollParent, Prog(L["Member Attendance — 25-man only"]), 11)
-    attLabel:SetPoint("BOTTOMLEFT", 0, 236)
+    local attHdr = UI:CreateTableHeader(scrollParent)
+    local function AHdr(txt, x)
+        UI:CreateHeaderText(attHdr, txt):SetPoint("LEFT", x, 0)
+    end
+    AHdr(L["PLAYER"], ATT_COLS.player); AHdr(L["GROUP"], ATT_COLS.group); AHdr(L["ATT%"], ATT_COLS.pct)
+    AHdr(L["RAIDS"], ATT_COLS.raids); AHdr(L["AVG SCORE"], ATT_COLS.avg); AHdr(L["LAST RAID"], ATT_COLS.last)
 
-    local attScroll = CreateFrame("ScrollFrame", "GuildOSAttendanceScroll", scrollParent, "UIPanelScrollFrameTemplate")
-    attScroll:SetPoint("BOTTOMLEFT",  0,   10)
-    attScroll:SetPoint("BOTTOMRIGHT", -10, 10)
-    attScroll:SetHeight(220)
-    UI:SkinScrollBar(attScroll, "GuildOSAttendanceScroll")
+    local attTitle = UI:CreateSectionTitle(scrollParent, Prog(L["Member Attendance — 25-man only"]))
+    attTitle:SetPoint("BOTTOMLEFT", attHdr, "TOPLEFT", 0, GAP)
 
-    local attContent = CreateFrame("Frame", nil, attScroll)
+    local attScroll, attContent = UI:CreateScrollFrame(scrollParent, "GuildOSAttendanceScroll")
+    attScroll:SetPoint("TOPLEFT", attHdr, "BOTTOMLEFT", 0, 0)
+    attScroll:SetPoint("BOTTOMRIGHT", 0, 0)
     attContent:SetSize(1, 1)
-    attScroll:SetScrollChild(attContent)
     UI:BindScrollChildWidth(attScroll, attContent)
+
+    -- The sessions list takes the room the attendance leaves it; with no session it has no empty
+    -- string to say so, so it folds away and the attendance moves up under the filter (#371): it
+    -- was a 400px black block. Left and right come from the parent, the bottom from the title.
+    sessionScroll:SetPoint("TOPLEFT", 0, LIST_TOP)
+    sessionScroll:SetPoint("TOPRIGHT", 0, LIST_TOP)
+    sessionScroll:SetPoint("BOTTOMLEFT", attTitle, "TOPLEFT", 0, 20)
+    sessionContent.placeBlocks = function(hasSessions)
+        attHdr:ClearAllPoints()
+        if hasSessions then
+            attHdr:SetPoint("TOPLEFT", scrollParent, "BOTTOMLEFT", 0, ATT_LIST_H + attHdr:GetHeight())
+            attHdr:SetPoint("TOPRIGHT", scrollParent, "BOTTOMRIGHT", 0, ATT_LIST_H + attHdr:GetHeight())
+        else
+            -- Under the filter row: 20px over the title for its rule, 18 for its line, UI.GAP to the header.
+            local top = (FILTER_Y - 20) - 20 - 18 - GAP
+            attHdr:SetPoint("TOPLEFT", scrollParent, "TOPLEFT", 0, top)
+            attHdr:SetPoint("TOPRIGHT", scrollParent, "TOPRIGHT", 0, top)
+        end
+        sessionScroll:SetShown(hasSessions)
+    end
+    sessionContent.placeBlocks(true)
 
     ----------------------------------------------------------------
     -- Filter button wiring
     ----------------------------------------------------------------
     local function SetFilterActive(only25)
         _raidFilter25 = only25
-        if only25 then
-            filter25Btn:LockHighlight()
-            filterAllBtn:UnlockHighlight()
-        else
-            filterAllBtn:LockHighlight()
-            filter25Btn:UnlockHighlight()
-        end
+        UI:SetSelected(filterAllBtn, not only25)
+        UI:SetSelected(filter25Btn, only25)
         GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
     end
 
@@ -520,10 +531,11 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         local uPlayers = 0
         for _ in pairs(g.allPlayers) do uPlayers = uPlayers + 1 end
 
-        -- Group header row
+        -- Group header row, hung by both top corners: a width read while the tab is hidden is 0 (#371).
         local gRow = CreateFrame("Button", nil, sessionContent, "BackdropTemplate")
-        gRow:SetSize(sessionContent:GetWidth() - 10, gRowH)
+        gRow:SetHeight(gRowH)
         gRow:SetPoint("TOPLEFT", 0, -yOff)
+        gRow:SetPoint("TOPRIGHT", 0, -yOff)
         gRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
         gRow:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, C.headerBg.a)
 
@@ -532,11 +544,11 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         UI:CreateText(gRow, isGroupExp and "-" or "+", 9, C.label.r, C.label.g, C.label.b)
             :SetPoint("LEFT", 4, 0)
 
-        -- Raid name (paper for 25-man, silver for 10-man)
+        -- Raid name (paper for 25-man, silver for 10-man); the core's tag plain, not purple (#371)
         local nameClr = is25 and C.text or C.silver
         local nameLabel = g.difficulty and (g.name .. " (" .. g.difficulty .. ")") or g.name
         if g.groupTag and g.groupTag ~= "" then
-            nameLabel = "|cff9966FF[" .. g.groupTag .. "]|r " .. nameLabel
+            nameLabel = "[" .. g.groupTag .. "] " .. nameLabel
         end
         UI:CreateText(gRow, nameLabel, 11, nameClr.r, nameClr.g, nameClr.b)
             :SetPoint("LEFT", 18, 0)
@@ -551,7 +563,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
             :SetPoint("LEFT", 280, 0)
 
         -- Unique player count
-        UI:CreateText(gRow, uPlayers .. L[" players"], 9, C.white.r, C.white.g, C.white.b)
+        UI:CreateText(gRow, uPlayers .. L[" players"], 9, C.text.r, C.text.g, C.text.b)
             :SetPoint("LEFT", 340, 0)
 
         -- Kills / wipes summary
@@ -583,8 +595,9 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                 local rowH  = 22
 
                 local row = CreateFrame("Button", nil, sessionContent, "BackdropTemplate")
-                row:SetSize(sessionContent:GetWidth() - 30, rowH)
+                row:SetHeight(rowH)
                 row:SetPoint("TOPLEFT", 20, -yOff)
+                row:SetPoint("TOPRIGHT", 0, -yOff)
                 row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
                 local bg = (idx % 2 == 1) and C.row1 or C.row2
                 row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
@@ -608,7 +621,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
 
                 -- Player count
                 local pCount = GuildOS.RaidTracker:CountTable(sd.players or {})
-                UI:CreateText(row, pCount .. L[" players"], 9, C.white.r, C.white.g, C.white.b)
+                UI:CreateText(row, pCount .. L[" players"], 9, C.text.r, C.text.g, C.text.b)
                     :SetPoint("LEFT", 215, 0)
 
                 -- Boss kills / wipes
@@ -694,25 +707,26 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                         return a.name < b.name
                     end)
 
-                    local hdrFrame = CreateFrame("Frame", nil, sessionContent, "BackdropTemplate")
-                    hdrFrame:SetSize(sessionContent:GetWidth() - 50, 16)
+                    -- The shared table header: no band, a 1px rule under it (#371).
+                    local hdrFrame = UI:CreateTableHeader(sessionContent)
                     hdrFrame:SetPoint("TOPLEFT", 40, -yOff)
-                    hdrFrame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-                    hdrFrame:SetBackdropColor(0.040, 0.040, 0.055, 1)
+                    hdrFrame:SetPoint("TOPRIGHT", 0, -yOff)
                     local function Hdr(txt, x)
                         UI:CreateHeaderText(hdrFrame, txt):SetPoint("LEFT", x, 0)
                     end
                     Hdr(L["PLAYER"], 6); Hdr(L["SCORE"], 120); Hdr(L["LATE"], 170); Hdr(L["LEFT EARLY"], 210)
                     if GuildOS.ConsumableChecker then Hdr(L["NO CONS"], 290) end   -- TBC only (issue #184)
-                    yOff = yOff + 18
+                    yOff = yOff + hdrFrame:GetHeight() + 2
 
                     for pIdx, p in ipairs(playerList) do
                         local pRow = CreateFrame("Frame", nil, sessionContent, "BackdropTemplate")
-                        pRow:SetSize(sessionContent:GetWidth() - 50, 18)
+                        pRow:SetHeight(18)
                         pRow:SetPoint("TOPLEFT", 40, -yOff)
+                        pRow:SetPoint("TOPRIGHT", 0, -yOff)
                         pRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-                        local pbg = (pIdx % 2 == 1) and { r=0.05, g=0.04, b=0.09 } or { r=0.07, g=0.06, b=0.12 }
-                        pRow:SetBackdropColor(pbg.r, pbg.g, pbg.b, 0.9)
+                        -- The table's own zebra, not a purple tint of its own (#371).
+                        local pbg = (pIdx % 2 == 1) and C.row1 or C.row2
+                        pRow:SetBackdropColor(pbg.r, pbg.g, pbg.b, pbg.a)
 
                         local cr, cg, cb = GuildOS:GetClassColor(p.class)
                         local nameT = UI:CreateText(pRow, p.name, 9, cr, cg, cb)
@@ -744,6 +758,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         end -- if isGroupExp
     end -- for groups
     sessionContent:SetHeight(math.max(1, yOff))
+    if sessionContent.placeBlocks then sessionContent.placeBlocks(#groupOrder > 0) end
 
     ----------------------------------------------------------------
     -- Attendance list — always 25-man stats regardless of filter
@@ -771,41 +786,29 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         return pa > pb
     end)
 
-    -- Column headers
-    local attHdr = CreateFrame("Frame", nil, attContent, "BackdropTemplate")
-    attHdr:SetSize(attContent:GetWidth() - 10, 16)
-    attHdr:SetPoint("TOPLEFT", 0, 0)
-    attHdr:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-    attHdr:SetBackdropColor(0.040, 0.040, 0.055, 1)
-    local function AHdr(txt, x)
-        local t = UI:CreateHeaderText(attHdr, txt)
-        t:SetPoint("LEFT", x, 0)
-    end
-    AHdr(L["PLAYER"], 6); AHdr(L["GROUP"], 145); AHdr(L["ATT%"], 240); AHdr(L["RAIDS"], 295); AHdr(L["AVG SCORE"], 355); AHdr(L["LAST RAID"], 450)
-
-    yOff = 20
+    -- The column labels are the panel's own header, outside the scroll (CreateRaidsPanel, #371).
+    yOff = 0
     local lastGroupTag = nil
     for idx, entry in ipairs(attList) do
-        -- Group separator header when the group changes
+        -- Group separator when the group changes: a header row of the table, the tag in plain text (#371).
         if entry.groupTag ~= lastGroupTag then
             lastGroupTag = entry.groupTag
-            local ghRow = CreateFrame("Frame", nil, attContent, "BackdropTemplate")
-            ghRow:SetSize(attContent:GetWidth() - 10, 16)
+            local ghRow = UI:CreateTableHeader(attContent, 18)
             ghRow:SetPoint("TOPLEFT", 0, -yOff)
-            ghRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-            ghRow:SetBackdropColor(0.100, 0.100, 0.130, 1)
+            ghRow:SetPoint("TOPRIGHT", 0, -yOff)
             local groupLabel = entry.groupTag ~= "" and entry.groupTag or L["(no group)"]
             local total25g = GuildOS.RaidTracker:GetTotal25ManSessions(entry.groupTag)
             local ghText = UI:CreateText(ghRow,
-                "|cff9966FF" .. groupLabel .. "|r  —  " .. total25g .. Prog(L[" 25-man raids"]),
-                9, C.white.r, C.white.g, C.white.b)
-            ghText:SetPoint("LEFT", 6, 0)
-            yOff = yOff + 18
+                groupLabel .. "  ·  " .. total25g .. Prog(L[" 25-man raids"]),
+                9, C.text.r, C.text.g, C.text.b)
+            ghText:SetPoint("LEFT", ATT_COLS.player, 0)
+            yOff = yOff + 20
         end
 
         local row = CreateFrame("Frame", nil, attContent, "BackdropTemplate")
-        row:SetSize(attContent:GetWidth() - 10, 20)
+        row:SetHeight(20)
         row:SetPoint("TOPLEFT", 0, -yOff)
+        row:SetPoint("TOPRIGHT", 0, -yOff)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
         local bg = (idx % 2 == 1) and C.row1 or C.row2
         row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
@@ -815,21 +818,21 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         local class = memberData and memberData.class
         local cr, cg, cb = GuildOS:GetClassColor(class)
         local nameText = UI:CreateText(row, shortName, 10, cr, cg, cb)
-        nameText:SetPoint("LEFT", 6, 0)
+        nameText:SetPoint("LEFT", ATT_COLS.player, 0)
 
         -- Group tag column
         local gtLabel = entry.groupTag ~= "" and entry.groupTag or "-"
-        UI:CreateText(row, gtLabel, 9, C.label.r, C.label.g, C.label.b):SetPoint("LEFT", 145, 0)
+        UI:CreateText(row, gtLabel, 9, C.label.r, C.label.g, C.label.b):SetPoint("LEFT", ATT_COLS.group, 0)
 
         local total25g = GuildOS.RaidTracker:GetTotal25ManSessions(entry.groupTag)
         local pct      = GuildOS.RaidTracker:GetAttendance25ManPercent(entry.key, entry.groupTag)
         local pctClr   = pct >= 75 and C.green or (pct >= 50 and C.warn or C.red)
         local pctText  = Num(UI:CreateText(row, pct .. "%", 10, pctClr.r, pctClr.g, pctClr.b))
-        pctText:SetPoint("LEFT", 240, 0)
+        pctText:SetPoint("LEFT", ATT_COLS.pct, 0)
 
         local raids25  = entry.data.raids25 or 0
         local fracText = Num(UI:CreateText(row, raids25 .. "/" .. total25g, 10, C.silver.r, C.silver.g, C.silver.b))
-        fracText:SetPoint("LEFT", 295, 0)
+        fracText:SetPoint("LEFT", ATT_COLS.raids, 0)
 
         local avgScore = 0
         if raids25 > 0 and entry.data.totalScore25 then
@@ -839,21 +842,21 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         if avgScore < 80 then asr, asg, asb = C.warn.r, C.warn.g, C.warn.b end
         if avgScore < 60 then asr, asg, asb = C.red.r,  C.red.g,  C.red.b  end
         local avgScoreText = Num(UI:CreateText(row, avgScore .. " pts", 9, asr, asg, asb))
-        avgScoreText:SetPoint("LEFT", 355, 0)
+        avgScoreText:SetPoint("LEFT", ATT_COLS.avg, 0)
 
         local lastStr = entry.data.lastRaid and entry.data.lastRaid > 0
             and GuildOS:DateText(entry.data.lastRaid, "/%Y") or "-"
         local lastText = Num(UI:CreateText(row, lastStr, 9, C.silver.r, C.silver.g, C.silver.b))
-        lastText:SetPoint("LEFT", 450, 0)
+        lastText:SetPoint("LEFT", ATT_COLS.last, 0)
 
         -- Recent form: flag members who missed the latest guild raid(s).
         local missed = GuildOS.RaidTracker:GetMissedStreak(entry.key, entry.groupTag, 5)
         if missed >= 2 then
             local f = UI:CreateText(row, string.format(L["missed last %d"], missed), 9, C.red.r, C.red.g, C.red.b)
-            f:SetPoint("LEFT", 540, 0)
+            f:SetPoint("LEFT", ATT_COLS.form, 0)
         elseif missed == 1 then
             local f = UI:CreateText(row, L["missed last raid"], 9, C.warn.r, C.warn.g, C.warn.b)
-            f:SetPoint("LEFT", 540, 0)
+            f:SetPoint("LEFT", ATT_COLS.form, 0)
         end
 
         local capturedEntry = entry
@@ -892,11 +895,14 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         yOff = yOff + 22
     end
 
-    if #attList == 0 then
-        local emptyText = UI:CreateText(attContent, Prog(L["No 25-man attendance data yet."]), 10, C.silver.r, C.silver.g, C.silver.b)
-        emptyText:SetPoint("TOPLEFT", 6, -yOff)
-        yOff = yOff + 22
+    -- One empty line, kept: a new one each redraw stayed on screen under the rows that came later.
+    if not attContent.emptyText then
+        attContent.emptyText = UI:CreateText(attContent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        attContent.emptyText:SetPoint("TOPLEFT", ATT_COLS.player, -6)
     end
+    attContent.emptyText:SetText(Prog(L["No 25-man attendance data yet."]))
+    attContent.emptyText:SetShown(#attList == 0)
+    if #attList == 0 then yOff = yOff + 22 end
 
     attContent:SetHeight(math.max(1, yOff))
 end
@@ -905,34 +911,29 @@ end
 -- TRIAL TRACKER PANEL
 ----------------------------------------------------------------------
 function GuildOS:CreateTrialsPanel(parent, _mainFrame)
+    -- Flush with the Recruitment sub-tab bar's left edge, the first line UI.GAP under it (#371).
     local scrollParent = CreateFrame("Frame", nil, parent)
-    scrollParent:SetPoint("TOPLEFT", 10, -10)
-    scrollParent:SetPoint("BOTTOMRIGHT", -10, 10)
+    scrollParent:SetPoint("TOPLEFT", 0, -GAP)
+    scrollParent:SetPoint("BOTTOMRIGHT", -GAP, GAP)
 
-    local title = UI:CreateTitle(scrollParent, L["Trial Members"], 14)
+    local title = UI:CreateSectionTitle(scrollParent, L["Trial Members"], true)
     title:SetPoint("TOPLEFT", 0, 0)
 
-    local statusText = UI:CreateText(scrollParent, "", 10, C.silver.r, C.silver.g, C.silver.b)
-    statusText:SetPoint("TOPRIGHT", 0, -2)
+    -- The count under the title it qualifies, not floating at the top right (#371).
+    local statusText = UI:CreateText(scrollParent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    statusText:SetPoint("TOPLEFT", 0, -22)
 
     -- The guild's length and its switch for new members (issue #249): an officer's, for the whole guild.
+    -- The shared field (#371): it had a gold border and no inset, so "30" touched its edge.
     local TT = GuildOS.TrialTracker
-    local daysLabel = UI:CreateText(scrollParent, L["Trial length (days)"], 11, C.white.r, C.white.g, C.white.b)
-    daysLabel:SetPoint("TOPLEFT", 0, -30)
-    local daysBox = CreateFrame("EditBox", nil, scrollParent, "BackdropTemplate")
-    daysBox:SetSize(40, 22)
+    local ROW_Y = -40
+    local daysLabel = UI:CreateText(scrollParent, L["Trial length (days)"], 11, C.text.r, C.text.g, C.text.b)
+    daysLabel:SetPoint("LEFT", scrollParent, "TOPLEFT", 0, ROW_Y - 11)
+    -- Room for a 100 to be refused, not cut to 10.
+    local daysBox = UI:CreateInput(scrollParent, 48, 22, { numeric = true, max = 3 })
     daysBox:SetPoint("LEFT", daysLabel, "RIGHT", 8, 0)
-    daysBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    daysBox:SetBackdropColor(0.058, 0.058, 0.075, 0.9)
-    daysBox:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
-    GuildOS:ApplyFont(daysBox, nil, "tableNum")
-    daysBox:SetTextColor(C.text.r, C.text.g, C.text.b)
-    daysBox:SetNumeric(true)
-    daysBox:SetMaxLetters(3)   -- room for a 100 to be refused, not cut to 10
-    daysBox:SetAutoFocus(false)
-    daysBox:SetScript("OnEscapePressed", function(self)
+    daysBox:HookScript("OnEscapePressed", function(self)
         self:SetText(tostring(TT and TT:GetDays() or ""))
-        self:ClearFocus()
     end)
     UI:AttachSaveButton(daysBox, function(box)
         local ok, why = TT:SetDays(box:GetText())
@@ -952,16 +953,17 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
         cb:SetChecked(TT:IsAutoOn())
     end
 
+    -- Under the row it explains, left-aligned (#371).
     local configHint = UI:CreateText(scrollParent,
         L["A new length moves the end of every running trial. Nobody already in the guild becomes a trial."],
-        9, C.silver.r, C.silver.g, C.silver.b)
-    configHint:SetPoint("TOPLEFT", 0, -54)
+        10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    configHint:SetPoint("TOPLEFT", 0, ROW_Y - 22 - 6)
 
-    -- Column headers
-    local colHeader = CreateFrame("Frame", nil, scrollParent)
-    colHeader:SetPoint("TOPLEFT", 0, -70)
-    colHeader:SetPoint("TOPRIGHT", 0, -70)
-    colHeader:SetHeight(20)
+    -- Column headers: the shared header, no band, its 1px rule under it (#371).
+    local HEADER_Y = ROW_Y - 22 - 6 - 14 - GAP
+    local colHeader = UI:CreateTableHeader(scrollParent)
+    colHeader:SetPoint("TOPLEFT", 0, HEADER_Y)
+    colHeader:SetPoint("TOPRIGHT", 0, HEADER_Y)
 
     local hName = UI:CreateHeaderText(colHeader, L["MEMBER"], 10)
     hName:SetPoint("LEFT", 6, 0)
@@ -978,13 +980,9 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     local hStatus = UI:CreateHeaderText(colHeader, L["STATUS"], 10)
     hStatus:SetPoint("LEFT", 455, 0)
 
-    local sep = UI:CreateSeparator(scrollParent)
-    sep:SetPoint("TOPLEFT", 0, -92)
-    sep:SetPoint("TOPRIGHT", 0, -92)
-
     local trialScroll = CreateFrame("ScrollFrame", "GuildOSTrialScroll", scrollParent, "UIPanelScrollFrameTemplate")
-    trialScroll:SetPoint("TOPLEFT", 0, -94)
-    trialScroll:SetPoint("BOTTOMRIGHT", -10, 0)
+    trialScroll:SetPoint("TOPLEFT", colHeader, "BOTTOMLEFT", 0, -2)
+    trialScroll:SetPoint("BOTTOMRIGHT", 0, 0)
     UI:SkinScrollBar(trialScroll, "GuildOSTrialScroll")
 
     local trialContent = CreateFrame("Frame", nil, trialScroll)
@@ -1036,15 +1034,17 @@ function GuildOS:RefreshTrialsPanel(parent)
         local progress = GuildOS.TrialTracker:GetProgress(trial.key)
         local state = GuildOS.TrialTracker:GetState(trial.key)
 
-        -- Main row
+        -- Main row, hung by both top corners: a width read while the tab is hidden is 0 (#371).
         local row = CreateFrame("Button", nil, content, "BackdropTemplate")
-        row:SetSize(content:GetWidth() - 10, 26)
+        row:SetHeight(26)
         row:SetPoint("TOPLEFT", 0, -yOff)
+        row:SetPoint("TOPRIGHT", 0, -yOff)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
 
+        -- The table's zebra only: a trial waiting for a decision says so in its status column, and gold
+        -- is the selection's colour, not a wash (#371).
         local rowIdx = math.floor(yOff / 26) % 2
         local altIdx = (rowIdx == 0) and C.row1 or C.row2
-        if state == "review" then altIdx = C.accentSoft end   -- a gold wash: it waits for a decision
         row:SetBackdropColor(altIdx.r, altIdx.g, altIdx.b, altIdx.a)
 
         -- Expand arrow
@@ -1092,7 +1092,7 @@ function GuildOS:RefreshTrialsPanel(parent)
 
         local daysRem = GuildOS.TrialTracker:GetDaysRemaining(trial.key)
         local daysStr = daysRem and (daysRem .. "d") or "-"
-        local daysColor = C.white
+        local daysColor = C.text
         if daysRem then
             daysColor = daysRem > 14 and C.green or (daysRem > 7 and C.warn or C.red)
         end
@@ -1188,7 +1188,9 @@ function GuildOS:RefreshTrialsPanel(parent)
                     local noteFS = detailFrame:CreateFontString(nil, "OVERLAY")
                     GuildOS:ApplyFont(noteFS, 9)
                     noteFS:SetPoint("TOPLEFT", 14, dY)
-                    noteFS:SetWidth(content:GetWidth() - 60)
+                    -- A set width, not a second anchor: GetStringHeight below measures the wrap at once, before
+                    -- an anchored width would be resolved. `content` is bound to the scroll's width (#371).
+                    noteFS:SetWidth(math.max(1, content:GetWidth() - 60))
                     noteFS:SetJustifyH("LEFT")
                     noteFS:SetWordWrap(true)
                     local dateStr = note.timestamp and GuildOS:DateText(note.timestamp, " %H:%M") or ""
@@ -1198,32 +1200,12 @@ function GuildOS:RefreshTrialsPanel(parent)
                 end
             end
 
-            -- Inline add note
-            local addBox = CreateFrame("EditBox", nil, detailFrame, "BackdropTemplate")
-            addBox:SetSize(content:GetWidth() - 120, 20)
+            -- Inline add note: the shared field with its hint, running up to the Add button (#371).
+            local addBtn = UI:CreateButton(detailFrame, L["Add"], 50, 22)
+            addBtn:SetPoint("TOPRIGHT", -10, dY - 4)
+            local addBox = UI:CreateInput(detailFrame, 200, 22, { max = 200, placeholder = L["Add comment..."] })
             addBox:SetPoint("TOPLEFT", 10, dY - 4)
-            addBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-            addBox:SetBackdropColor(0.038, 0.038, 0.052, 1)
-            addBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
-            GuildOS:ApplyFont(addBox, 9)
-            addBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-            addBox:SetTextInsets(4, 4, 2, 2)
-            addBox:SetAutoFocus(false)
-            addBox:SetMaxLetters(200)
-            addBox:Show()
-
-            local ph = addBox:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(ph, 9)
-            ph:SetPoint("LEFT", 4, 0)
-            ph:SetTextColor(0.3, 0.3, 0.3)
-            ph:SetText(L["Add comment..."])
-            addBox:SetScript("OnTextChanged", function(self)
-                if self:GetText() ~= "" then ph:Hide() else ph:Show() end
-            end)
-            addBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-            local addBtn = UI:CreateButton(detailFrame, L["Add"], 50, 20)
-            addBtn:SetPoint("LEFT", addBox, "RIGHT", 4, 0)
+            addBox:SetPoint("RIGHT", addBtn, "LEFT", -4, 0)
             addBtn:SetScript("OnClick", function()
                 local text = addBox:GetText()
                 if text and strtrim(text) ~= "" then
@@ -1249,11 +1231,13 @@ function GuildOS:RefreshTrialsPanel(parent)
         end
     end
 
-    if #trials == 0 then
-        local emptyText = UI:CreateText(content, L["No trial members tracked."], 11, C.silver.r, C.silver.g, C.silver.b)
-        emptyText:SetPoint("TOPLEFT", 0, 0)
-        yOff = 30
+    -- One empty line, kept: a new one each redraw stayed on screen under the trials that came later.
+    if not parent.trialEmpty then
+        parent.trialEmpty = UI:CreateText(content, L["No trial members tracked."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        parent.trialEmpty:SetPoint("TOPLEFT", 6, -6)
     end
+    parent.trialEmpty:SetShown(#trials == 0)
+    if #trials == 0 then yOff = 30 end
 
     content:SetHeight(math.max(1, yOff))
 end
@@ -1267,7 +1251,7 @@ function GuildOS:ShowExportChooser()
     local f = CreateFrame("Frame", "GuildOSExportChooser", UIParent, "BackdropTemplate")
     f:SetSize(390, 300)
     f:SetPoint("CENTER")
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
     UI:StylePopup(f)
@@ -1330,7 +1314,7 @@ function GuildOS:ShowExportPopup(titleStr, text)
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1360,16 +1344,15 @@ function GuildOS:ShowExportPopup(titleStr, text)
     scrollFrame:SetPoint("BOTTOMRIGHT", -12, 40)
     UI:SkinScrollBar(scrollFrame, "GuildOSExportScroll")
 
-    local editBox = CreateFrame("EditBox", nil, scrollFrame)
-    editBox:SetMultiLine(true)
-    GuildOS:ApplyFont(editBox, 11)
-    editBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    editBox:SetWidth(scrollFrame:GetWidth() - 10)
+    -- The shared field, multi-line (#371). It grows with its text; the scroll frame keeps it clear of
+    -- the bar, and Escape still closes the window after the field lets go.
+    local editBox = UI:CreateInput(scrollFrame, 460, 262, { multiline = true })
     editBox:SetAutoFocus(true)
     editBox:SetText(text or "")
     editBox:HighlightText()
-    editBox:SetScript("OnEscapePressed", function() f:Hide() end)
+    editBox:HookScript("OnEscapePressed", function() f:Hide() end)
     scrollFrame:SetScrollChild(editBox)
+    UI:BindScrollChildWidth(scrollFrame, editBox)
 
     local closeBtn = UI:CreateCloseButton(f)
     closeBtn:SetPoint("TOPRIGHT", -4, -4)
@@ -1395,7 +1378,7 @@ function GuildOS:ShowSoftResImportPopup()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1424,14 +1407,12 @@ function GuildOS:ShowSoftResImportPopup()
     scrollFrame:SetPoint("BOTTOMRIGHT", -12, 44)
     UI:SkinScrollBar(scrollFrame, "GuildOSSRImportScroll")
 
-    local editBox = CreateFrame("EditBox", nil, scrollFrame)
-    editBox:SetMultiLine(true)
-    GuildOS:ApplyFont(editBox, 11)
-    editBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    editBox:SetWidth(scrollFrame:GetWidth() - 10)
+    -- The shared field, multi-line (#371); Escape still closes the window after the field lets go.
+    local editBox = UI:CreateInput(scrollFrame, 480, 250, { multiline = true })
     editBox:SetAutoFocus(true)
-    editBox:SetScript("OnEscapePressed", function() f:Hide() end)
+    editBox:HookScript("OnEscapePressed", function() f:Hide() end)
     scrollFrame:SetScrollChild(editBox)
+    UI:BindScrollChildWidth(scrollFrame, editBox)
 
     local closeBtn = UI:CreateCloseButton(f)
     closeBtn:SetPoint("TOPRIGHT", -4, -4)
@@ -1470,7 +1451,7 @@ function GuildOS:ShowImportPopup()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1512,14 +1493,12 @@ function GuildOS:ShowImportPopup()
     scrollFrame:SetPoint("BOTTOMRIGHT", -12, 76)
     UI:SkinScrollBar(scrollFrame, "GuildOSCompanionImportScroll")
 
-    local editBox = CreateFrame("EditBox", nil, scrollFrame)
-    editBox:SetMultiLine(true)
-    GuildOS:ApplyFont(editBox, 11)
-    editBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    editBox:SetWidth(scrollFrame:GetWidth() - 10)
+    -- The shared field, multi-line (#371); Escape still closes the window after the field lets go.
+    local editBox = UI:CreateInput(scrollFrame, 480, 250, { multiline = true })
     editBox:SetAutoFocus(true)
-    editBox:SetScript("OnEscapePressed", function() f:Hide() end)
+    editBox:HookScript("OnEscapePressed", function() f:Hide() end)
     scrollFrame:SetScrollChild(editBox)
+    UI:BindScrollChildWidth(scrollFrame, editBox)
 
     local closeBtn = UI:CreateCloseButton(f)
     closeBtn:SetPoint("TOPRIGHT", -4, -4)
@@ -1589,7 +1568,7 @@ local function BuildWishlistFrame()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1646,8 +1625,8 @@ local function BuildWishlistFrame()
     counterText:SetText("0/50")
     f.counterText = counterText
 
-    -- Accent line under title
-    local titleLine = UI:CreateAccentLine(f, 2)
+    -- A 1px line under the title: gold is the selection's, not a rule's (#371).
+    local titleLine = UI:CreateSeparator(f)
     titleLine:SetPoint("TOPLEFT",  0, -40)
     titleLine:SetPoint("TOPRIGHT", 0, -40)
 
@@ -1656,33 +1635,21 @@ local function BuildWishlistFrame()
     closeBtn:SetPoint("TOPRIGHT", -4, -8)
     closeBtn:SetScript("OnClick", function() f:Hide() end)
 
-    -- Column headers background
-    local hdrBg = f:CreateTexture(nil, "BACKGROUND")
-    hdrBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    hdrBg:SetPoint("TOPLEFT",  1, -42)
-    hdrBg:SetPoint("TOPRIGHT", -1, -42)
-    hdrBg:SetHeight(22)
-    hdrBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.9)
-
+    -- Column headers: the shared header, no band, its 1px rule where the gold one was (#371).
+    local hdr = UI:CreateTableHeader(f)
+    hdr:SetPoint("TOPLEFT",  1, -42)
+    hdr:SetPoint("TOPRIGHT", -1, -42)
     local function Hdr(lbl, x, w, justify)
-        local t = f:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(t, nil, "colHeader")
-        t:SetTextColor(C.label.r, C.label.g, C.label.b)
-        t:SetPoint("TOPLEFT", x, -44)
+        local t = UI:CreateHeaderText(hdr, lbl)
+        t:SetPoint("LEFT", x - 1, 0)
         t:SetWidth(w)
         t:SetJustifyH(justify or "LEFT")
-        t:SetText(lbl)
         return t
     end
     Hdr("#",      10,  24, "CENTER")
     Hdr(L["ITEM"],   38, 262, "LEFT")
     Hdr(L["TYPE"],  308,  50, "CENTER")
     Hdr(L["ORDER"], 366,  60, "CENTER")
-
-    -- Thin separator between headers and rows
-    local hdrLine = UI:CreateAccentLine(f, 1)
-    hdrLine:SetPoint("TOPLEFT",  1, -64)
-    hdrLine:SetPoint("TOPRIGHT", -1, -64)
 
     -- Scroll area: TOPLEFT at y=-65, BOTTOMRIGHT at y=+50 (50px bottom bar)
     -- Available height: 520 - 65 - 50 = 405px; 14 rows × 28px = 392px ✓
@@ -1815,8 +1782,8 @@ local function BuildWishlistFrame()
         end)
     end)
 
-    -- Bottom bar (50px): separator line + dark background
-    local bottomLine = UI:CreateAccentLine(f, 1)
+    -- Bottom bar (50px): a 1px line (not gold, #371) + dark background
+    local bottomLine = UI:CreateSeparator(f)
     bottomLine:SetPoint("BOTTOMLEFT",  0, 50)
     bottomLine:SetPoint("BOTTOMRIGHT", 0, 50)
 
@@ -1834,101 +1801,46 @@ local function BuildWishlistFrame()
 
     local msBtn = UI:CreateButton(f, L["MS"], 56, 28)
     msBtn:SetPoint("BOTTOMLEFT", 10, 11)
-    -- Small dot indicator (6x6 texture, left of label)
-    local msDot = msBtn:CreateTexture(nil, "OVERLAY")
-    msDot:SetTexture("Interface\\Buttons\\WHITE8x8")
-    msDot:SetSize(6, 6)
-    msDot:SetPoint("RIGHT", msBtn.label, "LEFT", -4, 0)
-    msBtn.dot = msDot
     f.msBtn = msBtn
 
     local osBtn = UI:CreateButton(f, L["OS"], 56, 28)
     osBtn:SetPoint("BOTTOMLEFT", msBtn, "BOTTOMRIGHT", 4, 0)
-    local osDot = osBtn:CreateTexture(nil, "OVERLAY")
-    osDot:SetTexture("Interface\\Buttons\\WHITE8x8")
-    osDot:SetSize(6, 6)
-    osDot:SetPoint("RIGHT", osBtn.label, "LEFT", -4, 0)
-    osBtn.dot = osDot
     f.osBtn = osBtn
 
+    -- The spec the next item goes to: one of two, marked by UI:SetSelected (#371), not a gold fill
+    -- and a dot of its own.
     local function SetSpecType(isOS)
         f.isOS = isOS
-        if isOS then
-            -- OS selected
-            msBtn.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            msBtn.dot:SetVertexColor(0.3, 0.3, 0.3, 0.6)
-            msBtn:SetBackdropColor(0.045, 0.045, 0.060, 0.5)
-            msBtn:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
-            osBtn.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-            osBtn.dot:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1.0)
-            osBtn:SetBackdropColor(0.22, 0.16, 0.02, 0.9)
-            osBtn:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1.0)
-        else
-            -- MS selected
-            msBtn.label:SetTextColor(1.0, 1.0, 1.0)
-            msBtn.dot:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 1.0)
-            msBtn:SetBackdropColor(C.accentDim.r, C.accentDim.g, C.accentDim.b, 0.9)
-            msBtn:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 1.0)
-            osBtn.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            osBtn.dot:SetVertexColor(0.3, 0.3, 0.3, 0.6)
-            osBtn:SetBackdropColor(0.045, 0.045, 0.060, 0.5)
-            osBtn:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
-        end
+        UI:SetSelected(msBtn, not isOS)
+        UI:SetSelected(osBtn, isOS)
     end
 
     msBtn:SetScript("OnClick", function() SetSpecType(false) end)
     osBtn:SetScript("OnClick", function() SetSpecType(true)  end)
 
-    -- Override hover to preserve radio state visually
-    msBtn:SetScript("OnEnter", function(self)
-        self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1.0)
+    -- The tooltips hook the buttons' own hover, which keeps painting the selection.
+    msBtn:HookScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:ClearLines()
         GameTooltip:AddLine(L["Main Spec"], C.text.r, C.text.g, C.text.b)
         GameTooltip:AddLine(L["Item and priority for your main spec."], 1, 1, 1, true)
         GameTooltip:Show()
     end)
-    msBtn:SetScript("OnLeave", function()
-        SetSpecType(f.isOS)
-        GameTooltip:Hide()
-    end)
-    osBtn:SetScript("OnEnter", function(self)
-        self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1.0)
+    msBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    osBtn:HookScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:ClearLines()
         GameTooltip:AddLine(L["Off Spec"], C.text.r, C.text.g, C.text.b)
         GameTooltip:AddLine(L["Item for a secondary spec."], 1, 1, 1, true)
         GameTooltip:Show()
     end)
-    osBtn:SetScript("OnLeave", function()
-        SetSpecType(f.isOS)
-        GameTooltip:Hide()
-    end)
+    osBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
 
     SetSpecType(false)   -- initialise with MS selected
 
-    -- Add item edit box
-    local addBox = CreateFrame("EditBox", "GuildOSWishAddBox", f, "BackdropTemplate")
-    addBox:SetSize(162, 28)
+    -- Add item: the shared field and its placeholder (#371).
+    local addBox = UI:CreateInput(f, 162, 28, { max = 200, placeholder = L["Search item or paste link..."] })
     addBox:SetPoint("BOTTOMLEFT", osBtn, "BOTTOMRIGHT", 6, 0)
-    addBox:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    addBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    addBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.5)
-    GuildOS:ApplyFont(addBox, 11)
-    addBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    addBox:SetTextInsets(6, 6, 0, 0)
-    addBox:SetAutoFocus(false)
-    addBox:SetMaxLetters(200)
-
-    local addPlaceholder = addBox:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(addPlaceholder, 11)
-    addPlaceholder:SetPoint("LEFT", 6, 0)
-    addPlaceholder:SetTextColor(0.4, 0.4, 0.4)
-    addPlaceholder:SetText(L["Search item or paste link..."])
 
     -- Search dropdown — appears above the addBox
     local DROP_ROWS  = 6
@@ -1941,7 +1853,7 @@ local function BuildWishlistFrame()
     dropdown:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(dropdown),
     })
     -- A dropdown is elevation 4: popup surface, lineHi border.
     dropdown:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
@@ -1973,7 +1885,6 @@ local function BuildWishlistFrame()
             f.suppressSearch   = true
             addBox:SetText(dr.itemName or "")
             f.suppressSearch   = nil
-            addPlaceholder:Hide()
             dropdown:Hide()
         end)
         dropdown.rows[i] = dr
@@ -2022,9 +1933,9 @@ local function BuildWishlistFrame()
         dropdown:Show()
     end
 
-    addBox:SetScript("OnTextChanged", function(self)
+    -- Hooked: the field shows and hides its own placeholder (#371).
+    addBox:HookScript("OnTextChanged", function(self)
         local t = self:GetText()
-        if t and t ~= "" then addPlaceholder:Hide() else addPlaceholder:Show() end
         if f.suppressSearch then return end
         -- Guard: WoW may fire OnTextChanged twice after SetText; don't clear
         -- the selection if the text still matches what was just selected.
@@ -2069,10 +1980,7 @@ local function BuildWishlistFrame()
     end
 
     addBox:SetScript("OnEnterPressed", function(self) DoAdd(); self:ClearFocus() end)
-    addBox:SetScript("OnEscapePressed", function(self)
-        self:ClearFocus()
-        dropdown:Hide()
-    end)
+    addBox:HookScript("OnEscapePressed", function() dropdown:Hide() end)
     f.addBox = addBox
 
     local addBtn = UI:CreateButton(f, L["+ Add"], 88, 28)
@@ -2179,14 +2087,13 @@ function GuildOS:RefreshWishlistFrame()
             if isDelivered then
                 row.itemText:SetTextColor(0.45, 0.45, 0.45)
             else
-                row.itemText:SetTextColor(C.white.r, C.white.g, C.white.b)
+                row.itemText:SetTextColor(C.text.r, C.text.g, C.text.b)
             end
 
-            if entry.isOffspec then
-                row.typeText:SetText("|cffAAAAAA  " .. L["OS"] .. "|r")
-            else
-                row.typeText:SetText("|cff4CB5FF  " .. L["MS"] .. "|r")
-            end
+            -- The spec in the text colours, main spec first: no blue of its own (#371).
+            local typeInk = entry.isOffspec and C.textSoft or C.text
+            row.typeText:SetTextColor(typeInk.r, typeInk.g, typeInk.b)
+            row.typeText:SetText("  " .. (entry.isOffspec and L["OS"] or L["MS"]))
 
             -- Show/hide action buttons based on delivered state
             for _, child in pairs({ row:GetChildren() }) do
@@ -2221,10 +2128,10 @@ local function BuildPrioModal()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-    f:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 0.8)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)   -- a popup's line, not gold (#371)
     UI:StylePopup(f)
     f:SetFrameStrata("DIALOG")
     f:SetFrameLevel(60)
@@ -2250,7 +2157,7 @@ local function BuildPrioModal()
     titleText:SetText(L["MANAGE PRIORITIES"])
     f.titleText = titleText
 
-    local titleLine = UI:CreateAccentLine(f, 2)
+    local titleLine = UI:CreateSeparator(f)   -- a 1px line: gold is the selection's (#371)
     titleLine:SetPoint("TOPLEFT", 0, -40); titleLine:SetPoint("TOPRIGHT", 0, -40)
 
     local closeBtn = UI:CreateCloseButton(f)
@@ -2273,23 +2180,9 @@ local function BuildPrioModal()
 
     local LoadItem  -- forward declaration
 
-    local searchBox = CreateFrame("EditBox", "GuildOSPrioSearchBox", f, "BackdropTemplate")
-    searchBox:SetSize(320, 26)
+    -- The shared field and its placeholder (#371).
+    local searchBox = UI:CreateInput(f, 320, 26, { max = 200, placeholder = L["Search item, paste link or ID..."] })
     searchBox:SetPoint("LEFT", 10, 0); searchBox:SetPoint("TOP", 0, -52)
-    searchBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    searchBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    searchBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(searchBox, 11)
-    searchBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    searchBox:SetTextInsets(6, 6, 0, 0)
-    searchBox:SetAutoFocus(false)
-    searchBox:SetMaxLetters(200)
-
-    local placeholder = searchBox:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(placeholder, 11)
-    placeholder:SetPoint("LEFT", 6, 0)
-    placeholder:SetTextColor(0.4, 0.4, 0.4)
-    placeholder:SetText(L["Search item, paste link or ID..."])
 
     -- Search dropdown
     local PDROP_ROWS  = 6
@@ -2302,7 +2195,7 @@ local function BuildPrioModal()
     prioDropdown:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(prioDropdown),
     })
     -- A dropdown is elevation 4: popup surface, lineHi border.
     prioDropdown:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
@@ -2332,7 +2225,6 @@ local function BuildPrioModal()
             f.suppressPrioSearch = true
             searchBox:SetText(dr.itemName or "")
             f.suppressPrioSearch = nil
-            placeholder:Hide()
             prioDropdown:Hide()
             if LoadItem then LoadItem() end
         end)
@@ -2379,19 +2271,16 @@ local function BuildPrioModal()
         prioDropdown:Show()
     end
 
-    searchBox:SetScript("OnTextChanged", function(self)
+    -- Hooked: the field shows and hides its own placeholder and lets go on Escape (#371).
+    searchBox:HookScript("OnTextChanged", function(self)
         local t = self:GetText()
-        if t and t ~= "" then placeholder:Hide() else placeholder:Show() end
         if f.suppressPrioSearch then return end
         if f.prioSearchItemName and t == f.prioSearchItemName then return end
         f.prioSearchItemId   = nil
         f.prioSearchItemName = nil
         UpdatePrioDropdown(t)
     end)
-    searchBox:SetScript("OnEscapePressed", function(self)
-        self:ClearFocus()
-        prioDropdown:Hide()
-    end)
+    searchBox:HookScript("OnEscapePressed", function() prioDropdown:Hide() end)
 
     local loadBtn = UI:CreateButton(f, L["Load"], 90, 26)
     loadBtn:SetPoint("LEFT", searchBox, "RIGHT", 8, 0)
@@ -2405,20 +2294,14 @@ local function BuildPrioModal()
     statusText:SetText("")
     f.statusText = statusText
 
-    -- Column headers: #PRIO | NOME | WL# | ACOES
-    local hdrBg = f:CreateTexture(nil, "BACKGROUND")
-    hdrBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    hdrBg:SetPoint("TOPLEFT", 1, -78); hdrBg:SetPoint("TOPRIGHT", -1, -78)
-    hdrBg:SetHeight(22)
-    hdrBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.9)
+    -- Column headers: #PRIO | NOME | WL# | ACOES, on the shared header: no band, a 1px rule (#371).
+    local hdr = UI:CreateTableHeader(f)
+    hdr:SetPoint("TOPLEFT", 1, -78); hdr:SetPoint("TOPRIGHT", -1, -78)
 
     local function PrioHdr(lbl, x, w, justify)
-        local t = f:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(t, nil, "colHeader")
-        t:SetTextColor(C.label.r, C.label.g, C.label.b)
-        t:SetPoint("TOPLEFT", x, -82)
+        local t = UI:CreateHeaderText(hdr, lbl)
+        t:SetPoint("LEFT", x - 1, 0)
         t:SetWidth(w); t:SetJustifyH(justify or "LEFT")
-        t:SetText(lbl)
     end
     PrioHdr(L["#PRIO"],  10,  40, "CENTER")
     PrioHdr(L["NAME"],   56, 170, "LEFT")
@@ -2506,7 +2389,7 @@ local function BuildPrioModal()
     bottomBg:SetTexture("Interface\\Buttons\\WHITE8x8")
     bottomBg:SetPoint("BOTTOMLEFT"); bottomBg:SetPoint("BOTTOMRIGHT"); bottomBg:SetHeight(44)
     bottomBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
-    local bottomLine = UI:CreateAccentLine(f, 1)
+    local bottomLine = UI:CreateSeparator(f)   -- a 1px line, not gold (#371)
     bottomLine:SetPoint("BOTTOMLEFT", 0, 44); bottomLine:SetPoint("BOTTOMRIGHT", 0, 44)
 
     local saveBtn = UI:CreateButton(f, L["Save and Sync"], 130, 26)

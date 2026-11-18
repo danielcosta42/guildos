@@ -15,9 +15,13 @@ local C  = GuildOS.Colors
 local L  = GuildOS.L
 
 local SITE    = "guildos.me"
-local PAD     = 14   -- panel edge to content
-local GAP     = 8    -- between stacked lines
-local SECTION = 14   -- extra space above a section caption
+-- Where every tab's content starts (#371): 10px in, as the other tabs' sub-tab bars, the first line
+-- UI.GAP from the top, and the content ends UI.GAP short of that 10px on the right.
+local INSET   = 10
+local GAP     = UI.GAP   -- between stacked lines
+local RIGHT_INSET = INSET + GAP
+local SECTION = 20   -- over a later section title, for the rule UI:CreateSectionTitle draws 12px above it
+local TITLE_H = 24   -- a section title and the gap under it
 local BTN_H   = 22
 local ROW_H   = 16
 
@@ -134,10 +138,18 @@ function GuildOS:CreateWebPanel(parent, _win)
     local panel = CreateFrame("Frame", nil, parent)
     panel:SetAllPoints()
 
+    -- A section title as every screen draws it (#371). A later one's rule stops where the content
+    -- does, not at the panel's edge.
+    local function sectionTitle(text, first)
+        local fs = UI:CreateSectionTitle(panel, text, first)
+        if fs.rule then fs.rule:SetPoint("RIGHT", panel, "RIGHT", -RIGHT_INSET, 0) end
+        return fs
+    end
+
     ----------------------------------------------------------------
     -- PUBLISHING
     ----------------------------------------------------------------
-    local pubHead = UI:CreateHeaderText(panel, L["PUBLISHING"], 10)
+    local pubHead = sectionTitle(L["PUBLISHING"], true)
 
     local stateDot = panel:CreateTexture(nil, "OVERLAY")
     stateDot:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -150,7 +162,9 @@ function GuildOS:CreateWebPanel(parent, _win)
     pasteBtn:SetScript("OnClick", function() GuildOS:ShowWebString() end)
 
     local countText   = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    -- On the state's line, after "On": it says when that state last reached the disk (#371).
     local writtenText = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    writtenText:SetJustifyH("LEFT")
     -- The other half of the round trip, and the only line on this panel that is not
     -- about what the game did. The companion leaves it in the inbox after the site
     -- accepts an export.
@@ -160,9 +174,10 @@ function GuildOS:CreateWebPanel(parent, _win)
     ackText:SetJustifyH("LEFT")
     ackText:SetWordWrap(true)   -- the no-ack lines say what to do, and run past one row
 
+    -- Why a button is off: a hint in `textSoft`, not gold (#371).
     local publishBtn  = UI:CreateButton(panel, L["Publish now"], 120, BTN_H)
-    local publishWhy  = UI:CreateText(panel, "", 9, C.gold.r, C.gold.g, C.gold.b)
-    local publishNote = UI:CreateText(panel, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    local publishWhy  = UI:CreateText(panel, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local publishNote = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
     publishNote:SetWordWrap(true)
     publishNote:SetJustifyH("LEFT")
     publishWhy:SetJustifyH("LEFT")
@@ -170,8 +185,9 @@ function GuildOS:CreateWebPanel(parent, _win)
     ----------------------------------------------------------------
     -- PLANNED RAID
     ----------------------------------------------------------------
-    local raidHead  = UI:CreateHeaderText(panel, L["PLANNED RAID"], 10)
-    local raidCount = UI:CreateText(panel, "", 10, C.gold.r, C.gold.g, C.gold.b)
+    local raidHead  = sectionTitle(L["PLANNED RAID"])
+    -- How many are coming follows the title as secondary text, not gold in the far corner (#371).
+    local raidCount = UI:CreateText(panel, "", 11, C.label.r, C.label.g, C.label.b)
     local raidTitle = UI:CreateText(panel, "", 12, C.text.r, C.text.g, C.text.b)
     local raidWhen  = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
     raidTitle:SetJustifyH("LEFT")
@@ -193,7 +209,8 @@ function GuildOS:CreateWebPanel(parent, _win)
     local trimBtn   = UI:CreateButton(panel, L["Fit to plan"], 100, BTN_H)
     -- The night's plan from the site: notes, tasks and loot rules (issue #296).
     local planBtn   = UI:CreateButton(panel, L["Raid plan"], 90, BTN_H)
-    local raidWhy   = UI:CreateText(panel, "", 9, C.gold.r, C.gold.g, C.gold.b)
+    -- "Import a roster first." and its kin: what is missing, in `textSoft` (#371).
+    local raidWhy   = UI:CreateText(panel, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     raidWhy:SetJustifyH("LEFT")
     raidWhy:SetWordWrap(true)
 
@@ -207,7 +224,7 @@ function GuildOS:CreateWebPanel(parent, _win)
     local function makeList(headText)
         -- Zeroed, not nil: a resize can reach Relayout before the first Refresh has
         -- ever run, and the layout reads these to decide it can skip the section.
-        local list = { head = UI:CreateHeaderText(panel, headText, 10), rows = {}, shown = 0, rest = 0 }
+        local list = { head = sectionTitle(headText), rows = {}, shown = 0, rest = 0 }
         for i = 1, LIST_ROWS do
             local left  = UI:CreateText(panel, "", 10, C.text.r, C.text.g, C.text.b)
             local right = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
@@ -224,6 +241,7 @@ function GuildOS:CreateWebPanel(parent, _win)
     local look    = makeList(L["NEEDS A LOOK"])
     for _, list in ipairs({ standby, look }) do
         list.head:Hide()
+        list.head.rule:Hide()
         list.more:Hide()
         for _, row in ipairs(list.rows) do row.left:Hide(); row.right:Hide() end
     end
@@ -231,7 +249,7 @@ function GuildOS:CreateWebPanel(parent, _win)
     ----------------------------------------------------------------
     -- FIRST TIME?
     ----------------------------------------------------------------
-    local firstHead = UI:CreateHeaderText(panel, L["FIRST TIME?"], 10)
+    local firstHead = sectionTitle(L["FIRST TIME?"])
     local step1 = UI:CreateText(panel, string.format(L["1. Open %s"], SITE),
         10, C.text.r, C.text.g, C.text.b)
     local step2 = UI:CreateText(panel, L["2. Download the companion and paste the token"],
@@ -246,24 +264,13 @@ function GuildOS:CreateWebPanel(parent, _win)
 
     -- WoW cannot open a browser, so the address goes into a pre-selected
     -- read-only box for Ctrl+C. Same idiom as GuildOS:ShowExportPopup.
-    local copyBox = CreateFrame("EditBox", nil, panel, "BackdropTemplate")
-    copyBox:SetHeight(20)
-    copyBox:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    copyBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    copyBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(copyBox, 11)
-    copyBox:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
-    copyBox:SetTextInsets(6, 6, 0, 0)
-    copyBox:SetAutoFocus(false)
+    -- The shared field (#371): its Escape and focus handlers are its own.
+    local copyBox = UI:CreateInput(panel, 200, 20)
     copyBox:SetText(SITE)
-    copyBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
     copyBox:SetScript("OnEnterPressed", function(s) s:ClearFocus() end)
-    -- Read-only: any edit snaps back to the full address, still selected.
-    copyBox:SetScript("OnTextChanged", function(s)
+    -- Read-only: any edit snaps back to the full address, still selected. Hooked, as the field's own
+    -- text handlers must stay.
+    copyBox:HookScript("OnTextChanged", function(s)
         if s:GetText() ~= SITE then
             s:SetText(SITE)
             s:HighlightText()
@@ -365,6 +372,7 @@ function GuildOS:CreateWebPanel(parent, _win)
         list.more:SetText(rest > 0 and string.format(L["+%d on the site"], rest) or "")
         list.more:SetShown(rest > 0)
         list.head:SetShown(#lines > 0)
+        list.head.rule:SetShown(#lines > 0)
 
         -- Read by Relayout, so an empty list costs no height at all.
         list.shown = shown
@@ -400,7 +408,8 @@ function GuildOS:CreateWebPanel(parent, _win)
             local ackAt, ackCount = nil, 0
             if I then ackAt, ackCount = I:Ack() end
 
-            local dim, gold = C.textDim, C.gold
+            -- A companion that is silent or stale is a warning: `warn`, not gold (#371).
+            local dim, warn = C.textDim, C.warn
             if not ackAt then
                 -- No ack: a companion that wrote blocks without one has no guild link for this
                 -- folder; an empty inbox is the one the addon package ships, not written over yet.
@@ -411,10 +420,10 @@ function GuildOS:CreateWebPanel(parent, _win)
                     msg = L["No word from the companion yet. If it is running, wait a few minutes; if not, download it at %s"]
                 end
                 ackText:SetText(string.format(msg, SITE))
-                ackText:SetTextColor(gold.r, gold.g, gold.b)
+                ackText:SetTextColor(warn.r, warn.g, warn.b)
             elseif (GetServerTime() or time()) - ackAt > ACK_STALE then
                 ackText:SetText(string.format(L["The companion has sent nothing since %s"], stamp(ackAt)))
-                ackText:SetTextColor(gold.r, gold.g, gold.b)
+                ackText:SetTextColor(warn.r, warn.g, warn.b)
             else
                 ackText:SetText(string.format(L["Site updated %s, %d members"], stamp(ackAt), ackCount))
                 ackText:SetTextColor(dim.r, dim.g, dim.b)
@@ -539,7 +548,7 @@ function GuildOS:CreateWebPanel(parent, _win)
         -- The toggle already answers "has this person set it up", so the
         -- first-run block needs no state of its own.
         self.showFirstRun = not on
-        for _, r in ipairs({ firstHead, step1, step2, step3, copyBtn }) do
+        for _, r in ipairs({ firstHead, firstHead.rule, step1, step2, step3, copyBtn }) do
             r:SetShown(self.showFirstRun)
         end
         if not self.showFirstRun then copyBox:Hide() end
@@ -553,29 +562,31 @@ function GuildOS:CreateWebPanel(parent, _win)
     function panel:Relayout(w, _h)
         w = w or parent:GetWidth()
         if not w or w < 1 then return end
-        local inner = math.max(120, w - PAD * 2)
-        local y = PAD
+        local inner = math.max(120, w - INSET - RIGHT_INSET)
+        local y = GAP
 
         local function place(region, dx, dy)
             region:ClearAllPoints()
-            region:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD + (dx or 0), -(y + (dy or 0)))
+            region:SetPoint("TOPLEFT", panel, "TOPLEFT", INSET + (dx or 0), -(y + (dy or 0)))
         end
 
         place(pubHead)
-        y = y + ROW_H + 2
+        y = y + TITLE_H
 
-        place(stateDot, 2, 5)
-        place(stateText, 14)
+        -- One line says the state and when it was last written, and its two buttons follow it
+        -- there instead of sitting in the far corner (#371). The texts take the width they need.
+        place(stateDot, 2, 8)
+        place(stateText, 14, 4)
+        writtenText:ClearAllPoints()
+        writtenText:SetPoint("LEFT", stateText, "RIGHT", GAP * 2, 0)
         toggleBtn:ClearAllPoints()
-        toggleBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD, -y)
+        toggleBtn:SetPoint("LEFT", writtenText, "RIGHT", GAP * 2, 0)
         pasteBtn:ClearAllPoints()
-        pasteBtn:SetPoint("RIGHT", toggleBtn, "LEFT", -6, 0)
+        pasteBtn:SetPoint("LEFT", toggleBtn, "RIGHT", 6, 0)
         pasteBtn:SetShown(self.publishing and true or false)
-        y = y + BTN_H + 2
+        y = y + BTN_H + 4
 
         place(countText); countText:SetWidth(inner)
-        y = y + ROW_H
-        place(writtenText); writtenText:SetWidth(inner)
         y = y + ROW_H
         if ackText:IsShown() then
             place(ackText); ackText:SetWidth(inner)
@@ -589,19 +600,19 @@ function GuildOS:CreateWebPanel(parent, _win)
         publishNote:SetShown(on)
         if on then
             publishBtn:ClearAllPoints()
-            publishBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD, -y)
+            publishBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", INSET, -y)
             place(publishWhy, 128, 6)
             publishWhy:SetWidth(math.max(60, inner - 128))
             y = y + BTN_H + 2
             place(publishNote); publishNote:SetWidth(inner)
-            y = y + math.max(ROW_H * 2, math.ceil(publishNote:GetStringHeight() or 0) + 2) + GAP
+            y = y + math.max(ROW_H * 2, math.ceil(publishNote:GetStringHeight() or 0) + 2)
         end
 
         y = y + SECTION
         place(raidHead)
         raidCount:ClearAllPoints()
-        raidCount:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD, -y)
-        y = y + ROW_H + 2
+        raidCount:SetPoint("LEFT", raidHead, "RIGHT", GAP, 0)
+        y = y + TITLE_H
         place(raidTitle); raidTitle:SetWidth(inner)
         y = y + ROW_H + 2
         place(raidWhen); raidWhen:SetWidth(inner)
@@ -619,7 +630,7 @@ function GuildOS:CreateWebPanel(parent, _win)
         y = y + GAP
 
         bringBtn:ClearAllPoints()
-        bringBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD, -y)
+        bringBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", INSET, -y)
         inviteBtn:ClearAllPoints()
         inviteBtn:SetPoint("LEFT", bringBtn, "RIGHT", 6, 0)
         groupsBtn:ClearAllPoints()
@@ -628,7 +639,7 @@ function GuildOS:CreateWebPanel(parent, _win)
         trimBtn:SetPoint("LEFT", groupsBtn, "RIGHT", 6, 0)
         planBtn:ClearAllPoints()
         planBtn:SetPoint("LEFT", trimBtn, "RIGHT", 6, 0)
-        y = y + BTN_H + 2
+        y = y + BTN_H + 4
         place(raidWhy); raidWhy:SetWidth(inner)
         y = y + ROW_H
 
@@ -638,18 +649,18 @@ function GuildOS:CreateWebPanel(parent, _win)
         local NAME_W = math.min(120, math.floor(inner * 0.38))
         local function placeList(list)
             if list.shown == 0 and list.rest == 0 then return end
-            y = y + GAP
+            y = y + SECTION
             place(list.head)
-            y = y + ROW_H + 2
+            y = y + TITLE_H
             for i = 1, list.shown do
                 local row = list.rows[i]
-                place(row.left, 4); row.left:SetWidth(NAME_W)
-                place(row.right, 4 + NAME_W + 8)
-                row.right:SetWidth(math.max(40, inner - NAME_W - 12))
+                place(row.left); row.left:SetWidth(NAME_W)
+                place(row.right, NAME_W + 8)
+                row.right:SetWidth(math.max(40, inner - NAME_W - 8))
                 y = y + ROW_H
             end
             if list.rest > 0 then
-                place(list.more, 4); list.more:SetWidth(inner)
+                place(list.more); list.more:SetWidth(inner)
                 y = y + ROW_H
             end
         end
@@ -659,11 +670,12 @@ function GuildOS:CreateWebPanel(parent, _win)
         if self.showFirstRun then
             y = y + SECTION
             place(firstHead)
-            y = y + ROW_H + 2
-            place(step1); step1:SetWidth(math.max(60, inner - 80))
+            y = y + TITLE_H
+            -- The address and its Copy button on one line, side by side (#371).
+            place(step1)
             copyBtn:ClearAllPoints()
-            copyBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD, -y)
-            y = y + ROW_H
+            copyBtn:SetPoint("LEFT", step1, "RIGHT", GAP, 0)
+            y = y + ROW_H + 4
             place(step2); step2:SetWidth(inner)
             y = y + ROW_H
             place(step3); step3:SetWidth(inner)
@@ -674,7 +686,7 @@ function GuildOS:CreateWebPanel(parent, _win)
             end
         end
 
-        self.contentHeight = y + PAD
+        self.contentHeight = y + GAP
     end
 
     ----------------------------------------------------------------
