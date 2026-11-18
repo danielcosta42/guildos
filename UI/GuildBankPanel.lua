@@ -28,7 +28,8 @@ local WHERE_MIN = 640   -- under this width the inventory's "where" column goes
 local CHART_H   = 60
 local CHART_DAYS = 30
 local TOP_N     = 8     -- contributors shown
-local BAR_H     = 30    -- the bar under the game's bank
+local BAR_H     = 30    -- the bar over the game's bank
+local BAR_W     = 640   -- its width when it is not the bank's
 local ANNOUNCE_MAX = 240  -- characters of one guild chat line
 
 local function Bank() return GuildOS.GuildBank end
@@ -1236,17 +1237,47 @@ local function buildBar()
     progress:SetPoint("BOTTOMLEFT", 1, 1)
     progress:SetPoint("BOTTOMRIGHT", -1, 1)
 
+    -- Where the bar sits: where the player dragged it, or over the top of the game's bank, outside
+    -- it (under it, it covered the bank's own log tabs).
     function bar:Place()
         self:ClearAllPoints()
+        local pos = GuildOS:GetSetting("gbankBarPos")
         local host = GuildBankFrame
-        if host and host:IsShown() then
-            self:SetPoint("TOPLEFT", host, "BOTTOMLEFT", 0, -4)
-            self:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", 0, -4)
+        if type(pos) == "table" and tonumber(pos.x) and tonumber(pos.y) then
+            self:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", pos.x, pos.y)
+            self:SetWidth(tonumber(pos.w) or BAR_W)
+        elseif host and host:IsShown() then
+            self:SetPoint("BOTTOMLEFT", host, "TOPLEFT", 0, 4)
+            self:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", 0, 4)
         else
             self:SetPoint("TOP", UIParent, "TOP", 0, -120)
-            self:SetWidth(640)
+            self:SetWidth(BAR_W)
         end
     end
+
+    -- Drag it anywhere; right-click its name to put it back over the bank.
+    bar:SetMovable(true)
+    bar:SetClampedToScreen(true)
+    bar:EnableMouse(true)
+    bar:RegisterForDrag("LeftButton")
+    bar:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    bar:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        GuildOS:SetSetting("gbankBarPos", { x = math.floor(self:GetLeft() or 0), y = math.floor(self:GetBottom() or 0),
+                                            w = math.floor(self:GetWidth() or BAR_W) })
+        self:Place()
+    end)
+    local grip = CreateFrame("Button", nil, bar)
+    grip:SetAllPoints(mark)
+    grip:RegisterForClicks("RightButtonUp")
+    grip:RegisterForDrag("LeftButton")
+    grip:SetScript("OnDragStart", function() bar:StartMoving() end)
+    grip:SetScript("OnDragStop", function() bar:GetScript("OnDragStop")(bar) end)
+    grip:SetScript("OnClick", function()
+        GuildOS:SetSetting("gbankBarPos", nil)
+        bar:Place()
+    end)
+    UI:AddTooltip(grip, "Guild OS", { L["Drag to move the bar. Right-click to put it back over the bank."] })
 
     function bar:Draw()
         local run = B:SortState()

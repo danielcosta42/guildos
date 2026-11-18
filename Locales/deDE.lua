@@ -3235,3 +3235,4 @@ L["Tab %d is full: free one slot and it can be put in order."] = "Fach %d ist vo
 L["This tab is full: free one slot and it can be put in order."] = "Dieses Fach ist voll: mach einen Platz frei, dann lässt es sich ordnen."
 L["Bank log cleared."] = "Bank-Protokoll gelöscht."
 L["Last %d lines of the bank log (all of it is in WTF\\...\\SavedVariables\\GuildOS.lua):"] = "Letzte %d Zeilen des Bank-Protokolls (alles steht in WTF\\...\\SavedVariables\\GuildOS.lua):"
+L["Drag to move the bar. Right-click to put it back over the bank."] = "Ziehen, um die Leiste zu verschieben. Rechtsklick legt sie zurück an die Bank."

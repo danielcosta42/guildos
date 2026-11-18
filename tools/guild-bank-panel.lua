@@ -290,6 +290,7 @@ check(shows(panel, "Super Mana Potion") and shows(panel, "open"), "requests list
 check(Bank:ParseItemInput("fel iron") == 23445, "a typed name names an item")
 
 -- ── The bar under the game's bank ───────────────────────────────────────
+GuildBankFrame = newFrame("Frame", UIParent)
 Bank:OnEvent("GUILDBANKFRAME_OPENED")
 local bar = _G.GuildOSGuildBankBar
 check(bar == nil or bar.shown ~= false, "the bar docks when the bank opens")
@@ -300,6 +301,22 @@ check(docked.enabled == true, "on a tab whose rank withdraws without limit")
 TABS[1][2] = 5
 Bank:Refresh()
 check(docked.enabled == false, "and not on one with a limit")
+-- The bar sits over the game's bank, never over its bottom (the bank's own log tabs are there).
+local barFrame
+walk(UIParent, function(f) if f.Place and f.Draw then barFrame = f end end)
+check(barFrame ~= nil, "the bar exists")
+barFrame:Place()
+local p1 = barFrame.points and barFrame.points[1]
+check(p1 and p1[1] == "BOTTOMLEFT" and p1[2] == GuildBankFrame and p1[3] == "TOPLEFT", "the bar sits on top of the bank, outside it")
+-- Dragged, it stays where it was put; right-clicking its name puts it back.
+function Frame:GetLeft() return 100 end
+function Frame:GetBottom() return 200 end
+barFrame.scripts.OnDragStop(barFrame)
+local saved = GuildOS:GetSetting("gbankBarPos")
+check(saved and saved.x == 100 and saved.y == 200, "a dragged bar keeps its place")
+p1 = barFrame.points[1]
+check(p1[1] == "BOTTOMLEFT" and p1[2] == UIParent and p1[4] == 100, "and is placed there next time")
+GuildOS:SetSetting("gbankBarPos", nil)
 Bank:OnEvent("GUILDBANKFRAME_CLOSED")
 
 print(string.format("guild-bank-panel: %d checks passed", checks))

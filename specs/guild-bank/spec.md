@@ -33,7 +33,7 @@ own bank, and a line on item tooltips.
    declines it; its author cancels it.
 7. **Tooltip**: "Guild bank: N", per tab and the picture's age, and the need when there is one.
    Follows the existing item tooltip setting (always / Shift / off) and has its own switch.
-8. **Bar** under the game's bank: Organize tab, Organize all, Open in Guild OS, progress.
+8. **Bar** over the game's bank (outside it, so the bank's own log tabs stay free; draggable, right-click its name to reset): Organize tab, Organize all, Open in Guild OS, progress.
    Has its own switch.
 
 `/gos bank [sort [all] | stop | sync | need]`.

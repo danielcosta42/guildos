@@ -3115,3 +3115,4 @@ L["Tab %d is full: free one slot and it can be put in order."] = "标签页 %d �
 L["This tab is full: free one slot and it can be put in order."] = "此标签页已满：空出一格即可整理。"
 L["Bank log cleared."] = "银行日志已清除。"
 L["Last %d lines of the bank log (all of it is in WTF\\...\\SavedVariables\\GuildOS.lua):"] = "银行日志的最后 %d 行（全部在 WTF\\...\\SavedVariables\\GuildOS.lua）："
+L["Drag to move the bar. Right-click to put it back over the bank."] = "拖动以移动此栏。右键点击放回银行上方。"

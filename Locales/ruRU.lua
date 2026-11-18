@@ -3115,3 +3115,4 @@ L["Tab %d is full: free one slot and it can be put in order."] = "Вкладка
 L["This tab is full: free one slot and it can be put in order."] = "Эта вкладка заполнена: освободите одну ячейку, и её можно будет упорядочить."
 L["Bank log cleared."] = "Журнал банка очищен."
 L["Last %d lines of the bank log (all of it is in WTF\\...\\SavedVariables\\GuildOS.lua):"] = "Последние %d строк журнала банка (весь журнал в WTF\\...\\SavedVariables\\GuildOS.lua):"
+L["Drag to move the bar. Right-click to put it back over the bank."] = "Перетащите, чтобы сдвинуть панель. Правый клик вернёт её к банку."

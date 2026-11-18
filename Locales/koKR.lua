@@ -3115,3 +3115,4 @@ L["Tab %d is full: free one slot and it can be put in order."] = "탭 %d이(가)
 L["This tab is full: free one slot and it can be put in order."] = "이 탭은 가득 찼습니다: 한 칸을 비우면 정리할 수 있습니다."
 L["Bank log cleared."] = "은행 로그를 지웠습니다."
 L["Last %d lines of the bank log (all of it is in WTF\\...\\SavedVariables\\GuildOS.lua):"] = "은행 로그 마지막 %d줄 (전체는 WTF\\...\\SavedVariables\\GuildOS.lua):"
+L["Drag to move the bar. Right-click to put it back over the bank."] = "끌어서 바를 옮깁니다. 오른쪽 클릭하면 은행 위로 돌아갑니다."
