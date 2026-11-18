@@ -121,7 +121,10 @@ local function load(opts)
   C_Timer = { After = function() end, NewTicker = function() return { Cancel = function() end } end }
   Enum = { SendAddonMessageResult = {} }
   UISpecialFrames, SlashCmdList = {}, {}
-  function ReloadUI() popups.reloaded = true end
+  function ReloadUI()
+    popups.reloaded = true
+    popups.wizardUp = GuildOS.onboardingFrame and GuildOS.onboardingFrame.shown
+  end
   local without = opts.without or {}
   C_Texture = opts.noArt and {} or { GetAtlasInfo = function(name)
     name = tostring(name):lower()
@@ -490,5 +493,188 @@ for _, rel in ipairs(files) do
 end
 check(#files > 100 and #literal == 0,
   "no border is a literal 1 unit (use GuildOS.UI:Edge): " .. table.concat(literal, ", "))
+
+-- ── 11. One of each screen part (issue #371) ───────────────────────────
+S = load({ db = {} }); S:Resolve()
+UI = GuildOS.UI
+local C = GuildOS.Colors
+local function same(col, c) return col and math.abs(col[1] - c.r) < 1e-6 and math.abs(col[2] - c.g) < 1e-6 end
+local host = UI:CreatePanel(UIParent)
+
+-- A field: lineHi border, gold while typing, a hint while empty.
+local field = UI:CreateInput(host, 120, 22, { placeholder = "Search" })
+check(field.kind == "EditBox" and same(field.border, C.lineHi), "a field is an edit box with the lineHi border")
+check(field.placeholder and field.placeholder.shown and field.placeholder.text == "Search", "an empty field shows its hint")
+field.scripts.OnEditFocusGained(field)
+check(same(field.border, C.gold), "it turns gold while typing")
+field.scripts.OnEditFocusLost(field)
+check(same(field.border, C.lineHi), "and back when it lets go")
+field:SetText("ana"); field.scripts.OnTextChanged(field)
+check(not field.placeholder.shown, "the hint goes once there is text")
+
+-- A multi-line field keeps the height it was given: a multi-line EditBox alone takes its text's height,
+-- one line when empty, so the box is a frame of that size with the EditBox inside it.
+local area = UI:CreateTextArea(host, 300, 56, { placeholder = "Options" })
+check(area.h == 56 and area.edit and area.edit.kind == "EditBox" and area.edit.parent == area
+  and same(area.border, C.lineHi), "a text area is a 56px framed box with its EditBox inside")
+area.edit.scripts.OnEditFocusGained(area.edit)
+check(same(area.border, C.gold), "and its frame turns gold while typing")
+
+-- A dropdown's list has its own surface: popup fill under a lineHi border, not options over whatever is
+-- behind them (#371, seen in Loot > Rule).
+local dd = UI:CreateDropdown(host, 150, 22)
+dd:SetOptions({ { value = 1, text = "Rare" }, { value = 2, text = "Epic" } })
+dd:Open()
+local list
+for _, c in ipairs(UIParent.children) do if rawget(c, "catcher") then list = c end end
+check(list and list.backdrop and list.backdrop.bgFile and same(list.bg, C.popup) and same(list.border, C.lineHi),
+  "an open dropdown's list is a popup surface with a border")
+
+-- Selection: gold border and label, kept under the cursor, gone when unselected.
+local opt = UI:CreateButton(host, "All", 60, 22)
+UI:SetSelected(opt, true)
+check(same(opt.border, C.gold) and same(opt.label.color, C.gold), "a selected button has a gold border and label")
+opt.scripts.OnEnter(opt)
+check(same(opt.border, C.gold), "and keeps it under the cursor")
+opt.scripts.OnLeave(opt)
+UI:SetSelected(opt, false)
+check(same(opt.border, C.lineHi) and same(opt.label.color, C.text), "unselected, it is a secondary button again")
+UI:SetSelected(opt, true); opt:Disable(); opt.scripts.OnLeave(opt)
+UI:_ButtonState(opt, "disabled")
+check(same(opt.border, C.gold) and same(opt.label.color, C.disabled),
+  "a selected button that cannot be clicked keeps the gold border, so the choice still shows")
+
+-- Section titles: a rule above every one but the first; table headers: a rule under, no fill.
+local t1 = UI:CreateSectionTitle(host, "Your raid roles", true)
+local t2 = UI:CreateSectionTitle(host, "Notices")
+check(t1.rule == nil and t2.rule ~= nil and t2.rule.h ~= nil, "a later section title has a rule above it, the first none")
+check(same(t2.color, C.text), "a section title is text, not gold")
+local th = UI:CreateTableHeader(host)
+check(th.h == 22 and th.rule and th.backdrop == nil, "a table header is 22px with a rule and no fill")
+
+-- Scrolling: no empty track when nothing scrolls.
+local scroll = UI:CreateScrollFrame(host, "TestScroll")
+local bar = scroll.ScrollBar
+local track
+for _, c in ipairs(bar.children) do if c.kind == "CreateTexture" and c.layer == "BACKGROUND" then track = c end end
+bar.GetMinMaxValues = function() return 0, 0 end
+bar.scripts.OnMinMaxChanged(bar)
+check(track and not track.shown, "a scroll bar with nothing to scroll shows no track")
+bar.GetMinMaxValues = function() return 0, 300 end
+bar.scripts.OnMinMaxChanged(bar)
+check(track.shown, "and shows it once there is something to scroll")
+check(UI.SCROLL_GUTTER == 12, "content keeps 12px clear of the scroll bar")
+
+-- In WoW: Forever a field takes the game's search-box art, as the fields it replaced did (#122).
+S = load({ db = { style = "forever" } }); S:Resolve()
+local fhost = GuildOS.UI:CreatePanel(UIParent)
+local ffield = GuildOS.UI:CreateInput(fhost, 120, 22)
+local atlases = 0
+for _, c in ipairs(ffield.children) do if c.atlas then atlases = atlases + 1 end end
+check(atlases > 0 and ffield.backdrop and ffield.backdrop.edgeFile == nil,
+  "a Forever field wears the game's art, with no flat edge under it")
+local fbox = GuildOS.UI:CreateInput(fhost, 460, 250, { multiline = true })
+local boxArt = 0
+for _, c in ipairs(fbox.children) do if c.atlas then boxArt = boxArt + 1 end end
+check(boxArt == 0 and fbox.backdrop and fbox.backdrop.edgeFile ~= nil,
+  "a multi-line box stays flat: the 22px search-bar art is not stretched over it")
+
+-- ── 12. The onboarding asks the style first (#375) ─────────────────────
+-- Where the client draws both styles the wizard's first step is the style: two cards, the one on screen
+-- chosen. A pick is saved at once; the reload it needs comes only when the wizard is finished, and only
+-- when the style changed.
+local inCombat = false
+local function onboarding(opts)
+  S = load(opts); S:Resolve()
+  function InCombatLockdown() return inCombat end
+  function GuildOS:CreateRolePicker(parent)
+    local f = CreateFrame("Frame", nil, parent)
+    f.refresh = function() end
+    return f
+  end
+  function GuildOS:IsOfficer() return false end
+  GuildOS.onboardingFrame = nil
+  dofile(ADDON .. "/UI/Onboarding.lua")
+  GuildOS:ShowOnboarding()
+  return GuildOS.onboardingFrame
+end
+local Cn
+local function shownCards(f)
+  local out = {}
+  for _, c in ipairs(f.styleCards) do if c.shown then out[#out + 1] = c end end
+  return out
+end
+local function finish(f)
+  while f.step < #f.steps do f.nextBtn.scripts.OnClick(f.nextBtn) end
+  return f.nextBtn.label.text
+end
+
+local ob = onboarding({ db = {} })
+Cn = GuildOS.Colors
+check(ob.title.text == "Choose your style" and ob.stepLbl.text == "Step 1 of " .. #ob.steps,
+  "with both styles, the wizard's first step is the style")
+local cardsShown = shownCards(ob)
+check(#cardsShown == 2 and cardsShown[1].id == "guildos" and cardsShown[2].id == "forever",
+  "two cards, GuildOS then WoW: Forever")
+check(same(cardsShown[1].border, Cn.gold) and not same(cardsShown[2].border, Cn.gold), "the style on screen is the chosen one")
+check(cardsShown[2].sample.__three ~= nil and cardsShown[1].sample.backdrop ~= nil,
+  "each card shows a sample: the game's red button, a flat one")
+cardsShown[2].scripts.OnClick(cardsShown[2])
+check(GuildOSDB.style == "forever" and same(cardsShown[2].border, Cn.gold) and not same(cardsShown[1].border, Cn.gold),
+  "picking WoW: Forever saves it and marks its card")
+check(not popups.reloaded, "and reloads nothing yet")
+ob.nextBtn.scripts.OnClick(ob.nextBtn)
+check(ob.title.text == "Welcome to Guild OS" and not shownCards(ob)[1], "the next step is the welcome, without the cards")
+check(finish(ob) == "Finish and reload" and not popups.reloaded, "the last button says it will reload")
+ob.nextBtn.scripts.OnClick(ob.nextBtn)
+check(popups.reloaded and GuildOS.db.settings.onboarded == true,
+  "Finish marks the wizard done, then reloads")
+-- On WoW: Forever the click could not reload once it had hidden the wizard (ADDON_ACTION_BLOCKED out of
+-- combat, seen in game), while Publish's plain ReloadUI reloads: the reload comes first.
+check(popups.wizardUp, "the reload is called before the wizard is hidden")
+
+ob = onboarding({ db = {} })
+cardsShown = shownCards(ob)
+cardsShown[2].scripts.OnClick(cardsShown[2])
+cardsShown[1].scripts.OnClick(cardsShown[1])
+check(finish(ob) == "Finish", "picked back to the style on screen, the last button just finishes")
+ob.nextBtn.scripts.OnClick(ob.nextBtn)
+check(not popups.reloaded and GuildOS.db.settings.onboarded == true, "and nothing reloads")
+
+-- A style applied in Settings with "Later" on its reload, then the welcome replayed: that style is the
+-- chosen card, and finishing reloads to it.
+ob = onboarding({ db = {} })
+GuildOSDB.style = "forever"
+GuildOS:ShowOnboarding()
+cardsShown = shownCards(ob)
+check(same(cardsShown[2].border, Cn.gold) and not same(cardsShown[1].border, Cn.gold),
+  "a style saved but not reloaded yet is the chosen card")
+check(finish(ob) == "Finish and reload", "and finishing reloads to apply it")
+local sp = ob.settingsBtn.points[1]
+check(sp and sp[1] == "BOTTOMRIGHT" and sp[2] == ob.nextBtn and sp[3] == "BOTTOMLEFT",
+  "Open Settings sits beside the last button, so a longer Finish never covers it")
+
+-- Finished in combat: the game refuses a reload then (ADDON_ACTION_BLOCKED, seen in game). The wizard
+-- closes and says why, and the reload is offered, behind a click, the moment combat ends.
+ob = onboarding({ db = {} })
+inCombat = true
+cardsShown = shownCards(ob)
+cardsShown[2].scripts.OnClick(cardsShown[2])
+finish(ob)
+ob.nextBtn.scripts.OnClick(ob.nextBtn)
+check(not popups.reloaded and GuildOS.db.settings.onboarded == true and not ob.shown and said("Can't reload during combat."),
+  "finished in combat: the wizard closes, nothing reloads, and it says why")
+inCombat = false
+ob.afterCombat.scripts.OnEvent(ob.afterCombat, "PLAYER_REGEN_ENABLED")
+check(popups[#popups] and popups[#popups].which == "GUILDOS_STYLE_RELOAD" and popups[#popups].text:find("WoW: Forever", 1, true),
+  "when combat ends, the reload is offered for the style picked")
+local offered = #popups
+GuildOSDB.style = "guildos"   -- picked back to the style on screen before combat ended
+ob.afterCombat.scripts.OnEvent(ob.afterCombat, "PLAYER_REGEN_ENABLED")
+check(#popups == offered, "a saved style that is the one on screen by then offers no reload")
+
+ob = onboarding({ db = {}, noArt = true })
+check(ob.title.text == "Welcome to Guild OS" and not shownCards(ob)[1], "a client with one style has no style step")
+check(finish(ob) == "Finish", "and finishes without a reload")
 
 print(("style: %d checks passed"):format(checks))

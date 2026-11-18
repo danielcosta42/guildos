@@ -54,27 +54,34 @@ local function build()
     f:SetScript("OnDragStart", function(self) self:StartMoving() end)
     f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
 
-    local title = UI:CreateText(f, L["Loot council"], 13, C.gold.r, C.gold.g, C.gold.b)
+    -- The window's title and its lines in the text colours: gold is the selection's (#371).
+    local title = UI:CreateTitle(f, L["Loot council"], 13)
     title:SetPoint("TOP", 0, -8)
-    f.itemText = UI:CreateText(f, "", 12, C.white.r, C.white.g, C.white.b)
+    f.itemText = UI:CreateText(f, "", 12, C.text.r, C.text.g, C.text.b)
     f.itemText:SetPoint("TOP", 0, -28)
-    f.statusText = UI:CreateText(f, "", 10, C.silver.r, C.silver.g, C.silver.b)
+    f.statusText = UI:CreateText(f, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     f.statusText:SetPoint("TOP", 0, -46)
 
-    local headers = { { L["Player"], 28 }, { L["Type"], 170 }, { L["Roll"], 220 }, { L["ATT%"], 290 }, { L["RECV"], 340 },
-        { L["Points"], 390 }, { L["Votes"], 450 } }
+    -- The candidates' header row: the shared one, no fill and a 1px rule under it, ending where the
+    -- rows end, short of the scroll bar (#371).
+    local gutter = tonumber(UI.SCROLL_GUTTER) or 12
+    local head = UI:CreateTableHeader(f)
+    head:SetPoint("TOPLEFT", 10, -58)
+    head:SetPoint("TOPRIGHT", -(10 + gutter), -58)
+    local headers = { { L["Player"], 18 }, { L["Type"], 160 }, { L["Roll"], 210 }, { L["ATT%"], 280 }, { L["RECV"], 330 },
+        { L["Points"], 380 }, { L["Votes"], 440 } }
     for _, h in ipairs(headers) do
-        local ht = UI:CreateHeaderText(f, h[1], 9)
-        ht:SetPoint("TOPLEFT", h[2], -64)
+        local ht = UI:CreateHeaderText(head, h[1], 9)
+        ht:SetPoint("LEFT", h[2], 0)
     end
 
     local scroll, content = UI:CreateScrollFrame(f, "GuildOSLootCouncilScroll")
-    scroll:SetPoint("TOPLEFT", 10, -80)
-    scroll:SetPoint("BOTTOMRIGHT", -30, 44)   -- room for the scroll bar on its right
-    content:SetSize(W - 60, 1)
+    scroll:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, 0)
+    scroll:SetPoint("BOTTOMRIGHT", -10, 44)
+    UI:BindScrollChildWidth(scroll, content)   -- the rows stop short of the scroll bar
     f.content = content
 
-    f.hint = UI:CreateText(f, "", 10, C.silver.r, C.silver.g, C.silver.b)
+    f.hint = UI:CreateText(f, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     f.hint:SetPoint("BOTTOMLEFT", 12, 16)
 
     -- Take my vote back.
@@ -99,35 +106,38 @@ end
 
 -- One candidate's row.
 local function drawRow(content, y, c, view)
+    -- Hung by both top corners; the one the council proposes on the selected-row surface, not a gold
+    -- tint (#371).
     local row = CreateFrame("Button", nil, content, "BackdropTemplate")
-    row:SetSize(W - 60, ROW_H - 2)
+    row:SetHeight(ROW_H - 2)
     row:SetPoint("TOPLEFT", 0, -y)
+    row:SetPoint("TOPRIGHT", 0, -y)
     row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
     local proposed = view.proposed ~= nil and view.proposed == c.name
     if proposed then
-        row:SetBackdropColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.8)
+        row:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
     else
-        row:SetBackdropColor(0.082, 0.082, 0.105, 0.6)
+        row:SetBackdropColor(C.well.r, C.well.g, C.well.b, 0.6)
     end
 
-    local place = UI:CreateText(row, c.place .. ".", 10, C.silver.r, C.silver.g, C.silver.b)
+    local place = UI:CreateText(row, c.place .. ".", 11, C.label.r, C.label.g, C.label.b)
     place:SetPoint("LEFT", 4, 0)
-    local name = UI:CreateText(row, c.name, 10, C.white.r, C.white.g, C.white.b)
+    local name = UI:CreateText(row, c.name, 11, C.text.r, C.text.g, C.text.b)
     name:SetPoint("LEFT", 20, 0)
-    local answer = UI:CreateText(row, c.answer, 10, C.gold.r, C.gold.g, C.gold.b)
+    local answer = UI:CreateText(row, c.answer, 11, C.text.r, C.text.g, C.text.b)
     answer:SetPoint("LEFT", 162, 0)
     local figure = "-"
     if c.bid > 0 then figure = string.format(L["bid %d"], c.bid) elseif c.roll > 0 then figure = tostring(c.roll) end
-    local roll = UI:CreateText(row, figure, 10, C.white.r, C.white.g, C.white.b)
+    local roll = UI:CreateText(row, figure, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     roll:SetPoint("LEFT", 212, 0)
-    local att = UI:CreateText(row, c.att .. "%", 10, C.white.r, C.white.g, C.white.b)
+    local att = UI:CreateText(row, c.att .. "%", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     att:SetPoint("LEFT", 282, 0)
-    local recv = UI:CreateText(row, tostring(c.recv), 10, C.white.r, C.white.g, C.white.b)
+    local recv = UI:CreateText(row, tostring(c.recv), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     recv:SetPoint("LEFT", 336, 0)
-    local points = UI:CreateText(row, tostring(c.points), 10, C.white.r, C.white.g, C.white.b)
+    local points = UI:CreateText(row, tostring(c.points), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     points:SetPoint("LEFT", 382, 0)
-    local votes = UI:CreateText(row, tostring(c.votes), 11, C.gold.r, C.gold.g, C.gold.b)
-    votes:SetPoint("LEFT", 446, 0)
+    local votes = UI:CreateText(row, tostring(c.votes), 12, C.text.r, C.text.g, C.text.b)
+    votes:SetPoint("LEFT", 442, 0)
 
     local lines = tipLines(c, view.anon)
     if #lines > 0 then
@@ -144,7 +154,7 @@ local function drawRow(content, y, c, view)
         local mine = view.mine == c.place
         local voteBtn = UI:CreateButton(row, mine and L["Voted"] or L["Vote"], 70, 18)
         voteBtn:SetPoint("RIGHT", -2, 0)
-        if mine then voteBtn:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95) end
+        UI:SetSelected(voteBtn, mine)   -- my vote: the shared selection mark (#371)
         local to = c.place
         voteBtn:SetScript("OnClick", function() LC():Vote(to) end)
     end

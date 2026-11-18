@@ -300,9 +300,11 @@ function CTA:BuildPopup()
     f:SetSize(440, 132)
     f:SetPoint("TOP", 0, -140)
     f:SetFrameStrata("DIALOG")
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 2 })
-    f:SetBackdropColor(0.05, 0.03, 0.03, 0.94)
-    f:SetBackdropBorderColor(1, 0.53, 0, 0.9)
+    -- A flat popup surface with a 1px border (#371). Only the border keeps the alert's warm colour,
+    -- as the warn token; the title and the count are text, not an accent.
+    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
+    f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 0.97)
+    f:SetBackdropBorderColor(C.warn.r, C.warn.g, C.warn.b, 1)
     f:EnableMouse(true)
     f:Hide()
 
@@ -311,9 +313,9 @@ function CTA:BuildPopup()
     f.icon:SetPoint("TOPLEFT", 12, -12)
 
     f.title = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(f.title, 16)
+    GuildOS:ApplyFont(f.title, 16, "windowTitle")
     f.title:SetPoint("TOPLEFT", f.icon, "TOPRIGHT", 10, 0)
-    f.title:SetTextColor(1, 0.53, 0)
+    f.title:SetTextColor(C.text.r, C.text.g, C.text.b)
 
     f.text = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(f.text, 12)
@@ -321,7 +323,7 @@ function CTA:BuildPopup()
     f.text:SetWidth(350)
     f.text:SetJustifyH("LEFT")
     if f.text.SetMaxLines then f.text:SetMaxLines(3) end   -- 140 wide letters would be four
-    f.text:SetTextColor(C.white.r, C.white.g, C.white.b)
+    f.text:SetTextColor(C.text.r, C.text.g, C.text.b)
 
     f.close = GuildOS.UI:CreateButton(f, L["Dismiss"], 90, 22)
     f.close:SetPoint("BOTTOMRIGHT", -12, 10)
@@ -339,7 +341,7 @@ function CTA:BuildPopup()
     f.meta:SetPoint("BOTTOMRIGHT", -12, 40)
     f.meta:SetJustifyH("LEFT")
     f.meta:SetWordWrap(false)
-    f.meta:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+    f.meta:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
 
     -- How many are coming, beside the buttons and stopping short of them.
     f.count = f:CreateFontString(nil, "OVERLAY")
@@ -348,7 +350,7 @@ function CTA:BuildPopup()
     f.count:SetPoint("BOTTOMRIGHT", f.go, "BOTTOMLEFT", -8, 6)
     f.count:SetJustifyH("LEFT")
     f.count:SetWordWrap(false)
-    f.count:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    f.count:SetTextColor(C.text.r, C.text.g, C.text.b)
 
     self.popup = f
     return f

@@ -11,7 +11,7 @@ local L  = GuildOS.L
 local FRAME_W  = 400
 local ROW_H    = 22
 local MAX_ROWS = 12
-local LIST_TOP = -108   -- y of the first result row (below input + item line)
+local LIST_TOP = -126   -- y of the first result row (below input, item line, status and header)
 
 -- item:12345 link, a raw item id, or an [item] hyperlink → itemId
 local function ResolveItemId(text)
@@ -26,16 +26,15 @@ end
 ----------------------------------------------------------------------
 local function BuildFinder()
     local f = CreateFrame("Frame", "GuildOSCraftFinder", UIParent, "BackdropTemplate")
-    f:SetSize(FRAME_W, 120 + MAX_ROWS * ROW_H)
+    f:SetSize(FRAME_W, 138 + MAX_ROWS * ROW_H)
     f:SetPoint("CENTER")
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = GuildOS.UI:Edge(f),
     })
-    f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-    UI:StylePopup(f)
+    f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
+    UI:StylePopup(f)   -- the popup's lineHi border
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
     f:EnableMouse(true)
@@ -52,28 +51,9 @@ local function BuildFinder()
     closeBtn:SetPoint("TOPRIGHT", -6, -6)
     closeBtn:SetScript("OnClick", function() f:Hide() end)
 
-    -- Item input
-    local input = CreateFrame("EditBox", "GuildOSCraftFinderInput", f, "BackdropTemplate")
-    input:SetSize(FRAME_W - 24, 24)
+    -- Item input: the shared field, its hint its own (input.placeholder), #371.
+    local input = UI:CreateInput(f, FRAME_W - 24, 24, { placeholder = L["Shift-click an item or type its id"] })
     input:SetPoint("TOPLEFT", 12, -34)
-    input:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GuildOS.UI:Edge(input),
-    })
-    input:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    input:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(input, 11)
-    input:SetTextColor(C.white.r, C.white.g, C.white.b)
-    input:SetTextInsets(8, 8, 0, 0)
-    input:SetAutoFocus(false)
-
-    local placeholder = input:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(placeholder, 11)
-    placeholder:SetPoint("LEFT", 8, 0)
-    placeholder:SetTextColor(0.4, 0.4, 0.4)
-    placeholder:SetText(L["Shift-click an item or type its id"])
-    input.placeholder = placeholder
 
     -- Item line (icon + name of the resolved item)
     local itemIcon = f:CreateTexture(nil, "ARTWORK")
@@ -83,7 +63,7 @@ local function BuildFinder()
     itemIcon:Hide()
     f.itemIcon = itemIcon
 
-    local itemName = UI:CreateText(f, "", 12, C.gold.r, C.gold.g, C.gold.b)
+    local itemName = UI:CreateText(f, "", 12, C.text.r, C.text.g, C.text.b)   -- a name, in `text` (#371)
     itemName:SetPoint("LEFT", itemIcon, "RIGHT", 6, 0)
     f.itemName = itemName
 
@@ -92,15 +72,18 @@ local function BuildFinder()
     status:SetPoint("TOPLEFT", 12, -86)
     f.status = status
 
-    -- Column headers
+    -- Column headers: the shared header row over the rows, its labels over their cells (#371).
+    local header = UI:CreateTableHeader(f)
+    header:SetPoint("TOPLEFT", 10, LIST_TOP + 22)
+    header:SetPoint("TOPRIGHT", -10, LIST_TOP + 22)
     local function Hdr(text, x)
-        local h = UI:CreateHeaderText(f, text, 9)
-        h:SetPoint("TOPLEFT", x, LIST_TOP + 14)
+        local h = UI:CreateHeaderText(header, text, 10)
+        h:SetPoint("LEFT", x, 0)
         return h
     end
-    Hdr(L["PLAYER"],     14)
-    Hdr(L["PROFESSION"], 150)
-    Hdr(L["WHERE"],      270)
+    Hdr(L["PLAYER"],     4)
+    Hdr(L["PROFESSION"], 140)
+    Hdr(L["WHERE"],      260)
 
     f.rows = {}
     f.query = nil
@@ -156,16 +139,14 @@ local function BuildFinder()
             return
         end
         local row = GetRow(q.count)
-        local cr, cg, cb = C.white.r, C.white.g, C.white.b
+        local cr, cg, cb = C.text.r, C.text.g, C.text.b
         if class then cr, cg, cb = GuildOS:GetClassColor(class) end
         row.nameFS:SetTextColor(cr, cg, cb)
         row.nameFS:SetText(name)
         row.profFS:SetText(prof or "")
-        if scope == L["Guild"] then
-            row.scopeFS:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
-        else
-            row.scopeFS:SetTextColor(0.6, 0.8, 1.0)
-        end
+        -- Our own guild in `text`, an ally or the realm softer: no gold, no colour of its own (#371).
+        local ink = (scope == L["Guild"]) and C.text or C.textSoft
+        row.scopeFS:SetTextColor(ink.r, ink.g, ink.b)
         row.scopeFS:SetText(scope)
 
         local itemId = q.itemId
@@ -253,11 +234,7 @@ local function BuildFinder()
         SetStatus()
     end
 
-    -- Input handling
-    input:SetScript("OnTextChanged", function(self)
-        placeholder:SetShown((self:GetText() or "") == "")
-    end)
-    input:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    -- Input handling: Escape and the hint are the field's own.
     input:SetScript("OnEnterPressed", function(self)
         local id = ResolveItemId(self:GetText())
         if id then

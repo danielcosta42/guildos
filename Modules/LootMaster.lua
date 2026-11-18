@@ -1219,12 +1219,9 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
     f:SetScript("OnDragStart", function(self) self:StartMoving() end)
     f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
 
-    -- Title
-    local title = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(title, 13)
+    -- Title, in the text colour: gold is the selection's (#371).
+    local title = UI:CreateTitle(f, L["Wishlist Council"], 13)
     title:SetPoint("TOP", 0, -8)
-    title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    title:SetText(L["Wishlist Council"])
 
     -- Item
     local itemText = f:CreateFontString(nil, "OVERLAY")
@@ -1238,10 +1235,11 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
     local winText = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(winText, 11)
     winText:SetPoint("TOP", 0, -44)
+    -- The winner in their class colour, the reason as plain text: no marker, no gold (#371).
     local winLabel = winner.isPrio
-        and L["|cffFFD700Official Prio #1|r"]
-        or  string.format(L["|cff4CB8FFwishlist #%d|r"], winner.order)
-    winText:SetText(string.format(">> |cff%02x%02x%02x%s|r - %s",
+        and L["Official Prio #1"]
+        or  string.format(L["wishlist #%d"], winner.order)
+    winText:SetText(string.format("|cff%02x%02x%02x%s|r - %s",
         cc.r * 255, cc.g * 255, cc.b * 255,
         winner.name, winLabel))
 
@@ -1256,17 +1254,17 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
     -- Full priority list
     local yOff = -66
     if allCandidates then
-        for i, c in ipairs(allCandidates) do
+        for _, c in ipairs(allCandidates) do
             local ccc = CLASS_COLORS[c.class] or { r = 0.8, g = 0.8, b = 0.8 }
             local ctx = LootMaster:GetPlayerContext(c.name)
             local attColor = ctx.att25 >= 60 and "00FF00" or ctx.att25 >= 40 and "FFFF00" or "FF4444"
             local row = f:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(row, 10)
             row:SetPoint("TOPLEFT", 14, yOff)
-            local prefix = (i == 1) and "|cff00ff00>>|r " or "   "
+            -- In the order they stand: the winner is the line above, so the first row has no marker (#371).
             row:SetText(string.format(
                 L["%s|cff%02x%02x%02x%s|r  |cff4CB8FFwishlist #%d|r  |cff%s%d%%|r"],
-                prefix, ccc.r * 255, ccc.g * 255, ccc.b * 255,
+                "", ccc.r * 255, ccc.g * 255, ccc.b * 255,
                 c.name, c.order,
                 attColor, ctx.att25))
             yOff = yOff - 18
@@ -1274,9 +1272,9 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
     end
 
     -- Buttons
-    local awardBtn = UI:CreateButton(f, L["Award to "] .. winner.name, 150, 26)
+    -- The window's one primary action, in the shared primary look (#371: it was tinted green).
+    local awardBtn = UI:SetButtonVariant(UI:CreateButton(f, L["Award to "] .. winner.name, 150, 26), "primary")
     awardBtn:SetPoint("BOTTOMLEFT", 10, 10)
-    awardBtn:SetBackdropColor(0.0, 0.4, 0.0, 0.6)
     awardBtn:SetScript("OnClick", function()
         LootMaster:AwardLoot(winner.name)
         f:Hide()
@@ -2652,22 +2650,10 @@ end
 -- a version from before, or the settings' test) the buttons are MS, OS
 -- and Pass, by /roll, as always.
 ----------------------------------------------------------------------
--- An edit box in the loot windows' own look.
+-- An edit box of the loot windows: the shared field (#371). Its text was gold on a gold edge; the edge
+-- now turns gold only while it has the keyboard.
 local function lootEditBox(parent, width, numeric, maxLetters)
-    local C = GuildOS.Colors
-    local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    box:SetSize(width, 22)
-    box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(box) })
-    box:SetBackdropColor(0.05, 0.05, 0.066, 1)
-    box:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
-    GuildOS:ApplyFont(box, 11)
-    box:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    box:SetAutoFocus(false)
-    box:SetNumeric(numeric)
-    box:SetMaxLetters(maxLetters)
-    box:SetTextInsets(4, 4, 0, 0)
-    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    return box
+    return GuildOS.UI:CreateInput(parent, width, 22, { numeric = numeric and true or nil, max = maxLetters })
 end
 
 -- The rule's buttons at the foot of the roll popup, a box for the bid when an answer asks for one and
@@ -2802,7 +2788,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
     -- The header: "Loot", the clock, the close.
     local head = UI:CreateHeaderText(f, L["LOOT"], 10)
     head:SetPoint("TOPLEFT", POPUP_PAD, -10)
-    local clock = UI:CreateText(f, "", 11, C.gold.r, C.gold.g, C.gold.b)
+    local clock = UI:CreateText(f, "", 11, C.text.r, C.text.g, C.text.b)   -- danger in the last 5s; gold is not a status (#371)
     clock:SetPoint("TOPRIGHT", -34, -9)
     f.clock = clock
     local close = UI:CreateCloseButton(f)
@@ -2858,7 +2844,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
     if #chips == 0 then chips[1] = L["Not on your lists"] end
     local badges, widths = {}, {}
     for i, text in ipairs(chips) do
-        local b = UI:CreateBadge(f, text, (i == 1 and (st.reserved or st.prio)) and C.gold or nil)
+        local b = UI:CreateBadge(f, text)
         badges[i], widths[i] = b, b:GetWidth() or 60
     end
     f.standing = chips
@@ -2931,7 +2917,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
     timerBar:SetSize(POPUP_W - 2, 3)
     timerBar:SetPoint("BOTTOM", 0, 1)
     timerBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
-    timerBar:SetStatusBarColor(C.gold.r, C.gold.g, C.gold.b, 0.9)
+    timerBar:SetStatusBarColor(C.textSoft.r, C.textSoft.g, C.textSoft.b, 0.9)   -- progress, as the shared bars (#371)
     timerBar:SetMinMaxValues(0, duration)
     timerBar:SetValue(duration)
     local elapsed, warned = 0, false
@@ -3141,7 +3127,7 @@ function LootMaster:BuildLootTable()
     undoBtn:SetPoint("BOTTOMLEFT", 0, 0)
     undoBtn:SetScript("OnClick", function()
         local award, why = LootMaster:UndoLastAward()
-        f.status:SetText(award and string.format(L["|cffFFD700Undone:|r %s"], award.link) or ("|cffFF4444" .. why .. "|r"))
+        f.status:SetText(award and string.format(L["Undone: %s"], award.link) or ("|cffFF4444" .. why .. "|r"))
         LootMaster:RefreshRollFrame()
     end)
     f.undoBtn = undoBtn
@@ -3214,18 +3200,20 @@ function LootMaster:BuildLootTable()
     f.strip, f.forBox, f.forAnswer, f.forBid, f.mine, f.forEnter = strip, forBox, forAnswer, forBid, mine, forEnter
 
     -- The candidates.
-    local head = CreateFrame("Frame", nil, right)
-    head:SetPoint("TOPLEFT", 0, -52)
-    head:SetPoint("TOPRIGHT", 0, -52)
-    head:SetHeight(18)
+    -- The shared header row: no fill, a 1px rule under it, ending where the rows end (#371).
+    local gutter = tonumber(UI.SCROLL_GUTTER) or 12
+    local head = UI:CreateTableHeader(right)
+    head:SetPoint("TOPLEFT", 0, -50)
+    head:SetPoint("TOPRIGHT", -gutter, -50)
     f.head = head
     f.heads = {}
     local TITLES = { rank = "#", name = L["PLAYER"], answer = L["ANSWER"], why = L["WHY THEY ARE HERE"],
         plus = "+1", att = L["ATT%"], roll = L["ROLL"] }
     for _, col in ipairs(TABLE_COLS) do f.heads[col.key] = UI:CreateHeaderText(head, TITLES[col.key], 9) end
     local scroll, child = UI:CreateScrollFrame(right, "GuildOSLootTableScroll")
-    scroll:SetPoint("TOPLEFT", 0, -72)
-    scroll:SetPoint("BOTTOMRIGHT", -10, TABLE_FOOT + 40)
+    scroll:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, 0)
+    scroll:SetPoint("BOTTOMRIGHT", 0, TABLE_FOOT + 40)
+    UI:BindScrollChildWidth(scroll, child)   -- the rows stop short of the scroll bar (#371)
     f.scroll, f.scrollContent = scroll, child
     f.rows = {}
 
@@ -3424,7 +3412,7 @@ function LootMaster:RefreshRollFrame()
         local state, text = self:ItemState(item)
         row.stateKey = state
         row.state:SetText(text)
-        local ink = (state == "rolling" and C.gold) or (state == "awarded" and C.ok) or C.labelDim
+        local ink = (state == "rolling" and C.warn) or (state == "awarded" and C.ok) or C.labelDim   -- gold was not a status (#371)
         row.state:SetTextColor(ink.r, ink.g, ink.b)
         local on = f.selected == item
         row:SetBackdropColor(C.well.r, C.well.g, C.well.b, on and 1 or 0)
@@ -3503,8 +3491,8 @@ function LootMaster:RefreshRollFrame()
     for _, col in ipairs(TABLE_COLS) do
         if not (col.key == "plus" and #counters == 0) then spec[#spec + 1] = col end
     end
-    local tableW = math.max(1, W - TABLE_LIST_W - TABLE_PAD * 2 - 14 - 14)
-    f.scrollContent:SetWidth(tableW)
+    -- As wide as the scroll child BindScrollChildWidth keeps, from the window's own width.
+    local tableW = math.max(1, W - TABLE_LIST_W - TABLE_PAD * 2 - 14 - (tonumber(UI.SCROLL_GUTTER) or 12))
     local layout = UI:ResolveColumns(spec, tableW, 6)
     for _, col in ipairs(TABLE_COLS) do
         local at, fs = layout.byKey[col.key], f.heads[col.key]
@@ -3593,11 +3581,12 @@ function LootMaster:RefreshRollFrame()
         local nameInk = cc or C.text
         if pass or (mode == "lists" and not r.inRaid) then nameInk = C.labelDim end
         row.cells.name:SetTextColor(nameInk.r, nameInk.g, nameInk.b)
-        local ansInk = (pass and C.labelDim) or (row.answerPlace == 1 and C.ok) or (row.answerPlace == 2 and C.gold) or C.text
+        -- The second answer and a middling attendance in warn: gold is the selection's alone (#371).
+        local ansInk = (pass and C.labelDim) or (row.answerPlace == 1 and C.ok) or (row.answerPlace == 2 and C.warn) or C.text
         row.cells.answer:SetTextColor(ansInk.r, ansInk.g, ansInk.b)
-        local attInk = (att >= 60 and C.ok) or (att >= 40 and C.gold) or C.danger
+        local attInk = (att >= 60 and C.ok) or (att >= 40 and C.warn) or C.danger
         row.cells.att:SetTextColor(attInk.r, attInk.g, attInk.b)
-        row.cells.why:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+        row.cells.why:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
         row.tip = mode == "rolls" and self:RowTip(r, rule) or nil
         row:Show()
     end

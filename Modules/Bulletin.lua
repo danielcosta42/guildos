@@ -129,35 +129,31 @@ function Bulletin:Show()
 
         local listTop = -44
         if GuildOS:IsOfficer() then
-            local box = CreateFrame("EditBox", nil, f, "BackdropTemplate")
-            box:SetSize(330, 24)
-            box:SetPoint("TOPLEFT", 16, -42)
-            box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(box) })
-            box:SetBackdropColor(0.05, 0.05, 0.066, 1)
-            box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-            GuildOS:ApplyFont(box, 11)
-            box:SetTextColor(C.white.r, C.white.g, C.white.b)
-            box:SetTextInsets(6, 6, 0, 0)
-            box:SetAutoFocus(false)
-            box:SetMaxLetters(200)
-            box:SetScript("OnEscapePressed", function(self2) self2:ClearFocus() end)
+            -- The shared field, labelled, then its button: as the Guild tab's Bulletin draws it (#371).
+            local label = UI:CreateText(f, L["Notice:"], 12)
+            local postBtn = UI:CreateButton(f, L["Post"], 80, 24)
+            local box = UI:CreateInput(f, 0, 24, { max = 200 })
+            box:SetPoint("TOPLEFT", 16 + math.ceil(label:GetStringWidth() or 0) + 8, -42)
+            box:SetPoint("TOPRIGHT", -(16 + UI.ReserveFor(postBtn, 8)), -42)
+            label:SetPoint("RIGHT", box, "LEFT", -8, 0)
+            postBtn:SetPoint("LEFT", box, "RIGHT", 8, 0)
             local function doPost()
                 GuildOS.Bulletin:Post(box:GetText())
                 box:SetText("")
                 box:ClearFocus()
             end
             box:SetScript("OnEnterPressed", doPost)
-            local postBtn = UI:CreateButton(f, L["Post"], 80, 24)
-            postBtn:SetPoint("LEFT", box, "RIGHT", 8, 0)
             postBtn:SetScript("OnClick", doPost)
             listTop = -76
         end
 
         local holder = CreateFrame("Frame", nil, f)
-        holder:SetPoint("TOPLEFT", 12, listTop)
+        holder:SetPoint("TOPLEFT", 16, listTop)
         holder:SetPoint("BOTTOMRIGHT", -12, 14)
         local scroll, child = UI:CreateScrollFrame(holder, "GuildOSBulletinScroll")
         scroll:SetAllPoints()
+        -- The rows hang from both of the child's top corners; it keeps the list's width (#371).
+        UI:BindScrollChildWidth(scroll, child)
         f.child = child
         f.holder = holder
         self.frame = f
@@ -168,31 +164,29 @@ function Bulletin:Show()
         local child = f.child
         for _, c in pairs({ child:GetChildren() }) do c:Hide() end
         for _, r in pairs({ child:GetRegions() }) do r:Hide() end
-        child:SetWidth(f.holder:GetWidth() - 12)
 
         local msgs = GuildOS.Bulletin:GetMessages()
         local y, isOfficer = 0, GuildOS:IsOfficer()
         for _, m in ipairs(msgs) do
-            local textFS = UI:CreateText(child, m.text, 11, C.text.r, C.text.g, C.text.b)
-            textFS:SetPoint("TOPLEFT", 4, -y)
-            textFS:SetWidth(child:GetWidth() - (isOfficer and 30 or 10))
+            local textFS = UI:CreateText(child, m.text, 12, C.text.r, C.text.g, C.text.b)
+            textFS:SetPoint("TOPLEFT", 0, -y)
+            textFS:SetPoint("TOPRIGHT", isOfficer and -30 or 0, -y)
             textFS:SetJustifyH("LEFT")
             local th = textFS:GetStringHeight() or 14
-            local meta = UI:CreateText(child,
-                "|cff888888" .. (m.author or "?") .. " · " .. GuildOS:DateText(m.ts or 0, " %H:%M") .. "|r",
-                9, C.textDim.r, C.textDim.g, C.textDim.b)
-            meta:SetPoint("TOPLEFT", 4, -(y + th + 2))
+            local meta = UI:CreateText(child, (m.author or "?") .. " · " .. GuildOS:DateText(m.ts or 0, " %H:%M"),
+                11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            meta:SetPoint("TOPLEFT", 0, -(y + th + 2))
             if isOfficer then
-                local del = UI:CreateButton(child, "\195\151", 22, 18)  -- ×
-                del:SetPoint("TOPRIGHT", -2, -y)
+                local del = UI:CreateButton(child, "\195\151", 22, 18)  -- the multiplication sign
+                del:SetPoint("TOPRIGHT", 0, -y)
                 local id = m.id
                 del:SetScript("OnClick", function() GuildOS.Bulletin:Remove(id) end)
             end
             y = y + th + 22
         end
         if #msgs == 0 then
-            local empty = UI:CreateText(child, L["No notices yet."], 11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 4, -4)
+            local empty = UI:CreateText(child, L["No notices yet."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            empty:SetPoint("TOPLEFT", 0, 0)
         end
         child:SetHeight(math.max(1, y))
     end
