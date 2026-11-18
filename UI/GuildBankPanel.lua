@@ -216,12 +216,12 @@ end
 
 -- A row of chip buttons, one chosen: opts = { { key, label } }, onPick(key). Returns the bar and its
 -- Select(key).
-local function chipBar(parent, opts, onPick)
+local function chipBar(parent, opts, onPick, width)
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetHeight(FIELD_H)
     local buttons, prev = {}, nil
     for _, o in ipairs(opts) do
-        local b = UI:CreateButton(bar, o[2], 60, FIELD_H)
+        local b = UI:CreateButton(bar, o[2], width or 60, FIELD_H)
         if prev then b:SetPoint("LEFT", prev, "RIGHT", 4, 0) else b:SetPoint("LEFT", 0, 0) end
         b.key = o[1]
         b:SetScript("OnClick", function() bar.Select(o[1]); onPick(o[1]) end)
@@ -1127,6 +1127,32 @@ local VERDICT = {
     sell = { "Sell", "warn" }, review = { "Review", "textSoft" }, keep = { "Keep", "ok" },
 }
 
+-- Why a cleanup row has its verdict, in one line.
+local function whyText(r)
+    local why = {}
+    for _, k in ipairs(r.reasons) do why[#why + 1] = L[GuildOS.GuildBankCleanup.REASON[k]] end
+    if r.level and r.level > 0 then why[#why + 1] = string.format(L["level %d"], r.level) end
+    if r.days and r.days > 0 then why[#why + 1] = string.format(L["%d days in the bank"], r.days) end
+    if r.taken > 0 then why[#why + 1] = string.format(L["taken %d times in 60 days"], r.taken) end
+    return table.concat(why, " · ")
+end
+
+-- What a cleanup row is worth: where it sells for "sell", its vendor value otherwise.
+local function valueText(r)
+    if r.verdict == "sell" then
+        if r.where == "ah" and r.ah then return L["AH"] .. " " .. money(r.ah) end
+        if r.noValue then return L["no vendor value"] end
+        return money(r.vendor)
+    end
+    if r.vendorEach and r.vendorEach > 0 then return money(r.vendorEach * r.have) end
+    return ""
+end
+
+-- Mark or unmark a cleanup row, for the amount that may go.
+local function toggleMark(r)
+    if r then GuildOS.GuildBankCleanup:SetMark(r.key, not r.marked, r.out > 0 and r.out < r.have and r.out or nil) end
+end
+
 local function buildCleanup(p)
     local CL = GuildOS.GuildBankCleanup
     local st = { show = "sell" }
@@ -1198,10 +1224,7 @@ local function buildCleanup(p)
         row.value = UI:CreateText(row, "", 11)
         row.value:SetPoint("RIGHT", -36, 0)
         row.value:SetJustifyH("RIGHT")
-        local function toggle()
-            local r = row.data
-            if r then CL:SetMark(r.key, not r.marked, r.out > 0 and r.out < r.have and r.out or nil) end
-        end
+        local function toggle() toggleMark(row.data) end
         row.mark.checkbox.onChanged = function() toggle() end
         row:SetScript("OnEnter", function(self)
             self.hl:Show()
@@ -1218,21 +1241,8 @@ local function buildCleanup(p)
         if r.verdict == "sell" and r.out < r.have then verdictText = verdictText .. " " .. r.out end
         row.verdict:SetText(verdictText)
         row.verdict:SetTextColor(vc.r, vc.g, vc.b)
-        local why = {}
-        for _, k in ipairs(r.reasons) do why[#why + 1] = L[CL.REASON[k]] end
-        if r.level and r.level > 0 then why[#why + 1] = string.format(L["level %d"], r.level) end
-        if r.days and r.days > 0 then why[#why + 1] = string.format(L["%d days in the bank"], r.days) end
-        if r.taken > 0 then why[#why + 1] = string.format(L["taken %d times in 60 days"], r.taken) end
-        row.why:SetText(table.concat(why, " · "))
-        local valueText = ""
-        if r.verdict == "sell" then
-            if r.where == "ah" and r.ah then valueText = L["AH"] .. " " .. money(r.ah)
-            elseif r.noValue then valueText = L["no vendor value"]
-            else valueText = money(r.vendor) end
-        elseif r.vendorEach and r.vendorEach > 0 then
-            valueText = money(r.vendorEach * r.have)
-        end
-        row.value:SetText(valueText)
+        row.why:SetText(whyText(r))
+        row.value:SetText(valueText(r))
         row.mark.checkbox:SetChecked(r.marked)
     end)
     list:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, 0)
@@ -1349,10 +1359,179 @@ function GuildOS:CreateGuildBankPanel(container, _mainFrame)
     container.panels = panels
 end
 
+local bar   -- the bar over the game's guild bank, below
+
+----------------------------------------------------------------------
+-- The cleanup drawer beside the game's guild bank (officers, #384): mark what goes, take it out and
+-- put the gold back without leaving the bank. The bar's Cleanup button opens and closes it.
+----------------------------------------------------------------------
+local DRAWER_W  = 320
+local DRAWER_ROW_H = 34   -- a row: the item, and why on a second line
+local DRAWER_FOOT  = 92   -- the steps, the hint and the button under the list
+local drawer, showDrawer
+
+local function buildDrawer()
+    local B, CL = Bank(), GuildOS.GuildBankCleanup
+    local st = { show = "sell" }
+    drawer = CreateFrame("Frame", "GuildOSGuildBankCleanup", UIParent, "BackdropTemplate")
+    drawer:SetWidth(DRAWER_W)
+    drawer:SetFrameStrata("MEDIUM")   -- the bank's own: open bags beside it stay clickable
+    drawer:SetToplevel(true)
+    drawer:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(drawer) })
+    drawer:SetBackdropColor(C.bg.r, C.bg.g, C.bg.b, 0.97)
+    drawer:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    drawer:EnableMouse(true)
+    drawer:Hide()   -- frames are born shown; the bar's button shows it
+
+    local title = UI:CreateText(drawer, L["Cleanup"], 12)
+    GuildOS:ApplyFont(title, 12, "sectionTitle")
+    title:SetPoint("TOPLEFT", GAP + 2, -GAP - 2)
+    local close = UI:CreateCloseButton(drawer)
+    close:SetPoint("TOPRIGHT", -4, -4)
+    close:SetScript("OnClick", function() showDrawer(false) end)
+    local summary = UI:CreateText(drawer, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    summary:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+    summary:SetPoint("RIGHT", drawer, "RIGHT", -GAP, 0)
+    summary:SetJustifyH("LEFT")
+
+    local filters = chipBar(drawer, { { "sell", L["Sell"] }, { "review", L["Review"] }, { "keep", L["Keep"] } },
+        function(k) st.show = k; drawer:Draw() end, 92)
+    filters:SetPoint("TOPLEFT", summary, "BOTTOMLEFT", 0, -GAP)
+    filters:SetWidth(3 * 92 + 8)
+    filters.Select("sell")
+    local all = UI:CreateCheckbox(drawer, L["All suggested"], 16)
+    all:SetPoint("TOPLEFT", filters, "BOTTOMLEFT", 0, -6)
+    all.checkbox.onChanged = function(_, on) CL:MarkSuggested(not on) end
+
+    local list = makeList(drawer, DRAWER_ROW_H, function(row)
+        row.mark = UI:CreateCheckbox(row, "", 14)
+        row.mark:SetPoint("LEFT", 4, 0)
+        row.mark:SetWidth(18)
+        row.mark.checkbox.onChanged = function() toggleMark(row.data) end
+        row.icon = UI:CreateIcon(row, ICON)
+        row.icon:SetPoint("LEFT", 26, 0)
+        row.name = UI:CreateText(row, "", 12)
+        row.name:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 6, 3)
+        row.name:SetPoint("RIGHT", row, "RIGHT", -70, 0)
+        row.name:SetJustifyH("LEFT")
+        row.name:SetWordWrap(false)
+        row.value = UI:CreateText(row, "", 11)
+        row.value:SetPoint("TOPRIGHT", -4, -5)
+        row.value:SetJustifyH("RIGHT")
+        row.why = UI:CreateText(row, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        row.why:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMRIGHT", 6, -3)
+        row.why:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        row.why:SetJustifyH("LEFT")
+        row.why:SetWordWrap(false)
+        row:SetScript("OnEnter", function(self)
+            self.hl:Show()
+            if self.data then showItemTooltip(self, self.data.id, self.data.l) end
+        end)
+        row:SetScript("OnClick", function(self)
+            if self.data and IsShiftKeyDown() then linkToChat(self.data.id, self.data.l) else toggleMark(self.data) end
+        end)
+    end, function(row, r)
+        local suffix = string.format(" × %d", r.have)
+        if r.verdict == "sell" and r.out < r.have then suffix = suffix .. " · " .. L["Sell"] .. " " .. r.out end
+        paintItem(row, r.id, r.l, suffix)
+        row.value:SetText(valueText(r))
+        row.why:SetText(whyText(r))
+        row.mark.checkbox:SetChecked(r.marked)
+    end)
+    list:SetPoint("TOPLEFT", all, "BOTTOMLEFT", 0, -6)
+    list:SetPoint("BOTTOMRIGHT", drawer, "BOTTOMRIGHT", -GAP, DRAWER_FOOT)
+
+    -- The steps, a line on what to do next, and the one button that does it.
+    local main = UI:CreateButton(drawer, "", DRAWER_W - 2 * GAP, FIELD_H + 4)
+    UI:SetButtonVariant(main, "primary")
+    main:SetScript("OnClick", function(self)
+        if self.action == "take" then CL:WithdrawMarked() elseif self.action == "deposit" then CL:DepositOwed() end
+    end)
+    local stop = UI:CreateButton(drawer, L["Stop"], 70, FIELD_H + 4)
+    UI:SetButtonVariant(stop, "danger")
+    stop:SetPoint("BOTTOMRIGHT", -GAP, GAP)
+    stop:SetScript("OnClick", function() CL:StopWithdraw() end)
+    local steps = UI:CreateText(drawer, "", 11)
+    steps:SetPoint("BOTTOMLEFT", GAP, GAP + FIELD_H + 4 + 8)
+    local hint = UI:CreateText(drawer, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    hint:SetPoint("BOTTOMLEFT", steps, "TOPLEFT", 0, 6)
+    hint:SetPoint("RIGHT", drawer, "RIGHT", -GAP, 0)
+    hint:SetJustifyH("LEFT")
+
+    -- Beside the bank: on its right, or on its left when the screen has no room there.
+    function drawer:Dock()
+        self:ClearAllPoints()
+        local host = GuildBankFrame
+        if not (host and host:IsShown()) then
+            self:SetPoint("CENTER")
+            self:SetHeight(440)
+            return
+        end
+        local right, screen = host:GetRight(), UIParent:GetWidth()
+        if right and screen and screen > 0 and screen - right < DRAWER_W + 4 then
+            self:SetPoint("TOPRIGHT", host, "TOPLEFT", -4, 0)
+            self:SetPoint("BOTTOMRIGHT", host, "BOTTOMLEFT", -4, 0)
+        else
+            self:SetPoint("TOPLEFT", host, "TOPRIGHT", 4, 0)
+            self:SetPoint("BOTTOMLEFT", host, "BOTTOMRIGHT", 4, 0)
+        end
+    end
+
+    function drawer:Draw(rows)
+        if not GuildOS:IsOfficer() then self:Hide(); return end
+        rows = rows or CL:Rows()
+        local items, value, slots = CL:Summary(rows)
+        summary:SetText(string.format(L["%d to sell · %s · frees %d slots"], items, money(value), slots))
+        local counts, shown, allMarked = { sell = 0, review = 0, keep = 0 }, {}, items > 0
+        for _, r in ipairs(rows) do
+            counts[r.verdict] = (counts[r.verdict] or 0) + 1
+            if r.verdict == st.show then shown[#shown + 1] = r end
+            if r.verdict == "sell" and not r.marked then allMarked = false end
+        end
+        for _, b in ipairs(filters.buttons) do b.label:SetText(L[VERDICT[b.key][1]] .. " " .. counts[b.key]) end
+        all.checkbox:SetChecked(allMarked)
+        all.checkbox:SetEnabled(items > 0)
+        list:SetEmptyText(#rows == 0 and emptyBankText() or L["Nothing here: try another verdict above."])
+        list:SetData(shown)
+
+        -- 1 take out (marked, or a run under way), 2 sell (stacks out, nothing more marked), 3 gold back.
+        local done, total = CL:WithdrawProgress()
+        -- What can come out now: a mark no withdrawal can fill (part of a stack, a tab this rank
+        -- cannot take from, an item gone) does not hold the steps on 1.
+        local owed, takeable, out = CL:Owed(), #CL:Queue(), #CL:Sellable()
+        local step = (done and 1) or (owed > 0 and 3) or (out > 0 and takeable == 0 and 2) or 1
+        local function lit(n, text) return (n == step and hex(C.gold) or hex(C.textSoft)) .. n .. " " .. text .. "|r" end
+        steps:SetText(lit(1, L["Take out"]) .. "  >  " .. lit(2, L["Sell"]) .. "  >  " .. lit(3, L["Gold back"]))
+        hint:SetText(out > 0 and string.format(L["%d stacks taken out. Sell them at any vendor with the Guild OS button."], out) or "")
+        stop:SetShown(done ~= nil)
+        main:ClearAllPoints()
+        main:SetPoint("BOTTOMLEFT", GAP, GAP)
+        if done then main:SetPoint("RIGHT", stop, "LEFT", -6, 0) else main:SetPoint("RIGHT", self, "RIGHT", -GAP, 0) end
+        if done then
+            main.label:SetText(string.format(L["Taking out %d of %d"], done, total))
+            main.action = nil
+        elseif owed > 0 then
+            main.label:SetText(string.format(L["Deposit %s"], CL.MoneyText(owed)))
+            main.action = "deposit"
+        else
+            main.label:SetText(takeable > 0 and string.format(L["Take out marked (%d)"], takeable) or L["Take out marked"])
+            main.action = takeable > 0 and "take" or nil
+        end
+        main:SetEnabled(main.action ~= nil and not B:SortState())
+    end
+    return drawer
+end
+
+-- Open or close the drawer; the bar redraws, and with it the drawer.
+showDrawer = function(on)
+    local d = drawer or buildDrawer()
+    if on then d:Dock(); d:Show() else d:Hide() end
+    if bar then bar:Draw() end
+end
+
 ----------------------------------------------------------------------
 -- The bar under the game's guild bank
 ----------------------------------------------------------------------
-local bar
 local function buildBar()
     local B = Bank()
     bar = CreateFrame("Frame", "GuildOSGuildBankBar", UIParent, "BackdropTemplate")
@@ -1384,22 +1563,11 @@ local function buildBar()
     local open = UI:CreateButton(bar, L["Open in Guild OS"], 130, BAR_H - 4)
     open:SetPoint("RIGHT", -6, 0)
     open:SetScript("OnClick", function() if UI.OpenWindow then UI:OpenWindow("bank", "tabs") end end)
-    -- The cleanup (officers): take the marked stacks out, put the gold they made back in.
+    -- The cleanup (officers): opens the drawer beside the bank, where all of it happens.
     local CL = GuildOS.GuildBankCleanup
-    local take = UI:CreateButton(bar, L["Take out marked"], 130, BAR_H - 4)
+    local take = UI:CreateButton(bar, L["Cleanup"], 130, BAR_H - 4)
     take:SetPoint("RIGHT", open, "LEFT", -6, 0)
-    take:SetScript("OnClick", function(self)
-        if not CL then return end
-        if self.mode == "open" then
-            if UI.OpenWindow then UI:OpenWindow("bank", "cleanup") end
-        else
-            CL:WithdrawMarked()
-        end
-    end)
-    local deposit = UI:CreateButton(bar, "", 120, BAR_H - 4)
-    UI:SetButtonVariant(deposit, "primary")
-    deposit:SetPoint("RIGHT", take, "LEFT", -6, 0)
-    deposit:SetScript("OnClick", function() if CL then CL:DepositOwed() end end)
+    take:SetScript("OnClick", function() showDrawer(not (drawer and drawer:IsShown())) end)
     local status = UI:CreateText(bar, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     status:SetPoint("LEFT", all, "RIGHT", 12, 0)
     status:SetPoint("RIGHT", open, "LEFT", -12, 0)
@@ -1460,22 +1628,18 @@ local function buildBar()
         pause:SetShown(run ~= nil)
         stop:SetShown(run ~= nil)
         progress:SetShown(run ~= nil)
-        local officer = CL and GuildOS:IsOfficer()
-        local marked = officer and CL:MarkedCount() or 0
-        local owed = officer and CL:Owed() or 0
-        take:SetShown(officer and not run and true or false)
-        if marked > 0 or (CL and CL:IsWithdrawing()) then
-            take.label:SetText(CL:IsWithdrawing() and L["Taking out…"] or string.format(L["Take out marked (%d)"], marked))
-            take.mode = "take"
-        elseif officer then
-            local items = CL:Summary(CL:Rows())
-            take.label:SetText(string.format(L["Cleanup (%d)"], items))
-            take.mode = "open"
+        local officer = CL and GuildOS:IsOfficer() or false
+        local drawerOpen = drawer and drawer:IsShown() or false
+        take:SetShown(officer and not run)
+        UI:SetSelected(take, drawerOpen)
+        if officer and (not run or drawerOpen) then
+            local rows = CL:Rows()
+            take.label:SetText(string.format(L["Cleanup (%d)"], (CL:Summary(rows))))
+            if drawerOpen then drawer:Draw(rows) end
+        elseif drawerOpen then
+            drawer:Hide()
         end
-        take:SetEnabled(not (CL and CL:IsWithdrawing()))
-        deposit:SetShown(owed > 0 and not run)
-        deposit.label:SetText(string.format(L["Deposit %s"], CL and CL.MoneyText(owed) or ""))
-        local rightOf = (deposit:IsShown() and deposit) or (take:IsShown() and take) or open
+        local rightOf = (take:IsShown() and take) or open
         status:ClearAllPoints()
         status:SetPoint("LEFT", run and stop or all, "RIGHT", 12, 0)
         status:SetPoint("RIGHT", rightOf, "LEFT", -12, 0)
@@ -1500,10 +1664,22 @@ GuildOS.GuildBank.bankOpened = function()
     if GuildOS:GetSetting("gbankBar") == false then return end
     local b = bar or buildBar()
     -- The game builds its bank frame as it opens: place the bar a moment later.
-    GuildOS.Compat.After(0.1, function() b:Place(); b:Draw(); b:Show() end)
+    GuildOS.Compat.After(0.1, function()
+        b:Place(); b:Draw(); b:Show()
+        -- The cleanup's gold is owed: the drawer opens on that step.
+        local CL = GuildOS.GuildBankCleanup
+        if CL and GuildOS:IsOfficer() and CL:Owed() > 0 then showDrawer(true) end
+    end)
 end
-GuildOS.GuildBank.bankClosed = function() if bar then bar:Hide() end end
-GuildOS.GuildBank.barRefresh = function() if bar and bar:IsShown() then bar:Draw() end end
+GuildOS.GuildBank.bankClosed = function()
+    if bar then bar:Hide() end
+    if drawer then drawer:Hide() end
+end
+-- Coalesced like the window: every organize move and every stack taken out asks for a redraw, and
+-- an open drawer reads the bank and the bags on each.
+GuildOS.GuildBank.barRefresh = function()
+    GuildOS:Coalesce("gbank.bar", 0.3, function() if bar and bar:IsShown() then bar:Draw() end end)
+end
 
 ----------------------------------------------------------------------
 -- The bar at a vendor: sell what the cleanup took out of the bank
