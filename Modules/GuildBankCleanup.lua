@@ -310,12 +310,16 @@ function Cleanup:SetMark(key, on, n)
     return true
 end
 
--- Mark every item judged "sell", each for the amount that may go.
-function Cleanup:MarkSuggested()
+-- Mark every item judged "sell", each for the amount that may go; with `unmark`, unmark them all.
+-- Returns how many changed.
+function Cleanup:MarkSuggested(unmark)
     if not GuildOS:IsOfficer() then return 0 end
     local marks, n = self:Store().clean.marks, 0
     for _, r in ipairs(self:Rows()) do
-        if r.verdict == "sell" and not marks[r.key] then
+        if r.verdict == "sell" and unmark and marks[r.key] then
+            marks[r.key] = nil
+            n = n + 1
+        elseif r.verdict == "sell" and not unmark and not marks[r.key] then
             marks[r.key] = { n = r.out < r.have and r.out or nil, by = GuildOS.Compat.PlayerName(), ts = now() }
             n = n + 1
         end
@@ -400,6 +404,12 @@ function Cleanup:Queue()
 end
 
 function Cleanup:IsWithdrawing() return state().withdraw ~= nil end
+
+-- The run taking stacks out: how many came out and how many it set out to take, or nil.
+function Cleanup:WithdrawProgress()
+    local run = state().withdraw
+    if run then return run.done, run.total end
+end
 
 -- Take every marked stack out into the bags, one at a time.
 function Cleanup:WithdrawMarked()
