@@ -119,9 +119,13 @@ function PickupGuildBankItem(tab, slot)
   local slots = BANK.tabs[tab].slots
   if not cursor then
     local s = slots[slot]
-    if s then cursor = { tab = tab, slot = slot, c = s.c } end
+    if s then cursor = { tab = tab, slot = slot, c = s.c, at = CLOCK } end
     return
   end
+  -- As in the game: the server confirms a pickup a moment later, and a drop in the same frame is
+  -- lost, the item left on the cursor (#380, seen on WoW: Forever).
+  if CLOCK - cursor.at < 0.05 then return end
+  if BANK.refuse then return end   -- a rank the server will not let move items
   local from = BANK.tabs[cursor.tab].slots[cursor.slot]
   local to = slots[slot]
   local n = cursor.c
@@ -144,7 +148,7 @@ end
 function SplitGuildBankItem(tab, slot, count)
   local s = BANK.tabs[tab].slots[slot]
   check(s and count >= 1 and count <= s.c, "a split takes no more than the slot holds")
-  cursor = { tab = tab, slot = slot, c = count }
+  cursor = { tab = tab, slot = slot, c = count, at = CLOCK }
 end
 
 GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
@@ -552,6 +556,23 @@ runTimers()
 check(Bank:Store().tabs[3].slots[1].c == 4, "a late answer never marks the next tab answered")
 -- An empty read does not wipe a tab seen full unless the bank shows it.
 check(Bank:Store().tabs[2].slots[1].c == 3, "nor does an empty read wipe a tab seen holding items")
+Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+
+-- A bank that refuses every drop: the item goes back, nothing is lost, the run stops and says why.
+fresh()
+local tabR = addTab("Raid", -1)
+BANK.tabs[tabR].slots[5] = { id = 23445, c = 3 }
+BANK.tabs[tabR].slots[9] = { id = 22854, c = 4 }
+Bank:OnEvent("GUILDBANKFRAME_OPENED")
+Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
+runTimers()
+BANK.refuse = true
+check(Bank:StartSort(tabR), "a run starts on a bank that will refuse it")
+runTimers()
+BANK.refuse = nil
+check(Bank:SortState() == nil and cursor == nil, "a refused drop leaves nothing on the cursor, and the run stops")
+check(BANK.tabs[tabR].slots[5].c == 3 and BANK.tabs[tabR].slots[9].c == 4, "and nothing moved")
+check(table.concat(printed, "\n"):find("refused the moves", 1, true) ~= nil, "saying the bank refused")
 Bank:OnEvent("GUILDBANKFRAME_CLOSED")
 
 -- ── Typing an item ──────────────────────────────────────────────────────

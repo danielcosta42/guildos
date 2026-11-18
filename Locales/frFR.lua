@@ -3228,3 +3228,6 @@ L["Guild OS bar under the guild bank"] = "Barre Guild OS sous la banque de guild
 L["Organize the tab you are on, or every tab your rank may, from the bank itself."] = "Rangez l'onglet ouvert, ou tous ceux que votre rang permet, depuis la banque."
 L["Guild bank: open, organize the tab, ask for it, what it needs"] = "Banque de guilde : ouvrir, ranger l'onglet, la demander, ce qui manque"
 L["You already have %d open requests."] = "Vous avez déjà %d demandes ouvertes."
+L["Stopped: the bank refused the moves. Your rank may not move items in this tab."] = "Arrêté : la banque a refusé les déplacements. Votre rang ne peut peut-être pas déplacer d'objets dans cet onglet."
+L["Bank debug on: each move of an organize run is printed."] = "Diagnostic de la banque activé : chaque déplacement du rangement s'affiche dans le chat."
+L["Bank debug off."] = "Diagnostic de la banque désactivé."

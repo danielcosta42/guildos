@@ -668,8 +668,10 @@ function Compat.IsGuildLeader()
 end
 
 -- Whether the cursor holds anything, and empties it: a move left on the cursor is dropped back.
+-- CursorHasItem misses a guild bank item on some clients; GetCursorInfo names it ("guildbankitem").
 function Compat.CursorHasItem()
-    return (CursorHasItem and CursorHasItem()) and true or false
+    if CursorHasItem and CursorHasItem() then return true end
+    return (GetCursorInfo and GetCursorInfo() ~= nil) and true or false
 end
 
 function Compat.ClearCursor()

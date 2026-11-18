@@ -49,7 +49,7 @@ read_globals = {
     "QueryGuildBankTab", "QueryGuildBankLog", "GetGuildBankMoney", "GetNumGuildBankTransactions",
     "GetGuildBankTransaction", "GetNumGuildBankMoneyTransactions", "GetGuildBankMoneyTransaction",
     "PickupGuildBankItem", "SplitGuildBankItem", "GetCurrentGuildBankTab", "SetCurrentGuildBankTab",
-    "MAX_GUILDBANK_TABS", "CursorHasItem", "ClearCursor", "GuildBankFrame", "ChatEdit_InsertLink",
+    "MAX_GUILDBANK_TABS", "CursorHasItem", "ClearCursor", "GuildBankFrame", "ChatEdit_InsertLink", "GetCursorInfo",
     -- WoW API: Frames & UI
     "CreateFrame",
     "CreateColor",

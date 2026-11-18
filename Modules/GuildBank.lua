@@ -37,6 +37,9 @@ local ANSWER_MIN, ANSWER_MAX = 2, 8   -- seconds an answer waits, so one member 
 local FUTURE_SLACK = 300         -- seconds a received time may be ahead of ours
 local HIST_MAX = 300             -- ledger lines sent in one answer
 local MOVE_DELAY = 0.45          -- seconds between two moves (what sorters found the server takes)
+local HOLD_MIN = 0.1             -- seconds between picking an item up and dropping it, at least
+local HOLD_MAX = 0.8             -- the drop goes then, even when the client never says it holds it
+local DROP_FAILS = 3             -- drops the server refused, in a run, before it stops
 local LOCK_WAIT = 0.25           -- seconds between two looks while a slot is locked
 local LOCK_TIMEOUT = 8           -- seconds a slot may stay locked before the run gives up
 local INFO_WAIT = 3              -- seconds to wait for item names before a run starts anyway
@@ -1091,10 +1094,34 @@ function GuildBank:SortStep()
     if GuildOS.Compat.InCombat() then return self:StopSort("combat") end
     local tab = run.tab
     local again = function(d) schedule(run, d) end
-    if GuildOS.Compat.CursorHasItem() then
-        GuildOS.Compat.ClearCursor()
-        return again(LOCK_WAIT)
+    -- Second half of a move: the server confirms a pickup a moment later, and a drop in the same
+    -- frame as the pickup is lost (the item stayed on the cursor, in the game). Drop once the
+    -- cursor holds it, or after HOLD_MAX.
+    local held = run.holding
+    if held then
+        local waited = GetTime() - held.at
+        if (GuildOS.Compat.CursorHasItem() and waited >= HOLD_MIN) or waited >= HOLD_MAX then
+            run.holding = nil
+            GuildOS.Compat.GuildBankPickup(tab, held.move.to)
+            run.dropped = GetTime()
+            self:Trace("drop %d -> %d (held %.2fs, cursor %s)", held.move.from, held.move.to, waited,
+                tostring(GuildOS.Compat.CursorHasItem()))
+            return again(MOVE_DELAY)
+        end
+        return again(HOLD_MIN)
     end
+    if GuildOS.Compat.CursorHasItem() then
+        -- Still on the cursor after a drop: the server refused it. Put it back, and count it.
+        GuildOS.Compat.ClearCursor()
+        if run.dropped then
+            run.dropFails = (run.dropFails or 0) + 1
+            self:Trace("the drop was refused (%d)", run.dropFails)
+            if run.dropFails >= DROP_FAILS then return self:StopSort("refused") end
+        end
+        run.dropped = nil
+        return again(MOVE_DELAY)
+    end
+    run.dropped = nil
     -- The tab just asked for: its slots read empty until the server answers.
     if run.moves == 0 and s.lastSlotsAt < run.started and GetTime() - run.started < INFO_WAIT then
         return again(LOCK_WAIT)
@@ -1137,12 +1164,13 @@ function GuildBank:SortStep()
     else
         GuildOS.Compat.GuildBankPickup(tab, move.from)
     end
-    GuildOS.Compat.GuildBankPickup(tab, move.to)
+    self:Trace("%s %d (x%s) for %d", move.op, move.from, tostring(move.count or slots[move.from].c), move.to)
+    run.holding = { move = move, at = GetTime() }
     run.moves = run.moves + 1
     if run.moves > run.total then run.total = run.moves end
     run.current = move
     self:Refresh()
-    again(MOVE_DELAY)
+    again(HOLD_MIN)
 end
 
 function GuildBank:PauseSort(paused)
@@ -1159,7 +1187,13 @@ local STOP_TEXT = {
     combat = "Stopped: you entered combat.",
     cancel = "Stopped.",
     stuck = "Stopped: the bank did not answer the moves. Try again in a moment.",
+    refused = "Stopped: the bank refused the moves. Your rank may not move items in this tab.",
 }
+
+-- What the organize run does, step by step, while /gos bank debug is on.
+function GuildBank:Trace(fmt, ...)
+    if state().debug then GuildOS:Print("|cff888888[bank]|r " .. string.format(fmt, ...)) end
+end
 
 function GuildBank:StopSort(reason)
     local s = state()
@@ -1261,6 +1295,10 @@ function GuildBank:HandleCommand(args)
     if verb == "sort" then
         if args[2] == "all" then self:StartSort(self:OrganizableTabs())
         else self:StartSort(GuildOS.Compat.GuildBankCurrentTab() or 1) end
+    elseif verb == "debug" then
+        local s = state()
+        s.debug = not s.debug
+        GuildOS:Print(s.debug and L["Bank debug on: each move of an organize run is printed."] or L["Bank debug off."])
     elseif verb == "stop" then
         self:StopSort("cancel")
     elseif verb == "sync" then
