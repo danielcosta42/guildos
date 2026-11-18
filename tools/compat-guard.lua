@@ -22,6 +22,8 @@ local GLOBALS = {
   "GuildRoster", "RegisterAddonMessagePrefix", "SendAddonMessage", "SendAddonMessageLogged",
   -- Moved to C_PartyInfo / C_Item, and the globals gone on WoW: Forever (issue #43).
   "InviteUnit", "InviteByName", "GetItemQualityColor", "GetItemCount",
+  -- Moved to C_PartyInfo as well (issue #378).
+  "ConvertToRaid",
   -- Forbidden to addons on WoW: Forever 1.60.1.70790: Compat.GuildInvite (issue #256).
   "GuildInvite",
   -- What a tooltip is showing: the Classic readers, and the data type the retail client

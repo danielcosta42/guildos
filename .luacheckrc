@@ -295,6 +295,8 @@ read_globals = {
     "GetFileIDFromPath",   -- whether the client has a texture file (issue #341)
     "IsInGroup",
     "IsInRaid",
+    "ConvertToRaid",       -- a party for a raid-sized group (issue #378; Compat only)
+    "DoReadyCheck",        -- the leader panel's ready check (issue #378; Compat only)
     "C_InstanceEncounter",
     "IsEncounterInProgress",                 -- the deprecated spelling, as a fallback in Compat
     "UnitIsGroupLeader",
