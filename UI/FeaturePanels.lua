@@ -21,6 +21,16 @@ local _coreSignupFrame = nil
 
 local WHITE8 = "Interface\\Buttons\\WHITE8x8"
 
+-- The space between blocks and under a sub-tab bar (UI.GAP, #371), read the way Layout.lua reads
+-- UI.SCROLL_GUTTER: a stubbed UI in the tools answers a function for it.
+local GAP = type(UI.GAP) == "number" and UI.GAP or 8
+
+-- A numeric cell: IBM Plex Mono through the tableNum role (#363).
+local function Num(fs)
+    GuildOS:ApplyFont(fs, nil, "tableNum")
+    return fs
+end
+
 local function RefreshCoreSignupFrame()
     local f = _coreSignupFrame
     if not f or not f:IsShown() then return end
@@ -103,7 +113,8 @@ local function RefreshCoreSignupFrame()
         card:SetFrameLevel(content:GetFrameLevel())
 
         -- Name, size, and the state on the right.
-        local nameFS = line(coreName, 12, C.gold, CARD_PAD, y - CARD_PAD)
+        local nameFS = line(coreName, nil, C.text, CARD_PAD, y - CARD_PAD)
+        GuildOS:ApplyFont(nameFS, nil, "sectionTitle")
         local sizeBadge = UI:CreateBadge(content, tostring(raidSize))
         sizeBadge:SetPoint("LEFT", nameFS, "RIGHT", 8, 0)
         local state, stateCol
@@ -111,7 +122,7 @@ local function RefreshCoreSignupFrame()
             state, stateCol = st.bench and L["you are in reserve"] or L["you are a starter"], C.ok
         elseif st.pending then
             state, stateCol = type(st.pending) == "number" and string.format(L["request sent %s"], GuildOS:TimeAgo(st.pending))
-                or L["request sent"], C.gold
+                or L["request sent"], C.textSoft
         elseif st.full then
             state, stateCol = L["full"], C.labelDim
         else
@@ -165,7 +176,7 @@ local function RefreshCoreSignupFrame()
             rlbl:SetText(string.format("%s:%d/%d", rd.short, cnt, rd.target))
             if isMine then
                 local ul = content:CreateTexture(nil, "ARTWORK")
-                ul:SetTexture(WHITE8); ul:SetHeight(1)
+                ul:SetTexture(WHITE8); GuildOS.UI:Hairline(ul, "Height")
                 ul:SetPoint("TOPLEFT", rx, y - 16)
                 ul:SetWidth(44)
                 ul:SetVertexColor(rcol.r, rcol.g, rcol.b, 0.7)
@@ -176,23 +187,11 @@ local function RefreshCoreSignupFrame()
         -- The action: a note and Ask for a place, or Cancel request; nothing to do once on the core.
         local capCore = coreName
         if not st.member then
-            local noteInp = CreateFrame("EditBox", nil, content, "BackdropTemplate")
-            noteInp:SetSize(math.max(90, math.min(160, W - rx - 150)), 22)
+            -- The shared field, its hint the component's placeholder (#371).
+            local noteInp = UI:CreateInput(content, math.max(90, math.min(160, W - rx - 150)), 22,
+                { max = 80, placeholder = L["Note (optional)"] })
             noteInp:SetPoint("TOPRIGHT", -(CARD_PAD + 124), y + 2)
-            if GuildOS.Style then GuildOS.Style:Paint(noteInp, "input") end
-            GuildOS:ApplyFont(noteInp, 10)
-            noteInp:SetTextColor(C.text.r, C.text.g, C.text.b)
-            noteInp:SetTextInsets(6, 6, 0, 0)
-            noteInp:SetAutoFocus(false)
-            noteInp:SetMaxLetters(80)
-            noteInp:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-            local ph = noteInp:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(ph, 9)
-            ph:SetPoint("LEFT", 6, 0)
-            ph:SetTextColor(C.labelDim.r, C.labelDim.g, C.labelDim.b)
-            ph:SetText(L["Note (optional)"])
-            noteInp:SetScript("OnTextChanged", function(self)
-                if self:GetText() ~= "" then ph:Hide() else ph:Show() end
+            noteInp:HookScript("OnTextChanged", function(self)
                 f.notes[capCore] = self:GetText()   -- kept across a redraw, such as a role click (#94)
             end)
             noteInp:SetText(f.notes[coreName] or "")
@@ -284,7 +283,7 @@ local function BuildCoreSignupFrame()
         for i = #roles, 1, -1 do
             local role = roles[i]
             local b = CreateFrame("Button", nil, f, "BackdropTemplate")
-            b:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize=1 })
+            b:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize = GuildOS.UI:Edge(b) })
             b.lbl = b:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(b.lbl, 10)
             b.lbl:SetPoint("CENTER")
@@ -342,70 +341,89 @@ end
 ----------------------------------------------------------------------
 -- RAID ATTENDANCE PANEL
 ----------------------------------------------------------------------
-function GuildOS:CreateRaidsPanel(parent, _mainFrame)
-    local scrollParent = CreateFrame("Frame", nil, parent)
-    scrollParent:SetPoint("TOPLEFT", 10, -10)
-    scrollParent:SetPoint("BOTTOMRIGHT", -10, 10)
+-- The attendance table's columns, shared by its header and its rows (#371: the header left the scroll
+-- child so it stays put while the rows scroll).
+local ATT_COLS = { player = 6, group = 145, pct = 240, raids = 295, avg = 355, last = 450, form = 540 }
+local ATT_LIST_H = 200   -- px the attendance list keeps under the sessions while there are sessions
 
-    -- Title
-    local title = UI:CreateTitle(scrollParent, L["Raid Attendance"], 14)
+function GuildOS:CreateRaidsPanel(parent, _mainFrame)
+    -- Flush with the sub-tab bar's left edge, the first line UI.GAP under it (#371).
+    local scrollParent = CreateFrame("Frame", nil, parent)
+    scrollParent:SetPoint("TOPLEFT", 0, -GAP)
+    scrollParent:SetPoint("BOTTOMRIGHT", -GAP, GAP)
+
+    local title = UI:CreateSectionTitle(scrollParent, L["Raid Attendance"], true)
     title:SetPoint("TOPLEFT", 0, 0)
 
-    -- Status text
-    local statusText = UI:CreateText(scrollParent, "", 10, C.silver.r, C.silver.g, C.silver.b)
-    statusText:SetPoint("TOPLEFT", 200, -4)
+    -- The count and the tracker's state, under the title they qualify: it floated beside it at x = 200 (#371).
+    local statusText = UI:CreateText(scrollParent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    statusText:SetPoint("TOPLEFT", 0, -22)
 
     ----------------------------------------------------------------
-    -- Sessions section (top ~40%)
+    -- Sessions section
     ----------------------------------------------------------------
+    local FILTER_Y, LIST_TOP = -40, -40 - 20 - GAP
     local sessionsLabel = UI:CreateHeaderText(scrollParent, L["Sessions"], 11)
-    sessionsLabel:SetPoint("TOPLEFT", 0, -28)
+    sessionsLabel:SetPoint("LEFT", scrollParent, "TOPLEFT", 0, FILTER_Y - 10)
 
-    -- Filter toggle buttons
-    local filterAllBtn  = UI:CreateButton(scrollParent, L["All"], 58, 18)
-    local filter25Btn   = UI:CreateButton(scrollParent, Prog(L["25-man"]), 62, 18)
+    -- The filter: the shown one marked by UI:SetSelected, as every choice of a set (#371).
+    -- LockHighlight drew nothing on these flat buttons, so neither looked chosen.
+    local filterAllBtn  = UI:CreateButton(scrollParent, L["All"], 58, 20)
+    local filter25Btn   = UI:CreateButton(scrollParent, Prog(L["25-man"]), 62, 20)
     filterAllBtn:SetPoint("LEFT", sessionsLabel, "RIGHT", 10, 0)
     filter25Btn:SetPoint("LEFT", filterAllBtn,   "RIGHT",  4, 0)
 
-    local sessionScroll = CreateFrame("ScrollFrame", "GuildOSRaidSessionScroll", scrollParent, "UIPanelScrollFrameTemplate")
-    sessionScroll:SetPoint("TOPLEFT",     0,   -50)
-    sessionScroll:SetPoint("BOTTOMRIGHT", -10, 250)
-    UI:SkinScrollBar(sessionScroll, "GuildOSRaidSessionScroll")
-
-    local sessionContent = CreateFrame("Frame", nil, sessionScroll)
+    local sessionScroll, sessionContent = UI:CreateScrollFrame(scrollParent, "GuildOSRaidSessionScroll")
     sessionContent:SetSize(1, 1)
-    sessionScroll:SetScrollChild(sessionContent)
     UI:BindScrollChildWidth(sessionScroll, sessionContent)
 
     ----------------------------------------------------------------
-    -- Attendance section (bottom ~50%)
+    -- Attendance section: a section title, a table header that stays put, the rows that scroll
     ----------------------------------------------------------------
-    local attLabel = UI:CreateHeaderText(scrollParent, Prog(L["Member Attendance — 25-man only"]), 11)
-    attLabel:SetPoint("BOTTOMLEFT", 0, 236)
+    local attHdr = UI:CreateTableHeader(scrollParent)
+    local function AHdr(txt, x)
+        UI:CreateHeaderText(attHdr, txt):SetPoint("LEFT", x, 0)
+    end
+    AHdr(L["PLAYER"], ATT_COLS.player); AHdr(L["GROUP"], ATT_COLS.group); AHdr(L["ATT%"], ATT_COLS.pct)
+    AHdr(L["RAIDS"], ATT_COLS.raids); AHdr(L["AVG SCORE"], ATT_COLS.avg); AHdr(L["LAST RAID"], ATT_COLS.last)
 
-    local attScroll = CreateFrame("ScrollFrame", "GuildOSAttendanceScroll", scrollParent, "UIPanelScrollFrameTemplate")
-    attScroll:SetPoint("BOTTOMLEFT",  0,   10)
-    attScroll:SetPoint("BOTTOMRIGHT", -10, 10)
-    attScroll:SetHeight(220)
-    UI:SkinScrollBar(attScroll, "GuildOSAttendanceScroll")
+    local attTitle = UI:CreateSectionTitle(scrollParent, Prog(L["Member Attendance — 25-man only"]))
+    attTitle:SetPoint("BOTTOMLEFT", attHdr, "TOPLEFT", 0, GAP)
 
-    local attContent = CreateFrame("Frame", nil, attScroll)
+    local attScroll, attContent = UI:CreateScrollFrame(scrollParent, "GuildOSAttendanceScroll")
+    attScroll:SetPoint("TOPLEFT", attHdr, "BOTTOMLEFT", 0, 0)
+    attScroll:SetPoint("BOTTOMRIGHT", 0, 0)
     attContent:SetSize(1, 1)
-    attScroll:SetScrollChild(attContent)
     UI:BindScrollChildWidth(attScroll, attContent)
+
+    -- The sessions list takes the room the attendance leaves it; with no session it has no empty
+    -- string to say so, so it folds away and the attendance moves up under the filter (#371): it
+    -- was a 400px black block. Left and right come from the parent, the bottom from the title.
+    sessionScroll:SetPoint("TOPLEFT", 0, LIST_TOP)
+    sessionScroll:SetPoint("TOPRIGHT", 0, LIST_TOP)
+    sessionScroll:SetPoint("BOTTOMLEFT", attTitle, "TOPLEFT", 0, 20)
+    sessionContent.placeBlocks = function(hasSessions)
+        attHdr:ClearAllPoints()
+        if hasSessions then
+            attHdr:SetPoint("TOPLEFT", scrollParent, "BOTTOMLEFT", 0, ATT_LIST_H + attHdr:GetHeight())
+            attHdr:SetPoint("TOPRIGHT", scrollParent, "BOTTOMRIGHT", 0, ATT_LIST_H + attHdr:GetHeight())
+        else
+            -- Under the filter row: 20px over the title for its rule, 18 for its line, UI.GAP to the header.
+            local top = (FILTER_Y - 20) - 20 - 18 - GAP
+            attHdr:SetPoint("TOPLEFT", scrollParent, "TOPLEFT", 0, top)
+            attHdr:SetPoint("TOPRIGHT", scrollParent, "TOPRIGHT", 0, top)
+        end
+        sessionScroll:SetShown(hasSessions)
+    end
+    sessionContent.placeBlocks(true)
 
     ----------------------------------------------------------------
     -- Filter button wiring
     ----------------------------------------------------------------
     local function SetFilterActive(only25)
         _raidFilter25 = only25
-        if only25 then
-            filter25Btn:LockHighlight()
-            filterAllBtn:UnlockHighlight()
-        else
-            filterAllBtn:LockHighlight()
-            filter25Btn:UnlockHighlight()
-        end
+        UI:SetSelected(filterAllBtn, not only25)
+        UI:SetSelected(filter25Btn, only25)
         GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
     end
 
@@ -440,7 +458,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
     local totalAll  = GuildOS.RaidTracker:GetTotalSessions()
     local total25   = GuildOS.RaidTracker:GetTotal25ManSessions()
     local curGroup  = GuildOS.RaidTracker:GetCurrentGroup()
-    local groupStr  = curGroup ~= "" and ("|cffFFD700" .. curGroup .. "|r  ·  ") or ""
+    local groupStr  = curGroup ~= "" and (curGroup .. "  ·  ") or ""
     local trackStr  = GuildOS.RaidTracker.trackingActive
                       and "|cff00ff00" .. L["Tracking"] .. "|r" or "|cff888888" .. L["Idle"] .. "|r"
     statusText:SetText(groupStr .. totalAll .. L[" lockouts ("] .. total25 .. Prog(L[" 25-man)  |  "]) .. trackStr)
@@ -513,38 +531,39 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         local uPlayers = 0
         for _ in pairs(g.allPlayers) do uPlayers = uPlayers + 1 end
 
-        -- Group header row
+        -- Group header row, hung by both top corners: a width read while the tab is hidden is 0 (#371).
         local gRow = CreateFrame("Button", nil, sessionContent, "BackdropTemplate")
-        gRow:SetSize(sessionContent:GetWidth() - 10, gRowH)
+        gRow:SetHeight(gRowH)
         gRow:SetPoint("TOPLEFT", 0, -yOff)
+        gRow:SetPoint("TOPRIGHT", 0, -yOff)
         gRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
         gRow:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, C.headerBg.a)
 
         -- Expand arrow
         -- ASCII marks: IBM Plex Mono has no ▶ or ▼ glyph.
-        UI:CreateText(gRow, isGroupExp and "-" or "+", 9, C.accent.r, C.accent.g, C.accent.b)
+        UI:CreateText(gRow, isGroupExp and "-" or "+", 9, C.label.r, C.label.g, C.label.b)
             :SetPoint("LEFT", 4, 0)
 
-        -- Raid name (gold for 25-man, silver for 10-man)
-        local nameClr = is25 and C.gold or C.silver
+        -- Raid name (paper for 25-man, silver for 10-man); the core's tag plain, not purple (#371)
+        local nameClr = is25 and C.text or C.silver
         local nameLabel = g.difficulty and (g.name .. " (" .. g.difficulty .. ")") or g.name
         if g.groupTag and g.groupTag ~= "" then
-            nameLabel = "|cff9966FF[" .. g.groupTag .. "]|r " .. nameLabel
+            nameLabel = "[" .. g.groupTag .. "] " .. nameLabel
         end
         UI:CreateText(gRow, nameLabel, 11, nameClr.r, nameClr.g, nameClr.b)
             :SetPoint("LEFT", 18, 0)
 
         -- Week range label  e.g.  "22/04 – 28/04"
         local weekLabel = GuildOS:DateText(g.weekStart) .. " – " .. GuildOS:DateText(g.weekStart + 6 * 86400)
-        UI:CreateText(gRow, weekLabel, 10, C.silver.r, C.silver.g, C.silver.b)
+        Num(UI:CreateText(gRow, weekLabel, 10, C.silver.r, C.silver.g, C.silver.b))
             :SetPoint("LEFT", 170, 0)
 
         -- Session count
-        UI:CreateText(gRow, #g.sessions .. L[" sess."], 9, C.accentDim.r, C.accentDim.g, C.accentDim.b)
+        UI:CreateText(gRow, #g.sessions .. L[" sess."], 9, C.label.r, C.label.g, C.label.b)
             :SetPoint("LEFT", 280, 0)
 
         -- Unique player count
-        UI:CreateText(gRow, uPlayers .. L[" players"], 9, C.white.r, C.white.g, C.white.b)
+        UI:CreateText(gRow, uPlayers .. L[" players"], 9, C.text.r, C.text.g, C.text.b)
             :SetPoint("LEFT", 340, 0)
 
         -- Kills / wipes summary
@@ -576,32 +595,33 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                 local rowH  = 22
 
                 local row = CreateFrame("Button", nil, sessionContent, "BackdropTemplate")
-                row:SetSize(sessionContent:GetWidth() - 30, rowH)
+                row:SetHeight(rowH)
                 row:SetPoint("TOPLEFT", 20, -yOff)
+                row:SetPoint("TOPRIGHT", 0, -yOff)
                 row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
                 local bg = (idx % 2 == 1) and C.row1 or C.row2
                 row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
 
                 -- Expand arrow
-                UI:CreateText(row, isExp and "-" or "+", 8, C.accent.r, C.accent.g, C.accent.b)
+                UI:CreateText(row, isExp and "-" or "+", 8, C.label.r, C.label.g, C.label.b)
                     :SetPoint("LEFT", 4, 0)
 
                 -- Date + time
                 local dateStr = GuildOS:LocalDate("%a ", sd.startTime or 0) .. GuildOS:DateText(sd.startTime or 0, "  %H:%M")
-                UI:CreateText(row, dateStr, 9, C.silver.r, C.silver.g, C.silver.b)
+                Num(UI:CreateText(row, dateStr, 9, C.silver.r, C.silver.g, C.silver.b))
                     :SetPoint("LEFT", 16, 0)
 
                 -- Duration
                 local dur = sd.duration or (sd.endTime and sd.startTime and (sd.endTime - sd.startTime))
                 if dur then
                     local durStr = format("%dh%02dm", floor(dur / 3600), floor((dur % 3600) / 60))
-                    UI:CreateText(row, durStr, 9, C.silver.r, C.silver.g, C.silver.b)
+                    Num(UI:CreateText(row, durStr, 9, C.silver.r, C.silver.g, C.silver.b))
                         :SetPoint("LEFT", 165, 0)
                 end
 
                 -- Player count
                 local pCount = GuildOS.RaidTracker:CountTable(sd.players or {})
-                UI:CreateText(row, pCount .. L[" players"], 9, C.white.r, C.white.g, C.white.b)
+                UI:CreateText(row, pCount .. L[" players"], 9, C.text.r, C.text.g, C.text.b)
                     :SetPoint("LEFT", 215, 0)
 
                 -- Boss kills / wipes
@@ -687,34 +707,35 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                         return a.name < b.name
                     end)
 
-                    local hdrFrame = CreateFrame("Frame", nil, sessionContent, "BackdropTemplate")
-                    hdrFrame:SetSize(sessionContent:GetWidth() - 50, 16)
+                    -- The shared table header: no band, a 1px rule under it (#371).
+                    local hdrFrame = UI:CreateTableHeader(sessionContent)
                     hdrFrame:SetPoint("TOPLEFT", 40, -yOff)
-                    hdrFrame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-                    hdrFrame:SetBackdropColor(0.040, 0.040, 0.055, 1)
+                    hdrFrame:SetPoint("TOPRIGHT", 0, -yOff)
                     local function Hdr(txt, x)
-                        UI:CreateText(hdrFrame, txt, 8, C.accent.r, C.accent.g, C.accent.b):SetPoint("LEFT", x, 0)
+                        UI:CreateHeaderText(hdrFrame, txt):SetPoint("LEFT", x, 0)
                     end
                     Hdr(L["PLAYER"], 6); Hdr(L["SCORE"], 120); Hdr(L["LATE"], 170); Hdr(L["LEFT EARLY"], 210)
                     if GuildOS.ConsumableChecker then Hdr(L["NO CONS"], 290) end   -- TBC only (issue #184)
-                    yOff = yOff + 18
+                    yOff = yOff + hdrFrame:GetHeight() + 2
 
                     for pIdx, p in ipairs(playerList) do
                         local pRow = CreateFrame("Frame", nil, sessionContent, "BackdropTemplate")
-                        pRow:SetSize(sessionContent:GetWidth() - 50, 18)
+                        pRow:SetHeight(18)
                         pRow:SetPoint("TOPLEFT", 40, -yOff)
+                        pRow:SetPoint("TOPRIGHT", 0, -yOff)
                         pRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-                        local pbg = (pIdx % 2 == 1) and { r=0.05, g=0.04, b=0.09 } or { r=0.07, g=0.06, b=0.12 }
-                        pRow:SetBackdropColor(pbg.r, pbg.g, pbg.b, 0.9)
+                        -- The table's own zebra, not a purple tint of its own (#371).
+                        local pbg = (pIdx % 2 == 1) and C.row1 or C.row2
+                        pRow:SetBackdropColor(pbg.r, pbg.g, pbg.b, pbg.a)
 
                         local cr, cg, cb = GuildOS:GetClassColor(p.class)
                         local nameT = UI:CreateText(pRow, p.name, 9, cr, cg, cb)
                         nameT:SetPoint("LEFT", 6, 0); nameT:SetWidth(110)
 
                         local sr, sg, sb = C.green.r, C.green.g, C.green.b
-                        if p.score < 75 then sr, sg, sb = C.gold.r, C.gold.g, C.gold.b end
+                        if p.score < 75 then sr, sg, sb = C.warn.r, C.warn.g, C.warn.b end
                         if p.score < 50 then sr, sg, sb = C.red.r,  C.red.g,  C.red.b  end
-                        UI:CreateText(pRow, p.score .. "%", 9, sr, sg, sb):SetPoint("LEFT", 120, 0)
+                        Num(UI:CreateText(pRow, p.score .. "%", 9, sr, sg, sb)):SetPoint("LEFT", 120, 0)
 
                         local function Flag(x, val, redTxt, greenTxt)
                             local fr, fg, fb = val and C.red.r or C.green.r, val and C.red.g or C.green.g, val and C.red.b or C.green.b
@@ -726,7 +747,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                         if GuildOS.ConsumableChecker then
                             local consStr = p.consumeChecks > 0 and format("%d/%d", p.consumeHits, p.consumeChecks) or "-"
                             local cr2 = not p.noConsumes and C.green or C.red
-                            UI:CreateText(pRow, consStr, 8, cr2.r, cr2.g, cr2.b):SetPoint("LEFT", 290, 0)
+                            Num(UI:CreateText(pRow, consStr, 8, cr2.r, cr2.g, cr2.b)):SetPoint("LEFT", 290, 0)
                         end
 
                         yOff = yOff + 20
@@ -737,6 +758,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         end -- if isGroupExp
     end -- for groups
     sessionContent:SetHeight(math.max(1, yOff))
+    if sessionContent.placeBlocks then sessionContent.placeBlocks(#groupOrder > 0) end
 
     ----------------------------------------------------------------
     -- Attendance list — always 25-man stats regardless of filter
@@ -764,41 +786,29 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         return pa > pb
     end)
 
-    -- Column headers
-    local attHdr = CreateFrame("Frame", nil, attContent, "BackdropTemplate")
-    attHdr:SetSize(attContent:GetWidth() - 10, 16)
-    attHdr:SetPoint("TOPLEFT", 0, 0)
-    attHdr:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-    attHdr:SetBackdropColor(0.040, 0.040, 0.055, 1)
-    local function AHdr(txt, x)
-        local t = UI:CreateText(attHdr, txt, 8, C.accent.r, C.accent.g, C.accent.b)
-        t:SetPoint("LEFT", x, 0)
-    end
-    AHdr(L["PLAYER"], 6); AHdr(L["GROUP"], 145); AHdr(L["ATT%"], 240); AHdr(L["RAIDS"], 295); AHdr(L["AVG SCORE"], 355); AHdr(L["LAST RAID"], 450)
-
-    yOff = 20
+    -- The column labels are the panel's own header, outside the scroll (CreateRaidsPanel, #371).
+    yOff = 0
     local lastGroupTag = nil
     for idx, entry in ipairs(attList) do
-        -- Group separator header when the group changes
+        -- Group separator when the group changes: a header row of the table, the tag in plain text (#371).
         if entry.groupTag ~= lastGroupTag then
             lastGroupTag = entry.groupTag
-            local ghRow = CreateFrame("Frame", nil, attContent, "BackdropTemplate")
-            ghRow:SetSize(attContent:GetWidth() - 10, 16)
+            local ghRow = UI:CreateTableHeader(attContent, 18)
             ghRow:SetPoint("TOPLEFT", 0, -yOff)
-            ghRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-            ghRow:SetBackdropColor(0.100, 0.100, 0.130, 1)
+            ghRow:SetPoint("TOPRIGHT", 0, -yOff)
             local groupLabel = entry.groupTag ~= "" and entry.groupTag or L["(no group)"]
             local total25g = GuildOS.RaidTracker:GetTotal25ManSessions(entry.groupTag)
             local ghText = UI:CreateText(ghRow,
-                "|cff9966FF" .. groupLabel .. "|r  —  " .. total25g .. Prog(L[" 25-man raids"]),
-                9, C.white.r, C.white.g, C.white.b)
-            ghText:SetPoint("LEFT", 6, 0)
-            yOff = yOff + 18
+                groupLabel .. "  ·  " .. total25g .. Prog(L[" 25-man raids"]),
+                9, C.text.r, C.text.g, C.text.b)
+            ghText:SetPoint("LEFT", ATT_COLS.player, 0)
+            yOff = yOff + 20
         end
 
         local row = CreateFrame("Frame", nil, attContent, "BackdropTemplate")
-        row:SetSize(attContent:GetWidth() - 10, 20)
+        row:SetHeight(20)
         row:SetPoint("TOPLEFT", 0, -yOff)
+        row:SetPoint("TOPRIGHT", 0, -yOff)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
         local bg = (idx % 2 == 1) and C.row1 or C.row2
         row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
@@ -808,45 +818,45 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         local class = memberData and memberData.class
         local cr, cg, cb = GuildOS:GetClassColor(class)
         local nameText = UI:CreateText(row, shortName, 10, cr, cg, cb)
-        nameText:SetPoint("LEFT", 6, 0)
+        nameText:SetPoint("LEFT", ATT_COLS.player, 0)
 
         -- Group tag column
         local gtLabel = entry.groupTag ~= "" and entry.groupTag or "-"
-        UI:CreateText(row, gtLabel, 9, C.label.r, C.label.g, C.label.b):SetPoint("LEFT", 145, 0)
+        UI:CreateText(row, gtLabel, 9, C.label.r, C.label.g, C.label.b):SetPoint("LEFT", ATT_COLS.group, 0)
 
         local total25g = GuildOS.RaidTracker:GetTotal25ManSessions(entry.groupTag)
         local pct      = GuildOS.RaidTracker:GetAttendance25ManPercent(entry.key, entry.groupTag)
-        local pctClr   = pct >= 75 and C.green or (pct >= 50 and C.gold or C.red)
-        local pctText  = UI:CreateText(row, pct .. "%", 10, pctClr.r, pctClr.g, pctClr.b)
-        pctText:SetPoint("LEFT", 240, 0)
+        local pctClr   = pct >= 75 and C.green or (pct >= 50 and C.warn or C.red)
+        local pctText  = Num(UI:CreateText(row, pct .. "%", 10, pctClr.r, pctClr.g, pctClr.b))
+        pctText:SetPoint("LEFT", ATT_COLS.pct, 0)
 
         local raids25  = entry.data.raids25 or 0
-        local fracText = UI:CreateText(row, raids25 .. "/" .. total25g, 10, C.silver.r, C.silver.g, C.silver.b)
-        fracText:SetPoint("LEFT", 295, 0)
+        local fracText = Num(UI:CreateText(row, raids25 .. "/" .. total25g, 10, C.silver.r, C.silver.g, C.silver.b))
+        fracText:SetPoint("LEFT", ATT_COLS.raids, 0)
 
         local avgScore = 0
         if raids25 > 0 and entry.data.totalScore25 then
             avgScore = math.floor(entry.data.totalScore25 / raids25 + 0.5)
         end
         local asr, asg, asb = C.green.r, C.green.g, C.green.b
-        if avgScore < 80 then asr, asg, asb = C.gold.r, C.gold.g, C.gold.b end
+        if avgScore < 80 then asr, asg, asb = C.warn.r, C.warn.g, C.warn.b end
         if avgScore < 60 then asr, asg, asb = C.red.r,  C.red.g,  C.red.b  end
-        local avgScoreText = UI:CreateText(row, avgScore .. " pts", 9, asr, asg, asb)
-        avgScoreText:SetPoint("LEFT", 355, 0)
+        local avgScoreText = Num(UI:CreateText(row, avgScore .. " pts", 9, asr, asg, asb))
+        avgScoreText:SetPoint("LEFT", ATT_COLS.avg, 0)
 
         local lastStr = entry.data.lastRaid and entry.data.lastRaid > 0
             and GuildOS:DateText(entry.data.lastRaid, "/%Y") or "-"
-        local lastText = UI:CreateText(row, lastStr, 9, C.silver.r, C.silver.g, C.silver.b)
-        lastText:SetPoint("LEFT", 450, 0)
+        local lastText = Num(UI:CreateText(row, lastStr, 9, C.silver.r, C.silver.g, C.silver.b))
+        lastText:SetPoint("LEFT", ATT_COLS.last, 0)
 
         -- Recent form: flag members who missed the latest guild raid(s).
         local missed = GuildOS.RaidTracker:GetMissedStreak(entry.key, entry.groupTag, 5)
         if missed >= 2 then
             local f = UI:CreateText(row, string.format(L["missed last %d"], missed), 9, C.red.r, C.red.g, C.red.b)
-            f:SetPoint("LEFT", 540, 0)
+            f:SetPoint("LEFT", ATT_COLS.form, 0)
         elseif missed == 1 then
-            local f = UI:CreateText(row, L["missed last raid"], 9, C.gold.r, C.gold.g, C.gold.b)
-            f:SetPoint("LEFT", 540, 0)
+            local f = UI:CreateText(row, L["missed last raid"], 9, C.warn.r, C.warn.g, C.warn.b)
+            f:SetPoint("LEFT", ATT_COLS.form, 0)
         end
 
         local capturedEntry = entry
@@ -858,7 +868,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
             GameTooltip:AddLine(shortName, cr, cg, cb)
             local gLabel = capturedEntry.groupTag ~= "" and capturedEntry.groupTag or L["(no group)"]
             GameTooltip:AddLine(L["Group: "] .. gLabel, C.label.r, C.label.g, C.label.b)
-            GameTooltip:AddLine(Prog(L["25-man Attendance"]), C.gold.r, C.gold.g, C.gold.b)
+            GameTooltip:AddLine(Prog(L["25-man Attendance"]), C.text.r, C.text.g, C.text.b)
             GameTooltip:AddLine(" ")
             GameTooltip:AddDoubleLine(L["Raids:"], raids25 .. "/" .. total25g, 1,1,1, C.silver.r,C.silver.g,C.silver.b)
             GameTooltip:AddDoubleLine(L["Attendance %:"], pct .. "%", 1,1,1, pctClr.r,pctClr.g,pctClr.b)
@@ -885,11 +895,14 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         yOff = yOff + 22
     end
 
-    if #attList == 0 then
-        local emptyText = UI:CreateText(attContent, Prog(L["No 25-man attendance data yet."]), 10, C.silver.r, C.silver.g, C.silver.b)
-        emptyText:SetPoint("TOPLEFT", 6, -yOff)
-        yOff = yOff + 22
+    -- One empty line, kept: a new one each redraw stayed on screen under the rows that came later.
+    if not attContent.emptyText then
+        attContent.emptyText = UI:CreateText(attContent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        attContent.emptyText:SetPoint("TOPLEFT", ATT_COLS.player, -6)
     end
+    attContent.emptyText:SetText(Prog(L["No 25-man attendance data yet."]))
+    attContent.emptyText:SetShown(#attList == 0)
+    if #attList == 0 then yOff = yOff + 22 end
 
     attContent:SetHeight(math.max(1, yOff))
 end
@@ -898,34 +911,29 @@ end
 -- TRIAL TRACKER PANEL
 ----------------------------------------------------------------------
 function GuildOS:CreateTrialsPanel(parent, _mainFrame)
+    -- Flush with the Recruitment sub-tab bar's left edge, the first line UI.GAP under it (#371).
     local scrollParent = CreateFrame("Frame", nil, parent)
-    scrollParent:SetPoint("TOPLEFT", 10, -10)
-    scrollParent:SetPoint("BOTTOMRIGHT", -10, 10)
+    scrollParent:SetPoint("TOPLEFT", 0, -GAP)
+    scrollParent:SetPoint("BOTTOMRIGHT", -GAP, GAP)
 
-    local title = UI:CreateTitle(scrollParent, L["Trial Members"], 14)
+    local title = UI:CreateSectionTitle(scrollParent, L["Trial Members"], true)
     title:SetPoint("TOPLEFT", 0, 0)
 
-    local statusText = UI:CreateText(scrollParent, "", 10, C.silver.r, C.silver.g, C.silver.b)
-    statusText:SetPoint("TOPRIGHT", 0, -2)
+    -- The count under the title it qualifies, not floating at the top right (#371).
+    local statusText = UI:CreateText(scrollParent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    statusText:SetPoint("TOPLEFT", 0, -22)
 
     -- The guild's length and its switch for new members (issue #249): an officer's, for the whole guild.
+    -- The shared field (#371): it had a gold border and no inset, so "30" touched its edge.
     local TT = GuildOS.TrialTracker
-    local daysLabel = UI:CreateText(scrollParent, L["Trial length (days)"], 11, C.white.r, C.white.g, C.white.b)
-    daysLabel:SetPoint("TOPLEFT", 0, -30)
-    local daysBox = CreateFrame("EditBox", nil, scrollParent, "BackdropTemplate")
-    daysBox:SetSize(40, 22)
+    local ROW_Y = -40
+    local daysLabel = UI:CreateText(scrollParent, L["Trial length (days)"], 11, C.text.r, C.text.g, C.text.b)
+    daysLabel:SetPoint("LEFT", scrollParent, "TOPLEFT", 0, ROW_Y - 11)
+    -- Room for a 100 to be refused, not cut to 10.
+    local daysBox = UI:CreateInput(scrollParent, 48, 22, { numeric = true, max = 3 })
     daysBox:SetPoint("LEFT", daysLabel, "RIGHT", 8, 0)
-    daysBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    daysBox:SetBackdropColor(0.058, 0.058, 0.075, 0.9)
-    daysBox:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
-    GuildOS:ApplyFont(daysBox, 11)
-    daysBox:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    daysBox:SetNumeric(true)
-    daysBox:SetMaxLetters(3)   -- room for a 100 to be refused, not cut to 10
-    daysBox:SetAutoFocus(false)
-    daysBox:SetScript("OnEscapePressed", function(self)
+    daysBox:HookScript("OnEscapePressed", function(self)
         self:SetText(tostring(TT and TT:GetDays() or ""))
-        self:ClearFocus()
     end)
     UI:AttachSaveButton(daysBox, function(box)
         local ok, why = TT:SetDays(box:GetText())
@@ -945,16 +953,17 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
         cb:SetChecked(TT:IsAutoOn())
     end
 
+    -- Under the row it explains, left-aligned (#371).
     local configHint = UI:CreateText(scrollParent,
         L["A new length moves the end of every running trial. Nobody already in the guild becomes a trial."],
-        9, C.silver.r, C.silver.g, C.silver.b)
-    configHint:SetPoint("TOPLEFT", 0, -54)
+        10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    configHint:SetPoint("TOPLEFT", 0, ROW_Y - 22 - 6)
 
-    -- Column headers
-    local colHeader = CreateFrame("Frame", nil, scrollParent)
-    colHeader:SetPoint("TOPLEFT", 0, -70)
-    colHeader:SetPoint("TOPRIGHT", 0, -70)
-    colHeader:SetHeight(20)
+    -- Column headers: the shared header, no band, its 1px rule under it (#371).
+    local HEADER_Y = ROW_Y - 22 - 6 - 14 - GAP
+    local colHeader = UI:CreateTableHeader(scrollParent)
+    colHeader:SetPoint("TOPLEFT", 0, HEADER_Y)
+    colHeader:SetPoint("TOPRIGHT", 0, HEADER_Y)
 
     local hName = UI:CreateHeaderText(colHeader, L["MEMBER"], 10)
     hName:SetPoint("LEFT", 6, 0)
@@ -971,13 +980,9 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     local hStatus = UI:CreateHeaderText(colHeader, L["STATUS"], 10)
     hStatus:SetPoint("LEFT", 455, 0)
 
-    local sep = UI:CreateSeparator(scrollParent)
-    sep:SetPoint("TOPLEFT", 0, -92)
-    sep:SetPoint("TOPRIGHT", 0, -92)
-
     local trialScroll = CreateFrame("ScrollFrame", "GuildOSTrialScroll", scrollParent, "UIPanelScrollFrameTemplate")
-    trialScroll:SetPoint("TOPLEFT", 0, -94)
-    trialScroll:SetPoint("BOTTOMRIGHT", -10, 0)
+    trialScroll:SetPoint("TOPLEFT", colHeader, "BOTTOMLEFT", 0, -2)
+    trialScroll:SetPoint("BOTTOMRIGHT", 0, 0)
     UI:SkinScrollBar(trialScroll, "GuildOSTrialScroll")
 
     local trialContent = CreateFrame("Frame", nil, trialScroll)
@@ -997,7 +1002,7 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     -- An officer's change or the other officers' trials arriving redraw it while it is open (#249).
     if TT then
         TT.uiRefresh = function()
-            if parent:IsShown() then GuildOS:RefreshTrialsPanel(parent) end
+            if parent:IsVisible() then GuildOS:RefreshTrialsPanel(parent) end
         end
     end
 end
@@ -1029,19 +1034,21 @@ function GuildOS:RefreshTrialsPanel(parent)
         local progress = GuildOS.TrialTracker:GetProgress(trial.key)
         local state = GuildOS.TrialTracker:GetState(trial.key)
 
-        -- Main row
+        -- Main row, hung by both top corners: a width read while the tab is hidden is 0 (#371).
         local row = CreateFrame("Button", nil, content, "BackdropTemplate")
-        row:SetSize(content:GetWidth() - 10, 26)
+        row:SetHeight(26)
         row:SetPoint("TOPLEFT", 0, -yOff)
+        row:SetPoint("TOPRIGHT", 0, -yOff)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
 
+        -- The table's zebra only: a trial waiting for a decision says so in its status column, and gold
+        -- is the selection's colour, not a wash (#371).
         local rowIdx = math.floor(yOff / 26) % 2
         local altIdx = (rowIdx == 0) and C.row1 or C.row2
-        if state == "review" then altIdx = C.accentSoft end   -- a gold wash: it waits for a decision
         row:SetBackdropColor(altIdx.r, altIdx.g, altIdx.b, altIdx.a)
 
         -- Expand arrow
-        local arrow = UI:CreateText(row, isExpanded and "v" or ">", 10, C.accent.r, C.accent.g, C.accent.b)
+        local arrow = UI:CreateText(row, isExpanded and "v" or ">", 10, C.label.r, C.label.g, C.label.b)
         arrow:SetPoint("LEFT", 2, 0)
 
         -- Name with class color
@@ -1058,20 +1065,20 @@ function GuildOS:RefreshTrialsPanel(parent)
             local ilvlSign = progress.ilvlDelta > 0 and "+" or ""
             local ilvlColor = progress.ilvlDelta > 0 and C.green or (progress.ilvlDelta < 0 and C.red or C.silver)
             local ilvlStr = format("%d (%s%d)", progress.currentIlvl, ilvlSign, progress.ilvlDelta)
-            local ilvlText = UI:CreateText(row, ilvlStr, 9, ilvlColor.r, ilvlColor.g, ilvlColor.b)
+            local ilvlText = Num(UI:CreateText(row, ilvlStr, 9, ilvlColor.r, ilvlColor.g, ilvlColor.b))
             ilvlText:SetPoint("LEFT", 140, 0)
 
             -- Attunement progress
             if GuildOS.AttunementTracker then
                 local attColor = progress.attDelta > 0 and C.green or C.silver
                 local attStr = format("%d/%d (+%d)", progress.currentAttDone, progress.attTotal, progress.attDelta)
-                local attText = UI:CreateText(row, attStr, 9, attColor.r, attColor.g, attColor.b)
+                local attText = Num(UI:CreateText(row, attStr, 9, attColor.r, attColor.g, attColor.b))
                 attText:SetPoint("LEFT", 210, 0)
             end
         else
             local ilvlVal = memberData and memberData.avgIlvl or 0
             if ilvlVal > 0 then
-                local ilvlText = UI:CreateText(row, tostring(ilvlVal), 9, C.silver.r, C.silver.g, C.silver.b)
+                local ilvlText = Num(UI:CreateText(row, tostring(ilvlVal), 9, C.silver.r, C.silver.g, C.silver.b))
                 ilvlText:SetPoint("LEFT", 140, 0)
             end
             if GuildOS.AttunementTracker then
@@ -1085,11 +1092,11 @@ function GuildOS:RefreshTrialsPanel(parent)
 
         local daysRem = GuildOS.TrialTracker:GetDaysRemaining(trial.key)
         local daysStr = daysRem and (daysRem .. "d") or "-"
-        local daysColor = C.white
+        local daysColor = C.text
         if daysRem then
-            daysColor = daysRem > 14 and C.green or (daysRem > 7 and C.gold or C.red)
+            daysColor = daysRem > 14 and C.green or (daysRem > 7 and C.warn or C.red)
         end
-        local daysText = UI:CreateText(row, daysStr, 10, daysColor.r, daysColor.g, daysColor.b)
+        local daysText = Num(UI:CreateText(row, daysStr, 10, daysColor.r, daysColor.g, daysColor.b))
         daysText:SetPoint("LEFT", 390, 0)
 
         -- Status badge: the state worked out from the start and the guild's length, so a trial an older
@@ -1097,7 +1104,7 @@ function GuildOS:RefreshTrialsPanel(parent)
         local statusColor = C.silver
         local statusStr = tostring(data.status or "?")
         if state == "trial" then
-            statusColor = C.gold; statusStr = L["TRIAL"]
+            statusColor = C.textSoft; statusStr = L["TRIAL"]
         elseif state == "review" then
             statusColor = C.red; statusStr = L["READY TO REVIEW"]
         elseif state == "left" then
@@ -1172,7 +1179,7 @@ function GuildOS:RefreshTrialsPanel(parent)
                 local notesLabel = detailFrame:CreateFontString(nil, "OVERLAY")
                 GuildOS:ApplyFont(notesLabel, 9)
                 notesLabel:SetPoint("TOPLEFT", 10, dY)
-                notesLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+                notesLabel:SetTextColor(C.label.r, C.label.g, C.label.b)
                 notesLabel:SetText(L["Comments:"])
                 notesLabel:Show()
                 dY = dY - 14
@@ -1181,7 +1188,9 @@ function GuildOS:RefreshTrialsPanel(parent)
                     local noteFS = detailFrame:CreateFontString(nil, "OVERLAY")
                     GuildOS:ApplyFont(noteFS, 9)
                     noteFS:SetPoint("TOPLEFT", 14, dY)
-                    noteFS:SetWidth(content:GetWidth() - 60)
+                    -- A set width, not a second anchor: GetStringHeight below measures the wrap at once, before
+                    -- an anchored width would be resolved. `content` is bound to the scroll's width (#371).
+                    noteFS:SetWidth(math.max(1, content:GetWidth() - 60))
                     noteFS:SetJustifyH("LEFT")
                     noteFS:SetWordWrap(true)
                     local dateStr = note.timestamp and GuildOS:DateText(note.timestamp, " %H:%M") or ""
@@ -1191,32 +1200,12 @@ function GuildOS:RefreshTrialsPanel(parent)
                 end
             end
 
-            -- Inline add note
-            local addBox = CreateFrame("EditBox", nil, detailFrame, "BackdropTemplate")
-            addBox:SetSize(content:GetWidth() - 120, 20)
+            -- Inline add note: the shared field with its hint, running up to the Add button (#371).
+            local addBtn = UI:CreateButton(detailFrame, L["Add"], 50, 22)
+            addBtn:SetPoint("TOPRIGHT", -10, dY - 4)
+            local addBox = UI:CreateInput(detailFrame, 200, 22, { max = 200, placeholder = L["Add comment..."] })
             addBox:SetPoint("TOPLEFT", 10, dY - 4)
-            addBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-            addBox:SetBackdropColor(0.038, 0.038, 0.052, 1)
-            addBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
-            GuildOS:ApplyFont(addBox, 9)
-            addBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-            addBox:SetTextInsets(4, 4, 2, 2)
-            addBox:SetAutoFocus(false)
-            addBox:SetMaxLetters(200)
-            addBox:Show()
-
-            local ph = addBox:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(ph, 9)
-            ph:SetPoint("LEFT", 4, 0)
-            ph:SetTextColor(0.3, 0.3, 0.3)
-            ph:SetText(L["Add comment..."])
-            addBox:SetScript("OnTextChanged", function(self)
-                if self:GetText() ~= "" then ph:Hide() else ph:Show() end
-            end)
-            addBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-            local addBtn = UI:CreateButton(detailFrame, L["Add"], 50, 20)
-            addBtn:SetPoint("LEFT", addBox, "RIGHT", 4, 0)
+            addBox:SetPoint("RIGHT", addBtn, "LEFT", -4, 0)
             addBtn:SetScript("OnClick", function()
                 local text = addBox:GetText()
                 if text and strtrim(text) ~= "" then
@@ -1242,11 +1231,13 @@ function GuildOS:RefreshTrialsPanel(parent)
         end
     end
 
-    if #trials == 0 then
-        local emptyText = UI:CreateText(content, L["No trial members tracked."], 11, C.silver.r, C.silver.g, C.silver.b)
-        emptyText:SetPoint("TOPLEFT", 0, 0)
-        yOff = 30
+    -- One empty line, kept: a new one each redraw stayed on screen under the trials that came later.
+    if not parent.trialEmpty then
+        parent.trialEmpty = UI:CreateText(content, L["No trial members tracked."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        parent.trialEmpty:SetPoint("TOPLEFT", 6, -6)
     end
+    parent.trialEmpty:SetShown(#trials == 0)
+    if #trials == 0 then yOff = 30 end
 
     content:SetHeight(math.max(1, yOff))
 end
@@ -1260,7 +1251,7 @@ function GuildOS:ShowExportChooser()
     local f = CreateFrame("Frame", "GuildOSExportChooser", UIParent, "BackdropTemplate")
     f:SetSize(390, 300)
     f:SetPoint("CENTER")
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
     UI:StylePopup(f)
@@ -1323,7 +1314,7 @@ function GuildOS:ShowExportPopup(titleStr, text)
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1336,9 +1327,9 @@ function GuildOS:ShowExportPopup(titleStr, text)
     f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
 
     local titleText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(titleText, 13)
+    GuildOS:ApplyFont(titleText, nil, "sectionTitle")
     titleText:SetPoint("TOP", 0, -10)
-    titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    titleText:SetTextColor(C.text.r, C.text.g, C.text.b)
     titleText:SetText(titleStr or L["Export"])
 
     local hint = f:CreateFontString(nil, "OVERLAY")
@@ -1353,16 +1344,15 @@ function GuildOS:ShowExportPopup(titleStr, text)
     scrollFrame:SetPoint("BOTTOMRIGHT", -12, 40)
     UI:SkinScrollBar(scrollFrame, "GuildOSExportScroll")
 
-    local editBox = CreateFrame("EditBox", nil, scrollFrame)
-    editBox:SetMultiLine(true)
-    GuildOS:ApplyFont(editBox, 11)
-    editBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    editBox:SetWidth(scrollFrame:GetWidth() - 10)
+    -- The shared field, multi-line (#371). It grows with its text; the scroll frame keeps it clear of
+    -- the bar, and Escape still closes the window after the field lets go.
+    local editBox = UI:CreateInput(scrollFrame, 460, 262, { multiline = true })
     editBox:SetAutoFocus(true)
     editBox:SetText(text or "")
     editBox:HighlightText()
-    editBox:SetScript("OnEscapePressed", function() f:Hide() end)
+    editBox:HookScript("OnEscapePressed", function() f:Hide() end)
     scrollFrame:SetScrollChild(editBox)
+    UI:BindScrollChildWidth(scrollFrame, editBox)
 
     local closeBtn = UI:CreateCloseButton(f)
     closeBtn:SetPoint("TOPRIGHT", -4, -4)
@@ -1388,7 +1378,7 @@ function GuildOS:ShowSoftResImportPopup()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1401,9 +1391,9 @@ function GuildOS:ShowSoftResImportPopup()
     f:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
 
     local titleText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(titleText, 13)
+    GuildOS:ApplyFont(titleText, nil, "sectionTitle")
     titleText:SetPoint("TOP", 0, -10)
-    titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    titleText:SetTextColor(C.text.r, C.text.g, C.text.b)
     titleText:SetText(L["Import SoftRes from softres.it"])
 
     local hint = f:CreateFontString(nil, "OVERLAY")
@@ -1417,14 +1407,12 @@ function GuildOS:ShowSoftResImportPopup()
     scrollFrame:SetPoint("BOTTOMRIGHT", -12, 44)
     UI:SkinScrollBar(scrollFrame, "GuildOSSRImportScroll")
 
-    local editBox = CreateFrame("EditBox", nil, scrollFrame)
-    editBox:SetMultiLine(true)
-    GuildOS:ApplyFont(editBox, 11)
-    editBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    editBox:SetWidth(scrollFrame:GetWidth() - 10)
+    -- The shared field, multi-line (#371); Escape still closes the window after the field lets go.
+    local editBox = UI:CreateInput(scrollFrame, 480, 250, { multiline = true })
     editBox:SetAutoFocus(true)
-    editBox:SetScript("OnEscapePressed", function() f:Hide() end)
+    editBox:HookScript("OnEscapePressed", function() f:Hide() end)
     scrollFrame:SetScrollChild(editBox)
+    UI:BindScrollChildWidth(scrollFrame, editBox)
 
     local closeBtn = UI:CreateCloseButton(f)
     closeBtn:SetPoint("TOPRIGHT", -4, -4)
@@ -1463,7 +1451,7 @@ function GuildOS:ShowImportPopup()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1476,9 +1464,9 @@ function GuildOS:ShowImportPopup()
     f:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
 
     local titleText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(titleText, 13)
+    GuildOS:ApplyFont(titleText, nil, "sectionTitle")
     titleText:SetPoint("TOP", 0, -10)
-    titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    titleText:SetTextColor(C.text.r, C.text.g, C.text.b)
     titleText:SetText(L["Raid roster from the website"])
 
     local hint = f:CreateFontString(nil, "OVERLAY")
@@ -1505,14 +1493,12 @@ function GuildOS:ShowImportPopup()
     scrollFrame:SetPoint("BOTTOMRIGHT", -12, 76)
     UI:SkinScrollBar(scrollFrame, "GuildOSCompanionImportScroll")
 
-    local editBox = CreateFrame("EditBox", nil, scrollFrame)
-    editBox:SetMultiLine(true)
-    GuildOS:ApplyFont(editBox, 11)
-    editBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    editBox:SetWidth(scrollFrame:GetWidth() - 10)
+    -- The shared field, multi-line (#371); Escape still closes the window after the field lets go.
+    local editBox = UI:CreateInput(scrollFrame, 480, 250, { multiline = true })
     editBox:SetAutoFocus(true)
-    editBox:SetScript("OnEscapePressed", function() f:Hide() end)
+    editBox:HookScript("OnEscapePressed", function() f:Hide() end)
     scrollFrame:SetScrollChild(editBox)
+    UI:BindScrollChildWidth(scrollFrame, editBox)
 
     local closeBtn = UI:CreateCloseButton(f)
     closeBtn:SetPoint("TOPRIGHT", -4, -4)
@@ -1567,1213 +1553,6 @@ function GuildOS:ShowImportPopup()
 end
 
 ----------------------------------------------------------------------
--- SETTINGS PANEL
-----------------------------------------------------------------------
-function GuildOS:CreateSettingsPanel(parent, _mainFrame)
-    local scrollFrame, content = UI:CreateScrollFrame(parent, "GuildOSSettingsScroll")
-    scrollFrame:SetPoint("TOPLEFT", 12, -10)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -12, 10)
-    content:SetWidth(scrollFrame:GetWidth() - 20)
-
-    parent:SetScript("OnShow", function()
-        GuildOS:RefreshSettingsPanel(content)
-    end)
-end
-
-function GuildOS:RefreshSettingsPanel(content, category)
-    -- Clear existing. Hide BOTH child frames AND regions: section titles,
-    -- hints and separators are FontStrings/textures parented straight to
-    -- `content`, so they must be hidden too — otherwise a re-render with a
-    -- different layout (e.g. switching category) leaves the old text
-    -- overlapping the new.
-    for _, child in pairs({ content:GetChildren() }) do child:Hide() end
-    for _, region in pairs({ content:GetRegions() }) do region:Hide() end
-
-    local isOfficer = GuildOS:IsOfficer()
-
-    -- Settings are grouped into category sub-tabs so the panel is easy to
-    -- navigate. Officer-only categories are hidden from members. The active
-    -- category is remembered on the panel itself.
-    local CATS = {
-        { key = "general", label = L["General"] },
-        -- The loot settings live in the Loot window (issue #346): this category only says where.
-        { key = "loot",    label = L["Loot"],    officer = true },
-        { key = "raid",    label = L["Raid"] },
-        { key = "officer", label = L["Officer"], officer = true },
-        { key = "about",   label = L["About"] },
-    }
-    local cat = category or content.__settingsCat or "general"
-    if (cat == "loot" or cat == "officer") and not isOfficer then cat = "general" end
-    content.__settingsCat = cat
-
-    local yOff = 0
-
-    -- Title + category bar
-    local title = UI:CreateTitle(content, L["Settings"], 16)
-    title:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 26
-
-    local cx = 0
-    for _, c in ipairs(CATS) do
-        if (not c.officer or isOfficer) and not (c.retail == false and GuildOS.Client.isRetail) then
-            local b = UI:CreateButton(content, c.label, 92, 24)
-            b:SetPoint("TOPLEFT", cx, -yOff)
-            if c.key == cat then
-                b:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95)
-                b.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-            end
-            b:SetScript("OnClick", function() GuildOS:RefreshSettingsPanel(content, c.key) end)
-            cx = cx + b:GetWidth() + 4  -- a button its label grew pushes the next one (issue #28)
-        end
-    end
-    yOff = yOff + 34
-
-    local sep1 = UI:CreateSeparator(content)
-    sep1:SetPoint("TOPLEFT", 0, -yOff)
-    sep1:SetPoint("TOPRIGHT", -10, -yOff)
-    yOff = yOff + 12
-
-    if cat == "general" then
-    --------------------------------------------------------------------
-    -- MY PROFILE (self-service raid roles)
-    --------------------------------------------------------------------
-    local profTitle = UI:CreateHeaderText(content, L["MY PROFILE"], 12)
-    profTitle:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 22
-
-    local rolesHint = UI:CreateText(content, L["Roles you're willing to play. Your guild's Raiders list picks this up automatically, so no officer has to set it."], 10, C.silver.r, C.silver.g, C.silver.b)
-    rolesHint:SetPoint("TOPLEFT", 4, -yOff); rolesHint:SetWidth(content:GetWidth() - 20); rolesHint:SetJustifyH("LEFT")
-    yOff = yOff + 20
-
-    local rolePicker = GuildOS:CreateRolePicker(content)
-    rolePicker:SetPoint("TOPLEFT", 4, -yOff)
-    yOff = yOff + 34
-
-    local profSep = UI:CreateSeparator(content)
-    profSep:SetPoint("TOPLEFT", 0, -yOff)
-    profSep:SetPoint("TOPRIGHT", -10, -yOff)
-    yOff = yOff + 12
-
-    --------------------------------------------------------------------
-    -- UI SCALE
-    --------------------------------------------------------------------
-    local scaleLabel = UI:CreateText(content, L["UI scale"], 11, C.text.r, C.text.g, C.text.b)
-    scaleLabel:SetPoint("TOPLEFT", 0, -yOff)
-
-    local scale = CreateFrame("Slider", "GuildOSScaleSlider", content, "OptionsSliderTemplate")
-    scale:SetPoint("TOPLEFT", 120, -yOff)
-    scale:SetWidth(180)
-    scale:SetMinMaxValues(0.8, 1.2)
-    scale:SetValueStep(0.05)
-    scale:SetObeyStepOnDrag(true)
-    scale:SetValue(GuildOS:GetSetting("uiScale") or 1)
-    _G[scale:GetName() .. "Low"]:SetText("80%")
-    _G[scale:GetName() .. "High"]:SetText("120%")
-    _G[scale:GetName() .. "Text"]:SetText(string.format("%d%%", (GuildOS:GetSetting("uiScale") or 1) * 100))
-    scale:SetScript("OnValueChanged", function(self, value)
-        value = math.floor(value * 20 + 0.5) / 20   -- snap to the 0.05 step
-        GuildOS:SetSetting("uiScale", value)
-        _G[self:GetName() .. "Text"]:SetText(string.format("%d%%", value * 100))
-        UI:ApplyScale()
-    end)
-    yOff = yOff + 40
-
-    --------------------------------------------------------------------
-    -- MODULE TOGGLES
-    --------------------------------------------------------------------
-    local sectionTitle = UI:CreateHeaderText(content, L["MODULES"], 12)
-    sectionTitle:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 22
-
-    -- Toggles come from the feature registry. AllFeatures, not
-    -- VisibleFeatures: a disabled feature must keep its checkbox, or
-    -- there is no way left to switch it back on. `core` features have no
-    -- switch at all — turning Settings or Roster off would lock the user out.
-    for _, def in ipairs(UI:AllFeatures(nil)) do
-        if not def.core then
-        local row = CreateFrame("Frame", nil, content, "BackdropTemplate")
-        row:SetSize(content:GetWidth() - 10, 36)
-        row:SetPoint("TOPLEFT", 0, -yOff)
-        row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-        row:SetBackdropColor(0.082, 0.082, 0.105, 0.5)
-
-        local cb = UI:CreateCheckbox(row, def.label, 18)
-        cb:SetPoint("LEFT", 8, 0)
-        cb.checkbox:SetChecked(GuildOS:IsFeatureEnabled(def.id))
-        cb.checkbox.onChanged = function(_, checked)
-            GuildOS:SetFeatureEnabled(def.id, checked)
-            -- Tabs build lazily, so UI features toggle live. Background
-            -- modules register their events at Initialize, so only those
-            -- still need a reload, and a tab whose module does (`restart`).
-            local needsReload = def.restart or (def.module and not def.tab)
-            GuildOS:Print(def.label .. (checked
-                and L[" |cff00ff00enabled|r."]
-                or  L[" |cffFF4444disabled|r."])
-                .. (needsReload and L[" Reload UI to apply."] or ""))
-            if def.id == "lootMaster" and GuildOS.LootMaster and GuildOS.LootMaster.SetEnabled then
-                GuildOS.LootMaster:SetEnabled(checked and true or false)
-            end
-        end
-
-        local desc = UI:CreateText(row, def.desc or "", 9, C.silver.r, C.silver.g, C.silver.b)
-        desc:SetPoint("LEFT", 240, 0)
-        desc:SetWidth(400)
-
-        yOff = yOff + 38
-        end
-    end
-
-    yOff = yOff + 8
-
-    -- Separator
-    local sep2 = UI:CreateSeparator(content)
-    sep2:SetPoint("TOPLEFT", 0, -yOff)
-    sep2:SetPoint("TOPRIGHT", -10, -yOff)
-    yOff = yOff + 12
-
-    --------------------------------------------------------------------
-    -- QUICK ACCESS — open feature windows from the UI (not just chat)
-    --------------------------------------------------------------------
-    local qaTitle = UI:CreateHeaderText(content, L["QUICK ACCESS"], 12)
-    qaTitle:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 22
-
-    -- Show only the loot-access button that matches the active system.
-    local quickButtons = {}
-    if GuildOS:LootSystemShowsDKP() then
-        quickButtons[#quickButtons + 1] = { label = L["Loot & DKP"], fn = function() GuildOS:ShowPointsFrame() end }
-    end
-    if GuildOS:LootSystemShowsWishlist() then
-        quickButtons[#quickButtons + 1] = { label = L["My Wishlist"], fn = function() GuildOS:ShowWishlistFrame() end }
-    end
-    -- Retail's loot council by trade, for every member: offering an item, answering one (issue #185).
-    if GuildOS.TradeCouncil and GuildOS:LootSystemActive() then
-        quickButtons[#quickButtons + 1] = { label = L["Loot Council"], fn = function() GuildOS:ShowTradeCouncil() end }
-    end
-    if GuildOS.LootEquity then  -- on retail too since issue #183
-        quickButtons[#quickButtons + 1] = { label = L["Loot Equity"], fn = function()
-            local txt = GuildOS.Exporter and GuildOS.Exporter:Build("equity", "tsv") or ""
-            GuildOS:ShowExportPopup(L["Loot Equity"], txt)
-        end }
-    end
-    quickButtons[#quickButtons + 1] = { label = L["Bulletin"], fn = function()
-        if GuildOS.Bulletin then GuildOS.Bulletin:Show() end
-    end }
-    quickButtons[#quickButtons + 1] = { label = L["Polls"], fn = function()
-        if GuildOS.Polls then GuildOS.Polls:Show() end
-    end }
-    quickButtons[#quickButtons + 1] = { label = L["Search"], fn = function()
-        if GuildOS.Search then GuildOS.Search:Show() end
-    end }
-    quickButtons[#quickButtons + 1] = { label = L["Login Digest"], fn = function()
-        if GuildOS.Digest then GuildOS.Digest:Show() end
-    end }
-    quickButtons[#quickButtons + 1] = { label = L["Export Data"], fn = function()
-        if GuildOS.ShowExportChooser then GuildOS:ShowExportChooser() end
-    end }
-    local qx, qrow = 0, 0
-    for _, qb in ipairs(quickButtons) do
-        local b = UI:CreateButton(content, qb.label, 130, 24)
-        -- Wrap on the button's real width: its label may have grown it (issue #28).
-        if qx > 0 and qx + b:GetWidth() > content:GetWidth() - 20 then qx = 0; qrow = qrow + 30 end
-        b:SetPoint("TOPLEFT", qx, -(yOff + qrow))
-        b:SetScript("OnClick", qb.fn)
-        qx = qx + b:GetWidth() + 6
-    end
-    yOff = yOff + 36 + qrow
-
-    --------------------------------------------------------------------
-    -- GENERAL OPTIONS
-    --------------------------------------------------------------------
-    local goTitle = UI:CreateHeaderText(content, L["GENERAL OPTIONS"], 12)
-    goTitle:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 24
-
-    local mmCb = UI:CreateCheckbox(content, L["Show minimap button"], 18)
-    mmCb:SetPoint("TOPLEFT", 8, -yOff)
-    mmCb.checkbox:SetChecked(GuildOS.IsMinimapShown and GuildOS:IsMinimapShown() or false)
-    mmCb.checkbox.onChanged = function(_, checked)
-        if GuildOS.SetMinimapShown then GuildOS:SetMinimapShown(checked) end
-    end
-    yOff = yOff + 30
-
-    -- The guildmates-in-your-zone dots under the minimap (#271).
-    if GuildOS.GuildMap then
-        local dotsCb = UI:CreateCheckbox(content, L["Show guildmates in your zone on the minimap"], 18)
-        dotsCb:SetPoint("TOPLEFT", 8, -yOff)
-        dotsCb.checkbox:SetChecked(GuildOS.GuildMap:IsMinimapDots())
-        dotsCb.checkbox.onChanged = function(_, checked) GuildOS.GuildMap:SetMinimapDots(checked) end
-        yOff = yOff + 30
-    end
-
-    -- Guild button takeover — off = the guild micro button / "J" opens Blizzard's own
-    -- guild UI instead of Guild OS (use the minimap button, or the "Guild OS" button we
-    -- add to the native frame, to open Guild OS). Lets players use both.
-    local gbCb = UI:CreateCheckbox(content, L["Guild button opens Guild OS"], 18)
-    gbCb:SetPoint("TOPLEFT", 8, -yOff)
-    gbCb.checkbox:SetChecked(GuildOS:IsGuildButtonHijacked())
-    gbCb.checkbox.onChanged = function(_, checked)
-        GuildOS:SetSetting("hijackGuildButton", checked and true or false)
-    end
-    yOff = yOff + 30
-
-    -- Guild lines on item tooltips (crafters, wishlist, soft reserves) — issue #39.
-    local ttCb = UI:CreateCheckbox(content, L["Guild info on item tooltips"], 18)
-    ttCb:SetPoint("TOPLEFT", 8, -yOff)
-    local ttShift = UI:CreateCheckbox(content, L["Only while holding Shift"], 16)
-    ttShift:SetPoint("TOPLEFT", 28, -(yOff + 26))
-    local ttMode = GuildOS:GetSetting("itemTooltip")
-    ttCb.checkbox:SetChecked(ttMode ~= "off")
-    ttShift.checkbox:SetChecked(ttMode == "shift")
-    local function SaveTooltipMode()
-        local on = ttCb.checkbox:GetChecked() and true or false
-        GuildOS:SetSetting("itemTooltip", not on and "off" or (ttShift.checkbox:GetChecked() and "shift" or "always"))
-        if on then ttShift.checkbox:Enable() else ttShift.checkbox:Disable() end
-    end
-    if ttMode == "off" then ttShift.checkbox:Disable() end
-    ttCb.checkbox.onChanged = SaveTooltipMode
-    ttShift.checkbox.onChanged = SaveTooltipMode
-    yOff = yOff + 52
-
-    -- The interface style (issue #122): the picker, where the client draws more than one.
-    yOff = GuildOS.Style:BuildPicker(content, yOff)
-
-    -- The game's own font instead of GuildOS's (issue #57), for the whole account (see
-    -- ApplyFont). Text is set when it is drawn, so the change shows after a reload.
-    local fontCb = UI:CreateCheckbox(content, L["Use the game's font"], 18)
-    fontCb:SetPoint("TOPLEFT", 8, -yOff)
-    fontCb.checkbox:SetChecked(GuildOSDB.font == "game" or GuildOS.GameFontOnly or GuildOS.Style.gameFont)
-    fontCb.checkbox.onChanged = function(_, checked)
-        GuildOSDB.font = checked and "game" or nil
-    end
-    local fontReload = UI:CreateButton(content, L["Reload to apply"], 130, 22)
-    fontReload:SetPoint("TOPLEFT", 28, -(yOff + 26))
-    fontReload:SetScript("OnClick", function() ReloadUI() end)
-    -- A Korean or Chinese client always uses it: GuildOS's fonts cannot draw the language (#103).
-    if GuildOS.GameFontOnly or GuildOS.Style.gameFont then
-        fontCb.checkbox:Disable()
-        fontReload:Hide()
-    end
-    yOff = yOff + 56
-
-    local digestCb = UI:CreateCheckbox(content, L["Show login digest"], 18)
-    digestCb:SetPoint("TOPLEFT", 8, -yOff)
-    digestCb.checkbox:SetChecked(not (GuildOS.db.digest and GuildOS.db.digest.enabled == false))
-    digestCb.checkbox.onChanged = function(_, checked)
-        GuildOS.db.digest = GuildOS.db.digest or {}
-        GuildOS.db.digest.enabled = checked and true or false
-    end
-    yOff = yOff + 30
-
-    -- WoW: Forever's guild feed on guildos.me (issue #205): the member's own choice.
-    if GuildOS.Journal then
-        local feedCb = UI:CreateCheckbox(content, L["Don't name me in Discord posts"], 18)
-        feedCb:SetPoint("TOPLEFT", 8, -yOff)
-        feedCb.checkbox:SetChecked(GuildOS.Journal:IsOptedOut())
-        feedCb.checkbox.onChanged = function(_, checked) GuildOS.Journal:SetOptedOut(checked) end
-        yOff = yOff + 30
-    end
-
-    local welcomeBtn = UI:CreateButton(content, L["Show welcome again"], 160, 24)
-    welcomeBtn:SetPoint("TOPLEFT", 8, -yOff)
-    welcomeBtn:SetScript("OnClick", function()
-        if GuildOS.ShowOnboarding then GuildOS:ShowOnboarding() end
-    end)
-    local welcomeNote = UI:CreateText(content, L["Replay the first-run intro"], 9, C.silver.r, C.silver.g, C.silver.b)
-    welcomeNote:SetPoint("LEFT", welcomeBtn, "RIGHT", 10, 0)
-    yOff = yOff + 34
-
-    --------------------------------------------------------------------
-    -- CHAT (guild/officer chat annotations — a personal display
-    -- preference, not officer-only; lives in Modules/ChatTweaks.lua)
-    --------------------------------------------------------------------
-    local chatTitle = UI:CreateHeaderText(content, L["CHAT"], 12)
-    chatTitle:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 24
-
-    local chatCb = UI:CreateCheckbox(content, L["Annotate guild chat (class icon, level, alt tag)"], 18)
-    chatCb:SetPoint("TOPLEFT", 8, -yOff)
-    chatCb.checkbox:SetChecked(GuildOS.db.chatTweaks and GuildOS.db.chatTweaks.enabled or false)
-    chatCb.checkbox.onChanged = function(_, checked)
-        if GuildOS.db.chatTweaks then
-            GuildOS.db.chatTweaks.enabled = checked and true or false
-        end
-    end
-    yOff = yOff + 26
-
-    local classIconCb = UI:CreateCheckbox(content, L["Class icon"], 16)
-    classIconCb:SetPoint("TOPLEFT", 28, -yOff)
-    classIconCb.checkbox:SetChecked(GuildOS.db.chatTweaks and GuildOS.db.chatTweaks.classIcon ~= false)
-    classIconCb.checkbox.onChanged = function(_, checked)
-        if GuildOS.db.chatTweaks then
-            GuildOS.db.chatTweaks.classIcon = checked and true or false
-        end
-    end
-    yOff = yOff + 22
-
-    local levelCb = UI:CreateCheckbox(content, L["Level"], 16)
-    levelCb:SetPoint("TOPLEFT", 28, -yOff)
-    levelCb.checkbox:SetChecked(GuildOS.db.chatTweaks and GuildOS.db.chatTweaks.level ~= false)
-    levelCb.checkbox.onChanged = function(_, checked)
-        if GuildOS.db.chatTweaks then
-            GuildOS.db.chatTweaks.level = checked and true or false
-        end
-    end
-    yOff = yOff + 22
-
-    local altTagCb = UI:CreateCheckbox(content, L["Alt tag"], 16)
-    altTagCb:SetPoint("TOPLEFT", 28, -yOff)
-    altTagCb.checkbox:SetChecked(GuildOS.db.chatTweaks and GuildOS.db.chatTweaks.altTag ~= false)
-    altTagCb.checkbox.onChanged = function(_, checked)
-        if GuildOS.db.chatTweaks then
-            GuildOS.db.chatTweaks.altTag = checked and true or false
-        end
-    end
-    yOff = yOff + 22
-
-    -- Guild Roster Manager's tag (#269).
-    local altShortCb = UI:CreateCheckbox(content, L["Short tag: [M] on a main, [Main] on an alt"], 16)
-    altShortCb:SetPoint("TOPLEFT", 48, -yOff)
-    altShortCb.checkbox:SetChecked(GuildOS.db.chatTweaks and GuildOS.db.chatTweaks.altShort or false)
-    altShortCb.checkbox.onChanged = function(_, checked)
-        if GuildOS.db.chatTweaks then
-            GuildOS.db.chatTweaks.altShort = checked and true or false
-        end
-    end
-    yOff = yOff + 26
-
-    --------------------------------------------------------------------
-    -- MENTIONS & ALERTS (issue #59): what /gos mentions and /gos avail notify set.
-    -- Personal, never synced.
-    --------------------------------------------------------------------
-    local mcfg = GuildOS.db.mentions
-    if mcfg then
-        local mTitle = UI:CreateHeaderText(content, L["MENTIONS & ALERTS"], 12)
-        mTitle:SetPoint("TOPLEFT", 0, -yOff)
-        yOff = yOff + 24
-
-        local function MentionCheck(label, key, indent, size)
-            local cb = UI:CreateCheckbox(content, label, size)
-            cb:SetPoint("TOPLEFT", indent, -yOff)
-            cb.checkbox:SetChecked(mcfg[key] and true or false)
-            cb.checkbox.onChanged = function(_, checked) mcfg[key] = checked and true or false end
-            yOff = yOff + (size == 18 and 26 or 22)
-        end
-        MentionCheck(L["Alert me when my name or a watch-word comes up in chat"], "enabled", 8, 18)
-        MentionCheck(L["My own name"], "ownName", 28, 16)
-        MentionCheck(L["Guild chat"], "guild", 28, 16)
-        MentionCheck(L["Officer chat"], "officer", 28, 16)
-        MentionCheck(L["When somebody calls the officers in guild chat (officers only)"], "officerCall", 28, 16)
-        MentionCheck(L["Play a sound"], "sound", 28, 16)
-        yOff = yOff + 4
-
-        local wLabel = UI:CreateText(content, L["Watch-words:"], 11, C.white.r, C.white.g, C.white.b)
-        wLabel:SetPoint("TOPLEFT", 28, -yOff)
-        local wBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
-        wBox:SetSize(160, 22)
-        wBox:SetPoint("LEFT", wLabel, "RIGHT", 10, 0)
-        wBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-        wBox:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
-        wBox:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
-        GuildOS:ApplyFont(wBox, 11)
-        wBox:SetTextColor(C.text.r, C.text.g, C.text.b)
-        wBox:SetMaxLetters(40)
-        wBox:SetAutoFocus(false)
-        wBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-        yOff = yOff + 30
-
-        -- One chip per watch-word; clicking a chip removes it.
-        local WORD_MAX, WORD_PER_ROW = 9, 3
-        local wordBtns = {}
-        local moreText = UI:CreateText(content, "", 9, C.silver.r, C.silver.g, C.silver.b)
-        local function refreshWords()
-            local words = mcfg.watchWords or {}
-            for i = 1, WORD_MAX do
-                local b, w = wordBtns[i], words[i]
-                if w then
-                    b._word = w
-                    UI:SetChipText(b, w, 130)
-                    b:Show()
-                else
-                    b:Hide()
-                end
-            end
-            moreText:SetText(#words > WORD_MAX and string.format(L["+%d more (/gos mentions list)"], #words - WORD_MAX) or "")
-        end
-        for i = 1, WORD_MAX do
-            local b = UI:CreateButton(content, "", 130, 20)
-            b:SetPoint("TOPLEFT", 28 + ((i - 1) % WORD_PER_ROW) * 136, -(yOff + math.floor((i - 1) / WORD_PER_ROW) * 24))
-            b:SetScript("OnClick", function(self)
-                GuildOS.Mentions:_RemoveWatchWord(mcfg.watchWords, self._word)
-                refreshWords()
-            end)
-            wordBtns[i] = b
-        end
-        yOff = yOff + math.ceil(WORD_MAX / WORD_PER_ROW) * 24
-        moreText:SetPoint("TOPLEFT", 28, -yOff)
-        UI:AttachSaveButton(wBox, function(box)
-            mcfg.watchWords = mcfg.watchWords or {}
-            local status = GuildOS.Mentions:_AddWatchWord(mcfg.watchWords, box:GetText())
-            if status == "ok" then
-                box:SetText("")
-                refreshWords()
-            elseif status == "short" then
-                GuildOS:Print(L["Watch-words must be at least 3 characters."])
-            else
-                GuildOS:Print(L["Already watching: |cffFFFFFF"] .. strtrim(box:GetText()):lower() .. "|r")
-            end
-        end, { text = L["Add"] })
-        local wHint = UI:CreateText(content, L["Click a word to remove it."], 9, C.silver.r, C.silver.g, C.silver.b)
-        wHint:SetPoint("LEFT", wBox.saveButton, "RIGHT", 8, 0)
-        refreshWords()
-        yOff = yOff + 18
-
-        local logBtn = UI:CreateButton(content, L["Recent mentions"], 150, 22)
-        logBtn:SetPoint("TOPLEFT", 28, -yOff)
-        logBtn:SetScript("OnClick", function() GuildOS.Mentions:PrintLog() end)
-        local clearBtn = UI:CreateButton(content, L["Clear watch-words"], 150, 22)
-        clearBtn:SetPoint("LEFT", logBtn, "RIGHT", 8, 0)
-        clearBtn:SetScript("OnClick", function()
-            GuildOS.Dialogs["GUILDOS_CLEAR_WORDS"] = GuildOS.Dialogs["GUILDOS_CLEAR_WORDS"] or {
-                text = L["Clear every watch-word?"], button1 = L["Clear watch-words"], button2 = L["Cancel"],
-                OnAccept = function(self)
-                    GuildOS.Mentions:HandleCommand({ "clearwords" })
-                    if self and self.data and self.data.after then self.data.after() end
-                end,
-                timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-            }
-            GuildOS:ShowDialog("GUILDOS_CLEAR_WORDS", nil, nil, { after = refreshWords })
-        end)
-        yOff = yOff + 28
-    end
-
-    if GuildOS.db.lfgPrefs then
-        local lfgCb = UI:CreateCheckbox(content, L["Tell me when a guildmate posts on the LFG board"], 18)
-        lfgCb:SetPoint("TOPLEFT", 8, -yOff)
-        lfgCb.checkbox:SetChecked(GuildOS.db.lfgPrefs.notify and true or false)
-        lfgCb.checkbox.onChanged = function(_, checked) GuildOS.db.lfgPrefs.notify = checked and true or false end
-        yOff = yOff + 30
-    end
-    end -- cat == "general"
-
-
-    if isOfficer and cat == "loot" then
-        yOff = GuildOS:DrawLootPointer(content, yOff, "")
-    end
-
-    if cat == "raid" then
-    --------------------------------------------------------------------
-    -- RAID TRACKER SETTINGS
-    --------------------------------------------------------------------
-    local rtTitle = UI:CreateHeaderText(content, L["RAID TRACKER"], 12)
-    rtTitle:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 22
-
-    -- Officer-only: Raid Group Tag
-    if isOfficer then
-        local groupLabel = UI:CreateText(content, L["Raid Group:"], 11, C.white.r, C.white.g, C.white.b)
-        groupLabel:SetPoint("TOPLEFT", 8, -yOff)
-
-        local groupBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
-        groupBox:SetSize(160, 22)
-        groupBox:SetPoint("LEFT", groupLabel, "RIGHT", 10, 0)
-        groupBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-        groupBox:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
-        groupBox:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
-        GuildOS:ApplyFont(groupBox, 11)
-        groupBox:SetTextColor(C.text.r, C.text.g, C.text.b)
-        groupBox:SetMaxLetters(64)
-        groupBox:SetAutoFocus(false)
-        groupBox:SetText(GuildOS.db.raidTracker and GuildOS.db.raidTracker.currentGroupTag or "")
-        local function commitGroup(box)
-            local name = strtrim(box:GetText())
-            if GuildOS.RaidTracker then GuildOS.RaidTracker:SetGroupTag(name) end
-            if name ~= "" then
-                GuildOS:Print(L["Raid group set: "] .. "|cff9966FF" .. name .. "|r")
-            else
-                GuildOS:Print(L["Raid group removed."])
-            end
-        end
-        groupBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-        UI:AttachSaveButton(groupBox, commitGroup)
-
-        local groupHint = UI:CreateText(content, L["Ex: Core 1, Core 2"], 9, C.silver.r, C.silver.g, C.silver.b)
-        groupHint:SetPoint("LEFT", groupBox.saveButton, "RIGHT", 8, 0)
-        groupHint:SetWidth(180)
-        yOff = yOff + 30
-    end -- isOfficer (Raid group tag)
-
-    -- The guild's weights (issue #55): what a raid outside any core scores with, and what a
-    -- core takes when it set none of its own (Raids > Cores). 0 turns one off.
-    local penaltyInfo = UI:CreateText(content, L["Attendance penalties (base score = 100, 0 turns one off):"], 11, C.white.r, C.white.g, C.white.b)
-    penaltyInfo:SetPoint("TOPLEFT", 8, -yOff)
-    yOff = yOff + 18
-    local penaltyScope = UI:CreateText(content, L["For raids outside a core, and for every core that set none of its own."], 9, C.silver.r, C.silver.g, C.silver.b)
-    penaltyScope:SetPoint("TOPLEFT", 8, -yOff)
-    yOff = yOff + 18
-
-    local penalties = {
-        { key = "LATE",        label = L["Late (missed first snapshot)"] },
-        { key = "LEFT_EARLY",  label = L["Left Early (missed last snapshot)"] },
-    }
-    -- Consumables are checked only where the checker exists (TBC, ADR-0014; issue #184).
-    if GuildOS.ConsumableChecker then
-        penalties[#penalties + 1] = { key = "NO_CONSUMES", label = L["No Consumables (<50% snapshots)"] }
-    end
-    local pen = GuildOS.RaidTracker:GetPenalties("")
-    local canEdit = isOfficer and GuildOS.CoreManager
-    local penBoxes = {}
-    for _, p in ipairs(penalties) do
-        if canEdit then
-            local box = CreateFrame("EditBox", nil, content, "BackdropTemplate")
-            box:SetSize(44, 20)
-            box:SetPoint("TOPLEFT", 16, -yOff)
-            box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-            box:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
-            box:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
-            GuildOS:ApplyFont(box, 11)
-            box:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-            box:SetNumeric(true)
-            box:SetMaxLetters(3)
-            box:SetAutoFocus(false)
-            box:SetText(tostring(pen[p.key]))
-            box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-            UI:AttachSaveButton(box, function(b)
-                local val = tonumber(b:GetText())
-                if not val then   -- an empty box is a slip, not "off": 0 is typed
-                    b:SetText(tostring(GuildOS.RaidTracker:GetPenalties("")[p.key]))
-                    return
-                end
-                GuildOS.CoreManager:SetPenalty(p.key, val, "")
-                GuildOS.RaidTracker:RebuildAttendanceFromSessions()
-                b:SetText(tostring(GuildOS.RaidTracker:GetPenalties("")[p.key]))
-                GuildOS:Print(L["Attendance penalty saved."])
-            end)
-            local lbl = UI:CreateText(content, p.label, 10, C.silver.r, C.silver.g, C.silver.b)
-            lbl:SetPoint("LEFT", box.saveButton, "RIGHT", 8, 0)
-            penBoxes[p.key] = box
-            yOff = yOff + 24
-        else
-            local shown = pen[p.key] > 0 and ("-" .. pen[p.key]) or "0"
-            local pt = UI:CreateText(content, "  " .. shown .. "  " .. p.label, 10, C.silver.r, C.silver.g, C.silver.b)
-            pt:SetPoint("TOPLEFT", 16, -yOff)
-            yOff = yOff + 16
-        end
-    end
-    if canEdit then
-        local offBtn = UI:CreateButton(content, L["Turn penalties off"], 160, 22)
-        offBtn:SetPoint("TOPLEFT", 16, -yOff)
-        offBtn:SetScript("OnClick", function()
-            for _, p in ipairs(penalties) do
-                GuildOS.CoreManager:SetPenalty(p.key, 0, "")
-                penBoxes[p.key]:SetText("0")
-            end
-            GuildOS.RaidTracker:RebuildAttendanceFromSessions()
-            GuildOS:Print(L["Attendance penalties are off."])
-        end)
-        yOff = yOff + 28
-    end
-
-    yOff = yOff + 8
-    end -- cat == "raid"
-
-    if isOfficer and cat == "officer" then
-    --------------------------------------------------------------------
-    -- MAINTENANCE (officer only)
-    --------------------------------------------------------------------
-    local mtTitle = UI:CreateHeaderText(content, L["MAINTENANCE"], 12)
-    mtTitle:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 22
-
-    local errBtn = UI:CreateButton(content, L["View Errors"], 120, 24)
-    errBtn:SetPoint("TOPLEFT", 8, -yOff)
-    errBtn:SetScript("OnClick", function() GuildOS:ShowErrors() end)
-
-    local dbgCb = UI:CreateCheckbox(content, L["Debug logging"], 18)
-    dbgCb:SetPoint("LEFT", errBtn, "RIGHT", 14, 0)
-    dbgCb.checkbox:SetChecked((GuildOS.Logger and GuildOS.Logger.debug) or false)
-    dbgCb.checkbox.onChanged = function(_, checked)
-        if GuildOS.Logger then GuildOS.Logger.debug = checked and true or false end
-    end
-    yOff = yOff + 34
-
-    local sepMaint = UI:CreateSeparator(content)
-    sepMaint:SetPoint("TOPLEFT", 0, -yOff)
-    sepMaint:SetPoint("TOPRIGHT", -10, -yOff)
-    yOff = yOff + 12
-
-    --------------------------------------------------------------------
-    -- TEST FUNCTIONS (officer only)
-    --------------------------------------------------------------------
-    local testTitle = UI:CreateHeaderText(content, L["TEST FUNCTIONS"], 12)
-    testTitle:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 6
-
-    local testNote = UI:CreateText(content, L["Simulate features to preview how they work. No data is sent to raid or guild chat."], 10, C.silver.r, C.silver.g, C.silver.b)
-    testNote:SetPoint("TOPLEFT", 0, -yOff)
-    testNote:SetWidth(content:GetWidth() - 20)
-    yOff = yOff + 22
-
-    -- Test: Consumable Check. TBC content: only where the checker exists (ADR-0014).
-    if GuildOS.ConsumableChecker then
-        local testCons = UI:CreateButton(content, L["Test Consumable Check"], 200, 26)
-        testCons:SetPoint("TOPLEFT", 8, -yOff)
-        testCons:SetScript("OnClick", function()
-            local results = GuildOS.ConsumableChecker:CheckRaid()
-            if results then
-                local missing = GuildOS.ConsumableChecker:GetMissingCount(results)
-                GuildOS:Print(L["Consumable Check Test: "] .. missing .. L[" players missing buffs."])
-                GuildOS:Print(L["Use |cffFFD700/guildos consreport|r to see details in raid chat."])
-            else
-                GuildOS:Print(L["Consumable check returned no results (not in a raid?)."])
-            end
-        end)
-        local testConsDesc = UI:CreateText(content, L["Scans your current raid for missing consumables"], 9, C.silver.r, C.silver.g, C.silver.b)
-        testConsDesc:SetPoint("LEFT", testCons, "RIGHT", 10, 0)
-        yOff = yOff + 32
-    end
-
-    -- The Loot Master's tests: only where it exists, never on retail (ADR-0026).
-    if GuildOS.LootMaster then
-        -- Test: Loot Master Roll Popup
-        local testLM = UI:CreateButton(content, L["Test Roll Popup"], 200, 26)
-        testLM:SetPoint("TOPLEFT", 8, -yOff)
-        testLM:SetScript("OnClick", function()
-            if GuildOS.LootMaster then
-                GuildOS.LootMaster.testMode = true
-                -- Simulate a roll popup with a fake item
-                GuildOS.LootMaster:ShowRollPopup(
-                    "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r",
-                    15,
-                    32837
-                )
-                GuildOS:Print(L["Test roll popup shown (15s timer). Try MS/OS/Pass buttons."])
-            else
-                GuildOS:Print(L["|cffFF4444Loot Master module is disabled.|r"])
-            end
-        end)
-        local testLMDesc = UI:CreateText(content, L["Shows the raider roll popup with a sample item"], 9, C.silver.r, C.silver.g, C.silver.b)
-        testLMDesc:SetPoint("LEFT", testLM, "RIGHT", 10, 0)
-        yOff = yOff + 32
-
-        -- Test: Wishlist Council Preview
-        local testCouncil = UI:CreateButton(content, L["Test Wishlist Council"], 200, 26)
-        testCouncil:SetPoint("TOPLEFT", 8, -yOff)
-        testCouncil:SetScript("OnClick", function()
-            if GuildOS.LootMaster then
-                GuildOS.LootMaster.testMode = true
-                -- Show council frame with fake data
-                local fakeWinner = { name = GuildOS.Compat.PlayerName(), class = select(2, UnitClass("player")), wishlistType = "wishlist", order = 1 }
-                local fakeCandidates = {
-                    fakeWinner,
-                    { name = "TestPlayer", class = "WARRIOR", wishlistType = "wishlist", order = 2 },
-                    { name = "AnotherOne", class = "MAGE", wishlistType = "wishlist", order = 3 },
-                }
-                GuildOS.LootMaster.activeLoot = {
-                    link = "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r",
-                    slot = nil,
-                    itemId = 32837,
-                }
-                GuildOS.LootMaster:ShowCouncilResultFrame(
-                    fakeWinner,
-                    "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r",
-                    nil,
-                    fakeCandidates
-                )
-                GuildOS:Print(L["Test council frame shown. Award button won't work (no loot slot)."])
-            else
-                GuildOS:Print(L["|cffFF4444Loot Master module is disabled.|r"])
-            end
-        end)
-        local testCouncilDesc = UI:CreateText(content, L["Shows the ML council result frame with sample data"], 9, C.silver.r, C.silver.g, C.silver.b)
-        testCouncilDesc:SetPoint("LEFT", testCouncil, "RIGHT", 10, 0)
-        yOff = yOff + 32
-
-        -- Test: ML Roll Tracker
-        local testRollFrame = UI:CreateButton(content, L["Test Roll Tracker"], 200, 26)
-        testRollFrame:SetPoint("TOPLEFT", 8, -yOff)
-        testRollFrame:SetScript("OnClick", function()
-            if GuildOS.LootMaster then
-                GuildOS.LootMaster.testMode = true
-                GuildOS.LootMaster.activeLoot = {
-                    link = "|cffa335ee|Hitem:30110::::::::70:::::|h[Tsunami Talisman]|h|r",
-                    slot = nil,
-                    itemId = 30110,
-                    startTime = GetServerTime(),
-                    endTime = GetServerTime() + 30,
-                }
-                GuildOS.LootMaster.rolls = {
-                    ["TestWarrior-Realm"] = { name = "TestWarrior", class = "WARRIOR", rollType = "MS", roll = 87, prioOrder = 1 },
-                    ["TestMage-Realm"] = { name = "TestMage", class = "MAGE", rollType = "MS", roll = 54, wishlist = { order = 2 } },
-                    ["TestPriest-Realm"] = { name = "TestPriest", class = "PRIEST", rollType = "OS", roll = 92 },
-                    ["TestRogue-Realm"] = { name = "TestRogue", class = "ROGUE", rollType = "PASS", roll = 0 },
-                }
-                GuildOS.LootMaster:ShowRollFrame()
-                GuildOS:Print(L["Test roll tracker shown with sample rolls."])
-            else
-                GuildOS:Print(L["|cffFF4444Loot Master module is disabled.|r"])
-            end
-        end)
-        local testRFDesc = UI:CreateText(content, L["Shows the ML roll tracker with sample roll data"], 9, C.silver.r, C.silver.g, C.silver.b)
-        testRFDesc:SetPoint("LEFT", testRollFrame, "RIGHT", 10, 0)
-        yOff = yOff + 32
-    end
-
-    -- Test: Raid Tracker Status
-    local testRT = UI:CreateButton(content, L["Test Raid Status"], 200, 26)
-    testRT:SetPoint("TOPLEFT", 8, -yOff)
-    testRT:SetScript("OnClick", function()
-        if GuildOS.RaidTracker then
-            local total = GuildOS.RaidTracker:GetTotalSessions()
-            local tracking = GuildOS.RaidTracker.trackingActive
-            GuildOS:Print(string.format(L["Raid Tracker: %d sessions recorded. Currently %s."],
-                total, tracking and "|cff00ff00" .. L["tracking"] .. "|r" or "|cffFF4444" .. L["not tracking"] .. "|r"))
-            if GuildOS.RaidTracker.currentRaid then
-                GuildOS:Print(L["Active raid: "] .. (GuildOS.RaidTracker.currentRaid.name or L["Unknown"]))
-            end
-        else
-            GuildOS:Print(L["|cffFF4444Raid Tracker module is disabled.|r"])
-        end
-    end)
-    local testRTDesc = UI:CreateText(content, L["Shows current raid tracking status and session count"], 9, C.silver.r, C.silver.g, C.silver.b)
-    testRTDesc:SetPoint("LEFT", testRT, "RIGHT", 10, 0)
-    yOff = yOff + 32
-
-    if GuildOS.LootMaster then  -- not on retail (ADR-0026)
-        -- Test: ML Loot Frame
-        local testLootFrame = UI:CreateButton(content, L["Test Loot Frame"], 200, 26)
-        testLootFrame:SetPoint("TOPLEFT", 8, -yOff)
-        testLootFrame:SetScript("OnClick", function()
-            if GuildOS.LootMaster then
-                GuildOS.LootMaster.testMode = true
-                local fakeItems = {
-                    { slot = 1, link = "|cffa335ee|Hitem:30110::::::::70:::::|h[Tsunami Talisman]|h|r",   name = "Tsunami Talisman",    quality = 4 },
-                    { slot = 2, link = "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r", name = "Warglaive of Azzinoth", quality = 5 },
-                    { slot = 3, link = "|cffa335ee|Hitem:30019::::::::70:::::|h[Ring of Endless Coils]|h|r", name = "Ring of Endless Coils", quality = 4 },
-                }
-                GuildOS.LootMaster:ShowLootFrame(fakeItems)
-                GuildOS:Print(L["Test loot frame shown with 3 sample items."])
-            else
-                GuildOS:Print(L["|cffFF4444Loot Master module is disabled.|r"])
-            end
-        end)
-        local testLFDesc = UI:CreateText(content, L["Opens the ML loot frame with sample items"], 9, C.silver.r, C.silver.g, C.silver.b)
-        testLFDesc:SetPoint("LEFT", testLootFrame, "RIGHT", 10, 0)
-        yOff = yOff + 32
-    end
-
-    -- Test: Export Attendance
-    local testExport = UI:CreateButton(content, L["Test Attendance Export"], 200, 26)
-    testExport:SetPoint("TOPLEFT", 8, -yOff)
-    testExport:SetScript("OnClick", function()
-        if GuildOS.RaidTracker then
-            local json, err = GuildOS.RaidTracker:ExportForTMB()
-            if json then
-                GuildOS:ShowExportPopup(L["Attendance Export"], json)
-            else
-                GuildOS:Print(L["|cffFF4444Export failed:|r "] .. (err or L["No attendance data"]))
-            end
-        else
-            GuildOS:Print(L["|cffFF4444Raid Tracker module is disabled.|r"])
-        end
-    end)
-    local testExpDesc = UI:CreateText(content, L["Opens the attendance export window"], 9, C.silver.r, C.silver.g, C.silver.b)
-    testExpDesc:SetPoint("LEFT", testExport, "RIGHT", 10, 0)
-    yOff = yOff + 32
-
-    end -- isOfficer and cat == "officer" (Maintenance + Test Functions)
-
-    if isOfficer and cat == "officer" then
-    yOff = yOff + 8
-    local sep5 = UI:CreateSeparator(content)
-    sep5:SetPoint("TOPLEFT", 0, -yOff)
-    sep5:SetPoint("TOPRIGHT", -10, -yOff)
-    yOff = yOff + 12
-    --------------------------------------------------------------------
-    -- WoW: Forever: the item level a 60 needs to be ready without a warning (issue #206),
-    -- the guild's, like the officer ranks below.
-    --------------------------------------------------------------------
-    if not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail then
-        local readyTitle = UI:CreateHeaderText(content, L["Readiness"], 12)
-        readyTitle:SetPoint("TOPLEFT", 0, -yOff)
-        yOff = yOff + 22
-        local minLabel = UI:CreateText(content, L["Minimum item level for a level 60:"], 11, C.white.r, C.white.g, C.white.b)
-        minLabel:SetPoint("TOPLEFT", 8, -yOff)
-        local minBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
-        minBox:SetSize(50, 22)
-        minBox:SetPoint("LEFT", minLabel, "RIGHT", 10, 0)
-        minBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-        minBox:SetBackdropColor(0.058, 0.058, 0.075, 0.9)
-        minBox:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
-        GuildOS:ApplyFont(minBox, 11)
-        minBox:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-        minBox:SetNumeric(true)
-        minBox:SetMaxLetters(3)
-        minBox:SetAutoFocus(false)
-        minBox:SetText(tostring(GuildOS.Readiness:GetMinIlvl() or ""))
-        minBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-        UI:AttachSaveButton(minBox, function(box)
-            GuildOS.Readiness:SetMinIlvl(tonumber(box:GetText()))
-            box:SetText(tostring(GuildOS.Readiness:GetMinIlvl() or ""))
-            box:ClearFocus()
-        end)
-        local minHint = UI:CreateText(content, L["Empty: no minimum. Below it, a 60 still counts, with a warning."],
-            9, C.silver.r, C.silver.g, C.silver.b)
-        minHint:SetPoint("LEFT", minBox.saveButton, "RIGHT", 8, 0)
-        minHint:SetWidth(280)
-        yOff = yOff + 34
-
-        -- The founding letter, for after the prompt was put away (issue #208): the GM records, an
-        -- officer suggests.
-        if GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") then
-            local foundBtn = UI:CreateButton(content,
-                GuildOS.Founding:IsGM() and L["Record founding"] or L["Suggest founding date to your GM"], 240, 22)
-            foundBtn:SetPoint("TOPLEFT", 8, -yOff)
-            foundBtn:SetScript("OnClick", function() GuildOS:ShowFoundingLetter(false) end)
-            yOff = yOff + 32
-        end
-    end
-    --------------------------------------------------------------------
-    -- OFFICER RANK CONFIGURATION (officer only)
-    --------------------------------------------------------------------
-    local rankTitle = UI:CreateHeaderText(content, L["OFFICER RANKS"], 12)
-    rankTitle:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 22
-
-    local rankDesc = UI:CreateText(content,
-        L["Checked ranks are officers in Guild OS for the whole guild: a change goes to every member running it."],
-        10, C.silver.r, C.silver.g, C.silver.b)
-    rankDesc:SetPoint("TOPLEFT", 8, -yOff)
-    rankDesc:SetWidth(content:GetWidth() - 20)
-    yOff = yOff + math.max(18, (rankDesc:GetStringHeight() or 12) + 6)
-
-    -- Set before the threshold was the guild's (issue #81), a choice was never stamped, so nobody
-    -- sends it: one click shares it as it is. Only a choice, not the default: an officer who never
-    -- ticked anything and has not heard the guild's yet would otherwise overwrite it.
-    if not GuildOS.db.settings.officerMaxRankAt and (GuildOS.db.settings.officerMaxRank or 1) ~= 1 then
-        local shareBtn = UI:CreateButton(content, L["Share these ranks with the guild"], 220, 22)
-        shareBtn:SetPoint("TOPLEFT", 8, -yOff)
-        shareBtn:SetScript("OnClick", function(self)
-            GuildOS:SetOfficerMaxRank(GuildOS.db.settings.officerMaxRank or 1)
-            self:Hide()
-        end)
-        yOff = yOff + 30
-    end
-
-    -- Read current max rank setting
-    local currentMaxRank = GuildOS.db.settings.officerMaxRank or 1
-
-    -- Get rank names from the WoW guild control API (1-based, rank 1 = GM)
-    local numRanks = 0
-    if GuildControlGetNumRanks then
-        numRanks = GuildControlGetNumRanks() or 0
-    end
-
-    if numRanks == 0 then
-        local noRankText = UI:CreateText(content, L["Guild rank info not available. Open the Guild panel first."], 10, C.silver.r, C.silver.g, C.silver.b)
-        noRankText:SetPoint("TOPLEFT", 8, -yOff)
-        yOff = yOff + 18
-    else
-        -- Checkboxes: one per rank (rank 0 = index 1 in GuildControl = GM, always checked)
-        -- We store officerMaxRank as 0-based WoW rankIndex
-        for i = 1, numRanks do
-            local rankWoWIndex = i - 1  -- convert to 0-based WoW rankIndex
-            local rankName = GuildControlGetRankName and GuildControlGetRankName(i) or (L["Rank "] .. rankWoWIndex)
-            if not rankName or rankName == "" then rankName = L["Rank "] .. rankWoWIndex end
-
-            local row = CreateFrame("Frame", nil, content, "BackdropTemplate")
-            row:SetSize(content:GetWidth() - 10, 26)
-            row:SetPoint("TOPLEFT", 0, -yOff)
-            row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-            row:SetBackdropColor(0.082, 0.082, 0.105, 0.5)
-
-            local isGM = (rankWoWIndex == 0)
-            local isChecked = (rankWoWIndex <= currentMaxRank)
-
-            local cb = UI:CreateCheckbox(row, rankName, 18)
-            cb:SetPoint("LEFT", 8, 0)
-            cb.checkbox:SetChecked(isChecked)
-
-            -- Rank label showing 0-based index
-            local idxLabel = UI:CreateText(row, L["(rank "] .. rankWoWIndex .. ")", 9, C.silver.r, C.silver.g, C.silver.b)
-            idxLabel:SetPoint("LEFT", 220, 0)
-
-            if isGM then
-                -- GM is always an officer, cannot be unchecked
-                cb.checkbox:Disable()
-                local lockNote = UI:CreateText(row, L["|cff666666always officer|r"], 9, 0.4, 0.4, 0.4)
-                lockNote:SetPoint("LEFT", 280, 0)
-            else
-            local capturedRankIndex = rankWoWIndex
-            cb.checkbox.onChanged = function(_, checked)
-                -- officerMaxRank = highest rank that is checked.
-                -- Checking a rank implicitly checks all ranks above it (lower index).
-                -- Unchecking a rank implicitly unchecks all ranks below it (higher index).
-                local newMax
-                if checked then
-                    -- Expand threshold to include this rank if it's higher
-                    newMax = math.max(capturedRankIndex, GuildOS.db.settings.officerMaxRank or 0)
-                else
-                    -- Shrink threshold to exclude this rank and all below it
-                    newMax = capturedRankIndex - 1
-                    if newMax < 0 then newMax = 0 end
-                end
-                -- No longer an officer (a change from elsewhere, the panel still open): nothing changed.
-                if not GuildOS:SetOfficerMaxRank(newMax) then return end
-                local newRankName = GuildControlGetRankName and GuildControlGetRankName(newMax + 1) or (L["Rank "] .. newMax)
-                GuildOS:Print(L["Officer threshold: ranks 0-"] .. newMax .. " (" .. newRankName .. L[" and above are officers)."])
-            end
-            end
-
-            yOff = yOff + 28
-        end
-    end
-
-    -- Who creates calendar events (issue #283): the officers, or every rank down to one. The guild's, as
-    -- the threshold above; each click moves one rank further, then back to the officers.
-    yOff = yOff + 6
-    local evLabel = UI:CreateText(content, L["Who creates events:"], 11, C.silver.r, C.silver.g, C.silver.b)
-    evLabel:SetPoint("TOPLEFT", 8, -yOff)
-    local evBtn = UI:CreateButton(content, "", 180, 22)
-    evBtn:SetPoint("LEFT", evLabel, "RIGHT", 10, 0)
-    local function evText()
-        local max = GuildOS:EventMaxRank()
-        if max <= (GuildOS.db.settings.officerMaxRank or 1) then return L["Officers"] end
-        local name = GuildControlGetRankName and GuildControlGetRankName(max + 1)
-        return string.format(L["Up to %s"], (name and name ~= "") and name or tostring(max))
-    end
-    evBtn.label:SetText(evText())
-    evBtn:SetScript("OnClick", function()
-        local officers = GuildOS.db.settings.officerMaxRank or 1
-        local last = (GuildControlGetNumRanks and GuildControlGetNumRanks() or 10) - 1
-        local nextMax = GuildOS:EventMaxRank() + 1
-        if nextMax > last then nextMax = officers end
-        if GuildOS:SetEventMaxRank(nextMax) then evBtn.label:SetText(evText()) end
-    end)
-    yOff = yOff + 30
-
-    -- And which kinds of event those ranks create (issue #308), the guild's as the ranks are. The officers
-    -- create every kind whatever is ticked; nothing ticked by anybody yet means every kind.
-    local Cal = GuildOS.Calendar
-    if Cal and Cal.KINDS then
-        local kindsLabel = UI:CreateText(content, L["Event types non-officers may create:"], 11, C.silver.r, C.silver.g, C.silver.b)
-        kindsLabel:SetPoint("TOPLEFT", 8, -yOff)
-        yOff = yOff + 20
-        local open = Cal:MemberKinds()
-        local kindBoxes = {}
-        local function ticked()
-            local list = {}
-            for _, b in ipairs(kindBoxes) do
-                if b.checkbox:GetChecked() then list[#list + 1] = b.kind end
-            end
-            return list
-        end
-        for i, k in ipairs(Cal.KINDS) do
-            local kb = UI:CreateCheckbox(content, Cal:KindLabel(k), 18)
-            kb:SetSize(118, 18)
-            kb:SetPoint("TOPLEFT", 8 + ((i - 1) % 3) * 122, -(yOff + math.floor((i - 1) / 3) * 22))
-            kb.kind = k
-            kb.checkbox:SetChecked(open == nil or open[k] == true)
-            kb.checkbox.onChanged = function(box)
-                -- No longer an officer (a change from elsewhere, the panel still open): the tick goes back.
-                if not Cal:SetMemberKinds(ticked()) then box:SetChecked(not box:GetChecked()) end
-            end
-            kindBoxes[#kindBoxes + 1] = kb
-        end
-        yOff = yOff + math.ceil(#Cal.KINDS / 3) * 22 + 2
-        local kindsHint = UI:CreateText(content, L["Officers can always create every type."], 9,
-            C.textDim.r, C.textDim.g, C.textDim.b)
-        kindsHint:SetPoint("TOPLEFT", 8, -yOff)
-        yOff = yOff + 18
-    end
-
-    yOff = yOff + 4
-    local rankNote = UI:CreateText(content,
-        L["Change takes effect immediately. Reload UI required to reload officer modules."],
-        9, C.silver.r, C.silver.g, C.silver.b)
-    rankNote:SetPoint("TOPLEFT", 8, -yOff)
-    rankNote:SetWidth(content:GetWidth() - 20)
-    yOff = yOff + 20
-
-    end -- isOfficer and cat == "officer" (Rank config)
-
-    if isOfficer and cat == "officer" then
-    yOff = yOff + 8
-    local sep6 = UI:CreateSeparator(content)
-    sep6:SetPoint("TOPLEFT", 0, -yOff)
-    sep6:SetPoint("TOPRIGHT", -10, -yOff)
-    yOff = yOff + 12
-    --------------------------------------------------------------------
-    -- AUTO-INVITE moved to the Recruitment tab with all its filters (issue #59);
-    -- officers who look for it here find the way there.
-    --------------------------------------------------------------------
-    local aiTitle = UI:CreateHeaderText(content, L["AUTO-INVITE"], 12)
-    aiTitle:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 22
-
-    local aiBtn = UI:CreateButton(content, L["Open in Recruitment"], 170, 22)
-    aiBtn:SetPoint("TOPLEFT", 8, -yOff)
-    aiBtn:SetScript("OnClick", function() GuildOS.UI:OpenWindow("recruitment", "recruiting") end)
-    local aiHint = UI:CreateText(content, string.format(L["Keyword, level and class filters are in %s > %s."], L["Recruitment"], L["Recruiting"]),
-        9, C.silver.r, C.silver.g, C.silver.b)
-    aiHint:SetPoint("LEFT", aiBtn, "RIGHT", 10, 0)
-    aiHint:SetWidth(math.max(120, content:GetWidth() - 200))
-    yOff = yOff + 34
-
-    --------------------------------------------------------------------
-    -- !NOTE (issue #59): members set their public note by typing !note in guild
-    -- chat, and a client that can edit notes applies it.
-    --------------------------------------------------------------------
-    local ncTitle = UI:CreateHeaderText(content, L["!NOTE COMMAND"], 12)
-    ncTitle:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 22
-
-    local ncChk = UI:CreateCheckbox(content, L["Apply !note requests from guild chat on this client"], 18)
-    ncChk:SetPoint("TOPLEFT", 8, -yOff)
-    ncChk.checkbox:SetChecked(GuildOS.db.noteCommand and GuildOS.db.noteCommand.enabled or false)
-    ncChk.checkbox.onChanged = function(_, checked)
-        if GuildOS.db.noteCommand then GuildOS.db.noteCommand.enabled = checked and true or false end
-    end
-    yOff = yOff + 30
-
-    end -- isOfficer and cat == "officer" (Auto-Invite, !note)
-
-    if cat == "about" then
-    -- Reload UI button
-    local reloadBtn = UI:CreateButton(content, L["Reload UI"], 120, 28)
-    reloadBtn:SetPoint("TOPLEFT", 8, -yOff)
-    reloadBtn:SetScript("OnClick", function()
-        ReloadUI()
-    end)
-    local reloadNote = UI:CreateText(content, L["Required after enabling/disabling modules"], 9, C.silver.r, C.silver.g, C.silver.b)
-    reloadNote:SetPoint("LEFT", reloadBtn, "RIGHT", 10, 0)
-    yOff = yOff + 36
-
-    -- Backup / Restore
-    local backupBtn = UI:CreateButton(content, L["Backup"], 110, 24)
-    backupBtn:SetPoint("TOPLEFT", 8, -yOff)
-    backupBtn:SetScript("OnClick", function() if GuildOS.Backup then GuildOS.Backup:ShowExport() end end)
-    local restoreBtn2 = UI:CreateButton(content, L["Restore"], 110, 24)
-    restoreBtn2:SetPoint("LEFT", backupBtn, "RIGHT", 8, 0)
-    restoreBtn2:SetScript("OnClick", function() if GuildOS.Backup then GuildOS.Backup:ShowRestore() end end)
-    local backupNote = UI:CreateText(content, L["Export/import all Guild OS data for this guild"], 9, C.silver.r, C.silver.g, C.silver.b)
-    backupNote:SetPoint("LEFT", restoreBtn2, "RIGHT", 10, 0)
-    yOff = yOff + 34
-
-    -- Diagnostics: what /gos scan, errors, selftest, probe, probe chat and style preview do,
-    -- three to a row; the results go to chat (#142).
-    local diagHead = UI:CreateHeaderText(content, L["Diagnostics"], 11)
-    diagHead:SetPoint("TOPLEFT", 8, -yOff)
-    yOff = yOff + 20
-    local diag = {
-        { L["Collect my data"], function() GuildOS:CollectMyDataNow() end },
-        { L["View Errors"], function() GuildOS:ShowErrors() end },
-        { L["Self-test"], function() if GuildOS.SelfTest then GuildOS.SelfTest:Run() end end },
-        { L["Probe the client"], function() if GuildOS.Probe then GuildOS.Probe:Run() end end },
-        { L["Probe chat"], function()
-            -- It posts two lines in guild chat: asked first.
-            GuildOS.Dialogs["GUILDOS_PROBE_CHAT"] = GuildOS.Dialogs["GUILDOS_PROBE_CHAT"] or {
-                text = L["Post two test lines in guild chat?"],
-                button1 = L["Probe chat"], button2 = L["Cancel"],
-                OnAccept = function() if GuildOS.Probe then GuildOS.Probe:RunChat() end end,
-                timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-            }
-            GuildOS:ShowDialog("GUILDOS_PROBE_CHAT")
-        end },
-        { L["Style preview"], function() if GuildOS.Style then GuildOS.Style:ShowPreview() end end },
-    }
-    local prevDiag
-    for i, d in ipairs(diag) do
-        if i > 1 and (i - 1) % 3 == 0 then yOff = yOff + 26; prevDiag = nil end
-        local b = UI:CreateButton(content, d[1], 140, 22)
-        if prevDiag then b:SetPoint("LEFT", prevDiag, "RIGHT", 8, 0) else b:SetPoint("TOPLEFT", 8, -yOff) end
-        b:SetScript("OnClick", d[2])
-        prevDiag = b
-    end
-    yOff = yOff + 32
-
-    -- /gos reset, behind a confirmation: it cannot be undone.
-    local eraseBtn = UI:CreateButton(content, L["Erase guild data"], 170, 22)
-    eraseBtn:SetPoint("TOPLEFT", 8, -yOff)
-    eraseBtn:SetScript("OnClick", function()
-        GuildOS.Dialogs["GUILDOS_ERASE_GUILD"] = GuildOS.Dialogs["GUILDOS_ERASE_GUILD"] or {
-            text = L["Erase all Guild OS data for this guild and reload the interface? This cannot be undone."],
-            button1 = L["Erase guild data"], button2 = L["Cancel"],
-            OnAccept = function() GuildOS:EraseGuildData() end,
-            timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-        }
-        GuildOS:ShowDialog("GUILDOS_ERASE_GUILD")
-    end)
-    local eraseNote = UI:CreateText(content, L["Removes every Guild OS record of this guild on this PC, then reloads."], 9,
-        C.silver.r, C.silver.g, C.silver.b)
-    eraseNote:SetPoint("LEFT", eraseBtn, "RIGHT", 10, 0)
-    eraseNote:SetPoint("RIGHT", content, "TOPRIGHT", -10, -(yOff + 11))   -- the button's row
-    eraseNote:SetWordWrap(false)
-    eraseNote:SetJustifyH("LEFT")
-    yOff = yOff + 30
-
-    --------------------------------------------------------------------
-    -- ABOUT & SUPPORT
-    --------------------------------------------------------------------
-    yOff = yOff + 8
-    local sepAbout = UI:CreateSeparator(content)
-    sepAbout:SetPoint("TOPLEFT", 0, -yOff)
-    sepAbout:SetPoint("TOPRIGHT", -10, -yOff)
-    yOff = yOff + 12
-
-    local aboutTitle = UI:CreateHeaderText(content, L["ABOUT & SUPPORT"], 12)
-    aboutTitle:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 22
-
-    local verText = UI:CreateText(content, "Guild OS v" .. (GuildOS.VERSION or "?"), 11, C.gold.r, C.gold.g, C.gold.b)
-    verText:SetPoint("TOPLEFT", 8, -yOff)
-    yOff = yOff + 18
-
-    local creditText = UI:CreateText(content,
-        L["Made with care by "] .. "|cffFFD700Chehul|r", 10, C.silver.r, C.silver.g, C.silver.b)
-    creditText:SetPoint("TOPLEFT", 8, -yOff)
-    yOff = yOff + 22
-
-    -- Retail has no attunements (ADR-0026, issue #177); its wishlist came with issue #185.
-    local privacy = UI:CreateText(content, GuildOS.Client.isRetail
-        and L["Guild OS syncs your gear, professions, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."]
-        or L["Guild OS syncs your gear, professions, attunements, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."],
-        10, C.silver.r, C.silver.g, C.silver.b)
-    privacy:SetPoint("TOPLEFT", 8, -yOff)
-    privacy:SetWidth(content:GetWidth() - 20)
-    privacy:SetJustifyH("LEFT")
-    yOff = yOff + 42
-
-    local cmds = UI:CreateText(content,
-        "/guildos  |  /guildos sync  |  /guildos minimap  |  /guildos debug",
-        9, C.textDim.r, C.textDim.g, C.textDim.b)
-    cmds:SetPoint("TOPLEFT", 8, -yOff)
-    yOff = yOff + 22
-
-    local linksBtn = UI:CreateButton(content, L["Links"], 120, 24)
-    linksBtn:SetPoint("TOPLEFT", 8, -yOff)
-    linksBtn:SetScript("OnClick", function()
-        GuildOS:ShowExportPopup(L["Guild OS Links"],
-            -- The site first: it is the one link here that does something for the
-            -- person reading it. The other three are where the addon comes from. On
-            -- retail too since issue #182.
-            "App:  https://guildos.me\n"
-            .. "GitHub:  https://github.com/danielcosta42/GuildOS\n"
-            .. "CurseForge:  https://www.curseforge.com/projects/1549177\n"
-            .. "Wago:  https://addons.wago.io/addons/rNkyABKa")
-    end)
-    local linksNote = UI:CreateText(content, L["Project page, bug reports and updates"], 9, C.silver.r, C.silver.g, C.silver.b)
-    linksNote:SetPoint("LEFT", linksBtn, "RIGHT", 10, 0)
-    yOff = yOff + 34
-    end -- cat == "about"
-
-    content:SetHeight(math.max(1, yOff))
-    -- Snap back to the top so a shorter category never shows blank space.
-    local sf = content:GetParent()
-    if sf and sf.SetVerticalScroll then sf:SetVerticalScroll(0) end
-end
-
-----------------------------------------------------------------------
 -- WISHLIST FRAME — standalone frame for each member's own wishlist
 -- Accessible via /gos wish  or the "My Wishlist" button in roster.
 ----------------------------------------------------------------------
@@ -2789,7 +1568,7 @@ local function BuildWishlistFrame()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -2830,10 +1609,10 @@ local function BuildWishlistFrame()
     titleBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
 
     local titleText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(titleText, 14)
+    GuildOS:ApplyFont(titleText, nil, "sectionTitle")
     titleText:SetPoint("LEFT", 14, 0)
     titleText:SetPoint("TOP", 0, -12)
-    titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    titleText:SetTextColor(C.text.r, C.text.g, C.text.b)
     titleText:SetText(L["MY WISHLIST"])
     f.titleText = titleText
 
@@ -2846,8 +1625,8 @@ local function BuildWishlistFrame()
     counterText:SetText("0/50")
     f.counterText = counterText
 
-    -- Accent line under title
-    local titleLine = UI:CreateAccentLine(f, 2)
+    -- A 1px line under the title: gold is the selection's, not a rule's (#371).
+    local titleLine = UI:CreateSeparator(f)
     titleLine:SetPoint("TOPLEFT",  0, -40)
     titleLine:SetPoint("TOPRIGHT", 0, -40)
 
@@ -2856,33 +1635,21 @@ local function BuildWishlistFrame()
     closeBtn:SetPoint("TOPRIGHT", -4, -8)
     closeBtn:SetScript("OnClick", function() f:Hide() end)
 
-    -- Column headers background
-    local hdrBg = f:CreateTexture(nil, "BACKGROUND")
-    hdrBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    hdrBg:SetPoint("TOPLEFT",  1, -42)
-    hdrBg:SetPoint("TOPRIGHT", -1, -42)
-    hdrBg:SetHeight(22)
-    hdrBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.9)
-
+    -- Column headers: the shared header, no band, its 1px rule where the gold one was (#371).
+    local hdr = UI:CreateTableHeader(f)
+    hdr:SetPoint("TOPLEFT",  1, -42)
+    hdr:SetPoint("TOPRIGHT", -1, -42)
     local function Hdr(lbl, x, w, justify)
-        local t = f:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(t, 10)
-        t:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-        t:SetPoint("TOPLEFT", x, -44)
+        local t = UI:CreateHeaderText(hdr, lbl)
+        t:SetPoint("LEFT", x - 1, 0)
         t:SetWidth(w)
         t:SetJustifyH(justify or "LEFT")
-        t:SetText(lbl)
         return t
     end
     Hdr("#",      10,  24, "CENTER")
     Hdr(L["ITEM"],   38, 262, "LEFT")
     Hdr(L["TYPE"],  308,  50, "CENTER")
     Hdr(L["ORDER"], 366,  60, "CENTER")
-
-    -- Thin separator between headers and rows
-    local hdrLine = UI:CreateAccentLine(f, 1)
-    hdrLine:SetPoint("TOPLEFT",  1, -64)
-    hdrLine:SetPoint("TOPRIGHT", -1, -64)
 
     -- Scroll area: TOPLEFT at y=-65, BOTTOMRIGHT at y=+50 (50px bottom bar)
     -- Available height: 520 - 65 - 50 = 405px; 14 rows × 28px = 392px ✓
@@ -2927,7 +1694,7 @@ local function BuildWishlistFrame()
 
         -- Order number
         local numText = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(numText, 11)
+        GuildOS:ApplyFont(numText, nil, "tableNum")
         numText:SetPoint("LEFT", 10, 0)
         numText:SetWidth(24)
         numText:SetJustifyH("CENTER")
@@ -3015,8 +1782,8 @@ local function BuildWishlistFrame()
         end)
     end)
 
-    -- Bottom bar (50px): separator line + dark background
-    local bottomLine = UI:CreateAccentLine(f, 1)
+    -- Bottom bar (50px): a 1px line (not gold, #371) + dark background
+    local bottomLine = UI:CreateSeparator(f)
     bottomLine:SetPoint("BOTTOMLEFT",  0, 50)
     bottomLine:SetPoint("BOTTOMRIGHT", 0, 50)
 
@@ -3034,101 +1801,46 @@ local function BuildWishlistFrame()
 
     local msBtn = UI:CreateButton(f, L["MS"], 56, 28)
     msBtn:SetPoint("BOTTOMLEFT", 10, 11)
-    -- Small dot indicator (6x6 texture, left of label)
-    local msDot = msBtn:CreateTexture(nil, "OVERLAY")
-    msDot:SetTexture("Interface\\Buttons\\WHITE8x8")
-    msDot:SetSize(6, 6)
-    msDot:SetPoint("RIGHT", msBtn.label, "LEFT", -4, 0)
-    msBtn.dot = msDot
     f.msBtn = msBtn
 
     local osBtn = UI:CreateButton(f, L["OS"], 56, 28)
     osBtn:SetPoint("BOTTOMLEFT", msBtn, "BOTTOMRIGHT", 4, 0)
-    local osDot = osBtn:CreateTexture(nil, "OVERLAY")
-    osDot:SetTexture("Interface\\Buttons\\WHITE8x8")
-    osDot:SetSize(6, 6)
-    osDot:SetPoint("RIGHT", osBtn.label, "LEFT", -4, 0)
-    osBtn.dot = osDot
     f.osBtn = osBtn
 
+    -- The spec the next item goes to: one of two, marked by UI:SetSelected (#371), not a gold fill
+    -- and a dot of its own.
     local function SetSpecType(isOS)
         f.isOS = isOS
-        if isOS then
-            -- OS selected
-            msBtn.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            msBtn.dot:SetVertexColor(0.3, 0.3, 0.3, 0.6)
-            msBtn:SetBackdropColor(0.045, 0.045, 0.060, 0.5)
-            msBtn:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
-            osBtn.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-            osBtn.dot:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1.0)
-            osBtn:SetBackdropColor(0.22, 0.16, 0.02, 0.9)
-            osBtn:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1.0)
-        else
-            -- MS selected
-            msBtn.label:SetTextColor(1.0, 1.0, 1.0)
-            msBtn.dot:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 1.0)
-            msBtn:SetBackdropColor(C.accentDim.r, C.accentDim.g, C.accentDim.b, 0.9)
-            msBtn:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 1.0)
-            osBtn.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            osBtn.dot:SetVertexColor(0.3, 0.3, 0.3, 0.6)
-            osBtn:SetBackdropColor(0.045, 0.045, 0.060, 0.5)
-            osBtn:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
-        end
+        UI:SetSelected(msBtn, not isOS)
+        UI:SetSelected(osBtn, isOS)
     end
 
     msBtn:SetScript("OnClick", function() SetSpecType(false) end)
     osBtn:SetScript("OnClick", function() SetSpecType(true)  end)
 
-    -- Override hover to preserve radio state visually
-    msBtn:SetScript("OnEnter", function(self)
-        self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1.0)
+    -- The tooltips hook the buttons' own hover, which keeps painting the selection.
+    msBtn:HookScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:ClearLines()
-        GameTooltip:AddLine(L["Main Spec"], C.gold.r, C.gold.g, C.gold.b)
+        GameTooltip:AddLine(L["Main Spec"], C.text.r, C.text.g, C.text.b)
         GameTooltip:AddLine(L["Item and priority for your main spec."], 1, 1, 1, true)
         GameTooltip:Show()
     end)
-    msBtn:SetScript("OnLeave", function()
-        SetSpecType(f.isOS)
-        GameTooltip:Hide()
-    end)
-    osBtn:SetScript("OnEnter", function(self)
-        self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1.0)
+    msBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    osBtn:HookScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:ClearLines()
-        GameTooltip:AddLine(L["Off Spec"], C.gold.r, C.gold.g, C.gold.b)
+        GameTooltip:AddLine(L["Off Spec"], C.text.r, C.text.g, C.text.b)
         GameTooltip:AddLine(L["Item for a secondary spec."], 1, 1, 1, true)
         GameTooltip:Show()
     end)
-    osBtn:SetScript("OnLeave", function()
-        SetSpecType(f.isOS)
-        GameTooltip:Hide()
-    end)
+    osBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
 
     SetSpecType(false)   -- initialise with MS selected
 
-    -- Add item edit box
-    local addBox = CreateFrame("EditBox", "GuildOSWishAddBox", f, "BackdropTemplate")
-    addBox:SetSize(162, 28)
+    -- Add item: the shared field and its placeholder (#371).
+    local addBox = UI:CreateInput(f, 162, 28, { max = 200, placeholder = L["Search item or paste link..."] })
     addBox:SetPoint("BOTTOMLEFT", osBtn, "BOTTOMRIGHT", 6, 0)
-    addBox:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    addBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    addBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.5)
-    GuildOS:ApplyFont(addBox, 11)
-    addBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    addBox:SetTextInsets(6, 6, 0, 0)
-    addBox:SetAutoFocus(false)
-    addBox:SetMaxLetters(200)
-
-    local addPlaceholder = addBox:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(addPlaceholder, 11)
-    addPlaceholder:SetPoint("LEFT", 6, 0)
-    addPlaceholder:SetTextColor(0.4, 0.4, 0.4)
-    addPlaceholder:SetText(L["Search item or paste link..."])
 
     -- Search dropdown — appears above the addBox
     local DROP_ROWS  = 6
@@ -3141,7 +1853,7 @@ local function BuildWishlistFrame()
     dropdown:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(dropdown),
     })
     -- A dropdown is elevation 4: popup surface, lineHi border.
     dropdown:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
@@ -3173,7 +1885,6 @@ local function BuildWishlistFrame()
             f.suppressSearch   = true
             addBox:SetText(dr.itemName or "")
             f.suppressSearch   = nil
-            addPlaceholder:Hide()
             dropdown:Hide()
         end)
         dropdown.rows[i] = dr
@@ -3222,9 +1933,9 @@ local function BuildWishlistFrame()
         dropdown:Show()
     end
 
-    addBox:SetScript("OnTextChanged", function(self)
+    -- Hooked: the field shows and hides its own placeholder (#371).
+    addBox:HookScript("OnTextChanged", function(self)
         local t = self:GetText()
-        if t and t ~= "" then addPlaceholder:Hide() else addPlaceholder:Show() end
         if f.suppressSearch then return end
         -- Guard: WoW may fire OnTextChanged twice after SetText; don't clear
         -- the selection if the text still matches what was just selected.
@@ -3269,10 +1980,7 @@ local function BuildWishlistFrame()
     end
 
     addBox:SetScript("OnEnterPressed", function(self) DoAdd(); self:ClearFocus() end)
-    addBox:SetScript("OnEscapePressed", function(self)
-        self:ClearFocus()
-        dropdown:Hide()
-    end)
+    addBox:HookScript("OnEscapePressed", function() dropdown:Hide() end)
     f.addBox = addBox
 
     local addBtn = UI:CreateButton(f, L["+ Add"], 88, 28)
@@ -3379,14 +2087,13 @@ function GuildOS:RefreshWishlistFrame()
             if isDelivered then
                 row.itemText:SetTextColor(0.45, 0.45, 0.45)
             else
-                row.itemText:SetTextColor(C.white.r, C.white.g, C.white.b)
+                row.itemText:SetTextColor(C.text.r, C.text.g, C.text.b)
             end
 
-            if entry.isOffspec then
-                row.typeText:SetText("|cffAAAAAA  " .. L["OS"] .. "|r")
-            else
-                row.typeText:SetText("|cff4CB5FF  " .. L["MS"] .. "|r")
-            end
+            -- The spec in the text colours, main spec first: no blue of its own (#371).
+            local typeInk = entry.isOffspec and C.textSoft or C.text
+            row.typeText:SetTextColor(typeInk.r, typeInk.g, typeInk.b)
+            row.typeText:SetText("  " .. (entry.isOffspec and L["OS"] or L["MS"]))
 
             -- Show/hide action buttons based on delivered state
             for _, child in pairs({ row:GetChildren() }) do
@@ -3421,10 +2128,10 @@ local function BuildPrioModal()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-    f:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 0.8)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)   -- a popup's line, not gold (#371)
     UI:StylePopup(f)
     f:SetFrameStrata("DIALOG")
     f:SetFrameLevel(60)
@@ -3444,13 +2151,13 @@ local function BuildPrioModal()
     titleBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
 
     local titleText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(titleText, 13)
+    GuildOS:ApplyFont(titleText, nil, "sectionTitle")
     titleText:SetPoint("LEFT", 14, 0); titleText:SetPoint("TOP", 0, -12)
-    titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    titleText:SetTextColor(C.text.r, C.text.g, C.text.b)
     titleText:SetText(L["MANAGE PRIORITIES"])
     f.titleText = titleText
 
-    local titleLine = UI:CreateAccentLine(f, 2)
+    local titleLine = UI:CreateSeparator(f)   -- a 1px line: gold is the selection's (#371)
     titleLine:SetPoint("TOPLEFT", 0, -40); titleLine:SetPoint("TOPRIGHT", 0, -40)
 
     local closeBtn = UI:CreateCloseButton(f)
@@ -3473,23 +2180,9 @@ local function BuildPrioModal()
 
     local LoadItem  -- forward declaration
 
-    local searchBox = CreateFrame("EditBox", "GuildOSPrioSearchBox", f, "BackdropTemplate")
-    searchBox:SetSize(320, 26)
+    -- The shared field and its placeholder (#371).
+    local searchBox = UI:CreateInput(f, 320, 26, { max = 200, placeholder = L["Search item, paste link or ID..."] })
     searchBox:SetPoint("LEFT", 10, 0); searchBox:SetPoint("TOP", 0, -52)
-    searchBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    searchBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    searchBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(searchBox, 11)
-    searchBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    searchBox:SetTextInsets(6, 6, 0, 0)
-    searchBox:SetAutoFocus(false)
-    searchBox:SetMaxLetters(200)
-
-    local placeholder = searchBox:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(placeholder, 11)
-    placeholder:SetPoint("LEFT", 6, 0)
-    placeholder:SetTextColor(0.4, 0.4, 0.4)
-    placeholder:SetText(L["Search item, paste link or ID..."])
 
     -- Search dropdown
     local PDROP_ROWS  = 6
@@ -3502,7 +2195,7 @@ local function BuildPrioModal()
     prioDropdown:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(prioDropdown),
     })
     -- A dropdown is elevation 4: popup surface, lineHi border.
     prioDropdown:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
@@ -3532,7 +2225,6 @@ local function BuildPrioModal()
             f.suppressPrioSearch = true
             searchBox:SetText(dr.itemName or "")
             f.suppressPrioSearch = nil
-            placeholder:Hide()
             prioDropdown:Hide()
             if LoadItem then LoadItem() end
         end)
@@ -3579,19 +2271,16 @@ local function BuildPrioModal()
         prioDropdown:Show()
     end
 
-    searchBox:SetScript("OnTextChanged", function(self)
+    -- Hooked: the field shows and hides its own placeholder and lets go on Escape (#371).
+    searchBox:HookScript("OnTextChanged", function(self)
         local t = self:GetText()
-        if t and t ~= "" then placeholder:Hide() else placeholder:Show() end
         if f.suppressPrioSearch then return end
         if f.prioSearchItemName and t == f.prioSearchItemName then return end
         f.prioSearchItemId   = nil
         f.prioSearchItemName = nil
         UpdatePrioDropdown(t)
     end)
-    searchBox:SetScript("OnEscapePressed", function(self)
-        self:ClearFocus()
-        prioDropdown:Hide()
-    end)
+    searchBox:HookScript("OnEscapePressed", function() prioDropdown:Hide() end)
 
     local loadBtn = UI:CreateButton(f, L["Load"], 90, 26)
     loadBtn:SetPoint("LEFT", searchBox, "RIGHT", 8, 0)
@@ -3605,20 +2294,14 @@ local function BuildPrioModal()
     statusText:SetText("")
     f.statusText = statusText
 
-    -- Column headers: #PRIO | NOME | WL# | ACOES
-    local hdrBg = f:CreateTexture(nil, "BACKGROUND")
-    hdrBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    hdrBg:SetPoint("TOPLEFT", 1, -78); hdrBg:SetPoint("TOPRIGHT", -1, -78)
-    hdrBg:SetHeight(22)
-    hdrBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.9)
+    -- Column headers: #PRIO | NOME | WL# | ACOES, on the shared header: no band, a 1px rule (#371).
+    local hdr = UI:CreateTableHeader(f)
+    hdr:SetPoint("TOPLEFT", 1, -78); hdr:SetPoint("TOPRIGHT", -1, -78)
 
     local function PrioHdr(lbl, x, w, justify)
-        local t = f:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(t, 10)
-        t:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-        t:SetPoint("TOPLEFT", x, -82)
+        local t = UI:CreateHeaderText(hdr, lbl)
+        t:SetPoint("LEFT", x - 1, 0)
         t:SetWidth(w); t:SetJustifyH(justify or "LEFT")
-        t:SetText(lbl)
     end
     PrioHdr(L["#PRIO"],  10,  40, "CENTER")
     PrioHdr(L["NAME"],   56, 170, "LEFT")
@@ -3648,9 +2331,9 @@ local function BuildPrioModal()
 
         -- #PRIO number
         local prioOrderText = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(prioOrderText, 11)
+        GuildOS:ApplyFont(prioOrderText, nil, "tableNum")
         prioOrderText:SetPoint("LEFT", 10, 0); prioOrderText:SetWidth(40); prioOrderText:SetJustifyH("CENTER")
-        prioOrderText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+        prioOrderText:SetTextColor(C.text.r, C.text.g, C.text.b)
         row.prioOrderText = prioOrderText
 
         -- Character name (class-colored)
@@ -3661,7 +2344,7 @@ local function BuildPrioModal()
 
         -- WL order
         local wlOrderText = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(wlOrderText, 10)
+        GuildOS:ApplyFont(wlOrderText, nil, "tableNum")
         wlOrderText:SetPoint("LEFT", 230, 0); wlOrderText:SetWidth(50); wlOrderText:SetJustifyH("CENTER")
         row.wlOrderText = wlOrderText
 
@@ -3706,7 +2389,7 @@ local function BuildPrioModal()
     bottomBg:SetTexture("Interface\\Buttons\\WHITE8x8")
     bottomBg:SetPoint("BOTTOMLEFT"); bottomBg:SetPoint("BOTTOMRIGHT"); bottomBg:SetHeight(44)
     bottomBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
-    local bottomLine = UI:CreateAccentLine(f, 1)
+    local bottomLine = UI:CreateSeparator(f)   -- a 1px line, not gold (#371)
     bottomLine:SetPoint("BOTTOMLEFT", 0, 44); bottomLine:SetPoint("BOTTOMRIGHT", 0, 44)
 
     local saveBtn = UI:CreateButton(f, L["Save and Sync"], 130, 26)
@@ -3806,7 +2489,7 @@ local function BuildPrioModal()
         end
 
         local itemName = GuildOS.Compat.GetItemInfo(itemId) or (L["Item #"] .. itemId)
-        f.statusText:SetText("|cffFFD700" .. itemName .. "|r  " .. format(L["%d interested"], #f.prioData))
+        f.statusText:SetText(itemName .. "  " .. format(L["%d interested"], #f.prioData))
         subtitleText:SetText(itemName)
         GuildOS:RefreshPrioModal()
     end

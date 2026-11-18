@@ -205,9 +205,12 @@ end
 -- the child's points for width. That is why every scrolling panel in the
 -- addon had a hardcoded width baked in, which either clipped its rows or
 -- let them spill once the window stopped being the one fixed size.
+-- The child always stops UI.SCROLL_GUTTER short, so nothing runs under the
+-- scroll bar (#371); a larger `inset` still wins.
 ----------------------------------------------------------------------
 function UI:BindScrollChildWidth(scrollFrame, child, inset)
-    inset = inset or 0
+    local gutter = UI.SCROLL_GUTTER
+    inset = math.max(inset or 0, type(gutter) == "number" and gutter or 12)
     local function apply()
         local w = scrollFrame:GetWidth()
         if w and w > 1 then child:SetWidth(math.max(1, w - inset)) end

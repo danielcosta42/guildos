@@ -47,6 +47,7 @@ read_globals = {
     -- WoW API: Frames & UI
     "CreateFrame",
     "CreateColor",
+    "PixelUtil",
     "UIParent",
     "GameTooltip",
     "GameFontNormal",

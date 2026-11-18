@@ -276,6 +276,16 @@ for _, case in ipairs(CLIENTS) do
   end
   -- The site: everywhere, retail included since issue #182.
   check(listed("web") and UI:IsFeatureAllowed(UI:GetFeature("web")), "web is listed and allowed on " .. case.label)
+  -- The Journal and the Achievements: the Guild tab's sub-tabs, WoW: Forever's only (issue #367). Their
+  -- switches are listed only there, and Trials, Recruitment's officer sub-tab, everywhere.
+  local forever = not case.tbc and not case.retail
+  for _, id in ipairs({ "journal", "achievements" }) do
+    local d = UI:GetFeature(id)
+    check(not d.tab and d.opens[1] == "guild" and listed(id) == forever and UI:IsFeatureAllowed(d) == forever,
+      id .. (forever and " is the Guild tab's sub-tab on " or " is absent on ") .. case.label)
+  end
+  check(not UI:GetFeature("trials").tab and UI:GetFeature("trials").opens[1] == "recruitment" and listed("trials")
+    and UI:IsFeatureAllowed(UI:GetFeature("trials")), "trials is Recruitment's sub-tab on " .. case.label)
   check(GuildOS.db.settings.modules.consumableChecker == true and GuildOS.db.settings.modules.raidHUD == nil,
     "the player's own toggles are untouched on " .. case.label)
 end

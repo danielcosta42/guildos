@@ -149,7 +149,7 @@ function CreateDetailFrame()
     outerBorder:SetPoint("BOTTOMRIGHT", 2, -2)
     outerBorder:SetBackdrop({
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(outerBorder),
     })
     outerBorder:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.3)
     outerBorder:SetFrameLevel(19)
@@ -188,7 +188,7 @@ function CreateDetailFrame()
     classIconFrame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(classIconFrame),
     })
     classIconFrame:SetBackdropColor(0, 0, 0, 0.8)
     classIconFrame:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.8)
@@ -405,7 +405,8 @@ function PopulateDetail(frame, data)
                         local div = barFrame:CreateTexture(nil, "OVERLAY")
                         div:SetTexture("Interface\\Buttons\\WHITE8x8")
                         div:SetPoint("TOPLEFT", xPos, 0)
-                        div:SetSize(1, 18)
+                        div:SetHeight(18)
+                        GuildOS.UI:Hairline(div, "Width")
                         div:SetVertexColor(0, 0, 0, 0.7)
                         div:Show()
                     end
@@ -798,7 +799,7 @@ function PopulateDetail(frame, data)
             local addNoteBox = CreateFrame("EditBox", nil, child, "BackdropTemplate")
             addNoteBox:SetSize(contentWidth - 100, 22)
             addNoteBox:SetPoint("TOPLEFT", 15, yOff - 8)
-            addNoteBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            addNoteBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(addNoteBox) })
             addNoteBox:SetBackdropColor(0.050, 0.050, 0.066, 1)
             addNoteBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
             GuildOS:ApplyFont(addNoteBox, 10)
@@ -1016,7 +1017,7 @@ function PopulateDetail(frame, data)
         local addLinkBox = CreateFrame("EditBox", nil, child, "BackdropTemplate")
         addLinkBox:SetSize(contentWidth - 110, 22)
         addLinkBox:SetPoint("TOPLEFT", 12, yOff - 6)
-        addLinkBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        addLinkBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(addLinkBox) })
         addLinkBox:SetBackdropColor(0.050, 0.050, 0.066, 1)
         addLinkBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
         GuildOS:ApplyFont(addLinkBox, 10)
@@ -1094,7 +1095,8 @@ function CreateSectionHeader(parent, text, yOff, width)
     local line = _pBG(parent)
     line:SetTexture("Interface\\Buttons\\WHITE8x8")
     line:SetPoint("TOPLEFT", 0, yOff - 22)
-    line:SetSize(width, 1)
+    -- A pooled texture (_pBG) comes back as a band or a row later: size it, never register it (#369).
+    line:SetSize(width, GuildOS.UI:Px(line))
     line:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.4)
     line:Show()
 
@@ -1228,7 +1230,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
     local sep = _pBG(parent)
     sep:SetTexture("Interface\\Buttons\\WHITE8x8")
     sep:SetPoint("TOPLEFT", 10, yOff - totalH)
-    sep:SetSize(width - 20, 1)
+    sep:SetSize(width - 20, GuildOS.UI:Px(sep))   -- pooled, like the line above: not registered
     sep:SetVertexColor(C.separator.r, C.separator.g, C.separator.b, 0.2)
     sep:Show()
 
@@ -1396,7 +1398,7 @@ local function CreateTalentViewerFrame()
     titleLine:SetTexture("Interface\\Buttons\\WHITE8x8")
     titleLine:SetPoint("TOPLEFT",  0, -36)
     titleLine:SetPoint("TOPRIGHT", 0, -36)
-    titleLine:SetHeight(1)
+    GuildOS.UI:Hairline(titleLine, "Height")
     titleLine:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
 
     ----------------------------------------------------------------
@@ -1411,7 +1413,7 @@ local function CreateTalentViewerFrame()
         tab:SetBackdrop({
             bgFile   = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = GuildOS.UI:Edge(tab),
         })
         tab:SetBackdropColor(C.row2.r, C.row2.g, C.row2.b, 1)
         tab:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.5)
@@ -1450,7 +1452,7 @@ local function CreateTalentViewerFrame()
             slot:SetBackdrop({
                 bgFile   = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
+                edgeSize = GuildOS.UI:Edge(slot),
             })
             slot:SetBackdropColor(0, 0, 0, 0.7)
             slot:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)

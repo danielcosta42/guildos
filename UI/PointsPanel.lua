@@ -10,11 +10,27 @@ local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
 
-local PAD      = 12
 local ROW_H    = 22
 local LOG_W    = 260     -- the movements column, when the table leaves room for it
 local LOG_MIN  = 640     -- below this the movements go under the standings' place (they drop)
 local OTHER    = "__other"   -- the reason the officer types
+-- The screen's margins (#371): flush with the sub-tab bar's left edge, GAP under it, the content ending
+-- GAP short of the right edge. A scroll child stops UI.SCROLL_GUTTER short of its frame, so a scroll
+-- frame's right edge sits SCROLL_R from the panel's. Numbers even where a test stands in for the UI.
+local GAP      = tonumber(UI.GAP) or 8
+local GUTTER   = tonumber(UI.SCROLL_GUTTER) or 12
+local SCROLL_R = GUTTER - GAP
+local TOP_H    = 22      -- the selectors' row
+local HINT_H   = 14      -- a hint over a box
+local SUMMARY_Y = GAP + TOP_H + GAP
+local ROW_Y    = SUMMARY_Y + 14 + GAP + HINT_H   -- the award row, its hints over it
+local LOG_GAP  = GUTTER + 4   -- between the standings and the movements: the standings' bar sits in it
+local HEAD_ABOVE = 20    -- room over a later section title for its rule (UI:CreateSectionTitle)
+
+-- A box: the shared field (#371), whose border turns gold while it has the keyboard.
+local function input(parent, width, numeric, maxLetters)
+    return UI:CreateInput(parent, width, 22, { numeric = numeric and true or nil, max = maxLetters or 64 })
+end
 
 -- `/gos points` and `/gos dkp` (and every button that said "Open DKP Window") open the tab.
 function GuildOS:ShowPointsFrame(coreName)
@@ -55,7 +71,6 @@ local NUMBER_FIELDS = {
 
 function GuildOS:BuildLootAccounts(panel)
     local P = GuildOS.Points
-    local input = GuildOS.LootInput
     local scope = GuildOS:DefaultLootScope()
     local shownAcct = nil
     local settingsOpen = false
@@ -75,9 +90,9 @@ function GuildOS:BuildLootAccounts(panel)
 
     -- ── The selectors ───────────────────────────────────────────────
     local top = CreateFrame("Frame", nil, panel)
-    top:SetPoint("TOPLEFT", PAD, -8)
-    top:SetPoint("TOPRIGHT", -PAD, -8)
-    top:SetHeight(24)
+    top:SetPoint("TOPLEFT", 0, -GAP)
+    top:SetPoint("TOPRIGHT", -GAP, -GAP)
+    top:SetHeight(TOP_H)
     local coreLbl = UI:CreateHeaderText(top, L["CORE"], 10)
     coreLbl:SetPoint("LEFT", 0, 0)
     local coreDD = UI:CreateDropdown(top, 160, 22)
@@ -88,14 +103,14 @@ function GuildOS:BuildLootAccounts(panel)
     local acctDD = UI:CreateDropdown(top, 170, 22)
     acctDD:SetPoint("LEFT", acctLbl, "RIGHT", 8, 0)
     acctDD.isAccount = true
-    local summary = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    summary:SetPoint("TOPLEFT", PAD, -36)
-    summary:SetPoint("RIGHT", panel, "RIGHT", -PAD, 0)
+    local summary = UI:CreateText(panel, "", 11, C.label.r, C.label.g, C.label.b)
+    summary:SetPoint("TOPLEFT", 0, -SUMMARY_Y)
+    summary:SetPoint("RIGHT", panel, "RIGHT", -GAP, 0)
     summary:SetJustifyH("LEFT")
     if summary.SetWordWrap then summary:SetWordWrap(false) end
 
     local isOfficer = GuildOS:IsOfficer()
-    local listTop = 56
+    local listTop = SUMMARY_Y + 14 + GAP
     local status
 
     -- ── The award row (officers) ────────────────────────────────────
@@ -103,22 +118,22 @@ function GuildOS:BuildLootAccounts(panel)
     local flow   -- the officer's rows, laid out again at every width
     if isOfficer then
         local row = CreateFrame("Frame", nil, panel)
-        row:SetPoint("TOPLEFT", PAD, -56)
-        row:SetPoint("TOPRIGHT", -PAD, -56)
+        row:SetPoint("TOPLEFT", 0, -ROW_Y)
+        row:SetPoint("TOPRIGHT", -GAP, -ROW_Y)
         row:SetHeight(24)
         nameBox = input(row, 130, false, 48)
         nameBox:SetPoint("LEFT", 0, 0)
-        local nameHint = UI:CreateText(row, L["Who"], 9, C.textDim.r, C.textDim.g, C.textDim.b)
-        nameHint:SetPoint("BOTTOMLEFT", nameBox, "TOPLEFT", 0, 1)
+        local nameHint = UI:CreateText(row, L["Who"], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        nameHint:SetPoint("BOTTOMLEFT", nameBox, "TOPLEFT", 0, 2)
         reasonDD = UI:CreateDropdown(row, 200, 22)
         reasonDD:SetPoint("LEFT", nameBox, "RIGHT", 6, 0)
         reasonDD.isReason = true
-        local reasonHint = UI:CreateText(row, L["Reason"], 9, C.textDim.r, C.textDim.g, C.textDim.b)
-        reasonHint:SetPoint("BOTTOMLEFT", reasonDD, "TOPLEFT", 0, 1)
+        local reasonHint = UI:CreateText(row, L["Reason"], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        reasonHint:SetPoint("BOTTOMLEFT", reasonDD, "TOPLEFT", 0, 2)
         amountBox = input(row, 50, true, 6)
         amountBox:SetPoint("LEFT", reasonDD, "RIGHT", 6, 0)
-        local amountHint = UI:CreateText(row, L["Times"], 9, C.textDim.r, C.textDim.g, C.textDim.b)
-        amountHint:SetPoint("BOTTOMLEFT", amountBox, "TOPLEFT", 0, 1)
+        local amountHint = UI:CreateText(row, L["Times"], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        amountHint:SetPoint("BOTTOMLEFT", amountBox, "TOPLEFT", 0, 2)
         noteBox = input(row, 140, false, 60)
         noteBox:SetPoint("LEFT", amountBox, "RIGHT", 6, 0)
         local awardBtn = UI:CreateButton(row, L["Award"], 64, 22)
@@ -152,8 +167,8 @@ function GuildOS:BuildLootAccounts(panel)
         chargeBtn:SetScript("OnClick", function() doRow(true) end)
 
         local row2 = CreateFrame("Frame", nil, panel)
-        row2:SetPoint("TOPLEFT", PAD, -86)
-        row2:SetPoint("TOPRIGHT", -PAD, -86)
+        row2:SetPoint("TOPLEFT", 0, -(ROW_Y + 30))
+        row2:SetPoint("TOPRIGHT", -GAP, -(ROW_Y + 30))
         row2:SetHeight(22)
         local raidBtn = UI:CreateButton(row2, L["Award Raid"], 100, 20)
         raidBtn:SetPoint("LEFT", 0, 0)
@@ -179,51 +194,56 @@ function GuildOS:BuildLootAccounts(panel)
         settingsBtn = UI:CreateButton(row2, L["Account settings"], 130, 20)
         settingsBtn:SetPoint("RIGHT", 0, 0)
         settingsBtn:ClearAllPoints()
-        status = UI:CreateText(panel, "", 10, C.silver.r, C.silver.g, C.silver.b)
+        status = UI:CreateText(panel, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
         status:SetPoint("TOPLEFT", row2, "BOTTOMLEFT", 0, -4)
-        status:SetPoint("RIGHT", panel, "RIGHT", -PAD, 0)
+        status:SetPoint("RIGHT", panel, "RIGHT", -GAP, 0)
         status:SetJustifyH("LEFT")
         if status.SetWordWrap then status:SetWordWrap(false) end
-        listTop = 132
+        listTop = ROW_Y + 76
         -- Both rows wrap where the window is too narrow for them (FlowBar), the hints over the boxes
         -- keeping their room; what is under them follows.
         flow = function(body)
-            local h1 = UI:FlowBar(row, { nameBox, reasonDD, amountBox, noteBox, awardBtn, chargeBtn }, { gap = 6, rowGap = 14, rowH = 22 })
-            local top2 = 56 + h1 + 8
+            local h1 = UI:FlowBar(row, { nameBox, reasonDD, amountBox, noteBox, awardBtn, chargeBtn }, { gap = 6, rowGap = HINT_H + 4, rowH = 22 })
+            local top2 = ROW_Y + h1 + GAP
             row2:ClearAllPoints()
-            row2:SetPoint("TOPLEFT", PAD, -top2)
-            row2:SetPoint("TOPRIGHT", -PAD, -top2)
+            row2:SetPoint("TOPLEFT", 0, -top2)
+            row2:SetPoint("TOPRIGHT", -GAP, -top2)
             local h2 = UI:FlowBar(row2, { raidBtn, decayBtn, syncBtn, settingsBtn }, { gap = 6, rowGap = 4, rowH = 20 })
             body:ClearAllPoints()
-            body:SetPoint("TOPLEFT", PAD, -(top2 + h2 + 20))
-            body:SetPoint("BOTTOMRIGHT", -PAD, PAD)
+            body:SetPoint("TOPLEFT", 0, -(top2 + h2 + 22))
+            body:SetPoint("BOTTOMRIGHT", 0, GAP)
         end
     end
 
     -- ── The standings and the movements ─────────────────────────────
+    -- The body spans to the panel's right edge; what is in it stops GAP short of it (#371).
     local body = CreateFrame("Frame", nil, panel)
-    body:SetPoint("TOPLEFT", PAD, -listTop)
-    body:SetPoint("BOTTOMRIGHT", -PAD, PAD)
-    local standHead = CreateFrame("Frame", nil, body)
+    body:SetPoint("TOPLEFT", 0, -listTop)
+    body:SetPoint("BOTTOMRIGHT", 0, GAP)
+    -- The tables' header rows: the shared one, no fill and a 1px rule under it (#371).
+    local standHead = UI:CreateTableHeader(body)
     standHead:SetPoint("TOPLEFT", 0, 0)
-    standHead:SetHeight(18)
     local heads = {}
     for _, col in ipairs(STAND_COLS) do heads[col.key] = UI:CreateHeaderText(standHead, "", 10) end
     local standScroll, standChild = UI:CreateScrollFrame(body, nil)
-    standScroll:SetPoint("TOPLEFT", 0, -20)
-    local logHead = UI:CreateHeaderText(body, L["MOVEMENTS"], 10)
-    logHead:SetPoint("TOPRIGHT", -(LOG_W - 60), 0)
+    standScroll:SetPoint("TOPLEFT", standHead, "BOTTOMLEFT", 0, 0)
+    local logHead = UI:CreateTableHeader(body)
+    logHead:SetPoint("TOPRIGHT", -GAP, 0)
+    logHead:SetWidth(LOG_W)
+    local logTitle = UI:CreateHeaderText(logHead, L["MOVEMENTS"], 10)
+    logTitle:SetPoint("LEFT", 4, 0)
     local logScroll, logChild = UI:CreateScrollFrame(body, nil)
-    logScroll:SetPoint("TOPRIGHT", -10, -20)
-    logScroll:SetPoint("BOTTOMRIGHT", -10, 0)
-    logScroll:SetWidth(LOG_W - 10)
+    logScroll:SetPoint("TOPRIGHT", logHead, "BOTTOMRIGHT", GUTTER, 0)
+    logScroll:SetPoint("BOTTOMRIGHT", SCROLL_R, 0)
+    logScroll:SetWidth(LOG_W + GUTTER)
+    UI:BindScrollChildWidth(logScroll, logChild)
     local standRows, logRows = {}, {}
 
     -- ── The points' settings (officers): in place of the tables, while open ──
     local setScroll, setChild = UI:CreateScrollFrame(body, nil)
     setScroll:SetPoint("TOPLEFT", 0, 0)
-    setScroll:SetPoint("BOTTOMRIGHT", -10, 0)
-    UI:BindScrollChildWidth(setScroll, setChild, 4)
+    setScroll:SetPoint("BOTTOMRIGHT", SCROLL_R, 0)
+    UI:BindScrollChildWidth(setScroll, setChild)
     setScroll:Hide()
 
     local function standRow(i)
@@ -255,11 +275,11 @@ function GuildOS:BuildLootAccounts(panel)
         if not row then
             row = CreateFrame("Frame", nil, logChild)
             row:SetHeight(30)
-            row.line = UI:CreateText(row, "", 10)
+            row.line = UI:CreateText(row, "", 11)
             row.line:SetPoint("TOPLEFT", 4, 0)
             row.line:SetPoint("RIGHT", row, "RIGHT", -4, 0)
             row.line:SetJustifyH("LEFT")
-            row.sub = UI:CreateText(row, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+            row.sub = UI:CreateText(row, "", 10, C.label.r, C.label.g, C.label.b)
             row.sub:SetPoint("TOPLEFT", 12, -14)
             row.sub:SetPoint("RIGHT", row, "RIGHT", -4, 0)
             row.sub:SetJustifyH("LEFT")
@@ -273,9 +293,9 @@ function GuildOS:BuildLootAccounts(panel)
         return row
     end
 
-    local empty = UI:CreateText(standChild, "", 11, C.silver.r, C.silver.g, C.silver.b)
+    local empty = UI:CreateText(standChild, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     empty:SetPoint("TOPLEFT", 4, -4)
-    local logEmpty = UI:CreateText(logChild, L["No history."], 10, C.silver.r, C.silver.g, C.silver.b)
+    local logEmpty = UI:CreateText(logChild, L["No history."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     logEmpty:SetPoint("TOPLEFT", 4, -4)
 
     local drawSettings   -- below
@@ -328,17 +348,19 @@ function GuildOS:BuildLootAccounts(panel)
         setScroll:Hide()
         standScroll:Show(); standHead:Show()
 
-        -- The movements keep their column while the window leaves room for it; then they drop.
-        local W = body:GetWidth() or 0
+        -- The movements keep their column while the window leaves room for it; then they drop. The
+        -- content stops GAP short of the right edge; the standings' scroll bar sits in its gutter.
+        local W = (body:GetWidth() or 0) - GAP
         local withLog = W >= LOG_MIN
         logScroll:SetShown(withLog)
         logHead:SetShown(withLog)
+        local standW = math.max(1, withLog and (W - LOG_W - LOG_GAP) or W)
+        standHead:SetWidth(standW)
+        standChild:SetWidth(standW)
         standScroll:ClearAllPoints()
-        standScroll:SetPoint("TOPLEFT", 0, -20)
-        standScroll:SetPoint("BOTTOMRIGHT", withLog and -(LOG_W + 8) or -10, 0)
-        standHead:SetWidth(math.max(1, (withLog and W - LOG_W - 8 or W) - 10))
-        standChild:SetWidth(math.max(1, standHead:GetWidth()))
-        local layout = UI:ResolveColumns(STAND_COLS, standHead:GetWidth(), 6)
+        standScroll:SetPoint("TOPLEFT", standHead, "BOTTOMLEFT", 0, 0)
+        standScroll:SetPoint("BOTTOMRIGHT", body, "BOTTOMLEFT", standW + GUTTER, 0)
+        local layout = UI:ResolveColumns(STAND_COLS, standW, 6)
         local epgp = mode == "epgp"
         local queue = account and account.type == "queue"
         local TITLES = {
@@ -383,11 +405,12 @@ function GuildOS:BuildLootAccounts(panel)
                 fs:SetShown(at.shown)
                 fs:SetText(values[col.key])
             end
+            -- The balance in the text colour, the figures behind it secondary (#371: it was gold).
             row.cells.name:SetTextColor(cr, cg, cb)
-            row.cells.cur:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-            row.cells.earned:SetTextColor(C.green.r, C.green.g, C.green.b)
-            row.cells.spent:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            row.cells.rank:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
+            row.cells.cur:SetTextColor(C.text.r, C.text.g, C.text.b)
+            row.cells.earned:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            row.cells.spent:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            row.cells.rank:SetTextColor(C.label.r, C.label.g, C.label.b)
         end
         for i = #list + 1, #standRows do standRows[i]:Hide() end
         empty:SetText(account and L["Nobody on this account yet."] or L["No points recorded yet."])
@@ -395,12 +418,11 @@ function GuildOS:BuildLootAccounts(panel)
         standChild:SetHeight(math.max(1, #list * ROW_H))
 
         if withLog then
-            logChild:SetWidth(LOG_W - 22)
             local log = inScope(P.GetLog, P, 60)
             for i, e in ipairs(log) do
                 local row = logRow(i)
                 local up = (e.delta or 0) >= 0
-                local col = up and C.green or C.red
+                local col = up and C.ok or C.danger
                 row.line:SetText(GuildOS:ColorText((up and "+" or "") .. (e.delta or 0), col.r, col.g, col.b) .. " " .. (e.name or "?")
                     .. ((e.reason and e.reason ~= "") and (" \194\183 " .. e.reason) or ""))
                 row.sub:SetText(string.format(L["%s, by %s"], GuildOS:DateText(e.ts or 0, " %H:%M"), e.author or "?"))
@@ -420,19 +442,25 @@ function GuildOS:BuildLootAccounts(panel)
         local cfg = inScope(function() return P:Pool().config end) or {}
         local epgp = GuildOS:GetLootSystem(scope) == "epgp" or mode == "epgp"
         local y = 0
+        -- A form's label: the left column, in the text colour (#371).
         local function lbl(text, yy)
-            local t = UI:CreateText(content, text, 11, C.text.r, C.text.g, C.text.b)
-            t:SetPoint("TOPLEFT", 4, -(yy + 4))
+            local t = UI:CreateText(content, text, 12, C.text.r, C.text.g, C.text.b)
+            t:SetPoint("TOPLEFT", 0, -(yy + 4))
             return t
         end
-        -- The label column: past the widest label, never before 200.
+        -- The label column: past the widest label, never before 200; the form's every field starts there.
         local widths = {}
         for i, f in ipairs(NUMBER_FIELDS) do
-            local probe = UI:CreateText(content, f.label, 11)
+            local probe = UI:CreateText(content, f.label, 12)
             widths[i] = probe:GetStringWidth() or 0
             probe:Hide()
         end
-        local x = UI.LabelColumn(widths, 4, 12, 200)
+        for _, text in ipairs({ L["Mode:"], L["Decay rounding:"] }) do
+            local probe = UI:CreateText(content, text, 12)
+            widths[#widths + 1] = probe:GetStringWidth() or 0
+            probe:Hide()
+        end
+        local x = UI.LabelColumn(widths, 0, 12, 200)
 
         -- Mode: DKP or Loot Council; EPGP is the loot system's own (issue #319).
         if GuildOS:GetLootSystem(scope) ~= "epgp" then
@@ -460,7 +488,7 @@ function GuildOS:BuildLootAccounts(panel)
                     if kept ~= nil then b2:SetText(tostring(kept)) end
                 end, { state = true })
                 if f.hint then
-                    local h = UI:CreateText(content, f.hint, 9, C.textDim.r, C.textDim.g, C.textDim.b)
+                    local h = UI:CreateText(content, f.hint, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
                     h:SetPoint("LEFT", box.saveButton, "RIGHT", 8, 0)
                     h:SetPoint("RIGHT", content, "RIGHT", -4, 0)
                     h:SetJustifyH("LEFT")
@@ -476,9 +504,10 @@ function GuildOS:BuildLootAccounts(panel)
         roundDD:SetValue(cfg.decayRound or "near")
         roundDD.onSelect = function(_, v) P:SetConfigKey("decayRound", v, scope) end
         y = y + 30
+        -- A switch at the content's edge, its box flush with the labels above it (#371).
         local function switch(key, text)
-            local cb = UI:CreateCheckbox(content, text, 18)
-            cb:SetPoint("TOPLEFT", 0, -y)
+            local cb = UI:CreateCheckbox(content, text, 14)
+            cb:SetPoint("TOPLEFT", 0, -(y + 4))
             cb.checkbox:SetChecked(cfg[key] == true)
             cb.checkbox.pointsKey = key
             cb.checkbox.onChanged = function(_, checked) P:SetConfigKey(key, checked, scope) end
@@ -488,34 +517,35 @@ function GuildOS:BuildLootAccounts(panel)
         switch("autoAward", L["Auto-award on boss kill (raid leader only)"])
 
         -- The guild's own reasons to earn (issue #309): each with what it gives and how much a week.
-        y = y + 6
-        local rsTitle = UI:CreateHeaderText(content, L["OTHER REASONS TO EARN POINTS"], 10)
+        -- A section of the form, under the shared title (#371).
+        y = y + HEAD_ABOVE
+        local rsTitle = UI:CreateSectionTitle(content, L["OTHER REASONS TO EARN POINTS"])
         rsTitle:SetPoint("TOPLEFT", 0, -y)
-        y = y + 20
+        y = y + 26
         for _, r in ipairs(inScope(P.GetReasons, P)) do
             local line = UI:CreateText(content, string.format(
                 (r.weekly or 0) > 0 and L["%s: %d points, up to %d a week"] or L["%s: %d points"],
-                r.name, r.value, r.weekly), 10, C.silver.r, C.silver.g, C.silver.b)
-            line:SetPoint("TOPLEFT", 12, -(y + 2))
-            local del = UI:CreateButton(content, L["Remove"], 70, 18)
+                r.name, r.value, r.weekly), 12, C.text.r, C.text.g, C.text.b)
+            line:SetPoint("TOPLEFT", 0, -(y + 4))
+            local del = UI:CreateButton(content, L["Remove"], 70, 22)
             del:SetPoint("TOPLEFT", x + 160, -y)
             local rk = r.key
             del:SetScript("OnClick", function() inScope(P.SetReason, P, rk); refresh() end)
-            y = y + 22
+            y = y + 28
         end
-        y = y + 14
+        y = y + HINT_H + 2
         local function reasonBox(width, numeric, bx, tip)
             local box = input(content, width, numeric, numeric and 4 or 40)
             box:SetPoint("TOPLEFT", bx, -y)
-            local h = UI:CreateText(content, tip, 9, C.textDim.r, C.textDim.g, C.textDim.b)
-            h:SetPoint("BOTTOMLEFT", box, "TOPLEFT", 0, 1)
+            local h = UI:CreateText(content, tip, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            h:SetPoint("BOTTOMLEFT", box, "TOPLEFT", 0, 2)
             return box
         end
-        local rsName = reasonBox(180, false, 12, L["Reason"])
-        local rsValue = reasonBox(50, true, 198, L["Points"])
-        local rsWeekly = reasonBox(50, true, 254, L["Per week"])
+        local rsName = reasonBox(180, false, 0, L["Reason"])
+        local rsValue = reasonBox(50, true, 186, L["Points"])
+        local rsWeekly = reasonBox(50, true, 242, L["Per week"])
         local rsAdd = UI:CreateButton(content, L["Add reason"], 100, 22)
-        rsAdd:SetPoint("TOPLEFT", 314, -y)
+        rsAdd:SetPoint("TOPLEFT", 302, -y)
         rsAdd:SetScript("OnClick", function()
             local name = strtrim(rsName:GetText() or "")
             if name == "" or not tonumber(rsValue:GetText()) then return end

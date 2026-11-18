@@ -517,17 +517,19 @@ local function click(text)
   b.scripts.OnClick(b)
 end
 dofile(ADDON .. "/UI/FeaturePanels.lua")
+dofile(ADDON .. "/UI/SettingsPanel.lua")
 dofile(ADDON .. "/UI/LootWindow.lua")
 GuildOS.CreateRolePicker = function() return widget() end
 GuildOS.ShowPointsFrame = function() end
 
--- The loot settings moved to the Loot window's Rule tab (issue #346); Settings > Loot only points
--- there. The tab on the guild shows the guild's own choice, whatever core is active.
+-- The loot settings moved to the Loot window's Rule tab (issue #346), and Settings has had no Loot
+-- page since #367: an old "loot" link opens the first page. The tab on the guild shows the guild's
+-- own choice, whatever core is active.
 activate("Alpha")
 local content = widget()
 widgets, buttons, dropdowns = {}, {}, {}
 local drew, problem = pcall(GuildOS.RefreshSettingsPanel, GuildOS, content, "loot")
-check(drew and button("Open Loot") and not button("Add answer"), "Settings > Loot only points to the Loot window (" .. tostring(problem) .. ")")
+check(drew and not button("Open Loot") and not button("Add answer"), "Settings has no Loot page left (" .. tostring(problem) .. ")")
 widgets, buttons, dropdowns = {}, {}, {}
 drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, content, "")
 check(drew, "the Rule tab draws on the guild with a core active (" .. tostring(problem) .. ")")

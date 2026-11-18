@@ -76,7 +76,7 @@ function Style:BuildPicker(parent, yOff)
     local UI, C = GuildOS.UI, GuildOS.Colors
     local styles = self:Available()
     if #styles < 2 then return yOff end
-    local head = UI:CreateText(parent, L["Interface style"], 11, C.gold.r, C.gold.g, C.gold.b)
+    local head = UI:CreateText(parent, L["Interface style"], 12, C.text.r, C.text.g, C.text.b)
     head:SetPoint("TOPLEFT", 8, -yOff)
     yOff = yOff + 20
     for _, id in ipairs(styles) do

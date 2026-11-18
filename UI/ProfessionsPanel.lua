@@ -135,10 +135,10 @@ local function whoText(keys, who)
     local parts = {}
     for i = 1, math.min(3, #list) do
         local e = list[i]
-        parts[i] = e.online and ("|cff" .. classHex(e.class) .. e.name .. "|r") or ("|cff777777" .. e.name .. "|r")
+        parts[i] = e.online and ("|cff" .. classHex(e.class) .. e.name .. "|r") or ("|cff" .. hex(C.labelDim) .. e.name .. "|r")
     end
     local text = table.concat(parts, ", ")
-    if #list > 3 then text = text .. string.format(" |cff777777+%d|r", #list - 3) end
+    if #list > 3 then text = text .. string.format(" |cff%s+%d|r", hex(C.labelDim), #list - 3) end
     return text
 end
 
@@ -166,7 +166,7 @@ local function BuildCard()
 
     card.icon = UI:CreateIcon(card, 32)
     card.icon:SetPoint("TOPLEFT", 14, -14)
-    card.title = UI:CreateText(card, "", 13, C.white.r, C.white.g, C.white.b)
+    card.title = UI:CreateText(card, "", 13, C.text.r, C.text.g, C.text.b)
     card.title:SetPoint("TOPLEFT", card.icon, "TOPRIGHT", 10, -2)
     card.title:SetWidth(230)
     card.title:SetJustifyH("LEFT")
@@ -270,7 +270,7 @@ local function ShowCard(e, anchor, who, repaint)
             at(slot.icon, 14, y)
             slot.icon:SetTexture(itemIcon(rg.itemID) or QUESTION)
             local name = GuildOS.Compat.GetItemInfo(rg.itemID) or ("#" .. rg.itemID)
-            slot.text:SetText(string.format("%s  |cff%sx%d|r", name, hex(C.gold), rg.count))
+            slot.text:SetText(string.format("%s  |cff%sx%d|r", name, hex(C.label), rg.count))   -- not gold (#371)
             y = y - 20
         end
     end
@@ -286,7 +286,7 @@ local function ShowCard(e, anchor, who, repaint)
         if c then
             at(slot.text, 14, y)
             slot.text:SetText(c.online and ("|cff" .. classHex(c.class) .. c.name .. "|r")
-                or ("|cff777777" .. c.name .. "  " .. L["(offline)"] .. "|r"))
+                or ("|cff" .. hex(C.labelDim) .. c.name .. "  " .. L["(offline)"] .. "|r"))
             slot.btn:ClearAllPoints()
             slot.btn:SetPoint("RIGHT", card, "TOPRIGHT", -14, y - 6)
             local name = c.name
@@ -416,33 +416,23 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     tools:SetPoint("TOPRIGHT", 0, -TITLE_H)
     tools:SetHeight(TOOLS_H)
 
-    local search = CreateFrame("EditBox", nil, tools, "BackdropTemplate")
-    search:SetSize(220, 24)
+    -- The shared field (#371). Its hint is drawn here, as the field's own is (Sans 12 in `textSoft`,
+    -- 6px in), because this one also goes when the box is too narrow to hold it.
+    local search = UI:CreateInput(tools, 220, 24, { max = 50 })
     search:SetPoint("LEFT", 0, 0)
-    search:SetBackdrop({ bgFile = WHITE8, edgeFile = WHITE8, edgeSize = 1 })
-    search:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    search:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(search, 11)
-    search:SetTextColor(C.white.r, C.white.g, C.white.b)
-    search:SetTextInsets(8, 8, 0, 0)
-    search:SetAutoFocus(false)
-    search:SetMaxLetters(50)
-    local placeholder = search:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(placeholder, 11)
-    placeholder:SetPoint("LEFT", 8, 0)
-    placeholder:SetTextColor(0.4, 0.4, 0.4)
-    placeholder:SetText(L["Search recipes..."])
+    local placeholder = UI:CreateText(search, L["Search recipes..."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    placeholder:SetPoint("LEFT", 6, 0)
     -- The placeholder only while the box is empty and wide enough to hold it.
     local function paintPlaceholder()
         placeholder:SetShown((search:GetText() or "") == "" and (search:GetWidth() or 0) >= 130)
     end
-    search:SetScript("OnTextChanged", function(self)
+    -- Hooked, not set: the field keeps its own Escape, focus and text handlers.
+    search:HookScript("OnTextChanged", function(self)
         local text = self:GetText() or ""
         paintPlaceholder()
         state.query = text
         panel:Refresh(true)
     end)
-    search:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     search:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
 
     local filterTabs = {}
@@ -461,14 +451,10 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     ----------------------------------------------------------------
     -- Header strip and the list
     ----------------------------------------------------------------
-    local header = CreateFrame("Frame", nil, main)
+    -- The shared table header (#371): no fill, a 1px rule under the column labels.
+    local header = UI:CreateTableHeader(main, HEADER_H)
     header:SetPoint("TOPLEFT", tools, "BOTTOMLEFT", 0, -4)
     header:SetPoint("TOPRIGHT", tools, "BOTTOMRIGHT", 0, -4)
-    header:SetHeight(HEADER_H)
-    local headerBg = header:CreateTexture(nil, "BACKGROUND")
-    headerBg:SetTexture(WHITE8)
-    headerBg:SetAllPoints()
-    headerBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
     local headerCells = {}
     for _, key in ipairs({ "name", "skill", "who", "req" }) do
         local fs = UI:CreateHeaderText(header, "", 10)
@@ -484,7 +470,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     scroll:SetAllPoints()
     UI:SkinScrollBar(scroll, "GuildOSProfessionsScroll")
 
-    local empty = UI:CreateText(list, "", 11, C.textDim.r, C.textDim.g, C.textDim.b)
+    local empty = UI:CreateText(list, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     empty:SetPoint("CENTER", 0, 20)
 
     local footer = UI:CreateText(main, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
@@ -601,9 +587,11 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
                     row.bar:Hide()
                     row.icon:SetTexture(recipeIcon(e))
                     row.t1:SetText(e.name)
-                    row.t1:SetTextColor(C.white.r, C.white.g, C.white.b)
-                    -- A few recipes give no skill: the client's table says 0 for both.
-                    row.t2:SetText(e.grey > 0 and string.format("|cff%s%d|r–|cff888888%d|r", hex(C.gold), e.yellow, e.grey) or "")
+                    row.t1:SetTextColor(C.text.r, C.text.g, C.text.b)
+                    -- A few recipes give no skill: the client's table says 0 for both. The range in
+                    -- `text` to `label`, not gold (#371).
+                    row.t2:SetText(e.grey > 0 and string.format("|cff%s%d|r–|cff%s%d|r", hex(C.text), e.yellow,
+                        hex(C.label), e.grey) or "")
                     row.t3:SetText(whoText(e.crafters, state.who))
                     row.t4:SetText(requiresText(e))
                     row.t4:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
@@ -615,7 +603,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
                     row.t1:SetText("|cff" .. classHex(e.class) .. e.name .. "|r")
                     if e.native then
                         row.bar:Hide()
-                        row.t2:SetText("|cff777777" .. L["no addon"] .. "|r")
+                        row.t2:SetText("|cff" .. hex(C.labelDim) .. L["no addon"] .. "|r")
                     else
                         row.bar:SetShown(row.barAllowed)
                         row.bar:SetProgress((e.max or 0) > 0 and (e.rank or 0) / e.max or 0)
