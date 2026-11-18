@@ -37,13 +37,13 @@ local ANSWER_MIN, ANSWER_MAX = 2, 8   -- seconds an answer waits, so one member 
 local FUTURE_SLACK = 300         -- seconds a received time may be ahead of ours
 local HIST_MAX = 300             -- ledger lines sent in one answer
 local MOVE_DELAY = 0.45          -- seconds between two moves (what sorters found the server takes)
-local HOLD_MIN = 0.1             -- seconds between picking an item up and dropping it, at least
+local HOLD_MIN = 0.05            -- seconds between picking an item up and dropping it, at least
+local POLL = 0.05                -- seconds between two looks while waiting on the game
+local SETTLE_MIN = 0.1           -- seconds after a drop before the tab is read back
 local HOLD_MAX = 0.8             -- the drop goes then, even when the client never says it holds it
 local DROP_FAILS = 6             -- drops the server refused in a row before a run stops
-local LOCK_WAIT = 0.25           -- seconds between two looks while a slot is locked
 local LOCK_TIMEOUT = 8           -- seconds a slot may stay locked before the run gives up
 local INFO_WAIT = 3              -- seconds to wait for item names before a run starts anyway
-local STUCK_TRIES = 6            -- the same move this many times in a row with nothing changing stops a run
 local BACKOFF_MAX = 4            -- seconds, at most, before a move that did not take is tried again
 local MAX_MOVES = 400            -- a run never makes more moves than this
 local REQ_KEEP_DAYS = 14         -- closed requests are kept this long
@@ -543,7 +543,7 @@ function GuildBank:Preview(tab)
     if not t then return nil end
     local plain, rank, stack = self:PlanInput(t.slots or {})
     local target = Plan.Target(plain, SLOTS, rank, stack)
-    local moves, why = Plan.CountMoves(plain, SLOTS, rank, stack, MAX_MOVES)
+    local moves, why = Plan.CountMoves(plain, SLOTS, rank, stack, MAX_MOVES, not state().noSwap and GuildOS:GetSetting("gbankSwap") ~= false)
     local byKey = {}
     for _, s in pairs(t.slots or {}) do byKey[keyOf(s)] = s end
     local out = {}
@@ -1047,7 +1047,9 @@ function GuildBank:StartSort(tabs)
     end
     if #queue == 0 then GuildOS:Print(L["No tab here you may organize."]); return false end
     if GuildOS.Compat.InCombat() then GuildOS:Print(L["Not in combat."]); return false end
-    s.sort = { queue = queue, tab = nil, moves = 0, total = 0, merged = 0, before = 0, report = {} }
+    -- Swaps first, unless the bank refused one this session or the player switched them off.
+    local swaps = not s.noSwap and GuildOS:GetSetting("gbankSwap") ~= false
+    s.sort = { queue = queue, tab = nil, moves = 0, total = 0, merged = 0, before = 0, report = {}, swaps = swaps }
     self:NextSortTab()
     return true
 end
@@ -1069,7 +1071,7 @@ function GuildBank:NextSortTab()
     if not run then return end
     local tab = table.remove(run.queue, 1)
     if not tab then return self:StopSort("done") end
-    run.tab, run.moves, run.merged, run.last, run.same, run.lockedSince = tab, 0, 0, nil, 0, nil
+    run.tab, run.moves, run.merged, run.lockedSince, run.fails, run.verify, run.holding = tab, 0, 0, nil, 0, nil, nil
     GuildOS.Compat.SetGuildBankCurrentTab(tab)
     GuildOS.Compat.QueryGuildBankTab(tab)
     -- Item names first, so the order does not change mid-run as they load.
@@ -1079,7 +1081,7 @@ function GuildBank:NextSortTab()
     for _ in pairs(slots) do run.used = run.used + 1 end
     run.started = GetTime()
     run.waitUntil = run.started + INFO_WAIT
-    schedule(run, MOVE_DELAY)
+    schedule(run, POLL)
 end
 
 local function allNamed(self, slots)
@@ -1092,6 +1094,12 @@ local function allNamed(self, slots)
     return true
 end
 
+-- One step of an organize run. A move is three steps, each taken as soon as the game allows:
+--   1. pick the item up (or split part of it off);
+--   2. drop it once the cursor holds it: a drop in the same frame as the pickup is lost;
+--   3. once no slot is locked, read the tab back and check the move landed.
+-- A run first tries swaps (a drop on another item trades the two: one move per misplaced stack).
+-- When the bank refuses one, the run, and the session, moves through free slots instead.
 function GuildBank:SortStep()
     local s = state()
     local run = s.sort
@@ -1101,52 +1109,74 @@ function GuildBank:SortStep()
     if GuildOS.Compat.InCombat() then return self:StopSort("combat") end
     local tab = run.tab
     local again = function(d) schedule(run, d) end
-    -- Second half of a move: the server confirms a pickup a moment later, and a drop in the same
-    -- frame as the pickup is lost (the item stayed on the cursor, in the game). Drop once the
-    -- cursor holds it, or after HOLD_MAX.
+
+    -- 2. The drop.
     local held = run.holding
     if held then
         local waited = GetTime() - held.at
         if (GuildOS.Compat.CursorHasItem() and waited >= HOLD_MIN) or waited >= HOLD_MAX then
             run.holding = nil
             GuildOS.Compat.GuildBankPickup(tab, held.move.to)
-            run.dropped = GetTime()
-            self:Trace("drop %d -> %d (held %.2fs, cursor %s)", held.move.from, held.move.to, waited,
-                tostring(GuildOS.Compat.CursorHasItem()))
-            return again(MOVE_DELAY)
+            held.at = GetTime()
+            run.verify = held
+            self:Trace("drop %d -> %d%s (held %.2fs)", held.move.from, held.move.to, held.swap and " (swap)" or "", waited)
+            return again(SETTLE_MIN)
         end
-        return again(HOLD_MIN)
+        return again(POLL)
     end
-    if GuildOS.Compat.CursorHasItem() then
-        -- Still on the cursor after a drop: the server refused it. Put it back, and count it.
-        GuildOS.Compat.ClearCursor()
-        if run.dropped then
-            run.dropFails = (run.dropFails or 0) + 1
-            self:Trace("the drop was refused (%d in a row)", run.dropFails)
-            if run.dropFails >= DROP_FAILS then return self:StopSort("refused") end
-        end
-        run.dropped = nil
-        return again(backoff(run.dropFails or 0))
-    end
-    run.dropped = nil
+
     -- The tab just asked for: its slots read empty until the server answers.
     if run.moves == 0 and s.lastSlotsAt < run.started and GetTime() - run.started < INFO_WAIT then
-        return again(LOCK_WAIT)
+        return again(POLL)
     end
     local slots = self:ReadTab(tab)
     for _, sl in pairs(slots) do
         if sl.locked then
             run.lockedSince = run.lockedSince or GetTime()
             if GetTime() - run.lockedSince > LOCK_TIMEOUT then return self:StopSort("stuck") end
-            return again(LOCK_WAIT)
+            return again(POLL)
         end
     end
     run.lockedSince = nil
-    if not allNamed(self, slots) and GetTime() < (run.waitUntil or 0) then return again(LOCK_WAIT) end
+
+    -- 3. Did the last move land?
+    local v = run.verify
+    if v then
+        if GetTime() - v.at < SETTLE_MIN then return again(POLL) end
+        run.verify = nil
+        local at = slots[v.move.to]
+        local landed = at ~= nil and keyOf(at) == v.key and (v.toKey ~= v.key or at.c > (v.toC or 0))
+        if GuildOS.Compat.CursorHasItem() then
+            if landed and not slots[v.move.from] then
+                -- A swap that hands the other item back on the cursor: it goes where ours came from.
+                GuildOS.Compat.GuildBankPickup(tab, v.move.from)
+                self:Trace("the swapped item goes to %d", v.move.from)
+                return again(SETTLE_MIN)
+            end
+            GuildOS.Compat.ClearCursor()
+        end
+        if landed then
+            run.fails = 0
+        elseif v.swap and run.swaps then
+            run.swaps, s.noSwap = false, true
+            self:Trace("the bank refused a swap: moving through free slots from now on")
+            return again(POLL)
+        else
+            run.fails = (run.fails or 0) + 1
+            self:Trace("the move did not land (%d in a row)", run.fails)
+            if run.fails >= DROP_FAILS then return self:StopSort("refused") end
+            return again(backoff(run.fails))
+        end
+    end
+    if GuildOS.Compat.CursorHasItem() then
+        GuildOS.Compat.ClearCursor()
+        return again(POLL)
+    end
+    if not allNamed(self, slots) and GetTime() < (run.waitUntil or 0) then return again(POLL) end
 
     local plain, rank, stack = self:PlanInput(slots)
-    local move, why = Plan.PlanMove(plain, SLOTS, rank, stack)
-    if run.moves == 0 then run.total = Plan.CountMoves(plain, SLOTS, rank, stack, MAX_MOVES) end
+    local move, why = Plan.PlanMove(plain, SLOTS, rank, stack, run.swaps)
+    if run.moves == 0 then run.total = Plan.CountMoves(plain, SLOTS, rank, stack, MAX_MOVES, run.swaps) end
     if not move and why == "full" then
         run.report[#run.report + 1] = { tab = tab, moves = run.moves, freed = 0 }
         GuildOS:Print(string.format(L["Tab %d is full: free one slot and it can be put in order."], tab))
@@ -1159,32 +1189,21 @@ function GuildBank:SortStep()
         self:Refresh()
         return self:NextSortTab()
     end
-    local mark = encodeSlots(slots) .. "|" .. move.op .. move.from .. ">" .. move.to
-    if mark == run.last then
-        -- The last move did not take: wait longer each time before trying it again.
-        if not run.retrying then
-            run.same = run.same + 1
-            if run.same >= STUCK_TRIES then return self:StopSort("stuck") end
-            run.retrying = true
-            self:Trace("no change after the move; trying again in %.1fs (%d)", backoff(run.same), run.same)
-            return again(backoff(run.same))
-        end
-        run.retrying = nil
-    else
-        run.same, run.retrying, run.dropFails = 0, nil, 0
-    end
-    run.last = mark
     if run.moves >= MAX_MOVES then return self:StopSort("stuck") end
 
+    -- 1. The pickup.
     if GuildOS.Compat.GuildBankCurrentTab() ~= tab then GuildOS.Compat.SetGuildBankCurrentTab(tab) end
+    local src, dst = slots[move.from], slots[move.to]
+    local key = keyOf(src)
     if move.op == "split" then
         GuildOS.Compat.GuildBankSplit(tab, move.from, move.count)
         run.merged = run.merged + 1
     else
         GuildOS.Compat.GuildBankPickup(tab, move.from)
     end
-    self:Trace("%s %d (x%s) for %d", move.op, move.from, tostring(move.count or slots[move.from].c), move.to)
-    run.holding = { move = move, at = GetTime() }
+    self:Trace("%s %d (x%s) for %d", move.op, move.from, tostring(move.count or src.c), move.to)
+    run.holding = { move = move, at = GetTime(), key = key, toKey = dst and keyOf(dst), toC = dst and dst.c,
+                    swap = dst ~= nil and keyOf(dst) ~= key }
     run.moves = run.moves + 1
     if run.moves > run.total then run.total = run.moves end
     run.current = move

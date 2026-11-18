@@ -112,7 +112,15 @@ function GetCurrentGuildBankTab() return BANK.current end
 function SetCurrentGuildBankTab(tab) BANK.current = tab end
 function IsGuildLeader() return BANK.leader end
 function CursorHasItem() return cursor ~= nil end
-function ClearCursor() cursor = nil end
+function ClearCursor()
+  -- A swapped-out item on the cursor goes back where the game finds room: the first empty slot.
+  if cursor and cursor.held then
+    local slots = BANK.tabs[cursor.tab].slots
+    for i = 1, 98 do if not slots[i] then slots[i] = BANK.held; break end end
+    BANK.held = nil
+  end
+  cursor = nil
+end
 function InCombatLockdown() return false end
 local moves = 0
 function PickupGuildBankItem(tab, slot)
@@ -135,6 +143,11 @@ function PickupGuildBankItem(tab, slot)
     end
     if CLOCK < (BANK.quietUntil or 0) then return end
   end
+  if cursor.held then
+    if slots[slot] then return end
+    slots[slot], BANK.held, cursor = BANK.held, nil, nil
+    return
+  end
   local from = BANK.tabs[cursor.tab].slots[cursor.slot]
   local to = slots[slot]
   local n = cursor.c
@@ -148,9 +161,20 @@ function PickupGuildBankItem(tab, slot)
     from.c = from.c - take
     if from.c <= 0 then BANK.tabs[cursor.tab].slots[cursor.slot] = nil end
   else
-    -- The guild bank does not swap: a drop on another item is refused and stays on the cursor.
+    -- A drop on another item: refused (left on the cursor), swapped, or swapped with the other item
+    -- handed back on the cursor, depending on BANK.swap.
     BANK.swapsTried = (BANK.swapsTried or 0) + 1
-    return
+    if BANK.swap == "direct" then
+      slots[slot], BANK.tabs[cursor.tab].slots[cursor.slot] = from, to
+    elseif BANK.swap == "cursor" then
+      slots[slot], BANK.tabs[cursor.tab].slots[cursor.slot] = from, nil
+      BANK.held = to
+      cursor = { tab = tab, slot = -1, c = to.c, at = CLOCK, held = true }
+      moves = moves + 1
+      return
+    else
+      return
+    end
   end
   moves = moves + 1
   cursor = nil
@@ -221,6 +245,7 @@ end
 -- ── The planner ─────────────────────────────────────────────────────────
 math.randomseed(380)
 for trial = 1, 400 do
+  local swaps = trial % 2 == 0   -- every other run plays a bank that swaps
   local slots, rank, stack = {}, {}, {}
   local nkeys = math.random(1, 10)
   for k = 1, nkeys do
@@ -238,10 +263,10 @@ for trial = 1, 400 do
   end
   local n = 0
   while true do
-    local m = Plan.PlanMove(slots, 98, rank, stack)
+    local m = Plan.PlanMove(slots, 98, rank, stack, swaps)
     if not m then break end
     local dest = slots[m.to]
-    check(dest == nil or dest.k == slots[m.from].k, "a move only drops into an empty slot or onto the same item")
+    check(swaps or dest == nil or dest.k == slots[m.from].k, "without swaps, a move only drops into an empty slot or onto the same item")
     Plan.Apply(slots, m, stack)
     n = n + 1
     if n > 1000 then break end
@@ -606,7 +631,7 @@ check(throttledPlain > 0 and not table.concat(printed, "\n"):find("Stopped", 1, 
 Bank:OnEvent("GUILDBANKFRAME_CLOSED")
 
 -- The real bank never sees a swap.
-check((BANK.swapsTried or 0) == 0, "no run ever drops an item on another")
+check((BANK.swapsTried or 0) <= 1, "a bank that refuses swaps is asked once, then moved around")
 
 -- A full tab out of order says so instead of trying; one free slot is enough.
 do
@@ -637,6 +662,41 @@ do
   end
   check(n <= 600 and ordered, "and the tab ends in order through that one free slot")
 end
+
+-- A bank that swaps: one move per misplaced stack, fewer than through free slots.
+local function organizeWith(mode, fill)
+  fresh()
+  local tab = addTab("Raid", -1)
+  fill(BANK.tabs[tab].slots)
+  BANK.swap = mode
+  Bank:OnEvent("GUILDBANKFRAME_OPENED")
+  Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
+  runTimers()
+  moves, BANK.swapsTried, printed = 0, 0, {}
+  check(Bank:StartSort(tab), "a run starts (" .. tostring(mode) .. ")")
+  runTimers()
+  BANK.swap = nil
+  local got, plain, rank, stack = BANK.tabs[tab].slots, nil, nil, nil
+  local slots = {}
+  for i = 1, 98 do if got[i] then slots[i] = { id = got[i].id, c = got[i].c } end end
+  plain, rank, stack = Bank:PlanInput(slots)
+  local inOrder = Plan.PlanMove(plain, 98, rank, stack) == nil
+  return moves, inOrder, table.concat(printed, "\n"), cursor
+end
+local function crowded(slots)
+  -- Reversed order, few gaps: what a swap does best.
+  local ids = { 30000, 28555, 23440, 23445, 21877, 22861, 22854, 22832 }
+  for i, id in ipairs(ids) do slots[i] = { id = id, c = ITEMS[id][5] } end
+  slots[20] = { id = 22832, c = 20 }
+end
+local mSwap, okSwap, saidSwap, curSwap = organizeWith("direct", crowded)
+check(okSwap and curSwap == nil and not saidSwap:find("Stopped", 1, true), "a swapping bank ends in order")
+local mCur, okCur, _, curCur = organizeWith("cursor", crowded)
+check(okCur and curCur == nil, "and so does one that hands the other item back on the cursor")
+local mFree, okFree, saidFree = organizeWith(nil, crowded)
+check(okFree and not saidFree:find("Stopped", 1, true), "a bank that refuses swaps still ends in order")
+check(mSwap < mFree, "swapping takes fewer moves (" .. mSwap .. " against " .. mFree .. ")")
+check(GuildOS.State.gbank.noSwap == true, "and a refused swap is remembered for the session")
 
 -- ── Typing an item ──────────────────────────────────────────────────────
 check(Bank:ParseItemInput(linkOf(22854)) == 22854 and Bank:ParseItemInput("22832") == 22832, "a link or an id names its item")

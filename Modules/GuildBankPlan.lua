@@ -132,14 +132,19 @@ end
 -- holds something else, that is first moved out to an empty slot: its own place if that is empty,
 -- else the last empty slot of the tab. With no empty slot and no merge left a full tab cannot be
 -- ordered: nil, "full".
-function Plan.PlanMove(slots, size, rank, stack)
+-- `swaps`: the client does swap (a drop on another item trades the two): then the slot is filled
+-- straight from where its item is, one move per misplaced stack, and no free slot is needed.
+function Plan.PlanMove(slots, size, rank, stack, swaps)
     local merge = nextMerge(slots, size, stack)
     if merge then return merge end
     local target = Plan.Target(slots, size, rank, stack)
     for i, want in ipairs(target) do
         local cur = slots[i]
         if not (cur and cur.k == want.k and cur.c == want.c) then
-            if not cur then
+            -- Fill it straight from where its stack is: into an empty slot; onto a smaller stack of
+            -- the same item (the drop merges, the remainder stays behind: a swap in effect); or,
+            -- where the client swaps, onto anything else.
+            if not cur or (cur.k == want.k and cur.c < want.c) or (swaps and cur.k ~= want.k) then
                 for j = i + 1, size do
                     local s = slots[j]
                     if s and s.k == want.k and s.c == want.c then
@@ -166,7 +171,7 @@ function Plan.PlanMove(slots, size, rank, stack)
     return nil
 end
 
--- What a move does to `slots`, as the game does it. The harness plays a whole run with it, and the
+-- What a move does to `slots`, as the game does it: a drop on another item swaps the two. The harness plays a whole run with it, and the
 -- Organized view could; the real tab is always read back from the game.
 function Plan.Apply(slots, move, stack)
     local a, b = slots[move.from], slots[move.to]
@@ -194,7 +199,7 @@ end
 -- How many moves a run would take, playing it on a copy (capped at `limit`): the progress bar's
 -- total, and the harness's proof that every run ends. Second return: "full" when the tab cannot be
 -- put in order without a free slot.
-function Plan.CountMoves(slots, size, rank, stack, limit)
+function Plan.CountMoves(slots, size, rank, stack, limit, swaps)
     local copy = {}
     for i = 1, size do
         local s = slots[i]
@@ -202,7 +207,7 @@ function Plan.CountMoves(slots, size, rank, stack, limit)
     end
     local n = 0
     while n < limit do
-        local m, why = Plan.PlanMove(copy, size, rank, stack)
+        local m, why = Plan.PlanMove(copy, size, rank, stack, swaps)
         if not m then return n, why end
         Plan.Apply(copy, m, stack)
         n = n + 1

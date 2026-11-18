@@ -50,3 +50,12 @@ cursor), so a move only lands on an empty slot or on the same item: what sits in
 first moved out, to its own place if that is free, else to the last free slot. A full tab with
 nothing to merge cannot be ordered and says so; one free slot is enough. A move is two halves: the pickup (or split), then the drop once the cursor holds the item (at least 0.1 s, at most 0.8 s later): a drop in the same frame as its pickup is lost and leaves the item on the cursor (seen on WoW: Forever). An item still on the cursor after a drop is put back and counted; six refused drops in a row stop the run; a move that did not take is tried again after a wait that doubles (0.45 s up to 4 s), six times at most. `/gos bank debug` prints every half. One move every 0.45 s; the same move on the same state three times stops the run;
 at most 400 moves. Sort keys are cached once per item name, so the order cannot shift mid-run.
+
+### Swaps first (after the in-game tests)
+
+A run first tries swaps: the misplaced slot is filled straight from where its stack is, whatever
+holds the slot, one move per misplaced stack and no free slot needed. Every move is checked by
+reading the tab back once no slot is locked (no fixed delays: pick up, drop once the cursor holds the
+item, read back after 0.1 s). A swap that hands the other item back on the cursor has it dropped
+where ours came from. A swap the bank refuses switches the run, and the session, to moving through
+free slots. Setting `gbankSwap = false` starts there.
