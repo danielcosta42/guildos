@@ -36,12 +36,17 @@ local function Bank() return GuildOS.GuildBank end
 ----------------------------------------------------------------------
 -- Small pieces
 ----------------------------------------------------------------------
+-- A palette colour as a chat escape, for a colour inside one line of text.
+local function hex(c)
+    return string.format("|cff%02x%02x%02x", math.floor(c.r * 255 + 0.5), math.floor(c.g * 255 + 0.5), math.floor(c.b * 255 + 0.5))
+end
+
 local function money(copper)
     copper = tonumber(copper) or 0
     local g = math.floor(copper / 10000)
     local s = math.floor((copper % 10000) / 100)
-    if g > 0 then return string.format("%d|cffd9a94fg|r %d|cffa9a2b0s|r", g, s) end
-    return string.format("%d|cffa9a2b0s|r", s)
+    if g > 0 then return string.format("%d%sg|r %d%ss|r", g, hex(C.gold), s, hex(C.textSoft)) end
+    return string.format("%d%ss|r", s, hex(C.textSoft))
 end
 
 local function qualityColor(q)
@@ -1077,7 +1082,7 @@ local function buildRequests(p)
         row.who:SetText(shortName(r.who))
         row.who:SetTextColor(cc.r, cc.g, cc.b)
         local have = B:CountOf(r.item)
-        paintItem(row, r.item, nil, string.format(" × %d", r.n) .. (r.note and ("  |cff97909f" .. r.note .. "|r") or ""))
+        paintItem(row, r.item, nil, string.format(" × %d", r.n) .. (r.note and ("  " .. hex(C.label) .. r.note .. "|r") or ""))
         local col = (r.st == "open" and C.text) or (r.st == "done" and C.ok) or C.label
         local stateText = L[REQ_TEXT[r.st] or "open"]
         if r.st == "open" then stateText = stateText .. " · " .. string.format(L["bank has %d"], have)
