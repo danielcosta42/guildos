@@ -54,6 +54,15 @@ local VERIFY_MAX = 2             -- seconds a drop may wait for the game to say 
 -- The pickup also goes through the server: the cursor can take more than 0.8 s to show the item
 -- (in game, #380). The drop waits for it; a drop sent before is lost, and the item then lands in hand.
 local PICKUP_MAX = 2             -- seconds the cursor may take to show a picked-up item
+-- The server wants a breath after each move: an operation sent right after the last one landed is
+-- ignored (a pickup not taken, a drop left in hand: one every ~4 s in game, #380). BankStack waits
+-- 0.4 s after every guild bank move. The pause adapts: up after a problem, down while all goes well.
+local COOLDOWN_START = 0.4       -- seconds between a move landing and the next pickup, at first
+local COOLDOWN_MIN = 0.2
+local COOLDOWN_MAX = 1
+local COOLDOWN_UP = 0.1          -- added after each problem
+local COOLDOWN_DOWN = 0.05       -- taken off after COOLDOWN_CLEAN moves in a row without one
+local COOLDOWN_CLEAN = 8
 local TRACE_KEEP = 400           -- lines of the organize log kept in the saved variables
 local DROP_FAILS = 6             -- drops the server refused in a row before a run stops
 local LOCK_TIMEOUT = 8           -- seconds a slot may stay locked before the run gives up
@@ -1090,6 +1099,7 @@ function GuildBank:NextSortTab()
     if not tab then return self:StopSort("done") end
     run.tab, run.moves, run.merged, run.lockedSince, run.fails, run.holding = tab, 0, 0, nil, 0, nil
     run.pending, run.busy, run.cap, run.clean, run.model, run.rank, run.stack = {}, {}, CAP_START, 0, nil, {}, {}
+    run.cooldown = run.cooldown or COOLDOWN_START   -- kept across the tabs of one run
     GuildOS.Compat.SetGuildBankCurrentTab(tab)
     GuildOS.Compat.QueryGuildBankTab(tab)
     -- Item names first, so the order does not change mid-run as they load.
@@ -1233,7 +1243,17 @@ function GuildBank:SortStep()
                 local took = now_ - p.at
                 run.rtt = (run.rtt or RTT_START) * 0.7 + took * 0.3
             end
-            self:Trace("landed %d -> %d (%.2fs)", f, t, now_ - p.at)
+            run.readyAt = now_ + (run.cooldown or COOLDOWN_START)
+            if p.redrops then
+                run.streak = 0
+            else
+                run.streak = (run.streak or 0) + 1
+                if run.streak >= COOLDOWN_CLEAN then
+                    run.streak = 0
+                    run.cooldown = math.max(COOLDOWN_MIN, (run.cooldown or COOLDOWN_START) - COOLDOWN_DOWN)
+                end
+            end
+            self:Trace("landed %d -> %d (%.2fs), next in %.2fs", f, t, now_ - p.at, run.cooldown or COOLDOWN_START)
         elseif not lockedAt[t] and now_ - p.at >= math.max(REDROP_MIN, REDROP_RTT * (run.rtt or RTT_START))
             and GuildOS.Compat.CursorHasItem() and sameSlot(plain[f], p.origFrom) and sameSlot(plain[t], p.origTo)
             and (p.redrops or 0) < REDROP_TRIES then
@@ -1342,6 +1362,9 @@ function GuildBank:SortStep()
     end
     if run.moves >= MAX_MOVES then return self:StopSort("stuck") end
 
+    -- The server's breath after the last move.
+    if now_ < (run.readyAt or 0) then return again(run.readyAt - now_) end
+
     -- 1. The pickup.
     if GuildOS.Compat.GuildBankCurrentTab() ~= tab then GuildOS.Compat.SetGuildBankCurrentTab(tab) end
     if move.op == "split" then
@@ -1417,11 +1440,17 @@ end
 -- moved, from where to where, what was there, how long it waited and what the cursor said.
 function GuildBank:Problem(what, h, waited)
     local m = h.move
+    local run = state().sort
+    if run then
+        run.cooldown = math.min(COOLDOWN_MAX, (run.cooldown or COOLDOWN_START) + COOLDOWN_UP)
+        run.streak = 0
+        run.readyAt = GetTime() + run.cooldown
+    end
     local ctype, cid = GuildOS.Compat.CursorInfo()
-    local line = string.format("PROBLEM %s: tab %s, %d -> %d%s, %s onto %s, waited %.2fs (held %.2fs%s), cursor %s %s",
-        what, tostring(state().sort and state().sort.tab), m.from, m.to, h.swap and " (swap)" or "",
+    local line = string.format("PROBLEM %s: tab %s, %d -> %d%s, %s onto %s, waited %.2fs (held %.2fs%s), cursor %s %s, pause now %.2fs",
+        what, tostring(run and run.tab), m.from, m.to, h.swap and " (swap)" or "",
         self:Describe(h.item), self:Describe(h.other), waited or 0, h.held or 0, h.sameFrame and ", same frame" or "",
-        tostring(ctype), tostring(cid))
+        tostring(ctype), tostring(cid), run and run.cooldown or 0)
     if state().debug then GuildOS:Print("|cffff8800[bank]|r " .. line) end
     self:Keep(line)
 end

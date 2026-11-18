@@ -107,3 +107,10 @@ Every problem (pickup not taken, still in hand, move or swap not landed, item ar
 is kept in `GuildOS.db.guildBank.trace` (400 lines, in the saved variables) with the item's name, id,
 count, class, subclass and quality, the slots, the waits and what `GetCursorInfo` said;
 `/gos bank log [n]` prints the last lines, `/gos bank log clear` empties it.
+
+Sixth in-game log (the problem log): every kind of item had problems, one every ~4 s, alternating
+"pickup not taken" and "still in hand". Not the item: the server ignores an operation that comes
+right after the last move landed. As BankStack does (0.4 s after each guild bank move), the run now
+pauses after each move before the next pickup: 0.4 s at first, 0.1 s more after each problem (1 s at
+most), 0.05 s less after 8 moves in a row without one (0.2 s at least). On the stub with that rule
+(0.35 s): 114 ignored operations and 387 s before, 5 and 112 s now.

@@ -136,6 +136,11 @@ function PickupGuildBankItem(tab, slot)
     BANK.extraDrops = (BANK.extraDrops or 0) + 1
     return
   end
+  -- A server that wants a breath after each move: an operation sent sooner is ignored.
+  if BANK.breath and CLOCK - (BANK.lastDone or -99) < BANK.breath then
+    BANK.ignored = (BANK.ignored or 0) + 1
+    return
+  end
   if cursor and GuildOS and GuildOS.GuildBank and not BANK.instant then
     local c = cursor
     if CLOCK - c.at < 0.05 then return end
@@ -159,6 +164,7 @@ function PickupGuildBankItem(tab, slot)
         for k = 1, 98 do if not sl[k] then sl[k] = BANK.held; break end end
         BANK.held, cursor = nil, ours
       end
+      BANK.lastDone = CLOCK
       if GuildOS.GuildBank:IsOpen() then GuildOS.GuildBank:OnEvent("GUILDBANKBAGSLOTS_CHANGED") end
     end)
     return
@@ -237,6 +243,10 @@ dropNow = function(tab, slot)
   cursor = nil
 end
 function SplitGuildBankItem(tab, slot, count)
+  if BANK.breath and CLOCK - (BANK.lastDone or -99) < BANK.breath then
+    BANK.ignored = (BANK.ignored or 0) + 1
+    return
+  end
   local s = BANK.tabs[tab].slots[slot]
   check(s and count >= 1 and count <= s.c, "a split takes no more than the slot holds")
   cursor = { tab = tab, slot = slot, c = count, at = CLOCK }
@@ -785,6 +795,25 @@ do
   check(got[1] and got[1].id == 22832, "and the tab is in order")
   local log = table.concat(Bank:Store().trace or {}, "\n")
   check(log:find("PROBLEM pickup not taken", 1, true) and log:find("(id ", 1, true), "a pickup never taken is logged with its item")
+  Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+end
+
+-- A server that ignores what comes within 0.35 s of the last move: the run pauses between moves and
+-- ends in order, with few operations ignored.
+do
+  fresh()
+  local tab = addTab("Raid", -1)
+  crowded(BANK.tabs[tab].slots)
+  BANK.swap, BANK.breath, BANK.ignored = "direct", 0.35, 0
+  Bank:OnEvent("GUILDBANKFRAME_OPENED")
+  Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
+  runTimers()
+  check(Bank:StartSort(tab), "a run starts on a server that wants a breath")
+  runTimers()
+  local ignored = BANK.ignored
+  BANK.swap, BANK.breath = nil, nil
+  check(Bank:SortState() == nil and cursor == nil and BANK.tabs[tab].slots[1].id == 22832, "it ends in order, nothing in hand")
+  check(ignored <= 1, "and hardly an operation is ignored (" .. ignored .. ")")
   Bank:OnEvent("GUILDBANKFRAME_CLOSED")
 end
 
