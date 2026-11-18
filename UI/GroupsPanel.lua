@@ -19,7 +19,7 @@ local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 local TAB_H, TAB_MIN_W, TAB_PAD = 28, 70, 20   -- as the Guild hub's sub-tabs
 local TILE_MIN_W, TILE_H, GAP = 150, 60, UI.GAP
-local CARD_H, ROW_H, HEAD_H = 48, 24, 26
+local ROW_H, HEAD_H = 24, 26
 local HEAD_ABOVE = 20           -- room over a later section title for its rule (UI:CreateSectionTitle)
 local CHIP = 22
 local ART_ALPHA = 0.55          -- the game's art under a tile's text
@@ -41,6 +41,22 @@ local ROW_NOTE = ROW_SEATS + SLOT + 6
 local ROW_STATUS = ROW_NOTE + 18   -- what the buttons below do ("ask for a spot as"), on a line of its own
 local ROW_ACT = ROW_STATUS + 16
 local GROUP_H = ROW_ACT + 20 + 8
+-- My group as the leader's panel, and the summary over Active (#378), in one table: the tab's builder
+-- is one function, and Lua 5.1 lets a function reach at most 60 of the file's locals.
+local K = {}
+K.SEATS = BAND_H + 10
+K.FILL = K.SEATS + SLOT + 10
+K.META = K.FILL + 14
+K.ACT = K.META + 22
+K.H = K.ACT + 22 + 10
+K.TIME_BAR_H = 2           -- the time a listing has left, under a card's band
+K.SUMMARY_H, K.FILTER_H = 46, 22
+K.FILTERS = {
+    { key = "all",     label = L["All"] },
+    { key = "dungeon", label = L["Dungeons"] },
+    { key = "raid",    label = L["Raids"] },
+    { key = "other",   label = L["Quests and more"] },
+}
 -- A player looking (#373): class icon, name, level, roles, what they want.
 local ICON, CLASS_W, LEVEL_W = 16, 20, 44
 local ROLE_ICONS_W = 3 * (ICON + 2) + 6
@@ -207,7 +223,7 @@ end
 local function buildComposer()
     local B, G = GuildOS.LFGBoard, GuildOS.Groups
     local f = CreateFrame("Frame", "GuildOSGroupComposer", UIParent, "BackdropTemplate")
-    f:SetSize(380, 398)
+    f:SetSize(380, 448)
     f:SetPoint("CENTER")
     f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(f) })
     f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
@@ -312,6 +328,22 @@ local function buildComposer()
     end
     y = y - 22 - 12
 
+    -- When a group starts (#378): now, or a little later, so guildmates can plan around it.
+    local startLabel = label(L["STARTS"])
+    local starts = {}
+    x = PAD
+    for _, seconds in ipairs(G.STARTS) do
+        local b = UI:CreateButton(f, seconds == 0 and L["Now"] or B:DurationName(seconds), 52, 22)
+        b:SetPoint("TOPLEFT", x, y)
+        b:SetScript("OnClick", function()
+            f.start = seconds
+            f.Repaint()
+        end)
+        starts[seconds] = b
+        x = x + b:GetWidth() + 4
+    end
+    y = y - 22 - 12
+
     local chat = UI:CreateCheckbox(f, L["Also post in guild chat"], 18)
     chat:SetPoint("TOPLEFT", PAD - 2, y)
     chat.checkbox.onChanged = function(_, checked) B:SetPref("postToGuild", checked and true or false) end
@@ -346,6 +378,11 @@ local function buildComposer()
         end
         onlyBtn:SetShown(seek and #f.acts > 1 and f.picked ~= nil)
         auto:SetShown(not seek)
+        startLabel:SetShown(not seek)
+        for seconds, b in pairs(starts) do
+            b:SetShown(not seek)
+            UI:SetSelected(b, seconds == f.start)
+        end
         for _, letter in ipairs(LETTERS) do
             chips[letter]:SetShown(seek)
             steppers[letter]:SetShown(not seek)
@@ -396,7 +433,7 @@ local function buildComposer()
             B:SetPref("roles", roles)
             B:SetAvailable(nil, note:GetText(), f.ttl, toGuild, roles, f.acts)
         else
-            local ok, why = G:Create(f.act, f.need, note:GetText(), f.ttl, toGuild)
+            local ok, why = G:Create(f.act, f.need, note:GetText(), f.ttl, toGuild, f.start)
             if not ok then
                 hint:SetText(why or "")
                 return
@@ -422,6 +459,8 @@ local function buildComposer()
         self.act = act or (group and group.act) or nil
         self.need = (group and (not act or act == group.act)) and G:_SanitizeNeed(group.need) or defaultNeed(self.act)
         self.ttl = B:_ClampTtl(GuildOS.db.lfgPrefs.lastTtl)
+        -- A group I change keeps the start it has, to the second; a new one starts now.
+        self.start = (group and (not act or act == group.act) and G:StartsIn(group)) or 0
         local roles = (mine and mine.roles) or B:Pref("roles") or ""
         for _, letter in ipairs(LETTERS) do chips[letter]:SetOn(roles:find(letter, 1, true) ~= nil) end
         local current = (mode == "group" and group) or (mode == "seek" and mine) or nil
@@ -450,7 +489,7 @@ end
 -- a spot in mine and I do not invite whoever asks ("request"). One at a time: the newer replaces it.
 ----------------------------------------------------------------------
 local TOAST_W, TOAST_H = 300, 66
-local TOAST_SECONDS = { group = 12, request = 30 }
+local TOAST_SECONDS = { group = 12, request = 30, expiring = 60 }
 local toast
 
 local function buildToast()
@@ -518,6 +557,22 @@ function GuildOS:GroupsToast(n)
         toast.secondary:SetScript("OnClick", function()
             toast:Hide()
             whisper(n.name)
+        end)
+    elseif n.kind == "expiring" then
+        -- My listing is about to end (#378): 30 minutes more, or down now.
+        local group = n.what == "group"
+        toast.title:SetText(L["Your listing ends soon"])
+        toast.body:SetText(L["Your listing ends in 5 minutes."])
+        fitButton(toast.primary, L["+30 min"])
+        toast.primary:Show()
+        toast.primary:SetScript("OnClick", function()
+            toast:Hide()
+            if group then G:Extend() else B:Extend() end
+        end)
+        fitButton(toast.secondary, L["Take down"])
+        toast.secondary:SetScript("OnClick", function()
+            toast:Hide()
+            if group then G:Disband() else B:ClearAvailable() end
         end)
     else
         toast.title:SetText(L["Asking for a spot"])
@@ -664,6 +719,13 @@ function GuildOS:CreateGroupsPanel(parent)
         return b
     end
 
+    -- A button as wide as its label, never under the 60px of the others.
+    local function fit(b, text)
+        b.label:SetText(text)
+        b:SetWidth(math.max(60, math.ceil(b.label:GetStringWidth() or 0) + 18))
+        return b
+    end
+
     -- Lay buttons out from a frame's right edge inwards; returns the width they took. `inset`: 6 inside
     -- a card's border, none on a bare row, which ends flush with the content's right edge (#371).
     local function rightAlign(frame, buttons, top, inset)
@@ -687,46 +749,6 @@ function GuildOS:CreateGroupsPanel(parent)
     ------------------------------------------------------------------
     -- Active: my group and its queue, the groups being formed, who is looking
     ------------------------------------------------------------------
-    local function metaOf(g, now, leader)
-        local parts = {}
-        if leader then parts[#parts + 1] = leader end
-        parts[#parts + 1] = string.format("%d/%d", g.n or 1, g.max or 5)
-        parts[#parts + 1] = string.format(L["open: %s"], G:NeedText(g.need))
-        parts[#parts + 1] = string.format(L["%dm"], B:_Remaining(g, now))
-        if (g.note or "") ~= "" then parts[#parts + 1] = g.note end
-        return table.concat(parts, DOT)
-    end
-
-    local function myGroupCard(g, now)
-        local card = acquire("mine", function()
-            local f = panelFrame()
-            f.title = UI:CreateText(f, "", 13)
-            f.title:SetPoint("TOPLEFT", 10, -8)
-            f.meta = UI:CreateText(f, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-            f.meta:SetPoint("TOPLEFT", 10, -28)
-            f.edit = smallButton(f)
-            f.edit.label:SetText(L["Change"])
-            f.edit:SetScript("OnClick", function() openComposer(nil, "group") end)
-            f.down = smallButton(f, "danger")
-            f.down.label:SetText(L["Take down"])
-            f.down:SetScript("OnClick", function() G:Disband() end)
-            return f
-        end)
-        -- Hung by both top corners, not sized from a width (#371). My own group is told apart by the
-        -- brighter `lineHi` border: gold is only for what is selected or focused.
-        card:ClearAllPoints()
-        card:SetPoint("TOPLEFT", 0, -y)
-        card:SetPoint("TOPRIGHT", 0, -y)
-        card:SetHeight(CARD_H)
-        card:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
-        local taken = rightAlign(card, { card.down, card.edit }, -6)
-        card.title:SetText(string.format(L["Your group: %s"], B:ActivityName(g.act)))
-        oneLine(card.title, width - 20 - taken)
-        card.meta:SetText(metaOf(g, now))
-        oneLine(card.meta, width - 20)
-        y = y + CARD_H + GAP
-    end
-
     local function requestRow(r, classByKey)
         local row = acquire("request", function()
             local f = CreateFrame("Frame", nil, content)
@@ -755,6 +777,70 @@ function GuildOS:CreateGroupsPanel(parent)
         row.invite:SetScript("OnClick", function() G:Invite(key) end)
         row.decline:SetScript("OnClick", function() G:Decline(key) end)
         y = y + ROW_H
+    end
+
+    -- The activity's art as a band across a card's top, cut as the tiles cut it, over `well` where the
+    -- client has no art for it; with the time the listing has left as a hairline under it (#378).
+    local function addBand(f)
+        f.band = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+        f.band:SetTexture(WHITE)
+        f.band:SetVertexColor(C.well.r, C.well.g, C.well.b, 1)
+        f.band:SetPoint("TOPLEFT", 1, -1)
+        f.band:SetPoint("TOPRIGHT", -1, -1)
+        f.band:SetHeight(BAND_H)
+        f.art = f:CreateTexture(nil, "ARTWORK")
+        f.art:SetAllPoints(f.band)
+        f.art:SetTexCoord(0, 1, 0.08, 0.72)
+        f.art:SetAlpha(ART_ALPHA)
+        f.bandRule = UI:CreateSeparator(f)
+        f.bandRule:SetPoint("TOPLEFT", f.band, "BOTTOMLEFT", 0, 0)
+        f.bandRule:SetPoint("TOPRIGHT", f.band, "BOTTOMRIGHT", 0, 0)
+        f.timeBar = f:CreateTexture(nil, "OVERLAY")
+        f.timeBar:SetTexture(WHITE)
+        f.timeBar:SetPoint("TOPLEFT", f.band, "BOTTOMLEFT", 0, 0)
+        f.timeBar:SetHeight(K.TIME_BAR_H)
+        f.title = UI:CreateText(f, "", 13)
+        f.title:SetPoint("BOTTOMLEFT", f.band, "BOTTOMLEFT", 8, 6)
+        f.range = UI:CreateText(f, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        f.range:SetPoint("TOPRIGHT", f.band, "TOPRIGHT", -6, -5)
+        f.badge = UI:CreateBadge(f, "", C.ok)
+        f.badge:SetPoint("TOPLEFT", f.band, "TOPLEFT", 6, -5)
+        f.badge:Hide()
+    end
+
+    -- Paint a band: the art, the title, the range, an optional badge, and the time left as a share of
+    -- the listing's whole duration (`label` ink, `warn` in its last ten minutes).
+    local function paintBand(card, g, now, w, title, badgeText, badgeColor)
+        local it = Cat.byId[g.act]
+        if it and hasArt(it) then
+            card.art:SetTexture(it.art)
+            card.art:Show()
+        else
+            card.art:Hide()
+        end
+        card.title:SetText(title)
+        oneLine(card.title, w - 16)
+        card.range:SetText(rangeOf(it))
+        if badgeText then
+            card.badge:SetText(badgeText, badgeColor)
+            card.badge:Show()
+        else
+            card.badge:Hide()
+        end
+        local total = math.max(1, g.ttl or 1)
+        local left = math.max(0, (g.ts or now) + total - now)
+        card.timeBar:SetWidth(math.max(1, (w - 2) * math.min(1, left / total)))
+        local ink = left <= 600 and C.warn or C.label
+        card.timeBar:SetVertexColor(ink.r, ink.g, ink.b, 0.9)
+    end
+
+    -- What a card says about time: how full, when it starts (if later), how long it stays up.
+    local function whenText(g, now)
+        local parts = { string.format("%d/%d", g.n or 1, g.max or 5) }
+        local startIn = G:StartsIn(g, now)
+        if startIn then parts[#parts + 1] = string.format(L["starts in %dm"], math.ceil(startIn / 60)) end
+        parts[#parts + 1] = string.format(L["%dm"], B:_Remaining(g, now))
+        return table.concat(parts, DOT)
     end
 
     -- One seat of a card, made the first time a card needs that many and kept with the card.
@@ -794,28 +880,115 @@ function GuildOS:CreateGroupsPanel(parent)
         end
     end
 
-    local function groupCard(g, now, classByKey, x, w)
+    -- The seats: one a member, then one an open spot, by role, from `top`. `share` of the card at most,
+    -- so what is missing stays legible beside them; a raid's surplus reads as "+N", open spots kept
+    -- first. Returns the open roles and the x where the seats end.
+    local function paintSeats(card, g, w, top, share)
+        local open = {}
+        for _, letter in ipairs(LETTERS) do
+            for _ = 1, (g.need[letter] or 0) do open[#open + 1] = letter end
+        end
+        local members = g.n or 1
+        local cap = math.max(1, math.floor((w - 20) * share / (SLOT + SLOT_GAP)))
+        local showOpen = math.min(#open, cap)
+        local showFilled = math.min(members, cap - showOpen)
+        local hidden = (members - showFilled) + (#open - showOpen)
+        local n = 0
+        local function seat(letter)
+            n = n + 1
+            local s = slotOf(card, n)
+            s:ClearAllPoints()
+            s:SetPoint("TOPLEFT", 10 + (n - 1) * (SLOT + SLOT_GAP), -top)
+            paintSlot(s, letter)
+        end
+        for _ = 1, showFilled do seat(nil) end
+        for i = 1, showOpen do seat(open[i]) end
+        for i = n + 1, #card.slots do card.slots[i]:Hide() end
+        local after = 10 + n * (SLOT + SLOT_GAP) + 4
+        card.more:ClearAllPoints()
+        card.more:SetPoint("LEFT", card, "TOPLEFT", after, -(top + SLOT / 2))
+        card.more:SetText(hidden > 0 and ("+" .. hidden) or "")
+        if hidden > 0 then after = after + math.ceil(card.more:GetStringWidth() or 0) + 6 end
+        return open, after
+    end
+
+    -- My group, as the leader sees it (#378): the band with when it starts, the seats, a bar of how
+    -- full it is, and everything a leader does from here: change it, give it 30 minutes more, say it
+    -- in guild chat now, run a ready check, take it down.
+    local function leaderPanel(g, now)
+        local card = acquire("mine", function()
+            local f = panelFrame()
+            addBand(f)
+            f.slots = {}
+            f.more = UI:CreateText(f, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+            f.missing = UI:CreateText(f, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            f.fill = UI:CreateProgressBar(f, 100, 8)
+            f.fill:SetPoint("TOPLEFT", 10, -K.FILL)
+            f.fillText = UI:CreateText(f, "", 10, C.label.r, C.label.g, C.label.b)
+            f.fillText:SetPoint("LEFT", f.fill, "RIGHT", 8, 0)
+            f.meta = UI:CreateText(f, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            f.meta:SetPoint("TOPLEFT", 10, -K.META)
+            f.down = fit(smallButton(f, "danger"), L["Take down"])
+            f.down:SetScript("OnClick", function() G:Disband() end)
+            f.edit = fit(smallButton(f), L["Change"])
+            f.edit:SetScript("OnClick", function() openComposer(nil, "group") end)
+            f.extend = fit(smallButton(f), L["+30 min"])
+            f.extend:SetScript("OnClick", function() G:Extend() end)
+            f.post = smallButton(f)
+            f.post:SetScript("OnClick", function()
+                G:PostNow()
+                paint()
+            end)
+            f.ready = fit(smallButton(f), L["Ready check"])
+            f.ready:SetScript("OnClick", function() G:ReadyCheck() end)
+            return f
+        end)
+        -- Hung by both top corners (#371). My own group is told apart by the brighter `lineHi` border:
+        -- gold is only for what is selected or focused.
+        card:ClearAllPoints()
+        card:SetPoint("TOPLEFT", 0, -y)
+        card:SetPoint("TOPRIGHT", 0, -y)
+        card:SetHeight(K.H)
+        card:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+        local startIn = G:StartsIn(g, now)
+        paintBand(card, g, now, width, string.format(L["Your group: %s"], B:ActivityName(g.act)),
+            startIn and string.format(L["starts in %dm"], math.ceil(startIn / 60)) or nil, C.info)
+
+        local open, after = paintSeats(card, g, width, K.SEATS, 0.6)
+        card.missing:ClearAllPoints()
+        card.missing:SetPoint("LEFT", card, "TOPLEFT", after, -(K.SEATS + SLOT / 2))
+        card.missing:SetText(#open > 0 and string.format(L["missing %s"], G:NeedText(g.need)) or "")
+        oneLine(card.missing, width - after - 10)
+
+        local max = g.max or 5
+        card.fill:SetWidth(math.max(60, math.floor(width * 0.4)))
+        card.fill:SetProgress((g.n or 1) / max)
+        card.fillText:SetText(string.format("%d/%d", g.n or 1, max))
+
+        local parts = { string.format(L["%dm"], B:_Remaining(g, now)) }
+        if (g.note or "") ~= "" then parts[#parts + 1] = g.note end
+        card.meta:SetText(table.concat(parts, DOT))
+        oneLine(card.meta, width - 20)
+
+        local wait = B:GuildLineWait(now)
+        fit(card.post, wait > 0 and (L["Post in chat"] .. " (" .. string.format(L["in %dm"], math.ceil(wait / 60)) .. ")")
+            or L["Post in chat"])
+        if wait > 0 then card.post:Disable() else card.post:Enable() end
+        local buttons = { card.down, card.edit, card.extend, card.post }
+        if G:CanReadyCheck() then
+            card.ready:Show()
+            buttons[#buttons + 1] = card.ready
+        else
+            card.ready:Hide()
+        end
+        rightAlign(card, buttons, -K.ACT, 8)
+        y = y + K.H + GAP
+    end
+
+    local function groupCard(g, now, classByKey, x, w, forMe)
         local card = acquire("group", function()
             local f = panelFrame()
-            -- The activity's art as a band across the top, cut as the tiles cut it, over `well` where
-            -- the client has no art for it.
-            f.band = f:CreateTexture(nil, "BACKGROUND", nil, 1)
-            f.band:SetTexture(WHITE)
-            f.band:SetVertexColor(C.well.r, C.well.g, C.well.b, 1)
-            f.band:SetPoint("TOPLEFT", 1, -1)
-            f.band:SetPoint("TOPRIGHT", -1, -1)
-            f.band:SetHeight(BAND_H)
-            f.art = f:CreateTexture(nil, "ARTWORK")
-            f.art:SetAllPoints(f.band)
-            f.art:SetTexCoord(0, 1, 0.08, 0.72)
-            f.art:SetAlpha(ART_ALPHA)
-            f.bandRule = UI:CreateSeparator(f)
-            f.bandRule:SetPoint("TOPLEFT", f.band, "BOTTOMLEFT", 0, 0)
-            f.bandRule:SetPoint("TOPRIGHT", f.band, "BOTTOMRIGHT", 0, 0)
-            f.title = UI:CreateText(f, "", 13)
-            f.title:SetPoint("BOTTOMLEFT", f.band, "BOTTOMLEFT", 8, 6)
-            f.range = UI:CreateText(f, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-            f.range:SetPoint("TOPRIGHT", f.band, "TOPRIGHT", -6, -5)
+            addBand(f)
             f.lead = UI:CreateText(f, "", 11)
             f.lead:SetPoint("TOPLEFT", 10, -ROW_LEAD)
             f.when = UI:CreateText(f, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
@@ -845,51 +1018,17 @@ function GuildOS:CreateGroupsPanel(parent)
         card:SetPoint("TOPLEFT", x, -y)
         card:SetSize(w, GROUP_H)
 
-        -- The band: art, name and level range, as the activity's tile shows them.
-        local it = Cat.byId[g.act]
-        if it and hasArt(it) then
-            card.art:SetTexture(it.art)
-            card.art:Show()
-        else
-            card.art:Hide()
-        end
-        card.title:SetText(B:ActivityName(g.act))
-        oneLine(card.title, w - 16)
-        card.range:SetText(rangeOf(it))
+        -- The band: art, name and level range, as the activity's tile shows them, and "for you" on a
+        -- group of my level with a spot in a role I play (#378).
+        paintBand(card, g, now, w, B:ActivityName(g.act), forMe and L["for you"] or nil, C.ok)
 
         -- Who leads, in their class colour; how full and for how long.
         local key, name = g.key, g.name
-        card.when:SetText(string.format("%d/%d", g.n or 1, g.max or 5) .. DOT .. string.format(L["%dm"], B:_Remaining(g, now)))
+        card.when:SetText(whenText(g, now))
         card.lead:SetText(string.format(L["led by %s"], coloured(name, classByKey[key])))
         oneLine(card.lead, w - 20 - math.ceil(card.when:GetStringWidth() or 0) - 8)
 
-        -- The seats: one a member, then one an open spot, by role. Half the card at most, so what is
-        -- missing stays legible beside them; a raid's surplus reads as "+N", open spots kept first.
-        local open = {}
-        for _, letter in ipairs(LETTERS) do
-            for _ = 1, (g.need[letter] or 0) do open[#open + 1] = letter end
-        end
-        local members = g.n or 1
-        local cap = math.max(1, math.floor((w - 20) / 2 / (SLOT + SLOT_GAP)))
-        local showOpen = math.min(#open, cap)
-        local showFilled = math.min(members, cap - showOpen)
-        local hidden = (members - showFilled) + (#open - showOpen)
-        local n = 0
-        local function seat(letter)
-            n = n + 1
-            local s = slotOf(card, n)
-            s:ClearAllPoints()
-            s:SetPoint("TOPLEFT", 10 + (n - 1) * (SLOT + SLOT_GAP), -ROW_SEATS)
-            paintSlot(s, letter)
-        end
-        for _ = 1, showFilled do seat(nil) end
-        for i = 1, showOpen do seat(open[i]) end
-        for i = n + 1, #card.slots do card.slots[i]:Hide() end
-        local after = 10 + n * (SLOT + SLOT_GAP) + 4
-        card.more:ClearAllPoints()
-        card.more:SetPoint("LEFT", card, "TOPLEFT", after, -(ROW_SEATS + SLOT / 2))
-        card.more:SetText(hidden > 0 and ("+" .. hidden) or "")
-        if hidden > 0 then after = after + math.ceil(card.more:GetStringWidth() or 0) + 6 end
+        local open, after = paintSeats(card, g, w, ROW_SEATS, 0.5)
         card.missing:ClearAllPoints()
         card.missing:SetPoint("LEFT", card, "TOPLEFT", after, -(ROW_SEATS + SLOT / 2))
         card.missing:SetText(#open > 0 and string.format(L["missing %s"], G:NeedText(g.need)) or "")
@@ -934,14 +1073,14 @@ function GuildOS:CreateGroupsPanel(parent)
     end
 
     -- The cards wrap, two or three a row, each as wide as the row allows.
-    local function groupGrid(groups, now, classByKey)
+    local function groupGrid(groups, now, classByKey, forMe)
         local cols = math.max(1, math.min(3, math.floor((width + GAP) / (GROUP_MIN_W + GAP))))
         local w = math.floor((width - GAP * (cols - 1)) / cols)
         local shown = math.min(#groups, GROUPS_MAX)
         for i = 1, shown do
             local col = (i - 1) % cols
             if col == 0 and i > 1 then y = y + GROUP_H + GAP end
-            groupCard(groups[i], now, classByKey, col * (w + GAP), w)
+            groupCard(groups[i], now, classByKey, col * (w + GAP), w, forMe[groups[i].key])
         end
         if shown > 0 then y = y + GROUP_H + GAP end
         if #groups > shown then line(string.format(L["... and %d more."], #groups - shown)) end
@@ -994,6 +1133,8 @@ function GuildOS:CreateGroupsPanel(parent)
             f.invite = smallButton(f)
             f.invite.label:SetText(L["Invite"])
             f.you = UI:CreateText(f, L["(you)"], 10, C.label.r, C.label.g, C.label.b)
+            f.extend = fit(smallButton(f), L["+30 min"])
+            f.extend:SetScript("OnClick", function() B:Extend() end)
             f.rule = UI:CreateSeparator(f)
             f.rule:SetPoint("BOTTOMLEFT", 0, 0)
             f.rule:SetPoint("BOTTOMRIGHT", 0, 0)
@@ -1037,14 +1178,17 @@ function GuildOS:CreateGroupsPanel(parent)
         row.nameBtn:SetScript("OnClick", function() whisper(name) end)
         row.invite:SetShown(not isMe and not allied)
         row.you:SetShown(isMe)
+        row.extend:SetShown(isMe)
         local taken = 0
         if not isMe and not allied then
             taken = rightAlign(row, { row.invite }, -2, 0)
             row.invite:SetScript("OnClick", function() GuildOS.Compat.InviteUnit(name) end)
         elseif isMe then
+            -- My own row gives it 30 minutes more, beside the mark that says it is mine (#378).
+            taken = rightAlign(row, { row.extend }, -2, 0)
             row.you:ClearAllPoints()
-            row.you:SetPoint("RIGHT", 0, 0)
-            taken = math.ceil(row.you:GetStringWidth() or 30) + 4
+            row.you:SetPoint("RIGHT", row, "RIGHT", -(taken + 2), 0)
+            taken = taken + math.ceil(row.you:GetStringWidth() or 30) + 6
         end
         row.time:ClearAllPoints()
         row.time:SetPoint("RIGHT", row, "RIGHT", -(taken + 6), 0)
@@ -1052,6 +1196,110 @@ function GuildOS:CreateGroupsPanel(parent)
         local what = e.guild and e.note or B:Describe(e)
         row.what:SetText(what ~= "" and what or L["Anything"])
         oneLine(row.what, width - CLASS_W - NAME_W - LEVEL_W - rolesW - taken - TIME_W - 10)
+        y = y + ROW_H
+    end
+
+    -- Which activities a filter keeps (#378): its category, and with "my level only" those of my level.
+    local function keeps(act, cat, levelOnly, myLevel)
+        local it = Cat.byId[act]
+        if cat ~= "all" and (not it or it.cat ~= cat) then return false end
+        return not levelOnly or G:FitsLevel(act, myLevel)
+    end
+    -- A player looking with no activity named wants anything: every filter keeps them.
+    local function keepsSeeker(e, cat, levelOnly, myLevel)
+        if #(e.acts or {}) == 0 then return true end
+        for _, act in ipairs(e.acts) do
+            if keeps(act, cat, levelOnly, myLevel) then return true end
+        end
+        return false
+    end
+
+    -- Over Active (#378): how many groups, how many looking, how many for me, and the filters. On a
+    -- narrow window the filters take a line of their own under the figures.
+    local function summary(nGroups, nSeekers, nForMe)
+        local strip = acquire("summary", function()
+            local f = CreateFrame("Frame", nil, content)
+            f.chips = {
+                UI:CreateMetricChip(f, "0", L["groups forming"]),
+                UI:CreateMetricChip(f, "0", L["looking"]),
+                UI:CreateMetricChip(f, "0", L["for you"]),
+            }
+            for i, chip in ipairs(f.chips) do chip:SetPoint("TOPLEFT", (i - 1) * 110, 0) end
+            f.filters = {}
+            for _, def in ipairs(K.FILTERS) do
+                local b = fit(smallButton(f), def.label)
+                local key = def.key
+                b:SetScript("OnClick", function()
+                    B:SetPref("filterCat", key)
+                    paint()
+                end)
+                f.filters[#f.filters + 1] = { key = key, button = b }
+            end
+            f.level = fit(smallButton(f), L["My level only"])
+            f.level:SetScript("OnClick", function()
+                B:SetPref("filterLevel", not B:Pref("filterLevel"))
+                paint()
+            end)
+            return f
+        end)
+        strip.chips[1]:SetValue(tostring(nGroups))
+        strip.chips[2]:SetValue(tostring(nSeekers))
+        strip.chips[3]:SetValue(tostring(nForMe))
+        local cat = B:Pref("filterCat") or "all"
+        local row = { strip.level }
+        for i = #strip.filters, 1, -1 do row[#row + 1] = strip.filters[i].button end
+        local need = 0
+        for _, b in ipairs(row) do need = need + b:GetWidth() + 4 end
+        local wide = width - 3 * 110 >= need
+        local top = wide and 0 or -K.SUMMARY_H
+        local x = 0
+        for _, b in ipairs(row) do
+            b:ClearAllPoints()
+            b:SetPoint("TOPRIGHT", strip, "TOPRIGHT", x, top)
+            x = x - b:GetWidth() - 4
+        end
+        for _, def in ipairs(strip.filters) do UI:SetSelected(def.button, def.key == cat) end
+        UI:SetSelected(strip.level, B:Pref("filterLevel") and true or false)
+        local h = wide and K.SUMMARY_H or (K.SUMMARY_H + K.FILTER_H + 4)
+        strip:ClearAllPoints()
+        strip:SetPoint("TOPLEFT", 0, -y)
+        strip:SetPoint("TOPRIGHT", 0, -y)
+        strip:SetHeight(h)
+        y = y + h + GAP
+    end
+
+    -- A player looking who fits my group (#378): who, their level, the role they would take, what they
+    -- wrote, and one click to invite them in that role.
+    local function matchRow(m, classByKey, levelByKey)
+        local row = acquire("match", function()
+            local f = CreateFrame("Frame", nil, content)
+            f.name = UI:CreateText(f, "", 11)
+            f.name:SetPoint("LEFT", 0, 0)
+            f.what = UI:CreateText(f, "", 11, C.label.r, C.label.g, C.label.b)
+            f.invite = smallButton(f, "primary")
+            f.rule = UI:CreateSeparator(f)
+            f.rule:SetPoint("BOTTOMLEFT", 0, 0)
+            f.rule:SetPoint("BOTTOMRIGHT", 0, 0)
+            f.rule:SetAlpha(0.4)
+            return f
+        end)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 0, -y)
+        row:SetPoint("TOPRIGHT", 0, -y)
+        row:SetHeight(ROW_H)
+        local level = levelByKey[m.key]
+        local ink = roleColor(m.role)
+        row.name:SetText(coloured(m.name, classByKey[m.key]) .. (level and ("  |cff999999" .. L["Lv "] .. level .. "|r") or ""))
+        oneLine(row.name, NAME_W + LEVEL_W)
+        fit(row.invite, string.format(L["Invite as %s"], GuildOS:ColorText(B:RoleName(ROLE_OF[m.role]), ink.r, ink.g, ink.b)))
+        local taken = rightAlign(row, { row.invite }, -2, 0)
+        local what = B:Describe(m.entry)
+        row.what:ClearAllPoints()
+        row.what:SetPoint("LEFT", NAME_W + LEVEL_W + 8, 0)
+        row.what:SetText(what ~= "" and what or L["Anything"])
+        oneLine(row.what, width - NAME_W - LEVEL_W - taken - 16)
+        local key, name, role = m.key, m.name, m.role
+        row.invite:SetScript("OnClick", function() G:InviteSeeker(key, name, role) end)
         y = y + ROW_H
     end
 
@@ -1075,10 +1323,46 @@ function GuildOS:CreateGroupsPanel(parent)
         local now = GetServerTime()
         local onlineSet, classByKey = B:_BuildOnlineRoster()
         local mine = B:MyKey()
+        local myLevel = UnitLevel("player") or 1
+        local myRoles = B:Pref("roles") or ""
+        local cat, levelOnly = B:Pref("filterCat") or "all", B:Pref("filterLevel") and true or false
+        local known = false
+        for _, def in ipairs(K.FILTERS) do known = known or def.key == cat end
+        if not known then cat = "all" end
+        local levelByKey = rosterLevels()
+
+        -- The groups of others that pass the filter, those for me first (#378), then newest.
+        local groups, forMe, nForMe = {}, {}, 0
+        for _, g in ipairs(G:ActiveList(GuildOS.db.lfgGroups, now, onlineSet)) do
+            if g.key ~= mine and keeps(g.act, cat, levelOnly, myLevel) then
+                groups[#groups + 1] = g
+                if G:FitsMe(g, myLevel, myRoles) then
+                    forMe[g.key] = true
+                    nForMe = nForMe + 1
+                end
+            end
+        end
+        table.sort(groups, function(a, b)
+            if (forMe[a.key] or false) ~= (forMe[b.key] or false) then return forMe[a.key] == true end
+            if (a.ts or 0) ~= (b.ts or 0) then return (a.ts or 0) > (b.ts or 0) end
+            return a.key < b.key
+        end)
+
+        local seekers = {}
+        for _, e in ipairs(B:ActiveList(GuildOS.db.lfgBoard, now, onlineSet)) do
+            if keepsSeeker(e, cat, levelOnly, myLevel) then seekers[#seekers + 1] = e end
+        end
+        local ally = GuildOS.Alliance
+        local inAlliance = ally and ally:Get() ~= nil
+        if inAlliance and B:Pref("allianceScope") then
+            for _, row in ipairs(B:AllianceList(now)) do seekers[#seekers + 1] = row end
+        end
+
+        summary(#groups, #seekers, nForMe)
 
         local myGroup = G:Mine()
         if myGroup then
-            myGroupCard(myGroup, now)
+            leaderPanel(myGroup, now)
             local requests = G:Requests()
             if #requests == 0 then
                 line(L["Nobody asked for a spot yet. Guildmates see your group here and in the tiles."])
@@ -1087,32 +1371,28 @@ function GuildOS:CreateGroupsPanel(parent)
                 for _, r in ipairs(requests) do requestRow(r, classByKey) end
                 y = y + GAP
             end
+            -- Who is looking and would fit (#378): the leader invites them without waiting to be asked.
+            local matches = G:Matches(now, onlineSet)
+            if #matches > 0 then
+                head(L["Fits your group"], tostring(#matches))
+                for i = 1, math.min(#matches, SEEKERS_MAX) do matchRow(matches[i], classByKey, levelByKey) end
+                y = y + GAP
+            end
         end
 
-        local groups = {}
-        for _, g in ipairs(G:ActiveList(GuildOS.db.lfgGroups, now, onlineSet)) do
-            if g.key ~= mine then groups[#groups + 1] = g end
-        end
         head(L["Groups being formed"], tostring(#groups))
         if #groups == 0 then
             line(L["No group is being formed right now. Pick an activity to start one."])
         else
-            groupGrid(groups, now, classByKey)
+            groupGrid(groups, now, classByKey, forMe)
         end
 
-        local seekers = B:ActiveList(GuildOS.db.lfgBoard, now, onlineSet)
-        local ally = GuildOS.Alliance
-        local inAlliance = ally and ally:Get() ~= nil
-        if inAlliance and B:Pref("allianceScope") then
-            for _, row in ipairs(B:AllianceList(now)) do seekers[#seekers + 1] = row end
-        end
         local strip = head(L["Looking for a group"], tostring(#seekers))
         if inAlliance then scopeButton(strip) end
         if #seekers == 0 then
             line(L["Nobody is available right now. Be the first!"])
             return
         end
-        local levelByKey = rosterLevels()
         for i = 1, math.min(#seekers, SEEKERS_MAX) do seekerRow(seekers[i], now, classByKey, levelByKey, mine) end
         if #seekers > SEEKERS_MAX then line(string.format(L["... and %d more."], #seekers - SEEKERS_MAX)) end
     end

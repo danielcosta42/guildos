@@ -630,6 +630,109 @@ GuildOS.db.lfgPrefs.toast = false
 check(Groups:_Announce(key("Bea"), "Bea", dm) == "chat" and #printed == 1, "with the notices off it is the chat line")
 GuildOS.GroupsToast = nil
 
+-- ── The leader's tools (#378) ───────────────────────────────────────────
+-- A start later on crosses the wire as seconds from now, and never past the listing's end
+fresh()
+g = Groups:Create("karazhan", { T = 1, D = 3 }, "", 3600, false, 1800)
+check(g.start == NOW + 1800 and Groups:StartsIn(g, NOW) == 1800, "a group can start later")
+check(last(TYPES.LFG_GROUP).p.startIn == 1800, "and says so as seconds from now")
+check(Groups:Create("karazhan", { T = 1 }, "", 1800, false, 99999).start == NOW + 1740,
+  "a start never passes the listing's end")
+check(Groups:Create("karazhan", { T = 1 }, "", 3600, false).start == nil, "and with none it starts now")
+local heard = Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 3600, age = 600, startIn = 1e9 }, NOW)
+check(heard.start == NOW + 3000, "a start heard is clamped to what is left of the listing")
+heard = Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 3600, startIn = -5 }, NOW)
+check(heard.start == nil and Groups:StartsIn(heard, NOW) == nil, "and one in the past is now")
+fresh()
+Groups:Create("steamvault", { T = 1 }, "", 1800, true, 900)
+check(said[1].msg:find("(starts in 15m)", 1, true), "the guild line says when it starts: " .. said[1].msg)
+
+-- +30 minutes
+fresh()
+Groups:Create("steamvault", { T = 1 }, "", 1800, false)
+NOW = NOW + 1500
+CLOCK = CLOCK + 10
+check(Groups:Extend() and Groups:Mine().ts == NOW and Groups:Mine().ttl == 2100, "+30 min adds to what is left")
+runTimers()
+check(last(TYPES.LFG_GROUP).p.ttl == 2100 and last(TYPES.LFG_GROUP).p.age == 0, "and says the new end")
+Groups:Extend(1e6)
+check(Groups:Mine().ttl == 7200, "never past the longest duration")
+Groups:Disband()
+check(not Groups:Extend(), "with no group there is nothing to extend")
+fresh()
+Board:SetAvailable(nil, "x", 1800, false, "T", {})
+NOW = NOW + 1700
+check(Board:Extend() and Board:Mine().ttl == 1900 and wire[#wire].p.ttl == 1900, "my own listing takes 30 minutes more too")
+
+-- Post in chat now, outside the ten minutes
+fresh()
+Groups:Create("steamvault", { T = 1 }, "", 3600, true)
+local ok, wait = Groups:PostNow()
+check(not ok and wait == 300 and #said == 1, "the five-minute cooldown holds it, and says how long")
+NOW = NOW + 300
+check(Groups:PostNow() and #said == 2 and Board:GuildLineWait() == 300, "and then it goes out")
+
+-- A ready check
+fresh()
+local checksRun = 0
+function DoReadyCheck() checksRun = checksRun + 1 end
+Groups:Create("steamvault", { T = 1, D = 2 }, "", 3600, false)
+check(not Groups:CanReadyCheck() and not Groups:ReadyCheck(), "alone there is nobody to check")
+PARTY = { "Bea" }
+check(Groups:CanReadyCheck() and Groups:ReadyCheck() and checksRun == 1, "with somebody in it the leader checks")
+leader = false
+check(not Groups:CanReadyCheck(), "a member does not")
+leader = true
+DoReadyCheck = nil
+
+-- Who is looking and fits my group
+fresh()
+Groups:Create("steamvault", { T = 1, D = 1 }, "", 3600, false)
+local store = GuildOS.db.lfgBoard
+store[key("Bea")] = { role = "TANK", roles = "T", acts = { "steamvault" }, note = "", ts = NOW, ttl = 3600 }
+store[key("Cid")] = { role = "HEALER", roles = "H", acts = {}, note = "", ts = NOW, ttl = 3600 }
+store[key("Dan")] = { role = "ANY", roles = "", acts = {}, note = "", ts = NOW - 1, ttl = 3600 }
+store[key("Eva")] = { role = "DPS", roles = "D", acts = { "karazhan" }, note = "", ts = NOW, ttl = 3600 }
+local matches = Groups:Matches(NOW)
+local byKey = {}
+for _, m in ipairs(matches) do byKey[m.key] = m.role end
+check(byKey[key("Bea")] == "T", "a tank for my activity fits, as a tank")
+check(byKey[key("Dan")] == "T", "somebody who plays anything, for anything, fits in my first open spot")
+check(byKey[key("Cid")] == nil, "a healer does not, with no healer's spot")
+check(byKey[key("Eva")] == nil, "nor somebody who wants another activity")
+check(Groups:InviteSeeker(key("Bea"), "Bea", "T") and invited[#invited] == "Bea", "inviting one calls the game's invite")
+check(Groups:Requests()[1].key == key("Bea") and Groups:Requests()[1].state == "invited", "and they wait in the queue as invited")
+check(#Groups:Matches(NOW) == 1, "so they no longer show as a match")
+check(not Groups:InviteSeeker(key("Cid"), "Cid", "H"), "nobody is invited into a role with no spot")
+PARTY = { "Bea" }
+Groups:OnGroupRoster()
+check(Groups:Mine().need.T == 0 and Groups:Mine().need.D == 1, "the tank's spot closes when they join, not another")
+
+-- About to end
+fresh()
+toasts = {}
+GuildOS.GroupsToast = function(_, n) toasts[#toasts + 1] = n end
+Groups:Create("steamvault", { T = 1 }, "", 1800, false)
+check(Groups:_WarnExpiring(NOW + 1400) == nil, "with ten minutes left nothing is said")
+check(Groups:_WarnExpiring(NOW + 1520) == "group" and toasts[1].kind == "expiring" and toasts[1].what == "group",
+  "five minutes before the end the leader is told, with +30 min a click away")
+check(Groups:_WarnExpiring(NOW + 1560) == nil, "and only once")
+Groups:Extend()
+check(Groups:_WarnExpiring(NOW + 1520) == nil and not Groups:Mine().warned, "a listing extended warns again later")
+fresh()
+Board:SetAvailable(nil, "x", 1800, false, "T", {})
+check(Groups:_WarnExpiring(NOW + 1600) == "seek", "my own listing as well")
+GuildOS.GroupsToast = nil
+
+-- A group for me
+fresh()
+local fit70 = Groups:_BuildGroup({ act = "steamvault", need = { T = 1 }, ttl = 3600 }, NOW)
+fit70.key = key("Bea")
+check(Groups:FitsMe(fit70, 70, "T") and not Groups:FitsMe(fit70, 70, "H") and not Groups:FitsMe(fit70, 50, "T"),
+  "a group is for me at my level with a spot in my role")
+fit70.key = Board:MyKey()
+check(not Groups:FitsMe(fit70, 70, "T"), "and never my own")
+
 -- ── The catalogue of each client ────────────────────────────────────────
 local function catalogue(client)
   local real = GuildOS

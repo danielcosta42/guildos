@@ -1199,6 +1199,15 @@ function Compat.ConvertToRaid()
     return (pcall(convert))
 end
 
+-- A ready check (issue #378): the leader's or an assistant's, where the client has it.
+function Compat.CanReadyCheck()
+    return DoReadyCheck ~= nil
+end
+function Compat.DoReadyCheck()
+    if not DoReadyCheck then return false end
+    return (pcall(DoReadyCheck))
+end
+
 -- Whether I may invite somebody: alone, the group's leader, or a raid's assistant (issue #341).
 function Compat.CanInvite()
     local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0

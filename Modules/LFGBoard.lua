@@ -22,7 +22,7 @@ local GUILD_LINE_COOLDOWN = 300   -- at most one line in guild chat per 5 minute
 
 LFGBoard.DEFAULTS = { notify = true, postToGuild = true, lastRole = "ANY", lastNote = "",
                       lastTtl = DEFAULT_TTL, allianceScope = false, roles = "", lastMode = "seek",
-                      autoInvite = true, toast = true }
+                      autoInvite = true, toast = true, filterCat = "all", filterLevel = false }
 LFGBoard.ROLES    = { "ANY", "TANK", "HEALER", "DPS" }
 -- The roles of a listing since issue #341: a subset of these letters, in this order. `role` above
 -- still goes out beside it, which is all a client before #341 reads.
@@ -514,6 +514,26 @@ function LFGBoard:_SayInGuild(role, note, acts, line)
     return true
 end
 
+-- Seconds until the guild line's cooldown lets another out, 0 when it does now (#378).
+function LFGBoard:GuildLineWait(now)
+    local prefs = GuildOS.db and GuildOS.db.lfgPrefs
+    local last = prefs and prefs.lastGuildLine or 0
+    return math.max(0, GUILD_LINE_COOLDOWN - ((now or GetServerTime()) - last))
+end
+
+-- "+30 min" on my own listing, never past the longest duration from now (#378): said again at once,
+-- so the board everywhere shows the new end.
+function LFGBoard:Extend(by)
+    local entry = self:Mine()
+    if not entry then return false end
+    local now = GetServerTime()
+    entry.ttl = self:_ClampTtl(entry.ts + entry.ttl - now + (by or 1800))
+    entry.ts, entry.warned = now, nil
+    self:Rebroadcast()
+    self:Refresh()
+    return true
+end
+
 local function durationDisplay(seconds)
     return string.format(L["%dm"], math.floor((seconds or 0) / 60))
 end
@@ -542,7 +562,7 @@ end
 -- The few choices the Groups tab keeps between sessions. The panel asks and tells through these two:
 -- it never writes the saved table itself.
 local PREFS = { postToGuild = "boolean", allianceScope = "boolean", roles = "string", lastMode = "string",
-                autoInvite = "boolean", toast = "boolean" }
+                autoInvite = "boolean", toast = "boolean", filterCat = "string", filterLevel = "boolean" }
 function LFGBoard:Pref(key)
     local prefs = GuildOS.db and GuildOS.db.lfgPrefs
     return prefs and PREFS[key] and prefs[key]

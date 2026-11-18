@@ -317,6 +317,57 @@ check(shows(panel, "asked as Tank") and #buttons(panel, "Tank") == 0, "and the c
 click(panel, "Take it back")
 check(Groups:Asked(key("Cid")) == nil and #buttons(panel, "Tank") == 1, "taking it back offers the roles again")
 
+-- ── The summary, the filters and the leader's panel (#378) ─────────────
+check(shows(panel, "groups forming") and shows(panel, "looking") and shows(panel, "for you"), "Active opens on its figures")
+click(panel, "Dungeons", 2)   -- the first is the sub-tab
+check(Board:Pref("filterCat") == "dungeon" and not shows(panel, "first night")
+  and shows(panel, "No group is being formed right now. Pick an activity to start one."), "a filter leaves out the other activities")
+check(shows(panel, "Karazhan: until 23h") == false, "and who is looking only for them")
+click(panel, "Raids", 2)
+check(shows(panel, "first night") and shows(panel, "Karazhan: until 23h"), "the raids' filter keeps the raid")
+click(panel, "All")
+local before = Board:Pref("roles")
+Board:SetPref("roles", "T")
+Board:Refresh()
+check(shows(panel, "for you"), "a group of my level with a spot in my role says it is for me")
+Board:SetPref("roles", before)
+click(panel, "My level only")
+check(Board:Pref("filterLevel") == true and shows(panel, "first night"), "my level only keeps a group of my level")
+click(panel, "My level only")
+check(Board:Pref("filterLevel") == false, "and a second click shows them all again")
+
+Groups:Create("steamvault", { T = 0, H = 0, D = 2 }, "SP", 3600, false, 900)
+Board:HandleEntry("Fay-Realm", { roles = "D", acts = {}, note = "anything", ttl = 3600 })
+check(shows(panel, "Your group: The Steamvault") and shows(panel, "starts in 15m") and shows(panel, "1/5"),
+  "the leader's panel names the group, when it starts and how full it is")
+check(#buttons(panel, "+30 min") >= 1 and #buttons(panel, "Change") == 1 and #buttons(panel, "Take down") == 1,
+  "and gives the leader what to do with it")
+GuildOS.db.lfgPrefs.lastGuildLine = 0
+Board:Refresh()
+check(#buttons(panel, "Post in chat") == 1, "posting in chat is one click while the cooldown allows it")
+click(panel, "Post in chat")
+check(#buttons(panel, "Post in chat") == 0, "and then waits out the cooldown")
+local waiting
+walk(panel, function(f)
+  if f.kind == "Button" and f:IsVisible() and f.label and f.label.text == "Post in chat (in 5m)" then waiting = f end
+end)
+check(waiting ~= nil, "saying how long")
+check(shows(panel, "Fits your group") and shows(panel, "anything"), "a player looking who fits is offered to the leader")
+local inviteAs
+walk(panel, function(f)
+  if f.kind == "Button" and f:IsVisible() and f.label and f.label.text and f.label.text:find("Invite as", 1, true) then inviteAs = f end
+end)
+check(inviteAs ~= nil, "with an invite in the role they fit")
+inviteAs.scripts.OnClick(inviteAs)
+check(invited[#invited] == "Fay" and Groups:Requests()[1].state == "invited", "which invites them and keeps their spot")
+check(not shows(panel, "Fits your group"), "and they are no longer offered")
+click(panel, "+30 min")
+check(Groups:Mine().ttl > 3600 - 1, "+30 min gives my group more time")
+click(panel, "Take down")
+GuildOS.db.lfgBoard[key("Fay")] = nil
+Board._cd = {}   -- the stub never ends a cooldown; Fay speaks again below
+Board:Refresh()
+
 -- The tiles count what is there
 panel.SelectSub("raid")
 check(shows(panel, "1 forming") and shows(panel, "1 looking"), "a tile counts its groups and its players")

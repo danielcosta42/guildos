@@ -24,12 +24,17 @@ local ANNOUNCE_EVERY = 600   -- a listed group says it again in guild chat every
 local WHISPER_COOLDOWN = 10  -- one "inv" a sender every 10 s (#378)
 local LEVEL_SLACK    = 5     -- levels past an activity's range it still reads as mine (as the tiles)
 local PARTY_MAX      = 5
+local EXTEND_BY      = 1800  -- "+30 min" on a listing, never past the longest duration (#378)
+local WARN_BEFORE    = 300   -- a listing of mine says it is about to end 5 minutes before (#378)
 -- What a guildmate with no addon whispers a leader for an invite (#378): the whole message, any case.
 local INVITE_WORDS = { inv = true, invite = true, ["+"] = true, ["+1"] = true }
 local LETTERS = { "T", "H", "D" }
 local ROLE_OF = { T = "TANK", H = "HEALER", D = "DPS" }
 
 Groups.REQUESTS_MAX = REQUESTS_MAX
+-- When a group starts, from the moment it is listed (#378): now, or in 15, 30 or 60 minutes.
+Groups.STARTS = { 0, 900, 1800, 3600 }
+Groups.EXTEND_BY = EXTEND_BY
 
 local function board() return GuildOS.LFGBoard end
 local function myKey() return board():MyKey() end
@@ -150,7 +155,10 @@ function Groups:_BuildGroup(p, now)
     if age < 0 then age = 0 end
     if age > ttl then age = ttl end
     local max = clampInt(p.max, 2, SIZE_MAX, self:SizeOf(act))
+    -- A start, as seconds from when the listing was said (#378): never before it, never after it ends.
+    local startIn = clampInt(p.startIn, 0, ttl - age, 0)
     return {
+        start = startIn > 0 and (now + startIn) or nil,
         act = act,
         note = GuildOS:SanitizeUserText(p.note, NOTE_MAX),
         need = self:_SanitizeNeed(p.need, max - 1),
@@ -192,7 +200,7 @@ function Groups:ActiveList(store, now, onlineSet)
             out[#out + 1] = {
                 key = key, name = key:match("^([^-]+)") or key, from = g.from,
                 act = g.act, note = g.note or "", need = g.need or {}, n = g.n or 1, max = g.max or SIZE_DEFAULT,
-                ts = g.ts, ttl = g.ttl,
+                ts = g.ts, ttl = g.ttl, start = g.start,
             }
         end
     end
@@ -266,7 +274,16 @@ end
 local function payloadOf(g, now)
     local age = now - g.ts
     if age < 0 then age = 0 end
-    return { act = g.act, note = g.note, need = g.need, n = g.n, max = g.max, ttl = g.ttl, age = age }
+    local startIn = g.start and (g.start - now) or 0
+    return { act = g.act, note = g.note, need = g.need, n = g.n, max = g.max, ttl = g.ttl, age = age,
+             startIn = startIn > 0 and startIn or nil }
+end
+
+-- Seconds until a group starts, or nil for one that already has (or never named a start) (#378).
+function Groups:StartsIn(g, now)
+    if not g or not g.start then return nil end
+    local left = g.start - (now or GetServerTime())
+    return left > 0 and left or nil
 end
 
 -- Say what my group is now, or that it is gone. At most one every PUBLISH_EVERY seconds: a second
@@ -294,7 +311,7 @@ end
 
 -- List my group, or change the one I have. Returns the stored listing, or nil and why not.
 -- `toGuild` is the composer's box, as on the board: one line in guild chat, five minutes apart.
-function Groups:Create(act, need, note, ttl, toGuild)
+function Groups:Create(act, need, note, ttl, toGuild, startIn)
     local B = board()
     act = B:_SanitizeAct(act)
     if not act then return nil, L["Pick what the group is for."] end
@@ -304,9 +321,11 @@ function Groups:Create(act, need, note, ttl, toGuild)
     need = self:_SanitizeNeed(need, max - count)
     if self:OpenSpots(need) == 0 then return nil, L["A group needs at least one open spot."] end
     ttl = B:_ClampTtl(ttl or GuildOS.db.lfgPrefs.lastTtl)
+    local now = GetServerTime()
+    startIn = clampInt(startIn, 0, ttl - 60, 0)
     local g = {
         act = act, note = GuildOS:SanitizeUserText(note, NOTE_MAX), need = need,
-        n = count, max = max, ts = GetServerTime(), ttl = ttl,
+        n = count, max = max, ts = now, ttl = ttl, start = startIn > 0 and (now + startIn) or nil,
     }
     -- Whoever asked for a spot asked for the group that was listed: another activity is another group.
     local was = self:Mine()
@@ -336,6 +355,8 @@ function Groups:_GuildLine(g)
     local name = string.format("%s (%d/%d)", board():ActivityName(g.act), g.n or 1, g.max or SIZE_DEFAULT)
     local line = string.format(L["[Guild OS] Group for %s, looking for %s"], name, self:NeedText(g.need))
     if g.note and g.note ~= "" then line = line .. ": " .. g.note end
+    local startIn = self:StartsIn(g)
+    if startIn then line = line .. string.format(L[" (starts in %dm)"], math.ceil(startIn / 60)) end
     if pref("autoInvite") then line = line .. L[" Whisper me \"inv\" for an invite."] end
     return line
 end
@@ -343,12 +364,109 @@ end
 -- Once a minute: a group listed with "also post in guild chat" says it again every ANNOUNCE_EVERY,
 -- with the spots it has by then. A line the cooldown or the game held back is tried next minute.
 function Groups:Tick(now)
+    now = now or GetServerTime()
+    self:_WarnExpiring(now)
     local g = self:Mine()
     if not g or not g.announce or self:OpenSpots(g.need) == 0 then return false end
-    now = now or GetServerTime()
     if now - (g.announcedAt or g.ts or 0) < ANNOUNCE_EVERY then return false end
     if not board():_SayInGuild(nil, nil, nil, self:_GuildLine(g)) then return false end
     g.announcedAt = now
+    return true
+end
+
+-- My group or my own listing ends in WARN_BEFORE: say so once, with "+30 min" one click away
+-- (#378). Returns what was warned about, for the tests.
+function Groups:_WarnExpiring(now)
+    local warned
+    local function check(entry, kind)
+        if not entry or entry.warned then return end
+        local left = entry.ts + (entry.ttl or 0) - now
+        if left > 0 and left <= WARN_BEFORE then
+            entry.warned = true
+            warned = kind
+            if GuildOS.GroupsToast then
+                GuildOS:SafeCall(GuildOS.GroupsToast, GuildOS, { kind = "expiring", what = kind, left = left })
+            else
+                GuildOS:Print(L["Your listing ends in 5 minutes."])
+            end
+        end
+    end
+    check(self:Mine(), "group")
+    check(board():Mine(), "seek")
+    return warned
+end
+
+-- "+30 min": my group runs EXTEND_BY longer, up to the longest duration from now (#378). The listing
+-- is said again with its new end; its start and its queue stay.
+function Groups:Extend(by)
+    local g = self:Mine()
+    if not g then return false end
+    local now = GetServerTime()
+    local left = g.ts + g.ttl - now
+    g.ttl = board():_ClampTtl(left + (by or EXTEND_BY))
+    g.ts, g.warned = now, nil
+    if g.announcedAt and g.announcedAt > now then g.announcedAt = now end
+    self:_Publish()
+    board():Refresh()
+    return true
+end
+
+-- Say my group in guild chat now, outside the ten minutes. Returns true, or false and the seconds
+-- the guild line's cooldown still holds it (#378).
+function Groups:PostNow()
+    local g = self:Mine()
+    if not g then return false, 0 end
+    local wait = board():GuildLineWait()
+    if wait > 0 then return false, wait end
+    if not board():_SayInGuild(nil, nil, nil, self:_GuildLine(g)) then return false, 0 end
+    g.announcedAt = GetServerTime()
+    return true
+end
+
+-- A ready check for my group, when there is one to check and I lead it (#378).
+function Groups:CanReadyCheck()
+    local _, count = GuildOS.Compat.GroupRoster()
+    return count > 1 and GuildOS.Compat.CanInvite() and GuildOS.Compat.CanReadyCheck()
+end
+function Groups:ReadyCheck()
+    if not self:CanReadyCheck() then return false end
+    return GuildOS.Compat.DoReadyCheck()
+end
+
+-- Whether a group is one for me: my level, a spot in a role I play, and me not leading it (#378).
+function Groups:FitsMe(g, level, myRoles)
+    if not g or g.key == myKey() then return false end
+    return self:FitsLevel(g.act, level) and self:BestRole(g.need, myRoles or "") ~= nil
+end
+
+-- The players looking who fit my group: they want its activity (or anything) and play a role it has
+-- a spot for, with that role (#378). Newest first, as the board. Nobody already asked or invited.
+function Groups:Matches(now, onlineSet)
+    local g = self:Mine()
+    if not g then return {} end
+    local out, s = {}, state()
+    for _, e in ipairs(board():ActiveList(GuildOS.db.lfgBoard, now, onlineSet)) do
+        local wants = #(e.acts or {}) == 0
+        for _, id in ipairs(e.acts or {}) do wants = wants or id == g.act end
+        local role = wants and e.key ~= myKey() and not s.requests[e.key] and self:BestRole(g.need, e.roles or "")
+        if role then out[#out + 1] = { key = e.key, name = e.name, role = role, entry = e } end
+    end
+    return out
+end
+
+-- Invite a player looking into my group, in the role they fit: they join the queue as invited, so
+-- the spot of that role closes when they arrive (#378).
+function Groups:InviteSeeker(key, name, role)
+    local g = self:Mine()
+    if not g or not key or not name or not ROLE_OF[role] or (g.need[role] or 0) < 1 then return false end
+    local s = state()
+    if not s.requests[key] then
+        s.requests[key] = { key = key, name = name:match("^([^-]+)") or name, from = name, role = role,
+                            at = GetServerTime(), state = "invited" }
+    end
+    self:_RaidUp(g)
+    GuildOS.Compat.InviteUnit(name)
+    board():Refresh()
     return true
 end
 

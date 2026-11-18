@@ -128,6 +128,11 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 - **The party forms itself**: with "Invite whoever asks" on, each request is an invite at once, and a guildmate without the addon whispers the leader `inv` (or `+`) to get one; a raid-sized group turns the party into a raid as soon as somebody joins. With it off, the leader answers from a small notice, tab closed
 - **A discreet notice**: when a guildmate forms a group for your level, a small card at the top of the screen offers a spot in your role and goes away by itself (never in combat or while you are in a group; `/gos avail toast off` or Settings to turn it off)
 - **Said again in guild chat**: a group listed with "Also post in guild chat" repeats its line every 10 minutes with how full it is, until it fills or comes down
+- **The leader's panel**: your group as a card with its art, its seats, a bar of how full it is and the time it has left; from it you change the group, give it **+30 min**, **post it in chat now** (with the cooldown shown), run a **ready check** and take it down
+- **Fits your group**: players looking for your activity (or anything) in a role you still need, each with one click to invite them in that role, and the spot closes when they arrive
+- **A start time**: a group starts now or in 15, 30 or 60 minutes, shown on its card and in the guild line
+- **Active at a glance**: how many groups are forming, how many are looking and how many are for you, with filters by dungeon, raid or other and "my level only"; groups for your level with a spot in your role come first, marked "for you"
+- **Before it ends**: five minutes before your group or your listing expires, a notice offers +30 min or taking it down
 - No server: it all travels on the guild's addon channel, expires on its own and reaches whoever logs in later. `/gos avail` opens it
 
 ### Tab System
