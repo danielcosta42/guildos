@@ -557,6 +557,211 @@ function Compat.TooltipUnit(tooltip)
 end
 
 ----------------------------------------------------------------------
+-- The guild bank (issue #380)
+-- The item and log calls are the same legacy globals on TBC Anniversary, WoW: Forever and retail
+-- (Blizzard's own guild bank UI calls them alike on all three); only C_GuildBank, its switch, is
+-- namespaced. Each answers nothing on a client without the function, so the feature hides instead
+-- of raising. The 98 slots and the 14 per column are file-local in Blizzard's UI, not globals.
+----------------------------------------------------------------------
+Compat.GUILD_BANK_SLOTS = 98      -- MAX_GUILDBANK_SLOTS_PER_TAB on every client
+Compat.GUILD_BANK_PER_COLUMN = 14 -- NUM_SLOTS_PER_GUILDBANK_GROUP: 7 columns of 14 (two sub-columns of 7)
+Compat.GUILD_BANKER_INTERACTION = 10  -- Enum.PlayerInteractionType.GuildBanker, where the enum is missing
+
+-- Whether this client has a guild bank at all. WoW: Forever ships the bank's UI with the retail files,
+-- but whether its servers open one is the server's call: C_GuildBank.IsGuildBankEnabled answers it on
+-- all three clients. A client without the function and with the old globals (an older Classic) has one.
+function Compat.HasGuildBank()
+    if not (GetNumGuildBankTabs and GetGuildBankItemInfo and QueryGuildBankTab) then return false end
+    if C_GuildBank and C_GuildBank.IsGuildBankEnabled then
+        local ok, on = pcall(C_GuildBank.IsGuildBankEnabled)
+        if ok and on ~= nil then return on and true or false end
+    end
+    return true
+end
+
+-- The most tabs a guild may buy: 6 on TBC Anniversary, 8 on retail and Forever.
+function Compat.GuildBankMaxTabs()
+    return tonumber(MAX_GUILDBANK_TABS) or (GuildOS.Client.isAnniversary and 6 or 8)
+end
+
+function Compat.GuildBankTabCount()
+    return GetNumGuildBankTabs and tonumber(GetNumGuildBankTabs()) or 0
+end
+
+-- name, icon, isViewable, canDeposit, numWithdrawals, remainingWithdrawals. -1 withdrawals: no limit.
+function Compat.GuildBankTabInfo(tab)
+    if not GetGuildBankTabInfo then return nil end
+    return GetGuildBankTabInfo(tab)
+end
+
+-- texture, count, locked, link for one slot; nil texture when the slot is empty.
+function Compat.GuildBankSlot(tab, slot)
+    if not GetGuildBankItemInfo then return nil end
+    local texture, count, locked = GetGuildBankItemInfo(tab, slot)
+    if not texture then return nil end
+    return texture, tonumber(count) or 1, locked and true or false, GetGuildBankItemLink and GetGuildBankItemLink(tab, slot)
+end
+
+function Compat.QueryGuildBankTab(tab)
+    if QueryGuildBankTab then QueryGuildBankTab(tab) end
+end
+
+-- The log of `tab`, or the money log for tab MAX_GUILDBANK_TABS + 1.
+function Compat.QueryGuildBankLog(tab)
+    if QueryGuildBankLog then QueryGuildBankLog(tab) end
+end
+
+function Compat.GuildBankMoney()
+    return GetGuildBankMoney and tonumber(GetGuildBankMoney()) or nil
+end
+
+-- The item log of a tab, oldest first (the game's index 1 is the oldest):
+-- { type, name, link, count, tab1, tab2, ago } with `ago` in hours.
+function Compat.GuildBankItemLog(tab)
+    local out = {}
+    if not (GetNumGuildBankTransactions and GetGuildBankTransaction) then return out end
+    for i = 1, tonumber(GetNumGuildBankTransactions(tab)) or 0 do
+        local kind, name, link, count, tab1, tab2, y, mo, d, h = GetGuildBankTransaction(tab, i)
+        if kind then
+            out[#out + 1] = { type = kind, name = name, link = link, count = tonumber(count) or 1,
+                tab1 = tonumber(tab1), tab2 = tonumber(tab2),
+                ago = (((tonumber(y) or 0) * 365 + (tonumber(mo) or 0) * 30 + (tonumber(d) or 0)) * 24) + (tonumber(h) or 0) }
+        end
+    end
+    return out
+end
+
+-- The money log, oldest first: { type, name, amount, ago } with `amount` in copper and `ago` in hours.
+function Compat.GuildBankMoneyLog()
+    local out = {}
+    if not (GetNumGuildBankMoneyTransactions and GetGuildBankMoneyTransaction) then return out end
+    for i = 1, tonumber(GetNumGuildBankMoneyTransactions()) or 0 do
+        local kind, name, amount, y, mo, d, h = GetGuildBankMoneyTransaction(i)
+        if kind then
+            out[#out + 1] = { type = kind, name = name, amount = tonumber(amount) or 0,
+                ago = (((tonumber(y) or 0) * 365 + (tonumber(mo) or 0) * 30 + (tonumber(d) or 0)) * 24) + (tonumber(h) or 0) }
+        end
+    end
+    return out
+end
+
+-- Picking up and splitting need no hardware event (sorters drive them from timers on every client);
+-- they act on the tab the bank is showing, so the caller selects it first.
+function Compat.GuildBankPickup(tab, slot)
+    if PickupGuildBankItem then PickupGuildBankItem(tab, slot) end
+end
+
+function Compat.GuildBankSplit(tab, slot, count)
+    if SplitGuildBankItem then SplitGuildBankItem(tab, slot, count) end
+end
+
+function Compat.GuildBankCurrentTab()
+    return GetCurrentGuildBankTab and tonumber(GetCurrentGuildBankTab()) or nil
+end
+
+function Compat.SetGuildBankCurrentTab(tab)
+    if SetCurrentGuildBankTab then SetCurrentGuildBankTab(tab) end
+end
+
+function Compat.IsGuildLeader()
+    return IsGuildLeader and IsGuildLeader() and true or false
+end
+
+-- Whether the cursor holds anything, and empties it: a move left on the cursor is dropped back.
+-- CursorHasItem misses a guild bank item on some clients; GetCursorInfo names it ("guildbankitem").
+function Compat.CursorHasItem()
+    if CursorHasItem and CursorHasItem() then return true end
+    return (GetCursorInfo and GetCursorInfo() ~= nil) and true or false
+end
+
+-- What the cursor holds, as GetCursorInfo says it: its type ("item", "guildbankitem", ...) and id.
+function Compat.CursorInfo()
+    if not GetCursorInfo then return nil end
+    local ok, kind, id = pcall(GetCursorInfo)
+    if ok then return kind, id end
+end
+
+function Compat.ClearCursor()
+    if ClearCursor then ClearCursor() end
+end
+
+function Compat.InCombat()
+    return (InCombatLockdown and InCombatLockdown()) and true or false
+end
+
+-- Whether a PLAYER_INTERACTION_MANAGER_FRAME_SHOW/HIDE is the guild banker's.
+function Compat.IsGuildBankerInteraction(kind)
+    local want = Enum and Enum.PlayerInteractionType and Enum.PlayerInteractionType.GuildBanker
+    return tonumber(kind) == (want or Compat.GUILD_BANKER_INTERACTION)
+end
+
+-- The events that say the bank opened and closed. Retail and Forever say it through the interaction
+-- manager; TBC Anniversary still sends GUILDBANKFRAME_OPENED/CLOSED as well. Both are registered and
+-- the module drops the second of a pair.
+function Compat.RegisterGuildBankEvents(frame)
+    for _, ev in ipairs({ "GUILDBANKFRAME_OPENED", "GUILDBANKFRAME_CLOSED", "PLAYER_INTERACTION_MANAGER_FRAME_SHOW",
+            "PLAYER_INTERACTION_MANAGER_FRAME_HIDE", "GUILDBANKBAGSLOTS_CHANGED", "GUILDBANKLOG_UPDATE",
+            "GUILDBANK_UPDATE_MONEY", "GUILDBANK_UPDATE_TABS", "GUILDBANK_ITEM_LOCK_CHANGED",
+            "GET_ITEM_INFO_RECEIVED", "PLAYER_REGEN_DISABLED" }) do
+        Compat.RegisterEvent(frame, ev, true)
+    end
+end
+
+-- Taking an item out of the guild bank into the bags (it counts as a withdrawal).
+function Compat.GuildBankAutoStore(tab, slot)
+    if AutoStoreGuildBankItem then AutoStoreGuildBankItem(tab, slot) end
+end
+
+-- Putting gold into the guild bank, and the player's own gold.
+function Compat.DepositGuildBankMoney(copper)
+    if DepositGuildBankMoney and tonumber(copper) and copper > 0 then DepositGuildBankMoney(copper) end
+end
+
+function Compat.PlayerMoney()
+    return GetMoney and tonumber(GetMoney()) or 0
+end
+
+-- What a vendor pays for one, the level it asks for and its own item level, when the client has the
+-- item cached.
+function Compat.ItemValue(item)
+    local name, _, _, itemLevel, reqLevel, _, _, _, _, _, sellPrice = Compat.GetItemInfo(item)
+    if not name then return nil end
+    return tonumber(sellPrice) or 0, tonumber(reqLevel) or 0, tonumber(itemLevel) or 0
+end
+
+-- What one sells for at the auction house, from an addon that knows (Auctionator, TSM), or nil.
+-- Both are optional and called under pcall: their APIs are theirs to change.
+function Compat.AuctionPrice(itemID)
+    itemID = tonumber(itemID)
+    if not itemID then return nil end
+    if Auctionator and Auctionator.API and Auctionator.API.v1 and Auctionator.API.v1.GetAuctionPriceByItemID then
+        local ok, price = pcall(Auctionator.API.v1.GetAuctionPriceByItemID, "GuildOS", itemID)
+        if ok and tonumber(price) and price > 0 then return price end
+    end
+    if TSM_API and TSM_API.GetCustomPriceValue then
+        local ok, price = pcall(TSM_API.GetCustomPriceValue, "DBMarket", "i:" .. itemID)
+        if ok and tonumber(price) and price > 0 then return price end
+    end
+    return nil
+end
+
+-- What an item is, from its id or link alone, with no item cache: id, icon, classID, subClassID.
+function Compat.ItemInstant(item)
+    local instant = C_Item and C_Item.GetItemInfoInstant or GetItemInfoInstant
+    if not (instant and item) then return nil end
+    local id, _, _, _, icon, classID, subClassID = instant(item)
+    return tonumber(id), icon, tonumber(classID), tonumber(subClassID)
+end
+
+-- The item's name, quality, item level and stack size, when the client has it cached; nil otherwise
+-- (asking starts the load, and GET_ITEM_INFO_RECEIVED follows).
+function Compat.ItemDetails(item)
+    local name, _, quality, level, _, _, _, stack = Compat.GetItemInfo(item)
+    if not name then return nil end
+    return name, tonumber(quality), tonumber(level), tonumber(stack)
+end
+
+----------------------------------------------------------------------
 -- Items, spells, auras and bags (issue #10)
 -- Each prefers the namespaced API, falls back to the old global, and returns
 -- nothing when the client has neither, so a caller degrades instead of raising.

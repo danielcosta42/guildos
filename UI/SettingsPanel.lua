@@ -463,6 +463,17 @@ PAGES.interface = function(F)
             if tooltipsOn() then GuildOS:SetSetting("itemTooltip", checked and "shift" or "always") end
         end,
         { indent = SUB_INDENT, enabled = tooltipsOn })
+    -- The guild bank (issue #380): how many the bank holds, on the item's tooltip, and the bar under
+    -- the game's bank. Where the client has a guild bank.
+    if GuildOS.GuildBank and GuildOS.GuildBank:Available() then
+        F:Check(L["Guild bank count on item tooltips"], L["How many the guild bank holds, and what it still needs."],
+            function() return GuildOS:GetSetting("gbankTooltip") ~= false end,
+            function(checked) GuildOS:SetSetting("gbankTooltip", checked) end,
+            { indent = SUB_INDENT, enabled = tooltipsOn })
+        F:Check(L["Guild OS bar under the guild bank"], L["Organize the tab you are on, or every tab your rank may, from the bank itself."],
+            function() return GuildOS:GetSetting("gbankBar") ~= false end,
+            function(checked) GuildOS:SetSetting("gbankBar", checked) end)
+    end
 end
 
 PAGES.chat = function(F, isOfficer)

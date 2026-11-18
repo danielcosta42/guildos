@@ -66,6 +66,15 @@ UI:RegisterFeature({
     build = function(c, win) GuildOS:CreateGuildHub(c, win) end,
 })
 
+-- The guild bank (issue #380): what it holds, seen from anywhere, each tab, its ledger, what it
+-- needs and what members asked for. Only where the client has a guild bank (WoW: Forever's servers may not).
+UI:RegisterFeature({
+    id = "bank", label = L["Bank"], order = 45,
+    subs = { "inventory", "tabs", "ledger", "needs", "requests", "cleanup" },
+    condition = function() return GuildOS.GuildBank ~= nil and GuildOS.GuildBank:Available() end,
+    build = function(c, win) GuildOS:CreateGuildBankPanel(c, win) end,
+})
+
 -- The guild's own group finder (issue #341): what is being formed, who is looking, and the game's
 -- activities as tiles. /gos avail opens it.
 UI:RegisterFeature({

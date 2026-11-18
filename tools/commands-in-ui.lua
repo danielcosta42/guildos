@@ -90,6 +90,8 @@ local IN_UI = {
                   { "UI/SettingsPanel.lua", 'GuildOS.Mentions:HandleCommand({ "clearwords" })' } },
   notecmd     = { { "UI/SettingsPanel.lua", "GuildOS.db.noteCommand.enabled = checked" } },
   avail       = { { "UI/CommunityPanel.lua", "GuildOS.LFGBoard:Show()" } },
+  -- The Bank tab (issue #380); its sort and stop are the bar under the game's bank.
+  bank        = { { "UI/Features.lua", 'id = "bank"' }, { "UI/GuildBankPanel.lua", "B:StartSort(B:OrganizableTabs())" } },
   ally        = { { "UI/AlliancePanel.lua", "ALLY():Create(" }, { "UI/AlliancePanel.lua", "ALLY():RequestJoin(" } },
 }
 local ALIAS = {

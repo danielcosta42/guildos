@@ -296,6 +296,9 @@ local MODULE_START = {
     { "TradeCouncil" },
     { "Digest" },
     { "Bulletin" },
+    -- The guild bank (issue #380): where the client has one.
+    { "GuildBank", feature = "bank", ui = "bank" },
+    { "GuildBankCleanup", feature = "bank" },
     { "CallToArms" },
     { "Polls" },
     { "Calendar" },

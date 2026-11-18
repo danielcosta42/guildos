@@ -115,6 +115,10 @@ Modules\LootEquity.lua
 Modules\Digest.lua
 Modules\Backup.lua
 Modules\Bulletin.lua
+# The guild bank (issue #380): the order a tab is kept in, then the bank itself
+Modules\GuildBankPlan.lua
+Modules\GuildBank.lua
+Modules\GuildBankCleanup.lua
 Modules\CallToArms.lua
 Modules\Polls.lua
 Modules\Calendar.lua
@@ -163,6 +167,7 @@ UI\CalendarPanel.lua
 UI\FeaturePanels.lua
 UI\SettingsPanel.lua
 UI\LootWindow.lua
+UI\GuildBankPanel.lua
 UI\RosterFrame.lua
 UI\MemberDetail.lua
 UI\CorePanel.lua

@@ -28,6 +28,11 @@ local GLOBALS = {
   -- registers by (issue #19). Reading one behind Compat's back is a feature that goes quiet
   -- on the other client, which is the failure this guard exists to make loud.
   "GetItem", "GetSpell", "GetUnit", "TooltipDataType",
+  -- The guild bank (issue #380): its switch differs by client and its calls may be missing.
+  "GetNumGuildBankTabs", "GetGuildBankTabInfo", "GetGuildBankItemInfo", "GetGuildBankItemLink",
+  "QueryGuildBankTab", "QueryGuildBankLog", "GetGuildBankTransaction", "GetGuildBankMoneyTransaction",
+  "PickupGuildBankItem", "SplitGuildBankItem", "SetCurrentGuildBankTab", "GetCurrentGuildBankTab",
+  "AutoStoreGuildBankItem", "DepositGuildBankMoney",
 }
 -- Names only these APIs have: as a field or method of anything but Compat they are flagged too.
 local API_ONLY = { GuildRoster = true, RegisterAddonMessagePrefix = true, SendAddonMessage = true,
@@ -41,7 +46,9 @@ local NAMESPACES = { "C_Item", "C_Spell", "C_UnitAuras", "C_Container", "C_Trade
                      -- Retail's Mythic+ and Great Vault (issue #187).
                      "C_MythicPlus", "C_ChallengeMode", "C_WeeklyRewards", "C_Calendar",
                      -- The game's addon CPU meter, retail 11.0.2 on (issue #324).
-                     "C_AddOnProfiler" }
+                     "C_AddOnProfiler",
+                     -- Whether the server opens a guild bank (issue #380).
+                     "C_GuildBank" }
 
 -- Blank comments and strings, keeping every newline so line numbers stay true.
 local function blank(src)
