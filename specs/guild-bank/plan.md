@@ -118,3 +118,8 @@ most), 0.05 s less after 8 moves in a row without one (0.2 s at least). On the s
 Seventh in-game log: 26 moves, one problem: the first drop in the pickup's frame, which WoW: Forever
 does not take. That finding is now kept in the settings (`gbankSameFrame = false`), so later sessions
 start by waiting for the cursor.
+
+In game the inventory still said nobody had opened the bank: WoW: Forever sends no
+`GUILDBANKBAGSLOTS_CHANGED` for a tab it already has, and a tab was read only after that word. Now a
+tab with no word after 1.5 s is read when it holds items or is the one the bank shows; an empty one
+that is neither is left as the guild knew it.

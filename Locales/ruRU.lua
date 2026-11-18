@@ -3157,3 +3157,4 @@ L["Few in the guild are its level"] = "Мало кто в гильдии это�
 L["Recent"] = "Недавнее"
 L["Only officers decide what leaves the bank. Ask an officer, or set your guild's officer ranks in Settings."] = "Только офицеры решают, что покидает банк. Спросите офицера или задайте офицерские звания в настройках."
 L["Cleanup (%d)"] = "Чистка (%d)"
+L["Nothing here: try another verdict above."] = "Здесь пусто: выберите другой вердикт выше."

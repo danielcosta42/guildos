@@ -25,7 +25,7 @@ local MAX_TABS = 8               -- the most any client has
 local MAX_COUNT = 1000           -- the most one slot can hold (a stack of 1000 reagents on retail)
 local MAX_ITEM_ID = 10000000     -- above any item id the game has
 local QUERY_GAP = 0.35           -- seconds between tab queries when the bank opens
-local QUERY_TIMEOUT = 3          -- seconds a tab's query may go unanswered before it is skipped
+local QUERY_TIMEOUT = 1.5        -- seconds a tab's query may go unanswered before the tab is looked at
 local READ_AFTER = 1.5           -- seconds after the last query before the tabs are read
 local LOG_KEEP = 2000            -- ledger lines kept
 local MONEY_KEEP = 120           -- money readings kept
@@ -242,11 +242,18 @@ function GuildBank:QueryNext()
     GuildOS.Compat.QueryGuildBankLog(tab)
     local openId = s.openId
     GuildOS.Compat.After(QUERY_TIMEOUT, function()
-        -- No answer: the rest is not asked either, so a late answer can never be taken for the
-        -- next tab's. What answered is read now.
+        -- No word from the game: WoW: Forever sends none for a tab it already has (the bank was
+        -- never saved there, #380). The tab itself answers: one holding items, or the one the bank
+        -- shows, is loaded. An empty one that is neither is left as the guild knew it.
         if s.openId == openId and s.waiting == tab then
             s.waiting = nil
-            s.queue = {}
+            local loaded = GuildOS.Compat.GuildBankCurrentTab() == tab
+            for i = 1, SLOTS do
+                if loaded then break end
+                if GuildOS.Compat.GuildBankSlot(tab, i) then loaded = true end
+            end
+            if loaded then s.answered[tab] = GetTime() end
+            self:Trace("tab %d: no word from the game; %s", tab, loaded and "its items are there, read" or "empty, left as known")
             self:QueryNext()
         end
     end)

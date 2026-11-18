@@ -1254,6 +1254,7 @@ local function buildCleanup(p)
         for _, r in ipairs(rows) do
             if st.show == "all" or r.verdict == st.show then shown[#shown + 1] = r end
         end
+        list:SetEmptyText(#rows == 0 and emptyBankText() or L["Nothing here: try another verdict above."])
         list:SetData(shown)
     end
 end

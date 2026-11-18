@@ -852,6 +852,25 @@ end
 -- A client that never takes a drop in the pickup's frame: learned once, kept in the settings.
 check(GuildOS.db.settings.gbankSameFrame == nil or GuildOS.db.settings.gbankSameFrame == false, "the same-frame finding is a setting")
 
+-- A client that never says the slots changed for a tab it already has (WoW: Forever): the tabs
+-- are read all the same, kept and shared.
+do
+  fresh()
+  local t1, t2, t3 = addTab("A", -1), addTab("B", -1), addTab("C", -1)
+  BANK.tabs[t1].slots[1] = { id = 23445, c = 5 }
+  BANK.tabs[t2].slots[4] = { id = 22854, c = 3 }
+  BANK.current = t1
+  wire = {}
+  Bank:OnEvent("GUILDBANKFRAME_OPENED")   -- and no GUILDBANKBAGSLOTS_CHANGED, ever
+  runTimers()
+  local db = Bank:Store()
+  check(db.tabs[t1] and db.tabs[t1].slots[1].c == 5 and db.tabs[t2] and db.tabs[t2].slots[4].c == 3,
+    "with no word from the game, the tabs holding items are read")
+  check(db.tabs[t3] == nil, "an empty tab that is not shown is left as known")
+  check(last("gbank", "snap") ~= nil, "and the picture goes to the guild")
+  Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+end
+
 -- ── The cleanup ─────────────────────────────────────────────────────────
 local CL = GuildOS.GuildBankCleanup
 do
