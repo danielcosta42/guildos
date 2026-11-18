@@ -126,6 +126,15 @@ function PickupGuildBankItem(tab, slot)
   -- lost, the item left on the cursor (#380, seen on WoW: Forever).
   if CLOCK - cursor.at < 0.05 then return end
   if BANK.refuse then return end   -- a rank the server will not let move items
+  -- A server that throttles: after a burst, it drops moves for a while.
+  if BANK.throttle then
+    BANK.burst = (BANK.burst or 0) + 1
+    if BANK.burst > 4 then
+      BANK.quietUntil = CLOCK + 2.5
+      BANK.burst = 0
+    end
+    if CLOCK < (BANK.quietUntil or 0) then return end
+  end
   local from = BANK.tabs[cursor.tab].slots[cursor.slot]
   local to = slots[slot]
   local n = cursor.c
@@ -573,6 +582,24 @@ BANK.refuse = nil
 check(Bank:SortState() == nil and cursor == nil, "a refused drop leaves nothing on the cursor, and the run stops")
 check(BANK.tabs[tabR].slots[5].c == 3 and BANK.tabs[tabR].slots[9].c == 4, "and nothing moved")
 check(table.concat(printed, "\n"):find("refused the moves", 1, true) ~= nil, "saying the bank refused")
+Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+
+-- A server that throttles bursts of moves: the run waits longer and longer, and still finishes.
+local throttledPlain = organizeOnce(false)
+fresh()
+local tabT = addTab("Raid", -1)
+layout(BANK.tabs[tabT].slots)
+Bank:OnEvent("GUILDBANKFRAME_OPENED")
+Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
+runTimers()
+BANK.throttle = true
+check(Bank:StartSort(tabT), "a run starts on a throttling server")
+runTimers()
+BANK.throttle = nil
+local tg = BANK.tabs[tabT].slots
+check(Bank:SortState() == nil and tg[1] and tg[1].id == 22832 and tg[2].id == 22854 and tg[2].c == 20,
+  "the run waits out the throttle and finishes the tab")
+check(throttledPlain > 0 and not table.concat(printed, "\n"):find("Stopped", 1, true), "without giving up")
 Bank:OnEvent("GUILDBANKFRAME_CLOSED")
 
 -- ── Typing an item ──────────────────────────────────────────────────────

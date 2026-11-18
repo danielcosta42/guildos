@@ -39,11 +39,12 @@ local HIST_MAX = 300             -- ledger lines sent in one answer
 local MOVE_DELAY = 0.45          -- seconds between two moves (what sorters found the server takes)
 local HOLD_MIN = 0.1             -- seconds between picking an item up and dropping it, at least
 local HOLD_MAX = 0.8             -- the drop goes then, even when the client never says it holds it
-local DROP_FAILS = 3             -- drops the server refused, in a run, before it stops
+local DROP_FAILS = 6             -- drops the server refused in a row before a run stops
 local LOCK_WAIT = 0.25           -- seconds between two looks while a slot is locked
 local LOCK_TIMEOUT = 8           -- seconds a slot may stay locked before the run gives up
 local INFO_WAIT = 3              -- seconds to wait for item names before a run starts anyway
-local STUCK_TRIES = 3            -- the same move this many times with nothing changing stops a run
+local STUCK_TRIES = 6            -- the same move this many times in a row with nothing changing stops a run
+local BACKOFF_MAX = 4            -- seconds, at most, before a move that did not take is tried again
 local MAX_MOVES = 400            -- a run never makes more moves than this
 local REQ_KEEP_DAYS = 14         -- closed requests are kept this long
 local REQ_MAX = 100              -- requests kept
@@ -52,6 +53,12 @@ local NOTE_MAX = 80              -- characters of a request's or need's note
 local NEED_MAX = 60              -- needs kept
 
 local function now() return GetServerTime() end
+
+-- How long to wait before trying again after `n` tries that did not take: the server throttles a
+-- burst of moves, so each wait doubles, up to BACKOFF_MAX.
+local function backoff(n)
+    return math.min(BACKOFF_MAX, MOVE_DELAY * 2 ^ math.max(0, n))
+end
 
 -- Two names for one player: the sender of an addon message comes as "Name-Realm", my own name as
 -- "Name". Compared by player key.
@@ -1115,11 +1122,11 @@ function GuildBank:SortStep()
         GuildOS.Compat.ClearCursor()
         if run.dropped then
             run.dropFails = (run.dropFails or 0) + 1
-            self:Trace("the drop was refused (%d)", run.dropFails)
+            self:Trace("the drop was refused (%d in a row)", run.dropFails)
             if run.dropFails >= DROP_FAILS then return self:StopSort("refused") end
         end
         run.dropped = nil
-        return again(MOVE_DELAY)
+        return again(backoff(run.dropFails or 0))
     end
     run.dropped = nil
     -- The tab just asked for: its slots read empty until the server answers.
@@ -1149,10 +1156,17 @@ function GuildBank:SortStep()
     end
     local mark = encodeSlots(slots) .. "|" .. move.op .. move.from .. ">" .. move.to
     if mark == run.last then
-        run.same = run.same + 1
-        if run.same >= STUCK_TRIES then return self:StopSort("stuck") end
+        -- The last move did not take: wait longer each time before trying it again.
+        if not run.retrying then
+            run.same = run.same + 1
+            if run.same >= STUCK_TRIES then return self:StopSort("stuck") end
+            run.retrying = true
+            self:Trace("no change after the move; trying again in %.1fs (%d)", backoff(run.same), run.same)
+            return again(backoff(run.same))
+        end
+        run.retrying = nil
     else
-        run.same = 0
+        run.same, run.retrying, run.dropFails = 0, nil, 0
     end
     run.last = mark
     if run.moves >= MAX_MOVES then return self:StopSort("stuck") end
