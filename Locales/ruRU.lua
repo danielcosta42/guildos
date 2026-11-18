@@ -3111,3 +3111,5 @@ L["You already have %d open requests."] = "У вас уже %d открытых 
 L["Stopped: the bank refused the moves. Your rank may not move items in this tab."] = "Остановлено: банк отклонил перемещения. Возможно, ваше звание не может перемещать предметы в этой вкладке."
 L["Bank debug on: each move of an organize run is printed."] = "Отладка банка включена: каждое перемещение при упорядочивании выводится в чат."
 L["Bank debug off."] = "Отладка банка выключена."
+L["Tab %d is full: free one slot and it can be put in order."] = "Вкладка %d заполнена: освободите одну ячейку, и её можно будет упорядочить."
+L["This tab is full: free one slot and it can be put in order."] = "Эта вкладка заполнена: освободите одну ячейку, и её можно будет упорядочить."

@@ -148,8 +148,9 @@ function PickupGuildBankItem(tab, slot)
     from.c = from.c - take
     if from.c <= 0 then BANK.tabs[cursor.tab].slots[cursor.slot] = nil end
   else
-    check(n == from.c, "the planner never drops part of a stack on another item")
-    slots[slot], BANK.tabs[cursor.tab].slots[cursor.slot] = from, to
+    -- The guild bank does not swap: a drop on another item is refused and stays on the cursor.
+    BANK.swapsTried = (BANK.swapsTried or 0) + 1
+    return
   end
   moves = moves + 1
   cursor = nil
@@ -239,6 +240,8 @@ for trial = 1, 400 do
   while true do
     local m = Plan.PlanMove(slots, 98, rank, stack)
     if not m then break end
+    local dest = slots[m.to]
+    check(dest == nil or dest.k == slots[m.from].k, "a move only drops into an empty slot or onto the same item")
     Plan.Apply(slots, m, stack)
     n = n + 1
     if n > 1000 then break end
@@ -601,6 +604,39 @@ check(Bank:SortState() == nil and tg[1] and tg[1].id == 22832 and tg[2].id == 22
   "the run waits out the throttle and finishes the tab")
 check(throttledPlain > 0 and not table.concat(printed, "\n"):find("Stopped", 1, true), "without giving up")
 Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+
+-- The real bank never sees a swap.
+check((BANK.swapsTried or 0) == 0, "no run ever drops an item on another")
+
+-- A full tab out of order says so instead of trying; one free slot is enough.
+do
+  local full, rk, st = {}, {}, {}
+  for i = 1, 98 do
+    local k = "k" .. ((i % 3) + 1)
+    full[i] = { k = k, c = 1 }
+    rk[k] = Plan.SortKey({ id = (i % 3) + 1, classID = 0, name = k })
+    st[k] = 1
+  end
+  local m, why = Plan.PlanMove(full, 98, rk, st)
+  check(m == nil and why == "full", "a full tab with nothing to merge cannot be ordered, and says so")
+  full[98] = nil
+  local n = 0
+  while true do
+    local mv = Plan.PlanMove(full, 98, rk, st)
+    if not mv then break end
+    check(full[mv.to] == nil or full[mv.to].k == full[mv.from].k, "with one slot free, every move lands on an empty slot")
+    Plan.Apply(full, mv, st)
+    n = n + 1
+    if n > 600 then break end
+  end
+  local tgt = Plan.Target(full, 98, rk, st)
+  local ordered = true
+  for i = 1, 98 do
+    local a2, b2 = full[i], tgt[i]
+    if (a2 == nil) ~= (b2 == nil) or (a2 and a2.k ~= b2.k) then ordered = false end
+  end
+  check(n <= 600 and ordered, "and the tab ends in order through that one free slot")
+end
 
 -- ── Typing an item ──────────────────────────────────────────────────────
 check(Bank:ParseItemInput(linkOf(22854)) == 22854 and Bank:ParseItemInput("22832") == 22832, "a link or an id names its item")

@@ -3231,3 +3231,5 @@ L["You already have %d open requests."] = "Vous avez déjà %d demandes ouvertes
 L["Stopped: the bank refused the moves. Your rank may not move items in this tab."] = "Arrêté : la banque a refusé les déplacements. Votre rang ne peut peut-être pas déplacer d'objets dans cet onglet."
 L["Bank debug on: each move of an organize run is printed."] = "Diagnostic de la banque activé : chaque déplacement du rangement s'affiche dans le chat."
 L["Bank debug off."] = "Diagnostic de la banque désactivé."
+L["Tab %d is full: free one slot and it can be put in order."] = "L'onglet %d est plein : libérez un emplacement et il pourra être rangé."
+L["This tab is full: free one slot and it can be put in order."] = "Cet onglet est plein : libérez un emplacement et il pourra être rangé."

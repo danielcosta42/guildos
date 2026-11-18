@@ -3111,3 +3111,5 @@ L["You already have %d open requests."] = "你已有 %d 个待处理的申请。
 L["Stopped: the bank refused the moves. Your rank may not move items in this tab."] = "已停止：银行拒绝了移动。你的会阶可能无法在此标签页移动物品。"
 L["Bank debug on: each move of an organize run is printed."] = "银行诊断已开启：整理时的每次移动都会显示在聊天中。"
 L["Bank debug off."] = "银行诊断已关闭。"
+L["Tab %d is full: free one slot and it can be put in order."] = "标签页 %d 已满：空出一格即可整理。"
+L["This tab is full: free one slot and it can be put in order."] = "此标签页已满：空出一格即可整理。"

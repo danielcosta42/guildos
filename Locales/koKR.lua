@@ -3111,3 +3111,5 @@ L["You already have %d open requests."] = "이미 열린 요청이 %d개 있습�
 L["Stopped: the bank refused the moves. Your rank may not move items in this tab."] = "중지됨: 은행이 이동을 거부했습니다. 당신 등급은 이 탭에서 아이템을 옮길 수 없을 수 있습니다."
 L["Bank debug on: each move of an organize run is printed."] = "은행 진단 켜짐: 정리 중 모든 이동이 채팅에 표시됩니다."
 L["Bank debug off."] = "은행 진단 꺼짐."
+L["Tab %d is full: free one slot and it can be put in order."] = "탭 %d이(가) 가득 찼습니다: 한 칸을 비우면 정리할 수 있습니다."
+L["This tab is full: free one slot and it can be put in order."] = "이 탭은 가득 찼습니다: 한 칸을 비우면 정리할 수 있습니다."

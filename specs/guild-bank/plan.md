@@ -45,5 +45,8 @@ older read adds nothing.
 Each step reads the real tab, waits while any slot is locked (gives up after 8 s), and asks the
 planner for one move: first merges (the bigger partial stack takes from the smallest, by split
 when only part fits), then the first slot out of order is filled from a later slot holding exactly
-what it should. A move is two halves: the pickup (or split), then the drop once the cursor holds the item (at least 0.1 s, at most 0.8 s later): a drop in the same frame as its pickup is lost and leaves the item on the cursor (seen on WoW: Forever). An item still on the cursor after a drop is put back and counted; six refused drops in a row stop the run; a move that did not take is tried again after a wait that doubles (0.45 s up to 4 s), six times at most. `/gos bank debug` prints every half. One move every 0.45 s; the same move on the same state three times stops the run;
+what it should. The guild bank never swaps (a drop on another item is refused and stays on the
+cursor), so a move only lands on an empty slot or on the same item: what sits in the wrong slot is
+first moved out, to its own place if that is free, else to the last free slot. A full tab with
+nothing to merge cannot be ordered and says so; one free slot is enough. A move is two halves: the pickup (or split), then the drop once the cursor holds the item (at least 0.1 s, at most 0.8 s later): a drop in the same frame as its pickup is lost and leaves the item on the cursor (seen on WoW: Forever). An item still on the cursor after a drop is put back and counted; six refused drops in a row stop the run; a move that did not take is tried again after a wait that doubles (0.45 s up to 4 s), six times at most. `/gos bank debug` prints every half. One move every 0.45 s; the same move on the same state three times stops the run;
 at most 400 moves. Sort keys are cached once per item name, so the order cannot shift mid-run.

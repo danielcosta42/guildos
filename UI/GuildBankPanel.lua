@@ -581,7 +581,7 @@ local function buildTabs(p)
         grid:SetShown(t ~= nil)
         strip:SetShown(t ~= nil)
         if not t then title:SetText(L["Bank"]); fillText:SetText(""); perm:SetText(""); return end
-        local preview, moves = B:Preview(st.tab)
+        local preview, moves, full = B:Preview(st.tab)
         local shown = st.organized and preview or t.slots
         local used, after = 0, #preview
         for _ in pairs(t.slots) do used = used + 1 end
@@ -619,7 +619,8 @@ local function buildTabs(p)
             stop:Hide()
             progress:Hide()
             organize:SetEnabled(can and moves > 0)
-            if moves == 0 then note:SetText(L["This tab is already in order."])
+            if full and moves == 0 then note:SetText(L["This tab is full: free one slot and it can be put in order."])
+            elseif moves == 0 then note:SetText(L["This tab is already in order."])
             elseif can then note:SetText(L["Merges stacks and sorts by category, quality and name, one move at a time."])
             else note:SetText(why or "") end
         end

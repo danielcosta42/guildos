@@ -123,9 +123,15 @@ local function nextMerge(slots, size, stack)
 end
 
 -- The next move that brings the tab closer to Plan.Target, or nil when it already holds it.
--- { op = "split", from, to, count } takes `count` off `from` onto the same item at `to`;
--- { op = "move", from, to } picks `from` up and drops it on `to`: into an empty slot, onto the same
--- item, or swapping with what is there.
+-- The guild bank does not swap: an item dropped on a slot holding another item is refused and
+-- stays on the cursor (#380). So a move only ever drops into an empty slot or onto the same item:
+--   { op = "split", from, to, count } takes `count` off `from` onto the same item at `to`;
+--   { op = "move", from, to } picks `from` up and drops it into the empty `to`, or onto the same
+--   item there (a merge).
+-- The first slot out of order is filled from a later slot holding exactly what it should; when it
+-- holds something else, that is first moved out to an empty slot: its own place if that is empty,
+-- else the last empty slot of the tab. With no empty slot and no merge left a full tab cannot be
+-- ordered: nil, "full".
 function Plan.PlanMove(slots, size, rank, stack)
     local merge = nextMerge(slots, size, stack)
     if merge then return merge end
@@ -133,14 +139,28 @@ function Plan.PlanMove(slots, size, rank, stack)
     for i, want in ipairs(target) do
         local cur = slots[i]
         if not (cur and cur.k == want.k and cur.c == want.c) then
-            for j = i + 1, size do
-                local s = slots[j]
-                if s and s.k == want.k and s.c == want.c then
-                    return { op = "move", from = j, to = i }
+            if not cur then
+                for j = i + 1, size do
+                    local s = slots[j]
+                    if s and s.k == want.k and s.c == want.c then
+                        return { op = "move", from = j, to = i }
+                    end
+                end
+                return nil   -- not reachable once every merge is made; never loop on it
+            end
+            -- Move what is in the way out: home if its place is free, else to the end of the tab.
+            local park
+            for k = i + 1, size do
+                local w = target[k]
+                if not slots[k] and w and w.k == cur.k and w.c == cur.c then park = k; break end
+            end
+            if not park then
+                for k = size, i + 1, -1 do
+                    if not slots[k] then park = k; break end
                 end
             end
-            -- Not reachable once every merge is made; never loop on it.
-            return nil
+            if not park then return nil, "full" end
+            return { op = "move", from = i, to = park }
         end
     end
     return nil
@@ -172,7 +192,8 @@ function Plan.Apply(slots, move, stack)
 end
 
 -- How many moves a run would take, playing it on a copy (capped at `limit`): the progress bar's
--- total, and the harness's proof that every run ends.
+-- total, and the harness's proof that every run ends. Second return: "full" when the tab cannot be
+-- put in order without a free slot.
 function Plan.CountMoves(slots, size, rank, stack, limit)
     local copy = {}
     for i = 1, size do
@@ -181,8 +202,8 @@ function Plan.CountMoves(slots, size, rank, stack, limit)
     end
     local n = 0
     while n < limit do
-        local m = Plan.PlanMove(copy, size, rank, stack)
-        if not m then return n end
+        local m, why = Plan.PlanMove(copy, size, rank, stack)
+        if not m then return n, why end
         Plan.Apply(copy, m, stack)
         n = n + 1
     end

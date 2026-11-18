@@ -543,7 +543,7 @@ function GuildBank:Preview(tab)
     if not t then return nil end
     local plain, rank, stack = self:PlanInput(t.slots or {})
     local target = Plan.Target(plain, SLOTS, rank, stack)
-    local moves = Plan.CountMoves(plain, SLOTS, rank, stack, MAX_MOVES)
+    local moves, why = Plan.CountMoves(plain, SLOTS, rank, stack, MAX_MOVES)
     local byKey = {}
     for _, s in pairs(t.slots or {}) do byKey[keyOf(s)] = s end
     local out = {}
@@ -551,7 +551,7 @@ function GuildBank:Preview(tab)
         local src = byKey[want.k]
         out[i] = { id = src.id, l = src.l, c = want.c }
     end
-    return out, moves
+    return out, moves, why == "full"
 end
 
 ----------------------------------------------------------------------
@@ -1145,8 +1145,13 @@ function GuildBank:SortStep()
     if not allNamed(self, slots) and GetTime() < (run.waitUntil or 0) then return again(LOCK_WAIT) end
 
     local plain, rank, stack = self:PlanInput(slots)
-    local move = Plan.PlanMove(plain, SLOTS, rank, stack)
+    local move, why = Plan.PlanMove(plain, SLOTS, rank, stack)
     if run.moves == 0 then run.total = Plan.CountMoves(plain, SLOTS, rank, stack, MAX_MOVES) end
+    if not move and why == "full" then
+        run.report[#run.report + 1] = { tab = tab, moves = run.moves, freed = 0 }
+        GuildOS:Print(string.format(L["Tab %d is full: free one slot and it can be put in order."], tab))
+        return self:NextSortTab()
+    end
     if not move then
         local free = 0
         for i = 1, SLOTS do if not plain[i] then free = free + 1 end end
