@@ -114,3 +114,7 @@ right after the last move landed. As BankStack does (0.4 s after each guild bank
 pauses after each move before the next pickup: 0.4 s at first, 0.1 s more after each problem (1 s at
 most), 0.05 s less after 8 moves in a row without one (0.2 s at least). On the stub with that rule
 (0.35 s): 114 ignored operations and 387 s before, 5 and 112 s now.
+
+Seventh in-game log: 26 moves, one problem: the first drop in the pickup's frame, which WoW: Forever
+does not take. That finding is now kept in the settings (`gbankSameFrame = false`), so later sessions
+start by waiting for the cursor.

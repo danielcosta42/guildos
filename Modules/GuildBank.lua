@@ -1261,6 +1261,8 @@ function GuildBank:SortStep()
             -- same frame as its pickup that was not taken: this client wants a moment between them.
             if p.sameFrame and s.sameFrame ~= false then
                 s.sameFrame = false
+                -- Kept for the next sessions: this client never takes such a drop (WoW: Forever).
+                GuildOS:SetSetting("gbankSameFrame", false)
                 self:Trace("drops in the pickup's frame are not taken here: waiting for the cursor from now on")
             end
             p.redrops = (p.redrops or 0) + 1
@@ -1381,6 +1383,7 @@ function GuildBank:SortStep()
         self:Describe(run.holding.item))
     -- The cursor already holds it: drop in the same frame, as BankStack does, unless this session saw
     -- such a drop not taken. Otherwise the next steps drop it once the cursor shows it.
+    if s.sameFrame == nil then s.sameFrame = GuildOS:GetSetting("gbankSameFrame") end
     if s.sameFrame ~= false and GuildOS.Compat.CursorHasItem() then
         run.holding.sameFrame = true
         run.moves = run.moves + 1

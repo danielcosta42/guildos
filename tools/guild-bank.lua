@@ -817,6 +817,9 @@ do
   Bank:OnEvent("GUILDBANKFRAME_CLOSED")
 end
 
+-- A client that never takes a drop in the pickup's frame: learned once, kept in the settings.
+check(GuildOS.db.settings.gbankSameFrame == nil or GuildOS.db.settings.gbankSameFrame == false, "the same-frame finding is a setting")
+
 -- ── Typing an item ──────────────────────────────────────────────────────
 check(Bank:ParseItemInput(linkOf(22854)) == 22854 and Bank:ParseItemInput("22832") == 22832, "a link or an id names its item")
 check(Bank:ParseItemInput("fel iron") == 23445 and Bank:ParseItemInput("Nothing at all") == nil,
