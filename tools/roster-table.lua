@@ -93,10 +93,14 @@ function Frame:GetText() return self.text end
 function Frame:GetStringWidth() return #(self.text or "") * 6 end
 function Frame:GetStringHeight() return 12 end
 function Frame:SetTextColor(r, g, b) self.color = { r, g, b } end
-for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "SetBackdrop", "SetBackdropColor",
+-- Kept, so the rows' fills and the selection's gold edge can be read (#377).
+function Frame:SetBackdropColor(r, g, b, a) self.bg = { r, g, b, a } end
+function Frame:SetVertexColor(r, g, b, a) self.color = { r, g, b, a } end
+function Frame:SetFocus() self.focused = true end
+for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "SetBackdrop",
   "SetBackdropBorderColor", "SetTexture", "SetTexCoord", "SetBlendMode", "SetAlpha", "SetShadowOffset",
   "SetShadowColor", "SetJustifyH", "SetJustifyV", "SetWordWrap", "SetTextInsets", "SetAutoFocus", "SetMaxLetters", "SetNumeric",
-  "ClearFocus", "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetVertexColor", "SetDesaturated",
+  "ClearFocus", "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetDesaturated",
   "SetFrameStrata", "EnableMouse", "SetMovable", "RegisterForDrag", "SetColorTexture", "SetAtlas", "SetScale",
   "SetHorizTile", "SetVertTile", "SetResizeBounds", "SetClipsChildren", "SetScrollChild", "RegisterEvent",
   "SetDrawLayer", "SetFontObject", "SetSpacing", "SetNonSpaceWrap", "SetIndentedWordWrap", "SetMaxLines",
@@ -125,7 +129,12 @@ local function flush()
   end
 end
 
-DEFAULT_CHAT_FRAME = { AddMessage = function() end }
+local printed = {}
+DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) printed[#printed + 1] = m end }
+local function said(fragment)
+  for _, m in ipairs(printed) do if m:find(fragment, 1, true) then return true end end
+  return false
+end
 local NOW = 1757800000
 function GetServerTime() return NOW end
 time = function(t) if t then return os.time(t) end return NOW end
@@ -266,6 +275,191 @@ local DEFAULT = "name,level,class,avgIlvl,race,lastSeen,professions,zone"
 check(headers() == DEFAULT, "the default header is the old eight: " .. headers())
 check(not rowOf("Ana").textCells.note:IsShown(), "and no note cell is drawn")
 check(GuildOSDB.rosterColumns == nil, "and nothing is stored")
+
+-- ── The rows: the sketch's measurements (#377) ──────────────────────────
+local C = GuildOS.Colors
+local function same(color, token)
+  return color ~= nil and math.abs(color[1] - token.r) < 1e-6 and math.abs(color[2] - token.g) < 1e-6
+    and math.abs(color[3] - token.b) < 1e-6
+end
+do
+  local rows = parent.rows
+  check(#rows == math.floor((600 - (82 + 28 + 36 + 1)) / 24), "rows are 24px tall: as many as fit under the header")
+  local stacked, flat, ruled = true, true, true
+  for i, row in ipairs(rows) do
+    local p = row.points[1]
+    if row.h ~= 24 or p[1] ~= "TOPLEFT" or p[3] ~= -((i - 1) * 24) then stacked = false end
+    if i <= 4 and not same(row.bg, C.well) then flat = false end
+    local r = row.rule
+    if not (r and r.h == 1 and same(r.color, C.line) and r.points[1][1] == "BOTTOMLEFT"
+      and r.points[2][1] == "BOTTOMRIGHT") then ruled = false end
+  end
+  check(stacked, "each one 24px under the one before")
+  check(flat, "no zebra: every row on the table's well")
+  check(ruled, "and a 1px line under each")
+  check(rowOf("Ana").classIcon.w == 16 and rowOf("Ana").nameText.font.file == GuildOS.Fonts.memberName.file,
+    "a 16px class icon in the 24px row, the name in Plex Sans Medium")
+  local marked = false
+  for _, row in ipairs(rows) do if row.selMark.shown then marked = true end end
+  check(not marked, "before any click no row is selected")
+
+  -- A left click opens the member's sheet and selects the row.
+  local sheets = {}
+  function GuildOS:ShowMemberDetail(d)
+    self.DetailFrame = self.DetailFrame or CreateFrame("Frame", nil, UIParent)
+    self.DetailFrame:Show()
+    sheets[#sheets + 1] = d.name
+  end
+  local ana = rowOf("Ana")
+  fire(ana, "OnClick", "LeftButton")
+  local m = ana.selMark
+  check(sheets[1] == "Ana" and m.shown and m.w == 2 and same(m.color, C.gold) and m.points[1][1] == "TOPLEFT"
+    and m.points[1][2] == 0 and m.points[2][1] == "BOTTOMLEFT", "the selected row: a 2px gold edge down its left side")
+  check(same(ana.bg, C.popup), "on popup")
+  local others = true
+  for _, row in ipairs(parent.rows) do
+    if row ~= ana and row.shown and (row.selMark.shown or not same(row.bg, C.well)) then others = false end
+  end
+  check(others, "and only that one")
+  -- The hover's tooltip reads half the addon; only the fill is under test here.
+  GameTooltip = setmetatable({}, { __index = function() return function() end end })
+  local tooltip = ShowRowTooltip
+  ShowRowTooltip = function() end
+  fire(ana, "OnEnter")
+  check(same(ana.bg, C.popup), "a selected row stays popup under the cursor")
+  fire(ana, "OnLeave")
+  local beto = rowOf("Beto")
+  fire(beto, "OnEnter")
+  check(same(beto.bg, C.panel) and not beto.selMark.shown, "another row turns panel under the cursor")
+  fire(beto, "OnLeave")
+  check(same(beto.bg, C.well), "and back to well when it leaves")
+  ShowRowTooltip = tooltip
+
+  -- The list is virtual: the mark follows the member, not the row it was drawn on.
+  local firstRow = parent.rows[1]
+  check(firstRow.memberData.name == "Ana", "Ana is drawn on the first row")
+  fire(parent.headerButtons.name, "OnClick", "LeftButton")
+  fire(parent.headerButtons.name, "OnClick", "LeftButton")
+  check(firstRow.memberData.name ~= "Ana" and not firstRow.selMark.shown and rowOf("Ana").selMark.shown,
+    "sorted the other way, the first row shows someone else unmarked, and Ana's new row has the mark")
+  fire(rowOf("Caio"), "OnClick", "LeftButton")
+  check(rowOf("Caio").selMark.shown and not rowOf("Ana").selMark.shown, "clicking another member moves the selection")
+  local menu = GuildOS.ShowMemberContextMenu
+  GuildOS.ShowMemberContextMenu = function() end
+  fire(rowOf("Dora"), "OnClick", "RightButton")
+  GuildOS.ShowMemberContextMenu = menu
+  check(rowOf("Caio").selMark.shown and not rowOf("Dora").selMark.shown, "a right click opens the menu, not a selection")
+  GuildOS.DetailFrame:Hide()
+  local none = true
+  for _, row in ipairs(parent.rows) do if row.selMark.shown then none = false end end
+  check(none and parent.selectedKey == nil, "closing the sheet clears the selection")
+  GuildOS.db.settings.sortBy, GuildOS.db.settings.sortAsc = "level", false
+  GuildOS:RefreshRosterUI()
+end
+
+-- ── The Members bar: the invite field moved here from the footer (#377) ─
+do
+  local UI = GuildOS.UI
+  local field = parent.inviteField
+  local bar = parent.searchBox.parent
+  check(field.parent == bar, "the invite field is the Members bar's")
+  check(not field.shown, "off Anniversary nobody is offered it (#256)")
+  local canInvite = true
+  CanGuildInvite = function() return canInvite end
+  local invited
+  GuildInvite = function(n) invited = n end
+  GuildOS.Client.isAnniversary = true
+  GuildOS:RefreshRosterUI()
+  check(field.shown, "on Anniversary, for a rank that invites, it shows")
+  local function x(fr) return fr.points[1][4] end
+  check(x(field) > x(parent.offlineBtn) and x(parent.offlineBtn) > x(parent.searchBox) and x(parent.searchBox) > x(parent.resultText),
+    "at the bar's right end, past Show Offline")
+  check(field.button.variant == "primary" and field.button.label.text == "Invite" and field.box.h == 22
+    and field.box.placeholder.text == "Player name...", "a 22px name box and the screen's one primary button, Invite")
+  printed = {}
+  field.box:SetText("")
+  fire(field.button, "OnClick")
+  check(invited == nil and said("Enter a player name to invite."), "an empty invite asks for a name")
+  field.box:SetText("  Nova  ")
+  fire(field.button, "OnClick")
+  check(invited == "Nova" and said("Guild invite sent to Nova.") and field.box:GetText() == "",
+    "it invites the name typed, then clears")
+  canInvite = false
+  GuildOS:RefreshRosterUI()
+  check(not field.shown, "a rank that cannot invite does not see it, without a reload")
+  canInvite = true
+
+  -- A narrow bar drops in a set order and nothing overlaps; Show Offline always stays.
+  local function relayout(room)
+    parent.w = room + 2 * 12 + 156
+    UI:Relayout(parent)
+    flush()
+  end
+  local function parts()
+    local out = {}
+    for _, c in ipairs(bar.children) do
+      if c.kind ~= "Texture" and c.shown then out[#out + 1] = c end
+    end
+    table.sort(out, function(a, b) return x(a) < x(b) end)
+    return out
+  end
+  -- From the narrowest table the window draws: the watch band's 404px of content less the rail.
+  local misfit
+  for room = 404 - 156 - 24, 1300, 7 do
+    relayout(room)
+    local edge = 12
+    for _, c in ipairs(parts()) do
+      if x(c) < edge or x(c) + c.w > 12 + room then misfit = misfit or room end
+      edge = x(c) + c.w
+    end
+    if not parent.offlineBtn.shown then misfit = misfit or room end
+  end
+  check(misfit == nil, "at every width the bar's parts stay inside it, apart, and Show Offline stays: " .. tostring(misfit))
+  relayout(738)
+  check(#parts() == 6 and field.shown, "738px holds all six")
+  -- Narrowing, what goes and in what order: the summary first, then Columns (a right click on the header
+  -- opens it too), Analytics (the one way in to /gos analytics, #137), the invite field, and at the
+  -- narrowest the search box; Show Offline stays.
+  local named = { [parent.resultText] = "summary", [field] = "invite", [parent.searchBox] = "search",
+                  [parent.offlineBtn] = "offline" }
+  for _, c in ipairs(parts()) do
+    if not named[c] then named[c] = c.label and c.label.text == "Analytics" and "analytics" or "columns" end
+  end
+  local gone, order = {}, {}
+  for room = 738, 404 - 156 - 24, -2 do
+    relayout(room)
+    for fr, name in pairs(named) do
+      if not fr.shown and not gone[name] then gone[name] = room; order[#order + 1] = name end
+    end
+  end
+  table.sort(order, function(p, q) return gone[p] > gone[q] end)
+  check(table.concat(order, ",") == "summary,columns,analytics,invite,search",
+    "narrowing drops the summary, Columns, Analytics, the invite field, then the search: " .. table.concat(order, ","))
+  check(not gone.offline and gone.invite >= 400, "Show Offline stays at every width, and at 400px the search still does")
+
+  -- A field kept is never hidden and shown again: the search filters on every keystroke and the roster
+  -- updates while someone types a name, and a hidden EditBox loses the keyboard (B would open the bags).
+  relayout(738)
+  local hides = 0
+  local hide = Frame.Hide
+  local function watch(fr) fr.Hide = function(self) hides = hides + 1; return hide(self) end end
+  watch(parent.searchBox); watch(field)
+  parent.searchBox:SetText("Ab")
+  if parent.searchBox.scripts.OnTextChanged then fire(parent.searchBox, "OnTextChanged") end
+  GuildOS:RefreshRosterUI()
+  flush()
+  parent.searchBox.Hide, field.Hide = nil, nil
+  parent.searchBox:SetText("")
+  if parent.searchBox.scripts.OnTextChanged then fire(parent.searchBox, "OnTextChanged") end
+  check(hides == 0 and parent.searchBox.shown and field.shown,
+    "typing in the search and a roster update hide neither the search box nor the invite field (" .. hides .. ")")
+  GuildOS.Client.isAnniversary = false
+  parent.w = 1600
+  UI:Relayout(parent)
+  flush()
+  check(not field.shown, "back off Anniversary, gone again")
+  GuildInvite, CanGuildInvite = nil, nil
+end
 
 -- ── The panel offers what this reader may see ───────────────────────────
 GuildOS:ToggleColumnsPanel(parent.headerButtons.level)
@@ -531,6 +725,42 @@ do
   GuildOS.Print = print0
 
   GuildOS.CreateTrialsPanel, GuildOS.IsOfficer = createTrials, isOfficer
+end
+
+-- ── The Raids screen: Core Sign-up moved here from the footer (#377) ────
+do
+  for _, n in ipairs({ "CreateRaidsPanel", "CreateRaiderPanel", "CreateCoresPanel", "CreateAuditPanel", "CreateRaidToolsPanel" }) do
+    GuildOS[n] = GuildOS[n] or function() end
+  end
+  local isOfficer, officer = GuildOS.IsOfficer, true
+  function GuildOS:IsOfficer() return officer end
+  local ran, show = 0, GuildOS.ShowCoreSignupFrame
+  function GuildOS:ShowCoreSignupFrame() ran = ran + 1 end
+  for _, who in ipairs({ "an officer", "a member" }) do
+    local hub = CreateFrame("Frame", nil, UIParent)
+    GuildOS:CreateRaidHubPanel(hub, hub)
+    local btn = hub.signupButton
+    local subBar = btn and btn.parent
+    check(btn and btn.label.text == "Core Sign-up" and subBar.h == 28, who .. ": the Raids sub-tab bar has a Core Sign-up button")
+    check(btn.points[1][1] == "RIGHT" and btn.points[1][3] == "RIGHT" and btn.points[1][4] == -8, "at its right end, 8px in")
+    subBar:SetSize(900, 28)
+    flush()
+    check(btn.shown, who .. ": shown beside the tabs at 900px")
+    local before = ran
+    fire(btn, "OnClick")
+    check(ran == before + 1, "and it opens the core sign-up")
+    local tabs = 0
+    for _, c in ipairs(subBar.children) do if c.kind == "Button" and c ~= btn then tabs = tabs + 1 end end
+    check(tabs == (officer and 5 or 4), who .. " sees " .. tabs .. " sub-tabs, and the button either way")
+    subBar:SetSize(4 + tabs * 112 + 8 + btn.w + 8, 28)
+    flush()
+    check(btn.shown, who .. ": still shown while it fits past the last tab")
+    subBar:SetSize(4 + tabs * 112 + 8 + btn.w + 7, 28)
+    flush()
+    check(not btn.shown, who .. ": and stands down a pixel narrower, never over a tab")
+    officer = false
+  end
+  GuildOS.IsOfficer, GuildOS.ShowCoreSignupFrame = isOfficer, show
 end
 
 print(("roster-table: %d checks passed"):format(checks))

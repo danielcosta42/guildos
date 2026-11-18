@@ -308,15 +308,13 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
     GuildOS.State.comm.recvKind = msgType   -- for /gos perf; SyncService narrows SV to its domain
 
     if msgType == CommSystem.MSG_TYPES.BROADCAST then
-        self:HandleBroadcast(sender, data)
+        self:HandleBroadcast(sender, data, channel)
     elseif msgType == CommSystem.MSG_TYPES.REQUEST then
         self:HandleRequest(sender, data)
     elseif msgType == CommSystem.MSG_TYPES.RESPONSE then
         self:HandleResponse(sender, data)
     elseif msgType == CommSystem.MSG_TYPES.PING then
         self:HandlePing(sender)
-    elseif msgType == CommSystem.MSG_TYPES.VERSION then
-        self:HandleVersionCheck(sender, data)
     elseif msgType == "WL" then
         if GuildOS.Wishlist then
             GuildOS.Wishlist:HandleWishlistBroadcast(sender, data, channel)
@@ -469,7 +467,7 @@ end
 ----------------------------------------------------------------------
 -- Handle incoming broadcast
 ----------------------------------------------------------------------
-function CommSystem:HandleBroadcast(sender, data)
+function CommSystem:HandleBroadcast(sender, data, channel)
     local ok, playerData = LibSerialize:Deserialize(data)
     if not ok or type(playerData) ~= "table" then self:_CountPayload(sender, "dropped", "decode"); return end
 
@@ -487,6 +485,8 @@ function CommSystem:HandleBroadcast(sender, data)
     -- Store the data, and count what became of it (issue #312).
     local stored, why = GuildOS.DataCollector:StoreReceivedData(key, playerData)
     self:_CountPayload(sender, stored and "stored" or "dropped", why)
+    -- A guildmate's own version, over GUILD only: a whisper can come from anyone (#377).
+    if channel == "GUILD" then self:HandleVersionCheck(sender, playerData.addonVersion) end
 end
 
 ----------------------------------------------------------------------
@@ -673,13 +673,31 @@ function CommSystem:HandlePing(sender)
 end
 
 ----------------------------------------------------------------------
--- Handle version check
+-- A newer Guild OS in the guild (#377)
 ----------------------------------------------------------------------
-function CommSystem:HandleVersionCheck(_sender, data)
-    -- Could notify user of newer versions
-    if data and data ~= GuildOS.VERSION then
-        GuildOS:Print(L["A different Guild OS version detected: "] .. tostring(data))
-    end
+-- Every member's broadcast carries its addon version, and the newest one above this client's is said in
+-- chat: NOTICE_WAIT seconds after the first, so a login's wave of broadcasts says only its newest, and
+-- again only if a newer one still comes. The addon cannot see CurseForge: the newest is the newest some
+-- guildmate runs. Only a plain x.y.z on both sides counts, so a beta, a dev build or junk off the network
+-- warns nobody.
+-- At most NOTICE_MAX lines a session, and each part at most three digits: a guildmate stepping
+-- 1.29.1, 1.29.2... earns a few lines, not one every 10s.
+-- ponytail: one guildmate can still claim a version; ask for two senders if that is ever abused.
+CommSystem.NOTICE_WAIT, CommSystem.NOTICE_MAX = 10, 3
+local PLAIN = "^%d%d?%d?%.%d%d?%d?%.%d%d?%d?$"
+function CommSystem:HandleVersionCheck(_sender, ver)
+    local cur, M = GuildOS.VERSION, GuildOS.Mesh
+    if not (M and M.CompareVersions) then return end
+    if type(ver) ~= "string" or not ver:match(PLAIN) or type(cur) ~= "string" or not cur:match(PLAIN) then return end
+    if M.CompareVersions(ver, self.newestSeen or cur) <= 0 then return end
+    self.newestSeen = ver
+    if self.noticeDue or (self.noticesSaid or 0) >= self.NOTICE_MAX then return end
+    self.noticeDue = true
+    C_Timer.After(self.NOTICE_WAIT, function()
+        self.noticeDue = nil
+        self.noticesSaid = (self.noticesSaid or 0) + 1
+        GuildOS:Print(string.format(L["Guild OS %s is out, you have %s. Update it on CurseForge."], self.newestSeen, cur))
+    end)
 end
 
 ----------------------------------------------------------------------

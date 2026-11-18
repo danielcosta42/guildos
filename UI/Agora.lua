@@ -2,9 +2,12 @@
 -- Guild OS - Now (agora; issue #14)
 -- The first tab, and what the hub used to be: a live column that answers
 -- when the next raid is, what needs this player and what just happened.
--- Every row opens the screen that owns it. While the tab is wide enough,
--- the home cards (UI/Dashboard.lua) sit beside the column; #15 redesigns
--- them. The data half is frame-free, so tools/window-shell.lua tests it.
+-- Every row opens the screen that owns it. Laid out as the approved sketch
+-- (#377): the column's sections have no box and a 1px rule between them,
+-- the countdown is big in Mono, and the home cards (UI/Dashboard.lua) are
+-- a grid of equal cards beside the column, or under it once the tab is
+-- narrow. The data half is frame-free, so tools/window-shell.lua tests it;
+-- tools/dashboard-layout.lua checks the layout in both styles.
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
@@ -14,14 +17,19 @@ local Agora = {}
 UI.Agora = Agora
 
 local WHITE         = "Interface\\Buttons\\WHITE8x8"
-local COLUMN_W      = 296
-local HOME_MIN      = 780        -- tab width from which the home cards sit beside the column
-local GAP           = 8
-local CARD_PAD      = 10
-local TITLE_ROW     = 24         -- a card's title line, and the space under it
-local ROW_H         = 26
+-- The sketch's grid (Main.dc.html): a 12px gutter, UI.GAP once the window is under 620px.
+local GUTTER        = 12
+local NARROW_W      = 604        -- a 620px window's content, inside its 8px padding
+local SIDE_MIN      = 780        -- from this content width the cards sit beside the column (UI.LADDER "wide")
+local LINE_GAP      = 6          -- between the next raid's lines
+local SECTION_GAP   = 16         -- from a section's last line down to the next one's rule
+local RULE_GAP      = 12         -- CreateSectionTitle draws the rule this far over a title
+local TITLE_GAP     = 4          -- under a section title, before its rows
+local ROW_H         = 24         -- a list row, as a table row (Componentes.dc.html)
 local MARK          = 6
 local TIME_W        = 44
+local ARROW_W       = 10
+local STACKED_FEED  = 5          -- activity rows while the cards follow the column down
 local RECENT        = 48 * 3600  -- how far back the activity goes
 local ANSWER_WITHIN = 7 * 86400  -- a raid this close asks for an answer
 local MAX_NEEDS     = 5
@@ -106,7 +114,9 @@ function Agora:NeedsMe()
     -- A raid planned on the site is answered there: asked here, nobody could ever clear it (#146).
     local inGame = raid and not (cal.IsWebEvent and cal:IsWebEvent(raid))
     if inGame and cal.MyRsvp and not cal:MyRsvp(raid) and raid.when - now() <= ANSWER_WITHIN then
-        add(normal, string.format(L["You have not answered: %s"], raid.title or "?"), "guild", "calendar", raid.when)
+        local title = raid.title or "?"   -- a member's or the site's text (#377)
+        add(normal, string.format(L["You have not answered: %s"],
+            GuildOS.SanitizeUserText and GuildOS:SanitizeUserText(title) or title), "guild", "calendar", raid.when)
     end
 
     if GuildOS:IsOfficer() then
@@ -233,6 +243,11 @@ end
 -- The column
 ----------------------------------------------------------------------
 
+-- The gutter between the column and the cards, and between the cards (Main.dc.html).
+function Agora.Gutter(width)
+    return (width or 0) < NARROW_W and UI.GAP or GUTTER
+end
+
 local function newText(parent, size, role, color)
     local fs = parent:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(fs, size, role)
@@ -243,21 +258,14 @@ local function newText(parent, size, role, color)
     return fs
 end
 
-local function newCard(parent, title)
-    local card = UI:CreatePanel(parent)
-    card:SetFrameLevel(parent:GetFrameLevel() + 1)
-    card:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1)
-    card.title = newText(card, nil, "sectionTitle", C.text)
-    card.title:SetPoint("TOPLEFT", CARD_PAD, -CARD_PAD)
-    card.title:SetText(title)
-    return card
+-- A single line's height, never under its font's size: the stubs and a font still loading read less.
+local function lineH(fs, least)
+    return math.max(least, math.ceil(fs:GetStringHeight() or 0))
 end
 
-local function newList(card)
-    local list = UI:CreateDarkPanel(card)
-    list:SetFrameLevel(card:GetFrameLevel() + 1)
-    list:SetPoint("TOPLEFT", CARD_PAD, -(CARD_PAD + TITLE_ROW))
-    list:SetPoint("TOPRIGHT", -CARD_PAD, -(CARD_PAD + TITLE_ROW))
+-- A list of rows straight on the tab, no box (#377): a 1px line between rows does the separating.
+local function newList(parent)
+    local list = CreateFrame("Frame", nil, parent)
     list.rows = {}
     return list
 end
@@ -272,8 +280,8 @@ local function acquireRow(list, i)
     if r then return r end
     r = CreateFrame("Button", nil, list)
     r:SetHeight(ROW_H)
-    r:SetPoint("TOPLEFT", 1, -(1 + (i - 1) * ROW_H))
-    r:SetPoint("TOPRIGHT", -1, -(1 + (i - 1) * ROW_H))
+    r:SetPoint("TOPLEFT", 0, (1 - i) * ROW_H)
+    r:SetPoint("TOPRIGHT", 0, (1 - i) * ROW_H)
 
     r.hover = r:CreateTexture(nil, "BACKGROUND")
     r.hover:SetTexture(WHITE)
@@ -281,22 +289,31 @@ local function acquireRow(list, i)
     r.hover:SetVertexColor(C.panel.r, C.panel.g, C.panel.b, 1)
     r.hover:Hide()
 
+    r.line = UI:CreateSeparator(r)
+    r.line:SetPoint("BOTTOMLEFT", 0, 0)
+    r.line:SetPoint("BOTTOMRIGHT", 0, 0)
+
     r.mark = r:CreateTexture(nil, "ARTWORK")
     r.mark:SetTexture(WHITE)
     r.mark:SetSize(MARK, MARK)
-    r.mark:SetPoint("LEFT", 8, 0)
+    r.mark:SetPoint("LEFT", 0, 0)
 
-    r.time = newText(r, 10, "caption", C.label)
-    r.time:SetPoint("LEFT", 8, 0)
+    -- On the right, as in the sketch: a row's time, or the ">" that says it opens something.
+    r.time = newText(r, nil, "caption", C.label)
+    r.time:SetPoint("RIGHT", 0, 0)
     r.time:SetWidth(TIME_W)
+    r.time:SetJustifyH("RIGHT")
+    r.arrow = newText(r, nil, "caption", C.label)
+    r.arrow:SetPoint("RIGHT", 0, 0)
+    r.arrow:SetText(">")
 
-    r.text = newText(r, 11, nil, C.text)
+    r.text = newText(r, 12, nil, C.text)
 
     -- The loading state: a static bar where the text will be.
     r.bar = r:CreateTexture(nil, "ARTWORK")
     r.bar:SetTexture(WHITE)
     r.bar:SetHeight(8)
-    r.bar:SetPoint("LEFT", 8, 0)
+    r.bar:SetPoint("LEFT", 0, 0)
     r.bar:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
 
     r:SetScript("OnEnter", function(self) if self.go then self.hover:Show() end end)
@@ -307,37 +324,45 @@ local function acquireRow(list, i)
 end
 
 -- Paint a row as "need", "feed", "empty" (value: the line) or "loading"
--- (value: the bar's width). Items open their screen, filtered.
-local function paintRow(r, kind, value)
+-- (value: the bar's width). Items open their screen, filtered. The last row
+-- has no line under it: the next section's rule, or the tab's end, follows.
+local function paintRow(r, kind, value, last)
     r.go = nil
     r.hover:Hide()
     r.mark:Hide()
     r.time:Hide()
+    r.arrow:Hide()
     r.bar:Hide()
     r.text:Hide()
+    r.line:SetShown(not last)
     r.text:ClearAllPoints()
-    r.text:SetPoint("RIGHT", r, "RIGHT", -8, 0)
     if kind == "loading" then
         r.bar:SetWidth(value)
         r.bar:Show()
     elseif kind == "empty" then
-        r.text:SetPoint("LEFT", r, "LEFT", 8, 0)
+        r.text:SetPoint("LEFT", r, "LEFT", 0, 0)
+        r.text:SetPoint("RIGHT", r, "RIGHT", 0, 0)
         r.text:SetTextColor(C.label.r, C.label.g, C.label.b)
         r.text:SetText(value)
         r.text:Show()
     else
+        local right
         if kind == "need" then
-            local col = value.urgent and C.danger or C.gold
+            -- Urgent in danger, the rest a neutral mark: gold is not a status (#361).
+            local col = value.urgent and C.danger or C.label
             r.mark:SetVertexColor(col.r, col.g, col.b, 1)
             r.mark:Show()
-            r.text:SetPoint("LEFT", r, "LEFT", 8 + MARK + 8, 0)
-            r.text:SetTextColor(C.text.r, C.text.g, C.text.b)
+            r.arrow:Show()
+            r.text:SetPoint("LEFT", r, "LEFT", MARK + 8, 0)
+            right = ARROW_W + 8
         else
             r.time:SetText(stamp(value.ts))
             r.time:Show()
-            r.text:SetPoint("LEFT", r, "LEFT", 8 + TIME_W + 4, 0)
-            r.text:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            r.text:SetPoint("LEFT", r, "LEFT", 0, 0)
+            right = TIME_W + 8
         end
+        r.text:SetPoint("RIGHT", r, "RIGHT", -right, 0)
+        r.text:SetTextColor(C.text.r, C.text.g, C.text.b)
         r.text:SetText(value.text)
         r.text:Show()
         r.go = function()
@@ -350,56 +375,58 @@ local function paintRow(r, kind, value)
 end
 
 local function fill(list, rows)
-    for i, row in ipairs(rows) do paintRow(acquireRow(list, i), row[1], row[2]) end
+    for i, row in ipairs(rows) do paintRow(acquireRow(list, i), row[1], row[2], i == #rows) end
     for i = #rows + 1, #list.rows do list.rows[i]:Hide() end
-    list:SetHeight(2 + #rows * ROW_H)
+    list:SetHeight(#rows * ROW_H)
+end
+
+local function place(region, y, across)
+    region:ClearAllPoints()
+    region:SetPoint("TOPLEFT", 0, -y)
+    if across then region:SetPoint("TOPRIGHT", 0, -y) end
 end
 
 function GuildOS:CreateNowPanel(panel, win)
-    local column = CreateFrame("Frame", nil, panel)
+    -- One scroll area: narrow, the cards follow the column down (#377).
+    local scroll, content = UI:CreateScrollFrame(panel, "GuildOSNowScroll")
+    scroll:SetAllPoints(panel)
+    UI:BindScrollChildWidth(scroll, content)
+    panel.scroll, panel.content = scroll, content
+
+    local column = CreateFrame("Frame", nil, content)
     column:SetPoint("TOPLEFT", 0, 0)
-    column:SetPoint("BOTTOMLEFT", 0, 0)
-    column:SetWidth(COLUMN_W)
     panel.column = column
 
-    local home = CreateFrame("Frame", nil, panel)
-    home:SetPoint("TOPLEFT", column, "TOPRIGHT", GAP, 0)
-    home:SetPoint("BOTTOMRIGHT", 0, 0)
-    home:Hide()
+    local home = CreateFrame("Frame", nil, content)
+    home:SetPoint("TOPLEFT", column, "TOPRIGHT", GUTTER, 0)
     panel.home = home
+    -- The rule over the cards once they are under the column.
+    local gridRule = UI:CreateSeparator(content)
+    gridRule:Hide()
+    panel.gridRule = gridRule
 
-    local raid, height = nil, 0
+    local raid, tabW, width, height = nil, 0, 0, 0
 
-    -- Next raid
-    local raidCard = newCard(column, L["Next raid"])
-    raidCard:SetPoint("TOPLEFT", 0, 0)
-    raidCard:SetPoint("TOPRIGHT", 0, 0)
-    local clock = newText(raidCard, 19, "countdown", C.gold)
-    clock:SetPoint("TOPRIGHT", -CARD_PAD, -CARD_PAD)
-    clock:SetJustifyH("RIGHT")
-    local raidMeta = newText(raidCard, 10, "caption", C.label)
-    raidMeta:SetPoint("TOPLEFT", CARD_PAD, -(CARD_PAD + TITLE_ROW))
-    raidMeta:SetPoint("TOPRIGHT", -CARD_PAD, -(CARD_PAD + TITLE_ROW))
-    local openCal = UI:SetButtonVariant(UI:CreateButton(raidCard, L["Open calendar"], 140, 26), "primary")
-    openCal:SetPoint("TOPLEFT", CARD_PAD, -(CARD_PAD + TITLE_ROW + 22))
+    -- Next raid: its name, when and who is going, the countdown, the way to the calendar.
+    local raidTitle = UI:CreateSectionTitle(column, L["Next raid"], true)
+    raidTitle:SetPoint("TOPLEFT", 0, 0)
+    local raidName = newText(column, nil, "memberName", C.text)
+    local raidMeta = newText(column, nil, "caption", C.label)
+    local clock = newText(column, nil, "countdown", C.text)
+    -- A link, as in the sketch: the screen's one primary is the answer to the next event (Dashboard).
+    local openCal = UI:SetButtonVariant(UI:CreateButton(column, L["Open calendar"], 40, 26), "ghost")
+    -- Its mono label and 4px either side (the sketch's "b g"): CreateButton grows only a label that spills.
+    openCal:SetWidth(math.ceil(openCal.label:GetStringWidth() or 0) + 8)
     openCal:SetScript("OnClick", function() UI:OpenWindow("guild", "calendar", raid and raid.when) end)
-    raidCard:SetHeight(CARD_PAD + TITLE_ROW + 22 + 26 + CARD_PAD)
-    panel.clock, panel.raidMeta, panel.openCalendar = clock, raidMeta, openCal
+    panel.raidTitle, panel.raidName, panel.raidMeta = raidTitle, raidName, raidMeta
+    panel.clock, panel.openCalendar = clock, openCal
 
-    -- Needs me
-    local needsCard = newCard(column, L["Needs me"])
-    needsCard:SetPoint("TOPLEFT", raidCard, "BOTTOMLEFT", 0, -GAP)
-    needsCard:SetPoint("TOPRIGHT", raidCard, "BOTTOMRIGHT", 0, -GAP)
-    local needsList = newList(needsCard)
-    panel.needsList = needsList
-
-    -- Activity: the rest of the column
-    local feedCard = newCard(column, L["Activity"])
-    feedCard:SetPoint("TOPLEFT", needsCard, "BOTTOMLEFT", 0, -GAP)
-    feedCard:SetPoint("TOPRIGHT", needsCard, "BOTTOMRIGHT", 0, -GAP)
-    feedCard:SetPoint("BOTTOM", column, "BOTTOM", 0, 0)
-    local feedList = newList(feedCard)
-    panel.feedList = feedList
+    local needsTitle = UI:CreateSectionTitle(column, L["Needs me"])
+    local needsList = newList(column)
+    local feedTitle = UI:CreateSectionTitle(column, L["Activity"])
+    local feedList = newList(column)
+    panel.needsTitle, panel.needsList = needsTitle, needsList
+    panel.feedTitle, panel.feedList = feedTitle, feedList
 
     local function tickClock()
         clock:SetText(raid and Agora.Clock(raid.when - now()) or DASH)
@@ -410,19 +437,46 @@ function GuildOS:CreateNowPanel(panel, win)
     local needs, feed, loading = {}, {}, false
 
     local function paint()
+        if width < 1 then return end
+        -- Both read the tab's own width, as the ladder does: the scroll child is a gutter narrower.
+        local g = Agora.Gutter(tabW)
+        local side = tabW >= SIDE_MIN
+        -- Beside the cards the column is one of three equal columns: span 4 of 12 (Agora.dc.html).
+        local colW = side and math.floor((width - 2 * g) / 3) or width
+        column:SetWidth(colW)
+
+        local y = lineH(raidTitle, 14) + LINE_GAP
+        raidName:SetShown(raid ~= nil)
         if raid then
             local comp = GuildOS.Calendar:GetComposition(raid)
-            raidMeta:SetText((raid.title or "?") .. DOT .. GuildOS:LocalDate("%a %H:%M", raid.when)
-                .. DOT .. string.format(L["%d going"], comp.yes))
+            -- An event title is a member's or the site's text: no textures or links on the tab (#377).
+            local title = raid.title or "?"
+            raidName:SetText(GuildOS.SanitizeUserText and GuildOS:SanitizeUserText(title) or title)
+            place(raidName, y, true)
+            y = y + lineH(raidName, 12) + LINE_GAP
+            raidMeta:SetText(GuildOS:LocalDate(L["%a %d %b, %H:%M"], raid.when) .. DOT
+                .. string.format(L["%d going"], comp.yes))
         else
             raidMeta:SetText(L["No raid scheduled."])
         end
-        openCal:SetShown(allowed("guild"))
+        place(raidMeta, y, true)
+        y = y + lineH(raidMeta, 10) + LINE_GAP + 4
         tickClock()
+        place(clock, y)
+        y = y + lineH(clock, 40)
+        local cal = allowed("guild")
+        openCal:SetShown(cal)
+        if cal then
+            place(openCal, y + LINE_GAP + 2)
+            y = y + LINE_GAP + 2 + openCal:GetHeight()
+        end
 
+        y = y + SECTION_GAP + RULE_GAP
+        place(needsTitle, y)
+        y = y + lineH(needsTitle, 14) + TITLE_GAP
         local rows = {}
         if loading then
-            for _, w in ipairs(LOADING_BARS) do rows[#rows + 1] = { "loading", w } end
+            for _, bw in ipairs(LOADING_BARS) do rows[#rows + 1] = { "loading", bw } end
         else
             for i, item in ipairs(needs) do
                 if i > MAX_NEEDS then break end
@@ -431,17 +485,45 @@ function GuildOS:CreateNowPanel(panel, win)
             if #rows == 0 then rows[1] = { "empty", L["All caught up"] } end
         end
         fill(needsList, rows)
-        needsCard:SetHeight(CARD_PAD + TITLE_ROW + needsList:GetHeight() + CARD_PAD)
+        place(needsList, y, true)
+        y = y + needsList:GetHeight()
 
-        local feedH = height - raidCard:GetHeight() - needsCard:GetHeight() - 2 * GAP
-        local fit = math.max(1, UI:ResolveRows(feedH, ROW_H, CARD_PAD + TITLE_ROW + 2 + CARD_PAD))
+        y = y + SECTION_GAP + RULE_GAP
+        place(feedTitle, y)
+        y = y + lineH(feedTitle, 14) + TITLE_GAP
+        -- Beside the cards, activity runs to the bottom of the tab; under them, a few rows.
+        local fit = side and math.max(1, UI:ResolveRows(height - y, ROW_H, 0)) or STACKED_FEED
         rows = {}
         for i, item in ipairs(feed) do
-            if i > fit then break end
+            if i > math.min(fit, MAX_FEED) then break end
             rows[#rows + 1] = { "feed", item }
         end
         if #rows == 0 then rows[1] = { "empty", L["Nothing in the last 48 hours."] } end
         fill(feedList, rows)
+        place(feedList, y, true)
+        y = y + feedList:GetHeight()
+        column:SetHeight(y)
+
+        -- The cards: beside the column sharing the tab's height, or under it below a rule.
+        home:ClearAllPoints()
+        local gridW, gridY
+        if side then
+            home:SetPoint("TOPLEFT", column, "TOPRIGHT", g, 0)
+            gridW = width - colW - g
+            gridRule:Hide()
+        else
+            gridRule:ClearAllPoints()
+            gridRule:SetPoint("TOPLEFT", 0, -(y + SECTION_GAP))
+            gridRule:SetPoint("TOPRIGHT", 0, -(y + SECTION_GAP))
+            gridRule:Show()
+            gridY = y + SECTION_GAP + RULE_GAP
+            home:SetPoint("TOPLEFT", 0, -gridY)
+            gridW = width
+        end
+        home:SetWidth(gridW)
+        local gridH = home.Layout and home.Layout(gridW, side and height or nil, side, g) or 0
+        home:SetHeight(math.max(1, gridH))
+        content:SetHeight(math.max(1, side and math.max(height, y, gridH) or (gridY + gridH)))
     end
 
     local function refresh()
@@ -457,16 +539,15 @@ function GuildOS:CreateNowPanel(panel, win)
     end
     panel.Refresh = refresh
 
-    local homeBuilt = false
+    -- The cards are built with the column: they are on the tab at every width now.
+    GuildOS:SafeCall(function() GuildOS:CreateDashboardPanel(home, win) end)
+    -- A card that comes or goes (the guild's setup) changes the grid's height.
+    home.relayout = function() UI:Relayout(panel) end
+
     UI:MakeResponsive(panel, function(_, w, h)
-        height = h
-        local wide = w >= HOME_MIN
-        column:SetWidth(wide and COLUMN_W or w)
-        if wide and not homeBuilt then
-            homeBuilt = true
-            GuildOS:SafeCall(function() GuildOS:CreateDashboardPanel(home, win) end)
-        end
-        home:SetShown(wide)
+        -- The scroll child stops short of the scroll bar (BindScrollChildWidth sets the same).
+        tabW, width, height = w, math.max(0, w - UI.SCROLL_GUTTER), h
+        content:SetWidth(math.max(1, width))
         paint()
     end)
 

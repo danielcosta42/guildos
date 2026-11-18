@@ -642,7 +642,11 @@ local function handleCommand(msg)
         local word = note:match("^(%S+)")
         local role = word and GuildOS.CoreManager and GuildOS.CoreManager.ROLE_WORDS[word:lower()]
         if role then note = note:match("^%S+%s+(.+)$") or "" end
-        if not coreName or coreName == "" then
+        if (not coreName or coreName == "") and GuildOS.ShowCoreSignupFrame then
+            -- The window, as the Raids tab's button opens it: the way in at any width, and with the
+            -- Raids tab switched off (#377).
+            GuildOS:ShowCoreSignupFrame()
+        elseif not coreName or coreName == "" then
             GuildOS:Print(L["Usage: /gos signup <CoreName> [tank|healer|melee|ranged] [note]"])
         elseif not GuildOS.CoreManager then
             GuildOS:Print(L["Core Manager not loaded."])
