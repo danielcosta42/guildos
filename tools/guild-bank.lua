@@ -455,7 +455,7 @@ check(Bank:MergeStream(0, { { t = NOW, ty = "d", n = "Eva", g = 50000 } }) == 1 
   "the money log is its own stream")
 -- A shared read is cleaned before it is merged.
 wire = {}
-GuildOS.SyncService.handlers.gbank({ act = "log", data = { reads = { { k = 99, list = { line(0, "d", "X", 1, 1) } },
+GuildOS.SyncService.handlers.gbank({ act = "log", data = { v = Bank.LEDGER_V, reads = { { k = 99, list = { line(0, "d", "X", 1, 1) } },
   { k = 2, list = { { t = NOW + 999999, ty = "d", n = "X", id = 1, c = 1 }, { t = NOW, ty = "zz" },
     { t = NOW, ty = "d", n = "Fae|r", id = 21877, c = 1e9 } } } } } }, "Fae")
 local s2 = Bank:Stream(2)
@@ -582,6 +582,152 @@ for round = 1, 3 do
 end
 check(#Bank:Stream(3) == 28, "and the stream holds every line once")
 
+-- Recent lines are never added twice, whatever order or age the reads arrive in (in game the
+-- ledger filled with copies of the last hour's lines, #380).
+fresh()
+local recent = { line(1, "d", "Bea", 4592, 7), line(1, "w", "Bea", 5762, 1), line(1, "d", "Cid", 5762, 1), line(1, "d", "Cid", 5762, 1) }
+check(Bank:MergeStream(1, recent) == 4, "a first read of recent lines adds them all")
+local newer = { recent[1], recent[2], recent[3], recent[4], line(0, "d", "Dan", 6359, 4) }
+check(Bank:MergeStream(1, newer) == 1, "a newer read adds its one new line")
+check(Bank:MergeStream(1, recent) == 0, "an older read of recent lines, arriving late, adds nothing")
+check(Bank:MergeStream(1, { recent[3], recent[4] }) == 0, "nor does a piece of it")
+-- A late read of a pattern that repeats (deposit, withdraw, deposit) is held whole, not lined up
+-- with the last deposit as if its withdrawal were new.
+local again = { line(0.5, "d", "Gus", 2589, 1), line(0.5, "w", "Gus", 2589, 1) }
+check(Bank:MergeStream(9, { again[1], again[2], line(0.5, "d", "Gus", 2589, 1) }) == 3 and Bank:MergeStream(9, again) == 0,
+  "a late read of a repeating pattern adds nothing")
+-- A peer saw a line this client missed, in the middle: only that line and what is newer are added.
+local peer = shifted({ recent[2], recent[3], line(1, "w", "Eva", 2589, 2), recent[4], newer[5] }, 0.5)
+peer[#peer + 1] = line(0, "d", "Fae", 6359, 1)
+check(Bank:MergeStream(1, peer) == 2, "a peer's read adds only the lines this client never saw")
+-- The same lines in another order (a history sorted by its own times) add nothing.
+check(Bank:MergeStream(1, { newer[5], recent[4], recent[1], recent[3], recent[2] }) == 0, "order plays no part")
+check(#Bank:Stream(1) == 7, "and the stream holds every line once")
+-- Two equal deposits stay two even when only one was read before.
+check(Bank:MergeStream(1, { recent[3], recent[4], line(0, "d", "Cid", 5762, 1) }) == 1, "a third equal deposit is a new line")
+
+-- A deposit equal to one whose line scrolled out of the game's 25 (an organize wrote 24 moves in
+-- between) is a new line, though the two are within the hours two reads may disagree by.
+fresh()
+local d1 = line(1, "d", "Cid", 4503, 1)
+check(Bank:MergeStream(1, { d1 }) == 1, "a deposit is read")
+local burst = { d1 }
+for i = 1, 24 do burst[#burst + 1] = { t = NOW - 3000, ty = "m", n = "Ana", id = 3000 + i, c = 1, t2 = 2 } end
+check(Bank:MergeStream(1, burst) == 24, "an organize's moves follow it")
+NOW = NOW + 3600
+local scrolled = {}
+for i = 1, 24 do scrolled[i] = { t = burst[i + 1].t + 1800, ty = "m", n = "Ana", id = 3000 + i, c = 1, t2 = 2 } end
+scrolled[25] = line(0, "d", "Cid", 4503, 1)
+check(Bank:MergeStream(1, scrolled) == 1, "an equal deposit whose twin scrolled out of the log is new")
+-- A peer's history or read with a line this client missed, whose first line agrees with this
+-- client's last (Bea deposits the same stack every few hours), adds only the missed and newer lines:
+-- a one-line run is not taken as the overlap unless it is the same event.
+fresh()
+local H = 3600
+local function L(t, ty, n, id, c) return { t = t, ty = ty, n = n, id = id, c = c } end
+local C0, A, B, C = L(NOW - 2.5 * H, "d", "Bea", 2589, 20), L(NOW - 2 * H, "d", "Dan", 2771, 5), L(NOW - H, "w", "Eva", 22854, 1), L(NOW, "d", "Bea", 2589, 20)
+Bank:MergeStream(1, { C0, A, B, C })
+GuildOS.SyncService.handlers.gbank({ act = "hist", data = { v = Bank.LEDGER_V, reads = { { k = 1, list = {
+  C0, A, L(NOW - 1.5 * H, "d", "Fae", 765, 3), B, C, L(NOW, "d", "Gus", 3575, 2) } } } } }, "Cid")
+check(#Bank:Stream(1) == 6, "a history with a missed line adds it and what is newer, nothing twice")
+local X, Y, Z, X2 = L(NOW - 2 * H, "w", "Cid", 22854, 1), L(NOW - 1.5 * H, "d", "Dan", 2771, 5), L(NOW - H, "d", "Eva", 765, 3), L(NOW, "w", "Cid", 22854, 1)
+Bank:MergeStream(2, { X, Y, Z, X2 })
+GuildOS.SyncService.handlers.gbank({ act = "log", data = { v = Bank.LEDGER_V, reads = { { k = 2, list = {
+  X, Y, L(NOW - 1.2 * H, "d", "Fae", 3575, 2), Z, X2, L(NOW, "d", "Gus", 2589, 1) } } } } }, "Cid")
+check(#Bank:Stream(2) == 6, "and so does a peer's read")
+-- More lines than the log holds since the last read: nothing lines up, and a deposit an hour past
+-- everything kept is new even with an equal one inside the hours two reads may disagree by.
+Bank:MergeStream(3, { L(NOW - 600, "d", "Bea", 2589, 20), L(NOW, "d", "Cid", 4503, 1) })
+local gap = {}
+for i = 1, 24 do gap[i] = { t = NOW + 1.5 * H, ty = "m", n = "Ana", id = 3000 + i, c = 1, t2 = 2 } end
+gap[25] = L(NOW + 1.5 * H, "d", "Cid", 4503, 1)
+check(Bank:MergeStream(3, gap) == 25, "a read past a gap is new whole, its equal deposit too")
+-- A missed older line goes in at its time, so the next read still lines up with the newest lines.
+fresh()
+local R1 = {}
+for i = 1, 25 do R1[i] = L(NOW - (25 - i) * 240, "d", "P" .. i, 1000 + i, i) end
+R1[2] = L(NOW - 23 * 240, "d", "Cid", 4503, 1)
+Bank:MergeStream(1, R1)
+local older = { L(NOW - 2 * H, "w", "Eva", 22854, 1) }
+for i = 1, 25 do older[#older + 1] = R1[i] end
+GuildOS.SyncService.handlers.gbank({ act = "hist", data = { v = Bank.LEDGER_V, reads = { { k = 1, list = older } } } }, "Eva")
+local s1 = Bank:Stream(1)
+check(#s1 == 26 and s1[1].n == "Eva" and s1[#s1].n == "P25", "a missed older line goes in at its time")
+local R2 = {}
+for i = 3, 25 do R2[#R2 + 1] = R1[i] end
+R2[#R2 + 1] = L(NOW + 1800, "d", "Cid", 4503, 1)
+R2[#R2 + 1] = L(NOW + 1800, "d", "Dan", 2771, 5)
+check(Bank:MergeStream(1, R2) == 2, "and the next read, its equal deposit's twin scrolled out, adds both")
+
+-- The client caches a tab's log, and the log is read again on every log update: the same log read
+-- hours later (its "hours ago" as old as when it came) adds nothing, after a reload too; a log the
+-- server sent again, one line newer, adds that line.
+fresh()
+addTab("Raid", -1)
+local LOG = {}
+for i = 1, 15 do LOG[i] = { "deposit", "Bea", linkOf(23445), i, 9 - math.floor(i / 2) } end
+GetNumGuildBankTransactions = function(tab) return tab == 1 and #LOG or 0 end
+GetGuildBankTransaction = function(_, i)
+  local r = LOG[i]
+  if r then return r[1], r[2], r[3], r[4], 1, nil, 0, 0, 0, r[5] end
+end
+Bank:OnEvent("GUILDBANKFRAME_OPENED")
+runTimers()
+Bank:ReadLogs()
+check(#Bank:Stream(1) == 15, "a tab's log is read whole")
+NOW = NOW + 3.5 * 3600
+Bank:ReadLogs()
+check(#Bank:Stream(1) == 15, "the same cached log read hours later adds nothing")
+GuildOS.State.gbank = nil
+Bank:OnEvent("GUILDBANKFRAME_OPENED")
+runTimers()
+Bank:ReadLogs()
+check(#Bank:Stream(1) == 15, "nor after a reload")
+for _, r in ipairs(LOG) do r[3] = r[3]:gsub("%[.-%]", "[]") end
+NOW = NOW + 3600
+Bank:ReadLogs()
+check(#Bank:Stream(1) == 15, "nor when the client fills in the links of the cached log")
+for _, r in ipairs(LOG) do r[3] = linkOf(23445) end
+NOW = NOW - 3600
+for _, r in ipairs(LOG) do r[5] = r[5] + 3 end
+table.remove(LOG, 1)
+LOG[#LOG + 1] = { "deposit", "Cid", linkOf(21877), 5, 0 }
+Bank:ReadLogs()
+check(#Bank:Stream(1) == 16, "a log sent again adds its new line")
+GetNumGuildBankTransactions, GetGuildBankTransaction = nil, nil
+
+-- Reads and histories from a version that kept copies are not taken; this version's are.
+fresh()
+local hist = { k = 1, list = { line(1, "d", "Bea", 4592, 7), line(1, "d", "Bea", 4592, 7), line(1, "d", "Bea", 4592, 7) } }
+GuildOS.SyncService.handlers.gbank({ act = "hist", data = { reads = { hist } } }, "Cid")
+GuildOS.SyncService.handlers.gbank({ act = "log", data = { reads = { hist } } }, "Cid")
+check(#Bank:Stream(1) == 0, "an old version's reads and history are ignored")
+GuildOS.SyncService.handlers.gbank({ act = "hist", data = { v = Bank.LEDGER_V, reads = { hist } } }, "Cid")
+check(#Bank:Stream(1) == 3, "this version's history is merged")
+Bank:PublishHistory(0)
+check(last("gbank", "hist").data.v == Bank.LEDGER_V, "and this version marks the history it sends")
+-- A ledger saved before the fix is started over once.
+GuildOS.db.guildBank.ledgerV = nil
+check(#Bank:Store().ledger == 0 and Bank:Store().ledgerV == Bank.LEDGER_V, "a ledger with copies is started over once")
+Bank:MergeStream(1, hist.list)
+check(#Bank:Store().ledger == 3, "and kept from then on")
+-- Its withdrawals went with it: an item members took, in the bank for 40 days, is not judged
+-- untouched (and sold) on the strength of the empty new ledger.
+fresh()
+local CLr = GuildOS.GuildBankCleanup
+Bank:ApplySnapshot({ tabs = { [1] = { ts = NOW - 10, s = "1,28555,1" } } }, "Bea")
+local function pendant() for _, r in ipairs(CLr:Rows()) do if r.id == 28555 then return r end end end
+pendant()
+for key in pairs(CLr:Store().seen) do CLr:Store().seen[key] = NOW - 40 * 86400 end
+for i = 1, 3 do Bank:MergeStream(1, { { t = NOW - (10 + i) * 86400, ty = "w", n = "Bea", id = 28555, c = 1 } }) end
+check(pendant().verdict == "keep", "an item taken three times lately is kept")
+GuildOS.db.guildBank.ledgerV = nil
+Bank:Store()
+check(pendant().verdict ~= "sell" and pendant().days == 0, "and is not sold once the ledger starts over")
+NOW = NOW + 31 * 86400
+check(pendant().verdict ~= "sell", "nor a month later, with too little of the new ledger to call it untouched")
+NOW = NOW - 31 * 86400
+
 -- Requests a member sends in a backfill are ignored; an officer's are taken, with times clamped.
 fresh()
 officers = { Ana = true }
@@ -589,7 +735,7 @@ GuildOS.SyncService.handlers.gbankreq({ act = "new", data = { id = "Q1", item = 
 GuildOS.SyncService.handlers.gbank({ act = "reqs", data = { req = { Q1 = { id = "Q1", who = "Cid", item = 22854, n = 2,
   st = "done", by = "Ana", at = NOW + 1e9 } } } }, "Cid")
 check(Bank:Requests().Q1.st == "open" and Bank:Requests().Q1.who == "Bea", "a member's backfill changes no request")
-GuildOS.SyncService.handlers.gbank({ act = "hist", data = { reads = {}, req = { Q1 = { id = "Q1", who = "Cid", item = 22854,
+GuildOS.SyncService.handlers.gbank({ act = "hist", data = { v = Bank.LEDGER_V, reads = {}, req = { Q1 = { id = "Q1", who = "Cid", item = 22854,
   n = 2, st = "done", by = "Ana", at = NOW + 10 } } } }, "Cid")
 check(Bank:Requests().Q1.st == "open", "nor does a ledger answer that carries requests")
 GuildOS.SyncService.handlers.gbank({ act = "reqs", data = { req = { Q2 = { id = "Q2", who = "Dan", item = 22832, n = 1,
@@ -654,11 +800,11 @@ check(moves == plain, "stopping and starting again at once runs one loop")
 fresh()
 local shared = {}
 for i = 1, 25 do shared[i] = { t = NOW - (i <= 12 and 2 or 1) * 3600, ty = "d", n = "Bea", id = 23445, c = i } end
-GuildOS.SyncService.handlers.gbank({ act = "log", data = { reads = { { k = 4, list = shared } } } }, "Bea")
+GuildOS.SyncService.handlers.gbank({ act = "log", data = { v = Bank.LEDGER_V, reads = { { k = 4, list = shared } } } }, "Bea")
 local later = {}
 for i = 2, 25 do later[#later + 1] = shared[i] end
 later[#later + 1] = { t = NOW, ty = "d", n = "Cid", id = 21877, c = 7 }
-GuildOS.SyncService.handlers.gbank({ act = "log", data = { reads = { { k = 4, list = later } } } }, "Cid")
+GuildOS.SyncService.handlers.gbank({ act = "log", data = { v = Bank.LEDGER_V, reads = { { k = 4, list = later } } } }, "Cid")
 check(#Bank:Stream(4) == 26, "a shared read adds only its new line")
 
 -- A member's "reqs" never cancels an officer's answer.

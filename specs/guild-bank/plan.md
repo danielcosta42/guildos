@@ -35,10 +35,29 @@
 ## The ledger without ids
 
 The game gives each line "years, months, days, hours ago". A read becomes absolute times (now minus
-that), oldest first. Merging finds the longest run at the start of the read that matches the end
-of the kept stream (same kind, name, item, count, gold and target tab, times within 3 h) and keeps
-only what follows. With no overlap, only lines not older than the kept end are added, so a late,
-older read adds nothing.
+that), oldest first. Two lines agree when kind, name, item, count, gold and target tab do. Two reads
+of one line are under an hour apart (the game counts whole hours). The log is a window with no gaps,
+so a read is lined up by position, a line matching only a read of the same event:
+
+1. the longest run at its start that matches the end of the kept stream is there, and what follows
+   is new (so a deposit equal to one that scrolled out of the 25 lines is still new);
+2. a read matched whole before the end (late, or a repeating pattern) adds nothing;
+3. with neither (more lines than the log holds since the last read, a peer's history with a line
+   this client missed, or one in another order): a line an hour past everything kept is a later
+   event, so new; any other pairs with the nearest agreeing kept line within 3 h not paired already,
+   and only the unpaired are new (two equal deposits stay two). These go in at their time, so the
+   stream's end stays its newest lines and the next read lines up again.
+
+The client caches each tab's log, and the addon reads the logs on every log update: a cached log's
+"hours ago" are as old as when it arrived, so dating it from now shifts it. A log that says the same
+as the last one read of its stream (kind, item id, count, tabs and hours, not its text, which the
+client fills in later; kept in the saved variables, `lastRead`) is skipped.
+
+The first version lined reads up only with the end, at 3 h, and with no overlap re-added every line
+of the last 3 h: late reads, peers' histories and re-dated cached logs filled the ledger with
+copies, and the copies travelled in histories (#383). Ledgers from before `ledgerV = 2` start over
+once (`ledgerSince`). Their withdrawals went with them, so the cleanup calls nothing untouched until
+the new ledger holds 60 days. Reads and histories without `v = 2` are ignored.
 
 ## Organizing
 
