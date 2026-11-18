@@ -169,7 +169,8 @@ function Frame:IsMouseOver() return false end
 for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "Raise",
   "SetBackdropBorderColor", "SetTexture", "SetTexCoord", "SetBlendMode", "SetAlpha", "SetShadowOffset",
   "SetShadowColor", "SetJustifyH", "SetWordWrap", "SetTextInsets", "SetAutoFocus", "SetMaxLetters", "ClearFocus",
-  "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetMultiLine", "SetHorizTile", "SetVertTile" }) do
+  "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetMultiLine", "SetHorizTile", "SetVertTile",
+  "HighlightText" }) do
   Frame[name] = function() end
 end
 
@@ -725,58 +726,116 @@ do
   f:RefreshTitle()
 end
 
+-- The title bar's actions (#377): Search and Sync moved here from the footer, children of the bar
+-- so its drag does not eat their clicks, after the sync time and before minimise and close.
+local function titleRight(win) return win.w - 6 - win.closeButton.w - 2 - win.minimise.w end
+local function titleItems(win)
+  local out = {}
+  for _, k in ipairs({ "metaText", "syncText", "searchButton", "syncButton" }) do
+    local fr = win[k]
+    if fr.shown then out[#out + 1] = { key = k, x = fr.points[1][4], w = fr.w } end
+  end
+  return out
+end
+-- Nothing on the bar overlaps the next item or runs under the minimise button.
+local function titleFits(win)
+  local items, edge = titleItems(win), 10 + #"GuildOS" * 6
+  for _, it in ipairs(items) do
+    if type(it.x) ~= "number" or it.x < edge or it.x + it.w > titleRight(win) then return false, it.key end
+    edge = it.x + it.w
+  end
+  return true
+end
 do
-  local function footShown(key) return f.footItems[key].shown end
-  -- Off Anniversary the game lets no addon invite (#256): no invite field, the rest as ever. What the
-  -- field does is Anniversary's, read below with the client switched to it.
-  local wasAnniversary = GuildOS.Client.isAnniversary
-  GuildOS.Client.isAnniversary = false
-  f:LayoutFooter(1000)
-  check(not footShown("invite") and footShown("search") and footShown("sync") and footShown("cores") and footShown("blizzard"),
-    "off Anniversary the footer has no invite field")
-  GuildOS.Client.isAnniversary = true
-  f:LayoutFooter(1000)
-  check(footShown("search") and footShown("sync") and footShown("invite") and footShown("cores") and footShown("blizzard"),
-    "at 1000px the footer holds every action and the invite field")
-  check(point(f.footItems.search) == "LEFT,10,0", "starting 10px in")
-  check(f.footItems.search.variant == "ghost" and f.footItems.sync.variant == "ghost"
-    and f.footItems.cores.variant == "ghost" and f.footItems.blizzard.variant == "ghost", "as ghost buttons")
-  local ran = {}
-  local real = { GuildOS.Search, GuildOS.CommSystem, GuildOS.ShowCoreSignupFrame, GuildOS.OpenBlizzardGuildUI }
+  local search, syncB = f.searchButton, f.syncButton
+  check(search.parent == f.titleBar and syncB.parent == f.titleBar and search.level > f.titleBar.level
+    and syncB.level > f.titleBar.level, "Search and Sync are the title bar's children, above it, so a click is theirs")
+  check(search.label.text == "Search" and syncB.label.text == "Sync" and search.variant == "ghost"
+    and syncB.variant == "ghost" and search.h == 20, "as 20px ghost buttons labelled Search and Sync")
+  check(search.shown and syncB.shown and f.syncText.shown and f.metaText.shown, "at 1000px the bar holds them all")
+  local items = titleItems(f)
+  check(#items == 4 and items[1].key == "metaText" and items[2].key == "syncText" and items[3].key == "searchButton"
+    and items[4].key == "syncButton" and items[2].x < items[3].x, "left to right: meta, sync time, Search, Sync")
+  check(titleFits(f), "none of them overlaps or runs under the minimise button")
+  check(items[4].x + items[4].w == titleRight(f) - 8, "Sync stands 8px short of the minimise button")
+  local ran, real = {}, { GuildOS.Search, GuildOS.CommSystem }
   GuildOS.Search = { Show = function() ran.search = true end }
   GuildOS.CommSystem = { FullSync = function() ran.sync = true end }
-  GuildOS.ShowCoreSignupFrame = function() ran.cores = true end
-  GuildOS.OpenBlizzardGuildUI = function() ran.blizzard = true end
-  for _, key in ipairs({ "search", "sync", "cores", "blizzard" }) do fire(f.footItems[key], "OnClick") end
-  check(ran.search and ran.sync and ran.cores and ran.blizzard, "each footer action runs what it names")
-  GuildOS.Search, GuildOS.CommSystem, GuildOS.ShowCoreSignupFrame, GuildOS.OpenBlizzardGuildUI = real[1], real[2], real[3], real[4]
-  local invitedName
-  local realInvite = GuildInvite
-  GuildInvite = function(name) invitedName = name end
-  local holder, inviteBtn = f.footItems.invite, nil
-  for _, c in ipairs(holder.children) do
-    if c.kind == "Button" and c.label and c.label.text == "Invite" then inviteBtn = c end
+  fire(search, "OnClick")
+  fire(syncB, "OnClick")
+  check(ran.search and ran.sync, "Search opens the search, Sync runs a full sync")
+  GuildOS.Search, GuildOS.CommSystem = real[1], real[2]
+  -- The 10s tick and every roster update lay the bar out again: a button kept is never hidden and shown
+  -- again, or a press in progress loses its click (#377).
+  local hides, hide = 0, search.Hide
+  search.Hide = function(self) hides = hides + 1; return hide(self) end
+  syncB.Hide = search.Hide
+  for _ = 1, 3 do f:RefreshTitle() end
+  search.Hide, syncB.Hide = nil, nil
+  check(hides == 0 and search.shown and syncB.shown, "refreshing the title hides neither button (" .. hides .. ")")
+end
+
+-- The footer is links and the version (#377): every action it held went to where it is used.
+do
+  local function footShown(key) return f.footItems[key].shown end
+  f:LayoutFooter(1000)
+  local keys, buttons, boxes = {}, 0, 0
+  for k in pairs(f.footItems) do keys[#keys + 1] = k end
+  table.sort(keys)
+  for _, c in ipairs(f.footer.children) do
+    if c.kind == "Button" then buttons = buttons + 1 end
+    if c.kind == "EditBox" then boxes = boxes + 1 end
   end
+  check(table.concat(keys, ",") == "blizzard,help,site" and buttons == 3 and boxes == 1,
+    "the footer holds three links and the site's copy box, no action: " .. table.concat(keys, ","))
+  check(footShown("site") and footShown("help") and footShown("blizzard"), "at 1000px every link shows")
+  check(f.footItems.site.label.text == "guildos.me" and f.footItems.help.label.text == "/gos help"
+    and f.footItems.blizzard.label.text == "Blizzard", "guildos.me, /gos help and Blizzard")
+  check(f.footItems.site.variant == "ghost" and f.footItems.help.variant == "ghost"
+    and f.footItems.blizzard.variant == "ghost", "as links")
+  local function x(k) return f.footItems[k].points[1][4] end
+  check(point(f.footItems.site) == "LEFT,6,0" and x("site") < x("help") and x("help") < x("blizzard"),
+    "in that order, the first one's text 10px in")
+  local v = f.versionText
+  check(v.shown and v.text == "vtest" and point(v) == "RIGHT,-26,0" and v.font.size == 10
+    and v.font.file == face(GuildOS.Fonts.mono) and same(v.color, C.label),
+    "and the version at the right, clear of the grip, mono 10 in label")
+  -- The links never run into the version, at any width the footer is drawn at.
+  local overlap
+  for w = 100, 1000, 3 do
+    f:LayoutFooter(w)
+    local versionLeft = w - 26 - #v.text * 6
+    for _, k in ipairs({ "site", "help", "blizzard" }) do
+      local link = f.footItems[k]
+      if link.shown and link.points[1][4] + link.w > versionLeft - 4 then overlap = overlap or (k .. " at " .. w) end
+    end
+  end
+  check(overlap == nil, "no link runs into the version: " .. tostring(overlap))
+  f:LayoutFooter(240)
+  check(not footShown("blizzard") and footShown("help") and footShown("site"), "narrower: Blizzard goes first")
+  f:LayoutFooter(190)
+  check(not footShown("help") and footShown("site") and v.shown, "then /gos help; guildos.me and the version stay longest")
+  f:LayoutFooter(1000)
+
+  local ran, real = {}, GuildOS.OpenBlizzardGuildUI
+  GuildOS.OpenBlizzardGuildUI = function() ran.blizzard = true end
+  fire(f.footItems.blizzard, "OnClick")
+  check(ran.blizzard, "Blizzard opens the game's own guild window")
+  GuildOS.OpenBlizzardGuildUI = real
   printed = {}
-  holder.box:SetText("")
-  fire(inviteBtn, "OnClick")
-  check(invitedName == nil and said("Enter a player name to invite."), "an empty invite asks for a name")
-  holder.box:SetText("  Nova  ")
-  fire(inviteBtn, "OnClick")
-  check(invitedName == "Nova" and said("Guild invite sent to Nova.") and holder.box.text == "",
-    "the invite field invites the name typed, then clears")
-  GuildInvite = realInvite
-  canInvite = false
-  f:LayoutFooter(1000)
-  check(not footShown("invite") and footShown("blizzard"), "no invite field for who cannot invite")
-  canInvite = true
-  f:LayoutFooter(490)
-  check(not footShown("blizzard") and footShown("cores") and footShown("invite"), "narrower: Blizzard goes first")
-  f:LayoutFooter(420)
-  check(not footShown("cores") and footShown("search") and footShown("sync") and footShown("invite"),
-    "then Core Sign-up; search, sync and invite stay longest")
-  GuildOS.Client.isAnniversary = wasAnniversary
-  f:LayoutFooter(1000)
+  fire(f.footItems.help, "OnClick")
+  check(said("Guild OS commands (/gos or /guildos):"), "/gos help prints the commands")
+  local box = f.siteBox
+  check(not box.shown, "the site's copy box waits hidden")
+  printed = {}
+  fire(f.footItems.site, "OnClick")
+  check(box.shown and box.text == "https://guildos.me" and box.focused and box.level > f.footer.level
+    and said("Ctrl+C"), "guildos.me puts the address in a box over the links, focused for Ctrl+C")
+  box:SetText("typed over")
+  fire(box, "OnTextChanged")
+  check(box.text == "https://guildos.me", "the box is read-only: an edit snaps back to the address")
+  fire(box, "OnEditFocusLost")
+  check(not box.shown, "and it goes once it lets go")
 end
 
 -- ── Tab rule and »n ─────────────────────────────────────────────────────
@@ -1074,57 +1133,62 @@ local nowTicker = liveTicker(1)
 check(nowTicker ~= nil, "its clock ticks every second while on screen")
 now:SetSize(976, 520)
 flush()
-check(built.CreateDashboardPanel == 1 and now.home.shown and now.column.w == 296, "wide: the home cards beside the 296px column")
+-- The column and the cards as the approved sketch (#377); tools/dashboard-layout.lua checks the
+-- grid itself. The tab scrolls: its child stops the scroll bar's gutter short.
+-- Every Now tab builds its cards with it (each window this harness opened did): count from here.
+local nowW, dashBuilds = 976 - UI.SCROLL_GUTTER, built.CreateDashboardPanel
+check(dashBuilds and now.home.shown and now.column.w == math.floor((nowW - 24) / 3)
+  and not now.gridRule.shown, "wide: the cards beside the column, a third of the tab")
 now:SetSize(700, 520)
 flush()
-check(not now.home.shown and now.column.w == 700, "under 780px: the column alone")
+check(now.home.shown and now.column.w == 700 - UI.SCROLL_GUTTER and now.gridRule.shown
+  and point(now.home) == "TOPLEFT,0," .. -(now.column.h + 28), "under 780px: the cards under the column, below a rule")
 now:SetSize(976, 520)
 flush()
-check(built.CreateDashboardPanel == 1, "the home cards build once")
+check(built.CreateDashboardPanel == dashBuilds, "the home cards build once, not again on a resize")
 do
   local p = now.home.points[1]
-  check(p and p[1] == "TOPLEFT" and p[2] == now.column and p[3] == "TOPRIGHT" and p[4] == 8 and p[5] == 0,
-    "the home cards sit 8px beside the column, not over it")
-  local raidCard, needsCard, feedCard = now.clock.parent, now.needsList.parent, now.feedList.parent
-  local n1, f1 = needsCard.points[1], feedCard.points[1]
-  local toBottom = false
-  for _, q in ipairs(feedCard.points) do
-    if q[1] == "BOTTOM" and q[2] == now.column and q[3] == "BOTTOM" then toBottom = true end
-  end
-  check(n1 and n1[2] == raidCard and n1[3] == "BOTTOMLEFT" and n1[5] == -8
-    and f1 and f1[2] == needsCard and f1[3] == "BOTTOMLEFT" and f1[5] == -8 and toBottom,
-    "the cards stack 8px apart, and activity runs to the bottom of the column")
+  check(p and p[1] == "TOPLEFT" and p[2] == now.column and p[3] == "TOPRIGHT" and p[4] == 12 and p[5] == 0,
+    "the home cards sit 12px beside the column, not over it")
+  check(now.needsList.parent == now.column and now.feedList.parent == now.column and now.clock.parent == now.column
+    and not now.column.backdrop and now.raidTitle.rule == nil and now.needsTitle.rule and now.feedTitle.rule,
+    "the sections stand on the tab, no box, a rule over every title but the first")
   now:SetSize(780, 520)
   flush()
-  check(now.home.shown and now.column.w == 296, "from 780px the home cards are beside the column")
+  check(not now.gridRule.shown and now.column.w == math.floor((780 - UI.SCROLL_GUTTER - 24) / 3),
+    "from 780px the home cards are beside the column")
   now:SetSize(779, 520)
   flush()
-  check(not now.home.shown and now.column.w == 779, "at 779px the column is alone")
+  check(now.gridRule.shown and now.column.w == 779 - UI.SCROLL_GUTTER, "at 779px they go under it")
   now:SetSize(976, 520)
   flush()
 end
 
 check(now.clock.text == "4:12:38", "the countdown to the next raid")
-check(same(now.clock.color, C.gold) and now.clock.font.file == face(GuildOS.Fonts.countdown.file) and now.clock.font.size == 19,
-  "in gold, in the countdown's mono face at 19px")
-check(now.raidMeta.text == "Karazhan · " .. os.date("%a %H:%M", KARAZHAN) .. " · 9 going", "its title, time and who is going")
-check(now.openCalendar.shown and now.openCalendar.variant == "primary", "and a primary button to the calendar")
+check(same(now.clock.color, C.text) and now.clock.font.file == face(GuildOS.Fonts.countdown.file) and now.clock.font.size == 40,
+  "in paper, in the countdown's mono face at 40px")
+check(now.raidName.text == "Karazhan" and now.raidMeta.text == GuildOS:LocalDate("%a %d %b, %H:%M", KARAZHAN) .. " · 9 going",
+  "its title, then its time and who is going")
+check(now.openCalendar.shown and now.openCalendar.variant == "ghost", "and a link to the calendar")
 
 local needRows, feedRows = now.needsList.rows, now.feedList.rows
-check(visible(now.needsList) == 5 and now.needsList.h == 2 + 5 * 26 and needRows[1].h == 26, "five 26px rows of what needs me")
+check(visible(now.needsList) == 5 and now.needsList.h == 5 * 24 and needRows[1].h == 24, "five 24px rows of what needs me")
 check(needRows[1].mark.shown and needRows[1].mark.w == 6 and needRows[1].mark.h == 6
   and needRows[1].mark.color[1] == C.danger.r and needRows[1].text.text == "1 trial(s) ready to review",
   "urgent rows carry the 6px danger mark")
-check(needRows[2].mark.color[1] == C.gold.r and needRows[2].mark.color[2] == C.gold.g, "the others the gold one")
-check(point(needRows[1]) == "TOPLEFT,1,-1" and point(needRows[2]) == "TOPLEFT,1,-27",
-  "rows stack 26px apart inside the list's 1px frame")
-check(point(needRows[1].text, 2) == "LEFT,22,0", "a need's text starts after its mark")
+check(same(needRows[2].mark.color, C.label), "the others a neutral one: gold is not a status")
+check(point(needRows[1]) == "TOPLEFT,0,0" and point(needRows[2]) == "TOPLEFT,0,-24",
+  "rows stack 24px apart, no frame around the list")
+check(needRows[1].line.shown and not needRows[5].line.shown, "a 1px line between rows, none under the last")
+check(point(needRows[1].text, 1) == "LEFT,14,0" and needRows[1].arrow.shown, "a need's text starts after its mark, a > on its right")
 fire(needRows[1], "OnEnter")
 check(needRows[1].hover.shown, "a row lights up under the cursor")
 fire(needRows[1], "OnLeave")
 check(visible(now.feedList) == 7 and feedRows[1].time.shown and feedRows[1].time.w == 44
-  and feedRows[1].time.text == os.date("%H:%M", NOW - 50), "activity fills the column's height, each row led by a 44px time")
-check(point(feedRows[1].text, 2) == "LEFT,56,0", "the text starts after the time column")
+  and feedRows[1].time.text == os.date("%H:%M", NOW - 50) and point(feedRows[1].time) == "RIGHT,0,0",
+  "activity fills the column's height, each row's 44px time on its right")
+check(point(feedRows[1].text, 1) == "LEFT,0,0" and point(feedRows[1].text, 2) == "RIGHT,-52,0",
+  "the text runs from the left edge to the time")
 now:SetSize(976, 1000)
 flush()
 check(visible(now.feedList) == 10, "a taller column shows more of it")
@@ -1833,6 +1897,42 @@ do
   check(edge.titleBar.h == 30 and point(edge.content, 1) == "TOPLEFT,12," .. -(70 + topInset) and edge.band == "narrow",
     "at exactly 620px: the 30px title bar, 12px padding, and 596px of content, so narrow")
   edge:Hide()
+end
+
+-- ── The title bar at every width (#377) ─────────────────────────────────
+-- With labels as long as a translation's, the sync time goes first, then Search, then Sync, and
+-- nothing runs under the minimise button down to MIN_W, where only the three numbers stay.
+do
+  rawset(GuildOS.L, "Search", "Rechercher dans la guilde")
+  rawset(GuildOS.L, "Sync", "Synchroniser maintenant")
+  GuildOS.RosterFrame, GuildOS.db.settings.window = nil, nil
+  local win = UI:GetMainWindow()
+  win:Show()
+  local misfit, disorder
+  for w = 320, 1000 do
+    resize(win, w, 620)
+    local ok, key = titleFits(win)
+    if not ok then misfit = misfit or (w .. "px: " .. tostring(key)) end
+    local t, s, y = win.syncText.shown, win.searchButton.shown, win.syncButton.shown
+    if (t and not s) or (s and not y) then disorder = disorder or w end
+  end
+  check(misfit == nil, "from 320px to 1000px nothing on the title bar overlaps or runs under minimise: " .. tostring(misfit))
+  check(disorder == nil, "and what goes, goes in order: the sync time, then Search, then Sync: " .. tostring(disorder))
+  resize(win, 1000, 620)
+  check(win.syncText.shown and win.searchButton.shown and win.syncButton.shown, "at 1000px the long labels all fit")
+  resize(win, 560, 620)
+  check(not win.syncText.shown and win.searchButton.shown and win.syncButton.shown and win.metaText.shown,
+    "at 560px the sync time has gone")
+  resize(win, 480, 620)
+  check(not win.searchButton.shown and win.syncButton.shown and win.metaText.shown and win.band ~= "bar",
+    "at 480px Search has too, Sync and the meta line stay")
+  resize(win, 320, 620)
+  check(win.band == "bar" and win.summaryText.shown and point(win.summaryText, 2) == "RIGHT,-6,0"
+    and not (win.metaText.shown or win.syncText.shown or win.searchButton.shown or win.syncButton.shown),
+    "at MIN_W, folded to the bar, the three numbers end short of minimise and the buttons wait")
+  win:Hide()
+  rawset(GuildOS.L, "Search", nil)
+  rawset(GuildOS.L, "Sync", nil)
 end
 
 -- ── What is gone, and who opens what ────────────────────────────────────

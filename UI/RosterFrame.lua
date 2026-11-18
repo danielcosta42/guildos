@@ -330,7 +330,7 @@ local KPI_SPEC = {
     { key = "addon",   min = 96, weight = 1, priority = 50 },
 }
 
-local ROW_HEIGHT = 32
+local ROW_HEIGHT = 24          -- the sketch's table row (#377)
 local HEADER_HEIGHT = 36
 local RAIL_WIDTH = 156          -- left filter/segment rail (roster dashboard)
 -- +16 over the original 66 so the "Players" card has room for its
@@ -349,6 +349,43 @@ local KPI_MARGIN = 12
 local rosterInstances = 0
 -- Every roster panel built, so a change of columns lays them all out again (#178).
 local rosterPanels = {}
+-- And the frame each one keeps its state on, so the member sheet closing clears every selection (#377).
+local rosterHosts = {}
+
+local function ClearSelection()
+    for _, h in ipairs(rosterHosts) do
+        if h.selectedKey then
+            h.selectedKey = nil
+            h:UpdateRows()
+        end
+    end
+end
+
+-- The invite field (#377): it left the window's footer for the Members bar. The host's
+-- LayoutToolbar shows it to who may invite.
+local function InviteField(parent)
+    local holder = CreateFrame("Frame", nil, parent)
+    local box = UI:CreateInput(holder, 130, 22, { max = 50, placeholder = L["Player name..."] })
+    box:SetPoint("LEFT", 0, 0)
+    local btn = UI:SetButtonVariant(UI:CreateButton(holder, L["Invite"], 64, 22), "primary")
+    btn:SetPoint("LEFT", box, "RIGHT", 4, 0)
+
+    local function invite()
+        local target = strtrim(box:GetText() or "")
+        if target == "" then
+            GuildOS:Print(L["Enter a player name to invite."])
+            return
+        end
+        if GuildOS.Compat.GuildInvite(target) then GuildOS:Print(string.format(L["Guild invite sent to %s."], target)) end
+        box:SetText("")
+    end
+    btn:SetScript("OnClick", function() invite(); box:ClearFocus() end)
+    box:SetScript("OnEnterPressed", function(self) invite(); self:ClearFocus() end)
+
+    holder:SetSize(130 + 4 + btn:GetWidth(), 22)   -- the invite label may have grown its button (issue #28)
+    holder.box, holder.button = box, btn
+    return holder
+end
 -- Same reason as rosterInstances: the recruitment builder also runs once
 -- per container, and its scroll frame needs a globally unique name.
 local recruitInstances = 0
@@ -455,6 +492,21 @@ function GuildOS:CreateRaidHubPanel(container, mainFrame)
         end
     end
 
+    -- Core Sign-up (#377): it left the window's footer for the screen it belongs to, at the right of
+    -- the sub-tab bar so every Raids sub-tab has it. Any member signs up, so no rank gate. Where the
+    -- window is too narrow for it beside the tabs it stands down; /gos signup still opens it.
+    local signup = UI:CreateButton(subBar, L["Core Sign-up"], 110, 22)
+    signup:SetPoint("RIGHT", subBar, "RIGHT", -UI.GAP, 0)
+    signup:SetScript("OnClick", function()
+        if GuildOS.ShowCoreSignupFrame then GuildOS:ShowCoreSignupFrame() end
+    end)
+    container.signupButton = signup
+    UI:MakeResponsive(subBar, function(_, w)
+        local used = 4
+        for _, t in ipairs(subTabBtns) do used = used + t:GetWidth() + 2 end
+        signup:SetShown(used + UI.GAP + signup:GetWidth() + UI.GAP <= w)
+    end)
+
     -- Default to Sessions sub-tab
     container:SetScript("OnShow", function()
         if not activeSubTab then
@@ -481,6 +533,7 @@ function GuildOS:CreateRosterPanel(parent, host)
     rosterInstances = rosterInstances + 1
     local uid = rosterInstances > 1 and tostring(rosterInstances) or ""
     rosterPanels[#rosterPanels + 1] = parent
+    rosterHosts[#rosterHosts + 1] = host
     parent:HookScript("OnHide", function() GuildOS:HideColumnsPanel() end)
 
     ----------------------------------------------------------------
@@ -581,12 +634,12 @@ function GuildOS:CreateRosterPanel(parent, host)
 
     -- Active-filter / result summary on the left of the toolbar
     local resultText = UI:CreateText(statsBar, "", 11, C.silver.r, C.silver.g, C.silver.b)
-    resultText:SetPoint("LEFT", 12, 0)
+    resultText:SetJustifyH("LEFT")
+    resultText:SetWordWrap(false)
     host.resultText = resultText
 
     -- Filter: Show offline toggle
     local offlineBtn = UI:CreateButton(statsBar, L["Show Offline"], 100, 22)
-    offlineBtn:SetPoint("RIGHT", -12, 0)
     offlineBtn.isToggled = true
     local function paintOffline(on)
         offlineBtn.isToggled = on
@@ -608,13 +661,11 @@ function GuildOS:CreateRosterPanel(parent, host)
 
     -- Which columns, in what order (#178). A right click on the header opens the same panel.
     local columnsBtn = UI:CreateButton(statsBar, L["Columns"], 80, 22)
-    columnsBtn:SetPoint("RIGHT", offlineBtn, "LEFT", -10, 0)
     columnsBtn:SetScript("OnClick", function(self) GuildOS:ToggleColumnsPanel(self) end)
 
     -- Search box: the shared field (#371). Its placeholder, its gold border while typing and its
     -- Escape are the component's; the filter hooks the text.
     local searchBox = UI:CreateInput(statsBar, 160, 22, { max = 30, placeholder = L["Search / 60-70 / >=60"] })
-    searchBox:SetPoint("RIGHT", columnsBtn, "LEFT", -10, 0)
     searchBox:HookScript("OnTextChanged", function(self)
         host.searchFilter = self:GetText()
         host:RefreshRoster()
@@ -625,14 +676,53 @@ function GuildOS:CreateRosterPanel(parent, host)
     -- The guild's make-up by class, level, rank and zone (`/gos analytics`): every command has a
     -- way in here too (#137).
     local analyticsBtn = UI:CreateButton(statsBar, L["Analytics"], 90, 22)
-    analyticsBtn:SetPoint("RIGHT", searchBox, "LEFT", -10, 0)
-    -- The summary stops short of the buttons instead of running under them in a narrow window.
-    resultText:SetPoint("RIGHT", analyticsBtn, "LEFT", -10, 0)
-    resultText:SetJustifyH("LEFT")
-    resultText:SetWordWrap(false)
     analyticsBtn:SetScript("OnClick", function()
         if GuildOS.GuildAnalytics then GuildOS.GuildAnalytics:Show() end
     end)
+
+    local invite = InviteField(statsBar)
+    host.inviteField = invite
+
+    -- The toolbar left to right, placed by width as the table's columns are (#377): the summary
+    -- takes what is left over, and a narrow bar drops the summary first, then Columns (a right click
+    -- on the header opens it too), Analytics, the invite field and the search box. Show Offline always
+    -- stays. The invite field is only for who may invite: Anniversary only (#256), at a rank that
+    -- invites; read again on every refresh.
+    local TOOLBAR_PAD, TOOLBAR_GAP = 12, 10
+    local TOOLBAR = {
+        { key = "result",    frame = resultText,   priority = 20, weight = 1, min = 60 },
+        { key = "analytics", frame = analyticsBtn, priority = 50 },
+        { key = "search",    frame = searchBox,    priority = 90 },
+        { key = "columns",   frame = columnsBtn,   priority = 30 },
+        { key = "offline",   frame = offlineBtn,   priority = 100, required = true },
+        { key = "invite",    frame = invite,       priority = 70, invite = true },
+    }
+    function host:LayoutToolbar(w)
+        w = w or self.toolbarW
+        if not w then return end   -- laid out on the first resize pass
+        self.toolbarW = w
+        local spec, items = {}, {}
+        for _, item in ipairs(TOOLBAR) do
+            if not item.invite or GuildOS.Compat.AddonMayInvite() then
+                items[#items + 1] = item
+                spec[#spec + 1] = { key = item.key, min = item.min or item.frame:GetWidth(), weight = item.weight or 0,
+                                    priority = item.priority, required = item.required }
+            else
+                item.frame:Hide()
+            end
+        end
+        -- Each field shown or not, never hidden and shown again: this runs on every keystroke in the
+        -- search and every roster update, and a hidden EditBox loses the keyboard (#377).
+        for i, col in ipairs(UI:ResolveColumns(spec, w - 2 * TOOLBAR_PAD, TOOLBAR_GAP)) do
+            local item = items[i]
+            item.frame:SetShown(col.shown)
+            if col.shown then
+                item.frame:ClearAllPoints()
+                item.frame:SetPoint("LEFT", statsBar, "LEFT", TOOLBAR_PAD + col.x, 0)
+                if item.weight then item.frame:SetWidth(col.w) end
+            end
+        end
+    end
 
     -- Column Headers
     local headerFrame = CreateFrame("Frame", nil, tableArea)
@@ -728,7 +818,7 @@ function GuildOS:CreateRosterPanel(parent, host)
     -- A row is created once and reused for the rest of the session.
     host.AcquireRows = function(n)
         for i = #host.rows + 1, n do
-            local row = CreateRosterRow(rosterContainer, i, uid)
+            local row = CreateRosterRow(rosterContainer, i, uid, host)
             if host.colLayout then row:ApplyColumns(host.colLayout) end
             host.rows[i] = row
         end
@@ -993,10 +1083,23 @@ function GuildOS:CreateRosterPanel(parent, host)
             UI:Relayout(parent)
             GuildOS:RefreshColumnsPanel()
         end
+        self:LayoutToolbar()   -- who may invite can change under an open window (#377)
         self:BuildMemberList()
         self:UpdateSortIndicators()
         self:UpdateRows()
         self:UpdateStats()
+    end
+
+    -- The selected row is the member whose sheet a click opened (#377), and the mark goes when the
+    -- sheet closes. Hooked once, on the sheet UI/MemberDetail.lua builds on its first show.
+    function host:SelectMember(key)
+        self.selectedKey = key
+        local sheet = GuildOS.DetailFrame
+        if sheet and not sheet.__rosterSelection then
+            sheet.__rosterSelection = true
+            sheet:HookScript("OnHide", ClearSelection)
+        end
+        self:UpdateRows()
     end
 
     function host:BuildMemberList()
@@ -1191,7 +1294,7 @@ function GuildOS:CreateRosterPanel(parent, host)
 
             if dataIndex <= numMembers then
                 local data = members[dataIndex]
-                UpdateRosterRow(row, data, i)
+                UpdateRosterRow(row, data)
                 row:Show()
             else
                 row:Hide()
@@ -1284,6 +1387,8 @@ function GuildOS:CreateRosterPanel(parent, host)
             end
         end
 
+        host:LayoutToolbar(w - RAIL_WIDTH)
+
         -- Table columns.
         local tableW = w - RAIL_WIDTH - ROW_INSET - SCROLL_GUTTER
         local spec
@@ -1318,7 +1423,16 @@ end
 ----------------------------------------------------------------------
 -- Create a single roster row
 ----------------------------------------------------------------------
-function CreateRosterRow(parent, rowIndex, uid)
+
+-- One fill per state, the sketch's (#377): the table's well, panel under the cursor, popup for the
+-- selected member, who also gets the gold edge. A selected row stays popup under the cursor.
+local function PaintRow(row)
+    local c = (row.selected and C.popup) or (row.hovered and C.panel) or C.well
+    row:SetBackdropColor(c.r, c.g, c.b, 1)
+    row.selMark:SetShown(row.selected == true)
+end
+
+function CreateRosterRow(parent, rowIndex, uid, host)
     local row = CreateFrame("Button", "GuildOSRow" .. (uid or "") .. rowIndex, parent, "BackdropTemplate")
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     row:SetHeight(ROW_HEIGHT)
@@ -1327,11 +1441,22 @@ function CreateRosterRow(parent, rowIndex, uid)
     row:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
     })
+    row.host = host
 
-    -- Alternating row colors
-    local bgColor = (rowIndex % 2 == 0) and C.row2 or C.row1
-    row:SetBackdropColor(bgColor.r, bgColor.g, bgColor.b, bgColor.a)
-    row.defaultBg = bgColor
+    -- No zebra (#377): a 1px line parts the rows. The selected one has a 2px gold edge on its
+    -- left, through UI:Px so a scaled-down interface does not round it away.
+    local rule = UI:CreateSeparator(row)
+    rule:SetPoint("BOTTOMLEFT", 0, 0)
+    rule:SetPoint("BOTTOMRIGHT", 0, 0)
+    row.rule = rule
+    local mark = row:CreateTexture(nil, "OVERLAY")
+    mark:SetTexture("Interface\\Buttons\\WHITE8x8")
+    mark:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
+    mark:SetPoint("TOPLEFT", 0, 0)
+    mark:SetPoint("BOTTOMLEFT", 0, 0)
+    mark:SetWidth(UI:Px(mark, 2))
+    row.selMark = mark
+    PaintRow(row)
 
     -- Row elements. None of them is positioned here: ApplyColumns below
     -- places every cell from a resolved layout, so the same row works at
@@ -1343,14 +1468,14 @@ function CreateRosterRow(parent, rowIndex, uid)
     statusDot:SetTexture("Interface\\COMMON\\Indicator-Green")
     row.statusDot = statusDot
 
-    -- Class icon + Name
+    -- Class icon + Name. 16px: the 24px row leaves a 20px icon no room (#377).
     local classIcon = row:CreateTexture(nil, "OVERLAY")
-    classIcon:SetSize(20, 20)
+    classIcon:SetSize(16, 16)
     classIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     row.classIcon = classIcon
 
     local nameText = row:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(nameText, 12)
+    GuildOS:ApplyFont(nameText, nil, "memberName")   -- Plex Sans Medium 12, as the sketch's names
     nameText:SetPoint("LEFT", classIcon, "RIGHT", 5, 0)
     nameText:SetJustifyH("LEFT")
     nameText:SetWordWrap(false)
@@ -1450,14 +1575,15 @@ function CreateRosterRow(parent, rowIndex, uid)
 
     -- Hover effects
     row:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
+        self.hovered = true
+        PaintRow(self)
         if self.memberData then
             ShowRowTooltip(self)
         end
     end)
     row:SetScript("OnLeave", function(self)
-        local bg = self.defaultBg
-        self:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
+        self.hovered = nil
+        PaintRow(self)
         GameTooltip:Hide()
     end)
 
@@ -1468,6 +1594,7 @@ function CreateRosterRow(parent, rowIndex, uid)
             GuildOS:ShowMemberContextMenu(self, self.memberData)
         else
             GuildOS:ShowMemberDetail(self.memberData)
+            if self.host and self.host.SelectMember then self.host:SelectMember(self.memberData.key) end
         end
     end)
 
@@ -1477,13 +1604,14 @@ end
 ----------------------------------------------------------------------
 -- Update a roster row with member data
 ----------------------------------------------------------------------
-function UpdateRosterRow(row, data, rowIndex)
+function UpdateRosterRow(row, data)
     row.memberData = data
 
-    -- Alternating backgrounds
-    local bgColor = (rowIndex % 2 == 0) and C.row2 or C.row1
-    row.defaultBg = bgColor
-    row:SetBackdropColor(bgColor.r, bgColor.g, bgColor.b, bgColor.a)
+    -- The list is virtual (#377): a row shows another member on every scroll, so whether it is the
+    -- selected one is read from the member each time, never left on the row.
+    local host = row.host
+    row.selected = host ~= nil and host.selectedKey ~= nil and host.selectedKey == data.key
+    PaintRow(row)
 
     -- Grayscale helper for offline members
     local function textColor(r, g, b)

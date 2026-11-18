@@ -170,4 +170,25 @@ check(fauxTotal == 943 and fauxShown == 14 and named == 14,
   "the list knows all 943 and fills the 14 rows a 400px list holds (" .. named .. ")")
 check(firstName == "Member1", "sorted by rank, then name")
 
+-- Leadership > MOTD on WoW: Forever (#377): an addon's GuildSetMOTD is forbidden there, so the field only
+-- shows the message and its button opens the game's guild panel, saying why.
+function Frame:Disable() self.disabled = true end
+function Frame:Enable() self.disabled = false end
+local viaGame = true
+GuildOS.GuildManager = {
+  GetMOTD = function() return "Raid at 8" end, GetGuildInfo = function() return "" end,
+  CanSetMOTD = function() return true end, CanSetGuildInfo = function() return true end,
+  MOTDNeedsGamePanel = function() return viaGame end,
+}
+parent.SelectSub("motd")
+local motdPanel = parent.subPanels.motd.panel
+local motdArea, motdBtn, motdNote = motdPanel.children[2], motdPanel.children[3], motdPanel.children[4]
+check(motdArea.edit.disabled and motdBtn.label.text == "Edit in guild panel" and motdBtn.shown
+  and motdNote.text == "On WoW: Forever only the game's guild panel can change the message of the day.",
+  "on WoW: Forever the MOTD field only shows it, its button opens the game's panel and the note says why")
+viaGame = false
+parent.SelectSub("motd")
+check(not motdArea.edit.disabled and motdBtn.label.text == "Save MOTD" and motdNote.text == "",
+  "elsewhere the field is edited and saved from the addon")
+
 print("engagement-panel: " .. checks .. " checks passed")
