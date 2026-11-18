@@ -1017,6 +1017,31 @@ do
   Bank:OnEvent("GUILDBANKFRAME_CLOSED")
 end
 
+-- Ending a run never drops a "take every stack" mark for an item in a tab this officer did not read.
+do
+  fresh()
+  officer, officers = true, { Ana = true }
+  local t1 = addTab("Raid", -1)
+  local t2 = addTab("Hidden", -1)
+  BANK.tabs[t1].slots[1] = { id = 4500, c = 7 }
+  BANK.tabs[t2].slots[1] = { id = 4506, c = 1 }   -- a pouch in a tab the client never loads
+  Bank:ApplySnapshot({ tabs = { [t2] = { ts = NOW - 99, s = "1,4506,1" } } }, "Bea")
+  local hidden = BANK.tabs[t2].slots
+  BANK.tabs[t2].slots = {}                        -- reads empty this visit
+  Bank:OnEvent("GUILDBANKFRAME_OPENED")
+  Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
+  runTimers()
+  BAG = {}
+  CL:SetMark("4500", true)
+  CL:SetMark("4506", true)
+  CL:WithdrawMarked()
+  runTimers()
+  BANK.tabs[t2].slots = hidden
+  check(CL:IsMarked("4506"), "the pouch's mark stays: its tab was never read")
+  check(not CL:IsMarked("4500"), "the grey stack's mark, all taken, is done")
+  Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+end
+
 -- "Slots freed" counts stacks, not tabs.
 do
   fresh()

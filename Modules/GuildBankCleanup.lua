@@ -448,6 +448,8 @@ function Cleanup:WithdrawStep()
                 if m.n <= 0 then self:Store().clean.marks[cur.key] = nil end
             end
             run.done, run.changed = run.done + 1, true
+            run.took = run.took or {}
+            run.took[cur.key] = true
             local bs = GuildOS.State.gbank
             if bs and bs.touched then bs.touched[cur.tab], bs.answered[cur.tab] = true, GetTime() end
         else
@@ -483,14 +485,26 @@ function Cleanup:StopWithdraw(msg)
     local run = s.withdraw
     s.withdraw = nil
     if run and run.changed then
-        -- A mark for every stack is done once none is left in the tabs this player sees.
+        -- A mark for every stack is done once none is left anywhere: only for items this run took,
+        -- only while the bank is open, and a tab not read this visit (or not visible to this rank)
+        -- counts as the guild's picture says. A tab that merely reads empty proves nothing.
         local marks = self:Store().clean.marks
-        local left = {}
-        for tab = 1, math.min(GuildOS.Compat.GuildBankTabCount(), 8) do
-            for _, sl in pairs(Bank():ReadTab(tab)) do left[Bank().KeyOf(sl)] = true end
-        end
-        for key, m in pairs(marks) do
-            if not m.n and not left[key] then marks[key] = nil end
+        local bs = GuildOS.State.gbank
+        if Bank():IsOpen() and bs then
+            local left = {}
+            for tab = 1, 8 do
+                local _, _, viewable = GuildOS.Compat.GuildBankTabInfo(tab)
+                if viewable and bs.answered[tab] then
+                    for _, sl in pairs(Bank():ReadTab(tab)) do left[Bank().KeyOf(sl)] = true end
+                else
+                    local known = Bank():Store().tabs[tab]
+                    for _, sl in pairs(known and known.slots or {}) do left[Bank().KeyOf(sl)] = true end
+                end
+            end
+            for key in pairs(run.took or {}) do
+                local m = marks[key]
+                if m and not m.n and not left[key] then marks[key] = nil end
+            end
         end
         -- The other officers learn what is left to take, stopped early or not.
         self:Broadcast()
