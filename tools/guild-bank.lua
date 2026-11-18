@@ -344,6 +344,9 @@ GuildOS.SyncService.handlers.gbankreq({ act = "set", data = { id = "R1", st = "c
 check(r.st == "open", "nor cancel somebody else's")
 GuildOS.SyncService.handlers.gbankreq({ act = "set", data = { id = "R1", st = "done" } }, "Ana")
 check(r.st == "done" and r.by == "Ana", "an officer fills it")
+GuildOS.SyncService.handlers.gbankreq({ act = "new", data = { id = "R2", item = 22854, n = 1 } }, "Bea")
+GuildOS.SyncService.handlers.gbankreq({ act = "set", data = { id = "R2", st = "cancelled" } }, "Bea-Realm")
+check(Bank:Requests().R2.st == "cancelled", "its author cancels it, whichever way the name comes")
 check(Bank:Request(22832, 5, "heals") and last("gbankreq", "new").data.who == "Ana", "I ask, under my own name")
 
 -- ── Organizing a real tab ───────────────────────────────────────────────

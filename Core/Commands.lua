@@ -42,6 +42,7 @@ local function printHelp()
     helpLine("/gos calendar",    L["Guild calendar and events"])
     helpLine("/gos polls",       L["Guild polls"])
     helpLine("/gos bulletin",    L["Guild bulletin board"])
+    helpLine("/gos bank [sort [all] | stop | sync | need]", L["Guild bank: open, organize the tab, ask for it, what it needs"])
     helpLine("/gos cta [type] [message]", L["Call to Arms: rally the guild (officers)"])
     helpLine("/gos ally",        L["Alliance status and allied guilds"])
 

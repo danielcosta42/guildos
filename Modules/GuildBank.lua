@@ -48,6 +48,21 @@ local NEED_MAX = 60              -- needs kept
 
 local function now() return GetServerTime() end
 
+-- Two names for one player: the sender of an addon message comes as "Name-Realm", my own name as
+-- "Name". Compared by player key.
+local function keyName(name)
+    if type(name) ~= "string" or name == "" then return nil end
+    return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("^[^-]+%-(.+)$"))
+end
+local function sameName(a, b)
+    local ka = keyName(a)
+    return ka ~= nil and ka == keyName(b)
+end
+GuildBank.SameName = function(_, a, b) return sameName(a, b) end
+
+-- Whether a name is mine.
+function GuildBank:IsMe(name) return sameName(name, GuildOS.Compat.PlayerName()) end
+
 local function state()
     local s = GuildOS.State.gbank
     if not s then
@@ -658,7 +673,7 @@ end
 
 -- Someone asked: answer, once a random wait passes with nobody else answering, with what is newer.
 function GuildBank:OnAsk(data, sender)
-    if sender == GuildOS.Compat.PlayerName() then return end
+    if self:IsMe(sender) then return end
     local s = state()
     local ts, lt = self:Marks()
     local theirTs, theirLt = GuildOS.Finite(data.ts) or 0, GuildOS.Finite(data.lt) or 0
@@ -814,7 +829,7 @@ function GuildBank:SetRequestState(rid, st)
     local r = self:Store().requests[rid]
     if not r or not REQ_STATES[st] then return false end
     local me = GuildOS.Compat.PlayerName()
-    if st == "cancelled" and r.who ~= me then return false end
+    if st == "cancelled" and not self:IsMe(r.who) then return false end
     if (st == "done" or st == "declined") and not GuildOS:IsOfficer() then return false end
     r.st, r.by, r.at = st, me, now()
     if GuildOS.SyncService then GuildOS.SyncService:Publish("gbankreq", "set", { id = rid, st = st, at = r.at }) end
@@ -850,7 +865,7 @@ function GuildBank:OnRequestSync(env, sender)
         local r = reqs[cleanText(data.id, 20) or ""]
         local st = data.st
         if not (r and REQ_STATES[st]) then return end
-        local ok = (st == "cancelled" and sender == r.who)
+        local ok = (st == "cancelled" and sameName(sender, r.who))
             or ((st == "done" or st == "declined") and GuildOS:IsOfficerByName(sender))
         if not ok then return end
         r.st, r.by, r.at = st, sender, math.min(GuildOS.Finite(data.at) or now(), now() + FUTURE_SLACK)
@@ -1139,7 +1154,7 @@ end
 -- The class of a name from the ledger, by the roster the addon keeps, or nil.
 function GuildBank:ClassOf(name)
     if type(name) ~= "string" then return nil end
-    local key = GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("^[^-]+%-(.+)$"))
+    local key = keyName(name)
     local m = key and GuildOS.db.members and GuildOS.db.members[key]
     return m and m.class
 end

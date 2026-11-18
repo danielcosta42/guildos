@@ -49,6 +49,12 @@ local function qualityColor(q)
     return qc or C.text
 end
 
+-- A name as the guild says it: the realm only when it is not mine.
+local function shortName(name)
+    if type(name) ~= "string" then return "?" end
+    return (Ambiguate and Ambiguate(name, "guild")) or name
+end
+
 local function classColor(name)
     local class = Bank():ClassOf(name)
     return (class and GuildOS.ClassColors[class:upper()]) or C.text
@@ -701,7 +707,7 @@ local function buildLedger(p)
     end, function(row, e)
         row.when:SetText(GuildOS:TimeAgo(e.t))
         local cc = classColor(e.n)
-        row.who:SetText(e.n or "?")
+        row.who:SetText(shortName(e.n))
         row.who:SetTextColor(cc.r, cc.g, cc.b)
         local v = VERB[e.ty] or VERB.m
         local vc = C[v[2]] or C.text
@@ -825,7 +831,7 @@ local function buildLedger(p)
             row:SetShown(x ~= nil)
             if x then
                 local cc = classColor(x.name)
-                row.name:SetText(string.format("%d  %s", i, x.name))
+                row.name:SetText(string.format("%d  %s", i, shortName(x.name)))
                 row.name:SetTextColor(cc.r, cc.g, cc.b)
                 local what = string.format(L["%d items"], x.r.di)
                 if x.r.dg > 0 then what = what .. " · " .. money(x.r.dg) end
@@ -1055,7 +1061,7 @@ local function buildRequests(p)
         row.b1:SetScript("OnClick", function() if row.data then B:SetRequestState(row.data.id, "done") end end)
         row.b2:SetScript("OnClick", function()
             if not row.data then return end
-            B:SetRequestState(row.data.id, row.data.who == GuildOS.Compat.PlayerName() and not GuildOS:IsOfficer() and "cancelled" or "declined")
+            B:SetRequestState(row.data.id, B:IsMe(row.data.who) and not GuildOS:IsOfficer() and "cancelled" or "declined")
         end)
         row:SetScript("OnEnter", function(self)
             self.hl:Show()
@@ -1068,7 +1074,7 @@ local function buildRequests(p)
     end, function(row, r)
         row.when:SetText(GuildOS:TimeAgo(r.ts))
         local cc = classColor(r.who)
-        row.who:SetText(r.who or "?")
+        row.who:SetText(shortName(r.who))
         row.who:SetTextColor(cc.r, cc.g, cc.b)
         local have = B:CountOf(r.item)
         paintItem(row, r.item, nil, string.format(" × %d", r.n) .. (r.note and ("  |cff97909f" .. r.note .. "|r") or ""))
@@ -1079,7 +1085,7 @@ local function buildRequests(p)
         row.state:SetText(stateText)
         row.state:SetTextColor(col.r, col.g, col.b)
         local officer = GuildOS:IsOfficer()
-        local mine = r.who == GuildOS.Compat.PlayerName()
+        local mine = B:IsMe(r.who)
         row.b1:SetShown(r.st == "open" and officer)
         row.b2:SetShown(r.st == "open" and (officer or mine))
         row.b2.label:SetText((mine and not officer) and L["Cancel"] or L["Decline"])

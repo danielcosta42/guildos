@@ -1221,3 +1221,23 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `CoreManager:SetMemberRole(key, role, core)` / `:SetMemberBench(key, bench, core)` / `:MemberPresence(key, core)` | #346: what the roster's controls did to the record themselves: a member's role (one of the four) and titular/reserve (not for a Discord core's own people), told with the roster; presence in percent (RaidTracker) |
 | `GuildOS:ShowCoreSignupFrame()` | #346: one card a core: name, size and where the player stands (starter, reserve, "request sent 3h ago", missing roles, full) always in sight; when it raids and who leads it (`core.schedule`, `core.leader` when the site sends them, else "no … set"); "Loot: <rule>" and the player's presence; the role coverage; a note and Ask for a place (primary) or Cancel request (danger, no hover needed); See the rule (Loot window). `f.states[core]` is each card's state |
 | `CoreManager:SignupState(core, playerKey)` | #346: `{ member, bench, pending (ts), missing = { tank, healer, mdps, rdps }, full, schedule, leader, presence }` for the card |
+
+## The guild bank — Compat, GuildBankPlan.lua, GuildBank.lua, UI/GuildBankPanel.lua (#380)
+
+| Function | What |
+|---|---|
+| `Compat.HasGuildBank()` | whether the client and server have a guild bank (`C_GuildBank.IsGuildBankEnabled`) |
+| `Compat.GuildBankTabCount/TabInfo/Slot/ItemLog/MoneyLog/Money` | reading the bank |
+| `Compat.GuildBankPickup/Split/SetGuildBankCurrentTab/CursorHasItem/ClearCursor` | moving items |
+| `Compat.RegisterGuildBankEvents(frame)`, `Compat.IsGuildBankerInteraction(kind)` | open/close and slot events |
+| `Compat.ItemInstant(item)`, `Compat.ItemDetails(item)` | id/icon/class without cache; name/quality/level/stack |
+| `GuildBankPlan.GroupOf/SortKey/Target/PlanMove/Apply/CountMoves` | pure ordering and the next move |
+| `GuildBank:Index()/CountOf(id)/Newest()/Fill()/Preview(tab)` | what the picture holds |
+| `GuildBank:ReadOpenTabs/ReadLogs/MergeStream(k, list)/Contributions(days)` | scanning and the ledger |
+| `GuildBank:PublishSnapshot/ApplySnapshot/Ask/OnAsk/PublishHistory` | sharing (domain `gbank`) |
+| `GuildBank:SetNeed/NeedOf/NeedRows/ShoppingList` | needs (domain `gbankneed`) |
+| `GuildBank:Request/SetRequestState/RequestRows` | requests (domain `gbankreq`) |
+| `GuildBank:CanOrganize(tab)/OrganizableTabs/StartSort/PauseSort/StopSort` | organizing at the bank |
+| `GuildBank:ParseItemInput(text)/IsMe(name)/ClassOf(name)` | helpers |
+| `GuildOS:CreateGuildBankPanel(container)` | the Bank tab |
+
