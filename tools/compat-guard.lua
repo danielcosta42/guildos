@@ -32,6 +32,7 @@ local GLOBALS = {
   "GetNumGuildBankTabs", "GetGuildBankTabInfo", "GetGuildBankItemInfo", "GetGuildBankItemLink",
   "QueryGuildBankTab", "QueryGuildBankLog", "GetGuildBankTransaction", "GetGuildBankMoneyTransaction",
   "PickupGuildBankItem", "SplitGuildBankItem", "SetCurrentGuildBankTab", "GetCurrentGuildBankTab",
+  "AutoStoreGuildBankItem", "DepositGuildBankMoney",
 }
 -- Names only these APIs have: as a field or method of anything but Compat they are flagged too.
 local API_ONLY = { GuildRoster = true, RegisterAddonMessagePrefix = true, SendAddonMessage = true,

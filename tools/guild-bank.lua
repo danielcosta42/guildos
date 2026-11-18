@@ -46,7 +46,10 @@ time = function() return NOW end
 date = os.date
 function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 C_Timer = { After = function() end, NewTicker = function() end }
-function GetNumGuildMembers() return 0 end
+-- The guild's levels, for the cleanup's "few are its level".
+ROSTER_LEVELS = {}
+function GetNumGuildMembers() return #ROSTER_LEVELS end
+function GetGuildRosterInfo(i) return "M" .. i, "Rank", 1, ROSTER_LEVELS[i] end
 function IsInGuild() return true end
 function GetLocale() return "enUS" end
 
@@ -61,6 +64,10 @@ local ITEMS = {
   [23440] = { "Dawnstone", 3, 3, 1, 20 },
   [28555] = { "Seamaiden's Pendant", 4, 4, 0, 1 },
   [30000] = { "Pattern: Example", 3, 9, 2, 1 },
+  -- The cleanup's: name, quality, class, subclass, stack, required level, vendor price (copper).
+  [4500] = { "Broken Fang", 0, 15, 0, 20, 0, 25 },
+  [4501] = { "Low Sword", 2, 2, 7, 1, 12, 1500 },
+  [4502] = { "Old Elixir", 1, 0, 2, 20, 20, 40 },
 }
 local function idOf(item)
   if type(item) == "number" then return item end
@@ -77,7 +84,7 @@ function GetItemInfo(item)
   local id = idOf(item)
   local it = id and ITEMS[id]
   if not it then return nil end
-  return it[1], linkOf(id), it[2], 100, 1, "", "", it[5]
+  return it[1], linkOf(id), it[2], 100, it[6] or 1, "", "", it[5], "", "icon" .. id, it[7] or 10
 end
 
 -- ── The server's bank ──────────────────────────────────────────────────
@@ -107,6 +114,30 @@ function GetGuildBankItemLink(tab, slot)
   return s and linkOf(s.id) or nil
 end
 function QueryGuildBankTab() end
+-- The player's bags (bag 0, 16 slots) and gold, a vendor and the bank's gold.
+BAG, MONEY = {}, 0
+function GetContainerNumSlots(bag) return bag == 0 and 16 or 0 end
+function GetContainerItemInfo(bag, slot)
+  local it = bag == 0 and BAG[slot]
+  if not it then return nil end
+  return "icon" .. it.id, it.c, false, ITEMS[it.id][2], false, false, linkOf(it.id), false, (ITEMS[it.id][7] or 10) == 0, it.id
+end
+function UseContainerItem(bag, slot)
+  local it = bag == 0 and BAG[slot]
+  if not it or not MERCHANT then return end
+  MONEY = MONEY + (ITEMS[it.id][7] or 10) * it.c
+  BAG[slot] = nil
+end
+function GetMoney() return MONEY end
+function AutoStoreGuildBankItem(tab, slot)
+  local sl = BANK.tabs[tab].slots
+  local it = sl[slot]
+  if not it then return end
+  for k = 1, 16 do
+    if not BAG[k] then BAG[k] = { id = it.id, c = it.c }; sl[slot] = nil; return end
+  end
+end
+function DepositGuildBankMoney(c) if c <= MONEY then MONEY = MONEY - c; BANK.money = BANK.money + c end end
 function QueryGuildBankLog() end
 function GetGuildBankMoney() return BANK.money end
 function GetCurrentGuildBankTab() return BANK.current end
@@ -292,6 +323,7 @@ GuildOS.Compat.HookTooltip = function() return true end
 
 dofile(ADDON .. "/Modules/GuildBankPlan.lua")
 dofile(ADDON .. "/Modules/GuildBank.lua")
+dofile(ADDON .. "/Modules/GuildBankCleanup.lua")
 local Plan, Bank = GuildOS.GuildBankPlan, GuildOS.GuildBank
 
 local function deliver(msg, sender)
@@ -820,7 +852,95 @@ end
 -- A client that never takes a drop in the pickup's frame: learned once, kept in the settings.
 check(GuildOS.db.settings.gbankSameFrame == nil or GuildOS.db.settings.gbankSameFrame == false, "the same-frame finding is a setting")
 
+-- ── The cleanup ─────────────────────────────────────────────────────────
+local CL = GuildOS.GuildBankCleanup
+do
+  local J = CL.Judge
+  local function v(it) it.have = it.have or 10; it.maxLevel = 70; return (J(it)) end
+  check(v({ quality = 0 }) == "sell", "grey goes")
+  check(v({ need = 4, have = 10 }) == "sell" and select(2, J({ need = 4, have = 10, maxLevel = 70 })) == 6,
+    "past its need, the rest goes")
+  check(v({ need = 10, have = 12 }) == "keep", "an item with a need stays")
+  check(v({ requested = true, days = 99 }) == "keep" and v({ demandLines = 3, days = 99 }) == "keep",
+    "an item asked for, or taken lately, stays")
+  check(v({ days = 40, reqLevel = 12, share = 0.01 }) == "sell", "untouched for a month at a level few are: goes")
+  check(v({ days = 40, classID = 4 }) == "sell", "untouched gear goes")
+  check(v({ days = 40, reqLevel = 60, share = 0.5 }) == "review", "untouched but many are its level: review")
+  check(v({ days = 2 }) == "review", "a recent item is only reviewed")
+end
+
+fresh()
+officer, officers = true, { Ana = true }
+for i = 1, 100 do ROSTER_LEVELS[i] = i <= 2 and 15 or 70 end
+local tabC = addTab("Raid", -1)
+local slC = BANK.tabs[tabC].slots
+slC[1] = { id = 4500, c = 7 }       -- grey
+slC[2] = { id = 4501, c = 1 }       -- level 12 sword, 2% of the guild near it
+slC[3] = { id = 22854, c = 30 }     -- flask, need 10: 15 past 1.5x
+slC[4] = { id = 4502, c = 5 }       -- elixir, will be taken often
+Bank:OnEvent("GUILDBANKFRAME_OPENED")
+Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
+runTimers()
+Bank:SetNeed(22854, 10)
+Bank:MergeStream(tabC, { { t = NOW - 3600, ty = "w", n = "Bea", id = 4502, c = 1 }, { t = NOW - 1800, ty = "w", n = "Cid", id = 4502, c = 1 } })
+-- The sword has sat for 40 days.
+for _, e in ipairs(Bank:Index().list) do
+  if e.id == 4501 then CL:Store().seen[e.key] = NOW - 40 * 86400 end   -- gear is keyed by its link
+end
+local byId = {}
+for _, r in ipairs(CL:Rows()) do byId[r.id] = r end
+check(byId[4500].verdict == "sell" and byId[4500].vendor == 25 * 7, "the grey stack is to sell, at its vendor value")
+check(byId[4501].verdict == "sell", "the old low-level sword is to sell")
+check(byId[22854].verdict == "sell" and byId[22854].out == 20, "the flasks past their need are to sell (20 of 30)")
+check(byId[4502].verdict == "keep", "the elixir members take is kept")
+local items, value = CL:Summary(CL:Rows())
+check(items == 3 and value > 0, "the summary counts what goes and what it makes")
+
+-- Marks: an officer's, shared; a member's, refused.
+wire = {}
+check(CL:MarkSuggested() == 3 and CL:MarkedCount() == 3, "marking what is suggested marks the three")
+check(last("gbankclean", "snap") ~= nil, "and the marks go to the other officers")
+officer = false
+check(not CL:SetMark("4502", true), "a member does not mark")
+officer = true
+
+-- Taking them out at the bank: the grey stack, the sword and 20 flasks (the flask stack of 30 is
+-- bigger than the 20 marked, so it stays: only whole stacks come out).
+check(CL:WithdrawMarked(), "taking out starts")
+runTimers()
+check(not CL:IsWithdrawing(), "and ends")
+check(slC[1] == nil and slC[2] == nil and slC[3] and slC[3].c == 30, "the marked whole stacks left the bank")
+local outs = CL:Store().clean.out
+check(outs[4500] == 7 and outs[4501] == 1, "what came out is noted for selling")
+check(CL:Store().clean.marks[tostring(4500)] == nil, "and their marks are done")
+
+-- Selling at a vendor: only what came out; my own grey stack of the same item stays.
+BAG[10] = { id = 4500, c = 3 }    -- mine, from before
+local before = 0
+MERCHANT = true
+CL:OnEvent("MERCHANT_SHOW")
+MONEY = 1000
+local list = CL:ToSell()
+check(list[4500] == 7 and list[4501] == 1, "the vendor bar offers what came out")
+check(CL:SellOut(), "selling starts")
+runTimers()
+local mine = 0
+for k = 1, 16 do if BAG[k] and BAG[k].id == 4500 then mine = mine + BAG[k].c end end
+check(mine == 3, "my own stack of the same item is not sold")
+check(CL:Owed() == 25 * 7 + 1500, "what it made is owed to the bank")
+CL:OnEvent("MERCHANT_CLOSED")
+MERCHANT = nil
+
+-- Back at the bank: the gold goes in.
+local bankBefore = BANK.money
+check(CL:DepositOwed(), "the owed gold is deposited")
+check(BANK.money == bankBefore + 25 * 7 + 1500 and CL:Owed() == 0, "all of it, and nothing is owed")
+Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+ROSTER_LEVELS = {}
+
 -- ── Typing an item ──────────────────────────────────────────────────────
+fresh()
+Bank:ApplySnapshot({ tabs = { [1] = { ts = NOW - 10, s = "1,23445,20;2,22854,20" } } }, "Bea")
 check(Bank:ParseItemInput(linkOf(22854)) == 22854 and Bank:ParseItemInput("22832") == 22832, "a link or an id names its item")
 check(Bank:ParseItemInput("fel iron") == 23445 and Bank:ParseItemInput("Nothing at all") == nil,
   "a name the bank holds names its item; any other names none")

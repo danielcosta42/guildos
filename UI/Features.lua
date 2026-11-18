@@ -70,7 +70,7 @@ UI:RegisterFeature({
 -- needs and what members asked for. Only where the client has a guild bank (WoW: Forever's servers may not).
 UI:RegisterFeature({
     id = "bank", label = L["Bank"], order = 45,
-    subs = { "inventory", "tabs", "ledger", "needs", "requests" },
+    subs = { "inventory", "tabs", "ledger", "needs", "requests", "cleanup" },
     condition = function() return GuildOS.GuildBank ~= nil and GuildOS.GuildBank:Available() end,
     build = function(c, win) GuildOS:CreateGuildBankPanel(c, win) end,
 })

@@ -78,7 +78,7 @@ for _, name in ipairs(Probe.APIS) do
   check(not seen[name], "the inventory lists " .. name .. " once")
   seen[name] = true
 end
-check(#Probe.EVENTS == 63, "the probe checks the 63 events the addon registers")   -- +4: the game's calendar (#263)
+check(#Probe.EVENTS == 65, "the probe checks the 65 events the addon registers")   -- +4: the game's calendar (#263); +2: the bank cleanup's vendor (#380)
 
 -- Drift: the events the addon's own files register are exactly Probe.EVENTS.
 -- Static reading: an event name held in a variable is out of its reach.

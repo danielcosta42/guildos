@@ -44,6 +44,7 @@ SyncService.OFFICER_DOMAINS = {
     founding  = true,  -- WoW: Forever's founding and an officer's suggested date (issue #208)
     allylink  = true,  -- the alliance code an officer saved (issue #348); ask/have are member relays
     gbankneed = true,  -- how much of each item the guild bank should hold (issue #380)
+    gbankclean = true, -- what officers marked to take out of the guild bank and sell (issue #380)
 }
 
 -- Domains outside OFFICER_DOMAINS whose handlers trust IsOfficerByName(sender) themselves.

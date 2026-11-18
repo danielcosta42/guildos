@@ -707,6 +707,43 @@ function Compat.RegisterGuildBankEvents(frame)
     end
 end
 
+-- Taking an item out of the guild bank into the bags (it counts as a withdrawal).
+function Compat.GuildBankAutoStore(tab, slot)
+    if AutoStoreGuildBankItem then AutoStoreGuildBankItem(tab, slot) end
+end
+
+-- Putting gold into the guild bank, and the player's own gold.
+function Compat.DepositGuildBankMoney(copper)
+    if DepositGuildBankMoney and tonumber(copper) and copper > 0 then DepositGuildBankMoney(copper) end
+end
+
+function Compat.PlayerMoney()
+    return GetMoney and tonumber(GetMoney()) or 0
+end
+
+-- What a vendor pays for one, and the level it asks for, when the client has the item cached.
+function Compat.ItemValue(item)
+    local name, _, _, _, reqLevel, _, _, _, _, _, sellPrice = Compat.GetItemInfo(item)
+    if not name then return nil end
+    return tonumber(sellPrice) or 0, tonumber(reqLevel) or 0
+end
+
+-- What one sells for at the auction house, from an addon that knows (Auctionator, TSM), or nil.
+-- Both are optional and called under pcall: their APIs are theirs to change.
+function Compat.AuctionPrice(itemID)
+    itemID = tonumber(itemID)
+    if not itemID then return nil end
+    if Auctionator and Auctionator.API and Auctionator.API.v1 and Auctionator.API.v1.GetAuctionPriceByItemID then
+        local ok, price = pcall(Auctionator.API.v1.GetAuctionPriceByItemID, "GuildOS", itemID)
+        if ok and tonumber(price) and price > 0 then return price end
+    end
+    if TSM_API and TSM_API.GetCustomPriceValue then
+        local ok, price = pcall(TSM_API.GetCustomPriceValue, "DBMarket", "i:" .. itemID)
+        if ok and tonumber(price) and price > 0 then return price end
+    end
+    return nil
+end
+
 -- What an item is, from its id or link alone, with no item cache: id, icon, classID, subClassID.
 function Compat.ItemInstant(item)
     local instant = C_Item and C_Item.GetItemInfoInstant or GetItemInfoInstant

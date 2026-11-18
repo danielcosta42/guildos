@@ -505,6 +505,8 @@ function GuildBank:Index()
     local byId = {}
     for _, e in ipairs(list) do byId[e.id] = (byId[e.id] or 0) + e.total end
     s.index = { list = list, byKey = byKey, byId = byId }
+    -- When each item was first seen: the cleanup's "untouched for a month".
+    if GuildOS.GuildBankCleanup then GuildOS:SafeCall(GuildOS.GuildBankCleanup.Touch, GuildOS.GuildBankCleanup, list) end
     return s.index
 end
 
@@ -762,10 +764,15 @@ function GuildBank:OnAsk(data, sender)
         local _, _, rq = self:Marks()
         local theirRq = GuildOS.Finite(data.rq) or 0
         -- One officer answers each: any other officer's answer as new cancels ours.
+        -- The cleanup's marks ride along with the needs: one officer's answer carries both.
         if rev > 0 and not s.needAnswer then
             s.needAnswer = rev
             GuildOS.Compat.After(ANSWER_MIN + math.random() * (ANSWER_MAX - ANSWER_MIN), function()
-                if s.needAnswer then s.needAnswer = nil; GuildBank:BroadcastNeeds(true) end
+                if s.needAnswer then
+                    s.needAnswer = nil
+                    GuildBank:BroadcastNeeds(true)
+                    if GuildOS.GuildBankCleanup then GuildOS.GuildBankCleanup:Broadcast(true) end
+                end
             end)
         end
         if rq > theirRq and not s.reqAnswer then

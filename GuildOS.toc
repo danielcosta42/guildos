@@ -118,6 +118,7 @@ Modules\Bulletin.lua
 # The guild bank (issue #380): the order a tab is kept in, then the bank itself
 Modules\GuildBankPlan.lua
 Modules\GuildBank.lua
+Modules\GuildBankCleanup.lua
 Modules\CallToArms.lua
 Modules\Polls.lua
 Modules\Calendar.lua

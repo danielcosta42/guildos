@@ -192,6 +192,7 @@ GuildOS.IsOfficerByName = function() return officer end
 GuildOS.db = { settings = {}, members = {} }
 dofile(ADDON .. "/Modules/GuildBankPlan.lua")
 dofile(ADDON .. "/Modules/GuildBank.lua")
+dofile(ADDON .. "/Modules/GuildBankCleanup.lua")
 dofile(ADDON .. "/UI/GuildBankPanel.lua")
 local Bank = GuildOS.GuildBank
 GuildOS.State.gbank = nil
@@ -230,7 +231,7 @@ local panel = newFrame("Frame", UIParent)
 panel:SetSize(980, 620)
 GuildOS:CreateGuildBankPanel(panel)
 check(type(panel.SelectSub) == "function", "the tab takes a deep link")
-for _, sub in ipairs({ "inventory", "tabs", "ledger", "needs", "requests" }) do
+for _, sub in ipairs({ "inventory", "tabs", "ledger", "needs", "requests", "cleanup" }) do
   panel.SelectSub(sub)
   lay(panel)
   check(panel.ActiveSub() == sub, sub .. " opens")
@@ -285,6 +286,14 @@ check(shows(panel, "Flask of Relentless Assault") and shows(panel, "35 short") a
 panel.SelectSub("requests")
 lay(panel)
 check(shows(panel, "Super Mana Potion") and shows(panel, "open"), "requests list what was asked")
+
+panel.SelectSub("cleanup")
+lay(panel)
+check(shows(panel, "To sell") and shows(panel, "Gold back"), "the cleanup shows what selling would make")
+local allBtn
+walk(panel, function(f) if f.kind == "Button" and f:IsVisible() and f.label and f.label.text == "All" then allBtn = f end end)
+if allBtn then allBtn.scripts.OnClick(allBtn) end
+check(shows(panel, "Fel Iron Bar"), "and, with every verdict shown, lists the items")
 
 -- Prefill from the inventory: a typed name reaches the form.
 check(Bank:ParseItemInput("fel iron") == 23445, "a typed name names an item")

@@ -298,6 +298,7 @@ local MODULE_START = {
     { "Bulletin" },
     -- The guild bank (issue #380): where the client has one.
     { "GuildBank", feature = "bank", ui = "bank" },
+    { "GuildBankCleanup", feature = "bank" },
     { "CallToArms" },
     { "Polls" },
     { "Calendar" },

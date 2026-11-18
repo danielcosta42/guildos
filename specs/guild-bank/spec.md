@@ -64,3 +64,27 @@ Moving items between tabs; a bank alt's own bags; per-tab layout templates; pric
 - That the swap of two different items within a tab happens in one drop on every client.
 - Whether WoW: Forever's servers open a guild bank.
 - The money log's length.
+
+## Cleanup (officers; asked during the in-game tests)
+
+A guild of 900 fills its bank with what nobody takes. A **Cleanup** sub-tab, for officers only,
+gives each item a verdict with its reasons and value:
+
+- **Sell**: grey; what the bank holds past 1.5× its need (the rest); untouched (no withdrawal in 60
+  days) for 30 days and either gear or of a level that under 5% of the guild is within 15 levels of.
+- **Keep**: has a need, taken twice or more in 60 days, or a member's open request.
+- **Review**: the rest (untouched, or few at its level, but not both; or recent).
+
+The value is the vendor's; with Auctionator or TSM installed, the auction price too, and an item
+worth over 3× its vendor price there is flagged for the auction house. Chips: items to sell, the
+gold they would make, slots freed, marked (and gold owed to the bank).
+
+Officers mark what goes (one by one, or "Mark all suggested"); the marks are shared (officer domain
+`gbankclean`, backfilled with the needs). At the bank, the bar's **Take out marked** moves the
+marked whole stacks into the bags one at a time (each counts as a withdrawal; stops when the bags
+are full or a stack does not come out). At a vendor, a bar sells **only what came out of the bank**,
+never more of an item than came out, so a member's own copies stay. The gold it made is owed to the
+bank, and the next time the bank opens the bar's **Deposit** button puts it in.
+
+Limits: only whole stacks come out (a part of a stack past its need stays until organized or taken
+by hand); auction-house items are only flagged, not posted.
