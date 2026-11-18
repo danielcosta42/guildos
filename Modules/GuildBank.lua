@@ -40,6 +40,7 @@ local MOVE_DELAY = 0.45          -- seconds between two moves (what sorters foun
 local HOLD_MIN = 0.05            -- seconds between picking an item up and dropping it, at least
 local POLL = 0.05                -- seconds between two looks while waiting on the game
 local SETTLE_MIN = 0.1           -- seconds after a drop before the tab is read back
+local VERIFY_MAX = 2             -- seconds a drop may wait for the game to say the slots changed
 local HOLD_MAX = 0.8             -- the drop goes then, even when the client never says it holds it
 local DROP_FAILS = 6             -- drops the server refused in a row before a run stops
 local LOCK_TIMEOUT = 8           -- seconds a slot may stay locked before the run gives up
@@ -1143,9 +1144,16 @@ function GuildBank:SortStep()
     local v = run.verify
     if v then
         if GetTime() - v.at < SETTLE_MIN then return again(POLL) end
+        -- The client shows a slot's new content only once the server answers, with
+        -- GUILDBANKBAGSLOTS_CHANGED: read before it, the tab still shows the old one, and a move that
+        -- landed looks refused.
+        if s.lastSlotsAt < v.at and GetTime() - v.at < VERIFY_MAX then return again(POLL) end
         run.verify = nil
         local at = slots[v.move.to]
         local landed = at ~= nil and keyOf(at) == v.key and (v.toKey ~= v.key or at.c > (v.toC or 0))
+        -- The tab changed all the same (someone else moved something, the game merged otherwise):
+        -- that is progress, not a refusal; the next plan starts from what is there.
+        local changed = encodeSlots(slots) ~= v.mark
         if GuildOS.Compat.CursorHasItem() then
             if landed and not slots[v.move.from] then
                 -- A swap that hands the other item back on the cursor: it goes where ours came from.
@@ -1155,7 +1163,7 @@ function GuildBank:SortStep()
             end
             GuildOS.Compat.ClearCursor()
         end
-        if landed then
+        if landed or changed then
             run.fails = 0
         elseif v.swap and run.swaps then
             run.swaps, s.noSwap = false, true
@@ -1203,6 +1211,7 @@ function GuildBank:SortStep()
     end
     self:Trace("%s %d (x%s) for %d", move.op, move.from, tostring(move.count or src.c), move.to)
     run.holding = { move = move, at = GetTime(), key = key, toKey = dst and keyOf(dst), toC = dst and dst.c,
+                    mark = encodeSlots(slots),
                     swap = dst ~= nil and keyOf(dst) ~= key }
     run.moves = run.moves + 1
     if run.moves > run.total then run.total = run.moves end

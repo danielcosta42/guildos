@@ -59,3 +59,8 @@ reading the tab back once no slot is locked (no fixed delays: pick up, drop once
 item, read back after 0.1 s). A swap that hands the other item back on the cursor has it dropped
 where ours came from. A swap the bank refuses switches the run, and the session, to moving through
 free slots. Setting `gbankSwap = false` starts there.
+
+A drop is judged only after the game says the slots changed (`GUILDBANKBAGSLOTS_CHANGED`, at most
+2 s): read before it, the client still shows the old tab, and a move that landed looked refused
+(the in-game log of 2026-11-18 showed every move landing and the run stopping at the sixth). A tab
+that changed in any way since the pickup counts as progress.

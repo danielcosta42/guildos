@@ -123,7 +123,25 @@ function ClearCursor()
 end
 function InCombatLockdown() return false end
 local moves = 0
+-- As in the game, the client shows a drop's result only when the server answers, a moment later,
+-- with GUILDBANKBAGSLOTS_CHANGED: until then the tab reads as it was (#380, seen on WoW: Forever).
+local LAG = 0.3
+local dropNow
 function PickupGuildBankItem(tab, slot)
+  if cursor and GuildOS and GuildOS.GuildBank and not BANK.instant then
+    local c = cursor
+    if CLOCK - c.at < 0.05 then return end
+    cursor = nil
+    GuildOS.Compat.After(LAG, function()
+      cursor = c
+      dropNow(tab, slot)
+      if GuildOS.GuildBank:IsOpen() then GuildOS.GuildBank:OnEvent("GUILDBANKBAGSLOTS_CHANGED") end
+    end)
+    return
+  end
+  return dropNow(tab, slot)
+end
+dropNow = function(tab, slot)
   local slots = BANK.tabs[tab].slots
   if not cursor then
     local s = slots[slot]
