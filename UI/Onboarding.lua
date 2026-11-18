@@ -214,17 +214,19 @@ local function BuildFrame()
             render()
         else
             GuildOS:SetSetting("onboarded", true)
-            f:Hide()
             -- The style picked on the first step, if it is not the one on screen: its reload, now that the
-            -- wizard is done and nothing of it is lost (#375).
+            -- wizard is done and nothing of it is lost (#375). Before the wizard is hidden: on WoW: Forever
+            -- a click that hid its window first could not reload (ADDON_ACTION_BLOCKED out of combat, seen in
+            -- game), while Web's "Publish now", which only calls ReloadUI, reloads.
             if f.chosen ~= nil and f.chosen ~= f.startStyle then
-                if InCombatLockdown() then
-                    GuildOS:Print(L["Can't reload during combat."])
-                    afterCombat:RegisterEvent("PLAYER_REGEN_ENABLED")
-                else
+                if not InCombatLockdown() then
                     ReloadUI()
+                    return
                 end
+                GuildOS:Print(L["Can't reload during combat."])
+                afterCombat:RegisterEvent("PLAYER_REGEN_ENABLED")
             end
+            f:Hide()
         end
     end)
 

@@ -121,7 +121,10 @@ local function load(opts)
   C_Timer = { After = function() end, NewTicker = function() return { Cancel = function() end } end }
   Enum = { SendAddonMessageResult = {} }
   UISpecialFrames, SlashCmdList = {}, {}
-  function ReloadUI() popups.reloaded = true end
+  function ReloadUI()
+    popups.reloaded = true
+    popups.wizardUp = GuildOS.onboardingFrame and GuildOS.onboardingFrame.shown
+  end
   local without = opts.without or {}
   C_Texture = opts.noArt and {} or { GetAtlasInfo = function(name)
     name = tostring(name):lower()
@@ -624,8 +627,11 @@ ob.nextBtn.scripts.OnClick(ob.nextBtn)
 check(ob.title.text == "Welcome to Guild OS" and not shownCards(ob)[1], "the next step is the welcome, without the cards")
 check(finish(ob) == "Finish and reload" and not popups.reloaded, "the last button says it will reload")
 ob.nextBtn.scripts.OnClick(ob.nextBtn)
-check(popups.reloaded and GuildOS.db.settings.onboarded == true and not ob.shown,
-  "Finish closes the wizard, marks it done, then reloads")
+check(popups.reloaded and GuildOS.db.settings.onboarded == true,
+  "Finish marks the wizard done, then reloads")
+-- On WoW: Forever the click could not reload once it had hidden the wizard (ADDON_ACTION_BLOCKED out of
+-- combat, seen in game), while Publish's plain ReloadUI reloads: the reload comes first.
+check(popups.wizardUp, "the reload is called before the wizard is hidden")
 
 ob = onboarding({ db = {} })
 cardsShown = shownCards(ob)
