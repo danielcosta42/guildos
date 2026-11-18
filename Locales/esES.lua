@@ -200,7 +200,6 @@ L["Scanning specs for %d player(s)…"] = "Escaneando especializaciones de %d ju
 L["|cff00FF00Spec scan complete.|r"] = "|cff00FF00Escaneo de especializaciones completado.|r"
 
 -- Modules/CommSystem.lua
-L["A different Guild OS version detected: "] = "Se detectó una versión diferente de Guild OS: "
 L["Not in a guild."] = "No estás en una hermandad."
 L["Syncing data with guild..."] = "Sincronizando datos con la hermandad..."
 L["Syncing all guild data (officer mode)..."] = "Sincronizando todos los datos de la hermandad (modo oficial)..."
@@ -1083,7 +1082,6 @@ L["You cannot edit public notes. Only an officer who is online now and running G
 L[" — members type !note <text> in guild chat; officers apply it."] = " — los miembros escriben !note <texto> en el chat de hermandad; los oficiales lo aplican."
 
 -- Modules/LFGBoard.lua (/gos avail board window)
-L["You:"] = "Tú:"
 L["Looking for"] = "Buscando"
 L["[Guild OS] LFG"] = "[Guild OS] Busco grupo"
 L["[Guild OS] LFG as %s"] = "[Guild OS] Busco grupo como %s"
@@ -1982,7 +1980,6 @@ L["off"] = "no"
 L["ok"] = "ok"
 L["on"] = "sí"
 L["online"] = "conectados"
-L["raid-ready"] = "listos"
 L["ready"] = "listo"
 L["the game has never seen this character"] = "el juego nunca ha visto a este personaje"
 L["unknown guild"] = "hermandad desconocida"
@@ -3099,3 +3096,7 @@ L["by %s"] = "por %s"
 L["Choose your style"] = "Elige tu estilo"
 L["How should Guild OS look? You can change it later in %s > %s."] = "¿Cómo quieres que se vea Guild OS? Puedes cambiarlo luego en %s > %s."
 L["Finish and reload"] = "Terminar y recargar"
+L["Guild OS %s is out, you have %s. Update it on CurseForge."] = "Ya salió Guild OS %s, tienes la %s. Actualízalo en CurseForge."
+L["On WoW: Forever only the game's guild panel can change the message of the day."] = "En WoW: Forever solo el panel de hermandad del juego puede cambiar el mensaje del día."
+L["Edit in guild panel"] = "Editar en el panel de hermandad"
+L["%d raid-ready"] = "%d listos"

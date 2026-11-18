@@ -162,4 +162,14 @@ GuildOS.Companion.IsEnabled = function() return true end
 GuildOS:ShowWebString()
 check(shown == "Web Companion (3 members)", "the Web tab's button shows the paste text")
 
+-- A bare /gos signup opens the sign-up window (#377): with its button moved from the footer to the Raids tab,
+-- the command is the way in at any width and with Raids switched off.
+local opened = 0
+local realSignup = GuildOS.ShowCoreSignupFrame
+GuildOS.ShowCoreSignupFrame = function() opened = opened + 1 end
+printed = {}
+SlashCmdList.GUILDOS("signup")
+check(opened == 1 and not said("Usage: /gos signup"), "/gos signup alone opens the sign-up window")
+GuildOS.ShowCoreSignupFrame = realSignup
+
 print(("commands-ui-click: %d checks passed"):format(checks))

@@ -196,7 +196,6 @@ L["|cff4CFF4CON|r"] = "|cff4CFF4CON|r"
 L["|cffFF4444OFF|r"] = "|cffFF4444OFF|r"
 
 -- Modules/LFGBoard.lua (/gos avail board window)
-L["You:"] = "You:"
 L["Looking for"] = "Looking for"
 L["[Guild OS] LFG"] = "[Guild OS] LFG"
 L["[Guild OS] LFG as %s"] = "[Guild OS] LFG as %s"

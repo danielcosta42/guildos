@@ -84,7 +84,7 @@ local IN_UI = {
   mergeraids  = { { "UI/AuditPanel.lua", "GuildOS:MergeRaidSessions()" } },
   specs       = { { "UI/AuditPanel.lua", "GuildOS.SpecChecker:ScanGroup()" } },
   attune      = { { "UI/AuditPanel.lua", "BuildAttuneSub" } },
-  signup      = { { "UI/Window.lua", "GuildOS:ShowCoreSignupFrame()" } },
+  signup      = { { "UI/RosterFrame.lua", "GuildOS:ShowCoreSignupFrame()" } },   -- the Raids screen's button (#377)
   ban         = { { "UI/ManagementPanel.lua", "GuildOS.BanList:Add(" } },
   mentions    = { { "UI/SettingsPanel.lua", "GuildOS.Mentions:PrintLog()" },
                   { "UI/SettingsPanel.lua", 'GuildOS.Mentions:HandleCommand({ "clearwords" })' } },
