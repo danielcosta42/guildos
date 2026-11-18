@@ -1151,6 +1151,15 @@ local function buildCleanup(p)
     filters:SetPoint("TOPLEFT", 0, -(GAP + CHIP_H + GAP))
     filters:SetWidth(320)
     filters.Select("sell")
+    -- The level under which an item counts as low (officers; the whole guild's setting on this client).
+    local lowLabel = fieldLabel(p, L["Low level below"])
+    lowLabel:SetPoint("LEFT", filters.last, "RIGHT", 16, 0)
+    local lowDD = UI:CreateDropdown(p, 70, FIELD_H)
+    lowDD:SetPoint("LEFT", lowLabel, "RIGHT", 8, 0)
+    local opts = {}
+    for lv = 10, GuildOS.Client.maxLevel - 10, 10 do opts[#opts + 1] = { value = lv, text = tostring(lv) } end
+    lowDD:SetOptions(opts)
+    lowDD.onSelect = function(_, v) GuildOS:SetSetting("gbankCleanLow", v); p.Draw() end
     local clear = UI:CreateButton(p, L["Clear marks"], 110, FIELD_H)
     clear:SetPoint("TOPRIGHT", -GAP, -(GAP + CHIP_H + GAP))
     clear:SetScript("OnClick", function() CL:ClearMarks() end)
@@ -1211,6 +1220,7 @@ local function buildCleanup(p)
         row.verdict:SetTextColor(vc.r, vc.g, vc.b)
         local why = {}
         for _, k in ipairs(r.reasons) do why[#why + 1] = L[CL.REASON[k]] end
+        if r.level and r.level > 0 then why[#why + 1] = string.format(L["level %d"], r.level) end
         if r.days and r.days > 0 then why[#why + 1] = string.format(L["%d days in the bank"], r.days) end
         if r.taken > 0 then why[#why + 1] = string.format(L["taken %d times in 60 days"], r.taken) end
         row.why:SetText(table.concat(why, " · "))
@@ -1234,7 +1244,7 @@ local function buildCleanup(p)
     gate:SetPoint("TOPLEFT", 0, -GAP)
     gate:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
     gate:SetJustifyH("LEFT")
-    local parts = { blurb, filters, clear, markAll, head, list }
+    local parts = { blurb, filters, clear, markAll, head, list, lowLabel, lowDD }
     for _, c in ipairs(chips) do parts[#parts + 1] = c end
 
     p.Draw = function()
@@ -1242,6 +1252,7 @@ local function buildCleanup(p)
         gate:SetShown(not officer)
         for _, part in ipairs(parts) do part:SetShown(officer) end
         if not officer then return end
+        lowDD:SetValue(CL:LowBelow())
         local rows = CL:Rows()
         local items, value, slots = CL:Summary(rows)
         chips[1]:SetValue(tostring(items))

@@ -68,6 +68,10 @@ local ITEMS = {
   [4500] = { "Broken Fang", 0, 15, 0, 20, 0, 25 },
   [4501] = { "Low Sword", 2, 2, 7, 1, 12, 1500 },
   [4502] = { "Old Elixir", 1, 0, 2, 20, 20, 40 },
+  [4503] = { "Linen Cloth", 1, 7, 5, 20, 0, 13, 5 },          -- (8th: item level)
+  [4504] = { "Minor Scroll", 1, 0, 4, 20, 5, 25 },
+  [4505] = { "Blood Shard", 1, 12, 0, 20, 0, 0 },
+  [4506] = { "Small Pouch", 1, 1, 0, 1, 0, 25, 5 },
 }
 local function idOf(item)
   if type(item) == "number" then return item end
@@ -84,7 +88,7 @@ function GetItemInfo(item)
   local id = idOf(item)
   local it = id and ITEMS[id]
   if not it then return nil end
-  return it[1], linkOf(id), it[2], 100, it[6] or 1, "", "", it[5], "", "icon" .. id, it[7] or 10
+  return it[1], linkOf(id), it[2], it[8] or 100, it[6] or 1, "", "", it[5], "", "icon" .. id, it[7] or 10
 end
 
 -- ── The server's bank ──────────────────────────────────────────────────
@@ -875,49 +879,57 @@ end
 local CL = GuildOS.GuildBankCleanup
 do
   local J = CL.Judge
-  local function v(it) it.have = it.have or 10; it.maxLevel = 70; return (J(it)) end
+  local function v(it) it.have = it.have or 10; it.lowBelow = 30; return (J(it)) end
   check(v({ quality = 0 }) == "sell", "grey goes")
-  check(v({ need = 4, have = 10 }) == "sell" and select(2, J({ need = 4, have = 10, maxLevel = 70 })) == 6,
+  check(v({ need = 4, have = 10 }) == "sell" and select(2, J({ need = 4, have = 10, lowBelow = 30 })) == 6,
     "past its need, the rest goes")
   check(v({ need = 10, have = 12 }) == "keep", "an item with a need stays")
-  check(v({ requested = true, days = 99 }) == "keep" and v({ demandLines = 3, days = 99 }) == "keep",
-    "an item asked for, or taken lately, stays")
-  check(v({ days = 40, reqLevel = 12, share = 0.01 }) == "sell", "untouched for a month at a level few are: goes")
-  check(v({ days = 40, classID = 4 }) == "sell", "untouched gear goes")
-  check(v({ days = 40, reqLevel = 60, share = 0.5 }) == "review", "untouched but many are its level: review")
-  check(v({ days = 2 }) == "review", "a recent item is only reviewed")
+  check(v({ requested = true, level = 5, classID = 0 }) == "keep" and v({ demandLines = 3, level = 5, classID = 0 }) == "keep",
+    "an item asked for, or taken lately, stays whatever its level")
+  check(v({ level = 12, classID = 0 }) == "sell" and v({ level = 12, classID = 4 }) == "sell" and v({ level = 5, classID = 1 }) == "sell",
+    "consumables, gear and bags below the guild's level go, from the first look")
+  check(v({ level = 5, classID = 7 }) == "review" and v({ level = 5, classID = 9 }) == "review",
+    "low-level materials and recipes are only reviewed")
+  check(v({ classID = 12, level = 1 }) == "review", "quest items are reviewed")
+  check(v({ level = 58, classID = 4 }) == "keep", "gear at the guild's level stays")
+  check(v({ level = 58, classID = 4, days = 40 }) == "sell", "unless it sat untouched for a month")
 end
 
 fresh()
 officer, officers = true, { Ana = true }
-for i = 1, 100 do ROSTER_LEVELS[i] = i <= 2 and 15 or 70 end
 local tabC = addTab("Raid", -1)
 local slC = BANK.tabs[tabC].slots
 slC[1] = { id = 4500, c = 7 }       -- grey
 slC[2] = { id = 4501, c = 1 }       -- level 12 sword, 2% of the guild near it
 slC[3] = { id = 22854, c = 30 }     -- flask, need 10: 15 past 1.5x
 slC[4] = { id = 4502, c = 5 }       -- elixir, will be taken often
+slC[5] = { id = 4503, c = 20 }      -- linen: a low-level material
+slC[6] = { id = 4504, c = 3 }       -- a low-level scroll
+slC[7] = { id = 4505, c = 2 }       -- a quest item
 Bank:OnEvent("GUILDBANKFRAME_OPENED")
 Bank:OnEvent("GUILDBANKBAGSLOTS_CHANGED")
 runTimers()
 Bank:SetNeed(22854, 10)
 Bank:MergeStream(tabC, { { t = NOW - 3600, ty = "w", n = "Bea", id = 4502, c = 1 }, { t = NOW - 1800, ty = "w", n = "Cid", id = 4502, c = 1 } })
--- The sword has sat for 40 days.
-for _, e in ipairs(Bank:Index().list) do
-  if e.id == 4501 then CL:Store().seen[e.key] = NOW - 40 * 86400 end   -- gear is keyed by its link
-end
 local byId = {}
 for _, r in ipairs(CL:Rows()) do byId[r.id] = r end
 check(byId[4500].verdict == "sell" and byId[4500].vendor == 25 * 7, "the grey stack is to sell, at its vendor value")
-check(byId[4501].verdict == "sell", "the old low-level sword is to sell")
+check(byId[4501].verdict == "sell", "the low-level sword is to sell, on the first look")
+check(byId[4504].verdict == "sell", "and so is the low-level scroll")
+check(byId[4503].verdict == "review" and byId[4505].verdict == "review", "linen and the quest item are for review")
 check(byId[22854].verdict == "sell" and byId[22854].out == 20, "the flasks past their need are to sell (20 of 30)")
 check(byId[4502].verdict == "keep", "the elixir members take is kept")
 local items, value = CL:Summary(CL:Rows())
-check(items == 3 and value > 0, "the summary counts what goes and what it makes")
+GuildOS:SetSetting("gbankCleanLow", 10)
+local byId2 = {}
+for _, r in ipairs(CL:Rows()) do byId2[r.id] = r end
+check(byId2[4501].verdict == "keep" and byId2[4504].verdict == "sell", "the officers' level cutoff moves what counts as low")
+GuildOS:SetSetting("gbankCleanLow", nil)
+check(items == 4 and value > 0, "the summary counts what goes and what it makes")
 
 -- Marks: an officer's, shared; a member's, refused.
 wire = {}
-check(CL:MarkSuggested() == 3 and CL:MarkedCount() == 3, "marking what is suggested marks the three")
+check(CL:MarkSuggested() == 4 and CL:MarkedCount() == 4, "marking what is suggested marks the four")
 check(last("gbankclean", "snap") ~= nil, "and the marks go to the other officers")
 officer = false
 check(not CL:SetMark("4502", true), "a member does not mark")
@@ -946,14 +958,14 @@ runTimers()
 local mine = 0
 for k = 1, 16 do if BAG[k] and BAG[k].id == 4500 then mine = mine + BAG[k].c end end
 check(mine == 3, "my own stack of the same item is not sold")
-check(CL:Owed() == 25 * 7 + 1500, "what it made is owed to the bank")
+check(CL:Owed() == 25 * 7 + 1500 + 25 * 3, "what it made is owed to the bank")
 CL:OnEvent("MERCHANT_CLOSED")
 MERCHANT = nil
 
 -- Back at the bank: the gold goes in.
 local bankBefore = BANK.money
 check(CL:DepositOwed(), "the owed gold is deposited")
-check(BANK.money == bankBefore + 25 * 7 + 1500 and CL:Owed() == 0, "all of it, and nothing is owed")
+check(BANK.money == bankBefore + 25 * 7 + 1500 + 25 * 3 and CL:Owed() == 0, "all of it, and nothing is owed")
 Bank:OnEvent("GUILDBANKFRAME_CLOSED")
 ROSTER_LEVELS = {}
 

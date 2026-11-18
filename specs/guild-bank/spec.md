@@ -70,10 +70,20 @@ Moving items between tabs; a bank alt's own bags; per-tab layout templates; pric
 A guild of 900 fills its bank with what nobody takes. A **Cleanup** sub-tab, for officers only,
 gives each item a verdict with its reasons and value:
 
-- **Sell**: grey; what the bank holds past 1.5× its need (the rest); untouched (no withdrawal in 60
-  days) for 30 days and either gear or of a level that under 5% of the guild is within 15 levels of.
-- **Keep**: has a need, taken twice or more in 60 days, or a member's open request.
-- **Review**: the rest (untouched, or few at its level, but not both; or recent).
+- **Sell**: grey; what the bank holds past 1.5× its need (all but the need); consumables, gear, bags
+  and ammo below the guild's level; gear untouched (no withdrawal in 60 days) for a month.
+- **Review**: materials, reagents and recipes below the guild's level (crafters still level on them);
+  quest items; anything else untouched for a month.
+- **Keep**: has a need, taken twice or more in 60 days, a member's open request, or at the guild's
+  level.
+
+"Below the guild's level" is under a level the officers choose in the tab (half the game's cap until
+they do: 30 on WoW: Forever): the required level for what has one, the item's own level for
+materials. Nothing waits for time to pass: how long an item sat comes from the ledger (its last
+deposit, or at least as far back as the ledger reaches), so a bank read for the first time already
+has its verdicts (the first in-game try showed nothing to clean in a bank full of it: the rules
+then waited 30 days from the first read and asked that under 5% of a 900-member guild be near the
+item's level).
 
 The value is the vendor's; with Auctionator or TSM installed, the auction price too, and an item
 worth over 3× its vendor price there is flagged for the auction house. Chips: items to sell, the

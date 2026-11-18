@@ -18,8 +18,6 @@ local DEMAND_DAYS = 60        -- days of the ledger that count as "taken lately"
 local STALE_DAYS = 30         -- days an item must sit in the bank before it is offered for sale
 local DEMAND_KEEP = 2         -- withdrawals in DEMAND_DAYS that make an item worth keeping
 local EXCESS = 1.5            -- held past this many times its need: the rest may go
-local LEVEL_SPAN = 15         -- levels above an item's required level at which it is still of use
-local FEW_USERS = 0.05        -- under this share of the guild in that span, the item has few users
 local AH_FACTOR = 3           -- an auction price this many times the vendor's: sell it there
 local WITHDRAW_GAP = 0.6      -- seconds between two stacks taken out of the bank
 local WITHDRAW_WAIT = 3       -- seconds a stack may take to leave the bank
@@ -104,24 +102,6 @@ end
 -- The verdicts (pure, given what is passed in)
 ----------------------------------------------------------------------
 
--- The share of the guild whose level is from `req` to `req + LEVEL_SPAN`, from the roster.
-function Cleanup:LevelShare(req)
-    local s = state()
-    if not s.levels or (s.levelsAt or 0) < GetTime() - 60 then
-        s.levels, s.levelsAt = {}, GetTime()
-        for i = 1, (GetNumGuildMembers and GetNumGuildMembers() or 0) do
-            local _, _, _, level = GetGuildRosterInfo(i)
-            level = tonumber(level)
-            if level then s.levels[#s.levels + 1] = level end
-        end
-    end
-    local levels = s.levels
-    if #levels == 0 then return 1 end
-    local n = 0
-    for _, lv in ipairs(levels) do if lv >= req and lv <= req + LEVEL_SPAN then n = n + 1 end end
-    return n / #levels
-end
-
 -- Withdrawals of each item id over the last `days`: { [id] = { lines, items } }.
 function Cleanup:Demand(days)
     local since = now() - days * 86400
@@ -137,9 +117,23 @@ function Cleanup:Demand(days)
     return out
 end
 
--- The verdict on one item. `it` = { have, quality, classID, reqLevel, need, demandLines, requested,
--- days (in the bank), share (of the guild in its levels), maxLevel }. Returns the verdict, how many
--- may go, and the reasons as keys of REASON.
+-- The level under which an item counts as low: the officers' choice, else half the game's cap
+-- (30 on WoW: Forever, 35 on TBC, 45 on retail).
+function Cleanup:LowBelow()
+    local v = tonumber(GuildOS:GetSetting("gbankCleanLow"))
+    if v and v > 1 then return v end
+    return math.floor(GuildOS.Client.maxLevel / 2)
+end
+
+-- Classes that are worth nothing to a guild once below its level: consumables, gear, bags, ammo.
+local LOW_SELLS = { [0] = true, [1] = true, [2] = true, [4] = true, [6] = true, [11] = true }
+-- Classes worth a look below it: trade goods and reagents (crafters level on them), recipes.
+local LOW_REVIEWS = { [5] = true, [7] = true, [9] = true, [19] = true }
+
+-- The verdict on one item. `it` = { have, quality, classID, level (required, or the item's own),
+-- lowBelow, need, demandLines, requested, days (in the bank, at least) }. Returns the verdict, how
+-- many may go, and the reasons as keys of REASON. Nothing here waits for time to pass: a bank read
+-- for the first time already has its verdicts.
 function Cleanup.Judge(it)
     local reasons = {}
     if it.need and it.need > 0 then
@@ -158,15 +152,32 @@ function Cleanup.Judge(it)
     if (it.demandLines or 0) >= DEMAND_KEEP then reasons[#reasons + 1] = "taken" end
     if #reasons > 0 then return "keep", 0, reasons end
 
+    if it.classID == 12 then
+        reasons[#reasons + 1] = "quest"
+        return "review", 0, reasons
+    end
+    local low = it.level and it.level > 0 and it.level < (it.lowBelow or 30)
     local stale = (it.days or 0) >= STALE_DAYS and (it.demandLines or 0) == 0
-    local usable = it.reqLevel and it.reqLevel > 1 and it.reqLevel < (it.maxLevel or 60)
-    local fewUsers = usable and (it.share or 1) < FEW_USERS
-    if stale then reasons[#reasons + 1] = "stale" end
-    if fewUsers then reasons[#reasons + 1] = "lowlevel" end
-    if stale and (fewUsers or it.classID == 2 or it.classID == 4) then return "sell", it.have, reasons end
-    if stale or fewUsers then return "review", 0, reasons end
-    reasons[#reasons + 1] = "fresh"
-    return "review", 0, reasons
+    if low and LOW_SELLS[it.classID] then
+        reasons[#reasons + 1] = "lowlevel"
+        if stale then reasons[#reasons + 1] = "stale" end
+        return "sell", it.have, reasons
+    end
+    if low and LOW_REVIEWS[it.classID] then
+        reasons[#reasons + 1] = it.classID == 9 and "lowrecipe" or "lowmat"
+        if stale then reasons[#reasons + 1] = "stale" end
+        return "review", 0, reasons
+    end
+    if stale and (it.classID == 2 or it.classID == 4) then
+        reasons[#reasons + 1] = "stale"
+        return "sell", it.have, reasons
+    end
+    if stale then
+        reasons[#reasons + 1] = "stale"
+        return "review", 0, reasons
+    end
+    reasons[#reasons + 1] = "current"
+    return "keep", 0, reasons
 end
 
 Cleanup.REASON = {
@@ -176,9 +187,25 @@ Cleanup.REASON = {
     requested = "A member asked for it",
     taken = "Taken lately",
     stale = "Untouched for a month",
-    lowlevel = "Few in the guild are its level",
-    fresh = "Recent",
+    lowlevel = "Below the guild's level",
+    lowmat = "Low-level material: crafters still level on it",
+    lowrecipe = "Low-level recipe",
+    quest = "Quest item",
+    current = "At the guild's level",
 }
+
+-- When each item was last deposited, by the ledger: { [id] = time }, and how far back the ledger
+-- reaches. An item with no deposit in it has been in the bank at least that long.
+function Cleanup:Deposits()
+    local last, oldest = {}, nil
+    for _, e in ipairs(Bank():Store().ledger) do
+        if e.k ~= 0 then
+            if not oldest or (e.t or 0) < oldest then oldest = e.t end
+            if e.ty == "d" and e.id and (e.t or 0) > (last[e.id] or 0) then last[e.id] = e.t end
+        end
+    end
+    return last, oldest
+end
 
 -- Every item with its verdict, value and reasons, sell first and the most valuable first.
 function Cleanup:Rows()
@@ -187,19 +214,23 @@ function Cleanup:Rows()
     self:Touch(index.list)
     local db = self:Store()
     local demand = self:Demand(DEMAND_DAYS)
+    local deposits, ledgerFrom = self:Deposits()
     local requested = {}
     for _, r in pairs(db.requests or {}) do if r.st == "open" then requested[r.item] = true end end
     local t = now()
-    local maxLevel = GuildOS.Client.maxLevel
+    local lowBelow = self:LowBelow()
     local rows = {}
     for _, e in ipairs(index.list) do
         local info = B:ItemInfo(e.id, e.l)
-        local sell, req = GuildOS.Compat.ItemValue(e.l or e.id)
+        local sell, req, ilvl = GuildOS.Compat.ItemValue(e.l or e.id)
         local d = demand[e.id]
-        local it = { have = e.total, quality = info.quality, classID = info.classID, reqLevel = req,
-            need = B:NeedOf(e.id), demandLines = d and d.lines or 0, requested = requested[e.id],
-            days = math.floor((t - (db.seen[e.key] or t)) / 86400),
-            share = req and req > 1 and self:LevelShare(req) or 1, maxLevel = maxLevel }
+        -- How long it has sat: since its last deposit in the ledger; with none there, at least as
+        -- long as the ledger reaches back, or as long as this client has seen it.
+        local since = deposits[e.id] or math.min(ledgerFrom or t, db.seen[e.key] or t)
+        local level = (req and req > 1) and req or ilvl
+        local it = { have = e.total, quality = info.quality, classID = info.classID, level = level,
+            lowBelow = lowBelow, need = B:NeedOf(e.id), demandLines = d and d.lines or 0,
+            requested = requested[e.id], days = math.floor((t - since) / 86400) }
         local verdict, n, reasons = Cleanup.Judge(it)
         local ah = GuildOS.Compat.AuctionPrice(e.id)
         local unit = sell or 0
@@ -207,7 +238,7 @@ function Cleanup:Rows()
         rows[#rows + 1] = { key = e.key, id = e.id, l = e.l, have = e.total, tabs = e.tabs, verdict = verdict,
             out = n, reasons = reasons, vendor = unit * n, vendorEach = unit, ah = ah and ah * n or nil,
             where = where, days = it.days, taken = it.demandLines, marked = db.clean.marks[e.key] ~= nil,
-            noValue = sell ~= nil and unit == 0 }
+            noValue = sell ~= nil and unit == 0, level = level }
     end
     local order = { sell = 1, review = 2, keep = 3 }
     table.sort(rows, function(a, b)

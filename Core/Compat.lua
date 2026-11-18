@@ -721,11 +721,12 @@ function Compat.PlayerMoney()
     return GetMoney and tonumber(GetMoney()) or 0
 end
 
--- What a vendor pays for one, and the level it asks for, when the client has the item cached.
+-- What a vendor pays for one, the level it asks for and its own item level, when the client has the
+-- item cached.
 function Compat.ItemValue(item)
-    local name, _, _, _, reqLevel, _, _, _, _, _, sellPrice = Compat.GetItemInfo(item)
+    local name, _, _, itemLevel, reqLevel, _, _, _, _, _, sellPrice = Compat.GetItemInfo(item)
     if not name then return nil end
-    return tonumber(sellPrice) or 0, tonumber(reqLevel) or 0
+    return tonumber(sellPrice) or 0, tonumber(reqLevel) or 0, tonumber(itemLevel) or 0
 end
 
 -- What one sells for at the auction house, from an addon that knows (Auctionator, TSM), or nil.
