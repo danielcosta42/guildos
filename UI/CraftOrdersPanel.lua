@@ -540,13 +540,16 @@ function GuildOS:CreateCraftDetail(parent)
 
     -- recipe = { id (what identifies the row), item, crafters = { { key, name, class, online } } },
     -- the crafters online first. `toKey`: one crafter to send the order to.
-    function d:SetRecipe(recipe, toKey)
-        if not (self.recipe and recipe and self.recipe.id == recipe.id) then
+    -- A repaint of the same recipe keeps what the player chose in the block (quantity, materials,
+    -- tip, the crafter it goes to); a new recipe, or `fresh` (opened on an item from elsewhere),
+    -- starts over with `toKey`.
+    function d:SetRecipe(recipe, toKey, fresh)
+        if fresh or not (self.recipe and recipe and self.recipe.id == recipe.id) then
             self.qty, self.mode = 1, "mats"
             tip:SetText("")
+            self.toKey = toKey
         end
         self.recipe = recipe
-        self.toKey = toKey
         self:Paint()
     end
     d:SetScript("OnSizeChanged", function(self) if self:IsShown() then self:Paint() end end)
@@ -623,7 +626,11 @@ function GuildOS:CreateCraftsTab(container, win)
         dock:SetShown(queue ~= nil and (wide or drawerOpen))
         toggle:SetShown(queue ~= nil and not wide)
     end
-    toggle:SetScript("OnClick", function() drawerOpen = not drawerOpen; layout() end)
+    toggle:SetScript("OnClick", function()
+        drawerOpen = not drawerOpen
+        layout()
+        if drawerOpen and queue then GuildOS:SafeCall(queue.Draw, queue) end
+    end)
     UI:MakeResponsive(container, function(_, w) layout(w) end)
     layout()
 
@@ -665,7 +672,7 @@ end
 
 -- The window's Crafts tab says how many orders wait for me.
 function GuildOS:PaintCraftsBadge()
-    local f = UI.GetMainWindow and UI:GetMainWindow()
+    local f = GuildOS.RosterFrame        -- the window, only once it exists: this never builds it
     if not (f and f.tabs and GuildOS.CraftOrders) then return end
     local n = GuildOS.CraftOrders:InboxCount()
     for _, tab in ipairs(f.tabs) do
@@ -1011,7 +1018,10 @@ end
 
 if GuildOS.CraftOrders then
     -- Until the tab is built, a change still repaints the trade and mail bars.
-    GuildOS.CraftOrders.uiRefresh = GuildOS.CraftOrders.uiRefresh or function() GuildOS:RefreshCraftOrderBars() end
+    GuildOS.CraftOrders.uiRefresh = GuildOS.CraftOrders.uiRefresh or function()
+        GuildOS:RefreshCraftOrderBars()
+        GuildOS:PaintCraftsBadge()
+    end
     -- Painted a frame later: the game shows its own window on the same event, maybe after us.
     GuildOS.CraftOrders.uiTrade = function(open)
         if open then GuildOS.Compat.After(0, function() GuildOS:SafeCall(paintTradeBar) end)

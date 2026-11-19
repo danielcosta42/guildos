@@ -1162,9 +1162,20 @@ function Compat.TradeTimeLeft(bag, slot)
 end
 
 -- Open a trade with a nearby player by name; false when the client has no way to (craft orders, #389).
+-- InitiateTrade takes a unit: the player targeted, or one in the group (by name). For anyone else
+-- it does nothing, so the caller falls back to a whisper.
 function Compat.InitiateTrade(name)
     if not (InitiateTrade and type(name) == "string") then return false end
-    return pcall(InitiateTrade, name) and true or false
+    local short = name:match("^([^-]+)") or name
+    local unit
+    local target = UnitName and UnitName("target")
+    if target and not Compat.IsSecret(target) and (target == name or target == short) then
+        unit = "target"
+    elseif UnitExists and UnitExists(name) then
+        unit = name
+    end
+    if not unit then return false end
+    return pcall(InitiateTrade, unit) and true or false
 end
 
 -- Who the open trade window is with: name and realm (nil realm: this one), or nothing when the client

@@ -268,7 +268,9 @@ check(showing("1 orders"), "and each says how many")
 local tab = { key = "recipes", label = CreateFrame("Frame") }
 tab.label:SetText("Crafts")
 local laid = 0
-function UI:GetMainWindow() return { tabs = { tab }, LayoutTabs = function() laid = laid + 1 end } end
+GuildOS:PaintCraftsBadge()
+check(laid == 0, "with no window yet nothing is built to paint it")
+GuildOS.RosterFrame = { tabs = { tab }, LayoutTabs = function() laid = laid + 1 end }
 GuildOS:PaintCraftsBadge()
 check(tab.label.text == "Crafts (" .. O:InboxCount() .. ")" and laid == 1, "the tab counts what waits for me: " .. tab.label.text)
 for _, o in pairs(GuildOS.db.craftOrders) do o.st = "cancelled" end

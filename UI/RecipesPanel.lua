@@ -120,6 +120,12 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         else
             state.results = GuildOS.RecipeTracker:Search(state.query, state.profFilter)
         end
+        -- Opened on an item (Alt-click, an order's card): only the recipes that make it.
+        if state.item then
+            local only = {}
+            for _, e in ipairs(state.results) do if e.itemId == state.item then only[#only + 1] = e end end
+            state.results = only
+        end
         state.scrollOffset = 0
         countText:SetText(string.format(L["|cff888888%d results|r"], #state.results))
         -- The marks after a name: the recipes I make, and how many orders ask for each item.
@@ -163,7 +169,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         -- window is too narrow to hold every profession on one line.
 
         btn:SetScript("OnClick", function()
-            state.profFilter = profName
+            state.profFilter, state.item = profName, nil
             PaintFilters()
             RefreshResults()
             panel:UpdateRows()
@@ -208,7 +214,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     -- Hooked, not set: the field keeps its own Escape, focus and hint handlers.
     searchBox:HookScript("OnTextChanged", function(self)
         local text = self:GetText()
-        state.query = text or ""
+        state.query, state.item = text or "", nil
         RefreshResults()
         panel:UpdateRows()
     end)
@@ -508,7 +514,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     end)
 
     -- The opened recipe's block: its item, its crafters online first, and what it takes.
-    function panel:PaintDetail()
+    function panel:PaintDetail(fresh)
         if not detail then return end
         if not state.open then detail:Hide(); return end
         local e
@@ -524,7 +530,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
             return (a.name or "") < (b.name or "")
         end)
         detail:SetRecipe({ id = keyOf(e), item = e.itemId, crafters = crafters, meta = e.profName and L[e.profName] or nil },
-            state.openTo)
+            state.openTo, fresh)
     end
 
     -- Search again, keeping the scroll, and paint the rows and the opened recipe.
@@ -539,16 +545,16 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
 
     -- Open the recipe that makes `itemId`: the Crafts tab's Alt-click, an order's card.
     function panel:FocusItem(itemId, toKey)
-        local name = GuildOS.Compat.GetItemInfo(itemId)
-        state.profFilter, state.query = "All", name or ""
-        searchBox:SetText(state.query)
-        state.open = "i" .. itemId
+        state.profFilter, state.query = "All", ""
+        searchBox:SetText("")
+        state.item, state.open = itemId, "i" .. itemId     -- after SetText: its handler clears the item
         RefreshResults()
-        if not state.detailAt then return false end
+        if not state.detailAt then state.item = nil; RefreshResults(); return false end
+        PaintFilters()
         state.openTo = toKey
         if FauxScrollFrame_SetOffset then FauxScrollFrame_SetOffset(scrollFrame, 0) end
         self:UpdateRows()
-        self:PaintDetail()
+        self:PaintDetail(true)
         return true
     end
 

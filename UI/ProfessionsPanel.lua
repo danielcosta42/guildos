@@ -501,7 +501,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     end
 
     -- The opened recipe's block: its item, its crafters online first, what it takes.
-    function panel:PaintDetail()
+    function panel:PaintDetail(fresh)
         if not detail then return end
         if state.mode ~= "recipes" or not state.open then detail:Hide(); return end
         local e
@@ -509,7 +509,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         if not e then detail:Hide(); return end
         local list2 = crafterList(e.crafters, state.who)
         detail:SetRecipe({ id = e.id, item = (e.out and e.out > 0) and e.out or nil, crafters = list2,
-                           meta = metaText(e) }, state.openTo)
+                           meta = metaText(e) }, state.openTo, fresh)
     end
 
     scroll:SetScript("OnVerticalScroll", function(self, offset)
@@ -546,6 +546,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
             if not at then state.open = nil end
         else
             state.results = state.line and D.MemberRows(state.line) or {}
+            state.detailAt, state.detailRows = nil, nil
         end
         if resetScroll then
             scroll:SetVerticalScroll(0)
@@ -580,7 +581,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         state.open = D.ItemRecipes(itemId)[1]
         self:Refresh(true)
         state.openTo = toKey
-        self:PaintDetail()
+        self:PaintDetail(true)
         return true
     end
 

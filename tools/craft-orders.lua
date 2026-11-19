@@ -406,6 +406,33 @@ O:OnMailSent()
 check(O:Get("C1").st == "done", "the mail the bar wrote went: done")
 check(#O:MailRows() == 0, "nothing more to mail")
 
+-- Two orders with Cid: the trade moves the one whose item changed hands, whichever the bar picked.
+fresh()
+local p1 = O:Place(100, {})
+local p2 = O:Place(2, { tip = 100 })
+from("Cid", "acc", { id = p1.id, at = NOW })
+from("Cid", "acc", { id = p2.id, at = NOW })
+check(#O:OrdersWith(CID) == 2, "both are with Cid")
+O.trade = { partner = CID, pick = p2.id }
+check(O:OrderWith(CID).id == p2.id, "the bar's pick is the one the trade is about")
+O:OnTradeDone(CID, {}, { "item:2:0" }, true, p2.id)
+check(O:Get(p2.id).st == "done" and O:Get(p2.id).paid, "the second one, received, is done and its tip paid")
+check(O:Get(p1.id).st == "accepted" and not O:Get(p1.id).paid, "the first one stays where it was")
+O.trade = nil
+
+-- Trading needs a unit: the target, or someone in the group; anyone else gets a whisper instead.
+local traded
+InitiateTrade = function(u) traded = u end
+local TARGET
+UnitName = function(u) if u == "target" then return TARGET end return PLAYER end
+UnitExists = function(u) return u == "Gil" end
+TARGET = "Cid"
+check(GuildOS.Compat.InitiateTrade("Cid-Realm") and traded == "target", "the targeted player: traded")
+check(GuildOS.Compat.InitiateTrade("Gil") and traded == "Gil", "a group member: traded by name")
+traded = nil
+check(not GuildOS.Compat.InitiateTrade("Hal") and traded == nil, "anyone else: not traded, so the caller whispers")
+UnitName = function() return PLAYER end
+
 -- ── Putting the items in ────────────────────────────────────────────────
 BAGS = { [0] = { [1] = { id = 1, c = 3 }, [2] = { id = 1, c = 20 }, [3] = { id = 2, c = 1 } } }
 cursor, dropped = nil, {}

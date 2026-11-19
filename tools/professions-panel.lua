@@ -247,6 +247,9 @@ for _, o in ipairs(all) do
   end
 end
 check(asked and panel.detail.toKey == BOB and showing("To Bob only"), "Ask them sends the order to that crafter alone")
+panel.itemEvents.scripts.OnEvent(panel.itemEvents, "GET_ITEM_INFO_RECEIVED", 2770)
+runTimers()
+check(panel.detail.toKey == BOB, "and a repaint (an item's data arriving, an order synced) keeps that choice")
 row.scripts.OnClick(row)
 check(st.open == nil and not panel.detail.shown, "a second click closes it")
 local smelt
@@ -263,6 +266,8 @@ panel.railButtons[2].scripts.OnClick(panel.railButtons[2])
 panel.tabCrafters.scripts.OnClick(panel.tabCrafters)
 check(st.mode == "crafters" and #st.results == 2 and st.results[1].name == "Bob" and st.results[2].native,
       "Crafters lists the members, native last")
+panel:UpdateRows()
+check(not panel.detail.shown, "an opened recipe never shows over the Crafters view, even after a scroll")
 check(showing("210 / 300") and showing("no addon"), "ranks and native members show")
 panel.railButtons[1].scripts.OnClick(panel.railButtons[1])
 check(#st.results == 0 and showing("Pick a profession on the left."), "Crafters with All asks for a profession")

@@ -727,29 +727,36 @@ function CraftOrders:OnTradeClosed()
 end
 
 -- A trade went through: what it means for the order with that partner.
-function CraftOrders:OnTradeDone(partner, mine, theirs, tipPut)
-    local o, role = self:OrderWith(partner)
-    if not o then return end
-    local reagent = {}
-    for _, r in ipairs(self:Reagents(o.item, o)) do reagent[r.itemID] = true end
-    local gaveRg, gotRg, gaveItem, gotItem = false, false, false, false
-    for _, l in ipairs(mine or {}) do
-        local id = idOf(l)
-        if id and reagent[id] then gaveRg = true end
-        if id == o.item then gaveItem = true end
-    end
-    for _, l in ipairs(theirs or {}) do
-        local id = idOf(l)
-        if id and reagent[id] then gotRg = true end
-        if id == o.item then gotItem = true end
-    end
-    if role == "author" and tipPut then o.paid = true end
-    if role == "author" then
-        if gotItem then self:Act(o.id, "done")
-        elseif gaveRg and o.st == "accepted" and o.mode == "mats" then self:Act(o.id, "mats") end
-    else
-        if gaveItem then self:Act(o.id, "done")
-        elseif gotRg and o.st == "accepted" and o.mode == "mats" then self:Act(o.id, "mats") end
+function CraftOrders:OnTradeDone(partner, mine, theirs, tipPut, pick)
+    -- Every running order with this player is checked against what changed hands, so the one the
+    -- trade was about moves on whichever was picked on the bar; the tip belongs to the picked one
+    -- (or the only one).
+    local list = self:OrdersWith(partner)
+    if #list == 0 then return end
+    local tipFor = pick or (#list == 1 and list[1].o.id) or nil
+    for _, x in ipairs(list) do
+        local o, role = x.o, x.role
+        local reagent = {}
+        for _, r in ipairs(self:Reagents(o.item, o)) do reagent[r.itemID] = true end
+        local gaveRg, gotRg, gaveItem, gotItem = false, false, false, false
+        for _, l in ipairs(mine or {}) do
+            local id = idOf(l)
+            if id and reagent[id] then gaveRg = true end
+            if id == o.item then gaveItem = true end
+        end
+        for _, l in ipairs(theirs or {}) do
+            local id = idOf(l)
+            if id and reagent[id] then gotRg = true end
+            if id == o.item then gotItem = true end
+        end
+        if role == "author" and tipPut and o.id == tipFor then o.paid = true end
+        if role == "author" then
+            if gotItem then self:Act(o.id, "done")
+            elseif gaveRg and o.st == "accepted" and o.mode == "mats" then self:Act(o.id, "mats") end
+        else
+            if gaveItem then self:Act(o.id, "done")
+            elseif gotRg and o.st == "accepted" and o.mode == "mats" then self:Act(o.id, "mats") end
+        end
     end
     self:Refresh()
 end
@@ -844,7 +851,7 @@ function CraftOrders:Initialize()
                 local t = CraftOrders.trade
                 CraftOrders.trade = nil
                 if t and t.partner then
-                    GuildOS:SafeCall(function() CraftOrders:OnTradeDone(t.partner, t.mine, t.theirs, t.tipPut) end)
+                    GuildOS:SafeCall(function() CraftOrders:OnTradeDone(t.partner, t.mine, t.theirs, t.tipPut, t.pick) end)
                 end
             end
         elseif event == "MAIL_SHOW" then
@@ -860,6 +867,8 @@ function CraftOrders:Initialize()
         end
     end)
     Compat.HookSendMail(function(to, subject) CraftOrders:OnSendMail(to, subject) end)
-    -- A login asks once what is running; the reply comes from one member.
+    -- A login asks once what is running; the reply comes from one member. The window's tab and the
+    -- bars are painted once the answers had time to come in.
     Compat.After(math.random(8, 20), function() publish("ask", {}) end)
+    Compat.After(30, function() CraftOrders:Refresh() end)
 end
