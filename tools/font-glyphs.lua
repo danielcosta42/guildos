@@ -1,9 +1,10 @@
 -- Characters the addon's font cannot draw (issue #391).
 --
--- GuildOS draws its text in IBM Plex Sans and Mono (GuildOS:ApplyFont, Core/Data.lua). Plex has no
--- geometric shapes and no dingbats: a "●" beside each online crafter (issue #389) and a "✓" on a
--- delivered wishlist item drew as empty boxes. A mark like that is a texture (|T...|t or a
--- WHITE8x8 square), never a character. This reads every Lua file the TOC loads, comments left out,
+-- GuildOS draws its text in IBM Plex Sans and Mono, or in the client's own font with the "game
+-- font" setting and always on Korean and Chinese clients (GuildOS:ApplyFont, Core/Data.lua). Text
+-- has to draw in both, and neither has every geometric shape or dingbat: Plex has no "●" (a box
+-- beside each online crafter, issue #389), the client's font no "✓" (a box on a delivered wishlist
+-- item). A mark like that is a texture (|T...|t or a WHITE8x8 square), never a character. This reads every Lua file the TOC loads, comments left out,
 -- and fails on any of them. Modules/ChehulNet.lua is shared verbatim with other addons and keeps the
 -- client's font; Libs are third-party.
 --
@@ -35,7 +36,8 @@ end
 -- The source without its comments (long ones and `--` to the end of a line), strings kept: those
 -- are what reaches the screen. A `--` inside a string is rare enough here to be read as a comment.
 local function code(src)
-  src = src:gsub("%-%-%[(=*)%[.-%]%1%]", "")
+  -- A long comment keeps its line breaks, so the line numbers in a failure stay true.
+  src = src:gsub("(%-%-%[(=*)%[.-%]%2%])", function(c) return (c:gsub("[^\n]", "")) end)
   local out = {}
   for line in (src .. "\n"):gmatch("(.-)\n") do
     out[#out + 1] = (line:gsub("%-%-.*$", ""))
@@ -73,6 +75,7 @@ end
 check(code('x = "●" -- ok'):find("●", 1, true) ~= nil, "a glyph in a string is seen")
 check(code('x = 1 -- ●'):find("●", 1, true) == nil, "a glyph in a comment is not")
 check(code('--[[ ✓ ]] y = 2'):find("✓", 1, true) == nil, "nor one in a long comment")
+check(select(2, code("--[[ a\nb ]]\nz"):gsub("\n", "")) == 2, "a long comment keeps its line breaks")
 
 if #fails > 0 then
   for i = 1, math.min(#fails, 20) do io.stderr:write("FAIL: " .. fails[i] .. "\n") end
