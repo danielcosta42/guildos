@@ -10,7 +10,11 @@
 --   * outside it, before and after, everything is the game's;
 --   * a hidden sheet is not said in chat and not in another player's tooltip, and the roll still sees it;
 --   * the game's four tables are the same after a night as before;
---   * ListsFromSite / PriosFromSite ignore the window and want an `at` of the last three days.
+--   * ListsFromSite / PriosFromSite ignore whether the player is in the raid, and want the companion's own
+--     stamp (GuildOSInboxAck.at) of the last three days, read live (R18), and a raid whose every place this
+--     client can stamp (R20), in its night or still to come;
+--   * a night of two places is the same raid's sheet in either (R19);
+--   * hidden priorities (R21): no line of the raid's chat names a prio place, the loot master reads it locally.
 --
 --   luajit -e 'ADDON="."' tools/site-night.lua
 --
@@ -177,7 +181,10 @@ local function siteNight(over)
     },
   }
   for k, v in pairs(over or {}) do s[k] = v end
-  GuildOS.db.siteLoot = { at = time(), raids = { r1 = s } }
+  GuildOS.db.siteLoot = { raids = { r1 = s } }
+  -- Nothing in memory from an earlier read, and a companion that answered from the site just now.
+  GuildOS.CompanionImport._siteRaids = nil
+  _G.GuildOSInboxAck = { at = time(), members = 1 }
   return s
 end
 local function site() return GuildOS.db.siteLoot.raids.r1 end
@@ -313,15 +320,34 @@ end
 siteNight()
 check(SL:ListsFromSite("ana") == true and SL:ListsFromSite("cy") == false, "lists: the site holds Ana's, not Cy's")
 check(SL:PriosFromSite() == true, "prios: the site holds them")
-clock = NOW + 30 * 3600
-check(not SL:Active() and SL:ListsFromSite("ana") and SL:PriosFromSite(), "and the night being over does not change it")
-clock = NOW + 3 * 86400
-check(SL:ListsFromSite("ana") and SL:PriosFromSite(), "three days after is still the site's")
-clock = NOW + 3 * 86400 + 1
-check(SL:ListsFromSite("ana") == false and SL:PriosFromSite() == false, "older than three days: the game's again")
+check(SL:ListInForce("ana").wishlist[1].order == 1 and SL:ListInForce("cy") == nil, "the list in force is the site's own")
+-- Out of the instance, a night still to come: the source is the site's all the same.
+instance = 565
+check(not SL:Active() and SL:ListsFromSite("ana") and SL:PriosFromSite(), "being elsewhere does not change it")
+instance = 532
+clock = NOW - 30 * 3600
+check(SL:ListsFromSite("ana") and SL:PriosFromSite(), "a day before the night is the site's too")
+clock = NOW + 9 * 3600
+check(SL:ListsFromSite("ana") == false and SL:PriosFromSite() == false, "a night that is over speaks for nothing")
+-- R18: the age is the companion's own stamp, read live, never the time the inbox was read.
+siteNight({ startsAt = NOW + 5 * 86400 })
 clock = NOW
-GuildOS.db.siteLoot.at = nil
-check(SL:ListsFromSite("ana") == false and SL:PriosFromSite() == false, "no stamp, no claim")
+check(SL:ListsFromSite("ana") and SL:PriosFromSite(), "a fresh stamp and a raid in five days: the site's")
+_G.GuildOSInboxAck = { at = NOW - 3 * 86400 }
+check(SL:ListsFromSite("ana") and SL:PriosFromSite(), "a stamp three days old is still the site's")
+_G.GuildOSInboxAck = { at = NOW - 3 * 86400 - 1 }
+check(SL:ListsFromSite("ana") == false and SL:PriosFromSite() == false,
+  "an older stamp with a fresh siteLoot: no source, the game's again")
+_G.GuildOSInboxAck = { at = NOW }
+clock = NOW + 3 * 86400 + 1
+check(SL:ListsFromSite("ana") == false, "the stamp ages live: the clock moved, the same stamp is old now")
+clock = NOW
+for _, bad in ipairs({ false, "x", { at = "1791000000" }, { at = 0 / 0 }, { at = math.huge }, { at = 0 }, {} }) do
+  _G.GuildOSInboxAck = bad or nil
+  check(SL:ListsFromSite("ana") == false and SL:PriosFromSite() == false,
+    "no stamp, or one that is no plain number, is no source: " .. tostring(bad and bad.at))
+end
+_G.GuildOSInboxAck = { at = NOW }
 GuildOS.db.siteLoot = nil
 check(not SL:Active() and SL:ListsFromSite("ana") == false and SL:PriosFromSite() == false
   and SL:Reserves() == nil and SL:Prios() == nil and SL:WishlistOf("ana") == nil, "no siteLoot: nothing")
@@ -330,7 +356,7 @@ check(c("Bo").softRes and c("Cy").prioOrder == 1 and c("Ana").wishlist.order == 
 siteNight({ prios = false })
 check(SL:PriosFromSite() == false and SL:Prios() == nil, "a night with no prios holds none")
 
--- ConsumeInbox stamps `at` with the clock of the read.
+-- Reading the inbox again stamps nothing: an old Inbox.lua read at every login is as old as its companion's stamp.
 do
   local LD = LibStub("LibDeflate")
   local function wire(json) return "GOSROST1:" .. LD:EncodeForPrint(LD:CompressDeflate(json)) end
@@ -341,8 +367,14 @@ do
   GuildOS.db.siteLoot = nil
   function GuildOS:GetSetting(k) return self.db.settings[k] end
   check(GuildOS.CompanionImport:ConsumeInbox(), "the inbox is read")
-  check(GuildOS.db.siteLoot and GuildOS.db.siteLoot.at == clock, "and stamped with the time of the read")
-  check(SL:ListsFromSite("ana"), "so the list is the site's")
+  check(GuildOS.db.siteLoot and GuildOS.db.siteLoot.at == nil and GuildOS.db.siteLoot.raids.rx, "and no read stamp is kept")
+  check(not SL:ListsFromSite("ana"), "with no companion stamp (it does not own this folder) the list is the game's")
+  _G.GuildOSInboxAck = { at = clock - 4 * 86400, members = 1 }
+  GuildOS.CompanionImport._lastInbox = nil
+  GuildOS.CompanionImport:ConsumeInbox()
+  check(not SL:ListsFromSite("ana"), "a companion that stopped four days ago: read again at login, still the game's")
+  _G.GuildOSInboxAck = { at = clock - 600, members = 1 }
+  check(SL:ListsFromSite("ana"), "a companion that answered ten minutes ago: the site's")
 end
 -- A body over the cap is refused before anything is copied.
 do
@@ -357,6 +389,7 @@ end
 
 -- ── 6. Two raids of the guild in one window: each is its own sheet ───
 do
+  GuildOS.CompanionImport._siteRaids = nil
   local RT = GuildOS.RaidTracker
   local function entry(who, startsAt)
     return { startsAt = startsAt, instanceKey = "kara",
@@ -592,6 +625,125 @@ do
   GuildOS.db.siteLoot = nil
   check(LM:AllPrios()[ITEM][1].name == "Cy" and WL:ListFor("Ana-Realm", "Ana").wishlist[1].order == 3, "and the game's otherwise")
 end
+
+-- ── 12. A night of two places is one raid's in both (R19) ────────────
+do
+  local RT = GuildOS.RaidTracker
+  RT.currentRaid = nil
+  siteNight({ instanceKey = "gruul", instanceKeys = { "gruul", "mag" } })
+  instance = 565   -- Gruul's Lair
+  check(SL:ActiveRaid() == "r1" and names(SR:GetReserves(ITEM)) == "Ana", "in Gruul's Lair, the raid's sheet")
+  instance = 544   -- Magtheridon's Lair, the second place of the same night
+  check(SL:ActiveRaid() == "r1" and names(SR:GetReserves(ITEM)) == "Ana", "and in Magtheridon's Lair the same raid's")
+  instance = 532
+  check(SL:ActiveRaid() == nil, "a third place is not that raid")
+  siteNight({ instanceKey = "gruul" })
+  instance = 544
+  check(SL:ActiveRaid() == nil, "with one place only, Magtheridon's Lair is not a Gruul night")
+  -- The session is stamped by the same match, so the attendance of the second place has its raid too.
+  GuildOS.db.companionRaids = { { raidId = "r1", instanceKey = "gruul", instanceKeys = { "gruul", "mag" }, startsAt = NOW } }
+  check(GuildOS.CompanionImport:RaidFor(RT:RaidKeyOf(544), NOW + 3600) == "r1", "the stamp in Magtheridon's Lair names the raid")
+  GuildOS.db.companionRaids = nil
+  instance = 532
+end
+
+-- ── 13. A raid this client cannot stamp locks nothing (R20) ──────────
+do
+  local c = GuildOS.Client
+  siteNight({ instanceKey = "barrow-deeps" })
+  check(not SL:ListsFromSite("ana") and not SL:PriosFromSite() and SL:ListInForce("ana") == nil,
+    "a place with no map id here: the site's data is never used, so it is no source either")
+  siteNight({ instanceKey = "kara", instanceKeys = { "kara", "barrow-deeps" } })
+  check(not SL:ListsFromSite("ana"), "one place of the night with no map id: the game's list plays there, so it stays editable")
+  siteNight({ instanceKey = "kara", instanceKeys = { "kara", "gruul" } })
+  check(SL:ListsFromSite("ana"), "every place known: the site's")
+  -- WoW: Forever has its own table: Onyxia is known, Barrow Deeps and Hyjal are not yet.
+  local was = { c.isAnniversary, c.isRetail }
+  c.isAnniversary, c.isRetail = false, false
+  siteNight({ instanceKey = "forever-onyxia" })
+  check(SL:ListsFromSite("ana"), "Forever: Onyxia's Lair has its map id")
+  for _, key in ipairs({ "barrow-deeps", "forever-hyjal", "kara" }) do
+    siteNight({ instanceKey = key })
+    check(not SL:ListsFromSite("ana"), "Forever: " .. key .. " cannot be stamped here")
+  end
+  c.isAnniversary, c.isRetail = was[1], was[2]
+end
+
+-- ── 14. Hidden priorities never reach the raid's chat (R21) ──────────
+do
+  local RT = GuildOS.RaidTracker
+  RT.currentRaid = nil
+  local function chat() return table.concat(said, "\n") end
+  local function local_() return table.concat(printed, "\n") end
+  local function night(hidden, prios)
+    siteNight({ softres = false, wishlists = false, priosHidden = hidden or nil,
+      prios = prios or { [ITEM] = { { name = "Bo", class = "MAGE", order = 1 }, { name = "Ana", class = "MAGE", order = 2 } } } })
+  end
+  local tie = { [ITEM] = { { name = "Ana", class = "MAGE", order = 1 }, { name = "Bo", class = "MAGE", order = 1 } } }
+  for _, hidden in ipairs({ true, false }) do
+    local tag = hidden and "hidden" or "visible"
+    -- Drop time, an open roll: who has prio #1.
+    GuildOS.db.settings.lootSystem = "rolls"
+    night(hidden)
+    said, printed = {}, {}
+    LM.activeLoot, LM.rolls = nil, {}
+    LM:AnnounceItem(LINK, nil)
+    check((chat():find("official prio", 1, true) ~= nil) == not hidden, tag .. ": the raid hears prio #1 only when open: " .. chat())
+    check(not hidden or local_():find("Bo has official prio #1", 1, true), tag .. ": the loot master reads it")
+    -- A roll's acknowledgement names the roller's place, and the winner's line the reason.
+    said, printed = {}, {}
+    LM:RegisterRoll("Bo", "MS", 90)
+    LM:RegisterRoll("Ana", "MS", 10)
+    check((chat():find("Official Prio", 1, true) ~= nil) == not hidden, tag .. ": the roll lines name a prio place only when open")
+    check(not hidden or local_():find("Bo: MS (Official Prio #1)", 1, true), tag .. ": the loot master reads Bo's place")
+    said, printed = {}, {}
+    LM:EndRolling(true)
+    check(chat():find("[WINNER]", 1, true) and chat():find("Bo", 1, true), tag .. ": the winner is named")
+    check((chat():find("Official Prio", 1, true) ~= nil) == not hidden and not (hidden and chat():find("officer priority", 1, true)),
+      tag .. ": the winner's line gives the prio reason only when open: " .. chat())
+    check(not hidden or local_():find("Official Prio #1", 1, true), tag .. ": the loot master reads why")
+    -- A tie at the top, an open roll.
+    night(hidden, tie)
+    said, printed = {}, {}
+    LM.activeLoot, LM.rolls = nil, {}
+    LM:AnnounceItem(LINK, nil)
+    check((chat():find("tied at official prio", 1, true) ~= nil) == not hidden, tag .. ": the tie line only when open")
+    check(not hidden or local_():find("Ana, Bo are tied at official prio #1", 1, true), tag .. ": the loot master reads the tie")
+    -- The wishlist system: a direct award, and a tie's restricted roll.
+    GuildOS.db.settings.lootSystem = "wishlist"
+    night(hidden)
+    said, printed = {}, {}
+    LM.activeLoot, LM.rolls = nil, {}
+    local showCouncil = LM.ShowCouncilResultFrame
+    LM.ShowCouncilResultFrame = function() end
+    LM:AnnounceItem(LINK, nil)
+    LM.ShowCouncilResultFrame = showCouncil
+    check(chat():find("goes to Bo", 1, true), tag .. ": the award names the winner")
+    check((chat():find("Official Prio", 1, true) ~= nil) == not hidden, tag .. ": with the prio reason only when open: " .. chat())
+    check(not hidden or local_():find("goes to Bo (Official Prio #1)", 1, true), tag .. ": the loot master reads the reason")
+    night(hidden, tie)
+    said, printed = {}, {}
+    LM.activeLoot, LM.rolls = nil, {}
+    LM:AnnounceItem(LINK, nil)
+    check(LM.restrictedRollers and LM.restrictedRollers.ana and LM.restrictedRollers.bo and not LM.restrictedRollers.cy,
+      tag .. ": the tied still roll among themselves")
+    check((chat():find("Tie [prio", 1, true) ~= nil) == not hidden and (chat():find("prio", 1, true) ~= nil) == not hidden,
+      tag .. ": the raid warning says prio only when open: " .. chat())
+    check(not hidden or (chat():find("only Ana, Bo may roll", 1, true) and local_():find("Prio tie", 1, true)),
+      tag .. ": hidden, it says who may roll and the loot master reads why")
+    LM:CancelRolling()
+  end
+  -- The game's own priorities are said as they always were, whatever the site's marker.
+  GuildOS.db.siteLoot = nil
+  GuildOS.db.settings.lootSystem = "rolls"
+  said, printed = {}, {}
+  LM.activeLoot, LM.rolls = nil, {}
+  LM:AnnounceItem(LINK, nil)
+  check(chat():find("Cy has official prio #1", 1, true), "the game's priorities: the raid hears them, as before")
+  check(not LM:PriosHidden(), "and nothing is hidden")
+  LM:CancelRolling()
+end
+
 for _, k in ipairs({ "softRes", "lootPrios", "wishlists", "guildWishlists" }) do
   check(same(GuildOS.db[k], BEFORE[k]), k .. " is still what it was after all of it")
 end

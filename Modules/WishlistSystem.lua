@@ -312,13 +312,19 @@ function Wishlist:GetMyList()
     return GuildOS.db.wishlists[charKey]
 end
 
--- Whether the site is the source of this player's list (this repo's #385): then the game shows it
--- read-only, never writes it and never broadcasts it. The one question every writer below asks.
-function Wishlist:ListIsFromSite()
+-- The site's list in force for this player (this repo's #385, R23): the soonest raid's, in its night or still
+-- to come, that holds theirs, while the companion answers from the site. { name, class, wishlist } or nil.
+function Wishlist:SiteListInForce()
     local SiteLoot = GuildOS.SiteLoot
-    if not SiteLoot then return false end
+    if not SiteLoot then return nil end
     local name = GuildOS.Compat.PlayerName() or ""
-    return SiteLoot:ListsFromSite(storeKey(GuildOS:GetPlayerKey(name), name))
+    return SiteLoot:ListInForce(storeKey(GuildOS:GetPlayerKey(name), name))
+end
+
+-- Whether the site is the source of this player's list: then the game shows that list read-only, never
+-- writes theirs and never broadcasts it. The one question every writer below asks.
+function Wishlist:ListIsFromSite()
+    return self:SiteListInForce() ~= nil
 end
 
 -- The refusal of an edit made in the game: said once, locally. Returns false.
@@ -558,14 +564,14 @@ end
 -- Structure: db.lootPrios[itemId] = { {name, class, order}, ... }
 -- Officers set and sync prios; all members receive and store them.
 ----------------------------------------------------------------------
--- Whether the site is the source of the officers' priorities (#385): then they are not sent and an
--- incoming copy is not applied. db.lootPrios is one table for the guild, so this is guild-wide.
+-- Whether some raid of the site's, tonight or to come, plays by the site's priorities (#385). The game's
+-- priorities stay the game's all the same (R22): a night of the site never reads db.lootPrios, so they are
+-- edited, sent and applied as ever, and the prio modal only says which nights use the site's.
 function Wishlist:PriosAreFromSite()
     return GuildOS.SiteLoot ~= nil and GuildOS.SiteLoot:PriosFromSite()
 end
 
 function Wishlist:BroadcastLootPrios()
-    if self:PriosAreFromSite() then return end
     if not GuildOS.CommSystem then return end
     if not GuildOS.db or not GuildOS.db.lootPrios then return end
     local LibSerialize = LibStub("GuildOS-LibSerialize")
@@ -576,7 +582,6 @@ end
 -- Reached only through CommSystem:OnMessageReceived, which has checked the sender is an officer
 -- and the channel GUILD (issue #78). Any other caller must check the same.
 function Wishlist:HandleLootPriosBroadcast(sender, data)
-    if self:PriosAreFromSite() then return end
     local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, payload = LibSerialize:Deserialize(data)
     if not ok or type(payload) ~= "table" then return end

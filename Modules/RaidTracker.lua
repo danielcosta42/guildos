@@ -70,13 +70,26 @@ RaidTracker.FOREVER_RAID_KEYS = {
     [249] = "forever-onyxia",
 }
 
+-- This game's own table of the two above.
+local function raidKeys(self)
+    local client = GuildOS.Client
+    if client and not client.isAnniversary and not client.isRetail then return self.FOREVER_RAID_KEYS end
+    return self.RAID_KEYS
+end
+
 -- The site's key for the instance the game put this character in, in this game's own table.
 function RaidTracker:RaidKeyOf(instanceID)
-    local client = GuildOS.Client
-    if client and not client.isAnniversary and not client.isRetail then
-        return self.FOREVER_RAID_KEYS[instanceID]
+    return raidKeys(self)[instanceID]
+end
+
+-- Whether this client can ever stamp a session with the site's `key`: some map id of its table gives it.
+-- A raid whose map id nobody has yet (Forever's Barrow Deeps and Hyjal) cannot, and its nights never match.
+function RaidTracker:MakesKey(key)
+    if type(key) ~= "string" then return false end
+    for _, k in pairs(raidKeys(self)) do
+        if k == key then return true end
     end
-    return self.RAID_KEYS[instanceID]
+    return false
 end
 
 -- Raids that count for attendance (25-man progression)

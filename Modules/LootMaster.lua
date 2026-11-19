@@ -825,6 +825,26 @@ function LootMaster:SheetHidden()
     return S ~= nil and S.Hidden ~= nil and S:Hidden() or false
 end
 
+-- Whether tonight's priorities are the site's and kept from the raid (R21): the holder core has not opened them
+-- to its members, so no line of the raid's chat names a place of them; the loot master reads them in a local
+-- line instead. The game's own priorities, and the site's open ones, are said as they always were.
+function LootMaster:PriosHidden()
+    local S = GuildOS.SiteLoot
+    return S ~= nil and S:Prios() ~= nil and S:PriosHidden()
+end
+
+-- A line about a prio place: to the raid as ever, or, while tonight's priorities are hidden, to the loot
+-- master alone.
+function LootMaster:SayPrio(msg, channel, auto)
+    if self:PriosHidden() then
+        GuildOS:Print("|cff888888[" .. L["only you"] .. "]|r " .. msg)
+    elseif auto then
+        self:SafeSendChatAuto(msg, channel)
+    else
+        self:SafeSendChat(msg, channel)
+    end
+end
+
 -- Every item's prio list in force, for the screens that list them all: the site's while its raid's
 -- night lasts, else the game's. The second value says it is the site's (places, not positions).
 function LootMaster:AllPrios()
@@ -1089,7 +1109,8 @@ function LootMaster:DoNormalAnnounce(itemLink, _lootSlot, itemId, topEntry, prio
             or L["[Priority] %s has official prio #1 - roll open to everyone"]
         local who = prioEntry.names and self:FitNames(prioEntry.names, 250 - #format(fmt, "")) or prioEntry.name
         local infoMsg = format(fmt, who)
-        self:SafeSendChat(infoMsg, "RAID")
+        -- Hidden priorities (R21): the loot master reads it, the raid does not.
+        self:SayPrio(infoMsg, "RAID")
     elseif topEntry then
         local infoMsg = format(L["[Priority] %s (#%d on wishlist) - roll open to everyone"],
             topEntry.name, topEntry.order)
@@ -1185,11 +1206,15 @@ function LootMaster:AutoCouncilAward(winner, itemLink, lootSlot, allCandidates)
         orderStr = string.format(L["wishlist #%d"], winner.order)
     end
 
-    -- Announce in raid
-    self:SafeSendChat(
-        string.format(L["[Wishlist] %s goes to %s (%s) - awaiting ML confirmation"], itemLink, winner.name, orderStr),
-        "RAID_WARNING"
-    )
+    -- Announce in raid. Hidden priorities (R21): the raid hears who, never the prio place that decided it, and
+    -- the loot master reads the whole line.
+    local line = string.format(L["[Wishlist] %s goes to %s (%s) - awaiting ML confirmation"], itemLink, winner.name, orderStr)
+    if winner.isPrio and self:PriosHidden() then
+        self:SafeSendChat(string.format(L["[Wishlist] %s goes to %s - awaiting ML confirmation"], itemLink, winner.name), "RAID_WARNING")
+        self:SayPrio(line, "RAID_WARNING")
+    else
+        self:SafeSendChat(line, "RAID_WARNING")
+    end
 
     -- Show council result popup for ML to confirm
     self:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandidates)
@@ -1231,10 +1256,18 @@ function LootMaster:StartRestrictedRoll(tied, _allCandidates, itemLink, _lootSlo
 
     -- Announce in RAID_WARNING — only listed players should roll
     local duration = self:RollTime()
-    local tieFmt = L["[ROLL] %s  -  Tie [%s]: %s  -  /roll 1-100 MS  -  /roll 1-99 OS  -  %ds"]
     -- Up to forty people can tie: the names are cut to what a chat line holds.
-    local shown = self:FitNames(names, 250 - #string.format(tieFmt, itemLink, orderStr, "", 99))
-    self:SafeSendChat(string.format(tieFmt, itemLink, orderStr, shown, duration), "RAID_WARNING")
+    if kind == "prio" and self:PriosHidden() then
+        -- Hidden priorities (R21): the raid is told who rolls, never that a prio place made them tie. The loot
+        -- master's own line below says which.
+        local onlyFmt = L["[ROLL] %s  -  only %s may roll  -  /roll 1-100 MS  -  /roll 1-99 OS  -  %ds"]
+        local shown = self:FitNames(names, 250 - #string.format(onlyFmt, itemLink, "", 99))
+        self:SafeSendChat(string.format(onlyFmt, itemLink, shown, duration), "RAID_WARNING")
+    else
+        local tieFmt = L["[ROLL] %s  -  Tie [%s]: %s  -  /roll 1-100 MS  -  /roll 1-99 OS  -  %ds"]
+        local shown = self:FitNames(names, 250 - #string.format(tieFmt, itemLink, orderStr, "", 99))
+        self:SafeSendChat(string.format(tieFmt, itemLink, orderStr, shown, duration), "RAID_WARNING")
+    end
     self:AnnounceSoftReserves(itemId or (self.activeLoot and self.activeLoot.itemId))
 
     -- Addon comm: show popup to GuildOS users who have the item on their wishlist
@@ -1712,8 +1745,17 @@ function LootMaster:RegisterRollNow(name, rollType, roll, extra)
         gpBase     = gpBase,
     }
 
-    -- Announce prio or wishlist position to raid
-    if prioOrder and not extra.quiet then
+    -- Announce prio or wishlist position to raid. A hidden prio place (R21) is the loot master's alone, and the
+    -- raid hears the roller's wishlist place as it would for anybody without a prio.
+    local hiddenPrio = prioOrder and self:PriosHidden()
+    if prioOrder and not extra.quiet and hiddenPrio then
+        local id = key .. "|prio|" .. rollType
+        if not told[id] then
+            told[id] = true
+            self:SayPrio(string.format(L["[Loot] %s: %s (Official Prio #%d)"], name, rollType, prioOrder), "RAID", true)
+        end
+    end
+    if prioOrder and not extra.quiet and not hiddenPrio then
         sayOnce("prio|" .. rollType, string.format(L["[Loot] %s: %s (Official Prio #%d)"],
             name, rollType, prioOrder))
     elseif wishInfo and not extra.quiet then
@@ -2094,7 +2136,12 @@ function LootMaster:EndRolling(byClick)
     elseif #sorted > 0 then
         local winner = sorted[1]
         local wishStr = ""
-        if winner.prioOrder then
+        -- Hidden priorities (R21): the winner is named, the prio place that put them there is the loot master's.
+        local hiddenPrio = self:PriosHidden()
+        if winner.prioOrder and hiddenPrio then
+            GuildOS:Print("|cff888888[" .. L["only you"] .. "]|r " .. winner.name
+                .. string.format(L[" [Official Prio #%d]"], winner.prioOrder))
+        elseif winner.prioOrder then
             wishStr = string.format(L[" [Official Prio #%d]"], winner.prioOrder)
         elseif winner.softRes then
             -- Not said in the raid's chat when the site hides the sheet (R12).
@@ -2108,7 +2155,8 @@ function LootMaster:EndRolling(byClick)
         local decided = GuildOS.LootRule:DecidedBy(winner, sorted[2], rule)
         self.activeLoot.decidedBy = decided
         local reserveWhy = decided == "softres" or decided == "hardres"
-        if decided and decided ~= "roll" and wishStr == "" and not (reserveWhy and self:SheetHidden()) then
+        if decided and decided ~= "roll" and wishStr == "" and not (reserveWhy and self:SheetHidden())
+           and not (decided == "prio" and hiddenPrio) then
             wishStr = string.format(L[" [by %s]"], GuildOS.LootRule:Label(decided))
         end
         -- The answer by its button's name, and what it asked for: the roll, the bid, or neither (#334).

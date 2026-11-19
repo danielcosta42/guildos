@@ -154,10 +154,12 @@ end
 -- The raid's soft reserves, priorities and wishlists, as the site sends them (GOSROST1 v6, guildos-web
 -- #556; this repo's #385). The inbox is untrusted input, so every field is bounded and cleaned here and
 -- converted to the addon's own shapes, which lets a reader swap one of its tables for one of these:
---   softres   = { items = { [itemId] = { {name, class, note, plusOnes, hard?} } }, hidden = true|nil }
---   prios     = { [itemId] = { {name, class, order} } }
---   wishlists = { [lowerKey] = { name, class, wishlist = { {itemId, order, isOffspec} } } }
--- A field that fails its bounds is refused whole and becomes nil; the roster and the other fields go on.
+--   softres     = { items = { [itemId] = { {name, class, note, plusOnes, hard?} } }, hidden = true|nil }
+--   prios       = { [itemId] = { {name, class, order} } }   (names as the game's own: Name-Realm on retail)
+--   priosHidden = true|nil, only beside prios: no raid-chat line may name a place of them (R21)
+--   wishlists   = { [lowerKey] = { name, class, wishlist = { {itemId, order, isOffspec} } } }
+-- A field that fails its bounds is refused whole and becomes nil; the roster and the other fields go on. A
+-- person whose name does not read (empty, or over 64 bytes) is passed over alone.
 -- Nothing here writes a table of the game's own (db.softRes, db.lootPrios, db.guildWishlists).
 local SITE_LOOT = {
     softEntries = 1500, softItems = 20, hardEntries = 200,
@@ -189,10 +191,16 @@ local function siteText(v, max)
     end
     return s ~= "" and s or nil
 end
--- A name is a bound, not a note: one too long is not a person's, so the field is refused.
+-- A name is a bound, not a note: one too long, or empty, is not a person's, so that person is passed over
+-- (nil) and the rest of the field still reads. The site cuts names to the same 64 bytes before it sends.
 local function siteName(v)
-    if type(v) == "string" and #v > SITE_LOOT.name then error("name") end
-    return siteText(v, SITE_LOOT.name) or error("name")
+    if type(v) ~= "string" or #v > SITE_LOOT.name then return nil end
+    return siteText(v, SITE_LOOT.name)
+end
+-- A key the same way: never cut, since a cut key is somebody else's.
+local function siteKey(v)
+    if type(v) ~= "string" or #v > SITE_LOOT.name then return nil end
+    return siteText(v, SITE_LOOT.name)
 end
 local function siteClass(v)
     return siteText(v, SITE_LOOT.class) or ""
@@ -203,8 +211,9 @@ local function readSoftres(sr)
     for _, e in ipairs(siteList(sr.soft or {}, SITE_LOOT.softEntries)) do
         if type(e) ~= "table" then error("entry") end
         local name, class, note = siteName(e.name), siteClass(e.class), siteText(e.note, SITE_LOOT.note) or ""
-        for _, id in ipairs(siteList(e.items or {}, SITE_LOOT.softItems)) do
-            siteInt(id, 1, SITE_LOOT.id)
+        local ids = siteList(e.items or {}, SITE_LOOT.softItems)
+        for _, id in ipairs(ids) do siteInt(id, 1, SITE_LOOT.id) end
+        for _, id in ipairs(name and ids or {}) do
             items[id] = items[id] or {}
             table.insert(items[id], { name = name, class = class, note = note, plusOnes = 0 })
             any = true
@@ -215,7 +224,7 @@ local function readSoftres(sr)
     for _, h in ipairs(siteList(sr.hard or {}, SITE_LOOT.hardEntries)) do
         if type(h) ~= "table" then error("entry") end
         local id = siteInt(h.id, 1, SITE_LOOT.id)
-        local who = siteText(h["for"], SITE_LOOT.name)
+        local who = siteName(h["for"])
         if who then
             items[id] = items[id] or {}
             table.insert(items[id], { name = Import.PlainName(who), class = "", note = siteText(h.note, SITE_LOOT.note) or "",
@@ -234,7 +243,12 @@ local function readPrios(list)
         local order = {}
         for _, o in ipairs(siteList(p.order or {}, SITE_LOOT.prioPeople)) do
             if type(o) ~= "table" then error("entry") end
-            order[#order + 1] = { name = siteName(o.name), class = siteClass(o.class), order = siteInt(o.rank, 1, SITE_LOOT.prioRank) }
+            local rank = siteInt(o.rank, 1, SITE_LOOT.prioRank)
+            local name = siteName(o.name)
+            -- Named as the game's own priorities and the panels name them: on retail by the whole Name-Realm.
+            if name then
+                order[#order + 1] = { name = nameOf({ key = siteKey(o.key), name = name }), class = siteClass(o.class), order = rank }
+            end
         end
         if #order > 0 then
             prios[id] = order
@@ -248,14 +262,15 @@ local function readWishlists(list)
     local out, any = {}, false
     for _, w in ipairs(siteList(list, SITE_LOOT.wishPeople)) do
         if type(w) ~= "table" then error("entry") end
-        local entry = { key = type(w.key) == "string" and siteText(w.key, SITE_LOOT.name) or nil, name = siteName(w.name) }
+        local entry = { key = siteKey(w.key), name = siteName(w.name) }
         local wishlist = {}
         for _, it in ipairs(siteList(w.items or {}, SITE_LOOT.wishItems)) do
             if type(it) ~= "table" then error("entry") end
             wishlist[#wishlist + 1] = { itemId = siteInt(it.id, 1, SITE_LOOT.id), order = siteInt(it.o, 1, SITE_LOOT.wishItems),
                 isOffspec = it.x == true }
         end
-        if #wishlist > 0 then
+        -- A person with no readable name is passed over; the others' lists still read.
+        if #wishlist > 0 and entry.name then
             -- The key the game's own guild wishlists are kept by: the lowercased name, whole on retail.
             out[strlower(nameOf(entry))] = { name = nameOf(entry), class = siteClass(w.class), wishlist = wishlist }
             any = true
@@ -264,7 +279,7 @@ local function readWishlists(list)
     return any and out or nil
 end
 
--- { softres, prios, wishlists } of a decoded GOSROST1, or nil when none of them reads.
+-- { softres, prios, priosHidden, wishlists } of a decoded GOSROST1, or nil when none of them reads.
 function Import.ReadSiteLoot(data)
     local loot, any = {}, false
     local fields = { softres = readSoftres, prios = readPrios, wishlists = readWishlists }
@@ -278,7 +293,24 @@ function Import.ReadSiteLoot(data)
             end
         end
     end
+    if loot.prios and data.priosHidden == true then loot.priosHidden = true end
     return any and loot or nil
+end
+
+-- The places of a night of more than one (GOSROST1 v6 `instanceKeys`, the site's #556): catalogue keys,
+-- at most eight, each a short string, the same one never twice. nil with none that reads.
+local PLACES_MAX, PLACE_LEN = 8, 64
+function Import.ReadPlaces(v)
+    if type(v) ~= "table" then return nil end
+    local out, seen = {}, {}
+    for _, k in ipairs(v) do
+        if #out >= PLACES_MAX then break end
+        if type(k) == "string" and k ~= "" and #k <= PLACE_LEN and not k:find("[%c|]") and not seen[k] then
+            seen[k] = true
+            out[#out + 1] = k
+        end
+    end
+    return #out > 0 and out or nil
 end
 
 -- The window around a planned raid's start that counts as that raid's night (RaidFor, and how long a
@@ -365,6 +397,8 @@ function Import:Parse(raw)
         title = data.title or "",
         instance = data.instance,
         instanceKey = type(data.instanceKey) == "string" and data.instanceKey or nil,
+        -- v6 (the site's #556): every place of a night of more than one, instanceKey first; nil otherwise.
+        instanceKeys = Import.ReadPlaces(data.instanceKeys),
         size = tonumber(data.size) or 0,
         -- v3, retail: 14 Normal, 15 Heroic, 16 Mythic; nil elsewhere and from an older site (issue #182).
         difficulty = tonumber(data.difficulty),
@@ -418,6 +452,8 @@ function Import:Load(raw)
         return nil, L["That roster has nobody in it."]
     end
 
+    -- The site's loot data reaches the night only from the inbox (db.siteLoot); the kept roster never holds it.
+    roster.loot = nil
     GuildOS.db.companionRoster = roster
     return #roster.members
 end
@@ -521,6 +557,8 @@ function Import:ConsumeInbox()
                 planned[#planned + 1] = {
                     raidId = roster.raidId,
                     instanceKey = roster.instanceKey,
+                    -- A night of two places is the same raid in both (the site's #556): RaidFor matches any.
+                    instanceKeys = roster.instanceKeys,
                     startsAt = roster.startsAt or 0,
                     difficulty = roster.difficulty,
                 }
@@ -539,34 +577,83 @@ function Import:ConsumeInbox()
 
     self._lastInbox = key
     self._webRaids = raids
-    GuildOS.db.companionRoster = soonest
     GuildOS.db.companionRaids = planned
-    -- What the site holds for that night, already in the addon's own shapes. Kept apart from db.softRes,
-    -- db.lootPrios and db.guildWishlists, which are the game's and are never written from here: the
-    -- readers choose between the two, and a night without the site's data leaves nothing behind.
+    -- What the site holds for each raid's night, already in the addon's own shapes. Kept apart from
+    -- db.softRes, db.lootPrios and db.guildWishlists, which are the game's and are never written from here:
+    -- the readers choose between the two, and a night without the site's data leaves nothing behind.
     -- One entry per raid, from every roster of the inbox (two groups of a guild can raid in one window),
-    -- replaced by raidId. A raid the inbox no longer lists keeps its entry until its night is over: the
-    -- site stops serving a started raid after a few hours, and a /reload in the middle must not take
-    -- the night's reserves away. Entries past their window are dropped.
-    local kept, now = {}, GetServerTime()
+    -- replaced by raidId. Every entry lives in memory (SiteRaids), rebuilt from Inbox.lua at each login;
+    -- only the ones whose night has begun are saved (db.siteLoot), because the site stops serving a started
+    -- raid after a few hours and a /reload in the middle must not take the night's reserves away. Ten raids
+    -- of full lists would weigh megabytes in SavedVariables, for nights days away.
+    local now, mem, listed = GetServerTime(), {}, {}
+    for _, roster in ipairs(raids) do
+        if type(roster.raidId) == "string" then
+            listed[roster.raidId] = true
+            local loot = roster.loot
+            if loot then
+                mem[roster.raidId] = {
+                    startsAt = roster.startsAt, instanceKey = roster.instanceKey, instanceKeys = roster.instanceKeys,
+                    difficulty = roster.difficulty,
+                    softres = loot.softres, prios = loot.prios, priosHidden = loot.priosHidden, wishlists = loot.wishlists,
+                }
+            end
+        end
+        -- Read into the entries above: no roster this module keeps carries it (db.companionRoster included).
+        roster.loot = nil
+    end
+    self._siteRaids = mem
+    -- A saved entry the inbox no longer lists stays while its night lasts; one it lists again is the inbox's.
+    local kept = {}
     local old = GuildOS.db.siteLoot
     for id, e in pairs(type(old) == "table" and type(old.raids) == "table" and old.raids or {}) do
-        local startsAt = type(e) == "table" and tonumber(e.startsAt) or 0
-        -- Only a raid under way: one the site stopped listing before it began was taken down.
-        if type(e) == "table" and now >= startsAt - MATCH_EARLY and now <= startsAt + MATCH_LATE then kept[id] = e end
+        if not listed[id] and Import.UnderWay(e, now) then kept[id] = e end
     end
-    for _, roster in ipairs(raids) do
-        local loot = roster.loot
-        if type(roster.raidId) == "string" then
-            kept[roster.raidId] = loot and {
-                startsAt = roster.startsAt, instanceKey = roster.instanceKey, difficulty = roster.difficulty,
-                softres = loot.softres, prios = loot.prios, wishlists = loot.wishlists,
-            } or nil
-        end
+    for id, e in pairs(mem) do
+        if Import.UnderWay(e, now) then kept[id] = e end
     end
-    GuildOS.db.siteLoot = next(kept) and { at = time(), raids = kept } or nil
+    GuildOS.db.siteLoot = next(kept) and { raids = kept } or nil
+    GuildOS.db.companionRoster = soonest
     return true, #soonest.members
 end
+
+-- Whether a site loot entry's night has begun and is not over: from two hours before its start to eight
+-- after (the same window as RaidFor). A raid the site stopped listing before that was taken down.
+function Import.UnderWay(e, now)
+    local startsAt = type(e) == "table" and tonumber(e.startsAt)
+    return startsAt ~= nil and now >= startsAt - MATCH_EARLY and now <= startsAt + MATCH_LATE
+end
+
+-- Every raid entry the last inbox read built, in memory only: { [raidId] = entry }, or nil before one.
+function Import:SiteRaids()
+    return self._siteRaids
+end
+
+-- Saves the entries whose night is under way at `now` (the saved ones and the ones in memory), and drops
+-- the rest from SavedVariables. At logout too, so a raid that began during the session survives a /reload
+-- past the site's few hours of grace.
+function Import:KeepSiteLoot(now)
+    local db = GuildOS.db
+    if type(db) ~= "table" then return end
+    now = now or GetServerTime()
+    local kept = {}
+    local old = db.siteLoot
+    for id, e in pairs(type(old) == "table" and type(old.raids) == "table" and old.raids or {}) do
+        if Import.UnderWay(e, now) then kept[id] = e end
+    end
+    for id, e in pairs(self._siteRaids or {}) do
+        if Import.UnderWay(e, now) then kept[id] = e end
+    end
+    db.siteLoot = next(kept) and { raids = kept } or nil
+end
+
+-- One frame, at load, as CompanionExport's writer: PLAYER_LOGOUT exists on every client.
+local keeper = CreateFrame("Frame")
+keeper:RegisterEvent("PLAYER_LOGOUT")
+keeper:SetScript("OnEvent", function()
+    -- Its own pcall: nothing here may stand between the client and its logout.
+    pcall(Import.KeepSiteLoot, Import)
+end)
 
 -- The guild's Discord cores in the inbox (a GOSCORE1, specs/041 in guildos-web), decoded, whether the
 -- companion is on in game, and when the inbox was written (its ack line, #138): nil when there are
@@ -705,7 +792,15 @@ end
 ----------------------------------------------------------------------
 --- Returns the raidId of the planned raid covering `when` in `instanceKey`, or nil. On retail
 --- `difficulty` is the night's (14, 15, 16): a raid planned on another one is another lockout,
---- so when both say one they must agree (issue #182).
+--- so when both say one they must agree (issue #182). A night of more than one place matches in
+--- any of them (`instanceKeys`, the site's #556): Magtheridon's Lair after Gruul is the same raid.
+local function goesTo(r, instanceKey)
+    if r.instanceKey == instanceKey then return true end
+    for _, k in ipairs(type(r.instanceKeys) == "table" and r.instanceKeys or {}) do
+        if k == instanceKey then return true end
+    end
+    return false
+end
 function Import:RaidFor(instanceKey, when, difficulty, list)
     if type(instanceKey) ~= "string" or instanceKey == "" then return nil end
     when = tonumber(when) or 0
@@ -713,7 +808,7 @@ function Import:RaidFor(instanceKey, when, difficulty, list)
 
     local best, bestGap
     for _, r in ipairs(list or (GuildOS.db and GuildOS.db.companionRaids) or {}) do
-        if r.instanceKey == instanceKey and not (difficulty and r.difficulty and r.difficulty ~= difficulty) then
+        if type(r) == "table" and goesTo(r, instanceKey) and not (difficulty and r.difficulty and r.difficulty ~= difficulty) then
             local gap = when - (r.startsAt or 0)
             if gap >= -MATCH_EARLY and gap <= MATCH_LATE then
                 gap = math.abs(gap)

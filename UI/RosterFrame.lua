@@ -2308,7 +2308,9 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
         for _, rg in ipairs(regions) do rg:Hide() end
 
         local guildWl = GuildOS.Wishlist and GuildOS.Wishlist:AllLists() or GuildOS.db.guildWishlists
-        local allPrios, prioFromSite = GuildOS.LootMaster:AllPrios()   -- once per refresh
+        -- Once per refresh. Retail has no LootMaster (personal loot, ADR-0026): the game's own table, as before.
+        local allPrios, prioFromSite = GuildOS.db.lootPrios or {}, false
+        if GuildOS.LootMaster then allPrios, prioFromSite = GuildOS.LootMaster:AllPrios() end
         local ly = -2
         local count = 0
         local totalCount = 0

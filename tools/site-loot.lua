@@ -2,10 +2,13 @@
 -- repo's #385), run through the real CompanionImport under a stubbed client with the site's own fixture
 -- (tools/roster-v6-fixture.txt, the output of its scripts/roster-v6-fixture.mts).
 --
---   * the fixture parses into the addon's own shapes, in `roster.loot`;
---   * ConsumeInbox keeps them in db.siteLoot and never writes the game's tables;
---   * a hostile or broken body is refused whole (alphabet, size) or field by field (bounds), and never
---     throws or lets a NaN into a saved table;
+--   * the fixture parses into the addon's own shapes, in `roster.loot`, with the hidden priorities' marker
+--     and the night's two places;
+--   * ConsumeInbox keeps every raid's entry in memory, saves only the ones whose night has begun
+--     (db.siteLoot, R24), keeps no `loot` in db.companionRoster, and never writes the game's tables;
+--   * RaidFor finds a night of two places in either of them (R19);
+--   * a hostile or broken body is refused whole (alphabet, size) or field by field (bounds), a person with a
+--     bad name alone (minor 2), and never throws or lets a NaN into a saved table;
 --   * a v5 roster imports exactly as it did.
 --
 --   luajit -e 'ADDON="."' tools/site-loot.lua
@@ -78,8 +81,11 @@ local function range(n, fn) local t = {} for i = 1, n do t[i] = fn(i) end return
 local r, err = Import:Parse(FIXTURE)
 check(r, "the v6 fixture parses: " .. tostring(err))
 check(r.raidId == "raid-556-fixture" and r.startsAt == 1795000000, "and is still the same roster")
+check(r.instanceKey == "gruul" and r.instanceKeys and #r.instanceKeys == 2 and r.instanceKeys[1] == "gruul"
+  and r.instanceKeys[2] == "mag", "a night of two places: both, its own first")
 local loot = r.loot
 check(type(loot) == "table", "roster.loot is there")
+check(loot.priosHidden == true, "the hidden priorities' marker arrives beside the priorities")
 
 local items = loot.softres.items
 check(loot.softres.hidden == true, "the sheet's hidden flag arrives")
@@ -118,6 +124,21 @@ do
   c.isRetail, c.isAnniversary = was[1], was[2]
   check(rr.loot.wishlists["rias-firemaw"] and rr.loot.wishlists["rias-firemaw"].name == "Rias-Firemaw",
     "retail: the whole key, lowercased")
+  -- And the priorities by the whole key too, as the game's own and the panels name them (minor 1).
+  check(rr.loot.prios[30104][1].name == "Dora-Firemaw" and rr.loot.prios[30104][2].name == "Rias-Firemaw",
+    "retail: a site priority keeps its realm: " .. tostring(rr.loot.prios[30104][1].name))
+end
+check(loot.prios[30104][1].name == "Dora", "elsewhere the plain name, as before")
+
+-- The places are read bounded: eight at most, short strings, never twice.
+do
+  local many = {}
+  for i = 1, 12 do many[i] = "k" .. i end
+  local got = Import.ReadPlaces(many)
+  check(#got == 8 and got[8] == "k8", "eight places at most")
+  got = Import.ReadPlaces({ "a", "a", 5, "", string.rep("x", 65), "b|c", "b" })
+  check(#got == 2 and got[1] == "a" and got[2] == "b", "a repeat, a number, empty, too long and a pipe are passed over")
+  check(Import.ReadPlaces("gruul") == nil and Import.ReadPlaces({}) == nil and Import.ReadPlaces(nil) == nil, "nothing reads: nil")
 end
 
 -- ── 2. ConsumeInbox ──────────────────────────────────────────────────
@@ -147,11 +168,45 @@ local before = gameTables()
 check(Import:ConsumeInbox() == true, "the inbox is taken")
 local site = GuildOS.db.siteLoot
 local entry = site and site.raids and site.raids["raid-556-fixture"]
-check(entry and entry.startsAt == 1795000000 and site.at == time(), "db.siteLoot holds the raid by its id, stamped with the read")
+check(entry and entry.startsAt == 1795000000 and site.at == nil,
+  "db.siteLoot holds the raid by its id (its night has begun), with no read stamp: the age is the companion's (R18)")
+check(Import:SiteRaids()["raid-556-fixture"] == entry, "and so does the memory")
 check(entry.softres.items[30106][1].hard == true and entry.softres.hidden == true, "with the reserves")
 check(entry.prios[30104][2].name == "Rias" and entry.wishlists["dora"].name == "Dora", "the prios and the wishlists")
+check(entry.priosHidden == true and entry.instanceKeys[2] == "mag", "the hidden marker and both places")
+check(GuildOS.db.companionRoster and GuildOS.db.companionRoster.raidId == "raid-556-fixture"
+  and GuildOS.db.companionRoster.loot == nil, "the kept roster carries no loot (R24)")
+check(GuildOS.db.companionRaids[1].instanceKeys and GuildOS.db.companionRaids[1].instanceKeys[2] == "mag",
+  "the planned raid keeps both places")
+check(Import:RaidFor("gruul", SERVER) == "raid-556-fixture" and Import:RaidFor("mag", SERVER + 3600) == "raid-556-fixture",
+  "a session in either place is the same raid (R19): the attendance stamp, the site's sheet")
+check(Import:RaidFor("kara", SERVER) == nil, "and a third place is not")
 check(gameTables() == before, "the game's own tables are untouched")
 check(Import:ConsumeInbox() == false, "an unchanged inbox is skipped")
+
+-- R24: a raid days away lives in memory only, and is saved once its night has begun.
+do
+  local far = wire('{"fmt":"GOSROST1","v":6,"raidId":"far","startsAt":' .. (SERVER + 3 * 86400)
+    .. ',"instanceKey":"kara","members":[{"key":"Ana-Firemaw","name":"Ana","class":"MAGE"}],'
+    .. '"wishlists":[{"key":"Ana-Firemaw","name":"Ana","class":"MAGE","items":[{"id":7,"o":1}]}]}')
+  fresh({ far })
+  Import:ConsumeInbox()
+  check(GuildOS.db.siteLoot == nil, "a night three days away is not saved")
+  check(Import:SiteRaids().far and Import:SiteRaids().far.wishlists.ana, "it is in memory")
+  Import:KeepSiteLoot(SERVER)
+  check(GuildOS.db.siteLoot == nil, "a logout today still saves nothing of it")
+  Import:KeepSiteLoot(SERVER + 3 * 86400 - 3600)
+  check(GuildOS.db.siteLoot and GuildOS.db.siteLoot.raids.far, "a logout once its night has begun saves it")
+  -- The next login: the site stopped serving it, and the saved entry is what is left.
+  _G.GuildOSInbox, Import._lastInbox, Import._siteRaids = { V5 }, nil, nil
+  local was = SERVER
+  SERVER = SERVER + 3 * 86400 + 4 * 3600
+  Import:ConsumeInbox()
+  check(GuildOS.db.siteLoot and GuildOS.db.siteLoot.raids.far, "and it outlives the inbox for the rest of its night")
+  Import:KeepSiteLoot(SERVER + 5 * 3600)
+  check(GuildOS.db.siteLoot == nil, "and goes once its night is over")
+  SERVER = was
+end
 
 fresh({ V5 })
 before = gameTables()
@@ -185,7 +240,9 @@ SERVER = SERVER + 9 * 3600
 _G.GuildOSInbox = { V5, FIXTURE:sub(1, -1) .. "" }
 Import._lastInbox = nil
 Import:ConsumeInbox()
-check(GuildOS.db.siteLoot and GuildOS.db.siteLoot.raids.tonight == nil, "later, the night is over and goes")
+check(GuildOS.db.siteLoot == nil or GuildOS.db.siteLoot.raids.tonight == nil, "later, the night is over and goes")
+check((GuildOS.db.siteLoot == nil or GuildOS.db.siteLoot.raids["raid-556-fixture"] == nil) and Import:SiteRaids()["raid-556-fixture"],
+  "a raid listed after its night is not saved, and is still read into memory")
 SERVER = 1795000000
 
 -- ── 3. Refusals ──────────────────────────────────────────────────────
@@ -244,6 +301,22 @@ check(lootOf('"prios":[{"id":5,"order":[{"key":"A-F","name":"A","class":"MAGE","
 check(lootOf('"prios":[{"id":5.5,"order":[{"key":"A-F","name":"A","class":"MAGE","rank":1}]}]') == nil, "a fractional id too")
 check(lootOf('"prios":[{"id":5,"order":[{"key":"A-F","name":"","class":"MAGE","rank":1}]}]') == nil, "an empty name too")
 check(lootOf('"prios":[{"id":5,"order":[{"key":"A-F","name":"' .. string.rep("n", 65) .. '","class":"MAGE","rank":1}]}]') == nil, "a name of 65 characters too")
+-- One bad name passes over that person alone, never the whole field (minor 2).
+local LONG = string.rep("n", 65)
+local kept2 = lootOf('"prios":[{"id":5,"order":[{"key":"L-F","name":"' .. LONG .. '","class":"MAGE","rank":1},'
+  .. '{"key":"B-F","name":"Bo","class":"MAGE","rank":2}]}]')
+check(kept2 and #kept2.prios[5] == 1 and kept2.prios[5][1].name == "Bo", "prios: the long name is passed over, Bo stays")
+kept2 = lootOf('"softres":{"soft":[{"name":"' .. LONG .. '","class":"MAGE","items":[1]},{"name":"Bo","class":"MAGE","items":[1]}],'
+  .. '"hard":[{"id":2,"for":"' .. LONG .. '"},{"id":3,"for":"Tank"}]}')
+check(kept2 and #kept2.softres.items[1] == 1 and kept2.softres.items[1][1].name == "Bo" and kept2.softres.items[2] == nil
+  and kept2.softres.items[3][1].name == "Tank", "softres: the long name and the long `for` are passed over, the rest stays")
+kept2 = lootOf('"wishlists":[{"key":"L-F","name":"' .. LONG .. '","class":"MAGE","items":[{"id":1,"o":1}]},'
+  .. '{"key":"B-F","name":"Bo","class":"MAGE","items":[{"id":1,"o":1}]}]')
+check(kept2 and kept2.wishlists.bo and kept2.wishlists[strlower(LONG)] == nil, "wishlists: the long name is passed over, Bo stays")
+check(lootOf('"wishlists":[{"key":"' .. LONG .. '","name":"Bo","class":"MAGE","items":[{"id":1,"o":1}]}]').wishlists.bo,
+  "a key too long is no key: the plain name stands (elsewhere than retail)")
+check(lootOf('"softres":{"soft":[{"name":"' .. LONG .. '","class":"MAGE","items":[1.5]}],"hard":[]}') == nil,
+  "a bad id still refuses the sheet, even beside a bad name")
 
 local longItems = range(21, function(i) return tostring(1000 + i) end)
 check(lootOf(soft(longItems)) == nil, "21 reserved items for a person refuse the sheet")

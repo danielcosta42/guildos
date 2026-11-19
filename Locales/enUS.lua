@@ -1211,3 +1211,7 @@ L["Low-level material: crafters still level on it"] = "Low-level material: craft
 L["Low-level recipe"] = "Low-level recipe"
 L["Quest item"] = "Quest item"
 L["At the guild's level"] = "At the guild's level"
+L["[Wishlist] %s goes to %s - awaiting ML confirmation"] = "[Wishlist] %s goes to %s - awaiting ML confirmation"
+L["[ROLL] %s  -  only %s may roll  -  /roll 1-100 MS  -  /roll 1-99 OS  -  %ds"] = "[ROLL] %s  -  only %s may roll  -  /roll 1-100 MS  -  /roll 1-99 OS  -  %ds"
+L["only you"] = "only you"
+L["Nights of cores whose priorities live on the site use the site's."] = "Nights of cores whose priorities live on the site use the site's."

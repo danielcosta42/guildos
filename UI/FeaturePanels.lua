@@ -2024,8 +2024,9 @@ function GuildOS:ShowWishlistFrame()
         BuildWishlistFrame()
     end
     -- Pre-request item info for all wishlist entries so the client
-    -- fetches any uncached items before (or just after) we display them.
-    local list = (GuildOS.Wishlist and GuildOS.Wishlist:GetMyList()) or {}
+    -- fetches any uncached items before (or just after) we display them: the site's list when it holds mine.
+    local site = GuildOS.Wishlist and GuildOS.Wishlist:SiteListInForce()
+    local list = (site and site.wishlist) or (GuildOS.Wishlist and GuildOS.Wishlist:GetMyList()) or {}
     for _, entry in ipairs(list) do
         GuildOS.Compat.GetItemInfo(entry.itemId)
     end
@@ -2037,10 +2038,11 @@ function GuildOS:RefreshWishlistFrame()
     local f = self.WishlistFrame
     if not f then return end
 
-    local rawList = (GuildOS.Wishlist and GuildOS.Wishlist:GetMyList()) or {}
-
-    -- The site is the source of this list: the editor only shows it (#385).
-    local fromSite = GuildOS.Wishlist and GuildOS.Wishlist:ListIsFromSite()
+    -- The site is the source of this list: the editor only shows it, and what it shows is the site's list in
+    -- force (#385, R23), never the game's own list under the site's name.
+    local site = GuildOS.Wishlist and GuildOS.Wishlist:SiteListInForce()
+    local fromSite = site ~= nil
+    local rawList = (site and site.wishlist) or (GuildOS.Wishlist and GuildOS.Wishlist:GetMyList()) or {}
     for _, n in ipairs({ "msBtn", "osBtn", "addBox", "addBtn", "syncBtn" }) do
         if fromSite then f[n]:Hide() else f[n]:Show() end
     end
@@ -2425,7 +2427,6 @@ local function BuildPrioModal()
     saveBtn:SetPoint("BOTTOMRIGHT", -10, 10)
     f.saveBtn = saveBtn
     saveBtn:SetScript("OnClick", function()
-        if GuildOS.Wishlist:PriosAreFromSite() then return end   -- read-only while the site holds them (#385)
         if not f.prioData or not f.currentItemId then
             f.statusText:SetText(L["|cffFF4444No item loaded.|r"])
             return
@@ -2450,26 +2451,33 @@ local function BuildPrioModal()
     local cancelBtn = UI:CreateButton(f, L["Cancel"], 80, 26)
     cancelBtn:SetPoint("BOTTOMRIGHT", saveBtn, "BOTTOMLEFT", -8, 0)
     cancelBtn:SetScript("OnClick", function() f:Hide() end)
+    f.cancelBtn = cancelBtn
 
     -- Help text in bottom bar
     local bottomHelp = UI:CreateText(f, L["Reorder with the arrows. Only you see this before saving."], 9, 0.4, 0.4, 0.5)
     bottomHelp:SetPoint("BOTTOMLEFT", 10, 14)
     f.bottomHelp = bottomHelp
 
-    -- The priorities come from the site: the modal is read-only and these stand in for Save (#385).
-    local siteLine = UI:CreateText(f, L["The guild's priorities come from the site."], 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    siteLine:SetPoint("BOTTOMLEFT", 10, 14)
-    siteLine:Hide()
-    f.siteLine = siteLine
+    -- Some core's nights play by the site's priorities: the modal still edits the game's (R22, #385), and
+    -- this line, in the help's place, says that those nights use the site's, beside "Edit on the site".
     local siteBtn = UI:CreateButton(f, L["Edit on the site"], 130, 26)
-    siteBtn:SetPoint("BOTTOMRIGHT", -10, 10)
+    siteBtn:SetPoint("BOTTOMRIGHT", cancelBtn, "BOTTOMLEFT", -8, 0)
     siteBtn:SetScript("OnClick", function() GuildOS:ShowExportPopup(L["Edit on the site"], SITE_URL) end)
     siteBtn:Hide()
     f.siteBtn = siteBtn
+    local siteLine = UI:CreateText(f, L["Nights of cores whose priorities live on the site use the site's."], 9,
+        C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    siteLine:SetPoint("BOTTOMLEFT", 10, 8)
+    siteLine:SetPoint("RIGHT", siteBtn, "LEFT", -8, 0)
+    siteLine:SetHeight(30)
+    siteLine:SetJustifyH("LEFT")
+    siteLine:SetJustifyV("MIDDLE")
+    siteLine:SetWordWrap(true)
+    siteLine:Hide()
+    f.siteLine = siteLine
 
     -- Wire up LoadItem
     LoadItem = function()
-        if GuildOS.Wishlist:PriosAreFromSite() then return end
         local itemId = f.prioSearchItemId
         f.prioSearchItemId = nil
         if not itemId then
@@ -2563,20 +2571,16 @@ function GuildOS:ShowPrioModal()
     self.PrioModal:Show()
 end
 
--- The modal edits only while the game is the source of the priorities; otherwise it shows the site's
--- line and button and none of the controls (#385).
+-- The modal always edits the game's priorities (R22, #385). While some raid of the site's plays by the site's
+-- priorities, one line in the help's place says that those nights use the site's, with "Edit on the site".
 function GuildOS:ApplyPrioSource()
     local f = self.PrioModal
     if not f then return end
     local fromSite = GuildOS.Wishlist:PriosAreFromSite()
-    for _, n in ipairs({ "saveBtn", "searchBox", "loadBtn", "bottomHelp" }) do
-        if fromSite then f[n]:Hide() else f[n]:Show() end
-    end
-    if fromSite then f.siteLine:Show(); f.siteBtn:Show() else f.siteLine:Hide(); f.siteBtn:Hide() end
-    for _, row in ipairs(f.rows) do
-        for _, n in ipairs({ "upBtn", "downBtn", "removeBtn" }) do
-            if fromSite then row[n]:Hide() else row[n]:Show() end
-        end
+    if fromSite then
+        f.bottomHelp:Hide(); f.siteLine:Show(); f.siteBtn:Show()
+    else
+        f.bottomHelp:Show(); f.siteLine:Hide(); f.siteBtn:Hide()
     end
 end
 
