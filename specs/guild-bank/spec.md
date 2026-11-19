@@ -90,11 +90,17 @@ worth over 3× its vendor price there is flagged for the auction house. Chips: i
 gold they would make, slots freed, marked (and gold owed to the bank).
 
 Officers mark what goes (one by one, or "Mark all suggested"); the marks are shared (officer domain
-`gbankclean`, backfilled with the needs). At the bank, the bar's **Take out marked** moves the
-marked whole stacks into the bags one at a time (each counts as a withdrawal; stops when the bags
-are full or a stack does not come out). At a vendor, a bar sells **only what came out of the bank**,
-never more of an item than came out, so a member's own copies stay. The gold it made is owed to the
-bank, and the next time the bank opens the bar's **Deposit** button puts it in.
+`gbankclean`, backfilled with the needs). At the bank all of it happens in a **drawer beside the
+game's bank** (#384), opened and closed by the bar's **Cleanup (N)** button, with no trip to the
+Guild OS window: what selling would make, the Sell / Review / Keep lists with their marks, "All
+suggested", the steps (1 take out > 2 sell > 3 gold back) and one button for the step at hand.
+**Take out marked** moves the marked whole stacks into the bags one at a time (each counts as a
+withdrawal; stops when the bags are full or a stack does not come out), showing "Taking out X of N"
+with Stop. At a vendor, a bar sells **only what came out of the bank**, never more of an item than
+came out, so a member's own copies stay. The gold it made is owed to the bank; the next time the
+bank opens, the drawer opens itself on its **Deposit** button. The drawer docks on the bank's right,
+or its left when the screen has no room there. The Cleanup sub-tab stays, for a look away from the
+bank and the "Low level below" setting.
 
 Limits: only whole stacks come out (a part of a stack past its need stays until organized or taken
 by hand); auction-house items are only flagged, not posted.

@@ -247,12 +247,15 @@ function Cleanup:Rows()
         local sell, req, ilvl = GuildOS.Compat.ItemValue(e.l or e.id)
         local d = demand[e.id]
         -- How long it has sat: since its last deposit in the ledger; with none there, at least as
-        -- long as the ledger reaches back, or as long as this client has seen it.
-        local since = deposits[e.id] or math.min(ledgerFrom or t, db.seen[e.key] or t)
+        -- long as the ledger reaches back, or as long as this client has seen it. Not before the
+        -- ledger started over has DEMAND_DAYS of withdrawals again: those went with the old one,
+        -- so until then nothing is known to be untouched.
+        local since = deposits[e.id]
+            or math.max(math.min(ledgerFrom or t, db.seen[e.key] or t), (db.ledgerSince or 0) + (DEMAND_DAYS - STALE_DAYS) * 86400)
         local level = (req and req > 1) and req or ilvl
         local it = { have = e.total, quality = info.quality, classID = info.classID, level = level,
             lowBelow = lowBelow, need = B:NeedOf(e.id), demandLines = d and d.lines or 0,
-            requested = requested[e.id], days = math.floor((t - since) / 86400) }
+            requested = requested[e.id], days = math.max(0, math.floor((t - since) / 86400)) }
         local verdict, n, reasons = Cleanup.Judge(it)
         local ah = GuildOS.Compat.AuctionPrice(e.id)
         local unit = sell or 0
@@ -307,12 +310,16 @@ function Cleanup:SetMark(key, on, n)
     return true
 end
 
--- Mark every item judged "sell", each for the amount that may go.
-function Cleanup:MarkSuggested()
+-- Mark every item judged "sell", each for the amount that may go; with `unmark`, unmark them all.
+-- Returns how many changed.
+function Cleanup:MarkSuggested(unmark)
     if not GuildOS:IsOfficer() then return 0 end
     local marks, n = self:Store().clean.marks, 0
     for _, r in ipairs(self:Rows()) do
-        if r.verdict == "sell" and not marks[r.key] then
+        if r.verdict == "sell" and unmark and marks[r.key] then
+            marks[r.key] = nil
+            n = n + 1
+        elseif r.verdict == "sell" and not unmark and not marks[r.key] then
             marks[r.key] = { n = r.out < r.have and r.out or nil, by = GuildOS.Compat.PlayerName(), ts = now() }
             n = n + 1
         end
@@ -397,6 +404,12 @@ function Cleanup:Queue()
 end
 
 function Cleanup:IsWithdrawing() return state().withdraw ~= nil end
+
+-- The run taking stacks out: how many came out and how many it set out to take, or nil.
+function Cleanup:WithdrawProgress()
+    local run = state().withdraw
+    if run then return run.done, run.total end
+end
 
 -- Take every marked stack out into the bags, one at a time.
 function Cleanup:WithdrawMarked()

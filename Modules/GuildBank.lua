@@ -7,9 +7,9 @@
 --     the time it was read; a newer tab replaces an older one, whoever read it.
 --   * Ask: a member who logs in asks for what is newer than what they have; one member with
 --     something newer answers, after a random wait that any other answer cancels.
---   * Ledger: the game keeps 25 lines per tab, with no ids and only "hours ago". Each read is lined
---     up with the end of what is kept (the longest run that matches) and only what follows is added,
---     so a read never counts a line twice and two equal deposits in one hour stay two.
+--   * Ledger: the game keeps 25 lines per tab, with no ids and only "hours ago". Each line read is
+--     paired with an equal kept line a few hours apart, and only the unpaired ones are added, so a
+--     read never counts a line twice and two equal deposits in one hour stay two.
 --   * Organize: one move at a time on the bank's real state (GuildBankPlan), waiting for the server,
 --     only on a tab where the rank withdraws without limit (a move counts as a withdrawal) or by the GM.
 --   * Needs: officers set how many of an item the bank should hold (domain "gbankneed").
@@ -30,7 +30,9 @@ local READ_AFTER = 1.5           -- seconds after the last query before the tabs
 local LOG_KEEP = 2000            -- ledger lines kept
 local MONEY_KEEP = 120           -- money readings kept
 local MONEY_EVERY = 6 * 3600     -- a reading equal to the last one is kept once every six hours
-local MATCH_HOURS = 3            -- two reads of one line may disagree on its hour by this much
+local MATCH_HOURS = 3            -- two lines this far apart may still be one event, when nothing else lines up
+local SAME_EVENT = 3600 + 120    -- two reads of one line: under an hour apart (whole hours), plus the read's wait
+local LEDGER_V = 2              -- ledgers and histories from before this held copies (#380)
 local PUBLISH_GAP = 60           -- seconds between two pictures this client shares unasked
 local ASK_DELAY = 25             -- seconds after login before asking for the bank
 local ANSWER_MIN, ANSWER_MAX = 2, 8   -- seconds an answer waits, so one member answers
@@ -115,7 +117,11 @@ function GuildBank:Store()
         GuildOS.db.guildBank = db
     end
     db.tabs = db.tabs or {}
+    -- Ledgers kept before LEDGER_V hold copies of recent lines that cannot be told from real
+    -- repeats: started over once, refilled by the next bank read.
+    if db.ledgerV ~= LEDGER_V then db.ledger, db.ledgerV, db.ledgerSince, db.lastRead = {}, LEDGER_V, now(), {} end
     db.ledger = db.ledger or {}
+    db.lastRead = db.lastRead or {}
     db.money = db.money or {}
     db.needs = db.needs or {}
     db.requests = db.requests or {}
@@ -387,12 +393,9 @@ local function sig(e)
     return table.concat({ e.ty or "", e.n or "", e.id or 0, e.c or 0, e.g or 0, e.t2 or 0 }, "|")
 end
 GuildBank._sig = sig
+GuildBank.LEDGER_V = LEDGER_V
 
-local function same(a, b)
-    return sig(a) == sig(b) and math.abs((a.t or 0) - (b.t or 0)) <= MATCH_HOURS * 3600
-end
-
--- The lines of stream `k` (a tab, or 0 for money) in the ledger, oldest first.
+-- The lines of stream `k` (a tab, or 0 for money) in the ledger, in the order they were added.
 function GuildBank:Stream(k)
     local out = {}
     for _, e in ipairs(self:Store().ledger) do
@@ -401,35 +404,90 @@ function GuildBank:Stream(k)
     return out
 end
 
--- Add a read of stream `k` (`list`, oldest first, each with an absolute time) to the ledger: the
--- longest run at the start of `list` that matches the end of what is kept is already there; what
--- follows it is new. Returns how many lines were added. Pure apart from the ledger it writes.
+-- Add a read of stream `k` (`list`, oldest first, each with an absolute time) to the ledger.
+-- Lines agree when kind, name, item, count, gold and target tab do. The game's log is a window with
+-- no gaps, so a read is lined up by position, a line matching only one read of the same event
+-- (under SAME_EVENT apart):
+--   1. the longest run at its start that matches the end of what is kept is there; what follows
+--      is new (a line whose equal twin has scrolled out of the log is still new);
+--   2. a read matched whole before the end (late, or a repeating pattern) adds nothing;
+--   3. with neither (more lines than the log holds since the last read, a peer's history with a
+--      line this client missed, or one in another order): a line an hour past everything kept is
+--      a later event, so new; any other pairs with the nearest agreeing kept line within
+--      MATCH_HOURS not paired already, and only the unpaired are new (two equal deposits in one
+--      hour stay two). These go in at their time, so the stream's end stays the newest lines.
+-- Returns how many lines were added. Pure apart from the ledger it writes.
 function GuildBank:MergeStream(k, list)
     local kept = self:Stream(k)
+    local ks, ls, newest = {}, {}, -math.huge
+    for i, e in ipairs(kept) do ks[i] = sig(e); newest = math.max(newest, e.t or 0) end
+    for i, e in ipairs(list) do ls[i] = sig(e) end
+    local function runAt(j, n)   -- list[1..n] is kept[j..j+n-1], read again
+        for i = 1, n do
+            local a = kept[j + i - 1]
+            if ks[j + i - 1] ~= ls[i] or math.abs((a.t or 0) - (list[i].t or 0)) >= SAME_EVENT then return false end
+        end
+        return true
+    end
     local best = 0
     for n = math.min(#kept, #list), 1, -1 do
-        local ok = true
-        for i = 1, n do
-            if not same(kept[#kept - n + i], list[i]) then ok = false; break end
-        end
-        if ok then best = n; break end
+        if runAt(#kept - n + 1, n) then best = n; break end
     end
-    local last = kept[#kept]
-    local added = 0
+    local new, atEnd = {}, true
+    if best < #list then
+        for j = #kept - #list, 1, -1 do
+            if runAt(j, #list) then return 0 end
+        end
+        if best > 0 then
+            for i = best + 1, #list do new[#new + 1] = list[i] end
+        else
+            atEnd = false
+            local bySig, taken, tol = {}, {}, MATCH_HOURS * 3600
+            for i, e in ipairs(kept) do
+                bySig[ks[i]] = bySig[ks[i]] or {}
+                table.insert(bySig[ks[i]], e)
+            end
+            for i, e in ipairs(list) do
+                local pick, pickD
+                if (e.t or 0) < newest + SAME_EVENT then
+                    for _, c in ipairs(bySig[ls[i]] or {}) do
+                        local d = math.abs((c.t or 0) - (e.t or 0))
+                        if not taken[c] and d <= tol and (not pickD or d < pickD) then pick, pickD = c, d end
+                    end
+                end
+                if pick then taken[pick] = true else new[#new + 1] = e end
+            end
+        end
+    end
     local ledger = self:Store().ledger
-    for i = best + 1, #list do
-        local e = list[i]
-        -- Nothing matched: keep only what is not older than the end of what is kept, so an old
-        -- read arriving late adds nothing it already said.
-        if best > 0 or not last or (e.t or 0) >= (last.t or 0) - MATCH_HOURS * 3600 then
-            ledger[#ledger + 1] = { k = k, t = e.t, ty = e.ty, n = e.n, id = e.id, c = e.c, g = e.g, t2 = e.t2 }
-            added = added + 1
+    for _, e in ipairs(new) do
+        local pos = #ledger + 1
+        if not atEnd then
+            -- Before the stream's kept lines that are newer than it.
+            for i = #ledger, 1, -1 do
+                local x = ledger[i]
+                if x.k == k then
+                    if (x.t or 0) <= (e.t or 0) then break end
+                    pos = i
+                end
+            end
         end
+        table.insert(ledger, pos, { k = k, t = e.t, ty = e.ty, n = e.n, id = e.id, c = e.c, g = e.g, t2 = e.t2 })
     end
-    -- Kept in the order read, never re-sorted: lines of one hour share a time, and a sort would
-    -- shuffle them so the next read no longer lines up with the end.
     while #ledger > LOG_KEEP do table.remove(ledger, 1) end
-    return added
+    return #new
+end
+
+-- A log as the game gave it, by what it says rather than its text (a link or a name the client
+-- fills in later must not make a cached log look new): the same means the client's cached log,
+-- read again, whose "hours ago" are as old as when it arrived.
+local function rawKey(rows)
+    local parts = {}
+    for i, r in ipairs(rows) do
+        parts[i] = table.concat({ r.type or "", parseLink(r.link) or 0, r.count or r.amount or 0,
+            r.tab1 or 0, r.tab2 or 0, r.ago or 0 }, "|")
+    end
+    return table.concat(parts, "\n")
 end
 
 -- Read every tab's log and the money log, add them, and share the reads that added something.
@@ -438,10 +496,19 @@ function GuildBank:ReadLogs()
     if not s.open then return end
     local t = now()
     local reads = {}
+    local lastRead = self:Store().lastRead
+    -- A log the same as the last one read of its stream (kept across sessions: the client caches
+    -- logs) has nothing new and is skipped.
+    local function take(k, rows, list)
+        local key = rawKey(rows)
+        if key == lastRead[k] then return end
+        lastRead[k] = key
+        if #list > 0 and self:MergeStream(k, list) > 0 then reads[#reads + 1] = { k = k, list = list } end
+    end
     for tab = 1, math.min(GuildOS.Compat.GuildBankTabCount(), MAX_TABS) do
         if s.queried[tab] then
-            local list = {}
-            for _, row in ipairs(GuildOS.Compat.GuildBankItemLog(tab)) do
+            local rows, list = GuildOS.Compat.GuildBankItemLog(tab), {}
+            for _, row in ipairs(rows) do
                 local ty = ITEM_TYPES[row.type]
                 local id = parseLink(row.link)
                 if ty and row.name then
@@ -449,19 +516,19 @@ function GuildBank:ReadLogs()
                         t2 = ty == "m" and row.tab2 or nil }
                 end
             end
-            if #list > 0 and self:MergeStream(tab, list) > 0 then reads[#reads + 1] = { k = tab, list = list } end
+            take(tab, rows, list)
         end
     end
-    local money = {}
-    for _, row in ipairs(GuildOS.Compat.GuildBankMoneyLog()) do
+    local rows, money = GuildOS.Compat.GuildBankMoneyLog(), {}
+    for _, row in ipairs(rows) do
         local ty = MONEY_TYPES[row.type]
         if ty then money[#money + 1] = { t = t - row.ago * 3600, ty = ty, n = row.name, g = row.amount } end
     end
-    if #money > 0 and self:MergeStream(0, money) > 0 then reads[#reads + 1] = { k = 0, list = money } end
+    take(0, rows, money)
     if #reads > 0 then
         self:Refresh()
         if GuildOS.SyncService then
-            GuildOS.SyncService:Publish("gbank", "log", { reads = reads }, { priority = "BULK" })
+            GuildOS.SyncService:Publish("gbank", "log", { v = LEDGER_V, reads = reads }, { priority = "BULK" })
         end
     end
 end
@@ -718,6 +785,10 @@ function GuildBank:OnSync(env, sender)
             for _, t in pairs(data.tabs or {}) do newest = math.max(newest, GuildOS.Finite(type(t) == "table" and t.ts) or 0) end
             if newest >= s.answer.snap then s.answer.snap = nil end
         end
+    elseif (env.act == "log" or env.act == "hist") and data.v ~= LEDGER_V then
+        -- From an older version, whose ledger kept copies and re-dated cached logs: not taken, and
+        -- not an answer.
+        return
     elseif env.act == "log" or env.act == "hist" then
         local limit = now() + FUTURE_SLACK
         local added = 0
@@ -818,7 +889,7 @@ function GuildBank:PublishHistory(since)
     for _, r in ipairs(reads) do
         while #r.list > HIST_MAX do table.remove(r.list, 1) end
     end
-    GuildOS.SyncService:Publish("gbank", "hist", { reads = reads }, { priority = "BULK" })
+    GuildOS.SyncService:Publish("gbank", "hist", { v = LEDGER_V, reads = reads }, { priority = "BULK" })
 end
 
 ----------------------------------------------------------------------

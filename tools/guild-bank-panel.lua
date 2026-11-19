@@ -143,6 +143,7 @@ local ITEMS = {
   [22832] = { "Super Mana Potion", 1, 0, 1, 20 },
   [23445] = { "Fel Iron Bar", 1, 7, 7, 20 },
   [28555] = { "Seamaiden's Pendant", 4, 4, 0, 1 },
+  [3300] = { "Rabbit's Foot", 0, 15, 0, 20 },   -- grey: the cleanup sells it
 }
 local function idOf(item)
   if type(item) == "number" then return item end
@@ -315,6 +316,68 @@ check(docked ~= nil, "the bar offers to organize the tab")
 local cleanBtn
 walk(UIParent, function(f) if f.label and type(f.label.text) == "string" and f.label.text:find("^Cleanup %(") and f.shown then cleanBtn = f end end)
 check(cleanBtn ~= nil, "an officer's bar offers the cleanup, with how many items it would sell")
+
+-- The cleanup happens beside the bank (#384): the bar's button opens a drawer, no trip to the window.
+local CL = GuildOS.GuildBankCleanup
+Bank:ApplySnapshot({ tabs = { [2] = { n = "Mats", ts = NOW, by = "Bea", s = "1,3300,4" } } }, "Bea")
+-- The bank as the game shows it now: the grey stack in tab 2, the rank may take from it.
+GetGuildBankItemInfo = function(tab, slot) if tab == 2 and slot == 1 then return "icon3300", 4, false end return nil, 0 end
+GetGuildBankItemLink = function(tab, slot) if tab == 2 and slot == 1 then return linkOf(3300) end end
+cleanBtn.scripts.OnClick(cleanBtn)
+local drawer
+walk(UIParent, function(f) if f.Dock and f.Draw then drawer = f end end)
+check(drawer ~= nil and drawer:IsShown(), "the bar's Cleanup button opens the drawer")
+local dp = drawer.points[1]
+check(dp[1] == "TOPLEFT" and dp[2] == GuildBankFrame and dp[3] == "TOPRIGHT", "on the bank's right")
+lay(drawer)
+check(shows(drawer, " to sell · ") and shows(drawer, "1 Take out"), "with what selling would make and the steps")
+check(shows(drawer, "Rabbit's Foot × 4") and shows(drawer, "Sell 1"), "and lists what may go, on the Sell filter")
+local allBox
+walk(drawer, function(f) if f.checkbox and f.label and f.label.text == "All suggested" then allBox = f.checkbox end end)
+check(allBox ~= nil, "it offers to mark every suggestion")
+allBox:SetChecked(true)
+allBox.scripts.OnClick(allBox)
+local marked = CL:MarkedCount()
+check(marked > 0 and allBox:GetChecked(), "All suggested marks them")
+local takeBtn = buttons(drawer, "Take out marked (1)")[1]
+check(takeBtn ~= nil and takeBtn.enabled, "and the drawer's button offers the one stack that can come out")
+local withdraw, took = CL.WithdrawMarked, false
+CL.WithdrawMarked = function() took = true end
+takeBtn.scripts.OnClick(takeBtn)
+CL.WithdrawMarked = withdraw
+check(took, "and takes it out")
+allBox:SetChecked(false)
+allBox.scripts.OnClick(allBox)
+check(CL:MarkedCount() == 0 and #buttons(drawer, "Take out marked") == 1, "unticked, it unmarks them, and there is nothing to take")
+-- A run under way shows how far it got, with Stop.
+GuildOS.State.gbankClean.withdraw = { queue = {}, done = 2, total = 5 }
+Bank:Refresh()
+check(#buttons(drawer, "Taking out 2 of 5") == 1 and #buttons(drawer, "Stop") == 1, "a run shows its progress and can stop")
+GuildOS.State.gbankClean.withdraw = nil
+-- Gold the cleanup made is owed: the bank opens with the drawer on that step.
+CL:Mine().toDeposit = 12345
+Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+check(not drawer:IsShown(), "closing the bank closes the drawer")
+Bank:OnEvent("GUILDBANKFRAME_OPENED")
+check(drawer:IsShown() and #buttons(drawer, "Deposit 1g 23s 45c") == 1, "and the next visit opens it to put the gold back")
+CL:Mine().toDeposit = 0
+-- On a screen with no room on the bank's right, it docks on the left.
+GuildBankFrame.GetRight = function() return 1800 end
+UIParent:SetWidth(1920)
+drawer:Dock()
+dp = drawer.points[1]
+check(dp[1] == "TOPRIGHT" and dp[3] == "TOPLEFT", "with no room on the right, it docks on the left")
+GuildBankFrame.GetRight, UIParent.w = nil, 0
+-- A member never sees it.
+officer = false
+Bank:Refresh()
+check(not drawer:IsShown() and not cleanBtn.shown, "a member sees neither the button nor the drawer")
+officer = true
+Bank:Refresh()
+cleanBtn.scripts.OnClick(cleanBtn)
+check(drawer:IsShown(), "the button opens it again")
+cleanBtn.scripts.OnClick(cleanBtn)
+check(not drawer:IsShown(), "and closes it")
 check(docked.enabled == true, "on a tab whose rank withdraws without limit")
 TABS[1][2] = 5
 Bank:Refresh()
