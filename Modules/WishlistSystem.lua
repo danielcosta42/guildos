@@ -312,9 +312,25 @@ function Wishlist:GetMyList()
     return GuildOS.db.wishlists[charKey]
 end
 
+-- Whether the site is the source of this player's list (this repo's #385): then the game shows it
+-- read-only, never writes it and never broadcasts it. The one question every writer below asks.
+function Wishlist:ListIsFromSite()
+    local SiteLoot = GuildOS.SiteLoot
+    if not SiteLoot then return false end
+    local name = GuildOS.Compat.PlayerName() or ""
+    return SiteLoot:ListsFromSite(storeKey(GuildOS:GetPlayerKey(name), name))
+end
+
+-- The refusal of an edit made in the game: said once, locally. Returns false.
+function Wishlist:RefuseSiteEdit()
+    GuildOS:Print(L["|cffFF4444[Wishlist]|r Your list comes from the site. Edit it on the site."])
+    return false
+end
+
 -- Add or update an item in the player's own wishlist.
 function Wishlist:AddToWishlist(itemId, itemLink, isOffspec)
     if not GuildOS.db then return end
+    if self:ListIsFromSite() then return self:RefuseSiteEdit() end
     local list = self:GetMyList()
 
     -- If already present, update in place
@@ -376,6 +392,7 @@ end
 
 function Wishlist:RemoveFromWishlist(itemId)
     if not GuildOS.db then return end
+    if self:ListIsFromSite() then return self:RefuseSiteEdit() end
     if self:IsItemDelivered(itemId) then
         GuildOS:Print(L["|cffFF4444[Wishlist]|r This item has already been delivered and cannot be removed."])
         return
@@ -400,6 +417,7 @@ end
 -- Move an item up (-1) or down (+1) in the wishlist order.
 function Wishlist:ReorderWishlist(itemId, direction)
     if not GuildOS.db then return end
+    if self:ListIsFromSite() then return self:RefuseSiteEdit() end
     if self:IsItemDelivered(itemId) then return end
     local list = self:GetMyList()
     local idx
@@ -422,6 +440,7 @@ end
 ----------------------------------------------------------------------
 function Wishlist:BroadcastMyWishlist(force)
     if not GuildOS.db then return end
+    if self:ListIsFromSite() then return end   -- the site is the source: nothing of mine goes out
     local list = self:GetMyList()
 
     local myName  = GuildOS.Compat.PlayerName()
@@ -539,7 +558,14 @@ end
 -- Structure: db.lootPrios[itemId] = { {name, class, order}, ... }
 -- Officers set and sync prios; all members receive and store them.
 ----------------------------------------------------------------------
+-- Whether the site is the source of the officers' priorities (#385): then they are not sent and an
+-- incoming copy is not applied. db.lootPrios is one table for the guild, so this is guild-wide.
+function Wishlist:PriosAreFromSite()
+    return GuildOS.SiteLoot ~= nil and GuildOS.SiteLoot:PriosFromSite()
+end
+
 function Wishlist:BroadcastLootPrios()
+    if self:PriosAreFromSite() then return end
     if not GuildOS.CommSystem then return end
     if not GuildOS.db or not GuildOS.db.lootPrios then return end
     local LibSerialize = LibStub("GuildOS-LibSerialize")
@@ -550,6 +576,7 @@ end
 -- Reached only through CommSystem:OnMessageReceived, which has checked the sender is an officer
 -- and the channel GUILD (issue #78). Any other caller must check the same.
 function Wishlist:HandleLootPriosBroadcast(sender, data)
+    if self:PriosAreFromSite() then return end
     local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, payload = LibSerialize:Deserialize(data)
     if not ok or type(payload) ~= "table" then return end

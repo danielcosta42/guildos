@@ -1561,6 +1561,11 @@ end
 local WISH_ROW_HEIGHT = 28
 local WISH_VISIBLE    = 14
 
+-- The addresses the "Edit on the site" buttons show (#385). The first is the player's own page; the
+-- second is the site's root, because the core's page needs the guild key and the addon cannot build it.
+local SITE_WISHLIST_URL = "https://guildos.me/wishlist"
+local SITE_URL = "https://guildos.me"
+
 local function BuildWishlistFrame()
     local f = CreateFrame("Frame", "GuildOSWishlistFrame", UIParent, "BackdropTemplate")
     f:SetSize(500, 520)
@@ -1771,6 +1776,7 @@ local function BuildWishlistFrame()
         removeBtn:SetScript("OnEnter", function()
             removeTex:SetTextColor(1, 0.3, 0.3)
         end)
+        row.upBtn, row.downBtn, row.removeBtn = upBtn, downBtn, removeBtn
 
         row:Hide()
         f.rows[i] = row
@@ -1986,6 +1992,7 @@ local function BuildWishlistFrame()
     local addBtn = UI:CreateButton(f, L["+ Add"], 88, 28)
     addBtn:SetPoint("BOTTOMLEFT", addBox, "BOTTOMRIGHT", 6, 0)
     addBtn:SetScript("OnClick", DoAdd)
+    f.addBtn = addBtn
 
     -- Sync button — anchored to the right, with guaranteed gap from addBtn
     local syncBtn = UI:CreateButton(f, L["Sync"], 80, 28)
@@ -1994,6 +2001,19 @@ local function BuildWishlistFrame()
         if GuildOS.Wishlist then GuildOS.Wishlist:BroadcastMyWishlist(true) end
         GuildOS:Print(L["[Wishlist] Sent to the guild."])
     end)
+    f.syncBtn = syncBtn
+
+    -- When the site holds the list the editor is read-only and these two stand where the controls were
+    -- (shown by RefreshWishlistFrame, never here).
+    local siteLine = UI:CreateText(f, L["Your list comes from the site."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    siteLine:SetPoint("BOTTOMLEFT", 14, 19)
+    siteLine:Hide()
+    f.siteLine = siteLine
+    local siteBtn = UI:CreateButton(f, L["Edit on the site"], 140, 28)
+    siteBtn:SetPoint("BOTTOMRIGHT", -8, 11)
+    siteBtn:SetScript("OnClick", function() GuildOS:ShowExportPopup(L["Edit on the site"], SITE_WISHLIST_URL) end)
+    siteBtn:Hide()
+    f.siteBtn = siteBtn
 
     GuildOS.WishlistFrame = f
     return f
@@ -2018,6 +2038,13 @@ function GuildOS:RefreshWishlistFrame()
     if not f then return end
 
     local rawList = (GuildOS.Wishlist and GuildOS.Wishlist:GetMyList()) or {}
+
+    -- The site is the source of this list: the editor only shows it (#385).
+    local fromSite = GuildOS.Wishlist and GuildOS.Wishlist:ListIsFromSite()
+    for _, n in ipairs({ "msBtn", "osBtn", "addBox", "addBtn", "syncBtn" }) do
+        if fromSite then f[n]:Hide() else f[n]:Show() end
+    end
+    if fromSite then f.dropdown:Hide(); f.siteLine:Show(); f.siteBtn:Show() else f.siteLine:Hide(); f.siteBtn:Hide() end
 
     -- Split into active and delivered; delivered entries appear at the bottom.
     local active    = {}
@@ -2106,6 +2133,7 @@ function GuildOS:RefreshWishlistFrame()
                     end
                 end
             end
+            if fromSite then row.upBtn:Hide(); row.downBtn:Hide(); row.removeBtn:Hide() end
 
             row:Show()
         else
@@ -2283,6 +2311,7 @@ local function BuildPrioModal()
     searchBox:HookScript("OnEscapePressed", function() prioDropdown:Hide() end)
 
     local loadBtn = UI:CreateButton(f, L["Load"], 90, 26)
+    f.searchBox, f.loadBtn = searchBox, loadBtn
     loadBtn:SetPoint("LEFT", searchBox, "RIGHT", 8, 0)
 
     -- Status line
@@ -2394,7 +2423,9 @@ local function BuildPrioModal()
 
     local saveBtn = UI:CreateButton(f, L["Save and Sync"], 130, 26)
     saveBtn:SetPoint("BOTTOMRIGHT", -10, 10)
+    f.saveBtn = saveBtn
     saveBtn:SetScript("OnClick", function()
+        if GuildOS.Wishlist:PriosAreFromSite() then return end   -- read-only while the site holds them (#385)
         if not f.prioData or not f.currentItemId then
             f.statusText:SetText(L["|cffFF4444No item loaded.|r"])
             return
@@ -2423,9 +2454,22 @@ local function BuildPrioModal()
     -- Help text in bottom bar
     local bottomHelp = UI:CreateText(f, L["Reorder with the arrows. Only you see this before saving."], 9, 0.4, 0.4, 0.5)
     bottomHelp:SetPoint("BOTTOMLEFT", 10, 14)
+    f.bottomHelp = bottomHelp
+
+    -- The priorities come from the site: the modal is read-only and these stand in for Save (#385).
+    local siteLine = UI:CreateText(f, L["The guild's priorities come from the site."], 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    siteLine:SetPoint("BOTTOMLEFT", 10, 14)
+    siteLine:Hide()
+    f.siteLine = siteLine
+    local siteBtn = UI:CreateButton(f, L["Edit on the site"], 130, 26)
+    siteBtn:SetPoint("BOTTOMRIGHT", -10, 10)
+    siteBtn:SetScript("OnClick", function() GuildOS:ShowExportPopup(L["Edit on the site"], SITE_URL) end)
+    siteBtn:Hide()
+    f.siteBtn = siteBtn
 
     -- Wire up LoadItem
     LoadItem = function()
+        if GuildOS.Wishlist:PriosAreFromSite() then return end
         local itemId = f.prioSearchItemId
         f.prioSearchItemId = nil
         if not itemId then
@@ -2514,14 +2558,33 @@ function GuildOS:ShowPrioModal()
         return
     end
     if not self.PrioModal then BuildPrioModal() end
+    self:ApplyPrioSource()
     self:RefreshPrioModal()
     self.PrioModal:Show()
+end
+
+-- The modal edits only while the game is the source of the priorities; otherwise it shows the site's
+-- line and button and none of the controls (#385).
+function GuildOS:ApplyPrioSource()
+    local f = self.PrioModal
+    if not f then return end
+    local fromSite = GuildOS.Wishlist:PriosAreFromSite()
+    for _, n in ipairs({ "saveBtn", "searchBox", "loadBtn", "bottomHelp" }) do
+        if fromSite then f[n]:Hide() else f[n]:Show() end
+    end
+    if fromSite then f.siteLine:Show(); f.siteBtn:Show() else f.siteLine:Hide(); f.siteBtn:Hide() end
+    for _, row in ipairs(f.rows) do
+        for _, n in ipairs({ "upBtn", "downBtn", "removeBtn" }) do
+            if fromSite then row[n]:Hide() else row[n]:Show() end
+        end
+    end
 end
 
 function GuildOS:RefreshPrioModal()
     local f = self.PrioModal
     if not f or not f.prioData then return end
 
+    self:ApplyPrioSource()
     local data   = f.prioData
     local total  = #data
     local offset = FauxScrollFrame_GetOffset(f.scrollFrame)
