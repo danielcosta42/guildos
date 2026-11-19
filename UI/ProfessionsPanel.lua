@@ -203,14 +203,20 @@ local function BuildCard()
     card.crafters = {}
     for i = 1, CARD_LINES do
         local text = UI:CreateText(card, "", 10, C.text.r, C.text.g, C.text.b)
-        text:SetWidth(200)
+        text:SetWidth(170)   -- Order and Whisper sit to its right (#389)
         text:SetJustifyH("LEFT")
         text:SetWordWrap(false)
         local btn = UI:CreateButton(card, L["Whisper"], 60, 18)
-        card.crafters[i] = { text = text, btn = btn }
+        -- An order to this crafter alone (issue #389).
+        local order = UI:CreateButton(card, L["Order"], 50, 18)
+        order:SetPoint("RIGHT", btn, "LEFT", -4, 0)
+        card.crafters[i] = { text = text, btn = btn, order = order }
     end
     card.more = UI:CreateText(card, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
     card.none = UI:CreateText(card, "", 10, C.red.r, C.red.g, C.red.b)
+    -- An order open to every crafter of the recipe (issue #389).
+    card.orderAll = UI:CreateButton(card, L["Order from the guild"], 150, 20)
+    UI:SetButtonVariant(card.orderAll, "primary")
 end
 
 -- Anchor a region at x, y from the card's top-left.
@@ -281,8 +287,10 @@ local function ShowCard(e, anchor, who, repaint)
     local list = crafterList(e.crafters, who)
     for i, slot in ipairs(card.crafters) do
         local c = list[i]
+        local canOrder = c ~= nil and e.out and e.out > 0 and GuildOS.ShowCraftOrderDialog ~= nil
         slot.text:SetShown(c ~= nil)
         slot.btn:SetShown(c ~= nil and c.online)
+        slot.order:SetShown(canOrder and true or false)
         if c then
             at(slot.text, 14, y)
             slot.text:SetText(c.online and ("|cff" .. classHex(c.class) .. c.name .. "|r")
@@ -291,6 +299,12 @@ local function ShowCard(e, anchor, who, repaint)
             slot.btn:SetPoint("RIGHT", card, "TOPRIGHT", -14, y - 6)
             local name = c.name
             slot.btn:SetScript("OnClick", function() whisper(name) end)
+            -- Beside Whisper, or at the edge when the crafter is offline and Whisper is not shown.
+            slot.order:ClearAllPoints()
+            if c.online then slot.order:SetPoint("RIGHT", slot.btn, "LEFT", -4, 0)
+            else slot.order:SetPoint("RIGHT", card, "TOPRIGHT", -14, y - 6) end
+            local key, out = c.key, e.out
+            slot.order:SetScript("OnClick", function() GuildOS:ShowCraftOrderDialog(out, key) end)
             y = y - 22
         end
     end
@@ -305,6 +319,15 @@ local function ShowCard(e, anchor, who, repaint)
         at(card.none, 14, y)
         card.none:SetText(L["Nobody in the guild crafts this"])
         y = y - 18
+    end
+    local orderable = e.out and e.out > 0 and #list > 0 and GuildOS.ShowCraftOrderDialog ~= nil
+    card.orderAll:SetShown(orderable and true or false)
+    if orderable then
+        y = y - 6
+        at(card.orderAll, 14, y)
+        local out = e.out
+        card.orderAll:SetScript("OnClick", function() GuildOS:ShowCraftOrderDialog(out) end)
+        y = y - 26
     end
     card:SetHeight(-y + 14)
     card:Show()

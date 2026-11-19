@@ -70,6 +70,7 @@ local function printHelp()
         helpLine("/gos attune",    L["Your attunement progress"])
     end
     helpLine("/gos craft <item>",  L["Who can craft an item"])
+    helpLine("/gos order <item>",  L["Ask the guild's crafters to make an item"])
 
     helpHeader(L["Diagnostics"])
     helpLine("/gos sync",     L["Force a full data sync"])
@@ -269,6 +270,15 @@ local function handleCommand(msg)
         if GuildOS.Search then
             local q = strtrim((msg:gsub("^find%s*", "")))
             GuildOS.Search:Show(q ~= "search" and q or "")
+        end
+    elseif msg:match("^order") and GuildOS.ShowCraftOrderDialog then
+        -- /guildos order [item link or id] — a craft order (issue #389); no item opens the Orders tab.
+        local arg = strtrim((msg:gsub("^order%s*", "")))
+        local itemId = tonumber(arg:match("item:(%d+)")) or tonumber(arg:match("^(%d+)$"))
+        if itemId then
+            GuildOS:ShowCraftOrderDialog(itemId)
+        else
+            GuildOS.UI:OpenWindow("orders")
         end
     elseif msg:match("^craft") then
         -- /guildos craft <item link or id> — who can craft this, guild + realm.

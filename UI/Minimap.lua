@@ -84,6 +84,20 @@ local function MinimapMenu_Init(_, level)
         UIDropDownMenu_AddButton(info, level)
     end
 
+    -- Craft orders waiting for me (issue #389): the inbox, one click away.
+    local orders = GuildOS.CraftOrders
+    local pending = 0
+    if orders and IsInGuild() then
+        local ok, n = pcall(orders.InboxCount, orders)
+        pending = ok and n or 0
+    end
+    if pending > 0 then
+        info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
+        info.text = string.format(L["Craft orders (%d)"], pending)
+        info.func = function() GuildOS.UI:OpenWindow("orders", "forme"); CloseDropDownMenus() end
+        UIDropDownMenu_AddButton(info, level)
+    end
+
     for _, def in ipairs(GuildOS.UI:VisibleFeatures("tab")) do
         info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
         info.text = def.label
@@ -175,6 +189,12 @@ function GuildOS:CreateMinimapButton()
         GameTooltip:AddLine(L["Left-click: open"], 0.8, 0.8, 0.8)
         GameTooltip:AddLine(L["Right-click: menu"], 0.8, 0.8, 0.8)
         GameTooltip:AddLine(L["Drag: move button"], 0.5, 0.5, 0.5)
+        local orders = GuildOS.CraftOrders
+        local ok, pending = false, 0
+        if orders and IsInGuild() then ok, pending = pcall(orders.InboxCount, orders) end
+        if ok and (pending or 0) > 0 then
+            GameTooltip:AddLine(string.format(L["Craft orders waiting for you: %d (right-click)"], pending), C.ok.r, C.ok.g, C.ok.b)
+        end
         if GuildOS.minimapAlert and IsInGuild() then
             GameTooltip:AddLine(L["Somebody asked to join the guild: right-click for the list"], C.ok.r, C.ok.g, C.ok.b)
         elseif GuildOS.minimapAlert then

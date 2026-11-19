@@ -341,6 +341,12 @@ read_globals = {
     -- WoW API: trading a personal item (retail loot council, issue #185; Core/Compat.lua only)
     "C_TooltipInfo",
     "GetTradePlayerItemLink",
+    -- Craft orders (issue #389; Core/Compat.lua only, but the Anniversary scan reads the reagents)
+    "GetTradeTargetItemLink", "ClickTradeButton", "SetTradeMoney", "NUM_TOTAL_EQUIPPED_BAG_SLOTS",
+    "NUM_BAG_SLOTS", "PickupContainerItem", "SplitContainerItem", "ATTACHMENTS_MAX_SEND", "GetSendMailItem",
+    "ClickSendMailItemButton", "SendMailFrame", "MailFrameTab_OnClick", "MailFrameTab2", "SendMailNameEditBox",
+    "SendMailSubjectEditBox", "SetSendMailMoney", "SendMailMoney", "MoneyInputFrame_SetCopper", "MailFrame",
+    "TradeFrame", "GetTradeSkillNumReagents", "GetTradeSkillReagentInfo", "GetTradeSkillReagentItemLink",
     "LE_GAME_ERR_TRADE_COMPLETE",
     "ERR_TRADE_COMPLETE",
 

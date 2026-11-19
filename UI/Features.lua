@@ -58,6 +58,14 @@ UI:RegisterFeature({
     end,
 })
 
+-- Craft orders (issue #389): what I asked the guild's crafters for, what was sent to me or I took,
+-- and the open orders I can craft.
+UI:RegisterFeature({
+    id = "orders", label = L["Orders"], order = 42,
+    subs = { "mine", "forme", "open" },
+    build = function(c, win) GuildOS:CreateCraftOrdersPanel(c, win) end,
+})
+
 -- Journal and Achievements are its last two sub-tabs on WoW: Forever (issue #367), each where its
 -- feature is present and switched on.
 UI:RegisterFeature({
