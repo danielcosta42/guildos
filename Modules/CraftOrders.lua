@@ -639,7 +639,11 @@ function CraftOrders:OrdersWith(partner)
             if r then out[#out + 1] = { o = o, role = r } end
         end
     end
-    table.sort(out, function(a, b) return (a.o.ts or 0) < (b.o.ts or 0) end)
+    -- Oldest first; two placed in the same second by their id, so every run and client agrees.
+    table.sort(out, function(a, b)
+        if (a.o.ts or 0) ~= (b.o.ts or 0) then return (a.o.ts or 0) < (b.o.ts or 0) end
+        return a.o.id < b.o.id
+    end)
     return out
 end
 

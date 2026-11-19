@@ -413,19 +413,25 @@ local p2 = O:Place(2, { tip = 100 })
 from("Cid", "acc", { id = p1.id, at = NOW })
 from("Cid", "acc", { id = p2.id, at = NOW })
 check(#O:OrdersWith(CID) == 2, "both are with Cid")
--- Two orders for the same item: one item handed over moves one of them, never both.
-local q1 = O:Place(100, {}); local q2 = O:Place(100, {})
-from("Cid", "acc", { id = q1.id, at = NOW }); from("Cid", "acc", { id = q2.id, at = NOW })
-O:OnTradeDone(CID, {}, { "item:100:0" }, false, nil)
-local doneCount = 0
-for _, id in ipairs({ q1.id, q2.id, p1.id }) do if O:Get(id).st == "done" then doneCount = doneCount + 1 end end
-check(doneCount == 1, "one trade, one order moved: " .. doneCount)
 O.trade = { partner = CID, pick = p2.id }
 check(O:OrderWith(CID).id == p2.id, "the bar's pick is the one the trade is about")
 O:OnTradeDone(CID, {}, { "item:2:0" }, true, p2.id)
 check(O:Get(p2.id).st == "done" and O:Get(p2.id).paid, "the second one, received, is done and its tip paid")
 check(O:Get(p1.id).st == "accepted" and not O:Get(p1.id).paid, "the first one stays where it was")
 O.trade = nil
+
+-- Two orders for the same item: one item handed over moves one of them, never both, and always the
+-- same one (the oldest, two of the same second by id).
+fresh()
+local q1 = O:Place(100, {}); local q2 = O:Place(100, {})
+from("Cid", "acc", { id = q1.id, at = NOW }); from("Cid", "acc", { id = q2.id, at = NOW })
+local first = O:OrdersWith(CID)[1].o.id
+check(first == (q1.id < q2.id and q1.id or q2.id), "same second: the lower id is the older")
+O:OnTradeDone(CID, {}, { "item:100:0" }, false, nil)
+check(O:Get(first).st == "done", "one trade moves that one")
+local doneCount = 0
+for _, id in ipairs({ q1.id, q2.id }) do if O:Get(id).st == "done" then doneCount = doneCount + 1 end end
+check(doneCount == 1, "and only that one: " .. doneCount)
 
 -- Trading needs a unit: the target, or someone in the group; anyone else gets a whisper instead.
 local traded
