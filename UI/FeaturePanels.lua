@@ -1561,6 +1561,11 @@ end
 local WISH_ROW_HEIGHT = 28
 local WISH_VISIBLE    = 14
 
+-- The addresses the "Edit on the site" buttons show (#385). The first is the player's own page; the
+-- second is the site's root, because the core's page needs the guild key and the addon cannot build it.
+local SITE_WISHLIST_URL = "https://guildos.me/wishlist"
+local SITE_URL = "https://guildos.me"
+
 local function BuildWishlistFrame()
     local f = CreateFrame("Frame", "GuildOSWishlistFrame", UIParent, "BackdropTemplate")
     f:SetSize(500, 520)
@@ -1771,6 +1776,7 @@ local function BuildWishlistFrame()
         removeBtn:SetScript("OnEnter", function()
             removeTex:SetTextColor(1, 0.3, 0.3)
         end)
+        row.upBtn, row.downBtn, row.removeBtn = upBtn, downBtn, removeBtn
 
         row:Hide()
         f.rows[i] = row
@@ -1986,6 +1992,7 @@ local function BuildWishlistFrame()
     local addBtn = UI:CreateButton(f, L["+ Add"], 88, 28)
     addBtn:SetPoint("BOTTOMLEFT", addBox, "BOTTOMRIGHT", 6, 0)
     addBtn:SetScript("OnClick", DoAdd)
+    f.addBtn = addBtn
 
     -- Sync button — anchored to the right, with guaranteed gap from addBtn
     local syncBtn = UI:CreateButton(f, L["Sync"], 80, 28)
@@ -1994,6 +2001,27 @@ local function BuildWishlistFrame()
         if GuildOS.Wishlist then GuildOS.Wishlist:BroadcastMyWishlist(true) end
         GuildOS:Print(L["[Wishlist] Sent to the guild."])
     end)
+    f.syncBtn = syncBtn
+
+    -- When the site holds the list the editor is read-only and these two stand where the controls were
+    -- (shown by RefreshWishlistFrame, never here).
+    local siteLine = UI:CreateText(f, L["Your list comes from the site."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    siteLine:SetPoint("BOTTOMLEFT", 14, 19)
+    siteLine:Hide()
+    f.siteLine = siteLine
+    local siteBtn = UI:CreateButton(f, L["Edit on the site"], 140, 28)
+    siteBtn:SetPoint("BOTTOMRIGHT", -8, 11)
+    -- The line takes the width the button leaves and wraps, so a long translation never runs under it.
+    siteLine:ClearAllPoints()
+    siteLine:SetPoint("BOTTOMLEFT", 14, 11)
+    siteLine:SetPoint("RIGHT", siteBtn, "LEFT", -8, 0)
+    siteLine:SetHeight(28)
+    siteLine:SetJustifyH("LEFT")
+    siteLine:SetJustifyV("MIDDLE")
+    siteLine:SetWordWrap(true)
+    siteBtn:SetScript("OnClick", function() GuildOS:ShowExportPopup(L["Edit on the site"], SITE_WISHLIST_URL) end)
+    siteBtn:Hide()
+    f.siteBtn = siteBtn
 
     GuildOS.WishlistFrame = f
     return f
@@ -2004,8 +2032,9 @@ function GuildOS:ShowWishlistFrame()
         BuildWishlistFrame()
     end
     -- Pre-request item info for all wishlist entries so the client
-    -- fetches any uncached items before (or just after) we display them.
-    local list = (GuildOS.Wishlist and GuildOS.Wishlist:GetMyList()) or {}
+    -- fetches any uncached items before (or just after) we display them: the site's list when it holds mine.
+    local site = GuildOS.Wishlist and GuildOS.Wishlist:SiteListInForce()
+    local list = (site and site.wishlist) or (GuildOS.Wishlist and GuildOS.Wishlist:GetMyList()) or {}
     for _, entry in ipairs(list) do
         GuildOS.Compat.GetItemInfo(entry.itemId)
     end
@@ -2017,7 +2046,15 @@ function GuildOS:RefreshWishlistFrame()
     local f = self.WishlistFrame
     if not f then return end
 
-    local rawList = (GuildOS.Wishlist and GuildOS.Wishlist:GetMyList()) or {}
+    -- The site is the source of this list: the editor only shows it, and what it shows is the site's list in
+    -- force (#385, R23), never the game's own list under the site's name.
+    local site = GuildOS.Wishlist and GuildOS.Wishlist:SiteListInForce()
+    local fromSite = site ~= nil
+    local rawList = (site and site.wishlist) or (GuildOS.Wishlist and GuildOS.Wishlist:GetMyList()) or {}
+    for _, n in ipairs({ "msBtn", "osBtn", "addBox", "addBtn", "syncBtn" }) do
+        if fromSite then f[n]:Hide() else f[n]:Show() end
+    end
+    if fromSite then f.dropdown:Hide(); f.siteLine:Show(); f.siteBtn:Show() else f.siteLine:Hide(); f.siteBtn:Hide() end
 
     -- Split into active and delivered; delivered entries appear at the bottom.
     local active    = {}
@@ -2106,6 +2143,7 @@ function GuildOS:RefreshWishlistFrame()
                     end
                 end
             end
+            if fromSite then row.upBtn:Hide(); row.downBtn:Hide(); row.removeBtn:Hide() end
 
             row:Show()
         else
@@ -2119,6 +2157,7 @@ end
 -- Accessible via the Wishlist panel "Gerenciar Prios" button.
 ----------------------------------------------------------------------
 local PRIO_ROW_HEIGHT = 28
+local PRIO_SITE_ROW = 40   -- the bar's extra height while the site line shows (three lines at size 9)
 local PRIO_VISIBLE    = 14
 
 local function BuildPrioModal()
@@ -2283,6 +2322,7 @@ local function BuildPrioModal()
     searchBox:HookScript("OnEscapePressed", function() prioDropdown:Hide() end)
 
     local loadBtn = UI:CreateButton(f, L["Load"], 90, 26)
+    f.searchBox, f.loadBtn = searchBox, loadBtn
     loadBtn:SetPoint("LEFT", searchBox, "RIGHT", 8, 0)
 
     -- Status line
@@ -2312,6 +2352,7 @@ local function BuildPrioModal()
     local scrollCont = CreateFrame("Frame", nil, f)
     scrollCont:SetPoint("TOPLEFT",     1, -100)
     scrollCont:SetPoint("BOTTOMRIGHT", -1,  44)
+    f.scrollCont = scrollCont
 
     local scrollFrame = CreateFrame("ScrollFrame", "GuildOSPrioScroll", scrollCont, "FauxScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 0, 0); scrollFrame:SetPoint("BOTTOMRIGHT", 0, 0)
@@ -2391,9 +2432,11 @@ local function BuildPrioModal()
     bottomBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
     local bottomLine = UI:CreateSeparator(f)   -- a 1px line, not gold (#371)
     bottomLine:SetPoint("BOTTOMLEFT", 0, 44); bottomLine:SetPoint("BOTTOMRIGHT", 0, 44)
+    f.bottomBg, f.bottomLine = bottomBg, bottomLine
 
     local saveBtn = UI:CreateButton(f, L["Save and Sync"], 130, 26)
     saveBtn:SetPoint("BOTTOMRIGHT", -10, 10)
+    f.saveBtn = saveBtn
     saveBtn:SetScript("OnClick", function()
         if not f.prioData or not f.currentItemId then
             f.statusText:SetText(L["|cffFF4444No item loaded.|r"])
@@ -2419,10 +2462,32 @@ local function BuildPrioModal()
     local cancelBtn = UI:CreateButton(f, L["Cancel"], 80, 26)
     cancelBtn:SetPoint("BOTTOMRIGHT", saveBtn, "BOTTOMLEFT", -8, 0)
     cancelBtn:SetScript("OnClick", function() f:Hide() end)
+    f.cancelBtn = cancelBtn
 
     -- Help text in bottom bar
     local bottomHelp = UI:CreateText(f, L["Reorder with the arrows. Only you see this before saving."], 9, 0.4, 0.4, 0.5)
     bottomHelp:SetPoint("BOTTOMLEFT", 10, 14)
+    f.bottomHelp = bottomHelp
+
+    -- Some core's nights play by the site's priorities: the modal still edits the game's (R22, #385), and
+    -- this line, in the help's place, says that those nights use the site's, beside "Edit on the site".
+    local siteBtn = UI:CreateButton(f, L["Edit on the site"], 130, 26)
+    siteBtn:SetPoint("BOTTOMRIGHT", cancelBtn, "BOTTOMLEFT", -8, 0)
+    siteBtn:SetScript("OnClick", function() GuildOS:ShowExportPopup(L["Edit on the site"], SITE_URL) end)
+    siteBtn:Hide()
+    f.siteBtn = siteBtn
+    local siteLine = UI:CreateText(f, L["Nights of cores whose priorities live on the site use the site's."], 9,
+        C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    -- Its own row above the buttons, across the modal's width, with room for three wrapped lines (the German,
+    -- French and Russian texts are long): ApplyPrioSource grows the bar by PRIO_SITE_ROW while it shows.
+    siteLine:SetPoint("BOTTOMLEFT", 10, 48)
+    siteLine:SetPoint("BOTTOMRIGHT", -10, 48)
+    siteLine:SetHeight(PRIO_SITE_ROW - 6)
+    siteLine:SetJustifyH("LEFT")
+    siteLine:SetJustifyV("MIDDLE")
+    siteLine:SetWordWrap(true)
+    siteLine:Hide()
+    f.siteLine = siteLine
 
     -- Wire up LoadItem
     LoadItem = function()
@@ -2514,14 +2579,34 @@ function GuildOS:ShowPrioModal()
         return
     end
     if not self.PrioModal then BuildPrioModal() end
+    self:ApplyPrioSource()
     self:RefreshPrioModal()
     self.PrioModal:Show()
+end
+
+-- The modal always edits the game's priorities (R22, #385). While some raid of the site's plays by the site's
+-- priorities, one line in the help's place says that those nights use the site's, with "Edit on the site".
+function GuildOS:ApplyPrioSource()
+    local f = self.PrioModal
+    if not f then return end
+    local fromSite = GuildOS.Wishlist:PriosAreFromSite()
+    if fromSite then
+        f.bottomHelp:Hide(); f.siteLine:Show(); f.siteBtn:Show()
+    else
+        f.bottomHelp:Show(); f.siteLine:Hide(); f.siteBtn:Hide()
+    end
+    -- The site line takes a row of its own above the buttons: the bar, its rule and the list's bottom follow.
+    local bar = 44 + (fromSite and PRIO_SITE_ROW or 0)
+    f.bottomBg:SetHeight(bar)
+    f.bottomLine:SetPoint("BOTTOMLEFT", 0, bar); f.bottomLine:SetPoint("BOTTOMRIGHT", 0, bar)
+    f.scrollCont:SetPoint("BOTTOMRIGHT", -1, bar)
 end
 
 function GuildOS:RefreshPrioModal()
     local f = self.PrioModal
     if not f or not f.prioData then return end
 
+    self:ApplyPrioSource()
     local data   = f.prioData
     local total  = #data
     local offset = FauxScrollFrame_GetOffset(f.scrollFrame)
