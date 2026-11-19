@@ -3408,3 +3408,4 @@ L["You already have %d open craft orders."] = "Hai già %d ordini di creazione a
 L["You have no craft orders. Find an item in Find a Crafter or on the Professions tab, or type /gos order and an item."] = "Non hai ordini di creazione. Trova un oggetto in Find a Crafter o nella scheda Professioni, oppure scrivi /gos order e un oggetto."
 L["tip"] = "mancia"
 L["you have %d"] = "ne hai %d"
+L["%s accepted the order for %s at the same moment, and keeps it."] = "%s ha accettato l'ordine di %s nello stesso momento e lo tiene."

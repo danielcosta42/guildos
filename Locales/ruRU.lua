@@ -3264,3 +3264,4 @@ L["You already have %d open craft orders."] = "У вас уже %d открыт�
 L["You have no craft orders. Find an item in Find a Crafter or on the Professions tab, or type /gos order and an item."] = "У вас нет заказов ремесла. Найдите предмет в Find a Crafter или на вкладке Профессии, или введите /gos order и предмет."
 L["tip"] = "чаевые"
 L["you have %d"] = "у вас %d"
+L["%s accepted the order for %s at the same moment, and keeps it."] = "%s принял(а) заказ %s в тот же момент и оставляет его себе."

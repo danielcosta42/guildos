@@ -165,7 +165,8 @@ local function BuildFinder()
         row.scopeFS:SetText(scope)
 
         local itemId = q.itemId
-        row.orderBtn:SetShown(key ~= nil and GuildOS.ShowCraftOrderDialog ~= nil)
+        local me = GuildOS.CraftOrders and GuildOS.CraftOrders:MyKey()
+        row.orderBtn:SetShown(key ~= nil and key ~= me and GuildOS.ShowCraftOrderDialog ~= nil)
         row.orderBtn:SetScript("OnClick", function() GuildOS:ShowCraftOrderDialog(itemId, key) end)
         row.whisperBtn:SetScript("OnClick", function()
             local link = itemId and select(2, GuildOS.Compat.GetItemInfo(itemId))

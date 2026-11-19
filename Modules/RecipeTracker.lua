@@ -211,6 +211,10 @@ function RecipeTracker:KeepReagents(itemId, index)
     end
     GuildOS.db.craftReagents = GuildOS.db.craftReagents or {}
     GuildOS.db.craftReagents[itemId] = flat
+    -- How many one craft makes (ammo, some reagents make several): the least it promises.
+    local made = GetTradeSkillNumMade and tonumber((GetTradeSkillNumMade(index)))
+    GuildOS.db.craftYield = GuildOS.db.craftYield or {}
+    GuildOS.db.craftYield[itemId] = (made and made >= 1) and math.floor(made) or nil
 end
 
 ----------------------------------------------------------------------

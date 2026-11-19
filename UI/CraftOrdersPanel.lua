@@ -374,15 +374,17 @@ function GuildOS:CreateCraftOrdersPanel(container, _mainFrame)
         end)
     end
 
-    -- Something waiting for me opens the tab on it.
-    container:SetScript("OnShow", function()
-        if not active then
-            select(#Orders():Rows("forme") > 0 and "forme" or "mine")
-        else
-            select(active)
-        end
-    end)
-    select("mine")
+    -- Opened with something new for me, the tab shows it; otherwise it stays where it was left.
+    local seenForMe = 0
+    local function openOn()
+        local n = 0
+        for _, o in ipairs(Orders():Rows("forme")) do if Orders().IsActive(o) then n = n + 1 end end
+        local key = (n > seenForMe and "forme") or active or "mine"
+        seenForMe = n
+        select(key)
+    end
+    container:SetScript("OnShow", openOn)
+    openOn()
     container.SelectSub = select
     container.ActiveSub = function() return active end
     container.panels = panels
@@ -502,6 +504,7 @@ local function buildDialog()
 
         local n = math.max(1, math.min(O.MAX_N, tonumber(f.qty:GetText()) or 1))
         local rg = id and O:Reagents(id) or {}
+        local crafts = id and math.ceil(n / O:Yield(id)) or n
         local y = -214
         for i, slot in ipairs(f.rg) do
             local r = rg[i]
@@ -509,8 +512,8 @@ local function buildDialog()
             if r then
                 local rname, _, _, rtex = itemInfo(r.itemID)
                 slot.icon:SetTexture(rtex or QUESTION)
-                slot.text:SetText(string.format("%s  %s×%d|r", rname or ("item:" .. r.itemID), hex(C.label), r.count * n))
-                local have, need = GuildOS.Compat.GetItemCount(r.itemID) or 0, r.count * n
+                slot.text:SetText(string.format("%s  %s×%d|r", rname or ("item:" .. r.itemID), hex(C.label), r.count * crafts))
+                local have, need = GuildOS.Compat.GetItemCount(r.itemID) or 0, r.count * crafts
                 local col = (f.mode == "own" and C.textSoft) or (have >= need and C.ok) or C.red
                 slot.have:SetText(string.format(L["you have %d"], have))
                 slot.have:SetTextColor(col.r, col.g, col.b)

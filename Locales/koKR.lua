@@ -3264,3 +3264,4 @@ L["You already have %d open craft orders."] = "이미 열린 제작 주문이 %d
 L["You have no craft orders. Find an item in Find a Crafter or on the Professions tab, or type /gos order and an item."] = "제작 주문이 없습니다. Find a Crafter나 전문기술 탭에서 아이템을 찾거나 /gos order 와 아이템을 입력하세요."
 L["tip"] = "팁"
 L["you have %d"] = "보유 %d"
+L["%s accepted the order for %s at the same moment, and keeps it."] = "%s님이 같은 순간에 %s 주문을 수락하여 가져갑니다."

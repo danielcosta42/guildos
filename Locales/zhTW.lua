@@ -3264,3 +3264,4 @@ L["You already have %d open craft orders."] = "你已有 %d 個開放的製造�
 L["You have no craft orders. Find an item in Find a Crafter or on the Professions tab, or type /gos order and an item."] = "你沒有製造訂單。在 Find a Crafter 或專業技能頁中找到物品，或輸入 /gos order 加物品。"
 L["tip"] = "小費"
 L["you have %d"] = "你有 %d"
+L["%s accepted the order for %s at the same moment, and keeps it."] = "%s 在同一時刻接受了 %s 的訂單，訂單歸他。"

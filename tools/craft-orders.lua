@@ -150,6 +150,13 @@ for _ = 2, O.OPEN_PER do check(O:Place(100, {}), "up to five open") end
 local none, why = O:Place(100, {})
 check(none == nil and why, "a sixth is refused, and says why")
 check(O:Place(0, {}) == nil and O:Place("x", {}) == nil, "no item, no order")
+fresh()
+local big = O:Place(100, { n = 25, tip = 2e12 })
+check(big.n == O.MAX_N and big.tip == O.TIP_MAX, "too many items or too big a tip is clamped, not dropped")
+GuildOS.db.craftYield = { [100] = 5 }
+check(O:Yield(100) == 5 and O:Crafts({ item = 100, n = 12 }) == 3, "a craft that makes five: twelve take three crafts")
+check(O:Needs({ item = 100, n = 12 })[1].need == 6, "and the materials of three crafts")
+check(O:Yield(100, { y = 2 }) == 2, "the crafter's own yield first")
 
 -- ── What arrives ────────────────────────────────────────────────────────
 fresh()
@@ -176,7 +183,8 @@ check(#O:Rows("open") == 3 and O:InboxCount() == 3, "and every open order for it
 
 -- ── Accepting ───────────────────────────────────────────────────────────
 fresh()
-from("Bea", "new", { id = "X", item = 100, n = 1 })
+from("Bea", "new", { id = "X", item = 100, n = 1, ts = NOW - 100 })
+check(O:Apply("acc", { id = "X", at = NOW - 200 }, CID) == nil, "no acceptance from before the order")
 check(O:Apply("acc", { id = "X", at = NOW }, BEA) == nil, "the author does not accept their own order")
 check(O:Apply("acc", { id = "X", at = NOW, rg = { 1, 3 } }, CID), "a crafter accepts")
 check(O:Get("X").st == "accepted" and O:Get("X").cr == CID, "and holds it")
@@ -184,6 +192,30 @@ check(O:Apply("acc", { id = "X", at = NOW + 5 }, DAN) == nil, "a later acceptanc
 check(O:Apply("acc", { id = "X", at = NOW - 5 }, DAN) and O:Get("X").cr == DAN, "an earlier one wins: every client keeps the same")
 check(O:Apply("acc", { id = "X", at = NOW - 5 }, CID) and O:Get("X").cr == CID, "at the same time, the lower name")
 check(O.Wins(1, "b", 1, "a") == false and O.Wins(1, "a", 2, "a") == true, "the tie rule")
+check(O:Apply("acc", { id = "X", at = NOW - 30 }, DAN) and O:Get("X").cr == DAN, "an earlier one within a minute still wins")
+check(O:Apply("acc", { id = "X", at = NOW - 30 - O.TAKEOVER - 1 }, CID) == nil,
+      "but not one far earlier: that is a takeover, not two at once")
+O:Apply("mats", { id = "X" }, BEA)
+check(O:Apply("acc", { id = "X", at = NOW - 31 }, CID) == nil and O:Get("X").cr == DAN,
+      "once the materials went to a crafter, nobody takes the order from them")
+
+-- Messages in any order end the same: an acceptance from before a release does not take it again.
+fresh()
+from("Bea", "new", { id = "R", item = 100, n = 1, ts = NOW - 100 })
+O:Apply("acc", { id = "R", at = NOW - 90 }, CID)
+O:Apply("rel", { id = "R", at = NOW - 88 }, CID)
+check(O:Apply("acc", { id = "R", at = NOW - 89 }, DAN) == nil and O:Get("R").st == "open",
+      "Dan's acceptance from before Cid gave it back arrives late: the order stays open")
+check(O:Apply("acc", { id = "R", at = NOW - 80 }, DAN) and O:Get("R").cr == DAN, "a new one takes it")
+
+-- The crafter who lost a tie hears it.
+fresh()
+CRAFTS_ME = true; O:ForgetCrafters()
+from("Bea", "new", { id = "TIE", item = 100, n = 1, ts = NOW - 100 })
+check(O:Act("TIE", "accept"), "I accept")
+printed = {}
+from("Dan", "acc", { id = "TIE", at = NOW - 50 })
+check(O:Get("TIE").cr == DAN and printed[1] and printed[1]:find("same moment"), "Dan was first: I am told he keeps it")
 
 -- ── Sent to one crafter ─────────────────────────────────────────────────
 fresh()
@@ -275,6 +307,31 @@ check(O:Get("H1").st == "accepted", "another author for a known order is not tak
 from("Jon", "have", { l = { { id = "H1", who = "Bea", item = 100, n = 2, st = "done", cr = "Cid", ts = NOW, at = NOW + 10 } } })
 check(O:Get("H1").st == "done", "a newer state of a known order is")
 
+-- An answer is a hint: it cannot cancel, revive, reassign, or speak for me.
+fresh()
+from("Bea", "new", { id = "F1", item = 100, n = 1 })
+from("Dan", "have", { l = { { id = "F1", who = "Bea", item = 100, n = 1, st = "cancelled", ts = NOW, at = NOW + 60 } } })
+check(O:Get("F1").st == "open", "an answer does not cancel an order")
+O:Apply("acc", { id = "F1", at = NOW }, CID)
+from("Dan", "have", { l = { { id = "F1", who = "Bea", item = 100, n = 1, st = "mats", cr = "Dan", ts = NOW, at = NOW + 60 } } })
+check(O:Get("F1").cr == CID and O:Get("F1").st == "accepted", "nor hand it to another crafter")
+O:Apply("can", { id = "F1" }, BEA)
+from("Dan", "have", { l = { { id = "F1", who = "Bea", item = 100, n = 1, st = "accepted", cr = "Dan", ts = NOW, at = NOW + 60 } } })
+check(O:Get("F1").st == "cancelled", "nor bring a cancelled one back")
+from("Dan", "have", { l = { { id = "F2", who = "Ana", item = 100, n = 1, ts = NOW, at = NOW } } })
+check(O:Get("F2") == nil, "nor put an order in my name")
+from("Dan", "have", { l = { { id = "F3", who = "Bea", item = 100, n = 1, st = "cancelled", ts = NOW, at = NOW } } })
+check(O:Get("F3") == nil, "a closed order I never knew is not kept")
+local flood = {}
+for i = 1, 8 do flood[i] = { id = "FL" .. i, who = "Eve", item = 100, n = 1, ts = NOW, at = NOW } end
+from("Dan", "have", { l = flood })
+local eve = 0
+for _, x in pairs(GuildOS.db.craftOrders) do if x.who == K("Eve") then eve = eve + 1 end end
+check(eve == O.OPEN_PER, "nor more open orders for one author than the cap")
+local myOrder = O:Place(100, {})
+from("Dan", "have", { l = { { id = myOrder.id, who = "Ana", item = 100, n = 1, st = "accepted", cr = "Dan", ts = NOW, at = NOW + 60 } } })
+check(O:Get(myOrder.id).st == "open", "and my own orders come to me live, never from an answer")
+
 -- ── The trade and the mail ──────────────────────────────────────────────
 fresh()
 local t = O:Place(100, { n = 2, tip = 5000 })
@@ -299,9 +356,14 @@ check(O:Act("C1", "accept"), "I accept an order")
 check(last("acc").data.rg, "and tell what it takes")
 local rows = O:MailRows()
 check(#rows == 1 and rows[1].role == "crafter" and rows[1].act == "done", "I can mail the item")
-O.mailPending = { id = "C1", act = "done" }
+O:FillMail(rows[1])
+check(O.mailPending and O.mailPending.to == "Bea", "the bar writes the mail to the author")
+O:OnSendMail("Someone", "Hello")
 O:OnMailSent()
-check(O:Get("C1").st == "done", "the mail went: done")
+check(O:Get("C1").st == "accepted" and O.mailPending, "another mail sent from the box does not move the order")
+O:OnSendMail("bea", O.mailPending.subject)
+O:OnMailSent()
+check(O:Get("C1").st == "done", "the mail the bar wrote went: done")
 check(#O:MailRows() == 0, "nothing more to mail")
 
 -- ── Putting the items in ────────────────────────────────────────────────

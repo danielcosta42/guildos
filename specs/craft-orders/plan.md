@@ -22,7 +22,7 @@
 | Action | Payload | Who may send it |
 |---|---|---|
 | `new` | the order | anyone; the author is the sender; 5 open per author |
-| `acc` | `{ id, at, rg }` | a member, or the target when the order has one; earlier `at` wins, then the lower name |
+| `acc` | `{ id, at, rg, y }` | a member, or the target when the order has one. `at` must not be before `ts` or the last release (`rel`). It replaces another crafter only while `accepted` and within 60 s of that acceptance: the earlier `at` wins, then the lower name. |
 | `dec` | `{ id }` | the target: `to` is cleared, the order stays open |
 | `rel` | `{ id }` | the crafter: back to open |
 | `mats` | `{ id }` | the author or the crafter, while it is accepted and mode is `mats` |
@@ -30,4 +30,8 @@
 | `can` | `{ id }` | the author |
 | `ask` / `have` | `{}` / `{ list }` | a login asks; one answer after 2–10 s; an answer with nothing new to us cancels ours; at most one answer a minute |
 
-Orders merged from `have`: the newer `at` wins. A known order's author never changes.
+Orders merged from `have` are a hint.
+- Unknown orders are kept only while running, within their author's cap, and never when they name me.
+- Known orders only move forward (open < accepted < mats < done), with the same author and target,
+  and the same crafter once one has accepted.
+- Never applied from `have`: cancelling, reviving, or touching orders I placed or took.

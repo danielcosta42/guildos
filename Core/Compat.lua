@@ -1268,8 +1268,17 @@ function Compat.FillSendMail(to, subject, copper)
     if SendMailNameEditBox and to then SendMailNameEditBox:SetText(to) end
     if SendMailSubjectEditBox and subject then SendMailSubjectEditBox:SetText(subject) end
     copper = math.min(tonumber(copper) or 0, Compat.PlayerMoney())
-    if copper > 0 and SetSendMailMoney then SetSendMailMoney(copper) end
-    if copper > 0 and SendMailMoney and MoneyInputFrame_SetCopper then MoneyInputFrame_SetCopper(SendMailMoney, copper) end
+    if copper > 0 then
+        -- "Send Money", never C.O.D.: the send reads the money field and charges it on delivery
+        -- when the C.O.D. button is the one checked.
+        if SendMailRadioButton_OnClick then pcall(SendMailRadioButton_OnClick, 1) end
+        if SendMailMoney and MoneyInputFrame_SetCopper then MoneyInputFrame_SetCopper(SendMailMoney, copper) end
+    end
+end
+
+-- Call fn(recipient, subject) each time the game sends a mail.
+function Compat.HookSendMail(fn)
+    if SendMail and hooksecurefunc then hooksecurefunc("SendMail", function(to, subject) fn(to, subject) end) end
 end
 
 -- Whether a UI_INFO_MESSAGE says a trade has just gone through ("Trade complete.").

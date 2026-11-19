@@ -288,6 +288,7 @@ local function ShowCard(e, anchor, who, repaint)
     for i, slot in ipairs(card.crafters) do
         local c = list[i]
         local canOrder = c ~= nil and e.out and e.out > 0 and GuildOS.ShowCraftOrderDialog ~= nil
+            and not (GuildOS.CraftOrders and c.key == GuildOS.CraftOrders:MyKey())
         slot.text:SetShown(c ~= nil)
         slot.btn:SetShown(c ~= nil and c.online)
         slot.order:SetShown(canOrder and true or false)
