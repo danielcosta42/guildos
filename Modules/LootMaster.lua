@@ -1238,9 +1238,7 @@ function LootMaster:StartRestrictedRoll(tied, _allCandidates, itemLink, _lootSlo
     -- Show roll tracker for ML
     self:ShowRollFrame()
 
-    GuildOS:Print(string.format(kind == "prio" and L["|cffFFD700Prio tie|r [prio #%d]: %s - only they may roll (%ds)"]
-        or L["|cffFFD700Wishlist tie|r [wishlist #%d]: %s - only they may roll (%ds)"],
-        tied[1].order, nameStr, duration))
+    GuildOS:Print(string.format(kind == "prio" and L["|cffFFD700Prio tie|r [prio #%d]: %s - only they may roll (%ds)"] or L["|cffFFD700Wishlist tie|r [wishlist #%d]: %s - only they may roll (%ds)"], tied[1].order, nameStr, duration))
 end
 
 ----------------------------------------------------------------------
