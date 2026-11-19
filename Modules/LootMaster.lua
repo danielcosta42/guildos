@@ -95,6 +95,16 @@ function LootMaster:SafeSendChatAuto(msg, channel)
     self:SafeSendChat(msg, channel)
 end
 
+-- A line for one player: whispered from a click, printed for the loot master where Forever blocks
+-- automated chat (or off a raid).
+function LootMaster:SafeWhisper(msg, to)
+    if IsInRaid() and not self.testMode and not GuildOS.Compat.NeedsClick() then
+        SendChatMessage(msg, "WHISPER", nil, to)
+    else
+        GuildOS:Print("|cff888888[>" .. tostring(to) .. "]|r " .. msg)
+    end
+end
+
 function LootMaster:SafeSendAddon(prefix, payload, channel)
     if IsInRaid() and not self.testMode then
         GuildOS.Compat.SendAddonMessageNow(prefix, payload, channel)
@@ -802,10 +812,11 @@ function LootMaster:SheetHidden()
 end
 
 -- Every item's prio list in force, for the screens that list them all: the site's while its raid's
--- night lasts, else the game's.
+-- night lasts, else the game's. The second value says it is the site's (places, not positions).
 function LootMaster:AllPrios()
     local site = GuildOS.SiteLoot and GuildOS.SiteLoot:Prios()
-    return site or (GuildOS.db and GuildOS.db.lootPrios) or {}
+    if site then return site, true end
+    return (GuildOS.db and GuildOS.db.lootPrios) or {}, false
 end
 
 ----------------------------------------------------------------------
@@ -983,7 +994,7 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
                 end
             end
             if wishlistOnly and #tied >= 2 then
-                self:StartRestrictedRoll(tied, prioList, itemLink, lootSlot, itemId)
+                self:StartRestrictedRoll(tied, prioList, itemLink, lootSlot, itemId, "prio")
             elseif wishlistOnly then
                 -- Direct award prompt for top prio player
                 local council = self:ResolveWishlistCouncil(itemId) or {}
@@ -992,8 +1003,15 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
                     { name = topPrio.name, class = topPrio.class or "UNKNOWN", order = 1, isPrio = true },
                     itemLink, lootSlot, council)
             else
-                -- Open roll but announce prio info (DoNormalAnnounce calls AnnounceSoftReserves)
-                self:DoNormalAnnounce(itemLink, lootSlot, itemId, nil, topPrio)
+                -- Open roll but announce prio info (DoNormalAnnounce calls AnnounceSoftReserves). A tie
+                -- at the top names every one of the tied.
+                local who = topPrio
+                if #tied >= 2 then
+                    local names = {}
+                    for _, e in ipairs(tied) do names[#names + 1] = e.name end
+                    who = { name = table.concat(names, ", "), tied = true }
+                end
+                self:DoNormalAnnounce(itemLink, lootSlot, itemId, nil, who)
             end
             return
         end
@@ -1053,8 +1071,8 @@ function LootMaster:DoNormalAnnounce(itemLink, _lootSlot, itemId, topEntry, prio
 
     -- Post priority info note
     if prioEntry then
-        local infoMsg = format(L["[Priority] %s has official prio #1 - roll open to everyone"],
-            prioEntry.name)
+        local infoMsg = format(prioEntry.tied and L["[Priority] %s are tied at official prio #1 - roll open to everyone"]
+            or L["[Priority] %s has official prio #1 - roll open to everyone"], prioEntry.name)
         self:SafeSendChat(infoMsg, "RAID")
     elseif topEntry then
         local infoMsg = format(L["[Priority] %s (#%d on wishlist) - roll open to everyone"],
@@ -1184,7 +1202,7 @@ function LootMaster:AnnounceSoftReserves(itemId)
     self:SafeSendChat(format(L["[SR] Soft reserved by: %s"], table.concat(names, ", ")), "RAID")
 end
 
-function LootMaster:StartRestrictedRoll(tied, _allCandidates, itemLink, _lootSlot, itemId)
+function LootMaster:StartRestrictedRoll(tied, _allCandidates, itemLink, _lootSlot, itemId, kind)
     -- Build restricted set (lowercase names for fast lookup)
     self.restrictedRollers = {}
     local names = {}
@@ -1192,7 +1210,7 @@ function LootMaster:StartRestrictedRoll(tied, _allCandidates, itemLink, _lootSlo
         self.restrictedRollers[strlower(c.name)] = true
         table.insert(names, c.name)
     end
-    local orderStr = string.format(L["wishlist #%d"], tied[1].order)
+    local orderStr = string.format(kind == "prio" and L["prio #%d"] or L["wishlist #%d"], tied[1].order)
     local nameStr = table.concat(names, ", ")
 
     -- Announce in RAID_WARNING — only listed players should roll
@@ -1220,7 +1238,8 @@ function LootMaster:StartRestrictedRoll(tied, _allCandidates, itemLink, _lootSlo
     -- Show roll tracker for ML
     self:ShowRollFrame()
 
-    GuildOS:Print(string.format(L["|cffFFD700Wishlist tie|r [wishlist #%d]: %s - only they may roll (%ds)"],
+    GuildOS:Print(string.format(kind == "prio" and L["|cffFFD700Prio tie|r [prio #%d]: %s - only they may roll (%ds)"]
+        or L["|cffFFD700Wishlist tie|r [wishlist #%d]: %s - only they may roll (%ds)"],
         tied[1].order, nameStr, duration))
 end
 
@@ -1602,13 +1621,21 @@ function LootMaster:RegisterRollNow(name, rollType, roll, extra)
         told[id] = true
         self:SafeSendChatAuto(line, "RAID")
     end
+    -- What a hidden sheet's "reserved" filter says depends only on this roller's own reserve, so it goes
+    -- to them alone, never to the raid: the raid's chat would name everybody without one (R12, R16).
+    local function whisperOnce(what, line)
+        local id = key .. "|w|" .. what
+        if told[id] then return end
+        told[id] = true
+        self:SafeWhisper(line, name)
+    end
+    local hiddenReserve = self:SheetHidden()
 
     local asked = rollType   -- what was clicked, before a filter reads it as another answer
     local answer, filter = GuildOS.LootRule:AnswerFor(cand, rollType, rule)
     if filter and not answer then
-        -- "Not reserved" in the raid's chat would tell a hidden sheet's reserves (R12).
-        if filter.k == "reserved" and self:SheetHidden() then return end
-        sayOnce("out|" .. filter.k .. "|" .. tostring(filter.acct or ""), self:BlockedLine(name, filter, cand, rule))
+        local say1 = (filter.k == "reserved" and hiddenReserve) and whisperOnce or sayOnce
+        say1("out|" .. filter.k .. "|" .. tostring(filter.acct or ""), self:BlockedLine(name, filter, cand, rule))
         return
     end
     if filter then
@@ -1618,7 +1645,8 @@ function LootMaster:RegisterRollNow(name, rollType, roll, extra)
                 L["[Loot] %s: MS converted to OS (attendance %d%% below minimum %d%%)"],
                 name, ctx.att25, filter.min))
         else
-            sayOnce(what, string.format(L["[Loot] %s: %s read as %s (%s)"], name,
+            local say2 = (filter.k == "reserved" and hiddenReserve) and whisperOnce or sayOnce
+            say2(what, string.format(L["[Loot] %s: %s read as %s (%s)"], name,
                 self:AnswerLabel(filter.from), self:AnswerLabel(filter.to), self:FilterReason(filter, cand, rule)))
         end
         rollType = answer

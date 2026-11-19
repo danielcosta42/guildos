@@ -849,10 +849,11 @@ local function buildLists(panel)
     local srClearBtn = UI:CreateButton(srView, L["Clear"], 70, 22)
     srClearBtn:SetPoint("LEFT", srImportBtn, "RIGHT", 6, 0)
     local srFromSite = UI:CreateText(srView, L["Tonight the reserves come from the site."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    srFromSite:SetPoint("LEFT", srClearBtn, "RIGHT", 10, 0)
     srFromSite:Hide()
     local srCount = UI:CreateText(srView, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     srCount:SetPoint("TOPRIGHT", -GAP, -4)
+    -- Beside the count, which everybody sees (the import and clear buttons are the officers').
+    srFromSite:SetPoint("TOPRIGHT", srCount, "TOPLEFT", -12, 0)
     -- The table's header row: the shared one, no fill and a 1px rule under it (#371).
     local srHeader = UI:CreateTableHeader(srView)
     srHeader:SetPoint("TOPLEFT", 0, -(TOOLBAR_H + GAP))

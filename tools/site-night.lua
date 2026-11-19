@@ -207,7 +207,7 @@ end
 siteNight()
 check(SL:Active(NOW) and SL:Active(NOW - 2 * 3600) and SL:Active(NOW + 8 * 3600), "active from two hours before to eight after")
 check(not SL:Active(NOW - 2 * 3600 - 1) and not SL:Active(NOW + 8 * 3600 + 1), "and not a second outside")
-check(SL:Active() , "the default clock is time()")
+check(SL:Active(), "the default clock is the realm's, GetServerTime()")
 check(SL:Reserves() and SL:Prios() and SL:WishlistOf("ana") and not SL:WishlistOf("cy"), "the three readers answer in the night")
 check(names(SR:GetReserves(ITEM)) == "Ana", "reserves: the site's, not the game's Bo")
 check(names(SR:GetInRaidReserves(ITEM)) == "Ana", "and the ones in the raid")
@@ -357,23 +357,47 @@ end
 
 -- ── 6. Two raids of the guild in one window: each is its own sheet ───
 do
+  local RT = GuildOS.RaidTracker
   local function entry(who, startsAt)
     return { startsAt = startsAt, instanceKey = "kara",
       softres = { items = { [ITEM] = { { name = who, class = "MAGE", note = "", plusOnes = 0 } } } } }
   end
   GuildOS.db.siteLoot = { at = time(), raids = { first = entry("Ana", NOW), second = entry("Bo", NOW + 1800) } }
-  clock = NOW + 2700
-  check(names(SR:GetReserves(ITEM)) == "Bo", "two raids: closer to the second's start, it is the second's sheet")
-  clock = NOW - 3000
-  check(names(SR:GetReserves(ITEM)) == "Ana", "and earlier, the first's: nobody is shut out by the other raid's reserves")
-  local id = SL:ActiveRaid()
-  check(id == "first", "the active raid is named")
+  -- A client stamped with its raid at zone-in keeps that raid's sheet the whole night, whatever the other's start.
+  RT.currentRaid = { raidId = "first" }
+  for _, when in ipairs({ NOW - 3000, NOW + 900, NOW + 2700, NOW + 5 * 3600 }) do
+    clock = when
+    check(SL:ActiveRaid() == "first" and names(SR:GetReserves(ITEM)) == "Ana",
+      "stamped with the first raid, still the first's sheet at " .. (when - NOW) .. "s")
+  end
+  RT.currentRaid = { raidId = "second" }
+  for _, when in ipairs({ NOW - 3000, NOW + 2700 }) do
+    clock = when
+    check(SL:ActiveRaid() == "second" and names(SR:GetReserves(ITEM)) == "Bo", "stamped with the second, its own at " .. (when - NOW) .. "s")
+  end
   clock = NOW + 2700
   c = roll()
   check(c("Bo").softRes and c("Ana").softRes == nil, "a roll of the second raid reads the second's reserves only")
+  clock = NOW + 9 * 3600
+  check(not SL:Active() and SL:ActiveRaid() == nil, "stamped, but the raid's night is over: the game's tables")
+  -- No stamp: the nearest start, and the same answer every time on a tie.
+  RT.currentRaid = nil
+  clock = NOW + 2700
+  check(SL:ActiveRaid() == "second", "no stamp: the nearest start")
+  clock = NOW - 3000
+  check(SL:ActiveRaid() == "first", "and earlier, the first")
+  RT.currentRaid = { raidId = "gone" }
+  clock = NOW + 2700
+  check(SL:ActiveRaid() == "second", "a stamp the site has no entry for falls back to the nearest start")
+  RT.currentRaid = nil
+  for i = 1, 25 do
+    GuildOS.db.siteLoot = { at = time(), raids = { zeta = entry("Cy", NOW), alfa = entry("Dee", NOW), mid = entry("Ana", NOW) } }
+    check(SL:ActiveRaid() == "alfa", "equal starts: by raidId, always the same (round " .. i .. ")")
+  end
   instance = 565
-  check(not SL:Active() and SL:Reserves() == nil, "in another instance the site sheets are not used")
+  check(not SL:Active() and SL:Reserves() == nil, "in another instance, with no stamp, the site sheets are not used")
   instance = 532
+  GuildOS.db.siteLoot = { at = time(), raids = { first = entry("Ana", NOW), second = entry("Bo", NOW + 1800) } }
   check(SL:ListsFromSite("ana") == false and SL:PriosFromSite() == false, "no list of anybody's in those entries")
   clock = NOW
 end
@@ -439,22 +463,50 @@ do
   LM:EndRolling(true)
   check(table.concat(said, "\n"):find("Reserve", 1, true), "visible: the winner line says it as it always did")
 
-  -- The filter that keeps somebody out of a roll for not having reserved.
+  -- The filters of a rule that need a reserve: they depend on the roller's own reserve only, so a hidden
+  -- sheet says them to that roller, never to the raid.
+  local whispers = {}
+  local realSend = SendChatMessage
+  SendChatMessage = function(msg, channel, _, to) whispers[#whispers + 1] = { msg = msg, channel = channel, to = to } end
   local answerFor = rule.AnswerFor
-  rule.AnswerFor = function() return nil, { k = "reserved" } end
+  local function fresh()
+    LM.activeLoot, LM.rolls = nil, {}
+    LM:AnnounceItem(LINK, nil)
+    said, whispers = {}, {}
+  end
+  local function raidHears(name)
+    for _, m in ipairs(said) do if m:find(name, 1, true) then return true end end
+    return false
+  end
+  local function whisperedTo(name)
+    for _, w in ipairs(whispers) do if w.to == name and w.channel == "WHISPER" then return w.msg end end
+  end
   site().softres.hidden = true
-  LM.activeLoot, LM.rolls = nil, {}
-  LM:AnnounceItem(LINK, nil)
-  said = {}
+  rule.AnswerFor = function() return nil, { k = "reserved" } end
+  fresh()
   LM:RegisterRoll("Cy", "MS", 10)
-  check(#said == 0 and LM.rolls[K("Cy")] == nil, "hidden: nobody is told in the raid's chat that the item was not reserved")
+  LM:RegisterRoll("Cy", "MS", 10)
+  check(LM.rolls[K("Cy")] == nil and not raidHears("Cy"), "hidden: the block line is not in the raid's chat")
+  check(whisperedTo("Cy") and whisperedTo("Cy"):find("not reserved", 1, true) and #whispers == 1,
+    "hidden: Cy is told it, alone, and once")
+  rule.AnswerFor = function() return "OS", { k = "reserved", act = "downgrade", from = "MS", to = "OS" } end
+  fresh()
+  LM:RegisterRoll("Cy", "MS", 10)
+  LM:RegisterRoll("Bo", "MS", 10)
+  check(not raidHears("Cy") and not raidHears("Bo") and not raidHears("not reserved"),
+    "hidden: the downgrade form names nobody in the raid's chat")
+  check(whisperedTo("Cy") and whisperedTo("Cy"):find("read as", 1, true) and whisperedTo("Bo"), "hidden: each roller is whispered theirs")
+  check(LM.rolls[K("Cy")] and LM.rolls[K("Cy")].rollType == "OS", "and the downgrade still applies")
   site().softres.hidden = nil
-  LM.activeLoot, LM.rolls = nil, {}
-  LM:AnnounceItem(LINK, nil)
-  said = {}
+  fresh()
   LM:RegisterRoll("Cy", "MS", 10)
-  check(table.concat(said, "\n"):find("not reserved", 1, true), "visible: they are")
+  check(raidHears("Cy") and #whispers == 0, "visible: the raid hears it, as it always did")
+  rule.AnswerFor = function() return nil, { k = "reserved" } end
+  fresh()
+  LM:RegisterRoll("Cy", "MS", 10)
+  check(table.concat(said, "\n"):find("not reserved", 1, true) and #whispers == 0, "visible: and so the block line")
   rule.AnswerFor = answerFor
+  SendChatMessage = realSend
 end
 
 -- ── 10. A tie in the site's priorities is not a direct award ─────────
@@ -471,6 +523,20 @@ do
   LM:AnnounceItem(LINK, nil)
   check(restricted and #restricted == 2 and direct == nil, "a tie at the top of the site's priorities: a roll among the tied, no direct award")
   check(restricted[1].name == "Ana" and restricted[2].name == "Bo", "the tied, and only them")
+  -- The restricted roll says prio for a prio tie; the open roll names all of the tied.
+  LM.StartRestrictedRoll, LM.AutoCouncilAward = oldR, oldA
+  said, printed = {}, {}
+  LM:StartRestrictedRoll(restricted, nil, LINK, nil, ITEM, "prio")
+  check(table.concat(said, "\n"):find("Tie [prio #1]", 1, true) and table.concat(printed, "\n"):find("Prio tie", 1, true),
+    "the restricted roll of a prio tie says prio")
+  LM:CancelRolling()
+  GuildOS.db.settings.lootSystem = "rolls"
+  said, printed = {}, {}
+  LM.activeLoot, LM.rolls = nil, {}
+  LM:AnnounceItem(LINK, nil)
+  check(table.concat(said, "\n"):find("Ana, Bo are tied at official prio #1", 1, true), "an open roll names every one of the tied")
+  GuildOS.db.settings.lootSystem = "wishlist"
+  LM.StartRestrictedRoll, LM.AutoCouncilAward = function(_, tied) restricted = tied end, function(_, top) direct = top end
   -- Without a tie the top one is still prompted.
   siteNight({ softres = false, wishlists = false,
     prios = { [ITEM] = { { name = "Ana", class = "MAGE", order = 1 }, { name = "Bo", class = "MAGE", order = 2 } } } })

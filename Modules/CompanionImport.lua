@@ -551,7 +551,9 @@ function Import:ConsumeInbox()
     local kept, now = {}, GetServerTime()
     local old = GuildOS.db.siteLoot
     for id, e in pairs(type(old) == "table" and type(old.raids) == "table" and old.raids or {}) do
-        if type(e) == "table" and now <= (tonumber(e.startsAt) or 0) + MATCH_LATE then kept[id] = e end
+        local startsAt = type(e) == "table" and tonumber(e.startsAt) or 0
+        -- Only a raid under way: one the site stopped listing before it began was taken down.
+        if type(e) == "table" and now >= startsAt - MATCH_EARLY and now <= startsAt + MATCH_LATE then kept[id] = e end
     end
     for _, roster in ipairs(raids) do
         local loot = roster.loot

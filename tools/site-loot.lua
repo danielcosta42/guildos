@@ -169,11 +169,15 @@ check(GuildOS.db.siteLoot.raids["raid-556-fixture"] and GuildOS.db.siteLoot.raid
   "and the loot of a later raid is kept all the same, a raid with none has no entry")
 GuildOS.db.siteLoot.raids.old = { startsAt = SERVER - 9 * 3600, softres = { items = {} } }
 GuildOS.db.siteLoot.raids.tonight = { startsAt = SERVER - 3600, softres = { items = {} } }
+GuildOS.db.siteLoot.raids.deleted = { startsAt = SERVER + 3 * 86400, softres = { items = {} } }
+GuildOS.db.siteLoot.raids.soon = { startsAt = SERVER + 3600, softres = { items = {} } }
 _G.GuildOSInbox = { V5 }
 Import:ConsumeInbox()
 local kept = GuildOS.db.siteLoot.raids
 check(kept["raid-556-fixture"] and kept.tonight, "an inbox that no longer lists a raid keeps it while its night lasts")
 check(kept.old == nil, "and drops what is past its window")
+check(kept.deleted == nil, "a raid that has not begun and is no longer listed was taken down: dropped")
+check(kept.soon, "one that is about to begin (inside the early window) is kept")
 _G.GuildOSInbox = { wire('{"fmt":"GOSROST1","v":6,"raidId":"raid-556-fixture","startsAt":1795000000,"members":[{"name":"Ana","class":"MAGE"}]}') }
 Import:ConsumeInbox()
 check(GuildOS.db.siteLoot.raids["raid-556-fixture"] == nil, "a raid listed again with none loses its entry")

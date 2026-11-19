@@ -2308,6 +2308,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
         for _, rg in ipairs(regions) do rg:Hide() end
 
         local guildWl = GuildOS.Wishlist and GuildOS.Wishlist:AllLists() or GuildOS.db.guildWishlists
+        local allPrios, prioFromSite = GuildOS.LootMaster:AllPrios()   -- once per refresh
         local ly = -2
         local count = 0
         local totalCount = 0
@@ -2396,7 +2397,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
 
             -- Officer prio indicator: a star if this character has any prios
             local hasPrio = false
-            for _, prioList in pairs(GuildOS.LootMaster:AllPrios()) do
+            for _, prioList in pairs(allPrios) do
                 for _, prioEntry in ipairs(prioList) do
                     if strlower(prioEntry.name or "") == charKey then
                         hasPrio = true
@@ -2493,7 +2494,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                     end
 
                     -- Officer prio badge for this item + this character
-                    local itemPrios, prioFromSite = GuildOS.LootMaster:PrioListFor(item.itemId)
+                    local itemPrios = allPrios[item.itemId]
                     if itemPrios then
                         for prioIdx, prioEntry in ipairs(itemPrios) do
                             if strlower(prioEntry.name or "") == charKey then
@@ -2526,11 +2527,10 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
 
                 -- Officer prio section: items where this character has prio but may not be on wishlist
                 local prioBadges = {}
-                for itemId, prioList in pairs(GuildOS.LootMaster:AllPrios()) do
-                    local _, listFromSite = GuildOS.LootMaster:PrioListFor(itemId)
+                for itemId, prioList in pairs(allPrios) do
                     for prioIdx, prioEntry in ipairs(prioList) do
                         if strlower(prioEntry.name or "") == charKey then
-                            table.insert(prioBadges, { itemId = itemId, order = listFromSite and prioEntry.order or prioIdx })
+                            table.insert(prioBadges, { itemId = itemId, order = prioFromSite and prioEntry.order or prioIdx })
                             break
                         end
                     end

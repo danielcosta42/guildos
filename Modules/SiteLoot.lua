@@ -9,10 +9,12 @@
 -- (SoftRes, LootMaster, Wishlist) choose between that and the game's own tables, which nothing here
 -- ever writes.
 --
---   * Active: the raid the player is in is one of the entries (the same catalogue-key match the rest of
---     the addon uses, CompanionImport:RaidFor) and now is inside that raid's night window (LootRule's:
---     two hours before the start, eight after). Two raids of one guild in one window never share a sheet.
---     No match, and every reader uses the game's tables.
+--   * Active: the raid the player is in is one of the entries and now is inside that raid's night window
+--     (LootRule's: two hours before the start, eight after). The raid is the one RaidTracker stamped on the
+--     session when the group zoned in (it survives a /reload), so two groups of one guild in the same
+--     instance, half an hour apart, each keep their own sheet for the whole night; only without a stamp is
+--     it the nearest start (CompanionImport:RaidFor, ties by start and then raidId). No match, and every
+--     reader uses the game's tables.
 --   * ListsFromSite / PriosFromSite: "the site is the source" for the editors and the broadcasts. They
 --     ignore the window and the raid and hold while the inbox was read in the last three days (R9), so an
 --     inbox that stopped changing does not keep the game's editors locked for good.
@@ -35,18 +37,31 @@ end
 -- The entry of the raid this client is in, and its id; nil when it is in none of them tonight.
 function SiteLoot:ActiveRaid(now)
     local raids = raidsOf()
-    if not raids or not GetInstanceInfo then return nil end
-    local _, _, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
     local RT, Import, LR = GuildOS.RaidTracker, GuildOS.CompanionImport, GuildOS.LootRule
-    local key = RT and instanceID and RT:RaidKeyOf(instanceID)
-    if not (key and Import and LR) then return nil end
+    if not (raids and Import and LR) then return nil end
     now = now or GetServerTime()
+    -- The raid the session was stamped with at zone-in, when the site sent an entry for it.
+    local stamped = RT and RT.currentRaid and RT.currentRaid.raidId
+    local own = stamped and raids[stamped]
+    if type(own) == "table" then
+        if LR.InWindow(own.startsAt, now) then return stamped, own end
+        return nil
+    end
+    if not GetInstanceInfo then return nil end
+    local _, _, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
+    local key = RT and instanceID and RT:RaidKeyOf(instanceID)
+    if not key then return nil end
+    -- No stamp: the nearest start, with the candidates in a fixed order so a tie never depends on pairs().
     local list = {}
     for id, e in pairs(raids) do
         if type(e) == "table" then
-            list[#list + 1] = { raidId = id, instanceKey = e.instanceKey, startsAt = e.startsAt, difficulty = e.difficulty }
+            list[#list + 1] = { raidId = id, instanceKey = e.instanceKey, startsAt = tonumber(e.startsAt) or 0, difficulty = e.difficulty }
         end
     end
+    table.sort(list, function(a, b)
+        if a.startsAt ~= b.startsAt then return a.startsAt < b.startsAt end
+        return a.raidId < b.raidId
+    end)
     local id = Import:RaidFor(key, now, GuildOS.Client.isRetail and tonumber(difficultyID) or nil, list)
     local entry = id and raids[id]
     if entry and LR.InWindow(entry.startsAt, now) then return id, entry end
