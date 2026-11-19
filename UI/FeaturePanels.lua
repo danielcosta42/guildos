@@ -2011,6 +2011,14 @@ local function BuildWishlistFrame()
     f.siteLine = siteLine
     local siteBtn = UI:CreateButton(f, L["Edit on the site"], 140, 28)
     siteBtn:SetPoint("BOTTOMRIGHT", -8, 11)
+    -- The line takes the width the button leaves and wraps, so a long translation never runs under it.
+    siteLine:ClearAllPoints()
+    siteLine:SetPoint("BOTTOMLEFT", 14, 11)
+    siteLine:SetPoint("RIGHT", siteBtn, "LEFT", -8, 0)
+    siteLine:SetHeight(28)
+    siteLine:SetJustifyH("LEFT")
+    siteLine:SetJustifyV("MIDDLE")
+    siteLine:SetWordWrap(true)
     siteBtn:SetScript("OnClick", function() GuildOS:ShowExportPopup(L["Edit on the site"], SITE_WISHLIST_URL) end)
     siteBtn:Hide()
     f.siteBtn = siteBtn
@@ -2149,6 +2157,7 @@ end
 -- Accessible via the Wishlist panel "Gerenciar Prios" button.
 ----------------------------------------------------------------------
 local PRIO_ROW_HEIGHT = 28
+local PRIO_SITE_ROW = 40   -- the bar's extra height while the site line shows (three lines at size 9)
 local PRIO_VISIBLE    = 14
 
 local function BuildPrioModal()
@@ -2343,6 +2352,7 @@ local function BuildPrioModal()
     local scrollCont = CreateFrame("Frame", nil, f)
     scrollCont:SetPoint("TOPLEFT",     1, -100)
     scrollCont:SetPoint("BOTTOMRIGHT", -1,  44)
+    f.scrollCont = scrollCont
 
     local scrollFrame = CreateFrame("ScrollFrame", "GuildOSPrioScroll", scrollCont, "FauxScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 0, 0); scrollFrame:SetPoint("BOTTOMRIGHT", 0, 0)
@@ -2422,6 +2432,7 @@ local function BuildPrioModal()
     bottomBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
     local bottomLine = UI:CreateSeparator(f)   -- a 1px line, not gold (#371)
     bottomLine:SetPoint("BOTTOMLEFT", 0, 44); bottomLine:SetPoint("BOTTOMRIGHT", 0, 44)
+    f.bottomBg, f.bottomLine = bottomBg, bottomLine
 
     local saveBtn = UI:CreateButton(f, L["Save and Sync"], 130, 26)
     saveBtn:SetPoint("BOTTOMRIGHT", -10, 10)
@@ -2467,9 +2478,11 @@ local function BuildPrioModal()
     f.siteBtn = siteBtn
     local siteLine = UI:CreateText(f, L["Nights of cores whose priorities live on the site use the site's."], 9,
         C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    siteLine:SetPoint("BOTTOMLEFT", 10, 8)
-    siteLine:SetPoint("RIGHT", siteBtn, "LEFT", -8, 0)
-    siteLine:SetHeight(30)
+    -- Its own row above the buttons, across the modal's width, with room for three wrapped lines (the German,
+    -- French and Russian texts are long): ApplyPrioSource grows the bar by PRIO_SITE_ROW while it shows.
+    siteLine:SetPoint("BOTTOMLEFT", 10, 48)
+    siteLine:SetPoint("BOTTOMRIGHT", -10, 48)
+    siteLine:SetHeight(PRIO_SITE_ROW - 6)
     siteLine:SetJustifyH("LEFT")
     siteLine:SetJustifyV("MIDDLE")
     siteLine:SetWordWrap(true)
@@ -2582,6 +2595,11 @@ function GuildOS:ApplyPrioSource()
     else
         f.bottomHelp:Show(); f.siteLine:Hide(); f.siteBtn:Hide()
     end
+    -- The site line takes a row of its own above the buttons: the bar, its rule and the list's bottom follow.
+    local bar = 44 + (fromSite and PRIO_SITE_ROW or 0)
+    f.bottomBg:SetHeight(bar)
+    f.bottomLine:SetPoint("BOTTOMLEFT", 0, bar); f.bottomLine:SetPoint("BOTTOMRIGHT", 0, bar)
+    f.scrollCont:SetPoint("BOTTOMRIGHT", -1, bar)
 end
 
 function GuildOS:RefreshPrioModal()
