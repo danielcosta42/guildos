@@ -8,7 +8,7 @@ local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
 
-local FRAME_W  = 400
+local FRAME_W  = 460   -- room for Order beside Whisper (issue #389)
 local ROW_H    = 22
 local MAX_ROWS = 12
 local LIST_TOP = -126   -- y of the first result row (below input, item line, status and header)
@@ -72,6 +72,17 @@ local function BuildFinder()
     status:SetPoint("TOPLEFT", 12, -86)
     f.status = status
 
+    -- An order open to every guild crafter of the item (issue #389).
+    local orderAll = UI:CreateButton(f, L["Order from the guild"], 140, 20)
+    UI:SetButtonVariant(orderAll, "primary")
+    orderAll:SetPoint("TOPRIGHT", -12, -60)
+    orderAll:Hide()
+    orderAll:SetScript("OnClick", function() if f.query then GuildOS:ShowCraftOrderDialog(f.query.itemId) end end)
+    f.orderAll = orderAll
+    itemName:SetPoint("RIGHT", orderAll, "LEFT", -8, 0)
+    itemName:SetJustifyH("LEFT")
+    itemName:SetWordWrap(false)
+
     -- Column headers: the shared header row over the rows, its labels over their cells (#371).
     local header = UI:CreateTableHeader(f)
     header:SetPoint("TOPLEFT", 10, LIST_TOP + 22)
@@ -118,6 +129,10 @@ local function BuildFinder()
         local wb = UI:CreateButton(row, L["Whisper"], 56, 18)
         wb:SetPoint("RIGHT", -4, 0)
         row.whisperBtn = wb
+        -- A guild crafter takes an order sent to them alone (issue #389).
+        local ob = UI:CreateButton(row, L["Order"], 50, 18)
+        ob:SetPoint("RIGHT", wb, "LEFT", -4, 0)
+        row.orderBtn = ob
 
         f.rows[i] = row
         return row
@@ -130,7 +145,7 @@ local function BuildFinder()
     end
 
     -- Append one crafter result. class may be nil (unknown, e.g. realm peer).
-    local function AddResult(name, prof, scope, class)
+    local function AddResult(name, prof, scope, class, key)
         local q = f.query
         if not q then return end
         q.count = q.count + 1
@@ -150,6 +165,9 @@ local function BuildFinder()
         row.scopeFS:SetText(scope)
 
         local itemId = q.itemId
+        local me = GuildOS.CraftOrders and GuildOS.CraftOrders:MyKey()
+        row.orderBtn:SetShown(key ~= nil and key ~= me and GuildOS.ShowCraftOrderDialog ~= nil)
+        row.orderBtn:SetScript("OnClick", function() GuildOS:ShowCraftOrderDialog(itemId, key) end)
         row.whisperBtn:SetScript("OnClick", function()
             local link = itemId and select(2, GuildOS.Compat.GetItemInfo(itemId))
             local subject = link or (f.itemName:GetText() ~= "" and f.itemName:GetText()) or L["this item"]
@@ -186,11 +204,12 @@ local function BuildFinder()
 
         -- Guild crafters (already synced locally).
         local guild = GuildOS.RecipeTracker and GuildOS.RecipeTracker:GetCraftersForItem(itemId)
+        f.orderAll:SetShown(guild ~= nil and GuildOS.ShowCraftOrderDialog ~= nil)
         if guild then
             for _, c in ipairs(guild) do
                 if not f.query.seen[c.playerName] then
                     f.query.seen[c.playerName] = true
-                    AddResult(c.playerName, c.profName and L[c.profName], L["Guild"], c.class)
+                    AddResult(c.playerName, c.profName and L[c.profName], L["Guild"], c.class, c.playerKey)
                 end
             end
         end

@@ -56,6 +56,7 @@ SyncService.GUILD_ONLY_DOMAINS = {
     foundingSelf   = true,   -- each member's own join date (#208), filed under its sender
     gbank          = true,   -- the guild bank's picture, its ledger and asks for them (#380)
     gbankreq       = true,   -- a member's request for an item; officers close it (#380)
+    craftorder     = true,   -- a member's craft order and its crafter's answers (#389)
 }
 
 -- Actions any guild member may perform inside an officer domain, over GUILD. Keyed by domain:

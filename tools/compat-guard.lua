@@ -19,6 +19,8 @@ local GLOBALS = {
   -- WoW: Forever professions (issue #31).
   "GetProfessions", "GetProfessionInfo",
   "GetContainerNumSlots", "GetContainerItemLink", "GetContainerItemInfo", "UseContainerItem",
+  -- Moved to C_Container as well (craft orders, issue #389).
+  "PickupContainerItem", "SplitContainerItem",
   "GuildRoster", "RegisterAddonMessagePrefix", "SendAddonMessage", "SendAddonMessageLogged",
   -- Moved to C_PartyInfo / C_Item, and the globals gone on WoW: Forever (issue #43).
   "InviteUnit", "InviteByName", "GetItemQualityColor", "GetItemCount",

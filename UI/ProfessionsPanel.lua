@@ -3,8 +3,8 @@
 --
 -- Who in the guild makes what. A rail of professions with their coverage; a Recipes view of
 -- every recipe the game has for the profession (who knows it, what it needs, what nobody
--- covers) and a Crafters view of the members with it; a card per recipe with its reagents,
--- source and crafters. Everything comes from GuildOS.ProfDirectory; this file only draws.
+-- covers) and a Crafters view of the members with it. A recipe clicked opens in place with its
+-- reagents, source and crafters, and the craft order (issue #389). Everything comes from GuildOS.ProfDirectory; this file only draws.
 -- Replaces the Recipes panel on Forever (UI/Features.lua).
 ----------------------------------------------------------------------
 if GuildOS.Client.isAnniversary then return end
@@ -25,7 +25,6 @@ local FOOTER_H   = 24
 local COL_GAP    = 10
 local ROW_INSET  = 8
 local ROW_GUTTER = 12
-local CARD_LINES = 8
 local WHITE8     = "Interface\\Buttons\\WHITE8x8"
 local QUESTION   = "Interface\\Icons\\INV_Misc_QuestionMark"
 
@@ -82,13 +81,6 @@ local function recipeIcon(e)
     return itemIcon(e.out) or select(3, GuildOS.Compat.GetSpellInfo(e.id)) or QUESTION
 end
 
--- A whisper to a guildmate through the client's tell box. A name with a surname ("First Last") is
--- resolved by the chat parser's completion of online guildmates, which is why only online
--- crafters get the button.
-local function whisper(name)
-    if ChatFrame_SendTell then ChatFrame_SendTell(name) else ChatFrame_OpenChat("/w " .. name .. " ") end
-end
-
 local function sourceText(e)
     if e.src == 3 then return L["Automatic"] end
     if e.src == 2 then
@@ -142,172 +134,13 @@ local function whoText(keys, who)
     return text
 end
 
-----------------------------------------------------------------------
--- The recipe card: a popup beside the window, as tall as what it shows
-----------------------------------------------------------------------
-local card
-
-local function BuildCard()
-    card = UI:CreatePanel(UIParent, "GuildOSRecipeCard")
-    card:SetSize(320, 200)
-    card:SetFrameStrata("DIALOG")
-    card:SetClampedToScreen(true)
-    card:SetMovable(true)
-    card:EnableMouse(true)
-    card:RegisterForDrag("LeftButton")
-    card:SetScript("OnDragStart", card.StartMoving)
-    card:SetScript("OnDragStop", card.StopMovingOrSizing)
-    UI:StylePopup(card)
-    table.insert(UISpecialFrames, "GuildOSRecipeCard")
-
-    local close = UI:CreateCloseButton(card)
-    close:SetPoint("TOPRIGHT", -6, -6)
-    close:SetScript("OnClick", function() card:Hide() end)
-
-    card.icon = UI:CreateIcon(card, 32)
-    card.icon:SetPoint("TOPLEFT", 14, -14)
-    card.title = UI:CreateText(card, "", 13, C.text.r, C.text.g, C.text.b)
-    card.title:SetPoint("TOPLEFT", card.icon, "TOPRIGHT", 10, -2)
-    card.title:SetWidth(230)
-    card.title:SetJustifyH("LEFT")
-    card.subtitle = UI:CreateText(card, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    card.subtitle:SetPoint("TOPLEFT", card.title, "BOTTOMLEFT", 0, -4)
-
-    local function detail(label)
-        local l = UI:CreateText(card, label, 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        local v = UI:CreateText(card, "", 10, C.text.r, C.text.g, C.text.b)
-        v:SetWidth(196)
-        v:SetJustifyH("LEFT")
-        return { label = l, value = v }
-    end
-    card.details = {
-        makes = detail(L["Makes"]), source = detail(L["Source"]), skill = detail(L["Skill"]),
-        spec = detail(L["Specialization"]), station = detail(L["Station"]),
-    }
-
-    card.reagentsHeader = UI:CreateHeaderText(card, L["REAGENTS"], 10)
-    card.reagents = {}
-    for i = 1, CARD_LINES do
-        local icon = card:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(16, 16)
-        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        local text = UI:CreateText(card, "", 10, C.text.r, C.text.g, C.text.b)
-        text:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-        text:SetWidth(260)
-        text:SetJustifyH("LEFT")
-        text:SetWordWrap(false)
-        card.reagents[i] = { icon = icon, text = text }
-    end
-
-    card.craftersHeader = UI:CreateHeaderText(card, L["CRAFTERS"], 10)
-    card.crafters = {}
-    for i = 1, CARD_LINES do
-        local text = UI:CreateText(card, "", 10, C.text.r, C.text.g, C.text.b)
-        text:SetWidth(200)
-        text:SetJustifyH("LEFT")
-        text:SetWordWrap(false)
-        local btn = UI:CreateButton(card, L["Whisper"], 60, 18)
-        card.crafters[i] = { text = text, btn = btn }
-    end
-    card.more = UI:CreateText(card, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    card.none = UI:CreateText(card, "", 10, C.red.r, C.red.g, C.red.b)
-end
-
--- Anchor a region at x, y from the card's top-left.
-local function at(region, x, y)
-    region:ClearAllPoints()
-    region:SetPoint("TOPLEFT", x, y)
-end
-
--- `repaint` keeps the card where it is (the user may have dragged it); a click places it beside
--- the window.
-local function ShowCard(e, anchor, who, repaint)
-    if not card then BuildCard() end
-    local D = GuildOS.ProfDirectory
-    card.last = { e = e, anchor = anchor, who = who }   -- repainted when an item's data arrives
-    if not repaint then
-        card:ClearAllPoints()
-        card:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
-    end
-
-    card.icon.icon:SetTexture(recipeIcon(e))
-    card.title:SetText(e.name)
-    card.subtitle:SetText(D.DisplayName(e.line) .. (e.grey > 0 and string.format("  ·  %d–%d", e.yellow, e.grey) or ""))
-
-    local outLink = e.out and e.out > 0 and select(2, GuildOS.Compat.GetItemInfo(e.out))
-    local values = {
-        { card.details.makes, outLink or (e.out and e.out > 0 and ("#" .. e.out)) or L["Enchantment"] },
-        { card.details.source, sourceText(e) },
-        { card.details.skill, e.reqSkill and e.reqSkill > 0 and tostring(e.reqSkill) or nil },
-        { card.details.spec, specName(e.spec) },
-        { card.details.station, stationName(e.focus) },
-    }
-    local y = -64
-    for _, v in ipairs(values) do
-        local d, text = v[1], v[2]
-        d.label:SetShown(text ~= nil)
-        d.value:SetShown(text ~= nil)
-        if text then
-            at(d.label, 14, y)
-            at(d.value, 110, y)
-            d.value:SetText(text)
-            y = y - 18
-        end
-    end
-
-    local reagents = D.Reagents(e.id)
-    card.reagentsHeader:SetShown(#reagents > 0)
-    if #reagents > 0 then
-        y = y - 8
-        at(card.reagentsHeader, 14, y)
-        y = y - 18
-    end
-    for i, slot in ipairs(card.reagents) do
-        local rg = reagents[i]
-        slot.icon:SetShown(rg ~= nil)
-        slot.text:SetShown(rg ~= nil)
-        if rg then
-            at(slot.icon, 14, y)
-            slot.icon:SetTexture(itemIcon(rg.itemID) or QUESTION)
-            local name = GuildOS.Compat.GetItemInfo(rg.itemID) or ("#" .. rg.itemID)
-            slot.text:SetText(string.format("%s  |cff%sx%d|r", name, hex(C.label), rg.count))   -- not gold (#371)
-            y = y - 20
-        end
-    end
-
-    y = y - 8
-    at(card.craftersHeader, 14, y)
-    y = y - 20
-    local list = crafterList(e.crafters, who)
-    for i, slot in ipairs(card.crafters) do
-        local c = list[i]
-        slot.text:SetShown(c ~= nil)
-        slot.btn:SetShown(c ~= nil and c.online)
-        if c then
-            at(slot.text, 14, y)
-            slot.text:SetText(c.online and ("|cff" .. classHex(c.class) .. c.name .. "|r")
-                or ("|cff" .. hex(C.labelDim) .. c.name .. "  " .. L["(offline)"] .. "|r"))
-            slot.btn:ClearAllPoints()
-            slot.btn:SetPoint("RIGHT", card, "TOPRIGHT", -14, y - 6)
-            local name = c.name
-            slot.btn:SetScript("OnClick", function() whisper(name) end)
-            y = y - 22
-        end
-    end
-    card.more:SetShown(#list > CARD_LINES)
-    if #list > CARD_LINES then
-        at(card.more, 14, y)
-        card.more:SetText(string.format(L["+%d more crafters"], #list - CARD_LINES))
-        y = y - 18
-    end
-    card.none:SetShown(#list == 0)
-    if #list == 0 then
-        at(card.none, 14, y)
-        card.none:SetText(L["Nobody in the guild crafts this"])
-        y = y - 18
-    end
-    card:SetHeight(-y + 14)
-    card:Show()
+-- What the opened recipe says besides its materials: where it is learned, the skill, the station.
+local function metaText(e)
+    local parts = { sourceText(e) }
+    if e.reqSkill and e.reqSkill > 0 then parts[#parts + 1] = string.format(L["skill %d"], e.reqSkill) end
+    parts[#parts + 1] = specName(e.spec)
+    parts[#parts + 1] = stationName(e.focus)
+    return table.concat(parts, " · ")
 end
 
 ----------------------------------------------------------------------
@@ -317,7 +150,8 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     local D = GuildOS.ProfDirectory
     local panel = CreateFrame("Frame", nil, parent)
     panel:SetAllPoints()
-    local state = { line = nil, mode = "recipes", filter = "all", query = "", results = {}, who = {} }
+    local state = { line = nil, mode = "recipes", filter = "all", query = "", results = {}, who = {},
+                    open = nil, item = nil }
 
     ----------------------------------------------------------------
     -- Rail: every profession with its coverage
@@ -352,7 +186,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         b.sub:SetJustifyH("LEFT")
         b.sub:SetWordWrap(false)
         b:SetScript("OnClick", function()
-            state.line = line
+            state.line, state.item = line, nil
             panel:Refresh(true)
         end)
         b:SetScript("OnEnter", function(self)
@@ -431,12 +265,18 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         local text = self:GetText() or ""
         paintPlaceholder()
         state.query = text
+        if text ~= "" then state.item = nil end
         panel:Refresh(true)
     end)
     search:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
 
     local filterTabs = {}
     local FILTERS = { { "all", L["All"] }, { "guild", L["In the guild"] }, { "gaps", L["Nobody crafts"] } }
+    -- Craft orders (issue #389): the recipes I make, and the ones someone ordered.
+    if GuildOS.CraftOrders then
+        FILTERS[#FILTERS + 1] = { "mine", L["I craft"] }
+        FILTERS[#FILTERS + 1] = { "orders", L["With orders"] }
+    end
     local previous
     for i = #FILTERS, 1, -1 do
         local key, label = FILTERS[i][1], FILTERS[i][2]
@@ -469,6 +309,10 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     local scroll = CreateFrame("ScrollFrame", "GuildOSProfessionsScroll", list, "FauxScrollFrameTemplate")
     scroll:SetAllPoints()
     UI:SkinScrollBar(scroll, "GuildOSProfessionsScroll")
+    -- The opened recipe sits over the rows it takes; what scrolls past the list's edge is cut.
+    if list.SetClipsChildren then list:SetClipsChildren(true) end
+    local detail = GuildOS.CreateCraftDetail and GuildOS:CreateCraftDetail(list)
+    if detail then detail:SetFrameLevel(list:GetFrameLevel() + 5) end
 
     local empty = UI:CreateText(list, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     empty:SetPoint("CENTER", 0, 20)
@@ -554,7 +398,16 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
             GameTooltip:Hide()
         end)
         row:SetScript("OnClick", function(self)
-            if self.data and state.mode == "recipes" then ShowCard(self.data, panel, state.who) end
+            local e = self.data
+            if not (e and state.mode == "recipes" and detail) then return end
+            if IsShiftKeyDown() and e.out and e.out > 0 and HandleModifiedItemClick then
+                local _, link = GuildOS.Compat.GetItemInfo(e.out)
+                if link then HandleModifiedItemClick(link) end
+                return
+            end
+            if state.open == e.id then state.open = nil else state.open = e.id end
+            state.openTo = nil
+            panel:Refresh()
         end)
         rows[index] = row
         return row
@@ -575,7 +428,8 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         for i = 1, visible do
             local row, e = rows[i], state.results[offset + i]
             row.data = e
-            if not e then
+            if not e or e.__detail then
+                row.data = nil
                 row:Hide()
             else
                 row:Show()
@@ -586,8 +440,11 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
                     row.dot:Hide()
                     row.bar:Hide()
                     row.icon:SetTexture(recipeIcon(e))
-                    row.t1:SetText(e.name)
+                    row.t1:SetText(e.name .. panel:Badges(e))
                     row.t1:SetTextColor(C.text.r, C.text.g, C.text.b)
+                    if e.id == state.open then
+                        row:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1)
+                    end
                     -- A few recipes give no skill: the client's table says 0 for both. The range in
                     -- `text` to `label`, not gold (#371).
                     row.t2:SetText(e.grey > 0 and string.format("|cff%s%d|r–|cff%s%d|r", hex(C.text), e.yellow,
@@ -627,6 +484,32 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         end
         empty:SetText(message or "")
         empty:SetShown(message ~= nil)
+        if detail then
+            UI.PlaceDetail(detail, list, state.detailAt, state.detailRows or 0, offset, visible, ROW_H, ROW_GUTTER)
+        end
+    end
+
+    -- The marks after a recipe's name: I make it, and how many orders ask for it.
+    function panel:Badges(e)
+        local O = GuildOS.CraftOrders
+        if not O then return "" end
+        local out = ""
+        if state.mine and state.mine[e.id] then out = out .. "  " .. "|cff" .. hex(C.ok) .. L["you craft"] .. "|r" end
+        local n = e.out and state.byItem and state.byItem[e.out]
+        if n and n > 0 then out = out .. "  " .. "|cff" .. hex(C.gold) .. string.format(L["%d orders"], n) .. "|r" end
+        return out
+    end
+
+    -- The opened recipe's block: its item, its crafters online first, what it takes.
+    function panel:PaintDetail(fresh)
+        if not detail then return end
+        if state.mode ~= "recipes" or not state.open then detail:Hide(); return end
+        local e
+        for _, x in ipairs(state.results) do if not x.__detail and x.id == state.open then e = x end end
+        if not e then detail:Hide(); return end
+        local list2 = crafterList(e.crafters, state.who)
+        detail:SetRecipe({ id = e.id, item = (e.out and e.out > 0) and e.out or nil, crafters = list2,
+                           meta = metaText(e) }, state.openTo, fresh)
     end
 
     scroll:SetScript("OnVerticalScroll", function(self, offset)
@@ -639,15 +522,39 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     function panel:Refresh(resetScroll)
         state.who = D.Roster()
         if state.mode == "recipes" then
-            state.results = D.RecipeRows(state.line, state.filter, state.query)
+            local O = GuildOS.CraftOrders
+            local base = (state.filter == "mine" or state.filter == "orders") and "guild" or state.filter
+            local rows0 = D.RecipeRows(state.line, base, state.item and "" or state.query)
+            state.byItem = O and O:OrdersByItem() or {}
+            local me = O and O:MyKey()
+            state.mine = {}
+            for _, e in ipairs(rows0) do
+                for _, k in ipairs(e.crafters) do if k == me then state.mine[e.id] = true end end
+            end
+            local out = {}
+            for _, e in ipairs(rows0) do
+                local keep = (state.filter ~= "mine" or state.mine[e.id])
+                    and (state.filter ~= "orders" or (e.out and (state.byItem[e.out] or 0) > 0))
+                    and (not state.item or e.out == state.item)
+                if keep then out[#out + 1] = e end
+            end
+            local at, n
+            if UI.WithDetail then
+                out, at, n = UI.WithDetail(out, function(e) return e.id == state.open end, ROW_H)
+            end
+            state.results, state.detailAt, state.detailRows = out, at, n
+            if not at then state.open = nil end
         else
             state.results = state.line and D.MemberRows(state.line) or {}
+            state.detailAt, state.detailRows = nil, nil
         end
         if resetScroll then
             scroll:SetVerticalScroll(0)
             if FauxScrollFrame_SetOffset then FauxScrollFrame_SetOffset(scroll, 0) end
         end
-        title:SetText(state.line and D.DisplayName(state.line) or L["All professions"])
+        local itemName = state.item and (GuildOS.Compat.GetItemInfo(state.item) or ("item:" .. state.item))
+        title:SetText(itemName and string.format(L["Recipes for %s"], itemName)
+            or (state.line and D.DisplayName(state.line)) or L["All professions"])
         tabRecipes:SetActive(state.mode == "recipes")
         tabCrafters:SetActive(state.mode == "crafters")
         tools:SetShown(state.mode == "recipes")
@@ -661,6 +568,21 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
             footer:SetText(string.format(L["The guild knows %d of %d recipes"], known, total))
         end
         self:Relayout()
+        self:PaintDetail()
+    end
+
+    -- Open the recipe that makes `itemId` (the Crafts tab's Alt-click, an order's card). False when
+    -- the catalog has none.
+    function panel:FocusItem(itemId, toKey)
+        if #D.ItemRecipes(itemId) == 0 then return false end
+        state.mode, state.line, state.filter, state.query, state.item = "recipes", nil, "all", "", itemId
+        search:SetText("")
+        state.item = itemId          -- the search box's handler cleared it
+        state.open = D.ItemRecipes(itemId)[1]
+        self:Refresh(true)
+        state.openTo = toKey
+        self:PaintDetail(true)
+        return true
     end
 
     function panel:Relayout(w, h)
@@ -687,9 +609,28 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         end
         panel.railRow = railRow
 
-        -- The search box gives way to the filter tabs in a narrow window.
-        local filtersW = 0
-        for _, t in ipairs(filterTabs) do filtersW = filtersW + (t:GetWidth() or 0) + 4 end
+        -- The search box gives way to the filter tabs in a narrow window; where even that is not
+        -- enough, the order filters (issue #389) go first, the chosen one staying.
+        local function width(keepAll)
+            local sum = 0
+            for _, t in ipairs(filterTabs) do
+                local extra = t.key == "mine" or t.key == "orders"
+                t.fits = keepAll or not extra or state.filter == t.key
+                if t.fits then sum = sum + (t:GetWidth() or 0) + 4 end
+            end
+            return sum
+        end
+        local filtersW = width(true)
+        if inner - filtersW - 12 < 60 then filtersW = width(false) end
+        local previousTab
+        for _, t in ipairs(filterTabs) do          -- built right to left
+            t:SetShown(t.fits)
+            if t.fits then
+                t:ClearAllPoints()
+                if previousTab then t:SetPoint("RIGHT", previousTab, "LEFT", -4, 0) else t:SetPoint("RIGHT", 0, 0) end
+                previousTab = t
+            end
+        end
         search:SetWidth(math.max(60, math.min(220, inner - filtersW - 12)))
         paintPlaceholder()
 
@@ -711,7 +652,6 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     end
 
     parent:SetScript("OnShow", function() panel:Refresh() end)
-    parent:HookScript("OnHide", function() if card then card:Hide() end end)
     UI:MakeResponsive(parent, function(_, w, h) panel:Relayout(w, h) end)
 
     -- Items the client had not cached arrive later: repaint names, icons and links once they do.
@@ -723,15 +663,13 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         GuildOS.Compat.After(0.3, function()
             panel.itemsPending = false
             panel:UpdateRows()
-            if card and card:IsShown() and card.last then
-                ShowCard(card.last.e, card.last.anchor, card.last.who, true)
-            end
+            panel:PaintDetail()
         end)
     end)
     panel.itemEvents = itemEvents
 
     -- Reachable by the caller and by tools/professions-panel.lua, which drives the panel like a user.
-    panel.state, panel.railButtons, panel.rows = state, railButtons, rows
+    panel.state, panel.railButtons, panel.rows, panel.detail = state, railButtons, rows, detail
     panel.tabRecipes, panel.tabCrafters, panel.search, panel.filterTabs = tabRecipes, tabCrafters, search, filterTabs
     return panel
 end

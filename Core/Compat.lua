@@ -1161,6 +1161,23 @@ function Compat.TradeTimeLeft(bag, slot)
     return "bound"
 end
 
+-- Open a trade with a nearby player by name; false when the client has no way to (craft orders, #389).
+-- InitiateTrade takes a unit: the player targeted, or one in the group (by name). For anyone else
+-- it does nothing, so the caller falls back to a whisper.
+function Compat.InitiateTrade(name)
+    if not (InitiateTrade and type(name) == "string") then return false end
+    local short = name:match("^([^-]+)") or name
+    local unit
+    local target = UnitName and UnitName("target")
+    if target and not Compat.IsSecret(target) and (target == name or target == short) then
+        unit = "target"
+    elseif UnitExists and UnitExists(name) then
+        unit = name
+    end
+    if not unit then return false end
+    return pcall(InitiateTrade, unit) and true or false
+end
+
 -- Who the open trade window is with: name and realm (nil realm: this one), or nothing when the client
 -- does not say or keeps it secret.
 function Compat.TradePartner()
@@ -1178,6 +1195,107 @@ function Compat.TradeItemLinks()
         if type(link) == "string" and not Compat.IsSecret(link) then out[#out + 1] = link end
     end
     return out
+end
+
+-- The links of what the other player has put in the trade window, slot by slot (craft orders, #389).
+function Compat.TradeTargetItemLinks()
+    local out = {}
+    if not GetTradeTargetItemLink then return out end
+    for i = 1, TRADE_SLOTS do
+        local link = GetTradeTargetItemLink(i)
+        if type(link) == "string" and not Compat.IsSecret(link) then out[#out + 1] = link end
+    end
+    return out
+end
+
+-- The trade slots I have not filled yet, in order.
+function Compat.TradeFreeSlots()
+    local out = {}
+    if not GetTradePlayerItemLink then return out end
+    for i = 1, TRADE_SLOTS do
+        if not GetTradePlayerItemLink(i) then out[#out + 1] = i end
+    end
+    return out
+end
+
+-- Drop what the cursor holds into my trade slot `i`.
+function Compat.ClickTradeButton(i)
+    if ClickTradeButton then ClickTradeButton(i) end
+end
+
+-- The money I put in the trade window, in copper (no more than I have).
+function Compat.SetTradeMoney(copper)
+    copper = math.min(tonumber(copper) or 0, Compat.PlayerMoney())
+    if SetTradeMoney and copper > 0 then SetTradeMoney(copper) end
+end
+
+----------------------------------------------------------------------
+-- Bags and mail (craft orders, issue #389)
+----------------------------------------------------------------------
+-- The bags a player carries: the backpack, the four bags and, on retail, the reagent bag.
+function Compat.BagIDs()
+    local last = (NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4)
+    local out = {}
+    for b = 0, last do out[#out + 1] = b end
+    return out
+end
+
+function Compat.PickupContainerItem(bag, slot)
+    if C_Container and C_Container.PickupContainerItem then return C_Container.PickupContainerItem(bag, slot) end
+    if PickupContainerItem then return PickupContainerItem(bag, slot) end
+end
+
+function Compat.SplitContainerItem(bag, slot, count)
+    if C_Container and C_Container.SplitContainerItem then return C_Container.SplitContainerItem(bag, slot, count) end
+    if SplitContainerItem then return SplitContainerItem(bag, slot, count) end
+end
+
+-- How many attachments a sent mail takes (12 on every client today).
+function Compat.MailAttachMax()
+    return tonumber(ATTACHMENTS_MAX_SEND) or 12
+end
+
+-- The attachment slots of the mail being written that are still empty, in order.
+function Compat.MailFreeSlots()
+    local out = {}
+    for i = 1, Compat.MailAttachMax() do
+        local name = GetSendMailItem and GetSendMailItem(i)
+        if not name then out[#out + 1] = i end
+    end
+    return out
+end
+
+-- Drop what the cursor holds into attachment slot `i` of the mail being written.
+function Compat.ClickSendMailItemButton(i)
+    if ClickSendMailItemButton then ClickSendMailItemButton(i) end
+end
+
+-- Whether the mailbox shows the "Send Mail" page.
+function Compat.SendMailShown()
+    return SendMailFrame and SendMailFrame:IsShown() and true or false
+end
+
+-- Turn the mailbox to its "Send Mail" page.
+function Compat.ShowSendMail()
+    if MailFrameTab_OnClick and MailFrameTab2 then MailFrameTab_OnClick(MailFrameTab2, 2) end
+end
+
+-- The recipient and subject of the mail being written, and the money it sends (no more than I have).
+function Compat.FillSendMail(to, subject, copper)
+    if SendMailNameEditBox and to then SendMailNameEditBox:SetText(to) end
+    if SendMailSubjectEditBox and subject then SendMailSubjectEditBox:SetText(subject) end
+    copper = math.min(tonumber(copper) or 0, Compat.PlayerMoney())
+    if copper > 0 then
+        -- "Send Money", never C.O.D.: the send reads the money field and charges it on delivery
+        -- when the C.O.D. button is the one checked.
+        if SendMailRadioButton_OnClick then pcall(SendMailRadioButton_OnClick, 1) end
+        if SendMailMoney and MoneyInputFrame_SetCopper then MoneyInputFrame_SetCopper(SendMailMoney, copper) end
+    end
+end
+
+-- Call fn(recipient, subject) each time the game sends a mail.
+function Compat.HookSendMail(fn)
+    if SendMail and hooksecurefunc then hooksecurefunc("SendMail", function(to, subject) fn(to, subject) end) end
 end
 
 -- Whether a UI_INFO_MESSAGE says a trade has just gone through ("Trade complete.").

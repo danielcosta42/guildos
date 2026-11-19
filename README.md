@@ -65,6 +65,17 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 - Searchable browser for all recipes known across the guild
 - **Icon-only profession filter tabs** — compact tab bar with one icon per crafting profession; full name shown on hover tooltip
 - Gathering professions (Herbalism, Mining, Skinning, Fishing) are filtered out — only crafting professions shown
+- Item tooltips list at most three crafters (online first, else the offline ones seen most recently) and count the rest
+
+### Crafts (professions and craft orders in one tab)
+- The catalog of recipes and who makes them, beside the queue of craft orders, both in view at once
+- Click a recipe to open it in place: materials (what you carry against what the order needs), crafters, and the order
+- `/gos order <item>`, Alt-click on an item, or **Order** in Find a Crafter: ask the guild's crafters for an item
+- Open to every crafter who knows the recipe until one accepts, or sent to one crafter (a decline opens it to all)
+- Per order: bring the materials or let the crafter use their own, plus an optional tip (on trust)
+- Bars on the trade and mail windows put the materials, the item and the tip in with one click; a finished
+  trade or a sent mail moves the order on
+- The queue: For me · Mine · Open, one card per order with its four steps and the next thing to do; the tab and the minimap menu count what waits for you
 
 ### Raid Tracker
 - Automatically detects when you enter a raid and tracks full sessions (start/end, boss encounters, player snapshots)

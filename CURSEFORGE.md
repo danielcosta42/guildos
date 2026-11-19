@@ -161,7 +161,14 @@ wishlists run beside the loot council by trade (above); the loot master and soft
 
 ## 🛠️ Guild profession directory
 
-Who in the guild can craft what, what nobody covers yet, and the crafters right on the item tooltip.
+Who in the guild can craft what, what nobody covers yet, and the crafters right on the item tooltip
+(three at most, online first, so a big guild stays on screen).
+
+- **Craft orders**: ask the guild's crafters for an item, open to everyone who knows the recipe or sent to
+  one crafter. Bring the materials or let the crafter use theirs, with an optional tip. A bar on the trade
+  and mail windows hands the materials, the item and the tip over in one click, and the order moves on by
+  itself. One Crafts tab holds the recipes and the order queue side by side: click a recipe to open it in
+  place and order it, or Alt-click any item.
 
 ## 🏰 Guild chat, calendar and Call to Arms
 

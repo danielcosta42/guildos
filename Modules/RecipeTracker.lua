@@ -186,10 +186,35 @@ function RecipeTracker:ScanTradeSkill()
                 itemId = itemId,
                 spellId = spellId,
             })
+            if itemId then self:KeepReagents(itemId, i) end
         end
     end
 
     self:StoreMyRecipes(skillName, recipes)
+end
+
+-- What a recipe of the open tradeskill window needs, kept on this character only (craft orders,
+-- issue #389: the crafter tells the order's author). Anniversary's catalog has no reagents.
+local MAX_REAGENTS = 8
+function RecipeTracker:KeepReagents(itemId, index)
+    if not (GetTradeSkillNumReagents and GetTradeSkillReagentInfo and GetTradeSkillReagentItemLink) then return end
+    local n = tonumber(GetTradeSkillNumReagents(index)) or 0
+    if n == 0 then return end
+    local flat = {}
+    for j = 1, math.min(n, MAX_REAGENTS) do
+        local _, _, count = GetTradeSkillReagentInfo(index, j)
+        local link = GetTradeSkillReagentItemLink(index, j)
+        local id = link and tonumber(link:match("item:(%d+)"))
+        if not (id and tonumber(count)) then return end   -- not loaded yet: the next scan has it
+        flat[#flat + 1] = id
+        flat[#flat + 1] = tonumber(count)
+    end
+    GuildOS.db.craftReagents = GuildOS.db.craftReagents or {}
+    GuildOS.db.craftReagents[itemId] = flat
+    -- How many one craft makes (ammo, some reagents make several): the least it promises.
+    local made = GetTradeSkillNumMade and tonumber((GetTradeSkillNumMade(index)))
+    GuildOS.db.craftYield = GuildOS.db.craftYield or {}
+    GuildOS.db.craftYield[itemId] = (made and made >= 1) and math.floor(made) or nil
 end
 
 ----------------------------------------------------------------------
@@ -665,39 +690,107 @@ function RecipeTracker:LocalCrafts(itemId)
 end
 
 ----------------------------------------------------------------------
+-- The short crafter list of a tooltip (issue #389). With 900 members the full list ran off the
+-- screen: at most `max` crafters, the online ones (by name); when nobody is online, the offline
+-- ones seen most recently. `presence[shortName] = { online, ago }` (ago: hours since seen, nil
+-- when unknown). Returns the shown crafters, how many are left out, and how many of those are online.
+----------------------------------------------------------------------
+RecipeTracker.TOOLTIP_MAX = 3
+
+function RecipeTracker.TooltipPick(crafters, presence, max)
+    max = max or RecipeTracker.TOOLTIP_MAX
+    presence = presence or {}
+    local online = 0
+    for _, c in ipairs(crafters or {}) do
+        local p = presence[c.playerName]
+        if p and p.online then online = online + 1 end
+    end
+    local wantOnline = online > 0
+    -- a before b, among the crafters of the pool shown
+    local function before(a, b)
+        if not wantOnline then
+            local pa, pb = presence[a.playerName], presence[b.playerName]
+            local ta, tb = pa and pa.ago, pb and pb.ago
+            if ta ~= tb then
+                if ta == nil then return false end
+                if tb == nil then return true end
+                return ta < tb
+            end
+        end
+        return (a.playerName or "") < (b.playerName or "")
+    end
+    -- The best `max` in one pass, no sort of the whole list.
+    local shown = {}
+    for _, c in ipairs(crafters or {}) do
+        local p = presence[c.playerName]
+        if ((p and p.online) and true or false) == wantOnline then
+            local i = #shown + 1
+            while i > 1 and before(c, shown[i - 1]) do i = i - 1 end
+            if i <= max then
+                table.insert(shown, i, c)
+                if #shown > max then shown[#shown] = nil end
+            end
+        end
+    end
+    local total = #(crafters or {})
+    local restOnline = wantOnline and (online - #shown) or 0
+    return shown, total - #shown, restOnline
+end
+
+-- Who on the roster is online and how long ago the others were seen, read at most every 10 s
+-- (a tooltip asks on every redraw, and the item tooltips are not all GameTooltip).
+local PRESENCE_TTL = 10
+function RecipeTracker:GetPresence()
+    local now = GetTime and GetTime() or 0
+    if self._presence and now - (self._presenceAt or 0) < PRESENCE_TTL then return self._presence end
+    local out = {}
+    for i = 1, GetNumGuildMembers() or 0 do
+        local fullName, _, _, _, _, _, _, _, isOnline = GetGuildRosterInfo(i)
+        if fullName then
+            local short = fullName:match("^([^-]+)") or fullName
+            local ago
+            if not isOnline and GetGuildRosterLastOnline then
+                local y, mo, d, h = GetGuildRosterLastOnline(i)
+                if y or mo or d or h then
+                    ago = (((tonumber(y) or 0) * 365 + (tonumber(mo) or 0) * 30 + (tonumber(d) or 0)) * 24) + (tonumber(h) or 0)
+                end
+            end
+            out[short] = { online = isOnline and true or false, ago = ago }
+        end
+    end
+    self._presence, self._presenceAt = out, now
+    return out
+end
+
+----------------------------------------------------------------------
 -- Hook GameTooltip to show crafters for items
 ----------------------------------------------------------------------
 function RecipeTracker:HookTooltips()
     local C = GuildOS.Colors
-    local onlineSet
 
-    -- Shared: append crafter lines to a tooltip
+    -- Shared: append the short crafter list to a tooltip
     local function AppendCrafters(tooltip, crafters, label)
         if not crafters then return end
-
-        -- Refresh online set (cached per tooltip show)
-        if not onlineSet then
-            onlineSet = RecipeTracker:GetOnlineSet()
-        end
-
-        -- Sort: online first, then alphabetical
-        local sorted = {}
-        for _, c in ipairs(crafters) do
-            table.insert(sorted, c)
-        end
-        table.sort(sorted, function(a, b)
-            local aOn = onlineSet[a.playerName] and 1 or 0
-            local bOn = onlineSet[b.playerName] and 1 or 0
-            if aOn ~= bOn then return aOn > bOn end
-            return a.playerName < b.playerName
-        end)
+        local presence = RecipeTracker:GetPresence()
+        local shown, rest, restOnline = RecipeTracker.TooltipPick(crafters, presence)
 
         tooltip:AddLine(" ")
         tooltip:AddLine(label or L["Crafted by:"], C.accent.r, C.accent.g, C.accent.b)
-        for _, c in ipairs(sorted) do
+        for _, c in ipairs(shown) do
             local cc = c.class and GuildOS.ClassColors[c.class] or C.white
-            local status = onlineSet[c.playerName] and L[" |cff00ff00(online)|r"] or L[" |cff666666(offline)|r"]
+            local p = presence[c.playerName]
+            local status = (p and p.online) and L[" |cff00ff00(online)|r"] or L[" |cff666666(offline)|r"]
             tooltip:AddDoubleLine("  " .. c.playerName .. status, c.profName and L[c.profName] or "", cc.r, cc.g, cc.b, 0.6, 0.6, 0.6)
+        end
+        -- The rest as one count, and the way to order it (Alt-click opens it in the Crafts tab).
+        local more = ""
+        if rest > 0 then
+            more = (restOnline > 0 and string.format(L["+%d more (%d online)"], rest, restOnline)
+                or string.format(L["+%d more"], rest)) .. " · "
+        end
+        local hint = GuildOS.CraftOrders and L["Alt-click to order"] or L["/gos craft for all"]
+        if rest > 0 or GuildOS.CraftOrders then
+            tooltip:AddLine("  " .. more .. hint, C.textDim.r, C.textDim.g, C.textDim.b)
         end
 
         tooltip:Show()
@@ -734,11 +827,6 @@ function RecipeTracker:HookTooltips()
         local crafters = RecipeTracker:GetCraftersForSpell(spellId)
         AppendCrafters(tooltip, crafters, L["Enchanted by:"])
     end
-
-    -- Clear online cache when tooltip hides
-    GuildOS.Compat.HookTooltip(GameTooltip, "OnTooltipCleared", function()
-        onlineSet = nil
-    end)
 
     -- Item hooks (a tooltip that is not built yet is skipped)
     GuildOS.Compat.HookTooltip(GameTooltip, "OnTooltipSetItem", OnTooltipSetItem)

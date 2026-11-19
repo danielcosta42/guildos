@@ -48,14 +48,12 @@ UI:RegisterFeature({
     condition = function() return GuildOS:IsOfficer() and GuildOS:LootSystemShowsWishlist() end,
 })
 
--- On WoW: Forever the Professions panel (issue #33) takes the Recipes tab: the whole catalog,
--- who covers it and who does not. Anniversary keeps the recipe search.
+-- The Crafts tab (issue #389): the guild's professions and its craft orders in one place. The
+-- catalog is the Professions panel on WoW: Forever and retail (issue #33: the whole catalog, who
+-- covers it and who does not) and the recipe search on Anniversary; the order queue sits beside it.
 UI:RegisterFeature({
-    id = "recipes", label = GuildOS.CreateProfessionsPanel and L["Professions"] or L["Recipes"], order = 40,
-    build = function(c, win)
-        if GuildOS.CreateProfessionsPanel then return GuildOS:CreateProfessionsPanel(c, win) end
-        return GuildOS:CreateRecipesPanel(c, win)
-    end,
+    id = "recipes", label = L["Crafts"], order = 40,
+    build = function(c, win) return GuildOS:CreateCraftsTab(c, win) end,
 })
 
 -- Journal and Achievements are its last two sub-tabs on WoW: Forever (issue #367), each where its

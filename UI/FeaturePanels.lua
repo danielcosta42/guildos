@@ -2099,9 +2099,11 @@ function GuildOS:RefreshWishlistFrame()
             row.itemId   = entry.itemId
             row.itemLink = entry.itemLink or ""
 
-            -- Order number: show "✓" for delivered items
+            -- Order number, or for a delivered item the game's ready mark: a texture, since a check-mark
+            -- character drew a box in the client's font (the "game font" setting, Korean and Chinese
+            -- clients), which has no such glyph (issue #391).
             if isDelivered then
-                row.numText:SetText("|cff44FF44✓|r")
+                row.numText:SetText("|TInterface\\RaidFrame\\ReadyCheck-Ready:14:14|t")
             else
                 row.numText:SetText(entry.order or dataIdx)
             end

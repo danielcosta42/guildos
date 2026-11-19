@@ -44,6 +44,8 @@ local IN_UI = {
   cta         = { { "UI/CommunityPanel.lua", "BuildCallToArmsSub" } },
   analytics   = { { "UI/RosterFrame.lua", "GuildOS.GuildAnalytics:Show()" } },
   find        = { { "UI/Window.lua", "GuildOS.Search:Show()" } },
+  order       = { { "UI/CraftOrdersPanel.lua", "function GuildOS:CreateCraftsTab" },
+                  { "UI/CraftFinder.lua", "GuildOS:ShowCraftOrderDialog(" } },
   craft       = { { "UI/RecipesPanel.lua", "GuildOS:ShowCraftFinder()" },
                   { "UI/ProfessionsPanel.lua", "GuildOS:ShowCraftFinder()" } },
   scout       = { { "UI/RosterFrame.lua", "GuildOS.RecruitScanner:BuildInto(" } },
