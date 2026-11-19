@@ -2062,9 +2062,10 @@ function GuildOS:RefreshWishlistFrame()
             row.itemId   = entry.itemId
             row.itemLink = entry.itemLink or ""
 
-            -- Order number: show "✓" for delivered items
+            -- Order number, or for a delivered item the game's ready mark: a texture, since IBM Plex
+            -- has no check-mark glyph and drew a box (issue #391).
             if isDelivered then
-                row.numText:SetText("|cff44FF44✓|r")
+                row.numText:SetText("|TInterface\\RaidFrame\\ReadyCheck-Ready:14:14|t")
             else
                 row.numText:SetText(entry.order or dataIdx)
             end

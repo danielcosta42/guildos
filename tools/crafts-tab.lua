@@ -277,19 +277,8 @@ for _, o in pairs(GuildOS.db.craftOrders) do o.st = "cancelled" end
 GuildOS:PaintCraftsBadge()
 check(tab.label.text == "Crafts" and laid == 2, "and says nothing once nothing does")
 
--- ── Glyphs the font has ─────────────────────────────────────────────────
--- IBM Plex has no geometric shapes or check marks: a "●" drew as a box beside each online crafter.
--- The online mark is a texture, and the Crafts files carry none of these characters.
-local MISSING = { "●", "○", "▸", "►", "◆", "✓", "✔", "★", "☆" }
-for _, f in ipairs({ "UI/CraftOrdersPanel.lua", "UI/ProfessionsPanel.lua", "UI/RecipesPanel.lua",
-                     "Modules/CraftOrders.lua", "Modules/RecipeTracker.lua", "UI/CraftFinder.lua" }) do
-  local h = io.open(ADDON .. "/" .. f, "rb")
-  local src = h:read("*a")
-  h:close()
-  for _, g in ipairs(MISSING) do
-    check(not src:find(g, 1, true), f .. " draws no " .. g .. " (the font has no such glyph)")
-  end
-end
+-- ── The online mark ─────────────────────────────────────────────────────
+-- A drawn dot: a "●" character drew as a box (the font has no such glyph; tools/font-glyphs.lua).
 GuildOS.RosterFrame = nil
 for _, o in pairs(GuildOS.db.craftOrders) do o.st = "open" end
 GuildOS:ShowCraftFor(2840)
