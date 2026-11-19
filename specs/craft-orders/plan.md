@@ -28,9 +28,9 @@
 | `mats` | `{ id }` | the author or the crafter, while it is accepted and mode is `mats` |
 | `done` | `{ id }` | the crafter, or the author on receiving the item |
 | `can` | `{ id }` | the author |
-| `ask` / `have` | `{}` / `{ list }` | a login asks; one answer after 2–10 s; an answer with nothing new to us cancels ours; at most one answer a minute |
+| `ask` / `have` | `{}` / `{ list }` | a login asks. Each member answers with only the running orders they placed or took, after 2–10 s, at most once every 2 min. |
 
-Orders merged from `have` are a hint.
+Orders merged from `have`: each one counts only when the sender is its author or its crafter.
 - Unknown orders are kept only while running, within their author's cap, and never when they name me.
 - Known orders only move forward (open < accepted < mats < done), with the same author and target,
   and the same crafter once one has accepted.

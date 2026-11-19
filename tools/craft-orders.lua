@@ -127,7 +127,7 @@ local function fresh()
   wire, printed, timers = {}, {}, {}
   CRAFTS_ME = false
   O:ForgetCrafters()
-  O.answeredAt, O.answerPending, O.heardHave, O.lastHave = nil, nil, nil, nil
+  O.answeredAt, O.answerPending = nil, nil
   O:Initialize()
   timers = {}   -- the login's ask is checked on its own below
 end
@@ -289,22 +289,22 @@ check(haves == 1, "two asks, one answer")
 wire = {}
 from("Gil", "ask", {})
 runTimers()
-check(last("have") == nil, "not twice in a minute")
-NOW = NOW + 120
-local mineNow = O:Rows("mine")[1]
+check(last("have") == nil, "not twice in two minutes")
+NOW = NOW + O.ANSWER_EVERY + 1
+from("Bea", "new", { id = "NOTMINE", item = 100, n = 1 })
 from("Hal", "ask", {})
-from("Ivy", "have", { l = { { id = mineNow.id, who = "Ana", item = 100, n = 1, ts = mineNow.ts, at = mineNow.at } } })
 runTimers()
-check(last("have") == nil, "someone answered with all I know: mine is not sent")
+local answer = last("have")
+check(answer and #answer.data.l == 1 and answer.data.l[1].who == ANA, "I answer only for my own orders")
 
 fresh()
-from("Jon", "have", { l = { { id = "H1", who = "Bea", item = 100, n = 2, st = "accepted", cr = "Cid", ts = NOW, at = NOW },
+from("Cid", "have", { l = { { id = "H1", who = "Bea", item = 100, n = 2, st = "accepted", cr = "Cid", ts = NOW, at = NOW },
                             { id = "H2", who = "Bea", item = 100, n = 999 } } })
 check(O:Get("H1") and O:Get("H1").cr == CID and O:Get("H1").who == BEA, "an answer brings the orders I missed")
 check(O:Get("H2") == nil, "a bad one in it is dropped")
-from("Jon", "have", { l = { { id = "H1", who = "Eve", item = 100, n = 2, st = "cancelled", ts = NOW, at = NOW + 10 } } })
+from("Eve", "have", { l = { { id = "H1", who = "Eve", item = 100, n = 2, st = "cancelled", ts = NOW, at = NOW + 10 } } })
 check(O:Get("H1").st == "accepted", "another author for a known order is not taken")
-from("Jon", "have", { l = { { id = "H1", who = "Bea", item = 100, n = 2, st = "done", cr = "Cid", ts = NOW, at = NOW + 10 } } })
+from("Cid", "have", { l = { { id = "H1", who = "Bea", item = 100, n = 2, st = "done", cr = "Cid", ts = NOW, at = NOW + 10 } } })
 check(O:Get("H1").st == "done", "a newer state of a known order is")
 
 -- An answer is a hint: it cannot cancel, revive, reassign, or speak for me.
@@ -324,13 +324,48 @@ from("Dan", "have", { l = { { id = "F3", who = "Bea", item = 100, n = 1, st = "c
 check(O:Get("F3") == nil, "a closed order I never knew is not kept")
 local flood = {}
 for i = 1, 8 do flood[i] = { id = "FL" .. i, who = "Eve", item = 100, n = 1, ts = NOW, at = NOW } end
-from("Dan", "have", { l = flood })
+from("Eve", "have", { l = flood })
 local eve = 0
 for _, x in pairs(GuildOS.db.craftOrders) do if x.who == K("Eve") then eve = eve + 1 end end
 check(eve == O.OPEN_PER, "nor more open orders for one author than the cap")
 local myOrder = O:Place(100, {})
 from("Dan", "have", { l = { { id = myOrder.id, who = "Ana", item = 100, n = 1, st = "accepted", cr = "Dan", ts = NOW, at = NOW + 60 } } })
 check(O:Get(myOrder.id).st == "open", "and my own orders come to me live, never from an answer")
+from("Bea", "new", { id = "F4", item = 100, n = 1 })
+from("Eve", "have", { l = { { id = "F4", who = "Bea", item = 100, n = 1, st = "done", cr = "Dan", ts = NOW, at = NOW + 60 } } })
+check(O:Get("F4").st == "open", "an answer speaks only for its sender's orders: Eve cannot close Bea's")
+from("Dan", "have", { l = { { id = "F5", who = "Bea", item = 100, n = 1, ts = NOW, at = NOW } } })
+check(O:Get("F5") == nil, "nor bring an order in Bea's name")
+from("Bea", "have", { l = { { id = "F4", who = "Bea", item = 100, n = 1, st = "cancelled", ts = NOW, at = NOW + 60 } } })
+check(O:Get("F4").st == "cancelled", "the author's own answer may say it was cancelled")
+
+-- A late acceptance dated just before another is a takeover, not "at once".
+fresh()
+from("Bea", "new", { id = "LATE", item = 100, n = 1, ts = NOW - 10 })
+O:Apply("acc", { id = "LATE", at = NOW }, CID)
+NOW = NOW + 7200
+check(O:Apply("acc", { id = "LATE", at = NOW - 7201 }, DAN) == nil and O:Get("LATE").cr == CID,
+      "heard two hours after it was sent: refused")
+NOW = NOW - 7200
+
+-- A crafter who took the order and gave it back before hearing an earlier acceptance: every client
+-- ends with the earlier crafter, whichever order the messages came in.
+fresh()
+from("Bea", "new", { id = "RA", item = 100, n = 1, ts = NOW - 20 })
+from("Bea", "new", { id = "RB", item = 100, n = 1, ts = NOW - 20 })
+O:Apply("acc", { id = "RA", at = NOW - 9 }, DAN); O:Apply("rel", { id = "RA", at = NOW - 8 }, DAN)
+O:Apply("acc", { id = "RA", at = NOW - 10 }, CID)
+O:Apply("acc", { id = "RB", at = NOW - 10 }, CID)
+O:Apply("acc", { id = "RB", at = NOW - 9 }, DAN); O:Apply("rel", { id = "RB", at = NOW - 8 }, DAN)
+check(O:Get("RA").st == "accepted" and O:Get("RA").cr == CID, "Dan's acceptance and release first: Cid's earlier one holds")
+check(O:Get("RB").st == "accepted" and O:Get("RB").cr == CID, "Cid's first: the same end")
+
+-- The crafter's yield replaces the author's unknown one.
+fresh()
+local yo = O:Place(100, { n = 10 })
+check(last("new").data.y == nil, "an author who does not know the yield sends none")
+from("Cid", "acc", { id = yo.id, at = NOW, y = 5 })
+check(O:Get(yo.id).y == 5 and O:Crafts(O:Get(yo.id)) == 2, "the crafter's yield is used: ten items, two crafts")
 
 -- ── The trade and the mail ──────────────────────────────────────────────
 fresh()

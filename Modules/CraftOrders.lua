@@ -31,7 +31,7 @@ CraftOrders.MAX       = 200                -- orders kept at most
 CraftOrders.HAVE_MAX  = 60                 -- orders in one answer to a login
 CraftOrders.MAX_RG    = 8                  -- reagents of one recipe
 CraftOrders.FUTURE    = 300                -- seconds a peer's clock may run ahead
-CraftOrders.ANSWER_EVERY = 60              -- at most one answer to logins a minute
+CraftOrders.ANSWER_EVERY = 120             -- at most one answer to logins every two minutes
 CraftOrders.TAKEOVER  = 60                 -- seconds two acceptances count as "at once"
 local MAX_ITEM_ID = 10000000
 
@@ -183,27 +183,37 @@ function CraftOrders:Apply(act, data, by)
 
     if act == "acc" then
         if by == o.who or (o.to and o.to ~= by) then return nil end
-        -- No acceptance from before the order, or from before its last release: a late message
-        -- from an earlier round must not take it again, whatever order the messages came in.
-        if at < (o.ts or 0) or at < (o.rel or 0) then return nil end
-        if st == "open" then
+        if at < (o.ts or 0) then return nil end
+        -- "At once" means within TAKEOVER of each other AND heard within TAKEOVER of being sent: a
+        -- message dated a second before an acceptance but arriving hours later is a takeover.
+        local atOnce = function(other) return other and math.abs(at - other) <= self.TAKEOVER and t - at <= self.TAKEOVER end
+        if at < (o.rel or 0) then
+            -- From before the last release. It counts only when it beat the acceptance that was
+            -- released (a crafter who took the order and gave it back before hearing an earlier
+            -- one): then every client ends with the earlier crafter, whatever order they heard in.
+            if not (st == "open" and o.relBy and by ~= o.relBy and atOnce(o.relAcc)
+                    and CraftOrders.Wins(at, by, o.relAcc, o.relBy)) then
+                return nil
+            end
             o.st, o.cr, o.acc = "accepted", by, at
-        elseif st == "accepted" and o.cr ~= by and math.abs(at - (o.acc or at)) <= self.TAKEOVER
-            and CraftOrders.Wins(at, by, o.acc, o.cr) then
+        elseif st == "open" then
+            o.st, o.cr, o.acc = "accepted", by, at
+        elseif st == "accepted" and o.cr ~= by and atOnce(o.acc) and CraftOrders.Wins(at, by, o.acc, o.cr) then
             -- Two crafters took it at once: every client keeps the earlier. Never once the materials
-            -- went to one of them, and never long after: that is not "at once" but a takeover.
+            -- went to one of them, and never later: that is not "at once" but a takeover.
             o.cr, o.acc = by, at
         else
             return nil
         end
-        o.rg = o.rg or cleanRg(data.rg)
-        o.y = o.y or int(data.y, 1, 1000)
+        o.rg = cleanRg(data.rg) or o.rg
+        o.y = int(data.y, 1, 1000) or o.y   -- the crafter knows how many one craft makes
     elseif act == "dec" then
         if st ~= "open" or o.to ~= by then return nil end
         o.to = nil
     elseif act == "rel" then
         if o.cr ~= by or not (st == "accepted" or st == "mats") then return nil end
-        o.st, o.cr, o.acc, o.rel = "open", nil, nil, math.max(at, o.acc or 0)
+        o.st, o.rel, o.relBy, o.relAcc = "open", math.max(at, o.acc or 0), o.cr, o.acc
+        o.cr, o.acc = nil, nil
         if o.to == by then o.to = nil end
     elseif act == "mats" then
         if st ~= "accepted" or o.mode ~= "mats" or not (by == o.who or by == o.cr) then return nil end
@@ -310,6 +320,20 @@ function CraftOrders:Yield(item, o)
     end
     local y = GuildOS.db and GuildOS.db.craftYield and GuildOS.db.craftYield[item]
     return (tonumber(y) and y >= 1) and math.floor(y) or 1
+end
+
+-- The yield to send: only one this client actually knows (catalog or its own window), never the
+-- fallback of 1, which would hide the crafter's.
+function CraftOrders:KnownYield(item)
+    local D, cat = GuildOS.ProfDirectory, GuildOS.ProfCatalog
+    local ids = D and D.ItemRecipes and D.ItemRecipes(item)
+    if ids and ids[1] and cat and cat.F and cat.F.outCount then
+        local r = cat.recipes[ids[1]]
+        local n = r and tonumber(r[cat.F.outCount])
+        if n and n >= 1 then return math.floor(n) end
+    end
+    local y = GuildOS.db and GuildOS.db.craftYield and GuildOS.db.craftYield[item]
+    return (tonumber(y) and y >= 1) and math.floor(y) or nil
 end
 
 -- How many crafts make the order's items.
@@ -426,7 +450,7 @@ function CraftOrders:Place(item, opts)
         tip = math.max(0, math.min(self.TIP_MAX, math.floor(tonumber(opts.tip) or 0))),
         note = cleanText(opts.note, self.NOTE_MAX),
         to = opts.to ~= me and opts.to or nil,
-        rg = self:ReagentsFlat(item), y = self:Yield(item), ts = t, at = t,
+        rg = self:ReagentsFlat(item), y = self:KnownYield(item), ts = t, at = t,
     }
     local o = self:Apply("new", data, me)
     if not o then return nil, L["The order could not be placed."] end
@@ -441,7 +465,7 @@ function CraftOrders:Act(id, what)
     local act = ACTS[what] or what
     local data = { id = id, at = now() }
     local o = self:Get(id)
-    if act == "acc" and o then data.rg, data.y = self:ReagentsFlat(o.item), self:Yield(o.item) end
+    if act == "acc" and o then data.rg, data.y = self:ReagentsFlat(o.item), self:KnownYield(o.item) end
     if not self:Apply(act, data, self:MyKey()) then return false end
     publish(act, data)
     self:Refresh()
@@ -491,7 +515,7 @@ function CraftOrders:OnEnvelope(env, sender)
     if env.act == "ask" then
         self:OnAsk()
     elseif env.act == "have" then
-        self:Merge(data.l)
+        self:Merge(data.l, by)
     else
         local known = self:Get(type(data.id) == "string" and data.id or "")
         local before = known and known.cr
@@ -507,37 +531,31 @@ function CraftOrders:OnEnvelope(env, sender)
     end
 end
 
--- The orders still running, newest first, for an answer.
+-- My orders still running, newest first, for an answer: the ones I placed or took, which only I
+-- speak for.
 function CraftOrders:ActiveList()
-    local t, list = now(), {}
+    local t, me, list = now(), self:MyKey(), {}
     for _, o in pairs(store()) do
-        if CraftOrders.IsActive(o, t) then list[#list + 1] = o end
+        if CraftOrders.IsActive(o, t) and (o.who == me or o.cr == me) then list[#list + 1] = o end
     end
     table.sort(list, function(a, b) return (a.at or 0) > (b.at or 0) end)
     for i = #list, self.HAVE_MAX + 1, -1 do list[i] = nil end
     return list
 end
 
--- Orders from an answer: a hint, never an authority, since any member can send one. An unknown
--- order is kept only while running, within its author's cap, and never one naming me (my own and
--- the ones I took come to me live). A known one only moves forward (open, accepted, materials,
--- done) and keeps its author, its target and, once accepted, its crafter; nothing is cancelled or
--- brought back from here. Orders I placed or took are never touched. Returns whether it changed
--- anything.
+-- Orders from an answer by `by` (a member key). Each counts only where `by` speaks for it: its
+-- author, or its crafter. A forged answer can then say nothing about anyone else's order.
+--   * unknown: kept while running, within its author's cap, never one naming me;
+--   * known: the newer state, forward only (open, accepted, materials, done) with the same author
+--     and target; the author may also have cancelled it; a crafter speaks only as the crafter.
+-- Orders I placed or took are never touched: they come to me live. Returns whether it changed.
 local RANK = { open = 1, accepted = 2, mats = 3, done = 4 }
-function CraftOrders:Merge(list)
-    if type(list) ~= "table" then return false end
+function CraftOrders:Merge(list, by)
+    if type(list) ~= "table" or not by then return false end
     local orders, t, changed, me = store(), now(), false, self:MyKey()
-    -- What this answer carried, by id: when its order last changed (OnAsk reads it).
-    local seen = {}
-    for i = 1, math.min(#list, self.HAVE_MAX) do
-        local v = list[i]
-        if type(v) == "table" and type(v.id) == "string" then seen[v.id] = GuildOS.Finite(v.at) or 0 end
-    end
-    self.lastHave = seen
     for i = 1, math.min(#list, self.HAVE_MAX) do
         local o = clean(list[i])
-        if o then
+        if o and (by == o.who or by == o.cr) then
             local mine = orders[o.id]
             if not mine then
                 if CraftOrders.IsActive(o, t) and o.who ~= me and o.cr ~= me and o.to ~= me
@@ -545,12 +563,18 @@ function CraftOrders:Merge(list)
                     orders[o.id] = o
                     changed = true
                 end
-            elseif mine.who == o.who and mine.who ~= me and mine.cr ~= me and (o.at or 0) > (mine.at or 0)
-                and RANK[o.st] and RANK[mine.st] and RANK[o.st] > RANK[mine.st]
-                and (mine.cr == nil or mine.cr == o.cr) and o.cr ~= nil and o.to == mine.to then
-                mine.st, mine.cr, mine.acc, mine.at = o.st, o.cr, mine.acc or o.acc, o.at
-                mine.rg, mine.y = mine.rg or o.rg, mine.y or o.y
-                changed = true
+            elseif mine.who == o.who and mine.who ~= me and mine.cr ~= me and o.to == mine.to
+                and (o.at or 0) > (mine.at or 0) then
+                local forward = RANK[o.st] and RANK[mine.st] and RANK[o.st] > RANK[mine.st]
+                    and o.cr ~= nil and (mine.cr == nil or mine.cr == o.cr)
+                    and (by == o.who or by == o.cr)
+                local cancel = o.st == "cancelled" and by == mine.who and ACTIVE[mine.st]
+                if forward or cancel then
+                    mine.st, mine.at = o.st, o.at
+                    if forward then mine.cr, mine.acc = o.cr, mine.acc or o.acc end
+                    mine.rg, mine.y = mine.rg or o.rg, mine.y or o.y
+                    changed = true
+                end
             end
         end
     end
@@ -558,34 +582,22 @@ function CraftOrders:Merge(list)
         self:Prune()
         self:Refresh()
     end
-    self.heardHave = (self.heardHave or 0) + 1
     return changed
 end
 
--- A guildmate logged in and asked. One member answers, after a random wait; an answer heard
--- meanwhile cancels mine when it leaves out nothing I know.
+-- A guildmate logged in and asked: I answer for my own orders (placed or taken), after a random
+-- wait, at most once every ANSWER_EVERY.
 function CraftOrders:OnAsk()
     if self.answerPending then return end
-    local t = now()
-    if t - (self.answeredAt or 0) < self.ANSWER_EVERY then return end
+    if now() - (self.answeredAt or 0) < self.ANSWER_EVERY then return end
     if #self:ActiveList() == 0 then return end
     self.answerPending = true
-    local heard = self.heardHave or 0
-    local before = {}
-    for _, o in ipairs(self:ActiveList()) do before[o.id] = o.at end
     Compat.After(math.random(2, 10), function()
         self.answerPending = false
-        if (self.heardHave or 0) > heard and self.lastHave then
-            -- Someone answered: mine is needed only for what theirs did not carry.
-            local missing = false
-            for id, at in pairs(before) do
-                local theirs = self.lastHave[id]
-                if not theirs or theirs < at then missing = true break end
-            end
-            if not missing then return end
-        end
+        local list = self:ActiveList()
+        if #list == 0 then return end
         self.answeredAt = now()
-        publish("have", { l = self:ActiveList() })
+        publish("have", { l = list })
     end)
 end
 
@@ -758,7 +770,9 @@ function CraftOrders:OnMailSent()
     local p, sent = self.mailPending, self.lastSend
     self.lastSend = nil
     if not p then return end
-    if not sent or sent.to:lower() ~= p.to:lower() or sent.subject ~= p.subject then return end
+    local subj = sent and sent.subject or ""
+    local sameSubject = subj ~= "" and (p.subject:sub(1, #subj) == subj or subj:sub(1, #p.subject) == p.subject)
+    if not sent or sent.to:lower() ~= p.to:lower() or not sameSubject then return end
     self.mailPending = nil
     local o = self:Get(p.id)
     if not o then return end

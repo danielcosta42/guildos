@@ -45,7 +45,7 @@ make it meant whispering around.
 
 - An order belongs to its sender: the author is who sent the message, never what it says.
 - Only the author cancels. Only the target declines. Only one crafter accepts: when two accept at
-  once (within a minute of each other), every client keeps the earlier acceptance, and on a tie the
+  once (within a minute of each other, and heard within a minute of being sent), every client keeps the earlier acceptance, and on a tie the
   lower name, so they all agree. Once the materials went to a crafter, nobody takes the order from
   them. An acceptance dated before the order, or before its last release, is ignored, so a late
   message from an earlier round changes nothing. The crafter who lost a tie is told.
@@ -53,13 +53,16 @@ make it meant whispering around.
   gives the order back or marks it done. The author or the crafter marks the materials delivered.
 - At most 5 open orders per member, up to 20 items each, a note of up to 80 characters, and a tip
   of up to 100,000 gold. Closed orders are kept for 14 days. At most 200 orders are kept.
-- A member who logs in asks once. One member answers, after a random wait, with the orders still
-  running. Any answer that brings nothing new cancels the others.
-- An answer is a hint, never an authority: anyone can send one.
+- A member who logs in asks once. Each member with running orders they placed or took answers
+  for those, after a random wait, at most once every two minutes.
+- An answer speaks only for the sender's own orders, as their author or their crafter, so a
+  forged answer says nothing about anyone else's.
   - It adds only running orders, within their author's cap, and never one naming me.
-  - It only moves a known order forward (open, accepted, materials, done), keeping its author,
-    its target and, once accepted, its crafter.
-  - It never cancels or revives an order, and never touches orders I placed or took.
+  - It moves a known order only forward (open, accepted, materials, done), keeping its author, its
+    target and, once accepted, its crafter. Only the author's answer may say it was cancelled.
+  - It never revives an order, and never touches orders I placed or took: those come to me live.
+- A crafter who took an order and gave it back before hearing an earlier acceptance loses to it on
+  every client, whatever order the messages arrived in.
 - The materials count crafts, not items: a recipe that makes five takes a fifth of the crafts. The
   yield comes from the catalog, or the crafter's tradeskill window on Anniversary.
 - A tip by mail is always sent as money, never as C.O.D.
