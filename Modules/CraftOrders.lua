@@ -728,14 +728,12 @@ end
 
 -- A trade went through: what it means for the order with that partner.
 function CraftOrders:OnTradeDone(partner, mine, theirs, tipPut, pick)
-    -- Every running order with this player is checked against what changed hands, so the one the
-    -- trade was about moves on whichever was picked on the bar; the tip belongs to the picked one
-    -- (or the only one).
+    -- One trade moves one order: the one picked on the bar when what changed hands fits it, else the
+    -- oldest it fits. Item ids carry no counts, so two orders for the same item, or with a reagent in
+    -- common, never both move on one trade.
     local list = self:OrdersWith(partner)
     if #list == 0 then return end
-    local tipFor = pick or (#list == 1 and list[1].o.id) or nil
-    for _, x in ipairs(list) do
-        local o, role = x.o, x.role
+    local function effect(o, role)
         local reagent = {}
         for _, r in ipairs(self:Reagents(o.item, o)) do reagent[r.itemID] = true end
         local gaveRg, gotRg, gaveItem, gotItem = false, false, false, false
@@ -749,15 +747,33 @@ function CraftOrders:OnTradeDone(partner, mine, theirs, tipPut, pick)
             if id and reagent[id] then gotRg = true end
             if id == o.item then gotItem = true end
         end
-        if role == "author" and tipPut and o.id == tipFor then o.paid = true end
+        local matsStep = o.st == "accepted" and o.mode == "mats"
         if role == "author" then
-            if gotItem then self:Act(o.id, "done")
-            elseif gaveRg and o.st == "accepted" and o.mode == "mats" then self:Act(o.id, "mats") end
+            if gotItem then return "done" end
+            if gaveRg and matsStep then return "mats" end
         else
-            if gaveItem then self:Act(o.id, "done")
-            elseif gotRg and o.st == "accepted" and o.mode == "mats" then self:Act(o.id, "mats") end
+            if gaveItem then return "done" end
+            if gotRg and matsStep then return "mats" end
+        end
+        return nil
+    end
+    local chosen, act
+    for _, x in ipairs(list) do
+        if x.o.id == pick then chosen, act = x, effect(x.o, x.role) end
+    end
+    if not act then
+        chosen = nil
+        for _, x in ipairs(list) do
+            local a = effect(x.o, x.role)
+            if a then chosen, act = x, a break end
         end
     end
+    -- The tip went with this trade: it belongs to the picked order, or the only one.
+    local tipFor = pick or (#list == 1 and list[1].o.id) or (chosen and chosen.o.id)
+    for _, x in ipairs(list) do
+        if x.role == "author" and tipPut and x.o.id == tipFor then x.o.paid = true end
+    end
+    if chosen and act then self:Act(chosen.o.id, act) end
     self:Refresh()
 end
 

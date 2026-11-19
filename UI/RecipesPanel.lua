@@ -120,7 +120,10 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         else
             state.results = GuildOS.RecipeTracker:Search(state.query, state.profFilter)
         end
-        -- Opened on an item (Alt-click, an order's card): only the recipes that make it.
+        -- Opened on an item (Alt-click, an order's card): only the recipes that make it, and the
+        -- title says so until a filter or the search lets go of it.
+        local itemName = state.item and (GuildOS.Compat.GetItemInfo(state.item) or ("item:" .. state.item))
+        title:SetText(itemName and string.format(L["Recipes for %s"], itemName) or L["Guild Recipes"])
         if state.item then
             local only = {}
             for _, e in ipairs(state.results) do if e.itemId == state.item then only[#only + 1] = e end end
