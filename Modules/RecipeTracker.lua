@@ -782,10 +782,15 @@ function RecipeTracker:HookTooltips()
             local status = (p and p.online) and L[" |cff00ff00(online)|r"] or L[" |cff666666(offline)|r"]
             tooltip:AddDoubleLine("  " .. c.playerName .. status, c.profName and L[c.profName] or "", cc.r, cc.g, cc.b, 0.6, 0.6, 0.6)
         end
+        -- The rest as one count, and the way to order it (Alt-click opens it in the Crafts tab).
+        local more = ""
         if rest > 0 then
-            local more = restOnline > 0 and string.format(L["+%d more (%d online)"], rest, restOnline)
-                or string.format(L["+%d more"], rest)
-            tooltip:AddLine("  " .. more .. "  " .. L["/gos craft for all"], C.textDim.r, C.textDim.g, C.textDim.b)
+            more = (restOnline > 0 and string.format(L["+%d more (%d online)"], rest, restOnline)
+                or string.format(L["+%d more"], rest)) .. " · "
+        end
+        local hint = GuildOS.CraftOrders and L["Alt-click to order"] or L["/gos craft for all"]
+        if rest > 0 or GuildOS.CraftOrders then
+            tooltip:AddLine("  " .. more .. hint, C.textDim.r, C.textDim.g, C.textDim.b)
         end
 
         tooltip:Show()

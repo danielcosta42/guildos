@@ -346,7 +346,7 @@ read_globals = {
     "NUM_BAG_SLOTS", "PickupContainerItem", "SplitContainerItem", "ATTACHMENTS_MAX_SEND", "GetSendMailItem",
     "ClickSendMailItemButton", "SendMailFrame", "MailFrameTab_OnClick", "MailFrameTab2", "SendMailNameEditBox",
     "SendMailSubjectEditBox", "SendMailRadioButton_OnClick", "SendMail", "GetTradeSkillNumMade", "SendMailMoney", "MoneyInputFrame_SetCopper", "MailFrame",
-    "TradeFrame", "GetTradeSkillNumReagents", "GetTradeSkillReagentInfo", "GetTradeSkillReagentItemLink",
+    "TradeFrame", "InitiateTrade", "LootFrame", "IsControlKeyDown", "GetTradeSkillNumReagents", "GetTradeSkillReagentInfo", "GetTradeSkillReagentItemLink",
     "LE_GAME_ERR_TRADE_COMPLETE",
     "ERR_TRADE_COMPLETE",
 

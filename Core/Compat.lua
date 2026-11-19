@@ -1161,6 +1161,12 @@ function Compat.TradeTimeLeft(bag, slot)
     return "bound"
 end
 
+-- Open a trade with a nearby player by name; false when the client has no way to (craft orders, #389).
+function Compat.InitiateTrade(name)
+    if not (InitiateTrade and type(name) == "string") then return false end
+    return pcall(InitiateTrade, name) and true or false
+end
+
 -- Who the open trade window is with: name and realm (nil realm: this one), or nothing when the client
 -- does not say or keeps it secret.
 function Compat.TradePartner()

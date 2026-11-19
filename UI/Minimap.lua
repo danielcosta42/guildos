@@ -94,7 +94,7 @@ local function MinimapMenu_Init(_, level)
     if pending > 0 then
         info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
         info.text = string.format(L["Craft orders (%d)"], pending)
-        info.func = function() GuildOS.UI:OpenWindow("orders", "forme"); CloseDropDownMenus() end
+        info.func = function() GuildOS.UI:OpenWindow("recipes", "forme"); CloseDropDownMenus() end
         UIDropDownMenu_AddButton(info, level)
     end
 

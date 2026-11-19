@@ -409,6 +409,24 @@ end
 
 function CraftOrders:Get(id) return store()[id] end
 
+-- An order's step on the card: 1 open, 2 accepted, 3 materials delivered, 4 done; 0 when it was
+-- cancelled or expired.
+local STEP = { open = 1, accepted = 2, mats = 3, done = 4 }
+function CraftOrders.Step(o, t)
+    return STEP[CraftOrders.StateOf(o, t)] or 0
+end
+
+-- How many running orders ask for each item: { [itemId] = n }. The catalog's badges and its
+-- "With orders" filter read it once per draw.
+function CraftOrders:OrdersByItem()
+    local t, out = now(), {}
+    for _, o in pairs(store()) do
+        if CraftOrders.IsActive(o, t) then out[o.item] = (out[o.item] or 0) + 1 end
+    end
+    return out
+end
+
+
 ----------------------------------------------------------------------
 -- My own actions
 ----------------------------------------------------------------------
@@ -608,19 +626,32 @@ end
 ----------------------------------------------------------------------
 -- Delivery: the trade and the mail
 ----------------------------------------------------------------------
--- My running order with `partner` (a member key), and my part in it ("author" or "crafter").
-function CraftOrders:OrderWith(partner)
-    if not partner then return nil end
+-- My running orders with `partner` (a member key), oldest first: { { o, role } }, role "author"
+-- or "crafter".
+function CraftOrders:OrdersWith(partner)
+    local out = {}
+    if not partner then return out end
     local me, t = self:MyKey(), now()
-    local best, role
     for _, o in pairs(store()) do
         local st = CraftOrders.StateOf(o, t)
         if st == "accepted" or st == "mats" then
             local r = (o.who == me and o.cr == partner and "author") or (o.cr == me and o.who == partner and "crafter")
-            if r and (not best or (o.ts or 0) < (best.ts or 0)) then best, role = o, r end
+            if r then out[#out + 1] = { o = o, role = r } end
         end
     end
-    return best, role
+    table.sort(out, function(a, b) return (a.o.ts or 0) < (b.o.ts or 0) end)
+    return out
+end
+
+-- The one a trade is about: the one picked on the trade bar, else the oldest.
+function CraftOrders:OrderWith(partner)
+    local list = self:OrdersWith(partner)
+    local pick = self.trade and self.trade.pick
+    for _, x in ipairs(list) do
+        if x.o.id == pick then return x.o, x.role end
+    end
+    if list[1] then return list[1].o, list[1].role end
+    return nil
 end
 
 -- What I should hand over in an order: the materials (author, when they bring them and have not

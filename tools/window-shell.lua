@@ -533,7 +533,7 @@ check(UI:GetFeature("journal").restart, "the journal still asks for a reload whe
 
 GuildOS:SetFeatureEnabled("recipes", false)
 printed = {}
-check(not UI:OpenWindow("recipes") and said("Recipes is disabled in Settings."), "a disabled feature refuses, saying why")
+check(not UI:OpenWindow("recipes") and said("Crafts is disabled in Settings."), "a disabled feature refuses, saying why")
 check(not listed(f, "recipes"), "a disabled feature has no tab")
 GuildOS:SetFeatureEnabled("recipes", true)
 check(listed(f, "recipes"), "switching it back on brings the tab back")

@@ -129,6 +129,7 @@ FauxScrollFrame_GetOffset = function() return 0 end
 FauxScrollFrame_Update, FauxScrollFrame_OnVerticalScroll, FauxScrollFrame_SetOffset = noop, noop, noop
 local told
 ChatFrame_SendTell = function(name) told = name end
+function IsShiftKeyDown() return false end
 
 local registry = {}
 LibStub = setmetatable({
@@ -167,6 +168,9 @@ GuildOS.ProfCatalog = {
 dofile(ADDON .. "/Modules/Professions.lua")
 dofile(ADDON .. "/Modules/ProfDirectory.lua")
 dofile(ADDON .. "/UI/ProfessionsPanel.lua")
+-- The opened recipe's block and the orders it places (issue #389).
+dofile(ADDON .. "/Modules/CraftOrders.lua")
+dofile(ADDON .. "/UI/CraftOrdersPanel.lua")
 local P = GuildOS.Professions
 local ME, BOB, CID = P.OwnKey(), GuildOS:GetPlayerKey("Bob"), GuildOS:GetPlayerKey("Cid")
 GuildOS.db = { members = {}, recipes = {}, professions = {
@@ -176,7 +180,7 @@ GuildOS.db = { members = {}, recipes = {}, professions = {
     [164] = { rank = 210, max = 300, spec = 9788, h = 1, n = 1, recipes = { 9950 }, extra = {} } } },
   [CID] = { src = "native", ts = NOW, profs = { [164] = {} } },
 } }
--- Nine more who smelt copper: the card lists eight crafters and says how many more.
+-- Nine more who smelt copper: the opened recipe names three crafters and counts the rest.
 for i = 1, 9 do
   GuildOS.db.professions[GuildOS:GetPlayerKey("Miner" .. i)] = { src = "addon", ts = NOW, profs = {
     [186] = { rank = 30, max = 75, h = 1, n = 1, recipes = { 2657 }, extra = {} } } }
@@ -221,27 +225,30 @@ row.scripts.OnEnter(row)
 row.scripts.OnLeave(row)
 UNCACHED[7978] = true
 row.scripts.OnClick(row)
-local card = _G.GuildOSRecipeCard
-check(card and card.shown, "a click opens the recipe card")
+check(st.open == 9950 and st.detailAt ~= nil, "a click opens the recipe in place")
+check(panel.detail and panel.detail.shown, "its block shows over the rows it takes")
+local holes = 0
+for _, e in ipairs(st.results) do if e.__detail then holes = holes + 1 end end
+check(holes == st.detailRows and holes > 0 and st.results[st.detailAt].__detail == 1,
+      "the list makes room for it right after the recipe")
 check(not showing("Item 7978") and showing("Recipe item"), "an uncached recipe item shows as a plain source")
 UNCACHED[7978] = nil
-card:ClearAllPoints()
-card:SetPoint("CENTER", UIParent, "CENTER", 40, 40)   -- the user drags it away
 panel.itemEvents.scripts.OnEvent(panel.itemEvents, "GET_ITEM_INFO_RECEIVED", 7978)
 runTimers()
-check(card.movedTo == "CENTER", "a repaint keeps the card where the user dragged it")
-check(showing("Item 7978"), "the card repaints when the item's data arrives")
-check(card.h > 100 and card.h < 300, "the card is as tall as what it shows: " .. tostring(card.h))
-local whispered = false
+check(showing("Item 7978"), "the block repaints when the item's data arrives")
+check(showing("CRAFTERS · 1"), "it says who makes it")
+local asked = false
 for _, o in ipairs(all) do
   local label = rawget(o, "label")
-  if o.kind == "Button" and o.shown and label and label.text == "Whisper" and o.scripts.OnClick then
+  if o.kind == "Button" and o.shown and label and label.text == "Ask them" and o.scripts.OnClick then
     o.scripts.OnClick(o)
-    whispered = true
+    asked = true
     break
   end
 end
-check(whispered and told == "Bob", "Whisper opens a tell to the online crafter")
+check(asked and panel.detail.toKey == BOB and showing("To Bob only"), "Ask them sends the order to that crafter alone")
+row.scripts.OnClick(row)
+check(st.open == nil and not panel.detail.shown, "a second click closes it")
 local smelt
 panel.railButtons[1].scripts.OnClick(panel.railButtons[1])
 for _, r in ipairs(panel.rows) do
@@ -249,11 +256,9 @@ for _, r in ipairs(panel.rows) do
   if d and d.id == 2657 then smelt = r end
 end
 smelt.scripts.OnClick(smelt)
-check(showing("+2 more crafters"), "past eight crafters the card says how many more")
-local tall = card.h
-check(tall > 300, "and grows to hold them: " .. tostring(tall))
-container.scripts.OnHide(container)
-check(not card.shown, "the card closes with the panel")
+check(showing("CRAFTERS · 10") and showing("+7 more"), "past three crafters the block counts the rest")
+check(showing("you craft"), "a recipe I know is marked in the list")
+smelt.scripts.OnClick(smelt)
 panel.railButtons[2].scripts.OnClick(panel.railButtons[2])
 panel.tabCrafters.scripts.OnClick(panel.tabCrafters)
 check(st.mode == "crafters" and #st.results == 2 and st.results[1].name == "Bob" and st.results[2].native,
@@ -267,7 +272,7 @@ panel:Relayout(520, 400)
 check(panel.visibleRows > 0, "a narrow window still lays out")
 panel:Relayout(560, 500)
 local filtersW = 0
-for _, t in ipairs(panel.filterTabs) do filtersW = filtersW + t.w + 4 end
+for _, t in ipairs(panel.filterTabs) do if t.shown ~= false then filtersW = filtersW + t.w + 4 end end
 local inner = 560 - 10 * 2 - 176 - 12
 check(panel.search.w < 220 and panel.search.w + filtersW + 12 <= inner,
       "the search box gives way to the filters in a narrow window: " .. tostring(panel.search.w))

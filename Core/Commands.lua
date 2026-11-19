@@ -276,9 +276,9 @@ local function handleCommand(msg)
         local arg = strtrim((msg:gsub("^order%s*", "")))
         local itemId = tonumber(arg:match("item:(%d+)")) or tonumber(arg:match("^(%d+)$"))
         if itemId then
-            GuildOS:ShowCraftOrderDialog(itemId)
+            GuildOS:ShowCraftFor(itemId)
         else
-            GuildOS.UI:OpenWindow("orders")
+            GuildOS.UI:OpenWindow("recipes", "mine")
         end
     elseif msg:match("^craft") then
         -- /guildos craft <item link or id> — who can craft this, guild + realm.

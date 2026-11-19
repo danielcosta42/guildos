@@ -6,10 +6,19 @@
 |---|---|
 | `Modules/RecipeTracker.lua` | `TooltipPick` (pure): at most 3 lines and the rest as a count. The roster's presence is cached for 10 s, not per GameTooltip clear. The Anniversary scan keeps each recipe's reagents locally (`db.craftReagents`). |
 | `Modules/CraftOrders.lua` | Orders: the model, the rules, sync (`craftorder` domain, GUILD only), who can craft, reagents, the inbox count, trade and mail completion. |
-| `UI/CraftOrdersPanel.lua` | The Orders tab, the order dialog, and the bars on the trade and mail windows. |
-| `UI/CraftFinder.lua`, `UI/ProfessionsPanel.lua` | The entry points: Order (to anyone), Order on a crafter's row, and on the recipe card. |
+| `UI/CraftOrdersPanel.lua` | The Crafts tab: the order queue, the recipe block opened in place, and the tab around the catalog. Also the order dialog, Alt-click, and the bars on the trade and mail windows. |
+| `UI/ProfessionsPanel.lua`, `UI/RecipesPanel.lua` | The catalog, by client: the recipe opens in place (the floating card is gone). The order filters and the marks. `FocusItem`. |
+| `UI/CraftFinder.lua` | Order (to anyone) and Order on a crafter's row, through the dialog. |
 | `Core/Compat.lua` | Bags, the trade window's slots and money, the mail's attachments and money. |
 | `Core/Commands.lua`, `UI/Minimap.lua`, `UI/Features.lua`, `Core/Core.lua`, `GuildOS.toc` | `/gos order`, the inbox entry, the tab, the module start, the load order. |
+
+## The recipe opened in place
+
+The catalog lists keep fixed-height rows over a FauxScrollFrame.
+- An opened recipe takes `ceil(152 / row height)` rows: the list gets that many `{ __detail = k }`
+  entries right after it (`UI.WithDetail`).
+- The block is laid over their place (`UI.PlaceDetail`), and the list clips what scrolls past its edge.
+- Placeholder rows draw nothing.
 
 ## Data (`GuildOS.db.craftOrders[id]`)
 

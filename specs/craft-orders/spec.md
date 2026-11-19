@@ -28,18 +28,37 @@ make it meant whispering around.
      - The author cancels an order any time before it is done.
      - The crafter who accepted can give the order back, and it becomes `open` again.
      - An open order not taken in 7 days expires.
-3. **The Orders tab.** It has three lists:
-   - *My orders*: the ones I placed.
-   - *For me*: the ones I accepted, and the ones sent to me.
-   - *Open that I can craft*: open orders for recipes I know.
-
-   Each row offers the actions its state allows. An order is started from the Find a Crafter
-   window (to anyone, or to one crafter on a row), from the recipe card on the Professions tab, or
-   with `/gos order <item>`.
+3. **One Crafts tab** (it replaces the Professions/Recipes tab; no separate Orders tab). Three
+   columns, seen at once:
+   - **Professions** on the left, each with the guild's coverage (WoW: Forever and retail).
+     Anniversary keeps its profession filters over the list.
+   - **The catalog** in the middle: every recipe and who makes it.
+     - Marks after each name: "you craft" and "N orders".
+     - Filters, beside All / In the guild / Nobody crafts: **I craft** and **With orders**. In a
+       narrow window these two give way first; the chosen one stays.
+     - **A recipe clicked opens in place**, in the list, instead of the old floating card. Its block
+       holds the materials (what I carry against what the order needs, counted in crafts), the
+       crafters (three, online first, "Ask them" sends the order to that one alone, and the rest as
+       a count) and the order itself: quantity, whose materials, tip, and Send. A second click closes it.
+   - **The order queue** on the right, always in view: For me · Mine · Open, each with its count.
+     - One card per order shows its four steps (Open, Accepted, Materials, Ready).
+     - The card's main button is the next thing to do: Accept, Trade, Done, Received, Order again.
+       A second button holds the other choice: Decline, Give back, Cancel.
+     - The card waiting on me has a gold edge.
+     - Under 940 px the queue folds into an "Orders (N)" button that opens it as a drawer.
+   - The window's tab reads "Crafts (N)" while something waits for me.
+   - **Alt-click an item** anywhere (bags, chat, the bank) to open its recipe in the tab, ready to
+     order. It does nothing for a master looter, whose Alt-click on a bag item starts a roll, nor
+     while the loot window is open.
+   - `/gos order <item>` does the same. Without an item it opens the tab on Mine. An item the
+     catalog does not list still gets the order dialog, as Find a Crafter's Order buttons do.
+   - **Several orders with the same player**: the trade bar's "1/2 >" picks which one the trade is
+     about.
 4. **The inbox.**
    - A new order I can craft, sent to everyone or to me, says so in the chat, once, with a sound.
    - My order accepted, its materials received and its item delivered: each says so in the chat.
-   - The minimap menu shows "Craft orders (N)" while something waits for me.
+   - The minimap menu shows "Craft orders (N)" while something waits for me; it opens the
+     Crafts tab on For me.
 
 ## Rules
 
@@ -77,3 +96,6 @@ make it meant whispering around.
 - [x] A state from someone who may not set it is ignored: cancelling someone else's order, or
       marking done an order another crafter accepted.
 - [x] `tools/craft-orders.lua` and `tools/craft-tooltip.lua` cover the model and the tooltip limit.
+- [x] `tools/crafts-tab.lua` and `tools/professions-panel.lua` drive the tab: the queue's views and
+      actions, the drawer, a recipe opened in place, the filters and marks, an item opened from
+      anywhere, and the tab's count.

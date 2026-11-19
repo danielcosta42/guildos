@@ -327,7 +327,7 @@ local MODULE_START = {
     { "RecipeTracker", ui = "recipes" },
     { "CraftNet" },
     -- Craft orders (issue #389): ask the guild's crafters to make an item, deliver by trade or mail.
-    { "CraftOrders", ui = "orders" },
+    { "CraftOrders", ui = "recipes" },
     -- WoW: Forever only (issue #31); on Anniversary the module does not exist and is skipped.
     { "Professions" },
     { "ProfSync" },
