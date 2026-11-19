@@ -393,7 +393,11 @@ function GuildOS:CreateCraftDetail(parent)
         local name = UI:CreateText(d, "", 11)
         name:SetJustifyH("LEFT"); name:SetWordWrap(false)
         local ask = UI:SetButtonVariant(UI:CreateButton(d, L["Ask them"], 70, 18), "ghost")
-        d.who[i] = { name = name, ask = ask }
+        -- Online: a drawn dot, not a bullet character (IBM Plex has no such glyph: it drew a box).
+        local dot = d:CreateTexture(nil, "ARTWORK")
+        dot:SetTexture("Interface\\Buttons\\WHITE8x8")
+        dot:SetSize(6, 6)
+        d.who[i] = { name = name, ask = ask, dot = dot }
     end
     local whoMore = UI:CreateText(d, "", 10, C.label.r, C.label.g, C.label.b)
     whoMore:SetJustifyH("LEFT")
@@ -479,13 +483,17 @@ function GuildOS:CreateCraftDetail(parent)
         for i, slot in ipairs(self.who) do
             local c = r.crafters[i]
             slot.name:SetShown(c ~= nil)
+            slot.dot:SetShown(c ~= nil and c.online)
             slot.ask:SetShown(c ~= nil and c.key ~= me and c.key ~= self.toKey)
             if c then
                 slot.name:ClearAllPoints()
-                slot.name:SetPoint("TOPLEFT", x2, -8 - i * 20)
-                slot.name:SetWidth(colW - 76)
+                slot.name:SetPoint("TOPLEFT", x2 + 12, -8 - i * 20)
+                slot.name:SetWidth(colW - 88)
+                slot.dot:ClearAllPoints()
+                slot.dot:SetPoint("RIGHT", slot.name, "LEFT", -6, 0)
+                slot.dot:SetVertexColor(C.ok.r, C.ok.g, C.ok.b, 1)
                 local cc = c.online and classColor(c.key) or C.labelDim
-                slot.name:SetText((c.online and (hex(C.ok) .. "●|r ") or "") .. (c.name or nameOf(c.key)))
+                slot.name:SetText(c.name or nameOf(c.key))
                 slot.name:SetTextColor(cc.r, cc.g, cc.b)
                 slot.ask:ClearAllPoints()
                 slot.ask:SetPoint("TOPLEFT", x2 + colW - 72, -8 - i * 20 + 2)
