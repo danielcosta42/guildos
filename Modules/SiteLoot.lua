@@ -12,9 +12,10 @@
 --   * Active: the raid the player is in is one of the entries and now is inside that raid's night window
 --     (LootRule's: two hours before the start, eight after). The raid is the one RaidTracker stamped on the
 --     session when the group zoned in (it survives a /reload), so two groups of one guild in the same
---     instance, half an hour apart, each keep their own sheet for the whole night; only without a stamp is
---     it the nearest start (CompanionImport:RaidFor, ties by start and then raidId). No match, and every
---     reader uses the game's tables.
+--     instance, half an hour apart, each keep their own sheet for the whole night. A stamped raid the site
+--     sent no loot for has no sheet: the game's tables, never another raid's. Only a session with no stamp
+--     at all takes the nearest start (CompanionImport:RaidFor, ties by start and then raidId). No match,
+--     and every reader uses the game's tables.
 --   * ListsFromSite / PriosFromSite: "the site is the source" for the editors and the broadcasts. They
 --     ignore the window and the raid and hold while the inbox was read in the last three days (R9), so an
 --     inbox that stopped changing does not keep the game's editors locked for good.
@@ -42,10 +43,10 @@ function SiteLoot:ActiveRaid(now)
     now = now or GetServerTime()
     -- The raid the session was stamped with at zone-in, when the site sent an entry for it.
     local stamped = RT and RT.currentRaid and RT.currentRaid.raidId
-    local own = stamped and raids[stamped]
-    if type(own) == "table" then
-        if LR.InWindow(own.startsAt, now) then return stamped, own end
-        return nil
+    if stamped then
+        local own = raids[stamped]
+        if type(own) == "table" and LR.InWindow(own.startsAt, now) then return stamped, own end
+        return nil   -- no entry, or its night is over: never another raid's sheet
     end
     if not GetInstanceInfo then return nil end
     local _, _, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()

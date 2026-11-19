@@ -388,7 +388,17 @@ do
   check(SL:ActiveRaid() == "first", "and earlier, the first")
   RT.currentRaid = { raidId = "gone" }
   clock = NOW + 2700
-  check(SL:ActiveRaid() == "second", "a stamp the site has no entry for falls back to the nearest start")
+  check(SL:ActiveRaid() == nil and SL:Reserves() == nil, "a stamp the site has no entry for is the game's tables, never another raid's")
+  -- Kara A has no site loot, Kara B has a sheet: A's group, stamped A, never reads B's.
+  GuildOS.db.siteLoot = { at = time(), raids = { second = entry("Bo", NOW + 1800) } }
+  RT.currentRaid = { raidId = "first" }
+  check(SL:ActiveRaid() == nil and names(SR:GetReserves(ITEM)) == "Bo" and SL:Reserves() == nil,
+    "A has none and B has a sheet: A's group gets the game's (Bo is the game's reserver here), not B's")
+  c = roll()
+  check(c("Cy").prioOrder == 1 and c("Ana").wishlist and c("Ana").wishlist.order == 3, "and its roll reads the game's lists")
+  RT.currentRaid = { raidId = "second" }
+  check(SL:ActiveRaid() == "second", "B's group has B's sheet")
+  GuildOS.db.siteLoot = { at = time(), raids = { first = entry("Ana", NOW), second = entry("Bo", NOW + 1800) } }
   RT.currentRaid = nil
   for i = 1, 25 do
     GuildOS.db.siteLoot = { at = time(), raids = { zeta = entry("Cy", NOW), alfa = entry("Dee", NOW), mid = entry("Ana", NOW) } }
@@ -530,6 +540,25 @@ do
   check(table.concat(said, "\n"):find("Tie [prio #1]", 1, true) and table.concat(printed, "\n"):find("Prio tie", 1, true),
     "the restricted roll of a prio tie says prio")
   LM:CancelRolling()
+  -- Forty tied names still fit a chat line.
+  local forty = {}
+  for i = 1, 40 do forty[i] = { name = "Player" .. string.format("%02d", i) .. "-Realm", class = "MAGE", order = 1 } end
+  said, printed = {}, {}
+  LM:StartRestrictedRoll(forty, nil, LINK, nil, ITEM, "prio")
+  local tieLine = said[1] or ""
+  check(#tieLine <= 255 and tieLine:find("Player01", 1, true) and tieLine:find("+%d+") , "forty tied: the roll line fits 255 bytes with a +N: " .. #tieLine)
+  LM:CancelRolling()
+  local tops = { name = "x", names = {} }
+  for i = 1, 40 do tops.names[i] = forty[i].name end
+  said = {}
+  local tiePrios = GuildOS.db.siteLoot.raids.r1.prios
+  GuildOS.db.siteLoot.raids.r1.prios = { [ITEM] = forty }
+  GuildOS.db.settings.lootSystem = "rolls"
+  LM.activeLoot, LM.rolls = nil, {}
+  LM:AnnounceItem(LINK, nil)
+  for _, m in ipairs(said) do check(#m <= 255 or m:find("|H", 1, true), "no chat line past 255 bytes: " .. #m) end
+  check(LM:FitNames({ "A", "B" }, 100) == "A, B" and LM:FitNames(tops.names, 60):find("+%d+"), "FitNames keeps a short list whole and cuts a long one")
+  GuildOS.db.siteLoot.raids.r1.prios = tiePrios
   GuildOS.db.settings.lootSystem = "rolls"
   said, printed = {}, {}
   LM.activeLoot, LM.rolls = nil, {}

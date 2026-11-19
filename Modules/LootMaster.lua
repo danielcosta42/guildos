@@ -95,6 +95,20 @@ function LootMaster:SafeSendChatAuto(msg, channel)
     self:SafeSendChat(msg, channel)
 end
 
+-- `names` joined to fit `room` bytes of a chat line (the limit is 255), the rest as "+N".
+function LootMaster:FitNames(names, room)
+    local shown = #names
+    while shown > 1 do
+        local line = table.concat(names, ", ", 1, shown)
+        if shown < #names then line = line .. ", " .. format(L["+%d"], #names - shown) end
+        if #line <= room then return line end
+        shown = shown - 1
+    end
+    local line = names[1] or ""
+    if #names > 1 then line = line .. ", " .. format(L["+%d"], #names - 1) end
+    return line
+end
+
 -- A line for one player: whispered from a click, printed for the loot master where Forever blocks
 -- automated chat (or off a raid).
 function LootMaster:SafeWhisper(msg, to)
@@ -1009,7 +1023,7 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
                 if #tied >= 2 then
                     local names = {}
                     for _, e in ipairs(tied) do names[#names + 1] = e.name end
-                    who = { name = table.concat(names, ", "), tied = true }
+                    who = { names = names, tied = true }
                 end
                 self:DoNormalAnnounce(itemLink, lootSlot, itemId, nil, who)
             end
@@ -1071,8 +1085,10 @@ function LootMaster:DoNormalAnnounce(itemLink, _lootSlot, itemId, topEntry, prio
 
     -- Post priority info note
     if prioEntry then
-        local infoMsg = format(prioEntry.tied and L["[Priority] %s are tied at official prio #1 - roll open to everyone"]
-            or L["[Priority] %s has official prio #1 - roll open to everyone"], prioEntry.name)
+        local fmt = prioEntry.tied and L["[Priority] %s are tied at official prio #1 - roll open to everyone"]
+            or L["[Priority] %s has official prio #1 - roll open to everyone"]
+        local who = prioEntry.names and self:FitNames(prioEntry.names, 250 - #format(fmt, "")) or prioEntry.name
+        local infoMsg = format(fmt, who)
         self:SafeSendChat(infoMsg, "RAID")
     elseif topEntry then
         local infoMsg = format(L["[Priority] %s (#%d on wishlist) - roll open to everyone"],
@@ -1215,11 +1231,10 @@ function LootMaster:StartRestrictedRoll(tied, _allCandidates, itemLink, _lootSlo
 
     -- Announce in RAID_WARNING — only listed players should roll
     local duration = self:RollTime()
-    self:SafeSendChat(
-        string.format(L["[ROLL] %s  -  Tie [%s]: %s  -  /roll 1-100 MS  -  /roll 1-99 OS  -  %ds"],
-            itemLink, orderStr, nameStr, duration),
-        "RAID_WARNING"
-    )
+    local tieFmt = L["[ROLL] %s  -  Tie [%s]: %s  -  /roll 1-100 MS  -  /roll 1-99 OS  -  %ds"]
+    -- Up to forty people can tie: the names are cut to what a chat line holds.
+    local shown = self:FitNames(names, 250 - #string.format(tieFmt, itemLink, orderStr, "", 99))
+    self:SafeSendChat(string.format(tieFmt, itemLink, orderStr, shown, duration), "RAID_WARNING")
     self:AnnounceSoftReserves(itemId or (self.activeLoot and self.activeLoot.itemId))
 
     -- Addon comm: show popup to GuildOS users who have the item on their wishlist

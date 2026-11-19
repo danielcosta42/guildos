@@ -3379,3 +3379,4 @@ L["Tonight the reserves come from the site."] = "Nesta noite as reservas vêm do
 L["prio #%d"] = "prio #%d"
 L["|cffFFD700Prio tie|r [prio #%d]: %s - only they may roll (%ds)"] = "|cffFFD700Empate de prio|r [prio #%d]: %s - apenas eles podem rolar (%ds)"
 L["[Priority] %s are tied at official prio #1 - roll open to everyone"] = "[Prioridade] %s empatam na prio oficial #1 - rolagem aberta a todos"
+L["+%d"] = "+%d"

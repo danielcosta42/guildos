@@ -3194,3 +3194,4 @@ L["Tonight the reserves come from the site."] = "오늘 밤의 예약은 웹사�
 L["prio #%d"] = "우선순위 #%d"
 L["|cffFFD700Prio tie|r [prio #%d]: %s - only they may roll (%ds)"] = "|cffFFD700우선순위 동점|r [우선순위 #%d]: %s - 이들만 주사위를 굴릴 수 있습니다 (%ds)"
 L["[Priority] %s are tied at official prio #1 - roll open to everyone"] = "[우선순위] %s 님이 공식 우선순위 #1 동점 - 모두에게 주사위 개방"
+L["+%d"] = "+%d"
