@@ -298,7 +298,7 @@ local answer = last("have")
 check(answer and #answer.data.l == 1 and answer.data.l[1].who == ANA, "I answer only for my own orders")
 
 fresh()
-from("Cid", "have", { l = { { id = "H1", who = "Bea", item = 100, n = 2, st = "accepted", cr = "Cid", ts = NOW, at = NOW },
+from("Bea", "have", { l = { { id = "H1", who = "Bea", item = 100, n = 2, st = "accepted", cr = "Cid", ts = NOW, at = NOW },
                             { id = "H2", who = "Bea", item = 100, n = 999 } } })
 check(O:Get("H1") and O:Get("H1").cr == CID and O:Get("H1").who == BEA, "an answer brings the orders I missed")
 check(O:Get("H2") == nil, "a bad one in it is dropped")
@@ -336,6 +336,11 @@ from("Eve", "have", { l = { { id = "F4", who = "Bea", item = 100, n = 1, st = "d
 check(O:Get("F4").st == "open", "an answer speaks only for its sender's orders: Eve cannot close Bea's")
 from("Dan", "have", { l = { { id = "F5", who = "Bea", item = 100, n = 1, ts = NOW, at = NOW } } })
 check(O:Get("F5") == nil, "nor bring an order in Bea's name")
+from("Bea", "new", { id = "F6", item = 100, n = 1 })
+from("Dan", "have", { l = { { id = "F6", who = "Bea", item = 100, n = 1, st = "done", cr = "Dan", ts = NOW, at = NOW + 60 } } })
+check(O:Get("F6").st == "open", "naming oneself the crafter in an answer claims nothing")
+from("Dan", "have", { l = { { id = "F7", who = "Bea", item = 100, n = 1, st = "accepted", cr = "Dan", ts = NOW, at = NOW } } })
+check(O:Get("F7") == nil, "nor brings an order its author never sent")
 from("Bea", "have", { l = { { id = "F4", who = "Bea", item = 100, n = 1, st = "cancelled", ts = NOW, at = NOW + 60 } } })
 check(O:Get("F4").st == "cancelled", "the author's own answer may say it was cancelled")
 

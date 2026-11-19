@@ -30,7 +30,10 @@
 | `can` | `{ id }` | the author |
 | `ask` / `have` | `{}` / `{ list }` | a login asks. Each member answers with only the running orders they placed or took, after 2–10 s, at most once every 2 min. |
 
-Orders merged from `have`: each one counts only when the sender is its author or its crafter.
+Orders merged from `have`: each one counts only when the sender is its author, or the crafter
+this client already holds for it. Unknown orders come only from their author. Known limit: three
+crafters accepting and releasing within the same second can still leave two clients on different
+crafters until the next change.
 - Unknown orders are kept only while running, within their author's cap, and never when they name me.
 - Known orders only move forward (open < accepted < mats < done), with the same author and target,
   and the same crafter once one has accepted.

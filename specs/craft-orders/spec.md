@@ -55,9 +55,9 @@ make it meant whispering around.
   of up to 100,000 gold. Closed orders are kept for 14 days. At most 200 orders are kept.
 - A member who logs in asks once. Each member with running orders they placed or took answers
   for those, after a random wait, at most once every two minutes.
-- An answer speaks only for the sender's own orders, as their author or their crafter, so a
-  forged answer says nothing about anyone else's.
-  - It adds only running orders, within their author's cap, and never one naming me.
+- An answer speaks only for the sender's own orders: as their author, or as the crafter this client
+  already knows took them. A forged answer says nothing about anyone else's.
+  - It adds only running orders from their own author, within the cap, and never one naming me.
   - It moves a known order only forward (open, accepted, materials, done), keeping its author, its
     target and, once accepted, its crafter. Only the author's answer may say it was cancelled.
   - It never revives an order, and never touches orders I placed or took: those come to me live.

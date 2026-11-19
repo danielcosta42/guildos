@@ -544,8 +544,9 @@ function CraftOrders:ActiveList()
 end
 
 -- Orders from an answer by `by` (a member key). Each counts only where `by` speaks for it: its
--- author, or its crafter. A forged answer can then say nothing about anyone else's order.
---   * unknown: kept while running, within its author's cap, never one naming me;
+-- author, or the crafter this client already knows took it. A forged answer can then say nothing
+-- about anyone else's order.
+--   * unknown: only from its author, kept while running, within the author's cap, never naming me;
 --   * known: the newer state, forward only (open, accepted, materials, done) with the same author
 --     and target; the author may also have cancelled it; a crafter speaks only as the crafter.
 -- Orders I placed or took are never touched: they come to me live. Returns whether it changed.
@@ -555,19 +556,22 @@ function CraftOrders:Merge(list, by)
     local orders, t, changed, me = store(), now(), false, self:MyKey()
     for i = 1, math.min(#list, self.HAVE_MAX) do
         local o = clean(list[i])
-        if o and (by == o.who or by == o.cr) then
+        if o then
             local mine = orders[o.id]
             if not mine then
-                if CraftOrders.IsActive(o, t) and o.who ~= me and o.cr ~= me and o.to ~= me
+                -- Only its author brings an order I never heard of.
+                if by == o.who and CraftOrders.IsActive(o, t) and o.who ~= me and o.cr ~= me and o.to ~= me
                     and openCount(o.who) < self.OPEN_PER then
                     orders[o.id] = o
                     changed = true
                 end
             elseif mine.who == o.who and mine.who ~= me and mine.cr ~= me and o.to == mine.to
                 and (o.at or 0) > (mine.at or 0) then
-                local forward = RANK[o.st] and RANK[mine.st] and RANK[o.st] > RANK[mine.st]
+                -- The author speaks for their order; a crafter only for an acceptance this client
+                -- already holds (never by naming themselves in the answer).
+                local speaks = by == mine.who or (mine.cr ~= nil and by == mine.cr and o.cr == mine.cr)
+                local forward = speaks and RANK[o.st] and RANK[mine.st] and RANK[o.st] > RANK[mine.st]
                     and o.cr ~= nil and (mine.cr == nil or mine.cr == o.cr)
-                    and (by == o.who or by == o.cr)
                 local cancel = o.st == "cancelled" and by == mine.who and ACTIVE[mine.st]
                 if forward or cancel then
                     mine.st, mine.at = o.st, o.at
