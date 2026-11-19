@@ -848,8 +848,12 @@ local function buildLists(panel)
     srImportBtn:SetPoint("TOPLEFT", 0, 0)
     local srClearBtn = UI:CreateButton(srView, L["Clear"], 70, 22)
     srClearBtn:SetPoint("LEFT", srImportBtn, "RIGHT", 6, 0)
+    local srFromSite = UI:CreateText(srView, L["Tonight the reserves come from the site."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    srFromSite:Hide()
     local srCount = UI:CreateText(srView, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     srCount:SetPoint("TOPRIGHT", -GAP, -4)
+    -- Beside the count, which everybody sees (the import and clear buttons are the officers').
+    srFromSite:SetPoint("TOPRIGHT", srCount, "TOPLEFT", -12, 0)
     -- The table's header row: the shared one, no fill and a 1px rule under it (#371).
     local srHeader = UI:CreateTableHeader(srView)
     srHeader:SetPoint("TOPLEFT", 0, -(TOOLBAR_H + GAP))
@@ -876,6 +880,21 @@ local function buildLists(panel)
         srImportBtn:SetShown(officer)
         srClearBtn:SetShown(officer)
         local items = GuildOS.SoftRes:GetAllItems()
+        -- A sheet the site hides from the raiders: everyone but the loot master reads only their own.
+        local ownOnly = not GuildOS.SoftRes:OthersVisible()
+        -- The site's sheet is the night's: importing over it or clearing it would change nothing tonight.
+        local fromSite = GuildOS.SiteLoot and GuildOS.SiteLoot:Reserves() ~= nil
+        for _, b in ipairs({ srImportBtn, srClearBtn }) do
+            if fromSite then b:Disable() else b:Enable() end
+        end
+        srFromSite:SetShown(fromSite)
+        if ownOnly then
+            local mine = {}
+            for _, entry in ipairs(items) do
+                if #GuildOS.SoftRes:OwnOnly(GuildOS.SoftRes:GetReserves(entry.itemId)) > 0 then mine[#mine + 1] = entry end
+            end
+            items = mine
+        end
         srCount:SetText(#items .. " " .. L["items"])
         local layout = UI:ResolveColumns(srCols, math.max(1, srContent:GetWidth() or 0), 8)
         for key, fs in pairs(srHead) do
@@ -907,6 +926,7 @@ local function buildLists(panel)
             local itemName = GuildOS.Compat.GetItemInfo(entry.itemId)
             row.item:SetText(itemName or ("Item #" .. entry.itemId))
             local reserves = GuildOS.SoftRes:GetReservesForDisplay(entry.itemId)
+            if ownOnly then reserves = GuildOS.SoftRes:OwnOnly(reserves) end
             local inRaid, names = 0, {}
             for _, r in ipairs(reserves) do
                 if r.inRaid then inRaid = inRaid + 1 end

@@ -29,6 +29,7 @@ local isRetail = GuildOS.Client.isRetail
 local function storeKey(key, name)
     return strlower((isRetail and key or name) or "")
 end
+Wishlist.StoreKey = storeKey
 
 function Wishlist:Initialize()
     if not GuildOS.db.wishlists then
@@ -122,8 +123,20 @@ end
 
 -- A guildmate's synced list, by their member key and name (the right one for this client).
 function Wishlist:ListFor(key, name)
+    local sk = storeKey(key, name)
+    local site = GuildOS.SiteLoot and GuildOS.SiteLoot:WishlistOf(sk)
+    if site then return site end
     local guild = GuildOS.db and GuildOS.db.guildWishlists
-    return guild and guild[storeKey(key, name)]
+    return guild and guild[sk]
+end
+
+-- Every guildmate's list as the screens show them: the game's synced ones, and for each person the
+-- site holds a list of in the raid in hand, the site's. A new table; neither source is written.
+function Wishlist:AllLists()
+    local out = {}
+    for k, v in pairs(GuildOS.db and GuildOS.db.guildWishlists or {}) do out[k] = v end
+    for k, v in pairs(GuildOS.SiteLoot and GuildOS.SiteLoot:Wishlists() or {}) do out[k] = v end
+    return out
 end
 
 ----------------------------------------------------------------------
@@ -236,7 +249,36 @@ end
 ----------------------------------------------------------------------
 function Wishlist:GetItemInterest(itemId)
     if not self.itemIndex then return nil end
-    return self.itemIndex[itemId]
+    local site = GuildOS.SiteLoot and GuildOS.SiteLoot:Wishlists()
+    if not site then return self.itemIndex[itemId] end
+    return self:InterestTonight(itemId, site)
+end
+
+-- A raid from the site: for each person the site holds a list of, that list; for everybody else the
+-- game's, so a person the site has none of keeps their own and nobody is listed twice. Built per
+-- question from the tables as they are: the persistent index is never rebuilt from the site's data.
+function Wishlist:InterestTonight(itemId, site)
+    local out = {}
+    local function add(charData)
+        for _, item in ipairs(charData.wishlist or {}) do
+            if item.itemId == itemId then
+                out[#out + 1] = {
+                    name = charData.name or "", class = charData.class or "", type = "wishlist",
+                    order = item.order, isOffspec = item.isOffspec,
+                }
+                break
+            end
+        end
+    end
+    for key, charData in pairs(GuildOS.db and GuildOS.db.guildWishlists or {}) do
+        if not site[key] then add(charData) end
+    end
+    for _, charData in pairs(site) do add(charData) end
+    table.sort(out, function(a, b)
+        if (a.order or 999) ~= (b.order or 999) then return (a.order or 999) < (b.order or 999) end
+        return a.name < b.name
+    end)
+    return out
 end
 
 ----------------------------------------------------------------------
@@ -270,9 +312,31 @@ function Wishlist:GetMyList()
     return GuildOS.db.wishlists[charKey]
 end
 
+-- The site's list in force for this player (this repo's #385, R23): the soonest raid's, in its night or still
+-- to come, that holds theirs, while the companion answers from the site. { name, class, wishlist } or nil.
+function Wishlist:SiteListInForce()
+    local SiteLoot = GuildOS.SiteLoot
+    if not SiteLoot then return nil end
+    local name = GuildOS.Compat.PlayerName() or ""
+    return SiteLoot:ListInForce(storeKey(GuildOS:GetPlayerKey(name), name))
+end
+
+-- Whether the site is the source of this player's list: then the game shows that list read-only, never
+-- writes theirs and never broadcasts it. The one question every writer below asks.
+function Wishlist:ListIsFromSite()
+    return self:SiteListInForce() ~= nil
+end
+
+-- The refusal of an edit made in the game: said once, locally. Returns false.
+function Wishlist:RefuseSiteEdit()
+    GuildOS:Print(L["|cffFF4444[Wishlist]|r Your list comes from the site. Edit it on the site."])
+    return false
+end
+
 -- Add or update an item in the player's own wishlist.
 function Wishlist:AddToWishlist(itemId, itemLink, isOffspec)
     if not GuildOS.db then return end
+    if self:ListIsFromSite() then return self:RefuseSiteEdit() end
     local list = self:GetMyList()
 
     -- If already present, update in place
@@ -334,6 +398,7 @@ end
 
 function Wishlist:RemoveFromWishlist(itemId)
     if not GuildOS.db then return end
+    if self:ListIsFromSite() then return self:RefuseSiteEdit() end
     if self:IsItemDelivered(itemId) then
         GuildOS:Print(L["|cffFF4444[Wishlist]|r This item has already been delivered and cannot be removed."])
         return
@@ -358,6 +423,7 @@ end
 -- Move an item up (-1) or down (+1) in the wishlist order.
 function Wishlist:ReorderWishlist(itemId, direction)
     if not GuildOS.db then return end
+    if self:ListIsFromSite() then return self:RefuseSiteEdit() end
     if self:IsItemDelivered(itemId) then return end
     local list = self:GetMyList()
     local idx
@@ -380,6 +446,7 @@ end
 ----------------------------------------------------------------------
 function Wishlist:BroadcastMyWishlist(force)
     if not GuildOS.db then return end
+    if self:ListIsFromSite() then return end   -- the site is the source: nothing of mine goes out
     local list = self:GetMyList()
 
     local myName  = GuildOS.Compat.PlayerName()
@@ -467,7 +534,7 @@ function Wishlist:HookTooltips()
         local itemId = tonumber(link:match("item:(%d+)"))
         if not itemId then return end
 
-        local entries = self.itemIndex[itemId]
+        local entries = self:GetItemInterest(itemId)
         if not entries or #entries == 0 then return end
 
         tooltip:AddLine(" ")
@@ -497,6 +564,13 @@ end
 -- Structure: db.lootPrios[itemId] = { {name, class, order}, ... }
 -- Officers set and sync prios; all members receive and store them.
 ----------------------------------------------------------------------
+-- Whether some raid of the site's, tonight or to come, plays by the site's priorities (#385). The game's
+-- priorities stay the game's all the same (R22): a night of the site never reads db.lootPrios, so they are
+-- edited, sent and applied as ever, and the prio modal only says which nights use the site's.
+function Wishlist:PriosAreFromSite()
+    return GuildOS.SiteLoot ~= nil and GuildOS.SiteLoot:PriosFromSite()
+end
+
 function Wishlist:BroadcastLootPrios()
     if not GuildOS.CommSystem then return end
     if not GuildOS.db or not GuildOS.db.lootPrios then return end

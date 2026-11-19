@@ -1,4 +1,6 @@
-## [1.33.0] - 2026-11-18
+## [1.34.0] - 2026-11-19
 
 ### Added
-- a limpeza do banco acontece toda numa gaveta ao lado do banco do jogo, aberta pelo botão Cleanup da barra: marcar, tirar e devolver o gold sem abrir o Guild OS (#384)
+- When the site holds your wishlist or the guild's priorities, edit them on the site; the game shows them read-only.
+- During a raid from the site, loot uses the site's reserves, priorities and wishlists; your own lists stay as they were.
+- The roster from the site can carry the raid's soft reserves, priorities and wishlists.

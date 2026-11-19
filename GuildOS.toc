@@ -2,7 +2,7 @@
 ## Title: |cffFFD700Guild OS|r |cff888888Guild Manager|r
 ## Notes: Guild manager for WoW: Forever and Retail: roster, raid attendance, cores, recruitment and professions
 ## Author: Chehul (danielcosta42)
-## Version: 1.33.0
+## Version: 1.34.0
 ## SavedVariables: GuildOSDB
 ## DefaultState: enabled
 ## IconTexture: Interface\AddOns\GuildOS\Media\minimap-logo
@@ -109,6 +109,7 @@ Modules\Resistances.lua
 Modules\ExportImport.lua
 Modules\CompanionExport.lua
 Modules\CompanionImport.lua
+Modules\SiteLoot.lua
 Modules\RaidPlan.lua
 Modules\Points.lua
 Modules\TradeCouncil.lua

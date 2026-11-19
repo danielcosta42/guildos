@@ -1313,6 +1313,9 @@ local function inWindow(startsAt, now)
     return startsAt > 0 and now >= startsAt - NIGHT_EARLY and now <= startsAt + NIGHT_LATE
 end
 
+-- The same window for whatever else keeps a raid's night (SiteLoot): one place for the two and the eight.
+function LootRule.InWindow(startsAt, now) return inWindow(startsAt, now) end
+
 -- What the roster in hand says of its rule: the roster, whether it carries one, and whether this client
 -- reads it (checked once per roster and kept, as the screens ask often).
 local function rosterRule(self)
