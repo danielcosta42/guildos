@@ -1,4 +1,4 @@
 # Copies of danielcosta42/chehulnet. Do not edit them here: change the library there and run its tools/sync.sh.
-tag v1.4.0
-file Libs/LibChehulMesh.lua fd9e153d278b0b7765e0a0bce293ad28c8577368
+tag v1.4.1
+file Libs/LibChehulMesh.lua cc719b150db5799655c268fa41362bd34322b310
 file Modules/ChehulNet.lua 8f320aee321405749ebc1ff3b07b6263029af0da
