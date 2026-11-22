@@ -44,6 +44,7 @@ function Frame:CreateTexture() return Frame.new(nil) end
 function Frame:CreateFontString() return Frame.new(nil) end
 function Frame:SetText(t) self.text = t end
 function Frame:GetText() return rawget(self, "text") end
+function Frame:HasFocus() return false end
 function CreateFrame(_, _, parent) return Frame.new(parent) end
 UIParent = Frame.new(nil)
 local NOW = 1794000000
@@ -89,9 +90,11 @@ local warned
 function GuildOS:ShowWarnDialog(key, name, opts) warned = { key = key, name = name, opts = opts } end
 
 dofile(ADDON .. "/Modules/ModAlerts.lua")
+dofile(ADDON .. "/Modules/ModFlood.lua")
 dofile(ADDON .. "/UI/ModAlerts.lua")
-local M = GuildOS.ModAlerts
+local M, F = GuildOS.ModAlerts, GuildOS.ModFlood
 M:Initialize()
+F:Initialize()
 
 -- The two sub-tabs build.
 local alertsPanel, rulesPanel = Frame.new(nil), Frame.new(nil)
@@ -151,5 +154,26 @@ local del = find(rulesPanel, function(c) local l = rawget(c, "label"); return l 
 check(del ~= nil, "each rule has its remove button")
 del:Click()
 check(#M:GetRules() == nRules - 1, "and it removes the rule")
+
+-- The anti-flood's limits (#405) on the same tab.
+check(type(rulesPanel.floodRefresh) == "function", "the anti-flood's section builds under the rules")
+local nInputs = 0
+local function walkAll(fr, fn) for _, c in ipairs(fr.children) do fn(c); walkAll(c, fn) end end
+walkAll(rulesPanel, function(c) if rawget(c, "text") == "5" or rawget(c, "text") == "10" then nInputs = nInputs + 1 end end)
+check(nInputs >= 2, "its fields show the guild's limits")
+local saveBtn = find(rulesPanel, function(c) local l = rawget(c, "label"); return l and rawget(l, "text") == "Save limits" end)
+local got
+local realSet = F.SetConfig
+F.SetConfig = function(_, cfg) got = cfg; return true end
+saveBtn:Click()
+check(got and got.burst.n == 5 and got.burst.secs == 10 and got.caps.pct == 70 and got.caps.min == 12 and got.links.n == 2,
+      "Save sends what the fields hold")
+F.SetConfig = realSet
+-- A surge's alert names its signals.
+M:Deliver({ kind = "flood", signals = { "burst", "repeat" }, who = "Thrall", key = "Thrall", line = "x", lines = { "a", "b", "x" },
+  count = 3, cat = "flood", sev = "med", rule = "F:burst", claim = "000000bb" })
+check(GuildOS.modAlertFrame.title.text:find("too many lines, the same line repeated", 1, true), "the window names a surge's signals")
+check(GuildOS.modAlertFrame.line.text:find("(3 lines)", 1, true) and GuildOS.modAlertFrame.context.text == "Thrall: a\nThrall: b",
+      "with its count and its lines")
 
 print(("mod-alerts-ui: %d checks passed"):format(checks))

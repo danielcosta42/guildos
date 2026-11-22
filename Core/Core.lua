@@ -286,6 +286,8 @@ local MODULE_START = {
     { "Discipline" },
     -- The officers' chat alerts (issue #404): after GuildChat, whose log gives the context.
     { "ModAlerts" },
+    -- And the anti-flood (issue #405), delivering into the same panel.
+    { "ModFlood" },
     { "CommSystem", feature = "commSystem" },
     { "Wishlist", ui = "wishlist" },
     { "SoftRes" },

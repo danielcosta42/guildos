@@ -329,6 +329,7 @@ function ModAlerts:PublishConfig()
     if s.modAlertRulesAt then
         GuildOS.SyncService:Publish("guildcfg", "modrules", { rules = self:GetRules() }, { rev = s.modAlertRulesAt })
     end
+    if GuildOS.ModFlood then GuildOS.ModFlood:PublishConfig() end   -- and the anti-flood's limits (#405)
 end
 
 local function stampOf(env)
@@ -410,7 +411,8 @@ function ModAlerts:OnChat(msg, author)
     local folded, words = self.Prepare(msg)
     local rule = self.Match(self.compiled or {}, folded, words, self.mutes, now)
     if rule and self:_FromWatched(author) then self:_Flag(msg, author, rule, now) end
-    if GuildOS.ModFlood and GuildOS.ModFlood.OnLine then GuildOS.ModFlood:OnLine(msg, author, now) end
+    -- The anti-flood (#405) reads the same line, here, after the same checks.
+    if GuildOS.ModFlood and GuildOS.ModFlood.OnLine then GuildOS.ModFlood:OnLine(msg, author, now, folded) end
 end
 
 -- A new alert from a rule.
@@ -550,6 +552,12 @@ function ModAlerts:MuteRule(id)
     a.state = "ignored"
     self:Refresh()
     return true
+end
+
+-- An alert that grew (a surge's new line, #405): the window showing it redraws.
+function ModAlerts:Touch(a)
+    if self.popupUpdate then GuildOS:SafeCall(self.popupUpdate, a) end
+    self:Refresh()
 end
 
 function ModAlerts:Refresh()

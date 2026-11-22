@@ -28,6 +28,18 @@ end
 -- An alert's lines as the window and the list show them: the screen's text, without colours or links.
 local function plain(s) return GuildOS.ModAlerts.Plain(s or "") end
 
+-- What an alert is about: its category, and for a surge (#405) the signals it fired.
+local function aboutText(a)
+    local t = GuildOS.ModAlerts.CategoryText(a.cat)
+    local F = GuildOS.ModFlood
+    if a.signals and F then
+        local parts = {}
+        for i, sig in ipairs(a.signals) do parts[i] = F.SignalText(sig) end
+        t = t .. " (" .. table.concat(parts, ", ") .. ")"
+    end
+    return t
+end
+
 ----------------------------------------------------------------------
 -- The alert window
 ----------------------------------------------------------------------
@@ -80,13 +92,16 @@ function GuildOS:ShowModAlert(a)
         closeBtn:SetScript("OnClick", function() f:Hide() end)
         self.modAlertFrame = f
 
-        -- An alert acted on from the list closes the window showing it.
+        -- An alert acted on from the list closes the window showing it; one that grew redraws it.
         M.popupRefresh = function()
             if f:IsShown() and f.alert and f.alert.state ~= "new" then f:Hide() end
         end
+        M.popupUpdate = function(grown)
+            if f:IsShown() and f.alert == grown then GuildOS:ShowModAlert(grown) end
+        end
     end
     f.alert = a
-    f.title:SetText(string.format(L["Chat alert: %s"], M.CategoryText(a.cat)))
+    f.title:SetText(string.format(L["Chat alert: %s"], aboutText(a)))
     local ctx = {}
     if a.lines then
         -- A surge (#405): its lines, the newest last.
@@ -205,7 +220,7 @@ function GuildOS:BuildModAlertsSub(panel)
             if a.by then status = string.format(L["alerted on %s's screen"], a.by) .. (status ~= "" and (", " .. status) or "") end
             if a.sev == "low" and status == "" then status = L["logged"] end
             local who = a.count and string.format(L["%s (%d lines)"], a.who, a.count) or a.who
-            row.top:SetText(string.format("%s  %s  -  %s  %s", clock(a.at), who, M.CategoryText(a.cat),
+            row.top:SetText(string.format("%s  %s  -  %s  %s", clock(a.at), who, aboutText(a),
                 status ~= "" and ("(" .. status .. ")") or ""))
             local ink = a.state == "new" and C.text or C.textDim
             row.line:SetTextColor(ink.r, ink.g, ink.b)
@@ -358,4 +373,73 @@ function GuildOS:BuildModRulesSub(panel)
     end
     if M then M.rulesRefresh = refresh end
     return refresh
+end
+
+----------------------------------------------------------------------
+-- The anti-flood's limits (#405), on the Alert rules tab under the rules' form
+----------------------------------------------------------------------
+-- Builds the section at `top` px down `panel`; returns the height it takes. panel.floodRefresh fills it.
+function GuildOS:BuildModFloodSection(panel, top)
+    local F = GuildOS.ModFlood
+    if not F then return 0 end
+    local title = UI:CreateSectionTitle(panel, L["ANTI-FLOOD"], false)
+    title:SetPoint("TOPLEFT", 0, -(top + 20))
+    local hint = UI:CreateText(panel, L["Each signal flags one alert per person while the surge lasts. The game's item and spell links never count."],
+        11, C.silver.r, C.silver.g, C.silver.b)
+    hint:SetPoint("TOPLEFT", 0, -(top + 44))
+    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -(top + 44))
+    hint:SetJustifyH("LEFT")
+
+    -- One row per signal: its switch, then its two limits with their words between.
+    local ROWS = {
+        { sig = "burst", label = L["Too many lines"], a = "n", mid = L["lines in"], b = "secs", tail = L["seconds"] },
+        { sig = "repeat", label = L["The same line repeated"], a = "n", mid = L["times in"], b = "secs", tail = L["seconds"] },
+        { sig = "caps", label = L["Capitals"], a = "pct", mid = L["percent of the letters, in lines of at least"], b = "min", tail = L["letters"] },
+        { sig = "links", label = L["Links"], a = "n", mid = L["links in"], b = "secs", tail = L["seconds"] },
+    }
+    local fields = {}
+    for i, row in ipairs(ROWS) do
+        local y = -(top + 66 + (i - 1) * 26)
+        local cb = UI:CreateCheckbox(panel, row.label, 18)
+        cb:SetPoint("TOPLEFT", 0, y)
+        local boxA = UI:CreateInput(panel, 40, 20, { numeric = true, max = 3 })
+        boxA:SetPoint("TOPLEFT", 200, y + 1)
+        local mid = UI:CreateText(panel, row.mid, 11, C.text.r, C.text.g, C.text.b)
+        mid:SetPoint("LEFT", boxA, "RIGHT", 6, 0)
+        local boxB = UI:CreateInput(panel, 40, 20, { numeric = true, max = 3 })
+        boxB:SetPoint("LEFT", mid, "RIGHT", 6, 0)
+        local tail = UI:CreateText(panel, row.tail, 11, C.text.r, C.text.g, C.text.b)
+        tail:SetPoint("LEFT", boxB, "RIGHT", 6, 0)
+        fields[row.sig] = { cb = cb, a = boxA, b = boxB, row = row }
+    end
+    local y = -(top + 66 + #ROWS * 26 + 4)
+    local save = UI:CreateButton(panel, L["Save limits"], 110, 22)
+    save:SetPoint("TOPLEFT", 0, y)
+    local result = UI:CreateText(panel, "", 11, C.silver.r, C.silver.g, C.silver.b)
+    result:SetPoint("LEFT", save, "RIGHT", 10, 0)
+
+    save:SetScript("OnClick", function()
+        local cfg = {}
+        for sig, f in pairs(fields) do
+            local a, b = F.ValidLimit(f.row.a, f.a:GetText()), F.ValidLimit(f.row.b, f.b:GetText())
+            if not a or not b then
+                result:SetText(L["Out of range: lines 2-50, seconds 5-600, percent 50-100, letters 5-100."])
+                return
+            end
+            cfg[sig] = { on = f.cb.checkbox:GetChecked() and true or false, [f.row.a] = a, [f.row.b] = b }
+        end
+        local ok = F:SetConfig(cfg)
+        result:SetText(ok and L["Limits saved for the guild."] or L["|cffFF4444Officers only.|r"])
+    end)
+
+    panel.floodRefresh = function()
+        local cfg = F:GetConfig()
+        for sig, f in pairs(fields) do
+            local c = cfg[sig]
+            f.cb.checkbox:SetChecked(c.on and true or false)
+            if not f.a:HasFocus() then f.a:SetText(tostring(c[f.row.a])) end
+            if not f.b:HasFocus() then f.b:SetText(tostring(c[f.row.b])) end
+        end
+    end
+    return 66 + #ROWS * 26 + 32
 end

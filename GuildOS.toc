@@ -72,6 +72,7 @@ Modules\RosterLog.lua
 Modules\BanList.lua
 Modules\Discipline.lua
 Modules\ModAlerts.lua
+Modules\ModFlood.lua
 Modules\RecruitmentSystem.lua
 Modules\RecruitEngagement.lua
 Modules\WishlistSystem.lua

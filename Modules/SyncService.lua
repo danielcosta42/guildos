@@ -122,6 +122,11 @@ function SyncService:Initialize()
             if GuildOS.ModAlerts then GuildOS.ModAlerts:OnConfigSync(env) end
             return
         end
+        -- And the anti-flood's limits (issue #405); it carries no `max`.
+        if env.act == "modflood" then
+            if GuildOS.ModFlood then GuildOS.ModFlood:OnConfigSync(env) end
+            return
+        end
         -- Who creates calendar events (issue #283).
         if env.act == "events" then
             GuildOS:OnEventMaxRankSync(env)
