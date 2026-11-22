@@ -290,6 +290,8 @@ GuildOS:ShowCraftFor(3576, BOB)
 check(panel.state.open == 9999, "an item opened for Bob opens Bob's recipe")
 GuildOS:ShowCraftFor(3576, ME)
 check(panel.state.open == 3304, "and for me, mine")
+local placed = O:Place(3576, { recipe = 9999 })
+check(placed and placed.rg[1] == 2772 and placed.y == 2, "an order placed from a recipe carries that recipe's reagents and yield")
 GuildOS.db.craftOrders.O1.st = "open"
 check(O:Act("O1", "accept") and O:Get("O1").rg[1] == 2771, "accepting, I send the reagents of the recipe I know")
 

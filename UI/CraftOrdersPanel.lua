@@ -538,6 +538,7 @@ function GuildOS:CreateCraftDetail(parent)
         if not (r and r.item) then return end
         local o, why = Orders():Place(r.item, {
             n = d.qty, mode = d.mode, tip = (tonumber(tip:GetText()) or 0) * 10000, to = d.toKey,
+            recipe = r.recipeId,
         })
         if not o then GuildOS:Print(why or L["The order could not be placed."]); return end
         GuildOS:Print(string.format(L["Order sent: %s. You will hear when a crafter accepts."], Orders().ItemText(o.item)))

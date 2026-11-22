@@ -356,9 +356,9 @@ function CraftOrders:Crafts(o)
 end
 
 -- The same as a flat list, to send. `key`: whose recipe (an acceptance sends the crafter's own).
-function CraftOrders:ReagentsFlat(item, key)
+function CraftOrders:ReagentsFlat(item, key, recipeId)
     local flat = {}
-    for _, r in ipairs(self:Reagents(item, nil, nil, key)) do
+    for _, r in ipairs(self:Reagents(item, nil, recipeId, key)) do
         flat[#flat + 1] = r.itemID
         flat[#flat + 1] = r.count
     end
@@ -464,7 +464,8 @@ local function publish(act, data)
     if GuildOS.SyncService then GuildOS.SyncService:Publish(DOMAIN, act, data) end
 end
 
--- Place an order. opts = { n, mode ("mats"/"own"), tip (copper), note, to (a member key) }.
+-- Place an order. opts = { n, mode ("mats"/"own"), tip (copper), note, to (a member key), recipe (the
+-- catalog recipe opened, whose reagents and yield the order carries until a crafter answers) }.
 -- Returns the order, or nil and why.
 function CraftOrders:Place(item, opts)
     opts = opts or {}
@@ -482,7 +483,7 @@ function CraftOrders:Place(item, opts)
         tip = math.max(0, math.min(self.TIP_MAX, math.floor(tonumber(opts.tip) or 0))),
         note = cleanText(opts.note, self.NOTE_MAX),
         to = opts.to ~= me and opts.to or nil,
-        rg = self:ReagentsFlat(item, opts.to), y = self:KnownYield(item, nil, opts.to), ts = t, at = t,
+        rg = self:ReagentsFlat(item, opts.to, opts.recipe), y = self:KnownYield(item, opts.recipe, opts.to), ts = t, at = t,
     }
     local o = self:Apply("new", data, me)
     if not o then return nil, L["The order could not be placed."] end
