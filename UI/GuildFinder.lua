@@ -32,7 +32,7 @@ local LOOT_NAME   = { council = L["Loot council"], councilWishlist = L["Council 
                       softres = L["Soft reserve"], msos = L["MS>OS roll"], personal = L["Personal loot"], other = L["Other"] }
 local TRIAL_NAME  = { none = L["No trial"], week1 = L["1 week trial"], week2 = L["2 week trial"],
                       days30 = L["30 day trial"], other = L["Other"] }
-local RULESET_NAME = { normal = L["Normal"], pvp = L["PvP"], rp = L["Roleplay"], hardcore = L["Hardcore"] }
+local RULESET_NAME = { normal = L["Normal"], pvp = L["PvP"], rp = L["Roleplay"], rppvp = L["RP-PvP"], hardcore = L["Hardcore"] }
 local REGION_NAME  = { us = L["Americas"], eu = L["Europe"], kr = L["Korea"], tw = L["Taiwan"] }
 local ROLE_NAME    = { TANK = L["Tank"], HEALER = L["Healer"], DPS = L["DPS"] }
 
