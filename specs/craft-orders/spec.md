@@ -82,6 +82,14 @@ make it meant whispering around.
   - It never revives an order, and never touches orders I placed or took: those come to me live.
 - A crafter who took an order and gave it back before hearing an earlier acceptance loses to it on
   every client, whatever order the messages arrived in.
+- An item two recipes make (Forever has seven: a bar smelted or transmuted, Tailoring's or
+  Leatherworking's) is read through one recipe, never the first one found (issue #396):
+  - the row clicked shows its own;
+  - an order shows the recipe of the crafter who took it, or of the crafter it was sent to;
+  - otherwise it shows the recipe most of the guild knows.
+
+  The crafter's acceptance sends their recipe's reagents and yield.
+- The Forever catalog follows the game's build (`tools/prof_catalog.py <build>`), now 1.60.1.71037.
 - The materials count crafts, not items: a recipe that makes five takes a fifth of the crafts. The
   yield comes from the catalog, or the crafter's tradeskill window on Anniversary.
 - A tip by mail is always sent as money, never as C.O.D.

@@ -156,13 +156,16 @@ GuildOS.ProfCatalog = {
                   [185] = { child = 2939, primary = false, en = "Cooking" } },
   specs = { [9788] = 164 },
   stations = { [3] = "Forge" },
-  byLine = { [186] = { 2657, 3304 }, [164] = { 2660, 9950 }, [185] = { 2538 } },
+  byLine = { [186] = { 2657, 3304 }, [164] = { 2660, 9950 }, [185] = { 2538, 9999 } },
   recipes = {
     [2657] = { 186, 1, 25, 2840, 1, 0, 0, 0, 3, 3, 0, 0, { 2770, 1 } },
     [3304] = { 186, 65, 90, 3576, 1, 0, 0, 0, 3, 1, 0, 0, { 2771, 1 } },
     [2660] = { 164, 1, 15, 2862, 1, 0, 0, 0, 0, 1, 0, 0, { 2835, 1 } },
     [9950] = { 164, 210, 230, 7934, 1, 0, 210, 9788, 0, 2, 7978, 0, {} },
     [2538] = { 185, 1, 45, 2679, 1, 0, 0, 0, 0, 1, 0, 0, { 2672, 1 } },
+    -- A second recipe for 3304's item, with its own reagents and yield (issue #396: a bar smelted or
+    -- transmuted).
+    [9999] = { 185, 100, 150, 3576, 2, 0, 0, 0, 0, 1, 0, 0, { 2772, 3 } },
   },
 }
 dofile(ADDON .. "/Modules/Professions.lua")
@@ -180,7 +183,8 @@ GuildOS.db = { members = {}, recipes = {}, settings = {}, professions = {
   [ME] = { src = "addon", ts = NOW, profs = {
     [186] = { rank = 21, max = 75, h = 1, n = 2, recipes = { 2657, 3304 }, extra = {} } } },
   [BOB] = { src = "addon", ts = NOW, profs = {
-    [164] = { rank = 210, max = 300, spec = 9788, h = 1, n = 1, recipes = { 9950 }, extra = {} } } },
+    [164] = { rank = 210, max = 300, spec = 9788, h = 1, n = 1, recipes = { 9950 }, extra = {} },
+    [185] = { rank = 150, max = 300, h = 1, n = 1, recipes = { 9999 }, extra = {} } } },
 }, craftOrders = {
   -- Bob asks me for copper bars (I smelt them).
   T1 = { id = "T1", who = BOB, item = 2840, n = 4, mode = "mats", tip = 50000, to = ME, st = "open", ts = NOW - 60, at = NOW - 60 },
@@ -261,8 +265,33 @@ for _, t in ipairs(panel.filterTabs) do if t.key == "mine" then t.scripts.OnClic
 check(#recipes() == 2, "I craft keeps the two recipes I know: " .. table.concat(recipes(), ","))
 for _, t in ipairs(panel.filterTabs) do if t.key == "orders" then t.scripts.OnClick(t) end end
 local ids = recipes()
-check(#ids == 3, "With orders keeps the recipes someone ordered: " .. table.concat(ids, ","))
+check(#ids == 4, "With orders keeps the recipes someone ordered (both of the tin bar's): " .. table.concat(ids, ","))
 check(showing("1 orders"), "and each says how many")
+
+-- ── An item two recipes make (issue #396) ───────────────────────────────
+check(O:RecipeFor(3576, BOB) == 9999 and O:RecipeFor(3576, ME) == 3304, "each crafter's own recipe for the item")
+check(O:Reagents(3576, nil, 9999)[1].itemID == 2772 and O:Reagents(3576, nil, 3304)[1].itemID == 2771,
+      "and each recipe its own reagents")
+check(O:Reagents(3576, nil, nil, BOB)[1].itemID == 2772 and O:Yield(3576, nil, nil, BOB) == 2,
+      "a crafter's recipe gives its reagents and how many it makes")
+check(O:Reagents(3576, { item = 3576, n = 1, cr = BOB })[1].itemID == 2772, "an order accepted by Bob reads Bob's recipe")
+local tin
+panel.railButtons[1].scripts.OnClick(panel.railButtons[1])
+for _, r in ipairs(panel.rows) do
+  local d = rawget(r, "data")
+  if d and d.id == 9999 then tin = r end
+end
+tin.scripts.OnClick(tin)
+check(panel.state.open == 9999 and showing("Item 2772") and not showing("Item 2771"),
+      "the row clicked opens with its own reagents, not the other recipe's")
+check(showing("Makes 2 per craft"), "and its own yield")
+tin.scripts.OnClick(tin)
+GuildOS:ShowCraftFor(3576, BOB)
+check(panel.state.open == 9999, "an item opened for Bob opens Bob's recipe")
+GuildOS:ShowCraftFor(3576, ME)
+check(panel.state.open == 3304, "and for me, mine")
+GuildOS.db.craftOrders.O1.st = "open"
+check(O:Act("O1", "accept") and O:Get("O1").rg[1] == 2771, "accepting, I send the reagents of the recipe I know")
 
 -- ── The count on the window's tab ───────────────────────────────────────
 local tab = { key = "recipes", label = CreateFrame("Frame") }

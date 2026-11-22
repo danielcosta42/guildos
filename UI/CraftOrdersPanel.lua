@@ -445,9 +445,10 @@ function GuildOS:CreateCraftDetail(parent)
         if not r then return end
         local w = self:GetWidth() or 600
         local colW = math.max(120, math.floor((w - 34 - COMPOSER_W - 16 - 18) / 2))
-        local crafts = math.ceil(self.qty / O:Yield(r.item))
+        -- The recipe of the row clicked, when the catalog says which (issue #396).
+        local crafts = math.ceil(self.qty / O:Yield(r.item, nil, r.recipeId))
         -- Materials
-        local rg = r.item and O:Reagents(r.item) or {}
+        local rg = r.item and O:Reagents(r.item, nil, r.recipeId) or {}
         matHead:SetText(string.format(L["MATERIALS × %d"], self.qty))
         for i, m in ipairs(self.mats) do
             local x = rg[i]
@@ -471,7 +472,7 @@ function GuildOS:CreateCraftDetail(parent)
         -- Under the materials: how many one craft makes (or that the crafter will say what it takes),
         -- then where the recipe is learned, its skill and station.
         local note = (#rg == 0 and L["The materials show once a crafter accepts: they tell what it takes."])
-            or string.format(L["Makes %d per craft"], O:Yield(r.item))
+            or string.format(L["Makes %d per craft"], O:Yield(r.item, nil, r.recipeId))
         if r.meta and r.meta ~= "" then note = note .. " · " .. r.meta end
         matNote:SetText(note)
         -- Crafters
@@ -821,8 +822,9 @@ local function buildDialog()
         for _, b in ipairs(f.modeBtns) do UI:SetSelected(b, b.key == f.mode) end
 
         local n = math.max(1, math.min(O.MAX_N, tonumber(f.qty:GetText()) or 1))
-        local rg = id and O:Reagents(id) or {}
-        local crafts = id and math.ceil(n / O:Yield(id)) or n
+        -- The recipe of the crafter it goes to, or the one the guild knows most (issue #396).
+        local rg = id and O:Reagents(id, nil, nil, f.toKey) or {}
+        local crafts = id and math.ceil(n / O:Yield(id, nil, nil, f.toKey)) or n
         local y = -214
         for i, slot in ipairs(f.rg) do
             local r = rg[i]
