@@ -407,9 +407,26 @@ function Import:Parse(raw)
         clock = type(data.clock) == "table" and data.clock or nil,
         members = members,
         signups = signups,
+        -- v7 (the site's #603): the in-game names of who owns the raid, nil from an older site.
+        owners = Import.ReadOwners(data.owners),
         -- v6 (the site's #556): the raid's reserves, priorities and wishlists, nil when none is sent or read.
         loot = Import.ReadSiteLoot(data),
     }
+end
+
+-- Who owns the raid (GOSROST1 v7, the site's #603; this repo's #400): a list of in-game names, written
+-- the way a member's key is (Name-Realm, or the whole name with its surname on WoW: Forever). The inbox
+-- is untrusted: only strings count, each cut to 64 bytes, at most 12 of them. nil when none reads.
+local OWNERS_MAX = 12
+function Import.ReadOwners(list)
+    if type(list) ~= "table" then return nil end
+    local owners = {}
+    for _, v in ipairs(list) do
+        if #owners >= OWNERS_MAX then break end
+        local name = clipped(v, 64)
+        if name then owners[#owners + 1] = name end
+    end
+    return #owners > 0 and owners or nil
 end
 
 -- A GOSCORE1 the site gives as a code to copy, read the way the inbox's is (CoresFromInbox): the same
@@ -615,6 +632,45 @@ function Import:ConsumeInbox()
     GuildOS.db.siteLoot = next(kept) and { raids = kept } or nil
     GuildOS.db.companionRoster = soonest
     return true, #soonest.members
+end
+
+-- The raid the buttons act on: the nearest to `now` among the rosters of this session's inbox and the one
+-- kept from the last, whose start is from an hour ago to three hours ahead; nil when none is. A raid that
+-- began five hours ago is over for the buttons, and the soonest one in the inbox is no longer "the one"
+-- (the issue's #400). Rosters without a start time (0) are never inside the window.
+local BUTTON_BEFORE = 3600
+local BUTTON_AHEAD = 3 * 3600
+function Import:ButtonRaid(now)
+    now = now or GetServerTime()
+    local best, bestGap
+    local function consider(roster)
+        local startsAt = type(roster) == "table" and tonumber(roster.startsAt)
+        if not startsAt or startsAt <= 0 then return end
+        local gap = startsAt - now
+        if gap < -BUTTON_BEFORE or gap > BUTTON_AHEAD then return end
+        if not best or math.abs(gap) < bestGap then best, bestGap = roster, math.abs(gap) end
+    end
+    for _, roster in ipairs(self._webRaids or {}) do consider(roster) end
+    consider(self:Current())
+    return best
+end
+
+-- Whether this character owns `roster`: its name, in the form the client's members are keyed by, is one of
+-- the roster's owners (case does not matter). WoW: Forever keys a person by the whole name with its surname,
+-- no realm (UnitName gives only the first name there: Compat.PlayerName, issue #26); Anniversary and retail
+-- by Name-Realm.
+function Import:IsMine(roster)
+    local owners = type(roster) == "table" and roster.owners
+    if type(owners) ~= "table" or #owners == 0 then return false end
+    local name = GuildOS.Compat.PlayerName()
+    if type(name) ~= "string" or name == "" or GuildOS.Compat.IsSecret(name) then return false end
+    local me = GuildOS:RealmBound() and GuildOS:GetPlayerKey(name) or name
+    if not me then return false end
+    me = me:lower()
+    for _, owner in ipairs(owners) do
+        if type(owner) == "string" and owner:lower() == me then return true end
+    end
+    return false
 end
 
 -- Whether a site loot entry's night has begun and is not over: from two hours before its start to eight
