@@ -334,8 +334,16 @@ end
 -- Called when INSPECT_READY fires. Reads talent tabs for the
 -- currently pending inspect and stores the result.
 ----------------------------------------------------------------------
-function SpecChecker:OnInspectReady()
+function SpecChecker:OnInspectReady(guid)
     if not inspectPending then return end
+    -- INSPECT_READY also fires for an inspect somebody else asked for (the inspect window, another
+    -- addon). Its data is not the pending member's: store nothing and move on, so the queue never stalls.
+    local pendingGuid = guid and inspectPending.unit and UnitGUID and UnitGUID(inspectPending.unit)
+    if pendingGuid and guid ~= pendingGuid then
+        inspectPending = nil
+        C_Timer.After(INSPECT_DELAY, function() SpecChecker:ProcessNextInspect() end)
+        return
+    end
 
     if GuildOS.Client.isRetail then
         local spec = self:RetailSpec(inspectPending.unit)
@@ -414,7 +422,7 @@ function SpecChecker:Initialize()
     if GuildOS.Client.isRetail then GuildOS.Compat.RegisterEvent(frame, "PLAYER_SPECIALIZATION_CHANGED") end
     frame:SetScript("OnEvent", function(_, event, unit)
         if event == "INSPECT_READY" then
-            SpecChecker:OnInspectReady()
+            SpecChecker:OnInspectReady(unit)   -- INSPECT_READY's argument is the inspected GUID
         elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
             SpecChecker:OnSpecChanged(unit)
         end

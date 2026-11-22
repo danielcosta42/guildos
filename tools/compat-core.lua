@@ -508,6 +508,16 @@ SC:OnInspectReady()
 check(tabInspect == true and GuildOS.db.members[bobKey].spec.treeIndex == 3,
       "an inspected raider's talents are read with the inspect flag: their tree 3, not the inspector's tree 1")
 check(DC:CollectMyData().spec.treeIndex == 1, "and my own spec still reads my own talents")
+-- An INSPECT_READY for somebody else's inspect (the inspect window, another addon) stores nothing.
+GetTalentInfo = function(tab, i, inspect)
+  return "T" .. i, "icon", 1, i, ((inspect and tab == 2) or (not inspect and tab == 1)) and 5 or 0, 5
+end
+UnitGUID = function(unit) return "Player-1-" .. tostring(unit) end
+SC:ScanGroup()
+SC:OnInspectReady("Player-1-somebody-else")
+check(GuildOS.db.members[bobKey].spec.treeIndex == 3,
+      "an inspect somebody else asked for is not stored on the pending member")
+UnitGUID = nil
 talents(true)
 
 -- ── 5. The export: absent, not empty ────────────────────────────────────
