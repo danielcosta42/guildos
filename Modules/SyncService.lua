@@ -38,6 +38,7 @@ SyncService.OFFICER_DOMAINS = {
     cta      = true,   -- an officer's call to arms (answering it is a member action, issue #108)
     ban      = true,   -- blacklist add/remove (officer-authoritative)
     discipline = true, -- the disciplinary record (issue #402): officers write, and only officers keep it
+    modalert  = true,  -- an officer claiming a flagged chat line, so the others do not alert (issue #404)
     audit    = true,   -- guild audit trail (officer-authoritative, id-deduped)
     allyboard = true,  -- alliance bulletin posts this guild authored (ambassadors)
     allyhide  = true,  -- chat lines an ambassador pulled from the alliance feed
@@ -114,6 +115,11 @@ function SyncService:Initialize()
         -- The disciplinary record's term and ladder (issue #402); neither carries `max`.
         if env.act == "discterm" or env.act == "discladder" or env.act == "disctpl" or env.act == "discrank" then
             if GuildOS.Discipline then GuildOS.Discipline:OnConfigSync(env) end
+            return
+        end
+        -- The officers' list of chat alerts (issue #404); it carries no `max`.
+        if env.act == "modrules" then
+            if GuildOS.ModAlerts then GuildOS.ModAlerts:OnConfigSync(env) end
             return
         end
         -- Who creates calendar events (issue #283).

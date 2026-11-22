@@ -71,6 +71,7 @@ Modules\GuildChat.lua
 Modules\RosterLog.lua
 Modules\BanList.lua
 Modules\Discipline.lua
+Modules\ModAlerts.lua
 Modules\RecruitmentSystem.lua
 Modules\RecruitEngagement.lua
 Modules\WishlistSystem.lua
@@ -175,6 +176,7 @@ UI\GuildBankPanel.lua
 UI\RosterFrame.lua
 UI\MemberDetail.lua
 UI\WarnDialog.lua
+UI\ModAlerts.lua
 UI\CorePanel.lua
 UI\ManagementPanel.lua
 UI\AuditPanel.lua

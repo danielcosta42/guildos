@@ -284,6 +284,8 @@ local MODULE_START = {
     { "BanList" },
     -- The disciplinary record (issue #402): officers only, synced among them.
     { "Discipline" },
+    -- The officers' chat alerts (issue #404): after GuildChat, whose log gives the context.
+    { "ModAlerts" },
     { "CommSystem", feature = "commSystem" },
     { "Wishlist", ui = "wishlist" },
     { "SoftRes" },

@@ -20,6 +20,9 @@ local SUBTABS = {
     { key = "ban",      label = L["Ban List"] },
     { key = "engage",   label = L["Engagement"] },
     { key = "presets",  label = L["Presets"] },
+    -- The officers' chat alerts and their rules (issues #404, #405): UI/ModAlerts.lua builds both.
+    { key = "alerts",   label = L["Chat alerts"] },
+    { key = "alertrules", label = L["Alert rules"] },
 }
 
 local ROW_H = 26
@@ -1169,6 +1172,8 @@ function GuildOS:CreateManagementPanel(parent, _mainFrame)
         ban      = BuildBanSub,
         engage   = BuildEngageSub,
         presets  = BuildPresetsSub,
+        alerts   = function(p) return GuildOS.BuildModAlertsSub and GuildOS:BuildModAlertsSub(p) end,
+        alertrules = function(p) return GuildOS.BuildModRulesSub and GuildOS:BuildModRulesSub(p) end,
     }
     for _, t in ipairs(SUBTABS) do
         local p = makeSubPanel()

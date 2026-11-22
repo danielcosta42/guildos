@@ -1,0 +1,361 @@
+----------------------------------------------------------------------
+-- Guild OS - The officers' chat alerts on screen (issues #404, #405)
+--
+-- The alert itself (a small window: who, the two lines before, the line, the category; Warn, Ignore,
+-- Mute this pattern for 1h) and the Leadership screen's two sub-tabs: the alerts heard this session and
+-- the guild's rules. The logic is ModAlerts' (and ModFlood's); this file only lays it out.
+----------------------------------------------------------------------
+local UI = GuildOS.UI
+local C = GuildOS.Colors
+local L = GuildOS.L
+local WHITE8 = "Interface\\Buttons\\WHITE8x8"
+
+local ROW_H = 44
+local GUTTER = tonumber(UI.SCROLL_GUTTER) or 12
+
+local function text(parent, size, color)
+    local fs = parent:CreateFontString(nil, "OVERLAY")
+    GuildOS:ApplyFont(fs, size)
+    fs:SetTextColor(color.r, color.g, color.b)
+    fs:SetJustifyH("LEFT")
+    return fs
+end
+
+local function clock(t)
+    return date("%H:%M", t or GetServerTime())
+end
+
+-- An alert's lines as the window and the list show them: the screen's text, without colours or links.
+local function plain(s) return GuildOS.ModAlerts.Plain(s or "") end
+
+----------------------------------------------------------------------
+-- The alert window
+----------------------------------------------------------------------
+function GuildOS:ShowModAlert(a)
+    local M = GuildOS.ModAlerts
+    if not M or not GuildOS:IsOfficer() then return end
+    local f = self.modAlertFrame
+    if not f then
+        f = CreateFrame("Frame", "GuildOSModAlert", UIParent, "BackdropTemplate")
+        f:SetSize(420, 210)
+        f:SetPoint("TOP", 0, -140)
+        f:SetBackdrop({ bgFile = WHITE8, edgeFile = WHITE8, edgeSize = UI:Edge(f) })
+        f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+        f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+        UI:StylePopup(f)
+        f:SetFrameStrata("DIALOG")
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+
+        f.title = f:CreateFontString(nil, "OVERLAY")
+        GuildOS:ApplyFont(f.title, nil, "sectionTitle")
+        f.title:SetPoint("TOPLEFT", 14, -10)
+        f.title:SetTextColor(C.text.r, C.text.g, C.text.b)
+
+        f.context = text(f, 10, C.silver)
+        f.context:SetPoint("TOPLEFT", 14, -36)
+        f.context:SetWidth(392)
+        f.context:SetWordWrap(true)
+
+        f.line = text(f, 12, C.text)
+        f.line:SetPoint("TOPLEFT", f.context, "BOTTOMLEFT", 0, -6)
+        f.line:SetWidth(392)
+        f.line:SetWordWrap(true)
+
+        f.more = text(f, 9, C.silver)
+        f.more:SetPoint("BOTTOMLEFT", 14, 44)
+
+        f.warn = UI:CreateButton(f, L["Warn"], 90, 24)
+        f.warn:SetPoint("BOTTOMLEFT", 14, 12)
+        f.ignore = UI:CreateButton(f, L["Ignore"], 90, 24)
+        f.ignore:SetPoint("LEFT", f.warn, "RIGHT", 8, 0)
+        f.mute = UI:CreateButton(f, L["Mute this pattern for 1h"], 180, 24)
+        f.mute:SetPoint("LEFT", f.ignore, "RIGHT", 8, 0)
+
+        local closeBtn = UI:CreateCloseButton(f)
+        closeBtn:SetPoint("TOPRIGHT", -4, -4)
+        closeBtn:SetScript("OnClick", function() f:Hide() end)
+        self.modAlertFrame = f
+
+        -- An alert acted on from the list closes the window showing it.
+        M.popupRefresh = function()
+            if f:IsShown() and f.alert and f.alert.state ~= "new" then f:Hide() end
+        end
+    end
+    f.alert = a
+    f.title:SetText(string.format(L["Chat alert: %s"], M.CategoryText(a.cat)))
+    local ctx = {}
+    if a.lines then
+        -- A surge (#405): its lines, the newest last.
+        for i = math.max(1, #a.lines - 3), #a.lines - 1 do ctx[#ctx + 1] = a.who .. ": " .. plain(a.lines[i]) end
+    else
+        for _, e in ipairs(a.context or {}) do ctx[#ctx + 1] = tostring(e.n or "?") .. ": " .. plain(e.m) end
+    end
+    f.context:SetText(#ctx > 0 and table.concat(ctx, "\n") or L["(nothing said before it)"])
+    local shown = a.lines and a.lines[#a.lines] or a.line
+    local head = a.count and string.format(L["%s (%d lines)"], a.who, a.count) or a.who
+    f.line:SetText(head .. ": " .. plain(shown))
+    local waiting = 0
+    for _, other in ipairs(M:Feed()) do
+        if other ~= a and other.state == "new" and other.sev ~= "low" and not other.by then waiting = waiting + 1 end
+    end
+    f.more:SetText(waiting > 0 and string.format(L["%d more on Leadership > Chat alerts."], waiting) or "")
+    f.mute:SetShown(a.rule ~= nil)
+    local id = a.id
+    f.warn:SetScript("OnClick", function() M:Warn(id); f:Hide() end)
+    f.ignore:SetScript("OnClick", function() M:Ignore(id); f:Hide() end)
+    f.mute:SetScript("OnClick", function() M:MuteRule(id); f:Hide() end)
+    f:Show()
+end
+
+----------------------------------------------------------------------
+-- Leadership > Chat alerts: what was flagged this session
+----------------------------------------------------------------------
+local STATE_TEXT = { warned = L["warned"], ignored = L["ignored"] }
+
+function GuildOS:BuildModAlertsSub(panel)
+    local M = GuildOS.ModAlerts
+    local header = UI:CreateSectionTitle(panel, L["CHAT ALERTS"], true)
+    header:SetPoint("TOPLEFT", 0, 0)
+    local hint = UI:CreateText(panel,
+        L["Lines of guild chat that match the guild's rules, for the officers only. Kept in memory for two hours; a line is stored only when you warn."],
+        11, C.silver.r, C.silver.g, C.silver.b)
+    hint:SetPoint("TOPLEFT", 0, -24)
+    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -24)
+    hint:SetJustifyH("LEFT")
+
+    local paused = UI:CreateText(panel, L["Alerts paused: the game hides the chat in instances and combat."],
+        11, C.red.r, C.red.g, C.red.b)
+    paused:SetPoint("TOPLEFT", 0, -56)
+    paused:Hide()
+
+    -- This officer's own switches.
+    local prefs = M and M:Prefs() or {}
+    local boxes = {
+        { "enabled", L["Alerts on"] }, { "officers", L["Also officers' lines"] },
+        { "own", L["Also my own lines"] }, { "sound", L["Sound on high"] },
+    }
+    local x = 0
+    for _, b in ipairs(boxes) do
+        local cb = UI:CreateCheckbox(panel, b[2], 18)
+        cb:SetPoint("TOPLEFT", x, -74)
+        cb.checkbox:SetChecked(prefs[b[1]] and true or false)
+        cb.checkbox.onChanged = function(_, checked) prefs[b[1]] = checked and true or false end
+        x = x + 150
+    end
+
+    local holder = CreateFrame("Frame", nil, panel)
+    holder:SetPoint("TOPLEFT", 0, -102)
+    holder:SetPoint("BOTTOMRIGHT", 0, 0)
+    local scroll = CreateFrame("ScrollFrame", "GuildOSModAlertsScroll", holder, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 0, 0)
+    scroll:SetPoint("BOTTOMRIGHT", GUTTER, 0)
+    UI:SkinScrollBar(scroll, "GuildOSModAlertsScroll")
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(1, 1)
+    scroll:SetScrollChild(content)
+    UI:BindScrollChildWidth(scroll, content)
+
+    -- One frame per row, made once and refilled: a busy evening must not stack frames.
+    local rows = {}
+    local function rowAt(i)
+        if rows[i] then return rows[i] end
+        local row = CreateFrame("Frame", nil, content, "BackdropTemplate")
+        row:SetHeight(ROW_H)
+        row:SetPoint("TOPLEFT", 0, -((i - 1) * (ROW_H + 2)))
+        row:SetPoint("TOPRIGHT", 0, -((i - 1) * (ROW_H + 2)))
+        row:SetBackdrop({ bgFile = WHITE8 })
+        local alt = (i % 2 == 0) and C.row1 or C.row2
+        row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
+        row.top = text(row, 11, C.label)
+        row.top:SetPoint("TOPLEFT", 6, -4)
+        row.top:SetPoint("RIGHT", row, "RIGHT", -230, 0)
+        row.top:SetWordWrap(false)
+        row.line = text(row, 11, C.text)
+        row.line:SetPoint("TOPLEFT", 6, -22)
+        row.line:SetPoint("RIGHT", row, "RIGHT", -230, 0)
+        row.line:SetWordWrap(false)
+        row.mute = UI:CreateButton(row, L["Mute 1h"], 70, 20)
+        row.mute:SetPoint("RIGHT", -6, 0)
+        row.ignore = UI:CreateButton(row, L["Ignore"], 70, 20)
+        row.ignore:SetPoint("RIGHT", -82, 0)
+        row.warn = UI:CreateButton(row, L["Warn"], 70, 20)
+        row.warn:SetPoint("RIGHT", -158, 0)
+        row.mute:SetScript("OnClick", function() M:MuteRule(row.id) end)
+        row.ignore:SetScript("OnClick", function() M:Ignore(row.id) end)
+        row.warn:SetScript("OnClick", function() M:Warn(row.id) end)
+        rows[i] = row
+        return row
+    end
+    local empty = UI:CreateText(content, "", 11, C.silver.r, C.silver.g, C.silver.b)
+    empty:SetPoint("TOPLEFT", 0, -4)
+
+    local function refresh()
+        -- Off screen nothing is drawn: showing the tab draws it (as Engagement, #371).
+        if not M or not panel:IsVisible() then return end
+        paused:SetShown(M:Paused())
+        local feed = M:Feed()
+        for i, a in ipairs(feed) do
+            local row = rowAt(i)
+            row.id = a.id
+            local status = STATE_TEXT[a.state] or ""
+            if a.by then status = string.format(L["alerted on %s's screen"], a.by) .. (status ~= "" and (", " .. status) or "") end
+            if a.sev == "low" and status == "" then status = L["logged"] end
+            local who = a.count and string.format(L["%s (%d lines)"], a.who, a.count) or a.who
+            row.top:SetText(string.format("%s  %s  -  %s  %s", clock(a.at), who, M.CategoryText(a.cat),
+                status ~= "" and ("(" .. status .. ")") or ""))
+            local ink = a.state == "new" and C.text or C.textDim
+            row.line:SetTextColor(ink.r, ink.g, ink.b)
+            row.line:SetText(plain(a.lines and a.lines[#a.lines] or a.line))
+            row.mute:SetShown(a.rule ~= nil and a.state == "new")
+            row.ignore:SetShown(a.state == "new")
+            row:Show()
+        end
+        for i = #feed + 1, #rows do rows[i]:Hide() end
+        empty:SetShown(#feed == 0)
+        empty:SetText(#M:GetRules() == 0
+            and L["The guild's list is empty: nothing will alert. Add words on the Alert rules tab."]
+            or L["No alerts this session."])
+        content:SetHeight(math.max(1, #feed * (ROW_H + 2)))
+    end
+
+    -- The lockdown starts and ends without a line: while the tab shows, look every two seconds.
+    local acc = 0
+    holder:SetScript("OnUpdate", function(_, elapsed)
+        acc = acc + elapsed
+        if acc < 2 then return end
+        acc = 0
+        if M then paused:SetShown(M:Paused()) end
+    end)
+    if M then M.uiRefresh = refresh end
+    return refresh
+end
+
+----------------------------------------------------------------------
+-- Leadership > Alert rules: the guild's list (and the anti-flood's limits, #405)
+----------------------------------------------------------------------
+local RULE_WHY = {
+    empty = L["Type a word or a pattern."],
+    long = L["At most 60 characters."],
+    invalid = L["That Lua pattern is not valid."],
+    broad = L["That pattern matches every line."],
+    dupe = L["That rule is already on the list."],
+    full = L["The list is full."],
+    officer = L["|cffFF4444Officers only.|r"],
+}
+
+function GuildOS:BuildModRulesSub(panel)
+    local M = GuildOS.ModAlerts
+    local header = UI:CreateSectionTitle(panel, L["ALERT RULES"], true)
+    header:SetPoint("TOPLEFT", 0, 0)
+    local hint = UI:CreateText(panel,
+        L["The guild's words and patterns, shared by the officers. A word matches whole, without case or accents."],
+        11, C.silver.r, C.silver.g, C.silver.b)
+    hint:SetPoint("TOPLEFT", 0, -24)
+    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -24)
+    hint:SetJustifyH("LEFT")
+
+    local input = UI:CreateInput(panel, 170, 22, { max = M and M.PATTERN_MAX or 60, placeholder = L["word or phrase"] })
+    input:SetPoint("TOPLEFT", 0, -50)
+    local catDD = UI:CreateDropdown(panel, 150, 22)
+    catDD:SetPoint("LEFT", input, "RIGHT", 8, 0)
+    local cats = {}
+    for _, c in ipairs(M and M.CATEGORIES or {}) do cats[#cats + 1] = { value = c, text = M.CategoryText(c) } end
+    catDD:SetOptions(cats)
+    catDD:SetValue("custom")
+    local sevDD = UI:CreateDropdown(panel, 160, 22)
+    sevDD:SetPoint("LEFT", catDD, "RIGHT", 8, 0)
+    local sevs = {}
+    for _, s in ipairs(M and M.SEVERITIES or {}) do sevs[#sevs + 1] = { value = s, text = M.SeverityText(s) } end
+    sevDD:SetOptions(sevs)
+    sevDD:SetValue("med")
+    local luaChk = UI:CreateCheckbox(panel, L["Lua pattern"], 18)
+    luaChk:SetPoint("TOPLEFT", 0, -80)
+    local addBtn = UI:CreateButton(panel, L["Add"], 70, 22)
+    addBtn:SetPoint("LEFT", sevDD, "RIGHT", 8, 0)
+    local result = UI:CreateText(panel, "", 11, C.silver.r, C.silver.g, C.silver.b)
+    result:SetPoint("TOPLEFT", 160, -82)
+    local restore = UI:CreateButton(panel, L["Restore the default list"], 170, 22)
+    restore:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -78)
+
+    local function add()
+        if not M then return end
+        local ok, why = M:AddRule(input:GetText(), catDD:GetValue(), sevDD:GetValue(), luaChk.checkbox:GetChecked() and true or false)
+        if ok then
+            input:SetText("")
+            input:ClearFocus()
+            result:SetText("")
+        else
+            result:SetText(RULE_WHY[why] or RULE_WHY.empty)
+        end
+    end
+    addBtn:SetScript("OnClick", add)
+    input:HookScript("OnEnterPressed", add)
+    restore:SetScript("OnClick", function() if M then M:RestoreDefaults() end end)
+
+    -- The anti-flood's limits (#405) sit under the rules when that module is there.
+    local floodH = 0
+    if GuildOS.BuildModFloodSection then floodH = GuildOS:BuildModFloodSection(panel, 110) or 0 end
+
+    local holder = CreateFrame("Frame", nil, panel)
+    holder:SetPoint("TOPLEFT", 0, -(110 + floodH))
+    holder:SetPoint("BOTTOMRIGHT", 0, 0)
+    local scroll = CreateFrame("ScrollFrame", "GuildOSModRulesScroll", holder, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 0, 0)
+    scroll:SetPoint("BOTTOMRIGHT", GUTTER, 0)
+    UI:SkinScrollBar(scroll, "GuildOSModRulesScroll")
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(1, 1)
+    scroll:SetScrollChild(content)
+    UI:BindScrollChildWidth(scroll, content)
+
+    local rows = {}
+    local function rowAt(i)
+        if rows[i] then return rows[i] end
+        local row = CreateFrame("Frame", nil, content)
+        row:SetHeight(22)
+        row:SetPoint("TOPLEFT", 0, -((i - 1) * 24))
+        row:SetPoint("TOPRIGHT", 0, -((i - 1) * 24))
+        row.p = text(row, 11, C.text)
+        row.p:SetPoint("LEFT", 0, 0)
+        row.p:SetWidth(200)
+        row.p:SetWordWrap(false)
+        row.cat = text(row, 11, C.textDim)
+        row.cat:SetPoint("LEFT", 210, 0)
+        row.sev = text(row, 11, C.textDim)
+        row.sev:SetPoint("LEFT", 380, 0)
+        row.del = UI:CreateButton(row, "\195\151", 22, 18)  -- ×
+        row.del:SetPoint("RIGHT", 0, 0)
+        row.del:SetScript("OnClick", function() M:RemoveRule(row.index) end)
+        rows[i] = row
+        return row
+    end
+    local empty = UI:CreateText(content,
+        L["The list is empty: nothing will alert. Add a word above, or restore the default list."],
+        11, C.silver.r, C.silver.g, C.silver.b)
+    empty:SetPoint("TOPLEFT", 0, -4)
+
+    local function refresh()
+        if not M or not panel:IsVisible() then return end
+        if panel.floodRefresh then GuildOS:SafeCall(panel.floodRefresh) end
+        local rules = M:GetRules()
+        for i, r in ipairs(rules) do
+            local row = rowAt(i)
+            row.index = i
+            row.p:SetText(r.lua and (r.p .. "  |cff888888(" .. L["Lua pattern"] .. ")|r") or r.p)
+            row.cat:SetText(M.CategoryText(r.cat))
+            local ink = r.sev == "high" and C.red or C.textDim
+            row.sev:SetTextColor(ink.r, ink.g, ink.b)
+            row.sev:SetText(M.SeverityText(r.sev))
+            row:Show()
+        end
+        for i = #rules + 1, #rows do rows[i]:Hide() end
+        empty:SetShown(#rules == 0)
+        content:SetHeight(math.max(1, #rules * 24))
+    end
+    if M then M.rulesRefresh = refresh end
+    return refresh
+end
