@@ -34,10 +34,12 @@ function AltAutoDetect:RecordSelf()
     GuildOSDB.accountChars = GuildOSDB.accountChars or {}
     local name = GuildOS.Compat.PlayerName()
     if not name then return end
-    local key = GuildOS:GetPlayerKey(name, GetRealmName())
+    -- The realm GuildOS:RealmName() reads back when the client answers none (issue #394).
+    local realm = GuildOS:RealmName()
+    local key = GuildOS:GetPlayerKey(name, realm)
     local _, classFile = UnitClass("player")
     GuildOSDB.accountChars[key] = {
-        name = name, realm = GetRealmName(), class = classFile,
+        name = name, realm = realm, class = classFile,
         level = UnitLevel("player"), guild = GetGuildInfo("player"),
         ts = GetServerTime(),
     }

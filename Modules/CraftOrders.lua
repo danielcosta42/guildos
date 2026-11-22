@@ -64,7 +64,7 @@ function CraftOrders.NameOf(key)
     if type(key) ~= "string" then return "?" end
     local name, realm = key:match("^([^-]+)-(.+)$")
     if not name then return key end
-    local mine = GetRealmName and GetRealmName()
+    local mine = GuildOS:RealmName()
     if mine and (realm == mine or realm == mine:gsub("[%s%-]", "")) then return name end
     return key
 end

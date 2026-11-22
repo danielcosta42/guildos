@@ -42,7 +42,7 @@ Condensed spec + plan + tasks.
 - **PugInspector:** `Classify` stays free of globals, so it applies the same rule inline; its live sources hand it the client's realm.
 
 ### 2.3 Not changed (disclosed)
-- **The per-guild database key** (`BRutus:ResolveGuildDB`, `Guild-Realm` with an `"Unknown"` fallback) is not a member key; it is already stable on a realm-less client.
+- **The per-guild database key** (`BRutus:ResolveGuildDB`, `Guild-Realm` with an `"Unknown"` fallback) is not a member key; it is already stable on a realm-less client. Not on a client whose answer changes: see section 6.
 - **A roster that suffixes names on a client where both realm functions answer nothing** splits keys:
   - roster rows, the export's member rows and a suffixed sender's broadcast carry the suffix (`Bob-Suffix`);
   - every key built from a bare name stays bare (`Bob`): my own key and the export's author, loot history and rolls,
@@ -115,3 +115,14 @@ Condensed spec + plan + tasks.
   - `LootMaster`'s test mode adds me by name when the group list lacks me, so it can list me twice on Forever.
   - Handlers other than the data broadcast still trust a payload name (e.g. `WishlistSystem`'s `payload.name or sender`), so a guildmate still on 0.56.0 lands under the first name there.
   - Beta data written under the first-name key since 70009 (`Chehul-<realm>`) is not migrated. `/gos prune` removes members no longer on the roster.
+
+## 6. Fix: the realm went empty and every key changed (issue #394)
+
+- **What broke.** The WoW: Forever client patch of 2026-11-21 (~03:56 UTC) made `GetRealmName()` answer `""` all session. The guild's db key (`"<guild>-<realm>"`), every member key (`"Name-<client realm>"`) and the companion's `guildKey` all carried the realm answered before (`CAMWOW US2 Realm 5 PvE`), so they all changed at once: the addon opened an empty `"<guild>-"` db over the intact one, and players saw every setting and record gone. Nothing was deleted.
+- **Rule.** `GuildOS:RealmName()` is `GetRealmName()`; on Forever (not `RealmBound`) an empty answer is the realm this character had, read from `accountChars` (its own latest entry with a realm, else the account's when every character with one agrees), else `""` as the client gave it. It reads each `accountChars` table once, so the per-key cost stays one comparison. `GetClientRealm` and `GuildRealm` (non-retail) read it, so the db, member keys and `guildKey` are the ones saved before, byte for byte, with no data moved. Retail, Anniversary and any client that answers a realm are unchanged.
+- **The memory stays.** `AltAutoDetect:RecordSelf` writes that realm into `accountChars`, so a session with no realm does not overwrite the one it read. `CraftOrders.NameOf` compares with it, so a guildmate on my realm is whispered by name alone.
+- **Tests** (`tools/forever-keys.lua`, section 4): with `GetRealmName()` and `GetNormalizedRealmName()` both `""`, a member key and the resolved db take this character's latest saved realm (over an older one, a realm-less entry written after the patch and another realm's alt); `RecordSelf` keeps it and a fresh session reads it back; `NameOf` drops it; a character never recorded takes the account's single realm, none when the account has two; an account with nothing saved keys as before the fix; on Anniversary an empty realm is not filled. Mutants of the latest-entry order, the Forever gate, the agreement check and the fallback are all killed. Checked by hand against a real post-patch SavedVariables: the db resolves to the old key with its 154 members and settings.
+- **Not changed (disclosed).**
+  - What was written after the patch under `"<guild>-"` and realm-less `accountChars` entries stays in the SavedVariables, unread: one day of synced data and window settings.
+  - A character first seen after the patch has no realm to remember. If the client ever answers a realm again, that character's keys change once.
+  - Fields that store the raw `GetRealmName()` (`myData.realm`, a broadcast's `realm`) stay `""` on Forever; Forever keys ignore a payload's realm (issue #95), so no key depends on them.
