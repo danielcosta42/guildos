@@ -1522,23 +1522,28 @@ function GuildOS:ShowImportPopup()
         end
     end)
 
+    -- This window's two buttons act on the roster it holds, the one just loaded, not the raid of the window
+    -- the Web tab's buttons act on (issue #400).
     local inviteBtn = UI:CreateButton(f, L["Invite all"], 90, 26)
     inviteBtn:SetPoint("RIGHT", loadBtn, "LEFT", -6, 0)
     inviteBtn:SetScript("OnClick", function()
-        local n, skipped, err = GuildOS.CompanionImport:InviteAll()
+        local I = GuildOS.CompanionImport
+        local n, here, err, offline = I:InviteAll(I:Current())
         if err then
             status:SetTextColor(1, 0.35, 0.35)
             status:SetText(err)
         else
             status:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            status:SetText(string.format(L["Invited %d, already here %d."], n, skipped))
+            status:SetText(string.format(L["Invited %d, already here %d."], n, here))
         end
+        local off = I.OfflineLine(offline)
+        if off then GuildOS:Print(off) end
     end)
 
     local groupsBtn = UI:CreateButton(f, L["Groups"], 90, 26)
     groupsBtn:SetPoint("RIGHT", inviteBtn, "LEFT", -6, 0)
     groupsBtn:SetScript("OnClick", function()
-        local moved, err = GuildOS.CompanionImport:OrganizeGroups()
+        local moved, err = GuildOS.CompanionImport:OrganizeGroups(GuildOS.CompanionImport:Current())
         if err then
             status:SetTextColor(1, 0.35, 0.35)
             status:SetText(err)

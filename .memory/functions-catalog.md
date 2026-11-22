@@ -1246,3 +1246,19 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `GuildBank:ParseItemInput(text)/IsMe(name)/ClassOf(name)` | helpers |
 | `GuildOS:CreateGuildBankPanel(container)` | the Bank tab |
 
+## Starting the raid — Compat + CompanionImport.lua (#400, guildos-web #603, specs/090)
+
+| Symbol | Description |
+|---|---|
+| `Compat.SetRaidSubgroup(index, group)` / `Compat.SwapRaidSubgroup(i1, i2)` | A raid member into a group, two members trading groups: the globals (still globals on all three clients), pcall'd; false where missing or raising. `compat-guard` flags a direct call |
+| `Compat.IsGroupLeader()` / `Compat.IsLeaderOrAssist()` | Whether I lead my group (false outside one), and whether I may invite and arrange: alone, the leader, or an assistant. A secret `UnitIsGroupLeader`/`UnitIsGroupAssistant` answer counts as no and never raises. `Compat.CanInvite()` is `IsLeaderOrAssist` |
+| `CompanionImport:ButtonRaid(now)` / `:IsMine(roster)` | The raid of the button: the nearest whose start is from an hour ago to three hours ahead, a tie going to the one under way; whether this character is in its `owners` (GOSROST1 v7) |
+| `CompanionImport:ActiveRoster(now)` | What the Web tab and `/gos roster` act on: `ButtonRaid` when there is one, else the kept roster (`Current`), as before. The paste window passes `Current()` |
+| `CompanionImport:CanInvite/CanTrim/CanOrganize(roster)` | Each on `roster`, the active one by default. Invite and organise need leader or assistant (`Compat.IsLeaderOrAssist`), trim the leader (`Compat.IsGroupLeader`); organise refuses in combat |
+| `CompanionImport:InviteAll(roster)` | Invites who the plan still needs, as many as the group has room for: four alone, a party's free seats, all in a raid. Never me, nobody here, no guildmate the roster shows offline. Returns `(invited, here, err, offline)`; a full party with people left is an error |
+| `CompanionImport:OrganizeGroups(roster)` | Into the site's groups: a move where a group has a seat, a swap where it is full (the partner whose own group is the mover's first, then one with no planned group, then one planned elsewhere). Nobody outside the plan moves but as a swap's half. Returns `(placed, err)` |
+| `CompanionImport.OfflineLine(offline)` | "Offline, not invited: …", names made inert, or nil |
+| `RaidStart:Next(roster)` | The next step from the live group: `{ kind = invite4/convert/inviteRest/arrange/done/blocked, count, reason, offline, label }`. A roster that fits a party never converts |
+| `RaidStart:Run(roster)` / `:Label(step)` / `:Say(result)` | The click (convert only converts; the rest come on the next click); the button's text; the result's line and the offline line |
+| `tools/raid-start.lua` | The stepper under a stubbed WoW: Forever group, guild roster, combat and secrets |
+

@@ -1522,6 +1522,42 @@ function Compat.ConvertToRaid()
     return (pcall(convert))
 end
 
+-- Move raid member `index` into raid group `group` (1 to 8), or swap two members' groups (issue #400). Both are
+-- still globals: retail 12.1.5's probe found SetRaidSubgroup, WoW: Forever's API documentation is retail's, and
+-- neither moved into C_PartyInfo the way InviteUnit and ConvertToRaid did. False where the call is missing or raises.
+function Compat.SetRaidSubgroup(index, group)
+    if not SetRaidSubgroup then return false end
+    return (pcall(SetRaidSubgroup, index, group))
+end
+function Compat.SwapRaidSubgroup(index1, index2)
+    if not SwapRaidSubgroup then return false end
+    return (pcall(SwapRaidSubgroup, index1, index2))
+end
+
+-- One of the player's group flags (UnitIsGroupLeader, UnitIsGroupAssistant), read past the Secret Values: WoW:
+-- Forever and retail answer them secret when the unit's identity is restricted (docs/forever), and a secret is
+-- never tested, so it counts as no. False where the call is missing or raises.
+local function playerFlag(fn)
+    if not fn then return false end
+    local ok, v = pcall(fn, "player")
+    if not ok or Compat.IsSecret(v) then return false end
+    return v and true or false
+end
+
+-- Whether I lead my group (issue #400). False outside a group, and when the client keeps the answer secret.
+function Compat.IsGroupLeader()
+    if ((GetNumGroupMembers and GetNumGroupMembers()) or 0) == 0 then return false end
+    return playerFlag(UnitIsGroupLeader)
+end
+
+-- Whether I may invite and arrange (issue #400): alone, with no group yet, the one to start it; my group's
+-- leader; or a raid's assistant. A secret answer counts as no and never raises.
+function Compat.IsLeaderOrAssist()
+    local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0
+    if n <= 1 then return true end
+    return playerFlag(UnitIsGroupLeader) or playerFlag(UnitIsGroupAssistant)
+end
+
 -- A ready check (issue #378): the leader's or an assistant's, where the client has it.
 function Compat.CanReadyCheck()
     return DoReadyCheck ~= nil
@@ -1531,12 +1567,10 @@ function Compat.DoReadyCheck()
     return (pcall(DoReadyCheck))
 end
 
--- Whether I may invite somebody: alone, the group's leader, or a raid's assistant (issue #341).
+-- Whether I may invite somebody: alone, the group's leader, or a raid's assistant (issue #341), read past the
+-- Secret Values since issue #400.
 function Compat.CanInvite()
-    local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0
-    if n <= 1 then return true end
-    if UnitIsGroupLeader and UnitIsGroupLeader("player") then return true end
-    return (UnitIsGroupAssistant and UnitIsGroupAssistant("player")) and true or false
+    return Compat.IsLeaderOrAssist()
 end
 
 -- Whether the player of this key is in a roster Compat.GroupRoster gave. On WoW: Forever the first

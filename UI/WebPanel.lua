@@ -311,12 +311,14 @@ function GuildOS:CreateWebPanel(parent, _win)
     inviteBtn:SetScript("OnClick", function()
         local I = GuildOS.CompanionImport
         if not I then return end
-        local n, skipped, err = I:InviteAll()
+        local n, here, err, offline = I:InviteAll()
         if err then
             GuildOS:Print(err)
         else
-            GuildOS:Print(string.format(L["Invited %d, already here %d."], n, skipped))
+            GuildOS:Print(string.format(L["Invited %d, already here %d."], n, here))
         end
+        local off = I.OfflineLine(offline)
+        if off then GuildOS:Print(off) end
         panel:Refresh()
     end)
 
@@ -448,7 +450,8 @@ function GuildOS:CreateWebPanel(parent, _win)
         setEnabled(publishBtn, pubOk)
         publishWhy:SetText(pubOk and "" or (pubWhy or ""))
 
-        local roster = I and I:Current()
+        -- The raid the buttons below act on: the one of the window when there is one (issue #400).
+        local roster = I and I:ActiveRoster()
         local sum
         if roster then
             local title = roster.title

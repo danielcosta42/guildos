@@ -302,7 +302,8 @@ read_globals = {
     "UnitIsGroupLeader",
     "UnitIsGroupAssistant",
     "GetRaidRosterInfo",
-    "SetRaidSubgroup",
+    "SetRaidSubgroup",     -- a raid member into a group (Compat only, issue #400)
+    "SwapRaidSubgroup",    -- two raid members trade groups (Compat only, issue #400)
     "CombatLogGetCurrentEventInfo",
 
     -- WoW API: Loot

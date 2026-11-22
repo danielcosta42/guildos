@@ -637,18 +637,22 @@ end
 -- The raid the buttons act on: the nearest to `now` among the rosters of this session's inbox and the one
 -- kept from the last, whose start is from an hour ago to three hours ahead; nil when none is. A raid that
 -- began five hours ago is over for the buttons, and the soonest one in the inbox is no longer "the one"
--- (the issue's #400). Rosters without a start time (0) are never inside the window.
+-- (the issue's #400). Rosters without a start time (0) are never inside the window. Two as near, one begun and
+-- one ahead, go to the one under way: its leader is the one at the keyboard.
 local BUTTON_BEFORE = 3600
 local BUTTON_AHEAD = 3 * 3600
 function Import:ButtonRaid(now)
     now = now or GetServerTime()
-    local best, bestGap
+    local best, bestGap, bestBegun
     local function consider(roster)
         local startsAt = type(roster) == "table" and tonumber(roster.startsAt)
         if not startsAt or startsAt <= 0 then return end
         local gap = startsAt - now
         if gap < -BUTTON_BEFORE or gap > BUTTON_AHEAD then return end
-        if not best or math.abs(gap) < bestGap then best, bestGap = roster, math.abs(gap) end
+        local away, begun = math.abs(gap), gap <= 0
+        if not best or away < bestGap or (away == bestGap and begun and not bestBegun) then
+            best, bestGap, bestBegun = roster, away, begun
+        end
     end
     for _, roster in ipairs(self._webRaids or {}) do consider(roster) end
     consider(self:Current())
@@ -886,52 +890,89 @@ end
 -- slash command refuses with the same words. Both ask these, so a change
 -- to the rule reaches the button and the command together instead of
 -- drifting into two versions of the truth.
+--
+-- Each takes the roster to act on, the active one when none is given.
+-- The leader and assistant reads go through Compat, past the client's
+-- secret values (issue #400).
 ----------------------------------------------------------------------
-function Import:CanInvite()
-    if not self:Current() then return false, L["Import a roster first."] end
+
+--- The roster the Web panel and `/gos roster` act on (issue #400): the raid of the button (ButtonRaid, the nearest
+--- whose start is from an hour ago to three hours ahead) when there is one, else the roster kept, pasted or the
+--- inbox's soonest, as before. Without this session's inbox the kept roster is the only candidate there is.
+function Import:ActiveRoster(now)
+    if self._webRaids then
+        local raid = self:ButtonRaid(now)
+        if raid then return raid end
+    end
+    return self:Current()
+end
+
+function Import:CanInvite(roster)
+    roster = roster or self:ActiveRoster()
+    if not roster then return false, L["Import a roster first."] end
     if not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then
         return false, L["The web companion is off. Turn it on with /gos web on."]
     end
+    if not GuildOS.Compat.IsLeaderOrAssist() then return false, L["Only the group's leader or an assistant can invite."] end
     return true
 end
 
 -- Taking people out of the raid is the raid leader's alone: an assistant can invite and move,
 -- the game lets only the leader remove (issue #292).
-function Import:CanTrim()
-    if not self:Current() then return false, L["Import a roster first."] end
+function Import:CanTrim(roster)
+    roster = roster or self:ActiveRoster()
+    if not roster then return false, L["Import a roster first."] end
     if not IsInRaid() and (GetNumGroupMembers() or 0) == 0 then return false, L["You are not in a group."] end
-    if not UnitIsGroupLeader("player") then return false, L["Only the raid leader can remove people from the raid."] end
+    if not GuildOS.Compat.IsGroupLeader() then return false, L["Only the raid leader can remove people from the raid."] end
     return true
 end
 
-function Import:CanOrganize()
-    if not self:Current() then return false, L["Import a roster first."] end
+-- The game moves nobody between groups in combat, so the button waits for it to end.
+function Import:CanOrganize(roster)
+    roster = roster or self:ActiveRoster()
+    if not roster then return false, L["Import a roster first."] end
     if not IsInRaid() then return false, L["You need to be in a raid to organise groups."] end
-    if not (UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")) then
-        return false, L["Only the raid leader can organise groups."]
+    if not GuildOS.Compat.IsLeaderOrAssist() then
+        return false, L["Only the raid leader or an assistant can organise groups."]
     end
+    if GuildOS.Compat.InCombat() then return false, L["Not during combat."] end
     return true
+end
+
+-- Who a name stands for in the group: on retail the name with its realm, so a guildmate already
+-- here from another connected realm is not invited again, and a namesake from another realm is
+-- not taken for them (issue #182). Elsewhere the name.
+local function presence(name, realm)
+    if not GuildOS.Client.isRetail then return name end
+    return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, realm or name:match("^[^-]+%-(.+)$"))
 end
 
 --- Everyone on the live guild roster, by the name the site would send: the name they are kept by.
 --- On retail the site sends a name it never confirmed without a realm, and that is a guildmate
 --- only when one connected realm has it, kept as "Name-Realm": two namesakes are nobody to guess
 --- between (issue #182).
+---
+--- And beside it, who the roster shows offline, by who they are (presence): the raid's invites pass
+--- them over and name them (issue #400). Only a plain `false` is offline: a line that says nothing,
+--- or says it secret, is somebody who may be online, and an invite to them costs nothing.
 local function guildNames()
-    local names, retail = {}, GuildOS.Client.isRetail
+    local names, offline, retail = {}, {}, GuildOS.Client.isRetail
     for i = 1, (GetNumGuildMembers() or 0) do
-        local full = GetGuildRosterInfo(i)
+        local full, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
         if full then
+            local key
             if retail then
                 local short = full:match("^([^-]+)") or full
-                if names[short] == nil then names[short] = GuildOS:KeyOfRosterName(full) else names[short] = false end
+                key = GuildOS:KeyOfRosterName(full)
+                if names[short] == nil then names[short] = key else names[short] = false end
             else
-                local plain = Import.PlainName(full)
-                names[plain] = plain
+                key = Import.PlainName(full)
+                names[key] = key
             end
+            if not GuildOS.Compat.IsSecret(online) and online == false and key then offline[key] = true end
         end
     end
-    return names
+    return names, offline
 end
 
 --- The people the site could not vouch for but the game can, by short name.
@@ -949,9 +990,9 @@ end
 --- beside somebody it just invited is two versions of the truth.
 ---
 --- Keyed by the signup's name; the value is the name the guildmate is kept by, "Name-Realm"
---- on retail (issue #182).
-function Import:Rescued(roster)
-    local out, guild = {}, nil
+--- on retail (issue #182). `guild` is guildNames()'s first answer when the caller has read it already.
+function Import:Rescued(roster, guild)
+    local out = {}
     for _, p in ipairs((roster and roster.signups) or {}) do
         if p.why == "unknown" and not p.invite and type(p.name) == "string" then
             guild = guild or guildNames()
@@ -961,54 +1002,133 @@ function Import:Rescued(roster)
     return out
 end
 
--- Who a name stands for in the group: on retail the name with its realm, so a guildmate already
--- here from another connected realm is not invited again, and a namesake from another realm is
--- not taken for them (issue #182). Elsewhere the name.
-local function presence(name, realm)
-    if not GuildOS.Client.isRetail then return name end
-    return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, realm or name:match("^[^-]+%-(.+)$"))
+----------------------------------------------------------------------
+-- The plan against the group (issue #400)
+--
+-- What the invite, the groups and the Iniciar raide stepper all read, so
+-- the button's label and what its click does cannot disagree. Read fresh
+-- on every call, from the group as the client shows it now.
+----------------------------------------------------------------------
+local PARTY_MAX = 5                -- a party holds five, its leader among them
+local FIRST_WAVE = PARTY_MAX - 1   -- invited before the raid exists: what a party holds besides me
+local RAID_GROUPS = 8              -- a raid's groups
+local GROUP_MAX = 5                -- people in one raid group
+local RAID_MAX = 40                -- GetRaidRosterInfo's indexes (MAX_RAID_MEMBERS)
+
+-- Everyone the roster plans, in its order: the site's members, then the guildmates the game vouches for
+-- (Rescued), each once. { name = the name to invite, key = who they are (presence), group = 1..8 or nil }.
+local function planned(roster, guild)
+    local out, seen = {}, {}
+    local function add(name, group)
+        if type(name) ~= "string" or name == "" then return end
+        local key = presence(name)
+        if not key or seen[key] then return end
+        seen[key] = true
+        group = tonumber(group)
+        out[#out + 1] = { name = name, key = key, group = (group and group >= 1 and group <= RAID_GROUPS) and group or nil }
+    end
+    for _, m in ipairs(roster.members or {}) do add(m.name, m.group) end
+    local rescued = Import:Rescued(roster, guild)
+    for _, s in ipairs(roster.signups or {}) do add(rescued[s.name], s.group) end
+    return out
 end
 
---- Invite everyone on the loaded roster who is not already in the group.
---- Returns (invited, skipped, err).
-function Import:InviteAll()
-    local allowed, reason = self:CanInvite()
-    if not allowed then return nil, nil, reason end
-    local roster = self:Current()
-
-    -- Who is already here. Inviting someone in the raid produces an error
-    -- message in their chat for no reason.
-    local present = {}
-    local me = GuildOS.Compat.PlayerName()
-    present[presence(me)] = true
-    for i = 1, (GetNumGroupMembers() or 0) do
-        local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
-        local n, realm = GuildOS.Compat.UnitIdentity(unit)
-        if n then present[presence(n, realm)] = true end
+-- The planned person a name read off the group stands for, or nil. The name as presence keys it, first. On a
+-- client with surnames nobody has yet read whether a raid unit or a raid roster line carries the surname
+-- (issue #48, docs/forever): a name without a space is also tried with its hyphen as the space, the way the
+-- game's folders write it, and a bare first name stands for the one planned person of that first name, never two.
+local function planMatcher(list)
+    local byKey, byFirst = {}, {}
+    for _, p in ipairs(list) do
+        byKey[p.key] = p
+        local first = p.name:match("^(%S+) ")
+        if first then byFirst[first] = (byFirst[first] == nil) and p or false end
     end
-
-    -- Compat knows which invite the client has: WoW: Forever only has C_PartyInfo's (issue #43).
-    local function ask(name)
-        GuildOS.Compat.InviteUnit(inviteName(name))
+    local surnames = GuildOS.Client.has.surnames
+    return function(key)
+        if type(key) ~= "string" then return nil end
+        if byKey[key] then return byKey[key] end
+        if not surnames or key:find(" ", 1, true) then return nil end
+        local spaced = key:gsub("%-", " ", 1)
+        if byKey[spaced] then return byKey[spaced] end
+        if key:find("-", 1, true) then return nil end
+        return byFirst[key] or nil
     end
+end
 
-    local invited, skipped = 0, 0
-    local function send(name)
-        local who = presence(name)
-        if present[who] then
-            skipped = skipped + 1
-        else
-            ask(name)
-            -- Marked here as well as counted: two signups can name the same character,
-            -- and a second invite to a name already asked is an error in their chat.
-            present[who] = true
-            invited = invited + 1
+-- Who a group unit is, in the plan's terms. On a client with surnames the unit's second answer is the surname,
+-- not a realm (UnitFullName answers the player so, issue #26): joined, as Compat.GroupRoster joins it.
+local function unitKey(name, second)
+    if GuildOS.Client.has.surnames then
+        if type(second) == "string" and second ~= "" and not name:find(" ", 1, true) then name = name .. " " .. second end
+        return name
+    end
+    return presence(name, second)
+end
+
+-- The group as it is, against the plan: how many we are, whether it is a raid, how many of the plan are here, who
+-- is left to invite and who the guild roster shows offline. Never me, nobody already here, no offline guildmate;
+-- somebody outside the guild cannot be known offline, and is invited.
+local function survey(roster)
+    local Compat = GuildOS.Compat
+    local guild, offline = guildNames()
+    local list = planned(roster, guild)
+    local match = planMatcher(list)
+    local inRaid = IsInRaid() and true or false
+    local n = GetNumGroupMembers() or 0
+    local here = {}
+    local me = Compat.PlayerName()
+    if not Compat.IsSecret(me) and type(me) == "string" then
+        local p = match(presence(me))
+        if p then here[p] = true end
+    end
+    for i = 1, n do
+        local name, second = Compat.UnitIdentity((inRaid and "raid" or "party") .. i)
+        if type(name) == "string" and name ~= "" then
+            local p = match(unitKey(name, second))
+            if p then here[p] = true end
         end
     end
+    local s = { n = n, inRaid = inRaid, here = 0, invite = {}, offline = {}, match = match }
+    for _, p in ipairs(list) do
+        if here[p] then
+            s.here = s.here + 1
+        elseif offline[p.key] then
+            s.offline[#s.offline + 1] = p.name
+        else
+            s.invite[#s.invite + 1] = p.name
+        end
+    end
+    return s
+end
 
-    for _, m in ipairs(roster.members) do send(m.name) end
-    for _, name in pairs(self:Rescued(roster)) do send(name) end
-    return invited, skipped, nil
+--- Invite who the plan still needs, as many as the group has room for (issue #400): four alone, a party's free
+--- seats, everyone once it is a raid. Never me, nobody already here, and no guildmate the guild roster shows
+--- offline (returned, to be named). The Iniciar raide stepper's invite steps are this, on the raid of its button.
+--- Returns (invited, here, err, offline): `here` is how many of the plan are already in the group.
+function Import:InviteAll(roster)
+    roster = roster or self:ActiveRoster()
+    local allowed, reason = self:CanInvite(roster)
+    if not allowed then return nil, nil, reason end
+    local s = survey(roster)
+    local room = s.inRaid and #s.invite or (s.n <= 1 and FIRST_WAVE) or math.max(0, PARTY_MAX - s.n)
+    if room == 0 and #s.invite > 0 then return nil, nil, L["The party is full. Turn it into a raid first."], s.offline end
+    -- Compat knows which invite the client has: WoW: Forever only has C_PartyInfo's (issue #43). Each person is
+    -- asked once: a second invite to a name already asked is an error in their chat.
+    local invited = 0
+    for i = 1, math.min(room, #s.invite) do
+        GuildOS.Compat.InviteUnit(inviteName(s.invite[i]))
+        invited = invited + 1
+    end
+    return invited, s.here, nil, s.offline
+end
+
+--- The line that names who was left out for being offline, or nil with nobody: names off the network, made inert.
+function Import.OfflineLine(offline)
+    if type(offline) ~= "table" or #offline == 0 then return nil end
+    local names = {}
+    for i, name in ipairs(offline) do names[i] = Import.Inert(name) end
+    return string.format(L["Offline, not invited: %s"], table.concat(names, ", "))
 end
 
 --- Who is in the group and not in the plan (issue #292): a pug who joined, somebody who left the raid
@@ -1016,8 +1136,8 @@ end
 --- bench (`why = "bench"`): the raid leader benched them on purpose and may want them standing by in
 --- the raid — taking them out is the raid leader's own hand, not this button's. Returns names, the
 --- way the group shows them, and beside them the unit each one is, which is what removal asks for.
-function Import:OutsideThePlan()
-    local roster = self:Current()
+function Import:OutsideThePlan(roster)
+    roster = roster or self:ActiveRoster()
     if not roster then return {} end
     local keep = {}
     for _, m in ipairs(roster.members) do keep[presence(m.name)] = true end
@@ -1074,35 +1194,194 @@ end
 -- Groups
 ----------------------------------------------------------------------
 
---- Move raid members into the parties the website planned.
---- Returns (moved, err). Only works while in a raid and leading it.
-function Import:OrganizeGroups()
-    local allowed, reason = self:CanOrganize()
-    if not allowed then return nil, reason end
-    local roster = self:Current()
-
-    -- Where the website wants each person, by who they are: on retail name and realm (issue #182).
-    local want = {}
-    for _, m in ipairs(roster.members) do
-        if m.group >= 1 and m.group <= 8 then want[presence(m.name)] = m.group end
-    end
-
-    local moved = 0
-    for i = 1, 40 do
+-- The raid as the game lists it, against the plan: each line it lets us read, with its index, its group and the
+-- group the site planned for that person (nil for somebody outside the plan or planned without one), and how many
+-- each group holds. A line the client keeps secret is never read (issue #182), but still fills a seat of its group
+-- when the group itself reads.
+local function raidLayout(match)
+    local Compat = GuildOS.Compat
+    local people, count = {}, {}
+    for g = 1, RAID_GROUPS do count[g] = 0 end
+    for i = 1, RAID_MAX do
         local name, _, subgroup = GetRaidRosterInfo(i)
-        -- A member the client keeps secret is passed over, never read (issue #182).
-        if name and not GuildOS.Compat.IsSecret(name, subgroup) then
-            local target = want[presence(Import.PlainName(name))]
-            -- Only move people who are in the wrong place. Setting a group that
-            -- is already correct still costs a server call and can shuffle
-            -- someone else out of a full party.
-            if target and subgroup and target ~= subgroup then
-                SetRaidSubgroup(i, target)
-                moved = moved + 1
+        local hidden = Compat.IsSecret(name)
+        local group = not Compat.IsSecret(subgroup) and tonumber(subgroup) or nil
+        if group and count[group] and (hidden or name ~= nil) then count[group] = count[group] + 1 end
+        if not hidden and type(name) == "string" and name ~= "" and group and count[group] then
+            local p = match(presence(Import.PlainName(name)))
+            people[#people + 1] = { index = i, group = group, want = p and p.group or nil }
+        end
+    end
+    return people, count
+end
+
+-- How many of the plan's people are in the raid and not in their planned group.
+local function misplaced(people)
+    local n = 0
+    for _, p in ipairs(people) do
+        if p.want and p.want ~= p.group then n = n + 1 end
+    end
+    return n
+end
+
+-- The moves that put the plan's people into their groups, worked out on the layout (which it changes as it goes).
+-- Only somebody in the wrong place moves: setting a group already right still costs a server call. Into a group
+-- with a seat, a move; into a full one, a swap with somebody there who does not belong there, the one whose own
+-- planned group is the mover's first (both land), then somebody with no planned group, then anybody planned
+-- elsewhere. Somebody outside the plan only ever moves as a swap's other half. A group full of people who belong
+-- there takes nobody more. Each move: { index, group } or { index, swap = other index }, and how many it places.
+local function planMoves(people, count)
+    local moves = {}
+    for _, p in ipairs(people) do
+        local target = p.want
+        if target and p.group ~= target then
+            if count[target] < GROUP_MAX then
+                count[p.group] = count[p.group] - 1
+                count[target] = count[target] + 1
+                p.group = target
+                moves[#moves + 1] = { index = p.index, group = target, placed = 1 }
+            else
+                local best, bestRank
+                for _, q in ipairs(people) do
+                    if q.group == target and q.want ~= target then
+                        local rank = (q.want == p.group and 1) or (q.want == nil and 2) or 3
+                        if not bestRank or rank < bestRank then best, bestRank = q, rank end
+                    end
+                end
+                if best then
+                    best.group, p.group = p.group, target
+                    moves[#moves + 1] = { index = p.index, swap = best.index, placed = bestRank == 1 and 2 or 1 }
+                end
             end
         end
     end
-    return moved, nil
+    return moves
+end
+
+--- Move the raid's people into the groups the site planned (issue #400): a move where the group has a seat, a
+--- swap where it is full, never leaving somebody out of a group they fit into. Only in a raid, as its leader or an
+--- assistant, out of combat (CanOrganize). Returns (placed, err): how many of the plan it put in their group.
+function Import:OrganizeGroups(roster)
+    roster = roster or self:ActiveRoster()
+    local allowed, reason = self:CanOrganize(roster)
+    if not allowed then return nil, reason end
+    local Compat = GuildOS.Compat
+    local placed = 0
+    for _, m in ipairs(planMoves(raidLayout(planMatcher(planned(roster))))) do
+        local ok
+        if m.swap then ok = Compat.SwapRaidSubgroup(m.index, m.swap) else ok = Compat.SetRaidSubgroup(m.index, m.group) end
+        if ok then placed = placed + m.placed end
+    end
+    return placed, nil
+end
+
+----------------------------------------------------------------------
+-- Iniciar raide (issue #400; specs/090 in guildos-web)
+--
+-- One button that walks the raid's leader through the night, one click a
+-- step, since on WoW: Forever an invite goes out from a click only:
+-- invite the first four, turn the party into a raid, invite the rest,
+-- arrange the groups. Next decides the step from the group as it is every
+-- time it is asked, never from a step it remembers: a leader already in a
+-- raid of ten goes straight to the rest, or to the groups. Its label says
+-- what the next click does. The owner's prompt, the Now tab and the Web
+-- tab show it; Run is what their click calls.
+----------------------------------------------------------------------
+local RaidStart = {}
+GuildOS.RaidStart = RaidStart
+
+local function blocked(reason, count)
+    return { kind = "blocked", count = count or 0, reason = reason }
+end
+
+--- The next step for `roster` (the raid of the button): { kind, count, reason, offline, label }.
+--- kind: "invite4" (alone or in a party the plan fits: count = who that click invites), "convert" (a party the
+--- plan outgrows: count = who is left to invite once it is a raid), "inviteRest" (a raid: count = who is left),
+--- "arrange" (everyone here, count = how many are out of place), "done", or "blocked" with the reason (the
+--- player's language): no roster, the companion off, in a group and neither its leader nor an assistant, or in
+--- combat with groups to arrange. offline: the guildmates passed over for being offline, by name.
+function RaidStart:Next(roster)
+    if type(roster) ~= "table" then return self:Labelled(blocked(L["No raid from the site starts around this time."])) end
+    local ok, why = Import:CanInvite(roster)
+    if not ok then return self:Labelled(blocked(why)) end
+    local s = survey(roster)
+    local left, step = #s.invite, nil
+    if s.inRaid then
+        if left > 0 then
+            step = { kind = "inviteRest", count = left }
+        else
+            local people, count = raidLayout(s.match)
+            local out = misplaced(people)
+            if out > 0 and #planMoves(people, count) > 0 then
+                step = GuildOS.Compat.InCombat() and blocked(L["Not during combat."], out) or { kind = "arrange", count = out }
+            end
+        end
+    elseif s.n <= 1 then
+        if left > 0 then step = { kind = "invite4", count = math.min(FIRST_WAVE, left) } end
+    elseif s.n + left > PARTY_MAX then
+        -- More than a party holds: everyone in a party the plan fits never converts.
+        step = { kind = "convert", count = left }
+    elseif left > 0 then
+        step = { kind = "invite4", count = left }
+    end
+    step = step or { kind = "done", count = 0 }
+    step.offline = s.offline
+    return self:Labelled(step)
+end
+
+-- The step with its label.
+function RaidStart:Labelled(step)
+    step.label = self:Label(step)
+    return step
+end
+
+--- What the button says for a step: what the next click does, and its count.
+function RaidStart:Label(step)
+    local kind, n = step and step.kind, (step and tonumber(step.count)) or 0
+    if kind == "invite4" then return string.format(L["Invite (%d)"], n) end
+    if kind == "convert" then return string.format(L["Convert to raid (%d to invite)"], n) end
+    if kind == "inviteRest" then return string.format(L["Invite the rest (%d)"], n) end
+    if kind == "arrange" then return string.format(L["Arrange groups (%d out of place)"], n) end
+    if kind == "done" then return L["Raid ready"] end
+    return L["Start raid"]
+end
+
+--- The click: does what Next says, from a click only (an invite needs one on WoW: Forever). Converting does only
+--- that, and the rest are invited by the next click, once the raid exists. Returns what it did:
+--- { kind, count = invited or placed (left to invite after a convert), here, converted, reason, offline }.
+function RaidStart:Run(roster)
+    local step = self:Next(roster)
+    local out = { kind = step.kind, count = 0, reason = step.reason, offline = step.offline }
+    if step.kind == "invite4" or step.kind == "inviteRest" then
+        local invited, here, err = Import:InviteAll(roster)
+        out.count, out.here, out.reason = invited or 0, here or 0, err
+    elseif step.kind == "convert" then
+        out.converted = GuildOS.Compat.ConvertToRaid()
+        out.count = step.count
+    elseif step.kind == "arrange" then
+        local placed, err = Import:OrganizeGroups(roster)
+        out.count, out.reason = placed or 0, err
+    end
+    return out
+end
+
+--- The lines a click's result prints: what happened, and who was left out for being offline (nil with nobody).
+function RaidStart:Say(result)
+    local kind = result.kind
+    local line
+    if result.reason then
+        line = result.reason
+    elseif kind == "invite4" or kind == "inviteRest" then
+        line = string.format(L["Invited %d, already here %d."], result.count or 0, result.here or 0)
+    elseif kind == "convert" then
+        line = result.converted and L["The group is a raid now. Click again to invite the rest."]
+            or L["The game did not turn the group into a raid."]
+    elseif kind == "arrange" then
+        line = string.format(L["Moved %d into their groups."], result.count or 0)
+    else
+        line = L["Raid ready"]
+    end
+    return line, Import.OfflineLine(result.offline)
 end
 
 ----------------------------------------------------------------------

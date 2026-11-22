@@ -156,5 +156,14 @@ check(Import:ButtonRaid(NOW).raidId == "closer", "the nearest of the inbox and t
 GuildOS.db.companionRoster = nil
 Import._webRaids = { { raidId = "zero", startsAt = 0, members = {} } }
 check(Import:ButtonRaid(NOW) == nil, "a roster without a start time is outside the window")
+-- Two raids as far from now, one begun and one ahead: the one under way is the button's, in either order.
+Import._webRaids = { raidOf(nil, NOW + 30 * 60, "ahead"), raidOf(nil, NOW - 30 * 60, "underway") }
+check(Import:ButtonRaid(NOW).raidId == "underway", "a tie goes to the raid already under way")
+Import._webRaids = { raidOf(nil, NOW - 30 * 60, "underway"), raidOf(nil, NOW + 30 * 60, "ahead") }
+check(Import:ButtonRaid(NOW).raidId == "underway", "a tie goes to the raid already under way, whichever comes first")
+Import._webRaids = { raidOf(nil, NOW + 30 * 60, "ahead") }
+GuildOS.db.companionRoster = raidOf(nil, NOW - 30 * 60, "kept-underway")
+check(Import:ButtonRaid(NOW).raidId == "kept-underway", "the kept roster under way wins a tie with the inbox's")
+GuildOS.db.companionRoster = nil
 
 print(string.format("raid-owner: %d checks passed", checks))

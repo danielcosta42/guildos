@@ -80,7 +80,7 @@ local ROSTER = {
   { "Ana-Gallywix",    "Raider",       3, 90, 0, 0, 0, 0, true,  0, "MAGE" },
   { "Chehul-TolBarad", "Officer",      1, 90, 0, 0, 0, 0, true,  0, "DRUID" },
   { "Fulano-Azralon",  "Raider",       3, 90, 0, 0, 0, 0, true,  0, "WARRIOR" },
-  { "Novato-Gallywix", "Trial",        5, 88, 0, 0, 0, 0, false, 0, "HUNTER" },
+  { "Novato-Gallywix", "Trial",        5, 88, 0, 0, 0, 0, true,  0, "HUNTER" },
   { "Dup-Azralon",     "Raider",       3, 90, 0, 0, 0, 0, false, 0, "ROGUE" },
   { "Dup-Gallywix",    "Raider",       3, 90, 0, 0, 0, 0, false, 0, "ROGUE" },
   { "Zed-TolBarad",    "Raider",       3, 90, 0, 0, 0, 0, true,  0, "MAGE" },
@@ -328,6 +328,13 @@ table.sort(INVITED)
 check(table.concat(INVITED, ",") == "Ana-Azralon,Novato-Gallywix,Zed",
   "invited: Ana from Azralon (the Ana here is Gallywix's) and the rescued Novato by name and realm, Zed from my realm plain")
 check(invited == 3 and skipped == 2, "me and Fulano, already here from another realm, are not invited again")
+-- A guildmate the roster shows offline is passed over and named, by name and realm (issue #400).
+ROSTER[5][9], INVITED = false, {}
+local _, _, _, offline = Import:InviteAll()
+table.sort(INVITED)
+check(table.concat(INVITED, ",") == "Ana-Azralon,Zed" and offline and offline[1] == "Novato-Gallywix" and #offline == 1,
+  "the offline Novato is not invited, and is named with his realm")
+ROSTER[5][9], INVITED = true, {}
 
 -- Zed joined from my realm, in the wrong group: the raid roster says "Zed", the site "Zed-TolBarad".
 GROUP[4] = { "Zed", nil, 1 }

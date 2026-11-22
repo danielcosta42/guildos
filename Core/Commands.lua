@@ -490,15 +490,18 @@ local function handleCommand(msg)
             GuildOS:ShowWebString()
         end
     elseif msg:match("^roster") then
-        -- /guildos roster [invite|groups|trim] — the roster the website planned.
+        -- /guildos roster [invite|groups|trim] — the roster the website planned: the raid of the window when
+        -- there is one (issue #400), as the Web tab's buttons.
         local I = GuildOS.CompanionImport
         local sub = I and msg:match("^roster%s+(%S+)")
         if not I then
             GuildOS:Print(L["|cffFF4444Export failed:|r "] .. "CompanionImport")
         elseif sub == "invite" then
-            local n, skipped, err = I:InviteAll()
+            local n, here, err, offline = I:InviteAll()
             if err then GuildOS:Print(err)
-            else GuildOS:Print(string.format(L["Invited %d, already here %d."], n, skipped)) end
+            else GuildOS:Print(string.format(L["Invited %d, already here %d."], n, here)) end
+            local off = I.OfflineLine(offline)
+            if off then GuildOS:Print(off) end
         elseif sub == "groups" then
             local moved, err = I:OrganizeGroups()
             if err then GuildOS:Print(err)

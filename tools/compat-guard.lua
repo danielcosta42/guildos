@@ -26,6 +26,8 @@ local GLOBALS = {
   "InviteUnit", "InviteByName", "GetItemQualityColor", "GetItemCount",
   -- Moved to C_PartyInfo as well (issue #378).
   "ConvertToRaid",
+  -- Raid groups: moving and swapping go through Compat, which knows what a client lacks (issue #400).
+  "SetRaidSubgroup", "SwapRaidSubgroup",
   -- Forbidden to addons on WoW: Forever 1.60.1.70790: Compat.GuildInvite (issue #256).
   "GuildInvite",
   -- What a tooltip is showing: the Classic readers, and the data type the retail client
