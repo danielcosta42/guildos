@@ -222,6 +222,15 @@ end
 
 function BanList:_ApplyRemote(key, entry, rev)
     if not GuildOS.SyncService:ShouldApply("ban", key, rev) then return false end
+    -- An officer on a client before #408 re-bans or lifts with no `share`: the share this client holds stays,
+    -- marked withdrawn, so the site hears it was withdrawn instead of the ban staying shared for good.
+    local held = GuildOS.db.banList[key]
+    if type(entry) == "table" and entry.share == nil and type(held) == "table" and type(held.share) == "table" then
+        local carried = {}
+        for f, v in pairs(held.share) do carried[f] = v end
+        carried.withdrawnAt = carried.withdrawnAt or GetServerTime()
+        entry.share = carried
+    end
     GuildOS.db.banList[key] = entry
     GuildOS.SyncService:SetRevision("ban", key, rev)
     return true
@@ -308,6 +317,18 @@ function BanList:Unshare(key)
     return true
 end
 
+-- The member key for a name an officer typed: the roster's own key when a member matches it ignoring case
+-- (so "thrall" goes up as members[].key writes "Thrall"), else the name's key with its first letter capitalised.
+function BanList:_MemberKey(who)
+    local key = GuildOS:KeyOfRosterName(who)
+    if not key then return nil end
+    local lower = key:lower()
+    for k in pairs(GuildOS.db and GuildOS.db.members or {}) do
+        if type(k) == "string" and k:lower() == lower then return k end
+    end
+    return (key:gsub("^%l", string.upper))
+end
+
 -- The companion export's `banShares` (#408): from an officer's client only, every ban this guild ever
 -- shared, cleaned again (a share arrives from other officers over sync), newest first, at most
 -- SHARE_EXPORT_MAX. `key` is the member key as members[].key builds it; `withdrawnAt` when the officer
@@ -322,7 +343,7 @@ function BanList:ForExport(store, now)
         local reason = s and BanList.ShareReason(s.reason)
         local at = s and GuildOS.Finite(s.at)
         local who = type(e) == "table" and type(e.name) == "string" and e.name ~= "" and e.name or key
-        local exportKey = reason and at and type(who) == "string" and GuildOS:KeyOfRosterName(who)
+        local exportKey = reason and at and type(who) == "string" and BanList:_MemberKey(who)
         if exportKey then
             local withdrawn = GuildOS.Finite(s.withdrawnAt)
             if not withdrawn and e.removed then withdrawn = GuildOS.Finite(e.ts) or now end

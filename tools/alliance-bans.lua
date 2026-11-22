@@ -311,4 +311,24 @@ for _, retail in ipairs({ false, true }) do
   check(mine == 2, "the alliance's self-tests register")
 end
 
+-- ── Review fixes: an old client's tombstone keeps the share as withdrawn; the key is the roster's spelling ──
+do
+  local BL = GuildOS.BanList
+  local key = BL:_NormalizeKey("Zed")
+  GuildOS.db.banList[key] = { name = "zed", ts = 1, share = { reason = "scam", at = 5 } }
+  local realSync = GuildOS.SyncService
+  GuildOS.SyncService = { ShouldApply = function() return true end, SetRevision = function() end }
+  do
+    BL:_ApplyRemote(key, { name = "zed", ts = 9, removed = true }, 999999)
+    local e = GuildOS.db.banList[key]
+    check(e.share and e.share.withdrawnAt, "an old client's lift keeps the share, withdrawn")
+  end
+  GuildOS.SyncService = realSync
+  GuildOS.db.members = GuildOS.db.members or {}
+  local mk = GuildOS:KeyOfRosterName("Zed")
+  GuildOS.db.members[mk] = {}
+  check(BL:_MemberKey("zed") == mk, "the export key is the roster's own spelling")
+  GuildOS.db.members[mk] = nil
+  check(BL:_MemberKey("nobody"):sub(1, 1) == "N", "a name nobody on the roster has is capitalised")
+end
 print(("alliance-bans: %d checks passed"):format(checks))
