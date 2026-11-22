@@ -1601,6 +1601,53 @@ function Compat.TraitTreeNodes()
     return nodes
 end
 
+-- The talents bought on a trait tree, as { {definitionID, rank}, ... } sorted by definitionID, only
+-- the nodes with a rank (issue #399). The definitionID is the talent's own id in the game's tables,
+-- which does not move when the tree is redrawn; on a choice node it is the chosen entry's. configID
+-- nil reads the player's active tree; an inspect config reads the inspected unit's. Nil and why:
+-- "no-api" without the trait API (or without that config), "no-config" before the tree has loaded,
+-- "no-points" when nothing is bought, so a caller never publishes an empty tree it did not read.
+local function traitTalents(configID)
+    if not (C_Traits and C_Traits.GetConfigInfo and C_Traits.GetTreeNodes and C_Traits.GetNodeInfo
+            and C_Traits.GetEntryInfo) then
+        return nil, "no-api"
+    end
+    if configID == nil then
+        if not (C_ClassTalents and C_ClassTalents.GetActiveConfigID) then return nil, "no-api" end
+        configID = C_ClassTalents.GetActiveConfigID()
+    end
+    local config = configID and C_Traits.GetConfigInfo(configID)
+    local treeID = config and config.treeIDs and config.treeIDs[1]
+    if not treeID then return nil, "no-config" end
+    local out = {}
+    for _, nodeID in ipairs(C_Traits.GetTreeNodes(treeID) or {}) do
+        local info = C_Traits.GetNodeInfo(configID, nodeID)
+        local rank = info and tonumber(info.currentRank or info.ranksPurchased) or 0
+        local entryID = info and type(info.activeEntry) == "table" and info.activeEntry.entryID
+        if rank > 0 and entryID then
+            local entry = C_Traits.GetEntryInfo(configID, entryID)
+            local def = entry and tonumber(entry.definitionID)
+            if def and def > 0 then out[#out + 1] = { math.floor(def), math.floor(rank) } end
+        end
+    end
+    if #out == 0 then return nil, "no-points" end
+    table.sort(out, function(a, b) return a[1] < b[1] end)
+    return out
+end
+
+function Compat.TraitTalents(configID)
+    local ok, talents, why = pcall(traitTalents, configID)
+    if not ok then return nil, "error" end
+    return talents, why
+end
+
+-- The config id the trait API reads an inspected unit's tree from, after INSPECT_READY. Nil on a
+-- client that does not expose one: the inspect then brings no talents.
+function Compat.InspectTraitConfigID()
+    local consts = Constants and Constants.TraitConsts
+    return consts and tonumber(consts.INSPECT_TRAIT_CONFIG_ID) or nil
+end
+
 -- A unit's spec on retail (ADR-0026), where a character has one and the client names it: the spec
 -- id, its name in the reader's language and its role ("TANK", "HEALER", "DAMAGER"). "player" is
 -- read directly; any other unit is read from its inspect, so it needs INSPECT_READY first. Nil
