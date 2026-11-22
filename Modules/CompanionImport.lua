@@ -319,6 +319,7 @@ local MATCH_EARLY = 2 * 3600
 local MATCH_LATE = 8 * 3600
 
 local ROSTER_MAX = 524288   -- characters of a GOSROST1 body: ten raids with full lists stay well under it
+local GUILD_NAME_MAX = 96   -- bytes of a roster's guild name: the game's are 24 characters at most, four bytes each at worst
 
 --- Returns (roster, err). roster = { title, instance, startsAt, members = {...} }
 function Import:Parse(raw)
@@ -409,6 +410,8 @@ function Import:Parse(raw)
         signups = signups,
         -- v7 (the site's #603): the in-game names of who owns the raid, nil from an older site.
         owners = Import.ReadOwners(data.owners),
+        -- v7 (the site's #603): the guild the raid is for, as the game shows its name; nil from an older site.
+        guild = clipped(data.guild, GUILD_NAME_MAX),
         -- v6 (the site's #556): the raid's reserves, priorities and wishlists, nil when none is sent or read.
         loot = Import.ReadSiteLoot(data),
     }
@@ -427,6 +430,18 @@ function Import.ReadOwners(list)
         if name then owners[#owners + 1] = name end
     end
     return #owners > 0 and owners or nil
+end
+
+--- Whether a roster is for the guild this character is in (GOSROST1 v7 `guild`, the site's #603; spec 090). The
+--- owner's own list can hold raids of more than one guild, and the inbox is the game folder's, read by every
+--- character of it: a roster that names its guild is this one's only when that is GetGuildInfo's name, case aside,
+--- as the GOSGILD1's `guild` is read (GuildBlock). One that names none, from a site before v7, is, as it always was.
+--- The addon acts on no other: no prompt, no button, nothing on the calendar.
+function Import.OfThisGuild(roster)
+    local guild = type(roster) == "table" and roster.guild
+    if type(guild) ~= "string" then return true end
+    local mine = GetGuildInfo("player")
+    return type(mine) == "string" and mine ~= "" and mine:lower() == guild:lower()
 end
 
 -- A GOSCORE1 the site gives as a code to copy, read the way the inbox's is (CoresFromInbox): the same
@@ -467,6 +482,11 @@ function Import:Load(raw)
     -- on the calendar (#146), so the refusal lives here and not in Parse.
     if #roster.members == 0 and not (roster.signups and #roster.signups > 0) then
         return nil, L["That roster has nobody in it."]
+    end
+    -- Another guild's raid, pasted on a character of another guild, is refused: kept, every button would act on it
+    -- (issue #400). Its guild is named, so a guild the site calls by another name than the game does can tell.
+    if not Import.OfThisGuild(roster) then
+        return nil, string.format(L["That roster is for the guild %s, not this character's."], Import.Inert(roster.guild))
     end
 
     -- The site's loot data reaches the night only from the inbox (db.siteLoot); the kept roster never holds it.
@@ -567,7 +587,10 @@ function Import:ConsumeInbox()
     local planned = {}
     for _, raw in ipairs(raws) do
         local roster = self:Parse(raw)
-        if roster then
+        -- Another guild's raid (the owner's own list, read on a character of another guild) is not read at all: not
+        -- kept, not matched to a night, not on the calendar, no button and no prompt (OfThisGuild, issue #400). An
+        -- inbox of nothing else is, to this character, an inbox with no raid.
+        if roster and Import.OfThisGuild(roster) then
             imported = imported + 1
             raids[#raids + 1] = roster
             if roster.raidId and roster.instanceKey then
@@ -647,7 +670,7 @@ function Import:ButtonRaid(now)
     local best, bestGap, bestBegun
     local function consider(roster)
         local startsAt = type(roster) == "table" and tonumber(roster.startsAt)
-        if not startsAt or startsAt <= 0 then return end
+        if not startsAt or startsAt <= 0 or not Import.OfThisGuild(roster) then return end
         local gap = startsAt - now
         if gap < -BUTTON_BEFORE or gap > BUTTON_AHEAD then return end
         local away, begun = math.abs(gap), gap <= 0
@@ -1049,6 +1072,7 @@ end
 -- client with surnames nobody has yet read whether a raid unit or a raid roster line carries the surname
 -- (issue #48, docs/forever): a name without a space is also tried with its hyphen as the space, the way the
 -- game's folders write it, and a bare first name stands for the one planned person of that first name, never two.
+-- The second answer is true for a bare first name two planned people share: it could be either of them.
 local function planMatcher(list)
     local byKey, byFirst = {}, {}
     for _, p in ipairs(list) do
@@ -1064,7 +1088,8 @@ local function planMatcher(list)
         local spaced = key:gsub("%-", " ", 1)
         if byKey[spaced] then return byKey[spaced] end
         if key:find("-", 1, true) then return nil end
-        return byFirst[key] or nil
+        local p = byFirst[key]
+        return p or nil, p == false
     end
 end
 
@@ -1169,23 +1194,42 @@ end
 --- bench (`why = "bench"`): the raid leader benched them on purpose and may want them standing by in
 --- the raid — taking them out is the raid leader's own hand, not this button's. Returns names, the
 --- way the group shows them, and beside them the unit each one is, which is what removal asks for.
+---
+--- Read the way the Iniciar raide stepper reads the group (planned, planMatcher, unitKey; issue #400), so
+--- the two never disagree: on WoW: Forever a unit that answers its surname apart, or a first name alone
+--- that one planned person has, is that person, and is not taken out of a raid the button calls ready. A
+--- bare first name two planned people share could be either, so it stays. Neither am I, by unit, whatever
+--- shape my name comes back in.
 function Import:OutsideThePlan(roster)
     roster = roster or self:ActiveRoster()
     if not roster then return {} end
-    local keep = {}
-    for _, m in ipairs(roster.members) do keep[presence(m.name)] = true end
-    for _, name in pairs(self:Rescued(roster)) do keep[presence(name)] = true end
+    local Compat = GuildOS.Compat
+    local list, seen = planned(roster), {}
+    for _, p in ipairs(list) do seen[p.key] = true end
     for _, s in ipairs(roster.signups or {}) do
-        if s.why == "bench" then keep[presence(s.name)] = true end
+        local key = s.why == "bench" and type(s.name) == "string" and s.name ~= "" and presence(s.name)
+        if key and not seen[key] then
+            seen[key] = true
+            list[#list + 1] = { name = s.name, key = key }
+        end
     end
-    keep[presence(GuildOS.Compat.PlayerName())] = true
+    local match = planMatcher(list)
+    local me = Compat.PlayerName()
+    me = (type(me) == "string" and not Compat.IsSecret(me)) and presence(me) or nil
+    local inRaid, n = IsInRaid(), GetNumGroupMembers() or 0
     local out, units = {}, {}
-    for i = 1, (GetNumGroupMembers() or 0) do
-        local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
-        local n, realm = GuildOS.Compat.UnitIdentity(unit)
-        if n and not keep[presence(n, realm)] then
-            out[#out + 1] = n
-            units[n] = unit
+    -- A party's units are the others; a raid's are all of us.
+    for i = 1, inRaid and n or (n - 1) do
+        local unit = (inRaid and "raid" or "party") .. i
+        local name, second = Compat.UnitIdentity(unit)
+        if type(name) == "string" and name ~= "" and not Compat.IsPlayer(unit) then
+            local key = unitKey(name, second)
+            local p, either = match(key)
+            if not p and not either and key ~= me then
+                local shown = GuildOS.Client.has.surnames and key or name
+                out[#out + 1] = shown
+                units[shown] = unit
+            end
         end
     end
     table.sort(out)
@@ -1330,7 +1374,8 @@ end
 -- time it is asked, never from a step it remembers: a leader already in a
 -- raid of ten goes straight to the rest, or to the groups. Its label says
 -- what the next click does. The owner's prompt, the Now tab and the Web
--- tab show it; Run is what their click calls.
+-- tab show it (UI/WebPanel.lua); Click is what their click and
+-- `/gos raid start` call.
 ----------------------------------------------------------------------
 local RaidStart = {}
 GuildOS.RaidStart = RaidStart
@@ -1429,6 +1474,147 @@ function RaidStart:Say(result)
         line = L["Raid ready"]
     end
     return line, Import.OfflineLine(result.offline)
+end
+
+--- One click of the button, wherever it is: the owner's prompt, the Now and Web tabs, `/gos raid start`. Does the
+--- step (Run), says it in chat, and has every button on screen read the group again. Returns Run's result.
+function RaidStart:Click(roster)
+    local result = self:Run(roster)
+    local line, off = self:Say(result)
+    if line then GuildOS:Print(line) end
+    if off then GuildOS:Print(off) end
+    if GuildOS.RefreshRaidSteppers then GuildOS:RefreshRaidSteppers() end
+    return result
+end
+
+-- The button passes over a guildmate the guild roster shows offline, and the client's copy of that roster is only as
+-- fresh as its last update: somebody who logged in a minute ago would be skipped. While a button is on screen it
+-- asks the server for the roster again, at most this often (seconds); the server's answer repaints the buttons.
+local ROSTER_ASK_GAP = 30
+
+--- Asks the server for a fresh guild roster (Compat.GuildRoster), at most once every ROSTER_ASK_GAP seconds; the
+--- prompt and the tabs call it while their button shows. Returns whether it asked.
+function RaidStart:AskGuildRoster()
+    if not IsInGuild() then return false end
+    local now = GetTime()
+    if self._rosterAskedAt and now - self._rosterAskedAt < ROSTER_ASK_GAP then return false end
+    self._rosterAskedAt = now
+    GuildOS.Compat.GuildRoster()
+    return true
+end
+
+----------------------------------------------------------------------
+-- The owner's prompt (issue #400; specs/090 in guildos-web)
+--
+-- The site sends who owns each raid (`owners`), and the owner, and only
+-- the owner, is asked shortly before it starts: at login or /reload from
+-- half an hour before the start to an hour after it, and, already in the
+-- game, a quarter of an hour before it. Once per raid and start, kept in
+-- the guild's SavedVariables, so a /reload, another login or another
+-- character of the owner's asks nothing again; a raid moved to another
+-- time asks again. Only the inbox's raids are asked about: the owner's
+-- prompt comes from the site, not from a roster pasted by hand.
+--
+-- This decides; GuildOS:ShowRaidPrompt (UI/WebPanel.lua) shows it.
+----------------------------------------------------------------------
+local PROMPT_BEFORE = 30 * 60    -- seconds before the start from which a login asks
+local PROMPT_AFTER = 60 * 60     -- seconds after the start until which a login still asks
+local PROMPT_AHEAD = 15 * 60     -- seconds before the start at which a session already in the game is asked
+local PROMPT_KEEP = 7 * 86400    -- seconds a prompt shown is remembered: a week, then forgotten
+
+-- What a prompt is remembered by: the raid and its start (spec 090: "uma vez por raide e por horário"). Nil for a
+-- roster without an id or a start, which is never asked about.
+local function promptKey(roster)
+    local id, at = type(roster) == "table" and roster.raidId, type(roster) == "table" and tonumber(roster.startsAt)
+    if (type(id) ~= "string" and type(id) ~= "number") or id == "" or not at or at <= 0 then return nil end
+    return tostring(id) .. ":" .. tostring(at)
+end
+RaidStart.PromptKey = promptKey
+
+--- The prompts shown, in the guild's SavedVariables: { [raidId .. ":" .. startsAt] = when it was shown }. Read with
+--- what is over a week old dropped. Nil before the guild's db exists.
+function RaidStart:PromptedSet(now)
+    local db = GuildOS.db
+    if type(db) ~= "table" then return nil end
+    if type(db.raidPrompted) ~= "table" then db.raidPrompted = {} end
+    local set = db.raidPrompted
+    now = now or GetServerTime()
+    for key, at in pairs(set) do
+        if type(at) ~= "number" or now - at > PROMPT_KEEP then set[key] = nil end
+    end
+    return set
+end
+
+--- The raids of this session's inbox this character owns (IsMine), of the guild it is in (OfThisGuild), each with an
+--- id and a start.
+function RaidStart:Owned()
+    local out = {}
+    for _, roster in ipairs(Import._webRaids or {}) do
+        if promptKey(roster) and Import.OfThisGuild(roster) and Import:IsMine(roster) then out[#out + 1] = roster end
+    end
+    return out
+end
+
+--- Shows the prompt for `roster` and remembers it was shown (before showing it: a prompt that fails to show is not
+--- tried again at every login). False when there is nothing to show it with.
+function RaidStart:Prompt(roster, now)
+    local key, set = promptKey(roster), self:PromptedSet(now)
+    if not (key and set and GuildOS.ShowRaidPrompt) then return false end
+    set[key] = now or GetServerTime()
+    GuildOS:ShowRaidPrompt(roster)
+    return true
+end
+
+--- At login or /reload, once the inbox is read (Core's InitModules): the prompt for the owned raid from half an hour
+--- before its start to an hour after it, the nearest if two are, unless it was shown already; and, for each owned raid
+--- still more than a quarter of an hour away, a timer that asks then. Returns the roster prompted, or nil.
+function RaidStart:OnLogin(now)
+    now = now or GetServerTime()
+    self._loginPrompt = nil
+    local set = self:PromptedSet(now)
+    if not set then return nil end
+    local best, bestGap
+    for _, roster in ipairs(self:Owned()) do
+        local gap = roster.startsAt - now
+        if gap > PROMPT_AHEAD then self:Arm(roster, gap - PROMPT_AHEAD) end
+        if gap <= PROMPT_BEFORE and gap >= -PROMPT_AFTER and not set[promptKey(roster)]
+           and (not best or math.abs(gap) < bestGap) then
+            best, bestGap = roster, math.abs(gap)
+        end
+    end
+    if best and self:Prompt(best, now) then
+        self._loginPrompt = best
+        return best
+    end
+    return nil
+end
+
+--- Whether this login's prompt was shown. The login digest gives way to it (Digest:ShowOnLogin): one popup at a time.
+function RaidStart:PromptedAtLogin()
+    return self._loginPrompt ~= nil
+end
+
+--- The quarter-hour timer of an owned raid, armed once a session. It only shows the prompt: nothing is invited from a
+--- timer (WoW: Forever drops an invite that is not a click's), the prompt's button does that.
+function RaidStart:Arm(roster, delay)
+    local key = promptKey(roster)
+    if not key then return end
+    self._armed = self._armed or {}
+    if self._armed[key] then return end
+    self._armed[key] = true
+    GuildOS.Compat.After(delay, function()
+        GuildOS:SafeCall(function() RaidStart:Due(roster) end)
+    end)
+end
+
+--- A timer's moment for `roster`: its prompt, unless it was shown already (at login, or on another character of the
+--- owner's) or the roster is no longer this character's to start. Returns whether it was shown.
+function RaidStart:Due(roster, now)
+    now = now or GetServerTime()
+    local key, set = promptKey(roster), self:PromptedSet(now)
+    if not (key and set) or set[key] then return false end
+    if not (Import.OfThisGuild(roster) and Import:IsMine(roster)) then return false end
+    return self:Prompt(roster, now)
 end
 
 ----------------------------------------------------------------------

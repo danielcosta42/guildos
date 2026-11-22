@@ -81,6 +81,20 @@ function Agora:NextRaid()
     return nil
 end
 
+-- The raid the Iniciar raide button acts on here (issue #400), and its name when the card shows another one: the
+-- site's raid in its window (CompanionImport:ButtonRaid), while this player may lead its invites (CanInvite: the
+-- companion on, and alone, the group's leader or an assistant). Nil when there is none.
+function Agora:StartRaid(card)
+    local I = GuildOS.CompanionImport
+    local roster = I and GuildOS.RaidStart and I:ButtonRaid()
+    if not (roster and I:CanInvite(roster)) then return nil end
+    local cal = GuildOS.Calendar
+    if card and cal and cal.WebEventId and cal:WebEventId(roster) == card.id then return roster, nil end
+    local title = roster.title
+    if not title or title == "" then title = roster.instance or "?" end
+    return roster, GuildOS.SanitizeUserText and GuildOS:SanitizeUserText(title) or title
+end
+
 -- "4:12:38" under a day, "2d 4h" from a day out.
 function Agora.Clock(dt)
     if dt <= 0 then return L["now"] end
@@ -421,6 +435,21 @@ function GuildOS:CreateNowPanel(panel, win)
     panel.raidTitle, panel.raidName, panel.raidMeta = raidTitle, raidName, raidMeta
     panel.clock, panel.openCalendar = clock, openCal
 
+    -- Iniciar raide (issue #400): while a raid of the site is in its window (Import:ButtonRaid) and this player may
+    -- lead its invites, the same button as the owner's prompt and the Web tab (UI/WebPanel.lua). Not the primary:
+    -- that is the answer to the next event. The raid it acts on is not always the card's (an hour in, the card has
+    -- moved on to the next one): then its name is said over it.
+    local stepRoster, stepFor
+    local startFor = newText(column, nil, "caption", C.label)
+    local start = UI.CreateRaidStepper and UI:CreateRaidStepper(column, { roster = function() return stepRoster end })
+    if start then
+        start.why:SetWordWrap(false)   -- one line: the column's layout does not move under it
+        start:Hide()
+        start.why:Hide()
+    end
+    startFor:Hide()
+    panel.startRaid, panel.startFor = start, startFor
+
     local needsTitle = UI:CreateSectionTitle(column, L["Needs me"])
     local needsList = newList(column)
     local feedTitle = UI:CreateSectionTitle(column, L["Activity"])
@@ -469,6 +498,24 @@ function GuildOS:CreateNowPanel(panel, win)
         if cal then
             place(openCal, y + LINE_GAP + 2)
             y = y + LINE_GAP + 2 + openCal:GetHeight()
+        end
+        -- Iniciar raide: its raid's name when it is not the card's, the button, the line of why it is off.
+        local stepping = start and stepRoster ~= nil or false
+        startFor:SetShown(stepping and stepFor ~= nil)
+        if start then
+            start:SetShown(stepping)
+            start.why:SetShown(stepping)
+        end
+        if stepping then
+            if stepFor then
+                startFor:SetText(stepFor)
+                place(startFor, y + LINE_GAP, true)
+                y = y + LINE_GAP + lineH(startFor, 10)
+            end
+            place(start, y + LINE_GAP + 2)
+            y = y + LINE_GAP + 2 + start:GetHeight()
+            place(start.why, y + 2, true)
+            y = y + 2 + lineH(start.why, 10)
         end
 
         y = y + SECTION_GAP + RULE_GAP
@@ -530,6 +577,7 @@ function GuildOS:CreateNowPanel(panel, win)
         local t = GuildOS.Perf:Start()
         GuildOS:SafeCall(function()
             raid = Agora:NextRaid()
+            stepRoster, stepFor = Agora:StartRaid(raid)
             loading = Agora:RosterLoading()
             needs = loading and {} or Agora:NeedsMe()
             feed = Agora:Activity(MAX_FEED)

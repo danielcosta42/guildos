@@ -47,6 +47,14 @@ LibStub = setmetatable({
   end,
 })
 
+-- What the client's GetNormalizedRealmName answers, written out rather than worked out the way the code under test
+-- works it out: the realm without its spaces and hyphens, its apostrophes kept ("Mal'Ganis" stays). The site
+-- normalises the owners' realms the same way. A realm missing here fails loudly, so a new case says what the game says.
+local NORMALIZED = {
+  ["Classic Beta PvE"] = "ClassicBetaPvE", ["Mankrik"] = "Mankrik", ["Tol Barad"] = "TolBarad",
+  ["Mal'Ganis"] = "Mal'Ganis", ["Azjol-Nerub"] = "AzjolNerub", ["Area 52"] = "Area52",
+}
+
 -- A fresh addon on the client described, as the game would load it.
 local function boot(client)
   GuildOS = {
@@ -62,7 +70,7 @@ local function boot(client)
   function UnitName() return client.first end
   function UnitFullName() return client.first, client.second end
   function GetRealmName() return client.realm end
-  function GetNormalizedRealmName() return (client.realm:gsub("[%s%-]", "")) end
+  function GetNormalizedRealmName() return assert(NORMALIZED[client.realm], "no normalized name for " .. client.realm) end
   dofile(ADDON .. "/Core/Utils.lua")
   dofile(ADDON .. "/Core/Compat.lua")
   function GuildOS:Print() end
@@ -103,6 +111,26 @@ check(GuildOS.Client.game == "RETAIL", "the retail stub is a retail client")
 check(Import:IsMine(raidOf({ "Chehul-TolBarad" })), "retail: Name-Realm with this character's realm is mine")
 check(Import:IsMine(raidOf({ "CHEHUL-tolbarad" })), "retail: case does not matter")
 check(not Import:IsMine(raidOf({ "Chehul-Azralon" })), "retail: a namesake on another realm is not mine")
+
+-- Realms with an apostrophe, a hyphen and a space, as the site sends them: spaces and hyphens out, apostrophes kept.
+local RETAIL = { version = "12.1.5", interface = 120105, project = 1, first = "Chehul" }
+local function onRealm(realm)
+  local c = {}
+  for k, v in pairs(RETAIL) do c[k] = v end
+  c.realm = realm
+  return boot(c)
+end
+Import = onRealm("Mal'Ganis")
+check(Import:IsMine(raidOf({ "Chehul-Mal'Ganis" })), "retail on Mal'Ganis: the apostrophe is kept, and it is mine")
+check(Import:IsMine(raidOf({ "chehul-mal'ganis" })), "retail on Mal'Ganis: case does not matter")
+check(not Import:IsMine(raidOf({ "Chehul-MalGanis" })), "retail on Mal'Ganis: without the apostrophe it is another key")
+Import = onRealm("Azjol-Nerub")
+check(Import:IsMine(raidOf({ "Chehul-AzjolNerub" })), "retail on Azjol-Nerub: the hyphen goes, and it is mine")
+check(not Import:IsMine(raidOf({ "Chehul-Azjol-Nerub" })), "retail on Azjol-Nerub: with the hyphen kept it is not the key")
+Import = onRealm("Area 52")
+check(Import:IsMine(raidOf({ "Chehul-Area52" })), "retail on Area 52: the space goes, and it is mine")
+check(not Import:IsMine(raidOf({ "Chehul-Area 52" })), "retail on Area 52: with the space kept it is not the key")
+check(not Import:IsMine(raidOf({ "Chehul-TolBarad" })), "retail on Area 52: my name on another realm is not mine")
 
 -- ── Parse reads `owners`: strings only, clipped, at most 12 ───────────────────────────────
 local function encode(json)

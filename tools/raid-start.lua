@@ -63,7 +63,8 @@ function UnitName(unit)
   if unit == "player" then return "Chehul" end
   local kind, i = tostring(unit):match("^(%a+)(%d+)$")
   i = tonumber(i)
-  local g = (kind == "raid" and GROUP[i]) or (kind == "party" and i and GROUP[i + 1])
+  -- As the game: raidN exists only in a raid, partyN only in a party.
+  local g = (kind == "raid" and RAID and GROUP[i]) or (kind == "party" and not RAID and i and GROUP[i + 1])
   if g then return g[1], g[3] end
 end
 function UnitClass() return "Warrior", "WARRIOR" end
@@ -75,11 +76,15 @@ end
 function UnitIsGroupLeader(unit) if unit == "player" and #GROUP > 0 then return LEADER end return false end
 function UnitIsGroupAssistant(unit) if unit == "player" and #GROUP > 0 then return ASSIST end return false end
 function InCombatLockdown() return COMBAT end
+-- In a raid I am raid1 (GROUP[1]); a party's units are the others.
+function UnitIsUnit(a, b) return a == b or (b == "player" and RAID and a == "raid1") end
+local REMOVED = {}
 
 local INVITED, CONVERTED, MOVES = {}, 0, {}
 C_PartyInfo = {
   InviteUnit = function(name) INVITED[#INVITED + 1] = name end,
   ConvertToRaid = function() CONVERTED = CONVERTED + 1 end,
+  UninviteUnit = function(unit) REMOVED[#REMOVED + 1] = unit end,
 }
 function SetRaidSubgroup(i, group)
   MOVES[#MOVES + 1] = "set:" .. GROUP[i][1] .. "->" .. group
@@ -420,6 +425,37 @@ for _, c in ipairs({ { "Anniversary", true, false }, { "retail", false, true } }
     c[1] .. ": a bare first name and a hyphen stand for nobody planned (" .. step.kind .. " " .. tostring(step.count) .. ")")
 end
 client.has.surnames, client.isAnniversary, client.isRetail = was[1], was[2], was[3]
+
+-- ── Fit to plan reads the group as the button does (issue #400, the Task 5 review's M3) ────────
+-- The raid the button calls ready: the units answer the surname apart, and nobody planned is outside the plan.
+reset()
+REMOVED = {}
+local READY = plan({ { "Ana Lima", 1 }, { "Bia Souza", 1 } })
+GROUP, RAID = { line("Chehul", 1, "Costa"), line("Ana", 1, "Lima", "Ana Lima"), line("Bia", 1, "Souza", "Bia Souza") }, true
+check(RS:Next(READY).kind == "done", "the raid with everyone in place is ready")
+local out = Import:OutsideThePlan(READY)
+check(#out == 0, "and nobody in it is outside the plan, the surname apart or not, the owner neither: " .. join(out))
+-- My own unit read without the surname, and me not in the plan: never taken out of my own raid.
+GROUP[1] = line("Chehul", 1)
+out = Import:OutsideThePlan(READY)
+check(#out == 0, "the leader read by the first name alone is still me: " .. join(out))
+-- A bare first name one planned person has is that person; one two planned people share could be either, and stays.
+GROUP = { person(ME, 1), line("Ana", 1), line("Pug", 2, "Visitante") }
+out = Import:OutsideThePlan(READY)
+check(join(out) == "Pug Visitante", "a bare 'Ana' is Ana Lima; the pug, his surname joined, is outside: " .. join(out))
+GROUP = { person(ME, 1), line("Ana", 1) }
+out = Import:OutsideThePlan(TWO)
+check(#out == 0, "a bare 'Ana' with two Anas planned could be either: she stays: " .. join(out))
+-- And the removal goes by unit, for the pug only.
+GROUP = { person(ME, 1), line("Ana", 1, "Lima"), line("Pug", 2, "Visitante") }
+GuildOS.db.companionRoster = READY
+local removed = Import:TrimToPlan()
+GuildOS.db.companionRoster = nil
+check(removed == 1 and join(REMOVED) == "raid3", "fitting the group takes out the pug alone, by unit: " .. join(REMOVED))
+-- A party: its units are the others, and the same reading holds.
+GROUP, RAID = { person(ME, 1), line("Ana", 1, "Lima"), line("Zed", 1, "Outro") }, false
+out = Import:OutsideThePlan(READY)
+check(join(out) == "Zed Outro", "in a party, only who is outside the plan: " .. join(out))
 
 -- ── 10. A roster that fits a party never converts ──────────────────────────────────────────────
 local FOUR = plan({ { ME, 1 }, { "Ana Lima", 1 }, { "Bia Souza", 1 }, { "Caio Dias", 1 } })

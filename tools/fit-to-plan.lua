@@ -44,6 +44,8 @@ function UnitName(unit)
   return GROUP[i], ""
 end
 function UnitClass() return "Warrior", "WARRIOR" end
+-- In a raid, raid1 is me (the leader): trim tells me apart by unit, not by name (issue #400).
+function UnitIsUnit(a, b) return a == b or (b == "player" and a == "raid1") end
 local removed = {}
 C_PartyInfo = { UninviteUnit = function(name) removed[#removed + 1] = name end, InviteUnit = function() end }
 

@@ -3505,3 +3505,10 @@ L["Start raid"] = "Iniciar raide"
 L["The group is a raid now. Click again to invite the rest."] = "O grupo virou raide. Clique de novo para convidar o resto."
 L["The game did not turn the group into a raid."] = "O jogo não converteu o grupo em raide."
 L["Offline, not invited: %s"] = "Offline, sem convite: %s"
+
+-- O aviso do dono, a guilda da raide, /gos raid start (issue #400)
+L["That roster is for the guild %s, not this character's."] = "Essa lista é da guilda %s, não da deste personagem."
+L["Starts in %d min"] = "Começa em %d min"
+L["Starts now"] = "Começa agora"
+L["Started %d min ago"] = "Começou há %d min"
+L["Start the website's raid: invite and arrange, one step a click"] = "Inicia a raide do site: convida e organiza, um passo por clique"

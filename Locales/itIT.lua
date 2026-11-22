@@ -3464,3 +3464,10 @@ L["Start raid"] = "Avvia incursione"
 L["The group is a raid now. Click again to invite the rest."] = "Il gruppo ora è un'incursione. Clicca di nuovo per invitare il resto."
 L["The game did not turn the group into a raid."] = "Il gioco non ha convertito il gruppo in incursione."
 L["Offline, not invited: %s"] = "Offline, non invitati: %s"
+
+-- L'avviso al proprietario, la gilda dell'incursione, /gos raid start (issue #400)
+L["That roster is for the guild %s, not this character's."] = "Quell'elenco è della gilda %s, non di quella di questo personaggio."
+L["Starts in %d min"] = "Inizia tra %d min"
+L["Starts now"] = "Inizia ora"
+L["Started %d min ago"] = "Iniziata %d min fa"
+L["Start the website's raid: invite and arrange, one step a click"] = "Avvia l'incursione del sito: invita e organizza, un passo per clic"

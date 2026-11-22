@@ -119,6 +119,9 @@ function M:SetScrollChild(c) self.scrollChild = c end
 function M:RegisterEvent(e) self.events[e] = true end
 function M:EnableMouse(v) self.mouse = v end
 function M:IsEnabled() return self.disabled ~= true end
+-- As the game does: the button's own OnEnable / OnDisable, when the state changes.
+function M:Enable() if self.disabled then self.disabled = nil; fire(self, "OnEnable") end end
+function M:Disable() if not self.disabled then self.disabled = true; fire(self, "OnDisable") end end
 function M:IsMouseOver() return false end
 local function isRegion(c) return c.kind == "Texture" or c.kind == "FontString" end
 function M:GetChildren()
@@ -132,7 +135,10 @@ function M:GetRegions()
   return unpack(out)
 end
 for _, name in ipairs({ "SetShadowOffset", "SetShadowColor", "SetHorizTile", "SetVertTile", "SetTexCoord",
-                        "SetJustifyV", "SetClipsChildren", "UnregisterEvent", "SetMaxLines" }) do
+                        "SetJustifyV", "SetClipsChildren", "UnregisterEvent", "SetMaxLines",
+                        -- A popup's (tools/raid-start-ui.lua: the raid owner's prompt)
+                        "SetFrameStrata", "SetMovable", "RegisterForDrag", "StartMoving", "StopMovingOrSizing",
+                        "Raise" }) do
   M[name] = function() end
 end
 -- Text is 6px a character, colour codes left out; a wrapped line breaks at its width, 12px a line.

@@ -3320,3 +3320,10 @@ L["Start raid"] = "開始團隊"
 L["The group is a raid now. Click again to invite the rest."] = "隊伍現在是團隊了。再點一次邀請其餘的人。"
 L["The game did not turn the group into a raid."] = "遊戲沒有把隊伍轉換為團隊。"
 L["Offline, not invited: %s"] = "離線，未邀請：%s"
+
+-- 給團隊擁有者的提醒、團隊所屬的公會、/gos raid start（issue #400）
+L["That roster is for the guild %s, not this character's."] = "該名單屬於公會 %s，不屬於此角色的公會。"
+L["Starts in %d min"] = "%d 分鐘後開始"
+L["Starts now"] = "現在開始"
+L["Started %d min ago"] = "已開始 %d 分鐘"
+L["Start the website's raid: invite and arrange, one step a click"] = "開始網站上的團隊：邀請並分組，每次點擊一步"

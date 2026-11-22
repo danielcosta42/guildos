@@ -60,6 +60,9 @@ local function printHelp()
         or L["Export roster or attendance"])   -- the loot history is on retail too since issue #183
     if GuildOS.Companion then helpLine("/gos web [on|off]", L["Copy your guild into the web companion"]) end
     if GuildOS.CompanionImport then helpLine("/gos roster", L["Bring the raid roster in from the website"]) end
+    if GuildOS.RaidStart then   -- issue #400: the Iniciar raide button's next step
+        helpLine("/gos raid start", L["Start the website's raid: invite and arrange, one step a click"])
+    end
 
     helpHeader(L["Personal"])
     helpLine("/gos avail",         L["List yourself as available for a group"])
@@ -515,6 +518,11 @@ local function handleCommand(msg)
         else
             GuildOS:ShowImportPopup()
         end
+    elseif msg == "raid start" then
+        -- /guildos raid start — one step of the Iniciar raide button, as its click (issue #400): typed, it is a key
+        -- press, which WoW: Forever lets an invite out of. On the raid the Web tab's button acts on.
+        local I, RS = GuildOS.CompanionImport, GuildOS.RaidStart
+        if I and RS then RS:Click(I:ActiveRoster()) end
     elseif msg == "exportatt" or msg == "exportattendance" then
         if GuildOS.RaidTracker then
             local json, err = GuildOS.RaidTracker:ExportForTMB()

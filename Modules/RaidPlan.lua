@@ -32,9 +32,11 @@ local CHAT_LINE = 240
 
 local function inCombat() return InCombatLockdown ~= nil and InCombatLockdown() and true or false end
 
---- The plan of the roster in hand, or nil.
+--- The plan of the roster in hand, or nil: the raid the Web tab's buttons act on (ActiveRoster, the raid of the
+--- window when there is one; issue #400), so the Raid plan button never opens another night's plan.
 function Plan:Current()
-    local roster = GuildOS.CompanionImport and GuildOS.CompanionImport:Current()
+    local I = GuildOS.CompanionImport
+    local roster = I and I:ActiveRoster()
     return roster and roster.plan or nil, roster
 end
 

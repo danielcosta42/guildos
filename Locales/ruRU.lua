@@ -3320,3 +3320,10 @@ L["Start raid"] = "Начать рейд"
 L["The group is a raid now. Click again to invite the rest."] = "Группа теперь рейд. Нажмите ещё раз, чтобы пригласить остальных."
 L["The game did not turn the group into a raid."] = "Игра не преобразовала группу в рейд."
 L["Offline, not invited: %s"] = "Не в сети, не приглашены: %s"
+
+-- Напоминание владельцу, гильдия рейда, /gos raid start (issue #400)
+L["That roster is for the guild %s, not this character's."] = "Этот список гильдии %s, а не гильдии этого персонажа."
+L["Starts in %d min"] = "Начало через %d мин"
+L["Starts now"] = "Начинается сейчас"
+L["Started %d min ago"] = "Начался %d мин назад"
+L["Start the website's raid: invite and arrange, one step a click"] = "Начать рейд с сайта: приглашения и группы, один шаг за щелчок"

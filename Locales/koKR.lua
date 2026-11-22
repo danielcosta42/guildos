@@ -3320,3 +3320,10 @@ L["Start raid"] = "공격대 시작"
 L["The group is a raid now. Click again to invite the rest."] = "이제 공격대입니다. 나머지를 초대하려면 다시 클릭하세요."
 L["The game did not turn the group into a raid."] = "게임이 파티를 공격대로 전환하지 않았습니다."
 L["Offline, not invited: %s"] = "오프라인이라 초대하지 않음: %s"
+
+-- 공격대장 알림, 공격대의 길드, /gos raid start (issue #400)
+L["That roster is for the guild %s, not this character's."] = "이 명단은 %s 길드의 것이며, 이 캐릭터의 길드가 아닙니다."
+L["Starts in %d min"] = "%d분 후 시작"
+L["Starts now"] = "지금 시작"
+L["Started %d min ago"] = "%d분 전에 시작됨"
+L["Start the website's raid: invite and arrange, one step a click"] = "웹사이트의 공격대 시작: 초대와 정리, 클릭 한 번에 한 단계"

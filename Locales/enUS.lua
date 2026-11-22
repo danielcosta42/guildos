@@ -1230,3 +1230,10 @@ L["Start raid"] = "Start raid"
 L["The group is a raid now. Click again to invite the rest."] = "The group is a raid now. Click again to invite the rest."
 L["The game did not turn the group into a raid."] = "The game did not turn the group into a raid."
 L["Offline, not invited: %s"] = "Offline, not invited: %s"
+
+-- The owner's prompt, the raid's guild, /gos raid start (issue #400)
+L["That roster is for the guild %s, not this character's."] = "That roster is for the guild %s, not this character's."
+L["Starts in %d min"] = "Starts in %d min"
+L["Starts now"] = "Starts now"
+L["Started %d min ago"] = "Started %d min ago"
+L["Start the website's raid: invite and arrange, one step a click"] = "Start the website's raid: invite and arrange, one step a click"
