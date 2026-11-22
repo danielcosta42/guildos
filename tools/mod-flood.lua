@@ -240,4 +240,10 @@ for _, t in ipairs(registered) do
   check(ok, "selftest " .. t.name .. ": " .. tostring(why))
 end
 
+
+-- ── Review fix: capitals in other scripts ──
+local F = GuildOS.ModFlood
+check(F.Caps("нужны на ICC25 HC: TANK HEAL DPS, пишите в личку пожалуйста") < 70, "a Russian LFG line with acronyms is not shouting")
+check(F.Caps("求组 ICC25 HC 缺 TANK HEAL DPS 来") < 70, "nor a Chinese one")
+check(F.Caps("ВСЕ СЮДА БЫСТРО НА БОССА") >= 70, "Russian in capitals is")
 print(("mod-flood: %d checks passed"):format(checks))

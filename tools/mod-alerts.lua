@@ -253,4 +253,29 @@ for _, t in ipairs(registered) do
   check(ok, "selftest " .. t.name .. ": " .. tostring(why))
 end
 
+
+-- ── Review fixes: a slow pattern, case, broad patterns, Cyrillic, CJK by script ──
+check(M.CheckLuaPattern(".-.-.-.-.-#") == "slow", "two or more repetitions are refused: they would freeze the client")
+check(M.CheckLuaPattern("gold%d+") == nil, "one repetition is fine")
+check(M.CheckLuaPattern("[a-z]+g") == nil, "a range inside a set is no repetition")
+do
+  local t0 = os.clock()
+  local c1 = M.Compile({ { p = "%d+g", cat = "trade", sev = "high", lua = true } })
+  local line = string.rep("lol ", 64)
+  M.Match(c1, line, M.Words(line), nil, 0)
+  check(os.clock() - t0 < 0.5, "a pattern on a 255-byte line takes no time")
+end
+check(M.CheckLuaPattern("Gold%d") == "case", "a capital in a pattern could never match a folded line")
+check(M.CheckLuaPattern("%Agold") == nil, "an escape is not a capital")
+for _, broad in ipairs({ ".", "%a", "%S", ".+" }) do check(M.CheckLuaPattern(broad) == "broad", "broad: " .. broad) end
+check(M.Fold("ИДИОТ Ёж") == M.Fold("идиот ёж") and M.Fold("Идиот") == "идиот", "Cyrillic capitals fold")
+local ru = M.Compile({ { p = "идиот", cat = "offense", sev = "medium" } })
+local f1, w1 = M.Prepare("ты ИДИОТ")
+check(M.Match(ru, f1, w1, nil, 0) ~= nil, "a Russian word matches in capitals")
+local zh = M.Compile({ { p = "金币", cat = "trade", sev = "high" } })
+local f2, w2 = M.Prepare("便宜金币出售")
+check(M.Match(zh, f2, w2, nil, 0) ~= nil, "a Chinese rule matches inside a line on any client's language")
+local acc = M.Compile({ { p = "pão%d", cat = "custom", sev = "low", lua = true } })
+local f3, w3 = M.Prepare("PÃO5")
+check(M.Match(acc, f3, w3, nil, 0) ~= nil, "a pattern's accents are folded as the line's")
 print(("mod-alerts: %d checks passed"):format(checks))

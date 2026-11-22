@@ -52,7 +52,6 @@ local STAMP_FUTURE_SLACK = 300
 
 -- Chinese has no spaces and Korean glues a particle to a word: there a word in their script is any
 -- stretch of the line, as Mentions does (issue #106).
-local NO_WORD_EDGES = { zhCN = true, zhTW = true, koKR = true }
 
 local function settings() return GuildOS.db and GuildOS.db.settings end
 
@@ -88,8 +87,21 @@ do
 end
 
 -- Lower case, without accents. Other bytes as they are.
+-- Cyrillic capitals fold too (А-П, Р-Я, Ё): a ruRU guild's words have case as well.
+local function cyrillic(b1, b2)
+    local c = b2:byte()
+    if b1 == "\208" and c >= 144 and c <= 159 then return "\208" .. string.char(c + 32) end
+    if b1 == "\208" and c >= 160 and c <= 175 then return "\209" .. string.char(c - 32) end
+    if b1 == "\208" and c == 129 then return "\209\145" end
+    return b1 .. b2
+end
+-- The accents and the Cyrillic capitals alone, leaving ASCII as it is: what a Lua pattern gets, since
+-- lowering it would turn "%A" into "%a".
+function ModAlerts.FoldWide(s)
+    return (tostring(s or ""):gsub("\195[\128-\191]", FOLD):gsub("(\208)([\128-\191])", cyrillic))
+end
 function ModAlerts.Fold(s)
-    return (tostring(s or ""):lower():gsub("\195[\128-\191]", FOLD))
+    return ModAlerts.FoldWide(tostring(s or ""):lower())
 end
 
 -- The line as it reads on screen: colours and textures gone, a game link as its visible text.
@@ -118,11 +130,24 @@ end
 -- Whether a Lua pattern is usable: it compiles on every probe and does not match an empty line (".*"
 -- would fire on everything). Returns nil, or why: "invalid" or "broad".
 local PROBES = { "", "a", "abc 123 xyz", "%" }
+-- Lua's matcher backtracks: two unbounded repetitions (".-.-", ".*%d+") take exponential time on an
+-- ordinary line, and one officer's rule would freeze every officer's client on every /g line. One is
+-- allowed (quadratic on a 255-byte line, nothing). Counted with the escapes and the [sets] taken out.
+function ModAlerts.Repetitions(p)
+    local bare = p:gsub("%%.", "x"):gsub("%[.-%]", "x")
+    local _, n = bare:gsub("[%*%+%-]", "")
+    return n
+end
 function ModAlerts.CheckLuaPattern(p)
+    if ModAlerts.Repetitions(p) > 1 then return "slow" end
+    -- Matching runs on the folded line (lower case, no accents): an ASCII capital outside an escape could
+    -- never match. Accents and Cyrillic are folded in the pattern itself (FoldWide).
+    if p:gsub("%%.", ""):find("%u") then return "case" end
     for _, probe in ipairs(PROBES) do
         local ok, hit = pcall(string.find, probe, p)
         if not ok then return "invalid" end
-        if probe == "" and hit then return "broad" end
+        -- Whatever matches these matches nearly every line ("." or "%a" or ".+").
+        if hit and probe ~= "%" then return "broad" end
     end
     -- A trailing lone % is malformed but only fails on a subject that reaches it.
     local tail = p:match("(%%+)$")
@@ -187,16 +212,19 @@ function ModAlerts.DefaultRules()
 end
 
 -- The list made ready to match: highest severity first, each rule its needle or pattern. A word needle is
--- " word " (or the bare folded text where a word has no edges). Pure on `rules` and `locale`.
-function ModAlerts.Compile(rules, locale)
+-- " word " (or the bare folded text where a word has no edges: CJK and Hangul, by the word's own script).
+-- Pure on `rules`.
+function ModAlerts.Compile(rules)
     local out = {}
     for i, r in ipairs(rules or {}) do
         local c = { key = ModAlerts.RuleKey(r), cat = r.cat, sev = r.sev, p = r.p, order = i }
         if r.lua then
-            c.pat = r.p
+            c.pat = ModAlerts.FoldWide(r.p)
         else
             local folded = ModAlerts.Fold(r.p)
-            if NO_WORD_EDGES[locale] and folded:find("[\128-\255]") then
+            -- A word in a script with no spaces between words (CJK, Hangul) has no edges, whatever language
+            -- the client that reads it speaks.
+            if folded:find("[\227-\237]") then
                 c.sub = strtrim(folded)
             else
                 c.needle = ModAlerts.Words(folded)
@@ -222,7 +250,7 @@ function ModAlerts.Match(compiled, folded, words, muted, now)
             elseif c.sub then
                 hit = folded:find(c.sub, 1, true)
             else
-                local ok, at = pcall(string.find, folded, c.pat)
+                local ok, at = pcall(string.find, folded:sub(1, 255), c.pat)
                 if ok then hit = at else c.broken = true end
             end
             if hit then return c end
@@ -479,6 +507,7 @@ function ModAlerts:OnClaim(env, sender)
     if type(k) ~= "string" or not k:match("^%x%x%x%x%x%x%x%x$") then return end
     local by = shortName(sender)
     if by == myName() then return end
+    self:_PruneClaims(GetServerTime())
     if self.claims[k] then return end   -- first claim held wins on this client
     self.claims[k] = { at = GetServerTime(), by = by }
     self.claimCount = self.claimCount + 1

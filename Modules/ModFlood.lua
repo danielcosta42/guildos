@@ -77,7 +77,13 @@ function ModFlood.Caps(s)
     local _, low = s:gsub("%l", "")
     local _, upA = s:gsub("\195[\128-\158]", "")
     local _, lowA = s:gsub("\195[\159-\191]", "")
-    up, low = up + upA, low + lowA
+    -- Every other letter counts too, or a Russian, Chinese or Korean line with a few raid acronyms reads as
+    -- all capitals: Cyrillic capitals (А-Я, Ё) as capitals, any other multi-byte letter as not.
+    local _, upC = s:gsub("\208[\128-\175]", "")
+    local _, other = s:gsub("[\196-\244]", "")
+    -- A CJK or Hangul character says as much as a short word: it weighs three letters.
+    local _, wide = s:gsub("[\227-\237]", "")
+    up, low = up + upA + upC, low + lowA + (other - upC) + wide * 2
     local letters = up + low
     if letters == 0 then return 0, 0 end
     return math.floor(up * 100 / letters), letters
