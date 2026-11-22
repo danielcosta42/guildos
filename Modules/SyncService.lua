@@ -112,7 +112,7 @@ function SyncService:Initialize()
             return
         end
         -- The disciplinary record's term and ladder (issue #402); neither carries `max`.
-        if env.act == "discterm" or env.act == "discladder" then
+        if env.act == "discterm" or env.act == "discladder" or env.act == "disctpl" or env.act == "discrank" then
             if GuildOS.Discipline then GuildOS.Discipline:OnConfigSync(env) end
             return
         end

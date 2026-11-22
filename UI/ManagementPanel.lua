@@ -532,6 +532,7 @@ local ACTION_LABELS = {
     info    = { txt = L["Info"],     color = "info" },
     join    = { txt = L["Joined"], color = "online" },
     leave   = { txt = L["Left"],   color = "offline" },
+    warn    = { txt = L["Warned"], color = "warn" },
 }
 
 local function BuildLogSub(panel)

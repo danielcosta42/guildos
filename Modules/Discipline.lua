@@ -249,6 +249,13 @@ function Discipline:PublishConfig()
     if s.disciplineLadderAt then
         GuildOS.SyncService:Publish("guildcfg", "discladder", { ladder = self:GetLadder() }, { rev = s.disciplineLadderAt })
     end
+    if s.disciplineTemplatesAt then
+        local t = type(s.disciplineTemplates) == "table" and s.disciplineTemplates or {}
+        GuildOS.SyncService:Publish("guildcfg", "disctpl", { warning = t.warning, final = t.final, punish = t.punish }, { rev = s.disciplineTemplatesAt })
+    end
+    if s.disciplineRankAt then
+        GuildOS.SyncService:Publish("guildcfg", "discrank", { rank = s.disciplineRank or false }, { rev = s.disciplineRankAt })
+    end
 end
 
 local function stampOf(env)
@@ -277,6 +284,16 @@ function Discipline:OnConfigSync(env)
         local held = s.disciplineLadderAt
         if held and (at < held or (at == held and self.LadderKey(ladder) >= self.LadderKey(self:GetLadder()))) then return end
         s.disciplineLadder, s.disciplineLadderAt = ladder, at
+    elseif env.act == "disctpl" then
+        -- Newest stamp wins; the same second keeps what is held (a tie has no shorter side).
+        if s.disciplineTemplatesAt and at <= s.disciplineTemplatesAt then return end
+        local t = {}
+        for _, k in ipairs(self.TEMPLATE_KEYS) do t[k] = self.CleanTemplate(data[k]) end
+        s.disciplineTemplates, s.disciplineTemplatesAt = t, at
+    elseif env.act == "discrank" then
+        if s.disciplineRankAt and at <= s.disciplineRankAt then return end
+        local r = type(data.rank) == "string" and GuildOS:SanitizeUserText(data.rank, 48) or ""
+        s.disciplineRank, s.disciplineRankAt = r ~= "" and r or nil, at
     else
         return
     end
@@ -384,6 +401,147 @@ function Discipline:Prune(now, s)
         end
     end
     return dropped
+end
+
+----------------------------------------------------------------------
+-- Warning somebody with one click (issue #403)
+--
+-- The officer clicks Warn, picks a reason and one of the guild's templates, and the whisper leaves on that
+-- click: a hardware event, so the game allows it. Nothing is ever said in /g about anybody. When the new
+-- step's rung asks for something (the punishment rank, a temporary ban) it is only SUGGESTED: a second
+-- click confirms it, through the ways that already exist (GuildManager's hand-off to the game's own panel
+-- for a rank, ADR-0010; BanList for a ban). Never a protected guild API here.
+----------------------------------------------------------------------
+Discipline.TEMPLATE_KEYS = { "warning", "final", "punish" }
+Discipline.TEMPLATE_MAX = 200     -- bytes an officer may type; filled, the line is cut at 255
+Discipline.WHISPER_MAX = 255      -- what SendChatMessage takes
+
+-- The guild's templates before an officer wrote any, in this client's language.
+function Discipline.DefaultTemplates()
+    return {
+        warning = L["{name}, this is a warning from the officers: {reason}. Please keep to the guild's rules."],
+        final = L["{name}, this is a final warning: {reason}. The next one has consequences."],
+        punish = L["{name}, after repeated warnings ({reason}) the officers are applying the guild's rules."],
+    }
+end
+
+function Discipline:GetTemplates()
+    local s = settings()
+    local held = s and type(s.disciplineTemplates) == "table" and s.disciplineTemplates or {}
+    local out = self.DefaultTemplates()
+    for _, k in ipairs(self.TEMPLATE_KEYS) do
+        if type(held[k]) == "string" and held[k] ~= "" then out[k] = held[k] end
+    end
+    return out
+end
+
+-- A template off the network or a box: one line, no game codes, at most 200 bytes; nil when blank.
+function Discipline.CleanTemplate(t)
+    if type(t) ~= "string" then return nil end
+    local s = GuildOS:SanitizeUserText(t, Discipline.TEMPLATE_MAX)
+    return s ~= "" and s or nil
+end
+
+-- An officer edits one template. Whether it was taken.
+function Discipline:SetTemplate(key, text)
+    if not GuildOS:IsOfficer() then return false end
+    local known = false
+    for _, k in ipairs(self.TEMPLATE_KEYS) do known = known or k == key end
+    if not known then return false end
+    local s = settings()
+    s.disciplineTemplates = type(s.disciplineTemplates) == "table" and s.disciplineTemplates or {}
+    s.disciplineTemplates[key] = self.CleanTemplate(text)   -- blank: back to the default
+    stamp(s, "disciplineTemplatesAt")
+    self:PublishConfig()
+    return true
+end
+
+-- The guild's punishment rank, by name, as the officers set it. Nil until one is.
+function Discipline:GetPunishRank()
+    local s = settings()
+    local r = s and s.disciplineRank
+    return type(r) == "string" and r ~= "" and r or nil
+end
+
+function Discipline:SetPunishRank(name)
+    if not GuildOS:IsOfficer() then return false end
+    local s = settings()
+    local clean = GuildOS:SanitizeUserText(name or "", 48)
+    s.disciplineRank = clean ~= "" and clean or nil
+    stamp(s, "disciplineRankAt")
+    self:PublishConfig()
+    self:Refresh()
+    return true
+end
+
+-- The template a new warning at `step` starts on: a warning, then a final one, then the punishment.
+function Discipline.TemplateFor(step)
+    if step <= 1 then return "warning" end
+    if step == 2 then return "final" end
+    return "punish"
+end
+
+-- A template filled in: {name}, {reason} and {step}, one line with no game codes, cut at 255 bytes. Pure.
+function Discipline.Fill(template, vars)
+    local text = tostring(template or ""):gsub("{(%a+)}", function(k)
+        local v = vars[k]
+        if v == nil then return "{" .. k .. "}" end
+        return tostring(v)
+    end)
+    return GuildOS:SanitizeUserText(text, Discipline.WHISPER_MAX)
+end
+
+-- What the new step's rung suggests, for the officer to confirm: { action = "rank", rank = name|nil } or
+-- { action = "tempban", days = n }; nil when the rung asks for nothing. Pure on the ladder.
+function Discipline.Suggestion(ladder, level, punishRank)
+    local rung = Discipline.RungFor(ladder, level)
+    if not rung or rung.action == "none" then return nil end
+    if rung.action == "rank" then return { action = "rank", rank = punishRank } end
+    return { action = "tempban", days = rung.days }
+end
+
+-- A guildmate as the roster has them: whether they are online now, and the whole name to whisper (with
+-- the realm a connected-realm guildmate's line gives, so the whisper never goes to a namesake here).
+-- Nil when the roster does not have them.
+local function rosterOf(name)
+    local i = GuildOS.Compat.FindGuildRosterIndex(name)
+    if not i then return nil end
+    local full, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
+    return online and true or false, full or name
+end
+
+-- The click itself. Files the warning (always), and unless `opts.silent` whispers the filled template to
+-- the member. Returns the warning, and how the whisper went: "sent", "silent", "offline", "locked" (the
+-- game held the chat) or "failed"; or nil and why, as Add says.
+function Discipline:Warn(playerKey, name, reason, opts)
+    opts = opts or {}
+    local w, why = self:Add(playerKey, reason, { note = opts.note, excerpt = opts.excerpt })
+    if not w then return nil, why end
+    if GuildOS.RosterLog then GuildOS.RosterLog:Record("warn", name, GuildOS.Compat.PlayerName(), self.ReasonText(reason)) end
+    if opts.silent then return w, "silent" end
+    local online, full = rosterOf(name)
+    if online == false then return w, "offline" end
+    if GuildOS.Compat.InChatLockdown and GuildOS.Compat.InChatLockdown() then return w, "locked" end
+    local text = self.Fill(opts.text or self:GetTemplates()[self.TemplateFor(w.level)],
+        { name = name, reason = self.ReasonText(reason), step = w.level })
+    local target = GuildOS:WhisperTarget(full or name)
+    if GuildOS.NoteWhisper then GuildOS:NoteWhisper(target) end
+    return w, GuildOS.Compat.SendWhisper(text, target) and "sent" or "failed"
+end
+
+-- The officer confirmed the suggestion. "rank" hands off to the game's own guild panel (a rank change is
+-- Blizzard-protected) and says which rank; "tempban" files the ban. Whether something was done.
+function Discipline:ApplySuggestion(name, suggestion, reason)
+    if not GuildOS:IsOfficer() or type(suggestion) ~= "table" then return false end
+    if suggestion.action == "rank" then
+        if not suggestion.rank then return false end
+        GuildOS:Print(string.format(L["Move %s to the rank %s in the game's guild panel."], name, suggestion.rank))
+        if GuildOS.GuildManager then GuildOS.GuildManager:SetRank(name) end
+        return true
+    elseif suggestion.action == "tempban" then
+        return GuildOS.BanList ~= nil and GuildOS.BanList:Add(name, self.ReasonText(reason), suggestion.days * 86400) == true
+    end
+    return false
 end
 
 ----------------------------------------------------------------------

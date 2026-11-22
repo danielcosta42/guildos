@@ -929,10 +929,25 @@ function PopulateDetail(frame, data)
                 revoke:SetPoint("TOPRIGHT", child, "TOPLEFT", contentWidth - 10, yOff - 1)
                 local id = w.id
                 revoke:SetScript("OnClick", function()
-                    if D:Revoke(id) then PopulateDetail(frame, data) end
+                    D:Revoke(id)   -- the sheet redraws through D.uiRefresh
                 end)
             end
             yOff = yOff - math.max(20, row:GetStringHeight() + 6)
+        end
+
+        -- Warn (issue #403): the window files it, whispers on the click and suggests the step's rung.
+        local who = data.name
+        local warnBtn = UI:CreateButton(child, L["Warn"], 80, 20)
+        warnBtn:SetPoint("TOPLEFT", 15, yOff - 6)
+        warnBtn:SetScript("OnClick", function() GuildOS:ShowWarnDialog(playerKey, who) end)
+        yOff = yOff - 30
+        -- A warning or a setting that changes (here or from another officer) redraws the sheet, unless the
+        -- officer is typing in it: the sheet would scroll back to the top and lose what they typed.
+        D.uiRefresh = function()
+            if not frame:IsShown() then return end
+            local focus = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+            if focus and focus.IsVisible and focus:IsVisible() then return end
+            PopulateDetail(frame, data)
         end
 
         -- The guild's term, which every warning on every sheet counts by.
@@ -953,11 +968,20 @@ function PopulateDetail(frame, data)
         local setTerm = UI:CreateButton(child, L["Set term (days)"], 110, 20)
         setTerm:SetPoint("LEFT", termBox, "RIGHT", 6, 0)
         local function applyTerm()
-            if D:SetTerm(termBox:GetText()) then PopulateDetail(frame, data) else termBox:SetText(tostring(D:GetTerm())) end
+            termBox:ClearFocus()
+            if not D:SetTerm(termBox:GetText()) then termBox:SetText(tostring(D:GetTerm())) end   -- taken: D.uiRefresh redraws
         end
         setTerm:SetScript("OnClick", applyTerm)
         termBox:SetScript("OnEnterPressed", function(self) self:ClearFocus(); applyTerm() end)
         termBox:Show()
+
+        -- The guild's punishment rank, which a rung of the ladder may suggest (issue #403).
+        local rankBox = UI:CreateInput(child, 120, 20, { max = 48, placeholder = L["Punishment rank"] })
+        rankBox:SetPoint("LEFT", setTerm, "RIGHT", 16, 0)
+        rankBox:SetText(D:GetPunishRank() or "")
+        local setRank = UI:CreateButton(child, L["Set rank"], 80, 20)
+        setRank:SetPoint("LEFT", rankBox, "RIGHT", 6, 0)
+        setRank:SetScript("OnClick", function() D:SetPunishRank(rankBox:GetText()) end)
         yOff = yOff - 30
     end
 

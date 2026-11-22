@@ -37,6 +37,7 @@ local IN_UI = {
   equity      = { { "UI/LootWindow.lua", 'show("equity")' } },
   -- The record is a section of the member's sheet, with its term (issue #402).
   record      = { { "UI/MemberDetail.lua", "D:Record(playerKey)" }, { "UI/MemberDetail.lua", "D:SetTerm(" } },
+  warn        = { { "UI/MemberDetail.lua", "GuildOS:ShowWarnDialog(playerKey, who)" } },
   digest      = { { "UI/SettingsPanel.lua", "GuildOS.Digest:Show()" } },
   backup      = { { "UI/SettingsPanel.lua", "GuildOS.Backup:ShowExport()" } },
   restore     = { { "UI/SettingsPanel.lua", "GuildOS.Backup:ShowRestore()" } },

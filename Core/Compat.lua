@@ -1331,6 +1331,16 @@ function Compat.SendChatMessage(text, chatType)
     return (pcall(send, text, chatType))
 end
 
+-- Whisper one line to `target`, as a click of the player sends it (issue #403). Nothing in a chat lockdown;
+-- returns whether it went. The target's "No player named" line is the caller's to note (NoteWhisper).
+function Compat.SendWhisper(text, target)
+    if not target or target == "" or Compat.IsSecret(text) then return false end
+    if Compat.InChatLockdown and Compat.InChatLockdown() then return false end
+    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+    if not send then return false end
+    return (pcall(send, text, "WHISPER", nil, target))
+end
+
 -- Lets `fn` hide lines of a chat event from every chat frame: retail moved the filter to ChatFrameUtil, and
 -- the global is a deprecation fallback there. False on a client with neither.
 function Compat.AddChatFilter(event, fn)

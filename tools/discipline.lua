@@ -33,6 +33,7 @@ function GetRealmName() return "Classic Beta PvE 2" end
 function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 local NOW = 1790000000
 function GetServerTime() return NOW end
+function GetTime() return NOW end
 Enum = { SendAddonMessageResult = {} }
 GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
 
@@ -193,6 +194,73 @@ local st = { a = { id = "a", at = 1, changedAt = 1, excerpt = "x" }, b = { id = 
              c = { id = "c", at = NOW - 100 * 86400, changedAt = NOW - 100 * 86400, excerpt = "z" } }
 check(D:Prune(NOW, st) == 1 and st.a == nil, "past 400 days a warning goes")
 check(st.b.excerpt == "y" and st.c.excerpt == nil and st.c.id == "c", "past 90 days only the chat line goes")
+
+-- ── Warning with one click (#403) ───────────────────────────────────────
+officer = true
+check(D.Fill("{name}, {reason}: step {step} {other}", { name = "Thrall", reason = "Spam", step = 2 }) == "Thrall, Spam: step 2 {other}",
+      "a template is filled, and an unknown placeholder stays as it is")
+check(D.Fill("a|cffff0000b\nc", {}) == "acffff0000b c", "a filled line carries no game code and stays one line")
+check(#D.Fill(string.rep("é", 200), {}) <= 255, "and is cut at 255 bytes")
+check(D.TemplateFor(1) == "warning" and D.TemplateFor(2) == "final" and D.TemplateFor(7) == "punish", "the template follows the step")
+local ladder = D.ValidLadder({ { action = "none" }, { action = "rank" }, { action = "tempban", days = 7 } })
+check(D.Suggestion(ladder, 1, "Castigo") == nil, "a first warning suggests nothing")
+check(D.Suggestion(ladder, 2, nil).action == "rank" and D.Suggestion(ladder, 2, nil).rank == nil, "the rank rung with no rank set says so")
+check(D.Suggestion(ladder, 9, "Castigo").days == 7, "past the end, the last rung")
+
+check(D:SetTemplate("final", "  {name}: chega | de spam  ") and D:GetTemplates().final == "{name}: chega de spam", "an officer edits a template")
+check(not D:SetTemplate("nope", "x"), "an unknown template is refused")
+D:SetTemplate("final", "")
+check(D:GetTemplates().final == D.DefaultTemplates().final, "a blank one goes back to the default")
+local tAt = GuildOS.db.settings.disciplineTemplatesAt
+D:OnConfigSync({ act = "disctpl", rev = tAt, data = { final = "same second" } })
+check(D:GetTemplates().final == D.DefaultTemplates().final, "the same second keeps what is held")
+D:OnConfigSync({ act = "disctpl", rev = tAt + 5, data = { final = "nova|c" } })
+check(D:GetTemplates().final == "novac", "a newer one is taken, cleaned")
+check(D:SetPunishRank(" Castigo ") and D:GetPunishRank() == "Castigo", "the punishment rank is the guild's")
+
+-- The click: a whisper only on it, the outcome told; the roster says who is online.
+local online, locked, whispers = true, false, {}
+GuildOS.Compat.FindGuildRosterIndex = function() return 1 end
+function GetGuildRosterInfo() return "Thrall", "", 0, 60, "", "", "", "", online end
+GuildOS.Compat.InChatLockdown = function() return locked end
+GuildOS.Compat.SendWhisper = function(text, target) whispers[#whispers + 1] = { text = text, target = target } return true end
+local logged = {}
+GuildOS.RosterLog = { Record = function(_, action, target) logged[#logged + 1] = action .. ":" .. target end }
+local before = #whispers
+local ww, how = D:Warn(THRALL, "Thrall", "spam", { text = "custom {name}" })
+check(ww and how == "sent" and #whispers == before + 1 and whispers[#whispers].text == "custom Thrall", "the whisper leaves on the click")
+check(logged[#logged] == "warn:Thrall", "and the roster log says who was warned")
+local _, h2 = D:Warn(THRALL, "Thrall", "spam", { silent = true })
+check(h2 == "silent" and #whispers == before + 1, "only record it: no whisper")
+online = false
+local w3, h3 = D:Warn(THRALL, "Thrall", "spam")
+check(w3 and h3 == "offline" and #whispers == before + 1, "offline: filed, no whisper")
+online, locked = true, true
+local w4, h4 = D:Warn(THRALL, "Thrall", "spam")
+check(w4 and h4 == "locked", "the game holding the chat: filed, no whisper")
+locked = false
+GuildOS.Compat.SendWhisper = function() return false end
+local _, h5 = D:Warn(THRALL, "Thrall", "spam")
+check(h5 == "failed", "a whisper the game refused is told")
+GuildOS.Compat.SendWhisper = function(text, target) whispers[#whispers + 1] = { text = text, target = target } return true end
+function GetGuildRosterInfo() return "Thrall-Outrorreino", "", 0, 60, "", "", "", "", true end
+D:Warn(THRALL, "Thrall", "spam")
+check(whispers[#whispers].target == "Thrall-Outrorreino", "a guildmate of another realm is whispered by the roster's whole name, never a namesake here")
+officer = false
+check(D:Warn(THRALL, "Thrall", "spam") == nil, "a member warns nobody")
+officer = true
+
+-- The suggestion happens only on Confirm, by the ways that exist.
+local handed, banned = nil, nil
+GuildOS.GuildManager = { SetRank = function(_, name) handed = name end }
+GuildOS.BanList = { Add = function(_, name, reason, secs) banned = { name, reason, secs } return true end }
+check(not D:ApplySuggestion("Thrall", { action = "rank" }, "spam") and handed == nil, "no rank set: nothing is done")
+check(D:ApplySuggestion("Thrall", { action = "rank", rank = "Castigo" }, "spam") and handed == "Thrall", "a rank is handed to the game's panel")
+check(D:ApplySuggestion("Thrall", { action = "tempban", days = 7 }, "spam") and banned[3] == 7 * 86400, "a ban is filed for its days")
+officer = false
+banned = nil
+check(not D:ApplySuggestion("Thrall", { action = "tempban", days = 7 }, "spam") and banned == nil, "a member applies nothing")
+officer = true
 
 -- ── The self-tests the client runs ──────────────────────────────────────
 local registered = {}

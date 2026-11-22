@@ -92,6 +92,7 @@ local function printHelp()
         helpLine("/gos unban <name>",          L["Lift a ban"])
         helpLine("/gos banlist",               L["Open the ban list"])
         helpLine("/gos record <name>",         L["A member's disciplinary record"])
+        helpLine("/gos warn <name> [reason]",  L["Warn a member, with one click"])
         helpLine("/gos record term <days>",    L["How long a warning counts"])
         helpLine("/gos autoinvite",            L["Auto-invite settings"])
         helpLine("/gos note <name> <text>",    L["Add an officer note"])
@@ -717,6 +718,19 @@ local function handleCommand(msg)
             GuildOS:Print(L["Unbanned "] .. name)
         elseif name ~= "" and GuildOS.BanList and GuildOS:IsOfficer() then
             GuildOS:Print(string.format(L["No ban to lift for %s."], name))   -- nothing stood there (#184)
+        end
+    elseif msg:match("^warn%s") then
+        -- /gos warn <name> [reason]  — the Warn window (#403), officers only.
+        local name, rest = GuildOS:SplitNameAndText(strtrim((msg:gsub("^warn%s+", ""))))
+        name = name or strtrim((msg:gsub("^warn%s+", "")))
+        local key = GuildOS:RosterKey(name)
+        if not GuildOS:IsOfficer() then
+            GuildOS:Print(L["|cffFF4444Officers only.|r"])
+        elseif not key then
+            GuildOS:Print(string.format(L["%s is not on the guild roster."], name))
+        else
+            local _, shown = GuildOS:RosterKey(name)
+            GuildOS:ShowWarnDialog(key, shown, { reason = rest and strtrim(rest):lower() or nil })
         end
     elseif msg:match("^record%s+term%s") then
         -- /gos record term <days>  — the guild's term for warnings (#402), officers only.
