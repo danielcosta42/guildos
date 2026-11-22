@@ -129,6 +129,12 @@ function DataCollector:CollectMyData()
         -- the periodic collect reads the tree once there is one, and holding the snapshot
         -- open for them blocked the gear's corrective broadcast below level 10 (issue #41).
     end
+    -- WoW: Forever's talents, by talent id (issue #399). What cannot be read yet keeps what was
+    -- read before, never blanked; other clients never set it.
+    if GuildOS.SpecChecker and GuildOS.SpecChecker.CollectOwnTalents then
+        local talents = GuildOS.SpecChecker:CollectOwnTalents()
+        if talents then data.talents = talents end
+    end
     -- Named in the broadcast, so the other officers drop what they still hold for these fields (issue #10).
     data.absent = next(absent) and absent or nil
 
@@ -320,7 +326,7 @@ function DataCollector:CollectGear()
 
             -- Parse enchant and gems from the item link
             -- TBC format: item:itemId:enchantId:gem1:gem2:gem3:gem4:suffixId:uniqueId:...
-            local enchantId, gems = self:ParseItemLink(itemLink)
+            local enchantId, gems, suffix = self:ParseItemLink(itemLink)
 
             gear[slotId] = {
                 link = itemLink,
@@ -330,6 +336,7 @@ function DataCollector:CollectGear()
                 ilvl = itemLevel or 0,
                 enchantId = enchantId,
                 gems = gems,
+                suffix = suffix,   -- the random suffix ("of the Eagle"), issue #399; nil without one
             }
         else
             gear[slotId] = nil
@@ -340,10 +347,13 @@ function DataCollector:CollectGear()
 end
 
 ----------------------------------------------------------------------
--- Parse enchant and gem IDs from an item link
+-- Parse enchant, gem and random suffix IDs from an item link
+-- Returns enchantId (nil without one), the gems, and the random suffix id: the field after the four gems,
+-- what makes an "of the Eagle" item what it is (issue #399). Nil when the link has none (0 or
+-- empty). Kept with its sign: the game writes some suffixes as negative ids.
 ----------------------------------------------------------------------
 function DataCollector:ParseItemLink(link)
-    if not link then return nil, {} end
+    if not link then return nil, {}, nil end
 
     -- item:itemId:enchantId:gem1:gem2:gem3:gem4:suffixId:uniqueId:...
     local parts = { strsplit(":", link:match("item:([%d:-]+)") or "") }
@@ -358,7 +368,10 @@ function DataCollector:ParseItemLink(link)
         end
     end
 
-    return enchantId > 0 and enchantId or nil, gems
+    local suffix = tonumber(parts[7])
+    if suffix and (suffix == 0 or suffix ~= math.floor(suffix)) then suffix = nil end
+
+    return enchantId > 0 and enchantId or nil, gems, suffix
 end
 
 ----------------------------------------------------------------------
@@ -730,6 +743,7 @@ function DataCollector:GetBroadcastData()
                 quality = item.quality,
                 ilvl = item.ilvl,
                 enchantId = item.enchantId,
+                suffix = item.suffix,   -- issue #399; absent without one
             }
             if item.gems and #item.gems > 0 then
                 gearEntry.gems = {}
@@ -749,6 +763,12 @@ function DataCollector:GetBroadcastData()
     -- Include talent spec
     if myData.spec then
         clean.spec = myData.spec
+    end
+
+    -- WoW: Forever's talents by talent id (issue #399). StoreReceivedData merges them like any
+    -- field; absent until my client has read a tree.
+    if type(myData.talents) == "table" then
+        clean.talents = myData.talents
     end
 
     -- Include self-declared roles (the player's own preference; the Raider

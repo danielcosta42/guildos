@@ -159,6 +159,33 @@ function SpecChecker:RetailSpec(unit)
     return { tree = name or L["Unknown"], specID = id, role = role, scannedAt = GetServerTime() }
 end
 
+-- The talents of a WoW: Forever character, as { {definitionID, rank}, ... } (issue #399), so the
+-- companion and the site can show the whole character. Only Forever: its tree is the trait tree,
+-- read by talent id. Nil and why everywhere else ("no-api") and while there is nothing to read.
+local function isForever()
+    return not (GuildOS.Client.isRetail or GuildOS.Client.isAnniversary)
+end
+
+function SpecChecker:CollectOwnTalents()
+    if not isForever() then return nil, "no-api" end
+    return GuildOS.Compat.TraitTalents()
+end
+
+-- Talents read by an inspect, kept on the member's record unless their own Guild OS sent its
+-- reading at least as new (the same rule as the item level below). Forever only, and only when the
+-- client lets the trait API read the inspected tree.
+function SpecChecker:InspectedTalents()
+    if not isForever() then return nil end
+    local configID = GuildOS.Compat.InspectTraitConfigID()
+    if not configID then return nil end
+    return (GuildOS.Compat.TraitTalents(configID))
+end
+
+function SpecChecker:KeepInspectedTalents(rec, talents)
+    if (tonumber(rec.lastUpdate) or 0) >= time() then return end
+    rec.talents = talents
+end
+
 ----------------------------------------------------------------------
 -- Collect the local player's own spec from their talent tabs.
 -- Stores result in Guild OS.db.members[key].spec and returns it.
@@ -307,8 +334,16 @@ end
 -- Called when INSPECT_READY fires. Reads talent tabs for the
 -- currently pending inspect and stores the result.
 ----------------------------------------------------------------------
-function SpecChecker:OnInspectReady()
+function SpecChecker:OnInspectReady(guid)
     if not inspectPending then return end
+    -- INSPECT_READY also fires for an inspect somebody else asked for (the inspect window, another
+    -- addon). Its data is not the pending member's: store nothing and move on, so the queue never stalls.
+    local pendingGuid = guid and inspectPending.unit and UnitGUID and UnitGUID(inspectPending.unit)
+    if pendingGuid and guid ~= pendingGuid then
+        inspectPending = nil
+        C_Timer.After(INSPECT_DELAY, function() SpecChecker:ProcessNextInspect() end)
+        return
+    end
 
     if GuildOS.Client.isRetail then
         local spec = self:RetailSpec(inspectPending.unit)
@@ -324,8 +359,16 @@ function SpecChecker:OnInspectReady()
         return
     end
 
+    local talents = self:InspectedTalents()
+    if talents then
+        local key = inspectPending.key
+        GuildOS.db.members[key] = GuildOS.db.members[key] or { name = inspectPending.name }
+        self:KeepInspectedTalents(GuildOS.db.members[key], talents)
+    end
+
     local numTabs = GuildOS.Compat.GetNumTalentTabs(true)   -- true = isInspect
     if not numTabs or numTabs == 0 then
+        inspectPending = nil
         C_Timer.After(INSPECT_DELAY, function() SpecChecker:ProcessNextInspect() end)
         return
     end
@@ -379,7 +422,7 @@ function SpecChecker:Initialize()
     if GuildOS.Client.isRetail then GuildOS.Compat.RegisterEvent(frame, "PLAYER_SPECIALIZATION_CHANGED") end
     frame:SetScript("OnEvent", function(_, event, unit)
         if event == "INSPECT_READY" then
-            SpecChecker:OnInspectReady()
+            SpecChecker:OnInspectReady(unit)   -- INSPECT_READY's argument is the inspected GUID
         elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
             SpecChecker:OnSpecChanged(unit)
         end
