@@ -481,10 +481,12 @@ function Discipline.TemplateFor(step)
     return "punish"
 end
 
--- A template filled in: {name}, {reason} and {step}, one line with no game codes, cut at 255 bytes. Pure.
+-- A template filled in: {name}, {reason}, {step} and {rule} (a guild rule's number and title, #407; "the
+-- guild's rules" when the officer named none), one line with no game codes, cut at 255 bytes. Pure.
 function Discipline.Fill(template, vars)
     local text = tostring(template or ""):gsub("{(%a+)}", function(k)
         local v = vars[k]
+        if k == "rule" and (v == nil or v == "") then v = L["the guild's rules"] end
         if v == nil then return "{" .. k .. "}" end
         return tostring(v)
     end)
@@ -523,7 +525,7 @@ function Discipline:Warn(playerKey, name, reason, opts)
     if online == false then return w, "offline" end
     if GuildOS.Compat.InChatLockdown and GuildOS.Compat.InChatLockdown() then return w, "locked" end
     local text = self.Fill(opts.text or self:GetTemplates()[self.TemplateFor(w.level)],
-        { name = name, reason = self.ReasonText(reason), step = w.level })
+        { name = name, reason = self.ReasonText(reason), step = w.level, rule = opts.rule })
     local target = GuildOS:WhisperTarget(full or name)
     if GuildOS.NoteWhisper then GuildOS:NoteWhisper(target) end
     return w, GuildOS.Compat.SendWhisper(text, target) and "sent" or "failed"

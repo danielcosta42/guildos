@@ -290,6 +290,8 @@ local MODULE_START = {
     { "ModFlood" },
     -- And the newcomer's quarantine (issue #406): stricter alerts in a member's first days.
     { "Newcomer" },
+    -- The guild's rules (issue #407): written by the officers, read by everybody.
+    { "GuildRules" },
     { "CommSystem", feature = "commSystem" },
     { "Wishlist", ui = "wishlist" },
     { "SoftRes" },

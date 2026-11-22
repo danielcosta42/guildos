@@ -132,6 +132,11 @@ function SyncService:Initialize()
             if GuildOS.Newcomer then GuildOS.Newcomer:OnConfigSync(env) end
             return
         end
+        -- The guild's rules (issue #407), kept on every client; it carries no `max`.
+        if env.act == "rules" then
+            if GuildOS.GuildRules then GuildOS.GuildRules:OnConfigSync(env) end
+            return
+        end
         -- Who creates calendar events (issue #283).
         if env.act == "events" then
             GuildOS:OnEventMaxRankSync(env)

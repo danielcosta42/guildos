@@ -64,6 +64,7 @@ local function printHelp()
     helpHeader(L["Personal"])
     helpLine("/gos avail",         L["List yourself as available for a group"])
     helpLine("/gos signup <core>", L["Sign up for a raid core"])
+    helpLine("/gos rules",         L["The guild's rules"])
     helpLine("/gos mentions",      L["Name mention alerts"])
     helpLine("/gos myalts",        L["Detect and link your own alts"])
     if GuildOS.AttunementTracker then  -- TBC content (ADR-0014)
@@ -243,6 +244,9 @@ local function handleCommand(msg)
             table.remove(a, 1)
             GuildOS.GuildBank:HandleCommand(a)
         end
+    elseif msg == "rules" then
+        -- /gos rules: the guild's rules, for any member (#407).
+        if GuildOS.GuildRules then GuildOS.GuildRules:Show() end
     elseif msg == "bulletin" or msg == "board" then
         if GuildOS.Bulletin then GuildOS.Bulletin:Show() end
     elseif msg == "cta" or msg:match("^cta%s") then

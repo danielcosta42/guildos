@@ -1085,6 +1085,9 @@ function Companion:BuildPayload()
     -- Within 17 (#402, the site's specs/116): the disciplinary record, from an officer's client only.
     -- Additive: a reader from before never looks at it. Never in the pack.
     payload.discipline = GuildOS.Discipline and optional("discipline", GuildOS.Discipline.ForExport, GuildOS.Discipline) or nil
+    -- Within 17 (#407): the guild's rules, from any client that holds them, with their stamp so the site
+    -- keeps the newest whoever uploads last. Absent while the guild never wrote any. Never in the pack.
+    payload.rules = GuildOS.GuildRules and optional("rules", GuildOS.GuildRules.ForExport, GuildOS.GuildRules) or nil
     return payload
 end
 

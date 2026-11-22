@@ -74,6 +74,7 @@ Modules\Discipline.lua
 Modules\ModAlerts.lua
 Modules\ModFlood.lua
 Modules\Newcomer.lua
+Modules\GuildRules.lua
 Modules\RecruitmentSystem.lua
 Modules\RecruitEngagement.lua
 Modules\WishlistSystem.lua

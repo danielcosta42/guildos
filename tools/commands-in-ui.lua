@@ -42,6 +42,8 @@ local IN_UI = {
   backup      = { { "UI/SettingsPanel.lua", "GuildOS.Backup:ShowExport()" } },
   restore     = { { "UI/SettingsPanel.lua", "GuildOS.Backup:ShowRestore()" } },
   bulletin    = { { "UI/CommunityPanel.lua", "BuildBulletinSub" } },
+  -- The guild's rules are the Guild hub's Rules sub-tab, for every member (issue #407).
+  rules       = { { "UI/CommunityPanel.lua", "BuildGuildRulesSub" } },
   polls       = { { "UI/CommunityPanel.lua", "BuildPollsSub" } },
   calendar    = { { "UI/CommunityPanel.lua", "CreateCalendarSub" } },
   cta         = { { "UI/CommunityPanel.lua", "BuildCallToArmsSub" } },

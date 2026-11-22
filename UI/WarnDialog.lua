@@ -39,7 +39,7 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
     if self.warnDialog then self.warnDialog:Hide() end
 
     local f = CreateFrame("Frame", "GuildOSWarnDialog", UIParent, "BackdropTemplate")
-    f:SetSize(440, 330)
+    f:SetSize(440, 360)
     f:SetPoint("CENTER")
     f:SetBackdrop({ bgFile = WHITE8, edgeFile = WHITE8, edgeSize = GuildOS.UI:Edge(f) })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
@@ -82,43 +82,60 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
     })
     tplDD:SetValue(D.TemplateFor(step + 1))
 
+    -- The guild rule this warning is about (#407): {rule} in the template names it.
+    local GR = GuildOS.GuildRules
+    local ruleDD = UI:CreateDropdown(f, 412, 22)
+    ruleDD:SetPoint("TOPLEFT", 14, -84)
+    local ruleOpts = { { value = 0, text = L["Rule: none named"] } }
+    for i, r in ipairs(GR and GR:Get() or {}) do ruleOpts[#ruleOpts + 1] = { value = i, text = GR.RefText(i, r) } end
+    ruleDD:SetOptions(ruleOpts)
+    ruleDD:SetValue(0)
+    local function ruleText()
+        local n = ruleDD:GetValue()
+        local r = GR and n and n > 0 and GR:Rule(n)
+        return r and GR.RefText(n, r) or nil
+    end
+
     local msgLabel = text(f, 9, C.gold)
-    msgLabel:SetPoint("TOPLEFT", 14, -86)
+    msgLabel:SetPoint("TOPLEFT", 14, -116)
     msgLabel:SetText(L["The whisper (you can edit it before sending)"])
     local msg = UI:CreateInput(f, 412, 22, { max = D.WHISPER_MAX })
-    msg:SetPoint("TOPLEFT", 14, -100)
+    msg:SetPoint("TOPLEFT", 14, -130)
 
     local edited = false
     local function refill()
         if edited then return end
-        msg:SetText(D.Fill(D:GetTemplates()[tplDD:GetValue()], { name = name, reason = D.ReasonText(reasonDD:GetValue()), step = math.min(10, step + 1) }))
+        msg:SetText(D.Fill(D:GetTemplates()[tplDD:GetValue()], { name = name, reason = D.ReasonText(reasonDD:GetValue()), step = math.min(10, step + 1), rule = ruleText() }))
     end
     msg:HookScript("OnTextChanged", function(_, user) if user then edited = true end end)
     reasonDD.onSelect = function() refill() end
+    ruleDD.onSelect = function() refill() end
     tplDD.onSelect = function() edited = false; refill() end
     refill()
 
     local saveTpl = UI:CreateButton(f, L["Save as the guild's template"], 200, 20)
-    saveTpl:SetPoint("TOPLEFT", 14, -126)
+    saveTpl:SetPoint("TOPLEFT", 14, -156)
     saveTpl:SetScript("OnClick", function()
-        -- What was typed, with the name and the reason put back as their placeholders.
+        -- What was typed, with the name, the reason and the rule named put back as their placeholders.
         local typed = msg:GetText() or ""
         local reasonText = D.ReasonText(reasonDD:GetValue())
         typed = typed:gsub(name:gsub("%p", "%%%0"), "{name}"):gsub(reasonText:gsub("%p", "%%%0"), "{reason}")
+        local named = ruleText()
+        if named then typed = typed:gsub((named:gsub("%p", "%%%0")), "{rule}") end
         if D:SetTemplate(tplDD:GetValue(), typed) then GuildOS:Print(L["Template saved for the guild."]) end
     end)
 
     local noteLabel = text(f, 9, C.gold)
-    noteLabel:SetPoint("TOPLEFT", 14, -154)
+    noteLabel:SetPoint("TOPLEFT", 14, -184)
     noteLabel:SetText(L["Officer note (only officers see it)"])
     local note = UI:CreateInput(f, 412, 22, { max = D.NOTE_MAX })
-    note:SetPoint("TOPLEFT", 14, -168)
+    note:SetPoint("TOPLEFT", 14, -198)
 
     local silent = UI:CreateCheckbox(f, L["Only record it, without a whisper"])
-    silent:SetPoint("TOPLEFT", 14, -198)
+    silent:SetPoint("TOPLEFT", 14, -228)
 
     local result = text(f, 10, C.text)
-    result:SetPoint("TOPLEFT", 14, -226)
+    result:SetPoint("TOPLEFT", 14, -256)
     result:SetWidth(412)
     result:SetWordWrap(true)
 
@@ -138,7 +155,7 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
     warnBtn:SetScript("OnClick", function()
         local reason = reasonDD:GetValue()
         local w, how = D:Warn(playerKey, name, reason, {
-            text = msg:GetText(), note = note:GetText(), excerpt = opts.excerpt,
+            text = msg:GetText(), note = note:GetText(), excerpt = opts.excerpt, rule = ruleText(),
             silent = silent.checkbox:GetChecked() and true or false,
         })
         if not w then

@@ -87,6 +87,7 @@ function CommSystem:Initialize()
                     if GuildOS.TrialTracker then GuildOS.TrialTracker:PublishConfig() end  -- the trials' length and switch (#249)
                     if GuildOS.Discipline then GuildOS.Discipline:PublishConfig() end  -- the record's term and ladder (#402)
                     if GuildOS.ModAlerts then GuildOS.ModAlerts:PublishConfig() end  -- the chat alerts' list (#404)
+                    if GuildOS.GuildRules then GuildOS.GuildRules:PublishConfig() end  -- the guild's rules (#407)
                 end)
             end
         end
@@ -582,6 +583,7 @@ function CommSystem:_Answer()
                 if GuildOS.TrialTracker then GuildOS.TrialTracker:PublishConfig() end  -- the trials' length and switch (#249)
                 if GuildOS.Discipline then GuildOS.Discipline:PublishConfig() end  -- the record's term and ladder (#402)
                 if GuildOS.ModAlerts then GuildOS.ModAlerts:PublishConfig() end  -- the chat alerts' list (#404)
+                if GuildOS.GuildRules then GuildOS.GuildRules:PublishConfig() end  -- the guild's rules (#407)
             end)
         end
 
