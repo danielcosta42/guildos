@@ -635,12 +635,13 @@ function Import:ConsumeInbox()
 end
 
 -- The raid the buttons act on: the nearest to `now` among the rosters of this session's inbox and the one
--- kept from the last, whose start is from an hour ago to three hours ahead; nil when none is. A raid that
--- began five hours ago is over for the buttons, and the soonest one in the inbox is no longer "the one"
--- (the issue's #400). Rosters without a start time (0) are never inside the window. Two as near, one begun and
--- one ahead, go to the one under way: its leader is the one at the keyboard.
-local BUTTON_BEFORE = 3600
-local BUTTON_AHEAD = 3 * 3600
+-- kept from the last, while `now` is from an hour before its start to three hours after it (spec 090: "de 1
+-- hora antes a 3 horas depois do começo"), so its start is from three hours ago to an hour ahead; nil when none
+-- is. A raid that began five hours ago is over for the buttons, and the soonest one in the inbox is no longer
+-- "the one" (the issue's #400). Rosters without a start time (0) are never inside the window. Two as near, one
+-- begun and one ahead, go to the one under way: its leader is the one at the keyboard.
+local BUTTON_BEFORE = 3 * 3600   -- seconds a start may lie behind now: three hours into the raid
+local BUTTON_AHEAD = 3600        -- seconds a start may lie ahead of now: an hour before the raid
 function Import:ButtonRaid(now)
     now = now or GetServerTime()
     local best, bestGap, bestBegun
@@ -897,8 +898,8 @@ end
 ----------------------------------------------------------------------
 
 --- The roster the Web panel and `/gos roster` act on (issue #400): the raid of the button (ButtonRaid, the nearest
---- whose start is from an hour ago to three hours ahead) when there is one, else the roster kept, pasted or the
---- inbox's soonest, as before. Without this session's inbox the kept roster is the only candidate there is.
+--- while now is from an hour before its start to three hours after it) when there is one, else the roster kept,
+--- pasted or the inbox's soonest, as before. Without this session's inbox the kept roster is the only candidate.
 function Import:ActiveRoster(now)
     if self._webRaids then
         local raid = self:ButtonRaid(now)
@@ -1008,12 +1009,23 @@ end
 -- What the invite, the groups and the Iniciar raide stepper all read, so
 -- the button's label and what its click does cannot disagree. Read fresh
 -- on every call, from the group as the client shows it now.
+--
+-- The one thing kept between clicks is who was just asked. The game says
+-- nothing of an invite until it is answered, and without this a no-show
+-- held the button on "invite the rest" for good, asked again on every
+-- click. Somebody asked less than INVITE_WAIT ago is waiting: not asked
+-- again, and holding a seat of the party they were asked into. After that
+-- the next click asks them again, which is the retry.
 ----------------------------------------------------------------------
 local PARTY_MAX = 5                -- a party holds five, its leader among them
 local FIRST_WAVE = PARTY_MAX - 1   -- invited before the raid exists: what a party holds besides me
 local RAID_GROUPS = 8              -- a raid's groups
 local GROUP_MAX = 5                -- people in one raid group
 local RAID_MAX = 40                -- GetRaidRosterInfo's indexes (MAX_RAID_MEMBERS)
+local INVITE_WAIT = 60             -- seconds an invite is left to its answer: the game's invite popup lasts a minute
+
+-- Who the invites asked, by who they are (presence), and when (GetTime). Session only.
+Import._asked = {}
 
 -- Everyone the roster plans, in its order: the site's members, then the guildmates the game vouches for
 -- (Rescued), each once. { name = the name to invite, key = who they are (presence), group = 1..8 or nil }.
@@ -1067,8 +1079,9 @@ local function unitKey(name, second)
 end
 
 -- The group as it is, against the plan: how many we are, whether it is a raid, how many of the plan are here, who
--- is left to invite and who the guild roster shows offline. Never me, nobody already here, no offline guildmate;
--- somebody outside the guild cannot be known offline, and is invited.
+-- is left to invite (the planned entries), who was asked moments ago and is waiting (names), and who the guild
+-- roster shows offline (names). Never me, nobody already here, no offline guildmate; somebody outside the guild
+-- cannot be known offline, and is invited.
 local function survey(roster)
     local Compat = GuildOS.Compat
     local guild, offline = guildNames()
@@ -1089,35 +1102,55 @@ local function survey(roster)
             if p then here[p] = true end
         end
     end
-    local s = { n = n, inRaid = inRaid, here = 0, invite = {}, offline = {}, match = match }
+    local asked, now = Import._asked, GetTime()
+    local s = { n = n, inRaid = inRaid, here = 0, invite = {}, waiting = {}, offline = {}, match = match }
     for _, p in ipairs(list) do
+        local at = asked[p.key]
+        if at and now - at >= INVITE_WAIT then asked[p.key], at = nil, nil end
         if here[p] then
             s.here = s.here + 1
+            asked[p.key] = nil
         elseif offline[p.key] then
             s.offline[#s.offline + 1] = p.name
+        elseif at then
+            s.waiting[#s.waiting + 1] = p.name
         else
-            s.invite[#s.invite + 1] = p.name
+            s.invite[#s.invite + 1] = p
         end
     end
     return s
 end
 
+-- The seats an invite may fill now: everyone left in a raid; alone, the first wave; in a party, its free seats.
+-- Who is waiting on an answer holds a seat already.
+local function inviteRoom(s)
+    if s.inRaid then return #s.invite end
+    local free = (s.n <= 1) and FIRST_WAVE or (PARTY_MAX - s.n)
+    return math.max(0, free - #s.waiting)
+end
+
 --- Invite who the plan still needs, as many as the group has room for (issue #400): four alone, a party's free
---- seats, everyone once it is a raid. Never me, nobody already here, and no guildmate the guild roster shows
---- offline (returned, to be named). The Iniciar raide stepper's invite steps are this, on the raid of its button.
---- Returns (invited, here, err, offline): `here` is how many of the plan are already in the group.
+--- seats, everyone once it is a raid. Never me, nobody already here, nobody asked less than a minute ago, and no
+--- guildmate the guild roster shows offline (returned, to be named). The Iniciar raide stepper's invite steps are
+--- this, on the raid of its button. Returns (invited, here, err, offline): `here` is how many of the plan are
+--- already in the group.
 function Import:InviteAll(roster)
     roster = roster or self:ActiveRoster()
     local allowed, reason = self:CanInvite(roster)
     if not allowed then return nil, nil, reason end
     local s = survey(roster)
-    local room = s.inRaid and #s.invite or (s.n <= 1 and FIRST_WAVE) or math.max(0, PARTY_MAX - s.n)
-    if room == 0 and #s.invite > 0 then return nil, nil, L["The party is full. Turn it into a raid first."], s.offline end
+    local room = inviteRoom(s)
+    if room == 0 and #s.invite > 0 then
+        local why = s.n >= PARTY_MAX and L["The party is full. Turn it into a raid first."] or L["Waiting for the invited to answer."]
+        return nil, nil, why, s.offline
+    end
     -- Compat knows which invite the client has: WoW: Forever only has C_PartyInfo's (issue #43). Each person is
-    -- asked once: a second invite to a name already asked is an error in their chat.
-    local invited = 0
+    -- asked once a minute at most: a second invite to a name already asked is an error in their chat.
+    local now, invited = GetTime(), 0
     for i = 1, math.min(room, #s.invite) do
-        GuildOS.Compat.InviteUnit(inviteName(s.invite[i]))
+        local p = s.invite[i]
+        GuildOS.Compat.InviteUnit(inviteName(p.name))
+        self._asked[p.key] = now
         invited = invited + 1
     end
     return invited, s.here, nil, s.offline
@@ -1197,10 +1230,11 @@ end
 -- The raid as the game lists it, against the plan: each line it lets us read, with its index, its group and the
 -- group the site planned for that person (nil for somebody outside the plan or planned without one), and how many
 -- each group holds. A line the client keeps secret is never read (issue #182), but still fills a seat of its group
--- when the group itself reads.
+-- when the group itself reads. Two lines that stand for one planned person (two first names alike, read without
+-- the surname) are neither known to be them: neither has a planned group, so neither moves.
 local function raidLayout(match)
     local Compat = GuildOS.Compat
-    local people, count = {}, {}
+    local people, count, claimed = {}, {}, {}
     for g = 1, RAID_GROUPS do count[g] = 0 end
     for i = 1, RAID_MAX do
         local name, _, subgroup = GetRaidRosterInfo(i)
@@ -1209,18 +1243,27 @@ local function raidLayout(match)
         if group and count[group] and (hidden or name ~= nil) then count[group] = count[group] + 1 end
         if not hidden and type(name) == "string" and name ~= "" and group and count[group] then
             local p = match(presence(Import.PlainName(name)))
-            people[#people + 1] = { index = i, group = group, want = p and p.group or nil }
+            local line = { index = i, group = group, want = p and p.group or nil }
+            if p then
+                local first = claimed[p]
+                if first == nil then
+                    claimed[p] = line
+                else
+                    line.want = nil
+                    if first then first.want = nil end
+                    claimed[p] = false
+                end
+            end
+            people[#people + 1] = line
         end
     end
     return people, count
 end
 
--- How many of the plan's people are in the raid and not in their planned group.
-local function misplaced(people)
+-- How many of the plan's people the moves put in their group.
+local function placedBy(moves)
     local n = 0
-    for _, p in ipairs(people) do
-        if p.want and p.want ~= p.group then n = n + 1 end
-    end
+    for _, m in ipairs(moves) do n = n + m.placed end
     return n
 end
 
@@ -1229,9 +1272,11 @@ end
 -- with a seat, a move; into a full one, a swap with somebody there who does not belong there, the one whose own
 -- planned group is the mover's first (both land), then somebody with no planned group, then anybody planned
 -- elsewhere. Somebody outside the plan only ever moves as a swap's other half. A group full of people who belong
--- there takes nobody more. Each move: { index, group } or { index, swap = other index }, and how many it places.
+-- there takes nobody more, and neither does a full group on a client that cannot swap (so the stepper never offers
+-- an arrange that would move nobody). Each move: { index, group } or { index, swap = other index }, and how many
+-- it places.
 local function planMoves(people, count)
-    local moves = {}
+    local moves, canSwap = {}, GuildOS.Compat.CanSwapRaidSubgroup()
     for _, p in ipairs(people) do
         local target = p.want
         if target and p.group ~= target then
@@ -1240,7 +1285,7 @@ local function planMoves(people, count)
                 count[target] = count[target] + 1
                 p.group = target
                 moves[#moves + 1] = { index = p.index, group = target, placed = 1 }
-            else
+            elseif canSwap then
                 local best, bestRank
                 for _, q in ipairs(people) do
                     if q.group == target and q.want ~= target then
@@ -1294,38 +1339,40 @@ local function blocked(reason, count)
     return { kind = "blocked", count = count or 0, reason = reason }
 end
 
---- The next step for `roster` (the raid of the button): { kind, count, reason, offline, label }.
+--- The next step for `roster` (the raid of the button): { kind, count, reason, offline, waiting, label }.
 --- kind: "invite4" (alone or in a party the plan fits: count = who that click invites), "convert" (a party the
 --- plan outgrows: count = who is left to invite once it is a raid), "inviteRest" (a raid: count = who is left),
---- "arrange" (everyone here, count = how many are out of place), "done", or "blocked" with the reason (the
---- player's language): no roster, the companion off, in a group and neither its leader nor an assistant, or in
---- combat with groups to arrange. offline: the guildmates passed over for being offline, by name.
+--- "arrange" (nobody left to invite, count = how many the click can put in their group), "done", or "blocked"
+--- with the reason (the player's language): no roster, the companion off, in a group and neither its leader nor an
+--- assistant, in combat with groups to arrange, or the party's seats all held by invites awaiting their answer.
+--- offline: the guildmates passed over for being offline; waiting: who was asked less than a minute ago. In a raid
+--- the waiting never hold the button: it goes on to the groups, and asks them again once their minute is out.
 function RaidStart:Next(roster)
     if type(roster) ~= "table" then return self:Labelled(blocked(L["No raid from the site starts around this time."])) end
     local ok, why = Import:CanInvite(roster)
     if not ok then return self:Labelled(blocked(why)) end
     local s = survey(roster)
-    local left, step = #s.invite, nil
+    local left, waiting, step = #s.invite, #s.waiting, nil
     if s.inRaid then
         if left > 0 then
             step = { kind = "inviteRest", count = left }
         else
-            local people, count = raidLayout(s.match)
-            local out = misplaced(people)
-            if out > 0 and #planMoves(people, count) > 0 then
-                step = GuildOS.Compat.InCombat() and blocked(L["Not during combat."], out) or { kind = "arrange", count = out }
+            local placeable = placedBy(planMoves(raidLayout(s.match)))
+            if placeable > 0 then
+                step = GuildOS.Compat.InCombat() and blocked(L["Not during combat."], placeable)
+                    or { kind = "arrange", count = placeable }
             end
         end
-    elseif s.n <= 1 then
-        if left > 0 then step = { kind = "invite4", count = math.min(FIRST_WAVE, left) } end
-    elseif s.n + left > PARTY_MAX then
+    elseif s.n > 1 and s.n + left + waiting > PARTY_MAX then
         -- More than a party holds: everyone in a party the plan fits never converts.
         step = { kind = "convert", count = left }
-    elseif left > 0 then
-        step = { kind = "invite4", count = left }
+    elseif left > 0 and inviteRoom(s) > 0 then
+        step = { kind = "invite4", count = math.min(inviteRoom(s), left) }
+    elseif waiting > 0 then
+        step = blocked(L["Waiting for the invited to answer."], waiting)
     end
     step = step or { kind = "done", count = 0 }
-    step.offline = s.offline
+    step.offline, step.waiting = s.offline, s.waiting
     return self:Labelled(step)
 end
 

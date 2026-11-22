@@ -1219,6 +1219,7 @@ L["Nights of cores whose priorities live on the site use the site's."] = "Nights
 -- Modules/CompanionImport.lua: starting the raid, one click a step (issue #400)
 L["Only the group's leader or an assistant can invite."] = "Only the group's leader or an assistant can invite."
 L["No raid from the site starts around this time."] = "No raid from the site starts around this time."
+L["Waiting for the invited to answer."] = "Waiting for the invited to answer."
 L["The party is full. Turn it into a raid first."] = "The party is full. Turn it into a raid first."
 L["Invite (%d)"] = "Invite (%d)"
 L["Convert to raid (%d to invite)"] = "Convert to raid (%d to invite)"

@@ -127,7 +127,7 @@ parsed = Import:Parse(encode('{"fmt":"GOSROST1","v":7,"raidId":"a","title":"t","
   ',"members":[],"owners":"Chehul-TolBarad"}'))
 check(parsed and parsed.owners == nil, "owners that is not a list is nothing")
 
--- ── ButtonRaid: the nearest within an hour ago to three hours ahead ───────────────────────
+-- ── ButtonRaid: from an hour before the start to three hours after it (spec 090) ────────────
 local H = 3600
 Import._webRaids = {
   raidOf(nil, NOW - 5 * H, "old"),
@@ -138,12 +138,25 @@ Import._webRaids = {
 GuildOS.db.companionRoster = nil
 check(Import:ButtonRaid(NOW).raidId == "soon", "ButtonRaid picks the nearest inside the window")
 check(Import:ButtonRaid().raidId == "soon", "ButtonRaid asks the server time without a `now`")
+local function idOf(r) return r and r.raidId end
+Import._webRaids = { raidOf(nil, NOW + 50 * 60, "in50") }
+check(idOf(Import:ButtonRaid(NOW)) == "in50", "a raid starting in 50 minutes is the button's")
+Import._webRaids = { raidOf(nil, NOW - 2 * H, "began2h") }
+check(idOf(Import:ButtonRaid(NOW)) == "began2h", "a raid that began two hours ago still is: the night goes on")
+Import._webRaids = { raidOf(nil, NOW + 2 * H, "in2h") }
+check(Import:ButtonRaid(NOW) == nil, "a raid starting in two hours is not yet")
+Import._webRaids = { raidOf(nil, NOW - 4 * H, "began4h") }
+check(Import:ButtonRaid(NOW) == nil, "a raid that began four hours ago is over for the buttons")
 Import._webRaids = { raidOf(nil, NOW - 5 * H, "old") }
 check(Import:ButtonRaid(NOW) == nil, "a raid that began five hours ago is never the button's")
 Import._webRaids = { raidOf(nil, NOW - 50 * 60, "began"), raidOf(nil, NOW + 4 * H, "far") }
 check(Import:ButtonRaid(NOW).raidId == "began", "one that began 50 minutes ago still is; four hours ahead is not")
-Import._webRaids = { raidOf(nil, NOW + 3 * H + 1, "edge") }
-check(Import:ButtonRaid(NOW) == nil, "just past three hours ahead is outside")
+Import._webRaids = { raidOf(nil, NOW + H, "edge-ahead"), raidOf(nil, NOW - 3 * H - 60, "edge-behind") }
+check(idOf(Import:ButtonRaid(NOW)) == "edge-ahead", "an hour ahead is the window's edge, and inside it")
+Import._webRaids = { raidOf(nil, NOW + H + 1, "edge") }
+check(Import:ButtonRaid(NOW) == nil, "just past an hour ahead is outside")
+Import._webRaids = { raidOf(nil, NOW - 3 * H - 1, "edge") }
+check(Import:ButtonRaid(NOW) == nil, "just past three hours behind is outside")
 Import._webRaids = nil
 check(Import:ButtonRaid(NOW) == nil, "nothing loaded, nothing to act on")
 GuildOS.db.companionRoster = raidOf(nil, NOW + H, "kept")

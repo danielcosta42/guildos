@@ -3453,6 +3453,7 @@ L["you craft"] = "lo fai tu"
 -- Avviare l'incursione, un clic per passo (issue #400)
 L["Only the group's leader or an assistant can invite."] = "Solo il capogruppo o un assistente può invitare."
 L["No raid from the site starts around this time."] = "Nessuna incursione del sito inizia in questo momento."
+L["Waiting for the invited to answer."] = "In attesa della risposta degli invitati."
 L["The party is full. Turn it into a raid first."] = "Il gruppo è pieno. Convertilo prima in un'incursione."
 L["Invite (%d)"] = "Invita (%d)"
 L["Convert to raid (%d to invite)"] = "Converti in incursione (%d da invitare)"

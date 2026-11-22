@@ -3429,6 +3429,7 @@ L["you craft"] = "du kannst es"
 -- Den Schlachtzug starten, ein Klick pro Schritt (issue #400)
 L["Only the group's leader or an assistant can invite."] = "Nur der Gruppenleiter oder ein Assistent kann einladen."
 L["No raid from the site starts around this time."] = "Gerade beginnt kein Schlachtzug von der Website."
+L["Waiting for the invited to answer."] = "Warte auf die Antwort der Eingeladenen."
 L["The party is full. Turn it into a raid first."] = "Die Gruppe ist voll. Wandle sie zuerst in einen Schlachtzug um."
 L["Invite (%d)"] = "Einladen (%d)"
 L["Convert to raid (%d to invite)"] = "In Schlachtzug umwandeln (%d einzuladen)"

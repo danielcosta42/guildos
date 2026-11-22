@@ -3309,6 +3309,7 @@ L["you craft"] = "你会做"
 -- 开始团队，每次点击一步（issue #400）
 L["Only the group's leader or an assistant can invite."] = "只有队长或助理可以邀请。"
 L["No raid from the site starts around this time."] = "现在没有网站上的团队要开始。"
+L["Waiting for the invited to answer."] = "正在等待受邀者回应。"
 L["The party is full. Turn it into a raid first."] = "队伍已满。请先转换为团队。"
 L["Invite (%d)"] = "邀请（%d）"
 L["Convert to raid (%d to invite)"] = "转换为团队（还要邀请 %d 人）"

@@ -3429,7 +3429,8 @@ L["you craft"] = "lo haces tú"
 
 -- Iniciar la banda, un clic por paso (issue #400)
 L["Only the group's leader or an assistant can invite."] = "Solo el líder del grupo o un asistente puede invitar."
-L["No raid from the site starts around this time."] = "Ninguna banda de la web empieza por ahora."
+L["No raid from the site starts around this time."] = "Ninguna banda de la web empieza en este momento."
+L["Waiting for the invited to answer."] = "Esperando a que respondan los invitados."
 L["The party is full. Turn it into a raid first."] = "El grupo está lleno. Conviértelo primero en banda."
 L["Invite (%d)"] = "Invitar (%d)"
 L["Convert to raid (%d to invite)"] = "Convertir en banda (%d por invitar)"

@@ -3309,6 +3309,7 @@ L["you craft"] = "вы умеете"
 -- Начать рейд, один клик на шаг (issue #400)
 L["Only the group's leader or an assistant can invite."] = "Приглашать может только лидер группы или помощник."
 L["No raid from the site starts around this time."] = "Сейчас не начинается ни один рейд с сайта."
+L["Waiting for the invited to answer."] = "Ждём ответа приглашённых."
 L["The party is full. Turn it into a raid first."] = "Группа заполнена. Сначала преобразуйте её в рейд."
 L["Invite (%d)"] = "Пригласить (%d)"
 L["Convert to raid (%d to invite)"] = "Преобразовать в рейд (пригласить ещё %d)"

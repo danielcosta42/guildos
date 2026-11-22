@@ -3309,6 +3309,7 @@ L["you craft"] = "내가 제작 가능"
 -- 공격대 시작, 한 번 클릭에 한 단계 (issue #400)
 L["Only the group's leader or an assistant can invite."] = "파티장이나 부공대장만 초대할 수 있습니다."
 L["No raid from the site starts around this time."] = "지금 시작하는 사이트 공격대가 없습니다."
+L["Waiting for the invited to answer."] = "초대받은 사람들의 응답을 기다리는 중입니다."
 L["The party is full. Turn it into a raid first."] = "파티가 가득 찼습니다. 먼저 공격대로 전환하세요."
 L["Invite (%d)"] = "초대 (%d)"
 L["Convert to raid (%d to invite)"] = "공격대로 전환 (초대할 인원 %d명)"

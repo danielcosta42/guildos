@@ -32,6 +32,9 @@ local NOW = 1791000000
 local ME = "Chehul Costa"
 function GetServerTime() return NOW end
 function time() return NOW end
+-- The client's clock: the invites keep who they asked by it, for a minute.
+local CLOCK = 1000
+function GetTime() return CLOCK end
 function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 function CreateFrame() return setmetatable({}, { __index = function() return function() end end }) end
 function hooksecurefunc() end
@@ -47,7 +50,10 @@ C_Timer = { After = function() end, NewTicker = function() return { Cancel = fun
 StaticPopupDialogs = {}
 Enum = { SendAddonMessageResult = {} }
 
--- The group as the client sees it: { name, raid group }. In a group GROUP[1] is me; a party's units are the others.
+-- The group as the client sees it: { name, raid group, the unit's second answer, the raid roster line's name }.
+-- The last two are for the name shapes nobody has read on WoW: Forever yet (issue #48): a unit may answer the
+-- surname apart, ("Ana", "Lima"), and a roster line the first name alone. In a group GROUP[1] is me; a party's
+-- units are the others.
 local GROUP, RAID = {}, false
 local LEADER, ASSIST, COMBAT = true, false, false
 function GetNumGroupMembers() return #GROUP end
@@ -58,12 +64,12 @@ function UnitName(unit)
   local kind, i = tostring(unit):match("^(%a+)(%d+)$")
   i = tonumber(i)
   local g = (kind == "raid" and GROUP[i]) or (kind == "party" and i and GROUP[i + 1])
-  if g then return g[1] end
+  if g then return g[1], g[3] end
 end
 function UnitClass() return "Warrior", "WARRIOR" end
 function GetRaidRosterInfo(i)
   local g = RAID and GROUP[i]
-  if g then return g[1], 0, g[2] end
+  if g then return g[4] or g[1], 0, g[2] end
 end
 -- Alone, nobody leads anything: the client answers false, so "alone may invite" is Compat's to say.
 function UnitIsGroupLeader(unit) if unit == "player" and #GROUP > 0 then return LEADER end return false end
@@ -144,9 +150,12 @@ TEN.signups = { { name = "Rui Novato", class = "", spec = "", slot = "RANGED", s
 GUILD = { { ME, true }, { "Ana Lima", true }, { "Bia Souza", true }, { "Caio Dias", true }, { "Duda Rocha", false },
           { "Edu Prado", true }, { "Fabi Melo", true }, { "Gil Nunes", true }, { "Rui Novato", true } }
 
+-- A fresh scenario: a minute and more after the last, so no invite of it is still waiting on its answer.
+local WAIT = 60
 local function reset()
   INVITED, CONVERTED, MOVES = {}, 0, {}
   LEADER, ASSIST, COMBAT = true, false, false
+  CLOCK = CLOCK + WAIT + 1
 end
 local function has(list, name)
   for _, v in ipairs(list or {}) do if v == name then return true end end
@@ -168,6 +177,45 @@ check(join(INVITED) == "Ana Lima,Bia Souza,Caio Dias,Edu Prado",
   "the first four of the plan's order, Duda skipped for being offline: " .. join(INVITED))
 check(not has(INVITED, ME) and not has(INVITED, "Chehul"), "the owner is never invited, by either name")
 check(CONVERTED == 0 and #MOVES == 0, "inviting converts and moves nothing")
+
+-- ── Invites awaiting their answer: never asked twice in a minute ──────────────────────────────
+-- A second click while the four have not answered invites nobody: they hold the party's seats.
+INVITED = {}
+step = RS:Next(TEN)
+check(step.kind == "blocked" and step.reason == "Waiting for the invited to answer.",
+  "a second click within the minute waits on the four (" .. step.kind .. " " .. tostring(step.reason) .. ")")
+check(#step.waiting == 4 and has(step.waiting, "Ana Lima"), "the step names who it is waiting on")
+RS:Run(TEN)
+check(#INVITED == 0, "and its click invites nobody: " .. join(INVITED))
+local n0, _, why0 = Import:InviteAll(TEN)
+check(n0 == nil and why0 == "Waiting for the invited to answer.", "the old Invite says the same: " .. tostring(why0))
+-- Ana accepts: a party of two. The plan outgrows it, so convert; the three still waiting are not asked again.
+GROUP, RAID = { person(ME, 1), person("Ana Lima", 1) }, false
+step = RS:Next(TEN)
+check(step.kind == "convert" and step.count == 4, "a party of two with three waiting and four left converts (" .. step.kind .. " " .. tostring(step.count) .. ")")
+RS:Run(TEN)
+check(CONVERTED == 1 and #INVITED == 0, "the convert click converts only")
+GROUP, RAID = { person(ME, 1), person("Ana Lima", 1) }, true
+step = RS:Next(TEN)
+check(step.kind == "inviteRest" and step.count == 4, "right after the convert, the rest are the four never asked (" .. tostring(step.count) .. ")")
+RS:Run(TEN)
+check(join(INVITED) == "Fabi Melo,Gil Nunes,Pug Visitante,Rui Novato",
+  "the first wave still waiting is not asked again: " .. join(INVITED))
+-- A minute on, nobody else answered: the next click asks the ones still missing again, the retry.
+CLOCK = CLOCK + WAIT
+INVITED = {}
+step = RS:Next(TEN)
+check(step.kind == "inviteRest" and step.count == 7, "after the minute, invite the rest comes back for all seven (" .. tostring(step.count) .. ")")
+-- The waiting hold party seats: a party of three with two waiting and one left is more than a party, so convert.
+reset()
+local SIX = plan({ { ME, 1 }, { "Ana Lima", 1 }, { "Bia Souza", 1 }, { "Caio Dias", 1 }, { "Edu Prado", 2 }, { "Fabi Melo", 2 } })
+GROUP, RAID = {}, false
+RS:Run(SIX)
+check(join(INVITED) == "Ana Lima,Bia Souza,Caio Dias,Edu Prado", "a roster of six: the first four are asked")
+GROUP = { person(ME, 1), person("Ana Lima", 1), person("Bia Souza", 1) }
+step = RS:Next(SIX)
+check(step.kind == "convert" and step.count == 1, "three here, two waiting, one left: convert (" .. step.kind .. ")")
+GROUP, RAID = {}, false
 
 -- An owner who did not sign up is not in the plan, and still not invited.
 reset()
@@ -247,6 +295,27 @@ step = RS:Next(TEN)
 check(step.kind == "done", "everyone here and in their group: done (" .. step.kind .. ")")
 check(has(step.offline, "Duda Rocha"), "done still names who was offline")
 
+-- A no-show: Gil is asked and never comes. The button goes on to the groups and to done meanwhile, and asks him
+-- again once his minute is out.
+reset()
+local noShow = everyone()
+table.remove(noShow, 7)
+GROUP, RAID = noShow, true
+step = RS:Next(TEN)
+check(step.kind == "inviteRest" and step.count == 1, "Gil missing: invite the rest, one (" .. step.kind .. ")")
+RS:Run(TEN)
+check(join(INVITED) == "Gil Nunes", "Gil is asked: " .. join(INVITED))
+INVITED = {}
+step = RS:Next(TEN)
+check(step.kind == "arrange" and step.count == 3 and has(step.waiting, "Gil Nunes"),
+  "a no-show does not hold the button: arrange while he is waiting (" .. step.kind .. ")")
+RS:Run(TEN)
+check(#INVITED == 0 and #MOVES == 3, "the arrange click moves the three and asks nobody")
+check(RS:Next(TEN).kind == "done", "and then the raid is done while Gil has not answered")
+CLOCK = CLOCK + WAIT
+step = RS:Next(TEN)
+check(step.kind == "inviteRest" and step.count == 1, "his minute out, invite the rest comes back: the retry (" .. step.kind .. ")")
+
 -- ── 5. Into a full group: a swap, with the one who belongs where the mover is ─────────────────
 local SWAP = plan({ { ME, 1 }, { "A1 Um", 1 }, { "A2 Dois", 1 }, { "A3 Tres", 1 }, { "D4 Quatro", 1 },
                     { "E5 Cinco", 2 }, { "F6 Seis", 2 }, { "G7 Sete", 2 }, { "H8 Oito", 2 }, { "I9 Nove", 2 } })
@@ -282,15 +351,75 @@ GROUP, RAID = { person(ME, 1), person("D4 Quatro", 2), person("A1 Um", 1), perso
                 person("I9 Nove", 2) }, true
 local swap = SwapRaidSubgroup
 SwapRaidSubgroup = nil
+check(Compat.CanSwapRaidSubgroup() == false, "a client without the call cannot swap")
 ok, moved = pcall(Import.OrganizeGroups, Import, SWAP)
 check(ok and moved == 0 and #MOVES == 0, "no swap call: nothing placed, nothing raised: " .. tostring(moved))
+step = RS:Next(SWAP)
+check(step.kind == "done", "and the stepper does not offer an arrange that would move nobody (" .. step.kind .. ")")
 SwapRaidSubgroup = swap
+check(Compat.CanSwapRaidSubgroup() == true, "a client with it can")
 -- A raid line the client keeps secret is passed over, and still holds its seat.
 reset()
 GROUP[11] = { secret(), 3 }
 ok, moved = pcall(Import.OrganizeGroups, Import, SWAP)
 check(ok and moved == 2, "a secret raid line does not raise: " .. tostring(moved))
 GROUP[11] = nil
+
+-- ── WoW: Forever's name shapes (issue #48): the surname apart, the first name alone, the hyphen ─
+local function line(name, group, second, rosterName) return { name, group, second, rosterName } end
+GUILD = {}
+-- A unit that answers ("Ana", "Lima") is Ana Lima, and a raid roster line that says "Ana" is her too.
+reset()
+local ANA = plan({ { ME, 1 }, { "Ana Lima", 2 }, { "Bia Souza", 1 } })
+GROUP, RAID = { person(ME, 1), line("Ana", 1, "Lima", "Ana") }, true
+step = RS:Next(ANA)
+check(step.kind == "inviteRest" and step.count == 1, "the unit's surname apart is joined: only Bia is left (" .. step.kind .. ")")
+RS:Run(ANA)
+check(join(INVITED) == "Bia Souza", "Ana Lima is not asked: " .. join(INVITED))
+GROUP[3] = person("Bia Souza", 1)
+step = RS:Next(ANA)
+check(step.kind == "arrange" and step.count == 1, "the roster line 'Ana' is the one planned Ana: arrange 1 (" .. step.kind .. ")")
+RS:Run(ANA)
+check(join(MOVES) == "set:Ana->2", "and she moves to her group: " .. join(MOVES))
+-- "Ana-Lima", the way the game's folders write it, is Ana Lima too, in the unit and in the roster line.
+reset()
+GROUP, RAID = { person(ME, 1), line("Ana-Lima", 1), person("Bia Souza", 1) }, true
+step = RS:Next(ANA)
+check(step.kind == "arrange" and step.count == 1, "a hyphen-joined name is the spaced one (" .. step.kind .. ")")
+-- Two planned Anas: a bare "Ana" is neither of them, and both are invited.
+reset()
+local TWO = plan({ { ME, 1 }, { "Ana Lima", 1 }, { "Ana Souza", 2 } })
+GROUP, RAID = { person(ME, 1), line("Ana", 1) }, true
+step = RS:Next(TWO)
+check(step.kind == "inviteRest" and step.count == 2, "two planned of one first name: a bare 'Ana' is neither (" .. tostring(step.count) .. ")")
+RS:Run(TWO)
+check(join(INVITED) == "Ana Lima,Ana Souza", "and both are invited: " .. join(INVITED))
+-- The surname apart still tells them apart: ("Ana", "Souza") is Ana Souza, and only Ana Lima is left.
+reset()
+GROUP, RAID = { person(ME, 1), line("Ana", 1, "Souza") }, true
+step = RS:Next(TWO)
+check(step.kind == "inviteRest" and step.count == 1, "a unit's surname apart names one of two Anas (" .. tostring(step.count) .. ")")
+-- Two raid lines that both read "Ana", one Ana planned: neither is known to be her, so nobody moves, and a pug of
+-- that first name stays where he is.
+reset()
+local ONE = plan({ { ME, 1 }, { "Ana Lima", 2 } })
+GROUP, RAID = { person(ME, 1), line("Ana", 1), line("Ana", 3) }, true
+step = RS:Next(ONE)
+check(step.kind == "done", "two lines for one planned person: no arrange (" .. step.kind .. ")")
+check(Import:OrganizeGroups(ONE) == 0 and #MOVES == 0, "and neither line is moved: " .. join(MOVES))
+-- TBC Anniversary and retail have no surnames: no first-name fallback, and a hyphen is no space there.
+local client = GuildOS.Client
+local was = { client.has.surnames, client.isAnniversary, client.isRetail }
+for _, c in ipairs({ { "Anniversary", true, false }, { "retail", false, true } }) do
+  reset()
+  client.has.surnames, client.isAnniversary, client.isRetail = false, c[2], c[3]
+  local bare = plan({ { "Ana Lima", 2 }, { "Bia Souza", 1 } })
+  GROUP, RAID = { person("Chehul", 1), line("Ana", 1), line("Bia-Souza", 1) }, true
+  step = RS:Next(bare)
+  check(step.kind == "inviteRest" and step.count == 2,
+    c[1] .. ": a bare first name and a hyphen stand for nobody planned (" .. step.kind .. " " .. tostring(step.count) .. ")")
+end
+client.has.surnames, client.isAnniversary, client.isRetail = was[1], was[2], was[3]
 
 -- ── 10. A roster that fits a party never converts ──────────────────────────────────────────────
 local FOUR = plan({ { ME, 1 }, { "Ana Lima", 1 }, { "Bia Souza", 1 }, { "Caio Dias", 1 } })

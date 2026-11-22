@@ -1533,6 +1533,11 @@ function Compat.SwapRaidSubgroup(index1, index2)
     if not SwapRaidSubgroup then return false end
     return (pcall(SwapRaidSubgroup, index1, index2))
 end
+-- Whether this client can swap two raid members at all: without it a full group takes nobody, and the raid's
+-- arranging plans no swap it could not make (issue #400).
+function Compat.CanSwapRaidSubgroup()
+    return SwapRaidSubgroup ~= nil
+end
 
 -- One of the player's group flags (UnitIsGroupLeader, UnitIsGroupAssistant), read past the Secret Values: WoW:
 -- Forever and retail answer them secret when the unit's identity is restricted (docs/forever), and a secret is
