@@ -1082,6 +1082,9 @@ function Companion:BuildPayload()
     -- Within 16 (#347): the cores as the game has them. Never in the pack.
     payload.coreReceipt = GuildOS.IsFeatureEnabled ~= nil and GuildOS:IsFeatureEnabled("raids")
         and optional("coreReceipt", Companion.CoreReceipt) or nil
+    -- Within 17 (#402, the site's specs/116): the disciplinary record, from an officer's client only.
+    -- Additive: a reader from before never looks at it. Never in the pack.
+    payload.discipline = GuildOS.Discipline and optional("discipline", GuildOS.Discipline.ForExport, GuildOS.Discipline) or nil
     return payload
 end
 

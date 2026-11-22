@@ -549,6 +549,13 @@ function GuildOS:LocalizeStoredMemberTables()
             db.altLinks = links
         end,
         function() points(db.points) end,
+        -- The disciplinary record (#402): each warning names its member by key.
+        function()
+            local d = type(db.discipline) == "table" and db.discipline.warnings
+            for _, w in pairs(type(d) == "table" and d or {}) do
+                if type(w) == "table" and type(w.subject) == "string" then w.subject = self:LocalMemberKey(w.subject) end
+            end
+        end,
         function()
             for _, core in pairs(type(db.cores) == "table" and db.cores or {}) do
                 if type(core) == "table" then

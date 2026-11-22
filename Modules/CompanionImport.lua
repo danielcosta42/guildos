@@ -175,6 +175,30 @@ local function siteList(v, max)
     if type(v) ~= "table" or #v > max then error("list") end
     return v
 end
+-- The GOSGILD1's discordWarnings (the site's specs/116): warnings given on Discord, the site's to own.
+-- Cleaned here as the game's own are (Discipline.Clean, with Discord's "d:" ids), the text made inert,
+-- the key made this client's. Nil with no block; never stored.
+function Import:DiscordWarnings()
+    local block = self:GuildBlock()
+    local raw = block and block.discordWarnings
+    local D = GuildOS.Discipline
+    if type(raw) ~= "table" or not D then return nil end
+    local out = {}
+    for i = 1, math.min(#raw, 200) do
+        local r = raw[i]
+        if type(r) == "table" and type(r.id) == "string" and r.id:find("^d:") then
+            local w = D.Clean({ id = "x" .. r.id:sub(3), subject = r.subject, by = type(r.by) == "string" and Import.Inert(r.by) or nil,
+                reason = r.reason, at = r.at, changedAt = r.revokedAt or r.at, level = r.level,
+                note = type(r.note) == "string" and Import.Inert(r.note) or nil, revokedAt = r.revokedAt })
+            if w then
+                w.id, w.subject, w.discord = r.id, GuildOS:LocalMemberKey(w.subject), true
+                out[#out + 1] = w
+            end
+        end
+    end
+    return out
+end
+
 -- Text off the network, for a line of ours: inert, no control character, trimmed, cut to `max` bytes
 -- without splitting a UTF-8 character. nil when nothing is left.
 local function siteText(v, max)

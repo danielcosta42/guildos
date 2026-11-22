@@ -282,6 +282,8 @@ local MODULE_START = {
     { "GuildChat" },
     { "RosterLog" },
     { "BanList" },
+    -- The disciplinary record (issue #402): officers only, synced among them.
+    { "Discipline" },
     { "CommSystem", feature = "commSystem" },
     { "Wishlist", ui = "wishlist" },
     { "SoftRes" },

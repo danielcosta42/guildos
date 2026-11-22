@@ -91,6 +91,8 @@ local function printHelp()
         helpLine("/gos tempban <name> <days>", L["Ban a player for a number of days"])
         helpLine("/gos unban <name>",          L["Lift a ban"])
         helpLine("/gos banlist",               L["Open the ban list"])
+        helpLine("/gos record <name>",         L["A member's disciplinary record"])
+        helpLine("/gos record term <days>",    L["How long a warning counts"])
         helpLine("/gos autoinvite",            L["Auto-invite settings"])
         helpLine("/gos note <name> <text>",    L["Add an officer note"])
         if GuildOS.Wishlist then helpLine("/gos wish", L["Open the loot wishlist"]) end
@@ -715,6 +717,37 @@ local function handleCommand(msg)
             GuildOS:Print(L["Unbanned "] .. name)
         elseif name ~= "" and GuildOS.BanList and GuildOS:IsOfficer() then
             GuildOS:Print(string.format(L["No ban to lift for %s."], name))   -- nothing stood there (#184)
+        end
+    elseif msg:match("^record%s+term%s") then
+        -- /gos record term <days>  — the guild's term for warnings (#402), officers only.
+        local days = strtrim((msg:gsub("^record%s+term%s+", "")))
+        local ok, why = false, "range"
+        if GuildOS.Discipline then ok, why = GuildOS.Discipline:SetTerm(days) end
+        if ok then
+            GuildOS:Print(string.format(L["Warnings now count for %d days."], GuildOS.Discipline:GetTerm()))
+        elseif why == "officer" then
+            GuildOS:Print(L["|cffFF4444Officers only.|r"])
+        else
+            GuildOS:Print(L["Usage: /gos record term <1-365>"])
+        end
+    elseif msg:match("^record%s") then
+        -- /gos record <name>  — a member's disciplinary record (#402), officers only.
+        local name = strtrim((msg:gsub("^record%s+", "")))
+        local D = GuildOS.Discipline
+        if not (D and GuildOS:IsOfficer()) then
+            GuildOS:Print(L["|cffFF4444Officers only.|r"])
+        elseif name == "" then
+            GuildOS:Print(L["Usage: /gos record <name>"])
+        else
+            local key = GuildOS:RosterKey(name) or GuildOS:GetPlayerKey(name)
+            local now, term = GetServerTime(), D:GetTerm()
+            local record = D:Record(key)
+            GuildOS:Print(string.format(L["%s: step %d, %d warning(s)."], name, D.Step(record, term, now), #record))
+            for i = 1, math.min(5, #record) do
+                local w = record[i]
+                local state = w.revokedAt and L["revoked"] or (D.Active(w, term, now) and L["standing"] or L["lapsed"])
+                GuildOS:Print(string.format("  %s  %s  %s (%s)", GuildOS:DateText(w.at or 0), D.ReasonText(w.reason), state, w.by or "?"))
+            end
         end
     elseif msg == "banlist" then
         GuildOS.UI:OpenWindow("management", "ban")

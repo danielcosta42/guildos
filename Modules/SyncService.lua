@@ -37,6 +37,7 @@ SyncService.OFFICER_DOMAINS = {
     bulletin = true,   -- officer announcements
     cta      = true,   -- an officer's call to arms (answering it is a member action, issue #108)
     ban      = true,   -- blacklist add/remove (officer-authoritative)
+    discipline = true, -- the disciplinary record (issue #402): officers write, and only officers keep it
     audit    = true,   -- guild audit trail (officer-authoritative, id-deduped)
     allyboard = true,  -- alliance bulletin posts this guild authored (ambassadors)
     allyhide  = true,  -- chat lines an ambassador pulled from the alliance feed
@@ -108,6 +109,11 @@ function SyncService:Initialize()
         -- The guild's trial length and its switch for new members (issue #249); neither carries `max`.
         if env.act == "trialdays" or env.act == "trialauto" then
             if GuildOS.TrialTracker then GuildOS.TrialTracker:OnConfigSync(env) end
+            return
+        end
+        -- The disciplinary record's term and ladder (issue #402); neither carries `max`.
+        if env.act == "discterm" or env.act == "discladder" then
+            if GuildOS.Discipline then GuildOS.Discipline:OnConfigSync(env) end
             return
         end
         -- Who creates calendar events (issue #283).
