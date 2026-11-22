@@ -3545,3 +3545,13 @@ L["times in"] = "fois en"
 L["too many lines"] = "trop de lignes"
 L["Use at most one repetition (*, + or -) in a pattern: more would freeze the game."] = "Au plus une répétition (*, + ou -) par motif : davantage figerait le jeu."
 L["Write the pattern in lower case: lines are compared that way."] = "Écrivez le motif en minuscules : les lignes sont comparées ainsi."
+
+-- Modules/Newcomer.lua, UI/ModAlerts.lua (issue #406)
+L["newcomer (day %d of %d)"] = "nouveau (jour %d sur %d)"
+L["newcomer (trial)"] = "nouveau (en essai)"
+L["NEWCOMERS"] = "NOUVEAUX"
+L["In a member's first days any link alerts and the anti-flood's limits are halved. The join comes from the roster log: a member who joined before the addon is not a newcomer. Only officers see it."] = "Pendant les premiers jours d'un membre, tout lien déclenche une alerte et les limites de l'anti-flood sont divisées par deux. L'arrivée vient du journal du roster : un membre arrivé avant l'addon n'est pas nouveau. Seuls les officiers le voient."
+L["Newcomer for the first"] = "Nouveau pendant les"
+L["days (0 turns it off)"] = "premiers jours (0 désactive)"
+L["A trial counts as a newcomer"] = "Un membre à l'essai compte comme nouveau"
+L["From 0 to 30 days."] = "De 0 à 30 jours."

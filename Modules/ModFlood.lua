@@ -243,19 +243,23 @@ function ModFlood:OnLine(msg, author, now, folded)
     list[#list + 1] = entry
     while #list > self.PER_SPEAKER do table.remove(list, 1) end
     local cfg = self:GetConfig()
+    -- A newcomer (#406): any link, half the lines. Worked out on the officer's client only, never stored.
+    local N = GuildOS.Newcomer
+    local nc = N and N:Of(author, now)
+    if nc then cfg = N.Strict(cfg) end
     local pct, letters = 0, 0
     if cfg.caps.on then pct, letters = self.Caps(bare) end
     local fired = self.Fired(cfg, list, now, entry, pct, letters)
     if #fired == 0 or not M then return end
     -- An officer's own line, or an officer's: as the alerts say (#404).
     if not M:_FromWatched(author) then return end
-    self:_Surge(fired, msg, author, now, cfg)
+    self:_Surge(fired, msg, author, now, cfg, nc)
 end
 
 -- One alert per person while the surge lasts (it ends a window after its last flagged line): a new
 -- flagged line inside it adds to that alert, whichever signal it fired. `fired` in SIGNALS' order, so
 -- every officer's client names the surge, and claims it, alike.
-function ModFlood:_Surge(fired, msg, author, now, cfg)
+function ModFlood:_Surge(fired, msg, author, now, cfg, nc)
     local M = GuildOS.ModAlerts
     local live = {}
     for _, sig in ipairs(fired) do
@@ -276,6 +280,7 @@ function ModFlood:_Surge(fired, msg, author, now, cfg)
             if not a.seen[sig] then a.seen[sig] = true; a.signals[#a.signals + 1] = sig end
         end
         sg.untilT = now + secs
+        a.newcomer = nc or a.newcomer
         M:Touch(a)
         return
     end
@@ -300,7 +305,7 @@ function ModFlood:_Surge(fired, msg, author, now, cfg)
     local a = {
         kind = "flood", signal = sig, signals = live, seen = seen, cat = "flood", sev = "med", rule = "F:" .. sig,
         who = shortName(author), key = GuildOS:KeyOfRosterName(author), line = line,
-        lines = lines, count = count,
+        lines = lines, count = count, newcomer = nc,
         claim = M.ClaimKey(author, "flood:" .. sig .. "\n" .. tostring(msg)),
     }
     self.surges[author] = { alert = a, untilT = now + secs }

@@ -3425,3 +3425,13 @@ L["times in"] = "회 /"
 L["too many lines"] = "너무 많은 줄"
 L["Use at most one repetition (*, + or -) in a pattern: more would freeze the game."] = "패턴에는 반복(*, + 또는 -)을 하나만 쓰세요: 더 쓰면 게임이 멈춥니다."
 L["Write the pattern in lower case: lines are compared that way."] = "패턴은 소문자로 쓰세요: 줄은 그렇게 비교됩니다."
+
+-- Modules/Newcomer.lua, UI/ModAlerts.lua (issue #406)
+L["newcomer (day %d of %d)"] = "신입 (%d/%d일차)"
+L["newcomer (trial)"] = "신입 (수습)"
+L["NEWCOMERS"] = "신입"
+L["In a member's first days any link alerts and the anti-flood's limits are halved. The join comes from the roster log: a member who joined before the addon is not a newcomer. Only officers see it."] = "가입 후 처음 며칠 동안은 모든 링크가 경고가 되고 도배 방지 한도가 절반이 됩니다. 가입일은 명단 기록에서 가져옵니다: 애드온 이전에 가입한 길드원은 신입이 아닙니다. 관리자만 볼 수 있습니다."
+L["Newcomer for the first"] = "신입 기간: 처음"
+L["days (0 turns it off)"] = "일 (0이면 끔)"
+L["A trial counts as a newcomer"] = "수습 길드원도 신입으로 봄"
+L["From 0 to 30 days."] = "0일에서 30일까지."

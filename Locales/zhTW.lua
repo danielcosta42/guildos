@@ -3425,3 +3425,13 @@ L["times in"] = "次，時間"
 L["too many lines"] = "行數過多"
 L["Use at most one repetition (*, + or -) in a pattern: more would freeze the game."] = "一個模式裡最多用一個重複符（*、+ 或 -）：更多會讓遊戲卡死。"
 L["Write the pattern in lower case: lines are compared that way."] = "請用小寫書寫模式：訊息就是這樣比對的。"
+
+-- Modules/Newcomer.lua, UI/ModAlerts.lua (issue #406)
+L["newcomer (day %d of %d)"] = "新人（第 %d 天，共 %d 天）"
+L["newcomer (trial)"] = "新人（試用期）"
+L["NEWCOMERS"] = "新人"
+L["In a member's first days any link alerts and the anti-flood's limits are halved. The join comes from the roster log: a member who joined before the addon is not a newcomer. Only officers see it."] = "成員加入後的頭幾天，任何連結都會觸發警報，防洗頻的門檻減半。加入時間來自名冊日誌：在插件之前加入的成員不算新人。只有幹部看得到。"
+L["Newcomer for the first"] = "新人期：前"
+L["days (0 turns it off)"] = "天（0 為關閉）"
+L["A trial counts as a newcomer"] = "試用成員也算新人"
+L["From 0 to 30 days."] = "0 到 30 天。"

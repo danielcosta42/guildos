@@ -73,6 +73,7 @@ Modules\BanList.lua
 Modules\Discipline.lua
 Modules\ModAlerts.lua
 Modules\ModFlood.lua
+Modules\Newcomer.lua
 Modules\RecruitmentSystem.lua
 Modules\RecruitEngagement.lua
 Modules\WishlistSystem.lua

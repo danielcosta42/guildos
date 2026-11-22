@@ -358,6 +358,7 @@ function ModAlerts:PublishConfig()
         GuildOS.SyncService:Publish("guildcfg", "modrules", { rules = self:GetRules() }, { rev = s.modAlertRulesAt })
     end
     if GuildOS.ModFlood then GuildOS.ModFlood:PublishConfig() end   -- and the anti-flood's limits (#405)
+    if GuildOS.Newcomer then GuildOS.Newcomer:PublishConfig() end   -- and the newcomer's quarantine (#406)
 end
 
 local function stampOf(env)
@@ -451,6 +452,7 @@ function ModAlerts:_Flag(msg, author, rule, now)
         line = GuildOS:CutBytes((tostring(msg):gsub("%c", " ")), 255),
         context = self.Context(log, msg, self.CONTEXT), cat = rule.cat, sev = rule.sev, rule = rule.key,
         claim = self.ClaimKey(author, msg),
+        newcomer = GuildOS.Newcomer and GuildOS.Newcomer:Of(author, now) or nil,   -- the badge (#406)
     }, now)
 end
 

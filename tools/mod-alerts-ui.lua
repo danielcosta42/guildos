@@ -91,6 +91,7 @@ function GuildOS:ShowWarnDialog(key, name, opts) warned = { key = key, name = na
 
 dofile(ADDON .. "/Modules/ModAlerts.lua")
 dofile(ADDON .. "/Modules/ModFlood.lua")
+dofile(ADDON .. "/Modules/Newcomer.lua")
 dofile(ADDON .. "/UI/ModAlerts.lua")
 local M, F = GuildOS.ModAlerts, GuildOS.ModFlood
 M:Initialize()
@@ -175,5 +176,20 @@ M:Deliver({ kind = "flood", signals = { "burst", "repeat" }, who = "Thrall", key
 check(GuildOS.modAlertFrame.title.text:find("too many lines, the same line repeated", 1, true), "the window names a surge's signals")
 check(GuildOS.modAlertFrame.line.text:find("(3 lines)", 1, true) and GuildOS.modAlertFrame.context.text == "Thrall: a\nThrall: b",
       "with its count and its lines")
+
+
+-- The newcomer's quarantine (#406) on the same tab, and its badge on the alert.
+check(type(rulesPanel.newcomerRefresh) == "function", "the newcomers' section builds under the anti-flood")
+local ncSave = find(rulesPanel, function(c) local l = rawget(c, "label"); return l and rawget(l, "text") == "Save for the guild" end)
+local ncGot
+local realNc = GuildOS.Newcomer.SetConfig
+GuildOS.Newcomer.SetConfig = function(_, days, trial) ncGot = { days, trial }; return true end
+drawRules()
+ncSave:Click()
+check(ncGot and tonumber(ncGot[1]) == 7 and ncGot[2] == false, "Save sends the days and the trial switch")
+GuildOS.Newcomer.SetConfig = realNc
+M:Deliver({ kind = "flood", signals = { "links" }, who = "Rexxar", key = "Rexxar", line = "x", lines = { "x" }, count = 1,
+  cat = "flood", sev = "med", rule = "F:links", claim = "000000cc", newcomer = { day = 2, of = 7 } })
+check(GuildOS.modAlertFrame.title.text:find("newcomer (day 2 of 7)", 1, true), "a newcomer's alert carries the badge")
 
 print(("mod-alerts-ui: %d checks passed"):format(checks))

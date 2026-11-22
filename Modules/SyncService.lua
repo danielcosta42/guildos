@@ -127,6 +127,11 @@ function SyncService:Initialize()
             if GuildOS.ModFlood then GuildOS.ModFlood:OnConfigSync(env) end
             return
         end
+        -- And the newcomer's quarantine (issue #406); it carries no `max`.
+        if env.act == "newcomer" then
+            if GuildOS.Newcomer then GuildOS.Newcomer:OnConfigSync(env) end
+            return
+        end
         -- Who creates calendar events (issue #283).
         if env.act == "events" then
             GuildOS:OnEventMaxRankSync(env)

@@ -3425,3 +3425,13 @@ L["times in"] = "раз за"
 L["too many lines"] = "слишком много строк"
 L["Use at most one repetition (*, + or -) in a pattern: more would freeze the game."] = "Не больше одного повторения (*, + или -) в шаблоне: иначе игра зависнет."
 L["Write the pattern in lower case: lines are compared that way."] = "Пишите шаблон строчными буквами: строки сравниваются так."
+
+-- Modules/Newcomer.lua, UI/ModAlerts.lua (issue #406)
+L["newcomer (day %d of %d)"] = "новичок (день %d из %d)"
+L["newcomer (trial)"] = "новичок (испытательный срок)"
+L["NEWCOMERS"] = "НОВИЧКИ"
+L["In a member's first days any link alerts and the anti-flood's limits are halved. The join comes from the roster log: a member who joined before the addon is not a newcomer. Only officers see it."] = "В первые дни участника любая ссылка вызывает оповещение, а пороги антифлуда снижаются вдвое. Дата вступления берётся из журнала состава: кто вступил до аддона, не новичок. Видят только офицеры."
+L["Newcomer for the first"] = "Новичок в первые"
+L["days (0 turns it off)"] = "дней (0 — выключено)"
+L["A trial counts as a newcomer"] = "Испытуемый считается новичком"
+L["From 0 to 30 days."] = "От 0 до 30 дней."

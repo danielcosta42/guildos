@@ -37,6 +37,9 @@ local function aboutText(a)
         for i, sig in ipairs(a.signals) do parts[i] = F.SignalText(sig) end
         t = t .. " (" .. table.concat(parts, ", ") .. ")"
     end
+    -- A newcomer's (#406): the badge, on the officers' screens only.
+    local badge = GuildOS.Newcomer and GuildOS.Newcomer.BadgeText(a.newcomer)
+    if badge then t = t .. " - " .. badge end
     return t
 end
 
@@ -316,6 +319,8 @@ function GuildOS:BuildModRulesSub(panel)
     -- The anti-flood's limits (#405) sit under the rules when that module is there.
     local floodH = 0
     if GuildOS.BuildModFloodSection then floodH = GuildOS:BuildModFloodSection(panel, 110) or 0 end
+    -- And the newcomer's quarantine (#406) under them.
+    if GuildOS.BuildNewcomerSection then floodH = floodH + (GuildOS:BuildNewcomerSection(panel, 110 + floodH) or 0) end
 
     local holder = CreateFrame("Frame", nil, panel)
     holder:SetPoint("TOPLEFT", 0, -(110 + floodH))
@@ -358,6 +363,7 @@ function GuildOS:BuildModRulesSub(panel)
     local function refresh()
         if not M or not panel:IsVisible() then return end
         if panel.floodRefresh then GuildOS:SafeCall(panel.floodRefresh) end
+        if panel.newcomerRefresh then GuildOS:SafeCall(panel.newcomerRefresh) end
         local rules = M:GetRules()
         for i, r in ipairs(rules) do
             local row = rowAt(i)
@@ -444,4 +450,49 @@ function GuildOS:BuildModFloodSection(panel, top)
         end
     end
     return 66 + #ROWS * 26 + 32
+end
+
+----------------------------------------------------------------------
+-- The newcomer's quarantine (#406), on the Alert rules tab under the anti-flood
+----------------------------------------------------------------------
+-- Builds the section at `top` px down `panel`; returns the height it takes. panel.newcomerRefresh fills it.
+function GuildOS:BuildNewcomerSection(panel, top)
+    local N = GuildOS.Newcomer
+    if not N then return 0 end
+    local title = UI:CreateSectionTitle(panel, L["NEWCOMERS"], false)
+    title:SetPoint("TOPLEFT", 0, -(top + 8))
+    local hint = UI:CreateText(panel,
+        L["In a member's first days any link alerts and the anti-flood's limits are halved. The join comes from the roster log: a member who joined before the addon is not a newcomer. Only officers see it."],
+        11, C.silver.r, C.silver.g, C.silver.b)
+    hint:SetPoint("TOPLEFT", 0, -(top + 32))
+    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -(top + 32))
+    hint:SetJustifyH("LEFT")
+    local y = -(top + 62)
+    local lead = UI:CreateText(panel, L["Newcomer for the first"], 11, C.text.r, C.text.g, C.text.b)
+    lead:SetPoint("TOPLEFT", 0, y - 3)
+    local box = UI:CreateInput(panel, 40, 20, { numeric = true, max = 2 })
+    box:SetPoint("LEFT", lead, "RIGHT", 6, 0)
+    local tail = UI:CreateText(panel, L["days (0 turns it off)"], 11, C.text.r, C.text.g, C.text.b)
+    tail:SetPoint("LEFT", box, "RIGHT", 6, 0)
+    local trial = UI:CreateCheckbox(panel, L["A trial counts as a newcomer"], 18)
+    trial:SetPoint("LEFT", tail, "RIGHT", 16, 0)
+    local save = UI:CreateButton(panel, L["Save for the guild"], 140, 22)
+    save:SetPoint("TOPLEFT", 0, y - 28)
+    local result = UI:CreateText(panel, "", 11, C.silver.r, C.silver.g, C.silver.b)
+    result:SetPoint("LEFT", save, "RIGHT", 10, 0)
+    save:SetScript("OnClick", function()
+        local ok, why = N:SetConfig(box:GetText(), trial.checkbox:GetChecked() and true or false)
+        if ok then
+            result:SetText(L["Saved. The guild gets it now."])
+        elseif why == "range" then
+            result:SetText(L["From 0 to 30 days."])
+        else
+            result:SetText(L["|cffFF4444Officers only.|r"])
+        end
+    end)
+    panel.newcomerRefresh = function()
+        if not box:HasFocus() then box:SetText(tostring(N:GetDays())) end
+        trial.checkbox:SetChecked(N:TrialCounts())
+    end
+    return 62 + 56
 end

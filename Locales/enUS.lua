@@ -1337,3 +1337,13 @@ L["times in"] = "times in"
 L["too many lines"] = "too many lines"
 L["Use at most one repetition (*, + or -) in a pattern: more would freeze the game."] = "Use at most one repetition (*, + or -) in a pattern: more would freeze the game."
 L["Write the pattern in lower case: lines are compared that way."] = "Write the pattern in lower case: lines are compared that way."
+
+-- Modules/Newcomer.lua, UI/ModAlerts.lua (issue #406)
+L["newcomer (day %d of %d)"] = "newcomer (day %d of %d)"
+L["newcomer (trial)"] = "newcomer (trial)"
+L["NEWCOMERS"] = "NEWCOMERS"
+L["In a member's first days any link alerts and the anti-flood's limits are halved. The join comes from the roster log: a member who joined before the addon is not a newcomer. Only officers see it."] = "In a member's first days any link alerts and the anti-flood's limits are halved. The join comes from the roster log: a member who joined before the addon is not a newcomer. Only officers see it."
+L["Newcomer for the first"] = "Newcomer for the first"
+L["days (0 turns it off)"] = "days (0 turns it off)"
+L["A trial counts as a newcomer"] = "A trial counts as a newcomer"
+L["From 0 to 30 days."] = "From 0 to 30 days."

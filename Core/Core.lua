@@ -288,6 +288,8 @@ local MODULE_START = {
     { "ModAlerts" },
     -- And the anti-flood (issue #405), delivering into the same panel.
     { "ModFlood" },
+    -- And the newcomer's quarantine (issue #406): stricter alerts in a member's first days.
+    { "Newcomer" },
     { "CommSystem", feature = "commSystem" },
     { "Wishlist", ui = "wishlist" },
     { "SoftRes" },
