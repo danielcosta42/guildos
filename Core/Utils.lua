@@ -217,14 +217,51 @@ local function normalizedRealm(realm)
     return (realm:gsub("[%s%-]", ""))
 end
 
--- The client's realm for member keys: GetRealmName(), else GetNormalizedRealmName() (a
+-- The realm this character had, from the account's record of its characters (AltAutoDetect's
+-- accountChars): its own latest entry with a realm, else the account's when every character with
+-- one agrees; nil with neither. Read once per accountChars table: the one the SavedVariables load is
+-- a new table, and while the client answers no realm nothing adds one with a realm to it.
+local savedRealm, scanned
+local function rememberedRealm()
+    local chars = type(GuildOSDB) == "table" and GuildOSDB.accountChars
+    if type(chars) ~= "table" then return nil end
+    if chars == scanned then return savedRealm end
+    scanned = chars
+    local me = GuildOS.Compat and GuildOS.Compat.PlayerName()
+    local mine, mineTs, account
+    for _, c in pairs(chars) do
+        local realm = type(c) == "table" and c.realm
+        if type(realm) == "string" and realm ~= "" then
+            local ts = tonumber(c.ts) or 0
+            if c.name == me and (not mine or ts > mineTs) then mine, mineTs = realm, ts end
+            if account == nil then account = realm elseif account ~= realm then account = false end
+        end
+    end
+    savedRealm = mine or account or nil
+    return savedRealm
+end
+
+-- The client's realm name, GetRealmName(). WoW: Forever's client has answered it with "" since its
+-- patch of 2026-11-21 (issue #394), and every key saved before carries the realm it answered then:
+-- the guild's db, each member and the guild the site knows. With it empty they all changed, and the
+-- addon opened an empty db over the intact one. On Forever (not RealmBound) an empty answer is the
+-- realm this character had; with none saved, "" as the client gave it.
+-- ponytail: a character first seen after that patch has no realm to remember, so if the client
+-- ever answers one again its keys change once; a realm stored per character would cover it.
+function GuildOS:RealmName()
+    local realm = GetRealmName()
+    if (realm and realm ~= "") or self:RealmBound() then return realm end
+    return rememberedRealm() or realm
+end
+
+-- The client's realm for member keys: RealmName(), else GetNormalizedRealmName() (a
 -- client with no realm name may still suffix roster names with a normalized one), else
 -- nil; "" counts as nothing. Anniversary always answers the first, so its keys keep their bytes.
 -- Retail asks for the normalized one first: that is how its roster writes everybody (#165).
 function GuildOS:GetClientRealm()
     local realm
     if isRetail() and GetNormalizedRealmName then realm = GetNormalizedRealmName() end
-    if not realm or realm == "" then realm = GetRealmName() end
+    if not realm or realm == "" then realm = GuildOS:RealmName() end
     if not realm or realm == "" then realm = GetNormalizedRealmName and GetNormalizedRealmName() end
     if realm == "" then return nil end
     if realm and isRetail() then realm = normalizedRealm(realm) end
@@ -233,15 +270,15 @@ end
 
 -- The realm a guild is from. On retail a guild spans connected realms, so it is its home realm
 -- (GetGuildInfo's fourth answer, nil when it is this character's own), normalized: one guild,
--- whichever of its realms a character is on. Elsewhere GetRealmName(). The guild's database key
--- and the companion payload's guildKey both use it (ADR-0026, issue #182).
+-- whichever of its realms a character is on. Elsewhere the client's (RealmName). The guild's database
+-- key and the companion payload's guildKey both use it (ADR-0026, issues #182, #394).
 function GuildOS:GuildRealm()
     if isRetail() then
         local home = IsInGuild() and select(4, GetGuildInfo("player"))
         if not home or home == "" then home = GetRealmName() end
         return home and normalizedRealm(home)
     end
-    return GetRealmName()
+    return self:RealmName()
 end
 
 -- A member's key is "Name-Realm", byte for byte as it has always been. WoW: Forever has

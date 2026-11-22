@@ -175,4 +175,56 @@ GuildOS.db.members = { ["Bob-Spineshatter"] = { name = "Bob", class = "MAGE", la
 GuildOS:RekeyMembersToThisRealm()
 check(GuildOS.db.members["Bob-Spineshatter"] ~= nil, "anniversary: the rekey leaves another realm's member where it is")
 
+-- ── 4. Forever: the client answers no realm (issue #394) ────────────────
+-- Since the client's patch of 2026-11-21, GetRealmName() answers "" all session. Every key saved
+-- before carries the realm it answered then: the guild's db, each member, the guild the site knows.
+local OLD = "CAMWOW US2 Realm 5 PvE"
+local function noRealm(chars)
+  load("forever")
+  function GetRealmName() return "" end
+  function GetNormalizedRealmName() return "" end
+  function GetGuildInfo() return "Filhos da Horda" end
+  function UnitClass() return "Shaman", "SHAMAN" end
+  function UnitLevel() return 45 end
+  GuildOSDB = { _dbVersion = 2, accountChars = chars, ["Filhos da Horda-" .. OLD] = { settings = { onboarded = true } } }
+  GuildOS.db, GuildOS.guildKey = nil, nil
+end
+
+noRealm({
+  ["Chehul Costa-" .. OLD]    = { name = "Chehul Costa", realm = OLD, ts = 100 },
+  ["Chehul Costa-Beta Realm"] = { name = "Chehul Costa", realm = "Beta Realm", ts = 40 },  -- an older realm
+  ["Chehul Costa"]            = { name = "Chehul Costa", realm = "", ts = 200 },   -- written after the patch
+  ["Old Alt-Other Realm"]     = { name = "Old Alt", realm = "Other Realm", ts = 50 },
+})
+check(GuildOS:GetPlayerKey("Cherry Arrow") == "Cherry Arrow-" .. OLD, "no realm: a member keys on the realm this character had")
+check(GuildOS:ResolveGuildDB() and GuildOS.guildKey == "Filhos da Horda-" .. OLD and GuildOS.db.settings.onboarded,
+  "no realm: the guild's db is the one saved before, with what it held")
+dofile(ADDON .. "/Modules/AltAutoDetect.lua")
+GuildOS.AltAutoDetect:RecordSelf()
+local chars = GuildOSDB.accountChars
+check(chars["Chehul Costa-" .. OLD].realm == OLD and chars["Chehul Costa-" .. OLD].ts == 1791000000,
+  "no realm: recording this character keeps the realm it had")
+dofile(ADDON .. "/Modules/CraftOrders.lua")
+check(GuildOS.CraftOrders.NameOf("Cherry Arrow-" .. OLD) == "Cherry Arrow", "no realm: a craft order whispers the name alone")
+
+noRealm(chars)
+check(GuildOS:GetPlayerKey("Cherry Arrow") == "Cherry Arrow-" .. OLD, "no realm: the next session still has the realm")
+
+noRealm({ ["Alt One-" .. OLD] = { name = "Alt One", realm = OLD }, ["Alt Two-" .. OLD] = { name = "Alt Two", realm = OLD } })
+check(GuildOS:GetPlayerKey("Cherry Arrow") == "Cherry Arrow-" .. OLD, "no realm: a character never recorded takes the account's realm")
+
+noRealm({ ["Alt One-" .. OLD] = { name = "Alt One", realm = OLD }, ["Alt Two-Other"] = { name = "Alt Two", realm = "Other" } })
+check(GuildOS:GetPlayerKey("Cherry Arrow") == "Cherry Arrow", "no realm: with the account on two realms, none is guessed")
+
+noRealm(nil)
+check(GuildOS:GetPlayerKey("Cherry Arrow") == "Cherry Arrow", "no realm: an account with no realm saved keys as the client does")
+check(GuildOS:ResolveGuildDB() and GuildOS.guildKey == "Filhos da Horda-", "no realm: and keeps the db it has")
+
+-- Realms are real on Anniversary (and retail): a remembered one never stands in there.
+load("anniversary")
+function GetRealmName() return "" end
+function GetNormalizedRealmName() return "" end
+GuildOSDB = { accountChars = { ["Alt One-" .. OLD] = { name = "Alt One", realm = OLD } } }
+check(GuildOS:RealmName() == "" and GuildOS:GetPlayerKey("Bob") == "Bob", "anniversary: an empty realm is not filled from memory")
+
 print(("forever-keys: %d checks passed"):format(checks))
