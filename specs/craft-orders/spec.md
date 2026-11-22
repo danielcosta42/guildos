@@ -82,6 +82,22 @@ make it meant whispering around.
   - It never revives an order, and never touches orders I placed or took: those come to me live.
 - A crafter who took an order and gave it back before hearing an earlier acceptance loses to it on
   every client, whatever order the messages arrived in.
+- An item two recipes make (Forever has seven: a bar smelted or transmuted, Tailoring's or
+  Leatherworking's) is read through one recipe, never the first one found (issue #396):
+  - the row clicked shows its own, and an order placed from that row carries it;
+  - an order shows the recipe of the crafter who took it, or of the crafter it was sent to;
+  - otherwise it shows the recipe most of the guild knows.
+
+  The crafter's acceptance sends their recipe's reagents and yield.
+- Known limit: on Anniversary (no catalog) a character keeps one material list per item, the last
+  tradeskill window read; one who makes an item two ways keeps the list of the window opened last.
+- Season of Discovery's recipes stay in Forever's game data: 285 of 2490, under categories named
+  "SEASON OF DISCOVERY" (2592-2598), many beside the Forever recipe of the same name with other
+  reagents and skill. Two "Enchant Bracer - Agility" exist: 1217203 (SoD, skill 320) and 1248497
+  (Forever, 225, one Vision Dust). The catalog marks those categories (`seasonal`). Such a recipe is
+  listed, counted in coverage, and taken as an item's recipe only while someone in the guild knows
+  it (issue #396).
+- The Forever catalog follows the game's build (`tools/prof_catalog.py <build>`), now 1.60.1.71037.
 - The materials count crafts, not items: a recipe that makes five takes a fifth of the crafts. The
   yield comes from the catalog, or the crafter's tradeskill window on Anniversary.
 - A tip by mail is always sent as money, never as C.O.D.

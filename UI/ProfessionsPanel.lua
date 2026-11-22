@@ -508,7 +508,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         for _, x in ipairs(state.results) do if not x.__detail and x.id == state.open then e = x end end
         if not e then detail:Hide(); return end
         local list2 = crafterList(e.crafters, state.who)
-        detail:SetRecipe({ id = e.id, item = (e.out and e.out > 0) and e.out or nil, crafters = list2,
+        detail:SetRecipe({ id = e.id, recipeId = e.id, item = (e.out and e.out > 0) and e.out or nil, crafters = list2,
                            meta = metaText(e) }, state.openTo, fresh)
     end
 
@@ -578,7 +578,9 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         state.mode, state.line, state.filter, state.query, state.item = "recipes", nil, "all", "", itemId
         search:SetText("")
         state.item = itemId          -- the search box's handler cleared it
-        state.open = D.ItemRecipes(itemId)[1]
+        -- The recipe the crafter it goes to knows, else the one the guild knows most (issue #396).
+        local O = GuildOS.CraftOrders
+        state.open = (O and O:RecipeFor(itemId, toKey)) or D.ItemRecipes(itemId)[1]
         self:Refresh(true)
         state.openTo = toKey
         self:PaintDetail(true)

@@ -288,16 +288,42 @@ end
 
 function CraftOrders:ForgetCrafters() canCache, canCacheAt = {}, 0 end
 
+-- The catalog recipe that makes `item` for `key` (a member key): the one they know, else the one
+-- most of the guild knows, else the lowest id. Seven Forever items have two recipes (a bar smelted
+-- or transmuted, Tailoring's or Leatherworking's), each with its own reagents (issue #396): taking
+-- the first gave Gold Ore for a transmute. Nil when the client has no catalog (Anniversary).
+function CraftOrders:RecipeFor(item, key)
+    local D, P = GuildOS.ProfDirectory, GuildOS.Professions
+    local ids = D and D.ItemRecipes and D.ItemRecipes(item) or {}
+    if #ids <= 1 then return ids[1] end
+    local best, bestN
+    for _, id in ipairs(ids) do
+        local who = (P and P.CraftersOf and P:CraftersOf(id)) or {}
+        if key then
+            for _, k in ipairs(who) do if k == key then return id end end
+        end
+        if not bestN or #who > bestN then best, bestN = id, #who end
+    end
+    return best
+end
+
+-- The catalog row of a recipe, or nil.
+local function catalogRecipe(id)
+    local cat = GuildOS.ProfCatalog
+    return id and cat and cat.recipes and cat.recipes[id], cat
+end
+
 -- What one craft of `item` needs: { { itemID, count } }. The order's own list (the crafter's, sent
--- with the acceptance) first, then the client's catalog (WoW: Forever, retail), then what this
--- character read in its own tradeskill window (Anniversary).
-function CraftOrders:Reagents(item, o)
+-- with the acceptance) first, then the catalog's for `recipeId` (the row clicked) or for the recipe
+-- the order's crafter, else `key`, would use (WoW: Forever, retail), then what this character read
+-- in its own tradeskill window (Anniversary).
+function CraftOrders:Reagents(item, o, recipeId, key)
     local flat = o and o.rg
     if not flat then
         local D = GuildOS.ProfDirectory
-        local ids = D and D.ItemRecipes and D.ItemRecipes(item)
-        if ids and ids[1] then
-            local out = D.Reagents(ids[1])
+        local id = recipeId or self:RecipeFor(item, (o and (o.cr or o.to)) or key)
+        if D and id then
+            local out = D.Reagents(id)
             if #out > 0 then return out end
         end
         flat = GuildOS.db and GuildOS.db.craftReagents and GuildOS.db.craftReagents[item]
@@ -307,33 +333,21 @@ function CraftOrders:Reagents(item, o)
     return out
 end
 
--- How many items one craft makes: the order's own (the crafter's), the catalog's, or what this
--- character read in its tradeskill window; 1 when nobody knows.
-function CraftOrders:Yield(item, o)
-    if o and o.y then return o.y end
-    local D, cat = GuildOS.ProfDirectory, GuildOS.ProfCatalog
-    local ids = D and D.ItemRecipes and D.ItemRecipes(item)
-    if ids and ids[1] and cat and cat.F and cat.F.outCount then
-        local r = cat.recipes[ids[1]]
-        local n = r and tonumber(r[cat.F.outCount])
-        if n and n >= 1 then return math.floor(n) end
-    end
-    local y = GuildOS.db and GuildOS.db.craftYield and GuildOS.db.craftYield[item]
-    return (tonumber(y) and y >= 1) and math.floor(y) or 1
-end
-
--- The yield to send: only one this client actually knows (catalog or its own window), never the
--- fallback of 1, which would hide the crafter's.
-function CraftOrders:KnownYield(item)
-    local D, cat = GuildOS.ProfDirectory, GuildOS.ProfCatalog
-    local ids = D and D.ItemRecipes and D.ItemRecipes(item)
-    if ids and ids[1] and cat and cat.F and cat.F.outCount then
-        local r = cat.recipes[ids[1]]
-        local n = r and tonumber(r[cat.F.outCount])
-        if n and n >= 1 then return math.floor(n) end
-    end
+-- How many items one craft makes, as this client knows it: the catalog's for that recipe, or what
+-- this character read in its tradeskill window; nil when it does not know.
+function CraftOrders:KnownYield(item, recipeId, key)
+    local r, cat = catalogRecipe(recipeId or self:RecipeFor(item, key))
+    local n = r and tonumber(r[cat.F.outCount])
+    if n and n >= 1 then return math.floor(n) end
     local y = GuildOS.db and GuildOS.db.craftYield and GuildOS.db.craftYield[item]
     return (tonumber(y) and y >= 1) and math.floor(y) or nil
+end
+
+-- How many items one craft makes: the order's own (the crafter's), else what this client knows for
+-- that recipe; 1 when nobody knows.
+function CraftOrders:Yield(item, o, recipeId, key)
+    if o and o.y then return o.y end
+    return self:KnownYield(item, recipeId, (o and (o.cr or o.to)) or key) or 1
 end
 
 -- How many crafts make the order's items.
@@ -341,10 +355,10 @@ function CraftOrders:Crafts(o)
     return math.ceil(o.n / self:Yield(o.item, o))
 end
 
--- The same as a flat list, to send.
-function CraftOrders:ReagentsFlat(item)
+-- The same as a flat list, to send. `key`: whose recipe (an acceptance sends the crafter's own).
+function CraftOrders:ReagentsFlat(item, key, recipeId)
     local flat = {}
-    for _, r in ipairs(self:Reagents(item)) do
+    for _, r in ipairs(self:Reagents(item, nil, recipeId, key)) do
         flat[#flat + 1] = r.itemID
         flat[#flat + 1] = r.count
     end
@@ -450,7 +464,8 @@ local function publish(act, data)
     if GuildOS.SyncService then GuildOS.SyncService:Publish(DOMAIN, act, data) end
 end
 
--- Place an order. opts = { n, mode ("mats"/"own"), tip (copper), note, to (a member key) }.
+-- Place an order. opts = { n, mode ("mats"/"own"), tip (copper), note, to (a member key), recipe (the
+-- catalog recipe opened, whose reagents and yield the order carries until a crafter answers) }.
 -- Returns the order, or nil and why.
 function CraftOrders:Place(item, opts)
     opts = opts or {}
@@ -468,7 +483,7 @@ function CraftOrders:Place(item, opts)
         tip = math.max(0, math.min(self.TIP_MAX, math.floor(tonumber(opts.tip) or 0))),
         note = cleanText(opts.note, self.NOTE_MAX),
         to = opts.to ~= me and opts.to or nil,
-        rg = self:ReagentsFlat(item), y = self:KnownYield(item), ts = t, at = t,
+        rg = self:ReagentsFlat(item, opts.to, opts.recipe), y = self:KnownYield(item, opts.recipe, opts.to), ts = t, at = t,
     }
     local o = self:Apply("new", data, me)
     if not o then return nil, L["The order could not be placed."] end
@@ -483,7 +498,11 @@ function CraftOrders:Act(id, what)
     local act = ACTS[what] or what
     local data = { id = id, at = now() }
     local o = self:Get(id)
-    if act == "acc" and o then data.rg, data.y = self:ReagentsFlat(o.item), self:KnownYield(o.item) end
+    -- The crafter tells the order what their own recipe takes and makes (issue #396).
+    if act == "acc" and o then
+        local me = self:MyKey()
+        data.rg, data.y = self:ReagentsFlat(o.item, me), self:KnownYield(o.item, nil, me)
+    end
     if not self:Apply(act, data, self:MyKey()) then return false end
     publish(act, data)
     self:Refresh()

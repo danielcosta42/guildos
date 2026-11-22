@@ -31,6 +31,18 @@ function ProfDirectory.DisplayName(line)
     return meta and L[meta.en] or ("#" .. tostring(line))
 end
 
+-- Whether a recipe is shown. Forever's game data still holds Season of Discovery's recipes (285 of
+-- 2490, under categories the catalog marks `seasonal`), many beside the Forever recipe of the same
+-- name with other reagents and skill: two "Enchant Bracer - Agility" (issue #396). Such a recipe is
+-- shown only while someone in the guild knows it, so a member who learned one still finds it.
+function ProfDirectory.Shown(id)
+    local cat = catalog()
+    local r = cat.recipes[id]
+    if not (r and cat.seasonal and cat.seasonal[r[cat.F.category]]) then return true end
+    return #GuildOS.Professions:CraftersOf(id) > 0
+end
+local shown = ProfDirectory.Shown
+
 -- The catalog's profession lines: primaries, then secondaries, each by localized name.
 function ProfDirectory.Lines()
     local cat = catalog()
@@ -48,12 +60,14 @@ end
 -- knows, and how many members have the line.
 function ProfDirectory.Coverage(line)
     local P = GuildOS.Professions
-    local ids = catalog().byLine[line] or {}
-    local covered = 0
-    for _, id in ipairs(ids) do
-        if #P:CraftersOf(id) > 0 then covered = covered + 1 end
+    local covered, total = 0, 0
+    for _, id in ipairs(catalog().byLine[line] or {}) do
+        if shown(id) then
+            total = total + 1
+            if #P:CraftersOf(id) > 0 then covered = covered + 1 end
+        end
     end
-    return { total = #ids, covered = covered, crafters = #P:Members(line) }
+    return { total = total, covered = covered, crafters = #P:Members(line) }
 end
 
 -- The same over every line, each recipe once (a recipe two professions learn counts once).
@@ -61,8 +75,10 @@ function ProfDirectory.CoverageAll()
     local P, cat = GuildOS.Professions, catalog()
     local total, covered = 0, 0
     for id in pairs(cat.recipes) do
-        total = total + 1
-        if #P:CraftersOf(id) > 0 then covered = covered + 1 end
+        if shown(id) then
+            total = total + 1
+            if #P:CraftersOf(id) > 0 then covered = covered + 1 end
+        end
     end
     return { total = total, covered = covered }
 end
@@ -77,7 +93,7 @@ function ProfDirectory.RecipeRows(line, mode, query)
     local rows, seen = {}, {}
     for _, l in ipairs(line and { line } or ProfDirectory.Lines()) do
         for _, id in ipairs(cat.byLine[l] or {}) do
-            if not seen[id] then
+            if not seen[id] and shown(id) then
                 seen[id] = true
                 local crafters = P:CraftersOf(id)
                 local known = #crafters > 0
@@ -155,7 +171,11 @@ function ProfDirectory.ItemRecipes(itemID)
         end
         for _, ids in pairs(byItem) do table.sort(ids) end
     end
-    return byItem[itemID] or {}
+    local out = {}
+    for _, id in ipairs(byItem[itemID] or {}) do
+        if shown(id) then out[#out + 1] = id end
+    end
+    return out
 end
 
 -- RecipeTracker's crafter shape { { playerName, playerKey, class, profName } }, or nil. profName
