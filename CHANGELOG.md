@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.34.3] - 2026-11-22
+
+### Fixed
+- o Guild Finder nomeia o ruleset RP-PvP (danielcosta42/guildos-web#568)
+
+
 ## [1.34.2] - 2026-11-22
 
 ### Fixed
