@@ -156,13 +156,16 @@ GuildOS.ProfCatalog = {
                   [185] = { child = 2939, primary = false, en = "Cooking" } },
   specs = { [9788] = 164 },
   stations = { [3] = "Forge" },
-  byLine = { [186] = { 2657, 3304 }, [164] = { 2660, 9950 }, [185] = { 2538 } },
+  -- Season of Discovery's category (issue #396): its recipe shows only while someone knows it.
+  seasonal = { [2598] = true },
+  byLine = { [186] = { 2657, 3304 }, [164] = { 2660, 9950, 9951 }, [185] = { 2538 } },
   recipes = {
     [2657] = { 186, 1, 25, 2840, 1, 0, 0, 0, 3, 3, 0, 0, { 2770, 1 } },
     [3304] = { 186, 65, 90, 3576, 1, 0, 0, 0, 3, 1, 0, 0, { 2771, 1 } },
     [2660] = { 164, 1, 15, 2862, 1, 0, 0, 0, 0, 1, 0, 0, { 2835, 1 } },
     [9950] = { 164, 210, 230, 7934, 1, 0, 210, 9788, 0, 2, 7978, 0, {} },
     [2538] = { 185, 1, 45, 2679, 1, 0, 0, 0, 0, 1, 0, 0, { 2672, 1 } },
+    [9951] = { 164, 210, 230, 7999, 1, 0, 210, 0, 0, 2, 0, 2598, { 2835, 9 } },
   },
 }
 dofile(ADDON .. "/Modules/Professions.lua")
@@ -200,9 +203,19 @@ check(showing("Spell 2660") and showing("nobody"), "a recipe nobody knows says s
 check(showing("Ana Silva") and showing("Bob"), "crafters show by name")
 check(showing("Spell 9788") and showing("Forge"), "requirements show the specialization and the station")
 check(showing("The guild knows 3 of 5 recipes"), "the footer counts what the guild knows")
+check(not showing("Spell 9951"), "a Season of Discovery recipe nobody knows is not listed, nor counted")
+check(#GuildOS.ProfDirectory.ItemRecipes(7999) == 0, "nor taken as a recipe of its item")
 panel.railButtons[2].scripts.OnClick(panel.railButtons[2])
 check(st.line == 164 and #st.results == 2 and showing("Blacksmithing"), "a profession on the rail filters the recipes")
 check(showing("2 crafters · 50%"), "the rail shows crafters and coverage")
+GuildOS.db.professions[BOB].profs[164].recipes = { 9950, 9951 }
+GuildOS.Professions.index = nil
+panel:Refresh(true)
+check(#st.results == 3 and showing("Spell 9951") and showing("2 crafters · 67%"),
+      "once a member knows it, it is listed and counted")
+GuildOS.db.professions[BOB].profs[164].recipes = { 9950 }
+GuildOS.Professions.index = nil
+panel:Refresh(true)
 for _, t in ipairs(panel.filterTabs) do
   if t.key == "gaps" then t.scripts.OnClick(t) end
 end

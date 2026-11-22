@@ -37,6 +37,12 @@ RETAIL_PROFESSIONS = [164, 165, 171, 182, 185, 186, 197, 202, 333, 356, 393, 755
 CREATE_ITEM, ENCHANT_ITEM, ENCHANT_ITEM_TEMP = 24, 53, 54
 CRAFT_ITEM, CRAFT_FEAST, CRAFT_ENCHANT = 288, 296, 301   # retail's crafting effects
 RETAIL_TABLES = TABLES + ["CraftingData", "CraftingDataItemQuality"]
+# Forever's DB2 still holds Season of Discovery's recipes, each under a category of that name (2592-2598
+# on 1.60.1.71037): 285 of them, many beside the Forever recipe of the same name with other reagents
+# and skill (two "Enchant Bracer - Agility", issue #396). The catalog marks those categories; the addon
+# shows such a recipe only while someone in the guild knows it.
+FOREVER_TABLES = TABLES + ["TradeSkillCategory"]
+SEASONAL_NAMES = {"SEASON OF DISCOVERY"}
 FIELDS = ["line", "yellow", "grey", "out", "outCount", "enchant", "reqSkill", "spec", "focus", "src",
           "recipeItem", "category", "reagents"]
 
@@ -160,7 +166,10 @@ def build_catalog(t, retail=False):
             flat,
         ]
     stations = {f: focus_names.get(f, "") for f in sorted({v[8] for v in recipes.values() if v[8]})}
+    seasonal = sorted(num(r["ID"]) for r in t.get("TradeSkillCategory", [])
+                      if (r.get("Name_lang") or "").strip().upper() in SEASONAL_NAMES)
     return {"professions": professions, "recipes": recipes, "specs": specs, "stations": stations,
+            "seasonal": seasonal,
             # A spell can have several rows on one line (per race or class): listed once.
             "byLine": {line: sorted(set(ids)) for line, ids in by_line.items()}}
 
@@ -186,6 +195,9 @@ def render(cat, build, retail=False):
                    f"en = {lua_str(p['en'])} }},")
     out += ["    },", "    specs = {"] + [f"        [{s}] = {l}," for s, l in sorted(cat["specs"].items())]
     out += ["    },", "    stations = {"] + [f"        [{f}] = {lua_str(n)}," for f, n in sorted(cat["stations"].items())]
+    if cat.get("seasonal"):
+        out += ["    },", "    -- Season of Discovery's categories: shown only while someone in the guild knows the recipe.",
+                "    seasonal = {"] + [f"        [{c}] = true," for c in cat["seasonal"]]
     out += ["    },", "    byLine = {"]
     out += [f"        [{line}] = {{{','.join(map(str, ids))}}}," for line, ids in sorted(cat["byLine"].items())]
     out += ["    },", "    recipes = {"]
@@ -197,7 +209,7 @@ def render(cat, build, retail=False):
 
 def selftest():
     t = {name: read_csv(open(os.path.join(FIXTURE, f"{name}.fixture.csv"), encoding="utf-8").read())
-         for name in TABLES}
+         for name in FOREVER_TABLES}
     cat = build_catalog(t)
     F = {f: i for i, f in enumerate(FIELDS)}
     assert cat["professions"][186] == {"child": 2946, "primary": True, "en": "Mining"}, cat["professions"].get(186)
@@ -222,9 +234,11 @@ def selftest():
     retired = [num(r["Spell"]) for r in t["SkillLineAbility"] if num(r.get("AcquireMethod")) == 3]
     assert retired and all(s not in cat["recipes"] for s in retired), "retired rows are left out"
     assert cat["stations"] and all(name for name in cat["stations"].values()), cat["stations"]
+    assert cat["seasonal"] == [2597, 2598], "Season of Discovery's categories are marked: %r" % cat["seasonal"]
     lua = render(cat, "fixture")
     assert lua.startswith("-- Generated")
     assert "[2657] = {186," in lua and 'en = "Mining"' in lua and "[9788] = 164," in lua
+    assert "seasonal = {" in lua and "[2597] = true," in lua, "the catalog carries them"
     assert "if GuildOS.Client.isAnniversary or GuildOS.Client.isRetail then return end" in lua, "Forever's catalog is Forever's"
     # A row whose only effect is retail's feast (296) makes nothing on Forever (issue #177).
     feast = dict(t["SpellEffect"][0], Effect=str(CRAFT_FEAST), EffectItemType="2840", SpellID="999296")
@@ -272,7 +286,7 @@ def main(argv):
     argv = [a for a in argv if a != "--retail"]
     build = argv[0]
     cache = argv[argv.index("--cache") + 1] if "--cache" in argv else None
-    tables = RETAIL_TABLES if retail else TABLES
+    tables = RETAIL_TABLES if retail else FOREVER_TABLES
     cat = build_catalog({name: read_csv(fetch(name, build, cache)) for name in tables}, retail=retail)
     out = OUT_RETAIL if retail else OUT
     with open(out, "w", encoding="utf-8", newline="\n") as f:
