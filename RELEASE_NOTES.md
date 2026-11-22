@@ -1,4 +1,7 @@
-## [1.34.3] - 2026-11-22
+## [1.35.0] - 2026-11-22
+
+### Added
+- os talentos e o sufixo de cada item vão para o companion (#399)
 
 ### Fixed
-- o Guild Finder nomeia o ruleset RP-PvP (danielcosta42/guildos-web#568)
+- o Luacheck conhece Constants, e uma inspeção de outra pessoa não grava nada no membro da fila (#399)
