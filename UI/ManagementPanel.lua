@@ -596,6 +596,69 @@ local function BuildLogSub(panel)
 end
 
 ----------------------------------------------------------------------
+-- Share a ban with the alliance (#408): a reason from the contract's list, required, and an optional
+-- note. The logic is BanList:Share's; this only asks.
+----------------------------------------------------------------------
+local shareDialog
+local function ShowShareDialog(key, name)
+    local BL = GuildOS.BanList
+    if not BL then return end
+    if not GuildOS:IsOfficer() then
+        GuildOS:Print(L["|cffFF4444Officers only.|r"])
+        return
+    end
+    local f = shareDialog
+    if not f then
+        f = CreateFrame("Frame", "GuildOSBanShareDialog", UIParent, "BackdropTemplate")
+        f:SetSize(380, 176)
+        f:SetPoint("CENTER")
+        f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = UI:Edge(f) })
+        f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+        UI:StylePopup(f)
+        f:SetFrameStrata("DIALOG")
+        f:EnableMouse(true)
+        f.title = UI:CreateText(f, "", 13, C.text.r, C.text.g, C.text.b)
+        f.title:SetPoint("TOP", 0, -12)
+        local hint = UI:CreateText(f, L["The alliance's officers are alerted about them; nobody is banned for it."],
+            10, C.silver.r, C.silver.g, C.silver.b)
+        hint:SetPoint("TOPLEFT", 14, -34)
+        hint:SetPoint("TOPRIGHT", -14, -34)
+        hint:SetJustifyH("LEFT")
+        local reasonLbl = UI:CreateText(f, L["Reason"], 11, C.text.r, C.text.g, C.text.b)
+        reasonLbl:SetPoint("TOPLEFT", 14, -66)
+        f.reason = UI:CreateDropdown(f, 220, 22)
+        f.reason:SetPoint("LEFT", reasonLbl, "RIGHT", 8, 0)
+        local opts = {}
+        for _, r in ipairs(BL.SHARE_REASONS) do opts[#opts + 1] = { value = r, text = BL.ReasonText(r) } end
+        f.reason:SetOptions(opts)
+        f.reason:SetPlaceholder(L["Choose a reason"])
+        local noteLbl = UI:CreateText(f, L["Note (optional)"], 11, C.text.r, C.text.g, C.text.b)
+        noteLbl:SetPoint("TOPLEFT", 14, -98)
+        f.note = UI:CreateInput(f, 250, 22, { max = BL.SHARE_NOTE_MAX })
+        f.note:SetPoint("LEFT", noteLbl, "RIGHT", 8, 0)
+        f.result = UI:CreateText(f, "", 10, C.red.r, C.red.g, C.red.b)
+        f.result:SetPoint("BOTTOMLEFT", 14, 18)
+        f.ok = UI:CreateButton(f, L["Share"], 90, 24)
+        f.ok:SetPoint("BOTTOMRIGHT", -14, 12)
+        local cancel = UI:CreateButton(f, L["Cancel"], 90, 24)
+        cancel:SetPoint("RIGHT", f.ok, "LEFT", -8, 0)
+        cancel:SetScript("OnClick", function() f:Hide() end)
+        table.insert(UISpecialFrames, "GuildOSBanShareDialog")   -- ESC closes it
+        shareDialog = f
+    end
+    f.title:SetText(string.format(L["Share the ban on %s with the alliance"], name or "?"))
+    f.reason:SetValue(nil)
+    f.note:SetText("")
+    f.result:SetText("")
+    f.ok:SetScript("OnClick", function()
+        local ok, why = BL:Share(key, f.reason:GetValue(), f.note:GetText())
+        if ok then f:Hide(); return end
+        f.result:SetText(why == "reason" and L["Choose a reason first."] or L["Nothing was shared."])
+    end)
+    f:Show()
+end
+
+----------------------------------------------------------------------
 -- BAN LIST sub-panel — officer blacklist (add / search / remove)
 ----------------------------------------------------------------------
 local function BuildBanSub(panel)
@@ -669,8 +732,15 @@ local function BuildBanSub(panel)
     searchBox:SetPoint("LEFT", filterLbl, "RIGHT", 8, 0)
 
     local CELL_X = { 0, 152, 332, 422 }
-    MakeTableHeader(panel, { { L["PLAYER"], CELL_X[1] }, { L["REASON"], CELL_X[2] },
+    local localHeader = MakeTableHeader(panel, { { L["PLAYER"], CELL_X[1] }, { L["REASON"], CELL_X[2] },
         { L["BY"], CELL_X[3] }, { L["EXPIRES"], CELL_X[4] } }, 146)
+    -- The alliance's bans this client holds (#408): read-only, in memory, the guild that banned and when.
+    local allyHeader = MakeTableHeader(panel, { { L["PLAYER"], CELL_X[1] }, { L["REASON"], CELL_X[2] },
+        { L["GUILD"], CELL_X[3] }, { L["DATE"], CELL_X[4] } }, 146)
+    allyHeader:Hide()
+    local showAlliance = false
+    local allyBtn = UI:CreateButton(panel, L["Alliance bans"], 120, 20)
+    allyBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -126)
 
     -- List
     local listHolder = CreateFrame("Frame", nil, panel)
@@ -684,10 +754,39 @@ local function BuildBanSub(panel)
         fs:SetWidth(w); fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
     end
 
+    -- The alliance's bans, read-only: an alert for the officers, never a ban here (#408).
+    local function refreshAlliance(filter)
+        local BL = GuildOS.BanList
+        local list = BL and GuildOS:IsOfficer() and BL:AllianceBans() or nil
+        local y = 0
+        for _, b in ipairs(list or {}) do
+            if filter == "" or (b.name or ""):lower():find(filter, 1, true) then
+                local why = BL.ReasonText(b.reason) .. (b.appeal and (" " .. L["(under appeal)"]) or "")
+                if b.note then why = why .. " — " .. b.note end
+                cell(b.name or "?", CELL_X[1], 148, y, C.red.r, C.red.g, C.red.b)
+                cell(why, CELL_X[2], 176, y, C.text.r, C.text.g, C.text.b)
+                cell(b.guild or "?", CELL_X[3], 86, y, C.textDim.r, C.textDim.g, C.textDim.b)
+                cell(GuildOS:DateText(b.at, "/%y"), CELL_X[4], 82, y, C.textDim.r, C.textDim.g, C.textDim.b)
+                y = y + ROW_H
+            end
+        end
+        if y == 0 then
+            local empty = UI:CreateText(content,
+                L["No bans from the alliance. The site sends them with the companion when other guilds share theirs."],
+                11, C.silver.r, C.silver.g, C.silver.b)
+            empty:SetPoint("TOPLEFT", 0, -4)
+        end
+        content:SetHeight(math.max(1, y))
+    end
+
     local function refresh()
         for _, c in pairs({ content:GetChildren() }) do c:Hide() end
         for _, r in pairs({ content:GetRegions() }) do r:Hide() end
         local filter = strtrim(searchBox:GetText() or ""):lower()
+        local held = GuildOS.BanList and GuildOS:IsOfficer() and GuildOS.BanList:AllianceBans() or nil
+        allyBtn.label:SetText(showAlliance and L["Our bans"] or string.format(L["Alliance bans (%d)"], held and #held or 0))
+        localHeader:SetShown(not showAlliance); allyHeader:SetShown(showAlliance)
+        if showAlliance then return refreshAlliance(filter) end
         local now = GetServerTime()
         local list = GuildOS.BanList and GuildOS.BanList:List() or {}
         local y = 0
@@ -713,6 +812,15 @@ local function BuildBanSub(panel)
                 -- By the row's own key: on retail a name alone is a different ban from Name-Realm (#184).
                 local key = e.key
                 del:SetScript("OnClick", function() if GuildOS.BanList then GuildOS.BanList:RemoveKey(key) end end)
+                -- Share with the alliance, or stop sharing (#408).
+                local shared = GuildOS.BanList and GuildOS.BanList:IsShared(key)
+                local share = UI:CreateButton(content, shared and L["Unshare"] or L["Share"], 70, 18)
+                share:SetPoint("RIGHT", del, "LEFT", -4, 0)
+                local who = e.name
+                share:SetScript("OnClick", function()
+                    if not GuildOS.BanList then return end
+                    if shared then GuildOS.BanList:Unshare(key) else ShowShareDialog(key, who) end
+                end)
                 y = y + ROW_H
             end
         end
@@ -727,6 +835,7 @@ local function BuildBanSub(panel)
 
     -- Hooked: the field keeps its own text handlers (#371).
     searchBox:HookScript("OnTextChanged", function() refresh() end)
+    allyBtn:SetScript("OnClick", function() showAlliance = not showAlliance; refresh() end)
     -- let sync / mutations repaint this tab
     if GuildOS.BanList then GuildOS.BanList.uiRefresh = refresh end
     return refresh

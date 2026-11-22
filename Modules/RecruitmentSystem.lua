@@ -1459,10 +1459,15 @@ function Recruitment:HandleCommand(args)
                 GuildOS:Print(L["|cffFF4444You don't have permission to invite.|r"])
                 return
             end
-            if GuildOS.Compat.GuildInvite(target) then
-                if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(target) end
-                GuildOS:Print(L["Guild invite sent to |cffFFFFFF"] .. target .. "|r.")
+            local function invite()
+                if GuildOS.Compat.GuildInvite(target) then
+                    if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(target) end
+                    GuildOS:Print(L["Guild invite sent to |cffFFFFFF"] .. target .. "|r.")
+                end
             end
+            -- The alliance has banned them: the officer reads why first (#408).
+            local BL = GuildOS.BanList
+            if not (BL and BL.HoldInvite and BL:HoldInvite(target, invite)) then invite() end
         else
             GuildOS:Print(L["Usage: /guildos recruit invite <PlayerName>"])
         end

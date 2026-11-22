@@ -1088,6 +1088,11 @@ function Companion:BuildPayload()
     -- Within 17 (#407): the guild's rules, from any client that holds them, with their stamp so the site
     -- keeps the newest whoever uploads last. Absent while the guild never wrote any. Never in the pack.
     payload.rules = GuildOS.GuildRules and optional("rules", GuildOS.GuildRules.ForExport, GuildOS.GuildRules) or nil
+    -- Within 17 (#408, the site's guildos-web#616): the bans this guild shared with its alliance, from an
+    -- officer's client only, newest first, withdrawn ones with `withdrawnAt`. Absent when the guild never
+    -- shared any. Never in the pack.
+    payload.banShares = GuildOS.BanList and GuildOS.BanList.ForExport
+        and optional("banShares", GuildOS.BanList.ForExport, GuildOS.BanList) or nil
     return payload
 end
 

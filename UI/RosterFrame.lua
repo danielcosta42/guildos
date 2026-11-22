@@ -376,7 +376,12 @@ local function InviteField(parent)
             GuildOS:Print(L["Enter a player name to invite."])
             return
         end
-        if GuildOS.Compat.GuildInvite(target) then GuildOS:Print(string.format(L["Guild invite sent to %s."], target)) end
+        local function send()
+            if GuildOS.Compat.GuildInvite(target) then GuildOS:Print(string.format(L["Guild invite sent to %s."], target)) end
+        end
+        -- The alliance has banned them: the officer reads why first (#408).
+        local BL = GuildOS.BanList
+        if not (BL and BL.HoldInvite and BL:HoldInvite(target, send)) then send() end
         box:SetText("")
     end
     btn:SetScript("OnClick", function() invite(); box:ClearFocus() end)
