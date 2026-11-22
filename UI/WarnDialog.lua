@@ -121,7 +121,13 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
         local reasonText = D.ReasonText(reasonDD:GetValue())
         typed = typed:gsub(name:gsub("%p", "%%%0"), "{name}"):gsub(reasonText:gsub("%p", "%%%0"), "{reason}")
         local named = ruleText()
-        if named then typed = typed:gsub((named:gsub("%p", "%%%0")), "{rule}") end
+        if named then
+            typed = typed:gsub((named:gsub("%p", "%%%0")), "{rule}")
+        elseif tostring(D:GetTemplates()[tplDD:GetValue()] or ""):find("{rule}", 1, true) then
+            -- No rule named: the words that stood in for one go back to the placeholder, not into the template.
+            local generic = L["the guild's rules"]
+            typed = typed:gsub((generic:gsub("%p", "%%%0")), "{rule}")
+        end
         if D:SetTemplate(tplDD:GetValue(), typed) then GuildOS:Print(L["Template saved for the guild."]) end
     end)
 

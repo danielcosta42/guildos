@@ -51,8 +51,10 @@ end
 -- `days` on the last one; nil once join + days has passed, when the join is unknown or when days is 0.
 -- A join a little ahead of this clock (another officer's) reads as day 1.
 function Newcomer.DayOf(joinAt, now, days)
-    joinAt, now = tonumber(joinAt), tonumber(now)
+    joinAt, now = GuildOS.Finite(joinAt), GuildOS.Finite(now)
     if not (joinAt and now and days and days > 0) then return nil end
+    -- A join more than a few minutes past this clock is no join anybody saw: unknown, never a quarantine forever.
+    if joinAt > now + 300 then return nil end
     if now >= joinAt + days * DAY then return nil end
     return math.floor(math.max(0, now - joinAt) / DAY) + 1
 end

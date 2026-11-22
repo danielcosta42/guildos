@@ -33,9 +33,11 @@ local function settings() return GuildOS.db and GuildOS.db.settings end
 -- One rule off a box or the network, cleaned: { title, text }, or nil when it has no title.
 function GuildRules.CleanRule(r)
     if type(r) ~= "table" then return nil end
-    local title = type(r.title) == "string" and GuildOS:SanitizeUserText(r.title, GuildRules.TITLE_MAX) or ""
+    -- No braces: a rule is quoted inside a warning's template, where "{name}" would be filled again.
+    local function clean(v, max) return type(v) == "string" and strtrim((GuildOS:SanitizeUserText(v, max):gsub("[{}]", ""))) or "" end
+    local title = clean(r.title, GuildRules.TITLE_MAX)
     if title == "" then return nil end
-    local text = type(r.text) == "string" and GuildOS:SanitizeUserText(r.text, GuildRules.TEXT_MAX) or ""
+    local text = clean(r.text, GuildRules.TEXT_MAX)
     return { title = title, text = text }
 end
 

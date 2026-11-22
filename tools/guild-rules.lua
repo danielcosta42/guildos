@@ -173,4 +173,5 @@ for _, t in ipairs(registered) do
   local ok, why = t.fn()
   check(ok, "selftest " .. t.name .. ": " .. tostring(why))
 end
+check(GuildOS.GuildRules.CleanRule({ title = "Respect {name}", text = "no {reason}" }).title == "Respect name", "no braces in a rule: a template would fill them")
 print(("guild-rules: %d checks passed"):format(checks))

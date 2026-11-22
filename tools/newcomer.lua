@@ -209,4 +209,6 @@ for _, t in ipairs(registered) do
   local ok, why = t.fn()
   check(ok, "selftest " .. t.name .. ": " .. tostring(why))
 end
+check(GuildOS.Newcomer.DayOf(1e12, 1000, 7) == nil and GuildOS.Newcomer.DayOf(math.huge, 1000, 7) == nil, "a join in the far future is unknown, never a quarantine forever")
+check(GuildOS.Newcomer.DayOf(1100, 1000, 7) == 1, "a join a little ahead of this clock is day 1")
 print(("newcomer: %d checks passed"):format(checks))
