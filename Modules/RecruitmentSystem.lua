@@ -428,6 +428,24 @@ function Recruitment.ChatTextProblem(msg)
     return nil
 end
 
+-- The welcome as it goes out: the officers' text and, when they chose it and the guild has rules, the
+-- invitation to /gos rules (#407), only when the whole still fits the game's 255 bytes (else the text
+-- alone, as before). Pure on its arguments.
+function Recruitment.WelcomeWithRules(base, withRules, hasRules)
+    if type(base) ~= "string" or base == "" or not (withRules and hasRules) then return base end
+    local full = base .. " " .. L["Type /gos rules to read the guild's rules."]
+    if #full > 255 then return base end
+    return full
+end
+
+-- The welcome this client would send now (and shows in the Forever popup before the click).
+function Recruitment:WelcomeMessage()
+    local r = GuildOS.db.recruitment
+    local GR = GuildOS.GuildRules
+    return Recruitment.WelcomeWithRules(r and r.welcomeMessage, r ~= nil and r.welcomeRules == true,
+        GR ~= nil and GR:HasRules())
+end
+
 -- The one way a welcome reaches guild chat, clicked (Forever) or on its own (Anniversary): the text
 -- is checked first and a send the game raises on is said, never lost (#270). True when it went.
 function Recruitment:SendWelcomeText(msg, who)
@@ -449,7 +467,7 @@ end
 -- game would not take the text: whoever waits keeps waiting for the fixed one.
 function Recruitment:SendPendingWelcome()
     local list = self._pendingWelcomes
-    local msg = GuildOS.db.recruitment and GuildOS.db.recruitment.welcomeMessage
+    local msg = self:WelcomeMessage()
     if not list or #list == 0 or not msg or msg == "" then return false end
     if not self:SendWelcomeText(msg) then return false end
     GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. table.concat(list, ", ") .. L["|r in guild chat."])
@@ -1184,7 +1202,7 @@ function Recruitment:ShowWelcomePopup()
     local list = self._pendingWelcomes or {}
     if #list == 0 then f:Hide() return end
     f.line:SetText(string.format(L["|cffFFFFFF%s|r joined the guild."], table.concat(list, ", ")))
-    f.note:SetText((GuildOS.db.recruitment and GuildOS.db.recruitment.welcomeMessage) or "")
+    f.note:SetText(self:WelcomeMessage() or "")
     f:Fit()
     f:Show()
 end
@@ -1441,10 +1459,15 @@ function Recruitment:HandleCommand(args)
                 GuildOS:Print(L["|cffFF4444You don't have permission to invite.|r"])
                 return
             end
-            if GuildOS.Compat.GuildInvite(target) then
-                if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(target) end
-                GuildOS:Print(L["Guild invite sent to |cffFFFFFF"] .. target .. "|r.")
+            local function invite()
+                if GuildOS.Compat.GuildInvite(target) then
+                    if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(target) end
+                    GuildOS:Print(L["Guild invite sent to |cffFFFFFF"] .. target .. "|r.")
+                end
             end
+            -- The alliance has banned them: the officer reads why first (#408).
+            local BL = GuildOS.BanList
+            if not (BL and BL.HoldInvite and BL:HoldInvite(target, invite)) then invite() end
         else
             GuildOS:Print(L["Usage: /guildos recruit invite <PlayerName>"])
         end
@@ -1633,8 +1656,7 @@ function Recruitment:RegisterWelcomeEvent()
                     GuildOS.CommSystem.MSG_TYPES.WELCOME_CLAIM, newMember, nil, "NORMAL")
             end
 
-            local settings = GuildOS.db.recruitment
-            local welcomeMsg = settings.welcomeMessage
+            local welcomeMsg = Recruitment:WelcomeMessage()
             if welcomeMsg and welcomeMsg ~= "" then
                 if GuildOS.Compat.NeedsClick() then
                     -- Forever drops a line sent from this timer: the officer's click sends it (#61).

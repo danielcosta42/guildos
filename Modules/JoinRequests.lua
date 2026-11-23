@@ -555,10 +555,15 @@ local pending = {}   -- [id] = when the invite was sent: waiting for the game to
 -- player's Enter (Compat.GuildInvite, #256). The row
 -- is not closed here: the game's own line does that (see onSystem), so a person who is offline, or a
 -- name the game refused, leaves it open for another try.
-function JR:Invite(id)
+function JR:Invite(id, confirmed)
     if not self:CanInvite(id) then return false end
     local Import = GuildOS.CompanionImport
     local name = store()[id].character
+    -- The alliance has banned them (#408): the officer reads why first, and "Invite anyway" comes back here.
+    local BL = GuildOS.BanList
+    if not confirmed and BL and BL.HoldInvite and BL:HoldInvite(name, function() JR:Invite(id, true) end) then
+        return false
+    end
     pending[id] = now()
     dropped.invites = dropped.invites + 1
     GuildOS.Compat.GuildInvite(Import and Import.PlainName(name) or name)

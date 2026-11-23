@@ -37,6 +37,8 @@ SyncService.OFFICER_DOMAINS = {
     bulletin = true,   -- officer announcements
     cta      = true,   -- an officer's call to arms (answering it is a member action, issue #108)
     ban      = true,   -- blacklist add/remove (officer-authoritative)
+    discipline = true, -- the disciplinary record (issue #402): officers write, and only officers keep it
+    modalert  = true,  -- an officer claiming a flagged chat line, so the others do not alert (issue #404)
     audit    = true,   -- guild audit trail (officer-authoritative, id-deduped)
     allyboard = true,  -- alliance bulletin posts this guild authored (ambassadors)
     allyhide  = true,  -- chat lines an ambassador pulled from the alliance feed
@@ -108,6 +110,31 @@ function SyncService:Initialize()
         -- The guild's trial length and its switch for new members (issue #249); neither carries `max`.
         if env.act == "trialdays" or env.act == "trialauto" then
             if GuildOS.TrialTracker then GuildOS.TrialTracker:OnConfigSync(env) end
+            return
+        end
+        -- The disciplinary record's term and ladder (issue #402); neither carries `max`.
+        if env.act == "discterm" or env.act == "discladder" or env.act == "disctpl" or env.act == "discrank" then
+            if GuildOS.Discipline then GuildOS.Discipline:OnConfigSync(env) end
+            return
+        end
+        -- The officers' list of chat alerts (issue #404); it carries no `max`.
+        if env.act == "modrules" then
+            if GuildOS.ModAlerts then GuildOS.ModAlerts:OnConfigSync(env) end
+            return
+        end
+        -- And the anti-flood's limits (issue #405); it carries no `max`.
+        if env.act == "modflood" then
+            if GuildOS.ModFlood then GuildOS.ModFlood:OnConfigSync(env) end
+            return
+        end
+        -- And the newcomer's quarantine (issue #406); it carries no `max`.
+        if env.act == "newcomer" then
+            if GuildOS.Newcomer then GuildOS.Newcomer:OnConfigSync(env) end
+            return
+        end
+        -- The guild's rules (issue #407), kept on every client; it carries no `max`.
+        if env.act == "rules" then
+            if GuildOS.GuildRules then GuildOS.GuildRules:OnConfigSync(env) end
             return
         end
         -- Who creates calendar events (issue #283).

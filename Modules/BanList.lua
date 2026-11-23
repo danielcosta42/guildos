@@ -3,6 +3,13 @@
 -- Per-guild blacklist (permanent + temp-ban with auto-expiry), synced
 -- officer-authoritative (domain "ban"). Alerts officers when a banned
 -- player rejoins / whispers / is inspected. IsBanned() gates auto-invite.
+--
+-- The alliance (issue #408): an officer may share a local ban with the guild's alliance (a reason
+-- from SHARE_REASONS, an optional note), kept on the ban as `entry.share` and sent to the site in the
+-- GOSCOMP1 as `banShares`. The site hands back the bans of the alliance's OTHER guilds in the
+-- GOSGILD1 (`allianceBans`, read by CompanionImport:AllianceBans), held in memory only. Those only
+-- ever ALERT an officer — on a join, a whisper, a tooltip and before a manual invite — and never
+-- enter IsBanned(): another guild's ban never blocks the auto-invite; the officer decides.
 ----------------------------------------------------------------------
 local BanList = {}
 GuildOS.BanList = BanList
@@ -10,6 +17,13 @@ local L = GuildOS.L
 
 local EXPIRED_GRACE = 7 * 86400    -- keep expired temp-bans 7 days for visibility
 local TOMBSTONE_TTL = 30 * 86400   -- keep un-ban tombstones 30 days for sync convergence
+
+-- The alliance's contract (issue #408, the site's guildos-web#616): the reasons a shared ban may give,
+-- the note's bytes, and how many shares go up and how many of the alliance's bans are read.
+BanList.SHARE_REASONS = { "scam", "harassment", "ninja", "cheating", "other" }
+BanList.SHARE_NOTE_MAX = 200
+BanList.SHARE_EXPORT_MAX = 200
+BanList.ALLIANCE_MAX = 200
 
 function BanList:Initialize()
     GuildOS.db.banList = GuildOS.db.banList or {}
@@ -130,7 +144,10 @@ function BanList:Add(name, reason, durationSec)
     local key = self:_NormalizeKey(name)
     if key == "" then return false end
     local now = GetServerTime()
+    local held = GuildOS.db.banList[key]
     local entry = {
+        -- Banned again: the alliance share stays as it was, shared or withdrawn (#408).
+        share   = type(held) == "table" and type(held.share) == "table" and held.share or nil,
         name    = self:_Who(name),
         reason  = strtrim(reason or "") ~= "" and strtrim(reason) or L["(no reason)"],
         author  = GuildOS.Compat.PlayerName(),
@@ -155,10 +172,16 @@ function BanList:RemoveKey(key)
     if not GuildOS:IsOfficer() or not key or key == "" then return false end
     local existing = GuildOS.db.banList[key]
     if not existing or existing.removed then return false end
+    local now = GetServerTime()
     local tomb = {
         name = existing.name or key,
-        author = GuildOS.Compat.PlayerName(), ts = GetServerTime(), removed = true,
+        author = GuildOS.Compat.PlayerName(), ts = now, removed = true,
     }
+    -- A lifted ban that was shared tells the site so: the share, withdrawn now (#408).
+    local share = type(existing.share) == "table" and existing.share or nil
+    if share then
+        tomb.share = { reason = share.reason, note = share.note, at = share.at, withdrawnAt = share.withdrawnAt or now }
+    end
     GuildOS.db.banList[key] = tomb
     self:_Publish(key, tomb)
     self:Refresh()
@@ -199,6 +222,15 @@ end
 
 function BanList:_ApplyRemote(key, entry, rev)
     if not GuildOS.SyncService:ShouldApply("ban", key, rev) then return false end
+    -- An officer on a client before #408 re-bans or lifts with no `share`: the share this client holds stays,
+    -- marked withdrawn, so the site hears it was withdrawn instead of the ban staying shared for good.
+    local held = GuildOS.db.banList[key]
+    if type(entry) == "table" and entry.share == nil and type(held) == "table" and type(held.share) == "table" then
+        local carried = {}
+        for f, v in pairs(held.share) do carried[f] = v end
+        carried.withdrawnAt = carried.withdrawnAt or GetServerTime()
+        entry.share = carried
+    end
     GuildOS.db.banList[key] = entry
     GuildOS.SyncService:SetRevision("ban", key, rev)
     return true
@@ -213,6 +245,217 @@ end
 
 function BanList:Refresh()
     if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
+end
+
+----------------------------------------------------------------------
+-- Sharing a ban with the alliance (issue #408)
+----------------------------------------------------------------------
+local REASON_SET = {}
+for _, r in ipairs(BanList.SHARE_REASONS) do REASON_SET[r] = true end
+
+-- The reason as the contract has it, or nil.
+function BanList.ShareReason(v)
+    if type(v) == "string" and REASON_SET[v] then return v end
+    return nil
+end
+
+function BanList.ReasonText(r)
+    local t = {
+        scam = L["Scam"], harassment = L["Harassment"], ninja = L["Ninja looting"],
+        cheating = L["Cheating"], other = L["Other"],
+    }
+    return t[r] or L["Other"]
+end
+
+-- A note for the alliance, or off the network: nothing that opens a colour, a link or a texture, one
+-- line, no control character, trimmed, cut to SHARE_NOTE_MAX bytes without splitting a UTF-8
+-- character. Nil when nothing is left.
+function BanList.CleanNote(v)
+    if type(v) ~= "string" then return nil end
+    local s = strtrim((v:gsub("|", ""):gsub("%c", " ")))
+    local max = BanList.SHARE_NOTE_MAX
+    if #s > max then
+        local cut = max
+        while cut > 0 do
+            local b = s:byte(cut + 1)
+            if not (b and b >= 0x80 and b <= 0xBF) then break end
+            cut = cut - 1
+        end
+        s = strtrim(s:sub(1, cut))
+    end
+    return s ~= "" and s or nil
+end
+
+-- Whether the ban filed under `key` is shared with the alliance right now.
+function BanList:IsShared(key, store)
+    store = store or GuildOS.db.banList or {}
+    local e = store[key]
+    return type(e) == "table" and not e.removed and type(e.share) == "table" and not e.share.withdrawnAt
+end
+
+-- Share the standing ban filed under `key` with the alliance. Officers only; the reason is required.
+-- True, or false and why: "officer", "missing", "reason".
+function BanList:Share(key, reason, note)
+    if not GuildOS:IsOfficer() then return false, "officer" end
+    local e = key and GuildOS.db.banList[key]
+    if type(e) ~= "table" or e.removed then return false, "missing" end
+    reason = BanList.ShareReason(reason)
+    if not reason then return false, "reason" end
+    e.share = { reason = reason, note = BanList.CleanNote(note), at = GetServerTime() }
+    self:_Publish(key, e)
+    self:Refresh()
+    return true
+end
+
+-- Stop sharing it: the share stays, withdrawn, so the site hears it ended. False when it was not shared.
+function BanList:Unshare(key)
+    if not GuildOS:IsOfficer() or not self:IsShared(key) then return false end
+    local e = GuildOS.db.banList[key]
+    e.share.withdrawnAt = GetServerTime()
+    self:_Publish(key, e)
+    self:Refresh()
+    return true
+end
+
+-- The member key for a name an officer typed: the roster's own key when a member matches it ignoring case
+-- (so "thrall" goes up as members[].key writes "Thrall"), else the name's key with its first letter capitalised.
+function BanList:_MemberKey(who)
+    local key = GuildOS:KeyOfRosterName(who)
+    if not key then return nil end
+    local lower = key:lower()
+    for k in pairs(GuildOS.db and GuildOS.db.members or {}) do
+        if type(k) == "string" and k:lower() == lower then return k end
+    end
+    return (key:gsub("^%l", string.upper))
+end
+
+-- The companion export's `banShares` (#408): from an officer's client only, every ban this guild ever
+-- shared, cleaned again (a share arrives from other officers over sync), newest first, at most
+-- SHARE_EXPORT_MAX. `key` is the member key as members[].key builds it; `withdrawnAt` when the officer
+-- stopped sharing, the ban was lifted or a temporary one ran out. Nil when there is none.
+function BanList:ForExport(store, now)
+    if not GuildOS:IsOfficer() then return nil end
+    store = store or GuildOS.db.banList or {}
+    now = now or GetServerTime()
+    local list = {}
+    for key, e in pairs(store) do
+        local s = type(e) == "table" and type(e.share) == "table" and e.share or nil
+        local reason = s and BanList.ShareReason(s.reason)
+        local at = s and GuildOS.Finite(s.at)
+        local who = type(e) == "table" and type(e.name) == "string" and e.name ~= "" and e.name or key
+        local exportKey = reason and at and type(who) == "string" and BanList:_MemberKey(who)
+        if exportKey then
+            local withdrawn = GuildOS.Finite(s.withdrawnAt)
+            if not withdrawn and e.removed then withdrawn = GuildOS.Finite(e.ts) or now end
+            local expiry = GuildOS.Finite(e.expiry)
+            if not withdrawn and expiry and expiry <= now then withdrawn = expiry end
+            list[#list + 1] = {
+                key = exportKey, name = who:match("^([^-]+)") or who, reason = reason,
+                note = BanList.CleanNote(s.note), at = math.floor(at),
+                withdrawnAt = withdrawn and math.floor(withdrawn) or nil,
+            }
+        end
+    end
+    if #list == 0 then return nil end
+    table.sort(list, function(a, b)
+        if a.at ~= b.at then return a.at > b.at end
+        return a.key < b.key
+    end)
+    while #list > BanList.SHARE_EXPORT_MAX do list[#list] = nil end
+    return list
+end
+
+----------------------------------------------------------------------
+-- The alliance's bans (issue #408): in memory, alerts only
+----------------------------------------------------------------------
+-- The alliance's bans by the key BanList files a name under (_NormalizeKey: the realm on retail, the
+-- name alone elsewhere, #184), each key a list. Pure: `list` is CompanionImport:AllianceBans()'s.
+function BanList:IndexAllianceBans(list)
+    if type(list) ~= "table" then return nil end
+    local index = {}
+    for _, b in ipairs(list) do
+        local k = type(b) == "table" and type(b.key) == "string" and self:_NormalizeKey(b.key) or ""
+        if k ~= "" then
+            index[k] = index[k] or {}
+            local held = index[k]
+            held[#held + 1] = b
+        end
+    end
+    return index
+end
+
+-- The bans of the alliance this client holds, cleaned, rebuilt only when the inbox's block changes.
+function BanList:AllianceBans()
+    local I = GuildOS.CompanionImport
+    if not (I and I.AllianceBans and I.GuildBlock) then return nil, nil end
+    local block = I:GuildBlock()
+    if block ~= self._allyBlock or not self._allyHeld then
+        self._allyBlock = block
+        self._allyList = block and I:AllianceBans() or nil
+        self._allyIndex = self:IndexAllianceBans(self._allyList)
+        self._allyHeld = true
+    end
+    return self._allyList, self._allyIndex
+end
+
+-- The alliance's bans on `name` (as the game hands it over), for an officer; nil for anybody else or none.
+-- `index` is injected by the tests.
+function BanList:AllianceBansFor(name, index)
+    if type(name) ~= "string" or name == "" or not GuildOS:IsOfficer() then return nil end
+    if not index then
+        local _
+        _, index = self:AllianceBans()
+    end
+    if not index then return nil end
+    local found = index[self:_NormalizeKey(name)]
+    if found and #found > 0 then return found end
+    return nil
+end
+
+-- "Banned in <guild> for <reason>", and "(under appeal)" when it is.
+function BanList.AllianceLine(b)
+    local fmt = b.appeal and L["Banned in %s for %s (under appeal)"] or L["Banned in %s for %s"]
+    return string.format(fmt, b.guild or "?", BanList.ReasonText(b.reason))
+end
+
+function BanList:_AllianceAlert(name, bans)
+    if not GuildOS:IsOfficer() or type(bans) ~= "table" then return end
+    for i = 1, math.min(#bans, 3) do
+        local b = bans[i]
+        local msg = string.format(L["Alliance ban: %s. %s"], b.name or name, BanList.AllianceLine(b))
+        if b.note then msg = msg .. " — " .. b.note end
+        GuildOS:Print("|cffFF8800\226\154\160 " .. msg .. "|r")   -- ⚠
+        if i == 1 and RaidNotice_AddMessage and RaidWarningFrame and ChatTypeInfo then
+            RaidNotice_AddMessage(RaidWarningFrame, msg, ChatTypeInfo["RAID_WARNING"])
+        end
+    end
+end
+
+-- Before a manual guild invite: when the alliance has banned `name`, the officer sees why first and
+-- `invite` runs only on "Invite anyway". True when held (the caller stops there), false when nothing
+-- stands in the way (the caller invites as it always did). Never blocks: an alert, not a ban.
+function BanList:HoldInvite(name, invite)
+    local bans = self:AllianceBansFor(name)
+    if not bans or type(invite) ~= "function" or not GuildOS.ShowDialog then return false end
+    local lines = { string.format(L["The alliance has banned %s:"], name) }
+    for i = 1, math.min(#bans, 3) do
+        lines[#lines + 1] = BanList.AllianceLine(bans[i]) .. (bans[i].note and (" — " .. bans[i].note) or "")
+    end
+    if #bans > 3 then lines[#lines + 1] = string.format(L["and %d more"], #bans - 3) end
+    GuildOS:ShowDialog("GUILDOS_ALLIANCE_BAN_INVITE", table.concat(lines, "\n"), nil, invite)
+    return true
+end
+
+if GuildOS.Dialogs and not GuildOS.Dialogs["GUILDOS_ALLIANCE_BAN_INVITE"] then
+    GuildOS.Dialogs["GUILDOS_ALLIANCE_BAN_INVITE"] = {
+        text = "%s",
+        button1 = L["Invite anyway"], button2 = L["Cancel"],
+        OnAccept = function(dlg, data)
+            local invite = data or (dlg and dlg.data)
+            if type(invite) == "function" then invite() end
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true,
+    }
 end
 
 ----------------------------------------------------------------------
@@ -262,14 +505,21 @@ function BanList:_SetupDetection()
             if joiner and BanList:IsBanned(joiner) then
                 BanList:_Alert(BanList:Get(joiner))
             end
+            local ally = joiner and BanList:AllianceBansFor(joiner)
+            if ally then BanList:_AllianceAlert(joiner, ally) end
         elseif event == "CHAT_MSG_WHISPER" then
             -- The whole sender: on retail the realm tells two namesakes apart (#184).
             local who = arg2 and BanList:_Who(arg2)
             local sender = who and BanList:_NormalizeKey(who)
-            if sender and sender ~= "" and BanList:IsBanned(who) and not BanList._whisperCd[sender] then
-                BanList._whisperCd[sender] = true
-                GuildOS.Compat.After(60, function() BanList._whisperCd[sender] = nil end)
-                BanList:_Alert(BanList:Get(who))
+            if sender and sender ~= "" and not BanList._whisperCd[sender] then
+                local banned = BanList:IsBanned(who)
+                local ally = BanList:AllianceBansFor(who)
+                if banned or ally then
+                    BanList._whisperCd[sender] = true
+                    GuildOS.Compat.After(60, function() BanList._whisperCd[sender] = nil end)
+                end
+                if banned then BanList:_Alert(BanList:Get(who)) end
+                if ally then BanList:_AllianceAlert(who, ally) end
             end
         end
     end)
@@ -289,6 +539,14 @@ function BanList:_SetupDetection()
             local e = BanList:Get(name)
             tt:AddLine("\226\155\148 " .. L["BANNED"] .. " — " ..
                 (e.reason or "?") .. " (" .. (e.author or "?") .. ")", 1, 0.2, 0.2)
+            tt:Show()
+        end
+        -- The alliance's, officers only, as an alert (#408).
+        local ally = name and BanList:AllianceBansFor(name)
+        if ally then
+            for i = 1, math.min(#ally, 2) do
+                tt:AddLine("\226\154\160 " .. BanList.AllianceLine(ally[i]), 1, 0.53, 0)
+            end
             tt:Show()
         end
     end)
@@ -342,6 +600,34 @@ function BanList:_RegisterTests()
     S:Register("banlist.parse_join", function()
         local n = BanList:_ParseJoin("Grefer has joined the guild.")
         if n ~= BanList:_Who("Grefer") then return false, "got " .. tostring(n) end   -- realm and all on retail (#184)
+        return true
+    end)
+
+    -- The alliance's bans match by the key a ban is filed under: with the realm on retail, the name
+    -- alone elsewhere (#184), and never enter IsBanned (#408).
+    S:Register("banlist.alliance_match", function()
+        local index = BanList:IndexAllianceBans({
+            { key = "Thrall-Benediction", name = "Thrall", guild = "Horde Co", reason = "scam", at = 1 },
+        })
+        local hit = BanList:AllianceBansFor("Thrall-Benediction", index)
+        local other = BanList:AllianceBansFor("Thrall-Faerlina", index)
+        if not GuildOS:IsOfficer() then
+            if hit then return false, "a member sees nothing" end
+            return true
+        end
+        if not hit or hit[1].guild ~= "Horde Co" then return false, "the same key should match" end
+        if GuildOS.Client.isRetail and other then return false, "a namesake on another realm is somebody else on retail" end
+        if not GuildOS.Client.isRetail and not other then return false, "the name alone matches off retail" end
+        if BanList:IsBanned("Thrall-Benediction", 10, {}) then return false, "an alliance ban never blocks" end
+        return true
+    end)
+
+    S:Register("banlist.alliance_line", function()
+        local line = BanList.AllianceLine({ guild = "G", reason = "ninja", appeal = true })
+        if not line:find("G", 1, true) then return false, "got " .. line end
+        if BanList.ShareReason("theft") or not BanList.ShareReason("cheating") then return false, "reason enum" end
+        local note = BanList.CleanNote("a|cffff0000b\n" .. string.rep("\195\169", 200))
+        if not note or note:find("|", 1, true) or #note > BanList.SHARE_NOTE_MAX then return false, "note not cleaned" end
         return true
     end)
 

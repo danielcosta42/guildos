@@ -135,6 +135,135 @@ local function BuildBulletinSub(panel)
 end
 
 ----------------------------------------------------------------------
+-- RULES sub-panel (issue #407): the guild's rules for everybody to read; the officers write them here.
+----------------------------------------------------------------------
+local RULE_WHY = {
+    officer = L["|cffFF4444Officers only.|r"],
+    empty = L["A rule needs a title."],
+    full = L["The list is full."],
+    missing = L["That rule is gone."],
+}
+
+local function BuildGuildRulesSub(panel)
+    local GR = GuildOS.GuildRules
+    local listTop = GAP
+    local editing   -- the number of the rule the form rewrites, nil while it adds one
+    local titleBox, textBox, saveBtn, cancelBtn, result
+    if GuildOS:IsOfficer() and GR then
+        -- Two fields, title then text, each with its label beside it (#371), then the buttons.
+        local tLabel = UI:CreateText(panel, L["Title:"], 12)
+        titleBox = UI:CreateInput(panel, 0, FIELD_H, { max = GR.TITLE_MAX })
+        local xLabel = UI:CreateText(panel, L["Text:"], 12)
+        textBox = UI:CreateInput(panel, 0, FIELD_H, { max = GR.TEXT_MAX })
+        local labelW = math.ceil(math.max(tLabel:GetStringWidth() or 0, xLabel:GetStringWidth() or 0)) + GAP
+        titleBox:SetPoint("TOPLEFT", labelW, -GAP)
+        titleBox:SetPoint("TOPRIGHT", 0, -GAP)
+        tLabel:SetPoint("RIGHT", titleBox, "LEFT", -GAP, 0)
+        textBox:SetPoint("TOPLEFT", labelW, -(2 * GAP + FIELD_H))
+        textBox:SetPoint("TOPRIGHT", 0, -(2 * GAP + FIELD_H))
+        xLabel:SetPoint("RIGHT", textBox, "LEFT", -GAP, 0)
+        saveBtn = UI:CreateButton(panel, L["Add rule"], 120, FIELD_H)
+        saveBtn:SetPoint("TOPLEFT", labelW, -(3 * GAP + 2 * FIELD_H))
+        cancelBtn = UI:CreateButton(panel, L["Cancel"], 90, FIELD_H)
+        cancelBtn:SetPoint("LEFT", saveBtn, "RIGHT", GAP, 0)
+        cancelBtn:Hide()
+        result = UI:CreateText(panel, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        result:SetPoint("LEFT", cancelBtn, "RIGHT", GAP, 0)
+        local function stopEditing()
+            editing = nil
+            titleBox:SetText(""); textBox:SetText("")
+            titleBox:ClearFocus(); textBox:ClearFocus()
+            saveBtn.label:SetText(L["Add rule"])
+            cancelBtn:Hide()
+        end
+        panel.stopEditing = stopEditing
+        local function doSave()
+            local ok, why
+            if editing then
+                ok, why = GR:Update(editing, titleBox:GetText(), textBox:GetText())
+            else
+                ok, why = GR:Add(titleBox:GetText(), textBox:GetText())
+            end
+            if ok then
+                stopEditing()
+                result:SetText(L["Saved. The guild gets it now."])
+            else
+                result:SetText(RULE_WHY[why] or RULE_WHY.empty)
+            end
+        end
+        saveBtn:SetScript("OnClick", doSave)
+        textBox:SetScript("OnEnterPressed", doSave)
+        cancelBtn:SetScript("OnClick", stopEditing)
+        panel.editRule = function(n)
+            local r = GR:Rule(n)
+            if not r then return end
+            editing = n
+            titleBox:SetText(r.title); textBox:SetText(r.text or "")
+            saveBtn.label:SetText(L["Save rule"])
+            cancelBtn:Show()
+        end
+        listTop = 4 * GAP + 3 * FIELD_H
+    end
+    local _, child = makeScroll(panel, "GuildOSHubRulesScroll", listTop)
+
+    -- One frame per rule, made once and refilled (at most GR.RULES_MAX).
+    local rows = {}
+    local function rowAt(i)
+        if rows[i] then return rows[i] end
+        local row = CreateFrame("Frame", nil, child)
+        row.title = UI:CreateText(row, "", 13, C.text.r, C.text.g, C.text.b)
+        row.title:SetPoint("TOPLEFT", 0, 0)
+        row.title:SetJustifyH("LEFT")
+        row.text = UI:CreateText(row, "", 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        row.text:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -2)
+        row.text:SetJustifyH("LEFT")
+        if panel.editRule then
+            row.del = UI:CreateButton(row, "\195\151", 22, 18)   -- ×
+            row.del:SetPoint("TOPRIGHT", 0, 0)
+            row.del:SetScript("OnClick", function() GR:Remove(row.n); if panel.stopEditing then panel.stopEditing() end end)
+            row.up = UI:CreateButton(row, "\226\134\145", 22, 18)   -- ↑
+            row.up:SetPoint("RIGHT", row.del, "LEFT", -4, 0)
+            row.up:SetScript("OnClick", function() GR:MoveUp(row.n); if panel.stopEditing then panel.stopEditing() end end)
+            row.edit = UI:CreateButton(row, L["Edit"], 60, 18)
+            row.edit:SetPoint("RIGHT", row.up, "LEFT", -4, 0)
+            row.edit:SetScript("OnClick", function() panel.editRule(row.n) end)
+            row.title:SetPoint("TOPRIGHT", -(22 + 4 + 22 + 4 + 60 + GAP), 0)
+        else
+            row.title:SetPoint("TOPRIGHT", 0, 0)
+        end
+        row.text:SetPoint("TOPRIGHT", row.title, "BOTTOMRIGHT", 0, -2)
+        rows[i] = row
+        return row
+    end
+    local empty = UI:CreateText(child, L["The guild has not written its rules yet."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    empty:SetPoint("TOPLEFT", 0, 0)
+
+    local function refresh()
+        local rules = GR and GR:Get() or {}
+        local y = 0
+        for i, r in ipairs(rules) do
+            local row = rowAt(i)
+            row.n = i
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", 0, -y)
+            row:SetPoint("TOPRIGHT", 0, -y)
+            row.title:SetText(string.format("%d. %s", i, r.title))
+            row.text:SetText(r.text or "")
+            if row.up then row.up:SetShown(i > 1) end
+            local h = (row.title:GetStringHeight() or 14) + 2 + ((r.text ~= "" and row.text:GetStringHeight()) or 0)
+            row:SetHeight(math.max(18, h))
+            row:Show()
+            y = y + math.max(18, h) + GAP
+        end
+        for i = #rules + 1, #rows do rows[i]:Hide() end
+        empty:SetShown(#rules == 0)
+        child:SetHeight(math.max(1, y))
+    end
+    if GR then GR.uiRefresh = refresh end
+    return refresh
+end
+
+----------------------------------------------------------------------
 -- CALL TO ARMS sub-panel (issue #108): officers send, everyone sees the
 -- recent calls, answers them and sets how they want to be told.
 ----------------------------------------------------------------------
@@ -687,6 +816,7 @@ local HUB_SUBTABS = {
     { key = "calendar", label = L["Calendar"] },
     { key = "activity", label = L["Activity"] },
     { key = "bulletin", label = L["Bulletin"] },
+    { key = "rules",    label = L["Rules"] },
     { key = "cta",      label = L["Call to Arms"] },
     { key = "polls",    label = L["Polls"] },
     { key = "chat",     label = L["Chat"] },
@@ -721,6 +851,7 @@ function GuildOS:CreateGuildHub(parent, _mainFrame)
     local builders = {
         calendar = function(p) return GuildOS:CreateCalendarSub(p) end,
         activity = BuildActivitySub, bulletin = BuildBulletinSub, polls = BuildPollsSub, cta = BuildCallToArmsSub,
+        rules = BuildGuildRulesSub,
         chat = function(p) return GuildOS:CreateGuildChatFeed(p, GAP) end,
         journal = function(p) return GuildOS:CreateJournalPanel(p) end,
         achievements = function(p) return GuildOS:CreateAchievementsPanel(p) end,
