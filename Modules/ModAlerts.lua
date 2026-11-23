@@ -693,15 +693,21 @@ end
 
 function ModAlerts:_PruneFeed(now)
     local cut = now - self.FEED_TTL
+    -- Two hours old, any alert goes. Past the cap the oldest go, but never the one the window shows now (its
+    -- buttons find it by id).
     for i = #self.feed, 1, -1 do
         local e = self.feed[i]
-        -- A live alert still on screen is never pushed out (its window's buttons find it by id).
-        if (i > self.FEED_MAX or e.at < cut) and not (e.shown and e.state == "new" and e.at >= cut) then table.remove(self.feed, i) end
+        if e.at < cut then table.remove(self.feed, i) end
+    end
+    for i = #self.feed, 1, -1 do
+        if #self.feed <= self.FEED_MAX then break end
+        if self.feed[i] ~= self.onScreen then table.remove(self.feed, i) end
     end
 end
 
 function ModAlerts:_Show(a)
     a.shown = true
+    self.onScreen = a
     if a.sev == "high" and self:Prefs().sound and PlaySound then
         pcall(PlaySound, (SOUNDKIT and SOUNDKIT.RAID_WARNING) or 8959, "Master")
     end
