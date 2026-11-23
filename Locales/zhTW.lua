@@ -3503,3 +3503,5 @@ L["The alliance's officers are alerted about them; nobody is banned for it."] = 
 -- UI/SettingsPanel.lua (#415)
 L["Alt-click an item to open its recipe in Crafts"] = "Alt+點擊物品，在製造中開啟其配方"
 L["Never while the auction house, mail, trade, a vendor or the guild bank is open."] = "拍賣場、郵箱、交易、商人或公會銀行開啟時不會觸發。"
+L["Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."] = "網站上排在 %d 天之後的團隊副本尚未同步到遊戲；日期接近時會同步過來。"
+L["The website sends the game its next %d raids; later ones arrive as those pass."] = "網站只向遊戲傳送接下來的 %d 個團隊副本；之後的會在這些結束後同步過來。"

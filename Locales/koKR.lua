@@ -3503,3 +3503,5 @@ L["The alliance's officers are alerted about them; nobody is banned for it."] = 
 -- UI/SettingsPanel.lua (#415)
 L["Alt-click an item to open its recipe in Crafts"] = "아이템 Alt-클릭 시 제작 탭에서 제작법 열기"
 L["Never while the auction house, mail, trade, a vendor or the guild bank is open."] = "경매장, 우편함, 거래, 상인 또는 길드 은행이 열려 있을 때는 열지 않습니다."
+L["Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."] = "웹사이트에서 %d일보다 먼 날짜로 계획된 공격대는 아직 게임에 도착하지 않았습니다. 날짜가 가까워지면 도착합니다."
+L["The website sends the game its next %d raids; later ones arrive as those pass."] = "웹사이트는 다음 %d개의 공격대를 게임에 보냅니다. 이후 공격대는 앞선 공격대가 지나가면 도착합니다."

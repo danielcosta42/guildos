@@ -97,6 +97,19 @@ function GameCalendar.Match(webEvent, nativeEvents)
     return nil
 end
 
+--- Why a day may hold a site raid the game has not been sent yet (#416), or nil: "window" when part of
+--- the day is past the inbox's four weeks from `now`, "cap" when the inbox is full (`inbox` as
+--- CompanionImport:InboxInfo gives it, with `last`, its latest raid) and the day ends after its last
+--- raid. A raid planned two months ahead is on Discord the day it is made and reaches the game only
+--- once it is four weeks away; an empty day there says so rather than reading as "nothing planned".
+function GameCalendar.NotSentYet(dayEnd, now, inbox)
+    dayEnd, now = tonumber(dayEnd) or 0, tonumber(now) or 0
+    if dayEnd > now + GameCalendar.WINDOW_DAYS * 86400 then return "window" end
+    local last = type(inbox) == "table" and tonumber(inbox.last)
+    if last and (tonumber(inbox.count) or 0) >= GameCalendar.INBOX_CAP and dayEnd > last then return "cap" end
+    return nil
+end
+
 --- What the addon's calendar says about a site raid and the game's calendar:
 ---   "gone"    the site no longer sends it (inferred, and only where the inbox can tell);
 ---   "absent"  not in the game's calendar;

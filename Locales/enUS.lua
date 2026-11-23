@@ -1415,3 +1415,5 @@ L["The alliance's officers are alerted about them; nobody is banned for it."] = 
 -- UI/SettingsPanel.lua (#415)
 L["Alt-click an item to open its recipe in Crafts"] = "Alt-click an item to open its recipe in Crafts"
 L["Never while the auction house, mail, trade, a vendor or the guild bank is open."] = "Never while the auction house, mail, trade, a vendor or the guild bank is open."
+L["Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."] = "Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."
+L["The website sends the game its next %d raids; later ones arrive as those pass."] = "The website sends the game its next %d raids; later ones arrive as those pass."
