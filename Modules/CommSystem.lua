@@ -41,7 +41,7 @@ CommSystem.lastBroadcast = 0
 
 -- The alt links' old "AL" table (issue #424): sent only while a client before #424 was heard within
 -- LEGACY_WINDOW (its broadcast's version at or below LEGACY_ALT_MAX, or an "AL" without the mark).
-CommSystem.LEGACY_ALT_MAX = "1.37.0"
+CommSystem.LEGACY_ALT_MAX = "1.38.0"   -- 1.38.0 shipped before #424
 CommSystem.LEGACY_WINDOW = 1800
 local ALT_LINK_MARK = { v = 2 }
 -- The officers' safe list and nicknames (issue #429) on a sync request's answer at most once per 10 minutes.

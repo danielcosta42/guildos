@@ -26,7 +26,7 @@ too many alts.
    officer's entry replaces them, and an officer linking one again confirms it. A client that had a table
    never takes another client's unconfirmed links (their union would bring back unlinks a late officer
    missed); a new install does, and an officer's tombstone beats them.
-5. **Old clients.** "AL" goes out only while a client before this version (1.37.0 or older) was heard in the
+5. **Old clients.** "AL" goes out only while a client before this version (1.38.0 or older: 1.38.0 shipped before #424) was heard in the
    last 30 minutes, marked so new clients ignore it: the whole view (empty when every link is unlinked),
    never from a client that knows nothing. Received from an old client, it only adds an alt this client never
    heard of (never one with a tombstone); it never removes or changes a link; an empty one does nothing. An
