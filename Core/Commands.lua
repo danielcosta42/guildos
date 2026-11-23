@@ -527,9 +527,11 @@ local function handleCommand(msg)
         end
     elseif msg == "raid start" then
         -- /guildos raid start — one step of the Iniciar raide button, as its click (issue #400): typed, it is a key
-        -- press, which WoW: Forever lets an invite out of. On the raid the Web tab's button acts on.
+        -- press, which WoW: Forever lets an invite out of. On the raid near now (ButtonRaid: the site's, or one pasted
+        -- by hand), never a kept raid days away; with none, it says no raid starts around this time. The line it
+        -- prints starts with the raid's name.
         local I, RS = GuildOS.CompanionImport, GuildOS.RaidStart
-        if I and RS then RS:Click(I:ActiveRoster()) end
+        if I and RS then RS:Click(I:ButtonRaid(), true) end
     elseif msg == "exportatt" or msg == "exportattendance" then
         if GuildOS.RaidTracker then
             local json, err = GuildOS.RaidTracker:ExportForTMB()

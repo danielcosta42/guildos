@@ -3507,7 +3507,7 @@ L["The game did not turn the group into a raid."] = "O jogo não converteu o gru
 L["Offline, not invited: %s"] = "Offline, sem convite: %s"
 
 -- O aviso do dono, a guilda da raide, /gos raid start (issue #400)
-L["That roster is for the guild %s, not this character's."] = "Essa lista é da guilda %s, não da deste personagem."
+L["That roster is a raid of the guild %s: the raid buttons act on it, and it stays off this guild's calendar."] = "Essa lista é uma raide da guilda %s: os botões de raide agem nela, e ela fica fora do calendário desta guilda."
 L["Starts in %d min"] = "Começa em %d min"
 L["Starts now"] = "Começa agora"
 L["Started %d min ago"] = "Começou há %d min"

@@ -3322,7 +3322,7 @@ L["The game did not turn the group into a raid."] = "游戏没有把队伍转换
 L["Offline, not invited: %s"] = "离线，未邀请：%s"
 
 -- 给团队所有者的提醒、团队所属的公会、/gos raid start（issue #400）
-L["That roster is for the guild %s, not this character's."] = "该名单属于公会 %s，不属于此角色的公会。"
+L["That roster is a raid of the guild %s: the raid buttons act on it, and it stays off this guild's calendar."] = "该名单是公会 %s 的团队：团队按钮会按它操作，但它不会进入本公会的日历。"
 L["Starts in %d min"] = "%d 分钟后开始"
 L["Starts now"] = "现在开始"
 L["Started %d min ago"] = "已开始 %d 分钟"

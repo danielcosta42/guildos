@@ -1317,9 +1317,13 @@ end
 function LootRule.InWindow(startsAt, now) return inWindow(startsAt, now) end
 
 -- What the roster in hand says of its rule: the roster, whether it carries one, and whether this client
--- reads it (checked once per roster and kept, as the screens ask often).
+-- reads it (checked once per roster and kept, as the screens ask often). The roster in hand is the one the
+-- Raid plan window shows and the raid buttons act on (CompanionImport:ActiveRoster, issue #400): the raid of
+-- the window when there is one, else the roster kept.
 local function rosterRule(self)
-    local roster = GuildOS.db and GuildOS.db.companionRoster
+    local I = GuildOS.CompanionImport
+    local roster
+    if I and I.ActiveRoster then roster = I:ActiveRoster() else roster = GuildOS.db and GuildOS.db.companionRoster end
     if type(roster) ~= "table" or roster.lootRule == nil then return roster, nil end
     local seen = self.nightSeen
     if not (seen and seen.roster == roster and seen.rule == roster.lootRule) then

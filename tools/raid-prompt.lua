@@ -136,7 +136,7 @@ local function block(t)
   local LibDeflate = LibStub("LibDeflate")
   local data = { fmt = "GOSROST1", v = 7, raidId = t.id, title = t.title or "Onyxia", startsAt = t.at, size = 10,
                  members = t.members or { { key = "Ana Lima", name = "Ana Lima", class = "WARRIOR", slot = "MELEE", group = 1 } },
-                 owners = t.owners or { "Chehul Costa" }, guild = t.guild }
+                 owners = t.owners or { "Chehul Costa" }, guild = t.guild, instanceKey = t.instanceKey }
   return "GOSROST1:" .. LibDeflate:EncodeForPrint(LibDeflate:CompressDeflate(json(data)))
 end
 
@@ -175,6 +175,7 @@ advance(START - 15 * MIN)
 check(#SHOWN == 1, "its quarter-hour timer asks nothing more: " .. shown())
 advance(START + 2 * H)
 check(#SHOWN == 1, "nor does anything later: " .. shown())
+check(#INVITED == 0, "the login's prompt invites nobody: on WoW: Forever an invite is a click's, the button's")
 
 -- ── 2. A second login for the same raid and start ───────────────────────────────────────────
 login(START - 10 * MIN, { block({ id = "ony", at = START }) })
@@ -196,6 +197,7 @@ check(#SHOWN == 0, "a minute before the timer, still nothing")
 advance(START - 15 * MIN)
 check(shown() == "bwl@" .. START, "the quarter-hour timer prompts: " .. shown())
 check(not RS:PromptedAtLogin(), "a timer's prompt is not the login's")
+check(#INVITED == 0, "and a timer invites nobody either: only a click does")
 login(START - 5 * MIN, { block({ id = "bwl", at = START }) })
 check(#SHOWN == 0, "and the login after it does not prompt again")
 
@@ -259,6 +261,25 @@ login(START - 20 * MIN, { block({ id = "ready", at = START, members = {} }), blo
 check(shown() == "ready@" .. START and RS:Next(OPEN).kind == "done", "a first raid whose step is done")
 advance(START - 5 * MIN)
 check(shown() == "ready@" .. START .. ",next@" .. (START + 10 * MIN), "gives its place to the second: " .. shown())
+check(#INVITED == 0, "no timer, retry or prompt invites anybody")
+-- The first raid's prompt is up, but a pasted copy of that raid has nothing left to do: the second takes its place.
+fresh()
+login(START - 20 * MIN, { block({ id = "first", at = START }), block({ id = "second", at = START + 10 * MIN }) })
+Import:Load(block({ id = "first", at = START, members = { { key = "Chehul Costa", name = "Chehul Costa", group = 1 } } }))
+advance(START - 5 * MIN)
+check(shown() == "first@" .. START .. ",second@" .. (START + 10 * MIN),
+  "the first's step read on its pasted copy is done: the second prompts at once: " .. shown())
+-- A second raid kept waiting past the hour after its start asks nothing: that late, the prompt would be news of a raid
+-- long under way. The retries stop there.
+fresh()
+login(START - 20 * MIN, { block({ id = "long", at = START }), block({ id = "after", at = START + 10 * MIN }) })
+for t = START - 5 * MIN, START + 71 * MIN, 2 * MIN do advance(t) end
+check(shown() == "long@" .. START, "an hour past the second's start, it never prompted: " .. shown())
+check(#TIMERS == 0, "and stopped asking")
+OPEN = nil
+advance(START + 2 * H)
+check(#SHOWN == 1 and GuildOS.db.raidPrompted["after:" .. (START + 10 * MIN)] == nil,
+  "not even once the first is put off, and it is not marked shown")
 
 -- ── 6. Not mine: never ─────────────────────────────────────────────────────────────────────────
 fresh()
@@ -295,13 +316,30 @@ GUILD = nil
 login(START - 20 * MIN, { block({ id = "ours2", at = START, guild = "Filhos da Horda" }) })
 check(#SHOWN == 0 and Import._webRaids == nil, "a character with no guild acts on no raid that names one")
 GUILD = "Filhos da Horda"
--- Pasted by hand, another guild's roster is refused, its guild named.
-local n, why = Import:Load(block({ id = "pasted", at = START, guild = "Horda Unida" }))
-check(n == nil and type(why) == "string" and why:find("Horda Unida", 1, true),
-  "a pasted roster of another guild is refused, naming it: " .. tostring(why))
-check(not (GuildOS.db.companionRoster and GuildOS.db.companionRoster.raidId == "pasted"), "and not kept")
-n, why = Import:Load(block({ id = "pasted", at = START, guild = "Horda |cffff0000Unida" }))
-check(n == nil and type(why) == "string" and not why:find("|", 1, true), "the name off the network is made inert: " .. tostring(why))
+-- Pasted by hand, another guild's roster is taken (a federation core's leader in guild B running guild A's raid, the
+-- site's spec 089; ruling R9), with a line saying whose it is. The buttons act on it; the calendar, the prompt and
+-- the raid tracker's nights, which read the inbox's raids, never see it.
+fresh()
+login(START - 20 * MIN, { block({ id = "ours3", at = START + 40 * MIN, instanceKey = "onyxia" }) })
+PRINTED, SHOWN, INVITED = {}, {}, {}
+local n = Import:Load(block({ id = "core", at = START, guild = "Horda |cffff0000Unida", instanceKey = "onyxia" }))
+check(n == 1 and GuildOS.db.companionRoster.raidId == "core", "a pasted roster of another guild loads")
+check(PRINTED[1] == "That roster is a raid of the guild Horda cffff0000Unida: the raid buttons act on it, and it stays off this guild's calendar.",
+  "with a line saying whose raid it is, the name made inert: " .. tostring(PRINTED[1]))
+check(Import:ButtonRaid().raidId == "core" and Import:ActiveRoster().raidId == "core", "the buttons act on it")
+local res = RS:Click(Import:ButtonRaid())
+check(res.kind == "invite4" and INVITED[1] == "Ana Lima", "and its click invites its people: " .. tostring(res.kind))
+upserted = {}
+GuildOS.Calendar = { UpsertWebRaid = function(_, roster) upserted[#upserted + 1] = roster.raidId end }
+Import:CalendarFromInbox()
+check(table.concat(upserted, ",") == "ours3", "the calendar gets the inbox's raid of this guild, not the pasted one: "
+  .. table.concat(upserted, ","))
+GuildOS.Calendar = nil
+SHOWN = {}
+RS:OnLogin()
+check(#SHOWN == 0 and not RS:Due(GuildOS.db.companionRoster), "it never prompts, though its owners name me")
+check(#GuildOS.db.companionRaids == 1 and GuildOS.db.companionRaids[1].raidId == "ours3"
+  and Import:RaidFor("onyxia", START) == "ours3", "and the raid tracker's nights hold the inbox's raid, never the pasted one")
 check(Import:Load(block({ id = "pasted", at = START, guild = "Filhos da Horda" })) == 1, "this guild's is loaded")
 -- ── The guild's name as the site compares it: capitals aside past ASCII, the brackets aside ───────
 local Same, Fold = GuildOS.SameGuildName, GuildOS.FoldCase
@@ -349,8 +387,8 @@ Import:ConsumeInbox()
 check(#PRINTED == 1 and Import:ForeignLine() == nil, "an inbox with one raid of this guild says nothing, and keeps no line")
 GUILD = nil
 login(START - 20 * MIN, { block({ id = "o4", at = START, guild = "Outra" }) })
-check(PRINTED[1] == "The website's raids are for the guild Outra, and this character is in none.",
-  "a character with no guild is told so: " .. tostring(PRINTED[1]))
+check(#PRINTED == 0 and Import:ForeignLine() == "The website's raids are for the guild Outra, and this character is in none.",
+  "a character with no guild is told so on the Web tab, and not in chat at every login: " .. tostring(PRINTED[1]))
 GUILD = "Filhos da Horda"
 
 -- Parse reads the guild: a string, cut.
@@ -408,6 +446,20 @@ local result = RS:Click(Import:ActiveRoster())
 check(result.kind == "invite4" and INVITED[1] == "Ana Lima", "a click invites, alone: " .. tostring(result.kind))
 check(PRINTED[1] == "Invited 1, already here 0.", "and says it: " .. tostring(PRINTED[1]))
 check(REPAINTS == 1, "and every button on screen reads the group again")
+-- /gos raid start: on the raid near now only, its line after the raid's name; none near, it says so.
+SlashCmdList = SlashCmdList or {}
+dofile(ADDON .. "/Core/Commands.lua")
+PRINTED, INVITED = {}, {}
+CLOCK = CLOCK + DAY   -- Ana's invite has had its minute
+SlashCmdList.GUILDOS("raid start")
+check(INVITED[1] == "Ana Lima" and PRINTED[1] == "Onyxia · Invited 1, already here 0.",
+  "/gos raid start invites on the raid near now, and names it: " .. tostring(PRINTED[1]))
+GuildOS.db.companionRoster = { raidId = "far", title = "Far", startsAt = START + 3 * DAY, members = { { name = "Zed Outro" } } }
+Import._webRaids = { GuildOS.db.companionRoster }
+PRINTED, INVITED = {}, {}
+SlashCmdList.GUILDOS("raid start")
+check(#INVITED == 0 and PRINTED[1] == "No raid from the site starts around this time.",
+  "with only a raid days away it invites nobody and says no raid starts now: " .. tostring(PRINTED[1]))
 
 -- ── The guild roster is asked for while a button shows, at most every thirty seconds ─────────────
 ROSTER_ASKS = 0

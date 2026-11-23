@@ -3443,7 +3443,7 @@ L["The game did not turn the group into a raid."] = "El juego no convirtió el g
 L["Offline, not invited: %s"] = "Desconectados, sin invitar: %s"
 
 -- El aviso al dueño, la hermandad de la banda, /gos raid start (issue #400)
-L["That roster is for the guild %s, not this character's."] = "Esa lista es de la hermandad %s, no de la de este personaje."
+L["That roster is a raid of the guild %s: the raid buttons act on it, and it stays off this guild's calendar."] = "Esa lista es una banda de la hermandad %s: los botones de banda actúan sobre ella, y queda fuera del calendario de esta hermandad."
 L["Starts in %d min"] = "Empieza en %d min"
 L["Starts now"] = "Empieza ahora"
 L["Started %d min ago"] = "Empezó hace %d min"

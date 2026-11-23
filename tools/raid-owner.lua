@@ -207,4 +207,33 @@ GuildOS.db.companionRoster = raidOf(nil, NOW - 30 * 60, "kept-underway")
 check(Import:ButtonRaid(NOW).raidId == "kept-underway", "the kept roster under way wins a tie with the inbox's")
 GuildOS.db.companionRoster = nil
 
+-- ── A roster pasted by hand is the newest word on its raid (the inbox is read at login only) ──────
+local stale = { raidId = "r1", startsAt = NOW + 1800, members = { { name = "Old Layout", group = 1 } } }
+local pasted = { raidId = "r1", startsAt = NOW + 1800, members = { { name = "New Layout", group = 2 } }, pasted = true }
+Import._webRaids = { stale }
+GuildOS.db.companionRoster = pasted
+check(Import:ButtonRaid(NOW) == pasted and Import:ActiveRoster(NOW) == pasted,
+  "a pasted copy of the inbox's raid wins the tie: its new groups are what the buttons act on")
+local moved = { raidId = "r1", startsAt = NOW + 3000, members = {}, pasted = true }
+GuildOS.db.companionRoster = moved
+check(Import:ButtonRaid(NOW) == moved, "and wins with a start the site moved, though the inbox's copy is nearer")
+check(Import:Freshest(stale) == moved and Import:Freshest(raidOf(nil, NOW, "other")).raidId == "other",
+  "Freshest gives the pasted copy of the same raid, and leaves another raid be")
+GuildOS.db.companionRoster = { raidId = "r1", startsAt = NOW + 5 * 3600, members = {}, pasted = true }
+check(Import:ButtonRaid(NOW) == nil, "a pasted copy moved out of the window takes its raid out with it")
+Import._webRaids = { stale, raidOf(nil, NOW + 3500, "r2") }
+GuildOS.db.companionRoster = moved
+check(Import:ButtonRaid(NOW) == moved, "another raid of the inbox further away does not win over the paste")
+Import._webRaids = { stale, raidOf(nil, NOW + 600, "r3") }
+check(Import:ButtonRaid(NOW).raidId == "r3", "one nearer, another raid, still does")
+-- Another guild's: pasted by hand it counts (a federation core's raid, ruling R9); from the inbox it never does.
+function GetGuildInfo() return "Filhos da Horda" end
+Import._webRaids = { { raidId = "f1", startsAt = NOW + 600, members = {}, guild = "Horda Unida" } }
+GuildOS.db.companionRoster = { raidId = "f2", startsAt = NOW + 1200, members = {}, guild = "Horda Unida", pasted = true }
+check(Import:ButtonRaid(NOW).raidId == "f2", "another guild's raid pasted by hand is the button's; the inbox's is not")
+GuildOS.db.companionRoster.pasted = nil
+check(Import:ButtonRaid(NOW) == nil, "kept without being pasted, another guild's raid is nobody's button")
+GetGuildInfo = nil
+Import._webRaids, GuildOS.db.companionRoster = nil, nil
+
 print(string.format("raid-owner: %d checks passed", checks))

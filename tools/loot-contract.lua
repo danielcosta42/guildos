@@ -884,6 +884,17 @@ NOW = NOW + 9 * 3600
 check(LR:Night() == nil and GuildOS.db.lootNight == nil and LR:Active().model == "rolls", "is over eight hours after its start")
 NOW = NOW - 9 * 3600
 
+-- The rule is the one of the raid the Raid plan window shows and the raid buttons act on (ActiveRoster, issue #400):
+-- tonight's from the inbox, not a roster kept for a night days away.
+dawn()
+Import._webRaids = { (Import:Parse(wire("w1", NOW + 600, jsonOf("plus1")))) }
+GuildOS.db.companionRoster = (Import:Parse(wire("w2", NOW + 3 * 86400, jsonOf("dkp"))))
+check(LR:Active().model == "plus1" and GuildOS.db.lootNight.raidId == "w1", "the rule in force is tonight's raid's")
+local _, planRoster = Plan:Current()
+check(planRoster.raidId == "w1" and Plan:LootRuleLine() == "Loot rule: MS > OS +1 (in force for this raid)",
+  "and the plan window names the same raid's rule: " .. tostring(Plan:LootRuleLine()))
+Import._webRaids = nil
+
 -- A guild that hands its loot to another addon takes no rule from the site.
 dawn()
 GuildOS.db.settings.lootSystem = "external"

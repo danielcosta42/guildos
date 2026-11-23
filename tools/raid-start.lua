@@ -522,6 +522,12 @@ check(ok and not can, "and refuses arranging without raising")
 LEADER, ASSIST = true, false
 GROUP = {}
 check(Compat.IsLeaderOrAssist() == true and Compat.IsGroupLeader() == false, "alone I may invite, and lead no group")
+-- My own name read secret: never mine, and never compared (not even with "").
+local playerName = Compat.PlayerName
+Compat.PlayerName = function() return secret() end
+ok, can = pcall(Import.IsMine, Import, { owners = { ME } })
+check(ok and can == false, "a secret name of mine owns nothing, and reading it raises nothing")
+Compat.PlayerName = playerName
 
 -- ── Compat: C_PartyInfo's convert where the client has it, the old global otherwise ────────────
 reset()

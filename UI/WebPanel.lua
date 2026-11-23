@@ -300,11 +300,16 @@ local function buildPrompt()
     f.when:SetPoint("TOPLEFT", 16, -42)
     f.when:SetJustifyH("LEFT")
 
-    -- The button on the raid this prompt is about; "Raid ready" closes the prompt.
+    -- The button on the raid this prompt is about, in its newest copy (a roster pasted since the inbox was read, with
+    -- new groups or a moved start: CompanionImport:Freshest); "Raid ready" closes the prompt.
+    local function raid()
+        local I = GuildOS.CompanionImport
+        return I and I:Freshest(f.roster) or f.roster
+    end
     f.go = UI:SetButtonVariant(UI:CreateRaidStepper(f, {
-        roster = function() return f.roster end,
+        roster = raid,
         done = function() f:Hide() end,
-        paint = function() if f.roster then f.when:SetText(promptWhen(f.roster)) end end,
+        paint = function() if f.roster then f.when:SetText(promptWhen(raid())) end end,
         width = 200, height = PROMPT_BTN_H,
     }), "primary")
     f.go:SetPoint("TOPLEFT", 16, -70)
@@ -424,8 +429,9 @@ function GuildOS:CreateWebPanel(parent, _win)
         -- The site's raids all another guild's: say whose (ForeignLine). With nothing loaded, what to do about it.
         note = function(roster)
             local I = GuildOS.CompanionImport
+            -- Only with nothing to act on: a roster in hand (one pasted, another guild's included) has its own reason.
             local foreign = I and I:ForeignLine()
-            if foreign then return foreign end
+            if foreign and not roster then return foreign end
             if not roster then return L["Import a roster first."] end
         end,
         -- A repaint between two Refreshes moves the rows under the line; Refresh lays out once on its own.

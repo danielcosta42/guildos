@@ -3442,7 +3442,7 @@ L["The game did not turn the group into a raid."] = "Das Spiel hat die Gruppe ni
 L["Offline, not invited: %s"] = "Offline, nicht eingeladen: %s"
 
 -- Die Aufforderung an den Besitzer, die Gilde des Schlachtzugs, /gos raid start (issue #400)
-L["That roster is for the guild %s, not this character's."] = "Dieser Kader gehört der Gilde %s, nicht der dieses Charakters."
+L["That roster is a raid of the guild %s: the raid buttons act on it, and it stays off this guild's calendar."] = "Dieser Kader ist ein Schlachtzug der Gilde %s: Die Schlachtzugknöpfe wirken darauf, und er bleibt aus dem Kalender dieser Gilde heraus."
 L["Starts in %d min"] = "Beginnt in %d Min."
 L["Starts now"] = "Beginnt jetzt"
 L["Started %d min ago"] = "Begann vor %d Min."

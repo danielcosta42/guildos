@@ -508,14 +508,19 @@ function Import:Load(raw)
     if #roster.members == 0 and not (roster.signups and #roster.signups > 0) then
         return nil, L["That roster has nobody in it."]
     end
-    -- Another guild's raid, pasted on a character of another guild, is refused: kept, every button would act on it
-    -- (issue #400). Its guild is named, so a guild the site calls by another name than the game does can tell.
+    -- Pasted by hand, the roster is the leader's to act on whatever guild it is: a federation core's leader can be in
+    -- guild B while the core's raid is guild A's (the site's spec 089; ruling R9). Another guild's is taken with a
+    -- line that says whose it is, and never reaches what is the guild's own: the calendar, the owner's prompt and the
+    -- raid tracker's nights read the inbox's raids (_webRaids, db.companionRaids), never this one.
     if not Import.OfThisGuild(roster) then
-        return nil, string.format(L["That roster is for the guild %s, not this character's."], Import.Inert(roster.guild))
+        GuildOS:Print(string.format(L["That roster is a raid of the guild %s: the raid buttons act on it, and it stays off this guild's calendar."],
+            Import.Inert(roster.guild)))
     end
 
     -- The site's loot data reaches the night only from the inbox (db.siteLoot); the kept roster never holds it.
     roster.loot = nil
+    -- Pasted: the newest word on its raid, over the inbox's copy (ButtonRaid).
+    roster.pasted = true
     GuildOS.db.companionRoster = roster
     return #roster.members
 end
@@ -688,8 +693,8 @@ function Import:ConsumeInbox()
     return true, #soonest.members
 end
 
---- Says, once a session, that the inbox's raids were all another guild's (issue #400): in chat, and kept for the Web
---- tab's reason line (ForeignLine). A guild the site names otherwise than the game does reads its name here, rather
+--- Says, once a session, that the inbox's raids were all another guild's (issue #400): in chat (not to a character
+--- with no guild), and kept for the Web tab's reason line (ForeignLine). A guild the site names otherwise than the game does reads its name here, rather
 --- than losing the site's raids without a word. `guild` is the first roster's; both names are made inert.
 function Import:SayForeign(guild)
     local mine = GetGuildInfo("player")
@@ -697,7 +702,10 @@ function Import:SayForeign(guild)
     if type(mine) == "string" and mine ~= "" then
         self._foreignLine = string.format(L["The website's raids are for the guild %s, not %s."], site, Import.Inert(mine))
     else
+        -- A character with no guild has nothing the site's raids could be: the Web tab says so, chat stays quiet at
+        -- every login of every guildless alt.
         self._foreignLine = string.format(L["The website's raids are for the guild %s, and this character is in none."], site)
+        return
     end
     if not self._foreignSaid then
         self._foreignSaid = true
@@ -716,6 +724,11 @@ end
 -- is. A raid that began five hours ago is over for the buttons, and the soonest one in the inbox is no longer
 -- "the one" (the issue's #400). Rosters without a start time (0) are never inside the window. Two as near, one
 -- begun and one ahead, go to the one under way: its leader is the one at the keyboard.
+--
+-- The kept roster comes first, and the inbox's copy of the same raid gives way to it: pasted by hand, it is the
+-- newest word on that raid (the inbox is read at login only), new groups or a start the site moved included. A
+-- roster pasted by hand counts whatever guild it is (a federation core's raid, the site's spec 089; ruling R9);
+-- the inbox's count only when they are this guild's (OfThisGuild).
 local BUTTON_BEFORE = 3 * 3600   -- seconds a start may lie behind now: three hours into the raid
 local BUTTON_AHEAD = 3600        -- seconds a start may lie ahead of now: an hour before the raid
 function Import:ButtonRaid(now)
@@ -723,7 +736,8 @@ function Import:ButtonRaid(now)
     local best, bestGap, bestBegun
     local function consider(roster)
         local startsAt = type(roster) == "table" and tonumber(roster.startsAt)
-        if not startsAt or startsAt <= 0 or not Import.OfThisGuild(roster) then return end
+        if not startsAt or startsAt <= 0 then return end
+        if not roster.pasted and not Import.OfThisGuild(roster) then return end
         local gap = startsAt - now
         if gap < -BUTTON_BEFORE or gap > BUTTON_AHEAD then return end
         local away, begun = math.abs(gap), gap <= 0
@@ -731,9 +745,23 @@ function Import:ButtonRaid(now)
             best, bestGap, bestBegun = roster, away, begun
         end
     end
-    for _, roster in ipairs(self._webRaids or {}) do consider(roster) end
-    consider(self:Current())
+    local kept = self:Current()
+    consider(kept)
+    local keptId = type(kept) == "table" and kept.raidId or nil
+    for _, roster in ipairs(self._webRaids or {}) do
+        if not (keptId ~= nil and roster.raidId == keptId) then consider(roster) end
+    end
     return best
+end
+
+--- The newest copy of `roster`'s raid: the kept roster when it is the same raid (pasted after the inbox was read,
+--- ButtonRaid), else `roster` itself. The owner's prompt reads its raid through it.
+function Import:Freshest(roster)
+    local kept = self:Current()
+    if type(roster) == "table" and type(kept) == "table" and roster.raidId ~= nil and kept.raidId == roster.raidId then
+        return kept
+    end
+    return roster
 end
 
 -- Whether this character owns `roster`: its name, in the form the client's members are keyed by, is one of
@@ -744,7 +772,8 @@ function Import:IsMine(roster)
     local owners = type(roster) == "table" and roster.owners
     if type(owners) ~= "table" or #owners == 0 then return false end
     local name = GuildOS.Compat.PlayerName()
-    if type(name) ~= "string" or name == "" or GuildOS.Compat.IsSecret(name) then return false end
+    -- A secret is never compared, not even with "".
+    if type(name) ~= "string" or GuildOS.Compat.IsSecret(name) or name == "" then return false end
     local me = GuildOS:RealmBound() and GuildOS:GetPlayerKey(name) or name
     if not me then return false end
     me = me:lower()
@@ -1565,10 +1594,17 @@ function RaidStart:Say(result)
 end
 
 --- One click of the button, wherever it is: the owner's prompt, the Now and Web tabs, `/gos raid start`. Does the
---- step (Run), says it in chat, and has every button on screen read the group again. Returns Run's result.
-function RaidStart:Click(roster)
+--- step (Run), says it in chat (`titled`: after the raid's name), and has every button on screen read the group
+--- again. Returns Run's result.
+function RaidStart:Click(roster, titled)
     local result = self:Run(roster)
     local line, off = self:Say(result)
+    -- Typed, nothing on screen says which raid it acted on: the line starts with its name.
+    if line and titled and type(roster) == "table" then
+        local title = roster.title
+        if type(title) ~= "string" or title == "" then title = roster.instance or "?" end
+        line = Import.Inert(tostring(title)) .. " · " .. line
+    end
     if line then GuildOS:Print(line) end
     if off then GuildOS:Print(off) end
     if GuildOS.RefreshRaidSteppers then GuildOS:RefreshRaidSteppers() end
@@ -1710,9 +1746,12 @@ function RaidStart:Due(roster, now)
     now = now or GetServerTime()
     local key, set = promptKey(roster), self:PromptedSet(now)
     if not (key and set) or set[key] then return false end
+    -- Past the login's window (an hour after the start), a retry that waited all that time asks nothing: late, the
+    -- prompt would be news of a raid long under way.
+    if tonumber(roster.startsAt) + PROMPT_AFTER < now then return false end
     if not (Import.OfThisGuild(roster) and Import:IsMine(roster)) then return false end
     local showing = GuildOS.RaidPromptShowing and GuildOS:RaidPromptShowing()
-    if showing and showing ~= roster and self:Next(showing).kind ~= "done" then
+    if showing and showing ~= roster and self:Next(Import:Freshest(showing)).kind ~= "done" then
         schedule(roster, PROMPT_RETRY)
         return false
     end

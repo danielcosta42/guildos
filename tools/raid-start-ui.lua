@@ -157,6 +157,17 @@ check(not p:IsVisible() and #putOff == 2, "the close button puts it off too")
 RS.PromptDismissed = dismissed
 -- A long offline list stays above Later: two lines at most.
 check(p.go.why.maxLines == 2, "the prompt's reason line keeps to two lines: " .. tostring(p.go.why.maxLines))
+-- A copy of the prompt's raid pasted since the inbox was read (new people, a moved start): the prompt acts on it.
+reset()
+GuildOS:ShowRaidPrompt(ONYXIA)
+GuildOS.db.companionRoster = { raidId = "ony", title = "Onyxia", startsAt = NOW + 40 * 60, size = 10, pasted = true,
+  members = { { key = "Ana Lima", name = "Ana Lima", group = 1 }, { key = "Bia Souza", name = "Bia Souza", group = 1 } },
+  signups = {} }
+GuildOS:RefreshRaidSteppers()
+check(p.go.label.text == "Invite (2)" and p.when.text == "Starts in 40 min · 2 going",
+  "the prompt reads the pasted copy of its raid: " .. tostring(p.go.label.text) .. " / " .. tostring(p.when.text))
+GuildOS.db.companionRoster = nil
+p:Hide()
 -- A prompt in the game closes the digest still open, rather than stacking on it.
 GuildOS.Digest = { frame = kit.newFrame("Frame", UIParent) }
 GuildOS:ShowRaidPrompt(ONYXIA)
@@ -221,6 +232,12 @@ check(web.state.reason == "Import a roster first." and web.state.enabled.start =
 Import._foreignLine = "The website's raids are for the guild Outra, not Chama."
 web:Refresh()
 check(web.state.reason == Import._foreignLine, "the site's raids for another guild: the line says so: " .. tostring(web.state.reason))
-Import._foreignLine = nil
+-- With a roster in hand (one pasted, another guild's included), its own step says what stands in the way.
+GuildOS.db.companionRoster = ONYXIA
+GROUP, LEADER = { { "Chehul", "Costa" }, { "Ana", "Lima" } }, false
+web:Refresh()
+check(web.state.reason == "Only the group's leader or an assistant can invite.",
+  "a roster in hand has the step's own reason, not the foreign line: " .. tostring(web.state.reason))
+Import._foreignLine, GuildOS.db.companionRoster = nil, nil
 
 print(string.format("raid-start-ui: %d checks passed", kit.count()))
