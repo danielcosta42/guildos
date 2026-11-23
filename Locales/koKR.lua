@@ -470,6 +470,8 @@ L["Paste this same code in Alliance > Setup in every guild of the alliance and s
 L["Name at least two guilds, this one included."] = "이 길드를 포함해 길드를 둘 이상 적으세요."
 L["No alliance set up for this guild."] = "이 길드에 설정된 동맹이 없습니다."
 L["Saved. The guild gets it now."] = "저장했습니다. 길드가 지금 받습니다."
+L["The guild info holds another alliance code. An officer who can edit the guild info must save this one."] = "길드 정보에 다른 연합 코드가 있습니다. 길드 정보를 수정할 수 있는 관리자가 이 코드를 저장해야 합니다."
+L["Saved in the guild info. Every member gets it at login, with nobody online."] = "길드 정보에 저장했습니다. 접속한 사람이 없어도 모든 길드원이 접속할 때 받습니다."
 L["Active: %s, %d guilds."] = "활성: %s, 길드 %d개."
 L["The code does not name this guild."] = "코드에 이 길드가 없습니다."
 L["This alliance is set in Alliance > Setup. Change it there."] = "이 동맹은 동맹 > 설정에 있습니다. 거기서 바꾸세요."

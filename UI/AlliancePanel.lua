@@ -1522,7 +1522,12 @@ local function BuildSetup(panel)
         if not link then return end
         local ok, err = link:SetCode(strtrim(lineBox:GetText() or ""))
         say(ok, err)
-        if ok then GuildOS:Print(L["Saved. The guild gets it now."]) end
+        -- `err` is true when it went in the guild info too (issue #431).
+        if ok and err == true then
+            GuildOS:Print(L["Saved in the guild info. Every member gets it at login, with nobody online."])
+        elseif ok then
+            GuildOS:Print(L["Saved. The guild gets it now."])
+        end
         refresh()
     end)
     removeBtn:SetScript("OnClick", function()

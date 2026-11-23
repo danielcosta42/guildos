@@ -205,6 +205,8 @@ read_globals = {
     "CanGuildDemote",
     "CanEditMOTD",
     "CanEditGuildInfo",
+    "CHAT_FRAMES",              -- the chat windows by name, the temporary ones too (#431)
+    "FCF_OpenTemporaryWindow",  -- a whisper popped out: its chat box is hooked too (#431)
     "GuildPromote",
     "GuildDemote",
     "GuildUninvite",

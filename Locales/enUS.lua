@@ -457,6 +457,8 @@ L["Paste this same code in Alliance > Setup in every guild of the alliance and s
 L["Name at least two guilds, this one included."] = "Name at least two guilds, this one included."
 L["No alliance set up for this guild."] = "No alliance set up for this guild."
 L["Saved. The guild gets it now."] = "Saved. The guild gets it now."
+L["The guild info holds another alliance code. An officer who can edit the guild info must save this one."] = "The guild info holds another alliance code. An officer who can edit the guild info must save this one."
+L["Saved in the guild info. Every member gets it at login, with nobody online."] = "Saved in the guild info. Every member gets it at login, with nobody online."
 L["Active: %s, %d guilds."] = "Active: %s, %d guilds."
 L["The code does not name this guild."] = "The code does not name this guild."
 L["This alliance is set in Alliance > Setup. Change it there."] = "This alliance is set in Alliance > Setup. Change it there."

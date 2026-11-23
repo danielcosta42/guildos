@@ -470,6 +470,8 @@ L["Paste this same code in Alliance > Setup in every guild of the alliance and s
 L["Name at least two guilds, this one included."] = "Укажите не меньше двух гильдий, включая эту."
 L["No alliance set up for this guild."] = "Для этой гильдии союз не настроен."
 L["Saved. The guild gets it now."] = "Сохранено. Гильдия получает его сейчас."
+L["The guild info holds another alliance code. An officer who can edit the guild info must save this one."] = "В информации гильдии записан другой код альянса. Сохранить этот должен офицер, который может редактировать информацию гильдии."
+L["Saved in the guild info. Every member gets it at login, with nobody online."] = "Сохранено в информации гильдии. Каждый участник получит его при входе, даже если никого нет в сети."
 L["Active: %s, %d guilds."] = "Активен: %s, гильдий: %d."
 L["The code does not name this guild."] = "Код не называет эту гильдию."
 L["This alliance is set in Alliance > Setup. Change it there."] = "Этот союз задан в Союз > Настройка. Меняйте его там."

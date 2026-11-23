@@ -12,9 +12,12 @@
 --   * a line of /g the player sends from a chat box or the Guild tab goes on the channel, inside the
 --     key press; officer chat never does;
 --   * a channel line from an allied guild is drawn as /g by the frame's own handler, tagged, in the
---     frames that show /g only; ours, our own guild's, an unknown or blocked guild's and one the
---     rosters contradict are not; the room's lines go to the alliance feed;
---   * a data op is believed for the guild it names only with the key's proof for its sender.
+--     frames that show /g only; ours, our own guild's /g, an unknown or blocked guild's are not; a
+--     stale roster never drops a line; the room's lines go to the alliance feed, our guild's too;
+--     a line too long for its frame goes in parts;
+--   * a data op is believed for the guild it names only with the key's proof for its sender;
+--   * the code goes in the guild info and every member reads it from there, nobody online; the relay
+--     asks back a newer holder and keeps a copy that came before the roster (issue #431).
 --
 --   luajit -e 'ADDON="."' tools/alliance-link.lua
 --
@@ -232,6 +235,9 @@ box:ParseText(1)
 check(#sent == 1 and sent[1].chatType == "CHANNEL" and sent[1].target == 5, "a line of /g goes on the channel")
 check(sent[1].msg == "G" .. Link.Code("Guilda A") .. " alguem pra kara?", "framed with our guild's code")
 sent = {}
+box:ParseText(true)
+check(#sent == 1, "a client that sends with true sends too (issue #431)")
+sent = {}
 box:ParseText(0)
 check(#sent == 0, "only the send, not the typing")
 box.attrs.chatType = "OFFICER"
@@ -279,8 +285,10 @@ check(#replayed[1] == 0, "another channel is not ours")
 hear("oi humano", "Bob-Realm")
 check(#replayed[1] == 0, "a raw line is not ours")
 index.cid = { guild = "Guilda C" }
-hear("G" .. Link.Code("Guilda B") .. " mentira", "Cid-Realm")
-check(#replayed[1] == 0, "a speaker the rosters place in another guild is not believed")
+hear("G" .. Link.Code("Guilda B") .. " mudou de guilda", "Cid-Realm")
+check(#replayed[1] == 1 and replayed[1][1].args[1]:find("[Guilda B]", 1, true),
+  "a stale roster does not drop the line: the guild comes from the code (issue #431)")
+reset()
 ignored["Bob-Realm"] = true
 hear("G" .. Link.Code("Guilda B") .. " ignorado", "Bob-Realm")
 check(#replayed[1] == 0, "an ignored speaker is not shown")
@@ -297,6 +305,25 @@ local before = #Chat:Log()
 hear("A" .. Link.Code("Guilda C") .. " oi sala", "Cy-Realm")
 check(#replayed[1] == 0 and #Chat:Log() == before + 1, "a room line goes to the alliance feed, not /g")
 check(Chat:Log()[#Chat:Log()].g == "Guilda C" and Chat:Log()[#Chat:Log()].n == "Cy", "with its guild and speaker")
+before = #Chat:Log()
+hear("A" .. Link.Code("Guilda A") .. " oi do colega", "Gui-Realm")
+check(#replayed[1] == 0 and #Chat:Log() == before + 1 and Chat:Log()[#Chat:Log()].g == "Guilda A",
+  "a guildmate's room line reaches our feed (issue #431)")
+
+-- A line that does not fit with its frame goes in parts, nothing lost (issue #431).
+local long = string.rep("palavra ", 40) .. "fim"
+local parts = Link.Split("G", "abc", long)
+check(#parts == 2, "a long line goes in two parts")
+local joined = {}
+for _, p in ipairs(parts) do
+  check(#p <= Link.MAX_LINE, "each part fits a line of chat")
+  local k, c, t = Link.Decode(p)
+  check(k == "G" and c == "abc", "each part is framed")
+  joined[#joined + 1] = t
+end
+check(table.concat(joined, " ") == long, "the parts carry the whole line, cut on a space")
+check(#Link.Split("G", "abc", "curta") == 1, "a short line is one part")
+check(#Link.Split("G", "abc", "   ") == 0, "a blank line is nothing")
 
 -- A frame without a handler to replay through gets the line as /g reads.
 local plain = Link.FormatPlain("Guilda B", "Bob-Realm", "oi")
@@ -392,5 +419,83 @@ local login
 for _, f in ipairs(frames) do if f.events.PLAYER_ENTERING_WORLD and f.fn then login = f end end
 login.fn(login, "PLAYER_ENTERING_WORLD")
 check(#published == 1 and published[1].act == "ask" and published[1].data.rev == off, "at login it asks the guild")
+
+-- ── 8. The guild info: nobody has to be online (issue #431) ───────────
+local G = GuildOS.AllianceLink
+check(Link.InfoLine("Bem-vindos!\n" .. line .. "\nRaides qua/dom") == line, "the code is read among the info's other lines")
+check(Link.InfoLine("so texto") == nil, "an info without a code holds none")
+check(Link.WithInfoLine("Bem-vindos!", line) == "Bem-vindos!\n" .. line, "written at the end, the text kept")
+check(Link.WithInfoLine("Oi\n" .. line .. "\nTchau", line2) == "Oi\nTchau\n" .. line2, "an old code is replaced")
+check(Link.WithInfoLine("Oi\n" .. line, nil) == "Oi", "and taken out on removal")
+check(Link.WithInfoLine(string.rep("x", 480), line) == nil, "an info with no room is not cut")
+
+local infoText, canEdit, written = "", true, nil
+function GetGuildInfoText() return infoText end
+function CanEditGuildInfo() return canEdit end
+function SetGuildInfoText(t) written = t; infoText = t end
+local roster
+for _, f in ipairs(frames) do if f.events.GUILD_ROSTER_UPDATE and f.fn then roster = f end end
+check(roster ~= nil, "the module reads the guild info when the roster comes in")
+
+-- An officer saves: it goes in the guild info too.
+infoText = "Bem-vindos!"
+local ok, inInfo = Link:SetCode(line)
+check(ok and inInfo and written == "Bem-vindos!\n" .. line, "the officer's save writes the guild info")
+check(GuildOS.db.allianceLink.info, "and remembers it came from there")
+
+-- A member with nothing, nobody online: the info alone sets them up.
+GuildOS.db.allianceLink = { rev = 0 }
+Link._infoSeen = nil
+roster.fn(roster, "GUILD_ROSTER_UPDATE")
+check(GuildOS.db.allianceLink.line == line and A:Get().source == "link", "a member gets the code from the guild info at login")
+check(not Link:ReadGuildInfo(), "the same info read twice changes nothing")
+
+-- The info changes while we hold an older copy: the info wins.
+infoText = "Bem-vindos!\n" .. line2
+roster.fn(roster, "GUILD_ROSTER_UPDATE")
+check(GuildOS.db.allianceLink.line == line2, "a new code in the info replaces ours")
+-- Taken out of the info: a removal, but an empty info (not sent yet) is not.
+infoText = ""
+roster.fn(roster, "GUILD_ROSTER_UPDATE")
+check(GuildOS.db.allianceLink.line == line2, "an info the server has not sent yet removes nothing")
+infoText = "Bem-vindos!"
+roster.fn(roster, "GUILD_ROSTER_UPDATE")
+check(GuildOS.db.allianceLink.line == nil, "a code taken out of the info is a removal")
+-- A code from another guild's alliance in our info is not ours.
+infoText = "GOS=OUTRA:Kx7Pq2Lm9Z:Guilda X;Guilda Y"
+check(not Link:ReadGuildInfo() and GuildOS.db.allianceLink.line == nil, "a code that does not name us is ignored")
+
+-- Another code in the info this officer cannot change: refused with a reason.
+infoText, canEdit, written = "Oi\n" .. line2, false, nil
+local okNo, why = Link:SetCode(line)
+check(not okNo and type(why) == "string" and written == nil, "another code in an info we cannot edit is not overruled")
+-- No permission and no code in the info: the sync carries it alone.
+infoText = "Oi"
+check(Link:SetCode(line), "no permission and no code there: saved, and the sync carries it")
+canEdit = true
+
+-- ── 9. The relay works both ways, and waits for the roster ─────────────
+published = {}
+GuildOS.db.allianceLink.info = true
+sync(env("ask", { rev = 0 }), "Novo-Realm")
+check(#published == 0, "a holder from the guild info does not answer: the info hands it on")
+GuildOS.db.allianceLink.info = nil
+-- Somebody holding NEWER asks: we ask back, so they answer.
+published = {}
+Link._askedAt = nil
+sync(env("ask", { rev = GuildOS.db.allianceLink.rev + 100 }), "Veio-Realm")
+check(#published == 1 and published[1].act == "ask", "an ask from a newer holder makes us ask back")
+sync(env("ask", { rev = GuildOS.db.allianceLink.rev + 100 }), "Outro-Realm")
+check(#published == 1, "and not once per asker")
+
+-- A relayed officer's copy before the roster loads is kept, then taken.
+local rr = GuildOS.db.allianceLink.rev
+officers["Novo-Realm"] = nil
+sync(env("have", { line = line2, rev = rr + 1, by = "Novo-Realm" }), "Leo-Realm")
+check(GuildOS.db.allianceLink.line == line and Link._pending ~= nil, "with no roster yet the copy waits")
+officers["Novo-Realm"] = true
+GetNumGuildMembers = function() return 5 end
+roster.fn(roster, "GUILD_ROSTER_UPDATE")
+check(GuildOS.db.allianceLink.line == line2 and Link._pending == nil, "and is taken when the roster comes in")
 
 print(("alliance-link: %d checks passed"):format(checks))

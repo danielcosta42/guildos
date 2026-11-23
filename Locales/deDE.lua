@@ -1445,6 +1445,8 @@ L["Paste this same code in Alliance > Setup in every guild of the alliance and s
 L["Name at least two guilds, this one included."] = "Nenne mindestens zwei Gilden, diese eingeschlossen."
 L["No alliance set up for this guild."] = "Für diese Gilde ist keine Allianz eingerichtet."
 L["Saved. The guild gets it now."] = "Gespeichert. Die Gilde erhält ihn jetzt."
+L["The guild info holds another alliance code. An officer who can edit the guild info must save this one."] = "Die Gildeninformation enthält einen anderen Allianzcode. Ein Offizier, der die Gildeninformation bearbeiten darf, muss diesen speichern."
+L["Saved in the guild info. Every member gets it at login, with nobody online."] = "In der Gildeninformation gespeichert. Jedes Mitglied erhält ihn beim Einloggen, auch wenn niemand online ist."
 L["Active: %s, %d guilds."] = "Aktiv: %s, %d Gilden."
 L["The code does not name this guild."] = "Der Code nennt diese Gilde nicht."
 L["This alliance is set in Alliance > Setup. Change it there."] = "Diese Allianz steht in Allianz > Einrichtung. Ändere sie dort."

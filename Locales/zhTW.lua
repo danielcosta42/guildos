@@ -470,6 +470,8 @@ L["Paste this same code in Alliance > Setup in every guild of the alliance and s
 L["Name at least two guilds, this one included."] = "至少填寫兩個公會，包括本公會。"
 L["No alliance set up for this guild."] = "本公會沒有設定聯盟。"
 L["Saved. The guild gets it now."] = "已儲存。公會現在就會收到。"
+L["The guild info holds another alliance code. An officer who can edit the guild info must save this one."] = "公會資訊中已有另一個聯盟代碼。需要由能編輯公會資訊的幹部儲存這個代碼。"
+L["Saved in the guild info. Every member gets it at login, with nobody online."] = "已儲存到公會資訊。每位成員登入時都會收到，不需要有人在線上。"
 L["Active: %s, %d guilds."] = "已啟用：%s，%d 個公會。"
 L["The code does not name this guild."] = "代碼中不包含本公會。"
 L["This alliance is set in Alliance > Setup. Change it there."] = "此聯盟設定在 聯盟 > 設定 中。請在那裡修改。"
