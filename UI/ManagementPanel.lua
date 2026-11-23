@@ -541,11 +541,44 @@ local ACTION_LABELS = {
     join    = { txt = L["Joined"], color = "online" },
     leave   = { txt = L["Left"],   color = "offline" },
     warn    = { txt = L["Warned"], color = "warn" },
+    -- From the member history and the roster diff (issue #425).
+    rejoin  = { txt = L["Rejoined"], color = "online" },
+    gone    = { txt = L["Gone"],     color = "offline" },
+    level   = { txt = L["Level"],    color = "info" },
+    note    = { txt = L["Note"],     color = "info" },
+    onote   = { txt = L["Officer note"], color = "info" },
+    back    = { txt = L["Back"],     color = "online" },
 }
+
+-- What the level filter's button says for each mode (MemberHistory.LEVEL_MODES).
+local LEVEL_MODE_TEXT = {
+    milestones = L["Levels: milestones"],
+    all        = L["Levels: all"],
+    off        = L["Levels: off"],
+}
+
+-- Whether a log line holds `filter` (lower case): its member, officer, detail or the word for it.
+local function logMatches(e, meta, filter)
+    if filter == "" then return true end
+    for _, v in ipairs({ e.target, e.author, e.detail ~= nil and tostring(e.detail) or nil, meta.txt }) do
+        if v and v:lower():find(filter, 1, true) then return true end
+    end
+    return false
+end
 
 local function BuildLogSub(panel)
     local clearBtn = UI:CreateButton(panel, L["Clear"], 80, 22)
     clearBtn:SetPoint("TOPLEFT", 0, 0)
+
+    -- Search (issue #425): the member, the officer, the detail or the action's word.
+    local filterLbl = UI:CreateText(panel, L["Filter"], 11, C.text.r, C.text.g, C.text.b)
+    filterLbl:SetPoint("LEFT", clearBtn, "RIGHT", 12, 0)
+    local searchBox = UI:CreateInput(panel, 160, 20)
+    searchBox:SetPoint("LEFT", filterLbl, "RIGHT", 8, 0)
+
+    -- Which level ups the roster diff writes here: milestones (every 10 and the cap), all, none.
+    local levelBtn = UI:CreateButton(panel, LEVEL_MODE_TEXT.milestones, 140, 22)
+    levelBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
 
     local listHolder = CreateFrame("Frame", nil, panel)
     listHolder:SetPoint("TOPLEFT", 0, -(22 + GAP))
@@ -556,15 +589,24 @@ local function BuildLogSub(panel)
     refresh = function()
         ClearContent(content)
 
-        local entries = GuildOS.GuildManager:GetLog()
+        local MH = GuildOS.MemberHistory
+        levelBtn:SetShown(MH ~= nil and GuildOS:IsOfficer())
+        if MH then levelBtn.label:SetText(LEVEL_MODE_TEXT[MH:GetLevelMode()] or LEVEL_MODE_TEXT.milestones) end
+        local filter = strtrim(searchBox:GetText() or ""):lower()
+        local entries = {}
+        for _, e in ipairs(GuildOS.GuildManager:GetLog()) do
+            local meta = ACTION_LABELS[(e.action == "join" and e.rejoin) and "rejoin" or e.action]
+                or { txt = e.action or "?", color = "silver" }
+            if logMatches(e, meta, filter) then entries[#entries + 1] = { e = e, meta = meta } end
+        end
         local yOff = 0
-        for idx, e in ipairs(entries) do
+        for idx, item in ipairs(entries) do
+            local e, meta = item.e, item.meta
             local row = MakeRow(content, yOff, idx)
 
             local whenFS = UI:CreateText(row, GuildOS:DateText(e.timestamp or 0, " %H:%M"), 9, C.textDim.r, C.textDim.g, C.textDim.b)
             whenFS:SetPoint("LEFT", 8, 0)
 
-            local meta = ACTION_LABELS[e.action] or { txt = e.action or "?", color = "silver" }
             local col = C[meta.color] or C.silver
             local actFS = UI:CreateText(row, meta.txt, 10, col.r, col.g, col.b)
             actFS:SetPoint("LEFT", 90, 0)
@@ -578,7 +620,8 @@ local function BuildLogSub(panel)
             descFS:SetJustifyH("LEFT")
             descFS:SetWordWrap(false)
 
-            local byFS = UI:CreateText(row, L["by "] .. (e.author or "?"), 9, C.textDim.r, C.textDim.g, C.textDim.b)
+            -- A line of this client's roster diff has no officer: the roster only shows what changed.
+            local byFS = UI:CreateText(row, e.author and (L["by "] .. e.author) or "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
             byFS:SetPoint("RIGHT", -10, 0)
 
             yOff = yOff + ROW_H + 2
@@ -593,6 +636,12 @@ local function BuildLogSub(panel)
 
     clearBtn:SetScript("OnClick", function()
         GuildOS.GuildManager:ClearLog()
+        refresh()
+    end)
+    searchBox:HookScript("OnTextChanged", function() refresh() end)
+    levelBtn:SetScript("OnClick", function()
+        local MH = GuildOS.MemberHistory
+        if MH then MH:CycleLevelMode() end
         refresh()
     end)
 

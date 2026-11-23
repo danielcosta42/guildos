@@ -558,6 +558,8 @@ local function handleCommand(msg)
             GuildOS:ShowExportPopup(string.format("%s (%s)", title or L["Export"], fmt), text)
         elseif title == "absent" then
             GuildOS:Print(L["Not available on this client."])
+        elseif title == "officer" then
+            GuildOS:Print(L["|cffFF4444Officers only.|r"])
         elseif GuildOS.Exporter then
             GuildOS:Print(string.format(L["Usage: /guildos export <%s> [csv|tsv|discord]"], GuildOS.Exporter:Names()))
         end

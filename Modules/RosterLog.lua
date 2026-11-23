@@ -165,8 +165,19 @@ end
 
 function RosterLog:OnSync(env)
     if env.act == "add" and env.data and env.data.evt then
-        if self:_Insert(env.data.evt) then self:Refresh() end
+        if self:_Insert(env.data.evt) then
+            self:_ToHistory(env.data.evt)
+            self:Refresh()
+        end
+    elseif env.act == "hist" and GuildOS.MemberHistory then
+        -- A member's passage from another officer's roster diff (issue #425); a client before it ignores the act.
+        GuildOS.MemberHistory:OnSync(env.data)
     end
+end
+
+-- Every event taken, into the member's durable history (issue #425): officers only, MemberHistory checks.
+function RosterLog:_ToHistory(evt)
+    if GuildOS.MemberHistory then GuildOS:SafeCall(GuildOS.MemberHistory.FromAudit, GuildOS.MemberHistory, evt) end
 end
 
 ----------------------------------------------------------------------
@@ -175,6 +186,7 @@ end
 function RosterLog:Add(evt)
     local inserted = self:_Insert(evt)
     if inserted then
+        self:_ToHistory(evt)
         self:_Publish(evt)     -- broadcasts to officers if we are one; no-op for members
         self:Refresh()
     end
@@ -202,7 +214,13 @@ function RosterLog:_SetupDetection()
         if GuildOS.Compat.IsSecret(msg) then return end  -- chat in lockdown: nothing readable
         if not RosterLog._ready then return end
         local evt = RosterLog:_ParseSystem(msg)
+        -- Somebody the history says was a member before (issue #425): the log files it as a rejoin, still a
+        -- "join" with the mark (the id, and every client before it, stay the same), and the officer is told.
+        local past = evt and evt.action == "join" and GuildOS.MemberHistory and GuildOS:IsOfficer()
+            and GuildOS.MemberHistory:Describe(evt.target)
+        if past then evt.rejoin = true end
         if evt then RosterLog:Add(evt) end
+        if past then GuildOS.MemberHistory:Say(past) end
         -- With the guild's switch for new members on, an officer's client asks for a fresh roster: the
         -- trial starts from the roster line, never from this one's name (#249).
         if evt and evt.action == "join" and GuildOS.TrialTracker then
@@ -231,8 +249,11 @@ function RosterLog:Backfill()
     if not GuildOS.SyncService or not GuildOS:IsOfficer() then return end
     local recent = self:_Recent()
     for i = 1, #recent do
-        self:_Publish(recent[i])
+        -- A line of this client's own roster diff (issue #425) stays here: every officer's client sees
+        -- the same change, and a note's text is not for the guild channel.
+        if not recent[i].loc then self:_Publish(recent[i]) end
     end
+    if GuildOS.MemberHistory then GuildOS.MemberHistory:Backfill() end
 end
 
 ----------------------------------------------------------------------

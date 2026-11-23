@@ -69,6 +69,7 @@ Modules\AllianceChat.lua
 Modules\AllianceLink.lua
 Modules\GuildChat.lua
 Modules\RosterLog.lua
+Modules\MemberHistory.lua
 Modules\BanList.lua
 Modules\Discipline.lua
 Modules\ModAlerts.lua

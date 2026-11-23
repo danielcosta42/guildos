@@ -846,6 +846,41 @@ function PopulateDetail(frame, data)
     end
 
     ----------------------------------------------------------------
+    -- Section: Membership history (officer only, issue #425): every passage, then the rank changes.
+    ----------------------------------------------------------------
+    local MH = GuildOS.MemberHistory
+    if MH and GuildOS:IsOfficer() then
+        local hkey = data.key or GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        local stints, ranks = MH:Stints(hkey), MH:Ranks(hkey)
+        if #stints > 0 or #ranks > 0 then
+            yOff = yOff - 10
+            local total = MH:TenureDays(hkey)
+            yOff = CreateSectionHeader(child, string.format(L["MEMBERSHIP  --  %s days in the guild"],
+                total and tostring(total) or "?"), yOff, contentWidth)
+            local lines = {}
+            for i = #stints, 1, -1 do lines[#lines + 1] = MH:StintLine(stints[i]) end
+            for i = #ranks, math.max(1, #ranks - 4), -1 do
+                local rk = ranks[i]
+                local line = string.format(L["%s: rank %s"], GuildOS:DateText(rk.at, "/%Y"), rk.to)
+                if rk.from then line = line .. " (" .. string.format(L["was %s"], rk.from) .. ")" end
+                if rk.by then line = line .. " — " .. string.format(L["by %s"], rk.by) end
+                lines[#lines + 1] = "|cffAAAAAA" .. line .. "|r"
+            end
+            for _, text in ipairs(lines) do
+                local fs = _pFS(child)
+                GuildOS:ApplyFont(fs, 9)
+                fs:SetPoint("TOPLEFT", 15, yOff - 3)
+                fs:SetWidth(contentWidth - 30)
+                fs:SetJustifyH("LEFT")
+                fs:SetWordWrap(true)
+                fs:SetText(text)
+                fs:Show()
+                yOff = yOff - (fs:GetStringHeight() + 4)
+            end
+        end
+    end
+
+    ----------------------------------------------------------------
     -- Section: Officer Notes (officer only)
     ----------------------------------------------------------------
     if GuildOS.OfficerNotes and GuildOS:IsOfficer() then

@@ -1280,10 +1280,13 @@ function GuildOS:ShowExportChooser()
         { key = "readiness",  label = L["Readiness"] },
         { key = "equity",     label = L["Loot Equity"] },
         { key = "standings",  label = L["DKP Standings"] },
+        -- The officers' own (issue #425).
+        { key = "log",        label = L["Audit Log"], officer = true },
+        { key = "former",     label = L["Former members"], officer = true },
     }
     local y = -56
     for _, d in ipairs(datasets) do
-        if GuildOS.Exporter:Has(d.key) then
+        if GuildOS.Exporter:Has(d.key) and (not d.officer or GuildOS:IsOfficer()) then
             local lbl = UI:CreateText(f, d.label, 11, C.text.r, C.text.g, C.text.b)
             lbl:SetPoint("TOPLEFT", 16, y)
             local fx = 150
@@ -1300,6 +1303,7 @@ function GuildOS:ShowExportChooser()
             y = y - 32
         end
     end
+    f:SetHeight(math.max(300, -y + 16))   -- the officers' two rows (#425) need room below the six
 end
 
 ----------------------------------------------------------------------

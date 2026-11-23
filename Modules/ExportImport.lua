@@ -167,6 +167,34 @@ function Exporter:EquityData()
     return headers, rows
 end
 
+-- The guild's log (issue #425), oldest first: whatever this client's Roster Log holds (90 days, its own
+-- cap). Action words as the log files them ("join", "kick", "level", ...), a rejoin as "rejoin".
+function Exporter:LogData()
+    local headers = { "Date", "Action", "Member", "Detail", "By" }
+    local rows = {}
+    local events = GuildOS.db.rosterLog and GuildOS.db.rosterLog.events or {}
+    for _, e in ipairs(events) do
+        local action = (e.action == "join" and e.rejoin) and "rejoin" or e.action
+        rows[#rows + 1] = { e.timestamp and date("%Y-%m-%d %H:%M", e.timestamp) or "", action or "",
+            e.target or "", e.detail ~= nil and tostring(e.detail) or "", e.author or "" }
+    end
+    return headers, rows
+end
+
+-- Former members (issue #425), the latest departure first: the first join GuildOS knows, the last
+-- departure and how, the passages and the days in all. "Estimated" when a date is when GuildOS saw it.
+function Exporter:FormerData()
+    local headers = { "Name", "FirstJoined", "LastLeft", "How", "By", "Stints", "TotalDays", "Estimated" }
+    local rows = {}
+    local function day(ts) return ts and date("%Y-%m-%d", ts) or "" end
+    for _, f in ipairs(GuildOS.MemberHistory and GuildOS.MemberHistory:Former() or {}) do
+        local est = (f.first == nil or f.first.joinEst or f.last.leftEst) and "yes" or ""
+        rows[#rows + 1] = { f.key, day(f.first and f.first.joinAt), day(f.last.leftAt), f.last.how or "",
+            f.last.by or "", f.stints, f.days or "", est }
+    end
+    return headers, rows
+end
+
 -- `needs`: the module a dataset reads. Where it is absent (Points on retail, ADR-0026) the dataset is
 -- too: the command says so and the chooser leaves its row out (issue #177). The loot history and its
 -- equity are on retail since issue #183.
@@ -177,8 +205,11 @@ Exporter.DATASETS = {
     readiness  = { fn = "ReadinessData",  title = "Readiness" },
     standings  = { fn = "StandingsData",  title = "DKP Standings", needs = "Points" },
     equity     = { fn = "EquityData",     title = "Loot Equity", needs = "LootEquity" },
+    -- Officers only (issue #425): the log and who left are the officers' record.
+    log        = { fn = "LogData",        title = "Guild Log", needs = "RosterLog", officer = true },
+    former     = { fn = "FormerData",     title = "Former Members", needs = "MemberHistory", officer = true },
 }
-Exporter.ORDER = { "roster", "attendance", "loot", "readiness", "standings", "equity" }
+Exporter.ORDER = { "roster", "attendance", "loot", "readiness", "standings", "equity", "log", "former" }
 
 -- Whether this client has the dataset: known, and its module present.
 function Exporter:Has(dataset)
@@ -195,12 +226,13 @@ function Exporter:Names()
     return table.concat(out, "|")
 end
 
--- Build an export string. Returns (text, title); nil for an unknown dataset, and nil, "absent" for
--- one this client does not have.
+-- Build an export string. Returns (text, title); nil for an unknown dataset, nil, "absent" for
+-- one this client does not have, and nil, "officer" for an officers' one on a member's client.
 function Exporter:Build(dataset, format)
     local def = self.DATASETS[dataset]
     if not def then return nil end
     if not self:Has(dataset) then return nil, "absent" end
+    if def.officer and not GuildOS:IsOfficer() then return nil, "officer" end
     local headers, rows = self[def.fn](self)
     return render(headers, rows, format, def.title), def.title
 end
