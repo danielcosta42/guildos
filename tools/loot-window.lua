@@ -110,6 +110,8 @@ function Frame:SetChecked(v) self.checked = v and true or nil end
 function Frame:GetChecked() return self.checked end
 function Frame:SetTexture(t) self.texture = t end
 function Frame:SetScrollChild(c) self.scrollChild = c end
+function Frame:SetBackdrop(b) self.backdrop = b end
+function Frame:SetResizeBounds(w, h) self.minBounds = { w, h } end
 function Frame:SetBackdropBorderColor(r, g, b) self.border = { r, g, b } end
 function Frame:SetBackdropColor(r, g, b, a) self.bg = { r, g, b, a } end
 function Frame:SetTextColor(r, g, b) self.color = { r, g, b } end
@@ -645,6 +647,18 @@ local function lootTable()
                      { slot = 2, link = LINK2, name = "Ring of the Oath", quality = 4 } })
   local f = _G.GuildOSLootTable
   check(f and f:IsShown() and LM.lootFrame == f and LM.rollFrame == f, "the loot window and the roll tracker are one table")
+  -- A surface of its own (#413): with only StylePopup's border it opened see-through, the world behind it.
+  check(f.backdrop and f.backdrop.bgFile and f.bg and f.bg[4] == 1, "the table has an opaque background")
+  -- The loot master's answer is on the item's line, not on the strip where it ran over "Enter answer" (#413).
+  check(f.mine[2].points[1][2] == f.right and f.mineLabel.points[1][2] == f.mine[1]
+    and f.itemText.points[2][1] == "RIGHT" and f.itemText.points[2][2] == f.mineLabel,
+    "Your roll and its buttons sit at the item line's right, and the item stops short of them")
+  local stripW = -6   -- a 6px gap between the controls, none after the last
+  for _, c in ipairs(f.strip.children) do
+    if c.kind ~= "Texture" then stripW = stripW + (c.kind == "FontString" and c:GetStringWidth() or c.w) + 6 end
+  end
+  check(f.minBounds and f.minBounds[1] >= stripW + 214 + 34 and f.w >= f.minBounds[1],
+    "the table is never narrower than the strip's controls: " .. tostring(f.minBounds and f.minBounds[1]) .. " for " .. stripW)
   f:SetSize(1000, 480)
   LM:RefreshRollFrame()
   check(f.itemRows[1]:IsShown() and f.itemRows[2]:IsShown() and f.itemRows[1].stateKey == "queued", "the boss's items, each with its state")
@@ -753,6 +767,7 @@ local function popup()
   LM:ShowRollPopup(LINK1, 30, 28770, ask)
   local f = LM.rollPopup
   check(f and f:IsShown() and f.w == 380, "the popup opens")
+  check(f.backdrop and f.backdrop.bgFile and f.bg and f.bg[4] == 1, "on a background of its own (#413)")
   check(shows(f, "Crown of the Abyssal Wind") and shows(f, "Head \194\183 Cloth \194\183 item level 76"), "with the item and what it is")
   check(shows(f, "YOU WEAR") and shows(f, "Arcanist Cowl") and f.diffText.text == "+10 item level", "what the player wears there, and the gain")
   check(f.standing[1] == "Reserved the item" and f.standing[2] == "Wishlist #2" and f.standing[3] == "+1 tonight: 0",
