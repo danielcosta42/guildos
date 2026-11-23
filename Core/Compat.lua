@@ -388,6 +388,107 @@ function Compat.CanViewOfficerNote()
     return false
 end
 
+----------------------------------------------------------------------
+-- Rank changes and removals (issue #420). The rank's own rights are the game's Can* calls, nil-guarded:
+-- a client without one answers "no". GuildPromote, GuildDemote and GuildUninvite are protected: an
+-- addon's call is ADDON_ACTION_FORBIDDEN, from a click too (ADR-0010). What the game lets through is
+-- its own /gpromote, /gdemote and /gremove run by a secure action button the player clicks or a
+-- /click macro presses: the game runs the line, the addon only wrote it (ADR-0038).
+----------------------------------------------------------------------
+function Compat.CanGuildPromote()
+    return (CanGuildPromote and CanGuildPromote()) and true or false
+end
+
+function Compat.CanGuildDemote()
+    return (CanGuildDemote and CanGuildDemote()) and true or false
+end
+
+function Compat.CanGuildRemove()
+    return (CanGuildRemove and CanGuildRemove()) and true or false
+end
+
+-- This character's 0-based guild rank (0 = Guild Master), or nil outside a guild.
+function Compat.MyGuildRankIndex()
+    if not (IsInGuild and IsInGuild()) or not GetGuildInfo then return nil end
+    local _, _, rankIndex = GetGuildInfo("player")
+    return tonumber(rankIndex)
+end
+
+-- The game's own slash command for a rank change or a removal, in this client's spelling (the
+-- SLASH_* strings the chat frame registers), with the English one where a client lacks it.
+local RANK_SLASH = {
+    promote = { "SLASH_GUILD_PROMOTE1", "/gpromote" },
+    demote  = { "SLASH_GUILD_DEMOTE1", "/gdemote" },
+    remove  = { "SLASH_GUILD_UNINVITE1", "/gremove" },
+}
+
+-- The line that does `action` ("promote", "demote", "remove") to `name`, or nil: an unknown action, or a name
+-- with a character that could start or carry a second command (; / \ |) or a line break.
+-- Retail names the member with the realm, as a guild there spans connected realms (#184); the other
+-- clients' guilds are one realm, and the short name is the one their commands take. Where the game spells
+-- a surname with a space (WoW: Forever, "Chehul Druida"), the name goes as /w takes it, the hyphen for the
+-- space (GuildOS:WhisperTarget): a space would end the name there. Unverified for /gpromote (specs/bulk-actions).
+function Compat.GuildRankCommand(action, name)
+    local slash = RANK_SLASH[action]
+    if not slash or type(name) ~= "string" or name == "" or name:find("[;/\\|\r\n]") then return nil end
+    if not GuildOS.Client.isRetail then name = name:match("^([^-]+)") or name end
+    name = GuildOS:WhisperTarget(strtrim and strtrim(name) or name)
+    if name == "" or name:find("%s") then return nil end
+    local cmd = _G[slash[1]]
+    if type(cmd) ~= "string" or not cmd:match("^/%S+$") then cmd = slash[2] end
+    return cmd .. " " .. name
+end
+
+-- Whether a secure button may run that line. WoW: Forever refused a /ginvite written by the addon on a
+-- secure button (MACRO_ACTION_BLOCKED, 1.60.1.70790, #256): there the officer types the line instead.
+function Compat.SecureGuildMacro()
+    return GuildOS.Client.game ~= "FOREVER"
+end
+
+-- The game's "cast on key down" option (ActionButtonUseKeyDown): true or false, or nil on a client without it.
+local function keyDownOption()
+    local get = (C_CVar and C_CVar.GetCVar) or GetCVar
+    if not get then return nil end
+    local ok, v = pcall(get, "ActionButtonUseKeyDown")
+    if not ok or v == nil then return nil end
+    return tostring(v) == "1"
+end
+
+-- Register a secure action button for its clicks. A client with the key-down option (retail, and the newer
+-- Classic templates) may act on the press or on the release by it, a /click included: the button listens to
+-- both, and SecureClickActs lets exactly one of them arm the line, so a click acts once whichever the template
+-- runs. A client without the option acts on the release.
+function Compat.SecureClicks(button)
+    if keyDownOption() ~= nil then
+        button:RegisterForClicks("AnyUp", "AnyDown")
+    else
+        button:RegisterForClicks("AnyUp")
+    end
+end
+
+-- Whether the click event with this `down` is the one that arms the line (see SecureClicks).
+function Compat.SecureClickActs(down)
+    local opt = keyDownOption()
+    if opt == nil then return not down end
+    return (down and true or false) == opt
+end
+
+-- The macro line that presses button `name` the way SecureClickActs acts on: with the key-down option on,
+-- /click must say it is a press ("LeftButton 1"), or it arrives as a release and does nothing.
+function Compat.ClickMacro(name)
+    if keyDownOption() then return "/click " .. name .. " LeftButton 1" end
+    return "/click " .. name
+end
+
+-- Set the line a secure action button runs. Out of combat only: the game refuses SetAttribute on a
+-- protected frame in combat. Returns whether it was set.
+function Compat.SetSecureMacro(button, text)
+    if Compat.InCombat() then return false end
+    button:SetAttribute("type", "macro")
+    button:SetAttribute("macrotext", text or "")
+    return true
+end
+
 -- Resolve a guild roster index for `name`, which may be "Name" or "Name-Realm";
 -- `realm` (from a chat event, say) overrides any suffix on `name`.
 --
@@ -448,6 +549,58 @@ function Compat.SetGuildPublicNote(name, text, realm)
     end
     if GuildRosterSetPublicNote then
         GuildRosterSetPublicNote(idx, note)
+        return true
+    end
+    return false, (C_GuildInfo and C_GuildInfo.SetNote) and "no-guid" or "no-api"
+end
+
+-- Whether Guild OS may write a member's officer note (issue #429): as for the public note, only TBC
+-- Anniversary lets an addon; WoW: Forever and retail forbid C_GuildInfo.SetNote to addons.
+function Compat.CanEditOfficerNote()
+    if not GuildOS.Client.isAnniversary then return false end
+    if CanEditOfficerNote then return CanEditOfficerNote() and true or false end
+    return false
+end
+
+-- Whether this character's rank may edit that note in the game's own roster ("public" or "officer"),
+-- whether or not an addon may write it: where the addon may not, the player types it there (#429).
+function Compat.RankEditsNote(which)
+    if which == "officer" then
+        if C_GuildInfo and C_GuildInfo.CanEditOfficerNote then return C_GuildInfo.CanEditOfficerNote() and true or false end
+        return (CanEditOfficerNote and CanEditOfficerNote()) and true or false
+    end
+    if C_GuildInfo and C_GuildInfo.CanEditPublicNote then return C_GuildInfo.CanEditPublicNote() and true or false end
+    return (CanEditPublicNote and CanEditPublicNote()) and true or false
+end
+
+-- Whether Guild OS may write that note ("public" or "officer") on this client.
+function Compat.CanWriteNote(which)
+    if which == "officer" then return Compat.CanEditOfficerNote() end
+    return Compat.CanEditPublicNote()
+end
+
+-- A guild member's officer note, or nil and why ("absent", "ambiguous", "hidden": this rank cannot read them).
+function Compat.GetGuildOfficerNote(name, realm)
+    if not Compat.CanViewOfficerNote() then return nil, "hidden" end
+    local idx, why = Compat.FindGuildRosterIndex(name, realm)
+    if not idx then return nil, why end
+    local _, _, _, _, _, _, _, onote = GetGuildRosterInfo(idx)
+    return onote or ""
+end
+
+-- Set a guild member's officer note by name, as SetGuildPublicNote does the public one (issue #429).
+function Compat.SetGuildOfficerNote(name, text, realm)
+    if not Compat.CanEditOfficerNote() then return false, "no-permission" end
+    local idx, why = Compat.FindGuildRosterIndex(name, realm)
+    if not idx then return false, why end
+    local note = GuildOS:SanitizeUserText(text, 31)
+    local guid = select(17, GetGuildRosterInfo(idx))
+    if C_GuildInfo and C_GuildInfo.SetNote and guid then
+        C_GuildInfo.SetNote(guid, note, false)
+        return true
+    end
+    if GuildRosterSetOfficerNote then
+        GuildRosterSetOfficerNote(idx, note)
         return true
     end
     return false, (C_GuildInfo and C_GuildInfo.SetNote) and "no-guid" or "no-api"
@@ -2096,6 +2249,37 @@ function Compat.ChannelHidesRaidIcons(name, number)
     return info ~= nil and NO_RAID_ICONS[info.zoneChannelID] == true
 end
 
+-- Whether this character's rank may speak in officer chat, from the rank's flags (the fourth: officer chat,
+-- speak): C_GuildInfo.GuildControlGetRankFlags(rankOrder) gives a table, the older GuildControlGetRankFlags
+-- (rankOrder) the flags one by one. Nil when the client answers neither: then nobody knows, and the caller
+-- goes on as before (#427).
+function Compat.CanSpeakOfficerChat()
+    if not (IsInGuild and IsInGuild()) then return nil end
+    local rankIndex = select(3, GetGuildInfo("player"))
+    if type(rankIndex) ~= "number" then return nil end
+    local order = rankIndex + 1
+    if C_GuildInfo and C_GuildInfo.GuildControlGetRankFlags then
+        local ok, flags = pcall(C_GuildInfo.GuildControlGetRankFlags, order)
+        if ok and type(flags) == "table" and flags[4] ~= nil then return flags[4] and true or false end
+    end
+    if GuildControlGetRankFlags then
+        local ok, _, _, _, speak = pcall(GuildControlGetRankFlags, order)
+        if ok and speak ~= nil then return speak and true or false end
+    end
+    return nil
+end
+
+-- The addon channel only the ranks that may hear officer chat receive (issue #427): what a member's client must
+-- never even get the bytes of. The game's SendAddonMessage takes "OFFICER" on retail and on TBC Anniversary.
+-- WoW: Forever is not checked in game yet: nil there, and what would go to officers only stays on this client.
+-- A rank that may not speak in officer chat would send into nothing, silently: nil and "no-permission" then.
+function Compat.OfficerAddonChannel()
+    local c = GuildOS.Client
+    if not (c and (c.isRetail or c.isAnniversary)) then return nil, "no-channel" end
+    if Compat.CanSpeakOfficerChat() == false then return nil, "no-permission" end
+    return "OFFICER"
+end
+
 -- Send an addon message through ChatThrottleLib; prio is its "BULK" (default), "NORMAL" or "ALERT".
 function Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)
     queue({ prefix = prefix, text = text, channel = channel, target = target,
@@ -2287,6 +2471,23 @@ function Compat.CalendarCreateGuildEvent(spec)
         setEventWhen(spec)
         local raid = Enum and Enum.CalendarEventType and Enum.CalendarEventType.Raid
         if raid and C_Calendar.EventSetType then C_Calendar.EventSetType(raid) end
+        C_Calendar.AddEvent()
+    end)
+    if not ok then return false, tostring(err) end
+    return true
+end
+
+--- A guild announcement (no sign-up): { title, description, startsAt }, as a birthday is (#428). Only from
+--- a click; true, or false and why.
+function Compat.CalendarCreateGuildAnnouncement(spec)
+    if not Compat.CalendarAvailable() or type(C_Calendar.CreateGuildAnnouncementEvent) ~= "function" then
+        return false, "unavailable"
+    end
+    local ok, err = pcall(function()
+        C_Calendar.CreateGuildAnnouncementEvent()
+        C_Calendar.EventSetTitle(spec.title)
+        C_Calendar.EventSetDescription(spec.description or "")
+        setEventWhen(spec)
         C_Calendar.AddEvent()
     end)
     if not ok then return false, tostring(err) end

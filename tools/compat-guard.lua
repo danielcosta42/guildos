@@ -30,6 +30,8 @@ local GLOBALS = {
   "SetRaidSubgroup", "SwapRaidSubgroup",
   -- Forbidden to addons on WoW: Forever 1.60.1.70790: Compat.GuildInvite (issue #256).
   "GuildInvite",
+  -- A rank's rights to change ranks and remove (issue #420): Compat nil-guards them.
+  "CanGuildPromote", "CanGuildDemote", "CanGuildRemove",
   -- What a tooltip is showing: the Classic readers, and the data type the retail client
   -- registers by (issue #19). Reading one behind Compat's back is a feature that goes quiet
   -- on the other client, which is the failure this guard exists to make loud.

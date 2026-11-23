@@ -312,7 +312,11 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     -- The opened recipe sits over the rows it takes; what scrolls past the list's edge is cut.
     if list.SetClipsChildren then list:SetClipsChildren(true) end
     local detail = GuildOS.CreateCraftDetail and GuildOS:CreateCraftDetail(list)
-    if detail then detail:SetFrameLevel(list:GetFrameLevel() + 5) end
+    if detail then
+        detail:SetFrameLevel(list:GetFrameLevel() + 5)
+        -- Resized past where the order fits beside the columns: it takes other rows (#415).
+        detail.onReflow = function() panel:Refresh() end
+    end
 
     local empty = UI:CreateText(list, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     empty:SetPoint("CENTER", 0, 20)
@@ -540,7 +544,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
             end
             local at, n
             if UI.WithDetail then
-                out, at, n = UI.WithDetail(out, function(e) return e.id == state.open end, ROW_H)
+                out, at, n = UI.WithDetail(out, function(e) return e.id == state.open end, ROW_H, detail)
             end
             state.results, state.detailAt, state.detailRows = out, at, n
             if not at then state.open = nil end

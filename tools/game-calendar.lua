@@ -270,4 +270,20 @@ check(printed[#printed] == "It is in the game's calendar now." and redrawn >= 1,
 G:Act("web:rq", "put")
 check(printed[#printed] == "It is already in the game's calendar.", "and says why when it could not start")
 
+-- ── 7. A day the site has not sent yet (#416) ─────────────────────────
+-- A raid made two months ahead is on Discord at once and in the inbox only once it is four weeks away.
+local D = 86400
+check(G.NotSentYet(NOW + 54 * D, NOW, nil) == "window", "a night eight weeks out has not been sent yet")
+check(G.NotSentYet(NOW + 54 * D, NOW, { ids = {}, count = 2, at = NOW, last = NOW + D }) == "window",
+  "whatever the inbox holds")
+check(G.NotSentYet(NOW + 28 * D + 1, NOW, nil) == "window", "a day that ends past the four weeks may lack one")
+check(G.NotSentYet(NOW + 28 * D, NOW, nil) == nil, "a day inside them has whatever was sent")
+check(G.NotSentYet(NOW + 5 * D, NOW, { ids = {}, count = 10, at = NOW, last = NOW + 3 * D }) == "cap",
+  "past the tenth raid of a full inbox, later ones have not come")
+check(G.NotSentYet(NOW + 2 * D, NOW, { ids = {}, count = 10, at = NOW, last = NOW + 3 * D }) == nil,
+  "before it, a full inbox holds them all")
+check(G.NotSentYet(NOW + 5 * D, NOW, { ids = {}, count = 9, at = NOW, last = NOW + 3 * D }) == nil,
+  "an inbox under its cap holds every raid in its window")
+check(G.NotSentYet(NOW + 5 * D, NOW, { ids = {}, count = 10, at = NOW }) == nil, "an inbox with no dates says nothing")
+
 io.write(string.format("game-calendar: %d checks passed\n", checks))

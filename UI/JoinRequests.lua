@@ -84,12 +84,14 @@ local function Build()
     local empty = UI:CreateText(f, L["Nobody has asked to join yet."], 11, C.label.r, C.label.g, C.label.b)
     empty:SetPoint("TOP", 0, -120)
 
+    -- A note is one line until its row is clicked (#421); the ids of the rows unfolded, for this session.
+    local expanded = {}
     local rows = {}
     local function Row(i)
         if rows[i] then return rows[i] end
-        local row = CreateFrame("Frame", nil, content)
+        local row = CreateFrame("Button", nil, content)
         row:SetSize(WIDTH - 40, ROW_H)
-        row:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
+        row:EnableMouse(true); row:RegisterForClicks("LeftButtonUp")
         row.name = UI:CreateText(row, "", 12)
         row.name:SetPoint("TOPLEFT", 6, -8)
         row.detail = UI:CreateText(row, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
@@ -98,10 +100,10 @@ local function Build()
         row.note:SetPoint("TOPLEFT", 6, -26)
         row.note:SetWidth(330); row.note:SetJustifyH("LEFT"); row.note:SetWordWrap(false)
         row.meta = UI:CreateText(row, "", 10, C.label.r, C.label.g, C.label.b)
-        row.meta:SetPoint("TOPLEFT", 6, -44)
         row.meta:SetWidth(330); row.meta:SetJustifyH("LEFT"); row.meta:SetWordWrap(false)
         row.decline = UI:CreateButton(row, L["Decline"], 70, 24)
-        row.decline:SetPoint("RIGHT", -6, 0)
+        -- Where it always was in a one-line row, and still there when the note opens below.
+        row.decline:SetPoint("TOPRIGHT", -6, -(ROW_H - 24) / 2)
         UI:SetButtonVariant(row.decline, "danger")
         row.whisper = UI:CreateButton(row, L["Whisper"], 76, 24)
         row.whisper:SetPoint("RIGHT", row.decline, "LEFT", -6, 0)
@@ -117,6 +119,7 @@ local function Build()
         local open = JR():OpenCount()
         count:SetText(GuildOS:JoinRequestsOpenText(open))
         empty:SetShown(#list == 0)
+        local y = 0
         for i, r in ipairs(list) do
             if i > MAX_ROWS then break end
             local row = Row(i)
@@ -127,9 +130,36 @@ local function Build()
             else
                 row.name:SetTextColor(C.text.r, C.text.g, C.text.b)
             end
-            row.detail:SetText(Detail(r))
-            row.note:SetText(r.note and ("\226\128\156" .. r.note .. "\226\128\157") or "")
-            row.meta:SetText(Meta(r))
+            local detail, note, meta = Detail(r), r.note and ("\226\128\156" .. r.note .. "\226\128\157") or "", Meta(r)
+            row.detail:SetText(detail)
+            -- The note was cleaned when it arrived (GuildFinder.Text: no codes, one line, 120 characters);
+            -- here it only wraps, in the row once clicked and always in the tooltip.
+            local unfolded = r.note and expanded[r.id] or false
+            row.note:SetWordWrap(unfolded)
+            row.note:SetText(note)
+            row.meta:SetText(meta)
+            row.meta:ClearAllPoints()
+            local h = ROW_H
+            if unfolded then
+                row.meta:SetPoint("TOPLEFT", row.note, "BOTTOMLEFT", 0, -6)
+                h = math.max(ROW_H, math.ceil(26 + (row.note:GetStringHeight() or 0) + 6 + 18))
+            else
+                row.meta:SetPoint("TOPLEFT", 6, -44)
+            end
+            row:SetHeight(h)
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", 0, -y)
+            y = y + h
+            local lines = {}
+            if detail ~= "" then lines[#lines + 1] = { text = detail, r = C.textSoft.r, g = C.textSoft.g, b = C.textSoft.b, wrap = true } end
+            if note ~= "" then lines[#lines + 1] = note end
+            lines[#lines + 1] = { text = meta, r = C.label.r, g = C.label.g, b = C.label.b, wrap = true }
+            UI:AddTooltip(row, r.character, lines)
+            row:SetScript("OnClick", function()
+                if not r.note then return end
+                expanded[r.id] = not expanded[r.id] or nil
+                f.Refresh()
+            end)
             local isOpen = r.status == "open"
             -- Invite is whoever the game lets invite; deciding is an officer's, and Decline would do nothing for anybody else.
             -- The game lets no addon invite off Anniversary (#256), and these requests are Forever's and retail's.
@@ -142,7 +172,7 @@ local function Build()
             row:Show()
         end
         for i = #list + 1, #rows do rows[i]:Hide() end
-        content:SetHeight(math.max(1, math.min(#list, MAX_ROWS) * ROW_H))
+        content:SetHeight(math.max(1, y))
     end
 
     JR():Listen(function()
@@ -197,6 +227,11 @@ function GuildOS:JoinRequestsHeard(r)
     toast = toast or BuildToast()
     local detail = Detail(r, ", ")
     toast.who:SetText(r.character .. (detail ~= "" and (", " .. detail) or ""))
+    -- The line above is cut to the box; the whole of it, and the note, wrap in the tooltip (#421).
+    local lines = {}
+    if detail ~= "" then lines[#lines + 1] = { text = detail, r = C.textSoft.r, g = C.textSoft.g, b = C.textSoft.b, wrap = true } end
+    if r.note then lines[#lines + 1] = "\226\128\156" .. r.note .. "\226\128\157" end
+    UI:AddTooltip(toast, r.character, lines)
     toast.shownAt = GetTime()
     toast:Show()
     local shownAt = toast.shownAt

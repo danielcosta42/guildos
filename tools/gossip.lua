@@ -13,8 +13,11 @@
 -- the spelling that came back is the one used; no line reaches the chat; trash off the network breaks
 -- nothing; CR2 still reaches RecruitBeacon; and Anniversary stays out of it.
 --
--- `pairs` order differs from one run to the next, and so do who ties with whom and the number of checks
--- that make: a rule here holds on every order, and a test must not lean on one.
+-- `pairs` order differs from one run to the next (LuaJIT seeds its string hash per process): a rule
+-- here holds on every order, and a test must not lean on one. What a client does with its dice must
+-- not lean on one either (Gossip:Peers breaks its ties by name), so with the seed fixed a run is the
+-- same run every time, down to the number of checks, and a count held to a bound (the flood below) is
+-- one number, not whatever the table layout made of it this time.
 --
 --   luajit -e 'ADDON="."' tools/gossip.lua
 --
@@ -267,10 +270,17 @@ local function client(name, o)
   source(env, "Core/Core.lua")
   source(env, "Core/Compat.lua")
   source(env, "Core/Utils.lua")
+  source(env, "Core/WhisperQueue.lua")   -- every whisper waits its turn on Forever (#393)
   source(env, "Libs/LibChehulMesh.lua")
   source(env, "Modules/ChehulGossip.lua")
   source(env, "Modules/RecruitBeacon.lua")
   env.GuildOS.db = {}
+  -- The rules of the gossip are checked a second after a message; the queue's pace is tools/whisper-queue.lua's,
+  -- and the fifty clients below run at the real one.
+  if not o.realPace then
+    local Q = env.GuildOS.WhisperQueue
+    Q.INTERVAL, Q.BURST, Q._state.interval, Q._state.tokens = 0.001, 1000, 0.001, 1000
+  end
   c.env, c.GuildOS = env, env.GuildOS
   c.Gossip, c.RB = env.GuildOS.ChehulGossip, env.GuildOS.RecruitBeacon
   if o.channel then c.Gossip.CHANNEL = true end   -- a version that turns the route on
@@ -1006,7 +1016,7 @@ for cycle, n in pairs(told) do
 end
 check(cycles > 0, "the attack did get names in, so it is the seats that held")
 check(peak <= a.Gossip.HEARD_OF_MAX, "the flood never passes the ceiling, peak " .. peak)
-check(toHonest >= 15, "the honest peers keep their rounds, " .. toHonest .. " digests of 30 rounds")
+check(toHonest >= 15, "the honest peers keep their rounds, " .. toHonest .. " digests in " .. a.cycle .. " rounds")
 
 -- ── The ceiling: however many ask ───────────────────────────────────────
 fresh()
@@ -1156,7 +1166,7 @@ for _, held in ipairs({ 0, 11, 12, 30, 39 }) do
       fresh()
       local ring = {}
       for i = 1, 50 do
-        ring[i] = client("Node N" .. i)
+        ring[i] = client("Node N" .. i, { realPace = true })   -- the WhisperQueue at its real pace (#393)
         stock(ring[i], ads(held))
       end
       local key = edit and "Guild 01" or "Ordem"

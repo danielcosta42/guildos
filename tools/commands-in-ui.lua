@@ -95,6 +95,18 @@ local IN_UI = {
   attune      = { { "UI/AuditPanel.lua", "BuildAttuneSub" } },
   signup      = { { "UI/RosterFrame.lua", "GuildOS:ShowCoreSignupFrame()" } },   -- the Raids screen's button (#377)
   ban         = { { "UI/ManagementPanel.lua", "GuildOS.BanList:Add(" } },
+  -- Leadership > Bulk actions (issue #420): its Next, Skip and Stop are the panel's buttons.
+  bulk        = { { "UI/ManagementPanel.lua", "GuildOS:BuildBulkSub(p)" }, { "UI/BulkPanel.lua", "BA:Skip()" },
+                  { "UI/BulkPanel.lua", "BA:Stop()" }, { "UI/BulkPanel.lua", "GuildOS.BulkActions:Arm(down)" } },
+  -- A member's alts to the main's rank (issue #424): the buttons on the member's sheet.
+  altgroup    = { { "UI/MemberDetail.lua", "GuildOS.BulkActions:StartGroupAndSay(playerKey" } },
+  -- My birthday (issue #428): Settings > Profile's Birthday, its box and its "Show my birthday".
+  birthday    = { { "UI/SettingsPanel.lua", "GuildOS.Birthdays:SetMineText(" }, { "UI/SettingsPanel.lua", "GuildOS.Birthdays:ClearMine()" } },
+  -- Leadership > Notes and marks (issue #429): its buttons call what the commands call.
+  joindate    = { { "UI/ManagementPanel.lua", "GuildOS:BuildMarksSub(p)" }, { "UI/MarksPanel.lua", "ND:WriteOne(" },
+                  { "UI/MarksPanel.lua", "ND:ImportPlan()" }, { "UI/MarksPanel.lua", "ND:Plan()" } },
+  safe        = { { "UI/MarksPanel.lua", "MM:CommandSafe(" } },
+  nick        = { { "UI/MarksPanel.lua", "MM:CommandNick(" } },
   mentions    = { { "UI/SettingsPanel.lua", "GuildOS.Mentions:PrintLog()" },
                   { "UI/SettingsPanel.lua", 'GuildOS.Mentions:HandleCommand({ "clearwords" })' } },
   notecmd     = { { "UI/SettingsPanel.lua", "GuildOS.db.noteCommand.enabled = checked" } },
@@ -109,13 +121,14 @@ local ALIAS = {
   beacon = { "recruitbeacon" }, map = { "guildmap" }, recruit = { "recruiting" }, autoinvite = { "ai" },
   cons = { "consumables" }, lm = { "lootmaster" }, web = { "companion" }, exportatt = { "exportattendance" },
   attune = { "attunements" }, signup = { "unsignup" }, ban = { "tempban", "unban", "banlist" },
-  ally = { "alliance" },
+  ally = { "alliance" }, birthday = { "aniversario" },
 }
 -- Chat-only, and why.
 local CHAT_ONLY = {
   help = "prints the list of commands", commands = "help's alias",
   lfg = "opens by itself for a player with no guild",
   resscan = "debug: the resistance scan, printed",
+  altlimit = "an audit printed in chat, as GRM's /grm altlimit (issue #424)",
   ["attune debug"] = "debug", ["attunements debug"] = "debug", ["attune dumpquests"] = "debug: a quest-id dump",
 }
 

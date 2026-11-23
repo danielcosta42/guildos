@@ -51,6 +51,15 @@ local CR3_FIELDS = 19         -- the name of the message and the 18 fields after
 local CR3_MAX    = 2048       -- bytes; a whole one is under a kilobyte
 
 local function now() return (GetServerTime and GetServerTime()) or time() end
+
+-- An ad for the mesh's realm bus, through the WhisperQueue: on WoW: Forever that bus is whispers, and they
+-- wait for the room the server's limit leaves (issue #393). What does not fit now, the next tick offers again.
+local function Realm(mesh, prefix, payload, key)
+    local queue = GuildOS.WhisperQueue
+    if queue then return queue:Realm(prefix, payload, key) end
+    mesh:Realm(prefix, payload, key)
+    return true
+end
 local function sanitize(s) return (tostring(s or ""):gsub("|", "/")) end
 local function joinList(t) return table.concat(t or {}, "+") end
 local function splitSet(s)
@@ -418,7 +427,7 @@ function RB:Broadcast()
         self:Ingest(cr2, GuildOS.Compat.PlayerName())
         mesh:Guild(self.PREFIX, self:AdToPayload(own))
         mesh:Guild(self.PREFIX, cr2)
-        mesh:Realm(self.PREFIX, cr2, self.PREFIX .. ":" .. guild)
+        Realm(mesh, self.PREFIX, cr2, self.PREFIX .. ":" .. guild)
         return
     end
 
@@ -436,7 +445,7 @@ function RB:Broadcast()
 
     self:Ingest(payload, GuildOS.Compat.PlayerName())     -- seed our own cache (we relay it too)
     mesh:Guild(self.PREFIX, payload)
-    mesh:Realm(self.PREFIX, payload, self.PREFIX .. ":" .. guild)
+    Realm(mesh, self.PREFIX, payload, self.PREFIX .. ":" .. guild)
 end
 
 ----------------------------------------------------------------------
@@ -454,7 +463,7 @@ function RB:RelayTick()
     for _ = 1, math.min(self.RELAY_PER_TICK, #list) do
         relayCursor = (relayCursor % #list) + 1
         local ad = list[relayCursor]
-        mesh:Realm(self.PREFIX, CacheRecordToPayload(ad), self.PREFIX .. ":" .. ad.guild)
+        Realm(mesh, self.PREFIX, CacheRecordToPayload(ad), self.PREFIX .. ":" .. ad.guild)
     end
 end
 

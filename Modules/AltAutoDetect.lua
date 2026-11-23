@@ -120,16 +120,20 @@ function AltAutoDetect:DetectOwnAlts(accountChars, guildSet, altLinks)
     return { group = keys, main = main }
 end
 
--- Returns how many links changed. An officer writes and publishes them; a member applies
--- them to their own view, asks the officers and keeps the claim until an officer's list
--- carries it, since a claim nobody heard would be wiped by the next list (#353).
+-- Returns how many links changed. An officer writes and publishes them (AltSync, #424); a member
+-- applies them to their own view, asks the officers and keeps the claim until an officer's links
+-- carry it or a newer officer edit overrules it (#353, #424).
 function AltAutoDetect:LinkOwnAlts(mainKey, altKeys)
     if not mainKey or not altKeys then return 0 end
     local links, changed = self:PlanGroup(GuildOS.db.altLinks, altKeys, mainKey)
     if GuildOS:IsOfficer() then
-        if changed > 0 then
+        if GuildOS.AltSync then
+            -- The officer named these alts: a link of theirs from before #424 becomes an officer's.
+            local confirm = {}
+            for _, k in ipairs(altKeys) do if k ~= mainKey then confirm[k] = true end end
+            GuildOS.AltSync:Commit(links, confirm)
+        elseif changed > 0 then
             GuildOS.db.altLinks = links
-            if GuildOS.CommSystem then GuildOS.CommSystem:BroadcastAltLinks() end
         end
         return changed
     end
@@ -149,18 +153,39 @@ function AltAutoDetect:_SendClaim(mainKey, alts)
     GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.SELF_ALT, payload)
 end
 
-local PENDING_TTL = 30 * 86400
-local CLAIM_HEARD = 20   -- seconds an officer has to apply a re-sent claim before its list counts as an answer
+function AltAutoDetect:_SendUnlink(key)
+    if not GuildOS.CommSystem then return end
+    local payload = LibSerialize:Serialize({ unlink = { key } })
+    GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.SELF_ALT, payload)
+end
 
--- Account-wide like accountChars, tagged with the guild: the keys only mean something there.
+-- A claim, as it goes to the officers: a group's link, or a member's own unlink.
+function AltAutoDetect:_Send(p)
+    if p.unlink then self:_SendUnlink(p.unlink) else self:_SendClaim(p.main, p.alts) end
+end
+
+local PENDING_TTL = 30 * 86400
+local function unlinkSig(key) return "unlink:" .. key end
+
+-- Account-wide like accountChars, tagged with the guild: the keys only mean something there. A claim for
+-- the group replaces a member's own unlink of any of its characters still waiting.
 function AltAutoDetect:_KeepPending(mainKey, alts)
     if not GuildOSDB then return end
     GuildOSDB.altPending = GuildOSDB.altPending or {}
     local group = { mainKey }
     for _, k in ipairs(alts) do group[#group + 1] = k end
+    for _, k in ipairs(group) do GuildOSDB.altPending[unlinkSig(k)] = nil end
     GuildOSDB.altPending[GroupSignature(group)] = {
         main = mainKey, alts = alts, guild = GetGuildInfo("player"), ts = GetServerTime(),
     }
+end
+
+-- A member's own unlink waits like a claim (#424): on the member's view (Overlay) until an officer's
+-- tombstone for it, or a newer officer link of that character, answers it.
+function AltAutoDetect:_KeepUnlink(key)
+    if not GuildOSDB then return end
+    GuildOSDB.altPending = GuildOSDB.altPending or {}
+    GuildOSDB.altPending[unlinkSig(key)] = { unlink = key, guild = GetGuildInfo("player"), ts = GetServerTime() }
 end
 
 -- Each pending claim of this guild, after dropping the ones past their time.
@@ -169,7 +194,9 @@ function AltAutoDetect:_EachPending(fn)
     if not pending then return end
     local guild, now = GetGuildInfo("player"), GetServerTime()
     for sig, p in pairs(pending) do
-        if type(p) ~= "table" or not p.main or type(p.alts) ~= "table" or now - (p.ts or 0) > PENDING_TTL then
+        local valid = type(p) == "table"
+            and ((p.main and type(p.alts) == "table") or (type(p.unlink) == "string" and p.unlink ~= ""))
+        if not valid or now - (p.ts or 0) > PENDING_TTL then
             pending[sig] = nil
         elseif p.guild == guild then
             fn(sig, p)
@@ -185,44 +212,96 @@ local function carries(links, p)
     return true
 end
 
--- An officer's list just replaced ours. A claim it carries is done; one it lacks goes back
--- on our view and to the officers again, once a session each (an officer is online now).
+-- Pure: whether an officer's edit newer than claim `p` overrules it: one of its alts unlinked or
+-- linked to another main, or its main made somebody's alt, after the claim was made. Only an
+-- officer's own entry counts (one with an author, not a link taken from an old client's table):
+-- a link merely missing from an officer's list, or an older edit, is no answer (#424).
+function AltAutoDetect.Overruled(p, entries)
+    local since = p.ts or 0
+    local function newer(e)
+        return type(e) == "table" and e.author ~= nil and not e.legacy and (e.ts or 0) > since
+    end
+    for _, k in ipairs(p.alts) do
+        local e = entries[k]
+        if newer(e) and (e.removed or e.main ~= p.main) then return true end
+    end
+    local e = entries[p.main]
+    return newer(e) and not e.removed and e.main ~= nil
+end
+
+-- Pure: whether a member's own unlink `p` is answered: the officers' entries hold no link for that
+-- character (a tombstone, or none at all), or an officer linked it again after the unlink was asked.
+-- A link this client only has from before #424, or an officer's older one, is no answer (#424).
+function AltAutoDetect.UnlinkAnswered(p, entries)
+    local e = entries[p.unlink]
+    if type(e) ~= "table" or e.removed then return true end
+    return e.author ~= nil and not e.legacy and (e.ts or 0) > (p.ts or 0)
+end
+
+-- An officer's word on the links just arrived (AltSync). A claim the officers' links carry is
+-- done, one a newer officer edit overrules goes; any other stays on our view (Overlay) and goes
+-- to the officers again, once a session each (an officer is online now).
 function AltAutoDetect:OnOfficerLinks()
-    if GuildOS:IsOfficer() then return end
+    if GuildOS:IsOfficer() or not GuildOS.AltSync then return end
     self._resentAt = self._resentAt or {}
-    local t = GetTime()
+    local base, entries = GuildOS.AltSync:HeardView(), GuildOS.AltSync:Entries()
     self:_EachPending(function(sig, p)
-        local resentAt = self._resentAt[sig]
-        if carries(GuildOS.db.altLinks or {}, p) then
+        local done
+        if p.unlink then
+            done = AltAutoDetect.UnlinkAnswered(p, entries)
+        else
+            done = carries(base, p) or AltAutoDetect.Overruled(p, entries)
+        end
+        if done then
             GuildOSDB.altPending[sig] = nil
-        elseif resentAt and t - resentAt > CLAIM_HEARD then
-            -- Sent this session and an officer's list still lacks it a while later: the officers
-            -- heard it and undid it (an unlink since), and their word stands.
-            GuildOSDB.altPending[sig] = nil
+        elseif not self._resentAt[sig] then
+            self._resentAt[sig] = GetTime()
+            self:_Send(p)
+        end
+    end)
+end
+
+-- The member's own claims still waiting, on top of the officers' links, oldest first: what a
+-- member's view shows until an officer applies them. An officer's view is the officers' links.
+function AltAutoDetect:Overlay(links)
+    if GuildOS:IsOfficer() then return links end
+    local list = {}
+    self:_EachPending(function(_, p) list[#list + 1] = p end)
+    table.sort(list, function(a, b)
+        if (a.ts or 0) ~= (b.ts or 0) then return (a.ts or 0) < (b.ts or 0) end
+        return (a.main or ("\0" .. a.unlink)) < (b.main or ("\0" .. b.unlink))
+    end)
+    for _, p in ipairs(list) do
+        if p.unlink then
+            local out = {}
+            for k, v in pairs(links) do out[k] = v end
+            out[p.unlink] = nil
+            links = out
         else
             local group = { p.main }
             for _, k in ipairs(p.alts) do group[#group + 1] = k end
-            GuildOS.db.altLinks = self:PlanGroup(GuildOS.db.altLinks, group, p.main)
-            if not resentAt then
-                self._resentAt[sig] = t
-                self:_SendClaim(p.main, p.alts)
-            end
+            links = self:PlanGroup(links, group, p.main)
         end
-    end)
+    end
+    return links
 end
 
 -- At login: an officer now on this account applies its own claims; a member sends them again.
 function AltAutoDetect:ResendPending()
     self:_EachPending(function(sig, p)
         if GuildOS:IsOfficer() then
-            local group = { p.main }
-            for _, k in ipairs(p.alts) do group[#group + 1] = k end
-            self:LinkOwnAlts(p.main, group)
+            if p.unlink then
+                GuildOS:UnlinkAlt(p.unlink)
+            else
+                local group = { p.main }
+                for _, k in ipairs(p.alts) do group[#group + 1] = k end
+                self:LinkOwnAlts(p.main, group)
+            end
             GuildOSDB.altPending[sig] = nil
         else
-            -- Not marked as re-sent: nobody may be online to hear it, and only a re-send made
-            -- once an officer's list arrived starts the wait for their answer.
-            self:_SendClaim(p.main, p.alts)
+            -- Not marked as re-sent: nobody may be online to hear it, so the first officer
+            -- word on the links this session sends it again.
+            self:_Send(p)
         end
     end)
 end
@@ -261,7 +340,7 @@ function AltAutoDetect:_DropPendingWith(keys)
     local hit = {}
     for _, k in ipairs(keys) do hit[k] = true end
     for sig, p in pairs(pending) do
-        local touches = type(p) ~= "table" or hit[p.main]
+        local touches = type(p) ~= "table" or hit[p.main] or hit[p.unlink]
         if not touches and type(p.alts) == "table" then
             for _, k in ipairs(p.alts) do if hit[k] then touches = true; break end end
         end
@@ -300,7 +379,9 @@ function AltAutoDetect:SetOwnMain(newMainKey)
 end
 
 -- Member-safe unlink of one's OWN alt: officers apply directly, members
--- broadcast a self-claim that officers replay.
+-- broadcast a self-claim that officers replay. The member's unlink waits like a link claim (#424):
+-- the view is rebuilt from the officers' entries, so a plain local edit would come back on the next
+-- rebuild; the waiting unlink keeps it off the member's view until an officer answers it.
 function AltAutoDetect:UnlinkOwnAlt(altKey)
     if not altKey then return end
     if GuildOS:IsOfficer() then
@@ -308,16 +389,14 @@ function AltAutoDetect:UnlinkOwnAlt(altKey)
     else
         GuildOS.db.altLinks = GuildOS.db.altLinks or {}
         self:_UnclaimPending(altKey)
-        GuildOS.db.altLinks[altKey] = nil
-        if GuildOS.CommSystem then
-            local payload = LibSerialize:Serialize({ unlink = { altKey } })
-            GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.SELF_ALT, payload)
-        end
+        self:_KeepUnlink(altKey)
+        if GuildOS.AltSync then GuildOS.AltSync:Rebuild() else GuildOS.db.altLinks[altKey] = nil end
+        self:_SendUnlink(altKey)
     end
 end
 
--- Officer applies a member's self-claim through the authoritative LinkAlt/
--- UnlinkAlt path. Link and unlink are validated and handled independently so
+-- Officer applies a member's self-claim with LinkAlt's and UnlinkAlt's rules,
+-- in one write of the officers' synced links (#424). Link and unlink are validated and handled independently so
 -- an unlink-only claim (no main/alts) isn't rejected by the link guard.
 -- Security: a claim is only ever trusted for the KEYS IT NAMES about the
 -- SENDER themselves — the sender's own player key is derived from the comm
@@ -341,6 +420,8 @@ function AltAutoDetect:HandleSelfClaim(sender, data)
         for i, k in ipairs(claim.unlink) do claim.unlink[i] = GuildOS:LocalMemberKey(k) end
     end
 
+    local links, confirm = {}, {}
+    for k, v in pairs(GuildOS.db.altLinks or {}) do links[k] = v end
     if claim.main and type(claim.alts) == "table" then
         -- Only apply if the sender is part of the group they're claiming
         -- (either the main or one of the alts) — never someone else's.
@@ -361,13 +442,15 @@ function AltAutoDetect:HandleSelfClaim(sender, data)
             -- would detach X from its real group. When not same-group we skip
             -- the clear, and LinkAlt's circular guard still blocks linking to an
             -- existing alt, so a member can only re-main a group they belong to.
-            GuildOS.db.altLinks = GuildOS.db.altLinks or {}
             local senderGroup = GuildOS:GetLinkedChars(senderKey)
             for _, k in ipairs(senderGroup) do
-                if k == claim.main then GuildOS.db.altLinks[claim.main] = nil; break end
+                if k == claim.main then links[claim.main] = nil; break end
             end
             for _, k in ipairs(claim.alts) do
-                if k ~= claim.main then GuildOS:LinkAlt(k, claim.main) end
+                if k ~= claim.main then
+                    local planned = GuildOS:_PlanLink(links, k, claim.main)
+                    if planned then links, confirm[k] = planned, true end
+                end
             end
         end
     end
@@ -375,12 +458,12 @@ function AltAutoDetect:HandleSelfClaim(sender, data)
         -- Only unlink a key the sender owns: themselves, or an alt whose
         -- main is the sender.
         for _, k in ipairs(claim.unlink) do
-            local links = GuildOS.db.altLinks or {}
-            if k == senderKey or links[k] == senderKey then
-                GuildOS:UnlinkAlt(k)
-            end
+            if k == senderKey or links[k] == senderKey then links[k] = nil end
         end
     end
+    -- One write for the whole claim, through the officers' synced links (#424).
+    -- The member named these alts: a link of theirs from before #424 becomes an officer's.
+    if GuildOS.AltSync then GuildOS.AltSync:Commit(links, confirm) else GuildOS.db.altLinks = links end
 end
 
 ----------------------------------------------------------------------

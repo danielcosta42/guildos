@@ -702,8 +702,15 @@ function Alliance:Send(op, tbl, target)
     if not blob then
         return false
     end
-    GuildOS:NoteWhisper(target)
-    return mesh:Whisper(self.PREFIX, self.PROTO .. "|" .. op .. "|" .. blob, target) and true or false
+    local payload = self.PROTO .. "|" .. op .. "|" .. blob
+    local function send()
+        GuildOS:NoteWhisper(target)
+        return mesh:Whisper(self.PREFIX, payload, target) and true or false
+    end
+    -- In the WhisperQueue, which WoW: Forever's whisper limit needs (issue #393): true when it went or waits.
+    local queue = GuildOS.WhisperQueue
+    if not queue then return send() end
+    return queue:PushAddon(self.PREFIX, payload, target, "normal", send) ~= false
 end
 
 -- Whisper an op to the ambassadors of `guildName` that the presence mesh says

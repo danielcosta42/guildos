@@ -222,7 +222,16 @@ local COLUMNS = {
           return ctx.hasAlts[d.key] and L["Main"] or nil
       end,
       text = function(v) return v, C.silver end },
-    { key = "version",     label = L["VERSION"],      name = L["Addon version"], min = 56, weight = 0, align = "CENTER", num = true,
+    -- The member's own (issue #428), the same on every character of the group; by the date in the year.
+    { key = "birthday",    label = L["BIRTHDAY"],     name = L["Birthday"],     min = 64,  weight = 0, align = "CENTER", asc = true, num = true,
+      offered = function() return GuildOS.Birthdays ~= nil end,
+      value = function(d)
+          local b = GuildOS.Birthdays:For(d.key)
+          d.birthday = b
+          return b and (b.month * 100 + b.day) or nil
+      end,
+      text = function(_, d) return GuildOS.Birthdays:Text(d.birthday), C.silver end },
+    { key = "version",     label = L["VERSION"],     name = L["Addon version"], min = 56, weight = 0, align = "CENTER", num = true,
       value = function(d) return d.addonVersion and versionNumber(d.addonVersion) or nil end,
       text = function(_, d)
           return d.addonVersion, CompareVersions(d.addonVersion, GuildOS.VERSION) < 0 and C.red or C.silver
@@ -287,6 +296,15 @@ local COLUMNS = {
       offered = function() return GuildOS.TrialTracker ~= nil and enabled("trialTracker") and officer() end,
       value = function(d) return GuildOS.TrialTracker:GetDaysRemaining(d.key) end,
       text = function(v) return v .. "d", v > 14 and C.green or (v > 7 and C.warn or C.red) end },
+    -- When the member's current passage started (issue #427, from the member history of #425): "~" when
+    -- it is only when Guild OS saw them join.
+    { key = "joined",      label = L["JOINED"],       name = L["Joined the guild"], min = 70, weight = 0, align = "RIGHT", num = true,
+      offered = function() return GuildOS.MemberHistory ~= nil and officer() end,
+      value = function(d) return (GuildOS.MemberHistory:JoinedAt(d.key)) end,
+      text = function(v, d)
+          local _, est = GuildOS.MemberHistory:JoinedAt(d.key)
+          return (est and "~" or "") .. GuildOS:DateText(v, "/%y"), C.silver
+      end },
     { key = "gosNote",     label = L["GOS NOTE"],     name = L["Guild OS officer note"], min = 140, weight = 2, align = "LEFT", asc = true,
       offered = function() return GuildOS.OfficerNotes ~= nil and enabled("officerNotes") and officer() end,
       value = function(d)
@@ -1126,6 +1144,11 @@ function GuildOS:CreateRosterPanel(parent, host)
             end
         end
 
+        -- The hover card's index (issue #427): every member, shown or not, so the card names an alt
+        -- in its class colour without walking the roster on each hover.
+        local tipIndex = GuildOS.RosterCard and GuildOS.RosterCard.NewIndex(GuildOS.db.altLinks)
+        self.tipIndex = tipIndex
+
         -- Get guild roster info
         local numMembers = GetNumGuildMembers()
         for i = 1, numMembers do
@@ -1137,6 +1160,7 @@ function GuildOS:CreateRosterPanel(parent, host)
                 local displayName = name:match("^([^-]+)") or name
                 local realm = name:match("-(.+)$") or GetRealmName()
                 local key = GuildOS:GetPlayerKey(displayName, realm)
+                if tipIndex then GuildOS.RosterCard.IndexRow(tipIndex, key, displayName, classFile, isOnline) end
 
                 -- Apply filters
                 local passFilter = true
@@ -1597,6 +1621,9 @@ function CreateRosterRow(parent, rowIndex, uid, host)
         if not self.memberData then return end
         if button == "RightButton" then
             GuildOS:ShowMemberContextMenu(self, self.memberData)
+        elseif GuildOS.RosterCard and IsShiftKeyDown and IsShiftKeyDown() then
+            -- Shift+click keeps the card open; Escape lets it go (issue #427).
+            GuildOS.RosterCard:Toggle(self, ShowRowTooltip)
         else
             GuildOS:ShowMemberDetail(self.memberData)
             if self.host and self.host.SelectMember then self.host:SelectMember(self.memberData.key) end
@@ -2044,6 +2071,13 @@ local function MemberDropdown_Initialize(self, level, menuList)
                 GuildOS:ShowDialog("GUILDOS_OFFICER_NOTE", data.name, nil, { key = data.key, name = data.name })
             end
             UIDropDownMenu_AddButton(info, level)
+
+            -- The member's sheet, the long text (issue #427).
+            info = UIDropDownMenu_CreateInfo()
+            info.notCheckable = true
+            info.text = L["|cff8888FFEdit officer sheet|r"]
+            info.func = function() GuildOS:ShowOfficerSheetEditor(data.key, data.name) end
+            UIDropDownMenu_AddButton(info, level)
         end
     end
 
@@ -2063,27 +2097,34 @@ end
 ----------------------------------------------------------------------
 -- Row tooltip (rich info on hover)
 ----------------------------------------------------------------------
-function ShowRowTooltip(row)
+-- `tip` is the GameTooltip by default, or the card kept open (RosterCard:Toggle, issue #427).
+function ShowRowTooltip(row, tip, locked)
+    tip = tip or GameTooltip
     local data = row.memberData
     if not data then return end
 
-    GameTooltip:SetOwner(row, "ANCHOR_BOTTOM", 0, -5)
+    if not locked then tip:SetOwner(row, "ANCHOR_BOTTOM", 0, -5) end
 
     -- Header: Name colored by class
     local cr, cg, cb = GuildOS:GetClassColor(data.class)
-    GameTooltip:AddLine(data.name, cr, cg, cb)
-    GameTooltip:AddLine(string.format(L["Level %d %s %s"], data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
-    GameTooltip:AddLine(data.rank, C.text.r, C.text.g, C.text.b)
+    tip:AddLine(data.name, cr, cg, cb)
+    tip:AddLine(string.format(L["Level %d %s %s"], data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
+    tip:AddLine(data.rank, C.text.r, C.text.g, C.text.b)
+    -- The officers' nickname and the safe list (issue #429).
+    if GuildOS.MemberMarks then GuildOS.MemberMarks:TooltipLines(tip, data.key, data.note, data.officerNote) end
 
     -- What this member earned for the guild (issue #216).
     for _, title in ipairs(GuildOS.Achievements and GuildOS.Achievements:Of(data.key) or {}) do
-        GameTooltip:AddLine(title, C.text.r, C.text.g, C.text.b)
+        tip:AddLine(title, C.text.r, C.text.g, C.text.b)
     end
+
+    -- Alts and main, the rating and, to officers, the join, the sheet and the notes (issue #427).
+    if GuildOS.RosterCard then GuildOS.RosterCard:AddLines(tip, data, row.host and row.host.tipIndex) end
 
     -- First seen by Guild OS (approximate "member since")
     local firstSeen = GuildOS.GetFirstSeen and GuildOS:GetFirstSeen(data.key)
     if firstSeen then
-        GameTooltip:AddLine(string.format(L["Tracked since %s"], date("%Y-%m-%d", firstSeen)), C.silver.r, C.silver.g, C.silver.b)
+        tip:AddLine(string.format(L["Tracked since %s"], date("%Y-%m-%d", firstSeen)), C.silver.r, C.silver.g, C.silver.b)
     end
 
     -- Talent spec
@@ -2091,35 +2132,35 @@ function ShowRowTooltip(row)
         local memberKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
         local specLabel = GuildOS.SpecChecker:GetSpecLabel(memberKey)
         if specLabel then
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(string.format(L["Spec: %s"], specLabel), cr, cg, cb)
+            tip:AddLine(" ")
+            tip:AddLine(string.format(L["Spec: %s"], specLabel), cr, cg, cb)
         end
     end
 
     if data.zone and data.zone ~= "" then
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(string.format(L["Zone: %s"], data.zone), C.silver.r, C.silver.g, C.silver.b)
+        tip:AddLine(" ")
+        tip:AddLine(string.format(L["Zone: %s"], data.zone), C.silver.r, C.silver.g, C.silver.b)
     end
 
     if data.note and data.note ~= "" then
-        GameTooltip:AddLine(string.format(L["Note: %s"], data.note), 0.6, 0.6, 0.6, true)
+        tip:AddLine(string.format(L["Note: %s"], data.note), 0.6, 0.6, 0.6, true)
     end
 
     -- Gear summary
     if data.avgIlvl and data.avgIlvl > 0 then
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(string.format(L["Average Item Level: %s"], data.avgIlvl), C.text.r, C.text.g, C.text.b)
+        tip:AddLine(" ")
+        tip:AddLine(string.format(L["Average Item Level: %s"], data.avgIlvl), C.text.r, C.text.g, C.text.b)
     end
 
     -- Professions detail
     if data.professions and #data.professions > 0 then
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(L["Professions:"], C.text.r, C.text.g, C.text.b)
+        tip:AddLine(" ")
+        tip:AddLine(L["Professions:"], C.text.r, C.text.g, C.text.b)
         for _, prof in ipairs(data.professions) do
             local profColor = prof.isPrimary and C.text or C.silver
             local line = prof.rank and string.format("  %s  %d / %d", L[prof.name], prof.rank, prof.maxRank or 0)
                 or ("  " .. L[prof.name])   -- known from the guild roster only: no rank (issue #31)
-            GameTooltip:AddLine(line, profColor.r, profColor.g, profColor.b)
+            tip:AddLine(line, profColor.r, profColor.g, profColor.b)
         end
     end
 
@@ -2139,38 +2180,38 @@ function ShowRowTooltip(row)
             end
         end
 
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(
+        tip:AddLine(" ")
+        tip:AddLine(
             string.format(L["Attunements: (%d/%d)"], #done, #effAtts),
             C.text.r, C.text.g, C.text.b)
 
         for _, att in ipairs(done) do
-            GameTooltip:AddLine(
+            tip:AddLine(
                 string.format("  [%s] %s", att.tier, att.name) .. "  " .. L["Done"],
                 C.green.r, C.green.g, C.green.b)
         end
         for _, att in ipairs(inProg) do
-            GameTooltip:AddLine(
+            tip:AddLine(
                 string.format("  [%s] %s  %d%%", att.tier, att.name,
                     math.floor((att.progress or 0) * 100)),
                 C.textSoft.r, C.textSoft.g, C.textSoft.b)
         end
         for _, att in ipairs(pending) do
-            GameTooltip:AddLine(
+            tip:AddLine(
                 string.format(L["  [%s] %s  Not started"], att.tier, att.name),
                 C.red.r, C.red.g, C.red.b)
         end
     end
 
     if not data.hasAddonData then
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(L["Player does not have Guild OS installed"], C.red.r, C.red.g, C.red.b)
+        tip:AddLine(" ")
+        tip:AddLine(L["Player does not have Guild OS installed"], C.red.r, C.red.g, C.red.b)
     elseif data.addonVersion and data.addonVersion ~= GuildOS.VERSION then
-        GameTooltip:AddLine(" ")
+        tip:AddLine(" ")
         if CompareVersions(data.addonVersion, GuildOS.VERSION) < 0 then
-            GameTooltip:AddLine(string.format(L["Guild OS v%s (outdated)"], data.addonVersion), C.red.r, C.red.g, C.red.b)
+            tip:AddLine(string.format(L["Guild OS v%s (outdated)"], data.addonVersion), C.red.r, C.red.g, C.red.b)
         else
-            GameTooltip:AddLine(string.format("Guild OS v%s", data.addonVersion), C.label.r, C.label.g, C.label.b)
+            tip:AddLine(string.format("Guild OS v%s", data.addonVersion), C.label.r, C.label.g, C.label.b)
         end
     end
 
@@ -2179,27 +2220,28 @@ function ShowRowTooltip(row)
         local wData = GuildOS.Wishlist:ListFor(data.key, data.name)   -- by the whole key on retail (#185)
         if wData and wData.wishlist and #wData.wishlist > 0 then
             local wColor = GuildOS.Wishlist and GuildOS.Wishlist.TypeColors.wishlist or { r=0.3, g=0.7, b=1.0 }
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(L["Wishlist:"], C.text.r, C.text.g, C.text.b)
+            tip:AddLine(" ")
+            tip:AddLine(L["Wishlist:"], C.text.r, C.text.g, C.text.b)
             local shown = math.min(#wData.wishlist, 5)
             for j = 1, shown do
                 local item = wData.wishlist[j]
                 local iName = GuildOS.Wishlist and GuildOS.Wishlist:GetItemName(item.itemId) or string.format(L["Item #%s"], item.itemId or "?")
                 local os = item.isOffspec and (" (" .. L["OS"] .. ")") or ""
-                GameTooltip:AddLine("  #" .. (item.order or j) .. ": " .. iName .. os,
+                tip:AddLine("  #" .. (item.order or j) .. ": " .. iName .. os,
                     wColor.r, wColor.g, wColor.b)
             end
             if #wData.wishlist > 5 then
-                GameTooltip:AddLine(string.format(L["  +%d more..."], #wData.wishlist - 5), 0.5, 0.5, 0.5)
+                tip:AddLine(string.format(L["  +%d more..."], #wData.wishlist - 5), 0.5, 0.5, 0.5)
             end
         end
     end
 
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddLine(L["Left-click: detailed view"], 0.5, 0.5, 0.5)
-    GameTooltip:AddLine(L["Right-click: whisper, invite, etc."], 0.5, 0.5, 0.5)
+    tip:AddLine(" ")
+    tip:AddLine(L["Left-click: detailed view"], 0.5, 0.5, 0.5)
+    tip:AddLine(L["Right-click: whisper, invite, etc."], 0.5, 0.5, 0.5)
+    if not locked then tip:AddLine(L["Shift-click: keep this card open (Esc closes it)"], 0.5, 0.5, 0.5) end
 
-    GameTooltip:Show()
+    tip:Show()
 end
 
 ----------------------------------------------------------------------
@@ -3461,30 +3503,83 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     UI:AttachSaveButton(discordBox, commitDiscord)
     discordFlex.reserve = UI.ReserveFor(discordBox.saveButton, 6)
 
-    -- Welcome message: in the label column, on one line, as the game sends it (#371).
+    -- Welcome messages: in the label column, each on one line, as the game sends it (#371). Several,
+    -- one drawn for each welcome (#419): a row per message, its Save and Remove, then Add for one more.
     RowLabel(wb, L["Welcome Msg:"], -2 * ROW)
-    local welcomeBox = UI:CreateInput(wb, 200, ROW_H, { max = 255 })
-    local welcomeFlex = flexWidth(welcomeBox, COL, 66)
-    welcomeBox:SetPoint("TOPLEFT", COL, -2 * ROW)
-    local function commitWelcome(box)
-        local txt = box:GetText()
-        if txt and txt ~= "" then
+    local WELCOME_MAX = R.WELCOME_MAX
+    local welcomeRows = {}
+    local welcomeShown = 1          -- rows on show: the saved messages, and one just added and not saved
+    local welcomeAdd = UI:CreateButton(wb, L["Add message"], 120, ROW_H)
+    local welcomeNote = Note(wb, L["Several messages: one is drawn at random for each welcome, never the same one twice in a row."], COL, 0)
+    local refreshWelcomes
+    for i = 1, WELCOME_MAX do
+        local box = UI:CreateInput(wb, 200, ROW_H, { max = 255 })
+        local boxFlex = flexWidth(box, COL, 66)
+        UI:AttachSaveButton(box, function(b)
+            local txt = b:GetText()
+            if not txt or txt == "" then return end
             -- A text the game would refuse is not kept: the welcome would just never come (#270).
-            local problem = GuildOS.Recruitment.ChatTextProblem(txt)
+            local ok, problem = R:SetWelcome(i, txt)
             if problem then return GuildOS:Print(problem) end
-            GuildOS.db.recruitment.welcomeMessage = txt
-            GuildOS:Print(L["Welcome message updated."])
-        end
+            if ok then GuildOS:Print(L["Welcome message updated."]) end
+            refreshWelcomes()
+        end)
+        local remove = UI:CreateButton(wb, L["Remove"], 70, ROW_H)
+        remove:SetPoint("LEFT", box.saveButton, "RIGHT", 6, 0)
+        remove:SetScript("OnClick", function()
+            for _, row in ipairs(welcomeRows) do row.box:ClearFocus() end
+            if i <= #R.WelcomeList(GuildOS.db.recruitment) and not R:RemoveWelcome(i) then return end
+            welcomeShown = math.max(1, welcomeShown - 1)
+            refreshWelcomes()
+        end)
+        boxFlex.reserve = UI.ReserveFor(box.saveButton, 6) + UI.ReserveFor(remove, 6)
+        welcomeRows[i] = { box = box, remove = remove }
     end
-    UI:AttachSaveButton(welcomeBox, commitWelcome)
-    welcomeFlex.reserve = UI.ReserveFor(welcomeBox.saveButton, 6)
+    welcomeAdd:SetScript("OnClick", function()
+        welcomeShown = math.min(WELCOME_MAX, #R.WelcomeList(GuildOS.db.recruitment) + 1)
+        refreshWelcomes()
+        welcomeRows[welcomeShown].box:SetFocus()
+    end)
     -- And, the officer's choice, the invitation to read the guild's rules (#407): only while the guild has
     -- rules and the whole fits the game's 255 bytes; the popup's preview shows the text as it goes.
     local welcomeRules = UI:CreateCheckbox(wb, L["End it with \"Type /gos rules\" when the guild has rules"], 18)
-    welcomeRules:SetPoint("TOPLEFT", COL, -3 * ROW)
     welcomeRules.checkbox:SetChecked(GuildOS.db.recruitment.welcomeRules == true)
     welcomeRules.checkbox.onChanged = function(_, checked) GuildOS.db.recruitment.welcomeRules = checked and true or false end
-    welcomeSec.layout = function() return 3 * ROW + ROW_H end
+    welcomeSec.layout = function()
+        local y = -2 * ROW
+        local saved = #R.WelcomeList(GuildOS.db.recruitment)
+        for i = 1, WELCOME_MAX do
+            local row = welcomeRows[i]
+            local on = i <= welcomeShown
+            row.box:SetShown(on)
+            row.box.saveButton:SetShown(on)
+            -- The last saved message stays: only a row not saved yet, or one of several, goes.
+            row.remove:SetShown(on and (i > saved or saved > 1))
+            if on then
+                at(row.box, wb, COL, y)
+                y = y - ROW
+            end
+        end
+        welcomeAdd:SetShown(welcomeShown < WELCOME_MAX)
+        if welcomeShown < WELCOME_MAX then
+            at(welcomeAdd, wb, COL, y)
+            y = y - ROW
+        end
+        at(welcomeNote, wb, COL, y + 2)
+        y = y - noteH(welcomeNote) - 4
+        at(welcomeRules, wb, COL, y)
+        return -y + ROW_H
+    end
+    -- The rows from the saved list; a row added and not saved yet stays open, empty.
+    refreshWelcomes = function()
+        local list = R.WelcomeList(GuildOS.db.recruitment)
+        welcomeShown = math.max(1, #list, math.min(welcomeShown, #list + 1))
+        for i = 1, WELCOME_MAX do
+            local box = welcomeRows[i].box
+            if not box:HasFocus() then box:SetText(list[i] or "") end
+        end
+        relayout()
+    end
 
     ----------------------------------------------------------------
     -- Auto-Invite (issue #59): everything /gos autoinvite sets, through the same
@@ -3720,7 +3815,8 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
 
     -- The tab's OnShow fills every box before the tab is laid out, and an edit box filled before it is
     -- laid out shows nothing until its cursor moves (#158); a shut section's too, until it opens.
-    local editBoxes = { intervalBox, msgBox, chanBox, kwBox, lvlBox, discordBox, welcomeBox }
+    local editBoxes = { intervalBox, msgBox, chanBox, kwBox, lvlBox, discordBox }
+    for _, row in ipairs(welcomeRows) do editBoxes[#editBoxes + 1] = row.box end
     resetCursors = function()
         for _, box in ipairs(editBoxes) do
             if not box:HasFocus() then box:SetCursorPosition(0) end
@@ -3742,7 +3838,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         refreshAutoInvite()
         msgBox:SetText(s.message or "")
         discordBox:SetText(s.discord or "")
-        welcomeBox:SetText(s.welcomeMessage or "")
+        refreshWelcomes()
         welcomeRules.checkbox:SetChecked(s.welcomeRules == true)
         UpdateRecruitStatus()
         UpdateWelcomeStatus()

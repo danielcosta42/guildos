@@ -70,6 +70,7 @@ local function printHelp()
     helpLine("/gos rules",         L["The guild's rules"])
     helpLine("/gos mentions",      L["Name mention alerts"])
     helpLine("/gos myalts",        L["Detect and link your own alts"])
+    helpLine("/gos birthday <DD/MM | off>", L["Share your birthday with the guild (day and month only)"])
     if GuildOS.AttunementTracker then  -- TBC content (ADR-0014)
         helpLine("/gos attune",    L["Your attunement progress"])
     end
@@ -95,6 +96,18 @@ local function printHelp()
         helpLine("/gos tempban <name> <days>", L["Ban a player for a number of days"])
         helpLine("/gos unban <name>",          L["Lift a ban"])
         helpLine("/gos banlist",               L["Open the ban list"])
+        if GuildOS.BulkActions then
+            helpLine("/gos bulk [next | skip | stop]", L["Promote, demote or remove by rules, one member per click"])
+            helpLine("/gos altgroup <promote | demote> <name> [rank]",
+                L["Promote or demote a member's alts to their main's rank, or to a rank, one per click"])
+        end
+        helpLine("/gos altlimit <number>",     L["List the alt groups with more alts than that"])
+        helpLine("/gos birthday <name> <DD/MM | off>", L["Correct or remove a member's birthday"])
+        if GuildOS.NoteDates then
+            helpLine("/gos joindate [<name> | all | import]", L["Write a member's join date into their note, or read the dates already in the notes"])
+            helpLine("/gos safe [<name>]",     L["The safe list: never in a bulk removal or demotion"])
+            helpLine("/gos nick <name> [nickname]", L["The officers' nickname for a member"])
+        end
         helpLine("/gos record <name>",         L["A member's disciplinary record"])
         helpLine("/gos warn <name> [reason]",  L["Warn a member, with one click"])
         helpLine("/gos record term <days>",    L["How long a warning counts"])
@@ -555,6 +568,8 @@ local function handleCommand(msg)
             GuildOS:ShowExportPopup(string.format("%s (%s)", title or L["Export"], fmt), text)
         elseif title == "absent" then
             GuildOS:Print(L["Not available on this client."])
+        elseif title == "officer" then
+            GuildOS:Print(L["|cffFF4444Officers only.|r"])
         elseif GuildOS.Exporter then
             GuildOS:Print(string.format(L["Usage: /guildos export <%s> [csv|tsv|discord]"], GuildOS.Exporter:Names()))
         end
@@ -780,6 +795,37 @@ local function handleCommand(msg)
                 GuildOS:Print(string.format("  %s  %s  %s (%s)", GuildOS:DateText(w.at or 0), D.ReasonText(w.reason), state, w.by or "?"))
             end
         end
+    elseif msg == "bulk" or msg:match("^bulk%s") then
+        -- /gos bulk [next | skip | stop] — Leadership > Bulk actions (#420). A typed command is addon code, which may
+        -- not run the game's protected rank commands: `next` says who is next; the Next button or a
+        -- /click GuildOSBulkNext macro acts.
+        if GuildOS.BulkActions then
+            GuildOS.BulkActions:Command((msg:gsub("^bulk%s*", "")))
+        else
+            GuildOS:Print(L["Not available on this client."])
+        end
+    elseif msg == "altgroup" or msg:match("^altgroup%s") then
+        -- /gos altgroup <promote | demote> <name> [rank] (#424): a queue in Leadership > Bulk actions, one alt per click.
+        if GuildOS.BulkActions then
+            GuildOS.BulkActions:CommandGroup((msg:gsub("^altgroup%s*", "")))
+        else
+            GuildOS:Print(L["Not available on this client."])
+        end
+    elseif msg == "birthday" or msg:match("^birthday%s") or msg == "aniversario" or msg:match("^aniversario%s") then
+        -- /gos birthday [DD/MM | off] (#428), Settings > Profile's Birthday; an officer adds a name first.
+        if GuildOS.Birthdays then GuildOS.Birthdays:Command((msg:gsub("^%a+%s*", ""))) end
+    elseif msg == "joindate" or msg:match("^joindate%s") then
+        -- /gos joindate [<name> | all | import] (#429): Leadership > Notes and marks.
+        if GuildOS.NoteDates then GuildOS.NoteDates:Command((msg:gsub("^joindate%s*", ""))) end
+    elseif msg == "safe" or msg:match("^safe%s") then
+        -- /gos safe [<name>] (#429): the safe list the bulk actions never remove or demote.
+        if GuildOS.MemberMarks then GuildOS.MemberMarks:CommandSafe((msg:gsub("^safe%s*", ""))) end
+    elseif msg == "nick" or msg:match("^nick%s") then
+        -- /gos nick <name> [nickname] (#429): the officers' nickname, on the tooltip and in chat.
+        if GuildOS.MemberMarks then GuildOS.MemberMarks:CommandNick((msg:gsub("^nick%s*", ""))) end
+    elseif msg == "altlimit" or msg:match("^altlimit%s") then
+        -- /gos altlimit N (#424): the groups with more than N alts, in chat.
+        if GuildOS.AltSync then GuildOS.AltSync:CommandLimit((msg:gsub("^altlimit%s*", ""))) end
     elseif msg == "banlist" then
         GuildOS.UI:OpenWindow("management", "ban")
     elseif msg == "autoinvite" or msg:match("^autoinvite%s") or msg == "ai" or msg:match("^ai%s") then

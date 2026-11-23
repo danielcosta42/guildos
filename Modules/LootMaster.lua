@@ -2004,8 +2004,14 @@ function LootMaster:SendAnswer(key, bid, note)
     if note ~= "" then msg = msg .. "|" .. note end
     if heard.spec.sealed and bid > 0 then
         if IsInRaid() and not self.testMode then
-            GuildOS:NoteWhisper(heard.sender)
-            GuildOS.Compat.SendAddonMessageNow(LootMaster.PREFIX, msg, "WHISPER", heard.sender)
+            local to = heard.sender
+            local function send()
+                GuildOS:NoteWhisper(to)
+                GuildOS.Compat.SendAddonMessageNow(LootMaster.PREFIX, msg, "WHISPER", to)
+            end
+            -- First in the WhisperQueue, never dropped (issue #393).
+            local queue = GuildOS.WhisperQueue
+            if queue then queue:PushAddon(LootMaster.PREFIX, msg, to, "high", send) else send() end
         end
     else
         self:SafeSendAddon(LootMaster.PREFIX, msg, "RAID")
@@ -2908,7 +2914,9 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
     if self.rollPopup then self.rollPopup:Hide() end
     local rule = self:Rule()
 
-    local f = CreateFrame("Frame", "GuildOSRollPopup", UIParent, "BackdropTemplate")
+    -- Its own surface, as every window of the addon (#413): StylePopup only borders a backdrop its
+    -- caller made, and with none the popup floated over the world.
+    local f = UI:CreatePanel(UIParent, "GuildOSRollPopup")
     f:SetWidth(POPUP_W)
     f:SetPoint("TOP", UIParent, "TOP", 0, -120)
     UI:StylePopup(f)
@@ -3202,14 +3210,15 @@ end
 function LootMaster:BuildLootTable()
     local C, UI = GuildOS.Colors, GuildOS.UI
     local LR = GuildOS.LootRule
-    local f = CreateFrame("Frame", "GuildOSLootTable", UIParent, "BackdropTemplate")
+    -- Its own surface, as every window of the addon (#413): StylePopup only borders a backdrop its
+    -- caller made, and with none the table opened see-through, the world behind it.
+    local f = UI:CreatePanel(UIParent, "GuildOSLootTable")
     f:SetSize(TABLE_W, TABLE_H)
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
     UI:StylePopup(f)
     f:SetFrameStrata("HIGH")
     f:SetMovable(true)
     f:SetResizable(true)
-    if f.SetResizeBounds then f:SetResizeBounds(TABLE_MIN_W, TABLE_MIN_H) elseif f.SetMinResize then f:SetMinResize(TABLE_MIN_W, TABLE_MIN_H) end
     f:SetClampedToScreen(true)
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
@@ -3279,7 +3288,6 @@ function LootMaster:BuildLootTable()
     f.right = right
     f.itemText = tableText(right, 12)
     f.itemText:SetPoint("TOPLEFT", 0, 0)
-    f.itemText:SetPoint("RIGHT", right, "RIGHT", 0, 0)
 
     -- Answer for someone with no GuildOS (issue #334): the name, the answer, the bid when it asks for
     -- one; and the loot master's own answer, by the rule's first two answers.
@@ -3307,12 +3315,12 @@ function LootMaster:BuildLootTable()
             forBox:SetText("")
         end
     end)
-    local mineLabel = tableText(strip, 10, C.silver)
+    local mineLabel = tableText(right, 10, C.silver)
     mineLabel:SetText(L["Your roll:"])
     local mine = {}
     local firstAnswers = LR:Responses(self:Rule())
     for i = 1, 2 do
-        local b = UI:CreateButton(strip, firstAnswers[i] and firstAnswers[i].key or "-", 44, 22)
+        local b = UI:CreateButton(right, firstAnswers[i] and firstAnswers[i].key or "-", 44, 22)
         b.index = i
         b:SetScript("OnClick", function(self)
             local r = LR:Responses(LootMaster:Rule())[self.index]
@@ -3328,10 +3336,22 @@ function LootMaster:BuildLootTable()
         b:SetScript("OnLeave", function() GameTooltip:Hide() end)
         mine[i] = b
     end
-    mine[2]:SetPoint("RIGHT", strip, "RIGHT", 0, 0)
+    -- The loot master's own answer sits on the item's line, at its right: on the strip it ran over
+    -- "Enter answer" whenever the column was narrower than both (#413).
+    mine[2]:SetPoint("TOPRIGHT", right, "TOPRIGHT", 0, 2)
     mine[1]:SetPoint("RIGHT", mine[2], "LEFT", -4, 0)
     mineLabel:SetPoint("RIGHT", mine[1], "LEFT", -6, 0)
+    f.itemText:SetPoint("RIGHT", mineLabel, "LEFT", -8, 0)
     f.strip, f.forBox, f.forAnswer, f.forBid, f.mine, f.forEnter = strip, forBox, forAnswer, forBid, mine, forEnter
+    f.mineLabel = mineLabel
+
+    -- The window is never narrower than the strip (the bid's box included, and the translation's
+    -- longer label and button): below that, its controls ran into each other.
+    local stripW = forLabel:GetStringWidth() + 6 + forBox:GetWidth() + 6 + forAnswer:GetWidth()
+        + 6 + forBid:GetWidth() + 6 + forEnter:GetWidth()
+    local minW = math.max(TABLE_MIN_W, math.ceil(stripW) + TABLE_PAD * 2 + TABLE_LIST_W + 14)
+    if f.SetResizeBounds then f:SetResizeBounds(minW, TABLE_MIN_H) elseif f.SetMinResize then f:SetMinResize(minW, TABLE_MIN_H) end
+    if f:GetWidth() < minW then f:SetWidth(minW) end
 
     -- The candidates.
     -- The shared header row: no fill, a 1px rule under it, ending where the rows end (#371).

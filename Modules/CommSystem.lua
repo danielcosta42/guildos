@@ -17,7 +17,7 @@ CommSystem.MSG_TYPES = {
     PING      = "PI",    -- Presence ping
     PONG      = "PO",    -- Presence response
     VERSION   = "VR",    -- Version check
-    ALT_LINK  = "AL",    -- Alt/main link table sync (officer-authored; all members store)
+    ALT_LINK  = "AL",    -- Alt/main link table, for clients before #424; received only as a merge (AltSync)
     SELF_ALT  = "SA",    -- member self-claim of own alts (officers replay via LinkAlt)
     RAID_DATA = "RD",    -- Raid attendance + session sync (officer only)
     RAID_DELETE = "RX",  -- Delete a raid session (officer only; sender verified)
@@ -38,6 +38,14 @@ CommSystem.MSG_TYPES = {
 -- Throttle settings
 CommSystem.THROTTLE_INTERVAL = 5  -- seconds between broadcasts
 CommSystem.lastBroadcast = 0
+
+-- The alt links' old "AL" table (issue #424): sent only while a client before #424 was heard within
+-- LEGACY_WINDOW (its broadcast's version at or below LEGACY_ALT_MAX, or an "AL" without the mark).
+CommSystem.LEGACY_ALT_MAX = "1.38.0"   -- 1.38.0 shipped before #424
+CommSystem.LEGACY_WINDOW = 1800
+local ALT_LINK_MARK = { v = 2 }
+-- The officers' safe list and nicknames (issue #429) on a sync request's answer at most once per 10 minutes.
+CommSystem.MARKS_BACKFILL_GAP = 600
 
 function CommSystem:Initialize()
     -- Addon messages on Guild OS's prefix.
@@ -134,7 +142,12 @@ end
 
 -- Chunking settings
 CommSystem.CHUNK_SIZE = 230  -- Leave room for chunk header + "M:xxxx:nn:nn:"
-CommSystem.pendingMessages = {}  -- [sender] = { chunks = {}, total = 0, received = 0 }
+CommSystem.pendingMessages = {}  -- [sender] = { chunks = {}, total = 0, received = 0, last = GetTime() }
+-- Seconds a half-received message waits for its next chunk. A whisper's chunks come at the sender's
+-- WhisperQueue pace (issue #393): one every 4 s, up to 64 s while the server throttles, and a "high"
+-- whisper may pass between two of them; so two of its slowest steps.
+CommSystem.CHUNK_SECONDS = 30
+CommSystem.WHISPER_CHUNK_SECONDS = 128
 
 ----------------------------------------------------------------------
 -- Member-data counters (issue #312). Every drop on the way from a guildmate's broadcast to
@@ -193,7 +206,10 @@ CommSystem.DROP_REASON_TEXT = {
 -- Send a message to guild (with chunking for large payloads)
 ----------------------------------------------------------------------
 -- `kind`, optional, names it in /gos perf (SyncService passes its domain); else the type does.
-function CommSystem:SendMessage(msgType, data, target, priority, kind)
+-- `channel`, optional: "OFFICER" for what only officers may receive (SendToOfficers); GUILD otherwise.
+function CommSystem:SendMessage(msgType, data, target, priority, kind, channel)
+    -- The officers' notes never leave by GUILD or a whisper, whoever calls (#430): SendToOfficers sends them.
+    if self.OFFICER_TYPES[msgType] and (target or channel ~= "OFFICER") then return end
     local payload = msgType .. ":" .. (data or "")
 
     -- Compress
@@ -207,30 +223,93 @@ function CommSystem:SendMessage(msgType, data, target, priority, kind)
         -- Single message, no chunking needed (prefix with "S:").
         -- Cap at 250 so "S:" + payload stays safely under the 255-byte addon-message limit.
         local msg = "S:" .. encoded
-        self:SendRaw(msg, target, priority)
+        self:SendRaw(msg, target, priority, channel)
     else
         -- Multi-chunk: prefix each with "M:msgId:chunkIndex:totalChunks:"
         local msgId = string.format("%X", math.random(0, 0xFFFF))
         local totalChunks = math.ceil(len / self.CHUNK_SIZE)
+        local msgs = {}
         for i = 1, totalChunks do
             local startPos = (i - 1) * self.CHUNK_SIZE + 1
             local endPos = math.min(i * self.CHUNK_SIZE, len)
-            local chunk = encoded:sub(startPos, endPos)
             local header = string.format("M:%s:%d:%d:", msgId, i, totalChunks)
+            msgs[i] = header .. encoded:sub(startPos, endPos)
+        end
+        -- A whisper on WoW: Forever waits in the WhisperQueue, which paces it: the chunks go in as one
+        -- message, all or none, since a message missing one is lost whole (issue #393).
+        local queue = GuildOS.WhisperQueue
+        if target and queue and queue.Active() then
+            self:SendRawGroup(msgs, target, priority)
+            return
+        end
+        for i, msg in ipairs(msgs) do
             C_Timer.After((i - 1) * 0.1, function()
-                self:SendRaw(header .. chunk, target, priority)
+                self:SendRaw(msg, target, priority, channel)
             end)
         end
     end
 end
 
-function CommSystem:SendRaw(msg, target, priority)
+-- The chunks of one whisper, into the WhisperQueue together. Never "low", as SendRaw.
+function CommSystem:SendRawGroup(msgs, target, priority)
+    return GuildOS.WhisperQueue:PushAddonGroup(GuildOS.PREFIX, msgs, target,
+        priority == "ALERT" and "high" or "normal", function(msg) self:_Whisper(msg, target) end)
+end
+
+-- One addon whisper on the sync prefix.
+function CommSystem:_Whisper(msg, target)
+    GuildOS:NoteWhisper(target) -- a guildmate gone since they asked answers "No player named" (issue #326)
+    GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, "WHISPER", target, "NORMAL")
+end
+
+function CommSystem:SendRaw(msg, target, priority, channel)
     if target then
-        GuildOS:NoteWhisper(target) -- a guildmate gone since they asked answers "No player named" (issue #326)
-        GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, "WHISPER", target, "NORMAL")
+        local function send() self:_Whisper(msg, target) end
+        -- WoW: Forever throttles a client that whispers too fast (issue #393): every whisper waits its turn.
+        -- Never "low": a chunk the queue let go stale would cost the whole message.
+        local queue = GuildOS.WhisperQueue
+        if queue then
+            queue:PushAddon(GuildOS.PREFIX, msg, target, priority == "ALERT" and "high" or "normal", send)
+        else
+            send()
+        end
     else
-        GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, "GUILD", nil, priority or "BULK")
+        GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, channel or "GUILD", nil, priority or "BULK")
     end
+end
+
+-- Message types that travel only over the OFFICER addon channel, as SyncService.OFFICER_CHANNEL_DOMAINS for
+-- envelopes (issue #430): the officers' dated notes and tags. Sent there only; received over OFFICER, except "ON"
+-- over GUILD from an officer for the clients before #430 (OFFICER_TYPES_LEGACY_GUILD), never over a whisper.
+CommSystem.OFFICER_TYPES = { ON = true, OA = true }
+-- Transition only (#430, ADR-0045): an officer on a client before #430 still sends "ON" over GUILD; a new client
+-- reads it, so a note written there is not lost. Remove in the next version. "OA" over GUILD is not read.
+CommSystem.OFFICER_TYPES_LEGACY_GUILD = { ON = true }
+
+-- The OFFICER addon channel (Compat.OfficerAddonChannel), or nil when what goes to officers stays on this client.
+-- A rank that may not speak in officer chat is told so once a session, whatever wrote (#427, #430).
+function CommSystem:OfficerChannel()
+    local chan, why = GuildOS.Compat.OfficerAddonChannel()
+    if why == "no-permission" and not CommSystem._warnedNoOfficerChat then
+        CommSystem._warnedNoOfficerChat = true
+        GuildOS:Print(GuildOS.L["Your rank cannot speak in officer chat: what you write for the officers stays on this client."])
+    end
+    return chan, why
+end
+
+-- Whether an OFFICER_TYPES message counts over `channel`: OFFICER; GUILD for the legacy "ON" only (#430). Pure.
+function CommSystem:OfficerTypeChannelOk(msgType, channel)
+    if channel == "OFFICER" then return true end
+    return channel == "GUILD" and self.OFFICER_TYPES_LEGACY_GUILD[msgType] == true
+end
+
+-- To the officers only, over the game's OFFICER addon channel: a member's client never gets the bytes (issue #427).
+-- False, and nothing sent, on a client without that channel (Compat.OfficerAddonChannel).
+function CommSystem:SendToOfficers(msgType, data, priority, kind)
+    local channel = self:OfficerChannel()
+    if not channel then return false end
+    self:SendMessage(msgType, data, nil, priority, kind, channel)
+    return true
 end
 
 ----------------------------------------------------------------------
@@ -263,19 +342,25 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
 
         local key = sender .. ":" .. msgId
         if not self.pendingMessages[key] then
-            local started = { chunks = {}, total = total, received = 0 }
+            local started = { chunks = {}, total = total, received = 0, last = GetTime() }
             self.pendingMessages[key] = started
-            -- Timeout: clean up after 30s. Still waiting then, a chunk was lost: counted, not
-            -- silent (issue #312). A finished message has left the table already.
-            C_Timer.After(30, function()
-                if self.pendingMessages[key] == started then
-                    self.pendingMessages[key] = nil
-                    self:_CountPayload(sender, "dropped", "chunks")
-                end
-            end)
+            -- Timeout: given up once no chunk came for the window. Still waiting then, a chunk was
+            -- lost: counted, not silent (issue #312). A finished message has left the table already.
+            -- Each chunk renews it: a whisper's chunks leave the sender's WhisperQueue one every few
+            -- seconds on WoW: Forever, more slowly when the server throttles (issue #393).
+            local window = channel == "WHISPER" and self.WHISPER_CHUNK_SECONDS or self.CHUNK_SECONDS
+            local function expire()
+                if self.pendingMessages[key] ~= started then return end
+                local left = started.last + window - GetTime()
+                if left > 0 then C_Timer.After(left, expire); return end
+                self.pendingMessages[key] = nil
+                self:_CountPayload(sender, "dropped", "chunks")
+            end
+            C_Timer.After(window, expire)
         end
 
         local pending = self.pendingMessages[key]
+        pending.last = GetTime()
         if not pending.chunks[idx] then
             pending.chunks[idx] = chunkData
             pending.received = pending.received + 1
@@ -330,8 +415,10 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             GuildOS.Wishlist:HandleLootPriosBroadcast(sender, data)
         end
     elseif msgType == "ON" then
-        -- Only an officer writes officer notes, and only an officer keeps them (issue #78).
-        if GuildOS.OfficerNotes and GuildOS:IsOfficer() and channel == "GUILD" and GuildOS:IsOfficerByName(sender) then
+        -- Only an officer writes officer notes, and only an officer keeps them (issue #78). Over OFFICER, or over
+        -- GUILD from a client before #430 (OFFICER_TYPES_LEGACY_GUILD); never a whisper.
+        if GuildOS.OfficerNotes and GuildOS:IsOfficer() and self:OfficerTypeChannelOk(msgType, channel)
+            and GuildOS:IsOfficerByName(sender) then
             GuildOS.OfficerNotes:HandleIncoming(data)
         end
     elseif msgType == "RC" then
@@ -349,20 +436,16 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             GuildOS.RaiderRoster:HandleIncoming(sender, data)
         end
     elseif msgType == CommSystem.MSG_TYPES.ALT_LINK then
-        -- Officer-authored, everyone stores: members need altLinks to see
-        -- alt/main grouping (True Roster, chat tags, inspector). Over GUILD only (issue #81).
-        if channel == "GUILD" and GuildOS:IsOfficerByName(sender) then
-            local ok, links = LibSerialize:Deserialize(data)
-            if ok and type(links) == "table" then
-                -- Both sides keyed this client's way: on Forever the officer's keys carry its realm (#97).
-                local localized = {}
-                for alt, main in pairs(links) do
-                    local la, lm = GuildOS:LocalMemberKey(alt), GuildOS:LocalMemberKey(main)
-                    if la ~= lm then localized[la] = lm end   -- one split person is not their own alt
-                end
-                GuildOS.db.altLinks = localized
-                -- A member's own claim the list lacks goes back on top of it (#353).
-                if GuildOS.AltAutoDetect then GuildOS.AltAutoDetect:OnOfficerLinks() end
+        -- The whole table, from an officer on a client before #424 (or this one's copy for them). Over GUILD
+        -- only (issue #81). It used to replace this client's table and wiped everybody's links; now it is
+        -- only merged in, never removing or changing a link, and an empty one is nothing (AltSync).
+        -- A client since #424 adds a second value an old one never reads (ALT_LINK_MARK): its "AL" is for the old
+        -- clients only, and is ignored here, so new clients never merge each other's views.
+        if channel == "GUILD" and GuildOS:IsOfficerByName(sender) and GuildOS.AltSync then
+            local ok, links, mark = LibSerialize:Deserialize(data)
+            if ok and type(links) == "table" and not (type(mark) == "table" and mark.v == ALT_LINK_MARK.v) then
+                self:_HeardLegacy()
+                GuildOS.AltSync:OnLegacyList(links, sender)
             end
         end
     elseif msgType == CommSystem.MSG_TYPES.SELF_ALT then
@@ -383,7 +466,9 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             GuildOS.RaidTracker:HandleDeleteIncoming(data)
         end
     elseif msgType == CommSystem.MSG_TYPES.NOTES_ALL then
-        if GuildOS:IsOfficer() and channel == "GUILD" and GuildOS:IsOfficerByName(sender) and GuildOS.OfficerNotes then
+        -- Over OFFICER only (#430).
+        if GuildOS:IsOfficer() and self:OfficerTypeChannelOk(msgType, channel) and GuildOS:IsOfficerByName(sender)
+            and GuildOS.OfficerNotes then
             GuildOS.OfficerNotes:HandleAllIncoming(data)
         end
     elseif msgType == CommSystem.MSG_TYPES.SYNC_V2 then
@@ -545,11 +630,8 @@ function CommSystem:_Answer()
     C_Timer.After(math.random() * 3, function()  -- Stagger responses
         self:BroadcastMyData()
 
-        -- Officers also send the alt/main link table. This REQUEST handler
-        -- is what a member's automatic login-time pull (and the periodic
-        -- re-REQUEST ticker) lands on, so this is what lets a member who
-        -- logs in later actually converge on altLinks without an officer
-        -- having to run a manual /gos sync.
+        -- Officers also send the alt/main link table, only while a client before #424 is around
+        -- (BroadcastAltLinks). The new clients' links come from AltSync:Backfill below.
         if GuildOS:IsOfficer() then
             C_Timer.After(0.5, function()
                 self:BroadcastAltLinks()
@@ -666,6 +748,35 @@ function CommSystem:_Answer()
                 GuildOS.Bulletin:Backfill()
             end)
         end
+
+        -- Every alt link, tombstones included, at its stored revision, in spaced batches, at most once per
+        -- AltSync.BACKFILL_GAP (issue #424).
+        if GuildOS:IsOfficer() and GuildOS.AltSync then
+            C_Timer.After(6.5, function()
+                GuildOS.AltSync:Backfill()
+            end)
+        end
+
+        -- Every member's birthday, tombstones included, in spaced batches (issue #428).
+        if GuildOS:IsOfficer() and GuildOS.Birthdays then
+            C_Timer.After(7, function()
+                GuildOS.Birthdays:Backfill()
+            end)
+        end
+
+        -- Every member's officer sheet, a couple per envelope and spaced out, once per 10 minutes (issue #427).
+        if GuildOS:IsOfficer() and GuildOS.OfficerNotes then
+            C_Timer.After(7.5, function()
+                GuildOS.OfficerNotes:BackfillSheets()
+            end)
+        end
+
+        -- The officers' safe list and nicknames (issue #429), the same way, at most once per MARKS_BACKFILL_GAP.
+        if GuildOS:IsOfficer() and GuildOS.MemberMarks then
+            C_Timer.After(7, function()
+                self:_BackfillMarks()
+            end)
+        end
     end)
 end
 
@@ -698,6 +809,7 @@ end
 CommSystem.NOTICE_WAIT, CommSystem.NOTICE_MAX = 10, 3
 local PLAIN = "^%d%d?%d?%.%d%d?%d?%.%d%d?%d?$"
 function CommSystem:HandleVersionCheck(_sender, ver)
+    if type(ver) == "string" and ver:match(PLAIN) and not self:_AfterLegacyAlt(ver) then self:_HeardLegacy() end
     local cur, M = GuildOS.VERSION, GuildOS.Mesh
     if not (M and M.CompareVersions) then return end
     if type(ver) ~= "string" or not ver:match(PLAIN) or type(cur) ~= "string" or not cur:match(PLAIN) then return end
@@ -715,11 +827,49 @@ end
 ----------------------------------------------------------------------
 -- Broadcast alt link table to all officers in guild
 ----------------------------------------------------------------------
+-- For the clients before #424, which replace their whole table with it (issue #424). Only while one was
+-- heard within LEGACY_WINDOW: with only new clients listening it is noise, and an old officer's unlink is not
+-- undone on the old clients by a new one's view. AltSync:LegacyView is the whole view without the unconfirmed
+-- links an old officer's newest table lacks; an empty one goes too (the last unlink reaches the old clients),
+-- but nothing goes from a client that knows no entry at all (a new install would wipe them).
 function CommSystem:BroadcastAltLinks()
     if not GuildOS:IsOfficer() then return end
-    if not IsInGuild() then return end
-    local serialized = LibSerialize:Serialize(GuildOS.db.altLinks or {})
+    if not IsInGuild() or not GuildOS.AltSync or not self:LegacyHeard() then return end
+    local links = GuildOS.AltSync:LegacyView()
+    if type(links) ~= "table" then return end
+    local serialized = LibSerialize:Serialize(links, ALT_LINK_MARK)
     self:SendMessage(self.MSG_TYPES.ALT_LINK, serialized)
+end
+
+-- Whether `ver` (a plain x.y.z) is a version with AltSync, after LEGACY_ALT_MAX.
+function CommSystem:_AfterLegacyAlt(ver)
+    local function parts(v)
+        local a, b, c = v:match("^(%d+)%.(%d+)%.(%d+)$")
+        return tonumber(a) or 0, tonumber(b) or 0, tonumber(c) or 0
+    end
+    local a1, a2, a3 = parts(ver)
+    local b1, b2, b3 = parts(self.LEGACY_ALT_MAX)
+    if a1 ~= b1 then return a1 > b1 end
+    if a2 ~= b2 then return a2 > b2 end
+    return a3 > b3
+end
+
+function CommSystem:_HeardLegacy()
+    self.legacyHeardAt = GetTime()
+end
+
+--- Whether a client before #424 was heard within LEGACY_WINDOW.
+function CommSystem:LegacyHeard()
+    return self.legacyHeardAt ~= nil and GetTime() - self.legacyHeardAt < self.LEGACY_WINDOW
+end
+
+-- MemberMarks:Backfill on a sync request's answer, at most once per MARKS_BACKFILL_GAP (`force`: /gos sync).
+function CommSystem:_BackfillMarks(force)
+    if not GuildOS.MemberMarks then return end
+    local now = GetTime()
+    if not force and self._marksBackfillAt and now - self._marksBackfillAt < self.MARKS_BACKFILL_GAP then return end
+    self._marksBackfillAt = now
+    GuildOS.MemberMarks:Backfill()
 end
 
 ----------------------------------------------------------------------
@@ -751,6 +901,12 @@ function CommSystem:FullSync()
 
     C_Timer.After(1, function()
         self:BroadcastAltLinks()
+        if GuildOS.AltSync then GuildOS.AltSync:Backfill(true) end   -- issue #424
+        self:_BackfillMarks(true)   -- issue #429
+    end)
+
+    C_Timer.After(1.5, function()
+        if GuildOS.Birthdays then GuildOS.Birthdays:Backfill() end   -- issue #428
     end)
 
     C_Timer.After(2, function()
@@ -768,6 +924,7 @@ function CommSystem:FullSync()
     C_Timer.After(4, function()
         if GuildOS.OfficerNotes then
             GuildOS.OfficerNotes:BroadcastAllNotes()
+            GuildOS.OfficerNotes:BackfillSheets(true)   -- issue #427
         end
     end)
 end

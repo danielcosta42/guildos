@@ -178,7 +178,9 @@ function RecruitScanner:WhisperNext()
     local q = self._whisperQueue
     local w = q and table.remove(q, 1)
     if w then
-        SendChatMessage(w.msg, "WHISPER", nil, w.name)
+        -- The click sends it, and the WhisperQueue counts it against WoW: Forever's limit (issue #393).
+        local queue = GuildOS.WhisperQueue
+        if queue then queue:SendNow(w.name, w.msg) else SendChatMessage(w.msg, "WHISPER", nil, w.name) end
         self._contactCd[contactKey(w.name)] = GetServerTime() + ((GuildOS.db.recruitScanner or {}).cooldownSec or 1800)
     end
     return self:PendingWhispers()

@@ -54,9 +54,13 @@ local KIND_COLOR = {
     FARM    = { r = 0.46, g = 0.78, b = 0.48 },
     SOCIAL  = { r = 0.40, g = 0.68, b = 0.92 },
     OTHER   = { r = 0.70, g = 0.72, b = 0.78 },
+    -- Not kinds of event: the calendar's drawn dates (#428).
+    BIRTHDAY = { r = 0.93, g = 0.80, b = 0.48 },
+    JOINDAY  = { r = 0.56, g = 0.80, b = 0.86 },
 }
 local function kindColor(k) return KIND_COLOR[k] or KIND_COLOR.RAID end
-local function kindLabel(k) return (CAL() and CAL().KindLabel and CAL():KindLabel(k)) or k end
+local VIRTUAL_LABEL = { BIRTHDAY = L["Birthday"], JOINDAY = L["Anniversary"] }
+local function kindLabel(k) return VIRTUAL_LABEL[k] or (CAL() and CAL().KindLabel and CAL():KindLabel(k)) or k end
 
 ----------------------------------------------------------------------
 -- Event editor popup (shared by create + edit).
@@ -420,6 +424,24 @@ function GuildOS:CreateCalendarSub(panel)
     local todayBtn = UI:CreateButton(f, L["Today"], 60, 22)
     todayBtn:SetPoint("LEFT", nextBtn, "RIGHT", 12, 0)
 
+    -- Birthdays and join anniversaries (#428): dates drawn from the members, never events; each kind
+    -- has its filter. On WoW: Forever an officer puts this month's birthdays in the game's calendar.
+    local BD = GuildOS.Birthdays
+    local barEnd = todayBtn
+    if BD then
+        for _, kind in ipairs({ "birthday", "join" }) do
+            local cb = UI:CreateCheckbox(f, kind == "birthday" and L["Birthdays"] or L["Join anniversaries"], 18)
+            cb:SetWidth(kind == "birthday" and 100 or 140)
+            cb:SetPoint("LEFT", barEnd, "RIGHT", 16, 0)
+            cb.checkbox:SetChecked(BD:Shows(kind))
+            cb.checkbox.onChanged = function(_, checked) BD:SetShows(kind, checked) end
+            barEnd = cb
+        end
+    end
+    local gameBdayBtn = UI:CreateButton(f, L["Birthdays to the game's calendar"], 200, 22)
+    gameBdayBtn:SetPoint("LEFT", barEnd, "RIGHT", 12, 0)
+    gameBdayBtn:SetScript("OnClick", function() GuildOS.GameCalendar:PutNextBirthday() end)
+
     -- Weekday headers: the grid's column labels (repositioned in Render to match the grid width)
     f.wdFS = {}
     for i = 1, COLS do
@@ -496,6 +518,15 @@ function GuildOS:CreateCalendarSub(panel)
         end
 
         local dim = daysInMonth(f.viewYear, f.viewMonth)
+        -- The month's birthdays and join anniversaries, worked out now (#428).
+        if BD then
+            for _, e in ipairs(BD:VirtualEvents(noon(f.viewYear, f.viewMonth, 1) - 43200, noon(f.viewYear, f.viewMonth, dim) + 43199)) do
+                local k = keyOfTs(e.when)
+                byDay[k] = byDay[k] or {}
+                byDay[k][#byDay[k] + 1] = e
+            end
+        end
+        gameBdayBtn:SetShown(GuildOS.GameCalendar ~= nil and BD ~= nil and GuildOS.GameCalendar:CanAct())
         local lead = firstWeekday(f.viewYear, f.viewMonth) - 1
         local todayKey = keyOfTs(GetServerTime())
 
@@ -521,7 +552,7 @@ function GuildOS:CreateCalendarSub(panel)
                 local evs = byDay[k]
                 if evs then
                     table.sort(evs, function(a, b) return a.when < b.when end)
-                    local line = date("%H:%M ", evs[1].when) .. (evs[1].title or "")
+                    local line = (evs[1].virtual and "" or date("%H:%M ", evs[1].when)) .. (evs[1].title or "")
                     if #evs > 1 then line = "+" .. #evs .. " " .. line end
                     cell.evtFS:SetText(line)
                     local kc = kindColor(evs[1].kind)
@@ -568,8 +599,19 @@ function GuildOS:CreateCalendarSub(panel)
         end
         local soft = C.textSoft
 
-        local evs = (sel and byDay and byDay[sel]) or {}
+        local evs, virtual = {}, {}
+        for _, e in ipairs((sel and byDay and byDay[sel]) or {}) do
+            if e.virtual then virtual[#virtual + 1] = e else evs[#evs + 1] = e end
+        end
         local yy = 0
+        -- Birthdays and join anniversaries first, a line each: nothing to sign up to (#428).
+        for _, e in ipairs(virtual) do
+            local fs = UI:CreateText(child, tint("[" .. kindLabel(e.kind) .. "]", kindColor(e.kind)) .. " " .. (e.title or ""),
+                12, C.text.r, C.text.g, C.text.b)
+            across(fs, yy)
+            yy = yy + 20
+        end
+        if #virtual > 0 then yy = yy + 8 end
         -- The game's own calendar (guildos-web specs/075, #263), read once for the day's raids from the
         -- site: its guild events over the inbox's window, and the inbox. WoW: Forever only.
         local GC = GuildOS.GameCalendar
@@ -599,8 +641,11 @@ function GuildOS:CreateCalendarSub(panel)
             local shareMark = e.shareAlliance and "  [A]" or ""
             local inSeries = type(e.series) == "table"
             local repMark = inSeries and ("  " .. tint(L["(repeats)"], soft)) or ""
-            local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. (e.title or "") .. "  "
-                .. tint("(" .. (e.size or DEFAULT_SIZE) .. ")", soft) .. shareMark .. repMark,
+            -- One of the site's events that is not a raid (#652) has no size: nobody is counted against one.
+            local siteEvent = CAL().IsSiteEvent and CAL():IsSiteEvent(e)
+            local sizeMark = siteEvent and "" or ("  " .. tint("(" .. (e.size or DEFAULT_SIZE) .. ")", soft))
+            local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. (e.title or "")
+                .. sizeMark .. shareMark .. repMark,
                 12, C.text.r, C.text.g, C.text.b)
             head:SetPoint("TOPLEFT", 0, -yy)
             if CAL():MayManage(e) then
@@ -620,9 +665,10 @@ function GuildOS:CreateCalendarSub(panel)
             end
             yy = yy + 20
 
-            local compFS = UI:CreateText(child, string.format(L["Tanks %d, Heals %d, DPS %d  (%d going, %d tentative)"],
-                comp.roles.TANK, comp.roles.HEALER, comp.roles.DPS, comp.yes, comp.tentative),
-                11, soft.r, soft.g, soft.b)
+            local compText = siteEvent and string.format(L["%d going · %d maybe"], comp.yes, comp.tentative)
+                or string.format(L["Tanks %d, Heals %d, DPS %d  (%d going, %d tentative)"],
+                    comp.roles.TANK, comp.roles.HEALER, comp.roles.DPS, comp.yes, comp.tentative)
+            local compFS = UI:CreateText(child, compText, 11, soft.r, soft.g, soft.b)
             compFS:SetPoint("TOPLEFT", 0, -yy)
             yy = yy + 18
 
@@ -645,8 +691,9 @@ function GuildOS:CreateCalendarSub(panel)
                 local whereFS = UI:CreateText(child, where, 11, soft.r, soft.g, soft.b)
                 whereFS:SetPoint("TOPLEFT", 0, -yy)
                 yy = yy + 16
-                -- Whether it is in the game's own calendar, and for an officer the click that changes it.
-                if gameOn then
+                -- Whether it is in the game's own calendar, and for an officer the click that changes it. Not for
+                -- the site's events that are not raids (#652): the game's guild event is one to sign up and invite to.
+                if gameOn and not siteEvent then
                     local view = GC:ViewFor(e, gameEvents, inbox)
                     if view.text then
                         local stateFS = UI:CreateText(child, view.text, 11, soft.r, soft.g, soft.b)
@@ -767,10 +814,35 @@ function GuildOS:CreateCalendarSub(panel)
             yy = yy + math.max(40, (errFS:GetStringHeight() or 20) + 10)
         end
 
-        if sel and #evs == 0 then
+        if sel and #evs == 0 and #virtual == 0 then
             local none = UI:CreateText(child, canCreate and L["No events. Use New Event to add one."] or L["No events this day."],
                 12, soft.r, soft.g, soft.b)
             none:SetPoint("TOPLEFT", 0, 0)
+            yy = 20
+        end
+
+        -- A raid the site has but the game was not sent yet (#416): the inbox carries ten raids, four weeks
+        -- ahead, so a night planned two months out is on Discord and not here. Said only where the guild
+        -- uses the site (the companion is on here, or a raid from it is on the calendar).
+        if sel then
+            local Imp = GuildOS.CompanionImport
+            local usesSite = GuildOS.Companion ~= nil and GuildOS.Companion:IsEnabled()
+            if not usesSite then
+                for _, e in pairs(CAL():GetEvents()) do
+                    if CAL():IsWebEvent(e) and not e.canceled then usesSite = true break end
+                end
+            end
+            local why = usesSite and GuildOS.GameCalendar and GuildOS.GameCalendar.NotSentYet(
+                noon(math.floor(sel / 10000), math.floor((sel % 10000) / 100), sel % 100) + 12 * 3600,
+                GetServerTime(), inbox or (Imp and Imp:InboxInfo()))
+            if why then
+                local text = why == "window"
+                    and string.format(L["Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."], GuildOS.GameCalendar.WINDOW_DAYS)
+                    or string.format(L["The website sends the game its next %d raids; later ones arrive as those pass."], GuildOS.GameCalendar.INBOX_CAP)
+                local fs = UI:CreateText(child, text, 11, soft.r, soft.g, soft.b)
+                across(fs, yy)
+                yy = yy + math.max(14, (fs:GetStringHeight() or 12) + 6)
+            end
         end
         child:SetHeight(math.max(1, yy))
     end

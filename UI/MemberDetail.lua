@@ -249,6 +249,7 @@ end
 ----------------------------------------------------------------------
 function PopulateDetail(frame, data)
     local child = frame.content
+    frame._sheetRedraw = nil   -- set again below when this member's card has the officers' sheet
     -- Initialise or reset the FontString/Texture pool. Pooled objects are
     -- hidden and their cursors reset so the current populate reuses them
     -- in order rather than accumulating fresh C-level objects each call.
@@ -846,6 +847,41 @@ function PopulateDetail(frame, data)
     end
 
     ----------------------------------------------------------------
+    -- Section: Membership history (officer only, issue #425): every passage, then the rank changes.
+    ----------------------------------------------------------------
+    local MH = GuildOS.MemberHistory
+    if MH and GuildOS:IsOfficer() then
+        local hkey = data.key or GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        local stints, ranks = MH:Stints(hkey), MH:Ranks(hkey)
+        if #stints > 0 or #ranks > 0 then
+            yOff = yOff - 10
+            local total = MH:TenureDays(hkey)
+            yOff = CreateSectionHeader(child, string.format(L["MEMBERSHIP  --  %s days in the guild"],
+                total and tostring(total) or "?"), yOff, contentWidth)
+            local lines = {}
+            for i = #stints, 1, -1 do lines[#lines + 1] = MH:StintLine(stints[i]) end
+            for i = #ranks, math.max(1, #ranks - 4), -1 do
+                local rk = ranks[i]
+                local line = string.format(L["%s: rank %s"], GuildOS:DateText(rk.at, "/%Y"), rk.to)
+                if rk.from then line = line .. " (" .. string.format(L["was %s"], rk.from) .. ")" end
+                if rk.by then line = line .. " — " .. string.format(L["by %s"], rk.by) end
+                lines[#lines + 1] = "|cffAAAAAA" .. line .. "|r"
+            end
+            for _, text in ipairs(lines) do
+                local fs = _pFS(child)
+                GuildOS:ApplyFont(fs, 9)
+                fs:SetPoint("TOPLEFT", 15, yOff - 3)
+                fs:SetWidth(contentWidth - 30)
+                fs:SetJustifyH("LEFT")
+                fs:SetWordWrap(true)
+                fs:SetText(text)
+                fs:Show()
+                yOff = yOff - (fs:GetStringHeight() + 4)
+            end
+        end
+    end
+
+    ----------------------------------------------------------------
     -- Section: Officer Notes (officer only)
     ----------------------------------------------------------------
     if GuildOS.OfficerNotes and GuildOS:IsOfficer() then
@@ -869,6 +905,58 @@ function PopulateDetail(frame, data)
             tagStr:SetText(table.concat(tagParts, "  |  "))
             tagStr:Show()
             yOff = yOff - 16
+        end
+
+        -- The member's sheet, whole (issue #427), and the button that edits it.
+        local sheet = GuildOS.OfficerNotes:GetSheet(playerKey)
+        if sheet then
+            local by = _pFS(child)
+            GuildOS:ApplyFont(by, 9)
+            by:SetPoint("TOPLEFT", 15, yOff - 3)
+            by:SetText("|cffAAAAAA" .. string.format(L["Officer sheet (%s, %s):"], sheet.author or "?",
+                GuildOS:DateText(sheet.ts or 0, "/%Y")) .. "|r")
+            by:Show()
+            yOff = yOff - 16
+            local body = _pFS(child)
+            GuildOS:ApplyFont(body, 9)
+            body:SetPoint("TOPLEFT", 15, yOff - 3)
+            body:SetWidth(contentWidth - 30)
+            body:SetJustifyH("LEFT")
+            body:SetWordWrap(true)
+            body:SetText(sheet.text)   -- kept without "|" (OfficerNotes.CleanSheetText)
+            body:Show()
+            yOff = yOff - (body:GetStringHeight() + 6)
+        end
+        local sheetKey, sheetName = playerKey, data.name
+        -- One button for the panel's life (#427): a redraw per backfill envelope made a new one each time.
+        local editSheet = child._editSheet
+        if not editSheet then
+            editSheet = UI:CreateButton(child, L["Edit sheet"], 100, 20)
+            child._editSheet = editSheet
+        end
+        editSheet:ClearAllPoints()
+        editSheet:SetPoint("TOPLEFT", 15, yOff - 4)
+        editSheet:SetScript("OnClick", function() GuildOS:ShowOfficerSheetEditor(sheetKey, sheetName) end)
+        editSheet:Show()
+        yOff = yOff - 28
+        -- A sheet saved here or by another officer redraws the card, unless the officer is typing in it. Only
+        -- when this member's sheet changed, and at most once per SHEET_GAP + 1 seconds: a backfill sends an
+        -- envelope every SHEET_GAP seconds, most of them other members' sheets (#427).
+        local drawn = sheet and (tostring(sheet.rev) .. "\0" .. sheet.text) or ""
+        local function redraw()
+            if not frame:IsShown() then return end
+            local now = GuildOS.OfficerNotes:GetSheet(sheetKey)
+            if (now and (tostring(now.rev) .. "\0" .. now.text) or "") == drawn then return end
+            local focus = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+            if focus and focus.IsVisible and focus:IsVisible() then return end
+            PopulateDetail(frame, data)
+        end
+        -- Through the frame: a redraw held back by the coalescing runs for whoever the panel shows then.
+        frame._sheetRedraw = redraw
+        GuildOS.OfficerNotes.uiRefresh = function()
+            GuildOS:Coalesce("memberDetail.sheet", GuildOS.OfficerNotes.SHEET_GAP + 1, function()
+                if frame._sheetRedraw then frame._sheetRedraw() end
+            end)
         end
 
         -- Show last 3 notes
@@ -1109,6 +1197,26 @@ function PopulateDetail(frame, data)
                 lkLabel:SetJustifyH("LEFT")
                 yOff = yOff - 22
             end
+        end
+
+        -- The group's alts to the main's rank (issue #424): a queue in Leadership > Bulk actions, one alt per
+        -- click of its Next button; the game's rank commands only ever run from that click.
+        if GuildOS:IsOfficer() and GuildOS.BulkActions and #linkedKeys > 1 then
+            local promoteBtn = UI:CreateButton(child, L["Promote alts"], 110, 20)
+            promoteBtn:SetPoint("TOPLEFT", 12, yOff)
+            promoteBtn:SetScript("OnClick", function() GuildOS.BulkActions:StartGroupAndSay(playerKey, "promote") end)
+            local demoteBtn = UI:CreateButton(child, L["Demote alts"], 110, 20)
+            demoteBtn:SetPoint("LEFT", promoteBtn, "RIGHT", 6, 0)
+            demoteBtn:SetScript("OnClick", function() GuildOS.BulkActions:StartGroupAndSay(playerKey, "demote") end)
+            for _, b in ipairs({ promoteBtn, demoteBtn }) do
+                b:HookScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                    GameTooltip:SetText(L["To the main's rank, one alt per click of Next in Leadership > Bulk actions."], 1, 1, 1, 1, true)
+                    GameTooltip:Show()
+                end)
+                b:HookScript("OnLeave", function() GameTooltip:Hide() end)
+            end
+            yOff = yOff - 26
         end
 
         -- Input to add a new link

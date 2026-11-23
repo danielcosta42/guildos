@@ -20,6 +20,12 @@ local SUBTABS = {
     { key = "ban",      label = L["Ban List"] },
     { key = "engage",   label = L["Engagement"] },
     { key = "presets",  label = L["Presets"] },
+    -- Promote, demote or remove by rules, one member a click (issue #420): UI/BulkPanel.lua builds it.
+    { key = "bulk",     label = L["Bulk actions"] },
+    -- Who has no GuildOS, and a reminder one member a click (issue #422): UI/RemindPanel.lua builds it.
+    { key = "remind",   label = L["Without GuildOS"] },
+    -- Join dates in the notes, the safe list, nicknames (issue #429): UI/MarksPanel.lua builds it.
+    { key = "marks",    label = L["Notes and marks"] },
     -- The officers' chat alerts and their rules (issues #404, #405): UI/ModAlerts.lua builds both.
     { key = "alerts",   label = L["Chat alerts"] },
     { key = "alertrules", label = L["Alert rules"] },
@@ -171,6 +177,7 @@ local function MakeVirtualList(holder, name, rowStep, createRow, fillRow)
     holder:HookScript("OnSizeChanged", function() list:Update() end)
     return list
 end
+UI.MakeVirtualList = MakeVirtualList   -- the bulk actions' list draws the same way (UI/BulkPanel.lua)
 
 local function BuildRanksSub(panel)
     local note = UI:CreateText(panel,
@@ -536,11 +543,44 @@ local ACTION_LABELS = {
     join    = { txt = L["Joined"], color = "online" },
     leave   = { txt = L["Left"],   color = "offline" },
     warn    = { txt = L["Warned"], color = "warn" },
+    -- From the member history and the roster diff (issue #425).
+    rejoin  = { txt = L["Rejoined"], color = "online" },
+    gone    = { txt = L["Gone"],     color = "offline" },
+    level   = { txt = L["Level"],    color = "info" },
+    note    = { txt = L["Note changed"], color = "info" },
+    onote   = { txt = L["Officer note changed"], color = "info" },
+    back    = { txt = L["Back from inactivity"], color = "online" },   -- not L["Back"], the navigation's (#429)
 }
+
+-- What the level filter's button says for each mode (MemberHistory.LEVEL_MODES).
+local LEVEL_MODE_TEXT = {
+    milestones = L["Levels: milestones"],
+    all        = L["Levels: all"],
+    off        = L["Levels: off"],
+}
+
+-- Whether a log line holds `filter` (lower case): its member, officer, detail or the word for it.
+local function logMatches(e, meta, filter)
+    if filter == "" then return true end
+    for _, v in ipairs({ e.target, e.author, e.detail ~= nil and tostring(e.detail) or nil, meta.txt }) do
+        if v and v:lower():find(filter, 1, true) then return true end
+    end
+    return false
+end
 
 local function BuildLogSub(panel)
     local clearBtn = UI:CreateButton(panel, L["Clear"], 80, 22)
     clearBtn:SetPoint("TOPLEFT", 0, 0)
+
+    -- Search (issue #425): the member, the officer, the detail or the action's word.
+    local filterLbl = UI:CreateText(panel, L["Filter"], 11, C.text.r, C.text.g, C.text.b)
+    filterLbl:SetPoint("LEFT", clearBtn, "RIGHT", 12, 0)
+    local searchBox = UI:CreateInput(panel, 160, 20)
+    searchBox:SetPoint("LEFT", filterLbl, "RIGHT", 8, 0)
+
+    -- Which level ups the roster diff writes here: milestones (every 10 and the cap), all, none.
+    local levelBtn = UI:CreateButton(panel, LEVEL_MODE_TEXT.milestones, 140, 22)
+    levelBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
 
     local listHolder = CreateFrame("Frame", nil, panel)
     listHolder:SetPoint("TOPLEFT", 0, -(22 + GAP))
@@ -551,15 +591,24 @@ local function BuildLogSub(panel)
     refresh = function()
         ClearContent(content)
 
-        local entries = GuildOS.GuildManager:GetLog()
+        local MH = GuildOS.MemberHistory
+        levelBtn:SetShown(MH ~= nil and GuildOS:IsOfficer())
+        if MH then levelBtn.label:SetText(LEVEL_MODE_TEXT[MH:GetLevelMode()] or LEVEL_MODE_TEXT.milestones) end
+        local filter = strtrim(searchBox:GetText() or ""):lower()
+        local entries = {}
+        for _, e in ipairs(GuildOS.GuildManager:GetLog()) do
+            local meta = ACTION_LABELS[(e.action == "join" and e.rejoin) and "rejoin" or e.action]
+                or { txt = e.action or "?", color = "silver" }
+            if logMatches(e, meta, filter) then entries[#entries + 1] = { e = e, meta = meta } end
+        end
         local yOff = 0
-        for idx, e in ipairs(entries) do
+        for idx, item in ipairs(entries) do
+            local e, meta = item.e, item.meta
             local row = MakeRow(content, yOff, idx)
 
             local whenFS = UI:CreateText(row, GuildOS:DateText(e.timestamp or 0, " %H:%M"), 9, C.textDim.r, C.textDim.g, C.textDim.b)
             whenFS:SetPoint("LEFT", 8, 0)
 
-            local meta = ACTION_LABELS[e.action] or { txt = e.action or "?", color = "silver" }
             local col = C[meta.color] or C.silver
             local actFS = UI:CreateText(row, meta.txt, 10, col.r, col.g, col.b)
             actFS:SetPoint("LEFT", 90, 0)
@@ -573,7 +622,8 @@ local function BuildLogSub(panel)
             descFS:SetJustifyH("LEFT")
             descFS:SetWordWrap(false)
 
-            local byFS = UI:CreateText(row, L["by "] .. (e.author or "?"), 9, C.textDim.r, C.textDim.g, C.textDim.b)
+            -- A line of this client's roster diff has no officer: the roster only shows what changed.
+            local byFS = UI:CreateText(row, e.author and (L["by "] .. e.author) or "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
             byFS:SetPoint("RIGHT", -10, 0)
 
             yOff = yOff + ROW_H + 2
@@ -588,6 +638,12 @@ local function BuildLogSub(panel)
 
     clearBtn:SetScript("OnClick", function()
         GuildOS.GuildManager:ClearLog()
+        refresh()
+    end)
+    searchBox:HookScript("OnTextChanged", function() refresh() end)
+    levelBtn:SetScript("OnClick", function()
+        local MH = GuildOS.MemberHistory
+        if MH then MH:CycleLevelMode() end
         refresh()
     end)
 
@@ -790,6 +846,26 @@ local function BuildBanSub(panel)
         local now = GetServerTime()
         local list = GuildOS.BanList and GuildOS.BanList:List() or {}
         local y = 0
+        -- Banned and still in the guild (#426): "Remove all" only queues them in Bulk actions, one per click.
+        local BA = GuildOS.BulkActions
+        local inGuild = (BA and GuildOS.BanList and filter == "")
+            and GuildOS.BanList:StillInGuild(BA:Collect(false), BA:Context().meKey, now) or {}
+        if #inGuild > 0 then
+            local title = UI:CreateText(content, string.format(L["BANNED STILL IN THE GUILD (%d)"], #inGuild),
+                11, C.red.r, C.red.g, C.red.b)
+            title:SetPoint("TOPLEFT", 0, -y)
+            local all = UI:CreateButton(content, L["Remove all"], 110, 18)
+            all:SetPoint("TOPRIGHT", 0, -y)
+            all:SetScript("OnClick", function() BA:StartListAndSay("remove", inGuild) end)
+            y = y + ROW_H
+            local names = GuildOS.AltDeparture and GuildOS.AltDeparture.ColoredNames(inGuild) or ""
+            local fs = UI:CreateText(content, names, 11, C.text.r, C.text.g, C.text.b)
+            fs:SetPoint("TOPLEFT", 0, -y)
+            fs:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+            fs:SetJustifyH("LEFT"); fs:SetWordWrap(true)
+            y = y + math.max(ROW_H, math.ceil(fs:GetStringHeight() or 0) + 4) + 6
+        end
+        local officer = GuildOS:IsOfficer()
         for _, e in ipairs(list) do
             if filter == "" or (e.name or ""):lower():find(filter, 1, true) then
                 local expired = e.expiry and e.expiry <= now
@@ -803,8 +879,13 @@ local function BuildBanSub(panel)
                 else
                     expTxt = GuildOS:DateText(e.expiry, "/%y")
                 end
-                cell(e.name or "?", CELL_X[1], 148, y, nr, ng, nb)
-                cell(e.reason or "", CELL_X[2], 176, y, C.text.r, C.text.g, C.text.b)
+                -- Banned with an alt group (#426): "(group of X)"; the officers' note after the reason.
+                local shownName = e.name or "?"
+                if e.group then shownName = shownName .. " " .. string.format(L["(group of %s)"], e.group) end
+                local why = e.reason or ""
+                if officer and e.note then why = why .. " — " .. e.note end
+                cell(shownName, CELL_X[1], 148, y, nr, ng, nb)
+                cell(why, CELL_X[2], 176, y, C.text.r, C.text.g, C.text.b)
                 cell(e.author or "?", CELL_X[3], 86, y, C.textDim.r, C.textDim.g, C.textDim.b)
                 cell(expTxt, CELL_X[4], 82, y, C.textDim.r, C.textDim.g, C.textDim.b)
                 local del = UI:CreateButton(content, "\195\151", 22, 18)  -- ×
@@ -1281,6 +1362,9 @@ function GuildOS:CreateManagementPanel(parent, _mainFrame)
         ban      = BuildBanSub,
         engage   = BuildEngageSub,
         presets  = BuildPresetsSub,
+        bulk     = function(p) return GuildOS.BuildBulkSub and GuildOS:BuildBulkSub(p) end,
+        remind   = function(p) return GuildOS.BuildRemindSub and GuildOS:BuildRemindSub(p) end,
+        marks    = function(p) return GuildOS.BuildMarksSub and GuildOS:BuildMarksSub(p) end,
         alerts   = function(p) return GuildOS.BuildModAlertsSub and GuildOS:BuildModAlertsSub(p) end,
         alertrules = function(p) return GuildOS.BuildModRulesSub and GuildOS:BuildModRulesSub(p) end,
     }

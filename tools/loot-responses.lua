@@ -41,6 +41,7 @@ local function widget(fields)
     if k == "SetText" then return function(self, t) self.text = t end end
     if k == "GetText" then return function(self) return self.text or "" end end
     if k == "GetWidth" or k == "GetHeight" then return function() return 80 end end
+    if k == "GetStringWidth" then return function(self) return #(self.text or "") * 6 end end
     if k == "Hide" then return function(self) self.hidden = true end end
     if k == "Show" then return function(self) self.hidden = false end end
     if k == "IsShown" then return function(self) return not self.hidden end end

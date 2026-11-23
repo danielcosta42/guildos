@@ -51,6 +51,7 @@ function GetGuildRosterInfo(i) local r = ROSTER[i]; if r then return r[1], "Rank
 function GetGuildInfo() return "Guild", "Guild Master", 0 end
 function time() return 1000 end
 function GetServerTime() return 1000 end
+GetTime = GetTime or function() return 1000 end   -- a version at or below 1.38.0 is a client before #424
 function UnitName() return "Bishop" end
 strsplit = function(sep, s)
   local out = {}

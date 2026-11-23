@@ -1700,3 +1700,314 @@ everything. Until now cores reached the game only through the companion's `Inbox
 - (−) `wishlistOnlyMode` unchecked on a core is now stored `false` (it was `nil`, which fell back to the guild's).
 - (−) Escape closes an open list and, like every popup of the addon, the windows behind it.
 
+---
+
+## ADR-0038 — Bulk rank changes and removals: one member per click, through a secure button (#420)
+
+### Context
+- Officers asked to promote, demote or remove many members by rules (offline for days, rank, level, raid
+  attendance, without GuildOS), as other addons do from a button or a macro.
+- `GuildPromote`, `GuildDemote` and `GuildUninvite` are protected: an addon's call is `ADDON_ACTION_FORBIDDEN`,
+  from a click too (ADR-0010). The addon had no secure frame until now.
+- On WoW: Forever an addon-written `/ginvite` on a secure button was `MACRO_ACTION_BLOCKED` (#256).
+
+### Decision
+- **`Modules/BulkActions.lua`** picks the members (pure `Rules` / `Eligible` / `Meets` / `Match`) and keeps the
+  queue in `GuildOS.State.bulk` (session only). It never calls a protected function, never loops over the
+  queue and never acts from a timer or an event.
+- **The Next button** (`UI/BulkPanel.lua`) is a `SecureActionButtonTemplate` named `GuildOSBulkNext`, created at
+  the first moment out of combat after load (never in combat: its size and backdrop would be refused), so a
+  `/click GuildOSBulkNext` macro works before the tab is opened. Its PreClick asks `BulkActions:Arm`
+  for the line of this click only (the game's own `/gpromote`, `/gdemote` or `/gremove` for one member, written
+  by `Compat.GuildRankCommand`) and sets it with `Compat.SetSecureMacro`; the game runs it; PostClick marks the
+  member sent and clears the line. Before each click the member is read again from the roster, by the whole
+  name it gave (never a short-name match): who left, whose rank moved or who no longer meets the rules is
+  skipped. The removal's confirmation queues exactly the list it showed.
+- **Combat.** Attributes are set out of combat only. The button leaves the window on `PLAYER_REGEN_DISABLED`
+  (a window holding a protected frame cannot be hidden in combat) and comes back on `PLAYER_REGEN_ENABLED`.
+- **The key-down option.** Where `ActionButtonUseKeyDown` exists (retail, newer Classic templates) the template may
+  act on the press or the release by it: `Compat.SecureClicks` registers both, `Compat.SecureClickActs(down)` lets
+  exactly one arm the line, and `Compat.ClickMacro` gives the macro `/click GuildOSBulkNext LeftButton 1` while
+  the option is on (a bare /click arrives as a release).
+- **Typed fallback.** On WoW: Forever (`Compat.SecureGuildMacro` false), or after a blocked-action event for a
+  rank function of GuildOS raised while a click runs its line (between PreClick and PostClick), the click prints
+  the line for the officer to type and goes on. The blocked click's member is never marked sent; a member
+  already sent is never put back. A surname's space goes as a hyphen, as `/w` takes it (`WhisperTarget`). `/gos bulk next` is addon
+  code, so it never runs the line: it says who is next, or prints the line where it is typed anyway.
+- **Permission** is the game's `Can*` (now `Compat.CanGuildPromote/Demote/Remove`, guarded by compat-guard), and
+  `Eligible` leaves out oneself, ranks at or above one's own, promotions to one's own rank and demotions below
+  the last. A removal starts only after a confirmation listing who.
+- **Sent, then done or not confirmed.** A sent member is done only when the roster shows the change; with no
+  change 15 s after the click it reads "not confirmed, check it" and is never sent again.
+- **The Roster Log** gets a change when the roster shows it (`GUILD_ROSTER_UPDATE`), unless the game's own guild
+  message already logged it; `RosterLog:_Insert` also folds the same officer change (action, member, author,
+  rank) seen twice within 30 s.
+
+### Consequences
+- (+) Bulk changes with one click (or one macro press) per member, inside what the game allows.
+- (+) The first secure frame of the addon is in one place, with the combat rules in Compat and the panel.
+- (−) Not verified in game yet on any client: the secure macro path is the one other addons use on the Classic
+  clients; retail's press/release handling and WoW: Forever's typed fallback follow what #256 measured.
+- (−) A rank changed by the click but not yet seen by the roster stays "sent" until the next roster update.
+
+## ADR-0039 — The member history: passages and ranks kept past the log, from merges that never double (#425)
+
+### Context
+- Officers asked to see "was a member from X to Y, N days" when they re-invite somebody (Discord; epic #423,
+  group C). The Roster Log forgets after 90 days / 1000 events, `firstSeen` is dropped when a member leaves
+  (DropDeparted) and no client has a guild join date.
+- What happened while the officer was offline reached the log only if another officer's client saw it.
+
+### Decision
+- **`Modules/MemberHistory.lua`** keeps `db.memberHistory[key] = { stints, ranks }`, apart from the log and its
+  pruning, on officers' clients only, with a ceiling (10 passages and 15 rank changes a member, 4000 keys, the
+  former members who left longest ago dropped first; bound ~7.6 MB, a 1000-member guild over three years ~1 MB).
+- **Sources:** every event the Roster Log takes (its line or an officer's, `RosterLog:_ToHistory`); a diff of the
+  whole roster against `db.memberHistoryBase` (`Scan`, from Core's roster pass through `Coalesce`, at most once a
+  minute, 45 s after login so the officers' audit backfill arrives first); the other officers' records.
+  A one-time migration takes the Roster Log's events, then an open passage for each present member from the
+  earlier of `firstSeen` and `foundingJoins` (marked as only "seen by GuildOS").
+- **Merges, not ids, make it converge:** an exact time beats a seen one (`joinEst` / `leftEst`), a kick (with its
+  officer) beats a leave beats "gone", two exact records of one change within 5 minutes are one. Applying a
+  record twice, or two officers' records of the same change, changes nothing.
+- **Sync:** append-only records with an id over the existing `audit` domain, act `hist` (older clients read only
+  `add`); receivers apply on an officer's client only. The last 25 records this client sent go again with the
+  Roster Log's login backfill. No full-history sync.
+- **The diff's own log lines** (level ups by milestone/all/off, public and officer note changes, back from
+  30+ days offline, "gone", a join seen at login) are local (`loc`): never published nor backfilled, since every
+  officer's client sees the same change and an officer note is not for the guild channel.
+- **A rejoin** stays a `join` event with `rejoin = true`: the event id, the near-dup fold and every older client
+  stay as they were.
+- The TrialTracker's baseline is not shared: it only grows and is about newcomers; this one mirrors the roster.
+
+### Consequences
+- (+) Invite, join and whisper tell the officer the past; the log exports; other features read
+  `MemberHistory:Stints/JoinedAt/TenureDays/Ranks/LastLeft/Describe`.
+- (−) Before the install, or while no officer's client saw the roster, dates are "seen by GuildOS" or unknown.
+- (−) A rename is a departure and a join (no GUID tracking yet); an officer who installs late gets only the
+  records others still send (the last 25 each) and the log's 90 days.
+
+
+## ADR-0040 — Alt links: one synced entry per alt, with tombstones; "AL" only merges (#424)
+
+### Context
+- Linked alts "kept getting unlinked automatically". The "AL" message carried the whole `altLinks` table and
+  the receiver replaced its own with it: no time, no merge, no tombstone. Every officer sent it on every sync
+  request and on `/gos sync`, so an officer with an old or empty table (a new install, one offline when another
+  linked, a database the game recreated) wiped everybody's links, other officers' included, and an unlink came
+  back when an old table was sent again. A member's claim (#353) was dropped when an old list lacked it.
+
+### Decision
+- **`Modules/AltSync.lua`**, officer domain `alt` on the SyncService, as the ban list: one entry per alt
+  `{ main, author, ts }` or `{ removed = true, author, ts }`, its revision in `db.altSync.rev`. A write takes
+  revision max(server time, last + 1), so the newer edit wins across officers and two officers linking different
+  alts at once both stand. A tie settles the same way everywhere (`Wins`). A tombstone is pruned after a year;
+  its revision is kept for good, so an older link for that alt (an old client's table included) is still refused.
+- **Backfill:** officers re-send every entry at its stored revision on a sync request (at most once per 10 minutes,
+  `BACKFILL_GAP`) and `/gos sync` (always), 40 per envelope, 2 s apart, one backfill at a time (#324). The safe list's
+  backfill (#429) is gated the same way in `CommSystem:_BackfillMarks`.
+- **The view:** `db.altLinks` stays what every reader reads; `AltSync:Rebuild` derives it, flat (no alt of an
+  alt; a loop settles on its lowest key), plus a member's own waiting claims (`AltAutoDetect:Overlay`).
+  Officer edits (`LinkAlt`, `UnlinkAlt`, `SetMain`, a member's claim applied) plan the new view and
+  `AltSync:Commit` writes every alt whose entry differs.
+- **Migration:** the old table becomes *unconfirmed* entries (revision 0, `legacy`, no author); any officer's
+  entry replaces them, and an officer linking one again (`LinkAlt`, a claim applied: `Commit(links, confirm)`)
+  confirms it. Each client's old table differs where an officer missed a change, and their union would bring back
+  every unlink one late officer missed: a client that had a table of its own never takes another's unconfirmed
+  link (backfilled at r = 0); only a client that had nothing (`fresh`, a new install) does, and any officer
+  tombstone beats it. A new install cannot tell those links from unlinked ones, nor can an officer whose old
+  table was empty because everything was unlinked: both take the unconfirmed links, until an officer unlinks.
+- **Old clients:** "AL" goes only while a client before #424 was heard within 30 minutes (a broadcast's version
+  ≤ 1.37.0, or an "AL" without the mark), so with only new clients nothing goes. It carries a second serialized
+  value (`{ v = 2 }`) old clients never read; new clients ignore an "AL" with it. It is `LegacyView`: the whole
+  view, an empty one included (the last unlink reaches old clients), never from a client that knows no entry.
+  Received from an old client it is only a merge: an alt never heard of at all is added unconfirmed (never one
+  with a known revision: a tombstone, even pruned); nothing is removed or changed; an empty table is nothing.
+  An unconfirmed link the old officer's newest table lacks is marked `legacyGone`: still on the new clients'
+  view (it can be a stale table, the original bug), but left out of what goes to old clients and of the
+  backfill, so an unlink made on an old client is not undone on old clients by a new one.
+- **A member's claim** goes only when the officers' links carry it, or when an officer's entry newer than the
+  claim unlinks one of its characters or links it elsewhere. Missing from a list is no answer. A member's own
+  unlink waits the same way (`altPending["unlink:<key>"]`, on the member's view through `Overlay`) until an
+  officer's tombstone, or a newer officer link of that character, answers it.
+- **Forever keys:** every key off the network and in the store goes through `LocalMemberKey`.
+
+### Consequences
+- (+) No officer's old or empty data can remove a link; an unlink stays unlinked.
+- (−) While officers on old clients remain, they still replace their own tables, and an unlink made on an old
+  client stays on new clients' views (only left out of what goes back to old ones); unlinking it again on a new
+  client settles it. A link made or changed on a new client and unlinked on an old one comes back on old clients.
+- (−) A client that had a table before #424 never gets a link only another client's old table has; an officer
+  links it again. Chosen over the union, which brought back unlinks.
+- (−) Each officer's backfill sends every alt entry (a few hundred in a big guild), at most once per 10 minutes.
+
+## ADR-0041 — A member with alts removed or gone: the addon only asks, and its answers go through what exists (#426)
+
+### Context
+- Officers asked (as in GRM) to be asked about the alts when they remove somebody, to ban the whole group with a term
+  and a note, and to hear when a main leaves while alts stay. GRM removes and promotes on its own; the request was to
+  ask. `GuildUninvite` is protected (ADR-0010, ADR-0038), and several officers online all see the same guild line.
+
+### Decision
+- **`Modules/AltDeparture.lua`**, fed only by RosterLog's detection (nothing while the login settles, `_ready`, nor
+  for a line in chat lockdown, `Compat.IsSecret`) and by a Bulk actions removal the roster confirmed. Session state.
+- **Removed:** asked only on the client whose character removed them (the line's author is this character), 2 s
+  after, or once a removal queue of Bulk actions is through (`BulkActions:Refresh` flushes). Each group once a
+  session. The answers: a removal queue (`BulkActions:StartList`, one per click of the secure button, never
+  replacing a running queue), or `BanList:AddGroup` (one ban per character, one term, one note, the mark
+  "(group of X)"), or nothing.
+- **Gone:** a main leaving with alts still in the guild asks each officer online once (by event id and by main).
+  "Set A as main" is `SetMain` (synced by AltSync, ADR-0040), "Unlink" `GuildOS:UnlinkGroup`, "Keep" nothing. An
+  answer checks the links first: when another officer already answered, it changes nothing ("settled").
+- **The ban's `note`** is a field of the entry beside `reason`, cleaned like the alliance's note, and it never
+  leaves the client of the officer who wrote it (`BanList.OnTheWire` strips it from every publish and backfill;
+  `_ApplyRemote` drops any that comes in and keeps the writer's own on a ban another officer edits). The ban domain
+  goes over GUILD, which reaches every member's client, and the addon has no channel only officers read (OfficerNotes
+  also goes over GUILD); so, as a warning's chat line (specs/116), it stays local. `group` travels; a client before
+  #426 keeps it unread.
+- **The dialogs** are GuildOS's own frames (`UI/AltDepartureDialog.lua`), never a StaticPopup (#315).
+
+### Consequences
+- (+) Nothing is removed, banned or relinked without the officer's click; no main is promoted on its own; nobody is
+  whispered.
+- (−) A removal the client never reads (a secret line on retail in an instance, the remover offline) is not asked
+  about; MemberHistory's roster diff does not ask.
+- (+) No member's client ever holds an officer's note about somebody.
+- (−) The note is only on its writer's client: other officers see the ban, the term and the group, not the note.
+
+## ADR-0043 — Birthdays: a member-owned entry per character, and the calendar's dates drawn, never stored (#428)
+
+### Context
+- Officers asked for members' birthdays and join anniversaries on the calendar and said on the day (epic #423,
+  group E). The calendar's yearly repeat (#358) makes real events, one per date: one series per member would
+  fill `db.events` and its sync with hundreds of entries nobody created.
+
+### Decision
+- **`Modules/Birthdays.lua`**, member domain `birthday` (GUILD only), modelled on `foundingSelf`: one entry per
+  character `{ d, m, at, by }` or a tombstone `{ off = true, at, by }`, newest server time wins, a tie to the
+  tombstone. A member writes for their own characters (their key or alt group), an officer for anybody. One
+  birthday per person is a READ rule: the newest entry of the alt group. Members re-send their own at login,
+  officers backfill all and answer an older entry once a session.
+- **Virtual dates**: the calendar asks `Birthdays:VirtualEvents(from, to)` while it draws and buckets them with the
+  day's events; `_Occurrences` "yearly" gives the dates (29/02 on the 28th). Nothing is stored or synced as an
+  event.
+- **Join anniversary**: the current passage's start (MemberHistory), else `firstSeen`; a date from the first look
+  at the guild is none.
+- **/g line**: an officer's own setting, off; claim, wait 5–8 s, lower name wins, `said` remembered by everyone.
+- **Privacy**: day and month only, no year; tombstone on removal; dropped when the member leaves.
+
+### Consequences
+- (+) No event sync grows with the guild; the filters cost nothing.
+- (+) The birthday follows the alt group as links change, with no rewrite.
+- (−) A late officer can still repeat a line when nobody online heard it said that day.
+- (−) Join anniversaries differ between officers (history) and members (`firstSeen`).
+
+## ADR-0042 — The member's officer sheet: one long text per member, synced per member, newest wins (#427)
+
+### Context
+- Officers wanted a long note per member kept in the addon (GRM's custom note), and the dated notes are
+  a list of short entries. The game's officer note is 31 letters and every officer's to overwrite.
+- 1000 letters per member through the existing "OA" (the whole notes table in one message) would make
+  that one message huge in a big guild, and it has no revision: the last one to arrive would win.
+
+### Decision
+- **`db.officerNotes[key].sheet = { text, author, ts, rev }`**, next to `notes` and `tags`, so the
+  Forever key migration (`MergeSheet`, #97) carries it (the higher revision stays).
+- **The OFFICER addon channel only** (`SyncService.OFFICER_CHANNEL_DOMAINS`, `CommSystem:SendToOfficers`,
+  `Compat.OfficerAddonChannel`): over GUILD a member's client gets the bytes even when it drops them, and any
+  addon or log there could read them. Published there, accepted only from there. Retail and TBC Anniversary;
+  off on WoW: Forever until checked in game (a sheet stays on its client there).
+- **Sync:** officer domain `osheet` on the SyncService, as the alt links (ADR-0040): a write takes revision
+  max(server time, last + 1), the higher revision wins, a tie settles by text then author on every client;
+  an emptied sheet is an empty text, so an older one never comes back. A member's client drops it.
+- **Backfill:** every sheet at its stored revision on the answer to a sync request, at most once per 10
+  minutes per officer, and on `/gos sync`; 2 per envelope, 3 s apart, one backfill at a time (#324).
+- **"OA" sends notes and tags only**, and takes nothing else in; "ON" is unchanged. (Both moved to OFFICER in #430,
+  ADR-0045.)
+- **The hover card** reads an index the roster builds once per refresh (`RosterCard.NewIndex/IndexRow`:
+  alt links both ways, each roster line's name, class and online), never the roster itself.
+
+### Consequences
+- (+) A clean text of 1000 letters reaches every officer whole; the newest edit wins; old clients keep
+  reading the notes as before.
+- (−) The game delivers OFFICER by the rank's officer-chat permission, not by Guild OS's officer threshold: an
+  officer whose rank cannot hear officer chat gets no sheet. On WoW: Forever, no sync until checked.
+- (−) One text per member, no history of edits; two officers editing at once: one edit is lost (the older).
+- (−) Every officer backfills every sheet: in a guild with hundreds of sheets, a few minutes of BULK traffic
+  per officer at most once per 10 minutes.
+
+
+## ADR-0044 — Officers' tools on the notes: dates written and read, the safe list, nicknames (#429)
+
+### Context
+- Epic #423 group F (what GRM does and GuildOS did not): write the join date (#425's history) into a public or
+  officer note, read dates already written there back, never put some members in a bulk removal (#420), tell the
+  officers who comes back after a long time offline, and a nickname per member.
+- Only TBC Anniversary lets an addon write a note (`Compat.CanEditPublicNote`, #5/#162); WoW: Forever and retail
+  forbid `C_GuildInfo.SetNote` to addons. Many writes in a row can draw `ERR_GENERIC_THROTTLE` (#392/#393).
+
+### Decision
+- **`Modules/NoteDates.lua`.** A note never loses text silently: an empty note gets the date, one with room gets it
+  after a space, one that says it is left alone; another date or no room only from a confirmation showing the old
+  and the new note, and a note that changed since the question is asked again. Nothing over 31 bytes is sent.
+  Officer note by default (only officers read it); dates GuildOS only saw are off by default (on a guild GuildOS met
+  today they are all today).
+- **How it writes:** `Compat.CanWriteNote` (Anniversary) → a run writes one note every 2 s, doubled on the throttle
+  (the last write re-read, so none goes twice), halved back after 5 calm writes. `ADDON_ACTION_BLOCKED` on a note
+  write → one per click of Next (a hardware event); `ADDON_ACTION_FORBIDDEN`, or a client where `CanWriteNote` is
+  false but the rank may edit the note (`Compat.RankEditsNote`) → "copy the text": each click shows the whole new
+  note selected in a box to paste into the game's roster.
+- **The import** reads the first date of the public note, else the officer note; a review lists every one (new,
+  earlier than GuildOS saw, same day, later: not taken, history has the exact day: kept); only new and earlier are
+  ticked and the officer unticks any. A day taken is kept as "seen" (`joinEst`, `joinSrc = "note"`) at its last
+  minute, so the game's own line from any officer still replaces it. This client's history only: the records sync
+  sends are diffs and audit lines.
+- **`Modules/MemberMarks.lua`**, officer domain `marks`: per member and kind (`safe`, `nick`) one entry
+  `{ v, at, by }`, the later `at` winning (ties settle the same everywhere), a cleared one a tombstone for 90 days.
+  Sent on a change and, at login and `/gos sync`, every entry in batches of 40, 2 s apart. Applied on officers'
+  clients only.
+- **The safe list in `BulkActions`:** `memberAt` reads both notes and sets `m.safe`; `Eligible` refuses a removal or
+  demotion for it. Preview and `Current` (each click) both go through `Eligible`, so a member tagged after the
+  preview is skipped at their click. A promotion still may.
+- **Back after N days offline:** the history's roster diff (#425) already logged it; its look now also prints one
+  line to the officer with every member back in it. The snapshot then holds them online, so a return is told once.
+  The threshold (`backAfterDays`, 30 by default, 0 = no line) also sets the log's "Back".
+- **Chat Tweaks** shows the nickname in the prefix, and, when asked, the prefix on guild members' whispers, party
+  and raid lines (always hooked, checked per line).
+
+### Consequences
+- (+) Nothing an officer wrote in a note is lost without them seeing the old and new text.
+- (+) On Forever and retail the same tool works as copy and paste, one member a click.
+- (+) The marks travel only over the OFFICER addon channel (`SyncService.OFFICER_CHANNEL_DOMAINS`, as the sheet of
+  #427): a member's client never gets the nicknames or the safe list. (−) On WoW: Forever, until that channel is
+  checked there, they stay on the client of the officer who wrote them.
+- (−) An imported day stays on the client that imported it; another officer imports it on their own.
+
+## ADR-0045 — The officers' dated notes ("ON"/"OA") over the OFFICER addon channel only (#430)
+
+### Context
+- The sheet (#427, ADR-0042) and the marks (#429, ADR-0044) already travel only over the game's OFFICER addon
+  channel. The older dated notes and tags still went over GUILD as CommSystem messages "ON" (one note) and "OA"
+  (all notes and tags): a member's client dropped them, but got the bytes, as any addon or log there could.
+- They are CommSystem message types, not SyncService domains, so `SyncService.OFFICER_CHANNEL_DOMAINS` does not
+  cover them.
+
+### Decision
+- **`CommSystem.OFFICER_TYPES = { ON, OA }`**, the same rule for message types: sent only by
+  `CommSystem:SendToOfficers`; `CommSystem:SendMessage` refuses them over GUILD or a whisper, whoever calls.
+- **No channel, or a rank that may not speak in officer chat:** nothing is sent, the note stays on this client,
+  and the officer is told once a session. The warning is `CommSystem:OfficerChannel()`, shared by the
+  SyncService's officer domains and these types: one warning a session, whatever wrote.
+- **Received:** over OFFICER, from an officer (`IsOfficerByName`), on an officer's client. Never over a whisper.
+- **Transition (`CommSystem.OFFICER_TYPES_LEGACY_GUILD = { ON }`):** "ON" over GUILD from an officer is still read,
+  so a note an officer on a client before #430 writes is not lost; this client never sends one there. Reading it
+  adds no exposure: the old client has already put the bytes on GUILD. "OA" over GUILD is not read: it is the
+  whole table, the largest message, and the bulk that should leave GUILD first; a new officer gets the bulk from
+  the other new officers over OFFICER. Remove the GUILD "ON" in the next version.
+
+### Consequences
+- (+) A member's client on a new version never gets a byte of a note from a new client.
+- (−) During the transition: a note a new client writes does not reach an officer still on an old client (it
+  reads GUILD only), and an old client's "OA" does not reach a new one (only its live "ON" notes do).
+- (−) On WoW: Forever, until the OFFICER channel is checked there, the notes stay on the client that wrote them
+  (they synced over GUILD before), as the sheet and the marks.

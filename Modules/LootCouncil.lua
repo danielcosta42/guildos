@@ -509,8 +509,14 @@ function Council:Vote(place)
     local msg = string.format("CVOTE|%s|%d", w.sid, place)
     if w.anon then
         if IsInRaid() and not lm.testMode then
-            GuildOS:NoteWhisper(w.ml)
-            GuildOS.Compat.SendAddonMessageNow(lm.PREFIX, msg, "WHISPER", w.ml)
+            local ml = w.ml
+            local function vote()
+                GuildOS:NoteWhisper(ml)
+                GuildOS.Compat.SendAddonMessageNow(lm.PREFIX, msg, "WHISPER", ml)
+            end
+            -- First in the WhisperQueue, never dropped (issue #393).
+            local queue = GuildOS.WhisperQueue
+            if queue then queue:PushAddon(lm.PREFIX, msg, ml, "high", vote) else vote() end
         end
     else
         lm:SafeSendAddon(lm.PREFIX, msg, "RAID")

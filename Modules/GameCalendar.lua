@@ -97,6 +97,41 @@ function GameCalendar.Match(webEvent, nativeEvents)
     return nil
 end
 
+--- Why a day may hold a site raid the game has not been sent yet (#416), or nil: "window" when part of
+--- the day is past the inbox's four weeks from `now`, "cap" when the inbox is full (`inbox` as
+--- CompanionImport:InboxInfo gives it, with `last`, its latest raid) and the day ends after its last
+--- raid. A raid planned two months ahead is on Discord the day it is made and reaches the game only
+--- once it is four weeks away; an empty day there says so rather than reading as "nothing planned".
+function GameCalendar.NotSentYet(dayEnd, now, inbox)
+    dayEnd, now = tonumber(dayEnd) or 0, tonumber(now) or 0
+    if dayEnd > now + GameCalendar.WINDOW_DAYS * 86400 then return "window" end
+    local last = type(inbox) == "table" and tonumber(inbox.last)
+    if last and (tonumber(inbox.count) or 0) >= GameCalendar.INBOX_CAP and dayEnd > last then return "cap" end
+    return nil
+end
+
+--- Whether an event from the site that is not a raid (guildos-web #652) is gone from it: the inbox's list of
+--- events (`info` as CompanionImport:SiteEventsInfo gives it: { ids, count, at, last }) leaves it out, and the
+--- inbox could tell. The same reasoning as "gone" in StateOf and the window of NotSentYet (#416): only inside
+--- the inbox's window from when it was written, never past three hours after its start, below the inbox's cap
+--- (or, at the cap, no later than its last event), and never from an inbox older than the one that brought the
+--- event (`signupsAt`): one that only left the window is not called cancelled, and comes back when it returns.
+function GameCalendar.SiteEventGone(webEvent, info, now)
+    local at = type(info) == "table" and type(info.ids) == "table" and tonumber(info.at)
+    local raidId = GameCalendar.RaidIdOf(webEvent)
+    if not (at and raidId) or info.ids[raidId] then return false end
+    local known = tonumber(webEvent.signupsAt) or 0
+    if known <= 0 or known > at then return false end
+    local when = tonumber(webEvent.when) or 0
+    now = tonumber(now) or GetServerTime()
+    if when < at - GameCalendar.GRACE or when > at + GameCalendar.WINDOW_DAYS * 86400 or when < now - GameCalendar.GRACE then
+        return false
+    end
+    local last = tonumber(info.last)
+    if (tonumber(info.count) or 0) >= GameCalendar.INBOX_CAP and (not last or when > last) then return false end
+    return true
+end
+
 --- What the addon's calendar says about a site raid and the game's calendar:
 ---   "gone"    the site no longer sends it (inferred, and only where the inbox can tell);
 ---   "absent"  not in the game's calendar;
@@ -349,6 +384,75 @@ end
 
 -- Drawn again when the game hands its calendar over, so "reading" turns into the state (I5).
 if GuildOS.Compat and GuildOS.Compat.OnCalendarUpdate then GuildOS.Compat.OnCalendarUpdate(redraw) end
+
+----------------------------------------------------------------------
+-- Birthdays (issue #428): this month's, one guild announcement a click, never on its own. The game
+-- takes one new event per click, so the button puts the next one missing and says how many are left.
+----------------------------------------------------------------------
+local BIRTHDAY_MARK = MARK .. "birthday"
+
+--- The game event a birthday becomes: an announcement at Birthdays.GAME_HOUR (noon) on the realm's
+--- calendar that day.
+function GameCalendar.BirthdaySpec(b)
+    local title = firstLetters(string.format(L["Birthday: %s"], tostring(b.name or "")), GameCalendar.TITLE_MAX)
+    local room = GameCalendar.DESC_MAX - letters(BIRTHDAY_MARK) - 1
+    local text = firstLetters(L["A birthday shared in Guild OS."], math.max(room, 0))
+    local hour = GuildOS.Birthdays and GuildOS.Birthdays.GAME_HOUR or 12
+    local clock = { year = b.year, month = b.month, day = b.day, hour = hour, minute = 0 }
+    return { title = title, description = text .. "\n" .. BIRTHDAY_MARK, clock = clock,
+             startsAt = GuildOS.Compat.EpochOfRealm(clock) }
+end
+
+local function birthdayId(spec) return spec.title .. "@" .. tostring(spec.startsAt) end
+
+--- The birthdays of the rest of this month not in the game's calendar yet, as specs; nil while the game
+--- has not read its calendar. One the game refused this session is left out: it never holds the rest up.
+function GameCalendar:MissingBirthdays(now)
+    local B = GuildOS.Birthdays
+    if not B then return {} end
+    local specs = {}
+    for _, b in ipairs(B:RestOfMonth(now)) do specs[#specs + 1] = GameCalendar.BirthdaySpec(b) end
+    if #specs == 0 then return specs end
+    local list = GuildOS.Compat.CalendarGuildEvents(specs[1].startsAt - AROUND, specs[#specs].startsAt + AROUND)
+    if not list then return nil end
+    local out = {}
+    for _, s in ipairs(specs) do
+        if not has(list, s.title, s.startsAt) and not (self._refused or {})[birthdayId(s)] then out[#out + 1] = s end
+    end
+    return out
+end
+
+--- The calendar's button: puts the next birthday of this month in the game's calendar, from a click.
+function GameCalendar:PutNextBirthday()
+    if not self:CanAct() then return GuildOS:Print(L["Only an officer can do this, on WoW: Forever."]) end
+    if self:IsWaiting("birthdays") then return GuildOS:Print(L["Waiting for the game's answer."]) end
+    GuildOS.Compat.CalendarRequest()
+    local missing = self:MissingBirthdays(GetServerTime())
+    if not missing then return GuildOS:Print(L["The game's calendar is still loading. Try again in a moment."]) end
+    local spec = missing[1]
+    if not spec then return GuildOS:Print(L["Every birthday left this month is in the game's calendar."]) end
+    local left = #missing - 1
+    local function refused(msg)
+        self._refused = self._refused or {}
+        self._refused[birthdayId(spec)] = true
+        if msg then GuildOS:Print(msg) end
+        if left > 0 then GuildOS:Print(string.format(L["%s was left out. Click again for the next (%d left)."], spec.title, left)) end
+    end
+    local ok, err = GuildOS.Compat.CalendarCreateGuildAnnouncement(spec)
+    if not ok then return refused(err) end
+    self:_Await("birthdays", function()
+        local now = GuildOS.Compat.CalendarGuildEvents(spec.startsAt - AROUND, spec.startsAt + AROUND)
+        return now ~= nil and has(now, spec.title, spec.startsAt)
+    end, nil, function(done, msg)
+        if done then
+            GuildOS:Print(left > 0 and string.format(L["%s is in the game's calendar. Click again for the next (%d left)."], spec.title, left)
+                or string.format(L["%s is in the game's calendar. That was the last one this month."], spec.title))
+        else
+            refused(msg)
+        end
+        redraw()
+    end)
+end
 
 --- The panel's button: runs the action and says, in the chat window, what came of it.
 function GameCalendar:Act(eventId, action)

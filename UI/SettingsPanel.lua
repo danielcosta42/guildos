@@ -369,6 +369,26 @@ PAGES.profile = function(F)
             function(checked) GuildOS.Journal:SetOptedOut(checked) end)
     end
 
+    -- The member's own birthday (issue #428): the day and the month, for the guild's calendar.
+    local BD = GuildOS.Birthdays
+    if BD then
+        F:Section(L["Birthday"])
+        local box = F:Field(L["Your birthday"], { w = 80, max = 10, hint = BD:Hint(),
+            get = function() return BD:Text(BD:Mine()) or "" end,
+            save = function(b) GuildOS.Birthdays:SetMineText(b:GetText()); F:Refresh() end })
+        F:Check(L["Show my birthday to the guild"],
+            L["Only the day and the month, never the year. Untick it to remove it from everybody's Guild OS."],
+            function() return BD:Mine() ~= nil end,
+            function(checked)
+                if checked then GuildOS.Birthdays:SetMineText(box:GetText()) else GuildOS.Birthdays:ClearMine() end
+            end)
+        F:Check(L["Announce birthdays in guild chat"],
+            L["Officers: one line in /g on the day for each member, however many officers are online."],
+            function() return BD:AnnounceOn() end,
+            function(checked) BD:SetAnnounce(checked) end,
+            { shown = function() return GuildOS:IsOfficer() end })
+    end
+
     F:Section(L["Getting started"])
     F:Buttons({ { L["Show welcome again"], function() if GuildOS.ShowOnboarding then GuildOS:ShowOnboarding() end end, w = 170 } })
     F:Note(L["Replay the first-run intro"], { gap = 6 })
@@ -446,6 +466,13 @@ PAGES.interface = function(F)
     F:Check(L["Guild button opens Guild OS"], L["Off: the game's guild button opens the game's own guild window."],
         function() return GuildOS:IsGuildButtonHijacked() end,
         function(checked) GuildOS:SetSetting("hijackGuildButton", checked) end)
+    -- Alt-click an item to open its recipe in the Crafts tab (#415).
+    if GuildOS.CraftOrders then
+        F:Check(L["Alt-click an item to open its recipe in Crafts"],
+            L["Never while the auction house, mail, trade, a vendor or the guild bank is open."],
+            function() return GuildOS:GetSetting("altClickCrafts") ~= false end,
+            function(checked) GuildOS:SetSetting("altClickCrafts", checked) end)
+    end
 
     -- Guild lines on item tooltips (crafters, wishlist, soft reserves), issue #39. Shift is
     -- remembered while the lines are off, so turning them back on keeps it.
@@ -494,6 +521,13 @@ PAGES.chat = function(F, isOfficer)
     -- Guild Roster Manager's tag (#269).
     F:Check(L["Short tag: [M] on a main, [Main] on an alt"], nil, function() return ct().altShort end, setCt("altShort"),
         { indent = 2 * SUB_INDENT, enabled = function() return annotating() and ct().altTag ~= false end })
+    -- The officers' nickname, and the same prefix in whispers, party and raid from guild members (#429).
+    F:Check(L["Nickname (officers)"], nil, function() return ct().nick ~= false end, setCt("nick"),
+        { indent = SUB_INDENT, enabled = annotating })
+    F:Check(L["Also in whispers from guild members"], nil, function() return ct().whisper == true end, setCt("whisper"),
+        { indent = SUB_INDENT, enabled = annotating })
+    F:Check(L["Also in party and raid chat"], nil, function() return ct().group == true end, setCt("group"),
+        { indent = SUB_INDENT, enabled = annotating })
 
     -- Mentions (issue #59): what /gos mentions sets. Personal, never synced.
     local mcfg = GuildOS.db.mentions

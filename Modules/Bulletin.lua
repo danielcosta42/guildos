@@ -4,16 +4,40 @@
 -- Officer-authoritative: the board is broadcast as a revision-checked
 -- snapshot via SyncService (domain "bulletin"). New posts also surface
 -- in the login digest.
+--
+-- How long a notice lasts (issue #418): the officer picks it when posting,
+-- some days or until it is removed. A notice that lasts some days carries
+-- `exp`, the server time it ends; one without `exp` (every notice made
+-- before #418, and "until I close it") lasts until removed, as before. The
+-- field rides inside the same snapshot: an older client keeps and re-sends
+-- it untouched and simply shows the notice until removed. Each client keeps
+-- which notices it has told this player about (db.bulletin.seen), so the
+-- login digest, or a chat line, tells each active one once.
 ----------------------------------------------------------------------
 local Bulletin = {}
 GuildOS.Bulletin = Bulletin
 local L = GuildOS.L
 
 local MAX = 20
+local DAY = 86400
+local TELL = 3        -- notices told at login, the newest; the Now tab shows as many
+-- What the officer can pick: 0 is "until I close it".
+Bulletin.DURATIONS = { 0, 1, 3, 7, 14, 30 }
+
+local function serverNow() return GetServerTime() end
 
 function Bulletin:Initialize()
     GuildOS.db.bulletin = GuildOS.db.bulletin or { messages = {} }
     GuildOS.db.bulletin.messages = GuildOS.db.bulletin.messages or {}
+    if type(GuildOS.db.bulletin.seen) ~= "table" then
+        -- First run with #418: every notice already on the board counts as told; only what arrives after is new.
+        local seen = {}
+        for _, m in ipairs(GuildOS.db.bulletin.messages) do
+            local key = Bulletin.Key(m)
+            if key then seen[key] = true end
+        end
+        GuildOS.db.bulletin.seen = seen
+    end
     if GuildOS.SyncService then
         GuildOS.SyncService:On("bulletin", function(env) Bulletin:OnSync(env) end)
     end
@@ -23,6 +47,122 @@ function Bulletin:GetMessages()
     return (GuildOS.db.bulletin and GuildOS.db.bulletin.messages) or {}
 end
 
+-- What a notice is remembered as told by: its id, or, for one from the wire without one, who posted it, when and
+-- its text, which do not change from one snapshot to the next. Nil for what is not a notice.
+function Bulletin.Key(m)
+    if type(m) ~= "table" then return nil end
+    if m.id ~= nil then return tostring(m.id) end
+    return "~" .. tostring(m.author or "?") .. "|" .. tostring(m.ts or 0) .. "|" .. tostring(m.text or "")
+end
+
+-- When a notice ends (a server time), or nil when it lasts until removed. It came over the wire: a number or nothing.
+function Bulletin.Expires(m)
+    local exp = type(m) == "table" and tonumber(m.exp)
+    if exp and exp > 0 then return exp end
+    return nil
+end
+
+function Bulletin.IsActive(m, now)
+    local exp = Bulletin.Expires(m)
+    return type(m) == "table" and (exp == nil or exp > (now or serverNow()))
+end
+
+-- The notices still running, the newest first, at most `limit`.
+function Bulletin:Active(now, limit)
+    now = now or serverNow()
+    local out = {}
+    for _, m in ipairs(self:GetMessages()) do
+        if self.IsActive(m, now) and type(m.text) == "string" and m.text ~= "" then out[#out + 1] = m end
+    end
+    table.sort(out, function(a, b) return (tonumber(a.ts) or 0) > (tonumber(b.ts) or 0) end)
+    if limit then for i = #out, limit + 1, -1 do out[i] = nil end end
+    return out
+end
+
+-- The active notices this player has not been told about yet, the newest first, at most `limit`.
+function Bulletin:Unseen(now, limit)
+    local seen, out = GuildOS.db.bulletin.seen or {}, {}
+    for _, m in ipairs(self:Active(now)) do
+        if not seen[Bulletin.Key(m)] then out[#out + 1] = m end
+        if limit and #out >= limit then break end
+    end
+    return out
+end
+
+-- Every active notice has now been told (the ones over the limit too: they are not dripped login after login),
+-- and what left the board is forgotten.
+function Bulletin:MarkSeen(now)
+    local seen, kept = GuildOS.db.bulletin.seen or {}, {}
+    for _, m in ipairs(self:Active(now)) do kept[Bulletin.Key(m)] = true end
+    for _, m in ipairs(self:GetMessages()) do
+        local key = Bulletin.Key(m)
+        if key and seen[key] then kept[key] = true end
+    end
+    GuildOS.db.bulletin.seen = kept
+end
+
+-- The picker's choices: { value = days, text }.
+function Bulletin:DurationOptions()
+    local opts = {}
+    for _, days in ipairs(self.DURATIONS) do
+        local text = days == 0 and L["Until I close it"]
+            or days == 1 and L["For 1 day"] or string.format(L["For %d days"], days)
+        opts[#opts + 1] = { value = days, text = text }
+    end
+    return opts
+end
+
+-- A notice's line under its text: who, when, and how long it lasts.
+function Bulletin.MetaText(m, now)
+    local s = (m.author or "?") .. " · " .. GuildOS:DateText(tonumber(m.ts) or 0, " %H:%M")
+    local exp = Bulletin.Expires(m)
+    if exp then
+        if exp > (now or serverNow()) then
+            s = s .. " · " .. string.format(L["until %s"], GuildOS:DateText(exp, " %H:%M"))
+        else
+            s = s .. " · " .. L["no longer shown"]
+        end
+    end
+    return s
+end
+
+-- One notice as a line: in the digest and in the chat. Its text is an officer's: no links or textures.
+function Bulletin.Line(m)
+    return "|cffEDCC7B" .. L["Notice:"] .. "|r " .. GuildOS:SanitizeUserText(m.text or "")
+        .. " |cff9D9D9D(" .. GuildOS:SanitizeUserText(m.author or "?") .. ")|r"
+end
+
+-- The notices not told yet go to the chat, a line each, and are told. Returns how many lines.
+function Bulletin:TellInChat(now)
+    now = now or serverNow()
+    local list = self:Unseen(now, TELL)
+    for _, m in ipairs(list) do GuildOS:Print(self.Line(m)) end
+    self:MarkSeen(now)
+    return #list
+end
+
+-- The login digest has had its turn (issue #418): from here a notice that arrives is told in the chat.
+function Bulletin:LoginDone()
+    self.loginDone = true
+end
+
+-- What the board lists: every notice for an officer, who can remove the ones that ended; a member sees the active.
+function Bulletin:Listed(now)
+    if GuildOS:IsOfficer() then
+        local out = {}
+        for _, m in ipairs(self:GetMessages()) do
+            if type(m) == "table" then out[#out + 1] = m end
+        end
+        return out
+    end
+    now = now or serverNow()
+    local out = {}
+    for _, m in ipairs(self:GetMessages()) do
+        if self.IsActive(m, now) then out[#out + 1] = m end
+    end
+    return out
+end
+
 local function newId()
     return string.format("%X%04X", GetServerTime(), math.random(0, 0xFFFF))
 end
@@ -30,7 +170,8 @@ end
 ----------------------------------------------------------------------
 -- Officer mutations
 ----------------------------------------------------------------------
-function Bulletin:Post(text)
+-- `days`: how long it lasts; nil or 0 until it is removed.
+function Bulletin:Post(text, days)
     if not GuildOS:IsOfficer() then
         GuildOS:Print(L["|cffFF4444Officers only.|r"])
         return
@@ -38,7 +179,14 @@ function Bulletin:Post(text)
     text = strtrim(text or "")
     if text == "" then return end
     local msgs = self:GetMessages()
-    table.insert(msgs, 1, { id = newId(), text = text, author = GuildOS.Compat.PlayerName(), ts = GetServerTime() })
+    local ts = GetServerTime()
+    local m = { id = newId(), text = text, author = GuildOS.Compat.PlayerName(), ts = ts }
+    days = math.floor(tonumber(days) or 0)
+    if days > 0 then m.exp = ts + days * DAY end
+    table.insert(msgs, 1, m)
+    -- The officer wrote it: it is not told back to them.
+    GuildOS.db.bulletin.seen = GuildOS.db.bulletin.seen or {}
+    GuildOS.db.bulletin.seen[m.id] = true
     while #msgs > MAX do table.remove(msgs) end
     self:Broadcast()
     self:Refresh()
@@ -88,8 +236,14 @@ end
 function Bulletin:OnSync(env)
     if env.act == "snapshot" and env.data
         and GuildOS.SyncService:ShouldApply("bulletin", "board", env.rev) then
-        GuildOS.db.bulletin.messages = env.data.messages or {}
+        local msgs = {}
+        for _, m in ipairs(type(env.data.messages) == "table" and env.data.messages or {}) do
+            if type(m) == "table" then msgs[#msgs + 1] = m end
+        end
+        GuildOS.db.bulletin.messages = msgs
         GuildOS.SyncService:SetRevision("bulletin", "board", env.rev)
+        -- After the login digest, a notice that arrives is told in the chat; before it, the digest tells it.
+        if self.loginDone then self:TellInChat() end
         self:Refresh()
     end
 end
@@ -132,13 +286,19 @@ function Bulletin:Show()
             -- The shared field, labelled, then its button: as the Guild tab's Bulletin draws it (#371).
             local label = UI:CreateText(f, L["Notice:"], 12)
             local postBtn = UI:CreateButton(f, L["Post"], 80, 24)
+            -- How long it lasts (#418), between the field and its button.
+            local lasts = UI:CreateDropdown(f, 110, 24)
+            lasts:SetOptions(GuildOS.Bulletin:DurationOptions())
+            lasts:SetValue(0)
             local box = UI:CreateInput(f, 0, 24, { max = 200 })
             box:SetPoint("TOPLEFT", 16 + math.ceil(label:GetStringWidth() or 0) + 8, -42)
-            box:SetPoint("TOPRIGHT", -(16 + UI.ReserveFor(postBtn, 8)), -42)
+            box:SetPoint("TOPRIGHT", -(16 + UI.ReserveFor(postBtn, 8) + UI.ReserveFor(lasts, 8)), -42)
             label:SetPoint("RIGHT", box, "LEFT", -8, 0)
-            postBtn:SetPoint("LEFT", box, "RIGHT", 8, 0)
+            lasts:SetPoint("LEFT", box, "RIGHT", 8, 0)
+            postBtn:SetPoint("LEFT", lasts, "RIGHT", 8, 0)
+            f.lasts = lasts
             local function doPost()
-                GuildOS.Bulletin:Post(box:GetText())
+                GuildOS.Bulletin:Post(box:GetText(), lasts:GetValue())
                 box:SetText("")
                 box:ClearFocus()
             end
@@ -165,7 +325,7 @@ function Bulletin:Show()
         for _, c in pairs({ child:GetChildren() }) do c:Hide() end
         for _, r in pairs({ child:GetRegions() }) do r:Hide() end
 
-        local msgs = GuildOS.Bulletin:GetMessages()
+        local msgs = GuildOS.Bulletin:Listed()
         local y, isOfficer = 0, GuildOS:IsOfficer()
         for _, m in ipairs(msgs) do
             local textFS = UI:CreateText(child, m.text, 12, C.text.r, C.text.g, C.text.b)
@@ -173,7 +333,7 @@ function Bulletin:Show()
             textFS:SetPoint("TOPRIGHT", isOfficer and -30 or 0, -y)
             textFS:SetJustifyH("LEFT")
             local th = textFS:GetStringHeight() or 14
-            local meta = UI:CreateText(child, (m.author or "?") .. " · " .. GuildOS:DateText(m.ts or 0, " %H:%M"),
+            local meta = UI:CreateText(child, GuildOS.Bulletin.MetaText(m),
                 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
             meta:SetPoint("TOPLEFT", 0, -(y + th + 2))
             if isOfficer then

@@ -281,7 +281,14 @@ local MODULE_START = {
     { "AllianceLink" },
     { "GuildChat" },
     { "RosterLog" },
+    -- Each member's passages and rank changes, kept past the log's 90 days (issue #425).
+    { "MemberHistory" },
+    -- The officers' safe list and nicknames (issue #429), synced among them; dates in the notes.
+    { "MemberMarks" },
+    { "NoteDates" },
     { "BanList" },
+    -- The alt links, one synced entry per alt (issue #424): before the readers of db.altLinks.
+    { "AltSync" },
     -- The disciplinary record (issue #402): officers only, synced among them.
     { "Discipline" },
     -- The officers' chat alerts (issue #404): after GuildChat, whose log gives the context.
@@ -312,6 +319,8 @@ local MODULE_START = {
     { "CallToArms" },
     { "Polls" },
     { "Calendar" },
+    -- Each member's birthday and join anniversary (issue #428): drawn on the calendar, never stored as events.
+    { "Birthdays" },
     { "Milestones" },
     -- WoW: Forever only (issue #205): what happened to me, for the guild's feed on guildos.me.
     { "Journal", feature = "journal" },
@@ -366,6 +375,10 @@ local MODULE_START = {
     { "ChatTweaks" },
     { "GuildManager", feature = "guildManager", ui = "management" },
     { "ModPresets" },
+    -- Promote, demote or remove by rules, one member a click (issue #420).
+    { "BulkActions", feature = "guildManager" },
+    -- Who has no GuildOS, and a reminder whispered one member a click (issue #422).
+    { "AddonReminder", feature = "guildManager" },
     -- The roster is not compared for new members' trials until the guild's settings have arrived (#249).
     { "TrialTracker", method = "Arm" },
 }
@@ -618,6 +631,8 @@ local function rosterPass()
     if GuildOS.DropDeparted then GuildOS:DropDeparted() end
     -- Who joined since this client last saw the whole roster: a trial each, with the guild's switch on (#249).
     if GuildOS.TrialTracker then GuildOS:SafeCall(GuildOS.TrialTracker.ScanRoster, GuildOS.TrialTracker) end
+    -- What changed since the roster last seen (#425): at most a pass a minute, whatever the bursts.
+    if GuildOS.MemberHistory then GuildOS.MemberHistory:Schedule() end
     GuildOS.Perf:Stop("roster pass", t)
     t = GuildOS.Perf:Start()
     GuildOS:RefreshRosterUI()

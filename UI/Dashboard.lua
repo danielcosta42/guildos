@@ -183,8 +183,11 @@ function GuildOS:CreateDashboardPanel(panel)
         if kindTxt ~= "" then when = when .. DOT .. kindTxt end
         text(body, when, 0, 18, w, C.label, "caption")
         local comp = cal:GetComposition(e)
-        text(body, string.format(L["%d going · %d tentative  |  %dT %dH %dD"],
-            comp.yes, comp.tentative, comp.roles.TANK, comp.roles.HEALER, comp.roles.DPS), 0, 38, w, C.textSoft, "tableNum")
+        -- One of the site's events that is not a raid (#652): its counts, with no roles to tally.
+        local counts = (cal.IsSiteEvent and cal:IsSiteEvent(e)) and string.format(L["%d going · %d maybe"], comp.yes, comp.tentative)
+            or string.format(L["%d going · %d tentative  |  %dT %dH %dD"],
+                comp.yes, comp.tentative, comp.roles.TANK, comp.roles.HEALER, comp.roles.DPS)
+        text(body, counts, 0, 38, w, C.textSoft, "tableNum")
 
         -- A raid planned on the site is answered there: no buttons of the game's own (#146).
         if cal:IsWebEvent(e) then

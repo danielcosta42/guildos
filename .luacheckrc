@@ -198,6 +198,8 @@ read_globals = {
 
     -- WoW API: Guild management
     "IsGuildLeader",
+    "GetCVar",          -- ActionButtonUseKeyDown, for the bulk actions' secure button (#420)
+    "C_CVar",
     "CanGuildRemove",
     "CanGuildPromote",
     "CanGuildDemote",
@@ -212,6 +214,7 @@ read_globals = {
     "GetGuildRosterLastOnline",
     "GuildControlGetNumRanks",
     "GuildControlGetRankName",
+    "GuildControlGetRankFlags",
 
     -- WoW API: Dropdown menus
     "UIDropDownMenu_CreateInfo",
@@ -399,6 +402,8 @@ read_globals = {
     "GuildRosterSetPublicNote",
     "CanEditPublicNote",
     "CanViewOfficerNote",
+    "GuildRosterSetOfficerNote",   -- issue #429
+    "CanEditOfficerNote",
 
     -- The chat frame's raid-icon words ({skull}, {star}…, localized), issue #64
     "ICON_TAG_LIST",

@@ -109,9 +109,15 @@ Removed: `UI.Hub`, `UI:CreateWindow`, `UI:ToggleWindow`, `UI:IsWindowOpen`, `UI:
 | `GuildOS:RekeyMembersToThisRealm()` | Forever only, at `DataCollector:Initialize`: moves `db.members` records keyed with another client's realm to this client's key; the newer `lastUpdate` wins (a tie keeps the one already there) and the older one's fields fill the winner's gaps (issue #95) |
 | `PugInspector:Classify(name, srcs)` | Builds its table key with `GetPlayerKey` when the name or the sources give a realm, else the bare name (issue #95). On retail the ban, the guild membership (`srcs.guildKeys`, whole keys) and the ex-member check (`_LastRosterAction`, whole keys) go by that key, so a namesake on another connected realm is somebody else; `_GroupMembers` keeps a party member's realm and skips a secret raid name (issue #184) |
 | `BanList:_NormalizeKey(name)` / `_Find(name, store)` / `_Who(name)` | A ban's key: the name alone, lower case, on Forever and Anniversary; on retail the whole key (`KeyOfRosterName`, lower case; a name without a realm is this realm's). `_Find` (behind `Get` and `IsBanned`) takes a standing ban under the whole key, else a standing one filed under the name alone before issue #184 (holds on every realm, also once the whole key's is lifted), else the whole key's entry. `_Who` is how a ban names somebody and how a name from the game (whisper, join, tooltip) is looked up: with its realm on retail (issue #184) |
+| `BanList:Add(name, reason, durationSec, note, group)` / `AddGroup(keys, reason, days, note)` / `StillInGuild(members, meKey)` | (#426) A ban with the officer's `note` (never sent: `BanList.OnTheWire`, kept only on its writer's client) and the `group` mark "(group of X)" (synced; old clients keep it unread); a whole alt group with one term and one note; the banned still on the roster (the "Remove all" queue) |
 | `BanList:List()` / `RemoveKey(key)` / `Remove(name)` / `_RemovalKey(name)` | `List` returns copies of the standing bans, each with the `key` it is filed under; the ban list's x lifts that row with `RemoveKey`. `Remove` (`/gos unban`) lifts `_RemovalKey`: on retail a name with a realm is that key, a bare one the standing ban by name alone first, else this realm's. Both return false and write nothing when no ban stands at the key, and `/gos unban` then says "No ban to lift for %s." (issue #184). `_Find` skips a whole key's ban that ran out, as one lifted |
 | `RecruitScanner:Addr(cand)` | Who a /who candidate is to the scanner: on retail the whole name /who gave (`cand.full`), elsewhere the name alone. The selection, the row's label and the whisper's target use it; cooldowns and replies are keyed by `KeyOfRosterName` on retail; `WhisperSelected` checks the ban again at the click (issue #184) |
 | `RosterLog:_NormShort(name)` | Who a log event is about: the short name; on retail the whole key, so officers on different realms file one event under one id (issue #184) |
+| `MemberHistory:Stints(key)` / `Ranks(key)` / `JoinedAt(key)` / `TenureDays(key, now)` / `LastLeft(key)` / `IsFormer(key)` | The member history's API (issue #425, ADR-0039): passages `{joinAt, joinEst, leftAt, leftEst, how, by}` and rank changes `{at, from, to, by, est}`, oldest first (read only; `{}` for nobody); the current passage's start and whether it is only when GuildOS saw it; calendar days over every passage and how many |
+| `MemberHistory:Describe(name, key)` / `StintLine(st)` / `Warn` / `Say` | "Ana was a member: 03/02/2025 to 10/06/2025 (127 days), removed by Bob." (several passages: the count and the days in all); `Warn`/`Say` print it to an officer only. Used by `BanList:HoldInvite`, the whisper alert, RosterLog's join line, PugInspector, MemberDetail |
+| `MemberHistory.DaysBetween(a, b, dateFn)` / `DayNumber(y, m, d)` | Pure: calendar days on the client's dates (zone, summer time, year turn) |
+| `MemberHistory.ApplyJoin/ApplyLeave/ApplyRank/EnsureOpen/Cap/Diff/LevelWanted/ValidRecord` | Pure merge rules and the roster diff on a given store; `Scan()` (via `Schedule()`, at most every 60 s) runs them on an officer's client; `OnSync`/`Backfill` carry records over `audit`/`hist` |
+| `Exporter:LogData()` / `FormerData()` | Datasets `log` and `former` (officers only, `officer = true` in `DATASETS`; `Build` answers nil, "officer" elsewhere), English headers |
 | `GuildOS:LocalMemberKey(key)` | A member key another client built, as this client keys it: on Forever rebuilt from its name with this client's realm (`ally:` keys left alone); elsewhere unchanged (issue #97) |
 | `GuildOS:LocalizeMemberTable(t, merge)` | `t` rekeyed with `LocalMemberKey`; `merge(held, incoming)` settles two records for one member and only sees two tables; a record beats a non-record, and with no merge the first record stays (issue #97) |
 | `GuildOS:LocalizeStoredMemberTables()` | Forever only, at `DataCollector:Initialize`, once per database (`db.storedKeysLocalized` holds the realm it ran for), each table its own `SafeCall` step: rekeys stored attendance (not the old flat format), sessions' players and snapshots, officer notes, trials, raiders, alt links (a self-link dropped), DKP standings (summed, starting points once) and core rosters and sign-ups (issue #97) |
@@ -205,8 +211,9 @@ Removed: `Compat.NewTimer`.
 | `GuildOS:IsOfficer()` | true if local rank index ≤ officerMaxRank setting |
 | `GuildOS:IsOfficerByName(fullName)` | Checks officer status by scanning guild roster |
 | `GuildOS:SetOfficerMaxRank(n)` / `PublishOfficerMaxRank(justChanged)` / `OnOfficerMaxRankSync(env)` | The guild's officer threshold (issue #81): an officer's change is stamped (`settings.officerMaxRankAt`) and published on the `guildcfg` SyncService officer domain; officers re-send it on the 5-minute sync and when asked; a local change is stamped past the one held and goes out even when it demotes the sender; every client keeps the newest stamp (a real time, held to 5 min ahead of its clock; a tie goes to the lower threshold), a whole rank 0..9, sent by an officer over GUILD. `SetOfficerMaxRank` returns false and does nothing for a non-officer. A threshold set before #81 that is not the default is shared by the Settings button |
-| `GuildOS:LinkAlt(altKey, mainKey)` | Links alt to main in altLinks, broadcasts (officer only) |
-| `GuildOS:UnlinkAlt(altKey)` | Removes alt link, broadcasts (officer only) |
+| `GuildOS:LinkAlt(altKey, mainKey)` | Links alt to main (officer only): plans the view with `_PlanLink` (the alt's own alts follow it; nil when main is an alt) and writes it through `AltSync:Commit` (#424) |
+| `GuildOS:UnlinkAlt(altKey)` | Unlinks the alt (officer only): a tombstone through `AltSync:Commit` (#424) |
+| `GuildOS:UnlinkGroup(mainKey)` | Unlinks every alt of `mainKey` in one commit (officer only); returns how many (#426) |
 | `GuildOS:GetLinkedChars(playerKey)` | Returns all keys in the same alt/main account group |
 | `GuildOS:DeepCopy(orig)` | Recursively deep-copies a table |
 | `GuildOS:GetClassColor(class)` | Returns r,g,b for a WoW class token |
@@ -305,7 +312,8 @@ Removed: `Compat.NewTimer`.
 | `CommSystem:HandleResponse(sender, data)` | Delegates to HandleBroadcast |
 | `CommSystem:HandlePing(sender)` | Responds with PONG + version |
 | `CommSystem:HandleVersionCheck(_sender, data)` | Prints notice on version mismatch |
-| `CommSystem:BroadcastAltLinks()` | Serializes and sends altLinks table (officer only) |
+| `CommSystem:BroadcastAltLinks()` | Officers: `AltSync:LegacyView` as "AL" with a mark old clients ignore, only while `LegacyHeard()` (a client ≤ `LEGACY_ALT_MAX` heard within `LEGACY_WINDOW`) (#424) |
+| `CommSystem:_BackfillMarks(force)` | `MemberMarks:Backfill` on a sync answer at most once per `MARKS_BACKFILL_GAP` (#429) |
 | `CommSystem:FullSync()` | Full staggered sync of all data types |
 
 ---
@@ -546,11 +554,24 @@ Removed: `Compat.NewTimer`.
 | `OfficerNotes:SetTag(playerKey, tag, value)` | Sets tag on player note record (officer only) |
 | `OfficerNotes:GetTag(playerKey, tag)` | Returns specific tag value or nil |
 | `OfficerNotes:GetAllTags(playerKey)` | Returns full tags table or {} |
-| `OfficerNotes:BroadcastNote(playerKey, noteEntry)` | Serializes and sends "ON" comm message |
-| `OfficerNotes:HandleIncoming(data)` | Deserializes, deduplicates by author+timestamp, inserts note |
-| `OfficerNotes:BroadcastAllNotes()` | Serializes full officerNotes and sends "OA" comm message |
-| `OfficerNotes:HandleAllIncoming(data)` | Merges incoming bulk notes, deduplicates, sorts |
-| `OfficerNotes:MergeSheet(existing, incoming)` | Folds one member's sheet into another: every held note kept, an arriving one added unless the same author+timestamp is held, newest first, non-notes dropped; incoming non-empty tags win (issue #97) |
+| `OfficerNotes:BroadcastNote(playerKey, noteEntry)` | Serializes and sends "ON" over OFFICER only (`SendToOfficers`); nothing without the channel (#430) |
+| `OfficerNotes:HandleIncoming(data)` | Deserializes, deduplicates by author+timestamp, inserts note; CommSystem passes it only an officer's, over OFFICER or (transition) GUILD (#430) |
+| `OfficerNotes:BroadcastAllNotes()` | Serializes notes and tags and sends "OA" over OFFICER only; nothing without the channel (#430) |
+| `OfficerNotes:HandleAllIncoming(data)` | Merges incoming bulk notes, deduplicates, sorts; CommSystem passes it only an officer's over OFFICER (#430) |
+| `OfficerNotes:MergeSheet(existing, incoming)` | Folds one member's sheet into another: every held note kept, an arriving one added unless the same author+timestamp is held, newest first, non-notes dropped; incoming non-empty tags win (issue #97); the member's sheet at the higher revision stays (#427) |
+| `OfficerNotes.CleanSheetText(text)` | Pure: the sheet as kept: no "|" or control character but the line break, at most 3 blank lines in a row, trimmed, `SHEET_MAX` letters (#427) |
+| `OfficerNotes.SheetWins(rev, entry, cur, held)` | Pure: whether a sheet replaces the held one: higher revision; a tie by text then author (#427) |
+| `OfficerNotes.SheetHead(text, lines, letters)` | Pure: the first lines/letters of a sheet, and whether there is more (#427) |
+| `OfficerNotes:GetSheet(key)` | The member's sheet `{ text, author, ts, rev }`, nil when none or emptied; officers only (#427) |
+| `OfficerNotes:SetSheet(key, text)` | Writes the sheet as this officer's at max(server time, last + 1) and publishes it on `osheet` (#427) |
+| `OfficerNotes:ApplySheets(list, sender)` / `:OnSheetSync(env, sender)` | Applies sheets off the network (keys localized, checked); officers only (#427) |
+| `CommSystem:SendToOfficers(msgType, data, priority, kind)` | Sends over the OFFICER addon channel only; false and nothing sent without it (#427) |
+| `CommSystem:OfficerChannel()` | `Compat.OfficerAddonChannel()`, telling a rank that may not speak in officer chat once a session (shared by SyncService's officer domains and the notes) (#427, #430) |
+| `CommSystem:OfficerTypeChannelOk(msgType, channel)` | Whether an `OFFICER_TYPES` message ("ON", "OA") counts over `channel`: OFFICER; GUILD only for "ON" (`OFFICER_TYPES_LEGACY_GUILD`, transition, ADR-0045) (#430) |
+| `Compat.OfficerAddonChannel()` | "OFFICER" on retail and TBC Anniversary; nil, "no-channel" on WoW: Forever (not checked in game); nil, "no-permission" when the rank may not speak in officer chat (`CommSystem:OfficerChannel` tells the officer once) (#427) |
+| `Compat.CanSpeakOfficerChat()` | Whether this character's rank may speak in officer chat (rank flag 4, from `C_GuildInfo.GuildControlGetRankFlags` or the older `GuildControlGetRankFlags`); nil when the client answers neither (#427) |
+| `ChatTweaks.KeyOf(name)` | #429: the chat cache's key for a roster name or a chat author, the whole name with its realm (the player's when none), so a namesake from another realm gets no guildmate's nickname or tag |
+| `OfficerNotes:BackfillSheets(force)` | Every sheet at its stored revision, 2 per envelope 3 s apart; once per 10 min unless forced (#427) |
 
 ---
 
@@ -599,7 +620,7 @@ Removed: `Compat.NewTimer`.
 | Function | Description |
 |---|---|
 | `GuildManager:Initialize()` | Ensures `db.managementLog` ring buffer exists |
-| `GuildManager:CanPromote()` / `:CanDemote()` / `:CanKick()` | Nil-guarded wrappers over CanGuildPromote/Demote/Remove |
+| `GuildManager:CanPromote()` / `:CanDemote()` / `:CanKick()` | `Compat.CanGuildPromote/Demote/Remove` (nil-guarded there; #420) |
 | `GuildManager:CanSetMOTD()` / `:CanSetGuildInfo()` | Nil-guarded wrappers over CanEditMOTD/CanEditGuildInfo |
 | `GuildManager:GetRosterIndex(name)` | Guild roster index for a short/full name (realm-stripped match, the first hit); on retail `Compat.FindGuildRosterIndex` (the whole name wins, a short one only when unique; issue #184) |
 | `GuildManager:GetRankIndex(name)` | Current 0-based rank index for a player name |
@@ -617,6 +638,113 @@ Removed: `Compat.NewTimer`.
 | `GuildManager:GetLog()` / `:ClearLog()` | Returns log newest-first / wipes it |
 | `GuildManager:RefreshUI()` | Refreshes roster + active management sub-panel after an action |
 | `GuildManager:ConfirmSetRank(name)` / `:ConfirmKick(name)` | Call-site entry points → `_protectedNotice` handoff |
+
+---
+
+## BulkActions.lua — GuildOS.BulkActions (Leadership > Bulk actions, #420; ADR-0038)
+
+| Function | Description |
+|---|---|
+| `BulkActions.Rules(raw)` | Pure: the screen's fields → `{ days, rank, levelMin, levelMax, attMin, attMax, noAddon }`, nil when unset or out of range |
+| `BulkActions.HasRule(rules)` | Pure: whether any rule is set (none picks nobody) |
+| `BulkActions.Eligible(m, action, ctx)` | Pure: never oneself, a rank at/above one's own, a promotion to one's own rank, a demotion below the last |
+| `BulkActions.Meets(m, rules)` / `.Match(members, rules, action, ctx)` | Pure: the rules; the picked members, longest offline first |
+| `BulkActions:Collect(withAttendance)` / `:Context()` / `:HasAttendance()` | The live roster as Match reads it; this character's rank; whether raid attendance is known |
+| `BulkActions:Allowed(action)` / `:Preview(raw, action)` | The rank's right (Compat.CanGuild*); who the rules pick now, and why not |
+| `BulkActions:Start(raw, action, confirmed)` / `:StartAndSay(...)` / `:Stop()` / `:Skip()` | The queue (session state); a removal only confirmed |
+| `BulkActions:Current()` / `:Counts()` / `:NextLabel()` / `:Queue()` | The next member, read again from the roster (who left or changed rank is skipped) |
+| `BulkActions:Arm(down)` / `:AfterClick(down)` | The secure Next button's PreClick (the one line this click runs) and PostClick |
+| `BulkActions:Typed()` / `:CommandNext()` / `:Command(rest)` | Whether the line is printed to type (Forever, or a blocked click); `/gos bulk` next, skip, stop |
+| `BulkActions:Confirm()` / `:OnBlocked(event, arg1)` | GUILD_ROSTER_UPDATE: a change the roster shows is done and logged once; a block right after a click turns typed mode on |
+
+| `BulkActions.Toward(rank, action, target)` / `.GroupMatch(members, group, mainKey, action, target, ctx)` | Pure (#424): a step left toward the target rank; a group's alts (never the main) short of it that Eligible allows |
+| `BulkActions:StartGroup(key, action, target)` / `:StartGroupAndSay(...)` / `:CommandGroup(rest)` | A queue taking a member's alts to the main's rank (or `target`), one step per click, re-queued until there; `/gos altgroup` |
+| `BulkActions:StartList(action, list)` / `:StartListAndSay(...)` / `:ListFor(keys)` / `:Busy()` | (#426) A queue of exactly `list` (Collect's lines), each checked by Eligible; never replaces a queue still running ("busy"). The alts of a removed member, the banned still in the guild |
+
+## AltDeparture.lua — GuildOS.AltDeparture (somebody with alts removed or gone, #426; ADR-0041)
+
+| Function | Purpose |
+|---|---|
+| `AltDeparture:OnKick(evt)` / `:OnRemoved(key)` / `:Flush()` / `:TakeGroups(members)` | A removal by this client's character (RosterLog's line, or a Bulk actions removal the roster confirmed): after 2 s, or once a removal queue is through, each alt group still in the guild is asked about once a session (`ShowAltRemovedDialog`) |
+| `AltDeparture:RemoveOthers(groups)` / `:BanGroups(groups, reason, days, note)` | The dialog's answers: a removal queue of Bulk actions (one per click), or `BanList:AddGroup` per group |
+| `AltDeparture:OnLeave(evt)` / `:SetNewMain(departed, key)` / `:Unlink(departed)` | A main leaving with alts still in the guild: each officer asked once (`ShowMainLeftDialog`); `SetMain` or `GuildOS:UnlinkGroup`, refused ("settled") when another officer already answered |
+| `AltDeparture.Others(group, members, skip)` / `.ColoredNames(members)` | Pure: the group's members on the roster; names in class colour |
+
+## UI/OfficerSheet.lua — GuildOS.RosterCard (the roster's hover card and the sheet editor, #427; ADR-0042)
+
+| Function | Description |
+|---|---|
+| `RosterCard.NewIndex(links)` / `.IndexRow(idx, key, name, class, online)` | The card's index, built once per roster refresh: alts both ways, each roster line |
+| `RosterCard.NameText(idx, key)` / `.AltLines(idx, key)` | Pure on the index: a name in class colour with "(online)"; a main's alts or an alt's main and siblings |
+| `RosterCard:AddLines(tip, data, idx)` | The card's added lines: alts, M+, the birthday hook (`GuildOS.Birthdays:TooltipLine`); to officers joined/tenure, game officer note, sheet head, 2 notes |
+| `RosterCard:Toggle(row, fill)` | Shift+click: keeps the card open (`GuildOSRosterCard`, Esc closes), or lets it go |
+| `GuildOS:ShowOfficerSheetEditor(key, name)` | The sheet's editor (officers) |
+
+---
+
+| `BulkActions.Eligible` and `m.safe` (#429) | A member on the safe list (`MemberMarks:IsSafe`, read in `memberAt` from both notes) is never eligible for a removal or demotion: out of the preview, skipped at their click |
+
+## NoteDates.lua — GuildOS.NoteDates (join dates in the guild notes, #429; ADR-0044)
+
+| Function | Purpose |
+|---|---|
+| `NoteDates.Parse(text, order, maxYear)` | Pure: the first date in a note (`yyyy-mm-dd`, `dd.mm.yyyy`, `dd/mm/yy`, a "word:" before it) → `{year,month,day}`, start (label included), end, the date's own start; `order` "dmy"/"mdy" unless a number above 12 decides |
+| `NoteDates.Format(day, fmt, label)` / `.Compose(current, piece, order, maxYear)` / `.Silent(how)` | Pure: the date in one of `FORMATS`; the note with it: "same", "write", "append" (silent), "replace", "full" (only confirmed), never over 31 bytes |
+| `NoteDates:Plan(which)` / `:ItemFor(...)` / `:WriteOne(name)` / `:ConfirmWrite(item)` | What a run would write; one member (`/gos joindate <name>`), a loss of text asked first with the old and new note |
+| `NoteDates:Mode(which)` | "write" (Anniversary), "click" (a write was blocked), "copy" (forbidden, or Forever/retail: the copy box), nil (the rank may not edit it) |
+| `NoteDates:Start(items, confirmed)` / `:Next()` / `:Stop()` / `:Current()` / `:Counts()` | A run: one write every `GAP` s (doubled on ERR_GENERIC_THROTTLE, halved back after `CALM_WRITES`), or one per click of Next in click/copy mode |
+| `NoteDates:ImportPlan(order)` / `:ApplyImport(items)` | The import's review (new, earlier, same, later, kept; only new and earlier ticked) and taking the ticked ones (`MemberHistory:ImportJoin`) |
+| `NoteDates:Command(rest)` | `/gos joindate [<name> | all | import]` |
+
+## MemberMarks.lua — GuildOS.MemberMarks (safe list and nicknames, #429; ADR-0044)
+
+| Function | Purpose |
+|---|---|
+| `MemberMarks.NoteHasTag(note, onote, tag)` / `.Wins(e, held)` / `.Valid(it, now, sender)` | Pure: the tag in either note, capitals aside; later `at` wins; an entry off the network checked |
+| `MemberMarks:IsSafe(key, note, onote)` / `:IsMarkedSafe(key)` / `:SafeKeys()` / `:SafeTag()` / `:SetSafeTag(tag)` / `:SetSafe(key, on)` | The safe list: by hand or the tag (`[safe]` by default); officers write |
+| `MemberMarks:Nick(key)` / `:SetNick(key, text)` | The officers' nickname (24 bytes), on the roster tooltip and in Chat Tweaks' prefix |
+| `MemberMarks:Apply(items, sender)` / `:OnSync` / `:Backfill()` | Officer domain `marks`: `{ s, k, v, t, b }`, applied on officers' clients only; every entry at login and `/gos sync`, 40 per envelope, 2 s apart |
+| `MemberMarks:TooltipLines(tt, key, note, onote)` / `:CommandSafe(rest)` / `:CommandNick(rest)` | The tooltip's lines (officers); `/gos safe [<name>]`, `/gos nick <name> [nickname]` |
+| `MemberHistory:BackDays()` / `:SetBackDays(n)` / `.ApplyNoteJoin(h, key, t)` / `:ImportJoin(key, t)` / `:JoinedFromNote(key)` | The "back after N days offline" threshold (0: off); a join day from a note, kept as seen (`joinSrc = "note"`) so the game's exact line replaces it |
+
+## AltSync.lua — GuildOS.AltSync (alt links synced per alt, #424; ADR-0040)
+
+| Function | Purpose |
+|---|---|
+| `AltSync:Initialize()` | Registers domain `alt`, migrates the old `altLinks` once (unconfirmed entries, revision 0, no author; `fresh` when there was nothing), rekeys on Forever, prunes tombstones (a year), rebuilds the view |
+| `AltSync:LegacyView()` | The table for clients before #424: the view without unconfirmed links an old officer's newest table lacks (`legacyGone`); nil when no entry is known |
+| `AltSync.Base(entries)` / `.Flatten(links)` | Pure: the standing links of the entries; flat (a chain to its last main, a loop to its lowest key) |
+| `AltSync:BaseView()` / `:HeardView()` / `:Entries()` | The officers' links; only those an officer said (not this client's own migration); the entries |
+| `AltSync:Rebuild()` | `db.altLinks` = BaseView + a member's waiting claims (`AltAutoDetect:Overlay`), flat |
+| `AltSync.Wins(rev, entry, cur, held)` | Pure: higher revision wins; at a tie nothing seen comes back, own migration yields, else by main/author |
+| `AltSync:Commit(links, confirm)` / `:Write(changes)` | Officers: write every alt whose entry differs from `links` (rev = max(server time, last + 1)), and the alts in `confirm` whose link is unconfirmed; publish in batches, send "AL" for old clients (if one was heard) |
+| `AltSync:Apply(list, sender)` / `:OnSync(env, sender)` | Officer entries off the network (`{ k, m, x, a, t, r }`), keys localized; r = 0 (unconfirmed) only on a `fresh` client, for an alt it knows nothing of |
+| `AltSync:OnLegacyList(links, sender)` | "AL" from a client before #424: merge only (adds alts never heard of; never removes or changes; empty is nothing); marks unconfirmed links it lacks `legacyGone` |
+| `AltSync:Backfill(force)` | Officers: every entry at its stored revision (unconfirmed at 0, not `legacyGone`), `BATCH` per envelope, `BATCH_GAP` s apart, one at a time; at most once per `BACKFILL_GAP` unless `force` (/gos sync) |
+| `AltSync.OverLimit(links, n)` / `:CommandLimit(rest)` | The groups with more than n alts; `/gos altlimit N` |
+
+AltAutoDetect (#424): `Overruled(p, entries)` (a newer officer tombstone or link elsewhere ends a claim), `UnlinkAnswered(p, entries)` (a member's own waiting unlink ends on a tombstone or a newer officer link), `Overlay(links)` (claims and waiting unlinks), `OnOfficerLinks()` (a claim goes only applied or overruled).
+
+UI: `UI/BulkPanel.lua` — `GuildOS:BuildBulkSub(panel)`, the secure `GuildOSBulkNext` button (docked out of combat only).
+Compat (#420): `CanGuildPromote/Demote/Remove`, `MyGuildRankIndex`, `GuildRankCommand(action, name)`, `SecureGuildMacro`,
+`SecureClicks(button)`, `SecureClickActs(down)`, `SetSecureMacro(button, text)`.
+
+---
+
+## AddonReminder.lua — GuildOS.AddonReminder (Leadership > Without GuildOS, #422)
+
+| Function | Description |
+|---|---|
+| `AddonReminder.Filter(list, f, now, days)` | Pure: by name, rank, online, "reminded within days"; longest without GuildOS (earliest first-seen) first |
+| `AddonReminder.Check(m, t, days)` | Pure: may `m` be reminded now; else "addon", "offline", "recent", "throttle", "wait" (+ seconds left) |
+| `AddonReminder.Fill(template, vars)` / `.CleanTemplate(t)` / `.ValidDays(v)` | Pure: `{name}`/`{guild}` filled, one line, 255 bytes; a 200-byte template; 1..90 days |
+| `AddonReminder:Collect(now)` / `:List(f, now)` / `:Member(key, now)` | The roster's members this client never heard GuildOS from (no `lastUpdate`), oneself aside |
+| `AddonReminder:Remind(key)` | The officer's click: re-reads the member, checks, whispers ONE filled reminder on the click |
+| `AddonReminder:OnThrottle()` / `:Settle(sent)` | The game's ERR_GENERIC_THROTTLE: hold 60 s, undo a reminder sent within 3 s; else publish its date and file it on the record when asked |
+| `AddonReminder:OnSync(env)` | Domain "reminder" (officer): another officer's date, newest kept |
+| `Get/SetDays`, `Get/SetTemplate`, `Get/SetLogDiscipline` | The officer's own settings (`reminderDays`, `reminderTemplate`, `reminderLog`) |
+
+UI: `UI/RemindPanel.lua` — `GuildOS:BuildRemindSub(panel)`. Store: `GuildOS.db.reminders[key] = at` (90 days).
 
 ---
 
@@ -1166,6 +1294,7 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `UI.LabelColumn(widths, left, gap, floor)` / `UI.ReserveFor(button, gap)` | #265: pure; where a labelled form's controls start (past the widest label, never before `floor`), and the room a box keeps for its own Save button. The recruiting screen measures its labels in the client's language with them |
 | `Calendar:CreateSeries(title, when, size, note, kind, share, rep)` / `:TopUpSeries()` / `:UpdateSeries(id, ...)` / `:EndSeries(id)` / `Calendar._Occurrences(rule, first, from, to, cap)` / `Calendar.RepeatOf(rep, first)` | #267: events that repeat (`Calendar.REPEATS`: weekly, biweekly, daily, everyother, monthnth, monthday). A series is plain events, one per date, id `<series>:<YYYYMMDD>`, each carrying `series = { id, rep, first, hour, min, untilT? }`; the next 28 days are held, an officer's client fills the rest in 20 s after login. Update changes a date and every later one (each keeps its day, takes the new hour); End deletes from a date on and marks the earlier ones with `untilT`. The rule off the guild channel is cleaned |
 | `Calendar:EndedSeries()` / `Calendar:IsSeriesEnded(sid)` | #267: series ended (`db.calendar.ended`, kept 365 days). EndSeries marks it and publishes a `delete` of the series id with `series = true`; OnSync keeps the mark, drops a new date of an ended series, and keeps a date's rule when a client before this edits it without one. TopUpSeries skips ended series and series whose dates read another hour on this client's clock; it runs from OFFICER_START |
+| `Recruitment.WelcomeList(r)` / `SetWelcome(i, text)` / `RemoveWelcome(i)` / `PickWelcome(list, last, rnd)` / `WelcomeMessage()` | #419: up to `WELCOME_MAX` welcomes in `recruitment.welcomeMessages`, the first mirrored in `welcomeMessage` (which wins for that place, for clients before #419); each welcome draws one, never `welcomeLast` while there is another; the draw (`_drawnWelcome`) stays until `SendWelcomeText` sends it |
 | `Recruitment:SendWelcomeText(msg, who)` | #270: the one way a welcome reaches guild chat, clicked (Forever) or on its own (Anniversary): `ChatTextProblem` first, `pcall` around the send, the reason said; true when it went |
 | `GuildOS:LocalDate(fmt, timestamp)` | #307: `date()` with the weekday and the month (`%a %A %b %B`) from the translations (`L["Mon"]`, `L["Monday"]`, `L["Nov"]`, `L["November"]`; `"May"` one key for both); every other conversion is `date()`'s. A whole date's layout is passed as an L key (`L["%A, %d %b %Y"]`, `L["%b %Y"]`, `L["%a %d %b, %H:%M"]`), which a language may reorder or write with `%B`. `tools/date-names.lua` fails on a `date()` whose format names a day or a month. In Core/Core.lua, which every harness loads |
 | `Calendar.CleanKinds(list)` / `Calendar:MemberKinds()` / `:KindOpenToMembers(kind)` / `:MayCreateKind(kind)` / `:CreatableKinds()` | #308: the kinds the ranks below the officers create (`settings.eventKinds`, a list in `KINDS` order; nil = every kind). `MayCreateKind` is true for an officer, else for a rank that creates events (#283) and a kind open to members; `CreatableKinds` is the editor's pills and gates its New Event button |
@@ -1278,3 +1407,17 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `RaidPlan:Current()` / `LootRule`'s `rosterRule` (`Night`, `NightStatus`) | The plan and the loot rule of `ActiveRoster` (the raid the buttons act on), not of the kept roster: the plan window's rule line is its raid's |
 | `tools/raid-prompt.lua` / `tools/raid-start-ui.lua` | The prompt's timing and once-only set, the guild binding, the digest, the roster ask, the plan; the button and the prompt on screen (dashboard-layout's stub frames) |
 
+
+## Birthdays (#428)
+
+| Function | Notes |
+|---|---|
+| `Birthdays:For(key)` / `:TooltipLine(key)` / `:Mine()` | The birthday of a character's alt group (newest entry of the group, a tombstone reads as none): `{ day, month }` or nil; the roster card's line (#427), "Birthday: 14/03" or nil; mine |
+| `Birthdays:SetMine(d, m)` / `:SetMineText(text)` / `:ClearMine()` | The member's own, published on `birthday` (GUILD only); unticking tombstones every character of the group |
+| `Birthdays:SetFor(key, d, m)` / `:ClearFor(key)` / `:Command(rest)` | An officer's correction; `/gos birthday [name] <DD/MM \| off>` (alias `aniversario`) |
+| `Birthdays.Parse` / `.Valid` / `.OnDay` / `.Newer` / `.JoinAnchor` | Pure: the typed date in the language's order; 29/02 on 28/02 in a year with none; newest `at`, tie to the tombstone; the join anniversary from the current passage, else `firstSeen`, never a date from the first look |
+| `Birthdays:Today(now)` / `:GetDigestLines(now)` / `:ToldToday` / `:MarkTold` / `:TellInChat` | Today's dates on the realm's calendar; the digest's lines once a day at login, in chat when the digest is off |
+| `Birthdays:VirtualEvents(fromT, toT)` / `:Shows(kind)` / `:SetShows(kind, on)` | The calendar's drawn yearly dates (`Calendar._Occurrences`), never in `db.events`; the two filters |
+| `Birthdays:CheckAnnounce(now)` | An officer's /g line (setting `birthdayAnnounce`, off): claim, wait, say unless said or a lower name claimed; `said` kept by every client in `db.birthdaySaid` |
+| `Birthdays:Backfill()` / `:PublishSelf()` / `:Departed(present)` | Officers re-send all, a member their own at login; whoever leaves takes theirs along |
+| `GameCalendar:PutNextBirthday()` / `Compat.CalendarCreateGuildAnnouncement(spec)` | WoW: Forever: the next birthday of the month into the game's calendar, one click each |

@@ -7,9 +7,13 @@
 local RosterLog = {}
 GuildOS.RosterLog = RosterLog
 
-local CAP = 1000
+local CAP = 1000        -- the guild's events: what the game's messages say and what officers sync
+local LOCAL_CAP = 500   -- this client's own diff lines (`loc`: a level, a note, a return): a quota of their own
 local MAX_AGE = 90 * 86400
 local BACKFILL_N = 25   -- cold-sync re-broadcast is capped to the last N events
+local NEAR_DUP = 30     -- seconds within which the same change, seen twice, is one event
+local NEAR_DUP_SCAN = 20  -- how many of the latest events that check looks back over
+RosterLog.CAP, RosterLog.LOCAL_CAP, RosterLog.BACKFILL_N = CAP, LOCAL_CAP, BACKFILL_N
 
 function RosterLog:Initialize()
     GuildOS.db.rosterLog = GuildOS.db.rosterLog or { events = {} }
@@ -79,8 +83,33 @@ function RosterLog:_Insert(evt, store)
     for i = 1, #store do
         if store[i].id == evt.id then return false end   -- dedup
     end
+    -- The same change seen twice a few seconds apart, across a 5s bucket: a bulk action's line (issue #420) and
+    -- the game's guild message about it. Same action, member, officer and rank, within NEAR_DUP seconds. Only an
+    -- officer's change has an author: a join or a leave is never folded into another.
+    for i = #store, math.max(1, #store - NEAR_DUP_SCAN), -1 do
+        local e = store[i]
+        if evt.author ~= nil and e.action == evt.action and e.target == evt.target and e.author == evt.author and e.detail == evt.detail
+            and math.abs((e.timestamp or 0) - evt.timestamp) <= NEAR_DUP then
+            return false
+        end
+    end
     store[#store + 1] = evt
-    while #store > CAP do table.remove(store, 1) end
+    -- Each kind makes room in its own quota: a round of note dates or an evening of level-ups (issue #425)
+    -- never pushes a join or a kick out of the log.
+    local isLoc = evt.loc and true or false
+    local n, cap = 0, isLoc and LOCAL_CAP or CAP
+    for i = 1, #store do
+        if (store[i].loc and true or false) == isLoc then n = n + 1 end
+    end
+    local i = 1
+    while n > cap and store[i] do
+        if (store[i].loc and true or false) == isLoc then
+            table.remove(store, i)
+            n = n - 1
+        else
+            i = i + 1
+        end
+    end
     return true
 end
 
@@ -117,19 +146,21 @@ function RosterLog:CountsSince(since, store)
     return c
 end
 
--- Pure: the most recent up-to-N events (chronological order). Bounds the
--- cold-sync backfill so a late officer converges on the tail of the log
+-- Pure: the most recent up-to-N events (chronological order), only those `keep(evt)` accepts when
+-- given. Bounds the cold-sync backfill so a late officer converges on the tail of the log
 -- instead of us re-broadcasting the whole history every login.
-function RosterLog:_Recent(store, n)
+function RosterLog:_Recent(store, n, keep)
     store = store or (GuildOS.db.rosterLog and GuildOS.db.rosterLog.events) or {}
     n = n or BACKFILL_N
     local out = {}
-    local first = math.max(1, #store - n + 1)
-    for i = first, #store do
-        out[#out + 1] = store[i]
+    for i = #store, 1, -1 do
+        if #out >= n then break end
+        if not keep or keep(store[i]) then table.insert(out, 1, store[i]) end
     end
     return out
 end
+
+local function synced(evt) return not evt.loc end
 
 function RosterLog:_MigrateManagementLog()
     if GuildOS.db.rosterLog.migrated then return end
@@ -153,8 +184,19 @@ end
 
 function RosterLog:OnSync(env)
     if env.act == "add" and env.data and env.data.evt then
-        if self:_Insert(env.data.evt) then self:Refresh() end
+        if self:_Insert(env.data.evt) then
+            self:_ToHistory(env.data.evt)
+            self:Refresh()
+        end
+    elseif env.act == "hist" and GuildOS.MemberHistory then
+        -- A member's passage from another officer's roster diff (issue #425); a client before it ignores the act.
+        GuildOS.MemberHistory:OnSync(env.data)
     end
+end
+
+-- Every event taken, into the member's durable history (issue #425): officers only, MemberHistory checks.
+function RosterLog:_ToHistory(evt)
+    if GuildOS.MemberHistory then GuildOS:SafeCall(GuildOS.MemberHistory.FromAudit, GuildOS.MemberHistory, evt) end
 end
 
 ----------------------------------------------------------------------
@@ -163,6 +205,7 @@ end
 function RosterLog:Add(evt)
     local inserted = self:_Insert(evt)
     if inserted then
+        self:_ToHistory(evt)
         self:_Publish(evt)     -- broadcasts to officers if we are one; no-op for members
         self:Refresh()
     end
@@ -190,7 +233,13 @@ function RosterLog:_SetupDetection()
         if GuildOS.Compat.IsSecret(msg) then return end  -- chat in lockdown: nothing readable
         if not RosterLog._ready then return end
         local evt = RosterLog:_ParseSystem(msg)
+        -- Somebody the history says was a member before (issue #425): the log files it as a rejoin, still a
+        -- "join" with the mark (the id, and every client before it, stay the same), and the officer is told.
+        local past = evt and evt.action == "join" and GuildOS.MemberHistory and GuildOS:IsOfficer()
+            and GuildOS.MemberHistory:Describe(evt.target)
+        if past then evt.rejoin = true end
         if evt then RosterLog:Add(evt) end
+        if past then GuildOS.MemberHistory:Say(past) end
         -- With the guild's switch for new members on, an officer's client asks for a fresh roster: the
         -- trial starts from the roster line, never from this one's name (#249).
         if evt and evt.action == "join" and GuildOS.TrialTracker then
@@ -199,6 +248,13 @@ function RosterLog:_SetupDetection()
         -- And whoever leaves or is removed leaves the roster it compares against: back, they are new.
         if evt and (evt.action == "leave" or evt.action == "kick") and GuildOS.TrialTracker then
             GuildOS:SafeCall(GuildOS.TrialTracker.OnLeave, GuildOS.TrialTracker, evt.target)
+        end
+        -- Somebody with alts removed by this client's character, or a main who left (#426): only asked about.
+        local AD = GuildOS.AltDeparture
+        if evt and AD and evt.action == "kick" then
+            GuildOS:SafeCall(AD.OnKick, AD, evt)
+        elseif evt and AD and evt.action == "leave" then
+            GuildOS:SafeCall(AD.OnLeave, AD, evt)
         end
     end)
 end
@@ -217,10 +273,12 @@ end
 -- avoid dumping unbounded history. Officers only. Called from HandleRequest.
 function RosterLog:Backfill()
     if not GuildOS.SyncService or not GuildOS:IsOfficer() then return end
-    local recent = self:_Recent()
-    for i = 1, #recent do
-        self:_Publish(recent[i])
-    end
+    -- A line of this client's own roster diff (issue #425) stays here: every officer's client sees
+    -- the same change, and a note's text is not for the guild channel. Left out before the last
+    -- BACKFILL_N are picked, so a run of them never leaves the backfill with nothing to send.
+    local recent = self:_Recent(nil, nil, synced)
+    for i = 1, #recent do self:_Publish(recent[i]) end
+    if GuildOS.MemberHistory then GuildOS.MemberHistory:Backfill() end
 end
 
 ----------------------------------------------------------------------

@@ -331,7 +331,7 @@ local function textMaker()
   return function(_, _, text) local w = widget({ text = text }); texts[#texts + 1] = w; return w end
 end
 GuildOS.UI = {
-  StylePopup = function() end, SetButtonVariant = function() end, Edge = function() return 1 end,
+  StylePopup = function() end, SetButtonVariant = function() end, Edge = function() return 1 end, AddTooltip = function() end,
   CreateTitle = textMaker(), CreateText = textMaker(), CreateHeaderText = textMaker(),
   CreateCloseButton = function() return widget() end,
   CreateButton = function(_, _, label)

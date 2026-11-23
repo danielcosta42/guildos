@@ -119,6 +119,8 @@ Probe.TEMPLATES = {
     { "UICheckButtonTemplate", "CheckButton" }, { "UIPanelButtonTemplate", "Button" },
     { "UIDropDownMenuTemplate", "Frame" }, { "OptionsSliderTemplate", "Slider" },
     { "GameTooltipTemplate", "GameTooltip" },
+    -- The bulk actions' Next button (issue #420).
+    { "SecureActionButtonTemplate", "Button" },
 }
 
 -- Tooltip scripts the addon hooks.
@@ -141,6 +143,7 @@ Probe.EVENTS = {
     "PLAYER_TARGET_CHANGED", "QUEST_TURNED_IN", "RAID_ROSTER_UPDATE", "READY_CHECK", "READY_CHECK_FINISHED",
     "SKILL_LINES_CHANGED",
     "TRADE_ACCEPT_UPDATE", "TRADE_PLAYER_ITEM_CHANGED", "TRADE_SHOW", "TRADE_SKILL_SHOW", "UI_INFO_MESSAGE",
+    "UI_ERROR_MESSAGE",   -- the game's "too fast": holds the officers' reminders (#422) and backs the WhisperQueue off (#393)
     "UPDATE_MOUSEOVER_UNIT", "WEEKLY_REWARDS_UPDATE", "WHO_LIST_UPDATE",
     "ZONE_CHANGED_NEW_AREA",
 }

@@ -696,6 +696,98 @@ Bank:ReadLogs()
 check(#Bank:Stream(1) == 16, "a log sent again adds its new line")
 GetNumGuildBankTransactions, GetGuildBankTransaction = nil, nil
 
+-- The game gives a line's name as nil until the client knows it ("?" on screen): the line read
+-- before its name came and after is one line, whichever comes first; equal deposits by two members,
+-- or two by one member, stay apart (#414).
+local function M(h, n, g) return { t = NOW - h * 3600, ty = "d", n = n, g = g } end
+local function names(k)
+  local out = {}
+  for _, e in ipairs(Bank:Stream(k)) do out[#out + 1] = e.n or "?" end
+  return table.concat(out, ",")
+end
+fresh()
+check(Bank:MergeStream(0, { M(3, "Bea", 500), M(2, nil, 10000), M(2, nil, 50000) }) == 3, "lines without a name are kept")
+NOW = NOW + 1800
+local added, filled = Bank:MergeStream(0, { M(3.5, "Bea", 500), M(2.5, "Sam", 10000), M(2.5, "Dai", 50000), M(0, "Eva", 100) })
+check(added == 1 and filled == 2 and names(0) == "Bea,Sam,Dai,Eva", "the nameless line takes its name when it comes")
+check(Bank:Contributions(7).Sam.dg == 10000 and Bank:Contributions(7).Dai.dg == 50000, "and counts for its member")
+check(Bank:MergeStream(0, { M(2.5, nil, 10000), M(2.5, nil, 50000), M(0, "Eva", 100) }) == 0 and names(0) == "Bea,Sam,Dai,Eva",
+  "a nameless read of named lines adds nothing and keeps the names")
+-- With nothing lined up (a peer's history, out of order): the same.
+GuildOS.SyncService.handlers.gbank({ act = "hist", data = { v = Bank.LEDGER_V, reads = { { k = 0, list = {
+  M(0, nil, 100), M(2.4, nil, 50000), M(3.4, nil, 500), M(2.4, nil, 10000) } } } } }, "Cid")
+check(#Bank:Stream(0) == 4 and names(0) == "Bea,Sam,Dai,Eva", "a nameless history of named lines adds nothing")
+-- Equal deposits by two members stay two, named or not.
+fresh()
+Bank:MergeStream(0, { M(2, "Sam", 10000) })
+check(Bank:MergeStream(0, { M(2, "Sam", 10000), M(2, "Dai", 10000) }) == 1, "an equal deposit by another member is a new line")
+check(Bank:MergeStream(0, { M(1, "Eva", 5), M(2, "Dai", 10000), M(2, "Sam", 10000) }) == 1 and names(0) == "Sam,Dai,Eva",
+  "and a history of both, in another order, adds neither again")
+fresh()
+Bank:MergeStream(0, { M(2, nil, 10000), M(2, nil, 10000) })
+added, filled = Bank:MergeStream(0, { M(2, "Sam", 10000), M(2, "Dai", 10000) })
+check(added == 0 and filled == 2 and names(0) == "Sam,Dai", "two nameless lines take the two members' names")
+-- Two equal deposits by one member in the same hour stay two, whatever was read without a name.
+fresh()
+Bank:MergeStream(0, { M(2, nil, 10000), M(2, nil, 10000) })
+check(Bank:MergeStream(0, { M(2, "Sam", 10000), M(2, "Sam", 10000) }) == 0 and names(0) == "Sam,Sam",
+  "two nameless deposits by one member become his two")
+fresh()
+Bank:MergeStream(0, { M(2, "Sam", 10000), M(2, "Sam", 10000) })
+GuildOS.SyncService.handlers.gbank({ act = "hist", data = { v = Bank.LEDGER_V, reads = { { k = 0, list = {
+  M(1.8, nil, 10000), M(1.8, "Sam", 10000) } } } } }, "Cid")
+check(names(0) == "Sam,Sam", "a history with one of them nameless adds nothing")
+GuildOS.SyncService.handlers.gbank({ act = "hist", data = { v = Bank.LEDGER_V, reads = { { k = 0, list = {
+  M(1.8, "Sam", 10000), M(1.8, "Sam", 10000), M(1.8, nil, 10000) } } } } }, "Cid")
+check(#Bank:Stream(0) == 3, "a third equal deposit, nameless, is a new line")
+fresh()
+Bank:MergeStream(0, { M(2, "Sam", 10000) })
+check(Bank:MergeStream(0, { M(2, nil, 10000), M(2, "Sam", 10000) }) == 1 and names(0) == "Sam,Sam",
+  "one member's second equal deposit, read once without a name, is not lost")
+-- In game: the money log read before the client knows the names, then again with them.
+fresh()
+addTab("Raid", -1)
+local MLOG = { { "deposit", nil, 50000, 5 }, { "deposit", nil, 10000, 5 }, { "deposit", nil, 10000, 2 } }   -- oldest first
+GetNumGuildBankMoneyTransactions = function() return #MLOG end
+GetGuildBankMoneyTransaction = function(i)
+  local r = MLOG[i]
+  if r then return r[1], r[2], r[3], 0, 0, 0, r[4] end
+end
+Bank:OnEvent("GUILDBANKFRAME_OPENED")
+runTimers()
+Bank:ReadLogs()
+check(#Bank:Stream(0) == 3, "the money log is read before the names come")
+NOW = NOW + 3600
+MLOG = { { "deposit", "Dai", 50000, 6 }, { "deposit", "Sam", 10000, 6 }, { "deposit", "Sam", 10000, 3 }, { "deposit", "Eva", 100, 0 } }
+Bank:ReadLogs()
+check(#Bank:Stream(0) == 4 and names(0) == "Dai,Sam,Sam,Eva", "read again with them, each line once, named")
+GetNumGuildBankMoneyTransactions, GetGuildBankMoneyTransaction = nil, nil
+-- A ledger saved with the pairs is cleaned when it loads: each nameless line goes with its nearest
+-- named twin, one twin each; a nameless line with no twin stays.
+fresh()
+local led = Bank:Store().ledger
+local function P(h, n, g) local e = M(h, n, g); e.k = 0; led[#led + 1] = e end
+P(30, "Bea", 10000); P(29.5, nil, 10000)                         -- a pair
+P(20, "Sam", 10000); P(20, "Sam", 10000); P(19.6, nil, 10000)    -- two by Sam, one read nameless
+P(10, "Sam", 5000); P(10, "Dai", 5000); P(9.7, nil, 5000); P(9.7, nil, 5000)
+P(5, nil, 777)                                                    -- never named
+GuildOS.db.guildBank.namelessV = nil                              -- saved before the fix
+Bank:Initialize()
+check(names(0) == "Bea,Sam,Sam,Sam,Dai,?", "pairs saved before are cleaned on load, nothing more")
+-- Once: a real nameless deposit kept since (a member whose name never came), with an equal named one
+-- by another member in the same hour, survives every later load.
+P(1, "Bea", 5000000); P(1, nil, 5000000)
+Bank:Initialize()
+GuildOS.State.gbank = nil
+Bank:Initialize()
+check(names(0) == "Bea,Sam,Sam,Sam,Dai,?,Bea,?", "a later load drops no nameless line")
+-- A nameless read hours from another member's equal deposit is its own line.
+fresh()
+Bank:MergeStream(0, { M(2, "Bea", 500), M(1, "Eva", 100) })
+GuildOS.SyncService.handlers.gbank({ act = "hist", data = { v = Bank.LEDGER_V, reads = { { k = 0, list = {
+  M(0.5, nil, 500) } } } } }, "Cid")
+check(names(0) == "Bea,Eva,?", "a nameless deposit 1.5 h from an equal named one is new")
+
 -- Reads and histories from a version that kept copies are not taken; this version's are.
 fresh()
 local hist = { k = 1, list = { line(1, "d", "Bea", 4592, 7), line(1, "d", "Bea", 4592, 7), line(1, "d", "Bea", 4592, 7) } }
