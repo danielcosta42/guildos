@@ -208,6 +208,8 @@ CommSystem.DROP_REASON_TEXT = {
 -- `kind`, optional, names it in /gos perf (SyncService passes its domain); else the type does.
 -- `channel`, optional: "OFFICER" for what only officers may receive (SendToOfficers); GUILD otherwise.
 function CommSystem:SendMessage(msgType, data, target, priority, kind, channel)
+    -- The officers' notes never leave by GUILD or a whisper, whoever calls (#430): SendToOfficers sends them.
+    if self.OFFICER_TYPES[msgType] and (target or channel ~= "OFFICER") then return end
     local payload = msgType .. ":" .. (data or "")
 
     -- Compress
@@ -276,10 +278,35 @@ function CommSystem:SendRaw(msg, target, priority, channel)
     end
 end
 
+-- Message types that travel only over the OFFICER addon channel, as SyncService.OFFICER_CHANNEL_DOMAINS for
+-- envelopes (issue #430): the officers' dated notes and tags. Sent there only; received over OFFICER, except "ON"
+-- over GUILD from an officer for the clients before #430 (OFFICER_TYPES_LEGACY_GUILD), never over a whisper.
+CommSystem.OFFICER_TYPES = { ON = true, OA = true }
+-- Transition only (#430, ADR-0045): an officer on a client before #430 still sends "ON" over GUILD; a new client
+-- reads it, so a note written there is not lost. Remove in the next version. "OA" over GUILD is not read.
+CommSystem.OFFICER_TYPES_LEGACY_GUILD = { ON = true }
+
+-- The OFFICER addon channel (Compat.OfficerAddonChannel), or nil when what goes to officers stays on this client.
+-- A rank that may not speak in officer chat is told so once a session, whatever wrote (#427, #430).
+function CommSystem:OfficerChannel()
+    local chan, why = GuildOS.Compat.OfficerAddonChannel()
+    if why == "no-permission" and not CommSystem._warnedNoOfficerChat then
+        CommSystem._warnedNoOfficerChat = true
+        GuildOS:Print(GuildOS.L["Your rank cannot speak in officer chat: what you write for the officers stays on this client."])
+    end
+    return chan, why
+end
+
+-- Whether an OFFICER_TYPES message counts over `channel`: OFFICER; GUILD for the legacy "ON" only (#430). Pure.
+function CommSystem:OfficerTypeChannelOk(msgType, channel)
+    if channel == "OFFICER" then return true end
+    return channel == "GUILD" and self.OFFICER_TYPES_LEGACY_GUILD[msgType] == true
+end
+
 -- To the officers only, over the game's OFFICER addon channel: a member's client never gets the bytes (issue #427).
 -- False, and nothing sent, on a client without that channel (Compat.OfficerAddonChannel).
 function CommSystem:SendToOfficers(msgType, data, priority, kind)
-    local channel = GuildOS.Compat.OfficerAddonChannel()
+    local channel = self:OfficerChannel()
     if not channel then return false end
     self:SendMessage(msgType, data, nil, priority, kind, channel)
     return true
@@ -388,8 +415,10 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             GuildOS.Wishlist:HandleLootPriosBroadcast(sender, data)
         end
     elseif msgType == "ON" then
-        -- Only an officer writes officer notes, and only an officer keeps them (issue #78).
-        if GuildOS.OfficerNotes and GuildOS:IsOfficer() and channel == "GUILD" and GuildOS:IsOfficerByName(sender) then
+        -- Only an officer writes officer notes, and only an officer keeps them (issue #78). Over OFFICER, or over
+        -- GUILD from a client before #430 (OFFICER_TYPES_LEGACY_GUILD); never a whisper.
+        if GuildOS.OfficerNotes and GuildOS:IsOfficer() and self:OfficerTypeChannelOk(msgType, channel)
+            and GuildOS:IsOfficerByName(sender) then
             GuildOS.OfficerNotes:HandleIncoming(data)
         end
     elseif msgType == "RC" then
@@ -437,7 +466,9 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             GuildOS.RaidTracker:HandleDeleteIncoming(data)
         end
     elseif msgType == CommSystem.MSG_TYPES.NOTES_ALL then
-        if GuildOS:IsOfficer() and channel == "GUILD" and GuildOS:IsOfficerByName(sender) and GuildOS.OfficerNotes then
+        -- Over OFFICER only (#430).
+        if GuildOS:IsOfficer() and self:OfficerTypeChannelOk(msgType, channel) and GuildOS:IsOfficerByName(sender)
+            and GuildOS.OfficerNotes then
             GuildOS.OfficerNotes:HandleAllIncoming(data)
         end
     elseif msgType == CommSystem.MSG_TYPES.SYNC_V2 then

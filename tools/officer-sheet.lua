@@ -11,7 +11,9 @@
 --   * the officers' marks (Modules/MemberMarks.lua, #429) the same: OFFICER only, refused from GUILD, kept
 --     with their writer without that channel;
 --   * an officer who logs in later gets it from the spaced backfill;
---   * "ON" and "OA" read as before, and "OA" never carries a sheet;
+--   * the dated notes "ON" and "OA" the same (#430): OFFICER only, a member's client gets no envelope of a note,
+--     kept here without that channel; an old officer's "ON" over GUILD is still read, an "OA" there is not;
+--     "OA" never carries a sheet;
 --   * the card: a main with three alts names the three in class colour with the online ones marked,
 --     officers see the sheet and the notes, members do not, and a hover never reads the roster.
 --
@@ -277,29 +279,66 @@ check(#wire == 0 and #afters == 0, "and nothing is sent, nor any backfill")
 check(as("OffA", function() return ON:GetSheet(K("OffC")).text end) == "local only", "it stays on that client")
 GuildOS.Compat.OfficerAddonChannel = realChan
 
--- ── 5. "ON" and "OA" as before; "OA" never carries a sheet ──────────────
+-- ── 5. "ON" and "OA" over OFFICER only (#430); "OA" never carries a sheet ──
 local LS = LibStub("GuildOS-LibSerialize")
-as("OffA", function() ON:AddNote(MAIN, "Dated note") end)
-check(#wire >= 1, "a dated note still goes out")
-flush()
-check(as("OffB", function() return ON:GetNotes(MAIN)[1].text end) == "Dated note", "\"ON\" reads as before")
--- A client before #427 sends ON with { target, note }: read the same.
-local oldOn = LS:Serialize({ target = MAIN, note = { text = "Old client note", author = "OffC", timestamp = now - 5 } })
-as("OffB", function() CS.SendMessage(CS, "ON", oldOn) end)
-flush()
+local LD = LibStub("LibDeflate")
 local function hasNote(who, t)
   for _, n in ipairs(as(who, function() return ON:GetNotes(MAIN) end)) do if n.text == t then return true end end
   return false
 end
-check(hasNote("OffA", "Old client note") and not hasNote("Mem", "Old client note"), "a note from an old client is read, by officers only")
+-- What a client before #430 puts on the wire: the message over GUILD (or a whisper), as SendMessage did then.
+local function oldClientSends(from, msgType, data, channel, target)
+  local enc = LD:EncodeForWoWAddonChannel(LD:CompressDeflate(msgType .. ":" .. data))
+  check(#enc <= 250, "the old client's test message is one chunk")
+  wire[#wire + 1] = { msg = "S:" .. enc, channel = channel or "GUILD", from = from, target = target }
+end
+memberGot = {}
+wire = {}
+as("OffA", function() ON:AddNote(MAIN, "Dated note") end)
+check(#wire >= 1, "a dated note still goes out")
+local noteChannels = {}
+for _, m in ipairs(wire) do noteChannels[m.channel] = true end
+check(noteChannels.OFFICER and not noteChannels.GUILD and not noteChannels.WHISPER, "\"ON\" goes over OFFICER only")
+flush()
+check(as("OffB", function() return ON:GetNotes(MAIN)[1].text end) == "Dated note", "\"ON\" reaches the other officers")
 local sentOA
 local realSend = CS.SendMessage
-CS.SendMessage = function(self, t, data, ...) if t == "OA" then sentOA = data end return realSend(self, t, data, ...) end
+CS.SendMessage = function(self, t, data, target, prio, kind, channel)
+  if t == "OA" then sentOA = data; noteChannels.OA = target and "WHISPER" or channel end
+  return realSend(self, t, data, target, prio, kind, channel)
+end
 as("OffA", function() ON:BroadcastAllNotes() end)
 CS.SendMessage = realSend
 local okOA, oa = LS:Deserialize(sentOA)
 check(okOA and oa[MAIN] and oa[MAIN].notes and oa[MAIN].sheet == nil, "\"OA\" carries the notes and no sheet")
+check(noteChannels.OA == "OFFICER", "\"OA\" goes over OFFICER only")
 flush()
+check(next(memberGot) == nil, "the member's client got no envelope of a note at all, on any channel")
+check(clients.Mem.db.officerNotes[MAIN] == nil, "and keeps no note")
+-- Even a caller that asks for GUILD or a whisper sends nothing of a note.
+wire = {}
+as("OffA", function() CS:SendMessage("ON", sentOA); CS:SendMessage("OA", sentOA, "OffB-Realm"); CS:SendMessage("OA", sentOA, nil, nil, nil, "GUILD") end)
+check(#wire == 0, "\"ON\"/\"OA\" never leave by GUILD or a whisper")
+-- A client before #430 sends "ON" { target, note } over GUILD: read during the transition, by officers only.
+local oldOn = LS:Serialize({ target = MAIN, note = { text = "Old client note", author = "OffB", timestamp = now - 5 } })
+oldClientSends("OffB", "ON", oldOn)
+flush()
+check(hasNote("OffA", "Old client note") and not hasNote("Mem", "Old client note"), "an old officer's note over GUILD is read, by officers only")
+-- A member's "ON" over GUILD, an officer's over a whisper, and an "OA" over GUILD are refused.
+oldClientSends("Mem", "ON", LS:Serialize({ target = MAIN, note = { text = "Member forged", author = "Mem", timestamp = now - 4 } }))
+oldClientSends("OffB", "ON", LS:Serialize({ target = MAIN, note = { text = "Whispered", author = "OffB", timestamp = now - 3 } }),
+  "WHISPER", "OffA")
+oldClientSends("OffC", "OA", LS:Serialize({ [MAIN] = { notes = { { text = "Old bulk", author = "OffC", timestamp = now - 2 } }, tags = {} } }))
+flush()
+check(not hasNote("OffA", "Member forged") and not hasNote("OffA", "Whispered") and not hasNote("OffA", "Old bulk"),
+  "a member's note, a whispered one and an \"OA\" over GUILD are refused")
+-- Without the OFFICER channel the note stays here, and nothing is sent.
+GuildOS.Compat.OfficerAddonChannel = function() return nil, "no-channel" end
+wire = {}
+check(as("OffA", function() return ON:AddNote(MAIN, "Local note") end), "without OFFICER a note is still saved")
+as("OffA", function() ON:BroadcastAllNotes() end)
+check(#wire == 0 and hasNote("OffA", "Local note"), "kept here, nothing sent")
+GuildOS.Compat.OfficerAddonChannel = realChan
 local forged = LS:Serialize({ [MAIN] = { notes = {}, tags = {}, sheet = { text = "from OA", rev = now + 9999 } } })
 as("OffC", function() ON:HandleAllIncoming(forged) end)
 check(as("OffC", function() return ON:GetSheet(MAIN).text end) == "B's newer text", "a sheet inside \"OA\" is never taken")
@@ -333,10 +372,10 @@ local data = { key = MAIN, officerNote = "game note" }
 local offCard, reads = card("OffA", data)
 check(reads == 0, "a hover never reads the roster")
 check(offCard:find("Officer sheet", 1, true) and offCard:find("B's newer text", 1, true), "an officer's card starts the sheet")
-check(offCard:find("Dated note", 1, true) and offCard:find("Officer note: game note", 1, true), "and shows the notes and the game's officer note")
+check(offCard:find("Local note", 1, true) and offCard:find("Officer note: game note", 1, true), "and shows the notes and the game's officer note")
 check(offCard:find("AltX", 1, true), "and the alts")
 local memCard = card("Mem", data)
-check(memCard:find("AltX", 1, true) and not memCard:find("Officer sheet", 1, true) and not memCard:find("Dated note", 1, true)
+check(memCard:find("AltX", 1, true) and not memCard:find("Officer sheet", 1, true) and not memCard:find("Local note", 1, true)
   and not memCard:find("game note", 1, true), "a member's card shows the alts and nothing of the officers'")
 -- The birthday hook (#428): only when the module is there.
 GuildOS.Birthdays = { TooltipLine = function(_, key) return key == MAIN and "Birthday: 12/03" or nil end }
@@ -398,10 +437,12 @@ check(chan == nil and why == "no-permission", "no officer channel for a rank tha
 wire = {}
 check(as("OffA", function() return ON:SetSheet(MAIN, "muted officer") end), "the sheet is still saved")
 check(as("OffA", function() return MM:SetNick(MAIN, "Muted") end), "and a nickname")
+check(as("OffA", function() return ON:AddNote(MAIN, "Muted note") end) and hasNote("OffA", "Muted note"), "and a dated note (#430)")
+as("OffA", function() ON:BroadcastAllNotes() end)
 check(#wire == 0, "nothing is sent into an officer chat the rank cannot speak in")
 local warned = 0
 for _, m in ipairs(said) do if tostring(m):find("cannot speak in officer chat", 1, true) then warned = warned + 1 end end
-check(warned == 1, "the officer is told once, not at every write (" .. warned .. ")")
+check(warned == 1, "the officer is told once, not at every write, sheet, marks or notes alike (" .. warned .. ")")
 speaks[2] = true
 use("OffA")
 check(GuildOS.Compat.OfficerAddonChannel() == "OFFICER", "a rank that may speak there gets the channel")

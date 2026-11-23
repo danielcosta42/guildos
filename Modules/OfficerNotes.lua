@@ -3,8 +3,10 @@
 -- Private notes per member, synced between officers via comm system
 --
 -- Two things per member, both officers only:
---   * the dated notes (`notes`), a list each officer adds to, synced as "ON" (one) and "OA" (all), as
---     before: a client before #427 reads them the same;
+--   * the dated notes (`notes`) and tags, a list each officer adds to, synced as "ON" (one) and "OA" (all),
+--     only over the game's OFFICER addon channel (CommSystem:SendToOfficers, issue #430), as the sheet below: a
+--     member's client never gets the bytes; without that channel they stay on this client. A client before
+--     #430 still sends "ON" over GUILD; read during the transition (CommSystem.OFFICER_TYPES_LEGACY_GUILD);
 --   * the member's sheet (`sheet`, issue #427): one long text (up to SHEET_MAX characters, several
 --     lines) any officer edits, `{ text, author, ts, rev }`. Synced per member over the SyncService's
 --     officer domain "osheet", carried only by the game's OFFICER addon channel, so a member's client never
@@ -120,11 +122,11 @@ function OfficerNotes:BroadcastNote(playerKey, noteEntry)
         note = noteEntry,
     }
     local serialized = LibSerialize:Serialize(data)
-    GuildOS.CommSystem:SendMessage("ON", serialized)
+    GuildOS.CommSystem:SendToOfficers("ON", serialized)   -- nothing sent without OFFICER: the note stays here (#430)
 end
 
 -- Reached only through CommSystem:OnMessageReceived, which has checked the sender is an officer
--- and the channel GUILD (issue #78). Any other caller must check the same.
+-- and the channel OFFICER, or GUILD from a client before #430 (issues #78, #430). Any other caller must check the same.
 function OfficerNotes:HandleIncoming(data)
     if not GuildOS:IsOfficer() then return end
 
@@ -164,12 +166,12 @@ function OfficerNotes:BroadcastAllNotes()
         if type(v) == "table" then out[k] = { notes = v.notes, tags = v.tags } end
     end
     local serialized = LibSerialize:Serialize(out)
-    GuildOS.CommSystem:SendMessage("OA", serialized)
+    GuildOS.CommSystem:SendToOfficers("OA", serialized)   -- OFFICER only; none: kept here (#430)
 end
 
 -- Handle incoming bulk officer notes
 -- Reached only through CommSystem:OnMessageReceived, which has checked the sender is an officer
--- and the channel GUILD (issue #78). Any other caller must check the same.
+-- and the channel OFFICER (issues #78, #430). Any other caller must check the same.
 function OfficerNotes:HandleAllIncoming(data)
     if not GuildOS:IsOfficer() then return end
 
@@ -333,7 +335,7 @@ function OfficerNotes:ApplySheets(list, sender)
     return applied
 end
 
--- From an officer over GUILD (SyncService checked it). A member's client keeps nothing.
+-- From an officer over OFFICER (SyncService checked it). A member's client keeps nothing.
 function OfficerNotes:OnSheetSync(env, sender)
     if not GuildOS:IsOfficer() then return end
     if type(env) ~= "table" or env.act ~= "set" or type(env.data) ~= "table" then return end

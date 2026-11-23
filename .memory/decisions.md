@@ -1922,7 +1922,8 @@ everything. Until now cores reached the game only through the companion's `Inbox
   an emptied sheet is an empty text, so an older one never comes back. A member's client drops it.
 - **Backfill:** every sheet at its stored revision on the answer to a sync request, at most once per 10
   minutes per officer, and on `/gos sync`; 2 per envelope, 3 s apart, one backfill at a time (#324).
-- **"OA" sends notes and tags only**, and takes nothing else in; "ON" is unchanged.
+- **"OA" sends notes and tags only**, and takes nothing else in; "ON" is unchanged. (Both moved to OFFICER in #430,
+  ADR-0045.)
 - **The hover card** reads an index the roster builds once per refresh (`RosterCard.NewIndex/IndexRow`:
   alt links both ways, each roster line's name, class and online), never the roster itself.
 
@@ -1981,3 +1982,32 @@ everything. Until now cores reached the game only through the companion's `Inbox
   #427): a member's client never gets the nicknames or the safe list. (−) On WoW: Forever, until that channel is
   checked there, they stay on the client of the officer who wrote them.
 - (−) An imported day stays on the client that imported it; another officer imports it on their own.
+
+## ADR-0045 — The officers' dated notes ("ON"/"OA") over the OFFICER addon channel only (#430)
+
+### Context
+- The sheet (#427, ADR-0042) and the marks (#429, ADR-0044) already travel only over the game's OFFICER addon
+  channel. The older dated notes and tags still went over GUILD as CommSystem messages "ON" (one note) and "OA"
+  (all notes and tags): a member's client dropped them, but got the bytes, as any addon or log there could.
+- They are CommSystem message types, not SyncService domains, so `SyncService.OFFICER_CHANNEL_DOMAINS` does not
+  cover them.
+
+### Decision
+- **`CommSystem.OFFICER_TYPES = { ON, OA }`**, the same rule for message types: sent only by
+  `CommSystem:SendToOfficers`; `CommSystem:SendMessage` refuses them over GUILD or a whisper, whoever calls.
+- **No channel, or a rank that may not speak in officer chat:** nothing is sent, the note stays on this client,
+  and the officer is told once a session. The warning is `CommSystem:OfficerChannel()`, shared by the
+  SyncService's officer domains and these types: one warning a session, whatever wrote.
+- **Received:** over OFFICER, from an officer (`IsOfficerByName`), on an officer's client. Never over a whisper.
+- **Transition (`CommSystem.OFFICER_TYPES_LEGACY_GUILD = { ON }`):** "ON" over GUILD from an officer is still read,
+  so a note an officer on a client before #430 writes is not lost; this client never sends one there. Reading it
+  adds no exposure: the old client has already put the bytes on GUILD. "OA" over GUILD is not read: it is the
+  whole table, the largest message, and the bulk that should leave GUILD first; a new officer gets the bulk from
+  the other new officers over OFFICER. Remove the GUILD "ON" in the next version.
+
+### Consequences
+- (+) A member's client on a new version never gets a byte of a note from a new client.
+- (−) During the transition: a note a new client writes does not reach an officer still on an old client (it
+  reads GUILD only), and an old client's "OA" does not reach a new one (only its live "ON" notes do).
+- (−) On WoW: Forever, until the OFFICER channel is checked there, the notes stay on the client that wrote them
+  (they synced over GUILD before), as the sheet and the marks.

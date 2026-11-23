@@ -84,13 +84,29 @@ local function receive(msgType, data, sender, channel)
 end
 
 -- ── 1. The officer modules' messages ────────────────────────────────────
-for _, t in ipairs({ "LP", "ON", "OA", "TR", "RD" }) do
+-- The officers' notes ("ON", "OA") come over OFFICER (#430): see below.
+for _, t in ipairs({ "LP", "TR", "RD" }) do
   got[t] = nil
   receive(t, "payload", MEMBER)
   check(got[t] == nil, t .. " from a member is dropped")
   receive(t, "payload", OFFICER)
   check(got[t] == 1, t .. " from an officer is handled")
 end
+
+-- The officers' notes over the OFFICER addon channel only (#430): an officer's there; a member's never. Over
+-- GUILD, "ON" from an officer on a client before #430 is still read (transition); "OA" is not.
+for _, t in ipairs({ "ON", "OA" }) do
+  got[t] = nil
+  receive(t, "payload", MEMBER, "OFFICER")
+  receive(t, "payload", MEMBER)
+  check(got[t] == nil, t .. " from a member is dropped, over OFFICER or GUILD")
+  receive(t, "payload", OFFICER, "OFFICER")
+  check(got[t] == 1, t .. " from an officer over OFFICER is handled")
+end
+receive("ON", "payload", OFFICER)
+check(got.ON == 2, "ON from an officer over GUILD (a client before #430) is still handled")
+receive("OA", "payload", OFFICER)
+check(got.OA == 1, "OA over GUILD is dropped, even from an officer")
 
 -- Over any other channel, even from an officer's name: IsOfficerByName drops the realm, so a
 -- namesake elsewhere could otherwise whisper, or speak in a battleground, as the officer.
