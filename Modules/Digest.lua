@@ -285,6 +285,13 @@ end
 function Digest:ShowOnLogin()
     if not GuildOS.db.digest or not GuildOS.db.digest.enabled then return end
     if self.shownThisSession then return end
+    -- A raid owner's prompt took this login (issue #400): one popup at a time, and the raid about to start is the
+    -- one that cannot wait. Nothing is marked seen: the digest shows once the prompt is put off (Later or its close,
+    -- RaidStart:PromptDismissed), and after Raid ready waits for the next login, or /gos digest.
+    if GuildOS.RaidStart and GuildOS.RaidStart:PromptedAtLogin() then
+        self.deferred = true
+        return
+    end
 
     local since = GuildOS.db.digest.lastSeen or 0
     -- First ever run: nothing to compare against — just start the clock.

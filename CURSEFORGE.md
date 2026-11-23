@@ -101,7 +101,7 @@ The same window on retail, made for how retail works:
 - **Midnight's professions**, Jewelcrafting and Inscription included: who in the guild crafts what.
 - **All thirteen classes** in the roster, raid composition, recruitment and the recruit beacon.
 - **guildos.me and its Discord raid signups**, with the raid's difficulty: the roster and the nights go out, the
-  planned roster comes back for *Invite all*, connected-realm guildmates included.
+  planned roster comes back for *Start raid*, connected-realm guildmates included.
 - **Loot history from personal loot.** What each guildmate received from every boss of a tracked raid, on the roster,
   the Loot tab with its equity, the exports and guildos.me.
 - **Consumables before the pull.** The ready check reads Midnight's flask, food and augment rune across the raid, and
@@ -208,7 +208,11 @@ Optional, and off until you turn it on in the **Web** tab. The addon works the s
 
 - **Discord raid signups that know who is signing**: item level, spec and attendance come with each one
 - **Plan on the site, run it in game**: with publishing on, the planned roster arrives at your next login or
-  `/reload`, and the Web tab has *Invite* and a button that moves everyone into their groups
+  `/reload`, and *Start raid* on the Web tab invites it and moves everyone into their groups, one click a step
+  (also on the Now tab, and `/gos raid start`)
+- **The raid's owner is asked before it starts**: whoever booked the raid on the site, or leads its core, gets a
+  prompt with the same *Start raid* button on logging in from half an hour before it, or a quarter of an hour before
+  it while playing
 - **Your guild on the web**: roster, loot and attendance for your members, a recruiting page for everyone else, and
   each character with their gear, drawn as they look in game (on Forever, visit a barber once so the addon can see
   it)

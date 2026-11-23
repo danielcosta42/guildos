@@ -393,7 +393,7 @@ L["The roster string is damaged. Copy it again."] = "La stringa dell'elenco è d
 L["That roster has nobody in it."] = "Quell'elenco è vuoto."
 L["Import a roster first."] = "Prima importa un elenco."
 L["You need to be in a raid to organise groups."] = "Devi essere in un'incursione per organizzare i gruppi."
-L["Only the raid leader can organise groups."] = "Solo il capoincursione può organizzare i gruppi."
+L["Only the raid leader or an assistant can organise groups."] = "Solo il capoincursione o un assistente può organizzare i gruppi."
 L["Roster from the website: %d signed up."] = "Elenco dal sito: %d iscritti."
 
 -- Modules/ConsumableChecker.lua
@@ -3449,6 +3449,30 @@ L["from %s · you accepted"] = "da %s · l'hai accettato"
 L["skill %d"] = "livello %d"
 L["trade and mail in one click"] = "scambio e posta in un clic"
 L["you craft"] = "lo fai tu"
+
+-- Avviare l'incursione, un clic per passo (issue #400)
+L["Only the group's leader or an assistant can invite."] = "Solo il capogruppo o un assistente può invitare."
+L["No raid from the site starts around this time."] = "Nessuna incursione del sito inizia in questo momento."
+L["Waiting for the invited to answer."] = "In attesa della risposta degli invitati."
+L["The party is full. Turn it into a raid first."] = "Il gruppo è pieno. Convertilo prima in un'incursione."
+L["Invite (%d)"] = "Invita (%d)"
+L["Convert to raid (%d to invite)"] = "Converti in incursione (%d da invitare)"
+L["Invite the rest (%d)"] = "Invita il resto (%d)"
+L["Arrange groups (%d out of place)"] = "Organizza i gruppi (%d fuori posto)"
+L["Raid ready"] = "Incursione pronta"
+L["Start raid"] = "Avvia incursione"
+L["The group is a raid now. Click again to invite the rest."] = "Il gruppo ora è un'incursione. Clicca di nuovo per invitare il resto."
+L["The game did not turn the group into a raid."] = "Il gioco non ha convertito il gruppo in incursione."
+L["Offline, not invited: %s"] = "Offline, non invitati: %s"
+
+-- L'avviso al proprietario, la gilda dell'incursione, /gos raid start (issue #400)
+L["That roster is a raid of the guild %s: the raid buttons act on it, and it stays off this guild's calendar."] = "Quell'elenco è un'incursione della gilda %s: i pulsanti dell'incursione agiscono su di essa, e resta fuori dal calendario di questa gilda."
+L["Starts in %d min"] = "Inizia tra %d min"
+L["Starts now"] = "Inizia ora"
+L["Started %d min ago"] = "Iniziata %d min fa"
+L["Start the website's raid: invite and arrange, one step a click"] = "Avvia l'incursione del sito: invita e organizza, un passo per clic"
+L["The website's raids are for the guild %s, not %s."] = "Le incursioni del sito sono della gilda %s, non di %s."
+L["The website's raids are for the guild %s, and this character is in none."] = "Le incursioni del sito sono della gilda %s, e questo personaggio non è in nessuna."
 
 -- Modules/Discipline.lua, UI/MemberDetail.lua, Core/Commands.lua (the disciplinary record, #402)
 L["RECORD  --  step %d  (%d days term)"] = "FASCICOLO  --  livello %d  (termine di %d giorni)"

@@ -386,6 +386,7 @@ local OFFICER_START = {
 }
 
 local OFFICER_START_DELAY = 5  -- seconds; the guild rank is not known at PLAYER_LOGIN
+local RAID_PROMPT_DELAY = 4    -- seconds from the inbox read to the raid owner's prompt; the login digest comes at 9
 local OFFICER_START_TRIES = 12 -- asks, OFFICER_START_DELAY apart, before giving up on the rank
 
 -- The rank IsOfficer reads, or no guild at all: either way there is an answer to act on.
@@ -427,6 +428,11 @@ function GuildOS:InitModules()
     -- raid from it when the session starts. Its calendar half waits for the rank, below (#146).
     if GuildOS.CompanionImport and GuildOS.CompanionImport.ReadInbox then
         GuildOS.CompanionImport:ReadInbox()
+    end
+    -- The owner of a raid about to start is asked, once the inbox is read (issue #400): a moment later, so the guild
+    -- roster asked for below is in for the button, and before the digest, which gives way to it.
+    if GuildOS.RaidStart and GuildOS.RaidStart.OnLogin then
+        GuildOS.Compat.After(RAID_PROMPT_DELAY, function() GuildOS:SafeCall(GuildOS.RaidStart.OnLogin, GuildOS.RaidStart) end)
     end
 
     for _, entry in ipairs(MODULE_START) do

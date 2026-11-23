@@ -60,6 +60,9 @@ local function printHelp()
         or L["Export roster or attendance"])   -- the loot history is on retail too since issue #183
     if GuildOS.Companion then helpLine("/gos web [on|off]", L["Copy your guild into the web companion"]) end
     if GuildOS.CompanionImport then helpLine("/gos roster", L["Bring the raid roster in from the website"]) end
+    if GuildOS.RaidStart then   -- issue #400: the Iniciar raide button's next step
+        helpLine("/gos raid start", L["Start the website's raid: invite and arrange, one step a click"])
+    end
 
     helpHeader(L["Personal"])
     helpLine("/gos avail",         L["List yourself as available for a group"])
@@ -497,15 +500,18 @@ local function handleCommand(msg)
             GuildOS:ShowWebString()
         end
     elseif msg:match("^roster") then
-        -- /guildos roster [invite|groups|trim] — the roster the website planned.
+        -- /guildos roster [invite|groups|trim] — the roster the website planned: the raid of the window when
+        -- there is one (issue #400), as the Web tab's buttons.
         local I = GuildOS.CompanionImport
         local sub = I and msg:match("^roster%s+(%S+)")
         if not I then
             GuildOS:Print(L["|cffFF4444Export failed:|r "] .. "CompanionImport")
         elseif sub == "invite" then
-            local n, skipped, err = I:InviteAll()
+            local n, here, err, offline = I:InviteAll()
             if err then GuildOS:Print(err)
-            else GuildOS:Print(string.format(L["Invited %d, already here %d."], n, skipped)) end
+            else GuildOS:Print(string.format(L["Invited %d, already here %d."], n, here)) end
+            local off = I.OfflineLine(offline)
+            if off then GuildOS:Print(off) end
         elseif sub == "groups" then
             local moved, err = I:OrganizeGroups()
             if err then GuildOS:Print(err)
@@ -519,6 +525,13 @@ local function handleCommand(msg)
         else
             GuildOS:ShowImportPopup()
         end
+    elseif msg == "raid start" then
+        -- /guildos raid start — one step of the Iniciar raide button, as its click (issue #400): typed, it is a key
+        -- press, which WoW: Forever lets an invite out of. On the raid near now (ButtonRaid: the site's, or one pasted
+        -- by hand), never a kept raid days away; with none, it says no raid starts around this time. The line it
+        -- prints starts with the raid's name.
+        local I, RS = GuildOS.CompanionImport, GuildOS.RaidStart
+        if I and RS then RS:Click(I:ButtonRaid(), true) end
     elseif msg == "exportatt" or msg == "exportattendance" then
         if GuildOS.RaidTracker then
             local json, err = GuildOS.RaidTracker:ExportForTMB()

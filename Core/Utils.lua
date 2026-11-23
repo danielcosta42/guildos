@@ -760,6 +760,40 @@ function GuildOS:CutBytes(s, maxBytes)
     return utf8Backoff(s:sub(1, maxBytes))
 end
 
+-- `s` in lower case past ASCII (issue #400): the site holds a guild's name to the game's with JavaScript's
+-- toLowerCase, which lowers every letter, and string.lower lowers A-Z alone, so "ÉBANO" or "ОРДЕН" would never be the
+-- site's "ébano" or "орден" here. Latin-1's capitals (À to Þ, not the ×) and Cyrillic's (Ѐ to Я) are lowered too, in
+-- UTF-8: the cased letters of the game's languages but Latin Extended's few (Œ, Ł) and Greek.
+local LATIN1_TIMES = 151   -- the second byte of "×" (U+00D7), among Latin-1's capitals and not a letter
+function GuildOS.FoldCase(s)
+    s = tostring(s or ""):lower()
+    s = s:gsub("\195([\128-\158])", function(c)
+        local b = c:byte()
+        if b ~= LATIN1_TIMES then return "\195" .. string.char(b + 32) end
+    end)
+    return (s:gsub("\208([\128-\175])", function(c)
+        local b = c:byte()
+        if b >= 144 and b <= 159 then return "\208" .. string.char(b + 32) end   -- А-П -> а-п
+        if b >= 160 then return "\209" .. string.char(b - 32) end                 -- Р-Я -> р-я
+        return "\209" .. string.char(b + 16)                                       -- Ѐ-Џ -> ѐ-џ
+    end))
+end
+
+--- A guild's name as the game shows it, made the way the site makes it (guildos-web's bareGuildName): trimmed, and
+--- a pair of angle brackets around the whole name taken off ("<Sons of Lothar>"), unless nothing would be left.
+function GuildOS.BareGuildName(name)
+    local t = strtrim(tostring(name or ""))
+    local inner = t:match("^<%s*(.-)%s*>$")
+    return (inner and inner ~= "") and inner or t
+end
+
+--- Whether two names are one guild's, as the site takes them (guildos-web's sameGuildName): the brackets aside, and
+--- capitals aside past ASCII (FoldCase). An accent is another letter.
+function GuildOS.SameGuildName(a, b)
+    if type(a) ~= "string" or type(b) ~= "string" then return false end
+    return GuildOS.FoldCase(GuildOS.BareGuildName(a)) == GuildOS.FoldCase(GuildOS.BareGuildName(b))
+end
+
 function GuildOS:SanitizeUserText(text, maxBytes)
     local s = (tostring(text or ""):gsub("|", ""):gsub("%c", " "):gsub("%s+", " "))
     s = strtrim(s)

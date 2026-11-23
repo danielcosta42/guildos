@@ -108,6 +108,8 @@ Probe.APIS = {
     -- Retail (issue #185): the loot council by trade, a personal item's trade window on its tooltip.
     "C_TooltipInfo.GetBagItem", "GetTradePlayerItemLink", "Enum.TooltipDataLineType", "ERR_TRADE_COMPLETE",
     "INT_SPELL_DURATION_HOURS", "INT_SPELL_DURATION_MIN",
+    -- Starting the raid (issue #400): the party turned into a raid, and two raid members trading groups.
+    "C_PartyInfo.ConvertToRaid", "ConvertToRaid", "SwapRaidSubgroup",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.

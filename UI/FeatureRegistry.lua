@@ -189,23 +189,27 @@ function UI:_RegisterFeatureTests()
             return true
         end)
 
-        S:Register("companion.can_invite_needs_roster", function()
+        -- No roster at all: neither the kept one nor this session's inbox, both of which the active
+        -- roster reads (issue #400). Put back as they were whatever `fn` answers.
+        local function withNoRoster(fn)
             local I = GuildOS.CompanionImport
-            local saved = GuildOS.db.companionRoster
-            GuildOS.db.companionRoster = nil
-            local ok, reason = I:CanInvite()
-            GuildOS.db.companionRoster = saved
+            local kept, inbox = GuildOS.db.companionRoster, I._webRaids
+            GuildOS.db.companionRoster, I._webRaids = nil, nil
+            local ok, a, b, c = pcall(fn, I)
+            GuildOS.db.companionRoster, I._webRaids = kept, inbox
+            if not ok then error(a, 0) end
+            return a, b, c
+        end
+
+        S:Register("companion.can_invite_needs_roster", function()
+            local ok, reason = withNoRoster(function(I) return I:CanInvite() end)
             if ok then return false, "allowed inviting with no roster loaded" end
             if not reason or reason == "" then return false, "refused without saying why" end
             return true
         end)
 
         S:Register("companion.can_organize_needs_roster", function()
-            local I = GuildOS.CompanionImport
-            local saved = GuildOS.db.companionRoster
-            GuildOS.db.companionRoster = nil
-            local ok, reason = I:CanOrganize()
-            GuildOS.db.companionRoster = saved
+            local ok, reason = withNoRoster(function(I) return I:CanOrganize() end)
             if ok then return false, "allowed organising with no roster loaded" end
             if not reason or reason == "" then return false, "refused without saying why" end
             return true
@@ -227,12 +231,11 @@ function UI:_RegisterFeatureTests()
         -- InviteAll must not re-implement its own gate: it has to answer with
         -- exactly what the predicate said, or the button and the command disagree.
         S:Register("companion.action_agrees_with_predicate", function()
-            local I = GuildOS.CompanionImport
-            local saved = GuildOS.db.companionRoster
-            GuildOS.db.companionRoster = nil
-            local ok, want = I:CanInvite()
-            local _, _, got = I:InviteAll()
-            GuildOS.db.companionRoster = saved
+            local ok, want, got = withNoRoster(function(I)
+                local can, why = I:CanInvite()
+                local _, _, said = I:InviteAll()
+                return can, why, said
+            end)
             if ok then return false, "expected the no-roster case to refuse" end
             if got ~= want then
                 return false, string.format("InviteAll said [%s], predicate said [%s]",
