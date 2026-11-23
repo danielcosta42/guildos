@@ -342,6 +342,39 @@ for _, m in ipairs(sent) do
 end
 check(adds > 0 and hists == 2, "the log's tail and the two records")
 
+-- The log's quotas (issue #425): this client's own lines (a level, a note, a return) make room among themselves,
+-- never by pushing out the guild's events; and the backfill picks the last BACKFILL_N of what it may send.
+local logStore = {}
+for i = 1, 10 do RL:_Insert({ action = "join", target = "J" .. i, timestamp = 1000 + i * 10 }, logStore) end
+for i = 1, RL.LOCAL_CAP + 50 do
+  RL:_Insert({ action = "level", target = "L" .. i, detail = "1 > 2", timestamp = 2000 + i * 10, loc = true }, logStore)
+end
+local function tally(list)
+  local real, loc = 0, 0
+  for _, e in ipairs(list) do if e.loc then loc = loc + 1 else real = real + 1 end end
+  return real, loc
+end
+local real, loc = tally(logStore)
+check(real == 10 and loc == RL.LOCAL_CAP, "level-ups past their quota push out the oldest level-ups, not the joins")
+check(logStore[1].target == "J1" and logStore[11].target == "L51", "the oldest of this client's lines went first")
+for i = 1, RL.CAP do RL:_Insert({ action = "kick", target = "K" .. i, author = "Off", timestamp = 9000000 + i * 10 }, logStore) end
+real, loc = tally(logStore)
+check(real == RL.CAP and loc == RL.LOCAL_CAP, "the guild's events have their own CAP and leave the local lines be")
+local events = GuildOS.db.rosterLog.events
+local realBefore = tally(events)
+for i = 1, RL.BACKFILL_N + 5 do
+  RL:_Insert({ action = "note", target = "N" .. i, detail = "x", timestamp = now + i * 10, loc = true })
+end
+sent = {}
+RL:Backfill()
+adds = 0
+for _, m in ipairs(sent) do
+  local env = store[m.data]
+  if env and env.act == "add" then adds = adds + 1 end
+end
+check(realBefore > 0 and adds == math.min(RL.BACKFILL_N, realBefore),
+  "a tail of local lines does not leave the backfill empty: " .. adds .. " of " .. realBefore .. " sent")
+
 -- ── 7. The export, the API, the Pug Inspector ─────────────────────────────
 local text = GuildOS.Exporter:Build("former", "csv")
 check(text and text:find("^Name,FirstJoined,LastLeft,How,By,Stints,TotalDays,Estimated\n"), "former: English headers")

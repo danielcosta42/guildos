@@ -22,7 +22,10 @@ dropped when somebody leaves, and no client gives a guild join date. ADR-0039.
    it; in the alliance-ban dialog when that one holds it), at the join line, and at a whisper (once a session).
 5. **The log** gains: Rejoined (a join with `rejoin`), Gone, Level (milestones by default: every 10 and the cap;
    all or off with the button), Note, Officer note, Back (after 30+ days offline). A search box filters by
-   member, officer, detail or the action's word. The diff's lines stay on this client.
+   member, officer, detail or the action's word. The diff's lines stay on this client, in a quota of their
+   own (`LOCAL_CAP = 500`, beside the log's `CAP = 1000` for the guild's events): a round of note dates or
+   many level-ups push out only older diff lines, never a join or a kick; and the backfill picks its last
+   25 among the events it may send.
 6. **Export** (`/gos export log|former [csv|tsv|discord]`, and the export chooser), officers only:
    `log` = Date, Action, Member, Detail, By; `former` = Name, FirstJoined, LastLeft, How, By, Stints,
    TotalDays, Estimated.
