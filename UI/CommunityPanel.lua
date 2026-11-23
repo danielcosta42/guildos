@@ -87,13 +87,19 @@ local function BuildBulletinSub(panel)
         -- One field, so one label beside it, then its button (#371).
         local label = UI:CreateText(panel, L["Notice:"], 12)
         local postBtn = UI:CreateButton(panel, L["Post"], 84, FIELD_H)
+        -- How long the notice lasts (issue #418): some days, or until an officer removes it.
+        local lasts = UI:CreateDropdown(panel, 120, FIELD_H)
+        lasts:SetOptions(GuildOS.Bulletin and GuildOS.Bulletin:DurationOptions() or {})
+        lasts:SetValue(0)
+        panel.lasts = lasts
         box = UI:CreateInput(panel, 0, FIELD_H, { max = 200 })
         box:SetPoint("TOPLEFT", math.ceil(label:GetStringWidth() or 0) + GAP, -GAP)
-        box:SetPoint("TOPRIGHT", -(GAP + UI.ReserveFor(postBtn, GAP)), -GAP)
+        box:SetPoint("TOPRIGHT", -(GAP + UI.ReserveFor(postBtn, GAP) + UI.ReserveFor(lasts, GAP)), -GAP)
         label:SetPoint("RIGHT", box, "LEFT", -GAP, 0)
-        postBtn:SetPoint("LEFT", box, "RIGHT", GAP, 0)
+        lasts:SetPoint("LEFT", box, "RIGHT", GAP, 0)
+        postBtn:SetPoint("LEFT", lasts, "RIGHT", GAP, 0)
         local function doPost()
-            if GuildOS.Bulletin then GuildOS.Bulletin:Post(box:GetText()) end
+            if GuildOS.Bulletin then GuildOS.Bulletin:Post(box:GetText(), lasts:GetValue()) end
             box:SetText(""); box:ClearFocus()
         end
         box:SetScript("OnEnterPressed", doPost)
@@ -104,7 +110,7 @@ local function BuildBulletinSub(panel)
 
     local function refresh()
         clear(child)
-        local msgs = (GuildOS.Bulletin and GuildOS.Bulletin:GetMessages()) or {}
+        local msgs = (GuildOS.Bulletin and GuildOS.Bulletin:Listed()) or {}
         local isOfficer = GuildOS:IsOfficer()
         local y = 0
         for _, m in ipairs(msgs) do
@@ -113,7 +119,7 @@ local function BuildBulletinSub(panel)
             textFS:SetPoint("TOPRIGHT", isOfficer and -(22 + GAP) or 0, -y)
             textFS:SetJustifyH("LEFT")
             local th = textFS:GetStringHeight() or 14
-            local meta = UI:CreateText(child, (m.author or "?") .. " · " .. GuildOS:DateText(m.ts or 0, " %H:%M"),
+            local meta = UI:CreateText(child, GuildOS.Bulletin.MetaText(m),
                 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
             meta:SetPoint("TOPLEFT", 0, -(y + th + 2))
             if isOfficer then

@@ -34,6 +34,7 @@ local RECENT        = 48 * 3600  -- how far back the activity goes
 local ANSWER_WITHIN = 7 * 86400  -- a raid this close asks for an answer
 local MAX_NEEDS     = 5
 local MAX_FEED      = 12
+local MAX_NOTICES   = 3          -- the bulletin's newest active notices (issue #418)
 local LOADING_BARS  = { 180, 130, 160 }
 local DASH          = "\226\128\148"
 local DOT           = " \194\183 "
@@ -170,6 +171,20 @@ function Agora:NeedsMe()
 
     for _, item in ipairs(normal) do urgent[#urgent + 1] = item end
     return urgent
+end
+
+-- The bulletin's newest active notices (issue #418): { ts, text, id, sub } each, opening the board. None when this
+-- player cannot open the guild's tab, or no notice is running: then the section is not drawn.
+function Agora:Notices(limit)
+    local B = GuildOS.Bulletin
+    if not (B and B.Active and GuildOS.db and GuildOS.db.bulletin and allowed("guild")) then return {} end
+    local out = {}
+    for _, m in ipairs(B:Active(now(), limit or MAX_NOTICES)) do
+        -- An officer's text: one line, no links or textures on the tab (#377).
+        local text = GuildOS.SanitizeUserText and GuildOS:SanitizeUserText(m.text) or m.text
+        out[#out + 1] = { ts = tonumber(m.ts) or 0, text = text, id = "guild", sub = "bulletin" }
+    end
+    return out
 end
 
 local ROSTER_ACTION = {
@@ -452,6 +467,13 @@ function GuildOS:CreateNowPanel(panel, win)
 
     local needsTitle = UI:CreateSectionTitle(column, L["Needs me"])
     local needsList = newList(column)
+    -- The bulletin (issue #418), between what needs me and the activity, only while a notice is running.
+    local noticeTitle = UI:CreateSectionTitle(column, L["Bulletin"])
+    local noticeList = newList(column)
+    noticeTitle:Hide()
+    if noticeTitle.rule then noticeTitle.rule:Hide() end
+    noticeList:Hide()
+    panel.noticeTitle, panel.noticeList = noticeTitle, noticeList
     local feedTitle = UI:CreateSectionTitle(column, L["Activity"])
     local feedList = newList(column)
     panel.needsTitle, panel.needsList = needsTitle, needsList
@@ -463,7 +485,7 @@ function GuildOS:CreateNowPanel(panel, win)
 
     -- Data is fetched on show, on the ticker and on roster events. A resize
     -- only repaints what was fetched: officer work walks the whole roster.
-    local needs, feed, loading = {}, {}, false
+    local needs, feed, notices, loading = {}, {}, {}, false
 
     local function paint()
         if width < 1 then return end
@@ -535,6 +557,21 @@ function GuildOS:CreateNowPanel(panel, win)
         place(needsList, y, true)
         y = y + needsList:GetHeight()
 
+        local hasNotices = #notices > 0
+        noticeTitle:SetShown(hasNotices)
+        if noticeTitle.rule then noticeTitle.rule:SetShown(hasNotices) end
+        noticeList:SetShown(hasNotices)
+        if hasNotices then
+            y = y + SECTION_GAP + RULE_GAP
+            place(noticeTitle, y)
+            y = y + lineH(noticeTitle, 14) + TITLE_GAP
+            rows = {}
+            for _, item in ipairs(notices) do rows[#rows + 1] = { "feed", item } end
+            fill(noticeList, rows)
+            place(noticeList, y, true)
+            y = y + noticeList:GetHeight()
+        end
+
         y = y + SECTION_GAP + RULE_GAP
         place(feedTitle, y)
         y = y + lineH(feedTitle, 14) + TITLE_GAP
@@ -581,6 +618,7 @@ function GuildOS:CreateNowPanel(panel, win)
             loading = Agora:RosterLoading()
             needs = loading and {} or Agora:NeedsMe()
             feed = Agora:Activity(MAX_FEED)
+            notices = Agora:Notices(MAX_NOTICES)
             paint()
         end)
         GuildOS.Perf:Stop("window now tab", t)

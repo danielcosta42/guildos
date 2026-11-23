@@ -140,14 +140,11 @@ function Digest:Build(since)
         end
     end
 
-    -- New bulletin notices (most recent few)
+    -- The bulletin's active notices this player has not been told about (issue #418), the newest few: each once,
+    -- whenever it was posted, and never one that has ended. ShowOnLogin marks them told.
     if GuildOS.Bulletin then
-        local shown = 0
-        for _, m in ipairs(GuildOS.Bulletin:GetMessages()) do
-            if (m.ts or 0) > since and shown < 3 then
-                lines[#lines + 1] = "|cffEDCC7B" .. L["Notice:"] .. "|r " .. (m.text or "")
-                shown = shown + 1
-            end
+        for _, m in ipairs(GuildOS.Bulletin:Unseen(GetServerTime(), 3)) do
+            lines[#lines + 1] = GuildOS.Bulletin.Line(m)
         end
     end
 
@@ -283,7 +280,14 @@ end
 -- Auto-show once on login (skipped on first run and when disabled).
 ----------------------------------------------------------------------
 function Digest:ShowOnLogin()
-    if not GuildOS.db.digest or not GuildOS.db.digest.enabled then return end
+    local B = GuildOS.Bulletin
+    -- From now on a notice that arrives is told in the chat (issue #418).
+    if B then B:LoginDone() end
+    if not GuildOS.db.digest or not GuildOS.db.digest.enabled then
+        -- No digest: the notices not told yet get a chat line each.
+        if B then B:TellInChat(GetServerTime()) end
+        return
+    end
     if self.shownThisSession then return end
     -- A raid owner's prompt took this login (issue #400): one popup at a time, and the raid about to start is the
     -- one that cannot wait. Nothing is marked seen: the digest shows once the prompt is put off (Later or its close,
@@ -297,11 +301,14 @@ function Digest:ShowOnLogin()
     -- First ever run: nothing to compare against — just start the clock.
     if since == 0 then
         GuildOS.db.digest.lastSeen = GetServerTime()
+        -- The board is not part of that clock: what is on it now is told in the chat.
+        if B then B:TellInChat(GetServerTime()) end
         return
     end
 
     local lines = self:Build(since)
     self:MarkFeedSeen(GetServerTime())
+    if B then B:MarkSeen(GetServerTime()) end
     if GuildOS.Achievements then GuildOS.Achievements:MarkSeen() end
     if GuildOS.Activation then
         if GuildOS.Activation:GetDigestLine(GetServerTime()) then GuildOS.Activation:Reminded(GetServerTime()) end
