@@ -58,6 +58,7 @@ SyncService.GUILD_ONLY_DOMAINS = {
     ["core.roster"] = true,  -- CoreManager's officer roster updates
     journal        = true,   -- each member's own journal (#205): from the guild, never a whisper
     foundingSelf   = true,   -- each member's own join date (#208), filed under its sender
+    birthday       = true,   -- a member's birthday, for their own characters; officers correct it (#428)
     gbank          = true,   -- the guild bank's picture, its ledger and asks for them (#380)
     gbankreq       = true,   -- a member's request for an item; officers close it (#380)
     craftorder     = true,   -- a member's craft order and its crafter's answers (#389)

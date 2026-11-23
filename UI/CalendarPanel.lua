@@ -54,9 +54,13 @@ local KIND_COLOR = {
     FARM    = { r = 0.46, g = 0.78, b = 0.48 },
     SOCIAL  = { r = 0.40, g = 0.68, b = 0.92 },
     OTHER   = { r = 0.70, g = 0.72, b = 0.78 },
+    -- Not kinds of event: the calendar's drawn dates (#428).
+    BIRTHDAY = { r = 0.93, g = 0.80, b = 0.48 },
+    JOINDAY  = { r = 0.56, g = 0.80, b = 0.86 },
 }
 local function kindColor(k) return KIND_COLOR[k] or KIND_COLOR.RAID end
-local function kindLabel(k) return (CAL() and CAL().KindLabel and CAL():KindLabel(k)) or k end
+local VIRTUAL_LABEL = { BIRTHDAY = L["Birthday"], JOINDAY = L["Anniversary"] }
+local function kindLabel(k) return VIRTUAL_LABEL[k] or (CAL() and CAL().KindLabel and CAL():KindLabel(k)) or k end
 
 ----------------------------------------------------------------------
 -- Event editor popup (shared by create + edit).
@@ -420,6 +424,24 @@ function GuildOS:CreateCalendarSub(panel)
     local todayBtn = UI:CreateButton(f, L["Today"], 60, 22)
     todayBtn:SetPoint("LEFT", nextBtn, "RIGHT", 12, 0)
 
+    -- Birthdays and join anniversaries (#428): dates drawn from the members, never events; each kind
+    -- has its filter. On WoW: Forever an officer puts this month's birthdays in the game's calendar.
+    local BD = GuildOS.Birthdays
+    local barEnd = todayBtn
+    if BD then
+        for _, kind in ipairs({ "birthday", "join" }) do
+            local cb = UI:CreateCheckbox(f, kind == "birthday" and L["Birthdays"] or L["Join anniversaries"], 18)
+            cb:SetWidth(kind == "birthday" and 100 or 140)
+            cb:SetPoint("LEFT", barEnd, "RIGHT", 16, 0)
+            cb.checkbox:SetChecked(BD:Shows(kind))
+            cb.checkbox.onChanged = function(_, checked) BD:SetShows(kind, checked) end
+            barEnd = cb
+        end
+    end
+    local gameBdayBtn = UI:CreateButton(f, L["Birthdays to the game's calendar"], 200, 22)
+    gameBdayBtn:SetPoint("LEFT", barEnd, "RIGHT", 12, 0)
+    gameBdayBtn:SetScript("OnClick", function() GuildOS.GameCalendar:PutNextBirthday() end)
+
     -- Weekday headers: the grid's column labels (repositioned in Render to match the grid width)
     f.wdFS = {}
     for i = 1, COLS do
@@ -496,6 +518,15 @@ function GuildOS:CreateCalendarSub(panel)
         end
 
         local dim = daysInMonth(f.viewYear, f.viewMonth)
+        -- The month's birthdays and join anniversaries, worked out now (#428).
+        if BD then
+            for _, e in ipairs(BD:VirtualEvents(noon(f.viewYear, f.viewMonth, 1) - 43200, noon(f.viewYear, f.viewMonth, dim) + 43199)) do
+                local k = keyOfTs(e.when)
+                byDay[k] = byDay[k] or {}
+                byDay[k][#byDay[k] + 1] = e
+            end
+        end
+        gameBdayBtn:SetShown(GuildOS.GameCalendar ~= nil and BD ~= nil and GuildOS.GameCalendar:CanAct())
         local lead = firstWeekday(f.viewYear, f.viewMonth) - 1
         local todayKey = keyOfTs(GetServerTime())
 
@@ -521,7 +552,7 @@ function GuildOS:CreateCalendarSub(panel)
                 local evs = byDay[k]
                 if evs then
                     table.sort(evs, function(a, b) return a.when < b.when end)
-                    local line = date("%H:%M ", evs[1].when) .. (evs[1].title or "")
+                    local line = (evs[1].virtual and "" or date("%H:%M ", evs[1].when)) .. (evs[1].title or "")
                     if #evs > 1 then line = "+" .. #evs .. " " .. line end
                     cell.evtFS:SetText(line)
                     local kc = kindColor(evs[1].kind)
@@ -568,8 +599,19 @@ function GuildOS:CreateCalendarSub(panel)
         end
         local soft = C.textSoft
 
-        local evs = (sel and byDay and byDay[sel]) or {}
+        local evs, virtual = {}, {}
+        for _, e in ipairs((sel and byDay and byDay[sel]) or {}) do
+            if e.virtual then virtual[#virtual + 1] = e else evs[#evs + 1] = e end
+        end
         local yy = 0
+        -- Birthdays and join anniversaries first, a line each: nothing to sign up to (#428).
+        for _, e in ipairs(virtual) do
+            local fs = UI:CreateText(child, tint("[" .. kindLabel(e.kind) .. "]", kindColor(e.kind)) .. " " .. (e.title or ""),
+                12, C.text.r, C.text.g, C.text.b)
+            across(fs, yy)
+            yy = yy + 20
+        end
+        if #virtual > 0 then yy = yy + 8 end
         -- The game's own calendar (guildos-web specs/075, #263), read once for the day's raids from the
         -- site: its guild events over the inbox's window, and the inbox. WoW: Forever only.
         local GC = GuildOS.GameCalendar
@@ -767,7 +809,7 @@ function GuildOS:CreateCalendarSub(panel)
             yy = yy + math.max(40, (errFS:GetStringHeight() or 20) + 10)
         end
 
-        if sel and #evs == 0 then
+        if sel and #evs == 0 and #virtual == 0 then
             local none = UI:CreateText(child, canCreate and L["No events. Use New Event to add one."] or L["No events this day."],
                 12, soft.r, soft.g, soft.b)
             none:SetPoint("TOPLEFT", 0, 0)

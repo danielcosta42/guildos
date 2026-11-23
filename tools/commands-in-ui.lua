@@ -100,6 +100,8 @@ local IN_UI = {
                   { "UI/BulkPanel.lua", "BA:Stop()" }, { "UI/BulkPanel.lua", "GuildOS.BulkActions:Arm(down)" } },
   -- A member's alts to the main's rank (issue #424): the buttons on the member's sheet.
   altgroup    = { { "UI/MemberDetail.lua", "GuildOS.BulkActions:StartGroupAndSay(playerKey" } },
+  -- My birthday (issue #428): Settings > Profile's Birthday, its box and its "Show my birthday".
+  birthday    = { { "UI/SettingsPanel.lua", "GuildOS.Birthdays:SetMineText(" }, { "UI/SettingsPanel.lua", "GuildOS.Birthdays:ClearMine()" } },
   mentions    = { { "UI/SettingsPanel.lua", "GuildOS.Mentions:PrintLog()" },
                   { "UI/SettingsPanel.lua", 'GuildOS.Mentions:HandleCommand({ "clearwords" })' } },
   notecmd     = { { "UI/SettingsPanel.lua", "GuildOS.db.noteCommand.enabled = checked" } },
@@ -114,7 +116,7 @@ local ALIAS = {
   beacon = { "recruitbeacon" }, map = { "guildmap" }, recruit = { "recruiting" }, autoinvite = { "ai" },
   cons = { "consumables" }, lm = { "lootmaster" }, web = { "companion" }, exportatt = { "exportattendance" },
   attune = { "attunements" }, signup = { "unsignup" }, ban = { "tempban", "unban", "banlist" },
-  ally = { "alliance" },
+  ally = { "alliance" }, birthday = { "aniversario" },
 }
 -- Chat-only, and why.
 local CHAT_ONLY = {

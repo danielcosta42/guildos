@@ -1355,3 +1355,17 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `RaidPlan:Current()` / `LootRule`'s `rosterRule` (`Night`, `NightStatus`) | The plan and the loot rule of `ActiveRoster` (the raid the buttons act on), not of the kept roster: the plan window's rule line is its raid's |
 | `tools/raid-prompt.lua` / `tools/raid-start-ui.lua` | The prompt's timing and once-only set, the guild binding, the digest, the roster ask, the plan; the button and the prompt on screen (dashboard-layout's stub frames) |
 
+
+## Birthdays (#428)
+
+| Function | Notes |
+|---|---|
+| `Birthdays:For(key)` / `:TooltipLine(key)` / `:Mine()` | The birthday of a character's alt group (newest entry of the group, a tombstone reads as none): `{ day, month }` or nil; the roster card's line (#427), "Birthday: 14/03" or nil; mine |
+| `Birthdays:SetMine(d, m)` / `:SetMineText(text)` / `:ClearMine()` | The member's own, published on `birthday` (GUILD only); unticking tombstones every character of the group |
+| `Birthdays:SetFor(key, d, m)` / `:ClearFor(key)` / `:Command(rest)` | An officer's correction; `/gos birthday [name] <DD/MM \| off>` (alias `aniversario`) |
+| `Birthdays.Parse` / `.Valid` / `.OnDay` / `.Newer` / `.JoinAnchor` | Pure: the typed date in the language's order; 29/02 on 28/02 in a year with none; newest `at`, tie to the tombstone; the join anniversary from the current passage, else `firstSeen`, never a date from the first look |
+| `Birthdays:Today(now)` / `:GetDigestLines(now)` / `:ToldToday` / `:MarkTold` / `:TellInChat` | Today's dates on the realm's calendar; the digest's lines once a day at login, in chat when the digest is off |
+| `Birthdays:VirtualEvents(fromT, toT)` / `:Shows(kind)` / `:SetShows(kind, on)` | The calendar's drawn yearly dates (`Calendar._Occurrences`), never in `db.events`; the two filters |
+| `Birthdays:CheckAnnounce(now)` | An officer's /g line (setting `birthdayAnnounce`, off): claim, wait, say unless said or a lower name claimed; `said` kept by every client in `db.birthdaySaid` |
+| `Birthdays:Backfill()` / `:PublishSelf()` / `:Departed(present)` | Officers re-send all, a member their own at login; whoever leaves takes theirs along |
+| `GameCalendar:PutNextBirthday()` / `Compat.CalendarCreateGuildAnnouncement(spec)` | WoW: Forever: the next birthday of the month into the game's calendar, one click each |
