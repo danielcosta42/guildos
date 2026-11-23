@@ -1750,3 +1750,37 @@ everything. Until now cores reached the game only through the companion's `Inbox
   clients; retail's press/release handling and WoW: Forever's typed fallback follow what #256 measured.
 - (−) A rank changed by the click but not yet seen by the roster stays "sent" until the next roster update.
 
+## ADR-0039 — Alt links: one synced entry per alt, with tombstones; "AL" only merges (#424)
+
+### Context
+- Linked alts "kept getting unlinked automatically". The "AL" message carried the whole `altLinks` table and
+  the receiver replaced its own with it: no time, no merge, no tombstone. Every officer sent it on every sync
+  request and on `/gos sync`, so an officer with an old or empty table (a new install, one offline when another
+  linked, a database the game recreated) wiped everybody's links, other officers' included, and an unlink came
+  back when an old table was sent again. A member's claim (#353) was dropped when an old list lacked it.
+
+### Decision
+- **`Modules/AltSync.lua`**, officer domain `alt` on the SyncService, as the ban list: one entry per alt
+  `{ main, author, ts }` or `{ removed = true, author, ts }`, its revision in `db.altSync.rev`. A write takes
+  revision max(server time, last + 1), so the newer edit wins across officers and two officers linking different
+  alts at once both stand. A tie settles the same way everywhere (`Wins`). A tombstone is pruned after 30 days;
+  its revision is kept for good, so an older link for that alt is still refused.
+- **Backfill:** officers re-send every entry at its stored revision on a sync request and `/gos sync`, 40 per
+  envelope, 2 s apart, one backfill at a time (#324).
+- **The view:** `db.altLinks` stays what every reader reads; `AltSync:Rebuild` derives it, flat (no alt of an
+  alt; a loop settles on its lowest key), plus a member's own waiting claims (`AltAutoDetect:Overlay`).
+  Officer edits (`LinkAlt`, `UnlinkAlt`, `SetMain`, a member's claim applied) plan the new view and
+  `AltSync:Commit` writes every alt whose entry differs.
+- **Migration:** the old table becomes entries at revision 1 with no author, so any officer's entry replaces them.
+- **Old clients:** "AL" is still sent (the whole view, never an empty one) for clients before #424, which keep
+  replacing their table with it. Received, it is only a merge: an alt never heard of at all is added at
+  revision 1; nothing is removed or changed; an empty table is nothing.
+- **A member's claim** goes only when the officers' links carry it, or when an officer's entry newer than the
+  claim unlinks one of its characters or links it elsewhere. Missing from a list is no answer.
+- **Forever keys:** every key off the network and in the store goes through `LocalMemberKey`.
+
+### Consequences
+- (+) No officer's old or empty data can remove a link; an unlink stays unlinked.
+- (−) While officers on old clients remain, they still replace their own tables, and an unlink made on an old
+  client is not heard by new ones (the merge never removes). The full gain comes when every officer updates.
+- (−) Each officer's backfill sends every alt entry (a few hundred in a big guild) once per answered request.

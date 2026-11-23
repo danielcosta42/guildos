@@ -3558,3 +3558,18 @@ L["%d not confirmed: check them in the guild roster."] = "Не подтверж�
 L["The game blocked the click. Click Next again: it shows the line to type."] = "Игра заблокировала щелчок. Нажмите «Далее» ещё раз: появится строка для ввода."
 L["no longer meets the rules"] = "больше не подходит под правила"
 L["not confirmed, check it"] = "не подтверждено, проверьте"
+
+-- Alt links synced per alt, the group to the main's rank, the alt limit (issue #424)
+L["Promote alts"] = "Повысить твинков"
+L["Demote alts"] = "Понизить твинков"
+L["List the alt groups with more alts than that"] = "Список групп, где твинков больше указанного числа"
+L["No alt of this group needs that change."] = "Ни одному твинку этой группы это изменение не нужно."
+L["No alts are linked to this character."] = "К этому персонажу не привязаны твинки."
+L["No guild rank called %s."] = "Нет звания гильдии «%s»."
+L["Promote or demote a member's alts to their main's rank, or to a rank, one per click"] = "Повышает или понижает твинков участника до звания основы или до указанного, по одному за щелчок"
+L["The main is not in the guild roster."] = "Основы нет в списке гильдии."
+L["To the main's rank, one alt per click of Next in Leadership > Bulk actions."] = "До звания основы, по одному твинку за щелчок «Далее» в Руководство > Массовые действия."
+L["%d group(s) with more than %d alt(s):"] = "Групп: %d, где твинков больше %d:"
+L["No group has more than %d alt(s)."] = "Ни в одной группе нет больше %d твинков."
+L["Usage: /gos altlimit <number>"] = "Использование: /gos altlimit <число>"
+L["Usage: /gos altgroup <promote | demote> <name> [rank]"] = "Использование: /gos altgroup <promote | demote> <имя> [звание]"

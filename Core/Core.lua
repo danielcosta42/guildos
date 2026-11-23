@@ -282,6 +282,8 @@ local MODULE_START = {
     { "GuildChat" },
     { "RosterLog" },
     { "BanList" },
+    -- The alt links, one synced entry per alt (issue #424): before the readers of db.altLinks.
+    { "AltSync" },
     -- The disciplinary record (issue #402): officers only, synced among them.
     { "Discipline" },
     -- The officers' chat alerts (issue #404): after GuildChat, whose log gives the context.

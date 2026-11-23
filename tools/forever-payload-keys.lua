@@ -76,7 +76,7 @@ local function load(game)
   dofile(ADDON .. "/Core/Core.lua")
   dofile(ADDON .. "/Core/Compat.lua")
   dofile(ADDON .. "/Core/Utils.lua")
-  for _, m in ipairs({ "CommSystem", "RaidTracker", "Points", "AltAutoDetect", "OfficerNotes", "TrialTracker",
+  for _, m in ipairs({ "CommSystem", "RaidTracker", "Points", "AltAutoDetect", "AltSync", "OfficerNotes", "TrialTracker",
                        "RaiderRoster", "CoreManager", "Alliance" }) do
     dofile(ADDON .. "/Modules/" .. m .. ".lua")
   end

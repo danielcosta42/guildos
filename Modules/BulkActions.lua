@@ -114,6 +114,29 @@ function BulkActions.Meets(m, rules)
     return true
 end
 
+--- Whether a member at `rank` still has a step to go toward `target` (0-based ranks: a promotion lowers the index).
+function BulkActions.Toward(rank, action, target)
+    if not rank or not target then return false end
+    if action == "promote" then return rank > target end
+    if action == "demote" then return rank < target end
+    return false
+end
+
+--- The alts of a group (issue #424) that `action` moves toward rank `target`: every key of `group` but `mainKey`,
+--- on the roster, still short of the target and that Eligible lets this rank touch. By name.
+function BulkActions.GroupMatch(members, group, mainKey, action, target, ctx)
+    local want = {}
+    for _, k in ipairs(group or {}) do if k ~= mainKey then want[k] = true end end
+    local out = {}
+    for _, m in ipairs(members or {}) do
+        if want[m.key] and BulkActions.Toward(m.rankIndex, action, target) and BulkActions.Eligible(m, action, ctx) then
+            out[#out + 1] = m
+        end
+    end
+    table.sort(out, function(a, b) return (a.name or ""):lower() < (b.name or ""):lower() end)
+    return out
+end
+
 --- The members of `members` that `action` would touch under `rules`: longest offline first, then by name.
 --- Returns the list, and "rule" when no rule is set (then the list is empty).
 function BulkActions.Match(members, rules, action, ctx)
@@ -235,16 +258,48 @@ function BulkActions:Start(raw, action, confirmed, shown)
     if type(list) ~= "table" then list, why = self:Preview(raw, action) end
     if why then return false, why end
     if #list == 0 then return false, "empty" end
+    self:_Queue({ action = action, rules = rules }, list)
+    return true
+end
+
+local function itemOf(m)
+    return { fullName = m.fullName, name = m.name, key = m.key, rankIndex = m.rankIndex,
+             rankName = m.rankName, class = m.class, level = m.level, daysOffline = m.daysOffline,
+             attendance = m.attendance, hasAddon = m.hasAddon, status = "pending" }
+end
+
+-- The queue `q` ({ action, rules } or { action, target }) of the members of `list`, from its first.
+function BulkActions:_Queue(q, list)
     local items = {}
-    for i, m in ipairs(list) do
-        items[i] = { fullName = m.fullName, name = m.name, key = m.key, rankIndex = m.rankIndex,
-                     rankName = m.rankName, class = m.class, level = m.level, daysOffline = m.daysOffline,
-                     attendance = m.attendance, hasAddon = m.hasAddon, status = "pending" }
-    end
+    for i, m in ipairs(list) do items[i] = itemOf(m) end
+    q.items, q.pos = items, 1
     local s = state()
-    s.queue, s.armed, s.blocked = { action = action, rules = rules, items = items, pos = 1 }, nil, nil
-    GuildOS:Print(string.format(L["%s: %d member(s) in the queue, one per click of Next."], self:ActionText(action), #items))
+    s.queue, s.armed, s.blocked = q, nil, nil
+    GuildOS:Print(string.format(L["%s: %d member(s) in the queue, one per click of Next."], self:ActionText(q.action), #items))
     self:Refresh()
+end
+
+--- Start a queue that takes the alts of `key`'s group (issue #424) to rank `target` (0-based), by default the main's
+--- own: a promotion for the alts below it, a demotion for those above, one step per click; a member done with a step
+--- still short of the target is queued again. The main is never in it. Returns true, or false and why: "action",
+--- "combat", "permission", "group" (no alts linked), "main" (the main is not on the roster) or "empty".
+function BulkActions:StartGroup(key, action, target)
+    if action ~= "promote" and action ~= "demote" then return false, "action" end
+    if GuildOS.Compat.InCombat() then return false, "combat" end
+    if not self:Allowed(action) then return false, "permission" end
+    local group = key and GuildOS:GetLinkedChars(key) or {}
+    if #group < 2 then return false, "group" end
+    local mainKey = group[1]
+    local members = self:Collect(false)
+    if target == nil then
+        for _, m in ipairs(members) do
+            if m.key == mainKey then target = m.rankIndex break end
+        end
+        if target == nil then return false, "main" end
+    end
+    local list = self.GroupMatch(members, group, mainKey, action, target, self:Context())
+    if #list == 0 then return false, "empty" end
+    self:_Queue({ action = action, target = target }, list)
     return true
 end
 
@@ -255,11 +310,57 @@ local WHY = {
     empty = L["No members match these rules."],
     combat = L["Not during combat."],
     confirm = L["Confirm the removal first."],
+    group = L["No alts are linked to this character."],
+    main = L["The main is not in the guild roster."],
+    groupEmpty = L["No alt of this group needs that change."],
 }
 
 --- What a refusal of Start or Preview says to the player.
 function BulkActions:WhyText(why)
     return WHY[why] or WHY.empty
+end
+
+--- StartGroup, and say why not when it does not; started, the Bulk actions tab opens on the queue.
+function BulkActions:StartGroupAndSay(key, action, target)
+    local ok, why = self:StartGroup(key, action, target)
+    if not ok then
+        GuildOS:Print(self:WhyText(why == "empty" and "groupEmpty" or why))
+    elseif GuildOS.UI and GuildOS.UI.OpenWindow then
+        GuildOS.UI:OpenWindow("management", "bulk")
+    end
+    return ok
+end
+
+--- `/gos altgroup <promote | demote> <name> [rank]`: the rank by its name or its number in the game's list (1 is the
+--- guild master's); none is the main's.
+function BulkActions:CommandGroup(rest)
+    local action, tail = strtrim(rest or ""):match("^(%S+)%s+(.+)$")
+    action = action and action:lower()
+    if (action ~= "promote" and action ~= "demote") or not tail then
+        GuildOS:Print(L["Usage: /gos altgroup <promote | demote> <name> [rank]"])
+        return
+    end
+    -- The whole rest as a roster name first: a WoW: Forever surname has a space ("Chehul Druida").
+    local key, rank = GuildOS:RosterKey(tail), ""
+    if not key then
+        local who, r = tail:match("^(.-)%s+(%S+)$")
+        if not who then who = tail end
+        rank = r or ""
+        key = GuildOS:RosterKey(who) or GuildOS:GetPlayerKey(who)
+    end
+    local target
+    if rank ~= "" then
+        local ranks = GuildOS.GuildManager and GuildOS.GuildManager:GetRanks() or {}
+        local n = GuildOS.Finite(rank)
+        for i, r in ipairs(ranks) do
+            if (n and n == i) or r.name:lower() == rank:lower() then target = r.index break end
+        end
+        if target == nil then
+            GuildOS:Print(string.format(L["No guild rank called %s."], rank))
+            return
+        end
+    end
+    self:StartGroupAndSay(key, action, target)
 end
 
 --- Start, and say why not when it does not.
@@ -296,13 +397,15 @@ function BulkActions:Current()
         local item = q.items[q.pos]
         if item.status == "pending" then
             local idx, rank = live(item)
-            local m = idx and q.rules and memberAt(idx, usesAttendance(q.rules) and self:HasAttendance())
+            local m = idx and (q.rules or q.target) and memberAt(idx, q.rules and usesAttendance(q.rules) and self:HasAttendance())
             ctx = ctx or self:Context()
+            -- A queue from rules checks them again; one for a group of alts, that the target is still ahead (#424).
+            local still = m and (q.rules and self.Meets(m, q.rules) or (not q.rules and self.Toward(m.rankIndex, q.action, q.target)))
             if not idx then
                 item.status, item.why = "skipped", "left"
             elseif rank ~= item.rankIndex then
                 item.status, item.why = "skipped", "rank"
-            elseif m and not (self.Eligible(m, q.action, ctx) and self.Meets(m, q.rules)) then
+            elseif m and not (self.Eligible(m, q.action, ctx) and still) then
                 item.status, item.why = "skipped", "rules"
             else
                 return item
@@ -491,6 +594,15 @@ function BulkActions:Confirm()
                 if GuildOS.RosterLog and not alreadyLogged(act, item) then
                     local detail = rank and GuildOS.GuildManager and GuildOS.GuildManager:GetRankName(rank) or nil
                     GuildOS.RosterLog:Record(act, item.fullName, GuildOS.Compat.PlayerName(), detail)
+                end
+                -- A group's alt one step on and still short of the main's rank: queued again for its next step (#424).
+                if q.target and idx and self.Toward(rank, q.action, q.target) then
+                    local again = {}
+                    for f, v in pairs(item) do again[f] = v end
+                    again.status, again.why, again.sentAt, again.sentClock = "pending", nil, nil, nil
+                    again.rankIndex = rank
+                    again.rankName = GuildOS.GuildManager and GuildOS.GuildManager:GetRankName(rank) or item.rankName
+                    q.items[#q.items + 1] = again
                 end
             elseif item.status == "sent" and now - (item.sentClock or now) >= UNCONFIRMED_AFTER then
                 item.status, changed = "unconfirmed", true

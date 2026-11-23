@@ -1111,6 +1111,26 @@ function PopulateDetail(frame, data)
             end
         end
 
+        -- The group's alts to the main's rank (issue #424): a queue in Leadership > Bulk actions, one alt per
+        -- click of its Next button; the game's rank commands only ever run from that click.
+        if GuildOS:IsOfficer() and GuildOS.BulkActions and #linkedKeys > 1 then
+            local promoteBtn = UI:CreateButton(child, L["Promote alts"], 110, 20)
+            promoteBtn:SetPoint("TOPLEFT", 12, yOff)
+            promoteBtn:SetScript("OnClick", function() GuildOS.BulkActions:StartGroupAndSay(playerKey, "promote") end)
+            local demoteBtn = UI:CreateButton(child, L["Demote alts"], 110, 20)
+            demoteBtn:SetPoint("LEFT", promoteBtn, "RIGHT", 6, 0)
+            demoteBtn:SetScript("OnClick", function() GuildOS.BulkActions:StartGroupAndSay(playerKey, "demote") end)
+            for _, b in ipairs({ promoteBtn, demoteBtn }) do
+                b:HookScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                    GameTooltip:SetText(L["To the main's rank, one alt per click of Next in Leadership > Bulk actions."], 1, 1, 1, 1, true)
+                    GameTooltip:Show()
+                end)
+                b:HookScript("OnLeave", function() GameTooltip:Hide() end)
+            end
+            yOff = yOff - 26
+        end
+
         -- Input to add a new link
         local addLinkBox = CreateFrame("EditBox", nil, child, "BackdropTemplate")
         addLinkBox:SetSize(contentWidth - 110, 22)

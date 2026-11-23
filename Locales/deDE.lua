@@ -3678,3 +3678,18 @@ L["%d not confirmed: check them in the guild roster."] = "%d nicht bestätigt: p
 L["The game blocked the click. Click Next again: it shows the line to type."] = "Das Spiel hat den Klick blockiert. Klicke erneut auf Weiter: Es zeigt die Zeile zum Tippen."
 L["no longer meets the rules"] = "erfüllt die Regeln nicht mehr"
 L["not confirmed, check it"] = "nicht bestätigt, bitte prüfen"
+
+-- Alt links synced per alt, the group to the main's rank, the alt limit (issue #424)
+L["Promote alts"] = "Twinks befördern"
+L["Demote alts"] = "Twinks degradieren"
+L["List the alt groups with more alts than that"] = "Listet die Twink-Gruppen mit mehr Twinks als angegeben"
+L["No alt of this group needs that change."] = "Kein Twink dieser Gruppe braucht diese Änderung."
+L["No alts are linked to this character."] = "Mit diesem Charakter sind keine Twinks verknüpft."
+L["No guild rank called %s."] = "Kein Gildenrang namens %s."
+L["Promote or demote a member's alts to their main's rank, or to a rank, one per click"] = "Befördert oder degradiert die Twinks eines Mitglieds auf den Rang des Mains oder einen Rang, einen pro Klick"
+L["The main is not in the guild roster."] = "Der Main ist nicht in der Gildenliste."
+L["To the main's rank, one alt per click of Next in Leadership > Bulk actions."] = "Auf den Rang des Mains, ein Twink pro Klick auf Weiter unter Führung > Massenaktionen."
+L["%d group(s) with more than %d alt(s):"] = "%d Gruppe(n) mit mehr als %d Twink(s):"
+L["No group has more than %d alt(s)."] = "Keine Gruppe hat mehr als %d Twink(s)."
+L["Usage: /gos altlimit <number>"] = "Verwendung: /gos altlimit <Zahl>"
+L["Usage: /gos altgroup <promote | demote> <name> [rank]"] = "Verwendung: /gos altgroup <promote | demote> <Name> [Rang]"

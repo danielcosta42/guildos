@@ -3678,3 +3678,18 @@ L["%d not confirmed: check them in the guild roster."] = "%d non confirmé(s) : 
 L["The game blocked the click. Click Next again: it shows the line to type."] = "Le jeu a bloqué le clic. Cliquez à nouveau sur Suivant : il affiche la ligne à taper."
 L["no longer meets the rules"] = "ne correspond plus aux règles"
 L["not confirmed, check it"] = "non confirmé, à vérifier"
+
+-- Alt links synced per alt, the group to the main's rank, the alt limit (issue #424)
+L["Promote alts"] = "Promouvoir les rerolls"
+L["Demote alts"] = "Rétrograder les rerolls"
+L["List the alt groups with more alts than that"] = "Liste les groupes de rerolls qui en ont plus que ce nombre"
+L["No alt of this group needs that change."] = "Aucun reroll de ce groupe n'a besoin de ce changement."
+L["No alts are linked to this character."] = "Aucun reroll n'est lié à ce personnage."
+L["No guild rank called %s."] = "Aucun rang de guilde nommé %s."
+L["Promote or demote a member's alts to their main's rank, or to a rank, one per click"] = "Promeut ou rétrograde les rerolls d'un membre au rang de son main, ou à un rang, un par clic"
+L["The main is not in the guild roster."] = "Le main n'est pas dans la liste de guilde."
+L["To the main's rank, one alt per click of Next in Leadership > Bulk actions."] = "Au rang du main, un reroll par clic sur Suivant dans Direction > Actions groupées."
+L["%d group(s) with more than %d alt(s):"] = "%d groupe(s) avec plus de %d reroll(s) :"
+L["No group has more than %d alt(s)."] = "Aucun groupe n'a plus de %d reroll(s)."
+L["Usage: /gos altlimit <number>"] = "Utilisation : /gos altlimit <nombre>"
+L["Usage: /gos altgroup <promote | demote> <name> [rank]"] = "Utilisation : /gos altgroup <promote | demote> <nom> [rang]"

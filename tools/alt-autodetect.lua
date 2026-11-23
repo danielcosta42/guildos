@@ -69,6 +69,7 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/CommSystem.lua")
 dofile(ADDON .. "/Modules/AltAutoDetect.lua")
+dofile(ADDON .. "/Modules/AltSync.lua")
 local CS, AD = GuildOS.CommSystem, GuildOS.AltAutoDetect
 CS.pendingMessages = CS.pendingMessages or {}
 local sent = {}
@@ -200,17 +201,34 @@ deliver({ t = "AL", data = oldList }, "Off-Realm")
 check(next(GuildOSDB.altPending) ~= nil and GuildOS.db.altLinks[MAIN] == ALT and #sentOf("SA") == 1,
   "the first officer list ten minutes on gets the claim again, not a drop")
 
--- Re-sent this session and still missing from an officer's list a while later: the officers undid it.
+-- Missing from an officer's list is no answer, however long after (#424): an old or empty list
+-- dropped the member's claim for good. Only a newer officer unlink (a tombstone) or a newer
+-- officer link elsewhere does.
 client("Main")
 GuildOS.db.altLinks = {}
 AD:LinkOwnAlts(ALT, { MAIN, ALT })
 AD:ResendPending()
 deliver({ t = "AL", data = oldList }, "Off-Realm")
 check(next(GuildOSDB.altPending) ~= nil, "a list right after the claim went out may predate it: kept")
-clock = clock + 60
+clock = clock + 600
 deliver({ t = "AL", data = oldList }, "Off-Realm")
+check(next(GuildOSDB.altPending) ~= nil and GuildOS.db.altLinks[MAIN] == ALT,
+  "ten minutes on, a list that lacks it still leaves the claim and the member's view")
+local AS = GuildOS.AltSync
+AS:Apply({ { k = MAIN, x = true, a = "Off", t = now - 100, r = now - 100 } }, "Off")
+AD:OnOfficerLinks()
+check(next(GuildOSDB.altPending) ~= nil, "an officer unlink older than the claim is no answer either")
+AS:Apply({ { k = MAIN, x = true, a = "Off", t = now + 5, r = now + 5 } }, "Off")
+AD:OnOfficerLinks()
+AS:Rebuild()
 check(next(GuildOSDB.altPending) == nil and GuildOS.db.altLinks[MAIN] == nil,
-  "a minute on, the officers' list stands and the claim is dropped")
+  "a newer officer unlink (a tombstone) is the officers' answer: the claim goes")
+client("Main")
+GuildOS.db.altLinks = {}
+AD:LinkOwnAlts(ALT, { MAIN, ALT })
+AS:Apply({ { k = MAIN, m = THIRD, a = "Off", t = now + 5, r = now + 5 } }, "Off")
+AD:OnOfficerLinks()
+check(next(GuildOSDB.altPending) == nil, "and so is a newer officer link of that character to another main")
 
 -- A claim from another guild, or a month old, is left alone.
 client("Main")

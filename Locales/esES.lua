@@ -3679,3 +3679,18 @@ L["%d not confirmed: check them in the guild roster."] = "%d sin confirmar: rev�
 L["The game blocked the click. Click Next again: it shows the line to type."] = "El juego bloqueó el clic. Pulsa Siguiente otra vez: muestra la línea para escribir."
 L["no longer meets the rules"] = "ya no cumple las reglas"
 L["not confirmed, check it"] = "sin confirmar, revísalo"
+
+-- Alt links synced per alt, the group to the main's rank, the alt limit (issue #424)
+L["Promote alts"] = "Ascender alts"
+L["Demote alts"] = "Degradar alts"
+L["List the alt groups with more alts than that"] = "Lista los grupos de alts con más alts que ese número"
+L["No alt of this group needs that change."] = "Ningún alt de este grupo necesita ese cambio."
+L["No alts are linked to this character."] = "No hay alts vinculados a este personaje."
+L["No guild rank called %s."] = "No hay ningún rango de hermandad llamado %s."
+L["Promote or demote a member's alts to their main's rank, or to a rank, one per click"] = "Asciende o degrada los alts de un miembro al rango de su main, o a un rango, uno por clic"
+L["The main is not in the guild roster."] = "El main no está en la lista de la hermandad."
+L["To the main's rank, one alt per click of Next in Leadership > Bulk actions."] = "Al rango del main, un alt por clic en Siguiente en Liderazgo > Acciones en masa."
+L["%d group(s) with more than %d alt(s):"] = "%d grupo(s) con más de %d alt(s):"
+L["No group has more than %d alt(s)."] = "Ningún grupo tiene más de %d alt(s)."
+L["Usage: /gos altlimit <number>"] = "Uso: /gos altlimit <número>"
+L["Usage: /gos altgroup <promote | demote> <name> [rank]"] = "Uso: /gos altgroup <promote | demote> <nombre> [rango]"

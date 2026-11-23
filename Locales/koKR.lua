@@ -3558,3 +3558,18 @@ L["%d not confirmed: check them in the guild roster."] = "%d명 확인 안 됨: 
 L["The game blocked the click. Click Next again: it shows the line to type."] = "게임이 클릭을 막았습니다. 다음을 다시 누르면 입력할 줄을 보여 줍니다."
 L["no longer meets the rules"] = "더 이상 규칙에 맞지 않음"
 L["not confirmed, check it"] = "확인 안 됨, 확인 필요"
+
+-- Alt links synced per alt, the group to the main's rank, the alt limit (issue #424)
+L["Promote alts"] = "부캐 승급"
+L["Demote alts"] = "부캐 강등"
+L["List the alt groups with more alts than that"] = "그 수보다 부캐가 많은 그룹 목록"
+L["No alt of this group needs that change."] = "이 그룹에서 그 변경이 필요한 부캐가 없습니다."
+L["No alts are linked to this character."] = "이 캐릭터에 연결된 부캐가 없습니다."
+L["No guild rank called %s."] = "%s(이)라는 길드 등급이 없습니다."
+L["Promote or demote a member's alts to their main's rank, or to a rank, one per click"] = "구성원의 부캐를 본캐의 등급이나 지정한 등급으로 승급 또는 강등, 클릭당 하나씩"
+L["The main is not in the guild roster."] = "본캐가 길드 명단에 없습니다."
+L["To the main's rank, one alt per click of Next in Leadership > Bulk actions."] = "본캐의 등급으로, 지휘 > 일괄 작업에서 다음을 누를 때마다 부캐 하나씩."
+L["%d group(s) with more than %d alt(s):"] = "그룹 %d개에 부캐가 %d개보다 많음:"
+L["No group has more than %d alt(s)."] = "부캐가 %d개보다 많은 그룹이 없습니다."
+L["Usage: /gos altlimit <number>"] = "사용법: /gos altlimit <숫자>"
+L["Usage: /gos altgroup <promote | demote> <name> [rank]"] = "사용법: /gos altgroup <promote | demote> <이름> [등급]"

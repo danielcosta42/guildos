@@ -3558,3 +3558,18 @@ L["%d not confirmed: check them in the guild roster."] = "%d 个未确认：请�
 L["The game blocked the click. Click Next again: it shows the line to type."] = "游戏阻止了这次点击。再点一次“下一步”：会显示要输入的命令。"
 L["no longer meets the rules"] = "已不符合规则"
 L["not confirmed, check it"] = "未确认，请核对"
+
+-- Alt links synced per alt, the group to the main's rank, the alt limit (issue #424)
+L["Promote alts"] = "晋升小号"
+L["Demote alts"] = "降级小号"
+L["List the alt groups with more alts than that"] = "列出小号数超过该数字的小号组"
+L["No alt of this group needs that change."] = "该组没有需要此变更的小号。"
+L["No alts are linked to this character."] = "此角色没有关联的小号。"
+L["No guild rank called %s."] = "没有名为 %s 的公会会阶。"
+L["Promote or demote a member's alts to their main's rank, or to a rank, one per click"] = "将成员的小号晋升或降级到大号的会阶或指定会阶，每次点击一个"
+L["The main is not in the guild roster."] = "大号不在公会名单中。"
+L["To the main's rank, one alt per click of Next in Leadership > Bulk actions."] = "到大号的会阶，在“领导 > 批量操作”中每点一次“下一步”处理一个小号。"
+L["%d group(s) with more than %d alt(s):"] = "%d 个组的小号超过 %d 个："
+L["No group has more than %d alt(s)."] = "没有哪个组的小号超过 %d 个。"
+L["Usage: /gos altlimit <number>"] = "用法：/gos altlimit <数字>"
+L["Usage: /gos altgroup <promote | demote> <name> [rank]"] = "用法：/gos altgroup <promote | demote> <名字> [会阶]"

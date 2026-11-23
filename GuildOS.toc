@@ -70,6 +70,7 @@ Modules\AllianceLink.lua
 Modules\GuildChat.lua
 Modules\RosterLog.lua
 Modules\BanList.lua
+Modules\AltSync.lua
 Modules\Discipline.lua
 Modules\ModAlerts.lua
 Modules\ModFlood.lua

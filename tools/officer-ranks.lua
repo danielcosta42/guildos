@@ -69,6 +69,7 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/CommSystem.lua")
 dofile(ADDON .. "/Modules/SyncService.lua")
+dofile(ADDON .. "/Modules/AltSync.lua")
 local CS, SS = GuildOS.CommSystem, GuildOS.SyncService
 CS.pendingMessages = CS.pendingMessages or {}
 local sent = {}
