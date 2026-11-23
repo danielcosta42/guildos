@@ -137,7 +137,7 @@ end
 -- Officer mutations + sync (domain "ban", per-entry revision)
 ----------------------------------------------------------------------
 -- `note` (issue #426): the officer's own words about the person, apart from the reason, cleaned as the alliance's
--- note is. It never leaves this client (OnTheWire): the ban domain goes over GUILD, which reaches every member's
+-- note is; none (nil or empty) keeps the note the ban already had. It never leaves this client (OnTheWire): the ban domain goes over GUILD, which reaches every member's
 -- client, and the addon has no channel only officers read. `group`: the main's name when the ban came with its alt
 -- group's (AddGroup), shown as "(group of X)"; it travels, and a client before #426 keeps it unread.
 function BanList:Add(name, reason, durationSec, note, group)
@@ -160,6 +160,11 @@ function BanList:Add(name, reason, durationSec, note, group)
         note    = BanList.CleanNote(note),
         group   = BanList.CleanNote(group),
     }
+    -- Banned again without a note (/gos ban, the ban dialog, a group ban with the box left empty): the officer's
+    -- own words stay. Lifting the ban is what drops them.
+    if entry.note == nil and type(held) == "table" and not held.removed and type(held.note) == "string" then
+        entry.note = held.note
+    end
     GuildOS.db.banList[key] = entry
     self:_Publish(key, entry)
     self:Refresh()

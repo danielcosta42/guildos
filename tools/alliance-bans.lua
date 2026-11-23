@@ -123,6 +123,15 @@ officer = true
 -- Banned again: the share stays.
 B:Add("Thrall", "again")
 check(store.thrall.share == sh and store.thrall.reason == "again", "editing the ban keeps its share")
+-- The officer's own note (#426): banned again without one (or with the box empty) keeps it; lifting it drops it.
+B:Add("Thrall", "again", nil, "  my |cffff0000words|r ")
+check(store.thrall.note == "my cffff0000wordsr", "the officer's note, cleaned")
+B:Add("Thrall", "once more")
+check(store.thrall.note == "my cffff0000wordsr" and store.thrall.reason == "once more", "banned again without a note keeps it")
+B:Add("Thrall", "and again", nil, "  ")
+check(store.thrall.note == "my cffff0000wordsr", "nor does an empty box")
+B:Add("Thrall", "new words", nil, "other words")
+check(store.thrall.note == "other words", "a new note replaces it")
 
 NOW = NOW + 10
 check(B:Unshare("thrall") and store.thrall.share.withdrawnAt == NOW and not B:IsShared("thrall"), "stop sharing")

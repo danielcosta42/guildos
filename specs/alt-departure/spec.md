@@ -22,8 +22,9 @@ it on its own (removes, promotes the last one left); the request is to ask.
    (done, skipped or stopped). Each group is asked about once a session.
 2. **`BanList:Add(name, reason, durationSec, note, group)`** and **`BanList:AddGroup(keys, reason, days,
    note)`**. The note is never sent: it stays on the client of the officer who wrote it (a GUILD addon
-   message reaches every member's client, and there is no channel only officers read). `group` travels; a
-   client before #426 keeps it unread.
+   message reaches every member's client, and there is no channel only officers read). Banned again without a
+   note (nil or an empty box: `/gos ban`, the ban dialog, a group ban) keeps the note the ban had; lifting the
+   ban drops it. `group` travels; a client before #426 keeps it unread.
 3. **A main left of their own accord**, with alts still in the guild: each officer online is asked once:
    "X left and still has N alt(s) in the guild: A, B. Did the main change?" with **Set A as main** (a pick
    among the alts; `SetMain`, synced to everybody), **Unlink** (every alt stands alone) and **Keep**. When
