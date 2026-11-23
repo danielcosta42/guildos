@@ -94,6 +94,7 @@ GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VER
 dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
+dofile(ADDON .. "/Core/WhisperQueue.lua")
 dofile(ADDON .. "/Modules/CompanionImport.lua")
 dofile(ADDON .. "/Modules/GuildManager.lua")
 dofile(ADDON .. "/Modules/Discipline.lua")
@@ -329,5 +330,20 @@ check(GuildOS:GetSetting("reminderDiscordTemplate") == nil, "Default puts the Di
 BLOCK = nil
 check(names(R:List({})) == "Hal,Ivy" and R:Member(key("Gus")).noDiscord == nil,
       "without the field, nobody is called without Discord")
+
+-- ── WoW: Forever's limit ────────────────────────────────────────────────
+-- The reminder goes from the officer's click through WhisperQueue:SendNow, as Discipline's warning: at once,
+-- and counted against the limit, so what waits in the queue waits for it too (issue #422).
+local Q = GuildOS.WhisperQueue
+Q.enabled = true
+local qs = Q._state
+qs.tokens, qs.at, qs.items = Q.BURST, nil, {}
+local sentBefore, whispered = Q:Stats().sent, #whispers
+NOW = NOW + 30 * day
+CLOCK = CLOCK + R.GAP + R.HOLD
+ok, why = R:Remind(key("Ivy"))
+check(ok and #whispers == whispered + 1 and whispers[#whispers].target == "Ivy", "on Forever the click still whispers at once, " .. tostring(why))
+check(Q:Stats().sent == sentBefore + 1 and qs.tokens <= Q.BURST - 1, "and the WhisperQueue paid for it")
+Q.enabled = nil
 
 print(string.format("addon-reminder: %d checks passed", checks))
