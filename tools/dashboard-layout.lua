@@ -632,6 +632,36 @@ local function run(style)
     style .. ": no calendar link while the Guild tab is off, and nothing left in its place")
   GuildOS.UI.IsFeatureAllowed = function() return true end
 
+  -- ── The bulletin (issue #418): between needs me and activity, while a notice runs ──
+  check(not P.noticeTitle.shown and not P.noticeList.shown and not P.noticeTitle.rule.shown,
+    style .. ": no notice running, no bulletin section")
+  local notices = { { id = "a", text = "Raid moved", ts = NOW - 120 }, { id = "b", text = "Flasks", ts = NOW - 60 },
+                    { id = "c", text = "Old |cffff0000red|r", ts = NOW - 30 }, { id = "d", text = "Fourth", ts = NOW - 300 } }
+  GuildOS.db.bulletin = { messages = notices }
+  GuildOS.Bulletin = { Active = function(_, _, limit)
+    local out = {}
+    for i = 1, math.min(limit or #notices, #notices) do out[i] = notices[i] end
+    return out
+  end }
+  P.Refresh()
+  local _, nly = at(P.needsList)
+  local _, bty = at(P.noticeTitle)
+  local _, bly = at(P.noticeList)
+  local _, fty = at(P.feedTitle)
+  check(P.noticeTitle.shown and P.noticeTitle.text == L["Bulletin"] and P.noticeTitle.rule.shown,
+    style .. ": a running notice: the bulletin section, titled, its rule over it")
+  check(bty == nly - P.needsList.h - 28 and bly == bty - 14 - 4 and fty == bly - P.noticeList.h - 28,
+    style .. ": under needs me, and activity under it")
+  local brows = P.noticeList.rows
+  check(P.noticeList.h == 3 * 24 and brows[1].text.text == "Raid moved" and brows[3].text.text == "Old cffff0000redr"
+    and brows[1].time.shown, style .. ": the newest three, a line each with its time, no colour codes")
+  brows[1].scripts.OnClick(brows[1])
+  check(kit.opened[1] == "guild" and kit.opened[2] == "bulletin", style .. ": a notice opens the guild's bulletin")
+  GuildOS.Bulletin, GuildOS.db.bulletin = nil, nil
+  P.Refresh()
+  check(not P.noticeTitle.shown and not P.noticeTitle.rule.shown and select(2, at(P.feedTitle)) == fty + P.noticeList.h + 28 + 18,
+    style .. ": the section goes with the last notice, nothing left in its place")
+
   -- ── WoW: Forever's setup card, over the grid while due ─────────────────
   if style == "forever" then
     GuildOS.Activation = {

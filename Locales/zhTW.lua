@@ -3505,3 +3505,10 @@ L["Alt-click an item to open its recipe in Crafts"] = "Alt+點擊物品，在製
 L["Never while the auction house, mail, trade, a vendor or the guild bank is open."] = "拍賣場、郵箱、交易、商人或公會銀行開啟時不會觸發。"
 L["Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."] = "網站上排在 %d 天之後的團隊副本尚未同步到遊戲；日期接近時會同步過來。"
 L["The website sends the game its next %d raids; later ones arrive as those pass."] = "網站只向遊戲傳送接下來的 %d 個團隊副本；之後的會在這些結束後同步過來。"
+
+-- Modules/Bulletin.lua: how long a notice lasts (#418)
+L["Until I close it"] = "直到我關閉"
+L["For 1 day"] = "1 天"
+L["For %d days"] = "%d 天"
+L["until %s"] = "至 %s"
+L["no longer shown"] = "已不再顯示"

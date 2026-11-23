@@ -3690,3 +3690,10 @@ L["Alt-click an item to open its recipe in Crafts"] = "Alt-clique num item abre 
 L["Never while the auction house, mail, trade, a vendor or the guild bank is open."] = "Nunca com a casa de leilões, o correio, a troca, um vendedor ou o banco da guilda aberto."
 L["Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."] = "Raides marcadas no site para daqui a mais de %d dias ainda não chegaram ao jogo; elas chegam conforme a data se aproxima."
 L["The website sends the game its next %d raids; later ones arrive as those pass."] = "O site manda ao jogo as próximas %d raides; as seguintes chegam conforme essas passam."
+
+-- Modules/Bulletin.lua: how long a notice lasts (#418)
+L["Until I close it"] = "Até eu fechar"
+L["For 1 day"] = "Por 1 dia"
+L["For %d days"] = "Por %d dias"
+L["until %s"] = "até %s"
+L["no longer shown"] = "não aparece mais"
