@@ -1959,5 +1959,7 @@ everything. Until now cores reached the game only through the companion's `Inbox
 ### Consequences
 - (+) Nothing an officer wrote in a note is lost without them seeing the old and new text.
 - (+) On Forever and retail the same tool works as copy and paste, one member a click.
-- (−) The marks' payload reaches every guild client over GUILD (as every officer domain's); only officers keep it.
+- (+) The marks travel only over the OFFICER addon channel (`SyncService.OFFICER_CHANNEL_DOMAINS`, as the sheet of
+  #427): a member's client never gets the nicknames or the safe list. (−) On WoW: Forever, until that channel is
+  checked there, they stay on the client of the officer who wrote them.
 - (−) An imported day stays on the client that imported it; another officer imports it on their own.

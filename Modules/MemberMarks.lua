@@ -10,9 +10,11 @@
 --
 -- Both are the officers' word and every officer's client keeps them: one entry per member and kind,
 -- { v, at, by }, the later `at` winning (server time), a cleared one kept as a tombstone so an old copy
--- does not bring it back. Synced over the officer domain "marks" (SyncService: officers only, GUILD
--- only): sent at once on a change, and every entry again at login in spaced batches, like the alt
--- links (#424). Applied on officers' clients only: a member's client keeps none of it.
+-- does not bring it back. Synced over the officer domain "marks" (SyncService: officers only, and only
+-- over the game's OFFICER addon channel, as the officer sheet (#427): a member's client never gets the
+-- bytes): sent at once on a change, and every entry again at login in spaced batches, like the alt links
+-- (#424). Applied on officers' clients only. On a client without that channel (Compat.OfficerAddonChannel)
+-- nothing is sent: the marks stay on the client of the officer who wrote them.
 --
 --   db.memberMarks = { safe = { [key] = { v = true|false, at, by } }, nick = { [key] = { v = "text"|"", at, by } } }
 ----------------------------------------------------------------------
@@ -189,7 +191,7 @@ function MemberMarks.Valid(it, now, sender)
     return it.s, GuildOS:LocalMemberKey(k), { v = v, at = t, by = by }
 end
 
---- Entries from an officer (SyncService checked the officer and GUILD): applied on an officer's client only. How many.
+--- Entries from an officer (SyncService checked the officer and the OFFICER channel): applied on an officer's client only. How many.
 function MemberMarks:Apply(items, sender)
     if type(items) ~= "table" or not GuildOS:IsOfficer() then return 0 end
     local s, now, n = store(), GetServerTime(), 0
@@ -212,6 +214,7 @@ end
 --- Officers only; one at a time.
 function MemberMarks:Backfill()
     if not GuildOS:IsOfficer() or not GuildOS.SyncService or self._backfilling then return end
+    if not GuildOS.Compat.OfficerAddonChannel() then return end   -- the marks stay on this client
     local s, items = store(), {}
     for kind in pairs(self.KINDS) do
         for k, e in pairs(s[kind]) do

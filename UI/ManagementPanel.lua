@@ -547,9 +547,9 @@ local ACTION_LABELS = {
     rejoin  = { txt = L["Rejoined"], color = "online" },
     gone    = { txt = L["Gone"],     color = "offline" },
     level   = { txt = L["Level"],    color = "info" },
-    note    = { txt = L["Note"],     color = "info" },
-    onote   = { txt = L["Officer note"], color = "info" },
-    back    = { txt = L["Back"],     color = "online" },
+    note    = { txt = L["Note changed"], color = "info" },
+    onote   = { txt = L["Officer note changed"], color = "info" },
+    back    = { txt = L["Back from inactivity"], color = "online" },   -- not L["Back"], the navigation's (#429)
 }
 
 -- What the level filter's button says for each mode (MemberHistory.LEVEL_MODES).

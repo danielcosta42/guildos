@@ -566,6 +566,7 @@ Removed: `Compat.NewTimer`.
 | `OfficerNotes:ApplySheets(list, sender)` / `:OnSheetSync(env, sender)` | Applies sheets off the network (keys localized, checked); officers only (#427) |
 | `CommSystem:SendToOfficers(msgType, data, priority, kind)` | Sends over the OFFICER addon channel only; false and nothing sent without it (#427) |
 | `Compat.OfficerAddonChannel()` | "OFFICER" on retail and TBC Anniversary, nil on WoW: Forever (not checked in game) (#427) |
+| `ChatTweaks.KeyOf(name)` | #429: the chat cache's key for a roster name or a chat author, the whole name with its realm (the player's when none), so a namesake from another realm gets no guildmate's nickname or tag |
 | `OfficerNotes:BackfillSheets(force)` | Every sheet at its stored revision, 2 per envelope 3 s apart; once per 10 min unless forced (#427) |
 
 ---

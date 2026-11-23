@@ -397,7 +397,9 @@ MM:Backfill()
 check(#published == 1 and #published[1].data.items >= 3, "the backfill sends every entry, tombstones included")
 -- The chat prefix.
 GuildOS.db.chatTweaks = { enabled = true, nick = true, classIcon = false, level = false, altTag = false, whisper = false, group = true }
-CT._cache = { Bob = { level = 70, classFile = "WARRIOR", fullKey = K("Bob") } }
+roster = { { "Bob", 3, 70, true, 0, "", "" } }
+CT:_RefreshCache()
+check(CT._cache[K("Bob")] and CT._cache.Bob == nil, "the chat cache is keyed by the whole name with its realm")
 local filter = CT:_MakeFilter()
 local _, msg = filter(nil, "CHAT_MSG_GUILD", "hi", "Bob")
 check(msg and msg:find("Bobby", 1, true) and msg:find("hi$"), "the nickname before a guild line")
@@ -406,8 +408,22 @@ check(keep == false and select(2, filter(nil, "CHAT_MSG_WHISPER", "hi", "Bob")) 
 _, msg = filter(nil, "CHAT_MSG_RAID", "pull", "Bob")
 check(msg and msg:find("Bobby", 1, true), "in raid chat when asked")
 check(select(2, filter(nil, "CHAT_MSG_PARTY", "x", "Stranger")) == nil, "nobody outside the guild gets a prefix")
+check(select(2, filter(nil, "CHAT_MSG_PARTY", "x", "Bob-Dreamscythe")) ~= nil, "the guild's Bob with his realm written out")
+check(select(2, filter(nil, "CHAT_MSG_PARTY", "x", "Bob-Nightslayer")) == nil, "a Bob from another realm gets none of his")
+GuildOS.db.chatTweaks.whisper = true
+check(select(2, filter(nil, "CHAT_MSG_WHISPER", "x", "Bob-Nightslayer")) == nil, "nor in a whisper")
+GuildOS.db.chatTweaks.whisper = false
 local tips = {}
 MM:TooltipLines({ AddLine = function(_, l) tips[#tips + 1] = l end }, K("Bob"), "alt [safe]", "")
 check(tips[1] == "Nickname: Bobby" and tips[2] == "On the safe list (tag in the note)", "the tooltip's lines")
+
+-- The history log's tags have keys of their own: L["Back"] is the navigation's ("上一步", "Zurück").
+do
+  local f = assert(io.open(ADDON .. "/UI/ManagementPanel.lua", "rb"))
+  local src = f:read("*a")
+  f:close()
+  check(src:find('back    = { txt = L["Back from inactivity"]', 1, true)
+    and src:find('onote   = { txt = L["Officer note changed"]', 1, true), "the log's Back and Officer note tags")
+end
 
 print(("note-dates: %d checks passed"):format(checks))

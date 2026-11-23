@@ -71,6 +71,7 @@ SyncService.GUILD_ONLY_DOMAINS = {
 -- whisper. On a client without that channel (Compat.OfficerAddonChannel) they are not sent at all.
 SyncService.OFFICER_CHANNEL_DOMAINS = {
     osheet = true,
+    marks  = true,   -- the safe list and nicknames (#429): what officers call a member
 }
 
 -- Actions any guild member may perform inside an officer domain, over GUILD. Keyed by domain:
