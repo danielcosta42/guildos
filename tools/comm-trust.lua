@@ -30,6 +30,8 @@ function CreateFrame()
   return f
 end
 function hooksecurefunc() end
+local clock = 0   -- runTimers moves it
+function GetTime() return clock end
 function GetBuildInfo() return "1.60.1", "70205", "", 16001 end
 WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 99
 function UnitFullName() return "Bishop", "Who" end
@@ -156,6 +158,7 @@ local function printedHas(text)
   return false
 end
 local function runTimers(delay)
+  clock = clock + delay
   local due = {}
   for i = #timers, 1, -1 do if timers[i].d == delay then due[#due + 1] = table.remove(timers, i) end end
   for _, t in ipairs(due) do t.fn() end

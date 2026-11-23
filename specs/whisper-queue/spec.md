@@ -40,12 +40,20 @@ at about 28 `ChehulRecruit` whispers a minute for hours in the evening. Two caus
   click). A whisper the player's own click sends (a warning, *Whisper next*) goes at once through
   `SendNow` and is paid for, so what waits behind it waits longer.
 
+- **A message in chunks is one unit.** CommSystem cuts a whisper over 250 bytes into chunks, each
+  a whisper; on Forever they go in through `PushAddonGroup`: all of them or none (a full queue
+  refuses the message, not its last chunk), and when one makes way, or the game will not send one,
+  the rest of that message goes with it. The receiver waits for a whisper's next chunk
+  `WHISPER_CHUNK_SECONDS = 128` s (two of the queue's slowest steps), renewed at each chunk, so a
+  message of any length completes at the queue's pace; over GUILD it stays `CHUNK_SECONDS = 30`.
+
 API, for other modules (the reminders of #422 among them):
 
 ```lua
 GuildOS.WhisperQueue:Push(target, text, prio)            -- chat; "sent" | "queued" | false
 GuildOS.WhisperQueue:SendNow(target, text)               -- chat from a click; true when it went
 GuildOS.WhisperQueue:PushAddon(prefix, payload, target, prio, send)  -- send() returns false when nothing went
+GuildOS.WhisperQueue:PushAddonGroup(prefix, payloads, target, prio, send)  -- one message's parts, all or none
 GuildOS.WhisperQueue:Realm(prefix, payload, key)         -- true when it went into the mesh's queue
 GuildOS.WhisperQueue:Release()                           -- from a click
 ```
@@ -69,3 +77,5 @@ danielcosta42/chehulnet, followed by its `tools/sync.sh`.
 - [x] `tools/whisper-queue.lua`: an hour of the issue's load against a server that refuses past
   30 a minute draws no error (the same load without the queue draws 320), and the worst minute
   stays at 18.
+- [x] A whisper of 40 chunks, sent while the server throttles, reaches the other side whole; a full
+  queue takes a message's chunks all or none.

@@ -29,6 +29,7 @@
 --   WhisperQueue:Push(target, text, prio)            a chat whisper; "sent", "queued", or false
 --   WhisperQueue:SendNow(target, text)               a chat whisper from the player's own click
 --   WhisperQueue:PushAddon(prefix, payload, target, prio, send)  an addon whisper, `send()` doing the sending
+--   WhisperQueue:PushAddonGroup(prefix, payloads, target, prio, send)  one message's parts, all or none
 --   WhisperQueue:Realm(prefix, payload, key)         an item for the mesh's realm bus; whether it went in
 --   WhisperQueue:Release()                           from a click: what waits for one goes now
 ----------------------------------------------------------------------
@@ -103,9 +104,22 @@ local function NeedsClick(item)
     return item.chat and Compat.NeedsClick and Compat.NeedsClick()
 end
 
+-- The parts of one message (PushAddonGroup) are no use alone: what of `group` still waits goes too.
+local function DropGroup(group)
+    for j = #S.items, 1, -1 do
+        if S.items[j].group == group then
+            table.remove(S.items, j)
+            S.stats.dropped = S.stats.dropped + 1
+        end
+    end
+end
+
+-- Returns whether a message's other parts went with it (the indexes after `i` may have moved).
 local function Drop(i)
-    table.remove(S.items, i)
+    local item = table.remove(S.items, i)
     S.stats.dropped = S.stats.dropped + 1
+    if item.group then DropGroup(item.group); return true end
+    return false
 end
 
 local function Send(item)
@@ -152,13 +166,17 @@ Pump = function(fromTimer)
     while S.items[i] do
         local item = S.items[i]
         if item.rank == RANK.low and t - item.queuedAt > Q.LOW_TTL then
-            Drop(i)
+            if Drop(i) then i = 1 end
         elseif fromTimer and NeedsClick(item) then
             i = i + 1
         elseif S.tokens >= 1 then
             table.remove(S.items, i)
             S.tokens = S.tokens - item.cost
-            Send(item)
+            -- A part the game would not send: the message cannot be whole, its other parts would be wasted.
+            if not Send(item) and item.group then
+                DropGroup(item.group)
+                i = 1
+            end
         else
             break
         end
@@ -166,38 +184,65 @@ Pump = function(fromTimer)
     Arm()
 end
 
--- Room for one more of `rank`: the newest of a worse rank makes way; a "high" is never refused.
-local function Room(rank)
-    if #S.items < Q.QUEUE_MAX then return true end
-    for i = #S.items, 1, -1 do
-        if S.items[i].rank > rank then Drop(i); return true end
+-- Room for `n` more of `rank` (a message's parts come in together or not at all): the newest of a worse
+-- rank make way, a message's parts all together; a "high" is never refused. A message of more parts than
+-- QUEUE_MAX needs a queue empty of what it may not push out.
+local function Room(rank, n)
+    n = math.min(n or 1, Q.QUEUE_MAX)
+    local free = Q.QUEUE_MAX - #S.items
+    if free >= n then return true end
+    if rank ~= RANK.high then
+        local worse = 0
+        for _, item in ipairs(S.items) do
+            if item.rank > rank then worse = worse + 1 end
+        end
+        if free + worse < n then return false end
     end
-    return rank == RANK.high
+    local i = #S.items
+    while i >= 1 and Q.QUEUE_MAX - #S.items < n do
+        if S.items[i].rank > rank then
+            Drop(i)
+            i = #S.items
+        else
+            i = i - 1
+        end
+    end
+    return true
 end
 
-local function Enqueue(item)
+-- `items` are one message: all wait, in order, or none does.
+local function Enqueue(items)
     if not Active() then
-        local ok, went = pcall(item.send)
-        if not ok then Fail(went); return false end
-        return went ~= false and "sent" or false
+        local all = true
+        for _, item in ipairs(items) do
+            local ok, went = pcall(item.send)
+            if not ok then Fail(went); went = false end
+            if went == false then all = false; break end
+        end
+        return all and "sent" or false
     end
-    item.rank = RANK[item.prio] or RANK.normal
-    item.cost = math.max(1, item.cost or 1)
-    if not Room(item.rank) then
-        S.stats.dropped = S.stats.dropped + 1
+    local rank = RANK[items[1].prio] or RANK.normal
+    if not Room(rank, #items) then
+        S.stats.dropped = S.stats.dropped + #items
         return false
     end
-    item.queuedAt = now()
     local at = #S.items + 1
-    while at > 1 and S.items[at - 1].rank > item.rank do at = at - 1 end
-    table.insert(S.items, at, item)
-    S.stats.queued = S.stats.queued + 1
-    Pump(false)
-    if item.done then return "sent" end
-    for _, held in ipairs(S.items) do
-        if held == item then return "queued" end
+    while at > 1 and S.items[at - 1].rank > rank do at = at - 1 end
+    for k, item in ipairs(items) do
+        item.rank = rank
+        item.cost = math.max(1, item.cost or 1)
+        item.queuedAt = now()
+        table.insert(S.items, at + k - 1, item)
     end
-    return false
+    S.stats.queued = S.stats.queued + #items
+    Pump(false)
+    local held = {}
+    for _, item in ipairs(S.items) do held[item] = true end
+    local queued = false
+    for _, item in ipairs(items) do
+        if held[item] then queued = true elseif not item.done then return false end
+    end
+    return queued and "queued" or "sent"
 end
 
 -- A chat line's "No player named" answer is the player's to see; a caller who hides it notes the name first.
@@ -214,7 +259,7 @@ end
 -- :Release or whisper from a click sends it) or false (refused: an empty target, a full queue).
 function Q:Push(target, text, prio)
     if type(target) ~= "string" or target == "" or type(text) ~= "string" or text == "" then return false end
-    return Enqueue({ send = ChatSender(target, text), cost = 1, prio = prio, chat = true, target = target })
+    return Enqueue({ { send = ChatSender(target, text), cost = 1, prio = prio, chat = true, target = target } })
 end
 
 -- A chat whisper the player's own click sends (a warning, the next recruit): it goes now, because a line held
@@ -235,7 +280,21 @@ end
 -- Compat) and returns false when nothing went. Returns as :Push.
 function Q:PushAddon(prefix, payload, target, prio, send)
     if type(send) ~= "function" or type(payload) ~= "string" then return false end
-    return Enqueue({ send = send, cost = Q.Parts(payload), prio = prio, prefix = prefix, target = target })
+    return Enqueue({ { send = send, cost = Q.Parts(payload), prio = prio, prefix = prefix, target = target } })
+end
+
+-- One message cut in `payloads` (CommSystem's chunks), each sent by `send(payload)`: the queue takes all of
+-- them or none, keeps them in order, and lets none go stale or make way alone, since a message missing a
+-- part is lost whole. Returns as :Push.
+function Q:PushAddonGroup(prefix, payloads, target, prio, send)
+    if type(send) ~= "function" or type(payloads) ~= "table" or #payloads == 0 then return false end
+    local group, items = {}, {}
+    for i, payload in ipairs(payloads) do
+        if type(payload) ~= "string" then return false end
+        items[i] = { send = function() return send(payload) end, cost = Q.Parts(payload), prio = prio,
+                     prefix = prefix, target = target, group = group }
+    end
+    return Enqueue(items)
 end
 
 -- An item for the mesh's realm bus (ChehulMesh:Realm). Where YELL lives the mesh paces it itself and it
