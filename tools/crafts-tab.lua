@@ -106,7 +106,14 @@ function GetServerTime() return NOW end
 function time() return NOW end
 function GetTime() return NOW end
 function IsInGuild() return true end
-function hooksecurefunc() end
+local hooks = {}
+function hooksecurefunc(name, fn)
+  if type(name) == "string" then hooks[name] = hooks[name] or {}; table.insert(hooks[name], fn) end
+end
+HandleModifiedItemClick = function() end
+local altDown = false
+function IsAltKeyDown() return altDown end
+function IsControlKeyDown() return false end
 function debugstack() return "" end
 function GetRealmName() return "Classic Beta PvE 2" end
 function UnitName(u) if u == "player" then return "Ana" end end
@@ -316,5 +323,49 @@ GuildOS:ShowCraftFor(2840)
 local dots = 0
 for _, slot in ipairs(panel.detail.who) do if slot.dot.shown then dots = dots + 1 end end
 check(dots >= 1 and not showing("●"), "an online crafter gets a drawn dot, no character")
+
+-- ── Alt-click an item (#415) ────────────────────────────────────────────
+-- Auctionator sells the item on an Alt-click in the bags: with the auction house (or mail, trade,
+-- a vendor, the guild bank) open, the Crafts tab stays shut. And Settings turns it off.
+local shown = {}
+local realShow = GuildOS.ShowCraftFor
+GuildOS.ShowCraftFor = function(_, id) shown[#shown + 1] = id end
+local function altClick(link)
+  shown = {}
+  altDown = true
+  for _, fn in ipairs(hooks.HandleModifiedItemClick or {}) do fn(link) end
+  altDown = false
+  return shown[1]
+end
+local LINK = "|cffffffff|Hitem:2840::::::::|h[Item 2840]|h|r"
+check(altClick(LINK) == 2840, "Alt-click an item someone crafts opens its recipe")
+for _, name in ipairs({ "AuctionHouseFrame", "AuctionFrame", "MailFrame", "TradeFrame", "MerchantFrame", "GuildBankFrame" }) do
+  _G[name] = CreateFrame("Frame")
+  check(altClick(LINK) == nil, "not with " .. name .. " open")
+  _G[name]:Hide()
+  check(altClick(LINK) == 2840, "and again once " .. name .. " closes")
+  _G[name] = nil
+end
+GuildOS:SetSetting("altClickCrafts", false)
+check(altClick(LINK) == nil, "turned off in Settings, Alt-click opens nothing")
+GuildOS:SetSetting("altClickCrafts", true)
+check(altClick(LINK) == 2840, "turned back on, it opens the recipe")
+GuildOS.ShowCraftFor = realShow
+
+-- ── The order beside the columns, or under them (#415) ──────────────────
+-- In a narrow list the crafters' "Ask them" was drawn over the order's Quantity and Tip: there the
+-- block takes more rows and puts the order under the columns.
+local ROW_H = 24
+local st = panel.state
+GuildOS:ShowCraftFor(2840)
+check(panel.detail.shown and not panel.detail:IsStacked(), "a wide (or unmeasured) list: the order beside the columns")
+local wideRows = st.detailRows
+panel.detail.w = 470
+panel.detail.scripts.OnSizeChanged(panel.detail, 470)
+check(panel.detail:IsStacked() and st.detailRows > wideRows and st.detailRows * ROW_H == panel.detail:GetHeight(),
+      "a narrow one: the block takes more rows and the order goes under the columns")
+panel.detail.w = 900
+panel.detail.scripts.OnSizeChanged(panel.detail, 900)
+check(not panel.detail:IsStacked() and st.detailRows == wideRows, "widened again, back beside them")
 
 print("crafts-tab: " .. checks .. " checks passed")

@@ -3499,3 +3499,7 @@ L["Share the ban on %s with the alliance"] = "%s 님의 차단을 동맹과 공�
 L["Share"] = "공유"
 L["Choose a reason"] = "사유 선택"
 L["The alliance's officers are alerted about them; nobody is banned for it."] = "동맹 관리자에게 경고만 표시되며, 이것으로 차단되는 사람은 없습니다."
+
+-- UI/SettingsPanel.lua (#415)
+L["Alt-click an item to open its recipe in Crafts"] = "아이템 Alt-클릭 시 제작 탭에서 제작법 열기"
+L["Never while the auction house, mail, trade, a vendor or the guild bank is open."] = "경매장, 우편함, 거래, 상인 또는 길드 은행이 열려 있을 때는 열지 않습니다."

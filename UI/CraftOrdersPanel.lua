@@ -354,8 +354,15 @@ end
 ----------------------------------------------------------------------
 local DETAIL_H   = 152
 local COMPOSER_W = 248
+local COMPOSER_H = DETAIL_H - 16
 local MAT_LINES  = 5
 local WHO_LINES  = 3
+local COL_MIN    = 120
+-- Materials and crafters side by side, the order on their right, takes this much width. A
+-- narrower block puts the order under them, taller, instead of drawing the crafters' "Ask them"
+-- over it (#415).
+local WIDE_MIN   = 34 + 2 * COL_MIN + 18 + COMPOSER_W + 16
+local STACKED_H  = DETAIL_H + COMPOSER_H + 8
 
 function GuildOS:CreateCraftDetail(parent)
     local d = CreateFrame("Frame", nil, parent, "BackdropTemplate")
@@ -402,11 +409,9 @@ function GuildOS:CreateCraftDetail(parent)
     local whoMore = UI:CreateText(d, "", 10, C.label.r, C.label.g, C.label.b)
     whoMore:SetJustifyH("LEFT")
 
-    -- The order, on the right
+    -- The order: on the right, or under the columns in a narrow list (Paint places it)
     local box = CreateFrame("Frame", nil, d, "BackdropTemplate")
-    box:SetPoint("TOPRIGHT", -8, -8)
-    box:SetPoint("BOTTOMRIGHT", -8, 8)
-    box:SetWidth(COMPOSER_W)
+    box:SetSize(COMPOSER_W, COMPOSER_H)
     box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(box) })
     box:SetBackdropColor(C.bg.r, C.bg.g, C.bg.b, 1)
     box:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
@@ -440,11 +445,30 @@ function GuildOS:CreateCraftDetail(parent)
 
     d.qty, d.mode = 1, "mats"
 
+    -- The height the block takes at width `w`: the order beside the columns, or under them.
+    function d:HeightFor(w)
+        return (w and w > 0 and w < WIDE_MIN) and STACKED_H or DETAIL_H
+    end
+    -- The layout follows the height the list gave the block; when the width asks for the other
+    -- one, `onReflow` (the list's) gives it the rows it needs.
+    function d:IsStacked()
+        return (self:GetHeight() or 0) >= STACKED_H - 0.5
+    end
+
     function d:Paint()
         local O, r = Orders(), self.recipe
         if not r then return end
         local w = self:GetWidth() or 600
-        local colW = math.max(120, math.floor((w - 34 - COMPOSER_W - 16 - 18) / 2))
+        local stacked = self:IsStacked()
+        box:ClearAllPoints()
+        local colW
+        if stacked then
+            box:SetPoint("TOPLEFT", 34, -DETAIL_H)
+            colW = math.max(60, math.floor((w - 34 - 8 - 18) / 2))
+        else
+            box:SetPoint("TOPRIGHT", -8, -8)
+            colW = math.max(COL_MIN, math.floor((w - 34 - COMPOSER_W - 16 - 18) / 2))
+        end
         -- The recipe of the row clicked, when the catalog says which (issue #396).
         local crafts = math.ceil(self.qty / O:Yield(r.item, nil, r.recipeId))
         -- Materials
@@ -562,15 +586,29 @@ function GuildOS:CreateCraftDetail(parent)
         self.recipe = recipe
         self:Paint()
     end
-    d:SetScript("OnSizeChanged", function(self) if self:IsShown() then self:Paint() end end)
+    d:SetScript("OnSizeChanged", function(self, w)
+        if not self:IsShown() then return end
+        if self.onReflow and (self:HeightFor(w) == STACKED_H) ~= self:IsStacked() then
+            self.onReflow()
+            return
+        end
+        self:Paint()
+    end)
     return d
 end
 
 -- The catalog lists keep fixed-height rows. An open recipe takes DETAIL_ROWS of them: the list
 -- gets that many empty entries after it, and the detail is laid over their place (the list clips
--- what scrolls out). Returns the list with the entries, and where the first one is.
-function UI.WithDetail(results, isOpen, rowH)
-    local n = math.ceil(DETAIL_H / rowH)
+-- what scrolls out). `detail` (optional) says how tall it is at the list's width. Returns the
+-- list with the entries, and where the first one is.
+function UI.WithDetail(results, isOpen, rowH, detail)
+    local h = DETAIL_H
+    if detail and detail.HeightFor then
+        local w = detail:GetWidth()
+        if not w or w <= 0 then w = detail:GetParent() and detail:GetParent():GetWidth() end
+        h = detail:HeightFor(w)
+    end
+    local n = math.ceil(h / rowH)
     for i, e in ipairs(results) do
         if isOpen(e) then
             for k = 1, n do table.insert(results, i + k, { __detail = k }) end
@@ -1046,8 +1084,20 @@ end
 
 ----------------------------------------------------------------------
 -- Alt-click an item (bags, chat, the bank): its recipe opens in the Crafts tab, ready to order.
--- Not for a master looter, whose Alt-click on a bag item starts a roll (Modules/LootMaster.lua).
+-- Not for a master looter, whose Alt-click on a bag item starts a roll (Modules/LootMaster.lua),
+-- nor while a window that has its own use for the click is open: Auctionator and others sell
+-- or post the item on an Alt-click (#415). Settings turns the shortcut off ("altClickCrafts").
 ----------------------------------------------------------------------
+local BUSY_FRAMES = { "AuctionHouseFrame", "AuctionFrame", "MailFrame", "TradeFrame", "MerchantFrame", "GuildBankFrame" }
+
+local function busyFrameOpen()
+    for _, name in ipairs(BUSY_FRAMES) do
+        local f = _G[name]
+        if type(f) == "table" and f.IsShown and f:IsShown() then return true end
+    end
+    return false
+end
+
 local function itemHasCrafters(id)
     local rt = GuildOS.RecipeTracker
     if rt and rt:GetCraftersForItem(id) then return true end
@@ -1059,6 +1109,7 @@ if HandleModifiedItemClick and GuildOS.CraftOrders then
     hooksecurefunc("HandleModifiedItemClick", function(link)
         if not (IsAltKeyDown() and not IsShiftKeyDown() and not IsControlKeyDown()) then return end
         if type(link) ~= "string" or GuildOS.Compat.InCombat() then return end
+        if GuildOS:GetSetting("altClickCrafts") == false or busyFrameOpen() then return end
         local lm = GuildOS.LootMaster
         if lm and lm.IsMasterLooter then
             local ok, isML = pcall(lm.IsMasterLooter, lm)

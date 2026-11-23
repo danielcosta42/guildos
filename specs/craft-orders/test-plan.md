@@ -17,6 +17,10 @@ Two characters with the addon: A (no professions) and B (knows a recipe, e.g. Co
 8. **The tab.** Alt-click an item in the bags: Crafts opens on its recipe, opened. Filters I craft and
    With orders. Narrow the window under 940 px: the queue becomes "Orders (N)", a drawer.
    As master looter, Alt-click on a bag item still starts the roll, not the tab.
+   With the auction house open (Auctionator: Alt-click sells), mail, trade, a vendor or the guild
+   bank, Alt-click on a bag item leaves Crafts shut. Turned off in Settings, it never opens (#415).
+   With the queue docked (window just over 940 px), open a recipe: the order sits under materials
+   and crafters, and no "Ask them" covers Quantity, the modes or Tip (#415).
 9. **Two orders with one player.** The trade bar shows "1/2 >" and switches between them.
 6. **Rules.** A cancels an order; B gives an accepted order back → open again.
 7. **Late login.** C logs in after the orders were made: Orders shows them within ~10 s.
