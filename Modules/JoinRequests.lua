@@ -204,11 +204,11 @@ function JR:Deliver(e)
     local silent = (e.rounds or 0) >= 1 and not e.delivered
     if peer then
         e.rounds = (e.rounds or 0) + 1
-        if gossip:Whisper(peer, payload) then sent = 1 end
+        if gossip:Whisper(peer, payload, "high") then sent = 1 end
     end
     if not peer or silent then
         for _, name in ipairs(e.ct or {}) do
-            if gossip:Whisper(name, payload) then sent = sent + 1 end
+            if gossip:Whisper(name, payload, "high") then sent = sent + 1 end
         end
     end
     return sent
@@ -402,7 +402,7 @@ end
 local function answerTo(r, name, id)
     local gossip = GuildOS.ChehulGossip
     local state, by = answerOf(r)
-    if state and gossip then gossip:Whisper(name, table.concat({ "CRA", id or r.id, state, by }, "|")) end
+    if state and gossip then gossip:Whisper(name, table.concat({ "CRA", id or r.id, state, by }, "|"), "high") end
 end
 
 -- A closed row whose request is heard again: a client that was offline at the decision, or the person
@@ -416,7 +416,7 @@ local function announceAgain(r)
     local by = r.decidedBy or me()
     toGuild(table.concat({ "CRA", r.id, r.status, by }, "|"))
     local gossip = GuildOS.ChehulGossip
-    if gossip then gossip:Whisper(r.character, table.concat({ "CRA", r.gameId or r.id, r.status, by }, "|")) end
+    if gossip then gossip:Whisper(r.character, table.concat({ "CRA", r.gameId or r.id, r.status, by }, "|"), "high") end
 end
 
 -- A CRQ off the network. Whispered by the player it is the player's own, and answered; over GUILD it is
@@ -531,7 +531,7 @@ function JR:Decide(id, status)
     toGuild(table.concat({ "CRA", id, status, me() }, "|"))
     local gossip = GuildOS.ChehulGossip
     if gossip and (r.source == "addon" or r.gameId) and now() - (r.seen or 0) < self.ONLINE_SECONDS then
-        gossip:Whisper(r.character, table.concat({ "CRA", r.gameId or id, status, me() }, "|"))
+        gossip:Whisper(r.character, table.concat({ "CRA", r.gameId or id, status, me() }, "|"), "high")
     end
     changed()
     return true

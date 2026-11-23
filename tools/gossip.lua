@@ -267,10 +267,17 @@ local function client(name, o)
   source(env, "Core/Core.lua")
   source(env, "Core/Compat.lua")
   source(env, "Core/Utils.lua")
+  source(env, "Core/WhisperQueue.lua")   -- every whisper waits its turn on Forever (#393)
   source(env, "Libs/LibChehulMesh.lua")
   source(env, "Modules/ChehulGossip.lua")
   source(env, "Modules/RecruitBeacon.lua")
   env.GuildOS.db = {}
+  -- The rules of the gossip are checked a second after a message; the queue's pace is tools/whisper-queue.lua's,
+  -- and the fifty clients below run at the real one.
+  if not o.realPace then
+    local Q = env.GuildOS.WhisperQueue
+    Q.INTERVAL, Q.BURST, Q._state.interval, Q._state.tokens = 0.001, 1000, 0.001, 1000
+  end
   c.env, c.GuildOS = env, env.GuildOS
   c.Gossip, c.RB = env.GuildOS.ChehulGossip, env.GuildOS.RecruitBeacon
   if o.channel then c.Gossip.CHANNEL = true end   -- a version that turns the route on
@@ -1156,7 +1163,7 @@ for _, held in ipairs({ 0, 11, 12, 30, 39 }) do
       fresh()
       local ring = {}
       for i = 1, 50 do
-        ring[i] = client("Node N" .. i)
+        ring[i] = client("Node N" .. i, { realPace = true })   -- the WhisperQueue at its real pace (#393)
         stock(ring[i], ads(held))
       end
       local key = edit and "Guild 01" or "Ordem"

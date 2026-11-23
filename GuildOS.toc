@@ -47,6 +47,7 @@ Core\Compat.lua
 Core\Data.lua
 Core\Style.lua
 Core\Utils.lua
+Core\WhisperQueue.lua
 Core\Commands.lua
 Core\Probe.lua
 

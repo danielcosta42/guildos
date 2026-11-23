@@ -2004,8 +2004,14 @@ function LootMaster:SendAnswer(key, bid, note)
     if note ~= "" then msg = msg .. "|" .. note end
     if heard.spec.sealed and bid > 0 then
         if IsInRaid() and not self.testMode then
-            GuildOS:NoteWhisper(heard.sender)
-            GuildOS.Compat.SendAddonMessageNow(LootMaster.PREFIX, msg, "WHISPER", heard.sender)
+            local to = heard.sender
+            local function send()
+                GuildOS:NoteWhisper(to)
+                GuildOS.Compat.SendAddonMessageNow(LootMaster.PREFIX, msg, "WHISPER", to)
+            end
+            -- First in the WhisperQueue, never dropped (issue #393).
+            local queue = GuildOS.WhisperQueue
+            if queue then queue:PushAddon(LootMaster.PREFIX, msg, to, "high", send) else send() end
         end
     else
         self:SafeSendAddon(LootMaster.PREFIX, msg, "RAID")
