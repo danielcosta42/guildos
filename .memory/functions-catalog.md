@@ -554,10 +554,10 @@ Removed: `Compat.NewTimer`.
 | `OfficerNotes:SetTag(playerKey, tag, value)` | Sets tag on player note record (officer only) |
 | `OfficerNotes:GetTag(playerKey, tag)` | Returns specific tag value or nil |
 | `OfficerNotes:GetAllTags(playerKey)` | Returns full tags table or {} |
-| `OfficerNotes:BroadcastNote(playerKey, noteEntry)` | Serializes and sends "ON" comm message |
-| `OfficerNotes:HandleIncoming(data)` | Deserializes, deduplicates by author+timestamp, inserts note |
-| `OfficerNotes:BroadcastAllNotes()` | Serializes full officerNotes and sends "OA" comm message |
-| `OfficerNotes:HandleAllIncoming(data)` | Merges incoming bulk notes, deduplicates, sorts |
+| `OfficerNotes:BroadcastNote(playerKey, noteEntry)` | Serializes and sends "ON" over OFFICER only (`SendToOfficers`); nothing without the channel (#430) |
+| `OfficerNotes:HandleIncoming(data)` | Deserializes, deduplicates by author+timestamp, inserts note; CommSystem passes it only an officer's, over OFFICER or (transition) GUILD (#430) |
+| `OfficerNotes:BroadcastAllNotes()` | Serializes notes and tags and sends "OA" over OFFICER only; nothing without the channel (#430) |
+| `OfficerNotes:HandleAllIncoming(data)` | Merges incoming bulk notes, deduplicates, sorts; CommSystem passes it only an officer's over OFFICER (#430) |
 | `OfficerNotes:MergeSheet(existing, incoming)` | Folds one member's sheet into another: every held note kept, an arriving one added unless the same author+timestamp is held, newest first, non-notes dropped; incoming non-empty tags win (issue #97); the member's sheet at the higher revision stays (#427) |
 | `OfficerNotes.CleanSheetText(text)` | Pure: the sheet as kept: no "|" or control character but the line break, at most 3 blank lines in a row, trimmed, `SHEET_MAX` letters (#427) |
 | `OfficerNotes.SheetWins(rev, entry, cur, held)` | Pure: whether a sheet replaces the held one: higher revision; a tie by text then author (#427) |
@@ -566,7 +566,9 @@ Removed: `Compat.NewTimer`.
 | `OfficerNotes:SetSheet(key, text)` | Writes the sheet as this officer's at max(server time, last + 1) and publishes it on `osheet` (#427) |
 | `OfficerNotes:ApplySheets(list, sender)` / `:OnSheetSync(env, sender)` | Applies sheets off the network (keys localized, checked); officers only (#427) |
 | `CommSystem:SendToOfficers(msgType, data, priority, kind)` | Sends over the OFFICER addon channel only; false and nothing sent without it (#427) |
-| `Compat.OfficerAddonChannel()` | "OFFICER" on retail and TBC Anniversary; nil, "no-channel" on WoW: Forever (not checked in game); nil, "no-permission" when the rank may not speak in officer chat (SyncService:Publish tells the officer once) (#427) |
+| `CommSystem:OfficerChannel()` | `Compat.OfficerAddonChannel()`, telling a rank that may not speak in officer chat once a session (shared by SyncService's officer domains and the notes) (#427, #430) |
+| `CommSystem:OfficerTypeChannelOk(msgType, channel)` | Whether an `OFFICER_TYPES` message ("ON", "OA") counts over `channel`: OFFICER; GUILD only for "ON" (`OFFICER_TYPES_LEGACY_GUILD`, transition, ADR-0045) (#430) |
+| `Compat.OfficerAddonChannel()` | "OFFICER" on retail and TBC Anniversary; nil, "no-channel" on WoW: Forever (not checked in game); nil, "no-permission" when the rank may not speak in officer chat (`CommSystem:OfficerChannel` tells the officer once) (#427) |
 | `Compat.CanSpeakOfficerChat()` | Whether this character's rank may speak in officer chat (rank flag 4, from `C_GuildInfo.GuildControlGetRankFlags` or the older `GuildControlGetRankFlags`); nil when the client answers neither (#427) |
 | `ChatTweaks.KeyOf(name)` | #429: the chat cache's key for a roster name or a chat author, the whole name with its realm (the player's when none), so a namesake from another realm gets no guildmate's nickname or tag |
 | `OfficerNotes:BackfillSheets(force)` | Every sheet at its stored revision, 2 per envelope 3 s apart; once per 10 min unless forced (#427) |

@@ -24,7 +24,16 @@ and when the member joined, as GRM shows. ADR-0042.
    member's sheet changed). A write takes revision max(server time, last + 1): the newer edit wins on every
    client, a tie settles the same everywhere. An officer re-sends every sheet at its stored revision on the
    answer to a sync request (at most once per 10 minutes) and on `/gos sync`, 2 sheets per envelope, 3 s
-   apart (#324). "OA" no longer carries the sheet; "ON" and "OA" are unchanged for clients before #427.
+   apart (#324). "OA" no longer carries the sheet.
+6. **The dated notes and tags (issue #430, ADR-0045):** "ON" (one note) and "OA" (all notes and tags) go the same
+   way as the sheet: only over OFFICER (`CommSystem:SendToOfficers`; `CommSystem.OFFICER_TYPES`, the rule
+   `OFFICER_CHANNEL_DOMAINS` is for envelopes), never over GUILD or a whisper, whoever calls. Without the channel,
+   or for a rank that may not speak in officer chat, the note stays on this client, with the same warning once a
+   session (one warning for sheets, marks and notes). Received over OFFICER from an officer only; over a whisper
+   never. **Transition:** "ON" over GUILD from an officer (a client before #430) is still read, so an old
+   officer's note is not lost; reading it exposes nothing more, the old client already sent it there. "OA" over
+   GUILD is not read. The GUILD "ON" goes in the next version. Until then an officer on an old client does not
+   get the notes new clients write.
 3. **The card** (hover on a roster row), added lines:
    - everyone: the alts of a main, or the main and the other alts of an alt, each in its class colour,
      "(online)" in green on those online, a character not in the roster greyed; the Mythic+ rating and
@@ -40,7 +49,8 @@ and when the member joined, as GRM shows. ADR-0042.
 
 ## Privacy
 
-Free text about people: on officers' clients only, never in the companion export, never on the site.
+Free text about people: on officers' clients only, never in the companion export, never on the site; the
+sheet, the marks (#429) and the dated notes (#430) never reach a member's client.
 
 ## Out of scope
 

@@ -209,11 +209,8 @@ function SyncService:Publish(domain, action, data, opts)
 
     local officersOnly = self.OFFICER_CHANNEL_DOMAINS[domain]
     if officersOnly then
-        local chan, why = GuildOS.Compat.OfficerAddonChannel()
-        if why == "no-permission" and not self._warnedNoOfficerChat then   -- once a session (#427)
-            self._warnedNoOfficerChat = true
-            GuildOS:Print(GuildOS.L["Your rank cannot speak in officer chat: what you write for the officers stays on this client."])
-        end
+        -- No channel, or a rank that may not speak there (told once a session, shared with the notes, #430).
+        local chan = GuildOS.CommSystem and GuildOS.CommSystem:OfficerChannel()
         if opts.target or not chan then return nil end
     end
 
