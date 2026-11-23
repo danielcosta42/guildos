@@ -23,19 +23,26 @@ only reached the guild when an officer pressed "send to the guild" while people 
 
 ### The code (Modules/AllianceLink.lua)
 
-5. **In the guild info, as GreenWall.** An officer's save also writes the `GOS=` line in the guild info
-   (the rest of the text kept, the old line replaced; not written when it would pass 500 bytes or the
-   officer cannot edit it). Every member reads the guild info at login and at each roster update: the
-   server sends it with nobody else online.
-   * When the info's text **changes**, its code wins over the addon's copy.
-   * A code read from the info and gone from it is a removal, but an empty info (not sent yet) is not.
-   * A code that does not name this guild is ignored.
-   * An officer who cannot edit the info, facing **another** code there, is refused with a reason: that
-     code would win at every login. With no code there, the save goes by sync alone, as before.
-6. **The sync relay works both ways.** An `ask` from somebody holding a newer revision makes the others ask
-   back (at most once every 30 s), so a holder logging in hands the code on, not only a newcomer asking.
-7. **A relayed copy before the roster loads** (nobody reads as an officer yet) waits and is checked again
-   when the roster comes in, instead of being lost.
+5. **Short, no list of guilds.** The code is `GOS=TAG:key` (27 bytes at most). Who holds the key is the
+   alliance. The listed form (`GOS=TAG:key:Guilda A;Guilda B`) is still read, for codes already pasted.
+6. **The guilds find each other.** A guild is learned when it proves the key: a line on the passworded
+   channel (its name from the speaker's mesh presence, `gosg`), or a data op whose `_k` is the key's proof
+   for its sender. The mesh's peers advertising our tag (`gosa`) are only candidates: AllianceSync sends
+   them a HEAD, and their proved answer makes them ours. A line of a guild not met yet is shown all the
+   same, tagged "Allied guild". A guild silent for 30 days is forgotten.
+7. **In the guild master's public note.** Every member reads it whenever the roster comes in: the server
+   sends it with nobody else online. The officer's save writes it there (the note's other words kept while
+   they fit 31 bytes) where the game lets an addon write notes (TBC Anniversary); a new guild master's empty
+   note gets it from any officer's client by itself. WoW: Forever and retail forbid it: no one pastes
+   anything, the guild hands it on (8).
+   * When the note **changes**, its code wins over the addon's copy.
+   * A code taken out of the same guild master's note is a removal; a new guild master without one is not.
+   * Another code in a note this client cannot change: the save is refused with a reason.
+8. **Everybody hands it on.** Any member answers an `ask` (`have`), a holder from the note too. An `ask`
+   from somebody holding a newer revision makes the others ask back (at most once every 30 s), so a holder
+   logging in hands it on, not only a newcomer asking. The origin is what is checked, not the relay: a copy
+   counts when the officer it names is one on the roster, or when it says it came from the guild master's
+   note and our own copy of that note says the same. A relayed copy before the roster loads waits for it.
 
 ## Limits (the game's)
 
