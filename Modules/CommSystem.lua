@@ -17,7 +17,7 @@ CommSystem.MSG_TYPES = {
     PING      = "PI",    -- Presence ping
     PONG      = "PO",    -- Presence response
     VERSION   = "VR",    -- Version check
-    ALT_LINK  = "AL",    -- Alt/main link table sync (officer-authored; all members store)
+    ALT_LINK  = "AL",    -- Alt/main link table, for clients before #424; received only as a merge (AltSync)
     SELF_ALT  = "SA",    -- member self-claim of own alts (officers replay via LinkAlt)
     RAID_DATA = "RD",    -- Raid attendance + session sync (officer only)
     RAID_DELETE = "RX",  -- Delete a raid session (officer only; sender verified)
@@ -349,21 +349,12 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             GuildOS.RaiderRoster:HandleIncoming(sender, data)
         end
     elseif msgType == CommSystem.MSG_TYPES.ALT_LINK then
-        -- Officer-authored, everyone stores: members need altLinks to see
-        -- alt/main grouping (True Roster, chat tags, inspector). Over GUILD only (issue #81).
-        if channel == "GUILD" and GuildOS:IsOfficerByName(sender) then
+        -- The whole table, from an officer on a client before #424 (or this one's copy for them). Over GUILD
+        -- only (issue #81). It used to replace this client's table and wiped everybody's links; now it is
+        -- only merged in, never removing or changing a link, and an empty one is nothing (AltSync).
+        if channel == "GUILD" and GuildOS:IsOfficerByName(sender) and GuildOS.AltSync then
             local ok, links = LibSerialize:Deserialize(data)
-            if ok and type(links) == "table" then
-                -- Both sides keyed this client's way: on Forever the officer's keys carry its realm (#97).
-                local localized = {}
-                for alt, main in pairs(links) do
-                    local la, lm = GuildOS:LocalMemberKey(alt), GuildOS:LocalMemberKey(main)
-                    if la ~= lm then localized[la] = lm end   -- one split person is not their own alt
-                end
-                GuildOS.db.altLinks = localized
-                -- A member's own claim the list lacks goes back on top of it (#353).
-                if GuildOS.AltAutoDetect then GuildOS.AltAutoDetect:OnOfficerLinks() end
-            end
+            if ok and type(links) == "table" then GuildOS.AltSync:OnLegacyList(links, sender) end
         end
     elseif msgType == CommSystem.MSG_TYPES.SELF_ALT then
         if GuildOS.AltAutoDetect then GuildOS.AltAutoDetect:HandleSelfClaim(sender, data) end
@@ -545,11 +536,8 @@ function CommSystem:_Answer()
     C_Timer.After(math.random() * 3, function()  -- Stagger responses
         self:BroadcastMyData()
 
-        -- Officers also send the alt/main link table. This REQUEST handler
-        -- is what a member's automatic login-time pull (and the periodic
-        -- re-REQUEST ticker) lands on, so this is what lets a member who
-        -- logs in later actually converge on altLinks without an officer
-        -- having to run a manual /gos sync.
+        -- Officers also send the alt/main link table, for the clients before #424 (never an empty one).
+        -- This client's own links come from AltSync:Backfill below.
         if GuildOS:IsOfficer() then
             C_Timer.After(0.5, function()
                 self:BroadcastAltLinks()
@@ -666,6 +654,13 @@ function CommSystem:_Answer()
                 GuildOS.Bulletin:Backfill()
             end)
         end
+
+        -- Every alt link, tombstones included, at its stored revision, in spaced batches (issue #424).
+        if GuildOS:IsOfficer() and GuildOS.AltSync then
+            C_Timer.After(6.5, function()
+                GuildOS.AltSync:Backfill()
+            end)
+        end
     end)
 end
 
@@ -715,10 +710,15 @@ end
 ----------------------------------------------------------------------
 -- Broadcast alt link table to all officers in guild
 ----------------------------------------------------------------------
+-- For the clients before #424, which replace their whole table with it: so never an empty one, and
+-- always the whole view, never a part.
 function CommSystem:BroadcastAltLinks()
     if not GuildOS:IsOfficer() then return end
     if not IsInGuild() then return end
-    local serialized = LibSerialize:Serialize(GuildOS.db.altLinks or {})
+    if GuildOS.AltSync then GuildOS.AltSync:Rebuild() end
+    local links = GuildOS.db.altLinks
+    if type(links) ~= "table" or next(links) == nil then return end
+    local serialized = LibSerialize:Serialize(links)
     self:SendMessage(self.MSG_TYPES.ALT_LINK, serialized)
 end
 
@@ -751,6 +751,7 @@ function CommSystem:FullSync()
 
     C_Timer.After(1, function()
         self:BroadcastAltLinks()
+        if GuildOS.AltSync then GuildOS.AltSync:Backfill() end   -- issue #424
     end)
 
     C_Timer.After(2, function()

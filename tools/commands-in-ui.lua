@@ -98,6 +98,8 @@ local IN_UI = {
   -- Leadership > Bulk actions (issue #420): its Next, Skip and Stop are the panel's buttons.
   bulk        = { { "UI/ManagementPanel.lua", "GuildOS:BuildBulkSub(p)" }, { "UI/BulkPanel.lua", "BA:Skip()" },
                   { "UI/BulkPanel.lua", "BA:Stop()" }, { "UI/BulkPanel.lua", "GuildOS.BulkActions:Arm(down)" } },
+  -- A member's alts to the main's rank (issue #424): the buttons on the member's sheet.
+  altgroup    = { { "UI/MemberDetail.lua", "GuildOS.BulkActions:StartGroupAndSay(playerKey" } },
   mentions    = { { "UI/SettingsPanel.lua", "GuildOS.Mentions:PrintLog()" },
                   { "UI/SettingsPanel.lua", 'GuildOS.Mentions:HandleCommand({ "clearwords" })' } },
   notecmd     = { { "UI/SettingsPanel.lua", "GuildOS.db.noteCommand.enabled = checked" } },
@@ -119,6 +121,7 @@ local CHAT_ONLY = {
   help = "prints the list of commands", commands = "help's alias",
   lfg = "opens by itself for a player with no guild",
   resscan = "debug: the resistance scan, printed",
+  altlimit = "an audit printed in chat, as GRM's /grm altlimit (issue #424)",
   ["attune debug"] = "debug", ["attunements debug"] = "debug", ["attune dumpquests"] = "debug: a quest-id dump",
 }
 

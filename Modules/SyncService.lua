@@ -37,6 +37,7 @@ SyncService.OFFICER_DOMAINS = {
     bulletin = true,   -- officer announcements
     cta      = true,   -- an officer's call to arms (answering it is a member action, issue #108)
     ban      = true,   -- blacklist add/remove (officer-authoritative)
+    alt      = true,   -- alt links, one entry per alt with a tombstone on unlink (issue #424)
     discipline = true, -- the disciplinary record (issue #402): officers write, and only officers keep it
     reminder  = true,  -- when an officer reminded a member to install GuildOS (issue #422)
     modalert  = true,  -- an officer claiming a flagged chat line, so the others do not alert (issue #404)

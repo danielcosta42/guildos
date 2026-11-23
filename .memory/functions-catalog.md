@@ -210,8 +210,8 @@ Removed: `Compat.NewTimer`.
 | `GuildOS:IsOfficer()` | true if local rank index ≤ officerMaxRank setting |
 | `GuildOS:IsOfficerByName(fullName)` | Checks officer status by scanning guild roster |
 | `GuildOS:SetOfficerMaxRank(n)` / `PublishOfficerMaxRank(justChanged)` / `OnOfficerMaxRankSync(env)` | The guild's officer threshold (issue #81): an officer's change is stamped (`settings.officerMaxRankAt`) and published on the `guildcfg` SyncService officer domain; officers re-send it on the 5-minute sync and when asked; a local change is stamped past the one held and goes out even when it demotes the sender; every client keeps the newest stamp (a real time, held to 5 min ahead of its clock; a tie goes to the lower threshold), a whole rank 0..9, sent by an officer over GUILD. `SetOfficerMaxRank` returns false and does nothing for a non-officer. A threshold set before #81 that is not the default is shared by the Settings button |
-| `GuildOS:LinkAlt(altKey, mainKey)` | Links alt to main in altLinks, broadcasts (officer only) |
-| `GuildOS:UnlinkAlt(altKey)` | Removes alt link, broadcasts (officer only) |
+| `GuildOS:LinkAlt(altKey, mainKey)` | Links alt to main (officer only): plans the view with `_PlanLink` (the alt's own alts follow it; nil when main is an alt) and writes it through `AltSync:Commit` (#424) |
+| `GuildOS:UnlinkAlt(altKey)` | Unlinks the alt (officer only): a tombstone through `AltSync:Commit` (#424) |
 | `GuildOS:GetLinkedChars(playerKey)` | Returns all keys in the same alt/main account group |
 | `GuildOS:DeepCopy(orig)` | Recursively deep-copies a table |
 | `GuildOS:GetClassColor(class)` | Returns r,g,b for a WoW class token |
@@ -640,6 +640,26 @@ Removed: `Compat.NewTimer`.
 | `BulkActions:Arm(down)` / `:AfterClick(down)` | The secure Next button's PreClick (the one line this click runs) and PostClick |
 | `BulkActions:Typed()` / `:CommandNext()` / `:Command(rest)` | Whether the line is printed to type (Forever, or a blocked click); `/gos bulk` next, skip, stop |
 | `BulkActions:Confirm()` / `:OnBlocked(event, arg1)` | GUILD_ROSTER_UPDATE: a change the roster shows is done and logged once; a block right after a click turns typed mode on |
+
+| `BulkActions.Toward(rank, action, target)` / `.GroupMatch(members, group, mainKey, action, target, ctx)` | Pure (#424): a step left toward the target rank; a group's alts (never the main) short of it that Eligible allows |
+| `BulkActions:StartGroup(key, action, target)` / `:StartGroupAndSay(...)` / `:CommandGroup(rest)` | A queue taking a member's alts to the main's rank (or `target`), one step per click, re-queued until there; `/gos altgroup` |
+
+## AltSync.lua — GuildOS.AltSync (alt links synced per alt, #424; ADR-0040)
+
+| Function | Purpose |
+|---|---|
+| `AltSync:Initialize()` | Registers domain `alt`, migrates the old `altLinks` once (entries at `LEGACY_REV`, no author), rekeys on Forever, prunes tombstones, rebuilds the view |
+| `AltSync.Base(entries)` / `.Flatten(links)` | Pure: the standing links of the entries; flat (a chain to its last main, a loop to its lowest key) |
+| `AltSync:BaseView()` / `:HeardView()` / `:Entries()` | The officers' links; only those an officer said (not this client's own migration); the entries |
+| `AltSync:Rebuild()` | `db.altLinks` = BaseView + a member's waiting claims (`AltAutoDetect:Overlay`), flat |
+| `AltSync.Wins(rev, entry, cur, held)` | Pure: higher revision wins; at a tie nothing seen comes back, own migration yields, else by main/author |
+| `AltSync:Commit(links)` / `:Write(changes)` | Officers: write every alt whose entry differs from `links` (rev = max(server time, last + 1)), publish in batches, send "AL" for old clients |
+| `AltSync:Apply(list, sender)` / `:OnSync(env, sender)` | Officer entries off the network (`{ k, m, x, a, t, r }`), keys localized |
+| `AltSync:OnLegacyList(links, sender)` | "AL" from a client before #424: merge only (adds alts never heard of; never removes or changes; empty is nothing) |
+| `AltSync:Backfill()` | Officers: every entry at its stored revision, `BATCH` per envelope, `BATCH_GAP` s apart, one at a time |
+| `AltSync.OverLimit(links, n)` / `:CommandLimit(rest)` | The groups with more than n alts; `/gos altlimit N` |
+
+AltAutoDetect (#424): `Overruled(p, entries)` (a newer officer tombstone or link elsewhere ends a claim), `Overlay(links)`, `OnOfficerLinks()` (a claim goes only applied or overruled).
 
 UI: `UI/BulkPanel.lua` — `GuildOS:BuildBulkSub(panel)`, the secure `GuildOSBulkNext` button (docked out of combat only).
 Compat (#420): `CanGuildPromote/Demote/Remove`, `MyGuildRankIndex`, `GuildRankCommand(action, name)`, `SecureGuildMacro`,

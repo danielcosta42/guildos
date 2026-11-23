@@ -97,7 +97,10 @@ local function printHelp()
         helpLine("/gos banlist",               L["Open the ban list"])
         if GuildOS.BulkActions then
             helpLine("/gos bulk [next | skip | stop]", L["Promote, demote or remove by rules, one member per click"])
+            helpLine("/gos altgroup <promote | demote> <name> [rank]",
+                L["Promote or demote a member's alts to their main's rank, or to a rank, one per click"])
         end
+        helpLine("/gos altlimit <number>",     L["List the alt groups with more alts than that"])
         helpLine("/gos record <name>",         L["A member's disciplinary record"])
         helpLine("/gos warn <name> [reason]",  L["Warn a member, with one click"])
         helpLine("/gos record term <days>",    L["How long a warning counts"])
@@ -794,6 +797,16 @@ local function handleCommand(msg)
         else
             GuildOS:Print(L["Not available on this client."])
         end
+    elseif msg == "altgroup" or msg:match("^altgroup%s") then
+        -- /gos altgroup <promote | demote> <name> [rank] (#424): a queue in Leadership > Bulk actions, one alt per click.
+        if GuildOS.BulkActions then
+            GuildOS.BulkActions:CommandGroup((msg:gsub("^altgroup%s*", "")))
+        else
+            GuildOS:Print(L["Not available on this client."])
+        end
+    elseif msg == "altlimit" or msg:match("^altlimit%s") then
+        -- /gos altlimit N (#424): the groups with more than N alts, in chat.
+        if GuildOS.AltSync then GuildOS.AltSync:CommandLimit((msg:gsub("^altlimit%s*", ""))) end
     elseif msg == "banlist" then
         GuildOS.UI:OpenWindow("management", "ban")
     elseif msg == "autoinvite" or msg:match("^autoinvite%s") or msg == "ai" or msg:match("^ai%s") then

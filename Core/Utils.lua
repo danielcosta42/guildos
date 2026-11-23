@@ -62,29 +62,43 @@ end
 ----------------------------------------------------------------------
 -- Alt / Main linking (account-wide attunement propagation)
 ----------------------------------------------------------------------
+-- The officers' links are AltSync's entries, synced per alt (issue #424); `db.altLinks` is the view
+-- rebuilt from them. Each officer edit plans the new view and AltSync:Commit writes what changed.
+local function commitLinks(self, links)
+    if self.AltSync then return self.AltSync:Commit(links) end
+    self.db.altLinks = links
+    return 0
+end
+
+-- Pure: `links` with altKey linked to mainKey, a new table, or nil when mainKey is itself an alt (no
+-- loop). An alt that was altKey's own follows it to mainKey, so no alt ever points at an alt.
+function GuildOS:_PlanLink(links, altKey, mainKey)
+    if links[mainKey] then return nil end
+    local out = {}
+    for k, v in pairs(links) do out[k] = (v == altKey) and mainKey or v end
+    out[altKey] = mainKey
+    return out
+end
+
 function GuildOS:LinkAlt(altKey, mainKey)
     if not self:IsOfficer() then return false end
     if not altKey or not mainKey or altKey == mainKey then return false end
-    self.db.altLinks = self.db.altLinks or {}
+    local planned = self:_PlanLink(self.db.altLinks or {}, altKey, mainKey)
     -- Prevent circular links: mainKey must not itself be an alt
-    if self.db.altLinks[mainKey] then
+    if not planned then
         self:Print(L["Error: "] .. mainKey .. L[" is already an alt. Unlink it first."])
         return false
     end
-    self.db.altLinks[altKey] = mainKey
-    if self.CommSystem then
-        self.CommSystem:BroadcastAltLinks()
-    end
+    commitLinks(self, planned)
     return true
 end
 
 function GuildOS:UnlinkAlt(altKey)
     if not self:IsOfficer() then return false end
-    self.db.altLinks = self.db.altLinks or {}
-    self.db.altLinks[altKey] = nil
-    if self.CommSystem then
-        self.CommSystem:BroadcastAltLinks()
-    end
+    local links = {}
+    for k, v in pairs(self.db.altLinks or {}) do links[k] = v end
+    links[altKey] = nil
+    commitLinks(self, links)
     return true
 end
 
@@ -137,10 +151,7 @@ function GuildOS:SetMain(newMainKey)
     local group = self:GetLinkedChars(newMainKey)
     if #group < 2 then return false end                 -- nothing to re-main
     if self.db.altLinks[newMainKey] == nil then return false end  -- already main
-    self.db.altLinks = self:_RepointGroup(self.db.altLinks, group, newMainKey)
-    if self.CommSystem then
-        self.CommSystem:BroadcastAltLinks()
-    end
+    commitLinks(self, self:_RepointGroup(self.db.altLinks, group, newMainKey))
     return true
 end
 

@@ -284,6 +284,8 @@ local MODULE_START = {
     -- Each member's passages and rank changes, kept past the log's 90 days (issue #425).
     { "MemberHistory" },
     { "BanList" },
+    -- The alt links, one synced entry per alt (issue #424): before the readers of db.altLinks.
+    { "AltSync" },
     -- The disciplinary record (issue #402): officers only, synced among them.
     { "Discipline" },
     -- The officers' chat alerts (issue #404): after GuildChat, whose log gives the context.
