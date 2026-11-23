@@ -3632,3 +3632,7 @@ L["For 1 day"] = "Pendant 1 jour"
 L["For %d days"] = "Pendant %d jours"
 L["until %s"] = "jusqu'au %s"
 L["no longer shown"] = "n'est plus affichée"
+-- Modules/RecruitmentSystem.lua, UI/RosterFrame.lua (#419)
+L["Add message"] = "Ajouter un message"
+L["Several messages: one is drawn at random for each welcome, never the same one twice in a row."] = "Plusieurs messages : un est tiré au sort à chaque bienvenue, jamais le même deux fois de suite."
+L["(+%d more, one drawn at random each time)"] = "(+%d autres, un tiré au sort à chaque fois)"

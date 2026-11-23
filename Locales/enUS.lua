@@ -1424,3 +1424,7 @@ L["For 1 day"] = "For 1 day"
 L["For %d days"] = "For %d days"
 L["until %s"] = "until %s"
 L["no longer shown"] = "no longer shown"
+-- Modules/RecruitmentSystem.lua, UI/RosterFrame.lua (#419)
+L["Add message"] = "Add message"
+L["Several messages: one is drawn at random for each welcome, never the same one twice in a row."] = "Several messages: one is drawn at random for each welcome, never the same one twice in a row."
+L["(+%d more, one drawn at random each time)"] = "(+%d more, one drawn at random each time)"

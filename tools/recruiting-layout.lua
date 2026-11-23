@@ -427,6 +427,24 @@ typeInto(boxes[2], "Hi there!")
 click(boxes[2].saveButton)
 check(GuildOS.db.recruitment.discord == "discord.gg/new" and GuildOS.db.recruitment.welcomeMessage == "Hi there!",
   "their Saves write discord and welcomeMessage")
+-- Several welcomes (#419): Add opens a row under the first, its Save puts a second on the list.
+local function shownRemoves()
+  return findAll(welcome.body, function(f) return f.kind == "Button" and f.shown and f.label and f.label.text == "Remove" end)
+end
+check(boxes[2].shown and not boxes[3].shown and #shownRemoves() == 0, "one welcome: one row, which cannot be removed")
+local hOne = welcome.body.h
+check(click(button(welcome.body, "Add message")) and boxes[3].shown and boxes[3].text == "", "Add opens an empty row")
+check(welcome.body.h == hOne + 28 and #shownRemoves() == 1, "the section grows by a row; only the new row can go")
+typeInto(boxes[3], "Glad to have you!")
+click(boxes[3].saveButton)
+local wl = GuildOS.db.recruitment.welcomeMessages
+check(#wl == 2 and wl[1] == "Hi there!" and wl[2] == "Glad to have you!" and GuildOS.db.recruitment.welcomeMessage == "Hi there!",
+  "its Save adds the second welcome; the first stays welcomeMessage")
+check(#shownRemoves() == 2, "with two, either can go")
+click(shownRemoves()[1])
+wl = GuildOS.db.recruitment.welcomeMessages
+check(#wl == 1 and GuildOS.db.recruitment.welcomeMessage == "Glad to have you!" and boxes[2].text == "Glad to have you!"
+  and not boxes[3].shown and welcome.body.h == hOne, "Remove on the first: the second moves up, the row goes")
 click(welcome.head)
 check(not welcome.body.shown and topY(invite.head) == inviteY and t.content.h == h0, "shut again, it gives the room back")
 
