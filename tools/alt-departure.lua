@@ -5,7 +5,7 @@
 --
 -- Removing a main with two alts asks the officer who removed them (and only them) about the two, by name
 -- in class colour; "Remove them too" queues the two in Bulk actions and never calls the protected API;
--- "Ban the group" bans the three with one term and one note, synced; a removal while a queue runs is
+-- "Ban the group" bans the three with one term, synced, and the officer's note never leaves their client; a removal while a queue runs is
 -- asked about once it is through; a main leaving asks each officer once, and "Set A as main" holds for
 -- everybody; nothing during the login's settle, in a chat lockdown, for a member without alts or an alt.
 --
@@ -96,7 +96,14 @@ LibStub = setmetatable({ NewLibrary = function(_, k) registry[k] = registry[k] o
   GetLibrary = function(_, k) return registry[k] end },
   { __call = function(_, k) registry[k] = registry[k] or {}; return registry[k] end })
 LibStub("GuildOS-LibSerialize").Serialize = function(_, t) n = n + 1; store["s" .. n] = t; return "s" .. n end
-LibStub("GuildOS-LibSerialize").Deserialize = function(_, s) if store[s] then return true, store[s] end return false end
+-- Each receiver gets its own copy, as off a real wire.
+local function copy(v)
+  if type(v) ~= "table" then return v end
+  local out = {}
+  for k, x in pairs(v) do out[k] = copy(x) end
+  return out
+end
+LibStub("GuildOS-LibSerialize").Deserialize = function(_, s) if store[s] then return true, copy(store[s]) end return false end
 LibStub("LibDeflate").DecodeForWoWAddonChannel = function(_, s) return s end
 LibStub("LibDeflate").DecompressDeflate = function(_, s) return s end
 
@@ -267,13 +274,43 @@ check(banB.main and banB.altx and banB.alty, "the main and both alts are banned"
 check(banB.main.expiry == now + 30 * 86400 and banB.altx.expiry == banB.main.expiry and banB.alty.expiry == banB.main.expiry,
   "the same term for the three")
 check(banB.altx.note == "nota x" and banB.alty.group == "Main" and banB.main.reason == "Scam", "the same note, the group's mark")
+-- The note is the officer's words about a person: never on the guild channel, which every member's client reads.
+local function noteOnWire()
+  for _, msg in ipairs(wire) do
+    local env = store[msg.data]
+    local e = type(env) == "table" and env.dom == "ban" and type(env.data) == "table" and env.data.entry
+    if type(e) == "table" and e.note ~= nil then return true end
+  end
+  return false
+end
+local banWire = 0
+for _, msg in ipairs(wire) do
+  local env = store[msg.data]
+  if type(env) == "table" and env.dom == "ban" then banWire = banWire + 1 end
+end
+check(banWire == 3 and not noteOnWire(), "three bans on the wire, none with the note")
 flush()
 local banA, banM = clients.OffA.db.banList, clients.Mem.db.banList
-check(banA.altx and banA.altx.note == "nota x" and banA.alty.group == "Main" and banA.main.expiry == banB.main.expiry,
-  "the other officer has the three, note and all")
-check(banM.altx ~= nil, "the ban list reaches every client, as it always did")
--- A client before #426 knows nothing of `note` or `group`: plain strings in the entry it stores as it is.
-for _, f in ipairs({ "note", "group" }) do check(type(banB.altx[f]) == "string", "the new fields are plain strings: " .. f) end
+check(banA.altx and banA.alty.group == "Main" and banA.main.expiry == banB.main.expiry,
+  "the other officer has the three, the term and the group's mark")
+check(banM.altx ~= nil and banM.altx.group == "Main", "the ban list reaches every client, as it always did")
+for _, name in ipairs({ "OffA", "Mem" }) do
+  for k, e in pairs(clients[name].db.banList) do check(e.note == nil, name .. " never receives the note (" .. k .. ")") end
+end
+-- A backfill from the officer who wrote it carries no note either.
+as("OffB", function() BL:Backfill() end)
+check(#wire > 0 and not noteOnWire(), "a backfill sends no note")
+flush()
+check(clients.Mem.db.banList.altx.note == nil, "still no note on a member's client after a backfill")
+-- Another officer edits the ban (a share): the writer keeps their note, nobody else gets it.
+as("OffA", function() check(BL:Share("altx", "scam", "alliance words"), "shared") end)
+check(not noteOnWire(), "the share's envelope carries no officer note")
+flush()
+check(clients.OffB.db.banList.altx.note == "nota x" and clients.OffB.db.banList.altx.share ~= nil,
+  "the writer's note stays on a ban another officer edited")
+check(clients.Mem.db.banList.altx.note == nil, "and the member still has none")
+-- `group` is a plain string, which a client before #426 stores unread.
+check(type(banB.altx.group) == "string", "the group's mark is a plain string")
 -- And its bans, without them, are taken without an error.
 as("OffA", function()
   local rev = SS:NextRevision("ban", "solo")

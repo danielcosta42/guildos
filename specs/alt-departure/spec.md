@@ -16,12 +16,14 @@ it on its own (removes, promotes the last one left); the request is to ask.
      ADR-0038). Each is checked by `Eligible` (never oneself, never a rank at or above one's own) and again
      before their click. A queue still running is never replaced.
    - **Ban the group** (officers): one ban per character of the group, removed one included, the same
-     reason, term in days (empty: permanent) and officers' note; each row shows "(group of X)".
+     reason and term in days (empty: permanent), and a note; each row shows "(group of X)".
    - **Do nothing.**
    A removal made while a Bulk actions removal queue runs is asked about once the queue is through
    (done, skipped or stopped). Each group is asked about once a session.
 2. **`BanList:Add(name, reason, durationSec, note, group)`** and **`BanList:AddGroup(keys, reason, days,
-   note)`**. The note shows only on officers' screens. A client before #426 keeps the fields, unread.
+   note)`**. The note is never sent: it stays on the client of the officer who wrote it (a GUILD addon
+   message reaches every member's client, and there is no channel only officers read). `group` travels; a
+   client before #426 keeps it unread.
 3. **A main left of their own accord**, with alts still in the guild: each officer online is asked once:
    "X left and still has N alt(s) in the guild: A, B. Did the main change?" with **Set A as main** (a pick
    among the alts; `SetMain`, synced to everybody), **Unlink** (every alt stands alone) and **Keep**. When
@@ -39,4 +41,4 @@ it on its own (removes, promotes the last one left); the request is to ask.
 
 ## Known limits
 
-- The note travels with the ban on the guild channel, as the reason does.
+- Other officers see the ban, its term and its group, not the note.

@@ -1841,9 +1841,12 @@ everything. Until now cores reached the game only through the companion's `Inbox
 - **Gone:** a main leaving with alts still in the guild asks each officer online once (by event id and by main).
   "Set A as main" is `SetMain` (synced by AltSync, ADR-0040), "Unlink" `GuildOS:UnlinkGroup`, "Keep" nothing. An
   answer checks the links first: when another officer already answered, it changes nothing ("settled").
-- **The ban's `note`** is a field of the entry beside `reason`, cleaned like the alliance's note. The ban domain
-  still goes to the whole guild (as `reason` and `share.note` do); only officers' screens show the note. A client
-  before #426 stores the entry as it is and never reads `note` or `group`.
+- **The ban's `note`** is a field of the entry beside `reason`, cleaned like the alliance's note, and it never
+  leaves the client of the officer who wrote it (`BanList.OnTheWire` strips it from every publish and backfill;
+  `_ApplyRemote` drops any that comes in and keeps the writer's own on a ban another officer edits). The ban domain
+  goes over GUILD, which reaches every member's client, and the addon has no channel only officers read (OfficerNotes
+  also goes over GUILD); so, as a warning's chat line (specs/116), it stays local. `group` travels; a client before
+  #426 keeps it unread.
 - **The dialogs** are GuildOS's own frames (`UI/AltDepartureDialog.lua`), never a StaticPopup (#315).
 
 ### Consequences
@@ -1851,4 +1854,5 @@ everything. Until now cores reached the game only through the companion's `Inbox
   whispered.
 - (−) A removal the client never reads (a secret line on retail in an instance, the remover offline) is not asked
   about; MemberHistory's roster diff does not ask.
-- (−) The note travels on the guild channel with the ban, readable by a member's client like the reason.
+- (+) No member's client ever holds an officer's note about somebody.
+- (−) The note is only on its writer's client: other officers see the ban, the term and the group, not the note.

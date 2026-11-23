@@ -136,9 +136,10 @@ end
 ----------------------------------------------------------------------
 -- Officer mutations + sync (domain "ban", per-entry revision)
 ----------------------------------------------------------------------
--- `note` (issue #426): for the officers, apart from the reason, cleaned as the alliance's note is. `group`: the
--- main's name when the ban came with its alt group's (AddGroup), shown as "(group of X)". A client before #426
--- keeps both fields as part of the entry and never reads them.
+-- `note` (issue #426): the officer's own words about the person, apart from the reason, cleaned as the alliance's
+-- note is. It never leaves this client (OnTheWire): the ban domain goes over GUILD, which reaches every member's
+-- client, and the addon has no channel only officers read. `group`: the main's name when the ban came with its alt
+-- group's (AddGroup), shown as "(group of X)"; it travels, and a client before #426 keeps it unread.
 function BanList:Add(name, reason, durationSec, note, group)
     if not GuildOS:IsOfficer() then
         GuildOS:Print(L["|cffFF4444Officers only.|r"])
@@ -223,8 +224,20 @@ function BanList:RemoveKey(key)
     return true
 end
 
+-- What goes on the wire: the ban without the officer's note (#426). A GUILD addon message reaches every member's
+-- client, so the note stays on the client of the officer who wrote it, as a warning's chat line does (specs/116).
+function BanList.OnTheWire(entry)
+    if type(entry) ~= "table" or entry.note == nil then return entry end
+    local out = {}
+    for f, v in pairs(entry) do
+        if f ~= "note" then out[f] = v end
+    end
+    return out
+end
+
 function BanList:_Publish(key, entry)
     if not GuildOS.SyncService then return end
+    entry = BanList.OnTheWire(entry)
     local rev = GuildOS.SyncService:NextRevision("ban", key)
     -- Broadcast to the whole guild (Publish has no target); SyncService:Validate
     -- restricts who may *apply* a ban write to officers, not who receives it.
@@ -251,7 +264,7 @@ function BanList:Backfill()
     if not GuildOS:IsOfficer() or not GuildOS.SyncService then return end
     for key, entry in pairs(GuildOS.db.banList or {}) do
         local rev = GuildOS.SyncService:GetRevision("ban", key)
-        GuildOS.SyncService:Publish("ban", "set", { key = key, entry = entry }, { rev = rev })
+        GuildOS.SyncService:Publish("ban", "set", { key = key, entry = BanList.OnTheWire(entry) }, { rev = rev })
     end
 end
 
@@ -265,6 +278,12 @@ function BanList:_ApplyRemote(key, entry, rev)
         for f, v in pairs(held.share) do carried[f] = v end
         carried.withdrawnAt = carried.withdrawnAt or GetServerTime()
         entry.share = carried
+    end
+    -- The officer's note never comes in over the wire (#426), and the one this officer wrote stays on a ban that
+    -- still stands when another officer edits it (a share, a new term).
+    if type(entry) == "table" then
+        entry.note = nil
+        if not entry.removed and type(held) == "table" and type(held.note) == "string" then entry.note = held.note end
     end
     GuildOS.db.banList[key] = entry
     GuildOS.SyncService:SetRevision("ban", key, rev)
