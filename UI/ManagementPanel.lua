@@ -22,6 +22,8 @@ local SUBTABS = {
     { key = "presets",  label = L["Presets"] },
     -- Promote, demote or remove by rules, one member a click (issue #420): UI/BulkPanel.lua builds it.
     { key = "bulk",     label = L["Bulk actions"] },
+    -- Who has no GuildOS, and a reminder one member a click (issue #422): UI/RemindPanel.lua builds it.
+    { key = "remind",   label = L["Without GuildOS"] },
     -- The officers' chat alerts and their rules (issues #404, #405): UI/ModAlerts.lua builds both.
     { key = "alerts",   label = L["Chat alerts"] },
     { key = "alertrules", label = L["Alert rules"] },
@@ -1285,6 +1287,7 @@ function GuildOS:CreateManagementPanel(parent, _mainFrame)
         engage   = BuildEngageSub,
         presets  = BuildPresetsSub,
         bulk     = function(p) return GuildOS.BuildBulkSub and GuildOS:BuildBulkSub(p) end,
+        remind   = function(p) return GuildOS.BuildRemindSub and GuildOS:BuildRemindSub(p) end,
         alerts   = function(p) return GuildOS.BuildModAlertsSub and GuildOS:BuildModAlertsSub(p) end,
         alertrules = function(p) return GuildOS.BuildModRulesSub and GuildOS:BuildModRulesSub(p) end,
     }

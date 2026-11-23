@@ -109,6 +109,7 @@ Modules\GuildManager.lua
 Modules\RosterColumns.lua
 Modules\ModPresets.lua
 Modules\BulkActions.lua
+Modules\AddonReminder.lua
 Modules\GearAudit.lua
 Modules\Readiness.lua
 Modules\Resistances.lua
@@ -182,6 +183,7 @@ UI\MemberDetail.lua
 UI\WarnDialog.lua
 UI\ModAlerts.lua
 UI\BulkPanel.lua
+UI\RemindPanel.lua
 UI\CorePanel.lua
 UI\ManagementPanel.lua
 UI\AuditPanel.lua
