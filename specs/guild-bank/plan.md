@@ -52,9 +52,12 @@ The game gives a line's name as nil until the client knows the member (the ledge
 line without a name agrees with one that has a name and agrees in all else, and takes its name: one
 deposit read before its name came and again after is one line, whichever read comes first. With
 nothing lined up, lines with the same name pair first, so a nameless line never takes the twin a
-named one needs: equal deposits by two members, or two by one member, stay apart. Ledgers saved
-before this held such a pair for each money line read early (#414): on load, each nameless line goes
-with the nearest named twin of its stream within 3 h not taken by another; one with no twin stays.
+named one needs, and a nameless line pairs only within an hour (a read of the same event), so a
+member's equal deposit hours away is not taken for it: equal deposits by two members, or two by one
+member, stay apart. Ledgers saved before this held such a pair for each money line read early
+(#414): once per ledger (`namelessV`), each nameless line goes with the nearest named twin of its
+stream within the hour not taken by another; one with no twin stays. A nameless line kept after that
+(a deleted character's deposit) is never dropped on a later load.
 
 The client caches each tab's log, and the addon reads the logs on every log update: a cached log's
 "hours ago" are as old as when it arrived, so dating it from now shifts it. A log that says the same

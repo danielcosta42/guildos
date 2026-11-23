@@ -771,10 +771,22 @@ P(30, "Bea", 10000); P(29.5, nil, 10000)                         -- a pair
 P(20, "Sam", 10000); P(20, "Sam", 10000); P(19.6, nil, 10000)    -- two by Sam, one read nameless
 P(10, "Sam", 5000); P(10, "Dai", 5000); P(9.7, nil, 5000); P(9.7, nil, 5000)
 P(5, nil, 777)                                                    -- never named
+GuildOS.db.guildBank.namelessV = nil                              -- saved before the fix
 Bank:Initialize()
 check(names(0) == "Bea,Sam,Sam,Sam,Dai,?", "pairs saved before are cleaned on load, nothing more")
+-- Once: a real nameless deposit kept since (a member whose name never came), with an equal named one
+-- by another member in the same hour, survives every later load.
+P(1, "Bea", 5000000); P(1, nil, 5000000)
 Bank:Initialize()
-check(#Bank:Stream(0) == 6, "and cleaning again changes nothing")
+GuildOS.State.gbank = nil
+Bank:Initialize()
+check(names(0) == "Bea,Sam,Sam,Sam,Dai,?,Bea,?", "a later load drops no nameless line")
+-- A nameless read hours from another member's equal deposit is its own line.
+fresh()
+Bank:MergeStream(0, { M(2, "Bea", 500), M(1, "Eva", 100) })
+GuildOS.SyncService.handlers.gbank({ act = "hist", data = { v = Bank.LEDGER_V, reads = { { k = 0, list = {
+  M(0.5, nil, 500) } } } } }, "Cid")
+check(names(0) == "Bea,Eva,?", "a nameless deposit 1.5 h from an equal named one is new")
 
 -- Reads and histories from a version that kept copies are not taken; this version's are.
 fresh()
