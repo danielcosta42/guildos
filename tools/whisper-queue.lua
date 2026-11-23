@@ -320,4 +320,103 @@ check(worstMinute() <= 20, "the worst minute stays well under the server's 30, s
 check(taken > 0 and taken < offered, ("the realm bus still carries ads, %d of %d offered"):format(taken, offered))
 check(Q:Stats().sent > 0 and Q:Pending() == 0, "and everything of ours that was not stale went")
 
+-- ── 8. One message cut in chunks is one unit ────────────────────────────
+-- CommSystem cuts a whisper over 250 bytes into chunks that are each a whisper: the queue takes them all or
+-- none, and none makes way alone, since a message missing one is lost whole.
+local function group(n, prio, tag)
+  local payloads = {}
+  for i = 1, n do payloads[i] = (tag or "g") .. i end
+  return Q:PushAddonGroup("GUILDOS", payloads, "Bruno Melo", prio, function(p) sent[#sent + 1] = p; wire(1) end)
+end
+reset()
+sent = {}
+check(group(10, "normal") == "queued" and #sent == Q.BURST and Q:Pending() == 10 - Q.BURST,
+  "a message's chunks go in together, a burst of them goes, the rest waits")
+run(600)
+for i = 1, 10 do check(sent[i] == "g" .. i, "in order") end
+reset()
+for i = 1, Q.QUEUE_MAX + Q.BURST - 5 do addon("fill" .. i, "normal") end
+check(Q:Pending() == Q.QUEUE_MAX - 5, "five places left")
+check(group(8, "normal") == false and Q:Pending() == Q.QUEUE_MAX - 5, "eight chunks into five places: none goes in")
+check(group(5, "normal") == "queued" and Q:Pending() == Q.QUEUE_MAX, "five do, all of them")
+check(addon("one more", "normal") == false, "and nothing more of their rank")
+-- Lows make way for a message's chunks, but only when enough of them can.
+reset()
+for i = 1, Q.QUEUE_MAX + Q.BURST - 3 do addon("n" .. i, "normal") end
+for i = 1, 3 do addon("l" .. i, "low") end
+check(group(7, "normal") == false and Q:Pending() == Q.QUEUE_MAX, "three lows cannot make room for seven: nothing pushed out")
+check(group(3, "normal") == "queued" and Q:Pending() == Q.QUEUE_MAX, "they can for three")
+-- A high pushing out one chunk of a waiting message pushes out the whole message.
+reset()
+for i = 1, Q.BURST do addon("b" .. i, "normal") end
+for i = 1, Q.QUEUE_MAX - 6 do addon("n" .. i, "normal") end
+check(group(6, "low", "c") == "queued" and Q:Pending() == Q.QUEUE_MAX, "a low message fills the queue")
+check(addon("urgent", "high") == "queued", "a high comes")
+check(Q:Pending() == Q.QUEUE_MAX - 5, "and the whole low message made way, not one chunk of it")
+-- A chunk the game would not send: the rest of its message is no use and goes too.
+reset()
+sent = {}
+for i = 1, Q.BURST do addon("b" .. i, "normal") end
+local tries = 0
+Q:PushAddonGroup("GUILDOS", { "x1", "x2", "x3" }, "Bruno Melo", "normal", function()
+  tries = tries + 1
+  return false
+end)
+run(60)
+check(tries == 1 and Q:Pending() == 0, "one refused chunk drops its message, saw " .. tries .. " tries")
+-- Off WoW: Forever it all goes at once.
+reset()
+sent = {}
+Q.enabled = false
+check(group(5, "normal") == "sent" and #sent == 5, "off Forever a message's chunks go at once")
+
+-- ── 9. A long whisper reaches the other side whole ──────────────────────
+-- CommSystem on both ends: the sender's chunks leave through the queue one every INTERVAL, slower while the
+-- server throttles; the receiver waits for the next chunk as long as a whisper's chunks may take, and so
+-- puts together a message of 40 chunks (~9 KB), which took the old fixed 30 s past its end.
+reset()
+local registry = {}
+LibStub = setmetatable({ NewLibrary = function(_, n) registry[n] = registry[n] or {}; return registry[n] end,
+  GetLibrary = function(_, n) return registry[n] end },
+  { __call = function(_, n) registry[n] = registry[n] or {}; return registry[n] end })
+local LD = LibStub("LibDeflate")
+LD.CompressDeflate = function(_, s) return s end
+LD.EncodeForWoWAddonChannel = function(_, s) return s end
+LD.DecodeForWoWAddonChannel = function(_, s) return s end
+LD.DecompressDeflate = function(_, s) return s end
+GuildOS.State = GuildOS.State or {}
+GuildOS.State.comm = GuildOS.State.comm or {}
+GuildOS.PREFIX = GuildOS.PREFIX or "GuildOS"
+dofile(ADDON .. "/Modules/CommSystem.lua")
+local CS = GuildOS.CommSystem
+local got = {}
+GuildOS.RecipeTracker = { HandleIncoming = function(_, from, data) got[#got + 1] = { from = from, data = data } end }
+local wireMsgs = {}
+GuildOS.Compat.SendAddonMessage = function(_, msg, channel)
+  check(channel == "WHISPER", "a whisper")
+  wireMsgs[#wireMsgs + 1] = msg
+  wire(1)
+  CS:OnMessageReceived(msg, "WHISPER", "Bruno Melo")
+end
+local body = ("r"):rep(40 * CS.CHUNK_SIZE - 10)
+CS:SendMessage("RC", body, "Bruno Melo")
+check(#wireMsgs == Q.BURST and #got == 0, "a burst of the chunks goes, the rest waits in the queue")
+onError({}, "UI_ERROR_MESSAGE", 51, THROTTLE)   -- and the server throttles meanwhile
+run(1800)
+check(#wireMsgs == 40, "all forty chunks went, saw " .. #wireMsgs)
+check(#got == 1 and got[1].data == body and got[1].from == "Bruno Melo", "and the receiver put the message together")
+check(next(CS.pendingMessages) == nil and CS.syncStats.dropped == 0, "nothing left half-received, nothing counted lost")
+-- A chunk that never comes: the receiver still gives up, once no chunk came for its window.
+CS:OnMessageReceived("M:ABCD:1:3:half", "WHISPER", "Bruno Melo")
+run(CS.WHISPER_CHUNK_SECONDS - 1)
+check(CS.pendingMessages["Bruno Melo:ABCD"] ~= nil, "a whisper waits its window for the next chunk")
+CS:OnMessageReceived("M:ABCD:2:3:more", "WHISPER", "Bruno Melo")
+run(CS.WHISPER_CHUNK_SECONDS - 1)
+check(CS.pendingMessages["Bruno Melo:ABCD"] ~= nil, "each chunk renews it")
+run(2)
+check(CS.pendingMessages["Bruno Melo:ABCD"] == nil and CS.syncStats.dropped == 1, "a window without one: lost, and counted")
+CS:OnMessageReceived("M:BCDE:1:3:half", "GUILD", "Bruno Melo")
+run(CS.CHUNK_SECONDS + 1)
+check(CS.pendingMessages["Bruno Melo:BCDE"] == nil, "over GUILD the window stays CHUNK_SECONDS")
+
 print(("whisper-queue: %d checks passed"):format(checks))

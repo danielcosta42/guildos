@@ -321,7 +321,11 @@ function Reminder:Remind(key)
         { name = m.name, guild = GetGuildInfo("player") or "" })
     local target = GuildOS:WhisperTarget(m.fullName)
     if GuildOS.NoteWhisper then GuildOS:NoteWhisper(target) end
-    if not GuildOS.Compat.SendWhisper(text, target) then return false, "failed" end
+    -- The click sends it, and the WhisperQueue counts it against WoW: Forever's limit (issue #393), as Discipline's warning.
+    local queue = GuildOS.WhisperQueue
+    local went
+    if queue then went = queue:SendNow(target, text) else went = GuildOS.Compat.SendWhisper(text, target) end
+    if not went then return false, "failed" end
 
     local s, held = state(), store()
     local before = held[key]

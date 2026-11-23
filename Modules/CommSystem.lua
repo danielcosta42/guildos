@@ -142,7 +142,12 @@ end
 
 -- Chunking settings
 CommSystem.CHUNK_SIZE = 230  -- Leave room for chunk header + "M:xxxx:nn:nn:"
-CommSystem.pendingMessages = {}  -- [sender] = { chunks = {}, total = 0, received = 0 }
+CommSystem.pendingMessages = {}  -- [sender] = { chunks = {}, total = 0, received = 0, last = GetTime() }
+-- Seconds a half-received message waits for its next chunk. A whisper's chunks come at the sender's
+-- WhisperQueue pace (issue #393): one every 4 s, up to 64 s while the server throttles, and a "high"
+-- whisper may pass between two of them; so two of its slowest steps.
+CommSystem.CHUNK_SECONDS = 30
+CommSystem.WHISPER_CHUNK_SECONDS = 128
 
 ----------------------------------------------------------------------
 -- Member-data counters (issue #312). Every drop on the way from a guildmate's broadcast to
@@ -221,24 +226,43 @@ function CommSystem:SendMessage(msgType, data, target, priority, kind, channel)
         -- Multi-chunk: prefix each with "M:msgId:chunkIndex:totalChunks:"
         local msgId = string.format("%X", math.random(0, 0xFFFF))
         local totalChunks = math.ceil(len / self.CHUNK_SIZE)
+        local msgs = {}
         for i = 1, totalChunks do
             local startPos = (i - 1) * self.CHUNK_SIZE + 1
             local endPos = math.min(i * self.CHUNK_SIZE, len)
-            local chunk = encoded:sub(startPos, endPos)
             local header = string.format("M:%s:%d:%d:", msgId, i, totalChunks)
+            msgs[i] = header .. encoded:sub(startPos, endPos)
+        end
+        -- A whisper on WoW: Forever waits in the WhisperQueue, which paces it: the chunks go in as one
+        -- message, all or none, since a message missing one is lost whole (issue #393).
+        local queue = GuildOS.WhisperQueue
+        if target and queue and queue.Active() then
+            self:SendRawGroup(msgs, target, priority)
+            return
+        end
+        for i, msg in ipairs(msgs) do
             C_Timer.After((i - 1) * 0.1, function()
-                self:SendRaw(header .. chunk, target, priority, channel)
+                self:SendRaw(msg, target, priority, channel)
             end)
         end
     end
 end
 
+-- The chunks of one whisper, into the WhisperQueue together. Never "low", as SendRaw.
+function CommSystem:SendRawGroup(msgs, target, priority)
+    return GuildOS.WhisperQueue:PushAddonGroup(GuildOS.PREFIX, msgs, target,
+        priority == "ALERT" and "high" or "normal", function(msg) self:_Whisper(msg, target) end)
+end
+
+-- One addon whisper on the sync prefix.
+function CommSystem:_Whisper(msg, target)
+    GuildOS:NoteWhisper(target) -- a guildmate gone since they asked answers "No player named" (issue #326)
+    GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, "WHISPER", target, "NORMAL")
+end
+
 function CommSystem:SendRaw(msg, target, priority, channel)
     if target then
-        local function send()
-            GuildOS:NoteWhisper(target) -- a guildmate gone since they asked answers "No player named" (issue #326)
-            GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, "WHISPER", target, "NORMAL")
-        end
+        local function send() self:_Whisper(msg, target) end
         -- WoW: Forever throttles a client that whispers too fast (issue #393): every whisper waits its turn.
         -- Never "low": a chunk the queue let go stale would cost the whole message.
         local queue = GuildOS.WhisperQueue
@@ -291,19 +315,25 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
 
         local key = sender .. ":" .. msgId
         if not self.pendingMessages[key] then
-            local started = { chunks = {}, total = total, received = 0 }
+            local started = { chunks = {}, total = total, received = 0, last = GetTime() }
             self.pendingMessages[key] = started
-            -- Timeout: clean up after 30s. Still waiting then, a chunk was lost: counted, not
-            -- silent (issue #312). A finished message has left the table already.
-            C_Timer.After(30, function()
-                if self.pendingMessages[key] == started then
-                    self.pendingMessages[key] = nil
-                    self:_CountPayload(sender, "dropped", "chunks")
-                end
-            end)
+            -- Timeout: given up once no chunk came for the window. Still waiting then, a chunk was
+            -- lost: counted, not silent (issue #312). A finished message has left the table already.
+            -- Each chunk renews it: a whisper's chunks leave the sender's WhisperQueue one every few
+            -- seconds on WoW: Forever, more slowly when the server throttles (issue #393).
+            local window = channel == "WHISPER" and self.WHISPER_CHUNK_SECONDS or self.CHUNK_SECONDS
+            local function expire()
+                if self.pendingMessages[key] ~= started then return end
+                local left = started.last + window - GetTime()
+                if left > 0 then C_Timer.After(left, expire); return end
+                self.pendingMessages[key] = nil
+                self:_CountPayload(sender, "dropped", "chunks")
+            end
+            C_Timer.After(window, expire)
         end
 
         local pending = self.pendingMessages[key]
+        pending.last = GetTime()
         if not pending.chunks[idx] then
             pending.chunks[idx] = chunkData
             pending.received = pending.received + 1
