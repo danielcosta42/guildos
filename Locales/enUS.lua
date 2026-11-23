@@ -1583,6 +1583,7 @@ L["Note (kept only on your client, never sent)"] = "Note (kept only on your clie
 -- Birthdays and join anniversaries (issue #428)
 L["%s is in the game's calendar. Click again for the next (%d left)."] = "%s is in the game's calendar. Click again for the next (%d left)."
 L["%s is in the game's calendar. That was the last one this month."] = "%s is in the game's calendar. That was the last one this month."
+L["%s was left out. Click again for the next (%d left)."] = "%s was left out. Click again for the next (%d left)."
 L["%s joined the guild %d year(s) ago today."] = "%s joined the guild %d year(s) ago today."
 L["%s's birthday is now %s."] = "%s's birthday is now %s."
 L["%s's birthday was removed."] = "%s's birthday was removed."

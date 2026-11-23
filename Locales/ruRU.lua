@@ -3669,6 +3669,7 @@ L["Note (kept only on your client, never sent)"] = "Заметка (хранит
 -- Birthdays and join anniversaries (issue #428)
 L["%s is in the game's calendar. Click again for the next (%d left)."] = "%s в календаре игры. Нажмите ещё раз для следующего (осталось %d)."
 L["%s is in the game's calendar. That was the last one this month."] = "%s в календаре игры. Это был последний в этом месяце."
+L["%s was left out. Click again for the next (%d left)."] = "%s пропущен. Нажмите ещё раз для следующего (осталось %d)."
 L["%s joined the guild %d year(s) ago today."] = "%s вступил(а) в гильдию %d год(а) назад сегодня."
 L["%s's birthday is now %s."] = "День рождения %s теперь %s."
 L["%s's birthday was removed."] = "День рождения %s удалён."

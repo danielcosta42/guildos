@@ -25,10 +25,11 @@ local function check(cond, what)
 end
 
 local DAY = 86400
-local function at(y, m, d, hh) return os.time({ year = y, month = m, day = d, hour = hh or 12 }) end
+local function at(y, m, d, hh, mm) return os.time({ year = y, month = m, day = d, hour = hh or 12, min = mm or 0 }) end
 local NOW = at(2027, 2, 28, 15)        -- 28 Feb 2027: no 29th that year
 local myRank = 3                       -- a member
 local ROSTER = { { "Chehul", 3 }, { "Chehalt", 3 }, { "Mira", 1 }, { "Bob", 3 }, { "Ana", 1 } }
+local rosterReads = 0
 local sent, store, chat = {}, {}, {}
 local afters = {}
 
@@ -46,7 +47,8 @@ function UnitName() return "Chehul" end
 function GetRealmName() return "Normal" end
 function GetNormalizedRealmName() return "Normal" end
 function GetServerTime() return NOW end
-function GetTime() return 1 end
+local clock = 1
+function GetTime() return clock end
 function GetLocale() return "ptBR" end
 -- The realm's clock is this machine's: its dates are the ones os.date shows, in any TZ.
 C_DateAndTime = { GetCurrentCalendarTime = function()
@@ -58,7 +60,7 @@ function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 function IsInGuild() return true end
 function GetGuildInfo() return "Ashen Vow", "Rank", myRank end
 function GetNumGuildMembers() return #ROSTER end
-function GetGuildRosterInfo(i) local r = ROSTER[i]; if r then return r[1] .. "-Normal", "Rank", r[2], 60 end end
+function GetGuildRosterInfo(i) rosterReads = rosterReads + 1; local r = ROSTER[i]; if r then return r[1] .. "-Normal", "Rank", r[2], 60 end end
 function SendChatMessage(text, kind) chat[#chat + 1] = { text = text, kind = kind } end
 C_Timer = { After = function(_, fn) afters[#afters + 1] = fn end, NewTicker = function() end }
 Enum = { SendAddonMessageResult = {} }
@@ -244,8 +246,9 @@ sent, afters = {}, {}
 from("Ana-Normal", "said", { id = key("Mira"), day = 20270228 })
 B:CheckAnnounce(NOW + 3600)
 check(lastSent("claim") == nil, "an hour later nothing is claimed again: both were said today")
-from("Mira-Normal", "claim", { id = key("Bob"), day = 20270228 })
-check(lastSent("said") and lastSent("said").data.id == key("Bob"), "a late officer's claim is answered: it was said")
+from("Mira-Normal", "claim", { id = key("Bob"), kind = "j", day = 20270228 })
+check(lastSent("said") and lastSent("said").data.id == key("Bob") and lastSent("said").data.kind == "j",
+  "a late officer's claim is answered: it was said")
 -- A higher name's claim does not stop mine.
 G.db.birthdaySaid = {}
 sent, afters, chat = {}, {}, {}
@@ -253,6 +256,116 @@ B:CheckAnnounce(NOW)
 from("Zed-Normal", "claim", { id = key("Mira"), day = 20270228 })
 for _, fn in ipairs(afters) do fn() end
 check(#chat == 2, "a claim from a non-officer or a higher name does not stop mine")
+
+-- ── Only an officer's "said" counts ─────────────────────────────────────
+G.db.birthdaySaid = {}
+sent, afters, chat = {}, {}, {}
+from("Bob-Normal", "said", { id = key("Mira"), day = 20270228 })
+check(next(G.db.birthdaySaid) == nil, "a member's said is not kept")
+B:CheckAnnounce(NOW)
+from("Bob-Normal", "said", { id = key("Mira"), day = 20270228 })
+for _, fn in ipairs(afters) do fn() end
+check(#chat == 2, "nor does it silence an officer's claim")
+
+-- ── A birthday and a join anniversary on the same day are two lines ─────
+G.db.birthdays[key("Bob")] = { d = 28, m = 2, at = NOW - 5 }
+B:Forget()
+G.db.birthdaySaid = {}
+sent, afters, chat = {}, {}, {}
+B:CheckAnnounce(NOW)
+for _, fn in ipairs(afters) do fn() end
+check(#chat == 3, "Mira's birthday, Bob's birthday and Bob's year: three lines")
+check(G.db.birthdaySaid["b:" .. key("Bob")] == 20270228 and G.db.birthdaySaid["j:" .. key("Bob")] == 20270228,
+  "each said under its own id")
+sent, afters = {}, {}
+B:CheckAnnounce(NOW + 60)
+check(lastSent("claim") == nil, "and neither is claimed again")
+
+-- ── The late officer learns "said" from a backfill ──────────────────────
+local saidList = { { id = key("Mira") }, { id = key("Bob"), kind = "b" }, { id = key("Bob"), kind = "j" } }
+G.db.birthdaySaid = {}
+from("Bob-Normal", "said", { day = 20270228, list = saidList })
+check(next(G.db.birthdaySaid) == nil, "a member's list is dropped")
+from("Ana-Normal", "said", { day = 20270228, list = saidList })
+sent, afters = {}, {}
+B:CheckAnnounce(NOW)
+check(lastSent("claim") == nil and #afters == 0, "an officer's: the late officer claims nothing")
+
+-- ── The backfill: at most one every 10 minutes, and only when something changed ──
+sent = {}
+B:Backfill()
+check(lastSent("set") == nil, "a second backfill within 10 minutes sends nothing")
+clock = clock + 601
+B:Backfill()
+check(lastSent("set") == nil, "nor 10 minutes later, with nothing changed since")
+from("Mira-Normal", "set", { list = { { k = key("Bob"), d = 28, m = 2, at = NOW - 4 } } })
+B:Backfill()
+check(lastSent("set") ~= nil, "after 10 minutes, with the store changed, it goes")
+local sl = lastSent("said")
+check(sl and sl.data.day == 20270228 and #sl.data.list == 3, "and today's said go with it")
+sent = {}
+clock = clock + 601
+B:Backfill()
+check(lastSent("set") == nil and lastSent("said") == nil, "nothing changed: 10 minutes later, nothing")
+clock = clock + 3600
+B:Backfill()
+check(lastSent("set") ~= nil, "an hour later it goes again")
+
+-- ── The roster read once per update, not per envelope ───────────────────
+rosterReads = 0
+from("Mira-Normal", "set", { list = { { k = key("Bob"), d = 28, m = 2, at = NOW - 3 } } })
+from("Mira-Normal", "set", { list = { { k = key("Bob"), d = 28, m = 2, at = NOW - 2 } } })
+check(rosterReads == 0, "two envelopes, the roster kept from before")
+B:RosterChanged()
+from("Mira-Normal", "set", { list = { { k = key("Bob"), d = 28, m = 2, at = NOW - 1 } } })
+check(rosterReads == #ROSTER, "a roster update: read again, once")
+
+-- ── The rest of the month for the game's calendar ───────────────────────
+check(#B:RestOfMonth(at(2027, 2, 28, 11)) == 2, "before noon, today's birthdays are still ahead")
+check(#B:RestOfMonth(at(2027, 2, 28, 11, 55)) == 0 and #B:RestOfMonth(NOW) == 0,
+  "from 11:50 on, today's are past: the game refuses an event in the past")
+
+-- ── The game's calendar button never sticks on a refused birthday ───────
+local scripts = {}
+function CreateFrame()
+  local f = {}
+  function f:RegisterEvent() end
+  function f:UnregisterEvent() end
+  function f:SetScript(_, fn) scripts[#scripts + 1] = fn end
+  return f
+end
+local function fire(ev, ...) for _, fn in ipairs(scripts) do fn(nil, ev, ...) end end
+dofile(ADDON .. "/Modules/GameCalendar.lua")
+local GC = G.GameCalendar
+local inGame, announced, printed = {}, {}, {}
+G.Compat.CalendarAvailable = function() return true end
+G.Compat.CalendarRequest = function() end
+G.Compat.CalendarGuildEvents = function() return inGame end
+G.Compat.CalendarCreateGuildAnnouncement = function(spec) announced[#announced + 1] = spec; return true end
+function G:Print(m) printed[#printed + 1] = m end
+local realRest = B.RestOfMonth
+B.RestOfMonth = function()
+  return { { name = "Ana", day = 20, month = 3, year = 2027 }, { name = "Bob", day = 25, month = 3, year = 2027 } }
+end
+afters = {}
+GC:PutNextBirthday()
+check(#announced == 1 and announced[1].title == "Birthday: Ana" and announced[1].clock.hour == 12, "the button puts Ana's, at noon")
+fire("CALENDAR_UPDATE_ERROR", "CALENDAR_ERROR_PERMISSIONS")
+check(printed[#printed] == "Birthday: Ana was left out. Click again for the next (1 left).", "the game refused it: left out")
+GC:PutNextBirthday()
+check(#announced == 2 and announced[2].title == "Birthday: Bob", "the next click goes on to Bob's, not Ana's again")
+inGame[#inGame + 1] = { title = announced[2].title, startsAt = announced[2].startsAt }
+fire("CALENDAR_NEW_EVENT")
+GC:PutNextBirthday()
+check(#announced == 2 and printed[#printed] == "Every birthday left this month is in the game's calendar.",
+  "Bob's in, Ana's refused: nothing left to put")
+G.Compat.CalendarCreateGuildAnnouncement = function() return false, "nope" end
+GC._refused, inGame = nil, {}
+GC:PutNextBirthday()
+check(printed[#printed - 1] == "nope" and GC:MissingBirthdays(NOW)[1].title == "Birthday: Bob",
+  "a create the game throws on is left out too")
+B.RestOfMonth = realRest
+function G:Print() end
 
 -- ── Leaving ─────────────────────────────────────────────────────────────
 B:Departed({ [key("Chehul")] = true })

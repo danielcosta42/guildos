@@ -3669,6 +3669,7 @@ L["Note (kept only on your client, never sent)"] = "메모 (내 클라이언트�
 -- Birthdays and join anniversaries (issue #428)
 L["%s is in the game's calendar. Click again for the next (%d left)."] = "%s이(가) 게임 달력에 있습니다. 다음 항목은 다시 클릭하세요 (%d개 남음)."
 L["%s is in the game's calendar. That was the last one this month."] = "%s이(가) 게임 달력에 있습니다. 이번 달의 마지막이었습니다."
+L["%s was left out. Click again for the next (%d left)."] = "%s 항목은 건너뛰었습니다. 다음 항목은 다시 클릭하세요(%d개 남음)."
 L["%s joined the guild %d year(s) ago today."] = "%s님이 오늘로 길드에 가입한 지 %d년이 되었습니다."
 L["%s's birthday is now %s."] = "%s님의 생일이 이제 %s입니다."
 L["%s's birthday was removed."] = "%s님의 생일을 삭제했습니다."
