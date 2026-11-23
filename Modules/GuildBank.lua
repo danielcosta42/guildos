@@ -33,6 +33,7 @@ local MONEY_EVERY = 6 * 3600     -- a reading equal to the last one is kept once
 local MATCH_HOURS = 3            -- two lines this far apart may still be one event, when nothing else lines up
 local SAME_EVENT = 3600 + 120    -- two reads of one line: under an hour apart (whole hours), plus the read's wait
 local LEDGER_V = 2              -- ledgers and histories from before this held copies (#380)
+local NAMELESS_V = 1            -- ledgers from before this held a nameless copy of money lines (#414)
 local PUBLISH_GAP = 60           -- seconds between two pictures this client shares unasked
 local ASK_DELAY = 25             -- seconds after login before asking for the bank
 local ANSWER_MIN, ANSWER_MAX = 2, 8   -- seconds an answer waits, so one member answers
@@ -132,8 +133,13 @@ end
 -- Lifecycle
 ----------------------------------------------------------------------
 function GuildBank:Initialize()
-    self:Store()
-    self:DropNameless()
+    local db = self:Store()
+    -- Once per ledger: a nameless line kept after this may be a real deposit (a member deleted, a
+    -- name the client never filled in) and must not go on a later load.
+    if db.namelessV ~= NAMELESS_V then
+        self:DropNameless()
+        db.namelessV = NAMELESS_V
+    end
     state()
     if GuildOS.SyncService then
         GuildOS.SyncService:On("gbank", function(env, sender) GuildBank:OnSync(env, sender) end)
@@ -481,7 +487,9 @@ function GuildBank:MergeStream(k, list)
                         local pick, pickD
                         for _, c in ipairs(bySig[ls[i]] or {}) do
                             local d = math.abs((c.t or 0) - (e.t or 0))
-                            local who = pass == 1 and c.n == e.n or pass == 2 and sameWho(c, e)
+                            -- A nameless line pairs only with a read of the same event (under
+                            -- SAME_EVENT apart): further off it may be another member's equal deposit.
+                            local who = pass == 1 and c.n == e.n or pass == 2 and sameWho(c, e) and d < SAME_EVENT
                             if who and not taken[c] and d <= tol and (not pickD or d < pickD) then pick, pickD = c, d end
                         end
                         if pick then taken[pick], pickOf[i] = true, pick end
@@ -513,9 +521,9 @@ function GuildBank:MergeStream(k, list)
 end
 
 -- Ledgers saved before #414 hold each money line twice when it was read once before its name came:
--- a line without a name and, near it, the same line with one. On each load, each nameless line goes
--- with the nearest such named line of its stream not taken by another (so two equal deposits by one
--- member stay two); a clean ledger loses nothing. Returns how many lines went.
+-- a line without a name and, under SAME_EVENT from it, the same line with one. Each nameless line
+-- goes with the nearest such named line of its stream not taken by another (so two equal deposits by
+-- one member stay two). Run once per ledger (namelessV). Returns how many lines went.
 function GuildBank:DropNameless()
     local ledger = self:Store().ledger
     local groups = {}
@@ -524,7 +532,7 @@ function GuildBank:DropNameless()
         groups[g] = groups[g] or { named = {}, nameless = {} }
         table.insert(named(e) and groups[g].named or groups[g].nameless, e)
     end
-    local drop, tol = {}, MATCH_HOURS * 3600
+    local drop, tol = {}, SAME_EVENT
     for _, g in pairs(groups) do
         if #g.nameless > 0 and #g.named > 0 then
             local pairs_ = {}
