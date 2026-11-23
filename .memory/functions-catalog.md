@@ -599,7 +599,7 @@ Removed: `Compat.NewTimer`.
 | Function | Description |
 |---|---|
 | `GuildManager:Initialize()` | Ensures `db.managementLog` ring buffer exists |
-| `GuildManager:CanPromote()` / `:CanDemote()` / `:CanKick()` | Nil-guarded wrappers over CanGuildPromote/Demote/Remove |
+| `GuildManager:CanPromote()` / `:CanDemote()` / `:CanKick()` | `Compat.CanGuildPromote/Demote/Remove` (nil-guarded there; #420) |
 | `GuildManager:CanSetMOTD()` / `:CanSetGuildInfo()` | Nil-guarded wrappers over CanEditMOTD/CanEditGuildInfo |
 | `GuildManager:GetRosterIndex(name)` | Guild roster index for a short/full name (realm-stripped match, the first hit); on retail `Compat.FindGuildRosterIndex` (the whole name wins, a short one only when unique; issue #184) |
 | `GuildManager:GetRankIndex(name)` | Current 0-based rank index for a player name |
@@ -617,6 +617,28 @@ Removed: `Compat.NewTimer`.
 | `GuildManager:GetLog()` / `:ClearLog()` | Returns log newest-first / wipes it |
 | `GuildManager:RefreshUI()` | Refreshes roster + active management sub-panel after an action |
 | `GuildManager:ConfirmSetRank(name)` / `:ConfirmKick(name)` | Call-site entry points → `_protectedNotice` handoff |
+
+---
+
+## BulkActions.lua — GuildOS.BulkActions (Leadership > Bulk actions, #420; ADR-0038)
+
+| Function | Description |
+|---|---|
+| `BulkActions.Rules(raw)` | Pure: the screen's fields → `{ days, rank, levelMin, levelMax, attMin, attMax, noAddon }`, nil when unset or out of range |
+| `BulkActions.HasRule(rules)` | Pure: whether any rule is set (none picks nobody) |
+| `BulkActions.Eligible(m, action, ctx)` | Pure: never oneself, a rank at/above one's own, a promotion to one's own rank, a demotion below the last |
+| `BulkActions.Meets(m, rules)` / `.Match(members, rules, action, ctx)` | Pure: the rules; the picked members, longest offline first |
+| `BulkActions:Collect(withAttendance)` / `:Context()` / `:HasAttendance()` | The live roster as Match reads it; this character's rank; whether raid attendance is known |
+| `BulkActions:Allowed(action)` / `:Preview(raw, action)` | The rank's right (Compat.CanGuild*); who the rules pick now, and why not |
+| `BulkActions:Start(raw, action, confirmed)` / `:StartAndSay(...)` / `:Stop()` / `:Skip()` | The queue (session state); a removal only confirmed |
+| `BulkActions:Current()` / `:Counts()` / `:NextLabel()` / `:Queue()` | The next member, read again from the roster (who left or changed rank is skipped) |
+| `BulkActions:Arm(down)` / `:AfterClick(down)` | The secure Next button's PreClick (the one line this click runs) and PostClick |
+| `BulkActions:Typed()` / `:CommandNext()` / `:Command(rest)` | Whether the line is printed to type (Forever, or a blocked click); `/gos bulk` next, skip, stop |
+| `BulkActions:Confirm()` / `:OnBlocked(event, arg1)` | GUILD_ROSTER_UPDATE: a change the roster shows is done and logged once; a block right after a click turns typed mode on |
+
+UI: `UI/BulkPanel.lua` — `GuildOS:BuildBulkSub(panel)`, the secure `GuildOSBulkNext` button (docked out of combat only).
+Compat (#420): `CanGuildPromote/Demote/Remove`, `MyGuildRankIndex`, `GuildRankCommand(action, name)`, `SecureGuildMacro`,
+`SecureClicks(button)`, `SecureClickActs(down)`, `SetSecureMacro(button, text)`.
 
 ---
 

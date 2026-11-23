@@ -366,6 +366,8 @@ local MODULE_START = {
     { "ChatTweaks" },
     { "GuildManager", feature = "guildManager", ui = "management" },
     { "ModPresets" },
+    -- Promote, demote or remove by rules, one member a click (issue #420).
+    { "BulkActions", feature = "guildManager" },
     -- The roster is not compared for new members' trials until the guild's settings have arrived (#249).
     { "TrialTracker", method = "Arm" },
 }

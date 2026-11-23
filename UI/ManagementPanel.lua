@@ -20,6 +20,8 @@ local SUBTABS = {
     { key = "ban",      label = L["Ban List"] },
     { key = "engage",   label = L["Engagement"] },
     { key = "presets",  label = L["Presets"] },
+    -- Promote, demote or remove by rules, one member a click (issue #420): UI/BulkPanel.lua builds it.
+    { key = "bulk",     label = L["Bulk actions"] },
     -- The officers' chat alerts and their rules (issues #404, #405): UI/ModAlerts.lua builds both.
     { key = "alerts",   label = L["Chat alerts"] },
     { key = "alertrules", label = L["Alert rules"] },
@@ -171,6 +173,7 @@ local function MakeVirtualList(holder, name, rowStep, createRow, fillRow)
     holder:HookScript("OnSizeChanged", function() list:Update() end)
     return list
 end
+UI.MakeVirtualList = MakeVirtualList   -- the bulk actions' list draws the same way (UI/BulkPanel.lua)
 
 local function BuildRanksSub(panel)
     local note = UI:CreateText(panel,
@@ -1281,6 +1284,7 @@ function GuildOS:CreateManagementPanel(parent, _mainFrame)
         ban      = BuildBanSub,
         engage   = BuildEngageSub,
         presets  = BuildPresetsSub,
+        bulk     = function(p) return GuildOS.BuildBulkSub and GuildOS:BuildBulkSub(p) end,
         alerts   = function(p) return GuildOS.BuildModAlertsSub and GuildOS:BuildModAlertsSub(p) end,
         alertrules = function(p) return GuildOS.BuildModRulesSub and GuildOS:BuildModRulesSub(p) end,
     }

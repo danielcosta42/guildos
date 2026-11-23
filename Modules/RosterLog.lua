@@ -10,6 +10,8 @@ GuildOS.RosterLog = RosterLog
 local CAP = 1000
 local MAX_AGE = 90 * 86400
 local BACKFILL_N = 25   -- cold-sync re-broadcast is capped to the last N events
+local NEAR_DUP = 30     -- seconds within which the same change, seen twice, is one event
+local NEAR_DUP_SCAN = 20  -- how many of the latest events that check looks back over
 
 function RosterLog:Initialize()
     GuildOS.db.rosterLog = GuildOS.db.rosterLog or { events = {} }
@@ -78,6 +80,16 @@ function RosterLog:_Insert(evt, store)
     evt.id = evt.id or self:_EventId(evt.action, evt.target, evt.author, evt.timestamp)
     for i = 1, #store do
         if store[i].id == evt.id then return false end   -- dedup
+    end
+    -- The same change seen twice a few seconds apart, across a 5s bucket: a bulk action's line (issue #420) and
+    -- the game's guild message about it. Same action, member, officer and rank, within NEAR_DUP seconds. Only an
+    -- officer's change has an author: a join or a leave is never folded into another.
+    for i = #store, math.max(1, #store - NEAR_DUP_SCAN), -1 do
+        local e = store[i]
+        if evt.author ~= nil and e.action == evt.action and e.target == evt.target and e.author == evt.author and e.detail == evt.detail
+            and math.abs((e.timestamp or 0) - evt.timestamp) <= NEAR_DUP then
+            return false
+        end
     end
     store[#store + 1] = evt
     while #store > CAP do table.remove(store, 1) end

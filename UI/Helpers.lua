@@ -395,8 +395,10 @@ end
 -- fill); Helpers:SetButtonVariant switches it to primary, ghost or danger.
 -- Toggle buttons keep calling btn:SetBaseColor so a resting colour survives
 -- the hover; setting btn.baseLabelColor does the same for the label.
-function Helpers:CreateButton(parent, text, width, height)
-    local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+-- `name` and `template`, optional: a global name and a template added to BackdropTemplate (a secure
+-- action button, issue #420; never SetScript("OnClick") on one, which would replace its secure handler).
+function Helpers:CreateButton(parent, text, width, height, name, template)
+    local btn = CreateFrame("Button", name, parent, template and ("BackdropTemplate," .. template) or "BackdropTemplate")
     btn:SetSize(width or 120, height or BUTTON_HEIGHT)
     btn:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(btn) })
 
