@@ -3499,3 +3499,7 @@ L["Share the ban on %s with the alliance"] = "與聯盟分享對%s的封鎖"
 L["Share"] = "分享"
 L["Choose a reason"] = "選擇原因"
 L["The alliance's officers are alerted about them; nobody is banned for it."] = "聯盟的幹部會收到提醒；不會因此封鎖任何人。"
+
+-- UI/SettingsPanel.lua (#415)
+L["Alt-click an item to open its recipe in Crafts"] = "Alt+點擊物品，在製造中開啟其配方"
+L["Never while the auction house, mail, trade, a vendor or the guild bank is open."] = "拍賣場、郵箱、交易、商人或公會銀行開啟時不會觸發。"

@@ -3499,3 +3499,7 @@ L["Share the ban on %s with the alliance"] = "Поделиться баном %s
 L["Share"] = "Поделиться"
 L["Choose a reason"] = "Выберите причину"
 L["The alliance's officers are alerted about them; nobody is banned for it."] = "Офицеры альянса получат предупреждение; никто не будет забанен из-за этого."
+
+-- UI/SettingsPanel.lua (#415)
+L["Alt-click an item to open its recipe in Crafts"] = "Alt-клик по предмету открывает его рецепт в разделе «Ремесло»"
+L["Never while the auction house, mail, trade, a vendor or the guild bank is open."] = "Не срабатывает, когда открыты аукцион, почта, обмен, торговец или банк гильдии."

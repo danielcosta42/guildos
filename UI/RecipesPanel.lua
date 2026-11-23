@@ -113,6 +113,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     filterRow:SetSize(400, 26)
 
     local filterButtons = {}
+    local detail   -- the opened recipe's block, made with the list below
 
     local function RefreshResults()
         if not GuildOS.RecipeTracker then
@@ -137,7 +138,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         state.me = O and O:MyKey()
         local at, n
         if UI.WithDetail then
-            state.results, at, n = UI.WithDetail(state.results, function(e) return keyOf(e) == state.open end, ROW_HEIGHT)
+            state.results, at, n = UI.WithDetail(state.results, function(e) return keyOf(e) == state.open end, ROW_HEIGHT, detail)
         end
         state.detailAt, state.detailRows = at, n
         if not at then state.open = nil end
@@ -255,8 +256,12 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     UI:SkinScrollBar(scrollFrame, "GuildOSRecipeScroll")
     -- The opened recipe sits over the rows it takes; what scrolls past the list's edge is cut.
     if listFrame.SetClipsChildren then listFrame:SetClipsChildren(true) end
-    local detail = GuildOS.CreateCraftDetail and GuildOS:CreateCraftDetail(listFrame)
-    if detail then detail:SetFrameLevel(listFrame:GetFrameLevel() + 5) end
+    detail = GuildOS.CreateCraftDetail and GuildOS:CreateCraftDetail(listFrame)
+    if detail then
+        detail:SetFrameLevel(listFrame:GetFrameLevel() + 5)
+        -- Resized past where the order fits beside the columns: it takes other rows (#415).
+        detail.onReflow = function() panel:Reload() end
+    end
 
     -- Create row frames
     local rows = {}

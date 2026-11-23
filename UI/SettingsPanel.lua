@@ -446,6 +446,13 @@ PAGES.interface = function(F)
     F:Check(L["Guild button opens Guild OS"], L["Off: the game's guild button opens the game's own guild window."],
         function() return GuildOS:IsGuildButtonHijacked() end,
         function(checked) GuildOS:SetSetting("hijackGuildButton", checked) end)
+    -- Alt-click an item to open its recipe in the Crafts tab (#415).
+    if GuildOS.CraftOrders then
+        F:Check(L["Alt-click an item to open its recipe in Crafts"],
+            L["Never while the auction house, mail, trade, a vendor or the guild bank is open."],
+            function() return GuildOS:GetSetting("altClickCrafts") ~= false end,
+            function(checked) GuildOS:SetSetting("altClickCrafts", checked) end)
+    end
 
     -- Guild lines on item tooltips (crafters, wishlist, soft reserves), issue #39. Shift is
     -- remembered while the lines are off, so turning them back on keeps it.

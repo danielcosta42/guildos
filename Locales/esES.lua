@@ -3620,3 +3620,7 @@ L["Share the ban on %s with the alliance"] = "Compartir el veto de %s con la ali
 L["Share"] = "Compartir"
 L["Choose a reason"] = "Elige un motivo"
 L["The alliance's officers are alerted about them; nobody is banned for it."] = "Los oficiales de la alianza reciben una alerta; nadie es vetado por ello."
+
+-- UI/SettingsPanel.lua (#415)
+L["Alt-click an item to open its recipe in Crafts"] = "Alt-clic en un objeto abre su receta en Oficios"
+L["Never while the auction house, mail, trade, a vendor or the guild bank is open."] = "Nunca con la casa de subastas, el correo, el comercio, un vendedor o el banco de la hermandad abiertos."
