@@ -3461,30 +3461,83 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     UI:AttachSaveButton(discordBox, commitDiscord)
     discordFlex.reserve = UI.ReserveFor(discordBox.saveButton, 6)
 
-    -- Welcome message: in the label column, on one line, as the game sends it (#371).
+    -- Welcome messages: in the label column, each on one line, as the game sends it (#371). Several,
+    -- one drawn for each welcome (#419): a row per message, its Save and Remove, then Add for one more.
     RowLabel(wb, L["Welcome Msg:"], -2 * ROW)
-    local welcomeBox = UI:CreateInput(wb, 200, ROW_H, { max = 255 })
-    local welcomeFlex = flexWidth(welcomeBox, COL, 66)
-    welcomeBox:SetPoint("TOPLEFT", COL, -2 * ROW)
-    local function commitWelcome(box)
-        local txt = box:GetText()
-        if txt and txt ~= "" then
+    local WELCOME_MAX = R.WELCOME_MAX
+    local welcomeRows = {}
+    local welcomeShown = 1          -- rows on show: the saved messages, and one just added and not saved
+    local welcomeAdd = UI:CreateButton(wb, L["Add message"], 120, ROW_H)
+    local welcomeNote = Note(wb, L["Several messages: one is drawn at random for each welcome, never the same one twice in a row."], COL, 0)
+    local refreshWelcomes
+    for i = 1, WELCOME_MAX do
+        local box = UI:CreateInput(wb, 200, ROW_H, { max = 255 })
+        local boxFlex = flexWidth(box, COL, 66)
+        UI:AttachSaveButton(box, function(b)
+            local txt = b:GetText()
+            if not txt or txt == "" then return end
             -- A text the game would refuse is not kept: the welcome would just never come (#270).
-            local problem = GuildOS.Recruitment.ChatTextProblem(txt)
+            local ok, problem = R:SetWelcome(i, txt)
             if problem then return GuildOS:Print(problem) end
-            GuildOS.db.recruitment.welcomeMessage = txt
-            GuildOS:Print(L["Welcome message updated."])
-        end
+            if ok then GuildOS:Print(L["Welcome message updated."]) end
+            refreshWelcomes()
+        end)
+        local remove = UI:CreateButton(wb, L["Remove"], 70, ROW_H)
+        remove:SetPoint("LEFT", box.saveButton, "RIGHT", 6, 0)
+        remove:SetScript("OnClick", function()
+            for _, row in ipairs(welcomeRows) do row.box:ClearFocus() end
+            if i <= #R.WelcomeList(GuildOS.db.recruitment) and not R:RemoveWelcome(i) then return end
+            welcomeShown = math.max(1, welcomeShown - 1)
+            refreshWelcomes()
+        end)
+        boxFlex.reserve = UI.ReserveFor(box.saveButton, 6) + UI.ReserveFor(remove, 6)
+        welcomeRows[i] = { box = box, remove = remove }
     end
-    UI:AttachSaveButton(welcomeBox, commitWelcome)
-    welcomeFlex.reserve = UI.ReserveFor(welcomeBox.saveButton, 6)
+    welcomeAdd:SetScript("OnClick", function()
+        welcomeShown = math.min(WELCOME_MAX, #R.WelcomeList(GuildOS.db.recruitment) + 1)
+        refreshWelcomes()
+        welcomeRows[welcomeShown].box:SetFocus()
+    end)
     -- And, the officer's choice, the invitation to read the guild's rules (#407): only while the guild has
     -- rules and the whole fits the game's 255 bytes; the popup's preview shows the text as it goes.
     local welcomeRules = UI:CreateCheckbox(wb, L["End it with \"Type /gos rules\" when the guild has rules"], 18)
-    welcomeRules:SetPoint("TOPLEFT", COL, -3 * ROW)
     welcomeRules.checkbox:SetChecked(GuildOS.db.recruitment.welcomeRules == true)
     welcomeRules.checkbox.onChanged = function(_, checked) GuildOS.db.recruitment.welcomeRules = checked and true or false end
-    welcomeSec.layout = function() return 3 * ROW + ROW_H end
+    welcomeSec.layout = function()
+        local y = -2 * ROW
+        local saved = #R.WelcomeList(GuildOS.db.recruitment)
+        for i = 1, WELCOME_MAX do
+            local row = welcomeRows[i]
+            local on = i <= welcomeShown
+            row.box:SetShown(on)
+            row.box.saveButton:SetShown(on)
+            -- The last saved message stays: only a row not saved yet, or one of several, goes.
+            row.remove:SetShown(on and (i > saved or saved > 1))
+            if on then
+                at(row.box, wb, COL, y)
+                y = y - ROW
+            end
+        end
+        welcomeAdd:SetShown(welcomeShown < WELCOME_MAX)
+        if welcomeShown < WELCOME_MAX then
+            at(welcomeAdd, wb, COL, y)
+            y = y - ROW
+        end
+        at(welcomeNote, wb, COL, y + 2)
+        y = y - noteH(welcomeNote) - 4
+        at(welcomeRules, wb, COL, y)
+        return -y + ROW_H
+    end
+    -- The rows from the saved list; a row added and not saved yet stays open, empty.
+    refreshWelcomes = function()
+        local list = R.WelcomeList(GuildOS.db.recruitment)
+        welcomeShown = math.max(1, #list, math.min(welcomeShown, #list + 1))
+        for i = 1, WELCOME_MAX do
+            local box = welcomeRows[i].box
+            if not box:HasFocus() then box:SetText(list[i] or "") end
+        end
+        relayout()
+    end
 
     ----------------------------------------------------------------
     -- Auto-Invite (issue #59): everything /gos autoinvite sets, through the same
@@ -3720,7 +3773,8 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
 
     -- The tab's OnShow fills every box before the tab is laid out, and an edit box filled before it is
     -- laid out shows nothing until its cursor moves (#158); a shut section's too, until it opens.
-    local editBoxes = { intervalBox, msgBox, chanBox, kwBox, lvlBox, discordBox, welcomeBox }
+    local editBoxes = { intervalBox, msgBox, chanBox, kwBox, lvlBox, discordBox }
+    for _, row in ipairs(welcomeRows) do editBoxes[#editBoxes + 1] = row.box end
     resetCursors = function()
         for _, box in ipairs(editBoxes) do
             if not box:HasFocus() then box:SetCursorPosition(0) end
@@ -3742,7 +3796,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         refreshAutoInvite()
         msgBox:SetText(s.message or "")
         discordBox:SetText(s.discord or "")
-        welcomeBox:SetText(s.welcomeMessage or "")
+        refreshWelcomes()
         welcomeRules.checkbox:SetChecked(s.welcomeRules == true)
         UpdateRecruitStatus()
         UpdateWelcomeStatus()

@@ -3505,3 +3505,8 @@ L["Alt-click an item to open its recipe in Crafts"] = "Alt+點擊物品，在製
 L["Never while the auction house, mail, trade, a vendor or the guild bank is open."] = "拍賣場、郵箱、交易、商人或公會銀行開啟時不會觸發。"
 L["Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."] = "網站上排在 %d 天之後的團隊副本尚未同步到遊戲；日期接近時會同步過來。"
 L["The website sends the game its next %d raids; later ones arrive as those pass."] = "網站只向遊戲傳送接下來的 %d 個團隊副本；之後的會在這些結束後同步過來。"
+
+-- Modules/RecruitmentSystem.lua, UI/RosterFrame.lua (#419)
+L["Add message"] = "新增訊息"
+L["Several messages: one is drawn at random for each welcome, never the same one twice in a row."] = "多則訊息：每次歡迎隨機選一則，不會連續兩次相同。"
+L["(+%d more, one drawn at random each time)"] = "（另有 %d 則，每次隨機選一則）"

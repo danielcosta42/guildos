@@ -3625,3 +3625,8 @@ L["Alt-click an item to open its recipe in Crafts"] = "Alt-clic sur un objet ouv
 L["Never while the auction house, mail, trade, a vendor or the guild bank is open."] = "Jamais quand l'hôtel des ventes, le courrier, l'échange, un marchand ou la banque de guilde est ouvert."
 L["Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."] = "Les raids prévus sur le site à plus de %d jours ne sont pas encore arrivés dans le jeu ; ils arrivent à l'approche de la date."
 L["The website sends the game its next %d raids; later ones arrive as those pass."] = "Le site envoie au jeu ses %d prochains raids ; les suivants arrivent à mesure que ceux-ci passent."
+
+-- Modules/RecruitmentSystem.lua, UI/RosterFrame.lua (#419)
+L["Add message"] = "Ajouter un message"
+L["Several messages: one is drawn at random for each welcome, never the same one twice in a row."] = "Plusieurs messages : un est tiré au sort à chaque bienvenue, jamais le même deux fois de suite."
+L["(+%d more, one drawn at random each time)"] = "(+%d autres, un tiré au sort à chaque fois)"
