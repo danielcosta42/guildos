@@ -154,4 +154,91 @@ fire("CHAT_MSG_GUILD", "buy gold cheap now", "Seller")
 runTimers()
 check(#M:Feed() == 1 and not M:Feed()[1].away, "a live line is a live alert")
 
+
+-- ── Review cases ────────────────────────────────────────────────────────
+-- A fresh start of the module's login watch, as a new session would have.
+local function session()
+  timers, tickers = {}, {}
+  M.caughtUp = false
+  M.feed = {}
+  M:_SetupCatchUp()
+end
+GuildOS.Compat.GuildChatHistory = function()
+  if lockdown then return nil, "locked" end
+  return history
+end
+
+-- 1. A logout before the catch-up ran keeps the old time seen: the next login still covers the gap.
+M:MarkSeen(NOW - 5 * H)
+session()
+fire("PLAYER_ENTERING_WORLD")
+fire("PLAYER_LOGOUT")
+check(M:SeenAt() == NOW - 5 * H, "a reload before the catch-up never moves the time seen")
+
+-- 2. A lockdown that outlasts the tries never marks seen.
+session()
+lockdown = true
+fire("PLAYER_ENTERING_WORLD")
+for _ = 1, 10 do runTimers() end
+check(M:SeenAt() == NOW - 5 * H and not M.caughtUp, "the lockdown outlasting every try keeps the old time seen")
+fire("PLAYER_LOGOUT")
+check(M:SeenAt() == NOW - 5 * H, "and so does the logout after it")
+lockdown = false
+
+-- 3. What the client holds does not reach back: older lines are asked for, and read again once they came.
+local asked = 0
+GuildOS.Compat.RequestOlderGuildChat = function()
+  asked = asked + 1
+  -- the server sends what it holds before: the line said while away, and one from before the time seen
+  history[#history + 1] = line(NOW - 4 * H, "Seller", "buy gold cheap")
+  history[#history + 1] = line(NOW - 6 * H, "Old", "hi")
+end
+history = { line(NOW - 60, "Nice", "hello") }
+session()
+fire("PLAYER_ENTERING_WORLD")
+runTimers()
+check(asked == 1 and not M.caughtUp, "a history that does not reach the time seen asks for older lines")
+runTimers()
+check(M.caughtUp and M:SeenAt() == NOW, "read again whole once they came, then seen")
+local count = 0
+for _, a in ipairs(M:Feed()) do if a.who == "Seller" then count = count + 1 end end
+check(count == 1, "the line is alerted once, not once per read")
+
+-- 4. The module started after the world loaded (a late guild name): the catch-up starts at once.
+IsLoggedIn = function() return true end
+M:MarkSeen(NOW - H)
+history = { line(NOW - 30 * 60, "Seller", "buy gold cheap") }
+session()
+runTimers()
+runTimers()
+check(M.caughtUp and #M:Feed() == 1, "started after the login, it still catches up")
+IsLoggedIn = nil
+
+-- 5. Old lines never mix with the live anti-flood state.
+local liveList = { { t = NOW, h = "x", links = 0, m = "live" } }
+F.speakers = { Live = liveList }
+F.surges = {}
+F.speakerCount = 1
+M:MarkSeen(NOW - H)
+history = {}
+for k = 1, 6 do history[k] = line(NOW - 30 * 60 + k, "Live", "spam " .. k) end
+M:CatchUp(NOW)
+check(F.speakers.Live == liveList and #liveList == 1 and F.speakerCount == 1, "the live speakers are untouched by a catch-up")
+check(next(F.surges) == nil, "and no historical surge is left for a live line to join")
+
+-- 6. A spammer repeating one line is one alert, and a catch-up adds at most AWAY_FEED_MAX.
+M.feed = {}
+history = {}
+for k = 1, 40 do history[k] = line(NOW - 50 * 60 + k * 60, "Rep", "buy gold cheap") end
+M:CatchUp(NOW)
+local reps = 0
+for _, a in ipairs(M:Feed()) do if a.who == "Rep" and a.kind == "subject" then reps = reps + 1 end end
+check(reps == 1, "the same line repeated while away is one alert")
+M.feed = {}
+history = {}
+for k = 1, 60 do history[k] = line(NOW - 50 * 60 + k, "P" .. k, "buy gold cheap " .. k) end
+M:CatchUp(NOW)
+local aw = 0
+for _, a in ipairs(M:Feed()) do if a.away then aw = aw + 1 end end
+check(aw <= M.AWAY_FEED_MAX, "at most " .. M.AWAY_FEED_MAX .. " alerts from one catch-up")
 print(("mod-away: %d checks passed"):format(checks))

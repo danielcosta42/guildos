@@ -500,7 +500,11 @@ function ModAlerts.AwayLines(history, since, upTo)
     return out
 end
 
--- The catch-up itself. Returns how many lines were read, or nil and why ("member", "off", "none", "locked").
+ModAlerts.AWAY_FEED_MAX = 30   -- alerts a catch-up may add: the panel keeps room for the live ones
+
+-- The catch-up itself, on its own anti-flood state (old and live lines never mix in a window or a surge).
+-- Returns how many lines were read and whether the server's history reached back far enough; or nil and why
+-- ("member", "off", "none", "locked").
 function ModAlerts:CatchUp(loginAt)
     if not GuildOS:IsOfficer() then return nil, "member" end
     if not self:Prefs().enabled then return nil, "off" end
@@ -510,43 +514,86 @@ function ModAlerts:CatchUp(loginAt)
     if type(history) ~= "table" then return nil, "none" end
     loginAt = loginAt or GetServerTime()
     local since = math.max(self:SeenAt() or 0, loginAt - self.AWAY_MAX_SECS)
+    local oldest
+    for _, e in ipairs(history) do
+        local t = type(e) == "table" and GuildOS.Finite(e.t)
+        if t and (not oldest or t < oldest) then oldest = t end
+    end
+    -- The client holds only what it was sent: reaching back is the oldest held at or before `since`, or as
+    -- many lines as the catch-up reads at most.
+    local complete = (oldest ~= nil and oldest <= since) or #history >= self.AWAY_MAX_LINES
     local lines = self.AwayLines(history, since, loginAt)
-    self.catchingUp = true
+    local F = GuildOS.ModFlood
+    local live
+    if F then
+        live = { F.speakers, F.surges, F.speakerCount, F.lastPrune }
+        F.speakers, F.surges, F.speakerCount, F.lastPrune = {}, {}, 0, nil
+    end
+    self.catchingUp, self.awaySeen, self.awayAdded = true, {}, 0
     local ok = GuildOS:SafeCall(function()
         for _, l in ipairs(lines) do
             if not GuildOS.Compat.IsSecret(l.m, l.n) then self:_Check(l.m, l.n, l.t, l.context) end
         end
     end)
-    self.catchingUp = false
+    self.catchingUp, self.awaySeen = false, nil
+    if F then F.speakers, F.surges, F.speakerCount, F.lastPrune = live[1], live[2], live[3], live[4] end
     self:Refresh()
-    return ok and #lines or 0
+    return ok and #lines or 0, complete
 end
 
--- On an officer's login: a little after the world loads, once, with a few tries in a chat lockdown; the time
--- seen kept every minute and at logout.
+-- On an officer's login (or at once when the module starts after it, a late guild name): a little after the
+-- world loads, a few tries — in a chat lockdown, and asking the server for older lines while what it sent does
+-- not reach back. The time seen moves only once a catch-up really ran: a logout, a reload or a lockdown that
+-- outlasts the tries before then keeps the old time, and the next login covers the gap.
 function ModAlerts:_SetupCatchUp()
     local f = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(f, "PLAYER_ENTERING_WORLD")
     GuildOS.Compat.RegisterEvent(f, "PLAYER_LOGOUT")
     local started = false
-    f:SetScript("OnEvent", function(_, event)
-        if event == "PLAYER_LOGOUT" then
-            GuildOS:SafeCall(function() ModAlerts:MarkSeen() end)
-            return
-        end
+    local function start()
         if started then return end
         started = true
         local loginAt = GetServerTime()
         local tries = 0
+        local function done()
+            ModAlerts.caughtUp = true
+            ModAlerts:MarkSeen(loginAt)
+            GuildOS.Compat.NewTicker(60, function()
+                GuildOS:SafeCall(function() if ModAlerts.caughtUp then ModAlerts:MarkSeen() end end)
+            end)
+        end
         local function attempt()
             tries = tries + 1
-            local _, why = ModAlerts:CatchUp(loginAt)
-            if why == "locked" and tries < ModAlerts.AWAY_RETRIES then GuildOS.Compat.After(30, attempt) return end
-            ModAlerts:MarkSeen(loginAt)
-            GuildOS.Compat.NewTicker(60, function() GuildOS:SafeCall(function() ModAlerts:MarkSeen() end) end)
+            local n, flag = ModAlerts:CatchUp(loginAt)
+            if n == nil and flag ~= "locked" then return done() end    -- member, off, no history: nothing to cover
+            local last = tries >= ModAlerts.AWAY_RETRIES
+            if n == nil then                                            -- locked: try later; never mark seen
+                if not last then GuildOS.Compat.After(30, function() GuildOS:SafeCall(attempt) end) end
+                return
+            end
+            if flag or last then return done() end                      -- reached back, or the server has no more
+            if GuildOS.Compat.RequestOlderGuildChat then GuildOS.Compat.RequestOlderGuildChat(ModAlerts.AWAY_MAX_LINES) end
+            ModAlerts:_ForgetAway()                                     -- read again whole once the older lines came
+            GuildOS.Compat.After(10, function() GuildOS:SafeCall(attempt) end)
         end
         GuildOS.Compat.After(15, function() GuildOS:SafeCall(attempt) end)
+    end
+    f:SetScript("OnEvent", function(_, event)
+        if event == "PLAYER_LOGOUT" then
+            GuildOS:SafeCall(function() if ModAlerts.caughtUp then ModAlerts:MarkSeen() end end)
+            return
+        end
+        start()
     end)
+    -- Started after the world already loaded (the modules wait for a late guild name): at once.
+    if IsLoggedIn and IsLoggedIn() then start() end
+end
+
+-- Drops the away alerts of a partial read, before it is read again with the older lines.
+function ModAlerts:_ForgetAway()
+    for i = #self.feed, 1, -1 do
+        if self.feed[i].away then table.remove(self.feed, i) end
+    end
 end
 
 -- A new alert from a rule.
@@ -570,15 +617,20 @@ function ModAlerts:Deliver(a, now)
     local held = self.claims[a.claim]
     -- Already alerted (or about to be) on this client for the same line: never twice.
     if (held and held.mine) or self.pending[a.claim] then return end
+    if self.catchingUp then
+        if self.awaySeen[a.claim] or self.awayAdded >= self.AWAY_FEED_MAX then return end
+        self.awaySeen[a.claim], self.awayAdded = true, self.awayAdded + 1
+    end
     self.nextId = self.nextId + 1
     -- `at` is when it was alerted (what the panel keeps it by), `said` when the line was said.
     a.id, a.at, a.said, a.state = self.nextId, clock, now, "new"
-    table.insert(self.feed, 1, a)
+    -- Older than any live alert: an away one goes below them.
+    if self.catchingUp then self.feed[#self.feed + 1] = a else table.insert(self.feed, 1, a) end
     self:_PruneFeed(GetServerTime())
-    -- Said while this officer was away (#411): into the panel only, no window, no sound, no claim.
+    -- Said while this officer was away (#411): into the panel only, no window, no sound, no claim; one per line
+    -- (a spammer's repeats are one alert), at most AWAY_FEED_MAX, and drawn once at the end.
     if self.catchingUp then
         a.away = true
-        self:Refresh()
         return
     end
     if a.sev == "low" then
@@ -642,7 +694,9 @@ end
 function ModAlerts:_PruneFeed(now)
     local cut = now - self.FEED_TTL
     for i = #self.feed, 1, -1 do
-        if i > self.FEED_MAX or self.feed[i].at < cut then table.remove(self.feed, i) end
+        local e = self.feed[i]
+        -- A live alert still on screen is never pushed out (its window's buttons find it by id).
+        if (i > self.FEED_MAX or e.at < cut) and not (e.shown and e.state == "new" and e.at >= cut) then table.remove(self.feed, i) end
     end
 end
 
