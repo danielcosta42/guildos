@@ -1822,3 +1822,30 @@ everything. Until now cores reached the game only through the companion's `Inbox
 - (−) While officers on old clients remain, they still replace their own tables, and an unlink made on an old
   client is not heard by new ones (the merge never removes). The full gain comes when every officer updates.
 - (−) Each officer's backfill sends every alt entry (a few hundred in a big guild) once per answered request.
+
+## ADR-0043 — Birthdays: a member-owned entry per character, and the calendar's dates drawn, never stored (#428)
+
+### Context
+- Officers asked for members' birthdays and join anniversaries on the calendar and said on the day (epic #423,
+  group E). The calendar's yearly repeat (#358) makes real events, one per date: one series per member would
+  fill `db.events` and its sync with hundreds of entries nobody created.
+
+### Decision
+- **`Modules/Birthdays.lua`**, member domain `birthday` (GUILD only), modelled on `foundingSelf`: one entry per
+  character `{ d, m, at, by }` or a tombstone `{ off = true, at, by }`, newest server time wins, a tie to the
+  tombstone. A member writes for their own characters (their key or alt group), an officer for anybody. One
+  birthday per person is a READ rule: the newest entry of the alt group. Members re-send their own at login,
+  officers backfill all and answer an older entry once a session.
+- **Virtual dates**: the calendar asks `Birthdays:VirtualEvents(from, to)` while it draws and buckets them with the
+  day's events; `_Occurrences` "yearly" gives the dates (29/02 on the 28th). Nothing is stored or synced as an
+  event.
+- **Join anniversary**: the current passage's start (MemberHistory), else `firstSeen`; a date from the first look
+  at the guild is none.
+- **/g line**: an officer's own setting, off; claim, wait 5–8 s, lower name wins, `said` remembered by everyone.
+- **Privacy**: day and month only, no year; tombstone on removal; dropped when the member leaves.
+
+### Consequences
+- (+) No event sync grows with the guild; the filters cost nothing.
+- (+) The birthday follows the alt group as links change, with no rewrite.
+- (−) A late officer can still repeat a line when nobody online heard it said that day.
+- (−) Join anniversaries differ between officers (history) and members (`firstSeen`).

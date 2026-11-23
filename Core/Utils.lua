@@ -1337,6 +1337,8 @@ function GuildOS:DropDeparted()
     end
     -- A founder who left loses the badge before their date goes (WoW: Forever, issue #209).
     if self.Founding then self.Founding:Departed(present) end
+    -- A birthday is personal data: it goes with its member (issue #428).
+    if self.Birthdays then self.Birthdays:Departed(present) end
     for _, store in ipairs({ "firstSeen", "recipes" }) do
         for key in pairs(self.db[store] or {}) do
             if not present[key] then self.db[store][key] = nil end

@@ -363,6 +363,65 @@ end
 -- Drawn again when the game hands its calendar over, so "reading" turns into the state (I5).
 if GuildOS.Compat and GuildOS.Compat.OnCalendarUpdate then GuildOS.Compat.OnCalendarUpdate(redraw) end
 
+----------------------------------------------------------------------
+-- Birthdays (issue #428): this month's, one guild announcement a click, never on its own. The game
+-- takes one new event per click, so the button puts the next one missing and says how many are left.
+----------------------------------------------------------------------
+local BIRTHDAY_MARK = MARK .. "birthday"
+
+--- The game event a birthday becomes: an announcement at noon on the realm's calendar that day.
+function GameCalendar.BirthdaySpec(b)
+    local title = firstLetters(string.format(L["Birthday: %s"], tostring(b.name or "")), GameCalendar.TITLE_MAX)
+    local room = GameCalendar.DESC_MAX - letters(BIRTHDAY_MARK) - 1
+    local text = firstLetters(L["A birthday shared in Guild OS."], math.max(room, 0))
+    local clock = { year = b.year, month = b.month, day = b.day, hour = 12, minute = 0 }
+    return { title = title, description = text .. "\n" .. BIRTHDAY_MARK, clock = clock,
+             startsAt = GuildOS.Compat.EpochOfRealm(clock) }
+end
+
+--- The birthdays of the rest of this month not in the game's calendar yet, as specs; nil while the game
+--- has not read its calendar.
+function GameCalendar:MissingBirthdays(now)
+    local B = GuildOS.Birthdays
+    if not B then return {} end
+    local specs = {}
+    for _, b in ipairs(B:RestOfMonth(now)) do specs[#specs + 1] = GameCalendar.BirthdaySpec(b) end
+    if #specs == 0 then return specs end
+    local list = GuildOS.Compat.CalendarGuildEvents(specs[1].startsAt - AROUND, specs[#specs].startsAt + AROUND)
+    if not list then return nil end
+    local out = {}
+    for _, s in ipairs(specs) do
+        if not has(list, s.title, s.startsAt) then out[#out + 1] = s end
+    end
+    return out
+end
+
+--- The calendar's button: puts the next birthday of this month in the game's calendar, from a click.
+function GameCalendar:PutNextBirthday()
+    if not self:CanAct() then return GuildOS:Print(L["Only an officer can do this, on WoW: Forever."]) end
+    if self:IsWaiting("birthdays") then return GuildOS:Print(L["Waiting for the game's answer."]) end
+    GuildOS.Compat.CalendarRequest()
+    local missing = self:MissingBirthdays(GetServerTime())
+    if not missing then return GuildOS:Print(L["The game's calendar is still loading. Try again in a moment."]) end
+    local spec = missing[1]
+    if not spec then return GuildOS:Print(L["Every birthday left this month is in the game's calendar."]) end
+    local ok, err = GuildOS.Compat.CalendarCreateGuildAnnouncement(spec)
+    if not ok then return GuildOS:Print(err) end
+    local left = #missing - 1
+    self:_Await("birthdays", function()
+        local now = GuildOS.Compat.CalendarGuildEvents(spec.startsAt - AROUND, spec.startsAt + AROUND)
+        return now ~= nil and has(now, spec.title, spec.startsAt)
+    end, nil, function(done, msg)
+        if done then
+            GuildOS:Print(left > 0 and string.format(L["%s is in the game's calendar. Click again for the next (%d left)."], spec.title, left)
+                or string.format(L["%s is in the game's calendar. That was the last one this month."], spec.title))
+        elseif msg then
+            GuildOS:Print(msg)
+        end
+        redraw()
+    end)
+end
+
 --- The panel's button: runs the action and says, in the chat window, what came of it.
 function GameCalendar:Act(eventId, action)
     local run = ({ put = self.Put, refresh = self.Refresh })[action]

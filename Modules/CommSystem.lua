@@ -671,6 +671,13 @@ function CommSystem:_Answer()
                 GuildOS.AltSync:Backfill()
             end)
         end
+
+        -- Every member's birthday, tombstones included, in spaced batches (issue #428).
+        if GuildOS:IsOfficer() and GuildOS.Birthdays then
+            C_Timer.After(7, function()
+                GuildOS.Birthdays:Backfill()
+            end)
+        end
     end)
 end
 
@@ -762,6 +769,10 @@ function CommSystem:FullSync()
     C_Timer.After(1, function()
         self:BroadcastAltLinks()
         if GuildOS.AltSync then GuildOS.AltSync:Backfill() end   -- issue #424
+    end)
+
+    C_Timer.After(1.5, function()
+        if GuildOS.Birthdays then GuildOS.Birthdays:Backfill() end   -- issue #428
     end)
 
     C_Timer.After(2, function()

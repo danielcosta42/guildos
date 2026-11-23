@@ -316,6 +316,8 @@ local MODULE_START = {
     { "CallToArms" },
     { "Polls" },
     { "Calendar" },
+    -- Each member's birthday and join anniversary (issue #428): drawn on the calendar, never stored as events.
+    { "Birthdays" },
     { "Milestones" },
     -- WoW: Forever only (issue #205): what happened to me, for the guild's feed on guildos.me.
     { "Journal", feature = "journal" },

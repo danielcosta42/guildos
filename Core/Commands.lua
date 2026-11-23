@@ -70,6 +70,7 @@ local function printHelp()
     helpLine("/gos rules",         L["The guild's rules"])
     helpLine("/gos mentions",      L["Name mention alerts"])
     helpLine("/gos myalts",        L["Detect and link your own alts"])
+    helpLine("/gos birthday <DD/MM | off>", L["Share your birthday with the guild (day and month only)"])
     if GuildOS.AttunementTracker then  -- TBC content (ADR-0014)
         helpLine("/gos attune",    L["Your attunement progress"])
     end
@@ -101,6 +102,7 @@ local function printHelp()
                 L["Promote or demote a member's alts to their main's rank, or to a rank, one per click"])
         end
         helpLine("/gos altlimit <number>",     L["List the alt groups with more alts than that"])
+        helpLine("/gos birthday <name> <DD/MM | off>", L["Correct or remove a member's birthday"])
         helpLine("/gos record <name>",         L["A member's disciplinary record"])
         helpLine("/gos warn <name> [reason]",  L["Warn a member, with one click"])
         helpLine("/gos record term <days>",    L["How long a warning counts"])
@@ -804,6 +806,9 @@ local function handleCommand(msg)
         else
             GuildOS:Print(L["Not available on this client."])
         end
+    elseif msg == "birthday" or msg:match("^birthday%s") or msg == "aniversario" or msg:match("^aniversario%s") then
+        -- /gos birthday [DD/MM | off] (#428), Settings > Profile's Birthday; an officer adds a name first.
+        if GuildOS.Birthdays then GuildOS.Birthdays:Command((msg:gsub("^%a+%s*", ""))) end
     elseif msg == "altlimit" or msg:match("^altlimit%s") then
         -- /gos altlimit N (#424): the groups with more than N alts, in chat.
         if GuildOS.AltSync then GuildOS.AltSync:CommandLimit((msg:gsub("^altlimit%s*", ""))) end

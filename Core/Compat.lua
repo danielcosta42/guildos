@@ -2394,6 +2394,23 @@ function Compat.CalendarCreateGuildEvent(spec)
     return true
 end
 
+--- A guild announcement (no sign-up): { title, description, startsAt }, as a birthday is (#428). Only from
+--- a click; true, or false and why.
+function Compat.CalendarCreateGuildAnnouncement(spec)
+    if not Compat.CalendarAvailable() or type(C_Calendar.CreateGuildAnnouncementEvent) ~= "function" then
+        return false, "unavailable"
+    end
+    local ok, err = pcall(function()
+        C_Calendar.CreateGuildAnnouncementEvent()
+        C_Calendar.EventSetTitle(spec.title)
+        C_Calendar.EventSetDescription(spec.description or "")
+        setEventWhen(spec)
+        C_Calendar.AddEvent()
+    end)
+    if not ok then return false, tostring(err) end
+    return true
+end
+
 --- Opens the event at `where` ({ offset, day, index }) for editing; the game answers CALENDAR_OPEN_EVENT.
 function Compat.CalendarOpenEvent(where)
     if not Compat.CalendarAvailable() then return false, "unavailable" end

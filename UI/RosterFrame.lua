@@ -222,7 +222,16 @@ local COLUMNS = {
           return ctx.hasAlts[d.key] and L["Main"] or nil
       end,
       text = function(v) return v, C.silver end },
-    { key = "version",     label = L["VERSION"],      name = L["Addon version"], min = 56, weight = 0, align = "CENTER", num = true,
+    -- The member's own (issue #428), the same on every character of the group; by the date in the year.
+    { key = "birthday",    label = L["BIRTHDAY"],     name = L["Birthday"],     min = 64,  weight = 0, align = "CENTER", asc = true, num = true,
+      offered = function() return GuildOS.Birthdays ~= nil end,
+      value = function(d)
+          local b = GuildOS.Birthdays:For(d.key)
+          d.birthday = b
+          return b and (b.month * 100 + b.day) or nil
+      end,
+      text = function(_, d) return GuildOS.Birthdays:Text(d.birthday), C.silver end },
+    { key = "version",     label = L["VERSION"],     name = L["Addon version"], min = 56, weight = 0, align = "CENTER", num = true,
       value = function(d) return d.addonVersion and versionNumber(d.addonVersion) or nil end,
       text = function(_, d)
           return d.addonVersion, CompareVersions(d.addonVersion, GuildOS.VERSION) < 0 and C.red or C.silver

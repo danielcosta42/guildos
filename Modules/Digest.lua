@@ -114,6 +114,13 @@ function Digest:Build(since, opts)
         end
     end
 
+    -- Today's birthdays and join anniversaries (#428): at the first login of the day, and on demand.
+    if GuildOS.Birthdays and not (opts and opts.login and GuildOS.Birthdays:ToldToday(GetServerTime())) then
+        for _, line in ipairs(GuildOS.Birthdays:GetDigestLines(GetServerTime())) do
+            lines[#lines + 1] = "|cffEDCC7B" .. line .. "|r"
+        end
+    end
+
     -- Upcoming raid reminder (event within the next 24h)
     if GuildOS.Calendar and GuildOS.Calendar.GetDigestLines then
         local calLines = GuildOS.Calendar:GetDigestLines()
@@ -297,8 +304,9 @@ function Digest:ShowOnLogin()
     -- From now on a notice that arrives is told in the chat (issue #418).
     if B then B:LoginDone() end
     if not GuildOS.db.digest or not GuildOS.db.digest.enabled then
-        -- No digest: the notices not told yet get a chat line each.
+        -- No digest: the notices not told yet get a chat line each, and so do today's birthdays (#428).
         if B then B:TellInChat(GetServerTime()) end
+        if GuildOS.Birthdays then GuildOS.Birthdays:TellInChat(GetServerTime()) end
         return
     end
     if self.shownThisSession then return end
@@ -323,6 +331,7 @@ function Digest:ShowOnLogin()
     self:MarkFeedSeen(GetServerTime())
     if B then B:MarkSeen(GetServerTime()) end
     if GuildOS.Achievements then GuildOS.Achievements:MarkSeen() end
+    if GuildOS.Birthdays then GuildOS.Birthdays:MarkTold(GetServerTime()) end
     if GuildOS.Activation then
         if GuildOS.Activation:GetDigestLine(GetServerTime()) then GuildOS.Activation:Reminded(GetServerTime()) end
     end

@@ -369,6 +369,26 @@ PAGES.profile = function(F)
             function(checked) GuildOS.Journal:SetOptedOut(checked) end)
     end
 
+    -- The member's own birthday (issue #428): the day and the month, for the guild's calendar.
+    local BD = GuildOS.Birthdays
+    if BD then
+        F:Section(L["Birthday"])
+        local box = F:Field(L["Your birthday"], { w = 80, max = 10, hint = BD:Hint(),
+            get = function() return BD:Text(BD:Mine()) or "" end,
+            save = function(b) GuildOS.Birthdays:SetMineText(b:GetText()); F:Refresh() end })
+        F:Check(L["Show my birthday to the guild"],
+            L["Only the day and the month, never the year. Untick it to remove it from everybody's Guild OS."],
+            function() return BD:Mine() ~= nil end,
+            function(checked)
+                if checked then GuildOS.Birthdays:SetMineText(box:GetText()) else GuildOS.Birthdays:ClearMine() end
+            end)
+        F:Check(L["Announce birthdays in guild chat"],
+            L["Officers: one line in /g on the day for each member, however many officers are online."],
+            function() return BD:AnnounceOn() end,
+            function(checked) BD:SetAnnounce(checked) end,
+            { shown = function() return GuildOS:IsOfficer() end })
+    end
+
     F:Section(L["Getting started"])
     F:Buttons({ { L["Show welcome again"], function() if GuildOS.ShowOnboarding then GuildOS:ShowOnboarding() end end, w = 170 } })
     F:Note(L["Replay the first-run intro"], { gap = 6 })
