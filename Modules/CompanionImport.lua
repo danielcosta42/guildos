@@ -955,6 +955,40 @@ function Import:AllianceBans()
     return out
 end
 
+-- The GOSGILD1's discordLinked (#422, the site's specs/009): the keys of the guild's characters whose
+-- player linked their Discord on guildos.me, sent only on an officer's code. Read as a whole or not at
+-- all: a list that is not one, longer than DISCORD_LINKED_MAX, or with an entry that is not a key (not a
+-- string, over 64 bytes, a bar or a control character) is refused and this is nil, since a cut or patched
+-- list would call a linked member "without Discord". Kept in memory only, per block, as a set of this
+-- client's keys in lower case. Nil with no block or no field (an older site): the game does not know.
+Import.DISCORD_LINKED_MAX = 1000
+function Import:DiscordLinked()
+    local block = self:GuildBlock()
+    local raw = block and block.discordLinked
+    if type(raw) ~= "table" then return nil end
+    if self._linkedOf == raw then return self._linked end
+    local set
+    local n = #raw
+    if n <= Import.DISCORD_LINKED_MAX then
+        local count = 0
+        for _ in pairs(raw) do
+            count = count + 1
+            if count > n then break end
+        end
+        set = count == n and {} or nil
+        for i = 1, set and n or 0 do
+            local k = raw[i]
+            if type(k) ~= "string" or k == "" or #k > SITE_LOOT.name or k:find("[|%c]") then
+                set = nil
+                break
+            end
+            set[GuildOS:LocalMemberKey(k):lower()] = true
+        end
+    end
+    self._linkedOf, self._linked = raw, set
+    return set
+end
+
 -- Text off the network, for a line of ours: nothing in it may open a colour, a link or a texture, and
 -- one line stays one line.
 function Import.Inert(text)

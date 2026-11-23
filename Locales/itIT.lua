@@ -3731,3 +3731,16 @@ L["One reminder at a time: wait %d s."] = "Un promemoria alla volta: attendi %d 
 L["The game said whispers went too fast: wait %d s."] = "Il gioco ha detto che i sussurri andavano troppo in fretta: attendi %d s."
 L["The game holds the chat right now."] = "Il gioco sta trattenendo la chat in questo momento."
 L["The whisper did not go."] = "Il sussurro non è partito."
+
+-- Without GuildOS: who has no Discord linked, as the site says (issue #422)
+L["Hi {name}! The officers of {guild} use guildos.me with Discord for raids and signups. Could you link your Discord there when you have a moment? Thank you!"] = "Ciao {name}! Gli ufficiali di {guild} usano guildos.me con Discord per raid e iscrizioni. Potresti collegare lì il tuo Discord quando hai un momento? Grazie!"
+L["Also link your Discord on guildos.me."] = "Collega anche il tuo Discord su guildos.me."
+L["no Discord"] = "senza Discord"
+L["Members this client never heard GuildOS from, and the ones guildos.me says have no Discord linked. Remind whispers one of them per click, at most once every few days each."] = "I membri da cui questo client non ha mai sentito GuildOS, e quelli che secondo guildos.me non hanno collegato Discord. Ricorda sussurra a uno di loro per clic, al massimo ogni pochi giorni ciascuno."
+L["Without GuildOS or Discord"] = "Senza GuildOS o senza Discord"
+L["Without Discord"] = "Senza Discord"
+L["Without GuildOS and Discord"] = "Senza GuildOS né Discord"
+L["Without Discord ({name}, {guild})"] = "Senza Discord ({name}, {guild})"
+L["Nobody here: everyone has GuildOS and Discord, or the filter hides them."] = "Nessuno qui: tutti hanno GuildOS e Discord, o il filtro li nasconde."
+L["Reminded to link Discord on guildos.me (whisper)."] = "Ricordato di collegare Discord su guildos.me (sussurro)."
+L["Reminded to install GuildOS and link Discord (whisper)."] = "Ricordato di installare GuildOS e collegare Discord (sussurro)."

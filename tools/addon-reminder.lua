@@ -6,7 +6,10 @@
 -- rank, online and "reminded recently"; one click whispers one member the filled text, on the click;
 -- the same member waits N days, whoever of the officers reminded them; two reminders keep a gap and the
 -- game's "too fast" holds them and undoes the one that just left; the disciplinary record gets it only
--- when the officer asked; only an officer reminds, and only an officer's date is taken.
+-- when the officer asked; only an officer reminds, and only an officer's date is taken. With the site's
+-- GOSGILD1.discordLinked (read by the real CompanionImport, whole or not at all) the list also holds who
+-- has GuildOS but no Discord, filtered by what they lack, and the whisper says the matching text; without
+-- it, the list is the GuildOS one, as before.
 --
 --   luajit -e 'ADDON="."' tools/addon-reminder.lua
 --
@@ -91,6 +94,7 @@ GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VER
 dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
+dofile(ADDON .. "/Modules/CompanionImport.lua")
 dofile(ADDON .. "/Modules/GuildManager.lua")
 dofile(ADDON .. "/Modules/Discipline.lua")
 dofile(ADDON .. "/Modules/AddonReminder.lua")
@@ -109,6 +113,10 @@ local function publishedOf(dom)
 end
 
 GuildOS.Compat.PlayerName = function() return "Arthas" end
+-- The site's block, as the companion import hands it over (nil: an older site, or no block).
+local BLOCK
+local Import = GuildOS.CompanionImport
+function Import:GuildBlock() return BLOCK end
 GuildOS.db = { settings = {}, members = {}, firstSeen = {} }
 local R = GuildOS.AddonReminder
 local key = function(n) return GuildOS:GetPlayerKey(n) end
@@ -245,5 +253,81 @@ check(not ok and why == "gone", "who left is not reminded")
 -- The dates are forgotten past keeping.
 GuildOS.db.reminders.old = NOW - 100 * day
 check(R:Prune(NOW) >= 1 and GuildOS.db.reminders.old == nil, "an old date goes")
+
+-- ── Without Discord (the site's discordLinked) ──────────────────────────
+check(Import:DiscordLinked() == nil and R:Linked() == nil, "no block: the game does not know who linked Discord")
+BLOCK = { guild = "Os Guardioes" }
+check(Import:DiscordLinked() == nil, "a block without the field (an older site): not known")
+BLOCK = { discordLinked = "Bob-Dreamscythe" }
+check(Import:DiscordLinked() == nil, "not a list: refused")
+BLOCK = { discordLinked = { "Eve-Dreamscythe", 42 } }
+check(Import:DiscordLinked() == nil, "an entry that is not a key refuses the whole list")
+BLOCK = { discordLinked = { "Eve-Dreamscythe", "Bad|cffff0000-Dreamscythe" } }
+check(Import:DiscordLinked() == nil, "a key with a bar refuses the whole list")
+BLOCK = { discordLinked = { "Eve-Dreamscythe", string.rep("x", 65) } }
+check(Import:DiscordLinked() == nil, "a key past 64 bytes refuses the whole list, never cut")
+BLOCK = { discordLinked = { "Eve-Dreamscythe", extra = "x" } }
+check(Import:DiscordLinked() == nil, "a table with more than a list in it: refused")
+local big = {}
+for i = 1, Import.DISCORD_LINKED_MAX + 1 do big[i] = "M" .. i .. "-Dreamscythe" end
+BLOCK = { discordLinked = big }
+check(Import:DiscordLinked() == nil, "over the limit: refused, never a cut list")
+BLOCK = { discordLinked = {} }
+local none = Import:DiscordLinked()
+check(none ~= nil and next(none) == nil, "an empty list says nobody linked")
+
+roster = {
+  { "Arthas", 1, 60, true },
+  { "Fay", 4, 60, true },    -- GuildOS, Discord linked: not listed
+  { "Gus", 4, 60, true },    -- GuildOS, no Discord
+  { "Hal", 3, 60, true },    -- no GuildOS, Discord linked
+  { "Ivy", 3, 60, true },    -- neither
+}
+for _, n in ipairs({ "Fay", "Gus" }) do GuildOS.db.members[key(n)] = { lastUpdate = NOW } end
+GuildOS.db.reminders = {}
+BLOCK = { discordLinked = { "fay-dreamscythe", "Hal-Dreamscythe", "Arthas-Dreamscythe" } }
+check(Import:DiscordLinked()[key("Fay"):lower()] and Import:DiscordLinked() == Import:DiscordLinked(),
+      "kept in memory, once per block, by this client's key in any case")
+local names = function(l) local o = {} for _, m in ipairs(l) do o[#o + 1] = m.name end table.sort(o) return table.concat(o, ",") end
+check(names(R:List({})) == "Gus,Hal,Ivy", "without GuildOS, without Discord, or both; who has both is not listed, nor oneself")
+check(names(R:List({ lacks = "addon" })) == "Hal,Ivy", "only without GuildOS")
+check(names(R:List({ lacks = "discord" })) == "Gus,Ivy", "only without Discord")
+check(names(R:List({ lacks = "both" })) == "Ivy", "only without either")
+local gus = R:Member(key("Gus"))
+check(gus.noDiscord == true and gus.hasAddon and R.KindOf(gus) == "discord", "Gus lacks Discord only")
+check(R.KindOf(R:Member(key("Hal"))) == "addon" and R.KindOf(R:Member(key("Ivy"))) == "both" and R.KindOf(R:Member(key("Fay"))) == nil,
+      "what each one lacks")
+
+check(R:GetTemplate("discord") == R.DefaultDiscordTemplate(), "the Discord text has its own default")
+R:SetTemplate("Link it, {name}! {discord}", "discord")
+check(R:GetTemplate("discord") == "Link it, {name}! {discord}" and R:GetTemplate() == "Hi {name}, {guild} uses GuildOS.",
+      "an officer's own Discord text, apart from the GuildOS one")
+CLOCK = CLOCK + R.HOLD
+R:SetLogDiscipline(true)
+local n0 = #whispers
+ok = R:Remind(key("Gus"))
+check(ok and whispers[#whispers].text == "Link it, Gus!", "who has GuildOS gets the Discord text")
+CLOCK = CLOCK + R.GAP
+ok = R:Remind(key("Ivy"))
+check(ok and whispers[#whispers].text == "Hi Ivy, Os Guardioes uses GuildOS. " .. R.DiscordHint(),
+      "who lacks both gets the GuildOS text with the Discord hint after it")
+CLOCK = CLOCK + R.GAP
+R:SetTemplate("Hi {name}!{discord} Bye.")
+ok = R:Remind(key("Hal"))
+check(ok and whispers[#whispers].text == "Hi Hal! Bye." and #whispers == n0 + 3, "who has Discord: {discord} stays empty")
+runTimers()
+local notes = {}
+for _, w in pairs(GuildOS.db.discipline.warnings) do notes[w.subject] = w.note end
+check(notes[key("Gus")] == "Reminded to link Discord on guildos.me (whisper)."
+      and notes[key("Ivy")] == "Reminded to install GuildOS and link Discord (whisper)."
+      and notes[key("Hal")] == "Reminded to install GuildOS (whisper).", "the record says what the reminder was for")
+R:SetLogDiscipline(false)
+R:SetTemplate(nil, "discord")
+check(GuildOS:GetSetting("reminderDiscordTemplate") == nil, "Default puts the Discord text back")
+
+-- The site stops saying it: the list is the GuildOS one again.
+BLOCK = nil
+check(names(R:List({})) == "Hal,Ivy" and R:Member(key("Gus")).noDiscord == nil,
+      "without the field, nobody is called without Discord")
 
 print(string.format("addon-reminder: %d checks passed", checks))

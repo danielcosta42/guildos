@@ -5,8 +5,11 @@
 -- Who in the guild this client never heard GuildOS from (the roster's "no
 -- GuildOS": no `lastUpdate` in db.members, the same test as the roster and the
 -- bulk actions), since when, and a polite reminder whispered to ONE member per
--- click of the officer. Whether a member linked their Discord on the site is
--- not in the GOSGILD1 the site sends down, so the list cannot say it.
+-- click of the officer. Who linked their Discord on guildos.me comes in the
+-- officer's GOSGILD1 (`discordLinked`, CompanionImport:DiscordLinked): with it
+-- the list also holds who has GuildOS but no Discord, and says which each one
+-- lacks; without it (an older site, a member's code) it is as before, GuildOS
+-- only, and the panel says the site does not tell.
 --
 -- One member is reminded at most once every N days (default 7), whoever of the
 -- officers clicks: the date goes to the other officers (domain "reminder",
@@ -102,6 +105,16 @@ function Reminder.DefaultTemplate()
     return L["Hi {name}! The officers of {guild} use the GuildOS addon for raids, loot and the calendar. Could you install it when you have a moment? Thank you!"]
 end
 
+-- The "without Discord" variant: for who has GuildOS but did not link Discord on guildos.me.
+function Reminder.DefaultDiscordTemplate()
+    return L["Hi {name}! The officers of {guild} use guildos.me with Discord for raids and signups. Could you link your Discord there when you have a moment? Thank you!"]
+end
+
+-- Filled into {discord} for who lacks both (and put after a text that has no {discord}).
+function Reminder.DiscordHint()
+    return L["Also link your Discord on guildos.me."]
+end
+
 -- A template off a box: one line, no game codes, at most 200 bytes; nil when blank.
 function Reminder.CleanTemplate(t)
     if type(t) ~= "string" then return nil end
@@ -109,15 +122,42 @@ function Reminder.CleanTemplate(t)
     return s ~= "" and s or nil
 end
 
-function Reminder:GetTemplate()
-    return self.CleanTemplate(GuildOS:GetSetting("reminderTemplate")) or self.DefaultTemplate()
+-- `kind` "discord" is the "without Discord" text; anything else the GuildOS one.
+local function templateOf(kind)
+    if kind == "discord" then return "reminderDiscordTemplate", Reminder.DefaultDiscordTemplate end
+    return "reminderTemplate", Reminder.DefaultTemplate
+end
+
+function Reminder:GetTemplate(kind)
+    local setting, default = templateOf(kind)
+    return self.CleanTemplate(GuildOS:GetSetting(setting)) or default()
 end
 
 -- Blank (or the default itself) goes back to the default, in whatever language the client then runs.
-function Reminder:SetTemplate(text)
+function Reminder:SetTemplate(text, kind)
+    local setting, default = templateOf(kind)
     local clean = self.CleanTemplate(text)
-    if clean == self.DefaultTemplate() then clean = nil end
-    GuildOS:SetSetting("reminderTemplate", clean)
+    if clean == default() then clean = nil end
+    GuildOS:SetSetting(setting, clean)
+end
+
+--- What member `m` lacks: "both", "addon" (GuildOS), "discord", or nil (nothing).
+function Reminder.KindOf(m)
+    if not m then return nil end
+    if not m.hasAddon then return m.noDiscord and "both" or "addon" end
+    return m.noDiscord and "discord" or nil
+end
+
+--- The whisper for member `m` (name, guild): the GuildOS text, the Discord one, or for who lacks both the GuildOS
+--- text with {discord} filled with the hint (put at its end when it has no {discord}). Pure.
+function Reminder.TextFor(kind, templates, vars)
+    local hint = kind == "both" and Reminder.DiscordHint() or ""
+    local t = tostring((kind == "discord" and templates.discord or templates.addon) or "")
+    if hint ~= "" and not t:find("{discord}", 1, true) then t = t .. " {discord}" end
+    local v = {}
+    for k, x in pairs(vars) do v[k] = x end
+    v.discord = hint
+    return strtrim(Reminder.Fill(t, v))
 end
 
 function Reminder:GetLogDiscipline()
@@ -150,7 +190,8 @@ end
 Reminder.DaysSince = daysSince
 
 --- The members of `list` that `f` keeps: { text (part of the name, any case), rank (0-based; any when nil or
---- negative), online (online only), hideRecent (not those reminded within `days`) }. Longest without GuildOS
+--- negative), online (online only), hideRecent (not those reminded within `days`), lacks ("addon": without
+--- GuildOS, "discord": without Discord, "both": without either; anything else: all) }. Longest without GuildOS
 --- first (the earliest seen), then by name.
 function Reminder.Filter(list, f, now, days)
     f = type(f) == "table" and f or {}
@@ -163,6 +204,9 @@ function Reminder.Filter(list, f, now, days)
         if keep and rank and rank >= 0 and m.rankIndex ~= rank then keep = false end
         if keep and f.online and not m.online then keep = false end
         if keep and f.hideRecent and m.remindedAt and now - m.remindedAt < days * 86400 then keep = false end
+        if keep and f.lacks == "addon" and m.hasAddon then keep = false end
+        if keep and f.lacks == "discord" and not m.noDiscord then keep = false end
+        if keep and f.lacks == "both" and (m.hasAddon or not m.noDiscord) then keep = false end
         if keep then out[#out + 1] = m end
     end
     table.sort(out, function(a, b)
@@ -173,13 +217,13 @@ function Reminder.Filter(list, f, now, days)
     return out
 end
 
---- Whether member `m` may be reminded now, and when not why: "addon" (heard since), "offline", "recent" (within
+--- Whether member `m` may be reminded now, and when not why: "addon" (heard since, and nothing else lacking), "offline", "recent" (within
 --- `days`, with the seconds left as a second value), "wait" (this client's gap, seconds left), "throttle" (the
 --- game said too fast, seconds left). `t`: { now = server time, clock = GetTime(), last = clock of the last
 --- reminder, holdUntil = clock }.
 function Reminder.Check(m, t, days)
     if not m then return false, "gone" end
-    if m.hasAddon then return false, "addon" end
+    if not Reminder.KindOf(m) then return false, "addon" end
     if not m.online then return false, "offline" end
     if m.remindedAt and t.now - m.remindedAt < days * 86400 then
         return false, "recent", m.remindedAt + days * 86400 - t.now
@@ -192,8 +236,9 @@ end
 ----------------------------------------------------------------------
 -- The live roster
 ----------------------------------------------------------------------
--- Roster line `i` as the list reads it, or nil.
-local function memberAt(i, now)
+-- Roster line `i` as the list reads it, or nil. `linked`: the site's set of keys with Discord (lower case), or
+-- nil when the site does not say, and then `noDiscord` is nil for everyone.
+local function memberAt(i, now, linked)
     local name, rankName, rankIndex, level, _, _, _, _, online, _, classFile = GetGuildRosterInfo(i)
     if not name then return nil end
     local key = GuildOS:KeyOfRosterName(name)
@@ -209,17 +254,25 @@ local function memberAt(i, now)
         hasAddon = (d and (tonumber(d.lastUpdate) or 0) > 0) and true or false,
         since = since, sinceDays = daysSince(since, now),
         remindedAt = GuildOS.Finite(store()[key]),
+        noDiscord = linked and not linked[GuildOS:LocalMemberKey(key):lower()] or nil,
     }
 end
 
---- Everyone on the roster this client never heard GuildOS from, oneself aside.
+--- The site's set of who linked Discord (CompanionImport:DiscordLinked), or nil when it does not say.
+function Reminder:Linked()
+    local I = GuildOS.CompanionImport
+    return I and I.DiscordLinked and I:DiscordLinked() or nil
+end
+
+--- Everyone on the roster this client never heard GuildOS from, or (when the site says) without Discord, oneself aside.
 function Reminder:Collect(now)
     now = now or GetServerTime()
     local me = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName())
+    local linked = self:Linked()
     local out = {}
     for i = 1, GetNumGuildMembers() or 0 do
-        local m = memberAt(i, now)
-        if m and not m.hasAddon and m.key ~= me then out[#out + 1] = m end
+        local m = memberAt(i, now, linked)
+        if m and self.KindOf(m) and m.key ~= me then out[#out + 1] = m end
     end
     return out
 end
@@ -229,7 +282,7 @@ function Reminder:Member(key, now)
     now = now or GetServerTime()
     for i = 1, GetNumGuildMembers() or 0 do
         local name = GetGuildRosterInfo(i)
-        if name and GuildOS:KeyOfRosterName(name) == key then return memberAt(i, now) end
+        if name and GuildOS:KeyOfRosterName(name) == key then return memberAt(i, now, self:Linked()) end
     end
     return nil
 end
@@ -263,7 +316,9 @@ function Reminder:Remind(key)
     local ok, why, left = self:CanRemind(m, now)
     if not ok then return false, why, left end
     if GuildOS.Compat.InChatLockdown and GuildOS.Compat.InChatLockdown() then return false, "locked" end
-    local text = self.Fill(self:GetTemplate(), { name = m.name, guild = GetGuildInfo("player") or "" })
+    local kind = self.KindOf(m)
+    local text = self.TextFor(kind, { addon = self:GetTemplate(), discord = self:GetTemplate("discord") },
+        { name = m.name, guild = GetGuildInfo("player") or "" })
     local target = GuildOS:WhisperTarget(m.fullName)
     if GuildOS.NoteWhisper then GuildOS:NoteWhisper(target) end
     if not GuildOS.Compat.SendWhisper(text, target) then return false, "failed" end
@@ -272,7 +327,7 @@ function Reminder:Remind(key)
     local before = held[key]
     held[key] = now
     s.last = GetTime()
-    local sent = { key = key, name = m.name, at = now, clock = s.last, before = before, log = self:GetLogDiscipline() }
+    local sent = { key = key, name = m.name, at = now, clock = s.last, before = before, log = self:GetLogDiscipline(), kind = kind }
     s.pending = sent
     -- The game's "too fast" comes back within a moment; only once it did not is the reminder counted.
     GuildOS.Compat.After(self.WATCH, function() GuildOS:SafeCall(Reminder.Settle, Reminder, sent) end)
@@ -305,7 +360,10 @@ function Reminder:Settle(sent)
     if s.pending == sent then s.pending = nil end
     if GuildOS.SyncService then GuildOS.SyncService:Publish("reminder", "sent", { key = sent.key, at = sent.at }) end
     if sent.log and GuildOS.Discipline then
-        GuildOS.Discipline:Add(sent.key, "other", { note = L["Reminded to install GuildOS (whisper)."] })
+        local note = (sent.kind == "discord" and L["Reminded to link Discord on guildos.me (whisper)."])
+            or (sent.kind == "both" and L["Reminded to install GuildOS and link Discord (whisper)."])
+            or L["Reminded to install GuildOS (whisper)."]
+        GuildOS.Discipline:Add(sent.key, "other", { note = note })
     end
     self:Refresh()
 end

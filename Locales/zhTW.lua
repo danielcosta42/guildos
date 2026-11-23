@@ -3587,3 +3587,16 @@ L["One reminder at a time: wait %d s."] = "一次一個提醒：請等待 %d 秒
 L["The game said whispers went too fast: wait %d s."] = "遊戲提示密語發得太快：請等待 %d 秒。"
 L["The game holds the chat right now."] = "遊戲此刻正暫停聊天。"
 L["The whisper did not go."] = "密語沒有送出。"
+
+-- Without GuildOS: who has no Discord linked, as the site says (issue #422)
+L["Hi {name}! The officers of {guild} use guildos.me with Discord for raids and signups. Could you link your Discord there when you have a moment? Thank you!"] = "你好，{name}！{guild} 的幹部們用 guildos.me 搭配 Discord 管理團隊副本和報名。有空的時候能在那裡綁定一下你的 Discord 嗎？謝謝！"
+L["Also link your Discord on guildos.me."] = "也請在 guildos.me 綁定你的 Discord。"
+L["no Discord"] = "沒有 Discord"
+L["Members this client never heard GuildOS from, and the ones guildos.me says have no Discord linked. Remind whispers one of them per click, at most once every few days each."] = "本客戶端從未收到其 GuildOS 訊息的成員，以及 guildos.me 顯示未綁定 Discord 的成員。提醒每次點擊只密語其中一人，每人每隔幾天最多一次。"
+L["Without GuildOS or Discord"] = "沒有 GuildOS 或沒有 Discord"
+L["Without Discord"] = "沒有 Discord"
+L["Without GuildOS and Discord"] = "GuildOS 和 Discord 都沒有"
+L["Without Discord ({name}, {guild})"] = "沒有 Discord（{name}，{guild}）"
+L["Nobody here: everyone has GuildOS and Discord, or the filter hides them."] = "這裡沒有人：大家都有 GuildOS 和 Discord，或者被篩選隱藏了。"
+L["Reminded to link Discord on guildos.me (whisper)."] = "已提醒在 guildos.me 綁定 Discord（密語）。"
+L["Reminded to install GuildOS and link Discord (whisper)."] = "已提醒安裝 GuildOS 並綁定 Discord（密語）。"
