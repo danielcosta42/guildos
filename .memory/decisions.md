@@ -1700,3 +1700,45 @@ everything. Until now cores reached the game only through the companion's `Inbox
 - (−) `wishlistOnlyMode` unchecked on a core is now stored `false` (it was `nil`, which fell back to the guild's).
 - (−) Escape closes an open list and, like every popup of the addon, the windows behind it.
 
+---
+
+## ADR-0038 — Bulk rank changes and removals: one member per click, through a secure button (#420)
+
+### Context
+- Officers asked to promote, demote or remove many members by rules (offline for days, rank, level, raid
+  attendance, without GuildOS), as other addons do from a button or a macro.
+- `GuildPromote`, `GuildDemote` and `GuildUninvite` are protected: an addon's call is `ADDON_ACTION_FORBIDDEN`,
+  from a click too (ADR-0010). The addon had no secure frame until now.
+- On WoW: Forever an addon-written `/ginvite` on a secure button was `MACRO_ACTION_BLOCKED` (#256).
+
+### Decision
+- **`Modules/BulkActions.lua`** picks the members (pure `Rules` / `Eligible` / `Meets` / `Match`) and keeps the
+  queue in `GuildOS.State.bulk` (session only). It never calls a protected function, never loops over the
+  queue and never acts from a timer or an event.
+- **The Next button** (`UI/BulkPanel.lua`) is a `SecureActionButtonTemplate` named `GuildOSBulkNext`, created at
+  load so a `/click GuildOSBulkNext` macro works before the tab is opened. Its PreClick asks `BulkActions:Arm`
+  for the line of this click only (the game's own `/gpromote`, `/gdemote` or `/gremove` for one member, written
+  by `Compat.GuildRankCommand`) and sets it with `Compat.SetSecureMacro`; the game runs it; PostClick marks the
+  member sent and clears the line. Before each click the member is read again from the roster: who left or
+  whose rank moved is skipped.
+- **Combat.** Attributes are set out of combat only. The button leaves the window on `PLAYER_REGEN_DISABLED`
+  (a window holding a protected frame cannot be hidden in combat) and comes back on `PLAYER_REGEN_ENABLED`.
+- **Retail** acts on the press or the release by `ActionButtonUseKeyDown`: `Compat.SecureClicks` registers both
+  there and `Compat.SecureClickActs(down)` names the one that acts.
+- **Typed fallback.** On WoW: Forever (`Compat.SecureGuildMacro` false), or after a blocked-action event within
+  2 s of a click, the click prints the line for the officer to type and goes on. `/gos bulk next` is addon
+  code, so it never runs the line: it says who is next, or prints the line where it is typed anyway.
+- **Permission** is the game's `Can*` (now `Compat.CanGuildPromote/Demote/Remove`, guarded by compat-guard), and
+  `Eligible` leaves out oneself, ranks at or above one's own, promotions to one's own rank and demotions below
+  the last. A removal starts only after a confirmation listing who.
+- **The Roster Log** gets a change when the roster shows it (`GUILD_ROSTER_UPDATE`), unless the game's own guild
+  message already logged it; `RosterLog:_Insert` also folds the same officer change (action, member, author,
+  rank) seen twice within 30 s.
+
+### Consequences
+- (+) Bulk changes with one click (or one macro press) per member, inside what the game allows.
+- (+) The first secure frame of the addon is in one place, with the combat rules in Compat and the panel.
+- (−) Not verified in game yet on any client: the secure macro path is the one other addons use on the Classic
+  clients; retail's press/release handling and WoW: Forever's typed fallback follow what #256 measured.
+- (−) A rank changed by the click but not yet seen by the roster stays "sent" until the next roster update.
+

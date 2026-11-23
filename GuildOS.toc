@@ -108,6 +108,7 @@ Modules\TrialTracker.lua
 Modules\GuildManager.lua
 Modules\RosterColumns.lua
 Modules\ModPresets.lua
+Modules\BulkActions.lua
 Modules\GearAudit.lua
 Modules\Readiness.lua
 Modules\Resistances.lua
@@ -180,6 +181,7 @@ UI\RosterFrame.lua
 UI\MemberDetail.lua
 UI\WarnDialog.lua
 UI\ModAlerts.lua
+UI\BulkPanel.lua
 UI\CorePanel.lua
 UI\ManagementPanel.lua
 UI\AuditPanel.lua

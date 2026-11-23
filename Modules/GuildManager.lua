@@ -26,19 +26,19 @@ end
 
 ----------------------------------------------------------------------
 -- Permission helpers
--- The Can* guild globals may be absent on some clients, so each is
--- nil-guarded; a missing API resolves to "permission denied".
+-- The Can* guild globals may be absent on some clients: Compat nil-guards
+-- them, and a missing API resolves to "permission denied".
 ----------------------------------------------------------------------
 function GuildManager:CanPromote()
-    return (CanGuildPromote and CanGuildPromote()) and true or false
+    return GuildOS.Compat.CanGuildPromote()
 end
 
 function GuildManager:CanDemote()
-    return (CanGuildDemote and CanGuildDemote()) and true or false
+    return GuildOS.Compat.CanGuildDemote()
 end
 
 function GuildManager:CanKick()
-    return (CanGuildRemove and CanGuildRemove()) and true or false
+    return GuildOS.Compat.CanGuildRemove()
 end
 
 function GuildManager:CanSetMOTD()

@@ -95,6 +95,9 @@ local function printHelp()
         helpLine("/gos tempban <name> <days>", L["Ban a player for a number of days"])
         helpLine("/gos unban <name>",          L["Lift a ban"])
         helpLine("/gos banlist",               L["Open the ban list"])
+        if GuildOS.BulkActions then
+            helpLine("/gos bulk [next | skip | stop]", L["Promote, demote or remove by rules, one member per click"])
+        end
         helpLine("/gos record <name>",         L["A member's disciplinary record"])
         helpLine("/gos warn <name> [reason]",  L["Warn a member, with one click"])
         helpLine("/gos record term <days>",    L["How long a warning counts"])
@@ -779,6 +782,15 @@ local function handleCommand(msg)
                 local state = w.revokedAt and L["revoked"] or (D.Active(w, term, now) and L["standing"] or L["lapsed"])
                 GuildOS:Print(string.format("  %s  %s  %s (%s)", GuildOS:DateText(w.at or 0), D.ReasonText(w.reason), state, w.by or "?"))
             end
+        end
+    elseif msg == "bulk" or msg:match("^bulk%s") then
+        -- /gos bulk [next | skip | stop] — Leadership > Bulk actions (#420). A typed command is addon code, which may
+        -- not run the game's protected rank commands: `next` says who is next; the Next button or a
+        -- /click GuildOSBulkNext macro acts.
+        if GuildOS.BulkActions then
+            GuildOS.BulkActions:Command((msg:gsub("^bulk%s*", "")))
+        else
+            GuildOS:Print(L["Not available on this client."])
         end
     elseif msg == "banlist" then
         GuildOS.UI:OpenWindow("management", "ban")

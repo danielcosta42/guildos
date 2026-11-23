@@ -1,0 +1,501 @@
+----------------------------------------------------------------------
+-- Guild OS - Bulk actions (issue #420; Leadership > Bulk actions)
+-- Promote, demote or remove the members a set of rules picks (offline for
+-- days, current rank, level, raid attendance, without GuildOS), one member
+-- per click of the officer.
+--
+-- GuildPromote / GuildDemote / GuildUninvite are protected: the addon never
+-- calls them (ADR-0010). Each click of the Next button (a secure action
+-- button, UI/BulkPanel.lua) or of a `/click GuildOSBulkNext` macro runs the
+-- game's own /gpromote, /gdemote or /gremove for ONE member, the line this
+-- module wrote for that click only (ADR-0038). Nothing here loops or runs
+-- from a timer. Where a client refuses that (WoW: Forever, or a block seen
+-- after a click), the click prints the line for the officer to type.
+--
+-- Before each click the member is read again from the roster: who left or
+-- whose rank changed since the list was made is skipped. A change the roster
+-- then shows goes to the Roster Log. Session state only (GuildOS.State).
+----------------------------------------------------------------------
+local BulkActions = {}
+GuildOS.BulkActions = BulkActions
+local L = GuildOS.L
+
+BulkActions.ACTIONS = { "promote", "demote", "remove" }
+-- The secure button's global name: what `/click` presses.
+BulkActions.BUTTON = "GuildOSBulkNext"
+
+-- The Roster Log's word for each action (RosterLog:_ParseSystem files a removal as "kick").
+local LOG_ACTION = { promote = "promote", demote = "demote", remove = "kick" }
+local BLOCK_WINDOW = 2        -- seconds after a click in which a blocked-action event is that click's
+local ROSTER_ASK_DELAY = 1.5  -- seconds after a click before asking the server for the roster again
+local LOGGED_SLACK = 10       -- seconds before a click within which a Roster Log line already counts as it
+local MAX_LEVEL_RULE = 200    -- a level rule above any game's cap is taken as no rule
+local MAX_DAYS_RULE = 3650    -- ten years offline: anything above is taken as no rule
+
+local function state()
+    GuildOS.State.bulk = GuildOS.State.bulk or {}
+    return GuildOS.State.bulk
+end
+
+local function short(name)
+    return name and (name:match("^([^-]+)") or name) or "?"
+end
+
+function BulkActions:Initialize()
+    state()
+    local f = CreateFrame("Frame")
+    GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
+    GuildOS.Compat.RegisterEvent(f, "ADDON_ACTION_BLOCKED")
+    GuildOS.Compat.RegisterEvent(f, "ADDON_ACTION_FORBIDDEN")
+    GuildOS.Compat.RegisterEvent(f, "MACRO_ACTION_BLOCKED")
+    GuildOS.Compat.RegisterEvent(f, "MACRO_ACTION_FORBIDDEN")
+    f:SetScript("OnEvent", function(_, event, arg1)
+        if event == "GUILD_ROSTER_UPDATE" then
+            GuildOS:SafeCall(BulkActions.Confirm, BulkActions)
+        else
+            GuildOS:SafeCall(BulkActions.OnBlocked, BulkActions, event, arg1)
+        end
+    end)
+end
+
+----------------------------------------------------------------------
+-- Rules (pure; tools/bulk-actions.lua)
+----------------------------------------------------------------------
+local function num(v, lo, hi)
+    v = GuildOS.Finite(v)
+    if not v or v < lo or v > hi then return nil end
+    return math.floor(v)
+end
+
+--- The rules from what the screen holds: { days, rank, levelMin, levelMax, attMin, attMax, noAddon }, each nil
+--- when not set. days: offline at least that many days (1+); rank: the current 0-based rank (any when nil or
+--- negative); level and attendance (%) bounds, inclusive; noAddon: only members whose GuildOS this client never heard.
+function BulkActions.Rules(raw)
+    raw = type(raw) == "table" and raw or {}
+    local rank = GuildOS.Finite(raw.rank)
+    return {
+        days = num(raw.days, 1, MAX_DAYS_RULE),
+        rank = (rank and rank >= 0) and math.floor(rank) or nil,
+        levelMin = num(raw.levelMin, 1, MAX_LEVEL_RULE), levelMax = num(raw.levelMax, 1, MAX_LEVEL_RULE),
+        attMin = num(raw.attMin, 0, 100), attMax = num(raw.attMax, 0, 100),
+        noAddon = raw.noAddon and true or nil,
+    }
+end
+
+--- Whether `rules` set anything: with none, nothing is picked (never the whole guild by accident).
+function BulkActions.HasRule(rules)
+    return rules ~= nil and (rules.days or rules.rank or rules.levelMin or rules.levelMax
+        or rules.attMin or rules.attMax or rules.noAddon) ~= nil
+end
+
+--- Whether this rank may do `action` to member `m` at all, whatever the rules: never oneself, never someone at or
+--- above one's own rank, a promotion never up to one's own rank, a demotion never below the lowest one.
+--- ctx: { myRank, lowestRank, meKey }.
+function BulkActions.Eligible(m, action, ctx)
+    local r = m and m.rankIndex
+    if not r or not ctx or not ctx.myRank or m.key == ctx.meKey then return false end
+    if r <= ctx.myRank then return false end
+    if action == "promote" then return r - 1 > ctx.myRank end
+    if action == "demote" then return ctx.lowestRank ~= nil and r < ctx.lowestRank end
+    return action == "remove"
+end
+
+--- Whether member `m` meets every rule set. An unknown attendance meets no attendance rule.
+function BulkActions.Meets(m, rules)
+    if rules.days and not (m.daysOffline and m.daysOffline >= rules.days) then return false end
+    if rules.rank and m.rankIndex ~= rules.rank then return false end
+    local lvl = m.level or 0
+    if rules.levelMin and lvl < rules.levelMin then return false end
+    if rules.levelMax and lvl > rules.levelMax then return false end
+    if (rules.attMin or rules.attMax) and m.attendance == nil then return false end
+    if rules.attMin and m.attendance < rules.attMin then return false end
+    if rules.attMax and m.attendance > rules.attMax then return false end
+    if rules.noAddon and m.hasAddon then return false end
+    return true
+end
+
+--- The members of `members` that `action` would touch under `rules`: longest offline first, then by name.
+--- Returns the list, and "rule" when no rule is set (then the list is empty).
+function BulkActions.Match(members, rules, action, ctx)
+    local out = {}
+    if not BulkActions.HasRule(rules) then return out, "rule" end
+    for _, m in ipairs(members or {}) do
+        if BulkActions.Eligible(m, action, ctx) and BulkActions.Meets(m, rules) then out[#out + 1] = m end
+    end
+    table.sort(out, function(a, b)
+        local da, db = a.daysOffline or -1, b.daysOffline or -1
+        if da ~= db then return da > db end
+        return (a.name or ""):lower() < (b.name or ""):lower()
+    end)
+    return out
+end
+
+----------------------------------------------------------------------
+-- The live roster
+----------------------------------------------------------------------
+--- Whether raid attendance is known on this client (the raid tracker runs).
+function BulkActions:HasAttendance()
+    local RT = GuildOS.RaidTracker
+    return RT ~= nil and RT.GetAttendance25ManPercent ~= nil and RT.GetTotal25ManSessions ~= nil
+        and RT.GetPlayerGroup ~= nil
+end
+
+-- A member's 25-man attendance, or nil when no raid of their group was ever tracked (0% would then be a lie).
+local function attendanceOf(key)
+    local RT = GuildOS.RaidTracker
+    local group = RT:GetPlayerGroup(key, "raids25")
+    if (RT:GetTotal25ManSessions(group) or 0) == 0 then return nil end
+    return RT:GetAttendance25ManPercent(key, group)
+end
+
+--- What Eligible needs about this character: { myRank, lowestRank, meKey }.
+function BulkActions:Context()
+    local ranks = GuildOS.GuildManager and GuildOS.GuildManager:GetRanks() or {}
+    return {
+        myRank = GuildOS.Compat.MyGuildRankIndex(),
+        lowestRank = #ranks > 0 and (#ranks - 1) or nil,
+        meKey = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()),
+    }
+end
+
+--- The guild roster as Match reads it. Attendance is read only when `withAttendance`.
+function BulkActions:Collect(withAttendance)
+    local out = {}
+    local GM = GuildOS.GuildManager
+    local att = withAttendance and self:HasAttendance()
+    local members = GuildOS.db and GuildOS.db.members or {}
+    for i = 1, GetNumGuildMembers() or 0 do
+        local name, rankName, rankIndex, level, _, _, _, _, online, _, classFile = GetGuildRosterInfo(i)
+        if name then
+            local key = GuildOS:KeyOfRosterName(name)
+            local d = members[key]
+            local off = (not online and GM) and GM:GetDaysOffline(i) or nil
+            out[#out + 1] = {
+                fullName = name, name = short(name), key = key,
+                rankIndex = rankIndex, rankName = rankName or "?", level = level or 0,
+                online = online and true or false, class = classFile or "",
+                daysOffline = off and math.floor(off) or nil,
+                hasAddon = (d and (d.lastUpdate or 0) > 0) and true or false,
+                attendance = att and attendanceOf(key) or nil,
+            }
+        end
+    end
+    return out
+end
+
+--- Whether this character's rank may do `action` in the game.
+function BulkActions:Allowed(action)
+    local C = GuildOS.Compat
+    if action == "promote" then return C.CanGuildPromote() end
+    if action == "demote" then return C.CanGuildDemote() end
+    if action == "remove" then return C.CanGuildRemove() end
+    return false
+end
+
+--- Who `action` would touch under the raw rules, from the live roster. Returns the list and why it is empty:
+--- "action", "permission", "rule" or nil.
+function BulkActions:Preview(raw, action)
+    if not LOG_ACTION[action] then return {}, "action" end
+    if not self:Allowed(action) then return {}, "permission" end
+    local rules = self.Rules(raw)
+    return self.Match(self:Collect(rules.attMin ~= nil or rules.attMax ~= nil), rules, action, self:Context())
+end
+
+----------------------------------------------------------------------
+-- The queue
+----------------------------------------------------------------------
+--- The queue running, or nil: { action, items = { { fullName, name, key, rankIndex, rankName, status, why } }, pos }.
+--- status: "pending", "sent" (clicked, the roster has not shown it yet), "done" or "skipped" (why: "left",
+--- "rank", "name" or "you").
+function BulkActions:Queue()
+    return state().queue
+end
+
+--- Start a queue from the rules. A removal starts only `confirmed` (the screen asks first).
+--- Returns true, or false and why: "action", "permission", "rule", "confirm", "empty" or "combat".
+function BulkActions:Start(raw, action, confirmed)
+    if not LOG_ACTION[action] then return false, "action" end
+    if GuildOS.Compat.InCombat() then return false, "combat" end
+    if action == "remove" and not confirmed then return false, "confirm" end
+    local list, why = self:Preview(raw, action)
+    if why then return false, why end
+    if #list == 0 then return false, "empty" end
+    local items = {}
+    for i, m in ipairs(list) do
+        items[i] = { fullName = m.fullName, name = m.name, key = m.key, rankIndex = m.rankIndex,
+                     rankName = m.rankName, class = m.class, level = m.level, daysOffline = m.daysOffline,
+                     attendance = m.attendance, hasAddon = m.hasAddon, status = "pending" }
+    end
+    local s = state()
+    s.queue, s.armed, s.lastItem = { action = action, items = items, pos = 1 }, nil, nil
+    GuildOS:Print(string.format(L["%s: %d member(s) in the queue, one per click of Next."], self:ActionText(action), #items))
+    self:Refresh()
+    return true
+end
+
+local WHY = {
+    action = L["Not available on this client."],
+    permission = L["Your guild rank may not do this."],
+    rule = L["Set at least one rule."],
+    empty = L["No members match these rules."],
+    combat = L["Not during combat."],
+    confirm = L["Confirm the removal first."],
+}
+
+--- What a refusal of Start or Preview says to the player.
+function BulkActions:WhyText(why)
+    return WHY[why] or WHY.empty
+end
+
+--- Start, and say why not when it does not.
+function BulkActions:StartAndSay(raw, action, confirmed)
+    local ok, why = self:Start(raw, action, confirmed)
+    if not ok then GuildOS:Print(self:WhyText(why)) end
+    return ok
+end
+
+--- Drop the queue.
+function BulkActions:Stop()
+    local s = state()
+    s.queue, s.armed, s.lastItem = nil, nil, nil
+    self:Refresh()
+end
+
+-- The member's roster line now: its index and rank, or nil when they are not in the guild.
+local function live(item)
+    local GM = GuildOS.GuildManager
+    local idx = GM and GM:GetRosterIndex(item.fullName)
+    if not idx then return nil end
+    local _, _, rankIndex = GetGuildRosterInfo(idx)
+    return idx, rankIndex
+end
+
+--- The member the next click acts on, read again from the roster, or nil when the queue is through. Who left or
+--- whose rank moved since the list was made is skipped on the way.
+function BulkActions:Current()
+    local q = self:Queue()
+    if not q then return nil end
+    while q.items[q.pos] do
+        local item = q.items[q.pos]
+        if item.status == "pending" then
+            local idx, rank = live(item)
+            if not idx then
+                item.status, item.why = "skipped", "left"
+            elseif rank ~= item.rankIndex then
+                item.status, item.why = "skipped", "rank"
+            else
+                return item
+            end
+        end
+        q.pos = q.pos + 1
+    end
+    return nil
+end
+
+--- Counts of the queue's items by status: { pending, sent, done, skipped, total }.
+function BulkActions:Counts()
+    local c = { pending = 0, sent = 0, done = 0, skipped = 0, total = 0 }
+    local q = self:Queue()
+    for _, item in ipairs(q and q.items or {}) do
+        c[item.status] = (c[item.status] or 0) + 1
+        c.total = c.total + 1
+    end
+    return c
+end
+
+function BulkActions:ActionText(action)
+    if action == "promote" then return L["Promote"] end
+    if action == "demote" then return L["Demote"] end
+    return L["Remove"]
+end
+
+--- What the Next button says: the action and the member it is for, or why there is nothing to click.
+function BulkActions:NextLabel()
+    local q = self:Queue()
+    if not q then return L["Next"] end
+    local item = self:Current()
+    if not item then return L["Done"] end
+    return self:ActionText(q.action) .. " " .. item.name
+end
+
+-- Whether the click prints the line instead of the button running it.
+function BulkActions:Typed()
+    return state().typed == true or not GuildOS.Compat.SecureGuildMacro()
+end
+
+local function finishLine()
+    local c = BulkActions:Counts()
+    GuildOS:Print(string.format(L["Bulk actions done: %d done, %d waiting for the roster, %d skipped."],
+        c.done, c.sent, c.skipped))
+end
+
+-- The line for the current member, after the checks every click makes; nil (and why, printed) otherwise.
+function BulkActions:_Line()
+    local q = self:Queue()
+    if not q then
+        GuildOS:Print(L["No bulk action is running. Set one up in Leadership > Bulk actions."])
+        return nil
+    end
+    if GuildOS.Compat.InCombat() then GuildOS:Print(L["Not during combat."]) return nil end
+    if not self:Allowed(q.action) then
+        GuildOS:Print(L["Your guild rank may not do this."])
+        return nil
+    end
+    local item = self:Current()
+    if not item then finishLine() return nil end
+    local line = GuildOS.Compat.GuildRankCommand(q.action, item.fullName)
+    if not line then
+        item.status, item.why = "skipped", "name"
+        q.pos = q.pos + 1
+        self:Refresh()
+        return nil
+    end
+    return line, item
+end
+
+--- The secure button's PreClick: the line this click runs, or nil (the button then runs nothing). Only on the click
+--- event the button acts on (Compat.SecureClickActs). Where the click cannot run it, prints it to type instead.
+function BulkActions:Arm(down)
+    if not GuildOS.Compat.SecureClickActs(down) then return nil end
+    local s = state()
+    s.armed = nil
+    if self:Typed() then return self:_TypedNext() end
+    local line, item = self:_Line()
+    if not line then return nil end
+    s.armed, s.armedLine = item, line
+    return line
+end
+
+-- Where the click cannot run the line: print it for the officer to type, and go on to the next member.
+function BulkActions:_TypedNext()
+    local line, item = self:_Line()
+    if not line then return nil end
+    GuildOS:Print(string.format(L["Type %s in chat, then click Next for the one after."], line))
+    self:_Sent(item, line)
+    return nil
+end
+
+--- The secure button's PostClick: the click ran the armed line.
+function BulkActions:AfterClick(down)
+    if not GuildOS.Compat.SecureClickActs(down) then return end
+    local s = state()
+    local item, line = s.armed, s.armedLine
+    s.armed, s.armedLine = nil, nil
+    if item then self:_Sent(item, line) end
+end
+
+--- `/gos bulk next`. A typed command is the addon's code, which may not run the game's protected command: it says who
+--- is next and how to act (where the line is typed anyway, it is the click's twin).
+function BulkActions:CommandNext()
+    if self:Typed() then return self:_TypedNext() end
+    local line, item = self:_Line()
+    if not line then return nil end
+    GuildOS:Print(string.format(L["Next: %s (%s). Click Next in Leadership > Bulk actions, or a macro with %s."],
+        item.name, item.rankName or "?", "/click " .. self.BUTTON))
+    return nil
+end
+
+--- Skip the current member.
+function BulkActions:Skip()
+    local q = self:Queue()
+    local item = self:Current()
+    if not (q and item) then return false end
+    item.status, item.why = "skipped", "you"
+    q.pos = q.pos + 1
+    self:Refresh()
+    return true
+end
+
+function BulkActions:_Sent(item, line)
+    local s, q = state(), self:Queue()
+    item.status, item.sentAt = "sent", GetServerTime()
+    s.lastItem, s.lastClick = item, GetTime()
+    if q then
+        for i, it in ipairs(q.items) do if it == item then q.pos = i + 1 break end end
+    end
+    local nextItem = self:Current()
+    if not self:Typed() then
+        GuildOS:Print(nextItem and string.format(L["Sent %s. Next: %s."], line or "?", nextItem.name)
+            or string.format(L["Sent %s. That was the last one."], line or "?"))
+    end
+    GuildOS.Compat.After(ROSTER_ASK_DELAY, function() GuildOS.Compat.GuildRoster() end)
+    self:Refresh()
+end
+
+----------------------------------------------------------------------
+-- What the roster then shows
+----------------------------------------------------------------------
+-- Whether the Roster Log already holds this change, from the game's own guild message (RosterLog's detection).
+local function alreadyLogged(act, item)
+    local RL = GuildOS.RosterLog
+    local events = GuildOS.db and GuildOS.db.rosterLog and GuildOS.db.rosterLog.events or {}
+    local target = RL and RL:_NormShort(item.fullName) or short(item.fullName)
+    for i = #events, 1, -1 do
+        local e = events[i]
+        if (e.timestamp or 0) < (item.sentAt or 0) - LOGGED_SLACK then break end
+        if e.action == act and e.target == target then return true end
+    end
+    return false
+end
+
+--- On a roster update: each clicked member whose rank moved the asked way (or who is gone, for a removal) is done,
+--- and goes to the Roster Log unless the game's own guild message already put it there.
+function BulkActions:Confirm()
+    local q = self:Queue()
+    if not q then return end
+    local changed = false
+    for _, item in ipairs(q.items) do
+        if item.status == "sent" then
+            local idx, rank = live(item)
+            local done = (q.action == "remove" and not idx)
+                or (idx and q.action == "promote" and rank and rank < item.rankIndex)
+                or (idx and q.action == "demote" and rank and rank > item.rankIndex)
+            if done then
+                item.status, changed = "done", true
+                local act = LOG_ACTION[q.action]
+                if GuildOS.RosterLog and not alreadyLogged(act, item) then
+                    local detail = rank and GuildOS.GuildManager and GuildOS.GuildManager:GetRankName(rank) or nil
+                    GuildOS.RosterLog:Record(act, item.fullName, GuildOS.Compat.PlayerName(), detail)
+                end
+            end
+        end
+    end
+    if changed then self:Refresh() end
+end
+
+--- The game refused the last click (seen as a blocked-action event right after it): from now on this session the
+--- click prints the line to type, and that member waits again.
+function BulkActions:OnBlocked(event, arg1)
+    local s, q = state(), self:Queue()
+    if not (q and s.lastItem and s.lastClick) or GetTime() - s.lastClick > BLOCK_WINDOW then return end
+    if event:find("^ADDON_") and arg1 ~= "GuildOS" then return end
+    local item = s.lastItem
+    if item.status ~= "sent" then return end
+    s.typed, s.lastItem = true, nil
+    item.status, item.sentAt = "pending", nil
+    for i, it in ipairs(q.items) do if it == item then q.pos = i break end end
+    GuildOS:Print(string.format(L["The game blocked the click. Type the line instead: %s"],
+        GuildOS.Compat.GuildRankCommand(q.action, item.fullName) or "?"))
+    self:Refresh()
+end
+
+function BulkActions:Refresh()
+    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
+end
+
+--- `/gos bulk [next | skip | stop]`.
+function BulkActions:Command(rest)
+    rest = strtrim(rest or ""):lower()
+    if rest == "" then
+        GuildOS.UI:OpenWindow("management", "bulk")
+    elseif rest == "next" then
+        self:CommandNext()
+    elseif rest == "skip" then
+        if not self:Skip() then GuildOS:Print(L["No bulk action is running. Set one up in Leadership > Bulk actions."]) end
+    elseif rest == "stop" then
+        self:Stop()
+        GuildOS:Print(L["Bulk action stopped."])
+    else
+        GuildOS:Print(L["Usage: /gos bulk [next | skip | stop]"])
+    end
+end

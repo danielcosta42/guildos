@@ -35,6 +35,7 @@ GuildOS/
   OfficerNotes.lua        — officer note management + sync
   TrialTracker.lua        — trial member lifecycle
   GuildManager.lua        — leadership suite: ranks/kick/MOTD/inactivity/suggestions/log
+  BulkActions.lua         — promote/demote/remove by rules, one member per click (#420)
   GearAudit.lua           — guild-wide enchant audit (from synced gear)
   RaidTools.lua           — composition / buff & cooldown coverage
   Locales/
@@ -102,6 +103,7 @@ Until that split is done, all UI code continues to use `GuildOS.UI` / the `UI` l
 | `LFGBoard.lua` | Who is looking for a group: my listing (roles, activities, note, TTL), everybody else's, the line in guild chat (#243, #341) | UI (UI/GroupsPanel.lua) |
 | `Groups.lua` | The groups being formed: my listing and its open spots, the requests for a spot from both ends, the party watcher that closes a spot (#341) | UI (UI/GroupsPanel.lua), who is looking (LFGBoard) |
 | `GuildManager.lua` | Rank changes, kicks, MOTD/Info, inactivity, suggestions, action log | UI, comm |
+| `BulkActions.lua` | Bulk promote/demote/remove by rules: the queue, the one line each click of the secure Next button runs (#420, ADR-0038) | UI (UI/BulkPanel.lua), the protected calls |
 | `GearAudit.lua` | Guild-wide enchant audit from synced gear | UI |
 | `RaidTools.lua` | Composition + buff/cooldown coverage of group/online roster | UI |
 | `ConsumableChecker.lua` | Detect flask/elixir/food buffs (TBC's; Midnight's flask, food, rune and my weapon on retail, unknown never missing, #187) | UI |
@@ -116,6 +118,7 @@ Until that split is done, all UI code continues to use `GuildOS.UI` / the `UI` l
 | `UI/RosterFrame.lua` | Roster window, tabs | data writes |
 | `UI/MemberDetail.lua` | Per-member detail panel | data writes |
 | `UI/ManagementPanel.lua` | "Liderança" tab UI (calls GuildManager) | data writes |
+| `UI/BulkPanel.lua` | Leadership > Bulk actions, and the secure `GuildOSBulkNext` button | data writes |
 | `UI/FeaturePanels.lua` | Feature panels (raids/trials/settings/sign-up) | data writes |
 | `UI/LootWindow.lua` | The Loot window (#346): every loot setting's one place | data writes (LootRule, LootMaster, Points do them) |
 | `UI/RecipesPanel.lua` | Recipes panel | data writes |

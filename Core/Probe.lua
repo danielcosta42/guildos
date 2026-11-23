@@ -119,6 +119,8 @@ Probe.TEMPLATES = {
     { "UICheckButtonTemplate", "CheckButton" }, { "UIPanelButtonTemplate", "Button" },
     { "UIDropDownMenuTemplate", "Frame" }, { "OptionsSliderTemplate", "Slider" },
     { "GameTooltipTemplate", "GameTooltip" },
+    -- The bulk actions' Next button (issue #420).
+    { "SecureActionButtonTemplate", "Button" },
 }
 
 -- Tooltip scripts the addon hooks.

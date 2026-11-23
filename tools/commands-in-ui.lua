@@ -95,6 +95,9 @@ local IN_UI = {
   attune      = { { "UI/AuditPanel.lua", "BuildAttuneSub" } },
   signup      = { { "UI/RosterFrame.lua", "GuildOS:ShowCoreSignupFrame()" } },   -- the Raids screen's button (#377)
   ban         = { { "UI/ManagementPanel.lua", "GuildOS.BanList:Add(" } },
+  -- Leadership > Bulk actions (issue #420): its Next, Skip and Stop are the panel's buttons.
+  bulk        = { { "UI/ManagementPanel.lua", "GuildOS:BuildBulkSub(p)" }, { "UI/BulkPanel.lua", "BA:Skip()" },
+                  { "UI/BulkPanel.lua", "BA:Stop()" }, { "UI/BulkPanel.lua", "GuildOS.BulkActions:Arm(down)" } },
   mentions    = { { "UI/SettingsPanel.lua", "GuildOS.Mentions:PrintLog()" },
                   { "UI/SettingsPanel.lua", 'GuildOS.Mentions:HandleCommand({ "clearwords" })' } },
   notecmd     = { { "UI/SettingsPanel.lua", "GuildOS.db.noteCommand.enabled = checked" } },

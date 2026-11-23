@@ -388,6 +388,87 @@ function Compat.CanViewOfficerNote()
     return false
 end
 
+----------------------------------------------------------------------
+-- Rank changes and removals (issue #420). The rank's own rights are the game's Can* calls, nil-guarded:
+-- a client without one answers "no". GuildPromote, GuildDemote and GuildUninvite are protected: an
+-- addon's call is ADDON_ACTION_FORBIDDEN, from a click too (ADR-0010). What the game lets through is
+-- its own /gpromote, /gdemote and /gremove run by a secure action button the player clicks or a
+-- /click macro presses: the game runs the line, the addon only wrote it (ADR-0038).
+----------------------------------------------------------------------
+function Compat.CanGuildPromote()
+    return (CanGuildPromote and CanGuildPromote()) and true or false
+end
+
+function Compat.CanGuildDemote()
+    return (CanGuildDemote and CanGuildDemote()) and true or false
+end
+
+function Compat.CanGuildRemove()
+    return (CanGuildRemove and CanGuildRemove()) and true or false
+end
+
+-- This character's 0-based guild rank (0 = Guild Master), or nil outside a guild.
+function Compat.MyGuildRankIndex()
+    if not (IsInGuild and IsInGuild()) or not GetGuildInfo then return nil end
+    local _, _, rankIndex = GetGuildInfo("player")
+    return tonumber(rankIndex)
+end
+
+-- The game's own slash command for a rank change or a removal, in this client's spelling (the
+-- SLASH_* strings the chat frame registers), with the English one where a client lacks it.
+local RANK_SLASH = {
+    promote = { "SLASH_GUILD_PROMOTE1", "/gpromote" },
+    demote  = { "SLASH_GUILD_DEMOTE1", "/gdemote" },
+    remove  = { "SLASH_GUILD_UNINVITE1", "/gremove" },
+}
+
+-- The line that does `action` ("promote", "demote", "remove") to `name`, or nil: an unknown action, or a
+-- name that is not one word (a roster name never has a space; a line with one could carry a second command).
+-- Retail names the member with the realm, as a guild there spans connected realms (#184); the other
+-- clients' guilds are one realm, and the short name is the one their commands take.
+function Compat.GuildRankCommand(action, name)
+    local slash = RANK_SLASH[action]
+    if not slash or type(name) ~= "string" or not name:match("^[^%s;/\\|]+$") then return nil end
+    if not GuildOS.Client.isRetail then name = name:match("^([^-]+)") or name end
+    local cmd = _G[slash[1]]
+    if type(cmd) ~= "string" or not cmd:match("^/%S+$") then cmd = slash[2] end
+    return cmd .. " " .. name
+end
+
+-- Whether a secure button may run that line. WoW: Forever refused a /ginvite written by the addon on a
+-- secure button (MACRO_ACTION_BLOCKED, 1.60.1.70790, #256): there the officer types the line instead.
+function Compat.SecureGuildMacro()
+    return GuildOS.Client.game ~= "FOREVER"
+end
+
+-- Register a secure action button for its clicks. Retail acts on the press or the release by the
+-- ActionButtonUseKeyDown option, from a /click macro too, so it listens to both and SecureClickActs
+-- names the one that acts; the older clients act on the release.
+function Compat.SecureClicks(button)
+    if GuildOS.Client.isRetail then
+        button:RegisterForClicks("AnyUp", "AnyDown")
+    else
+        button:RegisterForClicks("AnyUp")
+    end
+end
+
+-- Whether the click event with this `down` is the one the secure button acts on (see SecureClicks).
+function Compat.SecureClickActs(down)
+    if GuildOS.Client.isRetail and GetCVarBool then
+        return (down and true or false) == (GetCVarBool("ActionButtonUseKeyDown") and true or false)
+    end
+    return not down
+end
+
+-- Set the line a secure action button runs. Out of combat only: the game refuses SetAttribute on a
+-- protected frame in combat. Returns whether it was set.
+function Compat.SetSecureMacro(button, text)
+    if Compat.InCombat() then return false end
+    button:SetAttribute("type", "macro")
+    button:SetAttribute("macrotext", text or "")
+    return true
+end
+
 -- Resolve a guild roster index for `name`, which may be "Name" or "Name-Realm";
 -- `realm` (from a chat event, say) overrides any suffix on `name`.
 --
