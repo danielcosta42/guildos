@@ -115,7 +115,13 @@ client("Off")
 GuildOS.db.altLinks = { [ALT] = MAIN }
 check(AD:LinkOwnAlts(MAIN, { MAIN, ALT, THIRD }) == 1 and GuildOS.db.altLinks[THIRD] == MAIN
   and GuildOS.db.altLinks[ALT] == MAIN and GuildOS.db.altLinks[MAIN] == nil, "the officer adds the new character")
-check(#sentOf("AL") == 1, "and publishes the list once")
+check(#sentOf("AL") == 0, "with no client before #424 heard, no old \"AL\" table goes out (#424)")
+client("Off")
+CS:_HeardLegacy()
+GuildOS.db.altLinks = { [ALT] = MAIN }
+AD:LinkOwnAlts(MAIN, { MAIN, ALT, THIRD })
+check(#sentOf("AL") == 1, "with one heard, the table goes once")
+CS.legacyHeardAt = nil
 client("Off")
 GuildOS.db.altLinks = { [ALT] = MAIN, [THIRD] = MAIN }
 check(AD:LinkOwnAlts(ALT, { MAIN, ALT, THIRD }) == 3, "making a current alt the main is applied, not refused")
@@ -154,20 +160,31 @@ client("Off")
 GuildOS.db.altLinks = { [ALT] = MAIN }
 deliver(claim, "Main-Realm")
 check(GuildOS.db.altLinks[MAIN] == ALT and GuildOS.db.altLinks[ALT] == nil, "the officer applies the claim")
-local newList = sentOf("AL")[#sentOf("AL")]
+-- The officer's entries (what its publish and backfill carry) reach the member.
+local offStore, newList = GuildOS.db.altSync, {}
+for k, e in pairs(offStore.links) do
+  if (offStore.rev[k] or 0) >= 1 then
+    newList[#newList + 1] = { k = k, m = e.main, x = e.removed, a = e.author, t = e.ts, r = offStore.rev[k] }
+  end
+end
 me, GuildOS.db, GuildOSDB = "Main", memberDb, memberAcc
-deliver(newList, "Off-Realm")
-check(next(GuildOSDB.altPending) == nil, "the officer's list carries it: the claim is done")
+GuildOS.AltSync:Apply(newList, "Off-Realm")
+GuildOS.AltSync:_AfterRemote()
+check(next(GuildOSDB.altPending) == nil, "the officer's entries carry it: the claim is done")
 
 -- The member's own unlink or re-main after accepting replaces the claim still waiting (review of #353).
 client("Main")
 GuildOS.db.altLinks = {}
 AD:LinkOwnAlts(ALT, { MAIN, ALT })
 AD:UnlinkOwnAlt(MAIN)
-check(next(GuildOSDB.altPending) == nil, "an unlink drops the waiting claim about those characters")
+local waiting = {}
+for _, p in pairs(GuildOSDB.altPending) do waiting[#waiting + 1] = p end
+check(#waiting == 1 and waiting[1].unlink == MAIN, "an unlink drops the waiting claim about those characters, and waits itself")
 sent = {}
 deliver({ t = "AL", data = oldList }, "Off-Realm")
-check(GuildOS.db.altLinks[MAIN] == nil and #sentOf("SA") == 0, "so the officer's list does not bring the link back")
+check(GuildOS.db.altLinks[MAIN] == nil, "so the officer's list does not bring the link back")
+check(#sentOf("SA") == 1 and select(2, LibStub("GuildOS-LibSerialize"):Deserialize(sentOf("SA")[1].data)).unlink[1] == MAIN,
+  "and the unlink goes to the officers again, now that one is online")
 client("Main")
 GuildOS.db.altLinks = {}
 AD:LinkOwnAlts(ALT, { MAIN, ALT })
@@ -184,7 +201,8 @@ client("Main")
 GuildOS.db.altLinks = {}
 AD:LinkOwnAlts(MAIN, { MAIN, ALT, THIRD })
 AD:UnlinkOwnAlt(THIRD)
-local p1 = select(2, next(GuildOSDB.altPending))
+local p1
+for _, p in pairs(GuildOSDB.altPending) do if p.main then p1 = p end end
 check(p1 and p1.main == MAIN and #p1.alts == 1 and p1.alts[1] == ALT, "unlinking Third leaves Alt -> Main waiting")
 deliver({ t = "AL", data = oldList }, "Off-Realm")
 check(GuildOS.db.altLinks[ALT] == MAIN and GuildOS.db.altLinks[THIRD] == nil, "an officer list keeps Alt and not Third")

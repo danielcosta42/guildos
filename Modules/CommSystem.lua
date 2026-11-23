@@ -39,6 +39,14 @@ CommSystem.MSG_TYPES = {
 CommSystem.THROTTLE_INTERVAL = 5  -- seconds between broadcasts
 CommSystem.lastBroadcast = 0
 
+-- The alt links' old "AL" table (issue #424): sent only while a client before #424 was heard within
+-- LEGACY_WINDOW (its broadcast's version at or below LEGACY_ALT_MAX, or an "AL" without the mark).
+CommSystem.LEGACY_ALT_MAX = "1.37.0"
+CommSystem.LEGACY_WINDOW = 1800
+local ALT_LINK_MARK = { v = 2 }
+-- The officers' safe list and nicknames (issue #429) on a sync request's answer at most once per 10 minutes.
+CommSystem.MARKS_BACKFILL_GAP = 600
+
 function CommSystem:Initialize()
     -- Addon messages on Guild OS's prefix.
     local frame = CreateFrame("Frame")
@@ -372,9 +380,14 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         -- The whole table, from an officer on a client before #424 (or this one's copy for them). Over GUILD
         -- only (issue #81). It used to replace this client's table and wiped everybody's links; now it is
         -- only merged in, never removing or changing a link, and an empty one is nothing (AltSync).
+        -- A client since #424 adds a second value an old one never reads (ALT_LINK_MARK): its "AL" is for the old
+        -- clients only, and is ignored here, so new clients never merge each other's views.
         if channel == "GUILD" and GuildOS:IsOfficerByName(sender) and GuildOS.AltSync then
-            local ok, links = LibSerialize:Deserialize(data)
-            if ok and type(links) == "table" then GuildOS.AltSync:OnLegacyList(links, sender) end
+            local ok, links, mark = LibSerialize:Deserialize(data)
+            if ok and type(links) == "table" and not (type(mark) == "table" and mark.v == ALT_LINK_MARK.v) then
+                self:_HeardLegacy()
+                GuildOS.AltSync:OnLegacyList(links, sender)
+            end
         end
     elseif msgType == CommSystem.MSG_TYPES.SELF_ALT then
         if GuildOS.AltAutoDetect then GuildOS.AltAutoDetect:HandleSelfClaim(sender, data) end
@@ -556,8 +569,8 @@ function CommSystem:_Answer()
     C_Timer.After(math.random() * 3, function()  -- Stagger responses
         self:BroadcastMyData()
 
-        -- Officers also send the alt/main link table, for the clients before #424 (never an empty one).
-        -- This client's own links come from AltSync:Backfill below.
+        -- Officers also send the alt/main link table, only while a client before #424 is around
+        -- (BroadcastAltLinks). The new clients' links come from AltSync:Backfill below.
         if GuildOS:IsOfficer() then
             C_Timer.After(0.5, function()
                 self:BroadcastAltLinks()
@@ -675,7 +688,8 @@ function CommSystem:_Answer()
             end)
         end
 
-        -- Every alt link, tombstones included, at its stored revision, in spaced batches (issue #424).
+        -- Every alt link, tombstones included, at its stored revision, in spaced batches, at most once per
+        -- AltSync.BACKFILL_GAP (issue #424).
         if GuildOS:IsOfficer() and GuildOS.AltSync then
             C_Timer.After(6.5, function()
                 GuildOS.AltSync:Backfill()
@@ -696,10 +710,10 @@ function CommSystem:_Answer()
             end)
         end
 
-        -- The officers' safe list and nicknames (issue #429), the same way.
+        -- The officers' safe list and nicknames (issue #429), the same way, at most once per MARKS_BACKFILL_GAP.
         if GuildOS:IsOfficer() and GuildOS.MemberMarks then
             C_Timer.After(7, function()
-                GuildOS.MemberMarks:Backfill()
+                self:_BackfillMarks()
             end)
         end
     end)
@@ -734,6 +748,7 @@ end
 CommSystem.NOTICE_WAIT, CommSystem.NOTICE_MAX = 10, 3
 local PLAIN = "^%d%d?%d?%.%d%d?%d?%.%d%d?%d?$"
 function CommSystem:HandleVersionCheck(_sender, ver)
+    if type(ver) == "string" and ver:match(PLAIN) and not self:_AfterLegacyAlt(ver) then self:_HeardLegacy() end
     local cur, M = GuildOS.VERSION, GuildOS.Mesh
     if not (M and M.CompareVersions) then return end
     if type(ver) ~= "string" or not ver:match(PLAIN) or type(cur) ~= "string" or not cur:match(PLAIN) then return end
@@ -751,16 +766,49 @@ end
 ----------------------------------------------------------------------
 -- Broadcast alt link table to all officers in guild
 ----------------------------------------------------------------------
--- For the clients before #424, which replace their whole table with it: so never an empty one, and
--- always the whole view, never a part.
+-- For the clients before #424, which replace their whole table with it (issue #424). Only while one was
+-- heard within LEGACY_WINDOW: with only new clients listening it is noise, and an old officer's unlink is not
+-- undone on the old clients by a new one's view. AltSync:LegacyView is the whole view without the unconfirmed
+-- links an old officer's newest table lacks; an empty one goes too (the last unlink reaches the old clients),
+-- but nothing goes from a client that knows no entry at all (a new install would wipe them).
 function CommSystem:BroadcastAltLinks()
     if not GuildOS:IsOfficer() then return end
-    if not IsInGuild() then return end
-    if GuildOS.AltSync then GuildOS.AltSync:Rebuild() end
-    local links = GuildOS.db.altLinks
-    if type(links) ~= "table" or next(links) == nil then return end
-    local serialized = LibSerialize:Serialize(links)
+    if not IsInGuild() or not GuildOS.AltSync or not self:LegacyHeard() then return end
+    local links = GuildOS.AltSync:LegacyView()
+    if type(links) ~= "table" then return end
+    local serialized = LibSerialize:Serialize(links, ALT_LINK_MARK)
     self:SendMessage(self.MSG_TYPES.ALT_LINK, serialized)
+end
+
+-- Whether `ver` (a plain x.y.z) is a version with AltSync, after LEGACY_ALT_MAX.
+function CommSystem:_AfterLegacyAlt(ver)
+    local function parts(v)
+        local a, b, c = v:match("^(%d+)%.(%d+)%.(%d+)$")
+        return tonumber(a) or 0, tonumber(b) or 0, tonumber(c) or 0
+    end
+    local a1, a2, a3 = parts(ver)
+    local b1, b2, b3 = parts(self.LEGACY_ALT_MAX)
+    if a1 ~= b1 then return a1 > b1 end
+    if a2 ~= b2 then return a2 > b2 end
+    return a3 > b3
+end
+
+function CommSystem:_HeardLegacy()
+    self.legacyHeardAt = GetTime()
+end
+
+--- Whether a client before #424 was heard within LEGACY_WINDOW.
+function CommSystem:LegacyHeard()
+    return self.legacyHeardAt ~= nil and GetTime() - self.legacyHeardAt < self.LEGACY_WINDOW
+end
+
+-- MemberMarks:Backfill on a sync request's answer, at most once per MARKS_BACKFILL_GAP (`force`: /gos sync).
+function CommSystem:_BackfillMarks(force)
+    if not GuildOS.MemberMarks then return end
+    local now = GetTime()
+    if not force and self._marksBackfillAt and now - self._marksBackfillAt < self.MARKS_BACKFILL_GAP then return end
+    self._marksBackfillAt = now
+    GuildOS.MemberMarks:Backfill()
 end
 
 ----------------------------------------------------------------------
@@ -792,8 +840,8 @@ function CommSystem:FullSync()
 
     C_Timer.After(1, function()
         self:BroadcastAltLinks()
-        if GuildOS.AltSync then GuildOS.AltSync:Backfill() end   -- issue #424
-        if GuildOS.MemberMarks then GuildOS.MemberMarks:Backfill() end   -- issue #429
+        if GuildOS.AltSync then GuildOS.AltSync:Backfill(true) end   -- issue #424
+        self:_BackfillMarks(true)   -- issue #429
     end)
 
     C_Timer.After(1.5, function()

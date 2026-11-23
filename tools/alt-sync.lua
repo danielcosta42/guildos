@@ -77,8 +77,15 @@ local function boot(game)
   LibStub = setmetatable({ NewLibrary = function(_, k) registry[k] = registry[k] or {}; return registry[k] end,
     GetLibrary = function(_, k) return registry[k] end },
     { __call = function(_, k) registry[k] = registry[k] or {}; return registry[k] end })
-  LibStub("GuildOS-LibSerialize").Serialize = function(_, t) n = n + 1; store["s" .. n] = t; return "s" .. n end
-  LibStub("GuildOS-LibSerialize").Deserialize = function(_, s) if store[s] then return true, store[s] end return false end
+  -- Every value given, as LibSerialize keeps them: an old client reads only the first.
+  LibStub("GuildOS-LibSerialize").Serialize = function(_, ...)
+    n = n + 1; store["s" .. n] = { n = select("#", ...), ... }; return "s" .. n
+  end
+  LibStub("GuildOS-LibSerialize").Deserialize = function(_, s)
+    local v = store[s]
+    if v then return true, unpack(v, 1, v.n) end
+    return false
+  end
   LibStub("LibDeflate").DecodeForWoWAddonChannel = function(_, s) return s end
   LibStub("LibDeflate").DecompressDeflate = function(_, s) return s end
   GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
@@ -157,8 +164,12 @@ end
 local function oldClientSends(from, links)
   n = n + 1
   local token = "s" .. n
-  store[token] = links
+  store[token] = { n = 1, links }
   wire[#wire + 1] = { t = "AL", data = token, from = from }
+end
+-- The table of the last "AL" on the wire, as an old client reads it.
+local function lastAL()
+  for i = #wire, 1, -1 do if wire[i].t == "AL" then return store[wire[i].data][1] end end
 end
 
 local K = function(name) return GuildOS:GetPlayerKey(name, "Realm") end
@@ -183,13 +194,14 @@ newClient("OffA", { [X] = MAIN })
 newClient("OffB", { [X] = MAIN })
 newClient("Mem", { [X] = MAIN })
 for _, name in ipairs({ "OffA", "OffB", "Mem" }) do as(name, function() AS:Initialize() end) end
-check(linksOf("OffA")[X] == MAIN and clients.OffA.db.altSync.links[X].legacy and clients.OffA.db.altSync.rev[X] == AS.LEGACY_REV,
-  "the old table becomes entries at the lowest revision, and the view is the same")
+check(linksOf("OffA")[X] == MAIN and clients.OffA.db.altSync.links[X].legacy and (clients.OffA.db.altSync.rev[X] or 0) == AS.LEGACY_REV,
+  "the old table becomes unconfirmed entries (revision 0), and the view is the same")
+check(not clients.OffA.db.altSync.fresh, "a client that had links of its own is not a new install")
 
 -- ── 2. An officer with an empty table answers a sync request ────────────
 newClient("OffC")                                -- a new install: nothing linked at all
 as("OffC", function() AS:Initialize() end)
-as("OffC", function() CS:BroadcastAltLinks(); AS:Backfill() end)
+as("OffC", function() CS:BroadcastAltLinks(); AS:Backfill(true) end)
 check(#wire == 0, "an officer with no links sends no table and no entries")
 oldClientSends("OffC", {})                       -- the same officer on a client before #424
 flush()
@@ -213,11 +225,11 @@ flush()
 check(linksOf("OffA")[X] == nil and linksOf("Mem")[X] == nil, "the unlink reaches whoever is online")
 check(linksOf("OffB")[X] == MAIN, "OffB, offline, still has the old link")
 online.OffB = true
-as("OffB", function() CS:BroadcastAltLinks(); AS:Backfill() end)   -- OffB answers a sync request
+as("OffB", function() CS:BroadcastAltLinks(); AS:Backfill(true) end)   -- OffB answers a sync request
 runAfters("OffB")
 flush()
 check(linksOf("OffA")[X] == nil and linksOf("Mem")[X] == nil, "OffB comes back with its old list: the link does not return")
-as("OffA", function() AS:Backfill() end)
+as("OffA", function() AS:Backfill(true) end)
 runAfters("OffA")
 flush()
 check(linksOf("OffB")[X] == nil, "and OffA's backfill takes the tombstone to OffB")
@@ -251,7 +263,7 @@ local claim = wire[#wire]
 check(claim and claim.t == "SA" and next(clients.Mem.acc.altPending or {}) ~= nil and linksOf("Mem")[OTHER] == MEM,
   "the member's claim goes out, waits, and shows on the member's view")
 wire = {}                                        -- no officer heard it
-as("OffB", function() CS:BroadcastAltLinks(); AS:Backfill() end)   -- an officer's links without it
+as("OffB", function() CS:BroadcastAltLinks(); AS:Backfill(true) end)   -- an officer's links without it
 runAfters("OffB")
 local fromB = wire
 wire = {}
@@ -279,9 +291,9 @@ afters = {}
 local total = 0
 for _ in pairs(clients.OffA.db.altSync.links) do total = total + 1 end
 check(total > 300, "a guild with hundreds of alts")
-as("OffA", function() AS:Backfill() end)
+as("OffA", function() AS:Backfill(true) end)
 check(sentOf("SV") == 1 and #afters == 1, "a backfill sends one batch now, the next one later")
-as("OffA", function() AS:Backfill() end)
+as("OffA", function() AS:Backfill(true) end)
 check(sentOf("SV") == 1, "a second backfill while one runs does not stack")
 runAfters("OffA")
 check(sentOf("SV") == math.ceil(total / AS.BATCH) and not AS._backfilling,
@@ -339,6 +351,170 @@ GuildOS.BulkActions:Stop()
 GuildOS.BulkActions:CommandGroup("promote Main Nope")
 check(GuildOS.BulkActions:Queue() == nil, "an unknown rank starts nothing")
 save()
+
+-- ── 9. Mixed versions: the old "AL" table only for old clients (review of #424) ──
+local function restart()
+  for k in pairs(clients) do clients[k] = nil; online[k] = nil end
+  wire, afters = {}, {}
+  CS.legacyHeardAt, AS._backfillAt, AS._backfilling = nil, nil, nil
+end
+restart()
+newClient("OffA", { [X] = MAIN, [Y] = MAIN })
+newClient("OffB", { [X] = MAIN, [Y] = MAIN })
+newClient("Mem", { [X] = MAIN, [Y] = MAIN })
+for _, name in ipairs({ "OffA", "OffB", "Mem" }) do as(name, function() AS:Initialize() end) end
+as("OffA", function() GuildOS:LinkAlt(Z, MAIN) end)
+check(sentOf("AL") == 0 and sentOf("SV") >= 1, "with only new clients heard, an edit goes as entries and no old table")
+flush()
+as("OffA", function() CS:BroadcastAltLinks() end)
+check(sentOf("AL") == 0, "nor on a sync request's answer")
+as("Mem", function() CS:HandleVersionCheck("Old-Realm", "1.38.0") end)
+check(not CS:LegacyHeard(), "a version after 1.37.0 is a new client")
+as("Mem", function() CS:HandleVersionCheck("Old-Realm", "1.37.0") end)
+check(CS:LegacyHeard(), "a broadcast from 1.37.0 or before is a client before #424")
+as("OffA", function() CS:BroadcastAltLinks() end)
+local al = lastAL()
+check(al and al[X] == MAIN and al[Y] == MAIN and al[Z] == MAIN, "once one is heard, the whole view goes to it")
+store[wire[#wire].data][1][OTHER] = MAIN          -- what only this new client's old table says
+flush()
+check(linksOf("Mem")[OTHER] == nil and linksOf("OffB")[OTHER] == nil,
+  "a new client's old table carries the mark: new clients ignore it")
+-- An old officer unlinks X: its table lacks it from now on.
+oldClientSends("Old", { [Y] = MAIN, [Z] = MAIN })
+flush()
+check(linksOf("OffA")[X] == MAIN and linksOf("Mem")[X] == MAIN,
+  "new clients keep the unconfirmed link (no way to tell an unlink from a stale table)")
+as("OffB", function() CS:BroadcastAltLinks() end)
+al = lastAL()
+check(al and al[X] == nil and al[Y] == MAIN and al[Z] == MAIN,
+  "but the table they send old clients leaves it out: the old officer's unlink is not undone there")
+flush()
+newClient("OffC")                                -- a new install
+as("OffC", function() AS:Initialize() end)
+check(clients.OffC.db.altSync.fresh, "a client with nothing to migrate is a new install")
+as("OffB", function() AS:Backfill(true) end)
+runAfters("OffB")
+flush()
+check(linksOf("OffC")[Y] == MAIN and linksOf("OffC")[Z] == MAIN and linksOf("OffC")[X] == nil,
+  "a new install gets the links, but not the one an old officer's table dropped")
+as("OffA", function() GuildOS:LinkAlt(X, MAIN) end)
+check((clients.OffA.db.altSync.rev[X] or 0) >= 1 and not clients.OffA.db.altSync.links[X].legacy,
+  "an officer linking it again on a new client confirms it")
+al = lastAL()
+check(al and al[X] == MAIN, "and the old clients get it back")
+flush()
+check(linksOf("OffC")[X] == MAIN, "and so does everybody")
+now = now + CS.LEGACY_WINDOW + 1
+wire = {}
+as("OffA", function() CS:BroadcastAltLinks() end)
+check(sentOf("AL") == 0, "half an hour with no old client heard: no old table again")
+CS:_HeardLegacy()
+as("OffA", function() for _, k in ipairs({ X, Y, Z }) do GuildOS:UnlinkAlt(k) end end)
+al = lastAL()
+check(al and next(al) == nil, "the last unlink reaches the old clients: an empty table goes")
+flush()
+newClient("Old")                                 -- an officer's new install, with nothing at all
+as("Old", function() AS:Initialize(); wire = {}; CS:BroadcastAltLinks() end)
+check(sentOf("AL") == 0, "a new install knows no entry: it sends old clients nothing, never an empty table")
+clients.Old, online.Old = nil, nil
+
+-- ── 10. Migration: clients' old tables are not united ───────────────────
+restart()
+newClient("OffA", { [X] = MAIN, [Y] = MAIN })   -- offline when Y was unlinked before #424
+newClient("OffB", { [X] = MAIN })               -- saw it
+newClient("Mem", { [X] = MAIN })
+newClient("OffC")                                -- a new install
+for _, name in ipairs({ "OffA", "OffB", "Mem", "OffC" }) do as(name, function() AS:Initialize() end) end
+as("OffA", function() AS:Backfill(true) end)
+runAfters("OffA")
+flush()
+check(linksOf("OffB")[Y] == nil and linksOf("Mem")[Y] == nil,
+  "a late officer's migrated link does not reach clients that had a table: the unlink it missed stays")
+check(linksOf("OffC")[X] == MAIN and linksOf("OffC")[Y] == MAIN,
+  "a new install takes the unconfirmed links (documented: it cannot know Y was unlinked)")
+as("OffA", function() GuildOS:UnlinkAlt(Y) end)
+flush()
+check(linksOf("OffC")[Y] == nil and linksOf("OffA")[Y] == nil, "an officer's unlink beats the unconfirmed link")
+newClient("Old")                                 -- another new install, the tombstone first
+as("Old", function() AS:Initialize() end)
+as("OffA", function() AS:Backfill(true) end)
+runAfters("OffA")
+flush()
+as("Old", function()
+  AS:Apply({ { k = Y, m = MAIN, r = 0 } }, "OffB")
+  AS:OnLegacyList({ [Y] = MAIN }, "OffB")
+  AS:Rebuild()
+end)
+check(linksOf("Old")[Y] == nil, "after the tombstone, neither an unconfirmed link nor an old table brings it back")
+clients.Old, online.Old = nil, nil
+
+-- ── 11. Tombstones: a year, and their revision for good ─────────────────
+check(AS.TOMBSTONE_TTL >= 365 * 86400, "a tombstone is kept a year")
+as("OffB", function()
+  AS:Apply({ { k = Z, x = true, a = "OffA", t = now - 400 * 86400, r = now - 400 * 86400 } }, "OffA")
+  AS:Prune()
+end)
+check(clients.OffB.db.altSync.links[Z] == nil and clients.OffB.db.altSync.rev[Z], "past it, it is pruned and its revision kept")
+oldClientSends("Old", { [Z] = MAIN })
+flush()
+check(linksOf("OffB")[Z] == nil, "an old table naming that alt is refused: its revision is known")
+check(linksOf("OffC")[Z] == MAIN, "a new install with nothing on it takes the old table's link")
+as("OffA", function() AS:Apply({ { k = Z, x = true, a = "OffA", t = now - 10, r = now - 10 } }, "OffA") end)
+as("OffA", function() AS:Backfill(true) end)
+runAfters("OffA")
+flush()
+check(linksOf("OffC")[Z] == nil, "and an officer's backfill with the tombstone wins over it")
+
+-- ── 12. A backfill on a sync request's answer at most once per ten minutes ──
+wire, afters, AS._backfillAt = {}, {}, nil
+as("OffA", function() AS:Backfill() end)
+runAfters("OffA")
+check(sentOf("SV") >= 1, "the first answer backfills")
+wire = {}
+as("OffA", function() AS:Backfill() end)
+check(sentOf("SV") == 0, "another answer within ten minutes does not")
+as("OffA", function() AS:Backfill(true) end)
+runAfters("OffA")
+check(sentOf("SV") >= 1, "a /gos sync always does")
+wire = {}
+now = now + AS.BACKFILL_GAP
+as("OffA", function() AS:Backfill() end)
+runAfters("OffA")
+check(sentOf("SV") >= 1, "ten minutes on, the next answer does")
+wire = {}
+local marks = 0
+GuildOS.MemberMarks = { Backfill = function() marks = marks + 1 end }
+CS._marksBackfillAt = nil
+CS:_BackfillMarks(); CS:_BackfillMarks()
+check(marks == 1, "the safe list's backfill on an answer: once per ten minutes too")
+CS:_BackfillMarks(true)
+check(marks == 2, "and always on a /gos sync")
+now = now + CS.MARKS_BACKFILL_GAP
+CS:_BackfillMarks()
+check(marks == 3, "and again ten minutes on")
+GuildOS.MemberMarks = nil
+
+-- ── 13. A member's own unlink waits for an officer ──────────────────────
+local MEMK = K("Mem")
+as("OffA", function() GuildOS:LinkAlt(OTHER, MEMK) end)
+flush()
+check(linksOf("Mem")[OTHER] == MEMK, "an officer links the member's alt")
+online.OffA, online.OffB = false, false
+now = now + 5
+as("Mem", function() AD:UnlinkOwnAlt(OTHER) end)
+check(linksOf("Mem")[OTHER] == nil, "the member's unlink shows on its own view at once")
+wire = {}                                        -- no officer heard it
+as("Mem", function() AS:Rebuild() end)
+check(linksOf("Mem")[OTHER] == nil, "a rebuild from the officers' entries does not bring it back: it waits")
+online.OffA = true
+as("OffA", function() AS:Backfill(true) end)     -- the officer comes back, with the older link
+runAfters("OffA")
+flush()
+check(linksOf("OffA")[OTHER] == nil and clients.OffA.db.altSync.links[OTHER].removed,
+  "the member's unlink goes to the officer once one is online, who applies it")
+local left = 0
+for _, p in pairs(clients.Mem.acc.altPending or {}) do if p.unlink then left = left + 1 end end
+check(left == 0 and linksOf("Mem")[OTHER] == nil, "and the officer's tombstone answers the member's unlink")
 
 -- ── 8. WoW: Forever keys with and without the realm are one member ──────
 boot("forever")

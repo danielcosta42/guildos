@@ -312,7 +312,8 @@ Removed: `Compat.NewTimer`.
 | `CommSystem:HandleResponse(sender, data)` | Delegates to HandleBroadcast |
 | `CommSystem:HandlePing(sender)` | Responds with PONG + version |
 | `CommSystem:HandleVersionCheck(_sender, data)` | Prints notice on version mismatch |
-| `CommSystem:BroadcastAltLinks()` | Serializes and sends altLinks table (officer only) |
+| `CommSystem:BroadcastAltLinks()` | Officers: `AltSync:LegacyView` as "AL" with a mark old clients ignore, only while `LegacyHeard()` (a client ≤ `LEGACY_ALT_MAX` heard within `LEGACY_WINDOW`) (#424) |
+| `CommSystem:_BackfillMarks(force)` | `MemberMarks:Backfill` on a sync answer at most once per `MARKS_BACKFILL_GAP` (#429) |
 | `CommSystem:FullSync()` | Full staggered sync of all data types |
 
 ---
@@ -706,18 +707,19 @@ Removed: `Compat.NewTimer`.
 
 | Function | Purpose |
 |---|---|
-| `AltSync:Initialize()` | Registers domain `alt`, migrates the old `altLinks` once (entries at `LEGACY_REV`, no author), rekeys on Forever, prunes tombstones, rebuilds the view |
+| `AltSync:Initialize()` | Registers domain `alt`, migrates the old `altLinks` once (unconfirmed entries, revision 0, no author; `fresh` when there was nothing), rekeys on Forever, prunes tombstones (a year), rebuilds the view |
+| `AltSync:LegacyView()` | The table for clients before #424: the view without unconfirmed links an old officer's newest table lacks (`legacyGone`); nil when no entry is known |
 | `AltSync.Base(entries)` / `.Flatten(links)` | Pure: the standing links of the entries; flat (a chain to its last main, a loop to its lowest key) |
 | `AltSync:BaseView()` / `:HeardView()` / `:Entries()` | The officers' links; only those an officer said (not this client's own migration); the entries |
 | `AltSync:Rebuild()` | `db.altLinks` = BaseView + a member's waiting claims (`AltAutoDetect:Overlay`), flat |
 | `AltSync.Wins(rev, entry, cur, held)` | Pure: higher revision wins; at a tie nothing seen comes back, own migration yields, else by main/author |
-| `AltSync:Commit(links)` / `:Write(changes)` | Officers: write every alt whose entry differs from `links` (rev = max(server time, last + 1)), publish in batches, send "AL" for old clients |
-| `AltSync:Apply(list, sender)` / `:OnSync(env, sender)` | Officer entries off the network (`{ k, m, x, a, t, r }`), keys localized |
-| `AltSync:OnLegacyList(links, sender)` | "AL" from a client before #424: merge only (adds alts never heard of; never removes or changes; empty is nothing) |
-| `AltSync:Backfill()` | Officers: every entry at its stored revision, `BATCH` per envelope, `BATCH_GAP` s apart, one at a time |
+| `AltSync:Commit(links, confirm)` / `:Write(changes)` | Officers: write every alt whose entry differs from `links` (rev = max(server time, last + 1)), and the alts in `confirm` whose link is unconfirmed; publish in batches, send "AL" for old clients (if one was heard) |
+| `AltSync:Apply(list, sender)` / `:OnSync(env, sender)` | Officer entries off the network (`{ k, m, x, a, t, r }`), keys localized; r = 0 (unconfirmed) only on a `fresh` client, for an alt it knows nothing of |
+| `AltSync:OnLegacyList(links, sender)` | "AL" from a client before #424: merge only (adds alts never heard of; never removes or changes; empty is nothing); marks unconfirmed links it lacks `legacyGone` |
+| `AltSync:Backfill(force)` | Officers: every entry at its stored revision (unconfirmed at 0, not `legacyGone`), `BATCH` per envelope, `BATCH_GAP` s apart, one at a time; at most once per `BACKFILL_GAP` unless `force` (/gos sync) |
 | `AltSync.OverLimit(links, n)` / `:CommandLimit(rest)` | The groups with more than n alts; `/gos altlimit N` |
 
-AltAutoDetect (#424): `Overruled(p, entries)` (a newer officer tombstone or link elsewhere ends a claim), `Overlay(links)`, `OnOfficerLinks()` (a claim goes only applied or overruled).
+AltAutoDetect (#424): `Overruled(p, entries)` (a newer officer tombstone or link elsewhere ends a claim), `UnlinkAnswered(p, entries)` (a member's own waiting unlink ends on a tombstone or a newer officer link), `Overlay(links)` (claims and waiting unlinks), `OnOfficerLinks()` (a claim goes only applied or overruled).
 
 UI: `UI/BulkPanel.lua` — `GuildOS:BuildBulkSub(panel)`, the secure `GuildOSBulkNext` button (docked out of combat only).
 Compat (#420): `CanGuildPromote/Demote/Remove`, `MyGuildRankIndex`, `GuildRankCommand(action, name)`, `SecureGuildMacro`,
