@@ -278,6 +278,7 @@ read_globals = {
     "debugprofilestop", -- the client's milliseconds, for GuildOS.Perf (#324)
     "GetServerTime",
     "GetCurrentKeyBoardFocus",
+    "IsLoggedIn",
     "ReloadUI",
     "InCombatLockdown",
     "PlaySound",
