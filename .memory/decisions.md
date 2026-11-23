@@ -1750,3 +1750,40 @@ everything. Until now cores reached the game only through the companion's `Inbox
   clients; retail's press/release handling and WoW: Forever's typed fallback follow what #256 measured.
 - (−) A rank changed by the click but not yet seen by the roster stays "sent" until the next roster update.
 
+## ADR-0039 — The member history: passages and ranks kept past the log, from merges that never double (#425)
+
+### Context
+- Officers asked to see "was a member from X to Y, N days" when they re-invite somebody (Discord; epic #423,
+  group C). The Roster Log forgets after 90 days / 1000 events, `firstSeen` is dropped when a member leaves
+  (DropDeparted) and no client has a guild join date.
+- What happened while the officer was offline reached the log only if another officer's client saw it.
+
+### Decision
+- **`Modules/MemberHistory.lua`** keeps `db.memberHistory[key] = { stints, ranks }`, apart from the log and its
+  pruning, on officers' clients only, with a ceiling (10 passages and 15 rank changes a member, 4000 keys, the
+  former members who left longest ago dropped first; bound ~7.6 MB, a 1000-member guild over three years ~1 MB).
+- **Sources:** every event the Roster Log takes (its line or an officer's, `RosterLog:_ToHistory`); a diff of the
+  whole roster against `db.memberHistoryBase` (`Scan`, from Core's roster pass through `Coalesce`, at most once a
+  minute, 45 s after login so the officers' audit backfill arrives first); the other officers' records.
+  A one-time migration takes the Roster Log's events, then an open passage for each present member from the
+  earlier of `firstSeen` and `foundingJoins` (marked as only "seen by GuildOS").
+- **Merges, not ids, make it converge:** an exact time beats a seen one (`joinEst` / `leftEst`), a kick (with its
+  officer) beats a leave beats "gone", two exact records of one change within 5 minutes are one. Applying a
+  record twice, or two officers' records of the same change, changes nothing.
+- **Sync:** append-only records with an id over the existing `audit` domain, act `hist` (older clients read only
+  `add`); receivers apply on an officer's client only. The last 25 records this client sent go again with the
+  Roster Log's login backfill. No full-history sync.
+- **The diff's own log lines** (level ups by milestone/all/off, public and officer note changes, back from
+  30+ days offline, "gone", a join seen at login) are local (`loc`): never published nor backfilled, since every
+  officer's client sees the same change and an officer note is not for the guild channel.
+- **A rejoin** stays a `join` event with `rejoin = true`: the event id, the near-dup fold and every older client
+  stay as they were.
+- The TrialTracker's baseline is not shared: it only grows and is about newcomers; this one mirrors the roster.
+
+### Consequences
+- (+) Invite, join and whisper tell the officer the past; the log exports; other features read
+  `MemberHistory:Stints/JoinedAt/TenureDays/Ranks/LastLeft/Describe`.
+- (−) Before the install, or while no officer's client saw the roster, dates are "seen by GuildOS" or unknown.
+- (−) A rename is a departure and a join (no GUID tracking yet); an officer who installs late gets only the
+  records others still send (the last 25 each) and the log's 90 days.
+

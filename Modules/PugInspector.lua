@@ -27,7 +27,8 @@ end
 --     banned, reason,            -- BanList
 --     inGuild,                   -- this char is itself on the guild roster
 --     isAlt, mainShort, mainInGuild,  -- altLinks resolution
---     exMember,                  -- best-effort, from the roster log
+--     exMember,                  -- best-effort, from the member history (#425) or the roster log
+--     exDetail,                  -- when they left and their days in the guild (the member history)
 --     note,                      -- officer/public note (already resolved)
 --   }
 -- Returns { tag, detail, severity }. severity in high|warn|guild|unknown.
@@ -57,6 +58,7 @@ function PugInspector:_Decide(facts)
         severity = "guild"
     elseif f.exMember then
         tag      = L["Ex-member"]
+        detail   = f.exDetail
         severity = "warn"
     elseif f.alliedGuild and f.alliedGuild ~= "" then
         -- Ranked below ex-member on purpose: "this person left us" is the more
@@ -70,7 +72,8 @@ function PugInspector:_Decide(facts)
     end
 
     if not f.banned and f.note and f.note ~= "" then
-        detail = string.format(L["Note: %s"], f.note)
+        local noted = string.format(L["Note: %s"], f.note)
+        detail = detail and (detail .. " · " .. noted) or noted
     end
 
     return { tag = tag, detail = detail, severity = severity }
@@ -135,6 +138,15 @@ function PugInspector:_LiveSources()
         guildKeys  = guildKeys,
         altLinks   = db.altLinks or {},
         log        = log,
+        -- The member history (issue #425): when a former member left and their days in the guild.
+        history    = GuildOS.MemberHistory and function(key)
+            local MH = GuildOS.MemberHistory
+            local last = MH:LastLeft(key)
+            if not last then return nil end
+            local days = MH:TenureDays(key)
+            return string.format(L["Left %s, %s days in the guild"], GuildOS:DateText(last.leftAt, "/%Y"),
+                days and tostring(days) or "?")
+        end or nil,
         realm      = GuildOS:GetClientRealm() or "",
         -- The member's key on retail, where BanList keeps the realm; the short name elsewhere.
         banEntry   = function(name)
@@ -204,7 +216,11 @@ function PugInspector:Classify(name, srcs)
         f.mainInGuild = inGuild(mainKey, f.mainShort or "")
     end
 
-    if srcs.log then
+    -- Never for somebody on the roster: a stale record must not mislabel a present guildmate.
+    local past = not f.inGuild and srcs.history and srcs.history(key)
+    if past then
+        f.exMember, f.exDetail = true, past
+    elseif srcs.log then
         local last = self:_LastRosterAction(name or shortLower, srcs.log)
         f.exMember = (last == "leave" or last == "kick")
     end
@@ -398,6 +414,13 @@ function PugInspector:_RegisterTests()
     S:Register("pug.decide_exmember", function()
         local r = PugInspector:_Decide({ exMember = true })
         if r.tag ~= L["Ex-member"] or r.severity ~= "warn" then return false, tostring(r.tag) end
+        return true
+    end)
+
+    S:Register("pug.decide_exmember_history", function()
+        local r = PugInspector:_Decide({ exMember = true, exDetail = "Left 01/02/2025", note = "x" })
+        if r.tag ~= L["Ex-member"] then return false, "tag" end
+        if r.detail ~= "Left 01/02/2025 · " .. string.format(L["Note: %s"], "x") then return false, tostring(r.detail) end
         return true
     end)
 

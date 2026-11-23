@@ -434,14 +434,22 @@ end
 -- Before a manual guild invite: when the alliance has banned `name`, the officer sees why first and
 -- `invite` runs only on "Invite anyway". True when held (the caller stops there), false when nothing
 -- stands in the way (the caller invites as it always did). Never blocks: an alert, not a ban.
+-- Somebody who was a member before (issue #425) is never held for it: the officer reads when, for how
+-- long and how they went, in chat, or in the dialog when the alliance's ban holds the invite anyway.
 function BanList:HoldInvite(name, invite)
+    local MH = GuildOS.MemberHistory
+    local past = MH and GuildOS:IsOfficer() and MH:Describe(name)
     local bans = self:AllianceBansFor(name)
-    if not bans or type(invite) ~= "function" or not GuildOS.ShowDialog then return false end
+    if not bans or type(invite) ~= "function" or not GuildOS.ShowDialog then
+        if past then MH:Say(past) end
+        return false
+    end
     local lines = { string.format(L["The alliance has banned %s:"], name) }
     for i = 1, math.min(#bans, 3) do
         lines[#lines + 1] = BanList.AllianceLine(bans[i]) .. (bans[i].note and (" — " .. bans[i].note) or "")
     end
     if #bans > 3 then lines[#lines + 1] = string.format(L["and %d more"], #bans - 3) end
+    if past then lines[#lines + 1] = past end
     GuildOS:ShowDialog("GUILDOS_ALLIANCE_BAN_INVITE", table.concat(lines, "\n"), nil, invite)
     return true
 end
@@ -495,6 +503,7 @@ function BanList:_SetupDetection()
     -- give the db time to load before trusting cold-login join spam
     self._ready = false
     self._whisperCd = {}
+    self._whisperPast = {}   -- former members already told about this session (issue #425)
     GuildOS.Compat.After(8, function() BanList._ready = true end)
     f:SetScript("OnEvent", function(_, event, arg1, arg2)
         if GuildOS.Compat.IsSecret(arg1, arg2) then return end  -- chat in lockdown: nothing readable
@@ -520,6 +529,13 @@ function BanList:_SetupDetection()
                 end
                 if banned then BanList:_Alert(BanList:Get(who)) end
                 if ally then BanList:_AllianceAlert(who, ally) end
+            end
+            -- A former member whispering (issue #425): told once a session per name.
+            local MH = GuildOS.MemberHistory
+            local hkey = who and MH and MH:KeyOf(who)
+            if hkey and not BanList._whisperPast[hkey] and MH:IsFormer(hkey) then
+                BanList._whisperPast[hkey] = true
+                MH:Warn(who, hkey)
             end
         end
     end)

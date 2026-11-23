@@ -281,6 +281,8 @@ local MODULE_START = {
     { "AllianceLink" },
     { "GuildChat" },
     { "RosterLog" },
+    -- Each member's passages and rank changes, kept past the log's 90 days (issue #425).
+    { "MemberHistory" },
     { "BanList" },
     -- The disciplinary record (issue #402): officers only, synced among them.
     { "Discipline" },
@@ -620,6 +622,8 @@ local function rosterPass()
     if GuildOS.DropDeparted then GuildOS:DropDeparted() end
     -- Who joined since this client last saw the whole roster: a trial each, with the guild's switch on (#249).
     if GuildOS.TrialTracker then GuildOS:SafeCall(GuildOS.TrialTracker.ScanRoster, GuildOS.TrialTracker) end
+    -- What changed since the roster last seen (#425): at most a pass a minute, whatever the bursts.
+    if GuildOS.MemberHistory then GuildOS.MemberHistory:Schedule() end
     GuildOS.Perf:Stop("roster pass", t)
     t = GuildOS.Perf:Start()
     GuildOS:RefreshRosterUI()
