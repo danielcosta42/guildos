@@ -198,7 +198,8 @@ read_globals = {
 
     -- WoW API: Guild management
     "IsGuildLeader",
-    "GetCVarBool",      -- retail's ActionButtonUseKeyDown, for the bulk actions' secure button (#420)
+    "GetCVar",          -- ActionButtonUseKeyDown, for the bulk actions' secure button (#420)
+    "C_CVar",
     "CanGuildRemove",
     "CanGuildPromote",
     "CanGuildDemote",

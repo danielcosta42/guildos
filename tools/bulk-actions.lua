@@ -179,9 +179,10 @@ check(line == "/gpromote Bob", "the click arms the game's line for Bob only")
 BA:AfterClick(false)
 check(q.items[1].status == "sent" and q.pos == 2, "the click sent it and goes on to Cid")
 check(said("Sent /gpromote Bob. Next: Cid."), "the chat says what was sent and who is next")
-check(#timers == 1, "and the roster is asked for again a moment later, never another action")
-timers[1](); timers = {}
-check(rosterAsked == 1, "the roster ask is the only thing the timer does")
+check(#timers == 2, "the timers only ask for the roster and look at it, never another action")
+for _, fn in ipairs(timers) do fn() end
+timers = {}
+check(rosterAsked == 1 and q.items[1].status == "sent", "the roster is asked for; too soon to call it unconfirmed")
 
 -- The roster shows Bob promoted; the game's own guild message logged it a second before.
 GuildOS.RosterLog._ready = true
@@ -249,26 +250,61 @@ can.promote = false
 check(BA:Arm(false) == nil and said("Your guild rank may not do this."), "no line without the rank's right")
 can.promote = true
 
--- A click the game blocked: the member waits again and the clicks print the line from then on.
+-- A block the game raises while this click runs its line: the member is never marked sent, and from then on the
+-- click prints the line to type. Another addon's block, or one for another function, is not ours.
 check(BA:Arm(false) == "/gpromote Bob", "armed")
-BA:AfterClick(false)
-BA:OnBlocked("ADDON_ACTION_FORBIDDEN", "SomeOtherAddon")
-check(BA:Queue().items[1].status == "sent", "another addon's block is not ours")
+BA:OnBlocked("ADDON_ACTION_FORBIDDEN", "SomeOtherAddon", "GuildPromote")
+BA:OnBlocked("MACRO_ACTION_BLOCKED", "CastSpellByName")
+check(not BA:Typed(), "another addon's block, or another function's, changes nothing")
 BA:OnBlocked("MACRO_ACTION_BLOCKED", "GuildPromote")
-check(BA:Queue().items[1].status == "pending" and BA:Typed(), "a block right after the click: Bob waits, typed mode on")
-check(said("The game blocked the click. Type the line instead: /gpromote Bob"), "and the line to type is said")
+BA:AfterClick(false)
+check(BA:Queue().items[1].status == "pending" and BA:Typed(), "blocked during the click: Bob was never sent, typed mode on")
+check(said("The game blocked the click. Click Next again: it shows the line to type."), "and the officer is told")
 printed = {}
 check(BA:Arm(false) == nil and BA:Queue().items[1].status == "sent", "typed: the click arms nothing and goes on")
 check(said("Type /gpromote Bob in chat, then click Next for the one after."), "it prints the line to type")
+-- A block after the click is over (nothing armed) never puts a sent member back.
+BA:OnBlocked("MACRO_ACTION_BLOCKED", "GuildPromote")
+check(BA:Queue().items[1].status == "sent", "a member already sent is never put back")
+-- No change in the roster for a while: "not confirmed", never sent again.
+CLOCK = CLOCK + 20
+for _, fn in ipairs(timers) do fn() end
+timers = {}
+check(BA:Queue().items[1].status == "unconfirmed", "no change seen in the roster: not confirmed, check it")
+check(BA:Arm(false) == nil and BA:Counts().sent == 0, "and nobody is sent twice")
+roster[2][2] = 3
+BA:Confirm()
+check(BA:Queue().items[1].status == "done", "a later roster update still confirms it")
 GuildOS.State.bulk.typed = nil
 
--- WoW: Forever prints the line from the first click; `/gos bulk next` does the same there.
-GuildOS.Client.game, GuildOS.Client.isAnniversary = "FOREVER", false
+-- The rules are checked again before each click: who logged in since is no longer 30 days offline.
+setRoster({ { "Arthas", 1, 60, true }, { "Bob", 4, 60, false, 45 }, { "Cid", 4, 60, false, 50 } })
+BA:Start({ days = 30 }, "remove", true)
+roster[3][4] = true   -- Cid logs in
+check(BA:Arm(false) == "/gremove Bob" and BA:Queue().items[1].status == "skipped" and BA:Queue().items[1].why == "rules",
+      "who no longer meets the rules is skipped, the click goes to the next")
+BA:AfterClick(false)
+
+-- The removal's confirmation queues exactly the list it showed.
+local shown = BA:Preview({ days = 30 }, "remove")
+roster[#roster + 1] = { "Dan", 4, 60, false, 90 }
+check(BA:Start({ days = 30 }, "remove", true, shown) and #BA:Queue().items == #shown,
+      "the queue is the list the dialog showed, not one made again")
+BA:Stop()
+
+-- WoW: Forever prints the line from the first click; `/gos bulk next` does the same there. A surname goes as /w
+-- takes it, the hyphen for the space.
+GuildOS.Client.game, GuildOS.Client.isAnniversary, GuildOS.Client.has.surnames = "FOREVER", false, true
+check(Compat.GuildRankCommand("promote", "Chehul Druida") == "/gpromote Chehul-Druida", "a Forever surname")
+check(Compat.GuildRankCommand("promote", "Chehul;Druida") == nil and Compat.GuildRankCommand("promote", "a/b") == nil,
+      "a ; or a / never reaches the line")
+setRoster({ { "Arthas", 1, 60, true }, { "Bob", 4, 60, false, 45 } })
 BA:Start({ days = 30 }, "promote")
 printed = {}
 BA:Command("next")
 check(BA:Queue().items[1].status == "sent" and said("Type /gpromote Bob in chat"), "Forever: /gos bulk next prints the line")
-GuildOS.Client.game, GuildOS.Client.isAnniversary = "ANNIVERSARY", true
+GuildOS.Client.game, GuildOS.Client.isAnniversary, GuildOS.Client.has.surnames = "ANNIVERSARY", true, false
+roster[2][2] = 4
 
 -- Elsewhere a typed command only says who is next: it may not run the game's command.
 BA:Start({ days = 30 }, "promote")
@@ -279,14 +315,31 @@ check(BA:Skip() and BA:Queue().items[1].why == "you", "skip passes over the memb
 BA:Command("stop")
 check(BA:Queue() == nil, "stop drops the queue")
 
--- Retail: the press or the release acts by the game's option.
+-- The key-down option: with it, the button listens to press and release and exactly one arms the line; the macro
+-- says it is a press when the option is on. Without it, the release acts.
+local keyDown = "1"
+function GetCVar(name) return name == "ActionButtonUseKeyDown" and keyDown or nil end
+local registered
+local fakeButton = { RegisterForClicks = function(_, ...) registered = { ... } end }
+Compat.SecureClicks(fakeButton)
+check(#registered == 2, "with the option, press and release are both registered")
+check(Compat.SecureClickActs(true) and not Compat.SecureClickActs(false), "key-down on: the press arms, the release does not")
+check(Compat.ClickMacro("GuildOSBulkNext") == "/click GuildOSBulkNext LeftButton 1", "and the macro presses")
+keyDown = "0"
+check(Compat.SecureClickActs(false) and not Compat.SecureClickActs(true), "key-down off: the release arms, the press does not")
+check(Compat.ClickMacro("GuildOSBulkNext") == "/click GuildOSBulkNext", "and the macro is a plain /click")
+GetCVar = nil
+Compat.SecureClicks(fakeButton)
+check(#registered == 1 and Compat.SecureClickActs(false) and not Compat.SecureClickActs(true), "without the option: the release")
+
+-- Retail keeps the realm, and a member is found by the whole name: Bob-A gone while Bob-B stays is gone.
 GuildOS.Client.isRetail = true
-local keyDown = true
-function GetCVarBool() return keyDown end
-check(Compat.SecureClickActs(true) and not Compat.SecureClickActs(false), "retail with key-down: the press acts")
-keyDown = false
-check(Compat.SecureClickActs(false) and not Compat.SecureClickActs(true), "retail with key-up: the release acts")
 check(Compat.GuildRankCommand("promote", "Bob-Azralon") == "/gpromote Bob-Azralon", "retail keeps the realm")
+setRoster({ { "Arthas", 1, 60, true }, { "Bob-Azralon", 4, 60, false, 45 }, { "Bob-Gallywix", 3, 60, false, 45 } })
+BA:Start({ days = 30, rank = 4 }, "promote")
+check(#BA:Queue().items == 1 and BA:Queue().items[1].fullName == "Bob-Azralon", "the queue holds Bob-Azralon")
+table.remove(roster, 2)
+check(BA:Arm(false) == nil and BA:Queue().items[1].why == "left", "Bob-Azralon left: Bob-Gallywix does not stand in for him")
 GuildOS.Client.isRetail = false
 
 print("bulk-actions: " .. checks .. " checks passed")

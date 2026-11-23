@@ -6,9 +6,11 @@
 --
 -- Next is a secure action button (ADR-0038): its PreClick asks the module
 -- for this click's line and sets it, the game runs it, its PostClick clears
--- it. It exists from load, so `/click GuildOSBulkNext` works before the tab
--- is opened, and leaves the window when combat starts: the game would refuse
--- to hide a window holding a protected button in combat.
+-- it. It is made at the first moment out of combat after load (a protected
+-- frame's size and backdrop are refused in combat, as after a /reload in a
+-- fight), so `/click GuildOSBulkNext` works before the tab is opened, and it
+-- leaves the window when combat starts: the game would refuse to hide a
+-- window holding a protected button in combat.
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
 local C = GuildOS.Colors
@@ -23,9 +25,10 @@ GuildOS.Dialogs["GUILDOS_BULK_REMOVE"] = {
     text = "%s",
     button1 = L["Start"],
     button2 = L["Cancel"],
+    -- Exactly the members the dialog listed, each still checked again before their click.
     OnAccept = function(_, data)
         if data and GuildOS.BulkActions then GuildOS:SafeCall(GuildOS.BulkActions.StartAndSay, GuildOS.BulkActions,
-            data.rules, "remove", true) end
+            data.rules, "remove", true, data.shown) end
     end,
     timeout = 0,
     whileDead = true,
@@ -37,36 +40,40 @@ GuildOS.Dialogs["GUILDOS_BULK_REMOVE"] = {
 ----------------------------------------------------------------------
 -- The Next button
 ----------------------------------------------------------------------
-local nextBtn = UI:CreateButton(UIParent, L["Next"], NEXT_W, 24, "GuildOSBulkNext", "SecureActionButtonTemplate")
-UI:SetButtonVariant(nextBtn, "primary")
--- A protected frame is set up out of combat only: a /reload in combat finishes this when the fight ends.
-local ready = false
-local function setup()
-    if ready or GuildOS.Compat.InCombat() then return end
+local nextBtn   -- made by ensure(), out of combat
+local function ensure()
+    if nextBtn or GuildOS.Compat.InCombat() then return nextBtn end
+    nextBtn = UI:CreateButton(UIParent, L["Next"], NEXT_W, 24, "GuildOSBulkNext", "SecureActionButtonTemplate")
+    UI:SetButtonVariant(nextBtn, "primary")
     nextBtn:Hide()
     GuildOS.Compat.SecureClicks(nextBtn)
     GuildOS.Compat.SetSecureMacro(nextBtn, "")
-    ready = true
+    nextBtn:SetScript("PreClick", function(self, _, down)
+        GuildOS.Compat.SetSecureMacro(self, GuildOS.BulkActions and GuildOS.BulkActions:Arm(down) or "")
+    end)
+    nextBtn:SetScript("PostClick", function(self, _, down)
+        if GuildOS.BulkActions then GuildOS:SafeCall(GuildOS.BulkActions.AfterClick, GuildOS.BulkActions, down) end
+        GuildOS.Compat.SetSecureMacro(self, "")
+    end)
+    return nextBtn
 end
-setup()
-nextBtn:SetScript("PreClick", function(self, _, down)
-    GuildOS.Compat.SetSecureMacro(self, GuildOS.BulkActions and GuildOS.BulkActions:Arm(down) or "")
-end)
-nextBtn:SetScript("PostClick", function(self, _, down)
-    if GuildOS.BulkActions then GuildOS:SafeCall(GuildOS.BulkActions.AfterClick, GuildOS.BulkActions, down) end
-    GuildOS.Compat.SetSecureMacro(self, "")
-end)
+ensure()
+
+-- The button's label (a font string: free to change in combat too).
+local function setNextLabel(text)
+    if nextBtn then nextBtn.label:SetText(text) end
+end
 
 local slot   -- where the panel shows the button, once built
 local function dock()
-    setup()
-    if not (slot and ready) or GuildOS.Compat.InCombat() then return end
+    if not (ensure() and slot) or GuildOS.Compat.InCombat() then return end
     nextBtn:SetParent(slot)
     nextBtn:ClearAllPoints()
     nextBtn:SetPoint("LEFT", slot, "LEFT", 0, 0)
     nextBtn:Show()
 end
 local function undock()
+    if not nextBtn then return end
     nextBtn:SetParent(UIParent)
     nextBtn:ClearAllPoints()
     nextBtn:Hide()
@@ -81,7 +88,8 @@ end)
 ----------------------------------------------------------------------
 -- The sub-panel
 ----------------------------------------------------------------------
-local SKIP_TEXT = { left = L["left the guild"], rank = L["rank changed"], name = L["unknown name"], you = L["skipped"] }
+local SKIP_TEXT = { left = L["left the guild"], rank = L["rank changed"], rules = L["no longer meets the rules"],
+                    name = L["unknown name"], you = L["skipped"] }
 
 -- The line a member's row says about them: offline days, attendance.
 local function detailOf(m)
@@ -95,6 +103,7 @@ end
 local function statusOf(item)
     if item.status == "done" then return L["done"], C.green end
     if item.status == "sent" then return L["sent"], C.warn end
+    if item.status == "unconfirmed" then return L["not confirmed, check it"], C.red end
     if item.status == "skipped" then return SKIP_TEXT[item.why] or L["skipped"], C.textDim end
     return L["waiting"], C.silver
 end
@@ -201,7 +210,8 @@ function GuildOS:BuildBulkSub(panel)
         local list = table.concat(names, ", ")
         if #live > NAMES_SHOWN then list = list .. " " .. string.format(L["and %d more"], #live - NAMES_SHOWN) end
         GuildOS:ShowDialog("GUILDOS_BULK_REMOVE", string.format(L["Remove %d member(s) from the guild:"], #live)
-            .. " " .. list .. "\n\n" .. L["Each removal still takes one click of Next. Start?"], nil, { rules = rules() })
+            .. " " .. list .. "\n\n" .. L["Each removal still takes one click of Next. Start?"], nil,
+            { rules = rules(), shown = live })
     end)
 
     -- The queue: Next, the member it is for, skip and stop.
@@ -290,9 +300,9 @@ function GuildOS:BuildBulkSub(panel)
                     c.done + c.sent + c.skipped + 1, c.total)
                 or string.format(L["Bulk actions done: %d done, %d waiting for the roster, %d skipped."],
                     c.done, c.sent, c.skipped))
-            nextBtn.label:SetText(BA:NextLabel())
+            setNextLabel(BA:NextLabel())
             macroFS:SetText(BA:Typed() and L["On this client the game takes the line only typed: each click of Next prints it for you."]
-                or string.format(L["Or press a macro with %s, one member per press."], "/click " .. BA.BUTTON))
+                or string.format(L["Or press a macro with %s, one member per press."], GuildOS.Compat.ClickMacro(BA.BUTTON)))
             skipBtn:SetShown(item ~= nil)
             stopBtn:Show()
             summary:SetText("")
@@ -300,7 +310,7 @@ function GuildOS:BuildBulkSub(panel)
             list:SetData(q.items)
         else
             queueFS:SetText(L["Preview the rules, then Start."])
-            nextBtn.label:SetText(L["Next"])
+            setNextLabel(L["Next"])
             macroFS:SetText("")
             skipBtn:Hide()
             stopBtn:Hide()

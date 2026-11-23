@@ -18,3 +18,10 @@ test guild with a few low-rank alts:
    raises no "Interface action failed" error.
 8. **Retail.** With "Cast on key down" on and off, one click promotes exactly one member.
 9. **WoW: Forever.** Next prints "Type /gpromote Name in chat…"; typing it promotes, the next click goes on.
+   **Open question:** a member with a surname ("Chehul Druida") gets `/gpromote Chehul-Druida`, the form `/w`
+   takes on Forever (GuildOS:WhisperTarget). Whether the game's /gpromote takes that form is not verified:
+   check it, and try `/gpromote Chehul Druida` if it does not.
+10. **Key-down option.** With "Cast on key down" on, the panel shows `/click GuildOSBulkNext LeftButton 1`;
+    off, `/click GuildOSBulkNext`. Each press of either macro acts on one member.
+11. **Not confirmed.** Click Next for a member the game refuses (e.g. one above your rank by then): 15 s
+    later the row reads "not confirmed, check it", and no click sends them again.
