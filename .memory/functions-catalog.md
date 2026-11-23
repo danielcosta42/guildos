@@ -565,7 +565,8 @@ Removed: `Compat.NewTimer`.
 | `OfficerNotes:SetSheet(key, text)` | Writes the sheet as this officer's at max(server time, last + 1) and publishes it on `osheet` (#427) |
 | `OfficerNotes:ApplySheets(list, sender)` / `:OnSheetSync(env, sender)` | Applies sheets off the network (keys localized, checked); officers only (#427) |
 | `CommSystem:SendToOfficers(msgType, data, priority, kind)` | Sends over the OFFICER addon channel only; false and nothing sent without it (#427) |
-| `Compat.OfficerAddonChannel()` | "OFFICER" on retail and TBC Anniversary, nil on WoW: Forever (not checked in game) (#427) |
+| `Compat.OfficerAddonChannel()` | "OFFICER" on retail and TBC Anniversary; nil, "no-channel" on WoW: Forever (not checked in game); nil, "no-permission" when the rank may not speak in officer chat (SyncService:Publish tells the officer once) (#427) |
+| `Compat.CanSpeakOfficerChat()` | Whether this character's rank may speak in officer chat (rank flag 4, from `C_GuildInfo.GuildControlGetRankFlags` or the older `GuildControlGetRankFlags`); nil when the client answers neither (#427) |
 | `ChatTweaks.KeyOf(name)` | #429: the chat cache's key for a roster name or a chat author, the whole name with its realm (the player's when none), so a namesake from another realm gets no guildmate's nickname or tag |
 | `OfficerNotes:BackfillSheets(force)` | Every sheet at its stored revision, 2 per envelope 3 s apart; once per 10 min unless forced (#427) |
 

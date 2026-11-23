@@ -3722,6 +3722,7 @@ L["|cff8888FFEdit officer sheet|r"] = "|cff8888FF編輯幹部檔案|r"
 L["Joined the guild"] = "加入公會"
 L["Shift-click: keep this card open (Esc closes it)"] = "Shift+點擊：保持此卡片開啟（Esc 關閉）"
 L["Edit sheet"] = "編輯檔案"
+L["Your rank cannot speak in officer chat: what you write for the officers stays on this client."] = "你的階級不能在幹部頻道發言：你為幹部寫下的內容只保存在此用戶端。"
 -- Join dates in the notes, the safe list, nicknames, back after a long time offline (issue #429)
 L["%d date(s) found in notes; %d ticked to take into the history. Click a row to change it."] = "在備註中找到 %d 個日期；已勾選 %d 個寫入歷史。點擊一行可更改。"
 L["%d note(s) lose text or a date they had: %s.\n\nThe list shows each old and new note. Write all of them?"] = "%d 條備註會遺失原有文字或日期：%s。\n\n列表顯示每條舊備註和新備註。全部寫入？"

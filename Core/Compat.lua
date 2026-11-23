@@ -2249,13 +2249,35 @@ function Compat.ChannelHidesRaidIcons(name, number)
     return info ~= nil and NO_RAID_ICONS[info.zoneChannelID] == true
 end
 
+-- Whether this character's rank may speak in officer chat, from the rank's flags (the fourth: officer chat,
+-- speak): C_GuildInfo.GuildControlGetRankFlags(rankOrder) gives a table, the older GuildControlGetRankFlags
+-- (rankOrder) the flags one by one. Nil when the client answers neither: then nobody knows, and the caller
+-- goes on as before (#427).
+function Compat.CanSpeakOfficerChat()
+    if not (IsInGuild and IsInGuild()) then return nil end
+    local rankIndex = select(3, GetGuildInfo("player"))
+    if type(rankIndex) ~= "number" then return nil end
+    local order = rankIndex + 1
+    if C_GuildInfo and C_GuildInfo.GuildControlGetRankFlags then
+        local ok, flags = pcall(C_GuildInfo.GuildControlGetRankFlags, order)
+        if ok and type(flags) == "table" and flags[4] ~= nil then return flags[4] and true or false end
+    end
+    if GuildControlGetRankFlags then
+        local ok, _, _, _, speak = pcall(GuildControlGetRankFlags, order)
+        if ok and speak ~= nil then return speak and true or false end
+    end
+    return nil
+end
+
 -- The addon channel only the ranks that may hear officer chat receive (issue #427): what a member's client must
 -- never even get the bytes of. The game's SendAddonMessage takes "OFFICER" on retail and on TBC Anniversary.
 -- WoW: Forever is not checked in game yet: nil there, and what would go to officers only stays on this client.
+-- A rank that may not speak in officer chat would send into nothing, silently: nil and "no-permission" then.
 function Compat.OfficerAddonChannel()
     local c = GuildOS.Client
-    if c and (c.isRetail or c.isAnniversary) then return "OFFICER" end
-    return nil
+    if not (c and (c.isRetail or c.isAnniversary)) then return nil, "no-channel" end
+    if Compat.CanSpeakOfficerChat() == false then return nil, "no-permission" end
+    return "OFFICER"
 end
 
 -- Send an addon message through ChatThrottleLib; prio is its "BULK" (default), "NORMAL" or "ALERT".

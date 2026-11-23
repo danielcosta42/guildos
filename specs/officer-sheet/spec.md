@@ -17,7 +17,11 @@ and when the member joined, as GRM shows. ADR-0042.
    refused. The game hands OFFICER messages to the ranks that may hear officer chat: an officer for Guild OS
    whose rank cannot hear it gets no sheet, and a rank that hears it but is not a Guild OS officer gets the
    bytes and drops them. WoW: Forever is not checked in game yet: there the channel is off
-   (`Compat.OfficerAddonChannel` nil) and a sheet stays on the client that wrote it. A write takes revision max(server time, last + 1): the newer edit wins on every
+   (`Compat.OfficerAddonChannel` nil) and a sheet stays on the client that wrote it. The same for an officer
+   whose rank may not speak in officer chat (the rank's flags, `Compat.CanSpeakOfficerChat`): the send would
+   go nowhere, so the sheet stays here and the officer is told once a session. On the member card the Edit
+   sheet button is made once, and the redraws a backfill brings are coalesced (one per 4 s, only when the shown
+   member's sheet changed). A write takes revision max(server time, last + 1): the newer edit wins on every
    client, a tie settles the same everywhere. An officer re-sends every sheet at its stored revision on the
    answer to a sync request (at most once per 10 minutes) and on `/gos sync`, 2 sheets per envelope, 3 s
    apart (#324). "OA" no longer carries the sheet; "ON" and "OA" are unchanged for clients before #427.

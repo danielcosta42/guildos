@@ -1636,6 +1636,7 @@ L["|cff8888FFEdit officer sheet|r"] = "|cff8888FFEdit officer sheet|r"
 L["Joined the guild"] = "Joined the guild"
 L["Shift-click: keep this card open (Esc closes it)"] = "Shift-click: keep this card open (Esc closes it)"
 L["Edit sheet"] = "Edit sheet"
+L["Your rank cannot speak in officer chat: what you write for the officers stays on this client."] = "Your rank cannot speak in officer chat: what you write for the officers stays on this client."
 -- Join dates in the notes, the safe list, nicknames, back after a long time offline (issue #429)
 L["%d date(s) found in notes; %d ticked to take into the history. Click a row to change it."] = "%d date(s) found in notes; %d ticked to take into the history. Click a row to change it."
 L["%d note(s) lose text or a date they had: %s.\n\nThe list shows each old and new note. Write all of them?"] = "%d note(s) lose text or a date they had: %s.\n\nThe list shows each old and new note. Write all of them?"

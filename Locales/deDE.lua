@@ -3842,6 +3842,7 @@ L["|cff8888FFEdit officer sheet|r"] = "|cff8888FFOffiziersakte bearbeiten|r"
 L["Joined the guild"] = "Gildenbeitritt"
 L["Shift-click: keep this card open (Esc closes it)"] = "Umschalt-Klick: Karte offen halten (Esc schließt sie)"
 L["Edit sheet"] = "Akte bearbeiten"
+L["Your rank cannot speak in officer chat: what you write for the officers stays on this client."] = "Dein Rang darf nicht im Offizierschat schreiben: was du für die Offiziere schreibst, bleibt auf diesem Client."
 -- Join dates in the notes, the safe list, nicknames, back after a long time offline (issue #429)
 L["%d date(s) found in notes; %d ticked to take into the history. Click a row to change it."] = "%d Datum/Daten in Notizen gefunden; %d angehakt für die Historie. Klicke eine Zeile, um sie zu ändern."
 L["%d note(s) lose text or a date they had: %s.\n\nThe list shows each old and new note. Write all of them?"] = "%d Notiz(en) verlieren Text oder ein Datum: %s.\n\nDie Liste zeigt jede alte und neue Notiz. Alle schreiben?"

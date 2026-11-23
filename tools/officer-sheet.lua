@@ -6,6 +6,7 @@
 --   * a sheet of 800 letters, several lines, reaches another officer whole, and the newer edit wins;
 --   * a sheet travels only over the OFFICER addon channel: a member's client never gets a byte of it, a
 --     sheet over GUILD is refused, and a client without that channel keeps its sheets to itself;
+--   * a rank that may not speak in officer chat sends nothing and is told once;
 --   * a member's client keeps nothing of it, and a member cannot write one;
 --   * the officers' marks (Modules/MemberMarks.lua, #429) the same: OFFICER only, refused from GUILD, kept
 --     with their writer without that channel;
@@ -382,6 +383,41 @@ check(as("OffA", function() return MM:SetNick(K("OffC"), "Cee") end), "without O
 as("OffA", function() MM:Backfill() end)
 check(#wire == 0 and as("OffA", function() return MM:Nick(K("OffC")) end) == "Cee", "kept here, nothing sent")
 GuildOS.Compat.OfficerAddonChannel = realChan
+
+-- ── 8. A rank that may not speak in officer chat (#427) ─────────────────
+check(GuildOS.Compat.CanSpeakOfficerChat() == nil and GuildOS.Compat.OfficerAddonChannel() == "OFFICER",
+  "a client that answers no rank flags goes on as before")
+C_GuildInfo = C_GuildInfo or {}
+local speaks = { [2] = false }   -- rank order 2 (rank index 1, the officers here) may not speak
+C_GuildInfo.GuildControlGetRankFlags = function(order) return { true, true, true, speaks[order] ~= false } end
+local said = {}
+DEFAULT_CHAT_FRAME.AddMessage = function(_, m) said[#said + 1] = m end
+use("OffA")
+local chan, why = GuildOS.Compat.OfficerAddonChannel()
+check(chan == nil and why == "no-permission", "no officer channel for a rank that may not speak there")
+wire = {}
+check(as("OffA", function() return ON:SetSheet(MAIN, "muted officer") end), "the sheet is still saved")
+check(as("OffA", function() return MM:SetNick(MAIN, "Muted") end), "and a nickname")
+check(#wire == 0, "nothing is sent into an officer chat the rank cannot speak in")
+local warned = 0
+for _, m in ipairs(said) do if tostring(m):find("cannot speak in officer chat", 1, true) then warned = warned + 1 end end
+check(warned == 1, "the officer is told once, not at every write (" .. warned .. ")")
+speaks[2] = true
+use("OffA")
+check(GuildOS.Compat.OfficerAddonChannel() == "OFFICER", "a rank that may speak there gets the channel")
+C_GuildInfo.GuildControlGetRankFlags = nil
+-- The old API, its flags one by one.
+GuildControlGetRankFlags = function() return true, true, true, false end
+check(GuildOS.Compat.CanSpeakOfficerChat() == false, "the older GuildControlGetRankFlags is read too")
+GuildControlGetRankFlags = nil
+DEFAULT_CHAT_FRAME.AddMessage = function() end
+
+-- ── 9. The member card: one Edit sheet button, redraws coalesced (#427) ──
+local detail = src("UI/MemberDetail.lua")
+check(detail:find("local editSheet = child._editSheet", 1, true) and select(2, detail:gsub('L%["Edit sheet"%]', "")) == 1,
+  "the card makes its Edit sheet button once and reuses it")
+check(detail:find('GuildOS:Coalesce("memberDetail.sheet", GuildOS.OfficerNotes.SHEET_GAP + 1', 1, true)
+  and detail:find("== drawn then return end", 1, true), "a backfill's envelopes redraw the card at most once a gap, and only on a change")
 
 check(memberGot.OFFICER == nil, "after everything, the member's client still never got an OFFICER message")
 print(string.format("officer-sheet: %d checks passed", checks))

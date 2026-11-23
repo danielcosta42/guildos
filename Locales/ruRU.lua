@@ -3722,6 +3722,7 @@ L["|cff8888FFEdit officer sheet|r"] = "|cff8888FFИзменить досье о�
 L["Joined the guild"] = "Вступление в гильдию"
 L["Shift-click: keep this card open (Esc closes it)"] = "Shift+щелчок: оставить карточку открытой (Esc закрывает)"
 L["Edit sheet"] = "Изменить досье"
+L["Your rank cannot speak in officer chat: what you write for the officers stays on this client."] = "Ваше звание не может писать в офицерский чат: то, что вы пишете для офицеров, остаётся на этом клиенте."
 -- Join dates in the notes, the safe list, nicknames, back after a long time offline (issue #429)
 L["%d date(s) found in notes; %d ticked to take into the history. Click a row to change it."] = "Найдено дат в заметках: %d; отмечено для истории: %d. Щёлкните строку, чтобы изменить."
 L["%d note(s) lose text or a date they had: %s.\n\nThe list shows each old and new note. Write all of them?"] = "Заметок, теряющих текст или дату: %d: %s.\n\nВ списке видна каждая старая и новая заметка. Записать все?"
