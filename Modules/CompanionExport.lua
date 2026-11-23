@@ -64,7 +64,12 @@ local FMT = "GOSCOMP1"
 -- site's #517; see lootWhy() below): one more absent field, which a reader from before never looks at.
 -- Also within 16, `coreReceipt`: the cores as this game has them, for the site to show what differs
 -- (issue #347, the site's #519; see coreReceipt() below). Absent with the Raids module off.
-local PAYLOAD_VERSION = 16
+-- 17 completes the character, so the companion and the site can show all of it (issue #399): each
+-- gear slot's `suffix`, the item's random suffix id from its link ("of the Eagle"), absent on an
+-- item without one; and each member's `talents` on WoW: Forever, [[definitionID, rank], ...] from
+-- the game's trait tree, only the talents with a rank, sorted by id (see talentsFor() below). Both
+-- absent when unknown: a reader from before never looks at them.
+local PAYLOAD_VERSION = 17
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -188,6 +193,9 @@ local function gearFor(data)
             -- Absent, not zero: a slot with no enchant and a slot nobody read are
             -- different claims, and the site is built to tell them apart.
             if item.enchantId and item.enchantId > 0 then entry.enchant = item.enchantId end
+            -- v17 (issue #399): the random suffix id, with its sign. Absent without one.
+            local suffix = tonumber(item.suffix)
+            if suffix and suffix ~= 0 and suffix == math.floor(suffix) then entry.suffix = suffix end
             if item.gems and #item.gems > 0 then
                 local gems = {}
                 for _, gem in ipairs(item.gems) do
@@ -204,6 +212,28 @@ local function gearFor(data)
     if #out == 0 then return nil end
     return out
 end
+
+-- v17 (issue #399): the talents as [[definitionID, rank], ...], from the member's own client or an
+-- inspect. Only whole positive pairs go out, at most TALENTS_MAX, sorted by id so the same tree is
+-- always the same string; a record that holds anything else sends nothing rather than half a tree.
+local TALENTS_MAX = 200
+local function talentsFor(data)
+    local list = data and data.talents
+    if type(list) ~= "table" or #list == 0 or #list > TALENTS_MAX then return nil end
+    local out = {}
+    for i, pair in ipairs(list) do
+        local id = type(pair) == "table" and tonumber(pair[1])
+        local rank = type(pair) == "table" and tonumber(pair[2])
+        if not (id and rank and id > 0 and rank > 0 and id == math.floor(id) and rank == math.floor(rank)) then
+            return nil
+        end
+        out[i] = { id, rank }
+    end
+    table.sort(out, function(a, b) return a[1] < b[1] end)
+    return out
+end
+
+Companion.TalentsFor = talentsFor
 
 local function attunementsFor(key)
     local out = {}
@@ -537,6 +567,8 @@ local function memberLine(key, short, classFile, level, rankName, rankIndex)
         -- v5. Absent for anybody whose client has never published, which is
         -- most of a guild's roster and is the honest answer for them.
         gear = gearFor(data),
+        -- v17 (issue #399), WoW: Forever. Absent until the member's client, or an inspect, read a tree.
+        talents = talentsFor(data),
         sex = data.sex,
         raceToken = data.raceToken,
         crafting = craftingFor(key),
@@ -1050,6 +1082,17 @@ function Companion:BuildPayload()
     -- Within 16 (#347): the cores as the game has them. Never in the pack.
     payload.coreReceipt = GuildOS.IsFeatureEnabled ~= nil and GuildOS:IsFeatureEnabled("raids")
         and optional("coreReceipt", Companion.CoreReceipt) or nil
+    -- Within 17 (#402, the site's specs/116): the disciplinary record, from an officer's client only.
+    -- Additive: a reader from before never looks at it. Never in the pack.
+    payload.discipline = GuildOS.Discipline and optional("discipline", GuildOS.Discipline.ForExport, GuildOS.Discipline) or nil
+    -- Within 17 (#407): the guild's rules, from any client that holds them, with their stamp so the site
+    -- keeps the newest whoever uploads last. Absent while the guild never wrote any. Never in the pack.
+    payload.rules = GuildOS.GuildRules and optional("rules", GuildOS.GuildRules.ForExport, GuildOS.GuildRules) or nil
+    -- Within 17 (#408, the site's guildos-web#616): the bans this guild shared with its alliance, from an
+    -- officer's client only, newest first, withdrawn ones with `withdrawnAt`. Absent when the guild never
+    -- shared any. Never in the pack.
+    payload.banShares = GuildOS.BanList and GuildOS.BanList.ForExport
+        and optional("banShares", GuildOS.BanList.ForExport, GuildOS.BanList) or nil
     return payload
 end
 

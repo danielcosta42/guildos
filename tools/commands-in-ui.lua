@@ -35,10 +35,15 @@ local IN_UI = {
   -- The points and the equity are the Loot window's Accounts and History (issue #346).
   points      = { { "UI/Features.lua", 'id = "dkp"' }, { "UI/PointsPanel.lua", "function GuildOS:BuildLootAccounts" } },
   equity      = { { "UI/LootWindow.lua", 'show("equity")' } },
+  -- The record is a section of the member's sheet, with its term (issue #402).
+  record      = { { "UI/MemberDetail.lua", "D:Record(playerKey)" }, { "UI/MemberDetail.lua", "D:SetTerm(" } },
+  warn        = { { "UI/MemberDetail.lua", "GuildOS:ShowWarnDialog(playerKey, who)" } },
   digest      = { { "UI/SettingsPanel.lua", "GuildOS.Digest:Show()" } },
   backup      = { { "UI/SettingsPanel.lua", "GuildOS.Backup:ShowExport()" } },
   restore     = { { "UI/SettingsPanel.lua", "GuildOS.Backup:ShowRestore()" } },
   bulletin    = { { "UI/CommunityPanel.lua", "BuildBulletinSub" } },
+  -- The guild's rules are the Guild hub's Rules sub-tab, for every member (issue #407).
+  rules       = { { "UI/CommunityPanel.lua", "BuildGuildRulesSub" } },
   polls       = { { "UI/CommunityPanel.lua", "BuildPollsSub" } },
   calendar    = { { "UI/CommunityPanel.lua", "CreateCalendarSub" } },
   cta         = { { "UI/CommunityPanel.lua", "BuildCallToArmsSub" } },

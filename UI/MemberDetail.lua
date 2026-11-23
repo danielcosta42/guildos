@@ -888,6 +888,104 @@ function PopulateDetail(frame, data)
     end
 
     ----------------------------------------------------------------
+    -- Section: Disciplinary record (officer only, issue #402)
+    ----------------------------------------------------------------
+    if GuildOS.Discipline and GuildOS:IsOfficer() then
+        yOff = yOff - 10
+        playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        local D = GuildOS.Discipline
+        local now = GetServerTime()
+        local term = D:GetTerm()
+        local record = D:Record(playerKey)
+        local step = D.Step(record, term, now)
+        yOff = CreateSectionHeader(child, format(L["RECORD  --  step %d  (%d days term)"], step, term), yOff, contentWidth)
+        if #record == 0 then
+            local none = _pFS(child)
+            GuildOS:ApplyFont(none, 9)
+            none:SetPoint("TOPLEFT", 15, yOff - 3)
+            none:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            none:SetText(L["No warnings."])
+            none:Show()
+            yOff = yOff - 16
+        end
+        for i = 1, math.min(10, #record) do
+            local w = record[i]
+            local active = D.Active(w, term, now)
+            local state = w.revokedAt and L["revoked"] or (active and L["standing"] or L["lapsed"])
+            local row = _pFS(child)
+            GuildOS:ApplyFont(row, 9)
+            row:SetPoint("TOPLEFT", 15, yOff - 3)
+            row:SetWidth(contentWidth - 100)
+            row:SetJustifyH("LEFT")
+            row:SetWordWrap(true)
+            local color = active and C.white or C.silver
+            row:SetTextColor(color.r, color.g, color.b)
+            row:SetText(format("|cffAAAAAA[%s %s]|r %s%s — %s%s",
+                w.by or "?", GuildOS:DateText(w.at or 0), D.ReasonText(w.reason), w.discord and (" |cff7289DA" .. L["(Discord)"] .. "|r") or "",
+                state, w.note and ("  |cffAAAAAA" .. GuildOS:SanitizeUserText(w.note, 200) .. "|r") or ""))
+            row:Show()
+            if active and not w.discord then
+                local revoke = UI:CreateButton(child, L["Revoke"], 70, 18)
+                revoke:SetPoint("TOPRIGHT", child, "TOPLEFT", contentWidth - 10, yOff - 1)
+                local id = w.id
+                revoke:SetScript("OnClick", function()
+                    D:Revoke(id)   -- the sheet redraws through D.uiRefresh
+                end)
+            end
+            yOff = yOff - math.max(20, row:GetStringHeight() + 6)
+        end
+
+        -- Warn (issue #403): the window files it, whispers on the click and suggests the step's rung.
+        local who = data.name
+        local warnBtn = UI:CreateButton(child, L["Warn"], 80, 20)
+        warnBtn:SetPoint("TOPLEFT", 15, yOff - 6)
+        warnBtn:SetScript("OnClick", function() GuildOS:ShowWarnDialog(playerKey, who) end)
+        yOff = yOff - 30
+        -- A warning or a setting that changes (here or from another officer) redraws the sheet, unless the
+        -- officer is typing in it: the sheet would scroll back to the top and lose what they typed.
+        D.uiRefresh = function()
+            if not frame:IsShown() then return end
+            local focus = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+            if focus and focus.IsVisible and focus:IsVisible() then return end
+            PopulateDetail(frame, data)
+        end
+
+        -- The guild's term, which every warning on every sheet counts by.
+        local termBox = CreateFrame("EditBox", nil, child, "BackdropTemplate")
+        termBox:SetSize(50, 20)
+        termBox:SetPoint("TOPLEFT", 15, yOff - 6)
+        termBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(termBox) })
+        termBox:SetBackdropColor(0.050, 0.050, 0.066, 1)
+        termBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
+        GuildOS:ApplyFont(termBox, 10)
+        termBox:SetTextColor(C.white.r, C.white.g, C.white.b)
+        termBox:SetTextInsets(6, 6, 2, 2)
+        termBox:SetAutoFocus(false)
+        termBox:SetNumeric(true)
+        termBox:SetMaxLetters(3)
+        termBox:SetText(tostring(term))
+        termBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        local setTerm = UI:CreateButton(child, L["Set term (days)"], 110, 20)
+        setTerm:SetPoint("LEFT", termBox, "RIGHT", 6, 0)
+        local function applyTerm()
+            termBox:ClearFocus()
+            if not D:SetTerm(termBox:GetText()) then termBox:SetText(tostring(D:GetTerm())) end   -- taken: D.uiRefresh redraws
+        end
+        setTerm:SetScript("OnClick", applyTerm)
+        termBox:SetScript("OnEnterPressed", function(self) self:ClearFocus(); applyTerm() end)
+        termBox:Show()
+
+        -- The guild's punishment rank, which a rung of the ladder may suggest (issue #403).
+        local rankBox = UI:CreateInput(child, 120, 20, { max = 48, placeholder = L["Punishment rank"] })
+        rankBox:SetPoint("LEFT", setTerm, "RIGHT", 16, 0)
+        rankBox:SetText(D:GetPunishRank() or "")
+        local setRank = UI:CreateButton(child, L["Set rank"], 80, 20)
+        setRank:SetPoint("LEFT", rankBox, "RIGHT", 6, 0)
+        setRank:SetScript("OnClick", function() D:SetPunishRank(rankBox:GetText()) end)
+        yOff = yOff - 30
+    end
+
+    ----------------------------------------------------------------
     -- Section: Linked Characters (officers manage anyone; members manage
     -- their own alts on the current character via self-claim)
     ----------------------------------------------------------------

@@ -2,7 +2,7 @@
 ## Title: |cffFFD700Guild OS|r |cff888888Guild Manager|r
 ## Notes: Guild manager for WoW: Forever and Retail: roster, raid attendance, cores, recruitment and professions
 ## Author: Chehul (danielcosta42)
-## Version: 1.34.3
+## Version: 1.36.0
 ## SavedVariables: GuildOSDB
 ## DefaultState: enabled
 ## IconTexture: Interface\AddOns\GuildOS\Media\minimap-logo
@@ -70,6 +70,11 @@ Modules\AllianceLink.lua
 Modules\GuildChat.lua
 Modules\RosterLog.lua
 Modules\BanList.lua
+Modules\Discipline.lua
+Modules\ModAlerts.lua
+Modules\ModFlood.lua
+Modules\Newcomer.lua
+Modules\GuildRules.lua
 Modules\RecruitmentSystem.lua
 Modules\RecruitEngagement.lua
 Modules\WishlistSystem.lua
@@ -173,6 +178,8 @@ UI\LootWindow.lua
 UI\GuildBankPanel.lua
 UI\RosterFrame.lua
 UI\MemberDetail.lua
+UI\WarnDialog.lua
+UI\ModAlerts.lua
 UI\CorePanel.lua
 UI\ManagementPanel.lua
 UI\AuditPanel.lua

@@ -246,6 +246,7 @@ read_globals = {
     -- WoW: Forever: the talent tree, read node by node (issue #41).
     "C_ClassTalents",
     "C_Traits",
+    "Constants",
     "C_SpecializationInfo",                  -- retail's spec (ADR-0026)
     "GetSpecializationInfoForSpecID",
     "C_PaperDollInfo",                       -- retail: an inspected average item level (issue #184)
@@ -276,6 +277,7 @@ read_globals = {
     "GetTime",
     "debugprofilestop", -- the client's milliseconds, for GuildOS.Perf (#324)
     "GetServerTime",
+    "GetCurrentKeyBoardFocus",
     "ReloadUI",
     "InCombatLockdown",
     "PlaySound",

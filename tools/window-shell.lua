@@ -1362,10 +1362,10 @@ do
     end
   end
   check(bar and bar.h == 28 and same(bar.bg.color, C.panel), "the Guild tab's sub-tab bar is 28px on panel")
-  check(subTabs == 8 and #visibleSubs == 8 and visibleSubs[1] == "Achievements" and visibleSubs[7] == "Chat"
-    and visibleSubs[8] == "Journal" and open and open.label.text == "Calendar"
+  check(subTabs == 9 and #visibleSubs == 9 and visibleSubs[1] == "Achievements" and visibleSubs[5] == "Rules"
+    and visibleSubs[8] == "Chat" and visibleSubs[9] == "Journal" and open and open.label.text == "Calendar"
     and (open.underline.shown or (STYLE == "forever" and open.__styleTab)),
-    "its eight sub-tabs on WoW: Forever (Achievements first, #373; Chat the seventh; Journal last) "
+    "its nine sub-tabs on WoW: Forever (Achievements first, #373; Rules after the Bulletin, #407; Chat the eighth; Journal last) "
       .. "carry a 1px gold rule, shown under the open one")
   check(cal.viewYear == 2026 and cal.viewMonth == 1 and cal.selectedKey == 20260115,
     "showing the raid's month, with its day selected")

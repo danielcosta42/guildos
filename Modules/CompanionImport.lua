@@ -175,6 +175,30 @@ local function siteList(v, max)
     if type(v) ~= "table" or #v > max then error("list") end
     return v
 end
+-- The GOSGILD1's discordWarnings (the site's specs/116): warnings given on Discord, the site's to own.
+-- Cleaned here as the game's own are (Discipline.Clean, with Discord's "d:" ids), the text made inert,
+-- the key made this client's. Nil with no block; never stored.
+function Import:DiscordWarnings()
+    local block = self:GuildBlock()
+    local raw = block and block.discordWarnings
+    local D = GuildOS.Discipline
+    if type(raw) ~= "table" or not D then return nil end
+    local out = {}
+    for i = 1, math.min(#raw, 200) do
+        local r = raw[i]
+        if type(r) == "table" and type(r.id) == "string" and r.id:find("^d:") then
+            local w = D.Clean({ id = "x" .. r.id:sub(3), subject = r.subject, by = type(r.by) == "string" and Import.Inert(r.by) or nil,
+                reason = r.reason, at = r.at, changedAt = r.revokedAt or r.at, level = r.level,
+                note = type(r.note) == "string" and Import.Inert(r.note) or nil, revokedAt = r.revokedAt })
+            if w then
+                w.id, w.subject, w.discord = r.id, GuildOS:LocalMemberKey(w.subject), true
+                out[#out + 1] = w
+            end
+        end
+    end
+    return out
+end
+
 -- Text off the network, for a line of ours: inert, no control character, trimmed, cut to `max` bytes
 -- without splitting a UTF-8 character. nil when nothing is left.
 local function siteText(v, max)
@@ -863,6 +887,40 @@ function Import:SiteJoinRequests()
            and type(r.status) == "string" and at then
             out[#out + 1] = { id = r.id, character = character, class = r.class, level = r.level, role = r.role,
                 note = GF.Text(r.note, 120), source = r.source == "addon" and "addon" or "site", status = r.status, at = at }
+        end
+    end
+    return out
+end
+
+-- The GOSGILD1's allianceBans (#408, the site's guildos-web#616): the bans the OTHER guilds of this
+-- guild's alliance shared, for the officers' alerts. Every field checked, the text made inert, the key
+-- made this client's, at most BanList.ALLIANCE_MAX read; one that fails is passed over alone, and one
+-- filed by this very guild is not another guild's. Never stored: BanList holds the list in memory.
+-- Nil with no block or none in it.
+--   { id, key, name, guild, reason = BanList.SHARE_REASONS, note?, at, appeal? }
+function Import:AllianceBans()
+    local block = self:GuildBlock()
+    local raw = block and block.allianceBans
+    local BL = GuildOS.BanList
+    if type(raw) ~= "table" or not BL then return nil end
+    local mine = (GetGuildInfo("player") or ""):lower()
+    local out = {}
+    for i = 1, math.min(#raw, BL.ALLIANCE_MAX) do
+        local r = raw[i]
+        if type(r) == "table" then
+            local id = type(r.id) == "string" and #r.id <= 64 and r.id:match("^[%w_:%-]+$") and r.id or nil
+            local key = siteKey(r.key)
+            local guild = siteText(r.guild, SITE_LOOT.name)
+            local reason = BL.ShareReason(r.reason)
+            local at = GuildOS.Finite(r.at)
+            if id and key and guild and reason and at and guild:lower() ~= mine then
+                key = GuildOS:LocalMemberKey(key)
+                out[#out + 1] = {
+                    id = id, key = key, name = siteName(r.name) or key:match("^([^-]+)") or key,
+                    guild = guild, reason = reason, note = type(r.note) == "string" and BL.CleanNote(Import.Inert(r.note)) or nil,
+                    at = math.floor(at), appeal = r.appeal == true or nil,
+                }
+            end
         end
     end
     return out

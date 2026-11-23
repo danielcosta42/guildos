@@ -549,6 +549,13 @@ function GuildOS:LocalizeStoredMemberTables()
             db.altLinks = links
         end,
         function() points(db.points) end,
+        -- The disciplinary record (#402): each warning names its member by key.
+        function()
+            local d = type(db.discipline) == "table" and db.discipline.warnings
+            for _, w in pairs(type(d) == "table" and d or {}) do
+                if type(w) == "table" and type(w.subject) == "string" then w.subject = self:LocalMemberKey(w.subject) end
+            end
+        end,
         function()
             for _, core in pairs(type(db.cores) == "table" and db.cores or {}) do
                 if type(core) == "table" then
@@ -996,9 +1003,15 @@ function GuildOS:HookChatInvite()
         if not link then return end
 
         local name = link:match("^player:([^:]+)")
-        if name and name ~= "" and GuildOS.Compat.GuildInvite(name) then
-            GuildOS:Print(L["Guild invite sent to "] .. name .. L[". (Alt+Click)"])
+        if not name or name == "" then return end
+        local function send()
+            if GuildOS.Compat.GuildInvite(name) then
+                GuildOS:Print(L["Guild invite sent to "] .. name .. L[". (Alt+Click)"])
+            end
         end
+        -- The alliance has banned them: the officer reads why first (#408).
+        local BL = GuildOS.BanList
+        if not (BL and BL.HoldInvite and BL:HoldInvite(name, send)) then send() end
     end)
 end
 

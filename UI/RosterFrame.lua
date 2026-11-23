@@ -376,7 +376,12 @@ local function InviteField(parent)
             GuildOS:Print(L["Enter a player name to invite."])
             return
         end
-        if GuildOS.Compat.GuildInvite(target) then GuildOS:Print(string.format(L["Guild invite sent to %s."], target)) end
+        local function send()
+            if GuildOS.Compat.GuildInvite(target) then GuildOS:Print(string.format(L["Guild invite sent to %s."], target)) end
+        end
+        -- The alliance has banned them: the officer reads why first (#408).
+        local BL = GuildOS.BanList
+        if not (BL and BL.HoldInvite and BL:HoldInvite(target, send)) then send() end
         box:SetText("")
     end
     btn:SetScript("OnClick", function() invite(); box:ClearFocus() end)
@@ -3473,7 +3478,13 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end
     UI:AttachSaveButton(welcomeBox, commitWelcome)
     welcomeFlex.reserve = UI.ReserveFor(welcomeBox.saveButton, 6)
-    welcomeSec.layout = function() return 2 * ROW + ROW_H end
+    -- And, the officer's choice, the invitation to read the guild's rules (#407): only while the guild has
+    -- rules and the whole fits the game's 255 bytes; the popup's preview shows the text as it goes.
+    local welcomeRules = UI:CreateCheckbox(wb, L["End it with \"Type /gos rules\" when the guild has rules"], 18)
+    welcomeRules:SetPoint("TOPLEFT", COL, -3 * ROW)
+    welcomeRules.checkbox:SetChecked(GuildOS.db.recruitment.welcomeRules == true)
+    welcomeRules.checkbox.onChanged = function(_, checked) GuildOS.db.recruitment.welcomeRules = checked and true or false end
+    welcomeSec.layout = function() return 3 * ROW + ROW_H end
 
     ----------------------------------------------------------------
     -- Auto-Invite (issue #59): everything /gos autoinvite sets, through the same
@@ -3732,6 +3743,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         msgBox:SetText(s.message or "")
         discordBox:SetText(s.discord or "")
         welcomeBox:SetText(s.welcomeMessage or "")
+        welcomeRules.checkbox:SetChecked(s.welcomeRules == true)
         UpdateRecruitStatus()
         UpdateWelcomeStatus()
         UpdateInviteStatus()

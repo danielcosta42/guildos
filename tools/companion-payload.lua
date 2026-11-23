@@ -355,12 +355,12 @@ GuildOS.JoinRequests = { ForExport = function() error("boom") end }
 GuildOS.RecordError = function() end
 local survived = GuildOS.Companion:BuildPayload()
 GuildOS.RecordError = nil
-assert(survived.joinRequests == nil and survived.members and survived.v == 16, "a failing joinRequests is left out and the rest goes")
+assert(survived.joinRequests == nil and survived.members and survived.v == 17, "a failing joinRequests is left out and the rest goes")
 GuildOS.JoinRequests = nil
 
 -- v14 (issue #251, the site's #392): a linked alt carries `main`, its main's key exactly as altLinks holds it, the
 -- same form as its own `key`. A main and anybody nobody linked carry no `main` key at all: not false, not "".
-assert(anniversary.v == 16, "the payload is v16")
+assert(anniversary.v == 17, "the payload is v17")
 
 -- v16 (issue #313, the site's #495): the guild's officer threshold rides the export with the officers' stamp,
 -- and only once somebody in the guild chose it. Without the stamp the client holds its own default, and
@@ -377,6 +377,54 @@ do
   s.officerMaxRank = 12
   assert(GuildOS.Companion:BuildPayload().officerRanks == nil, "a rank the game has not (0..9) is never sent")
   s.officerMaxRank, s.officerMaxRankAt = max, at
+end
+
+-- v17 (issue #399): each slot's random suffix id and the member's talents, so the site can show the
+-- whole character. Both absent when unknown, never null or zero; what a reader from before gets is
+-- otherwise the same payload.
+do
+  local m = GuildOS.db.members["Chehul-Firemaw"]
+  local savedGear, savedTalents = m.gear, m.talents
+  m.gear = {
+    [1]  = { id = 28275, name = "Beast Lord Helm", quality = 4, ilvl = 115, enchantId = 2999 },
+    [15] = { id = 10148, name = "Mighty Cloak of the Monkey", quality = 2, ilvl = 52, suffix = 590 },
+    [16] = { id = 15216, name = "Rune Sword of Agility", quality = 2, ilvl = 50, suffix = -22 },
+  }
+  local function chehul()
+    for _, line in ipairs(GuildOS.Companion:BuildPayload().members) do
+      if line.key == "Chehul-Firemaw" then return line end
+    end
+  end
+  local before = chehul()
+  assert(before.talents == nil, "no talents read: no talents key")
+  local bySlot = {}
+  for _, g in ipairs(before.gear) do bySlot[g.slot] = g end
+  assert(bySlot[1].suffix == nil, "an item without a random suffix carries no suffix key")
+  assert(bySlot[15].suffix == 590 and bySlot[16].suffix == -22, "each slot's suffix, sign kept")
+  local json = GuildOS.Companion.EncodeJson(before.gear)
+  assert(json:find('"slot":15,"suffix":590}', 1, true) and not json:find('"suffix":0', 1, true)
+    and not json:find("null", 1, true), "the suffix on the wire: " .. json)
+  m.gear[15].suffix, m.gear[16].suffix = 0, 1.5
+  bySlot = {}
+  for _, g in ipairs(chehul().gear) do bySlot[g.slot] = g end
+  assert(bySlot[15].suffix == nil and bySlot[16].suffix == nil, "a zero or a fraction is no suffix")
+
+  m.talents = { { 135489, 3 }, { 135469, 5 } }
+  local t = chehul().talents
+  assert(GuildOS.Companion.EncodeJson(t) == "[[135469,5],[135489,3]]", "talents as [[definitionID, rank]], sorted by id")
+  m.talents = { { 135489, 3 }, { 135469, 0 } }
+  assert(chehul().talents == nil, "a tree with a pair that is not whole and positive goes as nothing, never half")
+  m.talents = { { 135489, "x" } }
+  assert(chehul().talents == nil, "a rank that is not a number: nothing")
+  m.talents = "30303213002"
+  assert(chehul().talents == nil, "talents that are not a list: nothing")
+  m.talents = {}
+  assert(chehul().talents == nil, "an empty list: absent, not []")
+  local many = {}
+  for i = 1, 201 do many[i] = { i, 1 } end
+  m.talents = many
+  assert(chehul().talents == nil, "more pairs than any tree has: nothing")
+  m.gear, m.talents = savedGear, savedTalents
 end
 do
   local function lines()
@@ -470,7 +518,7 @@ do
   assert(#files == 1 and files[1] == GuildOSDB.__companion, "switch off: one string, in __companion: " .. #files)
   assert(files[1] == files[1]:match("^GOSCOMP1:[a-zA-Z0-9()]+$"), "the app's regex lifts the whole string")
   local pack, json = opened(files[1])
-  assert(pack.self == true and pack.fmt == "GOSCOMP1" and pack.v == 16 and pack.count == 1, "it says it is the pack")
+  assert(pack.self == true and pack.fmt == "GOSCOMP1" and pack.v == 17 and pack.count == 1, "it says it is the pack")
   assert(pack.guildKey == "Raid Guild-Firemaw" and pack.guildName == "Raid Guild" and pack.realm == "Firemaw"
     and pack.game == "ANNIVERSARY", "it names the guild and the game, as the site's upload picks by them")
   assert(pack.exportedBy == PLAYER and pack.exportedAt == NOW and pack.addonVersion == GuildOS.VERSION, "and who, when, which addon")
@@ -748,7 +796,7 @@ do
   end
   local payload = GuildOS.Companion:BuildPayload()
   local why = payload.loot[1].why
-  assert(payload.v == 16, "additive: the payload's version does not move")
+  assert(payload.v == 17, "additive: the payload's version does not move")
   assert(GuildOS.Companion.EncodeJson(why) == '{"candidates":[{"answer":"MS","bid":0,"name":"Chehul","roll":41,'
     .. '"values":{"account:plus1":0,"attendance":96,"softres":1}},{"answer":"MS","bid":0,"name":"Rias","roll":12},'
     .. '{"answer":"OS","asked":"MS","bid":0,"name":"Kawa","roll":7}],'
@@ -803,7 +851,7 @@ do
   assert(json == '{"at":1754400000,"cores":[{"fromDiscord":2,"guests":["Pugzão","Yan"],"importedAt":1754390000,"members":3,'
     .. '"name":"Núcleo Alfa","size":20,"tag":"nucleo-alfa"},{"fromDiscord":0,"guests":[],"importedAt":0,"members":1,'
     .. '"name":"So no jogo","size":10,"tag":""}],"linkedAt":1754390000}', "the receipt's documented shape: " .. json)
-  assert(payload.v == 16, "additive: the payload's version does not move")
+  assert(payload.v == 17, "additive: the payload's version does not move")
   -- A reader from before never looks at it: without it the payload is the one it always got.
   local withJson = GuildOS.Companion.EncodeJson(payload)
   payload.coreReceipt = nil

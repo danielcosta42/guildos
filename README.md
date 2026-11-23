@@ -116,6 +116,13 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 - Write private notes and apply quick-tags (Role, Priority, Status) per guild member
 - Notes are synced between officers in real time via addon comms
 
+### Disciplinary Record (Officer Only)
+- Every warning a member received, on their sheet: why, by whom, when, and whether it still counts
+- A warning counts for the guild's term (1 to 365 days, 30 until an officer changes it) and each one moves the
+  member up the guild's ladder; nothing is ever punished on its own
+- Synced between officers only, revoked rather than deleted, and the warnings given on the guild's Discord show
+  up too (`/gos record <name>`, `/gos record term <days>`)
+
 ### Trial Tracker (Officer Only)
 - Track trial/recruit members; the trial length is the guild's (1 to 90 days, 30 until an officer changes it in
   Recruitment → Trials), and a new length applies to running trials too

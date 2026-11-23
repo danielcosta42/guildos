@@ -85,6 +85,9 @@ function CommSystem:Initialize()
                     if GuildOS.Readiness then GuildOS.Readiness:PublishMinIlvl() end  -- Forever (issue #206)
                     if GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") then GuildOS.Founding:Publish() end  -- Forever (issue #208)
                     if GuildOS.TrialTracker then GuildOS.TrialTracker:PublishConfig() end  -- the trials' length and switch (#249)
+                    if GuildOS.Discipline then GuildOS.Discipline:PublishConfig() end  -- the record's term and ladder (#402)
+                    if GuildOS.ModAlerts then GuildOS.ModAlerts:PublishConfig() end  -- the chat alerts' list (#404)
+                    if GuildOS.GuildRules then GuildOS.GuildRules:PublishConfig() end  -- the guild's rules (#407)
                 end)
             end
         end
@@ -578,6 +581,9 @@ function CommSystem:_Answer()
                 if GuildOS.Readiness then GuildOS.Readiness:PublishMinIlvl() end  -- Forever (issue #206)
                 if GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") then GuildOS.Founding:Publish() end  -- Forever (issue #208)
                 if GuildOS.TrialTracker then GuildOS.TrialTracker:PublishConfig() end  -- the trials' length and switch (#249)
+                if GuildOS.Discipline then GuildOS.Discipline:PublishConfig() end  -- the record's term and ladder (#402)
+                if GuildOS.ModAlerts then GuildOS.ModAlerts:PublishConfig() end  -- the chat alerts' list (#404)
+                if GuildOS.GuildRules then GuildOS.GuildRules:PublishConfig() end  -- the guild's rules (#407)
             end)
         end
 
@@ -640,6 +646,12 @@ function CommSystem:_Answer()
         if GuildOS:IsOfficer() and GuildOS.BanList then
             C_Timer.After(5, function()
                 GuildOS.BanList:Backfill()
+            end)
+        end
+
+        if GuildOS:IsOfficer() and GuildOS.Discipline then
+            C_Timer.After(5.25, function()
+                GuildOS.Discipline:Backfill()
             end)
         end
 
