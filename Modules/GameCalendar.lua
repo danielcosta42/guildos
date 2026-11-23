@@ -369,18 +369,22 @@ if GuildOS.Compat and GuildOS.Compat.OnCalendarUpdate then GuildOS.Compat.OnCale
 ----------------------------------------------------------------------
 local BIRTHDAY_MARK = MARK .. "birthday"
 
---- The game event a birthday becomes: an announcement at noon on the realm's calendar that day.
+--- The game event a birthday becomes: an announcement at Birthdays.GAME_HOUR (noon) on the realm's
+--- calendar that day.
 function GameCalendar.BirthdaySpec(b)
     local title = firstLetters(string.format(L["Birthday: %s"], tostring(b.name or "")), GameCalendar.TITLE_MAX)
     local room = GameCalendar.DESC_MAX - letters(BIRTHDAY_MARK) - 1
     local text = firstLetters(L["A birthday shared in Guild OS."], math.max(room, 0))
-    local clock = { year = b.year, month = b.month, day = b.day, hour = 12, minute = 0 }
+    local hour = GuildOS.Birthdays and GuildOS.Birthdays.GAME_HOUR or 12
+    local clock = { year = b.year, month = b.month, day = b.day, hour = hour, minute = 0 }
     return { title = title, description = text .. "\n" .. BIRTHDAY_MARK, clock = clock,
              startsAt = GuildOS.Compat.EpochOfRealm(clock) }
 end
 
+local function birthdayId(spec) return spec.title .. "@" .. tostring(spec.startsAt) end
+
 --- The birthdays of the rest of this month not in the game's calendar yet, as specs; nil while the game
---- has not read its calendar.
+--- has not read its calendar. One the game refused this session is left out: it never holds the rest up.
 function GameCalendar:MissingBirthdays(now)
     local B = GuildOS.Birthdays
     if not B then return {} end
@@ -391,7 +395,7 @@ function GameCalendar:MissingBirthdays(now)
     if not list then return nil end
     local out = {}
     for _, s in ipairs(specs) do
-        if not has(list, s.title, s.startsAt) then out[#out + 1] = s end
+        if not has(list, s.title, s.startsAt) and not (self._refused or {})[birthdayId(s)] then out[#out + 1] = s end
     end
     return out
 end
@@ -405,9 +409,15 @@ function GameCalendar:PutNextBirthday()
     if not missing then return GuildOS:Print(L["The game's calendar is still loading. Try again in a moment."]) end
     local spec = missing[1]
     if not spec then return GuildOS:Print(L["Every birthday left this month is in the game's calendar."]) end
-    local ok, err = GuildOS.Compat.CalendarCreateGuildAnnouncement(spec)
-    if not ok then return GuildOS:Print(err) end
     local left = #missing - 1
+    local function refused(msg)
+        self._refused = self._refused or {}
+        self._refused[birthdayId(spec)] = true
+        if msg then GuildOS:Print(msg) end
+        if left > 0 then GuildOS:Print(string.format(L["%s was left out. Click again for the next (%d left)."], spec.title, left)) end
+    end
+    local ok, err = GuildOS.Compat.CalendarCreateGuildAnnouncement(spec)
+    if not ok then return refused(err) end
     self:_Await("birthdays", function()
         local now = GuildOS.Compat.CalendarGuildEvents(spec.startsAt - AROUND, spec.startsAt + AROUND)
         return now ~= nil and has(now, spec.title, spec.startsAt)
@@ -415,8 +425,8 @@ function GameCalendar:PutNextBirthday()
         if done then
             GuildOS:Print(left > 0 and string.format(L["%s is in the game's calendar. Click again for the next (%d left)."], spec.title, left)
                 or string.format(L["%s is in the game's calendar. That was the last one this month."], spec.title))
-        elseif msg then
-            GuildOS:Print(msg)
+        else
+            refused(msg)
         end
         redraw()
     end)

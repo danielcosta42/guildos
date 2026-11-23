@@ -3669,6 +3669,7 @@ L["Note (kept only on your client, never sent)"] = "备注（只保存在你的�
 -- Birthdays and join anniversaries (issue #428)
 L["%s is in the game's calendar. Click again for the next (%d left)."] = "%s 已在游戏日历中。再次点击添加下一个（还剩 %d 个）。"
 L["%s is in the game's calendar. That was the last one this month."] = "%s 已在游戏日历中。这是本月最后一个。"
+L["%s was left out. Click again for the next (%d left)."] = "%s 已跳过。再次点击添加下一个（剩余 %d 个）。"
 L["%s joined the guild %d year(s) ago today."] = "%s 今天加入公会已满 %d 年。"
 L["%s's birthday is now %s."] = "%s 的生日现在是 %s。"
 L["%s's birthday was removed."] = "已删除 %s 的生日。"

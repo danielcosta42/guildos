@@ -17,13 +17,17 @@
 -- unticked "Show my birthday", or an officer removed it). Synced over the member domain "birthday"
 -- (GUILD channel only), newest `at` (server time) wins, a tie to the tombstone. A member writes only
 -- for their own characters (their own key or their alt group); an officer for anybody. Each client
--- re-sends its own entry at login, officers re-send all of them on a sync request (Backfill), and an
+-- re-sends its own entry at login, officers re-send all of them on a sync request (Backfill: at most
+-- one every BACKFILL_GAP, and one every BACKFILL_IDLE when nothing changed since the last), and an
 -- officer who hears an older entry than the one it holds answers with its own, once a session.
 --
 -- On the day, by the realm's calendar (GetServerTime + Compat.RealmClock): a digest line at the first
 -- login of the day, and, if an officer turned it on (off by default), one line in /g a day for each
--- person, however many officers are online: a claim, a short wait, the lower name wins a tie, and
--- "said" is remembered by every client and answered to a late officer's claim.
+-- person and kind, however many officers are online: a claim, a short wait, the lower name wins a tie.
+-- Only an officer's claim or "said" counts. "Said" is remembered, answered to a late officer's claim by
+-- every officer who knows it, and sent with an officer's backfill (the late officer's own login sync
+-- request). The limit left: an officer who logs in when no officer who heard the "said" is online says
+-- it again (a member's word is not taken: anybody could silence the line with it).
 ----------------------------------------------------------------------
 local Birthdays = {}
 GuildOS.Birthdays = Birthdays
@@ -36,6 +40,10 @@ Birthdays.BATCH = 40          -- entries per envelope in a backfill, as AltSync'
 Birthdays.BATCH_GAP = 2       -- seconds between two of its envelopes (#324)
 Birthdays.CLAIM_WAIT = 5      -- seconds a claim to announce waits for another officer's
 Birthdays.CLAIM_JITTER = 3    -- and up to this much more, so two officers rarely claim at once
+Birthdays.BACKFILL_GAP = 600  -- seconds between two backfills of this client
+Birthdays.BACKFILL_IDLE = 3600 -- and between two with nothing changed in between
+Birthdays.GAME_HOUR = 12      -- the hour of the day a birthday goes in the game's calendar
+Birthdays.GAME_MARGIN = 10    -- minutes before it: today's is too late after that
 local PUBLISH_DELAY = 20      -- seconds after login: the guild channel is up by then
 local ANNOUNCE_DELAY = 90     -- after login: the roster and the other officers' "said" are in
 local ANNOUNCE_EVERY = 3600   -- an hourly look catches the day turning over
@@ -131,6 +139,10 @@ local function store()
     GuildOS.db.birthdays = GuildOS.db.birthdays or {}
     return GuildOS.db.birthdays
 end
+
+-- A count bumped on every change to the store: a backfill with nothing new waits longer.
+local revision = 0
+local function bump() revision = revision + 1 end
 
 local function session()
     GuildOS.State.birthdays = GuildOS.State.birthdays or { pending = {}, answered = {} }
@@ -232,6 +244,7 @@ function Birthdays:_Write(writes)
         s[w.key] = w.e
         list[#list + 1] = wire(w.key, w.e)
     end
+    bump()
     self:Forget()
     if #list > 0 and GuildOS.SyncService then GuildOS.SyncService:Publish(self.DOMAIN, "set", { list = list }) end
     redraw()
@@ -331,13 +344,19 @@ end
 ----------------------------------------------------------------------
 -- Receiving and the cold sync
 ----------------------------------------------------------------------
--- The roster's keys, or nil while it is not the whole guild (GuildOS:WholeRoster).
+-- The roster's keys, or nil while it is not the whole guild (GuildOS:WholeRoster). Worked out once per
+-- roster update (RosterChanged), not per envelope: a backfill is many envelopes, each read by everybody.
+local presentCache
+function Birthdays:RosterChanged() presentCache = nil end
+
 local function presentKeys()
+    if presentCache then return presentCache end
     local roster = GuildOS:WholeRoster()
     if not roster then return nil end
-    local present = { [myKey()] = true }
-    for _, full in ipairs(roster) do present[GuildOS:KeyOfRosterName(full)] = true end
-    return present
+    local keys = { [myKey()] = true }
+    for _, full in ipairs(roster) do keys[GuildOS:KeyOfRosterName(full)] = true end
+    presentCache = keys
+    return keys
 end
 
 function Birthdays:OnSync(env, sender)
@@ -345,7 +364,7 @@ function Birthdays:OnSync(env, sender)
     if not d or type(sender) ~= "string" or sender == "" or not onGuild() then return end
     if env.act == "set" then return self:_Apply(d.list, sender) end
     if env.act == "claim" then return self:_OnClaim(d, sender) end
-    if env.act == "said" then return self:_OnSaid(d) end
+    if env.act == "said" then return self:_OnSaid(d, sender) end
 end
 
 -- Entries from `sender`: a member's for their own characters only, an officer's for anybody, and
@@ -369,7 +388,7 @@ function Birthdays:_Apply(list, sender)
             end
         end
     end
-    if changed then self:Forget(); redraw() end
+    if changed then bump(); self:Forget(); redraw() end
     if #answer > 0 and GuildOS.SyncService then GuildOS.SyncService:Publish(self.DOMAIN, "set", { list = answer }, { priority = "BULK" }) end
 end
 
@@ -382,9 +401,14 @@ function Birthdays:PublishSelf()
 end
 
 --- Every entry, tombstones included, BATCH an envelope BATCH_GAP seconds apart: an officer's answer to a
---- sync request and /gos sync. One backfill at a time.
+--- sync request and /gos sync. One backfill at a time, at most one every BACKFILL_GAP seconds, and one
+--- every BACKFILL_IDLE when the store has not changed since the last. Today's "said" go with it.
 function Birthdays:Backfill()
     if not GuildOS:IsOfficer() or not GuildOS.SyncService or not onGuild() or self._backfilling then return end
+    local t, last = GetTime(), self._backfill
+    if last and t - last.at < (last.rev == revision and self.BACKFILL_IDLE or self.BACKFILL_GAP) then return end
+    self._backfill = { at = t, rev = revision }
+    self:_SendSaid()
     local keys = {}
     for k in pairs(store()) do keys[#keys + 1] = k end
     if #keys == 0 then return end
@@ -409,7 +433,7 @@ function Birthdays:Departed(present)
     local s = GuildOS.db and GuildOS.db.birthdays
     if not s then return end
     for key in pairs(s) do
-        if not present[key] then s[key] = nil end
+        if not present[key] then s[key] = nil; bump() end
     end
     self:Forget()
 end
@@ -573,12 +597,15 @@ function Birthdays:VirtualEvents(fromT, toT)
     return out
 end
 
---- This realm month's birthdays from today on, for the game's calendar (WoW: Forever): { name, day, month, year }.
+--- This realm month's birthdays still ahead, for the game's calendar (WoW: Forever): { name, day, month, year }.
+--- Today's only before GAME_HOUR (less GAME_MARGIN minutes): the game refuses an event in the past.
 function Birthdays:RestOfMonth(now)
     local c = Compat.RealmClock(now or GetServerTime())
+    local from = c.day
+    if c.hour * 60 + c.minute >= self.GAME_HOUR * 60 - self.GAME_MARGIN then from = c.day + 1 end
     local out = {}
     for _, b in ipairs(self:People().birthdays) do
-        for day = c.day, 31 do
+        for day = from, 31 do
             if Birthdays.OnDay(b.d, b.m, c.year, c.month, day) then
                 out[#out + 1] = { name = b.name, day = day, month = c.month, year = c.year }
                 break
@@ -597,6 +624,11 @@ function Birthdays:SetAnnounce(on) GuildOS:SetSetting("birthdayAnnounce", on and
 
 local function said() GuildOS.db.birthdaySaid = GuildOS.db.birthdaySaid or {}; return GuildOS.db.birthdaySaid end
 
+-- A line's slot, its id in claims, "said" and the pending list: a birthday and a join anniversary of
+-- the same person on the same day are two lines. On the wire: the member key and `kind` "b" or "j".
+local WIRE_KIND = { birthday = "b", join = "j" }
+local function slotOf(kind, key) return kind .. ":" .. key end
+
 --- Claims today's lines this officer may say; each is said CLAIM_WAIT (+ jitter) seconds later unless
 --- another officer said it, or claimed it with a lower name, meanwhile.
 function Birthdays:CheckAnnounce(now)
@@ -606,52 +638,77 @@ function Birthdays:CheckAnnounce(now)
     for id, day in pairs(s) do
         if day ~= stamp then s[id] = nil end
     end
-    local done = {}
     for _, item in ipairs(today) do
-        if not done[item.id] and s[item.id] ~= stamp and not pending[item.id] then
-            done[item.id] = true
-            local claim = { day = stamp, line = lineOf(item) }
-            pending[item.id] = claim
-            GuildOS.SyncService:Publish(self.DOMAIN, "claim", { id = item.id, day = stamp })
-            Compat.After(self.CLAIM_WAIT + math.random() * self.CLAIM_JITTER, function() self:_Say(item.id, claim) end)
+        local kind = WIRE_KIND[item.kind]
+        local slot = slotOf(kind, item.id)
+        if s[slot] ~= stamp and not pending[slot] then
+            local claim = { day = stamp, line = lineOf(item), id = item.id, kind = kind }
+            pending[slot] = claim
+            GuildOS.SyncService:Publish(self.DOMAIN, "claim", { id = item.id, kind = kind, day = stamp })
+            Compat.After(self.CLAIM_WAIT + math.random() * self.CLAIM_JITTER, function() self:_Say(slot, claim) end)
         end
     end
 end
 
-function Birthdays:_Say(id, claim)
+function Birthdays:_Say(slot, claim)
     local pending = session().pending
-    if pending[id] ~= claim then return end
-    pending[id] = nil
-    if claim.cancelled or said()[id] == claim.day then return end
+    if pending[slot] ~= claim then return end
+    pending[slot] = nil
+    if claim.cancelled or said()[slot] == claim.day then return end
     if not Compat.SendChatMessage(claim.line, "GUILD") then return end
-    said()[id] = claim.day
-    GuildOS.SyncService:Publish(self.DOMAIN, "said", { id = id, day = claim.day })
+    said()[slot] = claim.day
+    GuildOS.SyncService:Publish(self.DOMAIN, "said", { id = claim.id, kind = claim.kind, day = claim.day })
 end
 
-local function wireId(d)
-    if type(d.id) ~= "string" or #d.id > KEY_MAX or not isInt(d.day) then return nil end
-    return GuildOS:LocalMemberKey(d.id)
+-- A line off the network: its slot, key and wire kind, or nil. No kind is a birthday.
+local function wireSlot(it, day)
+    if type(it) ~= "table" or type(it.id) ~= "string" or #it.id > KEY_MAX or not isInt(day) then return nil end
+    local kind = it.kind == nil and "b" or it.kind
+    if kind ~= "b" and kind ~= "j" then return nil end
+    local key = GuildOS:LocalMemberKey(it.id)
+    if not key then return nil end
+    return slotOf(kind, key), key, kind
 end
 
 -- Another officer's claim: answered "said" by an officer who knows it was; my own claim for the same
 -- line gives way to a lower name.
 function Birthdays:_OnClaim(d, sender)
-    local id = wireId(d)
-    if not id or not GuildOS:IsOfficerByName(sender) then return end
-    if said()[id] == d.day then
-        if GuildOS:IsOfficer() then GuildOS.SyncService:Publish(self.DOMAIN, "said", { id = id, day = d.day }) end
+    local slot, key, kind = wireSlot(d, d.day)
+    if not slot or not GuildOS:IsOfficerByName(sender) then return end
+    if said()[slot] == d.day then
+        if GuildOS:IsOfficer() then GuildOS.SyncService:Publish(self.DOMAIN, "said", { id = key, kind = kind, day = d.day }) end
         return
     end
-    local mine = session().pending[id]
+    local mine = session().pending[slot]
     if mine and mine.day == d.day and senderKey(sender) < myKey() then mine.cancelled = true end
 end
 
-function Birthdays:_OnSaid(d)
-    local id = wireId(d)
-    if not id then return end
-    said()[id] = d.day
-    local mine = session().pending[id]
-    if mine and mine.day == d.day then mine.cancelled = true end
+-- An officer's "said": one line ({ id, kind, day }), or today's from a backfill ({ day, list }). A
+-- member's is dropped: it would silence the line for everybody.
+function Birthdays:_OnSaid(d, sender)
+    if not GuildOS:IsOfficerByName(sender) then return end
+    local list = type(d.list) == "table" and d.list or { d }
+    local s, pending = said(), session().pending
+    for i = 1, math.min(#list, MAX_ITEMS) do
+        local slot = wireSlot(list[i], d.day)
+        if slot then
+            s[slot] = d.day
+            local mine = pending[slot]
+            if mine and mine.day == d.day then mine.cancelled = true end
+        end
+    end
+end
+
+-- Today's "said", one envelope with the backfill: an officer who logs in later knows before it claims.
+function Birthdays:_SendSaid()
+    local stamp = stampOf(Compat.RealmClock(GetServerTime()))
+    local list = {}
+    for slot, day in pairs(GuildOS.db.birthdaySaid or {}) do
+        local kind, key
+        if type(slot) == "string" then kind, key = slot:match("^([bj]):(.+)$") end
+        if day == stamp and kind and #list < MAX_ITEMS then list[#list + 1] = { id = key, kind = kind } end
+    end
+    if #list > 0 then GuildOS.SyncService:Publish(self.DOMAIN, "said", { day = stamp, list = list }, { priority = "BULK" }) end
 end
 
 ----------------------------------------------------------------------
@@ -659,6 +716,9 @@ end
 ----------------------------------------------------------------------
 function Birthdays:Initialize()
     store()
+    local f = CreateFrame("Frame")
+    Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
+    f:SetScript("OnEvent", function() Birthdays:RosterChanged() end)
     if GuildOS.SyncService then
         GuildOS.SyncService:On(self.DOMAIN, function(env, sender) Birthdays:OnSync(env, sender) end)
     end
