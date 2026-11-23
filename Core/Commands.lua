@@ -101,6 +101,11 @@ local function printHelp()
                 L["Promote or demote a member's alts to their main's rank, or to a rank, one per click"])
         end
         helpLine("/gos altlimit <number>",     L["List the alt groups with more alts than that"])
+        if GuildOS.NoteDates then
+            helpLine("/gos joindate [<name> | all | import]", L["Write a member's join date into their note, or read the dates already in the notes"])
+            helpLine("/gos safe [<name>]",     L["The safe list: never in a bulk removal or demotion"])
+            helpLine("/gos nick <name> [nickname]", L["The officers' nickname for a member"])
+        end
         helpLine("/gos record <name>",         L["A member's disciplinary record"])
         helpLine("/gos warn <name> [reason]",  L["Warn a member, with one click"])
         helpLine("/gos record term <days>",    L["How long a warning counts"])
@@ -804,6 +809,15 @@ local function handleCommand(msg)
         else
             GuildOS:Print(L["Not available on this client."])
         end
+    elseif msg == "joindate" or msg:match("^joindate%s") then
+        -- /gos joindate [<name> | all | import] (#429): Leadership > Notes and marks.
+        if GuildOS.NoteDates then GuildOS.NoteDates:Command((msg:gsub("^joindate%s*", ""))) end
+    elseif msg == "safe" or msg:match("^safe%s") then
+        -- /gos safe [<name>] (#429): the safe list the bulk actions never remove or demote.
+        if GuildOS.MemberMarks then GuildOS.MemberMarks:CommandSafe((msg:gsub("^safe%s*", ""))) end
+    elseif msg == "nick" or msg:match("^nick%s") then
+        -- /gos nick <name> [nickname] (#429): the officers' nickname, on the tooltip and in chat.
+        if GuildOS.MemberMarks then GuildOS.MemberMarks:CommandNick((msg:gsub("^nick%s*", ""))) end
     elseif msg == "altlimit" or msg:match("^altlimit%s") then
         -- /gos altlimit N (#424): the groups with more than N alts, in chat.
         if GuildOS.AltSync then GuildOS.AltSync:CommandLimit((msg:gsub("^altlimit%s*", ""))) end

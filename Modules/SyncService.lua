@@ -49,6 +49,7 @@ SyncService.OFFICER_DOMAINS = {
     allylink  = true,  -- the alliance code an officer saved (issue #348); ask/have are member relays
     gbankneed = true,  -- how much of each item the guild bank should hold (issue #380)
     gbankclean = true, -- what officers marked to take out of the guild bank and sell (issue #380)
+    marks     = true,  -- the officers' safe list and nicknames (issue #429)
 }
 
 -- Domains outside OFFICER_DOMAINS whose handlers trust IsOfficerByName(sender) themselves.

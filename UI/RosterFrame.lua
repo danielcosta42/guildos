@@ -2074,6 +2074,8 @@ function ShowRowTooltip(row)
     GameTooltip:AddLine(data.name, cr, cg, cb)
     GameTooltip:AddLine(string.format(L["Level %d %s %s"], data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
     GameTooltip:AddLine(data.rank, C.text.r, C.text.g, C.text.b)
+    -- The officers' nickname and the safe list (issue #429).
+    if GuildOS.MemberMarks then GuildOS.MemberMarks:TooltipLines(GameTooltip, data.key, data.note, data.officerNote) end
 
     -- What this member earned for the guild (issue #216).
     for _, title in ipairs(GuildOS.Achievements and GuildOS.Achievements:Of(data.key) or {}) do

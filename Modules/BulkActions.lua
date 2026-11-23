@@ -89,11 +89,12 @@ function BulkActions.HasRule(rules)
 end
 
 --- Whether this rank may do `action` to member `m` at all, whatever the rules: never oneself, never someone at or
---- above one's own rank, a promotion never up to one's own rank, a demotion never below the lowest one.
---- ctx: { myRank, lowestRank, meKey }.
+--- above one's own rank, a promotion never up to one's own rank, a demotion never below the lowest one, and a member
+--- on the safe list (`m.safe`, issue #429) never removed or demoted. ctx: { myRank, lowestRank, meKey }.
 function BulkActions.Eligible(m, action, ctx)
     local r = m and m.rankIndex
     if not r or not ctx or not ctx.myRank or m.key == ctx.meKey then return false end
+    if m.safe and action ~= "promote" then return false end
     if r <= ctx.myRank then return false end
     if action == "promote" then return r - 1 > ctx.myRank end
     if action == "demote" then return ctx.lowestRank ~= nil and r < ctx.lowestRank end
@@ -183,7 +184,7 @@ end
 
 -- Roster line `i` as Match reads it, or nil. Attendance only when `att`.
 local function memberAt(i, att)
-    local name, rankName, rankIndex, level, _, _, _, _, online, _, classFile = GetGuildRosterInfo(i)
+    local name, rankName, rankIndex, level, _, _, note, onote, online, _, classFile = GetGuildRosterInfo(i)
     if not name then return nil end
     local GM = GuildOS.GuildManager
     local members = GuildOS.db and GuildOS.db.members or {}
@@ -197,6 +198,7 @@ local function memberAt(i, att)
         daysOffline = off and math.floor(off) or nil,
         hasAddon = (d and (d.lastUpdate or 0) > 0) and true or false,
         attendance = att and attendanceOf(key) or nil,
+        safe = (GuildOS.MemberMarks and GuildOS.MemberMarks:IsSafe(key, note, onote)) or nil,   -- issue #429
     }
 end
 

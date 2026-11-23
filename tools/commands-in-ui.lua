@@ -100,6 +100,11 @@ local IN_UI = {
                   { "UI/BulkPanel.lua", "BA:Stop()" }, { "UI/BulkPanel.lua", "GuildOS.BulkActions:Arm(down)" } },
   -- A member's alts to the main's rank (issue #424): the buttons on the member's sheet.
   altgroup    = { { "UI/MemberDetail.lua", "GuildOS.BulkActions:StartGroupAndSay(playerKey" } },
+  -- Leadership > Notes and marks (issue #429): its buttons call what the commands call.
+  joindate    = { { "UI/ManagementPanel.lua", "GuildOS:BuildMarksSub(p)" }, { "UI/MarksPanel.lua", "ND:WriteOne(" },
+                  { "UI/MarksPanel.lua", "ND:ImportPlan()" }, { "UI/MarksPanel.lua", "ND:Plan()" } },
+  safe        = { { "UI/MarksPanel.lua", "MM:CommandSafe(" } },
+  nick        = { { "UI/MarksPanel.lua", "MM:CommandNick(" } },
   mentions    = { { "UI/SettingsPanel.lua", "GuildOS.Mentions:PrintLog()" },
                   { "UI/SettingsPanel.lua", 'GuildOS.Mentions:HandleCommand({ "clearwords" })' } },
   notecmd     = { { "UI/SettingsPanel.lua", "GuildOS.db.noteCommand.enabled = checked" } },

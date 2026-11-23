@@ -113,9 +113,10 @@ function MemberHistory.ApplyJoin(h, key, t, est)
     local s = r.stints
     local last = s[#s]
     if last and last.leftAt == nil then
-        -- Already a member: an exact time earlier than a seen one is the better one.
-        if not est and (last.joinAt == nil or (last.joinEst and t <= last.joinAt)) then
-            last.joinAt, last.joinEst = t, nil
+        -- Already a member: an exact time earlier than a seen one is the better one, and any exact time
+        -- beats a day read from a note (#429).
+        if not est and (last.joinAt == nil or (last.joinEst and (t <= last.joinAt or last.joinSrc == "note"))) then
+            last.joinAt, last.joinEst, last.joinSrc = t, nil, nil
             return "refined"
         end
         return nil
@@ -212,6 +213,24 @@ function MemberHistory.ApplyRank(h, key, t, from, to, by, est)
     table.insert(list, at, { at = t, from = from, to = to, by = by })
     trim(list, MemberHistory.MAX_RANKS)
     return true
+end
+
+-- A join day read from the member's note (#429), at `t`: it fills the open passage's start when there is none, or
+-- replaces one GuildOS only saw that is later, never before the passage before it ended. It stays "seen" (est), so
+-- the game's own line replaces it. True when the history changed.
+function MemberHistory.ApplyNoteJoin(h, key, t)
+    if type(key) ~= "string" or key == "" or type(t) ~= "number" then return false end
+    local r = recOf(h, key, false)
+    local s = r and r.stints
+    local last = s and s[#s]
+    if not last or last.leftAt ~= nil then return false end
+    local prev = s[#s - 1]
+    if prev and prev.leftAt and t < prev.leftAt then return false end
+    if last.joinAt == nil or (last.joinEst and t < last.joinAt) then
+        last.joinAt, last.joinEst, last.joinSrc = t, true, "note"
+        return true
+    end
+    return false
 end
 
 -- A present member's open passage, made when none is: the first look at the guild, from what GuildOS
@@ -347,6 +366,13 @@ function MemberHistory:TenureDays(key, now, dateFn)
     return any and total or nil, #s
 end
 
+-- Whether the member's current passage starts on a day read from their note (#429).
+function MemberHistory:JoinedFromNote(key)
+    local s = self:Stints(key)
+    local last = s[#s]
+    return last ~= nil and last.leftAt == nil and last.joinSrc == "note"
+end
+
 -- The member's last passage when it is closed (they left), else nil.
 function MemberHistory:LastLeft(key)
     local s = self:Stints(key)
@@ -376,6 +402,7 @@ end
 function MemberHistory:StintLine(st, now, dateFn)
     local from
     if not st.joinAt then from = L["before GuildOS saw them"]
+    elseif st.joinSrc == "note" then from = string.format(L["%s (from a note)"], day(st.joinAt))
     elseif st.joinEst then from = string.format(L["%s (seen by GuildOS)"], day(st.joinAt))
     else from = day(st.joinAt) end
     local days = st.joinAt and MemberHistory.DaysBetween(st.joinAt, st.leftAt or now or GetServerTime(), dateFn)
@@ -439,6 +466,12 @@ end
 ----------------------------------------------------------------------
 local function mayRecord()
     return GuildOS.db and GuildOS.db.memberHistory and GuildOS:IsOfficer() and GuildOS:IsOnGuildDB()
+end
+
+-- An officer's import of a join day from the notes (NoteDates, #429): this client's history only.
+function MemberHistory:ImportJoin(key, t)
+    if not mayRecord() or not self:KeyOf(key) then return false end
+    return MemberHistory.ApplyNoteJoin(GuildOS.db.memberHistory, key, t)
 end
 
 -- An event the Roster Log took (its own line or an officer's, synced): into the history, officers only.
@@ -626,7 +659,7 @@ function MemberHistory:Scan()
         changes, shared = MemberHistory.Diff(base.m, rows, {
             levels = self:GetLevelMode(),
             maxLevel = GuildOS.Client and GuildOS.Client.maxLevel,
-            inactiveDays = GuildOS.GuildManager and GuildOS.GuildManager.DEFAULT_INACTIVE_DAYS or 30,
+            inactiveDays = self:BackDays() > 0 and self:BackDays() or self.DefaultBackDays(),
         })
     end
     if not (changes and shared) then
@@ -639,7 +672,7 @@ function MemberHistory:Scan()
     local first = not st.diffed
     st.diffed = true
     local sinceLogin = first and L["since your last login"] or nil
-    local joined, gone, ranked, added = {}, {}, {}, false
+    local joined, gone, ranked, back, added = {}, {}, {}, {}, false
     for _, c in ipairs(changes) do
         local k = c.key
         if c.kind == "join" then
@@ -675,6 +708,7 @@ function MemberHistory:Scan()
             logLocal("onote", k, GuildOS:SanitizeUserText(c.to, 31))
         elseif c.kind == "back" then
             logLocal("back", k, string.format(L["after %d days offline"], c.days))
+            back[#back + 1] = string.format("%s (%d)", short(k), c.days)
         end
     end
     snapshot(rows, base.m)
@@ -688,6 +722,32 @@ function MemberHistory:Scan()
         if #ranked > 0 then parts[#parts + 1] = string.format(L["%d changed rank (%s)"], #ranked, names(ranked)) end
         GuildOS:Print(L["Since your last login:"] .. " " .. table.concat(parts, "; "))
     end
+    -- Back after a long time offline (#429): one line a look, a member in it once a return (the snapshot holds
+    -- them online from now on, so the next look does not see the return again).
+    if #back > 0 and self:BackDays() > 0 then
+        self:Say(string.format(L["Back after a long time offline (days): %s"], names(back)))
+    end
+end
+
+-- The days offline a member must have been away for their return to be told to the officer; the log's "Back" uses it
+-- too. 0 turns the line off (the log keeps the default).
+MemberHistory.BACK_MAX = 365
+function MemberHistory.DefaultBackDays()
+    return GuildOS.GuildManager and GuildOS.GuildManager.DEFAULT_INACTIVE_DAYS or 30
+end
+
+function MemberHistory:BackDays()
+    local n = tonumber(GuildOS:GetSetting("backAfterDays"))
+    if n == nil then return self.DefaultBackDays() end
+    return n
+end
+
+-- Officers only; 0 (off) to BACK_MAX. Whether it changed.
+function MemberHistory:SetBackDays(n)
+    n = GuildOS.Finite(n)
+    if not GuildOS:IsOfficer() or not n or n < 0 or n > self.BACK_MAX then return false end
+    GuildOS:SetSetting("backAfterDays", math.floor(n))
+    return true
 end
 
 -- The Roster Log's level filter: "milestones" (default), "all" or "off". Officers only.
