@@ -48,6 +48,14 @@ so a read is lined up by position, a line matching only a read of the same event
    and only the unpaired are new (two equal deposits stay two). These go in at their time, so the
    stream's end stays its newest lines and the next read lines up again.
 
+The game gives a line's name as nil until the client knows the member (the ledger shows "?"). A
+line without a name agrees with one that has a name and agrees in all else, and takes its name: one
+deposit read before its name came and again after is one line, whichever read comes first. With
+nothing lined up, lines with the same name pair first, so a nameless line never takes the twin a
+named one needs: equal deposits by two members, or two by one member, stay apart. Ledgers saved
+before this held such a pair for each money line read early (#414): on load, each nameless line goes
+with the nearest named twin of its stream within 3 h not taken by another; one with no twin stays.
+
 The client caches each tab's log, and the addon reads the logs on every log update: a cached log's
 "hours ago" are as old as when it arrived, so dating it from now shifts it. A log that says the same
 as the last one read of its stream (kind, item id, count, tabs and hours, not its text, which the
