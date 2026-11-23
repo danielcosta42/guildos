@@ -13,8 +13,11 @@
 -- the spelling that came back is the one used; no line reaches the chat; trash off the network breaks
 -- nothing; CR2 still reaches RecruitBeacon; and Anniversary stays out of it.
 --
--- `pairs` order differs from one run to the next, and so do who ties with whom and the number of checks
--- that make: a rule here holds on every order, and a test must not lean on one.
+-- `pairs` order differs from one run to the next (LuaJIT seeds its string hash per process): a rule
+-- here holds on every order, and a test must not lean on one. What a client does with its dice must
+-- not lean on one either (Gossip:Peers breaks its ties by name), so with the seed fixed a run is the
+-- same run every time, down to the number of checks, and a count held to a bound (the flood below) is
+-- one number, not whatever the table layout made of it this time.
 --
 --   luajit -e 'ADDON="."' tools/gossip.lua
 --
@@ -1013,7 +1016,7 @@ for cycle, n in pairs(told) do
 end
 check(cycles > 0, "the attack did get names in, so it is the seats that held")
 check(peak <= a.Gossip.HEARD_OF_MAX, "the flood never passes the ceiling, peak " .. peak)
-check(toHonest >= 15, "the honest peers keep their rounds, " .. toHonest .. " digests of 30 rounds")
+check(toHonest >= 15, "the honest peers keep their rounds, " .. toHonest .. " digests in " .. a.cycle .. " rounds")
 
 -- ── The ceiling: however many ask ───────────────────────────────────────
 fresh()
