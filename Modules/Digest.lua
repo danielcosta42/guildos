@@ -40,7 +40,9 @@ end
 -- Build the digest lines for everything that changed since `since`
 -- (a server timestamp). Returns an array of strings.
 ----------------------------------------------------------------------
-function Digest:Build(since)
+-- opts.login: the login's digest, where the bulletin tells only the notices not told yet (#418); elsewhere (the
+-- Activity sub-tab, /gos digest) it lists the notices posted since `since`, as it always did.
+function Digest:Build(since, opts)
     since = since or GuildOS.db.digest.lastSeen or 0
     local lines = {}
     local feed, told = fromSite()
@@ -140,11 +142,22 @@ function Digest:Build(since)
         end
     end
 
-    -- The bulletin's active notices this player has not been told about (issue #418), the newest few: each once,
-    -- whenever it was posted, and never one that has ended. ShowOnLogin marks them told.
+    -- Bulletin notices. At login, the active ones this player has not been told about (issue #418), the newest
+    -- few: each once, whenever it was posted, never one that has ended; ShowOnLogin marks them told. Anywhere
+    -- else, the most recent few posted since `since`.
     if GuildOS.Bulletin then
-        for _, m in ipairs(GuildOS.Bulletin:Unseen(GetServerTime(), 3)) do
-            lines[#lines + 1] = GuildOS.Bulletin.Line(m)
+        if opts and opts.login then
+            for _, m in ipairs(GuildOS.Bulletin:Unseen(GetServerTime(), 3)) do
+                lines[#lines + 1] = GuildOS.Bulletin.Line(m)
+            end
+        else
+            local shown = 0
+            for _, m in ipairs(GuildOS.Bulletin:GetMessages()) do
+                if type(m) == "table" and (tonumber(m.ts) or 0) > since and shown < 3 then
+                    lines[#lines + 1] = GuildOS.Bulletin.Line(m)
+                    shown = shown + 1
+                end
+            end
         end
     end
 
@@ -306,7 +319,7 @@ function Digest:ShowOnLogin()
         return
     end
 
-    local lines = self:Build(since)
+    local lines = self:Build(since, { login = true })
     self:MarkFeedSeen(GetServerTime())
     if B then B:MarkSeen(GetServerTime()) end
     if GuildOS.Achievements then GuildOS.Achievements:MarkSeen() end

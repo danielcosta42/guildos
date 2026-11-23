@@ -27,8 +27,12 @@ and was never told at all.
   and marks every running notice told (the older ones are not dripped login after login). With
   the digest off, or on the first login ever, each is a chat line instead. After the login, a
   notice that arrives over sync is a chat line. An officer's own post is never told back.
-- **The update.** The first run with #418 counts as told the notices posted before the digest's
-  last look, so nothing the digest already showed is shown again.
+- **The update.** The first run with #418 counts as told every notice already on the board, whatever
+  the digest's clock says; only what arrives after is new.
+- **Without an id.** A notice from the wire with no `id` is remembered by its author, time and text,
+  so it is told once, not at every snapshot.
+- **Activity.** The Guild › Activity sub-tab (the digest built for the last 7 days) keeps listing
+  every notice posted in them, told or not; only the login's digest keeps to the ones not told.
 - Officer text on the Now tab and in the chat goes through `SanitizeUserText` (no links or
   textures).
 

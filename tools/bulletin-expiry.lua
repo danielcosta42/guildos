@@ -175,12 +175,10 @@ check(#printed == 1, "and only once")
 
 -- ── 5. Digest off, first login: a chat line each ────────────────────────
 fresh({ sync = {}, digest = { enabled = false, lastSeen = NOW }, settings = {}, members = {},
-        bulletin = { messages = {
+        bulletin = { seen = {}, messages = {
           { id = "A", text = "One", author = "Off", ts = now - 30 },
           { id = "B", text = "Two", author = "Off", ts = now - 20, exp = now + DAY },
           { id = "C", text = "Gone", author = "Off", ts = now - 10, exp = now - 1 } } } })
-check(GuildOS.db.bulletin.seen.A == nil and GuildOS.db.bulletin.seen.B == nil,
-  "first run with #418: notices posted after the digest's last look are not told yet")
 D:ShowOnLogin()
 check(#printed == 2 and printedHas("Two") and printedHas("One") and not printedHas("Gone"),
   "with the digest off, each running notice not told yet is a chat line")
@@ -189,17 +187,39 @@ B.loginDone = nil
 D:ShowOnLogin()
 check(#printed == 0, "once")
 
-fresh({ sync = {}, settings = {}, members = {},
-        bulletin = { messages = { { id = "A", text = "Welcome aboard", author = "Off", ts = now - 30 } } } })
+fresh({ sync = {}, settings = {}, members = {}, bulletin = { messages = {}, seen = {} } })
+B:OnSync({ act = "snapshot", rev = 1, data = { messages = {
+  { id = "A", text = "Welcome aboard", author = "Off", ts = now - 30 } } } })
+check(#printed == 0, "a fresh install's board arriving before the login is not told yet")
 D:ShowOnLogin()
 check(#printed == 1 and printedHas("Welcome aboard"), "on the first login ever the board is told in the chat")
 
--- Upgrading: what the digest already showed before #418 is not told again.
-fresh({ sync = {}, digest = { enabled = true, lastSeen = now - 5 }, settings = {}, members = {},
+-- Upgrading: every notice already on the board counts as told, whatever the digest's clock says (it may be off,
+-- or its last look long ago); only what arrives after is new.
+fresh({ sync = {}, digest = { enabled = false, lastSeen = now - 400 * DAY }, settings = {}, members = {},
         bulletin = { messages = { { id = "Old", text = "Shown last time", author = "Off", ts = now - 100 },
-                                  { id = "Newer", text = "Not yet", author = "Off", ts = now - 1 } } } })
-local unseen = B:Unseen(now)
-check(#unseen == 1 and unseen[1].id == "Newer", "on the update, a notice the digest already showed counts as told")
+                                  { id = "Newer", text = "Not yet", author = "Off", ts = now - 1 },
+                                  { text = "No id", author = "Off", ts = now - 2 } } } })
+check(#B:Unseen(now) == 0, "on the update, the notices already on the board count as told")
+D:ShowOnLogin()
+check(#printed == 0, "so the first login after it tells none of them")
+
+-- A notice from the wire without an id is remembered by who, when and what: told once, not at every snapshot.
+fresh({ sync = {}, settings = {}, members = {}, digest = { enabled = true, lastSeen = now - DAY },
+        bulletin = { messages = {}, seen = {} } })
+D:ShowOnLogin()
+local noId = { messages = { { text = "Anonymous board", author = "Off", ts = now - 5 } } }
+B:OnSync({ act = "snapshot", rev = 2, data = noId })
+check(#printed == 1 and printedHas("Anonymous board"), "a notice without an id is told")
+B:OnSync({ act = "snapshot", rev = 3, data = { messages = { { text = "Anonymous board", author = "Off", ts = now - 5 } } } })
+check(#printed == 1, "and not again when the board comes back")
+D.shownThisSession, shownLines = nil, nil
+D:ShowOnLogin()
+check(not table.concat(shownLines or {}, "\n"):find("Anonymous board", 1, true), "nor at the next login")
+
+-- The Activity sub-tab builds the digest for the last 7 days: every notice posted in them, told or not.
+local week = D:Build(now - 7 * DAY)
+check(table.concat(week, "\n"):find("Anonymous board", 1, true), "Activity still lists a notice already told")
 
 -- At most three at login: the rest are told too, never dripped login after login.
 local many = {}
