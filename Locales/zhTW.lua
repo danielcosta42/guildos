@@ -3807,3 +3807,8 @@ L["new"] = "新"
 L["no room: cuts the note, asks"] = "空間不足：截短備註，需確認"
 L["replaces a date: asks"] = "替換日期：需確認"
 L["same day"] = "同一天"
+
+-- The site's events that are not raids, on the calendar (guildos-web #652)
+L["From the website."] = "來自網站。"
+L["From the website. Where: %s"] = "來自網站。地點：%s"
+L["%d going · %d maybe"] = "%d 人參加 · %d 人待定"

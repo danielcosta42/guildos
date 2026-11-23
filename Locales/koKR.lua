@@ -3807,3 +3807,8 @@ L["new"] = "새 날짜"
 L["no room: cuts the note, asks"] = "공간 없음: 메모를 줄임, 확인"
 L["replaces a date: asks"] = "날짜를 바꿈: 확인"
 L["same day"] = "같은 날"
+
+-- The site's events that are not raids, on the calendar (guildos-web #652)
+L["From the website."] = "웹사이트에서."
+L["From the website. Where: %s"] = "웹사이트에서. 장소: %s"
+L["%d going · %d maybe"] = "%d명 참석 · %d명 미정"

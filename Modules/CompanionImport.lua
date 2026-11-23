@@ -989,6 +989,46 @@ function Import:DiscordLinked()
     return set
 end
 
+-- The GOSGILD1's events (the site's #652, specs/118): the guild's events that are not raids — a social
+-- night, PvP, a meetup, anything else — for the calendar to show as an event of that type, from the site,
+-- with nobody to invite. The inbox is untrusted: at most SITE_EVENTS_MAX read; an id of the site's alphabet
+-- ([%w_-], 64 bytes at most), a kind of the four, a title and a place made inert and held to their bytes, a
+-- whole positive start and whole counts, or the entry is passed over alone. A meetup is a SOCIAL event in the
+-- game: a guild gathering is social, and OTHER would say less.
+--   { id, kind = "SOCIAL"|"PVP"|"OTHER", title, startsAt, clock?, where?, going, maybe }
+-- Nil with no block, or a block that says nothing of events (a site before #652): the calendar then changes
+-- nothing. An empty list is the site saying it has none in the window.
+Import.SITE_EVENTS_MAX = 10
+local SITE_EVENT_KIND = { social = "SOCIAL", pvp = "PVP", meetup = "SOCIAL", other = "OTHER" }
+local SITE_EVENT_TEXT = { title = 192, where = 240 }   -- bytes: the site's 64 and 80 characters, at up to three each
+local SITE_EVENT_COUNT = 100000
+function Import:SiteEvents()
+    local block = self:GuildBlock()
+    local raw = block and block.events
+    if type(raw) ~= "table" then return nil end
+    local out = {}
+    for i = 1, math.min(#raw, Import.SITE_EVENTS_MAX) do
+        local r = raw[i]
+        if type(r) == "table" then
+            local id = type(r.id) == "string" and #r.id <= 64 and r.id:match("^[%w_%-]+$") and r.id or nil
+            local kind = type(r.kind) == "string" and SITE_EVENT_KIND[r.kind] or nil
+            local title = siteText(r.title, SITE_EVENT_TEXT.title)
+            local ok, startsAt, going, maybe = pcall(function()
+                return siteInt(r.startsAt, 1, 4102444800), siteInt(r.going, 0, SITE_EVENT_COUNT), siteInt(r.maybe, 0, SITE_EVENT_COUNT)
+            end)
+            if id and kind and title and ok then
+                out[#out + 1] = {
+                    id = id, kind = kind, title = title, startsAt = startsAt,
+                    -- Checked where it is kept (Calendar's cleanClock), as a roster's.
+                    clock = type(r.clock) == "table" and r.clock or nil,
+                    where = siteText(r.where, SITE_EVENT_TEXT.where), going = going, maybe = maybe,
+                }
+            end
+        end
+    end
+    return out
+end
+
 -- Text off the network, for a line of ours: nothing in it may open a colour, a link or a texture, and
 -- one line stays one line.
 function Import.Inert(text)
@@ -1828,17 +1868,52 @@ function Import:ReadInbox()
     end)
 end
 
+local INBOX_TRUST = 86400   -- the companion rewrites the inbox every hour: a day older is one that stopped
+
 function Import:CalendarFromInbox()
-    local raids = self._webRaids
-    if not (raids and GuildOS.Calendar and GuildOS.Calendar.UpsertWebRaid) then return end
+    local Cal = GuildOS.Calendar
+    if not Cal then return end
     -- When the site gave these, so an old inbox takes back nobody's answer.
     local answeredAt = self:Ack()
-    for _, roster in ipairs(raids) do
-        GuildOS:SafeCall(function() GuildOS.Calendar:UpsertWebRaid(roster, answeredAt) end)
+    local raids = self._webRaids
+    if raids and Cal.UpsertWebRaid then
+        for _, roster in ipairs(raids) do
+            GuildOS:SafeCall(function() Cal:UpsertWebRaid(roster, answeredAt) end)
+        end
+    end
+    -- The site's events that are not raids (#652): with or without a raid in the inbox. One the site no longer
+    -- sends leaves the calendar only where the inbox can tell (SiteEventsInfo, GameCalendar.SiteEventGone).
+    local events = self:SiteEvents()
+    if events and Cal.UpsertSiteEvent then
+        for _, ev in ipairs(events) do
+            GuildOS:SafeCall(function() Cal:UpsertSiteEvent(ev, answeredAt) end)
+        end
+        local info = self:SiteEventsInfo(events)
+        if info and Cal.DropSiteEvents then
+            GuildOS:SafeCall(function() Cal:DropSiteEvents(info) end)
+        end
     end
 end
 
-local INBOX_TRUST = 86400   -- the companion rewrites the inbox every hour: a day older is one that stopped
+--- What the inbox says of the site's events, for taking one the site no longer sends off the calendar (#652):
+--- { ids, count, at, last }, as InboxInfo says it of the raids. Nil when the block says nothing of events, the
+--- companion is off, there is no ack or the inbox is a day old: a stopped companion's leftover never takes an
+--- event away.
+function Import:SiteEventsInfo(events)
+    events = events or self:SiteEvents()
+    if type(events) ~= "table" or not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then return nil end
+    local at = self:Ack()
+    if not at then return nil end
+    local now = GetServerTime()
+    at = math.min(at, now)
+    if now - at > INBOX_TRUST then return nil end
+    local ids, last = {}, nil
+    for _, ev in ipairs(events) do
+        ids[ev.id] = true
+        if not last or ev.startsAt > last then last = ev.startsAt end
+    end
+    return { ids = ids, count = #events, at = at, last = last }
+end
 
 --- The site raids the inbox holds, by id, how many, and when the site gave them (its ack, held to now):
 --- { ids = { [raidId] = true }, count = n, at = epoch, last = latest startsAt }. Nil when no inbox with a raid was read this
