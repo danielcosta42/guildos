@@ -1822,3 +1822,33 @@ everything. Until now cores reached the game only through the companion's `Inbox
 - (−) While officers on old clients remain, they still replace their own tables, and an unlink made on an old
   client is not heard by new ones (the merge never removes). The full gain comes when every officer updates.
 - (−) Each officer's backfill sends every alt entry (a few hundred in a big guild) once per answered request.
+
+## ADR-0041 — A member with alts removed or gone: the addon only asks, and its answers go through what exists (#426)
+
+### Context
+- Officers asked (as in GRM) to be asked about the alts when they remove somebody, to ban the whole group with a term
+  and a note, and to hear when a main leaves while alts stay. GRM removes and promotes on its own; the request was to
+  ask. `GuildUninvite` is protected (ADR-0010, ADR-0038), and several officers online all see the same guild line.
+
+### Decision
+- **`Modules/AltDeparture.lua`**, fed only by RosterLog's detection (nothing while the login settles, `_ready`, nor
+  for a line in chat lockdown, `Compat.IsSecret`) and by a Bulk actions removal the roster confirmed. Session state.
+- **Removed:** asked only on the client whose character removed them (the line's author is this character), 2 s
+  after, or once a removal queue of Bulk actions is through (`BulkActions:Refresh` flushes). Each group once a
+  session. The answers: a removal queue (`BulkActions:StartList`, one per click of the secure button, never
+  replacing a running queue), or `BanList:AddGroup` (one ban per character, one term, one note, the mark
+  "(group of X)"), or nothing.
+- **Gone:** a main leaving with alts still in the guild asks each officer online once (by event id and by main).
+  "Set A as main" is `SetMain` (synced by AltSync, ADR-0040), "Unlink" `GuildOS:UnlinkGroup`, "Keep" nothing. An
+  answer checks the links first: when another officer already answered, it changes nothing ("settled").
+- **The ban's `note`** is a field of the entry beside `reason`, cleaned like the alliance's note. The ban domain
+  still goes to the whole guild (as `reason` and `share.note` do); only officers' screens show the note. A client
+  before #426 stores the entry as it is and never reads `note` or `group`.
+- **The dialogs** are GuildOS's own frames (`UI/AltDepartureDialog.lua`), never a StaticPopup (#315).
+
+### Consequences
+- (+) Nothing is removed, banned or relinked without the officer's click; no main is promoted on its own; nobody is
+  whispered.
+- (−) A removal the client never reads (a secret line on retail in an instance, the remover offline) is not asked
+  about; MemberHistory's roster diff does not ask.
+- (−) The note travels on the guild channel with the ban, readable by a member's client like the reason.

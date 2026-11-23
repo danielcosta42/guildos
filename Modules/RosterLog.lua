@@ -230,6 +230,13 @@ function RosterLog:_SetupDetection()
         if evt and (evt.action == "leave" or evt.action == "kick") and GuildOS.TrialTracker then
             GuildOS:SafeCall(GuildOS.TrialTracker.OnLeave, GuildOS.TrialTracker, evt.target)
         end
+        -- Somebody with alts removed by this client's character, or a main who left (#426): only asked about.
+        local AD = GuildOS.AltDeparture
+        if evt and AD and evt.action == "kick" then
+            GuildOS:SafeCall(AD.OnKick, AD, evt)
+        elseif evt and AD and evt.action == "leave" then
+            GuildOS:SafeCall(AD.OnLeave, AD, evt)
+        end
     end)
 end
 

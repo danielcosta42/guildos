@@ -136,7 +136,10 @@ end
 ----------------------------------------------------------------------
 -- Officer mutations + sync (domain "ban", per-entry revision)
 ----------------------------------------------------------------------
-function BanList:Add(name, reason, durationSec)
+-- `note` (issue #426): for the officers, apart from the reason, cleaned as the alliance's note is. `group`: the
+-- main's name when the ban came with its alt group's (AddGroup), shown as "(group of X)". A client before #426
+-- keeps both fields as part of the entry and never reads them.
+function BanList:Add(name, reason, durationSec, note, group)
     if not GuildOS:IsOfficer() then
         GuildOS:Print(L["|cffFF4444Officers only.|r"])
         return false
@@ -153,11 +156,43 @@ function BanList:Add(name, reason, durationSec)
         author  = GuildOS.Compat.PlayerName(),
         ts      = now,
         expiry  = durationSec and (now + durationSec) or nil,
+        note    = BanList.CleanNote(note),
+        group   = BanList.CleanNote(group),
     }
     GuildOS.db.banList[key] = entry
     self:_Publish(key, entry)
     self:Refresh()
     return true
+end
+
+-- Ban a whole alt group (issue #426): every key in `keys` (the main first, as GetLinkedChars gives them), with the
+-- same reason, the same term (`days`, nil or not above 0 for permanent) and the same note, each its own synced ban
+-- marked "(group of <main>)". Officers only. Returns how many were banned.
+function BanList:AddGroup(keys, reason, days, note)
+    if not GuildOS:IsOfficer() or type(keys) ~= "table" or #keys == 0 then return 0 end
+    days = GuildOS.Finite(days)
+    local duration = (days and days > 0) and math.floor(days * 86400) or nil
+    local main = type(keys[1]) == "string" and (keys[1]:match("^([^-]+)") or keys[1]) or nil
+    local seen, n = {}, 0
+    for _, k in ipairs(keys) do
+        local nk = type(k) == "string" and self:_NormalizeKey(k) or ""
+        if nk ~= "" and not seen[nk] then
+            seen[nk] = true
+            if self:Add(k, reason, duration, note, #keys > 1 and main or nil) then n = n + 1 end
+        end
+    end
+    return n
+end
+
+-- Pure: the members of `members` (BulkActions:Collect's lines) under a ban in force, by name; never `meKey`.
+function BanList:StillInGuild(members, meKey, now, store)
+    now = now or GetServerTime()
+    local out = {}
+    for _, m in ipairs(members or {}) do
+        if m.fullName and m.key ~= meKey and self:IsBanned(m.fullName, now, store) then out[#out + 1] = m end
+    end
+    table.sort(out, function(a, b) return (a.name or ""):lower() < (b.name or ""):lower() end)
+    return out
 end
 
 -- Lift a ban by the name an officer typed (/gos unban; `_RemovalKey`). False when none stands there.

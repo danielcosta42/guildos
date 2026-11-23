@@ -844,6 +844,26 @@ local function BuildBanSub(panel)
         local now = GetServerTime()
         local list = GuildOS.BanList and GuildOS.BanList:List() or {}
         local y = 0
+        -- Banned and still in the guild (#426): "Remove all" only queues them in Bulk actions, one per click.
+        local BA = GuildOS.BulkActions
+        local inGuild = (BA and GuildOS.BanList and filter == "")
+            and GuildOS.BanList:StillInGuild(BA:Collect(false), BA:Context().meKey, now) or {}
+        if #inGuild > 0 then
+            local title = UI:CreateText(content, string.format(L["BANNED STILL IN THE GUILD (%d)"], #inGuild),
+                11, C.red.r, C.red.g, C.red.b)
+            title:SetPoint("TOPLEFT", 0, -y)
+            local all = UI:CreateButton(content, L["Remove all"], 110, 18)
+            all:SetPoint("TOPRIGHT", 0, -y)
+            all:SetScript("OnClick", function() BA:StartListAndSay("remove", inGuild) end)
+            y = y + ROW_H
+            local names = GuildOS.AltDeparture and GuildOS.AltDeparture.ColoredNames(inGuild) or ""
+            local fs = UI:CreateText(content, names, 11, C.text.r, C.text.g, C.text.b)
+            fs:SetPoint("TOPLEFT", 0, -y)
+            fs:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+            fs:SetJustifyH("LEFT"); fs:SetWordWrap(true)
+            y = y + math.max(ROW_H, math.ceil(fs:GetStringHeight() or 0) + 4) + 6
+        end
+        local officer = GuildOS:IsOfficer()
         for _, e in ipairs(list) do
             if filter == "" or (e.name or ""):lower():find(filter, 1, true) then
                 local expired = e.expiry and e.expiry <= now
@@ -857,8 +877,13 @@ local function BuildBanSub(panel)
                 else
                     expTxt = GuildOS:DateText(e.expiry, "/%y")
                 end
-                cell(e.name or "?", CELL_X[1], 148, y, nr, ng, nb)
-                cell(e.reason or "", CELL_X[2], 176, y, C.text.r, C.text.g, C.text.b)
+                -- Banned with an alt group (#426): "(group of X)"; the officers' note after the reason.
+                local shownName = e.name or "?"
+                if e.group then shownName = shownName .. " " .. string.format(L["(group of %s)"], e.group) end
+                local why = e.reason or ""
+                if officer and e.note then why = why .. " — " .. e.note end
+                cell(shownName, CELL_X[1], 148, y, nr, ng, nb)
+                cell(why, CELL_X[2], 176, y, C.text.r, C.text.g, C.text.b)
                 cell(e.author or "?", CELL_X[3], 86, y, C.textDim.r, C.textDim.g, C.textDim.b)
                 cell(expTxt, CELL_X[4], 82, y, C.textDim.r, C.textDim.g, C.textDim.b)
                 local del = UI:CreateButton(content, "\195\151", 22, 18)  -- ×
