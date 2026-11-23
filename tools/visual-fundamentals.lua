@@ -28,7 +28,7 @@ local FILES = {
   "UI/RaiderPanel.lua", "UI/RaidToolsPanel.lua", "UI/LootCouncil.lua",
   "UI/GroupsPanel.lua", "UI/AlliancePanel.lua", "UI/ManagementPanel.lua", "UI/WebPanel.lua",
   "UI/RaidPlanPanel.lua", "UI/ProfessionsPanel.lua", "UI/RecipesPanel.lua", "UI/CraftFinder.lua",
-  "UI/ModAlerts.lua",
+  "UI/ModAlerts.lua", "UI/RemindPanel.lua",
 }
 
 -- Each rule: a Lua pattern a line must not match, and what it means.

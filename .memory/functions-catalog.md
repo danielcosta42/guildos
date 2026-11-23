@@ -642,6 +642,23 @@ Compat (#420): `CanGuildPromote/Demote/Remove`, `MyGuildRankIndex`, `GuildRankCo
 
 ---
 
+## AddonReminder.lua — GuildOS.AddonReminder (Leadership > Without GuildOS, #422)
+
+| Function | Description |
+|---|---|
+| `AddonReminder.Filter(list, f, now, days)` | Pure: by name, rank, online, "reminded within days"; longest without GuildOS (earliest first-seen) first |
+| `AddonReminder.Check(m, t, days)` | Pure: may `m` be reminded now; else "addon", "offline", "recent", "throttle", "wait" (+ seconds left) |
+| `AddonReminder.Fill(template, vars)` / `.CleanTemplate(t)` / `.ValidDays(v)` | Pure: `{name}`/`{guild}` filled, one line, 255 bytes; a 200-byte template; 1..90 days |
+| `AddonReminder:Collect(now)` / `:List(f, now)` / `:Member(key, now)` | The roster's members this client never heard GuildOS from (no `lastUpdate`), oneself aside |
+| `AddonReminder:Remind(key)` | The officer's click: re-reads the member, checks, whispers ONE filled reminder on the click |
+| `AddonReminder:OnThrottle()` / `:Settle(sent)` | The game's ERR_GENERIC_THROTTLE: hold 60 s, undo a reminder sent within 3 s; else publish its date and file it on the record when asked |
+| `AddonReminder:OnSync(env)` | Domain "reminder" (officer): another officer's date, newest kept |
+| `Get/SetDays`, `Get/SetTemplate`, `Get/SetLogDiscipline` | The officer's own settings (`reminderDays`, `reminderTemplate`, `reminderLog`) |
+
+UI: `UI/RemindPanel.lua` — `GuildOS:BuildRemindSub(panel)`. Store: `GuildOS.db.reminders[key] = at` (90 days).
+
+---
+
 ## v0.3.0 additions — Audit / Raid Tools / QoL
 
 | Function | Description |

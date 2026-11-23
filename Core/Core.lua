@@ -368,6 +368,8 @@ local MODULE_START = {
     { "ModPresets" },
     -- Promote, demote or remove by rules, one member a click (issue #420).
     { "BulkActions", feature = "guildManager" },
+    -- Who has no GuildOS, and a reminder whispered one member a click (issue #422).
+    { "AddonReminder", feature = "guildManager" },
     -- The roster is not compared for new members' trials until the guild's settings have arrived (#249).
     { "TrialTracker", method = "Arm" },
 }
