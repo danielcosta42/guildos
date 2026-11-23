@@ -55,15 +55,22 @@ function ChatTweaks.TimedRefresh()
     GuildOS.Perf:Stop("roster chat cache", t)
 end
 
+-- The cache's key for a roster name or a chat author: the whole name with its realm, the player's realm when it
+-- gives none. By the short name a "Bob-OtherRealm" from outside the guild, whispering or in a group, got the
+-- guild's Bob's nickname and alt tag (#429).
+function ChatTweaks.KeyOf(name)
+    if type(name) ~= "string" or name == "" then return nil end
+    return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("-(.+)$") or GetRealmName())
+end
+
 function ChatTweaks:_RefreshCache()
     local cache = {}
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
         local name, _, _, level, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
         if name then
-            local short = name:match("^([^-]+)") or name
-            local realm = name:match("-(.+)$") or GetRealmName()
-            cache[short] = { classFile = classFile, level = level, fullKey = GuildOS:GetPlayerKey(short, realm) }
+            local key = ChatTweaks.KeyOf(name)
+            if key then cache[key] = { classFile = classFile, level = level, fullKey = key } end
         end
     end
     self._cache = cache
@@ -110,8 +117,8 @@ function ChatTweaks:_MakeFilter()
         local only = EVENT_SETTING[event]
         if only and not cfg[only] then return false end
         if GuildOS.Compat.IsSecret and GuildOS.Compat.IsSecret(msg, author) then return false end   -- chat in lockdown
-        local short = author and (author:match("^([^-]+)") or author)
-        local cached = short and ChatTweaks._cache[short]
+        local key = ChatTweaks.KeyOf(author)
+        local cached = key and ChatTweaks._cache[key]
         if not cached then return false end
         local info = {
             classFile = cached.classFile,

@@ -249,6 +249,7 @@ end
 ----------------------------------------------------------------------
 function PopulateDetail(frame, data)
     local child = frame.content
+    frame._sheetRedraw = nil   -- set again below when this member's card has the officers' sheet
     -- Initialise or reset the FontString/Texture pool. Pooled objects are
     -- hidden and their cursors reset so the current populate reuses them
     -- in order rather than accumulating fresh C-level objects each call.
@@ -927,16 +928,35 @@ function PopulateDetail(frame, data)
             yOff = yOff - (body:GetStringHeight() + 6)
         end
         local sheetKey, sheetName = playerKey, data.name
-        local editSheet = UI:CreateButton(child, L["Edit sheet"], 100, 20)
+        -- One button for the panel's life (#427): a redraw per backfill envelope made a new one each time.
+        local editSheet = child._editSheet
+        if not editSheet then
+            editSheet = UI:CreateButton(child, L["Edit sheet"], 100, 20)
+            child._editSheet = editSheet
+        end
+        editSheet:ClearAllPoints()
         editSheet:SetPoint("TOPLEFT", 15, yOff - 4)
         editSheet:SetScript("OnClick", function() GuildOS:ShowOfficerSheetEditor(sheetKey, sheetName) end)
+        editSheet:Show()
         yOff = yOff - 28
-        -- A sheet saved here or by another officer redraws the card, unless the officer is typing in it.
-        GuildOS.OfficerNotes.uiRefresh = function()
+        -- A sheet saved here or by another officer redraws the card, unless the officer is typing in it. Only
+        -- when this member's sheet changed, and at most once per SHEET_GAP + 1 seconds: a backfill sends an
+        -- envelope every SHEET_GAP seconds, most of them other members' sheets (#427).
+        local drawn = sheet and (tostring(sheet.rev) .. "\0" .. sheet.text) or ""
+        local function redraw()
             if not frame:IsShown() then return end
+            local now = GuildOS.OfficerNotes:GetSheet(sheetKey)
+            if (now and (tostring(now.rev) .. "\0" .. now.text) or "") == drawn then return end
             local focus = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
             if focus and focus.IsVisible and focus:IsVisible() then return end
             PopulateDetail(frame, data)
+        end
+        -- Through the frame: a redraw held back by the coalescing runs for whoever the panel shows then.
+        frame._sheetRedraw = redraw
+        GuildOS.OfficerNotes.uiRefresh = function()
+            GuildOS:Coalesce("memberDetail.sheet", GuildOS.OfficerNotes.SHEET_GAP + 1, function()
+                if frame._sheetRedraw then frame._sheetRedraw() end
+            end)
         end
 
         -- Show last 3 notes

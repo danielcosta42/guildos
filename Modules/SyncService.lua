@@ -71,6 +71,7 @@ SyncService.GUILD_ONLY_DOMAINS = {
 -- whisper. On a client without that channel (Compat.OfficerAddonChannel) they are not sent at all.
 SyncService.OFFICER_CHANNEL_DOMAINS = {
     osheet = true,
+    marks  = true,   -- the safe list and nicknames (#429): what officers call a member
 }
 
 -- Actions any guild member may perform inside an officer domain, over GUILD. Keyed by domain:
@@ -207,7 +208,14 @@ function SyncService:Publish(domain, action, data, opts)
     end
 
     local officersOnly = self.OFFICER_CHANNEL_DOMAINS[domain]
-    if officersOnly and (opts.target or not GuildOS.Compat.OfficerAddonChannel()) then return nil end
+    if officersOnly then
+        local chan, why = GuildOS.Compat.OfficerAddonChannel()
+        if why == "no-permission" and not self._warnedNoOfficerChat then   -- once a session (#427)
+            self._warnedNoOfficerChat = true
+            GuildOS:Print(GuildOS.L["Your rank cannot speak in officer chat: what you write for the officers stays on this client."])
+        end
+        if opts.target or not chan then return nil end
+    end
 
     local ok, serialized = pcall(function() return LibSerialize:Serialize(env) end)
     if not ok or type(serialized) ~= "string" then return nil end

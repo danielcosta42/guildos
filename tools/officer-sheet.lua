@@ -6,7 +6,10 @@
 --   * a sheet of 800 letters, several lines, reaches another officer whole, and the newer edit wins;
 --   * a sheet travels only over the OFFICER addon channel: a member's client never gets a byte of it, a
 --     sheet over GUILD is refused, and a client without that channel keeps its sheets to itself;
+--   * a rank that may not speak in officer chat sends nothing and is told once;
 --   * a member's client keeps nothing of it, and a member cannot write one;
+--   * the officers' marks (Modules/MemberMarks.lua, #429) the same: OFFICER only, refused from GUILD, kept
+--     with their writer without that channel;
 --   * an officer who logs in later gets it from the spaced backfill;
 --   * "ON" and "OA" read as before, and "OA" never carries a sheet;
 --   * the card: a main with three alts names the three in class colour with the online ones marked,
@@ -87,9 +90,11 @@ dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Modules/CommSystem.lua")
 dofile(ADDON .. "/Modules/SyncService.lua")
 dofile(ADDON .. "/Modules/OfficerNotes.lua")
+dofile(ADDON .. "/Modules/MemberMarks.lua")
 GuildOS.UI = GuildOS.UI or {}
 dofile(ADDON .. "/UI/OfficerSheet.lua")
 local CS, SS, ON, RC = GuildOS.CommSystem, GuildOS.SyncService, GuildOS.OfficerNotes, GuildOS.RosterCard
+local MM = GuildOS.MemberMarks
 CS.pendingMessages = {}
 GuildOS.State = GuildOS.State or {}
 GuildOS.State.comm = GuildOS.State.comm or {}
@@ -98,6 +103,7 @@ GuildOS.Compat.CanViewOfficerNote = function() return true end
 -- Every message a client hands the comm layer, with its channel: a sheet must only ever go over OFFICER.
 local LSer = LibStub("GuildOS-LibSerialize")
 local sheetChannels = {}
+local marksChannels = {}   -- the same for the officers' marks (#429)
 do
   local realSend = CS.SendMessage
   CS.SendMessage = function(self, t, data, target, prio, kind, channel)
@@ -106,6 +112,9 @@ do
       if ok and type(env) == "table" and env.dom == "osheet" then
         local c = target and "WHISPER" or (channel or "GUILD")
         sheetChannels[c] = (sheetChannels[c] or 0) + 1
+      elseif ok and type(env) == "table" and env.dom == "marks" then
+        local c = target and "WHISPER" or (channel or "GUILD")
+        marksChannels[c] = (marksChannels[c] or 0) + 1
       end
     end
     return realSend(self, t, data, target, prio, kind, channel)
@@ -343,6 +352,72 @@ check(roster:find('key = "joined"', 1, true), "the roster has a Joined column")
 local export = src("Modules/CompanionExport.lua")
 check(not export:find("officerNotes", 1, true) and not export:find("GetSheet", 1, true) and not export:find("OfficerNotes", 1, true),
   "the sheet is never exported to the site")
+
+-- ── 7. The officers' marks (#429) go the same way ───────────────────────
+for _, n in ipairs({ "OffA", "OffB", "OffC", "Mem" }) do as(n, function() MM:Initialize() end) end
+memberGot = {}
+check(as("OffA", function() return MM:SetNick(MAIN, "Big Mem") end), "officer A gives the member a nickname")
+check(as("OffA", function() return MM:SetSafe(K("OffB"), true) end), "and marks B safe")
+flush()
+check(as("OffB", function() return MM:Nick(MAIN) end) == "Big Mem" and as("OffC", function() return MM:IsMarkedSafe(K("OffB")) end),
+  "the other officers get the marks")
+check((marksChannels.OFFICER or 0) > 0 and marksChannels.GUILD == nil and marksChannels.WHISPER == nil,
+  "every marks envelope went over OFFICER, none over GUILD or a whisper")
+check(memberGot.OFFICER == nil and memberGot.GUILD == nil, "the member's client got no marks envelope at all")
+check(clients.Mem.db.memberMarks == nil or next(clients.Mem.db.memberMarks.nick or {}) == nil, "and keeps none")
+wire = {}
+as("OffA", function() MM:Backfill() end)
+check(#wire > 0, "the login backfill goes out too")
+flush()
+check(memberGot.OFFICER == nil and memberGot.GUILD == nil and marksChannels.GUILD == nil, "over OFFICER only")
+-- Marks over GUILD, even in an officer's name, are refused.
+local menv = { v = 2, id = "FEED0002", av = "test", dom = "marks", act = "set", ts = now, pv = 1, src = "local",
+               data = { items = { { s = "nick", k = MAIN, v = "Forged", t = now + 100, b = "OffA" } } } }
+as("OffA", function() CS:SendMessage("SV", LSer:Serialize(menv)) end)
+flush()
+check(as("OffB", function() return MM:Nick(MAIN) end) == "Big Mem", "marks over GUILD are refused")
+-- Without the OFFICER channel the marks stay on the writer's client, and nothing is sent.
+GuildOS.Compat.OfficerAddonChannel = function() return nil end
+wire = {}
+check(as("OffA", function() return MM:SetNick(K("OffC"), "Cee") end), "without OFFICER a nickname is still saved")
+as("OffA", function() MM:Backfill() end)
+check(#wire == 0 and as("OffA", function() return MM:Nick(K("OffC")) end) == "Cee", "kept here, nothing sent")
+GuildOS.Compat.OfficerAddonChannel = realChan
+
+-- ── 8. A rank that may not speak in officer chat (#427) ─────────────────
+check(GuildOS.Compat.CanSpeakOfficerChat() == nil and GuildOS.Compat.OfficerAddonChannel() == "OFFICER",
+  "a client that answers no rank flags goes on as before")
+C_GuildInfo = C_GuildInfo or {}
+local speaks = { [2] = false }   -- rank order 2 (rank index 1, the officers here) may not speak
+C_GuildInfo.GuildControlGetRankFlags = function(order) return { true, true, true, speaks[order] ~= false } end
+local said = {}
+DEFAULT_CHAT_FRAME.AddMessage = function(_, m) said[#said + 1] = m end
+use("OffA")
+local chan, why = GuildOS.Compat.OfficerAddonChannel()
+check(chan == nil and why == "no-permission", "no officer channel for a rank that may not speak there")
+wire = {}
+check(as("OffA", function() return ON:SetSheet(MAIN, "muted officer") end), "the sheet is still saved")
+check(as("OffA", function() return MM:SetNick(MAIN, "Muted") end), "and a nickname")
+check(#wire == 0, "nothing is sent into an officer chat the rank cannot speak in")
+local warned = 0
+for _, m in ipairs(said) do if tostring(m):find("cannot speak in officer chat", 1, true) then warned = warned + 1 end end
+check(warned == 1, "the officer is told once, not at every write (" .. warned .. ")")
+speaks[2] = true
+use("OffA")
+check(GuildOS.Compat.OfficerAddonChannel() == "OFFICER", "a rank that may speak there gets the channel")
+C_GuildInfo.GuildControlGetRankFlags = nil
+-- The old API, its flags one by one.
+GuildControlGetRankFlags = function() return true, true, true, false end
+check(GuildOS.Compat.CanSpeakOfficerChat() == false, "the older GuildControlGetRankFlags is read too")
+GuildControlGetRankFlags = nil
+DEFAULT_CHAT_FRAME.AddMessage = function() end
+
+-- ── 9. The member card: one Edit sheet button, redraws coalesced (#427) ──
+local detail = src("UI/MemberDetail.lua")
+check(detail:find("local editSheet = child._editSheet", 1, true) and select(2, detail:gsub('L%["Edit sheet"%]', "")) == 1,
+  "the card makes its Edit sheet button once and reuses it")
+check(detail:find('GuildOS:Coalesce("memberDetail.sheet", GuildOS.OfficerNotes.SHEET_GAP + 1', 1, true)
+  and detail:find("== drawn then return end", 1, true), "a backfill's envelopes redraw the card at most once a gap, and only on a change")
 
 check(memberGot.OFFICER == nil, "after everything, the member's client still never got an OFFICER message")
 print(string.format("officer-sheet: %d checks passed", checks))

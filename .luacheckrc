@@ -214,6 +214,7 @@ read_globals = {
     "GetGuildRosterLastOnline",
     "GuildControlGetNumRanks",
     "GuildControlGetRankName",
+    "GuildControlGetRankFlags",
 
     -- WoW API: Dropdown menus
     "UIDropDownMenu_CreateInfo",

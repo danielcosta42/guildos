@@ -40,9 +40,12 @@ away; a nickname per member. ADR-0044.
    0 turns the line off (panel field).
 5. **Nicknames** (`/gos nick <name> [nickname]`, the panel): 24 bytes, on the roster tooltip ("Nickname: ...", and
    the safe list) and, with Chat Tweaks on, in the chat prefix.
-6. **Sync of the marks:** officer domain `marks` (officers only, over GUILD): one entry per member and kind, the
-   later time winning, a cleared one a tombstone (90 days). Sent at once, and every entry at login and on
-   `/gos sync`, 40 per envelope, 2 s apart. Kept on officers' clients only.
+6. **Sync of the marks:** officer domain `marks` (officers only, and only over the game's OFFICER addon channel,
+   as the officer sheet, #427: a member's client never gets the bytes; one from GUILD or a whisper is refused):
+   one entry per member and kind, the later time winning, a cleared one a tombstone (90 days). Sent at once, and
+   every entry at login and on `/gos sync`, 40 per envelope, 2 s apart. Kept on officers' clients only. On a
+   client without that channel (WoW: Forever until checked) nothing is sent: the marks stay with their writer.
+   Chat Tweaks finds a member by the whole name with the realm: a namesake from another realm gets nothing.
 7. **Chat Tweaks:** "Nickname (officers)", and "Also in whispers from guild members", "Also in party and raid
    chat" (off by default): the same prefix on a guild member's lines there.
 
