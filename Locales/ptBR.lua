@@ -3684,3 +3684,4 @@ L["Share the ban on %s with the alliance"] = "Compartilhar o ban de %s com a ali
 L["Share"] = "Compartilhar"
 L["Choose a reason"] = "Escolha um motivo"
 L["The alliance's officers are alerted about them; nobody is banned for it."] = "Os oficiais da aliança são alertados sobre a pessoa; ninguém é banido por isso."
+L["while you were away"] = "enquanto você estava fora"

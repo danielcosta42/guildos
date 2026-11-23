@@ -222,8 +222,10 @@ function GuildOS:BuildModAlertsSub(panel)
             local status = STATE_TEXT[a.state] or ""
             if a.by then status = string.format(L["alerted on %s's screen"], a.by) .. (status ~= "" and (", " .. status) or "") end
             if a.sev == "low" and status == "" then status = L["logged"] end
+            -- Said while this officer was away (#411): when it was said, and so marked.
+            if a.away then status = L["while you were away"] .. (status ~= "" and (", " .. status) or "") end
             local who = a.count and string.format(L["%s (%d lines)"], a.who, a.count) or a.who
-            row.top:SetText(string.format("%s  %s  -  %s  %s", clock(a.at), who, aboutText(a),
+            row.top:SetText(string.format("%s  %s  -  %s  %s", clock(a.said or a.at), who, aboutText(a),
                 status ~= "" and ("(" .. status .. ")") or ""))
             local ink = a.state == "new" and C.text or C.textDim
             row.line:SetTextColor(ink.r, ink.g, ink.b)

@@ -397,6 +397,7 @@ function ModAlerts:Initialize()
     if GuildOS.SyncService then
         GuildOS.SyncService:On("modalert", function(env, sender) ModAlerts:OnClaim(env, sender) end)
     end
+    self:_SetupCatchUp()
     local f = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_GUILD")
     f:SetScript("OnEvent", function(_, _, msg, author)
@@ -436,21 +437,125 @@ function ModAlerts:OnChat(msg, author)
     end
     if self.wasPaused then self.wasPaused = false; self:Refresh() end
     if not msg or not author or not GuildOS:IsOfficer() or not self:Prefs().enabled then return end
-    local now = GetServerTime()
+    self:_Check(msg, author, GetServerTime())
+end
+
+-- One line through the rules and the anti-flood, at the time it was said. `context`: the lines before it,
+-- when they are not in this client's own /g log (a line from the server's history, #411).
+function ModAlerts:_Check(msg, author, now, context)
     local folded, words = self.Prepare(msg)
     local rule = self.Match(self.compiled or {}, folded, words, self.mutes, now)
-    if rule and self:_FromWatched(author) then self:_Flag(msg, author, rule, now) end
+    if rule and self:_FromWatched(author) then self:_Flag(msg, author, rule, now, context) end
     -- The anti-flood (#405) reads the same line, here, after the same checks.
     if GuildOS.ModFlood and GuildOS.ModFlood.OnLine then GuildOS.ModFlood:OnLine(msg, author, now, folded) end
 end
 
+----------------------------------------------------------------------
+-- What was said while this officer was away (#411)
+--
+-- Where the server keeps the guild's chat (Forever, retail: Compat.GuildChatHistory), an officer's login
+-- reads the /g lines said since this character was last seen online (at most 24 hours and 300 lines),
+-- through the same rules and the same anti-flood, each at the time it was said. Their alerts go only into
+-- the panel, marked "while you were away": no window, no sound, no claim on the wire (the officers who were
+-- online then already had theirs). TBC Anniversary keeps no such history: nothing happens there. Only the
+-- time last seen is stored, per character; the lines stay in memory as #404's do.
+----------------------------------------------------------------------
+ModAlerts.AWAY_MAX_LINES = 300
+ModAlerts.AWAY_MAX_SECS = 24 * 3600
+ModAlerts.AWAY_RETRIES = 5
+
+local function seenKey()
+    return GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()) or "?"
+end
+
+-- The time this character was last seen online, or nil.
+function ModAlerts:SeenAt()
+    local s = GuildOS.db.modSeen
+    return type(s) == "table" and GuildOS.Finite(s[seenKey()]) or nil
+end
+
+function ModAlerts:MarkSeen(now)
+    GuildOS.db.modSeen = type(GuildOS.db.modSeen) == "table" and GuildOS.db.modSeen or {}
+    GuildOS.db.modSeen[seenKey()] = math.floor(now or GetServerTime())
+end
+
+-- The lines of `history` (the server's, oldest or newest first) said after `since` and up to `upTo`, oldest
+-- first, at most AWAY_MAX_LINES (the newest of them), each with the lines before it as its context. Pure.
+function ModAlerts.AwayLines(history, since, upTo)
+    local sorted = {}
+    for _, e in ipairs(type(history) == "table" and history or {}) do
+        local t = type(e) == "table" and GuildOS.Finite(e.t)
+        if t and type(e.m) == "string" and type(e.n) == "string" then sorted[#sorted + 1] = e end
+    end
+    table.sort(sorted, function(a, b) return a.t < b.t end)
+    local out = {}
+    for i, e in ipairs(sorted) do
+        if e.t > since and e.t <= upTo then
+            local ctx = {}
+            for j = math.max(1, i - ModAlerts.CONTEXT), i - 1 do ctx[#ctx + 1] = { n = sorted[j].n, m = sorted[j].m } end
+            out[#out + 1] = { t = e.t, n = e.n, m = e.m, context = ctx }
+        end
+    end
+    while #out > ModAlerts.AWAY_MAX_LINES do table.remove(out, 1) end
+    return out
+end
+
+-- The catch-up itself. Returns how many lines were read, or nil and why ("member", "off", "none", "locked").
+function ModAlerts:CatchUp(loginAt)
+    if not GuildOS:IsOfficer() then return nil, "member" end
+    if not self:Prefs().enabled then return nil, "off" end
+    if not GuildOS.Compat.GuildChatHistory then return nil, "none" end
+    local history, why = GuildOS.Compat.GuildChatHistory(self.AWAY_MAX_LINES)
+    if why == "locked" then return nil, "locked" end
+    if type(history) ~= "table" then return nil, "none" end
+    loginAt = loginAt or GetServerTime()
+    local since = math.max(self:SeenAt() or 0, loginAt - self.AWAY_MAX_SECS)
+    local lines = self.AwayLines(history, since, loginAt)
+    self.catchingUp = true
+    local ok = GuildOS:SafeCall(function()
+        for _, l in ipairs(lines) do
+            if not GuildOS.Compat.IsSecret(l.m, l.n) then self:_Check(l.m, l.n, l.t, l.context) end
+        end
+    end)
+    self.catchingUp = false
+    self:Refresh()
+    return ok and #lines or 0
+end
+
+-- On an officer's login: a little after the world loads, once, with a few tries in a chat lockdown; the time
+-- seen kept every minute and at logout.
+function ModAlerts:_SetupCatchUp()
+    local f = CreateFrame("Frame")
+    GuildOS.Compat.RegisterEvent(f, "PLAYER_ENTERING_WORLD")
+    GuildOS.Compat.RegisterEvent(f, "PLAYER_LOGOUT")
+    local started = false
+    f:SetScript("OnEvent", function(_, event)
+        if event == "PLAYER_LOGOUT" then
+            GuildOS:SafeCall(function() ModAlerts:MarkSeen() end)
+            return
+        end
+        if started then return end
+        started = true
+        local loginAt = GetServerTime()
+        local tries = 0
+        local function attempt()
+            tries = tries + 1
+            local _, why = ModAlerts:CatchUp(loginAt)
+            if why == "locked" and tries < ModAlerts.AWAY_RETRIES then GuildOS.Compat.After(30, attempt) return end
+            ModAlerts:MarkSeen(loginAt)
+            GuildOS.Compat.NewTicker(60, function() GuildOS:SafeCall(function() ModAlerts:MarkSeen() end) end)
+        end
+        GuildOS.Compat.After(15, function() GuildOS:SafeCall(attempt) end)
+    end)
+end
+
 -- A new alert from a rule.
-function ModAlerts:_Flag(msg, author, rule, now)
+function ModAlerts:_Flag(msg, author, rule, now, context)
     local log = GuildOS.GuildChat and GuildOS.GuildChat:Log() or nil
     self:Deliver({
         kind = "subject", who = shortName(author), key = GuildOS:KeyOfRosterName(author),
         line = GuildOS:CutBytes((tostring(msg):gsub("%c", " ")), 255),
-        context = self.Context(log, msg, self.CONTEXT), cat = rule.cat, sev = rule.sev, rule = rule.key,
+        context = context or self.Context(log, msg, self.CONTEXT), cat = rule.cat, sev = rule.sev, rule = rule.key,
         claim = self.ClaimKey(author, msg),
         newcomer = GuildOS.Newcomer and GuildOS.Newcomer:Of(author, now) or nil,   -- the badge (#406)
     }, now)
@@ -460,14 +565,22 @@ end
 -- `a.claim` is the line's (or the surge's) claim key. Also used by the anti-flood (#405).
 function ModAlerts:Deliver(a, now)
     now = now or GetServerTime()
-    self:_PruneClaims(now)
+    local clock = GetServerTime()
+    self:_PruneClaims(clock)
     local held = self.claims[a.claim]
     -- Already alerted (or about to be) on this client for the same line: never twice.
     if (held and held.mine) or self.pending[a.claim] then return end
     self.nextId = self.nextId + 1
-    a.id, a.at, a.state = self.nextId, now, "new"
+    -- `at` is when it was alerted (what the panel keeps it by), `said` when the line was said.
+    a.id, a.at, a.said, a.state = self.nextId, clock, now, "new"
     table.insert(self.feed, 1, a)
-    self:_PruneFeed(now)
+    self:_PruneFeed(GetServerTime())
+    -- Said while this officer was away (#411): into the panel only, no window, no sound, no claim.
+    if self.catchingUp then
+        a.away = true
+        self:Refresh()
+        return
+    end
     if a.sev == "low" then
         self:Refresh()
         return

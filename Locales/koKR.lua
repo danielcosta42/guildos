@@ -3499,3 +3499,4 @@ L["Share the ban on %s with the alliance"] = "%s 님의 차단을 동맹과 공�
 L["Share"] = "공유"
 L["Choose a reason"] = "사유 선택"
 L["The alliance's officers are alerted about them; nobody is banned for it."] = "동맹 관리자에게 경고만 표시되며, 이것으로 차단되는 사람은 없습니다."
+L["while you were away"] = "자리를 비운 동안"

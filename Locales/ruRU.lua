@@ -3499,3 +3499,4 @@ L["Share the ban on %s with the alliance"] = "Поделиться баном %s
 L["Share"] = "Поделиться"
 L["Choose a reason"] = "Выберите причину"
 L["The alliance's officers are alerted about them; nobody is banned for it."] = "Офицеры альянса получат предупреждение; никто не будет забанен из-за этого."
+L["while you were away"] = "пока вас не было"

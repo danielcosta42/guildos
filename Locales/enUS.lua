@@ -1411,3 +1411,4 @@ L["Share the ban on %s with the alliance"] = "Share the ban on %s with the allia
 L["Share"] = "Share"
 L["Choose a reason"] = "Choose a reason"
 L["The alliance's officers are alerted about them; nobody is banned for it."] = "The alliance's officers are alerted about them; nobody is banned for it."
+L["while you were away"] = "while you were away"
