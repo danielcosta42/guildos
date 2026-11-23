@@ -394,6 +394,11 @@ function Calendar:GetComposition(e)
     local comp = { yes = 0, tentative = 0, no = 0, roles = { TANK = 0, HEALER = 0, DPS = 0 }, classes = {} }
     -- A raid planned on the site counts the site's answers: nobody signs up for it in the game (#146).
     -- An allied seat is still approved in the game, and counts with them.
+    -- One of the site's events that is not a raid (#652): the site's counts, with nobody's name or role.
+    if self:IsSiteEvent(e) then
+        comp.yes, comp.tentative = e.site.going or 0, e.site.maybe or 0
+        return comp
+    end
     local answers
     if self:IsWebEvent(e) then
         answers = self:WebSignups(e)
@@ -772,11 +777,16 @@ end
 -- client. Left out, a field goes: the site's list once did, and what the raid was put in the game's
 -- calendar as would (#263).
 local function wireOf(e)
+    local site, canceled = type(e.site) == "table" and e.site or nil, nil
+    if site then canceled = e.canceled == true end
     return {
         id = e.id, title = e.title, when = e.when, size = e.size,
         note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
         shareAlliance = e.shareAlliance, signups = e.signups, signupsAt = e.signupsAt,
         game = e.game, gameAt = e.gameAt, clock = e.clock, series = e.series,
+        -- An event from the site that is not a raid (#652): its place and counts, and whether it is cancelled, so
+        -- one the site sends again after it left comes back on every client, not only on the importing officer's.
+        site = site, canceled = canceled,
     }
 end
 
@@ -801,6 +811,30 @@ local function cleanGame(g)
     if g == false then return false end
     if type(g) ~= "table" or type(g.title) ~= "string" or not tonumber(g.at) then return nil end
     return { title = GuildOS:SanitizeUserText(g.title, 64), at = tonumber(g.at) }
+end
+
+-- What an event from the site that is not a raid carries beside a raid's fields (#652): { where?, going, maybe },
+-- cleaned like anything off the guild channel; nil when it is none.
+local SITE_COUNT_MAX = 100000
+local function cleanSite(v)
+    if type(v) ~= "table" then return nil end
+    local function count(n)
+        n = GuildOS.Finite(n)
+        return n and n == math.floor(n) and n >= 0 and n <= SITE_COUNT_MAX and n or 0
+    end
+    local where = type(v.where) == "string" and GuildOS:SanitizeUserText(v.where, 240) or ""
+    return { where = where ~= "" and where or nil, going = count(v.going), maybe = count(v.maybe) }
+end
+
+local function sameSite(a, b)
+    if type(a) ~= "table" or type(b) ~= "table" then return false end
+    return a.where == b.where and a.going == b.going and a.maybe == b.maybe
+end
+
+--- Whether an event is one of the site's that is not a raid (#652): a site event (`web:<id>`) with what only those
+--- carry. Its answers are the site's counts, it has nobody to invite and it never goes to the game's own calendar.
+function Calendar:IsSiteEvent(e)
+    return self:IsWebEvent(e) and type(e.site) == "table"
 end
 
 function Calendar:WebEventId(roster)
@@ -877,6 +911,74 @@ function Calendar:UpsertWebRaid(roster, answeredAt)
     end
     self:Refresh()
     return e
+end
+
+--- Create or refresh the guild event for one of the site's events that is not a raid (guildos-web #652, the
+--- GOSGILD1's `events`, read by CompanionImport:SiteEvents): of its type (SOCIAL, PVP, OTHER), from the site, with
+--- its place and "N going · N maybe", nobody to invite and no list of names. Officers only, like UpsertWebRaid, and
+--- forward only by `answeredAt` (the companion's ack): an older inbox than the one that brought what is here
+--- changes nothing. Returns the event, or nil.
+function Calendar:UpsertSiteEvent(ev, answeredAt)
+    if type(ev) ~= "table" or type(ev.id) ~= "string" or ev.id == "" then return nil end
+    if not GuildOS:IsOfficer() then return nil end
+    local id = WEB_ID_PREFIX .. ev.id
+    local when = tonumber(ev.startsAt) or 0
+    if when <= 0 or self:IsDeleted(id) then return nil end
+
+    local events = self:GetEvents()
+    local e = events[id]
+    -- The site's id names a raid or an event, never both: a raid of this id is left as it is.
+    if e and not self:IsSiteEvent(e) then return nil end
+    answeredAt = math.min(tonumber(answeredAt) or 0, GetServerTime())
+    if e and (tonumber(e.signupsAt) or 0) > answeredAt then return e end
+
+    local kind = normalizeKind(ev.kind)
+    local title = GuildOS:SanitizeUserText(ev.title, 192)
+    if title == "" then title = self:KindLabel(kind) end
+    local clock = cleanClock(ev.clock)
+    local site = cleanSite(ev)
+
+    -- Nothing moved: the same event said again later only moves its time. The note is this client's language and
+    -- is not compared, or two officers reading two languages would republish it at every login.
+    if e and not e.canceled and e.title == title and e.when == when and e.kind == kind and sameClock(e.clock, clock)
+        and sameSite(e.site, site) then
+        e.signupsAt = math.max(tonumber(e.signupsAt) or 0, answeredAt)
+        return e
+    end
+
+    local isNew = (e == nil)
+    if isNew then
+        e = {
+            id = id, author = GuildOS.Compat.PlayerName(), createdAt = GetServerTime(),
+            rsvps = {}, shareAlliance = false, size = GuildOS.Client.defaultRaidSize,
+        }
+        events[id] = e
+    end
+    e.canceled = false
+    e.title, e.when, e.clock, e.kind = title, when, clock, kind
+    e.note = site.where and string.format(L["From the website. Where: %s"], site.where) or L["From the website."]
+    -- Answered on the site, counted there: no names travel, and nobody answers it in the game.
+    e.signups, e.signupsAt, e.site = {}, answeredAt, site
+
+    if GuildOS.SyncService then
+        local rev = GuildOS.SyncService:NextRevision("event", id)
+        GuildOS.SyncService:Publish("event", isNew and "create" or "update", { event = wireOf(e) }, { rev = rev })
+    end
+    self:Refresh()
+    return e
+end
+
+--- Takes off the calendar the site's events that are not raids which the site no longer sends (#652), where the
+--- inbox can tell (`info`, CompanionImport:SiteEventsInfo; the reasoning is GameCalendar.SiteEventGone). Cancelled,
+--- as an officer cancels one, so it goes on every client; it comes back if the site sends it again.
+function Calendar:DropSiteEvents(info)
+    local GC = GuildOS.GameCalendar
+    if not (GuildOS:IsOfficer() and GC and GC.SiteEventGone and type(info) == "table") then return end
+    local now, gone = GetServerTime(), {}
+    for id, e in pairs(self:GetEvents()) do
+        if not e.canceled and self:IsSiteEvent(e) and GC.SiteEventGone(e, info, now) then gone[#gone + 1] = id end
+    end
+    for _, id in ipairs(gone) do self:Cancel(id) end
 end
 
 --- What a site raid was put in the game's calendar as ({ title, at }), or false once taken out of it,
@@ -1024,6 +1126,7 @@ function Calendar:OnSync(env, sender)
         -- A new date of a series this client knows is ended: a stale officer filled it in. Dropped.
         local ended = series and not existing and self:IsSeriesEnded(series.id)
         if not ended and not self:IsDeleted(e.id) and GuildOS.SyncService:ShouldApply("event", e.id, env.rev) then
+            local wireCanceled = e.canceled == true
             e.rsvps    = (existing and existing.rsvps) or {}
             e.canceled = (existing and existing.canceled) or false
             e.shareAlliance = e.shareAlliance and true or false
@@ -1046,9 +1149,17 @@ function Calendar:OnSync(env, sender)
                     e.game, e.gameAt = existing and existing.game, existing and existing.gameAt
                 end
                 e.clock = cleanClock(e.clock)
+                -- One of the site's events that is not a raid (#652): its counts, no names, never in the game's own
+                -- calendar; and cancelled or not as the officer who sent it has it, so one the site sends again after
+                -- it left comes back here too.
+                e.site = cleanSite(e.site)
+                if e.site then
+                    e.signups, e.game, e.gameAt = {}, nil, nil
+                    e.canceled = wireCanceled
+                end
             else
                 e.signups, e.signupsAt = nil, nil
-                e.game, e.gameAt, e.clock = nil, nil, nil
+                e.game, e.gameAt, e.clock, e.site = nil, nil, nil, nil
             end
             e.series = cleanSeries(e.series)   -- #267: the rule of a repeating event, checked
             self:GetEvents()[e.id] = e

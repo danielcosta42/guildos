@@ -110,6 +110,28 @@ function GameCalendar.NotSentYet(dayEnd, now, inbox)
     return nil
 end
 
+--- Whether an event from the site that is not a raid (guildos-web #652) is gone from it: the inbox's list of
+--- events (`info` as CompanionImport:SiteEventsInfo gives it: { ids, count, at, last }) leaves it out, and the
+--- inbox could tell. The same reasoning as "gone" in StateOf and the window of NotSentYet (#416): only inside
+--- the inbox's window from when it was written, never past three hours after its start, below the inbox's cap
+--- (or, at the cap, no later than its last event), and never from an inbox older than the one that brought the
+--- event (`signupsAt`): one that only left the window is not called cancelled, and comes back when it returns.
+function GameCalendar.SiteEventGone(webEvent, info, now)
+    local at = type(info) == "table" and type(info.ids) == "table" and tonumber(info.at)
+    local raidId = GameCalendar.RaidIdOf(webEvent)
+    if not (at and raidId) or info.ids[raidId] then return false end
+    local known = tonumber(webEvent.signupsAt) or 0
+    if known <= 0 or known > at then return false end
+    local when = tonumber(webEvent.when) or 0
+    now = tonumber(now) or GetServerTime()
+    if when < at - GameCalendar.GRACE or when > at + GameCalendar.WINDOW_DAYS * 86400 or when < now - GameCalendar.GRACE then
+        return false
+    end
+    local last = tonumber(info.last)
+    if (tonumber(info.count) or 0) >= GameCalendar.INBOX_CAP and (not last or when > last) then return false end
+    return true
+end
+
 --- What the addon's calendar says about a site raid and the game's calendar:
 ---   "gone"    the site no longer sends it (inferred, and only where the inbox can tell);
 ---   "absent"  not in the game's calendar;

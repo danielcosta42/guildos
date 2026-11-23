@@ -3992,3 +3992,8 @@ L["new"] = "nova"
 L["no room: cuts the note, asks"] = "sem espaço: corta a nota, pergunta"
 L["replaces a date: asks"] = "troca uma data: pergunta"
 L["same day"] = "mesmo dia"
+
+-- The site's events that are not raids, on the calendar (guildos-web #652)
+L["From the website."] = "Do site."
+L["From the website. Where: %s"] = "Do site. Local: %s"
+L["%d going · %d maybe"] = "%d vão · %d talvez"

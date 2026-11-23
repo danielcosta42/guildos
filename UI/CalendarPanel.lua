@@ -641,8 +641,11 @@ function GuildOS:CreateCalendarSub(panel)
             local shareMark = e.shareAlliance and "  [A]" or ""
             local inSeries = type(e.series) == "table"
             local repMark = inSeries and ("  " .. tint(L["(repeats)"], soft)) or ""
-            local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. (e.title or "") .. "  "
-                .. tint("(" .. (e.size or DEFAULT_SIZE) .. ")", soft) .. shareMark .. repMark,
+            -- One of the site's events that is not a raid (#652) has no size: nobody is counted against one.
+            local siteEvent = CAL().IsSiteEvent and CAL():IsSiteEvent(e)
+            local sizeMark = siteEvent and "" or ("  " .. tint("(" .. (e.size or DEFAULT_SIZE) .. ")", soft))
+            local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. (e.title or "")
+                .. sizeMark .. shareMark .. repMark,
                 12, C.text.r, C.text.g, C.text.b)
             head:SetPoint("TOPLEFT", 0, -yy)
             if CAL():MayManage(e) then
@@ -662,9 +665,10 @@ function GuildOS:CreateCalendarSub(panel)
             end
             yy = yy + 20
 
-            local compFS = UI:CreateText(child, string.format(L["Tanks %d, Heals %d, DPS %d  (%d going, %d tentative)"],
-                comp.roles.TANK, comp.roles.HEALER, comp.roles.DPS, comp.yes, comp.tentative),
-                11, soft.r, soft.g, soft.b)
+            local compText = siteEvent and string.format(L["%d going · %d maybe"], comp.yes, comp.tentative)
+                or string.format(L["Tanks %d, Heals %d, DPS %d  (%d going, %d tentative)"],
+                    comp.roles.TANK, comp.roles.HEALER, comp.roles.DPS, comp.yes, comp.tentative)
+            local compFS = UI:CreateText(child, compText, 11, soft.r, soft.g, soft.b)
             compFS:SetPoint("TOPLEFT", 0, -yy)
             yy = yy + 18
 
@@ -687,8 +691,9 @@ function GuildOS:CreateCalendarSub(panel)
                 local whereFS = UI:CreateText(child, where, 11, soft.r, soft.g, soft.b)
                 whereFS:SetPoint("TOPLEFT", 0, -yy)
                 yy = yy + 16
-                -- Whether it is in the game's own calendar, and for an officer the click that changes it.
-                if gameOn then
+                -- Whether it is in the game's own calendar, and for an officer the click that changes it. Not for
+                -- the site's events that are not raids (#652): the game's guild event is one to sign up and invite to.
+                if gameOn and not siteEvent then
                     local view = GC:ViewFor(e, gameEvents, inbox)
                     if view.text then
                         local stateFS = UI:CreateText(child, view.text, 11, soft.r, soft.g, soft.b)
