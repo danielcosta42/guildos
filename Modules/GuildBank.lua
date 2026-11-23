@@ -133,6 +133,7 @@ end
 ----------------------------------------------------------------------
 function GuildBank:Initialize()
     self:Store()
+    self:DropNameless()
     state()
     if GuildOS.SyncService then
         GuildOS.SyncService:On("gbank", function(env, sender) GuildBank:OnSync(env, sender) end)
@@ -393,6 +394,19 @@ local function sig(e)
     return table.concat({ e.ty or "", e.n or "", e.id or 0, e.c or 0, e.g or 0, e.t2 or 0 }, "|")
 end
 GuildBank._sig = sig
+
+-- The game gives a line's name as nil until the client knows it (shown as "?"): such a line is the
+-- same event as a named one that agrees in all else (#414).
+local function named(e) return type(e.n) == "string" and e.n ~= "" and e.n ~= "?" end
+-- What a line says but its name.
+local function body(e)
+    return table.concat({ e.ty or "", e.id or 0, e.c or 0, e.g or 0, e.t2 or 0 }, "|")
+end
+-- Whether two lines with the same body may be one event: same name, or one of them has none.
+local function sameWho(a, b)
+    if named(a) and named(b) then return a.n == b.n end
+    return true
+end
 GuildBank.LEDGER_V = LEDGER_V
 
 -- The lines of stream `k` (a tab, or 0 for money) in the ledger, in the order they were added.
@@ -416,29 +430,40 @@ end
 --      a later event, so new; any other pairs with the nearest agreeing kept line within
 --      MATCH_HOURS not paired already, and only the unpaired are new (two equal deposits in one
 --      hour stay two). These go in at their time, so the stream's end stays the newest lines.
--- Returns how many lines were added. Pure apart from the ledger it writes.
+-- A line with no name (the game had not filled it in) agrees with one that has a name and agrees in
+-- all else, and takes that name: one event read before and after its name came is one line (#414).
+-- Returns how many lines were added, then how many kept lines got their name. Pure apart from the
+-- ledger it writes.
 function GuildBank:MergeStream(k, list)
     local kept = self:Stream(k)
     local ks, ls, newest = {}, {}, -math.huge
-    for i, e in ipairs(kept) do ks[i] = sig(e); newest = math.max(newest, e.t or 0) end
-    for i, e in ipairs(list) do ls[i] = sig(e) end
+    for i, e in ipairs(kept) do ks[i] = body(e); newest = math.max(newest, e.t or 0) end
+    for i, e in ipairs(list) do ls[i] = body(e) end
+    local filled = 0
+    local function fill(keptLine, read)   -- a kept line without a name takes the read's
+        if not named(keptLine) and named(read) then keptLine.n = read.n; filled = filled + 1 end
+    end
     local function runAt(j, n)   -- list[1..n] is kept[j..j+n-1], read again
         for i = 1, n do
             local a = kept[j + i - 1]
-            if ks[j + i - 1] ~= ls[i] or math.abs((a.t or 0) - (list[i].t or 0)) >= SAME_EVENT then return false end
+            if ks[j + i - 1] ~= ls[i] or not sameWho(a, list[i])
+                or math.abs((a.t or 0) - (list[i].t or 0)) >= SAME_EVENT then return false end
         end
         return true
     end
+    local function fillRun(j, n) for i = 1, n do fill(kept[j + i - 1], list[i]) end end
     local best = 0
     for n = math.min(#kept, #list), 1, -1 do
         if runAt(#kept - n + 1, n) then best = n; break end
     end
     local new, atEnd = {}, true
+    if best == #list then fillRun(#kept - best + 1, best) end
     if best < #list then
         for j = #kept - #list, 1, -1 do
-            if runAt(j, #list) then return 0 end
+            if runAt(j, #list) then fillRun(j, #list); return 0, filled end
         end
         if best > 0 then
+            fillRun(#kept - best + 1, best)
             for i = best + 1, #list do new[#new + 1] = list[i] end
         else
             atEnd = false
@@ -447,15 +472,24 @@ function GuildBank:MergeStream(k, list)
                 bySig[ks[i]] = bySig[ks[i]] or {}
                 table.insert(bySig[ks[i]], e)
             end
-            for i, e in ipairs(list) do
-                local pick, pickD
-                if (e.t or 0) < newest + SAME_EVENT then
-                    for _, c in ipairs(bySig[ls[i]] or {}) do
-                        local d = math.abs((c.t or 0) - (e.t or 0))
-                        if not taken[c] and d <= tol and (not pickD or d < pickD) then pick, pickD = c, d end
+            -- Lines with the same name pair first, so a nameless line never takes the twin a named
+            -- line needs (two equal deposits by one member stay two).
+            local pickOf = {}
+            for pass = 1, 2 do
+                for i, e in ipairs(list) do
+                    if not pickOf[i] and (e.t or 0) < newest + SAME_EVENT then
+                        local pick, pickD
+                        for _, c in ipairs(bySig[ls[i]] or {}) do
+                            local d = math.abs((c.t or 0) - (e.t or 0))
+                            local who = pass == 1 and c.n == e.n or pass == 2 and sameWho(c, e)
+                            if who and not taken[c] and d <= tol and (not pickD or d < pickD) then pick, pickD = c, d end
+                        end
+                        if pick then taken[pick], pickOf[i] = true, pick end
                     end
                 end
-                if pick then taken[pick] = true else new[#new + 1] = e end
+            end
+            for i, e in ipairs(list) do
+                if pickOf[i] then fill(pickOf[i], e) else new[#new + 1] = e end
             end
         end
     end
@@ -475,7 +509,43 @@ function GuildBank:MergeStream(k, list)
         table.insert(ledger, pos, { k = k, t = e.t, ty = e.ty, n = e.n, id = e.id, c = e.c, g = e.g, t2 = e.t2 })
     end
     while #ledger > LOG_KEEP do table.remove(ledger, 1) end
-    return #new
+    return #new, filled
+end
+
+-- Ledgers saved before #414 hold each money line twice when it was read once before its name came:
+-- a line without a name and, near it, the same line with one. On each load, each nameless line goes
+-- with the nearest such named line of its stream not taken by another (so two equal deposits by one
+-- member stay two); a clean ledger loses nothing. Returns how many lines went.
+function GuildBank:DropNameless()
+    local ledger = self:Store().ledger
+    local groups = {}
+    for _, e in ipairs(ledger) do
+        local g = (e.k or 0) .. "|" .. body(e)
+        groups[g] = groups[g] or { named = {}, nameless = {} }
+        table.insert(named(e) and groups[g].named or groups[g].nameless, e)
+    end
+    local drop, tol = {}, MATCH_HOURS * 3600
+    for _, g in pairs(groups) do
+        if #g.nameless > 0 and #g.named > 0 then
+            local pairs_ = {}
+            for _, u in ipairs(g.nameless) do
+                for _, x in ipairs(g.named) do
+                    local d = math.abs((u.t or 0) - (x.t or 0))
+                    if d <= tol then pairs_[#pairs_ + 1] = { u = u, x = x, d = d } end
+                end
+            end
+            table.sort(pairs_, function(a, b) return a.d < b.d end)
+            local used = {}
+            for _, p in ipairs(pairs_) do
+                if not drop[p.u] and not used[p.x] then drop[p.u], used[p.x] = true, true end
+            end
+        end
+    end
+    local n = 0
+    for i = #ledger, 1, -1 do
+        if drop[ledger[i]] then table.remove(ledger, i); n = n + 1 end
+    end
+    return n
 end
 
 -- A log as the game gave it, by what it says rather than its text (a link or a name the client
@@ -503,7 +573,9 @@ function GuildBank:ReadLogs()
         local key = rawKey(rows)
         if key == lastRead[k] then return end
         lastRead[k] = key
-        if #list > 0 and self:MergeStream(k, list) > 0 then reads[#reads + 1] = { k = k, list = list } end
+        if #list == 0 then return end
+        local added, filled = self:MergeStream(k, list)
+        if added > 0 or filled > 0 then reads[#reads + 1] = { k = k, list = list } end
     end
     for tab = 1, math.min(GuildOS.Compat.GuildBankTabCount(), MAX_TABS) do
         if s.queried[tab] then
@@ -794,7 +866,10 @@ function GuildBank:OnSync(env, sender)
         local added = 0
         for _, read in ipairs(type(data.reads) == "table" and data.reads or {}) do
             local k, list = cleanRead(read, limit)
-            if k and #list > 0 then added = added + self:MergeStream(k, list) end
+            if k and #list > 0 then
+                local a, f = self:MergeStream(k, list)
+                added = added + a + f
+            end
         end
         if added > 0 then self:Refresh() end
         if env.act == "hist" and s.answer then s.answer.hist = nil end
