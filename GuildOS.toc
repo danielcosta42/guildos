@@ -112,6 +112,7 @@ Modules\GuildManager.lua
 Modules\RosterColumns.lua
 Modules\ModPresets.lua
 Modules\BulkActions.lua
+Modules\AltDeparture.lua
 Modules\AddonReminder.lua
 Modules\GearAudit.lua
 Modules\Readiness.lua
@@ -184,6 +185,7 @@ UI\GuildBankPanel.lua
 UI\RosterFrame.lua
 UI\MemberDetail.lua
 UI\WarnDialog.lua
+UI\AltDepartureDialog.lua
 UI\ModAlerts.lua
 UI\BulkPanel.lua
 UI\RemindPanel.lua

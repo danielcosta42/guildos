@@ -102,6 +102,18 @@ function GuildOS:UnlinkAlt(altKey)
     return true
 end
 
+-- Unlink every alt of `mainKey` at once (issue #426: the main left and the officer said the group is over). Officers
+-- only. Returns how many alts were unlinked.
+function GuildOS:UnlinkGroup(mainKey)
+    if not self:IsOfficer() or not mainKey then return 0 end
+    local links, n = {}, 0
+    for k, v in pairs(self.db.altLinks or {}) do
+        if v == mainKey then n = n + 1 else links[k] = v end
+    end
+    if n > 0 then commitLinks(self, links) end
+    return n
+end
+
 -- Returns all keys in the same account group as playerKey (includes playerKey itself)
 function GuildOS:GetLinkedChars(playerKey)
     local altLinks = (self.db and self.db.altLinks) or {}

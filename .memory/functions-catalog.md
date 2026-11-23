@@ -109,6 +109,7 @@ Removed: `UI.Hub`, `UI:CreateWindow`, `UI:ToggleWindow`, `UI:IsWindowOpen`, `UI:
 | `GuildOS:RekeyMembersToThisRealm()` | Forever only, at `DataCollector:Initialize`: moves `db.members` records keyed with another client's realm to this client's key; the newer `lastUpdate` wins (a tie keeps the one already there) and the older one's fields fill the winner's gaps (issue #95) |
 | `PugInspector:Classify(name, srcs)` | Builds its table key with `GetPlayerKey` when the name or the sources give a realm, else the bare name (issue #95). On retail the ban, the guild membership (`srcs.guildKeys`, whole keys) and the ex-member check (`_LastRosterAction`, whole keys) go by that key, so a namesake on another connected realm is somebody else; `_GroupMembers` keeps a party member's realm and skips a secret raid name (issue #184) |
 | `BanList:_NormalizeKey(name)` / `_Find(name, store)` / `_Who(name)` | A ban's key: the name alone, lower case, on Forever and Anniversary; on retail the whole key (`KeyOfRosterName`, lower case; a name without a realm is this realm's). `_Find` (behind `Get` and `IsBanned`) takes a standing ban under the whole key, else a standing one filed under the name alone before issue #184 (holds on every realm, also once the whole key's is lifted), else the whole key's entry. `_Who` is how a ban names somebody and how a name from the game (whisper, join, tooltip) is looked up: with its realm on retail (issue #184) |
+| `BanList:Add(name, reason, durationSec, note, group)` / `AddGroup(keys, reason, days, note)` / `StillInGuild(members, meKey)` | (#426) A ban with the officer's `note` (never sent: `BanList.OnTheWire`, kept only on its writer's client) and the `group` mark "(group of X)" (synced; old clients keep it unread); a whole alt group with one term and one note; the banned still on the roster (the "Remove all" queue) |
 | `BanList:List()` / `RemoveKey(key)` / `Remove(name)` / `_RemovalKey(name)` | `List` returns copies of the standing bans, each with the `key` it is filed under; the ban list's x lifts that row with `RemoveKey`. `Remove` (`/gos unban`) lifts `_RemovalKey`: on retail a name with a realm is that key, a bare one the standing ban by name alone first, else this realm's. Both return false and write nothing when no ban stands at the key, and `/gos unban` then says "No ban to lift for %s." (issue #184). `_Find` skips a whole key's ban that ran out, as one lifted |
 | `RecruitScanner:Addr(cand)` | Who a /who candidate is to the scanner: on retail the whole name /who gave (`cand.full`), elsewhere the name alone. The selection, the row's label and the whisper's target use it; cooldowns and replies are keyed by `KeyOfRosterName` on retail; `WhisperSelected` checks the ban again at the click (issue #184) |
 | `RosterLog:_NormShort(name)` | Who a log event is about: the short name; on retail the whole key, so officers on different realms file one event under one id (issue #184) |
@@ -212,6 +213,7 @@ Removed: `Compat.NewTimer`.
 | `GuildOS:SetOfficerMaxRank(n)` / `PublishOfficerMaxRank(justChanged)` / `OnOfficerMaxRankSync(env)` | The guild's officer threshold (issue #81): an officer's change is stamped (`settings.officerMaxRankAt`) and published on the `guildcfg` SyncService officer domain; officers re-send it on the 5-minute sync and when asked; a local change is stamped past the one held and goes out even when it demotes the sender; every client keeps the newest stamp (a real time, held to 5 min ahead of its clock; a tie goes to the lower threshold), a whole rank 0..9, sent by an officer over GUILD. `SetOfficerMaxRank` returns false and does nothing for a non-officer. A threshold set before #81 that is not the default is shared by the Settings button |
 | `GuildOS:LinkAlt(altKey, mainKey)` | Links alt to main (officer only): plans the view with `_PlanLink` (the alt's own alts follow it; nil when main is an alt) and writes it through `AltSync:Commit` (#424) |
 | `GuildOS:UnlinkAlt(altKey)` | Unlinks the alt (officer only): a tombstone through `AltSync:Commit` (#424) |
+| `GuildOS:UnlinkGroup(mainKey)` | Unlinks every alt of `mainKey` in one commit (officer only); returns how many (#426) |
 | `GuildOS:GetLinkedChars(playerKey)` | Returns all keys in the same alt/main account group |
 | `GuildOS:DeepCopy(orig)` | Recursively deep-copies a table |
 | `GuildOS:GetClassColor(class)` | Returns r,g,b for a WoW class token |
@@ -643,6 +645,16 @@ Removed: `Compat.NewTimer`.
 
 | `BulkActions.Toward(rank, action, target)` / `.GroupMatch(members, group, mainKey, action, target, ctx)` | Pure (#424): a step left toward the target rank; a group's alts (never the main) short of it that Eligible allows |
 | `BulkActions:StartGroup(key, action, target)` / `:StartGroupAndSay(...)` / `:CommandGroup(rest)` | A queue taking a member's alts to the main's rank (or `target`), one step per click, re-queued until there; `/gos altgroup` |
+| `BulkActions:StartList(action, list)` / `:StartListAndSay(...)` / `:ListFor(keys)` / `:Busy()` | (#426) A queue of exactly `list` (Collect's lines), each checked by Eligible; never replaces a queue still running ("busy"). The alts of a removed member, the banned still in the guild |
+
+## AltDeparture.lua — GuildOS.AltDeparture (somebody with alts removed or gone, #426; ADR-0041)
+
+| Function | Purpose |
+|---|---|
+| `AltDeparture:OnKick(evt)` / `:OnRemoved(key)` / `:Flush()` / `:TakeGroups(members)` | A removal by this client's character (RosterLog's line, or a Bulk actions removal the roster confirmed): after 2 s, or once a removal queue is through, each alt group still in the guild is asked about once a session (`ShowAltRemovedDialog`) |
+| `AltDeparture:RemoveOthers(groups)` / `:BanGroups(groups, reason, days, note)` | The dialog's answers: a removal queue of Bulk actions (one per click), or `BanList:AddGroup` per group |
+| `AltDeparture:OnLeave(evt)` / `:SetNewMain(departed, key)` / `:Unlink(departed)` | A main leaving with alts still in the guild: each officer asked once (`ShowMainLeftDialog`); `SetMain` or `GuildOS:UnlinkGroup`, refused ("settled") when another officer already answered |
+| `AltDeparture.Others(group, members, skip)` / `.ColoredNames(members)` | Pure: the group's members on the roster; names in class colour |
 
 ## AltSync.lua — GuildOS.AltSync (alt links synced per alt, #424; ADR-0040)
 

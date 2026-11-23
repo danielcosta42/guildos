@@ -303,7 +303,58 @@ function BulkActions:StartGroup(key, action, target)
     return true
 end
 
+--- The roster lines (Collect's) of the members whose key is in `keys`, by name.
+function BulkActions:ListFor(keys)
+    local want = {}
+    for _, k in ipairs(keys or {}) do want[k] = true end
+    local out = {}
+    for _, m in ipairs(self:Collect(false)) do
+        if want[m.key] then out[#out + 1] = m end
+    end
+    table.sort(out, function(a, b) return (a.name or ""):lower() < (b.name or ""):lower() end)
+    return out
+end
+
+--- Whether a queue still has a member to click (pending) or one clicked the roster has not shown yet.
+function BulkActions:Busy()
+    if not self:Queue() then return false end
+    local c = self:Counts()
+    return self:Current() ~= nil or c.sent > 0
+end
+
+--- Start a queue of exactly the members of `list` (Collect's lines): the alts of a removed member, the banned still
+--- in the guild (issue #426). The officer's click on the screen that listed them is the confirmation; each member is
+--- still checked by Eligible here and again before their click. Never replaces a queue still running. Returns true,
+--- or false and why: "action", "combat", "permission", "busy" or "empty".
+function BulkActions:StartList(action, list)
+    if not LOG_ACTION[action] then return false, "action" end
+    if GuildOS.Compat.InCombat() then return false, "combat" end
+    if not self:Allowed(action) then return false, "permission" end
+    if self:Busy() then return false, "busy" end
+    local ctx = self:Context()
+    local picked = {}
+    for _, m in ipairs(list or {}) do
+        if self.Eligible(m, action, ctx) then picked[#picked + 1] = m end
+    end
+    if #picked == 0 then return false, "empty" end
+    self:_Queue({ action = action, list = true }, picked)
+    return true
+end
+
+--- StartList, and say why not when it does not; started, the Bulk actions tab opens on the queue.
+function BulkActions:StartListAndSay(action, list)
+    local ok, why = self:StartList(action, list)
+    if not ok then
+        GuildOS:Print(self:WhyText(why == "empty" and "listEmpty" or why))
+    elseif GuildOS.UI and GuildOS.UI.OpenWindow then
+        GuildOS.UI:OpenWindow("management", "bulk")
+    end
+    return ok
+end
+
 local WHY = {
+    busy = L["A bulk action is still running: finish it or stop it first."],
+    listEmpty = L["Your guild rank may not do this to any of them."],
     action = L["Not available on this client."],
     permission = L["Your guild rank may not do this."],
     rule = L["Set at least one rule."],
@@ -397,10 +448,18 @@ function BulkActions:Current()
         local item = q.items[q.pos]
         if item.status == "pending" then
             local idx, rank = live(item)
-            local m = idx and (q.rules or q.target) and memberAt(idx, q.rules and usesAttendance(q.rules) and self:HasAttendance())
+            local m = idx and (q.rules or q.target or q.list) and memberAt(idx, q.rules and usesAttendance(q.rules) and self:HasAttendance())
             ctx = ctx or self:Context()
-            -- A queue from rules checks them again; one for a group of alts, that the target is still ahead (#424).
-            local still = m and (q.rules and self.Meets(m, q.rules) or (not q.rules and self.Toward(m.rankIndex, q.action, q.target)))
+            -- A queue from rules checks them again; one for a group of alts, that the target is still ahead (#424);
+            -- one of a list (#426), only that this rank may still do it.
+            local still
+            if m and q.rules then
+                still = self.Meets(m, q.rules)
+            elseif m and q.target then
+                still = self.Toward(m.rankIndex, q.action, q.target)
+            else
+                still = m ~= nil
+            end
             if not idx then
                 item.status, item.why = "skipped", "left"
             elseif rank ~= item.rankIndex then
@@ -595,6 +654,11 @@ function BulkActions:Confirm()
                     local detail = rank and GuildOS.GuildManager and GuildOS.GuildManager:GetRankName(rank) or nil
                     GuildOS.RosterLog:Record(act, item.fullName, GuildOS.Compat.PlayerName(), detail)
                 end
+                -- A member this officer removed: their alts still in the guild are asked about once the queue is
+                -- through (#426). Only asked: nothing is removed or banned without the officer's click.
+                if q.action == "remove" and GuildOS.AltDeparture then
+                    GuildOS:SafeCall(GuildOS.AltDeparture.OnRemoved, GuildOS.AltDeparture, item.key)
+                end
                 -- A group's alt one step on and still short of the main's rank: queued again for its next step (#424).
                 if q.target and idx and self.Toward(rank, q.action, q.target) then
                     local again = {}
@@ -636,6 +700,9 @@ end
 
 function BulkActions:Refresh()
     if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
+    -- Members removed while a queue ran are asked about once it is through, skipped or stopped (#426).
+    local AD = GuildOS.AltDeparture
+    if AD and AD.HasPending and AD:HasPending() then GuildOS:SafeCall(AD.Flush, AD) end
 end
 
 --- `/gos bulk [next | skip | stop]`.
