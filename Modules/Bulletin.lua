@@ -30,10 +30,11 @@ function Bulletin:Initialize()
     GuildOS.db.bulletin = GuildOS.db.bulletin or { messages = {} }
     GuildOS.db.bulletin.messages = GuildOS.db.bulletin.messages or {}
     if type(GuildOS.db.bulletin.seen) ~= "table" then
-        -- First run with #418: what the login digest already showed (posted before its last look) is not told again.
-        local seen, lastSeen = {}, tonumber(GuildOS.db.digest and GuildOS.db.digest.lastSeen) or 0
+        -- First run with #418: every notice already on the board counts as told; only what arrives after is new.
+        local seen = {}
         for _, m in ipairs(GuildOS.db.bulletin.messages) do
-            if type(m) == "table" and m.id and (tonumber(m.ts) or 0) <= lastSeen then seen[m.id] = true end
+            local key = Bulletin.Key(m)
+            if key then seen[key] = true end
         end
         GuildOS.db.bulletin.seen = seen
     end
@@ -44,6 +45,14 @@ end
 
 function Bulletin:GetMessages()
     return (GuildOS.db.bulletin and GuildOS.db.bulletin.messages) or {}
+end
+
+-- What a notice is remembered as told by: its id, or, for one from the wire without one, who posted it, when and
+-- its text, which do not change from one snapshot to the next. Nil for what is not a notice.
+function Bulletin.Key(m)
+    if type(m) ~= "table" then return nil end
+    if m.id ~= nil then return tostring(m.id) end
+    return "~" .. tostring(m.author or "?") .. "|" .. tostring(m.ts or 0) .. "|" .. tostring(m.text or "")
 end
 
 -- When a notice ends (a server time), or nil when it lasts until removed. It came over the wire: a number or nothing.
@@ -74,7 +83,7 @@ end
 function Bulletin:Unseen(now, limit)
     local seen, out = GuildOS.db.bulletin.seen or {}, {}
     for _, m in ipairs(self:Active(now)) do
-        if not (m.id and seen[m.id]) then out[#out + 1] = m end
+        if not seen[Bulletin.Key(m)] then out[#out + 1] = m end
         if limit and #out >= limit then break end
     end
     return out
@@ -84,11 +93,10 @@ end
 -- and what left the board is forgotten.
 function Bulletin:MarkSeen(now)
     local seen, kept = GuildOS.db.bulletin.seen or {}, {}
-    for _, m in ipairs(self:Active(now)) do
-        if m.id then kept[m.id] = true end
-    end
+    for _, m in ipairs(self:Active(now)) do kept[Bulletin.Key(m)] = true end
     for _, m in ipairs(self:GetMessages()) do
-        if type(m) == "table" and m.id and seen[m.id] then kept[m.id] = true end
+        local key = Bulletin.Key(m)
+        if key and seen[key] then kept[key] = true end
     end
     GuildOS.db.bulletin.seen = kept
 end
