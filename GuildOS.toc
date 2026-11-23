@@ -71,6 +71,8 @@ Modules\AllianceLink.lua
 Modules\GuildChat.lua
 Modules\RosterLog.lua
 Modules\MemberHistory.lua
+Modules\MemberMarks.lua
+Modules\NoteDates.lua
 Modules\BanList.lua
 Modules\AltSync.lua
 Modules\Discipline.lua
@@ -191,6 +193,7 @@ UI\AltDepartureDialog.lua
 UI\ModAlerts.lua
 UI\BulkPanel.lua
 UI\RemindPanel.lua
+UI\MarksPanel.lua
 UI\CorePanel.lua
 UI\ManagementPanel.lua
 UI\AuditPanel.lua

@@ -521,6 +521,13 @@ PAGES.chat = function(F, isOfficer)
     -- Guild Roster Manager's tag (#269).
     F:Check(L["Short tag: [M] on a main, [Main] on an alt"], nil, function() return ct().altShort end, setCt("altShort"),
         { indent = 2 * SUB_INDENT, enabled = function() return annotating() and ct().altTag ~= false end })
+    -- The officers' nickname, and the same prefix in whispers, party and raid from guild members (#429).
+    F:Check(L["Nickname (officers)"], nil, function() return ct().nick ~= false end, setCt("nick"),
+        { indent = SUB_INDENT, enabled = annotating })
+    F:Check(L["Also in whispers from guild members"], nil, function() return ct().whisper == true end, setCt("whisper"),
+        { indent = SUB_INDENT, enabled = annotating })
+    F:Check(L["Also in party and raid chat"], nil, function() return ct().group == true end, setCt("group"),
+        { indent = SUB_INDENT, enabled = annotating })
 
     -- Mentions (issue #59): what /gos mentions sets. Personal, never synced.
     local mcfg = GuildOS.db.mentions

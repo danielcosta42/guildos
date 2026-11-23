@@ -102,6 +102,11 @@ local IN_UI = {
   altgroup    = { { "UI/MemberDetail.lua", "GuildOS.BulkActions:StartGroupAndSay(playerKey" } },
   -- My birthday (issue #428): Settings > Profile's Birthday, its box and its "Show my birthday".
   birthday    = { { "UI/SettingsPanel.lua", "GuildOS.Birthdays:SetMineText(" }, { "UI/SettingsPanel.lua", "GuildOS.Birthdays:ClearMine()" } },
+  -- Leadership > Notes and marks (issue #429): its buttons call what the commands call.
+  joindate    = { { "UI/ManagementPanel.lua", "GuildOS:BuildMarksSub(p)" }, { "UI/MarksPanel.lua", "ND:WriteOne(" },
+                  { "UI/MarksPanel.lua", "ND:ImportPlan()" }, { "UI/MarksPanel.lua", "ND:Plan()" } },
+  safe        = { { "UI/MarksPanel.lua", "MM:CommandSafe(" } },
+  nick        = { { "UI/MarksPanel.lua", "MM:CommandNick(" } },
   mentions    = { { "UI/SettingsPanel.lua", "GuildOS.Mentions:PrintLog()" },
                   { "UI/SettingsPanel.lua", 'GuildOS.Mentions:HandleCommand({ "clearwords" })' } },
   notecmd     = { { "UI/SettingsPanel.lua", "GuildOS.db.noteCommand.enabled = checked" } },

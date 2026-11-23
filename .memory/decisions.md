@@ -1916,3 +1916,48 @@ everything. Until now cores reached the game only through the companion's `Inbox
 - (−) One text per member, no history of edits; two officers editing at once: one edit is lost (the older).
 - (−) Every officer backfills every sheet: in a guild with hundreds of sheets, a few minutes of BULK traffic
   per officer at most once per 10 minutes.
+
+
+## ADR-0044 — Officers' tools on the notes: dates written and read, the safe list, nicknames (#429)
+
+### Context
+- Epic #423 group F (what GRM does and GuildOS did not): write the join date (#425's history) into a public or
+  officer note, read dates already written there back, never put some members in a bulk removal (#420), tell the
+  officers who comes back after a long time offline, and a nickname per member.
+- Only TBC Anniversary lets an addon write a note (`Compat.CanEditPublicNote`, #5/#162); WoW: Forever and retail
+  forbid `C_GuildInfo.SetNote` to addons. Many writes in a row can draw `ERR_GENERIC_THROTTLE` (#392/#393).
+
+### Decision
+- **`Modules/NoteDates.lua`.** A note never loses text silently: an empty note gets the date, one with room gets it
+  after a space, one that says it is left alone; another date or no room only from a confirmation showing the old
+  and the new note, and a note that changed since the question is asked again. Nothing over 31 bytes is sent.
+  Officer note by default (only officers read it); dates GuildOS only saw are off by default (on a guild GuildOS met
+  today they are all today).
+- **How it writes:** `Compat.CanWriteNote` (Anniversary) → a run writes one note every 2 s, doubled on the throttle
+  (the last write re-read, so none goes twice), halved back after 5 calm writes. `ADDON_ACTION_BLOCKED` on a note
+  write → one per click of Next (a hardware event); `ADDON_ACTION_FORBIDDEN`, or a client where `CanWriteNote` is
+  false but the rank may edit the note (`Compat.RankEditsNote`) → "copy the text": each click shows the whole new
+  note selected in a box to paste into the game's roster.
+- **The import** reads the first date of the public note, else the officer note; a review lists every one (new,
+  earlier than GuildOS saw, same day, later: not taken, history has the exact day: kept); only new and earlier are
+  ticked and the officer unticks any. A day taken is kept as "seen" (`joinEst`, `joinSrc = "note"`) at its last
+  minute, so the game's own line from any officer still replaces it. This client's history only: the records sync
+  sends are diffs and audit lines.
+- **`Modules/MemberMarks.lua`**, officer domain `marks`: per member and kind (`safe`, `nick`) one entry
+  `{ v, at, by }`, the later `at` winning (ties settle the same everywhere), a cleared one a tombstone for 90 days.
+  Sent on a change and, at login and `/gos sync`, every entry in batches of 40, 2 s apart. Applied on officers'
+  clients only.
+- **The safe list in `BulkActions`:** `memberAt` reads both notes and sets `m.safe`; `Eligible` refuses a removal or
+  demotion for it. Preview and `Current` (each click) both go through `Eligible`, so a member tagged after the
+  preview is skipped at their click. A promotion still may.
+- **Back after N days offline:** the history's roster diff (#425) already logged it; its look now also prints one
+  line to the officer with every member back in it. The snapshot then holds them online, so a return is told once.
+  The threshold (`backAfterDays`, 30 by default, 0 = no line) also sets the log's "Back".
+- **Chat Tweaks** shows the nickname in the prefix, and, when asked, the prefix on guild members' whispers, party
+  and raid lines (always hooked, checked per line).
+
+### Consequences
+- (+) Nothing an officer wrote in a note is lost without them seeing the old and new text.
+- (+) On Forever and retail the same tool works as copy and paste, one member a click.
+- (−) The marks' payload reaches every guild client over GUILD (as every officer domain's); only officers keep it.
+- (−) An imported day stays on the client that imported it; another officer imports it on their own.

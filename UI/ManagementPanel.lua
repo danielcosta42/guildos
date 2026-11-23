@@ -24,6 +24,8 @@ local SUBTABS = {
     { key = "bulk",     label = L["Bulk actions"] },
     -- Who has no GuildOS, and a reminder one member a click (issue #422): UI/RemindPanel.lua builds it.
     { key = "remind",   label = L["Without GuildOS"] },
+    -- Join dates in the notes, the safe list, nicknames (issue #429): UI/MarksPanel.lua builds it.
+    { key = "marks",    label = L["Notes and marks"] },
     -- The officers' chat alerts and their rules (issues #404, #405): UI/ModAlerts.lua builds both.
     { key = "alerts",   label = L["Chat alerts"] },
     { key = "alertrules", label = L["Alert rules"] },
@@ -1362,6 +1364,7 @@ function GuildOS:CreateManagementPanel(parent, _mainFrame)
         presets  = BuildPresetsSub,
         bulk     = function(p) return GuildOS.BuildBulkSub and GuildOS:BuildBulkSub(p) end,
         remind   = function(p) return GuildOS.BuildRemindSub and GuildOS:BuildRemindSub(p) end,
+        marks    = function(p) return GuildOS.BuildMarksSub and GuildOS:BuildMarksSub(p) end,
         alerts   = function(p) return GuildOS.BuildModAlertsSub and GuildOS:BuildModAlertsSub(p) end,
         alertrules = function(p) return GuildOS.BuildModRulesSub and GuildOS:BuildModRulesSub(p) end,
     }

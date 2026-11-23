@@ -677,6 +677,31 @@ Removed: `Compat.NewTimer`.
 
 ---
 
+| `BulkActions.Eligible` and `m.safe` (#429) | A member on the safe list (`MemberMarks:IsSafe`, read in `memberAt` from both notes) is never eligible for a removal or demotion: out of the preview, skipped at their click |
+
+## NoteDates.lua — GuildOS.NoteDates (join dates in the guild notes, #429; ADR-0044)
+
+| Function | Purpose |
+|---|---|
+| `NoteDates.Parse(text, order, maxYear)` | Pure: the first date in a note (`yyyy-mm-dd`, `dd.mm.yyyy`, `dd/mm/yy`, a "word:" before it) → `{year,month,day}`, start (label included), end, the date's own start; `order` "dmy"/"mdy" unless a number above 12 decides |
+| `NoteDates.Format(day, fmt, label)` / `.Compose(current, piece, order, maxYear)` / `.Silent(how)` | Pure: the date in one of `FORMATS`; the note with it: "same", "write", "append" (silent), "replace", "full" (only confirmed), never over 31 bytes |
+| `NoteDates:Plan(which)` / `:ItemFor(...)` / `:WriteOne(name)` / `:ConfirmWrite(item)` | What a run would write; one member (`/gos joindate <name>`), a loss of text asked first with the old and new note |
+| `NoteDates:Mode(which)` | "write" (Anniversary), "click" (a write was blocked), "copy" (forbidden, or Forever/retail: the copy box), nil (the rank may not edit it) |
+| `NoteDates:Start(items, confirmed)` / `:Next()` / `:Stop()` / `:Current()` / `:Counts()` | A run: one write every `GAP` s (doubled on ERR_GENERIC_THROTTLE, halved back after `CALM_WRITES`), or one per click of Next in click/copy mode |
+| `NoteDates:ImportPlan(order)` / `:ApplyImport(items)` | The import's review (new, earlier, same, later, kept; only new and earlier ticked) and taking the ticked ones (`MemberHistory:ImportJoin`) |
+| `NoteDates:Command(rest)` | `/gos joindate [<name> | all | import]` |
+
+## MemberMarks.lua — GuildOS.MemberMarks (safe list and nicknames, #429; ADR-0044)
+
+| Function | Purpose |
+|---|---|
+| `MemberMarks.NoteHasTag(note, onote, tag)` / `.Wins(e, held)` / `.Valid(it, now, sender)` | Pure: the tag in either note, capitals aside; later `at` wins; an entry off the network checked |
+| `MemberMarks:IsSafe(key, note, onote)` / `:IsMarkedSafe(key)` / `:SafeKeys()` / `:SafeTag()` / `:SetSafeTag(tag)` / `:SetSafe(key, on)` | The safe list: by hand or the tag (`[safe]` by default); officers write |
+| `MemberMarks:Nick(key)` / `:SetNick(key, text)` | The officers' nickname (24 bytes), on the roster tooltip and in Chat Tweaks' prefix |
+| `MemberMarks:Apply(items, sender)` / `:OnSync` / `:Backfill()` | Officer domain `marks`: `{ s, k, v, t, b }`, applied on officers' clients only; every entry at login and `/gos sync`, 40 per envelope, 2 s apart |
+| `MemberMarks:TooltipLines(tt, key, note, onote)` / `:CommandSafe(rest)` / `:CommandNick(rest)` | The tooltip's lines (officers); `/gos safe [<name>]`, `/gos nick <name> [nickname]` |
+| `MemberHistory:BackDays()` / `:SetBackDays(n)` / `.ApplyNoteJoin(h, key, t)` / `:ImportJoin(key, t)` / `:JoinedFromNote(key)` | The "back after N days offline" threshold (0: off); a join day from a note, kept as seen (`joinSrc = "note"`) so the game's exact line replaces it |
+
 ## AltSync.lua — GuildOS.AltSync (alt links synced per alt, #424; ADR-0040)
 
 | Function | Purpose |

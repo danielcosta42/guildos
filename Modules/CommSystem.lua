@@ -695,6 +695,13 @@ function CommSystem:_Answer()
                 GuildOS.OfficerNotes:BackfillSheets()
             end)
         end
+
+        -- The officers' safe list and nicknames (issue #429), the same way.
+        if GuildOS:IsOfficer() and GuildOS.MemberMarks then
+            C_Timer.After(7, function()
+                GuildOS.MemberMarks:Backfill()
+            end)
+        end
     end)
 end
 
@@ -786,6 +793,7 @@ function CommSystem:FullSync()
     C_Timer.After(1, function()
         self:BroadcastAltLinks()
         if GuildOS.AltSync then GuildOS.AltSync:Backfill() end   -- issue #424
+        if GuildOS.MemberMarks then GuildOS.MemberMarks:Backfill() end   -- issue #429
     end)
 
     C_Timer.After(1.5, function()

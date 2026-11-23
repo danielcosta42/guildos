@@ -283,6 +283,9 @@ local MODULE_START = {
     { "RosterLog" },
     -- Each member's passages and rank changes, kept past the log's 90 days (issue #425).
     { "MemberHistory" },
+    -- The officers' safe list and nicknames (issue #429), synced among them; dates in the notes.
+    { "MemberMarks" },
+    { "NoteDates" },
     { "BanList" },
     -- The alt links, one synced entry per alt (issue #424): before the readers of db.altLinks.
     { "AltSync" },

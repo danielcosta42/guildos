@@ -554,6 +554,58 @@ function Compat.SetGuildPublicNote(name, text, realm)
     return false, (C_GuildInfo and C_GuildInfo.SetNote) and "no-guid" or "no-api"
 end
 
+-- Whether Guild OS may write a member's officer note (issue #429): as for the public note, only TBC
+-- Anniversary lets an addon; WoW: Forever and retail forbid C_GuildInfo.SetNote to addons.
+function Compat.CanEditOfficerNote()
+    if not GuildOS.Client.isAnniversary then return false end
+    if CanEditOfficerNote then return CanEditOfficerNote() and true or false end
+    return false
+end
+
+-- Whether this character's rank may edit that note in the game's own roster ("public" or "officer"),
+-- whether or not an addon may write it: where the addon may not, the player types it there (#429).
+function Compat.RankEditsNote(which)
+    if which == "officer" then
+        if C_GuildInfo and C_GuildInfo.CanEditOfficerNote then return C_GuildInfo.CanEditOfficerNote() and true or false end
+        return (CanEditOfficerNote and CanEditOfficerNote()) and true or false
+    end
+    if C_GuildInfo and C_GuildInfo.CanEditPublicNote then return C_GuildInfo.CanEditPublicNote() and true or false end
+    return (CanEditPublicNote and CanEditPublicNote()) and true or false
+end
+
+-- Whether Guild OS may write that note ("public" or "officer") on this client.
+function Compat.CanWriteNote(which)
+    if which == "officer" then return Compat.CanEditOfficerNote() end
+    return Compat.CanEditPublicNote()
+end
+
+-- A guild member's officer note, or nil and why ("absent", "ambiguous", "hidden": this rank cannot read them).
+function Compat.GetGuildOfficerNote(name, realm)
+    if not Compat.CanViewOfficerNote() then return nil, "hidden" end
+    local idx, why = Compat.FindGuildRosterIndex(name, realm)
+    if not idx then return nil, why end
+    local _, _, _, _, _, _, _, onote = GetGuildRosterInfo(idx)
+    return onote or ""
+end
+
+-- Set a guild member's officer note by name, as SetGuildPublicNote does the public one (issue #429).
+function Compat.SetGuildOfficerNote(name, text, realm)
+    if not Compat.CanEditOfficerNote() then return false, "no-permission" end
+    local idx, why = Compat.FindGuildRosterIndex(name, realm)
+    if not idx then return false, why end
+    local note = GuildOS:SanitizeUserText(text, 31)
+    local guid = select(17, GetGuildRosterInfo(idx))
+    if C_GuildInfo and C_GuildInfo.SetNote and guid then
+        C_GuildInfo.SetNote(guid, note, false)
+        return true
+    end
+    if GuildRosterSetOfficerNote then
+        GuildRosterSetOfficerNote(idx, note)
+        return true
+    end
+    return false, (C_GuildInfo and C_GuildInfo.SetNote) and "no-guid" or "no-api"
+end
+
 ----------------------------------------------------------------------
 -- Events and tooltip hooks a client may not have
 ----------------------------------------------------------------------
