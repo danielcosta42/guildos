@@ -12,8 +12,12 @@ and when the member joined, as GRM shows. ADR-0042.
    letters, several lines, any officer edits it (right-click on the roster > Edit officer sheet, or Edit
    sheet on the member card). Kept without "|" and control characters but the line break. Emptying it keeps
    an empty text, so an older one never comes back. The dated notes stay as they are, beside it.
-2. **Sync:** officer domain `osheet` on the SyncService (officer writes over GUILD only; a member's client
-   drops every packet). A write takes revision max(server time, last + 1): the newer edit wins on every
+2. **Sync:** officer domain `osheet` on the SyncService, carried only by the game's OFFICER addon channel
+   (`CommSystem:SendToOfficers`): a member's client never gets the bytes; a sheet over GUILD or a whisper is
+   refused. The game hands OFFICER messages to the ranks that may hear officer chat: an officer for Guild OS
+   whose rank cannot hear it gets no sheet, and a rank that hears it but is not a Guild OS officer gets the
+   bytes and drops them. WoW: Forever is not checked in game yet: there the channel is off
+   (`Compat.OfficerAddonChannel` nil) and a sheet stays on the client that wrote it. A write takes revision max(server time, last + 1): the newer edit wins on every
    client, a tie settles the same everywhere. An officer re-sends every sheet at its stored revision on the
    answer to a sync request (at most once per 10 minutes) and on `/gos sync`, 2 sheets per envelope, 3 s
    apart (#324). "OA" no longer carries the sheet; "ON" and "OA" are unchanged for clients before #427.

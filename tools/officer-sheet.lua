@@ -4,6 +4,8 @@
 -- several clients on one guild channel and the real compression and chunking between them.
 --
 --   * a sheet of 800 letters, several lines, reaches another officer whole, and the newer edit wins;
+--   * a sheet travels only over the OFFICER addon channel: a member's client never gets a byte of it, a
+--     sheet over GUILD is refused, and a client without that channel keeps its sheets to itself;
 --   * a member's client keeps nothing of it, and a member cannot write one;
 --   * an officer who logs in later gets it from the spaced backfill;
 --   * "ON" and "OA" read as before, and "OA" never carries a sheet;
@@ -93,6 +95,23 @@ GuildOS.State = GuildOS.State or {}
 GuildOS.State.comm = GuildOS.State.comm or {}
 GuildOS.Compat.CanViewOfficerNote = function() return true end
 
+-- Every message a client hands the comm layer, with its channel: a sheet must only ever go over OFFICER.
+local LSer = LibStub("GuildOS-LibSerialize")
+local sheetChannels = {}
+do
+  local realSend = CS.SendMessage
+  CS.SendMessage = function(self, t, data, target, prio, kind, channel)
+    if t == "SV" then
+      local ok, env = LSer:Deserialize(data)
+      if ok and type(env) == "table" and env.dom == "osheet" then
+        local c = target and "WHISPER" or (channel or "GUILD")
+        sheetChannels[c] = (sheetChannels[c] or 0) + 1
+      end
+    end
+    return realSend(self, t, data, target, prio, kind, channel)
+  end
+end
+
 -- ── The clients ─────────────────────────────────────────────────────────
 local clients, wire, online = {}, {}, {}
 local function newClient(name)
@@ -116,6 +135,12 @@ GuildOS.Compat.SendAddonMessage = function(_, msg, channel, target)
   check(#msg <= 255, "every chunk fits the game's 255 bytes")
   wire[#wire + 1] = { msg = msg, channel = channel, from = me, target = target }
 end
+-- Who the game hands an OFFICER addon message: the ranks that hear officer chat (here the officers' rank).
+local function hearsOfficer(name)
+  for _, r in ipairs(ROSTER) do if r[1] == name then return r[2] <= 1 end end
+  return false
+end
+local memberGot = {}   -- every channel a message reached the member's client by
 local function flush()
   local guard = 0
   while #wire > 0 do
@@ -125,7 +150,8 @@ local function flush()
     wire = {}
     for _, m in ipairs(batch) do
       for name in pairs(clients) do
-        if online[name] and name ~= m.from then
+        if online[name] and name ~= m.from and (m.channel ~= "OFFICER" or hearsOfficer(name)) then
+          if name == "Mem" then memberGot[m.channel] = (memberGot[m.channel] or 0) + 1 end
           use(name)
           CS:OnMessageReceived(m.msg, m.channel, m.from .. "-Realm")
           save()
@@ -222,6 +248,26 @@ as("OffB", function() ON:BackfillSheets(true) end)
 check(#wire > 0, "a /gos sync sends them again")
 flush(); runAfters("OffB"); flush()
 
+-- ── 4b. Only the officers' channel carries a sheet ───────────────────────
+check((sheetChannels.OFFICER or 0) > 0 and sheetChannels.GUILD == nil and sheetChannels.WHISPER == nil,
+  "every sheet envelope went over OFFICER, none over GUILD or a whisper")
+check(memberGot.OFFICER == nil, "the member's client never got a single OFFICER message")
+-- A sheet over GUILD, even in an officer's name, is refused.
+local env = { v = 2, id = "FEED0001", av = "test", dom = "osheet", act = "set", ts = now, pv = 1, src = "local",
+              data = { sheets = { { k = MAIN, x = "over guild", a = "OffA", t = now, r = now + 99999 } } } }
+as("OffA", function() CS:SendMessage("SV", LSer:Serialize(env)) end)
+flush()
+check(as("OffB", function() return ON:GetSheet(MAIN).text end) == "B's newer text", "a sheet over GUILD is refused")
+-- A client without the OFFICER channel (WoW: Forever until checked): the sheet stays there.
+local realChan = GuildOS.Compat.OfficerAddonChannel
+GuildOS.Compat.OfficerAddonChannel = function() return nil end
+wire = {}
+check(as("OffA", function() return ON:SetSheet(K("OffC"), "local only") end), "without OFFICER the sheet is still saved")
+as("OffA", function() ON:BackfillSheets(true) end)
+check(#wire == 0 and #afters == 0, "and nothing is sent, nor any backfill")
+check(as("OffA", function() return ON:GetSheet(K("OffC")).text end) == "local only", "it stays on that client")
+GuildOS.Compat.OfficerAddonChannel = realChan
+
 -- ── 5. "ON" and "OA" as before; "OA" never carries a sheet ──────────────
 local LS = LibStub("GuildOS-LibSerialize")
 as("OffA", function() ON:AddNote(MAIN, "Dated note") end)
@@ -298,4 +344,5 @@ local export = src("Modules/CompanionExport.lua")
 check(not export:find("officerNotes", 1, true) and not export:find("GetSheet", 1, true) and not export:find("OfficerNotes", 1, true),
   "the sheet is never exported to the site")
 
+check(memberGot.OFFICER == nil, "after everything, the member's client still never got an OFFICER message")
 print(string.format("officer-sheet: %d checks passed", checks))

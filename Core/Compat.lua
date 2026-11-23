@@ -2197,6 +2197,15 @@ function Compat.ChannelHidesRaidIcons(name, number)
     return info ~= nil and NO_RAID_ICONS[info.zoneChannelID] == true
 end
 
+-- The addon channel only the ranks that may hear officer chat receive (issue #427): what a member's client must
+-- never even get the bytes of. The game's SendAddonMessage takes "OFFICER" on retail and on TBC Anniversary.
+-- WoW: Forever is not checked in game yet: nil there, and what would go to officers only stays on this client.
+function Compat.OfficerAddonChannel()
+    local c = GuildOS.Client
+    if c and (c.isRetail or c.isAnniversary) then return "OFFICER" end
+    return nil
+end
+
 -- Send an addon message through ChatThrottleLib; prio is its "BULK" (default), "NORMAL" or "ALERT".
 function Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)
     queue({ prefix = prefix, text = text, channel = channel, target = target,

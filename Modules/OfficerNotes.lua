@@ -7,11 +7,13 @@
 --     before: a client before #427 reads them the same;
 --   * the member's sheet (`sheet`, issue #427): one long text (up to SHEET_MAX characters, several
 --     lines) any officer edits, `{ text, author, ts, rev }`. Synced per member over the SyncService's
---     officer domain "osheet": a write takes revision max(server time, last + 1), so the newer edit wins
+--     officer domain "osheet", carried only by the game's OFFICER addon channel, so a member's client never
+--     gets the bytes; on a client without that channel (WoW: Forever, not checked in game yet) a sheet stays
+--     on the client that wrote it. A write takes revision max(server time, last + 1), so the newer edit wins
 --     on every client; an officer re-sends every sheet at its stored revision on a sync request, a few
 --     per envelope and spaced out (#324). An emptied sheet is kept as an empty text, so an older one
 --     never comes back. "OA" never carries it (a client before #427 would drop it anyway, and a big
---     guild's sheets would make that one message huge). A member's client drops every packet of it.
+--     guild's sheets would make that one message huge).
 --     Never exported to the site.
 ----------------------------------------------------------------------
 local OfficerNotes = {}
@@ -343,6 +345,7 @@ end
 --- (`force`). Officers only; one backfill at a time.
 function OfficerNotes:BackfillSheets(force)
     if not GuildOS:IsOfficer() or not GuildOS.SyncService or self._sheetBackfilling then return end
+    if not GuildOS.Compat.OfficerAddonChannel() then return end   -- the sheets stay on this client
     local now = GetTime()
     if not force and self._sheetBackfillAt and now - self._sheetBackfillAt < self.SHEET_BACKFILL_GAP then return end
     local keys = {}

@@ -1834,6 +1834,10 @@ everything. Until now cores reached the game only through the companion's `Inbox
 ### Decision
 - **`db.officerNotes[key].sheet = { text, author, ts, rev }`**, next to `notes` and `tags`, so the
   Forever key migration (`MergeSheet`, #97) carries it (the higher revision stays).
+- **The OFFICER addon channel only** (`SyncService.OFFICER_CHANNEL_DOMAINS`, `CommSystem:SendToOfficers`,
+  `Compat.OfficerAddonChannel`): over GUILD a member's client gets the bytes even when it drops them, and any
+  addon or log there could read them. Published there, accepted only from there. Retail and TBC Anniversary;
+  off on WoW: Forever until checked in game (a sheet stays on its client there).
 - **Sync:** officer domain `osheet` on the SyncService, as the alt links (ADR-0040): a write takes revision
   max(server time, last + 1), the higher revision wins, a tie settles by text then author on every client;
   an emptied sheet is an empty text, so an older one never comes back. A member's client drops it.
@@ -1846,6 +1850,8 @@ everything. Until now cores reached the game only through the companion's `Inbox
 ### Consequences
 - (+) A clean text of 1000 letters reaches every officer whole; the newest edit wins; old clients keep
   reading the notes as before.
+- (−) The game delivers OFFICER by the rank's officer-chat permission, not by Guild OS's officer threshold: an
+  officer whose rank cannot hear officer chat gets no sheet. On WoW: Forever, no sync until checked.
 - (−) One text per member, no history of edits; two officers editing at once: one edit is lost (the older).
 - (−) Every officer backfills every sheet: in a guild with hundreds of sheets, a few minutes of BULK traffic
   per officer at most once per 10 minutes.

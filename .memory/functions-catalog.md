@@ -562,6 +562,8 @@ Removed: `Compat.NewTimer`.
 | `OfficerNotes:GetSheet(key)` | The member's sheet `{ text, author, ts, rev }`, nil when none or emptied; officers only (#427) |
 | `OfficerNotes:SetSheet(key, text)` | Writes the sheet as this officer's at max(server time, last + 1) and publishes it on `osheet` (#427) |
 | `OfficerNotes:ApplySheets(list, sender)` / `:OnSheetSync(env, sender)` | Applies sheets off the network (keys localized, checked); officers only (#427) |
+| `CommSystem:SendToOfficers(msgType, data, priority, kind)` | Sends over the OFFICER addon channel only; false and nothing sent without it (#427) |
+| `Compat.OfficerAddonChannel()` | "OFFICER" on retail and TBC Anniversary, nil on WoW: Forever (not checked in game) (#427) |
 | `OfficerNotes:BackfillSheets(force)` | Every sheet at its stored revision, 2 per envelope 3 s apart; once per 10 min unless forced (#427) |
 
 ---
