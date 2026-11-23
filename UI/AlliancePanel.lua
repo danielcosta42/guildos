@@ -1466,22 +1466,20 @@ local function BuildSetup(panel)
     tagLbl:SetPoint("TOPLEFT", 0, -50)
     local tagBox = makeInput(panel, 110)
     tagBox:SetPoint("TOPLEFT", 0, -68)
-    local guildsLbl = UI:CreateText(panel, L["Guilds, separated by ;"], 11)
-    guildsLbl:SetPoint("TOPLEFT", 0, -100)
-    local guildsBox = makeInput(panel, 420)
-    guildsBox:SetPoint("TOPLEFT", 0, -118)
+    -- No list of guilds (issue #431): who holds the key is the alliance, and
+    -- the guilds are learned by themselves.
     local genBtn = UI:CreateButton(panel, L["Generate"], 110, 24)
-    genBtn:SetPoint("LEFT", guildsBox, "RIGHT", UI.GAP, 0)
+    genBtn:SetPoint("LEFT", tagBox, "RIGHT", UI.GAP, 0)
 
     local lineBox = makeInput(panel, 540)
-    lineBox:SetPoint("TOPLEFT", 0, -(118 + 24 + UI.GAP + 4))
+    lineBox:SetPoint("TOPLEFT", 0, -(68 + 24 + UI.GAP + 4))
     lineBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     local writeBtn = UI:CreateButton(panel, L["Save for the guild"], 170, 24)
     writeBtn:SetPoint("TOPLEFT", lineBox, "BOTTOMLEFT", 0, -UI.GAP)
     local removeBtn = UI:CreateButton(panel, L["Turn off for the guild"], 170, 24)
     removeBtn:SetPoint("LEFT", writeBtn, "RIGHT", UI.GAP, 0)
 
-    local hint = UI:CreateText(panel, L["Paste this same code in Alliance > Setup in every guild of the alliance and save. Guild OS hands it to every member of the guild: no ambassadors, nobody in particular has to be online."],
+    local hint = UI:CreateText(panel, L["Paste this same code in Alliance > Setup in every guild of the alliance and save, once. It goes in the guild master's public note where the game allows it, and every member hands it on at login: no ambassadors, nobody in particular has to be online. The guilds find each other by themselves."],
         10, C.textDim.r, C.textDim.g, C.textDim.b)
     hint:SetPoint("TOPLEFT", writeBtn, "BOTTOMLEFT", 0, -UI.GAP)
     hint:SetWidth(540)
@@ -1497,24 +1495,15 @@ local function BuildSetup(panel)
     genBtn:SetScript("OnClick", function()
         local link = LINK()
         if not link then return end
-        local names = {}
-        for name in (guildsBox:GetText() .. ";"):gmatch("([^;]*);") do
-            name = strtrim(name)
-            if name ~= "" then names[#names + 1] = name end
-        end
-        local mine = ALLY() and ALLY():MyGuildName()
-        local has = false
-        for _, n in ipairs(names) do if n == mine then has = true end end
-        if mine and not has then table.insert(names, 1, mine) end
         local tag = GuildOS.Alliance.NormalizeTag(tagBox:GetText())
-        if tag == "" or #names < 2 then
-            GuildOS:Print(L["Name at least two guilds, this one included."])
+        if tag == "" then
+            GuildOS:Print(L["Name the alliance with a tag."])
             return
         end
-        -- The same tag keeps its key, so the guilds already set need nothing new but the list.
+        -- The same tag keeps its key, so the guilds already set need nothing new.
         local cfg = link:Config()
         local key = (cfg and cfg.tag == tag) and cfg.key or link.NewKey()
-        lineBox:SetText(link.Build(tag, key, names))
+        lineBox:SetText(link.Build(tag, key))
         lineBox:HighlightText()
     end)
     writeBtn:SetScript("OnClick", function()
@@ -1522,7 +1511,12 @@ local function BuildSetup(panel)
         if not link then return end
         local ok, err = link:SetCode(strtrim(lineBox:GetText() or ""))
         say(ok, err)
-        if ok then GuildOS:Print(L["Saved. The guild gets it now."]) end
+        -- `err` is true when it went in the guild info too (issue #431).
+        if ok and err == true then
+            GuildOS:Print(L["Saved in the guild master's public note. Every member gets it at login, with nobody online."])
+        elseif ok then
+            GuildOS:Print(L["Saved. The guild gets it now."])
+        end
         refresh()
     end)
     removeBtn:SetScript("OnClick", function()
@@ -1537,7 +1531,12 @@ local function BuildSetup(panel)
         if not link then return end
         local cfg = link:Config()
         local mine = ALLY() and ALLY():MyGuildName()
-        if cfg and mine and cfg.guilds[mine] then
+        local pact = link:Pact()
+        if pact and cfg and cfg.open then
+            local n = 0
+            for _ in pairs(pact.guilds) do n = n + 1 end
+            status:SetText(string.format(L["Active: %s, %d guilds."], cfg.tag, n))
+        elseif cfg and mine and cfg.guilds[mine] then
             status:SetText(string.format(L["Active: %s, %d guilds."], cfg.tag, #cfg.order))
         elseif cfg then
             status:SetText(L["The code does not name this guild."])
@@ -1545,7 +1544,7 @@ local function BuildSetup(panel)
             status:SetText(L["No alliance set up for this guild."])
         end
         local officer = GuildOS:IsOfficer()
-        for _, w in ipairs({ tagLbl, tagBox, guildsLbl, guildsBox, genBtn, lineBox, writeBtn, removeBtn, hint }) do
+        for _, w in ipairs({ tagLbl, tagBox, genBtn, lineBox, writeBtn, removeBtn, hint }) do
             setShown(w, officer)
         end
         if not officer then return end
@@ -1555,7 +1554,6 @@ local function BuildSetup(panel)
             lineBox:SetText(line or "")
             if parsed and tagBox:GetText() == "" then
                 tagBox:SetText(parsed.tag)
-                guildsBox:SetText(table.concat(parsed.order, "; "))
             end
         end
         if link:Config() then removeBtn:Enable() else removeBtn:Disable() end

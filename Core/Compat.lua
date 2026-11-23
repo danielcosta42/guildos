@@ -1557,21 +1557,34 @@ end
 -- retail 11 moved ParseText onto each box; older clients have the global (issue #348).
 function Compat.HookChatSend(fn)
     local function onParse(box, send)
-        if send ~= 1 or not box or not box.GetAttribute then return end
+        -- 1 from the game's own SendText; a client that passes true sends too (issue #431).
+        if (send ~= 1 and send ~= true) or not box or not box.GetAttribute then return end
         local chatType, text = box:GetAttribute("chatType"), box:GetText()
         if Compat.IsSecret(chatType, text) then return end
         if type(text) == "string" and text:match("%S") then fn(chatType, text) end
     end
     if ChatFrame1EditBox and ChatFrame1EditBox.ParseText then
-        local n = 0
-        for i = 1, (NUM_CHAT_WINDOWS or 10) do
-            local box = _G["ChatFrame" .. i .. "EditBox"]
-            if box and box.ParseText then
+        local hooked = {}
+        local function hookBox(box)
+            if box and box.ParseText and not hooked[box] then
+                hooked[box] = true
                 hooksecurefunc(box, "ParseText", onParse)
-                n = n + 1
             end
         end
-        return n > 0
+        local function hookAll()
+            for i = 1, (NUM_CHAT_WINDOWS or 10) do
+                hookBox(_G["ChatFrame" .. i .. "EditBox"])
+            end
+            -- The temporary windows (a whisper popped out) have boxes of their own, made later.
+            for _, name in ipairs(type(CHAT_FRAMES) == "table" and CHAT_FRAMES or {}) do
+                hookBox(_G[tostring(name) .. "EditBox"])
+            end
+        end
+        hookAll()
+        if type(FCF_OpenTemporaryWindow) == "function" then
+            hooksecurefunc("FCF_OpenTemporaryWindow", hookAll)
+        end
+        return next(hooked) ~= nil
     end
     if ChatEdit_ParseText then
         hooksecurefunc("ChatEdit_ParseText", onParse)

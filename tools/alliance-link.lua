@@ -12,9 +12,13 @@
 --   * a line of /g the player sends from a chat box or the Guild tab goes on the channel, inside the
 --     key press; officer chat never does;
 --   * a channel line from an allied guild is drawn as /g by the frame's own handler, tagged, in the
---     frames that show /g only; ours, our own guild's, an unknown or blocked guild's and one the
---     rosters contradict are not; the room's lines go to the alliance feed;
---   * a data op is believed for the guild it names only with the key's proof for its sender.
+--     frames that show /g only; ours, our own guild's /g, an unknown or blocked guild's are not; a
+--     stale roster never drops a line; the room's lines go to the alliance feed, our guild's too;
+--     a line too long for its frame goes in parts;
+--   * a data op is believed for the guild it names only with the key's proof for its sender;
+--   * the short code goes in the guild master's public note and every member reads it from there,
+--     nobody online; the guilds are learned from the channel, the mesh and the proofs; the relay
+--     asks back a newer holder and keeps a copy that came before the roster (issue #431).
 --
 --   luajit -e 'ADDON="."' tools/alliance-link.lua
 --
@@ -185,6 +189,11 @@ check(Link.Parse("GOS=NUCLEO:Kx7Pq2Lm9Z:Guilda A") == nil, "one guild is no alli
 check(Link.Parse("GOS=NUCLEO:k:Guilda A;Guilda B") == nil, "a key too short is refused")
 check(Link.Parse("GOS=...:Kx7Pq2Lm9Z:Guilda A;Guilda B") == nil, "a tag with nothing usable is refused")
 check(Link.Parse("nada aqui") == nil and Link.Parse(nil) == nil, "no line, no alliance")
+local short = Link.Build("nucleo", "Kx7Pq2Lm9Z")
+check(short == "GOS=NUCLEO:Kx7Pq2Lm9Z", "the short code names no guild (issue #431)")
+local sc = Link.Parse("Main do GM " .. short)
+check(sc and sc.open and sc.tag == "NUCLEO" and sc.key == "Kx7Pq2Lm9Z" and sc.line == short, "read in the middle of a note")
+check(#Link.Build(string.rep("T", 12), Link.NewKey()) <= Link.NOTE_MAX, "the longest short code fits a public note")
 local key = Link.NewKey()
 check(#key == Link.KEY_LEN and key:match("^%w+$"), "a new key is alphanumeric")
 check(Link.Decode(Link.Encode("G", "abc", "oi gente")) == "G", "a channel line round-trips")
@@ -198,7 +207,7 @@ check(A:Get() == nil, "no code, no pact")
 GuildOS.db.alliance = { tag = "OLD", guilds = { ["Guilda A"] = { ambassadors = { "Ana" } }, ["Guilda Z"] = { ambassadors = { "Zed" } } } }
 check(A:Get().tag == "OLD" and not A.InLink(), "without the line, the old pact")
 local suggest = Link.Parse(Link:Suggest())
-check(suggest and suggest.tag == "OLD" and suggest.guilds["Guilda Z"], "the panel offers a line made from the old pact")
+check(suggest and suggest.tag == "OLD" and suggest.open, "the panel offers a short code made from the old pact's tag")
 setCode(line)
 local pact = A:Get()
 check(pact and pact.source == "link" and pact.tag == "NUCLEO", "the code wins over the old pact")
@@ -231,6 +240,9 @@ box.attrs.chatType, box.text = "GUILD", "alguem pra kara?"
 box:ParseText(1)
 check(#sent == 1 and sent[1].chatType == "CHANNEL" and sent[1].target == 5, "a line of /g goes on the channel")
 check(sent[1].msg == "G" .. Link.Code("Guilda A") .. " alguem pra kara?", "framed with our guild's code")
+sent = {}
+box:ParseText(true)
+check(#sent == 1, "a client that sends with true sends too (issue #431)")
 sent = {}
 box:ParseText(0)
 check(#sent == 0, "only the send, not the typing")
@@ -279,8 +291,10 @@ check(#replayed[1] == 0, "another channel is not ours")
 hear("oi humano", "Bob-Realm")
 check(#replayed[1] == 0, "a raw line is not ours")
 index.cid = { guild = "Guilda C" }
-hear("G" .. Link.Code("Guilda B") .. " mentira", "Cid-Realm")
-check(#replayed[1] == 0, "a speaker the rosters place in another guild is not believed")
+hear("G" .. Link.Code("Guilda B") .. " mudou de guilda", "Cid-Realm")
+check(#replayed[1] == 1 and replayed[1][1].args[1]:find("[Guilda B]", 1, true),
+  "a stale roster does not drop the line: the guild comes from the code (issue #431)")
+reset()
 ignored["Bob-Realm"] = true
 hear("G" .. Link.Code("Guilda B") .. " ignorado", "Bob-Realm")
 check(#replayed[1] == 0, "an ignored speaker is not shown")
@@ -297,6 +311,25 @@ local before = #Chat:Log()
 hear("A" .. Link.Code("Guilda C") .. " oi sala", "Cy-Realm")
 check(#replayed[1] == 0 and #Chat:Log() == before + 1, "a room line goes to the alliance feed, not /g")
 check(Chat:Log()[#Chat:Log()].g == "Guilda C" and Chat:Log()[#Chat:Log()].n == "Cy", "with its guild and speaker")
+before = #Chat:Log()
+hear("A" .. Link.Code("Guilda A") .. " oi do colega", "Gui-Realm")
+check(#replayed[1] == 0 and #Chat:Log() == before + 1 and Chat:Log()[#Chat:Log()].g == "Guilda A",
+  "a guildmate's room line reaches our feed (issue #431)")
+
+-- A line that does not fit with its frame goes in parts, nothing lost (issue #431).
+local long = string.rep("palavra ", 40) .. "fim"
+local parts = Link.Split("G", "abc", long)
+check(#parts == 2, "a long line goes in two parts")
+local joined = {}
+for _, p in ipairs(parts) do
+  check(#p <= Link.MAX_LINE, "each part fits a line of chat")
+  local k, c, t = Link.Decode(p)
+  check(k == "G" and c == "abc", "each part is framed")
+  joined[#joined + 1] = t
+end
+check(table.concat(joined, " ") == long, "the parts carry the whole line, cut on a space")
+check(#Link.Split("G", "abc", "curta") == 1, "a short line is one part")
+check(#Link.Split("G", "abc", "   ") == 0, "a blank line is nothing")
 
 -- A frame without a handler to replay through gets the line as /g reads.
 local plain = Link.FormatPlain("Guilda B", "Bob-Realm", "oi")
@@ -392,5 +425,148 @@ local login
 for _, f in ipairs(frames) do if f.events.PLAYER_ENTERING_WORLD and f.fn then login = f end end
 login.fn(login, "PLAYER_ENTERING_WORLD")
 check(#published == 1 and published[1].act == "ask" and published[1].data.rev == off, "at login it asks the guild")
+
+-- ── 8. The guild master's note: nobody has to be online (issue #431) ──
+check(Link.NoteLine("GM " .. short) == short, "the code is read out of the note")
+check(Link.NoteLine("Main") == nil and Link.NoteLine(line) == nil, "no code, or the listed form, is no note code")
+check(Link.WithNoteLine("GM", short) == "GM " .. short, "written after the note's words when they fit")
+check(Link.WithNoteLine("Guild Master desde 2019", short) == short, "and alone when they do not")
+check(Link.WithNoteLine("GM GOS=VELHA:abcd1234", short) == "GM " .. short, "an old code is replaced")
+check(Link.WithNoteLine("GM " .. short, nil) == "GM", "and taken out on removal")
+
+local gmNote, canNote, noteWrites = "GM", true, {}
+local rosterRows = 1
+GetNumGuildMembers = function() return rosterRows end
+function GetGuildRosterInfo(i) if i == 1 then return "Rei-Realm", "Guild Master", 0, 70, "", "", gmNote end end
+GuildOS.Compat.CanEditPublicNote = function() return canNote end
+GuildOS.Compat.SetGuildPublicNote = function(name, text)
+  noteWrites[#noteWrites + 1] = { name = name, text = text }; gmNote = text; return true
+end
+local roster
+for _, f in ipairs(frames) do if f.events.GUILD_ROSTER_UPDATE and f.fn then roster = f end end
+check(roster ~= nil, "the module reads the roster when it comes in")
+
+-- Anniversary: the officer's save goes in the guild master's note.
+local ok8, inNote = Link:SetCode(short)
+check(ok8 and inNote and noteWrites[1].name == "Rei-Realm" and gmNote == "GM " .. short, "the save writes the GM's note")
+check(GuildOS.db.allianceLink.note, "and remembers the note holds it")
+check(A:Get().open and A:Get().guilds["Guilda A"], "an open code is a pact with our guild in it")
+
+-- A member with nothing, nobody online: the note alone sets them up.
+GuildOS.db.allianceLink = { rev = 0 }
+Link._noteSeen = nil
+roster.fn(roster, "GUILD_ROSTER_UPDATE")
+check(GuildOS.db.allianceLink.line == short and A:Get().source == "link", "a member gets the code from the GM's note at login")
+check(not Link:ReadGuildMasterNote(), "the same note read twice changes nothing")
+-- The note changes: it wins over ours.
+local short2 = Link.Build("NUCLEO", "Zz9Yy8Xx7W")
+gmNote = "GM " .. short2
+roster.fn(roster, "GUILD_ROSTER_UPDATE")
+check(GuildOS.db.allianceLink.line == short2, "a new code in the note replaces ours")
+-- Taken out of the same guild master's note: a removal.
+gmNote = "GM"
+roster.fn(roster, "GUILD_ROSTER_UPDATE")
+check(GuildOS.db.allianceLink.line == nil, "a code taken out of the GM's note is a removal")
+
+-- A new guild master with an empty note: not a removal, and an officer's client writes it by itself.
+setCode(short, 5)
+Link._noteSeen = "Rei-Realm\0GM " .. short
+noteWrites = {}
+function GetGuildRosterInfo(i) if i == 1 then return "Nova-Realm", "Guild Master", 0, 70, "", "", gmNote end end
+gmNote = ""
+roster.fn(roster, "GUILD_ROSTER_UPDATE")
+check(GuildOS.db.allianceLink.line == short, "a new GM without the code removes nothing")
+check(#noteWrites == 1 and noteWrites[1].name == "Nova-Realm" and gmNote == short, "and an officer's client writes it in the new GM's note")
+-- A member's client (not an officer) never writes.
+officer = false
+gmNote, noteWrites, Link._noteSeen = "", {}, nil
+roster.fn(roster, "GUILD_ROSTER_UPDATE")
+check(#noteWrites == 0, "a member's client never writes a note")
+officer = true
+
+-- Where the game forbids writing notes (WoW: Forever, retail): saved, and the guild hands it on by itself.
+canNote, gmNote, noteWrites = false, "", {}
+published = {}
+local ok9, inNote9 = Link:SetCode(short2)
+check(ok9 and not inNote9 and #noteWrites == 0 and published[1].act == "set", "no note write: saved, and the sync carries it")
+-- Another code in a note this client cannot change: refused with a reason.
+gmNote = "GM " .. short
+local okNo, why = Link:SetCode(short2)
+check(not okNo and type(why) == "string", "another code in a note we cannot change is not overruled")
+canNote, gmNote = true, ""
+
+-- A copy from the GM's note relayed by any member: taken when our own copy of the note says the same.
+setCode(short, 50)
+gmNote = "GM " .. short2
+Link._noteSeen = "Nova-Realm\0GM " .. short2   -- as if read already, so only the relay acts
+sync(env("have", { line = short2, rev = 60, by = Link.NOTE_BY }), "Membro-Realm")
+check(GuildOS.db.allianceLink.line == short2, "a member's relay of the GM's note is taken")
+sync(env("have", { line = Link.Build("FAKE", "abcd1234"), rev = 70, by = Link.NOTE_BY }), "Membro-Realm")
+check(GuildOS.db.allianceLink.line == short2, "a relay the GM's note does not back is refused")
+gmNote = ""
+
+-- ── Guilds are learned, nobody lists them ──────────────────────────────
+setCode(short, GuildOS.db.allianceLink.rev + 1)
+Link._noteSeen = "Nova-Realm\0" .. gmNote
+check(A:Get().guilds["Guilda B"] == nil, "a guild nobody heard from is not known yet")
+-- From the mesh: the speaker's presence names their guild.
+local peerGuild = { Bia = "Guilda Bela" }
+GuildOS.Mesh = { GetPeerGuild = function(_, n) return peerGuild[n] end, GetPeerAlliance = function(_, n) return peerGuild[n] and "NUCLEO" end }
+reset()
+hear("G" .. Link.Code("Guilda Bela") .. " cheguei", "Bia-Realm")
+check(#replayed[1] == 1 and replayed[1][1].args[1]:find("[Guilda Bela]", 1, true), "a new guild's line is drawn under its name")
+check(A:Get().guilds["Guilda Bela"], "and the guild is learned")
+reset()
+hear("G" .. Link.Code("Guilda Bela") .. " de novo", "Outro-Realm")
+check(#replayed[1] == 1 and replayed[1][1].args[1]:find("[Guilda Bela]", 1, true), "its code is known from then on")
+reset()
+hear("Gq9z ninguem sabe", "Xis-Realm")
+check(#replayed[1] == 1, "a line of a guild not met yet is shown all the same, never dropped")
+-- From a data op with the key's proof.
+op("HEAD", { revs = {}, _g = "Guilda Nova", _k = Link.Proof("Kx7Pq2Lm9Z", "Nil") }, "Nil-Realm")
+check(A:Get().guilds["Guilda Nova"], "a guild proving the key in a data op is learned")
+op("HEAD", { revs = {}, _g = "Guilda Falsa", _k = Link.Proof("errada", "Fal") }, "Fal-Realm")
+check(A:Get().guilds["Guilda Falsa"] == nil, "a wrong proof teaches nothing")
+-- From the mesh alone: only a candidate.
+peerGuild.Cid = "Guilda Cid"
+_G.ChehulNet = { Peers = function() return { Cid = { ts = 1 }, Bia = { ts = 1 } } end }
+local cands = Link:Candidates()
+check(cands["Guilda Cid"] == "Cid" and cands["Guilda Bela"] == nil, "the mesh's guilds of our tag are candidates, the known ones are not")
+check(A:Get().guilds["Guilda Cid"] == nil, "a candidate is not a guild of ours until it proves the key")
+-- Forgotten after a month of silence.
+GuildOS.db.allianceLinkLearned.NUCLEO["Guilda Nova"] = NOW - Link.LEARN_TTL - 1
+Link._learnRev = (Link._learnRev or 0) + 1
+check(A:Get().guilds["Guilda Nova"] == nil, "a guild silent for a month is forgotten")
+_G.ChehulNet, GuildOS.Mesh = nil, nil
+setCode(line, GuildOS.db.allianceLink.rev + 1)
+rosterRows = 0
+GetNumGuildMembers = function() return 0 end
+
+-- ── 9. The relay works both ways, and waits for the roster ─────────────
+published = {}
+GuildOS.db.allianceLink.note = true
+published, defer, deferred = {}, true, {}
+sync(env("ask", { rev = 0 }), "Novo-Realm")
+deferred[1]()
+check(#published == 1 and published[1].act == "have", "a holder from the GM's note answers too: everybody hands it on")
+GuildOS.db.allianceLink.note = nil
+defer, deferred, published = false, {}, {}
+-- Somebody holding NEWER asks: we ask back, so they answer.
+published = {}
+Link._askedAt = nil
+sync(env("ask", { rev = GuildOS.db.allianceLink.rev + 100 }), "Veio-Realm")
+check(#published == 1 and published[1].act == "ask", "an ask from a newer holder makes us ask back")
+sync(env("ask", { rev = GuildOS.db.allianceLink.rev + 100 }), "Outro-Realm")
+check(#published == 1, "and not once per asker")
+
+-- A relayed officer's copy before the roster loads is kept, then taken.
+local rr = GuildOS.db.allianceLink.rev
+officers["Novo-Realm"] = nil
+sync(env("have", { line = line2, rev = rr + 1, by = "Novo-Realm" }), "Leo-Realm")
+check(GuildOS.db.allianceLink.line == line and Link._pending ~= nil, "with no roster yet the copy waits")
+officers["Novo-Realm"] = true
+GetNumGuildMembers = function() return 5 end
+roster.fn(roster, "GUILD_ROSTER_UPDATE")
+check(GuildOS.db.allianceLink.line == line2 and Link._pending == nil, "and is taken when the roster comes in")
 
 print(("alliance-link: %d checks passed"):format(checks))

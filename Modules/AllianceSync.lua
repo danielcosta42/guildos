@@ -555,6 +555,18 @@ function AllianceSync:Tick()
             end
         end
     end
+    -- Under an open alliance code the guilds are not listed: whoever the mesh
+    -- says runs our tag gets a HEAD, and its answer, proved with the key, is
+    -- what makes it one of ours (issue #431).
+    local link = GuildOS.AllianceLink
+    if pact.open and link then
+        for guildName, target in pairs(link:Candidates()) do
+            if not ally:IsBlocked(guildName) then
+                self.stats.headOut = self.stats.headOut + 1
+                ally:Send("HEAD", head, target)
+            end
+        end
+    end
 end
 
 ----------------------------------------------------------------------

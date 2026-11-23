@@ -536,13 +536,15 @@ function Alliance:GuildOfSender(sender, pact)
 end
 
 -- Pure. The guild a data op from `sender` speaks for under the alliance
--- code, or nil: the guild it names must be in the pact, not ours, not
--- blocked, and the proof must be the one the key makes for that sender.
+-- code, or nil: not ours, not blocked, in the pact (an open code, which lists
+-- no guild, takes any: the proof is the membership, issue #431), and the proof
+-- must be the one the key makes for that sender.
 function Alliance.VerifyProof(pact, claimed, proof, sender, myGuild)
-    if type(pact) ~= "table" or type(pact.guilds) ~= "table" or type(claimed) ~= "string" then
+    if type(pact) ~= "table" or type(pact.guilds) ~= "table" or type(claimed) ~= "string" or claimed == "" then
         return nil
     end
-    if claimed == myGuild or not pact.guilds[claimed] or (pact.blocked and pact.blocked[claimed]) then
+    if claimed == myGuild or (not pact.open and not pact.guilds[claimed])
+        or (pact.blocked and pact.blocked[claimed]) then
         return nil
     end
     if type(proof) ~= "string" or proof ~= GuildOS.AllianceLink.Proof(pact.key, sender) then
@@ -972,6 +974,9 @@ function Alliance:OnMessage(payload, sender, dist)
     if pact and pact.source == "link" then
         local fn = Alliance.ops[op]
         local guild = Alliance.VerifyProof(pact, data._g, data._k, sender, self:MyGuildName())
+        if guild and pact.open then
+            GuildOS.AllianceLink:Learn(guild)
+        end
         if fn and guild then
             GuildOS:SafeCall(fn, data, sender, guild)
         end
