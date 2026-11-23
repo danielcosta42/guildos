@@ -1,58 +1,9 @@
-## [1.39.0] - 2026-11-23
+## [1.40.0] - 2026-11-23
 
 ### Added
-- Social, PvP, meetup and other events planned on guildos.me now show on the GuildOS calendar as events of their type, with the place and how many are going, nobody to invite, and leave it when cancelled on the site.
-- Officers can write each member's join date into their public or officer note, one member or the whole guild, never losing what the note said without asking (#429)
-- Officers can read join dates already written in notes into the member history, after reviewing them (#429)
-- A safe list (marked by hand or with [safe] in a note) keeps members out of bulk removals and demotions (#429)
-- Officers are told once when a member comes back after a long time offline (#429)
-- Officers can give members a nickname, shown on the roster tooltip and in chat (#429)
-- Members can share their birthday (day and month only) with /gos birthday or in Settings > Profile; it shows on all their alts and can be removed at any time (#428)
-- The calendar shows members' birthdays and guild join anniversaries, with a filter for each, and the login digest mentions them on the day (#428)
-- Officers can announce birthdays in guild chat (off by default, once a day per member) and, on WoW: Forever, put the month's birthdays in the game's calendar (#428)
-- New Birthday column in the roster (#428)
-- Officers can keep a long sheet on each member (up to 1000 characters, several lines), synced between officers only; the newest edit wins (#427)
-- The roster's hover card shows a member's alts and main in class colours with who is online, the Mythic+ rating, and for officers the join date and days in the guild, the sheet, the last two notes and the game's officer note; Shift-click keeps it open, Esc closes it (#427)
-- New Joined column in the roster for officers (#427)
-- Removing a member with alts asks whether to remove their alts too (one per click in Bulk actions) or ban the whole group, with a term and a note for officers (#426)
-- When a main leaves the guild while their alts stay, officers are asked once whether to set one of the alts as the new main, unlink them or keep the group (#426)
-- The Ban list shows the banned players still in the guild, with a button that queues them all for removal in Bulk actions (#426)
-- Leadership > Without GuildOS also lists who has not linked Discord on guildos.me (as the site tells officers), with a filter and its own reminder text (#422)
-- Officers see when a former member was in the guild, for how long and how they left, when inviting, at the join and in a whisper (#425)
-- Login tells officers who joined, left or changed rank since their last login (#425)
-- The audit log gains rejoins, level ups, note changes and returns from inactivity, with a search box, and exports as "log" and "former" (#425)
-- Officers get Leadership > Without GuildOS: who has no GuildOS yet, and a polite reminder whispered to one member per click, at most once every few days each (#422)
-- Leadership > Bulk actions promotes, demotes or removes the members your rules pick (offline days, rank, level, raid attendance, without GuildOS), one member per click of Next or of a /click GuildOSBulkNext macro, skipping who left or changed rank, and logging each change (#420)
-- Guild bulletin notices now show on the Now tab, and each active notice is shown once at login (in the login digest, or a chat line).
-- Officers choose how long a bulletin notice lasts when posting it: some days, or until they remove it.
-- Officers can write several welcome messages; each newcomer gets one drawn at random, never the same one twice in a row.
+- The alliance code is now short (GOS=TAG:key) and lists no guilds: the allied guilds find each other by themselves.
+- The alliance code now lives in the guild master's public note where the game allows it, and every member hands it on at login, so nobody has to be online or paste anything.
 
 ### Fixed
-- Officers' dated notes and tags now travel only over the officer addon channel, so members' clients never receive them; without that channel (or rank permission) they stay on your client.
-- The Roster Log keeps joins and kicks even after many level-ups or note changes, and the login backfill again re-sends the latest real events.
-- Banning someone again without a note no longer erases the note you wrote on their ban (#426)
-- An alt unlinked by an officer on an older version no longer comes back on that officer's guildmates, and new versions stop sending the old link table when nobody needs it (#424)
-- Officers re-send alt links and the safe list at most every 10 minutes when answering a sync, instead of on every request (#424)
-- A member unlinking their own alt now stays unlinked on their screen until an officer applies it (#424)
-- An officer whose rank cannot speak in officer chat is told once that their officer sheets stay on their client, instead of the sync failing silently (#427)
-- Long sync whispers on WoW: Forever no longer get lost when they take more than 30 seconds to arrive or the whisper queue is full.
-- Birthday announcements in guild chat are no longer repeated or silenced by non-officers, and a birthday and a join anniversary on the same day are both announced.
-- The "Birthdays to the game's calendar" button skips birthdays whose time has passed and never gets stuck on one the game refused.
-- Officers' nicknames and safe list now travel only to other officers, never to members' clients (#429)
-- Chat nicknames no longer show on a player from another realm who shares a guildmate's name (#429)
-- Gossip peers that were heard at the same moment are now taken in a stable order.
-- WoW: Forever: GuildOS no longer whispers fast enough to trigger "You are doing that too fast"; its whispers wait in one paced queue and slow down when the game complains.
-- Linked alts no longer get unlinked when an officer with an old or empty list syncs; each link now syncs on its own, and an unlink stays unlinked (#424)
-- Officers can promote or demote a member's alts to the main's rank from the member's sheet or /gos altgroup, one click per alt (#424)
-- /gos altlimit N lists the alt groups with more than N alts (#424)
-- Join requests: hover a request to read the whole note, or click it to unfold the note in the list.
-- Atividade volta a listar os boletins, migração marca o quadro como visto e aviso sem id não repete (#418)
-- The guild bank ledger cleanup of "?" lines runs once, so a deposit whose member name never loaded is never removed later.
-- nomes do bloco da receita nunca com largura zero ou negativa (#415)
-- Alt-clicking a bag item no longer opens the Crafts tab while the auction house, mail, trade, a vendor or the guild bank is open, so Auctionator's Alt-click to sell works again.
-- New setting (Interface): turn off Alt-click opening an item's recipe in Crafts.
-- The order box of an opened recipe no longer has the crafters' "Ask them" buttons drawn over it in a narrow window: it moves under the materials and crafters.
-- The master looter's Loot table and the raiders' roll popup have a solid background again instead of showing the world through them.
-- In the Loot table, "Your roll" and its MS/OS buttons moved to the item's line, so they no longer overlap "Enter answer", and the window can no longer be resized narrower than its controls.
-- The guild bank ledger no longer lists each gold deposit twice, once under the member's name and once under "?"; ledgers that already have these pairs are cleaned when you log in.
-- The guild calendar tells you when a day is too far ahead for raids planned on the website to have reached the game yet (they arrive four weeks before), instead of showing it as empty.
+- Every line of allied chat now crosses: a stale roster no longer drops lines, your own guildmates' lines in the alliance room now show, and a long line is no longer cut off.
+- The alliance code is now also written in the guild info, so every member gets it at login with no officer, or anybody, online.
