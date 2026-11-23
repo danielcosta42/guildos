@@ -13,17 +13,30 @@
 --     two officers linking different alts at once both stand;
 --   * an officer re-sends every entry at its STORED revision on a sync request (Backfill), in batches
 --     spaced out so a big guild's channel stays quiet (#324); a stale re-send never rolls anything back;
---   * an unlink is a tombstone, kept 30 days; its revision is kept for good, so an older link for that
---     alt is refused even after the tombstone is gone.
+--   * an unlink is a tombstone, kept a year; its revision is kept for good, so an older link for that
+--     alt is refused even after the tombstone is gone;
+--   * a backfill goes at most once per BACKFILL_GAP on the answer to a sync request (a /gos sync forces it).
 --
 -- `db.altLinks` ([altKey] = mainKey) stays what every reader reads (AltRoster, ChatTweaks,
 -- MemberDetail, CoreManager, AllianceSync, CompanionExport...): it is now rebuilt from the entries,
 -- flat (an alt never points at an alt), plus, on a member's client, the member's own claims still
 -- waiting for an officer (AltAutoDetect:Overlay).
 --
--- A client before #424 still sends and reads "AL". This one sends it the whole view, never an empty
--- one, and takes one in only as a merge: an alt it has never heard of at all is added at the lowest
--- revision, nothing is ever removed or changed by it, and an empty one is nothing.
+-- The links from before #424 are "unconfirmed": revision 0, `legacy = true`. Each client migrates its own
+-- old table, and those tables differ where an officer was offline for a change. A union of them would bring
+-- back every unlink one late officer missed, so a client that had a table of its own never takes another
+-- client's unconfirmed link: only a client that had nothing (a new install) does, and an officer's tombstone or
+-- link (revision 1 or more) beats them all. An officer confirms one by linking it again (LinkAlt, a claim).
+-- There is no way to tell a new install from an officer whose old table was empty because every link was
+-- unlinked: that one takes the others' unconfirmed links too.
+--
+-- A client before #424 still sends and reads "AL" (and replaces its table with it). This one sends it only
+-- after hearing such a client recently (CommSystem:LegacyHeard), with a mark old clients ignore, and ignores
+-- the "AL" of clients that carry the mark. An old client's "AL" is taken in only as a merge: an alt this client
+-- has never heard of at all (no entry, no revision, so never a tombstone) is added unconfirmed, nothing is
+-- removed or changed, an empty one is nothing. An unconfirmed link the old officer's newest table lacks (an
+-- unlink made there, or a stale table: no way to tell) stays on this client's view but is left out of what this
+-- client sends old clients and of its backfill, so it does not undo that unlink on them.
 ----------------------------------------------------------------------
 local AltSync = {}
 GuildOS.AltSync = AltSync
@@ -31,8 +44,9 @@ GuildOS.AltSync = AltSync
 AltSync.DOMAIN = "alt"
 AltSync.BATCH = 40              -- entries per envelope
 AltSync.BATCH_GAP = 2           -- seconds between the envelopes of one backfill (#324)
-AltSync.TOMBSTONE_TTL = 30 * 86400
-AltSync.LEGACY_REV = 1          -- the revision of a link taken from the table a client before #424 kept or sent
+AltSync.BACKFILL_GAP = 600      -- a backfill on a sync request's answer at most once per 10 minutes (#324)
+AltSync.TOMBSTONE_TTL = 365 * 86400
+AltSync.LEGACY_REV = 0          -- unconfirmed: a link from the table a client before #424 kept or sent
 AltSync.KEY_MAX = 80            -- bytes of a key off the network
 
 local function db() return GuildOS.db end
@@ -62,8 +76,9 @@ end
 ----------------------------------------------------------------------
 -- Migration and keys
 ----------------------------------------------------------------------
---- The links of the table a version before #424 kept, as entries at the lowest revision, with no author:
---- any officer's entry for the same alt, at that revision or above, replaces them. Once per database.
+--- The links of the table a version before #424 kept, as unconfirmed entries (revision 0, no author): any
+--- officer's entry for the same alt replaces them. `fresh` when there was nothing: the only client that takes
+--- other clients' unconfirmed links. Once per database.
 function AltSync:Migrate(d)
     local links, rev = {}, {}
     for alt, main in pairs(type(d.altLinks) == "table" and d.altLinks or {}) do
@@ -71,11 +86,10 @@ function AltSync:Migrate(d)
             local la, lm = GuildOS:LocalMemberKey(alt), GuildOS:LocalMemberKey(main)
             if la ~= "" and lm ~= "" and la ~= lm then
                 links[la] = { main = lm, ts = 0, legacy = true }
-                rev[la] = self.LEGACY_REV
             end
         end
     end
-    d.altSync = { v = 1, links = links, rev = rev }
+    d.altSync = { v = 1, links = links, rev = rev, fresh = next(links) == nil or nil }
 end
 
 --- WoW: Forever keys a member by the client's realm, which can change (#97, #394): every key and main
@@ -156,6 +170,19 @@ function AltSync:HeardView()
         if type(e) == "table" and e.author ~= nil then heard[k] = e end
     end
     return self.Flatten(self.Base(heard))
+end
+
+--- The links for a client before #424, which replaces its whole table with it: the view, without an unconfirmed
+--- link an old officer's newest table lacks (OnLegacyList). Nil when this client knows no entry at all (a new
+--- install has nothing to tell them); an empty table when every link it knows is unlinked.
+function AltSync:LegacyView()
+    local s = self:_Store()
+    if next(s.links) == nil then return nil end
+    local keep = {}
+    for k, e in pairs(s.links) do
+        if type(e) == "table" and not e.legacyGone then keep[k] = e end
+    end
+    return self.Flatten(self.Base(keep))
 end
 
 --- The entries, read only: AltAutoDetect asks whether an officer answered a claim.
@@ -242,14 +269,19 @@ function AltSync:Write(changes)
 end
 
 --- Make the officers' links equal `links` ([altKey] = mainKey, as LinkAlt, SetMain and a member's claim plan
---- them from `db.altLinks`): every alt whose entry says otherwise is written, linked or unlinked. Officers only.
---- Returns how many entries were written.
-function AltSync:Commit(links)
+--- them from `db.altLinks`): every alt whose entry says otherwise is written, linked or unlinked. An alt in
+--- `confirm` (a set: the alts the officer named) is written too when its link is only unconfirmed, which makes
+--- it an officer's. Officers only. Returns how many entries were written.
+function AltSync:Commit(links, confirm)
     if not GuildOS:IsOfficer() or type(links) ~= "table" then return 0 end
-    local held = self.Base(self:_Store().links)
+    local entries = self:_Store().links
+    local held = self.Base(entries)
     local changes = {}
     for k, m in pairs(links) do
-        if held[k] ~= m and m ~= k then changes[k] = m end
+        local e = entries[k]
+        if m ~= k and (held[k] ~= m or (confirm and confirm[k] and type(e) == "table" and e.legacy)) then
+            changes[k] = m
+        end
     end
     for k in pairs(held) do
         if links[k] == nil then changes[k] = false end
@@ -266,7 +298,8 @@ local function key(v)
 end
 
 --- Apply officer entries off the network ({ k, m, x, a, t, r } each). `sender` is the officer SyncService checked;
---- an entry names its own author, else the sender. Returns how many were applied.
+--- an entry names its own author, else the sender. An unconfirmed link (r = 0) is taken only by a `fresh` client,
+--- for an alt it knows nothing of. Returns how many were applied.
 function AltSync:Apply(list, sender)
     if type(list) ~= "table" then return 0 end
     local s = self:_Store()
@@ -276,10 +309,14 @@ function AltSync:Apply(list, sender)
         local rev = k and GuildOS.Finite(it.r)
         local removed = k and it.x == true
         local main = k and not removed and key(it.m)
-        if k and rev and rev >= 1 and (removed or (main and main ~= k)) then
+        local author = (type(it) == "table" and type(it.a) == "string" and it.a ~= "" and #it.a <= self.KEY_MAX)
+            and it.a or sender
+        if k and rev == 0 and s.fresh and main and main ~= k and s.links[k] == nil and (s.rev[k] or 0) == 0 then
+            s.links[k] = { main = main, author = author, ts = 0, legacy = true }
+            applied = applied + 1
+        elseif k and rev and rev >= 1 and (removed or (main and main ~= k)) then
             local e = {
-                main = main or nil, removed = removed or nil,
-                author = (type(it.a) == "string" and it.a ~= "" and #it.a <= self.KEY_MAX) and it.a or sender,
+                main = main or nil, removed = removed or nil, author = author,
                 ts = GuildOS.Finite(it.t) or 0,
             }
             if self.Wins(rev, e, s.rev[k], s.links[k]) then
@@ -309,23 +346,30 @@ function AltSync:OnSync(env, sender)
 end
 
 --- The table "AL" a client before #424 sends ([altKey] = mainKey): an alt this client has never heard of at all
---- (no entry, no revision) is added at LEGACY_REV, and a link this client only migrated from its own old table and
---- the list says too counts as an officer's from now on. Nothing is removed or changed by it; an empty table is
---- nothing. `sender` is the officer CommSystem checked.
+--- (no entry, no revision: never a tombstone, even a pruned one) is added unconfirmed, and a link this client only
+--- migrated from its own old table and the list says too counts as an officer's word from now on. Nothing is
+--- removed or changed by it; an empty table is nothing. An unconfirmed link it lacks (or gives another main) is
+--- marked `legacyGone`: kept on this view, left out of LegacyView and of the backfill, until an old table has it
+--- again. `sender` is the officer CommSystem checked.
 function AltSync:OnLegacyList(links, sender)
     if type(links) ~= "table" then return end
     local s = self:_Store()
-    local added = 0
+    local added, said = 0, {}
     for alt, main in pairs(links) do
         local la, lm = key(alt), key(main)
         local held = la and s.links[la]
+        if la and lm and la ~= lm then said[la] = lm end
         if la and lm and la ~= lm and held == nil and (s.rev[la] or 0) == 0 then
             s.links[la] = { main = lm, author = sender, ts = 0, legacy = true }
-            s.rev[la] = self.LEGACY_REV
             added = added + 1
         elseif type(held) == "table" and held.author == nil and not held.removed and held.main == lm then
             held.author = sender
             added = added + 1
+        end
+    end
+    if next(said) ~= nil then   -- an empty table says nothing, not "everything unlinked"
+        for k, e in pairs(s.links) do
+            if type(e) == "table" and e.legacy then e.legacyGone = (said[k] ~= e.main) or nil end
         end
     end
     if added > 0 then
@@ -338,15 +382,21 @@ end
 ----------------------------------------------------------------------
 -- Cold sync
 ----------------------------------------------------------------------
---- Every entry, tombstones included, at its stored revision, in batches BATCH_GAP seconds apart. Answers a sync
---- request (CommSystem:_Answer) and a /gos sync. Officers only; one backfill at a time.
-function AltSync:Backfill()
+--- Every entry, tombstones included, at its stored revision (an unconfirmed link at 0, but not one an old officer's
+--- table lacks), in batches BATCH_GAP seconds apart. On the answer to a sync request (CommSystem:_Answer) at most
+--- once per BACKFILL_GAP, and on a /gos sync (`force`). Officers only; one backfill at a time.
+function AltSync:Backfill(force)
     if not GuildOS:IsOfficer() or not GuildOS.SyncService or self._backfilling then return end
+    local now = GetTime()
+    if not force and self._backfillAt and now - self._backfillAt < self.BACKFILL_GAP then return end
     local s = self:_Store()
     local keys = {}
-    for k in pairs(s.links) do keys[#keys + 1] = k end
+    for k, e in pairs(s.links) do
+        if (s.rev[k] or 0) >= 1 or (type(e) == "table" and e.legacy and not e.legacyGone) then keys[#keys + 1] = k end
+    end
     if #keys == 0 then return end
     table.sort(keys)
+    self._backfillAt = now
     local items = {}
     for _, k in ipairs(keys) do items[#items + 1] = wire(k, s.links[k], s.rev[k] or self.LEGACY_REV) end
     local batches = {}

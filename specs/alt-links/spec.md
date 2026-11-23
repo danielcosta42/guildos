@@ -16,19 +16,26 @@ too many alts.
 1. **Synced per alt.** Each alt is one entry (`main`, who wrote it, when) with its own revision; an unlink
    is a tombstone. The newer edit wins on every client; two officers linking different alts at the same
    time both stand. Domain `alt` on the SyncService: only an officer writes, over the guild channel.
-2. **Cold sync.** An officer answers a sync request (and `/gos sync`) with every entry at its stored
-   revision, in batches of 40, 2 s apart. A stale answer never rolls back a newer edit; a tombstone
-   reaches an officer who was offline.
+2. **Cold sync.** An officer answers a sync request (at most once per 10 minutes) and `/gos sync` (always)
+   with every entry at its stored revision, in batches of 40, 2 s apart. A stale answer never rolls back a
+   newer edit; a tombstone (kept a year, its revision for good) reaches an officer who was offline.
 3. **Readers unchanged.** `db.altLinks` ([alt] = main) is rebuilt from the entries, flat, plus a member's
    own waiting claims on that member's client. The roster, chat tags, member sheet, cores, alliance and
    companion export read it as before.
-4. **Migration.** The table saved before this version becomes entries at the lowest revision: any
-   officer's entry replaces them.
-5. **Old clients.** "AL" still goes out (the whole view, never an empty one). Received, it only adds an
-   alt this client never heard of; it never removes or changes a link; an empty one does nothing.
+4. **Migration.** The table saved before this version becomes unconfirmed entries (revision 0): any
+   officer's entry replaces them, and an officer linking one again confirms it. A client that had a table
+   never takes another client's unconfirmed links (their union would bring back unlinks a late officer
+   missed); a new install does, and an officer's tombstone beats them.
+5. **Old clients.** "AL" goes out only while a client before this version (1.37.0 or older) was heard in the
+   last 30 minutes, marked so new clients ignore it: the whole view (empty when every link is unlinked),
+   never from a client that knows nothing. Received from an old client, it only adds an alt this client never
+   heard of (never one with a tombstone); it never removes or changes a link; an empty one does nothing. An
+   unconfirmed link an old officer's newest table lacks stays on new clients but is not sent back to old
+   ones nor backfilled.
 6. **A member's claim** stays (and is re-sent once a session when an officer is online) until the
    officers' links carry it, or an officer's edit newer than the claim unlinks one of its characters or
-   links it to another main. A link missing from an officer's list is no answer.
+   links it to another main. A link missing from an officer's list is no answer. A member's own unlink
+   waits the same way, on the member's view, until an officer's unlink (or a newer link) answers it.
 7. **WoW: Forever keys** with and without the realm are one member (`LocalMemberKey`), on receipt and in
    the stored entries.
 8. **The group to the main's rank.** On a member's sheet an officer has **Promote alts** and **Demote
@@ -45,6 +52,10 @@ too many alts.
 
 ## Known limits
 
-- An officer still on an old client keeps replacing its own table, and an unlink made there is not heard
-  by new clients (the merge never removes). The full gain comes when every officer has updated.
+- An officer still on an old client keeps replacing its own table, and an unlink made there stays on new
+  clients' views (it is only kept off what goes back to old clients). Unlinking it again on a new client
+  settles it. The full gain comes when every officer has updated.
+- A link only some old tables had (made before this version while an officer was offline) does not reach
+  the clients that had a table of their own: an officer links it again.
+- A new install takes the old tables' links without knowing which were unlinked before this version.
 - Revisions use the server time: on the same realm every client reads the same clock.

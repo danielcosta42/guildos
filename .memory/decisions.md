@@ -1801,27 +1801,45 @@ everything. Until now cores reached the game only through the companion's `Inbox
 - **`Modules/AltSync.lua`**, officer domain `alt` on the SyncService, as the ban list: one entry per alt
   `{ main, author, ts }` or `{ removed = true, author, ts }`, its revision in `db.altSync.rev`. A write takes
   revision max(server time, last + 1), so the newer edit wins across officers and two officers linking different
-  alts at once both stand. A tie settles the same way everywhere (`Wins`). A tombstone is pruned after 30 days;
-  its revision is kept for good, so an older link for that alt is still refused.
-- **Backfill:** officers re-send every entry at its stored revision on a sync request and `/gos sync`, 40 per
-  envelope, 2 s apart, one backfill at a time (#324).
+  alts at once both stand. A tie settles the same way everywhere (`Wins`). A tombstone is pruned after a year;
+  its revision is kept for good, so an older link for that alt (an old client's table included) is still refused.
+- **Backfill:** officers re-send every entry at its stored revision on a sync request (at most once per 10 minutes,
+  `BACKFILL_GAP`) and `/gos sync` (always), 40 per envelope, 2 s apart, one backfill at a time (#324). The safe list's
+  backfill (#429) is gated the same way in `CommSystem:_BackfillMarks`.
 - **The view:** `db.altLinks` stays what every reader reads; `AltSync:Rebuild` derives it, flat (no alt of an
   alt; a loop settles on its lowest key), plus a member's own waiting claims (`AltAutoDetect:Overlay`).
   Officer edits (`LinkAlt`, `UnlinkAlt`, `SetMain`, a member's claim applied) plan the new view and
   `AltSync:Commit` writes every alt whose entry differs.
-- **Migration:** the old table becomes entries at revision 1 with no author, so any officer's entry replaces them.
-- **Old clients:** "AL" is still sent (the whole view, never an empty one) for clients before #424, which keep
-  replacing their table with it. Received, it is only a merge: an alt never heard of at all is added at
-  revision 1; nothing is removed or changed; an empty table is nothing.
+- **Migration:** the old table becomes *unconfirmed* entries (revision 0, `legacy`, no author); any officer's
+  entry replaces them, and an officer linking one again (`LinkAlt`, a claim applied: `Commit(links, confirm)`)
+  confirms it. Each client's old table differs where an officer missed a change, and their union would bring back
+  every unlink one late officer missed: a client that had a table of its own never takes another's unconfirmed
+  link (backfilled at r = 0); only a client that had nothing (`fresh`, a new install) does, and any officer
+  tombstone beats it. A new install cannot tell those links from unlinked ones, nor can an officer whose old
+  table was empty because everything was unlinked: both take the unconfirmed links, until an officer unlinks.
+- **Old clients:** "AL" goes only while a client before #424 was heard within 30 minutes (a broadcast's version
+  ≤ 1.37.0, or an "AL" without the mark), so with only new clients nothing goes. It carries a second serialized
+  value (`{ v = 2 }`) old clients never read; new clients ignore an "AL" with it. It is `LegacyView`: the whole
+  view, an empty one included (the last unlink reaches old clients), never from a client that knows no entry.
+  Received from an old client it is only a merge: an alt never heard of at all is added unconfirmed (never one
+  with a known revision: a tombstone, even pruned); nothing is removed or changed; an empty table is nothing.
+  An unconfirmed link the old officer's newest table lacks is marked `legacyGone`: still on the new clients'
+  view (it can be a stale table, the original bug), but left out of what goes to old clients and of the
+  backfill, so an unlink made on an old client is not undone on old clients by a new one.
 - **A member's claim** goes only when the officers' links carry it, or when an officer's entry newer than the
-  claim unlinks one of its characters or links it elsewhere. Missing from a list is no answer.
+  claim unlinks one of its characters or links it elsewhere. Missing from a list is no answer. A member's own
+  unlink waits the same way (`altPending["unlink:<key>"]`, on the member's view through `Overlay`) until an
+  officer's tombstone, or a newer officer link of that character, answers it.
 - **Forever keys:** every key off the network and in the store goes through `LocalMemberKey`.
 
 ### Consequences
 - (+) No officer's old or empty data can remove a link; an unlink stays unlinked.
 - (−) While officers on old clients remain, they still replace their own tables, and an unlink made on an old
-  client is not heard by new ones (the merge never removes). The full gain comes when every officer updates.
-- (−) Each officer's backfill sends every alt entry (a few hundred in a big guild) once per answered request.
+  client stays on new clients' views (only left out of what goes back to old ones); unlinking it again on a new
+  client settles it. A link made or changed on a new client and unlinked on an old one comes back on old clients.
+- (−) A client that had a table before #424 never gets a link only another client's old table has; an officer
+  links it again. Chosen over the union, which brought back unlinks.
+- (−) Each officer's backfill sends every alt entry (a few hundred in a big guild), at most once per 10 minutes.
 
 ## ADR-0041 — A member with alts removed or gone: the addon only asks, and its answers go through what exists (#426)
 

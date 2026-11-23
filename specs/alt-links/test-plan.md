@@ -8,6 +8,11 @@ Automated:
   the same alt to two mains); a member's claim kept through an officer's list that lacks it, re-sent, then
   applied; a 300-alt backfill in spaced batches, never stacked; the group queue (promote, demote, never the
   main, `Eligible`, re-queued until the main's rank); WoW: Forever keys with and without the realm.
+  Mixed versions: no "AL" with only new clients heard, one after an old version is heard, ignored by new
+  clients, without a link an old officer unlinked, empty after the last unlink, none from a new install;
+  migrated tables not united (a new install takes them, a tombstone beats them in either order); a pruned
+  tombstone still refuses an old table; the backfill at most once per 10 minutes (and the safe list's); a
+  member's own unlink waiting until an officer applies it.
 - `luajit -e 'ADDON="."' tools/alt-autodetect.lua`: the member's claim is dropped only by a newer
   tombstone or a newer link elsewhere, never by a missing link.
 - `tools/forever-payload-keys.lua`, `tools/officer-ranks.lua`: "AL" keys and channel rules.

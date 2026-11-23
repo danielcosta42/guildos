@@ -63,9 +63,10 @@ end
 -- Alt / Main linking (account-wide attunement propagation)
 ----------------------------------------------------------------------
 -- The officers' links are AltSync's entries, synced per alt (issue #424); `db.altLinks` is the view
--- rebuilt from them. Each officer edit plans the new view and AltSync:Commit writes what changed.
-local function commitLinks(self, links)
-    if self.AltSync then return self.AltSync:Commit(links) end
+-- rebuilt from them. Each officer edit plans the new view and AltSync:Commit writes what changed, and
+-- confirms the alts in `confirm` whose link was only unconfirmed (from before #424).
+local function commitLinks(self, links, confirm)
+    if self.AltSync then return self.AltSync:Commit(links, confirm) end
     self.db.altLinks = links
     return 0
 end
@@ -89,7 +90,7 @@ function GuildOS:LinkAlt(altKey, mainKey)
         self:Print(L["Error: "] .. mainKey .. L[" is already an alt. Unlink it first."])
         return false
     end
-    commitLinks(self, planned)
+    commitLinks(self, planned, { [altKey] = true })
     return true
 end
 
