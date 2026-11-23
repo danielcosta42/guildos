@@ -481,7 +481,7 @@ function GuildOS:CreateCraftDetail(parent)
                 local need = x.count * crafts
                 local have = GuildOS.Compat.GetItemCount(x.itemID) or 0
                 m.name:SetText(itemInfo(x.itemID) or ("item:" .. x.itemID))
-                m.name:SetWidth(colW - 60)
+                m.name:SetWidth(math.max(20, colW - 60))
                 m.have:ClearAllPoints()
                 m.have:SetPoint("TOPLEFT", 34 + colW - 56, -8 - i * 18)
                 m.have:SetWidth(56)
@@ -513,7 +513,7 @@ function GuildOS:CreateCraftDetail(parent)
             if c then
                 slot.name:ClearAllPoints()
                 slot.name:SetPoint("TOPLEFT", x2 + 12, -8 - i * 20)
-                slot.name:SetWidth(colW - 88)
+                slot.name:SetWidth(math.max(20, colW - 88))
                 slot.dot:ClearAllPoints()
                 slot.dot:SetPoint("RIGHT", slot.name, "LEFT", -6, 0)
                 slot.dot:SetVertexColor(C.ok.r, C.ok.g, C.ok.b, 1)
