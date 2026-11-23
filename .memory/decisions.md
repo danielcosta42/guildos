@@ -1822,3 +1822,30 @@ everything. Until now cores reached the game only through the companion's `Inbox
 - (−) While officers on old clients remain, they still replace their own tables, and an unlink made on an old
   client is not heard by new ones (the merge never removes). The full gain comes when every officer updates.
 - (−) Each officer's backfill sends every alt entry (a few hundred in a big guild) once per answered request.
+
+## ADR-0042 — The member's officer sheet: one long text per member, synced per member, newest wins (#427)
+
+### Context
+- Officers wanted a long note per member kept in the addon (GRM's custom note), and the dated notes are
+  a list of short entries. The game's officer note is 31 letters and every officer's to overwrite.
+- 1000 letters per member through the existing "OA" (the whole notes table in one message) would make
+  that one message huge in a big guild, and it has no revision: the last one to arrive would win.
+
+### Decision
+- **`db.officerNotes[key].sheet = { text, author, ts, rev }`**, next to `notes` and `tags`, so the
+  Forever key migration (`MergeSheet`, #97) carries it (the higher revision stays).
+- **Sync:** officer domain `osheet` on the SyncService, as the alt links (ADR-0040): a write takes revision
+  max(server time, last + 1), the higher revision wins, a tie settles by text then author on every client;
+  an emptied sheet is an empty text, so an older one never comes back. A member's client drops it.
+- **Backfill:** every sheet at its stored revision on the answer to a sync request, at most once per 10
+  minutes per officer, and on `/gos sync`; 2 per envelope, 3 s apart, one backfill at a time (#324).
+- **"OA" sends notes and tags only**, and takes nothing else in; "ON" is unchanged.
+- **The hover card** reads an index the roster builds once per refresh (`RosterCard.NewIndex/IndexRow`:
+  alt links both ways, each roster line's name, class and online), never the roster itself.
+
+### Consequences
+- (+) A clean text of 1000 letters reaches every officer whole; the newest edit wins; old clients keep
+  reading the notes as before.
+- (−) One text per member, no history of edits; two officers editing at once: one edit is lost (the older).
+- (−) Every officer backfills every sheet: in a guild with hundreds of sheets, a few minutes of BULK traffic
+  per officer at most once per 10 minutes.

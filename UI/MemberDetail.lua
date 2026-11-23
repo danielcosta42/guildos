@@ -906,6 +906,39 @@ function PopulateDetail(frame, data)
             yOff = yOff - 16
         end
 
+        -- The member's sheet, whole (issue #427), and the button that edits it.
+        local sheet = GuildOS.OfficerNotes:GetSheet(playerKey)
+        if sheet then
+            local by = _pFS(child)
+            GuildOS:ApplyFont(by, 9)
+            by:SetPoint("TOPLEFT", 15, yOff - 3)
+            by:SetText("|cffAAAAAA" .. string.format(L["Officer sheet (%s, %s):"], sheet.author or "?",
+                GuildOS:DateText(sheet.ts or 0, "/%Y")) .. "|r")
+            by:Show()
+            yOff = yOff - 16
+            local body = _pFS(child)
+            GuildOS:ApplyFont(body, 9)
+            body:SetPoint("TOPLEFT", 15, yOff - 3)
+            body:SetWidth(contentWidth - 30)
+            body:SetJustifyH("LEFT")
+            body:SetWordWrap(true)
+            body:SetText(sheet.text)   -- kept without "|" (OfficerNotes.CleanSheetText)
+            body:Show()
+            yOff = yOff - (body:GetStringHeight() + 6)
+        end
+        local sheetKey, sheetName = playerKey, data.name
+        local editSheet = UI:CreateButton(child, L["Edit sheet"], 100, 20)
+        editSheet:SetPoint("TOPLEFT", 15, yOff - 4)
+        editSheet:SetScript("OnClick", function() GuildOS:ShowOfficerSheetEditor(sheetKey, sheetName) end)
+        yOff = yOff - 28
+        -- A sheet saved here or by another officer redraws the card, unless the officer is typing in it.
+        GuildOS.OfficerNotes.uiRefresh = function()
+            if not frame:IsShown() then return end
+            local focus = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+            if focus and focus.IsVisible and focus:IsVisible() then return end
+            PopulateDetail(frame, data)
+        end
+
         -- Show last 3 notes
         for i = 1, math.min(3, #notes) do
             local note = notes[i]

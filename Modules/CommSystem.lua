@@ -671,6 +671,13 @@ function CommSystem:_Answer()
                 GuildOS.AltSync:Backfill()
             end)
         end
+
+        -- Every member's officer sheet, a couple per envelope and spaced out, once per 10 minutes (issue #427).
+        if GuildOS:IsOfficer() and GuildOS.OfficerNotes then
+            C_Timer.After(7, function()
+                GuildOS.OfficerNotes:BackfillSheets()
+            end)
+        end
     end)
 end
 
@@ -779,6 +786,7 @@ function CommSystem:FullSync()
     C_Timer.After(4, function()
         if GuildOS.OfficerNotes then
             GuildOS.OfficerNotes:BroadcastAllNotes()
+            GuildOS.OfficerNotes:BackfillSheets(true)   -- issue #427
         end
     end)
 end

@@ -287,6 +287,15 @@ local COLUMNS = {
       offered = function() return GuildOS.TrialTracker ~= nil and enabled("trialTracker") and officer() end,
       value = function(d) return GuildOS.TrialTracker:GetDaysRemaining(d.key) end,
       text = function(v) return v .. "d", v > 14 and C.green or (v > 7 and C.warn or C.red) end },
+    -- When the member's current passage started (issue #427, from the member history of #425): "~" when
+    -- it is only when Guild OS saw them join.
+    { key = "joined",      label = L["JOINED"],       name = L["Joined the guild"], min = 70, weight = 0, align = "RIGHT", num = true,
+      offered = function() return GuildOS.MemberHistory ~= nil and officer() end,
+      value = function(d) return (GuildOS.MemberHistory:JoinedAt(d.key)) end,
+      text = function(v, d)
+          local _, est = GuildOS.MemberHistory:JoinedAt(d.key)
+          return (est and "~" or "") .. GuildOS:DateText(v, "/%y"), C.silver
+      end },
     { key = "gosNote",     label = L["GOS NOTE"],     name = L["Guild OS officer note"], min = 140, weight = 2, align = "LEFT", asc = true,
       offered = function() return GuildOS.OfficerNotes ~= nil and enabled("officerNotes") and officer() end,
       value = function(d)
@@ -1126,6 +1135,11 @@ function GuildOS:CreateRosterPanel(parent, host)
             end
         end
 
+        -- The hover card's index (issue #427): every member, shown or not, so the card names an alt
+        -- in its class colour without walking the roster on each hover.
+        local tipIndex = GuildOS.RosterCard and GuildOS.RosterCard.NewIndex(GuildOS.db.altLinks)
+        self.tipIndex = tipIndex
+
         -- Get guild roster info
         local numMembers = GetNumGuildMembers()
         for i = 1, numMembers do
@@ -1137,6 +1151,7 @@ function GuildOS:CreateRosterPanel(parent, host)
                 local displayName = name:match("^([^-]+)") or name
                 local realm = name:match("-(.+)$") or GetRealmName()
                 local key = GuildOS:GetPlayerKey(displayName, realm)
+                if tipIndex then GuildOS.RosterCard.IndexRow(tipIndex, key, displayName, classFile, isOnline) end
 
                 -- Apply filters
                 local passFilter = true
@@ -1597,6 +1612,9 @@ function CreateRosterRow(parent, rowIndex, uid, host)
         if not self.memberData then return end
         if button == "RightButton" then
             GuildOS:ShowMemberContextMenu(self, self.memberData)
+        elseif GuildOS.RosterCard and IsShiftKeyDown and IsShiftKeyDown() then
+            -- Shift+click keeps the card open; Escape lets it go (issue #427).
+            GuildOS.RosterCard:Toggle(self, ShowRowTooltip)
         else
             GuildOS:ShowMemberDetail(self.memberData)
             if self.host and self.host.SelectMember then self.host:SelectMember(self.memberData.key) end
@@ -2044,6 +2062,13 @@ local function MemberDropdown_Initialize(self, level, menuList)
                 GuildOS:ShowDialog("GUILDOS_OFFICER_NOTE", data.name, nil, { key = data.key, name = data.name })
             end
             UIDropDownMenu_AddButton(info, level)
+
+            -- The member's sheet, the long text (issue #427).
+            info = UIDropDownMenu_CreateInfo()
+            info.notCheckable = true
+            info.text = L["|cff8888FFEdit officer sheet|r"]
+            info.func = function() GuildOS:ShowOfficerSheetEditor(data.key, data.name) end
+            UIDropDownMenu_AddButton(info, level)
         end
     end
 
@@ -2063,27 +2088,32 @@ end
 ----------------------------------------------------------------------
 -- Row tooltip (rich info on hover)
 ----------------------------------------------------------------------
-function ShowRowTooltip(row)
+-- `tip` is the GameTooltip by default, or the card kept open (RosterCard:Toggle, issue #427).
+function ShowRowTooltip(row, tip, locked)
+    tip = tip or GameTooltip
     local data = row.memberData
     if not data then return end
 
-    GameTooltip:SetOwner(row, "ANCHOR_BOTTOM", 0, -5)
+    if not locked then tip:SetOwner(row, "ANCHOR_BOTTOM", 0, -5) end
 
     -- Header: Name colored by class
     local cr, cg, cb = GuildOS:GetClassColor(data.class)
-    GameTooltip:AddLine(data.name, cr, cg, cb)
-    GameTooltip:AddLine(string.format(L["Level %d %s %s"], data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
-    GameTooltip:AddLine(data.rank, C.text.r, C.text.g, C.text.b)
+    tip:AddLine(data.name, cr, cg, cb)
+    tip:AddLine(string.format(L["Level %d %s %s"], data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
+    tip:AddLine(data.rank, C.text.r, C.text.g, C.text.b)
 
     -- What this member earned for the guild (issue #216).
     for _, title in ipairs(GuildOS.Achievements and GuildOS.Achievements:Of(data.key) or {}) do
-        GameTooltip:AddLine(title, C.text.r, C.text.g, C.text.b)
+        tip:AddLine(title, C.text.r, C.text.g, C.text.b)
     end
+
+    -- Alts and main, the rating and, to officers, the join, the sheet and the notes (issue #427).
+    if GuildOS.RosterCard then GuildOS.RosterCard:AddLines(tip, data, row.host and row.host.tipIndex) end
 
     -- First seen by Guild OS (approximate "member since")
     local firstSeen = GuildOS.GetFirstSeen and GuildOS:GetFirstSeen(data.key)
     if firstSeen then
-        GameTooltip:AddLine(string.format(L["Tracked since %s"], date("%Y-%m-%d", firstSeen)), C.silver.r, C.silver.g, C.silver.b)
+        tip:AddLine(string.format(L["Tracked since %s"], date("%Y-%m-%d", firstSeen)), C.silver.r, C.silver.g, C.silver.b)
     end
 
     -- Talent spec
@@ -2091,35 +2121,35 @@ function ShowRowTooltip(row)
         local memberKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
         local specLabel = GuildOS.SpecChecker:GetSpecLabel(memberKey)
         if specLabel then
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(string.format(L["Spec: %s"], specLabel), cr, cg, cb)
+            tip:AddLine(" ")
+            tip:AddLine(string.format(L["Spec: %s"], specLabel), cr, cg, cb)
         end
     end
 
     if data.zone and data.zone ~= "" then
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(string.format(L["Zone: %s"], data.zone), C.silver.r, C.silver.g, C.silver.b)
+        tip:AddLine(" ")
+        tip:AddLine(string.format(L["Zone: %s"], data.zone), C.silver.r, C.silver.g, C.silver.b)
     end
 
     if data.note and data.note ~= "" then
-        GameTooltip:AddLine(string.format(L["Note: %s"], data.note), 0.6, 0.6, 0.6, true)
+        tip:AddLine(string.format(L["Note: %s"], data.note), 0.6, 0.6, 0.6, true)
     end
 
     -- Gear summary
     if data.avgIlvl and data.avgIlvl > 0 then
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(string.format(L["Average Item Level: %s"], data.avgIlvl), C.text.r, C.text.g, C.text.b)
+        tip:AddLine(" ")
+        tip:AddLine(string.format(L["Average Item Level: %s"], data.avgIlvl), C.text.r, C.text.g, C.text.b)
     end
 
     -- Professions detail
     if data.professions and #data.professions > 0 then
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(L["Professions:"], C.text.r, C.text.g, C.text.b)
+        tip:AddLine(" ")
+        tip:AddLine(L["Professions:"], C.text.r, C.text.g, C.text.b)
         for _, prof in ipairs(data.professions) do
             local profColor = prof.isPrimary and C.text or C.silver
             local line = prof.rank and string.format("  %s  %d / %d", L[prof.name], prof.rank, prof.maxRank or 0)
                 or ("  " .. L[prof.name])   -- known from the guild roster only: no rank (issue #31)
-            GameTooltip:AddLine(line, profColor.r, profColor.g, profColor.b)
+            tip:AddLine(line, profColor.r, profColor.g, profColor.b)
         end
     end
 
@@ -2139,38 +2169,38 @@ function ShowRowTooltip(row)
             end
         end
 
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(
+        tip:AddLine(" ")
+        tip:AddLine(
             string.format(L["Attunements: (%d/%d)"], #done, #effAtts),
             C.text.r, C.text.g, C.text.b)
 
         for _, att in ipairs(done) do
-            GameTooltip:AddLine(
+            tip:AddLine(
                 string.format("  [%s] %s", att.tier, att.name) .. "  " .. L["Done"],
                 C.green.r, C.green.g, C.green.b)
         end
         for _, att in ipairs(inProg) do
-            GameTooltip:AddLine(
+            tip:AddLine(
                 string.format("  [%s] %s  %d%%", att.tier, att.name,
                     math.floor((att.progress or 0) * 100)),
                 C.textSoft.r, C.textSoft.g, C.textSoft.b)
         end
         for _, att in ipairs(pending) do
-            GameTooltip:AddLine(
+            tip:AddLine(
                 string.format(L["  [%s] %s  Not started"], att.tier, att.name),
                 C.red.r, C.red.g, C.red.b)
         end
     end
 
     if not data.hasAddonData then
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(L["Player does not have Guild OS installed"], C.red.r, C.red.g, C.red.b)
+        tip:AddLine(" ")
+        tip:AddLine(L["Player does not have Guild OS installed"], C.red.r, C.red.g, C.red.b)
     elseif data.addonVersion and data.addonVersion ~= GuildOS.VERSION then
-        GameTooltip:AddLine(" ")
+        tip:AddLine(" ")
         if CompareVersions(data.addonVersion, GuildOS.VERSION) < 0 then
-            GameTooltip:AddLine(string.format(L["Guild OS v%s (outdated)"], data.addonVersion), C.red.r, C.red.g, C.red.b)
+            tip:AddLine(string.format(L["Guild OS v%s (outdated)"], data.addonVersion), C.red.r, C.red.g, C.red.b)
         else
-            GameTooltip:AddLine(string.format("Guild OS v%s", data.addonVersion), C.label.r, C.label.g, C.label.b)
+            tip:AddLine(string.format("Guild OS v%s", data.addonVersion), C.label.r, C.label.g, C.label.b)
         end
     end
 
@@ -2179,27 +2209,28 @@ function ShowRowTooltip(row)
         local wData = GuildOS.Wishlist:ListFor(data.key, data.name)   -- by the whole key on retail (#185)
         if wData and wData.wishlist and #wData.wishlist > 0 then
             local wColor = GuildOS.Wishlist and GuildOS.Wishlist.TypeColors.wishlist or { r=0.3, g=0.7, b=1.0 }
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(L["Wishlist:"], C.text.r, C.text.g, C.text.b)
+            tip:AddLine(" ")
+            tip:AddLine(L["Wishlist:"], C.text.r, C.text.g, C.text.b)
             local shown = math.min(#wData.wishlist, 5)
             for j = 1, shown do
                 local item = wData.wishlist[j]
                 local iName = GuildOS.Wishlist and GuildOS.Wishlist:GetItemName(item.itemId) or string.format(L["Item #%s"], item.itemId or "?")
                 local os = item.isOffspec and (" (" .. L["OS"] .. ")") or ""
-                GameTooltip:AddLine("  #" .. (item.order or j) .. ": " .. iName .. os,
+                tip:AddLine("  #" .. (item.order or j) .. ": " .. iName .. os,
                     wColor.r, wColor.g, wColor.b)
             end
             if #wData.wishlist > 5 then
-                GameTooltip:AddLine(string.format(L["  +%d more..."], #wData.wishlist - 5), 0.5, 0.5, 0.5)
+                tip:AddLine(string.format(L["  +%d more..."], #wData.wishlist - 5), 0.5, 0.5, 0.5)
             end
         end
     end
 
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddLine(L["Left-click: detailed view"], 0.5, 0.5, 0.5)
-    GameTooltip:AddLine(L["Right-click: whisper, invite, etc."], 0.5, 0.5, 0.5)
+    tip:AddLine(" ")
+    tip:AddLine(L["Left-click: detailed view"], 0.5, 0.5, 0.5)
+    tip:AddLine(L["Right-click: whisper, invite, etc."], 0.5, 0.5, 0.5)
+    if not locked then tip:AddLine(L["Shift-click: keep this card open (Esc closes it)"], 0.5, 0.5, 0.5) end
 
-    GameTooltip:Show()
+    tip:Show()
 end
 
 ----------------------------------------------------------------------
