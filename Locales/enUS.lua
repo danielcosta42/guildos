@@ -1542,3 +1542,16 @@ L["%d group(s) with more than %d alt(s):"] = "%d group(s) with more than %d alt(
 L["No group has more than %d alt(s)."] = "No group has more than %d alt(s)."
 L["Usage: /gos altlimit <number>"] = "Usage: /gos altlimit <number>"
 L["Usage: /gos altgroup <promote | demote> <name> [rank]"] = "Usage: /gos altgroup <promote | demote> <name> [rank]"
+
+-- Without GuildOS: who has no Discord linked, as the site says (issue #422)
+L["Hi {name}! The officers of {guild} use guildos.me with Discord for raids and signups. Could you link your Discord there when you have a moment? Thank you!"] = "Hi {name}! The officers of {guild} use guildos.me with Discord for raids and signups. Could you link your Discord there when you have a moment? Thank you!"
+L["Also link your Discord on guildos.me."] = "Also link your Discord on guildos.me."
+L["no Discord"] = "no Discord"
+L["Members this client never heard GuildOS from, and the ones guildos.me says have no Discord linked. Remind whispers one of them per click, at most once every few days each."] = "Members this client never heard GuildOS from, and the ones guildos.me says have no Discord linked. Remind whispers one of them per click, at most once every few days each."
+L["Without GuildOS or Discord"] = "Without GuildOS or Discord"
+L["Without Discord"] = "Without Discord"
+L["Without GuildOS and Discord"] = "Without GuildOS and Discord"
+L["Without Discord ({name}, {guild})"] = "Without Discord ({name}, {guild})"
+L["Nobody here: everyone has GuildOS and Discord, or the filter hides them."] = "Nobody here: everyone has GuildOS and Discord, or the filter hides them."
+L["Reminded to link Discord on guildos.me (whisper)."] = "Reminded to link Discord on guildos.me (whisper)."
+L["Reminded to install GuildOS and link Discord (whisper)."] = "Reminded to install GuildOS and link Discord (whisper)."

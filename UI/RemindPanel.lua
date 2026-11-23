@@ -1,7 +1,8 @@
 ----------------------------------------------------------------------
 -- Guild OS - Without GuildOS panel (issue #422; Leadership > Without GuildOS)
--- Who this client never heard GuildOS from, the filter, the officer's
--- reminder text and how often, and a Remind button per member that
+-- Who this client never heard GuildOS from and, when the site says it
+-- (GOSGILD1.discordLinked), who has no Discord linked; the filter, the
+-- officer's two reminder texts and how often, and a Remind button per member that
 -- whispers ONE member per click. Visual layout only: the list, the checks
 -- and the whisper are GuildOS.AddonReminder's (Rule 10).
 ----------------------------------------------------------------------
@@ -12,15 +13,15 @@ local L = GuildOS.L
 local ROW_H = 24
 local REMIND_W = 90
 
--- What a member's row says about them: how long without GuildOS, offline, last reminder.
+-- What a member's row says about them: how long without GuildOS, without Discord, offline, last reminder.
 local function detailOf(m, now)
     local R = GuildOS.AddonReminder
     local parts = {}
-    if m.sinceDays then
-        parts[#parts + 1] = string.format(L["no GuildOS for %d day(s)"], m.sinceDays)
-    else
-        parts[#parts + 1] = L["no GuildOS"]
+    -- Who has GuildOS is listed only for Discord.
+    if not m.hasAddon then
+        parts[#parts + 1] = m.sinceDays and string.format(L["no GuildOS for %d day(s)"], m.sinceDays) or L["no GuildOS"]
     end
+    if m.noDiscord then parts[#parts + 1] = L["no Discord"] end
     parts[#parts + 1] = m.online and L["online"] or (m.daysOffline and (m.daysOffline .. L["d offline"]) or L["offline"])
     local d = m.remindedAt and R.DaysSince(m.remindedAt, now)
     if d then
@@ -36,9 +37,10 @@ function GuildOS:BuildRemindSub(panel)
 
     local title = UI:CreateSectionTitle(panel, L["WITHOUT GUILDOS"], true)
     title:SetPoint("TOPLEFT", 0, -2)
-    local hint = UI:CreateText(panel,
-        L["Members this client never heard GuildOS from. Remind whispers one of them per click, at most once every few days each; whether they linked Discord on guildos.me is not known in the game."],
-        11, C.silver.r, C.silver.g, C.silver.b)
+    -- Without the site's list (an older site), the old hint: the game does not know who linked Discord.
+    local HINT_NO_SITE = L["Members this client never heard GuildOS from. Remind whispers one of them per click, at most once every few days each; whether they linked Discord on guildos.me is not known in the game."]
+    local HINT_SITE = L["Members this client never heard GuildOS from, and the ones guildos.me says have no Discord linked. Remind whispers one of them per click, at most once every few days each."]
+    local hint = UI:CreateText(panel, HINT_NO_SITE, 11, C.silver.r, C.silver.g, C.silver.b)
     hint:SetPoint("TOPLEFT", 0, -24)
     hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -24)
     hint:SetJustifyH("LEFT")
@@ -57,6 +59,17 @@ function GuildOS:BuildRemindSub(panel)
     local recentCB = UI:CreateCheckbox(panel, L["Hide the ones reminded recently"], 18)
     recentCB:SetPoint("TOPLEFT", 0, y - 30)
     recentCB.checkbox.onChanged = function() refresh() end
+    -- Which lack: shown only when the site says who linked Discord.
+    local lacksDD = UI:CreateDropdown(panel, 200, 22)
+    lacksDD:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, y - 28)
+    lacksDD:SetOptions({
+        { value = "any", text = L["Without GuildOS or Discord"] },
+        { value = "addon", text = L["Without GuildOS"] },
+        { value = "discord", text = L["Without Discord"] },
+        { value = "both", text = L["Without GuildOS and Discord"] },
+    })
+    lacksDD:SetValue("any")
+    lacksDD.onSelect = function() refresh() end
 
     -- How often, and the record.
     y = y - 60
@@ -79,24 +92,30 @@ function GuildOS:BuildRemindSub(panel)
     logCB:SetPoint("TOPLEFT", 0, y - 30)
     logCB.checkbox.onChanged = function(_, on) R:SetLogDiscipline(on) end
 
-    -- The text.
+    -- The texts: GuildOS's, and (for who has GuildOS but no Discord) Discord's.
+    local function templateRow(label, kind, rowY)
+        local lbl = UI:CreateText(panel, label, 11, C.text.r, C.text.g, C.text.b)
+        lbl:SetPoint("TOPLEFT", 0, rowY - 4)
+        local box = UI:CreateInput(panel, 300, 22, { max = R.TEMPLATE_MAX })
+        box:SetPoint("LEFT", lbl, "RIGHT", 8, 0)
+        box:SetPoint("RIGHT", panel, "RIGHT", -(60 + 6 + 70 + 6), 0)
+        local save = UI:AttachSaveButton(box, function(b)
+            R:SetTemplate(b:GetText(), kind)
+            b:SetText(R:GetTemplate(kind))
+        end, { state = true })
+        local def = UI:CreateButton(panel, L["Default"], 70, 22)
+        def:SetPoint("LEFT", save, "RIGHT", 6, 0)
+        def:SetScript("OnClick", function()
+            R:SetTemplate(nil, kind)
+            box:SetText(R:GetTemplate(kind))
+            box:ClearFocus()
+        end)
+        return box, { lbl, box, save, def }
+    end
     y = y - 60
-    local textLbl = UI:CreateText(panel, L["Reminder ({name}, {guild})"], 11, C.text.r, C.text.g, C.text.b)
-    textLbl:SetPoint("TOPLEFT", 0, y - 4)
-    local textBox = UI:CreateInput(panel, 300, 22, { max = R.TEMPLATE_MAX })
-    textBox:SetPoint("LEFT", textLbl, "RIGHT", 8, 0)
-    textBox:SetPoint("RIGHT", panel, "RIGHT", -(60 + 6 + 70 + 6), 0)
-    local saveBtn = UI:AttachSaveButton(textBox, function(box)
-        R:SetTemplate(box:GetText())
-        box:SetText(R:GetTemplate())
-    end, { state = true })
-    local defBtn = UI:CreateButton(panel, L["Default"], 70, 22)
-    defBtn:SetPoint("LEFT", saveBtn, "RIGHT", 6, 0)
-    defBtn:SetScript("OnClick", function()
-        R:SetTemplate(nil)
-        textBox:SetText(R:GetTemplate())
-        textBox:ClearFocus()
-    end)
+    local textBox = templateRow(L["Reminder ({name}, {guild})"], nil, y)
+    y = y - 30
+    local discordBox, discordRow = templateRow(L["Without Discord ({name}, {guild})"], "discord", y)
 
     -- What holds the next reminder back, and how many are listed.
     y = y - 32
@@ -167,19 +186,28 @@ function GuildOS:BuildRemindSub(panel)
         if rankDD:GetValue() == nil then rankDD:SetValue(-1) end
         if not daysBox:HasFocus() then daysBox:SetText(tostring(R:GetDays())) end
         if not textBox:HasFocus() and (textBox:GetText() or "") == "" then textBox:SetText(R:GetTemplate()) end
+        if not discordBox:HasFocus() and (discordBox:GetText() or "") == "" then discordBox:SetText(R:GetTemplate("discord")) end
         logCB.checkbox:SetChecked(R:GetLogDiscipline())
+
+        -- The site's list or not: the hint, the "which lack" choice and the Discord text follow it.
+        local site = R:Linked() ~= nil
+        hint:SetText(site and HINT_SITE or HINT_NO_SITE)
+        lacksDD:SetShown(site)
+        for _, w in ipairs(discordRow) do w:SetShown(site) end
 
         local data = R:List({
             text = search:GetText(), rank = rankDD:GetValue(),
             online = onlineCB.checkbox:GetChecked() and true or false,
             hideRecent = recentCB.checkbox:GetChecked() and true or false,
+            lacks = site and lacksDD:GetValue() or nil,
         }, now)
         local t = R:Times(now)
         local held = (t.holdUntil and t.clock < t.holdUntil and { "throttle", t.holdUntil - t.clock })
             or (t.last and t.clock - t.last < R.GAP and { "wait", R.GAP - (t.clock - t.last) })
         local count = string.format(L["%d member(s)"], #data)
         status:SetText(held and (count .. "  " .. R.WhyText(held[1], held[2])) or count)
-        empty:SetText(#data == 0 and L["Nobody here: everyone has GuildOS, or the filter hides them."] or "")
+        empty:SetText(#data == 0 and (site and L["Nobody here: everyone has GuildOS and Discord, or the filter hides them."]
+            or L["Nobody here: everyone has GuildOS, or the filter hides them."]) or "")
         list:SetData(data)
         -- Turn the buttons back on once the wait is over (the window may stay open).
         if held and not rearm then

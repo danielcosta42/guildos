@@ -3628,3 +3628,16 @@ L["%d group(s) with more than %d alt(s):"] = "Групп: %d, где твинк�
 L["No group has more than %d alt(s)."] = "Ни в одной группе нет больше %d твинков."
 L["Usage: /gos altlimit <number>"] = "Использование: /gos altlimit <число>"
 L["Usage: /gos altgroup <promote | demote> <name> [rank]"] = "Использование: /gos altgroup <promote | demote> <имя> [звание]"
+
+-- Without GuildOS: who has no Discord linked, as the site says (issue #422)
+L["Hi {name}! The officers of {guild} use guildos.me with Discord for raids and signups. Could you link your Discord there when you have a moment? Thank you!"] = "Привет, {name}! Офицеры {guild} пользуются guildos.me с Discord для рейдов и записи. Не мог бы ты привязать там свой Discord, когда будет минутка? Спасибо!"
+L["Also link your Discord on guildos.me."] = "Привяжи также свой Discord на guildos.me."
+L["no Discord"] = "без Discord"
+L["Members this client never heard GuildOS from, and the ones guildos.me says have no Discord linked. Remind whispers one of them per click, at most once every few days each."] = "Участники, от которых этот клиент ни разу не слышал GuildOS, и те, у кого, по словам guildos.me, не привязан Discord. «Напомнить» шепчет одному из них за клик, каждому не чаще раза в несколько дней."
+L["Without GuildOS or Discord"] = "Без GuildOS или без Discord"
+L["Without Discord"] = "Без Discord"
+L["Without GuildOS and Discord"] = "Без GuildOS и без Discord"
+L["Without Discord ({name}, {guild})"] = "Без Discord ({name}, {guild})"
+L["Nobody here: everyone has GuildOS and Discord, or the filter hides them."] = "Никого: у всех есть GuildOS и Discord, или их скрывает фильтр."
+L["Reminded to link Discord on guildos.me (whisper)."] = "Напомнили привязать Discord на guildos.me (шёпотом)."
+L["Reminded to install GuildOS and link Discord (whisper)."] = "Напомнили установить GuildOS и привязать Discord (шёпотом)."

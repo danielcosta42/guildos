@@ -3628,3 +3628,16 @@ L["%d group(s) with more than %d alt(s):"] = "%d 个组的小号超过 %d 个：
 L["No group has more than %d alt(s)."] = "没有哪个组的小号超过 %d 个。"
 L["Usage: /gos altlimit <number>"] = "用法：/gos altlimit <数字>"
 L["Usage: /gos altgroup <promote | demote> <name> [rank]"] = "用法：/gos altgroup <promote | demote> <名字> [会阶]"
+
+-- Without GuildOS: who has no Discord linked, as the site says (issue #422)
+L["Hi {name}! The officers of {guild} use guildos.me with Discord for raids and signups. Could you link your Discord there when you have a moment? Thank you!"] = "你好，{name}！{guild} 的官员们用 guildos.me 配合 Discord 管理团队副本和报名。有空的时候能在那里绑定一下你的 Discord 吗？谢谢！"
+L["Also link your Discord on guildos.me."] = "也请在 guildos.me 绑定你的 Discord。"
+L["no Discord"] = "没有 Discord"
+L["Members this client never heard GuildOS from, and the ones guildos.me says have no Discord linked. Remind whispers one of them per click, at most once every few days each."] = "本客户端从未收到其 GuildOS 消息的成员，以及 guildos.me 显示未绑定 Discord 的成员。提醒每次点击只密语其中一人，每人每隔几天最多一次。"
+L["Without GuildOS or Discord"] = "没有 GuildOS 或没有 Discord"
+L["Without Discord"] = "没有 Discord"
+L["Without GuildOS and Discord"] = "GuildOS 和 Discord 都没有"
+L["Without Discord ({name}, {guild})"] = "没有 Discord（{name}，{guild}）"
+L["Nobody here: everyone has GuildOS and Discord, or the filter hides them."] = "这里没有人：大家都有 GuildOS 和 Discord，或者被筛选隐藏了。"
+L["Reminded to link Discord on guildos.me (whisper)."] = "已提醒在 guildos.me 绑定 Discord（密语）。"
+L["Reminded to install GuildOS and link Discord (whisper)."] = "已提醒安装 GuildOS 并绑定 Discord（密语）。"

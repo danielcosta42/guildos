@@ -3628,3 +3628,16 @@ L["%d group(s) with more than %d alt(s):"] = "그룹 %d개에 부캐가 %d개보
 L["No group has more than %d alt(s)."] = "부캐가 %d개보다 많은 그룹이 없습니다."
 L["Usage: /gos altlimit <number>"] = "사용법: /gos altlimit <숫자>"
 L["Usage: /gos altgroup <promote | demote> <name> [rank]"] = "사용법: /gos altgroup <promote | demote> <이름> [등급]"
+
+-- Without GuildOS: who has no Discord linked, as the site says (issue #422)
+L["Hi {name}! The officers of {guild} use guildos.me with Discord for raids and signups. Could you link your Discord there when you have a moment? Thank you!"] = "안녕하세요 {name}님! {guild}의 임원들은 공격대와 신청에 Discord와 함께 guildos.me를 씁니다. 시간 날 때 그곳에서 Discord를 연결해 주실 수 있을까요? 감사합니다!"
+L["Also link your Discord on guildos.me."] = "guildos.me에서 Discord도 연결해 주세요."
+L["no Discord"] = "Discord 없음"
+L["Members this client never heard GuildOS from, and the ones guildos.me says have no Discord linked. Remind whispers one of them per click, at most once every few days each."] = "이 클라이언트가 GuildOS를 한 번도 듣지 못한 구성원과, guildos.me에 따르면 Discord를 연결하지 않은 구성원입니다. 알림은 클릭 한 번에 한 명에게 귓속말하며, 각자에게 며칠에 한 번까지만 보냅니다."
+L["Without GuildOS or Discord"] = "GuildOS 또는 Discord 없음"
+L["Without Discord"] = "Discord 없음"
+L["Without GuildOS and Discord"] = "GuildOS와 Discord 모두 없음"
+L["Without Discord ({name}, {guild})"] = "Discord 없음 ({name}, {guild})"
+L["Nobody here: everyone has GuildOS and Discord, or the filter hides them."] = "아무도 없음: 모두 GuildOS와 Discord가 있거나 필터가 숨기고 있습니다."
+L["Reminded to link Discord on guildos.me (whisper)."] = "guildos.me에서 Discord 연결을 알림 (귓속말)."
+L["Reminded to install GuildOS and link Discord (whisper)."] = "GuildOS 설치와 Discord 연결을 알림 (귓속말)."
