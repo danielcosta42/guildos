@@ -1411,3 +1411,5 @@ L["Share the ban on %s with the alliance"] = "Share the ban on %s with the allia
 L["Share"] = "Share"
 L["Choose a reason"] = "Choose a reason"
 L["The alliance's officers are alerted about them; nobody is banned for it."] = "The alliance's officers are alerted about them; nobody is banned for it."
+L["Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."] = "Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."
+L["The website sends the game its next %d raids; later ones arrive as those pass."] = "The website sends the game its next %d raids; later ones arrive as those pass."

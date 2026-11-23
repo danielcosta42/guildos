@@ -771,6 +771,31 @@ function GuildOS:CreateCalendarSub(panel)
             local none = UI:CreateText(child, canCreate and L["No events. Use New Event to add one."] or L["No events this day."],
                 12, soft.r, soft.g, soft.b)
             none:SetPoint("TOPLEFT", 0, 0)
+            yy = 20
+        end
+
+        -- A raid the site has but the game was not sent yet (#416): the inbox carries ten raids, four weeks
+        -- ahead, so a night planned two months out is on Discord and not here. Said only where the guild
+        -- uses the site (the companion is on here, or a raid from it is on the calendar).
+        if sel then
+            local Imp = GuildOS.CompanionImport
+            local usesSite = GuildOS.Companion ~= nil and GuildOS.Companion:IsEnabled()
+            if not usesSite then
+                for _, e in pairs(CAL():GetEvents()) do
+                    if CAL():IsWebEvent(e) and not e.canceled then usesSite = true break end
+                end
+            end
+            local why = usesSite and GuildOS.GameCalendar and GuildOS.GameCalendar.NotSentYet(
+                noon(math.floor(sel / 10000), math.floor((sel % 10000) / 100), sel % 100) + 12 * 3600,
+                GetServerTime(), inbox or (Imp and Imp:InboxInfo()))
+            if why then
+                local text = why == "window"
+                    and string.format(L["Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."], GuildOS.GameCalendar.WINDOW_DAYS)
+                    or string.format(L["The website sends the game its next %d raids; later ones arrive as those pass."], GuildOS.GameCalendar.INBOX_CAP)
+                local fs = UI:CreateText(child, text, 11, soft.r, soft.g, soft.b)
+                across(fs, yy)
+                yy = yy + math.max(14, (fs:GetStringHeight() or 12) + 6)
+            end
         end
         child:SetHeight(math.max(1, yy))
     end

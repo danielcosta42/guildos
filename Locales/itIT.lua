@@ -3643,3 +3643,5 @@ L["Share the ban on %s with the alliance"] = "Condividi il ban di %s con l'allea
 L["Share"] = "Condividi"
 L["Choose a reason"] = "Scegli un motivo"
 L["The alliance's officers are alerted about them; nobody is banned for it."] = "Gli ufficiali dell'alleanza ricevono un avviso; nessuno viene bandito per questo."
+L["Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."] = "Le incursioni pianificate sul sito tra più di %d giorni non sono ancora arrivate nel gioco; arrivano man mano che la data si avvicina."
+L["The website sends the game its next %d raids; later ones arrive as those pass."] = "Il sito invia al gioco le prossime %d incursioni; le successive arrivano man mano che queste passano."

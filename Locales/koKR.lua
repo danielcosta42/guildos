@@ -3499,3 +3499,5 @@ L["Share the ban on %s with the alliance"] = "%s 님의 차단을 동맹과 공�
 L["Share"] = "공유"
 L["Choose a reason"] = "사유 선택"
 L["The alliance's officers are alerted about them; nobody is banned for it."] = "동맹 관리자에게 경고만 표시되며, 이것으로 차단되는 사람은 없습니다."
+L["Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."] = "웹사이트에서 %d일보다 먼 날짜로 계획된 공격대는 아직 게임에 도착하지 않았습니다. 날짜가 가까워지면 도착합니다."
+L["The website sends the game its next %d raids; later ones arrive as those pass."] = "웹사이트는 다음 %d개의 공격대를 게임에 보냅니다. 이후 공격대는 앞선 공격대가 지나가면 도착합니다."

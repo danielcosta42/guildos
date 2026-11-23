@@ -1807,7 +1807,7 @@ end
 local INBOX_TRUST = 86400   -- the companion rewrites the inbox every hour: a day older is one that stopped
 
 --- The site raids the inbox holds, by id, how many, and when the site gave them (its ack, held to now):
---- { ids = { [raidId] = true }, count = n, at = epoch }. Nil when no inbox with a raid was read this
+--- { ids = { [raidId] = true }, count = n, at = epoch, last = latest startsAt }. Nil when no inbox with a raid was read this
 --- session, the companion is off, or the inbox is a day old: the game's calendar infers "no longer on the
 --- website" from it, and a stopped companion's leftover must never offer to take a live raid out of the
 --- game (guildos-web specs/075, #263).
@@ -1819,9 +1819,11 @@ function Import:InboxInfo()
     local now = GetServerTime()
     at = math.min(at, now)
     if now - at > INBOX_TRUST then return nil end
-    local ids = {}
+    local ids, last = {}, nil
     for _, roster in ipairs(raids) do
         if roster.raidId ~= nil then ids[tostring(roster.raidId)] = true end
+        local when = tonumber(roster.startsAt)
+        if when and (not last or when > last) then last = when end
     end
-    return { ids = ids, count = #raids, at = at }
+    return { ids = ids, count = #raids, at = at, last = last }
 end
