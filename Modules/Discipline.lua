@@ -528,6 +528,9 @@ function Discipline:Warn(playerKey, name, reason, opts)
         { name = name, reason = self.ReasonText(reason), step = w.level, rule = opts.rule })
     local target = GuildOS:WhisperTarget(full or name)
     if GuildOS.NoteWhisper then GuildOS:NoteWhisper(target) end
+    -- The click sends it, and the WhisperQueue counts it against WoW: Forever's limit (issue #393).
+    local queue = GuildOS.WhisperQueue
+    if queue then return w, queue:SendNow(target, text) and "sent" or "failed" end
     return w, GuildOS.Compat.SendWhisper(text, target) and "sent" or "failed"
 end
 
