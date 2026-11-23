@@ -38,6 +38,7 @@ SyncService.OFFICER_DOMAINS = {
     cta      = true,   -- an officer's call to arms (answering it is a member action, issue #108)
     ban      = true,   -- blacklist add/remove (officer-authoritative)
     alt      = true,   -- alt links, one entry per alt with a tombstone on unlink (issue #424)
+    osheet   = true,   -- a member's officer sheet, the long text (issue #427): officers write, and only officers keep it
     discipline = true, -- the disciplinary record (issue #402): officers write, and only officers keep it
     reminder  = true,  -- when an officer reminded a member to install GuildOS (issue #422)
     modalert  = true,  -- an officer claiming a flagged chat line, so the others do not alert (issue #404)
@@ -62,6 +63,13 @@ SyncService.GUILD_ONLY_DOMAINS = {
     gbank          = true,   -- the guild bank's picture, its ledger and asks for them (#380)
     gbankreq       = true,   -- a member's request for an item; officers close it (#380)
     craftorder     = true,   -- a member's craft order and its crafter's answers (#389)
+}
+
+-- Officer domains that travel only over the game's OFFICER addon channel (issue #427): free text about a person,
+-- whose bytes a member's client must never get. Published there, accepted only from there; never over GUILD or a
+-- whisper. On a client without that channel (Compat.OfficerAddonChannel) they are not sent at all.
+SyncService.OFFICER_CHANNEL_DOMAINS = {
+    osheet = true,
 }
 
 -- Actions any guild member may perform inside an officer domain, over GUILD. Keyed by domain:
@@ -197,9 +205,18 @@ function SyncService:Publish(domain, action, data, opts)
         env.ack = true
     end
 
+    local officersOnly = self.OFFICER_CHANNEL_DOMAINS[domain]
+    if officersOnly and (opts.target or not GuildOS.Compat.OfficerAddonChannel()) then return nil end
+
     local ok, serialized = pcall(function() return LibSerialize:Serialize(env) end)
     if not ok or type(serialized) ~= "string" then return nil end
     if not GuildOS.CommSystem then return nil end
+
+    if officersOnly then
+        GuildOS.CommSystem:SendToOfficers(self.ENVELOPE_MSGTYPE, serialized, opts.priority,
+            self.ENVELOPE_MSGTYPE .. " " .. tostring(domain))
+        return env.id
+    end
 
     GuildOS.CommSystem:SendMessage(self.ENVELOPE_MSGTYPE, serialized, opts.target, opts.priority,
         self.ENVELOPE_MSGTYPE .. " " .. tostring(domain))   -- /gos perf counts it by domain (issue #324)
@@ -280,7 +297,7 @@ function SyncService:Validate(env, sender, channel)
     if env.v > self.PROTOCOL_VERSION then return false end   -- newer protocol than we speak
     if self.GUILD_ONLY_DOMAINS[env.dom] and channel ~= "GUILD" then return false end
     if self.OFFICER_DOMAINS[env.dom] then
-        if channel ~= "GUILD" then return false end
+        if channel ~= (self.OFFICER_CHANNEL_DOMAINS[env.dom] and "OFFICER" or "GUILD") then return false end
         local member = self.MEMBER_ACTIONS[env.dom]
         local ranked = self.RANKED_ACTIONS[env.dom]
         if not (member and member[env.act]) and not GuildOS:IsOfficerByName(sender)

@@ -193,7 +193,8 @@ CommSystem.DROP_REASON_TEXT = {
 -- Send a message to guild (with chunking for large payloads)
 ----------------------------------------------------------------------
 -- `kind`, optional, names it in /gos perf (SyncService passes its domain); else the type does.
-function CommSystem:SendMessage(msgType, data, target, priority, kind)
+-- `channel`, optional: "OFFICER" for what only officers may receive (SendToOfficers); GUILD otherwise.
+function CommSystem:SendMessage(msgType, data, target, priority, kind, channel)
     local payload = msgType .. ":" .. (data or "")
 
     -- Compress
@@ -207,7 +208,7 @@ function CommSystem:SendMessage(msgType, data, target, priority, kind)
         -- Single message, no chunking needed (prefix with "S:").
         -- Cap at 250 so "S:" + payload stays safely under the 255-byte addon-message limit.
         local msg = "S:" .. encoded
-        self:SendRaw(msg, target, priority)
+        self:SendRaw(msg, target, priority, channel)
     else
         -- Multi-chunk: prefix each with "M:msgId:chunkIndex:totalChunks:"
         local msgId = string.format("%X", math.random(0, 0xFFFF))
@@ -218,13 +219,13 @@ function CommSystem:SendMessage(msgType, data, target, priority, kind)
             local chunk = encoded:sub(startPos, endPos)
             local header = string.format("M:%s:%d:%d:", msgId, i, totalChunks)
             C_Timer.After((i - 1) * 0.1, function()
-                self:SendRaw(header .. chunk, target, priority)
+                self:SendRaw(header .. chunk, target, priority, channel)
             end)
         end
     end
 end
 
-function CommSystem:SendRaw(msg, target, priority)
+function CommSystem:SendRaw(msg, target, priority, channel)
     if target then
         local function send()
             GuildOS:NoteWhisper(target) -- a guildmate gone since they asked answers "No player named" (issue #326)
@@ -239,8 +240,17 @@ function CommSystem:SendRaw(msg, target, priority)
             send()
         end
     else
-        GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, "GUILD", nil, priority or "BULK")
+        GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, channel or "GUILD", nil, priority or "BULK")
     end
+end
+
+-- To the officers only, over the game's OFFICER addon channel: a member's client never gets the bytes (issue #427).
+-- False, and nothing sent, on a client without that channel (Compat.OfficerAddonChannel).
+function CommSystem:SendToOfficers(msgType, data, priority, kind)
+    local channel = GuildOS.Compat.OfficerAddonChannel()
+    if not channel then return false end
+    self:SendMessage(msgType, data, nil, priority, kind, channel)
+    return true
 end
 
 ----------------------------------------------------------------------
@@ -678,6 +688,13 @@ function CommSystem:_Answer()
                 GuildOS.Birthdays:Backfill()
             end)
         end
+
+        -- Every member's officer sheet, a couple per envelope and spaced out, once per 10 minutes (issue #427).
+        if GuildOS:IsOfficer() and GuildOS.OfficerNotes then
+            C_Timer.After(7.5, function()
+                GuildOS.OfficerNotes:BackfillSheets()
+            end)
+        end
     end)
 end
 
@@ -790,6 +807,7 @@ function CommSystem:FullSync()
     C_Timer.After(4, function()
         if GuildOS.OfficerNotes then
             GuildOS.OfficerNotes:BroadcastAllNotes()
+            GuildOS.OfficerNotes:BackfillSheets(true)   -- issue #427
         end
     end)
 end

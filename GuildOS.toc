@@ -183,6 +183,7 @@ UI\FeaturePanels.lua
 UI\SettingsPanel.lua
 UI\LootWindow.lua
 UI\GuildBankPanel.lua
+UI\OfficerSheet.lua
 UI\RosterFrame.lua
 UI\MemberDetail.lua
 UI\WarnDialog.lua

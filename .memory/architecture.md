@@ -32,7 +32,7 @@ GuildOS/
   LootTracker.lua         — loot history recording
   LootMaster.lua          — ML loot distribution UI and logic
   RecipeTracker.lua       — profession recipe scanning
-  OfficerNotes.lua        — officer note management + sync
+  OfficerNotes.lua        — officer notes and the member's sheet (#427, domain osheet) + sync
   TrialTracker.lua        — trial member lifecycle
   GuildManager.lua        — leadership suite: ranks/kick/MOTD/inactivity/suggestions/log
   BulkActions.lua         — promote/demote/remove by rules, one member per click (#420)
@@ -48,6 +48,7 @@ GuildOS/
   SpecChecker.lua         — spec/talent detection
   UI/
     Helpers.lua           — ALL UI factory + theme (current; target: split below)
+    OfficerSheet.lua      — the roster's hover card (alts, sheet, join; #427) and the sheet editor
     RosterFrame.lua       — main guild roster window + tabs
     MemberDetail.lua      — per-member detail slide-in panel
     ManagementPanel.lua   — "Liderança" tab (rank/inactivity/suggestions/MOTD/log)

@@ -557,7 +557,16 @@ Removed: `Compat.NewTimer`.
 | `OfficerNotes:HandleIncoming(data)` | Deserializes, deduplicates by author+timestamp, inserts note |
 | `OfficerNotes:BroadcastAllNotes()` | Serializes full officerNotes and sends "OA" comm message |
 | `OfficerNotes:HandleAllIncoming(data)` | Merges incoming bulk notes, deduplicates, sorts |
-| `OfficerNotes:MergeSheet(existing, incoming)` | Folds one member's sheet into another: every held note kept, an arriving one added unless the same author+timestamp is held, newest first, non-notes dropped; incoming non-empty tags win (issue #97) |
+| `OfficerNotes:MergeSheet(existing, incoming)` | Folds one member's sheet into another: every held note kept, an arriving one added unless the same author+timestamp is held, newest first, non-notes dropped; incoming non-empty tags win (issue #97); the member's sheet at the higher revision stays (#427) |
+| `OfficerNotes.CleanSheetText(text)` | Pure: the sheet as kept: no "|" or control character but the line break, at most 3 blank lines in a row, trimmed, `SHEET_MAX` letters (#427) |
+| `OfficerNotes.SheetWins(rev, entry, cur, held)` | Pure: whether a sheet replaces the held one: higher revision; a tie by text then author (#427) |
+| `OfficerNotes.SheetHead(text, lines, letters)` | Pure: the first lines/letters of a sheet, and whether there is more (#427) |
+| `OfficerNotes:GetSheet(key)` | The member's sheet `{ text, author, ts, rev }`, nil when none or emptied; officers only (#427) |
+| `OfficerNotes:SetSheet(key, text)` | Writes the sheet as this officer's at max(server time, last + 1) and publishes it on `osheet` (#427) |
+| `OfficerNotes:ApplySheets(list, sender)` / `:OnSheetSync(env, sender)` | Applies sheets off the network (keys localized, checked); officers only (#427) |
+| `CommSystem:SendToOfficers(msgType, data, priority, kind)` | Sends over the OFFICER addon channel only; false and nothing sent without it (#427) |
+| `Compat.OfficerAddonChannel()` | "OFFICER" on retail and TBC Anniversary, nil on WoW: Forever (not checked in game) (#427) |
+| `OfficerNotes:BackfillSheets(force)` | Every sheet at its stored revision, 2 per envelope 3 s apart; once per 10 min unless forced (#427) |
 
 ---
 
@@ -655,6 +664,18 @@ Removed: `Compat.NewTimer`.
 | `AltDeparture:RemoveOthers(groups)` / `:BanGroups(groups, reason, days, note)` | The dialog's answers: a removal queue of Bulk actions (one per click), or `BanList:AddGroup` per group |
 | `AltDeparture:OnLeave(evt)` / `:SetNewMain(departed, key)` / `:Unlink(departed)` | A main leaving with alts still in the guild: each officer asked once (`ShowMainLeftDialog`); `SetMain` or `GuildOS:UnlinkGroup`, refused ("settled") when another officer already answered |
 | `AltDeparture.Others(group, members, skip)` / `.ColoredNames(members)` | Pure: the group's members on the roster; names in class colour |
+
+## UI/OfficerSheet.lua — GuildOS.RosterCard (the roster's hover card and the sheet editor, #427; ADR-0042)
+
+| Function | Description |
+|---|---|
+| `RosterCard.NewIndex(links)` / `.IndexRow(idx, key, name, class, online)` | The card's index, built once per roster refresh: alts both ways, each roster line |
+| `RosterCard.NameText(idx, key)` / `.AltLines(idx, key)` | Pure on the index: a name in class colour with "(online)"; a main's alts or an alt's main and siblings |
+| `RosterCard:AddLines(tip, data, idx)` | The card's added lines: alts, M+, the birthday hook (`GuildOS.Birthdays:TooltipLine`); to officers joined/tenure, game officer note, sheet head, 2 notes |
+| `RosterCard:Toggle(row, fill)` | Shift+click: keeps the card open (`GuildOSRosterCard`, Esc closes), or lets it go |
+| `GuildOS:ShowOfficerSheetEditor(key, name)` | The sheet's editor (officers) |
+
+---
 
 ## AltSync.lua — GuildOS.AltSync (alt links synced per alt, #424; ADR-0040)
 
