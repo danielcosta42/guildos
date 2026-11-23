@@ -1716,21 +1716,29 @@ everything. Until now cores reached the game only through the companion's `Inbox
   queue in `GuildOS.State.bulk` (session only). It never calls a protected function, never loops over the
   queue and never acts from a timer or an event.
 - **The Next button** (`UI/BulkPanel.lua`) is a `SecureActionButtonTemplate` named `GuildOSBulkNext`, created at
-  load so a `/click GuildOSBulkNext` macro works before the tab is opened. Its PreClick asks `BulkActions:Arm`
+  the first moment out of combat after load (never in combat: its size and backdrop would be refused), so a
+  `/click GuildOSBulkNext` macro works before the tab is opened. Its PreClick asks `BulkActions:Arm`
   for the line of this click only (the game's own `/gpromote`, `/gdemote` or `/gremove` for one member, written
   by `Compat.GuildRankCommand`) and sets it with `Compat.SetSecureMacro`; the game runs it; PostClick marks the
-  member sent and clears the line. Before each click the member is read again from the roster: who left or
-  whose rank moved is skipped.
+  member sent and clears the line. Before each click the member is read again from the roster, by the whole
+  name it gave (never a short-name match): who left, whose rank moved or who no longer meets the rules is
+  skipped. The removal's confirmation queues exactly the list it showed.
 - **Combat.** Attributes are set out of combat only. The button leaves the window on `PLAYER_REGEN_DISABLED`
   (a window holding a protected frame cannot be hidden in combat) and comes back on `PLAYER_REGEN_ENABLED`.
-- **Retail** acts on the press or the release by `ActionButtonUseKeyDown`: `Compat.SecureClicks` registers both
-  there and `Compat.SecureClickActs(down)` names the one that acts.
-- **Typed fallback.** On WoW: Forever (`Compat.SecureGuildMacro` false), or after a blocked-action event within
-  2 s of a click, the click prints the line for the officer to type and goes on. `/gos bulk next` is addon
+- **The key-down option.** Where `ActionButtonUseKeyDown` exists (retail, newer Classic templates) the template may
+  act on the press or the release by it: `Compat.SecureClicks` registers both, `Compat.SecureClickActs(down)` lets
+  exactly one arm the line, and `Compat.ClickMacro` gives the macro `/click GuildOSBulkNext LeftButton 1` while
+  the option is on (a bare /click arrives as a release).
+- **Typed fallback.** On WoW: Forever (`Compat.SecureGuildMacro` false), or after a blocked-action event for a
+  rank function of GuildOS raised while a click runs its line (between PreClick and PostClick), the click prints
+  the line for the officer to type and goes on. The blocked click's member is never marked sent; a member
+  already sent is never put back. A surname's space goes as a hyphen, as `/w` takes it (`WhisperTarget`). `/gos bulk next` is addon
   code, so it never runs the line: it says who is next, or prints the line where it is typed anyway.
 - **Permission** is the game's `Can*` (now `Compat.CanGuildPromote/Demote/Remove`, guarded by compat-guard), and
   `Eligible` leaves out oneself, ranks at or above one's own, promotions to one's own rank and demotions below
   the last. A removal starts only after a confirmation listing who.
+- **Sent, then done or not confirmed.** A sent member is done only when the roster shows the change; with no
+  change 15 s after the click it reads "not confirmed, check it" and is never sent again.
 - **The Roster Log** gets a change when the roster shows it (`GUILD_ROSTER_UPDATE`), unless the game's own guild
   message already logged it; `RosterLog:_Insert` also folds the same officer change (action, member, author,
   rank) seen twice within 30 s.

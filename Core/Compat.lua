@@ -422,14 +422,18 @@ local RANK_SLASH = {
     remove  = { "SLASH_GUILD_UNINVITE1", "/gremove" },
 }
 
--- The line that does `action` ("promote", "demote", "remove") to `name`, or nil: an unknown action, or a
--- name that is not one word (a roster name never has a space; a line with one could carry a second command).
+-- The line that does `action` ("promote", "demote", "remove") to `name`, or nil: an unknown action, or a name
+-- with a character that could start or carry a second command (; / \ |) or a line break.
 -- Retail names the member with the realm, as a guild there spans connected realms (#184); the other
--- clients' guilds are one realm, and the short name is the one their commands take.
+-- clients' guilds are one realm, and the short name is the one their commands take. Where the game spells
+-- a surname with a space (WoW: Forever, "Chehul Druida"), the name goes as /w takes it, the hyphen for the
+-- space (GuildOS:WhisperTarget): a space would end the name there. Unverified for /gpromote (specs/bulk-actions).
 function Compat.GuildRankCommand(action, name)
     local slash = RANK_SLASH[action]
-    if not slash or type(name) ~= "string" or not name:match("^[^%s;/\\|]+$") then return nil end
+    if not slash or type(name) ~= "string" or name == "" or name:find("[;/\\|\r\n]") then return nil end
     if not GuildOS.Client.isRetail then name = name:match("^([^-]+)") or name end
+    name = GuildOS:WhisperTarget(strtrim and strtrim(name) or name)
+    if name == "" or name:find("%s") then return nil end
     local cmd = _G[slash[1]]
     if type(cmd) ~= "string" or not cmd:match("^/%S+$") then cmd = slash[2] end
     return cmd .. " " .. name
@@ -441,23 +445,39 @@ function Compat.SecureGuildMacro()
     return GuildOS.Client.game ~= "FOREVER"
 end
 
--- Register a secure action button for its clicks. Retail acts on the press or the release by the
--- ActionButtonUseKeyDown option, from a /click macro too, so it listens to both and SecureClickActs
--- names the one that acts; the older clients act on the release.
+-- The game's "cast on key down" option (ActionButtonUseKeyDown): true or false, or nil on a client without it.
+local function keyDownOption()
+    local get = (C_CVar and C_CVar.GetCVar) or GetCVar
+    if not get then return nil end
+    local ok, v = pcall(get, "ActionButtonUseKeyDown")
+    if not ok or v == nil then return nil end
+    return tostring(v) == "1"
+end
+
+-- Register a secure action button for its clicks. A client with the key-down option (retail, and the newer
+-- Classic templates) may act on the press or on the release by it, a /click included: the button listens to
+-- both, and SecureClickActs lets exactly one of them arm the line, so a click acts once whichever the template
+-- runs. A client without the option acts on the release.
 function Compat.SecureClicks(button)
-    if GuildOS.Client.isRetail then
+    if keyDownOption() ~= nil then
         button:RegisterForClicks("AnyUp", "AnyDown")
     else
         button:RegisterForClicks("AnyUp")
     end
 end
 
--- Whether the click event with this `down` is the one the secure button acts on (see SecureClicks).
+-- Whether the click event with this `down` is the one that arms the line (see SecureClicks).
 function Compat.SecureClickActs(down)
-    if GuildOS.Client.isRetail and GetCVarBool then
-        return (down and true or false) == (GetCVarBool("ActionButtonUseKeyDown") and true or false)
-    end
-    return not down
+    local opt = keyDownOption()
+    if opt == nil then return not down end
+    return (down and true or false) == opt
+end
+
+-- The macro line that presses button `name` the way SecureClickActs acts on: with the key-down option on,
+-- /click must say it is a press ("LeftButton 1"), or it arrives as a release and does nothing.
+function Compat.ClickMacro(name)
+    if keyDownOption() then return "/click " .. name .. " LeftButton 1" end
+    return "/click " .. name
 end
 
 -- Set the line a secure action button runs. Out of combat only: the game refuses SetAttribute on a

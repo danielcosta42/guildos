@@ -25,13 +25,15 @@ to prepare the list and act on **one member per click** of the officer.
 4. **Preview** lists who the rules pick now (name, rank, level, days offline, attendance, no GuildOS),
    longest offline first.
 5. **Start** makes the queue from the live roster. **Remove asks first**, listing who (ten names and
-   "and N more"); the queue starts only on Start in that dialog.
+   "and N more"); the queue starts only on Start in that dialog, with exactly the members it listed.
 6. **Next** acts on one member per click. The button says the action and the member ("Promote Bob");
    the line beside it says who is next and "3 of 12". Before each click the member is read again from
-   the roster: who left the guild or whose rank changed since the list was made is skipped, with the
-   reason in the list. **Skip** passes over the current member; **Stop** drops the queue.
+   the roster (by the whole name, realm included): who left the guild, whose rank changed or who no
+   longer meets the rules (logged in since, say) is skipped, with the reason in the list. A clicked
+   member is "sent" until the roster shows the change ("done"); with no change 15 s later it reads
+   "not confirmed, check it" and is never sent again. **Skip** passes over the current member; **Stop** drops the queue.
 7. **Macro:** `/click GuildOSBulkNext` presses the same button, one member per press (the panel shows
-   it). `/gos bulk` opens the tab; `/gos bulk next` says who is next and the macro; `/gos bulk skip`
+   it; with the game's "cast on key down" option on it is `/click GuildOSBulkNext LeftButton 1`). `/gos bulk` opens the tab; `/gos bulk next` says who is next and the macro; `/gos bulk skip`
    and `/gos bulk stop` do what the buttons do. A typed command is addon code and never runs the
    protected command.
 8. **Permission:** Preview, Start and every click need the rank's right in the game
@@ -44,8 +46,10 @@ to prepare the list and act on **one member per click** of the officer.
 - Next is a secure action button. Its PreClick writes, for that click only, the game's own
   `/gpromote`, `/gdemote` or `/gremove` for one member; the game runs it; PostClick clears it.
 - **WoW: Forever** refused an addon-written guild command on a secure button (#256): there each click
-  prints the line ("Type /gpromote Bob in chat") and goes on to the next member. Any client where the
-  game blocks the click right after it switches to the same typed mode for the session.
+  prints the line ("Type /gpromote Bob in chat") and goes on to the next member. A surname goes with a
+  hyphen for the space ("Chehul Druida" → `/gpromote Chehul-Druida`), as `/w` takes it. Any client where
+  the game blocks the click while it runs switches to the same typed mode for the session; that member
+  stays next, never marked sent.
 - Retail acts on the press or the release by the game's "cast on key down" option; both are handled.
 
 ## Out of scope
