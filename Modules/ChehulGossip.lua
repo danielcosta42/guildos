@@ -549,7 +549,12 @@ function Gossip:Peers()
             list[#list + 1] = peer
         end
     end
-    table.sort(list, function(a, b) return a.at > b.at end)
+    -- Ties go by name: names heard of off one list share an `at`, and an order left to `pairs` would
+    -- make who a round picks hang on how the table happens to be laid out, not on the dice.
+    table.sort(list, function(a, b)
+        if a.at ~= b.at then return a.at > b.at end
+        return a.name < b.name
+    end)
     return list
 end
 
