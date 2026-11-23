@@ -155,7 +155,7 @@ parsed = Import:Parse(encode('{"fmt":"GOSROST1","v":7,"raidId":"a","title":"t","
   ',"members":[],"owners":"Chehul-TolBarad"}'))
 check(parsed and parsed.owners == nil, "owners that is not a list is nothing")
 
--- ── ButtonRaid: from an hour before the start to three hours after it (spec 090) ────────────
+-- ── ButtonRaid: from an hour before the start to three hours after it (spec 115) ────────────
 local H = 3600
 Import._webRaids = {
   raidOf(nil, NOW - 5 * H, "old"),

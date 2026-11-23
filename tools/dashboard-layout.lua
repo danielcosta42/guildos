@@ -115,6 +115,7 @@ function M:SetAlpha(a) self.alpha = a end
 function M:GetAlpha() return self.alpha end
 function M:SetJustifyH(j) self.justifyH = j end
 function M:SetWordWrap(v) self.wordWrap = v end
+function M:SetMaxLines(n) self.maxLines = n end
 function M:SetScrollChild(c) self.scrollChild = c end
 function M:RegisterEvent(e) self.events[e] = true end
 function M:EnableMouse(v) self.mouse = v end
@@ -135,7 +136,7 @@ function M:GetRegions()
   return unpack(out)
 end
 for _, name in ipairs({ "SetShadowOffset", "SetShadowColor", "SetHorizTile", "SetVertTile", "SetTexCoord",
-                        "SetJustifyV", "SetClipsChildren", "UnregisterEvent", "SetMaxLines",
+                        "SetJustifyV", "SetClipsChildren", "UnregisterEvent",
                         -- A popup's (tools/raid-start-ui.lua: the raid owner's prompt)
                         "SetFrameStrata", "SetMovable", "RegisterForDrag", "StartMoving", "StopMovingOrSizing",
                         "Raise" }) do

@@ -1,4 +1,4 @@
--- The Iniciar raide button on screen (issue #400; the site's #603, spec 090): the owner's prompt, the Now tab's next
+-- The Iniciar raide button on screen (issue #400; the site's #603, spec 115): the owner's prompt, the Now tab's next
 -- raid and the Web tab, run against the real UI/WebPanel.lua, UI/Agora.lua, Helpers and CompanionImport on
 -- tools/dashboard-layout.lua's stub frames (a method the stub does not know raises) under a WoW: Forever client.
 -- One label and one gate in all three: the step's label, greyed with the reason under it while it cannot run, never
@@ -131,18 +131,32 @@ GROUP, LEADER = { { "Chehul", "Costa" }, { "Ana", "Lima" } }, false
 GuildOS:RefreshRaidSteppers()
 check(p.go:IsVisible() and not p.go:IsEnabled(), "a step that cannot run leaves the prompt's button greyed, not hidden")
 check(p.go.why.text == "Only the group's leader or an assistant can invite.", "with the reason under it: " .. tostring(p.go.why.text))
+-- Who the prompt says was put off (Later, the close button): the login's digest then has its turn.
+local putOff = {}
+local RS = GuildOS.RaidStart
+local dismissed = RS.PromptDismissed
+RS.PromptDismissed = function(_, roster) putOff[#putOff + 1] = roster end
 -- Ready: everyone in place. "Raid ready", and its click closes the prompt.
 GROUP, RAID, LEADER = { { "Chehul", "Costa", 1 }, { "Ana", "Lima", 1 } }, true, true
 GuildOS:RefreshRaidSteppers()
 check(p.go.label.text == "Raid ready" and p.go:IsEnabled(), "a raid in place reads Raid ready: " .. tostring(p.go.label.text))
 fire(p.go, "OnClick")
 check(not p:IsVisible(), "and its click closes the prompt")
+check(GuildOS:RaidPromptShowing() == nil, "and then no prompt is up")
+check(#putOff == 0, "Raid ready does not put the prompt off: the digest keeps waiting")
 -- Later closes it too.
 reset()
 GuildOS:ShowRaidPrompt(ONYXIA)
-check(p:IsVisible(), "a second prompt shows again")
+check(p:IsVisible() and GuildOS:RaidPromptShowing() == ONYXIA, "a second prompt shows again, and says for which raid")
 fire(p.later, "OnClick")
 check(not p:IsVisible(), "Later closes the prompt")
+check(#putOff == 1 and putOff[1] == ONYXIA, "and puts it off")
+GuildOS:ShowRaidPrompt(ONYXIA)
+fire(p.close, "OnClick")
+check(not p:IsVisible() and #putOff == 2, "the close button puts it off too")
+RS.PromptDismissed = dismissed
+-- A long offline list stays above Later: two lines at most.
+check(p.go.why.maxLines == 2, "the prompt's reason line keeps to two lines: " .. tostring(p.go.why.maxLines))
 -- A prompt in the game closes the digest still open, rather than stacking on it.
 GuildOS.Digest = { frame = kit.newFrame("Frame", UIParent) }
 GuildOS:ShowRaidPrompt(ONYXIA)
@@ -179,5 +193,34 @@ GROUP, RAID, LEADER = { { "Chehul", "Costa", 1 }, { "Ana", "Lima", 1 } }, true, 
 web:Refresh()
 local ready = kit.button(web, "Raid ready")
 check(ready ~= nil and not ready:IsEnabled(), "on the Web tab Raid ready is a state, off")
+-- One Refresh lays the tab out once: the button's own repaint inside it does not lay it out again.
+local relayouts, relayout = 0, web.Relayout
+web.Relayout = function(...) relayouts = relayouts + 1; return relayout(...) end
+web:Refresh()
+check(relayouts == 1, "a Refresh lays the tab out once (" .. relayouts .. ")")
+-- A burst of group changes refreshes it once at once and once at its end; combat, at once.
+local refreshes, refresh = 0, web.Refresh
+web.Refresh = function(...) refreshes = refreshes + 1; return refresh(...) end
+local onEvent = web.scripts.OnEvent
+onEvent(web, "GROUP_ROSTER_UPDATE")
+onEvent(web, "GROUP_ROSTER_UPDATE")
+onEvent(web, "GROUP_ROSTER_UPDATE")
+check(refreshes == 1, "three group changes in a row refresh the tab once now (" .. refreshes .. ")")
+flush()
+check(refreshes == 2, "and once more when the burst ends (" .. refreshes .. ")")
+onEvent(web, "PLAYER_REGEN_DISABLED")
+check(refreshes == 3, "combat refreshes it at once")
+web.Refresh, web.Relayout = refresh, relayout
+-- Nothing loaded: what to do about it, not that no raid starts now.
+reset()
+Import._webRaids, GuildOS.db.companionRoster = nil, nil
+web:Refresh()
+check(web.state.reason == "Import a roster first." and web.state.enabled.start == false,
+  "with nothing loaded the line says to import a roster: " .. tostring(web.state.reason))
+-- The site's raids all another guild's: the line says whose.
+Import._foreignLine = "The website's raids are for the guild Outra, not Chama."
+web:Refresh()
+check(web.state.reason == Import._foreignLine, "the site's raids for another guild: the line says so: " .. tostring(web.state.reason))
+Import._foreignLine = nil
 
 print(string.format("raid-start-ui: %d checks passed", kit.count()))

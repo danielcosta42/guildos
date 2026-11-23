@@ -135,7 +135,7 @@ local function canPublishNow()
 end
 
 ----------------------------------------------------------------------
--- The Iniciar raide button (issue #400; specs/090 in guildos-web)
+-- The Iniciar raide button (issue #400; specs/115 in guildos-web)
 --
 -- One stepper wherever it sits: the owner's prompt, the Now tab's next
 -- raid and this tab. Its label is RaidStart:Next's and its click is
@@ -148,6 +148,7 @@ end
 ----------------------------------------------------------------------
 local STEP_TICK = 5   -- seconds between repaints while a button shows: an invite's minute runs out, people log in
 local STEP_GAP  = 1   -- seconds: a burst of group events repaints once
+local WEB_GROUP_GAP = 0.5   -- seconds: a burst of group events refreshes the Web tab once
 local STEP_EVENTS = { "GROUP_ROSTER_UPDATE", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "GUILD_ROSTER_UPDATE" }
 
 local steppers, stepTicker, stepEvents = {}, nil, nil
@@ -172,7 +173,9 @@ local function paintStepper(s, cache)
     s.btn.label:SetText(step.label or L["Start raid"])
     -- Ready is a click only where the host gives it one (the prompt closes); elsewhere it is a state.
     if step.kind ~= "blocked" and (step.kind ~= "done" or s.done) then s.btn:Enable() else s.btn:Disable() end
-    s.why:SetText((step.kind == "blocked" and step.reason) or (I and I.OfflineLine(step.offline)) or "")
+    -- The host may know better what to say (the Web tab with nothing loaded: what to do about it).
+    local note = s.note and s.note(roster)
+    s.why:SetText(note or (step.kind == "blocked" and step.reason) or (I and I.OfflineLine(step.offline)) or "")
     if s.paint then s.paint(step) end
 end
 
@@ -207,16 +210,16 @@ local function stepperClick(s)
 end
 
 --- An Iniciar raide button on `parent`. opts: roster (a function: the roster it acts on), done (a function: what a
---- click on "Raid ready" does; without it the button is off once the raid is ready), paint (a function(step): the
---- host's own lines, repainted with it), width, height. Returns the button; the line under it is btn.why, for the
---- host to place.
+--- click on "Raid ready" does; without it the button is off once the raid is ready), note (a function(roster): a line
+--- to say under the button in place of the step's, or nil), paint (a function(step): the host's own lines, repainted
+--- with it), width, height. Returns the button; the line under it is btn.why, for the host to place.
 function UI:CreateRaidStepper(parent, opts)
     local btn = UI:CreateButton(parent, L["Start raid"], opts.width or 150, opts.height or BTN_H)
     local why = UI:CreateText(parent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     why:SetJustifyH("LEFT")
     why:SetWordWrap(true)
     btn.why = why
-    local s = { btn = btn, why = why, roster = opts.roster, done = opts.done, paint = opts.paint }
+    local s = { btn = btn, why = why, roster = opts.roster, done = opts.done, note = opts.note, paint = opts.paint }
     steppers[#steppers + 1] = s
     btn:SetScript("OnClick", function() stepperClick(s) end)
     btn:HookScript("OnShow", function()
@@ -245,6 +248,7 @@ end
 ----------------------------------------------------------------------
 local PROMPT_W, PROMPT_H = 340, 168
 local PROMPT_BTN_H = 26
+local PROMPT_WHY_LINES = 2   -- the reason line's room between the button and Later
 local MINUTE = 60
 
 -- "Starts in 20 min", "Starts now", "Started 45 min ago", and how many are coming.
@@ -283,9 +287,14 @@ local function buildPrompt()
     f.title:SetJustifyH("LEFT")
     f.title:SetWordWrap(false)
 
+    -- Put off (Later, or the close button), not done: the digest that gave way to it at login has its turn.
+    local function putOff()
+        f:Hide()
+        if GuildOS.RaidStart then GuildOS.RaidStart:PromptDismissed(f.roster) end
+    end
     f.close = UI:CreateCloseButton(f)
     f.close:SetPoint("TOPRIGHT", -8, -8)
-    f.close:SetScript("OnClick", function() f:Hide() end)
+    f.close:SetScript("OnClick", putOff)
 
     f.when = UI:CreateText(f, "", 11, C.label.r, C.label.g, C.label.b)
     f.when:SetPoint("TOPLEFT", 16, -42)
@@ -301,17 +310,25 @@ local function buildPrompt()
     f.go:SetPoint("TOPLEFT", 16, -70)
     f.go.why:SetPoint("TOPLEFT", f.go, "BOTTOMLEFT", 0, -6)
     f.go.why:SetWidth(PROMPT_W - 32)
+    -- Two lines fit above Later: a long list of who is offline is cut there, not drawn under the button.
+    f.go.why:SetMaxLines(PROMPT_WHY_LINES)
 
     f.later = UI:CreateButton(f, L["Later"], 90, PROMPT_BTN_H)
     f.later:SetPoint("BOTTOMRIGHT", -16, 14)
-    f.later:SetScript("OnClick", function() f:Hide() end)
+    f.later:SetScript("OnClick", putOff)
 
     f:Hide()
     return f
 end
 
+--- The roster the prompt is up for, or nil when it is not on screen (RaidStart:Due holds a second raid's prompt back
+--- while this one's step is not done).
+function GuildOS:RaidPromptShowing()
+    return prompt and prompt:IsShown() and prompt.roster or nil
+end
+
 --- The owner's prompt for `roster` (RaidStart:Prompt decides when): its name, when it starts, how many are coming,
---- the Iniciar raide button and Later. A second raid's prompt takes the place of the first.
+--- the Iniciar raide button and Later. A second raid's prompt takes the place of the first once that one is done.
 function GuildOS:ShowRaidPrompt(roster)
     if type(roster) ~= "table" then return end
     prompt = prompt or buildPrompt()
@@ -404,7 +421,17 @@ function GuildOS:CreateWebPanel(parent, _win)
             local I = GuildOS.CompanionImport
             return I and I:ActiveRoster()
         end,
-        paint = function() if panel:IsShown() and panel.Relayout then panel:Relayout() end end,
+        -- The site's raids all another guild's: say whose (ForeignLine). With nothing loaded, what to do about it.
+        note = function(roster)
+            local I = GuildOS.CompanionImport
+            local foreign = I and I:ForeignLine()
+            if foreign then return foreign end
+            if not roster then return L["Import a roster first."] end
+        end,
+        -- A repaint between two Refreshes moves the rows under the line; Refresh lays out once on its own.
+        paint = function()
+            if panel:IsShown() and panel.Relayout and not panel.refreshing then panel:Relayout() end
+        end,
         width = 160,
     }), "primary")
     local raidWhy   = startBtn.why
@@ -685,8 +712,10 @@ function GuildOS:CreateWebPanel(parent, _win)
         setEnabled(bringBtn, on)
         setEnabled(trimBtn, trimOk and true or false)
         -- Iniciar raide paints its own label, gate and reason line, the prompt's and the Now tab's with it: one reason
-        -- line, the first thing standing in the way (RaidStart:Next), not a wall of them.
+        -- line, the first thing standing in the way (RaidStart:Next), not a wall of them. Laid out below, once.
+        self.refreshing = true
         GuildOS:RefreshRaidSteppers()
+        self.refreshing = nil
 
         -- Exposed so the layout tests can assert the contract this panel
         -- exists for: a button that is off has to say why, and one that is
@@ -854,8 +883,16 @@ function GuildOS:CreateWebPanel(parent, _win)
     GuildOS.Compat.RegisterEvent(panel, "PLAYER_REGEN_DISABLED")
     GuildOS.Compat.RegisterEvent(panel, "PLAYER_REGEN_ENABLED")
     GuildOS.Compat.RegisterEvent(panel, "GROUP_ROSTER_UPDATE")
-    panel:SetScript("OnEvent", function(self)
-        if self:IsShown() then self:Refresh() end
+    -- Combat at once; the group in a burst (forty accepts, issue #400) as one Refresh every WEB_GROUP_GAP seconds.
+    local function visibleRefresh()
+        if panel:IsShown() then panel:Refresh() end
+    end
+    panel:SetScript("OnEvent", function(_, event)
+        if event == "GROUP_ROSTER_UPDATE" then
+            GuildOS:Coalesce("webpanel", WEB_GROUP_GAP, visibleRefresh)
+        else
+            visibleRefresh()
+        end
     end)
     panel:SetScript("OnShow", function(self)
         self:Refresh()

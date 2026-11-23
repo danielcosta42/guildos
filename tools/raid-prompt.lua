@@ -1,4 +1,4 @@
--- The owner's prompt before the raid (issue #400; the site's #603, spec 090): when it is shown and that it is shown
+-- The owner's prompt before the raid (issue #400; the site's #603, spec 115): when it is shown and that it is shown
 -- once. At login or /reload from half an hour before the start to an hour after it, in the game a quarter of an hour
 -- before it, once per raid and start (kept in the guild's SavedVariables, a week), only to the owner, only for a raid
 -- of the guild this character is in (GOSROST1 v7 `guild`). Also: the login digest gives way to the prompt, the
@@ -106,9 +106,13 @@ for _, fn in ipairs({ "OnLogin", "PromptedAtLogin", "PromptedSet", "Due", "Click
   check(type(RS[fn]) == "function", "RaidStart:" .. fn .. " exists")
 end
 
--- The prompt the UI would show: who it was shown for, in order.
-local SHOWN = {}
-function GuildOS:ShowRaidPrompt(roster) SHOWN[#SHOWN + 1] = roster.raidId .. "@" .. roster.startsAt end
+-- The prompt the UI would show: who it was shown for, in order, and the one on screen (OPEN, until the test closes it).
+local SHOWN, OPEN = {}, nil
+function GuildOS:ShowRaidPrompt(roster)
+  SHOWN[#SHOWN + 1] = roster.raidId .. "@" .. roster.startsAt
+  OPEN = roster
+end
+function GuildOS:RaidPromptShowing() return OPEN end
 local REPAINTS = 0
 function GuildOS:RefreshRaidSteppers() REPAINTS = REPAINTS + 1 end
 
@@ -131,7 +135,7 @@ end
 local function block(t)
   local LibDeflate = LibStub("LibDeflate")
   local data = { fmt = "GOSROST1", v = 7, raidId = t.id, title = t.title or "Onyxia", startsAt = t.at, size = 10,
-                 members = { { key = "Ana Lima", name = "Ana Lima", class = "WARRIOR", slot = "MELEE", group = 1 } },
+                 members = t.members or { { key = "Ana Lima", name = "Ana Lima", class = "WARRIOR", slot = "MELEE", group = 1 } },
                  owners = t.owners or { "Chehul Costa" }, guild = t.guild }
   return "GOSROST1:" .. LibDeflate:EncodeForPrint(LibDeflate:CompressDeflate(json(data)))
 end
@@ -140,9 +144,10 @@ end
 -- prompt's turn. SavedVariables (GuildOS.db) carry over; everything else is the session's.
 local function login(now, blocks)
   NOW, CLOCK = now, CLOCK + 2 * DAY
-  TIMERS, SHOWN, PRINTED = {}, {}, {}
-  Import._lastInbox, Import._webRaids = nil, nil
+  TIMERS, SHOWN, PRINTED, OPEN = {}, {}, {}, nil
+  Import._lastInbox, Import._webRaids, Import._foreignLine, Import._foreignSaid = nil, nil, nil, nil
   RS._armed, RS._loginPrompt = nil, nil
+  Digest.deferred, Digest.shownThisSession = nil, nil
   _G.GuildOSInbox = blocks
   Import:ConsumeInbox()
   return RS:OnLogin()
@@ -228,10 +233,32 @@ check(#SHOWN == 1 and #TIMERS == 0, "ten minutes before prompts, and arms no tim
 fresh()
 login(START - 20 * MIN, { block({ id = "late", at = START + 5 * MIN }), block({ id = "near", at = START }) })
 check(shown() == "near@" .. START, "two in the window: the nearest prompts: " .. shown())
+OPEN = nil   -- put off
 advance(START - 10 * MIN)
 check(shown() == "near@" .. START .. ",late@" .. (START + 5 * MIN), "and the other at its quarter hour: " .. shown())
+OPEN = nil
 advance(START + H)
 check(#SHOWN == 2, "and neither again: " .. shown())
+
+-- A second raid's quarter hour while the first raid's prompt is still being worked: it waits, two minutes at a time.
+fresh()
+login(START - 20 * MIN, { block({ id = "first", at = START }), block({ id = "second", at = START + 10 * MIN }) })
+check(shown() == "first@" .. START, "the first raid prompts at login")
+advance(START - 5 * MIN)
+check(#SHOWN == 1 and OPEN and OPEN.raidId == "first", "the second's quarter hour leaves the first's prompt in place: " .. shown())
+check(#TIMERS == 1 and TIMERS[1].at == START - 3 * MIN, "and asks again two minutes later")
+check(GuildOS.db.raidPrompted["second:" .. (START + 10 * MIN)] == nil, "not marked shown meanwhile")
+advance(START - 3 * MIN)
+check(#SHOWN == 1, "still waiting while the first's step is not done: " .. shown())
+OPEN = nil   -- the first is put off
+advance(START - MIN)
+check(shown() == "first@" .. START .. ",second@" .. (START + 10 * MIN), "then the second prompts: " .. shown())
+-- The first raid ready (nothing left to do): the second takes its place at once.
+fresh()
+login(START - 20 * MIN, { block({ id = "ready", at = START, members = {} }), block({ id = "next", at = START + 10 * MIN }) })
+check(shown() == "ready@" .. START and RS:Next(OPEN).kind == "done", "a first raid whose step is done")
+advance(START - 5 * MIN)
+check(shown() == "ready@" .. START .. ",next@" .. (START + 10 * MIN), "gives its place to the second: " .. shown())
 
 -- ── 6. Not mine: never ─────────────────────────────────────────────────────────────────────────
 fresh()
@@ -276,6 +303,56 @@ check(not (GuildOS.db.companionRoster and GuildOS.db.companionRoster.raidId == "
 n, why = Import:Load(block({ id = "pasted", at = START, guild = "Horda |cffff0000Unida" }))
 check(n == nil and type(why) == "string" and not why:find("|", 1, true), "the name off the network is made inert: " .. tostring(why))
 check(Import:Load(block({ id = "pasted", at = START, guild = "Filhos da Horda" })) == 1, "this guild's is loaded")
+-- ── The guild's name as the site compares it: capitals aside past ASCII, the brackets aside ───────
+local Same, Fold = GuildOS.SameGuildName, GuildOS.FoldCase
+check(Same("Ébano Negro", "ébano negro") and Same("ÉBANO NEGRO", "Ébano Negro"), "Latin-1 capitals fold: Ébano Negro")
+check(Same("ОРДЕН СВЕТА", "орден света") and Same("Орден Света", "оРДЕН сВЕТА"), "Cyrillic capitals fold: Орден Света")
+check(Same("ЁЛКА ЂАК", "ёлка ђак") and Same("ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞ", "àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþ"),
+  "every Latin-1 capital and Ѐ-Џ fold too")
+check(Fold("×") == "×" and Fold("÷") == "÷", "the × and ÷ signs are not letters")
+check(not Same("Ébano Negro", "Ebano Negro"), "an accent is another letter, as on the site")
+check(not Same("Орден Света", "Орден Тьмы") and not Same("Filhos da Horda", "Horda Unida"), "another guild is another guild")
+check(Same("  <Filhos da Horda>  ", "filhos da horda") and Same("<>", "<>") and not Same("<>", ""),
+  "the brackets around the whole name go, as on the site; a name of brackets alone keeps them")
+check(not Same("Filhos  da Horda", "Filhos da Horda"), "inner spaces count, as on the site (bareGuildName only trims)")
+check(not Same(nil, "x") and not Same("x", 7), "no name is no guild")
+-- End to end: a guild with accents, and a Cyrillic one, keep their raids.
+fresh()
+GUILD = "ébano negro"
+login(START - 20 * MIN, { block({ id = "eb", at = START, guild = "Ébano Negro" }) })
+check(shown() == "eb@" .. START and Import:ButtonRaid().raidId == "eb", "a guild named with an accent keeps its raids")
+check(GuildOS.db.companionRaids ~= nil and Import:ForeignLine() == nil, "matched to its nights, and nothing said")
+GUILD = "Орден Света"
+login(START - 20 * MIN, { block({ id = "ru", at = START, guild = "ОРДЕН СВЕТА" }) })
+check(shown() == "ru@" .. START, "a Cyrillic guild keeps its raids, capitals aside")
+-- The guild's block reads the same way.
+local LibDeflate = LibStub("LibDeflate")
+_G.GuildOSInbox = { "GOSGILD1:" .. LibDeflate:EncodeForPrint(LibDeflate:CompressDeflate(json({ fmt = "GOSGILD1", guild = "орден света", at = NOW }))) }
+check(Import:GuildBlock() ~= nil, "the guild's block is read for a Cyrillic guild, capitals aside")
+GUILD = "Орден Тьмы"
+check(Import:GuildBlock() == nil, "and not for another guild")
+
+-- ── A site whose raids are all another guild's says so, once a session ──────────────────────────
+fresh()
+GUILD = "Filhos da Horda"
+login(START - 20 * MIN, { block({ id = "o1", at = START, guild = "Horda |cffff0000Unida" }), block({ id = "o2", at = START, guild = "Outra" }) })
+local said = "The website's raids are for the guild Horda cffff0000Unida, not Filhos da Horda."
+check(#SHOWN == 0 and #PRINTED == 1 and PRINTED[1] == said, "said in chat, the site's guild and this one named, inert: " .. tostring(PRINTED[1]))
+check(Import:ForeignLine() == said, "and kept for the Web tab's reason line")
+Import._lastInbox = nil
+Import:ConsumeInbox()
+check(#PRINTED == 1, "once a session, however often the inbox is read")
+-- Read again with one raid of this guild in it, the line is gone.
+_G.GuildOSInbox = { block({ id = "o3", at = START, guild = "Outra" }), block({ id = "ours", at = START + 5 * MIN }) }
+Import._lastInbox = nil
+Import:ConsumeInbox()
+check(#PRINTED == 1 and Import:ForeignLine() == nil, "an inbox with one raid of this guild says nothing, and keeps no line")
+GUILD = nil
+login(START - 20 * MIN, { block({ id = "o4", at = START, guild = "Outra" }) })
+check(PRINTED[1] == "The website's raids are for the guild Outra, and this character is in none.",
+  "a character with no guild is told so: " .. tostring(PRINTED[1]))
+GUILD = "Filhos da Horda"
+
 -- Parse reads the guild: a string, cut.
 local parsed = Import:Parse(block({ id = "p", at = START, guild = string.rep("x", 200) }))
 check(parsed and #parsed.guild == 96, "Parse cuts the guild name to 96 bytes")
@@ -302,6 +379,22 @@ digestShown = false
 Digest.shownThisSession = nil
 Digest:ShowOnLogin()
 check(not digestShown and GuildOS.db.digest.lastSeen == START - DAY, "with the prompt up, the digest waits, its news untouched")
+-- Raid ready closes the prompt and tells nobody: the digest keeps waiting, for the next login.
+local loginRoster = OPEN
+RS:PromptDismissed({ raidId = "another", startsAt = START })
+check(not digestShown, "putting off another raid's prompt does not bring the login's digest")
+-- Later, or the close button: the digest has its turn now.
+RS:PromptDismissed(loginRoster)
+check(digestShown and GuildOS.db.digest.lastSeen == NOW, "the login's prompt put off: the digest shows")
+check(not RS:PromptedAtLogin(), "and the login's prompt is no longer up")
+-- Put off before the digest's own moment: it simply comes at its time.
+GuildOS.db.digest.lastSeen = START - DAY
+login(START - 25 * MIN, { block({ id = "d2", at = START }) })
+digestShown = false
+RS:PromptDismissed(OPEN)
+check(not digestShown, "put off before the digest's turn, nothing shows early")
+Digest:ShowOnLogin()
+check(digestShown, "and the digest shows at its turn")
 login(START + 2 * H, { block({ id = "d", at = START }) })
 Digest.shownThisSession = nil
 Digest:ShowOnLogin()

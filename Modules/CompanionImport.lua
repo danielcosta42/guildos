@@ -432,16 +432,17 @@ function Import.ReadOwners(list)
     return #owners > 0 and owners or nil
 end
 
---- Whether a roster is for the guild this character is in (GOSROST1 v7 `guild`, the site's #603; spec 090). The
+--- Whether a roster is for the guild this character is in (GOSROST1 v7 `guild`, the site's #603; spec 115). The
 --- owner's own list can hold raids of more than one guild, and the inbox is the game folder's, read by every
---- character of it: a roster that names its guild is this one's only when that is GetGuildInfo's name, case aside,
---- as the GOSGILD1's `guild` is read (GuildBlock). One that names none, from a site before v7, is, as it always was.
---- The addon acts on no other: no prompt, no button, nothing on the calendar.
+--- character of it: a roster that names its guild is this one's only when that is GetGuildInfo's name the way the
+--- site compares them (GuildOS.SameGuildName: the brackets and capitals aside, accented and Cyrillic ones too), as
+--- the GOSGILD1's `guild` is read (GuildBlock). One that names none, from a site before v7, is, as it always was.
+--- The addon acts on no other: no prompt, no button, nothing on the calendar. Never accepted on a doubt.
 function Import.OfThisGuild(roster)
     local guild = type(roster) == "table" and roster.guild
     if type(guild) ~= "string" then return true end
     local mine = GetGuildInfo("player")
-    return type(mine) == "string" and mine ~= "" and mine:lower() == guild:lower()
+    return type(mine) == "string" and mine ~= "" and GuildOS.SameGuildName(mine, guild)
 end
 
 -- A GOSCORE1 the site gives as a code to copy, read the way the inbox's is (CoresFromInbox): the same
@@ -584,13 +585,15 @@ function Import:ConsumeInbox()
     -- rosters are not kept: the soonest is the one anybody acts on, and holding ten of
     -- them in SavedVariables to answer one question later is ten rosters of churn at
     -- every logout.
-    local planned = {}
+    local planned, foreign = {}, nil
     for _, raw in ipairs(raws) do
         local roster = self:Parse(raw)
         -- Another guild's raid (the owner's own list, read on a character of another guild) is not read at all: not
         -- kept, not matched to a night, not on the calendar, no button and no prompt (OfThisGuild, issue #400). An
-        -- inbox of nothing else is, to this character, an inbox with no raid.
-        if roster and Import.OfThisGuild(roster) then
+        -- inbox of nothing else is, to this character, an inbox with no raid, and that is said (SayForeign).
+        if roster and not Import.OfThisGuild(roster) then
+            foreign = foreign or roster.guild
+        elseif roster then
             imported = imported + 1
             raids[#raids + 1] = roster
             if roster.raidId and roster.instanceKey then
@@ -612,7 +615,11 @@ function Import:ConsumeInbox()
             end
         end
     end
-    if imported == 0 then return false end
+    if imported == 0 then
+        if foreign then self:SayForeign(foreign) end
+        return false
+    end
+    self._foreignLine = nil
     soonest = soonest or soonestAny
 
     self._lastInbox = key
@@ -657,8 +664,30 @@ function Import:ConsumeInbox()
     return true, #soonest.members
 end
 
+--- Says, once a session, that the inbox's raids were all another guild's (issue #400): in chat, and kept for the Web
+--- tab's reason line (ForeignLine). A guild the site names otherwise than the game does reads its name here, rather
+--- than losing the site's raids without a word. `guild` is the first roster's; both names are made inert.
+function Import:SayForeign(guild)
+    local mine = GetGuildInfo("player")
+    local site = Import.Inert(tostring(guild))
+    if type(mine) == "string" and mine ~= "" then
+        self._foreignLine = string.format(L["The website's raids are for the guild %s, not %s."], site, Import.Inert(mine))
+    else
+        self._foreignLine = string.format(L["The website's raids are for the guild %s, and this character is in none."], site)
+    end
+    if not self._foreignSaid then
+        self._foreignSaid = true
+        GuildOS:Print(self._foreignLine)
+    end
+end
+
+--- The line SayForeign said, while the inbox's raids are all another guild's; nil otherwise.
+function Import:ForeignLine()
+    return self._foreignLine
+end
+
 -- The raid the buttons act on: the nearest to `now` among the rosters of this session's inbox and the one
--- kept from the last, while `now` is from an hour before its start to three hours after it (spec 090: "de 1
+-- kept from the last, while `now` is from an hour before its start to three hours after it (spec 115: "de 1
 -- hora antes a 3 horas depois do começo"), so its start is from three hours ago to an hour ahead; nil when none
 -- is. A raid that began five hours ago is over for the buttons, and the soonest one in the inbox is no longer
 -- "the one" (the issue's #400). Rosters without a start time (0) are never inside the window. Two as near, one
@@ -771,7 +800,8 @@ function Import:GuildBlock()
             end
             local data = self._blockData
             local mine = GetGuildInfo("player")
-            if not data or not mine or type(data.guild) ~= "string" or data.guild:lower() ~= mine:lower() then return nil end
+            -- The site's comparison, capitals aside past ASCII (GuildOS.SameGuildName, issue #400).
+            if not data or not mine or mine == "" or not GuildOS.SameGuildName(data.guild, mine) then return nil end
             -- As what must hold: a date that is NaN or inf is too old to believe, never good for ever.
             local at = GuildOS.Finite(data.at)
             if not (at and GetServerTime() - at <= BLOCK_MAX_AGE) then return nil end
@@ -1365,7 +1395,7 @@ function Import:OrganizeGroups(roster)
 end
 
 ----------------------------------------------------------------------
--- Iniciar raide (issue #400; specs/090 in guildos-web)
+-- Iniciar raide (issue #400; specs/115 in guildos-web)
 --
 -- One button that walks the raid's leader through the night, one click a
 -- step, since on WoW: Forever an invite goes out from a click only:
@@ -1504,7 +1534,7 @@ function RaidStart:AskGuildRoster()
 end
 
 ----------------------------------------------------------------------
--- The owner's prompt (issue #400; specs/090 in guildos-web)
+-- The owner's prompt (issue #400; specs/115 in guildos-web)
 --
 -- The site sends who owns each raid (`owners`), and the owner, and only
 -- the owner, is asked shortly before it starts: at login or /reload from
@@ -1522,7 +1552,7 @@ local PROMPT_AFTER = 60 * 60     -- seconds after the start until which a login 
 local PROMPT_AHEAD = 15 * 60     -- seconds before the start at which a session already in the game is asked
 local PROMPT_KEEP = 7 * 86400    -- seconds a prompt shown is remembered: a week, then forgotten
 
--- What a prompt is remembered by: the raid and its start (spec 090: "uma vez por raide e por horário"). Nil for a
+-- What a prompt is remembered by: the raid and its start (spec 115: "uma vez por raide e por horário"). Nil for a
 -- roster without an id or a start, which is never asked about.
 local function promptKey(roster)
     local id, at = type(roster) == "table" and roster.raidId, type(roster) == "table" and tonumber(roster.startsAt)
@@ -1594,6 +1624,15 @@ function RaidStart:PromptedAtLogin()
     return self._loginPrompt ~= nil
 end
 
+local PROMPT_RETRY = 2 * 60      -- seconds a raid's prompt waits while another raid's prompt is still being worked
+
+-- The timer that calls Due for `roster` after `delay` seconds.
+local function schedule(roster, delay)
+    GuildOS.Compat.After(delay, function()
+        GuildOS:SafeCall(function() RaidStart:Due(roster) end)
+    end)
+end
+
 --- The quarter-hour timer of an owned raid, armed once a session. It only shows the prompt: nothing is invited from a
 --- timer (WoW: Forever drops an invite that is not a click's), the prompt's button does that.
 function RaidStart:Arm(roster, delay)
@@ -1602,19 +1641,37 @@ function RaidStart:Arm(roster, delay)
     self._armed = self._armed or {}
     if self._armed[key] then return end
     self._armed[key] = true
-    GuildOS.Compat.After(delay, function()
-        GuildOS:SafeCall(function() RaidStart:Due(roster) end)
-    end)
+    schedule(roster, delay)
 end
 
 --- A timer's moment for `roster`: its prompt, unless it was shown already (at login, or on another character of the
---- owner's) or the roster is no longer this character's to start. Returns whether it was shown.
+--- owner's) or the roster is no longer this character's to start. While the prompt is up for another raid whose step
+--- is not done, that one is not taken from under the leader's hand: this one asks again in PROMPT_RETRY seconds.
+--- Returns whether it was shown.
 function RaidStart:Due(roster, now)
     now = now or GetServerTime()
     local key, set = promptKey(roster), self:PromptedSet(now)
     if not (key and set) or set[key] then return false end
     if not (Import.OfThisGuild(roster) and Import:IsMine(roster)) then return false end
+    local showing = GuildOS.RaidPromptShowing and GuildOS:RaidPromptShowing()
+    if showing and showing ~= roster and self:Next(showing).kind ~= "done" then
+        schedule(roster, PROMPT_RETRY)
+        return false
+    end
     return self:Prompt(roster, now)
+end
+
+--- The prompt for `roster` was closed with Later or its close button, not by Raid ready: the login's digest, which
+--- gave way to it (Digest:ShowOnLogin), has its turn now, or at its own time if that has not come. Closed by Raid
+--- ready, the raid is under way and the digest waits for the next login.
+function RaidStart:PromptDismissed(roster)
+    if not (self._loginPrompt and self._loginPrompt == roster) then return end
+    self._loginPrompt = nil
+    local D = GuildOS.Digest
+    if D and D.deferred then
+        D.deferred = nil
+        D:ShowOnLogin()
+    end
 end
 
 ----------------------------------------------------------------------

@@ -1,4 +1,4 @@
--- The Iniciar raide stepper (issue #400; the site's #603, spec 090): one button that walks the raid's leader
+-- The Iniciar raide stepper (issue #400; the site's #603, spec 115): one button that walks the raid's leader
 -- through invite, convert, invite the rest and arrange, one click a step, each step decided from the group as it
 -- is at that moment. Run against the real Utils, Compat and CompanionImport under a stubbed WoW: Forever client
 -- ("Chehul Costa": UnitName gives the first name only), with a stubbed group, guild roster, combat and secrets.
