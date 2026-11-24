@@ -15,15 +15,20 @@ The rule's bonus account takes `scope` (guildos-web#657 writes it from the SR+ q
 - **absent or `"character"`** — the rule as it always was. Nothing changes for a rule saved before.
 - **`"item"`** — the account is kept per character and item, at the key `Name-Realm#itemId`
   (`LootRule:CounterKey`). The figures, their sync (`cdelta`), snapshots and merges are the counters' own: only
-  the key differs.
+  the key differs. On WoW: Forever a key from another officer is rebuilt from its name (issue #97): the `#itemId`
+  is kept apart and put back (`localCounterKey`, in `cdelta` and in a snapshot's accounts).
   - **At a raid's end** (`Points:EarnItemBonuses`, from `OnRaidEnd`, on the one client that pays the raid's end):
-    for everybody who was there, each item they reserved on tonight's sheet (`SoftRes:ActiveItems`, matched by
-    name) and were not given tonight (the loot history between the raid's start and end) grows by the account's
+    for everybody who was there, each item they reserved on tonight's sheet (matched by name) and were not given
+    that raid night (the loot history from a night before the session's start to its end: a raid broken in two
+    sessions is one night) grows by the account's
     `raid` earn, never past `cap`, which holds per item. Each item they hold a figure on and did **not** reserve
     tonight goes back to nothing: only reserves in a row add up.
   - **Whoever missed the raid** keeps what they hold.
-  - **With no sheet in force** (none imported, none from the site, retail) nothing moves: a night nobody imported
-    reserves for wipes nobody. The sheet read is the paying client's own (`RaidEndPayer`): a sheet from the site
+  - **Tonight's sheet** is the site's while its night lasts, else the imported one only when it was imported for
+    this raid (`meta.importedAt` from a night before the session's start to its end). An import is never cleared
+    by itself: last week's, or another raid's, would grow last week's reserves again or wipe everybody's.
+  - **With no sheet in force** (none imported for this raid, none from the site, retail) nothing moves: a night
+    nobody imported reserves for wipes nobody. The sheet read is the paying client's own (`RaidEndPayer`): a sheet from the site
     reaches every officer with the companion; an imported one only the officer who imported it.
   - "Given tonight" is read from the loot history, which officers share (`AWARD`). With the loot history switched
     off in Settings, an item won tonight is emptied by the award and grows again at the raid's end.
@@ -51,5 +56,6 @@ The rule's bonus account takes `scope` (guildos-web#657 writes it from the SR+ q
 a raid adds per item reserved and nothing at the player's key; the same raid ended twice counts once; one row per
 item in the points window; the roll adds the bonus of the item rolled for; the award empties the item won only and
 an undo gives it back; a reserve in a row adds, an item not reserved empties, the item won tonight does not grow;
-whoever missed keeps theirs; the cap per item; no sheet moves nobody; a boss earn, an unknown scope and a scope on
+whoever missed keeps theirs; the cap per item; no sheet moves nobody, nor last week's import; an item won earlier
+the same night does not grow; on Forever an officer's entry and a snapshot keep the item on the key; a boss earn, an unknown scope and a scope on
 a counter are refused. The by-raid scenes of `srplus` are unchanged.

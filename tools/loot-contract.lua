@@ -156,8 +156,10 @@ local function activate(name) RT:SetGroupTag(name) end
 
 GuildOS.Companion = { IsEnabled = function() return true end }
 -- The night's whole sheet, item by item: the item rolled for holds `reserves`, `sheet` the others.
-local sheet = {}
+local sheet, importedAt = {}, nil
 GuildOS.SoftRes = {
+  -- The imported sheet, stamped when it was imported (tonight's unless a scene says otherwise).
+  GetDB = function() return { items = GuildOS.SoftRes.ActiveItems(), meta = { importedAt = importedAt or NOW } } end,
   ActiveItems = function()
     local items = { [ITEM_ID] = reserves }
     for id, list in pairs(sheet) do items[id] = list end
@@ -440,6 +442,12 @@ local function variant(change)
   change(rule)
   return LR:Validate(rule)
 end
+local function variantOk(change)
+  local rule = GuildOS.JsonDecode(jsonOf("srplus:item"))
+  change(rule)
+  return LR:Validate(rule)
+end
+check(variantOk(function() end), "srplus by item: the variant itself is valid")
 check(variant(function(r) r.accounts[1].earn = { { key = "boss", auto = "boss", value = 5 } } end) == false,
   "srplus by item: a boss killed never feeds a bonus kept per item")
 check(variant(function(r) r.accounts[1].scope = "boss" end) == false, "srplus by item: a scope it does not know is refused")
@@ -489,6 +497,30 @@ GuildOS.SoftRes.ActiveItems, GuildOS.SoftRes._items = function() return {} end, 
 P:OnRaidEnd(night(9, { "Ana" }))
 check(sr("Ana", ITEM) == 50, "srplus by item: a night with no sheet in force moves nobody")
 GuildOS.SoftRes.ActiveItems = GuildOS.SoftRes._items
+-- A sheet imported last week, never cleared, is no sheet for tonight: it neither grows nor wipes.
+reserves, sheet, importedAt = {}, { [OTHER] = { { name = "Ana" } } }, NOW - 8 * 86400
+P:OnRaidEnd(night(10, { "Ana" }))
+check(sr("Ana", ITEM) == 50 and sr("Ana", OTHER) == 0, "srplus by item: last week's import moves nobody")
+importedAt = nil
+-- An item won earlier the same night, in a raid broken in two sessions, does not grow at the second end.
+reserves, sheet = { { name = "Ana" } }, {}
+GuildOS.db.lootHistory = { { playerKey = K("Ana"), itemLink = LINK, timestamp = NOW - 9000, fromML = true } }
+P:OnRaidEnd(night(11, { "Ana" }))
+check(sr("Ana", ITEM) == 50, "srplus by item: at the cap it stays put")
+P:AddCounter("srplus", K("Ana") .. "#" .. ITEM, -50, "never")
+P:OnRaidEnd(night(12, { "Ana" }))
+check(sr("Ana", ITEM) == 0, "srplus by item: an item won earlier that night does not grow")
+GuildOS.db.lootHistory = {}
+-- On WoW: Forever a key from another officer is rebuilt from its name (issue #97): the item stays on it,
+-- in an entry and in a snapshot.
+local wasAnniversary = GuildOS.Client.isAnniversary
+GuildOS.Client.isAnniversary = false
+P:OnSync({ act = "cdelta", data = { entries = { { key = "Cy-Elsewhere#" .. OTHER, acct = "srplus", rs = "never", per = 0,
+  delta = 5, op = "Tforever-1", kind = "counter", ts = NOW } } } })
+check(sr("Cy", OTHER) == 5 and P:Counter("srplus", K("Cy")) == 0, "srplus by item: an officer's entry keeps its item on Forever")
+P:MergeAccounts(P:Pool(), { srplus = { rs = "never", per = 0, v = { ["Dee-Elsewhere#" .. OTHER] = 7 }, t = { ["Dee-Elsewhere#" .. OTHER] = NOW } } })
+check(sr("Dee", OTHER) == 7 and P:Counter("srplus", K("Dee")) == 0, "srplus by item: and so does a snapshot's figure")
+GuildOS.Client.isAnniversary = wasAnniversary
 
 -- council (issue #336): nobody rolls; the candidates are listed by the answer, the wishlist, fewer
 -- items received and attendance in steps of ten, the officers (ranks 0 and 1) vote, and two votes
