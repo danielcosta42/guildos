@@ -26,7 +26,10 @@ The rule's bonus account takes `scope` (guildos-web#657 writes it from the SR+ q
   - **Whoever missed the raid** keeps what they hold.
   - **Tonight's sheet** is the site's while its night lasts, else the imported one only when it was imported for
     this raid (`meta.importedAt` from a night before the session's start to its end). An import is never cleared
-    by itself: last week's, or another raid's, would grow last week's reserves again or wipe everybody's.
+    by itself: last week's, or another raid's, would grow last week's reserves again or wipe everybody's. With two
+    raids in one evening, the window starts at the end of the earlier saved session: its sheet is not the later
+    one's. Left open: a sheet imported for the next raid while one is still running counts for the running one
+    (the import does not say which raid it is for). `importedAt` is the server's clock, as the sessions are.
   - **With no sheet in force** (none imported for this raid, none from the site, retail) nothing moves: a night
     nobody imported reserves for wipes nobody. The sheet read is the paying client's own (`RaidEndPayer`): a sheet from the site
     reaches every officer with the companion; an imported one only the officer who imported it.
@@ -56,6 +59,6 @@ The rule's bonus account takes `scope` (guildos-web#657 writes it from the SR+ q
 a raid adds per item reserved and nothing at the player's key; the same raid ended twice counts once; one row per
 item in the points window; the roll adds the bonus of the item rolled for; the award empties the item won only and
 an undo gives it back; a reserve in a row adds, an item not reserved empties, the item won tonight does not grow;
-whoever missed keeps theirs; the cap per item; no sheet moves nobody, nor last week's import; an item won earlier
+whoever missed keeps theirs; the cap per item; no sheet moves nobody, nor last week's import, nor the evening's earlier raid's; an item won earlier
 the same night does not grow; on Forever an officer's entry and a snapshot keep the item on the key; a boss earn, an unknown scope and a scope on
 a counter are refused. The by-raid scenes of `srplus` are unchanged.

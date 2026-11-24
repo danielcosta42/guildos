@@ -501,6 +501,19 @@ GuildOS.SoftRes.ActiveItems = GuildOS.SoftRes._items
 reserves, sheet, importedAt = {}, { [OTHER] = { { name = "Ana" } } }, NOW - 8 * 86400
 P:OnRaidEnd(night(10, { "Ana" }))
 check(sr("Ana", ITEM) == 50 and sr("Ana", OTHER) == 0, "srplus by item: last week's import moves nobody")
+-- Two raids in one evening: the first raid's sheet, imported before it ended, is not the second's.
+GuildOS.db.raidTracker = GuildOS.db.raidTracker or {}
+local savedSessions = GuildOS.db.raidTracker.sessions
+GuildOS.db.raidTracker.sessions = { early = { startTime = NOW - 14400, endTime = NOW - 7300 } }
+reserves, sheet, importedAt = {}, { [OTHER] = { { name = "Ana" } } }, NOW - 14000
+P:AddCounter("srplus", K("Ana") .. "#" .. OTHER, 10, "never")
+P:OnRaidEnd(night(13, { "Ana" }))
+check(sr("Ana", ITEM) == 50 and sr("Ana", OTHER) == 10, "srplus by item: the evening's earlier raid's sheet moves nobody at the later one's end")
+importedAt = NOW - 7250
+P:OnRaidEnd(night(14, { "Ana" }))
+check(sr("Ana", ITEM) == 0 and sr("Ana", OTHER) == 20, "srplus by item: a sheet imported after it, for this raid, counts")
+P:AddCounter("srplus", K("Ana") .. "#" .. ITEM, 50, "never")
+GuildOS.db.raidTracker.sessions = savedSessions
 importedAt = nil
 -- An item won earlier the same night, in a raid broken in two sessions, does not grow at the second end.
 reserves, sheet = { { name = "Ana" } }, {}

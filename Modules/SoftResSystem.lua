@@ -192,7 +192,7 @@ function SoftRes:LoadItems(items, source, meta)
         items       = items,
         distributed = {},
         meta        = {
-            importedAt   = time(),
+            importedAt   = GetServerTime(),   -- the server's clock, as the raid sessions it is read against (#433)
             raidStartsAt = meta and (meta.raidStartsAt or 0) or 0,
             source       = source or "unknown",
             listId       = meta and (meta.id or "") or "",

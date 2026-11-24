@@ -993,7 +993,14 @@ local function sheetOf(session)
     local db = GuildOS.SoftRes and GuildOS.SoftRes.GetDB and GuildOS.SoftRes:GetDB()
     local meta = db and db.meta or {}
     local at = tonumber(meta.importedAt) or 0
-    local from = (tonumber(session.startTime) or 0) - NIGHT
+    local start = tonumber(session.startTime) or 0
+    local from = start - NIGHT
+    -- Two raids in one evening: a sheet imported before the earlier one ended was that raid's.
+    local saved = GuildOS.db and GuildOS.db.raidTracker and GuildOS.db.raidTracker.sessions
+    for _, other in pairs(type(saved) == "table" and saved or {}) do
+        local ended = type(other) == "table" and other ~= session and tonumber(other.endTime)
+        if ended and ended <= start and ended > from then from = ended end
+    end
     local to = tonumber(session.endTime) or GetServerTime()
     if db and at >= from and at <= to then return db.items end
     return nil
