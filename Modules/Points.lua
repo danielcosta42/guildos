@@ -730,6 +730,8 @@ function Points:OnRaidEnd(session)
     -- The counters the loot rule feeds per raid attended, whatever the points' own switch says; the
     -- raid night names each entry.
     self:EarnCounters("raid", everyone, night)
+    -- And a bonus kept per item (SR+ by item, issue #433), by what each of them reserved tonight.
+    self:EarnItemBonuses(session, everyone, night)
     -- Only once an officer has switched them on (`raidEndAwards`, off until then). `onTimeAward` sat in
     -- the settings for years with nothing reading it: a guild that typed a figure there long ago, and
     -- has the boss auto-award on, would have started paying it at every raid's end without being asked.
@@ -955,7 +957,8 @@ function Points:EarnCounters(auto, keys, tag)
     if not (pool and pool.appliedOps) then return 0 end
     local entries = {}
     for _, a in ipairs(LR:Counters()) do
-        for _, earn in ipairs(a.earn or {}) do
+        -- A bonus kept per item is fed by what was reserved (EarnItemBonuses), never by the key alone.
+        for _, earn in ipairs(a.scope ~= "item" and a.earn or {}) do
             if earn.auto == auto then
                 for _, key in ipairs(keys) do
                     -- An account with a cap (a bonus, issue #337) never grows past it.
@@ -980,6 +983,139 @@ function Points:EarnCounters(auto, keys, tag)
     return #entries
 end
 
+-- Tonight's sheet for the raid `session`: the site's while its night lasts, else the imported one only
+-- when it was imported for this raid (in the night before it began, up to its end). An import is never
+-- cleared by itself: last week's, or another raid's, would grow last week's reserves again or wipe
+-- everybody's (issue #433).
+local function sheetOf(session)
+    local site = GuildOS.SiteLoot and GuildOS.SiteLoot.Reserves and GuildOS.SiteLoot:Reserves()
+    if site then return site.items end
+    local db = GuildOS.SoftRes and GuildOS.SoftRes.GetDB and GuildOS.SoftRes:GetDB()
+    local meta = db and db.meta or {}
+    local at = tonumber(meta.importedAt) or 0
+    local start = tonumber(session.startTime) or 0
+    local from = start - NIGHT
+    -- Two raids in one evening: a sheet imported before the earlier one ended was that raid's.
+    local saved = GuildOS.db and GuildOS.db.raidTracker and GuildOS.db.raidTracker.sessions
+    for _, other in pairs(type(saved) == "table" and saved or {}) do
+        local ended = type(other) == "table" and other ~= session and tonumber(other.endTime)
+        if ended and ended <= start and ended > from then from = ended end
+    end
+    local to = tonumber(session.endTime) or GetServerTime()
+    if db and at >= from and at <= to then return db.items end
+    return nil
+end
+
+-- The items each of `keys` reserved on tonight's sheet: { [key] = { [itemId] = true } }, or nil when no
+-- sheet is in force (none imported for this raid, none from the site, or retail, which has none).
+-- Matched by the character's name, as the reserves name them.
+local function reservedBy(session, keys)
+    local items = GuildOS.SoftRes and sheetOf(session)
+    if type(items) ~= "table" or next(items) == nil then return nil end
+    local byName = {}
+    for itemId, list in pairs(items) do
+        for _, e in ipairs(type(list) == "table" and list or {}) do
+            local name = type(e) == "table" and type(e.name) == "string" and string.lower(e.name) or nil
+            if name and tonumber(itemId) then
+                byName[name] = byName[name] or {}
+                byName[name][tonumber(itemId)] = true
+            end
+        end
+    end
+    local out = {}
+    for _, key in ipairs(keys) do
+        out[key] = byName[string.lower(key:match("^([^-]+)") or key)] or {}
+    end
+    return out
+end
+
+-- What each of `keys` was given on the raid night of `session`: { [key] = { [itemId] = true } }, from
+-- the loot history up to the raid's end, back to a night before its start: a raid broken in two
+-- sessions is one night, and its entries are named after the night.
+local function wonIn(session, keys)
+    local out, want = {}, {}
+    for _, key in ipairs(keys) do want[key] = true; out[key] = {} end
+    local from = (tonumber(session.startTime) or 0) - NIGHT
+    local to = tonumber(session.endTime) or GetServerTime()
+    for _, e in ipairs(GuildOS.db and GuildOS.db.lootHistory or {}) do
+        local ts = tonumber(e.timestamp) or 0
+        -- A master looter's award names the item by its link only.
+        local itemId = tonumber(e.itemId) or (type(e.itemLink) == "string" and tonumber(e.itemLink:match("item:(%d+)")))
+        if ts >= from and ts <= to and want[e.playerKey] and itemId and not e.undone then
+            out[e.playerKey][itemId] = true
+        end
+    end
+    return out
+end
+
+-- A bonus kept per item (SR+ by item, issue #433), at a raid's end: for everyone who was there, each
+-- item they reserved tonight and were not given grows by the account's "raid" earn, never past its cap;
+-- each item they hold a figure on and did not reserve tonight goes back to nothing, since only reserves
+-- in a row add up. Whoever missed the raid keeps what they hold. With no sheet in force nothing moves:
+-- a night nobody imported reserves for wipes nobody's. Each entry is named after the raid night, so the
+-- same raid ended twice counts once. Returns how many entries were made.
+function Points:EarnItemBonuses(session, keys, night)
+    local LR = GuildOS.LootRule
+    if not (LR and LR.Active and GuildOS:IsOfficer()) then return 0 end
+    local pool = self:Pool()
+    if not (pool and pool.appliedOps) then return 0 end
+    local accounts = {}
+    for _, a in ipairs(LR:Counters()) do
+        if a.scope == "item" then accounts[#accounts + 1] = a end
+    end
+    if #accounts == 0 then return 0 end
+    local reserved = reservedBy(session, keys)
+    if not reserved then return 0 end
+    local won = wonIn(session, keys)
+    local entries = {}
+    -- One entry moves a counter by a hundred at most: a larger move takes several, each named apart.
+    local function give(a, key, delta, op)
+        local step = 0
+        while delta ~= 0 do
+            local d = math.max(-COUNTER_MAX, math.min(COUNTER_MAX, delta))
+            step = step + 1
+            local e = self:MakeEntry(key, d, "", "counter")
+            e.acct, e.rs = a.key, COUNTER_RESETS[a.reset] and a.reset or "never"
+            e.per = self:CounterPeriod(e.rs)
+            e.op = string.format("%s%s-%s-%s.%d", op, night or "", a.key, key, step)
+            if pool.appliedOps[e.op] or not self:ApplyCounterEntry(e, pool) then return end
+            self:MarkApplied(e.op, pool)
+            entries[#entries + 1] = e
+            delta = delta - d
+        end
+    end
+    for _, a in ipairs(accounts) do
+        local value = 0
+        for _, earn in ipairs(a.earn or {}) do
+            if earn.auto == "raid" then value = value + earn.value end
+        end
+        local held = pool.accounts and pool.accounts[a.key]
+        for _, key in ipairs(keys) do
+            -- What this player holds a figure on and did not reserve tonight starts over.
+            local prefix, stale = key .. "#", {}
+            for k in pairs(held and held.v or {}) do
+                local itemId = k:sub(1, #prefix) == prefix and tonumber(k:sub(#prefix + 1)) or nil
+                if itemId and not reserved[key][itemId] then stale[#stale + 1] = k end
+            end
+            for _, k in ipairs(stale) do give(a, k, -self:Counter(a.key, k, pool), "Z") end
+            -- What they reserved and were not given grows.
+            for itemId in pairs(value > 0 and reserved[key] or {}) do
+                if not won[key][itemId] then
+                    local k = LR:CounterKey(a, key, itemId)
+                    local grow = value
+                    if a.cap then grow = math.min(grow, math.max(0, a.cap - self:Counter(a.key, k, pool))) end
+                    give(a, k, grow, "I")
+                end
+            end
+        end
+    end
+    if #entries > 0 then
+        if canTell() then GuildOS.SyncService:Publish("points", "cdelta", { entries = entries }) end
+        self:Refresh()
+    end
+    return #entries
+end
+
 -- Everyone on a counter or a bonus account with something on it: { { key, name, class, value }, ... },
 -- the most first. For the points window.
 function Points:CounterStandings(acct, pool)
@@ -989,13 +1125,18 @@ function Points:CounterStandings(acct, pool)
     for key in pairs(a and a.v or {}) do
         local value = self:Counter(acct, key, pool)
         if value > 0 then
-            local m = GuildOS.db.members and GuildOS.db.members[key]
-            list[#list + 1] = { key = key, name = key:match("^([^-]+)") or key, class = (m and m.class) or "", value = value }
+            -- A bonus kept per item (issue #433) is held at "Name-Realm#itemId": one row per item.
+            local who, item = key:match("^(.-)#(%d+)$")
+            who = who or key
+            local m = GuildOS.db.members and GuildOS.db.members[who]
+            list[#list + 1] = { key = key, name = who:match("^([^-]+)") or who, class = (m and m.class) or "",
+                value = value, itemId = tonumber(item) }
         end
     end
     table.sort(list, function(x, y)
         if x.value ~= y.value then return x.value > y.value end
-        return x.name:lower() < y.name:lower()
+        if x.name:lower() ~= y.name:lower() then return x.name:lower() < y.name:lower() end
+        return (x.itemId or 0) < (y.itemId or 0)
     end)
     return list
 end
@@ -1235,6 +1376,15 @@ local function localQueues(queues)
     return out
 end
 
+-- A counter key another client built, as this client keys it: the member's part rebuilt (issue #97),
+-- and a bonus kept per item (issue #433) keeping its "#itemId", which LocalMemberKey alone would cut off
+-- on WoW: Forever along with the realm.
+local function localCounterKey(key)
+    local who, item = key:match("^(.-)(#%d+)$")
+    if who and who ~= "" then return GuildOS:LocalMemberKey(who) .. item end
+    return GuildOS:LocalMemberKey(key)
+end
+
 -- The accounts of a snapshot, as this client keeps them: every figure checked, every key its own.
 local function localAccounts(accounts)
     local out = {}
@@ -1244,14 +1394,14 @@ local function localAccounts(accounts)
             local v = {}
             for key, n in pairs(a.v) do
                 if type(key) == "string" and type(n) == "number" and n > 0 and n < math.huge then
-                    key = GuildOS:LocalMemberKey(key)
+                    key = localCounterKey(key)
                     v[key] = (v[key] or 0) + math.floor(n)
                 end
             end
             local t = {}
             for key, at in pairs(type(a.t) == "table" and a.t or {}) do
                 if type(key) == "string" and type(at) == "number" and at > 0 and at < math.huge then
-                    key = GuildOS:LocalMemberKey(key)
+                    key = localCounterKey(key)
                     t[key] = math.max(t[key] or 0, at)
                 end
             end
@@ -1474,7 +1624,7 @@ function Points:OnSync(env)
         local applied = false
         for _, e in ipairs(d.entries) do
             if type(e) == "table" and type(e.key) == "string" and type(e.op) == "string" then
-                e.key = GuildOS:LocalMemberKey(e.key)
+                e.key = localCounterKey(e.key)
                 local pool = poolFor(e.core)
                 if not pool then keepForLater("cdelta", e) end
                 if pool and not pool.appliedOps[e.op] then

@@ -309,6 +309,14 @@ function GuildOS:BuildLootRuleEditor(content, yOff, coreName, redraw, col)
             { k = "never", n = L["Never"] },
         }, a.reset or "never", function(k) changed(LR:SetCounterReset(acct, k, coreName)) end)
         yOff = yOff + FIELD_H
+        -- A roll bonus (SR+) counts by raid or by item (issue #433).
+        if a.type == "bonus" then
+            formLabel(content, string.format(L["%s counts by:"], a.name or a.key), yOff)
+            pick(col, 160, {
+                { k = "character", n = L["Raid attended"] }, { k = "item", n = L["Item reserved"] },
+            }, a.scope or "character", function(k) changed(LR:SetBonusScope(acct, k, coreName)) end)
+            yOff = yOff + FIELD_H
+        end
     end
 
     -- Who decides (issue #336): the order alone, the master looter, or a council that votes among the

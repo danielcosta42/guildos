@@ -143,6 +143,7 @@ LM.SafeSendChatAuto = function(_, msg) said[#said + 1] = msg end
 LM.IsMasterLooter = function() return true end
 -- What the raid tracker and the lists say of each raider, set by each scene.
 local att, recv, reserves, prios, wishes = {}, {}, {}, {}, {}
+local ITEM_ID = 28770
 LM.GetPlayerContext = function(_, name) return { att25 = att[name] or 100, recvThisLockout = recv[name] or 0 } end
 LM.ShowRollFrame = function() end
 LM.StopListeningForRolls = function() end
@@ -154,7 +155,16 @@ local function all(list) return table.concat(list, "\n") end
 local function activate(name) RT:SetGroupTag(name) end
 
 GuildOS.Companion = { IsEnabled = function() return true end }
+-- The night's whole sheet, item by item: the item rolled for holds `reserves`, `sheet` the others.
+local sheet, importedAt = {}, nil
 GuildOS.SoftRes = {
+  -- The imported sheet, stamped when it was imported (tonight's unless a scene says otherwise).
+  GetDB = function() return { items = GuildOS.SoftRes.ActiveItems(), meta = { importedAt = importedAt or NOW } } end,
+  ActiveItems = function()
+    local items = { [ITEM_ID] = reserves }
+    for id, list in pairs(sheet) do items[id] = list end
+    return items
+  end,
   GetReserves = function() return reserves end,
   GetInRaidReserves = function() return {} end,
 }
@@ -195,7 +205,7 @@ local function dawn()
   GuildOS.db.lootMaster.awardHistory = {}
   GuildOS.db.points = {}
   P:Initialize()
-  att, recv, reserves, prios, wishes = {}, {}, {}, {}, {}
+  att, recv, reserves, prios, wishes, sheet = {}, {}, {}, {}, {}, {}
   GuildOS.db.lootPrios = { [ITEM] = prios }
 end
 local raidSeq = 0
@@ -413,6 +423,118 @@ P:OnRaidEnd(session)
 check(P:Counter("srplus", K("Ana")) == 40 and P:Counter("srplus", K("Bo")) == 10 and P:Counter("srplus", K("Dee")) == 50,
   "srplus: a raid attended adds ten, never past the cap of fifty")
 
+-- srplus by item (issue #433): the SR+ is kept per character and item. A raid attended adds ten to
+-- each item reserved and not won, empties each item not reserved that night (only reserves in a row
+-- add up), and leaves whoever missed it alone; an award empties the item won only, and the roll adds
+-- the bonus of the item rolled for.
+local OTHER = 28771
+local function night(n, present)
+  local members = {}
+  for _, name in ipairs(present) do members[K(name)] = true end
+  -- Each night its own raid (the instance names the night): the same clock, so the night's rule holds.
+  return { leader = ME, startTime = NOW - 7200, endTime = NOW, instanceID = 500 + n, snapshots = { { members = members } } }
+end
+local function sr(name, itemId) return P:Counter("srplus", K(name) .. "#" .. itemId) end
+plays("srplus:item")
+GuildOS.db.lootHistory = {}   -- the earlier scenes' awards are no item won tonight
+local function variant(change)
+  local rule = GuildOS.JsonDecode(jsonOf("srplus:item"))
+  change(rule)
+  return LR:Validate(rule)
+end
+local function variantOk(change)
+  local rule = GuildOS.JsonDecode(jsonOf("srplus:item"))
+  change(rule)
+  return LR:Validate(rule)
+end
+check(variantOk(function() end), "srplus by item: the variant itself is valid")
+check(variant(function(r) r.accounts[1].earn = { { key = "boss", auto = "boss", value = 5 } } end) == false,
+  "srplus by item: a boss killed never feeds a bonus kept per item")
+check(variant(function(r) r.accounts[1].scope = "boss" end) == false, "srplus by item: a scope it does not know is refused")
+check(LR:Validate(GuildOS.JsonDecode(jsonOf("plus1"):gsub('"reset":"lockout"', '"reset":"lockout","scope":"item"'))) == false,
+  "srplus by item: only a roll bonus is kept per item")
+check(LR:Counter("srplus").scope == "item" and LR:PerItem("srplus"), "srplus by item: the account is kept per item")
+check(LR:CounterKey("srplus", K("Ana"), ITEM) == K("Ana") .. "#" .. ITEM and LR:CounterKey("srplus", K("Ana")) == K("Ana"),
+  "srplus by item: the player's figure is at their key and the item's")
+reserves, sheet = { { name = "Ana" }, { name = "Bo" } }, { [OTHER] = { { name = "Ana" } } }
+local first = night(1, { "Ana", "Bo", "Cy" })
+P:OnRaidEnd(first)
+check(sr("Ana", ITEM) == 10 and sr("Ana", OTHER) == 10 and sr("Bo", ITEM) == 10 and sr("Cy", ITEM) == 0
+  and P:Counter("srplus", K("Ana")) == 0,
+  "srplus by item: a raid adds ten to each item reserved, nothing to whoever reserved nothing, nothing at the player's key")
+P:OnRaidEnd(first)
+check(sr("Ana", ITEM) == 10, "srplus by item: the same raid ended twice counts once")
+local standings = P:CounterStandings("srplus")
+check(#standings == 3 and standings[1].itemId and standings[1].name == "Ana", "srplus by item: the points window lists one row per item")
+
+P:AddCounter("srplus", K("Bo") .. "#" .. ITEM, 10, "never")
+reserves, sheet = { { name = "Ana" }, { name = "Bo" } }, {}
+announce()
+LM:RegisterRoll("Ana", "MS", 52)
+LM:RegisterRoll("Bo", "MS", 45)
+check(order() == "Bo,Ana" and LR:BonusOf(LM.activeLoot.sortedResults[1], LM:Rule()) == 20,
+  "srplus by item: the roll adds the bonus of the item rolled for, 45 + 20 beats 52 + 10: " .. order())
+LM:AwardLoot("Bo")
+check(sr("Bo", ITEM) == 0 and sr("Ana", ITEM) == 10 and sr("Ana", OTHER) == 10, "srplus by item: the award empties the item won only")
+check(LM:UndoLastAward() and sr("Bo", ITEM) == 20, "srplus by item: and an undo gives it back")
+announce()
+LM:RegisterRoll("Ana", "MS", 52)
+LM:RegisterRoll("Bo", "MS", 45)
+order()
+LM:AwardLoot("Bo")
+P:OnRaidEnd(night(2, { "Ana", "Bo" }))
+check(sr("Ana", ITEM) == 20 and sr("Ana", OTHER) == 0 and sr("Bo", ITEM) == 0,
+  "srplus by item: a reserve in a row adds, an item not reserved that night empties, the item won tonight does not grow")
+
+GuildOS.db.lootHistory = {}   -- last night's award was last night's
+reserves = { { name = "Ana" }, { name = "Bo" } }
+P:OnRaidEnd(night(3, { "Bo" }))
+check(sr("Ana", ITEM) == 20 and sr("Bo", ITEM) == 10, "srplus by item: whoever missed the raid keeps what they hold")
+for n = 4, 8 do P:OnRaidEnd(night(n, { "Ana" })) end
+check(sr("Ana", ITEM) == 50, "srplus by item: never past the cap of fifty, per item")
+reserves, sheet = {}, {}
+GuildOS.SoftRes.ActiveItems, GuildOS.SoftRes._items = function() return {} end, GuildOS.SoftRes.ActiveItems
+P:OnRaidEnd(night(9, { "Ana" }))
+check(sr("Ana", ITEM) == 50, "srplus by item: a night with no sheet in force moves nobody")
+GuildOS.SoftRes.ActiveItems = GuildOS.SoftRes._items
+-- A sheet imported last week, never cleared, is no sheet for tonight: it neither grows nor wipes.
+reserves, sheet, importedAt = {}, { [OTHER] = { { name = "Ana" } } }, NOW - 8 * 86400
+P:OnRaidEnd(night(10, { "Ana" }))
+check(sr("Ana", ITEM) == 50 and sr("Ana", OTHER) == 0, "srplus by item: last week's import moves nobody")
+-- Two raids in one evening: the first raid's sheet, imported before it ended, is not the second's.
+GuildOS.db.raidTracker = GuildOS.db.raidTracker or {}
+local savedSessions = GuildOS.db.raidTracker.sessions
+GuildOS.db.raidTracker.sessions = { early = { startTime = NOW - 14400, endTime = NOW - 7300 } }
+reserves, sheet, importedAt = {}, { [OTHER] = { { name = "Ana" } } }, NOW - 14000
+P:AddCounter("srplus", K("Ana") .. "#" .. OTHER, 10, "never")
+P:OnRaidEnd(night(13, { "Ana" }))
+check(sr("Ana", ITEM) == 50 and sr("Ana", OTHER) == 10, "srplus by item: the evening's earlier raid's sheet moves nobody at the later one's end")
+importedAt = NOW - 7250
+P:OnRaidEnd(night(14, { "Ana" }))
+check(sr("Ana", ITEM) == 0 and sr("Ana", OTHER) == 20, "srplus by item: a sheet imported after it, for this raid, counts")
+P:AddCounter("srplus", K("Ana") .. "#" .. ITEM, 50, "never")
+GuildOS.db.raidTracker.sessions = savedSessions
+importedAt = nil
+-- An item won earlier the same night, in a raid broken in two sessions, does not grow at the second end.
+reserves, sheet = { { name = "Ana" } }, {}
+GuildOS.db.lootHistory = { { playerKey = K("Ana"), itemLink = LINK, timestamp = NOW - 9000, fromML = true } }
+P:OnRaidEnd(night(11, { "Ana" }))
+check(sr("Ana", ITEM) == 50, "srplus by item: at the cap it stays put")
+P:AddCounter("srplus", K("Ana") .. "#" .. ITEM, -50, "never")
+P:OnRaidEnd(night(12, { "Ana" }))
+check(sr("Ana", ITEM) == 0, "srplus by item: an item won earlier that night does not grow")
+GuildOS.db.lootHistory = {}
+-- On WoW: Forever a key from another officer is rebuilt from its name (issue #97): the item stays on it,
+-- in an entry and in a snapshot.
+local wasAnniversary = GuildOS.Client.isAnniversary
+GuildOS.Client.isAnniversary = false
+P:OnSync({ act = "cdelta", data = { entries = { { key = "Cy-Elsewhere#" .. OTHER, acct = "srplus", rs = "never", per = 0,
+  delta = 5, op = "Tforever-1", kind = "counter", ts = NOW } } } })
+check(sr("Cy", OTHER) == 5 and P:Counter("srplus", K("Cy")) == 0, "srplus by item: an officer's entry keeps its item on Forever")
+P:MergeAccounts(P:Pool(), { srplus = { rs = "never", per = 0, v = { ["Dee-Elsewhere#" .. OTHER] = 7 }, t = { ["Dee-Elsewhere#" .. OTHER] = NOW } } })
+check(sr("Dee", OTHER) == 7 and P:Counter("srplus", K("Dee")) == 0, "srplus by item: and so does a snapshot's figure")
+GuildOS.Client.isAnniversary = wasAnniversary
+
 -- council (issue #336): nobody rolls; the candidates are listed by the answer, the wishlist, fewer
 -- items received and attendance in steps of ten, the officers (ranks 0 and 1) vote, and two votes
 -- propose who the master looter confirms. tools/loot-council.lua has the vote in full.
@@ -515,7 +637,10 @@ P:AddCounter("karma", K("Ana"), 57, "never")
 P:OnRaidEnd(session)
 check(P:Counter("karma", K("Ana")) == 100, "karma: five a raid attended, never past the cap of a hundred: " .. P:Counter("karma", K("Ana")))
 
-local modelsPlayed, modelsRefused = #supported, #refused - 1   -- the refused one is no model of the site's
+-- The models alone: a variant (a model at other answers, "srplus:item") played among them is not one.
+local modelsPlayed = 0
+for _, n in ipairs(supported) do if not n:find(":", 1, true) then modelsPlayed = modelsPlayed + 1 end end
+local modelsRefused = #refused - 1   -- the refused one is no model of the site's
 check(modelsPlayed == 14 and modelsRefused == 0, string.format("all fourteen models play: %d and %d", modelsPlayed, modelsRefused))
 for _, name in ipairs(MODELS) do
   local found = false
