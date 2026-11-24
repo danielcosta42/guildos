@@ -1,9 +1,8 @@
-## [1.40.0] - 2026-11-23
+## [1.41.0] - 2026-11-24
 
 ### Added
-- The alliance code is now short (GOS=TAG:key) and lists no guilds: the allied guilds find each other by themselves.
-- The alliance code now lives in the guild master's public note where the game allows it, and every member hands it on at login, so nobody has to be online or paste anything.
+- The SR+ loot rule can count its bonus per item: each raid you reserve an item without winning it adds to that item, and winning it or a raid without reserving it empties it (#433)
 
 ### Fixed
-- Every line of allied chat now crosses: a stale roster no longer drops lines, your own guildmates' lines in the alliance room now show, and a long line is no longer cut off.
-- The alliance code is now also written in the guild info, so every member gets it at login with no officer, or anybody, online.
+- SR+ por item ignora a folha da raide anterior da mesma noite (#433)
+- SR+ por item sobrevive à sincronia e só lê a folha da noite (#433)
