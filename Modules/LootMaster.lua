@@ -1640,7 +1640,8 @@ function LootMaster:RegisterRollNow(name, rollType, roll, extra)
     if pointsReady then
         for _, a in ipairs(GuildOS.LootRule:Counters(rule)) do
             accts = accts or {}
-            accts[a.key] = P:Counter(a.key, key)
+            -- A bonus kept per item (issue #433) is read on the item being rolled for.
+            accts[a.key] = P:Counter(a.key, GuildOS.LootRule:CounterKey(a, key, self.activeLoot and self.activeLoot.itemId))
         end
         for _, q in ipairs(GuildOS.LootRule:Queues(rule)) do
             accts = accts or {}
@@ -2077,7 +2078,8 @@ function LootMaster:RereadAccounts(rule)
     for key, r in pairs(self.rolls) do
         if r.live then
             r.accts = r.accts or {}
-            for _, a in ipairs(counters) do r.accts[a.key] = P:Counter(a.key, key) end
+            local itemId = self.activeLoot and self.activeLoot.itemId
+            for _, a in ipairs(counters) do r.accts[a.key] = P:Counter(a.key, LR:CounterKey(a, key, itemId)) end
             for _, q in ipairs(queues) do r.accts[q.key] = P:QueuePos(q.key, key) end
         end
     end
@@ -2377,7 +2379,7 @@ function LootMaster:AwardLootNow(playerName, silent, free)
     if pointsReady and response then
         local pKey = GuildOS:GetPlayerKey(playerName)
         local opBase = self:AwardOp(self.activeLoot.sid, itemId, pKey)
-        self:CounterEffects(rule, response, pKey, opBase, award)
+        self:CounterEffects(rule, response, pKey, opBase, award, itemId)
         -- A master looter who is no officer cannot tell the guild's accounts anything: the entries above
         -- stay on this client. The raid's officers hear who won with which answer and make the same
         -- entries themselves, under the same names, once (OnWonMessage).
@@ -2410,29 +2412,33 @@ end
 -- `opBase` names each entry after the award (AwardOp), so the master looter's client and every officer
 -- who hears of the award make it once between them. `award` is the master looter's record of the award:
 -- each move is kept on it for an undo, and only with it does a queue move, since a queue's order is the
--- master looter's client's to say.
+-- master looter's client's to say. `itemId` is the item awarded: a bonus kept per item (issue #433)
+-- moves on that item only.
 ----------------------------------------------------------------------
 function LootMaster:AwardOp(sid, itemId, pKey)
     if not sid then return nil end
     return string.format("W%s-%d-%s", sid, itemId or 0, pKey)
 end
 
-function LootMaster:CounterEffects(rule, response, pKey, opBase, award)
+function LootMaster:CounterEffects(rule, response, pKey, opBase, award, itemId)
     local LR, P = GuildOS.LootRule, GuildOS.Points
     local made, moves = 0, 0
+    -- Where the winner's figure on `acct` is kept: on the item itself for a bonus kept per item.
+    local function keyOf(acct) return LR:CounterKey(acct, pKey, itemId, rule) end
     -- One entry moves a counter by a hundred at most (Points): a larger move takes several.
     local function move(acct, delta)
         local counter = LR:Counter(acct, rule)
         local reset = counter and counter.reset or "never"
+        local key = keyOf(acct)
         while delta ~= 0 do
             local step = math.max(-100, math.min(100, delta))
             moves = moves + 1
-            local e = P:AddCounter(acct, pKey, step, reset, nil, opBase and (opBase .. "." .. moves) or nil)
+            local e = P:AddCounter(acct, key, step, reset, nil, opBase and (opBase .. "." .. moves) or nil)
             if not e then return end
             made = made + 1
             if award then
                 award.plus = award.plus or {}
-                award.plus[#award.plus + 1] = { acct = e.acct, key = pKey, value = step, reset = e.rs, per = e.per }
+                award.plus[#award.plus + 1] = { acct = e.acct, key = key, value = step, reset = e.rs, per = e.per }
             end
             delta = delta - step
         end
@@ -2444,14 +2450,14 @@ function LootMaster:CounterEffects(rule, response, pKey, opBase, award)
             -- An account with a cap (a bonus, issue #337) never grows past it.
             local value = effect.value
             if counter and counter.cap then
-                value = math.min(value, math.max(0, counter.cap - P:Counter(effect.acct, pKey)))
+                value = math.min(value, math.max(0, counter.cap - P:Counter(effect.acct, keyOf(effect.acct))))
             end
             move(effect.acct, value)
         elseif effect.k == "reset" and counter then
-            move(effect.acct, -P:Counter(effect.acct, pKey))
+            move(effect.acct, -P:Counter(effect.acct, keyOf(effect.acct)))
         elseif effect.k == "charge" and counter and (response.plus or not bonus) then
             -- A bonus account is charged only when the winning answer used it (karma: lose half).
-            move(effect.acct, -LR:CounterCharge(effect, P:Counter(effect.acct, pKey), response))
+            move(effect.acct, -LR:CounterCharge(effect, P:Counter(effect.acct, keyOf(effect.acct)), response))
         elseif effect.k == "bottom" and response.plus and award then
             -- When the answer is one that counts: an off spec roll moves nobody.
             local queue = LR:Queue(effect.acct, rule)
@@ -2489,7 +2495,7 @@ function LootMaster:OnWonMessage(rest, sender)
     local response = GuildOS.LootRule:Response(key, rule)
     if not response then return end
     local pKey = GuildOS:GetPlayerKey(name)
-    self:CounterEffects(rule, response, pKey, self:AwardOp(sid, tonumber(itemId), pKey), nil)
+    self:CounterEffects(rule, response, pKey, self:AwardOp(sid, tonumber(itemId), pKey), nil, tonumber(itemId))
 end
 
 ----------------------------------------------------------------------
@@ -4002,7 +4008,7 @@ function LootMaster:Standing(itemId, rule)
     local P = GuildOS.Points
     if P and P.GetDB and GuildOS.db and GuildOS.db.points then
         for _, a in ipairs(GuildOS.LootRule:Counters(rule)) do
-            out.counters[#out.counters + 1] = { name = a.name or a.key, value = P:Counter(a.key, key) }
+            out.counters[#out.counters + 1] = { name = a.name or a.key, value = P:Counter(a.key, GuildOS.LootRule:CounterKey(a, key, itemId)) }
         end
         if GuildOS.LootRule:UsesPoints(rule) then
             out.points = P:Get(key)

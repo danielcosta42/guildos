@@ -62,6 +62,7 @@ local ROUNDS = { up = true, down = true, near = true }
 local AUTOS = { boss = true, ontime = true, late = true, stayed = true, leftearly = true, raid = true }
 local COUNTER_AUTOS = { boss = true, raid = true }   -- what feeds a counter by itself (Points:EarnCounters)
 local NEWCOMERS = { bottom = true, random = true }   -- where a queue puts somebody it never saw
+local SCOPES = { character = true, item = true }    -- what a bonus account is kept by (issue #433)
 local QUEUE_END = 99999       -- the place of somebody a queue does not hold: after everyone it does
 local LIST_POINTS = 10        -- what the first place of a list is worth in a score; each place after, one less
 local SCORE_PARTS_MAX = 6     -- parts one score adds up
@@ -286,7 +287,7 @@ local RESPONSE_KEYS = { key = true, label = true, ask = true, plus = true, cost 
 local FILTER_KEYS = { k = true, act = true, min = true, max = true, acct = true, from = true, to = true }
 local EFFECT_KEYS = { k = true, acct = true, price = true, value = true, refund = true }
 local ACCOUNT_KEYS = { key = true, type = true, name = true, start = true, cap = true, floor = true,
-    decay = true, reset = true, earn = true, frozen = true, newcomer = true }
+    decay = true, reset = true, earn = true, frozen = true, newcomer = true, scope = true }
 local EARN_KEYS = { key = true, auto = true, name = true, value = true, weekly = true }
 
 -- How to ask (issue #334): up to ten answers, each a button.
@@ -313,7 +314,9 @@ end
 --     between items (earn, decay, cap) is read and left to the pool's own settings in the game; the GP
 --     account's `start` is the base GP the rule's ratio divides by;
 --   * "bonus" (issue #337): a counter added to a roll (karma, SR+). It starts at nothing, may have a
---     cap it never grows past, and is fed like a counter;
+--     cap it never grows past, and is fed like a counter. `scope` "item" (issue #433) keeps it per
+--     character and item: a raid attended feeds each item reserved and not won, empties each one not
+--     reserved, and an award empties the item won only;
 --   * "queue" (issue #337): an ordered list of players (Suicide Kings), read by the place in it.
 --     `frozen`: when the winner drops, only who is in the raid moves up and whoever is absent keeps
 --     their slot; `newcomer`: somebody it never saw joins at the "bottom" or at a "random" place.
@@ -332,6 +335,7 @@ local function validAccounts(list)
         end
         if not flagOrNil(a.frozen) or (a.newcomer ~= nil and not NEWCOMERS[a.newcomer]) then return nil, "accounts" end
         if a.type ~= "queue" and (a.frozen ~= nil or a.newcomer ~= nil) then return nil, "accounts" end
+        if a.scope ~= nil and not (SCOPES[a.scope] and a.type == "bonus") then return nil, "accounts" end
         if a.name ~= nil and not isLabel(a.name, NAME_MAX) then return nil, "accounts" end
         if a.reset ~= nil and not RESETS[a.reset] then return nil, "accounts" end
         for _, f in ipairs({ "start", "cap", "floor" }) do
@@ -370,6 +374,8 @@ local function validAccounts(list)
                 if not (COUNTER_AUTOS[e.auto] and wholeIn(e.value, 1, 100) and e.weekly == nil) then
                     return nil, unsupported("earn")
                 end
+                -- Kept per item, only a raid feeds it: a boss killed says nothing of what was reserved.
+                if a.scope == "item" and e.auto ~= "raid" then return nil, unsupported("earn") end
             end
         elseif a.type == "counter" then
             if POINTS_ACCOUNTS[a.key] then return nil, "accounts" end
@@ -882,6 +888,23 @@ function LootRule:Counters(rule)
         if a.type == "counter" or a.type == "bonus" then out[#out + 1] = a end
     end
     return out
+end
+
+-- Where `pKey`'s figure on the counter `acct` is kept: the player's own key, or, on a bonus account
+-- kept per item (issue #433), the player's and the item's together ("Name-Realm#itemId"). Without an
+-- item, an account kept per item is read at the player's key, which holds nothing.
+function LootRule:CounterKey(acct, pKey, itemId, rule)
+    local a = type(acct) == "table" and acct or self:Counter(acct, rule)
+    if a and a.scope == "item" and tonumber(itemId) then
+        return string.format("%s#%d", pKey, tonumber(itemId))
+    end
+    return pKey
+end
+
+-- Whether the counter `acct` is kept per item (issue #433).
+function LootRule:PerItem(acct, rule)
+    local a = type(acct) == "table" and acct or self:Counter(acct, rule)
+    return a ~= nil and a.scope == "item"
 end
 
 -- The queue accounts a rule keeps (issue #337): { { key, type, name, frozen, newcomer }, ... }.
@@ -1919,6 +1942,26 @@ function LootRule:SetCounterReset(acct, reset, coreName)
     local rule = self:Draft(coreName)
     for _, a in ipairs(rule.accounts or {}) do
         if a.key == acct then a.reset = reset end
+    end
+    return self:Set(rule, coreName)
+end
+
+-- What a bonus account is kept by (issue #433), for the rule editor: "character" (a raid attended feeds
+-- it) or "item" (a raid feeds each item reserved and not won). Kept per item, only a raid feeds it.
+function LootRule:SetBonusScope(acct, scope, coreName)
+    if not SCOPES[scope] then return nil end
+    local rule = self:Draft(coreName)
+    for _, a in ipairs(rule.accounts or {}) do
+        if a.key == acct and a.type == "bonus" then
+            a.scope = scope ~= "character" and scope or nil
+            if scope == "item" and a.earn then
+                local kept = {}
+                for _, e in ipairs(a.earn) do
+                    if e.auto == "raid" then kept[#kept + 1] = e end
+                end
+                a.earn = #kept > 0 and kept or nil
+            end
+        end
     end
     return self:Set(rule, coreName)
 end

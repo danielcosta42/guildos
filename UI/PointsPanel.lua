@@ -391,7 +391,9 @@ function GuildOS:BuildLootAccounts(panel)
             local row = standRow(i)
             local cr, cg, cb = GuildOS:GetClassColor(s.class)
             local values = {
-                rank = tostring(i), name = s.name,
+                -- A bonus kept per item (issue #433): the row is the player's on that item.
+                rank = tostring(i), name = s.itemId and string.format("%s \194\183 %s", s.name,
+                    GuildOS.Compat.GetItemInfo(s.itemId) or ("#" .. s.itemId)) or s.name,
                 cur = account and (queue and ("#" .. s.value) or tostring(s.value))
                     or (epgp and string.format("%.2f", math.max(0, s.pr or 0)) or tostring(s.current)),
                 earned = account and "" or tostring(s.earned),
