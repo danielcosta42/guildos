@@ -4013,3 +4013,7 @@ L["Winter Veil"] = "Winter Veil"
 L["Someone is wrapping something for the guild. Keep an eye out. — Frimm"] = "Quelqu'un emballe quelque chose pour la guilde. Gardez l'œil ouvert. — Frimm"
 L["Winter Veil snow"] = "Neige de Winter Veil"
 L["Off: no snow falls on the Guild OS window."] = "Désactivé : aucune neige ne tombe sur la fenêtre de Guild OS."
+
+-- Modules/WinterVeil.lua, UI/WinterVeilPanel.lua (guildos-web#671); translations to review
+L["In-game participation: registered"] = "Participation en jeu : enregistrée"
+L["In-game participation: not yet, complete a Winter Veil quest"] = "Participation en jeu : pas encore — terminez une quête du Voile d'hiver"
