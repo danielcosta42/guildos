@@ -25,6 +25,9 @@ WV.RELAY_EVERY = 3600
 WV.EXPORT_JOINS = 100
 WV.EXPORT_WRAPS = 200
 WV.EXPORT_OPENS = 200
+WV.EXPORT_PLAYS = 1
+-- The game's event starts on Dec 15, 00:00 server time (UTC-3); a play counts from then to the event's `wrapUntil`.
+WV.PLAY_START_OFFSET = 3 * 3600
 WV.SCENES = { "tree", "cabin", "snowman", "fire", "mountain" }
 WV.RARITIES = { "common", "rare", "epic", "legendary" }
 
@@ -50,6 +53,7 @@ local function store()
     s.opens = s.opens or {}           -- [myKey] = at: I asked the site to open my globe
     s.opened = s.opened or {}         -- [giverKey] = { to }: the pair a carrier whispered to me
     s.carried = s.carried or {}       -- [giverKey] = { at, got }: pairs I carry, when I last whispered them
+    -- s.played = { key, at }: my first valid turn-in of a Winter Veil quest this year (nil until then; never grows)
     return s
 end
 WV._store = store
@@ -67,6 +71,21 @@ end
 -- The full name on WoW: Forever too (a first name and a surname): UnitName gives only the first.
 function WV:MyKey() return GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()) end
 
+-- Days since 1970-01-01 of a civil date (proleptic Gregorian); no os/date calls, so the client's clock zone never enters.
+local function daysFromCivil(y, m, d)
+    if m <= 2 then y = y - 1 end
+    local era = math.floor(y / 400)
+    local yoe = y - era * 400
+    local doy = math.floor((153 * (m + (m > 2 and -3 or 9)) + 2) / 5) + d - 1
+    local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy
+    return era * 146097 + doe - 719468
+end
+
+-- The first second of the game's event for `year`: Dec 15 00:00 at UTC-3, as epoch seconds.
+function WV.PlayStart(year)
+    return daysFromCivil(year, 12, 15) * 86400 + WV.PLAY_START_OFFSET
+end
+
 -- "joining" | "closed" | "wrapping" | "wrapped" | "open", by the event's own clock (the site's phaseOf).
 function WV.PhaseOf(e, t)
     if not e then return nil end
@@ -74,6 +93,43 @@ function WV.PhaseOf(e, t)
     if t >= e.openAt then return "open" end
     if not e.drawn then return t < e.joinUntil and "joining" or "closed" end
     return t < e.wrapUntil and "wrapping" or "wrapped"
+end
+
+----------------------------------------------------------------------
+-- Taking part in the game's event: turning in one of Data/WinterVeilQuests.lua's quests (an event, QUEST_TURNED_IN:
+-- IsQuestFlaggedCompleted stays true from earlier years). It counts for the Chimney, only for the one who played, only
+-- from Dec 15 to the wrapping deadline, only if this person is in the event. The first one is kept; nothing grows.
+----------------------------------------------------------------------
+function WV.IsPlayQuest(questID)
+    local list = GuildOS.WinterVeilQuests
+    return type(questID) == "number" and type(list) == "table" and list[questID] ~= nil
+end
+
+-- Pure: is `t` inside the window of event `e`.
+function WV.InPlayWindow(e, t)
+    if not (e and type(e.year) == "number" and type(e.wrapUntil) == "number") then return false end
+    return t >= WV.PlayStart(e.year) and t < e.wrapUntil
+end
+
+-- Returns true when this turn-in was recorded now.
+function WV:OnQuestTurnedIn(questID)
+    if not WV.IsPlayQuest(questID) then return false end
+    local e, s, me = self:Event(), store(), self:MyKey()
+    if not (e and s and me) or s.played then return false end
+    if not WV.InPlayWindow(e, now()) or not self:Joined() then return false end
+    s.played = { key = me, at = now() }
+    return true
+end
+
+function WV:Played()
+    local s = store()
+    return s ~= nil and s.played ~= nil
+end
+
+-- Did the site's block say my participation is already registered?
+function WV:PlaySeen()
+    local p = self:Personal()
+    return p ~= nil and p.played == true
 end
 
 ----------------------------------------------------------------------
@@ -376,7 +432,7 @@ end
 function WV:ForExport()
     local e, s, me = self:Event(), store(), self:MyKey()
     if not (e and s) then return nil end
-    local out = { year = e.year, joins = {}, leaves = {}, wrap = {}, open = {} }
+    local out = { year = e.year, joins = {}, leaves = {}, wrap = {}, open = {}, plays = {} }
     for key, p in pairs(s.people) do
         if p.join then out.joins[#out.joins + 1] = { key = key, volunteer = p.join.volunteer, at = p.join.at } end
         if p.left then out.leaves[#out.leaves + 1] = { key = key, at = p.left } end
@@ -389,6 +445,7 @@ function WV:ForExport()
         out.wrap[#out.wrap + 1] = line
     end
     if me and s.opens[me] then out.open[1] = { receiver = me, at = s.opens[me] } end
+    if s.played and me and s.played.key == me then out.plays[1] = { key = s.played.key, at = s.played.at } end
     -- Within the site's caps (the part is refused whole past them): the newest first, in a guild of hundreds.
     local function newest(list, max)
         table.sort(list, function(a, b) return a.at > b.at end)
@@ -410,8 +467,13 @@ function WV:Initialize()
     end
     local f = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE", true)
+    GuildOS.Compat.RegisterEvent(f, "QUEST_TURNED_IN", true)
     local lastRelay = 0
-    f:SetScript("OnEvent", function()
+    f:SetScript("OnEvent", function(_, event, questID)
+        if event == "QUEST_TURNED_IN" then
+            GuildOS:SafeCall(function() WV:OnQuestTurnedIn(questID) end)
+            return
+        end
         if not WV:Event() or GetTime() - lastRelay <= 60 then return end
         lastRelay = GetTime()
         GuildOS:SafeCall(function() WV:Relay() end)

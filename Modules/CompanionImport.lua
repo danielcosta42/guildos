@@ -1158,13 +1158,14 @@ function Import:VeilBlock()
 end
 
 -- A decoded GOSVEIL1 (v2) held to its shape (pure, for the harness). Nil when it is not one.
---   { guild, year, at, event?, mine = { { key, volunteer, gives = { { to, toClass?, scene?, note?, wrapped, extra?, hosted?,
+--   { guild, year, at, event?, played (the site holds my in-game participation; absent = false), mine = { { key, volunteer, gives = { { to, toClass?, scene?, note?, wrapped, extra?, hosted?,
 --     rarity? } }, got? = { ready, ornament? } } }, relay = { { giver, seal } }, collection = { ornament } }
 function Import:CleanVeil(data)
     if type(data) ~= "table" or data.fmt ~= "GOSVEIL1" or data.v ~= 2 or type(data.guild) ~= "string" then return nil end
     local ok, year, at = pcall(function() return siteInt(data.year, 2020, 2100), siteInt(data.at, 1, VEIL_TIME) end)
     if not ok then return nil end
-    local out = { guild = data.guild, year = year, at = at, mine = {}, relay = {}, collection = {}, event = veilEvent(data.event) }
+    local out = { guild = data.guild, year = year, at = at, mine = {}, relay = {}, collection = {}, event = veilEvent(data.event),
+                 played = data.played == true }
     for i = 1, math.min(type(data.mine) == "table" and #data.mine or 0, 10) do
         local m = data.mine[i]
         local key = type(m) == "table" and veilKey(m.key)
