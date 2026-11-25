@@ -1849,3 +1849,6 @@ L["The raids are open"] = "The raids are open"
 L["Raids open in under a day"] = "Raids open in under a day"
 L["Raids open in 1 day"] = "Raids open in 1 day"
 L["Raids open in %d days"] = "Raids open in %d days"
+
+-- UI/Rooms.lua: the Officers' Room side bar (#447); translations to review
+L["Moderation"] = "Moderation"

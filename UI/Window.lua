@@ -32,6 +32,9 @@ local PAD_NARROW   = 8
 local RULE_H       = 28
 local RULE_PAD     = 6
 local ENTRY_H      = 26      -- the open room's entries, under the rooms (specs/salao, #445)
+local SIDE_W       = 176     -- a side room's bar of entries (the Officers' Room, #447)
+local SIDE_ROW     = 22
+local SIDE_HEAD    = 22
 local TAB_GAP      = 2
 local TAB_MIN_W    = 48
 local TAB_TEXT_PAD = 18      -- 20 until the Groups tab (#341): an officer's sixteen tabs still fit at 1000px
@@ -346,6 +349,12 @@ local function createWindow()
     entryMore:Hide()
     f.entryMore = entryMore
 
+    -- A side room's entries (#447): a column of them in groups, left of the content.
+    local sideNav = UI:CreateDarkPanel(f)
+    sideNav:SetWidth(SIDE_W)
+    sideNav:Hide()
+    f.sideNav, f.sideBtns, f.sideHeads = sideNav, {}, {}
+
     local more = UI:SetButtonVariant(UI:CreateButton(rule, "", MORE_W, 22), "ghost")
     more:SetPoint("RIGHT", rule, "RIGHT", -RULE_PAD, 0)
     more:SetScript("OnClick", function(self) showTabMenu(f, self, f.overflow) end)
@@ -487,6 +496,11 @@ local function createWindow()
     -- `filter` for the sub-tab that takes one. Remembered per room, so a room opens where it was left.
     function f:SelectEntry(roomId, entry, byUser, sub, filter)
         if not (entry and UI:EntryAllowed(entry)) then return false end
+        -- An action, not a screen (Core Sign-up): it runs, and the screen on show stays.
+        if entry.run then
+            GuildOS:SafeCall(entry.run)
+            return true
+        end
         local prevRoom, prevEntry = self.activeRoom, self.activeEntry
         self.activeRoom, self.activeEntry = roomId, entry
         if not self:SetActiveTab(entry.feature, byUser) then
@@ -599,7 +613,12 @@ local function createWindow()
         for _, e in ipairs(self.activeRoom and UI:RoomEntries(self.activeRoom) or {}) do
             if self.tabPanels[e.feature] then list[#list + 1] = e end
         end
-        local rowShown = #list > 1 and self.band ~= "bar"
+        local room = self.activeRoom and UI:RoomById(self.activeRoom)
+        local side = room and room.side and #list > 0 and self.band ~= "bar" and self.band ~= "watch" and true or false
+        sideNav:SetShown(side)
+        for _, b in ipairs(self.sideBtns) do b:Hide() end
+        for _, h in ipairs(self.sideHeads) do h:Hide() end
+        local rowShown = not side and #list > 1 and self.band ~= "bar"
         entryRow:SetShown(rowShown)
         for _, btn in ipairs(self.entryTabs) do btn:Hide() end
         entryMore:Hide()
@@ -644,8 +663,55 @@ local function createWindow()
                 entryMore:Show()
             end
         end
+        local left = pad
+        if side then
+            local y0 = top + RULE_H + pad
+            sideNav:ClearAllPoints()
+            sideNav:SetPoint("TOPLEFT", pad, -y0)
+            sideNav:SetPoint("BOTTOMLEFT", pad, footLift + FOOT_H + pad)
+            local y, group, nb, nh = 6, nil, 0, 0
+            for _, entry in ipairs(list) do
+                if entry.group and entry.group ~= group then
+                    group = entry.group
+                    nh = nh + 1
+                    local h = self.sideHeads[nh]
+                    if not h then
+                        h = sideNav:CreateFontString(nil, "OVERLAY")
+                        GuildOS:ApplyFont(h, 11, "sectionTitle")
+                        h:SetShadowOffset(0, 0)
+                        h:SetJustifyH("LEFT")
+                        self.sideHeads[nh] = h
+                    end
+                    h:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+                    h:SetText(group)
+                    h:ClearAllPoints()
+                    h:SetPoint("TOPLEFT", 10, -(y + (nh > 1 and 6 or 0)))
+                    h:Show()
+                    y = y + SIDE_HEAD + (nh > 1 and 6 or 0)
+                end
+                nb = nb + 1
+                local b = self.sideBtns[nb]
+                if not b then
+                    b = UI:CreateTab(sideNav, "", SIDE_W - 12, true)
+                    b:SetHeight(SIDE_ROW)
+                    b.label:ClearAllPoints()
+                    b.label:SetPoint("LEFT", 10, 0)
+                    b:SetScript("OnClick", function(btn) f:SelectEntry(f.activeRoom, btn.entry, true) end)
+                    self.sideBtns[nb] = b
+                end
+                b.entry = entry
+                b.label:SetText(entry.label)
+                b:SetWidth(SIDE_W - 12)
+                b:ClearAllPoints()
+                b:SetPoint("TOPLEFT", 6, -y)
+                b:SetActive(self.activeEntry and self.activeEntry.id == entry.id or false)
+                b:Show()
+                y = y + SIDE_ROW
+            end
+            left = pad + SIDE_W + UI.GAP
+        end
         content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", pad, -(top + RULE_H + (rowShown and ENTRY_H or 0) + pad))
+        content:SetPoint("TOPLEFT", left, -(top + RULE_H + (rowShown and ENTRY_H or 0) + pad))
         content:SetPoint("BOTTOMRIGHT", -pad, footLift + FOOT_H + pad)
     end
 
@@ -800,7 +866,7 @@ local function createWindow()
 
         rule:SetShown(not isBar)
         content:SetShown(not isBar)
-        if isBar then entryRow:Hide() end
+        if isBar then entryRow:Hide(); sideNav:Hide() end
         foot:SetShown(not isBar)
         rule:ClearAllPoints()
         rule:SetPoint("TOPLEFT", 0, -(top + titleH))

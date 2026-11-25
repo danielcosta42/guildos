@@ -105,7 +105,7 @@ check(ids(UI:RoomEntries("salao")):find("x:extra", 1, true), "listed after the S
 
 -- ── 6. An entry the window built no panel for ──────────────────────────
 function UI:HasPanel(id) return id ~= "groups" end
-check(ids(UI:RoomEntries("raids")) == "calendar,raids", "an entry with no panel is not offered")
+check(ids(UI:RoomEntries("raids")) == "calendar,sessions,raiders,cores,audit,raidtools,signup", "an entry with no panel is not offered: " .. ids(UI:RoomEntries("raids")))
 check(UI:RoomDefault("raids", "groups").id == "calendar", "nor opened, even when it was saved")
 function UI:HasPanel(id) return id == "groups" end
 check(not UI:RoomAllowed("members"), "a room whose entries have no panel is not drawn")

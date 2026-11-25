@@ -1125,7 +1125,11 @@ function GuildOS:CreateSettingsPanel(parent, _mainFrame)
     local tabs, tabList = {}, {}
     local function anchorScroll(info, stripShown)
         info.scroll:ClearAllPoints()
-        info.scroll:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 2, -10)
+        if parent.PlaceUnderSubBar then
+            parent.PlaceUnderSubBar(info.scroll)
+        else
+            info.scroll:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 2, -10)
+        end
         info.scroll:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -12, stripShown and (STRIP_H + 16) or 10)
     end
     strip.onToggle = function(shown)
@@ -1144,6 +1148,12 @@ function GuildOS:CreateSettingsPanel(parent, _mainFrame)
         end)
     end
     parent.SelectSub = selectSub   -- deep links: /gos open settings <page>
+    -- The Settings button's entries open these pages themselves (#445).
+    UI:CollapsibleSubBar(parent, bar, function()
+        local t = {}
+        for _, info in pairs(parent.subPanels) do t[#t + 1] = info.scroll end
+        return t
+    end, { 2, -10 })
 
     for _, s in ipairs(SUBS) do
         local t = UI:CreateTab(bar, s.label, TAB_MIN, true)

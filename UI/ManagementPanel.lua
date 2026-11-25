@@ -1322,6 +1322,7 @@ function GuildOS:CreateManagementPanel(parent, _mainFrame)
         if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
     parent.SelectSub = selectSub   -- deep links: /gos banlist, the Now tab
+    UI:CollapsibleSubBar(parent, bar, function() return parent.subPanels end, { 0, -GAP })   -- the Officers' Room (#445)
 
     -- Refresh whatever sub-panel is currently visible (used by GuildManager).
     parent.RefreshActive = function()

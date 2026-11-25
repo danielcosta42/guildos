@@ -860,21 +860,22 @@ do
   end
 end
 check(tabOf(f, f.activeRoom).isActive, "the open room carries the rule")
-fire(tabOf(f, "loot"), "OnClick")
-check(f.activeTab == "loot" and f.activeRoom == "loot" and g.tab == "loot" and g.room == "loot" and tabOf(f, "loot").isActive,
+fire(tabOf(f, "members"), "OnClick")
+check(f.activeTab == "roster" and f.activeRoom == "members" and g.tab == "roster" and g.room == "members" and tabOf(f, "members").isActive,
   "clicking a room opens its entry, marks it and remembers it")
 check(not f.entryRow.shown, "a room with one entry draws no entries row")
 fire(tabOf(f, "raids"), "OnClick")
 check(f.entryRow.shown and f.activeRoom == "raids" and f.activeTab == "guild" and selected[#selected] == "CreateGuildHub:calendar",
   "Raids opens on its first entry, the calendar, with the row of its entries")
 local raidsEntry
-for _, b in ipairs(f.entryTabs) do if b.shown and b.entry.id == "raids" then raidsEntry = b end end
+for _, b in ipairs(f.entryTabs) do if b.shown and b.entry.id == "sessions" then raidsEntry = b end end
 fire(raidsEntry, "OnClick")
-check(f.activeTab == "raids" and raidsEntry.isActive and g.entries.raids == "raids", "an entry opens its panel and is remembered")
-fire(tabOf(f, "loot"), "OnClick")
+check(f.activeTab == "raids" and raidsEntry.isActive and g.entries.raids == "sessions" and selected[#selected] == "CreateRaidHubPanel:sessions",
+  "an entry opens its panel on its sub-tab and is remembered")
+fire(tabOf(f, "members"), "OnClick")
 fire(tabOf(f, "raids"), "OnClick")
 check(f.activeTab == "raids", "and the room opens again where it was left")
-fire(tabOf(f, "loot"), "OnClick")
+fire(tabOf(f, "members"), "OnClick")
 
 resize(f, 890)
 check(f.band == "full", "890px (content 866) is still full: 16px past the line before the band changes")
@@ -942,6 +943,36 @@ f:UpdateTabVisibility()
 check(f.activeRoom ~= "officers", "demoted, the window leaves the Officers' Room")
 officer = true
 f:UpdateTabVisibility()
+-- One row only (#447): each screen's sub-tabs are its room's entries.
+check(UI:OpenWindow("raids") and f.activeRoom == "raids" and f.activeEntry.id == "sessions"
+  and selected[#selected] == "CreateRaidHubPanel:sessions", "Raids by name opens on its first sub-tab, Sessions")
+local signupRan = false
+local realSignup = GuildOS.ShowCoreSignupFrame
+GuildOS.ShowCoreSignupFrame = function() signupRan = true end
+local signupBtn
+for _, b in ipairs(f.entryTabs) do if b.shown and b.entry.id == "signup" then signupBtn = b end end
+if not signupBtn then
+  fire(f.entryMore, "OnClick")
+  for _, item in ipairs(menuItems) do if item.text == "Core Sign-up" then item.func() end end
+else
+  fire(signupBtn, "OnClick")
+end
+check(signupRan and f.activeTab == "raids" and f.activeEntry.id == "sessions",
+  "Core Sign-up is an entry that opens the sign-up window and leaves the screen as it was")
+GuildOS.ShowCoreSignupFrame = realSignup
+officer = false
+f:UpdateTabVisibility()
+local coresListed = false
+for _, e in ipairs(UI:RoomEntries("raids")) do if e.id == "cores" then coresListed = true end end
+check(not coresListed, "a member's Raids has no Cores entry")
+officer = true
+f:UpdateTabVisibility()
+slash("open management inactive")
+local sideActive
+for _, b in ipairs(f.sideBtns) do if b.shown and b.isActive then sideActive = b end end
+check(f.sideNav.shown and not f.entryRow.shown and sideActive and sideActive.entry.id == "inactive",
+  "the Officers' Room lists its entries in a side bar, the open one marked")
+check(f.content.points[1][2] > 12, "and the content starts right of it")
 resize(f, 500)
 fire(f.selector, "OnClick")
 for _, item in ipairs(menuItems) do if item.text == "Members" then item.func() end end

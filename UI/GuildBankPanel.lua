@@ -1355,6 +1355,7 @@ function GuildOS:CreateGuildBankPanel(container, _mainFrame)
     container:SetScript("OnShow", function() if not active then select("inventory") end end)
     select("inventory")
     container.SelectSub = select
+    UI:CollapsibleSubBar(container, subBar, function() return panels end)   -- the Workshop's entries (#445)
     container.ActiveSub = function() return active end
     container.panels = panels
 end

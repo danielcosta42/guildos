@@ -932,4 +932,29 @@ for _, style in ipairs({ "guildos", "forever" }) do
   signup()
 end
 
+-- A room that opens one of these sub-tabs hides the window's own bar (#447): the panels start where it was.
+do
+  local box = lootWindow()
+  local bar, panel
+  for _, c in ipairs(box.children) do
+    if c.kind == "Frame" and c.h == 28 and c.points[1] and c.points[1][1] == "TOPLEFT" and not bar then bar = c end
+  end
+  box.SelectSub("history")
+  for _, c in ipairs(box.children) do if c.shown and c ~= bar and c.kind == "Frame" then panel = c end end
+  check(type(box.SetSubBarShown) == "function", "the Loot window lets a room hide its sub-tab bar")
+  -- The client replaces an anchor of the same name; the stub keeps them all, so read the newest TOPLEFT.
+  local function topLeft(fr)
+    local last
+    for _, pt in ipairs(fr and fr.points or {}) do if pt[1] == "TOPLEFT" then last = pt end end
+    return last
+  end
+  box.SetSubBarShown(false)
+  local p = topLeft(panel)
+  check(bar and not bar.shown and p and p[1] == "TOPLEFT" and p[2] == bar and p[3] == "TOPLEFT",
+    "hidden, the bar is gone and the open panel starts at its top")
+  box.SetSubBarShown(true)
+  p = topLeft(panel)
+  check(bar.shown and p and p[2] == bar and p[3] == "BOTTOMLEFT", "shown again, the panel is back under it")
+end
+
 print(("loot-window: %d checks passed"):format(checks))

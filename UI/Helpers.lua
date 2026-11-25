@@ -1157,6 +1157,33 @@ end
 -- Create a tab: mono `label` text at rest, paper when hovered, and the active
 -- one gold with a 2px gold rule under it; `sub` makes it a sub-tab, with a
 -- 1px rule. No box around it.
+-- A screen's own sub-tab bar that a room may hide (specs/salao, #445): opened from a room entry that names one of
+-- its sub-tabs, the room's row is the only row of tabs. `frames()` returns the sub-panels (frames, or records
+-- with a `panel`); `under` is where each starts under the bar, { x, y } from its bottom-left. Hidden, they
+-- start where the bar's top-left is. host.PlaceUnderSubBar(frame) anchors one by the same rule.
+function Helpers:CollapsibleSubBar(host, bar, frames, under)
+    local shown = true
+    local ux, uy = under and under[1] or 0, under and under[2] or 0
+    local function place(f)
+        if shown then
+            f:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", ux, uy)
+        else
+            f:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+        end
+    end
+    host.PlaceUnderSubBar = place
+    function host.SetSubBarShown(v)
+        v = v and true or false
+        if v == shown then return end
+        shown = v
+        bar:SetShown(v)
+        for _, p in pairs(frames()) do
+            local f = (type(p) == "table" and rawget(p, "panel")) or p
+            if f then place(f) end
+        end
+    end
+end
+
 function Helpers:CreateTab(parent, text, width, sub)
     local tab = CreateFrame("Button", nil, parent, "BackdropTemplate")
     tab:SetSize(width or 100, 28)

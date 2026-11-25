@@ -125,3 +125,52 @@ the wide band.
   to get right. `tools/window-shell.lua` covers it.
 - **Third-party tabs.** They fall back to the Salão, so they stay reachable.
 - **Flat style users.** They lose their style. The maintainer decided this.
+
+---
+
+# Phase 2: one row only (#447)
+
+After phase 1, several screens still drew their own row of sub-tabs under the room's row: Raids, Loot,
+Bank, Leadership, Recruitment and Settings. Phase 2 turns those sub-tabs into the rooms' own entries, so a
+screen never shows two rows of tabs.
+
+## Entries
+
+| Room | Entries |
+|---|---|
+| Raids | Calendar, Sessions, Raiders, Cores (officers), Audit, Raid Tools, Groups, Core Sign-up |
+| Loot | Rule, Accounts (while the Points module is there), Lists (while Wishlist or SoftRes is), History |
+| Workshop | Crafts, Bank, Tabs, Ledger, Needs, Requests, Cleanup (while GuildBankCleanup is there) |
+| Officers' Room | a side bar in four groups (below) |
+| Settings | Profile, Interface, Chat and alerts, Modules, Guild rules, Data and support, Web |
+
+The Officers' Room groups:
+- **Recruitment:** Recruiting, Scanner, Trials, Engagement;
+- **Members:** Suggestions, Ranks, Inactivity, Bulk actions, Presets, Without GuildOS, Notes and marks;
+- **Moderation:** Chat alerts, Alert rules, Ban List, Audit Log;
+- **Guild:** MOTD / Info.
+
+## Rules
+
+- **A screen's own bar hides.** Each of those screens lets a room hide its own sub-tab bar
+  (`UI:CollapsibleSubBar` in UI/Helpers.lua, which writes `SetSubBarShown`). Its panels then start where
+  the bar was.
+  - Groups and the Alliance keep their own row in this phase. There the sub-tabs filter the content
+    (activities; bulletin and chat), not separate screens.
+- **Core Sign-up is an action, not a screen.** It was a button on the Raids bar. It opens the sign-up
+  window and leaves the screen on show as it was.
+- **Three new kinds of entry.**
+  - `officer`: an officers' entry in a room everybody has. A member's Raids has no Cores.
+  - `cond`: the entry needs its module to be there.
+  - `group`: the entry's heading in a side room.
+- **The Officers' Room draws a side bar.** It has sixteen entries, so it draws a column in groups left of
+  the content instead of the row. Narrowed into the watch band, it falls back to the folding row.
+- **A feature opened by name alone** lands on the sub-tab it opened on before (`UI.ROOM_PREFERRED`):
+  - Raids: Sessions;
+  - Loot: Rule;
+  - Bank: Inventory;
+  - Leadership: Ranks;
+  - Recruitment: Recruiting;
+  - Settings: Profile;
+  - Guild: Achievements on WoW: Forever, else the calendar.
+- **An action is never where a screen opens.** `UI:RoomOf` skips `run` entries.

@@ -4055,3 +4055,6 @@ L["The raids are open"] = "Las bandas están abiertas"
 L["Raids open in under a day"] = "Las bandas abren en menos de un día"
 L["Raids open in 1 day"] = "Las bandas abren en 1 día"
 L["Raids open in %d days"] = "Las bandas abren en %d días"
+
+-- UI/Rooms.lua: the Officers' Room side bar (#447); translations to review
+L["Moderation"] = "Moderación"

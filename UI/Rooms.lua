@@ -11,6 +11,9 @@
 local UI = GuildOS.UI
 local L  = GuildOS.L
 
+-- `officer`: an officers' entry in a room everybody has (Raids' Cores). `cond`: a test of its own (a sub-tab
+-- whose module is absent). `run`: an action instead of a screen (Core Sign-up). `group`: its heading in a
+-- side bar (`side` rooms).
 -- `feature`: the feature whose panel the entry opens. `sub`: the panel's sub-tab, opened with its own
 -- sub-tab bar hidden where the panel allows it (a hub split over rooms). `needs`: another feature the
 -- entry also needs (the Guild hub's Achievements and Journal are WoW: Forever's). `members`: shown only
@@ -28,39 +31,81 @@ UI.ROOMS = {
         { id = "recruit",  label = L["Recruitment"],  feature = "recruitment", members = true },
     } },
     { id = "raids", label = L["Raids"], entries = {
-        { id = "calendar", label = L["Calendar"], feature = "guild", sub = "calendar" },
-        { id = "raids",    label = L["Raids"],    feature = "raids" },
-        { id = "groups",   label = L["Groups"],   feature = "groups" },
+        { id = "calendar",  label = L["Calendar"],    feature = "guild", sub = "calendar" },
+        { id = "sessions",  label = L["Sessions"],    feature = "raids", sub = "sessions" },
+        { id = "raiders",   label = L["Raiders"],     feature = "raids", sub = "raiders" },
+        { id = "cores",     label = L["Cores"],       feature = "raids", sub = "cores", officer = true },
+        { id = "audit",     label = L["Audit"],       feature = "raids", sub = "audit" },
+        { id = "raidtools", label = L["Raid Tools"],  feature = "raids", sub = "raidtools" },
+        { id = "groups",    label = L["Groups"],      feature = "groups" },
+        -- Not a screen: the sign-up window, which the Raids bar's button opened before the rooms.
+        { id = "signup",    label = L["Core Sign-up"], feature = "raids",
+          run = function() if GuildOS.ShowCoreSignupFrame then GuildOS:ShowCoreSignupFrame() end end },
     } },
     { id = "members", label = L["Members"], entries = {
         { id = "roster", label = L["Members"], feature = "roster" },
     } },
     { id = "loot", label = L["Loot"], entries = {
-        { id = "loot", label = L["Loot"], feature = "loot" },
+        { id = "rule",     label = L["Rule"],     feature = "loot", sub = "rule" },
+        { id = "accounts", label = L["Accounts"], feature = "loot", sub = "accounts",
+          cond = function() return GuildOS.Points ~= nil end },
+        { id = "lists",    label = L["Lists"],    feature = "loot", sub = "lists",
+          cond = function() return GuildOS.Wishlist ~= nil or GuildOS.SoftRes ~= nil end },
+        { id = "history",  label = L["History"],  feature = "loot", sub = "history" },
     } },
     { id = "workshop", label = L["Workshop"], entries = {
-        { id = "crafts", label = L["Crafts"],     feature = "recipes" },
-        { id = "bank",   label = L["Guild bank"], feature = "bank" },
+        { id = "crafts",   label = L["Crafts"],   feature = "recipes" },
+        { id = "bank",     label = L["Bank"],     feature = "bank", sub = "inventory" },
+        { id = "tabs",     label = L["Tabs"],     feature = "bank", sub = "tabs" },
+        { id = "ledger",   label = L["Ledger"],   feature = "bank", sub = "ledger" },
+        { id = "needs",    label = L["Needs"],    feature = "bank", sub = "needs" },
+        { id = "requests", label = L["Requests"], feature = "bank", sub = "requests" },
+        { id = "cleanup",  label = L["Cleanup"],  feature = "bank", sub = "cleanup",
+          cond = function() return GuildOS.GuildBankCleanup ~= nil end },
     } },
     { id = "chronicle", label = L["Chronicle"], entries = {
         { id = "achievements", label = L["Achievements"], feature = "guild", sub = "achievements", needs = "achievements" },
         { id = "journal",      label = L["Journal"],      feature = "guild", sub = "journal", needs = "journal" },
         { id = "activity",     label = L["Activity"],     feature = "guild", sub = "activity" },
     } },
-    { id = "officers", label = L["Officers' Room"], officer = true, entries = {
-        { id = "leadership",  label = L["Leadership"],  feature = "management" },
-        { id = "recruitment", label = L["Recruitment"], feature = "recruitment" },
+    -- Sixteen entries: a side bar in groups instead of the row (`side`, UI/Window.lua).
+    { id = "officers", label = L["Officers' Room"], officer = true, side = true, entries = {
+        { id = "recruiting", label = L["Recruiting"],       feature = "recruitment", sub = "recruiting", group = L["Recruitment"] },
+        { id = "scanner",    label = L["Scanner"],          feature = "recruitment", sub = "scanner",    group = L["Recruitment"] },
+        { id = "trials",     label = L["Trials"],           feature = "recruitment", sub = "trials",     group = L["Recruitment"],
+          needs = "trials" },
+        { id = "engage",     label = L["Engagement"],       feature = "management",  sub = "engage",     group = L["Recruitment"] },
+        { id = "suggest",    label = L["Suggestions"],      feature = "management",  sub = "suggest",    group = L["Members"] },
+        { id = "ranks",      label = L["Ranks"],            feature = "management",  sub = "ranks",      group = L["Members"] },
+        { id = "inactive",   label = L["Inactivity"],       feature = "management",  sub = "inactive",   group = L["Members"] },
+        { id = "bulk",       label = L["Bulk actions"],     feature = "management",  sub = "bulk",       group = L["Members"] },
+        { id = "presets",    label = L["Presets"],          feature = "management",  sub = "presets",    group = L["Members"] },
+        { id = "remind",     label = L["Without GuildOS"],  feature = "management",  sub = "remind",     group = L["Members"] },
+        { id = "marks",      label = L["Notes and marks"],  feature = "management",  sub = "marks",      group = L["Members"] },
+        { id = "alerts",     label = L["Chat alerts"],      feature = "management",  sub = "alerts",     group = L["Moderation"] },
+        { id = "alertrules", label = L["Alert rules"],      feature = "management",  sub = "alertrules", group = L["Moderation"] },
+        { id = "ban",        label = L["Ban List"],         feature = "management",  sub = "ban",        group = L["Moderation"] },
+        { id = "log",        label = L["Audit Log"],        feature = "management",  sub = "log",        group = L["Moderation"] },
+        { id = "motd",       label = L["MOTD / Info"],      feature = "management",  sub = "motd",       group = L["Guild"] },
     } },
-    -- The gear in the title bar: never drawn among the rooms.
+    -- The Settings button in the title bar: never drawn among the rooms.
     { id = "settings", label = L["Settings"], gear = true, entries = {
-        { id = "settings", label = L["Settings"], feature = "settings" },
-        { id = "web",      label = L["Web"],      feature = "web" },
+        { id = "profile",   label = L["Profile"],          feature = "settings", sub = "profile" },
+        { id = "interface", label = L["Interface"],        feature = "settings", sub = "interface" },
+        { id = "chat",      label = L["Chat and alerts"],  feature = "settings", sub = "chat" },
+        { id = "modules",   label = L["Modules"],          feature = "settings", sub = "modules" },
+        { id = "rules",     label = L["Guild rules"],      feature = "settings", sub = "rules" },
+        { id = "data",      label = L["Data and support"], feature = "settings", sub = "data" },
+        { id = "web",       label = L["Web"],              feature = "web" },
     } },
 }
 
 -- A split hub opened by its name alone (/gos open guild): the sub-tabs it opened on before the rooms, in
 -- order, the first that may open (Achievements on WoW: Forever, else the calendar; #373).
-UI.ROOM_PREFERRED = { guild = { "achievements", "calendar" } }
+UI.ROOM_PREFERRED = {
+    guild = { "achievements", "calendar" }, raids = { "sessions" }, loot = { "rule" }, bank = { "inventory" },
+    management = { "ranks" }, recruitment = { "recruiting" }, settings = { "profile" },
+}
 
 -- Where a tab another addon registers lands when no room names it: the Salão, so it stays reachable.
 UI.ROOM_FALLBACK = "salao"
@@ -102,6 +147,8 @@ function UI:EntryAllowed(e)
     -- was built has none): an entry with no panel would be a button that does nothing.
     if self.HasPanel and not self:HasPanel(e.feature) then return false end
     if e.members and officer() then return false end
+    if e.officer and not officer() then return false end
+    if e.cond and not e.cond() then return false end
     if e.needs and not self:IsFeatureAllowed(self:GetFeature(e.needs)) then return false end
     return self:IsFeatureAllowed(self:GetFeature(e.feature))
 end
@@ -147,26 +194,29 @@ end
 -- skipped for a non-officer, so a deep link never lands there. Nil when no room holds it.
 function UI:RoomOf(id, sub)
     if type(id) ~= "string" then return nil end
-    local exact, plain, any
+    local found = {}
     for _, r in ipairs(self.ROOMS) do
         if not (r.officer and not officer()) then
             for _, e in ipairs(self:RoomEntries(r.id, true)) do
-                if e.feature == id and not (e.members and officer()) then
-                    if sub and e.sub == sub then exact = exact or { r, e } end
-                    if not e.sub then plain = plain or { r, e } end
-                    any = any or { r, e }
+                -- An action (Core Sign-up) is never where a screen opens.
+                if e.feature == id and not e.run and not (e.members and officer()) then
+                    found[#found + 1] = { r, e }
                 end
             end
         end
     end
+    local function first(test)
+        for _, hit in ipairs(found) do if test(hit[2]) then return hit end end
+    end
+    local hit = (sub and first(function(e) return e.sub == sub end)) or first(function(e) return not e.sub end)
     -- A hub split over rooms, opened by name alone, lands where the hub itself opened before the rooms.
-    if not (exact or plain) and self.ROOM_PREFERRED[id] then
+    if not hit and self.ROOM_PREFERRED[id] then
         for _, want in ipairs(self.ROOM_PREFERRED[id]) do
-            local r, e = self:RoomOf(id, want)
-            if e and e.sub == want and self:EntryAllowed(e) then return r, e end
+            hit = first(function(e) return e.sub == want and self:EntryAllowed(e) end)
+            if hit then break end
         end
     end
-    local hit = exact or plain or any
+    hit = hit or found[1]
     if not hit then return nil end
     return hit[1], hit[2]
 end

@@ -3934,3 +3934,6 @@ L["The raids are open"] = "团队副本已开放"
 L["Raids open in under a day"] = "团队副本将在一天内开放"
 L["Raids open in 1 day"] = "团队副本将在 1 天后开放"
 L["Raids open in %d days"] = "团队副本将在 %d 天后开放"
+
+-- UI/Rooms.lua: the Officers' Room side bar (#447); translations to review
+L["Moderation"] = "管理"

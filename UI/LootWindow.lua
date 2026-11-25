@@ -1329,6 +1329,7 @@ function GuildOS:CreateLootWindow(container, _mainFrame)
     container:SetScript("OnShow", function() if not active then select("rule") end end)
     select("rule")
     container.SelectSub = select
+    UI:CollapsibleSubBar(container, subBar, function() return panels end)   -- Loot's entries (#445)
     container.ActiveSub = function() return active end
     container.panels = panels
 end

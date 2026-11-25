@@ -542,6 +542,12 @@ function GuildOS:CreateRaidHubPanel(container, mainFrame)
     -- Exposed so the hub and /gos can deep-link a sub-tab (same contract as
     -- CommunityPanel / AlliancePanel).
     container.SelectSub = SetSubTab
+    -- Raids' entries open these sub-tabs themselves (#445): the bar goes, Core Sign-up is the room's entry.
+    UI:CollapsibleSubBar(container, subBar, function()
+        local t = {}
+        for _, st in ipairs(SUBTABS) do t[#t + 1] = st.panel end
+        return t
+    end)
 end
 
 ----------------------------------------------------------------------
@@ -2933,6 +2939,8 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         end
         if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
+    -- The Officers' Room lists these sub-tabs itself (#445): its side bar is the only one.
+    UI:CollapsibleSubBar(root, bar, function() return { recruitingSub, scannerSub, trialsSub } end)
     root.SelectSub = selectSub   -- deep links: the Now tab, /gos open recruitment <sub>, /gos open trials
 
     for _, t in ipairs(RECRUIT_SUBTABS) do
