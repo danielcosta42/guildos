@@ -3888,3 +3888,8 @@ L["Frimm"] = "Frimm"
 L["PARTICIPANTS"] = "參與者"
 L["Nobody sees the pairs, officers included. The rules and the draw are on the site: %s"] = "沒有人能看到配對，幹部也不行。規則和抽籤請見網站：%s"
 L["Winter Veil"] = "Winter Veil"
+
+-- UI/Snow.lua, UI/SettingsPanel.lua (guildos-web#662)
+L["Coming soon: Winter Veil Secret Santa. Everyone in the guild gets a collectible snow globe: five scenes, four rarities, and a little note from whoever drew you. The Chimney only fills if everyone wraps. Presents open on Dec 25. — Frimm (he swears he hasn't lost a single tag yet)"] = "冬幕節神秘禮物即將開啟。公會裡每個人都會收到一個收藏版雪花球：五種場景、四種稀有度，還有抽到你的人寫的小紙條。只有所有人都包好禮物，煙囪才會裝滿。禮物將在12月25日開啟。——弗里姆（他發誓還沒弄丟過任何一張標籤）"
+L["Winter Veil snow"] = "冬幕節飄雪"
+L["Off: no snow falls on the Guild OS window."] = "關閉：Guild OS 視窗不再飄雪。"

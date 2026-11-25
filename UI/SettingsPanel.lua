@@ -466,6 +466,12 @@ PAGES.interface = function(F)
     F:Check(L["Guild button opens Guild OS"], L["Off: the game's guild button opens the game's own guild window."],
         function() return GuildOS:IsGuildButtonHijacked() end,
         function(checked) GuildOS:SetSetting("hijackGuildButton", checked) end)
+    -- Winter Veil's snow over the window, in December (guildos-web#662).
+    if GuildOS.Snow and GuildOS.Snow:Phase() ~= "off" then
+        F:Check(L["Winter Veil snow"], L["Off: no snow falls on the Guild OS window."],
+            function() return GuildOS.Snow:Enabled() end,
+            function(checked) GuildOS.Snow:SetEnabled(checked) end)
+    end
     -- Alt-click an item to open its recipe in the Crafts tab (#415).
     if GuildOS.CraftOrders then
         F:Check(L["Alt-click an item to open its recipe in Crafts"],
