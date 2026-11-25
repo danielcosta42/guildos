@@ -3890,6 +3890,6 @@ L["Nobody sees the pairs, officers included. The rules and the draw are on the s
 L["Winter Veil"] = "Winter Veil"
 
 -- UI/Snow.lua, UI/SettingsPanel.lua (guildos-web#662)
-L["Coming soon: Winter Veil Secret Santa. Everyone in the guild gets a collectible snow globe: five scenes, four rarities, and a little note from whoever drew you. The Chimney only fills if everyone wraps. Presents open on Dec 25. — Frimm (he swears he hasn't lost a single tag yet)"] = "冬幕节神秘礼物即将开启。公会里每个人都会收到一个收藏版雪花球：五种场景、四种稀有度，还有抽到你的人写的小纸条。只有所有人都包好礼物，烟囱才会装满。礼物将在12月25日开启。——弗里姆（他发誓还没弄丢过一张标签）"
+L["Someone is wrapping something for the guild. Keep an eye out. — Frimm"] = "有人正在为公会包装着什么。敬请期待。——Frimm"
 L["Winter Veil snow"] = "冬幕节飘雪"
 L["Off: no snow falls on the Guild OS window."] = "关闭：Guild OS 窗口不再飘雪。"
