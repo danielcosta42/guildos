@@ -73,6 +73,13 @@ UI:RegisterFeature({
     build = function(c, win) GuildOS:CreateGuildBankPanel(c, win) end,
 })
 
+-- Winter Veil's Secret Santa (issue #437, the site's specs/119): only while the site sends this year's event.
+UI:RegisterFeature({
+    id = "winterveil", label = L["Winter Veil"], order = 53,
+    condition = function() return GuildOS.WinterVeil ~= nil and GuildOS.WinterVeil:Event() ~= nil end,
+    build = function(c, win) GuildOS:CreateWinterVeilPanel(c, win) end,
+})
+
 -- The guild's own group finder (issue #341): what is being formed, who is looking, and the game's
 -- activities as tiles. /gos avail opens it.
 UI:RegisterFeature({
