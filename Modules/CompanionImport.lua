@@ -45,6 +45,7 @@ local WIRE_PREFIX = "GOSROST1:"
 local CORES_PREFIX = "GOSCORE1:"
 local GUILD_PREFIX = "GOSGILD1:"
 local RECRUIT_PREFIX = "GOSRECR1:"
+local VEIL_PREFIX = "GOSVEIL1:"
 local RECRUIT_MAX_AGE = 3 * 86400   -- the list is public and asked for every 15 minutes: three days of silence is a companion that stopped
 local BLOCK_MAX_AGE = 7 * 86400   -- the feed is a week long: an older block is a companion that stopped
 
@@ -1025,6 +1026,175 @@ function Import:SiteEvents()
                 }
             end
         end
+    end
+    return out
+end
+
+-- Winter Veil's snow globe (the site's specs/119, guildos#437) ------------------------------------------------------
+-- Everything here is off the network: each number whole and bounded, each key one line with no `|`, each list capped.
+-- The game only shows what the site says and tells it what the player asked; nothing here decides a rarity.
+Import.VEIL_LIST_MAX = 1000
+Import.VEIL_NOTE_MAX = 80
+local VEIL_TIME = 4102444800
+Import.VEIL_SCENES = { "tree", "cabin", "snowman", "fire", "mountain" }
+Import.VEIL_RARITIES = { "common", "rare", "epic", "legendary" }
+local VEIL_SCENE, VEIL_RARITY = {}, {}
+for _, s in ipairs(Import.VEIL_SCENES) do VEIL_SCENE[s] = true end
+for _, r in ipairs(Import.VEIL_RARITIES) do VEIL_RARITY[r] = true end
+
+local function veilKey(k)
+    if type(k) ~= "string" or k == "" or #k > 96 or k:find("[|\r\n]") then return nil end
+    return GuildOS:LocalMemberKey(k)
+end
+Import.VeilKey = veilKey
+
+-- A note off the network: at most 80 characters, and nothing in it opens a colour, a link or a texture.
+local function utf8len(s)
+    local _, n = s:gsub("[^\128-\191]", "")
+    return n
+end
+local function veilNote(n)
+    if type(n) ~= "string" or #n > 4 * Import.VEIL_NOTE_MAX or utf8len(n) > Import.VEIL_NOTE_MAX then return nil end
+    return (Import.Inert(n):gsub("%c", " "))
+end
+Import.VeilNote = veilNote
+
+-- A globe somebody opened, as the owner sees it. Nil when it is not one.
+local function veilOrnament(o)
+    if type(o) ~= "table" or type(o.id) ~= "string" or o.id == "" or #o.id > 64 or o.id:find("[|\r\n]") then return nil end
+    if not (VEIL_SCENE[o.scene] and VEIL_RARITY[o.rarity]) then return nil end
+    local ok, year, at = pcall(function() return siteInt(o.year, 2020, 2100), siteInt(o.openedAt, 1, VEIL_TIME) end)
+    if not ok then return nil end
+    return { id = o.id, year = year, scene = o.scene, rarity = o.rarity, openedAt = at,
+             from = veilKey(o.from), host = o.host == true or nil, note = o.note ~= nil and veilNote(o.note) or nil }
+end
+
+-- An event as either block carries it (the guild's `veil`, or a person's `event`), held to its shape; nil when not one.
+--   { year, joinUntil, wrapUntil, openAt, reassignDays, drawn, salt?, chimney?, counts = { entrants, wrapped, pairs, opened },
+--     entrants? = { { key, wrapped } }, carriers? = { [giverKey] = carrierKey },
+--     reveal? = { { giver, to, scene, rarity, host? } } }
+local function veilEvent(v)
+    if type(v) ~= "table" then return nil end
+    local ok, out = pcall(function()
+        local c = type(v.counts) == "table" and v.counts or {}
+        return {
+            year = siteInt(v.year, 2020, 2100),
+            joinUntil = siteInt(v.joinUntil, 1, VEIL_TIME), wrapUntil = siteInt(v.wrapUntil, 1, VEIL_TIME), openAt = siteInt(v.openAt, 1, VEIL_TIME),
+            reassignDays = siteInt(v.reassignDays, 1, 7), drawn = v.drawn == true,
+            salt = type(v.salt) == "string" and v.salt:match("^%x+$") and #v.salt <= 64 and v.salt or nil,
+            chimney = v.chimney ~= nil and siteInt(v.chimney, 0, 100) or nil,
+            counts = { entrants = siteInt(c.entrants or 0, 0, 100000), wrapped = siteInt(c.wrapped or 0, 0, 100000),
+                       pairs = siteInt(c.pairs or 0, 0, 100000), opened = siteInt(c.opened or 0, 0, 100000) },
+        }
+    end)
+    if not ok then return nil end
+    if type(v.entrants) == "table" then
+        out.entrants = {}
+        for i = 1, math.min(#v.entrants, Import.VEIL_LIST_MAX) do
+            local r = v.entrants[i]
+            local key = type(r) == "table" and veilKey(r.key)
+            if key then out.entrants[#out.entrants + 1] = { key = key, wrapped = r.wrapped == true } end
+        end
+    end
+    -- Who carries the pair of each guildmate without the companion: a whispered pair is believed only from them.
+    if type(v.carriers) == "table" then
+        out.carriers = {}
+        for i = 1, math.min(#v.carriers, Import.VEIL_LIST_MAX) do
+            local r = v.carriers[i]
+            local giver, carrier = type(r) == "table" and veilKey(r.giver), type(r) == "table" and veilKey(r.carrier)
+            if giver and carrier then out.carriers[giver] = carrier end
+        end
+    end
+    -- The chain: only globes already opened, after `openAt`. No note. The host's globes name Frimm, not a character.
+    if type(v.reveal) == "table" then
+        out.reveal = {}
+        for i = 1, math.min(#v.reveal, Import.VEIL_LIST_MAX) do
+            local r = v.reveal[i]
+            if type(r) == "table" and VEIL_SCENE[r.scene] and VEIL_RARITY[r.rarity] then
+                local host = r.host == true
+                local giver = host and type(r.giver) == "string" and #r.giver <= 32 and Import.Inert(r.giver) or veilKey(r.giver)
+                local to = veilKey(r.to)
+                if giver and giver ~= "" and to then
+                    out.reveal[#out.reveal + 1] = { giver = giver, to = to, scene = r.scene, rarity = r.rarity, host = host or nil }
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- The guild's block first; before the site opens the event to everybody, a tester's own GOSVEIL1 carries it alone
+-- (the guild's block says nothing yet, so no guildmate's addon shows the tab).
+function Import:WinterVeil()
+    local block = self:GuildBlock()
+    local e = veilEvent(block and block.veil)
+    if e then return e end
+    local mine = self:VeilBlock()
+    return mine and mine.event or nil
+end
+
+-- The inbox's GOSVEIL1: this person's own Winter Veil, written by their companion (the site's specs/119 §13) — whom
+-- each of their characters drew and the globe they wrapped for them, the one they received, the pairs they carry sealed
+-- for guildmates without the companion, and the account's Collection. Decoded once per string. Nil with none, a
+-- damaged one, one of another guild or older than a week.
+function Import:VeilBlock()
+    local inbox = _G.GuildOSInbox
+    if type(inbox) ~= "table" then return nil end
+    for _, v in ipairs(inbox) do
+        if type(v) == "string" and v:sub(1, #VEIL_PREFIX) == VEIL_PREFIX then
+            if self._veilRaw ~= v then
+                self._veilRaw, self._veilData = v, self:CleanVeil(unwrap(v:sub(#VEIL_PREFIX + 1), "GOSVEIL1"))
+            end
+            local data = self._veilData
+            local mine = GetGuildInfo("player")
+            if not data or not mine or mine == "" or not GuildOS.SameGuildName(data.guild, mine) then return nil end
+            if not (data.at and GetServerTime() - data.at <= BLOCK_MAX_AGE) then return nil end
+            return data
+        end
+    end
+    return nil
+end
+
+-- A decoded GOSVEIL1 (v2) held to its shape (pure, for the harness). Nil when it is not one.
+--   { guild, year, at, event?, mine = { { key, volunteer, gives = { { to, toClass?, scene?, note?, wrapped, extra?, hosted?,
+--     rarity? } }, got? = { ready, ornament? } } }, relay = { { giver, seal } }, collection = { ornament } }
+function Import:CleanVeil(data)
+    if type(data) ~= "table" or data.fmt ~= "GOSVEIL1" or data.v ~= 2 or type(data.guild) ~= "string" then return nil end
+    local ok, year, at = pcall(function() return siteInt(data.year, 2020, 2100), siteInt(data.at, 1, VEIL_TIME) end)
+    if not ok then return nil end
+    local out = { guild = data.guild, year = year, at = at, mine = {}, relay = {}, collection = {}, event = veilEvent(data.event) }
+    for i = 1, math.min(type(data.mine) == "table" and #data.mine or 0, 10) do
+        local m = data.mine[i]
+        local key = type(m) == "table" and veilKey(m.key)
+        if key then
+            local gives = {}
+            for j = 1, math.min(type(m.gives) == "table" and #m.gives or 0, 4) do
+                local g = m.gives[j]
+                local to = type(g) == "table" and veilKey(g.to)
+                if to then
+                    gives[#gives + 1] = {
+                        to = to, toClass = type(g.toClass) == "string" and GuildOS.ClassColors and GuildOS.ClassColors[g.toClass] and g.toClass or nil,
+                        scene = VEIL_SCENE[g.scene] and g.scene or nil, note = g.note ~= nil and veilNote(g.note) or nil,
+                        wrapped = g.wrapped == true, extra = g.extra == true or nil, hosted = g.hosted == true or nil,
+                        rarity = VEIL_RARITY[g.rarity] and g.rarity or nil,
+                    }
+                end
+            end
+            local got
+            if type(m.got) == "table" then got = { ready = m.got.ready == true, ornament = veilOrnament(m.got.ornament) } end
+            out.mine[#out.mine + 1] = { key = key, volunteer = m.volunteer == true, gives = gives, got = got }
+        end
+    end
+    for i = 1, math.min(type(data.relay) == "table" and #data.relay or 0, 200) do
+        local r = data.relay[i]
+        local giver = type(r) == "table" and veilKey(r.giver)
+        if giver and type(r.seal) == "string" and #r.seal <= 8192 and r.seal:match("^%x*$") and #r.seal % 2 == 0 then
+            out.relay[#out.relay + 1] = { giver = giver, seal = r.seal }
+        end
+    end
+    for i = 1, math.min(type(data.collection) == "table" and #data.collection or 0, 500) do
+        local o = veilOrnament(data.collection[i])
+        if o then out.collection[#out.collection + 1] = o end
     end
     return out
 end
