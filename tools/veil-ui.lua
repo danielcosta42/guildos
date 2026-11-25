@@ -359,7 +359,7 @@ check(math.abs(ch.hot.coords[3] - (1 - ch.hot.h / 512)) < 1e-6 and ch.hot.coords
 check(math.abs(ch.cold.coords[3] - 84 / 512) < 1e-6 and ch.cold.coords[4] == 1, "the cold drawing is the bottom 428 px of its file")
 check(ch.flip.running, "the fire's flipbook runs")
 check(ch.plateText.text == "62%", "the plate says the share")
-check(said("9 of 16 already wrapped") ~= nil, "the caption says how many wrapped")
+check(said("62% of the pairs wrapped or played the event") ~= nil, "the caption says the share wrapped or played")
 check(said("+6% quests") ~= nil, "and the quests' slice, apart")
 check(said("ODDS AT THE OPENING") and ch.labels[1].text == "60%" and ch.labels[4].text == "3%", "the odds at the opening are the base ones")
 local embersOn = 0
@@ -490,7 +490,7 @@ check(WV:Seen("open:g1"), "and, played to the end, it is seen")
 check(soundsOf(Fx.SOUND.step) == 4, "a legendary climbs four steps: wood, silver, gold, crystal: " .. soundsOf(Fx.SOUND.step))
 check(soundsOf(Fx.SOUND.big) == 1, "with the big reveal's sound")
 check(said("LEGENDARY") and said("From Kaelthos") and said("Que a sua lareira nunca apague"), "the result: the rarity, who gave it, the note")
-check(said("caprice note: +1 level") ~= nil, "the caprice tag, for caprice = true")
+check(said("caprice note: drawn twice") ~= nil, "the caprice tag, for caprice = true")
 check(said("Chimney full: double odds") ~= nil, "and the full Chimney's")
 check(maxMoving <= Fx.BUDGET, "the legendary peak stays within the ceiling: " .. maxMoving)
 check(maxUpdates <= 3, "never more than the snow, the fire and a transition's OnUpdate: " .. maxUpdates)
@@ -506,7 +506,7 @@ local steps = soundsOf(Fx.SOUND.step)
 panel.Draw()
 advance(6)
 check(soundsOf(Fx.SOUND.step) == steps + 1 and WV:Seen("open:g2"), "a common stops at the first step")
-check(said("caprice note: +1 level") == nil, "and shows no caprice tag")
+check(said("caprice note: drawn twice") == nil, "and shows no caprice tag")
 local plain = { id = "g3", year = 2025, scene = "tree", rarity = "rare", openedAt = NOW - 5 }
 inbox(veil(OPEN), personal({ { to = "Thalindra-Nightslayer" } }, { ready = true, ornament = plain }))
 check(WV:Got().ornament.caprice == nil, "absent caprice is false")
@@ -519,6 +519,91 @@ shakes = soundsOf(Fx.SOUND.shake)
 panel.Draw()
 check(said("Epic") and WV:Seen("open:g4") and soundsOf(Fx.SOUND.shake) == shakes and playingGroups() == 0, "option off: the result at once, no ceremony, nothing moving")
 Snow:SetEnabled(true)
+
+-- Frimm's globe always counts as a caprice note.
+local HOST = { id = "g5", year = 2025, scene = "snowman", rarity = "rare", openedAt = NOW - 5, host = true }
+inbox(veil(OPEN), personal({ { to = "Thalindra-Nightslayer" } }, { ready = true, ornament = HOST }))
+Snow:SetEnabled(false); panel.Draw(); Snow:SetEnabled(true)
+check(said("caprice note: drawn twice") ~= nil and said("Frimm, the host") ~= nil, "Frimm's globe shows the caprice tag")
+
+-- The extras of the site's block, when it sends them: clues on the box, my guess, their thanks, badges.
+inbox(veil(OPEN), personal({ { to = "Thalindra-Nightslayer", rarity = "epic", thanks = "Amei o globo!" } },
+  { ready = true, clues = { "Toca flauta", "Mora em |cffff0000Lua Cheia|r", "uma terceira" }, guess = "Kaelthos-Nightslayer" }))
+local got = WV:Got()
+check(#got.clues == 2 and not got.clues[2]:find("|", 1, true), "two clues at most, made inert")
+GuildOS.db.winterVeil.opens = {}
+panel.Draw()
+check(said("CLUES FROM WHOEVER WRAPPED IT") and said("Toca flauta"), "the clues show on the box")
+check(said("Your guess: Kaelthos") and said('Thalindra thanked you: "Amei o globo!"'), "my guess and their thanks show")
+inbox(veil(OPEN), personal({ { to = "Thalindra-Nightslayer" } }, { ready = true }))
+panel.Draw()
+check(said("CLUES FROM") == nil and said("Your guess") == nil and said("thanked you") == nil, "absent, nothing of them shows")
+local B = { id = "g6", year = 2025, scene = "tree", rarity = "common", openedAt = NOW - 5, badges = { "first-of-guild", "bad|badge" } }
+inbox(veil(OPEN), personal({ { to = "Thalindra-Nightslayer" } }, { ready = true, ornament = B }))
+check(#WV:Got().ornament.badges == 1, "a badge that is not a plain word is dropped")
+
+-- ── The caprice hint: 40 characters and 6 different letters ───────────
+inbox(veil(), personal({ { to = "Thalindra-Nightslayer", wrapped = false } }))
+GuildOS.db.winterVeil.wraps = {}
+local tabMineFirst
+for _, fs in ipairs(texts) do if fs.text == "My secret friend" then tabMineFirst = fs.parent end end
+tabMineFirst.scripts.OnClick(tabMineFirst)
+panel.Draw()
+local box
+for _, fr in ipairs(frames) do if fr.kind == "Frame" and fr.edit == nil and fr.parent and rawget(fr.parent, "edit") == fr then box = fr end end
+check(box ~= nil, "the note box is there")
+box:SetText(string.rep("ab ", 14))
+check(said("needs 6 different letters") ~= nil, "40 characters of two letters is not a caprice note")
+box:SetText("Que o seu totem nunca caia na hora errada!")
+check(said("drawn twice and the better one stays") ~= nil, "40 characters and enough letters is one")
+
+-- ── Two pairs: the form follows the pair ──────────────────────────────
+GuildOS.db.winterVeil.wraps = {}
+inbox(veil(), personal({ { to = "Thalindra-Nightslayer", wrapped = true, scene = "fire", note = "Para a maga" },
+                         { to = "Gorbash-Nightslayer", extra = true, wrapped = true, scene = "mountain", note = "Para o urso" } }))
+local wrapAgain
+for _, fs in ipairs(texts) do if fs.text == "Wrap again" and fs:IsVisible() then wrapAgain = fs.parent end end
+panel.Draw()
+for _, fs in ipairs(texts) do if fs.text == "Wrap again" and fs:IsVisible() then wrapAgain = fs.parent end end
+wrapAgain.scripts.OnClick(wrapAgain)
+check(box:GetText() == "Para a maga", "the form opens on the first pair's note")
+local rowGorbash
+for _, fs in ipairs(texts) do if fs.text == "Gorbash" and fs:IsVisible() then rowGorbash = fs.parent end end
+rowGorbash.scripts.OnClick(rowGorbash)
+check(box:GetText() == "Para o urso", "picking the other pair brings its note")
+check(panel.chimney ~= nil and said("Wrap again") ~= nil, "and its button")
+
+-- ── A wrap the site has not confirmed yet ─────────────────────────────
+local tabChain
+for _, fs in ipairs(texts) do if fs.text == "The guild's chain" then tabChain = fs.parent end end
+tabChain.scripts.OnClick(tabChain); tabMineFirst.scripts.OnClick(tabMineFirst)
+GuildOS.db.winterVeil.wraps = { ["Thalindra-Nightslayer"] = { scene = "tree", note = "", at = NOW } }
+inbox(veil(), personal({ { to = "Thalindra-Nightslayer", wrapped = false } }))
+panel.Draw()
+check(said("Waiting to sync") ~= nil, "a wrap made here and not on the site yet says it waits to sync")
+inbox(veil({ wrapUntil = NOW + 3600, openAt = NOW + 86400 }), personal({ { to = "Thalindra-Nightslayer", wrapped = false } }))
+panel.Draw()
+check(said("closes in less than a day") ~= nil, "near the deadline it says so louder")
+inbox(veil(), personal({ { to = "Thalindra-Nightslayer", wrapped = true, scene = "tree" } }))
+panel.Draw()
+check(said("Waiting to sync") == nil and said("Double ribbon") ~= nil, "once the site has it, Frimm is at ease")
+
+-- ── The chain and the officers' table scroll ──────────────────────────
+local many = {}
+for i = 1, 60 do many[i] = { key = "P" .. i .. "-Nightslayer", wrapped = i % 2 == 0 } end
+inbox(veil({ entrants = many }), personal({ { to = "Thalindra-Nightslayer" } }))
+GuildOS.IsOfficer = function() return true end
+local tabBoard
+for _, fs in ipairs(texts) do if fs.text == "Organize" then tabBoard = fs.parent end end
+panel.Draw()
+tabBoard.scripts.OnClick(tabBoard)
+check(said("P1") ~= nil and said("of 60") ~= nil, "sixty entrants: the first rows and where they are")
+local list
+for _, fs in ipairs(texts) do if fs.text == "P1" and fs:IsVisible() then list = fs.parent.parent end end
+for _ = 1, 30 do list.scripts.OnMouseWheel(list, -1) end
+check(said("P60") ~= nil and said("P1") == nil, "the wheel reaches the last one")
+GuildOS.IsOfficer = function() return false end
+tabMineFirst.scripts.OnClick(tabMineFirst)
 
 -- ── 9. The Collection as a shelf ──────────────────────────────────────
 check(select(1, Shelf.Window(0, 0)) == 1 and select(2, Shelf.Window(0, 0)) == 6, "an empty shelf shows two rows")

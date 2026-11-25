@@ -95,7 +95,8 @@ The approved prototype is `ui/prototipo-addon.html` (with `ui/addon.md`, copies 
 Final decisions: the wrapped globe is a **gift box**; opening is **one click** (the click asks, Frimm "goes to fetch it",
 and the whole ceremony plays once when the opened globe reaches the client through the companion and the tab is in view);
 the Chimney shows **out before the draw** ("lights at the draw") and frozen after the deadline; the game's quests are a
-blue slice; a `caprice = true` on the opened globe (new, optional; absent = false) shows "caprice note: +1 level"; Frimm
+blue slice; a `caprice = true` on the opened globe (new, optional; absent = false; Frimm's always) shows "caprice note:
+drawn twice" (the rarity is the better of two draws; a caprice note is 40+ characters and 6 different letters); Frimm
 is a portrait with three faces; the `snow` option is shown as "Winter Veil animations" (snow, embers, rays), same key.
 
 - `UI/VeilFx.lua`: the art's paths and the `veil-fx` atlas's layout (the one place they live), the rarity colours, the
@@ -116,3 +117,8 @@ is a portrait with three faces; the `snow` option is shown as "Winter Veil anima
 - Tests: `tools/veil-ui.lua` (frames that know when they are visible, AnimationGroups in simulated time).
 - Only the game can tell: the sound ids, the Scale animation's API on 2.5.x (`SetScaleFrom`, with fallbacks), the look
   of ADD over the panel, the fire's size against the drawing, and the frame rate with everything on.
+- Review (orchestrator, same day): no relay is drawn; the chain and the officers' table page by the wheel, the shelf by
+  rows; a wrap made here that the site has not confirmed says "waiting to sync", louder within a day of the deadline;
+  with two pairs the form follows the pair picked; only the teaser's parcel and cap take the mouse. Optional extras of
+  `GOSVEIL1`, hidden when absent: `got.clues` (up to two, on the box), `got.guess` (shown only), `gives[].thanks`,
+  `collection[].badges`.

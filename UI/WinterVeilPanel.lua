@@ -61,6 +61,23 @@ local function fromOf(o)
     return o.host and L["Frimm, the host"] or (o.from and nameOf(o.from) or "?")
 end
 
+-- A caprice note (the site's §7, decided 2026-11-25): 40 characters or more and 6 different letters; the rarity is
+-- then drawn twice and the better one stays. The site decides; this is the hint. WinterVeil.Caprice when it has it.
+local CAPRICE_LETTERS = 6
+local function letters(note)
+    local seen, n = {}, 0
+    for ch in note:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+        local c = #ch == 1 and ch:lower() or ch
+        if (#ch > 1 or c:find("%a")) and not seen[c] then seen[c] = true; n = n + 1 end
+    end
+    return n
+end
+local function isCaprice(note)
+    local WV = GuildOS.WinterVeil
+    if type(WV.Caprice) == "function" then return WV.Caprice(note) == true end
+    return WV.CharCount(note) >= WV.CAPRICE_MIN and letters(note) >= CAPRICE_LETTERS
+end
+
 local T = { sceneName = sceneName, rarityName = rarityName, baseName = baseName, nameOf = nameOf, dayOf = dayOf, fromOf = fromOf }
 
 local function mono(fs, size, role)
@@ -174,7 +191,8 @@ function GuildOS:CreateWinterVeilPanel(container)
     panel:SetClipsChildren(true)
     local scope = Fx.Scope(panel)
     local view = "mine"
-    local scene, pickedTo, seenScene, editing = "tree", nil, false, false
+    local scene, pickedTo, formFor, editing = "tree", nil, nil, false
+    local listTop = 0 -- the chain's and the officers' list: the first row shown
     local wrapping = false -- the wrap animation is running
 
     -- No event: one line, nothing else.
@@ -206,7 +224,7 @@ function GuildOS:CreateWinterVeilPanel(container)
         local t = UI:CreateTab(main, text, 130, true)
         if anchor then t:SetPoint("LEFT", anchor, "RIGHT", 4, 0) else t:SetPoint("TOPLEFT", 0, -56) end
         t:SetScript("OnClick", function()
-            if view ~= id then Fx.Sound("tab") end
+            if view ~= id then Fx.Sound("tab"); listTop = 0; editing = false end
             view = id
             GuildOS:SafeCall(panel.Draw)
         end)
@@ -508,7 +526,7 @@ function GuildOS:CreateWinterVeilPanel(container)
     wdSay:Say(nil, L["Double ribbon. No shaking it before the time."])
     local rewrapBtn = UI:CreateButton(vWrapped, L["Wrap again"], 140, 28)
     rewrapBtn:SetPoint("TOPLEFT", 244, -284)
-    rewrapBtn:SetScript("OnClick", function() editing = true; GuildOS:SafeCall(panel.Draw) end)
+    rewrapBtn:SetScript("OnClick", function() editing = true; formFor = nil; GuildOS:SafeCall(panel.Draw) end)
     local wdClosed = UI:CreateText(vWrapped, "", 11, C.label.r, C.label.g, C.label.b)
     wdClosed:SetPoint("TOPLEFT", 244, -284)
     wdClosed:SetPoint("RIGHT", vWrapped, "RIGHT", -12, 0)
@@ -664,7 +682,9 @@ function GuildOS:CreateWinterVeilPanel(container)
     end
     local tagFull = tag(L["Chimney full: double odds"], true)
     tagFull:SetPoint("TOPLEFT")
-    local tagCaprice = tag(L["caprice note: +1 level"], false)
+    local tagCaprice = tag(L["caprice note: drawn twice"], false)
+    local rBadges = mono(UI:CreateText(info, "", 10, C.gold.r, C.gold.g, C.gold.b))
+    rBadges:SetPoint("TOPLEFT", tags, "BOTTOMLEFT", 0, -6)
     local keepBtn = UI:CreateButton(info, L["See it in the Collection"], 180, 28)
     UI:SetButtonVariant(keepBtn, "primary")
     keepBtn:SetScript("OnClick", function() view = "collection"; Fx.Sound("tab"); GuildOS:SafeCall(panel.Draw) end)
@@ -672,7 +692,13 @@ function GuildOS:CreateWinterVeilPanel(container)
     rMine:SetPoint("BOTTOMLEFT", 0, 0)
     rMine:SetPoint("RIGHT", info, "RIGHT", 0, 0)
     rMine:SetJustifyH("LEFT")
-    local resultParts = { rName, rSub, rFrom, rCard, tags, keepBtn }
+    local resultParts = { rName, rSub, rFrom, rCard, tags, keepBtn, rBadges }
+    -- What the giver left on the box (up to two clues) and whom I guessed on the site: hidden when the block has none.
+    local iClues = UI:CreateText(info, "", 12, C.text.r, C.text.g, C.text.b)
+    iClues:SetPoint("TOPLEFT", iCap, "BOTTOMLEFT", 0, -14)
+    iClues:SetPoint("RIGHT", info, "RIGHT", 0, 0)
+    iClues:SetJustifyH("LEFT")
+    iClues:Hide()
     local readyParts = { iHead, iSoft, openBtn, iCap }
     local waitParts = { iFace, iSay }
 
@@ -730,11 +756,15 @@ function GuildOS:CreateWinterVeilPanel(container)
         tags:SetPoint("TOPLEFT", hasNote and rCard or rFrom, "BOTTOMLEFT", 0, -14)
         local full = e and (tonumber(e.chimney) or 0) >= 100
         tagFull:SetShown(full)
-        tagCaprice:SetShown(o.caprice == true)
+        -- Frimm's globes always count as a caprice note (the site's §7).
+        local capr = o.caprice == true or o.host == true
+        tagCaprice:SetShown(capr)
         tagCaprice:ClearAllPoints()
         if full then tagCaprice:SetPoint("LEFT", tagFull, "RIGHT", 6, 0) else tagCaprice:SetPoint("TOPLEFT") end
         keepBtn:ClearAllPoints()
-        keepBtn:SetPoint("TOPLEFT", tags, "BOTTOMLEFT", 0, (full or o.caprice) and -12 or 6)
+        rBadges:SetShown(o.badges ~= nil)
+        rBadges:SetText(o.badges and string.format(L["Badges: %s"], table.concat(o.badges, " · ")) or "")
+        keepBtn:SetPoint("TOPLEFT", tags, "BOTTOMLEFT", 0, ((full or capr) and -12 or 6) - (o.badges and 18 or 0))
         if animate then
             for i, p in ipairs({ rFrom, rCard, tags, keepBtn, rMine }) do scope:Reveal(p, 0.25 + (i - 1) * 0.26) end
         end
@@ -858,6 +888,14 @@ function GuildOS:CreateWinterVeilPanel(container)
     chList:SetPoint("TOPLEFT", 12, -56)
     chList:SetPoint("BOTTOMRIGHT", -12, 12)
     local chRow, chHide = rowPool(chList, true)
+    local chPage = mono(UI:CreateText(chain, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b), 10, "tableNum")
+    chPage:SetPoint("TOPRIGHT", chain, "TOPRIGHT", -12, -12)
+    -- Hundreds of rows (the officers' table holds up to a thousand): the wheel moves through them, a row at a time.
+    chList:EnableMouseWheel(true)
+    chList:SetScript("OnMouseWheel", function(_, delta)
+        listTop = math.max(0, listTop - delta * 3)
+        GuildOS:SafeCall(panel.Draw)
+    end)
 
     local shownSection
     function show(which)
@@ -876,8 +914,26 @@ function GuildOS:CreateWinterVeilPanel(container)
     local function drawOpen(e, gives, got)
         only(vOpen)
         local g = gives[1]
-        rMine:SetText(g and g.rarity and string.format(L["Yours for %s was %s."], nameOf(g.to), colored(rarityName(g.rarity), Fx.Rarity(g.rarity).text)) or "")
         local o = got and got.ornament
+        local mineLines = {}
+        if got and got.guess then
+            local right = o and o.from and o.from == got.guess
+            mineLines[#mineLines + 1] = string.format(L["Your guess: %s"], nameOf(got.guess)) .. (right and ("  " .. colored(L["right!"], C.ok)) or "")
+        end
+        if g and g.rarity then
+            mineLines[#mineLines + 1] = string.format(L["Yours for %s was %s."], nameOf(g.to), colored(rarityName(g.rarity), Fx.Rarity(g.rarity).text))
+        end
+        if g and g.thanks and g.thanks ~= "" then
+            mineLines[#mineLines + 1] = string.format(L["%s thanked you: \"%s\""], nameOf(g.to), g.thanks)
+        end
+        rMine:SetText(table.concat(mineLines, "\n"))
+        local clues = {}
+        if got and got.clues then
+            clues[1] = colored(L["CLUES FROM WHOEVER WRAPPED IT"], C.label)
+            for _, c in ipairs(got.clues) do clues[#clues + 1] = "\"" .. c .. "\"" end
+        end
+        iClues:SetText(table.concat(clues, "\n"))
+        iClues:SetShown(not o and #clues > 0)
         if o then
             if cer.playing and cer.id == o.id then return end
             if not WV:Seen("open:" .. o.id) then
@@ -989,6 +1045,24 @@ function GuildOS:CreateWinterVeilPanel(container)
         wdNoNote:SetShown(not hasNote)
         if hasNote then wdCard:SetNote(g.note) end
         wdCount:SetText(countdown(e.openAt - t))
+        -- A wrap made here that the site has not confirmed yet: say so, louder near the deadline.
+        local pending = false
+        local s = WV._store and WV._store()
+        if s and s.wraps and s.wraps[g.to] then
+            pending = true
+            local m = WV:MyEntry()
+            for _, x in ipairs(m and m.gives or {}) do if x.to == g.to and x.wrapped then pending = false end end
+        end
+        if pending and phase == "wrapping" and e.wrapUntil - t < 86400 then
+            wdFace:SetFace("oops")
+            wdSay:Say(nil, L["The wrapping closes in less than a day and the site does not have yours yet: sync the companion."])
+        elseif pending and phase == "wrapping" then
+            wdFace:SetFace("rush")
+            wdSay:Say(nil, L["Waiting to sync: the site does not have this wrap yet. Sync the companion."])
+        else
+            wdFace:SetFace("happy")
+            wdSay:Say(nil, L["Double ribbon. No shaking it before the time."])
+        end
         wdUntil:SetText(string.format(L["UNTIL THE OPENING · %s"], date("%d/%m %H:%M", e.openAt)))
         local open_ = phase == "wrapping"
         rewrapBtn:SetShown(open_)
@@ -1006,7 +1080,13 @@ function GuildOS:CreateWinterVeilPanel(container)
     local function drawForm(g, gives)
         only(vWrap)
         wName:SetText(nameOf(g.to))
-        if g.wrapped and g.scene and not seenScene then scene = g.scene; seenScene = true end
+        -- The form follows the pair it is for: picking the other pair (a volunteer holds two) brings its scene and note.
+        -- SetText fires OnTextChanged, which draws again: `formFor` is set first, so that draw does not set it again.
+        if formFor ~= g.to then
+            formFor = g.to
+            scene = g.scene or "tree"
+            noteBox.edit:SetText(g.note or "")
+        end
         pvBox:Hide()
         pvGlobe:SetAlpha(1)
         pvGlobe:SetTexture(Fx.GlobePath(scene, "common", true))
@@ -1018,22 +1098,21 @@ function GuildOS:CreateWinterVeilPanel(container)
             b.label:SetTextColor(tc.r, tc.g, tc.b)
         end
         local note = noteBox.edit and noteBox.edit:GetText() or ""
-        -- Fill the box from a note kept here once. SetText fires OnTextChanged, which draws again: mark it first, and only
-        -- when there is a note to put, or an empty one would loop through its own handler.
-        if note == "" and g.note and g.note ~= "" and not noteBox._seen then noteBox._seen = true; noteBox.edit:SetText(g.note); note = g.note end
         local n = WV.CharCount(note)
         local clean = WV.CleanNote(note)
         noteCount:SetText(string.format("%d/%d", n, WV.NOTE_MAX))
-        local caprice = clean ~= nil and n >= WV.CAPRICE_MIN
+        local caprice = clean ~= nil and isCaprice(clean)
         local fc = caprice and C.ok or C.lineHi
         meterFill:SetColorTexture(fc.r, fc.g, fc.b, 1)
         meterFill:SetWidth(math.max(0.01, 452 * math.min(n, WV.NOTE_MAX) / WV.NOTE_MAX))
         if not clean then
             capLine:SetText(colored(L["not allowed"], C.danger) .. "  " .. L["Up to 80 characters, no links, no @, no markdown."])
         elseif caprice then
-            capLine:SetText(colored(L["Caprice note: the globe goes up one rarity level."], C.ok))
+            capLine:SetText(colored(L["Caprice note: the rarity is drawn twice and the better one stays."], C.ok))
+        elseif n >= WV.CAPRICE_MIN then
+            capLine:SetText(string.format(L["A caprice note needs %d different letters."], CAPRICE_LETTERS))
         else
-            capLine:SetText(string.format(L["With %d characters or more, the globe goes up one rarity level. %d to go."], WV.CAPRICE_MIN, WV.CAPRICE_MIN - n))
+            capLine:SetText(string.format(L["With %d characters or more and %d different letters, the rarity is drawn twice. %d to go."], WV.CAPRICE_MIN, CAPRICE_LETTERS, WV.CAPRICE_MIN - n))
         end
         wrapBtn:SetText(g.wrapped and L["Wrap again"] or L["Wrap"])
         wrapBtn:SetEnabled(clean ~= nil and WV:HasCompanion())
@@ -1154,7 +1233,7 @@ function GuildOS:CreateWinterVeilPanel(container)
             return
         end
 
-        local i = 0
+        local rows = {}
         if view == "chain" then
             chTitle:SetText(L["THE GUILD'S CHAIN"])
             if phase ~= "open" or not e.reveal then
@@ -1162,26 +1241,33 @@ function GuildOS:CreateWinterVeilPanel(container)
             else
                 chNote:SetText(string.format(L["Only the globes already opened: %d of %d. A closed one stays a secret."], #e.reveal, e.counts.pairs))
                 for _, r in ipairs(e.reveal) do
-                    i = i + 1
-                    local row = chRow(i)
-                    row.icon:SetTexture(Fx.GlobePath(r.scene, r.rarity))
-                    row.icon:Show()
-                    row.text:SetText((r.host and L["Frimm"] or nameOf(r.giver)) .. "  |cff6f6878" .. L["gave"] .. "|r  " .. nameOf(r.to))
-                    row.value:SetText(sceneName(r.scene) .. " · " .. colored(rarityName(r.rarity), Fx.Rarity(r.rarity).text))
+                    rows[#rows + 1] = { icon = Fx.GlobePath(r.scene, r.rarity),
+                        text = (r.host and L["Frimm"] or nameOf(r.giver)) .. "  |cff6f6878" .. L["gave"] .. "|r  " .. nameOf(r.to),
+                        value = sceneName(r.scene) .. " · " .. colored(rarityName(r.rarity), Fx.Rarity(r.rarity).text) }
                 end
             end
         else
             chTitle:SetText(L["PARTICIPANTS"])
             chNote:SetText(string.format(L["Nobody sees the pairs, officers included. The rules and the draw are on the site: %s"], siteLink()))
             for _, r in ipairs(e.entrants or {}) do
-                i = i + 1
-                local row = chRow(i)
-                row.icon:Hide()
-                row.text:SetText(nameOf(r.key))
-                row.value:SetText(r.wrapped and colored(L["wrapped"], C.ok) or L["not wrapped yet"])
+                rows[#rows + 1] = { text = nameOf(r.key), value = r.wrapped and colored(L["wrapped"], C.ok) or L["not wrapped yet"] }
             end
         end
+        -- Only the rows that fit, from `listTop`.
+        local fit = math.max(1, math.floor((tonumber(chList:GetHeight()) or 0) / ROW_H))
+        if fit <= 1 then fit = 13 end
+        listTop = math.max(0, math.min(listTop, #rows - fit))
+        local i = 0
+        for k = listTop + 1, math.min(#rows, listTop + fit) do
+            local d = rows[k]
+            i = i + 1
+            local row = chRow(i)
+            if d.icon then row.icon:SetTexture(d.icon); row.icon:Show() else row.icon:Hide() end
+            row.text:SetText(d.text)
+            row.value:SetText(d.value)
+        end
         chHide(i + 1)
+        chPage:SetText(#rows > fit and string.format(L["%d–%d of %d"], listTop + 1, listTop + i, #rows) or "")
     end
 
     noteBox.edit:HookScript("OnTextChanged", function() GuildOS:SafeCall(draw) end)
