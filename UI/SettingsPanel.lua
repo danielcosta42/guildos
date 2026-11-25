@@ -466,11 +466,18 @@ PAGES.interface = function(F)
     F:Check(L["Guild button opens Guild OS"], L["Off: the game's guild button opens the game's own guild window."],
         function() return GuildOS:IsGuildButtonHijacked() end,
         function(checked) GuildOS:SetSetting("hijackGuildButton", checked) end)
-    -- Winter Veil's snow over the window, in December (guildos-web#662).
-    if GuildOS.Snow and GuildOS.Snow:Phase() ~= "off" then
-        F:Check(L["Winter Veil snow"], L["Off: no snow falls on the Guild OS window."],
+    -- Winter Veil's animations (guildos-web#662, #673): the snow over the window in December and the Winter Veil tab's
+    -- embers and rays, one switch (saved as `snow`); and the tab's sounds. While it snows or the event is on.
+    local veilOn = GuildOS.WinterVeil and GuildOS.WinterVeil:Event() ~= nil
+    if GuildOS.Snow and (GuildOS.Snow:Phase() ~= "off" or veilOn) then
+        F:Check(L["Winter Veil animations"], L["Off: no snow, embers or rays on the Guild OS window."],
             function() return GuildOS.Snow:Enabled() end,
             function(checked) GuildOS.Snow:SetEnabled(checked) end)
+    end
+    if veilOn then
+        F:Check(L["Winter Veil sounds"], L["Off: the Winter Veil tab plays no sound."],
+            function() return GuildOS:GetSetting("veilSounds") ~= false end,
+            function(checked) GuildOS:SetSetting("veilSounds", checked and true or false) end)
     end
     -- Alt-click an item to open its recipe in the Crafts tab (#415).
     if GuildOS.CraftOrders then

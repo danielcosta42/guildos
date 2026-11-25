@@ -179,6 +179,9 @@ UI\RecipesPanel.lua
 UI\ProfessionsPanel.lua
 UI\CraftFinder.lua
 UI\CraftOrdersPanel.lua
+UI\VeilFx.lua
+UI\VeilChimney.lua
+UI\VeilShelf.lua
 UI\WinterVeilPanel.lua
 UI\Snow.lua
 UI\RecruitBeacon.lua
