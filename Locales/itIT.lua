@@ -4032,3 +4032,8 @@ L["Frimm"] = "Frimm"
 L["PARTICIPANTS"] = "PARTECIPANTI"
 L["Nobody sees the pairs, officers included. The rules and the draw are on the site: %s"] = "Nessuno vede le coppie, nemmeno gli ufficiali. Le regole e l'estrazione sono sul sito: %s"
 L["Winter Veil"] = "Winter Veil"
+
+-- UI/Snow.lua, UI/SettingsPanel.lua (guildos-web#662)
+L["Coming soon: Winter Veil Secret Santa. Everyone in the guild gets a collectible snow globe: five scenes, four rarities, and a little note from whoever drew you. The Chimney only fills if everyone wraps. Presents open on Dec 25. — Frimm (he swears he hasn't lost a single tag yet)"] = "Sta arrivando l'Amico Segreto di Winter Veil. Tutti in gilda ricevono una palla di neve da collezione: cinque scene, quattro rarità e un biglietto di chi ti ha pescato. Il Camino si riempie solo se tutti incartano. I regali si aprono il 25/12. — Frimm (giura di non aver ancora perso nemmeno un'etichetta)"
+L["Winter Veil snow"] = "Neve di Winter Veil"
+L["Off: no snow falls on the Guild OS window."] = "Disattivato: non cade neve sulla finestra di Guild OS."

@@ -3888,3 +3888,8 @@ L["Frimm"] = "Frimm"
 L["PARTICIPANTS"] = "참여자"
 L["Nobody sees the pairs, officers included. The rules and the draw are on the site: %s"] = "관리자를 포함해 아무도 짝을 볼 수 없습니다. 규칙과 추첨은 사이트에 있습니다: %s"
 L["Winter Veil"] = "Winter Veil"
+
+-- UI/Snow.lua, UI/SettingsPanel.lua (guildos-web#662)
+L["Coming soon: Winter Veil Secret Santa. Everyone in the guild gets a collectible snow globe: five scenes, four rarities, and a little note from whoever drew you. The Chimney only fills if everyone wraps. Presents open on Dec 25. — Frimm (he swears he hasn't lost a single tag yet)"] = "겨울맞이 마니또가 곧 열립니다. 길드원 모두가 수집용 스노볼를 받습니다: 장면 다섯 가지, 희귀도 네 단계, 그리고 당신을 뽑은 사람의 쪽지까지. 굴뚝은 모두가 포장해야 채워집니다. 선물은 12월 25일에 열립니다. — 프림 (아직 이름표를 하나도 잃어버리지 않았다고 장담합니다)"
+L["Winter Veil snow"] = "겨울맞이 눈"
+L["Off: no snow falls on the Guild OS window."] = "끔: Guild OS 창에 눈이 내리지 않습니다."

@@ -709,6 +709,7 @@ local function createWindow()
 
     local saved = store().tab
     if not (saved and f:SetActiveTab(saved)) then f:UpdateTabVisibility() end
+    if UI.Snow then UI.Snow:Attach(f) end   -- Winter Veil's snow (guildos-web#662)
     return f
 end
 
