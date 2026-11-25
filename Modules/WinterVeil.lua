@@ -1,40 +1,39 @@
 ----------------------------------------------------------------------
--- Guild OS - Winter Veil's Secret Santa (issue #437; the site's specs/119, guildos-web#659)
+-- Guild OS - Winter Veil's snow globe (issue #437; the site's specs/119, guildos-web#659)
 --
--- The site holds the event, the draw and every pair; this module shows them and tells the site what happened in
--- the game. What it knows comes from two blocks the companion writes:
---   GOSGILD1.veil   the guild's event: rules, counts, the officers' table, the chain after the reveal
---   GOSVEIL1        this person's own: whom they drew and that one's list, their list, and the pairs they carry,
---                   sealed, for guildmates without the companion
--- What it tells the site goes in the export (GOSCOMP1.veil): entries, lists, deliveries, auction prices and the
--- bank's needs. A member without the companion reaches the site through an officer's export: every addon keeps
--- what each guildmate announced *of themselves* on the guild channel — the game says who sent a message, so a
--- player can only ever speak for their own characters.
+-- The site holds the event, the draw, every pair and every rarity; this module shows them and tells the site what the
+-- player asked in the game. What it knows comes from two blocks the companion writes:
+--   GOSGILD1.veil   the guild's event: dates, counts, the Chimney, the officers' table, the chain after the opening
+--   GOSVEIL1        this person's own: whom each of their characters drew, the globe they wrapped, the one they got,
+--                   the pairs they carry (sealed) for guildmates without the companion, and the account's Collection
+-- What it tells the site goes in the export (GOSCOMP1.veil): join, leave, wrap (a scene and a note) and open.
 --
--- Nothing here decides: the cap, the kind of gift and the pairs are the site's. A list that breaks the guild's
--- rules is refused by the site whole; the screen checks the same rules first so nobody is surprised.
+-- Nothing here decides: the pairs, the rarity (drawn on the server when the receiver opens) and the Chimney are the
+-- site's. The screen checks the note's rules first so nobody is surprised; the site refuses a line whole when it
+-- breaks them. A member without the companion joins and leaves on the guild channel (an officer's export carries
+-- it); wrapping and opening are the player's own export's, or the site's.
 ----------------------------------------------------------------------
 local WV = {}
 GuildOS.WinterVeil = WV
 
 local DOMAIN = "veil"
-local DAY = 86400
-WV.MAX_WISHES = 8
-WV.MAX_QTY = 20
-WV.PRICE_DAYS = 14
-WV.PRICES_MAX = 500
+WV.NOTE_MAX = 80
+-- A note this long lifts the rarity one level (the site's CAPRICE_MIN); shown as a hint, the site decides.
+WV.CAPRICE_MIN = 40
 WV.RELAY_EVERY = 3600
 -- The site's caps on one export's part (lib/veil-wire.ts): past them it refuses the part whole.
 WV.EXPORT_JOINS = 100
-WV.EXPORT_LISTS = 200
-WV.EXPORT_DELIVERIES = 200       -- a carrier whispers a pair again at most once an hour until its owner says they have it
+WV.EXPORT_WRAPS = 200
+WV.EXPORT_OPENS = 200
+WV.SCENES = { "tree", "cabin", "snowman", "fire", "mountain" }
+WV.RARITIES = { "common", "rare", "epic", "legendary" }
 
 local function now() return GetServerTime() end
 local function Import() return GuildOS.CompanionImport end
 
 ----------------------------------------------------------------------
--- What this client keeps (per guild): its own entry and list, what guildmates announced of themselves, prices,
--- deliveries, and the pairs a carrier handed it.
+-- What this client keeps: its own entry, the globes it wrapped and asked to open, what guildmates announced of
+-- themselves, and the pair a carrier handed it. A new year starts clean.
 ----------------------------------------------------------------------
 local function store()
     local db = GuildOS.db
@@ -42,15 +41,14 @@ local function store()
     db.winterVeil = db.winterVeil or {}
     local s = db.winterVeil
     local event = WV:Event()
-    -- A new year starts clean: last year's lists and pairs mean nothing to this one.
     if event and s.year ~= event.year then
         db.winterVeil = { year = event.year }
         s = db.winterVeil
     end
-    s.people = s.people or {}        -- [key] = { join = { volunteer, at }, wishes = {...}, wishesAt }
-    s.deliveries = s.deliveries or {} -- [giver .. ">" .. to] = { giver, to, via, recipe?, qty?, copper?, at }
-    s.prices = s.prices or {}         -- [recipe] = { c, at }
-    s.opened = s.opened or {}         -- [giverKey] = { to, wishes, delivered }: pairs a carrier whispered to me
+    s.people = s.people or {}         -- [key] = { join = { volunteer, at }, left = at }
+    s.wraps = s.wraps or {}           -- [receiverKey] = { scene, note, at }: the globes I wrapped here
+    s.opens = s.opens or {}           -- [myKey] = at: I asked the site to open my globe
+    s.opened = s.opened or {}         -- [giverKey] = { to }: the pair a carrier whispered to me
     s.carried = s.carried or {}       -- [giverKey] = { at, got }: pairs I carry, when I last whispered them
     return s
 end
@@ -69,125 +67,85 @@ end
 -- The full name on WoW: Forever too (a first name and a surname): UnitName gives only the first.
 function WV:MyKey() return GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()) end
 
--- "joining" | "closed" | "drawn" | "revealed", by the event's own clock.
+-- "joining" | "closed" | "wrapping" | "wrapped" | "open", by the event's own clock (the site's phaseOf).
 function WV.PhaseOf(e, t)
     if not e then return nil end
     t = t or now()
-    if t >= e.revealAt then return "revealed" end
-    if e.drawn then return "drawn" end
-    return t < e.joinUntil and "joining" or "closed"
+    if t >= e.openAt then return "open" end
+    if not e.drawn then return t < e.joinUntil and "joining" or "closed" end
+    return t < e.wrapUntil and "wrapping" or "wrapped"
 end
 
 ----------------------------------------------------------------------
--- Prices (§6): the auction house's, of one of what a recipe makes, through Compat.AuctionPrice (Auctionator, TSM).
--- A scan anybody makes is shared: whoever has no auction addon uses a guildmate's.
+-- The note (the site's cleanNote): the same rules, checked here first. Nil and "note" when the site would refuse it.
 ----------------------------------------------------------------------
-function WV.ProductOf(recipe)
-    local cat = GuildOS.ProfCatalog
-    local r = cat and cat.recipes and cat.recipes[recipe]
-    local out = r and r[cat.F.out]
-    local count = r and cat.F.outCount and r[cat.F.outCount] or 1
-    return out, (tonumber(count) or 1)
+local BANNED = "[@`*_~<>%[%]|\\#]"
+function WV.CharCount(s)
+    local _, n = s:gsub("[^\128-\191]", "")
+    return n
 end
 
-function WV:PriceOf(recipe, t)
-    local s = store()
-    local p = s and s.prices[recipe]
-    t = t or now()
-    if not p or t - p.at > WV.PRICE_DAYS * DAY then return nil end
-    return p.c
-end
-
--- Reads the price of each recipe asked from this client's auction addon, keeps the newer, and tells the guild.
-function WV:ScanPrices(recipes)
-    local s = store()
-    if not s or not (GuildOS.Compat and GuildOS.Compat.AuctionPrice) then return 0 end
-    local fresh, t = {}, now()
-    for _, recipe in ipairs(recipes) do
-        local item, count = WV.ProductOf(recipe)
-        local c = item and GuildOS.Compat.AuctionPrice(item)
-        if c and c > 0 then
-            -- The price of what one craft makes: a recipe that makes five charges five auctions' worth.
-            c = math.floor(c * count + 0.5)
-            s.prices[recipe] = { c = c, at = t }
-            fresh[#fresh + 1] = { r = recipe, c = c, at = t }
+function WV.CleanNote(raw)
+    if raw == nil then return "" end
+    if type(raw) ~= "string" then return nil, "note" end
+    local plain = raw:gsub("[\t\n\r]", " ")
+    -- control characters, C1 (U+0080-009F), zero-width and direction marks (U+200B-200F, U+2028-202E, U+2066-2069)
+    if plain:find("[%z\1-\31\127]") or plain:find("\194[\128-\159]") or plain:find("\226\128[\139-\143]")
+        or plain:find("\226\128[\168-\174]") or plain:find("\226\129[\166-\169]") then
+        return nil, "note"
+    end
+    local note = plain:gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
+    if WV.CharCount(note) > WV.NOTE_MAX then return nil, "note" end
+    local low = note:lower()
+    if note:find(BANNED) or low:find("https?:") or low:find("www%.") then return nil, "note" end
+    for _, tld in ipairs({ "com", "net", "org", "gg", "me", "io" }) do
+        local from = 1
+        while true do
+            local a, b = low:find("%." .. tld, from)
+            if not a then break end
+            if not low:sub(b + 1, b + 1):find("[%w_]") then return nil, "note" end
+            from = b + 1
         end
     end
-    if #fresh > 0 and GuildOS.SyncService then
-        GuildOS.SyncService:Publish(DOMAIN, "prices", { p = fresh }, { priority = "BULK" })
-    end
-    return #fresh
+    return note
+end
+
+function WV.IsScene(id)
+    for _, s in ipairs(WV.SCENES) do if s == id then return true end end
+    return false
 end
 
 ----------------------------------------------------------------------
--- A wish list (§4): the same rules the site holds, checked here first.
+-- Joining and leaving: said on the guild channel, so an officer's export carries a member who has no companion.
 ----------------------------------------------------------------------
-function WV.WishWorth(w, priceOf)
-    if w.k == "gold" then return w.copper end
-    local c = priceOf(w.recipe)
-    return c and c * w.qty or nil
-end
-
--- nil when the list passes, else the reason the site would give ("kind", "price", "cap", "shape").
-function WV.ListRefusal(list, e, priceOf)
-    if type(list) ~= "table" or #list > WV.MAX_WISHES then return "shape" end
-    local golds, seen = 0, {}
-    for _, w in ipairs(list) do
-        if w.k == "gold" then
-            golds = golds + 1
-        elseif w.k == "item" then
-            if seen[w.recipe] or (w.qty or 0) < 1 or w.qty > WV.MAX_QTY then return "shape" end
-            seen[w.recipe] = true
-        else
-            return "shape"
-        end
-    end
-    if golds > 1 then return "shape" end
-    if e.kind == "item" and golds > 0 then return "kind" end
-    if e.kind == "gold" and golds ~= #list then return "kind" end
-    for _, w in ipairs(list) do
-        local c = WV.WishWorth(w, priceOf)
-        if not c then return "price" end
-        if c > e.cap then return "cap" end
-    end
-    return nil
-end
-
--- This player's list as this client holds it: its own edit, else what the site last sent.
-function WV:MyList()
-    local s, me = store(), self:MyKey()
-    local mine = s and me and s.people[me]
-    if mine and mine.wishes then return mine.wishes, mine.wishesAt end
-    local p = self:Personal()
-    for _, m in ipairs(p and p.mine or {}) do
-        if m.key == me then return m.wishes, m.wishesAt end
-    end
-    return {}, nil
-end
-
-function WV:SetList(list)
-    local e, s, me = self:Event(), store(), self:MyKey()
-    if not (e and s and me) then return false, "event" end
-    if now() >= e.revealAt then return false, "over" end
-    local why = WV.ListRefusal(list, e, function(r) return self:PriceOf(r) end)
-    if why then return false, why end
-    s.people[me] = s.people[me] or {}
-    s.people[me].wishes, s.people[me].wishesAt = list, now()
-    if GuildOS.SyncService then GuildOS.SyncService:Publish(DOMAIN, "list", { k = me, w = list, at = s.people[me].wishesAt }) end
-    return true
-end
-
 function WV:Join(volunteer)
     local e, s, me = self:Event(), store(), self:MyKey()
     if not (e and s and me) or WV.PhaseOf(e) ~= "joining" then return false end
     s.people[me] = s.people[me] or {}
-    s.people[me].join = { volunteer = volunteer == true, at = now() }
+    s.people[me].join, s.people[me].left = { volunteer = volunteer == true, at = now() }, nil
     if GuildOS.SyncService then GuildOS.SyncService:Publish(DOMAIN, "join", { k = me, v = volunteer == true, at = s.people[me].join.at }) end
     return true
 end
 
+function WV:Leave()
+    local e, s, me = self:Event(), store(), self:MyKey()
+    if not (e and s and me) or WV.PhaseOf(e) ~= "joining" then return false end
+    s.people[me] = s.people[me] or {}
+    s.people[me].join, s.people[me].left = nil, now()
+    if GuildOS.SyncService then GuildOS.SyncService:Publish(DOMAIN, "leave", { k = me, at = s.people[me].left }) end
+    return true
+end
+
+-- True once this person's own entry is in: the site's block says so, or this client sent it.
+function WV:Joined()
+    if self:MyEntry() then return true end
+    local s, me = store(), self:MyKey()
+    local mine = s and me and s.people[me]
+    return mine ~= nil and mine.join ~= nil
+end
+
 ----------------------------------------------------------------------
--- Whom I give to (§5): from my own block, or opened from a pair a carrier whispered.
+-- Whom I give to: from my own block, or opened from a pair a carrier whispered.
 ----------------------------------------------------------------------
 function WV:MyEntry()
     local p, me = self:Personal(), self:MyKey()
@@ -197,16 +155,81 @@ function WV:MyEntry()
     return nil
 end
 
+-- A companion is running for this person when the site's own block reached the inbox: wrapping and opening go
+-- through its export, so without it the screen sends the player to the site.
+function WV:HasCompanion() return self:Personal() ~= nil end
+
+-- Each pair I give: { to, toClass?, scene?, note?, wrapped, extra?, hosted?, rarity? }. What I wrapped here shows at once,
+-- before the site's next block says it holds it.
 function WV:MyGives()
     local m = self:MyEntry()
-    if m and #m.gives > 0 then return m.gives end
+    local gives = {}
+    if m and #m.gives > 0 then
+        for i, g in ipairs(m.gives) do gives[i] = g end
+    else
+        local s, me = store(), self:MyKey()
+        local opened = s and me and s.opened[me]
+        if opened then gives[1] = { to = opened.to, wrapped = false } end
+    end
+    local s = store()
+    for i, g in ipairs(gives) do
+        local w = s and s.wraps[g.to]
+        if w and (not g.wrapped or not g.scene) then
+            gives[i] = { to = g.to, toClass = g.toClass, scene = w.scene, note = w.note, wrapped = true, extra = g.extra, hosted = g.hosted, rarity = g.rarity }
+        end
+    end
+    return gives
+end
+
+-- Wraps (or wraps again) the globe for `to`, one of whom I drew: a scene and a note, until the site's wrapping deadline.
+-- Returns true, or false and why ("event", "phase", "pair", "scene", "note", "companion").
+function WV:Wrap(to, scene, noteRaw)
+    local e, s, me = self:Event(), store(), self:MyKey()
+    if not (e and s and me) then return false, "event" end
+    if WV.PhaseOf(e) ~= "wrapping" then return false, "phase" end
+    if not self:HasCompanion() then return false, "companion" end
+    local mine = false
+    for _, g in ipairs(self:MyGives()) do if g.to == to then mine = true end end
+    if not mine then return false, "pair" end
+    if not WV.IsScene(scene) then return false, "scene" end
+    local note, why = WV.CleanNote(noteRaw)
+    if not note then return false, why end
+    s.wraps[to] = { scene = scene, note = note, at = now() }
+    return true
+end
+
+-- The receiver's request to open the globe: the site draws the rarity and says so in the next block. Nothing here
+-- chooses it. Returns true, or false and why ("event", "phase", "companion", "nothing").
+function WV:RequestOpen()
+    local e, s, me = self:Event(), store(), self:MyKey()
+    if not (e and s and me) then return false, "event" end
+    if WV.PhaseOf(e) ~= "open" then return false, "phase" end
+    if not self:HasCompanion() then return false, "companion" end
+    local m = self:MyEntry()
+    if not (m and m.got and m.got.ready and not m.got.ornament) then return false, "nothing" end
+    s.opens[me] = s.opens[me] or now()
+    return true
+end
+
+function WV:OpenRequested()
     local s, me = store(), self:MyKey()
-    local opened = s and me and s.opened[me]
-    return opened and { opened } or {}
+    return s ~= nil and me ~= nil and s.opens[me] ~= nil
+end
+
+-- The globe I received: nil before it can be opened, { ready = true } once it can, { ready = true, ornament } after.
+function WV:Got()
+    local m = self:MyEntry()
+    return m and m.got or nil
+end
+
+-- The account's Collection, newest first (the site's order).
+function WV:Collection()
+    local p = self:Personal()
+    return p and p.collection or {}
 end
 
 ----------------------------------------------------------------------
--- The relay (§12): obfuscation, not secrecy. The same as the site's lib/veil-rules.ts, byte for byte; the harness
+-- The relay (§13): obfuscation, not secrecy. The same as the site's lib/veil-rules.ts, byte for byte; the harness
 -- (tools/winter-veil.lua) holds the site's vector.
 ----------------------------------------------------------------------
 local bit = _G.bit
@@ -258,7 +281,9 @@ function WV.SealKey(salt, giverKey)
     return salt .. ":" .. spelled
 end
 
--- Opens a pair a carrier whispered me; true when it was mine and read whole.
+
+-- Opens a pair a carrier whispered me; true when it was mine and read whole. The pair is the giver's target and
+-- nothing else (`{"to": key}`): the wrapping is the player's own, on the site or in the game.
 function WV:OpenPair(sealHex)
     local e, s, me = self:Event(), store(), self:MyKey()
     if not (e and e.salt and s and me) then return false end
@@ -267,7 +292,7 @@ function WV:OpenPair(sealHex)
     if not ok or type(data) ~= "table" then return false end
     local to = Import().VeilKey(data.to)
     if not to then return false end
-    s.opened[me] = { to = to, wishes = Import().VeilWishes(data.wishes), delivered = data.delivered == true }
+    s.opened[me] = { to = to }
     return true
 end
 
@@ -296,26 +321,9 @@ function WV:Relay()
 end
 
 ----------------------------------------------------------------------
--- Deliveries (§7): a mail or a trade to whom I drew is recorded on its own.
-----------------------------------------------------------------------
-function WV:RecordDelivery(toKey, via, copper, recipe, qty)
-    local s, me = store(), self:MyKey()
-    if not (s and me and toKey) then return false end
-    local mine = false
-    for _, g in ipairs(self:MyGives()) do if g.to == toKey then mine = true end end
-    if not mine then return false end
-    local id = me .. ">" .. toKey
-    if s.deliveries[id] then return false end
-    local d = { giver = me, to = toKey, via = via, copper = copper and copper > 0 and copper or nil, recipe = recipe, qty = qty, at = now() }
-    s.deliveries[id] = d
-    if GuildOS.SyncService then GuildOS.SyncService:Publish(DOMAIN, "gave", d) end
-    GuildOS:Print(GuildOS.L["Winter Veil: your gift was recorded."])
-    return true
-end
-
-----------------------------------------------------------------------
--- The guild channel: each player announces their own entry, list and delivery; the game says who sent it, so a
--- line about anybody else is dropped. Prices are anybody's. A pair is whispered to its owner alone.
+-- The guild channel: each player announces their own entry and exit; the game says who sent it, so a line about
+-- anybody else is dropped. A pair is whispered to its owner alone. Wrapping and opening never travel here: they would
+-- tell the guild who wrapped, which only the officers' table shows.
 ----------------------------------------------------------------------
 local function wholeAt(v)
     local n = GuildOS.Finite(v)
@@ -328,17 +336,6 @@ function WV:OnEnvelope(env, sender)
     if not s or type(env) ~= "table" or type(env.data) ~= "table" then return end
     local d, act = env.data, env.act
     local from = sender and GuildOS:KeyOfRosterName(sender)
-    if act == "prices" then
-        for i = 1, math.min(type(d.p) == "table" and #d.p or 0, 100) do
-            local x = d.p[i]
-            local r, c, at = type(x) == "table" and tonumber(x.r), type(x) == "table" and GuildOS.Finite(x.c), type(x) == "table" and wholeAt(x.at)
-            if r and r == math.floor(r) and r > 0 and c and c == math.floor(c) and c > 0 and c <= 1e11 and at then
-                local held = s.prices[r]
-                if not held or held.at < at then s.prices[r] = { c = c, at = at } end
-            end
-        end
-        return
-    end
     if act == "pair" then
         -- Only for me, only about me, and only from the carrier the site named for me: every member holds the salt,
         -- so anybody could seal a pair under my key.
@@ -356,77 +353,51 @@ function WV:OnEnvelope(env, sender)
     end
     -- What a player says of themselves.
     if not from then return end
-    if act == "join" and d.k == from then
-        local at = wholeAt(d.at)
-        if at then
-            s.people[from] = s.people[from] or {}
-            s.people[from].join = { volunteer = d.v == true, at = at }
-        end
-    elseif act == "list" and d.k == from then
-        local at = wholeAt(d.at)
+    local at = wholeAt(d.at)
+    if act == "join" and d.k == from and at then
         local held = s.people[from]
-        if at and not (held and held.wishesAt and held.wishesAt >= at) then
+        if not (held and held.join and held.join.at >= at) and not (held and held.left and held.left >= at) then
             s.people[from] = held or {}
-            s.people[from].wishes, s.people[from].wishesAt = Import().VeilWishes(d.w), at
+            s.people[from].join, s.people[from].left = { volunteer = d.v == true, at = at }, nil
         end
-    elseif act == "gave" and d.giver == from then
-        local to, at = Import().VeilKey(d.to), wholeAt(d.at)
-        if to and at and (d.via == "mail" or d.via == "trade") and not s.deliveries[from .. ">" .. to] then
-            local cop = GuildOS.Finite(d.copper)
-            s.deliveries[from .. ">" .. to] = { giver = from, to = to, via = d.via, at = at,
-                copper = cop and cop == math.floor(cop) and cop > 0 and cop or nil,
-                recipe = tonumber(d.recipe), qty = tonumber(d.qty) }
+    elseif act == "leave" and d.k == from and at then
+        local held = s.people[from]
+        if not (held and ((held.join and held.join.at >= at) or (held.left and held.left >= at))) then
+            s.people[from] = held or {}
+            s.people[from].join, s.people[from].left = nil, at
         end
     end
 end
 
 ----------------------------------------------------------------------
--- The export (GOSCOMP1.veil, the site's specs/119): everything this client holds; the site believes all of it only
--- from an officer's code, and from anybody else only their own lines.
+-- The export (GOSCOMP1.veil, the site's specs/119 §13): `{ year, joins, leaves, wrap, open }`. The site believes all
+-- of it only from an officer's code for joins and leaves; wrap and open are only ever the exporter's own.
 ----------------------------------------------------------------------
 function WV:ForExport()
-    local e, s = self:Event(), store()
+    local e, s, me = self:Event(), store(), self:MyKey()
     if not (e and s) then return nil end
-    local out = { year = e.year, joins = {}, wishes = {}, deliveries = {}, prices = {} }
-    local hasPrice = false
+    local out = { year = e.year, joins = {}, leaves = {}, wrap = {}, open = {} }
     for key, p in pairs(s.people) do
         if p.join then out.joins[#out.joins + 1] = { key = key, volunteer = p.join.volunteer, at = p.join.at } end
-        if p.wishes and p.wishesAt then out.wishes[#out.wishes + 1] = { key = key, list = p.wishes, at = p.wishesAt } end
+        if p.left then out.leaves[#out.leaves + 1] = { key = key, at = p.left } end
     end
-    for _, d in pairs(s.deliveries) do out.deliveries[#out.deliveries + 1] = d end
-    local n = 0
-    for r, p in pairs(s.prices) do
-        if n < WV.PRICES_MAX and now() - p.at <= WV.PRICE_DAYS * DAY then
-            out.prices[tostring(r)] = { c = p.c, at = p.at }
-            n = n + 1
-            hasPrice = true
-        end
+    -- `to` names the pair only when I hold two (one taken over from somebody who did not wrap); with one it is implied.
+    local gives = self:MyGives()
+    for to, w in pairs(s.wraps) do
+        local line = { giver = me, scene = w.scene, note = w.note, at = w.at }
+        if #gives > 1 then line.to = to end
+        out.wrap[#out.wrap + 1] = line
     end
-    -- The export's encoder writes an empty table as a list, and the site reads `prices` as a map: none is no field.
-    if not hasPrice then out.prices = nil end
+    if me and s.opens[me] then out.open[1] = { receiver = me, at = s.opens[me] } end
     -- Within the site's caps (the part is refused whole past them): the newest first, in a guild of hundreds.
-    local function newest(list, max, at)
-        table.sort(list, function(a, b) return at(a) > at(b) end)
+    local function newest(list, max)
+        table.sort(list, function(a, b) return a.at > b.at end)
         while #list > max do list[#list] = nil end
     end
-    newest(out.joins, WV.EXPORT_JOINS, function(x) return x.at end)
-    newest(out.wishes, WV.EXPORT_LISTS, function(x) return x.at end)
-    newest(out.deliveries, WV.EXPORT_DELIVERIES, function(x) return x.at end)
-    -- The bank's needs, for the Chimney: an officer's client only.
-    local B = GuildOS.GuildBank
-    if GuildOS:IsOfficer() and B and B.Needs then
-        local needs = {}
-        for id, need in pairs(B:Needs() or {}) do
-            if #needs < 40 and type(need) == "table" and tonumber(need.n) and need.n > 0 then
-                local info = B.ItemInfo and B:ItemInfo(id) or nil
-                local name = type(info) == "table" and info.name or nil
-                needs[#needs + 1] = { id = id, name = type(name) == "string" and name ~= "" and name or ("#" .. id),
-                                      have = B:CountOf(id) or 0, want = math.floor(need.n) }
-            end
-        end
-        table.sort(needs, function(a, b) return a.id < b.id end)
-        out.needs, out.needsAt = needs, now()
-    end
+    newest(out.joins, WV.EXPORT_JOINS)
+    newest(out.leaves, WV.EXPORT_JOINS)
+    newest(out.wrap, WV.EXPORT_WRAPS)
+    newest(out.open, WV.EXPORT_OPENS)
     return out
 end
 
@@ -438,34 +409,11 @@ function WV:Initialize()
         GuildOS.SyncService:On(DOMAIN, function(env, sender) WV:OnEnvelope(env, sender) end)
     end
     local f = CreateFrame("Frame")
-    local trade = {}
-    GuildOS.Compat.RegisterEvent(f, "TRADE_SHOW", true)
-    GuildOS.Compat.RegisterEvent(f, "TRADE_MONEY_CHANGED", true)
-    GuildOS.Compat.RegisterEvent(f, "UI_INFO_MESSAGE", true)
-    GuildOS.Compat.RegisterEvent(f, "MAIL_SEND_SUCCESS", true)
     GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE", true)
-    local pendingMail
-    GuildOS.Compat.HookSendMail(function(to)
-        pendingMail = { to = to and GuildOS:KeyOfRosterName(to), copper = GetSendMailMoney and GetSendMailMoney() or 0 }
-    end)
     local lastRelay = 0
-    f:SetScript("OnEvent", function(_, event, a, b)
-        if not WV:Event() then return end
-        if event == "TRADE_SHOW" then
-            local name, realm = GuildOS.Compat.TradePartner()
-            trade = { to = name and GuildOS:GetPlayerKey(name, realm) }
-        elseif event == "TRADE_MONEY_CHANGED" then
-            trade.copper = GetPlayerTradeMoney and GetPlayerTradeMoney() or 0
-        elseif event == "UI_INFO_MESSAGE" and GuildOS.Compat.IsTradeComplete(a, b) then
-            if trade.to then GuildOS:SafeCall(function() WV:RecordDelivery(trade.to, "trade", trade.copper) end) end
-            trade = {}
-        elseif event == "MAIL_SEND_SUCCESS" and pendingMail then
-            local m = pendingMail
-            pendingMail = nil
-            GuildOS:SafeCall(function() WV:RecordDelivery(m.to, "mail", m.copper) end)
-        elseif event == "GUILD_ROSTER_UPDATE" and GetTime() - lastRelay > 60 then
-            lastRelay = GetTime()
-            GuildOS:SafeCall(function() WV:Relay() end)
-        end
+    f:SetScript("OnEvent", function()
+        if not WV:Event() or GetTime() - lastRelay <= 60 then return end
+        lastRelay = GetTime()
+        GuildOS:SafeCall(function() WV:Relay() end)
     end)
 end

@@ -1,63 +1,90 @@
-# Winter Veil's Secret Santa, in the game (#437; guildos-web #659, specs/119)
+# Winter Veil's snow globe, in the game (#437; guildos-web #659, specs/119)
 
-Layout approved on the canvas "Winter Veil — Amigo Secreto (addon + site)" (2026-11-24/25).
+Layouts approved on the canvas "Winter Veil — Amigo Secreto (addon + site)": Addon-Embrulhar, Addon-Abrir, Addon-Perfil,
+Addon-Revelacao, Addon-Oficial. This file replaces the first design (a list of crafts or gold, a cap, mail or trade
+deliveries, the bank's needs). The site's `specs/119-o-amigo-secreto/{spec.md,redesenho-globo.md}` is the source of truth.
 
 ## Why
 
-Winter Veil (15 December to 2 January) is WoW: Forever's holiday. The owner wants an engagement event the whole
-guild plays, raiders or not: a Secret Santa with crafts or gold within a cap the officers set, a guild "chimney" of
-the bank's needs, and a public ranking of guilds. The site holds the event, the draw and every pair (guildos-web
-specs/119); the addon shows them and tells the site what happened in the game.
+Winter Veil (15 December to 2 January) is WoW: Forever's holiday. The event is an engagement game the whole guild plays,
+raiders or not, and it is 100% digital: each player wraps a collectible **snow globe** (a scene and a note of up to 80
+characters) for whoever they drew, the receiver opens it at Christmas, and the globe's **rarity is drawn on the server**
+at that moment. The Chimney is the share of players who already wrapped. The site holds the event, the draw, every pair
+and every rarity; the addon shows them and tells the site what the player asked.
+
+**The addon only shows and records; it never decides.** No rarity, no pair, no Chimney is computed in the game.
 
 ## What
 
-1. **Two blocks in.** `GOSGILD1.veil` (the guild's: rules, counts, the officers' table, the chain after the reveal,
-   and after the draw the relay's `salt`) is read by `CompanionImport:WinterVeil`. `GOSVEIL1` (one person's, written
-   by their own companion: whom each of their characters drew and that one's list, their list, and the pairs they
-   carry for guildmates without the companion) is read by `CompanionImport:VeilBlock`. Both are untrusted: every
-   number whole and bounded, every key one line with no `|`, lists capped (8 wishes, 4 pairs, 200 relays, 1000
-   rows), a block of another guild or older than a week refused. Neither is ever written to the saved variables
-   as received. Before the site opens the event to everybody (1 December), a tester's own `GOSVEIL1` carries the
-   event (`event`) and the guild's block says nothing: `WinterVeil()` reads the guild's first, then the tester's, so
-   only the tester's addon shows the tab. The officers' table and the carriers come only with the guild's block.
-2. **The tab.** "Winter Veil" appears only while the site sends this year's event (`RegisterFeature` condition).
-   - A member who is not in sees how to join (before joining closes) and may volunteer for an extra gift.
-   - Left: whom I drew and their list; picking an option sets the action: mail the gold (the mail window filled
-     with the name, "Winter Veil" and the amount) or place a craft order for the item.
-   - Right: my list — each option with what it is worth, the cap bar (the dearest option against the cap), a gold
-     option where the guild takes gold, and a search of the recipes somebody in the guild makes.
-   - Officers: "Organize" shows who is in, who has a list and who delivered — never a pair, never who received.
-     **The rules and the draw are on the site** (a change from the canvas, where the officer screen had inputs): the
-     site owns the event, so the addon shows the rules and links there instead of offering a second place to edit
-     them.
-   - After the reveal: the guild's chain, who gave whom what, and the pairs reassigned.
-3. **The list is checked here first** (`WinterVeil.ListRefusal`), with the site's rules: at most 8 options, one gold,
-   each item 1 to 20 units, the guild's kind of gift, and each option alone within the cap at its auction price. The
-   site refuses whole whatever slips through.
-4. **Prices** (`ScanPrices`): the auction price of what a recipe makes (`ProfCatalog` out × count) through
-   `Compat.AuctionPrice` (Auctionator, TSM), kept 14 days, and shared on the guild channel so a member without an
-   auction addon uses a guildmate's scan.
-5. **Deliveries** (`RecordDelivery`): a mail (`SendMail` hook + `MAIL_SEND_SUCCESS`) or a finished trade
-   (`TRADE_SHOW` partner + "Trade complete") to whom I drew is recorded once, with the gold sent.
-6. **The guild channel** (domain `veil`, not guild-only, since a pair is whispered): each player announces their
-   own entry, list and delivery, and a client keeps a line only when its key is the sender's — the game says who
-   sent a message, so nobody speaks for anybody else. Prices are anybody's, newest wins.
-7. **The relay.** A carrier whispers each pair it carries to its owner while they are online, at most once an hour,
-   until the owner answers it has it (the whisper name through ChehulGossip, for WoW: Forever's spaced names). The
-   owner believes a whispered pair only from the carrier the site names for them (`GOSGILD1.veil.carriers`): every
-   member holds the salt, so anybody could seal a false pair under somebody's key. The owner opens it with `salt:<their key as the site spells it>` (the realm
-   off on WoW: Forever). The seal is the site's, byte for byte: FNV-1a 32 seeding xorshift32, XOR, hex; the
-   harness holds the site's own vector. It is obfuscation, not secrecy, as the site's spec says.
-8. **The export** (`GOSCOMP1.veil`, within payload 17, additive): the year, entries, lists, deliveries, fresh prices
-   and, from an officer's client only, the bank's needs (`GuildBank:Needs`, with what the bank holds). No fresh price
-   is no `prices` field (the encoder writes an empty table as a list), and each list is cut to the site's caps,
-   newest first (100 entries, 200 lists, 200 deliveries).
-9. **Prices are read on Enter**, when a recipe search is committed, never per keystroke: each scan is a guild
-   message. The site
-   believes all of it only from an officer's code; from any other, only the exporter's own lines.
+1. **Blocks in** (all untrusted: numbers whole and bounded, keys one line with no `|`, lists capped, notes held to 80
+   characters and made inert; a block of another guild, or older than a week, is refused).
+   - `GOSGILD1.veil`: `{ year, joinUntil, wrapUntil, openAt, reassignDays, drawn, salt?, chimney?, counts = { entrants, wrapped,
+     pairs, opened }, entrants? (officers: { key, wrapped }), carriers?, reveal? (after `openAt`, only opened globes:
+     { giver, to, scene, rarity, host? }) }`. Read by `CompanionImport:WinterVeil`.
+   - `GOSVEIL1` **v2** (one person's; v1 of the first design is refused): `{ guild, year, at, event?, mine = { { key, volunteer,
+     gives = { { to, toClass?, scene?, note?, wrapped, extra?, hosted?, rarity? } }, got? = { ready, ornament? } } },
+     relay, collection }`. Scenes are `tree|cabin|snowman|fire|mountain`, rarities `common|rare|epic|legendary`; anything
+     else drops the line. Read by `CompanionImport:VeilBlock`. Before the site opens the event to everybody, a tester's own
+     block carries it (`event`).
+2. **The tab** appears only while the site sends this year's event. Sub-views:
+   - **My secret friend** (Addon-Embrulhar / Addon-Abrir): not in → join (with "I can give one more globe"); in, before the
+     draw → wait (and leave until joining closes); after the draw → whom I drew, a scene picker, the note (counter, and a
+     hint when it is long enough to lift the rarity, which the server decides), "Wrap" / "Wrap again"; with two pairs (one
+     taken over) a row picker. From `openAt`: the globe I received, wrapped until I press **Open the globe**, which only asks;
+     the site draws the rarity and the next block shows it. Once the receiver opened mine, I see its rarity.
+   - **Collection** (Addon-Perfil): every globe the account opened, newest first, with scene, rarity, year, giver and note.
+   - **The guild's chain** (Addon-Revelacao): after the opening, who gave whom, scene and rarity, of the opened globes only.
+   - **Organize** (officers, Addon-Oficial): who is in and who wrapped, never a pair. The rules and the draw are on the site.
+   - The Chimney bar and the counts are in the header.
+3. **Images.** The game cannot load 3D from outside: a globe is a 128×128 TGA per scene × rarity (20) plus `closed.tga`
+   (wrapped), in `Media/Globes/`, rendered from the site's approved prototype (`prototipo-globo.html`, three.js r128) by
+   `tools/render-globes.js` (see below). One frame each.
+4. **The note** is checked here first with the site's rules (`WinterVeil.CleanNote` mirrors `cleanNote`): whitespace collapsed,
+   up to 80 characters (not bytes), no control, zero-width or direction characters, no `@`, link or markdown. The site
+   refuses a line whole when it breaks them; a scene outside the five also drops the line.
+5. **Joining and leaving** are said on the guild channel (domain `veil`), each player only about themselves, so an
+   officer's export carries a member who has no companion. **Wrapping and opening never travel on the channel**: they would
+   tell the guild who wrapped, which only the officers' table shows. They go in the player's own export, or are done on the
+   site (so wrapping and opening in the game need the companion's `GOSVEIL1`; without it the screen links to the site).
+6. **The relay.** A carrier whispers each pair it carries (`{"to": key}` and nothing more) to its owner while they are online,
+   at most once an hour, until the owner answers it has it. The owner believes a whispered pair only from the carrier the
+   site names (`GOSGILD1.veil.carriers`) and opens it with `salt:<their key as the site spells it>`. The seal is the site's,
+   byte for byte (FNV-1a 32 seeding xorshift32, XOR, hex; `lib/veil-rules.ts` `seal`/`unseal`; the harness holds the
+   site's own vector). It is obfuscation, not secrecy, as the site's spec says.
+7. **The export** (`GOSCOMP1.veil`, payload 17, additive): `{ year, joins, leaves, wrap, open }`: `joins` and `leaves` as
+   announced (an officer's code believed by the site), `wrap = { giver, to?, scene, note, at }` (`to` only when I hold two
+   pairs) and `open = { receiver, at }`, always my own. Capped at the site's limits (100 / 200 / 200), newest first.
+   **Never a rarity.** Gone: `prices`, `needs`, `deliveries`, `wishes`.
+
+## Removed from the first design
+
+Auction prices (`ScanPrices`, `Compat.AuctionPrice` use), wish lists and the cap, the gift kind, `RecordDelivery` and
+the mail/trade hooks, `deliveries`, the bank's needs (`GuildBank:Needs`), and their locale strings. The probe's
+`MAIL_SEND_SUCCESS` / `TRADE_MONEY_CHANGED` and the extra luacheck globals went with them.
+
+## Regenerating the images
+
+```
+node tools/render-globes.js <guildos-web>/specs/119-o-amigo-secreto/prototipo-globo.html [Media/Globes]
+```
+
+Needs Playwright with Chromium and network access to cdnjs (the prototype loads three.js r128 from there). Reduced motion
+is forced so every globe stands still at the same angle; each of the 5 scenes × 4 rarities waits 2.5 s for the snow to
+settle. Files: `<scene>-<rarity>.tga` and `closed.tga`; 32-bit uncompressed, top-left origin (descriptor `0x28`), the
+size the WoW client wants (power of two).
 
 ## Tests
 
-`tools/winter-veil.lua`: the seal against the site's vector; the guild's block and a person's block read and
-refused; the list's rules; the relay (whispered once an hour, opened only by its owner); the guild channel (a line
-about anybody else dropped); a delivery only to whom I drew, once; the export.
+`tools/winter-veil.lua`: the seal against the site's vector; the guild's block and a person's v2 block read and refused;
+the note's rules; wrapping (a pair I did not draw, a scene outside the five, a refused note, after the deadline, without
+the companion, two pairs); opening (only from `openAt`, only a ready globe, never a rarity in the export); the relay (whispered
+once an hour, opened only for its owner and only from the named carrier); the channel (a line about somebody else
+dropped, nothing about wrapping or opening); the export's caps; and the panel drawing every state.
+
+## Open
+
+- The rendered globes are the "preview" of what the site draws in 3D; the wrapped globe is the common tree under a gold
+  ribbon drawn by the render script, not a modelled one.
+- A member who wraps or opens in the game needs the companion; a "wrap it on the site" link stands in when there is none.
+- Frimm (the host) is shown as text only: no image or voice yet (launch kit).
+- Not yet tried in the game client (Interface 20504).
