@@ -1082,6 +1082,8 @@ local function veilEvent(v)
             joinUntil = siteInt(v.joinUntil, 1, VEIL_TIME), wrapUntil = siteInt(v.wrapUntil, 1, VEIL_TIME), openAt = siteInt(v.openAt, 1, VEIL_TIME),
             reassignDays = siteInt(v.reassignDays, 1, 7), drawn = v.drawn == true,
             salt = type(v.salt) == "string" and v.salt:match("^%x+$") and #v.salt <= 64 and v.salt or nil,
+            -- the guild's key on the site, for the link to its page: one line, nothing that could open a colour or a link
+            guildKey = type(v.guildKey) == "string" and #v.guildKey >= 1 and #v.guildKey <= 96 and not v.guildKey:find("[|%c]") and v.guildKey or nil,
             chimney = v.chimney ~= nil and siteInt(v.chimney, 0, 100) or nil,
             counts = { entrants = siteInt(c.entrants or 0, 0, 100000), wrapped = siteInt(c.wrapped or 0, 0, 100000),
                        pairs = siteInt(c.pairs or 0, 0, 100000), opened = siteInt(c.opened or 0, 0, 100000) },

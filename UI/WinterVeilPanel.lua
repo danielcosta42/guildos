@@ -87,9 +87,13 @@ local function rowPool(parent)
     end
 end
 
+-- The page of this guild's event on the site: the key comes with the event (the guild's key is the site's to say), and
+-- is encoded as the site encodes it. Without one, the public page, which at least exists.
 local function siteLink()
-    local key = GuildOS.Companion and GuildOS.Companion.GuildKey and GuildOS.Companion:GuildKey() or nil
-    return key and string.format("%s/guild/%s/winter-veil", SITE, key) or (SITE .. "/winter-veil")
+    local e = GuildOS.WinterVeil and GuildOS.WinterVeil:Event()
+    local key = e and e.guildKey
+    if not key then return SITE .. "/winter-veil" end
+    return string.format("%s/guild/%s/winter-veil", SITE, (key:gsub("[^%w%-_%.~]", function(c) return string.format("%%%02X", c:byte()) end)))
 end
 
 local function whyText(why)
@@ -407,7 +411,9 @@ function GuildOS:CreateWinterVeilPanel(container)
                 UI:SetButtonVariant(b, id == scene and "primary" or "secondary")
             end
             local note = noteBox.edit and noteBox.edit:GetText() or ""
-            if note == "" and g.note and not noteBox._seen then noteBox.edit:SetText(g.note); note = g.note; noteBox._seen = true end
+            -- Fill the box from a note kept here once. SetText fires OnTextChanged, which draws again: mark it first, and only
+            -- when there is a note to put, or an empty one would loop through its own handler.
+            if note == "" and g.note and g.note ~= "" and not noteBox._seen then noteBox._seen = true; noteBox.edit:SetText(g.note); note = g.note end
             local n = WV.CharCount(note)
             local clean = WV.CleanNote(note)
             noteCount:SetText(string.format("%d/%d", n, WV.NOTE_MAX)

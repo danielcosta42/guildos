@@ -268,15 +268,29 @@ check(not WV.RecordDelivery and not WV.ScanPrices and not WV.SetList, "and the m
 -- ── 10. The panel draws every state without an error, and shows what the site said ──
 do
   local Frame = {}
-  Frame.__index = function(_, k) return Frame[k] or function(self) return self end end
+  -- Unknown methods are no-ops; a field the panel keeps for itself ("_seen") is nil until set, as on a real frame.
+  Frame.__index = function(_, k) if type(k) == "string" and k:sub(1, 1) == "_" then return nil end return Frame[k] or function(self) return self end end
   local function new() return setmetatable({ shown = true, scripts = {}, text = "" }, Frame) end
-  function Frame:SetText(t) self.text = t end
+  -- The game fires OnTextChanged when SetText is called, even with the same text: the stub does too, and counts how deep
+  -- the handlers nest, so a draw that sets the text of its own edit box and re-enters itself is caught (the game would
+  -- end it with a C stack overflow, which SafeCall swallows).
+  local depth, maxDepth = 0, 0
+  function Frame:SetText(t)
+    self.text = t
+    local hooks = rawget(self, "hooks")
+    local hook = hooks and hooks.OnTextChanged
+    if hook then
+      depth = depth + 1; maxDepth = math.max(maxDepth, depth)
+      if depth <= 30 then pcall(hook, self, false) end
+      depth = depth - 1
+    end
+  end
   function Frame:GetText() return self.text end
   function Frame:SetShown(v) self.shown = v and true or false end
   function Frame:Show() self.shown = true end
   function Frame:Hide() self.shown = false end
   function Frame:SetScript(n, fn) self.scripts[n] = fn end
-  function Frame:HookScript() end
+  function Frame:HookScript(name, fn) local h = rawget(self, "hooks"); if not h then h = {}; self.hooks = h end; h[name] = fn end
   function Frame:SetTexture(t) self.tex = t end
   function Frame:CreateTexture() return new() end
   function Frame:SetEnabled(v) self.enabled = v end
@@ -320,6 +334,7 @@ do
   check(say("YOU DREW") and say("Wrap"), "after the draw it shows whom I drew and the wrapping")
   inbox(veil({ chimney = 100 }), personal({ { to = "Thalindra-Nightslayer", wrapped = true, scene = "fire", note = "oi" } })); draw()
   check(say("full: better odds"), "a full Chimney says the odds are better")
+
   inbox(veil({ wrapUntil = NOW - 86400, openAt = NOW - 10 }), personal({ { to = "Thalindra-Nightslayer", rarity = "rare" } }, { ready = true }))
   GuildOS.db.winterVeil.opens = {}
   draw()
@@ -334,6 +349,29 @@ do
   officer = true; tab("Organize"); draw()
   check(say("PARTICIPANTS"), "the officers' table draws")
   tab("My secret friend"); draw()
+
+  -- The link to the page says the guild's key, encoded; without a key it is the public page.
+  inbox(veil({ guildKey = "us:Curva Mor" }), personal({ { to = "Thalindra-Nightslayer", wrapped = false } }))
+  check(GuildOS.WinterVeil:Event().guildKey == "us:Curva Mor", "the event carries the guild's key")
+  inbox(veil({ guildKey = "bad|key" }), personal({ { to = "Thalindra-Nightslayer", wrapped = false } }))
+  check(GuildOS.WinterVeil:Event().guildKey == nil, "a key that is not one line is dropped")
+  local hadCompanion = GuildOS.WinterVeil.HasCompanion
+  GuildOS.WinterVeil.HasCompanion = function() return false end
+  inbox(veil({ guildKey = "us:Curva Mor" }), personal({ { to = "Thalindra-Nightslayer", wrapped = false } })); draw()
+  check(say("guildos.me/guild/us%3ACurva%20Mor/winter-veil"), "a player without the companion is sent to the guild's page of the event")
+  inbox(veil(), personal({ { to = "Thalindra-Nightslayer", wrapped = false } })); draw()
+  check(say("guildos.me/winter-veil"), "and, with no key, to the public page")
+  GuildOS.WinterVeil.HasCompanion = hadCompanion
+
+  -- A wrap kept here with an empty note (allowed: the note is optional): a panel just opened fills its note box from
+  -- it, and must not re-enter itself through the box's OnTextChanged (the game fires it on SetText, same text or not).
+  GuildOS.db.winterVeil.wraps["Thalindra-Nightslayer"] = { scene = "fire", note = "", at = NOW }
+  inbox(veil(), personal({ { to = "Thalindra-Nightslayer", wrapped = false } }))
+  local fresh = GuildOS:CreateWinterVeilPanel(new())
+  maxDepth = 0
+  local okf, errf = pcall(fresh.Draw)
+  check(okf, "a panel with a locally wrapped globe of an empty note draws: " .. tostring(errf))
+  check(maxDepth <= 2, "and does not re-enter itself through the note box (depth " .. maxDepth .. ")")
 end
 
 print(string.format("winter-veil: %d checks passed", checks))
