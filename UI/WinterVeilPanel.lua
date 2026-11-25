@@ -166,6 +166,12 @@ function GuildOS:CreateWinterVeilPanel(container)
     mNote:SetPoint("RIGHT", mine, "RIGHT", -12, 0)
     mNote:SetJustifyH("LEFT")
 
+    -- In-game participation (a quest of the event turned in): counts for the Chimney, kept by the addon or the site's block.
+    local mPlay = UI:CreateText(mine, "", 11, C.label.r, C.label.g, C.label.b)
+    mPlay:SetPoint("BOTTOMLEFT", 12, 12)
+    mPlay:SetPoint("RIGHT", mine, "RIGHT", -12, 0)
+    mPlay:SetJustifyH("LEFT")
+
     local globe = mine:CreateTexture(nil, "ARTWORK")
     globe:SetSize(128, 128)
     globe:SetPoint("TOPLEFT", 12, -84)
@@ -309,6 +315,12 @@ function GuildOS:CreateWinterVeilPanel(container)
             form:Hide(); volCheck:Hide(); leaveBtn:Hide(); actBtn:Hide(); globe:Hide(); globeCaption:SetText("")
             giveHide(1)
             mNote:SetText("")
+            if joined then
+                mPlay:SetText((WV:Played() or WV:PlaySeen()) and L["In-game participation: registered"]
+                    or L["In-game participation: not yet, complete a Winter Veil quest"])
+            else
+                mPlay:SetText("")
+            end
 
             -- The opening: the globe I received.
             if phase == "open" then
