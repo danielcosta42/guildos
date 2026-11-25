@@ -17,7 +17,9 @@ specs/119); the addon shows them and tells the site what happened in the game.
    carry for guildmates without the companion) is read by `CompanionImport:VeilBlock`. Both are untrusted: every
    number whole and bounded, every key one line with no `|`, lists capped (8 wishes, 4 pairs, 200 relays, 1000
    rows), a block of another guild or older than a week refused. Neither is ever written to the saved variables
-   as received.
+   as received. Before the site opens the event to everybody (1 December), a tester's own `GOSVEIL1` carries the
+   event (`event`) and the guild's block says nothing: `WinterVeil()` reads the guild's first, then the tester's, so
+   only the tester's addon shows the tab. The officers' table and the carriers come only with the guild's block.
 2. **The tab.** "Winter Veil" appears only while the site sends this year's event (`RegisterFeature` condition).
    - A member who is not in sees how to join (before joining closes) and may volunteer for an extra gift.
    - Left: whom I drew and their list; picking an option sets the action: mail the gold (the mail window filled

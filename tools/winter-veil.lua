@@ -125,6 +125,12 @@ check(e and e.cap == 2000000 and e.drawn and e.salt == SALT, "the event is read"
 check(#e.entrants == 1 and e.entrants[1].key == "Thalindra-Nightslayer", "an entrant with a key that is not one is passed over")
 check(WV.PhaseOf(e, NOW) == "drawn" and WV.PhaseOf(e, NOW + 11 * 86400) == "revealed", "the phase is the event's own clock")
 
+-- Before the site opens it to everybody, a tester's own block carries the event and the guild's says nothing.
+inbox(nil, { mine = {}, event = veil() })
+check(WV:Event() and WV:Event().cap == 2000000, "a tester's own block carries the event before the opening")
+inbox({ kind = "both" }, { mine = {}, event = veil({ cap = 3000000 }) })
+check(WV:Event().cap == 3000000, "a guild block with no valid event leaves the tester's")
+
 -- ── 3. My block, and a list held to the guild's rules ─────────────────
 inbox(veil(), { mine = { { key = "Chehul-Nightslayer", volunteer = false, got = false,
   wishes = { { k = "gold", copper = 500000 } },

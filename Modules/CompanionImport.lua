@@ -1070,9 +1070,8 @@ Import.VeilKey = veilKey
 --     carriers? = { [giverKey] = carrierKey }, reveal? = { { giver, to, gift?, lostBy? } } }
 Import.VEIL_LIST_MAX = 1000
 local VEIL_KINDS = { item = true, gold = true, both = true }
-function Import:WinterVeil()
-    local block = self:GuildBlock()
-    local v = block and block.veil
+-- An event as either block carries it (the guild's `veil`, or a person's `event`), held to its shape; nil when not one.
+local function veilEvent(v)
     if type(v) ~= "table" or not VEIL_KINDS[v.kind] then return nil end
     local ok, out = pcall(function()
         local c = type(v.counts) == "table" and v.counts or {}
@@ -1125,6 +1124,16 @@ function Import:WinterVeil()
     return out
 end
 
+-- The guild's block first; before the site opens the event to everybody, a tester's own GOSVEIL1 carries it alone
+-- (the guild's block says nothing yet, so no guildmate's addon shows the tab).
+function Import:WinterVeil()
+    local block = self:GuildBlock()
+    local e = veilEvent(block and block.veil)
+    if e then return e end
+    local mine = self:VeilBlock()
+    return mine and mine.event or nil
+end
+
 -- The inbox's GOSVEIL1: this person's own Winter Veil, written by their companion (the site's specs/119 §12) — whom
 -- each of their characters drew and that one's list, their own list, and the pairs they carry, sealed, for guildmates
 -- without the companion. Decoded once per string. Nil with none, a damaged one, one of another guild or older than a week.
@@ -1153,7 +1162,7 @@ function Import:CleanVeil(data)
     if type(data) ~= "table" or data.fmt ~= "GOSVEIL1" or type(data.guild) ~= "string" then return nil end
     local ok, year, at = pcall(function() return siteInt(data.year, 2020, 2100), siteInt(data.at, 1, 4102444800) end)
     if not ok then return nil end
-    local out = { guild = data.guild, year = year, at = at, mine = {}, relay = {} }
+    local out = { guild = data.guild, year = year, at = at, mine = {}, relay = {}, event = veilEvent(data.event) }
     for i = 1, math.min(type(data.mine) == "table" and #data.mine or 0, 10) do
         local m = data.mine[i]
         local key = type(m) == "table" and veilKey(m.key)
