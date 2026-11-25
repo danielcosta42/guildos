@@ -3928,3 +3928,9 @@ L["You are going"] = "你会去"
 L["You drew %s in the Secret Santa"] = "你在神秘圣诞老人中抽到了 %s"
 L["Your snow globe arrived"] = "你的雪球到了"
 L["and %d more online"] = "还有 %d 人在线"
+
+-- UI/Salao.lua: the Forever raids countdown (#445); translations to review
+L["The raids are open"] = "团队副本已开放"
+L["Raids open in under a day"] = "团队副本将在一天内开放"
+L["Raids open in 1 day"] = "团队副本将在 1 天后开放"
+L["Raids open in %d days"] = "团队副本将在 %d 天后开放"

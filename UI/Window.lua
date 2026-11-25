@@ -166,6 +166,25 @@ local function showTabMenu(f, anchor, keys)
     ToggleDropDownMenu(1, nil, menu, anchor, 0, 0)
 end
 
+-- The entries that did not fit on the row, under its "»n".
+local function showEntryMenu(f, anchor, entries)
+    if #entries == 0 then return end
+    menu = menu or CreateFrame("Frame", "GuildOSTabMenu", UIParent, "UIDropDownMenuTemplate")
+    UIDropDownMenu_Initialize(menu, function(_, level)
+        for _, e in ipairs(entries) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = e.label
+            info.checked = (f.activeEntry and f.activeEntry.id == e.id) or false
+            info.func = function()
+                f:SelectEntry(f.activeRoom, e, true)
+                CloseDropDownMenus()
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end, "MENU")
+    ToggleDropDownMenu(1, nil, menu, anchor, 0, 0)
+end
+
 ----------------------------------------------------------------------
 -- Footer (#377): links and the version, nothing else. The actions it held
 -- went where they are used: Search and Sync to the title bar, the invite
@@ -320,7 +339,12 @@ local function createWindow()
     entryLine:SetPoint("BOTTOMLEFT", sideL, 0)
     entryLine:SetPoint("BOTTOMRIGHT", -sideR, 0)
     entryRow:Hide()
-    f.entryRow, f.entryTabs = entryRow, {}
+    f.entryRow, f.entryTabs, f.entryOverflow = entryRow, {}, {}
+    local entryMore = UI:SetButtonVariant(UI:CreateButton(entryRow, "", MORE_W, 20), "ghost")
+    entryMore:SetPoint("RIGHT", entryRow, "RIGHT", -RULE_PAD, 0)
+    entryMore:SetScript("OnClick", function(self) showEntryMenu(f, self, f.entryOverflow) end)
+    entryMore:Hide()
+    f.entryMore = entryMore
 
     local more = UI:SetButtonVariant(UI:CreateButton(rule, "", MORE_W, 22), "ghost")
     more:SetPoint("RIGHT", rule, "RIGHT", -RULE_PAD, 0)
@@ -479,6 +503,15 @@ local function createWindow()
         local panel = self.tabPanels[entry.feature]
         local want = sub or entry.sub
         if want and panel and panel.SelectSub then panel.SelectSub(want, filter) end
+        -- The panel may land elsewhere (a sub-tab that failed to build falls back to the calendar): the
+        -- marked entry follows the screen actually drawn.
+        if entry.sub and panel and panel.activeSub and panel.activeSub ~= entry.sub then
+            local r2, e2 = UI:RoomOf(entry.feature, panel.activeSub)
+            if e2 and e2.sub == panel.activeSub then
+                self.activeRoom, self.activeEntry = r2.id, e2
+                self:LayoutTabs()
+            end
+        end
         return true
     end
 
@@ -495,6 +528,8 @@ local function createWindow()
     function f:UpdateTabVisibility()
         -- An entry that may no longer open (a rank change, the Winter Veil event over) counts as closed.
         if self.activeEntry and not UI:EntryAllowed(self.activeEntry) then self.activeEntry = nil end
+        -- A room that may no longer show (an officer demoted with the Officers' Room open) closes too.
+        if self.activeRoom and not UI:RoomAllowed(self.activeRoom) then self.activeEntry = nil end
         if not (self.activeTab and allowed(self.activeTab) and self.activeEntry) then
             local panel = self.activeTab and self.tabPanels[self.activeTab]
             if panel then panel:Hide() end
@@ -556,17 +591,25 @@ local function createWindow()
 
     -- The open room's entries under the rooms, and the content below whatever is drawn. A room with a
     -- single entry draws no row: its one screen starts right under the rooms.
-    function f:LayoutEntries()
-        local list = self.activeRoom and UI:RoomEntries(self.activeRoom) or {}
+    function f:LayoutEntries(w)
+        w = w or self:GetWidth() or 0
+        -- Only entries whose feature has a panel: a tab another addon registers after the window was built
+        -- has none, and would be a button that does nothing.
+        local list = {}
+        for _, e in ipairs(self.activeRoom and UI:RoomEntries(self.activeRoom) or {}) do
+            if self.tabPanels[e.feature] then list[#list + 1] = e end
+        end
         local rowShown = #list > 1 and self.band ~= "bar"
         entryRow:SetShown(rowShown)
         for _, btn in ipairs(self.entryTabs) do btn:Hide() end
+        entryMore:Hide()
+        self.entryOverflow = {}
         local top, pad = self.layoutTop or 0, self.layoutPad or PAD
         if rowShown then
             entryRow:ClearAllPoints()
             entryRow:SetPoint("TOPLEFT", 0, -(top + RULE_H))
             entryRow:SetPoint("TOPRIGHT", 0, -(top + RULE_H))
-            local x = RULE_PAD
+            local widths, active = {}, nil
             for i, entry in ipairs(list) do
                 local btn = self.entryTabs[i]
                 if not btn then
@@ -577,13 +620,28 @@ local function createWindow()
                 end
                 btn.entry = entry
                 btn.label:SetText(entry.label)
-                local bw = math.max(TAB_MIN_W, math.ceil(btn.label:GetStringWidth()) + TAB_TEXT_PAD)
-                btn:SetWidth(bw)
+                widths[i] = math.max(TAB_MIN_W, math.ceil(btn.label:GetStringWidth()) + TAB_TEXT_PAD)
+                if self.activeEntry and self.activeEntry.id == entry.id then active = i end
+            end
+            -- Entries that do not fit fold into "»n", as the rooms do.
+            local fit, hidden = UI:FitTabs(widths, w - 2 * RULE_PAD, TAB_GAP, MORE_W, active)
+            local x, placed = RULE_PAD, {}
+            for _, i in ipairs(fit) do
+                local btn = self.entryTabs[i]
+                btn:SetWidth(widths[i])
                 btn:ClearAllPoints()
                 btn:SetPoint("LEFT", entryRow, "LEFT", x, 0)
-                btn:SetActive(self.activeEntry and self.activeEntry.id == entry.id or false)
+                btn:SetActive(i == active)
                 btn:Show()
-                x = x + bw + TAB_GAP
+                x = x + widths[i] + TAB_GAP
+                placed[i] = true
+            end
+            for i, entry in ipairs(list) do
+                if not placed[i] then self.entryOverflow[#self.entryOverflow + 1] = entry end
+            end
+            if hidden > 0 then
+                entryMore.label:SetText(RAQUO .. hidden)
+                entryMore:Show()
             end
         end
         content:ClearAllPoints()
@@ -751,13 +809,15 @@ local function createWindow()
 
         local home = self.tabPanels[HOME]
         if changed and isWatch and self.activeTab ~= HOME and not (home and home.buildFailed) then
-            -- The tab that was open comes back once the window is wide again.
-            self.beforeWatch = self.activeTab
+            -- The room and entry that were open come back once the window is wide again.
+            self.beforeWatch = { room = self.activeRoom, entry = self.activeEntry, tab = self.activeTab }
             self:SetActiveTab(HOME)
         elseif changed and not isWatch and not isBar and self.beforeWatch then
             local back = self.beforeWatch
             self.beforeWatch = nil
-            if self.activeTab == HOME then self:SetActiveTab(back) end
+            if self.activeTab == HOME then
+                if not (back.entry and self:SelectEntry(back.room, back.entry)) then self:SetActiveTab(back.tab) end
+            end
         end
 
         self:LayoutTabs(w)

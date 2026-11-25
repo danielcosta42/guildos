@@ -4048,3 +4048,9 @@ L["You are going"] = "Vous venez"
 L["You drew %s in the Secret Santa"] = "Vous avez tiré %s au Père Noël secret"
 L["Your snow globe arrived"] = "Votre boule à neige est arrivée"
 L["and %d more online"] = "et %d autres en ligne"
+
+-- UI/Salao.lua: the Forever raids countdown (#445); translations to review
+L["The raids are open"] = "Les raids sont ouverts"
+L["Raids open in under a day"] = "Les raids ouvrent dans moins d'un jour"
+L["Raids open in 1 day"] = "Les raids ouvrent dans 1 jour"
+L["Raids open in %d days"] = "Les raids ouvrent dans %d jours"

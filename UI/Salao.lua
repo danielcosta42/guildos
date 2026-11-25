@@ -136,6 +136,38 @@ function Salao:Chimney()
              opened = math.max(0, math.floor(tonumber(c.opened) or 0)), lit = WV.PhaseOf(e) == "open" }
 end
 
+-- WoW: Forever's countdown to the raids (issue #207), until a week after they open: Readiness:Countdown counts
+-- (the days, each core at the level cap, the guild), this only reads it. Nil anywhere else.
+function Salao:Countdown()
+    local R = GuildOS.Readiness
+    if not (R and R.Countdown and R.GetReport) then return nil end
+    return R:Countdown(R:GetReport(), now())
+end
+
+-- The countdown's title and lines, { text, side } each, as the Now card said them.
+function Salao:CountdownLines(cd)
+    local title = cd.open and L["The raids are open"]
+        or cd.days == 0 and L["Raids open in under a day"]
+        or cd.days == 1 and L["Raids open in 1 day"]
+        or string.format(L["Raids open in %d days"], cd.days)
+    local lines = {}
+    for _, c in ipairs(cd.cores or {}) do
+        lines[#lines + 1] = { text = c.name, side = string.format(L["%d / %d at %d"], c.ready, c.size, cd.cap) }
+    end
+    local g = cd.guild or { ready = 0, slices = {} }
+    local sl = g.slices or {}
+    local side
+    if sl.short then
+        side = sl.shortSize == (GuildOS.Readiness and GuildOS.Readiness.DUNGEON_GROUP)
+            and string.format(L["%d at %d · %d more for a group"], g.ready, cd.cap, sl.short)
+            or string.format(L["%d at %d · %d more for a %d"], g.ready, cd.cap, sl.short, sl.shortSize)
+    else
+        side = string.format(L["%d at %d"], g.ready, cd.cap)
+    end
+    lines[#lines + 1] = { text = L["Guild"], side = side }
+    return title, lines
+end
+
 ----------------------------------------------------------------------
 -- Drawing
 ----------------------------------------------------------------------
@@ -245,7 +277,8 @@ function GuildOS:CreateSalaoPanel(panel)
     local chimney  = card(content, L["The Chimney"], true)
     local fire     = card(content, L["By the fire"], true)
     local wall     = card(content, L["Guild wall"])
-    panel.cards = { forYou = forYou, board = board, chimney = chimney, fire = fire, wall = wall }
+    local raidsIn  = card(content, "", true)
+    panel.cards = { forYou = forYou, board = board, chimney = chimney, fire = fire, wall = wall, countdown = raidsIn }
 
     -- Start raid (#400), under the board, while this player may lead the invites of the site's raid in its window:
     -- the same stepper the Web screen has. The raid's name over it when it is not the board's first event.
@@ -410,6 +443,15 @@ function GuildOS:CreateSalaoPanel(panel)
         if #wItems == 0 then wItems[1] = { text = L["Nothing new in the guild yet."] } end
         local hWall = fillRows(wall, wItems, rightW)
 
+        local hCount = 0
+        local cd = Salao:Countdown()
+        if cd then
+            local title, lines = Salao:CountdownLines(cd)
+            raidsIn.title:SetText(title)
+            hCount = fillRows(raidsIn, lines, rightW)
+        else
+            fillRows(raidsIn, {}, rightW)
+        end
         local hChimney = fillChimney(rightW)
         local hFire = fillFire(rightW)
 
@@ -423,6 +465,7 @@ function GuildOS:CreateSalaoPanel(panel)
         local yl = place(forYou, 0, 0, leftW, hYou)
         yl = place(board, 0, yl, leftW, hBoard)
         local xr, yr = two and (leftW + GUTTER) or 0, two and 0 or yl
+        yr = place(raidsIn, xr, yr, rightW, hCount)
         yr = place(chimney, xr, yr, rightW, hChimney)
         yr = place(fire, xr, yr, rightW, hFire)
         yr = place(wall, xr, yr, rightW, hWall)

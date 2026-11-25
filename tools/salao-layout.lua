@@ -391,6 +391,24 @@ local function run(style)
   check(shownRows(cards.forYou)[1].main.text == "Your snow globe arrived" and cards.chimney.title.text == "The Chimney is lit",
     style .. ": on the day, the globe to open leads, and the Chimney is lit")
   GuildOS.WinterVeil = nil
+
+  -- WoW: Forever's countdown to the raids (#207): a card while Readiness:Countdown says so, none otherwise.
+  check(not cards.countdown.shown, style .. ": no countdown when Readiness has none")
+  GuildOS.Readiness = {
+    GetReport = function() return {} end,
+    DUNGEON_GROUP = 5,
+    Countdown = function()
+      return { open = false, days = 13, cap = 60, cores = { { name = "Main", ready = 7, size = 10 } },
+               guild = { ready = 27, slices = { dungeons = 5, raids = {} } } }
+    end,
+  }
+  P.Refresh()
+  local cd = shownRows(cards.countdown)
+  check(cards.countdown.shown and cards.countdown.title.text == "Raids open in 13 days",
+    style .. ": the countdown card says how many days")
+  check(cd[1] and cd[1].main.text == "Main" and cd[1].side.text == "7 / 10 at 60" and cd[2].main.text == "Guild"
+    and cd[2].side.text == "27 at 60", style .. ": each core at the level cap, then the guild")
+  GuildOS.Readiness = nil
 end
 
 run("guildos")

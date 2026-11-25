@@ -917,6 +917,31 @@ end
 resize(f, 700)
 check(f.band == "compact" and f.activeTab == "raids", "wide again, the screen that was open comes back")
 check(not f.selector.shown and shownTabs(f) > 0, "and the rooms replace the selector")
+-- Back from the narrow band: the room and the entry that were open, not just the feature (#445).
+UI:OpenWindow("guild", "bulletin")
+resize(f, 500)
+check(f.activeTab == "home", "narrow, the Salão's Home again")
+resize(f, 700)
+check(f.activeRoom == "salao" and f.activeEntry.id == "bulletin" and selected[#selected] == "CreateGuildHub:bulletin",
+  "wide again: the same room, entry and sub-tab, not the calendar")
+-- The entries row folds into »n when it does not fit, as the rooms do.
+fire(tabOf(f, "salao"), "OnClick")
+resize(f, 430)
+local entryShown = 0
+for _, b in ipairs(f.entryTabs) do if b.shown then entryShown = entryShown + 1 end end
+check(f.entryMore.shown and #f.entryOverflow > 0 and entryShown + #f.entryOverflow == #UI:RoomEntries("salao"),
+  "a narrow window folds the Salão's entries into »n, none lost")
+fire(f.entryMore, "OnClick")
+check(#menuItems == #f.entryOverflow and menuItems[1].text == f.entryOverflow[1].label, "»n lists the folded entries")
+resize(f, 700)
+-- An officer demoted with the Officers' Room open leaves it.
+UI:OpenWindow("recruitment")
+check(f.activeRoom == "officers", "an officer's Recruitment is in the Officers' Room")
+officer = false
+f:UpdateTabVisibility()
+check(f.activeRoom ~= "officers", "demoted, the window leaves the Officers' Room")
+officer = true
+f:UpdateTabVisibility()
 resize(f, 500)
 fire(f.selector, "OnClick")
 for _, item in ipairs(menuItems) do if item.text == "Members" then item.func() end end

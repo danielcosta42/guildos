@@ -39,6 +39,10 @@ content; each room is redrawn in its own phase (epic #444).
 - A room shows only while at least one of its entries may open (present on this client, switched on,
   started, the rank allows it).
 - Under the rooms, a second row holds the open room's entries. A room with a single entry draws no row.
+  Entries that do not fit fold into "»n", as the rooms do, so none is lost on a narrow window.
+- Narrowed under 520px the window shows the Salão's Home. Widened again, it returns to the room, entry and
+  sub-tab that were open.
+- An officer who is demoted while the Officers' Room is open leaves it at once.
 - Phase 1 rooms and entries, in order:
 
 | Room | Entries (feature › sub-tab) |
@@ -84,6 +88,8 @@ the wide band.
    click opens the member's menu (whisper, invite, open their sheet).
 4. **Guild wall.** The last five lines of `Agora:Activity`, each opening the screen that owns it.
 
+- On WoW: Forever, until a week after the raids open, a **raids countdown** card heads the right column.
+  It comes from `Readiness:Countdown` (#207): the days left, each core at the level cap, and the guild.
 - While a Winter Veil event is on, a **Chimney** card above By the fire shows one stocking per entrant,
   filled for each one who wrapped (`counts.entrants`, `counts.wrapped`).
 - After the opening it reads "The Chimney is lit" with the count of opened globes.

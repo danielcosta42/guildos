@@ -3928,3 +3928,9 @@ L["You are going"] = "참석"
 L["You drew %s in the Secret Santa"] = "비밀 산타에서 %s 님을 뽑았습니다"
 L["Your snow globe arrived"] = "스노우볼이 도착했습니다"
 L["and %d more online"] = "외 %d명 접속 중"
+
+-- UI/Salao.lua: the Forever raids countdown (#445); translations to review
+L["The raids are open"] = "공격대가 열렸습니다"
+L["Raids open in under a day"] = "공격대가 하루 안에 열립니다"
+L["Raids open in 1 day"] = "공격대가 1일 후 열립니다"
+L["Raids open in %d days"] = "공격대가 %d일 후 열립니다"
