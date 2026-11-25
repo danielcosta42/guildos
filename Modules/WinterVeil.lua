@@ -278,6 +278,41 @@ function WV:Got()
     return m and m.got or nil
 end
 
+----------------------------------------------------------------------
+-- The Chimney as the screen shows it (the site's §10). Pure: the share is the site's (`chimney`), the game only says
+-- which state it is in. Before the draw it is out ("lights at the draw"); while wrapping it is live; from `wrapUntil`
+-- it is frozen at the site's number. Full is 100% for real. The quests' slice is the part of the share that the
+-- wrapped globes alone do not explain (a pair counts when wrapped or when its giver did a quest of the event).
+--   state "off" | "live" | "full" | "frozen", pct (nil when off), full, wrappedPct, questPct
+----------------------------------------------------------------------
+function WV.ChimneyState(e, t)
+    local phase = WV.PhaseOf(e, t)
+    if not phase or not e.drawn or phase == "joining" or phase == "closed" then
+        return { state = "off", full = false, wrappedPct = 0, questPct = 0 }
+    end
+    local pct = math.max(0, math.min(100, math.floor(tonumber(e.chimney) or 0)))
+    local c = e.counts or {}
+    local pairs_ = tonumber(c.pairs) or 0
+    local wrappedPct = pairs_ > 0 and math.min(pct, math.floor((tonumber(c.wrapped) or 0) * 100 / pairs_ + 1e-9)) or pct
+    local full = pct >= 100
+    local state = phase == "wrapping" and (full and "full" or "live") or "frozen"
+    return { state = state, pct = pct, full = full, wrappedPct = wrappedPct, questPct = math.max(0, pct - wrappedPct) }
+end
+
+-- Moments the screen plays once a year in this client (the Chimney filling, a globe's opening): a flag per name,
+-- kept with the year's store so a new year starts clean.
+function WV:Seen(what)
+    local s = store()
+    return s ~= nil and s.seen ~= nil and s.seen[what] == true
+end
+
+function WV:MarkSeen(what)
+    local s = store()
+    if not s or type(what) ~= "string" then return end
+    s.seen = s.seen or {}
+    s.seen[what] = true
+end
+
 -- The account's Collection, newest first (the site's order).
 function WV:Collection()
     local p = self:Personal()

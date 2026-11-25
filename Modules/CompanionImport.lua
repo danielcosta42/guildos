@@ -1066,7 +1066,9 @@ local function veilOrnament(o)
     local ok, year, at = pcall(function() return siteInt(o.year, 2020, 2100), siteInt(o.openedAt, 1, VEIL_TIME) end)
     if not ok then return nil end
     return { id = o.id, year = year, scene = o.scene, rarity = o.rarity, openedAt = at,
-             from = veilKey(o.from), host = o.host == true or nil, note = o.note ~= nil and veilNote(o.note) or nil }
+             from = veilKey(o.from), host = o.host == true or nil, note = o.note ~= nil and veilNote(o.note) or nil,
+             -- the note lifted the rarity one level (the site's §7): only a literal true; absent or anything else is false
+             caprice = o.caprice == true or nil }
 end
 
 -- An event as either block carries it (the guild's `veil`, or a person's `event`), held to its shape; nil when not one.

@@ -230,7 +230,7 @@ do
   function Frame:CreateTexture() return new() end
   local texts = {}
   local UI = {}
-  for _, name in ipairs({ "CreateTitle", "CreateText", "CreateSectionTitle", "CreateMetricChip", "CreateProgressBar", "CreateButton", "CreatePanel", "SetButtonVariant" }) do
+  for _, name in ipairs({ "CreateTitle", "CreateText", "CreateHeaderText", "CreateSectionTitle", "CreateMetricChip", "CreateProgressBar", "CreateButton", "CreatePanel", "SetButtonVariant" }) do
     UI[name] = function(_, a, b)
       local f = new()
       if type(b) == "string" then f.text = b elseif type(a) == "string" then f.text = a end
@@ -248,7 +248,8 @@ do
   function CreateFrame() return new() end
   function date(...) return os.date(...) end
   function GuildOS:IsOfficer() return false end
-  dofile(ADDON .. "/UI/WinterVeilPanel.lua")
+  -- The panel draws through the Winter Veil effects, the Chimney and the shelf (guildos-web#673).
+  for _, f in ipairs({ "VeilFx", "VeilChimney", "VeilShelf", "WinterVeilPanel" }) do dofile(ADDON .. "/UI/" .. f .. ".lua") end
   local panel = GuildOS:CreateWinterVeilPanel(new())
   local function say(text)
     for _, f in ipairs(texts) do if f.shown and f.text and tostring(f.text):find(text, 1, true) then return true end end
