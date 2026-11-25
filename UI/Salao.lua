@@ -138,10 +138,19 @@ end
 
 -- WoW: Forever's countdown to the raids (issue #207), until a week after they open: Readiness:Countdown counts
 -- (the days, each core at the level cap, the guild), this only reads it. Nil anywhere else.
+-- The report walks the whole roster and its gear, so it is never built off Forever, and at most once every
+-- COUNTDOWN_S: the 15s ticker and a resize redraw from the last answer.
+local COUNTDOWN_S = 60
 function Salao:Countdown()
+    local client = GuildOS.Client or {}
+    if client.isRetail or client.isAnniversary then return nil end
     local R = GuildOS.Readiness
     if not (R and R.Countdown and R.GetReport) then return nil end
-    return R:Countdown(R:GetReport(), now())
+    local t = now()
+    if self._cdAt and t - self._cdAt < COUNTDOWN_S then return self._cd end
+    local ok, cd = GuildOS:SafeCall(function() return R:Countdown(R:GetReport(), t) end)
+    self._cd, self._cdAt = ok and cd or nil, t
+    return self._cd
 end
 
 -- The countdown's title and lines, { text, side } each, as the Now card said them.
@@ -483,9 +492,12 @@ function GuildOS:CreateSalaoPanel(panel)
         if panel.ticker then panel.ticker:Cancel(); panel.ticker = nil end
     end)
     -- The scroll child stops short of the scroll bar (as BindScrollChildWidth); laid out again on a resize.
+    -- A grip drag resizes every frame: the cards are laid out again once it settles, not each frame.
     UI:MakeResponsive(panel, function(_, w)
         content:SetWidth(math.max(1, (w or 0) - (UI.SCROLL_GUTTER or 0)))
-        if panel:IsVisible() then GuildOS:SafeCall(refresh) end
+        GuildOS:Coalesce("salaoLayout", 0.2, function()
+            if panel:IsVisible() then GuildOS:SafeCall(refresh) end
+        end)
     end)
     GuildOS:SafeCall(refresh)
 end

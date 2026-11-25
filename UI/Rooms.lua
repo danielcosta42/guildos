@@ -98,6 +98,9 @@ end
 -- rank), so may the feature it needs, and a members-only entry is not an officer's.
 function UI:EntryAllowed(e)
     if not e then return false end
+    -- The window answers whether it built a panel for the feature (a tab another addon registered after it
+    -- was built has none): an entry with no panel would be a button that does nothing.
+    if self.HasPanel and not self:HasPanel(e.feature) then return false end
     if e.members and officer() then return false end
     if e.needs and not self:IsFeatureAllowed(self:GetFeature(e.needs)) then return false end
     return self:IsFeatureAllowed(self:GetFeature(e.feature))

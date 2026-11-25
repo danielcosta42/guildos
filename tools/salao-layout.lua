@@ -394,21 +394,33 @@ local function run(style)
 
   -- WoW: Forever's countdown to the raids (#207): a card while Readiness:Countdown says so, none otherwise.
   check(not cards.countdown.shown, style .. ": no countdown when Readiness has none")
+  local reports = 0
   GuildOS.Readiness = {
-    GetReport = function() return {} end,
+    GetReport = function() reports = reports + 1; return {} end,
     DUNGEON_GROUP = 5,
     Countdown = function()
       return { open = false, days = 13, cap = 60, cores = { { name = "Main", ready = 7, size = 10 } },
                guild = { ready = 27, slices = { dungeons = 5, raids = {} } } }
     end,
   }
+  GuildOS.UI.Salao._cdAt = nil
+  local wasRetail, wasTBC = GuildOS.Client.isRetail, GuildOS.Client.isAnniversary
+  GuildOS.Client.isRetail, GuildOS.Client.isAnniversary = true, false
   P.Refresh()
+  check(reports == 0 and not cards.countdown.shown, style .. ": off Forever the readiness report is never built for it")
+  GuildOS.Client.isRetail, GuildOS.Client.isAnniversary = false, false
+  GuildOS.UI.Salao._cdAt = nil
+  P.Refresh()
+  P.Refresh()
+  check(reports == 1, style .. ": on Forever it is built once, and the next refreshes reuse it")
   local cd = shownRows(cards.countdown)
   check(cards.countdown.shown and cards.countdown.title.text == "Raids open in 13 days",
     style .. ": the countdown card says how many days")
   check(cd[1] and cd[1].main.text == "Main" and cd[1].side.text == "7 / 10 at 60" and cd[2].main.text == "Guild"
     and cd[2].side.text == "27 at 60", style .. ": each core at the level cap, then the guild")
   GuildOS.Readiness = nil
+  GuildOS.Client.isRetail, GuildOS.Client.isAnniversary = wasRetail, wasTBC
+  GuildOS.UI.Salao._cdAt, GuildOS.UI.Salao._cd = nil, nil
 end
 
 run("guildos")

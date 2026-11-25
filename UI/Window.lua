@@ -877,6 +877,13 @@ end
 -- The ways in
 ----------------------------------------------------------------------
 
+-- Whether the window can open feature `id`: true before it is built (every tab feature will get a panel then),
+-- and afterwards only for the features it built a panel for (UI/Rooms.lua asks, #445).
+function UI:HasPanel(id)
+    local f = GuildOS.RosterFrame
+    return not f or (f.tabPanels and f.tabPanels[id] ~= nil) or false
+end
+
 -- The window, created on first use. Nil until the saved data is loaded.
 function UI:GetMainWindow()
     if not GuildOS.db then return nil end

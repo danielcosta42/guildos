@@ -103,6 +103,14 @@ room, entry = UI:RoomOf("extra")
 check(room and room.id == "salao" and entry.feature == "extra", "a tab no room names is a Salão entry")
 check(ids(UI:RoomEntries("salao")):find("x:extra", 1, true), "listed after the Salão's own")
 
+-- ── 6. An entry the window built no panel for ──────────────────────────
+function UI:HasPanel(id) return id ~= "groups" end
+check(ids(UI:RoomEntries("raids")) == "calendar,raids", "an entry with no panel is not offered")
+check(UI:RoomDefault("raids", "groups").id == "calendar", "nor opened, even when it was saved")
+function UI:HasPanel(id) return id == "groups" end
+check(not UI:RoomAllowed("members"), "a room whose entries have no panel is not drawn")
+UI.HasPanel = nil
+
 if #fails > 0 then
   for _, f in ipairs(fails) do print("FAIL: " .. f) end
   os.exit(1)
