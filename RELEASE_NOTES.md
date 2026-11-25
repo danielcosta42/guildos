@@ -1,4 +1,4 @@
-## [1.43.3] - 2026-11-25
+## [1.43.4] - 2026-11-25
 
 ### Other
-- Shortened the Winter Veil teaser tooltip to a single line.
+- Winter Veil quests done in the game now count toward the guild's Chimney, and the Winter Veil tab shows whether yours was registered.
