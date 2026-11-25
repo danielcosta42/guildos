@@ -88,3 +88,31 @@ dropped, nothing about wrapping or opening); the export's caps; and the panel dr
 - A member who wraps or opens in the game needs the companion; a "wrap it on the site" link stands in when there is none.
 - Frimm (the host) is shown as text only: no image or voice yet (launch kit).
 - Not yet tried in the game client (Interface 20504).
+
+## The screens (guildos-web#673, the site's specs/122)
+
+The approved prototype is `ui/prototipo-addon.html` (with `ui/addon.md`, copies of the site's; the site is the source).
+Final decisions: the wrapped globe is a **gift box**; opening is **one click** (the click asks, Frimm "goes to fetch it",
+and the whole ceremony plays once when the opened globe reaches the client through the companion and the tab is in view);
+the Chimney shows **out before the draw** ("lights at the draw") and frozen after the deadline; the game's quests are a
+blue slice; a `caprice = true` on the opened globe (new, optional; absent = false) shows "caprice note: +1 level"; Frimm
+is a portrait with three faces; the `snow` option is shown as "Winter Veil animations" (snow, embers, rays), same key.
+
+- `UI/VeilFx.lua`: the art's paths and the `veil-fx` atlas's layout (the one place they live), the rarity colours, the
+  sounds (client ids, all to be checked on 2.5.x, inside `pcall`, behind `veilSounds`), and every effect: the fire's
+  flipbook (one OnUpdate at 10 Hz for both flames), AnimationGroup factories (ember, smoke, star, ring, flash, rays,
+  tremble, burst, reveal, pop) and timers without OnUpdate. A scope per tab stops all of it on OnHide; nothing plays
+  with the option off or past **64 textures in motion** (the window's snow counted).
+- `UI/VeilChimney.lua`: the left column, 264x512: cold and hot drawings, the hot one clipped from the bottom
+  (`SetHeight` + `SetTexCoord`, 0.9 s transition), fire, embers and smoke by the level, the plate, the ruler, the
+  wrapped/quests split, and the odds bar (60/25/12/3 to 20/50/24/6, the site's `rarityOf`). Full: a sweep, the
+  plate's bounce, stars and Frimm's toast, once a year (`WinterVeil:Seen`).
+- `UI/WinterVeilPanel.lua`: joining (Frimm, the four dates, the five scenes), joined, wrapping (five scenes, the note
+  with its 80/40 meter, the globe wrapped into the box), wrapped (the box, the note card, the countdown), the opening
+  and the result (who gave it, the note card, the tags). `UI/VeilShelf.lua`: the Collection, three columns of 128 on
+  planks, framed in the rarity's colour, and the detail (192, from whom, the note); rays only in the detail.
+- `UI/Snow.lua`: the corner teaser gains the parcel and Frimm's cap, which rises on hover; the text is the same.
+- `Modules/WinterVeil.lua`: `ChimneyState(e, t)` (pure: state, share, the split) and the year's `Seen`/`MarkSeen`.
+- Tests: `tools/veil-ui.lua` (frames that know when they are visible, AnimationGroups in simulated time).
+- Only the game can tell: the sound ids, the Scale animation's API on 2.5.x (`SetScaleFrom`, with fallbacks), the look
+  of ADD over the panel, the fire's size against the drawing, and the frame rate with everything on.

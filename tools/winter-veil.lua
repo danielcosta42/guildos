@@ -296,7 +296,7 @@ do
   function Frame:SetEnabled(v) self.enabled = v end
   local tabs, texts = {}, {}
   local UI = {}
-  for _, name in ipairs({ "CreateTitle", "CreateText", "CreateSectionTitle", "CreateMetricChip", "CreateProgressBar", "CreateButton",
+  for _, name in ipairs({ "CreateTitle", "CreateText", "CreateHeaderText", "CreateSectionTitle", "CreateMetricChip", "CreateProgressBar", "CreateButton",
                           "CreateCheckbox", "CreatePanel", "SetButtonVariant" }) do
     UI[name] = function(_, a, b)
       local f = new()
@@ -316,7 +316,8 @@ do
   function date(...) return os.date(...) end
   local officer = false
   function GuildOS:IsOfficer() return officer end
-  dofile(ADDON .. "/UI/WinterVeilPanel.lua")
+  -- The panel draws through the Winter Veil effects, the Chimney and the shelf (guildos-web#673).
+  for _, f in ipairs({ "VeilFx", "VeilChimney", "VeilShelf", "WinterVeilPanel" }) do dofile(ADDON .. "/UI/" .. f .. ".lua") end
   local container = new()
   local panel = GuildOS:CreateWinterVeilPanel(container)
   local function say(text)
@@ -333,7 +334,7 @@ do
   inbox(veil(), personal({ { to = "Thalindra-Nightslayer", wrapped = false } })); draw()
   check(say("YOU DREW") and say("Wrap"), "after the draw it shows whom I drew and the wrapping")
   inbox(veil({ chimney = 100 }), personal({ { to = "Thalindra-Nightslayer", wrapped = true, scene = "fire", note = "oi" } })); draw()
-  check(say("full: better odds"), "a full Chimney says the odds are better")
+  check(say("DOUBLE ODDS") and say("FULL"), "a full Chimney says the odds are better")
 
   inbox(veil({ wrapUntil = NOW - 86400, openAt = NOW - 10 }), personal({ { to = "Thalindra-Nightslayer", rarity = "rare" } }, { ready = true }))
   GuildOS.db.winterVeil.opens = {}

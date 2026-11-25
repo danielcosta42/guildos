@@ -30,6 +30,15 @@ local function newFrame()
   function f:GetHeight() return self.h end
   function f:SetFrameLevel(l) self.level = l end
   function f:GetFrameLevel() return self.level end
+  -- The corner's cap rises with one AnimationGroup (no OnUpdate): Play counts, OnFinished runs at once.
+  function f:CreateAnimationGroup()
+    local ag = { scripts = {}, plays = 0 }
+    function ag:CreateAnimation() return setmetatable({}, { __index = function() return function() end end }) end
+    function ag:SetScript(n, fn) self.scripts[n] = fn end
+    function ag:Play() self.plays = self.plays + 1; f.animPlays = (f.animPlays or 0) + 1; if self.scripts.OnFinished then self.scripts.OnFinished(self) end end
+    function ag:Stop() end
+    return ag
+  end
   function f:CreateTexture()
     local t = { n = 0 }
     function t:SetColorTexture() end
@@ -88,6 +97,13 @@ check(tip.text and tip.text:find("wrapping something", 1, true) and tip.text:fin
 check(tip.shownNow, "the tooltip is shown")
 S.corner.scripts.OnLeave(S.corner)
 check(not tip.shownNow, "and hidden on leave")
+check(S.corner.parcel and S.corner.hat, "the corner has the parcel and Frimm's cap")
+local hatPlays = S.corner.hat.animPlays or 0
+S.corner.scripts.OnEnter(S.corner)
+check((S.corner.hat.animPlays or 0) == hatPlays + 1 and S.corner.hatUp, "hovering raises the cap, with one animation")
+S.corner.scripts.OnLeave(S.corner)
+check((S.corner.hat.animPlays or 0) == hatPlays + 2 and not S.corner.hatUp, "and leaving lowers it")
+check(S:Moving() == #S.corner.flakes, "the corner's flakes count as textures in motion")
 
 -- ── 4. Throttle ───────────────────────────────────────────────────────
 local moved = 0
@@ -100,6 +116,7 @@ S.Step = orig
 -- ── 5. Closing the window stops everything ────────────────────────────
 win:Hide()
 check(not S.corner.scripts.OnUpdate and not S.full.scripts.OnUpdate and not S.corner.shown, "closed: no OnUpdate, nothing shown")
+check(S:Moving() == 0, "closed: nothing in motion")
 
 -- ── 6. From the cutoff: the whole window, 20 flakes at most ───────────
 NOW = S.CUTOFF_AT + 60
