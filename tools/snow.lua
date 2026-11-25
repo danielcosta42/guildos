@@ -84,7 +84,7 @@ check(S.corner.scripts.OnUpdate and not S.full.scripts.OnUpdate, "only the corne
 check(S.corner.mouse == true and S.full.mouse == false, "the corner takes the mouse for the tooltip; the full layer lets it through")
 check(#S.corner.flakes <= S.MAX_FLAKES and #S.corner.flakes > 0, "the corner has a few flakes")
 S.corner.scripts.OnEnter(S.corner)
-check(tip.text and tip.text:find("Winter Veil Secret Santa", 1, true) and tip.text:find("Frimm", 1, true), "hover shows the teaser text")
+check(tip.text and tip.text:find("wrapping something", 1, true) and tip.text:find("Frimm", 1, true), "hover shows the teaser text")
 check(tip.shownNow, "the tooltip is shown")
 S.corner.scripts.OnLeave(S.corner)
 check(not tip.shownNow, "and hidden on leave")

@@ -124,7 +124,7 @@ end
 -- The window's two layers: the whole-window snow and the corner teaser.
 ----------------------------------------------------------------------
 function Snow:Teaser()
-    return L["Coming soon: Winter Veil Secret Santa. Everyone in the guild gets a collectible snow globe: five scenes, four rarities, and a little note from whoever drew you. The Chimney only fills if everyone wraps. Presents open on Dec 25. — Frimm (he swears he hasn't lost a single tag yet)"]
+    return L["Someone is wrapping something for the guild. Keep an eye out. — Frimm"]
 end
 
 -- Called when the window shows, and when the option changes.
