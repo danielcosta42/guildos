@@ -253,7 +253,7 @@ local function inbox(gild, personal)
   GuildOSInbox = {}
   if gild then GuildOSInbox[#GuildOSInbox + 1] = pack("GOSGILD1", { fmt = "GOSGILD1", v = 1, guild = GUILD, realm = "Nightslayer", at = NOW - 60, veil = gild }) end
   if personal then
-    local p = { fmt = "GOSVEIL1", v = 2, guild = GUILD, realm = "Nightslayer", at = NOW - 60, year = 2025, mine = {}, relay = {}, collection = {} }
+    local p = { fmt = "GOSVEIL1", v = 2, guild = GUILD, realm = "Nightslayer", at = NOW - 60, year = 2025, mine = {}, collection = {} }
     for k, x in pairs(personal) do p[k] = x end
     GuildOSInbox[#GuildOSInbox + 1] = pack("GOSVEIL1", p)
   end
@@ -401,6 +401,12 @@ local anyEmber = false
 for _, em in ipairs(ch.embers) do anyEmber = anyEmber or em.g.playing end
 check(not anyEmber, "no ember rises")
 check(said("Join the Secret Santa") ~= nil and said("The workshop is open!") ~= nil, "the joining screen, with Frimm's line")
+-- GOSVEIL1 alone (no GOSGILD1): its `event` draws the same joining screen, and joining works from it.
+inbox(nil, { mine = {}, event = veil({ drawn = false, joinUntil = NOW + 86400, chimney = 0 }) })
+panel.Draw()
+check(said("Join the Secret Santa") ~= nil, "with GOSVEIL1 alone the joining screen shows")
+check(WV:Join(false) == true and WV:Joined(), "and I join from it")
+GuildOS.db.winterVeil.people = {}
 inbox(veil({ wrapUntil = NOW - 10, openAt = NOW + 86400, chimney = 71 }), personal({ { to = "Thalindra-Nightslayer", wrapped = true, scene = "fire" } }))
 panel.Draw()
 advance(1)
@@ -584,6 +590,10 @@ check(said("Waiting to sync") ~= nil, "a wrap made here and not on the site yet 
 inbox(veil({ wrapUntil = NOW + 3600, openAt = NOW + 86400 }), personal({ { to = "Thalindra-Nightslayer", wrapped = false } }))
 panel.Draw()
 check(said("closes in less than a day") ~= nil, "near the deadline it says so louder")
+inbox(veil({ wrapUntil = NOW + 3 * 86400 + 3600, openAt = NOW + 5 * 86400 }), personal({ { to = "Thalindra-Nightslayer", wrapped = false } }))
+panel.Draw()
+check(said("hands the unwrapped pairs to somebody else") ~= nil and said("closes in less than a day") == nil,
+  "near the reassignment (WinterVeil.SyncWarningAt), it says that one")
 inbox(veil(), personal({ { to = "Thalindra-Nightslayer", wrapped = true, scene = "tree" } }))
 panel.Draw()
 check(said("Waiting to sync") == nil and said("Double ribbon") ~= nil, "once the site has it, Frimm is at ease")

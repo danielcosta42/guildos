@@ -503,7 +503,8 @@ local function createWindow()
             link:Hide()
             spec[#spec + 1] = { key = item.key, min = link:GetWidth(), weight = 0, priority = item.priority }
         end
-        local room = w - 2 * FOOT_PAD + LINK_PAD - GRIP - math.ceil(version:GetStringWidth()) - FOOT_GAP
+        -- `footReserve`: room left of the version another part keeps (the snow's parcel, UI/Snow.lua).
+        local room = w - 2 * FOOT_PAD + LINK_PAD - GRIP - math.ceil(version:GetStringWidth()) - FOOT_GAP - (self.footReserve or 0)
         for _, col in ipairs(UI:ResolveColumns(spec, room, FOOT_GAP)) do
             if col.shown then
                 local link = self.footItems[col.key]

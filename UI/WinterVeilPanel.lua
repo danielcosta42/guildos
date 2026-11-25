@@ -61,23 +61,6 @@ local function fromOf(o)
     return o.host and L["Frimm, the host"] or (o.from and nameOf(o.from) or "?")
 end
 
--- A caprice note (the site's §7, decided 2026-11-25): 40 characters or more and 6 different letters; the rarity is
--- then drawn twice and the better one stays. The site decides; this is the hint. WinterVeil.Caprice when it has it.
-local CAPRICE_LETTERS = 6
-local function letters(note)
-    local seen, n = {}, 0
-    for ch in note:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
-        local c = #ch == 1 and ch:lower() or ch
-        if (#ch > 1 or c:find("%a")) and not seen[c] then seen[c] = true; n = n + 1 end
-    end
-    return n
-end
-local function isCaprice(note)
-    local WV = GuildOS.WinterVeil
-    if type(WV.Caprice) == "function" then return WV.Caprice(note) == true end
-    return WV.CharCount(note) >= WV.CAPRICE_MIN and letters(note) >= CAPRICE_LETTERS
-end
-
 local T = { sceneName = sceneName, rarityName = rarityName, baseName = baseName, nameOf = nameOf, dayOf = dayOf, fromOf = fromOf }
 
 local function mono(fs, size, role)
@@ -1046,14 +1029,14 @@ function GuildOS:CreateWinterVeilPanel(container)
         if hasNote then wdCard:SetNote(g.note) end
         wdCount:SetText(countdown(e.openAt - t))
         -- A wrap made here that the site has not confirmed yet: say so, louder near the deadline.
+        -- WinterVeil:PendingSync() names it; WinterVeil.SyncWarningAt says when a deadline is less than a day away.
         local pending = false
-        local s = WV._store and WV._store()
-        if s and s.wraps and s.wraps[g.to] then
-            pending = true
-            local m = WV:MyEntry()
-            for _, x in ipairs(m and m.gives or {}) do if x.to == g.to and x.wrapped then pending = false end end
-        end
-        if pending and phase == "wrapping" and e.wrapUntil - t < 86400 then
+        for _, x in ipairs(WV:PendingSync()) do if x.to == g.to then pending = true end end
+        local warn = pending and phase == "wrapping" and WV.SyncWarningAt(e, 1, t) or nil
+        if warn and warn.kind == "reassign" then
+            wdFace:SetFace("oops")
+            wdSay:Say(nil, L["In less than a day the site hands the unwrapped pairs to somebody else, and it does not have yours yet: sync the companion."])
+        elseif warn then
             wdFace:SetFace("oops")
             wdSay:Say(nil, L["The wrapping closes in less than a day and the site does not have yours yet: sync the companion."])
         elseif pending and phase == "wrapping" then
@@ -1098,10 +1081,12 @@ function GuildOS:CreateWinterVeilPanel(container)
             b.label:SetTextColor(tc.r, tc.g, tc.b)
         end
         local note = noteBox.edit and noteBox.edit:GetText() or ""
-        local n = WV.CharCount(note)
+        -- Counted as the site counts it: the clean note (spaces collapsed). A caprice note (the site's §7): 40 characters
+        -- or more and 6 different letters, the rarity then drawn twice; WinterVeil.Caprice is the site's rule, a hint here.
         local clean = WV.CleanNote(note)
+        local n = WV.CharCount(clean or note)
         noteCount:SetText(string.format("%d/%d", n, WV.NOTE_MAX))
-        local caprice = clean ~= nil and isCaprice(clean)
+        local caprice = WV.Caprice(note)
         local fc = caprice and C.ok or C.lineHi
         meterFill:SetColorTexture(fc.r, fc.g, fc.b, 1)
         meterFill:SetWidth(math.max(0.01, 452 * math.min(n, WV.NOTE_MAX) / WV.NOTE_MAX))
@@ -1110,11 +1095,11 @@ function GuildOS:CreateWinterVeilPanel(container)
         elseif caprice then
             capLine:SetText(colored(L["Caprice note: the rarity is drawn twice and the better one stays."], C.ok))
         elseif n >= WV.CAPRICE_MIN then
-            capLine:SetText(string.format(L["A caprice note needs %d different letters."], CAPRICE_LETTERS))
+            capLine:SetText(string.format(L["A caprice note needs %d different letters."], WV.CAPRICE_LETTERS))
         else
-            capLine:SetText(string.format(L["With %d characters or more and %d different letters, the rarity is drawn twice. %d to go."], WV.CAPRICE_MIN, CAPRICE_LETTERS, WV.CAPRICE_MIN - n))
+            capLine:SetText(string.format(L["With %d characters or more and %d different letters, the rarity is drawn twice. %d to go."], WV.CAPRICE_MIN, WV.CAPRICE_LETTERS, WV.CAPRICE_MIN - n))
         end
-        wrapBtn:SetText(g.wrapped and L["Wrap again"] or L["Wrap"])
+        wrapBtn:SetText((g.wrapped or g.pending) and L["Wrap again"] or L["Wrap"])
         wrapBtn:SetEnabled(clean ~= nil and WV:HasCompanion())
         wrapBtn:SetScript("OnClick", function()
             local ok, why = WV:Wrap(g.to, scene, noteBox.edit:GetText())
@@ -1134,7 +1119,7 @@ function GuildOS:CreateWinterVeilPanel(container)
                 i = i + 1
                 local row = giveRowAt(i)
                 row.text:SetText(nameOf(x.to))
-                row.value:SetText(x.wrapped and L["wrapped"] or L["not wrapped yet"])
+                row.value:SetText((x.wrapped or x.pending) and L["wrapped"] or L["not wrapped yet"])
                 if x.to == g.to then row.sel:Show() end
                 row:SetScript("OnClick", function() pickedTo = x.to; GuildOS:SafeCall(draw) end)
             end
@@ -1167,7 +1152,7 @@ function GuildOS:CreateWinterVeilPanel(container)
             only(nil)
             mKicker:SetText(L["YOU DREW"])
             mLine:SetText(L["Your pair has not reached this client yet."])
-            mNote:SetText(L["It comes with the companion, or from a guildmate who has it. You can also wrap on the site."] .. "  " .. siteLink())
+            mNote:SetText(L["It comes with the companion. You can also wrap on the site."] .. "  " .. siteLink())
             return
         end
         local g = gives[1]
@@ -1175,7 +1160,8 @@ function GuildOS:CreateWinterVeilPanel(container)
         pickedTo = g.to
 
         if wrapping then return end
-        if g.wrapped and not (editing and phase == "wrapping") then drawWrapped(e, phase, t, g); return end
+        -- A wrap made here and not on the site yet (`pending`) shows as wrapped, "waiting to sync".
+        if (g.wrapped or g.pending) and not (editing and phase == "wrapping") then drawWrapped(e, phase, t, g); return end
         if phase ~= "wrapping" then
             only(nil)
             mKicker:SetText(L["YOU DREW"])

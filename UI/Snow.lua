@@ -24,6 +24,10 @@ Snow.MAX_FLAKES = 20
 Snow.STEP = 0.05
 local TEASER_W, TEASER_H = 72, 72
 local TEASER_FLAKES = 8
+-- The teaser stands on the window's footer, left of the version, where nothing else is: the footer keeps that width
+-- free of its links (`footReserve`, UI/Window.lua). Only the parcel and Frimm's cap take the mouse; the snow over them
+-- lets every click through to what is under it.
+local GIFT_GAP = 6
 
 local function clock() return time() end
 
@@ -138,6 +142,11 @@ end
 -- The corner's parcel and Frimm's cap: colour blocks. The cap rises 22 px on hover and sinks back on leave.
 ----------------------------------------------------------------------
 local HAT_X, HAT_LOW, HAT_RISE = 40, -16, 22
+local PARCEL_X, PARCEL_W, HAT_W = 24, 24, 22
+-- The width of the corner that takes the mouse (the parcel's left edge to the cap's right edge), and what lies right of it.
+Snow.MOUSE_W = HAT_X + HAT_W - PARCEL_X
+Snow.MOUSE_RIGHT = TEASER_W - (HAT_X + HAT_W)
+local MOUSE_RIGHT = Snow.MOUSE_RIGHT
 
 local function block(parent, layer, r, g, b, w, h, x, y)
     local t = parent:CreateTexture(nil, layer)
@@ -150,8 +159,8 @@ end
 local function buildCorner(box)
     -- The parcel: red, a gold band and a gold loop on top.
     local parcel = CreateFrame("Frame", nil, box)
-    parcel:SetSize(24, 26)
-    parcel:SetPoint("BOTTOMLEFT", 24, 2)
+    parcel:SetSize(PARCEL_W, 26)
+    parcel:SetPoint("BOTTOMLEFT", PARCEL_X, 2)
     block(parcel, "ARTWORK", 0.72, 0.263, 0.227, 24, 20, 0, 0)
     block(parcel, "OVERLAY", 0.851, 0.663, 0.31, 4, 20, 10, 0)
     block(parcel, "OVERLAY", 0.851, 0.663, 0.31, 12, 2, 6, 24)
@@ -159,7 +168,7 @@ local function buildCorner(box)
     block(parcel, "OVERLAY", 0.851, 0.663, 0.31, 2, 5, 16, 20)
     -- The cap: a red cone leaning right, a white brim and a pompom.
     local hat = CreateFrame("Frame", nil, box)
-    hat:SetSize(22, 26)
+    hat:SetSize(HAT_W, 26)
     hat:SetPoint("BOTTOMLEFT", HAT_X, HAT_LOW)
     block(hat, "ARTWORK", 0.72, 0.263, 0.227, 17, 8, 2, 4)
     block(hat, "ARTWORK", 0.72, 0.263, 0.227, 12, 7, 6, 12)
@@ -218,9 +227,15 @@ function Snow:Refresh()
         stopLayer(self.full)
     end
     if mode == "teaser" then
+        -- The parcel and the cap stand on the footer, GIFT_GAP left of the version (the footer is 22 px high: the box's
+        -- floor is its floor); the window's footer keeps their width free of links.
         local box = self.corner
         box:ClearAllPoints()
-        box:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", -8, 30)
+        if win.versionText then
+            box:SetPoint("BOTTOMRIGHT", win.versionText, "LEFT", MOUSE_RIGHT - GIFT_GAP, -11)
+        else
+            box:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", -8, 30)
+        end
         box:SetSize(TEASER_W, TEASER_H)
         box:SetFrameLevel(win:GetFrameLevel() + 50)
         self:Fill(box, TEASER_FLAKES)
@@ -228,6 +243,11 @@ function Snow:Refresh()
         startLayer(self, box)
     elseif self.corner then
         stopLayer(self.corner)
+    end
+    local reserve = mode == "teaser" and win.versionText and (self.MOUSE_W + 2 * GIFT_GAP) or 0
+    if win.footReserve ~= reserve then
+        win.footReserve = reserve
+        if win.LayoutFooter then win:LayoutFooter() end
     end
 end
 

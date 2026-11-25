@@ -1,8 +1,9 @@
 -- Winter Veil: taking part in the game's event counts for the Chimney (guildos-web#671). Real CompanionImport and
 -- WinterVeil under stubbed WoW APIs.
 -- Proves: only a quest of the list, turned in (the event, never IsQuestFlaggedCompleted) inside Dec 15 00:00 (UTC-3) to
--- the wrapping deadline, by an entrant of this year's event, is kept; once; the export carries `plays`; GOSVEIL1's
--- `played` is read as untrusted and shown.
+-- the wrapping deadline, by an entrant of this year's event, is kept; once per character of the account, at most ten;
+-- every export carries all of them (`plays`; the site keeps its scope); GOSVEIL1's `mine[i].played` is read per
+-- character, as untrusted, and shown.
 --
 --   luajit -e 'ADDON="."' tools/winter-plays.lua
 --
@@ -95,7 +96,7 @@ local function inbox(gild, personal)
   GuildOSInbox = {}
   if gild then GuildOSInbox[#GuildOSInbox + 1] = pack("GOSGILD1", { fmt = "GOSGILD1", v = 1, guild = GUILD, realm = "Nightslayer", at = NOW - 60, veil = gild }) end
   if personal then
-    local p = { fmt = "GOSVEIL1", v = 2, guild = GUILD, realm = "Nightslayer", at = NOW - 60, year = 2025, mine = {}, relay = {}, collection = {} }
+    local p = { fmt = "GOSVEIL1", v = 2, guild = GUILD, realm = "Nightslayer", at = NOW - 60, year = 2025, mine = {}, collection = {} }
     for k, x in pairs(personal) do p[k] = x end
     GuildOSInbox[#GuildOSInbox + 1] = pack("GOSVEIL1", p)
   end
@@ -134,10 +135,9 @@ end
 
 setup(START + 10)
 check(WV:OnQuestTurnedIn(7021) == true and WV:Played(), "a quest of the list inside the window, joined: kept")
-local pl = WV._store().played
-check(pl.key == ME_KEY and pl.at == START + 10, "as { key, at } of this character")
+check(WV._store().played[ME_KEY] == START + 10, "as [key] = at of this character")
 NOW = START + 500
-check(WV:OnQuestTurnedIn(7043) == false and WV._store().played.at == START + 10, "only the first is kept")
+check(WV:OnQuestTurnedIn(7043) == false and WV._store().played[ME_KEY] == START + 10, "only the first is kept")
 local out = WV:ForExport()
 check(#out.plays == 1 and out.plays[1].key == ME_KEY and out.plays[1].at == START + 10, "the export carries plays = { { key, at } }")
 local keys = 0
@@ -206,13 +206,49 @@ do
   check(not src:gsub("%-%-[^\n]*", ""):find("IsQuestFlaggedCompleted", 1, true), "IsQuestFlaggedCompleted is not called")
 end
 
--- ── GOSVEIL1 `played` ─────────────────────────────────────────────────
-setup(START + 10, nil, true, { mine = {}, played = true })
-check(WV:PlaySeen() == true, "played = true is read")
+-- ── Every character of the account ────────────────────────────────────
+setup(START + 10)
+WV:OnQuestTurnedIn(7021)
+ME = "Altinho"
+local ALT_KEY = "Altinho-Nightslayer"
+WV._store().people[ALT_KEY] = { join = { volunteer = false, at = START - 50 } }
+NOW = START + 900
+check(not WV:Played() and WV:OnQuestTurnedIn(7021) == true and WV:Played(), "an alt of the account plays too, and is kept")
+check(WV._store().played[ME_KEY] == START + 10 and WV._store().played[ALT_KEY] == START + 900, "each under its own key")
+out = WV:ForExport()
+local seen = {}
+for _, r in ipairs(out.plays) do seen[r.key] = r.at end
+check(#out.plays == 2 and seen[ME_KEY] == START + 10 and seen[ALT_KEY] == START + 900, "the alt's export carries both: the site keeps its scope")
+ME = "Chehul"
+check(#WV:ForExport().plays == 2, "and so does the main's")
+-- At most EXPORT_PLAYS characters: the list never grows past it.
+for i = 1, 20 do WV._store().played["Bot" .. i .. "-Nightslayer"] = START + i end
+check(#WV:ForExport().plays == WV.EXPORT_PLAYS, "the export holds at most " .. WV.EXPORT_PLAYS)
+setup(START + 10)
+for i = 1, WV.EXPORT_PLAYS do WV._store().played["Bot" .. i .. "-Nightslayer"] = START + i end
+check(WV:OnQuestTurnedIn(7021) == false, "and no eleventh character is recorded")
+-- The first design's { key, at } is read as the character it named.
+setup(START + 10)
+GuildOS.db.winterVeil.played = { key = ME_KEY, at = START + 5 }
+check(WV:Played() and WV._store().played[ME_KEY] == START + 5 and WV:OnQuestTurnedIn(7021) == false, "an old { key, at } becomes [key] = at")
+
+-- ── GOSVEIL1 `mine[i].played` ──────────────────────────────────────────
+local function withPlayed(v, top)
+  local pp = personal({ { to = "Thalindra-Nightslayer" } })
+  pp.mine[1].played = v
+  pp.played = top
+  return pp
+end
+setup(START + 10, nil, true, withPlayed(true))
+check(WV:PlaySeen() == true, "mine[i].played = true is read, for this character")
 for _, bad in ipairs({ "true", 1, "yes", {}, false }) do
-  setup(START + 10, nil, true, { mine = {}, played = bad })
+  setup(START + 10, nil, true, withPlayed(bad))
   check(WV:PlaySeen() == false, "played = " .. tostring(type(bad) == "table" and "{}" or bad) .. " is not true")
 end
+setup(START + 10, nil, true, withPlayed(nil, true))
+check(WV:PlaySeen() == false, "a top-level played (the wrong place) is not read")
+setup(START + 10, nil, true, { mine = { { key = ME_KEY, gives = {}, played = false }, { key = "Altinho-Nightslayer", gives = {}, played = true } } })
+check(WV:PlaySeen() == false, "another character's played is not mine")
 setup(START + 10, nil, true, { mine = {} })
 check(WV:PlaySeen() == false, "absent is false")
 
@@ -260,7 +296,7 @@ do
   setup(START + 10, nil, true, personal({ { to = "Thalindra-Nightslayer" } }))
   draw()
   check(say("In-game participation: not yet"), "no play yet: the panel says not yet")
-  setup(START + 10, nil, true, personal({ { to = "Thalindra-Nightslayer" } }, nil, { played = true }))
+  setup(START + 10, nil, true, withPlayed(true))
   draw()
   check(say("In-game participation: registered"), "the site's block says played: registered")
   setup(START + 10, nil, true, personal({ { to = "Thalindra-Nightslayer" } }))
