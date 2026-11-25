@@ -171,9 +171,10 @@ UI\Layout.lua
 UI\WebPanel.lua
 UI\RaidPlanPanel.lua
 UI\FeatureRegistry.lua
+UI\Rooms.lua
 UI\Window.lua
 UI\Agora.lua
-UI\Dashboard.lua
+UI\Salao.lua
 UI\RaiderPanel.lua
 UI\RecipesPanel.lua
 UI\ProfessionsPanel.lua

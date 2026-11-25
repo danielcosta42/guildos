@@ -62,6 +62,7 @@ function GuildOS:IsOfficer() return true end
 local realUI = { IsFeatureAllowed = function() return true end, GetFeature = function(_, id) return id end }
 GuildOS.UI, GuildOS.Colors = realUI, setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1 } end })
 dofile(ADDON .. "/UI/Agora.lua")
+dofile(ADDON .. "/UI/Salao.lua")
 local A = realUI.Agora
 
 local S = GuildOS.RecruitScanner

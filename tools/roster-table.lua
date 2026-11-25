@@ -297,8 +297,8 @@ do
   check(stacked, "each one 24px under the one before")
   check(flat, "no zebra: every row on the table's well")
   check(ruled, "and a 1px line under each")
-  check(rowOf("Ana").classIcon.w == 16 and rowOf("Ana").nameText.font.file == GuildOS.Fonts.memberName.file,
-    "a 16px class icon in the 24px row, the name in Plex Sans Medium")
+  check(rowOf("Ana").classIcon.w == 16 and rowOf("Ana").nameText.font.file == STANDARD_TEXT_FONT,
+    "a 16px class icon in the 24px row, the name in the game's font (#445)")
   local marked = false
   for _, row in ipairs(rows) do if row.selMark.shown then marked = true end end
   check(not marked, "before any click no row is selected")

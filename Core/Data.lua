@@ -38,6 +38,10 @@ local T = {
     warn     = rgb(0.910, 0.604, 0.353),  -- #e89a5a a score between ok and danger
     info     = rgb(0.357, 0.576, 0.812),  -- #5b93cf the tank role, a link to the site, sync
     epic     = rgb(0.659, 0.435, 0.878),  -- #a86fe0 epic item quality, nothing else
+    -- The Salão's parchment cards (#445): the paper, its ink and its softer ink.
+    paper     = rgb(0.953, 0.894, 0.761),  -- #f3e4c2
+    paperInk  = rgb(0.227, 0.165, 0.090),  -- #3a2a17
+    paperSoft = rgb(0.435, 0.353, 0.235),  -- #6f5a3c
 }
 
 local ACCENT_DIM  = 0.54  -- dimmed gold for secondary marks
@@ -50,6 +54,7 @@ GuildOS.Colors = {
     disabled = T.disabled,
     gold = T.gold, goldHover = T.goldHover, goldActive = T.goldActive, onGold = T.onGold,
     ok = T.ok, danger = T.danger, warn = T.warn, info = T.info, epic = T.epic,
+    paper = T.paper, paperInk = T.paperInk, paperSoft = T.paperSoft,
 
     -- Legacy keys. Screens older than the Forever skin still read these; each
     -- one points at the token that plays its role now. New code uses the tokens.

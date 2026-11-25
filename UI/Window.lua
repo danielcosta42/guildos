@@ -1,9 +1,14 @@
 ----------------------------------------------------------------------
 -- Guild OS - The window (issue #14, ADR-0016)
--- The only container. Every feature is a tab in one resizable window, and
+-- The only container. Every feature is a panel in one resizable window, and
 -- every entry point opens it: the slash commands, the minimap button, the
 -- guild-frame takeover and the key binding, all through
 -- UI:OpenWindow(id, sub) or UI:ToggleMain().
+--
+-- Since the Salão (specs/salao, #445) the bar under the title holds the rooms
+-- (UI/Rooms.lua), not one tab per feature, and a row under it the open room's
+-- entries; each entry opens a feature's panel, on its sub-tab when it names
+-- one. Settings and Web are behind the title bar's Settings button.
 --
 -- It reorganises by width through the resize ladder (UI/Layout.lua). Tabs
 -- that do not fit fold into "»n"; under 520px the tab rule becomes a
@@ -26,6 +31,7 @@ local PAD          = 12
 local PAD_NARROW   = 8
 local RULE_H       = 28
 local RULE_PAD     = 6
+local ENTRY_H      = 26      -- the open room's entries, under the rooms (specs/salao, #445)
 local TAB_GAP      = 2
 local TAB_MIN_W    = 48
 local TAB_TEXT_PAD = 18      -- 20 until the Groups tab (#341): an officer's sixteen tabs still fit at 1000px
@@ -147,10 +153,11 @@ local function showTabMenu(f, anchor, keys)
     UIDropDownMenu_Initialize(menu, function(_, level)
         for _, key in ipairs(keys) do
             local info = UIDropDownMenu_CreateInfo()
-            info.text = UI:GetFeature(key).label
-            info.checked = (key == f.activeTab)
+            local room = UI:RoomById(key)
+            info.text = room and room.label or key
+            info.checked = (key == f.activeRoom)
             info.func = function()
-                f:SetActiveTab(key, true)
+                f:OpenRoom(key, true)
                 CloseDropDownMenus()
             end
             UIDropDownMenu_AddButton(info, level)
@@ -267,6 +274,9 @@ local function createWindow()
     local searchBtn = barButton(L["Search"], function() if GuildOS.Search then GuildOS.Search:Show() end end)
     local syncBtn = barButton(L["Sync"], function() if GuildOS.CommSystem then GuildOS.CommSystem:FullSync() end end)
     f.searchButton, f.syncButton = searchBtn, syncBtn
+    -- Settings and Web live behind this button since the rooms (#445): never among them.
+    local gearBtn = barButton(L["Settings"], function() f:OpenRoom("settings", true) end)
+    f.settingsButton = gearBtn
 
     local sync = text(10, "caption", C.label)
     sync:SetJustifyH("RIGHT")
@@ -293,13 +303,24 @@ local function createWindow()
     ruleLine:SetPoint("BOTTOMRIGHT", -sideR, 0)
     f.rule = rule
 
-    for _, def in ipairs(tabFeatures()) do
-        local tab = UI:CreateTab(rule, def.label, TAB_MIN_W)
-        tab.key = def.id
-        tab:SetScript("OnClick", function() f:SetActiveTab(def.id, true) end)
-        tab:Hide()
-        f.tabs[#f.tabs + 1] = tab
+    for _, room in ipairs(UI.ROOMS) do
+        if not room.gear then
+            local tab = UI:CreateTab(rule, room.label, TAB_MIN_W)
+            tab.key = room.id
+            tab:SetScript("OnClick", function() f:OpenRoom(room.id, true) end)
+            tab:Hide()
+            f.tabs[#f.tabs + 1] = tab
+        end
     end
+
+    -- The open room's entries, one row under the rooms; drawn only when the room has more than one.
+    local entryRow = CreateFrame("Frame", nil, f)
+    entryRow:SetHeight(ENTRY_H)
+    local entryLine = UI:CreateSeparator(entryRow)
+    entryLine:SetPoint("BOTTOMLEFT", sideL, 0)
+    entryLine:SetPoint("BOTTOMRIGHT", -sideR, 0)
+    entryRow:Hide()
+    f.entryRow, f.entryTabs = entryRow, {}
 
     local more = UI:SetButtonVariant(UI:CreateButton(rule, "", MORE_W, 22), "ghost")
     more:SetPoint("RIGHT", rule, "RIGHT", -RULE_PAD, 0)
@@ -311,9 +332,7 @@ local function createWindow()
     selector:SetPoint("LEFT", rule, "LEFT", RULE_PAD, 0)
     selector:SetScript("OnClick", function(self)
         local keys = {}
-        for _, tab in ipairs(f.tabs) do
-            if allowed(tab.key) then keys[#keys + 1] = tab.key end
-        end
+        for _, room in ipairs(UI:VisibleRooms()) do keys[#keys + 1] = room.id end
         showTabMenu(f, self, keys)
     end)
     selector:Hide()
@@ -429,17 +448,54 @@ local function createWindow()
             store().tab = key
             self.beforeWatch = nil
         end
-        for _, tab in ipairs(self.tabs) do tab:SetActive(tab.key == key) end
+        -- Opened by its feature (the narrow band's switch to Home, a saved tab): the room that holds it.
+        if not (self.activeEntry and self.activeEntry.feature == key) then
+            local room, entry = UI:RoomOf(key)
+            self.activeRoom, self.activeEntry = room and room.id, entry
+        end
         for k, p in pairs(self.tabPanels) do p:SetShown(k == key) end
+        if panel.SetSubBarShown then panel.SetSubBarShown(not (self.activeEntry and self.activeEntry.sub)) end
         self:LayoutTabs()
         return true
+    end
+
+    -- Open a room's entry: its feature's panel, on the entry's sub-tab (or `sub`, a deep link's), with
+    -- `filter` for the sub-tab that takes one. Remembered per room, so a room opens where it was left.
+    function f:SelectEntry(roomId, entry, byUser, sub, filter)
+        if not (entry and UI:EntryAllowed(entry)) then return false end
+        local prevRoom, prevEntry = self.activeRoom, self.activeEntry
+        self.activeRoom, self.activeEntry = roomId, entry
+        if not self:SetActiveTab(entry.feature, byUser) then
+            self.activeRoom, self.activeEntry = prevRoom, prevEntry
+            self:LayoutTabs()
+            return false
+        end
+        if byUser then
+            local g = store()
+            g.room = roomId
+            g.entries = type(g.entries) == "table" and g.entries or {}
+            g.entries[roomId] = entry.id
+        end
+        local panel = self.tabPanels[entry.feature]
+        local want = sub or entry.sub
+        if want and panel and panel.SelectSub then panel.SelectSub(want, filter) end
+        return true
+    end
+
+    -- A room from its tab: the entry it was left on, else its first.
+    function f:OpenRoom(roomId, byUser)
+        if not UI:RoomAllowed(roomId) then return false end
+        local saved = type(store().entries) == "table" and store().entries[roomId] or nil
+        return self:SelectEntry(roomId, UI:RoomDefault(roomId, saved), byUser)
     end
 
     -- Re-check which tabs may show (rank, loot system, alliance, Settings
     -- toggles and start-up failures all change it without a reload) and fall
     -- back to Now when the open tab is no longer allowed.
     function f:UpdateTabVisibility()
-        if not (self.activeTab and allowed(self.activeTab)) then
+        -- An entry that may no longer open (a rank change, the Winter Veil event over) counts as closed.
+        if self.activeEntry and not UI:EntryAllowed(self.activeEntry) then self.activeEntry = nil end
+        if not (self.activeTab and allowed(self.activeTab) and self.activeEntry) then
             local panel = self.activeTab and self.tabPanels[self.activeTab]
             if panel then panel:Hide() end
             self.activeTab = nil
@@ -453,17 +509,21 @@ local function createWindow()
 
     function f:LayoutTabs(w)
         w = w or self:GetWidth() or 0
+        local visible = {}
+        for _, room in ipairs(UI:VisibleRooms()) do visible[room.id] = true end
         local shown = {}
         for _, tab in ipairs(self.tabs) do
             tab:Hide()
-            if allowed(tab.key) then shown[#shown + 1] = tab end
+            tab:SetActive(tab.key == self.activeRoom)
+            if visible[tab.key] then shown[#shown + 1] = tab end
         end
         self.overflow = {}
         more:Hide()
         selector:SetShown(self.band == "watch")
+        self:LayoutEntries(w)
         if self.band == "watch" then
-            local def = UI:GetFeature(self.activeTab)
-            selector.label:SetText((def and def.label or "") .. " " .. RAQUO)
+            local room = UI:RoomById(self.activeRoom)
+            selector.label:SetText((room and room.label or "") .. " " .. RAQUO)
             selector:SetWidth(math.ceil(selector.label:GetStringWidth()) + 16)
             return
         end
@@ -472,11 +532,11 @@ local function createWindow()
         local widths, active = {}, nil
         for i, tab in ipairs(shown) do
             widths[i] = math.max(TAB_MIN_W, math.ceil(tab.label:GetStringWidth()) + TAB_TEXT_PAD)
-            if tab.key == self.activeTab then active = i end
+            if tab.key == self.activeRoom then active = i end
         end
-        local visible, hidden = UI:FitTabs(widths, w - 2 * RULE_PAD, TAB_GAP, MORE_W, active)
+        local fit, hidden = UI:FitTabs(widths, w - 2 * RULE_PAD, TAB_GAP, MORE_W, active)
         local x, placed = RULE_PAD, {}
-        for _, i in ipairs(visible) do
+        for _, i in ipairs(fit) do
             local tab = shown[i]
             tab:ClearAllPoints()
             tab:SetPoint("LEFT", rule, "LEFT", x, 0)
@@ -492,6 +552,43 @@ local function createWindow()
             more.label:SetText(RAQUO .. hidden)
             more:Show()
         end
+    end
+
+    -- The open room's entries under the rooms, and the content below whatever is drawn. A room with a
+    -- single entry draws no row: its one screen starts right under the rooms.
+    function f:LayoutEntries()
+        local list = self.activeRoom and UI:RoomEntries(self.activeRoom) or {}
+        local rowShown = #list > 1 and self.band ~= "bar"
+        entryRow:SetShown(rowShown)
+        for _, btn in ipairs(self.entryTabs) do btn:Hide() end
+        local top, pad = self.layoutTop or 0, self.layoutPad or PAD
+        if rowShown then
+            entryRow:ClearAllPoints()
+            entryRow:SetPoint("TOPLEFT", 0, -(top + RULE_H))
+            entryRow:SetPoint("TOPRIGHT", 0, -(top + RULE_H))
+            local x = RULE_PAD
+            for i, entry in ipairs(list) do
+                local btn = self.entryTabs[i]
+                if not btn then
+                    btn = UI:CreateTab(entryRow, "", TAB_MIN_W, true)
+                    btn:SetHeight(ENTRY_H - 2)
+                    btn:SetScript("OnClick", function(b) f:SelectEntry(f.activeRoom, b.entry, true) end)
+                    self.entryTabs[i] = btn
+                end
+                btn.entry = entry
+                btn.label:SetText(entry.label)
+                local bw = math.max(TAB_MIN_W, math.ceil(btn.label:GetStringWidth()) + TAB_TEXT_PAD)
+                btn:SetWidth(bw)
+                btn:ClearAllPoints()
+                btn:SetPoint("LEFT", entryRow, "LEFT", x, 0)
+                btn:SetActive(self.activeEntry and self.activeEntry.id == entry.id or false)
+                btn:Show()
+                x = x + bw + TAB_GAP
+            end
+        end
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", pad, -(top + RULE_H + (rowShown and ENTRY_H or 0) + pad))
+        content:SetPoint("BOTTOMRIGHT", -pad, footLift + FOOT_H + pad)
     end
 
     -- The links from the left, their text FOOT_PAD in; the version and the grip keep the right.
@@ -523,6 +620,7 @@ local function createWindow()
         { key = "time",   frame = sync,      priority = 40,  text = true },
         { key = "search", frame = searchBtn, priority = 60 },
         { key = "sync",   frame = syncBtn,   priority = 80 },
+        { key = "gear",   frame = gearBtn,   priority = 90 },
     }
     function f:LayoutTitle(w)
         w = w or self:GetWidth() or 0
@@ -644,13 +742,12 @@ local function createWindow()
 
         rule:SetShown(not isBar)
         content:SetShown(not isBar)
+        if isBar then entryRow:Hide() end
         foot:SetShown(not isBar)
         rule:ClearAllPoints()
         rule:SetPoint("TOPLEFT", 0, -(top + titleH))
         rule:SetPoint("TOPRIGHT", 0, -(top + titleH))
-        content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", pad, -(top + titleH + RULE_H + pad))
-        content:SetPoint("BOTTOMRIGHT", -pad, footLift + FOOT_H + pad)
+        self.layoutTop, self.layoutPad = top + titleH, pad
 
         local home = self.tabPanels[HOME]
         if changed and isWatch and self.activeTab ~= HOME and not (home and home.buildFailed) then
@@ -707,8 +804,11 @@ local function createWindow()
 
     table.insert(UISpecialFrames, NAME)   -- ESC closes it
 
-    local saved = store().tab
-    if not (saved and f:SetActiveTab(saved)) then f:UpdateTabVisibility() end
+    -- Where it was left: the saved room's entry, else the saved feature (before the rooms), else Home.
+    local g = store()
+    if not (g.room and f:OpenRoom(g.room)) and not (g.tab and f:SetActiveTab(g.tab)) then
+        f:UpdateTabVisibility()
+    end
     if UI.Snow then UI.Snow:Attach(f) end   -- Winter Veil's snow (guildos-web#662)
     return f
 end
@@ -775,6 +875,9 @@ function UI:OpenWindow(id, sub, filter)
     f:Show()
     -- A tab asked for by name has to be seen, so the bar opens back up.
     if store().collapsed or f.band == "bar" then f:ToggleCollapsed() end
+    -- Through the room that holds it (#445): its entry, on the sub-tab asked for.
+    local room, entry = self:RoomOf(id, sub)
+    if room then return f:SelectEntry(room.id, entry, true, sub, filter) end
     if not f:SetActiveTab(id, true) then return false end
     local panel = f.tabPanels[id]
     if sub and panel.SelectSub then panel.SelectSub(sub, filter) end

@@ -169,58 +169,51 @@ check(#S.KEY_ATLASES >= 2 and #shared == 0, "the key atlases are ones Anniversar
 check(#named > 40 and #unknown == 0, "every atlas the Forever style names is an element the Forever client draws (" ..
   #named .. " named; unknown: " .. table.concat(unknown, ", ") .. ")")
 
--- ── 2. Which styles a client can draw ──────────────────────────────────
+-- ── 2. One look, drawn two ways (#445) ─────────────────────────────────
 S = load({ noArt = true })
-check(S:Has("guildos") and not S:Has("forever"), "a client without the art (Anniversary) draws only guildos")
-check(#S:Available() == 1 and S:Available()[1] == "guildos", "and offers only it")
+check(S:Has("guildos") and not S:Has("forever"), "a client without the art (Anniversary) draws it flat")
+check(#S:Available() == 1 and S:Available()[1] == "guildos", "and has nothing to choose")
 S = load()
-check(S:Has("forever") and #S:Available() == 2 and S:Available()[2] == "forever", "the Forever client offers both")
+check(S:Has("forever") and #S:Available() == 1 and S:Available()[1] == "forever",
+  "the Forever client draws it with its art, and has nothing to choose either")
 S = load({ without = { ["common-internaltab"] = true } })
-check(not S:Has("forever"), "a client missing one of the key atlases does not offer forever")
-check(S:Name("guildos") == "GuildOS" and S:Name("forever") == "WoW: Forever" and S:Name("x") == "x",
-  "the styles' names are their brands")
+check(not S:Has("forever"), "a client missing one of the key atlases draws it flat")
 
--- ── 3. Choosing ────────────────────────────────────────────────────────
+-- ── 3. Nothing to choose ───────────────────────────────────────────────
 S = load()
 local ok, why = S:Choose("neon")
 check(not ok and why == "unknown" and GuildOSDB.style == nil, "an unknown style is refused, and nothing is saved")
-ok = S:Choose("forever")
-check(ok and GuildOSDB.style == "forever", "a style the client draws is saved for the account")
-S = load({ noArt = true })
 ok, why = S:Choose("forever")
-check(not ok and why == "unavailable", "forever is refused where the client has no art")
+check(not ok and why == "one" and GuildOSDB.style == nil, "a known one is refused too: there is one look")
+S:Apply("guildos")
+check(said("one look"), "/gos style says so")
 
 -- ── 4. Resolving at load ───────────────────────────────────────────────
+S = load({ db = { style = "guildos" } })
+check(S:Resolve() == "forever" and S:Current() == "forever" and #printed == 0,
+  "a saved flat style from before #445 is ignored, silently, where the art exists")
 S = load({ db = { style = "forever" }, noArt = true })
-check(S:Resolve() == "guildos" and S:Current() == "guildos", "a saved forever on a client without the art falls back")
-check(said("WoW: Forever") and said("GuildOS"), "and says so in chat")
-S = load({ db = {} })
-check(S:Resolve() == "guildos" and #printed == 0, "nothing saved: guildos, silently")
-S = load({ db = { style = "forever" } })
-check(S:Resolve() == "forever" and S:Current() == "forever", "a saved forever where the art exists is used")
+check(S:Resolve() == "guildos" and #printed == 0, "and a saved forever without the art draws flat, silently")
 
--- ── 5. The palette and the font ────────────────────────────────────────
-S = load({ db = {} })
-local C = GuildOS.Colors
-local GOLD, ACCENT = C.gold, C.accent          -- as a module captures them at load
-local flatGold = C.gold.r
-S:Resolve()
-check(C.gold.r == flatGold and S.gameFont == nil, "guildos leaves the palette and the font as they are")
-S = load({ db = { style = "forever" } })
-C = GuildOS.Colors
-GOLD, ACCENT = C.gold, C.accent
-S:Resolve()
-check(GOLD.r == 1 and GOLD.g == 0.82 and C.gold == GOLD, "forever re-points gold in place: a captured table sees it")
-check(ACCENT.r == 1 and ACCENT.g == 0.82 and ACCENT ~= GOLD, "and the legacy keys follow their token, still their own copies")
-check(math.abs(C.accentSoft.a - 0.14) < 1e-9 and math.abs(C.accentDim.r - 0.54) < 1e-9 and C.row2.r == C.bg.r,
-  "dimmed and washed aliases are recomputed from the new gold")
-check(C.ok.r == 0.490, "status colours keep theirs")
-local fs = newRegion("FontString")
-GuildOS:ApplyFont(fs, 12)
-check(S.gameFont and fs.font == STANDARD_TEXT_FONT, "and every text takes the game's font")
+-- ── 5. The palette and the font, on every client ───────────────────────
+for _, opts in ipairs({ { db = {}, noArt = true }, { db = {} } }) do
+  S = load(opts)
+  local C = GuildOS.Colors
+  local GOLD, ACCENT = C.gold, C.accent          -- as a module captures them at load
+  S:Resolve()
+  local where = opts.noArt and " (flat)" or " (art)"
+  check(GOLD.r == 1 and GOLD.g == 0.82 and C.gold == GOLD, "the palette's gold is re-pointed in place" .. where)
+  check(ACCENT.r == 1 and ACCENT.g == 0.82 and ACCENT ~= GOLD, "and the legacy keys follow their token" .. where)
+  check(math.abs(C.accentSoft.a - 0.14) < 1e-9 and math.abs(C.accentDim.r - 0.54) < 1e-9 and C.row2.r == C.bg.r,
+    "dimmed and washed aliases are recomputed from the new gold" .. where)
+  check(C.ok.r == 0.490, "status colours keep theirs" .. where)
+  local fs = newRegion("FontString")
+  GuildOS:ApplyFont(fs, 12)
+  check(S.gameFont and fs.font == STANDARD_TEXT_FONT, "every text takes the game's font" .. where)
+end
 
 -- ── 6. Painting by role ────────────────────────────────────────────────
-S = load({ db = {} }); S:Resolve()
+S = load({ db = {}, noArt = true }); S:Resolve()
 C = GuildOS.Colors
 local f = newRegion("Frame")
 check(S:Paint(f, "window") == "flat" and f.backdrop.bgFile == "Interface\\Buttons\\WHITE8x8"
@@ -272,7 +265,7 @@ check(S:Paint(f, "titlebar") == "flat" and f.__styleBg,
   "without the metal frame there is no edge to be the bar: the title bar keeps its band (#148)")
 
 -- ── 7. The controls, through the real Helpers ──────────────────────────
-S = load({ db = {} }); S:Resolve()
+S = load({ db = {}, noArt = true }); S:Resolve()
 local UI = GuildOS.UI
 local b = UI:CreateButton(UIParent, "Go", 120, 26)
 check(not b.__forever and b.backdrop.edgeSize == 1, "guildos: a button is today's bordered backdrop")
@@ -379,46 +372,28 @@ local pop = UI:CreatePanel(UIParent)
 UI:StylePopup(pop, { noShadow = true, noFade = true })
 check(pop.__nine.TopLeftCorner.atlas == "Tooltip-NineSlice-CornerTopLeft", "a popup takes the tooltip art")
 
--- ── 7b. Initialize settles the style; the Settings picker ─────────────
-S = load({ db = { style = "forever" } })
+-- ── 7b. Initialize settles the look; no Settings picker (#445) ───────
+S = load({ db = { style = "guildos" } })
 GuildOS:Initialize()
-check(S:Current() == "forever" and GuildOS.Colors.gold.r == 1, "Initialize settles the saved style before anything is drawn")
+check(S:Current() == "forever" and GuildOS.Colors.gold.r == 1, "Initialize settles the one look before anything is drawn")
 local host = newRegion("Frame")
-local y = S:BuildPicker(host, 100)
-local applies, longDesc = {}, nil
-for _, c in ipairs(host.children) do
-  if c.label and (c.label.text == "Apply" or c.label.text == "In use") then applies[#applies + 1] = c end
-  if c.text == S:Description("forever") then longDesc = c end
-end
-check(#applies == 2 and y > 100, "the picker lists each style the client draws, with its button")
-check(applies[1].label.text == "Apply" and applies[2].label.text == "In use" and applies[2].enabled == false,
-  "the one in use says so and cannot be pressed")
-check(longDesc and longDesc.w > 0 and longDesc.w < 380 - 16, "a description wraps short of the button")
-applies[1].scripts.OnClick(applies[1])
-check(GuildOSDB.style == "guildos" and popups[1], "Apply saves the choice and offers the reload")
+check(S:BuildPicker(host, 100) == 100 and #(host.children or {}) == 0, "and Settings draws no style picker")
 S = load({ db = {}, noArt = true }); S:Resolve()
 host = newRegion("Frame")
 check(S:BuildPicker(host, 100) == 100 and #host.children == 0, "with one style there is nothing to choose: no section at all")
 
 -- ── 8. /gos style ──────────────────────────────────────────────────────
-S = load({ db = {} }); S:Resolve()
-dofile(ADDON .. "/Core/Commands.lua")
-SlashCmdList.GUILDOS("style")
-check(said("guildos - GuildOS (in use)") and said("forever - WoW: Forever"), "/gos style lists the styles and marks the one in use")
-SlashCmdList.GUILDOS("style forever")
-check(GuildOSDB.style == "forever" and popups[1] and popups[1].which == "GUILDOS_STYLE_RELOAD",
-  "/gos style forever saves it and offers the reload")
-SlashCmdList.GUILDOS("style neon")
-check(said("Unknown style: neon"), "an unknown style says which exist")
 S = load({ db = {}, noArt = true }); S:Resolve()
 dofile(ADDON .. "/Core/Commands.lua")
-SlashCmdList.GUILDOS("style forever")
-check(GuildOSDB.style == nil and said("not available on this client"), "forever is refused where the client has no art")
 SlashCmdList.GUILDOS("style")
-check(said("not available here"), "and the list says so")
+check(said("salao - Salão (in use)"), "/gos style lists the one look")
+SlashCmdList.GUILDOS("style forever")
+check(GuildOSDB.style == nil and not popups[1] and said("one look"), "/gos style forever saves nothing and says there is one look")
+SlashCmdList.GUILDOS("style neon")
+check(said("Unknown style: neon"), "an unknown style says which exists")
 
 -- ── 9. /gos style preview ──────────────────────────────────────────────
-S = load({ db = {}, without = { ["128-redbutton-exit"] = true } }); S:Resolve()
+S = load({ db = {}, noArt = true, without = { ["128-redbutton-exit"] = true } }); S:Resolve()
 local rows = S:PreviewRows()
 local seen, missingSeen = {}, false
 for _, r in ipairs(rows) do
@@ -442,7 +417,7 @@ end }
 local function pixels(units, region) return units * region:GetEffectiveScale() * physH / 768 end
 local function near(a, b) return math.abs(a - b) < 1e-9 end
 
-S = load({ db = {} }); S:Resolve()
+S = load({ db = {}, noArt = true }); S:Resolve()
 local UI = GuildOS.UI
 UIParent.scale = 0.64                    -- 1080p at the smallest UI scale: 1 unit is 0.91 px
 local win = UI:CreatePanel(UIParent)
@@ -495,7 +470,7 @@ check(#files > 100 and #literal == 0,
   "no border is a literal 1 unit (use GuildOS.UI:Edge): " .. table.concat(literal, ", "))
 
 -- ── 11. One of each screen part (issue #371) ───────────────────────────
-S = load({ db = {} }); S:Resolve()
+S = load({ db = {}, noArt = true }); S:Resolve()
 UI = GuildOS.UI
 local C = GuildOS.Colors
 local function same(col, c) return col and math.abs(col[1] - c.r) < 1e-6 and math.abs(col[2] - c.g) < 1e-6 end
@@ -610,69 +585,8 @@ local function finish(f)
 end
 
 local ob = onboarding({ db = {} })
-Cn = GuildOS.Colors
-check(ob.title.text == "Choose your style" and ob.stepLbl.text == "Step 1 of " .. #ob.steps,
-  "with both styles, the wizard's first step is the style")
-local cardsShown = shownCards(ob)
-check(#cardsShown == 2 and cardsShown[1].id == "guildos" and cardsShown[2].id == "forever",
-  "two cards, GuildOS then WoW: Forever")
-check(same(cardsShown[1].border, Cn.gold) and not same(cardsShown[2].border, Cn.gold), "the style on screen is the chosen one")
-check(cardsShown[2].sample.__three ~= nil and cardsShown[1].sample.backdrop ~= nil,
-  "each card shows a sample: the game's red button, a flat one")
-cardsShown[2].scripts.OnClick(cardsShown[2])
-check(GuildOSDB.style == "forever" and same(cardsShown[2].border, Cn.gold) and not same(cardsShown[1].border, Cn.gold),
-  "picking WoW: Forever saves it and marks its card")
-check(not popups.reloaded, "and reloads nothing yet")
-ob.nextBtn.scripts.OnClick(ob.nextBtn)
-check(ob.title.text == "Welcome to Guild OS" and not shownCards(ob)[1], "the next step is the welcome, without the cards")
-check(finish(ob) == "Finish and reload" and not popups.reloaded, "the last button says it will reload")
-ob.nextBtn.scripts.OnClick(ob.nextBtn)
-check(popups.reloaded and GuildOS.db.settings.onboarded == true,
-  "Finish marks the wizard done, then reloads")
--- On WoW: Forever the click could not reload once it had hidden the wizard (ADDON_ACTION_BLOCKED out of
--- combat, seen in game), while Publish's plain ReloadUI reloads: the reload comes first.
-check(popups.wizardUp, "the reload is called before the wizard is hidden")
-
-ob = onboarding({ db = {} })
-cardsShown = shownCards(ob)
-cardsShown[2].scripts.OnClick(cardsShown[2])
-cardsShown[1].scripts.OnClick(cardsShown[1])
-check(finish(ob) == "Finish", "picked back to the style on screen, the last button just finishes")
-ob.nextBtn.scripts.OnClick(ob.nextBtn)
-check(not popups.reloaded and GuildOS.db.settings.onboarded == true, "and nothing reloads")
-
--- A style applied in Settings with "Later" on its reload, then the welcome replayed: that style is the
--- chosen card, and finishing reloads to it.
-ob = onboarding({ db = {} })
-GuildOSDB.style = "forever"
-GuildOS:ShowOnboarding()
-cardsShown = shownCards(ob)
-check(same(cardsShown[2].border, Cn.gold) and not same(cardsShown[1].border, Cn.gold),
-  "a style saved but not reloaded yet is the chosen card")
-check(finish(ob) == "Finish and reload", "and finishing reloads to apply it")
-local sp = ob.settingsBtn.points[1]
-check(sp and sp[1] == "BOTTOMRIGHT" and sp[2] == ob.nextBtn and sp[3] == "BOTTOMLEFT",
-  "Open Settings sits beside the last button, so a longer Finish never covers it")
-
--- Finished in combat: the game refuses a reload then (ADDON_ACTION_BLOCKED, seen in game). The wizard
--- closes and says why, and the reload is offered, behind a click, the moment combat ends.
-ob = onboarding({ db = {} })
-inCombat = true
-cardsShown = shownCards(ob)
-cardsShown[2].scripts.OnClick(cardsShown[2])
-finish(ob)
-ob.nextBtn.scripts.OnClick(ob.nextBtn)
-check(not popups.reloaded and GuildOS.db.settings.onboarded == true and not ob.shown and said("Can't reload during combat."),
-  "finished in combat: the wizard closes, nothing reloads, and it says why")
-inCombat = false
-ob.afterCombat.scripts.OnEvent(ob.afterCombat, "PLAYER_REGEN_ENABLED")
-check(popups[#popups] and popups[#popups].which == "GUILDOS_STYLE_RELOAD" and popups[#popups].text:find("WoW: Forever", 1, true),
-  "when combat ends, the reload is offered for the style picked")
-local offered = #popups
-GuildOSDB.style = "guildos"   -- picked back to the style on screen before combat ended
-ob.afterCombat.scripts.OnEvent(ob.afterCombat, "PLAYER_REGEN_ENABLED")
-check(#popups == offered, "a saved style that is the one on screen by then offers no reload")
-
+check(ob.title.text == "Welcome to Guild OS" and not shownCards(ob)[1], "the Forever client has no style step either (#445)")
+check(finish(ob) == "Finish", "and finishes without a reload")
 ob = onboarding({ db = {}, noArt = true })
 check(ob.title.text == "Welcome to Guild OS" and not shownCards(ob)[1], "a client with one style has no style step")
 check(finish(ob) == "Finish", "and finishes without a reload")

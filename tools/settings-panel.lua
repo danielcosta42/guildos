@@ -288,20 +288,9 @@ check(not strip:IsShown() and not GuildOS:IsFeatureEnabled("groups"), "a tab swi
 groups.checkbox.onChanged(groups.checkbox, true)
 parent.SelectSub("interface")
 local interface = parent.subPanels.interface.content
-local font = find(interface, "check", "Use the game's font")
-if STYLE == "forever" then
-  -- The Forever style always draws in the game's font: the box says so and cannot be changed.
-  check(font.checkbox.checked and not font.checkbox:IsEnabled() and shows(interface, "This client always uses the game's font."),
-    "on Forever the game's font is ticked, locked, and says why")
-  check(find(interface, "button", "In use") and find(interface, "button", "Apply"),
-    "and the style picker offers the other style")
-else
-  font.checkbox.onChanged(font.checkbox, true)
-  check(GuildOSDB.font == "game" and strip:IsShown(), "the game's font waits for a reload")
-  font.checkbox.onChanged(font.checkbox, false)
-  check(GuildOSDB.font == nil and not strip:IsShown(), "and is no change once switched back")
-  check(not find(interface, "button", "Apply"), "with one style there is no style picker")
-end
+-- One look and one font since the Salão (#445): neither a font switch nor a style picker.
+check(not find(interface, "check", "Use the game's font") and not find(interface, "button", "Apply"),
+  "no font switch and no style picker, on any client")
 
 -- ── 5. A sub-option greys out with its parent ───────────────────────────
 parent.SelectSub("chat")
@@ -363,7 +352,7 @@ for _, p in ipairs(PAGES) do
   GuildOS:RefreshSettingsPanel(content, p)
 end
 for _, label in ipairs({ "Show minimap button", "Guild button opens Guild OS", "Guild info on item tooltips",
-  "Only while holding Shift", "Use the game's font", "Show login digest",
+  "Only while holding Shift", "Show login digest",
   "Annotate guild chat (class icon, level, alt tag)", "Class icon", "Level", "Alt tag",
   "Short tag: [M] on a main, [Main] on an alt", "Alert me when my name or a watch-word comes up in chat",
   "My own name", "Guild chat", "Officer chat", "When somebody calls the officers in guild chat (officers only)",

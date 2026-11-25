@@ -943,6 +943,26 @@ function GuildOS:CreateGuildHub(parent, _mainFrame)
         if not t.feature then build(t.key) end
     end
 
+    -- A room that opens one of these sub-tabs as its own entry (the Salão's Notices, Raids' Calendar,
+    -- specs/salao #445) hides this bar, so the screen never shows two rows of the same tabs: the
+    -- sub-panels then start where the bar was.
+    local barShown = true
+    function parent.SetSubBarShown(shown)
+        shown = shown and true or false
+        if shown == barShown then return end
+        barShown = shown
+        bar:SetShown(shown)
+        for _, info in pairs(parent.subPanels) do
+            info.panel:ClearAllPoints()
+            if shown then
+                info.panel:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, 0)
+            else
+                info.panel:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -8)
+            end
+            info.panel:SetPoint("BOTTOMRIGHT", -10, 10)
+        end
+    end
+
     parent:SetScript("OnShow", function()
         layoutTabs()
         selectSub(parent.activeSub or hubDefault(failed))

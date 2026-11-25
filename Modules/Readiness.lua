@@ -52,7 +52,7 @@ end
 -- The countdown to the raids on WoW: Forever (issue #207), from a report's rows: how many days, how
 -- many of each core are at the cap (its titulars; up to three cores, largest first), how many of the
 -- guild, and me. Nil off Forever, and a week after the raids opened.
--- Business logic only: UI/Dashboard.lua draws it.
+-- Business logic only: UI/AuditPanel.lua draws it.
 ----------------------------------------------------------------------
 function Readiness:Countdown(rows, now)
     if not FOREVER then return nil end

@@ -86,7 +86,7 @@ local IN_UI = {
   web         = { { "UI/WebPanel.lua", "GuildOS:ShowWebString()" }, { "UI/WebPanel.lua", "co:SetEnabled(" } },
   roster      = { { "UI/WebPanel.lua", 'L["Bring roster"]' } },
   -- The Iniciar raide button, on the Web tab, the Now tab and the owner's prompt (issue #400).
-  ["raid start"] = { { "UI/WebPanel.lua", "GuildOS.RaidStart:Click(" }, { "UI/Agora.lua", "UI:CreateRaidStepper(" } },
+  ["raid start"] = { { "UI/WebPanel.lua", "GuildOS.RaidStart:Click(" }, { "UI/Salao.lua", "UI:CreateRaidStepper(" } },
   exportatt   = { { "UI/SettingsPanel.lua", 'L["Test Attendance Export"]' } },
   export      = { { "UI/SettingsPanel.lua", 'L["Export Data"]' } },
   wish        = { { "UI/RosterFrame.lua", 'L["My Wishlist"]' } },

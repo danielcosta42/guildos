@@ -14,7 +14,8 @@ local L  = GuildOS.L
 -- `retail = false`: not on retail (ADR-0026), which has no Master Loot: the loot master (issue #185).
 UI:RegisterFeature({
     id = "home", label = L["Now"], order = 5, core = true,
-    build = function(c, win) GuildOS:CreateNowPanel(c, win) end,
+    -- The Salão's Home (specs/salao, #445), in place of the Now column and its cards.
+    build = function(c) GuildOS:CreateSalaoPanel(c) end,
 })
 
 UI:RegisterFeature({

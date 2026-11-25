@@ -440,18 +440,7 @@ PAGES.interface = function(F)
         styleRow:Hide()
     end
 
-    -- The game's own font instead of GuildOS's (issue #57), for the whole account. A Korean or Chinese
-    -- client, and the Forever style, always use it (#103).
-    local forced = GuildOS.GameFontOnly or GuildOS.Style.gameFont
-    F:Check(L["Use the game's font"],
-        forced and L["This client always uses the game's font."]
-            or L["Swaps IBM Plex Sans and Mono for the client's own font. Applies after a reload."],
-        function() return GuildOSDB.font == "game" or forced end,
-        function(checked)
-            GuildOSDB.font = checked and "game" or nil
-            markReload("font", checked ~= boot.font)
-        end,
-        { enabled = function() return not forced end, gap = 12 })
+    -- The game's font is the only font since the Salão (#445): no switch for it any more.
 
     F:Section(L["In the game"])
     F:Check(L["Show minimap button"], nil,

@@ -105,7 +105,7 @@ local function load(style)
   Enum = { SendAddonMessageResult = {} }
   UISpecialFrames, SlashCmdList = {}, {}
   -- The Forever client has every atlas the style names; that is all "forever" asks of it.
-  C_Texture = { GetAtlasInfo = function() return { width = 32, height = 32 } end }
+  C_Texture = style == "forever" and { GetAtlasInfo = function() return { width = 32, height = 32 } end } or {}
   GuildOSDB = { style = style }
   GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
   dofile(ADDON .. "/Core/Core.lua")

@@ -202,7 +202,7 @@ for tocLine in toc:gmatch("[^\r\n]+") do
   local src = rel and not rel:find("^Libs") and read(ADDON .. "/" .. rel:gsub("\\", "/")) or ""
   for key in src:gmatch('LocalDate%(%s*L%["(.-)"%]') do layouts[key] = true end
 end
-check(layouts[DETAIL] and layouts[MONTH] and layouts[SOON], "the calendar's day, its month and the Dashboard's next event")
+check(layouts[DETAIL] and layouts[MONTH] and layouts[SOON], "the calendar's day, its month and the Salão's next events")
 G = client("enUS")
 local english = {}
 for key in pairs(layouts) do english[key] = G:LocalDate(key, MONDAY) end

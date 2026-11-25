@@ -65,6 +65,7 @@ GuildOS.CommSystem.SendMessage = function(_, t, data) sent[#sent + 1] = { t = t,
 GuildOS.UI = { IsFeatureAllowed = function() return true end, GetFeature = function(_, id) return id end }
 GuildOS.Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1 } end })
 dofile(ADDON .. "/UI/Agora.lua")
+dofile(ADDON .. "/UI/Salao.lua")
 local A, B, D = GuildOS.UI.Agora, GuildOS.Bulletin, GuildOS.Digest
 
 local function fresh(db)

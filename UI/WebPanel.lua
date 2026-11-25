@@ -38,8 +38,7 @@ local LIST_ROWS = 5
 -- hour while it can reach the site, so three days means three days of failing.
 local ACK_STALE = 3 * 24 * 60 * 60
 
--- Same shape as UI/Dashboard.lua's countdown, kept local so this panel
--- does not depend on the dashboard having been built.
+-- A countdown in the shape the Now cards had ("2d 4h", "4:12"), kept local.
 local function fmtCountdown(dt)
     if dt <= 0 then return L["now"] end
     local d = math.floor(dt / 86400)

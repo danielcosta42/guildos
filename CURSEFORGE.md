@@ -209,7 +209,7 @@ Optional, and off until you turn it on in the **Web** tab. The addon works the s
 - **Discord raid signups that know who is signing**: item level, spec and attendance come with each one
 - **Plan on the site, run it in game**: with publishing on, the planned roster arrives at your next login or
   `/reload`, and *Start raid* on the Web tab invites it and moves everyone into their groups, one click a step
-  (also on the Now tab, and `/gos raid start`)
+  (also on the Salão, under the notice board, and `/gos raid start`)
 - **The raid's owner is asked before it starts**: whoever booked the raid on the site, or leads its core, gets a
   prompt with the same *Start raid* button on logging in from half an hour before it, or a quarter of an hour before
   it while playing

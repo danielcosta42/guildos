@@ -1,11 +1,9 @@
 ----------------------------------------------------------------------
--- Guild OS - Interface styles (issue #122; spec docs/superpowers/specs/2026-10-07-ui-styles-design.md §4)
--- A style is how the addon is painted: its palette, its font, and the art behind each role
--- (window, title bar, panel, well, popup, input) and control (button, tab, checkbox, close
--- button, scroll bar). "guildos" is the flat look the addon was made with; it paints exactly as
--- the Helpers always did. "forever" paints with the WoW: Forever client's own -c60 atlases, and
--- is offered only where the client has them. The choice belongs to the account (GuildOSDB.style)
--- and takes effect at load: frames are built once, so a switch asks for a reload.
+-- Guild OS - The look (issue #122; the Salão, specs/salao, #445)
+-- One look on every client since the Salão (#445): the stone, bronze and parchment palette and the
+-- client's own font. It is drawn in one of two ways, never chosen: with the WoW: Forever client's own
+-- -c60 atlases where the client has them ("forever"), and flat everywhere else ("guildos", the
+-- painter the addon was made with, now in the same palette). Frames are built once, at load.
 ----------------------------------------------------------------------
 local Style = {}
 GuildOS.Style = Style
@@ -15,10 +13,10 @@ Style.DEFAULT = "guildos"
 Style.ORDER = { "guildos", "forever" }
 Style.current = Style.DEFAULT
 
+-- The two ways of drawing the one look. Their names are only ever printed by /gos style.
 local INFO = {
-    guildos = { name = "GuildOS", desc = L["Flat and dark: the look Guild OS was made with."] },
-    forever = { name = "WoW: Forever",
-                desc = L["The game's own bronze frames, tabs and buttons. A beta: tell us what looks off."] },
+    guildos = { name = "Salão", desc = L["Flat and dark: the look Guild OS was made with."] },
+    forever = { name = "Salão", desc = L["The game's own bronze frames, tabs and buttons. A beta: tell us what looks off."] },
 }
 
 -- Names are the client's atlas ELEMENTS. On WoW: Forever an element resolves to its -c60 member (the
@@ -134,41 +132,27 @@ function Style:Has(id)
     return true
 end
 
+-- One look (#445): nothing to choose, so the Settings picker and the onboarding step draw nothing.
 function Style:Available()
-    local out = {}
-    for _, id in ipairs(self.ORDER) do
-        if self:Has(id) then out[#out + 1] = id end
-    end
-    return out
+    return { self:Has("forever") and "forever" or "guildos" }
 end
 
 function Style:Name(id) return INFO[id] and INFO[id].name or tostring(id) end
 function Style:Description(id) return INFO[id] and INFO[id].desc or "" end
 function Style:Current() return self.current end
 
--- Saves the account's choice; it is used from the next load on.
+-- Nothing is saved any more (#445): there is one look. Kept for the callers that still ask.
 function Style:Choose(id)
     if not INFO[id] then return false, "unknown" end
-    if not self:Has(id) then return false, "unavailable" end
-    if type(GuildOSDB) ~= "table" then GuildOSDB = {} end
-    GuildOSDB.style = id
-    return true
+    return false, "one"
 end
 
--- At load, before any window is built: the saved style if this client draws it, else the default,
--- said once. The Forever style re-points the palette in place and takes the game's font.
+-- At load, before any window is built: the client's art where it has it, flat elsewhere, always in the
+-- stone and bronze palette and the game's font. A saved GuildOSDB.style from before #445 is ignored.
 function Style:Resolve()
-    local want = type(GuildOSDB) == "table" and GuildOSDB.style or nil
-    local id = (want and self:Has(want)) and want or self.DEFAULT
-    self.current, self.gameFont = id, nil
-    if want and want ~= id then
-        GuildOS:Print(string.format(L["The %s style is not available on this client; using %s."],
-            self:Name(want), self:Name(id)))
-    end
-    if id == "forever" then
-        GuildOS:RepointColors(self.FOREVER_PALETTE)
-        self.gameFont = true
-    end
+    local id = self:Has("forever") and "forever" or "guildos"
+    self.current, self.gameFont = id, true
+    GuildOS:RepointColors(self.FOREVER_PALETTE)
     return id
 end
 
@@ -178,26 +162,19 @@ GuildOS.Dialogs["GUILDOS_STYLE_RELOAD"] = {
     timeout = 0, whileDead = true, hideOnEscape = true,
 }
 
--- The picker's and /gos style's verb: save, then offer the reload.
+-- /gos style <id>: there is one look now (#445).
 function Style:Apply(id)
-    local ok, why = self:Choose(id)
-    if not ok then
-        if why == "unknown" then
-            GuildOS:Print(string.format(L["Unknown style: %s. Styles: %s"], tostring(id), table.concat(self.ORDER, ", ")))
-        else
-            GuildOS:Print(string.format(L["The %s style is not available on this client."], self:Name(id)))
-        end
-        return false
+    local _, why = self:Choose(id)
+    if why == "unknown" then
+        GuildOS:Print(string.format(L["Unknown style: %s. Styles: %s"], tostring(id), "salao"))
+    else
+        GuildOS:Print(L["Guild OS has one look now: the Salão."])
     end
-    GuildOS:ShowDialog("GUILDOS_STYLE_RELOAD", string.format(L["Reload the interface now to use the %s style?"], self:Name(id)))
-    return true
+    return false
 end
 
 function Style:PrintList()
-    for _, id in ipairs(self.ORDER) do
-        local tag = (id == self.current and L["in use"]) or ((not self:Has(id)) and L["not available here"]) or nil
-        GuildOS:Print("  " .. id .. " - " .. self:Name(id) .. (tag and (" (" .. tag .. ")") or ""))
-    end
+    GuildOS:Print("  salao - Salão (" .. L["in use"] .. ")")
 end
 
 ----------------------------------------------------------------------
