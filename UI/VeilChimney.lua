@@ -351,7 +351,7 @@ function Chimney:Set(info, ctx)
     elseif info.state == "frozen" then
         text = string.format(L["Closed at %d%% on %s"], info.pct, dayOf(ctx.wrapUntil))
     else
-        text = string.format(L["%d of %d already wrapped"], ctx.wrapped or 0, ctx.pairs or 0)
+        text = string.format(L["%d%% of the pairs wrapped or played the event"], info.pct)
     end
     if info.questPct and info.questPct > 0 then
         text = text .. "  |cff" .. string.format("%02x%02x%02x", BLUE.r * 255, BLUE.g * 255, BLUE.b * 255)

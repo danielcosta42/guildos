@@ -231,7 +231,7 @@ function WV:MyGives()
     for i, g in ipairs(gives) do
         local w = s and s.wraps[g.to]
         if w and (not g.wrapped or not g.scene) then
-            gives[i] = { to = g.to, toClass = g.toClass, scene = w.scene, note = w.note, wrapped = true, extra = g.extra, hosted = g.hosted, rarity = g.rarity }
+            gives[i] = { to = g.to, toClass = g.toClass, scene = w.scene, note = w.note, wrapped = true, extra = g.extra, hosted = g.hosted, rarity = g.rarity, thanks = g.thanks }
         end
     end
     return gives

@@ -100,6 +100,10 @@ function Shelf.Create(parent, scope, T)
     from:SetPoint("TOPLEFT", sub, "BOTTOMLEFT", 0, -6)
     from:SetPoint("RIGHT", det, "RIGHT", 0, 0)
     from:SetJustifyH("LEFT")
+    local badges = UI:CreateText(det, "", 10, C.gold.r, C.gold.g, C.gold.b)
+    if GuildOS.ApplyFont then GuildOS:ApplyFont(badges, 10, "caption") end
+    badges:SetPoint("TOPLEFT", from, "BOTTOMLEFT", 0, -4)
+    sh.badges = badges
     local card = Fx.Card(det, 220)
     card:SetPoint("TOPLEFT", from, "BOTTOMLEFT", 0, -14)
     local noNote = UI:CreateText(det, L["No note."], 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
@@ -244,6 +248,7 @@ function Shelf:Set(list)
     self.emptyFace:SetShown(not has)
     self.emptyBubble:SetShown(not has)
     for _, region in ipairs({ self.stage, self.name, self.sub, self.from, self.hint }) do region:SetShown(has) end
+    self.badges:SetShown(has and o.badges ~= nil)
     self.card:SetShown(has and o.note ~= nil and o.note ~= "")
     self.noNote:SetShown(has and not (o.note and o.note ~= ""))
     self.rays1:SetShown(has and (o.rarity == "epic" or o.rarity == "legendary"))
@@ -269,5 +274,10 @@ function Shelf:Set(list)
     self.sub:SetText(T.sceneName(o.scene) .. " · " .. T.baseName(o.rarity) .. " · " .. o.year)
     self.from:SetText(string.format(L["From %s"], T.fromOf(o)) .. "  |cff6f6878· " .. T.dayOf(o.openedAt) .. "/" .. o.year .. "|r")
     if o.note and o.note ~= "" then self.card:SetNote(o.note) end
+    -- The site's badges on this globe (optional): one gold line over the card, which moves down for it.
+    self.badges:SetShown(o.badges ~= nil)
+    self.badges:SetText(o.badges and string.format(L["Badges: %s"], table.concat(o.badges, " · ")) or "")
+    self.card:ClearAllPoints()
+    self.card:SetPoint("TOPLEFT", self.from, "BOTTOMLEFT", 0, o.badges and -30 or -14)
     return n
 end

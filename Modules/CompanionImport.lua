@@ -1059,6 +1059,29 @@ local function veilNote(n)
 end
 Import.VeilNote = veilNote
 
+-- A list of short notes off the network (the giver's clues): up to `max`, each a note; nil when there is none.
+local function veilNotes(list, max)
+    if type(list) ~= "table" then return nil end
+    local out = {}
+    for i = 1, math.min(#list, max) do
+        local n = veilNote(list[i])
+        if n and n ~= "" then out[#out + 1] = n end
+    end
+    return #out > 0 and out or nil
+end
+Import.VeilNotes = veilNotes
+
+-- A globe's badges (the site's names for them): up to 6, each one plain word of up to 24 characters; nil when none.
+local function veilBadges(list)
+    if type(list) ~= "table" then return nil end
+    local out = {}
+    for i = 1, math.min(#list, 6) do
+        local b = list[i]
+        if type(b) == "string" and #b >= 1 and #b <= 24 and b:match("^[%w][%w%-_ ]*$") then out[#out + 1] = b end
+    end
+    return #out > 0 and out or nil
+end
+
 -- A globe somebody opened, as the owner sees it. Nil when it is not one.
 local function veilOrnament(o)
     if type(o) ~= "table" or type(o.id) ~= "string" or o.id == "" or #o.id > 64 or o.id:find("[|\r\n]") then return nil end
@@ -1067,8 +1090,8 @@ local function veilOrnament(o)
     if not ok then return nil end
     return { id = o.id, year = year, scene = o.scene, rarity = o.rarity, openedAt = at,
              from = veilKey(o.from), host = o.host == true or nil, note = o.note ~= nil and veilNote(o.note) or nil,
-             -- the note lifted the rarity one level (the site's §7): only a literal true; absent or anything else is false
-             caprice = o.caprice == true or nil }
+             -- a caprice note: the rarity was drawn twice, the better kept (the site's §7); only a literal true counts
+             caprice = o.caprice == true or nil, badges = veilBadges(o.badges) }
 end
 
 -- An event as either block carries it (the guild's `veil`, or a person's `event`), held to its shape; nil when not one.
@@ -1182,11 +1205,17 @@ function Import:CleanVeil(data)
                         scene = VEIL_SCENE[g.scene] and g.scene or nil, note = g.note ~= nil and veilNote(g.note) or nil,
                         wrapped = g.wrapped == true, extra = g.extra == true or nil, hosted = g.hosted == true or nil,
                         rarity = VEIL_RARITY[g.rarity] and g.rarity or nil,
+                        -- the receiver's thanks for the globe I gave (optional, after they opened it)
+                        thanks = g.thanks ~= nil and veilNote(g.thanks) or nil,
                     }
                 end
             end
             local got
-            if type(m.got) == "table" then got = { ready = m.got.ready == true, ornament = veilOrnament(m.got.ornament) } end
+            if type(m.got) == "table" then
+                -- clues: up to two lines the giver left on the box; guess: whom I guessed (made on the site), a key
+                got = { ready = m.got.ready == true, ornament = veilOrnament(m.got.ornament),
+                        clues = veilNotes(m.got.clues, 2), guess = veilKey(m.got.guess) }
+            end
             out.mine[#out.mine + 1] = { key = key, volunteer = m.volunteer == true, gives = gives, got = got }
         end
     end
