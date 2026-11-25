@@ -1,4 +1,4 @@
-## [1.43.0] - 2026-11-25
+## [1.43.1] - 2026-11-25
 
-### Added
-- Winter Veil Secret Santa: wrap a collectible snow globe (a scene and a short note) for whoever you drew, open the one you received, and browse your Collection in a new tab shown while guildos.me runs the guild's event.
+### Other
+- Fixed the Winter Veil tab sending players to the wrong page of guildos.me and a Lua error when a globe was wrapped with an empty note.
