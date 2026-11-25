@@ -21,6 +21,10 @@ Snow.MAX_FLAKES = 20
 Snow.STEP = 0.05
 local TEASER_W, TEASER_H = 72, 72
 local TEASER_FLAKES = 8
+-- The one part of the teaser that takes the mouse: the parcel on the snow's floor, in the footer between its links and
+-- the version, where nothing else is. The snow over it lets every click through to what is under it.
+Snow.GIFT = 14
+local GIFT_GAP = 6
 
 local function clock() return time() end
 
@@ -143,17 +147,34 @@ function Snow:Refresh()
     elseif self.full then
         stopLayer(self.full)
     end
+    local gift = self.gift
     if mode == "teaser" then
+        -- The parcel sits left of the version in the footer; the window's footer keeps its width free of links.
+        gift:ClearAllPoints()
+        if win.versionText then
+            gift:SetPoint("RIGHT", win.versionText, "LEFT", -GIFT_GAP, 0)
+        else
+            gift:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", -40, 4)
+        end
+        gift:SetSize(self.GIFT, self.GIFT)
+        gift:SetFrameLevel(win:GetFrameLevel() + 50)
+        gift:Show()
         local box = self.corner
         box:ClearAllPoints()
-        box:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", -8, 30)
+        box:SetPoint("BOTTOMRIGHT", gift, "BOTTOMRIGHT", 4, -2)
         box:SetSize(TEASER_W, TEASER_H)
-        box:SetFrameLevel(win:GetFrameLevel() + 50)
+        box:SetFrameLevel(win:GetFrameLevel() + 49)
         self:Fill(box, TEASER_FLAKES)
         box:Show()
         startLayer(self, box)
-    elseif self.corner then
-        stopLayer(self.corner)
+    else
+        if self.corner then stopLayer(self.corner) end
+        if gift then gift:Hide() end
+    end
+    local reserve = mode == "teaser" and (self.GIFT + 2 * GIFT_GAP) or 0
+    if win.footReserve ~= reserve then
+        win.footReserve = reserve
+        if win.LayoutFooter then win:LayoutFooter() end
     end
 end
 
@@ -164,13 +185,26 @@ function Snow:Attach(win)
     self.full = newLayer(win)
     self.full:EnableMouse(false)
     self.corner = newLayer(win)
-    self.corner:EnableMouse(true)
-    self.corner:SetScript("OnEnter", function(box)
-        GameTooltip:SetOwner(box, "ANCHOR_LEFT")
+    self.corner:EnableMouse(false)
+    -- The parcel: a box and its ribbon in colour textures, the only thing that takes the mouse.
+    local gift = CreateFrame("Frame", nil, win)
+    gift:EnableMouse(true)
+    local boxTex = gift:CreateTexture(nil, "ARTWORK")
+    boxTex:SetAllPoints(gift)
+    boxTex:SetColorTexture(0.62, 0.16, 0.18, 0.95)
+    local ribbon = gift:CreateTexture(nil, "OVERLAY")
+    ribbon:SetPoint("TOP", gift, "TOP", 0, 0)
+    ribbon:SetPoint("BOTTOM", gift, "BOTTOM", 0, 0)
+    ribbon:SetWidth(3)
+    ribbon:SetColorTexture(0.85, 0.66, 0.31, 1)
+    gift:SetScript("OnEnter", function(g)
+        GameTooltip:SetOwner(g, "ANCHOR_LEFT")
         GameTooltip:SetText(Snow:Teaser(), 1, 1, 1, 1, true)
         GameTooltip:Show()
     end)
-    self.corner:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    gift:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    gift:Hide()
+    self.gift = gift
     win:HookScript("OnShow", function() Snow:Refresh() end)
     win:HookScript("OnHide", function() Snow:Refresh() end)
     self:Refresh()

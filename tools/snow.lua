@@ -1,6 +1,8 @@
 -- Winter Veil's snow (guildos-web#662), the real UI/Snow.lua under stubbed WoW APIs.
 -- Proves: the cutoff (before: corner teaser; from 1 Dec to the end of December: whole window; after: nothing), the
 -- `snow` option, the tooltip text, at most 20 flakes, a throttled OnUpdate, and nothing updating with the window closed.
+-- The teaser lets every click through but on its parcel, a 14px box in the footer left of the version, whose width the
+-- footer keeps free of its links: it covers no control.
 --
 --   luajit -e 'ADDON="."' tools/snow.lua
 ADDON = ADDON or "."
@@ -14,7 +16,7 @@ local NOW = 1796094000 - 3600
 function time() return NOW end
 
 local function newFrame()
-  local f = { shown = false, scripts = {}, hooks = {}, children = {}, w = 200, h = 150, level = 10, textures = {} }
+  local f = { shown = false, scripts = {}, hooks = {}, children = {}, w = 200, h = 150, level = 10, textures = {}, points = {} }
   function f:SetClipsChildren() end
   function f:EnableMouse(v) self.mouse = v end
   function f:Hide() local was = self.shown; self.shown = false; if was then for _, h in ipairs(self.hooks.OnHide or {}) do h(self) end end end
@@ -22,8 +24,8 @@ local function newFrame()
   function f:IsShown() return self.shown end
   function f:SetScript(n, fn) self.scripts[n] = fn end
   function f:HookScript(n, fn) self.hooks[n] = self.hooks[n] or {}; table.insert(self.hooks[n], fn) end
-  function f:ClearAllPoints() end
-  function f:SetPoint() end
+  function f:ClearAllPoints() self.points = {} end
+  function f:SetPoint(...) self.points[#self.points + 1] = { ... } end
   function f:SetAllPoints() end
   function f:SetSize(w, h) self.w, self.h = w, h end
   function f:GetWidth() return self.w end
@@ -36,6 +38,8 @@ local function newFrame()
     function t:ClearAllPoints() end
     function t:SetPoint() self.n = self.n + 1 end
     function t:SetSize() end
+    function t:SetAllPoints() end
+    function t:SetWidth() end
     function t:SetShown(v) self.vis = v end
     table.insert(f.textures, t)
     return t
@@ -76,17 +80,28 @@ GuildOS.db.settings.snow = nil
 
 -- ── 3. Before the cutoff: the corner and its tooltip ──────────────────
 local win = newFrame()
+win.versionText = newFrame()
+local footerLaidOut = 0
+function win:LayoutFooter() footerLaidOut = footerLaidOut + 1 end
 S:Attach(win)
 check(not S.corner.shown and not S.full.shown and not S.corner.scripts.OnUpdate, "window closed: nothing shown, no OnUpdate")
 win:Show()
 check(S.corner.shown and not S.full.shown, "before the cutoff the corner panel shows, not the whole window")
 check(S.corner.scripts.OnUpdate and not S.full.scripts.OnUpdate, "only the corner animates")
-check(S.corner.mouse == true and S.full.mouse == false, "the corner takes the mouse for the tooltip; the full layer lets it through")
+check(S.corner.mouse == false and S.full.mouse == false, "neither snow layer takes the mouse: clicks reach what is under them")
+check(S.gift.mouse == true and S.gift.shown, "only the parcel does")
+check(S.gift.w <= 16 and S.gift.h <= 16, "and it is small: " .. S.gift.w .. "x" .. S.gift.h)
+local gp = S.gift.points[1]
+check(gp and gp[1] == "RIGHT" and gp[2] == win.versionText and gp[3] == "LEFT" and gp[4] < 0, "the parcel sits left of the version, in the footer")
+check(win.footReserve and win.footReserve >= S.gift.w + 4 and footerLaidOut >= 1, "and the footer keeps its width free of links, laid out again")
+local cp = S.corner.points[1]
+check(cp and cp[2] == S.gift, "the snow box stands on the parcel")
 check(#S.corner.flakes <= S.MAX_FLAKES and #S.corner.flakes > 0, "the corner has a few flakes")
-S.corner.scripts.OnEnter(S.corner)
+check(S.corner.scripts.OnEnter == nil, "the snow box has no tooltip of its own")
+S.gift.scripts.OnEnter(S.gift)
 check(tip.text and tip.text:find("wrapping something", 1, true) and tip.text:find("Frimm", 1, true), "hover shows the teaser text")
 check(tip.shownNow, "the tooltip is shown")
-S.corner.scripts.OnLeave(S.corner)
+S.gift.scripts.OnLeave(S.gift)
 check(not tip.shownNow, "and hidden on leave")
 
 -- ── 4. Throttle ───────────────────────────────────────────────────────
@@ -105,6 +120,7 @@ check(not S.corner.scripts.OnUpdate and not S.full.scripts.OnUpdate and not S.co
 NOW = S.CUTOFF_AT + 60
 win:Show()
 check(S.full.shown and not S.corner.shown, "from the cutoff the whole window snows and the corner stops")
+check(not S.gift.shown and win.footReserve == 0, "the parcel goes and the footer gets its width back")
 check(S.full.scripts.OnUpdate and not S.corner.scripts.OnUpdate, "only the full layer animates")
 check(#S.full.flakes == S.MAX_FLAKES and S.MAX_FLAKES <= 20, "at most 20 flakes")
 local visible = 0
