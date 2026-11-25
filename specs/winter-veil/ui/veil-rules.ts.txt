@@ -1,0 +1,311 @@
+/**
+ * Winter Veil's snow globe (specs/119, #659): the rules that need no database — the event's rules, the wrap (scene and
+ * note), the draw, the reassignment, the Chimney, the rarity, the ranking's points and the relay's seal. Pure, so each
+ * rule is tested on its own; `lib/veil.ts` runs them inside its transactions. Free: nothing here asks `hasPlan`, and
+ * nothing here is gold, an item or a delivery: the game is never asked whether a gift arrived.
+ */
+
+// Who sees the Secret Santa, and from when, is the backoffice's switch `winter-veil` (specs/120, `lib/flags.ts`).
+
+const DAY = 86_400_000;
+export const REASSIGN_DAYS_MIN = 1;
+export const REASSIGN_DAYS_MAX = 7;
+/** The fewest entrants a draw takes: with two, each would know who drew them. */
+export const DRAW_MIN = 4;
+/** The fewest entrants for a guild to be on the public ranking (§12). */
+export const RANKING_MIN = 5;
+/** The longest note, in characters (§6). */
+export const NOTE_MAX = 80;
+/** A note this long (after cleaning) is the "caprice" that lifts the rarity one level (§7). */
+export const CAPRICE_MIN = 40;
+/** How many fixed letters Frimm has (§6.1), 0 to 19, translated in the nine languages. */
+export const HOST_LETTERS = 20;
+/** The host who sends the globe of a pair nobody wrapped (§6.2). Text only, no voice. */
+export const VEIL_HOST = "Frimm";
+
+export const SCENES = ["tree", "cabin", "snowman", "fire", "mountain"] as const;
+export type Scene = (typeof SCENES)[number];
+export const RARITIES = ["common", "rare", "epic", "legendary"] as const;
+export type Rarity = (typeof RARITIES)[number];
+
+export type Refusal = { ok: false; reason: string };
+
+// ---------------------------------------------------------------------------------------------------------------
+// The event's rules (§3)
+
+export type RulesInput = {
+  joinUntil?: unknown;
+  wrapUntil?: unknown;
+  openAt?: unknown;
+  reassignDays?: unknown;
+  minRankIndex?: unknown;
+};
+
+export type Rules = {
+  joinUntil: Date;
+  wrapUntil: Date;
+  openAt: Date;
+  reassignDays: number;
+  minRankIndex: number | null;
+};
+
+const int = (v: unknown): number | null => {
+  const n = typeof v === "string" && v.trim() !== "" ? Number(v) : v;
+  return typeof n === "number" && Number.isInteger(n) ? n : null;
+};
+
+const date = (v: unknown): Date | null => {
+  const d = v instanceof Date ? v : typeof v === "string" || typeof v === "number" ? new Date(v) : null;
+  return d && !Number.isNaN(d.getTime()) ? d : null;
+};
+
+/** The moment pairs nobody wrapped go to volunteers (§8). */
+export const reassignAt = (e: { wrapUntil: Date; reassignDays: number }) => new Date(e.wrapUntil.getTime() - e.reassignDays * DAY);
+
+/**
+ * Reads the officer's rules whole or refuses them. The order is `joinUntil < reassignAt < wrapUntil < openAt`.
+ * `drawn`: after the draw only `wrapUntil` and `openAt` may change (never to before now); `reassigned`: once the
+ * reassignment ran its term is fixed too.
+ */
+export function cleanRules(input: RulesInput, opts: { now: Date; drawn?: Rules | null; reassigned?: boolean }): { ok: true; rules: Rules } | Refusal {
+  const joinUntil = date(input.joinUntil);
+  const wrapUntil = date(input.wrapUntil);
+  const openAt = date(input.openAt);
+  if (!joinUntil || !wrapUntil || !openAt) return { ok: false, reason: "dates" };
+  if (!(joinUntil < wrapUntil && wrapUntil < openAt)) return { ok: false, reason: "dates" };
+  const reassignDays = int(input.reassignDays);
+  if (reassignDays === null || reassignDays < REASSIGN_DAYS_MIN || reassignDays > REASSIGN_DAYS_MAX) return { ok: false, reason: "reassign" };
+  // The reassignment has to fall after the joining closes, or there would be nobody drawn to take a pair from.
+  if (wrapUntil.getTime() - reassignDays * DAY <= joinUntil.getTime()) return { ok: false, reason: "reassign" };
+  const none = input.minRankIndex === null || input.minRankIndex === undefined || input.minRankIndex === "";
+  const rank = none ? null : int(input.minRankIndex);
+  if (!none && (rank === null || rank < 0 || rank > 9)) return { ok: false, reason: "rank" };
+  const rules: Rules = { joinUntil, wrapUntil, openAt, reassignDays, minRankIndex: rank };
+  const was = opts.drawn;
+  if (was) {
+    if (was.joinUntil.getTime() !== rules.joinUntil.getTime() || was.minRankIndex !== rules.minRankIndex) return { ok: false, reason: "drawn" };
+    if (opts.reassigned && was.reassignDays !== rules.reassignDays) return { ok: false, reason: "drawn" };
+    if (rules.wrapUntil < opts.now && rules.wrapUntil.getTime() !== was.wrapUntil.getTime()) return { ok: false, reason: "dates" };
+    if (rules.openAt < opts.now && rules.openAt.getTime() !== was.openAt.getTime()) return { ok: false, reason: "dates" };
+  }
+  return { ok: true, rules };
+}
+
+/** Where the event is, by its own clock. */
+export function phaseOf(
+  e: { joinUntil: Date; wrapUntil: Date; openAt: Date; drawnAt: Date | null },
+  now: Date,
+): "joining" | "closed" | "drawn" | "wrapping" | "wrapped" | "open" {
+  if (now >= e.openAt) return "open";
+  if (!e.drawnAt) return now < e.joinUntil ? "joining" : "closed";
+  return now < e.wrapUntil ? "wrapping" : "wrapped";
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The wrap (§6): a scene of the five and a note, whole or not at all.
+
+/** Collapses whitespace and refuses what a note may not hold: control characters, `@`, a link or markdown. */
+export function cleanNote(raw: unknown): { ok: true; note: string } | Refusal {
+  if (raw === null || raw === undefined) return { ok: true, note: "" };
+  if (typeof raw !== "string") return { ok: false, reason: "note" };
+  if (/[\u0000-\u001f\u007f\u0080-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/.test(raw.replace(/[\t\n\r]/g, " "))) return { ok: false, reason: "note" };
+  const note = raw.replace(/\s+/g, " ").trim();
+  if ([...note].length > NOTE_MAX) return { ok: false, reason: "note" };
+  if (/[@`*_~<>\[\]|\\#]/.test(note) || /https?:|www\.|\.(com|net|org|gg|me|io)\b/i.test(note)) return { ok: false, reason: "note" };
+  return { ok: true, note };
+}
+
+export function cleanWrap(input: { scene?: unknown; note?: unknown }): { ok: true; scene: Scene; note: string } | Refusal {
+  const scene = SCENES.find((s) => s === input.scene);
+  if (!scene) return { ok: false, reason: "scene" };
+  const n = cleanNote(input.note);
+  if (!n.ok) return n;
+  return { ok: true, scene, note: n.note };
+}
+
+/** The caprice: a note of `CAPRICE_MIN` characters or more, wrapped before `wrapUntil` (§7). */
+export const capriceOf = (note: string | null | undefined): boolean => [...(note ?? "")].length >= CAPRICE_MIN;
+
+// ---------------------------------------------------------------------------------------------------------------
+// The rarity (§7)
+
+/**
+ * `roll` is an integer in [0, 100) from the server's `crypto.randomInt`. Base: common 60, rare 25, epic 12, legendary 3.
+ * With the Chimney full the chances of rare and up double (common 20, rare 50, epic 24, legendary 6). The caprice lifts
+ * the result one level, to legendary at most. The client never decides any of this.
+ */
+export function rarityOf(roll: number, chimneyFull: boolean, caprice: boolean): Rarity {
+  if (!Number.isInteger(roll) || roll < 0 || roll > 99) throw new Error("the roll is an integer in [0, 100)");
+  const cuts = chimneyFull ? [20, 70, 94] : [60, 85, 97];
+  let level = roll < cuts[0] ? 0 : roll < cuts[1] ? 1 : roll < cuts[2] ? 2 : 3;
+  if (caprice) level = Math.min(3, level + 1);
+  return RARITIES[level];
+}
+
+/**
+ * Which of the host's fixed letters each pair gets: random, and not repeating while there are letters left over
+ * (§6.1). `rand(n)` is an integer in [0, n).
+ */
+export function pickLetters(pairIds: readonly string[], rand: (n: number) => number): Map<string, number> {
+  const out = new Map<string, number>();
+  let bag: number[] = [];
+  for (const id of [...pairIds].sort()) {
+    if (!bag.length) bag = Array.from({ length: HOST_LETTERS }, (_, i) => i);
+    out.set(id, bag.splice(rand(bag.length), 1)[0]);
+  }
+  return out;
+}
+
+/**
+ * One cycle over the entrants: shuffled with `rand(n)` (an integer in [0, n)), each gives to the next and the last
+ * to the first. Nobody draws themselves, and everybody gives and gets exactly once.
+ */
+export function drawCycle<T>(ids: readonly T[], rand: (n: number) => number): { giver: T; receiver: T }[] {
+  if (ids.length < DRAW_MIN) throw new Error(`a draw takes ${DRAW_MIN} entrants`);
+  const order = [...ids];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = rand(i + 1);
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order.map((giver, i) => ({ giver, receiver: order[(i + 1) % order.length] }));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The reassignment (§8)
+
+export type ReassignPair = { id: string; giverId: string; receiverId: string; wrappedAt: Date | null; lostById: string | null };
+export type ReassignEntrant = { id: string; volunteer: boolean };
+
+/**
+ * Which volunteer takes each pair nobody wrapped: one who said they can give one more, already wrapped their own,
+ * is not the pair's receiver nor the one who lost it, and has not taken another — first wrapped, first asked. A pair
+ * with nobody left to take it stays as it is (and Frimm sends it at `wrapUntil`, §6).
+ */
+export function reassignPlan(pairs: readonly ReassignPair[], entrants: readonly ReassignEntrant[]): { pairId: string; to: string; from: string }[] {
+  const wrappedAt = new Map<string, number>();
+  for (const p of pairs) {
+    if (p.wrappedAt) {
+      const was = wrappedAt.get(p.giverId);
+      if (was === undefined || p.wrappedAt.getTime() < was) wrappedAt.set(p.giverId, p.wrappedAt.getTime());
+    }
+  }
+  const owes = new Set(pairs.filter((p) => !p.wrappedAt).map((p) => p.giverId));
+  const pool = entrants
+    .filter((e) => e.volunteer && wrappedAt.has(e.id) && !owes.has(e.id))
+    .sort((a, b) => wrappedAt.get(a.id)! - wrappedAt.get(b.id)! || a.id.localeCompare(b.id))
+    .map((e) => e.id);
+  const taken = new Set<string>();
+  const moves: { pairId: string; to: string; from: string }[] = [];
+  for (const p of [...pairs].filter((x) => !x.wrappedAt).sort((a, b) => a.id.localeCompare(b.id))) {
+    const to = pool.find((v) => !taken.has(v) && v !== p.receiverId && v !== p.giverId && v !== p.lostById);
+    if (!to) continue;
+    taken.add(to);
+    moves.push({ pairId: p.id, to, from: p.giverId });
+  }
+  return moves;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The Chimney and the ranking (§10, §12)
+
+/**
+ * The share of the pairs that count, 0 to 1; null before any pair exists. A pair counts when its giver wrapped it **or**
+ * played the event in the game (#671): `counted` is that union, counted by the site (a giver who did both is one).
+ */
+export function chimneyOf(pairs: number, counted: number): number | null {
+  if (pairs <= 0) return null;
+  return Math.min(1, Math.max(0, counted / pairs));
+}
+
+/** Where the game's Winter Veil begins: Dec 15 00:00 on the server's clock (UTC-3) of the event's year (#671). */
+export const playsFrom = (year: number): Date => new Date(Date.UTC(year, 11, 15, 3, 0, 0));
+
+/** A play counts from the event's start up to (not including) `wrapUntil`. */
+export const playInWindow = (year: number, wrapUntil: Date, at: Date): boolean => at >= playsFrom(year) && at < wrapUntil;
+
+/** Whole percent as the screens and the game say it, and "full" as the rarity reads it. */
+export const chimneyPct = (share: number | null): number | null => (share === null ? null : Math.floor(share * 100 + 1e-9));
+export const chimneyFull = (pct: number | null): boolean => pct !== null && pct >= 100;
+
+export type ScoreInput = { entrants: number; members: number; pairs: number; wrapped: number; chimney: number | null };
+
+export function scoreOf(s: ScoreInput): { participation: number; wrapped: number; chimney: number; points: number } {
+  const participation = s.members > 0 ? Math.min(1, s.entrants / s.members) : 0;
+  const wrapped = s.pairs > 0 ? s.wrapped / s.pairs : 0;
+  const chimney = s.chimney ?? 0;
+  return { participation, wrapped, chimney, points: Math.round(1000 * (0.4 * participation + 0.4 * wrapped + 0.2 * chimney)) };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The relay (§12): obfuscation, not secrecy. The same in the addon (Modules/WinterVeil.lua), byte for byte.
+
+/** FNV-1a, 32 bits, over the UTF-8 bytes. */
+export function fnv1a(s: string): number {
+  let h = 0x811c9dc5;
+  for (const b of Buffer.from(s, "utf8")) {
+    h ^= b;
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+function keystream(key: string, n: number): Uint8Array {
+  let x = fnv1a(key) || 0x9e3779b9;
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    x ^= x << 13;
+    x >>>= 0;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    x >>>= 0;
+    out[i] = x & 0xff;
+  }
+  return out;
+}
+
+export const sealKey = (salt: string, giverKey: string) => `${salt}:${giverKey}`;
+
+/** The text XORed with the key's stream, as lowercase hex. */
+export function seal(text: string, key: string): string {
+  const bytes = Buffer.from(text, "utf8");
+  const ks = keystream(key, bytes.length);
+  return Buffer.from(bytes.map((b, i) => b ^ ks[i])).toString("hex");
+}
+
+export function unseal(hex: string, key: string): string | null {
+  if (!/^(?:[0-9a-f]{2})*$/.test(hex)) return null;
+  const bytes = Buffer.from(hex, "hex");
+  const ks = keystream(key, bytes.length);
+  return Buffer.from(bytes.map((b, i) => b ^ ks[i])).toString("utf8");
+}
+
+/**
+ * Who carries each pair of an entrant without the companion (§12): in the cycle's order, the givers without are
+ * spread over those with, one after another, so each carries at most ⌈without / with⌉ that are not theirs — and never
+ * the pair they themselves receive, or the carrier would learn who their own Santa is. A pair nobody else can carry
+ * is left out. Fixed for a given set of pairs and sessions. Empty when nobody has the companion.
+ */
+export function relayersOf(
+  pairs: readonly { giver: string; receiver: string }[],
+  withSession: ReadonlySet<string>,
+  /** Whose an entry is: one person may hold two entries, and must carry the pair of neither. */
+  personOf: (id: string) => string = (id) => id,
+): Map<string, string> {
+  const ordered = [...pairs].sort((a, b) => a.giver.localeCompare(b.giver));
+  const carriers = ordered.map((p) => p.giver).filter((id, i, all) => withSession.has(id) && all.indexOf(id) === i);
+  const out = new Map<string, string>();
+  if (!carriers.length) return out;
+  let i = 0;
+  for (const p of ordered) {
+    if (withSession.has(p.giver) || out.has(p.giver)) continue;
+    for (let tries = 0; tries < carriers.length; tries++) {
+      const c = carriers[(i + tries) % carriers.length];
+      if (personOf(c) !== personOf(p.receiver) && personOf(c) !== personOf(p.giver)) {
+        out.set(p.giver, c);
+        i = (i + tries + 1) % carriers.length;
+        break;
+      }
+    }
+  }
+  return out;
+}
