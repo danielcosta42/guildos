@@ -397,7 +397,7 @@ function GuildOS:CreateWinterVeilPanel(container)
             mKicker:SetText(L["YOU DREW"])
             if #gives == 0 then
                 mLine:SetText(L["Your pair has not reached this client yet."])
-                mNote:SetText(L["It comes with the companion, or from a guildmate who has it. You can also wrap on the site."] .. "  " .. siteLink())
+                mNote:SetText(L["It comes with the companion. You can also wrap on the site."] .. "  " .. siteLink())
                 return
             end
             local g = gives[1]
@@ -405,7 +405,8 @@ function GuildOS:CreateWinterVeilPanel(container)
             pickedTo = g.to
             mLine:SetText(nameOf(g.to) .. (g.wrapped and ("   " .. colored(L["wrapped"], C.ok)) or ""))
             globe:Show()
-            if g.wrapped and g.scene then
+            -- A globe wrapped here and not yet on the site (`pending`) previews what was wrapped here.
+            if (g.wrapped or g.pending) and g.scene then
                 setGlobe(globe, g.scene, "common")
                 globeCaption:SetText(L["Preview: the rarity is drawn when they open it."])
             else
@@ -417,7 +418,7 @@ function GuildOS:CreateWinterVeilPanel(container)
                 return
             end
             form:Show()
-            if g.wrapped and g.scene and not seenScene then scene = g.scene; seenScene = true end
+            if (g.wrapped or g.pending) and g.scene and not seenScene then scene = g.scene; seenScene = true end
             for id, b in pairs(sceneBtns) do
                 b:Show()
                 UI:SetButtonVariant(b, id == scene and "primary" or "secondary")
@@ -426,12 +427,13 @@ function GuildOS:CreateWinterVeilPanel(container)
             -- Fill the box from a note kept here once. SetText fires OnTextChanged, which draws again: mark it first, and only
             -- when there is a note to put, or an empty one would loop through its own handler.
             if note == "" and g.note and g.note ~= "" and not noteBox._seen then noteBox._seen = true; noteBox.edit:SetText(g.note); note = g.note end
-            local n = WV.CharCount(note)
+            -- Counted as the site counts it: the clean note (spaces collapsed); the caprice is the site's rule (WV.Caprice).
             local clean = WV.CleanNote(note)
+            local n = WV.CharCount(clean or note)
             noteCount:SetText(string.format("%d/%d", n, WV.NOTE_MAX)
-                .. (clean and n >= WV.CAPRICE_MIN and ("  " .. colored(L["a longer note lifts the rarity one level"], C.ok)) or "")
+                .. (WV.Caprice(note) and ("  " .. colored(L["a longer note lifts the rarity one level"], C.ok)) or "")
                 .. (not clean and ("  " .. colored(L["not allowed"], C.danger)) or ""))
-            wrapBtn:SetText(g.wrapped and L["Wrap again"] or L["Wrap"])
+            wrapBtn:SetText((g.wrapped or g.pending) and L["Wrap again"] or L["Wrap"])
             wrapBtn:SetEnabled(clean ~= nil and WV:HasCompanion())
             wrapBtn:SetScript("OnClick", function()
                 local ok, why = WV:Wrap(g.to, scene, noteBox.edit:GetText())

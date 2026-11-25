@@ -2,11 +2,14 @@
 -- WinterVeil under stubbed WoW APIs.
 --
 -- The site holds the event, the pairs and every rarity; the addon reads two blocks and tells the site what the player
--- asked. This proves: the seal is the site's byte for byte (the vector is the site's own test's); the guild's block
--- and a person's block (GOSVEIL1 v2) are read to their shape and refused when they are not theirs; a note is held to
--- the site's rules before it is sent; a pair a carrier whispers opens only for its owner; on the guild channel a
--- player speaks only for themselves and never about wrapping or opening; a request to open never carries a
--- rarity; and the export (GOSCOMP1.veil: joins, leaves, wrap, open) stays within the site's limits.
+-- asked. This proves: the relay (§13) is gone and an old block's `carriers`/`relay` are read past; the guild's block
+-- and a person's block (GOSVEIL1 v2) are read to their shape and refused when they are not theirs; GOSVEIL1 alone
+-- (its `event`, no `mine`) shows the tab and lets a player join; a note is held to the site's rules before it is sent,
+-- and the caprice hint is the site's rule on the clean note; on the guild channel a player speaks only for themselves,
+-- keyed as this client keys them whatever realm their client answers, and never about wrapping or opening; a globe
+-- wrapped here is "waiting to sync" until the site's block holds it, with a warning a day before a deadline; a request
+-- to open never carries a rarity; the export (GOSCOMP1.veil: joins, leaves, wrap, open) stays within the site's limits
+-- and stops repeating what the site already has; and the event is cleaned once per block, not on every call.
 --
 --   luajit -e 'ADDON="."' tools/winter-veil.lua
 --
@@ -88,10 +91,9 @@ local Import, WV = GuildOS.CompanionImport, GuildOS.WinterVeil
 local function pack(fmt, t)
   return fmt .. ":" .. LibDeflate:EncodeForPrint(LibDeflate:CompressDeflate(GuildOS.Companion.EncodeJson(t)))
 end
-local SALT = "00112233445566778899aabbccddeeff"
 local function veil(extra)
   local v = { year = 2025, joinUntil = NOW - 86400, wrapUntil = NOW + 5 * 86400, openAt = NOW + 6 * 86400, reassignDays = 3,
-              drawn = true, salt = SALT, chimney = 60, counts = { entrants = 5, wrapped = 3, pairs = 5, opened = 0 } }
+              drawn = true, chimney = 60, counts = { entrants = 5, wrapped = 3, pairs = 5, opened = 0 } }
   for k, x in pairs(extra or {}) do v[k] = x end
   return v
 end
@@ -99,7 +101,7 @@ local function inbox(gild, personal)
   GuildOSInbox = {}
   if gild then GuildOSInbox[#GuildOSInbox + 1] = pack("GOSGILD1", { fmt = "GOSGILD1", v = 1, guild = GUILD, realm = "Nightslayer", at = NOW - 60, veil = gild }) end
   if personal then
-    local p = { fmt = "GOSVEIL1", v = 2, guild = GUILD, realm = "Nightslayer", at = NOW - 60, year = 2025, mine = {}, relay = {}, collection = {} }
+    local p = { fmt = "GOSVEIL1", v = 2, guild = GUILD, realm = "Nightslayer", at = NOW - 60, year = 2025, mine = {}, collection = {} }
     for k, x in pairs(personal) do p[k] = x end
     GuildOSInbox[#GuildOSInbox + 1] = pack("GOSVEIL1", p)
   end
@@ -112,11 +114,15 @@ local function personal(gives, got, extra)
   return p
 end
 
--- ── 1. The seal is the site's, byte for byte ──────────────────────────
-check(WV.Fnv1a("abc") == 0x1a47e90b, "FNV-1a matches the site's")
-check(WV.Seal("Winter Veil", "salt:Key") == "6c969bcc2c44b67092fb17", "the seal matches the site's frozen vector")
-check(WV.Unseal(WV.Seal('{"to":"X"}', "k"), "k") == '{"to":"X"}', "a seal opens with its key")
-check(WV.Unseal("zz", "k") == nil and WV.Unseal("abc", "k") == nil, "and refuses what is not hex")
+-- ── 1. The relay (§13) is gone ─────────────────────────────────────────
+check(WV.Relay == nil and WV.OpenPair == nil and WV.Seal == nil and WV.Unseal == nil and WV.SealKey == nil and WV.Fnv1a == nil,
+  "no relay, no seal: a player without the companion wraps on the site")
+do
+  local src = io.open(ADDON .. "/Modules/WinterVeil.lua"):read("*a"):gsub("%-%-[^\n]*", "")
+  check(not src:find('act == "pair"', 1, true) and not src:find('"got"', 1, true) and not src:find("carriers", 1, true)
+    and not src:find("%.relay") and not src:find("s%.opened%[") and not src:find("s%.carried%["), "and nothing of it is left in the module")
+  check(not src:find("GUILD_ROSTER_UPDATE", 1, true), "nor the roster event that only drove it")
+end
 
 -- ── 2. The guild's block ──────────────────────────────────────────────
 inbox(nil)
@@ -126,11 +132,13 @@ check(WV:Event() == nil, "a date that is not a number is no event")
 inbox(veil({ reassignDays = 30 }))
 check(WV:Event() == nil, "a term the site never sends is no event")
 inbox(veil({ entrants = { { key = "Thalindra-Nightslayer", wrapped = true }, { key = "bad|key" } },
-  carriers = { { giver = "Chehul-Nightslayer", carrier = "Kaelthos-Nightslayer" } } }))
+  carriers = { { giver = "Chehul-Nightslayer", carrier = "Kaelthos-Nightslayer" } }, salt = "00112233445566778899aabbccddeeff" }))
 local e = WV:Event()
-check(e and e.drawn and e.salt == SALT and e.chimney == 60 and e.counts.wrapped == 3, "the event is read, with the Chimney")
+check(e and e.drawn and e.chimney == 60 and e.counts.wrapped == 3, "the event is read, with the Chimney")
 check(#e.entrants == 1 and e.entrants[1].key == "Thalindra-Nightslayer" and e.entrants[1].wrapped, "an entrant with a key that is not one is passed over")
-check(e.carriers["Chehul-Nightslayer"] == "Kaelthos-Nightslayer", "the carriers are read")
+check(e.carriers == nil and e.salt == nil, "an older site's carriers and salt are read past, the event still whole")
+inbox(veil({ carriers = "not a list", salt = 5 }))
+check(WV:Event() and WV:Event().chimney == 60, "and carriers or a salt of any shape do not break it")
 check(WV.PhaseOf(e, NOW) == "wrapping" and WV.PhaseOf(e, NOW + 5 * 86400 + 1) == "wrapped" and WV.PhaseOf(e, NOW + 7 * 86400) == "open", "the phase is the event's own clock")
 check(WV.PhaseOf(veil({ drawn = false }) and { joinUntil = NOW + 10, wrapUntil = NOW + 20, openAt = NOW + 30, drawn = false }, NOW) == "joining", "joining before the draw")
 inbox(veil({ chimney = 140 }))
@@ -152,10 +160,10 @@ check(WV:Event().chimney == 10, "a guild block with no valid event leaves the te
 local OPENED = { id = "o1", year = 2025, scene = "cabin", rarity = "epic", openedAt = NOW - 100, from = "Kaelthos-Nightslayer", note = "Que o seu inverno seja quente" }
 inbox(veil(), personal({ { to = "Thalindra-Nightslayer", toClass = "MAGE", wrapped = false } }, { ready = true, ornament = OPENED },
   { collection = { OPENED, { id = "o0", year = 2024, scene = "castle", rarity = "rare", openedAt = NOW - 5000 }, { id = "o2", year = 2024, scene = "fire", rarity = "legendary", openedAt = NOW - 5000, host = true } },
-    relay = { { giver = "Kaelthos-Nightslayer", seal = WV.Seal('{"to":"Chehul-Nightslayer"}', SALT .. ":Kaelthos-Nightslayer") } } }))
+    relay = { { giver = "Kaelthos-Nightslayer", seal = "6c969bcc" } } }))
 local p = WV:Personal()
 check(p and #p.mine == 1 and p.mine[1].gives[1].to == "Thalindra-Nightslayer" and not p.mine[1].gives[1].wrapped, "my block says whom I drew")
-check(#p.relay == 1, "and the pair I carry")
+check(p.relay == nil, "an older site's relay is read past")
 check(WV:Got().ornament.rarity == "epic" and WV:Got().ornament.from == "Kaelthos-Nightslayer", "the globe I got comes with its rarity, as the site drew it")
 check(#WV:Collection() == 2 and WV:Collection()[2].host == true, "the Collection keeps the globes the site sends and drops a scene it never sends")
 GuildOSInbox = { pack("GOSVEIL1", { fmt = "GOSVEIL1", v = 1, guild = GUILD, at = NOW - 60, year = 2025, mine = {}, relay = {} }) }
@@ -183,7 +191,8 @@ check(select(2, WV:Wrap("Thalindra-Nightslayer", "castle", "oi")) == "scene", "a
 check(select(2, WV:Wrap("Thalindra-Nightslayer", "tree", "oi @x")) == "note", "a note the site would refuse is refused")
 check(WV:Wrap("Thalindra-Nightslayer", "cabin", "Feliz Natal!") == true, "a globe within the rules is kept")
 local g = WV:MyGives()[1]
-check(g.wrapped and g.scene == "cabin" and g.note == "Feliz Natal!", "and shows at once, before the site's next block")
+check(not g.wrapped and g.pending and g.scene == "cabin" and g.note == "Feliz Natal!", "and shows as waiting to sync, not wrapped, until the site's block holds it")
+check(#WV:PendingSync() == 1 and WV:PendingSync()[1].to == "Thalindra-Nightslayer" and WV:PendingSync()[1].scene == "cabin", "PendingSync names it")
 check(#published == 0 or published[#published].act ~= "wrap", "wrapping is never said on the guild channel")
 check(WV:Wrap("Thalindra-Nightslayer", "fire", "Outra") == true and WV:MyGives()[1].scene == "fire", "wrapping again replaces the scene and the note")
 inbox(veil({ wrapUntil = NOW - 10, openAt = NOW + 86400 }), personal({ { to = "Thalindra-Nightslayer" } }))
@@ -217,21 +226,37 @@ check(#published == 0 or published[#published].act ~= "open", "opening is never 
 inbox(veil({ wrapUntil = NOW - 86400, openAt = NOW - 10 }), personal({ { to = "Thalindra-Nightslayer" } }, { ready = true, ornament = OPENED }))
 check(select(2, WV:RequestOpen()) == "nothing", "an opened globe is not asked for twice")
 
--- ── 7. The relay: a whispered pair opens only for its owner ───────────
-inbox(veil({ carriers = { { giver = "Chehul-Nightslayer", carrier = "Kaelthos-Nightslayer" } } }),
-      { mine = {}, relay = { { giver = "Kaelthos-Nightslayer", seal = WV.Seal('{"to":"Chehul-Nightslayer"}', SALT .. ":Kaelthos-Nightslayer") } } })
-local before = #published
-check(WV:Relay() == 1 and published[#published].act == "pair" and published[#published].opts.target == "Kaelthos-Nightslayer", "I whisper the pair I carry to its owner, online")
-check(WV:Relay() == 0 and #published == before + 1, "and not again within the hour")
-local sealed = WV.Seal('{"to":"Thalindra-Nightslayer"}', SALT .. ":Chehul-Nightslayer")
-local forged = WV.Seal('{"to":"Kaelthos-Nightslayer"}', SALT .. ":Chehul-Nightslayer")
-WV:OnEnvelope({ act = "pair", data = { g = "Chehul-Nightslayer", s = forged } }, "Thalindra-Nightslayer")
-check(#WV:MyGives() == 0, "a pair whispered by anybody but my carrier is not believed: every member holds the salt")
-WV:OnEnvelope({ act = "pair", data = { g = "Chehul-Nightslayer", s = sealed } }, "Kaelthos-Nightslayer")
-check(WV:MyGives()[1] and WV:MyGives()[1].to == "Thalindra-Nightslayer", "a pair whispered to me opens with the guild's salt")
-check(published[#published].act == "got", "and I say I have it")
-check(WV:OpenPair(WV.Seal('{"to":"X-Nightslayer"}', SALT .. ":Someone-Nightslayer")) == false or WV:MyGives()[1].to ~= "X-Nightslayer", "another's pair does not open as mine")
-check(WV:OpenPair(WV.Seal('{"nope":1}', SALT .. ":Chehul-Nightslayer")) == false, "a pair with no target is no pair")
+-- ── 7. Waiting to sync, and the warning before a deadline ─────────────
+do
+  local WRAPU = NOW + 5 * 86400
+  local ev = veil({ wrapUntil = WRAPU, reassignDays = 3 })
+  inbox(ev, personal({ { to = "Thalindra-Nightslayer", wrapped = false } }))
+  WV._store().wraps = {}
+  check(#WV:PendingSync() == 0 and WV:SyncWarning() == nil, "nothing wrapped here, nothing waiting")
+  WV:Wrap("Thalindra-Nightslayer", "tree", "Boas festas")
+  check(#WV:PendingSync() == 1 and WV:SyncWarning() == nil, "wrapped here, five days to go: waiting, no warning yet")
+  local RA = WV.ReassignAt(WV:Event())
+  check(RA == WRAPU - 3 * 86400, "the reassignment is reassignDays before the deadline (the site's reassignAt)")
+  local w = WV.SyncWarningAt(WV:Event(), 1, RA - 3600)
+  check(w and w.kind == "reassign" and w.at == RA and w.left == 3600, "an hour before the reassignment: warned, about the reassignment")
+  check(WV.SyncWarningAt(WV:Event(), 1, RA - 86400) == nil, "a whole day before: not yet")
+  w = WV.SyncWarningAt(WV:Event(), 1, WRAPU - 600)
+  check(w and w.kind == "wrapUntil" and w.left == 600, "past the reassignment, ten minutes before the deadline: warned, about the deadline")
+  check(WV.SyncWarningAt(WV:Event(), 1, WRAPU + 1) == nil, "past the deadline: nothing left to warn of")
+  check(WV.SyncWarningAt(WV:Event(), 0, RA - 3600) == nil, "nothing waiting: no warning")
+  local saved = NOW
+  NOW = RA - 7200
+  inbox(ev, personal({ { to = "Thalindra-Nightslayer", wrapped = false } }))
+  check(WV:SyncWarning() and WV:SyncWarning().kind == "reassign", "SyncWarning() says it now, from the wrap kept here")
+  -- The site's block now holds it, as wrapped here.
+  inbox(ev, personal({ { to = "Thalindra-Nightslayer", wrapped = true, scene = "tree", note = "Boas festas" } }))
+  check(#WV:PendingSync() == 0 and WV:SyncWarning() == nil and WV:MyGives()[1].wrapped and not WV:MyGives()[1].pending, "once the site holds it: wrapped, nothing waiting")
+  -- Wrapped again here with another scene: waiting again, wrapped on the site meanwhile.
+  WV:Wrap("Thalindra-Nightslayer", "fire", "Boas festas")
+  g = WV:MyGives()[1]
+  check(g.wrapped and g.pending and g.scene == "fire", "wrapped again here: the site's globe stands, the new one waits")
+  NOW = saved
+end
 
 -- ── 8. The guild channel: a player speaks only for themselves ─────────
 local s = WV._store()
@@ -248,6 +273,10 @@ WV:OnEnvelope({ act = "open", data = { r = "Kaelthos-Nightslayer", at = NOW - 5 
 check(next(s.wraps) == nil or s.wraps["Kaelthos-Nightslayer"] == nil, "a line about wrapping or opening is not a thing of the channel")
 WV:OnEnvelope({ act = "join", data = { k = "Gorbash-Nightslayer", v = false, at = NOW + 4000 } }, "Gorbash-Nightslayer")
 check(s.people["Gorbash-Nightslayer"] == nil, "a stamp from the future is dropped")
+local sent = #published
+WV:OnEnvelope({ act = "pair", data = { g = ME_KEY, s = "00" } }, "Kaelthos-Nightslayer")
+WV:OnEnvelope({ act = "got", data = { g = "Kaelthos-Nightslayer" } }, "Kaelthos-Nightslayer")
+check(WV._store().opened == nil and WV._store().carried == nil and #published == sent, "the relay's pair and got are dropped, unanswered")
 
 -- ── 9. Joining, and the export within the site's limits ───────────────
 inbox(veil({ drawn = false, joinUntil = NOW + 86400, wrapUntil = NOW + 5 * 86400 }), { mine = {} })
@@ -259,11 +288,118 @@ check(WV:Leave() == true and not WV:Joined(), "I can leave before the draw")
 inbox(veil({ drawn = true }), { mine = {} })
 check(WV:Join(false) == false and WV:Leave() == false, "and neither after it")
 inbox(veil({ drawn = false, joinUntil = NOW + 86400, wrapUntil = NOW + 5 * 86400 }), { mine = {} })
-for i = 1, 150 do GuildOS.db.winterVeil.people["P" .. i .. "-Nightslayer"] = { join = { volunteer = false, at = NOW - i } } end
+-- All newer than the site's block (NOW - 60): an older line is one the site already has (§11).
+for i = 1, 150 do GuildOS.db.winterVeil.people["P" .. i .. "-Nightslayer"] = { join = { volunteer = false, at = NOW - (i % 50) } } end
 check(#WV:ForExport().joins == 100, "a guild of hundreds stays within the site's cap, newest first")
 local enc = GuildOS.Companion.EncodeJson(WV:ForExport())
 check(not enc:find('"prices"', 1, true) and not enc:find('"needs"', 1, true) and not enc:find('"deliveries"', 1, true), "nothing of the first design is in the export")
 check(not WV.RecordDelivery and not WV.ScanPrices and not WV.SetList, "and the module has none of it")
+
+-- ── 11. Forever: clients of one guild answer different realms, or none ─
+do
+  local saved = GuildOS.Client
+  GuildOS.Client = {}   -- WoW: Forever (no realm sets players apart)
+  inbox(veil({ drawn = false, joinUntil = NOW + 86400, wrapUntil = NOW + 5 * 86400 }), { mine = {} })
+  GuildOS.db.winterVeil = nil
+  local st = WV._store()
+  local LOCAL = GuildOS:LocalMemberKey("Ana Lima")
+  check(LOCAL == "Ana Lima-Nightslayer", "this client keys Ana as Ana Lima-Nightslayer")
+  -- Ana's client answers "Classic Beta PvE 2"; the game's sender carries no realm, or that one.
+  WV:OnEnvelope({ act = "join", data = { k = "Ana Lima-Classic Beta PvE 2", v = true, at = NOW - 30 } }, "Ana Lima")
+  check(st.people[LOCAL] and st.people[LOCAL].join.volunteer == true, "a join keyed on another realm is kept, as this client keys Ana")
+  check(st.people["Ana Lima-Classic Beta PvE 2"] == nil, "and not under the other realm")
+  WV:OnEnvelope({ act = "leave", data = { k = "Ana Lima", at = NOW - 10 } }, "Ana Lima-Classic Beta PvE")
+  check(st.people[LOCAL].join == nil and st.people[LOCAL].left == NOW - 10, "a leave with no realm, from a sender with a third one, is hers too")
+  WV:OnEnvelope({ act = "join", data = { k = "Bia Souza-Classic Beta PvE 2", at = NOW - 5 } }, "Ana Lima")
+  check(st.people[GuildOS:LocalMemberKey("Bia Souza")] == nil, "a line about somebody else is still dropped")
+  WV:OnEnvelope({ act = "join", data = { k = "bad|key", at = NOW - 5 } }, "bad")
+  WV:OnEnvelope({ act = "join", data = { k = 5, at = NOW - 5 } }, "Ana Lima")
+  check(st.people["bad"] == nil and st.people["bad|key"] == nil, "a key that is not one is dropped")
+  GuildOS.Client = saved
+end
+
+-- ── 12. The export stops repeating what the site already has ──────────
+do
+  inbox(veil({ drawn = false, joinUntil = NOW + 86400, wrapUntil = NOW + 5 * 86400 }), { mine = {} })
+  GuildOS.db.winterVeil = nil
+  local st = WV._store()
+  check(WV:Join(false), "I join")
+  st.people["Old-Nightslayer"] = { join = { volunteer = false, at = NOW - 3600 } }     -- before the site's block (NOW - 60)
+  st.people["Gone-Nightslayer"] = { left = NOW - 3600 }
+  st.people["New-Nightslayer"] = { join = { volunteer = true, at = NOW - 10 } }
+  local function has(list, key) for _, r in ipairs(list) do if r.key == key then return true end end return false end
+  out = WV:ForExport()
+  check(has(out.joins, ME_KEY) and has(out.joins, "New-Nightslayer"), "my join and a newer one go")
+  check(not has(out.joins, "Old-Nightslayer") and not has(out.leaves, "Gone-Nightslayer"), "a join or leave older than the site's block does not")
+  -- The site's block now lists my entry: my own join goes no more.
+  inbox(veil({ drawn = false, joinUntil = NOW + 86400, wrapUntil = NOW + 5 * 86400 }), personal({}))
+  out = WV:ForExport()
+  check(not has(out.joins, ME_KEY) and has(out.joins, "New-Nightslayer"), "once the site shows my entry, my join is not sent again")
+  check(WV:Joined(), "and I am still in")
+  -- I leave after that: the leave goes.
+  check(WV:Leave(), "I leave")
+  out = WV:ForExport()
+  check(has(out.leaves, ME_KEY), "and the leave is sent while the site still lists me")
+  -- A newer block stops the rest.
+  local was = NOW
+  NOW = NOW + 3600
+  inbox(veil({ drawn = false, joinUntil = NOW + 86400, wrapUntil = NOW + 5 * 86400 }), { mine = {} })
+  out = WV:ForExport()
+  check(#out.joins == 0 and #out.leaves == 0, "a block newer than every line: nothing of the channel is sent again")
+  NOW = was
+end
+
+-- ── 13. GOSVEIL1 alone (its `event`, no `mine`): the tab shows and I can join ─
+do
+  GuildOSInbox = { pack("GOSVEIL1", { fmt = "GOSVEIL1", v = 2, guild = GUILD, at = NOW - 60, year = 2025, collection = {},
+    event = veil({ drawn = false, joinUntil = NOW + 86400, wrapUntil = NOW + 5 * 86400 }) }) }
+  Import._blockRaw, Import._veilRaw = nil, nil
+  GuildOS.db.winterVeil = nil
+  check(WV:Event() ~= nil and WV.PhaseOf(WV:Event()) == "joining", "the event comes from GOSVEIL1 alone")
+  check(WV:Personal() and #WV:Personal().mine == 0 and WV:MyEntry() == nil and not WV:Joined(), "with no `mine`: not in yet")
+  local cond
+  GuildOS.UI = GuildOS.UI or {}
+  local reg = GuildOS.UI.RegisterFeature
+  GuildOS.UI.RegisterFeature = function(_, def) if def.id == "winterveil" then cond = def.condition end end
+  local okF = pcall(dofile, ADDON .. "/UI/Features.lua")
+  GuildOS.UI.RegisterFeature = reg
+  check(cond and cond() == true, "the Winter Veil tab's condition holds (Features loaded: " .. tostring(okF) .. ")")
+  local before = #published
+  check(WV:Join(true) == true and WV:Joined(), "and I join from the game")
+  check(#published == before + 1 and published[#published].act == "join", "said on the channel")
+  out = WV:ForExport()
+  check(#out.joins == 1 and out.joins[1].key == ME_KEY and out.joins[1].volunteer == true, "and carried by my export")
+  GuildOS.db.winterVeil = nil
+end
+
+-- ── 14. The caprice: the site's rule on the clean note ─────────────────
+check(WV.CAPRICE_MIN == 40 and WV.CAPRICE_LETTERS == 6, "40 characters and 6 different letters")
+check(WV.Caprice("Que o seu inverno seja quente e cheio de paz!") == true, "a real note of 45 characters is a caprice")
+check(WV.Caprice(string.rep("a", 80)) == false, "80 times the same letter is not")
+check(WV.Caprice(string.rep("abcde ", 8)) == false, "five letters repeated to 48 characters are not")
+check(WV.Caprice(string.rep("abcdef ", 6)) == true, "six letters to 42 characters are")
+check(WV.Caprice(string.rep("aAbBcC", 7)) == false, "capitals are not other letters")
+check(WV.Caprice("Feliz       Natal      para     voce      ok") == false, "spaces collapse first: 26 clean characters are not 40")
+check(WV.Caprice(string.rep("1234567890", 5)) == false, "digits are not letters")
+check(WV.Caprice(string.rep("abcdefgh", 5) .. " @x") == false, "a note the site refuses is no caprice")
+check(WV.Caprice("\195\169\195\137\195\160\195\128\195\167\195\135" .. string.rep("ab", 20)) == false, "é/É, à/À, ç/Ç fold to three letters: with a and b, five")
+check(WV.Caprice("\195\169\195\137\195\160\195\128\195\167\195\135\195\177" .. string.rep("ab", 20)) == true, "and ñ makes six")
+check(WV.Caprice(string.rep("\226\128\148\240\159\142\132", 45)) == false, "dashes and emoji are not letters")
+-- ── 15. The event is cleaned once per block, not on every call ─────────
+do
+  local many = {}
+  for i = 1, 1000 do many[i] = { key = "P" .. i .. "-Nightslayer", wrapped = i % 2 == 0 } end
+  inbox(veil({ entrants = many }), personal({}))
+  local first = WV:Event()
+  check(#first.entrants == 1000 and rawequal(WV:Event(), first), "the same block gives the same cleaned event")
+  local t0 = os.clock()
+  for _ = 1, 2000 do WV:Event() end
+  check(os.clock() - t0 < 0.5, "two thousand calls (a roster update and a key each) are cheap: " .. (os.clock() - t0))
+  inbox(veil({ chimney = 20 }), personal({}))
+  check(not rawequal(WV:Event(), first) and WV:Event().chimney == 20, "a new block is cleaned anew")
+  inbox(nil, { mine = {}, event = veil({ chimney = 30 }) })
+  check(WV:Event().chimney == 30, "and with no guild block the person's event is read")
+end
 
 -- ── 10. The panel draws every state without an error, and shows what the site said ──
 do
@@ -306,7 +442,8 @@ do
     end
   end
   UI.CreateCheckbox = function() local f = new(); f.checkbox = new(); return f end
-  UI.CreateTextArea = function() local f = new(); f.edit = new(); return f end
+  local areas = {}
+  UI.CreateTextArea = function() local f = new(); f.edit = new(); areas[#areas + 1] = f; return f end
   UI.CreateTab = function(_, _, text) local f = new(); f.tabName = text; function f:SetActive() end; tabs[text] = f; return f end
   GuildOS.UI = UI
   GuildOS.Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1 } end })
@@ -332,6 +469,18 @@ do
   check(say("Join the Secret Santa"), "before joining closes, it offers to join")
   inbox(veil(), personal({ { to = "Thalindra-Nightslayer", wrapped = false } })); draw()
   check(say("YOU DREW") and say("Wrap"), "after the draw it shows whom I drew and the wrapping")
+  -- The count and the caprice hint are the clean note's, as the site counts it.
+  local box = areas[#areas].edit
+  box.text = "Feliz" .. string.rep(" ", 40) .. "Natal"
+  draw()
+  check(say("11/80") and not say("a longer note lifts"), "45 raw characters that clean to 11 count 11, and are no caprice")
+  box.text = string.rep("a", 45)
+  draw()
+  check(say("45/80") and not say("a longer note lifts"), "45 times one letter: no caprice hint")
+  box.text = "Que o seu inverno seja quente e cheio de paz!"
+  draw()
+  check(say("a longer note lifts"), "a real long note: the hint")
+  box.text = ""
   inbox(veil({ chimney = 100 }), personal({ { to = "Thalindra-Nightslayer", wrapped = true, scene = "fire", note = "oi" } })); draw()
   check(say("full: better odds"), "a full Chimney says the odds are better")
 
