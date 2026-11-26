@@ -675,6 +675,22 @@ function Link:GuildOfLine(code, author, kind)
         return nil
     end
     local guild = self:GuildOfCode(code)
+    -- The alliance's directory from guildos.me names the guilds and their members (GOSALLY1): a guild whose code
+    -- the line carries, or the speaker's own guild there, before the generic "Allied guild" (#449).
+    if not guild then
+        local A = GuildOS.Alliance
+        local dir = A and A.Directory and A:Directory() or {}
+        for _, g in ipairs(dir) do
+            if type(g) == "table" and type(g.guild) == "string" and Link.Code(g.guild) == code then
+                guild = g.guild
+                break
+            end
+        end
+        if not guild and A and A._DirectoryRow then
+            local _, dg = A:_DirectoryRow(shortName(author))
+            if type(dg) == "string" and Link.Code(dg) == code then guild = dg end
+        end
+    end
     if not guild and pact.open then
         -- A guild we have not met: the speaker's own presence names it.
         local mesh = GuildOS.Mesh

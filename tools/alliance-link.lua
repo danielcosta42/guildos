@@ -436,6 +436,9 @@ check(info and info.guild == "Guilda C" and info.class == "MAGE" and A:GuildOfMe
 local crafters = A:FindCrafters(1234)
 check(#crafters == 1 and crafters[1].name == "Zeca" and crafters[1].guild == "Guilda C" and not crafters[1].online,
   "and who crafts an item")
+-- A channel line whose guild the key's list doesn't know is named from the directory, not "Allied guild" (#449).
+check(Link:GuildOfLine(Link.Code("Guilda C"), "Zeca-Realm", "G") == "Guilda C",
+  "a line from a guild only the site's directory knows carries that guild's name")
 A.Directory = realDir
 
 -- ── 7. Officers save the code, the guild hands it on ──────────────────
