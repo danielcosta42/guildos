@@ -496,6 +496,18 @@ function GuildOS:CreateCalendarSub(panel)
             end
         end
 
+        -- The raids the allied guilds opened to the alliance (guildos.me's GOSALLY1, Alliance:OpenRaids): shown,
+        -- never stored in the calendar, nothing to answer here (alianca.md §3.2). Its text is inert already
+        -- (CompanionImport.ReadAlliance).
+        local ALLY = GuildOS.Alliance
+        for _, r in ipairs(ALLY and ALLY:OpenRaids() or {}) do
+            local k = keyOfTs(r.when)
+            byDay[k] = byDay[k] or {}
+            byDay[k][#byDay[k] + 1] = { allied = true, kind = "RAID", when = r.when, guild = r.guild,
+                title = "[" .. tostring(r.guild or "?") .. "] " .. tostring(r.title or "?"),
+                where = r.where, leader = r.leader, going = r.going, size = r.size }
+        end
+
         local dim = daysInMonth(f.viewYear, f.viewMonth)
         -- The month's birthdays and join anniversaries, worked out now (#428).
         if BD then
@@ -577,9 +589,11 @@ function GuildOS:CreateCalendarSub(panel)
         end
         local soft = C.textSoft
 
-        local evs, virtual = {}, {}
+        local evs, virtual, allied = {}, {}, {}
         for _, e in ipairs((sel and byDay and byDay[sel]) or {}) do
-            if e.virtual then virtual[#virtual + 1] = e else evs[#evs + 1] = e end
+            if e.virtual then virtual[#virtual + 1] = e
+            elseif e.allied then allied[#allied + 1] = e
+            else evs[#evs + 1] = e end
         end
         local yy = 0
         -- Birthdays and join anniversaries first, a line each: nothing to sign up to (#428).
@@ -590,6 +604,26 @@ function GuildOS:CreateCalendarSub(panel)
             yy = yy + 20
         end
         if #virtual > 0 then yy = yy + 8 end
+        -- The alliance's open raids: read-only, as the site sent them.
+        if #allied > 0 then
+            table.sort(allied, function(a, b) return a.when < b.when end)
+            local asOf = GuildOS.Alliance and GuildOS.Alliance:AsOf()
+            for _, e in ipairs(allied) do
+                local fs = UI:CreateText(child, date("%H:%M ", e.when) .. tint("[" .. L["Alliance"] .. "]", kindColor("RAID")) .. " "
+                    .. e.title .. "  " .. tint(string.format("%d/%d", e.going or 0, e.size or 0), soft), 12, C.text.r, C.text.g, C.text.b)
+                across(fs, yy)
+                yy = yy + 18
+                local bits = {}
+                if e.where then bits[#bits + 1] = e.where end
+                if e.leader then bits[#bits + 1] = string.format(L["led by %s"], e.leader) end
+                bits[#bits + 1] = L["Sign up in Discord or on the website."]
+                if asOf then bits[#bits + 1] = string.format(L["(as of %s)"], GuildOS:LocalDate("%a %H:%M", asOf)) end
+                local sub = UI:CreateText(child, table.concat(bits, " · "), 11, soft.r, soft.g, soft.b)
+                across(sub, yy)
+                yy = yy + math.max(16, (sub:GetStringHeight() or 12) + 4)
+            end
+            yy = yy + 8
+        end
         -- The game's own calendar (guildos-web specs/075, #263), read once for the day's raids from the
         -- site: its guild events over the inbox's window, and the inbox. WoW: Forever only.
         local GC = GuildOS.GameCalendar

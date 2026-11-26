@@ -763,4 +763,50 @@ do
   GuildOS.IsOfficer, GuildOS.ShowCoreSignupFrame = isOfficer, show
 end
 
+-- ── Members › From the alliance (alianca.md §3.2): guildos.me's directory, read-only ──
+do
+  local keepAlly, keepTell, keepDetail, keepMenu = GuildOS.Alliance, ChatFrame_SendTell, GuildOS.ShowMemberDetail, GuildOS.ShowMemberContextMenu
+  local dir = {}
+  GuildOS.Alliance = {
+    Directory = function() return dir end,
+    OnlineNow = function() return { { name = "Zeca", guild = "Iron Pact" } } end,
+    AsOf = function() return 1790000000 end,
+  }
+  local wasShown = parent.shown
+  parent.shown = true
+  GuildOS:RefreshRosterUI()
+  check(not parent.segBtns.allied.shown, "no directory from the site: no From the alliance")
+  dir = { { guild = "Iron Pact", members = {
+    { key = "Zeca-Other", name = "Zeca", class = "MAGE", level = 70, role = "DPS", profs = { "Tailoring" }, recipes = {} },
+    { key = "Yuri-Other", name = "Yuri", class = "PRIEST", level = 68, main = "Zeca-Other", recipes = {} } } },
+          { guild = "Silver Hand", members = { { key = "Xan", name = "Xan", class = "MAGE", level = 60, recipes = {} } } } }
+  GuildOS:RefreshRosterUI()
+  check(parent.segBtns.allied.shown and parent.segBtns.allied.label.text == "From the alliance"
+    and parent.segBtns.allied.count.text == 3, "with one, the rail offers From the alliance, with how many it lists")
+  fire(parent.segBtns.allied, "OnClick")
+  check(order():find("Zeca", 1, true) and order():find("Xan", 1, true) and not order():find("Ana", 1, true),
+    "the table lists the allied members, none of the guild's")
+  local zeca = rowOf("Zeca")
+  check(zeca.memberData.allied and zeca.memberData.rank == "Iron Pact" and zeca.memberData.isOnline,
+    "each with their guild in the rank's place, and on now as the channel tells")
+  local opened, told = 0, nil
+  function GuildOS:ShowMemberDetail() opened = opened + 1 end
+  GuildOS.ShowMemberContextMenu = function() opened = opened + 1 end
+  ChatFrame_SendTell = function(n) told = n end
+  fire(zeca, "OnClick", "RightButton")
+  fire(zeca, "OnClick", "LeftButton")
+  check(opened == 0 and told == "Zeca-Other", "read-only: no sheet, no menu, no rank action; a click whispers them")
+  parent.classFilter = "PRIEST"
+  GuildOS:RefreshRosterUI()
+  check(order() == "Yuri", "the class chips filter them as the guild's")
+  parent.classFilter = nil
+  dir = {}
+  GuildOS:RefreshRosterUI()
+  GuildOS:RefreshRosterUI()
+  check(parent.segment == "all" and not parent.segBtns.allied.shown, "the directory gone, the view goes back to All")
+  GuildOS.Alliance, ChatFrame_SendTell, GuildOS.ShowMemberDetail, GuildOS.ShowMemberContextMenu = keepAlly, keepTell, keepDetail, keepMenu
+  GuildOS:RefreshRosterUI()
+  parent.shown = wasShown
+end
+
 print(("roster-table: %d checks passed"):format(checks))

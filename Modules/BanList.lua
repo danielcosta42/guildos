@@ -670,6 +670,8 @@ function BanList:_SetupDetection()
         -- The alliance's, officers only, as an alert (#408).
         local ally = name and BanList:AllianceBansFor(name)
         if ally then
+            -- Labelled as the alliance's, never the guild's own: they come from guildos.me (alianca.md §3.2).
+            tt:AddLine(L["The alliance's bans"], 1, 0.53, 0)
             for i = 1, math.min(#ally, 2) do
                 tt:AddLine("\226\154\160 " .. BanList.AllianceLine(ally[i]), 1, 0.53, 0)
             end

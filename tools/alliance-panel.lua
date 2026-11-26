@@ -6,6 +6,10 @@
 --     marked, who of them is on now with the note that it is a best effort, the alliance room and
 --     the shared /g's switch; with no alliance it says so and where alliances live now;
 --   * the raids open to the alliance show only once the site's hook has some;
+--   * with the site's code in force: the alliance's name and its guilds from the directory with how many
+--     it lists, the open raids with where, who leads, "as of" and that signing up is on the site or in
+--     Discord; Officers' Room › Alliance says "From guildos.me", managed there, with no paste field; a
+--     pasted code or another key version gets none of the block; the guilds blocked here (review A);
 --   * Officers' Room › Alliance offers the code by hand with the line that it is the chat only, and
 --     the alliance's bans only while the guild has an alliance on guildos.me (audit B7);
 --   * the rooms open the two screens, the officers' one in the Officers' Room only;
@@ -85,6 +89,8 @@ function GuildOS:GetPlayerKey(n, r) return n .. "-" .. r end
 function GuildOS:LocalDate(fmt, ts) return os.date(fmt, ts) end
 function GuildOS:GetClassColor() return 1, 1, 1 end
 function GuildOS:Print() end
+function GuildOS.FoldCase(x) return tostring(x or ""):lower() end
+function GuildOS.SameGuildName(a, b) return type(a) == "string" and type(b) == "string" and a:lower() == b:lower() end
 GuildOS.UI = setmetatable({ GAP = 8, SCROLL_GUTTER = 22 }, { __index = function(_, name)
   return function(_, parent, text)
     local f = Frame.new(type(parent) == "table" and parent or nil)
@@ -110,7 +116,10 @@ GuildOS.AllianceLink = {
   Pact = function() return pact end,
   Active = function() return pact ~= nil end,
   ChannelName = function() return pact and "GOSANUCLEO" end,
-  Config = function() return pact and { tag = "NUCLEO", key = "Kx7Pq2Lm9Z", open = true, line = "GOS=NUCLEO:Kx7Pq2Lm9Z", guilds = {}, order = {} } end,
+  Config = function()
+    return pact and { tag = "NUCLEO", key = "Kx7Pq2Lm9Z", open = true, line = "GOS=NUCLEO:Kx7Pq2Lm9Z", guilds = {}, order = {},
+                      site = pact.site, name = pact.site and pact.name or nil, version = pact.version }
+  end,
   Suggest = function() return pact and "GOS=NUCLEO:Kx7Pq2Lm9Z" end,
   Parse = function() return { tag = "NUCLEO" } end,
 }
@@ -206,6 +215,66 @@ parent.SelectSub("setup")
 t = texts(setup)
 check(not t:find("The alliance's bans", 1, true) and not t:find("Save for the guild", 1, true), "a member sees neither")
 officer = true
+
+-- ── 3b. The site's code in force (alianca.md §3.2, §3.5) ───────────────
+local allyBlock = {
+  at = NOW - 1800, alliance = { name = "Pacto do Sul", tag = "NUCLEO", version = 2 },
+  guilds = { { name = "Guilda A", self = true, members = {} },
+             { name = "Guilda B", members = { { key = "Bob", name = "Bob", class = "MAGE", level = 70 },
+                                              { key = "Bea", name = "Bea", class = "PRIEST", level = 70 } } },
+             { name = "Guilda E", members = { { key = "Edu", name = "Edu", class = "ROGUE", level = 60 } } } },
+  raids = { { id = "r1", guild = "Guilda B", title = "Gruul", where = "Gruul's Lair", startsAt = NOW + 7200,
+              size = 25, lead = "Bob-Realm", going = 11 },
+            { id = "r0", guild = "Guilda E", title = "Ontem", startsAt = NOW - 4 * 3600, size = 10, going = 2 } },
+}
+GuildOS.CompanionImport = { AllianceBlock = function() return allyBlock end }
+pact.blocked = {}
+check(#A:Directory() == 0 and #A:OpenRaids() == 0, "a pasted code gets none of the site's block: the chat only (§3.3)")
+pact.site, pact.name, pact.version = true, "Pacto do Sul", 2
+parent.SelectSub("hall")
+t = texts(hall)
+check(t:find("Pacto do Sul [NUCLEO]", 1, true), "Salão › Alliance names the alliance as the site does")
+check(t:find("Guilda E|r", 1, true) and t:find("Guilda B|r |cffffffff(2 in the directory)", 1, true),
+  "and its guilds from the directory, one nobody heard on the channel included, with how many it lists")
+check(t:find("Gruul (11/25)", 1, true) and t:find("Gruul's Lair", 1, true) and t:find("led by Bob", 1, true)
+  and not t:find("Ontem", 1, true), "the open raids: where, who leads, how many go; one long begun is not")
+check(t:find("(as of ", 1, true) and t:find("Sign up in Discord or on the website.", 1, true),
+  "as of when the site built them, and that signing up is on the site or in Discord")
+pact.version = 3
+check(#A:OpenRaids() == 0 and #A:Directory() == 0, "a block of another key version is not this alliance's")
+pact.version = 2
+check(A:Block("Guilda B"))
+check(#A:OpenRaids() == 0 and #A:Directory() == 1, "a blocked guild's raids and members are left out")
+check(A:Unblock("Guilda B") and #A:Directory() == 2, "and back once unblocked")
+
+parent.SelectSub("setup")
+t = texts(setup)
+check(t:find("From guildos.me: Pacto do Sul [NUCLEO]", 1, true) and t:find("This alliance is managed on guildos.me", 1, true),
+  "Officers' Room › Alliance: From guildos.me, with the alliance's name, managed there")
+check(not t:find("Save for the guild", 1, true) and not t:find("Generate", 1, true) and not t:find("Chat only:", 1, true),
+  "and no field to paste a code")
+check(t:find("The alliance's bans", 1, true), "the alliance's bans stay")
+-- Blocking a guild here (review A).
+check(t:find("Ignore a guild locally", 1, true) and t:find("Lines from a blocked guild are not shown on this account.", 1, true),
+  "the block list, empty")
+local blockBox, blockBtn, unblockBtn
+for _, f in ipairs(all) do
+  local l = rawget(f, "label")
+  if l and l.text == "Block" then blockBtn = f elseif l and l.text == "Unblock" then unblockBtn = f end
+end
+for _, f in ipairs(all) do if f.helper == "CreateInput" and f.scripts and blockBtn and f ~= blockBtn then blockBox = f end end
+GuildOS.AllianceChat._Notify = function() end
+A.Block = function(_, g) pact.blocked[g] = true; return true end
+A.Unblock = function(_, g) pact.blocked[g] = nil; return true end
+blockBox:SetText("Guilda E")
+blockBtn.scripts.OnClick()
+t = texts(setup)
+check(pact.blocked["Guilda E"] and t:find("Blocked: Guilda E", 1, true), "Block adds the guild, and the list says it")
+blockBox:SetText("Guilda E")
+unblockBtn.scripts.OnClick()
+check(not pact.blocked["Guilda E"], "Unblock lifts it")
+pact.site, pact.name, pact.version = nil, "NUCLEO", nil
+GuildOS.CompanionImport = nil
 
 -- ── 4. The rooms and what is gone ──────────────────────────────────────
 local rooms = read("UI/Rooms.lua")

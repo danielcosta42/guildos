@@ -5,8 +5,9 @@
 --   * the alliance code the GreenWall way (Modules/AllianceLink.lua): GOS=TAG:key, the hidden
 --     channel, the shared /g mirrored with the speaker's guild tag;
 --   * the alliance room (Modules/AllianceChat.lua), on that same channel;
---   * what the site sends through the companion: the shared bans (GOSGILD1, Modules/BanList.lua)
---     and, in a later step, the directory and the open raids (GOSALLY1).
+--   * what the site sends through the companion: the alliance code itself (GOSGILD1 `alliance`, which
+--     wins over a pasted one: AllianceLink), the shared bans (GOSGILD1, Modules/BanList.lua), and the
+--     directory and the open raids (GOSALLY1, CompanionImport:AllianceBlock), in memory only.
 --
 -- The ambassador pact that used to live here (invites, the join code, ambassadors, the whisper ops,
 -- the bridge, the allied data sync, the alliance board and LFG pool) is gone (§3.4). This file is
@@ -118,7 +119,58 @@ end
 
 function Alliance:IsMemberGuild(guildName)
     local pact = self:Get()
-    return (pact and pact.guilds and pact.guilds[guildName or ""]) ~= nil
+    if not pact or type(guildName) ~= "string" then return false end
+    if pact.guilds and pact.guilds[guildName] then return true end
+    for _, name in ipairs(self:SiteGuildNames()) do
+        if GuildOS.SameGuildName(name, guildName) then return true end
+    end
+    return false
+end
+
+-- Whether the alliance in force is managed on guildos.me (its code came in the companion's block).
+function Alliance:FromSite()
+    local pact = self:Get()
+    return pact ~= nil and pact.site == true
+end
+
+-- A guild an officer blocked: its lines on the alliance channel (the shared /g and the room) are not shown
+-- on this account. Nothing is sent: the other guild is never told. Kept in the guild's db, through any key change.
+function Alliance:IsBlocked(guildName)
+    local pact = self:Get()
+    return (pact and pact.blocked and type(guildName) == "string" and pact.blocked[guildName]) == true
+end
+
+function Alliance:Blocked()
+    local out = {}
+    local pact = self:Get()
+    for name, on in pairs(pact and pact.blocked or {}) do
+        if on == true then out[#out + 1] = name end
+    end
+    table.sort(out)
+    return out
+end
+
+function Alliance:Block(guildName)
+    if not GuildOS:IsOfficer() then return false, L["Only officers can do that."] end
+    local pact = self:Get()
+    if not pact then return false, L["This guild is not in an alliance yet."] end
+    local clean = GuildOS:SanitizeUserText(guildName, Alliance.GUILD_NAME_MAX)
+    if clean == "" then return false, L["Name the guild to block."] end
+    if clean == self:MyGuildName() then return false, L["Name the guild to block."] end
+    pact.blocked[clean] = true
+    self._dirOf = nil
+    if GuildOS.AllianceChat then GuildOS.AllianceChat:_Notify() end
+    return true
+end
+
+function Alliance:Unblock(guildName)
+    if not GuildOS:IsOfficer() then return false, L["Only officers can do that."] end
+    local pact = self:Get()
+    if not pact then return false, L["This guild is not in an alliance yet."] end
+    pact.blocked[GuildOS:SanitizeUserText(guildName, Alliance.GUILD_NAME_MAX)] = nil
+    self._dirOf = nil
+    if GuildOS.AllianceChat then GuildOS.AllianceChat:_Notify() end
+    return true
 end
 
 -- An officer of a guild in the alliance: hides a line from the room for the guild.
@@ -127,34 +179,154 @@ function Alliance:CanAdminister()
 end
 
 ----------------------------------------------------------------------
--- HOOKS FOR GOSALLY1 (alianca.md §3.2). The site's directory and its open raids reach the game in
--- a new companion block, read in a later step. Until then both answer an empty list, and everything
--- below that reads them (GuildOfMember, MemberInfo, FindCrafters, the Salão, the digest) works the
--- same with nothing in them.
+-- GOSALLY1 (alianca.md §3.2): the site's directory and its open raids, read by CompanionImport
+-- (AllianceBlock, every field checked there) and kept in memory only. A block counts only for the
+-- alliance in force, and only when that alliance is the site's: same tag, same key version as the
+-- GOSGILD1's code. A pasted code gets the chat only (§3.3): nothing here.
 ----------------------------------------------------------------------
--- The allied guilds' members: { { guild = "Name", members = { { name, class, level, role, main,
--- recipes = { [recipeId] = true } } } } }. Never our own guild; opted-out members never in it.
-function Alliance:Directory()
-    return {}
+Alliance.RAID_GRACE = 3 * 3600   -- an open raid that began up to three hours ago is still shown
+Alliance.MAP_TTL    = 60         -- seconds the recipe → item map built from the guild's own scans holds
+
+function Alliance:SiteBlock()
+    local pact = self:Get()
+    local I = GuildOS.CompanionImport
+    if not pact or not pact.site or not (I and I.AllianceBlock) then return nil end
+    local block = I:AllianceBlock()
+    local a = block and block.alliance
+    if not a or a.tag ~= pact.tag or (pact.version and a.version ~= pact.version) then return nil end
+    return block
 end
 
--- The allied guilds' raids open to the alliance, soonest first: { { guild, title, when, where,
--- leader, going, size } }. Signing up is on the site or in Discord.
-function Alliance:OpenRaids()
-    return {}
+-- When the site built the block in force (Unix seconds), for "as of": nil without one.
+function Alliance:AsOf()
+    local block = self:SiteBlock()
+    return block and block.at or nil
+end
+
+-- Every guild the site names in the alliance, this one included, founder first as the site sends them.
+function Alliance:SiteGuildNames()
+    local out = {}
+    local block = self:SiteBlock()
+    for _, g in ipairs(block and block.guilds or {}) do out[#out + 1] = g.name end
+    return out
+end
+
+-- A recipe spell id → (the item it makes, the profession's English name). The site sends recipe SPELL ids
+-- (gosally1.md, Crafter.recipes) and "who crafts this?" asks by ITEM. WoW: Forever and retail read the static
+-- catalog (Data/ProfCatalog*.lua, recipes[id][F.out] and F.line); TBC Anniversary has none, and maps what the
+-- guild's own scans recorded (db.recipes: spellId with itemId), rebuilt at most every MAP_TTL seconds. A recipe
+-- that makes no item (an enchant) or one nobody here has scanned maps to nothing and is not searchable by item.
+function Alliance:_RecipeMap()
+    local cat = GuildOS.ProfCatalog
+    if type(cat) == "table" and type(cat.recipes) == "table" and type(cat.F) == "table" then
+        if self._mapOf ~= cat then
+            self._mapOf, self._mapAt = cat, nil
+            self._map = function(id)
+                local r = cat.recipes[id]
+                if type(r) ~= "table" then return nil end
+                local out, line = r[cat.F.out], r[cat.F.line]
+                local prof = line and cat.professions and cat.professions[line]
+                return (type(out) == "number" and out > 0) and out or nil, prof and prof.en or nil
+            end
+            self._mapRev = (self._mapRev or 0) + 1
+        end
+        return self._map, self._mapRev
+    end
+    local t = (GetTime and GetTime()) or 0
+    if self._mapOf == "scans" and self._mapAt and t - self._mapAt < Alliance.MAP_TTL then
+        return self._map, self._mapRev
+    end
+    local byId = {}
+    local DC = GuildOS.DataCollector
+    for _, profs in pairs(GuildOS.db and GuildOS.db.recipes or {}) do
+        for profName, list in pairs(type(profs) == "table" and profs or {}) do
+            local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
+            for _, r in ipairs(type(list) == "table" and list or {}) do
+                if type(r) == "table" and type(r.spellId) == "number" and not byId[r.spellId] then
+                    byId[r.spellId] = { item = type(r.itemId) == "number" and r.itemId or nil, prof = canonical }
+                end
+            end
+        end
+    end
+    self._mapOf, self._mapAt = "scans", t
+    self._map = function(id)
+        local hit = byId[id]
+        if hit then return hit.item, hit.prof end
+        return nil
+    end
+    self._mapRev = (self._mapRev or 0) + 1
+    return self._map, self._mapRev
+end
+
+-- The allied guilds' members: { { guild = "Name", realm?, members = { { key, name, class, level, role, main,
+-- prof, profs, recipes = { [itemId] = profession } } } } }, as the site sent them. `recipes` is keyed by the
+-- ITEM a recipe makes (mapped by _RecipeMap from the site's recipe spell ids), its value the profession's
+-- English name; `prof` is the member's first. Never our own guild, never a blocked one; opted-out members are
+-- never in the site's block. Rebuilt only when the block or the recipe map changes.
+function Alliance:Directory()
+    local block = self:SiteBlock()
+    if not block then return {} end
+    local map, rev = self:_RecipeMap()
+    if self._dirOf == block and self._dirRev == rev then return self._dir end
+    local mine = self:MyGuildName()
+    local out = {}
+    for _, g in ipairs(block.guilds) do
+        if not g.self and not (mine and GuildOS.SameGuildName(g.name, mine)) and not self:IsBlocked(g.name) then
+            local members = {}
+            for _, m in ipairs(g.members) do
+                local recipes, profs, seen = {}, {}, {}
+                for _, id in ipairs(m.spells or {}) do
+                    local item, prof = map(id)
+                    if item and not recipes[item] then recipes[item] = prof or true end
+                    if prof and not seen[prof] then
+                        seen[prof] = true
+                        profs[#profs + 1] = prof
+                    end
+                end
+                members[#members + 1] = { key = m.key, name = m.name, class = m.class, level = m.level, role = m.role,
+                                          main = m.main, prof = profs[1], profs = profs, recipes = recipes }
+            end
+            out[#out + 1] = { guild = g.name, realm = g.realm, via = g.via, members = members }
+        end
+    end
+    self._dirOf, self._dirRev, self._dir = block, rev, out
+    return out
+end
+
+-- The allied guilds' raids open to the alliance, soonest first: { { id, guild, title, when, where, leader, going,
+-- size } }, from three hours ago on. Signing up is on the site or in Discord: nothing here acts on them.
+function Alliance:OpenRaids(at)
+    local block = self:SiteBlock()
+    local out = {}
+    if not block then return out end
+    at = at or now()
+    for _, r in ipairs(block.raids) do
+        if r.startsAt >= at - Alliance.RAID_GRACE and not self:IsBlocked(r.guild) then
+            out[#out + 1] = { id = r.id, guild = r.guild, title = r.title, when = r.startsAt, where = r.where,
+                              leader = r.lead and shortName(r.lead) or nil, going = r.going, size = r.size }
+        end
+    end
+    return out
 end
 
 -- The directory's row for a character of an allied guild, or nil.
 function Alliance:_DirectoryRow(name)
     local short = shortName(name):lower()
     if short == "" then return nil end
-    for _, g in ipairs(self:Directory()) do
-        for _, m in ipairs(type(g.members) == "table" and g.members or {}) do
-            if type(m) == "table" and shortName(m.name):lower() == short then
-                return m, g.guild
+    -- Indexed once per directory: the room asks for every line it draws.
+    local dir = self:Directory()
+    if self._rowsOf ~= dir then
+        local idx = {}
+        for _, g in ipairs(dir) do
+            for _, m in ipairs(type(g.members) == "table" and g.members or {}) do
+                local k = type(m) == "table" and shortName(m.name):lower()
+                if k and not idx[k] then idx[k] = { m, g.guild } end
             end
         end
+        self._rowsOf, self._rows = dir, idx
     end
+    local hit = self._rows[short]
+    if hit then return hit[1], hit[2] end
     return nil
 end
 
@@ -178,7 +350,7 @@ function Alliance:OnlineNow(at)
     local mine = self:MyGuildName()
     at = at or now()
     for key, h in pairs(self._heard) do
-        if at - (h.t or 0) <= Alliance.ONLINE_FOR and h.guild ~= mine then
+        if at - (h.t or 0) <= Alliance.ONLINE_FOR and h.guild ~= mine and not self:IsBlocked(h.guild) then
             out[#out + 1] = { name = h.name, guild = h.guild }
             seen[key] = true
         end
@@ -187,7 +359,8 @@ function Alliance:OnlineNow(at)
     if net and net.Peers and mesh and mesh.GetPeerGuild then
         for short in pairs(net:Peers()) do
             local guild = mesh:GetPeerGuild(short)
-            if guild and guild ~= mine and pact.guilds[guild] and not seen[tostring(short):lower()] then
+            if guild and guild ~= mine and self:IsMemberGuild(guild) and not self:IsBlocked(guild)
+               and not seen[tostring(short):lower()] then
                 out[#out + 1] = { name = short, guild = guild }
                 seen[tostring(short):lower()] = true
             end
@@ -209,9 +382,18 @@ function Alliance:Guilds(at)
     local mine = self:MyGuildName()
     local online = {}
     for _, p in ipairs(self:OnlineNow(at)) do online[p.guild] = (online[p.guild] or 0) + 1 end
-    for name in pairs(pact.guilds) do
-        out[#out + 1] = { name = name, mine = (name == mine), online = (name ~= mine) and (online[name] or 0) or nil }
+    local seen = {}
+    local function add(name)
+        local isMine = mine ~= nil and GuildOS.SameGuildName(name, mine)
+        local k = GuildOS.FoldCase(name)
+        if seen[k] then return end
+        seen[k] = true
+        out[#out + 1] = { name = isMine and mine or name, mine = isMine,
+                          online = (not isMine) and (online[name] or 0) or nil, blocked = self:IsBlocked(name) or nil }
     end
+    -- The site's list when it sent one (every guild, whether heard or not), then any guild heard on the channel.
+    for _, name in ipairs(self:SiteGuildNames()) do add(name) end
+    for name in pairs(pact.guilds) do add(name) end
     table.sort(out, function(a, b)
         if a.mine ~= b.mine then return a.mine end
         return a.name < b.name
@@ -291,8 +473,8 @@ function Alliance:SpeakerInfo(name)
     return nil
 end
 
--- Everyone of an ALLIED guild who can craft `itemId`, from the directory: { name, guild, prof,
--- online }, the ones on now first. `recipes` in a directory row is keyed by the item it makes.
+-- Everyone of an ALLIED guild who can craft `itemId`, from the directory: { name, guild, prof, class,
+-- whisper, online }, the ones on now first. `recipes` in a directory row is keyed by the item it makes.
 function Alliance:FindCrafters(itemId)
     local out = {}
     if not self:Get() or not itemId then return out end
@@ -305,8 +487,9 @@ function Alliance:FindCrafters(itemId)
                 local recipes = type(m) == "table" and m.recipes
                 if type(recipes) == "table" and recipes[itemId] then
                     local name = shortName(m.name)
-                    out[#out + 1] = { name = name, guild = g.guild, prof = m.prof,
-                                      online = onNow[name:lower()] == true }
+                    local prof = type(recipes[itemId]) == "string" and recipes[itemId] or m.prof
+                    out[#out + 1] = { name = name, guild = g.guild, prof = prof, class = m.class,
+                                      whisper = m.key or name, online = onNow[name:lower()] == true }
                 end
             end
         end
@@ -331,9 +514,10 @@ function Alliance:PrintStatus()
     end
     local guilds = self:Guilds()
     GuildOS:Print(string.format(L["Alliance %s [%s] - %d guilds"], pact.name or pact.tag, pact.tag, #guilds))
+    if pact.site then GuildOS:Print(L["From guildos.me: the alliance is managed there."]) end
     for _, g in ipairs(guilds) do
         local suffix = g.mine and (" " .. L["(you)"]) or (" - " .. string.format(L["%d online"], g.online or 0))
-        GuildOS:Print("  " .. g.name .. suffix)
+        GuildOS:Print("  " .. g.name .. suffix .. (g.blocked and (" " .. L["(blocked)"]) or ""))
     end
 end
 
@@ -356,6 +540,17 @@ function Alliance:HandleCommand(args)
         end
         GuildOS:Print((chat:Prefs().guildBridge and L["Allied /g: shown"] or L["Allied /g: hidden"])
             .. " · " .. link:StatusLine())
+        return
+    end
+    if verb == "block" or verb == "unblock" then
+        -- An allied guild's lines hidden on this account (officers): nobody is told.
+        local ok, err = self[verb == "block" and "Block" or "Unblock"](self, rest)
+        if ok then
+            GuildOS:Print(string.format(verb == "block" and L["Blocked: %s"] or L["Unblocked: %s"],
+                GuildOS:SanitizeUserText(rest, Alliance.GUILD_NAME_MAX)))
+        elseif err then
+            GuildOS:Print(err)
+        end
         return
     end
     -- create, invite, leave, join, code, amb... : the pact's verbs, gone with it (alianca.md §3.4).

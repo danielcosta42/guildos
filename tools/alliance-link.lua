@@ -17,8 +17,16 @@
 --     a line too long for its frame goes in parts;
 --   * who is on now is who was heard on the channel, and the mesh's GuildOS clients of the allied
 --     guilds; a speaker's guild tags their whisper;
---   * the hooks for the site's directory and open raids (GOSALLY1) answer nothing yet, and what reads
---     them works once they do;
+--   * the directory and open raids (GOSALLY1) answer nothing without the site's block, and what reads
+--     them works once they do (the block itself: tools/guild-block.lua);
+--   * an officer blocks an allied guild (review A): its /g and room lines are not shown, it is not on now,
+--     /gos ally block|unblock, kept through a key change;
+--   * the old pact's channel is left by each of the account's characters, never the code's own channel
+--     when the names meet (reviews B, C);
+--   * guildos.me's code (GOSGILD1 `alliance`) is held to its shape, wins over a pasted one and the GM's
+--     note, is never written into the guild's copy; a new key leaves the old channel and joins with the
+--     new one; a block that names none ends the alliance and leaves its channel, the dead code in the
+--     note does not come back, another code an officer pasted does;
 --   * the short code goes in the guild master's public note and every member reads it from there,
 --     nobody online; the guilds are the ones heard on the channel; the relay asks back a newer
 --     holder and keeps a copy that came before the roster (issue #431).
@@ -172,6 +180,9 @@ GuildOS.SyncService = {
   On = function(_, dom, fn) syncHandlers[dom] = fn end,
 }
 local function setCode(line, rev) GuildOS.db.allianceLink = { line = line, rev = rev or 1 } end
+-- The hidden channel's name comes from the code: the tag and a hash of the key (follow-up 1).
+local CH = GuildOS.AllianceLink.ChannelNameFor("NUCLEO", "Kx7Pq2Lm9Z")
+frameChannels[1][1] = CH
 
 local A, Link, Chat, GC = GuildOS.Alliance, GuildOS.AllianceLink, GuildOS.AllianceChat, GuildOS.GuildChat
 local printed = {}
@@ -196,6 +207,12 @@ check(short == "GOS=NUCLEO:Kx7Pq2Lm9Z", "the short code names no guild (issue #4
 local sc = Link.Parse("Main do GM " .. short)
 check(sc and sc.open and sc.tag == "NUCLEO" and sc.key == "Kx7Pq2Lm9Z" and sc.line == short, "read in the middle of a note")
 check(#Link.Build(string.rep("T", 12), Link.NewKey()) <= Link.NOTE_MAX, "the longest short code fits a public note")
+-- The hidden channel's name (follow-up 1): from the code alone, so every guild agrees; a new key is a new channel.
+local longest = Link.ChannelNameFor(string.rep("T", 12), "Zz9Yy8Xx7W")
+check(#longest == 22 and longest:match("^[A-Za-z0-9]+$") and longest:sub(1, 16) == "GOSA" .. string.rep("T", 12),
+  "the longest channel name is 22 letters and digits, no hyphen, under the 31 the game keeps")
+check(Link.ChannelNameFor("NUCLEO", "Kx7Pq2Lm9Z") == Link.ChannelNameFor("nucleo", "Kx7Pq2Lm9Z"), "the same code, the same channel")
+check(Link.ChannelNameFor("NUCLEO", "Kx7Pq2Lm9Z") ~= Link.ChannelNameFor("NUCLEO", "Kx7Pq2Lm9Y"), "another key, another channel")
 local key = Link.NewKey()
 check(#key == Link.KEY_LEN and key:match("^%w+$"), "a new key is alphanumeric")
 check(Link.Decode(Link.Encode("G", "abc", "oi gente")) == "G", "a channel line round-trips")
@@ -235,12 +252,39 @@ GuildOS.db.allianceLeaveChannel = "GOSOLD"   -- kept by ResolveGuildDB when it c
 local left = {}
 function LeaveChannelByName(name) left[#left + 1] = name; joined[name] = nil end
 check(Chat:EnsureJoined(), "the watchdog joins it")
-check(left[1] == "GOSOLD" and #left == 1 and GuildOS.db.allianceLeaveChannel == nil, "and leaves the old pact's public channel, once")
-check(joined["GOSANUCLEO"] == "Kx7Pq2Lm9Z", "with the key as the password")
-check(#removed == 1 and removed[1].frame == ChatFrame1 and removed[1].name == "GOSANUCLEO", "and takes it out of the frame that listed it")
+check(left[1] == "GOSOLD" and #left == 1, "and leaves the old pact's public channel, once")
+check(GuildOS.db.allianceLeaveChannel == "GOSOLD" and GuildOS.db.allianceLeftBy["Ana-Realm"] == true,
+  "review B: the name stays for the account's other characters, this one marked as having left it")
+check(joined[CH] == "Kx7Pq2Lm9Z", "with the key as the password")
+check(#removed == 1 and removed[1].frame == ChatFrame1 and removed[1].name == CH, "and takes it out of the frame that listed it")
 Chat:EnsureJoined()
 check(#left == 1, "the old channel is left never again")
-local hidden = filters.CHAT_MSG_CHANNEL[1](nil, "CHAT_MSG_CHANNEL", "Gabc x", "Bob", "", "", "", "", 0, 5, "GOSANUCLEO")
+-- Review B: another character of the account, sharing the guild's db, is in the old channel too and leaves it.
+local realUnitName = UnitName
+UnitName = function() return "Bia" end
+joined["GOSOLD"] = ""
+Chat:EnsureJoined()
+check(#left == 2 and left[2] == "GOSOLD" and GuildOS.db.allianceLeftBy["Bia-Realm"] == true,
+  "review B: a second character of the account leaves the old channel as well")
+UnitName = realUnitName
+-- Review C: an old pact's channel name that is the hidden channel in force is never left as the old one.
+do
+  local keepLink, keepLeft = GuildOS.db.allianceLink, GuildOS.db.allianceLeftBy
+  local BR = Link.ChannelNameFor("BR", "Kx7Pq2Lm9Z")
+  GuildOS.db.allianceLeftBy, GuildOS.db.allianceLeaveChannel = {}, BR
+  setCode("GOS=BR:Kx7Pq2Lm9Z", 2)
+  Link._pact = nil
+  joined[BR] = "Kx7Pq2Lm9Z"
+  local n = #left
+  Chat:_LeaveLegacy()
+  check(#left == n and joined[BR] ~= nil, "review C: the old name that is the channel in force is not left")
+  GuildOS.db.allianceLink, GuildOS.db.allianceLeftBy, GuildOS.db.allianceLeaveChannel = keepLink, keepLeft, "GOSOLD"
+  joined[BR] = nil
+  Link._pact = nil
+  GuildOS.db.allianceLinkJoined = nil
+  Chat:EnsureJoined()
+end
+local hidden = filters.CHAT_MSG_CHANNEL[1](nil, "CHAT_MSG_CHANNEL", "Gabc x", "Bob", "", "", "", "", 0, 5, CH)
 check(hidden == true, "its lines never print raw")
 check(not filters.CHAT_MSG_CHANNEL[1](nil, "CHAT_MSG_CHANNEL", "oi", "Bob", "", "", "", "", 0, 1, "General"), "another channel passes")
 check(filters.CHAT_MSG_CHANNEL_NOTICE and filters.CHAT_MSG_CHANNEL_JOIN, "its notices are filtered too")
@@ -277,7 +321,7 @@ check(log[#log].m == "oi alianca" and log[#log].g == "Guilda A", "and shows in o
 local recv
 for _, f in ipairs(frames) do if f.events.CHAT_MSG_CHANNEL and f.fn then recv = f end end
 local function hear(msg, author, chan, guid)
-  recv.fn(recv, "CHAT_MSG_CHANNEL", msg, author, "Common", "5. GOSANUCLEO", "", "", 0, 5, chan or "GOSANUCLEO", 0, 77, guid)
+  recv.fn(recv, "CHAT_MSG_CHANNEL", msg, author, "Common", "5. " .. CH, "", "", 0, 5, chan or CH, 0, 77, guid)
 end
 local function reset() replayed[1], replayed[2] = {}, {} end
 reset()
@@ -579,5 +623,198 @@ officers["Novo-Realm"] = true
 GetNumGuildMembers = function() return 5 end
 roster.fn(roster, "GUILD_ROSTER_UPDATE")
 check(GuildOS.db.allianceLink.line == line2 and Link._pending == nil, "and is taken when the roster comes in")
+
+-- ── 10. Blocking an allied guild (review A) ────────────────────────────
+reset()
+hear("G" .. Link.Code("Guilda B") .. " antes", "Bob-Realm")
+check(#replayed[1] == 1, "a line of Guilda B is drawn before any block")
+officer = false
+local okB, whyB = A:Block("Guilda B")
+check(not okB and whyB == "Only officers can do that.", "only an officer blocks a guild")
+officer = true
+printed = {}
+A:HandleCommand("block Guilda B")
+check(A:IsBlocked("Guilda B") and GuildOS.db.allianceLinkBlocked["Guilda B"] == true and printed[1] == "Blocked: Guilda B",
+  "/gos ally block: kept in the guild's db, and said")
+reset()
+hear("G" .. Link.Code("Guilda B") .. " bloqueado", "Bob-Realm")
+check(#replayed[1] == 0, "a blocked guild's /g is not drawn")
+local logN = #Chat:Log()
+hear("A" .. Link.Code("Guilda B") .. " sala bloqueada", "Bob-Realm")
+check(#Chat:Log() == logN, "nor its lines in the room")
+local onB = false
+for _, p in ipairs(A:OnlineNow()) do onB = onB or p.guild == "Guilda B" end
+check(not onB, "nor counted as on now")
+check(not A:Block(""), "a block names a guild")
+A:HandleCommand("unblock Guilda B")
+check(not A:IsBlocked("Guilda B"), "/gos ally unblock lifts it")
+reset()
+hear("G" .. Link.Code("Guilda B") .. " voltei", "Bob-Realm")
+check(#replayed[1] == 1, "and its lines are drawn again")
+A:HandleCommand("block Guilda C")
+check(A:Blocked()[1] == "Guilda C", "the blocked list, for the Officers' Room")
+
+-- ── 11. guildos.me's code (GOSGILD1 `alliance`) wins, and its end is an end ──
+local SITE, SITE2 = "GOS=PACTO:AbCdE12345", "GOS=PACTO:ZzYyXx9876"
+local P1, P2 = Link.ChannelNameFor("PACTO", "AbCdE12345"), Link.ChannelNameFor("PACTO", "ZzYyXx9876")
+local good = Link.ReadSiteCode({ code = SITE, name = "Pacto do Sul", version = 3 })
+check(good and good.line == SITE and good.name == "Pacto do Sul" and good.version == 3, "the site's code reads")
+local hostile = {
+  "GOS=PACTO:AbCdE12345", 42, {},
+  { code = SITE .. ":Guilda A;Guilda B", name = "Pacto", version = 1 },   -- the listed form is not the site's
+  { code = "GOS=pacto:AbCdE12345", name = "Pacto", version = 1 },          -- lower-case tag
+  { code = "GOS=PACTO:AbCdE1234", name = "Pacto", version = 1 },           -- a key of nine
+  { code = "GOS=PACTO:AbCdE12345X", name = "Pacto", version = 1 },         -- a key of eleven
+  { code = "GOS=ABCDEFGHIJKLM:AbCdE12345", name = "Pacto", version = 1 },  -- a tag of thirteen
+  { code = "GOS=PA-CTO:AbCdE12345", name = "Pacto", version = 1 },
+  { code = " " .. SITE, name = "Pacto", version = 1 },
+  { code = SITE .. "\n", name = "Pacto", version = 1 },
+  { code = SITE, name = "P", version = 1 },
+  { code = SITE, name = string.rep("x", 49), version = 1 },
+  { code = SITE, name = "Pa|cffff0000cto", version = 1 },
+  { code = SITE, name = "Pacto\nNovo", version = 1 },
+  { code = SITE, name = 7, version = 1 },
+  { code = SITE, name = "Pacto", version = 0 },
+  { code = SITE, name = "Pacto", version = 1.5 },
+  { code = SITE, name = "Pacto", version = "3" },
+  { code = SITE, name = "Pacto", version = 0 / 0 },
+  { code = string.rep("G", 100000), name = "Pacto", version = 1 },
+}
+for i, bad in ipairs(hostile) do check(Link.ReadSiteCode(bad) == nil, "a hostile site code is refused (" .. i .. ")") end
+
+local siteBlock
+GuildOS.CompanionImport = { GuildBlock = function() return siteBlock end }
+local heldBefore = GuildOS.db.allianceLink.line
+published, left = {}, {}
+-- (`joined` is the split test's above: the channels are read through the client's own GetChannelName.)
+local function inChan(name) return GetChannelName(name) > 0 end
+local function keyOf(name)
+  for i = #channelArgs, 1, -1 do if channelArgs[i][1] == name then return channelArgs[i][2] end end
+end
+check(Chat:EnsureJoined() and inChan(CH), "the pasted code's channel is the one joined")
+siteBlock = { alliance = { code = SITE, name = "Pacto do Sul", version = 3 } }
+Chat:EnsureJoined()
+local sp = A:Get()
+check(sp and sp.site and sp.tag == "PACTO" and A:Name() == "Pacto do Sul" and A:FromSite() and Link:FromSite(),
+  "the site's code is the alliance, with the site's name")
+check(inChan(P1) and keyOf(P1) == "AbCdE12345" and not inChan(CH) and left[1] == CH,
+  "its channel is joined with the site's key, and the pasted code's is left")
+check(GuildOS.db.allianceLink.line == heldBefore and Link:Suggest() == heldBefore,
+  "the site's code is never written into the guild's copy or offered to copy")
+check(#published == 1 and published[1].act == "site" and published[1].data.line == SITE and published[1].data.version == 3
+  and published[1].data.name == "Pacto do Sul", "an officer reading it in the block tells the guild, as the site's (follow-up 2)")
+check(Link:SetCode(short) and A:Get().tag == "PACTO", "a code pasted while the site's is in force does not replace it")
+siteBlock = nil
+Chat:EnsureJoined()
+check(A:FromSite(), "no block to read (a login, the companion off): the site's last code stands")
+siteBlock = { alliance = { code = "GOS=x" } }
+Chat:EnsureJoined()
+check(A:FromSite() and A:Get().tag == "PACTO", "a damaged `alliance` is read as saying nothing, never as an end")
+
+-- A new key (a guild left, or a reset): the channel keyed with the old one is left, then joined with the new.
+left = {}
+siteBlock = { alliance = { code = SITE2, name = "Pacto do Sul", version = 4 } }
+Chat:EnsureJoined()
+check(left[1] == P1 and P1 ~= P2, "a new key is a new channel, and the old one is left")
+Chat:EnsureJoined()
+check(inChan(P2) and keyOf(P2) == "ZzYyXx9876" and A:Get().version == 4, "and joins it again with the new key")
+check(GuildOS.db.allianceLinkJoined["Ana-Realm"].key == "ZzYyXx9876", "remembered per character, with its key")
+check(A:IsBlocked("Guilda C"), "a block outlives a key change")
+
+-- The guild left the alliance: the block names none. The site's code ends, the channel is left, and the code
+-- it left in the guild master's note (the same dead code) does not come back.
+setCode(SITE2, GuildOS.db.allianceLink.rev + 1)
+left = {}
+siteBlock = { guild = "Guilda A" }
+Chat:EnsureJoined()
+check(A:Get() == nil and not Link:FromSite(), "a site code that disappears ends the alliance")
+check(left[1] == P2 and not inChan(P2), "and leaves its channel")
+check(GuildOS.db.allianceLinkSite == nil and GuildOS.db.allianceLinkSiteGone == SITE2, "the end is remembered")
+Chat:EnsureJoined()
+check(A:Get() == nil, "and stays an end")
+-- A code an officer pasted by hand that is another one comes back into force: the chat only.
+setCode(short, GuildOS.db.allianceLink.rev + 1)
+check(A:Get() and A:Get().tag == "NUCLEO" and not A:FromSite(), "another code an officer pasted is the guild's again")
+-- The dead code pasted again by an officer, on purpose, is theirs.
+check(Link:SetCode(SITE2) and A:Get() and A:Get().tag == "PACTO" and GuildOS.db.allianceLinkSiteGone == nil,
+  "an officer pasting that code again brings it back")
+GuildOS.CompanionImport = nil
+
+-- ── 12. The site's code reaches members without the companion, through the guild (follow-up 2) ──
+local SITE3, SITE4 = "GOS=PACTO:Mm3Nn4Oo5P", "GOS=PACTO:Qq6Rr7Ss8T"
+local P3 = Link.ChannelNameFor("PACTO", "Mm3Nn4Oo5P")
+officer = false
+GuildOS.db.allianceLinkSite, GuildOS.db.allianceLinkSiteGone = nil, nil
+setCode(short, GuildOS.db.allianceLink.rev + 1)
+Chat:EnsureJoined()
+check(A:Get().tag == "NUCLEO" and not A:FromSite(), "a member with no companion: the pasted code")
+local writesBefore = #noteWrites
+sync(env("site", { line = SITE3, name = "Pacto do Sul", version = 5 }), "Leo-Realm")
+check(not A:FromSite(), "a relay from somebody who is not an officer is refused on receipt too")
+sync(env("site", { line = SITE3, name = "Pacto do Sul", version = 5 }), "Ofi-Realm")
+check(A:FromSite() and A:Get().version == 5 and A:Name() == "Pacto do Sul", "an officer's relay is the site's code here")
+Chat:EnsureJoined()
+check(inChan(P3) and keyOf(P3) == "Mm3Nn4Oo5P" and not inChan(CH), "its channel joined, the pasted code's left")
+check(#noteWrites == writesBefore and GuildOS.db.allianceLink.line == short, "never into the GM's note nor the guild's copy")
+sync(env("site", { line = SITE2, name = "Pacto do Sul", version = 4 }), "Ofi-Realm")
+check(A:Get().version == 5, "an older key version never replaces a newer one")
+sync(env("site", { line = "GOS=PACTO:bad", name = "Pacto do Sul", version = 9 }), "Ofi-Realm")
+sync(env("site", { line = SITE4 .. ":Guilda A;Guilda B", name = "Pacto do Sul", version = 9 }), "Ofi-Realm")
+sync(env("site", { line = SITE4, name = "P|r", version = 9 }), "Ofi-Realm")
+check(A:Get().version == 5, "a hostile relay is refused as the block's would be")
+published = {}
+Link._askedAt = nil
+Link:Ask()
+check(published[1].act == "ask" and published[1].data.site == SITE3, "at login a member asks with the site code it holds")
+-- The end travels the same way.
+sync(env("site", { gone = SITE3 }), "Leo-Realm")
+check(A:FromSite(), "an end from a member is refused")
+sync(env("site", { gone = SITE4 }), "Ofi-Realm")
+check(A:FromSite(), "an end naming another code ends nothing")
+left = {}
+sync(env("site", { gone = SITE3 }), "Ofi-Realm")
+Chat:EnsureJoined()
+check(not A:FromSite() and A:Get().tag == "NUCLEO" and left[1] == P3 and not inChan(P3),
+  "an officer's end: the member leaves the site's alliance and its channel; their own pasted code stands")
+sync(env("site", { line = SITE3, name = "Pacto do Sul", version = 6 }), "Ofi-Realm")
+check(not A:FromSite(), "the code the site ended is not brought back by a relay")
+-- A member's own block wins over any relay.
+local mine
+GuildOS.CompanionImport = { GuildBlock = function() return mine end }
+mine = { alliance = { code = SITE4, name = "Pacto do Sul", version = 7 } }
+Link:SyncSite()
+sync(env("site", { line = "GOS=PACTO:Zz1Zz2Zz3Z", name = "Pacto do Sul", version = 9 }), "Ofi-Realm")
+check(A:Get().version == 7 and A:Get().key == "Qq6Rr7Ss8T", "a client that reads the site itself ignores relays")
+-- An officer answers a member's ask with what its own block says, once.
+officer = true
+local function answers(fromSite)
+  published, deferred, defer = {}, {}, true
+  Link._askedAt = nil
+  sync(env("ask", { rev = GuildOS.db.allianceLink.rev, site = fromSite }), "Novo-Realm")
+  for _, fn in ipairs(deferred) do fn() end
+  defer = false
+  local out = {}
+  for _, m in ipairs(published) do if m.act == "site" then out[#out + 1] = m.data end end
+  return out
+end
+local ans = answers("")
+check(#ans == 1 and ans[1].line == SITE4 and ans[1].version == 7, "an officer answers a member who holds none")
+check(#answers(SITE4) == 0, "and not one who holds the same")
+mine = { guild = "Guilda A" }
+Link:SyncSite()
+ans = answers(SITE3)
+check(#ans == 1 and ans[1].gone == SITE3, "a block naming no alliance answers with the end of what the member holds")
+mine = { alliance = { code = SITE4, name = "Pacto do Sul", version = 7 } }
+Link:SyncSite()
+check(#answers("") == 1, "with the code back in the block, the officer answers again")
+published, deferred, defer = {}, {}, true
+sync(env("ask", { rev = 0, site = "" }), "Novo-Realm")
+sync(env("site", { line = SITE4, name = "Pacto do Sul", version = 7 }), "Ofi-Realm")
+for _, fn in ipairs(deferred) do fn() end
+defer = false
+local siteSent = 0
+for _, m in ipairs(published) do if m.act == "site" then siteSent = siteSent + 1 end end
+check(siteSent == 0, "nobody answers twice: another officer's relay first silences ours")
+GuildOS.CompanionImport = nil
 
 print(("alliance-link: %d checks passed"):format(checks))

@@ -2,7 +2,7 @@
 -- Guild OS - The alliance room
 --
 -- The social half of the alliance code (Modules/AllianceLink.lua): the room is
--- the hidden, passworded channel the code names ("GOSA" .. TAG), whose lines
+-- the hidden, passworded channel the code names (AllianceLink.ChannelNameFor), whose lines
 -- AllianceLink decodes and hands here, each with the speaker's guild. This
 -- module keeps the player in the channel (a watchdog), keeps the feed the
 -- Salão shows, and the player's switches, the shared /g among them.
@@ -87,10 +87,14 @@ function AllianceChat:EnsureJoined()
         return false
     end
     self:_LeaveLegacy()
+    local link = GuildOS.AllianceLink
+    if link then
+        link:SyncSite()
+        link:LeaveStale()   -- a channel of an alliance that ended, or of an old key, goes even with the room off
+    end
     if not self:Prefs().chat then
         return false
     end
-    local link = GuildOS.AllianceLink
     if link and link:Active() then
         return link:EnsureJoined()
     end
@@ -98,16 +102,29 @@ function AllianceChat:EnsureJoined()
 end
 
 -- The old pact's public channel (GOS<TAG>) is the client's saved channel, and
--- nothing reads it any more (audit #448): left once, then forgotten. Its name
--- was kept when the pact's data was cleared (Core/Core.lua ResolveGuildDB).
+-- nothing reads it any more (audit #448). Its name was kept when the pact's data
+-- was cleared (Core/Core.lua ResolveGuildDB) and stays: the guild's db is shared by
+-- the account's characters and each one is in the channel on its own, so each
+-- leaves it once (allianceLeftBy, per character). Never the hidden channel in
+-- force: an old pact's name can meet the code's (GOS .. "A..." against GOSA .. TAG .. hash).
 function AllianceChat:_LeaveLegacy()
-    local old = GuildOS.db and GuildOS.db.allianceLeaveChannel
+    local db = GuildOS.db
+    local old = db and db.allianceLeaveChannel
     if type(old) ~= "string" or not GetChannelName then
         return
     end
+    local link = GuildOS.AllianceLink
+    if old:lower() == ((link and link:ChannelName()) or ""):lower() then
+        return
+    end
+    local me = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName() or "?", GetRealmName())
+    db.allianceLeftBy = type(db.allianceLeftBy) == "table" and db.allianceLeftBy or {}
+    if db.allianceLeftBy[me] then
+        return
+    end
     if (GetChannelName(old) or 0) > 0 then
-        if LeaveChannelByName then LeaveChannelByName(old) end
-        GuildOS.db.allianceLeaveChannel = nil
+        GuildOS.Compat.LeaveChannel(old)
+        db.allianceLeftBy[me] = true
     end
 end
 

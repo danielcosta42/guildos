@@ -188,7 +188,7 @@ local function noRealm(chars)
   function UnitLevel() return 45 end
   GuildOSDB = { _dbVersion = 2, accountChars = chars, ["Filhos da Horda-" .. OLD] = { settings = { onboarded = true },
     mapPeers = { x = {} }, guildMapPrefs = { shareExact = true },
-    alliance = { tag = "br-core", guilds = {} }, allianceData = { G = {} }, allianceBoard = { {} },
+    alliance = { tag = "br-core", guilds = {}, blocked = { H = true } }, allianceData = { G = {} }, allianceBoard = { {} },
     allianceLinkBlocked = { G = true }, allianceLink = { line = "GOS=NUCLEO:Kx7Pq2Lm9Z", rev = 3 } } }
   GuildOS.db, GuildOS.guildKey = nil, nil
 end
@@ -203,8 +203,10 @@ check(GuildOS:GetPlayerKey("Cherry Arrow") == "Cherry Arrow-" .. OLD, "no realm:
 check(GuildOS:ResolveGuildDB() and GuildOS.guildKey == "Filhos da Horda-" .. OLD and GuildOS.db.settings.onboarded,
   "no realm: the guild's db is the one saved before, with what it held")
 check(GuildOS.db.mapPeers == nil and GuildOS.db.guildMapPrefs == nil, "B23: the guild map's orphaned saved data is deleted at startup")
-check(GuildOS.db.alliance == nil and GuildOS.db.allianceData == nil and GuildOS.db.allianceBoard == nil
-  and GuildOS.db.allianceLinkBlocked == nil, "#448: the ambassador pact's saved data is deleted at startup")
+check(GuildOS.db.alliance == nil and GuildOS.db.allianceData == nil and GuildOS.db.allianceBoard == nil,
+  "#448: the ambassador pact's saved data is deleted at startup")
+check(GuildOS.db.allianceLinkBlocked and GuildOS.db.allianceLinkBlocked.G == true and GuildOS.db.allianceLinkBlocked.H == true,
+  "review A: the guilds blocked here stay blocked, the old pact's own list joining them")
 check(GuildOS.db.allianceLeaveChannel == "GOSBRCORE" and GuildOS.db.allianceLink.line == "GOS=NUCLEO:Kx7Pq2Lm9Z",
   "#448: the old pact's channel is kept to be left once, and the alliance code stays")
 dofile(ADDON .. "/Modules/AltAutoDetect.lua")

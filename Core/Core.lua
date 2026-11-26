@@ -222,14 +222,20 @@ function GuildOS:ResolveGuildDB()
     guildDB.mapPeers, guildDB.guildMapPrefs = nil, nil
     -- Audit #448 (alianca.md §3.4): the ambassador pact and its whisper sync are gone, and what they kept goes
     -- too. The old pact's public channel (GOS<TAG>) is the client's saved channel: its name is kept until
-    -- AllianceChat has left it once.
+    -- each of the account's characters has left it once (AllianceChat, per character).
+    -- The guilds blocked here stay blocked (db.allianceLinkBlocked), the old pact's own list joining them.
     local pact = guildDB.alliance
     if type(pact) == "table" and type(pact.tag) == "string" and not guildDB.allianceLeaveChannel then
         local tag = pact.tag:upper():gsub("[^A-Z0-9]", "")
         if tag ~= "" then guildDB.allianceLeaveChannel = "GOS" .. tag:sub(1, 12) end
     end
+    if type(pact) == "table" and type(pact.blocked) == "table" then
+        guildDB.allianceLinkBlocked = type(guildDB.allianceLinkBlocked) == "table" and guildDB.allianceLinkBlocked or {}
+        for name, on in pairs(pact.blocked) do
+            if type(name) == "string" and on == true then guildDB.allianceLinkBlocked[name] = true end
+        end
+    end
     guildDB.alliance, guildDB.allianceData, guildDB.allianceBoard = nil, nil, nil
-    guildDB.allianceLinkBlocked = nil
 
     self.db = guildDB
     self.guildKey = dbKey

@@ -89,11 +89,13 @@ function Salao:ForYou()
     return out
 end
 
--- The notice board: the next events still to start, { title, when, rsvp }, and the newest notice.
+-- The notice board: the next events still to start, { title, when, rsvp }, and the newest notice. The raids
+-- the allied guilds opened to the alliance (guildos.me's, Alliance:OpenRaids) take their place in time among the
+-- guild's own, { title, when, guild, going, size, allied = true }: read-only, signed up to on the site or Discord.
 function Salao:Board()
     local events, cal = {}, GuildOS.Calendar
+    local t = now()
     if cal and cal.GetUpcoming and GuildOS.db and GuildOS.db.calendar then
-        local t = now()
         for _, e in ipairs(cal:GetUpcoming(false)) do
             if (e.when or 0) > t then
                 events[#events + 1] = { title = clean(e.title or "?"), when = e.when,
@@ -102,6 +104,18 @@ function Salao:Board()
             end
         end
     end
+    local ally = GuildOS.Alliance
+    for _, r in ipairs(ally and ally:OpenRaids(t) or {}) do
+        if (r.when or 0) > t then
+            events[#events + 1] = { title = clean(r.title or "?"), when = r.when, guild = r.guild,
+                                    going = r.going, size = r.size, allied = true }
+        end
+    end
+    table.sort(events, function(a, b)
+        if a.when ~= b.when then return a.when < b.when end
+        return (a.allied and 1 or 0) < (b.allied and 1 or 0)
+    end)
+    for i = #events, MAX_BOARD + 1, -1 do events[i] = nil end
     local A = UI.Agora
     local notice = A and A:Notices(1)[1] or nil
     return events, notice
@@ -414,9 +428,17 @@ function GuildOS:CreateSalaoPanel(panel)
         local bItems = {}
         for _, e in ipairs(events) do
             local when = GuildOS:LocalDate(L["%a %d %b, %H:%M"], e.when)
-            local answer = rsvpText(e.rsvp)
-            bItems[#bItems + 1] = { text = e.title, side = answer and (when .. " · " .. answer) or when,
-                                    run = open({ id = "guild", sub = "calendar", filter = e.when }) }
+            if e.allied then
+                -- An allied guild's raid: its guild in front, the count, and the Salão's Alliance, where it says
+                -- that signing up is on the site or in Discord.
+                local count = e.size and string.format(" · %d/%d", e.going or 0, e.size) or ""
+                bItems[#bItems + 1] = { text = "[" .. clean(e.guild or "?") .. "] " .. e.title, side = when .. count,
+                                        run = open({ id = "alliance", sub = "hall" }) }
+            else
+                local answer = rsvpText(e.rsvp)
+                bItems[#bItems + 1] = { text = e.title, side = answer and (when .. " · " .. answer) or when,
+                                        run = open({ id = "guild", sub = "calendar", filter = e.when }) }
+            end
         end
         if notice then bItems[#bItems + 1] = { text = notice.text, run = open(notice) } end
         if #bItems == 0 then bItems[1] = { text = L["Nothing on the calendar yet."], run = open({ id = "guild", sub = "calendar" }) } end

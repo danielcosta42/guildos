@@ -270,7 +270,8 @@ end
 GuildOS.Compat.UnitIdentity = function() return "Gul", nil end
 local tt = tooltip("Gul")
 hooks.OnTooltipSetUnit(tt)
-check(#tt.lines == 2 and tt.lines[1]:find("Banned in Horde Co for Scam", 1, true), "the tooltip shows the alliance's bans")
+check(#tt.lines == 3 and tt.lines[1] == "The alliance's bans" and tt.lines[2]:find("Banned in Horde Co for Scam", 1, true),
+  "the tooltip shows the alliance's bans, labelled the alliance's")
 officer = false
 tt = tooltip("Gul")
 hooks.OnTooltipSetUnit(tt)
@@ -318,6 +319,17 @@ check(src("UI/RosterFrame.lua"):find("BL:HoldInvite(target, send)", 1, true), "t
 check(src("Core/Utils.lua"):find("BL:HoldInvite(name, send)", 1, true), "Alt+Click asks")
 local auto = src("Modules/RecruitmentSystem.lua"):match("function Recruitment:_InviteNow(.-)\nend\n")
 check(auto and not auto:find("HoldInvite", 1, true), "the auto-invite is never held")
+-- Audit M2: nor does it invite somebody the alliance banned, by itself; the whisper's alert tells the officer.
+local whisper = src("Modules/RecruitmentSystem.lua"):match("function Recruitment:_HandleKeywordWhisper(.-)\nend\n")
+local afterWho = src("Modules/RecruitmentSystem.lua"):match("function Recruitment:_FinishWho(.-)\nend\n")
+check(whisper and whisper:find("AllianceBansFor(author or sender)", 1, true)
+  and afterWho and afterWho:find("AllianceBansFor(sender)", 1, true), "M2: the auto-invite passes over an allied ban, before and after /who")
+-- Every guild invite the addon sends goes through one of the paths above (Compat.GuildInvite's callers).
+local callers = 0
+for _, rel in ipairs({ "Modules/JoinRequests.lua", "Modules/RecruitmentSystem.lua", "UI/RosterFrame.lua", "Core/Utils.lua" }) do
+  for _ in src(rel):gmatch("Compat%.GuildInvite%(") do callers = callers + 1 end
+end
+check(callers == 5, "M2: five calls to GuildInvite, every one of them behind an allied-ban check (" .. callers .. ")")
 local banSrc = src("Modules/BanList.lua")
 local isBanned = banSrc:match("function BanList:IsBanned(.-)\nend\n")
 check(isBanned and not isBanned:find("Alliance", 1, true), "IsBanned does not look at the alliance")

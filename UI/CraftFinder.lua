@@ -144,8 +144,9 @@ local function BuildFinder()
         end
     end
 
-    -- Append one crafter result. class may be nil (unknown, e.g. realm peer).
-    local function AddResult(name, prof, scope, class, key)
+    -- Append one crafter result. class may be nil (unknown, e.g. realm peer). `whisperTo` is who the whisper
+    -- goes to when it is not `name` (an ally on another realm: their key, Name-Realm).
+    local function AddResult(name, prof, scope, class, key, whisperTo)
         local q = f.query
         if not q then return end
         q.count = q.count + 1
@@ -171,7 +172,7 @@ local function BuildFinder()
         row.whisperBtn:SetScript("OnClick", function()
             local link = itemId and select(2, GuildOS.Compat.GetItemInfo(itemId))
             local subject = link or (f.itemName:GetText() ~= "" and f.itemName:GetText()) or L["this item"]
-            ChatFrame_OpenChat("/w " .. name .. " " .. string.format(L["Can you craft %s?"], subject))
+            ChatFrame_OpenChat("/w " .. GuildOS:WhisperTarget(whisperTo or name) .. " " .. string.format(L["Can you craft %s?"], subject))
         end)
         row:Show()
     end
@@ -214,8 +215,9 @@ local function BuildFinder()
             end
         end
 
-        -- Alliance: read from guildos.me's directory (Alliance:FindCrafters), so an
-        -- allied crafter is found even while they are offline. No query, no waiting.
+        -- Alliance: read from guildos.me's directory (Alliance:FindCrafters, GOSALLY1's recipe spell ids
+        -- mapped to the items they make), so an allied crafter is found even while they are offline. No query,
+        -- no waiting, no order: an ally is whispered.
         if GuildOS.Alliance and GuildOS.Alliance:Get() then
             for _, c in ipairs(GuildOS.Alliance:FindCrafters(itemId)) do
                 if not f.query.seen[c.name] then
@@ -224,7 +226,7 @@ local function BuildFinder()
                     if not c.online then
                         label = label .. " " .. L["(offline)"]
                     end
-                    AddResult(c.name, label, c.guild, nil)
+                    AddResult(c.name, label, c.guild, c.class, nil, c.whisper)
                 end
             end
         end

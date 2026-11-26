@@ -870,7 +870,7 @@ function GuildOS:CreateRosterPanel(parent, host)
     local RAIL_PAD = 8
     local RAIL_BTN_W = RAIL_WIDTH - RAIL_PAD * 2 - 2
 
-    host.segment = "all"     -- "all" | "online" | "rank:<index>"
+    host.segment = "all"     -- "all" | "online" | "allied" | "rank:<index>"
     host.classFilter = nil   -- classFile or nil
     host.segBtns = {}
     host.rankBtns = {}       -- pooled, laid out in UpdateRail
@@ -936,9 +936,19 @@ function GuildOS:CreateRosterPanel(parent, host)
     segOnline:SetScript("OnClick", function() host:SetSegment("online") end)
     host.segBtns.online = segOnline
 
+    -- From the alliance: the allied guilds' members as guildos.me lists them (GOSALLY1, Alliance:Directory),
+    -- read-only. Shown only while the site sent a directory; the ranks move down under it.
+    local segAllied = CreateRailButton()
+    segAllied:SetPoint("TOPLEFT", RAIL_PAD, -78)
+    segAllied.label:SetText(L["From the alliance"])
+    segAllied:SetScript("OnClick", function() host:SetSegment("allied") end)
+    segAllied:Hide()
+    host.segBtns.allied = segAllied
+
     -- RANKS (dynamic — populated from the guild's actual ranks in UpdateRail)
-    RailSectionHeader(L["RANKS"], -86)
+    local ranksHeader = RailSectionHeader(L["RANKS"], -86)
     local RANK_TOP, RANK_H = -106, 26
+    local ALLIED_SHIFT = 26   -- what the allied segment pushes the ranks down by
 
     -- CLASSES (fixed chips, anchored to the bottom of the rail, growing upward)
     local CLASS_ORDER = GuildOS.Client.classes   -- thirteen on retail
@@ -1006,6 +1016,7 @@ function GuildOS:CreateRosterPanel(parent, host)
     function host:UpdateRailActive()
         self.segBtns.all:SetActive(self.segment == "all")
         self.segBtns.online:SetActive(self.segment == "online")
+        self.segBtns.allied:SetActive(self.segment == "allied")
         for _, b in ipairs(self.rankBtns) do
             b:SetActive(self.segment == ("rank:" .. tostring(b.rankIndex)))
         end
@@ -1036,6 +1047,14 @@ function GuildOS:CreateRosterPanel(parent, host)
 
         self.segBtns.all.count:SetText(total)
         self.segBtns.online.count:SetText(online)
+        local alliedN = 0
+        for _, g in ipairs(GuildOS.Alliance and GuildOS.Alliance:Directory() or {}) do alliedN = alliedN + #g.members end
+        self.segBtns.allied.count:SetText(alliedN)
+        self.segBtns.allied:SetShown(alliedN > 0)
+        if alliedN == 0 and self.segment == "allied" then self.segment = "all" end   -- the directory went
+        local shift = alliedN > 0 and ALLIED_SHIFT or 0
+        ranksHeader:ClearAllPoints()
+        ranksHeader:SetPoint("TOPLEFT", RAIL_PAD + 2, -86 - shift)
 
         -- Lay out one button per populated rank, sorted by rank index
         local indices = {}
@@ -1045,9 +1064,10 @@ function GuildOS:CreateRosterPanel(parent, host)
             local b = self.rankBtns[slot]
             if not b then
                 b = CreateRailButton()
-                b:SetPoint("TOPLEFT", RAIL_PAD, RANK_TOP - (slot - 1) * RANK_H)
                 self.rankBtns[slot] = b
             end
+            b:ClearAllPoints()
+            b:SetPoint("TOPLEFT", RAIL_PAD, RANK_TOP - shift - (slot - 1) * RANK_H)
             b.rankIndex = idx
             b.label:SetText(rankName[idx] or string.format(L["Rank %d"], idx))
             b.count:SetText(rankCount[idx] or 0)
@@ -1070,6 +1090,8 @@ function GuildOS:CreateRosterPanel(parent, host)
     function host:GetSegmentLabel()
         if self.segment == "online" then
             return L["Online"]
+        elseif self.segment == "allied" then
+            return L["From the alliance"]
         elseif type(self.segment) == "string" and self.segment:find("^rank:") then
             local ri = tonumber(self.segment:match("^rank:(%d+)"))
             for _, b in ipairs(self.rankBtns) do
@@ -1155,8 +1177,16 @@ function GuildOS:CreateRosterPanel(parent, host)
         local tipIndex = GuildOS.RosterCard and GuildOS.RosterCard.NewIndex(GuildOS.db.altLinks)
         self.tipIndex = tipIndex
 
+        -- From the alliance: the directory's rows instead of the guild's, read-only (AlliedEntries).
+        local allied = self.segment == "allied"
+        if allied then
+            for _, entry in ipairs(UI.AlliedEntries(filter, levelMatch, self.classFilter)) do
+                members[#members + 1] = entry
+            end
+        end
+
         -- Get guild roster info
-        local numMembers = GetNumGuildMembers()
+        local numMembers = allied and 0 or GetNumGuildMembers()
         for i = 1, numMembers do
             local name, rankName, rankIndex, level, classLoc, zone, note,
                   officerNote, isOnline, status, classFile = GetGuildRosterInfo(i)
@@ -1625,6 +1655,13 @@ function CreateRosterRow(parent, rowIndex, uid, host)
     -- Click: left = detail, right = context menu
     row:SetScript("OnClick", function(self, button)
         if not self.memberData then return end
+        -- An ally's row is read-only: no sheet, no menu, no rank action. A click whispers them.
+        if self.memberData.allied then
+            if button ~= "RightButton" and ChatFrame_SendTell then
+                ChatFrame_SendTell(GuildOS:WhisperTarget(self.memberData.whisper or self.memberData.name))
+            end
+            return
+        end
         if button == "RightButton" then
             GuildOS:ShowMemberContextMenu(self, self.memberData)
         elseif GuildOS.RosterCard and IsShiftKeyDown and IsShiftKeyDown() then
@@ -1637,6 +1674,51 @@ function CreateRosterRow(parent, rowIndex, uid, host)
     end)
 
     return row
+end
+
+----------------------------------------------------------------------
+-- From the alliance (alianca.md §3.2): the allied guilds' members as rows of the Members table, read-only.
+-- `rank` is the member's guild, `isOnline` the best effort of the channel and the mesh (Alliance:OnlineNow).
+-- The search, a level query and the class chip filter them as they do the guild's.
+----------------------------------------------------------------------
+local ROLE_LABEL = { TANK = "Tank", HEALER = "Healer", DPS = "DPS" }
+function UI.AlliedEntries(filter, levelMatch, classFilter)
+    local out = {}
+    local A = GuildOS.Alliance
+    if not A then return out end
+    local onNow = {}
+    for _, p in ipairs(A:OnlineNow()) do onNow[tostring(p.name):lower()] = true end
+    for _, g in ipairs(A:Directory()) do
+        for _, m in ipairs(g.members) do
+            local classDisplay = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[m.class]) or m.class
+            local short = m.name:match("^([^-]+)") or m.name
+            local pass = not classFilter or m.class == classFilter
+            if pass and filter ~= "" then
+                if levelMatch then
+                    pass = levelMatch(m.level or 0)
+                else
+                    pass = strlower(short .. " " .. classDisplay .. " " .. g.guild):find(filter, 1, true) ~= nil
+                end
+            end
+            if pass then
+                local profs = {}
+                for _, prof in ipairs(m.profs or {}) do profs[#profs + 1] = { name = prof, isPrimary = true } end
+                local profNames = {}
+                for _, prof in ipairs(m.profs or {}) do profNames[#profNames + 1] = L[prof] end
+                out[#out + 1] = {
+                    allied = true, key = "ally:" .. g.guild .. ":" .. m.key, whisper = m.key, guild = g.guild,
+                    name = short, fullName = m.key, rank = g.guild, rankIndex = 99, level = m.level or 0,
+                    class = m.class, classDisplay = classDisplay, zone = "", note = "", officerNote = "",
+                    isOnline = onNow[short:lower()] == true, status = "", avgIlvl = 0, race = "", lastUpdate = 0,
+                    lastSync = 0, professions = #profs > 0 and profs or nil, hasAddonData = false, cols = {},
+                    main = m.main and (m.main:match("^([^-]+)") or m.main) or nil,
+                    roleLabel = m.role and L[ROLE_LABEL[m.role]] or nil,
+                    profLine = #profNames > 0 and table.concat(profNames, ", ") or nil,
+                }
+            end
+        end
+    end
+    return out
 end
 
 ----------------------------------------------------------------------
@@ -2083,6 +2165,20 @@ function ShowRowTooltip(row, tip, locked)
 
     -- Header: Name colored by class
     local cr, cg, cb = GuildOS:GetClassColor(data.class)
+    if data.allied then
+        -- What guildos.me says of an ally, and nothing of the guild's own.
+        tip:AddLine(data.name, cr, cg, cb)
+        tip:AddLine(string.format(L["Level %d %s %s"], data.level, "", data.classDisplay), 0.8, 0.8, 0.8)
+        tip:AddLine(data.rank, C.text.r, C.text.g, C.text.b)
+        if data.roleLabel then tip:AddLine(data.roleLabel, C.silver.r, C.silver.g, C.silver.b) end
+        if data.main then tip:AddLine(string.format(L["Alt of %s"], data.main), C.silver.r, C.silver.g, C.silver.b) end
+        if data.profLine then tip:AddLine(data.profLine, C.silver.r, C.silver.g, C.silver.b, true) end
+        local asOf = GuildOS.Alliance and GuildOS.Alliance:AsOf()
+        tip:AddLine(asOf and string.format(L["From guildos.me %s"], string.format(L["(as of %s)"], GuildOS:LocalDate("%a %H:%M", asOf)))
+            or L["From guildos.me"], C.textDim.r, C.textDim.g, C.textDim.b)
+        if not locked then tip:Show() end
+        return
+    end
     tip:AddLine(data.name, cr, cg, cb)
     tip:AddLine(string.format(L["Level %d %s %s"], data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
     tip:AddLine(data.rank, C.text.r, C.text.g, C.text.b)

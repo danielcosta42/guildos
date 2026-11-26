@@ -4,8 +4,10 @@
 --   * hall, the Salão's Alliance: the alliance's name and its guilds as far as the code and the
 --     channel tell, who of them is on now (a best effort, and it says so), the raids open to the
 --     alliance (guildos.me's, Alliance:OpenRaids), and the alliance room with the shared /g's switch;
---   * setup, the Officers' Room's Alliance: the alliance code pasted by hand, which gives the chat
---     only, and the alliance's bans (guildos.me's, BanList), shown only while there is an alliance.
+--   * setup, the Officers' Room's Alliance: "From guildos.me" with the alliance's name while the site's
+--     code is in force (managed there: nothing to paste), else the alliance code pasted by hand, which
+--     gives the chat only; the guilds blocked on this account; and the alliance's bans (guildos.me's,
+--     BanList), shown only while there is an alliance.
 -- The ambassador pact's Manage tab, its bulletin and its overview are gone (§3.4).
 --
 -- Rule 10: no business logic here. Everything is read from Alliance, AllianceLink, AllianceChat and
@@ -418,8 +420,14 @@ local function BuildHall(panel)
 
         -- The guilds, in their colours, ours marked, the others with how many are seen on now.
         local parts = {}
+        -- How many the site lists of each allied guild (GOSALLY1's directory), when it sent one.
+        local counts = {}
+        for _, d in ipairs(ally:Directory()) do counts[d.guild] = #d.members end
         for _, g in ipairs(ally:Guilds()) do
             local label = "|cff" .. ally.GuildColorHex(g.name) .. g.name .. "|r"
+            if counts[g.name] and counts[g.name] > 0 then
+                label = label .. " |cff" .. hex(C.textDim) .. string.format(L["(%d in the directory)"], counts[g.name]) .. "|r"
+            end
             if g.mine then
                 label = label .. " " .. L["(you)"]
             elseif (g.online or 0) > 0 then
@@ -444,6 +452,9 @@ local function BuildHall(panel)
         -- Raids open to the alliance, from guildos.me (GOSALLY1): nothing until the site sends them.
         local raids = ally:OpenRaids()
         if #raids > 0 then
+            local asOf = ally:AsOf()
+            raidsHdr:SetText(L["Open raids"] .. (asOf and ("  |cff" .. hex(C.textDim)
+                .. string.format(L["(as of %s)"], GuildOS:LocalDate("%a %H:%M", asOf)) .. "|r") or ""))
             y = place(raidsHdr, y + UI.GAP)
             local lines = {}
             for i = 1, math.min(#raids, MAX_RAIDS) do
@@ -451,9 +462,14 @@ local function BuildHall(panel)
                 local when = r.when and GuildOS:LocalDate("%d/%m %H:%M", r.when) or "?"
                 local count = r.size and string.format(" (%d/%d)", r.going or 0, r.size)
                     or (r.going and string.format(" (%d)", r.going) or "")
+                local extra = (r.where and ("  " .. GuildOS:SanitizeUserText(r.where, 80)) or "")
+                    .. (r.leader and ("  " .. string.format(L["led by %s"], GuildOS:SanitizeUserText(r.leader, 48))) or "")
                 lines[#lines + 1] = when .. "  " .. GuildOS:SanitizeUserText(r.title or "?", 60) .. count
                     .. "  |cff" .. ally.GuildColorHex(r.guild) .. "[" .. tostring(r.guild or "?") .. "]|r"
+                    .. "|cff" .. hex(C.textSoft) .. extra .. "|r"
             end
+            -- Nothing here signs anybody up (alianca.md §3.2): the site and Discord do.
+            lines[#lines + 1] = "|cff" .. hex(C.textDim) .. L["Sign up in Discord or on the website."] .. "|r"
             raidsFS:SetText(table.concat(lines, "\n"))
             y = place(raidsFS, y)
         end
@@ -512,10 +528,22 @@ local function BuildSetup(panel)
     hint:SetPoint("TOPLEFT", writeBtn, "BOTTOMLEFT", 0, -UI.GAP)
     addFlexHint(hint)
 
+    -- An allied guild blocked on this account: its lines on the channel are not shown, and nobody is told.
+    local blockHdr = UI:CreateSectionTitle(panel, L["Ignore a guild locally"])
+    local blockBox = makeInput(panel, 200)
+    blockBox:SetPoint("TOPLEFT", blockHdr, "BOTTOMLEFT", 0, -UI.GAP)
+    local blockBtn = UI:CreateButton(panel, L["Block"], 90, 24)
+    blockBtn:SetPoint("LEFT", blockBox, "RIGHT", UI.GAP, 0)
+    local unblockBtn = UI:CreateButton(panel, L["Unblock"], 90, 24)
+    unblockBtn:SetPoint("LEFT", blockBtn, "RIGHT", 6, 0)
+    local blockedFS = wrapText(panel, 10, C.textDim)
+    blockedFS:SetPoint("TOPLEFT", blockBox, "BOTTOMLEFT", 0, -UI.GAP)
+    addFlexHint(blockedFS)
+
     -- The alliance's bans, guildos.me's (BanList, #408): read-only, an alert for the officers. Hidden while
     -- this guild has no alliance on the site (audit B7).
     local bansHdr = UI:CreateSectionTitle(panel, L["The alliance's bans"])
-    bansHdr:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", 0, -SECTION_ABOVE - UI.GAP)
+    bansHdr:SetPoint("TOPLEFT", blockedFS, "BOTTOMLEFT", 0, -SECTION_ABOVE - UI.GAP)
     local holder = CreateFrame("Frame", nil, panel)
     holder:SetPoint("TOPLEFT", bansHdr, "BOTTOMLEFT", 0, -UI.GAP)
     holder:SetPoint("BOTTOMRIGHT", 0, 0)
@@ -575,6 +603,16 @@ local function BuildSetup(panel)
         say(link:SetCode(nil))
         refresh()
     end)
+    blockBtn:SetScript("OnClick", function()
+        say(ALLY():Block(blockBox:GetText()))
+        blockBox:SetText("")
+        refresh()
+    end)
+    unblockBtn:SetScript("OnClick", function()
+        say(ALLY():Unblock(blockBox:GetText()))
+        blockBox:SetText("")
+        refresh()
+    end)
 
     local function refreshBans(officer)
         local BL = GuildOS.BanList
@@ -602,7 +640,14 @@ local function BuildSetup(panel)
         local cfg = link:Config()
         local mine = ALLY() and ALLY():MyGuildName()
         local pact = link:Pact()
-        if pact and cfg and cfg.open then
+        local site = cfg ~= nil and cfg.site == true
+        chatOnly:SetText(site
+            and L["This alliance is managed on guildos.me: its guilds, its key and who sees what. The companion brings it here; there is nothing to paste."]
+            or L["Chat only: the shared /g and the alliance room. Members, crafters, raids and bans come from guildos.me."])
+        if site then
+            -- The site's code is in force (alianca.md §3.2): managed there, nothing to paste here.
+            status:SetText(string.format(L["From guildos.me: %s [%s]"], cfg.name or cfg.tag, cfg.tag))
+        elseif pact and cfg and cfg.open then
             local n = 0
             for _ in pairs(pact.guilds) do n = n + 1 end
             status:SetText(string.format(L["Active: %s, %d guilds."], cfg.tag, n))
@@ -615,10 +660,23 @@ local function BuildSetup(panel)
         end
         local officer = GuildOS:IsOfficer()
         for _, w in ipairs({ tagLbl, tagBox, genBtn, lineBox, writeBtn, removeBtn, hint }) do
-            setShown(w, officer)
+            setShown(w, officer and not site)
         end
+        -- The block list under whatever the code section shows.
+        blockHdr:ClearAllPoints()
+        blockHdr:SetPoint("TOPLEFT", (officer and not site) and hint or chatOnly, "BOTTOMLEFT", 0, -SECTION_ABOVE - UI.GAP)
+        local blocking = officer and pact ~= nil
+        for _, w in ipairs({ blockHdr, blockBox, blockBtn, unblockBtn, blockedFS }) do setShown(w, blocking) end
+        if blocking then
+            local list = ALLY():Blocked()
+            blockedFS:SetText(#list > 0 and string.format(L["Blocked: %s"], table.concat(list, ", "))
+                or L["Lines from a blocked guild are not shown on this account. Nobody is told."])
+        end
+        bansHdr:ClearAllPoints()
+        bansHdr:SetPoint("TOPLEFT", blocking and blockedFS or ((officer and not site) and hint or chatOnly), "BOTTOMLEFT",
+            0, -SECTION_ABOVE - UI.GAP)
         refreshBans(officer)
-        if not officer then return end
+        if not officer or site then return end
         if not lineBox:HasFocus() then
             local line = link:Suggest()
             local parsed = line and link.Parse(line)

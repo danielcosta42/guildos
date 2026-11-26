@@ -349,6 +349,23 @@ local function run(style)
   check(kit.opened[1] == "guild" and kit.opened[2] == "calendar" and kit.opened[3] == KARAZHAN,
     style .. ": a click opens the calendar on that day")
 
+  -- The allied guilds' open raids (guildos.me's GOSALLY1, Alliance:OpenRaids) take their place in time.
+  local keepAlly = GuildOS.Alliance
+  GuildOS.Alliance = { OpenRaids = function() return {
+    { guild = "Iron Pact", title = "Gruul", when = NOW + 3600, going = 11, size = 25 },
+    { guild = "Silver Hand", title = "Started", when = NOW - 60, going = 2, size = 10 } } end }
+  P.Refresh()
+  board = shownRows(cards.board)
+  check(board[1] and board[1].main.text == "[Iron Pact] Gruul" and board[1].side.text:find("11/25", 1, true)
+    and board[2].main.text == "Karazhan", style .. ": an allied open raid sits on the board in time, its guild and count shown")
+  local begun = false
+  for _, r in ipairs(board) do begun = begun or r.main.text:find("Started", 1, true) ~= nil end
+  check(not begun, style .. ": one already begun is not on the board")
+  board[1].scripts.OnClick(board[1])
+  check(kit.opened[1] == "alliance" and kit.opened[2] == "hall", style .. ": a click opens the Salão's Alliance, where it says how to sign up")
+  GuildOS.Alliance = keepAlly
+  P.Refresh()
+
   check(#shownRows(cards.wall) == 5, style .. ": the guild wall keeps to five lines")
   check(not cards.chimney.shown, style .. ": no Winter Veil event, no Chimney")
   check(cards.board.points[1][2] == 0 and cards.fire.points[1][2] > 0, style .. ": wide, two columns")

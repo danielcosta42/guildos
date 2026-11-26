@@ -46,6 +46,7 @@ local CORES_PREFIX = "GOSCORE1:"
 local GUILD_PREFIX = "GOSGILD1:"
 local RECRUIT_PREFIX = "GOSRECR1:"
 local VEIL_PREFIX = "GOSVEIL1:"
+local ALLY_PREFIX = "GOSALLY1:"
 local RECRUIT_MAX_AGE = 3 * 86400   -- the list is public and asked for every 15 minutes: three days of silence is a companion that stopped
 local BLOCK_MAX_AGE = 7 * 86400   -- the feed is a week long: an older block is a companion that stopped
 
@@ -71,12 +72,13 @@ end
 
 -- The table inside a wire string's body (what follows its prefix), when it is the `fmt` asked
 -- for; nil when it is damaged or another kind.
-local function unwrap(body, fmt)
+-- `maxJson`, when given, is how many bytes the inflated text may take before it is parsed at all.
+local function unwrap(body, fmt, maxJson)
     local LibDeflate = LibStub and LibStub("LibDeflate", true)
     if not LibDeflate then return nil end
     local compressed = LibDeflate:DecodeForPrint(body)
     local json = compressed and LibDeflate:DecompressDeflate(compressed)
-    if not json then return nil end
+    if not json or (maxJson and #json > maxJson) then return nil end
     local ok, data = pcall(GuildOS.JsonDecode, json)
     if ok and type(data) == "table" and data.fmt == fmt then return data end
     return nil
@@ -976,6 +978,167 @@ function Import:AllianceBans()
         end
     end
     return out
+end
+
+-- The inbox's GOSALLY1 (alianca.md §3.2, the site's specs/123): the alliance's directory and its open raids.
+-- Display only, and untrusted whatever wrote it: the string held to the print alphabet and ALLY_MAX characters,
+-- the inflated text to ALLY_JSON_MAX bytes, then every field checked and cut by ReadAlliance below; a part that
+-- fails is passed over alone, a block that is not v1 or names no alliance is nothing. In memory only, never in
+-- the guild's member DB nor in SavedVariables (as the GOSGILD1 it rides with: the inbox is read again at every
+-- login). Nil with no inbox, the companion off, a damaged block, another guild's or realm's, or one over a week
+-- old. Which alliance it must be (the code in force, from the site) is Alliance's to check.
+Import.ALLY_MAX = 262144          -- characters of the encoded body (the site's cap, 256 KiB)
+Import.ALLY_JSON_MAX = 4194304    -- bytes of the inflated text: a full block is about a megabyte
+Import.ALLY = { guilds = 16, members = 1000, recipes = 2000, recipeTotal = 200000, raids = 30,
+                name = 48, key = 64, guildName = 64, title = 192, where = 240, allianceName = 144,
+                level = 1000, size = 80, going = 1000, id = 2147483647, time = 4102444800 }
+local ALLY_ROLE = { TANK = true, HEALER = true, DPS = true }
+local ALLY_VIA = { founder = true, invite = true, federation = true }
+
+-- A key or a name of the block: a string within `max` bytes, one line, no bar; refused (nil), never cut.
+local function allyWord(v, max)
+    if type(v) ~= "string" or v == "" or #v > max or v:find("[|%c]") then return nil end
+    local s = strtrim(v)
+    return s ~= "" and s or nil
+end
+local function allyInt(v, lo, hi)
+    if type(v) ~= "number" or v ~= v or v ~= math.floor(v) or v < lo or v > hi then return nil end
+    return v
+end
+local function allyList(v, max)
+    if type(v) ~= "table" then return {} end
+    local n = #v
+    return v, math.min(n, max)
+end
+
+-- A decoded GOSALLY1 held to its shape (pure, for the harness), or nil.
+--   { guild, realm?, at, cut?, alliance = { name, tag, version },
+--     guilds = { { name, realm?, self?, via?, members = { { key, name, class, level, role?, main?, spells? } } } },
+--     raids = { { id, guild, title, where?, startsAt, size, lead?, going } } }
+-- `spells` is the member's recipe spell ids, as the site sends them; Alliance maps them to what they make.
+function Import.ReadAlliance(data)
+    local A = Import.ALLY
+    if type(data) ~= "table" or data.fmt ~= "GOSALLY1" or data.v ~= 1 then return nil end
+    local guild = allyWord(data.guild, A.guildName)
+    local at = allyInt(data.at, 1, A.time)
+    local a = type(data.alliance) == "table" and data.alliance or nil
+    local tag = a and type(a.tag) == "string" and a.tag:match("^[A-Z0-9]+$") and #a.tag <= 12 and a.tag or nil
+    local version = a and allyInt(a.version, 1, A.id)
+    local name = a and type(a.name) == "string" and siteText(a.name, A.allianceName) or nil
+    if not (guild and at and tag and version and name) then return nil end
+    local out = { guild = guild, realm = allyWord(data.realm, A.guildName), at = at, cut = data.cut == true or nil,
+                  alliance = { name = name, tag = tag, version = version }, guilds = {}, raids = {} }
+    local names, budget = {}, A.recipeTotal
+    local list, n = allyList(data.guilds, A.guilds)
+    for i = 1, n or 0 do
+        local g = list[i]
+        local gname = type(g) == "table" and allyWord(g.name, A.guildName)
+        if gname and not names[gname:lower()] then
+            names[gname:lower()] = true
+            local og = { name = gname, realm = allyWord(g.realm, A.guildName), self = g.self == true or nil,
+                         via = type(g.via) == "string" and ALLY_VIA[g.via] and g.via or nil, members = {} }
+            -- This block's own guild never carries members (the site's rule, held here too).
+            if not og.self and not GuildOS.SameGuildName(gname, guild) then
+                local byKey = {}
+                local ms, mn = allyList(g.members, A.members)
+                for j = 1, mn or 0 do
+                    local m = ms[j]
+                    local key = type(m) == "table" and allyWord(m.key, A.key)
+                    local mname = key and allyWord(m.name, A.name)
+                    local class = mname and type(m.class) == "string" and m.class:match("^[A-Z_]+$")
+                        and #m.class >= 2 and #m.class <= 16 and m.class or nil
+                    local level = class and allyInt(m.level, 0, A.level)
+                    if level and not byKey[key] then
+                        local main = allyWord(m.main, A.key)
+                        local om = { key = key, name = mname, class = class, level = level,
+                                     role = type(m.role) == "string" and ALLY_ROLE[m.role] and m.role or nil,
+                                     main = (main and main ~= key) and main or nil }
+                        byKey[key] = om
+                        og.members[#og.members + 1] = om
+                    end
+                end
+                local cs, cn = allyList(g.crafters, A.members)
+                for j = 1, cn or 0 do
+                    local c = cs[j]
+                    local om = type(c) == "table" and type(c.key) == "string" and byKey[c.key] or nil
+                    if om and not om.spells and type(c.recipes) == "table" and budget > 0 then
+                        local spells, seen = {}, {}
+                        for k = 1, math.min(#c.recipes, A.recipes, budget) do
+                            local id = allyInt(c.recipes[k], 1, A.id)
+                            if id and not seen[id] then
+                                seen[id] = true
+                                spells[#spells + 1] = id
+                            end
+                        end
+                        budget = budget - #spells
+                        if #spells > 0 then om.spells = spells end
+                    end
+                end
+            end
+            out.guilds[#out.guilds + 1] = og
+        end
+    end
+    local rl, rn = allyList(data.raids, A.raids)
+    for i = 1, rn or 0 do
+        local r = rl[i]
+        if type(r) == "table" then
+            local id = type(r.id) == "string" and #r.id <= 64 and r.id:match("^[%w_%-]+$") and r.id or nil
+            local owner = allyWord(r.guild, A.guildName)
+            local title = siteText(r.title, A.title)
+            local startsAt = allyInt(r.startsAt, 1, A.time)
+            local size = allyInt(r.size, 1, A.size)
+            local going = allyInt(r.going, 0, A.going)
+            -- Never this block's own guild, and only a guild the block names.
+            if id and owner and title and startsAt and size and going and names[owner:lower()]
+               and not GuildOS.SameGuildName(owner, guild) then
+                out.raids[#out.raids + 1] = { id = id, guild = owner, title = title, where = siteText(r.where, A.where),
+                    startsAt = startsAt, size = size, lead = allyWord(r.lead, A.key), going = going }
+            end
+        end
+    end
+    table.sort(out.raids, function(x, y)
+        if x.startsAt ~= y.startsAt then return x.startsAt < y.startsAt end
+        return x.id < y.id
+    end)
+    return out
+end
+
+-- Whether a block's realm is this guild's: WoW: Forever has none, so a block naming one there is another game's;
+-- elsewhere one naming another realm is another region's or realm's (a client folder can hold what another install
+-- left), and one naming none cannot be told apart and stands. Spaces, hyphens and capitals aside.
+local function sameRealm(realm)
+    local forever = not (GuildOS.Client.isAnniversary or GuildOS.Client.isRetail)
+    if forever then return realm == nil end
+    if not realm then return true end
+    local function bare(s) return tostring(s or ""):gsub("[%s%-']", ""):lower() end
+    local _, _, _, guildRealm = GetGuildInfo("player")
+    local mine = guildRealm or (GetNormalizedRealmName and GetNormalizedRealmName()) or GetRealmName()
+    return bare(realm) == bare(mine) or bare(realm) == bare(GetRealmName())
+end
+
+function Import:AllianceBlock()
+    local inbox = _G.GuildOSInbox
+    if type(inbox) ~= "table" or not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then return nil end
+    for _, v in ipairs(inbox) do
+        if type(v) == "string" and v:sub(1, #ALLY_PREFIX) == ALLY_PREFIX then
+            -- Decoded and cleaned once per string: the file only changes on a reload.
+            if self._allyRaw ~= v then
+                local body = v:sub(#ALLY_PREFIX + 1)
+                local ok = body ~= "" and #body <= Import.ALLY_MAX and not body:find("[^A-Za-z0-9()]")
+                self._allyRaw = v
+                self._allyData = ok and Import.ReadAlliance(unwrap(body, "GOSALLY1", Import.ALLY_JSON_MAX)) or false
+            end
+            local data = self._allyData
+            local mine = GetGuildInfo("player")
+            if not data or not mine or mine == "" or not GuildOS.SameGuildName(data.guild, mine)
+               or not sameRealm(data.realm) then
+                return nil
+            end
+            if GetServerTime() - data.at > BLOCK_MAX_AGE then return nil end
+            return data
+        end
+    end
+    return nil
 end
 
 -- The GOSGILD1's discordLinked (#422, the site's specs/009): the keys of the guild's characters whose

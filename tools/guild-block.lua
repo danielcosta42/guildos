@@ -7,6 +7,10 @@
 -- is shown and never run; the digest says five lines at most, each once, with no colour or link, and
 -- with nothing from the site it stays as it was; an event the site tells is not told twice; the
 -- site's founding is kept by the same order as the GM's, and only the GM's client tells the guild.
+-- The alliance's GOSALLY1 (tools/ally-fixture.txt, with tools/ally-guild-fixture.txt's GOSGILD1 code): read
+-- only for this guild, this game, under a week old, held to its caps (16 guilds, 1000 members, 2000 recipes,
+-- 30 raids, 256 KiB, the inflated size), every field checked; in memory only; the directory maps recipe spell
+-- ids to the items "who crafts this?" asks by, and it counts only for the site's code in force.
 --
 --   luajit -e 'ADDON="."' tools/guild-block.lua
 --
@@ -301,5 +305,174 @@ ROSTER[4] = "Dan"
 GuildOS:RecordFirstSeen()
 check(newcomers(), "whoever joins after it is new")
 GetNumGuildMembers, GetGuildRosterInfo = function() return 0 end, function() end
+
+-- ── The alliance's blocks: GOSGILD1 `alliance` and GOSALLY1 (alianca.md §3.2; the site's specs/123) ──────────
+-- tools/ally-fixture.txt and tools/ally-guild-fixture.txt are made by the site's own encoders (encodeGosally,
+-- encodeGosgild in guildos-web packages/goscomp) from this payload: "Ashen Vow" (Forever, realm null) in "Pacto do
+-- Sul" [PACTO] v3 with "Iron Pact" (Mira Thornwood, TANK, recipes 2149 2153 7418 999999; Olaf Stone, alt of Mira,
+-- recipe 2385) and "Silver Hand" (Lia Moon, HEALER); raids "Molten Core" (Iron Pact, at LAUNCH+21d, 31 of 40, led by
+-- Mira) and "Onyxia" (Silver Hand, LAUNCH+20d+2h, 12 of 40); built at LAUNCH+20d-1h; the code GOS=PACTO:AbCdE12345.
+local ALLY = io.open(ADDON .. "/tools/ally-fixture.txt", "rb"):read("*a")
+local ALLY_GILD = io.open(ADDON .. "/tools/ally-guild-fixture.txt", "rb"):read("*a")
+local LD = LibStub("LibDeflate")
+local function pack(fmt, t)
+  return fmt .. ":" .. LD:EncodeForPrint(LD:CompressDeflate(GuildOS.Companion.EncodeJson(t)))
+end
+fresh()
+GuildOSInbox = { ALLY_GILD, ALLY }
+local ab = Import:AllianceBlock()
+check(ab and ab.guild == "Ashen Vow" and ab.alliance.tag == "PACTO" and ab.alliance.version == 3
+  and ab.alliance.name == "Pacto do Sul" and #ab.guilds == 3, "the site's own GOSALLY1 reads")
+check(ab.guilds[1].self and #ab.guilds[1].members == 0 and #ab.guilds[2].members == 2, "our own guild carries nobody")
+check(ab.raids[1].title == "Onyxia" and ab.raids[2].title == "Molten Core", "the raids, soonest first")
+check(Import:AllianceBlock() == ab, "decoded once per load")
+check(Import:GuildBlock().alliance.code == "GOS=PACTO:AbCdE12345", "the GOSGILD1 beside it carries the code")
+GUILD = "Outra Guilda"
+check(Import:AllianceBlock() == nil, "another guild's GOSALLY1 is ignored")
+GUILD = "ashen VOW"
+check(Import:AllianceBlock() ~= nil, "capitals aside")
+GUILD = "Ashen Vow"
+NOW = ab.at + 7 * DAY + 1
+check(Import:AllianceBlock() == nil, "over a week old is a companion that stopped")
+NOW = LAUNCH + 20 * DAY
+GuildOS.db.settings.companion = false
+check(Import:AllianceBlock() == nil, "the companion off: nothing")
+GuildOS.db.settings.companion = true
+local base = { fmt = "GOSALLY1", v = 1, guild = "Ashen Vow", at = NOW - 3600,
+               alliance = { name = "Pacto do Sul", tag = "PACTO", version = 3 }, guilds = {}, raids = {} }
+local function variant(extra)
+  local t = {}
+  for k, v in pairs(base) do t[k] = v end
+  for k, v in pairs(extra) do t[k] = v end
+  return t
+end
+GuildOSInbox = { pack("GOSALLY1", variant({ realm = "Firemaw" })) }
+check(Import:AllianceBlock() == nil, "on WoW: Forever a block naming a realm is another game's, and ignored")
+GuildOSInbox = { pack("GOSALLY1", variant({})) }
+check(Import:AllianceBlock() ~= nil, "and this game's, naming none, reads")
+GuildOSInbox = { pack("GOSALLY1", variant({ v = 2 })) }
+check(Import:AllianceBlock() == nil, "a v2 is a breaking change: not read")
+GuildOSInbox = { (pack("GOSALLY1", variant({ fmt = "GOSGILD1" }))) }
+check(Import:AllianceBlock() == nil, "a block whose fmt is another's is not one")
+GuildOSInbox = { "GOSALLY1:notareal(block)" }
+check(Import:AllianceBlock() == nil, "a damaged one is dropped")
+GuildOSInbox = { "GOSALLY1:" .. string.rep("A", Import.ALLY_MAX + 1) }
+check(Import:AllianceBlock() == nil, "a body over 256 KiB is refused before it is decoded")
+GuildOSInbox = { "GOSALLY1:abc|cff$%" }
+check(Import:AllianceBlock() == nil, "a body outside the print alphabet is refused")
+local keepJson = Import.ALLY_JSON_MAX
+Import.ALLY_JSON_MAX = 200
+GuildOSInbox = { pack("GOSALLY1", variant({ guilds = { { name = "Iron Pact", members = {
+  { key = "X", name = string.rep("x", 40), class = "MAGE", level = 1 },
+  { key = "Y", name = string.rep("y", 40), class = "MAGE", level = 1 },
+  { key = "Z", name = string.rep("z", 40), class = "MAGE", level = 1 } } } } })) }
+check(Import:AllianceBlock() == nil, "a body that inflates past its cap is refused before it is parsed")
+Import.ALLY_JSON_MAX = keepJson
+GuildOSInbox = nil
+check(Import:AllianceBlock() == nil, "no inbox: nothing")
+
+-- Every field held to the contract, a part that fails passed over alone (pure, ReadAlliance).
+local R = Import.ReadAlliance
+check(R(variant({ alliance = { name = "Pacto", tag = "pacto", version = 3 } })) == nil, "a tag not of the contract: no block")
+check(R(variant({ alliance = { name = "Pacto", tag = "PACTO", version = 0 } })) == nil, "nor a version under 1")
+check(R(variant({ alliance = { tag = "PACTO", version = 3 } })) == nil, "nor an alliance with no name")
+check(R(variant({ at = 1.5 })) == nil and R(variant({ guild = "A|cffB" })) == nil and R("x") == nil, "nor a broken head")
+local many = {}
+for i = 1, 20 do many[i] = { name = "G" .. i } end
+check(#R(variant({ guilds = many })).guilds == 16, "at most 16 guilds")
+local crowd, recipes = {}, {}
+for i = 1, 1500 do crowd[i] = { key = "K" .. i, name = "N" .. i, class = "MAGE", level = 60 } end
+for i = 1, 3000 do recipes[i] = i end
+local hostileMembers = {
+  { key = "Ok", name = "Ok", class = "MAGE", level = 60, role = "BOSS", main = "Ok" },
+  { key = "Ok", name = "Twin", class = "MAGE", level = 60 },                    -- the same key twice
+  { key = "Bar|r", name = "Bar", class = "MAGE", level = 60 },
+  { key = string.rep("k", 65), name = "Long", class = "MAGE", level = 60 },
+  { key = "Low", name = "Low", class = "mage", level = 60 },
+  { key = "Neg", name = "Neg", class = "MAGE", level = -1 },
+  { key = "Frac", name = "Frac", class = "MAGE", level = 1.5 },
+  { key = "Str", name = "Str", class = "MAGE", level = "60" },
+  { key = "Nl", name = "Line\nBreak", class = "MAGE", level = 60 },
+  "not a member",
+}
+local hm = R(variant({ guilds = {
+  { name = "Ashen Vow", members = { { key = "Spy", name = "Spy", class = "MAGE", level = 60 } } },   -- ours, not self
+  { name = "Crowd", members = crowd, crafters = { { key = "K1", recipes = recipes }, { key = "K2", recipes = { 5, 5, 1.5, -3, "7", 8 } },
+                                                  { key = "Nobody", recipes = { 1 } } } },
+  { name = "Hostile", members = hostileMembers },
+  { name = "crowd", members = {} },                                             -- the same guild again
+} }))
+check(#hm.guilds == 3 and #hm.guilds[1].members == 0, "our own guild never carries members, self or not; a guild twice is once")
+check(#hm.guilds[2].members == 1000, "at most 1000 members a guild")
+check(#hm.guilds[2].members[1].spells == 2000, "at most 2000 recipes a crafter")
+check(table.concat(hm.guilds[2].members[2].spells, ",") == "5,8", "recipe ids whole, positive and once")
+local h = hm.guilds[3].members
+check(#h == 1 and h[1].key == "Ok" and h[1].role == nil and h[1].main == nil,
+  "a member off the contract is passed over alone; a role not of the three and a main that is themselves go")
+local raidsIn = {}
+for i = 1, 40 do raidsIn[i] = { id = "r" .. i, guild = "Crowd", title = "R" .. i, startsAt = NOW + i, size = 25, going = 1 } end
+raidsIn[1] = { id = "bad id!", guild = "Crowd", title = "x", startsAt = NOW, size = 25, going = 1 }
+raidsIn[2] = { id = "mine", guild = "Ashen Vow", title = "x", startsAt = NOW, size = 25, going = 1 }
+raidsIn[3] = { id = "ghost", guild = "Nowhere", title = "x", startsAt = NOW, size = 25, going = 1 }
+raidsIn[4] = { id = "t", guild = "Crowd", title = "|cffff0000Red|r |Hitem:1|h[x]|h", startsAt = NOW + 4, size = 25, going = 1 }
+raidsIn[5] = { id = "f", guild = "Crowd", title = "x", startsAt = NOW + 0.5, size = 25, going = 1 }
+local rr = R(variant({ guilds = { { name = "Crowd" } }, raids = raidsIn })).raids
+check(#rr == 26 and rr[1].id == "t" and not rr[1].title:find("|", 1, true),
+  "at most 30 raids read; a bad id, our own guild's, an unknown guild's, a fractional time are passed over; titles inert")
+
+-- In the game: the site's code drives the alliance, its block fills the directory (AllianceLink, Alliance).
+dofile(ADDON .. "/Data/ProfCatalogForever.lua")
+dofile(ADDON .. "/Modules/Alliance.lua")
+dofile(ADDON .. "/Modules/AllianceLink.lua")
+local A, Link = GuildOS.Alliance, GuildOS.AllianceLink
+fresh()
+GuildOSInbox = { FIXTURE, ALLY }
+Link:SyncSite()
+check(A:Get() == nil and #A:Directory() == 0, "a GOSALLY1 beside a GOSGILD1 with no alliance is nobody's: no directory")
+GuildOSInbox = { ALLY_GILD, ALLY }
+Link:SyncSite()
+check(A:Get() and A:FromSite() and A:Name() == "Pacto do Sul", "the GOSGILD1's code is the alliance")
+local dir = A:Directory()
+check(#dir == 2 and dir[1].guild == "Iron Pact" and dir[2].guild == "Silver Hand", "the directory: the allied guilds, never ours")
+local mira = dir[1].members[1]
+check(mira.name == "Mira Thornwood" and mira.class == "WARRIOR" and mira.level == 60 and mira.role == "TANK",
+  "a member with class, level and role")
+check(mira.recipes[2302] == "Leatherworking" and mira.recipes[2303] == "Leatherworking" and mira.prof == "Leatherworking",
+  "recipe spell ids mapped to the items they make, by the catalog")
+local n = 0
+for _ in pairs(mira.recipes) do n = n + 1 end
+check(n == 2, "an enchant (no item) and an id the catalog does not know make nothing to search by")
+check(dir[1].members[2].main == "Mira Thornwood" and dir[1].members[2].recipes[2568] == "Tailoring", "an alt, and their own crafts")
+local fc = A:FindCrafters(2302)
+check(#fc == 1 and fc[1].name == "Mira Thornwood" and fc[1].guild == "Iron Pact" and fc[1].prof == "Leatherworking"
+  and fc[1].class == "WARRIOR" and not fc[1].online, "who crafts this: the allied crafter, offline too")
+local orr = A:OpenRaids()
+check(#orr == 2 and orr[1].title == "Onyxia" and orr[2].leader == "Mira Thornwood" and orr[2].going == 31 and orr[2].size == 40
+  and orr[2].where == "Molten Core", "the open raids, soonest first, with who leads and how many go")
+check(A:AsOf() == LAUNCH + 20 * DAY - 3600, "as of when the site built it")
+check(A:IsMemberGuild("Silver Hand") and A:Guilds()[1].mine and #A:Guilds() == 3, "the site's guilds are the alliance's")
+check(A:MemberInfo("Lia Moon").guild == "Silver Hand", "an allied character is known by guild")
+check(next(GuildOS.db.members) == nil and GuildOS.db.recipes == nil, "nothing of it goes into the guild's member DB")
+for k in pairs(GuildOS.db) do
+  check(not k:find("^ally") or k:find("^allianceLink"), "nor a field of its own in SavedVariables: " .. k)
+end
+check(GuildOS.db.allianceLinkSite and GuildOS.db.allianceLinkSite.line == "GOS=PACTO:AbCdE12345",
+  "only the code the site gave is remembered, for a login before the block reads")
+-- TBC Anniversary has no catalog: the guild's own scans map a recipe to its item.
+local cat = GuildOS.ProfCatalog
+GuildOS.ProfCatalog = nil
+GuildOS.db.recipes = { ["Ana"] = { Leatherworking = { { spellId = 2149, itemId = 2302 }, { spellId = 7418 } } } }
+local fc2 = A:FindCrafters(2302)
+check(#fc2 == 1 and fc2[1].prof == "Leatherworking" and #A:FindCrafters(2303) == 0,
+  "without a catalog, what the guild scanned maps the recipe; one nobody scanned finds nobody")
+GuildOS.ProfCatalog, GuildOS.db.recipes = cat, nil
+-- Another key version (the block is older than the code): not this alliance's.
+GuildOS.db.allianceLinkSite.version = 4
+check(#A:Directory() == 0 and #A:OpenRaids() == 0, "a GOSALLY1 of another key version is not read")
+GuildOS.db.allianceLinkSite.version = 3
+-- The guild left: the GOSGILD1 names no alliance any more. The alliance ends, and its directory with it.
+GuildOSInbox = { FIXTURE, ALLY }
+Link:SyncSite()
+check(A:Get() == nil and #A:Directory() == 0 and #A:OpenRaids() == 0, "the guild left: no alliance, no directory, no raids")
 
 print(("guild-block: %d checks passed"):format(checks))

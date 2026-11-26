@@ -1321,6 +1321,34 @@ do
   UI:OpenWindow("guild", "calendar")
   check(cal.selectedKey == 20260115, "opening the calendar without a day leaves the selection alone")
 
+  -- An allied guild's raid open to the alliance (guildos.me's GOSALLY1): on the day, read-only, never stored.
+  local keepAlly = GuildOS.Alliance
+  local gruul = os.time({ year = 2026, month = 1, day = 15, hour = 21, min = 0 })
+  GuildOS.Alliance = {
+    OpenRaids = function() return { { guild = "Iron Pact", title = "Gruul", when = gruul, where = "Gruul's Lair",
+                                      leader = "Mira", going = 11, size = 25 } } end,
+    AsOf = function() return gruul - 86400 end,
+  }
+  cal.Render()
+  local found = {}
+  local function walk(f)
+    for _, c in ipairs(f.children or {}) do
+      if c.shown ~= false and type(c.text) == "string" then found[#found + 1] = c.text end
+      walk(c)
+    end
+  end
+  walk(cal.child)
+  local said = table.concat(found, "\n")
+  check(said:find("[Iron Pact] Gruul", 1, true) and said:find("11/25", 1, true) and said:find("Gruul's Lair", 1, true)
+    and said:find("led by Mira", 1, true) and said:find("Sign up in Discord or on the website.", 1, true)
+    and said:find("(as of ", 1, true), "Raids › Calendar shows the alliance's open raid on its day, read-only, signed up to elsewhere")
+  local cell
+  for _, c in ipairs(cal.cells) do if c.dkey == 20260115 then cell = c end end
+  check(cell and cell.evtFS.text:find("Iron Pact", 1, true), "and the day's cell names it")
+  check(#GuildOS.Calendar.GetEvents() == 0, "the calendar stores nothing of it")
+  GuildOS.Alliance = keepAlly
+  cal.Render()
+
   -- The event editor (#308): only the kinds this rank creates, and a dungeon from the game's list.
   -- Calendar's own rules are tools/event-kinds.lua's.
   local Cal = GuildOS.Calendar

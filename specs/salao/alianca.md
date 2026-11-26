@@ -65,7 +65,20 @@ Nobody pastes anything.
      guild. Each player can turn it off.
    - **The alliance room:** a channel of its own.
 
-   A new key, when a guild leaves or the alliance is reset, closes the old channel.
+   A new key, when a guild leaves or the alliance is reset, closes the old channel: the hidden channel's
+   name comes from the code, `GOSA` + TAG + six base-36 characters of a hash of the key (22 letters and
+   digits at most, no `-`), so a new key is a new channel. Every guild derives the same name from the same
+   code, pasted or the site's. The clients of a guild that was removed keep the old key and are left alone
+   in the old channel; the addon leaves it on every client that has the new key, or no alliance any more.
+
+   Precedence in the addon: the site's code, then the guild's own (pasted by an officer, or read from the
+   guild master's note). When `GOSGILD1` names no alliance any more, the site's code ends and its channel is
+   left; the same code left in the note does not bring it back, another code an officer pasted does.
+
+   Members without the companion get the site's code from the guild: an officer whose own client reads it in
+   `GOSGILD1` sends it over the guild sync (`allylink` `site`, an officer-only write, checked again on
+   receipt), the highest key version winning, and the end the same way. An officer also answers a member's
+   login ask when their copies differ. It never goes in the guild master's note.
 2. **The directory**, in a new block `GOSALLY1`: the allied guilds, their members (name, class, level, role,
    main) and their crafters (recipe ids per member). It comes from the rosters and professions the site
    already holds.
@@ -129,6 +142,9 @@ shared bans. The full panel on the site (rosters together, compared attendance, 
   - remove §3.4.
 - **Order:** the site first, then the addon. Until the site sends anything, an addon with only a pasted code
   keeps the chat, so nobody loses the shared /g in between.
+- **Migration of the channel name:** clients from before the key-derived name (`GOSA` + TAG alone) and
+  clients after it do not meet on the channel. All the guilds of an alliance update together; the release
+  notes say so.
 
 ## 5. Questions answered
 
