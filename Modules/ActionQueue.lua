@@ -6,7 +6,9 @@
 -- (Compat.NeedsClick) a whisper, a guild chat line or a group invite. Every
 -- feature that would do one of those from an event or a timer hands it here:
 -- the keyword auto-invite, its /who check, the scanner's whispers, the
--- welcome, Raid Tools' invites, the Groups board's "inv" whisper.
+-- welcome, Raid Tools' invites, the Groups board's "inv" whisper, and the
+-- recruitment ad's channels after the first where one key press carries one
+-- channel line (Recruitment:PostRound).
 --
 -- Compat.NeedsHardware(kind) says per client (and per the probe, /gos probe
 -- invite) whether an action needs one; when it does not, the action runs at
@@ -69,9 +71,11 @@ local VERBS = {
     who = function() return L["check with /who"] end,
     whisper = function() return L["whisper"] end,
     chat = function() return L["send"] end,
+    channel = function() return L["post in"] end,
 }
 
---- Adds one action. item: { kind ("guildInvite", "groupInvite", "who", "whisper", "chat"), key (one per person
+--- Adds one action. item: { kind ("guildInvite", "groupInvite", "who", "whisper", "chat", "channel": a line in a
+--- chat channel, the recruitment ad's channels after the first, #449), key (one per person
 --- and purpose: a second Add with it replaces the first in its place), name (who it is for), run (does it;
 --- returns false when nothing went), valid (optional: false when it no longer applies; then it is skipped),
 --- verb (optional: what the toast says), ownWindow (optional: a window of its own asks for it, the toast stays

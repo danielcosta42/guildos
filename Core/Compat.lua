@@ -2574,6 +2574,45 @@ function Compat.ChannelId(name)
     return id
 end
 
+-- The channels this character is in, as { { num = 3, name = "LookingForGroup" }, ... } in number order. Read from
+-- GetChannelList (number, name[, disabled] per channel: the third value is there on retail and the classic clients,
+-- not on older ones, so a number followed by a name starts each entry), else by asking GetChannelName for each
+-- number. A zone channel's full name ("Trade - City") is kept as the game gives it. Empty when nothing answers.
+local MAX_CHANNELS = 20
+function Compat.JoinedChannels()
+    local out, seen = {}, {}
+    local function add(num, name)
+        num = tonumber(num)
+        if num and num > 0 and type(name) == "string" and name ~= "" and not seen[num]
+            and not Compat.IsSecret(name) then
+            seen[num] = true
+            out[#out + 1] = { num = num, name = name }
+        end
+    end
+    if GetChannelList then
+        local ok, list = pcall(function() return { GetChannelList() } end)
+        if ok and type(list) == "table" then
+            local i = 1
+            while list[i] ~= nil do
+                if type(list[i]) == "number" and type(list[i + 1]) == "string" then
+                    add(list[i], list[i + 1])
+                    i = i + 2
+                else
+                    i = i + 1
+                end
+            end
+        end
+    end
+    if #out == 0 and GetChannelName then
+        for i = 1, MAX_CHANNELS do
+            local ok, id, name = pcall(GetChannelName, i)
+            if ok and not Compat.IsSecret(id) then add(id, name) end
+        end
+    end
+    table.sort(out, function(a, b) return a.num < b.num end)
+    return out
+end
+
 -- Leaves `name`. True when the call went, whether or not the channel was joined.
 function Compat.LeaveChannel(name)
     if not LeaveChannelByName then return false end

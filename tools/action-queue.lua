@@ -321,6 +321,8 @@ check(out.results.who.click == true and out.results.who.timer == false and out.r
   "/who: the timer's went unanswered")
 check(out.results.groupInvite.timer == true and out.results.whisper.timer == true, "group invite and whisper go from a timer")
 check(out.results.channel.click == true and out.raw.channel.timer == "silent", "the channel line only from the key press")
+check(out.results.channelTwice.click == true and out.raw.channelTwice.timer == "from a key press only",
+  "a second channel line from the same key press is measured, from the key press only (#449)")
 check(B.Compat.NeedsHardware("guildInvite") and not B.Compat.NeedsHardware("groupInvite") and B.Compat.NeedsHardware("who"),
   "Compat reads it")
 check(type(out.tabard) == "table" and out.tabard.source == "none", "the tabard's APIs are kept with it")
@@ -340,6 +342,27 @@ out = GuildOSDB.probeInvite
 check(not tried and out.results.guildInvite.click == false and out.raw.guildInvite.click:find("forbidden", 1, true),
   "Forever: no guild invite is tried, it is recorded as forbidden")
 check(out.results.channel.click == nil and out.raw.channel.click == "no channel number", "a channel with no number is not tried")
+
+-- Forever, with a channel number: the client takes one channel line per key press, the second is dropped silently.
+B = load("forever")
+function B.Compat.ChannelId() return 7 end
+function B.Compat.JoinChannel() end
+function B.Compat.LeaveChannel() return true end
+local channelLines = 0
+SendChatMessage = function(msg, chan)
+  if chan == "CHANNEL" and env.hardware then
+    channelLines = channelLines + 1
+    if channelLines == 1 then fire("CHAT_MSG_CHANNEL", msg) end
+  end
+end
+env.hardware = true
+B.Probe:RunInvite()
+env.hardware = false
+runTimers(env.clock + 20)
+out = GuildOSDB.probeInvite
+check(out.results.channel.click == true and out.raw.channelTwice.click == "silent" and out.results.channelTwice.click == false,
+  "Forever: the first channel line of a key press answered, the second not")
+check(B.Recruitment:PostsPerClick() == 1, "so the recruitment ad posts one channel per key press")
 
 -- ── The toast and the line to copy (UI/ActionQueue.lua), on stub frames ─
 B = load("retail")

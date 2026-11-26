@@ -683,7 +683,9 @@ end
 --   * the invites and the whisper go to a name no character can have (letters and digits: "Gosprobe4821"):
 --     the game answers "not found" with that name in it, which shows the call ran; nobody is asked;
 --   * the /who asks for that name: WHO_LIST_UPDATE (or its "0 players" line) is the answer;
---   * the channel line goes into a temporary channel only this character is in, and its echo is the answer.
+--   * the channel line goes into a temporary channel only this character is in, and its echo is the answer;
+--     from the key press a second line follows the first (results.channelTwice), to tell whether one key press
+--     carries one channel line or several (Recruitment:PostsPerClick, #449).
 -- The command's own Enter is the key press; the second attempt comes from a timer INVITE_TIMER_AT seconds
 -- later, past the /who's own cooldown. Each attempt reads true (answered), false (the game reported it blocked:
 -- ADDON_ACTION_BLOCKED/FORBIDDEN naming the call) or "silent" (no answer: dropped, the usual fate of a #hwevent
@@ -703,8 +705,18 @@ local function blockedKinds(func)
     if func:find("InviteUnit", 1, true) or func:find("InviteByName", 1, true) then return { "groupInvite" } end
     if func:find("Invite", 1, true) then return { "guildInvite" } end
     if func:find("SendWho", 1, true) then return { "who" } end
-    if func:find("SendChatMessage", 1, true) then return { "whisper", "channel" } end
+    if func:find("SendChatMessage", 1, true) then return { "whisper", "channel", "channelTwice" } end
     return {}
+end
+
+-- What the probe measures: the queue's kinds, and a second channel line from the same key press (#449): the
+-- recruitment ad posted to the first channels of a round and not the last on WoW: Forever, so whether one key press
+-- carries two channel lines is measured on its own (from a click only: from a timer the first already says it).
+local function probeKinds()
+    local out = {}
+    for _, k in ipairs(GuildOS.Compat.HARDWARE_KINDS) do out[#out + 1] = k end
+    out[#out + 1] = "channelTwice"
+    return out
 end
 
 local function fakeName()
@@ -746,6 +758,13 @@ function Probe:InviteAttempt(run, how)
                 local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
                 send(step.name, "CHANNEL", nil, id)
             end)
+            -- The second line, right after the first, inside the same key press.
+            if how == "click" then
+                try("channelTwice", function(step)
+                    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+                    send(step.name, "CHANNEL", nil, id)
+                end)
+            end
         end
     end
 end
@@ -770,11 +789,13 @@ function Probe:RunInvite()
     local Compat = GuildOS.Compat
     local game = GuildOS.Client.game
     local run = { started = GetTime(), blocked = {}, raw = {}, channelName = "GOSInv" .. math.random(1000, 9999), sysLines = 0 }
-    for _, kind in ipairs(Compat.HARDWARE_KINDS) do
+    for _, kind in ipairs(probeKinds()) do
         run.raw[kind] = { click = { name = fakeName() }, timer = { name = fakeName() } }
     end
     run.raw.channel.click.name = run.channelName .. " click"
     run.raw.channel.timer.name = run.channelName .. " timer"
+    run.raw.channelTwice.click.name = run.channelName .. " second"
+    run.raw.channelTwice.timer.skipped = "from a key press only"
     if game == "FOREVER" then
         run.raw.guildInvite.click.skipped = "forbidden to addons (#256)"
         run.raw.guildInvite.timer.skipped = "forbidden to addons (#256)"
@@ -801,7 +822,7 @@ function Probe:RunInvite()
             run.unreadable = true
             return
         end
-        for _, kind in ipairs(Compat.HARDWARE_KINDS) do
+        for _, kind in ipairs(probeKinds()) do
             for _, h in ipairs({ "click", "timer" }) do
                 local step = run.raw[kind][h]
                 if step.tried and text:find(step.name, 1, true) then step.answered = true end
@@ -866,7 +887,7 @@ function Probe:FinishInvite(run)
     local out = { at = (clockOk and now) or 0, build = GuildOS.Client.build, version = GuildOS.Client.version,
                   game = GuildOS.Client.game, results = {}, raw = {}, unreadable = run.unreadable,
                   blocked = run.blocked, tabard = Compat.TabardApis() }
-    for _, kind in ipairs(Compat.HARDWARE_KINDS) do
+    for _, kind in ipairs(probeKinds()) do
         local res, raw = {}, {}
         for _, how in ipairs({ "click", "timer" }) do
             local step = run.raw[kind][how]
@@ -899,6 +920,12 @@ function Probe:FinishInvite(run)
         GuildOS:Print(string.format("  " .. L["%s: from a key press %s, from a timer %s. Needs a key press: %s."],
             labels[kind], word(raw.click), word(raw.timer), answer(Compat.NeedsHardware(kind))))
     end
+    -- The second channel line from the same key press: whether the recruitment ad's round posts every channel on
+    -- one click or one channel per key press (Recruitment:PostsPerClick).
+    GuildOS:Print("  " .. string.format(L["A second channel line from the same key press: %s. The recruitment ad posts %s."],
+        word(out.raw.channelTwice.click),
+        (GuildOS.Recruitment and GuildOS.Recruitment:PostsPerClick() == 1) and L["one channel per key press"]
+            or L["every channel on one click"]))
     local tb = out.tabard
     GuildOS:Print("  " .. string.format(L["Tabard: %s (GetGuildTabardInfo %s, GetGuildLogoInfo %s, SetLargeGuildTabardTextures %s, masks %s)."],
         tostring(tb.source), answer(tb.GetGuildTabardInfo), answer(tb.GetGuildLogoInfo),

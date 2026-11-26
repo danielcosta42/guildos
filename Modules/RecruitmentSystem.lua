@@ -193,9 +193,42 @@ function Recruitment:HasChannel(list, name)
     return false
 end
 
+-- The channel `saved` names, as this character has it: its name and number, or the name and 0 when it is not
+-- joined. The game is asked by name first (a zone channel answers to its shortcut, "Trade"); then the joined
+-- channels are read and compared in any case, so a "LookingforGuild" typed by hand finds the "LookingForGuild"
+-- the player is in (#449), and a zone channel's full name ("Trade - City") answers to its shortcut too. A preset
+-- named in any language is this client's first (ChannelName).
+local function baseName(name)
+    return (tostring(name):match("^(.-)%s+%-%s+") or tostring(name)):lower()
+end
+function Recruitment:ResolveChannel(saved)
+    local name = self:ChannelName(strtrim(tostring(saved or "")))
+    if name == "" then return name, 0 end
+    local Compat = GuildOS.Compat
+    local want = name:lower()
+    local joined = Compat.JoinedChannels and Compat.JoinedChannels() or {}
+    local num = Compat.ChannelId(name)
+    if num > 0 then
+        for _, ch in ipairs(joined) do
+            if ch.num == num and ch.name:lower() == want then return ch.name, num end
+        end
+        return name, num
+    end
+    for _, ch in ipairs(joined) do
+        if ch.name:lower() == want then return ch.name, ch.num end
+    end
+    for _, ch in ipairs(joined) do
+        if baseName(ch.name) == want then return name, ch.num end
+    end
+    return name, 0
+end
+
 function Recruitment:AddChannel(list, name)
     name = strtrim(tostring(name or ""))
     if name == "" or self:HasChannel(list, name) then return false end
+    -- Saved as the game names the channel when the player is in it: "lookingforguild" goes in as "LookingForGuild".
+    local real, num = self:ResolveChannel(name)
+    if num > 0 and real:lower() == self:ChannelName(name):lower() then name = real end
     list[#list + 1] = name
     return true
 end
@@ -1167,21 +1200,77 @@ function Recruitment:_ActiveConfig()
     return GuildOS:IsOfficer() and GuildOS.db.recruitment or GuildOS.db.guildRecruitment
 end
 
--- Configured channel names, and how many of them the player has actually joined
--- right now. GetChannelName returns 0 for a channel the player is not in, so
--- with zero joined there is nothing to post to.
-function Recruitment:_ResolveChannels(settings)
-    local names, joined, seen = {}, 0, {}
-    for _, ch in ipairs(settings and settings.channels or {}) do
-        ch = self:ChannelName(ch)
-        if not seen[ch:lower()] then   -- the same channel saved in two languages is one
-            seen[ch:lower()] = true
-            names[#names + 1] = ch
-            local num = GetChannelName(ch)
-            if num and num > 0 then joined = joined + 1 end
+-- The post round's plan (#449): every configured channel once, whatever the case or the language it was saved in,
+-- resolved against the channels the player is in. { targets = { { name, num } ... } in the saved order, one per
+-- channel number; notJoined = { name ... } }.
+function Recruitment:PostPlan(settings)
+    local plan, seenName, seenNum = { targets = {}, notJoined = {} }, {}, {}
+    for _, saved in ipairs(settings and settings.channels or {}) do
+        local name, num = self:ResolveChannel(saved)
+        local key = name:lower()
+        if name ~= "" and not seenName[key] and not (num > 0 and seenNum[num]) then
+            seenName[key] = true
+            if num > 0 then
+                seenNum[num] = true
+                plan.targets[#plan.targets + 1] = { name = name, num = num }
+            else
+                plan.notJoined[#plan.notJoined + 1] = name
+            end
         end
     end
+    return plan
+end
+
+-- Configured channel names (once each), and how many of them the player has actually joined right now: with zero
+-- joined there is nothing to post to.
+function Recruitment:_ResolveChannels(settings)
+    local names, joined = {}, 0
+    local plan = self:PostPlan(settings)
+    for _, t in ipairs(plan.targets) do
+        names[#names + 1] = t.name
+        joined = joined + 1
+    end
+    for _, n in ipairs(plan.notJoined) do names[#names + 1] = n end
     return names, joined
+end
+
+-- How many channel lines one key press or click may carry. Where the game wants a hardware event for a channel
+-- line (Compat.NeedsHardware("channel"): WoW: Forever and retail, or as /gos debug probe invite measured it), the
+-- maintainer saw a round post to the first channels and not to the last (#449): one line per key press there,
+-- unless the probe heard a second line from the same key press come back. Elsewhere every channel at once.
+function Recruitment:PostsPerClick()
+    local Compat = GuildOS.Compat
+    if not Compat.NeedsHardware("channel") then return math.huge end
+    local twice = Compat.ProbedHardware("channelTwice")
+    if twice and twice.click == true then return math.huge end
+    return 1
+end
+
+-- The consent popup's Post button: "Post", or "Post (1 of 3)" when the click carries the first of several.
+function Recruitment:PostButtonText(joined)
+    joined = joined or 0
+    if joined > 1 and self:PostsPerClick() < joined then
+        return string.format(L["Post (1 of %d)"], joined)
+    end
+    return L["Post"]
+end
+
+-- The line after a post round: "Posted in: [3] LookingForGroup, [4] Trade · Not joined: General · Waiting for a
+-- key press: LookingForGuild", only the parts that apply. `round` = { posted = { {name, num} }, notJoined = { name },
+-- waiting = { name }, iconsOnly = { name } }. Nil when nothing applies.
+function Recruitment:RoundSummary(round)
+    local parts = {}
+    local function list(t, fmt)
+        if t and #t > 0 then parts[#parts + 1] = string.format(fmt, table.concat(t, ", ")) end
+    end
+    local posted = {}
+    for _, p in ipairs(round.posted or {}) do posted[#posted + 1] = string.format("[%d] %s", p.num, p.name) end
+    list(posted, L["Posted in: %s"])
+    list(round.notJoined, L["Not joined: %s"])
+    list(round.iconsOnly, L["Only raid icons, which it hides: %s"])
+    list(round.waiting, L["Waiting for a key press: %s"])
+    if #parts == 0 then return nil end
+    return table.concat(parts, " \194\183 ")
 end
 
 ----------------------------------------------------------------------
@@ -1429,6 +1518,8 @@ function Recruitment:ShowSendPopup()
         f.hint:Hide()
         f.postBtn:Show()
     end
+    -- Where a click carries one channel line, the button says which of how many it posts (#449).
+    if f.postBtn.label then f.postBtn.label:SetText(self:PostButtonText(joined)) end
     f:LayButtons()
     f:SetHeight(y + (f.foot and rawget(GuildOS, "Kit") and GuildOS.Kit.FOOT_H or 40))
     f:Show()
@@ -1473,33 +1564,102 @@ function Recruitment:DoSendRecruitmentMessage()
         return
     end
 
-    local sent, iconsOnly, posted = false, false, {}
-    for _, saved in ipairs(settings.channels or {}) do
-        local channelName = self:ChannelName(saved)
-        local channelNum = GetChannelName(channelName)
-        -- One post per channel: the same one saved in two languages resolves to one number.
-        if channelNum and channelNum > 0 and not posted[channelNum] then
-            posted[channelNum] = true
-            -- Where the server hides raid icons, the copy goes without their codes (issue #64).
-            local text = GuildOS.Compat.ChannelHidesRaidIcons(channelName, channelNum) and self:_StripRaidIcons(msg) or msg
-            if text ~= "" then
-                SendChatMessage(text, "CHANNEL", nil, channelNum)
-                sent = true
-            else
-                iconsOnly = true
+    self:PostRound(settings, msg)
+end
+
+-- The key of a channel's ad waiting in the officer action queue.
+local function adKey(name) return "recruitAd:" .. tostring(name):lower() end
+
+-- Posts `msg` to one resolved channel, raid icons left out where the server hides them (issue #64). "posted",
+-- "icons" (nothing left to post there) or false (the game would not take it).
+function Recruitment:_PostTo(name, num, msg)
+    local text = GuildOS.Compat.ChannelHidesRaidIcons(name, num) and self:_StripRaidIcons(msg) or msg
+    if text == "" then return "icons" end
+    return GuildOS.Compat.SendChannelMessage(text, num) and "posted" or false
+end
+
+-- One post round, from a key press or a click. Every channel at once where one click may carry them all; else the
+-- first now and each of the rest in the officer action queue, one per key press of its binding or click of its
+-- toast ("Press [key] to post the ad in LookingForGuild · 2 more"). Ends with the round's line (RoundSummary).
+function Recruitment:PostRound(settings, msg)
+    local plan = self:PostPlan(settings)
+    local AQ = GuildOS.ActionQueue
+    -- A new round replaces what an older one left waiting.
+    if AQ then
+        for _, key in ipairs(self._queuedAds or {}) do AQ:Remove(key) end
+    end
+    self._queuedAds = {}
+    local per = self:PostsPerClick()
+    if not AQ then per = math.huge end
+    local round = { posted = {}, notJoined = plan.notJoined, waiting = {}, iconsOnly = {} }
+    local went = 0
+    for _, t in ipairs(plan.targets) do
+        if went >= per then
+            round.waiting[#round.waiting + 1] = t.name
+        else
+            local r = self:_PostTo(t.name, t.num, msg)
+            if r == "posted" then
+                went = went + 1
+                round.posted[#round.posted + 1] = t
+            elseif r == "icons" then
+                round.iconsOnly[#round.iconsOnly + 1] = t.name
             end
         end
     end
+    for _, name in ipairs(round.waiting) do
+        local key = adKey(name)
+        self._queuedAds[#self._queuedAds + 1] = key
+        AQ:Add({
+            kind = "channel", key = key, name = name, verb = L["post the ad in"],
+            run = function() return Recruitment:_PostQueued(name, msg) end,
+        })
+    end
+    self:_FinishRound(round)
+    return round
+end
 
-    if sent then
+-- A queued channel's turn, from the key press or the click that runs it: resolved again (the player may have left
+-- it, or its number changed), posted, and the line says what is left.
+function Recruitment:_PostQueued(name, msg)
+    local real, num = self:ResolveChannel(name)
+    local round = { posted = {}, notJoined = {}, waiting = {}, iconsOnly = {} }
+    local key = adKey(name)
+    for i, k in ipairs(self._queuedAds or {}) do
+        if k == key then table.remove(self._queuedAds, i) break end
+    end
+    local r = num > 0 and self:_PostTo(real, num, msg)
+    if r == "posted" then
+        round.posted[1] = { name = real, num = num }
+    elseif r == "icons" then
+        round.iconsOnly[1] = real
+    elseif num == 0 then
+        round.notJoined[1] = real
+    end
+    local AQ = GuildOS.ActionQueue
+    for _, item in ipairs(AQ and AQ._state and AQ._state.items or {}) do
+        if item.kind == "channel" and tostring(item.key):find("^recruitAd:") and item.key ~= key then
+            round.waiting[#round.waiting + 1] = item.name
+        end
+    end
+    self:_FinishRound(round, true)
+    return r == "posted"
+end
+
+-- The round's bookkeeping and its line. A queued channel's post counts as part of its round, not a new send.
+function Recruitment:_FinishRound(round, queued)
+    if #round.posted > 0 and not queued then
         self._lastSendAt = GetTime()
         self.lastSend = GetTime()
         if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordPost() end
-        GuildOS:Print(L["Recruitment message sent!"])
-    elseif iconsOnly then
-        GuildOS:Print(L["|cffFF4444The message is only raid icons, which this channel does not show: nothing posted.|r"])
-    else
-        GuildOS:Print(L["|cffFF4444No valid channels found. Join a channel first.|r"])
+    end
+    local line = self:RoundSummary(round)
+    if line then GuildOS:Print(line) end
+    if #round.posted == 0 and #round.waiting == 0 and not queued then
+        if #round.iconsOnly > 0 then
+            GuildOS:Print(L["|cffFF4444The message is only raid icons, which this channel does not show: nothing posted.|r"])
+        else
+            GuildOS:Print(L["|cffFF4444No valid channels found. Join a channel first.|r"])
+        end
     end
 end
 

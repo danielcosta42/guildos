@@ -148,6 +148,7 @@ read_globals = {
     "SendAddonMessage",
     "RegisterAddonMessagePrefix",
     "GetChannelName",
+    "GetChannelList",
     "JoinChannelByName",
     "LeaveChannelByName",
     "EnumerateServerChannels",

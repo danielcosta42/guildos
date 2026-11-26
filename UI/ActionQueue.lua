@@ -111,7 +111,8 @@ function AQ:RefreshToast()
     -- Grown to the line: under the header, the line, a gap, the buttons and the body's bottom margin.
     local Kit = GuildOS.Kit
     f:SetHeight(Kit.HEADER_H + 8 + 2 + math.ceil(f.line:GetStringHeight() or 14) + UI.SP.FIELD_GAP + UI.SP.FIELD + 10)
-    local verb = item.kind == "guildInvite" and L["Invite"] or item.kind == "who" and L["Check"] or L["Do it"]
+    local verb = item.kind == "guildInvite" and L["Invite"] or item.kind == "who" and L["Check"]
+        or item.kind == "channel" and L["Post"] or L["Do it"]
     f.go.label:SetText(verb)
     f:SetTitle(L["Officer queue"], tostring(self:Pending(true)))
     f:Show()
