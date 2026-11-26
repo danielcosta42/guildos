@@ -907,6 +907,27 @@ function Compat.GuildBankMaxTabs()
     return tonumber(MAX_GUILDBANK_TABS) or (GuildOS.Client.isAnniversary and 6 or 8)
 end
 
+-- The game's own buttons down the guild bank's right edge (the tabs, GuildBankTab1..n with their inner
+-- GuildBankTabNButton, the "buy a tab" one among them; retail's host.BankTabs too), for a window docked beside
+-- the bank that must clear them. Frames only; empty where the bank is not built.
+function Compat.GuildBankSideButtons(host)
+    local out, seen = {}, {}
+    local function add(f)
+        if type(f) == "table" and type(f.GetRight) == "function" and not seen[f] then
+            seen[f] = true
+            out[#out + 1] = f
+        end
+    end
+    for i = 1, math.max(Compat.GuildBankMaxTabs(), 8) do
+        add(_G["GuildBankTab" .. i])
+        add(_G["GuildBankTab" .. i .. "Button"])
+    end
+    if type(host) == "table" and type(host.BankTabs) == "table" then
+        for _, f in ipairs(host.BankTabs) do add(f) end
+    end
+    return out
+end
+
 function Compat.GuildBankTabCount()
     return GetNumGuildBankTabs and tonumber(GetNumGuildBankTabs()) or 0
 end

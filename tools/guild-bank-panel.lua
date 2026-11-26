@@ -333,8 +333,15 @@ check(drawer ~= nil and drawer:IsShown(), "the bar's Cleanup button opens the dr
 local dp = drawer.points[1]
 check(dp[1] == "TOPLEFT" and dp[2] == GuildBankFrame and dp[3] == "TOPRIGHT", "on the bank's right")
 lay(drawer)
-check(shows(drawer, " to sell · ") and shows(drawer, "1 Take out"), "with what selling would make and the steps")
-check(shows(drawer, "Rabbit's Foot × 4") and shows(drawer, "Sell 1"), "and lists what may go, on the Sell filter")
+check(shows(drawer, " to sell · ") and shows(drawer, "Take out") and shows(drawer, "Gold back"),
+  "with what selling would make and the steps")
+local function segment(key)
+  for _, b in ipairs(drawer.seg.buttons) do if b.key == key then return b end end
+end
+check(shows(drawer, "Rabbit's Foot × 4") and segment("sell").label.text == "Sell" and segment("sell").count.text == "1"
+  and segment("sell").isActive, "and lists what may go, on the Sell segment, with its count")
+check(drawer.steps.current == 1 and drawer.steps.parts[1].state == "now" and drawer.steps.parts[2].state == "next",
+  "the first step is lit while something is marked or can be")
 local allBox
 walk(drawer, function(f) if f.checkbox and f.label and f.label.text == "All suggested" then allBox = f.checkbox end end)
 check(allBox ~= nil, "it offers to mark every suggestion")
@@ -401,6 +408,147 @@ check(saved and saved.x == 100 and saved.y == 200, "a dragged bar keeps its plac
 p1 = barFrame.points[1]
 check(p1[1] == "BOTTOMLEFT" and p1[2] == UIParent and p1[4] == 100, "and is placed there next time")
 GuildOS:SetSetting("gbankBarPos", nil)
+
+-- ── The Salão's look on the game's bank (#449): sizes, tooltips, docking, steps ──
+do
+  local CL = GuildOS.GuildBankCleanup
+  local B = barFrame.buttons
+  -- Text widths as the client draws them, near enough: a Latin or Cyrillic letter 6.5 px, a Hangul or Han one 12.
+  local realWidth = Frame.GetStringWidth
+  function Frame:GetStringWidth()
+    local s = tostring(self.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    local w = 0
+    for ch in s:gmatch("[%z\1-\127\194-\244][\128-\191]*") do w = w + (ch:byte() >= 0xE0 and 12 or 6.5) end
+    return w
+  end
+  local function localeTable(code)
+    local saveL, saveGL = GuildOS.L, GetLocale
+    local T = setmetatable({}, { __index = function(_, k) return k end })
+    GuildOS.L, GetLocale = T, function() return code end
+    dofile(ADDON .. "/Locales/" .. code .. ".lua")
+    GuildOS.L, GetLocale = saveL, saveGL
+    return T
+  end
+  -- Everything the bar shows sits inside it, one after the other, each button wider than its label.
+  local function barFits(what)
+    local laid, inner = barFrame.laid, barFrame.contentW
+    check(barFrame.w == inner + 6, what .. ": the bar is as wide as what it holds")
+    for i, e in ipairs(laid) do
+      check(e.x >= 12 and e.x + e.w <= inner - 12, what .. ": nothing past the bar's edges (" .. i .. ")")
+      if i > 1 then check(e.x >= laid[i - 1].x + laid[i - 1].w + 6, what .. ": nothing over its neighbour (" .. i .. ")") end
+      if e.f.label then
+        check(e.w >= e.f.label:GetStringWidth() + 24, what .. ": a button fits its label: " .. tostring(e.f.label.text))
+        check(e.f.h == 24, what .. ": every button one height")
+      end
+    end
+  end
+  barFrame:Draw()
+  barFits("enUS")
+  check(B.one.w == B.all.w, "the two organize buttons are one width")
+  local codes = { "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW", "itIT" }
+  for _, code in ipairs(codes) do
+    local T = localeTable(code)
+    B.one.label:SetText(T["Organize tab"]); B.all.label:SetText(T["Organize all"])
+    B.take.label:SetText(string.format(T["Cleanup (%d)"], 128)); B.open.label:SetText(T["Open in Guild OS"])
+    barFrame:Layout()
+    barFits(code)
+    -- A run: Pause and Stop, and how far it got.
+    B.one:Hide(); B.all:Hide(); B.take:Hide(); B.pause:Show(); B.stop:Show()
+    B.pause.label:SetText(T["Resume"]); B.stop.label:SetText(T["Stop"])
+    barFrame.status:SetText(string.format(T["Tab %d: move %d of about %d"], 3, 120, 240) .. string.format(T[" · %d tabs to go"], 4))
+    barFrame.status:Show()
+    barFrame:Layout()
+    barFits(code .. " running")
+    check(barFrame.status.w <= 280, code .. ": a run's line has a cap")
+    B.one:Show(); B.all:Show(); B.take:Show(); B.pause:Hide(); B.stop:Hide(); barFrame.status:Hide()
+    -- The drawer: its segments, its steps and its button inside its width.
+    local inner = drawer.inner
+    for _, b in ipairs(drawer.seg.buttons) do
+      b.label:SetText(T[({ sell = "Sell", review = "Review", keep = "Keep" })[b.key]]); b.count:SetText("128")
+      check(b.label:GetStringWidth() + 5 + b.count:GetStringWidth() + 8 <= drawer.seg.segW,
+        code .. ": a segment fits its name and count: " .. b.label.text)
+    end
+    check(3 * drawer.seg.segW + 4 <= inner, code .. ": the segments inside the drawer")
+    for i, k in ipairs({ "Take out", "Sell", "Gold back" }) do drawer.steps.parts[i].label:SetText(T[k]) end
+    for cur = 1, 3 do
+      drawer.steps:Set(cur)
+      drawer.steps:Layout(inner)
+      check(drawer.steps.laidW <= inner, code .. ": the steps inside the drawer (step " .. cur .. ")")
+      check(drawer.steps.parts[cur].label.shown, code .. ": the lit step is named")
+    end
+    for _, k in ipairs({ "Take out marked (%d)", "Taking out %d of %d", "Deposit %s" }) do
+      drawer.main.label:SetText(string.format(T[k], 128, 256))
+      check(drawer.main.label:GetStringWidth() + 24 + 76 <= inner, code .. ": the drawer's button and Stop fit: " .. drawer.main.label.text)
+    end
+  end
+  barFrame:Draw()
+  check(drawer.summary.w == drawer.inner, "the summary wraps inside the drawer")
+
+  -- What each button does is in its tooltip, not in a line cut short on the bar.
+  local tip = {}
+  local realSet, realAdd = GameTooltip.SetText, GameTooltip.AddLine
+  GameTooltip.SetText = function(_, t) tip = { t } end
+  GameTooltip.AddLine = function(_, t) tip[#tip + 1] = t end
+  local function tipOf(f) tip = {}; f.scripts.OnEnter(f); return table.concat(tip, "\n"), #tip end
+  check(tipOf(B.one):find("Merges stacks and sorts by category", 1, true), "Organize tab explains itself")
+  local _, nOne = tipOf(B.one)
+  check(not B.one.enabled and nOne >= 3, "and, disabled, says why")
+  check(tipOf(B.all):find("Every tab your rank may organize", 1, true), "Organize all explains itself")
+  check(tipOf(B.take):find("What the bank holds that nobody takes", 1, true), "the cleanup explains itself")
+  check(tipOf(B.open):find("ledger, needs and requests", 1, true), "Open in Guild OS says what it opens")
+  check(not shows(barFrame, "Merges stacks"), "and the bar draws no explanation of its own")
+  check(tipOf(drawer.steps.parts[2]):find("vendor", 1, true), "a step says what it is")
+  drawer:Show(); drawer:Draw()
+  lay(drawer)
+  local row
+  walk(drawer.list, function(f) if f.data and f.why then row = row or f end end)
+  check(row and row.why.text ~= "" and tipOf(row):find(row.why.text, 1, true), "a row's tooltip holds the whole of why")
+  GameTooltip.SetText, GameTooltip.AddLine = realSet, realAdd
+
+  -- The steps: the one to do now lit, those done behind it.
+  local realSellable, realQueue = CL.Sellable, CL.Queue
+  CL.Sellable = function() return { {} } end
+  CL.Queue = function() return {} end
+  drawer:Draw()
+  check(drawer.steps.current == 2 and drawer.steps.parts[1].state == "done" and drawer.steps.parts[2].state == "now"
+    and drawer.steps.parts[3].state == "next", "stacks out and nothing more to take: Sell is lit")
+  CL.Sellable, CL.Queue = realSellable, realQueue
+  CL:Mine().toDeposit = 500
+  drawer:Draw()
+  check(drawer.steps.current == 3 and drawer.steps.parts[3].state == "now" and drawer.steps.parts[2].state == "done",
+    "gold owed: Gold back is lit")
+  CL:Mine().toDeposit = 0
+  drawer:Draw()
+  check(drawer.steps.current == 1, "and back to the first")
+
+  -- Docked on the bank's right, past the game's tab buttons there (they drew over the drawer's corner).
+  GuildBankFrame.GetRight = function() return 800 end
+  UIParent:SetWidth(1920)
+  for i = 1, 6 do
+    local t = newFrame("Frame", GuildBankFrame)
+    t.GetRight = function() return 838 end
+    _G["GuildBankTab" .. i] = t
+  end
+  drawer:Dock()
+  local dp = drawer.points[1]
+  check(dp[1] == "TOPLEFT" and dp[2] == GuildBankFrame and dp[3] == "TOPRIGHT" and dp[4] >= 38 + 4,
+    "the drawer docks clear of the bank's tab buttons (" .. tostring(dp[4]) .. ")")
+  check(drawer.points[2][4] == dp[4], "top and bottom alike")
+  for i = 1, 6 do _G["GuildBankTab" .. i].GetRight = function() return nil end end
+  drawer:Dock()
+  check(drawer.points[1][4] >= 44, "unmeasured, it keeps the room they take")
+  for i = 1, 6 do _G["GuildBankTab" .. i]:Hide() end
+  drawer:Dock()
+  check(drawer.points[1][4] == 4, "with no tab buttons shown, it sits by the bank")
+  for i = 1, 6 do _G["GuildBankTab" .. i]:Show(); _G["GuildBankTab" .. i].GetRight = function() return GuildBankFrame:GetRight() + 38 end end
+  GuildBankFrame.GetRight = function() return 1560 end
+  drawer:Dock()
+  check(drawer.points[1][1] == "TOPRIGHT" and drawer.points[1][3] == "TOPLEFT", "no room past the tabs: on the bank's left")
+  for i = 1, 6 do _G["GuildBankTab" .. i] = nil end
+  GuildBankFrame.GetRight, UIParent.w = nil, 0
+  drawer:Hide()
+  Frame.GetStringWidth = realWidth
+end
 Bank:OnEvent("GUILDBANKFRAME_CLOSED")
 
 -- At a vendor: the leftovers window, docked on the vendor's, its items as icons, one Sell all (#449).

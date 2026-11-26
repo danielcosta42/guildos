@@ -30,8 +30,6 @@ local WHERE_MIN = 640   -- under this width the inventory's "where" column goes
 local CHART_H   = 60
 local CHART_DAYS = 30
 local TOP_N     = 8     -- contributors shown
-local BAR_H     = 30    -- the bar over the game's bank
-local BAR_W     = 640   -- its width when it is not the bank's
 local ANNOUNCE_MAX = 240  -- characters of one guild chat line
 
 local function Bank() return GuildOS.GuildBank end
@@ -56,6 +54,8 @@ local function money(copper, paper)
     local s = math.floor((copper % 10000) / 100)
     local gc, sc = paper and C.paperTitle or C.gold, paper and C.paperSoft or C.textSoft
     if g > 0 then return string.format("%d%sg|r %d%ss|r", g, hex(gc), s, hex(sc)) end
+    -- Under a silver, its copper: a few greys read "0s" otherwise.
+    if s == 0 and copper > 0 then return string.format("%d%sc|r", copper % 100, hex(sc)) end
     return string.format("%d%ss|r", s, hex(sc))
 end
 -- On a parchment card (the bank's sub-screens).
@@ -1412,70 +1412,301 @@ end
 local bar   -- the bar over the game's guild bank, below
 
 ----------------------------------------------------------------------
+-- What the bar and the drawer share: the Salão's look on the game's guild bank (#449 phase 3)
+----------------------------------------------------------------------
+local WHITE = "Interface\\Buttons\\WHITE8x8"
+local BTN_PAD = 12   -- a button's label to its edge, each side
+
+-- A frame's explanation in its tooltip, where a line of text beside it had no room: `title` in the soft gold,
+-- then `lines` (a list, or a function of the frame that returns one; an entry is a string, in white, or
+-- { text, colour }). Hooked, so a button keeps its own hover. Returns the frame.
+local function explain(frame, title, lines)
+    frame.tipTitle, frame.tipLines = title, lines
+    if frame.__explained then return frame end
+    frame.__explained = true
+    frame:EnableMouse(true)
+    frame:HookScript("OnEnter", function(self)
+        local list = self.tipLines
+        if type(list) == "function" then list = list(self) end
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(self.tipTitle or "", C.gold2.r, C.gold2.g, C.gold2.b)
+        for _, line in ipairs(list or {}) do
+            if type(line) == "table" then
+                local c = line[2] or C.text
+                GameTooltip:AddLine(line[1], c.r, c.g, c.b, true)
+            else
+                GameTooltip:AddLine(line, 1, 1, 1, true)
+            end
+        end
+        GameTooltip:Show()
+    end)
+    frame:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    return frame
+end
+
+-- A button as wide as its label in the client's language, BTN_PAD each side, never under `minW`.
+local function fitButton(b, minW)
+    local w = math.max(minW or 0, math.ceil(b.label:GetStringWidth() or 0) + 2 * BTN_PAD)
+    b:SetWidth(w)
+    return w
+end
+
+-- Two buttons of one pair (Organize tab and Organize all, Pause and Stop) as wide as the wider.
+local function fitPair(a, b, minW)
+    local w = math.max(fitButton(a, minW), fitButton(b, minW))
+    a:SetWidth(w); b:SetWidth(w)
+    return w
+end
+
+----------------------------------------------------------------------
 -- The cleanup drawer beside the game's guild bank (officers, #384): mark what goes, take it out and
 -- put the gold back without leaving the bank. The bar's Cleanup button opens and closes it.
+-- A floating window of the kit (Kit:Dress): its summary, the verdicts as one segmented control with their
+-- counts, "All suggested" over the rows' own boxes, the rows (the item framed in its quality, its name in that
+-- quality, its value at the right, why on a second line, all of it in the tooltip), and a footer with the three
+-- steps (the one to do now lit) and the one button that does it.
 ----------------------------------------------------------------------
-local DRAWER_W  = 320
-local DRAWER_ROW_H = 34   -- a row: the item, and why on a second line
-local DRAWER_FOOT  = 92   -- the steps, the hint and the button under the list
+local DRAWER_W     = 340
+local DRAWER_ROW_H = 40    -- a row: the item and its value, why on a second line
+local DRAWER_ICON  = 26
+local DRAWER_CHECK = 16    -- a mark's box: the rows' and "All suggested"'s, one column
+local TAB_CLEAR    = 44    -- how far the game's tab buttons stand out past the bank's right edge, where unmeasured
+local STEP_DISC    = 18    -- a step's numbered disc
+local STEP_GAP     = 6     -- a step to the line that joins it to the next
+local STEP_LINE    = 10    -- that line, at least
 local drawer, showDrawer
 
+-- How far the game's own buttons down the bank's right edge (its tabs, the one that buys a tab) stand out past
+-- it: the drawer docks beyond them, never under them.
+local function sideClearance(host)
+    local right = host.GetRight and host:GetRight()
+    local clear = 0
+    for _, b in ipairs(GuildOS.Compat.GuildBankSideButtons(host)) do
+        if b:IsShown() then
+            local r = b:GetRight()
+            if right and r then clear = math.max(clear, r - right) else clear = math.max(clear, TAB_CLEAR) end
+        end
+    end
+    return math.ceil(clear)
+end
+
+-- One choice of a few as a segmented control: the Salão's pills in a dark track, each segment its name and a
+-- count, the chosen one the soft gold pill. items = { { key, label } }; onPick(key). seg.buttons (b.key, b.label,
+-- b.count); seg:Select(key); seg:SetCount(key, n).
+local function segmented(parent, items, width, onPick)
+    local Style = GuildOS.Style
+    local seg = CreateFrame("Frame", nil, parent)
+    seg:SetSize(width, UI.SP.HIT + 4)
+    local track = Style:Three(seg, "pill", "BACKGROUND", 0)
+    track:SetColor(C.well)
+    local edge = Style:Three(seg, "pill-line", "BACKGROUND", 1)
+    edge:SetColor(C.lineHi)
+    local n = #items
+    local segW = math.floor((width - 4) / n)
+    seg.buttons = {}
+    local function center(b)
+        local lw = math.ceil(b.label:GetStringWidth() or 0)
+        local cw = math.ceil(b.count:GetStringWidth() or 0)
+        b.label:ClearAllPoints()
+        b.label:SetPoint("LEFT", b, "CENTER", -math.floor((lw + 5 + cw) / 2), 0)
+        b.count:ClearAllPoints()
+        b.count:SetPoint("LEFT", b.label, "RIGHT", 5, 0)
+    end
+    for i, it in ipairs(items) do
+        local b = UI:CreateTab(seg, it[2], segW)
+        b:SetWidth(segW)
+        b:SetPoint("LEFT", seg, "LEFT", 2 + (i - 1) * segW, 0)
+        b.key = it[1]
+        b.count = UI:CreateText(b, "0", UI.SP.META)
+        GuildOS:ApplyFont(b.count, UI.SP.META, "tableNum")
+        b:SetScript("OnClick", function() seg:Select(it[1]); onPick(it[1]) end)
+        b:HookScript("OnEnter", function(self) center(self) end)
+        b:HookScript("OnLeave", function(self) center(self) end)
+        seg.buttons[i] = b
+        center(b)
+    end
+    function seg:Select(key)
+        self.key = key
+        for _, b in ipairs(self.buttons) do
+            b:SetActive(b.key == key)
+            local c = b.key == key and C.onGold or C.textSoft
+            b.count:SetTextColor(c.r, c.g, c.b, b.key == key and 0.8 or 1)
+            b:SetWidth(segW)
+            center(b)
+        end
+    end
+    function seg:SetCount(key, count)
+        for _, b in ipairs(self.buttons) do
+            if b.key == key then b.count:SetText(tostring(count or 0)); center(b) end
+        end
+    end
+    seg.segW = segW
+    return seg
+end
+
+-- The cleanup's three steps as small numbered discs joined by a line: the one to do now in the soft gold with its
+-- name lit, those done in the metal's gold, those to come dim. labels = { text, ... }, tips = { text, ... } (each
+-- step's tooltip). s.parts (p.disc, p.label, p.state); s:Set(current); s:Layout(width), which keeps the steps
+-- inside `width` (only the lit step named when the three names do not fit) and sets s.laidW.
+local function stepper(parent, labels, tips)
+    local s = CreateFrame("Frame", nil, parent)
+    s:SetHeight(STEP_DISC)
+    s.parts = {}
+    for i, text in ipairs(labels) do
+        local p = CreateFrame("Frame", nil, s)
+        p:SetHeight(STEP_DISC)
+        p.disc = UI:CreateGlyph(p, STEP_DISC)
+        p.disc:SetPoint("LEFT", 0, 0)
+        p.label = UI:CreateText(p, text, UI.SP.META)
+        p.label:SetPoint("LEFT", p.disc, "RIGHT", 5, 0)
+        p.label:SetJustifyH("LEFT")
+        p.label:SetWordWrap(false)
+        if i > 1 then
+            p.line = s:CreateTexture(nil, "ARTWORK")
+            p.line:SetTexture(WHITE)
+            UI:Hairline(p.line)
+        end
+        explain(p, string.format("%d · %s", i, text), { tips[i] })
+        s.parts[i] = p
+    end
+    function s:Set(current)
+        self.current = current
+        for i, p in ipairs(self.parts) do
+            p.state = (i == current and "now") or (i < current and "done") or "next"
+            local disc = (p.state == "now" and C.gold2) or (p.state == "done" and C.metal2) or C.lineHi
+            p.disc:Set(tostring(i), disc)
+            p.disc.orb:SetVertexColor(disc.r, disc.g, disc.b, p.state == "done" and 0.6 or 1)
+            local ink = p.state == "next" and C.textSoft or C.onGold
+            p.disc.letter:SetTextColor(ink.r, ink.g, ink.b)
+            GuildOS:ApplyFont(p.label, UI.SP.META, p.state == "now" and "button" or nil)
+            local lc = p.state == "now" and C.gold or C.textSoft
+            p.label:SetTextColor(lc.r, lc.g, lc.b)
+            if p.line then
+                local on = i <= current
+                local c = on and C.metal2 or C.lineHi
+                p.line:SetVertexColor(c.r, c.g, c.b, 1)
+            end
+        end
+    end
+    function s:Layout(width)
+        local n = #self.parts
+        local function natural(compact)
+            local sum = 0
+            for _, p in ipairs(self.parts) do
+                local named = not compact or p.state == "now"
+                p.w = STEP_DISC + (named and (5 + math.ceil(p.label:GetStringWidth() or 0)) or 0)
+                sum = sum + p.w
+            end
+            return sum
+        end
+        local sum = natural(false)
+        local joins = (n - 1) * (2 * STEP_GAP + STEP_LINE)
+        self.compact = sum + joins > width
+        if self.compact then sum = natural(true) end
+        if sum + joins > width then
+            -- Even the lit step's name alone is too long: it is cut to the room left.
+            for _, p in ipairs(self.parts) do
+                if p.state == "now" then
+                    local lw = math.max(10, p.w - (sum + joins - width) - STEP_DISC - 5)
+                    p.label:SetWidth(lw)
+                    sum = sum - p.w + STEP_DISC + 5 + lw
+                    p.w = STEP_DISC + 5 + lw
+                end
+            end
+        end
+        local line = n > 1 and math.floor((width - sum - (n - 1) * 2 * STEP_GAP) / (n - 1)) or 0
+        local x = 0
+        for _, p in ipairs(self.parts) do
+            local named = not self.compact or p.state == "now"
+            p.label:SetShown(named)
+            if p.line then
+                p.line:ClearAllPoints()
+                p.line:SetPoint("LEFT", self, "LEFT", x + STEP_GAP, 0)
+                p.line:SetWidth(math.max(1, line))
+                x = x + 2 * STEP_GAP + line
+            end
+            p:ClearAllPoints()
+            p:SetPoint("LEFT", self, "LEFT", x, 0)
+            p:SetWidth(p.w)
+            p.x = x
+            x = x + p.w
+        end
+        self.laidW = x
+        self:SetWidth(width)
+    end
+    return s
+end
+
 local function buildDrawer()
-    local B, CL = Bank(), GuildOS.GuildBankCleanup
+    local B, CL, Kit, SP = Bank(), GuildOS.GuildBankCleanup, GuildOS.Kit, UI.SP
+    local INNER = DRAWER_W - 2 * Kit.PAD
     local st = { show = "sell" }
     drawer = CreateFrame("Frame", "GuildOSGuildBankCleanup", UIParent, "BackdropTemplate")
     drawer:SetWidth(DRAWER_W)
     drawer:SetFrameStrata("MEDIUM")   -- the bank's own: open bags beside it stay clickable
     drawer:SetToplevel(true)
-    drawer:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(drawer) })
-    drawer:SetBackdropColor(C.bg.r, C.bg.g, C.bg.b, 0.97)
-    drawer:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    drawer:SetClampedToScreen(true)
     drawer:EnableMouse(true)
     drawer:Hide()   -- frames are born shown; the bar's button shows it
+    Kit:Dress(drawer, L["Cleanup"], { onClose = function() showDrawer(false) end })
+    drawer.inner = INNER
 
-    local title = UI:CreateText(drawer, L["Cleanup"], 12)
-    GuildOS:ApplyFont(title, 12, "sectionTitle")
-    title:SetPoint("TOPLEFT", GAP + 2, -GAP - 2)
-    local close = UI:CreateCloseButton(drawer)
-    close:SetPoint("TOPRIGHT", -4, -4)
-    close:SetScript("OnClick", function() showDrawer(false) end)
-    local summary = UI:CreateText(drawer, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    summary:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-    summary:SetPoint("RIGHT", drawer, "RIGHT", -GAP, 0)
+    -- What selling would make, in one line (two where the language needs them).
+    local summary = UI:CreateText(drawer, "", SP.BODY, C.text.r, C.text.g, C.text.b)
+    summary:SetPoint("TOPLEFT", Kit.PAD, -(Kit.HEADER_H + 12))
+    summary:SetWidth(INNER)
     summary:SetJustifyH("LEFT")
+    summary:SetWordWrap(true)
+    drawer.summary = summary
 
-    local filters = chipBar(drawer, { { "sell", L["Sell"] }, { "review", L["Review"] }, { "keep", L["Keep"] } },
-        function(k) st.show = k; drawer:Draw() end, 92)
-    filters:SetPoint("TOPLEFT", summary, "BOTTOMLEFT", 0, -GAP)
-    filters:SetWidth(3 * 92 + 8)
-    filters.Select("sell")
-    local all = UI:CreateCheckbox(drawer, L["All suggested"], 16)
-    all:SetPoint("TOPLEFT", filters, "BOTTOMLEFT", 0, -6)
+    local seg = segmented(drawer, { { "sell", L["Sell"] }, { "review", L["Review"] }, { "keep", L["Keep"] } }, INNER,
+        function(k) st.show = k; drawer:Draw() end)
+    seg:SetPoint("TOPLEFT", summary, "BOTTOMLEFT", 0, -SP.FIELD_GAP)
+    seg:Select("sell")
+    drawer.seg = seg
+
+    local all = UI:CreateCheckbox(drawer, L["All suggested"], DRAWER_CHECK)
+    all:SetPoint("TOPLEFT", seg, "BOTTOMLEFT", 0, -10)
+    all:SetWidth(INNER)
     all.checkbox.onChanged = function(_, on) CL:MarkSuggested(not on) end
+    explain(all.checkbox, L["All suggested"], { L["Marks every item the cleanup suggests selling; untick to unmark them."] })
 
     local list = makeList(drawer, DRAWER_ROW_H, function(row)
-        row.mark = UI:CreateCheckbox(row, "", 14)
+        row.mark = UI:CreateCheckbox(row, "", DRAWER_CHECK)
         row.mark:SetPoint("LEFT", 4, 0)
-        row.mark:SetWidth(18)
+        row.mark:SetWidth(DRAWER_CHECK)
         row.mark.checkbox.onChanged = function() toggleMark(row.data) end
-        row.icon = UI:CreateIcon(row, ICON)
-        row.icon:SetPoint("LEFT", 26, 0)
-        row.name = UI:CreateText(row, "", 12)
-        row.name:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 6, 3)
-        row.name:SetPoint("RIGHT", row, "RIGHT", -70, 0)
+        row.icon = UI:CreateIcon(row, DRAWER_ICON)
+        row.icon:SetPoint("LEFT", 4 + DRAWER_CHECK + 6, 0)
+        row.value = UI:CreateText(row, "", SP.META)
+        GuildOS:ApplyFont(row.value, SP.META, "tableNum")
+        row.value:SetPoint("TOPRIGHT", -2, -7)
+        row.value:SetJustifyH("RIGHT")
+        row.name = UI:CreateText(row, "", SP.BODY)
+        row.name:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 8, 0)
+        row.name:SetPoint("RIGHT", row.value, "LEFT", -8, 0)
         row.name:SetJustifyH("LEFT")
         row.name:SetWordWrap(false)
-        row.value = UI:CreateText(row, "", 11)
-        row.value:SetPoint("TOPRIGHT", -4, -5)
-        row.value:SetJustifyH("RIGHT")
-        row.why = UI:CreateText(row, "", UI.SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        row.why:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMRIGHT", 6, -3)
-        row.why:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        row.why = UI:CreateText(row, "", SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        row.why:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMRIGHT", 8, 0)
+        row.why:SetPoint("RIGHT", row, "RIGHT", -2, 0)
         row.why:SetJustifyH("LEFT")
         row.why:SetWordWrap(false)
+        -- The item's own tooltip, then the verdict and the whole of why (the row cuts it to one line).
         row:SetScript("OnEnter", function(self)
             self.hl:Show()
-            if self.data then showItemTooltip(self, self.data.id, self.data.l) end
+            local r = self.data
+            if not r then return end
+            showItemTooltip(self, r.id, r.l)
+            local v = VERDICT[r.verdict] or VERDICT.review
+            local vc = C[v[2]] or C.text
+            GameTooltip:AddLine(" ")
+            local value = valueText(r)
+            GameTooltip:AddLine(L[v[1]] .. (value ~= "" and ("  " .. value) or ""), vc.r, vc.g, vc.b)
+            local why = whyText(r)
+            if why ~= "" then GameTooltip:AddLine(why, 1, 1, 1, true) end
+            GameTooltip:AddLine(L["Click: mark it to go · Shift-click: link in chat"], C.textSoft.r, C.textSoft.g, C.textSoft.b, true)
+            GameTooltip:Show()
         end)
         row:SetScript("OnClick", function(self)
             if self.data and IsShiftKeyDown() then linkToChat(self.data.id, self.data.l) else toggleMark(self.data) end
@@ -1488,27 +1719,49 @@ local function buildDrawer()
         row.why:SetText(whyText(r))
         row.mark.checkbox:SetChecked(r.marked)
     end)
-    list:SetPoint("TOPLEFT", all, "BOTTOMLEFT", 0, -6)
-    list:SetPoint("BOTTOMRIGHT", drawer, "BOTTOMRIGHT", -GAP, DRAWER_FOOT)
+    -- On the window's dark body the list is the body itself, a line under each row (no square well).
+    list:SetBackdropColor(0, 0, 0, 0)
+    list:SetBackdropBorderColor(0, 0, 0, 0)
+    -- The rows' boxes under "All suggested"'s: a row starts 1 in from the list, its box 4 in from the row.
+    list:SetPoint("TOPLEFT", all, "BOTTOMLEFT", -5, -6)
+    local empty = UI:CreateEmptyState(list, "0", INNER - 24)
+    empty:SetPoint("CENTER", list, "CENTER", -4, 0)
+    empty:Hide()
+    list.empty = empty
+    drawer.list, drawer.emptyState = list, empty
 
-    -- The steps, a line on what to do next, and the one button that does it.
-    local main = UI:CreateButton(drawer, "", DRAWER_W - 2 * GAP, FIELD_H + 4)
-    UI:SetButtonVariant(main, "primary")
+    -- The footer: the steps across it, a line on what to do next when there is one, and the button that does it
+    -- at the right (Stop beside it while stacks come out), what is marked at the left.
+    local foot = Kit:Footer(drawer)
+    list:SetPoint("BOTTOMRIGHT", foot, "TOPRIGHT", -3, 4)
+    local steps = stepper(foot, { L["Take out"], L["Sell"], L["Gold back"] }, {
+        L["Takes the marked stacks out of the bank into your bags."],
+        L["At any vendor, the Guild OS window there sells only what came out of the bank."],
+        L["Back at the bank, deposit the gold the sale made."],
+    })
+    steps:SetPoint("TOPLEFT", foot, "TOPLEFT", Kit.PAD - 3, -10)
+    steps:SetWidth(INNER)
+    drawer.steps = steps
+    local hint = UI:CreateText(foot, "", SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    hint:SetPoint("TOPLEFT", steps, "BOTTOMLEFT", 0, -8)
+    hint:SetWidth(INNER)
+    hint:SetJustifyH("LEFT")
+    hint:SetWordWrap(true)
+    local main = UI:SetButtonVariant(UI:CreateButton(foot, "", 120, SP.FIELD), "primary")
+    main:SetPoint("BOTTOMRIGHT", foot, "BOTTOMRIGHT", -(Kit.PAD - 3), 9)
     main:SetScript("OnClick", function(self)
         if self.action == "take" then CL:WithdrawMarked() elseif self.action == "deposit" then CL:DepositOwed() end
     end)
-    local stop = UI:CreateButton(drawer, L["Stop"], 70, FIELD_H + 4)
-    UI:SetButtonVariant(stop, "danger")
-    stop:SetPoint("BOTTOMRIGHT", -GAP, GAP)
+    local stop = UI:SetButtonVariant(UI:CreateButton(foot, L["Stop"], 70, SP.FIELD), "danger")
+    stop:SetPoint("RIGHT", main, "LEFT", -6, 0)
     stop:SetScript("OnClick", function() CL:StopWithdraw() end)
-    local steps = UI:CreateText(drawer, "", 11)
-    steps:SetPoint("BOTTOMLEFT", GAP, GAP + FIELD_H + 4 + 8)
-    local hint = UI:CreateText(drawer, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    hint:SetPoint("BOTTOMLEFT", steps, "TOPLEFT", 0, 6)
-    hint:SetPoint("RIGHT", drawer, "RIGHT", -GAP, 0)
-    hint:SetJustifyH("LEFT")
+    local marked = UI:CreateText(foot, "", SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    marked:SetPoint("LEFT", foot, "BOTTOMLEFT", Kit.PAD - 3, 9 + SP.FIELD / 2)
+    marked:SetJustifyH("LEFT")
+    marked:SetWordWrap(false)
+    drawer.main, drawer.stop, drawer.hint, drawer.marked, drawer.foot = main, stop, hint, marked, foot
 
-    -- Beside the bank: on its right, or on its left when the screen has no room there.
+    -- Beside the bank: on its right past the game's tab buttons there, or on its left when the screen has no room.
     function drawer:Dock()
         self:ClearAllPoints()
         local host = GuildBankFrame
@@ -1518,30 +1771,39 @@ local function buildDrawer()
             return
         end
         local right, screen = host:GetRight(), UIParent:GetWidth()
-        if right and screen and screen > 0 and screen - right < DRAWER_W + 4 then
+        local clear = sideClearance(host) + 4
+        if right and screen and screen > 0 and screen - right < DRAWER_W + clear then
             self:SetPoint("TOPRIGHT", host, "TOPLEFT", -4, 0)
             self:SetPoint("BOTTOMRIGHT", host, "BOTTOMLEFT", -4, 0)
         else
-            self:SetPoint("TOPLEFT", host, "TOPRIGHT", 4, 0)
-            self:SetPoint("BOTTOMLEFT", host, "BOTTOMRIGHT", 4, 0)
+            self:SetPoint("TOPLEFT", host, "TOPRIGHT", clear, 0)
+            self:SetPoint("BOTTOMLEFT", host, "BOTTOMRIGHT", clear, 0)
         end
+        self:Raise()   -- over the bank and its tab buttons, in the bank's strata
     end
 
     function drawer:Draw(rows)
         if not GuildOS:IsOfficer() then self:Hide(); return end
         rows = rows or CL:Rows()
         local items, value, slots = CL:Summary(rows)
-        summary:SetText(string.format(L["%d to sell · %s · frees %d slots"], items, money(value), slots))
+        summary:SetText(items > 0 and string.format(L["%d to sell · %s · frees %d slots"], items, money(value), slots)
+            or L["Nothing suggested to sell right now."])
         local counts, shown, allMarked = { sell = 0, review = 0, keep = 0 }, {}, items > 0
         for _, r in ipairs(rows) do
             counts[r.verdict] = (counts[r.verdict] or 0) + 1
             if r.verdict == st.show then shown[#shown + 1] = r end
             if r.verdict == "sell" and not r.marked then allMarked = false end
         end
-        for _, b in ipairs(filters.buttons) do b.label:SetText(L[VERDICT[b.key][1]] .. " " .. counts[b.key]) end
+        for key, n in pairs(counts) do seg:SetCount(key, n) end
         all.checkbox:SetChecked(allMarked)
         all.checkbox:SetEnabled(items > 0)
-        list:SetEmptyText(#rows == 0 and emptyBankText() or L["Nothing here: try another verdict above."])
+        if #rows == 0 then
+            empty.glyph:Set("?", C.paperTitle)
+            empty:Set(emptyBankText())
+        else
+            empty.glyph:Set("0", C.paperTitle)
+            empty:Set(L["Nothing here: try another verdict above."])
+        end
         list:SetData(shown)
 
         -- 1 take out (marked, or a run under way), 2 sell (stacks out, nothing more marked), 3 gold back.
@@ -1550,13 +1812,12 @@ local function buildDrawer()
         -- cannot take from, an item gone) does not hold the steps on 1.
         local owed, takeable, out = CL:Owed(), #CL:Queue(), #CL:Sellable()
         local step = (done and 1) or (owed > 0 and 3) or (out > 0 and takeable == 0 and 2) or 1
-        local function lit(n, text) return (n == step and hex(C.gold) or hex(C.textSoft)) .. n .. " " .. text .. "|r" end
-        steps:SetText(lit(1, L["Take out"]) .. "  >  " .. lit(2, L["Sell"]) .. "  >  " .. lit(3, L["Gold back"]))
+        steps:Set(step)
+        steps:Layout(INNER)
         hint:SetText(out > 0 and string.format(L["%d stacks taken out. Sell them at any vendor with the Guild OS button."], out) or "")
+        hint:SetShown(out > 0)
+
         stop:SetShown(done ~= nil)
-        main:ClearAllPoints()
-        main:SetPoint("BOTTOMLEFT", GAP, GAP)
-        if done then main:SetPoint("RIGHT", stop, "LEFT", -6, 0) else main:SetPoint("RIGHT", self, "RIGHT", -GAP, 0) end
         if done then
             main.label:SetText(string.format(L["Taking out %d of %d"], done, total))
             main.action = nil
@@ -1568,6 +1829,17 @@ local function buildDrawer()
             main.action = takeable > 0 and "take" or nil
         end
         main:SetEnabled(main.action ~= nil and not B:SortState())
+        local stopW = done and (fitButton(stop, 64) + 6) or 0
+        local mainW = math.min(fitButton(main, 120), INNER - stopW)
+        main:SetWidth(mainW)
+        local n = CL:MarkedCount()
+        marked:SetText(n > 0 and string.format("%s · %d", L["Marked"], n) or "")
+        local room = INNER - mainW - stopW - SP.CELL
+        marked:SetShown(n > 0 and (marked:GetStringWidth() or 0) <= room)
+        if marked:IsShown() then marked:SetWidth(room) end
+
+        local hintH = out > 0 and (8 + math.ceil(hint:GetStringHeight() or 12)) or 0
+        foot:SetHeight(10 + STEP_DISC + hintH + 10 + SP.FIELD + 9)
     end
     return drawer
 end
@@ -1580,52 +1852,78 @@ showDrawer = function(on)
 end
 
 ----------------------------------------------------------------------
--- The bar under the game's guild bank
+-- The bar over the game's guild bank
 ----------------------------------------------------------------------
+-- The kit's header strip as a bar (the title bar's warm gradient in the metal frame): the mark in Cinzel gold,
+-- then [Organize tab][Organize all] (or [Pause][Stop] and how far a run got), a line, then [Cleanup (n)]
+-- [Open in Guild OS]. As wide as what it holds in the client's language; what each button does is in its
+-- tooltip. Dragged, it stays where it was put; right-click the mark to put it back over the bank.
+local BAR_H     = 40               -- the bar, in its metal frame
+local BAR_BTN_H = UI.SP.HIT        -- its buttons
+local BAR_PAD   = 12               -- its content to the strip's edge
+local BAR_GAP   = 6                -- two buttons of one group
+local BAR_SEP   = 12               -- each side of the line between the groups, and after the mark
+local BAR_STATUS_MAX = 280         -- a run's progress line, at most
+
 local function buildBar()
-    local B = Bank()
+    local B, CL, Kit, SP = Bank(), GuildOS.GuildBankCleanup, GuildOS.Kit, UI.SP
     bar = CreateFrame("Frame", "GuildOSGuildBankBar", UIParent, "BackdropTemplate")
-    bar:SetHeight(BAR_H + 8)
+    bar:SetSize(480, BAR_H)
     bar:SetFrameStrata("HIGH")
-    bar:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(bar) })
-    bar:SetBackdropColor(C.bg.r, C.bg.g, C.bg.b, 0.97)
-    bar:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
-    local mark = UI:CreateText(bar, "GUILD OS", 12)
-    GuildOS:ApplyFont(mark, 12, "sectionTitle")
-    mark:SetPoint("LEFT", 10, 0)
-    local one = UI:CreateButton(bar, L["Organize tab"], 120, BAR_H - 4)
-    UI:SetButtonVariant(one, "primary")
-    one:SetPoint("LEFT", mark, "RIGHT", 12, 0)
+    bar:SetClampedToScreen(true)
+    bar:EnableMouse(true)
+    bar:SetMovable(true)
+    local strip = Kit:Chrome(bar, BAR_H - 3)   -- the header strip fills the frame: the bar is all title bar
+    bar.strip = strip
+
+    local mark = strip:CreateFontString(nil, "OVERLAY")
+    GuildOS:ApplyFont(mark, 14, "windowTitle")
+    mark:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    mark:SetText("Guild OS")
+    mark:SetWordWrap(false)
+    local function button(text, variant)
+        local b = UI:CreateButton(strip, text, 60, BAR_BTN_H)
+        if variant then UI:SetButtonVariant(b, variant) end
+        return b
+    end
+    local one = button(L["Organize tab"], "primary")
     one:SetScript("OnClick", function() B:StartSort(GuildOS.Compat.GuildBankCurrentTab() or 1) end)
-    local all = UI:CreateButton(bar, L["Organize all"], 110, BAR_H - 4)
-    all:SetPoint("LEFT", one, "RIGHT", 6, 0)
+    local all = button(L["Organize all"])
     all:SetScript("OnClick", function() B:StartSort(B:OrganizableTabs()) end)
-    local pause = UI:CreateButton(bar, L["Pause"], 70, BAR_H - 4)
-    pause:SetPoint("LEFT", one, "RIGHT", 6, 0)
+    local pause = button(L["Pause"])
     pause:SetScript("OnClick", function()
         local run = B:SortState()
         if run then B:PauseSort(not run.paused) end
     end)
-    local stop = UI:CreateButton(bar, L["Stop"], 70, BAR_H - 4)
-    UI:SetButtonVariant(stop, "danger")
-    stop:SetPoint("LEFT", pause, "RIGHT", 6, 0)
+    local stop = button(L["Stop"], "danger")
     stop:SetScript("OnClick", function() B:StopSort("cancel") end)
-    local open = UI:CreateButton(bar, L["Open in Guild OS"], 130, BAR_H - 4)
-    open:SetPoint("RIGHT", -6, 0)
-    open:SetScript("OnClick", function() if UI.OpenWindow then UI:OpenWindow("bank", "tabs") end end)
     -- The cleanup (officers): opens the drawer beside the bank, where all of it happens.
-    local CL = GuildOS.GuildBankCleanup
-    local take = UI:CreateButton(bar, L["Cleanup"], 130, BAR_H - 4)
-    take:SetPoint("RIGHT", open, "LEFT", -6, 0)
+    local take = button(L["Cleanup"])
     take:SetScript("OnClick", function() showDrawer(not (drawer and drawer:IsShown())) end)
-    local status = UI:CreateText(bar, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    status:SetPoint("LEFT", all, "RIGHT", 12, 0)
-    status:SetPoint("RIGHT", open, "LEFT", -12, 0)
+    local open = button(L["Open in Guild OS"])
+    open:SetScript("OnClick", function() if UI.OpenWindow then UI:OpenWindow("bank", "tabs") end end)
+    local sep = strip:CreateTexture(nil, "ARTWORK")
+    sep:SetTexture(WHITE)
+    sep:SetSize(1, BAR_BTN_H - 4)
+    sep:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    local status = UI:CreateText(strip, "", SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     status:SetJustifyH("LEFT")
     status:SetWordWrap(false)
-    local progress = UI:CreateProgressBar(bar, 100, 4)
-    progress:SetPoint("BOTTOMLEFT", 1, 1)
-    progress:SetPoint("BOTTOMRIGHT", -1, 1)
+    local progress = UI:CreateProgressBar(strip, 100, 3)
+    progress:SetPoint("BOTTOMLEFT", 2, 2)   -- as wide as the strip: Layout sets it
+    bar.buttons = { one = one, all = all, pause = pause, stop = stop, take = take, open = open }
+    bar.mark, bar.status, bar.sep = mark, status, sep
+
+    -- What each button does, in its tooltip (the bar has no room for a line of it in every language).
+    explain(one, L["Organize tab"], function()
+        local can, why = B:CanOrganize(GuildOS.Compat.GuildBankCurrentTab() or 1)
+        local lines = { L["Merges stacks and sorts by category, quality and name, one move at a time."] }
+        if not can and why and why ~= "" then lines[#lines + 1] = { why, C.warn } end
+        return lines
+    end)
+    explain(all, L["Organize all"], { L["Every tab your rank may organize, one after the other."] })
+    explain(take, L["Cleanup"], { L["What the bank holds that nobody takes. Mark what goes; at the bank the bar takes it out, at a vendor it sells only that, and the gold goes back in."] })
+    explain(open, L["Open in Guild OS"], { L["The bank's inventory, tabs, ledger, needs and requests in the Guild OS window."] })
 
     -- Where the bar sits: where the player dragged it, or over the top of the game's bank, outside
     -- it (under it, it covered the bank's own log tabs).
@@ -1635,29 +1933,25 @@ local function buildBar()
         local host = GuildBankFrame
         if type(pos) == "table" and tonumber(pos.x) and tonumber(pos.y) then
             self:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", pos.x, pos.y)
-            self:SetWidth(tonumber(pos.w) or BAR_W)
         elseif host and host:IsShown() then
             self:SetPoint("BOTTOMLEFT", host, "TOPLEFT", 0, 4)
-            self:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", 0, 4)
         else
             self:SetPoint("TOP", UIParent, "TOP", 0, -120)
-            self:SetWidth(BAR_W)
         end
     end
 
-    -- Drag it anywhere; right-click its name to put it back over the bank.
-    bar:SetMovable(true)
-    bar:SetClampedToScreen(true)
-    bar:EnableMouse(true)
+    -- Drag it anywhere (the strip, the frame or the mark); right-click the mark to put it back over the bank.
     bar:RegisterForDrag("LeftButton")
     bar:SetScript("OnDragStart", function(self) self:StartMoving() end)
     bar:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
         GuildOS:SetSetting("gbankBarPos", { x = math.floor(self:GetLeft() or 0), y = math.floor(self:GetBottom() or 0),
-                                            w = math.floor(self:GetWidth() or BAR_W) })
+                                            w = math.floor(self:GetWidth() or 0) })
         self:Place()
     end)
-    local grip = CreateFrame("Button", nil, bar)
+    strip:SetScript("OnDragStart", function() bar:StartMoving() end)
+    strip:SetScript("OnDragStop", function() bar:GetScript("OnDragStop")(bar) end)
+    local grip = CreateFrame("Button", nil, strip)
     grip:SetAllPoints(mark)
     grip:RegisterForClicks("RightButtonUp")
     grip:RegisterForDrag("LeftButton")
@@ -1667,12 +1961,46 @@ local function buildBar()
         GuildOS:SetSetting("gbankBarPos", nil)
         bar:Place()
     end)
-    UI:AddTooltip(grip, "Guild OS", { L["Drag to move the bar. Right-click to put it back over the bank."] })
+    explain(grip, "Guild OS", { L["Drag to move the bar. Right-click to put it back over the bank."] })
+
+    -- Lay what shows from the left, each at its own width, and size the bar to it: bar.laid lists
+    -- { frame, x, w } (x from the strip's left), bar.contentW the strip's width.
+    function bar:Layout()
+        local x, laid = BAR_PAD, {}
+        local function put(f, w, gapBefore)
+            if #laid > 0 then x = x + gapBefore end
+            f:ClearAllPoints()
+            f:SetPoint("LEFT", strip, "LEFT", x, 0)
+            laid[#laid + 1] = { f = f, x = x, w = w }
+            x = x + w
+        end
+        put(mark, math.ceil(mark:GetStringWidth() or 60), 0)
+        local first = {}
+        if one:IsShown() then fitPair(one, all, 72); first = { one, all } end
+        if pause:IsShown() then fitPair(pause, stop, 64); first = { pause, stop } end
+        for i, b in ipairs(first) do put(b, b:GetWidth(), i == 1 and BAR_SEP or BAR_GAP) end
+        if status:IsShown() then
+            local w = math.min(BAR_STATUS_MAX, math.ceil(status:GetStringWidth() or 0))
+            status:SetWidth(w)
+            put(status, w, BAR_SEP)
+        end
+        local second = {}
+        for _, b in ipairs({ take, open }) do
+            if b:IsShown() then fitButton(b, 72); second[#second + 1] = b end
+        end
+        sep:SetShown(#second > 0 and #laid > 1)
+        if sep:IsShown() then put(sep, 1, BAR_SEP) end
+        for i, b in ipairs(second) do put(b, b:GetWidth(), i == 1 and BAR_SEP or BAR_GAP) end
+        self.laid, self.contentW = laid, x + BAR_PAD
+        self:SetWidth(self.contentW + 6)   -- the strip sits 3 in from each side of the frame
+        progress:SetWidth(self.contentW - 4)
+        progress:SetProgress(self.done or 0)
+    end
 
     function bar:Draw()
         local run = B:SortState()
         local tab = GuildOS.Compat.GuildBankCurrentTab() or 1
-        local withdrawing = GuildOS.GuildBankCleanup and GuildOS.GuildBankCleanup:IsWithdrawing()
+        local withdrawing = CL and CL:IsWithdrawing()
         one:SetShown(not run and not withdrawing)
         all:SetShown(not run and not withdrawing)
         pause:SetShown(run ~= nil)
@@ -1689,22 +2017,20 @@ local function buildBar()
         elseif drawerOpen then
             drawer:Hide()
         end
-        local rightOf = (take:IsShown() and take) or open
-        status:ClearAllPoints()
-        status:SetPoint("LEFT", run and stop or all, "RIGHT", 12, 0)
-        status:SetPoint("RIGHT", rightOf, "LEFT", -12, 0)
         if run then
             pause.label:SetText(run.paused and L["Resume"] or L["Pause"])
             local total = math.max(1, run.total or 1)
-            progress:SetProgress((run.moves or 0) / total)
+            self.done = (run.moves or 0) / total
             status:SetText(string.format(L["Tab %d: move %d of about %d"], run.tab or tab, run.moves or 0, total)
                 .. (#run.queue > 0 and string.format(L[" · %d tabs to go"], #run.queue) or ""))
         else
-            local can, why = B:CanOrganize(tab)
+            local can = B:CanOrganize(tab)
             one:SetEnabled(can)
             all:SetEnabled(#B:OrganizableTabs() > 0)
-            status:SetText(can and L["Merges stacks and sorts this tab."] or (why or ""))
+            status:SetText("")
         end
+        status:SetShown(run ~= nil)
+        self:Layout()
     end
     return bar
 end
