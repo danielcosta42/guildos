@@ -267,6 +267,22 @@ Chat:EnsureJoined()
 check(#left == 2 and left[2] == "GOSOLD" and GuildOS.db.allianceLeftBy["Bia-Realm"] == true,
   "review B: a second character of the account leaves the old channel as well")
 UnitName = realUnitName
+-- Review 2: the hidden channel as 1.27-1.43 named it (GOSA .. TAG, no hash of the key) is left once per character.
+do
+  local n = #left
+  joined["GOSANUCLEO"] = "Kx7Pq2Lm9Z"
+  Chat:EnsureJoined()
+  check(#left == n + 1 and left[#left] == "GOSANUCLEO" and joined[CH] ~= nil,
+    "review 2: the unhashed channel of the code in force is left, the hashed one kept")
+  joined["GOSANUCLEO"] = "Kx7Pq2Lm9Z"
+  Chat:EnsureJoined()
+  check(#left == n + 1, "review 2: once per character (a channel joined again by hand stays)")
+  UnitName = function() return "Bia" end
+  Chat:EnsureJoined()
+  check(#left == n + 2 and left[#left] == "GOSANUCLEO", "review 2: another character of the account leaves it too")
+  UnitName = realUnitName
+  joined["GOSANUCLEO"] = nil
+end
 -- Review C: an old pact's channel name that is the hidden channel in force is never left as the old one.
 do
   local keepLink, keepLeft = GuildOS.db.allianceLink, GuildOS.db.allianceLeftBy
@@ -773,11 +789,30 @@ sync(env("site", { gone = SITE4 }), "Ofi-Realm")
 check(A:FromSite(), "an end naming another code ends nothing")
 left = {}
 sync(env("site", { gone = SITE3 }), "Ofi-Realm")
+check(A:FromSite(), "an end that does not say which key version it ended ends nothing")
+sync(env("site", { gone = SITE3, version = 5 }), "Ofi-Realm")
 Chat:EnsureJoined()
 check(not A:FromSite() and A:Get().tag == "NUCLEO" and left[1] == P3 and not inChan(P3),
   "an officer's end: the member leaves the site's alliance and its channel; their own pasted code stands")
+sync(env("site", { line = SITE3, name = "Pacto do Sul", version = 5 }), "Ofi-Realm")
+check(not A:FromSite(), "the code the site ended is not brought back by a relay of that version")
+check(GuildOS.db.allianceLinkSiteGoneOwn == nil, "an end heard from the guild is never this client's to tell")
+-- Review 1: an end never touches a pasted code or the GM note's, only a site code held here.
+setCode(SITE3, GuildOS.db.allianceLink.rev + 1)
+check(A:Get() and A:Get().key == "Mm3Nn4Oo5P" and not A:FromSite(),
+  "the same code pasted by hand stands, though a relayed end named it")
+GuildOS.db.allianceLinkSiteGone, GuildOS.db.allianceLinkSiteGoneV = nil, nil
+sync(env("site", { gone = SITE3, version = 5 }), "Ofi-Realm")
+check(A:Get() and A:Get().key == "Mm3Nn4Oo5P" and GuildOS.db.allianceLinkSiteGone == nil,
+  "an end for a code held only as a paste ends nothing and records nothing")
+setCode(short, GuildOS.db.allianceLink.rev + 1)
+GuildOS.db.allianceLinkSiteGone, GuildOS.db.allianceLinkSiteGoneV = SITE3, 5
 sync(env("site", { line = SITE3, name = "Pacto do Sul", version = 6 }), "Ofi-Realm")
-check(not A:FromSite(), "the code the site ended is not brought back by a relay")
+check(A:FromSite() and A:Get().version == 6, "a relay of a higher key version passes the end")
+sync(env("site", { gone = SITE3, version = 5 }), "Ofi-Realm")
+check(A:FromSite(), "an end of an older version does not end a newer one")
+sync(env("site", { gone = SITE3, version = 6 }), "Ofi-Realm")
+check(not A:FromSite() and A:Get().tag == "NUCLEO", "the end of the version held does")
 -- A member's own block wins over any relay.
 local mine
 GuildOS.CompanionImport = { GuildBlock = function() return mine end }
@@ -802,8 +837,15 @@ check(#ans == 1 and ans[1].line == SITE4 and ans[1].version == 7, "an officer an
 check(#answers(SITE4) == 0, "and not one who holds the same")
 mine = { guild = "Guilda A" }
 Link:SyncSite()
-ans = answers(SITE3)
-check(#ans == 1 and ans[1].gone == SITE3, "a block naming no alliance answers with the end of what the member holds")
+check(#answers(SITE3) == 0 and #answers(short) == 0,
+  "review 1: an officer never ends a code it did not see end itself, whatever the asker names (a pasted one too)")
+ans = answers(SITE4)
+check(#ans == 1 and ans[1].gone == SITE4 and ans[1].version == 7, "only the code its own block saw end, with its version")
+-- A stale officer (a block saying nothing of an alliance it never held) answers nobody.
+local keepGone = { GuildOS.db.allianceLinkSiteGone, GuildOS.db.allianceLinkSiteGoneV, GuildOS.db.allianceLinkSiteGoneOwn }
+Link.ForgetGone()
+check(#answers(SITE4) == 0, "a stale officer whose block names no alliance cannot end a live site code")
+GuildOS.db.allianceLinkSiteGone, GuildOS.db.allianceLinkSiteGoneV, GuildOS.db.allianceLinkSiteGoneOwn = keepGone[1], keepGone[2], keepGone[3]
 mine = { alliance = { code = SITE4, name = "Pacto do Sul", version = 7 } }
 Link:SyncSite()
 check(#answers("") == 1, "with the code back in the block, the officer answers again")

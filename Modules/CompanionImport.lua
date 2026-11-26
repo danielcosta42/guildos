@@ -72,12 +72,18 @@ end
 
 -- The table inside a wire string's body (what follows its prefix), when it is the `fmt` asked
 -- for; nil when it is damaged or another kind.
--- `maxJson`, when given, is how many bytes the inflated text may take before it is parsed at all.
+-- `maxJson`, when given, is how many bytes the inflated text may take: the inflating itself stops there
+-- (LibDeflate:DecompressDeflateLimited), so a small string made to inflate a thousandfold costs no more than the cap.
 local function unwrap(body, fmt, maxJson)
     local LibDeflate = LibStub and LibStub("LibDeflate", true)
     if not LibDeflate then return nil end
     local compressed = LibDeflate:DecodeForPrint(body)
-    local json = compressed and LibDeflate:DecompressDeflate(compressed)
+    local json
+    if compressed and maxJson and LibDeflate.DecompressDeflateLimited then
+        json = LibDeflate:DecompressDeflateLimited(compressed, maxJson)
+    elseif compressed then
+        json = LibDeflate:DecompressDeflate(compressed)
+    end
     if not json or (maxJson and #json > maxJson) then return nil end
     local ok, data = pcall(GuildOS.JsonDecode, json)
     if ok and type(data) == "table" and data.fmt == fmt then return data end

@@ -368,6 +368,27 @@ GuildOSInbox = { pack("GOSALLY1", variant({ guilds = { { name = "Iron Pact", mem
   { key = "Z", name = string.rep("z", 40), class = "MAGE", level = 1 } } } } })) }
 check(Import:AllianceBlock() == nil, "a body that inflates past its cap is refused before it is parsed")
 Import.ALLY_JSON_MAX = keepJson
+-- Review 3: the cap stops the inflating itself. A 2 MB run deflates to a few kilobytes; read with a 100 KB cap it is
+-- refused by LibDeflate:DecompressDeflateLimited before the whole of it is ever built.
+local run = string.rep(" ", 2000000)
+local bomb = LD:CompressDeflate('{"fmt":"GOSALLY1","pad":"' .. run .. '"}')
+check(#bomb < 20000, "a 2 MB run deflates to a few kilobytes (" .. #bomb .. ")")
+local res, why = LD:DecompressDeflateLimited(bomb, 100000)
+check(res == nil and why == -100, "inflating stops once the output passes the cap")
+check(LD:DecompressDeflateLimited(bomb, 3000000) == LD:DecompressDeflate(bomb), "under the cap it is DecompressDeflate's own")
+for _, size in ipairs({ 0, 1, 32767, 32768, 65536, 98304, 98305 }) do
+  local text = string.rep("ab", math.floor(size / 2)) .. string.rep("c", size % 2)
+  local packed = LD:CompressDeflate(text)
+  check(LD:DecompressDeflateLimited(packed, size) == text and LD:DecompressDeflateLimited(packed, size + 1) == text,
+    "exactly at its cap the text comes back whole (" .. size .. ")")
+  if size > 0 then check(LD:DecompressDeflateLimited(packed, size - 1) == nil, "one byte over is refused (" .. size .. ")") end
+end
+local stored = LD:CompressDeflate(string.rep("x", 1), { level = 0 })
+check(LD:DecompressDeflateLimited(stored, 10) == "x", "a stored block reads too")
+Import.ALLY_JSON_MAX = 100000
+GuildOSInbox = { "GOSALLY1:" .. LD:EncodeForPrint(bomb) }
+check(Import:AllianceBlock() == nil, "a GOSALLY1 made to inflate a thousandfold is refused while it inflates")
+Import.ALLY_JSON_MAX = keepJson
 GuildOSInbox = nil
 check(Import:AllianceBlock() == nil, "no inbox: nothing")
 

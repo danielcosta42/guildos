@@ -77,7 +77,9 @@ Nobody pastes anything.
 
    Members without the companion get the site's code from the guild: an officer whose own client reads it in
    `GOSGILD1` sends it over the guild sync (`allylink` `site`, an officer-only write, checked again on
-   receipt), the highest key version winning, and the end the same way. An officer also answers a member's
+   receipt), the highest key version winning. The end goes the same way, naming the code and its key version,
+   and only from an officer whose own block saw that code end. It ends only a site code a member holds, never
+   a pasted one or the note's. An officer also answers a member's
    login ask when their copies differ. It never goes in the guild master's note.
 2. **The directory**, in a new block `GOSALLY1`: the allied guilds, their members (name, class, level, role,
    main) and their crafters (recipe ids per member). It comes from the rosters and professions the site
@@ -144,7 +146,7 @@ shared bans. The full panel on the site (rosters together, compared attendance, 
   keeps the chat, so nobody loses the shared /g in between.
 - **Migration of the channel name:** clients from before the key-derived name (`GOSA` + TAG alone) and
   clients after it do not meet on the channel. All the guilds of an alliance update together; the release
-  notes say so.
+  notes say so. Each character leaves the old-style channel (`GOSA` + TAG) once.
 
 ## 5. Questions answered
 

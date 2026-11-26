@@ -312,20 +312,30 @@ function Link:SyncSite()
             return false
         end
         GuildOS.db.allianceLinkSite = site
-        GuildOS.db.allianceLinkSiteGone = nil
+        Link.ForgetGone()
     else
         if not held then return false end
         GuildOS.db.allianceLinkSite = nil
-        GuildOS.db.allianceLinkSiteGone = held.line
+        -- Seen to end by this client's own block: the only end it ever tells the guild (PublishSite), and the only
+        -- one that also keeps the same code in the guild's own copy (the GM's note) from coming back.
+        GuildOS.db.allianceLinkSiteGone, GuildOS.db.allianceLinkSiteGoneV = held.line, held.version
+        GuildOS.db.allianceLinkSiteGoneOwn = true
     end
     self:_Changed()
     self:PublishSite()
     return true
 end
 
+-- The record of the site code that ended, cleared by a new one and by an officer's own paste.
+function Link.ForgetGone()
+    local db = GuildOS.db
+    if db then db.allianceLinkSiteGone, db.allianceLinkSiteGoneV, db.allianceLinkSiteGoneOwn = nil, nil, nil end
+end
+
 -- An officer whose own client reads the site's block tells the guild what it says: the code, or the end of the one
--- `gone` names. Nobody else ever sends it (the sync takes "site" from officers only).
-function Link:PublishSite(gone)
+-- this client's own block saw end (never a code somebody asked about: audit #448 review). Nobody else ever sends it
+-- (the sync takes "site" from officers only).
+function Link:PublishSite()
     if not (GuildOS.SyncService and GuildOS:IsOfficer()) then return false end
     local site = self:SiteCode()
     if site == nil then return false end
@@ -334,14 +344,17 @@ function Link:PublishSite(gone)
             { priority = "ALERT" })
         return true
     end
-    gone = gone or GuildOS.db.allianceLinkSiteGone
-    if type(gone) ~= "string" then return false end
-    GuildOS.SyncService:Publish("allylink", "site", { gone = gone }, { priority = "ALERT" })
+    local db = GuildOS.db
+    if type(db.allianceLinkSiteGone) ~= "string" or not db.allianceLinkSiteGoneOwn then return false end
+    GuildOS.SyncService:Publish("allylink", "site", { gone = db.allianceLinkSiteGone, version = db.allianceLinkSiteGoneV },
+        { priority = "ALERT" })
     return true
 end
 
 -- The site's code relayed by an officer of the guild. Never over this client's own block; checked as the block's
--- is (ReadSiteCode); an older key version, or the code the site ended, never replaces what is held.
+-- is (ReadSiteCode); an older key version, or the code the site ended at a version not above the end's, never
+-- replaces what is held. An end ends only the SITE code held here that it names: never a pasted code or the GM
+-- note's, and nothing at all when no site code is held.
 function Link:_TakeSite(d, sender)
     self._siteHeard = (GetTime and GetTime()) or 0
     local db = GuildOS.db
@@ -350,18 +363,19 @@ function Link:_TakeSite(d, sender)
     if self:SiteCode() ~= nil then return false end   -- this client reads the site itself
     local held = db.allianceLinkSite
     if d.gone ~= nil then
-        local dead = Link.ReadSiteCode({ code = d.gone, name = "--", version = 1 })
-        if not dead then return false end
-        if held and held.line == d.gone then
-            db.allianceLinkSite, db.allianceLinkSiteGone = nil, d.gone
-            self:_Changed()
-            return true
-        end
-        if not held then db.allianceLinkSiteGone = d.gone end
-        return false
+        if type(d.gone) ~= "string" or not held or held.line ~= d.gone then return false end
+        -- The end carries the key version it ended; one without, or of an older version, ends nothing.
+        if type(d.version) ~= "number" or d.version < held.version then return false end
+        db.allianceLinkSite = nil
+        db.allianceLinkSiteGone, db.allianceLinkSiteGoneV, db.allianceLinkSiteGoneOwn = d.gone, held.version, nil
+        self:_Changed()
+        return true
     end
     local site = Link.ReadSiteCode({ code = d.line, name = d.name, version = d.version })
-    if not site or site.line == db.allianceLinkSiteGone then return false end
+    if not site then return false end
+    if site.line == db.allianceLinkSiteGone and site.version <= (tonumber(db.allianceLinkSiteGoneV) or math.huge) then
+        return false
+    end
     if held and (site.version < held.version
                  or (held.line == site.line and held.name == site.name and held.version == site.version)) then
         return false
@@ -378,12 +392,16 @@ function Link:_AnswerSite(held)
     local site = self:SiteCode()
     if site == nil then return end
     held = type(held) == "string" and held or ""
-    if (site and held == site.line) or (not site and held == "") then return end
+    if site and held == site.line then return end
+    -- An end only for the very code this officer's own block saw end: an asker names whatever it likes, and a
+    -- block that says nothing of alliances (none, or a stale one) is not the end of somebody else's code.
+    local db = GuildOS.db
+    if not site and not (held ~= "" and held == db.allianceLinkSiteGone and db.allianceLinkSiteGoneOwn) then return end
     local asked = (GetTime and GetTime()) or 0
     self._siteHeard = nil
     GuildOS.Compat.After(math.random() * self.ANSWER_MAX, function()
         if (self._siteHeard or -1) >= asked then return end
-        self:PublishSite(not site and held or nil)
+        self:PublishSite()
     end)
 end
 
@@ -401,7 +419,7 @@ function Link:Config()
         line, name, version = site.line, site.name, site.version
     else
         line = db and db.allianceLink and db.allianceLink.line
-        if line and db.allianceLinkSiteGone and line == db.allianceLinkSiteGone then
+        if line and db.allianceLinkSiteGoneOwn and line == db.allianceLinkSiteGone then
             line = nil   -- the alliance the site ended: not brought back by the copy it left in the note
         end
     end
@@ -554,8 +572,33 @@ function Link:LeaveStale()
     return false
 end
 
+-- The hidden channel as 1.27 to 1.43 named it, "GOSA" .. TAG with no hash of the key, is the client's own
+-- channel from then: left once per character when it is joined and is not the channel in force. The tags are the
+-- codes this guild holds (the site's, the guild's own copy), the only ones whose old channel it can be in.
+function Link:LeaveUnhashed()
+    local db = GuildOS.db
+    if not db or not GetChannelName then return false end
+    db.allianceLinkUnhashedLeft = type(db.allianceLinkUnhashedLeft) == "table" and db.allianceLinkUnhashedLeft or {}
+    local mine = db.allianceLinkUnhashedLeft[me()] or {}
+    local current = (self:ChannelName() or ""):lower()
+    local left = false
+    for _, line in ipairs({ type(db.allianceLinkSite) == "table" and db.allianceLinkSite.line or false,
+                            db.allianceLink and db.allianceLink.line or false }) do
+        local cfg = line and Link.Parse(line)
+        local old = cfg and ("GOSA" .. cfg.tag)
+        if old and not mine[old] and old:lower() ~= current and (GetChannelName(old) or 0) > 0 then
+            GuildOS.Compat.LeaveChannel(old)
+            mine[old] = true
+            db.allianceLinkUnhashedLeft[me()] = mine
+            left = true
+        end
+    end
+    return left
+end
+
 function Link:EnsureJoined()
     self:SyncSite()
+    self:LeaveUnhashed()
     if self:LeaveStale() then
         return false
     end
@@ -760,7 +803,7 @@ function Link:SetCode(line)
     local rev = math.max(GetServerTime(), (tonumber(held.rev) or 0) + 1)
     local by = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
     -- An officer's own paste, even of the code the site ended, is the guild's to have.
-    GuildOS.db.allianceLinkSiteGone = nil
+    Link.ForgetGone()
     held.line, held.rev, held.by = line, rev, by
     held.note = wrote or nil
     if GuildOS.SyncService then
@@ -910,7 +953,7 @@ function Link:_Take(d, sender, trusted)
     end
     local held = self:Store()
     held.line, held.rev, held.by = cfg and cfg.line or nil, tonumber(d.rev), by
-    if trusted then GuildOS.db.allianceLinkSiteGone = nil end   -- an officer's own "set", as SetCode
+    if trusted then Link.ForgetGone() end   -- an officer's own "set", as SetCode
     self:_Changed()
     return true
 end

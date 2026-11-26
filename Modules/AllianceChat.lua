@@ -91,6 +91,7 @@ function AllianceChat:EnsureJoined()
     if link then
         link:SyncSite()
         link:LeaveStale()   -- a channel of an alliance that ended, or of an old key, goes even with the room off
+        link:LeaveUnhashed()   -- and the channel as 1.27 to 1.43 named it (GOSA .. TAG), once per character
     end
     if not self:Prefs().chat then
         return false
