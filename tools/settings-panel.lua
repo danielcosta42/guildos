@@ -243,6 +243,51 @@ for _, p in ipairs(PAGES) do
   check(info.content.h > 0, p .. " has a height for its scroll frame")
 end
 
+-- ── 2b. Every part of a page lies inside its card (#449) ────────────────
+-- In the game the module lists were laid out by the window's width while their card had a fixed one: the right
+-- column, its descriptions and "reload" badges sat on the wood. Now a card is its column's width and lays its
+-- rows in its own: every row (and every cell of a row's grid) ends inside the card, at a 1250px and an 800px
+-- window (about 1200px and 750px of page), and two cards never overlap.
+for _, pageW in ipairs({ 1200, 750 }) do
+  for _, p in ipairs(PAGES) do
+    local form = parent.subPanels[p].form
+    form:Layout(pageW)
+    check(form.placed and #form.placed > 0, p .. " lays rows in cards at " .. pageW)
+    for _, pl in ipairs(form.placed) do
+      local ow = pl.row.w or 0
+      check(pl.x + math.min(ow, pl.w) <= pl.cardW - 14 + 0.5 and pl.w <= pl.cardW - 28 + 0.5,
+        ("%s at %d: a row ends inside its card (x %d + %d of %d)"):format(p, pageW, pl.x, ow, pl.cardW))
+      for _, c in ipairs(pl.row.children or {}) do
+        local pt = c.points and c.points[1]
+        if c.shown and pt and pt[1] == "TOPLEFT" and pt[2] == pl.row and type(pt[4]) == "number" and (c.w or 0) > 0 then
+          check(pt[4] + c.w <= pl.w + 0.5, ("%s at %d: a cell (%d + %d) ends inside its row of %d"):format(p, pageW, pt[4], c.w, pl.w))
+        end
+      end
+    end
+    -- The cards themselves: inside the page, side by side or one under the other, never over each other.
+    local boxes = {}
+    for _, c in ipairs(parent.subPanels[p].content.children) do
+      local pt = c.points and c.points[1]
+      if c.shown and c.__paper and pt and pt[2] == parent.subPanels[p].content then
+        boxes[#boxes + 1] = { x = pt[4], y = -pt[5], w = c.w, h = c.h }
+        check(pt[4] >= 0 and pt[4] + c.w <= pageW + 0.5, ("%s at %d: a card inside the page"):format(p, pageW))
+      end
+    end
+    for i = 1, #boxes do for j = i + 1, #boxes do
+      local a2, b2 = boxes[i], boxes[j]
+      local apart = a2.x + a2.w <= b2.x or b2.x + b2.w <= a2.x or a2.y + a2.h <= b2.y or b2.y + b2.h <= a2.y
+      check(apart, ("%s at %d: two cards do not overlap"):format(p, pageW))
+    end end
+    if pageW >= 900 and #boxes >= 2 and p ~= "modules" then
+      local xs = {}
+      for _, bx in ipairs(boxes) do xs[bx.x] = true end
+      local n = 0
+      for _ in pairs(xs) do n = n + 1 end
+      check(n == 2, p .. " lays its cards in two columns on a wide page")
+    end
+  end
+end
+
 -- ── 3. Module lists: one column, two from a 900px window ────────────────
 parent.SelectSub("modules")
 local mods = parent.subPanels.modules

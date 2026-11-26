@@ -61,14 +61,13 @@ end
 -- On a parchment card (the bank's sub-screens).
 local function paperMoney(copper) return money(copper, true) end
 
--- An item's quality colour; on the paper the common reads in its ink and the rest deepened (the mockup's
--- quality names on the bank's card).
+-- An item's quality colour; on the paper (`paper` true, or a frame on a card) the paper's quality ink, the one
+-- mapping every paper screen takes (UI:InkFor, #449): a common item in the paper's ink, an uncommon dark green.
 local function qualityColor(q, paper)
-    local qc = GuildOS.QualityColors and GuildOS.QualityColors[q or 1]
-    if paper then
-        if not qc or (q or 1) <= 1 then return C.paperInk end
-        return { r = qc.r * 0.7, g = qc.g * 0.7, b = qc.b * 0.7 }
+    if paper and (paper == true or UI:OnPaper(paper)) then
+        return UI.QUALITY_INK[q or 1] or C.paperInk
     end
+    local qc = GuildOS.QualityColors and GuildOS.QualityColors[q or 1]
     return qc or C.text
 end
 
@@ -78,8 +77,13 @@ local function shortName(name)
     return (Ambiguate and Ambiguate(name, "guild")) or name
 end
 
-local function classColor(name)
+-- A member's class colour; on the paper (`surface` a frame on a card) the paper's class ink (UI:InkFor).
+local function classColor(name, surface)
     local class = Bank():ClassOf(name)
+    if surface and UI:OnPaper(surface) then
+        local r, g, b = UI:InkFor("paper", "class", class)
+        return { r = r, g = g, b = b }
+    end
     return (class and GuildOS.ClassColors[class:upper()]) or C.text
 end
 
@@ -231,7 +235,7 @@ local function paintItem(row, id, l, suffix)
     local info = Bank():ItemInfo(id, l)
     row.icon.icon:SetTexture(info.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
     UI:SetIconQuality(row.icon, info.quality or 1)
-    local qc = qualityColor(info.quality, row.paper)
+    local qc = qualityColor(info.quality, row.paper or row)
     row.name:SetText((info.name or ("item:" .. tostring(id))) .. (suffix or ""))
     row.name:SetTextColor(qc.r, qc.g, qc.b)
     return info
@@ -743,11 +747,11 @@ local function buildLedger(p)
         end)
     end, function(row, e)
         row.when:SetText(GuildOS:TimeAgo(e.t))
-        local cc = classColor(e.n)
+        local cc = classColor(e.n, row)
         row.who:SetText(shortName(e.n))
         row.who:SetTextColor(cc.r, cc.g, cc.b)
         local v = VERB[e.ty] or VERB.m
-        local vc = C[v[2]] or C.text
+        local vc = UI:Ink(row, C[v[2]] or C.text)
         row.verb:SetText(L[v[1]])
         row.verb:SetTextColor(vc.r, vc.g, vc.b)
         if e.k == 0 then
@@ -757,7 +761,7 @@ local function buildLedger(p)
             row.tab:SetText("—")
         else
             local info = B:ItemInfo(e.id)
-            local qc = qualityColor(info.quality)
+            local qc = qualityColor(info.quality, row)
             row.itemText:SetText(info.name or (e.id and ("item:" .. e.id)) or "?")
             row.itemText:SetTextColor(qc.r, qc.g, qc.b)
             row.qty:SetText(tostring(e.c or ""))
@@ -874,7 +878,7 @@ local function buildLedger(p)
             local x = list2[i]
             row:SetShown(x ~= nil)
             if x then
-                local cc = classColor(x.name)
+                local cc = classColor(x.name, row)
                 row.name:SetText(string.format("%d  %s", i, shortName(x.name)))
                 row.name:SetTextColor(cc.r, cc.g, cc.b)
                 local what = string.format(L["%d items"], x.r.di)
@@ -1122,7 +1126,7 @@ local function buildRequests(p)
         row:SetScript("OnClick", function(self) if self.data and IsShiftKeyDown() then linkToChat(self.data.item) end end)
     end, function(row, r)
         row.when:SetText(GuildOS:TimeAgo(r.ts))
-        local cc = classColor(r.who)
+        local cc = classColor(r.who, row)
         row.who:SetText(shortName(r.who))
         row.who:SetTextColor(cc.r, cc.g, cc.b)
         local have = B:CountOf(r.item)
@@ -1266,7 +1270,7 @@ local function buildCleanup(p)
     end, function(row, r)
         paintItem(row, r.id, r.l, string.format(" × %d", r.have))
         local v = VERDICT[r.verdict]
-        local vc = C[v[2]] or C.text
+        local vc = UI:Ink(row, C[v[2]] or C.text)
         local verdictText = L[v[1]]
         if r.verdict == "sell" and r.out < r.have then verdictText = verdictText .. " " .. r.out end
         row.verdict:SetText(verdictText)

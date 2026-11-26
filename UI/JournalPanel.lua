@@ -249,7 +249,7 @@ function GuildOS:CreateJournalPanel(parent)
             setColor(card.meta, C.paperSoft)
             card.who:SetWidth(textW)
             local who = whoText(f.who, classes)
-            card.who:SetText(who)
+            card.who:SetText(UI:PaperText(who, card.who))   -- class colours in the paper's inks (#449)
             setColor(card.who, C.paperSoft)
             local h = 1 + bandH + (art and 1 or 0) + 10 + (card.name:GetStringHeight() or 12) + 5
                 + (card.meta:GetStringHeight() or 12)
@@ -326,7 +326,7 @@ function GuildOS:CreateJournalPanel(parent)
         local J = GuildOS.Journal
         if not J then return end
         -- Read only here, on show and on resize: hidden, the tab reads no width (#373).
-        local sw = scroll:GetWidth() or 0
+        local sw = UI:LaidWidth(scroll) or 0
         local width = math.max(1, (sw > 1 and sw or FALLBACK_W) - UI.SCROLL_GUTTER)
         local two = width >= TWO_COLUMNS
         local lw = two and math.floor((width - GUTTER) * LEFT_SHARE) or width

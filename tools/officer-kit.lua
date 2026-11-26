@@ -187,4 +187,37 @@ for _, p in ipairs({ "UI/LootWindow.lua", "UI/PointsPanel.lua" }) do
   check(not read(p):find("CreateCheckbox = function", 1, true), p .. " no longer repaints the shared checkbox for the paper")
 end
 
+-- ── An older floating window takes the .fw chrome with its title (#449) ──
+-- UI:StylePopup on a frame on the screen, then UI:CreateTitle and UI:CreateCloseButton on it, as the officer sheet,
+-- the loot council, the PUG inspector, Search the realm, the guild finder, Analytics, Search and the Columns picker
+-- build theirs: the title and the close land in Kit:Chrome's header, wherever the window asked for them.
+local old = CreateFrame("Frame", "GuildOSOldPopup", UIParent, "BackdropTemplate")
+old.GetParent = function() return UIParent end
+local backdrops = 0
+old.SetBackdrop = function() backdrops = backdrops + 1 end
+UI:StylePopup(old)
+local oldTitle = UI:CreateTitle(old, "Columns", 14)
+oldTitle:SetPoint("TOPLEFT", 14, -12)
+local oldClose = UI:CreateCloseButton(old)
+oldClose:SetPoint("TOPRIGHT", -8, -8)
+check(old.header and old.__dark, "the window wears Kit:Chrome's header and dark body")
+check(oldTitle:GetParent() == old.header and oldClose:GetParent() == old.header, "its title and close are in the header")
+local tp = oldTitle.points[#oldTitle.points]
+check(tp[1] == "LEFT" and tp[2] == old.header and tp[5] == 0, "the title sits on the header's middle, whatever point the window gave")
+local second = UI:CreateTitle(old, "A heading", 12)
+check(second:GetParent() == old, "only the first title goes in the header")
+local calls = backdrops
+old:SetBackdrop({ edgeFile = "x" })
+check(backdrops == calls, "a backdrop set again later draws no square edge inside the rounded frame")
+local dd = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+dd.GetParent = function() return UIParent end
+UI:StylePopup(dd)
+check(not dd.header, "a popup that makes no title (a dropdown, a bar) keeps its own look")
+-- The member card is a dressed window with the paper's body and no section title in capitals.
+local md = read("UI/MemberDetail.lua")
+check(md:find("Kit:Dress(frame", 1, true) and md:find('Style:Paint(sheet, "paper")', 1, true), "the member card is a dressed window with a parchment body")
+for t in md:gmatch('CreateSectionHeader%(child, L%["([^"]+)"%]') do
+  check(t ~= t:upper(), "the member card's section " .. t .. " is not in capitals")
+end
+
 print(("officer-kit: %d checks passed"):format(checks))

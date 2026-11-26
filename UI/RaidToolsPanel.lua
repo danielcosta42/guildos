@@ -103,7 +103,7 @@ local function BuildCompSub(panel)
         panel.summary = string.format(L["%s  \226\128\148  %d players"], label, #list)
 
         -- The classes on the left and the buffs they cover on the right; one under the other when narrow.
-        local W = content:GetWidth()
+        local W = UI:LaidWidth(content)
         if not W or W < 100 then W = 600 end
         local twoCols = W >= 520
         local colW = twoCols and math.floor((W - 16) / 2) or W
@@ -114,7 +114,7 @@ local function BuildCompSub(panel)
             local c = counts[classFile] or 0
             if c > 0 then
                 local row = MakeRow(content, yOff, 0, colW)
-                local cc = GuildOS.ClassColors[classFile] or C.silver
+                local cc = UI:Ink(row, GuildOS.ClassColors[classFile] or C.silver)   -- the paper's class ink on a card (#449)
                 local nameFS = UI:CreateText(row, ClassName(classFile), 12, cc.r, cc.g, cc.b)
                 nameFS:SetPoint("LEFT", 6, 0)
                 local cntFS = UI:CreateText(row, tostring(c), 12, C.text.r, C.text.g, C.text.b)
@@ -135,7 +135,7 @@ local function BuildCompSub(panel)
                 b.covered and C.text.r or C.label.r, b.covered and C.text.g or C.label.g, b.covered and C.text.b or C.label.b)
             nameFS:SetPoint("LEFT", 24, 0)
             if b.covered then
-                local prov = UI:CreateText(row, ProvidersText(b.providers), 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+                local prov = UI:CreateText(row, UI:PaperText(ProvidersText(b.providers), row), 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
                 prov:SetPoint("LEFT", math.floor((W - x2) * 0.45), 0)
             end
             yOff = yOff + ROW_H
@@ -172,7 +172,7 @@ local function BuildCdSub(panel)
                 cd.covered and C.text.r or C.label.r, cd.covered and C.text.g or C.label.g, cd.covered and C.text.b or C.label.b)
             nameFS:SetPoint("LEFT", 24, 0)
             if cd.covered then
-                local prov = UI:CreateText(row, ProvidersText(cd.providers), 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+                local prov = UI:CreateText(row, UI:PaperText(ProvidersText(cd.providers), row), 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
                 prov:SetPoint("LEFT", 260, 0)
             else
                 local miss = UI:CreateBadge(row, L["missing"], C.danger)

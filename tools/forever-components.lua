@@ -170,9 +170,9 @@ toggle:SetBackdropColor(0.2, 0.3, 0.4, 1)
 check(near(tint(toggle, "button")[2], 0.3), "the backdrop's colour call lands on the button's art")
 
 b:Disable()
-check(same(b.label.color, C.disabled) and near(tint(b, "button")[4], 0.5), "disabled: the label turns disabled, the button half seen")
+check(same(b.label.color, UI.DISABLED_INK.wood) and near(tint(b, "button")[4], 1), "disabled: a flat desaturated button with a readable label (#449)")
 b:Fire("OnEnter")
-check(same(b.label.color, C.disabled), "hovering a disabled button does not light it")
+check(same(b.label.color, UI.DISABLED_INK.wood), "hovering a disabled button does not light it")
 b:Enable()
 check(same(b.label.color, C.darkInk) and same(tint(b, "button-line"), C.lineHi, 1), "enabling repaints the resting state")
 
@@ -195,7 +195,8 @@ check(lit(tint(p, "button"), C.crimson, 1.14), "releasing a primary button over 
 p:Fire("OnLeave")
 check(same(tint(p, "button"), C.crimson, 1), "the cursor leaving a primary button: resting crimson")
 p:Disable()
-check(near(tint(p, "button")[4], 0.5) and near(tint(p, "button-line")[4], 0.5), "disabled primary: half seen, its line too")
+check(near(tint(p, "button")[4], 1) and not same(tint(p, "button"), C.crimson, 1) and same(p.label.color, UI.DISABLED_INK.wood),
+  "disabled primary: no dim red bar, a flat desaturated button with a readable label (#449)")
 
 -- ── Ghost, danger and chip ──────────────────────────────────────────────
 local g = UI:SetButtonVariant(UI:CreateButton(parent, "ver histórico"), "ghost")
@@ -205,14 +206,14 @@ check(g.label.font.file == F.ui and g.label.font.size == 12, "a ghost label is a
 g:Fire("OnEnter")
 check(same(g.label.color, C.text) and same(g.underline.color, C.text, 1), "ghost hover: the ink and its underline")
 g:Disable()
-check(same(g.label.color, C.disabled) and not tint(g, "button"), "disabled ghost: disabled label, no box")
+check(same(g.label.color, UI.DISABLED_INK.wood) and not tint(g, "button"), "disabled ghost: disabled label, no box")
 g:Enable()
 local d = UI:SetButtonVariant(UI:CreateButton(parent, "expulsar"), "danger")
 check(same(tint(d, "button-line"), C.danger, 1) and same(d.label.color, C.danger), "danger: a danger line and label")
 d:Fire("OnEnter")
 check(same(tint(d, "button-line"), C.danger, 1), "danger hover keeps its danger line")
 d:Disable()
-check(same(d.label.color, C.disabled), "disabled danger: disabled label")
+check(same(d.label.color, UI.DISABLED_INK.wood), "disabled danger: disabled label")
 check(d.glow == nil, "no button glows")
 UI:SetButtonVariant(g, "secondary")
 check(not g.underline.shown and same(tint(g, "button-line"), C.lineHi, 1) and g.label.font.file == F.uiBold,

@@ -240,7 +240,7 @@ function GuildOS:CreateAchievementsPanel(parent)
     -- The width to lay the cards and the pills out in, read on every draw (on show and on every resize,
     -- #373). A tab built hidden reads 0: then the boxes stack, hung by both sides, until it is shown.
     local function width()
-        local w = scroll:GetWidth()
+        local w = UI:LaidWidth(scroll)
         return (type(w) == "number" and w > GUTTER + 1) and (w - GUTTER) or 0
     end
 

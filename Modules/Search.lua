@@ -134,7 +134,9 @@ function Search:Show(initial)
         local child = f.child
         for _, c in pairs({ child:GetChildren() }) do c:Hide() end
         for _, r in pairs({ child:GetRegions() }) do r:Hide() end
-        child:SetWidth(f.holder:GetWidth() - 12)
+        local hw = UI:LaidWidth(f.holder)
+        if type(hw) ~= "number" then hw = f.holder:GetWidth() or 0 end
+        child:SetWidth(math.max(1, hw - 12))   -- read from the anchors (#449)
 
         local res = Search:Query(f.box:GetText())
         local y = 0
@@ -147,7 +149,7 @@ function Search:Show(initial)
             color = color or C.text
             local fs = UI:CreateText(child, t, 11, color.r, color.g, color.b)
             fs:SetPoint("TOPLEFT", 10, -y)
-            fs:SetWidth(child:GetWidth() - 14)
+            fs:SetWidth(UI:TextWidth(child, 14))
             fs:SetJustifyH("LEFT")
             fs:SetWordWrap(false)
             y = y + 16
@@ -170,7 +172,7 @@ function Search:Show(initial)
             y = y + 6
         end
         if #res.loot > 0 then
-            header(L["LOOT"])
+            header(L["Loot"])
             for _, e in ipairs(res.loot) do
                 line(string.format("%s  |cff888888→ %s · %s|r", e.item, e.player, GuildOS:DateText(e.ts)))
             end

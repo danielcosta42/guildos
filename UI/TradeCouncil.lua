@@ -90,7 +90,7 @@ local function build()
 
     -- Left: the offers in the raid, then my tradeable items.
     local y = -56
-    local oh = UI:CreateHeaderText(f, L["OFFERS IN THE RAID"], 10)
+    local oh = UI:CreateHeaderText(f, L["Offers in the raid"], 10)
     oh:SetPoint("TOPLEFT", PAD, y)
     y = y - 16
     f.offerRows = {}
@@ -111,7 +111,7 @@ local function build()
     f.noOffers:SetPoint("TOPLEFT", PAD + 4, y - 4)
 
     y = y - OFFER_ROWS * (ROW_H + 2) - 14
-    local ih = UI:CreateHeaderText(f, L["YOUR TRADEABLE ITEMS"], 10)
+    local ih = UI:CreateHeaderText(f, L["Your tradeable items"], 10)
     ih:SetPoint("TOPLEFT", PAD, y)
     y = y - 16
     f.itemRows = {}
@@ -316,10 +316,10 @@ local function fillDetail(o)
             paint(r, i, o.award and o.award.winner == a.key)
             local cr, cg, cb = GuildOS:GetClassColor(GuildOS.db.members[a.key] and GuildOS.db.members[a.key].class or "")
             r.name:SetText(who(a.key))
-            r.name:SetTextColor(cr, cg, cb)
+            UI:SetInk(r.name, cr, cg, cb)
             local col = a.choice == "N" and C.green or (a.choice == "G" and C.gold or C.silver)
             r.answer:SetText(T.CHOICE_LABEL[a.choice] or "?")
-            r.answer:SetTextColor(col.r, col.g, col.b)
+            UI:SetInk(r.answer, col)
             r.roll:SetText(a.roll and tostring(a.roll) or "-")   -- the server's /roll, once seen
             r.worn.link = a.equipped
             r.worn.label:SetText(a.equipped or "-")

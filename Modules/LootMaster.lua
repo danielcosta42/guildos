@@ -3070,7 +3070,7 @@ function LootMaster:BuildRollPopup()
         -- caller made, and with none the popup floated over the world.
         f = UI:CreatePanel(UIParent, "GuildOSRollPopup")
         UI:StylePopup(f)
-        local head = UI:CreateHeaderText(f, L["LOOT"], 10)
+        local head = UI:CreateHeaderText(f, L["Loot"], 10)
         head:SetPoint("TOPLEFT", POPUP_PAD, -10)
         local clock = UI:CreateText(f, "", 11, C.text.r, C.text.g, C.text.b)   -- danger in the last 5s; gold is not a status (#371)
         clock:SetPoint("TOPRIGHT", -34, -9)

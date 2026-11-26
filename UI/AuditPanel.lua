@@ -10,32 +10,13 @@ local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 -- The Raids room's Audit (the mockup's raides-prontidao): one parchment card, its sub-tabs as pills, the
 -- tables on the paper. The paper's shades of a state, and a class's colour as the paper prints it.
-local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
-local PAPER_OK, PAPER_WARN, PAPER_BAD = hex("2f6e33"), hex("a0560f"), hex("8f1b0b")
-local PAPER_CLASS = {
-    PRIEST = hex("666666"), ROGUE = hex("857612"), HUNTER = hex("4f7319"), MAGE = hex("16758d"),
-    PALADIN = hex("a8457a"), DRUID = hex("b35400"), SHAMAN = hex("0b4fa0"), WARRIOR = hex("7e5a33"),
-    WARLOCK = hex("4b4cb0"),
-}
 local function paperClass(class)
-    local c = PAPER_CLASS[type(class) == "string" and class:upper() or ""]
-    if c then return c.r, c.g, c.b end
-    local r, g, b = GuildOS:GetClassColor(class)
-    return r * 0.6, g * 0.6, b * 0.6
+    return GuildOS.UI:InkFor("paper", "class", class)   -- the paper's class inks (UI/Helpers.lua, #449)
 end
 -- The wood's colours as the paper prints them: the ink, the soft ink, a state's deeper shade; anything
 -- else light (a school's colour) darkened to read on the parchment.
-local function same(r, g, b, c) return c and math.abs(r - c.r) < 1e-3 and math.abs(g - c.g) < 1e-3 and math.abs(b - c.b) < 1e-3 end
 local function onPaper(r, g, b)
-    if same(r, g, b, C.text) then return C.paperInk.r, C.paperInk.g, C.paperInk.b end
-    if same(r, g, b, C.textSoft) or same(r, g, b, C.label) or same(r, g, b, C.labelDim) then
-        return C.paperSoft.r, C.paperSoft.g, C.paperSoft.b
-    end
-    if same(r, g, b, C.ok) then return PAPER_OK.r, PAPER_OK.g, PAPER_OK.b end
-    if same(r, g, b, C.warn) then return PAPER_WARN.r, PAPER_WARN.g, PAPER_WARN.b end
-    if same(r, g, b, C.danger) then return PAPER_BAD.r, PAPER_BAD.g, PAPER_BAD.b end
-    if (r + g + b) / 3 > 0.55 then return r * 0.6, g * 0.6, b * 0.6 end
-    return r, g, b
+    return GuildOS.UI.PaperRGB(r, g, b)   -- the one mapping of the paper's inks (UI/Helpers.lua, #449)
 end
 -- The shared components, with every text drawn on the paper taking the paper's shade of its colour.
 local UI = setmetatable({

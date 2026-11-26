@@ -249,7 +249,7 @@ UNCACHED[7978] = nil
 panel.itemEvents.scripts.OnEvent(panel.itemEvents, "GET_ITEM_INFO_RECEIVED", 7978)
 runTimers()
 check(showing("Item 7978"), "the block repaints when the item's data arrives")
-check(showing("CRAFTERS · 1"), "it says who makes it")
+check(showing("Crafters · 1"), "it says who makes it")
 local asked = false
 for _, o in ipairs(all) do
   local label = rawget(o, "label")
@@ -272,7 +272,7 @@ for _, r in ipairs(panel.rows) do
   if d and d.id == 2657 then smelt = r end
 end
 smelt.scripts.OnClick(smelt)
-check(showing("CRAFTERS · 10") and showing("+7 more"), "past three crafters the block counts the rest")
+check(showing("Crafters · 10") and showing("+7 more"), "past three crafters the block counts the rest")
 check(showing("you craft"), "a recipe I know is marked in the list")
 smelt.scripts.OnClick(smelt)
 panel.railButtons[2].scripts.OnClick(panel.railButtons[2])

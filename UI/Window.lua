@@ -916,7 +916,8 @@ local function createWindow()
             local online = A:RosterLoading() and DASH or string.format(L["%d online"], A:OnlineCount())
             local level = GuildOS.Achievements and GuildOS.Achievements:Renown()
             local badge = level and GuildOS.Achievements:Insignia()
-            local renown = level and (DOT .. (badge and ("|T" .. badge .. ":14:14|t ") or "")
+            -- The insignia at the line's own height (0: the font's), not a 14px icon on an 11px line (#449).
+            local renown = level and (DOT .. (badge and ("|T" .. badge .. ":0:0:0:-1|t ") or "")
                 .. string.format(L["renown %d"], level)) or ""
             local guild = GetGuildInfo("player") or "Guild OS"
             GuildOS:SetTitleText(guildName, guild)

@@ -134,10 +134,17 @@ local function menuRow(i)
     if rows[i] then return rows[i] end
     local row = CreateFrame("Button", nil, menuFrame)
     row:SetHeight(MENU_ROW)
-    local wash = row:CreateTexture(nil, "BACKGROUND")
-    wash:SetTexture("Interface\\Buttons\\WHITE8x8")
-    wash:SetAllPoints()
-    wash:SetVertexColor(1, 0.843, 0.471, 0.1)
+    -- The menu row's warm gold wash, 4px corners (UI:MenuRow's).
+    local wash = GuildOS.Style and GuildOS.Style.Nine and GuildOS.Style:Nine(row, "card", 4, "BACKGROUND", 1)
+    if wash then
+        wash:SetRGBA(1, 0.843, 0.478, 0.22)
+        wash.Show, wash.Hide = function(w) w:SetShown(true) end, function(w) w:SetShown(false) end
+    else
+        wash = row:CreateTexture(nil, "BACKGROUND")
+        wash:SetTexture("Interface\\Buttons\\WHITE8x8")
+        wash:SetAllPoints()
+        wash:SetVertexColor(1, 0.843, 0.471, 0.1)
+    end
     wash:Hide()
     row.wash = wash
     row.text = row:CreateFontString(nil, "OVERLAY")
@@ -147,7 +154,7 @@ local function menuRow(i)
     row.text:SetWordWrap(false)
     row.rule = menuFrame:CreateTexture(nil, "ARTWORK")
     row.rule:SetTexture("Interface\\Buttons\\WHITE8x8")
-    row.rule:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
+    row.rule:SetVertexColor(0.227, 0.165, 0.09, 1)   -- the menus' separator, #3a2a17
     row.rule:SetPoint("BOTTOMLEFT", row, "TOPLEFT", 4, 3)
     row.rule:SetPoint("BOTTOMRIGHT", row, "TOPRIGHT", -4, 3)
     GuildOS.UI:Hairline(row.rule)
@@ -165,7 +172,10 @@ local function buildMenu()
     menuFrame:SetFrameLevel(20)
     menuFrame:SetClampedToScreen(true)
     menuFrame:EnableMouse(true)
-    if GuildOS.Style and GuildOS.Style.Paint then
+    -- The addon's one menu look (UI:PaintMenu, the mockup's .mmenu; #449), as the dropdowns' lists.
+    if GuildOS.UI and GuildOS.UI.PaintMenu then
+        GuildOS.UI:PaintMenu(menuFrame)
+    elseif GuildOS.Style and GuildOS.Style.Paint then
         GuildOS.Style:Paint(menuFrame, "panel")
         menuFrame:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 0.98)
         menuFrame:SetBackdropBorderColor(C.metal2.r, C.metal2.g, C.metal2.b, 1)

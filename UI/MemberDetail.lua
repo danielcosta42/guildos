@@ -8,6 +8,8 @@ local L = GuildOS.L
 
 local DETAIL_WIDTH = 460
 local DETAIL_HEIGHT = 620
+local HEADER_H = 62    -- the card's header: the portrait, the name, the line under it and an alt's line
+local PORTRAIT = 44
 local TIMELINE_SHOWN = 8   -- entries of the officers' timeline (dated notes and trial comments) the sheet shows
 
 -- Static stat list — defined once at module level to avoid per-call allocation.
@@ -72,6 +74,34 @@ local function _pFS(parent)
     return fs
 end
 
+-- The card's body is parchment (#449): the sections draw with the wood's colours (a quality's, a class's, the
+-- silver labels, the status reds and greens, the dark row bands), so after each fill every pooled text takes
+-- the paper's shade of its colour (UI.PaperRGB) and of the codes in its string (UI:PaperText), and a dark band
+-- becomes the paper's tan rule. A text drawn on a dark part (a talent bar's segment) keeps its own.
+local function paperInks(child)
+    local p = child._p
+    if not p or not UI.PaperRGB then return end
+    for _, fs in ipairs(p.fs) do
+        if fs:IsShown() and not fs.__ownInk then
+            local r, g, b, a = fs:GetTextColor()
+            if r then
+                local pr, pg, pb = UI.PaperRGB(r, g, b)
+                fs:SetTextColor(pr, pg, pb, math.max(a or 1, 0.85))
+            end
+            local t = fs:GetText()
+            if t and t:find("|c", 1, true) then fs:SetText(UI:PaperText(t, "paper")) end
+        end
+    end
+    for _, tx in ipairs(p.bg) do
+        if tx:IsShown() and not tx.__ownInk then
+            local r, g, b, a = tx:GetVertexColor()
+            if r and UI.Luminance(r, g, b) < 0.06 then
+                tx:SetVertexColor(C.paperRule.r, C.paperRule.g, C.paperRule.b, math.min(a or 1, 0.35))
+            end
+        end
+    end
+end
+
 local function _pBG(parent)
     local p = parent._p
     p.bgCur = p.bgCur + 1
@@ -133,7 +163,10 @@ end
 -- Create the detail frame
 ----------------------------------------------------------------------
 function CreateDetailFrame()
-    local frame = UI:CreatePanel(UIParent, "GuildOSDetailFrame")
+    -- The mockup's floating member card (#449): Kit:Dress's metal frame and dark body, a taller brown header
+    -- with the member's round portrait, the name in Cinzel in the class's colour, the level, race, class and rank under it and,
+    -- for a linked alt, whose alt it is; the round red close.
+    local frame = CreateFrame("Frame", "GuildOSDetailFrame", UIParent, "BackdropTemplate")
     frame:SetSize(DETAIL_WIDTH, DETAIL_HEIGHT)
     frame:SetPoint("CENTER", 250, 0)
     frame:SetMovable(true)
@@ -142,96 +175,33 @@ function CreateDetailFrame()
     frame:SetFrameStrata("DIALOG")
     frame:SetFrameLevel(20)
     frame:Hide()
-    UI:StylePopup(frame, { noSheen = true, shadowSize = 18 })
+    local Kit = GuildOS.Kit
+    Kit:Dress(frame, "", { headerH = HEADER_H, lead = PORTRAIT, stack = true })
 
-    -- Outer glow border
-    local outerBorder = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    outerBorder:SetPoint("TOPLEFT", -2, 2)
-    outerBorder:SetPoint("BOTTOMRIGHT", 2, -2)
-    outerBorder:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GuildOS.UI:Edge(outerBorder),
-    })
-    outerBorder:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.3)
-    outerBorder:SetFrameLevel(19)
+    local avatar = UI:CreateAvatar(frame.header.lead, PORTRAIT, false)
+    avatar:SetPoint("CENTER", 0, 0)
+    avatar:EnableMouse(false)
+    frame.avatar = avatar
 
-    -- Top glow
-    local topGlow = frame:CreateTexture(nil, "ARTWORK", nil, 1)
-    topGlow:SetTexture("Interface\\Buttons\\WHITE8x8")
-    topGlow:SetPoint("TOPLEFT", 1, -1)
-    topGlow:SetPoint("TOPRIGHT", -1, -1)
-    topGlow:SetHeight(80)
-    topGlow:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(C.accent.r, C.accent.g, C.accent.b, 0.06))
-
-    ----------------------------------------------------------------
-    -- Title Bar
-    ----------------------------------------------------------------
-    local titleBar = CreateFrame("Frame", nil, frame)
-    titleBar:SetPoint("TOPLEFT")
-    titleBar:SetPoint("TOPRIGHT")
-    -- +14 over the original 50 so an "alt of X" line can sit under the
-    -- name/info subtitle when the member is a linked alt.
-    titleBar:SetHeight(64)
-    titleBar:EnableMouse(true)
-    titleBar:RegisterForDrag("LeftButton")
-    titleBar:SetScript("OnDragStart", function() frame:StartMoving() end)
-    titleBar:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
-
-    local titleBg = titleBar:CreateTexture(nil, "ARTWORK")
-    titleBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    titleBg:SetAllPoints()
-    titleBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, C.headerBg.a)
-
-    -- Class icon (big)
-    local classIconFrame = CreateFrame("Frame", nil, titleBar, "BackdropTemplate")
-    classIconFrame:SetSize(38, 38)
-    classIconFrame:SetPoint("LEFT", 10, 0)
-    classIconFrame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GuildOS.UI:Edge(classIconFrame),
-    })
-    classIconFrame:SetBackdropColor(0, 0, 0, 0.8)
-    classIconFrame:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.8)
-
-    local classIcon = classIconFrame:CreateTexture(nil, "ARTWORK")
-    classIcon:SetPoint("TOPLEFT", 2, -2)
-    classIcon:SetPoint("BOTTOMRIGHT", -2, 2)
-    classIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    frame.classIcon = classIcon
-    frame.classIconFrame = classIconFrame
-
-    -- Name
-    local nameText = UI:CreateTitle(titleBar, "", 18)
-    nameText:SetPoint("LEFT", classIconFrame, "RIGHT", 10, 6)
-    frame.nameText = nameText
-
-    -- Subtitle (level, race, class)
-    local infoText = UI:CreateText(titleBar, "", 11, C.silver.r, C.silver.g, C.silver.b)
-    infoText:SetPoint("LEFT", classIconFrame, "RIGHT", 10, -10)
-    frame.infoText = infoText
-
-    -- Alt-of indicator (only shown when the member is a linked alt)
-    local altTagText = UI:CreateText(titleBar, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    altTagText:SetPoint("LEFT", classIconFrame, "RIGHT", 10, -24)
-    frame.altTagText = altTagText
-
-    -- Close button
-    local closeBtn = UI:TitleBarButton(titleBar, "close")
-    closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -12)
-    closeBtn:SetScript("OnClick", function() frame:Hide() end)
-
-    -- Title line
-    local titleLine = UI:CreateAccentLine(frame, 2)
-    titleLine:SetPoint("TOPLEFT", 0, -64)
-    titleLine:SetPoint("TOPRIGHT", 0, -64)
+    frame.nameText = frame.titleText
+    GuildOS:ApplyFont(frame.nameText, 17, "windowTitle")
+    frame.infoText = frame.subText
+    frame.altTagText = frame.header.extra
 
     ----------------------------------------------------------------
     -- Content scroll
     ----------------------------------------------------------------
-    local content = CreateFrame("ScrollFrame", "GuildOSDetailScroll", frame, "UIPanelScrollFrameTemplate")
-    content:SetPoint("TOPLEFT", 5, -69)
-    content:SetPoint("BOTTOMRIGHT", -10, 5)
+    -- The body is a parchment sheet in the dark frame (the mockup's member card): every text on it takes the
+    -- paper's inks (paperInks, after each fill), the controls the paper's look; the slim scrollbar inside it.
+    local sheet = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    sheet:SetPoint("TOPLEFT", 8, -(HEADER_H + 4))
+    sheet:SetPoint("BOTTOMRIGHT", -8, 8)
+    GuildOS.Style:Paint(sheet, "paper")
+    sheet.__paper = true
+    frame.sheet = sheet
+    local content = CreateFrame("ScrollFrame", "GuildOSDetailScroll", sheet, "UIPanelScrollFrameTemplate")
+    content:SetPoint("TOPLEFT", 8, -8)
+    content:SetPoint("BOTTOMRIGHT", -UI.SCROLL_GUTTER, 8)
     UI:SkinScrollBar(content, "GuildOSDetailScroll")
 
     local child = CreateFrame("Frame", "GuildOSDetailScrollChild", content)
@@ -271,22 +241,12 @@ function PopulateDetail(frame, data)
     -- Reset scroll position so switching members always starts at the top.
     child:GetParent():SetVerticalScroll(0)
 
-    -- Class icon
-    local classCoords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[data.class]
-    if classCoords then
-        frame.classIcon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CharacterCreate-Classes")
-        frame.classIcon:SetTexCoord(unpack(classCoords))
-    end
-
-    -- Class color for border
+    -- The round portrait in the class's colour, the name in Cinzel in the class's colour (the mockup's card).
     local cr, cg, cb = GuildOS:GetClassColor(data.class)
-    frame.classIconFrame:SetBackdropBorderColor(cr, cg, cb, 0.9)
-
-    -- Name
-    -- A founding member's scroll and since when (WoW: Forever, issue #209).
+    frame.avatar:SetMember(data.name, data.class and tostring(data.class):upper())
     local founder = GuildOS.Founding and data.key and GuildOS.Founding:Founders()[data.key]
     GuildOS:SetTitleText(frame.nameText, founder and (data.name .. " " .. GuildOS.Founding.BADGE) or data.name)
-    frame.nameText:SetTextColor(cr, cg, cb)
+    frame.nameText:SetTextColor(cr, cg, cb)   -- the name in the class's colour on the dark header (the mockup)
 
     -- Info line
     -- Defence in depth: string.format on a nil takes the WHOLE panel down, and
@@ -320,7 +280,7 @@ function PopulateDetail(frame, data)
     local playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
     local specLabel = GuildOS.SpecChecker and GuildOS.SpecChecker:GetSpecLabel(playerKey)
 
-    yOff = CreateSectionHeader(child, L["TALENT SPEC"], yOff, contentWidth)
+    yOff = CreateSectionHeader(child, L["Talent spec"], yOff, contentWidth)
     yOff = yOff - 5
 
     if specLabel then
@@ -351,12 +311,10 @@ function PopulateDetail(frame, data)
             for _, pts in ipairs(spec.points) do total = total + pts end
             if total == 0 then total = 1 end
 
-            -- Three colour shades for the three trees
-            local treeColors = {
-                { r = cr,      g = cg,      b = cb      },
-                { r = cr*0.65, g = cg*0.65, b = cb*0.65 },
-                { r = cr*0.40, g = cg*0.40, b = cb*0.40 },
-            }
+            -- The trees in the paper's colours (#449): the class's ink, a softer cut of it, the paper's tan.
+            local ir, ig, ib = UI:InkFor("paper", "class", data.class)
+            local function mix(t) return { r = ir + (C.paperEdge.r - ir) * t, g = ig + (C.paperEdge.g - ig) * t, b = ib + (C.paperEdge.b - ib) * t } end
+            local treeColors = { mix(0), mix(0.45), { r = C.paperRule.r, g = C.paperRule.g, b = C.paperRule.b } }
 
             local BAR_W = contentWidth - 20
             local xPos = 0
@@ -381,7 +339,7 @@ function PopulateDetail(frame, data)
                     seg:SetPoint("TOPLEFT", xPos, 0)
                     seg:SetSize(segW, 18)
                     local tc = treeColors[i] or treeColors[1]
-                    seg:SetVertexColor(tc.r, tc.g, tc.b, 0.85)
+                    seg:SetVertexColor(tc.r, tc.g, tc.b, 1)
                     seg:Show()
 
                     -- Label clipped to segment width; text adapts to available space
@@ -392,7 +350,9 @@ function PopulateDetail(frame, data)
                     segLabel:SetJustifyH("CENTER")
                     segLabel:SetJustifyV("MIDDLE")
                     segLabel:SetWordWrap(false)
-                    segLabel:SetTextColor(1, 1, 1, 0.95)
+                    -- White on the class's ink, the paper's ink on the lighter trees.
+                    if i == 1 then segLabel:SetTextColor(1, 0.97, 0.9, 1)
+                    else segLabel:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b, 1) end
                     if segW >= 55 then
                         segLabel:SetText(pts .. "  " .. (spec.names[i] or ""))
                     elseif segW >= 22 then
@@ -462,7 +422,7 @@ function PopulateDetail(frame, data)
     -- Section: Stats
     ----------------------------------------------------------------
     if data.stats then
-        yOff = CreateSectionHeader(child, L["CHARACTER STATS"], yOff, contentWidth)
+        yOff = CreateSectionHeader(child, L["Character stats"], yOff, contentWidth)
         yOff = yOff - 5
 
         local statsGrid = CreateFrame("Frame", nil, child)
@@ -516,7 +476,7 @@ function PopulateDetail(frame, data)
             v:Show()
         end
 
-        yOff = CreateSectionHeader(child, L["MYTHIC+"], yOff, contentWidth)
+        yOff = CreateSectionHeader(child, L["Mythic+"], yOff, contentWidth)
         yOff = yOff - 5
         local rating = MP:Rating(data.mplus)
         local r, g, b = GuildOS.Compat.RatingColor(rating)
@@ -524,7 +484,7 @@ function PopulateDetail(frame, data)
         cell(L["Keystone"], MP:KeystoneText(data.mplus) or L["none"], 10 + (contentWidth - 20) / 3, yOff)
         yOff = yOff - 26
 
-        yOff = CreateSectionHeader(child, L["GREAT VAULT"], yOff, contentWidth)
+        yOff = CreateSectionHeader(child, L["Great Vault"], yOff, contentWidth)
         yOff = yOff - 5
         local cells, why = MP:VaultCells(data.vault, GuildOS.Compat.WeekStart())
         if cells then
@@ -545,7 +505,7 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     -- Section: Equipment
     ----------------------------------------------------------------
-     yOff = CreateSectionHeader(child, L["EQUIPMENT"] .. (data.avgIlvl and data.avgIlvl > 0 and (L["  -  Avg iLvl: "] .. data.avgIlvl) or ""), yOff, contentWidth)
+     yOff = CreateSectionHeader(child, L["Equipment"] .. (data.avgIlvl and data.avgIlvl > 0 and (L["  -  Avg iLvl: "] .. data.avgIlvl) or ""), yOff, contentWidth)
     yOff = yOff - 5
 
     if data.gear then
@@ -567,7 +527,7 @@ function PopulateDetail(frame, data)
     -- Section: Professions
     ----------------------------------------------------------------
     yOff = yOff - 10
-    yOff = CreateSectionHeader(child, L["PROFESSIONS"], yOff, contentWidth)
+    yOff = CreateSectionHeader(child, L["Professions"], yOff, contentWidth)
     yOff = yOff - 5
 
     if data.professions and #data.professions > 0 then
@@ -590,7 +550,7 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     if GuildOS.Client.isAnniversary then
         yOff = yOff - 10
-        yOff = CreateSectionHeader(child, L["RAID ATTUNEMENTS"], yOff, contentWidth)
+        yOff = CreateSectionHeader(child, L["Raid attunements"], yOff, contentWidth)
         yOff = yOff - 5
 
         local attsToShow
@@ -622,7 +582,7 @@ function PopulateDetail(frame, data)
     local wishData = GuildOS.Wishlist and GuildOS.Wishlist:ListFor(playerKey, data.name)
     if wishData and wishData.wishlist and #wishData.wishlist > 0 then
         yOff = yOff - 10
-        local wishHeader = L["WISHLIST  --  "] .. #wishData.wishlist .. L[" item(s)"]
+        local wishHeader = L["Wishlist"] .. " · " .. #wishData.wishlist .. L[" item(s)"]
         yOff = CreateSectionHeader(child, wishHeader, yOff, contentWidth)
         yOff = yOff - 5
 
@@ -665,7 +625,7 @@ function PopulateDetail(frame, data)
         local total25      = GuildOS.RaidTracker:GetTotal25ManSessions(playerGroup)
         local raids25      = att.raids25 or 0
         local groupSuffix  = playerGroup ~= "" and ("  [" .. playerGroup .. "]") or ""
-        local attStr = string.format(GuildOS.RaidTracker:ProgLabel(L["RAID ATTENDANCE%s  --  %d%%  (%d/%d raids, 25-man)"]),
+        local attStr = string.format(GuildOS.RaidTracker:ProgLabel(L["Raid attendance%s · %d%% (%d/%d raids, 25-man)"]),
             groupSuffix, pct, raids25, total25)
         yOff = CreateSectionHeader(child, attStr, yOff, contentWidth)
 
@@ -687,7 +647,7 @@ function PopulateDetail(frame, data)
         yOff = yOff - 10
         playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
         local lootCount = GuildOS.LootTracker:GetLootCount(playerKey)
-        local lootHeader = L["LOOT HISTORY  --  "] .. lootCount .. L[" items"]
+        local lootHeader = L["Loot history"] .. " · " .. lootCount .. L[" items"]
         yOff = CreateSectionHeader(child, lootHeader, yOff, contentWidth)
 
         local recentLoot = GuildOS.LootTracker:GetPlayerLoot(playerKey, 5)
@@ -731,9 +691,9 @@ function PopulateDetail(frame, data)
             local daysSince = GuildOS.TrialTracker:GetDaysSinceStart(playerKey)
             -- The state worked out from the start and the guild's length, not the word stored (#249).
             local state = GuildOS.TrialTracker:GetState(playerKey)
-            local stateText = ({ trial = L["TRIAL"], review = L["READY TO REVIEW"], left = L["LEFT THE GUILD"],
-                approved = L["APPROVED"], denied = L["DENIED"] })[state] or tostring(trial.status or "?"):upper()
-            local trialStr = L["TRIAL STATUS  --  "] .. stateText
+            local stateText = ({ trial = L["Trial"], review = L["Ready to review"], left = L["Left the guild"],
+                approved = L["Approved"], denied = L["Denied"] })[state] or tostring(trial.status or "?")
+            local trialStr = L["Trial status"] .. " · " .. stateText
             if daysRem and state == "trial" then trialStr = trialStr .. "  (" .. daysRem .. L[" days left)"] end
             yOff = CreateSectionHeader(child, trialStr, yOff, contentWidth)
 
@@ -834,7 +794,7 @@ function PopulateDetail(frame, data)
         if #stints > 0 or #ranks > 0 then
             yOff = yOff - 10
             local total = MH:TenureDays(hkey)
-            yOff = CreateSectionHeader(child, string.format(L["MEMBERSHIP  --  %s days in the guild"],
+            yOff = CreateSectionHeader(child, string.format(L["Membership · %s days in the guild"],
                 total and tostring(total) or "?"), yOff, contentWidth)
             local lines = {}
             for i = #stints, 1, -1 do lines[#lines + 1] = MH:StintLine(stints[i]) end
@@ -867,7 +827,7 @@ function PopulateDetail(frame, data)
         playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
         -- One timeline: the dated notes and the trial's comments (audit B10).
         local notes = GuildOS.OfficerNotes:Timeline(playerKey)
-        local notesHeader = L["OFFICER NOTES  --  "] .. #notes .. L[" notes"]
+        local notesHeader = L["Officer notes"] .. " · " .. #notes .. L[" notes"]
         yOff = CreateSectionHeader(child, notesHeader, yOff, contentWidth)
         -- WoW: Forever: what is written here stays on this client (audit B11).
         local localOnly = GuildOS:LocalOnlyText()
@@ -965,7 +925,7 @@ function PopulateDetail(frame, data)
         local term = D:GetTerm()
         local record = D:Record(playerKey)
         local step = D.Step(record, term, now)
-        yOff = CreateSectionHeader(child, format(L["RECORD  --  step %d  (%d days term)"], step, term), yOff, contentWidth)
+        yOff = CreateSectionHeader(child, format(L["Record · step %d (%d days term)"], step, term), yOff, contentWidth)
         if #record == 0 then
             local none = _pFS(child)
             GuildOS:ApplyFont(none, 9)
@@ -1065,8 +1025,8 @@ function PopulateDetail(frame, data)
 
         -- Header shows how many chars are linked
         local linkCount = #linkedKeys - 1  -- exclude self
-        local hdrSuffix = linkCount > 0 and ("  --  " .. linkCount .. L[" linked"]) or L["  --  none"]
-        yOff = CreateSectionHeader(child, L["LINKED CHARACTERS"] .. hdrSuffix, yOff, contentWidth)
+        local hdrSuffix = linkCount > 0 and (" · " .. linkCount .. L[" linked"]) or ""
+        yOff = CreateSectionHeader(child, L["Linked characters"] .. hdrSuffix, yOff, contentWidth)
         yOff = yOff - 5
 
         -- The officer's note is about attunements: none where the game has none (issue #184).
@@ -1257,35 +1217,37 @@ function PopulateDetail(frame, data)
     -- scrollbar clamps correctly when content is shorter than the frame.
     child:SetHeight(math.abs(yOff) + 20)
     child:GetParent():UpdateScrollChildRect()
+    paperInks(child)
 end
 
 ----------------------------------------------------------------------
 -- Create a section header
 ----------------------------------------------------------------------
+-- A section of the card (the mockup's .fw .sec > b): its title in the section face, the soft gold, in normal
+-- case, a thin dark line above it (none over the first). No band: the body's own dark is the ground.
 function CreateSectionHeader(parent, text, yOff, width)
-    local bg = _pBG(parent)
-    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    bg:SetPoint("TOPLEFT", 0, yOff)
-    bg:SetSize(width, 22)
-    bg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.6)
-    bg:Show()
+    if yOff < -6 then
+        local line = _pBG(parent)
+        line:SetTexture("Interface\\Buttons\\WHITE8x8")
+        line:SetPoint("TOPLEFT", 0, yOff - 2)
+        -- A pooled texture (_pBG) comes back as a band or a row later: size it, never register it (#369).
+        line:SetSize(width, GuildOS.UI:Px(line))
+        line:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)   -- the card's tan rule
+        line.__ownInk = true
+        line:Show()
+    end
 
     local label = _pFS(parent)
-    GuildOS:ApplyFont(label, 10)
-    label:SetPoint("LEFT", bg, "LEFT", 10, 0)
-    label:SetTextColor(C.gold.r, C.gold.g, C.gold.b, 0.9)
-    label:SetText(text)
+    GuildOS:ApplyFont(label, 13, "sectionTitle")
+    label:SetPoint("TOPLEFT", 2, yOff - 8)
+    label:SetTextColor(C.paperTitle.r, C.paperTitle.g, C.paperTitle.b, 1)
+    label:SetJustifyH("LEFT")
+    label:SetWidth(width - 4)
+    label:SetWordWrap(false)
+    GuildOS:SetTitleText(label, text)
     label:Show()
 
-    local line = _pBG(parent)
-    line:SetTexture("Interface\\Buttons\\WHITE8x8")
-    line:SetPoint("TOPLEFT", 0, yOff - 22)
-    -- A pooled texture (_pBG) comes back as a band or a row later: size it, never register it (#369).
-    line:SetSize(width, GuildOS.UI:Px(line))
-    line:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.4)
-    line:Show()
-
-    return yOff - 26
+    return yOff - 28
 end
 
 ----------------------------------------------------------------------
@@ -1300,11 +1262,11 @@ function CreateGearRow(parent, slotId, item, yOff, width)
 
     -- Slot label
     local slotLabel = _pFS(parent)
-    GuildOS:ApplyFont(slotLabel, 9)
+    GuildOS:ApplyFont(slotLabel, 10)
     slotLabel:SetPoint("TOPLEFT", 10, yOff - 4)
     slotLabel:SetWidth(65)
     slotLabel:SetJustifyH("RIGHT")
-    slotLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.6)
+    slotLabel:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b, 1)   -- readable on the card (#449)
     slotLabel:SetText(slotName)
     slotLabel:Show()
 

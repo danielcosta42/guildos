@@ -51,35 +51,16 @@ end
 -- The paper's own shades (the mockup's raides-cores): a state's, a role counter's box and the pink of one
 -- short of what the format asks, and a class's colour as the paper prints it (.card .c-*).
 local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
-local PAPER_OK, PAPER_WARN, PAPER_BAD = hex("2f6e33"), hex("a0560f"), hex("8f1b0b")
 local ROLE_FILL, ROLE_MISS = hex("efe0bd"), hex("f6d6c9")
-local PAPER_CLASS = {
-    PRIEST = hex("666666"), ROGUE = hex("857612"), HUNTER = hex("4f7319"), MAGE = hex("16758d"),
-    PALADIN = hex("a8457a"), DRUID = hex("b35400"), SHAMAN = hex("0b4fa0"), WARRIOR = hex("7e5a33"),
-    WARLOCK = hex("4b4cb0"),
-}
 local function paperClass(class)
-    local c = PAPER_CLASS[type(class) == "string" and class:upper() or ""]
-    if c then return c.r, c.g, c.b end
-    local r, g, b = GuildOS:GetClassColor(class)
-    return r * 0.6, g * 0.6, b * 0.6
+    return GuildOS.UI:InkFor("paper", "class", class)   -- the paper's class inks (UI/Helpers.lua, #449)
 end
 local PAD = type(UI.CARD_PAD) == "number" and UI.CARD_PAD or 14
 local CARD_TOP = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
 
 -- The wood's colours, as the paper prints them: the ink, the soft ink, a state's deeper shade.
-local function same(r, g, b, c) return c and math.abs(r - c.r) < 1e-3 and math.abs(g - c.g) < 1e-3 and math.abs(b - c.b) < 1e-3 end
 local function onPaper(r, g, b)
-    if same(r, g, b, C.text) then return C.paperInk.r, C.paperInk.g, C.paperInk.b end
-    if same(r, g, b, C.textSoft) or same(r, g, b, C.label) or same(r, g, b, C.labelDim) then
-        return C.paperSoft.r, C.paperSoft.g, C.paperSoft.b
-    end
-    if same(r, g, b, C.ok) then return PAPER_OK.r, PAPER_OK.g, PAPER_OK.b end
-    if same(r, g, b, C.warn) then return PAPER_WARN.r, PAPER_WARN.g, PAPER_WARN.b end
-    if same(r, g, b, C.danger) then return PAPER_BAD.r, PAPER_BAD.g, PAPER_BAD.b end
-    -- Anything else light (a role's colour): darkened to read on the parchment.
-    if (r + g + b) / 3 > 0.55 then return r * 0.6, g * 0.6, b * 0.6 end
-    return r, g, b
+    return GuildOS.UI.PaperRGB(r, g, b)   -- the one mapping of the paper's inks (UI/Helpers.lua, #449)
 end
 
 -- A line of text: the soft ink unless a colour is given; on the parchment, the paper's own shade of it.
@@ -657,7 +638,7 @@ function GuildOS:CreateCoresPanel(panel)
             CM:IsFromDiscord(coreName) and L["The requests for a Discord core go to Discord: its leader answers there and the answer comes back here."]
             or L["Players apply in the Sign-up window or with: /gos signup <core> [role] [note]"], 11)
         tipLbl:SetPoint("TOPLEFT", 0, y)
-        tipLbl:SetWidth(math.max(200, rightContent:GetWidth() or 0))
+        tipLbl:SetWidth(math.max(200, tonumber(UI:LaidWidth(rightContent)) or rightContent:GetWidth() or 0))
         tipLbl:SetJustifyH("LEFT")
         y = y - 20
         if #suList == 0 then
@@ -718,7 +699,7 @@ function GuildOS:CreateCoresPanel(panel)
         local function line(text)
             local fs = MakeLabel(rightContent, text, 12, C.text.r, C.text.g, C.text.b)
             fs:SetPoint("TOPLEFT", 0, y)
-            fs:SetWidth(math.max(200, rightContent:GetWidth() or 0))
+            fs:SetWidth(math.max(200, tonumber(UI:LaidWidth(rightContent)) or rightContent:GetWidth() or 0))
             fs:SetJustifyH("LEFT")
             if fs.SetWordWrap then fs:SetWordWrap(true) end
             y = y - math.max(14, math.ceil(fs:GetStringHeight() or 14)) - 4
@@ -865,7 +846,7 @@ function GuildOS:CreateCoresPanel(panel)
         local rlNote = MakeLabel(rightContent,
             L["Guild ranks below can add/remove members and accept sign-ups (officers always can)."], 11)
         rlNote:SetPoint("TOPLEFT", 0, y)
-        rlNote:SetWidth(math.max(200, rightContent:GetWidth() or 0))
+        rlNote:SetWidth(math.max(200, tonumber(UI:LaidWidth(rightContent)) or rightContent:GetWidth() or 0))
         rlNote:SetJustifyH("LEFT")
         y = y - 24
         local numRanks = GuildControlGetNumRanks and GuildControlGetNumRanks() or 0

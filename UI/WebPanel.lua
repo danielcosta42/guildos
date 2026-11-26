@@ -374,7 +374,7 @@ function GuildOS:CreateWebPanel(parent, _win)
     ----------------------------------------------------------------
     -- PUBLISHING
     ----------------------------------------------------------------
-    local pubHead = sectionTitle(L["PUBLISHING"], true)
+    local pubHead = sectionTitle(L["Publishing"], true)
 
     local stateDot = panel:CreateTexture(nil, "OVERLAY")
     stateDot:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -410,7 +410,7 @@ function GuildOS:CreateWebPanel(parent, _win)
     ----------------------------------------------------------------
     -- PLANNED RAID
     ----------------------------------------------------------------
-    local raidHead  = sectionTitle(L["PLANNED RAID"])
+    local raidHead  = sectionTitle(L["Planned raid"])
     -- How many are coming follows the title as secondary text, not gold in the far corner (#371).
     local raidCount = UI:CreateText(panel, "", 11, C.label.r, C.label.g, C.label.b)
     local raidTitle = UI:CreateText(panel, "", 12, C.text.r, C.text.g, C.text.b)
@@ -479,8 +479,8 @@ function GuildOS:CreateWebPanel(parent, _win)
         return list
     end
 
-    local standby = makeList(L["STANDBY"])
-    local look    = makeList(L["NEEDS A LOOK"])
+    local standby = makeList(L["Standby"])
+    local look    = makeList(L["Needs a look"])
     for _, list in ipairs({ standby, look }) do
         list.head:Hide()
         list.head.rule:Hide()
@@ -491,7 +491,7 @@ function GuildOS:CreateWebPanel(parent, _win)
     ----------------------------------------------------------------
     -- FIRST TIME?
     ----------------------------------------------------------------
-    local firstHead = sectionTitle(L["FIRST TIME?"])
+    local firstHead = sectionTitle(L["First time?"])
     local step1 = UI:CreateText(panel, string.format(L["1. Open %s"], SITE),
         10, C.text.r, C.text.g, C.text.b)
     local step2 = UI:CreateText(panel, L["2. Download the companion and paste the token"],

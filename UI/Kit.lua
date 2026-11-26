@@ -26,15 +26,9 @@ local function hex(s)
              b = tonumber(s:sub(5, 6), 16) / 255, a = 1 }
 end
 
--- The statuses on the paper: the mockup's #2f6e33 (ok), the badges' deep amber, red and blue.
-Kit.INK = {
-    ok   = hex("2f6e33"),
-    warn = hex("a0560f"),
-    bad  = hex("8f1b0b"),
-    info = hex("1d4f99"),
-    mute = hex("8a7a5e"),
-    epic = hex("6c2fb0"),
-}
+-- The statuses on the paper: the mockup's #2f6e33 (ok), the badges' deep amber, red and blue; the one mapping
+-- (UI:InkFor, UI/Helpers.lua), each made to read at 4.5:1 on the paper.
+Kit.INK = UI.STATUS_INK
 
 -- GuildOS.Colors as a card's text reads it: the ink, the softer ink and the statuses of the paper; every
 -- other key (a line, a fill, the gold of a selection) is the shared one.
@@ -61,19 +55,12 @@ function Kit.Colors()
     return Kit.PAPER
 end
 
--- The class colours on the paper (the mockup's `.card .c-*`), darker so they read on it.
-Kit.CLASS_INK = {
-    PRIEST = hex("666666"), ROGUE = hex("857612"), HUNTER = hex("4f7319"), MAGE = hex("16758d"),
-    PALADIN = hex("a8457a"), DRUID = hex("b35400"), SHAMAN = hex("0b4fa0"), WARRIOR = hex("7e5a33"),
-    WARLOCK = hex("4b4cb0"), DEATHKNIGHT = hex("a3202f"), MONK = hex("00995a"), DEMONHUNTER = hex("7a2a9a"),
-    EVOKER = hex("23705f"),
-}
+-- The class colours on the paper (the mockup's `.card .c-*`), darker so they read on it: UI.CLASS_INK.
+Kit.CLASS_INK = UI.CLASS_INK
 
 -- r, g, b of `classFile` on the paper; the paper's ink for an unknown class.
 function Kit:ClassInk(classFile)
-    local c = classFile and self.CLASS_INK[tostring(classFile):upper()]
-    if c then return c.r, c.g, c.b end
-    return C.paperInk.r, C.paperInk.g, C.paperInk.b
+    return UI:InkFor("paper", "class", classFile)
 end
 
 -- A row's tan line along its bottom (the mockup's `.card .t td` border), in place of the wood's stripes.
@@ -124,10 +111,21 @@ local FW_RULE = hex("3a2a17")
 -- warm gradient, a metal line under it) with `title` in Cinzel gold and `sub` beside it in the soft ink, a
 -- round red close at its right (opts.noClose: none; opts.onClose: what it runs, else f:Hide()), dragging
 -- by the header when f is movable. Returns f, with f.header, f.titleText, f.subText and f.closeBtn, and
--- f:SetTitle(title, sub). The frame's own content must start Kit.HEADER_H down.
-function Kit:Dress(f, title, opts)
-    opts = opts or {}
-    if f.SetBackdrop then f:SetBackdrop(nil) end
+-- f:SetTitle(title, sub). The frame's own content must start Kit.HEADER_H down (opts.headerH when given).
+-- opts.headerH: a taller header (a member's card: a portrait, the name, a line under it); opts.lead: px kept at
+-- the header's left for a portrait or an icon (f.header.lead, a frame there, is where it goes); opts.stack: the
+-- subtitle under the title instead of beside it, and f.header.extra a third line under that.
+-- The floating window's frame without its title or close (Kit:Dress puts those on): the metal frame over the
+-- dark body and the header strip (`headerH`, default HEADER_H), dragging the frame by it when it is movable.
+-- An older window that builds its own title and close (UI:StylePopup, then UI:CreateTitle and
+-- UI:CreateCloseButton on the frame) gets this from UI/Helpers.lua, its title and close moved into the strip.
+-- Returns the header.
+function Kit:Chrome(f, headerH)
+    if f.header then return f.header end
+    headerH = headerH or self.HEADER_H
+    -- The old square backdrop and its 1px edge go, and stay gone: a window that sets its backdrop again later
+    -- (on show, on a resize) would draw the square gold edge inside the rounded metal frame (#449).
+    if f.SetBackdrop then f:SetBackdrop(nil); f.SetBackdrop = function() end end
     Style:Paint(f, "window")
     if f.SetBackdropColor then f:SetBackdropColor(FW_BODY.r, FW_BODY.g, FW_BODY.b, 0.98) end
     f.__dark = true   -- the controls on it take the wood's colours (UI:OnPaper)
@@ -135,7 +133,7 @@ function Kit:Dress(f, title, opts)
     local header = CreateFrame("Frame", nil, f)
     header:SetPoint("TOPLEFT", 3, -3)
     header:SetPoint("TOPRIGHT", -3, -3)
-    header:SetHeight(self.HEADER_H - 3)
+    header:SetHeight(headerH - 3)
     header:SetFrameLevel((f:GetFrameLevel() or 1) + 2)
     Style:Paint(header, "titlebar")
     local line = header:CreateTexture(nil, "BORDER")
@@ -145,13 +143,35 @@ function Kit:Dress(f, title, opts)
     UI:Hairline(line)
     line:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
     f.header = header
+    header:EnableMouse(true)
+    header:RegisterForDrag("LeftButton")
+    header:SetScript("OnDragStart", function() if f:IsMovable() then f:StartMoving() end end)
+    header:SetScript("OnDragStop", function() f:StopMovingOrSizing(); f.moved = true end)
+    return header
+end
+
+function Kit:Dress(f, title, opts)
+    opts = opts or {}
+    local headerH = opts.headerH or self.HEADER_H
+    local header = self:Chrome(f, headerH)
 
     local t = header:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(t, 14, "windowTitle")
     t:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     t:SetJustifyH("LEFT")
     t:SetWordWrap(false)
-    t:SetPoint("LEFT", header, "LEFT", 10, 0)
+    local lead = opts.lead or 0
+    if lead > 0 then
+        local slot = CreateFrame("Frame", nil, header)
+        slot:SetSize(lead, headerH - 3)
+        slot:SetPoint("LEFT", header, "LEFT", 8, 0)
+        header.lead = slot
+    end
+    if opts.stack then
+        t:SetPoint("TOPLEFT", header, "TOPLEFT", 10 + (lead > 0 and lead + 8 or 0), -8)
+    else
+        t:SetPoint("LEFT", header, "LEFT", 10 + (lead > 0 and lead + 8 or 0), 0)
+    end
     f.titleText = t
 
     local sub = header:CreateFontString(nil, "OVERLAY")
@@ -159,25 +179,38 @@ function Kit:Dress(f, title, opts)
     sub:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
     sub:SetJustifyH("LEFT")
     sub:SetWordWrap(false)
-    sub:SetPoint("LEFT", t, "RIGHT", 8, 0)
+    if opts.stack then
+        sub:SetPoint("TOPLEFT", t, "BOTTOMLEFT", 0, -3)
+        local extra = header:CreateFontString(nil, "OVERLAY")
+        GuildOS:ApplyFont(extra, 10, "caption")
+        extra:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        extra:SetJustifyH("LEFT")
+        extra:SetWordWrap(false)
+        extra:SetPoint("TOPLEFT", sub, "BOTTOMLEFT", 0, -2)
+        header.extra = extra
+    else
+        sub:SetPoint("LEFT", t, "RIGHT", 8, 0)
+    end
     f.subText = sub
 
     if not opts.noClose then
         local close = UI:TitleBarButton(header, "close")
-        close:SetPoint("RIGHT", header, "RIGHT", -6, 0)
+        if opts.stack then close:SetPoint("TOPRIGHT", header, "TOPRIGHT", -6, -6)
+        else close:SetPoint("RIGHT", header, "RIGHT", -6, 0) end
         close:SetScript("OnClick", function()
             if opts.onClose then opts.onClose(f) else f:Hide() end
         end)
-        sub:SetPoint("RIGHT", close, "LEFT", -8, 0)
+        if not opts.stack then sub:SetPoint("RIGHT", close, "LEFT", -8, 0) end
         f.closeBtn = close
-    else
+    elseif not opts.stack then
         sub:SetPoint("RIGHT", header, "RIGHT", -10, 0)
     end
-
-    header:EnableMouse(true)
-    header:RegisterForDrag("LeftButton")
-    header:SetScript("OnDragStart", function() if f:IsMovable() then f:StartMoving() end end)
-    header:SetScript("OnDragStop", function() f:StopMovingOrSizing(); f.moved = true end)
+    if opts.stack then
+        -- Stacked lines are as wide as the header less the portrait and the close: a set width, the frame's
+        -- own (one placed by its anchors reads 0 until laid out, #449).
+        local w = math.max(60, UI:LaidWidth(f) - 10 - (lead > 0 and lead + 8 or 0) - 40)
+        t:SetWidth(w); sub:SetWidth(w); header.extra:SetWidth(w)
+    end
 
     function f:SetTitle(text, subText)
         GuildOS:SetTitleText(self.titleText, text or "")

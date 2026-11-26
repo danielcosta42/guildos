@@ -363,18 +363,12 @@ local SESS_TOP   = CARD_TOP + 28   -- the card's title and its filter chips over
 
 -- The paper's own shades of a state (the mockup's .b-ok, .b-warn, .b-bad) and a class's colour as the paper
 -- prints it (.card .c-*): the game's colours, darkened where they would not read on the parchment.
-local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
-local PAPER_OK, PAPER_WARN, PAPER_BAD = hex("2f6e33"), hex("a0560f"), hex("8f1b0b")
-local PAPER_CLASS = {
-    PRIEST = hex("666666"), ROGUE = hex("857612"), HUNTER = hex("4f7319"), MAGE = hex("16758d"),
-    PALADIN = hex("a8457a"), DRUID = hex("b35400"), SHAMAN = hex("0b4fa0"), WARRIOR = hex("7e5a33"),
-    WARLOCK = hex("4b4cb0"),
-}
+-- The paper's statuses (UI/Helpers.lua's one mapping, #449); a test that loads no Helpers gets the same hex.
+local STATUS = type(GuildOS.UI.STATUS_INK) == "table" and GuildOS.UI.STATUS_INK or {}
+local function hexc(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
+local PAPER_OK, PAPER_WARN, PAPER_BAD = STATUS.ok or hexc("2f6e33"), STATUS.warn or hexc("8f4a0c"), STATUS.bad or hexc("8f1b0b")
 local function paperClass(class)
-    local c = PAPER_CLASS[type(class) == "string" and class:upper() or ""]
-    if c then return c.r, c.g, c.b end
-    local r, g, b = GuildOS:GetClassColor(class)
-    return r * 0.6, g * 0.6, b * 0.6
+    return GuildOS.UI:InkFor("paper", "class", class)   -- the paper's class inks (UI/Helpers.lua, #449)
 end
 
 -- A 1px rule across the top of a row: the row lines of the mockup's tables, on the wood or the paper.
@@ -1231,7 +1225,7 @@ function GuildOS:RefreshTrialsPanel(parent)
                     noteFS:SetPoint("TOPLEFT", 14, dY)
                     -- A set width, not a second anchor: GetStringHeight below measures the wrap at once, before
                     -- an anchored width would be resolved. `content` is bound to the scroll's width (#371).
-                    noteFS:SetWidth(math.max(1, content:GetWidth() - 60))
+                    noteFS:SetWidth(UI:TextWidth(content, 60))
                     noteFS:SetJustifyH("LEFT")
                     noteFS:SetWordWrap(true)
                     local dateStr = note.timestamp and GuildOS:DateText(note.timestamp, " %H:%M") or ""
@@ -1977,7 +1971,7 @@ local function BuildWishlistFrame()
                 local entry = results[i]
                 local r, g, b = GuildOS.Compat.GetItemQualityColor(entry.quality)
                 dr.label:SetText(entry.name)
-                dr.label:SetTextColor(r, g, b)
+                UI:SetInk(dr.label, r, g, b)   -- the paper's quality ink on a card (#449)
                 dr.itemId   = entry.itemId
                 dr.itemLink = entry.link
                 dr.itemName = entry.name
@@ -2351,7 +2345,7 @@ local function BuildPrioModal()
                 local entry = results[i]
                 local r, g, b = GuildOS.Compat.GetItemQualityColor(entry.quality)
                 dr.label:SetText(entry.name)
-                dr.label:SetTextColor(r, g, b)
+                UI:SetInk(dr.label, r, g, b)   -- the paper's quality ink on a card (#449)
                 dr.itemId   = entry.itemId
                 dr.itemName = entry.name
                 dr:Show()
@@ -2680,7 +2674,7 @@ function GuildOS:RefreshPrioModal()
             -- Character name (class-colored)
             local cr, cg, cb = GuildOS:GetClassColor(entry.class or "")
             row.nameText:SetText(entry.name or "?")
-            row.nameText:SetTextColor(cr, cg, cb)
+            UI:SetInk(row.nameText, cr, cg, cb)
 
             -- Wishlist order
             if entry.wishlistOrder and entry.wishlistOrder < 999 then

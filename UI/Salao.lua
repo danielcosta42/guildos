@@ -733,7 +733,7 @@ function GuildOS:CreateSalaoPanel(panel)
     end
 
     refresh = function()
-        local w = content:GetWidth() or 0
+        local w = UI:LaidWidth(content) or 0
         if w <= 1 then w = (panel:GetWidth() or 0) - (UI.SCROLL_GUTTER or 0) end
         if w <= 1 then return end
         content:SetWidth(w)

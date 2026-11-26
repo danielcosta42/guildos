@@ -109,16 +109,8 @@ local CARD_TOP = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
 local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
 -- The paper's shades of a gear state, and a class's colour as the paper prints it (the mockup's .card .c-*).
 local PAPER_GEAR = { ready = hex("2f6e33"), gearing = hex("a0560f"), missing = hex("8f1b0b") }
-local PAPER_CLASS = {
-    PRIEST = hex("666666"), ROGUE = hex("857612"), HUNTER = hex("4f7319"), MAGE = hex("16758d"),
-    PALADIN = hex("a8457a"), DRUID = hex("b35400"), SHAMAN = hex("0b4fa0"), WARRIOR = hex("7e5a33"),
-    WARLOCK = hex("4b4cb0"),
-}
 local function paperClass(class)
-    local c = PAPER_CLASS[type(class) == "string" and class:upper() or ""]
-    if c then return c.r, c.g, c.b end
-    local r, g, b = GuildOS:GetClassColor(class)
-    return r * 0.6, g * 0.6, b * 0.6
+    return GuildOS.UI:InkFor("paper", "class", class)   -- the paper's class inks (UI/Helpers.lua, #449)
 end
 
 -- A role as a round letter (the mockup's T C D): cream with a tan ring at rest, the title's red filled when

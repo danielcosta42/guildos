@@ -132,8 +132,38 @@ end
 function Helpers:CreatePanel(parent, name, level)
     local f = CreateFrame("Frame", name, parent, "BackdropTemplate")
     f:SetFrameLevel(level or 1)
-    Style:Paint(f, (parent == nil or parent == UIParent) and "window" or "panel")
+    local top = parent == nil or parent == UIParent
+    Style:Paint(f, top and "window" or "panel")
+    if top then f.__popupTop = true end   -- a floating window: its title and close go in the header (#449)
     return f
+end
+
+-- An older floating window (UI:StylePopup or UI:CreatePanel on UIParent) wears the mockup's .fw chrome the
+-- moment it makes its title or its close (#449): Kit:Chrome's metal frame, dark body and brown header, the
+-- title (the first UI:CreateTitle on the frame) in Cinzel gold on the header's left and the close (the first
+-- UI:CreateCloseButton) round and red at its right, wherever the window asked to put them. Returns the
+-- header, or nil for anything else (a card, a dropdown, a frame Kit:Dress dressed itself).
+local function popupHeader(frame, what)
+    if not frame or not rawget(frame, "__popupTop") or rawget(frame, what) then return nil end
+    local Kit = rawget(GuildOS, "Kit")
+    if not Kit or not Kit.Chrome then return nil end
+    if frame.header and not rawget(frame, "__chromed") then return nil end   -- Kit:Dress's own header
+    frame.__chromed = true
+    frame[what] = true
+    return Kit:Chrome(frame)
+end
+-- `region` placed at the header's `point` (LEFT or RIGHT) whatever the window asks: its x kept, its y the
+-- header's middle. The window's own SetPoint calls land here.
+local function pinToHeader(region, header, point, pad)
+    local setPoint = region.SetPoint
+    region.SetPoint = function(self, _, rel, _, x)
+        if type(rel) == "number" then x = rel end
+        x = math.abs(tonumber(x) or pad)
+        x = math.max(pad, math.min(x, 24))
+        self:ClearAllPoints()
+        setPoint(self, point, header, point, point == "LEFT" and x or -x, 0)
+    end
+    region:SetPoint(point, pad)
 end
 
 -- Create an inset surface on the wood (a table body, a scroll area, a side bar's well).
@@ -155,6 +185,228 @@ function Helpers:OnPaper(frame)
         depth = depth + 1
     end
     return false
+end
+
+-- A frame's width as its anchors will make it, where GetWidth cannot say yet. The game lays a frame placed by
+-- its anchors out on the next drawn frame: until then (a window built and filled in the same call, a frame
+-- never shown) GetWidth answers 0. A text given `GetWidth() - x` then got a negative width and drew nothing at
+-- all (the login digest's lines, #449). This reads the anchors instead: a frame on both a left and a right
+-- point of the same frame is that frame's width less the offsets, SetAllPoints its whole width; its own set
+-- width wins. Returns 0 when nothing says (a caller keeps its own floor).
+function Helpers:LaidWidth(frame, depth)
+    if not frame then return 0 end
+    local w = frame.GetWidth and frame:GetWidth() or 0
+    if type(w) == "number" and w > 0 then return w end
+    depth = (depth or 0) + 1
+    if depth > 12 then return 0 end
+    local okN, n = pcall(function() return frame:GetNumPoints() end)
+    if not okN or type(n) ~= "number" then return 0 end
+    local left, right
+    for i = 1, n do
+        local point, rel, relPoint, x = frame:GetPoint(i)
+        if type(rel) == "number" then rel, relPoint, x = nil, point, rel end   -- SetPoint("TOPLEFT", x, y), as given
+        if type(relPoint) == "number" then relPoint, x = point, relPoint end   -- SetPoint("TOPLEFT", other, x, y)
+        if type(rel) == "string" then rel = _G[rel] end
+        rel = rel or frame:GetParent()
+        relPoint = relPoint or point
+        x = tonumber(x) or 0
+        if point and point:find("LEFT") and relPoint:find("LEFT") then left = left or { rel, x }
+        elseif point and point:find("RIGHT") and relPoint:find("RIGHT") then right = right or { rel, x } end
+    end
+    if left and right and left[1] == right[1] then
+        local pw = self:LaidWidth(left[1], depth)
+        if pw > 0 then return math.max(0, pw - left[2] + right[2]) end
+    end
+    return 0
+end
+
+-- The width a text laid `inset` px inside `frame` may take: LaidWidth less the inset, never under `floor`
+-- (default 40). A negative or zero width is never handed to a FontString this way.
+function Helpers:TextWidth(frame, inset, floor)
+    return math.max(floor or 40, self:LaidWidth(frame) - (inset or 0))
+end
+
+----------------------------------------------------------------------
+-- Inks on the paper (#449): one mapping for every colour a screen draws on a parchment card
+--
+-- The game's colours are made for a dark ground: a common item's white, a priest's white, a rogue's yellow,
+-- an uncommon item's light green and the wood's status colours vanish on the paper. On the paper every such
+-- colour goes through here: an item's quality and a class take the paper's own inks, a status the kit's,
+-- and any other colour (one in a string's |cff… code, an item link's) is darkened, keeping its hue, until it
+-- reads at 4.5:1 or better against the paper. Off the paper they are the game's.
+----------------------------------------------------------------------
+local function lin(v) return v <= 0.03928 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4 end
+-- WCAG relative luminance of r, g, b (0..1).
+function Helpers.Luminance(r, g, b) return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) end
+-- The contrast ratio between two colours ({ r, g, b }).
+function Helpers.Contrast(a, b)
+    local la, lb = Helpers.Luminance(a.r, a.g, a.b), Helpers.Luminance(b.r, b.g, b.b)
+    if la < lb then la, lb = lb, la end
+    return (la + 0.05) / (lb + 0.05)
+end
+Helpers.PAPER_CONTRAST = 4.6   -- the least a text on the paper reads at (WCAG AA is 4.5)
+
+-- r, g, b darkened (hue kept) until it reads at PAPER_CONTRAST against the paper; unchanged when it does.
+function Helpers.PaperSafe(r, g, b)
+    local paper = C.paper
+    local k = 1
+    for _ = 1, 40 do
+        if Helpers.Contrast({ r = r * k, g = g * k, b = b * k }, paper) >= Helpers.PAPER_CONTRAST then break end
+        k = k * 0.94
+    end
+    return r * k, g * k, b * k
+end
+
+local function hexInk(s)
+    local r, g, b = tonumber(s:sub(1, 2), 16) / 255, tonumber(s:sub(3, 4), 16) / 255, tonumber(s:sub(5, 6), 16) / 255
+    r, g, b = Helpers.PaperSafe(r, g, b)
+    return { r = r, g = g, b = b, a = 1 }
+end
+-- An item's quality on the paper: poor dark grey, common the paper's ink, uncommon dark green, rare blue,
+-- epic purple, legendary dark orange, artifact dark gold, heirloom dark cyan.
+Helpers.QUALITY_INK = {
+    [0] = hexInk("5f5a52"), [1] = hexInk("3a2a17"), [2] = hexInk("1a6e00"), [3] = hexInk("0b4fa0"),
+    [4] = hexInk("6c2fb0"), [5] = hexInk("a34a00"), [6] = hexInk("7a6326"), [7] = hexInk("0a6e8a"),
+    [8] = hexInk("0a6e8a"),
+}
+-- The game's quality colours as their codes read (lower case), to know a quality from a link's colour.
+local QUALITY_HEX = {
+    ["9d9d9d"] = 0, ["ffffff"] = 1, ["1eff00"] = 2, ["0070dd"] = 3, ["0070de"] = 3, ["a335ee"] = 4,
+    ["ff8000"] = 5, ["e6cc80"] = 6, ["00ccff"] = 7,
+}
+Helpers.QUALITY_HEX = QUALITY_HEX
+-- The statuses on the paper (the kit's badges' inks).
+Helpers.STATUS_INK = {
+    ok = hexInk("2f6e33"), warn = hexInk("8f4a0c"), bad = hexInk("8f1b0b"), info = hexInk("1d4f99"),
+    mute = hexInk("6f6450"), epic = hexInk("6c2fb0"),
+}
+-- A class on the paper (the mockup's `.card .c-*`): each made safe on the paper, a priest's white dark grey,
+-- a rogue's yellow dark gold.
+Helpers.CLASS_INK = {}
+for k, v in pairs({ PRIEST = "666666", ROGUE = "857612", HUNTER = "4f7319", MAGE = "16758d", PALADIN = "a8457a",
+    DRUID = "b35400", SHAMAN = "0b4fa0", WARRIOR = "7e5a33", WARLOCK = "4b4cb0", DEATHKNIGHT = "a3202f",
+    MONK = "00995a", DEMONHUNTER = "7a2a9a", EVOKER = "23705f" }) do
+    Helpers.CLASS_INK[k] = hexInk(v)
+end
+
+local function onPaperSurface(surface)
+    if surface == "paper" or surface == true then return true end
+    if surface == "wood" or not surface then return false end
+    return Helpers:OnPaper(surface)
+end
+
+-- r, g, b of a colour as `surface` (a frame, "paper" or "wood") reads it. kind:
+--   "quality"  value: an item's quality (0..8)
+--   "class"    value: a class file (PRIEST)
+--   "status"   value: ok, warn, bad, info, mute or epic
+--   "rgb"      value: { r, g, b } (any colour meant for the wood)
+function Helpers:InkFor(surface, kind, value)
+    local paper = onPaperSurface(surface)
+    if kind == "quality" then
+        local q = tonumber(value) or 1
+        if paper then local c = Helpers.QUALITY_INK[q] or C.paperInk; return c.r, c.g, c.b end
+        local c = GuildOS.QualityColors and GuildOS.QualityColors[q]
+        if c then return c.r, c.g, c.b end
+        local Compat = GuildOS.Compat
+        if Compat and Compat.GetItemQualityColor then
+            local r, g, b = Compat.GetItemQualityColor(q)
+            if r then return r, g, b end
+        end
+        return 1, 1, 1
+    elseif kind == "class" then
+        local file = value and tostring(value):upper()
+        if paper then local c = file and Helpers.CLASS_INK[file] or C.paperInk; return c.r, c.g, c.b end
+        return GuildOS:GetClassColor(value)
+    elseif kind == "status" then
+        if paper then local c = Helpers.STATUS_INK[value] or C.paperSoft; return c.r, c.g, c.b end
+        local wood = { ok = C.ok, warn = C.warn, bad = C.danger, info = C.info, mute = C.disabled, epic = C.epic }
+        local c = wood[value] or C.textSoft
+        return c.r, c.g, c.b
+    end
+    local c = type(value) == "table" and value or C.text
+    if paper then return Helpers.PaperRGB(c.r, c.g, c.b) end
+    return c.r, c.g, c.b
+end
+
+-- `text` with every colour code in it made safe for the paper: a quality's colour (an item link's) becomes the
+-- paper's quality ink, retail's |cnIQn: too, and any other colour is darkened until it reads. On the wood (a
+-- frame that is not on the paper, or "wood") it is returned unchanged.
+function Helpers:PaperText(text, surface)
+    if text == nil then return text end
+    text = tostring(text)
+    if surface ~= nil and not onPaperSurface(surface) then return text end
+    local function code(r, g, b) return string.format("|cff%02x%02x%02x", math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5)) end
+    text = text:gsub("|c(%x%x)(%x%x%x%x%x%x)", function(_, hex)
+        hex = hex:lower()
+        local q = QUALITY_HEX[hex]
+        if q then local c = Helpers.QUALITY_INK[q]; return code(c.r, c.g, c.b) end
+        local r, g, b = tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
+        return code(Helpers.PaperRGB(r, g, b))
+    end)
+    text = text:gsub("|cnIQ(%d+):", function(n)
+        local c = Helpers.QUALITY_INK[tonumber(n)] or C.paperInk
+        return code(c.r, c.g, c.b)
+    end)
+    return text
+end
+
+-- A colour's six hex digits (lower case).
+local function hexOf(r, g, b)
+    return string.format("%02x%02x%02x", math.floor((r or 0) * 255 + 0.5), math.floor((g or 0) * 255 + 0.5), math.floor((b or 0) * 255 + 0.5))
+end
+-- The wood's colours by their value, and what the paper prints for each.
+local paperSwap
+local function swapTable()
+    if paperSwap then return paperSwap end
+    local S = Helpers.STATUS_INK
+    paperSwap = {}
+    local function put(c, to) if c and c.r then paperSwap[hexOf(c.r, c.g, c.b)] = paperSwap[hexOf(c.r, c.g, c.b)] or to end end
+    -- The inks first: a status sharing a value with one keeps the ink's meaning.
+    put(C.text, C.paperInk); put(C.textSoft, C.paperSoft); put(C.silver, C.paperSoft); put(C.label, C.paperSoft)
+    put(C.ok, S.ok); put(C.green, S.ok); put(C.online, S.ok)
+    put(C.danger, S.bad); put(C.red, S.bad); put(C.warn, S.warn); put(C.info, S.info); put(C.blue, S.info)
+    put(C.epic, S.epic); put(C.offline, S.mute); put(C.disabled, S.mute); put(C.labelDim, S.mute); put(C.textDim, S.mute)
+    put(C.gold, C.paperTitle); put(C.gold2, C.paperTitle); put(C.accent, C.paperTitle)
+    -- The game's quality colours (a common item's white is the paper's ink).
+    for hx, q in pairs(QUALITY_HEX) do paperSwap[hx] = paperSwap[hx] or Helpers.QUALITY_INK[q] end
+    for file, ink in pairs(Helpers.CLASS_INK) do
+        local c = GuildOS.ClassColors and GuildOS.ClassColors[file]
+        if c and not paperSwap[hexOf(c.r, c.g, c.b)] then paperSwap[hexOf(c.r, c.g, c.b)] = ink end
+    end
+    return paperSwap
+end
+
+-- r, g, b of a colour meant for the wood as the paper prints it: the wood's statuses become the paper's (ok,
+-- warn, bad, info), its inks the paper's ink and soft ink, its golds the paper's title red, the game's quality
+-- and class colours the paper's quality and class inks, and anything else is darkened until it reads
+-- (PaperSafe). Every paper screen's local "on the paper" shade calls this.
+function Helpers.PaperRGB(r, g, b)
+    local to = swapTable()[hexOf(r, g, b)]
+    if to then return to.r, to.g, to.b end
+    return Helpers.PaperSafe(r or 0, g or 0, b or 0)
+end
+
+-- A palette colour `c` (one of GuildOS.Colors, a quality's, a class's, any { r, g, b }) as `surface` reads it,
+-- as a table: on the paper PaperRGB's colour; off it, `c` itself.
+function Helpers:Ink(surface, c)
+    c = c or C.text
+    if not onPaperSurface(surface) then return c end
+    local r, g, b = Helpers.PaperRGB(c.r, c.g, c.b)
+    return { r = r, g = g, b = b, a = c.a or 1 }
+end
+
+-- fs:SetTextColor of a colour meant for the wood (a class's, a quality's, a status's: r, g, b or a table),
+-- taking the paper's shade of it where `fs` is drawn on the paper (PaperRGB). Off the paper, the colour as given.
+function Helpers:SetInk(fs, r, g, b)
+    if type(r) == "table" then r, g, b = r.r, r.g, r.b end
+    r, g, b = r or 1, g or 1, b or 1
+    if Helpers:OnPaper(fs) then r, g, b = Helpers.PaperRGB(r, g, b) end
+    fs:SetTextColor(r, g, b)
+end
+
+-- SetText on `fs` with its colour codes made safe where it is drawn on the paper (PaperText).
+function Helpers:SetInkText(fs, text)
+    fs:SetText(Helpers:OnPaper(fs) and Helpers:PaperText(text) or text)
 end
 
 -- A card, as the mockup's .card and .dark: a parchment card (its paper, grain, darker bottom edge and soft
@@ -310,6 +562,8 @@ end
 -- `shadowSize`, `shadowAlpha` and `noSheen` are accepted and ignored.
 function Helpers:StylePopup(frame, opts)
     opts = opts or {}
+    -- A floating window on the screen takes the .fw chrome with its title (popupHeader).
+    if frame.GetParent and frame:GetParent() == UIParent and not opts.noChrome then frame.__popupTop = true end
     if frame.SetBackdropBorderColor then
         frame:SetBackdropBorderColor(C.metal2.r, C.metal2.g, C.metal2.b, 1)
     end
@@ -345,6 +599,16 @@ end
 
 -- Create a window title: Cinzel, gold (dark red on a parchment card).
 function Helpers:CreateTitle(parent, text, size)
+    local header = popupHeader(parent, "__fwTitled")
+    if header then
+        local fs = newText(header, math.min(size or 15, 15), "windowTitle")
+        fs:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+        fs:SetJustifyH("LEFT")
+        fs:SetWordWrap(false)
+        pinToHeader(fs, header, "LEFT", 10)
+        GuildOS:SetTitleText(fs, text or "")
+        return fs
+    end
     local fs = newText(parent, size or 15, "windowTitle")
     local c = Helpers:OnPaper(parent) and C.paperTitle or C.gold
     fs:SetTextColor(c.r, c.g, c.b)
@@ -532,6 +796,10 @@ local function looks()
         paperChip = { art = "pill",        line = "pill-line",   fill = C.quiet,      edge = C.paperEdge,   ink = C.quietInk },
         ghost     = { ink = C.textSoft },
         paperGhost = { ink = C.paperLink },
+        -- A select's closed field (#449): the text input's own box, the dark well on the wood, the light paper
+        -- with its tan line on a card, 5px corners.
+        field      = { art = "nine:card", line = "nine:card-line", fill = C.well,       edge = C.lineHi,    ink = C.text },
+        paperField = { art = "nine:card", line = "nine:card-line", fill = C.paperLight, edge = C.paperEdge, ink = C.paperInk },
     }
     return LOOKS
 end
@@ -542,6 +810,7 @@ local function lookKey(btn)
         if v == "secondary" then return "quiet" end
         if v == "chip" then return "paperChip" end
         if v == "ghost" then return "paperGhost" end
+        if v == "field" then return "paperField" end
     end
     return v
 end
@@ -552,12 +821,17 @@ local function wear(btn, look)
     for name, art in pairs(btn.__arts) do art:SetShown(name == look.art or name == look.line) end
     for _, name in ipairs({ look.art, look.line }) do
         if name and not btn.__arts[name] then
-            local art = Style:Three(btn, name, "BACKGROUND", name:find("line") and 2 or 1)
+            local nine = name:match("^nine:(.+)$")
+            local art = nine and Style:Nine(btn, nine, 5, "BACKGROUND", nine:find("line") and 2 or 1)
+                or Style:Three(btn, name, "BACKGROUND", name:find("line") and 2 or 1)
             btn.__arts[name] = art
         end
     end
     return look.art and btn.__arts[look.art], look.line and btn.__arts[look.line]
 end
+
+-- A disabled button's label: about 60% of the contrast its ground allows, on the wood and on the paper.
+Helpers.DISABLED_INK = { wood = { r = 0.62, g = 0.57, b = 0.49 }, paper = { r = 0.45, g = 0.40, b = 0.33 } }
 
 -- Paint one button state: "rest", "hover", "pressed" or "disabled". Internal.
 -- Every colour lands in the same frame; there is no transition.
@@ -573,14 +847,23 @@ function Helpers:_ButtonState(btn, state)
     local k = 1   -- the fill's light: up under the cursor, down while held
 
     if state == "disabled" then
-        local d = paper and C.paperSoft or C.disabled
+        -- Disabled reads as disabled on both grounds (#449), not as a dim copy of itself: a flat desaturated
+        -- fill, a quiet line and a label at about 60% contrast. A crimson "Raid ready" went a dim red bar with
+        -- an unreadable label, a dark button on the wood all but vanished.
+        if key ~= "ghost" and key ~= "paperGhost" then
+            local fill = paper and { 0.835, 0.776, 0.651 } or { 0.20, 0.165, 0.125 }
+            r, g, b, a = fill[1], fill[2], fill[3], 1
+            border = paper and C.paperRule or C.lineHi
+        end
+        local d = paper and Helpers.DISABLED_INK.paper or Helpers.DISABLED_INK.wood
         tr, tg, tb = d.r, d.g, d.b
-        a = (a or 1) * 0.5
     elseif state == "hover" then
         k = 1.14
         if key == "ghost" or key == "paperGhost" then
             local h = paper and C.paperInk or C.text
             tr, tg, tb = h.r, h.g, h.b
+        elseif key == "field" or key == "paperField" then
+            border = paper and C.paperTitle or C.metal2
         elseif key == "secondary" or key == "chip" or key == "danger" then
             border = (key == "danger") and C.danger or C.metal2
             if key ~= "danger" then tr, tg, tb = C.text.r, C.text.g, C.text.b end
@@ -610,7 +893,7 @@ function Helpers:_ButtonState(btn, state)
     end
     if lineArt then
         if border then
-            lineArt:SetRGBA(border.r, border.g, border.b, (state == "disabled") and 0.5 or 1)
+            lineArt:SetRGBA(border.r, border.g, border.b, 1)
         else
             lineArt:SetRGBA(0, 0, 0, 0)
         end
@@ -618,6 +901,11 @@ function Helpers:_ButtonState(btn, state)
     btn.__bg = { r, g, b, a or 1 }
     btn.label:SetTextColor(tr, tg, tb)
     if btn.underline then btn.underline:SetVertexColor(tr, tg, tb, 1) end
+end
+
+-- Say why `btn` is disabled: shown in a tooltip while it is (nil: none).
+function Helpers:SetDisabledReason(btn, text)
+    btn.disabledReason = text
 end
 
 -- Create a button. Secondary by default: the dark button on the wood, the quiet cream one on a parchment
@@ -657,8 +945,20 @@ function Helpers:CreateButton(parent, text, width, height, name, template)
     local function idle(self) return self:IsEnabled() and "rest" or "disabled" end
     btn:SetScript("OnEnter", function(self)
         Helpers:_ButtonState(self, self:IsEnabled() and "hover" or "disabled")
+        -- Why it is disabled, where the code knows (Helpers:SetDisabledReason).
+        if not self:IsEnabled() and self.disabledReason and GameTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(self.disabledReason, 1, 0.82, 0.5, 1, true)
+            GameTooltip:Show()
+            self.__reasonShown = true
+        end
     end)
-    btn:SetScript("OnLeave", function(self) Helpers:_ButtonState(self, idle(self)) end)
+    btn:SetScript("OnLeave", function(self)
+        Helpers:_ButtonState(self, idle(self))
+        if self.__reasonShown and GameTooltip then GameTooltip:Hide(); self.__reasonShown = nil end
+    end)
+    -- A disabled button still answers the cursor, for its reason's tooltip.
+    pcall(function() btn:SetMotionScriptsWhileDisabled(true) end)
     btn:SetScript("OnMouseDown", function(self)
         if self:IsEnabled() then Helpers:_ButtonState(self, "pressed") end
     end)
@@ -916,8 +1216,8 @@ end
 -- popup surface (StylePopup) whose rows are borderless buttons.
 ----------------------------------------------------------------------
 local DROPDOWN_ROWS  = 10     -- rows the list shows before it scrolls
-local DROPDOWN_ROW_H = 20
-local DROPDOWN_PAD   = 2      -- px between the list's edge and its rows
+local DROPDOWN_ROW_H = 22     -- the mockup's menu rows (.ctx button)
+local DROPDOWN_PAD   = 4      -- px between the list's edge and its rows
 local ARROW_W        = 14     -- room the button keeps on its right for the arrow
 local dropdownList            -- the shared list, built on first open
 
@@ -946,17 +1246,63 @@ local function closeDropdown()
     end
 end
 
+-- The mockup's menu surface on `f`: a soft shadow, the #1a1009 panel with 6px corners and the metal2 line.
+-- Shared by the dropdown's list, the minimap menu and the right-click menus.
+Helpers.MENU_BG = { r = 0x1a / 255, g = 0x10 / 255, b = 0x09 / 255 }
+function Helpers:PaintMenu(f)
+    if f.__menuPainted then return f end
+    f.__menuPainted = true
+    if f.SetBackdrop then f:SetBackdrop(nil) end
+    local shadow = Style:Nine(f, "shadow", 14, "BACKGROUND", -8, { -8, -4, -8, -10 })
+    shadow:SetRGBA(0, 0, 0, 0.5)
+    local fill = Style:Nine(f, "card", 6, "BACKGROUND", -7)
+    fill:SetColor(Helpers.MENU_BG)
+    local line = Style:Nine(f, "card-line", 6, "BACKGROUND", -6)
+    line:SetColor(C.metal2)
+    Style:Hand(f, fill, line)
+    return f
+end
+
+-- A menu row (the mockup's .ctx button): its label 10px in, a warm gold wash with 4px corners under the
+-- cursor; `row:SetChosen(on)` marks the current value: the soft gold label on a fainter wash.
+function Helpers:MenuRow(parent, h)
+    local row = CreateFrame("Button", nil, parent)
+    row:SetHeight(h or DROPDOWN_ROW_H)
+    row.wash = Style:Nine(row, "card", 4, "BACKGROUND", 1)
+    row.wash:SetRGBA(C.gold2.r, C.gold2.g, C.gold2.b, 0)
+    row.label = newText(row, 12)
+    row.label:SetPoint("LEFT", 10, 0)
+    row.label:SetPoint("RIGHT", -8, 0)
+    row.label:SetJustifyH("LEFT")
+    if row.label.SetWordWrap then row.label:SetWordWrap(false) end
+    row.ink = C.text
+    local function paint(self)
+        local over = self.__over and self:IsEnabled()
+        local a = over and 0.22 or (self.chosen and 0.1 or 0)
+        self.wash:SetRGBA(C.gold2.r, C.gold2.g, C.gold2.b, a)
+        local c = (not self:IsEnabled() and Helpers.DISABLED_INK.wood) or (self.chosen and C.gold2) or (over and C.text) or self.ink
+        self.label:SetTextColor(c.r, c.g, c.b)
+    end
+    row.Paint = paint
+    function row:SetChosen(on) self.chosen = on and true or false; paint(self) end
+    function row:SetInk(c) self.ink = c or C.text; paint(self) end
+    row:SetScript("OnEnter", function(self) self.__over = true; paint(self) end)
+    row:SetScript("OnLeave", function(self) self.__over = false; paint(self) end)
+    row:HookScript("OnEnable", paint)
+    row:HookScript("OnDisable", paint)
+    paint(row)
+    return row
+end
+
 local function buildDropdownList()
     local f = CreateFrame("Frame", "GuildOSDropdownList", UIParent, "BackdropTemplate")
     f:SetFrameStrata("FULLSCREEN_DIALOG")
     f:SetFrameLevel(20)
     f:EnableMouse(true)
     f:SetClampedToScreen(true)
-    -- Its own surface: StylePopup only borders a backdrop its caller made, and with none the options
-    -- floated over whatever was under them (#371).
-    f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = Helpers:Edge(f) })
-    f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
-    Helpers:StylePopup(f, { noFade = true })
+    -- Its own surface, the mockup's menus (.ctx, .mmenu; #449): a rounded dark panel (#1a1009) in the bright
+    -- metal's line over a soft shadow, the rows 4px in. Every popup menu of the addon draws as this.
+    Helpers:PaintMenu(f)
     f:Hide()
     table.insert(UISpecialFrames, "GuildOSDropdownList")   -- Escape closes it
 
@@ -986,16 +1332,12 @@ end
 local function dropdownRow(f, i)
     local row = f.rows[i]
     if row then return row end
-    row = Helpers:CreateButton(f.child, "", 10, DROPDOWN_ROW_H)
-    row.baseBorder = nil
-    row.baseColor = { 0, 0, 0, 0 }
-    row.label:ClearAllPoints()
-    row.label:SetPoint("LEFT", 8, 0)
-    row.label:SetJustifyH("LEFT")
+    row = Helpers:MenuRow(f.child, DROPDOWN_ROW_H)
+    -- The chosen value's mark: a short soft gold bar at the row's left, inside its wash.
     local mark = row:CreateTexture(nil, "OVERLAY")
     mark:SetTexture(WHITE)
-    mark:SetSize(2, DROPDOWN_ROW_H - 6)
-    mark:SetPoint("LEFT", 2, 0)
+    mark:SetSize(2, DROPDOWN_ROW_H - 10)
+    mark:SetPoint("LEFT", 4, 0)
     mark:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 1)
     row.mark = mark
     row:SetScript("OnClick", function(self)
@@ -1003,7 +1345,6 @@ local function dropdownRow(f, i)
         closeDropdown()
         if owner then owner:Select(self.value) end
     end)
-    Helpers:_ButtonState(row, "rest")
     f.rows[i] = row
     return row
 end
@@ -1024,11 +1365,12 @@ local function openDropdown(dd)
         row:SetPoint("TOPLEFT", 0, -(i - 1) * DROPDOWN_ROW_H)
         row.label:SetText(opt.text or tostring(opt.value))
         local chosen = opt.value == dd.value
-        local ink = opt.color or (chosen and C.gold) or C.text
-        row.baseLabelColor = { ink.r, ink.g, ink.b }
+        -- The field's size: the list's text in the UI face at the field's own size.
+        GuildOS:ApplyFont(row.label, dd.fontSize or 12)
+        row.ink = opt.color or C.text
         row.mark:SetShown(chosen)
         if opt.disabled then row:Disable() else row:Enable() end
-        Helpers:_ButtonState(row, opt.disabled and "disabled" or "rest")
+        row:SetChosen(chosen)
         row:Show()
     end
     for i = #options + 1, #f.rows do f.rows[i]:Hide() end
@@ -1050,6 +1392,9 @@ function Helpers:CloseDropdown() closeDropdown() end
 
 function Helpers:CreateDropdown(parent, width, height)
     local dd = self:CreateButton(parent, "", width or 140, height or 22)
+    -- The closed field looks like the text input beside it (#449): the select of the mockup, not a button.
+    self:SetButtonVariant(dd, "field")
+    GuildOS:ApplyFont(dd.label, 12)
     dd.label:ClearAllPoints()
     dd.label:SetPoint("LEFT", 8, 0)
     dd.label:SetPoint("RIGHT", -ARROW_W, 0)
@@ -1103,7 +1448,8 @@ end
 -- brighter under the cursor. btn.x is the glyph.
 local CLOSE_RED = { r = 0.765, g = 0.153, b = 0.114 }
 function Helpers:CreateCloseButton(parent)
-    local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    local header = popupHeader(parent, "__fwClosed")
+    local btn = CreateFrame("Button", nil, header or parent, "BackdropTemplate")
     btn:SetSize(20, 20)
     local orb = Style:Texture(btn, "orb", "BACKGROUND", 1)
     orb:SetAllPoints()
@@ -1127,6 +1473,7 @@ function Helpers:CreateCloseButton(parent)
         self.orb:SetVertexColor(CLOSE_RED.r, CLOSE_RED.g, CLOSE_RED.b, 1)
         self.x:SetTextColor(1, 0.85, 0.69)
     end)
+    if header then pinToHeader(btn, header, "RIGHT", 6) end
     return btn
 end
 

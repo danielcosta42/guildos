@@ -176,7 +176,9 @@ function GuildAnalytics:Show()
         local child = f.child
         for _, c in pairs({ child:GetChildren() }) do c:Hide() end
         for _, r in pairs({ child:GetRegions() }) do r:Hide() end
-        child:SetWidth(f.holder:GetWidth() - 12)
+        local hw = UI:LaidWidth(f.holder)
+        if type(hw) ~= "number" then hw = f.holder:GetWidth() or 0 end
+        child:SetWidth(math.max(1, hw - 12))   -- read from the anchors (#449)
 
         local entries = self:Distribution(self._dim, self._onlineOnly, nil, self._maxOnly)
         local y = 0

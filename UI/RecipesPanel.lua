@@ -33,9 +33,7 @@ local CARD_TOP   = 38   -- under the card's title
 
 -- A colour deepened to read on the paper: the bright ones (a priest's white, a rogue's yellow) vanish on it.
 local function deep(c)
-    local lum = 0.3 * c.r + 0.59 * c.g + 0.11 * c.b
-    local k = lum > 0.55 and 0.55 or 0.8
-    return { r = c.r * k, g = c.g * k, b = c.b * k }
+    return GuildOS.UI:Ink("paper", c)   -- the one mapping of the paper's inks (UI/Helpers.lua, #449)
 end
 local function hexOf(c) return string.format("%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255) end
 

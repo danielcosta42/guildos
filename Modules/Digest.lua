@@ -280,7 +280,7 @@ function Digest:Show(lines)
     if #lines == 0 then
         local empty = UI:CreateText(f.body, L["Nothing new since your last login."], 11, C.silver.r, C.silver.g, C.silver.b)
         empty:SetPoint("TOPLEFT", 2, -y)
-        empty:SetWidth(f.body:GetWidth() - 4)
+        empty:SetWidth(UI:TextWidth(f.body, 4))
     else
         -- Each line on a round glyph with its first letter (the mockup's mural: a glyph, then the line).
         local glyphs = UI.CreateGlyph ~= nil
@@ -297,7 +297,9 @@ function Digest:Show(lines)
             end
             local fs = UI:CreateText(f.body, line, 11, C.text.r, C.text.g, C.text.b)
             fs:SetPoint("TOPLEFT", x, -y)
-            fs:SetWidth(f.body:GetWidth() - x - 4)
+            -- Not f.body:GetWidth(): the body is placed by its anchors and reads 0 until the game lays it out, and
+            -- a text 34px less than that drew nothing (#449). TextWidth reads the anchors.
+            fs:SetWidth(UI:TextWidth(f.body, x + 4))
             fs:SetJustifyH("LEFT")
             y = y + math.max(26, (fs:GetStringHeight() or 14) + 10)
         end

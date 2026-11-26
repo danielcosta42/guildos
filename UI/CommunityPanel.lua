@@ -1043,7 +1043,7 @@ function GuildOS:CreateGuildChatFeed(panel, top)
         pinBottom = false
         layoutTabs()
         -- Born 0 wide (CreateScrollFrame sizes it before layout), so re-set on every draw.
-        content:SetWidth(math.max(holder:GetWidth() - 12, 1))
+        content:SetWidth(math.max(UI:LaidWidth(holder) - 12, 1))
         local log = GC:Entries(current)
         local classOf = {}
         for _, e in ipairs(log) do classOf[e.n] = e.c or classOf[e.n] end

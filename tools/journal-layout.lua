@@ -322,9 +322,9 @@ local function run(style)
   -- Who was there, by class: Mage Ana, Priest Bea, Warrior Cid; Eva has none and Dan opted out.
   check(firsts[1].name == "Excavation Site: Wetlands" and cards[1].who.text == "|cff" .. inkHex .. "Eva|r",
     style .. ": a member who chose not to be named is not, and one with no class takes the paper's ink")
-  check(cards[2].who.text == "|cff" .. classHex("MAGE") .. "Ana|r", style .. ": Ana in the Mage colour")
-  check(cards[3].who.text == "|cff" .. classHex("WARRIOR") .. "Cid|r", style .. ": Cid in the Warrior colour")
-  check(cards[4].who.text == "|cff" .. classHex("MAGE") .. "Ana|r · |cff" .. classHex("PRIEST") .. "Bea|r",
+  check(cards[2].who.text == GuildOS.UI:PaperText("|cff" .. classHex("MAGE") .. "Ana|r", "paper"), style .. ": Ana in the Mage colour, as the paper prints it (#449)")
+  check(cards[3].who.text == GuildOS.UI:PaperText("|cff" .. classHex("WARRIOR") .. "Cid|r", "paper"), style .. ": Cid in the Warrior colour, as the paper prints it")
+  check(cards[4].who.text == GuildOS.UI:PaperText("|cff" .. classHex("MAGE") .. "Ana|r · |cff" .. classHex("PRIEST") .. "Bea|r", "paper"),
     style .. ": a group, each in their class colour, between soft dots")
   check(same(cards[4].who.color, C.paperSoft) and cards[4].who.wordWrap == true, style .. ": the line wraps, soft")
 

@@ -30,8 +30,8 @@ local SUBS = {
 -- The categories before #367, so an old deep link or command still lands on the right page.
 local OLD_KEYS = { general = "profile", raid = "rules", officer = "rules", about = "data" }
 
-local MAX_W       = 640   -- one column of settings reads best at this width
-local TWO_COL_W   = 830   -- the module lists split in two from here (a 900px window: 900 - 2x12 - 24 - 20)
+local TWO_CARDS_W = 900   -- a page lays its cards in two columns from here (#449), one below
+local GRID_TWO_W  = 560   -- a card's own grid (the module lists) splits in two from this inner width
 local ROW_GAP     = 8
 local SUB_INDENT  = 22    -- a sub-option sits under its parent's label
 local NOTE_INDENT = 22    -- a checkbox's explanation starts where its label does
@@ -110,7 +110,7 @@ end
 function Form:Row(obj, opts)
     opts = opts or {}
     self.rows[#self.rows + 1] = { obj = obj, gap = opts.gap or ROW_GAP, indent = opts.indent or 0,
-        h = opts.h, wide = opts.wide, shown = opts.shown, place = opts.place, card = opts.card }
+        h = opts.h, wide = opts.wide, shown = opts.shown, place = opts.place, card = opts.card, span = opts.span }
     return obj
 end
 
@@ -124,56 +124,103 @@ function Form:Refresh()
     return self:Layout()
 end
 
+-- The page (#449, the mockup's config screens): what comes before the first section sits on the wood across
+-- the page; each section is a parchment card, its rows laid inside the card's own width (CARD_PAD in, under
+-- its title) and anchored to the card, so a row never runs past it. From TWO_CARDS_W the cards go in two
+-- columns, each to the shorter one (masonry, in order); a card made with `span` (a module grid) takes the
+-- whole width under both. Below TWO_CARDS_W one column, the cards as wide as the page. Records each card's
+-- place and each row's box in self.placed, for the tests.
 function Form:Layout(width)
     width = num(width, 0)
-    if width < 1 then width = num(self.content:GetWidth(), 0) end
-    if width < 1 then width = self.width or MAX_W end
+    if width < 1 then width = num(UI.LaidWidth and UI:LaidWidth(self.content), 0) end
+    if width < 1 then width = self.width or 640 end
     self.width = width
-    local page = math.min(width, MAX_W)
-    -- A section is a parchment card (the mockup's Settings): its rows go CARD_PAD in, under its title, and
-    -- the card closes CARD_PAD under its last row. Rows before any section sit on the page itself.
-    local y, first = 0, true
-    local card, cardTop, pad = nil, 0, 0
-    local function closeCard()
-        if card then card:SetHeight(math.max(1, y - cardTop + CARD_PAD)); y = y + CARD_PAD end
-        card = nil
-    end
+    local two = width >= TWO_CARDS_W
+    local colW = two and math.floor((width - CARD_GAP) / 2) or width
+    self.placed = {}
+
+    -- Blocks: the rows on the wood before any section, then a section with its rows.
+    local pre, blocks, cur = {}, {}, nil
     for _, r in ipairs(self.rows) do
+        if r.card then cur = { card = r, rows = {} }; blocks[#blocks + 1] = cur
+        elseif cur then cur.rows[#cur.rows + 1] = r
+        else pre[#pre + 1] = r end
+    end
+
+    local y, first = 0, true
+    for _, r in ipairs(pre) do
         local on = not r.shown or r.shown() and true or false
         r.obj:SetShown(on)
-        if on and r.card then
-            closeCard()
-            if not first then y = y + CARD_GAP end
-            card, cardTop = r.obj, y
-            card:ClearAllPoints()
-            card:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -y)
-            card:SetWidth(math.max(1, page))
-            pad = CARD_PAD
-            y = y + CARD_TOP
-            first = true
-        elseif on then
+        if on then
             if not first then y = y + r.gap end
             first = false
-            local inner = page - 2 * pad
             r.obj:ClearAllPoints()
-            r.obj:SetPoint("TOPLEFT", self.content, "TOPLEFT", pad + r.indent, -y)
-            if r.wide then r.obj:SetWidth(math.max(1, inner - r.indent)) end
-            y = y + (r.place and r.place(r.obj, inner - r.indent, width - 2 * pad - r.indent) or r.h or textHeight(r.obj))
+            r.obj:SetPoint("TOPLEFT", self.content, "TOPLEFT", r.indent, -y)
+            if r.wide then r.obj:SetWidth(math.max(1, width - r.indent)) end
+            y = y + (r.place and r.place(r.obj, width - r.indent, width - r.indent) or r.h or textHeight(r.obj))
         end
     end
-    closeCard()
-    self.content:SetHeight(math.max(1, y))
-    return y
+    if y > 0 then y = y + CARD_GAP end
+
+    local colY = { y, y }
+    for _, b in ipairs(blocks) do
+        local card = b.card.obj
+        local on = not b.card.shown or b.card.shown() and true or false
+        card:SetShown(on)
+        if not on then
+            for _, r in ipairs(b.rows) do r.obj:SetShown(false) end
+        else
+            local span = b.card.span or not two
+            local cw = span and width or colW
+            local inner = cw - 2 * CARD_PAD
+            card:SetWidth(math.max(1, cw))
+            local yy, firstRow = CARD_TOP, true
+            for _, r in ipairs(b.rows) do
+                local ron = not r.shown or r.shown() and true or false
+                r.obj:SetShown(ron)
+                if ron then
+                    if not firstRow then yy = yy + r.gap end
+                    firstRow = false
+                    local w = inner - r.indent
+                    r.obj:ClearAllPoints()
+                    r.obj:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD + r.indent, -yy)
+                    if r.wide then r.obj:SetWidth(math.max(1, w)) end
+                    local h = r.place and r.place(r.obj, w, w) or r.h or textHeight(r.obj)
+                    self.placed[#self.placed + 1] = { card = card, row = r.obj, x = CARD_PAD + r.indent, w = w, cardW = cw }
+                    yy = yy + h
+                end
+            end
+            local ch = yy + CARD_PAD
+            card:SetHeight(math.max(1, ch))
+            card:ClearAllPoints()
+            local x, top
+            if span then
+                top = math.max(colY[1], colY[2])
+                x = 0
+                colY[1], colY[2] = top + ch + CARD_GAP, top + ch + CARD_GAP
+            else
+                local c = (colY[2] < colY[1]) and 2 or 1
+                top, x = colY[c], (c - 1) * (colW + CARD_GAP)
+                colY[c] = top + ch + CARD_GAP
+            end
+            card:SetPoint("TOPLEFT", self.content, "TOPLEFT", x, -top)
+        end
+    end
+    local h = math.max(colY[1], colY[2])
+    if #blocks > 0 then h = h - CARD_GAP end
+    self.content:SetHeight(math.max(1, h))
+    return h
 end
 
 -- A section: a parchment card titled `title` (Cinzel, the paper's dark red, never upper case), behind the rows
 -- that follow it up to the next section. Under the page's other parts, so their text draws over it.
-function Form:Section(title, shown)
+-- opts.span: the card takes the page's whole width (a grid of its own), under both columns.
+function Form:Section(title, shown, opts)
     local card = UI:CreateCard(self.content, title)
     card:SetFrameLevel(math.max(0, (self.content:GetFrameLevel() or 1) - 1))
     card:SetHeight(CARD_TOP)
     self.hasCard = true
-    return self:Row(card, { card = true, shown = shown })
+    return self:Row(card, { card = true, shown = shown, span = opts and opts.span })
 end
 
 -- A paragraph in Sans 11, textSoft, wrapped to the page.
@@ -352,7 +399,7 @@ function Form:Grid(make, list, cellH, opts)
             colW = opts.colW
             cols = math.max(1, math.floor((w + 24) / (colW + 24)))
         else
-            cols = (full >= TWO_COL_W and #cells > 1) and 2 or 1
+            cols = (full >= GRID_TWO_W and #cells > 1) and 2 or 1
             colW = cols == 2 and math.floor((full - 24) / 2) or w
         end
         for i, c in ipairs(cells) do
@@ -360,6 +407,7 @@ function Form:Grid(make, list, cellH, opts)
             c:ClearAllPoints()
             c:SetPoint("TOPLEFT", holder, "TOPLEFT", col * (colW + 24), -row * (cellH + 8))
             c:SetWidth(colW)
+            if c.Relayout then c:Relayout(colW) end
         end
         local h = math.max(1, math.ceil(#cells / cols) * (cellH + 8) - 8)
         holder:SetSize(cols == 2 and full or w, h)
@@ -665,16 +713,21 @@ local function moduleCell(F, holder, def)
 
     local f = checkbox(cell, label, 18)
     f:SetPoint("TOPLEFT", 0, 0)
-    f:SetPoint("RIGHT", cell, "RIGHT", needsReload and -76 or 0, 0)
     if f.label then
         f.label:SetPoint("RIGHT", f, "RIGHT", 0, 0)
         f.label:SetJustifyH("LEFT")
         f.label:SetWordWrap(false)
     end
-    if needsReload then
-        local badge = UI:CreateBadge(cell, L["reload"])
-        badge:SetPoint("TOPRIGHT", cell, "TOPRIGHT", 0, -1)
+    -- "reload" right after the label, inside the cell (#449): the switch is as wide as its label, the
+    -- badge beside it; a label too long for the cell is cut before the badge.
+    local badge = needsReload and UI:CreateBadge(cell, L["reload"]) or nil
+    if badge then badge:SetPoint("LEFT", f, "RIGHT", 6, 0) end
+    function cell:Relayout(w)
+        local textW = math.ceil(num(f.label and f.label.GetStringWidth and f.label:GetStringWidth(), 0))
+        local room = w - (badge and (num(badge:GetWidth(), 50) + 6) or 0)
+        f:SetWidth(math.max(40, math.min(room, 22 + 6 + textW + 2)))
     end
+    cell:Relayout(300)
     local desc = UI:CreateText(cell, TAB_DESC[def.id] or def.desc or "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     desc:SetPoint("TOPLEFT", cell, "TOPLEFT", NOTE_INDENT, -21)
     desc:SetPoint("RIGHT", cell, "RIGHT", 0, 0)
@@ -706,11 +759,11 @@ PAGES.modules = function(F)
         end
     end
     local function cell(holder, def) return moduleCell(F, holder, def) end
-    F:Section(L["Window tabs"])
+    F:Section(L["Window tabs"], nil, { span = true })
     F:Note(L["Turning one off hides it; nothing is deleted."], { gap = 6 })
     F:Grid(cell, tabs, 40, { gap = 12 })
     if #background > 0 then
-        F:Section(L["In the background"])
+        F:Section(L["In the background"], nil, { span = true })
         F:Note(L["These run without a tab of their own."], { gap = 6 })
         F:Grid(cell, background, 40, { gap = 12 })
     end

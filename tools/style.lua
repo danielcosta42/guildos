@@ -393,8 +393,9 @@ dd:SetOptions({ { value = 1, text = "Rare" }, { value = 2, text = "Epic" } })
 dd:Open()
 local list
 for _, c in ipairs(UIParent.children) do if rawget(c, "catcher") then list = c end end
-check(list and list.backdrop and list.backdrop.bgFile and same(list.bg, C.popup) and same(list.border, C.metal2),
-  "an open dropdown's list is a popup surface with the bright metal's border")
+check(list and list.__menuPainted and list.__look and list.__look.fill and list.__look.line,
+  "an open dropdown's list is the mockup's menu: a rounded dark panel with the bright metal's line (#449)")
+check(dd.variant == "field", "the closed select is drawn as a field, like the text input beside it")
 
 -- Selection: the soft gold's line and ink, kept under the cursor, gone when unselected.
 local function edge(b) return b.__arts["button-line"].color end
@@ -408,7 +409,7 @@ UI:SetSelected(opt, false)
 check(same(edge(opt), C.lineHi) and same(opt.label.color, C.darkInk), "unselected, it is the dark button again")
 UI:SetSelected(opt, true); opt:Disable(); opt.scripts.OnLeave(opt)
 UI:_ButtonState(opt, "disabled")
-check(same(edge(opt), C.gold2) and same(opt.label.color, C.disabled),
+check(same(edge(opt), C.gold2) and same(opt.label.color, GuildOS.UI.DISABLED_INK.wood),
   "a selected button that cannot be clicked keeps the gold line, so the choice still shows")
 
 -- Section titles: a rule above every one but the first; table headers: a rule under, no fill.

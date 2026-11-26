@@ -12,19 +12,8 @@ local L  = GuildOS.L
 -- The Loot room (specs/salao/fase3.md, the mockup's saque-*): its screens are parchment and dark cards on the
 -- wood. On the paper a colour of the wood takes the paper's shade: the ink, the soft ink, a state's deeper one;
 -- anything else light (an item quality's colour stays its own) is darkened to read.
-local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
-local PAPER_OK, PAPER_WARN, PAPER_BAD = hex("2f6e33"), hex("a0560f"), hex("8f1b0b")
-local function same(r, g, b, c) return c and math.abs(r - c.r) < 1e-3 and math.abs(g - c.g) < 1e-3 and math.abs(b - c.b) < 1e-3 end
 local function onPaper(r, g, b)
-    if same(r, g, b, C.text) then return C.paperInk.r, C.paperInk.g, C.paperInk.b end
-    if same(r, g, b, C.textSoft) or same(r, g, b, C.label) or same(r, g, b, C.labelDim) then
-        return C.paperSoft.r, C.paperSoft.g, C.paperSoft.b
-    end
-    if same(r, g, b, C.ok) then return PAPER_OK.r, PAPER_OK.g, PAPER_OK.b end
-    if same(r, g, b, C.warn) then return PAPER_WARN.r, PAPER_WARN.g, PAPER_WARN.b end
-    if same(r, g, b, C.danger) then return PAPER_BAD.r, PAPER_BAD.g, PAPER_BAD.b end
-    if (r + g + b) / 3 > 0.55 then return r * 0.6, g * 0.6, b * 0.6 end
-    return r, g, b
+    return GuildOS.UI.PaperRGB(r, g, b)   -- the one mapping of the paper's inks (UI/Helpers.lua, #449)
 end
 local function paperOf(parent) return GuildOS.UI.OnPaper ~= nil and GuildOS.UI:OnPaper(parent) end
 -- The shared components, with a text on the paper in the paper's shade (a switch takes the paper's own).
@@ -34,6 +23,12 @@ local UI = setmetatable({
         return GuildOS.UI.CreateText(self, parent, text, size, r, g, b)
     end,
 }, { __index = function(_, k) return GuildOS.UI[k] end })
+-- A frame's width from its anchors when the game has not laid it out yet (UI:LaidWidth, #449).
+local function laidW(f)
+    local w = GuildOS.UI.LaidWidth and GuildOS.UI:LaidWidth(f)
+    if type(w) ~= "number" then w = f:GetWidth() end
+    return type(w) == "number" and w or 0
+end
 local PAD      = type(GuildOS.UI.CARD_PAD) == "number" and GuildOS.UI.CARD_PAD or 14
 local CARD_TOP = type(GuildOS.UI.CARD_TOP) == "number" and GuildOS.UI.CARD_TOP or 36
 local TWO_COLS = 760   -- px of the Rule tab: two columns from here, one under the other below
@@ -153,7 +148,7 @@ local function paragraph(content, text, y, x, size, col)
     col = col or C.textSoft
     local t = UI:CreateText(content, text, size or 11, col.r, col.g, col.b)
     t:SetPoint("TOPLEFT", x or 0, -y)
-    t:SetWidth(math.max(120, (content:GetWidth() or 0) - (x or 0)))
+    t:SetWidth(math.max(120, laidW(content) - (x or 0)))
     t:SetJustifyH("LEFT")
     if t.SetWordWrap then t:SetWordWrap(true) end
     return y + math.max(14, math.ceil(t:GetStringHeight() or 14)) + 4
@@ -558,7 +553,7 @@ function GuildOS:BuildLootRuleEditor(content, yOff, coreName, redraw, col)
             or L["The guild's own rule is in force: the loot system's other settings no longer change who wins."], 11,
             C.textSoft.r, C.textSoft.g, C.textSoft.b)
         backHint:SetPoint("LEFT", backBtn, "RIGHT", 10, 0)
-        backHint:SetWidth(math.max(120, (content:GetWidth() or 0) - 240))
+        backHint:SetWidth(math.max(120, laidW(content) - 240))
         backHint:SetJustifyH("LEFT")
         yOff = yOff + 30
     end
@@ -608,7 +603,7 @@ local function drawModels(content, y, scope, redraw)
     end
     -- The models as pills (the mockup's saque-regra), flowing over as many lines as the card needs; the one
     -- in force filled in the title's red (UI:SetSelected).
-    local W = content:GetWidth() or 0
+    local W = laidW(content) or 0
     if W < 60 then W = 400 end
     local x, line = 0, 0
     for _, choice in ipairs(list) do
@@ -747,7 +742,7 @@ function GuildOS:RefreshLootRuleTab(content, scope)
 
     -- The mockup's saque-regra: on the left the rule's cards (whose it is, the model, its settings), on
     -- the right how players will read it; one under the other where the tab is narrow.
-    local W = content:GetWidth()
+    local W = laidW(content)
     if not W or W < 100 then W = 600 end
     local two = W >= TWO_COLS
     local leftW = two and math.floor((W - GAP - 4) * 0.53) or W
@@ -1026,7 +1021,7 @@ local function buildLists(panel)
             local itemName, _, quality = GuildOS.Compat.GetItemInfo(entry.itemId)
             local qc = GuildOS.QualityColors[quality or 1] or C.text
             row.item:SetText(itemName or ("Item #" .. entry.itemId))
-            row.item:SetTextColor(qc.r, qc.g, qc.b)
+            UI:SetInk(row.item, qc)   -- the paper's quality ink on a card (#449)
             local reserves = GuildOS.SoftRes:GetReservesForDisplay(entry.itemId)
             if ownOnly then reserves = GuildOS.SoftRes:OwnOnly(reserves) end
             local inRaid, names = 0, {}
@@ -1206,12 +1201,12 @@ function GuildOS:RefreshLootPanel(content, countText, header)
         row.cells.item:SetWidth(math.max(1, layout.byKey.item.w - 34))
         GuildOS:ApplyFont(row.cells.item, 12, "button")
         row.cells.item:SetText(localName or entry.itemName or "?")
-        row.cells.item:SetTextColor(qColor.r, qColor.g, qColor.b)
+        UI:SetInk(row.cells.item, qColor)
         local member = GuildOS.db.members[entry.playerKey]
         local pr, pg, pb = 1, 1, 1
         if member and member.class then pr, pg, pb = GuildOS:GetClassColor(member.class) end
         row.cells.player:SetText(entry.player or "?")
-        row.cells.player:SetTextColor(pr, pg, pb)
+        UI:SetInk(row.cells.player, pr, pg, pb)
         GuildOS:ApplyFont(row.cells.player, 12, "button")
         row.cells.raid:SetText(entry.raid or "")
         row.cells.raid:SetTextColor(C.text.r, C.text.g, C.text.b)
@@ -1261,7 +1256,7 @@ function GuildOS:RefreshLootEquity(content, countText, header)
         placeCells(row, layout)
         local cr, cg, cb = GuildOS:GetClassColor(r.class)
         row.cells.name:SetText(r.name)
-        row.cells.name:SetTextColor(cr, cg, cb)
+        UI:SetInk(row.cells.name, cr, cg, cb)
         row.cells.items:SetText(tostring(r.items))
         row.cells.items:SetTextColor(C.text.r, C.text.g, C.text.b)
         -- Attendance: ok when high, warn in the middle, danger when low (#371: the middle was gold).

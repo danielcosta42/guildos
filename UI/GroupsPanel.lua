@@ -269,10 +269,10 @@ local function buildComposer()
     y = y - TAB_H - 10
 
     -- Activity
-    label(L["ACTIVITY"])
+    label(L["Activity"])
     local actText = UI:CreateText(f, "", 12)
     actText:SetPoint("TOPLEFT", PAD, y)
-    actText:SetWidth(f:GetWidth() - PAD * 2)
+    actText:SetWidth(UI:TextWidth(f, PAD * 2))
     actText:SetJustifyH("LEFT")
     actText:SetWordWrap(true)
     actText:SetHeight(28)
@@ -361,7 +361,7 @@ local function buildComposer()
 
     local hint = UI:CreateText(f, "", 11, C.danger.r, C.danger.g, C.danger.b)
     hint:SetPoint("TOPLEFT", PAD, y)
-    hint:SetWidth(f:GetWidth() - PAD * 2)
+    hint:SetWidth(UI:TextWidth(f, PAD * 2))
     hint:SetJustifyH("LEFT")
 
     local publish = UI:SetButtonVariant(UI:CreateButton(f, L["Publish"], 110, 26), "primary")
@@ -1519,7 +1519,7 @@ function GuildOS:CreateGroupsPanel(parent)
         releaseAll()
         -- Read only while shown (the early return above), and minus the gutter BindScrollChildWidth
         -- keeps, so the tiles and the text that is cut to fit stop clear of the scroll bar (#371).
-        local w = scroll:GetWidth() or 0
+        local w = UI:LaidWidth(scroll) or 0
         width = (w > 1 and w or 400) - UI.SCROLL_GUTTER
         content:SetWidth(width)
         y = 0

@@ -78,9 +78,7 @@ local function hex(c) return string.format("%02x%02x%02x", c.r * 255, c.g * 255,
 -- A class's colour deepened to read on the paper (the mockup's names on its cards): the bright ones (the
 -- priest's white, the rogue's yellow) would vanish on it.
 local function onPaper(r, g, b)
-    local lum = 0.3 * r + 0.59 * g + 0.11 * b
-    local k = lum > 0.55 and 0.55 or 0.8
-    return r * k, g * k, b * k
+    return GuildOS.UI.PaperRGB(r, g, b)   -- the one mapping of the paper's inks (UI/Helpers.lua, #449)
 end
 local function classHex(class)
     -- The shared paper inks (UI/Kit.lua's mockup class colours) where they are loaded.

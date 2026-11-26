@@ -45,17 +45,8 @@ local ROLE_MISS   = hex("f6d6c9")
 
 -- A class's colour as the paper prints it (the mockup's .card .c-*): the game's colours, darkened where
 -- they would not read on the parchment.
-local PAPER_CLASS = {
-    PRIEST = hex("666666"), ROGUE = hex("857612"), HUNTER = hex("4f7319"), MAGE = hex("16758d"),
-    PALADIN = hex("a8457a"), DRUID = hex("b35400"), SHAMAN = hex("0b4fa0"), WARRIOR = hex("7e5a33"),
-    WARLOCK = hex("4b4cb0"),
-}
 local function paperClass(class)
-    local key = type(class) == "string" and class:upper() or ""
-    local c = PAPER_CLASS[key]
-    if c then return c.r, c.g, c.b end
-    local r, g, b = GuildOS:GetClassColor(class)
-    return r * 0.6, g * 0.6, b * 0.6
+    return GuildOS.UI:InkFor("paper", "class", class)   -- the paper's class inks (UI/Helpers.lua, #449)
 end
 
 -- Secondary bits of a line drawn in one string (a size, "(repeats)", a guild): the token's colour,
@@ -458,17 +449,18 @@ function GuildOS:CreateCalendarSub(panel)
 
     -- Birthdays and join anniversaries (#428): dates drawn from the members, never events; each kind
     -- has its filter. On WoW: Forever an officer puts this month's birthdays in the game's calendar.
+    -- Laid in Render (#449): on their own line under the month's title, the second under the first when the
+    -- card is too narrow for both, and the weekday row under them, never over them.
     local BD = GuildOS.Birthdays
-    local barEnd
+    f.filterBoxes = {}
     if BD then
         for _, kind in ipairs({ "birthday", "join" }) do
             local cb = UI:CreateCheckbox(monthCard, kind == "birthday" and L["Birthdays"] or L["Join anniversaries"], 18)
             cb.label:SetTextColor(C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
             cb:SetWidth(math.ceil(cb.label:GetStringWidth() or 80) + 28)
-            if barEnd then cb:SetPoint("LEFT", barEnd, "RIGHT", 8, 0) else cb:SetPoint("TOPLEFT", PAD - 2, -36) end
             cb.checkbox:SetChecked(BD:Shows(kind))
             cb.checkbox.onChanged = function(_, checked) BD:SetShows(kind, checked) end
-            barEnd = cb
+            f.filterBoxes[#f.filterBoxes + 1] = cb
         end
     end
     local gameBdayBtn = UI:CreateButton(monthCard, L["Birthdays to the game's calendar"], 200, 20)
@@ -611,14 +603,24 @@ function GuildOS:CreateCalendarSub(panel)
         local rows = math.ceil((lead + dim) / COLS)
 
         -- The cells grow with the window, never under the mockup's 44px less what a short window lacks.
-        local gridTop = 58
+        -- Under the title (36px), the filters' line(s), then the weekday row (16px) and the grid.
+        local filterTop, x, fline = 36, 0, 0
+        for _, cb in ipairs(f.filterBoxes) do
+            local cw = cb:GetWidth() or 100
+            if x > 0 and x + cw > innerW then x, fline = 0, fline + 1 end
+            cb:ClearAllPoints()
+            cb:SetPoint("TOPLEFT", monthCard, "TOPLEFT", PAD - 2 + x, -(filterTop + fline * 22))
+            x = x + cw + 10
+        end
+        local filtersH = #f.filterBoxes > 0 and ((fline + 1) * 22) or 0
+        local gridTop = filterTop + filtersH + 18
         local room = H - gridTop - 34 - 2 * GAP
         local cellH = math.max(30, math.min(56, math.floor(room / rows) - CELL_GAP))
         if stacked then cellH = math.max(30, math.min(cellH, 40)) end
 
         for i = 1, COLS do
             f.wdFS[i]:ClearAllPoints()
-            f.wdFS[i]:SetPoint("TOP", monthCard, "TOPLEFT", PAD + (i - 1) * cellW + (cellW - CELL_GAP) / 2, -gridTop + 14)
+            f.wdFS[i]:SetPoint("TOP", monthCard, "TOPLEFT", PAD + (i - 1) * cellW + (cellW - CELL_GAP) / 2, -gridTop + 15)
         end
 
         local kindsShown, kindOrder = {}, {}
@@ -750,7 +752,7 @@ function GuildOS:CreateCalendarSub(panel)
             fs:SetPoint("TOPLEFT", 0, -y)
             return fs
         end
-        local listW = child:GetWidth()
+        local listW = UI:LaidWidth(child)
         if not listW or listW < 60 then listW = 360 end
 
         local evs, virtual, allied = {}, {}, {}

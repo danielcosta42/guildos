@@ -34,10 +34,15 @@ end
 
 local function nameOf(key) return Orders().NameOf(key) end
 
-local function classColor(key)
+-- A member's class colour; on the paper (`surface` a frame on a card) the paper's class ink (UI:InkFor).
+local function classColor(key, surface)
     local short = type(key) == "string" and (key:match("^([^-]+)") or key)
     local rec = short and GuildOS.GetMemberRecord and GuildOS:GetMemberRecord(short, key:match("-(.+)$"))
     local class = rec and rec.class
+    if surface and UI.InkFor and UI:OnPaper(surface) then
+        local r, g, b = UI:InkFor("paper", "class", class)
+        return { r = r, g = g, b = b }
+    end
     return (class and GuildOS.ClassColors[class:upper()]) or C.text
 end
 
@@ -286,11 +291,8 @@ function GuildOS:CreateOrderQueue(parent)
         c.icon.icon:SetTexture(tex or QUESTION)
         UI:SetIconQuality(c.icon, quality or 1)
         local qc = (GuildOS.QualityColors and GuildOS.QualityColors[quality or 1]) or P.ink
-        -- On the paper the common and the uncommon read in its ink, the rarer deepened (as the catalog's).
-        if paper then
-            if (quality or 1) <= 1 then qc = P.ink
-            else qc = { r = qc.r * 0.7, g = qc.g * 0.7, b = qc.b * 0.7 } end
-        end
+        -- On the paper the paper's quality ink (UI:InkFor, #449): the common in its ink, the uncommon dark green.
+        if paper then qc = UI.QUALITY_INK[quality or 1] or P.ink end
         c.name:SetText((name or ("item:" .. o.item)) .. (o.n > 1 and (" × " .. o.n) or ""))
         c.name:SetTextColor(qc.r, qc.g, qc.b)
         c.who:SetText(cardWho(q.view, o))
@@ -385,21 +387,45 @@ local COL_MIN    = 120
 local WIDE_MIN   = 34 + 2 * COL_MIN + 18 + COMPOSER_W + 16
 local STACKED_H  = DETAIL_H + COMPOSER_H + 8
 
+-- An inset on the paper (#449): a lighter paper with the card's tan line, rounded; its text takes the paper's
+-- inks (it is __paper). `fill`: the inset's colour.
+local function paperInset(frame, fill)
+    local Style = GuildOS.Style
+    if frame.SetBackdrop then frame:SetBackdrop(nil) end
+    frame.__paper, frame.__dark = true, nil
+    if not Style then return frame end
+    local f = Style:Nine(frame, "card", 6, "BACKGROUND", -6)
+    f:SetColor(fill or C.paperLight)
+    local l = Style:Nine(frame, "card-line", 6, "BACKGROUND", -5)
+    l:SetColor(C.paperLine)
+    Style:Hand(frame, f, l)
+    return frame
+end
+
+-- The paper's inks, read where the detail is drawn.
+local function ink(key)
+    local P = { soft = C.paperSoft, dim = UI.STATUS_INK and UI.STATUS_INK.mute or C.paperSoft,
+                ok = UI.STATUS_INK and UI.STATUS_INK.ok or C.ok, bad = UI.STATUS_INK and UI.STATUS_INK.bad or C.danger }
+    return P[key]
+end
+
 function GuildOS:CreateCraftDetail(parent)
+    -- A light paper inset in the catalog's card (the mockup's opened recipe), not a dark block on the paper:
+    -- every text in it is the paper's ink (#449).
     local d = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     d:SetHeight(DETAIL_H)
-    d:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-    d:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1)
+    paperInset(d, C.paperLight)
     d:EnableMouse(true)
     local mark = d:CreateTexture(nil, "ARTWORK")
     mark:SetTexture("Interface\\Buttons\\WHITE8x8")
-    mark:SetPoint("TOPLEFT"); mark:SetPoint("BOTTOMLEFT")
-    mark:SetWidth(2)
-    mark:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
+    mark:SetPoint("TOPLEFT", 1, -4); mark:SetPoint("BOTTOMLEFT", 1, 4)
+    mark:SetWidth(3)
+    mark:SetVertexColor(C.paperTitle.r, C.paperTitle.g, C.paperTitle.b, 1)
     d:Hide()
 
     -- Materials
-    local matHead = UI:CreateHeaderText(d, "", 10)
+    -- Section titles in the section face, in normal case (the mockup never sets one in capitals).
+    local matHead = UI:CreateHeaderText(d, "", 11)
     matHead:SetPoint("TOPLEFT", 34, -8)
     d.mats = {}
     for i = 1, MAT_LINES do
@@ -411,11 +437,11 @@ function GuildOS:CreateCraftDetail(parent)
         have:SetJustifyH("RIGHT")
         d.mats[i] = { name = name, have = have }
     end
-    local matNote = UI:CreateText(d, "", 10, C.label.r, C.label.g, C.label.b)
+    local matNote = UI:CreateText(d, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     matNote:SetJustifyH("LEFT")
 
     -- Crafters
-    local whoHead = UI:CreateHeaderText(d, "", 10)
+    local whoHead = UI:CreateHeaderText(d, "", 11)
     d.who = {}
     for i = 1, WHO_LINES do
         local name = UI:CreateText(d, "", 11)
@@ -427,16 +453,16 @@ function GuildOS:CreateCraftDetail(parent)
         dot:SetSize(6, 6)
         d.who[i] = { name = name, ask = ask, dot = dot }
     end
-    local whoMore = UI:CreateText(d, "", 10, C.label.r, C.label.g, C.label.b)
+    local whoMore = UI:CreateText(d, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     whoMore:SetJustifyH("LEFT")
 
     -- The order: on the right, or under the columns in a narrow list (Paint places it)
+    -- The order: the card's own paper inside the light inset, the paper's controls on it (quiet cream buttons, the
+    -- light field, the crimson Send).
     local box = CreateFrame("Frame", nil, d, "BackdropTemplate")
     box:SetSize(COMPOSER_W, COMPOSER_H)
-    box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(box) })
-    box:SetBackdropColor(C.bg.r, C.bg.g, C.bg.b, 1)
-    box:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
-    local qtyLabel = UI:CreateText(box, L["Quantity"], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    paperInset(box, C.paper)
+    local qtyLabel = UI:CreateText(box, L["Quantity"], 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     qtyLabel:SetPoint("TOPLEFT", 10, -12)
     local plus = UI:CreateButton(box, "+", 22, 20)
     plus:SetPoint("TOPRIGHT", -10, -8)
@@ -450,11 +476,11 @@ function GuildOS:CreateCraftDetail(parent)
     modeMats:SetPoint("TOPLEFT", 10, -36)
     local modeOwn = UI:CreateButton(box, L["Crafter's own"], 112, 20)
     modeOwn:SetPoint("LEFT", modeMats, "RIGHT", 4, 0)
-    local tipLabel = UI:CreateText(box, L["Tip (gold)"], 10, C.label.r, C.label.g, C.label.b)
+    local tipLabel = UI:CreateText(box, L["Tip (gold)"], 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     tipLabel:SetPoint("TOPLEFT", 10, -64)
     local tip = UI:CreateInput(box, 70, 20, { numeric = true, max = 6 })
     tip:SetPoint("TOPLEFT", 10, -78)
-    local toText = UI:CreateText(box, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local toText = UI:CreateText(box, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     toText:SetPoint("TOPLEFT", tip, "TOPRIGHT", 10, 12)
     toText:SetPoint("RIGHT", box, "RIGHT", -10, 0)
     toText:SetJustifyH("LEFT"); toText:SetWordWrap(false)
@@ -494,20 +520,22 @@ function GuildOS:CreateCraftDetail(parent)
         local crafts = math.ceil(self.qty / O:Yield(r.item, nil, r.recipeId))
         -- Materials
         local rg = r.item and O:Reagents(r.item, nil, r.recipeId) or {}
-        matHead:SetText(string.format(L["MATERIALS × %d"], self.qty))
+        matHead:SetText(string.format(L["Materials × %d"], self.qty))
         for i, m in ipairs(self.mats) do
             local x = rg[i]
             m.name:SetShown(x ~= nil); m.have:SetShown(x ~= nil)
             if x then
                 local need = x.count * crafts
                 local have = GuildOS.Compat.GetItemCount(x.itemID) or 0
-                m.name:SetText(itemInfo(x.itemID) or ("item:" .. x.itemID))
+                local mname, _, mq = itemInfo(x.itemID)
+                m.name:SetText(mname or ("item:" .. x.itemID))
+                m.name:SetTextColor(UI:InkFor(d, "quality", mq or 1))
                 m.name:SetWidth(math.max(20, colW - 60))
                 m.have:ClearAllPoints()
                 m.have:SetPoint("TOPLEFT", 34 + colW - 56, -8 - i * 18)
                 m.have:SetWidth(56)
                 m.have:SetText(string.format("%d / %d", have, need))
-                local col = (self.mode == "own" and C.labelDim) or (have >= need and C.ok) or C.danger
+                local col = (self.mode == "own" and ink("dim")) or (have >= need and ink("ok")) or ink("bad")
                 m.have:SetTextColor(col.r, col.g, col.b)
             end
         end
@@ -524,7 +552,7 @@ function GuildOS:CreateCraftDetail(parent)
         local x2 = 34 + colW + 18
         whoHead:ClearAllPoints()
         whoHead:SetPoint("TOPLEFT", x2, -8)
-        whoHead:SetText(string.format(L["CRAFTERS · %d"], #r.crafters))
+        whoHead:SetText(string.format(L["Crafters · %d"], #r.crafters))
         local me = O:MyKey()
         for i, slot in ipairs(self.who) do
             local c = r.crafters[i]
@@ -537,8 +565,9 @@ function GuildOS:CreateCraftDetail(parent)
                 slot.name:SetWidth(math.max(20, colW - 88))
                 slot.dot:ClearAllPoints()
                 slot.dot:SetPoint("RIGHT", slot.name, "LEFT", -6, 0)
-                slot.dot:SetVertexColor(C.ok.r, C.ok.g, C.ok.b, 1)
-                local cc = c.online and classColor(c.key) or C.labelDim
+                local okc = ink("ok")
+                slot.dot:SetVertexColor(okc.r, okc.g, okc.b, 1)
+                local cc = c.online and classColor(c.key, d) or ink("dim")
                 slot.name:SetText(c.name or nameOf(c.key))
                 slot.name:SetTextColor(cc.r, cc.g, cc.b)
                 slot.ask:ClearAllPoints()
@@ -570,6 +599,7 @@ function GuildOS:CreateCraftDetail(parent)
         end
         local orderable = r.item ~= nil and (#r.crafters > 0 or self.toKey ~= nil)
         send:SetEnabled(orderable)
+        UI:SetDisabledReason(send, (not orderable) and (r.item and L["Nobody in the guild crafts this"] or L["The materials show once a crafter accepts: they tell what it takes."]) or nil)
         box:SetShown(r.item ~= nil)
     end
 
@@ -625,7 +655,7 @@ end
 function UI.WithDetail(results, isOpen, rowH, detail)
     local h = DETAIL_H
     if detail and detail.HeightFor then
-        local w = detail:GetWidth()
+        local w = UI:LaidWidth(detail)
         if not w or w <= 0 then w = detail:GetParent() and detail:GetParent():GetWidth() end
         h = detail:HeightFor(w)
     end
@@ -839,7 +869,7 @@ local function buildDialog()
     f.note = UI:CreateInput(f, DIALOG_W - 104, FIELD_H, { max = 80 })
     f.note:SetPoint("TOPLEFT", 90, -164)
 
-    f.rgHeader = UI:CreateHeaderText(f, L["MATERIALS"], 10)
+    f.rgHeader = UI:CreateHeaderText(f, L["Materials"], 10)
     f.rgHeader:SetPoint("TOPLEFT", 14, -198)
     f.rg = {}
     for i = 1, REAGENT_LINES do
@@ -874,7 +904,7 @@ local function buildDialog()
         UI:SetIconQuality(f.icon, quality or 1)
         local qc = (GuildOS.QualityColors and GuildOS.QualityColors[quality or 1]) or C.text
         f.itemName:SetText(id and (name or ("item:" .. id)) or L["No item yet"])
-        f.itemName:SetTextColor(qc.r, qc.g, qc.b)
+        UI:SetInk(f.itemName, qc)
         f.to:SetText(f.toKey and string.format(L["To %s only"], nameOf(f.toKey)) or L["To every crafter who knows it"])
         f.toClear:SetShown(f.toKey ~= nil)
         for _, b in ipairs(f.modeBtns) do UI:SetSelected(b, b.key == f.mode) end
@@ -1047,7 +1077,7 @@ local function paintMailBar()
         mailBar:SetWidth(260)
         mailBar:SetPoint("TOPLEFT", MailFrame, "TOPRIGHT", 4, 0)
         UI:StylePopup(mailBar)
-        local title = UI:CreateHeaderText(mailBar, L["CRAFT ORDERS"], 10)
+        local title = UI:CreateHeaderText(mailBar, L["Craft orders"], 10)
         title:SetPoint("TOPLEFT", 10, -10)
         mailBar.lines = {}
         for i = 1, MAIL_LINES do

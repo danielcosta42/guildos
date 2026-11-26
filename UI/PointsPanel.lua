@@ -11,14 +11,8 @@ local L = GuildOS.L
 
 -- The Accounts are parchment cards (#449): on the paper a colour of the wood takes the paper's shade, and a
 -- switch's label its ink.
-local function same(r, g, b, c) return c and math.abs(r - c.r) < 1e-3 and math.abs(g - c.g) < 1e-3 and math.abs(b - c.b) < 1e-3 end
 local function onPaper(r, g, b)
-    if same(r, g, b, C.text) then return C.paperInk.r, C.paperInk.g, C.paperInk.b end
-    if same(r, g, b, C.textSoft) or same(r, g, b, C.label) or same(r, g, b, C.labelDim) then
-        return C.paperSoft.r, C.paperSoft.g, C.paperSoft.b
-    end
-    if (r + g + b) / 3 > 0.55 then return r * 0.6, g * 0.6, b * 0.6 end
-    return r, g, b
+    return GuildOS.UI.PaperRGB(r, g, b)   -- the one mapping of the paper's inks (UI/Helpers.lua, #449)
 end
 local function paperOf(parent) return GuildOS.UI.OnPaper ~= nil and GuildOS.UI:OnPaper(parent) end
 local UI = setmetatable({
@@ -46,16 +40,8 @@ local TWO_COLS = 760     -- px: two columns of cards from here
 local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
 local PAPER_OK, PAPER_BAD = hex("2f6e33"), hex("8f1b0b")
 -- A class's colour as the paper prints it (the mockup's .card .c-*).
-local PAPER_CLASS = {
-    PRIEST = hex("666666"), ROGUE = hex("857612"), HUNTER = hex("4f7319"), MAGE = hex("16758d"),
-    PALADIN = hex("a8457a"), DRUID = hex("b35400"), SHAMAN = hex("0b4fa0"), WARRIOR = hex("7e5a33"),
-    WARLOCK = hex("4b4cb0"),
-}
 local function paperClass(class)
-    local c = PAPER_CLASS[type(class) == "string" and class:upper() or ""]
-    if c then return c.r, c.g, c.b end
-    local r, g, b = GuildOS:GetClassColor(class)
-    return r * 0.6, g * 0.6, b * 0.6
+    return GuildOS.UI:InkFor("paper", "class", class)   -- the paper's class inks (UI/Helpers.lua, #449)
 end
 
 -- A box: the shared field (#371), whose border turns gold while it has the keyboard.
