@@ -54,9 +54,9 @@ UI.ROOMS = {
     } },
     { id = "workshop", label = L["Workshop"], entries = {
         { id = "crafts",   label = L["Crafts"],   feature = "recipes" },
-        -- Not a screen: who crafts an item on the whole realm, the guild's crafters first (audit B27).
-        { id = "realm",    label = L["Search the realm"], feature = "recipes",
-          run = function() if GuildOS.ShowCraftFinder then GuildOS:ShowCraftFinder() end end },
+        -- Who crafts an item on the whole realm, the guild's crafters first (audit B27): a screen of the Crafts tab
+        -- (#449), GuildOS:ShowCraftFinder's and /gos craft's.
+        { id = "realm",    label = L["Search the realm"], feature = "recipes", sub = "realm" },
         { id = "bank",     label = L["Bank"],     feature = "bank", sub = "inventory" },
         { id = "tabs",     label = L["Tabs"],     feature = "bank", sub = "tabs" },
         { id = "ledger",   label = L["Ledger"],   feature = "bank", sub = "ledger" },

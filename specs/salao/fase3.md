@@ -94,6 +94,26 @@ as fontes do cliente (título: a fonte dos títulos de missão do cliente, `Ques
 latim (nome de guilda ou de evento em cirílico num cliente enUS) troca para a Alegreya Sans Bold
 (`GuildOS:SetTitleText`). Nenhuma das três tem "●": o ponto do rodapé é textura.
 
+## Espaçamento
+
+O mantenedor, no jogo: "um pouco mais de espaço (problema geral nessas telas), densidade de opções e uso do
+espaço". O padrão abaixo vale para Raides › Cores e Grupos desde já (`SP` em `UI/CorePanel.lua` e
+`UI/GroupsPanel.lua`) e vira global depois, nos primitivos.
+
+- **Unidade 4.** Toda medida é múltiplo de 4 (2 só para linhas finas e ajuste ótico).
+- **Card:** padding 16; 14 entre cards; o conteúdo nunca encosta na borda. Título de seção **15 serifado**
+  (Cinzel), 8 acima do conteúdo; entre seções de um card, **18**.
+- **Formulário:** campo com **26** de altura, rótulo 4 acima do campo, campos 12 entre si.
+- **Tabela:** linha de **28** (32 com avatar), célula com 10 de respiro.
+- **Texto:** corpo **13**; nunca abaixo de 11, e 11 só em linha de meta (tempo, contagem, legenda). Número de
+  KPI **22**.
+- **Alvo de clique** mínimo de **24**.
+- **Uso do espaço:** cards em grade de 2 colunas a partir de 900 px de tela; listas crescem até o fim da altura
+  disponível; estado vazio é um bloco centrado e ilustrativo (glifo ou ícone, uma linha e a ação principal),
+  nunca uma linha cinza no canto superior esquerdo.
+- **Teste:** todo descendente visível de um card fica dentro do card (`isCard`; `tools/groups-panel.lua` e a
+  parte de Cores de `tools/loot-window.lua` conferem pelas âncoras).
+
 ## O que o WoW não reproduz do protótipo
 
 - Sombras e degradês são texturas fixas: a sombra do papel não acompanha cantos de raio diferente, e o

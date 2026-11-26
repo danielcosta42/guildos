@@ -87,6 +87,8 @@ GuildOS.RecruitEngagement = { GetAggregate = function()
   return { rows = rows, totals = { posts7 = 1, invites7 = 1, joins7 = 0, conv = 0, postsPrev = 0, invitesPrev = 0, joinsPrev = 0 } }
 end }
 
+dofile(ADDON .. "/UI/Forms.lua")
+GuildOS.Forms = rawget(GuildOS, "Forms")
 dofile(ADDON .. "/UI/ManagementPanel.lua")
 local parent = Frame.new(nil)
 GuildOS:CreateManagementPanel(parent, nil)
@@ -182,7 +184,7 @@ GuildOS.GuildManager = {
 }
 parent.SelectSub("motd")
 local motdPanel = parent.subPanels.motd.panel
-local motdArea, motdBtn, motdNote = motdPanel.children[2], motdPanel.children[3], motdPanel.children[4]
+local motdArea, motdBtn, motdNote = motdPanel.motdArea, motdPanel.motdBtn, motdPanel.motdNote
 check(motdArea.edit.disabled and motdBtn.label.text == "Edit in guild panel" and motdBtn.shown
   and motdNote.text == "On WoW: Forever only the game's guild panel can change the message of the day.",
   "on WoW: Forever the MOTD field only shows it, its button opens the game's panel and the note says why")

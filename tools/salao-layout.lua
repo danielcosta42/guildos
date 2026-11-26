@@ -134,9 +134,17 @@ for _, name in ipairs({ "SetShadowOffset", "SetShadowColor", "SetHorizTile", "Se
                         "SetJustifyV", "SetClipsChildren", "UnregisterEvent",
                         -- A popup's (tools/raid-start-ui.lua: the raid owner's prompt)
                         "SetFrameStrata", "SetMovable", "RegisterForDrag", "StartMoving", "StopMovingOrSizing",
-                        "Raise" }) do
+                        "Raise",
+                        -- The Guild chat card's box and feed (#449)
+                        "SetTextInsets", "SetAutoFocus", "SetMaxLetters", "SetNumeric", "SetMultiLine", "SetHyperlinksEnabled",
+                        "SetFocus" }) do
   M[name] = function() end
 end
+function M:HasFocus() return false end
+function M:ClearFocus() self.focusCleared = true end
+function M:SetVerticalScroll(v) self.vscroll = v end
+function M:GetVerticalScroll() return self.vscroll or 0 end
+function M:GetVerticalScrollRange() return 0 end
 -- Text is 6px a character, colour codes left out; a wrapped line breaks at its width, 12px a line.
 local function plain(s) return (tostring(s or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
 local function chars(s) local _, n = plain(s):gsub("[^\128-\191]", ""); return n end
@@ -431,7 +439,66 @@ local function run(style)
   P.Refresh()
   check(shownRows(cards.forYou)[1].main.text == "Your snow globe arrived" and cards.chimney.title.text == "The Chimney is lit",
     style .. ": on the day, the globe to open leads, and the Chimney is lit")
+  -- One entrant, or none yet (#449): a stocking drawn as one (its foot and cuff), or a line saying none hangs yet.
+  phase = "wrapping"
+  WV.Event = function() return { counts = { entrants = 1, wrapped = 0 } } end
+  P.Refresh()
+  local one = cards.chimney.stockings[1]
+  check(one.shown and one.foot.shown and one.cuff.shown and not cards.chimney.stockings[2].shown,
+    style .. ": one entrant, one stocking with its foot and cuff, not a bare block")
+  WV.Event = function() return { counts = { entrants = 0 } } end
+  P.Refresh()
+  check(cards.chimney.shown and not one.shown and cards.chimney.line.text:find("No stockings yet", 1, true),
+    style .. ": nobody yet: the Chimney says no stockings hang yet")
   GuildOS.WinterVeil = nil
+
+  -- The Guild chat (#449): under the board, the last lines of /g, newest at the bottom; an officer's channel only
+  -- for an officer, marked; Enter sends to /g and clears the box; the link opens Salão › Chat.
+  local sent = {}
+  local guildLog = {
+    { n = "Lunara", c = "DRUID", t = NOW - 600, m = "flask anyone?" },
+    { n = "Oruk", c = "SHAMAN", t = NOW - 60, m = "bank has 3" },
+  }
+  local listeners = {}
+  GuildOS.GuildChat = {
+    Locked = function() return false end, Watch = function() end,
+    Streams = function() return { { kind = "guild" }, { kind = "officer", id = "o" } } end,
+    Entries = function(_, st) if st and st.kind == "officer" then return { { n = "Kael", c = "MAGE", t = NOW - 300, m = "promote Oruk" } } end return guildLog end,
+    OnRefresh = function(_, fn) listeners[#listeners + 1] = fn end,
+    Send = function(_, text, st) sent[#sent + 1] = { text, st }; return true end,
+  }
+  P = build(976, 516)
+  cards = P.cards
+  local chat = cards.chat
+  check(chat.shown and not chat.__paper and chat.points[1][2] == 0 and chat.points[1][3] < cards.board.points[1][3],
+    style .. ": the Guild chat is a dark card in the left column, under the notice board")
+  check(chat.h >= 180, style .. ": filling the column's height: " .. tostring(chat.h))
+  local ln = chat.shownLines
+  check(#ln == 3 and ln[1].name == "Lunara" and ln[2].officer and ln[3].name == "Oruk",
+    style .. ": its lines oldest first, the newest at the bottom, the officers' line among them for an officer")
+  check(kit.shows(chat, "Officer") and kit.shows(chat, "promote Oruk"), style .. ": an officer's line is marked")
+  check(chat.lines[1].avatar.letter.text == "L" and chat.lines[3].time.text ~= "", style .. ": each with its avatar and time")
+  chat.say:SetText("on my way")
+  chat.say.scripts.OnEnterPressed(chat.say)
+  check(sent[1] and sent[1][1] == "on my way" and sent[1][2] == nil and chat.say:GetText() == "",
+    style .. ": Enter says it in /g and clears the box")
+  guildLog[#guildLog + 1] = { n = "Velyra", c = "PRIEST", t = NOW, m = "thanks!" }
+  for _, fn in ipairs(listeners) do fn() end
+  flush()
+  check(#chat.shownLines == 4 and chat.shownLines[4].name == "Velyra", style .. ": a new line of /g shows at once")
+  chat.link.scripts.OnClick(chat.link)
+  check(kit.opened[1] == "guild" and kit.opened[2] == "chat", style .. ": its Chat link opens Salão › Chat")
+  kit.setRank(5)
+  P.Refresh()
+  check(#chat.shownLines == 3 and not kit.shows(chat, "promote Oruk"), style .. ": a member never sees the officers' lines")
+  kit.setRank(0)
+  P:SetSize(600, 516)
+  flush()
+  P.Refresh()
+  check(chat.points[1][2] == 0 and cards.fire.points[1][3] < chat.points[1][3], style .. ": narrow, the chat under the board, the right column under it")
+  P:SetSize(976, 516)
+  flush()
+  GuildOS.GuildChat = nil
 
   -- WoW: Forever's countdown to the raids (#207): a card while Readiness:Countdown says so, none otherwise.
   check(not cards.countdown.shown, style .. ": no countdown when Readiness has none")

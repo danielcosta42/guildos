@@ -46,9 +46,6 @@ local function hex(c)
     return string.format("%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255)
 end
 
--- Room over a later section title for the rule UI:CreateSectionTitle draws 12px above it (#371).
-local SECTION_ABOVE = 20
-
 -- A scroll frame filling `holder` and reaching UI.SCROLL_GUTTER past its right edge (#371).
 local function fillScroll(scroll, content)
     scroll:SetPoint("TOPLEFT", 0, 0)
@@ -523,65 +520,57 @@ local P = setmetatable({}, { __index = function(_, k)
     local Kit = rawget(GuildOS, "Kit")
     return (Kit and Kit.PAPER or C)[k]
 end })
-local function setupSection(parent, text, first)
-    local Kit = rawget(GuildOS, "Kit")
-    if Kit then return Kit:SectionTitle(parent, text, first) end
-    return UI:CreateSectionTitle(parent, text, first)
-end
 
 local function BuildSetup(panel)
     local LINK = function() return GuildOS.AllianceLink end
+    local board = UI:CreateBoard(panel, { name = "GuildOSAllianceSetupBoard" })
+    local state = { officer = false, site = false, blocking = false, bans = false }
 
-    -- Under the card's title ("Alliance code"), form labels in the paper's ink over their fields (#371).
-    local status = UI:CreateText(panel, "", 11, P.text.r, P.text.g, P.text.b)
-    status:SetPoint("TOPLEFT", 0, 0)
+    -- The code (the mockup's "Alliance code"): where it stands, the tag and Generate, the code, and Save for
+    -- the guild at the card's bottom right. Pasted by hand the code gives the chat only (alianca.md §3.3).
+    local codeCard = board:Card(L["Alliance code"], { col = 1 })
+    local status = UI:CreateText(codeCard, "", 12, P.text.r, P.text.g, P.text.b)
     status:SetJustifyH("LEFT")
-    -- Pasted by hand the code gives the chat only (alianca.md §3.3).
-    local chatOnly = wrapText(panel, 10, P.textSoft)
-    chatOnly:SetPoint("TOPLEFT", 0, -18)
+    codeCard:Add(status, { place = function(fs, w) fs:SetWidth(w); return math.ceil(tonumber(fs:GetStringHeight()) or 14) end })
+    local chatOnly = wrapText(codeCard, 10, P.textSoft)
     chatOnly:SetText(L["Chat only: the shared /g and the alliance room. Members, crafters, raids and bans come from guildos.me."])
-    addFlexHint(chatOnly)
+    codeCard:Add(chatOnly, { gap = 4, place = function(fs, w) fs:SetWidth(w); return math.ceil(tonumber(fs:GetStringHeight()) or 12) end })
+    local editing = function() return state.officer and not state.site end
 
-    local tagLbl = UI:CreateText(panel, L["Tag (letters and numbers)"], 11)
-    tagLbl:SetPoint("TOPLEFT", chatOnly, "BOTTOMLEFT", 0, -UI.GAP)
-    local tagBox = makeInput(panel, 110)
-    tagBox:SetPoint("TOPLEFT", tagLbl, "BOTTOMLEFT", 0, -4)
-    local genBtn = UI:CreateButton(panel, L["Generate"], 110, 24)
-    genBtn:SetPoint("LEFT", tagBox, "RIGHT", UI.GAP, 0)
-
-    local lineBox = makeInput(panel, 540)
-    lineBox:SetPoint("TOPLEFT", tagBox, "BOTTOMLEFT", 0, -(UI.GAP + 4))
+    local tagBox = makeInput(codeCard, 110)
+    local genBtn = UI:CreateButton(codeCard, L["Generate"], 110, 24)
+    genBtn:SetWidth(math.ceil(tonumber(genBtn.label:GetStringWidth()) or 60) + 24)
+    local tagField = codeCard:Field(L["Tag (letters and numbers)"], tagBox, { w = 160, button = genBtn, gap = 10, shown = editing })
+    local lineBox = makeInput(codeCard, 300)
     lineBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    local writeBtn = UI:CreateButton(panel, L["Save for the guild"], 170, 24)
-    UI:SetButtonVariant(writeBtn, "primary")
-    writeBtn:SetPoint("TOPLEFT", lineBox, "BOTTOMLEFT", 0, -UI.GAP)
-    local removeBtn = UI:CreateButton(panel, L["Turn off for the guild"], 170, 24)
-    removeBtn:SetPoint("LEFT", writeBtn, "RIGHT", UI.GAP, 0)
-
-    local hint = wrapText(panel, 10, P.textDim)
+    codeCard:Field(L["Alliance code"], lineBox, { shown = editing })
+    local hint = wrapText(codeCard, 10, P.textDim)
     hint:SetText(L["Paste this same code here in every guild of the alliance and save, once. It goes in the guild master's public note where the game allows it, and every member hands it on at login: nobody in particular has to be online."])
-    hint:SetPoint("TOPLEFT", writeBtn, "BOTTOMLEFT", 0, -UI.GAP)
-    addFlexHint(hint)
+    codeCard:Add(hint, { shown = editing, place = function(fs, w) fs:SetWidth(w); return math.ceil(tonumber(fs:GetStringHeight()) or 12) end })
+    local removeBtn = UI:CreateButton(codeCard, L["Turn off for the guild"], 170, 24)
+    removeBtn:SetWidth(math.ceil(tonumber(removeBtn.label:GetStringWidth()) or 120) + 24)
+    local writeBtn = UI:CreateButton(codeCard, L["Save for the guild"], 170, 24)
+    UI:SetButtonVariant(writeBtn, "primary")
+    writeBtn:SetWidth(math.ceil(tonumber(writeBtn.label:GetStringWidth()) or 120) + 24)
+    codeCard:Actions({ removeBtn, writeBtn }, { shown = editing })
+    local tagLbl = tagField.label
 
     -- An allied guild blocked on this account: its lines on the channel are not shown, and nobody is told.
-    local blockHdr = setupSection(panel, L["Ignore a guild locally"])
-    local blockBox = makeInput(panel, 200)
-    blockBox:SetPoint("TOPLEFT", blockHdr, "BOTTOMLEFT", 0, -UI.GAP)
-    local blockBtn = UI:CreateButton(panel, L["Block"], 90, 24)
-    blockBtn:SetPoint("LEFT", blockBox, "RIGHT", UI.GAP, 0)
-    local unblockBtn = UI:CreateButton(panel, L["Unblock"], 90, 24)
-    unblockBtn:SetPoint("LEFT", blockBtn, "RIGHT", 6, 0)
-    local blockedFS = wrapText(panel, 10, P.textDim)
-    blockedFS:SetPoint("TOPLEFT", blockBox, "BOTTOMLEFT", 0, -UI.GAP)
-    addFlexHint(blockedFS)
+    local blockCard = board:Card(L["Ignore a guild locally"], { col = 2, shown = function() return state.blocking end })
+    local blockBox = makeInput(blockCard, 200)
+    local blockBtn = UI:CreateButton(blockCard, L["Block"], 90, 24)
+    blockCard:Field(L["Guild"], blockBox, { button = blockBtn })
+    local blockedFS = wrapText(blockCard, 10, P.textDim)
+    blockCard:Add(blockedFS, { place = function(fs, w) fs:SetWidth(w); return math.ceil(tonumber(fs:GetStringHeight()) or 12) end })
+    local unblockBtn = UI:CreateButton(blockCard, L["Unblock"], 90, 24)
+    blockCard:Actions({ unblockBtn })
 
     -- The alliance's bans, guildos.me's (BanList, #408): read-only, an alert for the officers. Hidden while
     -- this guild has no alliance on the site (audit B7).
-    local bansHdr = setupSection(panel, L["The alliance's bans"])
-    bansHdr:SetPoint("TOPLEFT", blockedFS, "BOTTOMLEFT", 0, -SECTION_ABOVE - UI.GAP)
-    local holder = CreateFrame("Frame", nil, panel)
-    holder:SetPoint("TOPLEFT", bansHdr, "BOTTOMLEFT", 0, -UI.GAP)
-    holder:SetPoint("BOTTOMRIGHT", 0, 0)
+    local bansCard = board:Card(L["The alliance's bans"], { col = 2, fill = true, minH = 160,
+        shown = function() return state.bans end })
+    local bansHdr = bansCard
+    local holder = bansCard:Body(BAN_ROW_H * 4)
     local scroll, content = UI:CreateScrollFrame(holder, "GuildOSAllianceBansScroll")
     fillScroll(scroll, content)
     local bansEmpty = wrapText(content, 11, P.textSoft)
@@ -653,8 +642,8 @@ local function BuildSetup(panel)
         local BL = GuildOS.BanList
         local list = (officer and BL) and BL:AllianceBans() or nil
         local shown = officer and BL and ((list and #list > 0) or BL:HasSiteAlliance()) or false
+        state.bans = shown and true or false
         setShown(bansHdr, shown)
-        setShown(holder, shown)
         for _, fs in ipairs(rows) do fs:Hide() end
         if not shown then return end
         local n = 0
@@ -694,23 +683,20 @@ local function BuildSetup(panel)
             status:SetText(L["No alliance set up for this guild."])
         end
         local officer = GuildOS:IsOfficer()
+        state.officer, state.site = officer and true or false, site and true or false
         for _, w in ipairs({ tagLbl, tagBox, genBtn, lineBox, writeBtn, removeBtn, hint }) do
             setShown(w, officer and not site)
         end
-        -- The block list under whatever the code section shows.
-        blockHdr:ClearAllPoints()
-        blockHdr:SetPoint("TOPLEFT", (officer and not site) and hint or chatOnly, "BOTTOMLEFT", 0, -SECTION_ABOVE - UI.GAP)
         local blocking = officer and pact ~= nil
-        for _, w in ipairs({ blockHdr, blockBox, blockBtn, unblockBtn, blockedFS }) do setShown(w, blocking) end
+        state.blocking = blocking and true or false
+        setShown(blockCard, blocking)
         if blocking then
             local list = ALLY():Blocked()
             blockedFS:SetText(#list > 0 and string.format(L["Blocked: %s"], table.concat(list, ", "))
                 or L["Lines from a blocked guild are not shown on this account. Nobody is told."])
         end
-        bansHdr:ClearAllPoints()
-        bansHdr:SetPoint("TOPLEFT", blocking and blockedFS or ((officer and not site) and hint or chatOnly), "BOTTOMLEFT",
-            0, -SECTION_ABOVE - UI.GAP)
         refreshBans(officer)
+        if board.Layout then board:Layout() end
         if not officer or site then return end
         if not lineBox:HasFocus() then
             local line = link:Suggest()
@@ -749,7 +735,6 @@ function GuildOS:CreateAlliancePanel(parent, _mainFrame)
         if not btns[key] then key = "hall" end
         parent.activeSub = key
         for k, info in pairs(parent.subPanels) do
-            if info.card then info.card:SetShown(k == key) end
             info.panel:SetShown(k == key)
         end
         for k, btn in pairs(btns) do btn:SetActive(k == key) end
@@ -776,26 +761,13 @@ function GuildOS:CreateAlliancePanel(parent, _mainFrame)
         UI:FlowBar(bar, visible, { gap = 4, rowGap = 4, rowH = 28 })
     end
 
-    -- Flush with the bar's left edge, UI.GAP under it, ending UI.GAP short of its right edge (#371).
-    -- The Officers' Room's setup is a parchment card titled "Alliance code" (the mockup's), its screen inside
-    -- it; the card is what shows, hides and moves with the bar.
-    local CARD_PAD, CARD_TOP = tonumber(UI.CARD_PAD) or 14, tonumber(UI.CARD_TOP) or 36
-    local function makeSubPanel(key)
-        if key ~= "setup" then
-            local p = CreateFrame("Frame", nil, parent)
-            p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -UI.GAP)
-            p:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -(10 + UI.GAP), 10)
-            p:Hide()
-            return p
-        end
-        local card = UI:CreateCard(parent, L["Alliance code"])
-        card:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -UI.GAP)
-        card:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -(10 + UI.GAP), 10)
-        card:Hide()
-        local p = CreateFrame("Frame", nil, card)
-        p:SetPoint("TOPLEFT", CARD_PAD, -CARD_TOP)
-        p:SetPoint("BOTTOMRIGHT", -CARD_PAD, CARD_PAD - 4)
-        p.card = card
+    -- Flush with the bar's left edge, UI.GAP under it, ending UI.GAP short of its right edge (#371). The Officers'
+    -- Room's setup lays its parchment cards on the wood there (UI/Forms.lua, the mockup's "Alliance code").
+    local function makeSubPanel()
+        local p = CreateFrame("Frame", nil, parent)
+        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -UI.GAP)
+        p:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -(10 + UI.GAP), 10)
+        p:Hide()
         return p
     end
 
@@ -803,14 +775,14 @@ function GuildOS:CreateAlliancePanel(parent, _mainFrame)
     flexHints = {}
     for _, t in ipairs(SUBTABS) do
         local p = makeSubPanel(t.key)
-        parent.subPanels[t.key] = { panel = p, card = rawget(p, "card"), refresh = builders[t.key](p) }
+        parent.subPanels[t.key] = { panel = p, refresh = builders[t.key](p) }
     end
     local myHints = flexHints
     flexHints = nil
     -- Opened from a room entry that names a sub-tab, the room's row is the only row of tabs (#445).
     UI:CollapsibleSubBar(parent, bar, function()
         local frames = {}
-        for k, info in pairs(parent.subPanels) do frames[k] = info.card or info.panel end
+        for k, info in pairs(parent.subPanels) do frames[k] = info.panel end
         return frames
     end, { 0, -UI.GAP })
 
@@ -821,9 +793,15 @@ function GuildOS:CreateAlliancePanel(parent, _mainFrame)
         selectSub(want)
     end)
 
-    UI:MakeResponsive(parent, function(_, w, _)
+    UI:MakeResponsive(parent, function(_, w, h)
         bar:SetWidth(math.max(TAB_MIN_W, w - 20))
         layoutTabs()
+        -- The setup's cards at its area's width and height (its anchors say so; the game says so a frame later).
+        local setupBoard = rawget(parent.subPanels.setup.panel, "board")
+        if type(setupBoard) == "table" and setupBoard.Layout then
+            local areaH = h - 8 - 10 - (bar:IsShown() and ((tonumber(bar:GetHeight()) or 28) + UI.GAP) or 0)
+            setupBoard:Layout(w - 20 - UI.GAP - (tonumber(UI.SCROLL_GUTTER) or 12), areaH)
+        end
         local hintW = math.max(220, w - 40)
         for _, fs in ipairs(myHints) do fs:SetWidth((UI.OnPaper and UI:OnPaper(fs)) and (hintW - 28) or hintW) end
     end)

@@ -98,6 +98,7 @@ function GuildOS:Print(m) printed[#printed + 1] = m end
 dofile(ADDON .. "/Modules/ModAlerts.lua")
 dofile(ADDON .. "/Modules/ModFlood.lua")
 dofile(ADDON .. "/Modules/Newcomer.lua")
+dofile(ADDON .. "/UI/Forms.lua")
 dofile(ADDON .. "/UI/ModAlerts.lua")
 local M, F = GuildOS.ModAlerts, GuildOS.ModFlood
 M:Initialize()

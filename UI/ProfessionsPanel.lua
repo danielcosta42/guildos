@@ -3,8 +3,8 @@
 --
 -- Who in the guild makes what. A rail of professions with their coverage; a Recipes view of
 -- every recipe the game has for the profession (who knows it, what it needs, what nobody
--- covers) and a Crafters view of the members with it. A recipe clicked opens in place with its
--- reagents, source and crafters, and the craft order (issue #389). Everything comes from GuildOS.ProfDirectory; this file only draws.
+-- covers) and a Crafters view of the members with it. A recipe clicked opens its card beside the table (the
+-- Crafts tab's right column, #449): its reagents, source and crafters, and the craft order (issue #389). Everything comes from GuildOS.ProfDirectory; this file only draws.
 -- Replaces the Recipes panel on Forever (UI/Features.lua).
 --
 -- Drawn as the Workshop's mockup (#449 phase 3): the rail in a dark card ("Professions"), the catalog in a
@@ -150,15 +150,6 @@ local function whoText(keys, who)
     local text = table.concat(parts, ", ")
     if #list > 3 then text = text .. string.format(" |cff%s+%d|r", hex(C.paperSoft), #list - 3) end
     return text
-end
-
--- What the opened recipe says besides its materials: where it is learned, the skill, the station.
-local function metaText(e)
-    local parts = { sourceText(e) }
-    if e.reqSkill and e.reqSkill > 0 then parts[#parts + 1] = string.format(L["skill %d"], e.reqSkill) end
-    parts[#parts + 1] = specName(e.spec)
-    parts[#parts + 1] = stationName(e.focus)
-    return table.concat(parts, " · ")
 end
 
 ----------------------------------------------------------------------
@@ -339,13 +330,14 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     local scroll = CreateFrame("ScrollFrame", "GuildOSProfessionsScroll", list, "FauxScrollFrameTemplate")
     scroll:SetAllPoints()
     UI:SkinScrollBar(scroll, "GuildOSProfessionsScroll")
-    -- The opened recipe sits over the rows it takes; what scrolls past the list's edge is cut.
-    if list.SetClipsChildren then list:SetClipsChildren(true) end
-    local detail = GuildOS.CreateCraftDetail and GuildOS:CreateCraftDetail(list)
+    -- The chosen recipe's card (#449): the Crafts tab puts it in its right column; on its own it lies over the
+    -- panel's right part. Closed (its "‹ Orders", Escape), the catalog lets go of the recipe.
+    local detail = GuildOS.CreateRecipeCard and GuildOS:CreateRecipeCard(panel)
     if detail then
-        detail:SetFrameLevel(list:GetFrameLevel() + 5)
-        -- Resized past where the order fits beside the columns: it takes other rows (#415).
-        detail.onReflow = function() panel:Refresh() end
+        detail.onClose = function()
+            state.open, state.openTo = nil, nil
+            panel:UpdateRows()
+        end
     end
 
     local empty = UI:CreateText(list, "", 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
@@ -369,6 +361,13 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         row.frame:SetTexture(WHITE8)
         row.frame:SetPoint("TOPLEFT", row.icon, "TOPLEFT", -1, 1)
         row.frame:SetPoint("BOTTOMRIGHT", row.icon, "BOTTOMRIGHT", 1, -1)
+        row.mark = row:CreateTexture(nil, "ARTWORK")
+        row.mark:SetTexture(WHITE8)
+        row.mark:SetVertexColor(C.paperTitle.r, C.paperTitle.g, C.paperTitle.b, 1)
+        row.mark:SetPoint("TOPLEFT", 0, 0)
+        row.mark:SetPoint("BOTTOMLEFT", 0, 0)
+        row.mark:SetWidth(2)
+        row.mark:Hide()
         row.dot = row:CreateTexture(nil, "OVERLAY")
         row.dot:SetSize(8, 8)
         row.dot:SetTexture(WHITE8)
@@ -443,15 +442,21 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
                 if link then HandleModifiedItemClick(link) end
                 return
             end
-            if state.open == e.id then state.open = nil else state.open = e.id end
             state.openTo = nil
-            panel:Refresh()
+            if state.open == e.id then
+                detail:Close()
+            else
+                state.open = e.id
+                panel:UpdateRows()
+                panel:PaintDetail(true)
+            end
         end)
         rows[index] = row
         return row
     end
 
-    -- A row on the paper: a line of the paper's under it rather than stripes, the opened recipe washed.
+    -- A row on the paper: a line of the paper's under it rather than stripes, the chosen recipe washed and marked
+    -- on its left in the paper's title red.
     function panel:PaintRowBg(row, _)
         local open = row.data and state.mode == "recipes" and row.data.id == state.open
         if open then
@@ -459,6 +464,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         else
             row:SetBackdropColor(0, 0, 0, 0)
         end
+        row.mark:SetShown(open and true or false)
     end
 
     panel.visibleRows = 0
@@ -476,7 +482,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         for i = 1, visible do
             local row, e = rows[i], state.results[offset + i]
             row.data = e
-            if not e or e.__detail then
+            if not e then
                 row.data = nil
                 row:Hide()
             else
@@ -539,9 +545,6 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         end
         empty:SetText(message or "")
         empty:SetShown(message ~= nil)
-        if detail then
-            UI.PlaceDetail(detail, list, state.detailAt, state.detailRows or 0, offset, visible, ROW_H, ROW_GUTTER)
-        end
     end
 
     -- The marks after a recipe's name: I make it, and how many orders ask for it.
@@ -555,16 +558,30 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         return out
     end
 
-    -- The opened recipe's block: its item, its crafters online first, what it takes.
+    -- The chosen recipe's card: its item, what it takes, its crafters online first (each with their skill), the order.
     function panel:PaintDetail(fresh)
         if not detail then return end
-        if state.mode ~= "recipes" or not state.open then detail:Hide(); return end
-        local e
-        for _, x in ipairs(state.results) do if not x.__detail and x.id == state.open then e = x end end
-        if not e then detail:Hide(); return end
+        if state.mode ~= "recipes" or not state.open then
+            if detail:IsShown() then detail:Close() end
+            return
+        end
+        local e = state.openRow
+        for _, x in ipairs(state.results) do if x.id == state.open then e = x end end
+        if not e or e.id ~= state.open then detail:Close(); return end
+        state.openRow = e
         local list2 = crafterList(e.crafters, state.who)
-        detail:SetRecipe({ id = e.id, recipeId = e.id, item = (e.out and e.out > 0) and e.out or nil, crafters = list2,
-                           meta = metaText(e) }, state.openTo, fresh)
+        local P = GuildOS.Professions
+        for _, c in ipairs(list2) do
+            local rec = P and P.Get and P:Get(c.key)
+            local p = rec and rec.profs and rec.profs[e.line]
+            c.skill = p and p.rank or nil
+        end
+        local item = (e.out and e.out > 0) and e.out or nil
+        local req = requiresText(e)
+        detail:SetRecipe({ id = e.id, recipeId = e.id, item = item, spell = not item and e.id or nil,
+            name = e.name, icon = recipeIcon(e), prof = D.DisplayName(e.line), yellow = e.yellow, grey = e.grey,
+            requires = req ~= "" and req or nil, source = sourceText(e), crafters = list2 }, state.openTo, fresh)
+        UI.PlaceRecipeCard(detail, panel)
     end
 
     scroll:SetScript("OnVerticalScroll", function(self, offset)
@@ -593,15 +610,9 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
                     and (not state.item or e.out == state.item)
                 if keep then out[#out + 1] = e end
             end
-            local at, n
-            if UI.WithDetail then
-                out, at, n = UI.WithDetail(out, function(e) return e.id == state.open end, ROW_H, detail)
-            end
-            state.results, state.detailAt, state.detailRows = out, at, n
-            if not at then state.open = nil end
+            state.results = out
         else
             state.results = state.line and D.MemberRows(state.line) or {}
-            state.detailAt, state.detailRows = nil, nil
         end
         if resetScroll then
             scroll:SetVerticalScroll(0)
@@ -636,8 +647,8 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         -- The recipe the crafter it goes to knows, else the one the guild knows most (issue #396).
         local O = GuildOS.CraftOrders
         state.open = (O and O:RecipeFor(itemId, toKey)) or D.ItemRecipes(itemId)[1]
-        self:Refresh(true)
         state.openTo = toKey
+        self:Refresh(true)
         self:PaintDetail(true)
         return true
     end
@@ -707,6 +718,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         AcquireRows(UI:ResolveRows(h - listTop - FOOTER_H - SIDE, ROW_H, 0))
         for i = 1, self.visibleRows do rows[i]:ApplyColumns(layout, state.mode) end
         self:UpdateRows()
+        if detail and detail:IsShown() then UI.PlaceRecipeCard(detail, panel, w) end
     end
 
     parent:SetScript("OnShow", function() panel:Refresh() end)

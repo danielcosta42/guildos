@@ -120,7 +120,7 @@ check(panel:find("local SIZES%s*=%s*GuildOS%.Client%.raidSizes"), "the calendar'
 for _, path in ipairs({ "UI/CalendarPanel.lua", "Modules/Calendar.lua", "UI/AlliancePanel.lua" }) do
   check(not code(path):find("%f[%d]25%f[%D]"), path .. " holds no 25 of its own: sizes come from the game")
 end
-check(read("UI/CorePanel.lua"):find('if #comp.buffStatus > 0 then%s+y = MakeSectionHeader%(rightContent, L%["Raid Buffs"%]'),
+check(read("UI/CorePanel.lua"):find('if #comp.buffStatus > 0 then%s+side%[#side %+ 1%] = function%(at%) return BuffsCard%('),
   "the core screen leaves out the Raid Buffs section when the game has none")
 
 print(("forever-raid-data: %d checks passed"):format(checks))

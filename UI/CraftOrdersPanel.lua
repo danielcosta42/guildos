@@ -1,8 +1,9 @@
 ----------------------------------------------------------------------
 -- Guild OS - The Crafts tab and craft orders (issue #389)
 -- One tab for the guild's professions and its craft orders: the catalog on the left (the
--- Professions panel, or Anniversary's recipe list), the order queue on the right, and a recipe
--- opened in place with what it takes, who makes it and the order. Also the order dialog, Alt-click
+-- Professions panel, or Anniversary's recipe list), the order queue on the right, and the recipe chosen
+-- on a card of its own in the queue's place (#449) with what it takes, who makes it and the order; the
+-- Workshop's Search the realm is a screen of the tab (UI/CraftFinder.lua). Also the order dialog, Alt-click
 -- on an item, and the bars on the game's trade and mail windows that hand the materials or the
 -- item over in one click. Visual layer only: every change goes through GuildOS.CraftOrders.
 -- The queue is the Workshop's "Pedidos de craft" (#449 phase 3): a parchment card, its views as pills, each
@@ -17,6 +18,7 @@ local GUTTER  = tonumber(UI.SCROLL_GUTTER) or 12
 local ICON    = 18
 local FIELD_H = 22
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
+local WHITE8   = "Interface\\Buttons\\WHITE8x8"
 
 local function Orders() return GuildOS.CraftOrders end
 
@@ -33,18 +35,6 @@ local function money(copper)
 end
 
 local function nameOf(key) return Orders().NameOf(key) end
-
--- A member's class colour; on the paper (`surface` a frame on a card) the paper's class ink (UI:InkFor).
-local function classColor(key, surface)
-    local short = type(key) == "string" and (key:match("^([^-]+)") or key)
-    local rec = short and GuildOS.GetMemberRecord and GuildOS:GetMemberRecord(short, key:match("-(.+)$"))
-    local class = rec and rec.class
-    if surface and UI.InkFor and UI:OnPaper(surface) then
-        local r, g, b = UI:InkFor("paper", "class", class)
-        return { r = r, g = g, b = b }
-    end
-    return (class and GuildOS.ClassColors[class:upper()]) or C.text
-end
 
 local function itemInfo(id)
     local name, link, quality, _, _, _, _, _, _, tex = GuildOS.Compat.GetItemInfo(id)
@@ -373,234 +363,408 @@ function GuildOS:CreateOrderQueue(parent)
 end
 
 ----------------------------------------------------------------------
--- The recipe opened in the catalog: what it takes, who makes it, and the order, in one block
+-- The recipe card (#449): the recipe chosen in the catalog, on a parchment card of its own in the right
+-- column where the Orders card was (over the table's right part in a narrow window). Its item framed in its
+-- quality, what it takes for the quantity chosen, who crafts it (the guild, then the alliance) and the order.
+-- "‹ Orders", Escape or the row clicked again close it.
 ----------------------------------------------------------------------
-local DETAIL_H   = 152
-local COMPOSER_W = 248
-local COMPOSER_H = DETAIL_H - 16
-local MAT_LINES  = 5
-local WHO_LINES  = 3
-local COL_MIN    = 120
--- Materials and crafters side by side, the order on their right, takes this much width. A
--- narrower block puts the order under them, taller, instead of drawing the crafters' "Ask them"
--- over it (#415).
-local WIDE_MIN   = 34 + 2 * COL_MIN + 18 + COMPOSER_W + 16
-local STACKED_H  = DETAIL_H + COMPOSER_H + 8
+local CARD_PAD   = 14
+local HEAD_TOP   = 40       -- under the "‹ Orders" pill
+local ICON_SIZE  = 36
+local MAT_H      = 22
+local MAT_BANK_H = 34       -- a material the guild bank also holds: a second line under its name
+local WHO_H      = 26
+local WHO_MAX    = 40       -- crafter rows drawn at most; the rest counted
+local ORDER_H    = 176      -- the order block, pinned to the card's foot
+local SCROLL_GUT = 14
 
--- An inset on the paper (#449): a lighter paper with the card's tan line, rounded; its text takes the paper's
--- inks (it is __paper). `fill`: the inset's colour.
-local function paperInset(frame, fill)
-    local Style = GuildOS.Style
-    if frame.SetBackdrop then frame:SetBackdrop(nil) end
-    frame.__paper, frame.__dark = true, nil
-    if not Style then return frame end
-    local f = Style:Nine(frame, "card", 6, "BACKGROUND", -6)
-    f:SetColor(fill or C.paperLight)
-    local l = Style:Nine(frame, "card-line", 6, "BACKGROUND", -5)
-    l:SetColor(C.paperLine)
-    Style:Hand(frame, f, l)
-    return frame
-end
-
--- The paper's inks, read where the detail is drawn.
+-- The paper's inks, read where the card is drawn.
 local function ink(key)
-    local P = { soft = C.paperSoft, dim = UI.STATUS_INK and UI.STATUS_INK.mute or C.paperSoft,
-                ok = UI.STATUS_INK and UI.STATUS_INK.ok or C.ok, bad = UI.STATUS_INK and UI.STATUS_INK.bad or C.danger }
+    local S = UI.STATUS_INK or {}
+    local P = { soft = C.paperSoft, dim = S.mute or C.paperSoft, ok = S.ok or C.ok, bad = S.bad or C.danger }
     return P[key]
 end
 
-function GuildOS:CreateCraftDetail(parent)
-    -- A light paper inset in the catalog's card (the mockup's opened recipe), not a dark block on the paper:
-    -- every text in it is the paper's ink (#449).
-    local d = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    d:SetHeight(DETAIL_H)
-    paperInset(d, C.paperLight)
+-- A material's count in the guild bank, by the bank's last picture (nil where nobody read it).
+local function bankCount(id)
+    local B = GuildOS.GuildBank
+    if not (B and B.CountOf and B.Available and B:Available()) then return nil end
+    local ok, n = pcall(B.CountOf, B, id)
+    return ok and tonumber(n) or nil
+end
+
+-- The item's link (or the enchant's), for a shift-click into chat.
+local function recipeLink(r)
+    if r.item then
+        local _, link = itemInfo(r.item)
+        return link
+    end
+    if r.spell and GuildOS.Compat.GetSpellLink then return GuildOS.Compat.GetSpellLink(r.spell) end
+end
+
+local function whisperTo(name, r)
+    if not ChatFrame_OpenChat then return end
+    local link = recipeLink(r)
+    ChatFrame_OpenChat("/w " .. GuildOS:WhisperTarget(name) .. " "
+        .. string.format(L["Can you craft %s?"], link or r.name or L["this item"]))
+end
+
+function GuildOS:CreateRecipeCard(parent)
+    local d = UI:CreateCard(parent, "")
+    d.title:Hide()
     d:EnableMouse(true)
-    local mark = d:CreateTexture(nil, "ARTWORK")
-    mark:SetTexture("Interface\\Buttons\\WHITE8x8")
-    mark:SetPoint("TOPLEFT", 1, -4); mark:SetPoint("BOTTOMLEFT", 1, 4)
-    mark:SetWidth(3)
-    mark:SetVertexColor(C.paperTitle.r, C.paperTitle.g, C.paperTitle.b, 1)
     d:Hide()
-
-    -- Materials
-    -- Section titles in the section face, in normal case (the mockup never sets one in capitals).
-    local matHead = UI:CreateHeaderText(d, "", 11)
-    matHead:SetPoint("TOPLEFT", 34, -8)
-    d.mats = {}
-    for i = 1, MAT_LINES do
-        local name = UI:CreateText(d, "", 11)
-        name:SetPoint("TOPLEFT", 34, -8 - i * 18)
-        name:SetJustifyH("LEFT"); name:SetWordWrap(false)
-        local have = UI:CreateText(d, "", 11)
-        GuildOS:ApplyFont(have, 11, "tableNum")
-        have:SetJustifyH("RIGHT")
-        d.mats[i] = { name = name, have = have }
-    end
-    local matNote = UI:CreateText(d, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    matNote:SetJustifyH("LEFT")
-
-    -- Crafters
-    local whoHead = UI:CreateHeaderText(d, "", 11)
-    d.who = {}
-    for i = 1, WHO_LINES do
-        local name = UI:CreateText(d, "", 11)
-        name:SetJustifyH("LEFT"); name:SetWordWrap(false)
-        local ask = UI:SetButtonVariant(UI:CreateButton(d, L["Ask them"], 70, 18), "ghost")
-        -- Online: a drawn dot, not a bullet character (the addon's fonts have no such glyph: it draws a box).
-        local dot = d:CreateTexture(nil, "ARTWORK")
-        dot:SetTexture("Interface\\Buttons\\WHITE8x8")
-        dot:SetSize(6, 6)
-        d.who[i] = { name = name, ask = ask, dot = dot }
-    end
-    local whoMore = UI:CreateText(d, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    whoMore:SetJustifyH("LEFT")
-
-    -- The order: on the right, or under the columns in a narrow list (Paint places it)
-    -- The order: the card's own paper inside the light inset, the paper's controls on it (quiet cream buttons, the
-    -- light field, the crimson Send).
-    local box = CreateFrame("Frame", nil, d, "BackdropTemplate")
-    box:SetSize(COMPOSER_W, COMPOSER_H)
-    paperInset(box, C.paper)
-    local qtyLabel = UI:CreateText(box, L["Quantity"], 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    qtyLabel:SetPoint("TOPLEFT", 10, -12)
-    local plus = UI:CreateButton(box, "+", 22, 20)
-    plus:SetPoint("TOPRIGHT", -10, -8)
-    local qtyText = UI:CreateText(box, "1", 12)
-    GuildOS:ApplyFont(qtyText, 12, "tableNum")
-    qtyText:SetPoint("RIGHT", plus, "LEFT", -4, 0)
-    qtyText:SetWidth(26); qtyText:SetJustifyH("CENTER")
-    local minus = UI:CreateButton(box, "-", 22, 20)
-    minus:SetPoint("RIGHT", qtyText, "LEFT", -4, 0)
-    local modeMats = UI:CreateButton(box, L["I bring them"], 112, 20)
-    modeMats:SetPoint("TOPLEFT", 10, -36)
-    local modeOwn = UI:CreateButton(box, L["Crafter's own"], 112, 20)
-    modeOwn:SetPoint("LEFT", modeMats, "RIGHT", 4, 0)
-    local tipLabel = UI:CreateText(box, L["Tip (gold)"], 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    tipLabel:SetPoint("TOPLEFT", 10, -64)
-    local tip = UI:CreateInput(box, 70, 20, { numeric = true, max = 6 })
-    tip:SetPoint("TOPLEFT", 10, -78)
-    local toText = UI:CreateText(box, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    toText:SetPoint("TOPLEFT", tip, "TOPRIGHT", 10, 12)
-    toText:SetPoint("RIGHT", box, "RIGHT", -10, 0)
-    toText:SetJustifyH("LEFT"); toText:SetWordWrap(false)
-    local toClear = UI:SetButtonVariant(UI:CreateButton(box, L["Send to anyone"], 120, 18), "ghost")
-    toClear:SetPoint("TOPLEFT", tip, "TOPRIGHT", 10, -1)
-    local send = UI:CreateButton(box, L["Send order"], COMPOSER_W - 20, 24)
-    UI:SetButtonVariant(send, "primary")
-    send:SetPoint("BOTTOMLEFT", 10, 8)
-
     d.qty, d.mode = 1, "mats"
 
-    -- The height the block takes at width `w`: the order beside the columns, or under them.
-    function d:HeightFor(w)
-        return (w and w > 0 and w < WIDE_MIN) and STACKED_H or DETAIL_H
+    -- Back to the Orders card (the column's own).
+    local back = UI:SetButtonVariant(UI:CreateButton(d, L["‹ Orders"], 80, 20), "chip")
+    back:SetWidth(math.ceil(back.label:GetStringWidth() or 50) + 22)
+    back:SetPoint("TOPLEFT", CARD_PAD - 2, -10)
+    d.back = back
+
+    -- The header: the item in its quality's frame, its name in the serif in the paper's quality ink.
+    local icon = UI:CreateIcon(d, ICON_SIZE)
+    icon:SetPoint("TOPLEFT", CARD_PAD, -HEAD_TOP)
+    icon:EnableMouse(true)
+    d.icon = icon
+    local name = UI:CreateTitle(d, "", 14)
+    name:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -1)
+    name:SetPoint("RIGHT", d, "RIGHT", -CARD_PAD, 0)
+    name:SetJustifyH("LEFT")
+    if name.SetWordWrap then name:SetWordWrap(true) end
+    if name.SetMaxLines then name:SetMaxLines(2) end
+    d.name = name
+    local meta = UI:CreateText(d, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    meta:SetJustifyH("LEFT")
+    meta:SetWordWrap(true)
+    d.meta = meta
+    local makes = UI:CreateText(d, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    makes:SetJustifyH("LEFT")
+    d.makes = makes
+
+    -- Hovered: the item's tooltip. Shift-clicked: its link into chat.
+    local function showTip(self)
+        local r = d.recipe
+        if not r then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if r.item then GameTooltip:SetHyperlink("item:" .. r.item)
+        elseif r.spell then GameTooltip:SetHyperlink("enchant:" .. r.spell) end
+        GameTooltip:Show()
     end
-    -- The layout follows the height the list gave the block; when the width asks for the other
-    -- one, `onReflow` (the list's) gives it the rows it needs.
-    function d:IsStacked()
-        return (self:GetHeight() or 0) >= STACKED_H - 0.5
+    icon:SetScript("OnEnter", showTip)
+    icon:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    icon:SetScript("OnMouseUp", function()
+        local r = d.recipe
+        local link = r and recipeLink(r)
+        if link and IsShiftKeyDown() and HandleModifiedItemClick then HandleModifiedItemClick(link) end
+    end)
+
+    -- The middle scrolls: the materials and who crafts it.
+    local scroll, body = UI:CreateScrollFrame(d, nil)
+    d.scroll, d.body = scroll, body
+    body.__paper = true
+
+    local matHead = UI:CreateHeaderText(body, L["Materials"], 11)
+    matHead:SetPoint("TOPLEFT", 0, 0)
+    local matNote = UI:CreateText(body, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    matNote:SetJustifyH("LEFT")
+    matNote:SetWordWrap(true)
+    d.mats = {}
+    local function matRow(i)
+        local m = d.mats[i]
+        if m then return m end
+        m = CreateFrame("Button", nil, body)
+        m:SetHeight(MAT_H)
+        m.icon = m:CreateTexture(nil, "ARTWORK")
+        m.icon:SetSize(16, 16)
+        m.icon:SetPoint("TOPLEFT", 0, -3)
+        m.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        m.name = UI:CreateText(m, "", 12)
+        m.name:SetPoint("TOPLEFT", 22, -4)
+        m.name:SetJustifyH("LEFT"); m.name:SetWordWrap(false)
+        m.have = UI:CreateText(m, "", 12)
+        GuildOS:ApplyFont(m.have, 12, "tableNum")
+        m.have:SetPoint("TOPRIGHT", 0, -4)
+        m.have:SetJustifyH("RIGHT")
+        m.bank = UI:CreateText(m, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+        m.bank:SetPoint("TOPLEFT", 22, -19)
+        m.bank:SetJustifyH("LEFT"); m.bank:SetWordWrap(false)
+        m:SetScript("OnEnter", function(self)
+            if not self.itemID then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetHyperlink("item:" .. self.itemID)
+            GameTooltip:Show()
+        end)
+        m:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        m:SetScript("OnClick", function(self)
+            local _, link = itemInfo(self.itemID)
+            if link and IsShiftKeyDown() and HandleModifiedItemClick then HandleModifiedItemClick(link) end
+        end)
+        d.mats[i] = m
+        return m
     end
 
+    local whoHead = UI:CreateHeaderText(body, "", 11)
+    d.who = {}
+    local function whoRow(i)
+        local w = d.who[i]
+        if w then return w end
+        w = CreateFrame("Frame", nil, body)
+        w:SetHeight(WHO_H)
+        w.avatar = UI:CreateAvatar(w, 20, false)
+        w.avatar:SetPoint("LEFT", 0, 0)
+        w.avatar:EnableMouse(false)
+        -- Online: a drawn dot, not a bullet character (the addon's fonts have no such glyph: it draws a box).
+        w.dot = w:CreateTexture(nil, "OVERLAY")
+        w.dot:SetTexture(WHITE8)
+        w.dot:SetSize(6, 6)
+        w.dot:SetPoint("BOTTOMRIGHT", w.avatar, "BOTTOMRIGHT", 1, -1)
+        w.name = UI:CreateText(w, "", 12)
+        w.name:SetPoint("LEFT", 28, 0)
+        w.name:SetJustifyH("LEFT"); w.name:SetWordWrap(false)
+        w.skill = UI:CreateText(w, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+        GuildOS:ApplyFont(w.skill, 11, "tableNum")
+        w.skill:SetJustifyH("RIGHT")
+        w.whisper = UI:SetButtonVariant(UI:CreateButton(w, L["Whisper"], 50, 18), "ghost")
+        w.whisper:SetWidth(math.ceil(w.whisper.label:GetStringWidth() or 40) + 4)
+        w.whisper:SetPoint("RIGHT", 0, 0)
+        w.ask = UI:SetButtonVariant(UI:CreateButton(w, L["Order"], 40, 18), "ghost")
+        w.ask:SetWidth(math.ceil(w.ask.label:GetStringWidth() or 30) + 4)
+        w.ask:SetPoint("RIGHT", w.whisper, "LEFT", -8, 0)
+        w.skill:SetPoint("RIGHT", w.ask, "LEFT", -8, 0)
+        w.skill:SetWidth(40)
+        w.name:SetPoint("RIGHT", w.skill, "LEFT", -6, 0)
+        d.who[i] = w
+        return w
+    end
+    local whoMore = UI:CreateText(body, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    whoMore:SetJustifyH("LEFT")
+    whoMore:SetWordWrap(true)
+    -- Nobody in the guild: the realm's search, opened on the item.
+    local realm = UI:SetButtonVariant(UI:CreateButton(body, L["Search the realm"], 100, 18), "ghost")
+    realm:SetWidth(math.ceil(realm.label:GetStringWidth() or 80) + 4)
+    realm:SetScript("OnClick", function()
+        local r = d.recipe
+        if GuildOS.ShowCraftFinder then GuildOS:ShowCraftFinder(r and r.item) end
+    end)
+    d.realm = realm
+
+    -- The order, pinned to the card's foot under a rule.
+    local box = CreateFrame("Frame", nil, d)
+    box:SetPoint("BOTTOMLEFT", CARD_PAD, CARD_PAD - 4)
+    box:SetPoint("BOTTOMRIGHT", -CARD_PAD, CARD_PAD - 4)
+    box:SetHeight(ORDER_H)
+    d.box = box
+    local rule = UI:CreateSeparator(box)
+    rule:SetVertexColor(C.paperRule.r, C.paperRule.g, C.paperRule.b, 1)
+    rule:SetPoint("TOPLEFT", 0, 0)
+    rule:SetPoint("TOPRIGHT", 0, 0)
+    local orderHead = UI:CreateHeaderText(box, L["Order"], 11)
+    orderHead:SetPoint("TOPLEFT", 0, -10)
+    -- The quantity and the tip on one line, the materials' two ways under them, who it goes to, Send.
+    local qtyLabel = UI:CreateText(box, L["Quantity"], 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    qtyLabel:SetPoint("TOPLEFT", 0, -36)
+    local minus = UI:CreateButton(box, "-", 22, 20)
+    minus:SetPoint("LEFT", qtyLabel, "RIGHT", 8, 0)
+    local qtyText = UI:CreateText(box, "1", 13)
+    GuildOS:ApplyFont(qtyText, 13, "tableNum")
+    qtyText:SetPoint("LEFT", minus, "RIGHT", 2, 0)
+    qtyText:SetWidth(28); qtyText:SetJustifyH("CENTER")
+    local plus = UI:CreateButton(box, "+", 22, 20)
+    plus:SetPoint("LEFT", qtyText, "RIGHT", 2, 0)
+    local tip = UI:CreateInput(box, 64, 22, { numeric = true, max = 6 })
+    tip:SetPoint("TOPRIGHT", 0, -31)
+    local tipLabel = UI:CreateText(box, L["Tip (gold)"], 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    tipLabel:SetPoint("RIGHT", tip, "LEFT", -8, 0)
+    local modeMats = UI:SetButtonVariant(UI:CreateButton(box, L["I bring the materials"], 120, 22), "chip")
+    modeMats:SetWidth(math.ceil(modeMats.label:GetStringWidth() or 100) + 22)
+    modeMats:SetPoint("TOPLEFT", 0, -60)
+    local modeOwn = UI:SetButtonVariant(UI:CreateButton(box, L["Crafter's own"], 100, 22), "chip")
+    modeOwn:SetWidth(math.ceil(modeOwn.label:GetStringWidth() or 80) + 22)
+    modeOwn:SetPoint("LEFT", modeMats, "RIGHT", 6, 0)
+    local toText = UI:CreateText(box, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    toText:SetPoint("TOPLEFT", 0, -92)
+    toText:SetJustifyH("LEFT"); toText:SetWordWrap(false)
+    local toClear = UI:SetButtonVariant(UI:CreateButton(box, L["Send to anyone"], 100, 18), "ghost")
+    toClear:SetWidth(math.ceil(toClear.label:GetStringWidth() or 80) + 4)
+    toClear:SetPoint("TOPRIGHT", 0, -89)
+    toText:SetPoint("RIGHT", toClear, "LEFT", -6, 0)
+    local send = UI:SetButtonVariant(UI:CreateButton(box, L["Send order"], 140, 26), "primary")
+    send:SetPoint("TOPLEFT", 0, -112)
+    send:SetPoint("TOPRIGHT", 0, -112)
+    local what = UI:CreateText(box, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    what:SetPoint("TOPLEFT", send, "BOTTOMLEFT", 0, -6)
+    what:SetPoint("TOPRIGHT", send, "BOTTOMRIGHT", 0, -6)
+    what:SetJustifyH("LEFT")
+    what:SetWordWrap(true)
+    d.send, d.what, d.tip, d.modeMats, d.modeOwn, d.toText, d.toClear = send, what, tip, modeMats, modeOwn, toText, toClear
+    d.plus, d.minus = plus, minus
+
+    -- Lays the body out at the card's width and paints it. Every width is read from the card (UI:LaidWidth),
+    -- never from a GetWidth that answers 0 before the game lays the card out.
     function d:Paint()
         local O, r = Orders(), self.recipe
         if not r then return end
-        local w = self:GetWidth() or 600
-        local stacked = self:IsStacked()
-        box:ClearAllPoints()
-        local colW
-        if stacked then
-            box:SetPoint("TOPLEFT", 34, -DETAIL_H)
-            colW = math.max(60, math.floor((w - 34 - 8 - 18) / 2))
-        else
-            box:SetPoint("TOPRIGHT", -8, -8)
-            colW = math.max(COL_MIN, math.floor((w - 34 - COMPOSER_W - 16 - 18) / 2))
+        local W = math.max(220, UI:LaidWidth(self))
+        local inner = W - 2 * CARD_PAD
+
+        -- The header
+        local q = r.quality or (r.item and select(3, itemInfo(r.item))) or 1
+        icon.icon:SetTexture(r.icon or (r.item and select(4, itemInfo(r.item))) or QUESTION)
+        UI:SetIconQuality(icon, q)
+        name:SetWidth(math.max(60, inner - ICON_SIZE - 14))
+        name:SetText(r.name or (r.item and itemInfo(r.item)) or (r.item and ("item:" .. r.item)) or "?")
+        name:SetTextColor(UI:InkFor("paper", "quality", q))
+        local parts = {}
+        if r.prof and r.prof ~= "" then parts[#parts + 1] = r.prof end
+        if r.yellow and r.grey and r.grey > 0 then
+            parts[#parts + 1] = string.format(L["skill %d–%d"], r.yellow, r.grey)
         end
-        -- The recipe of the row clicked, when the catalog says which (issue #396).
-        local crafts = math.ceil(self.qty / O:Yield(r.item, nil, r.recipeId))
-        -- Materials
-        local rg = r.item and O:Reagents(r.item, nil, r.recipeId) or {}
-        matHead:SetText(string.format(L["Materials × %d"], self.qty))
-        for i, m in ipairs(self.mats) do
-            local x = rg[i]
-            m.name:SetShown(x ~= nil); m.have:SetShown(x ~= nil)
-            if x then
-                local need = x.count * crafts
-                local have = GuildOS.Compat.GetItemCount(x.itemID) or 0
-                local mname, _, mq = itemInfo(x.itemID)
-                m.name:SetText(mname or ("item:" .. x.itemID))
-                m.name:SetTextColor(UI:InkFor(d, "quality", mq or 1))
-                m.name:SetWidth(math.max(20, colW - 60))
-                m.have:ClearAllPoints()
-                m.have:SetPoint("TOPLEFT", 34 + colW - 56, -8 - i * 18)
-                m.have:SetWidth(56)
-                m.have:SetText(string.format("%d / %d", have, need))
-                local col = (self.mode == "own" and ink("dim")) or (have >= need and ink("ok")) or ink("bad")
-                m.have:SetTextColor(col.r, col.g, col.b)
+        if r.requires and r.requires ~= "" then parts[#parts + 1] = string.format(L["Requires %s"], r.requires) end
+        if r.source and r.source ~= "" then parts[#parts + 1] = r.source end
+        meta:SetText(table.concat(parts, " · "))
+        meta:SetWidth(inner)
+        meta:ClearAllPoints()
+        meta:SetPoint("TOPLEFT", CARD_PAD, -(HEAD_TOP + ICON_SIZE + 12))
+        local metaH = (meta:GetText() ~= "" and math.max(14, math.ceil(meta:GetStringHeight() or 14))) or 0
+        local yield = r.item and O:Yield(r.item, nil, r.recipeId, self.toKey) or 1
+        makes:SetText(string.format(L["Makes %d per craft"], yield))
+        makes:ClearAllPoints()
+        makes:SetPoint("TOPLEFT", CARD_PAD, -(HEAD_TOP + ICON_SIZE + 12 + metaH + (metaH > 0 and 3 or 0)))
+        local headBottom = HEAD_TOP + ICON_SIZE + 12 + metaH + (metaH > 0 and 3 or 0) + 16 + 10
+
+        scroll:ClearAllPoints()
+        scroll:SetPoint("TOPLEFT", CARD_PAD, -headBottom)
+        scroll:SetPoint("BOTTOMRIGHT", -(CARD_PAD - 4), CARD_PAD - 4 + ORDER_H + 8)
+        local bw = math.max(120, inner - SCROLL_GUT)
+        body:SetWidth(bw)
+
+        -- Materials, for the quantity chosen
+        local crafts = math.ceil(self.qty / math.max(1, yield))
+        local rg = r.item and O:Reagents(r.item, nil, r.recipeId, self.toKey) or {}
+        matHead:SetText(self.qty > 1 and string.format(L["Materials × %d"], self.qty) or L["Materials"])
+        local y = 20
+        for _, m in ipairs(self.mats) do m:Hide() end
+        for i, x in ipairs(rg) do
+            local m = matRow(i)
+            local need = x.count * crafts
+            local have = GuildOS.Compat.GetItemCount(x.itemID) or 0
+            local mname, _, mq, mtex = itemInfo(x.itemID)
+            m.itemID = x.itemID
+            m.icon:SetTexture(mtex or QUESTION)
+            m.name:SetText(mname or ("item:" .. x.itemID))
+            m.name:SetTextColor(UI:InkFor("paper", "quality", mq or 1))
+            m.have:SetText(string.format("%d / %d", have, need))
+            local col = (self.mode == "own" and ink("dim")) or (have >= need and ink("ok")) or ink("bad")
+            m.have:SetTextColor(col.r, col.g, col.b)
+            m.name:SetWidth(math.max(40, bw - 22 - 70))
+            local inBank = bankCount(x.itemID)
+            m.bank:SetShown(inBank ~= nil and inBank > 0)
+            if inBank and inBank > 0 then m.bank:SetText(string.format(L["+%d in the guild bank"], inBank)) end
+            local h = (inBank and inBank > 0) and MAT_BANK_H or MAT_H
+            m:SetHeight(h)
+            m:ClearAllPoints()
+            m:SetPoint("TOPLEFT", 0, -y)
+            m:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            m:Show()
+            y = y + h
+        end
+        matNote:SetShown(#rg == 0)
+        if #rg == 0 then
+            matNote:SetText(L["The materials show once a crafter accepts: they tell what it takes."])
+            matNote:SetWidth(bw)
+            matNote:ClearAllPoints()
+            matNote:SetPoint("TOPLEFT", 0, -y)
+            y = y + math.max(16, math.ceil(matNote:GetStringHeight() or 16)) + 2
+        end
+        y = y + 14
+
+        -- Who crafts it: the guild's, online first, then the alliance's (marked with their guild).
+        local list = {}
+        for _, c in ipairs(r.crafters or {}) do list[#list + 1] = c end
+        local allies = 0
+        local A = GuildOS.Alliance
+        if r.item and A and A.Get and A:Get() and A.FindCrafters then
+            local ok, found = pcall(A.FindCrafters, A, r.item)
+            for _, c in ipairs(ok and found or {}) do
+                list[#list + 1] = { name = c.name, class = c.class, online = c.online, guild = c.guild, whisper = c.whisper,
+                                    ally = true }
+                allies = allies + 1
             end
         end
-        matNote:ClearAllPoints()
-        matNote:SetPoint("TOPLEFT", 34, -8 - (math.min(#rg, MAT_LINES) + 1) * 18 - 4)
-        matNote:SetWidth(colW)
-        -- Under the materials: how many one craft makes (or that the crafter will say what it takes),
-        -- then where the recipe is learned, its skill and station.
-        local note = (#rg == 0 and L["The materials show once a crafter accepts: they tell what it takes."])
-            or string.format(L["Makes %d per craft"], O:Yield(r.item, nil, r.recipeId))
-        if r.meta and r.meta ~= "" then note = note .. " · " .. r.meta end
-        matNote:SetText(note)
-        -- Crafters
-        local x2 = 34 + colW + 18
+        local guildN = #list - allies
         whoHead:ClearAllPoints()
-        whoHead:SetPoint("TOPLEFT", x2, -8)
-        whoHead:SetText(string.format(L["Crafters · %d"], #r.crafters))
+        whoHead:SetPoint("TOPLEFT", 0, -y)
+        whoHead:SetText(string.format(L["Who crafts it · %d"], #list))
+        y = y + 20
         local me = O:MyKey()
-        for i, slot in ipairs(self.who) do
-            local c = r.crafters[i]
-            slot.name:SetShown(c ~= nil)
-            slot.dot:SetShown(c ~= nil and c.online)
-            slot.ask:SetShown(c ~= nil and c.key ~= me and c.key ~= self.toKey)
-            if c then
-                slot.name:ClearAllPoints()
-                slot.name:SetPoint("TOPLEFT", x2 + 12, -8 - i * 20)
-                slot.name:SetWidth(math.max(20, colW - 88))
-                slot.dot:ClearAllPoints()
-                slot.dot:SetPoint("RIGHT", slot.name, "LEFT", -6, 0)
-                local okc = ink("ok")
-                slot.dot:SetVertexColor(okc.r, okc.g, okc.b, 1)
-                local cc = c.online and classColor(c.key, d) or ink("dim")
-                slot.name:SetText(c.name or nameOf(c.key))
-                slot.name:SetTextColor(cc.r, cc.g, cc.b)
-                slot.ask:ClearAllPoints()
-                slot.ask:SetPoint("TOPLEFT", x2 + colW - 72, -8 - i * 20 + 2)
-                local key = c.key
-                slot.ask:SetScript("OnClick", function() self.toKey = key; self:Paint() end)
-            end
+        for _, w in ipairs(self.who) do w:Hide() end
+        for i = 1, math.min(#list, WHO_MAX) do
+            local c, w = list[i], whoRow(i)
+            w.data = c
+            w.avatar:SetMember(c.name or nameOf(c.key), c.class, not c.online)
+            w.dot:SetShown(c.online and true or false)
+            local okc = ink("ok")
+            w.dot:SetVertexColor(okc.r, okc.g, okc.b, 1)
+            local cname = c.name or nameOf(c.key)
+            if c.ally then cname = cname .. "  |cff" .. string.format("%02x%02x%02x", C.paperSoft.r * 255, C.paperSoft.g * 255,
+                C.paperSoft.b * 255) .. "[" .. tostring(c.guild or "?") .. "]|r" end
+            w.name:SetText(cname)
+            local cr, cg, cb = UI:InkFor("paper", "class", c.class)
+            if not c.online then local s = ink("dim"); cr, cg, cb = s.r, s.g, s.b end
+            w.name:SetTextColor(cr, cg, cb)
+            w.skill:SetText(c.skill and tostring(c.skill) or "")
+            local mine = c.key ~= nil and c.key == me
+            w.whisper:SetShown(not mine)
+            w.whisper:SetScript("OnClick", function() whisperTo(c.whisper or cname:match("^(%S+)") or cname, r) end)
+            -- A guild crafter takes an order sent to them alone.
+            w.ask:SetShown(c.key ~= nil and not mine and c.key ~= self.toKey)
+            w.ask:SetScript("OnClick", function() self.toKey = c.key; self:Paint() end)
+            w:ClearAllPoints()
+            w:SetPoint("TOPLEFT", 0, -y)
+            w:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            w:Show()
+            y = y + WHO_H
         end
-        local extra, extraOnline = #r.crafters - WHO_LINES, 0
-        for i = WHO_LINES + 1, #r.crafters do if r.crafters[i].online then extraOnline = extraOnline + 1 end end
+        realm:Hide()
         whoMore:ClearAllPoints()
-        whoMore:SetPoint("TOPLEFT", x2, -8 - (WHO_LINES + 1) * 20)
-        whoMore:SetWidth(colW)
-        if #r.crafters == 0 then
-            whoMore:SetText(L["Nobody in the guild crafts this"])
-        elseif extra > 0 then
-            whoMore:SetText(string.format(L["+%d more (%d online)"], extra, extraOnline))
+        whoMore:SetPoint("TOPLEFT", 0, -(y + 2))
+        whoMore:SetWidth(bw)
+        if #list > WHO_MAX then
+            whoMore:SetText(string.format(L["+%d more"], #list - WHO_MAX))
+            whoMore:Show()
+            y = y + 20
+        elseif guildN == 0 then
+            whoMore:SetText(L["Nobody in the guild crafts this."])
+            whoMore:Show()
+            realm:ClearAllPoints()
+            realm:SetPoint("TOPLEFT", whoMore, "BOTTOMLEFT", 0, -4)
+            realm:SetShown(GuildOS.ShowCraftFinder ~= nil and r.item ~= nil)
+            y = y + 20 + (realm:IsShown() and 22 or 0)
         else
-            whoMore:SetText("")
+            whoMore:Hide()
         end
+        body:SetHeight(y + 8)
+
         -- The order
         qtyText:SetText(tostring(self.qty))
         UI:SetSelected(modeMats, self.mode == "mats")
         UI:SetSelected(modeOwn, self.mode == "own")
-        toText:SetShown(self.toKey ~= nil)
+        toText:SetText(self.toKey and string.format(L["To %s only"], nameOf(self.toKey)) or L["To every crafter who knows it"])
         toClear:SetShown(self.toKey ~= nil)
-        if self.toKey then
-            toText:SetText(string.format(L["To %s only"], nameOf(self.toKey)))
-        end
-        local orderable = r.item ~= nil and (#r.crafters > 0 or self.toKey ~= nil)
+        local orderable = Orders ~= nil and r.item ~= nil and (guildN > 0 or self.toKey ~= nil)
         send:SetEnabled(orderable)
-        UI:SetDisabledReason(send, (not orderable) and (r.item and L["Nobody in the guild crafts this"] or L["The materials show once a crafter accepts: they tell what it takes."]) or nil)
-        box:SetShown(r.item ~= nil)
+        local why
+        if not r.item then why = L["An enchant is not an item: whisper a crafter instead."]
+        elseif not orderable then why = L["Nobody in the guild crafts this"] end
+        UI:SetDisabledReason(send, why)
+        if not orderable then
+            what:SetText(why or "")
+        elseif self.toKey then
+            what:SetText(string.format(L["%s sees it and can accept it. You hear when they do."], nameOf(self.toKey)))
+        else
+            what:SetText(string.format(L["The %d guild crafters who know it see it; the first to accept takes it."], guildN))
+        end
     end
 
     plus:SetScript("OnClick", function() d.qty = math.min(Orders().MAX_N, d.qty + 1); d:Paint() end)
@@ -623,70 +787,71 @@ function GuildOS:CreateCraftDetail(parent)
         if d.onSent then d.onSent(o) end
     end)
 
-    -- recipe = { id (what identifies the row), item, crafters = { { key, name, class, online } } },
-    -- the crafters online first. `toKey`: one crafter to send the order to.
-    -- A repaint of the same recipe keeps what the player chose in the block (quantity, materials,
-    -- tip, the crafter it goes to); a new recipe, or `fresh` (opened on an item from elsewhere),
-    -- starts over with `toKey`.
+    -- recipe = { id (the row's), recipeId, item, spell, name, icon, quality, prof, yellow, grey, requires, source,
+    -- crafters = { { key, name, class, online, skill } } }, the crafters online first. `toKey`: one crafter to
+    -- send the order to. A repaint of the same recipe keeps what the player chose (quantity, materials, tip, the
+    -- crafter); a new recipe, or `fresh` (opened on an item from elsewhere), starts over with `toKey`.
     function d:SetRecipe(recipe, toKey, fresh)
         if fresh or not (self.recipe and recipe and self.recipe.id == recipe.id) then
             self.qty, self.mode = 1, "mats"
             tip:SetText("")
             self.toKey = toKey
+            scroll:SetVerticalScroll(0)
         end
         self.recipe = recipe
+        local was = self:IsShown()
+        self:Show()
         self:Paint()
+        if not was and self.onChange then self.onChange(true) end
     end
-    d:SetScript("OnSizeChanged", function(self, w)
-        if not self:IsShown() then return end
-        if self.onReflow and (self:HeightFor(w) == STACKED_H) ~= self:IsStacked() then
-            self.onReflow()
-            return
+
+    -- Closed: by "‹ Orders" (`toOrders`), Escape or its row clicked again. The catalog lets go of the recipe.
+    function d:Close(toOrders)
+        local was = self:IsShown()
+        self.recipe = nil
+        self:Hide()
+        if self.onClose then self.onClose() end
+        if was and self.onChange then self.onChange(false, toOrders) end
+    end
+    back:SetScript("OnClick", function() d:Close(true) end)
+
+    -- Escape closes the card first, the window after. Keys go on to the game otherwise (never touched in combat,
+    -- where a frame may not change that).
+    d:EnableKeyboard(true)
+    d:SetScript("OnKeyDown", function(self, key)
+        local fight = GuildOS.Compat.InCombat and GuildOS.Compat.InCombat()
+        if key == "ESCAPE" then
+            if not fight and self.SetPropagateKeyboardInput then self:SetPropagateKeyboardInput(false) end
+            self:Close()
+        elseif not fight and self.SetPropagateKeyboardInput then
+            self:SetPropagateKeyboardInput(true)
         end
-        self:Paint()
+    end)
+
+    d:SetScript("OnSizeChanged", function(self)
+        if self:IsShown() and self.recipe then self:Paint() end
     end)
     return d
 end
 
--- The catalog lists keep fixed-height rows. An open recipe takes DETAIL_ROWS of them: the list
--- gets that many empty entries after it, and the detail is laid over their place (the list clips
--- what scrolls out). `detail` (optional) says how tall it is at the list's width. Returns the
--- list with the entries, and where the first one is.
-function UI.WithDetail(results, isOpen, rowH, detail)
-    local h = DETAIL_H
-    if detail and detail.HeightFor then
-        local w = UI:LaidWidth(detail)
-        if not w or w <= 0 then w = detail:GetParent() and detail:GetParent():GetWidth() end
-        h = detail:HeightFor(w)
-    end
-    local n = math.ceil(h / rowH)
-    for i, e in ipairs(results) do
-        if isOpen(e) then
-            for k = 1, n do table.insert(results, i + k, { __detail = k }) end
-            return results, i + 1, n
-        end
-    end
-    return results, nil, n
+-- Where the card sits when no Crafts tab places it (a catalog on its own): over the right part of `host`.
+function UI.PlaceRecipeCard(card, host, w)
+    if not card or card.hosted then return end
+    w = w or UI:LaidWidth(host)
+    card:ClearAllPoints()
+    card:SetPoint("TOPRIGHT", host, "TOPRIGHT", -10, -8)
+    card:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -10, 10)
+    card:SetWidth(math.max(260, math.min(360, (w or 0) - 220)))
+    card:SetFrameLevel((host:GetFrameLevel() or 1) + 30)
 end
 
--- Lay the detail over its rows, or hide it when none of them is in view.
-function UI.PlaceDetail(detail, list, first, n, offset, visible, rowH, gutter)
-    if not first then detail:Hide(); return end
-    local top = first - offset - 1
-    if top + n <= 0 or top >= visible then detail:Hide(); return end
-    detail:ClearAllPoints()
-    detail:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -top * rowH)
-    detail:SetPoint("RIGHT", list, "RIGHT", -(gutter or 0), 0)
-    detail:SetHeight(n * rowH)
-    detail:Show()
-    detail:Paint()
-end
 
 ----------------------------------------------------------------------
 -- The Crafts tab: the catalog and the order queue, side by side (issue #389)
 ----------------------------------------------------------------------
 local QUEUE_W   = 300
-local QUEUE_MIN = 940    -- under this width the queue becomes a drawer
+local CARD_W    = 340    -- the recipe card in the right column
+local QUEUE_MIN = 1000   -- under this width the queue becomes a drawer and the recipe card lies over the table
 
 function GuildOS:CreateCraftsTab(container, win)
     local host = CreateFrame("Frame", nil, container)
@@ -707,29 +872,84 @@ function GuildOS:CreateCraftsTab(container, win)
     else
         panel = GuildOS:CreateRecipesPanel(host, win)
     end
+    -- The recipe chosen in the catalog: its card takes the right column (the Orders card's place), or lies over
+    -- the table's right part in a narrow window.
+    local card = panel and panel.detail
+    if card then
+        card.hosted = true
+        if card.SetParent then card:SetParent(container) end
+    end
+
+    -- Search the realm (the Workshop's second entry): a screen of this tab, in place of the catalog and the queue.
+    local realm = CreateFrame("Frame", nil, container)
+    realm:SetAllPoints()
+    realm:Hide()
+    local finder = GuildOS.CreateRealmSearch and GuildOS:CreateRealmSearch(realm)
+    local view = "catalog"
 
     local lastW
     local function layout(w)
-        w = w or lastW or container:GetWidth() or 0
+        w = w or lastW or UI:LaidWidth(container) or 0
         lastW = w
+        if view == "realm" then
+            host:Hide(); dock:Hide(); toggle:Hide()
+            if card then card:Hide() end
+            return
+        end
+        host:Show()
         local wide = w >= QUEUE_MIN
+        local open = card ~= nil and card:IsShown()
+        local colW = (wide and open) and CARD_W or QUEUE_W
         host:ClearAllPoints()
         host:SetPoint("TOPLEFT")
-        host:SetPoint("BOTTOMRIGHT", wide and -(QUEUE_W + 12) or 0, 0)
+        host:SetPoint("BOTTOMRIGHT", wide and -(colW + 12) or 0, 0)
         dock:ClearAllPoints()
         dock:SetPoint("TOPRIGHT", -10, -8)
         dock:SetPoint("BOTTOMRIGHT", -10, wide and 10 or 34)
         dock:SetWidth(QUEUE_W)
-        dock:SetShown(queue ~= nil and (wide or drawerOpen))
-        toggle:SetShown(queue ~= nil and not wide)
+        -- The card takes the column while it is open; the drawer closes under it.
+        dock:SetShown(queue ~= nil and not open and (wide or drawerOpen))
+        toggle:SetShown(queue ~= nil and not wide and not open)
+        if card then
+            card:ClearAllPoints()
+            card:SetPoint("TOPRIGHT", container, "TOPRIGHT", -10, -8)
+            card:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -10, 10)
+            card:SetWidth(wide and CARD_W or math.max(280, math.min(CARD_W, w - 240)))
+            card:SetFrameLevel(container:GetFrameLevel() + 22)
+        end
     end
     toggle:SetScript("OnClick", function()
         drawerOpen = not drawerOpen
         layout()
         if drawerOpen and queue then GuildOS:SafeCall(queue.Draw, queue) end
     end)
+    if card then
+        -- Opened or closed: the column follows. "‹ Orders" in a narrow window opens the drawer it covered.
+        card.onChange = function(_, toOrders)
+            if toOrders and not (lastW and lastW >= QUEUE_MIN) then drawerOpen = true end
+            layout()
+            if panel.Relayout then GuildOS:SafeCall(panel.Relayout, panel) end
+            if queue and dock:IsShown() then GuildOS:SafeCall(queue.Draw, queue) end
+        end
+    end
     UI:MakeResponsive(container, function(_, w) layout(w) end)
     layout()
+
+    -- The catalog, or Search the realm. The recipe open on the catalog is let go when the realm's screen opens.
+    local function showView(v)
+        v = (v == "realm" and finder) and "realm" or "catalog"
+        if v == "realm" and card and card:IsShown() then card:Close() end
+        view = v
+        container.activeSub = v == "realm" and "realm" or nil
+        realm:SetShown(v == "realm")
+        layout()
+        if v == "realm" then GuildOS:SafeCall(finder.Relayout, finder) end
+    end
+    -- The window opened one of the tab's entries: the Crafts entry (no sub-tab) is the catalog.
+    container.SetSubBarShown = function()
+        local e = win and win.activeEntry
+        if not (e and e.sub == "realm") then showView("catalog") end
+    end
 
     local function paintToggle()
         if not queue then return end
@@ -756,12 +976,20 @@ function GuildOS:CreateCraftsTab(container, win)
     end)
 
     -- /gos open recipes forme · the minimap's inbox: the queue on that view.
-    container.SelectSub = function(sub)
+    container.SelectSub = function(sub, filter)
+        if sub == "realm" then
+            showView("realm")
+            if finder and tonumber(filter) then finder.RunQuery(filter) end
+            return
+        end
+        showView("catalog")
         if not queue then return end
+        if card and card:IsShown() then card:Close() end
         if not dock:IsShown() then drawerOpen = true; layout() end
         queue:Select(sub)
     end
-    container.panel, container.queue, container.dock, container.toggle = panel, queue, dock, toggle
+    container.panel, container.queue, container.dock, container.toggle, container.card = panel, queue, dock, toggle, card
+    container.finder, container.ShowView = finder, showView
     container.LayoutCrafts = layout
     GuildOS.craftsTab = container
     return panel

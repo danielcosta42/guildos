@@ -770,11 +770,19 @@ function Helpers:CreateTableHeader(parent, height)
 end
 
 -- A selected row's mark (the mockup's .t tr.sel): a gold wash that fades to the right. A texture on `row`,
--- hidden; show it while the row is selected.
+-- hidden; show it while the row is selected. It is exactly the row's box, its top and bottom on the row's own
+-- edges, where the lines between rows are drawn (#449: the wash sat above its row in the Cores list). Pinned by
+-- two corners to the row itself, never left to SetAllPoints' parent; and only the art's middle rows are read, so
+-- the texture's filtering never bleeds its edge rows in (an 8px art stretched over a 46px row). Under the row's
+-- lines (sub-level -1), so a rule drawn on the row still shows on a selected one.
 function Helpers:CreateRowSelection(row)
-    local t = Style:Texture(row, "fade", "BACKGROUND", 2)
-    t:SetAllPoints()
+    local t = Style:Texture(row, "fade", "BACKGROUND", -1)
+    t:ClearAllPoints()
+    t:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    t:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+    t:SetTexCoord(0, 1, 0.25, 0.75)
     t:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 0.2)
+    t.row = row
     t:Hide()
     return t
 end

@@ -1026,6 +1026,25 @@ function Recruitment:CyclePostMaxRank()
     return nextLimit
 end
 
+-- The limits CyclePostMaxRank goes through, in its order: nil (every rank), then each member rank. The
+-- officer's Recruiting screen lists them in a select (#449). Returns a list of limits (nil first).
+function Recruitment:PostMaxRankChoices()
+    local n = (GuildControlGetNumRanks and GuildControlGetNumRanks()) or 0
+    if n < 1 then n = 10 end
+    local first = ((GuildOS.db.settings and GuildOS.db.settings.officerMaxRank) or 1) + 1
+    local out = { false }
+    for limit = first, n - 2 do out[#out + 1] = limit end
+    return out
+end
+
+-- Set the members' rank limit to `limit` (nil or false: every rank), as CyclePostMaxRank does: sent to the
+-- guild only while this officer's recruiting is on. Returns the limit.
+function Recruitment:SetPostMaxRank(limit)
+    GuildOS.db.recruitment.postMaxRank = limit or nil
+    if GuildOS.db.recruitment.enabled then self:BroadcastStatus(true) end
+    return GuildOS.db.recruitment.postMaxRank
+end
+
 -- Member opt-in choice (persisted). nil = never touched, true = helping,
 -- false = turned off.
 function Recruitment:SetParticipation(v)

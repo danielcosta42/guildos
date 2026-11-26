@@ -610,25 +610,53 @@ check(not Groups:FitsLevel("not-an-activity", 70), "an unknown activity fits nob
 check(Groups:BestRole({ T = 0, H = 1, D = 2 }, "D") == "D" and Groups:BestRole({ T = 1, D = 2 }, "") == "T"
   and Groups:BestRole({ T = 1 }, "H") == nil, "the role asked is the first of mine with a spot")
 local dm = listing("steamvault", { T = 1, D = 1 })
-check(Groups:_ShouldToast(dm, 70, false, false), "a group for my level, free, gets a notice")
-check(not Groups:_ShouldToast(dm, 50, false, false), "not one for another level")
-check(not Groups:_ShouldToast(dm, 70, true, false), "not in combat")
-check(not Groups:_ShouldToast(dm, 70, false, true), "not in a group")
+check(Groups:_ShouldToast(dm, 70, false), "a group for my level, free, gets a notice")
+check(not Groups:_ShouldToast(dm, 50, false), "not one for another level")
+check(not Groups:_ShouldToast(dm, 70, true), "not in a group")
 Board:SetPref("roles", "H")
-check(not Groups:_ShouldToast(dm, 70, false, false), "not with no spot for any role of mine")
+check(not Groups:_ShouldToast(dm, 70, false), "not with no spot for any role of mine")
 Board:SetPref("roles", "")
 GuildOS.db.lfgPrefs.toast = false
-check(not Groups:_ShouldToast(dm, 70, false, false), "and not with the notices off")
+check(not Groups:_ShouldToast(dm, 70, false), "and not with the notices off")
 GuildOS.db.lfgPrefs.toast = true
 Groups:Create("steamvault", { T = 1 }, "", 3600, false)
-check(not Groups:_ShouldToast(dm, 70, false, false), "nor while I lead a group of my own")
+check(not Groups:_ShouldToast(dm, 70, false), "nor while I lead a group of my own")
 Groups:Disband()
 check(Groups:_Announce(key("Bea"), "Bea", Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 3600 }, NOW)) == "toast"
   and toasts[1].kind == "group" and toasts[1].act == "karazhan" and #printed == 0,
   "a new group that fits a level-less client is a notice, not a chat line")
+-- In combat the notice is still asked for (#449): GuildOS:ShowWhenClear holds it until combat ends,
+-- where before it was dropped for good.
+function InCombatLockdown() return true end
+toasts = {}
+check(Groups:_Announce(key("Cid"), "Cid", Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 3600 }, NOW)) == "toast"
+  and #toasts == 1, "in combat a group that fits is still a notice, held for after it")
+InCombatLockdown = nil
+local panelSrc = assert(io.open(ADDON .. "/UI/GroupsPanel.lua", "rb")):read("*a")
+check(panelSrc:find("self:ShowWhenClear(\"groups:\"", 1, true) ~= nil, "and the notice opens through ShowWhenClear, never in combat")
+check(panelSrc:find("G:StillTrue(n)", 1, true) ~= nil, "and checks, when it shows, that it is still true")
 GuildOS.db.lfgPrefs.toast = false
 check(Groups:_Announce(key("Bea"), "Bea", dm) == "chat" and #printed == 1, "with the notices off it is the chat line")
 GuildOS.GroupsToast = nil
+
+-- A notice that waited behind combat says only what is still true (#449)
+fresh()
+GuildOS.db.lfgGroups[key("Bea")] = Groups:_BuildGroup({ act = "steamvault", need = { T = 1 }, ttl = 3600 }, NOW)
+GuildOS.db.lfgGroups[key("Bea")].from = "Bea-Realm"
+local note = { kind = "group", key = key("Bea") }
+check(Groups:StillTrue(note), "a group still up with a spot for me is still news")
+Board:SetPref("roles", "H")
+check(not Groups:StillTrue(note), "not once it has no spot in a role of mine")
+Board:SetPref("roles", "")
+Groups:RequestSpot(key("Bea"), "T")
+check(not Groups:StillTrue(note), "nor once I asked it already")
+Groups:CancelRequest(key("Bea"))
+NOW = NOW + 3600
+check(not Groups:StillTrue(note), "nor once it ended")
+NOW = NOW - 3600
+check(not Groups:StillTrue({ kind = "request", key = key("Cid") }), "a request nobody is waiting on is not")
+check(not Groups:StillTrue({ kind = "expiring", what = "group" }) and not Groups:StillTrue({ kind = "nonsense" }),
+  "nor a warning about a listing I no longer have, nor anything else")
 
 -- ── The leader's tools (#378) ───────────────────────────────────────────
 -- A start later on crosses the wire as seconds from now, and never past the listing's end
@@ -732,6 +760,67 @@ check(Groups:FitsMe(fit70, 70, "T") and not Groups:FitsMe(fit70, 70, "H") and no
   "a group is for me at my level with a spot in my role")
 fit70.key = Board:MyKey()
 check(not Groups:FitsMe(fit70, 70, "T"), "and never my own")
+
+-- ── The board keeps itself clean (#449) ─────────────────────────────────
+-- A listing heard with no spot left is a group that filled: it closes, and nothing lists it
+fresh()
+Groups:HandleGroup("Bea-Realm", { act = "steamvault", need = { T = 1 }, ttl = 3600 }, "GUILD")
+Groups:RequestSpot(key("Bea"), "T")
+runTimers()
+Groups:HandleGroup("Bea-Realm", { act = "steamvault", need = { T = 0, H = 0, D = 0 }, n = 5, ttl = 3600 }, "GUILD")
+check(GuildOS.db.lfgGroups[key("Bea")] == nil and Groups:Asked(key("Bea")) == nil, "a full group heard closes, and so does what I asked of it")
+GuildOS.db.lfgGroups[key("Cid")] = { act = "steamvault", need = { T = 0, H = 0, D = 0 }, n = 5, max = 5, ts = NOW, ttl = 3600 }
+check(#Groups:ActiveList(GuildOS.db.lfgGroups, NOW) == 0, "and a full one stored from before is not listed")
+
+-- Expired listings leave on the minute's tick, with the tab closed too
+fresh()
+local refreshed = 0
+Board.uiRefresh = function() refreshed = refreshed + 1 end
+GuildOS.db.lfgGroups[key("Bea")] = Groups:_BuildGroup({ act = "steamvault", need = { T = 1 }, ttl = 1800 }, NOW)
+GuildOS.db.lfgBoard[key("Cid")] = Board:_BuildEntry({ roles = "H", ttl = 1800 }, NOW)
+Groups:Tick(NOW + 60)
+check(GuildOS.db.lfgGroups[key("Bea")] and GuildOS.db.lfgBoard[key("Cid")] and refreshed == 0, "a live listing stays, and nothing repaints")
+Groups:Tick(NOW + 1801)
+check(GuildOS.db.lfgGroups[key("Bea")] == nil and GuildOS.db.lfgBoard[key("Cid")] == nil and refreshed == 1,
+  "an expired group and an expired player leave the saved board, and the tab repaints once")
+
+-- Whoever logs off or leaves the guild leaves the board, and what was asked of them
+fresh()
+Groups:HandleGroup("Bea-Realm", { act = "steamvault", need = { T = 1 }, ttl = 3600 }, "GUILD")
+Groups:RequestSpot(key("Bea"), "T")
+GuildOS.db.lfgBoard[key("Cid")] = Board:_BuildEntry({ roles = "H", ttl = 3600 }, NOW)
+GuildOS.db.lfgBoard[key("Dan")] = Board:_BuildEntry({ roles = "D", ttl = 3600 }, NOW)
+check(Groups:SweepOffline({}) == 0 and GuildOS.db.lfgGroups[key("Bea")], "a roster without me in it (not loaded yet) drops nothing")
+local online = { [Board:MyKey()] = true, [key("Dan")] = true }
+check(Groups:SweepOffline(online) == 3, "with the roster loaded, the offline leader, player and request go")
+check(GuildOS.db.lfgGroups[key("Bea")] == nil and Groups:Asked(key("Bea")) == nil and GuildOS.db.lfgBoard[key("Cid")] == nil
+  and GuildOS.db.lfgBoard[key("Dan")] ~= nil, "and whoever is online stays")
+fresh()
+Groups:Create("steamvault", { T = 1, D = 1 }, "", 3600, false)
+Groups:HandleJoin("Bea-Realm", { role = "T" }, "WHISPER")
+Groups:SweepOffline({ [Board:MyKey()] = true })
+check(#Groups:Requests() == 0 and Groups:Mine() ~= nil, "a leader's queue drops who logged off, and keeps the group")
+
+-- Joining a guildmate's listed group, by their invite, takes my own listing down
+fresh()
+Board:SetAvailable(nil, "x", 3600, false, "T", { "steamvault" })
+Groups:HandleGroup("Bea-Realm", { act = "steamvault", need = { T = 1 }, ttl = 3600 }, "GUILD")
+PARTY = { "Cid" }
+Groups:OnGroupRoster()
+check(Board:AmAvailable(), "a party with somebody else in it leaves me listed")
+PARTY = { "Bea" }
+Groups:OnGroupRoster()
+check(not Board:AmAvailable() and last(TYPES.LFG).p.clear == true, "in the party of a listed group I am no longer looking, and the guild hears it")
+
+-- A take-down is heard inside the cooldown of the listing before it
+fresh()
+Board:HandleEntry("Bea-Realm", { roles = "T", ttl = 3600 }, "GUILD")
+check(GuildOS.db.lfgBoard[key("Bea")] ~= nil, "a guildmate lists")
+Board:HandleEntry("Bea-Realm", { clear = true }, "GUILD")
+check(GuildOS.db.lfgBoard[key("Bea")] == nil, "and taking it down a moment later is heard, cooldown or not")
+Board:HandleEntry("Bea-Realm", { roles = "H", ttl = 3600 }, "GUILD")
+check(GuildOS.db.lfgBoard[key("Bea")] == nil, "while a new listing still waits out the cooldown")
+Board.uiRefresh = nil
 
 -- ── The catalogue of each client ────────────────────────────────────────
 local function catalogue(client)

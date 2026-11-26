@@ -126,6 +126,7 @@ node = function(name)
   })
 end
 GuildOS.UI = node()
+GuildOS.Forms = node()   -- the board's builders (UI/Forms.lua), answering as the frames do
 CreateFrame = function() return node() end
 local panel = node()
 panel._scannerBuilt = false   -- a node answers every field; this one the build reads first

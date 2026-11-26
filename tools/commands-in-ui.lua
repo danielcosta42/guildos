@@ -51,8 +51,9 @@ local IN_UI = {
   analytics   = { { "UI/RosterFrame.lua", "GuildOS.GuildAnalytics:Show()" } },
   find        = { { "UI/Window.lua", "GuildOS.Search:Show()" } },
   order       = { { "UI/CraftOrdersPanel.lua", "function GuildOS:CreateCraftsTab" },
-                  { "UI/CraftFinder.lua", "GuildOS:ShowCraftOrderDialog(" } },
-  craft       = { { "UI/Rooms.lua", "GuildOS:ShowCraftFinder()" } },
+                  { "UI/CraftFinder.lua", "GuildOS:ShowCraftFor(itemId, c.key)" } },
+  -- The Workshop's Search the realm, a screen of the Crafts tab (#449).
+  craft       = { { "UI/Rooms.lua", 'feature = "recipes", sub = "realm"' }, { "UI/CraftFinder.lua", "function GuildOS:CreateRealmSearch" } },
   scout       = { { "UI/RosterFrame.lua", "GuildOS.RecruitScanner:BuildInto(" } },
   beacon      = { { "UI/RosterFrame.lua", 'L["Edit Beacon"]' } },
   pug         = { { "UI/Minimap.lua", "GuildOS:TogglePugInspector()" } },

@@ -22,10 +22,6 @@ local function classInk(class)
     return GuildOS:GetClassColor(class)
 end
 local function rule(row) if Kit then Kit:Rule(row) end end
-local function checkbox(parent, text, size)
-    if Kit then return Kit:Checkbox(parent, text, size) end
-    return GuildOS.UI:CreateCheckbox(parent, text, size)
-end
 local L = GuildOS.L
 
 local ROW_H = 24
@@ -125,68 +121,64 @@ function GuildOS:BuildBulkSub(panel)
     if not BA then return nil end
     local action = "promote"
     local preview, previewWhy = nil, nil
+    local macroFS_text
 
     -- Under the card's title ("Bulk actions").
-    local hint = UI:CreateText(panel,
-        L["Pick members by rules, then act on one per click of Next: the game lets a rank change or a removal come only from your click."],
-        11, C.silver.r, C.silver.g, C.silver.b)
-    hint:SetPoint("TOPLEFT", 0, 0)
-    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
-    hint:SetJustifyH("LEFT")
-
-    -- What to do.
-    local y = -28
-    local actLbl = UI:CreateText(panel, L["Action"], 11, C.text.r, C.text.g, C.text.b)
-    actLbl:SetPoint("TOPLEFT", 0, y - 4)
-    local actBtns, prev = {}, actLbl
+    local Forms = GuildOS.Forms
+    local board = UI:CreateBoard(panel, { name = "GuildOSMgmtBulkBoard" })
     local refresh
+    -- The rules (the mockup's "Bulk actions" card): the action as pills, the rules as fields above their
+    -- boxes, Preview and Start at the card's bottom right.
+    local card = board:Card(L["Bulk actions"], { col = 1 })
+    card:Note(L["Pick members by rules, then act on one per click of Next: the game lets a rank change or a removal come only from your click."])
+    local actBtns, actList = {}, {}
     for _, key in ipairs(BA.ACTIONS) do
-        local b = UI:CreateButton(panel, BA:ActionText(key), 90, 22)
-        b:SetPoint("LEFT", prev, "RIGHT", prev == actLbl and 12 or 6, 0)
+        local b = Forms:Pill(card, BA:ActionText(key))
         b:SetScript("OnClick", function()
             action, preview = key, nil
             refresh()
         end)
-        actBtns[key], prev = b, b
+        actBtns[key] = b
+        actList[#actList + 1] = b
     end
+    card:Note(L["Action"], { gap = 10 })
+    card:Flow(actList, { gap = Forms.LABEL_GAP })
 
-    -- The rules.
-    local function label(text, anchor, dx)
-        local fs = UI:CreateText(panel, text, 11, C.text.r, C.text.g, C.text.b)
-        fs:SetPoint("LEFT", anchor, "RIGHT", dx or 6, 0)
-        return fs
-    end
-    local function field(anchor, dx)
-        local box = UI:CreateInput(panel, FIELD_W, 22, { numeric = true, max = 4, justify = "CENTER" })
-        box:SetPoint("LEFT", anchor, "RIGHT", dx or 6, 0)
+    local function field(parent)
+        local box = UI:CreateInput(parent, FIELD_W, 24, { numeric = true, max = 4, justify = "CENTER" })
         box:SetScript("OnEnterPressed", function(s) s:ClearFocus(); preview = nil; refresh() end)
         return box
     end
-    y = y - 32
-    local offLbl = UI:CreateText(panel, L["Offline at least"], 11, C.text.r, C.text.g, C.text.b)
-    offLbl:SetPoint("TOPLEFT", 0, y - 4)
-    local daysBox = field(offLbl, 8)
-    local daysLbl = label(L["days"], daysBox)
-    local rankLbl = label(L["Rank"], daysLbl, 20)
-    local rankDD = UI:CreateDropdown(panel, 150, 22)
-    rankDD:SetPoint("LEFT", rankLbl, "RIGHT", 8, 0)
+    -- From one box to the other ("1 to 70"): two boxes and the word between them, as wide as the field.
+    local function range(parent)
+        local holder = CreateFrame("Frame", nil, parent)
+        holder:SetSize(FIELD_W * 2 + 30, 24)
+        local a, b = field(holder), field(holder)
+        local to = UI:CreateText(holder, L["to"], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        a:SetPoint("LEFT", holder, "LEFT", 0, 0)
+        to:SetPoint("LEFT", a, "RIGHT", 6, 0)
+        b:SetPoint("LEFT", to, "RIGHT", 6, 0)
+        holder:SetScript("OnSizeChanged", function(_, w)
+            w = tonumber(w) or 0
+            local bw = math.max(30, math.floor((w - 12 - (to:GetStringWidth() or 12)) / 2))
+            a:SetWidth(bw); b:SetWidth(bw)
+        end)
+        holder.min, holder.max, holder.to = a, b, to
+        return holder
+    end
+    local daysBox = field(card)
+    local rankDD = UI:CreateDropdown(card, 150, 24)
     rankDD.onSelect = function() preview = nil; refresh() end
-    local noAddon = checkbox(panel, L["Without GuildOS only"], 18)
-    noAddon:SetPoint("LEFT", rankDD, "RIGHT", 16, 0)
+    card:Pair(Forms:MakeField(card, L["Offline at least"] .. " (" .. L["days"] .. ")", daysBox, { w = 100 }),
+              Forms:MakeField(card, L["Rank"], rankDD))
+    local lvl, att = range(card), range(card)
+    local lvlMin, lvlMax, attMin, attMax = lvl.min, lvl.max, att.min, att.max
+    local attField = Forms:MakeField(card, L["Raid attendance"] .. " (%)", att, { w = 200 })
+    card:Pair(Forms:MakeField(card, L["Level"], lvl, { w = 200 }), attField)
+    local attParts = { attField }
+    local noAddon = card:Check(L["Without GuildOS only"])
     noAddon.checkbox.onChanged = function() preview = nil; refresh() end
-
-    y = y - 32
-    local lvlLbl = UI:CreateText(panel, L["Level"], 11, C.text.r, C.text.g, C.text.b)
-    lvlLbl:SetPoint("TOPLEFT", 0, y - 4)
-    local lvlMin = field(lvlLbl, 8)
-    local lvlTo = label(L["to"], lvlMin)
-    local lvlMax = field(lvlTo)
-    local attLbl = label(L["Raid attendance"], lvlMax, 20)
-    local attMin = field(attLbl, 8)
-    local attTo = label(L["to"], attMin)
-    local attMax = field(attTo)
-    local attPct = label("%", attMax, 4)
-    local attParts = { attLbl, attMin, attTo, attMax, attPct }
+    local summary = card:Note("")
 
     local function rules()
         return {
@@ -197,21 +189,17 @@ function GuildOS:BuildBulkSub(panel)
         }
     end
 
-    -- Preview and start.
-    y = y - 34
-    local previewBtn = UI:CreateButton(panel, L["Preview"], 90, 22)
-    previewBtn:SetPoint("TOPLEFT", 0, y)
-    local summary = UI:CreateText(panel, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    summary:SetPoint("LEFT", previewBtn, "RIGHT", 12, 0)
-    local startBtn = UI:CreateButton(panel, L["Start"], 90, 22)
+    local previewBtn = UI:CreateButton(card, L["Preview"], 90, 24)
+    local startBtn = UI:CreateButton(card, L["Start"], 90, 24)
     UI:SetButtonVariant(startBtn, "primary")
-    startBtn:SetPoint("TOPRIGHT", 0, y)
+    card:Actions({ previewBtn, startBtn })
     previewBtn:SetScript("OnClick", function()
         preview, previewWhy = BA:Preview(rules(), action)
         refresh()
     end)
     startBtn:SetScript("OnClick", function()
         if action ~= "remove" then return BA:StartAndSay(rules(), action) end
+        -- A removal is final: the officer sees how many and who before the queue starts (#420 review).
         local live, why = BA:Preview(rules(), "remove")
         if why or #live == 0 then
             GuildOS:Print(BA:WhyText(why or "empty"))
@@ -226,34 +214,44 @@ function GuildOS:BuildBulkSub(panel)
             { rules = rules(), shown = live })
     end)
 
-    -- The queue: Next, the member it is for, skip and stop.
-    y = y - 34
-    slot = CreateFrame("Frame", nil, panel)
+    -- The queue (the mockup's message line): Next (the secure button, docked here), where it is, Retry, Skip
+    -- and Stop, the macro's line, then the members: the preview's or the queue's.
+    local qcard = board:Card(L["Members"], { col = 2, fill = true })
+    local qrow = CreateFrame("Frame", nil, qcard)
+    qrow:SetSize(1, 24)
+    slot = CreateFrame("Frame", nil, qrow)
     slot:SetSize(NEXT_W, 24)
-    slot:SetPoint("TOPLEFT", 0, y)
-    local queueFS = UI:CreateText(panel, "", 11, C.text.r, C.text.g, C.text.b)
-    queueFS:SetPoint("LEFT", slot, "RIGHT", 12, 0)
-    local stopBtn = UI:CreateButton(panel, L["Stop"], 70, 22)
-    stopBtn:SetPoint("TOPRIGHT", 0, y - 1)
-    stopBtn:SetScript("OnClick", function() BA:Stop() end)
-    local skipBtn = UI:CreateButton(panel, L["Skip"], 70, 22)
-    skipBtn:SetPoint("RIGHT", stopBtn, "LEFT", -6, 0)
-    skipBtn:SetScript("OnClick", function() BA:Skip() end)
-    -- The members the roster never showed changed go back in the queue (audit M13).
-    local retryBtn = UI:CreateButton(panel, L["Retry"], 110, 22)
-    retryBtn:SetPoint("RIGHT", skipBtn, "LEFT", -6, 0)
+    slot:SetPoint("TOPLEFT", qrow, "TOPLEFT", 0, 0)
+    local queueFS = UI:CreateText(qrow, "", 11, C.text.r, C.text.g, C.text.b)
+    queueFS:SetJustifyH("LEFT")
+    queueFS:SetWordWrap(true)
+    qcard:Add(qrow, { place = function(_, w)
+        local beside = w >= NEXT_W + 160
+        queueFS:ClearAllPoints()
+        if beside then
+            queueFS:SetPoint("TOPLEFT", slot, "TOPRIGHT", 12, -5)
+            queueFS:SetWidth(w - NEXT_W - 12)
+        else
+            queueFS:SetPoint("TOPLEFT", slot, "BOTTOMLEFT", 0, -6)
+            queueFS:SetWidth(w)
+        end
+        local th = math.ceil(queueFS:GetStringHeight() or 14)
+        local h = beside and math.max(24, th + 5) or (24 + 6 + th)
+        qrow:SetSize(math.max(1, w), h)
+        return h
+    end })
+    local retryBtn = UI:CreateButton(qcard, L["Retry"], 110, 22)
     retryBtn:SetScript("OnClick", function() BA:RetryUnconfirmed() end)
     retryBtn:Hide()
-    local macroFS = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    macroFS:SetPoint("TOPLEFT", 0, y - 30)
-    macroFS:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, y - 30)
-    macroFS:SetJustifyH("LEFT")
+    local skipBtn = UI:CreateButton(qcard, L["Skip"], 70, 22)
+    skipBtn:SetScript("OnClick", function() BA:Skip() end)
+    local stopBtn = UI:CreateButton(qcard, L["Stop"], 70, 22)
+    stopBtn:SetScript("OnClick", function() BA:Stop() end)
+    qcard:Flow({ retryBtn, skipBtn, stopBtn }, { shown = function() return stopBtn:IsShown() end })
+    local macroFS = qcard:Note("", { size = 10, shown = function() return (macroFS_text or "") ~= "" end })
     dock()
 
-    -- The members: the queue while one runs, the preview otherwise.
-    local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 0, y - 50)
-    listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
+    local listHolder = qcard:Body(ROW_H * 4, { gap = 10 })
     local empty = UI:CreateText(listHolder, "", 11, C.silver.r, C.silver.g, C.silver.b)
     empty:SetPoint("TOPLEFT", 0, -4)
     local function createRow(parent)
@@ -293,7 +291,7 @@ function GuildOS:BuildBulkSub(panel)
     local list = UI.MakeVirtualList(listHolder, "GuildOSMgmtBulkScroll", ROW_H + 2, createRow, fillRow)
 
     refresh = function()
-        for key, b in pairs(actBtns) do UI:SetSelected(b, key == action) end
+        for key, b in pairs(actBtns) do Forms:SetOn(b, key == action) end
         -- The ranks, as the roster knows them now.
         local opts = { { value = -1, text = L["Any rank"] } }
         for _, r in ipairs(GuildOS.GuildManager and GuildOS.GuildManager:GetRanks() or {}) do
@@ -319,8 +317,9 @@ function GuildOS:BuildBulkSub(panel)
                 or string.format(L["Bulk actions done: %d done, %d waiting for the roster, %d skipped."],
                     c.done, c.sent, c.skipped))
             setNextLabel(BA:NextLabel())
-            macroFS:SetText(BA:Typed() and L["On this client the game takes the line only typed: each click of Next prints it for you."]
-                or string.format(L["Or press a macro with %s, one member per press."], GuildOS.Compat.ClickMacro(BA.BUTTON)))
+            macroFS_text = BA:Typed() and L["On this client the game takes the line only typed: each click of Next prints it for you."]
+                or string.format(L["Or press a macro with %s, one member per press."], GuildOS.Compat.ClickMacro(BA.BUTTON))
+            macroFS:SetText(macroFS_text)
             skipBtn:SetShown(item ~= nil)
             retryBtn.label:SetText(string.format(L["Retry (%d)"], c.unconfirmed))
             retryBtn:SetShown(c.unconfirmed > 0)
@@ -331,6 +330,7 @@ function GuildOS:BuildBulkSub(panel)
         else
             queueFS:SetText(L["Preview the rules, then Start."])
             setNextLabel(L["Next"])
+            macroFS_text = ""
             macroFS:SetText("")
             skipBtn:Hide()
             retryBtn:Hide()
@@ -345,6 +345,7 @@ function GuildOS:BuildBulkSub(panel)
             empty:SetText(preview and #preview == 0 and not previewWhy and BA:WhyText("empty") or "")
             list:SetData(preview or {})
         end
+        board:Layout()
     end
 
     if BA then BA.uiRefresh = refresh end

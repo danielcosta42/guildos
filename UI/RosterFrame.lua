@@ -418,9 +418,6 @@ end
 -- Same reason as rosterInstances: the recruitment builder also runs once
 -- per container, and its scroll frame needs a globally unique name.
 local recruitInstances = 0
--- Which of the Recruiting sub-tab's sections are open (#373): for the session only, never saved, so
--- every login starts with them shut.
-local recruitingOpen = {}
 
 ----------------------------------------------------------------------
 -- Re-apply loot-system-dependent visibility (the DKP and wishlist tabs)
@@ -2907,10 +2904,12 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- sub-tab idiom in UI/ManagementPanel.lua:CreateManagementPanel.
     ----------------------------------------------------------------
     local root = parent
-    -- The Officers' Room draws each of these screens on a parchment card (specs/salao/fase3.md): P is the
-    -- paper's inks (UI/Kit.lua), the chat line's preview stays on the wood's dark (C).
+    -- The Officers' Room draws these screens as parchment cards on the wood (specs/salao/fase3.md, #449):
+    -- UI/Forms.lua lays them out. P is the paper's inks (UI/Kit.lua); the chat line's preview stays on the
+    -- wood's dark (C).
     local Kit = rawget(GuildOS, "Kit")
     local P = Kit and Kit.PAPER or C
+    local Forms = GuildOS.Forms
 
     -- Left-anchored: UI:FlowBar reads GetWidth, and a frame pinned on both
     -- sides reports a stale width in the frame its container was resized.
@@ -2920,28 +2919,21 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     bar:SetSize(300, 28)
     UI:StyleSubTabBar(bar)
 
-    -- A sub-panel starts flush with the bar's left edge, right under it, and ends where the bar does:
-    -- it sat 2px in and 8px down, and its content 17px further in than the tabs (#371). Each screen
-    -- puts its first line UI.GAP below the panel's top.
-    -- Each is a parchment card titled as the mockup's, its screen on the paper inside (CARD_PAD in): the card
-    -- is what shows and hides and what the room moves when it hides the bar.
-    local RCARD_PAD, RCARD_TOP = tonumber(UI.RCARD_PAD) or 14, tonumber(UI.RCARD_TOP) or 36
-    local cards = {}
-    local function makeSubPanel(key, title)
-        local card = UI:CreateCard(root, title)
-        card:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, 0)
-        card:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", -BAR_INSET, 10)
-        card:Hide()
-        local p = CreateFrame("Frame", nil, card)
-        p:SetPoint("TOPLEFT", RCARD_PAD, -RCARD_TOP)
-        p:SetPoint("BOTTOMRIGHT", -RCARD_PAD, RCARD_PAD - 4)
-        cards[key] = card
+    -- Each sub-tab is an area on the wood under the bar, where its screen lays its cards (UI/Forms.lua): the
+    -- area is what shows and hides and what the room moves when it hides the bar.
+    local areas = {}
+    local function makeSubPanel(key)
+        local p = CreateFrame("Frame", nil, root)
+        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, 0)
+        p:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", -BAR_INSET, 10)
+        p:Hide()
+        areas[key] = p
         return p
     end
 
-    local recruitingSub = makeSubPanel("recruiting", L["Post in the channels"])
-    local scannerSub = makeSubPanel("scanner", L["Scanner of players without a guild"])
-    local trialsSub = makeSubPanel("trials", L["Members on trial"])
+    local recruitingSub = makeSubPanel("recruiting")
+    local scannerSub = makeSubPanel("scanner")
+    local trialsSub = makeSubPanel("trials")
 
     -- root.subPanels[key] = { panel, refresh } — same shape as
     -- UI/ManagementPanel.lua. selectSub() below both flips visibility AND
@@ -2993,7 +2985,6 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         end
         root.activeSub = key
         for k, i in pairs(root.subPanels) do
-            if cards[k] then cards[k]:SetShown(k == key) end
             i.panel:SetShown(k == key)
         end
         for k, btn in pairs(subTabBtns) do
@@ -3002,7 +2993,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
     -- The Officers' Room lists these sub-tabs itself (#445): its side bar is the only one.
-    UI:CollapsibleSubBar(root, bar, function() return cards end)
+    UI:CollapsibleSubBar(root, bar, function() return areas end)
     root.SelectSub = selectSub   -- deep links: the Now tab, /gos open recruitment <sub>, /gos open trials
 
     for _, t in ipairs(RECRUIT_SUBTABS) do
@@ -3024,65 +3015,22 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         UI:FlowBar(bar, shown, { gap = 4, rowGap = 4, rowH = 28 })
     end
 
-    -- The Recruiting sub-tab (#373, "panel with preview"): a status strip, the ad beside the chat line it
-    -- makes, the channels under both, then Welcome, Auto-invite, Beacon and, where its module runs, Join
-    -- requests, each a section that opens in place. Opened, it is taller than the window, so it builds
-    -- into a scroll frame.
-    --
-    -- CreateScrollFrame does NOT anchor the frame it returns: without these points the content clips to
-    -- 0x0 and the whole panel renders blank, with no Lua error to explain it. Its first line sits UI.GAP
-    -- under the bar and its right edge is the bar's: the scroll bar sits there, and the child stops
-    -- UI.SCROLL_GUTTER short of it (#371).
-    local GAP = UI.GAP
+    ----------------------------------------------------------------
+    -- The Recruiting sub-tab (#373, #449 the mockup's "Recruitment ad"): cards on the wood, two columns
+    -- from Forms.TWO_W. On the left how the ad goes out: posting (on or off, the interval, Send now), the
+    -- message beside the chat line it makes, the channels as pills, and which members help. On the right
+    -- what greets and invites: the welcome, the auto-invite, the beacon and, where its module runs, the
+    -- join requests. Each card saves on its own: a switch or a pill at once, a card's fields with its one
+    -- Save (Enter in a field does the same).
+    ----------------------------------------------------------------
     local WHITE = "Interface\\Buttons\\WHITE8x8"
-    local recruitScroll, recruitContent =
-        UI:CreateScrollFrame(recruitingSub, "GuildOSRecruitScroll" .. uid)
-    recruitScroll:SetPoint("TOPLEFT", 0, -GAP)
-    recruitScroll:SetPoint("BOTTOMRIGHT", 0, 0)
-    recruitContent:SetSize(1, 1)
     local R = GuildOS.Recruitment
+    local board = UI:CreateBoard(recruitingSub, { name = "GuildOSRecruitScroll" .. uid })
+    local function relayout() board:Layout() end
+    local resetCursors
 
-    -- The tab is laid out by relayout() at the width the last layout had (nil until the first one): a
-    -- width read while the tab is hidden is 0 (#371). Forward, as the controls built below call them.
-    local layoutW
-    local relayout, resetCursors
-
-    -- Widgets whose width has to follow the panel instead of a constant. `left` is the widget's x
-    -- inset, `reserve` the room to leave on the right (an attached Save button, say).
-    local flex = {}
-    local function flexWidth(widget, left, reserve)
-        local entry = { widget = widget, left = left, reserve = reserve or 0 }
-        flex[#flex + 1] = entry
-        return entry
-    end
-
-    -- One label column for the whole form (#371): every row label at x = 0, flush with the bar, and
-    -- every control where the widest label in this client's language ends, never before x = 110, the
-    -- column the form always had (#265: a fixed column put "Membres qui aident :" over its own button).
-    -- The interval's label sits in the strip and the message's over its field now (#373).
-    local measure = UI:CreateText(recruitContent, "", 11, 1, 1, 1)
-    local function textWidth(text)
-        measure:SetText(text)
-        return measure:GetStringWidth() or 0
-    end
-    local labelWidths = {}
-    for _, text in ipairs({ L["Status:"], L["Members who help:"], L["Channels:"], L["Other channel:"],
-        L["Keyword:"], L["Min level:"], L["Classes:"], L["Not confirmed:"], L["Auto-Welcome:"], L["Discord:"],
-        L["Welcome Msg:"] }) do
-        labelWidths[#labelWidths + 1] = textWidth(text)
-    end
-    local COL = UI.LabelColumn(labelWidths, 0, 12, 110)
-    local SIDE = COL + 160               -- a button beside a status line
-    local ROW_H = 22                     -- every control of the form
-    local ROW = ROW_H + 6                -- from one row to the next
-    local CHIP_W, CHIP_STEP, CHIP_ROW = 130, 136, 26  -- a chip, from it to the next one along, and to the next row
-    local NOTE_H = 16                    -- a note's line under the control it explains
-    -- #373: the strip's inner margin; the ad's field, three lines of Sans 12; the width under which the
-    -- preview goes below the ad; the gap between the two columns; a section's header row; and how near
-    -- the game's 255 bytes the count turns warn.
-    -- AREA_H: five lines, so a full 255-byte ad fits the field (it clips, it does not scroll).
-    local STRIP_PAD, AREA_H, TWO_COLS_MIN, AD_GAP, HEAD_H, COUNT_WARN = GAP, 72, 520, 16, 28, 230
-
+    -- A label above its field takes no colon: the one the form beside it had ("Interval (sec):", "Interval (s) :").
+    local function noColon(s) return (tostring(s or ""):gsub("%s*:%s*$", "")) end
     -- The words the tab always showed, in the identity's ok and danger rather than the colour codes
     -- their keys carry (#373), so no string is added.
     local function plain(s) return (tostring(s or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
@@ -3096,154 +3044,93 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         return string.format("%02x%02x%02x", math.floor(c.r * 255 + 0.5), math.floor(c.g * 255 + 0.5),
             math.floor(c.b * 255 + 0.5))
     end
-    -- The strip's status: its dot, 6px, and the wider of the two words, so ON and OFF never move it.
-    local stateW = 8 + 6 + math.ceil(math.max(textWidth(ON), textWidth(OFF)))
-    measure:Hide()
-
-    -- Placing: by the top-left corner, and a row label level with its row's control.
-    local function at(region, host, x, y)
-        region:ClearAllPoints()
-        region:SetPoint("TOPLEFT", host, "TOPLEFT", x, y)
-    end
-    local function labelAt(label, host, y)
-        label:ClearAllPoints()
-        label:SetPoint("LEFT", host, "TOPLEFT", 0, y - ROW_H / 2)
-    end
-
-    -- A row label: the form's one column, in the text colour, level with its row's control (#371).
-    local function RowLabel(host, text, y)
-        local label = UI:CreateText(host, text, 11, P.text.r, P.text.g, P.text.b)
-        labelAt(label, host, y)
-        return label
-    end
-
-    -- A note under the thing it explains, left-aligned with it (#371). It wraps at the width it follows,
-    -- and what comes under it moves down with it (#373).
-    local function Note(host, text, x, y)
-        local note = UI:CreateText(host, text, 10, P.textSoft.r, P.textSoft.g, P.textSoft.b)
-        note:SetPoint("TOPLEFT", x, y)
-        note:SetJustifyH("LEFT")
-        flexWidth(note, x)
-        return note
-    end
-    local function noteH(note) return math.max(NOTE_H, math.ceil(note:GetStringHeight() or 0) + 4) end
-
-    -- A status word beside its row label, level with the row.
-    local function StatusText(host, y)
-        local fs = UI:CreateText(host, "", 11, P.text.r, P.text.g, P.text.b)
-        fs:SetPoint("LEFT", host, "TOPLEFT", COL, y - ROW_H / 2)
-        return fs
-    end
-
-    -- A run of chips from the label column, as many to a row as the width takes (at most `most`), so a
-    -- narrow tab never runs them under the scroll bar (#373). Returns the height the run takes.
-    local function chipsPerRow(w, most)
-        return math.max(1, math.min(most, math.floor((w - COL + CHIP_STEP - CHIP_W) / CHIP_STEP)))
-    end
-    local function placeChips(btns, count, host, y, perRow)
-        for i = 1, count do
-            at(btns[i], host, COL + ((i - 1) % perRow) * CHIP_STEP, y - math.floor((i - 1) / perRow) * CHIP_ROW)
+    -- A line on a card: a status word (its dot, `dot`) and a soft note after it, one line.
+    local function StatusLine(card, withDot)
+        local line = CreateFrame("Frame", nil, card)
+        line:SetSize(1, 18)
+        local dot
+        if withDot then
+            dot = line:CreateTexture(nil, "ARTWORK")
+            dot:SetTexture(WHITE)
+            dot:SetSize(8, 8)
+            dot:SetPoint("LEFT", 0, 0)
         end
-        local rows = math.ceil(count / perRow)
-        return rows > 0 and ((rows - 1) * CHIP_ROW + ROW_H) or 0
+        local word = UI:CreateText(line, "", 12, P.text.r, P.text.g, P.text.b)
+        word:SetPoint("LEFT", line, "LEFT", withDot and 14 or 0, 0)
+        word:SetWordWrap(false)
+        local after = Forms:Soft(line, "", 11)
+        after:SetPoint("LEFT", word, "RIGHT", 10, 0)
+        after:SetPoint("RIGHT", line, "RIGHT", 0, 0)
+        after:SetWordWrap(false)
+        line.dot, line.word, line.after = dot, word, after
+        card:Add(line, { h = 18, wide = true })
+        return line
     end
+    -- Enter, and the field letting go, commit a field that saves on its own (the interval).
+    local function commitOnLeave(box, commit)
+        box:SetScript("OnEnterPressed", function(self) commit(self); self:ClearFocus() end)
+        box:HookScript("OnEditFocusLost", function(self) commit(self) end)
+    end
+    local GAP_PILL = 6
 
     ----------------------------------------------------------------
-    -- Status strip (#373): ON or OFF and its switch, the interval and Send now, on one panel. There is no
-    -- "next post in": the module's ticker (C_Timer.NewTicker) keeps no time of its next popup, and the
-    -- tab keeps no clock of its own.
+    -- Post in the channels: ON or OFF and its switch, the interval, Send now. There is no "next post in":
+    -- the module's ticker (C_Timer.NewTicker) keeps no time of its next popup, and the tab keeps no clock.
     ----------------------------------------------------------------
-    local strip = UI:CreatePanel(recruitContent, nil, recruitContent:GetFrameLevel() + 1)
-    -- On the paper the strip is the paper's light box (the mockup's `.card .kpi`), not the wood's dark card.
-    if Kit then
-        strip:SetBackdropColor(0.937, 0.878, 0.741, 1)
-        strip:SetBackdropBorderColor(0.788, 0.706, 0.541, 1)
-        strip.__paper = true
-    end
-    local stripState = CreateFrame("Frame", nil, strip)
-    stripState:SetSize(stateW, ROW_H)
-    local dot = stripState:CreateTexture(nil, "ARTWORK")
-    dot:SetTexture(WHITE)
-    dot:SetSize(8, 8)
-    dot:SetPoint("LEFT", 0, 0)
-    local statusText = UI:CreateText(stripState, "", 11, P.text.r, P.text.g, P.text.b)
-    statusText:SetPoint("LEFT", dot, "RIGHT", 6, 0)
-
-    local toggleBtn = UI:CreateButton(strip, L["Enable"], 80, ROW_H)
-
-    -- Interval: the shared field (#371), with its label beside it in the strip.
-    local stripInterval = CreateFrame("Frame", nil, strip)
-    stripInterval:SetHeight(ROW_H)
-    local intervalLabel = UI:CreateText(stripInterval, L["Interval (sec):"], 11, P.text.r, P.text.g, P.text.b)
-    intervalLabel:SetPoint("LEFT", 0, 0)
-    local intervalBox = UI:CreateInput(stripInterval, 60, ROW_H, { numeric = true, max = 5 })
-    intervalBox:SetPoint("LEFT", intervalLabel, "RIGHT", 6, 0)
+    local postCard = board:Card(L["Post in the channels"], { col = 1 })
+    local stateLine = StatusLine(postCard, true)
+    local statusText, dot = stateLine.word, stateLine.dot
+    local intervalBox = UI:CreateInput(postCard, 100, Forms.FIELD_H, { numeric = true, max = 5 })
     local function commitInterval(box)
         local val = tonumber(box:GetText())
         if val and val >= 60 then
-            GuildOS.db.recruitment.interval = val
-            GuildOS:Print(string.format(L["Interval set to %ds."], val))
+            if val ~= GuildOS.db.recruitment.interval then
+                GuildOS.db.recruitment.interval = val
+                GuildOS:Print(string.format(L["Interval set to %ds."], val))
+            end
         else
             box:SetText(tostring(GuildOS.db.recruitment.interval))
         end
     end
-    UI:AttachSaveButton(intervalBox, commitInterval)
-
-    -- Manual send button
-    local sendNowBtn = UI:CreateButton(strip, L["Send Now"], 100, ROW_H)
+    commitOnLeave(intervalBox, commitInterval)
+    postCard:Field(noColon(L["Interval (sec):"]), intervalBox, { w = 120 })
+    -- What the interval does: the click Blizzard requires is the popup it opens.
+    postCard:Note(L["Note: Blizzard requires a click to send channel messages. A popup will appear on interval."])
+    local sendNowBtn = Forms:Button(postCard, L["Send Now"])
     sendNowBtn:SetScript("OnClick", function()
-        if GuildOS.Recruitment then
-            GuildOS.Recruitment:DoSendRecruitmentMessage()
-        end
+        if GuildOS.Recruitment then GuildOS.Recruitment:DoSendRecruitmentMessage() end
     end)
+    local toggleBtn = Forms:Button(postCard, L["Enable"], "primary")
+    postCard:Actions({ sendNowBtn, toggleBtn })
 
-    -- ON or OFF, the words the Welcome row and /gos recruit status use (#371), and the dot in the same
-    -- colour (#373). The toggle says what a click does, with no red or green fill of its own.
+    -- ON or OFF, the words the Welcome card and /gos recruit status use (#371), and the dot in the same
+    -- colour (#373). The switch says what a click does.
     local function UpdateRecruitStatus()
         local on = GuildOS.db.recruitment.enabled and true or false
         paintOnOff(statusText, on)
         local c = on and P.ok or P.danger
         dot:SetVertexColor(c.r, c.g, c.b, 1)
+        stateLine.after:SetText(on and string.format(L["(popup every %ds)"], GuildOS.db.recruitment.interval or 120) or "")
         toggleBtn.label:SetText(on and L["Disable"] or L["Enable"])
+        Forms:FitPill(toggleBtn)
     end
-
     toggleBtn:SetScript("OnClick", function()
         if GuildOS.Recruitment then
             GuildOS.Recruitment:Toggle()
             UpdateRecruitStatus()
-            relayout()   -- "Désactiver" is wider than "Activer": the strip flows again
+            relayout()   -- "Désactiver" is wider than "Activer": the buttons flow again
         end
     end)
 
-    -- The strip's four groups along it, wrapping under one another when the tab is narrow.
-    local function layoutStrip(w)
-        stripInterval:SetWidth(math.ceil(intervalLabel:GetStringWidth() or 0) + 6 + intervalBox:GetWidth() + 6
-            + intervalBox.saveButton:GetWidth())
-        local items = { stripState, toggleBtn, stripInterval, sendNowBtn }
-        local widths = {}
-        for i, f in ipairs(items) do widths[i] = f:GetWidth() end
-        local rows = UI:FlowRows(widths, w - 2 * STRIP_PAD, 12)
-        for r, row in ipairs(rows) do
-            local x = STRIP_PAD
-            for _, i in ipairs(row) do
-                at(items[i], strip, x, -STRIP_PAD - (r - 1) * ROW)
-                x = x + widths[i] + 12
-            end
-        end
-        return 2 * STRIP_PAD + #rows * ROW - (ROW - ROW_H)
-    end
-
-    -- What the interval does, under the strip: the click Blizzard requires is the popup it opens.
-    local intervalNote = Note(recruitContent,
-        L["Note: Blizzard requires a click to send channel messages. A popup will appear on interval."], 0, 0)
-
     ----------------------------------------------------------------
-    -- The ad and how it appears (#373): the message on the left, three lines tall, and on the right the
-    -- line it makes in the first channel it goes to, cleaned as DoSendRecruitmentMessage cleans it, under
-    -- this character's name, with its length against the game's 255.
+    -- The message and how it appears (#373): the field on the left, five lines tall, and beside it the line
+    -- it makes in the first channel it goes to, cleaned as DoSendRecruitmentMessage cleans it, under this
+    -- character's name, with its length against the game's 255. Under each other on a narrow card.
     ----------------------------------------------------------------
-    local adBlock = CreateFrame("Frame", nil, recruitContent)
-    local adCap = UI:CreateHeaderText(adBlock, L["Message:"])
+    local AREA_H, BESIDE_W, COUNT_WARN = 72, 420, 230
+    local msgCard = board:Card(L["Recruitment message"], { col = 1 })
+    local adBlock = CreateFrame("Frame", nil, msgCard)
+    adBlock:SetSize(1, AREA_H)
     local msgArea = UI:CreateTextArea(adBlock, 200, AREA_H, { max = 255 })
     local msgBox = msgArea.edit
     local function commitMsg(box)
@@ -3256,11 +3143,10 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             GuildOS:Print(L["Recruitment message updated."])
         end
     end
-    -- Its Save under the field's right edge: the field is as wide as its column.
-    UI:AttachSaveButton(msgBox, commitMsg, { parent = adBlock, point = { "TOPRIGHT", msgArea, "BOTTOMRIGHT", 0, -6 } })
     -- A chat message has one line (ChatTextProblem): Enter saves the ad, and a line break pasted into
     -- the field becomes a space, as the send's SanitizeUserText does, not glued words. Enter typed is
     -- one line break right before the cursor: it simply goes, so a word it lands in is not split (#373).
+    msgBox:SetScript("OnEnterPressed", function(self) commitMsg(self); self:ClearFocus() end)
     msgBox:HookScript("OnTextChanged", function(self, typed)
         local t = self:GetText() or ""
         if not (typed and t:find("[\r\n]")) then return end
@@ -3274,7 +3160,8 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         end
     end)
 
-    local previewCap = UI:CreateHeaderText(adBlock, L["Preview"])
+    local previewCap = Forms:Soft(adBlock, L["Preview"], 11)
+    previewCap:SetWordWrap(false)
     local previewBox = UI:CreateDarkPanel(adBlock, nil, adBlock:GetFrameLevel() + 1)
     local previewText = UI:CreateText(previewBox, "", 12, C.text.r, C.text.g, C.text.b)   -- the chat's, on its dark
     previewText:SetPoint("TOPLEFT", 6, -6)
@@ -3283,7 +3170,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     previewText:SetWordWrap(true)
     local countText = UI:CreateText(adBlock, "", 11, P.textSoft.r, P.textSoft.g, P.textSoft.b)
     GuildOS:ApplyFont(countText, 11, "tableNum")
-    countText:SetPoint("TOPRIGHT", previewBox, "BOTTOMRIGHT", 0, -4)
+    countText:SetJustifyH("RIGHT")
 
     -- The line as it goes out: the first saved channel this character is in (the send skips the others),
     -- labelled as chat labels it ("2. Trade - City"), this character's name as chat writes it
@@ -3324,40 +3211,54 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end
     msgBox:HookScript("OnTextChanged", function() updatePreview() end)
 
-    local function layoutAd(w)
-        local two = w >= TWO_COLS_MIN
-        local colW = two and math.floor((w - AD_GAP) / 2) or w
-        at(adCap, adBlock, 0, 0)
-        at(msgArea, adBlock, 0, -18)
+    -- The field and the chat line beside it on a card wide enough, the line under the field otherwise.
+    msgCard:Add(adBlock, { place = function(_, w)
+        local beside = w >= BESIDE_W
+        local colW = beside and math.floor((w - 12) / 2) or w
+        msgArea:ClearAllPoints()
+        msgArea:SetPoint("TOPLEFT", adBlock, "TOPLEFT", 0, -17)
         msgArea:SetWidth(colW)
-        local leftH = 18 + AREA_H + 6 + ROW_H
-        local x, top = two and (colW + AD_GAP) or 0, two and 0 or -(leftH + GAP)
-        at(previewCap, adBlock, x, top)
+        local x, top = beside and (colW + 12) or 0, beside and 0 or -(17 + AREA_H + 8)
+        previewCap:ClearAllPoints()
+        previewCap:SetPoint("TOPLEFT", adBlock, "TOPLEFT", x, top)
+        previewCap:SetWidth(colW)
         previewText:SetWidth(colW - 12)
         previewH = previewHeight()
-        at(previewBox, adBlock, x, top - 18)
+        previewBox:ClearAllPoints()
+        previewBox:SetPoint("TOPLEFT", adBlock, "TOPLEFT", x, top - 17)
         previewBox:SetSize(colW, previewH)
-        local rightH = 18 + previewH + 4 + 14
-        return two and math.max(leftH, rightH) or (leftH + GAP + rightH)
-    end
+        countText:ClearAllPoints()
+        countText:SetPoint("TOPRIGHT", previewBox, "BOTTOMRIGHT", 0, -3)
+        local rightH = 17 + previewH + 3 + 14
+        local h = beside and math.max(17 + AREA_H, rightH) or (17 + AREA_H + 8 + rightH)
+        adBlock:SetSize(math.max(1, w), h)
+        return h
+    end })
+    local msgSave = Forms:Button(msgCard, L["Save"], "primary")
+    msgSave:SetScript("OnClick", function() commitMsg(msgBox); msgBox:ClearFocus() end)
+    msgCard:Actions({ msgSave })
+    -- The ad's caption, above its field as the preview's is above it.
+    local msgCap = Forms:Soft(adBlock, noColon(L["Message:"]), 11)
+    msgCap:SetPoint("TOPLEFT", adBlock, "TOPLEFT", 0, 0)
+    msgCap:SetPoint("RIGHT", msgArea, "RIGHT", 0, 0)
+    msgCap:SetWordWrap(false)
 
     ----------------------------------------------------------------
-    -- Under both: the channels, the channel of one's own, who helps, and the broadcast (#373).
+    -- Channels: a pill for each the client names (issue #112: an English name is no channel on a French
+    -- client), on while it posts there; a channel of one's own added by name, its pill under the field
+    -- (issue #59), a click taking it off.
     ----------------------------------------------------------------
-    local chanBlock = CreateFrame("Frame", nil, recruitContent)
-    local chanLabel = RowLabel(chanBlock, L["Channels:"], 0)
-    -- As this client names them (issue #112): an English name is no channel on a French client.
+    local chanCard = board:Card(noColon(L["Channels:"]), { col = 1 })
     local CHAN_LIST = GuildOS.Recruitment:PresetChannels()
     local chanBtns = {}
-    -- A channel it posts to is the selected chip (UI:SetSelected, #371), not a green fill.
     local function refreshChanBtns()
         local chs = GuildOS.db.recruitment.channels
         for _, b in ipairs(chanBtns) do
-            UI:SetSelected(b, GuildOS.Recruitment:HasChannel(chs, b._ch))
+            Forms:SetOn(b, GuildOS.Recruitment:HasChannel(chs, b._ch))
         end
     end
     for i, ch in ipairs(CHAN_LIST) do
-        local btn = UI:CreateButton(chanBlock, ch, CHIP_W, ROW_H)
+        local btn = Forms:Pill(chanCard, ch)
         btn._ch = ch
         btn:SetScript("OnClick", function()
             local chs = GuildOS.db.recruitment.channels
@@ -3367,59 +3268,38 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         end)
         chanBtns[i] = btn
     end
+    chanCard:Flow(chanBtns, { gapX = GAP_PILL })
 
-    -- Channels beyond the three presets (issue #59): one box adds, a chip per channel removes.
-    local otherLabel = RowLabel(chanBlock, L["Other channel:"], 0)
-    local chanBox = UI:CreateInput(chanBlock, 130, ROW_H, { max = 31 })
-    local CUSTOM_MAX, CUSTOM_PER_ROW = 6, 3
+    local CUSTOM_MAX, CHIP_MAXW = 6, 180
+    local chanBox = UI:CreateInput(chanCard, 130, Forms.FIELD_H, { max = 31 })
+    local addChan = Forms:Button(chanCard, L["Add"])
     local customBtns = {}
-    local customMore = UI:CreateText(chanBlock, "", 10, P.textSoft.r, P.textSoft.g, P.textSoft.b)
     local customShown, customOver = 0, false
-    local chanHint
+    local refreshCustomChans
     local function isPreset(name)
         return GuildOS.Recruitment:HasChannel(CHAN_LIST, name)
     end
-    local function refreshCustomChans()
-        local shown = 0
-        for _, ch in ipairs(GuildOS.db.recruitment.channels) do
-            if not isPreset(ch) and shown < CUSTOM_MAX then
-                shown = shown + 1
-                local b = customBtns[shown]
-                b._ch = ch
-                UI:SetChipText(b, ch, CHIP_W)
-                b:Show()
-            end
-        end
-        for i = shown + 1, CUSTOM_MAX do customBtns[i]:Hide() end
-        local custom = 0
-        for _, ch in ipairs(GuildOS.db.recruitment.channels) do
-            if not isPreset(ch) then custom = custom + 1 end
-        end
-        customMore:SetText(custom > CUSTOM_MAX and string.format(L["+%d more (/gos recruit channel list)"], custom - CUSTOM_MAX) or "")
-        -- "Click a channel below" only with a channel below (#265).
-        if chanHint then chanHint:SetShown(shown > 0) end
-        -- The rows under the chips sit under the ones shown (#265), laid out again (#373).
-        customShown, customOver = shown, custom > CUSTOM_MAX
-        relayout()
-    end
-    UI:AttachSaveButton(chanBox, function(box)
-        if GuildOS.Recruitment:AddChannel(GuildOS.db.recruitment.channels, box:GetText()) then
-            box:SetText("")
+    local function addChannel()
+        if GuildOS.Recruitment:AddChannel(GuildOS.db.recruitment.channels, chanBox:GetText()) then
+            chanBox:SetText("")
             refreshCustomChans()
             refreshChanBtns()
             updatePreview()
-        elseif strtrim(box:GetText()) ~= "" then
-            GuildOS:Print(L["Already posting to: |cffFFFFFF"] .. strtrim(box:GetText()) .. "|r")
+        elseif strtrim(chanBox:GetText()) ~= "" then
+            GuildOS:Print(L["Already posting to: |cffFFFFFF"] .. strtrim(chanBox:GetText()) .. "|r")
         end
-    end, { text = L["Add"] })
-    -- Under the box, over the chips it explains, left-aligned with them (#371).
-    chanHint = UI:CreateText(chanBlock, L["Click a channel below to stop posting to it."], 10, P.textSoft.r, P.textSoft.g, P.textSoft.b)
-    chanHint:Hide()
-    -- A channel of one's own is on, so its chip is selected like an on preset's, and keeps its x:
-    -- a click takes it off the list (#371).
+        chanBox:ClearFocus()
+    end
+    addChan:SetScript("OnClick", addChannel)
+    chanBox:SetScript("OnEnterPressed", addChannel)
+    chanBox.saveButton = addChan
+    chanCard:Field(noColon(L["Other channel:"]), chanBox, { button = addChan })
+    -- Over the pills it explains, only while there is one (#265).
+    chanCard:Note(L["Click a channel below to stop posting to it."], { size = 10, shown = function() return customShown > 0 end })
+    -- A channel of one's own is on, so its pill is on like an on preset's, and keeps its x: a click takes it
+    -- off the list (#371).
     for i = 1, CUSTOM_MAX do
-        local b = UI:CreateButton(chanBlock, "", CHIP_W, ROW_H)
-        UI:SetSelected(b, true)
+        local b = Forms:Pill(chanCard, "", true)
         b:SetScript("OnClick", function(self)
             GuildOS.Recruitment:RemoveChannel(GuildOS.db.recruitment.channels, self._ch)
             refreshCustomChans()
@@ -3429,188 +3309,130 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         b:Hide()
         customBtns[i] = b
     end
+    chanCard:Flow(customBtns, { gapX = GAP_PILL, gap = 4, shown = function() return customShown > 0 end })
+    local customMore = chanCard:Note("", { size = 10, shown = function() return customOver end })
+    refreshCustomChans = function()
+        local shown = 0
+        for _, ch in ipairs(GuildOS.db.recruitment.channels) do
+            if not isPreset(ch) and shown < CUSTOM_MAX then
+                shown = shown + 1
+                local b = customBtns[shown]
+                b._ch = ch
+                b.label:SetText(GuildOS:ChipLabel(ch))
+                Forms:FitPill(b, CHIP_MAXW)
+                b:Show()
+            end
+        end
+        for i = shown + 1, CUSTOM_MAX do customBtns[i]:Hide() end
+        local custom = 0
+        for _, ch in ipairs(GuildOS.db.recruitment.channels) do
+            if not isPreset(ch) then custom = custom + 1 end
+        end
+        customMore:SetText(custom > CUSTOM_MAX and string.format(L["+%d more (/gos recruit channel list)"], custom - CUSTOM_MAX) or "")
+        customShown, customOver = shown, custom > CUSTOM_MAX
+        relayout()
+    end
 
-    -- Which members post the guild's message: every rank, or up to one. It travels with the ad, and a
-    -- member past it is never asked (#150). Each click moves one member rank down, then back to every rank.
-    local rankLabel = RowLabel(chanBlock, L["Members who help:"], 0)
-    local rankBtn = UI:CreateButton(chanBlock, "", 160, ROW_H)
-    local function rankText()
-        local limit = GuildOS.db.recruitment.postMaxRank
-        if limit == nil then return L["Any rank"] end
+    ----------------------------------------------------------------
+    -- Who helps: which members post the guild's message, every rank or up to one. It travels with the ad,
+    -- and a member past it is never asked (#150). Then the broadcast that sends them the settings.
+    ----------------------------------------------------------------
+    local helpCard = board:Card(noColon(L["Members who help:"]), { col = 1 })
+    local rankDrop = UI:CreateDropdown(helpCard, 200, Forms.FIELD_H)
+    local ANY = -1
+    local function rankText(limit)
+        if limit == nil or limit == false or limit == ANY then return L["Any rank"] end
         local name = GuildControlGetRankName and GuildControlGetRankName(limit + 1)
         return string.format(L["Up to %s"], (name and name ~= "") and name or tostring(limit))
     end
-    rankBtn.label:SetText(rankText())
-    rankBtn:SetScript("OnClick", function()
-        if GuildOS.Recruitment then GuildOS.Recruitment:CyclePostMaxRank() end
-        rankBtn.label:SetText(rankText())
-    end)
-
-    -- Broadcast button, under the settings it sends
-    local broadcastBtn = UI:CreateButton(chanBlock, L["Broadcast to Members"], 180, 24)
+    local function refreshRankDrop()
+        local opts = {}
+        for _, limit in ipairs(R:PostMaxRankChoices()) do
+            opts[#opts + 1] = { value = limit or ANY, text = rankText(limit) }
+        end
+        rankDrop:SetOptions(opts)
+        local cur = GuildOS.db.recruitment.postMaxRank
+        rankDrop:SetValue(cur == nil and ANY or cur)
+        -- A limit no longer on the list (the ranks changed) still shows what it is.
+        if cur ~= nil and rankDrop.label:GetText() == "" then rankDrop.label:SetText(rankText(cur)) end
+    end
+    rankDrop.onSelect = function(_, value)
+        R:SetPostMaxRank(value ~= ANY and value or nil)
+    end
+    helpCard:Field(L["Rank"], rankDrop, { w = 260 })
+    local broadcastBtn = Forms:Button(helpCard, L["Broadcast to Members"], "primary")
     broadcastBtn:SetScript("OnClick", function()
         if GuildOS.Recruitment then GuildOS.Recruitment:BroadcastStatus() end
     end)
-
-    local function layoutChan(w)
-        local y = 0
-        labelAt(chanLabel, chanBlock, y)
-        y = y - placeChips(chanBtns, #chanBtns, chanBlock, y, chipsPerRow(w, 4)) - 6
-        labelAt(otherLabel, chanBlock, y)
-        at(chanBox, chanBlock, COL, y)
-        y = y - ROW_H
-        at(chanHint, chanBlock, COL, y - 4)
-        if customShown > 0 then
-            y = y - 4 - NOTE_H
-            y = y - placeChips(customBtns, customShown, chanBlock, y, chipsPerRow(w, CUSTOM_PER_ROW))
-        end
-        at(customMore, chanBlock, COL, y - 4)
-        if customOver then y = y - 4 - NOTE_H end
-        y = y - 6
-        labelAt(rankLabel, chanBlock, y)
-        at(rankBtn, chanBlock, COL, y)
-        y = y - ROW
-        at(broadcastBtn, chanBlock, COL, y)
-        return -(y - 24)
-    end
+    helpCard:Actions({ broadcastBtn })
 
     ----------------------------------------------------------------
-    -- Sections that open and close in place (#373), shut until opened and only for the session
-    -- (recruitingOpen): a header row with a caret and the title on the left and the section's status on
-    -- the right, over a 1px rule. Opening one lays the tab out again below it.
+    -- Welcome message: the switch, the Discord, the messages (several, one drawn for each welcome, #419)
+    -- with Add and a Remove at each row's right, and the rules' ending (#407). The switch and the ending
+    -- save at once; the Discord and the messages with the card's Save.
     ----------------------------------------------------------------
-    local sections = {}
-    local function Section(key, title)
-        local head = CreateFrame("Button", nil, recruitContent)
-        head:SetHeight(HEAD_H)
-        local rule = Kit and Kit:Separator(head) or UI:CreateSeparator(head)
-        rule:SetPoint("TOPLEFT", 0, 0)
-        rule:SetPoint("TOPRIGHT", 0, 0)
-        -- The caret in solid pixels, pointing right shut and down open, as the dropdown draws its arrow:
-        -- no glyph a font may lack (the addon's fonts have no triangles, nor has every client's own).
-        local shut, open = {}, {}
-        for i, len in ipairs({ 7, 5, 3, 1 }) do
-            local t = head:CreateTexture(nil, "OVERLAY")
-            t:SetTexture(WHITE)
-            t:SetHeight(len)
-            UI:Hairline(t, "Width")
-            t:SetPoint("LEFT", head, "LEFT", i + 1, 0)
-            shut[i] = t
-            local d = head:CreateTexture(nil, "OVERLAY")
-            d:SetTexture(WHITE)
-            d:SetWidth(len)
-            UI:Hairline(d)
-            d:SetPoint("LEFT", head, "LEFT", (7 - len) / 2, 2 - i)
-            open[i] = d
-        end
-        local status = UI:CreateText(head, "", 11, P.text.r, P.text.g, P.text.b)
-        status:SetPoint("RIGHT", head, "RIGHT", 0, 0)
-        local titleText = UI:CreateSectionTitle(head, title, true)
-        titleText:SetPoint("LEFT", head, "LEFT", 16, 0)
-        titleText:SetPoint("RIGHT", status, "LEFT", -GAP, 0)
-        titleText:SetWordWrap(false)
-        local sec = { key = key, head = head, body = CreateFrame("Frame", nil, recruitContent), status = status,
-                      title = titleText }
-        -- In `col`, or the colour it had: hovered, it stays lit through the layout its click starts.
-        function sec.paintCaret(col)
-            col = col or sec.caretCol or P.label
-            sec.caretCol = col
-            local isOpen = recruitingOpen[key] and true or false
-            for i = 1, #shut do
-                shut[i]:SetShown(not isOpen)
-                open[i]:SetShown(isOpen)
-                shut[i]:SetVertexColor(col.r, col.g, col.b, 1)
-                open[i]:SetVertexColor(col.r, col.g, col.b, 1)
-            end
-        end
-        head:SetScript("OnEnter", function() sec.paintCaret(P.text) end)
-        head:SetScript("OnLeave", function() sec.paintCaret(P.label) end)
-        head:SetScript("OnClick", function()
-            recruitingOpen[key] = not recruitingOpen[key] or nil
-            sec.paintCaret(P.text)
-            relayout()
-            resetCursors()   -- its boxes were filled while it was shut (#158)
-        end)
-        sec.paintCaret(P.label)
-        sections[#sections + 1] = sec
-        return sec
-    end
-
-    ----------------------------------------------------------------
-    -- Welcome Message Section
-    ----------------------------------------------------------------
-    local welcomeSec = Section("welcome", L["Welcome Message (New Members)"])
-    local wb = welcomeSec.body
-
-    -- Welcome status + toggle
-    RowLabel(wb, L["Auto-Welcome:"], 0)
-    local welcomeStatusText = StatusText(wb, 0)
-    local welcomeToggle = UI:CreateButton(wb, L["Enable"], 80, ROW_H)
-    welcomeToggle:SetPoint("TOPLEFT", SIDE, 0)
-
-    -- ON or OFF, here and on the section's header; the toggle says what a click does, with no red or
-    -- green fill of its own (#371).
+    local welcomeCard = board:Card(L["Welcome Message (New Members)"], { col = 2 })
+    local welcomeChk = welcomeCard:Check(noColon(L["Auto-Welcome:"]))
     local function UpdateWelcomeStatus()
-        local on = GuildOS.db.recruitment.welcomeEnabled and true or false
-        paintOnOff(welcomeStatusText, on)
-        paintOnOff(welcomeSec.status, on)
-        welcomeToggle.label:SetText(on and L["Disable"] or L["Enable"])
+        welcomeChk.checkbox:SetChecked(GuildOS.db.recruitment.welcomeEnabled and true or false)
     end
-
-    welcomeToggle:SetScript("OnClick", function()
-        GuildOS.db.recruitment.welcomeEnabled = not GuildOS.db.recruitment.welcomeEnabled
-        UpdateWelcomeStatus()
+    welcomeChk.checkbox.onChanged = function(_, checked)
+        GuildOS.db.recruitment.welcomeEnabled = checked and true or false
         local state = GuildOS.db.recruitment.welcomeEnabled and L["enabled"] or L["disabled"]
         GuildOS:Print(string.format(L["Welcome message %s."], state))
-    end)
-
-    -- Discord link
-    RowLabel(wb, L["Discord:"], -ROW)
-    local discordBox = UI:CreateInput(wb, 200, ROW_H, { max = 100 })
-    local discordFlex = flexWidth(discordBox, COL, 66)
-    discordBox:SetPoint("TOPLEFT", COL, -ROW)
-    local function commitDiscord(box)
-        local txt = box:GetText()
-        if txt and txt ~= "" then
-            GuildOS.db.recruitment.discord = txt
-            GuildOS:Print(L["Discord link updated."])
-        end
     end
-    UI:AttachSaveButton(discordBox, commitDiscord)
-    discordFlex.reserve = UI.ReserveFor(discordBox.saveButton, 6)
+    local discordBox = UI:CreateInput(welcomeCard, 200, Forms.FIELD_H, { max = 100 })
+    welcomeCard:Field(noColon(L["Discord:"]), discordBox)
 
-    -- Welcome messages: in the label column, each on one line, as the game sends it (#371). Several,
-    -- one drawn for each welcome (#419): a row per message, its Save and Remove, then Add for one more.
-    RowLabel(wb, L["Welcome Msg:"], -2 * ROW)
     local WELCOME_MAX = R.WELCOME_MAX
     local welcomeRows = {}
     local welcomeShown = 1          -- rows on show: the saved messages, and one just added and not saved
-    local welcomeAdd = UI:CreateButton(wb, L["Add message"], 120, ROW_H)
-    local welcomeNote = Note(wb, L["Several messages: one is drawn at random for each welcome, never the same one twice in a row."], COL, 0)
     local refreshWelcomes
+    local welcomeList = CreateFrame("Frame", nil, welcomeCard)
+    welcomeList:SetSize(1, 1)
+    local welcomeCap = Forms:Soft(welcomeList, noColon(L["Welcome Msg:"]), 11)
+    welcomeCap:SetPoint("TOPLEFT", 0, 0)
+    welcomeCap:SetWordWrap(false)
     for i = 1, WELCOME_MAX do
-        local box = UI:CreateInput(wb, 200, ROW_H, { max = 255 })
-        local boxFlex = flexWidth(box, COL, 66)
-        UI:AttachSaveButton(box, function(b)
-            local txt = b:GetText()
-            if not txt or txt == "" then return end
-            -- A text the game would refuse is not kept: the welcome would just never come (#270).
-            local ok, problem = R:SetWelcome(i, txt)
-            if problem then return GuildOS:Print(problem) end
-            if ok then GuildOS:Print(L["Welcome message updated."]) end
-            refreshWelcomes()
-        end)
-        local remove = UI:CreateButton(wb, L["Remove"], 70, ROW_H)
-        remove:SetPoint("LEFT", box.saveButton, "RIGHT", 6, 0)
+        local box = UI:CreateInput(welcomeList, 200, Forms.FIELD_H, { max = 255 })
+        local remove = UI:SetButtonVariant(UI:CreateButton(welcomeList, L["Remove"], 40, 18), "ghost")
+        remove:SetWidth(math.ceil(remove.label:GetStringWidth() or 30) + 6)
         remove:SetScript("OnClick", function()
             for _, row in ipairs(welcomeRows) do row.box:ClearFocus() end
             if i <= #R.WelcomeList(GuildOS.db.recruitment) and not R:RemoveWelcome(i) then return end
             welcomeShown = math.max(1, welcomeShown - 1)
             refreshWelcomes()
         end)
-        boxFlex.reserve = UI.ReserveFor(box.saveButton, 6) + UI.ReserveFor(remove, 6)
         welcomeRows[i] = { box = box, remove = remove }
     end
+    welcomeCard:Add(welcomeList, { place = function(_, w)
+        welcomeCap:SetWidth(math.max(1, w))
+        local y = 17
+        local saved = #R.WelcomeList(GuildOS.db.recruitment)
+        local rw = 0
+        for _, row in ipairs(welcomeRows) do rw = math.max(rw, row.remove:GetWidth()) end
+        for i = 1, WELCOME_MAX do
+            local row = welcomeRows[i]
+            local on = i <= welcomeShown
+            row.box:SetShown(on)
+            -- The last saved message stays: only a row not saved yet, or one of several, goes.
+            row.remove:SetShown(on and (i > saved or saved > 1))
+            if on then
+                row.box:ClearAllPoints()
+                row.box:SetPoint("TOPLEFT", welcomeList, "TOPLEFT", 0, -y)
+                row.box:SetWidth(math.max(40, w - rw - 10))
+                row.remove:ClearAllPoints()
+                row.remove:SetPoint("RIGHT", welcomeList, "TOPRIGHT", 0, -(y + Forms.FIELD_H / 2))
+                y = y + Forms.FIELD_H + 6
+            end
+        end
+        local h = y - 6
+        welcomeList:SetSize(math.max(1, w), h)
+        return h
+    end })
+    local welcomeAdd = Forms:Button(welcomeCard, L["Add message"])
+    welcomeCard:Flow({ welcomeAdd }, { shown = function() return welcomeShown < WELCOME_MAX end })
+    welcomeCard:Note(L["Several messages: one is drawn at random for each welcome, never the same one twice in a row."], { size = 10 })
     welcomeAdd:SetScript("OnClick", function()
         welcomeShown = math.min(WELCOME_MAX, #R.WelcomeList(GuildOS.db.recruitment) + 1)
         refreshWelcomes()
@@ -3618,34 +3440,43 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end)
     -- And, the officer's choice, the invitation to read the guild's rules (#407): only while the guild has
     -- rules and the whole fits the game's 255 bytes; the popup's preview shows the text as it goes.
-    local welcomeRules = (Kit or UI)[Kit and "Checkbox" or "CreateCheckbox"](Kit or UI, wb, L["End it with \"Type /gos rules\" when the guild has rules"], 18)
+    local welcomeRules = welcomeCard:Check(L["End it with \"Type /gos rules\" when the guild has rules"])
     welcomeRules.checkbox:SetChecked(GuildOS.db.recruitment.welcomeRules == true)
     welcomeRules.checkbox.onChanged = function(_, checked) GuildOS.db.recruitment.welcomeRules = checked and true or false end
-    welcomeSec.layout = function()
-        local y = -2 * ROW
-        local saved = #R.WelcomeList(GuildOS.db.recruitment)
-        for i = 1, WELCOME_MAX do
-            local row = welcomeRows[i]
-            local on = i <= welcomeShown
-            row.box:SetShown(on)
-            row.box.saveButton:SetShown(on)
-            -- The last saved message stays: only a row not saved yet, or one of several, goes.
-            row.remove:SetShown(on and (i > saved or saved > 1))
-            if on then
-                at(row.box, wb, COL, y)
-                y = y - ROW
-            end
+
+    -- The card's Save: the Discord (left alone while empty, as it always was) and every message shown.
+    local function commitDiscord()
+        local txt = discordBox:GetText()
+        if txt and txt ~= "" and txt ~= GuildOS.db.recruitment.discord then
+            GuildOS.db.recruitment.discord = txt
+            GuildOS:Print(L["Discord link updated."])
         end
-        welcomeAdd:SetShown(welcomeShown < WELCOME_MAX)
-        if welcomeShown < WELCOME_MAX then
-            at(welcomeAdd, wb, COL, y)
-            y = y - ROW
-        end
-        at(welcomeNote, wb, COL, y + 2)
-        y = y - noteH(welcomeNote) - 4
-        at(welcomeRules, wb, COL, y)
-        return -y + ROW_H
     end
+    local function commitWelcome(i)
+        local txt = welcomeRows[i].box:GetText()
+        if not txt or txt == "" then return true end
+        if R.WelcomeList(GuildOS.db.recruitment)[i] == txt then return true end
+        -- A text the game would refuse is not kept: the welcome would just never come (#270).
+        local ok, problem = R:SetWelcome(i, txt)
+        if problem then GuildOS:Print(problem); return false end
+        if ok then GuildOS:Print(L["Welcome message updated."]) end
+        return true
+    end
+    local function saveWelcomeCard()
+        commitDiscord()
+        for i = 1, welcomeShown do
+            if not commitWelcome(i) then break end
+        end
+        for _, row in ipairs(welcomeRows) do row.box:ClearFocus() end
+        discordBox:ClearFocus()
+        refreshWelcomes()
+    end
+    discordBox:SetScript("OnEnterPressed", function() saveWelcomeCard() end)
+    for _, row in ipairs(welcomeRows) do row.box:SetScript("OnEnterPressed", function() saveWelcomeCard() end) end
+    local welcomeSave = Forms:Button(welcomeCard, L["Save"], "primary")
+    welcomeSave:SetScript("OnClick", saveWelcomeCard)
+    welcomeCard:Actions({ welcomeSave })
+    discordBox.saveButton = welcomeSave
     -- The rows from the saved list; a row added and not saved yet stays open, empty.
     refreshWelcomes = function()
         local list = R.WelcomeList(GuildOS.db.recruitment)
@@ -3658,63 +3489,65 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end
 
     ----------------------------------------------------------------
-    -- Auto-Invite (issue #59): everything /gos autoinvite sets, through the same
-    -- Recruitment setters the command uses.
+    -- Auto-invite (issue #59): everything /gos autoinvite sets, through the same Recruitment setters the
+    -- command uses. The switch, the class pills and the fallback save at once; the keyword and the level
+    -- with the card's Save.
     ----------------------------------------------------------------
-    local aiSec = Section("autoinvite", L["Auto-Invite (whisper keyword)"])
-    local ab = aiSec.body
+    local aiCard = board:Card(L["Auto-Invite (whisper keyword)"], { col = 2 })
     local function aiCfg() return GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite end
-
-    -- A game that lets no addon invite says so on the header and first in the section, and its controls
-    -- are greyed out below (#371, #373).
+    -- A game that lets no addon invite says so first, and its controls are greyed out below (#371, #373).
     local canInvite = GuildOS.Client.isAnniversary
-    local aiNote = not canInvite
-        and Note(ab, L["This game does not let an addon invite: the auto-invite works on TBC Anniversary only."], 0, 0)
-    local function UpdateInviteStatus()
-        if not canInvite then return paint(aiSec.status, L["not on this client"], P.textSoft) end
-        local cfg = aiCfg()
-        paintOnOff(aiSec.status, cfg and cfg.enabled)
+    if not canInvite then
+        aiCard:Note(L["This game does not let an addon invite: the auto-invite works on TBC Anniversary only."],
+            { ink = P.warn })
     end
-
-    local aiChk = (Kit or UI)[Kit and "Checkbox" or "CreateCheckbox"](Kit or UI, ab, L["Invite players who whisper the keyword"], 18)
+    local aiChk = aiCard:Check(L["Invite players who whisper the keyword"])
     aiChk.checkbox.onChanged = function(_, checked)
         local cfg = aiCfg()
         if cfg then cfg.enabled = checked and true or false end
-        UpdateInviteStatus()
     end
-
-    local kwLabel = RowLabel(ab, L["Keyword:"], 0)
-    local kwBox = UI:CreateInput(ab, 120, ROW_H, { max = R.KEYWORD_MAX })
-    UI:AttachSaveButton(kwBox, function(box)
+    local kwBox = UI:CreateInput(aiCard, 120, Forms.FIELD_H, { max = R.KEYWORD_MAX })
+    local lvlBox = UI:CreateInput(aiCard, 60, Forms.FIELD_H, { numeric = true, max = 2 })
+    local function commitKeyword()
         local cfg = aiCfg()
         if not cfg then return end
-        if not R:SetAutoInviteKeyword(cfg, box:GetText()) then box:SetText(cfg.keyword) return end
-        box:SetText(cfg.keyword)
-        GuildOS:Print(L["Auto-invite keyword set to |cffFFFFFF"] .. cfg.keyword .. "|r.")
-    end)
-
-    local lvlLabel = RowLabel(ab, L["Min level:"], 0)
-    local lvlBox = UI:CreateInput(ab, 50, ROW_H, { numeric = true, max = 2 })
-    UI:AttachSaveButton(lvlBox, function(box)
+        local txt = kwBox:GetText()
+        if txt ~= cfg.keyword then
+            if R:SetAutoInviteKeyword(cfg, txt) then
+                GuildOS:Print(L["Auto-invite keyword set to |cffFFFFFF"] .. cfg.keyword .. "|r.")
+            end
+        end
+        kwBox:SetText(cfg.keyword)
+    end
+    local function commitLevel()
         local cfg = aiCfg()
         if not cfg then return end
-        R:SetAutoInviteMinLevel(cfg, box:GetText())
-        box:SetText(tostring(cfg.minLevel))
-    end)
-    local lvlNote = Note(ab, L["0 = any level"], COL, 0)
+        if tostring(cfg.minLevel) ~= lvlBox:GetText() then R:SetAutoInviteMinLevel(cfg, lvlBox:GetText()) end
+        lvlBox:SetText(tostring(cfg.minLevel))
+    end
+    local function saveInvite()
+        commitKeyword()
+        commitLevel()
+        kwBox:ClearFocus()
+        lvlBox:ClearFocus()
+    end
+    kwBox:SetScript("OnEnterPressed", saveInvite)
+    lvlBox:SetScript("OnEnterPressed", saveInvite)
+    aiCard:Pair(Forms:MakeField(aiCard, noColon(L["Keyword:"]), kwBox),
+                Forms:MakeField(aiCard, noColon(L["Min level:"]), lvlBox, { w = 90, hint = L["0 = any level"] }))
 
-    local classLabel = RowLabel(ab, L["Classes:"], 0)
+    aiCard:Note(noColon(L["Classes:"]), { gap = 10 })
     local classBtns = {}
-    -- A class the invite takes is the selected chip (UI:SetSelected, #371), not a fill in its colour.
+    -- A class the invite takes is an on pill (#371), not a fill in its colour.
     local function refreshClassBtns()
         local cfg = aiCfg()
         for _, b in ipairs(classBtns) do
-            UI:SetSelected(b, cfg and cfg.classes[b._class] and true or false)
+            Forms:SetOn(b, cfg and cfg.classes[b._class] and true or false)
         end
     end
     for i, class in ipairs(R.CLASSES) do
         local name = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class
-        local b = UI:CreateButton(ab, name, CHIP_W, ROW_H)
+        local b = Forms:Pill(aiCard, name)
         b._class = class
         b:SetScript("OnClick", function(self)
             local cfg = aiCfg()
@@ -3724,25 +3557,28 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         end)
         classBtns[i] = b
     end
-    local classNote = Note(ab, L["None selected = any class."], COL, 0)
+    aiCard:Flow(classBtns, { gapX = GAP_PILL, gap = Forms.LABEL_GAP })
+    aiCard:Note(L["None selected = any class."], { size = 10, gap = 3 })
 
-    local fbLabel = RowLabel(ab, L["Not confirmed:"], 0)
-    local fbBtn = UI:CreateButton(ab, "", 120, ROW_H)
+    local fbDrop = UI:CreateDropdown(aiCard, 160, Forms.FIELD_H)
+    fbDrop:SetOptions({ { value = "skip", text = L["Skip them"] }, { value = "invite", text = L["Invite them"] } })
+    fbDrop.onSelect = function(_, value)
+        local cfg = aiCfg()
+        if cfg then R:SetAutoInviteFallback(cfg, value) end
+    end
     local function refreshFallback()
         local cfg = aiCfg()
-        fbBtn.label:SetText((cfg and cfg.whoFallback == "invite") and L["Invite them"] or L["Skip them"])
+        fbDrop:SetValue((cfg and cfg.whoFallback == "invite") and "invite" or "skip")
     end
-    fbBtn:SetScript("OnClick", function()
-        local cfg = aiCfg()
-        if not cfg then return end
-        R:SetAutoInviteFallback(cfg, cfg.whoFallback == "invite" and "skip" or "invite")
-        refreshFallback()
-    end)
-    local fbNote = Note(ab, L["When /who can't confirm the level or class."], COL, 0)
-
-    -- How the invite decides, under the section it explains.
-    local banNote = canInvite
-        and Note(ab, L["Banned players are never invited. Level and class filters are checked with /who."], 0, 0)
+    aiCard:Field(noColon(L["Not confirmed:"]), fbDrop, { w = 220, hint = L["When /who can't confirm the level or class."] })
+    -- How the invite decides, under what it explains.
+    if canInvite then
+        aiCard:Note(L["Banned players are never invited. Level and class filters are checked with /who."])
+    end
+    local aiSave = Forms:Button(aiCard, L["Save"], "primary")
+    aiSave:SetScript("OnClick", saveInvite)
+    aiCard:Actions({ aiSave })
+    kwBox.saveButton, lvlBox.saveButton = aiSave, aiSave
     if not canInvite then
         -- Greyed out and kept, under the sentence that says why (#371).
         aiChk.checkbox:SetEnabled(false)
@@ -3750,147 +3586,68 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         for _, box in ipairs({ kwBox, lvlBox }) do
             box:EnableMouse(false)
             box:SetTextColor(P.disabled.r, P.disabled.g, P.disabled.b)
-            box.saveButton:SetEnabled(false)
         end
+        aiSave:SetEnabled(false)
         for _, b in ipairs(classBtns) do b:SetEnabled(false) end
-        fbBtn:SetEnabled(false)
+        fbDrop:SetEnabled(false)
     end
 
     local function refreshAutoInvite()
         local cfg = aiCfg()
         aiChk.checkbox:SetChecked(cfg and cfg.enabled or false)
-        kwBox:SetText(cfg and cfg.keyword or "")
-        lvlBox:SetText(cfg and tostring(cfg.minLevel or 0) or "")
+        if not kwBox:HasFocus() then kwBox:SetText(cfg and cfg.keyword or "") end
+        if not lvlBox:HasFocus() then lvlBox:SetText(cfg and tostring(cfg.minLevel or 0) or "") end
         refreshClassBtns()
         refreshFallback()
-    end
-
-    -- The class chips wrap with the width, so the rows under them follow.
-    aiSec.layout = function(w)
-        local y = 0
-        if aiNote then
-            at(aiNote, ab, 0, y)
-            y = y - noteH(aiNote) - 6
-        end
-        at(aiChk, ab, 0, y - 2)
-        y = y - ROW
-        labelAt(kwLabel, ab, y)
-        at(kwBox, ab, COL, y)
-        y = y - ROW
-        labelAt(lvlLabel, ab, y)
-        at(lvlBox, ab, COL, y)
-        y = y - ROW_H - 4
-        at(lvlNote, ab, COL, y)
-        y = y - noteH(lvlNote) - 6
-        labelAt(classLabel, ab, y)
-        y = y - placeChips(classBtns, #classBtns, ab, y, chipsPerRow(w, 3)) - 4
-        at(classNote, ab, COL, y)
-        y = y - noteH(classNote) - 6
-        labelAt(fbLabel, ab, y)
-        at(fbBtn, ab, COL, y)
-        y = y - ROW_H - 4
-        at(fbNote, ab, COL, y)
-        y = y - noteH(fbNote)
-        if banNote then
-            y = y - 6
-            at(banNote, ab, 0, y)
-            y = y - noteH(banNote)
-        end
-        return -y
     end
 
     ----------------------------------------------------------------
     -- Recruitment Beacon (Chehul mesh): realm/city-wide ad, officer-only
     ----------------------------------------------------------------
-    local beaconSec = Section("beacon", L["Recruitment Beacon (mesh)"])
-    local bb = beaconSec.body
-    RowLabel(bb, L["Status:"], 0)
-    local beaconStatus = StatusText(bb, 0)
-    local editBeaconBtn = UI:CreateButton(bb, L["Edit Beacon"], 130, ROW_H)
-    editBeaconBtn:SetPoint("TOPLEFT", SIDE, 0)
+    local beaconCard = board:Card(L["Recruitment Beacon (mesh)"])
+    local beaconLine = StatusLine(beaconCard, false)
+    local beaconStatus = beaconLine.word
+    beaconCard:Note(L["Lives in the mesh and keeps circulating even when you're offline."])
+    local editBeaconBtn = Forms:Button(beaconCard, L["Edit Beacon"])
     editBeaconBtn:SetScript("OnClick", function()
         if GuildOS.ShowRecruitBeacon then GuildOS:ShowRecruitBeacon() end
     end)
+    beaconCard:Actions({ editBeaconBtn })
     local BROADCASTING, BEACON_OFF = plain(L["|cff4CFF4CBroadcasting|r"]), plain(L["|cff888888Off|r"])
     local function UpdateBeaconStatus()
         local ad = GuildOS.RecruitBeacon and GuildOS.RecruitBeacon:GetAd()
         local on = ad and ad.enabled
-        for _, fs in ipairs({ beaconStatus, beaconSec.status }) do
-            paint(fs, on and BROADCASTING or BEACON_OFF, on and P.ok or P.textSoft)
-        end
+        paint(beaconStatus, on and BROADCASTING or BEACON_OFF, on and P.ok or P.textSoft)
     end
     UpdateBeaconStatus()
-    local beaconNote = Note(bb, L["Lives in the mesh and keeps circulating even when you're offline."], COL, -(ROW_H + 4))
-    beaconSec.layout = function() return ROW_H + 4 + noteH(beaconNote) end
 
     ----------------------------------------------------------------
     -- Join requests: people with no guild who asked this one to take them
     ----------------------------------------------------------------
-    -- Not where the module never starts (Anniversary): a section with nothing behind it.
+    -- Not where the module never starts (Anniversary): a card with nothing behind it.
     local UpdateRequestsStatus = function() end
     if GuildOS.JoinRequests and not GuildOS.Client.isAnniversary then
-        local reqSec = Section("requests", L["Join requests"])
-        local qb = reqSec.body
-        RowLabel(qb, L["Status:"], 0)
-        local requestsStatus = StatusText(qb, 0)
-        local requestsBtn = UI:CreateButton(qb, L["Open the list"], 130, ROW_H)
-        requestsBtn:SetPoint("TOPLEFT", SIDE, 0)
+        local reqCard = board:Card(L["Join requests"])
+        local reqLine = StatusLine(reqCard, false)
+        local requestsStatus = reqLine.word
+        reqCard:Note(L["Players who asked your guild to take them, from the game or from guildos.me."])
+        local requestsBtn = Forms:Button(reqCard, L["Open the list"])
         requestsBtn:SetScript("OnClick", function()
             if GuildOS.ShowJoinRequests then GuildOS:ShowJoinRequests() end
         end)
+        reqCard:Actions({ requestsBtn })
         local NONE = plain(L["|cff888888None|r"])
         UpdateRequestsStatus = function()
             -- A damaged row must not take the whole tab down with it.
             local ok, n = pcall(GuildOS.JoinRequests.OpenCount, GuildOS.JoinRequests)
             n = ok and n or 0
-            for _, fs in ipairs({ requestsStatus, reqSec.status }) do
-                if n > 0 then paint(fs, GuildOS:JoinRequestsOpenText(n), P.text) else paint(fs, NONE, P.textSoft) end
-            end
+            if n > 0 then paint(requestsStatus, GuildOS:JoinRequestsOpenText(n), P.text) else paint(requestsStatus, NONE, P.textSoft) end
         end
         UpdateRequestsStatus()
-        local reqNote = Note(qb, L["Players who asked your guild to take them, from the game or from guildos.me."], COL, -(ROW_H + 4))
-        reqSec.layout = function() return ROW_H + 4 + noteH(reqNote) end
-    end
-
-    ----------------------------------------------------------------
-    -- The tab, top to bottom (#373), at the width the last layout had. The scroll child's height is set
-    -- after every pass: it is what gives the scroll frame its range.
-    ----------------------------------------------------------------
-    relayout = function()
-        local w = layoutW
-        if not w then return end
-        local y = 0
-        local function place(f, h)
-            f:ClearAllPoints()
-            f:SetPoint("TOPLEFT", recruitContent, "TOPLEFT", 0, y)
-            f:SetPoint("TOPRIGHT", recruitContent, "TOPRIGHT", 0, y)
-            f:SetHeight(h)
-            y = y - h
-        end
-        place(strip, layoutStrip(w))
-        y = y - 4
-        at(intervalNote, recruitContent, 0, y)
-        y = y - noteH(intervalNote) - GAP
-        place(adBlock, layoutAd(w))
-        y = y - GAP
-        place(chanBlock, layoutChan(w))
-        y = y - 2 * GAP
-        for _, sec in ipairs(sections) do
-            place(sec.head, HEAD_H)
-            local isOpen = recruitingOpen[sec.key] and true or false
-            sec.paintCaret()
-            sec.body:SetShown(isOpen)
-            if isOpen then
-                y = y - 4
-                place(sec.body, sec.layout(w))
-                y = y - GAP
-            end
-        end
-        recruitContent:SetHeight(math.max(1, -y + GAP))
     end
 
     -- The tab's OnShow fills every box before the tab is laid out, and an edit box filled before it is
-    -- laid out shows nothing until its cursor moves (#158); a shut section's too, until it opens.
+    -- laid out shows nothing until its cursor moves (#158).
     local editBoxes = { intervalBox, msgBox, chanBox, kwBox, lvlBox, discordBox }
     for _, row in ipairs(welcomeRows) do editBoxes[#editBoxes + 1] = row.box end
     resetCursors = function()
@@ -3898,33 +3655,36 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             if not box:HasFocus() then box:SetCursorPosition(0) end
         end
     end
+    board.onLayout = resetCursors
 
     ----------------------------------------------------------------
     -- Refresh function for the "Recruiting" sub-tab. Registered into
     -- root.subPanels so selectSub() runs it whenever this sub-tab becomes
     -- active (and root's OnShow below re-runs it every time the officer
-    -- opens the Recruitment tab), NOT wired to recruitingSub's own
-    -- OnShow, which (being a child frame already left "shown") would
-    -- never see a real hidden->shown transition on its own.
+    -- opens the Recruitment tab).
     ----------------------------------------------------------------
     local function recruitingRefresh()
         local s = GuildOS.db.recruitment
-        intervalBox:SetText(tostring(s.interval or 120))
+        if not intervalBox:HasFocus() then intervalBox:SetText(tostring(s.interval or 120)) end
         refreshChanBtns()
         refreshAutoInvite()
-        msgBox:SetText(s.message or "")
-        discordBox:SetText(s.discord or "")
+        if not msgBox:HasFocus() then msgBox:SetText(s.message or "") end
+        if not discordBox:HasFocus() then discordBox:SetText(s.discord or "") end
         refreshWelcomes()
         welcomeRules.checkbox:SetChecked(s.welcomeRules == true)
+        refreshRankDrop()
         UpdateRecruitStatus()
         UpdateWelcomeStatus()
-        UpdateInviteStatus()
         UpdateBeaconStatus()
         UpdateRequestsStatus()
         updatePreview()
         refreshCustomChans()   -- last: it lays the tab out again
     end
     root.subPanels.recruiting = { panel = recruitingSub, refresh = recruitingRefresh }
+    -- What the tests read.
+    root.recruitBoard = board
+    root.recruitCards = { post = postCard, message = msgCard, channels = chanCard, help = helpCard,
+        welcome = welcomeCard, invite = aiCard, beacon = beaconCard }
 
     root:SetScript("OnShow", function()
         layoutTabs()
@@ -3932,22 +3692,16 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end)
 
     ----------------------------------------------------------------
-    -- Layout: the sub-tab bar wraps, and the Recruiting tab follows the
-    -- scroll content's width.
+    -- Layout: the sub-tab bar wraps, and the screens lay their cards at the area's width.
     ----------------------------------------------------------------
-    UI:MakeResponsive(root, function(_, w, _)
+    UI:MakeResponsive(root, function(_, w, h)
         bar:SetWidth(math.max(180, w - 2 * BAR_INSET))
         layoutTabs()
-
-        -- The scroll child is the sub-panel, as wide as the bar, less the scroll bar's gutter (#371): it
-        -- was 10px wider than its scroll frame, so the Save buttons ran under the bar.
-        local contentW = math.max(200, w - 2 * BAR_INSET - 2 * RCARD_PAD - UI.SCROLL_GUTTER)
-        layoutW = contentW
-        recruitContent:SetWidth(contentW)
-        for _, f in ipairs(flex) do
-            f.widget:SetWidth(math.max(80, contentW - f.left - f.reserve))
+        local areaH = h - 8 - (bar:IsShown() and (bar:GetHeight() or 28) or 0) - 10
+        local areaW = w - 2 * BAR_INSET
+        for _, area in pairs(areas) do
+            local b = rawget(area, "board")
+            if b then b:Layout(areaW - UI.SCROLL_GUTTER, areaH) end
         end
-        relayout()
-        resetCursors()
     end)
 end

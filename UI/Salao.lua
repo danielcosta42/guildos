@@ -4,8 +4,9 @@
 -- who is home and what this player still has to do. Drawn as the approved mockup's Início (phase 3, #449),
 -- in two columns, stacked when the window is narrow. On the left, parchment cards: Set up (an officer's,
 -- while the guild's activation is not done), For you (three lines at most, each a coloured square, a line
--- under it and one button) and the Notice board (the next events as pinned notes, this player's answer
--- outlining each, and the newest notice under them). On the right: the countdown to the raids (Forever),
+-- under it and one button), the Notice board (the next events as pinned notes, this player's answer
+-- outlining each, and the newest notice under them) and, filling the column's height under it, the Guild chat
+-- (a dark card: the last lines of /g, an officer's channel too for an officer, and a box to answer). On the right: the countdown to the raids (Forever),
 -- the Chimney while a Winter Veil event is on, By the fire (a dark card of round class avatars and a "+n"
 -- disc) and the Guild wall (a glyph, the line, its time). Every line opens the screen that owns it.
 --
@@ -37,6 +38,11 @@ local NOTE_GAP     = 10
 local GLYPH        = 26
 local WALL_H       = 30
 local REFRESH_S    = 15
+local CHAT_LINES   = 40         -- the Guild chat card's lines at most (pooled)
+local CHAT_MIN     = 180        -- its least height beside the right column
+local CHAT_STACKED = 260        -- its height in one column
+local CHAT_AV      = 18
+local CHAT_FIELD   = 24
 
 local function now() return (GetServerTime and GetServerTime()) or time() end
 local function short(full) return full and (full:match("^([^-]+)") or full) or "?" end
@@ -158,9 +164,44 @@ function Salao:Chimney()
     if not e then return nil end
     local c = type(e.counts) == "table" and e.counts or {}
     local entrants = math.max(0, math.floor(tonumber(c.entrants) or 0))
-    if entrants == 0 then return nil end
     return { entrants = entrants, wrapped = math.min(entrants, math.max(0, math.floor(tonumber(c.wrapped) or 0))),
              opened = math.max(0, math.floor(tonumber(c.opened) or 0)), lit = WV.PhaseOf(e) == "open" }
+end
+
+-- The Guild chat card's lines: the newest `max` of /g (the server's history where it keeps one, else the
+-- addon's log), and for an officer the Officers channel where the server keeps it, each of those marked; oldest
+-- first, so the newest is at the bottom. { name, class, ts, text, guild (an ally's line), officer }. Nil in a chat
+-- lockdown, when nothing of the server's can be read (the card keeps what it shows).
+function Salao:ChatLines(max)
+    local GC = GuildOS.GuildChat
+    if not GC then return {} end
+    if GC.Locked and GC:Locked() then return nil end
+    local lines = {}
+    local function add(list, officer)
+        for _, e in ipairs(list or {}) do
+            if type(e) == "table" and e.m then
+                lines[#lines + 1] = { name = e.n, class = e.c, ts = tonumber(e.t) or 0, text = tostring(e.m), guild = e.g,
+                                      officer = officer or nil, at = #lines }
+            end
+        end
+    end
+    add((GC:Entries(nil)))
+    if GuildOS:IsOfficer() and GC.Streams then
+        for _, st in ipairs(GC:Streams() or {}) do
+            if type(st) == "table" and st.kind == "officer" then add((GC:Entries(st)), true) end
+        end
+    end
+    table.sort(lines, function(a, b)
+        if a.ts ~= b.ts then return a.ts < b.ts end
+        return a.at < b.at
+    end)
+    max = max or CHAT_LINES
+    if #lines > max then
+        local cut = {}
+        for i = #lines - max + 1, #lines do cut[#cut + 1] = lines[i] end
+        lines = cut
+    end
+    return lines
 end
 
 -- WoW: Forever's countdown to the raids (issue #207), until a week after they open: Readiness:Countdown counts
@@ -453,6 +494,66 @@ local function wallLine(wall, i)
     return r
 end
 
+-- A line of the Guild chat card (the mockup's .chat .ln): a small round class avatar, the name in the class's
+-- colour and the time softer beside it, the text under them. Pooled: the card repaints on every line of /g.
+local function chatLine(chat, i)
+    local r = chat.lines[i]
+    if r then return r end
+    r = CreateFrame("Frame", nil, chat.content)
+    -- A link in the line opens as it does in the chat frame.
+    r:EnableMouse(true)
+    if r.SetHyperlinksEnabled then r:SetHyperlinksEnabled(true) end
+    r:SetScript("OnHyperlinkClick", function(_, link, linkText, button)
+        if SetItemRef then SetItemRef(link, linkText, button) end
+    end)
+    r.avatar = UI:CreateAvatar(r, CHAT_AV, false)
+    r.avatar:SetPoint("TOPLEFT", 0, -1)
+    r.avatar:EnableMouse(false)
+    r.name = text(r, 12, C.text, "itemName")
+    r.name:SetPoint("TOPLEFT", CHAT_AV + 8, 0)
+    r.time = text(r, 10, C.textSoft)
+    r.time:SetPoint("LEFT", r.name, "RIGHT", 6, 0)
+    r.body = text(r, 12, C.text)
+    r.body:SetPoint("TOPLEFT", CHAT_AV + 8, -15)
+    r.body:SetWordWrap(true)
+    chat.lines[i] = r
+    return r
+end
+
+-- A stocking of the Chimney (#449): a leg, a foot to the right and a white cuff, drawn, never a bare block.
+-- stocking.color is its leg's colour (what the tests read); stocking:Paint(c) colours it, stocking:Place(x, y).
+local function stocking(chimney, i)
+    local sk = chimney.stockings[i]
+    if sk then return sk end
+    local WHITE = "Interface\\Buttons\\WHITE8x8"
+    sk = chimney:CreateTexture(nil, "ARTWORK")
+    sk:SetTexture(WHITE)
+    sk:SetSize(10, 15)
+    sk.foot = chimney:CreateTexture(nil, "ARTWORK")
+    sk.foot:SetTexture(WHITE)
+    sk.foot:SetSize(15, 7)
+    sk.foot:SetPoint("TOPLEFT", sk, "BOTTOMLEFT", 0, 2)
+    sk.cuff = chimney:CreateTexture(nil, "OVERLAY")
+    sk.cuff:SetTexture(WHITE)
+    sk.cuff:SetSize(12, 5)
+    sk.cuff:SetPoint("BOTTOMLEFT", sk, "TOPLEFT", -1, -2)
+    function sk:Paint(col, full)
+        self:SetVertexColor(col.r, col.g, col.b, 1)
+        self.foot:SetVertexColor(col.r, col.g, col.b, 1)
+        local cuff = full and { r = 0.96, g = 0.93, b = 0.86 } or { r = 0.62, g = 0.52, b = 0.45 }
+        self.cuff:SetVertexColor(cuff.r, cuff.g, cuff.b, 1)
+    end
+    function sk:Place(x, y)
+        self:ClearAllPoints()
+        self:SetPoint("TOPLEFT", x + 1, -(y + 3))
+    end
+    function sk:SetAll(on)
+        self:SetShown(on); self.foot:SetShown(on); self.cuff:SetShown(on)
+    end
+    chimney.stockings[i] = sk
+    return sk
+end
+
 local STEP_LABEL = {
     publish = function() return L["Publish"] end,
     bot = function() return L["Discord bot"] end,
@@ -474,9 +575,11 @@ function GuildOS:CreateSalaoPanel(panel)
     local fire     = UI:CreateCard(content, L["By the fire"], { dark = true, link = L["Members"] })
     local wall     = UI:CreateCard(content, L["Guild wall"], { link = L["Activity"] })
     local raidsIn  = UI:CreateCard(content, "", { dark = true })
-    for _, c in ipairs({ setup, forYou, board, chimney, fire, wall, raidsIn }) do c.rows = {} end
+    local chat     = UI:CreateCard(content, L["Guild chat"], { dark = true, link = L["Chat"] })
+    for _, c in ipairs({ setup, forYou, board, chimney, fire, wall, raidsIn, chat }) do c.rows = {} end
     panel.cards = { setup = setup, forYou = forYou, board = board, chimney = chimney, fire = fire, wall = wall,
-                    countdown = raidsIn }
+                    countdown = raidsIn, chat = chat }
+    chat.link:SetScript("OnClick", open({ id = "guild", sub = "chat" }))
     board.link:SetScript("OnClick", open({ id = "guild", sub = "calendar" }))
     fire.link:SetScript("OnClick", open({ id = "roster" }))
     wall.link:SetScript("OnClick", open({ id = "guild", sub = "activity" }))
@@ -528,6 +631,94 @@ function GuildOS:CreateSalaoPanel(panel)
     chimney.stockings = {}
     chimney.line = text(chimney, 12, { r = 0.949, g = 0.843, b = 0.690 })
     chimney.line:SetPoint("TOPLEFT", CARD_PAD, -(CARD_PAD + TITLE_H - 4))
+
+    -- The Guild chat (#449): the last lines of /g under the Notice board, newest at the bottom, a box to answer.
+    -- The feed follows new lines while the reader is at its bottom, never pulling one who scrolled up.
+    local cscroll, ccontent = UI:CreateScrollFrame(chat, nil)
+    cscroll:SetPoint("TOPLEFT", CARD_PAD, -(CARD_PAD + TITLE_H))
+    cscroll:SetPoint("BOTTOMRIGHT", -(CARD_PAD - 4), CARD_PAD + CHAT_FIELD + 8)
+    chat.scroll, chat.content, chat.lines = cscroll, ccontent, {}
+    chat.empty = text(ccontent, 12, C.textSoft)
+    chat.empty:SetPoint("TOPLEFT", 0, -4)
+    chat.empty:SetWordWrap(true)
+    local say = UI:CreateInput(chat, 200, CHAT_FIELD, { placeholder = L["Say to the guild…"], max = 255 })
+    say:SetPoint("BOTTOMLEFT", CARD_PAD, CARD_PAD)
+    say:SetPoint("BOTTOMRIGHT", -CARD_PAD, CARD_PAD)
+    chat.say = say
+    -- Enter is the player's own key press, which chat needs on Forever. The text stays in a chat lockdown.
+    say:SetScript("OnEnterPressed", function(self)
+        local GC = GuildOS.GuildChat
+        local msg = self:GetText() or ""
+        if not GC or msg:gsub("%s", "") == "" then self:ClearFocus(); return end
+        local ok, why = GC:Send(msg:sub(1, 255))
+        if ok then
+            self:SetText("")
+            chat.follow = true
+        elseif why == "locked" then
+            GuildOS:Print(L["Chat is locked right now: your message is still in the box."])
+        end
+    end)
+
+    local function fillChat(width, height)
+        local lines = Salao:ChatLines(CHAT_LINES)
+        if not lines then return end       -- a chat lockdown: what is drawn stays
+        local w = math.max(120, width - 2 * CARD_PAD - 14)
+        ccontent:SetWidth(w)
+        local range = cscroll.GetVerticalScrollRange and cscroll:GetVerticalScrollRange() or 0
+        local follow = chat.follow or (cscroll:GetVerticalScroll() or 0) >= (range or 0) - 4
+        chat.follow = nil
+        local today = date and date("%Y%m%d", now()) or ""
+        local y = 0
+        for i, l in ipairs(lines) do
+            local r = chatLine(chat, i)
+            r:ClearAllPoints()
+            r:SetPoint("TOPLEFT", 0, -y)
+            r:SetWidth(w)
+            r.avatar:SetMember(l.name or "?", l.class)
+            local who = l.name or "?"
+            if l.guild then who = "[" .. clean(l.guild) .. "] " .. who end
+            -- An officer's line, in the Officers channel's green, says so.
+            if l.officer then who = "|cff40c040" .. L["Officer"] .. "|r  " .. who end
+            r.name:SetText(who)
+            local cr, cg, cb = GuildOS:GetClassColor(l.class)
+            r.name:SetTextColor(cr, cg, cb)
+            r.time:SetText(l.ts > 0 and GuildOS:LocalDate((date and date("%Y%m%d", l.ts) == today) and "%H:%M" or "%a %H:%M", l.ts) or "")
+            r.body:SetWidth(w - CHAT_AV - 8)
+            r.body:SetText(l.text)
+            local c = l.officer and { r = 0.25, g = 0.75, b = 0.25 } or C.text
+            r.body:SetTextColor(c.r, c.g, c.b)
+            local h = math.max(CHAT_AV + 2, 15 + math.ceil(r.body:GetStringHeight() or 12))
+            r:SetHeight(h)
+            r:Show()
+            y = y + h + 6
+        end
+        for i = #lines + 1, #chat.lines do chat.lines[i]:Hide() end
+        chat.empty:SetShown(#lines == 0)
+        if #lines == 0 then
+            chat.empty:SetWidth(w)
+            chat.empty:SetText(L["Nothing said in the guild chat yet."])
+            y = 20
+        end
+        ccontent:SetHeight(math.max(1, y))
+        chat.shownLines = lines
+        -- A frame later: the scroll range follows the new height only after it lands.
+        if follow then
+            local view = math.max(1, (height or 0) - (CARD_PAD + TITLE_H) - (CARD_PAD + CHAT_FIELD + 8))
+            local target = math.max(0, y - view)
+            GuildOS.Compat.After(0, function()
+                if panel:IsVisible() then cscroll:SetVerticalScroll(target) end
+            end)
+        end
+    end
+    -- Live: a line of /g (GuildChat's own CHAT_MSG_GUILD) repaints the card, coalesced, while it shows.
+    if GuildOS.GuildChat and GuildOS.GuildChat.OnRefresh then
+        GuildOS.GuildChat:OnRefresh(function()
+            if not chat:IsVisible() then return end
+            GuildOS:Coalesce("salaoChat", 0.3, function()
+                if chat:IsVisible() then GuildOS:SafeCall(fillChat, UI:LaidWidth(chat), chat:GetHeight()) end
+            end)
+        end)
+    end
 
     local function fillSetup(width)
         local st = Salao:Setup()
@@ -705,29 +896,30 @@ function GuildOS:CreateSalaoPanel(panel)
 
     local function fillChimney(width)
         local c = Salao:Chimney()
-        for _, sk in ipairs(chimney.stockings) do sk:Hide() end
+        for _, sk in ipairs(chimney.stockings) do sk:SetAll(false) end
         if not c then return 0 end
         GuildOS:SetTitleText(chimney.title, c.lit and L["The Chimney is lit"] or L["The Chimney"])
+        local y0 = CARD_PAD + TITLE_H + 16
+        -- Nobody has entered yet: said, not a row of nothing.
+        if c.entrants == 0 then
+            chimney.line:SetText(L["No stockings yet: they hang here as the guild joins the Secret Santa."])
+            chimney.line:SetWordWrap(true)
+            chimney.line:SetWidth(width - 2 * CARD_PAD)
+            return y0 + 4 + CARD_PAD - 4
+        end
+        chimney.line:SetWordWrap(false)
+        chimney.line:SetWidth(width - 2 * CARD_PAD)
         chimney.line:SetText(c.lit and string.format(L["%d of %d globes opened"], math.min(c.opened, c.entrants), c.entrants)
             or string.format(L["%d of %d entrants wrapped their globe"], c.wrapped, c.entrants))
-        local w, h, gap = 14, 19, 4
+        local w, h, gap = 16, 22, 6
         local perRow = math.max(1, math.floor((width - 2 * CARD_PAD + gap) / (w + gap)))
-        local y0 = CARD_PAD + TITLE_H + 16
         for i = 1, c.entrants do
-            local sk = chimney.stockings[i]
-            if not sk then
-                sk = chimney:CreateTexture(nil, "ARTWORK")
-                sk:SetTexture(GuildOS.Style.ART.card)
-                sk:SetSize(w, h)
-                chimney.stockings[i] = sk
-            end
+            local sk = stocking(chimney, i)
             local full = c.lit or i <= c.wrapped
-            local col = full and C.danger or C.line
-            sk:SetVertexColor(col.r, col.g, col.b, 1)
+            sk:Paint(full and C.danger or { r = 0.45, g = 0.27, b = 0.22 }, full)
             local cx, cy = (i - 1) % perRow, math.floor((i - 1) / perRow)
-            sk:ClearAllPoints()
-            sk:SetPoint("TOPLEFT", CARD_PAD + cx * (w + gap), -(y0 + cy * (h + 6)))
-            sk:Show()
+            sk:Place(CARD_PAD + cx * (w + gap), y0 + cy * (h + 6))
+            sk:SetAll(true)
         end
         return y0 + math.ceil(c.entrants / perRow) * (h + 6) + CARD_PAD - 4
     end
@@ -819,6 +1011,18 @@ function GuildOS:CreateSalaoPanel(panel)
         local yl = place(setup, 0, 2, leftW, hSetup)
         yl = place(forYou, 0, yl, leftW, hYou)
         yl = place(board, 0, yl, leftW, hBoard)
+        -- The Guild chat under the board: in two columns as tall as the rest of the view (or of the right column,
+        -- when that is taller), at least CHAT_MIN; in one column a fixed height, the right column under it.
+        local hChat = CHAT_STACKED
+        local yc = yl
+        if two then
+            local yr0 = 2 + (hCount > 0 and hCount + GUTTER or 0) + (hChimney > 0 and hChimney + GUTTER or 0)
+                + hFire + GUTTER + hWall
+            local view = UI:LaidWidth(panel) > 0 and (panel:GetHeight() or 0) or 0
+            hChat = math.max(CHAT_MIN, math.max(yr0, view - 10) - yc)
+        end
+        yl = place(chat, 0, yc, leftW, hChat)
+        GuildOS:SafeCall(fillChat, leftW, hChat)
         local xr, yr = two and (leftW + GUTTER) or 0, two and 2 or yl
         yr = place(raidsIn, xr, yr, rightW, hCount)
         yr = place(chimney, xr, yr, rightW, hChimney)
@@ -829,6 +1033,7 @@ function GuildOS:CreateSalaoPanel(panel)
     panel.Refresh = refresh
 
     panel:SetScript("OnShow", function()
+        chat.follow = true
         GuildOS:SafeCall(refresh)
         if not panel.ticker then
             panel.ticker = C_Timer.NewTicker(REFRESH_S, function() if panel:IsVisible() then GuildOS:SafeCall(refresh) end end)

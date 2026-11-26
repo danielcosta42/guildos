@@ -36,6 +36,7 @@ check(UI.ChipRowsHeight(2, 3, 26) == 30, "one row of chips")
 check(UI.ChipRowsHeight(4, 3, 26) == 56, "two rows, as the screen always kept before")
 local stack = io.open(ADDON .. "/UI/RosterFrame.lua", "rb"):read("*a")
 check(not stack:find("math.ceil(CUSTOM_MAX / CUSTOM_PER_ROW) * 26", 1, true), "the recruiting screen no longer keeps the most chips possible")
-check(stack:find("chanHint:SetShown(shown > 0)", 1, true), "\"click a channel below\" shows only with a channel below")
+check(stack:find("L[\"Click a channel below to stop posting to it.\"], { size = 10, shown = function() return customShown > 0 end }", 1, true),
+  "\"click a channel below\" shows only with a channel below")
 
 print("label-column: " .. checks .. " checks passed")

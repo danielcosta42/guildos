@@ -1236,7 +1236,8 @@ function GuildOS:CreateWinterVeilPanel(container)
             chTitle:SetText(L["Participants"])
             chNote:SetText(string.format(L["Nobody sees the pairs, officers included. The rules and the draw are on the site: %s"], siteLink()))
             for _, r in ipairs(e.entrants or {}) do
-                rows[#rows + 1] = { text = nameOf(r.key), value = r.wrapped and colored(L["wrapped"], C.ok) or L["not wrapped yet"] }
+                -- Who wrapped in the ok ink, who has not yet in the warn's (the mockup's badges), never a pair.
+                rows[#rows + 1] = { text = nameOf(r.key), value = r.wrapped and colored(L["wrapped"], C.ok) or colored(L["not wrapped yet"], C.warn) }
             end
         end
         -- Only the rows that fit, from `listTop`.

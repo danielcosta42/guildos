@@ -254,7 +254,7 @@ for _, case in ipairs(CLIENTS) do
 end
 -- One list (audit B19): the HUD keeps none of its own.
 do
-  local f = assert(io.open(ADDON .. "/UI/RaidHUD.lua", "rb"))
+  local f = assert(io.open(ADDON .. "/Modules/RaidHUD.lua", "rb"))   -- the HUD moved there (#449)
   local hud = f:read("*a")
   f:close()
   check(hud:find("RT_TOOLS:TrackedCooldowns()", 1, true) and not hud:find("spellIDs = {", 1, true),

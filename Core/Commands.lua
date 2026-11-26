@@ -304,13 +304,12 @@ local function handleCommand(msg)
         -- /guildos craft <item link or id> — who can craft this, guild + realm.
         local arg = strtrim((msg:gsub("^craft%s*", "")))
         local itemId = tonumber(arg:match("item:(%d+)")) or tonumber(arg:match("^(%d+)$"))
+        -- The Workshop's Search the realm (#449), on the item when one is given.
+        if GuildOS.ShowCraftFinder and GuildOS:ShowCraftFinder(itemId) ~= false then
+            return
+        end
         if not itemId then
-            -- No item given: open the Craft Finder popup instead.
-            if GuildOS.ShowCraftFinder then
-                GuildOS:ShowCraftFinder()
-            else
-                GuildOS:Print(L["Usage: /guildos craft [item link or id]"])
-            end
+            GuildOS:Print(L["Usage: /guildos craft [item link or id]"])
         else
             local itemName = GuildOS.Compat.GetItemInfo(itemId) or ("item:" .. itemId)
             local seen = {}

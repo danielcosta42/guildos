@@ -51,6 +51,9 @@ function Proxy:GetHeight() return self.h end
 function Proxy:SetText(t) self.text = t end
 function Proxy:GetText() return self.text end
 function Proxy:GetStringWidth() return #(self.text or "") * 6 end
+function Proxy:GetStringHeight() return 14 end
+function Proxy:HasFocus() return false end
+function Proxy:GetFrameLevel() return 1 end
 function Proxy:Show() self.shown = true end
 function Proxy:Hide() self.shown = false end
 function Proxy:SetShown(v) self.shown = v and true or false end
@@ -58,7 +61,8 @@ function Proxy:IsShown() return self.shown end
 function Proxy:IsVisible() return self.shown end
 function Proxy:GetObjectType() return self.kind end
 function Proxy:IsMouseOver() return false end
-function Proxy:IsEnabled() return true end
+function Proxy:IsEnabled() return rawget(self, "enabled") ~= false end
+function Proxy:SetEnabled(v) self.enabled = v and true or false end
 function Proxy:GetFrameLevel() return 1 end
 function Proxy:GetName() return self.name end
 function Proxy:GetParent() return self.parent end
@@ -181,6 +185,7 @@ dofile(ADDON .. "/UI/ProfessionsPanel.lua")
 dofile(ADDON .. "/Modules/RecipeTracker.lua")
 dofile(ADDON .. "/Modules/CraftOrders.lua")
 dofile(ADDON .. "/UI/CraftOrdersPanel.lua")
+dofile(ADDON .. "/UI/CraftFinder.lua")
 local O = GuildOS.CraftOrders
 
 local P = GuildOS.Professions
@@ -352,20 +357,59 @@ GuildOS:SetSetting("altClickCrafts", true)
 check(altClick(LINK) == 2840, "turned back on, it opens the recipe")
 GuildOS.ShowCraftFor = realShow
 
--- ── The order beside the columns, or under them (#415) ──────────────────
--- In a narrow list the crafters' "Ask them" was drawn over the order's Quantity and Tip: there the
--- block takes more rows and puts the order under the columns.
-local ROW_H = 24
-local st = panel.state
+-- ── The recipe card in the right column (#449) ──────────────────────────
+-- The recipe chosen in the catalog takes the Orders card's place; "‹ Orders", Escape or the row again
+-- give it back. In a narrow window the card lies over the table's right part.
 GuildOS:ShowCraftFor(2840)
-check(panel.detail.shown and not panel.detail:IsStacked(), "a wide (or unmeasured) list: the order beside the columns")
-local wideRows = st.detailRows
-panel.detail.w = 470
-panel.detail.scripts.OnSizeChanged(panel.detail, 470)
-check(panel.detail:IsStacked() and st.detailRows > wideRows and st.detailRows * ROW_H == panel.detail:GetHeight(),
-      "a narrow one: the block takes more rows and the order goes under the columns")
-panel.detail.w = 900
-panel.detail.scripts.OnSizeChanged(panel.detail, 900)
-check(not panel.detail:IsStacked() and st.detailRows == wideRows, "widened again, back beside them")
+container.LayoutCrafts(1200)
+check(container.card.shown and not container.dock.shown and not container.toggle.shown,
+      "a wide window: the recipe card in the right column, the Orders card under it")
+check(container.card.w == 340, "the card a column of its own width: " .. tostring(container.card.w))
+container.card.back.scripts.OnClick(container.card.back)
+check(not container.card.shown and container.dock.shown and panel.state.open == nil, "‹ Orders gives the column back")
+GuildOS:ShowCraftFor(2840)
+container.LayoutCrafts(800)
+check(container.card.shown and not container.dock.shown and not container.toggle.shown and container.card.w >= 280,
+      "a narrow window: the card over the table, the drawer's button hidden under it")
+container.card.back.scripts.OnClick(container.card.back)
+check(not container.card.shown and container.dock.shown, "and its ‹ Orders opens the drawer it covered")
+container.toggle.scripts.OnClick(container.toggle)
+container.LayoutCrafts(1200)
+check(container.dock.shown, "wide again, the queue beside the catalog")
+
+-- ── Search the realm, a screen of the tab (#449) ────────────────────────
+local finder = container.finder
+check(finder ~= nil, "the tab builds the realm's search")
+container.SelectSub("realm", 2840)
+check(container.activeSub == "realm" and not panel.parent.shown and not container.dock.shown,
+      "the Workshop's Search the realm shows it in place of the catalog and the queue")
+check(finder.query and finder.query.itemId == 2840 and showing("Item 2840"), "on the item it was opened with")
+check(finder.query.count >= 1 and finder.rows[1].shown and finder.rows[1].where.text == "Guild",
+      "the guild's crafters at once, marked as the guild's")
+check(showing("How it works") and showing("Nothing is posted in public chat"), "and it says how the search works")
+local ordered
+local realShowFor = GuildOS.ShowCraftFor
+GuildOS.ShowCraftFor = function(_, id, key) ordered = { id, key } end
+local first = finder.rows[1]
+if first.order.shown then first.order.scripts.OnClick(first.order) end
+check(not first.order.shown or (ordered and ordered[1] == 2840), "a guild crafter's Order opens the recipe for them")
+GuildOS.ShowCraftFor = realShowFor
+local CF = GuildOS.CraftFinder
+check(CF.ResolveItemId("|cffffffff|Hitem:2840::::|h[x]|h|r") == 2840 and CF.ResolveItemId(" 2840 ") == 2840
+      and CF.ResolveItemId("Copper Bar") == nil, "the field takes a link or an id; a name is not an id")
+local hits = CF.Suggest("spell 26", 8)
+check(#hits == 1 and hits[1].id == 2862, "a name typed suggests the items the catalog makes (the recipe's name)")
+hits = CF.Suggest("item 28", 8)
+check(#hits == 1 and hits[1].id == 2840, "and the item's own name once the client has it")
+check(#CF.Suggest("s", 8) == 0, "one letter suggests nothing")
+finder.input:SetText("Spell 2660")
+finder.input.scripts.OnTextChanged(finder.input, true)
+check(finder.suggest.shown and finder.suggest.rows[1].label.text == "Spell 2660", "the suggestions show under the field")
+finder.input.scripts.OnEnterPressed(finder.input)
+check(finder.query.itemId == 2862 and not finder.suggest.shown, "Enter searches the first one")
+check(showing("Nobody in the guild crafts this. Waiting for the realm's answers…") or finder.query.done,
+      "an item nobody in the guild crafts waits for the realm")
+container.SetSubBarShown(true)
+check(container.activeSub == nil and panel.parent.shown and container.dock.shown, "the Crafts entry gives the catalog back")
 
 print("crafts-tab: " .. checks .. " checks passed")

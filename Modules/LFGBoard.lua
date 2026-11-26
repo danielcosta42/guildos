@@ -323,19 +323,27 @@ end
 -- anybody (issue #341; `channel` is nil only from a harness that passes none).
 function LFGBoard:HandleEntry(sender, data, channel)
     if not sender or (channel ~= nil and channel ~= "GUILD") then return end
-    -- Cooldown first, before the deserialize and before any repaint, so a
-    -- flooding peer costs us nothing. Keyed on the short name so "Bob" and
-    -- "Bob-Realm" share one bucket.
-    if self:_RateLimited(sender:match("^([^-]+)") or sender) then return end
-    local ok, p = LibSerialize:Deserialize(data)
-    if not ok or type(p) ~= "table" then return end
     local short = sender:match("^([^-]+)") or sender
     local realm = sender:match("-(.+)$") or GetRealmName()
     local key = GuildOS:GetPlayerKey(short, realm)
     GuildOS.db.lfgBoard = GuildOS.db.lfgBoard or {}
-    if p.clear then
+    -- Taking a listing down is heard whatever the cooldown says, as a group's (Groups:HandleGroup):
+    -- it changes something only when we hold that listing, once. Dropped, it left a player who listed
+    -- and then formed a group (which takes the listing down a moment later) on the board for 90
+    -- minutes (#449). Peeked before the cooldown, which only ever drops.
+    local okPeek, peek = LibSerialize:Deserialize(data)
+    if okPeek and type(peek) == "table" and peek.clear then
+        if GuildOS.db.lfgBoard[key] == nil then return end
         GuildOS.db.lfgBoard[key] = nil
-    else
+        self:Refresh()
+        return
+    end
+    -- Cooldown before any repaint, so a flooding peer costs us nothing. Keyed on the short name so
+    -- "Bob" and "Bob-Realm" share one bucket.
+    if self:_RateLimited(short) then return end
+    local ok, p = okPeek, peek
+    if not ok or type(p) ~= "table" then return end
+    do
         local now = GetServerTime()
         local wasActive = self:_IsActive(GuildOS.db.lfgBoard[key], now)
         local entry, age = self:_BuildEntry(p, now)

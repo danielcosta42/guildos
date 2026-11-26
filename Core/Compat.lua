@@ -1748,6 +1748,42 @@ function Compat.DoReadyCheck()
     return (pcall(DoReadyCheck))
 end
 
+-- A role check (Raid Tools, #449): InitiateRolePoll where the client has it (it is not on every Classic build).
+function Compat.CanRolePoll()
+    return InitiateRolePoll ~= nil
+end
+function Compat.DoRolePoll()
+    if not InitiateRolePoll then return false end
+    return (pcall(InitiateRolePoll))
+end
+
+-- The game's own pull countdown (Raid Tools, #449): C_PartyInfo.DoCountdown where the client has it. False
+-- where it is missing or refused; the caller then says the pull in chat.
+function Compat.CanCountdown()
+    return (C_PartyInfo and C_PartyInfo.DoCountdown) ~= nil
+end
+function Compat.DoCountdown(seconds)
+    local fn = C_PartyInfo and C_PartyInfo.DoCountdown
+    if not fn then return false end
+    local ok, res = pcall(fn, seconds)
+    return ok and res ~= false
+end
+
+-- A raid target mark (1 star .. 8 skull, 0 clears) on `unit` (Raid Tools, #449). False where it is missing or raises.
+function Compat.SetRaidTarget(unit, index)
+    if not SetRaidTarget then return false end
+    return (pcall(SetRaidTarget, unit, index))
+end
+
+-- Where the player is: the instance's map id (GetInstanceInfo's eighth answer), its type and its size; nil
+-- outside an instance or where the answer is secret (Raid Tools, #449).
+function Compat.CurrentInstance()
+    if not GetInstanceInfo then return nil end
+    local ok, name, kind, _, _, maxPlayers, _, _, mapID = pcall(GetInstanceInfo)
+    if not ok or Compat.IsSecret(name, kind, maxPlayers, mapID) or kind == "none" then return nil end
+    return tonumber(mapID), kind, tonumber(maxPlayers)
+end
+
 -- Whether I may invite somebody: alone, the group's leader, or a raid's assistant (issue #341), read past the
 -- Secret Values since issue #400.
 function Compat.CanInvite()

@@ -868,13 +868,77 @@ local function cores()
     "the header says the origin, and a Discord core is not renamed here")
   check(#buttons(panel, "Roster") == 1 and #buttons(panel, "Requests") == 1 and #buttons(panel, "Rule") == 1 and #buttons(panel, "Config") == 1,
     "sub-tabs Roster, Requests, Rule, Config")
-  check(shows(panel, "Tanks") and shows(panel, "Healers") and shows(panel, "1 of "), "the role meters")
+  check(shows(panel, "Tanks") and shows(panel, "Healers") and shows(panel, "1 / "), "a card a role, who it has of what the format asks")
+  local roleCards = 0
+  walk(panel, function(f) if f.isCard and f.role and f:IsVisible() then roleCards = roleCards + 1 end end)
+  check(roleCards == 4, "four role cards (" .. roleCards .. ")")
+  -- Every visible text and frame drawn on a card lies inside the card (#449).
+  local function rectOf(f, memo)
+    if memo[f] then return memo[f] end
+    memo[f] = { l = 0, t = 0, r = 0, b = 0 }
+    local w = (f.w or 0) > 0 and f.w or (f.kind == "FontString" and f:GetStringWidth() or 0)
+    local h = (f.h or 0) > 0 and f.h or (f.kind == "FontString" and f:GetStringHeight() or 0)
+    local pts, r = f.points or {}, nil
+    if #pts == 0 then
+      local base = f.scrollOwner and rectOf(f.scrollOwner, memo) or (f.parent and rectOf(f.parent, memo)) or { l = 0, t = 0 }
+      r = { l = base.l, t = base.t, r = base.l + w, b = base.t + h }
+    else
+      local L, R, T, B, CX, CY
+      for _, p in ipairs(pts) do
+        local point, rel, relPoint, x, y = p[1], nil, nil, 0, 0
+        if type(p[2]) == "table" then
+          rel = p[2]
+          if type(p[3]) == "string" then relPoint, x, y = p[3], p[4] or 0, p[5] or 0 else x, y = p[3] or 0, p[4] or 0 end
+        else
+          x, y = p[2] or 0, p[3] or 0
+        end
+        rel = rel or f.parent
+        relPoint = relPoint or point
+        local o = rel and rectOf(rel, memo) or { l = 0, t = 0, r = 0, b = 0 }
+        local ax = (relPoint:find("LEFT") and o.l) or (relPoint:find("RIGHT") and o.r) or (o.l + o.r) / 2
+        local ay = (relPoint:find("TOP") and o.t) or (relPoint:find("BOTTOM") and o.b) or (o.t + o.b) / 2
+        ax, ay = ax + x, ay - y
+        if point:find("LEFT") then L = ax elseif point:find("RIGHT") then R = ax else CX = ax end
+        if point:find("TOP") then T = ay elseif point:find("BOTTOM") then B = ay else CY = ay end
+      end
+      if not L and not R then L = (CX or 0) - w / 2; R = L + w elseif not L then L = R - w elseif not R then R = L + w end
+      if not T and not B then T = (CY or 0) - h / 2; B = T + h elseif not T then T = B - h elseif not B then B = T + h end
+      r = { l = L, t = T, r = R, b = B }
+    end
+    memo[f] = r
+    return r
+  end
+  local function insideCards(root, what)
+    walk(root, function(f) if f.scrollChild then f.scrollChild.scrollOwner = f end end)
+    local memo, n = {}, 0
+    walk(root, function(card)
+      if not (card.isCard and card:IsVisible()) then return end
+      local box = rectOf(card, memo)
+      local function visit(d)
+        if d ~= card then
+          if d.kind == "ScrollFrame" or d.kind == "Texture" or not d:IsVisible() then return end   -- a list scrolls, clipped
+          if not (d.kind == "FontString" and (d.text or "") == "") then
+            local r = rectOf(d, memo)
+            n = n + 1
+            check(r.l >= box.l - 0.5 and r.r <= box.r + 0.5 and r.t >= box.t - 0.5 and r.b <= box.b + 0.5,
+              what .. ": " .. tostring(d.kind) .. " \"" .. tostring(d.text or (d.label and d.label.text) or "") .. "\" lies inside its card "
+              .. string.format("(%d,%d,%d,%d in %d,%d,%d,%d)", r.l, r.t, r.r, r.b, box.l, box.t, box.r, box.b))
+          end
+        end
+        for _, c in ipairs(d.children) do visit(c) end
+      end
+      visit(card)
+    end)
+    return n
+  end
+  check(insideCards(panel, "the core's roster") > 30, "every text and control of the core's screen lies inside its card")
   local roleDD
   walk(panel, function(f) if f:IsVisible() and f.memberKey == K("Kawa") then roleDD = f end end)
   check(roleDD and #roleDD.options == 4 and roleDD:GetValue() == "tank", "each member's role is a dropdown of the four")
   roleDD:Select("mdps")
   check(GuildOS.db.cores.Alfa.members[K("Kawa")].role == "mdps", "and a choice changes it, through CoreManager")
   check(shows(panel, "Guests of the night (1)") and shows(panel, "Xablau"), "the guests of the night")
+  check(#buttons(panel, "Add guest") == 1, "with a pug from outside the guild added by name")
   check(shows(panel, "Dean_Ales") and shows(panel, "waiting for a character"), "who the Discord has with no character")
   check(shows(panel, "Who joins and leaves the core is decided on Discord"), "and what is the Discord's to decide")
   check(#buttons(panel, "Remove") == 1, "a Discord member is not removed here; a guest is")
@@ -900,6 +964,7 @@ local function cores()
   check(#buttons(panel, "10-man") == 1 and #buttons(panel, "25-man") == 1, "TBC's two formats are two buttons")
   click(panel, "10-man")
   check(CM:GetRaidSize("Bravo") == 10, "and a click is the format")
+  check(insideCards(panel, "the core's config") > 10, "the Config form lies inside its card")
   local late
   walk(panel, function(f) if f:IsVisible() and f.penaltyKey == "LATE" then late = f end end)
   check(late and late.saveButton.label.text == "Saved", "a penalty's box says it is saved")

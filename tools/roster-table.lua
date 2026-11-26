@@ -107,6 +107,8 @@ for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "SetBackdrop"
   "HasFocus" }) do   -- the shared field's placeholder asks whether it has the focus (#371)
   Frame[name] = function() end
 end
+-- Kept, so the selection wash's sampling can be read (#449).
+function Frame:SetTexCoord(a, b, c, d) self.texCoord = { a, b, c, d } end
 
 function CreateFrame(kind, name, parent)
   local f = newFrame(kind, parent)
@@ -190,6 +192,7 @@ dofile(ADDON .. "/Core/Style.lua")
 GuildOS.Style:Resolve()
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
+dofile(ADDON .. "/UI/Forms.lua")
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/Modules/RosterColumns.lua")
 dofile(ADDON .. "/Modules/GearAudit.lua")
@@ -320,6 +323,20 @@ do
   check(sheets[1] == "Ana" and m.shown and m.w == 2 and same(m.color, C.gold) and m.points[1][1] == "TOPLEFT"
     and m.points[1][2] == 0 and m.points[2][1] == "BOTTOMLEFT", "the selected row: a 2px gold edge down its left side")
   check(ana.selFade and ana.selFade.shown, "and the gold wash that fades to the right")
+  -- The wash is the row's own box (#449: it sat above its row): its top and bottom are the row's, where the
+  -- lines between rows are drawn, each pinned to the row itself and never offset.
+  local function edge(region, row, which)
+    for _, p in ipairs(region.points) do
+      if p[1] == "ALL" then return (p[2] == nil or p[2] == row) and 0 or nil end
+      if p[1]:find(which) and p[2] == row and p[3] == p[1] then return p[5] or 0 end
+    end
+  end
+  local fade = ana.selFade
+  local top, bottom = edge(fade, ana, "TOP"), edge(fade, ana, "BOTTOM")
+  check(top == 0 and bottom == 0 and #fade.points == 2, "the wash's top and bottom are the row's top and bottom")
+  local tc = rawget(fade, "texCoord")
+  check(tc and (tc[3] > 0 and tc[4] < 1 and math.abs(tc[3] - (1 - tc[4])) < 1e-9),
+        "it reads the art's middle rows, as far from its top as from its bottom")
   local others = true
   for _, row in ipairs(parent.rows) do
     if row ~= ana and row.shown and (row.selMark.shown or row.selFade.shown) then others = false end

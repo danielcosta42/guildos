@@ -149,6 +149,7 @@ Data\ForeverDungeons.lua
 Modules\DungeonLog.lua
 Modules\Search.lua
 Modules\RaidTools.lua
+Modules\RaidHUD.lua
 Data\ConsumablesRetail.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua
@@ -165,6 +166,7 @@ Modules\PugInspector.lua
 # UI
 UI\Helpers.lua
 UI\Kit.lua
+UI\Forms.lua
 UI\StylePreview.lua
 UI\Layout.lua
 UI\WebPanel.lua

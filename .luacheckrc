@@ -309,6 +309,8 @@ read_globals = {
     "GetRaidRosterInfo",
     "SetRaidSubgroup",     -- a raid member into a group (Compat only, issue #400)
     "SwapRaidSubgroup",    -- two raid members trade groups (Compat only, issue #400)
+    "InitiateRolePoll",    -- Raid Tools' role check (Compat only, #449)
+    "SetRaidTarget",       -- Raid Tools' marks (Compat only, #449)
     "CombatLogGetCurrentEventInfo",
 
     -- WoW API: Loot

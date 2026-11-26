@@ -132,9 +132,15 @@ fresh:Hide()
 
 -- ── The screens and windows wear them ───────────────────────────────────
 check(read("GuildOS.toc"):find("UI\\Helpers.lua\r?\nUI\\Kit.lua"), "the kit loads right after the shared helpers")
-for _, p in ipairs({ "UI/ManagementPanel.lua", "UI/RosterFrame.lua", "UI/AlliancePanel.lua", "UI/SettingsPanel.lua" }) do
-  check(read(p):find("UI:CreateCard(", 1, true), p .. " draws its screens on parchment cards")
+for _, p in ipairs({ "UI/AlliancePanel.lua", "UI/SettingsPanel.lua" }) do
+  check(read(p):find("UI:CreateCard(", 1, true) or read(p):find(":Card(", 1, true), p .. " draws its screens on parchment cards")
 end
+-- The Officers' Room's screens lay theirs on a board (UI/Forms.lua, #449): the mockup's cards in two columns.
+for _, p in ipairs({ "UI/ManagementPanel.lua", "UI/RosterFrame.lua", "UI/BulkPanel.lua", "UI/RemindPanel.lua",
+  "UI/MarksPanel.lua", "UI/ModAlerts.lua", "Modules/RecruitScanner.lua" }) do
+  check(read(p):find("UI:CreateBoard(", 1, true) and read(p):find(":Card(", 1, true), p .. " lays its screens out as parchment cards on a board")
+end
+check(read("GuildOS.toc"):find("UI\\Kit.lua\r?\nUI\\Forms.lua"), "the board loads right after the kit")
 for _, p in ipairs({ "Modules/RecruitmentSystem.lua", "UI/WarnDialog.lua", "UI/Onboarding.lua", "Modules/Digest.lua",
   "Modules/LootMaster.lua", "UI/JoinRequests.lua", "UI/WebPanel.lua", "UI/ModAlerts.lua", "UI/ManagementPanel.lua" }) do
   check(read(p):find("Kit:Dress(", 1, true), p .. " opens its window with the floating window's chrome")
