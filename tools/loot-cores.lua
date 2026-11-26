@@ -559,6 +559,24 @@ check(button("Back to the loot system's rule"), "and offers the way back")
 click("Back to the loot system's rule")
 check(not LR:IsCustom("Beta"), "which is a click")
 
+-- A Discord core whose rule the site sends (in game: "attempt to index local 'rule' (a boolean value)"):
+-- LootRuleFromSite answers true/false, the tab reads the rule from the roster, never the boolean.
+do
+  local realFrom = CM.LootRuleFromSite
+  CM.LootRuleFromSite = function() return true end
+  GuildOS.db.companionRoster = { lootRule = LR:For("Beta") }
+  widgets, buttons, dropdowns = {}, {}, {}
+  drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, content, "Beta")
+  check(drew, "the Rule tab draws while the site's rule plays (" .. tostring(problem) .. ")")
+  GuildOS.db.companionRoster = {}
+  widgets, buttons, dropdowns = {}, {}, {}
+  drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, content, "Beta")
+  check(drew, "and when the roster carries no readable rule (" .. tostring(problem) .. ")")
+  CM.LootRuleFromSite = realFrom
+  GuildOS.db.companionRoster = nil
+end
+check(pcall(LR.Describe, LR, true), "Describe never indexes a boolean")
+
 -- The Rule tab on a core: every loot system this client offers, and Follow the guild (they were the
 -- core's Config tab's until issue #346).
 widgets, buttons, dropdowns = {}, {}, {}

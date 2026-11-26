@@ -483,6 +483,28 @@ function Helpers:CreateAvatar(parent, size, glow)
     a.dash:Hide()
     a.letter = newText(a, math.max(SP.META, math.floor(size * 0.42)), "button")
     a.letter:SetPoint("CENTER", 0, 0)
+    -- The class's own crest from the game, cut round inside the disc (the disc's colour shows as a thin
+    -- band around it, the gold ring over both). Where a client has no mask it stays square, trimmed of the
+    -- crest's own frame. No class known: the initial, as before.
+    local inset = math.max(2, math.floor(size * 0.1 + 0.5))
+    a.icon = a:CreateTexture(nil, "ARTWORK", nil, 0)
+    a.icon:SetPoint("TOPLEFT", inset, -inset)
+    a.icon:SetPoint("BOTTOMRIGHT", -inset, inset)
+    a.icon:Hide()
+    local Compat = GuildOS.Compat
+    a.iconMask = Compat and Compat.NewMask and Compat.NewMask(a, Style.ART and Style.ART.circle, inset)
+    if a.iconMask then Compat.AddMask(a.icon, a.iconMask) end
+    function a:SetClassIcon(classFile)
+        local tc = classFile and CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[classFile]
+        if type(tc) ~= "table" or not tc[4] then self.icon:Hide(); return false end
+        -- Trimmed a little: the crest's painted edge would read as a second ring.
+        local l, r, t, b = tc[1], tc[2], tc[3], tc[4]
+        local dx, dy = (r - l) * 0.08, (b - t) * 0.08
+        self.icon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CharacterCreate-Classes")
+        self.icon:SetTexCoord(l + dx, r - dx, t + dy, b - dy)
+        self.icon:Show()
+        return true
+    end
     function a:SetMember(name, classFile, away)
         local cc = (classFile and GuildOS.ClassColors[classFile]) or C.textSoft
         -- The disc runs from a lighter cut of the class's colour to a darker one, as the mockup's gradient.
@@ -501,9 +523,16 @@ function Helpers:CreateAvatar(parent, size, glow)
         -- Dark classes (the shaman's blue) take a light initial.
         local lum = 0.3 * cc.r + 0.59 * cc.g + 0.11 * cc.b
         if lum < 0.45 then self.letter:SetTextColor(1, 1, 1) else self.letter:SetTextColor(0.14, 0.08, 0.04) end
-        self.letter:SetText(initial(name))
+        if self:SetClassIcon(classFile) then
+            self.letter:SetText("")
+            if self.icon.SetDesaturated then self.icon:SetDesaturated(away and true or false) end
+            self.icon:SetVertexColor(away and 0.6 or 1, away and 0.6 or 1, away and 0.6 or 1, 1)
+        else
+            self.letter:SetText(initial(name))
+        end
     end
     function a:SetCount(n)
+        self.icon:Hide()
         self.disc:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
         self.ring:Hide()
         self.dash:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 1)

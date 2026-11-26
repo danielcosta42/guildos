@@ -106,6 +106,10 @@ function M:SetTextColor(r, g, b) self.color = { r, g, b } end
 function M:SetVertexColor(r, g, b, a) self.color = { r, g, b, a } end
 function M:SetTexture(t) self.texture = t end
 function M:SetAtlas(a) self.atlas = a end
+function M:CreateMaskTexture() local t = newFrame("MaskTexture", self); return t end
+function M:AddMaskTexture(m) self.mask = m end
+function M:SetTexCoord(...) self.texCoord = { ... } end
+function M:SetDesaturated(v) self.desaturated = v end
 function M:SetAlpha(a) self.alpha = a end
 function M:GetAlpha() return self.alpha end
 function M:SetJustifyH(j) self.justifyH = j end
@@ -130,7 +134,7 @@ function M:GetRegions()
   for _, c in ipairs(self.children) do if isRegion(c) then out[#out + 1] = c end end
   return unpack(out)
 end
-for _, name in ipairs({ "SetShadowOffset", "SetShadowColor", "SetHorizTile", "SetVertTile", "SetTexCoord",
+for _, name in ipairs({ "SetShadowOffset", "SetShadowColor", "SetHorizTile", "SetVertTile",
                         "SetJustifyV", "SetClipsChildren", "UnregisterEvent",
                         -- A popup's (tools/raid-start-ui.lua: the raid owner's prompt)
                         "SetFrameStrata", "SetMovable", "RegisterForDrag", "StartMoving", "StopMovingOrSizing",
@@ -560,6 +564,24 @@ do
   check(leaves == 1, "the same leave filed by the game, the roster diff and another officer is one line (" .. leaves .. ")")
   check(joins == 1, "a join after it is its own line")
   check(other == 1, "a leave only the roster diff saw still shows")
+end
+
+-- An avatar shows the class's crest cut round, the initial only when the class is unknown.
+do
+  local saved = CLASS_ICON_TCOORDS
+  CLASS_ICON_TCOORDS = { MAGE = { 0.25, 0.5, 0, 0.25 } }
+  local a = GuildOS.UI:CreateAvatar(kit.newFrame("Frame"), 40, false)
+  a:SetMember("Jaina", "MAGE")
+  check(a.icon.shown and (a.letter.text or "") == "" and a.icon.texture:find("CharacterCreate%-Classes"), "a known class: its crest, no letter")
+  check(a.icon.texCoord[1] > 0.25 and a.icon.texCoord[2] < 0.5, "trimmed of the crest's own frame")
+  check(a.icon.mask ~= nil, "cut round by a mask")
+  a:SetMember("Jaina", "MAGE", true)
+  check(a.icon.desaturated == true, "away: the crest greys out")
+  a:SetMember("Xyz", "UNKNOWN")
+  check(not a.icon.shown and a.letter.text == "X", "an unknown class: the initial")
+  a:SetCount(5)
+  check(not a.icon.shown and a.letter.text == "+5", "the count disc has no crest")
+  CLASS_ICON_TCOORDS = saved
 end
 
 print(("salao-layout: %d checks passed"):format(checks))

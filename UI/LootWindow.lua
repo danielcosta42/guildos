@@ -790,7 +790,18 @@ function GuildOS:RefreshLootRuleTab(content, scope)
     end
     below = close(ofCard, of, y) + GAP + 4
 
-    local siteRule = scope ~= "" and CM and CM.LootRuleFromSite and CM:LootRuleFromSite(scope)
+    -- LootRuleFromSite says whether the site's rule plays (a boolean); the rule itself is the night's, or the
+    -- one the roster in hand carries. Not a rule that reads: the core's own, as if the site sent none.
+    local siteRule
+    if scope ~= "" and CM and CM.LootRuleFromSite and CM:LootRuleFromSite(scope) then
+        local roster = GuildOS.db and GuildOS.db.companionRoster
+        siteRule = LR.Night and LR:Night()
+        if type(siteRule) ~= "table" and type(roster) == "table" and type(roster.lootRule) == "table"
+            and LR:Validate(roster.lootRule) then
+            siteRule = roster.lootRule
+        end
+        if type(siteRule) ~= "table" then siteRule = nil end
+    end
     local inForce = GuildOS:GetLootSystem(scope)
     local rule = siteRule or LR:For(scope)
 

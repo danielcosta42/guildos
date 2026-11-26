@@ -1833,7 +1833,7 @@ local function filterLine(f, rule)
 end
 
 function LootRule:Describe(rule, seconds)
-    rule = rule or self:Active()
+    if type(rule) ~= "table" then rule = self:Active() end
     local out = { order = {} }
     local who = { L["Everyone in the raid."] }
     for _, f in ipairs(rule.filters or {}) do who[#who + 1] = filterLine(f, rule) end
