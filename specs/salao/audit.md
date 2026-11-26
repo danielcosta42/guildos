@@ -163,3 +163,30 @@ Nothing here has been run in the game. A finding read from code is checked again
 2. The approved B items, by area.
 3. The B16 investigation, back to the maintainer.
 4. The alliance on the site (an issue in guildos-web), then in the addon.
+
+## Done (2026-11-26)
+
+Every approved item is implemented, each with a harness test, and went through independent review rounds until
+no finding was left. Not run in the game yet.
+
+Beyond the list, decided in the work:
+- **The master looter's safety** (review of the raids):
+  - only the item rolled is given;
+  - an award is written once the item leaves the corpse;
+  - a second item never drops the open roll;
+  - nobody outside the group can be picked.
+- **The master looter's rule** (L3, L5, L7, L8, L9, approved):
+  - the raid in progress picks the site's rule;
+  - the guild's rule syncs on every client;
+  - officers apply the master looter's rule to the counters;
+  - Trade Council refuses what it cannot fill.
+- **L5, as built:** a raid whose rule only comes from a loot system now gets `lootSystem`, not a derived rule. The
+  addon builds the rule from the guild's own settings, so entry costs, attendance and council quorum still apply.
+  `lootExternal` turns GuildOS loot off for the night.
+- **B29, the alliance:**
+  - **Kept**, beyond §3.5: blocking an allied guild.
+  - **Removed**, beyond §3.4:
+    - the calendar's "share with the alliance";
+    - the cross-guild double-booking warning;
+    - the officers' approve/decline queue for allied slots.
+  - **The hidden channel:** its name follows the key, so all the guilds of an alliance update together.
