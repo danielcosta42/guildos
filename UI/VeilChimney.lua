@@ -201,7 +201,7 @@ function Chimney.Create(parent, scope)
     col:SetScript("OnEnter", function(f)
         local info = ch.info
         if not (info and GameTooltip) then return end
-        GameTooltip:SetOwner(f, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(f, "ANCHOR_CURSOR")   -- at the mouse: the chimney is tall, its right edge is far from the pointer
         GameTooltip:SetText(info.pct and string.format(L["The Chimney · %d%%"], info.pct) or L["The Chimney"], 1, 1, 1)
         if info.state == "off" then
             GameTooltip:AddLine(L["It lights after the draw and warms up with every globe wrapped."], C.textSoft.r, C.textSoft.g, C.textSoft.b, true)
