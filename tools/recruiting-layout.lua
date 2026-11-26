@@ -529,6 +529,21 @@ flush()
 wl = GuildOS.db.recruitment.welcomeMessages
 check(#wl == 1 and GuildOS.db.recruitment.welcomeMessage == "Glad to have you!" and boxes[2].text == "Glad to have you!"
   and not boxes[3].shown and laid(welcome).h == hOne, "Remove on the first: the second moves up, the row goes")
+-- Typed and not saved, then Add (the bug reported in game): the text stays and is saved, a new row opens.
+check(click(button(welcome, "Add message")) and boxes[3].shown, "Add again opens a second row")
+typeInto(boxes[3], "Typed, no Enter")
+click(button(welcome, "Add message"))
+flush()
+wl = GuildOS.db.recruitment.welcomeMessages
+check(#wl == 2 and wl[2] == "Typed, no Enter" and boxes[3].text == "Typed, no Enter" and boxes[4].shown and boxes[4].text == "",
+  "Add keeps what was typed without Enter: saved, and a new empty row under it")
+typeInto(boxes[4], "Still typing")
+click(shownRemoves()[1])
+flush()
+check(boxes[2].text == "Typed, no Enter" and boxes[3].text == "Still typing" and boxes[4].text == "" and not boxes[4].shown,
+  "Remove on the first moves the rest up, unsaved text too, with no duplicate")
+click(shownRemoves()[#shownRemoves()])
+flush()
 local rules = findAll(welcome, function(f) return f.kind == "CheckButton" end)[2]
 rules:SetChecked(true)
 fire(rules, "OnClick")

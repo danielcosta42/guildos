@@ -391,6 +391,8 @@ function UI:WelcomeBackList(card, relayout)
         remove:SetScript("OnClick", function()
             for _, row in ipairs(rows) do row.box:ClearFocus() end
             if i <= #R.WelcomeBackList(GuildOS.db.recruitment) then R:RemoveWelcomeBack(i) end
+            for j = i, MAX - 1 do rows[j].box:SetText(rows[j + 1].box:GetText() or "") end
+            rows[MAX].box:SetText("")
             shown = math.max(1, shown - 1)
             api.refresh()
         end)
@@ -423,6 +425,7 @@ function UI:WelcomeBackList(card, relayout)
     card:Flow({ add }, { shown = function() return shown < MAX end })
     card:Note(L["Empty: a member who returns gets the welcome above. {days} is how many days they were away, {since} the date they left."])
     add:SetScript("OnClick", function()
+        if not api.commit() then return end   -- what was typed is kept, then a new row opens
         shown = math.min(MAX, #R.WelcomeBackList(GuildOS.db.recruitment) + 1)
         api.refresh()
         rows[shown].box:SetFocus()
@@ -444,7 +447,9 @@ function UI:WelcomeBackList(card, relayout)
         local list = R.WelcomeBackList(GuildOS.db.recruitment)
         shown = math.max(1, #list, math.min(shown, #list + 1))
         for i = 1, MAX do
-            if not rows[i].box:HasFocus() then rows[i].box:SetText(list[i] or "") end
+            local box = rows[i].box
+            if i > shown then box:SetText("")
+            elseif list[i] and not box:HasFocus() then box:SetText(list[i]) end
         end
         if relayout then relayout() end
     end

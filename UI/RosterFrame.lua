@@ -3820,6 +3820,9 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         remove:SetScript("OnClick", function()
             for _, row in ipairs(welcomeRows) do row.box:ClearFocus() end
             if i <= #R.WelcomeList(GuildOS.db.recruitment) and not R:RemoveWelcome(i) then return end
+            -- The rows under it move up with their text, saved or not.
+            for j = i, WELCOME_MAX - 1 do welcomeRows[j].box:SetText(welcomeRows[j + 1].box:GetText() or "") end
+            welcomeRows[WELCOME_MAX].box:SetText("")
             welcomeShown = math.max(1, welcomeShown - 1)
             refreshWelcomes()
         end)
@@ -3854,7 +3857,13 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     welcomeCard:Flow({ welcomeAdd }, { shown = function() return welcomeShown < WELCOME_MAX end })
     welcomeCard:Note(L["Several messages: one is drawn at random for each welcome, never the same one twice in a row."])
     welcomeCard:Note(L["Write {name} where the new member's name goes, and {guild} for the guild's name."])
+    -- Add keeps what was just typed: the rows shown are saved first (as Enter or Save would), then a new
+    -- empty row opens under them. Before, a message typed and not saved was wiped by the click.
+    local commitWelcome
     welcomeAdd:SetScript("OnClick", function()
+        for i = 1, welcomeShown do
+            if not commitWelcome(i) then return end
+        end
         welcomeShown = math.min(WELCOME_MAX, #R.WelcomeList(GuildOS.db.recruitment) + 1)
         refreshWelcomes()
         welcomeRows[welcomeShown].box:SetFocus()
@@ -3881,7 +3890,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             GuildOS:Print(L["Discord link updated."])
         end
     end
-    local function commitWelcome(i)
+    commitWelcome = function(i)
         local txt = welcomeRows[i].box:GetText()
         if not txt or txt == "" then return true end
         if R.WelcomeList(GuildOS.db.recruitment)[i] == txt then return true end
@@ -3913,7 +3922,9 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         welcomeShown = math.max(1, #list, math.min(welcomeShown, #list + 1))
         for i = 1, WELCOME_MAX do
             local box = welcomeRows[i].box
-            if not box:HasFocus() then box:SetText(list[i] or "") end
+            -- A row past the saved list keeps its unsaved text while it is shown; a hidden one empties.
+            if i > welcomeShown then box:SetText("")
+            elseif list[i] and not box:HasFocus() then box:SetText(list[i]) end
         end
         if welcomeShared then welcomeShared:SetText(R:WelcomeSharedText()) end
         if welcomeBack then welcomeBack.refresh() else relayout() end
