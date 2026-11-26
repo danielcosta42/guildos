@@ -13,6 +13,22 @@ GuildOS.RosterColumns = RosterColumns
 
 -- The list as it was before anyone could change it.
 RosterColumns.DEFAULT = { "level", "class", "avgIlvl", "race", "lastSeen", "professions", "zone" }
+-- An officer's default also shows Guild OS (#449), after the race: who runs it, and on which version.
+RosterColumns.OFFICER_AFTER = { version = "race" }
+
+-- The default for this reader: an officer's has the officer's columns in it.
+local function default()
+    local out = {}
+    for i, k in ipairs(RosterColumns.DEFAULT) do out[i] = k end
+    if GuildOS.IsOfficer and GuildOS:IsOfficer() then
+        for key, after in pairs(RosterColumns.OFFICER_AFTER) do
+            local at = #out
+            for i, k in ipairs(out) do if k == after then at = i end end
+            table.insert(out, at + 1, key)
+        end
+    end
+    return out
+end
 
 -- The stored choice, or a copy of the default. Anything but a list of strings reads as the default;
 -- repeats and Member are dropped.
@@ -26,9 +42,7 @@ local function current()
         end
         if out then return out end
     end
-    out = {}
-    for i, k in ipairs(RosterColumns.DEFAULT) do out[i] = k end
-    return out
+    return default()
 end
 
 local function indexOf(list, key)

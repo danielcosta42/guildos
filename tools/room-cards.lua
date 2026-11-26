@@ -872,6 +872,44 @@ for _, W in ipairs({ 1250, 800 }) do
   check(box.b <= card.b - SP.PAD + 1, "the order block sits PAD above the card's foot")
 end
 
+-- Members (#449, membros-mockup): the six tiles span the screen's width (two rows of three at 800), the filter rail
+-- and the list are cards inside the screen, side by side at 1250 and the rail above the list at 800, and every
+-- line of the rail and every part of the list lies inside its card (the loop above holds them in; this names them).
+for _, W in ipairs({ 1250, 800 }) do
+  local f, home = open("members", "roster", W, 720)
+  check(f ~= nil, "Members opens at " .. W)
+  local host = GuildOS.RosterFrame
+  local resolve = resolver(f, W, 720)
+  local screen = resolve(home)
+  local band = resolve(host.kpiBand)
+  local first, last = resolve(host.kpiCards.members), resolve(host.kpiCards[W >= 1000 and "addon" or "online"])
+  check(math.abs(first.l - screen.l) <= 1 and math.abs(last.r - screen.r) <= 1 and math.abs(band.r - screen.r) <= 1,
+    string.format("Members at %d: the tiles span the screen (%d..%d of %d..%d)", W, first.l, last.r, screen.l, screen.r))
+  local rail, list = resolve(host.railCard), resolve(host.listCard)
+  for name, r in pairs({ rail = rail, list = list }) do
+    check(r.l >= screen.l - 1 and r.r <= screen.r + 1 and r.t >= band.b and r.b <= screen.b + 1,
+      string.format("Members at %d: the %s card is inside the screen, under the tiles", W, name))
+  end
+  if W == 1250 then
+    check(rail.r <= list.l - SP.GAP + 1 and math.abs(rail.t - list.t) <= 1, "Members at 1250: the rail on the left, the list beside it")
+  else
+    check(rail.b <= list.t - SP.GAP + 1 and math.abs(rail.l - list.l) <= 1, "Members at 800: the rail above the list")
+  end
+  local inside = true
+  local function walk(fr, card, c)
+    for _, k in ipairs(fr.children) do
+      if k.shown and k.kind ~= "Texture" then
+        local r = resolve(k)
+        if (r.r - r.l) >= 1 and (r.l < c.l - SLACK or r.r > c.r + SLACK) then inside = false end
+        walk(k, card, c)
+      end
+    end
+  end
+  walk(host.railCard, host.railCard, rail)
+  walk(host.listCard, host.listCard, list)
+  check(inside, "Members at " .. W .. ": every line of the rail and every part of the list inside its card")
+end
+
 check(opened >= 80, "every room's screens were opened at both widths (" .. opened .. ")")
 
 print(("room-cards: %d checks passed"):format(checks))

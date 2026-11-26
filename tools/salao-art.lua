@@ -59,6 +59,11 @@ for name, path in pairs(S.ART) do
   n = n + 1
 end
 check(n >= 20, "the look names its textures (" .. n .. ")")
+-- The Members list's marks (#449): a round chip each, drawn at 32px and shown at 18.
+for _, name in ipairs({ "mark-crest", "mark-warn", "mark-banner" }) do
+  local data = S.ART[name] and onDisk(S.ART[name])
+  check(data ~= nil and data:byte(13) == 32 and data:byte(15) == 32, name .. " is named by the look, 32x32")
+end
 check(total < 1.5 * 1024 * 1024, string.format("the art stays small: %d KB", math.floor(total / 1024)))
 
 -- Every Media\Salao file a Lua file names directly, and every Style.ART name the source asks for.

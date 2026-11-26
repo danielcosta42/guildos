@@ -27,7 +27,7 @@ Style.ART_DIR = DIR
 Style.ART = {}
 for _, name in ipairs({ "wood", "grain", "glow", "titlebar", "card", "card-line", "shadow", "button", "button-soft",
                         "button-line", "pill", "pill-line", "orb", "disc", "circle", "ring", "ring-dash", "halo", "fade",
-                        "snow", "garland", "icon-search", "icon-gear" }) do
+                        "snow", "garland", "icon-search", "icon-gear", "mark-crest", "mark-warn", "mark-banner" }) do
     Style.ART[name] = DIR .. name .. ".tga"
 end
 

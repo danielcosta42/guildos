@@ -46,12 +46,20 @@ de um painel moderno". Três causas:
   linha, a resposta do jogador contorna o bilhete em verde, âmbar ou vermelho; o aviso mais novo embaixo);
   Perto da lareira (card escuro, avatares de 40px em 4 colunas e o disco tracejado "+N fora"); Mural da
   guilda (glifo, linha, hora). Os dados e o comportamento são os de antes.
-- **Membros** (`UI/RosterFrame.lua`) como `membros-lista.png`: blocos KPI escuros; um card escuro "Membros"
-  com busca, Todos/Online/Da aliança como pílulas, Mostrar offline, Colunas, Análises; cargos e classes como
-  pílulas logo abaixo (a barra lateral saiu); tabela com avatar redondo e nome na cor da classe, linha
-  selecionada em degradê dourado.
+- **Membros** (`UI/RosterFrame.lua`), revisto pelo mockup `membros-mockup.html` (variante escolhida): os seis
+  blocos KPI escuros na largura toda (duas fileiras de três abaixo de 900 px; "com Guild OS · N desatualizados");
+  embaixo, os filtros de volta numa coluna à esquerda (card escuro de 210 px com borda de metal): Ver (Todos,
+  Online, Da aliança, Fundadores, Mostrar offline), Guild OS (Atualizado, Desatualizado, Não instalado), Cargos e
+  Classes (duas por linha, ícone, nome e contagem) e "Limpar filtros"; a escolha é a pílula dourada e, clicada de
+  novo, sai; todos se combinam. Abaixo de 820 px a coluna sobe para cima da lista, cada grupo uma linha de
+  pílulas. O card "Membros" leva "N de M", busca, Colunas e Análises na linha do título, os filtros ativos como
+  chips removíveis, a tabela (linha de 32) e a legenda das marcas. Ao lado do nome, marcas redondas de 18 px com
+  tooltip: brasão verde (Guild OS em dia), âmbar com "!" (versão antiga; "a mais nova vista na guilda" é a
+  maior entre a deste cliente, a que o CommSystem ouviu e a de cada membro: o addon não vê o CurseForge),
+  nenhuma sem Guild OS, estandarte dourado para fundador (`Founding`, só no Forever). A coluna "Guild OS"
+  (versão, "X · atualizar" ou "não instalado") é das Colunas e vem ligada por padrão para oficiais.
 
-## Arte (`Media/Salao`, 438 KB)
+## Arte (`Media/Salao`, 450 KB)
 
 Gerada por `python3 tools/salao_art.py` (Pillow, semente fixa; `--check` confere). TGA 32-bit, sem
 compressão, origem topo-esquerda, lados potência de dois. `tools/salao-art.lua` confere cada arquivo que o
@@ -73,6 +81,7 @@ código nomeia.
 | `fade.tga` | 64x8 | degradê da linha selecionada |
 | `snow.tga`, `garland.tga` | 64x64, 64x16 | Winter Veil: neve nas tábuas, guirlanda sob a barra |
 | `icon-search.tga`, `icon-gear.tga` | 32x32 | ícones das ferramentas |
+| `mark-crest.tga`, `mark-warn.tga`, `mark-banner.tga` | 32x32 | marcas de Membros (Guild OS em dia, desatualizado, fundador), já coloridas |
 
 Alfinete, botão redondo de fechar, ferramenta e brasão são composições dessas peças, não arquivos próprios.
 

@@ -99,6 +99,129 @@ local function CompareVersions(a, b)
     return 0
 end
 
+----------------------------------------------------------------------
+-- Guild OS on each member, and the founders (#449, membros-mockup): the marks beside a name, the Guild OS
+-- column, the rail's filters, the tiles and the legend all read one scan of the guild per refresh.
+--   status   "cur": runs the newest version seen in the guild; "old": an older one; "none": this client never
+--            heard Guild OS from them (no lastUpdate in db.members: the test Without GuildOS and the bulk
+--            actions use)
+--   version  the live one the mesh hears, else the one their last sync stored
+--   latest   the newest plain x.y.z among this client's own version, the newest CommSystem heard on the guild
+--            channel and every member's. The addon cannot see CurseForge: "latest" is the newest seen in the
+--            guild, and the tooltip says so.
+-- Founders are Modules/Founding.lua's (WoW: Forever only): everyone else has no founder mark or filter.
+----------------------------------------------------------------------
+local PLAIN_VERSION = "^%d+%.%d+%.%d+$"
+local Marks = {}
+UI.RosterMarks = Marks
+Marks.SIZE = 18
+Marks.ART = { cur = "mark-crest", old = "mark-warn", founder = "mark-banner" }
+-- The mockup's amber (an older version): the mark's glyph, the Guild OS column's "· update".
+Marks.AMBER = { r = 0.941, g = 0.722, b = 0.314 }
+
+-- The newer plain version of a and b; either may be nil or not plain (a beta, a dev build): ignored.
+function Marks.Newer(a, b)
+    local okA = type(a) == "string" and a:match(PLAIN_VERSION) ~= nil
+    local okB = type(b) == "string" and b:match(PLAIN_VERSION) ~= nil
+    if not okA then return okB and b or nil end
+    if not okB then return a end
+    return CompareVersions(a, b) >= 0 and a or b
+end
+
+-- "cur", "old" or "none". A version that is not plain is never called old.
+function Marks.Status(installed, version, latest)
+    if not installed then return "none" end
+    if type(version) == "string" and version:match(PLAIN_VERSION) and latest and CompareVersions(version, latest) < 0 then
+        return "old"
+    end
+    return "cur"
+end
+
+-- The member's version as the roster reads it.
+function Marks.VersionOf(shortName, addonData)
+    local M = GuildOS.Mesh
+    return (M and M.GetPeerVersion and M:GetPeerVersion(shortName)) or (addonData and addonData.addonVersion)
+end
+
+-- The guild roster once: byKey[key] = { status, version }, count.cur/old/none, latest, and `oldest` (the oldest
+-- version anyone runs, for the legend's tooltip).
+function Marks.Scan()
+    local members = GuildOS.db.members or {}
+    local rows = {}
+    local latest = Marks.Newer(GuildOS.VERSION, GuildOS.CommSystem and GuildOS.CommSystem.newestSeen)
+    for i = 1, GetNumGuildMembers() or 0 do
+        local name = GetGuildRosterInfo(i)
+        if name then
+            local short = name:match("^([^-]+)") or name
+            local key = GuildOS:GetPlayerKey(short, name:match("-(.+)$") or GetRealmName())
+            local d = members[key]
+            local r = { installed = (d and d.lastUpdate and d.lastUpdate > 0) and true or false, version = Marks.VersionOf(short, d) }
+            rows[key] = r
+            if r.installed then latest = Marks.Newer(latest, r.version) end
+        end
+    end
+    local scan = { byKey = {}, latest = latest, count = { cur = 0, old = 0, none = 0 } }
+    for key, r in pairs(rows) do
+        local s = Marks.Status(r.installed, r.version, latest)
+        scan.byKey[key] = { status = s, version = r.version }
+        scan.count[s] = scan.count[s] + 1
+        if s == "old" and (not scan.oldest or CompareVersions(r.version, scan.oldest) < 0) then scan.oldest = r.version end
+    end
+    return scan
+end
+
+-- A mark's tooltip: its title and its lines, each { text, colour }.
+function Marks.Tooltip(kind, version, latest)
+    if kind == "cur" then
+        return L["Guild OS up to date"], {
+            { string.format(L["Version %s. Syncs everything: attendance, loot, professions, alerts."], version or "?"), C.text },
+        }
+    elseif kind == "old" then
+        return L["Guild OS out of date"], {
+            { string.format(L["Version %s; the latest seen in the guild is %s. Some things may not sync until they update."],
+                version or "?", latest or "?"), C.text },
+            { string.format(L["Officers can send a reminder from %s."], L["Officers' Room"] .. " › " .. L["Without GuildOS"]), C.textSoft },
+        }
+    elseif kind == "founder" then
+        return L["Founder"], { { L["One of the people who founded the guild."], C.text } }
+    end
+end
+
+function Marks.ShowTooltip(owner, kind, version, latest)
+    local title, lines = Marks.Tooltip(kind, version, latest)
+    if not title or not GameTooltip then return end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:SetText(title, C.gold2.r, C.gold2.g, C.gold2.b)
+    for _, l in ipairs(lines) do GameTooltip:AddLine(l[1], l[2].r, l[2].g, l[2].b, true) end
+    GameTooltip:Show()
+end
+
+-- A mark: the 18px round chip of its art (Media/Salao/mark-*.tga), its tooltip under the cursor. `onClick`, if
+-- given, takes its clicks (a row's mark clicks the row).
+function Marks.Create(parent, onClick)
+    local m = CreateFrame("Button", nil, parent)
+    m:SetSize(Marks.SIZE, Marks.SIZE)
+    m.tex = GuildOS.Style:Texture(m, "mark-crest", "ARTWORK")
+    m.tex:SetAllPoints()
+    function m:SetKind(kind, version, latest)
+        self.kind, self.version, self.latest = kind, version, latest
+        self.tex:SetTexture(GuildOS.Style.ART[Marks.ART[kind] or "mark-crest"])
+    end
+    m:SetScript("OnEnter", function(self) Marks.ShowTooltip(self, self.kind, self.version, self.latest) end)
+    m:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    if onClick then
+        m:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        m:SetScript("OnClick", onClick)
+    end
+    return m
+end
+
+-- The width a FontString's text takes, whatever width it was given.
+local function textW(fs)
+    local w = fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth() or fs:GetStringWidth()
+    return math.ceil(w or 0)
+end
+
 -- Every column the table can draw (issue #178). Which of them show, and in what order, is each
 -- account's (Modules/RosterColumns.lua); Member is always first.
 --   label     the header; `name`, the line in the Columns panel
@@ -132,7 +255,7 @@ local function versionNumber(v)
 end
 
 local COLUMNS = {
-    { key = "name",        label = L["MEMBER"],      name = L["Member"],      min = 150, weight = 3, align = "LEFT", asc = true },
+    { key = "name",        label = L["MEMBER"],      name = L["Member"],      min = 170, weight = 3, align = "LEFT", asc = true },
     { key = "level",       label = L["LVL"],         name = L["Level"],       min = 34,  weight = 0, align = "CENTER" },
     { key = "class",       label = L["CLASS"],       name = L["Class"],       min = 74,  weight = 1, align = "LEFT" },
     { key = "avgIlvl",     label = L["iLVL"],        name = L["Item level"],  min = 46,  weight = 0, align = "CENTER",
@@ -231,11 +354,19 @@ local COLUMNS = {
           return b and (b.month * 100 + b.day) or nil
       end,
       text = function(_, d) return GuildOS.Birthdays:Text(d.birthday), C.silver end },
-    { key = "version",     label = L["VERSION"],     name = L["Addon version"], min = 56, weight = 0, align = "CENTER", num = true,
-      value = function(d) return d.addonVersion and versionNumber(d.addonVersion) or nil end,
+    -- Guild OS on the member (#449): the version in green, an older one in amber with "· update", or "not
+    -- installed" in the dim ink (`empty`: what a member with no value reads). By the version; on by default for
+    -- officers (Modules/RosterColumns.lua).
+    { key = "version",     label = L["GUILD OS"],    name = L["Guild OS"],    min = 84,  weight = 0, align = "LEFT",
+      value = function(d)
+          if d.addonStatus ~= "cur" and d.addonStatus ~= "old" then return nil end
+          return d.addonVersion and versionNumber(d.addonVersion) or 0
+      end,
       text = function(_, d)
-          return d.addonVersion, CompareVersions(d.addonVersion, GuildOS.VERSION) < 0 and C.red or C.silver
-      end },
+          if d.addonStatus == "old" then return string.format(L["%s · update"], d.addonVersion or "?"), Marks.AMBER end
+          return d.addonVersion or "?", C.ok
+      end,
+      empty = function(d) if not d.allied then return L["not installed"], C.labelDim end end },   -- an ally's: unknown
     { key = "enchants",    label = L["ENCHANTS"],     name = L["Missing enchants"], min = 84, weight = 0, align = "CENTER", num = true,
       offered = function() return GuildOS.GearAudit ~= nil end,
       value = function(d) return d.gear and #GuildOS.GearAudit:MissingEnchants(d.gear) or nil end,
@@ -335,39 +466,31 @@ local function ChosenColumns()
     return spec, table.concat(keys, ",")
 end
 
--- KPI cards resolve through the same primitive, so they disappear in a
--- deliberate order instead of running off the right edge. Listed in
--- VISUAL order (ResolveColumns lays out in spec order); `priority` alone
--- decides who goes first, so the survivors never shuffle sideways.
-local KPI_SPEC = {
-    { key = "members", min = 96, weight = 1, priority = 100, required = true },
-    { key = "players", min = 96, weight = 1, priority = 40 },
-    { key = "online",  min = 96, weight = 1, priority = 95,  required = true },
-    { key = "ilvl",    min = 96, weight = 1, priority = 90,  required = true },
-    { key = "att",     min = 96, weight = 1, priority = 60 },
-    { key = "addon",   min = 96, weight = 1, priority = 50 },
-}
-
-local ROW_HEIGHT = 26          -- the mockup's table row (.t td: 5px around a 13px line and its avatar)
+local SP = UI.SP
+local ROW_HEIGHT = SP.ROW_AV   -- a row with its avatar (the standard's 32; the mockup's td)
 local HEADER_HEIGHT = 24
--- The Salão's phase 3 (#449) drew the list as the mockup's membros-lista: the KPI tiles across the top, then
--- one dark card holding the toolbar, the filters as pills (the views, the ranks, the classes) and the table.
--- The left rail went: its filters are the pills.
-local KPI_BAND_HEIGHT = 70      -- the tiles (56px) and the gap under them
-local CARD_TOP = UI.SP.TOP             -- the list card's title
-local CARD_SIDE = 12            -- the list card's padding
-local CARD_BOTTOM = 10
-local TOOLBAR_H = 28
+-- The Members screen (#449, membros-mockup, the chosen variant): the six tiles across the top (two rows of three
+-- under SP.TWO_COLS), then the filters in a dark rail on the left and the list card beside it. Under RAIL_STACK
+-- the rail goes above the list, each group a title and its lines as pills, wrapping.
+local TILE_H = 56
+local KPI_GAP = 8
+local RAIL_W = 210
+local RAIL_STACK = 820
+local RAIL_PAD_X = 10           -- the rail's side padding (the mockup's .rail: 14px 10px)
+local ITEM_H = SP.HIT           -- a rail line: a click target
+local ITEM_GAP = 2
+local GROUP_GAP = 10            -- above a group's title
+local HEAD_H = 14               -- a group's title
+local FLOW_HEAD_W = 78          -- stacked: the column of the groups' titles
+local RAIL_TOP_MAX = 0.45       -- stacked: the rail takes at most this share of the height, and scrolls past it
+local TOOL_H = 28               -- the card's tools, on its title's line
 local CHIP_H = 22
 local CHIP_GAP = 6
-local CHIP_ROWS = 3             -- the pills wrap onto at most this many rows
 local COL_GAP = 10              -- space between two table columns
 local ROW_INSET = 10            -- x of the first column inside a row
 local SCROLL_GUTTER = 18        -- rows stop short of the scrollbar
--- Everything above the first row but the pills: KPI band, card title, toolbar, column header, rule, card's bottom.
-local TABLE_RESERVED = KPI_BAND_HEIGHT + CARD_TOP + TOOLBAR_H + 6 + 6 + HEADER_HEIGHT + 1 + CARD_BOTTOM
-local KPI_GAP = 8
-local KPI_MARGIN = 0
+local LEGEND_H = 18             -- the marks' legend under the table
+local LEGEND_GAP = 10           -- its rule, above it
 -- Global frame names must stay unique if a builder ever runs twice. The
 -- first instance keeps the historical names so nothing that hardcodes them breaks.
 local rosterInstances = 0
@@ -569,25 +692,24 @@ function GuildOS:CreateRosterPanel(parent, host)
     parent:HookScript("OnHide", function() GuildOS:HideColumnsPanel() end)
 
     ----------------------------------------------------------------
-    -- KPI band (the mockup's .kpi tiles across the top)
+    -- The tiles (the mockup's .tiles): six across the whole width, two rows of three on a narrow window
     ----------------------------------------------------------------
     local kpiBand = CreateFrame("Frame", nil, parent)
     kpiBand:SetPoint("TOPLEFT", 0, 0)
     kpiBand:SetPoint("TOPRIGHT", 0, 0)
-    kpiBand:SetHeight(KPI_BAND_HEIGHT)
-
+    kpiBand:SetHeight(TILE_H)
+    host.kpiBand = kpiBand
     host.kpiCards = {}
 
     -- A small dark tile: the number in the title serif and the soft gold, its caption under it in the soft
-    -- ink. subLabelText: optional, a second line under the caption ("of 62 chars" under "Players"). Returns the
-    -- value FontString, and the sub-label FontString if requested. The tile is filed under `key` so the layout
-    -- pass can move and hide it; position and width come from ResolveColumns, not from here.
+    -- ink. subLabelText: optional, beside the caption in the dim ink ("of 62 chars" beside "players"). Returns
+    -- the value FontString, and the sub-label FontString if requested. Placed by the layout pass.
     local function MakeKpiCard(key, labelText, valueColor, subLabelText)
         local card = UI:CreatePanel(kpiBand)
         -- CreatePanel pins level to 1; raise it above the main window's
         -- backdrop (level ~10) so the card and its text are actually visible.
         card:SetFrameLevel((kpiBand:GetFrameLevel() or 1) + 1)
-        card:SetHeight(KPI_BAND_HEIGHT - 14)
+        card:SetHeight(TILE_H)
         host.kpiCards[key] = card
 
         local value = card:CreateFontString(nil, "OVERLAY")
@@ -595,17 +717,19 @@ function GuildOS:CreateRosterPanel(parent, host)
         value:SetShadowOffset(0, 0)
         value:SetTextColor(valueColor.r, valueColor.g, valueColor.b)
         value:SetText("—")
-        value:SetPoint("TOPLEFT", 10, -8)
+        value:SetPoint("TOPLEFT", 12, -8)
 
-        local lbl = UI:CreateText(card, labelText, UI.SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        local lbl = UI:CreateText(card, labelText, SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
         lbl:SetPoint("TOPLEFT", value, "BOTTOMLEFT", 0, -3)
+        lbl:SetWordWrap(false)
+        card.label = lbl
 
         local sub
         if subLabelText ~= nil then
-            sub = UI:CreateText(card, subLabelText, UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+            sub = UI:CreateText(card, subLabelText, SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b)
             sub:SetPoint("LEFT", lbl, "RIGHT", 4, 0)
+            sub:SetWordWrap(false)
         end
-
         return value, sub
     end
 
@@ -615,61 +739,276 @@ function GuildOS:CreateRosterPanel(parent, host)
     host.kpiOnline  = MakeKpiCard("online",  L["online"],             C.online)
     host.kpiIlvl    = MakeKpiCard("ilvl",    L["average iLvl"],       C.gold2)
     host.kpiAtt     = MakeKpiCard("att",     L["average attendance"], C.gold2)
-    host.kpiAddon   = MakeKpiCard("addon",   L["with Guild OS"],      C.gold2)
+    host.kpiAddon, host.kpiAddonSub =
+                      MakeKpiCard("addon",   L["with Guild OS"],      C.gold2, "")
+    local KPI_ORDER = { "members", "players", "online", "ilvl", "att", "addon" }
+
+    -- Lays the tiles out in `w`; returns the band's height with the gap under it.
+    function host:LayoutTiles(w)
+        local cols = w >= SP.TWO_COLS and 6 or 3
+        local rows = math.ceil(#KPI_ORDER / cols)
+        local tw = (w - (cols - 1) * KPI_GAP) / cols
+        for i, key in ipairs(KPI_ORDER) do
+            local card = self.kpiCards[key]
+            local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
+            card:ClearAllPoints()
+            card:SetPoint("TOPLEFT", kpiBand, "TOPLEFT", math.floor(col * (tw + KPI_GAP) + 0.5), -row * (TILE_H + KPI_GAP))
+            card:SetWidth(math.floor(tw + 0.5))
+            card:Show()
+        end
+        local h = rows * TILE_H + (rows - 1) * KPI_GAP
+        kpiBand:SetHeight(h)
+        return h + SP.GAP
+    end
 
     ----------------------------------------------------------------
-    -- The list: one dark card under the tiles (the mockup's "Membros"), holding the toolbar, the pills and
-    -- the table. `rail` is the pills' frame now (the name the filters always had).
+    -- The filters: a dark rail card with the metal line (the mockup's .rail), its groups in a scroll frame
+    -- (a guild with many ranks is taller than the window). `rail` is the scroll child.
+    ----------------------------------------------------------------
+    local railCard = UI:CreateCard(parent, "", { dark = true })
+    railCard.title:Hide()
+    railCard:SetFrameLevel((parent:GetFrameLevel() or 1) + 1)
+    railCard:SetPoint("TOPLEFT", 0, -(TILE_H + SP.GAP))
+    railCard:SetSize(RAIL_W, 200)
+    host.railCard = railCard
+    local railScroll, rail = UI:CreateScrollFrame(railCard, "GuildOSRosterRail" .. uid)
+    railScroll:SetPoint("TOPLEFT", RAIL_PAD_X, -SP.PAD)
+    railScroll:SetPoint("BOTTOMRIGHT", -RAIL_PAD_X, SP.PAD)
+    host.railScroll, host.rail = railScroll, rail
+
+    -- A group's title: the serif, small, in the soft gold.
+    local function head(text)
+        local fs = UI:CreateHeaderText(rail, text, SP.META)
+        fs:SetTextColor(C.gold2.r, C.gold2.g, C.gold2.b)
+        fs:SetJustifyH("LEFT")
+        fs:SetWordWrap(false)
+        return fs
+    end
+    local heads = { view = head(L["View"]), addon = head(L["Guild OS"]), ranks = head(L["Ranks"]), classes = head(L["Classes"]) }
+    host.railHeads = heads
+
+    -- A line of the rail (the mockup's .ri): its label on the left, its count on the right, nothing behind it at
+    -- rest; the chosen one is the gold pill. b:Natural() is the width it asks for, b:Fit(w) gives it one.
+    local function railItem(text, onClick)
+        local b = UI:SetButtonVariant(UI:CreateButton(rail, text, 60, ITEM_H), "chip")
+        b.baseBorder = nil
+        b:SetBaseColor(0, 0, 0, 0)
+        GuildOS:ApplyFont(b.label, SP.BODY)
+        b.label:ClearAllPoints()
+        b.label:SetPoint("LEFT", 9, 0)
+        b.label:SetJustifyH("LEFT")
+        b.label:SetWordWrap(false)
+        b.count = UI:CreateText(b, "", SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+        b.count:SetPoint("RIGHT", -9, 0)
+        b.count:SetJustifyH("RIGHT")
+        b.padL, b.padR = 9, 9
+        function b:Natural() return self.padL + textW(self.label) + 8 + textW(self.count) + self.padR end
+        function b:Fit(w)
+            self:SetWidth(w)
+            self.label:SetWidth(math.max(10, math.min(textW(self.label), w - self.padL - 8 - textW(self.count) - self.padR)))
+        end
+        function b:SetActive(active)
+            self.active = active and true or false
+            UI:SetSelected(self, active)
+            local c = active and C.onGold or C.labelDim
+            self.count:SetTextColor(c.r, c.g, c.b)
+        end
+        b:SetScript("OnClick", onClick)
+        return b
+    end
+
+    host.segment = "all"     -- the view: "all" | "online" | "allied"
+    host.foundersOnly = false
+    host.addonFilter = nil   -- "cur" | "old" | "none" | nil
+    host.rankFilter = nil    -- a rank's index or nil
+    host.classFilter = nil   -- classFile or nil
+
+    host.segBtns = {
+        all = railItem(L["All"], function() host:SetSegment("all") end),
+        online = railItem(L["Online"], function() host:SetSegment("online") end),
+        allied = railItem(L["From the alliance"], function() host:SetSegment("allied") end),
+    }
+    host.segBtns.allied:Hide()
+    host.foundersBtn = railItem(L["Founders"], function() host:SetFounders(not host.foundersOnly) end)
+    host.addonBtns = {
+        cur = railItem(L["Up to date"], function() host:SetAddonFilter("cur") end),
+        old = railItem(L["Out of date"], function() host:SetAddonFilter("old") end),
+        none = railItem(L["Not installed"], function() host:SetAddonFilter("none") end),
+    }
+    host.rankBtns = {}       -- pooled, filled in UpdateRail
+    host.classChips = {}
+
+    -- Show offline (the toolbar's toggle before): a box in the View group, saved between sessions.
+    local offlineBtn = UI:CreateCheckbox(rail, L["Show Offline"], ITEM_H)
+    offlineBtn.checkbox:SetChecked(GuildOS.db.settings.showOffline ~= false)
+    offlineBtn.checkbox.onChanged = function(_, checked)
+        GuildOS.db.settings.showOffline = checked and true or false
+        host:RefreshRoster()
+    end
+    function offlineBtn:Natural() return ITEM_H + 6 + textW(self.label) + 4 end
+    function offlineBtn:Fit(w) self:SetWidth(w) end
+    host.offlineBtn = offlineBtn
+
+    -- A class (the mockup's .cl): its icon, its name and how many.
+    local CLASS_ORDER = GuildOS.Client.classes   -- thirteen on retail
+    local function className(classFile)
+        return (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[classFile]) or classFile
+    end
+    for _, classFile in ipairs(CLASS_ORDER) do
+        local b = railItem(className(classFile), function() host:SetClassFilter(classFile) end)
+        GuildOS:ApplyFont(b.label, SP.BODY - 1)
+        local icon = b:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(16, 16)
+        icon:SetPoint("LEFT", 7, 0)
+        icon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CharacterCreate-Classes")
+        if CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[classFile] then
+            icon:SetTexCoord(unpack(CLASS_ICON_TCOORDS[classFile]))
+        end
+        b.icon = icon
+        b.padL, b.padR = 7 + 16 + 6, 7
+        b.label:ClearAllPoints()
+        b.label:SetPoint("LEFT", b.padL, 0)
+        b.count:ClearAllPoints()
+        b.count:SetPoint("RIGHT", -b.padR, 0)
+        host.classChips[classFile] = b
+    end
+
+    -- Clear filters: every filter the rail and the search hold.
+    local clearBtn = UI:SetButtonVariant(UI:CreateButton(rail, L["Clear filters"], 80, 18), "ghost")
+    clearBtn:SetScript("OnClick", function() host:ClearFilters() end)
+    function clearBtn:Natural() return textW(self.label) + 4 end
+    function clearBtn:Fit() self:SetWidth(self:Natural()) end
+    host.clearBtn = clearBtn
+
+    -- The groups in order, each its title and the lines this guild and client have.
+    function host:RailGroups()
+        local view = { self.segBtns.all, self.segBtns.online }
+        if self.alliedShown then view[#view + 1] = self.segBtns.allied end
+        if GuildOS.Founding then view[#view + 1] = self.foundersBtn end
+        view[#view + 1] = self.offlineBtn
+        local ranks = {}
+        for _, b in ipairs(self.rankBtns) do if b.inUse then ranks[#ranks + 1] = b end end
+        local classes = {}
+        for _, classFile in ipairs(CLASS_ORDER) do classes[#classes + 1] = self.classChips[classFile] end
+        return {
+            { head = heads.view, items = view },
+            { head = heads.addon, items = { self.addonBtns.cur, self.addonBtns.old, self.addonBtns.none } },
+            { head = heads.ranks, items = ranks },
+            { head = heads.classes, items = classes, grid = true },
+        }
+    end
+
+    -- Places the rail's groups in railInnerW: one column on the side (the classes two to a line), or, stacked
+    -- above the list, a title column and the lines as pills wrapping after it. Returns the content's height.
+    function host:LayoutRail()
+        local w = self.railInnerW or (RAIL_W - 2 * RAIL_PAD_X)
+        local placed = {}
+        local function place(fr, x, y)
+            fr:ClearAllPoints()
+            fr:SetPoint("TOPLEFT", rail, "TOPLEFT", x, -y)
+            placed[fr] = true
+        end
+        local y = 0
+        local groups = self:RailGroups()
+        if self.railMode ~= "top" then
+            for _, g in ipairs(groups) do
+                if #g.items > 0 then
+                    if y > 0 then y = y + GROUP_GAP end
+                    place(g.head, 8, y)
+                    g.head:SetWidth(w - 8)
+                    y = y + HEAD_H + 4
+                    if g.grid then
+                        local cw = math.floor((w - 4) / 2)
+                        for i, b in ipairs(g.items) do
+                            local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
+                            b:Fit(cw)
+                            place(b, col * (cw + 4), y + row * (ITEM_H + ITEM_GAP))
+                        end
+                        y = y + math.ceil(#g.items / 2) * (ITEM_H + ITEM_GAP) - ITEM_GAP
+                    else
+                        for _, b in ipairs(g.items) do
+                            b:Fit(w)
+                            place(b, 0, y)
+                            y = y + ITEM_H + ITEM_GAP
+                        end
+                        y = y - ITEM_GAP
+                    end
+                end
+            end
+            y = y + 8
+            clearBtn:Fit()
+            place(clearBtn, 8, y)
+            y = y + 18
+        else
+            local last
+            for _, g in ipairs(groups) do
+                if #g.items > 0 then last = g end
+            end
+            for _, g in ipairs(groups) do
+                if #g.items > 0 then
+                    if y > 0 then y = y + 6 end
+                    place(g.head, 0, y + (ITEM_H - HEAD_H) / 2)
+                    g.head:SetWidth(FLOW_HEAD_W - 8)
+                    local items = {}
+                    for _, b in ipairs(g.items) do items[#items + 1] = b end
+                    if g == last then items[#items + 1] = clearBtn end
+                    local x, line = FLOW_HEAD_W, 0
+                    for _, b in ipairs(items) do
+                        local bw = math.min(b:Natural(), w - FLOW_HEAD_W)
+                        if x > FLOW_HEAD_W and x + bw > w then x, line = FLOW_HEAD_W, line + 1 end
+                        b:Fit(bw)
+                        place(b, x, y + line * (ITEM_H + ITEM_GAP) + (b == clearBtn and (ITEM_H - 18) / 2 or 0))
+                        x = x + bw + 4
+                    end
+                    y = y + (line + 1) * (ITEM_H + ITEM_GAP) - ITEM_GAP
+                end
+            end
+        end
+        -- Everything else the rail holds stays out of sight: a rank no longer used, From the alliance without
+        -- the site's directory, Founders off WoW: Forever, an empty group's title.
+        local all = { self.segBtns.all, self.segBtns.online, self.segBtns.allied, self.foundersBtn, self.offlineBtn,
+                      self.addonBtns.cur, self.addonBtns.old, self.addonBtns.none, clearBtn,
+                      heads.view, heads.addon, heads.ranks, heads.classes }
+        for _, b in ipairs(self.rankBtns) do all[#all + 1] = b end
+        for _, b in pairs(self.classChips) do all[#all + 1] = b end
+        for _, fr in ipairs(all) do fr:SetShown(placed[fr] == true) end
+        rail:SetSize(w, math.max(1, y))
+        return y
+    end
+
+    ----------------------------------------------------------------
+    -- The list: a dark card beside the rail (the mockup's .list): its title, "N of M", the tools on the same
+    -- line; the active filters as chips; the table; the marks' legend under it.
     ----------------------------------------------------------------
     local listCard = UI:CreateCard(parent, L["Members"], { dark = true })
     listCard:SetFrameLevel((parent:GetFrameLevel() or 1) + 1)
-    listCard:SetPoint("TOPLEFT", 0, -KPI_BAND_HEIGHT)
+    listCard:SetPoint("TOPLEFT", RAIL_W + SP.GAP, -(TILE_H + SP.GAP))
     listCard:SetPoint("BOTTOMRIGHT", 0, 0)
     host.listCard = listCard
+    -- The title keeps its own width: the tools share its line.
+    listCard.title:ClearAllPoints()
+    listCard.title:SetPoint("TOPLEFT", SP.PAD, -SP.PAD)
 
     local tableArea = CreateFrame("Frame", nil, listCard)
-    tableArea:SetPoint("TOPLEFT", CARD_SIDE, -CARD_TOP)
-    tableArea:SetPoint("BOTTOMRIGHT", -CARD_SIDE, CARD_BOTTOM)
+    tableArea:SetPoint("TOPLEFT", SP.PAD, -SP.TOP)
+    tableArea:SetPoint("BOTTOMRIGHT", -SP.PAD, SP.PAD)
+    host.tableArea = tableArea
 
-    local rail = CreateFrame("Frame", nil, tableArea)
-    rail:SetPoint("TOPLEFT", 0, -(TOOLBAR_H + 6))
-    rail:SetPoint("TOPRIGHT", 0, -(TOOLBAR_H + 6))
-    rail:SetHeight(CHIP_H)
-    host.rail = rail
-    host.filterH = CHIP_H
+    -- The tools, on the title's line (the mockup's .head): "N of M", the search, Columns, Analytics and, for who
+    -- may invite, the invite field.
+    local statsBar = CreateFrame("Frame", nil, listCard)
+    statsBar:SetHeight(TOOL_H)
+    host.statsBar = statsBar
 
-    -- Toolbar (search + filters) — the former stats bar, scoped to the table
-    local statsBar = CreateFrame("Frame", nil, tableArea)
-    statsBar:SetPoint("TOPLEFT", 0, 0)
-    statsBar:SetPoint("TOPRIGHT", 0, 0)
-    statsBar:SetHeight(TOOLBAR_H)
-
-    -- Active-filter / result summary on the left of the toolbar
-    local resultText = UI:CreateText(statsBar, "", 11, C.silver.r, C.silver.g, C.silver.b)
+    local resultText = UI:CreateText(statsBar, "", SP.BODY, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     resultText:SetJustifyH("LEFT")
     resultText:SetWordWrap(false)
     host.resultText = resultText
 
-    -- Filter: Show offline toggle
-    local offlineBtn = UI:SetButtonVariant(UI:CreateButton(statsBar, L["Show Offline"], 100, CHIP_H), "chip")
-    offlineBtn.isToggled = true
-    local function paintOffline(on)
-        offlineBtn.isToggled = on
-        offlineBtn.label:SetText(on and L["Show Offline"] or L["Online Only"])
-        offlineBtn:SetWidth(math.ceil(offlineBtn.label:GetStringWidth()) + 22)
-        UI:SetSelected(offlineBtn, not on)
-    end
-    offlineBtn:SetScript("OnClick", function(self)
-        paintOffline(not self.isToggled)
-        GuildOS.db.settings.showOffline = self.isToggled
-        host:RefreshRoster()
-    end)
-    if not GuildOS.db.settings.showOffline then paintOffline(false) end   -- saved from the last session
-    host.offlineBtn = offlineBtn
-
     -- Which columns, in what order (#178). A right click on the header opens the same panel.
     local columnsBtn = UI:CreateButton(statsBar, L["Columns"], 80, CHIP_H)
     columnsBtn:SetScript("OnClick", function(self) GuildOS:ToggleColumnsPanel(self) end)
+    host.columnsBtn = columnsBtn
 
     -- Search box: the shared field (#371). Its placeholder, its gold border while typing and its
     -- Escape are the component's; the filter hooks the text.
@@ -687,84 +1026,68 @@ function GuildOS:CreateRosterPanel(parent, host)
     analyticsBtn:SetScript("OnClick", function()
         if GuildOS.GuildAnalytics then GuildOS.GuildAnalytics:Show() end
     end)
+    host.analyticsBtn = analyticsBtn
 
     local invite = InviteField(statsBar)
     host.inviteField = invite
 
-    -- The toolbar left to right, placed by width as the table's columns are (#377): the summary
-    -- takes what is left over, and a narrow bar drops the summary first, then Columns (a right click
-    -- on the header opens it too), Analytics, the invite field and the search box. Show Offline always
-    -- stays. The invite field is only for who may invite: Anniversary and retail (#256, #449), at a rank that
-    -- invites; read again on every refresh.
-    -- The views as pills in the toolbar, as the mockup's "Todos" and "Em casa": All, Online and, while the site
-    -- sent a directory, From the alliance. Each is a chip with its count; the chosen one fills gold.
-    local function viewChip(label, seg)
-        local b = UI:SetButtonVariant(UI:CreateButton(statsBar, label, 60, CHIP_H), "chip")
-        b.label:ClearAllPoints()
-        b.label:SetPoint("LEFT", 10, 0)
-        b.count = UI:CreateText(b, "", UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b)
-        b.count:SetPoint("LEFT", b.label, "RIGHT", 5, 0)
-        function b:Fit()
-            self:SetWidth(math.ceil(self.label:GetStringWidth()) + math.ceil(self.count:GetStringWidth() or 0) + 25)
-        end
-        function b:SetActive(active)
-            self.active = active
-            UI:SetSelected(self, active)
-            local c = active and C.onGold or C.labelDim
-            self.count:SetTextColor(c.r, c.g, c.b)
-        end
-        b:SetScript("OnClick", function() host:SetSegment(seg) end)
-        b:Fit()
-        return b
-    end
-    host.segBtns = {
-        all = viewChip(L["All"], "all"),
-        online = viewChip(L["Online"], "online"),
-        allied = viewChip(L["From the alliance"], "allied"),
-    }
-    host.segBtns.allied:Hide()
-
-    local TOOLBAR_PAD, TOOLBAR_GAP = 0, 6
+    -- The tools left to right, placed by width as the table's columns are (#377): "N of M" takes what is left
+    -- over and pushes the rest right; a narrow line drops it first, then Columns (a right click on the header
+    -- opens it too), Analytics, the invite field and the search box. The invite field is only for who may
+    -- invite: Anniversary and retail (#256, #449), at a rank that invites; read again on every refresh.
+    local TOOLBAR_GAP = 8
     local TOOLBAR = {
+        { key = "result",    frame = resultText,   priority = 20, weight = 1, min = 50 },
         { key = "search",    frame = searchBox,    priority = 90 },
-        { key = "all",       frame = host.segBtns.all,    priority = 100, required = true },
-        { key = "online",    frame = host.segBtns.online, priority = 100, required = true },
-        { key = "allied",    frame = host.segBtns.allied, priority = 95, allied = true },
-        { key = "offline",   frame = offlineBtn,   priority = 100, required = true },
         { key = "columns",   frame = columnsBtn,   priority = 30 },
         { key = "analytics", frame = analyticsBtn, priority = 50 },
         { key = "invite",    frame = invite,       priority = 70, invite = true },
-        { key = "result",    frame = resultText,   priority = 20, weight = 1, min = 60 },
     }
-    function host:LayoutToolbar(w)
-        w = w or self.toolbarW
-        if not w then return end   -- laid out on the first resize pass
-        self.toolbarW = w
+    function host:LayoutToolbar(cardW)
+        cardW = cardW or self.listW
+        if not cardW then return end   -- laid out on the first resize pass
+        local titleW = textW(listCard.title)
+        local x0 = SP.PAD + titleW + 12
+        local w = math.max(0, cardW - SP.PAD - x0)
+        statsBar:ClearAllPoints()
+        statsBar:SetPoint("TOPLEFT", listCard, "TOPLEFT", x0, -(SP.PAD + SP.TITLE_H / 2 - TOOL_H / 2))
+        statsBar:SetSize(w, TOOL_H)
         local spec, items = {}, {}
         for _, item in ipairs(TOOLBAR) do
-            if (not item.invite or GuildOS.Compat.AddonMayInvite()) and not (item.allied and not self.alliedShown) then
+            if not item.invite or GuildOS.Compat.AddonMayInvite() then
                 items[#items + 1] = item
                 spec[#spec + 1] = { key = item.key, min = item.min or item.frame:GetWidth(), weight = item.weight or 0,
-                                    priority = item.priority, required = item.required }
+                                    priority = item.priority }
             else
                 item.frame:Hide()
             end
         end
-        -- Each field shown or not, never hidden and shown again: this runs on every keystroke in the
-        -- search and every roster update, and a hidden EditBox loses the keyboard (#377).
-        for i, col in ipairs(UI:ResolveColumns(spec, w - 2 * TOOLBAR_PAD, TOOLBAR_GAP)) do
+        -- Each part shown or not, never hidden and shown again: this runs on every keystroke in the search and
+        -- every roster update, and a hidden EditBox loses the keyboard (#377).
+        local cols = UI:ResolveColumns(spec, w, TOOLBAR_GAP)
+        local right = 0
+        for _, col in ipairs(cols) do if col.shown then right = math.max(right, col.x + col.w) end end
+        local shift = math.max(0, w - right)   -- with "N of M" gone, the tools still sit on the right
+        for i, col in ipairs(cols) do
             local item = items[i]
             item.frame:SetShown(col.shown)
             if col.shown then
                 item.frame:ClearAllPoints()
-                item.frame:SetPoint("LEFT", statsBar, "LEFT", TOOLBAR_PAD + col.x, 0)
+                item.frame:SetPoint("LEFT", statsBar, "LEFT", col.x + shift, 0)
                 if item.weight then item.frame:SetWidth(col.w) end
             end
         end
     end
 
-    -- Column Headers (the mockup's .t th: the title serif, small, gold, a metal rule under them). Placed under
-    -- the pills by host:PlaceTable, as the pills' rows change.
+    -- The active filters as chips over the table (the mockup's .chips); a click takes that filter off.
+    local activeBar = CreateFrame("Frame", nil, tableArea)
+    activeBar:SetPoint("TOPLEFT", 0, 0)
+    activeBar:SetPoint("TOPRIGHT", 0, 0)
+    activeBar:SetHeight(CHIP_H)
+    host.activeBar = activeBar
+    host.activeChips = {}
+
+    -- Column Headers (the mockup's th: the title serif, small, gold, a metal rule under them).
     local headerFrame = CreateFrame("Frame", nil, tableArea)
     headerFrame:SetHeight(HEADER_HEIGHT)
     host.headerFrame = headerFrame
@@ -779,65 +1102,130 @@ function GuildOS:CreateRosterPanel(parent, host)
     -- pass; x and width come from ResolveColumns, never from a constant.
     host.headerButtons = {}
     for _, col in ipairs(COLUMNS) do
-        do
-            local btn = CreateFrame("Button", nil, headerFrame)
-            btn:SetHeight(HEADER_HEIGHT)
-            btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        local btn = CreateFrame("Button", nil, headerFrame)
+        btn:SetHeight(HEADER_HEIGHT)
+        btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
-            local text = UI:CreateHeaderText(btn, col.label, UI.SP.META)
-            if col.align == "CENTER" then
-                text:SetPoint("CENTER")
-            elseif col.align == "RIGHT" then
-                text:SetPoint("RIGHT")
-            else
-                text:SetPoint("LEFT")
-            end
-            btn.text = text
-
-            -- Sort indicator
-            local sortArrow = btn:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(sortArrow, UI.SP.META)
-            sortArrow:SetPoint("LEFT", text, "RIGHT", 3, 0)
-            sortArrow:SetTextColor(C.text.r, C.text.g, C.text.b)
-            sortArrow:Hide()
-            btn.sortArrow = sortArrow
-
-            btn:SetScript("OnClick", function(self, button)
-                if button == "RightButton" then
-                    GuildOS:ToggleColumnsPanel(self)
-                    return
-                end
-                local db = GuildOS.db.settings
-                if db.sortBy == col.key then
-                    db.sortAsc = not db.sortAsc
-                else
-                    db.sortBy = col.key
-                    db.sortAsc = col.asc or false
-                end
-                host:RefreshRoster()
-            end)
-
-            btn:SetScript("OnEnter", function(self)
-                self.text:SetTextColor(C.white.r, C.white.g, C.white.b)
-            end)
-            btn:SetScript("OnLeave", function(self)
-                self.text:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-            end)
-
-            host.headerButtons[col.key] = btn
+        local text = UI:CreateHeaderText(btn, col.label, SP.META)
+        if col.align == "CENTER" then
+            text:SetPoint("CENTER")
+        elseif col.align == "RIGHT" then
+            text:SetPoint("RIGHT")
+        else
+            text:SetPoint("LEFT")
         end
+        btn.text = text
+
+        -- Sort indicator
+        local sortArrow = btn:CreateFontString(nil, "OVERLAY")
+        GuildOS:ApplyFont(sortArrow, SP.META)
+        sortArrow:SetPoint("LEFT", text, "RIGHT", 3, 0)
+        sortArrow:SetTextColor(C.text.r, C.text.g, C.text.b)
+        sortArrow:Hide()
+        btn.sortArrow = sortArrow
+
+        btn:SetScript("OnClick", function(self, button)
+            if button == "RightButton" then
+                GuildOS:ToggleColumnsPanel(self)
+                return
+            end
+            local db = GuildOS.db.settings
+            if db.sortBy == col.key then
+                db.sortAsc = not db.sortAsc
+            else
+                db.sortBy = col.key
+                db.sortAsc = col.asc or false
+            end
+            host:RefreshRoster()
+        end)
+
+        btn:SetScript("OnEnter", function(self)
+            self.text:SetTextColor(C.white.r, C.white.g, C.white.b)
+        end)
+        btn:SetScript("OnLeave", function(self)
+            self.text:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+        end)
+
+        host.headerButtons[col.key] = btn
     end
 
     -- Header bottom line: the metal.
     local headerLine = UI:CreateSeparator(tableArea)
     headerLine:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
 
+    -- The legend under the table (the mockup's .legend): "Marks", each mark and what it says, and the hint; a
+    -- line above it. What does not fit goes from the end.
+    local legend = CreateFrame("Frame", nil, tableArea)
+    legend:SetPoint("BOTTOMLEFT", 0, 0)
+    legend:SetPoint("BOTTOMRIGHT", 0, 0)
+    legend:SetHeight(LEGEND_H)
+    host.legend = legend
+    local legendRule = UI:CreateSeparator(tableArea)
+    legendRule:SetPoint("BOTTOMLEFT", legend, "TOPLEFT", 0, LEGEND_GAP / 2)
+    legendRule:SetPoint("BOTTOMRIGHT", legend, "TOPRIGHT", 0, LEGEND_GAP / 2)
+    local legendTitle = UI:CreateHeaderText(legend, L["Marks"], SP.META)
+    legendTitle:SetTextColor(C.gold2.r, C.gold2.g, C.gold2.b)
+    local function legendText(text, colour)
+        local fs = UI:CreateText(legend, text, SP.META, colour.r, colour.g, colour.b)
+        fs:SetWordWrap(false)
+        return fs
+    end
+    local noMark = CreateFrame("Frame", nil, legend)
+    noMark:SetSize(Marks.SIZE, Marks.SIZE)
+    local noMarkRing = GuildOS.Style:Texture(noMark, "ring", "ARTWORK")
+    noMarkRing:SetAllPoints()
+    noMarkRing:SetVertexColor(C.labelDim.r, C.labelDim.g, C.labelDim.b, 1)
+    host.legendItems = {
+        { key = "cur", mark = Marks.Create(legend), text = legendText(L["Guild OS up to date"], C.textSoft) },
+        { key = "old", mark = Marks.Create(legend), text = legendText(L["Guild OS out of date"], C.textSoft) },
+        { key = "none", mark = noMark, text = legendText(L["No mark: no Guild OS"], C.textSoft) },
+        { key = "founder", mark = Marks.Create(legend), text = legendText(L["Founder"], C.textSoft), founder = true },
+        { key = "hint", text = legendText(L["Hover a mark for details"], C.labelDim) },
+    }
+    host.legendTitle = legendTitle
+
+    -- Lays the legend out in `w`, from the left; an item that does not fit hides, and every one after it.
+    function host:LayoutLegend(w)
+        w = w or self.legendW
+        if not w then return end
+        self.legendW = w
+        local scan = self.scan or {}
+        legendTitle:ClearAllPoints()
+        legendTitle:SetPoint("LEFT", legend, "LEFT", 0, 0)
+        local x, full = textW(legendTitle) + 14, false
+        for _, it in ipairs(self.legendItems) do
+            local on = not it.founder or GuildOS.Founding ~= nil
+            local iw = textW(it.text) + (it.mark and (Marks.SIZE + 6) or 0)
+            local fits = on and not full and x + iw <= w
+            if on and not fits then full = true end
+            if it.mark then it.mark:SetShown(fits) end
+            it.text:SetShown(fits)
+            if fits then
+                if it.mark then
+                    it.mark:ClearAllPoints()
+                    it.mark:SetPoint("LEFT", legend, "LEFT", x, 0)
+                    it.text:ClearAllPoints()
+                    it.text:SetPoint("LEFT", it.mark, "RIGHT", 6, 0)
+                    if it.mark.SetKind then
+                        local version = (it.key == "cur" and scan.latest) or (it.key == "old" and (scan.oldest or "?")) or nil
+                        it.mark:SetKind(it.key, version, scan.latest)
+                    end
+                else
+                    it.text:ClearAllPoints()
+                    it.text:SetPoint("LEFT", legend, "LEFT", x, 0)
+                end
+                x = x + iw + 18
+            end
+        end
+    end
+
     -- Scroll Frame for roster rows
     local rosterContainer = CreateFrame("Frame", "GuildOSRosterContainer" .. uid, tableArea)
 
-    -- The header, its rule and the rows under the pills, however many rows of pills there are.
+    -- The chips (when a filter is on), the header, its rule, the rows and the legend; as many rows as fit.
     function host:PlaceTable()
-        local top = TOOLBAR_H + 6 + (self.filterH or CHIP_H) + 6
+        local top = self.chipsShown and (CHIP_H + 8) or 0
+        activeBar:SetShown(self.chipsShown == true)
         headerFrame:ClearAllPoints()
         headerFrame:SetPoint("TOPLEFT", 0, -top)
         headerFrame:SetPoint("TOPRIGHT", 0, -top)
@@ -846,9 +1234,12 @@ function GuildOS:CreateRosterPanel(parent, host)
         headerLine:SetPoint("TOPRIGHT", 0, -(top + HEADER_HEIGHT))
         rosterContainer:ClearAllPoints()
         rosterContainer:SetPoint("TOPLEFT", 0, -(top + HEADER_HEIGHT + 1))
-        rosterContainer:SetPoint("BOTTOMRIGHT", 0, 0)
+        rosterContainer:SetPoint("BOTTOMRIGHT", 0, LEGEND_H + LEGEND_GAP)
+        if self.listH and self.AcquireRows then
+            local rowsH = self.listH - SP.TOP - top - HEADER_HEIGHT - 1 - LEGEND_H - LEGEND_GAP - SP.PAD
+            self.AcquireRows(UI:ResolveRows(rowsH, ROW_HEIGHT, 0))
+        end
     end
-    host:PlaceTable()
 
     local scrollFrame = CreateFrame("ScrollFrame", "GuildOSRosterScroll" .. uid, rosterContainer, "FauxScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 0, 0)
@@ -873,6 +1264,7 @@ function GuildOS:CreateRosterPanel(parent, host)
         end
         host.visibleRows = n
     end
+    host:PlaceTable()
 
     scrollFrame:SetScript("OnVerticalScroll", function(self, offset)
         FauxScrollFrame_OnVerticalScroll(self, offset, ROW_HEIGHT, function()
@@ -880,106 +1272,159 @@ function GuildOS:CreateRosterPanel(parent, host)
         end)
     end)
 
+    -- Where the rail and the list go in the body under the tiles (bodyW x bodyH, the band bandH tall): side by
+    -- side, or the rail above the list on a narrow window. Returns whether the list's height changed.
+    function host:LayoutBody()
+        local w, h, band = self.bodyW, self.bodyH, self.bandH
+        if not w then return false end
+        local stacked = w < RAIL_STACK
+        self.railMode = stacked and "top" or "side"
+        local railW = stacked and w or RAIL_W
+        local inner = railW - 2 * RAIL_PAD_X
+        self.railInnerW = inner
+        local contentH = self:LayoutRail()
+        local avail = math.max(0, h - band)
+        local maxH = stacked and math.floor(avail * RAIL_TOP_MAX) or avail
+        if contentH + 2 * SP.PAD > maxH then
+            -- It scrolls: its lines keep clear of the scroll bar.
+            self.railInnerW = inner - UI.SCROLL_GUTTER
+            contentH = self:LayoutRail()
+        end
+        local railH = math.max(2 * SP.PAD + ITEM_H, math.min(contentH + 2 * SP.PAD, maxH))
+        railCard:ClearAllPoints()
+        railCard:SetPoint("TOPLEFT", 0, -band)
+        railCard:SetSize(railW, railH)
+        railScroll:SetSize(railW - 2 * RAIL_PAD_X, railH - 2 * SP.PAD)
+        local listTop = stacked and (band + railH + SP.GAP) or band
+        listCard:ClearAllPoints()
+        listCard:SetPoint("TOPLEFT", stacked and 0 or (RAIL_W + SP.GAP), -listTop)
+        listCard:SetPoint("BOTTOMRIGHT", 0, 0)
+        self.listW = stacked and w or (w - RAIL_W - SP.GAP)
+        local listH = h - listTop
+        local changed = listH ~= self.listH
+        self.listH = listH
+        return changed
+    end
+
     ----------------------------------------------------------------
-    -- THE PILLS: the guild's ranks and its classes, under the toolbar, wrapping onto up to CHIP_ROWS rows
-    -- (the views are in the toolbar). A rank is a view of its own; a class filters whatever view is on.
+    -- The filters' state. A view is one of All, Online, From the alliance; Founders, a Guild OS state, a rank
+    -- and a class each narrow it, all together. The chosen one is the gold pill; chosen again, it goes.
     ----------------------------------------------------------------
-    host.segment = "all"     -- "all" | "online" | "allied" | "rank:<index>"
-    host.classFilter = nil   -- classFile or nil
-    host.rankBtns = {}       -- pooled, laid out in UpdateRail
-    host.classChips = {}
-
-    local function rankChip()
-        local b = UI:SetButtonVariant(UI:CreateButton(rail, "", 60, CHIP_H), "chip")
-        b.label:ClearAllPoints()
-        b.label:SetPoint("LEFT", 10, 0)
-        b.label:SetWordWrap(false)
-        b.count = UI:CreateText(b, "", UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b)
-        b.count:SetPoint("LEFT", b.label, "RIGHT", 5, 0)
-        function b:Fit()
-            local lw = math.min(140, math.ceil(self.label:GetStringWidth()))
-            self.label:SetWidth(lw)
-            self:SetWidth(lw + math.ceil(self.count:GetStringWidth() or 0) + 25)
-        end
-        function b:SetActive(active)
-            self.active = active
-            UI:SetSelected(self, active)
-            local c = active and C.onGold or C.labelDim
-            self.count:SetTextColor(c.r, c.g, c.b)
-        end
-        return b
-    end
-
-    -- A class: its icon and how many, a pill; the chosen one fills gold.
-    local CLASS_ORDER = GuildOS.Client.classes   -- thirteen on retail
-    local function CreateClassChip(classFile)
-        local chip = UI:SetButtonVariant(UI:CreateButton(rail, "", 46, CHIP_H), "chip")
-        chip.label:Hide()
-        local icon = chip:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(14, 14)
-        icon:SetPoint("LEFT", 7, 0)
-        icon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CharacterCreate-Classes")
-        if CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[classFile] then
-            icon:SetTexCoord(unpack(CLASS_ICON_TCOORDS[classFile]))
-        end
-        chip.icon = icon
-        local cnt = UI:CreateText(chip, "0", UI.SP.META, C.door.r, C.door.g, C.door.b)
-        cnt:SetPoint("LEFT", icon, "RIGHT", 4, 0)
-        chip.count = cnt
-        function chip:Fit() self:SetWidth(7 + 14 + 4 + math.ceil(cnt:GetStringWidth() or 0) + 9) end
-        function chip:SetActive(active)
-            self.active = active
-            UI:SetSelected(self, active)
-            local c = active and C.onGold or C.door
-            self.count:SetTextColor(c.r, c.g, c.b)
-        end
-        chip:SetScript("OnClick", function() host:SetClassFilter(classFile) end)
-        chip:Fit()
-        return chip
-    end
-    for _, classFile in ipairs(CLASS_ORDER) do
-        host.classChips[classFile] = CreateClassChip(classFile)
-    end
-
-    -- Lay the pills out left to right, wrapping, and the table under them; returns their height.
-    function host:LayoutFilters(w)
-        w = w or self.filterW
-        if not w then return self.filterH end
-        self.filterW = w
-        local chips = {}
-        for _, b in ipairs(self.rankBtns) do if b.inUse then chips[#chips + 1] = b end end
-        for _, classFile in ipairs(CLASS_ORDER) do chips[#chips + 1] = self.classChips[classFile] end
-        local x, row = 0, 0
-        for _, b in ipairs(chips) do
-            local bw = b:GetWidth()
-            if x > 0 and x + bw > w then x, row = 0, row + 1 end
-            b:ClearAllPoints()
-            if row < CHIP_ROWS then
-                b:SetPoint("TOPLEFT", rail, "TOPLEFT", x, -row * (CHIP_H + 4))
-                b:Show()
-            else
-                b:Hide()
-            end
-            x = x + bw + CHIP_GAP
-        end
-        local rows = math.min(CHIP_ROWS, row + 1)
-        local h = rows * CHIP_H + (rows - 1) * 4
-        rail:SetHeight(h)
-        local changed = h ~= self.filterH
-        self.filterH = h
-        self:PlaceTable()
-        return h, changed
-    end
-
     function host:UpdateRailActive()
         self.segBtns.all:SetActive(self.segment == "all")
         self.segBtns.online:SetActive(self.segment == "online")
         self.segBtns.allied:SetActive(self.segment == "allied")
-        for _, b in ipairs(self.rankBtns) do
-            b:SetActive(self.segment == ("rank:" .. tostring(b.rankIndex)))
+        self.foundersBtn:SetActive(self.foundersOnly == true)
+        for k, b in pairs(self.addonBtns) do b:SetActive(self.addonFilter == k) end
+        for _, b in ipairs(self.rankBtns) do b:SetActive(b.inUse and self.rankFilter == b.rankIndex) end
+        for classFile, chip in pairs(self.classChips) do chip:SetActive(self.classFilter == classFile) end
+        self.offlineBtn.checkbox:SetChecked(GuildOS.db.settings.showOffline ~= false)
+    end
+
+    function host:SetSegment(id)
+        if id ~= "all" and self.segment == id then id = "all" end
+        self.segment = id
+        self:UpdateRailActive()
+        self:RefreshRoster()
+    end
+
+    function host:SetFounders(on)
+        self.foundersOnly = on and true or false
+        self:UpdateRailActive()
+        self:RefreshRoster()
+    end
+
+    function host:SetAddonFilter(status)
+        if self.addonFilter == status then status = nil end
+        self.addonFilter = status
+        self:UpdateRailActive()
+        self:RefreshRoster()
+    end
+
+    function host:SetRankFilter(index)
+        if self.rankFilter == index then index = nil end
+        self.rankFilter = index
+        self:UpdateRailActive()
+        self:RefreshRoster()
+    end
+
+    function host:SetClassFilter(classFile)
+        -- Toggle: clicking the active class clears it. NOTE: do not use the
+        -- "cond and nil or x" idiom here — `and nil` short-circuits so it can
+        -- never return nil, which made the filter impossible to clear.
+        if self.classFilter == classFile then
+            self.classFilter = nil
+        else
+            self.classFilter = classFile
         end
-        for classFile, chip in pairs(self.classChips) do
-            chip:SetActive(self.classFilter == classFile)
+        self:UpdateRailActive()
+        self:RefreshRoster()
+    end
+
+    function host:ClearFilters()
+        self.segment, self.foundersOnly, self.addonFilter, self.rankFilter, self.classFilter = "all", false, nil, nil, nil
+        GuildOS.db.settings.showOffline = true
+        self:UpdateRailActive()
+        if (self.searchBox:GetText() or "") ~= "" then
+            self.searchBox:SetText("")   -- its OnTextChanged refreshes
+            self.searchFilter = ""
+        end
+        self:RefreshRoster()
+    end
+
+    -- The filters on now, each with its label and what takes it off.
+    function host:ActiveFilters()
+        local out = {}
+        local function add(label, off) out[#out + 1] = { label = label, off = off } end
+        if self.segment == "online" then add(L["Online"], function() self.segment = "all" end) end
+        if self.segment == "allied" then add(L["From the alliance"], function() self.segment = "all" end) end
+        if GuildOS.db.settings.showOffline == false then
+            add(L["Online Only"], function() GuildOS.db.settings.showOffline = true end)
+        end
+        if self.foundersOnly and GuildOS.Founding then add(L["Founders"], function() self.foundersOnly = false end) end
+        if self.addonFilter then
+            add(self.addonBtns[self.addonFilter].label:GetText(), function() self.addonFilter = nil end)
+        end
+        if self.rankFilter then
+            local name = string.format(L["Rank %d"], self.rankFilter)
+            for _, b in ipairs(self.rankBtns) do
+                if b.inUse and b.rankIndex == self.rankFilter then name = b.label:GetText() end
+            end
+            add(name, function() self.rankFilter = nil end)
+        end
+        if self.classFilter then add(className(self.classFilter), function() self.classFilter = nil end) end
+        return out
+    end
+
+    -- The chips over the table; the table moves under them when they come or go.
+    function host:UpdateChips()
+        local list = self:ActiveFilters()
+        local w = self.legendW or 400
+        local x = 0
+        for i, f in ipairs(list) do
+            local chip = self.activeChips[i]
+            if not chip then
+                chip = UI:SetButtonVariant(UI:CreateButton(activeBar, "", 60, CHIP_H), "chip")
+                self.activeChips[i] = chip
+            end
+            chip.label:SetText(f.label .. "  ×")
+            local cw = textW(chip.label) + 20
+            chip:SetWidth(cw)
+            chip:ClearAllPoints()
+            chip:SetPoint("LEFT", activeBar, "LEFT", x, 0)
+            chip:SetShown(x + cw <= w)
+            chip:SetScript("OnClick", function()
+                f.off()
+                self:UpdateRailActive()
+                self:RefreshRoster()
+            end)
+            x = x + cw + CHIP_GAP
+        end
+        for i = #list + 1, #self.activeChips do self.activeChips[i]:Hide() end
+        local shown = #list > 0
+        if shown ~= (self.chipsShown == true) then
+            self.chipsShown = shown
+            self:PlaceTable()
         end
     end
 
@@ -1008,84 +1453,55 @@ function GuildOS:CreateRosterPanel(parent, host)
         local alliedN = 0
         for _, g in ipairs(GuildOS.Alliance and GuildOS.Alliance:Directory() or {}) do alliedN = alliedN + #g.members end
         self.segBtns.allied.count:SetText(tostring(alliedN))
-        for _, b in pairs(self.segBtns) do b:Fit() end
-        self.segBtns.allied:SetShown(alliedN > 0)
+        self.alliedShown = alliedN > 0
         if alliedN == 0 and self.segment == "allied" then self.segment = "all" end   -- the directory went
-        if (alliedN > 0) ~= (self.alliedShown or false) then
-            self.alliedShown = alliedN > 0
-            self:LayoutToolbar()
-        end
 
-        -- One pill per populated rank, sorted by rank index; a click on the open one goes back to All.
+        local founders = 0
+        if GuildOS.Founding then
+            local set = GuildOS.Founding:Founders() or {}
+            for key in pairs(set) do
+                if self.scan and self.scan.byKey[key] then founders = founders + 1 end
+            end
+        end
+        self.foundersBtn.count:SetText(tostring(founders))
+
+        local count = self.scan and self.scan.count or {}
+        for k, b in pairs(self.addonBtns) do b.count:SetText(tostring(count[k] or 0)) end
+
+        -- One line per populated rank, sorted by rank index; a click on the open one clears it.
         local indices = {}
         for idx in pairs(rankCount) do indices[#indices + 1] = idx end
         table.sort(indices)
         for slot, idx in ipairs(indices) do
             local b = self.rankBtns[slot]
             if not b then
-                b = rankChip()
+                b = railItem("", nil)
                 self.rankBtns[slot] = b
             end
             b.rankIndex = idx
             b.inUse = true
             b.label:SetText(rankName[idx] or string.format(L["Rank %d"], idx))
             b.count:SetText(tostring(rankCount[idx] or 0))
-            b:Fit()
-            b:SetScript("OnClick", function()
-                host:SetSegment(host.segment == ("rank:" .. idx) and "all" or ("rank:" .. idx))
-            end)
-            b:Show()
+            b:SetScript("OnClick", function() host:SetRankFilter(idx) end)
         end
         for slot = #indices + 1, #self.rankBtns do
             self.rankBtns[slot].inUse = nil
-            self.rankBtns[slot]:Hide()
         end
+        if self.rankFilter and not rankCount[self.rankFilter] then self.rankFilter = nil end   -- the rank emptied
 
         for classFile, chip in pairs(self.classChips) do
             local c = classCount[classFile] or 0
             chip.count:SetText(tostring(c))
-            chip:Fit()
             chip:SetAlpha(c == 0 and 0.35 or 1)
         end
 
         self:UpdateRailActive()
-        local _, changed = self:LayoutFilters()
-        -- More or fewer rows of pills: the table under them gets its rows again.
-        if changed and UI.Relayout then UI:Relayout(parent) end
-    end
-
-    function host:GetSegmentLabel()
-        if self.segment == "online" then
-            return L["Online"]
-        elseif self.segment == "allied" then
-            return L["From the alliance"]
-        elseif type(self.segment) == "string" and self.segment:find("^rank:") then
-            local ri = tonumber(self.segment:match("^rank:(%d+)"))
-            for _, b in ipairs(self.rankBtns) do
-                if b.rankIndex == ri then return b.label:GetText() or L["Rank"] end
-            end
-            return L["Rank"]
+        -- More or fewer lines (a rank came or went): the rail and the list are laid out again, and the rows.
+        if self:LayoutBody() then
+            self:LayoutToolbar()
+            self:PlaceTable()
+            self:UpdateRows()
         end
-        return L["All"]
-    end
-
-    function host:SetSegment(id)
-        self.segment = id
-        self:UpdateRailActive()
-        self:RefreshRoster()
-    end
-
-    function host:SetClassFilter(classFile)
-        -- Toggle: clicking the active class clears it. NOTE: do not use the
-        -- "cond and nil or x" idiom here — `and nil` short-circuits so it can
-        -- never return nil, which made the filter impossible to clear.
-        if self.classFilter == classFile then
-            self.classFilter = nil
-        else
-            self.classFilter = classFile
-        end
-        self:UpdateRailActive()
-        self:RefreshRoster()
     end
 
     ----------------------------------------------------------------
@@ -1102,10 +1518,12 @@ function GuildOS:CreateRosterPanel(parent, host)
             GuildOS:RefreshColumnsPanel()
         end
         self:LayoutToolbar()   -- who may invite can change under an open window (#377)
+        self:UpdateChips()
         self:BuildMemberList()
         self:UpdateSortIndicators()
         self:UpdateRows()
         self:UpdateStats()
+        self:LayoutLegend()
     end
 
     -- The selected row is the member whose sheet a click opened (#377), and the mark goes when the
@@ -1124,9 +1542,14 @@ function GuildOS:CreateRosterPanel(parent, host)
         -- Reuse the existing table to avoid allocating a new one on every refresh.
         wipe(self.sortedMembers)
         local members = self.sortedMembers
-        local showOffline = GuildOS.db.settings.showOffline
+        local showOffline = GuildOS.db.settings.showOffline ~= false
         local filter = self.searchFilter and strlower(strtrim(self.searchFilter)) or ""
         local levelMatch = (filter ~= "" and GuildOS.LevelQuery) and GuildOS.LevelQuery:Parse(filter) or nil
+
+        -- Guild OS on every member and who founded the guild, once per refresh (#449).
+        local scan = Marks.Scan()
+        self.scan = scan
+        local founders = GuildOS.Founding and GuildOS.Founding:Founders() or {}
 
         -- Only the values a cell draws, and the one sorted by, are worth reading (#178).
         local sortBy = GuildOS.db.settings.sortBy or "level"
@@ -1144,7 +1567,8 @@ function GuildOS:CreateRosterPanel(parent, host)
         local tipIndex = GuildOS.RosterCard and GuildOS.RosterCard.NewIndex(GuildOS.db.altLinks)
         self.tipIndex = tipIndex
 
-        -- From the alliance: the directory's rows instead of the guild's, read-only (AlliedEntries).
+        -- From the alliance: the directory's rows instead of the guild's, read-only (AlliedEntries). Only the
+        -- search and the class filter them: the rest are the guild's.
         local allied = self.segment == "allied"
         if allied then
             for _, entry in ipairs(UI.AlliedEntries(filter, levelMatch, self.classFilter)) do
@@ -1164,8 +1588,9 @@ function GuildOS:CreateRosterPanel(parent, host)
                 local realm = name:match("-(.+)$") or GetRealmName()
                 local key = GuildOS:GetPlayerKey(displayName, realm)
                 if tipIndex then GuildOS.RosterCard.IndexRow(tipIndex, key, displayName, classFile, isOnline) end
+                local gos = scan.byKey[key] or { status = "none" }
 
-                -- Apply filters
+                -- Apply filters: all of them together.
                 local passFilter = true
                 if not showOffline and not isOnline then
                     passFilter = false
@@ -1180,20 +1605,11 @@ function GuildOS:CreateRosterPanel(parent, host)
                         end
                     end
                 end
-
-                -- Rail segment filter (Todos / Online / by rank)
-                local seg = self.segment
-                if seg == "online" then
-                    if not isOnline then passFilter = false end
-                elseif type(seg) == "string" and seg:find("^rank:") then
-                    local ri = tonumber(seg:match("^rank:(%d+)"))
-                    if ri and rankIndex ~= ri then passFilter = false end
-                end
-
-                -- Rail class filter
-                if self.classFilter and classFile ~= self.classFilter then
-                    passFilter = false
-                end
+                if self.segment == "online" and not isOnline then passFilter = false end
+                if self.foundersOnly and GuildOS.Founding and not founders[key] then passFilter = false end
+                if self.addonFilter and gos.status ~= self.addonFilter then passFilter = false end
+                if self.rankFilter and rankIndex ~= self.rankFilter then passFilter = false end
+                if self.classFilter and classFile ~= self.classFilter then passFilter = false end
 
                 if passFilter then
                     -- Merge with stored addon data
@@ -1232,8 +1648,13 @@ function GuildOS:CreateRosterPanel(parent, host)
                         -- Prefer the live version a member is broadcasting on the mesh
                         -- (realm-wide, fresher than the last guild sync) over the stored
                         -- one, so an update shows up before CommSystem re-syncs.
-                        addonVersion = (GuildOS.Mesh and GuildOS.Mesh:GetPeerVersion(displayName)) or addonData.addonVersion,
+                        addonVersion = gos.version,
                         hasAddonData = (addonData.lastUpdate ~= nil and addonData.lastUpdate ~= 0),
+                        -- Guild OS on them and the newest seen in the guild (the marks, the column), and
+                        -- whether they founded the guild (#449).
+                        addonStatus = gos.status,
+                        latest = scan.latest,
+                        founder = founders[key] ~= nil,
                         cols = {},
                     }
                     for _, col in ipairs(wanted) do entry.cols[col.key] = col.value(entry, ctx) end
@@ -1343,15 +1764,12 @@ function GuildOS:CreateRosterPanel(parent, host)
             if isOnline then numOnline = numOnline + 1 end
         end
 
-        -- Addon coverage + average item level (members with stored addon data)
-        local numWithAddon, ilvlSum, ilvlCount = 0, 0, 0
+        -- Average item level (members with stored addon data)
+        local ilvlSum, ilvlCount = 0, 0
         for _, data in pairs(GuildOS.db.members) do
-            if data.lastUpdate and data.lastUpdate > 0 then
-                numWithAddon = numWithAddon + 1
-                if data.avgIlvl and data.avgIlvl > 0 then
-                    ilvlSum = ilvlSum + data.avgIlvl
-                    ilvlCount = ilvlCount + 1
-                end
+            if data.lastUpdate and data.lastUpdate > 0 and data.avgIlvl and data.avgIlvl > 0 then
+                ilvlSum = ilvlSum + data.avgIlvl
+                ilvlCount = ilvlCount + 1
             end
         end
         local avgIlvl = ilvlCount > 0 and math.floor(ilvlSum / ilvlCount + 0.5) or 0
@@ -1379,19 +1797,19 @@ function GuildOS:CreateRosterPanel(parent, host)
             end
         end
 
-        -- KPI cards
+        -- KPI cards. With Guild OS: the guild's members this client heard it from, the same scan as the marks.
+        local count = self.scan and self.scan.count or { cur = 0, old = 0 }
         if self.kpiMembers then self.kpiMembers:SetText(numTotal) end
         if self.kpiOnline then self.kpiOnline:SetText(numOnline) end
         if self.kpiIlvl then self.kpiIlvl:SetText(avgIlvl > 0 and avgIlvl or "—") end
         if self.kpiAtt then self.kpiAtt:SetText(avgAtt > 0 and (avgAtt .. "%") or "—") end
-        if self.kpiAddon then self.kpiAddon:SetText(numWithAddon) end
+        if self.kpiAddon then self.kpiAddon:SetText(count.cur + count.old) end
+        if self.kpiAddonSub then self.kpiAddonSub:SetText(string.format(L["· %d out of date"], count.old)) end
 
-        -- Toolbar result summary (reflects the active filters)
+        -- "N of M": how many the filters leave, of the whole guild.
         if self.resultText then
             local shown = self.sortedMembers and #self.sortedMembers or 0
-            local segLabel = self.GetSegmentLabel and self:GetSegmentLabel() or L["All"]
-            self.resultText:SetText(string.format(
-                L["%s  |cff6a6a76·|r  |cffffffff%d|r of %d"], segLabel, shown, numTotal))
+            self.resultText:SetText(string.format(L["%s of %d"], "|cfff6e9cf" .. shown .. "|r", numTotal))
         end
 
         -- Rail counts + active highlight
@@ -1404,24 +1822,13 @@ function GuildOS:CreateRosterPanel(parent, host)
     -- dragged (UI:MakeResponsive coalesces the burst).
     ----------------------------------------------------------------
     UI:MakeResponsive(parent, function(_, w, h)
-        -- KPI band. Same drop-by-priority rule as the table, so the cards
-        -- vanish in a chosen order instead of sliding off the edge.
-        local kpi = UI:ResolveColumns(KPI_SPEC, w - KPI_MARGIN * 2, KPI_GAP)
-        for _, entry in ipairs(kpi) do
-            local card = host.kpiCards[entry.key]
-            if card then
-                card:SetShown(entry.shown)
-                if entry.shown then
-                    card:ClearAllPoints()
-                    card:SetPoint("TOPLEFT", KPI_MARGIN + entry.x, -2)
-                    card:SetWidth(entry.w)
-                end
-            end
-        end
-
-        local inner = w - 2 * CARD_SIDE
-        host:LayoutToolbar(inner)
-        host:LayoutFilters(inner)
+        host.bandH = host:LayoutTiles(w)
+        host.bodyW, host.bodyH = w, h
+        host:LayoutBody()
+        host:LayoutToolbar()
+        local inner = host.listW - 2 * SP.PAD
+        host.legendW = inner
+        host:LayoutLegend(inner)
 
         -- Table columns.
         local tableW = inner - ROW_INSET - SCROLL_GUTTER
@@ -1443,7 +1850,7 @@ function GuildOS:CreateRosterPanel(parent, host)
         end
 
         -- Rows: how many fit, and where their cells sit.
-        host.AcquireRows(UI:ResolveRows(h - TABLE_RESERVED - (host.filterH or CHIP_H), ROW_HEIGHT, 0))
+        host:PlaceTable()
         for i = 1, host.visibleRows do
             host.rows[i]:ApplyColumns(layout)
         end
@@ -1522,14 +1929,27 @@ function CreateRosterRow(parent, rowIndex, uid, host)
     nameText:SetWordWrap(false)
     row.nameText = nameText
 
-    -- Addon indicator (tiny dot)
-    local addonDot = row:CreateTexture(nil, "OVERLAY")
-    addonDot:SetSize(6, 6)
-    addonDot:SetPoint("LEFT", nameText, "RIGHT", 2, 0)
-    addonDot:SetTexture("Interface\\Buttons\\WHITE8x8")
-    addonDot:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
-    addonDot:Hide()
-    row.addonDot = addonDot
+    -- The marks after the name (#449): Guild OS (green crest up to date, amber with "!" out of date, none when it
+    -- is not installed) and the founder's banner. A mark's click is the row's.
+    local function clickRow(_, button)
+        local fn = row:GetScript("OnClick")
+        if fn then fn(row, button) end
+    end
+    row.marks = { Marks.Create(row, clickRow), Marks.Create(row, clickRow) }
+    row.marks[1]:SetPoint("LEFT", nameText, "RIGHT", 4, 0)
+    row.marks[2]:SetPoint("LEFT", row.marks[1], "RIGHT", 4, 0)
+    for _, m in ipairs(row.marks) do m:Hide() end
+    row.markKinds = {}
+
+    -- The name takes what the marks leave of its cell.
+    function row:FitName()
+        local max = self.nameMax or 100
+        local n = #self.markKinds
+        local room = math.max(20, max - n * (Marks.SIZE + 4))
+        if not self.nameText.GetUnboundedStringWidth then self.nameText:SetWidth(max) end
+        self.nameText:SetWidth(math.max(1, math.min(textW(self.nameText), room)))
+        for i, m in ipairs(self.marks) do m:SetShown(self.nameShown ~= false and self.markKinds[i] ~= nil) end
+    end
 
     local function cell(size, justify, colour, role)
         local fs = row:CreateFontString(nil, "OVERLAY")
@@ -1551,7 +1971,7 @@ function CreateRosterRow(parent, rowIndex, uid, host)
     -- Which elements belong to which column, so a dropped column takes
     -- everything it owns with it.
     row.cells = {
-        name        = { nameText, avatar, statusDot, addonDot },
+        name        = { nameText, avatar, statusDot },
         level       = { row.levelText },
         class       = { row.classText },
         avgIlvl     = { row.ilvlText },
@@ -1583,19 +2003,18 @@ function CreateRosterRow(parent, rowIndex, uid, host)
                 for _, el in ipairs(group) do el:Show() end
             end
         end
-        -- addonDot has its own visibility rule (set per member in
-        -- UpdateRosterRow); the layout must not force it back on.
-        if not self.__hasAddon then self.addonDot:Hide() end
-
         local byKey = layout.byKey
         local nameCol = byKey.name
-        if nameCol and nameCol.shown then
+        self.nameShown = nameCol ~= nil and nameCol.shown
+        if self.nameShown then
             self.statusDot:ClearAllPoints()
             self.statusDot:SetPoint("LEFT", ROW_INSET + nameCol.x + 6, 0)
             self.avatar:ClearAllPoints()
             self.avatar:SetPoint("LEFT", ROW_INSET + nameCol.x + 16, 0)
-            self.nameText:SetWidth(math.max(20, nameCol.w - 52))
+            self.nameMax = math.max(20, nameCol.w - 52)
         end
+        -- The marks have their own rule (the member's); the layout only gives the name its room.
+        self:FitName()
 
         local function place(key, fs)
             local col = byKey[key]
@@ -1734,25 +2153,19 @@ function UpdateRosterRow(row, data)
     -- Name (class-colored, grayscale if offline)
     local cr, cg, cb = GuildOS:GetClassColor(data.class)
     local nr, ng, nb = textColor(cr, cg, cb)
-    -- A founding member's scroll (WoW: Forever, issue #209).
-    local founder = GuildOS.Founding and data.key and GuildOS.Founding:IsFounder(data.key)
-    row.nameText:SetText(founder and (data.name .. " " .. GuildOS.Founding.BADGE) or data.name)
+    row.nameText:SetText(data.name)
     row.nameText:SetTextColor(nr, ng, nb)
 
-    -- Addon data indicator. __hasAddon is remembered so a later layout
-    -- pass (which shows every element the name column owns) does not
-    -- resurrect the dot on a member who has no addon data.
-    row.__hasAddon = data.hasAddonData and true or false
-    if data.hasAddonData then
-        row.addonDot:Show()
-        if data.addonVersion and CompareVersions(data.addonVersion, GuildOS.VERSION) < 0 then
-            row.addonDot:SetVertexColor(C.red.r, C.red.g, C.red.b, 0.9)
-        else
-            row.addonDot:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
-        end
-    else
-        row.addonDot:Hide()
+    -- The marks (#449): Guild OS up to date or out of date (none when it is not installed), then a founder's
+    -- banner (WoW: Forever, issue #209; it was a scroll in the name). An ally's row has none.
+    local kinds = {}
+    if data.addonStatus == "cur" or data.addonStatus == "old" then kinds[#kinds + 1] = data.addonStatus end
+    if data.founder then kinds[#kinds + 1] = "founder" end
+    row.markKinds = kinds
+    for i, m in ipairs(row.marks) do
+        if kinds[i] then m:SetKind(kinds[i], data.addonVersion, data.latest) end
     end
+    row:FitName()
 
     -- Level with color coding: paper at the cap, green within ten of it
     local level = data.level
@@ -1819,7 +2232,13 @@ function UpdateRosterRow(row, data)
     for key, fs in pairs(row.textCells) do
         if fs:IsShown() then
             local v = data.cols[key]
-            if v == nil then
+            local col = COLUMN_BY_KEY[key]
+            local blank, blankColour
+            if v == nil and col.empty then blank, blankColour = col.empty(data) end
+            if blank then
+                fs:SetText(blank)
+                fs:SetTextColor(textColor(blankColour.r, blankColour.g, blankColour.b))
+            elseif v == nil then
                 fs:SetText(DASH)
             else
                 local s, colour = COLUMN_BY_KEY[key].text(v, data)

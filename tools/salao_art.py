@@ -306,12 +306,69 @@ def icon_gear():
     return white_with(reduce(big, size, size))
 
 
+# The Members list's marks (#449, membros-mockup .mk): 18px round chips beside a name, drawn here at 32px in
+# their own colours (nothing tints them). A crest on green: Guild OS up to date; on amber with a "!": an older
+# version; a banner on dark brown with a gold ring: a founder. The chip is the mockup's: its fill, a 1px ring
+# (1.8px at 32) and the glyph, 12/18 of the chip, centred.
+def _crest_poly(ox, oy, s):
+    """The crest of the mockup's 12x12 viewBox (M6 1 10 2.6v3.2C10 8.3 8.3 10 6 11 3.7 10 2 8.3 2 5.8V2.6Z)."""
+    def bez(p0, p1, p2, p3, n=12):
+        out = []
+        for i in range(1, n + 1):
+            t = i / n
+            u = 1 - t
+            out.append((u ** 3 * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t ** 3 * p3[0],
+                        u ** 3 * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t ** 3 * p3[1]))
+        return out
+    pts = [(6, 1), (10, 2.6), (10, 5.8)]
+    pts += bez((10, 5.8), (10, 8.3), (8.3, 10), (6, 11))
+    pts += bez((6, 11), (3.7, 10), (2, 8.3), (2, 5.8))
+    pts += [(2, 2.6)]
+    return [(ox + x * s, oy + y * s) for x, y in pts]
+
+
+def _mark(fill, ring, glyph):
+    size = 32
+    big = Image.new("RGBA", (size * SS, size * SS), (0, 0, 0, 0))
+    d = ImageDraw.Draw(big)
+    d.ellipse((0, 0, size * SS - 1, size * SS - 1), fill=hexc(ring))
+    rw = 1.8 * SS
+    d.ellipse((rw, rw, size * SS - 1 - rw, size * SS - 1 - rw), fill=hexc(fill))
+    s = size * SS * (12 / 18) / 12           # the glyph's unit, in supersampled px
+    o = (size * SS - 12 * s) / 2             # centred
+    glyph(d, o, s)
+    return reduce(big, size, size)
+
+
+def mark_crest():
+    return _mark("1f4f2a", "5fe05a", lambda d, o, s: d.polygon(_crest_poly(o, o, s), fill=hexc("7fe07a")))
+
+
+def mark_warn():
+    def g(d, o, s):
+        d.polygon(_crest_poly(o, o, s), fill=hexc("f0b850"))
+        ink = hexc("2b1a04")
+        d.rectangle((o + 5.3 * s, o + 3.4 * s, o + 6.7 * s, o + 7.0 * s), fill=ink)
+        d.rectangle((o + 5.3 * s, o + 7.7 * s, o + 6.7 * s, o + 9.1 * s), fill=ink)
+    return _mark("5a3a08", "f0a830", g)
+
+
+def mark_banner():
+    def g(d, o, s):
+        gold = hexc("ffd77a")
+        d.rectangle((o + 3 * s, o + 1 * s, o + 4 * s, o + 11 * s), fill=gold)
+        d.polygon([(o + 4 * s, o + 1.5 * s), (o + 9.5 * s, o + 1.5 * s), (o + 8 * s, o + 3.8 * s),
+                   (o + 9.5 * s, o + 6.1 * s), (o + 4 * s, o + 6.1 * s)], fill=gold)
+    return _mark("3b2512", "ffd77a", g)
+
+
 ART = {
     "wood": wood, "grain": grain, "glow": glow, "titlebar": titlebar,
     "card": card, "card-line": card_line, "shadow": shadow,
     "button": button, "button-soft": button_soft, "button-line": button_line, "pill": pill, "pill-line": pill_line,
     "orb": orb, "disc": disc, "circle": circle, "ring": ring, "ring-dash": ring_dash, "halo": halo,
     "fade": fade, "snow": snow, "garland": garland, "icon-search": icon_search, "icon-gear": icon_gear,
+    "mark-crest": mark_crest, "mark-warn": mark_warn, "mark-banner": mark_banner,
 }
 
 
