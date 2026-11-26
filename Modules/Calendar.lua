@@ -1534,7 +1534,7 @@ function Calendar:_ReceiveSignup(data, sender, senderGuild)
     end
 
     -- Class and level come from the synced allied roster, never from the
-    -- payload, exactly like the guild map takes class from the roster.
+    -- payload, class comes from the roster.
     local class, level
     local sync = GuildOS.AllianceSync
     local snap = sync and sync:Remote(senderGuild, "roster")

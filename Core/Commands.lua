@@ -362,9 +362,6 @@ local function handleCommand(msg)
         else
             GuildOS:OpenGuildFinder()
         end
-    elseif msg == "map" or msg == "guildmap" then
-        -- Anyone: open the live guild map (world map pins + list overlay).
-        if GuildOS.ToggleGuildMap then GuildOS:ToggleGuildMap() end
     elseif msg == "pug" then
         -- Anyone: classify the current party/raid against what GuildOS knows.
         if GuildOS.TogglePugInspector then GuildOS:TogglePugInspector() end

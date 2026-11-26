@@ -344,7 +344,6 @@ local MODULE_START = {
     { "LFGBoard" },
     -- The groups being formed (issue #341). After the board, whose listings and cooldown line it shares.
     { "Groups" },
-    { "GuildMap" },
     { "PugInspector" },
     -- The Crafts switch stops every crafts module and its sync, not only the tab (audit B25).
     { "RecipeTracker", feature = "recipes", ui = "recipes", drop = true },

@@ -61,7 +61,7 @@ local function OnDragUpdate(btn)
 end
 
 -- Right-click context menu for the minimap button (built lazily). Left-click
--- still opens the roster; the menu exposes the guild map and settings.
+-- still opens the roster; the menu exposes the tabs and settings.
 local menuFrame
 
 local function MinimapMenu_Init(_, level)
@@ -104,14 +104,6 @@ local function MinimapMenu_Init(_, level)
         info.func = function() GuildOS.UI:OpenWindow(def.id); CloseDropDownMenus() end
         UIDropDownMenu_AddButton(info, level)
     end
-
-    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
-    info.text = L["Guild Map"]
-    info.func = function()
-        if GuildOS.ToggleGuildMap then GuildOS:ToggleGuildMap() end
-        CloseDropDownMenus()
-    end
-    UIDropDownMenu_AddButton(info, level)
 
     info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
     info.text = L["Do I know this pug?"]
@@ -175,7 +167,7 @@ function GuildOS:CreateMinimapButton()
 
     btn:SetScript("OnClick", function(_, mouseButton)
         if mouseButton == "RightButton" then
-            -- Right-click opens the menu (roster / guild map / settings).
+            -- Right-click opens the menu (roster / tabs / settings).
             ShowMinimapMenu()
         else
             GuildOS:ToggleRoster()
@@ -216,10 +208,6 @@ function GuildOS:CreateMinimapButton()
     GuildOS.Compat.After(1, function() UpdatePosition(btn) end)
 
     self.minimapButton = btn
-
-    -- Wire the live guild map presence layer (minimap zone dots + refresh hook)
-    -- now that the minimap definitely exists. Safe to call once.
-    if GuildOS.SetupGuildMapPresence then GuildOS:SetupGuildMapPresence() end
 
     return btn
 end

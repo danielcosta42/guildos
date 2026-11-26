@@ -446,12 +446,6 @@ PAGES.interface = function(F)
     F:Check(L["Show minimap button"], nil,
         function() return GuildOS.IsMinimapShown and GuildOS:IsMinimapShown() end,
         function(checked) if GuildOS.SetMinimapShown then GuildOS:SetMinimapShown(checked) end end)
-    -- The guildmates-in-your-zone dots under the minimap (#271).
-    if GuildOS.GuildMap then
-        F:Check(L["Show guildmates in your zone on the minimap"], nil,
-            function() return GuildOS.GuildMap:IsMinimapDots() end,
-            function(checked) GuildOS.GuildMap:SetMinimapDots(checked) end)
-    end
     F:Check(L["Guild button opens Guild OS"], L["Off: the game's guild button opens the game's own guild window."],
         function() return GuildOS:IsGuildButtonHijacked() end,
         function(checked) GuildOS:SetSetting("hijackGuildButton", checked) end)
