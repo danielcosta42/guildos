@@ -139,3 +139,27 @@ Nothing here has been run in the game. A finding read from code is checked again
 | Id | Proposal |
 |---|---|
 | B29 | The alliance redrawn as `alianca.md` describes: one alliance on the site (by invite or as a federation); the chat code and its data delivered by the companion; the pact, the bridge sync and the Manage tab removed |
+
+---
+
+## Decisions (the maintainer, 2026-11-26)
+
+- **List A:** all approved, including the performance and dead-code items.
+- **List B, approved:** B1 to B19 and B21 to B29.
+- **List B, refused:** B20. Resistances keep being scanned on every client, as today.
+- **Added by the maintainer: nothing drawn over the screen opens in combat**, not only the moderation
+  alerts (B4).
+  - That covers the login popups, the raid prompt, calls to arms, group notices, join-request notices and
+    any other window an event opens.
+  - Each waits until combat ends and shows then, one at a time (B21).
+- **B16:** the loot rule should already come from the site. Before changing the loot systems, check how the
+  site's loot rule (guildos-web specs 078, 083, 084) reaches the addon and what is left of the addon's own
+  choice. The plan comes back to the maintainer.
+- **B29:** the site first, then the addon.
+
+### Order of the work
+
+1. List A (defects).
+2. The approved B items, by area.
+3. The B16 investigation, back to the maintainer.
+4. The alliance on the site (an issue in guildos-web), then in the addon.
