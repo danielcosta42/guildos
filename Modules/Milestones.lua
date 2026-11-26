@@ -35,7 +35,9 @@ function Milestones:Check(key, data, prevLevel, prevAttune, hadPrior)
     local name = data.name or (key:match("^([^-]+)") or key)
 
     local cap = GuildOS.Client.maxLevel
-    if prevLevel and prevLevel < cap and (data.level or 0) >= cap then
+    -- Where the journal exists (WoW: Forever) the cap comes from it, written by whoever dinged: one
+    -- source, not two (audit B24).
+    if not GuildOS.Journal and prevLevel and prevLevel < cap and (data.level or 0) >= cap then
         self:Record("ding", key, name, tostring(cap))
     end
 
@@ -74,8 +76,17 @@ function Milestones:GetDigestLines(since, told)
     -- one line per level and per dungeon, each person once — a few names, or how many. Read from
     -- the journal, which keeps a month of them, not from the fifty events above, which a launch
     -- week would flood. The cap is the ding above.
-    local groups = {}
+    local groups, dinged = {}, {}
     for _, e in ipairs(GuildOS.Journal and GuildOS.Journal:GetSince(since) or {}) do
+        -- The cap, from the journal where it exists (audit B24): the ding line, each person once.
+        if e.type == "member.level60" then
+            local k = GuildOS:LocalMemberKey(e.subjectKey)
+            if not (dinged[k] or (told and told["member.level60|" .. tostring(e.subjectKey)])) then
+                dinged[k] = true
+                out[#out + 1] = string.format(L["%s reached level %s!"], k:match("^(.-)%-[^-]*$") or k,
+                    tostring(GuildOS.Client.maxLevel))
+            end
+        end
         local g = e.type == "member.level" and { level = e.data.level, sort = 1000 - e.data.level }
             or e.type == "dungeon.clear" and { name = e.data.dungeonName or e.data.dungeonId, sort = 2000 }
         if g then

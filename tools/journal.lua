@@ -232,7 +232,7 @@ put(me, "c3", NOW - 70, "dungeon.clear", clear(RUINS, 7))
 for i = 1, 5 do put("E" .. i .. "-" .. REALM, "e" .. i, NOW - 60, "member.level", { level = 20 }) end
 M:Check(A, { name = "A", level = 41 }, 38, 0, true)
 M:Check("D-" .. REALM, { name = "D", level = 60 }, 58, 0, true)
-check(#G.db.milestones.events == 1, "the fifty events keep only the ding: the ten-level ones are the journal's")
+check(#G.db.milestones.events == 0, "the fifty events keep no level here: the ten-level ones and the cap are the journal's (audit B24)")
 local lines = table.concat(M:GetDigestLines(0), "|")
 check(lines:find("Level 40 reached by A, B", 1, true), "a milestone line names a few, each once: " .. lines)
 check(lines:find("D reached level 60!", 1, true) and not lines:find("Level 60", 1, true), "the cap is the ding, said once")

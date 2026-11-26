@@ -44,7 +44,7 @@ local function BuildFinder()
     table.insert(UISpecialFrames, "GuildOSCraftFinder")
 
     -- Title
-    local title = UI:CreateTitle(f, L["Find a Crafter"], 13)
+    local title = UI:CreateTitle(f, L["Search the realm"], 13)
     title:SetPoint("TOPLEFT", 12, -10)
 
     local closeBtn = UI:CreateCloseButton(f)

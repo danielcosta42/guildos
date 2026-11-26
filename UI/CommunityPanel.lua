@@ -80,13 +80,67 @@ end
 ----------------------------------------------------------------------
 -- BULLETIN sub-panel
 ----------------------------------------------------------------------
+-- The polls, drawn on the board under the notices (audit B24): what a poll is, a kind of notice.
+local function pollKey(name)
+    local short = (name or ""):match("^([^-]+)") or name
+    return GuildOS:GetPlayerKey(short, GetRealmName())
+end
+
+local function drawPolls(child, y)
+    local polls = (GuildOS.Polls and GuildOS.Polls:GetSorted()) or {}
+    local isOfficer = GuildOS:IsOfficer()
+    local myKey = pollKey(GuildOS.Compat.PlayerName())
+    for _, p in ipairs(polls) do
+        -- The question in the text colour, a closed one in the soft one (#371).
+        local qc = p.closed and C.textSoft or C.text
+        local q = UI:CreateText(child, (p.closed and "[" .. L["closed"] .. "] " or "") .. p.question, 12, qc.r, qc.g, qc.b)
+        local closable = isOfficer and not p.closed
+        q:SetPoint("TOPLEFT", 0, -y)
+        q:SetPoint("TOPRIGHT", closable and -(56 + GAP) or 0, -y)
+        q:SetJustifyH("LEFT")
+        if closable then
+            local closeBtn = UI:CreateButton(child, L["Close"], 56, 18)
+            closeBtn:SetPoint("TOPRIGHT", 0, -y)
+            local id = p.id
+            closeBtn:SetScript("OnClick", function() if GuildOS.Polls then GuildOS.Polls:Close(id) end end)
+        end
+        y = y + math.max(18, (q:GetStringHeight() or 14) + 4)
+
+        local total, counts = 0, {}
+        for _, opt in pairs(p.votes or {}) do counts[opt] = (counts[opt] or 0) + 1; total = total + 1 end
+        local myVote = p.votes and p.votes[myKey]
+        for idx, optText in ipairs(p.options or {}) do
+            local n = counts[idx] or 0
+            local pct = total > 0 and math.floor(n / total * 100 + 0.5) or 0
+            local btn = UI:CreateButton(child, string.format("%s  (%d · %d%%)", optText, n, pct), 1, 20)
+            btn:SetPoint("TOPLEFT", 0, -y)
+            btn:SetPoint("TOPRIGHT", 0, -y)
+            -- My vote is the selected option, as every selection is marked (#371).
+            UI:SetSelected(btn, myVote == idx)
+            btn.label:ClearAllPoints()
+            btn.label:SetPoint("LEFT", 8, 0)
+            if not p.closed then
+                local id, oi = p.id, idx
+                btn:SetScript("OnClick", function() if GuildOS.Polls then GuildOS.Polls:Vote(id, oi) end end)
+            end
+            y = y + 22
+        end
+        local meta = UI:CreateText(child, string.format(L["%d vote(s) · by %s"], total, p.author or "?"),
+            11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        meta:SetPoint("TOPLEFT", 0, -y)
+        y = y + 22
+    end
+    return y, #polls
+end
+
 local function BuildBulletinSub(panel)
     local listTop = GAP
-    local box
+    local box, pollForm
     if GuildOS:IsOfficer() then
-        -- One field, so one label beside it, then its button (#371).
+        -- One field, so one label beside it, then its buttons (#371). A poll is the other kind of post.
         local label = UI:CreateText(panel, L["Notice:"], 12)
         local postBtn = UI:CreateButton(panel, L["Post"], 84, FIELD_H)
+        local pollBtn = UI:CreateButton(panel, L["New poll"], 96, FIELD_H)
         -- How long the notice lasts (issue #418): some days, or until an officer removes it.
         local lasts = UI:CreateDropdown(panel, 120, FIELD_H)
         lasts:SetOptions(GuildOS.Bulletin and GuildOS.Bulletin:DurationOptions() or {})
@@ -94,10 +148,12 @@ local function BuildBulletinSub(panel)
         panel.lasts = lasts
         box = UI:CreateInput(panel, 0, FIELD_H, { max = 200 })
         box:SetPoint("TOPLEFT", math.ceil(label:GetStringWidth() or 0) + GAP, -GAP)
-        box:SetPoint("TOPRIGHT", -(GAP + UI.ReserveFor(postBtn, GAP) + UI.ReserveFor(lasts, GAP)), -GAP)
+        box:SetPoint("TOPRIGHT", -(GAP + UI.ReserveFor(postBtn, GAP) + UI.ReserveFor(lasts, GAP)
+            + UI.ReserveFor(pollBtn, GAP)), -GAP)
         label:SetPoint("RIGHT", box, "LEFT", -GAP, 0)
         lasts:SetPoint("LEFT", box, "RIGHT", GAP, 0)
         postBtn:SetPoint("LEFT", lasts, "RIGHT", GAP, 0)
+        pollBtn:SetPoint("LEFT", postBtn, "RIGHT", GAP, 0)
         local function doPost()
             if GuildOS.Bulletin then GuildOS.Bulletin:Post(box:GetText(), lasts:GetValue()) end
             box:SetText(""); box:ClearFocus()
@@ -105,8 +161,50 @@ local function BuildBulletinSub(panel)
         box:SetScript("OnEnterPressed", doPost)
         postBtn:SetScript("OnClick", doPost)
         listTop = GAP + FIELD_H + GAP
+
+        -- The poll's fields, under the notice's while "New poll" holds them open. The question says
+        -- what it is while empty; the options box is three lines tall with its hint right under it (#371).
+        pollForm = CreateFrame("Frame", nil, panel)
+        pollForm:SetPoint("TOPLEFT", 0, -listTop)
+        pollForm:SetPoint("TOPRIGHT", 0, -listTop)
+        pollForm:SetHeight(FIELD_H + GAP + 56 + 4 + 14)
+        pollForm:Hide()
+        local createBtn = UI:CreateButton(pollForm, L["Create Poll"], 110, FIELD_H)
+        local qBox = UI:CreateInput(pollForm, 0, FIELD_H, { max = 150, placeholder = L["Question..."] })
+        qBox:SetPoint("TOPLEFT", 0, 0)
+        qBox:SetPoint("TOPRIGHT", -(GAP + UI.ReserveFor(createBtn, GAP)), 0)
+        createBtn:SetPoint("LEFT", qBox, "RIGHT", GAP, 0)
+        local oArea = UI:CreateTextArea(pollForm, 0, 56)   -- a multi-line EditBox alone shrinks to one line
+        oArea:SetPoint("TOPLEFT", qBox, "BOTTOMLEFT", 0, -GAP)
+        oArea:SetPoint("TOPRIGHT", createBtn, "BOTTOMRIGHT", 0, -GAP)
+        local oBox = oArea.edit
+        local hint = UI:CreateText(pollForm, L["One option per line (2-6)"], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        hint:SetPoint("TOPLEFT", oArea, "BOTTOMLEFT", 0, -4)
+        pollForm.create = function()
+            local opts = {}
+            for line in (oBox:GetText() .. "\n"):gmatch("([^\n]*)\n") do
+                local t = strtrim(line)
+                if t ~= "" and #opts < 6 then opts[#opts + 1] = t end
+            end
+            if GuildOS.Polls then GuildOS.Polls:Create(qBox:GetText(), opts) end
+            qBox:SetText(""); oBox:SetText(""); qBox:ClearFocus(); oBox:ClearFocus()
+        end
+        pollForm.button, pollForm.createBtn = pollBtn, createBtn
     end
-    local _, child = makeScroll(panel, "GuildOSHubBulletinScroll", listTop)
+    local holder, child = makeScroll(panel, "GuildOSHubBulletinScroll", listTop)
+    local function place()
+        local open = pollForm and pollForm:IsShown()
+        holder:ClearAllPoints()
+        holder:SetPoint("TOPLEFT", 0, -(listTop + (open and (pollForm:GetHeight() + GAP) or 0)))
+        holder:SetPoint("BOTTOMRIGHT", 0, 0)
+    end
+    if pollForm then
+        pollForm.button:SetScript("OnClick", function()
+            if pollForm:IsShown() then pollForm:Hide() else pollForm:Show() end
+            place()
+        end)
+        pollForm.createBtn:SetScript("OnClick", function() pollForm.create(); pollForm:Hide(); place() end)
+    end
 
     local function refresh()
         clear(child)
@@ -130,13 +228,16 @@ local function BuildBulletinSub(panel)
             end
             y = y + th + 22
         end
-        if #msgs == 0 then
+        local polls
+        y, polls = drawPolls(child, y)
+        if #msgs == 0 and polls == 0 then
             local empty = UI:CreateText(child, L["No notices yet."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
             empty:SetPoint("TOPLEFT", 0, 0)
         end
         child:SetHeight(math.max(1, y))
     end
     if GuildOS.Bulletin then GuildOS.Bulletin.uiRefresh = refresh end
+    if GuildOS.Polls then GuildOS.Polls.uiRefresh = refresh end
     return refresh
 end
 
@@ -479,99 +580,6 @@ local function BuildCallToArmsSub(panel)
 end
 
 ----------------------------------------------------------------------
--- POLLS sub-panel
-----------------------------------------------------------------------
-local function BuildPollsSub(panel)
-    local listTop = GAP
-    if GuildOS:IsOfficer() then
-        -- The question says what it is while empty; the options box is three lines tall with its
-        -- hint right under it (#371).
-        local createBtn = UI:CreateButton(panel, L["Create Poll"], 110, FIELD_H)
-        local qBox = UI:CreateInput(panel, 0, FIELD_H, { max = 150, placeholder = L["Question..."] })
-        qBox:SetPoint("TOPLEFT", 0, -GAP)
-        qBox:SetPoint("TOPRIGHT", -(GAP + UI.ReserveFor(createBtn, GAP)), -GAP)
-        createBtn:SetPoint("LEFT", qBox, "RIGHT", GAP, 0)
-        local oArea = UI:CreateTextArea(panel, 0, 56)   -- a multi-line EditBox alone shrinks to one line
-        oArea:SetPoint("TOPLEFT", qBox, "BOTTOMLEFT", 0, -GAP)
-        oArea:SetPoint("TOPRIGHT", createBtn, "BOTTOMRIGHT", 0, -GAP)
-        local oBox = oArea.edit
-        local hint = UI:CreateText(panel, L["One option per line (2-6)"], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        hint:SetPoint("TOPLEFT", oArea, "BOTTOMLEFT", 0, -4)
-        listTop = hint
-        createBtn:SetScript("OnClick", function()
-            local opts = {}
-            for line in (oBox:GetText() .. "\n"):gmatch("([^\n]*)\n") do
-                local t = strtrim(line)
-                if t ~= "" and #opts < 6 then opts[#opts + 1] = t end
-            end
-            if GuildOS.Polls then GuildOS.Polls:Create(qBox:GetText(), opts) end
-            qBox:SetText(""); oBox:SetText(""); qBox:ClearFocus(); oBox:ClearFocus()
-        end)
-    end
-    local _, child = makeScroll(panel, "GuildOSHubPollsScroll", listTop)
-
-    local function keyOf(name)
-        local short = (name or ""):match("^([^-]+)") or name
-        return GuildOS:GetPlayerKey(short, GetRealmName())
-    end
-
-    local function refresh()
-        clear(child)
-        local polls = (GuildOS.Polls and GuildOS.Polls:GetSorted()) or {}
-        local isOfficer = GuildOS:IsOfficer()
-        local myKey = keyOf(GuildOS.Compat.PlayerName())
-        local y = 0
-        for _, p in ipairs(polls) do
-            -- The question in the text colour, a closed one in the soft one (#371).
-            local qc = p.closed and C.textSoft or C.text
-            local q = UI:CreateText(child, (p.closed and "[" .. L["closed"] .. "] " or "") .. p.question, 12, qc.r, qc.g, qc.b)
-            local closable = isOfficer and not p.closed
-            q:SetPoint("TOPLEFT", 0, -y)
-            q:SetPoint("TOPRIGHT", closable and -(56 + GAP) or 0, -y)
-            q:SetJustifyH("LEFT")
-            if closable then
-                local closeBtn = UI:CreateButton(child, L["Close"], 56, 18)
-                closeBtn:SetPoint("TOPRIGHT", 0, -y)
-                local id = p.id
-                closeBtn:SetScript("OnClick", function() if GuildOS.Polls then GuildOS.Polls:Close(id) end end)
-            end
-            y = y + math.max(18, (q:GetStringHeight() or 14) + 4)
-
-            local total, counts = 0, {}
-            for _, opt in pairs(p.votes or {}) do counts[opt] = (counts[opt] or 0) + 1; total = total + 1 end
-            local myVote = p.votes and p.votes[myKey]
-            for idx, optText in ipairs(p.options or {}) do
-                local n = counts[idx] or 0
-                local pct = total > 0 and math.floor(n / total * 100 + 0.5) or 0
-                local btn = UI:CreateButton(child, string.format("%s  (%d · %d%%)", optText, n, pct), 1, 20)
-                btn:SetPoint("TOPLEFT", 0, -y)
-                btn:SetPoint("TOPRIGHT", 0, -y)
-                -- My vote is the selected option, as every selection is marked (#371).
-                UI:SetSelected(btn, myVote == idx)
-                btn.label:ClearAllPoints()
-                btn.label:SetPoint("LEFT", 8, 0)
-                if not p.closed then
-                    local id, oi = p.id, idx
-                    btn:SetScript("OnClick", function() if GuildOS.Polls then GuildOS.Polls:Vote(id, oi) end end)
-                end
-                y = y + 22
-            end
-            local meta = UI:CreateText(child, string.format(L["%d vote(s) · by %s"], total, p.author or "?"),
-                11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-            meta:SetPoint("TOPLEFT", 0, -y)
-            y = y + 22
-        end
-        if #polls == 0 then
-            local empty = UI:CreateText(child, L["No polls yet."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-            empty:SetPoint("TOPLEFT", 0, 0)
-        end
-        child:SetHeight(math.max(1, y))
-    end
-    if GuildOS.Polls then GuildOS.Polls.uiRefresh = refresh end
-    return refresh
-end
-
-----------------------------------------------------------------------
 -- Guild chat feed (issues #124, #126), kept by Modules/GuildChat.lua. Laid out
 -- like the alliance feed: one card per run of lines from one speaker, newest at
 -- the bottom, a box underneath, and a tab per channel of the guild. Guild > Chat
@@ -824,7 +832,6 @@ local HUB_SUBTABS = {
     { key = "bulletin", label = L["Bulletin"] },
     { key = "rules",    label = L["Rules"] },
     { key = "cta",      label = L["Call to Arms"] },
-    { key = "polls",    label = L["Polls"] },
     { key = "chat",     label = L["Chat"] },
     { key = "journal",      label = L["Journal"],      feature = "journal" },
 }
@@ -856,7 +863,7 @@ function GuildOS:CreateGuildHub(parent, _mainFrame)
 
     local builders = {
         calendar = function(p) return GuildOS:CreateCalendarSub(p) end,
-        activity = BuildActivitySub, bulletin = BuildBulletinSub, polls = BuildPollsSub, cta = BuildCallToArmsSub,
+        activity = BuildActivitySub, bulletin = BuildBulletinSub, cta = BuildCallToArmsSub,
         rules = BuildGuildRulesSub,
         chat = function(p) return GuildOS:CreateGuildChatFeed(p, GAP) end,
         journal = function(p) return GuildOS:CreateJournalPanel(p) end,

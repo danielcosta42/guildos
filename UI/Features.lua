@@ -64,7 +64,7 @@ UI:RegisterFeature({
 -- feature is present and switched on.
 UI:RegisterFeature({
     id = "guild", label = L["Guild"], order = 50,
-    subs = { "achievements", "calendar", "activity", "bulletin", "cta", "polls", "chat", "journal" },
+    subs = { "achievements", "calendar", "activity", "bulletin", "cta", "chat", "journal" },
     build = function(c, win) GuildOS:CreateGuildHub(c, win) end,
 })
 

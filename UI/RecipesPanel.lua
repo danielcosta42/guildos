@@ -99,11 +99,6 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     local searchBox = UI:CreateInput(topBar, 220, 24, { max = 50, placeholder = L["Search recipes..."] })
     searchBox:SetPoint("TOPRIGHT", 0, 0)
 
-    -- Realm-wide crafter finder (guild + mesh) — opens the CraftFinder popup.
-    local realmBtn = UI:CreateButton(topBar, L["Find a Crafter"], 120, 24)
-    realmBtn:SetPoint("RIGHT", searchBox, "LEFT", -8, 0)
-    realmBtn:SetScript("OnClick", function() GuildOS:ShowCraftFinder() end)
-
     -- Profession filter buttons row
     -- Anchored on the left only: UI:FlowBar reads GetWidth to decide where
     -- to wrap, and a frame pinned on both sides reports a stale width in

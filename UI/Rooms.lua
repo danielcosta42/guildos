@@ -24,7 +24,6 @@ UI.ROOMS = {
         { id = "bulletin", label = L["Notices"],      feature = "guild", sub = "bulletin" },
         { id = "rules",    label = L["Rules"],        feature = "guild", sub = "rules" },
         { id = "cta",      label = L["Call to Arms"], feature = "guild", sub = "cta" },
-        { id = "polls",    label = L["Polls"],        feature = "guild", sub = "polls" },
         { id = "chat",     label = L["Chat"],         feature = "guild", sub = "chat" },
         { id = "alliance", label = L["Alliance"],     feature = "alliance" },
         { id = "veil",     label = L["Secret Santa"], feature = "winterveil" },
@@ -55,6 +54,9 @@ UI.ROOMS = {
     } },
     { id = "workshop", label = L["Workshop"], entries = {
         { id = "crafts",   label = L["Crafts"],   feature = "recipes" },
+        -- Not a screen: who crafts an item on the whole realm, the guild's crafters first (audit B27).
+        { id = "realm",    label = L["Search the realm"], feature = "recipes",
+          run = function() if GuildOS.ShowCraftFinder then GuildOS:ShowCraftFinder() end end },
         { id = "bank",     label = L["Bank"],     feature = "bank", sub = "inventory" },
         { id = "tabs",     label = L["Tabs"],     feature = "bank", sub = "tabs" },
         { id = "ledger",   label = L["Ledger"],   feature = "bank", sub = "ledger" },
