@@ -961,7 +961,10 @@ check(f.selector.label.text == "Salão \194\187", "the selector names the open r
 check(f.selector.variant == "ghost", "the selector is a ghost button")
 check(g.tab == "raids", "the switch to Home is not remembered as a choice")
 fire(f.selector, "OnClick")
+menuItems = UI.lastMenuItems or {}
 check(#menuItems == allowedCount(f), "the selector lists every room")
+check(GuildOSTabMenu and GuildOSTabMenu.shown and GuildOSTabMenu.points[1][2] == f.selector, "in the addon's own menu, under the selector")
+GuildOSTabMenu:Hide()
 do
   local salao
   for _, item in ipairs(menuItems) do if item.text == "Salão" then salao = item end end
@@ -985,6 +988,8 @@ for _, b in ipairs(f.entryTabs) do if b.shown then entryShown = entryShown + 1 e
 check(f.entryMore.shown and #f.entryOverflow > 0 and entryShown + #f.entryOverflow == #UI:RoomEntries("salao"),
   "a narrow window folds the Salão's entries into »n, none lost")
 fire(f.entryMore, "OnClick")
+menuItems = UI.lastMenuItems or {}
+GuildOSTabMenu:Hide()
 check(#menuItems == #f.entryOverflow and menuItems[1].text == f.entryOverflow[1].label, "»n lists the folded entries")
 resize(f, 700)
 -- An officer demoted with the Officers' Room open leaves it.
@@ -1079,6 +1084,7 @@ f:UpdateTabVisibility()
 resize(f, 700, 620)
 resize(f, 500)
 fire(f.selector, "OnClick")
+menuItems = UI.lastMenuItems or {}
 for _, item in ipairs(menuItems) do if item.text == "Members" then item.func() end end
 check(f.activeTab == "roster" and g.tab == "roster" and g.room == "members", "a room picked from the selector opens and is remembered")
 resize(f, 900)
@@ -1087,18 +1093,29 @@ check(f.band == "wide" and f.activeTab == "roster", "and stays open when the win
 -- ── Bar ─────────────────────────────────────────────────────────────────
 resize(f, 1000, 620)
 fire(f.grip, "OnMouseDown")
+check(f.resizeBounds and f.resizeBounds[1] > 420, "an open window's grip stops at the watch band")
 resize(f, 400, 620)
+fire(f.grip, "OnMouseUp")
+flush()
+check(not g.collapsed and f.w > 420 and f.h == 620 and f.band == "watch",
+  "dragged narrower anyway, it stays open at the narrowest open width: only minimise folds it")
+check(f.resizeBounds[1] == 320, "and the grip's bounds go back")
+resize(f, 1000, 620)
+fire(f.minimise, "OnClick")
 check(f.band == "bar" and not f.rule.shown and not f.content.shown and not f.footer.shown,
-  "under 420px only the title bar stays")
+  "folded, only the title bar stays")
 check(f.summaryText.shown and not f.metaText.shown and f.summaryText.text == A:BarText(),
   "with the three numbers in place of the meta line")
 check(f.minimise.x.text == "+" and point(f.closeButton) == "RIGHT,-18,0",
   "the dash becomes the way back out, and close clears the grip")
-fire(f.grip, "OnMouseUp")
-flush()
-check(f.h == 28 and g.collapsed and g.restoreW == 1000 and g.restoreH == 620, "let go in the bar: 28px tall, the old size kept")
-check(g.w == 400 and g.h == 28 and g.left and g.top, "and the fold is saved")
+check(f.h == 28 and g.collapsed and g.restoreW == 1000 and g.restoreH == 620, "28px tall, the old size kept")
+check(g.h == 28 and g.left and g.top, "and the fold is saved")
 check(f.points[1][1] == "TOPLEFT", "it folds from its top-left corner")
+check(f.summaryHit and f.summaryHit.shown, "the numbers take the pointer")
+fire(f.summaryHit, "OnEnter")
+fire(f.summaryHit, "OnClick")
+check(not g.collapsed and f.band ~= "bar", "and a click on them opens the window back up")
+fire(f.minimise, "OnClick")
 fire(f.minimise, "OnClick")
 check(f.w == 1000 and f.h == 620 and not g.collapsed and f.band == "full", "the bar opens back to that size, laid out at once")
 check(g.w == 1000 and g.h == 620, "and that size is saved")
@@ -1129,9 +1146,8 @@ fire(f.grip, "OnMouseDown")
 resize(f, 350)
 fire(f.grip, "OnMouseUp")
 flush()
-check(g.restoreW == 430 and g.restoreH == 500, "the size kept is the one the drag started from")
-fire(f.minimise, "OnClick")
-check(f.w == 452 and f.h == 500 and f.band == "watch", "the way back out always lands past the bar band")
+check(not g.collapsed and f.w == 452 and f.h == 500 and f.band == "watch",
+  "an open window dragged under the bar band stays open, at the width that clears it")
 resize(f, 1000, 620)
 fire(f.minimise, "OnClick")
 fire(f.grip, "OnMouseDown")

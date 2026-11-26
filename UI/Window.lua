@@ -29,6 +29,9 @@ local NAME         = "GuildOSWindow"
 local DEFAULT_W    = 1000
 local DEFAULT_H    = 620
 local MIN_W        = 320
+-- The narrowest a drag of the grip leaves an open window: its content still in the watch band. Only the
+-- minimise button folds it to the bar; a window made small by hand used to fold and read as closed.
+local DRAG_MIN_W   = 420 + 16 + 2 * 8   -- past the watch band by the ladder's hysteresis
 local BAR_H        = 28      -- the whole window in the bar band
 local TITLE_H      = 50      -- the title bar: crest, guild, rooms and tools (the mockup's .bar)
 local EDGE         = 3       -- the metal frame's width, inside the window's edge
@@ -268,43 +271,89 @@ end
 ----------------------------------------------------------------------
 -- The tab menu: the "»n" overflow, and the one-line selector under 520px.
 ----------------------------------------------------------------------
+-- Drawn as every menu of the addon (UI:PaintMenu, UI:MenuRow; #449): the dark rounded panel under the
+-- button, a row per item, the current one marked, a click elsewhere or Escape closes it. The game's
+-- UIDropDownMenu drew a square grey list over the window, its highlight off the rows.
+local MENU_ROW, MENU_PAD, MENU_MIN = 24, 4, 140
 local menu
-local function showTabMenu(f, anchor, keys)
-    if #keys == 0 then return end
-    menu = menu or CreateFrame("Frame", "GuildOSTabMenu", UIParent, "UIDropDownMenuTemplate")
-    UIDropDownMenu_Initialize(menu, function(_, level)
-        for _, key in ipairs(keys) do
-            local info = UIDropDownMenu_CreateInfo()
-            local room = UI:RoomById(key)
-            info.text = room and room.label or key
-            info.checked = (key == f.activeRoom)
-            info.func = function()
-                f:OpenRoom(key, true)
-                CloseDropDownMenus()
-            end
-            UIDropDownMenu_AddButton(info, level)
+local function closeMenu()
+    if menu then menu:Hide(); menu.catcher:Hide() end
+end
+local function buildMenu()
+    menu = CreateFrame("Frame", "GuildOSTabMenu", UIParent, "BackdropTemplate")
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")
+    menu:SetFrameLevel(20)
+    menu:EnableMouse(true)
+    menu:SetClampedToScreen(true)
+    UI:PaintMenu(menu)
+    menu:Hide()
+    if UISpecialFrames then table.insert(UISpecialFrames, "GuildOSTabMenu") end
+    local catcher = CreateFrame("Button", nil, UIParent)
+    catcher:SetAllPoints(UIParent)
+    catcher:SetFrameStrata("FULLSCREEN_DIALOG")
+    catcher:SetFrameLevel(10)
+    catcher:EnableMouse(true)
+    if catcher.RegisterForClicks then catcher:RegisterForClicks("AnyUp") end
+    catcher:SetScript("OnClick", closeMenu)
+    catcher:Hide()
+    menu.catcher = catcher
+    menu:SetScript("OnHide", function() catcher:Hide() end)
+    menu.rows = {}
+    return menu
+end
+-- items: { text, checked, func }. The list is kept on UI.lastMenuItems (what the tests read).
+local function showListMenu(anchor, items)
+    if #items == 0 then return end
+    local m = menu or buildMenu()
+    if m:IsShown() and m.anchor == anchor then closeMenu(); return end
+    m.anchor = anchor
+    UI.lastMenuItems = items
+    local w = MENU_MIN
+    for i, item in ipairs(items) do
+        local row = m.rows[i]
+        if not row then
+            row = UI:MenuRow(m, MENU_ROW)
+            m.rows[i] = row
         end
-    end, "MENU")
-    ToggleDropDownMenu(1, nil, menu, anchor, 0, 0)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", m, "TOPLEFT", MENU_PAD, -(MENU_PAD + (i - 1) * MENU_ROW))
+        row:SetPoint("TOPRIGHT", m, "TOPRIGHT", -MENU_PAD, -(MENU_PAD + (i - 1) * MENU_ROW))
+        row.label:SetText(item.text or "")
+        row:SetChosen(item.checked)
+        row:SetScript("OnClick", function()
+            closeMenu()
+            if item.func then item.func() end
+        end)
+        row:Show()
+        w = math.max(w, math.ceil(tonumber(row.label:GetStringWidth()) or 0) + 30)
+    end
+    for i = #items + 1, #m.rows do m.rows[i]:Hide() end
+    m:SetSize(w + 2 * MENU_PAD, #items * MENU_ROW + 2 * MENU_PAD)
+    m:ClearAllPoints()
+    m:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)
+    m.catcher:Show()
+    m:Show()
+end
+
+-- The rooms: the "»n" overflow, and the one-line selector under 520px.
+local function showTabMenu(f, anchor, keys)
+    local items = {}
+    for _, key in ipairs(keys) do
+        local room = UI:RoomById(key)
+        items[#items + 1] = { text = room and room.label or key, checked = (key == f.activeRoom),
+            func = function() f:OpenRoom(key, true) end }
+    end
+    showListMenu(anchor, items)
 end
 
 -- The entries that did not fit on the row, under its "»n".
 local function showEntryMenu(f, anchor, entries)
-    if #entries == 0 then return end
-    menu = menu or CreateFrame("Frame", "GuildOSTabMenu", UIParent, "UIDropDownMenuTemplate")
-    UIDropDownMenu_Initialize(menu, function(_, level)
-        for _, e in ipairs(entries) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = e.label
-            info.checked = (f.activeEntry and f.activeEntry.id == e.id) or false
-            info.func = function()
-                f:SelectEntry(f.activeRoom, e, true)
-                CloseDropDownMenus()
-            end
-            UIDropDownMenu_AddButton(info, level)
-        end
-    end, "MENU")
-    ToggleDropDownMenu(1, nil, menu, anchor, 0, 0)
+    local items = {}
+    for _, e in ipairs(entries) do
+        items[#items + 1] = { text = e.label, checked = (f.activeEntry and f.activeEntry.id == e.id) or false,
+            func = function() f:SelectEntry(f.activeRoom, e, true) end }
+    end
+    showListMenu(anchor, items)
 end
 
 ----------------------------------------------------------------------
@@ -437,6 +486,27 @@ local function createWindow()
     summary:SetPoint("RIGHT", minimise, "LEFT", -6, 0)
     summary:Hide()
     f.summaryText = summary
+    -- The folded bar's three numbers, unlabelled to fit: the pointer on them says what they are, and a
+    -- click opens the window back up.
+    local summaryHit = CreateFrame("Button", nil, bar)
+    summaryHit:SetPoint("TOPLEFT", summary, "TOPLEFT", 0, 4)
+    summaryHit:SetPoint("BOTTOMRIGHT", summary, "BOTTOMRIGHT", 0, -4)
+    summaryHit:Hide()
+    summaryHit:SetScript("OnClick", function() f:ToggleCollapsed() end)
+    summaryHit:SetScript("OnEnter", function(self)
+        local A = GuildOS.Agora
+        if not (A and GameTooltip) then return end
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Guild OS")
+        GameTooltip:AddLine(string.format(L["%d online"], tonumber(A:OnlineCount()) or 0), 1, 1, 1)
+        local raid = A:NextRaid()
+        GameTooltip:AddLine(L["Next raid"] .. ": " .. (raid and A.Short(raid.when - GetServerTime()) or "\226\128\148"), 1, 1, 1)
+        GameTooltip:AddLine(string.format(L["Waiting on you: %d"], #A:NeedsMe()), 1, 1, 1)
+        GameTooltip:AddLine(L["Click to open the window."], C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        GameTooltip:Show()
+    end)
+    summaryHit:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    f.summaryHit = summaryHit
 
     ------------------------------------------------------------------
     -- The rooms: doors in the title bar (the mockup's .door), "»n" and the one-line selector
@@ -659,13 +729,21 @@ local function createWindow()
     grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
     grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    local function bounds(w, h)
+        if f.SetResizeBounds then f:SetResizeBounds(w, h)
+        elseif f.SetMinResize then f:SetMinResize(w, h) end
+    end
     grip:SetScript("OnMouseDown", function()
         pinTopLeft(f)
         f.sizingFrom = { f:GetWidth(), f:GetHeight() }
+        f.sizingFolded = store().collapsed and true or false
+        -- Open, it stops at the watch band; folded, it stays the bar it is.
+        if not f.sizingFolded then bounds(DRAG_MIN_W, 240) end
         f:StartSizing("BOTTOMRIGHT")
     end)
     grip:SetScript("OnMouseUp", function()
         f:StopMovingOrSizing()
+        bounds(MIN_W, BAR_H)
         f:Settle()
     end)
     f.grip = grip
@@ -1126,6 +1204,7 @@ local function createWindow()
         w = w or self:GetWidth() or 0
         local isBar = self.band == "bar"
         summary:SetShown(isBar)
+        summaryHit:SetShown(isBar)
         crest:SetShown(not isBar)
         guildName:SetShown(not isBar)
         meta:SetShown(not isBar)
@@ -1232,6 +1311,16 @@ local function createWindow()
         local g = store()
         pinTopLeft(self)
         local band = UI:ResolveBand(contentWidth(self:GetWidth()), self.band)
+        -- An open window dragged narrow (a client that let the grip past its bounds) stays open, at the
+        -- narrowest open width: folding is the minimise button's.
+        if band == "bar" and not g.collapsed and self.sizingFrom and not self.sizingFolded then
+            self:SetWidth(DRAG_MIN_W)
+            if (tonumber(self:GetHeight()) or 0) < 240 then self:SetHeight(240) end
+            self.sizingFrom, self.sizingFolded = nil, nil
+            UI:SaveWindowGeometry(self)
+            self:Layout(self:GetWidth())
+            return
+        end
         if band == "bar" then
             if not g.collapsed then
                 local from = self.sizingFrom
@@ -1244,7 +1333,7 @@ local function createWindow()
             g.collapsed = nil
             self:SetHeight(g.restoreH or DEFAULT_H)
         end
-        self.sizingFrom = nil
+        self.sizingFrom, self.sizingFolded = nil, nil
         UI:SaveWindowGeometry(self)
     end
 
