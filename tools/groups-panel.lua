@@ -355,6 +355,14 @@ Board:Refresh()
 -- Step 1: what it is for, as cards (the two boxes start as saved: both off here)
 Board:SetPref("autoInvite", false)
 Board:SetPref("postToGuild", false)
+-- In combat neither form opens: the lists stay.
+do
+  local realCombat = GuildOS.InCombat
+  GuildOS.InCombat = function() return true end
+  click(panel, "+ Form a group")
+  check(formOf("isGroupForm") == nil and cardTitled(panel, "Groups being formed") ~= nil, "in combat, Form a group does not open")
+  GuildOS.InCombat = realCombat
+end
 click(panel, "+ Form a group")
 local fg = formOf("isGroupForm")
 check(fg ~= nil and fg.isCard, "Form a group turns the left column into the form, a parchment card")

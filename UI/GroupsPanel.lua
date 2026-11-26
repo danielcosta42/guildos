@@ -1989,6 +1989,8 @@ function GuildOS:CreateGroupsPanel(parent)
 
     -- Form a group: on the cards, or, leading one already, on its spots and times to change.
     openGroupForm = function()
+        -- Not in combat: a form takes the keyboard and the screen, and nothing waits on it mid-fight.
+        if GuildOS:InCombat() then GuildOS:Print(L["Not during combat."]); return end
         local group = G:Mine()
         V.form, V.hint = "group", ""
         V.ttl = B:_ClampTtl(GuildOS.db.lfgPrefs.lastTtl)
@@ -2015,6 +2017,7 @@ function GuildOS:CreateGroupsPanel(parent)
 
     -- I am looking: on what I have listed, or on nothing (anything) with the roles I play.
     openSeekForm = function()
+        if GuildOS:InCombat() then GuildOS:Print(L["Not during combat."]); return end
         local listing = B:Mine()
         V.form = "seek"
         V.acts = {}
