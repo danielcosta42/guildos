@@ -983,6 +983,25 @@ check(f.sideNav.shown, "with room again, the side bar comes back")
 -- A sub-tab the screen opens itself (a button inside it) is the entry the room marks and remembers.
 f.tabPanels.management.OnSubChanged("ban")
 check(f.activeEntry.id == "ban" and g.entries.officers == "ban", "a sub-tab opened from inside the screen moves the mark")
+-- Switching screens is no choice of a sub-tab: the hub's old sub-tab showing on the way must not overwrite
+-- another room's memory (the Guild hub lives in the Salão, Raids and the Chronicle).
+do
+  local guild = f.tabPanels.guild
+  local realShown = guild.SetShown
+  -- The stub fires no OnShow for children: the hub's left-over sub-tab reports itself as the client would.
+  guild.SetShown = function(self, v)
+    realShown(self, v)
+    if v and f.switching ~= nil and guild.OnSubChanged then guild.OnSubChanged("bulletin") end
+  end
+  UI:OpenWindow("guild", "bulletin")
+  fire(tabOf(f, "salao"), "OnClick")
+  for _, b in ipairs(f.entryTabs) do if b.shown and b.entry.id == "home" then fire(b, "OnClick") end end
+  check(g.entries.salao == "home", "the Salão remembers Home")
+  UI:OpenWindow("guild", "calendar")
+  check(g.entries.salao == "home" and f.activeEntry.id == "calendar",
+    "opening Raids' Calendar leaves the Salão's memory alone")
+  guild.SetShown = realShown
+end
 -- A deep link to a sub-tab this player may not open falls back to the screen's default.
 officer = false
 f:UpdateTabVisibility()

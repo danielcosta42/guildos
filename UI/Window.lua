@@ -487,7 +487,11 @@ local function createWindow()
             local room, entry = UI:RoomOf(key)
             self.activeRoom, self.activeEntry = room and room.id, entry
         end
+        -- Showing a hub fires OnShow on the sub-tab it was left on, not the entry's: that is no choice of the
+        -- player, so FollowSub ignores it while the panels switch.
+        self.switching = true
         for k, p in pairs(self.tabPanels) do p:SetShown(k == key) end
+        self.switching = nil
         if panel.SetSubBarShown then panel.SetSubBarShown(not (self.activeEntry and self.activeEntry.sub)) end
         self:LayoutTabs()
         return true
@@ -534,6 +538,7 @@ local function createWindow()
     -- remembers the entry that names it, when there is one. Nothing changes while another screen is open.
     function f:FollowSub(feature, sub)
         local e = self.activeEntry
+        if self.switching then return end
         if self.activeTab ~= feature or not (e and e.feature == feature and e.sub) or e.sub == sub then return end
         local r2, e2 = UI:RoomOf(feature, sub)
         if not (e2 and e2.sub == sub) then return end
