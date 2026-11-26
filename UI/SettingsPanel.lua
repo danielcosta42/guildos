@@ -1151,7 +1151,7 @@ function GuildOS:CreateSettingsPanel(parent, _mainFrame)
     -- The Settings button's entries open these pages themselves (#445).
     UI:CollapsibleSubBar(parent, bar, function()
         local t = {}
-        for _, info in pairs(parent.subPanels) do t[#t + 1] = info.scroll end
+        for key, info in pairs(parent.subPanels) do t[key] = info.scroll end
         return t
     end, { 2, -10 })
 

@@ -967,12 +967,29 @@ for _, e in ipairs(UI:RoomEntries("raids")) do if e.id == "cores" then coresList
 check(not coresListed, "a member's Raids has no Cores entry")
 officer = true
 f:UpdateTabVisibility()
+resize(f, 1000, 620)
 slash("open management inactive")
 local sideActive
 for _, b in ipairs(f.sideBtns) do if b.shown and b.isActive then sideActive = b end end
 check(f.sideNav.shown and not f.entryRow.shown and sideActive and sideActive.entry.id == "inactive",
   "the Officers' Room lists its entries in a side bar, the open one marked")
-check(f.content.points[1][2] > 12, "and the content starts right of it")
+check(f.content.points[#f.content.points - 1][2] > 12 or f.content.points[1][2] > 12, "and the content starts right of it")
+resize(f, 700, 620)
+check(not f.sideNav.shown and f.entryRow.shown, "narrow, the side bar folds into the row: the content keeps its width")
+resize(f, 1000, 380)
+check(not f.sideNav.shown and f.entryRow.shown, "and so it does in a window too short for every row")
+resize(f, 1000, 620)
+check(f.sideNav.shown, "with room again, the side bar comes back")
+-- A sub-tab the screen opens itself (a button inside it) is the entry the room marks and remembers.
+f.tabPanels.management.OnSubChanged("ban")
+check(f.activeEntry.id == "ban" and g.entries.officers == "ban", "a sub-tab opened from inside the screen moves the mark")
+-- A deep link to a sub-tab this player may not open falls back to the screen's default.
+officer = false
+f:UpdateTabVisibility()
+check(UI:OpenWindow("raids", "cores") and f.activeEntry.id == "sessions", "a member's link to Cores opens Sessions")
+officer = true
+f:UpdateTabVisibility()
+resize(f, 700, 620)
 resize(f, 500)
 fire(f.selector, "OnClick")
 for _, item in ipairs(menuItems) do if item.text == "Members" then item.func() end end

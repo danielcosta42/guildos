@@ -164,7 +164,15 @@ The Officers' Room groups:
   - `cond`: the entry needs its module to be there.
   - `group`: the entry's heading in a side room.
 - **The Officers' Room draws a side bar.** It has sixteen entries, so it draws a column in groups left of
-  the content instead of the row. Narrowed into the watch band, it falls back to the folding row.
+  the content instead of the row.
+  - The bar shows only while the content keeps a table's width beside it (the medium band and up) and the
+    window is tall enough for every row.
+  - Otherwise the room folds into the row like any other.
+- **The mark follows the screen.** When a screen shows another sub-tab itself, the room marks and remembers
+  that entry (`OnSubChanged`). Examples: Bank's right-click opens Requests; the Rule page's link opens
+  Accounts.
+- **A deep link to a refused sub-tab falls back to the default.** A member's `/gos open raids cores`, or a
+  link to an absent module's page, lands on the screen's default sub-tab instead of opening nothing.
 - **A feature opened by name alone** lands on the sub-tab it opened on before (`UI.ROOM_PREFERRED`):
   - Raids: Sessions;
   - Loot: Rule;

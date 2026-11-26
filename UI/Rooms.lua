@@ -208,7 +208,9 @@ function UI:RoomOf(id, sub)
     local function first(test)
         for _, hit in ipairs(found) do if test(hit[2]) then return hit end end
     end
-    local hit = (sub and first(function(e) return e.sub == sub end)) or first(function(e) return not e.sub end)
+    -- A sub-tab this player may not open (a member's Cores, an absent module) falls through to the default.
+    local hit = (sub and first(function(e) return e.sub == sub and self:EntryAllowed(e) end))
+        or first(function(e) return not e.sub end)
     -- A hub split over rooms, opened by name alone, lands where the hub itself opened before the rooms.
     if not hit and self.ROOM_PREFERRED[id] then
         for _, want in ipairs(self.ROOM_PREFERRED[id]) do

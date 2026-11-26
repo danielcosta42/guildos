@@ -1159,16 +1159,19 @@ end
 -- 1px rule. No box around it.
 -- A screen's own sub-tab bar that a room may hide (specs/salao, #445): opened from a room entry that names one of
 -- its sub-tabs, the room's row is the only row of tabs. `frames()` returns the sub-panels (frames, or records
--- with a `panel`); `under` is where each starts under the bar, { x, y } from its bottom-left. Hidden, they
--- start where the bar's top-left is. host.PlaceUnderSubBar(frame) anchors one by the same rule.
+-- with a `panel`), keyed by sub-tab; `under` is where each starts under the bar, { x, y } from its bottom-left.
+-- Hidden, they start where the bar's top-left is (the same x). host.PlaceUnderSubBar(frame) anchors one by the
+-- same rule. A sub-panel shown by the screen itself (a button that opens another sub-tab) reports its key to
+-- host.OnSubChanged, so the room marks the entry actually on screen.
 function Helpers:CollapsibleSubBar(host, bar, frames, under)
     local shown = true
     local ux, uy = under and under[1] or 0, under and under[2] or 0
+    local function frameOf(p) return (type(p) == "table" and rawget(p, "panel")) or p end
     local function place(f)
         if shown then
             f:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", ux, uy)
         else
-            f:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+            f:SetPoint("TOPLEFT", bar, "TOPLEFT", ux, 0)
         end
     end
     host.PlaceUnderSubBar = place
@@ -1178,8 +1181,14 @@ function Helpers:CollapsibleSubBar(host, bar, frames, under)
         shown = v
         bar:SetShown(v)
         for _, p in pairs(frames()) do
-            local f = (type(p) == "table" and rawget(p, "panel")) or p
+            local f = frameOf(p)
             if f then place(f) end
+        end
+    end
+    for key, p in pairs(frames()) do
+        local f = frameOf(p)
+        if f and f.HookScript and type(key) == "string" then
+            f:HookScript("OnShow", function() if host.OnSubChanged then host.OnSubChanged(key) end end)
         end
     end
 end

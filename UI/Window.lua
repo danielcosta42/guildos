@@ -471,6 +471,7 @@ local function createWindow()
         if not panel.built then
             panel.built = true
             panel.buildFailed = not GuildOS:RunStartup("Tab:" .. key, nil, def.build, panel, self)
+            panel.OnSubChanged = function(sub) self:FollowSub(key, sub) end
         end
         if panel.buildFailed then
             GuildOS:Print(string.format(L["%s could not start on this client. Type /guildos errors for details."], def.label))
@@ -527,6 +528,21 @@ local function createWindow()
             end
         end
         return true
+    end
+
+    -- The panel showed sub-tab `sub` itself (a button inside it, the hub's own fallback): the room marks and
+    -- remembers the entry that names it, when there is one. Nothing changes while another screen is open.
+    function f:FollowSub(feature, sub)
+        local e = self.activeEntry
+        if self.activeTab ~= feature or not (e and e.feature == feature and e.sub) or e.sub == sub then return end
+        local r2, e2 = UI:RoomOf(feature, sub)
+        if not (e2 and e2.sub == sub) then return end
+        self.activeRoom, self.activeEntry = r2.id, e2
+        local g = store()
+        g.room = r2.id
+        g.entries = type(g.entries) == "table" and g.entries or {}
+        g.entries[r2.id] = e2.id
+        self:LayoutTabs()
     end
 
     -- A room from its tab: the entry it was left on, else its first.
@@ -614,7 +630,20 @@ local function createWindow()
             if self.tabPanels[e.feature] then list[#list + 1] = e end
         end
         local room = self.activeRoom and UI:RoomById(self.activeRoom)
-        local side = room and room.side and #list > 0 and self.band ~= "bar" and self.band ~= "watch" and true or false
+        local top, pad = self.layoutTop or 0, self.layoutPad or PAD
+        -- The side bar only while it fits: the content keeps a table's width beside it (medium and up), and the
+        -- window is tall enough for every row; otherwise the room folds into the row like any other.
+        local side = false
+        if room and room.side and #list > 0 and (self.band == "full" or self.band == "wide" or self.band == "medium") then
+            local need, groups, seen = 6, 0, {}
+            for _, e in ipairs(list) do
+                if e.group and not seen[e.group] then seen[e.group] = true; groups = groups + 1 end
+                need = need + SIDE_ROW
+            end
+            need = need + groups * SIDE_HEAD + math.max(0, groups - 1) * 6
+            local room_h = (self:GetHeight() or 0) - (top + RULE_H + 2 * pad + footLift + FOOT_H)
+            side = need <= room_h
+        end
         sideNav:SetShown(side)
         for _, b in ipairs(self.sideBtns) do b:Hide() end
         for _, h in ipairs(self.sideHeads) do h:Hide() end
@@ -623,7 +652,6 @@ local function createWindow()
         for _, btn in ipairs(self.entryTabs) do btn:Hide() end
         entryMore:Hide()
         self.entryOverflow = {}
-        local top, pad = self.layoutTop or 0, self.layoutPad or PAD
         if rowShown then
             entryRow:ClearAllPoints()
             entryRow:SetPoint("TOPLEFT", 0, -(top + RULE_H))
