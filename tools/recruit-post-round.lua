@@ -10,7 +10,7 @@
 --     one key press come back, then all at once;
 --   * a saved name finds the joined channel in any case, and AddChannel saves the game's spelling;
 --   * the same channel saved twice is posted to once;
---   * every round ends with one line: "Posted in: [3] ... · Not joined: ... · Waiting for a key press: ...";
+--   * every round ends with one line: "Sent to: [3] ... · Not joined: ... · Waiting for a key press: ...";
 --   * the consent popup's button says "Post (1 of 3)" where a click carries one channel.
 --
 --   luajit -e 'ADDON="."' tools/recruit-post-round.lua
@@ -116,67 +116,23 @@ local R, AQ = load("anniversary", MAINTAINER, SAVED)
 check(R:PostsPerClick() == math.huge, "Anniversary: one click carries every channel")
 R:DoSendRecruitmentMessage()
 check(nums() == "3,4,5" and AQ:Pending() == 0, "Anniversary posts to all three at once, LookingforGuild included")
-check(has(last(), "Posted in: [3] LookingForGroup, [4] Trade, [5] LookingForGuild") and not has(last(), "Waiting"),
+check(has(last(), "Sent to: [3] LookingForGroup, [4] Trade, [5] LookingForGuild") and not has(last(), "Waiting"),
   "and says where: " .. last())
 check(R:PostButtonText(3) == "Post", "the popup's button is plain Post")
 
--- ── Forever: the first now, the rest one per key press ─────────────────
-R, AQ = load("forever", MAINTAINER, SAVED)
-check(R:PostsPerClick() == 1, "Forever: one channel line per key press")
-check(R:PostButtonText(3) == "Post (1 of 3)" and R:PostButtonText(1) == "Post", "the popup's button: Post (1 of 3)")
-R:DoSendRecruitmentMessage()
-check(nums() == "3" and AQ:Pending() == 2, "the click posts to the first channel, the other two wait")
-check(last() == "Posted in: [3] LookingForGroup \194\183 Waiting for a key press: Trade, LookingForGuild",
-  "the round's line: " .. last())
-local item = AQ:Peek(true)
-check(item and item.kind == "channel" and item.name == "Trade", "the next one is Trade, a channel action")
-local prompt = AQ:PromptText()
-check(has(prompt, "post the ad in Trade") and has(prompt, "1 more"), "the toast: " .. prompt)
-AQ:Next(true)
-check(nums() == "3,4" and AQ:Pending() == 1, "one key press posts to Trade, and only to Trade")
-check(last() == "Posted in: [4] Trade \194\183 Waiting for a key press: LookingForGuild", "and says what is left: " .. last())
-check(has(AQ:PromptText(), "post the ad in LookingForGuild") and not has(AQ:PromptText(), "more"),
-  "the toast now names LookingForGuild alone")
-AQ:Next(true)
-check(nums() == "3,4,5" and AQ:Pending() == 0, "the next key press posts to LookingForGuild, the one that was missed")
-check(last() == "Posted in: [5] LookingForGuild", "and the line ends the round: " .. last())
-check(env.sent[3].msg == "Filhos da Horda recruta" and env.sent[3].chan == "CHANNEL", "the same ad, to the channel")
-
--- A new round replaces what the last one left waiting.
-R, AQ = load("forever", MAINTAINER, SAVED)
-R:DoSendRecruitmentMessage()
-R._lastSendAt = nil
-env.clock = env.clock + 600
-R:DoSendRecruitmentMessage()
-check(nums() == "3,3" and AQ:Pending() == 2, "a second round queues its channels once, not twice")
-
--- The player left a queued channel before its key press.
-R, AQ = load("forever", MAINTAINER, SAVED)
-R:DoSendRecruitmentMessage()
-env.joined = { { 3, "LookingForGroup" }, { 5, "LookingForGuild" } }
-AQ:Next(true)
-check(nums() == "3" and last() == "Not joined: Trade \194\183 Waiting for a key press: LookingForGuild",
-  "a channel left meanwhile is named as not joined: " .. last())
-
--- The probe heard a second channel line from one key press: then all at once.
-R, AQ = load("forever", MAINTAINER, SAVED)
-GuildOSDB.probeInvite = { build = GuildOS.Client.build, results = { channelTwice = { click = true } } }
-check(R:PostsPerClick() == math.huge and R:PostButtonText(3) == "Post", "a measured second line lifts the limit")
-R:DoSendRecruitmentMessage()
-check(nums() == "3,4,5" and AQ:Pending() == 0, "and the round posts everywhere on the click")
-GuildOSDB.probeInvite = { build = "1", results = { channelTwice = { click = true } } }
-check(R:PostsPerClick() == 1, "a measurement from another build does not count")
-
--- Retail also wants a key press per channel line.
-R, AQ = load("retail", MAINTAINER, SAVED)
-R:DoSendRecruitmentMessage()
-check(nums() == "3" and AQ:Pending() == 2, "retail: the first now, the rest queued")
+-- ── Forever and retail: one click posts everywhere too (the maintainer, #449) ──
+for _, game in ipairs({ "forever", "retail" }) do
+  R, AQ = load(game, MAINTAINER, SAVED)
+  check(R:PostsPerClick() == math.huge and R:PostButtonText(3) == "Post", game .. ": one click carries every channel")
+  R:DoSendRecruitmentMessage()
+  check(nums() == "3,4,5" and AQ:Pending() == 0, game .. ": all three at once, nothing queued")
+end
 
 -- ── Not joined, and only the parts that apply ──────────────────────────
 R, AQ = load("forever", { { 3, "LookingForGroup" } }, { "LookingForGroup", "General" })
 R:DoSendRecruitmentMessage()
 check(nums() == "3" and AQ:Pending() == 0, "a channel the player is not in is neither posted nor queued")
-check(last() == "Posted in: [3] LookingForGroup \194\183 Not joined: General", "the line: " .. last())
+check(last() == "Sent to: [3] LookingForGroup \194\183 Not joined: General", "the line: " .. last())
 R, AQ = load("anniversary", {}, { "General" })
 R:DoSendRecruitmentMessage()
 check(nums() == "" and has(env.printed[#env.printed - 1] or "", "Not joined: General")
@@ -211,7 +167,7 @@ check(R:AddChannel(list, "myChannel") and list[2] == "myChannel", "a channel not
 R, AQ = load("forever", MAINTAINER, { "LookingforGuild", "LookingForGuild", "lookingforguild", "Trade" })
 local names, joinedN = R:_ResolveChannels(GuildOS.db.recruitment)
 check(#names == 2 and joinedN == 2 and names[1] == "LookingForGuild", "listed once in the popup")
-check(R:PostButtonText(joinedN) == "Post (1 of 2)", "and counted once on its button")
+check(R:PostButtonText(joinedN) == "Post", "and the button is plain Post")
 R:DoSendRecruitmentMessage()
 AQ:Next(true)
 check(nums() == "5,4" and AQ:Pending() == 0, "posted to once: LookingForGuild, then Trade")
@@ -224,5 +180,29 @@ local f = assert(io.open(ADDON .. "/Modules/RecruitmentSystem.lua", "rb"))
 local src = f:read("*a")
 f:close()
 check(src:find("f.postBtn.label:SetText(self:PostButtonText(joined))", 1, true), "ShowSendPopup sets the button's count")
+
+-- The game takes a line and the channel may still not show it (#449): each post waits for its own echo.
+do
+  load("forever", { { 3, "LookingForGroup" }, { 5, "LookingForGuild" } }, { "LookingForGroup", "LookingForGuild" }, true)
+  local R = GuildOS.Recruitment
+  local script, afters = nil, {}
+  CreateFrame = function()
+    local f = {}
+    function f:RegisterEvent() end
+    function f:SetScript(_, fn) script = fn end
+    return f
+  end
+  R._echoFrame, R._echo = nil, nil
+  local realAfter = GuildOS.Compat.After
+  GuildOS.Compat.After = function(_, fn) afters[#afters + 1] = fn end
+  local me = GuildOS.Compat.PlayerName()
+  R:_WatchEcho({ { num = 3, name = "LookingForGroup" }, { num = 5, name = "LookingForGuild" } })
+  script(nil, "CHAT_MSG_CHANNEL", "the ad", me, "", "3. LookingForGroup", "", "", 0, 3)
+  script(nil, "CHAT_MSG_CHANNEL", "spam", "Someone", "", "5. LookingForGuild", "", "", 0, 5)
+  for _, fn in ipairs(afters) do fn() end
+  check(has(last(), "Not shown in: [5] LookingForGuild") and not has(last(), "[3]"),
+    "a post whose line never came back is said to have been dropped; one that did is not: " .. last())
+  GuildOS.Compat.After = realAfter
+end
 
 print(("recruit-post-round: %d checks passed"):format(checks))

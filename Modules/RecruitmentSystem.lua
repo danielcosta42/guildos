@@ -1238,24 +1238,18 @@ end
 -- line (Compat.NeedsHardware("channel"): WoW: Forever and retail, or as /gos debug probe invite measured it), the
 -- maintainer saw a round post to the first channels and not to the last (#449): one line per key press there,
 -- unless the probe heard a second line from the same key press come back. Elsewhere every channel at once.
+-- One click posts in every channel (the maintainer, #449: the channel that stayed empty had dropped the line itself,
+-- which the echo check now says; posting one channel per key press was not the cause and is gone).
 function Recruitment:PostsPerClick()
-    local Compat = GuildOS.Compat
-    if not Compat.NeedsHardware("channel") then return math.huge end
-    local twice = Compat.ProbedHardware("channelTwice")
-    if twice and twice.click == true then return math.huge end
-    return 1
+    return math.huge
 end
 
--- The consent popup's Post button: "Post", or "Post (1 of 3)" when the click carries the first of several.
-function Recruitment:PostButtonText(joined)
-    joined = joined or 0
-    if joined > 1 and self:PostsPerClick() < joined then
-        return string.format(L["Post (1 of %d)"], joined)
-    end
+-- The consent popup's Post button: one click posts in every channel.
+function Recruitment:PostButtonText()
     return L["Post"]
 end
 
--- The line after a post round: "Posted in: [3] LookingForGroup, [4] Trade · Not joined: General · Waiting for a
+-- The line after a post round: "Sent to: [3] LookingForGroup, [4] Trade · Not joined: General · Waiting for a
 -- key press: LookingForGuild", only the parts that apply. `round` = { posted = { {name, num} }, notJoined = { name },
 -- waiting = { name }, iconsOnly = { name } }. Nil when nothing applies.
 function Recruitment:RoundSummary(round)
@@ -1265,7 +1259,7 @@ function Recruitment:RoundSummary(round)
     end
     local posted = {}
     for _, p in ipairs(round.posted or {}) do posted[#posted + 1] = string.format("[%d] %s", p.num, p.name) end
-    list(posted, L["Posted in: %s"])
+    list(posted, L["Sent to: %s"])
     list(round.notJoined, L["Not joined: %s"])
     list(round.iconsOnly, L["Only raid icons, which it hides: %s"])
     list(round.waiting, L["Waiting for a key press: %s"])
@@ -1645,8 +1639,48 @@ function Recruitment:_PostQueued(name, msg)
     return r == "posted"
 end
 
+-- The game takes a channel line and may still not show it (a channel's moderator muted the player, a server spam
+-- filter, a channel that only some may speak in): nothing says so. Each post waits for its own line to come back on
+-- CHAT_MSG_CHANNEL; one that has not after ECHO_WAIT seconds is said to have been dropped (#449).
+Recruitment.ECHO_WAIT = 5
+function Recruitment:_WatchEcho(posted)
+    if not (CreateFrame and GuildOS.Compat.After) then return end
+    self._echo = self._echo or {}
+    local watch = {}
+    for _, p in ipairs(posted or {}) do
+        watch[#watch + 1] = p
+        self._echo[p.num] = { name = p.name, seen = false }
+    end
+    if #watch == 0 then return end
+    if not self._echoFrame then
+        local f = CreateFrame("Frame")
+        GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL")
+        f:SetScript("OnEvent", function(_, _, _, sender, _, _, _, _, _, num)
+            local e = Recruitment._echo and Recruitment._echo[tonumber(num) or -1]
+            if not e or e.seen then return end
+            if GuildOS.Compat.IsSecret and GuildOS.Compat.IsSecret(sender) then return end
+            local me = GuildOS.Compat.PlayerName and GuildOS.Compat.PlayerName()
+            if me and GuildOS.SenderName and GuildOS:SenderName(sender) == me then e.seen = true end
+        end)
+        self._echoFrame = f
+    end
+    GuildOS.Compat.After(self.ECHO_WAIT, function()
+        local dropped = {}
+        for _, p in ipairs(watch) do
+            local e = Recruitment._echo[p.num]
+            if e and not e.seen then dropped[#dropped + 1] = string.format("[%d] %s", p.num, p.name) end
+            Recruitment._echo[p.num] = nil
+        end
+        if #dropped > 0 then
+            GuildOS:Print("|cffFF9900" .. string.format(L["Not shown in: %s. The game took the line but the channel did not show it: you may be muted there, or the server filtered it. Try typing in that channel yourself."],
+                table.concat(dropped, ", ")) .. "|r")
+        end
+    end)
+end
+
 -- The round's bookkeeping and its line. A queued channel's post counts as part of its round, not a new send.
 function Recruitment:_FinishRound(round, queued)
+    self:_WatchEcho(round.posted)
     if #round.posted > 0 and not queued then
         self._lastSendAt = GetTime()
         self.lastSend = GetTime()

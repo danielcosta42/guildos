@@ -362,7 +362,7 @@ runTimers(env.clock + 20)
 out = GuildOSDB.probeInvite
 check(out.results.channel.click == true and out.raw.channelTwice.click == "silent" and out.results.channelTwice.click == false,
   "Forever: the first channel line of a key press answered, the second not")
-check(B.Recruitment:PostsPerClick() == 1, "so the recruitment ad posts one channel per key press")
+check(B.Recruitment:PostsPerClick() == math.huge, "the recruitment ad still posts everywhere on one click (the maintainer, #449)")
 
 -- ── The toast and the line to copy (UI/ActionQueue.lua), on stub frames ─
 B = load("retail")
