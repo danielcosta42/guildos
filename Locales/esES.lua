@@ -4092,3 +4092,10 @@ L["Sent to your guild and to the Guild OS players around while enabled; one offi
 L["Kept on this client only: this game has no officer channel to share it with the other officers."] = "Se guarda solo en este cliente: este juego no tiene canal de oficiales para compartirlo con los demás oficiales."
 L["trial"] = "prueba"
 L["They go to the Bulk actions queue: one click of Next each, the safe list and your rank's limits kept."] = "Van a la cola de Acciones masivas: un clic en Siguiente cada uno, respetando la lista segura y los límites de tu rango."
+
+-- Master looter safety (#448, L1-L12)
+L["%s did not leave the corpse: %s may have full bags or be out of range. Nothing was recorded: award it again."] = "%s no salió del cadáver: %s puede tener las bolsas llenas o estar fuera de alcance. No se registró nada: entrégalo de nuevo."
+L["Wait: the last item is still on its way to its winner."] = "Espera: el último objeto aún va de camino a su ganador."
+L["%s is not on the open corpse: open the one that holds it, or close the loot window to give it by trade."] = "%s no está en el cadáver abierto: abre el que lo tiene, o cierra la ventana de botín para darlo por comercio."
+L["%s cannot take %s from this corpse (offline, outside the instance or not eligible). Nothing was recorded."] = "%s no puede recibir %s de este cadáver (desconectado, fuera de la instancia o sin derecho). No se registró nada."
+L["Giving to %s..."] = "Entregando a %s..."

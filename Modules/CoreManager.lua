@@ -2246,7 +2246,16 @@ end
 function CoreManager:LootRuleFromSite(coreName)
     if not (self:IsLinked() and self:IsFromDiscord(coreName)) then return false end
     local roster = GuildOS.db and GuildOS.db.companionRoster
-    return type(roster) == "table" and type(roster.lootRule) == "table"
+    if not (type(roster) == "table" and type(roster.lootRule) == "table") then return false end
+    -- Only a rule that will really play (audit L6): one the addon refused, or a night already over, leaves
+    -- the core's own rule in force and its editor open.
+    local LR = GuildOS.LootRule
+    if not (LR and LR.NightStatus) then return true end
+    local status = LR:NightStatus()
+    if status == "active" then return true end
+    if status ~= "waiting" then return false end
+    local startsAt = tonumber(roster.startsAt) or 0
+    return startsAt > 0 and GetServerTime() <= startsAt + 8 * 3600
 end
 
 function CoreManager:BroadcastRoster(coreName)

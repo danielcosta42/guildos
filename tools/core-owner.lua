@@ -324,6 +324,15 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(CM:SetLootRule("Núcleo Alfa", { model = "rolls" }), G("with no rule from the site, the officers set the core's"))
   GuildOS.db.companionRoster = { title = "Kara", members = {}, lootRule = { model = "council" } }
   check(CM:LootRuleFromSite("Núcleo Alfa") and not CM:LootRuleFromSite("Charlie2"), G("a Discord core's rule is the site's while it sends one"))
+  -- Audit L6: only a rule that will play locks the core's editor.
+  GuildOS.LootRule = { NightStatus = function() return "refused" end }
+  check(not CM:LootRuleFromSite("Núcleo Alfa"), G("a rule the addon refused is not the site's rule in force"))
+  GuildOS.LootRule.NightStatus = function() return "waiting" end
+  GuildOS.db.companionRoster.startsAt = GetServerTime() - 9 * 3600
+  check(not CM:LootRuleFromSite("Núcleo Alfa"), G("nor one of a night already over"))
+  GuildOS.db.companionRoster.startsAt = GetServerTime() + 3600
+  check(CM:LootRuleFromSite("Núcleo Alfa"), G("a night still to come keeps it"))
+  GuildOS.LootRule, GuildOS.db.companionRoster.startsAt = nil, nil
   check(not CM:SetLootRule("Núcleo Alfa", { model = "plus1" }) and CM:GetLootRule("Núcleo Alfa").model == "rolls",
     G("not changed in game then"))
   check(not CM:SetLootSystem("Núcleo Alfa", "rolls"), G("nor its loot system"))

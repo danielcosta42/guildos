@@ -303,6 +303,7 @@ function LootMaster:Initialize()
     local frame = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(frame, "LOOT_OPENED")
     GuildOS.Compat.RegisterEvent(frame, "LOOT_CLOSED")
+    GuildOS.Compat.RegisterEvent(frame, "LOOT_SLOT_CLEARED")   -- an item given really left the corpse (audit L2)
     GuildOS.Compat.RegisterEvent(frame, "CHAT_MSG_ADDON")
     GuildOS.Compat.RegisterEvent(frame, "CHAT_MSG_SYSTEM")  -- capture /roll results
     GuildOS.Compat.RegisterEvent(frame, "TRADE_SHOW")
@@ -321,6 +322,8 @@ function LootMaster:Initialize()
             LootMaster:OnLootOpened()
         elseif event == "LOOT_CLOSED" then
             LootMaster:OnLootClosed()
+        elseif event == "LOOT_SLOT_CLEARED" then
+            LootMaster:OnLootSlotCleared(...)
         elseif event == "CHAT_MSG_ADDON" then
             LootMaster:OnAddonMessage(...)
         elseif event == "CHAT_MSG_SYSTEM" then
@@ -2226,8 +2229,99 @@ function LootMaster:AwardLoot(playerName, silent, free)
     return self:InLootCore(self.AwardLootNow, self, playerName, silent, free)
 end
 
-function LootMaster:AwardLootNow(playerName, silent, free)
+-- The slot of this corpse that holds `link`: the one it was announced in if it still does, else any other
+-- (a second corpse opened since renumbers them). None: the item is not on the open corpse (audit L1).
+function LootMaster:SlotOf(link, slot)
+    if not (GetLootSlotLink and link) then return slot end
+    if slot and GetLootSlotLink(slot) == link then return slot end
+    for i = 1, (GetNumLootItems and GetNumLootItems() or 0) do
+        if GetLootSlotLink(i) == link then return i end
+    end
+    return nil
+end
 
+-- The game gives a master-looted item a moment after GiveMasterLoot, or not at all (full bags, out of
+-- range). The award is written only once the slot clears; after 5 s with the item still there, nothing
+-- was written and the master looter is told (audit L2).
+function LootMaster:AwaitGive(slot, link, playerName, silent, free)
+    local token = {}
+    self.pendingGive = { slot = slot, link = link, token = token, finish = function()
+        self.pendingGive = nil
+        -- The roll it belongs to is still the open one (nothing replaced it meanwhile).
+        if not (self.activeLoot and self.activeLoot.link == link) then return end
+        self:InLootCore(self.RecordAward, self, playerName, silent, free, true)
+    end }
+    GuildOS.Compat.After(5, function()
+        local p = self.pendingGive
+        if p and p.token == token then
+            self.pendingGive = nil
+            GuildOS:Print("|cffFF9900[LootMaster]|r " .. string.format(L["%s did not leave the corpse: %s may have full bags or be out of range. Nothing was recorded: award it again."],
+                link, playerName))
+        end
+    end)
+end
+
+function LootMaster:OnLootSlotCleared(slot)
+    local p = self.pendingGive
+    if p and p.slot == slot then p.finish() end
+end
+
+function LootMaster:AwardLootNow(playerName, silent, free)
+    if self.pendingGive then
+        GuildOS:Print("|cffFF9900[LootMaster]|r " .. L["Wait: the last item is still on its way to its winner."])
+        return
+    end
+    local slot = self.activeLoot.slot
+    local awarded = false
+
+    -- Path 1: ML loot window open + ML API available -> GiveMasterLoot
+    if self.lootWindowOpen and slot and GiveMasterLoot and GetMasterLootCandidate then
+        -- Only ever the item that was rolled: another corpse open since would give whatever its slot holds.
+        local link = self.activeLoot.link
+        slot = self:SlotOf(link, slot)
+        if not slot then
+            GuildOS:Print("|cffFF9900[LootMaster]|r " .. string.format(L["%s is not on the open corpse: open the one that holds it, or close the loot window to give it by trade."], link))
+            return
+        end
+        self.activeLoot.slot = slot
+        local numCandidates = 40
+        local found, matches, listed = nil, 0, 0
+        for i = 1, numCandidates do
+            local candidateName = GetMasterLootCandidate(slot, i)
+            if candidateName then
+                listed = listed + 1
+                local cName = candidateName:match("^([^-]+)")
+                if cName == playerName then
+                    found, matches = i, 1
+                    break
+                elseif GuildOS.Client.has.surnames and self:WholeRollerName(cName, playerName) then
+                    found, matches = i, matches + 1
+                end
+            end
+        end
+        -- The game lists who may take this item and the winner is not among them (offline, outside the
+        -- instance): nothing is given, recorded or charged (audit L2). An empty list (a client whose API
+        -- answers nothing) keeps the trade path below.
+        if listed > 0 and matches == 0 then
+            GuildOS:Print("|cffFF9900[LootMaster]|r " .. string.format(L["%s cannot take %s from this corpse (offline, outside the instance or not eligible). Nothing was recorded."],
+                playerName, link))
+            return
+        end
+        -- An item handed out does not come back: a first name alone gives it only when it can be nobody
+        -- else's. Two who share one go to the trade below (issue #48).
+        if matches == 1 then
+            GiveMasterLoot(slot, found)
+            if GetLootSlotLink and GetLootSlotLink(slot) == link then
+                return self:AwaitGive(slot, link, playerName, silent, free)
+            end
+            awarded = true
+        end
+    end
+    return self:RecordAward(playerName, silent, free, awarded)
+end
+
+-- What an award writes: the trade when it was not given, the history, the points, the counters.
+function LootMaster:RecordAward(playerName, silent, free, awarded)
     local itemLink = self.activeLoot.link
     -- The winner's answer, when the item was rolled for: what it costs and whether it counts for the
     -- +1 come from it (issue #334). An item given straight from the loot window has none.
@@ -2238,32 +2332,6 @@ function LootMaster:AwardLootNow(playerName, silent, free)
     -- Default to 0 so the "%d" in the AWARD payload (and history record) never sees nil
     -- for malformed/non-item links. The receiver skips this field with "%d+", so 0 is safe.
     local itemId = self.activeLoot.itemId or 0
-    local slot = self.activeLoot.slot
-    local awarded = false
-
-    -- Path 1: ML loot window open + ML API available -> GiveMasterLoot
-    if self.lootWindowOpen and slot and GiveMasterLoot and GetMasterLootCandidate then
-        local numCandidates = 40
-        local found, matches = nil, 0
-        for i = 1, numCandidates do
-            local candidateName = GetMasterLootCandidate(slot, i)
-            if candidateName then
-                local cName = candidateName:match("^([^-]+)")
-                if cName == playerName then
-                    found, matches = i, 1
-                    break
-                elseif GuildOS.Client.has.surnames and self:WholeRollerName(cName, playerName) then
-                    found, matches = i, matches + 1
-                end
-            end
-        end
-        -- An item handed out does not come back: a first name alone gives it only when it can be nobody
-        -- else's. Two who share one go to the trade below (issue #48).
-        if matches == 1 then
-            GiveMasterLoot(slot, found)
-            awarded = true
-        end
-    end
 
     -- Path 2: No ML API or loot window closed -> queue for trade
     if not awarded then
@@ -3418,15 +3486,32 @@ function LootMaster:BuildLootTable()
     cancelBtn:SetPoint("LEFT", deBtn, "RIGHT", 6, 0)
     f.awardBtn, f.endBtn, f.openBtn, f.deBtn, f.cancelBtn = awardBtn, endBtn, openBtn, deBtn, cancelBtn
 
+    -- Another item than the one rolling: the open roll is ended, awarded or cancelled first, never
+    -- dropped by a click on a second item (audit L4).
+    local function takeItem(item)
+        local loot = LootMaster.activeLoot
+        if loot and loot.link == item.link then return true end
+        local open = LootMaster:OpenRoll()
+        if open then
+            f.status:SetText("|cffFF4444" .. L["Roll in progress: "] .. open .. "|r")
+            return false
+        end
+        LootMaster:SetActiveLoot(item.link, item.slot, tonumber(item.link:match("item:(%d+)")))
+        return true
+    end
     awardBtn:SetScript("OnClick", function()
         local item, who = f.selected, f.chosen
         if not (item and who) then return end
-        local loot = LootMaster.activeLoot
-        if not (loot and loot.link == item.link) then
-            LootMaster:SetActiveLoot(item.link, item.slot, tonumber(item.link:match("item:(%d+)")))
-        end
+        if not takeItem(item) then return end
         LootMaster:AwardLoot(who)
-        f.status:SetText(string.format(L["|cff4CFF4CAwarded to %s.|r"], who))
+        local loot = LootMaster.activeLoot
+        if LootMaster.pendingGive then
+            f.status:SetText(string.format(L["Giving to %s..."], who))
+        elseif loot and loot.link == item.link and not loot.delivered then
+            f.status:SetText("")   -- refused: the chat line says why
+        else
+            f.status:SetText(string.format(L["|cff4CFF4CAwarded to %s.|r"], who))
+        end
         f.picked = nil
         LootMaster:RefreshRollFrame()
     end)
@@ -3445,11 +3530,8 @@ function LootMaster:BuildLootTable()
     deBtn:SetScript("OnClick", function()
         local item = f.selected
         if not item then return end
+        if not takeItem(item) then return end
         local loot = LootMaster.activeLoot
-        if not (loot and loot.link == item.link) then
-            LootMaster:SetActiveLoot(item.link, item.slot, tonumber(item.link:match("item:(%d+)")))
-            loot = LootMaster.activeLoot
-        end
         LootMaster:SendToDisenchanter(loot.link, loot.slot, loot.itemId)
         f.status:SetText(L["|cff9966FFSent to Disenchant!|r"])
         LootMaster:RefreshRollFrame()
@@ -3651,7 +3733,10 @@ function LootMaster:RefreshRollFrame()
     -- candidate; else the rule's first once the answers are in, and before a roll the first on the lists.
     local picked
     for _, r in ipairs(rows) do
-        if f.picked and r.name == f.picked and r.rollType ~= "PASS" then picked = r.name end
+        -- Never someone outside the group: the item would go to a trade it can never reach (audit L11).
+        if f.picked and r.name == f.picked and r.rollType ~= "PASS" and (mode ~= "lists" or r.inRaid) then
+            picked = r.name
+        end
     end
     f.picked = picked
     f.chosen = picked or (mode == "lists" and first and first.name) or (ended and first and first.name) or nil
@@ -3979,7 +4064,10 @@ function LootMaster:ItemState(item)
         if loot.ended then return "ended", string.format(L["%d asked, closed"], self:CountRolls()) end
         return "rolling", string.format(L["%d asked, rolling"], self:CountRolls())
     end
-    for _, a in ipairs(self:NightAwards()) do
+    -- Still on the open corpse: not given, even when a second copy of it was (audit L12). An award is
+    -- written only once its slot cleared (AwaitGive).
+    local onCorpse = self.lootWindowOpen and item.slot and GetLootSlotLink and GetLootSlotLink(item.slot) == item.link
+    for _, a in ipairs(onCorpse and {} or self:NightAwards()) do
         if a.link == item.link and (a.timestamp or 0) >= (self.lootShownAt or 0) then
             return "awarded", string.format(L["to %s"], a.player or "?")
         end

@@ -3971,3 +3971,10 @@ L["Sent to your guild and to the Guild OS players around while enabled; one offi
 L["Kept on this client only: this game has no officer channel to share it with the other officers."] = "이 클라이언트에만 저장됩니다: 이 게임에는 다른 간부와 공유할 간부 채널이 없습니다."
 L["trial"] = "수습"
 L["They go to the Bulk actions queue: one click of Next each, the safe list and your rank's limits kept."] = "일괄 작업 대기열로 갑니다: 한 명당 다음을 한 번씩 클릭하며, 보호 목록과 등급 제한이 지켜집니다."
+
+-- Master looter safety (#448, L1-L12)
+L["%s did not leave the corpse: %s may have full bags or be out of range. Nothing was recorded: award it again."] = "%s이(가) 시체에서 나오지 않았습니다. %s의 가방이 가득 찼거나 거리가 너무 멉니다. 아무것도 기록되지 않았습니다. 다시 분배하세요."
+L["Wait: the last item is still on its way to its winner."] = "잠시만요: 마지막 아이템이 아직 당첨자에게 가는 중입니다."
+L["%s is not on the open corpse: open the one that holds it, or close the loot window to give it by trade."] = "%s은(는) 열린 시체에 없습니다. 그 아이템이 있는 시체를 열거나, 전리품 창을 닫고 거래로 주세요."
+L["%s cannot take %s from this corpse (offline, outside the instance or not eligible). Nothing was recorded."] = "%s은(는) 이 시체에서 %s을(를) 받을 수 없습니다(오프라인, 인스턴스 밖 또는 자격 없음). 아무것도 기록되지 않았습니다."
+L["Giving to %s..."] = "%s에게 주는 중..."

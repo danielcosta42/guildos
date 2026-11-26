@@ -3971,3 +3971,10 @@ L["Sent to your guild and to the Guild OS players around while enabled; one offi
 L["Kept on this client only: this game has no officer channel to share it with the other officers."] = "僅保存在此客戶端：此遊戲沒有幹部頻道可與其他幹部共享。"
 L["trial"] = "試用"
 L["They go to the Bulk actions queue: one click of Next each, the safe list and your rank's limits kept."] = "他們會進入批次操作佇列：每人點一次「下一個」，保留保護名單和你的階級限制。"
+
+-- Master looter safety (#448, L1-L12)
+L["%s did not leave the corpse: %s may have full bags or be out of range. Nothing was recorded: award it again."] = "%s 沒有離開屍體：%s 可能背包已滿或超出距離。未記錄任何內容：請重新分配。"
+L["Wait: the last item is still on its way to its winner."] = "請稍候：上一件物品仍在送往獲勝者的途中。"
+L["%s is not on the open corpse: open the one that holds it, or close the loot window to give it by trade."] = "%s 不在已開啟的屍體上：請開啟裝有它的屍體，或關閉拾取視窗以交易給出。"
+L["%s cannot take %s from this corpse (offline, outside the instance or not eligible). Nothing was recorded."] = "%s 無法從這具屍體獲得 %s（離線、不在副本內或無資格）。未記錄任何內容。"
+L["Giving to %s..."] = "正在給予 %s……"

@@ -390,7 +390,7 @@ gave = nil
 LootMaster.lootWindowOpen, LootMaster.activeLoot = true, { itemId = 1, link = "item:1", slot = 1 }
 function GetMasterLootCandidate(_, i) if i == 1 then return "Chehul Silva" end end
 LootMaster:AwardLoot("Chehul Costa", true)
-check(not gave and #LootMaster.pendingTrades == 1, "a roll: and not somebody else's with the same first name")
+check(not gave and #LootMaster.pendingTrades == 0, "a roll: and not somebody else's with the same first name: refused, never a trade for an item still on the corpse (audit L2)")
 -- An item does not come back: a first name alone gives it only when it can be nobody else's.
 local function awardTo(winner, list)
   gave = nil
@@ -406,6 +406,55 @@ slot, queued = awardTo("Ana", { "Ana Silva", "Ana Souza" })
 check(slot == nil and queued == 1, "a roll: and so does a winner read by first name among two")
 slot, queued = awardTo("Ana Souza", { "Ana", "Ana Souza" })
 check(slot == 2 and queued == 0, "a roll: the exact name wins over a first name before it")
+
+-- Audit L1/L2: only the item rolled is given, and the award is written once the item really left the corpse.
+do
+  local corpse = { "item:2", "item:1" }
+  function GetNumLootItems() return #corpse end
+  function GetLootSlotLink(i) return corpse[i] end
+  function GetMasterLootCandidate(_, i) if i == 1 then return "Ana" end end
+  local gaveSlot
+  function GiveMasterLoot(sl) gaveSlot = sl; corpse[sl] = nil end   -- this stub clears at once
+  LootMaster.pendingTrades, LootMaster.pendingGive = {}, nil
+  LootMaster.lootWindowOpen, LootMaster.activeLoot = true, { itemId = 1, link = "item:1", slot = 1 }
+  LootMaster:AwardLoot("Ana", true)
+  check(gaveSlot == 2 and LootMaster.activeLoot == nil, "L1: a corpse renumbered: the item is found in the slot that holds it")
+  corpse = { "item:7" }; gaveSlot = nil
+  LootMaster.lootWindowOpen, LootMaster.activeLoot = true, { itemId = 1, link = "item:1", slot = 1 }
+  LootMaster:AwardLoot("Ana", true)
+  check(gaveSlot == nil and #LootMaster.pendingTrades == 0 and LootMaster.activeLoot ~= nil,
+    "L1: another corpse open: nothing given, nothing queued, the roll kept")
+  -- In the game the slot clears a moment later, or never (full bags).
+  corpse = { "item:1" }
+  function GiveMasterLoot(sl) gaveSlot = sl end
+  local afters = {}
+  local realAfter = GuildOS.Compat.After
+  GuildOS.Compat.After = function(_, fn) afters[#afters + 1] = fn end
+  local recorded = 0
+  local realRecord = LootMaster.RecordAward
+  LootMaster.RecordAward = function(self, ...) recorded = recorded + 1; return realRecord(self, ...) end
+  LootMaster.lootWindowOpen, LootMaster.activeLoot = true, { itemId = 1, link = "item:1", slot = 1 }
+  LootMaster:AwardLoot("Ana", true)
+  check(gaveSlot == 1 and recorded == 0 and LootMaster.pendingGive ~= nil, "L2: given, but nothing written until the slot clears")
+  LootMaster:AwardLoot("Ana", true)
+  check(recorded == 0, "L2: a second click meanwhile gives nothing more")
+  LootMaster:OnLootSlotCleared(1)
+  check(recorded == 1 and LootMaster.pendingGive == nil and LootMaster.activeLoot == nil, "L2: the slot clears: the award is written")
+  LootMaster.activeLoot = { itemId = 1, link = "item:1", slot = 1 }
+  afters = {}
+  LootMaster:AwardLoot("Ana", true)
+  for _, fn in ipairs(afters) do fn() end
+  check(recorded == 1 and LootMaster.pendingGive == nil and LootMaster.activeLoot ~= nil,
+    "L2: the item never left (full bags): nothing written, the roll still there to award again")
+  -- L12: a second copy of an item given still on the corpse is not "awarded".
+  LootMaster.lootShownAt = 0
+  local realNight = LootMaster.NightAwards
+  LootMaster.NightAwards = function() return { { link = "item:1", player = "Ana", timestamp = 1 } } end
+  LootMaster.activeLoot = nil
+  check(LootMaster:ItemState({ link = "item:1", slot = 1 }) ~= "awarded", "L12: a copy still on the corpse is not shown as given")
+  LootMaster.NightAwards, LootMaster.RecordAward, GuildOS.Compat.After = realNight, realRecord, realAfter
+  GetNumLootItems, GetLootSlotLink = nil, nil
+end
 GetMasterLootCandidate, GiveMasterLoot, UnitFullName = nil, nil, nil
 LootMaster.pendingTrades, LootMaster.lootWindowOpen = {}, nil
 LootMaster.IsMasterLooter = realIsML
