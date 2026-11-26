@@ -359,7 +359,9 @@ function Recruitment:RegisterAutoInviteEvent()
         if GuildOS.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
         local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
         if not cfg or not cfg.enabled then return end
-        if not GuildOS.Compat.AddonMayInvite() then return end   -- Anniversary only (#256)
+        -- Anniversary and retail invite (one key press each where the game wants it, #449); WoW: Forever lets
+        -- no addon invite (#256), and there the officer gets the /ginvite line to copy.
+        if not (GuildOS.Compat.AddonMayInvite() or Recruitment:_InviteIsTyped()) then return end
         if not Recruitment:_MatchKeyword(msg, cfg.keyword) then return end
         local sender = author and (author:match("^([^-]+)") or author)
         if sender and sender ~= "" then
@@ -368,18 +370,39 @@ function Recruitment:RegisterAutoInviteEvent()
     end)
 end
 
--- An invite the whisper earned. Only TBC Anniversary gets here (#256): the popup that held it for a
--- click on WoW: Forever (#61) went with the invite the game took away from addons there.
+-- Whether an invite here is a line the officer copies and sends (WoW: Forever, #256): the game lets no addon
+-- invite, from a click either.
+function Recruitment:_InviteIsTyped()
+    local c = GuildOS.Client
+    return not (c.isAnniversary or c.isRetail) and (CanGuildInvite and CanGuildInvite()) == true
+end
+
+-- An invite the whisper earned (#449). Through the officer action queue: at once where the game lets an addon
+-- invite from an event, else on the next key press of the queue's binding or a click of its toast. On WoW:
+-- Forever, the /ginvite line to copy. Without the queue (a test), at once.
 function Recruitment:_DoInvite(name)
-    self:_InviteNow(name)
+    local AQ = GuildOS.ActionQueue
+    if self:_InviteIsTyped() then
+        if AQ then AQ:OfferTyped(name) end
+        return
+    end
+    if not AQ then return self:_InviteNow(name) end
+    AQ:Add({ kind = "guildInvite", key = "ginv:" .. name, name = name,
+             valid = function()
+                 local BL = GuildOS.BanList
+                 if BL and (BL:IsBanned(name) or BL:AllianceBansFor(name)) then return false end
+                 return not self:_OnInviteCooldown(name, GetServerTime())
+             end,
+             run = function() return self:_InviteNow(name) end })
 end
 
 function Recruitment:_InviteNow(name, full)
     local cfg = GuildOS.db.recruitment.autoInvite
-    if not GuildOS.Compat.GuildInvite(full or name) then return end
+    if not GuildOS.Compat.GuildInvite(full or name) then return false end
     if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(name) end
     self:_MarkInvited(name, GetServerTime(), cfg.cooldownSec)
     GuildOS:Print(string.format(L["Auto-invited |cffFFFFFF%s|r to the guild."], name))
+    return true
 end
 
 function Recruitment:_HandleKeywordWhisper(sender, author)
@@ -392,13 +415,19 @@ function Recruitment:_HandleKeywordWhisper(sender, author)
     if GuildOS.BanList and GuildOS.BanList:AllianceBansFor(author or sender) then return end
     -- Cooldown
     if self:_OnInviteCooldown(sender, GetServerTime()) then return end
-    -- Filters need a /who, which Forever runs only from a click: there the officer's click on
-    -- the popup is the check, and the filters stay for Anniversary.
+    -- Filters need a /who (#449). C_FriendList.SendWho wants a hardware event (wiki; /gos probe invite measures
+    -- it): there the /who waits in the officer action queue, its key press runs it, and the invite follows (at
+    -- once, or on the next key press). Where the officer copies the invite (Forever), the copy is the check.
     local filtered = (cfg.minLevel or 0) > 0 or (cfg.classes and next(cfg.classes) ~= nil)
-    if filtered and not GuildOS.Compat.NeedsClick() then
-        self:_QualifyAndInvite(sender)
-    else
+    local AQ = GuildOS.ActionQueue
+    if not filtered or self:_InviteIsTyped() then
         self:_DoInvite(sender)
+    elseif GuildOS.Compat.NeedsHardware("who") and AQ then
+        AQ:Add({ kind = "who", key = "who:" .. sender, name = sender,
+                 valid = function() return not self:_OnInviteCooldown(sender, GetServerTime()) end,
+                 run = function() return self:_QualifyAndInvite(sender) ~= false end })
+    else
+        self:_QualifyAndInvite(sender)
     end
 end
 
@@ -417,6 +446,17 @@ end
 function Recruitment:QueueWelcome(name)
     self._pendingWelcomes = self._pendingWelcomes or {}
     addOnce(self._pendingWelcomes, name)
+    -- The queue's key press sends it too (#449); the popup is its window, so the toast stays out.
+    local AQ = GuildOS.ActionQueue
+    if AQ then
+        AQ:Add({ kind = "chat", key = "welcome", name = table.concat(self._pendingWelcomes, ", "),
+                 verb = L["welcome"], ownWindow = true,
+                 run = function()
+                     local went = self:SendPendingWelcome()
+                     if self.welcomePopup then self.welcomePopup:Hide() end
+                     return went
+                 end })
+    end
     -- Never in combat, one popup at a time (audit B21): a join mid-fight waits for its end.
     GuildOS:ShowWhenClear("welcome", function() self:ShowWelcomePopup(); return self.welcomePopup end)
 end
@@ -562,6 +602,7 @@ function Recruitment:SendPendingWelcome()
     if not self:SendWelcomeText(msg) then return false end
     GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. table.concat(list, ", ") .. L["|r in guild chat."])
     self._pendingWelcomes = {}
+    if GuildOS.ActionQueue then GuildOS.ActionQueue:Remove("welcome") end
     return true
 end
 
@@ -582,6 +623,7 @@ end
 
 function Recruitment:DismissPendingWelcome()
     self._pendingWelcomes = {}
+    if GuildOS.ActionQueue then GuildOS.ActionQueue:Remove("welcome") end
 end
 
 -- Async /who lookup, one query at a time. Fail-safe: on timeout / no result,
@@ -589,7 +631,7 @@ end
 function Recruitment:_QualifyAndInvite(sender)
     if self._whoBusy then
         -- one lookup at a time; drop extra concurrent triggers (cooldown will let them retry)
-        return
+        return false
     end
     self._whoBusy = sender
     if not self._whoFrame then

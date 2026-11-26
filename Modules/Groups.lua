@@ -732,10 +732,26 @@ function Groups:OnWhisper(text, sender, schedule)
     local members = GuildOS.Compat.GroupRoster()
     if GuildOS.Compat.InGroup(members, key) then return false end
     if rateLimited(state().whisperCd, key, WHISPER_COOLDOWN, schedule) then return false end
-    self:_RaidUp(g)
-    GuildOS.Compat.InviteUnit(sender)
-    GuildOS:Print(string.format(L["Inviting %s, who whispered for a spot."], short))
-    return true
+    local function invite()
+        self:_RaidUp(g)
+        GuildOS.Compat.InviteUnit(sender)
+        GuildOS:Print(string.format(L["Inviting %s, who whispered for a spot."], short))
+        return true
+    end
+    -- From the whisper's event: where the game drops an invite an addon sends from one (WoW: Forever, Compat
+    -- .NeedsHardware, /gos probe invite), it waits for the officer action queue's key press or click (#449).
+    local AQ = GuildOS.ActionQueue
+    if AQ and GuildOS.Compat.NeedsHardware("groupInvite") then
+        AQ:Add({ kind = "groupInvite", key = "group:" .. key, name = short,
+                 valid = function()
+                     local mine = self:Mine()
+                     return mine ~= nil and self:OpenSpots(mine.need) > 0
+                         and not GuildOS.Compat.InGroup(GuildOS.Compat.GroupRoster(), key)
+                 end,
+                 run = invite })
+        return true
+    end
+    return invite()
 end
 
 function Groups:Decline(key)

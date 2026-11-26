@@ -65,6 +65,80 @@ BINDING_NAME_GUILDOS_TOGGLE = L["Open or close Guild OS"]
 
 local function round(n) return math.floor(n + 0.5) end
 
+----------------------------------------------------------------------
+-- The guild's tabard in a round crest (#449): background, emblem and border, inside the crest's ring. The layers
+-- sit between the crest's sphere (ARTWORK 0) and its ring (ARTWORK 4). The data is Compat's (GuildTabardInfo:
+-- the colours and the emblem's file), else the game draws its own (SetLargeGuildTabardTextures). Round by a mask
+-- where the client has them (the art's own disc), else the background is the disc itself and the game's square
+-- background is drawn inside the circle. Nothing to draw: the layers hide and the guild's initial stays.
+----------------------------------------------------------------------
+local TABARD_INSET = 3     -- inside the metal ring
+local EMBLEM_INSET = 7
+local SQUARE_INSET = 8     -- a square inside the circle, where there are no masks
+
+function UI:TabardLayers(crest)
+    local function layer(sub, inset)
+        local t = crest:CreateTexture(nil, "ARTWORK", nil, sub)
+        t:SetPoint("TOPLEFT", inset, -inset)
+        t:SetPoint("BOTTOMRIGHT", -inset, inset)
+        t:Hide()
+        return t
+    end
+    crest.tabBg = layer(1, TABARD_INSET)
+    crest.tabEmblem = layer(2, EMBLEM_INSET)
+    crest.tabBorder = layer(3, TABARD_INSET)
+    return crest
+end
+
+-- Draws the tabard on a crest made with UI:TabardLayers. Returns how ("info", "game") or nil (the initial stays).
+function UI:DrawTabard(crest)
+    if not (crest and crest.tabBg) then return nil end
+    local Compat, Style = GuildOS.Compat, GuildOS.Style
+    local bg, em, bd = crest.tabBg, crest.tabEmblem, crest.tabBorder
+    local disc = Style.ART.circle
+    local how
+    -- The game's own drawing first where textures take a mask (retail and WoW: Forever run the modern client): it
+    -- knows its emblems and colours; its square background is made round.
+    local canMask = bg.SetMask ~= nil
+    if canMask and Compat.SetGuildTabardTextures(em, bg, bd) then
+        Compat.SetMask(bg, disc)
+        Compat.SetMask(em, disc)
+        bg:ClearAllPoints()
+        bg:SetPoint("TOPLEFT", TABARD_INSET, -TABARD_INSET)
+        bg:SetPoint("BOTTOMRIGHT", -TABARD_INSET, TABARD_INSET)
+        bd:Hide()   -- its square frame: the crest's own ring is the border
+        how = "game"
+    end
+    local info = not how and Compat.GuildTabardInfo()
+    if info then
+        bg:ClearAllPoints()
+        bg:SetPoint("TOPLEFT", TABARD_INSET, -TABARD_INSET)
+        bg:SetPoint("BOTTOMRIGHT", -TABARD_INSET, TABARD_INSET)
+        bg:SetTexture(disc)
+        bg:SetVertexColor(info.background.r, info.background.g, info.background.b, 1)
+        em:SetTexture(info.emblemFile)
+        em:SetVertexColor(info.emblem.r, info.emblem.g, info.emblem.b, 1)
+        Compat.SetMask(em, disc)
+        bd:SetTexture(Style.ART.ring)
+        bd:SetVertexColor(info.border.r, info.border.g, info.border.b, 1)
+        bd:Show()
+        how = "info"
+    elseif not how and Compat.SetGuildTabardTextures(em, bg, bd) then
+        -- No masks: the game's square background inside the circle.
+        bg:ClearAllPoints()
+        bg:SetPoint("TOPLEFT", SQUARE_INSET, -SQUARE_INSET)
+        bg:SetPoint("BOTTOMRIGHT", -SQUARE_INSET, SQUARE_INSET)
+        bd:Hide()
+        how = "game"
+    end
+    bg:SetShown(how ~= nil)
+    em:SetShown(how ~= nil)
+    if not how then bd:Hide() end
+    if crest.letter then crest.letter:SetShown(how == nil) end
+    crest.tabard = how
+    return how
+end
+
 local function store()
     local g = GuildOS:GetSetting("window")
     if type(g) ~= "table" then
@@ -258,14 +332,16 @@ local function createWindow()
         return fs
     end
 
-    -- The crest: the guild's initial on a dark red sphere in the bright metal's ring.
+    -- The crest: the guild's tabard (UI:DrawTabard) or, where the client gives none, its initial, on a dark red
+    -- sphere in the bright metal's ring.
     local crest = CreateFrame("Frame", nil, bar)
     crest:SetSize(CREST, CREST)
     crest:SetPoint("LEFT", 10, 0)
     crest.orb = GuildOS.Style:Texture(crest, "orb", "ARTWORK", 0)
     crest.orb:SetAllPoints()
     crest.orb:SetVertexColor(0.42, 0.11, 0.07, 1)
-    crest.ring = GuildOS.Style:Texture(crest, "ring", "ARTWORK", 1)
+    UI:TabardLayers(crest)
+    crest.ring = GuildOS.Style:Texture(crest, "ring", "ARTWORK", 4)
     crest.ring:SetAllPoints()
     crest.ring:SetVertexColor(C.metal2.r, C.metal2.g, C.metal2.b, 1)
     crest.letter = text(crest, nil, "windowTitle", { r = 1, g = 0.824, b = 0.29 })
@@ -923,6 +999,7 @@ local function createWindow()
             local guild = GetGuildInfo("player") or "Guild OS"
             GuildOS:SetTitleText(guildName, guild)
             GuildOS:SetTitleText(crest.letter, UI.Initial(guild))
+            UI:DrawTabard(crest)
             local realm = GetRealmName and GetRealmName() or nil
             meta:SetText(online .. ((realm and realm ~= "") and (DOT .. realm) or "") .. renown)
             local last = A:LastSync()
@@ -1072,6 +1149,8 @@ local function createWindow()
     GuildOS.Compat.RegisterEvent(f, "RAID_ROSTER_UPDATE")
     GuildOS.Compat.RegisterEvent(f, "PARTY_LOOT_METHOD_CHANGED")
     GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
+    -- The crest's tabard: the guild changed, or its data arrived (#449).
+    GuildOS.Compat.RegisterEvent(f, "PLAYER_GUILD_UPDATE")
     -- The title counts who is online over the whole roster: at most once every ROSTER_GAP (issue #324).
     local function shownTitle()
         if f:IsShown() then f:InvalidateOfficerCounts(); f:RefreshTitle() end
@@ -1079,6 +1158,8 @@ local function createWindow()
     f:SetScript("OnEvent", function(self, event)
         if event == "GUILD_ROSTER_UPDATE" then
             GuildOS:Coalesce("windowTitle", GuildOS.ROSTER_GAP, shownTitle)
+        elseif event == "PLAYER_GUILD_UPDATE" then
+            if self:IsShown() then GuildOS:SafeCall(UI.DrawTabard, UI, crest) end
         else
             self:UpdateTabVisibility()
         end

@@ -20,7 +20,7 @@ local L = GuildOS.L
 local HELP_HEADER_COLOR = "|cff00CCFF"   -- section headers
 local HELP_CMD_COLOR    = "|cffFFD700"   -- command verbs (addon gold)
 -- The diagnostics under /gos debug, as the help lists them (audit B22).
-local DEBUG_VERBS = { "selftest", "errors", "perf [reset]", "probe [chat | channel]", "scan", "mergeraids" }
+local DEBUG_VERBS = { "selftest", "errors", "perf [reset]", "probe [chat | channel | invite]", "scan", "mergeraids" }
 
 local function helpHeader(text)
     GuildOS:Print(HELP_HEADER_COLOR .. text .. "|r")
@@ -71,6 +71,9 @@ local function printHelp()
         helpLine("/gos note <name> <text>",    L["Add an officer note"])
         if GuildOS.BulkActions then
             helpLine("/gos bulk [next | skip | retry | stop]",L["Promote, demote or remove by rules, one member per click"])
+        end
+        if GuildOS.ActionQueue then
+            helpLine("/gos queue [next | clear | bind <key>]", L["The invites and whispers waiting for a key press"])
         end
     end
 
@@ -181,7 +184,7 @@ end
 -- The commands of two words whose second word is a keyword: lowercased with the verb (audit C16). Any other
 -- second word is a name, an item or a note, and keeps its case.
 local KEYWORD_PAIRS = {
-    ["probe chat"] = true, ["probe channel"] = true, ["perf reset"] = true, ["lm undo"] = true,
+    ["probe chat"] = true, ["probe channel"] = true, ["probe invite"] = true, ["perf reset"] = true, ["lm undo"] = true,
     ["lm announce"] = true, ["raid start"] = true, ["attune debug"] = true, ["attunements debug"] = true,
     ["attune dumpquests"] = true, ["record term"] = true, ["web on"] = true, ["web off"] = true,
     ["companion on"] = true, ["companion off"] = true,
@@ -201,7 +204,7 @@ end
 -- The diagnostics' old verbs (audit B22), kept unlisted for one release: each is its /gos debug one.
 local DEBUG_ALIAS = {
     scan = "scan", selftest = "selftest", errors = "errors", perf = "perf", ["perf reset"] = "perf reset",
-    probe = "probe", ["probe chat"] = "probe chat", ["probe channel"] = "probe channel", resscan = "resscan",
+    probe = "probe", ["probe chat"] = "probe chat", ["probe channel"] = "probe channel", ["probe invite"] = "probe invite", resscan = "resscan",
     mergeraids = "mergeraids", ["attune debug"] = "attune", ["attunements debug"] = "attune",
     ["attune dumpquests"] = "dumpquests",
 }
@@ -410,6 +413,9 @@ local function handleCommand(msg)
     elseif msg == "debug probe chat" then
         -- Whether chat from a timer gets through, measured (issue #75).
         if GuildOS.Probe then GuildOS.Probe:RunChat() end
+    elseif msg == "debug probe invite" then
+        -- What needs a key press here, measured without inviting anybody (#449, specs/salao/convites.md).
+        if GuildOS.Probe then GuildOS.Probe:RunInvite() end
     elseif msg == "debug probe channel" then
         -- Whether an addon message may go through a created channel, measured (specs/071-o-recrutamento).
         if GuildOS.Probe then GuildOS.Probe:RunChannel() end
@@ -817,6 +823,13 @@ local function handleCommand(msg)
         else
             GuildOS:Print(L["Not available on this client."])
         end
+    elseif msg == "queue" or msg:match("^queue%s") then
+        -- /gos queue [next | clear | bind <key>]: the officer action queue (#449). The Enter is a key press.
+        if GuildOS.ActionQueue then
+            GuildOS.ActionQueue:Command((msg:gsub("^queue%s*", "")))
+        else
+            GuildOS:Print(L["Not available on this client."])
+        end
     elseif msg == "altgroup" or msg:match("^altgroup%s") then
         -- /gos altgroup <promote | demote> <name> [rank] (#424): a queue in Leadership > Bulk actions, one alt per click.
         if GuildOS.BulkActions then
@@ -891,7 +904,12 @@ local function handleCommand(msg)
     else
         -- A bare /gos is the documented way to open the window. An unknown verb opens nothing and points
         -- at the listing (audit C16): a typo used to open the roster.
-        if msg ~= "" then
+        local verb = string.match(msg, "%S+")   -- the first word: not a verb of the router (tools/commands-in-ui.lua)
+        if verb and DEBUG_ALIAS[verb] then
+            -- A diagnostic's old verb with words its alias does not know (/gos probe nonsense): where it lives now.
+            GuildOS:Print(string.format(L["Moved: %s"], "|cffFFD700/gos debug " .. (verb == "probe"
+                and "probe [chat | channel | invite]" or verb) .. "|r"))
+        elseif msg ~= "" then
             GuildOS:Print(string.format(L["Unknown command. Type %s for the list."], "|cffFFD700/gos help|r"))
         else
             GuildOS:ToggleRoster()

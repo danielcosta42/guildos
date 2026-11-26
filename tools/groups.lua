@@ -547,6 +547,23 @@ PARTY = {}
 Groups:Disband()
 check(not Groups:OnWhisper("inv", "Cid-Realm"), "a group taken down invites nobody")
 
+-- Where the game drops an invite sent from the whisper's event (#449, Compat.NeedsHardware), it waits in the officer
+-- action queue, and the key press (ActionQueue:Next) sends it; one that no longer applies is passed over.
+fresh()
+dofile(ADDON .. "/Modules/ActionQueue.lua")
+local needs = GuildOS.Compat.NeedsHardware
+GuildOS.Compat.NeedsHardware = function(kind) return kind == "groupInvite" end
+Groups:Create("steamvault", { T = 1, D = 1 }, "", 3600, false)
+GuildOS.db.lfgPrefs.autoInvite = true
+invited = {}
+check(Groups:OnWhisper("inv", "Dan-Realm") and #invited == 0 and GuildOS.ActionQueue:Pending() == 1,
+  "queued: the whisper's event invites nobody, the queue holds it")
+check(GuildOS.ActionQueue:Next() and invited[1] == "Dan-Realm" and GuildOS.ActionQueue:Pending() == 0,
+  "the key press invites them")
+GuildOS.Compat.NeedsHardware = needs
+GuildOS.ActionQueue = nil
+Groups:Disband()
+
 -- A raid-sized group turns the party into a raid
 fresh()
 converted = 0

@@ -694,7 +694,7 @@ function GuildOS:CreateRosterPanel(parent, host)
     -- The toolbar left to right, placed by width as the table's columns are (#377): the summary
     -- takes what is left over, and a narrow bar drops the summary first, then Columns (a right click
     -- on the header opens it too), Analytics, the invite field and the search box. Show Offline always
-    -- stays. The invite field is only for who may invite: Anniversary only (#256), at a rank that
+    -- stays. The invite field is only for who may invite: Anniversary and retail (#256, #449), at a rank that
     -- invites; read again on every refresh.
     -- The views as pills in the toolbar, as the mockup's "Todos" and "Em casa": All, Online and, while the site
     -- sent a directory, From the alliance. Each is a chip with its count; the chosen one fills gold.
@@ -3495,11 +3495,17 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     ----------------------------------------------------------------
     local aiCard = board:Card(L["Auto-Invite (whisper keyword)"], { col = 2 })
     local function aiCfg() return GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite end
-    -- A game that lets no addon invite says so first, and its controls are greyed out below (#371, #373).
-    local canInvite = GuildOS.Client.isAnniversary
+    -- A game that lets no addon invite (WoW: Forever, #256) says so first: there the keyword brings up the
+    -- /ginvite line to copy, and the filters, which need the invite's /who, are greyed out below (#371, #373, #449).
+    -- Where each invite wants a key press (C_GuildInfo.Invite is #hwevent), the card says which key.
+    local canInvite = GuildOS.Client.isAnniversary or GuildOS.Client.isRetail
     if not canInvite then
-        aiCard:Note(L["This game does not let an addon invite: the auto-invite works on TBC Anniversary only."],
+        aiCard:Note(L["This game does not let an addon invite: when someone whispers the keyword, Guild OS shows the /ginvite line for you to copy and send."],
             { ink = P.warn })
+    elseif GuildOS.Compat.NeedsHardware("guildInvite") and GuildOS.ActionQueue then
+        local key = GuildOS.ActionQueue:KeyText()
+        aiCard:Note(key and string.format(L["Each invite waits for a key press: %s, or a click on the queue's window."], key)
+            or L["Each invite waits for a key press: bind Guild OS: next in the queue under Key Bindings, AddOns, or click the queue's window."])
     end
     local aiChk = aiCard:Check(L["Invite players who whisper the keyword"])
     aiChk.checkbox.onChanged = function(_, checked)
@@ -3580,14 +3586,9 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     aiCard:Actions({ aiSave })
     kwBox.saveButton, lvlBox.saveButton = aiSave, aiSave
     if not canInvite then
-        -- Greyed out and kept, under the sentence that says why (#371).
-        aiChk.checkbox:SetEnabled(false)
-        aiChk.label:SetTextColor(P.disabled.r, P.disabled.g, P.disabled.b)
-        for _, box in ipairs({ kwBox, lvlBox }) do
-            box:EnableMouse(false)
-            box:SetTextColor(P.disabled.r, P.disabled.g, P.disabled.b)
-        end
-        aiSave:SetEnabled(false)
+        -- The filters greyed out and kept, under the sentence that says why (#371): the copied line has no /who.
+        lvlBox:EnableMouse(false)
+        lvlBox:SetTextColor(P.disabled.r, P.disabled.g, P.disabled.b)
         for _, b in ipairs(classBtns) do b:SetEnabled(false) end
         fbDrop:SetEnabled(false)
     end

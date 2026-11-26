@@ -2276,21 +2276,221 @@ function Compat.NeedsClick()
     return not GuildOS.Client.isAnniversary
 end
 
--- A guild invite (#256). Only TBC Anniversary lets an addon invite to the guild. WoW: Forever
--- 1.60.1.70790 refused all three ways one has, in game on 2026-11-04: GuildInvite itself, which is only
--- C_GuildInfo.Invite there (ADDON_ACTION_FORBIDDEN, from a click too); a secure button running a
--- /ginvite the addon wrote (MACRO_ACTION_BLOCKED); and that line left in the chat box for the player's
--- Enter (blocked, and the box stayed tainted until a /reload). Retail runs the same API. So off
--- Anniversary nothing offers an invite, and what still asks for one is told the /ginvite line to type.
+-- A guild invite (#256, #449). WoW: Forever 1.60.1.70790 refused all three ways one has, in game on 2026-11-04:
+-- GuildInvite itself, which is only C_GuildInfo.Invite there (ADDON_ACTION_FORBIDDEN, from a click too); a secure
+-- button running a /ginvite the addon wrote (MACRO_ACTION_BLOCKED); and that line left in the chat box for the
+-- player's Enter (blocked, and the box stayed tainted until a /reload). So on Forever nothing offers an invite,
+-- and what still asks for one is shown the /ginvite line to copy (UI/ActionQueue.lua). TBC Anniversary and retail
+-- let an addon invite: C_GuildInfo.Invite is restricted #hwevent there (https://warcraft.wiki.gg/wiki/
+-- API_C_GuildInfo.Invite), so one key press or click per invite (Compat.NeedsHardware("guildInvite"); the
+-- officer action queue, Modules/ActionQueue.lua, asks for it).
 function Compat.AddonMayInvite()
-    return GuildOS.Client.isAnniversary == true and CanGuildInvite() == true
+    local c = GuildOS.Client
+    if not (c.isAnniversary or c.isRetail) then return false end
+    return (CanGuildInvite and CanGuildInvite()) == true
 end
 
+-- The guild invite itself: C_GuildInfo.Invite where the client has it (the global GuildInvite went in 2.5.5,
+-- 1.15.2 and 10.2.6), else the global. True when the call was made (the game's own line says whether it went).
 function Compat.GuildInvite(name)
     if type(name) ~= "string" or name == "" then return false end
-    if GuildOS.Client.isAnniversary then GuildInvite(name); return true end
+    local c = GuildOS.Client
+    if c.isAnniversary or c.isRetail then
+        local invite = (C_GuildInfo and C_GuildInfo.Invite) or GuildInvite
+        if invite then invite(name); return true end
+    end
     GuildOS:Print(string.format(GuildOS.L["Type /ginvite %s to invite them."], name))
     return false
+end
+
+----------------------------------------------------------------------
+-- What needs a key press or a click behind it (#449). The officer action queue (Modules/ActionQueue.lua) asks
+-- this before each action: true, and the action waits for the next key press of the "next in the queue" binding
+-- or a click of its toast; false, and it runs at once, from the event or the timer that asked for it.
+--   guildInvite  C_GuildInfo.Invite, #hwevent on every client (wiki); Anniversary invited from a whisper event
+--                before (Compat.NeedsClick false), so there it runs at once until the probe says otherwise
+--   groupInvite  C_PartyInfo.InviteUnit: dropped from a timer on Forever (#61), and so assumed on retail
+--   who          C_FriendList.SendWho: a hardware event since 1.13.2 on every client (wiki)
+--   whisper/chat SendChatMessage: dropped from a timer on Forever (#61) and retail (NeedsClick)
+-- `/gos probe invite` measures each from a click and from a timer and keeps it in GuildOSDB.probeInvite; a
+-- measurement made on this build wins over the assumption.
+----------------------------------------------------------------------
+Compat.HARDWARE_KINDS = { "guildInvite", "groupInvite", "who", "whisper", "channel" }
+
+local function assumedHardware(kind)
+    local c = GuildOS.Client
+    if kind == "who" then return true end
+    if kind == "guildInvite" then return not c.isAnniversary end
+    return Compat.NeedsClick()
+end
+
+-- What the probe measured for `kind` on this build: { click = true|false|nil, timer = true|false|nil } or nil.
+function Compat.ProbedHardware(kind)
+    local p = type(GuildOSDB) == "table" and GuildOSDB.probeInvite
+    if type(p) ~= "table" or type(p.results) ~= "table" then return nil end
+    if p.build ~= nil and tostring(p.build) ~= tostring(GuildOS.Client.build) then return nil end
+    local r = p.results[kind]
+    return type(r) == "table" and r or nil
+end
+
+function Compat.NeedsHardware(kind)
+    local r = Compat.ProbedHardware(kind)
+    if r and r.timer == true then return false end
+    if r and r.timer == false and r.click == true then return true end
+    return assumedHardware(kind)
+end
+
+-- Whether the probe found `kind` refused even from a click (then nothing the addon does can do it here).
+function Compat.ProbedImpossible(kind)
+    local r = Compat.ProbedHardware(kind)
+    return r ~= nil and r.click == false
+end
+
+-- The key bound to a binding command (a "CLICK Button:LeftButton" one too), as the game names it, or nil.
+function Compat.BindingKey(command)
+    if not GetBindingKey then return nil end
+    local ok, key = pcall(GetBindingKey, command)
+    if ok and type(key) == "string" and key ~= "" then return key end
+    return nil
+end
+
+-- The key's name as the player reads it ("CTRL-N" as the client shows it), or the key itself.
+function Compat.BindingKeyText(key)
+    if type(key) ~= "string" then return nil end
+    if GetBindingText then
+        local ok, text = pcall(GetBindingText, key)
+        if ok and type(text) == "string" and text ~= "" then return text end
+    end
+    return key
+end
+
+-- Binds `key` to a click of button `buttonName`, saved with the character's bindings. Never in combat, where the
+-- game refuses a binding change. Returns whether it was set.
+function Compat.SetBindingClick(key, buttonName)
+    if Compat.InCombat() or not SetBindingClick or type(key) ~= "string" or key == "" then return false end
+    local ok, done = pcall(SetBindingClick, key, buttonName, "LeftButton")
+    if not ok or done == false then return false end
+    if SaveBindings then
+        local set = GetCurrentBindingSet and GetCurrentBindingSet() or 2
+        pcall(SaveBindings, set)
+    end
+    return true
+end
+
+-- Masks texture `tex` with the file at `path` (a round one makes it round). False on a client without masks.
+function Compat.SetMask(tex, path)
+    if not (tex and tex.SetMask) then return false end
+    return (pcall(tex.SetMask, tex, path))
+end
+
+----------------------------------------------------------------------
+-- The guild's tabard on the window's crest (#449). Three ways a client may give it, asked in this order:
+--   C_GuildInfo.GetGuildTabardInfo(unit): { backgroundColor, borderColor, emblemColor (colours), emblemFileID }
+--   GetGuildLogoInfo(): the three colours as bytes, the emblem's file and its style (Compat.GuildTabard)
+--   SetLargeGuildTabardTextures / SetSmallGuildTabardTextures(unit, emblemTex, backgroundTex, borderTex): the
+--   game draws its own textures, colours included (the guild frame's way)
+-- Each is nil-guarded and pcalled; nothing secret is drawn.
+----------------------------------------------------------------------
+local function colorOf(c)
+    if type(c) ~= "table" then return nil end
+    local r, g, b
+    if c.GetRGB then
+        local ok, rr, gg, bb = pcall(c.GetRGB, c)
+        if ok then r, g, b = rr, gg, bb end
+    else
+        r, g, b = c.r, c.g, c.b
+    end
+    if Compat.IsSecret(r, g, b) or type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then return nil end
+    return { r = r, g = g, b = b }
+end
+
+-- The crest's data: { background, border, emblem = { r, g, b } in 0..1, emblemFile, source }, or nil.
+function Compat.GuildTabardInfo()
+    if not (IsInGuild and IsInGuild()) then return nil end
+    local get = C_GuildInfo and C_GuildInfo.GetGuildTabardInfo
+    if get then
+        local ok, t = pcall(get, "player")
+        if ok and type(t) == "table" then
+            local file = t.emblemFileID
+            local bg, border, emblem = colorOf(t.backgroundColor), colorOf(t.borderColor), colorOf(t.emblemColor)
+            if bg and emblem and not Compat.IsSecret(file) and (type(file) == "number" or type(file) == "string") then
+                return { background = bg, border = border or bg, emblem = emblem, emblemFile = file, source = "info" }
+            end
+        end
+    end
+    if GetGuildLogoInfo then
+        local ok, br, bgc, bb, rr, rg, rb, er, eg, eb, file = pcall(GetGuildLogoInfo)
+        local nums = { br, bgc, bb, rr, rg, rb, er, eg, eb }
+        local good = ok and #nums == 9 and not Compat.IsSecret(file) and (type(file) == "number" or type(file) == "string")
+        for i = 1, 9 do
+            if not good then break end
+            if Compat.IsSecret(nums[i]) or type(nums[i]) ~= "number" then good = false end
+        end
+        if good then
+            local function c(r, g, b) return { r = r / 255, g = g / 255, b = b / 255 } end
+            return { background = c(br, bgc, bb), border = c(rr, rg, rb), emblem = c(er, eg, eb),
+                     emblemFile = file, source = "logo" }
+        end
+    end
+    return nil
+end
+
+-- Has the game draw the tabard on the three textures (the guild frame's way). True when the emblem got a file.
+function Compat.SetGuildTabardTextures(emblemTex, backgroundTex, borderTex)
+    if not (IsInGuild and IsInGuild()) then return false end
+    local set = SetLargeGuildTabardTextures or SetSmallGuildTabardTextures
+    if not set or not emblemTex then return false end
+    local ok = pcall(set, "player", emblemTex, backgroundTex, borderTex)
+    if not ok then return false end
+    local got = emblemTex.GetTexture and emblemTex:GetTexture()
+    return got ~= nil and got ~= "" and not Compat.IsSecret(got)
+end
+
+-- What the crest would draw the tabard with here, for /gos debug probe: the API used ("SetLargeGuildTabardTextures
+-- (masked round)", "C_GuildInfo.GetGuildTabardInfo", "GetGuildLogoInfo", ...) or "none: why". Second: TabardApis().
+function Compat.TabardReport()
+    local apis = Compat.TabardApis()
+    local have = {}
+    for _, n in ipairs({ "GetGuildTabardInfo", "GetGuildLogoInfo", "GetGuildTabardFiles", "GetGuildTabardFileNames",
+                         "SetLargeGuildTabardTextures", "SetSmallGuildTabardTextures" }) do
+        if apis[n] then have[#have + 1] = n end
+    end
+    if not (IsInGuild and IsInGuild()) then return "none: not in a guild", apis end
+    local used
+    if UIParent and UIParent.CreateTexture then
+        local t = {}
+        for i = 1, 3 do
+            local ok, tex = pcall(UIParent.CreateTexture, UIParent)
+            t[i] = ok and tex or nil
+        end
+        if t[1] and t[2] and t[3] and Compat.SetGuildTabardTextures(t[1], t[2], t[3]) then
+            used = SetLargeGuildTabardTextures and "SetLargeGuildTabardTextures" or "SetSmallGuildTabardTextures"
+        end
+        for i = 1, 3 do if t[i] and t[i].Hide then pcall(t[i].Hide, t[i]) end end
+    end
+    if not used then
+        local info = Compat.GuildTabardInfo()
+        if info then used = info.source == "info" and "C_GuildInfo.GetGuildTabardInfo" or "GetGuildLogoInfo" end
+    end
+    if used then return used .. (apis.SetMask and " (masked round)" or " (no masks)"), apis end
+    if #have == 0 then return "none: no tabard API on this client", apis end
+    return "none: the guild's tabard did not answer (has " .. table.concat(have, ", ") .. ")", apis
+end
+
+-- Which of the tabard's APIs this client has (the probe keeps it).
+function Compat.TabardApis()
+    return {
+        GetGuildTabardInfo = (C_GuildInfo and C_GuildInfo.GetGuildTabardInfo) ~= nil,
+        GetGuildLogoInfo = GetGuildLogoInfo ~= nil,
+        GetGuildTabardFiles = GetGuildTabardFiles ~= nil,
+        GetGuildTabardFileNames = GetGuildTabardFileNames ~= nil,
+        SetLargeGuildTabardTextures = SetLargeGuildTabardTextures ~= nil,
+        SetSmallGuildTabardTextures = SetSmallGuildTabardTextures ~= nil,
+        SetMask = (UIParent and UIParent.CreateTexture and (function()
+            local ok, t = pcall(UIParent.CreateTexture, UIParent)
+            return ok and type(t) == "table" and t.SetMask ~= nil
+        end)()) or false,
+    }
 end
 
 -- Does the server show this channel without raid icons? It is the ChatChannels table's

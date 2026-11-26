@@ -319,6 +319,10 @@ function GuildOS:BuildBulkSub(panel)
             setNextLabel(BA:NextLabel())
             macroFS_text = BA:Typed() and L["On this client the game takes the line only typed: each click of Next prints it for you."]
                 or string.format(L["Or press a macro with %s, one member per press."], GuildOS.Compat.ClickMacro(BA.BUTTON))
+            -- The officer action queue's key does the same step when nothing else waits in it (#449).
+            local AQ = GuildOS.ActionQueue
+            local key = AQ and not BA:Typed() and AQ:KeyText()
+            if key then macroFS_text = macroFS_text .. " " .. string.format(L["Or press %s."], key) end
             macroFS:SetText(macroFS_text)
             skipBtn:SetShown(item ~= nil)
             retryBtn.label:SetText(string.format(L["Retry (%d)"], c.unconfirmed))

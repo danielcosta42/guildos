@@ -159,11 +159,21 @@ function RecruitScanner:WhisperSelected(names)
         end
     end
     if #plan == 0 then return end
-    if GuildOS.Compat.NeedsClick() then
+    if GuildOS.Compat.NeedsHardware("whisper") then
         -- WoW: Forever drops a whisper sent from a timer (issue #61): the first goes out in
-        -- this click, the rest one per click on "Whisper next".
+        -- this click, the rest one per click on "Whisper next", or one per key press of the
+        -- officer action queue's binding or click of its toast (#449).
         self._whisperQueue = plan
         self:WhisperNext()
+        local AQ = GuildOS.ActionQueue
+        if AQ then
+            for _, w in ipairs(plan) do
+                local name = w.name
+                AQ:Add({ kind = "whisper", key = "scan:" .. name, name = name,
+                         valid = function() return self:_Waiting(name) end,
+                         run = function() return self:_WhisperOne(name) end })
+            end
+        end
         if #plan > 0 then
             GuildOS:Print(string.format(GuildOS.L["%d more: click Whisper next to send each one."], #plan))
         end
@@ -183,10 +193,32 @@ function RecruitScanner:PendingWhispers()
     return self._whisperQueue and #self._whisperQueue or 0
 end
 
+-- Whether `name`'s whisper still waits (a new scan drops the batch).
+function RecruitScanner:_Waiting(name)
+    for _, w in ipairs(self._whisperQueue or {}) do
+        if w.name == name then return true end
+    end
+    return false
+end
+
+-- One whisper waiting, by name, taken off the list: the officer action queue's key press (#449). Whether it went.
+function RecruitScanner:_WhisperOne(name)
+    local q = self._whisperQueue or {}
+    for i, w in ipairs(q) do
+        if w.name == name then
+            table.insert(q, 1, table.remove(q, i))
+            self:WhisperNext()
+            return true
+        end
+    end
+    return false
+end
+
 -- The click: send the next whisper waiting. Returns how many are left.
 function RecruitScanner:WhisperNext()
     local q = self._whisperQueue
     local w = q and table.remove(q, 1)
+    if w and GuildOS.ActionQueue then GuildOS.ActionQueue:Remove("scan:" .. w.name) end
     if w then
         -- The click sends it, and the WhisperQueue counts it against WoW: Forever's limit (issue #393).
         local queue = GuildOS.WhisperQueue

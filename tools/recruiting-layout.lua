@@ -562,8 +562,11 @@ local fi = f.cards.invite
 check(not button(f.cards.channels, "GuildRecruitment"), "the Anniversary-only channel is not offered")
 check(textOf(fi, "^This game does not let an addon invite"), "where no addon may invite, the card says why first")
 local fcb = findAll(fi, function(f2) return f2.kind == "CheckButton" end)[1]
-check(not fcb:IsEnabled() and not button(fi, "Save"):IsEnabled() and not button(fi, "MAGE"):IsEnabled()
-  and not findAll(fi, function(f2) return f2.options ~= nil and f2.Select end)[1]:IsEnabled(), "and its controls are kept, disabled")
+-- The keyword still brings up the /ginvite line to copy there (#449): its switch and keyword stay; the filters, which
+-- need the invite's /who, are kept, disabled.
+check(fcb:IsEnabled() and button(fi, "Save"):IsEnabled() and not button(fi, "MAGE"):IsEnabled()
+  and not findAll(fi, function(f2) return f2.options ~= nil and f2.Select end)[1]:IsEnabled(),
+  "its switch and keyword work, the filters are kept, disabled")
 
 -- Join requests, where its module runs (not Anniversary), is one more card.
 GuildOS.JoinRequests = { OpenCount = function() return 2 end }

@@ -146,6 +146,17 @@ function RosterLog:CountsSince(since, store)
     return c
 end
 
+-- The guild's events strictly after `since`, oldest first: what the game's messages said and officers synced,
+-- not this client's own diff lines (`loc`). The Chronicle's Activity names who left, was removed or promoted (#449).
+function RosterLog:EventsSince(since, store)
+    store = store or (GuildOS.db.rosterLog and GuildOS.db.rosterLog.events) or {}
+    local out = {}
+    for _, e in ipairs(store) do
+        if not e.loc and (e.timestamp or 0) > (since or 0) then out[#out + 1] = e end
+    end
+    return out
+end
+
 -- Pure: the most recent up-to-N events (chronological order), only those `keep(evt)` accepts when
 -- given. Bounds the cold-sync backfill so a late officer converges on the tail of the log
 -- instead of us re-broadcasting the whole history every login.

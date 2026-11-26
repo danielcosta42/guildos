@@ -1020,6 +1020,8 @@ PAGES.data = function(F, isOfficer)
             }
             GuildOS:ShowDialog("GUILDOS_PROBE_CHAT")
         end },
+        -- What needs a key press on this client (#449): no dialog, nobody is invited or whispered.
+        { L["Probe invites"], function() if GuildOS.Probe then GuildOS.Probe:RunInvite() end end },
         { L["Style preview"], function() if GuildOS.Style then GuildOS.Style:ShowPreview() end end },
     })
     F:Note(L["The results go to the chat window."], { gap = 6 })

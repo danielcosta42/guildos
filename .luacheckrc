@@ -268,6 +268,9 @@ read_globals = {
     "FACTION_HORDE",                         -- the client's own words for the two factions
     "FACTION_ALLIANCE",
     "GetGuildLogoInfo",                      -- the guild tabard's colours and emblem (issue #213)
+    -- The officer action queue's binding and the crest's tabard (#449).
+    "GetBindingKey", "GetBindingText", "SetBindingClick", "SaveBindings", "GetCurrentBindingSet",
+    "SetLargeGuildTabardTextures", "SetSmallGuildTabardTextures", "GetGuildTabardFileNames",
     "GetGuildTabardFiles",                   -- and its six files, where the border's style is (issue #213)
     "C_XMLUtil",
     "GetRealmName",

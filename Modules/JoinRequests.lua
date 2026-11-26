@@ -551,8 +551,8 @@ local pending = {}   -- [id] = when the invite was sent: waiting for the game to
 
 -- The game's guild invite, with the name as the game gave it (retail: cut to the plain one on this
 -- character's realm). Only ever called from a button's OnClick, and there is no path here that invites by
--- itself. On WoW: Forever the game lets no addon invite: the /ginvite line waits in the chat box for the
--- player's Enter (Compat.GuildInvite, #256). The row
+-- itself (a button's click is the hardware event C_GuildInfo.Invite wants, #449). On WoW: Forever the game
+-- lets no addon invite: the /ginvite line is said for the player to type (Compat.GuildInvite, #256). The row
 -- is not closed here: the game's own line does that (see onSystem), so a person who is offline, or a
 -- name the game refused, leaves it open for another try.
 function JR:Invite(id, confirmed)

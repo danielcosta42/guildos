@@ -704,13 +704,33 @@ function RaidTools:InviteStep(people, now)
         room = math.max(0, (n <= 1 and FIRST_WAVE or PARTY_MAX - n) - #skipped.waiting)
     end
     if room == 0 then return { kind = "wait", skipped = skipped } end
-    if Compat.NeedsClick() then room = 1 end
+    local oneByOne = Compat.NeedsClick()
+    if oneByOne then room = 1 end
     local names = {}
     for i = 1, math.min(room, #pending) do
         local p = pending[i]
         Compat.InviteUnit(inviteName(p))
         self._asked[p.key] = now
         names[#names + 1] = p.name
+    end
+    -- One a click: the rest wait in the officer action queue too, one a key press of its binding (#449). Each is
+    -- checked again at its press: who was asked meanwhile (this button again) is passed over.
+    local AQ = GuildOS.ActionQueue
+    if oneByOne and AQ then
+        for i = room + 1, #pending do
+            local p = pending[i]
+            AQ:Add({ kind = "groupInvite", key = "raid:" .. tostring(p.key), name = p.name,
+                     valid = function()
+                         local asked = self._asked[p.key]
+                         return not (asked and GetTime() - asked < INVITE_WAIT)
+                     end,
+                     run = function()
+                         if Compat.InCombat() or not Compat.CanInvite() then return false end
+                         Compat.InviteUnit(inviteName(p))
+                         self._asked[p.key] = GetTime()
+                         return true
+                     end })
+        end
     end
     return { kind = "invite", names = names, left = #pending - #names, skipped = skipped }
 end

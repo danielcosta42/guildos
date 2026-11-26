@@ -65,6 +65,10 @@ local IN_UI = {
   ["debug probe"] = { { "UI/SettingsPanel.lua", "GuildOS.Probe:Run()" } },
   ["debug probe chat"] = { { "UI/SettingsPanel.lua", "GuildOS.Probe:RunChat()" } },
   ["debug probe channel"] = { { "UI/AuditPanel.lua", "GuildOS.Probe:RunChannel()" } },
+  -- What needs a key press here (#449): Settings > Diagnostics.
+  ["debug probe invite"] = { { "UI/SettingsPanel.lua", "GuildOS.Probe:RunInvite()" } },
+  -- The officer action queue (#449): its toast's button and its key binding's button.
+  queue       = { { "UI/ActionQueue.lua", "GuildOS:SafeCall(AQ.Next, AQ, true)" }, { "UI/ActionQueue.lua", "pcall(AQ.Arm, AQ, down)" } },
   ["debug perf"] = { { "UI/AuditPanel.lua", "GuildOS.Perf:Print()" } },
   ["debug perf reset"] = { { "UI/AuditPanel.lua", "GuildOS.Perf:Reset()" } },
   -- Asked first, from the command too (audit C15).

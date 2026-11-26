@@ -1104,7 +1104,7 @@ end
 ----------------------------------------------------------------------
 function GuildOS:HookChatInvite()
     hooksecurefunc("SetItemRef", function(link, _, button)
-        if not GuildOS.Compat.AddonMayInvite() then return end   -- Anniversary only (#256)
+        if not GuildOS.Compat.AddonMayInvite() then return end   -- Anniversary and retail; never Forever (#256, #449)
         if button ~= "LeftButton" or not IsAltKeyDown() then return end
         if not link then return end
 

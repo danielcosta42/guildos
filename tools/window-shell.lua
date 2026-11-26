@@ -689,6 +689,37 @@ do
   local F = GuildOS.Fonts
   check(f.crest.shown and f.crest.letter.text == "C" and f.crest.orb.texture:find("Salao\\orb.tga", 1, true),
     "left: the round crest with the guild's initial")
+  check(f.crest.tabBg and not f.crest.tabBg.shown and not f.crest.tabEmblem.shown,
+    "a client that gives no tabard keeps the initial, the tabard's layers hidden (#449)")
+  -- The guild's tabard in the crest (#449): GetGuildLogoInfo's colours and emblem, drawn inside the ring and masked
+  -- round where textures take a mask; PLAYER_GUILD_UPDATE draws it again, and without it the initial comes back.
+  local masks = {}
+  Frame.SetMask = function(self, path) masks[#masks + 1] = { self, path } end
+  GetGuildLogoInfo = function() return 33, 220, 255, 255, 255, 255, 223, 165, 90, 414975, 69 end
+  f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
+  local cr = f.crest
+  check(cr.tabard == "info" and cr.tabEmblem.shown and cr.tabEmblem.texture == 414975 and cr.tabBg.shown
+      and not cr.letter.shown, "the tabard replaces the initial: its emblem and background drawn")
+  check(math.abs(cr.tabBg.color[1] - 33 / 255) < 1e-6 and math.abs(cr.tabEmblem.color[2] - 165 / 255) < 1e-6,
+    "in the guild's own colours")
+  check(cr.tabBg.texture:find("Salao\\circle.tga", 1, true) and #masks >= 1 and masks[1][1] == cr.tabEmblem,
+    "on the round disc, the emblem masked round")
+  check(cr.ring.drawSub == nil or cr.ring.drawSub == 4, "the ring above the tabard")
+  -- Where the game draws it itself (retail, WoW: Forever: SetLargeGuildTabardTextures) and textures take a mask, its
+  -- drawing wins over the data: round, its square border left to the crest's ring.
+  Frame.GetTexture = function(self) return self.texture end
+  SetLargeGuildTabardTextures = function(unit, emblem, bgTex, border)
+    if unit == "player" then emblem:SetTexture(5000); bgTex:SetTexture(5001); border:SetTexture(5002) end
+  end
+  masks = {}
+  f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
+  check(cr.tabard == "game" and cr.tabEmblem.texture == 5000 and cr.tabBg.shown and not cr.tabBorder.shown
+      and #masks == 2 and not cr.letter.shown, "the game's own tabard, masked round, the ring its border")
+  SetLargeGuildTabardTextures, Frame.GetTexture = nil, nil
+  GetGuildLogoInfo = nil
+  Frame.SetMask = nil
+  f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
+  check(cr.tabard == nil and cr.letter.shown and not cr.tabEmblem.shown, "no tabard: the initial again")
   check(f.nameText.text == "Chama" and f.nameText.font.file == F.title and same(f.nameText.color, C.gold),
     "the guild's name in Cinzel and gold")
   check(f.titleBar.__styleBg and f.titleBar.__styleBg.texture:find("titlebar.tga", 1, true), "the bar's warm gradient")

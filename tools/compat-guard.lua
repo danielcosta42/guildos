@@ -41,6 +41,8 @@ local GLOBALS = {
   "QueryGuildBankTab", "QueryGuildBankLog", "GetGuildBankTransaction", "GetGuildBankMoneyTransaction",
   "PickupGuildBankItem", "SplitGuildBankItem", "SetCurrentGuildBankTab", "GetCurrentGuildBankTab",
   "AutoStoreGuildBankItem", "DepositGuildBankMoney",
+  -- The officer action queue's binding and the crest's tabard (#449): refused in combat, missing on some clients.
+  "SetBindingClick", "SetLargeGuildTabardTextures", "SetSmallGuildTabardTextures",
 }
 -- Names only these APIs have: as a field or method of anything but Compat they are flagged too.
 local API_ONLY = { GuildRoster = true, RegisterAddonMessagePrefix = true, SendAddonMessage = true,

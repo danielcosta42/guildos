@@ -209,4 +209,22 @@ SlashCmdList.GUILDOS("help")
 check(said("/gos open <feature>") and said("/gos find <text>") and said("/gos debug [selftest"), "the help keeps open, find and debug")
 check(not said("/gos selftest") and not said("/gos probe chat") and not said("/gos map"), "and leaves the rest to the window")
 
+-- The diagnostics' old top-level verbs still run them (audit B22; the maintainer typed /gos probe in game and read
+-- "Unknown command"): /gos probe and its three kinds, in any case, are their /gos debug ones.
+do
+  local ran = {}
+  GuildOS.Probe = { Run = function() ran[#ran + 1] = "probe" end, RunChat = function() ran[#ran + 1] = "chat" end,
+                    RunChannel = function() ran[#ran + 1] = "channel" end, RunInvite = function() ran[#ran + 1] = "invite" end }
+  printed = {}
+  for _, cmd in ipairs({ "probe", "Probe Chat", "probe channel", "probe invite", "debug probe invite", "  probe  " }) do
+    SlashCmdList.GUILDOS(cmd)
+  end
+  check(table.concat(ran, ",") == "probe,chat,channel,invite,invite,probe" and not said("Unknown command."),
+    "/gos probe [chat | channel | invite] run the probes: " .. table.concat(ran, ","))
+  printed = {}
+  SlashCmdList.GUILDOS("probe nonsense")
+  check(said("/gos debug probe"), "an unknown kind of probe says where the probes are")
+  GuildOS.Probe = nil
+end
+
 print(("commands-ui-click: %d checks passed"):format(checks))

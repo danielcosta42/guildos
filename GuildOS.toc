@@ -115,6 +115,7 @@ Modules\GuildManager.lua
 Modules\RosterColumns.lua
 Modules\ModPresets.lua
 Modules\BulkActions.lua
+Modules\ActionQueue.lua
 Modules\AltDeparture.lua
 Modules\AddonReminder.lua
 Modules\GearAudit.lua
@@ -202,6 +203,7 @@ UI\WarnDialog.lua
 UI\AltDepartureDialog.lua
 UI\ModAlerts.lua
 UI\BulkPanel.lua
+UI\ActionQueue.lua
 UI\RemindPanel.lua
 UI\MarksPanel.lua
 UI\CorePanel.lua

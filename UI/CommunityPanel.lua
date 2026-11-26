@@ -36,7 +36,6 @@ end
 -- The mockup's squares and glyphs: red for what is open now, the paper's brown for what is past.
 local SQUARE_OPEN, SQUARE_PAST = hex("b0261b"), hex("6f5a3c")
 local POLL_FILL = hex("ecd9a8")
-local GLYPHS = { hex("3e8e41"), hex("1d4f99"), hex("b0261b"), hex("b38a1a"), hex("6f5a3c") }
 
 -- A FontString in `color`, left-aligned; `wrap` lets it run over lines (give it a width).
 local function text(parent, size, color, role, wrap)
@@ -139,59 +138,368 @@ local function noteCard(parent, title, body)
 end
 
 ----------------------------------------------------------------------
--- ACTIVITY sub-panel: recent guild activity (last 7 days), the Chronicle's mockup: one card, a glyph per line.
+-- ACTIVITY sub-panel: what happened in the guild, in categories (#449, the maintainer: "can we make this screen
+-- categorized?"). A row of pills picks the period (today, 7 or 30 days); each category of the digest's model
+-- (Digest:Collect: members, levels and milestones, dungeons and raids, loot, achievements and renown, guild life,
+-- guildos.me) is a card, in two columns from SP.TWO_COLS, hidden when it has nothing to say. Members are counts
+-- (KPI chips) and names; the level cap is one list of names in their class's ink, each person once; the milestones
+-- every ten levels are a line each, their names under it. A long list of names shows a few and "and N more".
 ----------------------------------------------------------------------
-local function BuildActivitySub(panel)
-    local screen = cardScreen(panel, "GuildOSHubActivityScroll")
-    -- The card's title is a sentence: the mockup's "O que aconteceu nos últimos 7 dias".
-    local card = UI:CreateCard(screen.content, L["What happened in the last 7 days"])
-    local rows = {}
-    local lines = {}
-    local ROW_H = 32
-    screen.add(card, 0, 1, function(w)
-        local y = TOP - 4
-        for i, line in ipairs(lines) do
-            local r = rows[i]
-            if not r then
-                r = CreateFrame("Frame", nil, card)
-                r:SetHeight(ROW_H)
-                r.glyph = UI:CreateGlyph(r, 26)
-                r.glyph:SetPoint("LEFT", 0, 0)
-                r.text = text(r, 13, card.ink)
-                r.text:SetPoint("LEFT", 35, 0)
-                r.text:SetPoint("RIGHT", 0, 0)
-                rows[i] = r
-            end
-            local plain = tostring(line):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-            r.glyph:Set(plain:match("^%d+") and "+" or UI.Initial(plain), GLYPHS[(i - 1) % #GLYPHS + 1])
-            r.text:SetText(line)
-            r:ClearAllPoints()
-            r:SetPoint("TOPLEFT", PAD, -y)
-            r:SetWidth(w - 2 * PAD)
-            r:Show()
-            y = y + ROW_H
-        end
-        for i = #lines + 1, #rows do rows[i]:Hide() end
-        if #lines == 0 then
-            card.empty = card.empty or text(card, 12, card.soft)
-            card.empty:SetText(L["Nothing new in the last 7 days."])
-            card.empty:SetPoint("TOPLEFT", PAD, -TOP)
-            card.empty:Show()
-            y = y + 22
-        elseif card.empty then
-            card.empty:Hide()
-        end
-        return y + PAD - 2
-    end)
-    return function()
-        lines = {}
-        if GuildOS.Digest then
-            local since = GetServerTime() - 7 * 86400
-            lines = GuildOS.Digest:Build(since) or {}
-        end
-        screen.layout()
+local SP = UI.SP
+local ACTIVITY_PERIODS = {
+    { id = "today", label = L["Today"] },
+    { id = "week",  label = L["7 days"], days = 7 },
+    { id = "month", label = L["30 days"], days = 30 },
+}
+local NAMES_SHOWN = 12   -- names in a list before "and N more"
+local ROW_GLYPH = 24
+
+-- Where a period starts: today's midnight (the realm's clock as the game gives it), or N days back.
+local function periodStart(period, now)
+    if period.days then return now - period.days * 86400 end
+    local ok, t = pcall(date, "*t", now)
+    if ok and type(t) == "table" then
+        return now - ((t.hour or 0) * 3600 + (t.min or 0) * 60 + (t.sec or 0))
     end
+    return now - 86400
 end
+
+-- Short name -> class file, from the roster and the synced member data, for the names' ink.
+local function classesByName()
+    local out = {}
+    for key, m in pairs(GuildOS.db.members or {}) do
+        local cf = type(m) == "table" and (m.classFile or m.class)
+        if type(cf) == "string" and GuildOS.ClassColors[cf] then out[(key:match("^(.-)%-[^-]*$") or key)] = cf end
+    end
+    local n = GetNumGuildMembers and GetNumGuildMembers() or 0
+    for i = 1, n do
+        local full, _, _, _, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
+        if full and classFile then out[GuildOS:ShortName(full)] = classFile end
+    end
+    return out
+end
+
+-- What a card draws, from pools: texts, glyphs, links and metric chips, reused on every layout.
+local function cardPool(card)
+    local P = { fs = {}, gl = {}, bt = {}, ch = {}, used = {} }
+    function P.begin() P.used = { fs = 0, gl = 0, bt = 0, ch = 0 } end
+    local function take(kind, make)
+        P.used[kind] = P.used[kind] + 1
+        local o = P[kind][P.used[kind]]
+        if not o then o = make(); P[kind][P.used[kind]] = o end
+        o:ClearAllPoints()
+        o:Show()
+        return o
+    end
+    function P.text(size, color, wrap)
+        local fs = take("fs", function() return text(card, size, color, nil, wrap) end)
+        GuildOS:ApplyFont(fs, size)
+        fs:SetTextColor(color.r, color.g, color.b)
+        fs:SetWordWrap(wrap and true or false)
+        fs:SetJustifyH("LEFT")
+        return fs
+    end
+    function P.glyph() return take("gl", function() return UI:CreateGlyph(card, ROW_GLYPH) end) end
+    function P.link(caption, onClick)
+        local b = take("bt", function() return UI:SetButtonVariant(UI:CreateButton(card, "", 40, SP.HIT), "ghost") end)
+        b.label:SetText(caption)
+        b:SetWidth(math.ceil(b.label:GetStringWidth() or 40) + 4)
+        b:SetScript("OnClick", onClick)
+        return b
+    end
+    function P.chip(value, caption)
+        local c = take("ch", function() return UI:CreateMetricChip(card, "", "") end)
+        c:SetValue(tostring(value))
+        c.label:SetText(caption)
+        c:SetWidth(math.max(56, math.ceil(c.value:GetStringWidth() or 0), math.ceil(c.label:GetStringWidth() or 0)) + 24)
+        return c
+    end
+    function P.finish()
+        for kind, list in pairs({ fs = P.fs, gl = P.gl, bt = P.bt, ch = P.ch }) do
+            for i = P.used[kind] + 1, #list do list[i]:Hide() end
+        end
+    end
+    return P
+end
+
+local function BuildActivitySub(panel)
+    local Digest = GuildOS.Digest
+    local scroll, content = UI:CreateScrollFrame(panel, "GuildOSHubActivityScroll")
+    scroll:SetAllPoints(panel)
+    local state = { period = ACTIVITY_PERIODS[2], model = nil, expanded = {}, classes = {} }
+    local layout
+
+    -- The period, as pills on the wood.
+    local pills = {}
+    for i, p in ipairs(ACTIVITY_PERIODS) do
+        local b = UI:SetButtonVariant(UI:CreateButton(content, p.label, 80, SP.FIELD), "chip")
+        b:SetWidth(math.max(64, math.ceil(b.label:GetStringWidth() or 40) + 2 * SP.PAD))
+        b:SetPoint("TOPLEFT", (i == 1) and 2 or 0, -2)
+        if i > 1 then b:SetPoint("TOPLEFT", pills[i - 1], "TOPRIGHT", SP.UNIT * 2, 0) end
+        b:SetScript("OnClick", function()
+            state.period = p
+            state.expanded = {}
+            GuildOS:SafeCall(panel.activityRefresh)
+        end)
+        pills[i] = b
+    end
+
+    local empty = UI:CreateEmptyState(content, "!")
+
+    -- One card per category, each drawn by a function of (card, pool, width, data) returning its height (0: none).
+    local function ink(name)
+        local cf = state.classes[name]
+        if not cf then return name end
+        return "|cff" .. GuildOS:GetClassColorHex(cf) .. name .. "|r"
+    end
+
+    -- A list of names in their class's ink, wrapped; past NAMES_SHOWN, "and N more" opens the rest.
+    local function names(P, card, y, x, w, list, key)
+        local shown, open = {}, state.expanded[key]
+        local cut = open and #list or math.min(#list, NAMES_SHOWN)
+        for i = 1, cut do
+            local n = list[i]
+            shown[i] = type(n) == "table" and (ink(n.name) .. " (" .. tostring(n.detail) .. ")") or ink(n)
+        end
+        local fs = P.text(SP.BODY, card.ink, true)
+        fs:SetPoint("TOPLEFT", x, -y)
+        fs:SetWidth(w - x - SP.PAD)
+        UI:SetInkText(fs, table.concat(shown, ", "))
+        y = y + math.ceil(fs:GetStringHeight() or 14) + SP.UNIT
+        if #list > NAMES_SHOWN then
+            local more = open and L["Show less"] or string.format(L["and %d more"], #list - NAMES_SHOWN)
+            local b = P.link(more, function()
+                state.expanded[key] = not state.expanded[key] or nil
+                GuildOS:SafeCall(layout)
+            end)
+            b:SetPoint("TOPLEFT", x - 2, -y + SP.UNIT)
+            y = y + SP.HIT
+        end
+        return y
+    end
+
+    -- A line on a round glyph (the category's mark in its colour, or the row's own).
+    local function row(P, card, y, w, letter, color, line, meta)
+        local g = P.glyph()
+        g:SetPoint("TOPLEFT", SP.PAD, -y)
+        g:Set(letter, color)
+        local x = SP.PAD + ROW_GLYPH + SP.CELL
+        local fs = P.text(SP.BODY, card.ink, true)
+        fs:SetPoint("TOPLEFT", x, -(y + 5))
+        local right = 0
+        if meta then
+            local m = P.text(SP.META, card.soft)
+            m:SetText(meta)
+            m:SetPoint("TOPRIGHT", -SP.PAD, -(y + 6))
+            right = math.ceil(m:GetStringWidth() or 0) + SP.CELL
+        end
+        fs:SetWidth(w - x - SP.PAD - right)
+        UI:SetInkText(fs, line)
+        return y + math.max(ROW_GLYPH, math.ceil(fs:GetStringHeight() or 14) + 6) + SP.UNIT, x
+    end
+
+    local function section(P, card, y, caption)
+        local fs = P.text(SP.META + 1, card.soft)
+        fs:SetText(caption)
+        fs:SetPoint("TOPLEFT", SP.PAD, -y)
+        return y + SP.TITLE_H
+    end
+
+    local function lines(P, card, y, w, cat, list)
+        local color = Digest.Color(cat.color)
+        for _, line in ipairs(list) do y = row(P, card, y, w, cat.glyph, color, line) end
+        return y
+    end
+
+    local function namesOf(list, withDetail)
+        local out = {}
+        for i, e in ipairs(list) do out[i] = (withDetail and e.detail) and { name = e.name, detail = e.detail } or e.name end
+        return out
+    end
+
+    local DRAW = {}
+    function DRAW.members(P, card, w, d, cat)
+        local kinds = {
+            { list = d.joined,  label = L["Joined"] },
+            { list = d.left,    label = L["Left"] },
+            { list = d.kick,    label = L["Removed"] },
+            { list = d.promote, label = L["Promoted"], detail = true },
+            { list = d.demote,  label = L["Demoted"], detail = true },
+        }
+        local y, x = SP.TOP, SP.PAD
+        local rowH = 0
+        for _, k in ipairs(kinds) do
+            if k.list and #k.list > 0 then
+                local c = P.chip(#k.list, k.label)
+                local cw = c:GetWidth()
+                if x > SP.PAD and x + cw > w - SP.PAD then x, y = SP.PAD, y + rowH + SP.UNIT * 2 end
+                c:SetPoint("TOPLEFT", x, -y)
+                x = x + cw + SP.UNIT * 2
+                rowH = math.max(rowH, c:GetHeight())
+            end
+        end
+        if rowH > 0 then y = y + rowH + SP.SECTION end
+        for i, k in ipairs(kinds) do
+            if k.list and #k.list > 0 then
+                y = section(P, card, y, k.label)
+                y = names(P, card, y, SP.PAD, w, namesOf(k.list, k.detail), "members" .. i) + SP.UNIT
+            end
+        end
+        local extra = {}
+        for _, a in ipairs(d.anniversaries or {}) do
+            extra[#extra + 1] = string.format(L["%s is celebrating %d year(s) with the guild!"], a.name, a.years)
+        end
+        if d.inactive then extra[#extra + 1] = string.format(L["%d inactive member(s)"], d.inactive) end
+        if #extra == 0 and y == SP.TOP then return 0 end
+        return lines(P, card, y, w, cat, extra) - SP.UNIT + SP.PAD
+    end
+
+    function DRAW.levels(P, card, w, d, cat)
+        local y = SP.TOP
+        local color = Digest.Color(cat.color)
+        if d.dings and #d.dings > 0 then
+            y = section(P, card, y, string.format(L["Reached level %s"], tostring(GuildOS.Client.maxLevel)))
+            y = names(P, card, y, SP.PAD, w, namesOf(d.dings), "cap") + SP.UNIT * 2
+        end
+        if d.attunes and #d.attunes > 0 then
+            y = section(P, card, y, L["Attunements"])
+            y = names(P, card, y, SP.PAD, w, namesOf(d.attunes), "attune") + SP.UNIT * 2
+        end
+        for _, g in ipairs(d.levels or {}) do
+            local x
+            y, x = row(P, card, y, w, tostring(g.level), color,
+                string.format(L["Level %s — %d member(s)"], tostring(g.level), #g.names))
+            y = names(P, card, y - SP.UNIT, x, w, g.names, "level" .. g.level) + SP.UNIT
+        end
+        if y == SP.TOP then return 0 end
+        return y - SP.UNIT + SP.PAD
+    end
+
+    function DRAW.dungeons(P, card, w, d, cat)
+        local y = SP.TOP
+        local color = Digest.Color(cat.color)
+        for _, g in ipairs(d.clears or {}) do
+            local line = string.format(L["%s — %d member(s)"], g.name, #g.names)
+            if g.first then line = line .. "  |cff6b1d0e" .. L["First clear"] .. "|r" end
+            local x
+            y, x = row(P, card, y, w, "D", color, line)
+            y = names(P, card, y - SP.UNIT, x, w, g.names, "clear" .. tostring(g.id)) + SP.UNIT
+        end
+        for _, r in ipairs(d.raids or {}) do
+            y = row(P, card, y, w, "R", color, r.name, GuildOS:TimeAgo(r.at))
+        end
+        if y == SP.TOP then return 0 end
+        return y - SP.UNIT + SP.PAD
+    end
+
+    local function qualityColor(q)
+        local Compat = GuildOS.Compat
+        if q and Compat and Compat.GetItemQualityColor then
+            local r, g, b = Compat.GetItemQualityColor(q)
+            if r then return { r = r, g = g, b = b } end
+        end
+        return Digest.Color("7a3d9a")
+    end
+
+    -- An item as its name in its quality's colour: the link's own colour, or the quality's (the card's text takes
+    -- no hyperlink: a link drawn raw would show its code).
+    local function itemText(it)
+        local link = tostring(it.link or "?")
+        local name = link:match("%[(.-)%]") or link:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        local code = link:match("^|c(%x%x%x%x%x%x%x%x)")
+        if not code and it.quality then
+            local c = qualityColor(it.quality)
+            code = string.format("ff%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255)
+        end
+        return code and ("|c" .. code .. "[" .. name .. "]|r") or ("[" .. name .. "]"), name
+    end
+
+    function DRAW.loot(P, card, w, d)
+        local y = SP.TOP
+        for _, it in ipairs(d.items or {}) do
+            local who = it.player and ink(GuildOS:ShortName(it.player)) or nil
+            local item, name = itemText(it)
+            local code = item:match("^|cff(%x%x%x%x%x%x)")
+            local color = code and Digest.Color(code) or qualityColor(it.quality)
+            local line = who and string.format(L["%s received %s"], who, item) or item
+            y = row(P, card, y, w, UI.Initial(name), color, line, GuildOS:TimeAgo(it.at))
+        end
+        if y == SP.TOP then return 0 end
+        return y - SP.UNIT + SP.PAD
+    end
+
+    local cards = {}
+    for _, cat in ipairs(Digest and Digest.CATEGORIES or {}) do
+        local card = UI:CreateCard(content, cat.title)
+        local P = cardPool(card)
+        cards[#cards + 1] = { frame = card, cat = cat, fill = function(w)
+            P.begin()
+            local d = state.model and state.model[cat.id]
+            local h = 0
+            if d then
+                if DRAW[cat.id] then
+                    h = DRAW[cat.id](P, card, w, d, cat)
+                elseif #d.lines > 0 then
+                    h = lines(P, card, SP.TOP, w, cat, d.lines) - SP.UNIT + SP.PAD
+                end
+            end
+            P.finish()
+            return h
+        end }
+    end
+
+    -- The cards in two columns from SP.TWO_COLS (each into the shorter one), one under the other below it.
+    layout = function()
+        local w = (panel:GetWidth() or 0) - (UI.SCROLL_GUTTER or 12)
+        if w < 60 then w = 600 end   -- not laid out yet (built hidden): OnSizeChanged lays it out again
+        content:SetWidth(w)
+        for i, b in ipairs(pills) do UI:SetSelected(b, ACTIVITY_PERIODS[i] == state.period) end
+        local top = 2 + SP.FIELD + SP.GAP
+        local two = w >= SP.TWO_COLS
+        local cw = two and math.floor((w - 4 - SP.GAP) / 2) or (w - 4)
+        local y = { top, top }
+        local any = false
+        for _, c in ipairs(cards) do
+            local h = c.fill(cw) or 0
+            c.frame:SetShown(h > 0)
+            if h > 0 then
+                any = true
+                local col = (two and y[2] < y[1]) and 2 or 1
+                c.frame:ClearAllPoints()
+                c.frame:SetPoint("TOPLEFT", 2 + (col == 2 and (cw + SP.GAP) or 0), -y[col])
+                c.frame:SetSize(cw, h)
+                y[col] = y[col] + h + SP.GAP
+            end
+        end
+        empty:SetShown(not any)
+        if not any then
+            local p = state.period
+            empty:SetWidth(math.min(420, w - 4))
+            empty:Set(p.id == "today" and L["Nothing new today."]
+                or p.id == "month" and L["Nothing new in the last 30 days."]
+                or L["Nothing new in the last 7 days."])
+            empty:ClearAllPoints()
+            empty:SetPoint("TOP", content, "TOP", 0, -(top + SP.SECTION * 2))
+            y[1] = top + SP.SECTION * 2 + (empty:GetHeight() or 120)
+        end
+        content:SetHeight(math.max(y[1], y[2]) + 8)
+    end
+    panel:SetScript("OnSizeChanged", function() GuildOS:SafeCall(layout) end)
+    panel.activityState, panel.activityCards, panel.activityPills, panel.activityEmpty = state, cards, pills, empty
+
+    local function refresh()
+        state.model = nil
+        if Digest then
+            local now = GetServerTime()
+            state.model = Digest:Collect(periodStart(state.period, now))
+        end
+        state.classes = classesByName()
+        layout()
+    end
+    panel.activityRefresh = refresh
+    return refresh
+end
+UI.BuildActivityScreen = BuildActivitySub   -- the hub's Activity sub-tab; tools/activity-categories.lua builds it alone
 
 ----------------------------------------------------------------------
 -- BULLETIN sub-panel: the notices as pinned notes, the polls as bars, the officers' forms on the right.
