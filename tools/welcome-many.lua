@@ -148,4 +148,16 @@ GuildOS.GuildRules = { HasRules = function() return true end }
 r.welcomeRules = true
 check(R:WelcomeMessage():find("Type /gos rules", 1, true) ~= nil, "the rules' invitation ends the drawn welcome")
 
+-- {name} and {guild} in a welcome (#449).
+do
+  local F = R.FillWelcome
+  local realGI = GetGuildInfo
+  GetGuildInfo = function() return "Filhos da Horda" end
+  check(F("Welcome {name}!", "Ana-Realm") == "Welcome Ana!", "{name} becomes the name without its realm")
+  check(F("Bem-vindo {Nome} à {guild}", "Bob") == "Bem-vindo Bob à Filhos da Horda", "any case, {nome} too, and {guild}")
+  check(F("Welcome {name}!", { "Ana", "Bob" }) == "Welcome Ana, Bob!", "several who joined at once, by commas")
+  check(F("Welcome, {name}!", nil) == "Welcome,!" or F("Welcome {name}!", nil) == "Welcome!", "nobody to name leaves no stray space")
+  check(F("Hi {unknown}", "Ana") == "Hi {unknown}", "an unknown placeholder stays as written")
+  GetGuildInfo = realGI
+end
 print("welcome-many: " .. checks .. " checks passed")

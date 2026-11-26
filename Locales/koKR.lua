@@ -4512,3 +4512,4 @@ L["Only guildmates with Guild OS who share their position, and your group, show 
 L["Level %d %s"] = "%d 레벨 %s"
 L["%d yd"] = "%d미터"
 L["The attributes did not come through: the game hides them on this client while it restricts data (WoW: Forever). They fill in when the member syncs without that restriction."] = "능력치가 전달되지 않았습니다: 이 클라이언트는 데이터를 제한하는 동안 능력치를 숨깁니다 (WoW: Forever). 제한이 없을 때 동기화하면 채워집니다."
+L["Write {name} where the new member's name goes, and {guild} for the guild's name."] = "새 멤버 이름이 들어갈 곳에 {name}, 길드 이름에는 {guild}를 쓰세요."

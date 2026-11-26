@@ -4512,3 +4512,4 @@ L["Only guildmates with Guild OS who share their position, and your group, show 
 L["Level %d %s"] = "%d級 %s"
 L["%d yd"] = "%d碼"
 L["The attributes did not come through: the game hides them on this client while it restricts data (WoW: Forever). They fill in when the member syncs without that restriction."] = "屬性未能傳來：該客戶端在限制資料時會隱藏屬性（WoW: Forever）。成員在無此限制時同步後會顯示。"
+L["Write {name} where the new member's name goes, and {guild} for the guild's name."] = "在新成員名字的位置寫 {name}，公會名寫 {guild}。"

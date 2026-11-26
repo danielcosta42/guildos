@@ -4632,3 +4632,4 @@ L["Only guildmates with Guild OS who share their position, and your group, show 
 L["Level %d %s"] = "Niveau %d %s"
 L["%d yd"] = "%d m"
 L["The attributes did not come through: the game hides them on this client while it restricts data (WoW: Forever). They fill in when the member syncs without that restriction."] = "Les attributs ne sont pas arrivés : le jeu les masque sur ce client tant qu'il restreint les données (WoW: Forever). Ils apparaîtront quand le membre synchronisera sans cette restriction."
+L["Write {name} where the new member's name goes, and {guild} for the guild's name."] = "Écrivez {name} là où va le nom du nouveau membre, et {guild} pour le nom de la guilde."

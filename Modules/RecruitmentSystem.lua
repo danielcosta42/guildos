@@ -610,7 +610,31 @@ end
 
 -- The one way a welcome reaches guild chat, clicked (Forever) or on its own (Anniversary): the text
 -- is checked first and a send the game raises on is said, never lost (#270). True when it went.
+-- The welcome's placeholders: {name} (also {nome}, {player}) becomes who joined — several joined at once, their
+-- names joined by commas — and {guild} the guild's name. Names go without their realm. Case does not matter.
+function Recruitment.FillWelcome(msg, who)
+    if type(msg) ~= "string" then return msg end
+    local names = type(who) == "table" and who or (who and { who } or {})
+    local short = {}
+    for _, n in ipairs(names) do
+        local nm = tostring(n)
+        short[#short + 1] = (GuildOS.ShortName and GuildOS:ShortName(nm)) or nm:match("^([^-]+)") or nm
+    end
+    local joined = table.concat(short, ", ")
+    local guild = (GetGuildInfo and GetGuildInfo("player")) or ""
+    local out = msg:gsub("{(%a+)}", function(key)
+        local k = key:lower()
+        if k == "name" or k == "nome" or k == "player" then return joined end
+        if k == "guild" or k == "guilda" then return guild end
+        return nil
+    end)
+    -- A name placeholder with nobody to name (a test from /gos) leaves no stray comma.
+    out = out:gsub("%s+([,!.?])", "%1"):gsub("^%s+", "")
+    return out
+end
+
 function Recruitment:SendWelcomeText(msg, who)
+    msg = Recruitment.FillWelcome(msg, who)
     local problem = Recruitment.ChatTextProblem(msg)
     if problem then
         GuildOS:Print(string.format(L["The welcome was not sent: %s"], problem))
@@ -622,7 +646,10 @@ function Recruitment:SendWelcomeText(msg, who)
         return false
     end
     self:_WelcomeSent()
-    if who then GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. who .. L["|r in guild chat."]) end
+    if who then
+        local w = type(who) == "table" and table.concat(who, ", ") or tostring(who)
+        GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. w .. L["|r in guild chat."])
+    end
     return true
 end
 
@@ -632,8 +659,7 @@ function Recruitment:SendPendingWelcome()
     local list = self._pendingWelcomes
     local msg = self:WelcomeMessage()
     if not list or #list == 0 or not msg or msg == "" then return false end
-    if not self:SendWelcomeText(msg) then return false end
-    GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. table.concat(list, ", ") .. L["|r in guild chat."])
+    if not self:SendWelcomeText(msg, list) then return false end
     self._pendingWelcomes = {}
     if GuildOS.ActionQueue then GuildOS.ActionQueue:Remove("welcome") end
     return true
@@ -1458,7 +1484,7 @@ function Recruitment:ShowWelcomePopup()
     local list = self._pendingWelcomes or {}
     if #list == 0 then f:Hide() return end
     f.line:SetText(string.format(L["|cffFFFFFF%s|r joined the guild."], table.concat(list, ", ")))
-    f.note:SetText(self:WelcomeMessage() or "")
+    f.note:SetText(Recruitment.FillWelcome(self:WelcomeMessage() or "", list))
     f:Fit()
     f:Show()
 end
