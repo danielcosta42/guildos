@@ -71,10 +71,29 @@ local function round(n) return math.floor(n + 0.5) end
 -- the colours and the emblem's file), else the game draws its own (SetLargeGuildTabardTextures). Round by a mask
 -- where the client has them (the art's own disc), else the background is the disc itself and the game's square
 -- background is drawn inside the circle. Nothing to draw: the layers hide and the guild's initial stays.
+--
+-- How Blizzard draws the emblem (wow-ui-source, the same on live, classic and classic_era):
+--  * The emblem's file (C_GuildInfo.GetGuildTabardInfo().emblemFileID, GetGuildLogoInfo()'s 10th value; it is
+--    Textures\GuildEmblems\Emblem_NN, 512x1024 on retail) holds HALF the emblem: its right half, the emblem's
+--    middle on the file's left edge. Blizzard draws it twice, side by side, the left one mirrored, cropped to
+--    u 0..0.7, v 0.15..0.85, each half twice as tall as wide (94x188), so the whole emblem is a square:
+--    https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_AchievementUI/Mainline/Blizzard_AchievementUI.xml
+--    ($parentGuildEmblemLeft TexCoords 0.7,0,0.15,0.85 / Right 0,0.7,0.15,0.85; SetTexture(emblemFilename) in
+--    Blizzard_AchievementUI.lua), and InspectGuildFrame.xml (TabardLeftIcon mirrored, TabardRightIcon plain,
+--    SetDoubleGuildTabardTextures). Drawn whole in a square, as before, it showed half an emblem, small and
+--    off-centre (WoW: Forever, #449). The crop does not change between clients, so no Compat branch.
+--  * SetLargeGuildTabardTextures draws instead from a sheet of whole emblems, Interface\GuildFrame\GuildEmblemsLG_01
+--    (1024x1024, 16 columns of 64x64 cells), the cell picked by SetTexCoord from the emblem's style, and squeezes
+--    the texture to 7/8 of its height in width:
+--    https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_FrameXML/GuildUtil.lua
+--    (classic_era: Blizzard_UIParent/TBC/UIParent.lua, the style read from the emblem file's number). On a
+--    banner its emblem is 42 high on a 51 high background (Blizzard_Communities/CommunitiesList.xml, 36x42 on 52x51).
 ----------------------------------------------------------------------
 local TABARD_INSET = 3     -- inside the metal ring
-local EMBLEM_INSET = 7
 local SQUARE_INSET = 8     -- a square inside the circle, where there are no masks
+local EMBLEM_HALF = { 0, 0.7, 0.15, 0.85 }   -- Blizzard's crop of the emblem file's half (u0, u1, v0, v1)
+local SHEET_HEIGHT = 42 / 51                  -- the sheet's emblem on its background (CommunitiesList.xml)
+local SHEET_WIDTH = 7 / 8                     -- SetLargeGuildTabardTextures' width for that height
 
 function UI:TabardLayers(crest)
     local function layer(sub, inset)
@@ -85,8 +104,11 @@ function UI:TabardLayers(crest)
         return t
     end
     crest.tabBg = layer(1, TABARD_INSET)
-    crest.tabEmblem = layer(2, EMBLEM_INSET)
+    crest.tabEmblem = layer(2, TABARD_INSET)    -- the emblem's left half (mirrored), or the sheet's whole emblem
+    crest.tabEmblemR = layer(2, TABARD_INSET)   -- its right half
     crest.tabBorder = layer(3, TABARD_INSET)
+    -- One round mask over the disc for both halves (a mask set on a half would be stretched to the half).
+    crest.tabMask = GuildOS.Compat.NewMask(crest, GuildOS.Style.ART.circle, TABARD_INSET)
     return crest
 end
 
@@ -94,13 +116,15 @@ end
 function UI:DrawTabard(crest)
     if not (crest and crest.tabBg) then return nil end
     local Compat, Style = GuildOS.Compat, GuildOS.Style
-    local bg, em, bd = crest.tabBg, crest.tabEmblem, crest.tabBorder
+    local bg, em, emR, bd = crest.tabBg, crest.tabEmblem, crest.tabEmblemR, crest.tabBorder
     local disc = Style.ART.circle
+    local size = crest.GetWidth and crest:GetWidth()
+    if type(size) ~= "number" or size <= 0 then size = CREST end
+    local d = size - 2 * TABARD_INSET          -- the disc's diameter
     local how
     -- The guild's colours and emblem first (C_GuildInfo.GetGuildTabardInfo / GetGuildLogoInfo): a disc in the
-    -- background colour, the emblem centred in its colour, the ring in the border colour. The game's own drawing
-    -- (SetLargeGuildTabardTextures) places the emblem for a tabard's shape, and in the small round crest it fell
-    -- outside the disc: only the background showed (WoW: Forever, #449). It is the fallback.
+    -- background colour, the emblem's two halves (Blizzard's crop, above) filling it in the emblem's colour, the
+    -- ring in the border colour.
     local info = Compat.GuildTabardInfo()
     if info then
         bg:ClearAllPoints()
@@ -109,16 +133,27 @@ function UI:DrawTabard(crest)
         bg:SetTexture(disc)
         bg:SetTexCoord(0, 1, 0, 1)
         bg:SetVertexColor(info.background.r, info.background.g, info.background.b, 1)
-        em:SetTexture(info.emblemFile)
-        em:SetTexCoord(0, 1, 0, 1)
-        em:SetVertexColor(info.emblem.r, info.emblem.g, info.emblem.b, 1)
-        Compat.SetMask(em, disc)
+        local u0, u1, v0, v1 = EMBLEM_HALF[1], EMBLEM_HALF[2], EMBLEM_HALF[3], EMBLEM_HALF[4]
+        for _, half in ipairs({ { em, "RIGHT", u1, u0 }, { emR, "LEFT", u0, u1 } }) do
+            local t = half[1]
+            t:ClearAllPoints()
+            t:SetPoint(half[2], crest, "CENTER", 0, 0)
+            t:SetSize(d / 2, d)
+            t:SetTexture(info.emblemFile)
+            t:SetTexCoord(half[3], half[4], v0, v1)
+            t:SetVertexColor(info.emblem.r, info.emblem.g, info.emblem.b, 1)
+            Compat.AddMask(t, crest.tabMask)
+        end
         bd:SetTexture(Style.ART.ring)
         bd:SetTexCoord(0, 1, 0, 1)
         bd:SetVertexColor(info.border.r, info.border.g, info.border.b, 1)
         bd:Show()
         how = "info"
     elseif Compat.SetGuildTabardTextures(em, bg, bd) then
+        -- The sheet's cell, centred at Blizzard's banner proportion (above); its coordinates are the game's.
+        em:ClearAllPoints()
+        em:SetPoint("CENTER", crest, "CENTER", 0, 0)
+        em:SetSize(d * SHEET_HEIGHT * SHEET_WIDTH, d * SHEET_HEIGHT)
         if bg.SetMask ~= nil then
             Compat.SetMask(bg, disc)
             bg:ClearAllPoints()
@@ -135,6 +170,7 @@ function UI:DrawTabard(crest)
     end
     bg:SetShown(how ~= nil)
     em:SetShown(how ~= nil)
+    emR:SetShown(how == "info")
     if not how then bd:Hide() end
     if crest.letter then crest.letter:SetShown(how == nil) end
     crest.tabard = how

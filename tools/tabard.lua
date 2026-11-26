@@ -87,6 +87,33 @@ SetLargeGuildTabardTextures = function(unit, em) if unit == "player" then em:Set
 check(Compat.TabardReport() == "SetLargeGuildTabardTextures (masked round)", "the game's drawing, round")
 local e, b2, b3 = tex(), tex(), tex()
 check(Compat.SetGuildTabardTextures(e, b2, b3) and e.file == 77, "and it draws on the crest's textures")
+-- The game picks the emblem's cell in its sheet (GuildEmblemsLG_01, 16 columns of 64/1024) by SetTexCoord; Compat
+-- resets the coordinates first and takes the whole sheet left as no emblem.
+local function ctex()
+  local t = tex()
+  t.SetTexCoord = function(self, ...) self.tc = { ... } end
+  t.GetTexCoord = function(self) local c = self.tc
+    return c[1], c[3], c[1], c[4], c[2], c[3], c[2], c[4] end
+  return t
+end
+local ce = ctex()
+ce.tc = { 0.5, 0.5625, 0, 0.0625 }
+SetLargeGuildTabardTextures = function(unit, em) if unit == "player" then em:SetTexture(77) end end
+check(not Compat.SetGuildTabardTextures(ce, tex(), tex()) and ce.tc[2] == 1, "the whole sheet (no cell picked): no tabard")
+SetLargeGuildTabardTextures = function(unit, em)   -- style 164: column 4, row 10
+  if unit == "player" then em:SetTexture(77); em:SetTexCoord(4 / 16, 5 / 16, 10 / 16, 11 / 16) end
+end
+check(Compat.SetGuildTabardTextures(ce, tex(), tex()) and ce.tc[1] == 0.25 and ce.tc[4] == 11 / 16, "a cell: drawn")
+-- A round mask over an area (the crest's disc), for textures that cover only part of it (the emblem's halves).
+check(Compat.NewMask({}, "circle", 3) == nil and Compat.AddMask(tex(), nil) == false, "no mask textures: none")
+local pts = {}
+local parent = { CreateMaskTexture = function() return { SetTexture = function(m, f) m.file = f end,
+  SetPoint = function(_, ...) pts[#pts + 1] = { ... } end } end }
+local m = Compat.NewMask(parent, "circle", 3)
+check(m and m.file == "circle" and #pts == 2 and pts[1][1] == "TOPLEFT" and pts[1][4] == 3 and pts[2][5] == 3,
+  "the mask, inset inside its parent")
+local under
+check(Compat.AddMask({ AddMaskTexture = function(_, mm) under = mm end }, m) and under == m, "a texture under it")
 SetLargeGuildTabardTextures = function() end
 C_GuildInfo, GetGuildLogoInfo = nil, nil
 check(Compat.TabardReport():find("^none: the guild's tabard did not answer %(has GetGuildTabardFiles, SetLargeGuildTabardTextures%)"),

@@ -693,17 +693,46 @@ do
     "a client that gives no tabard keeps the initial, the tabard's layers hidden (#449)")
   -- The guild's tabard in the crest (#449): GetGuildLogoInfo's colours and emblem, drawn inside the ring and masked
   -- round where textures take a mask; PLAYER_GUILD_UPDATE draws it again, and without it the initial comes back.
-  local masks = {}
+  local masks, added = {}, {}
   Frame.SetMask = function(self, path) masks[#masks + 1] = { self, path } end
+  Frame.SetTexCoord = function(self, ...) self.texCoord = { ... } end
+  Frame.AddMaskTexture = function(self, m) added[#added + 1] = { self, m } end
   GetGuildLogoInfo = function() return 33, 220, 255, 255, 255, 255, 223, 165, 90, 414975, 69 end
   f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
   local cr = f.crest
-  check(cr.tabard == "info" and cr.tabEmblem.shown and cr.tabEmblem.texture == 414975 and cr.tabBg.shown
-      and not cr.letter.shown, "the tabard replaces the initial: its emblem and background drawn")
-  check(math.abs(cr.tabBg.color[1] - 33 / 255) < 1e-6 and math.abs(cr.tabEmblem.color[2] - 165 / 255) < 1e-6,
-    "in the guild's own colours")
-  check(cr.tabBg.texture:find("Salao\\circle.tga", 1, true) and #masks >= 1 and masks[1][1] == cr.tabEmblem,
-    "on the round disc, the emblem masked round")
+  local L, R = cr.tabEmblem, cr.tabEmblemR
+  check(cr.tabard == "info" and L.shown and R.shown and L.texture == 414975 and R.texture == 414975 and cr.tabBg.shown
+      and not cr.letter.shown, "the tabard replaces the initial: its emblem (both halves) and background drawn")
+  check(math.abs(cr.tabBg.color[1] - 33 / 255) < 1e-6 and math.abs(L.color[2] - 165 / 255) < 1e-6
+      and math.abs(R.color[2] - 165 / 255) < 1e-6, "in the guild's own colours")
+  -- The emblem file holds the emblem's right half: Blizzard's crop (Blizzard_AchievementUI.xml), the left mirrored.
+  local function coords(c, want)
+    if not c or #c ~= #want then return false end
+    for i = 1, #want do if math.abs(c[i] - want[i]) > 1e-9 then return false end end
+    return true
+  end
+  check(coords(L.texCoord, { 0.7, 0, 0.15, 0.85 }) and coords(R.texCoord, { 0, 0.7, 0.15, 0.85 }),
+    "Blizzard's texcoords: the left half mirrored, u 0..0.7, v 0.15..0.85")
+  -- Each half is half the disc wide and the disc tall (34 - 2 * 3 = 28), meeting at the crest's centre.
+  check(L.w == 14 and L.h == 28 and R.w == 14 and R.h == 28, "the halves fill the disc: 14x28 each, a 28px square")
+  check(#L.points == 1 and L.points[1][1] == "RIGHT" and L.points[1][2] == cr and L.points[1][3] == "CENTER"
+      and L.points[1][4] == 0 and L.points[1][5] == 0 and #R.points == 1 and R.points[1][1] == "LEFT"
+      and R.points[1][2] == cr and R.points[1][3] == "CENTER", "centred: the halves meet on the crest's centre")
+  check(cr.tabBg.texture:find("Salao\\circle.tga", 1, true) and #masks == 0,
+    "on the round disc; no SetMask on a half (it would stretch the circle to the half)")
+  check(cr.tabMask == nil and #added == 0, "a client without mask textures: the halves unmasked, inside the ring")
+  -- With mask textures: one round mask over the disc, under both halves.
+  Frame.CreateMaskTexture = function(self) local m = newFrame("MaskTexture", self); return m end
+  local crest2 = CreateFrame("Frame", nil, UIParent)
+  crest2:SetSize(34, 34)
+  UI:TabardLayers(crest2)
+  check(crest2.tabMask and crest2.tabMask.texture:find("Salao\\circle.tga", 1, true) and #crest2.tabMask.points == 2
+      and crest2.tabMask.points[1][4] == 3, "the disc's mask, inside the ring")
+  added = {}
+  UI:DrawTabard(crest2)
+  check(#added == 2 and added[1][2] == crest2.tabMask and added[2][2] == crest2.tabMask
+      and added[1][1] == crest2.tabEmblem and added[2][1] == crest2.tabEmblemR, "both halves under the round mask")
+  Frame.CreateMaskTexture = nil
   check(cr.ring.drawSub == nil or cr.ring.drawSub == 4, "the ring above the tabard")
   -- The data wins over the game's own drawing (SetLargeGuildTabardTextures places the emblem for a tabard's shape,
   -- and in the small crest it fell outside the disc on WoW: Forever, #449): with both, the data's disc.
@@ -720,8 +749,21 @@ do
   f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
   check(cr.tabard == "game" and cr.tabEmblem.texture == 5000 and cr.tabBg.shown and not cr.tabBorder.shown
       and #masks == 1 and masks[1][1] == cr.tabBg and not cr.letter.shown, "the game's own tabard, masked round, the ring its border")
-  SetLargeGuildTabardTextures, Frame.GetTexture = nil, nil
-  Frame.SetMask = nil
+  check(not R.shown and math.abs(L.w - 28 * 42 / 51 * 7 / 8) < 1e-9 and math.abs(L.h - 28 * 42 / 51) < 1e-9 and #L.points == 1
+      and L.points[1][1] == "CENTER" and L.points[1][2] == cr, "the sheet's emblem centred, 7/8 wide, 42/51 of the disc")
+  -- A client whose game drawing leaves the whole sheet (no cell picked): no tabard, the initial.
+  Frame.GetTexCoord = function(self) local c = self.texCoord or { 0, 1, 0, 1 }
+    return c[1], c[3], c[1], c[4], c[2], c[3], c[2], c[4] end
+  f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
+  check(cr.tabard == nil and cr.letter.shown, "the game's drawing with the whole sheet is no tabard")
+  SetLargeGuildTabardTextures = function(unit, emblem, bgTex)
+    if unit == "player" then emblem:SetTexture(5000); emblem:SetTexCoord(0.25, 0.3125, 0.625, 0.6875); bgTex:SetTexture(5001) end
+  end
+  f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
+  check(cr.tabard == "game" and coords(cr.tabEmblem.texCoord, { 0.25, 0.3125, 0.625, 0.6875 }), "a cell of it is: the game's coordinates kept")
+  SetLargeGuildTabardTextures, Frame.GetTexture, Frame.GetTexCoord = nil, nil, nil
+  Frame.SetMask, Frame.AddMaskTexture = nil, nil
+  Frame.SetTexCoord = function() end
   f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
   check(cr.tabard == nil and cr.letter.shown and not cr.tabEmblem.shown, "no tabard: the initial again")
   check(f.nameText.text == "Chama" and f.nameText.font.file == F.title and same(f.nameText.color, C.gold),

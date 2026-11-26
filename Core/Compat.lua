@@ -2386,13 +2386,34 @@ function Compat.SetMask(tex, path)
     return (pcall(tex.SetMask, tex, path))
 end
 
+-- A mask of the file at `path` on `parent`, `inset` px inside its edges, for textures that do not cover that
+-- whole area (SetMask stretches the mask over the masked texture's own rectangle: on half a disc, half an
+-- ellipse). Nil on a client without mask textures. Compat.AddMask puts a texture under it.
+function Compat.NewMask(parent, path, inset)
+    if not (parent and parent.CreateMaskTexture) then return nil end
+    local ok, m = pcall(parent.CreateMaskTexture, parent)
+    if not ok or type(m) ~= "table" then return nil end
+    inset = inset or 0
+    pcall(m.SetTexture, m, path, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    m:SetPoint("TOPLEFT", parent, "TOPLEFT", inset, -inset)
+    m:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -inset, inset)
+    return m
+end
+
+function Compat.AddMask(tex, mask)
+    if not (tex and mask and tex.AddMaskTexture) then return false end
+    return (pcall(tex.AddMaskTexture, tex, mask))
+end
+
 ----------------------------------------------------------------------
 -- The guild's tabard on the window's crest (#449). Three ways a client may give it, asked in this order:
 --   C_GuildInfo.GetGuildTabardInfo(unit): { backgroundColor, borderColor, emblemColor (colours), emblemFileID }
 --   GetGuildLogoInfo(): the three colours as bytes, the emblem's file and its style (Compat.GuildTabard)
 --   SetLargeGuildTabardTextures / SetSmallGuildTabardTextures(unit, emblemTex, backgroundTex, borderTex): the
 --   game draws its own textures, colours included (the guild frame's way)
--- Each is nil-guarded and pcalled; nothing secret is drawn.
+-- Each is nil-guarded and pcalled; nothing secret is drawn. The emblem file of the first two is half an emblem,
+-- drawn twice and mirrored (UI:DrawTabard has Blizzard's crop and the source links); the third draws from a sheet
+-- of whole emblems.
 ----------------------------------------------------------------------
 local function colorOf(c)
     if type(c) ~= "table" then return nil end
@@ -2443,10 +2464,22 @@ function Compat.SetGuildTabardTextures(emblemTex, backgroundTex, borderTex)
     if not (IsInGuild and IsInGuild()) then return false end
     local set = SetLargeGuildTabardTextures or SetSmallGuildTabardTextures
     if not set or not emblemTex then return false end
+    -- The game picks the emblem's cell in its sheet by SetTexCoord (GuildUtil.lua's SetGuildTabardTextures, see
+    -- UI:DrawTabard); a client whose tabard info lacks the emblem's style leaves the coordinates alone and the whole
+    -- sheet would be drawn (or it set the no-design picture, whole). Reset first, then a cell or nothing.
+    if emblemTex.SetTexCoord then emblemTex:SetTexCoord(0, 1, 0, 1) end
     local ok = pcall(set, "player", emblemTex, backgroundTex, borderTex)
     if not ok then return false end
     local got = emblemTex.GetTexture and emblemTex:GetTexture()
-    return got ~= nil and got ~= "" and not Compat.IsSecret(got)
+    if got == nil or got == "" or Compat.IsSecret(got) then return false end
+    if emblemTex.GetTexCoord then
+        local ok2, ulx, _, _, _, urx = pcall(emblemTex.GetTexCoord, emblemTex)
+        if ok2 and type(ulx) == "number" and type(urx) == "number" and not Compat.IsSecret(ulx, urx)
+            and math.abs(urx - ulx) > 0.5 then
+            return false
+        end
+    end
+    return true
 end
 
 -- What the crest would draw the tabard with here, for /gos debug probe: the API used ("SetLargeGuildTabardTextures
