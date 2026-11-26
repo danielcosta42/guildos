@@ -5,6 +5,11 @@
 --   * Guild hub: Activity feed, Bulletin board, Polls (sub-tabs)
 --   * DKP: standings + officer controls
 -- Renders from the module data APIs (Rule 3 / Rule 10).
+--
+-- The Salão's entries and the Chronicle's Activity are drawn as the approved mockup (#449 phase 3):
+-- parchment cards to read on the wood, in two columns (the mockup's .g2) from a 700px tab and one under it
+-- below; the notices as pinned notes, the polls as bars, the rules as a parchment list, the calls as lines
+-- with a coloured square, the forms in a card of their own on the right.
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
 local C = GuildOS.Colors
@@ -13,72 +18,183 @@ local WHITE = "Interface\\Buttons\\WHITE8x8"
 local TAB_H = 28        -- UI:CreateTab's fixed height
 local TAB_MIN_W = 70    -- narrowest a sub-tab may be drawn
 local TAB_PAD = 20      -- label padding inside a sub-tab
--- Every sub-tab lays out on the same grid (#371): content flush with the sub-tab bar's left edge,
--- its first line GAP under the sub-panel's top, blocks GAP apart, and a later section title with
--- room over it for its rule.
-local GAP = UI.GAP
-local SECTION_SPACE = 20   -- over a later UI:CreateSectionTitle: its rule sits 12px above it
-local FIELD_H = 24         -- a one-line field, and the button beside it
+local FIELD_H = 26         -- a one-line field, and the button beside it
 
 ----------------------------------------------------------------------
--- Shared builders
+-- The cards (#449 phase 3)
 ----------------------------------------------------------------------
--- A scroll list filling the panel under `top`: a region it hangs GAP below, or an offset from the
--- panel's top (GAP by default). Its child keeps the list's width, less the scroll bar's gutter, and
--- every row hangs from both top corners, so a tab built hidden (0 wide) still lays out (#371).
-local function makeScroll(panel, name, top)
-    local holder = CreateFrame("Frame", nil, panel)
-    if type(top) == "table" then
-        holder:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, -GAP)
-    else
-        holder:SetPoint("TOPLEFT", 0, -(top or GAP))
+local TWO_COLUMNS = 700     -- from this content width the cards sit in two columns
+local LEFT_SHARE  = 0.535   -- the mockup's 1.15fr : 1fr
+local GUTTER      = 12
+local PAD         = UI.CARD_PAD or 14
+local TOP         = 38      -- a card's first line, under its title
+local NOTE_GAP    = 10
+
+local function hex(h)
+    return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 }
+end
+-- The mockup's squares and glyphs: red for what is open now, the paper's brown for what is past.
+local SQUARE_OPEN, SQUARE_PAST = hex("b0261b"), hex("6f5a3c")
+local POLL_FILL = hex("ecd9a8")
+local GLYPHS = { hex("3e8e41"), hex("1d4f99"), hex("b0261b"), hex("b38a1a"), hex("6f5a3c") }
+
+-- A FontString in `color`, left-aligned; `wrap` lets it run over lines (give it a width).
+local function text(parent, size, color, role, wrap)
+    local fs = parent:CreateFontString(nil, "OVERLAY")
+    GuildOS:ApplyFont(fs, size, role)
+    fs:SetShadowOffset(0, 0)
+    fs:SetTextColor(color.r, color.g, color.b)
+    fs:SetJustifyH("LEFT")
+    fs:SetWordWrap(wrap and true or false)
+    return fs
+end
+
+-- A thin rule of the card's line colour across `row`'s top.
+local function rule(row, card)
+    local t = row:CreateTexture(nil, "ARTWORK")
+    t:SetTexture(WHITE)
+    UI:Hairline(t)
+    local c = card.lineColor or C.paperLine
+    t:SetVertexColor(c.r, c.g, c.b, 1)
+    t:SetPoint("TOPLEFT", 0, 0)
+    t:SetPoint("TOPRIGHT", 0, 0)
+    return t
+end
+
+-- A small rounded square in a colour with a letter on it (the mockup's .ic): an open call, a closed poll.
+local function square(parent, size)
+    local sq = CreateFrame("Frame", nil, parent)
+    sq:SetSize(size, size)
+    sq.fill = sq:CreateTexture(nil, "ARTWORK")
+    sq.fill:SetTexture(GuildOS.Style.ART.card)
+    sq.fill:SetAllPoints()
+    sq.mark = text(sq, 12, { r = 1, g = 1, b = 1 }, "button")
+    sq.mark:SetJustifyH("CENTER")
+    sq.mark:SetPoint("CENTER", 0, 0)
+    function sq:Set(letter, c)
+        self.fill:SetVertexColor(c.r, c.g, c.b, 1)
+        self.mark:SetText(letter or "")
     end
-    holder:SetPoint("BOTTOMRIGHT", 0, 0)
-    local scroll, child = UI:CreateScrollFrame(holder, name)
-    scroll:SetAllPoints()
-    UI:BindScrollChildWidth(scroll, child)
-    return holder, child
+    return sq
 end
 
-local function clear(child)
-    for _, c in pairs({ child:GetChildren() }) do c:Hide() end
-    for _, r in pairs({ child:GetRegions() }) do r:Hide() end
+-- A field's label over it (the mockup's .field), in the card's ink.
+local function label(card)
+    return text(card, 12, card.ink, nil)
+end
+
+-- A screen of cards over a sub-panel: a scroll area, cards added across both columns (0), to the left (1) or the right (2) column in
+-- `order`, each with fill(width) returning its height (0 hides it). Laid out at once on a resize: a narrow
+-- tab stacks the right column under the left.
+local function cardScreen(panel, name)
+    local scroll, content = UI:CreateScrollFrame(panel, name)
+    scroll:SetAllPoints(panel)
+    local s = { scroll = scroll, content = content, cards = {} }
+    function s.add(card, col, order, fill)
+        s.cards[#s.cards + 1] = { frame = card, col = col, order = order or #s.cards, fill = fill }
+        table.sort(s.cards, function(a, b)
+            if a.col ~= b.col then return a.col < b.col end
+            return a.order < b.order
+        end)
+        return card
+    end
+    function s.layout()
+        local w = (panel:GetWidth() or 0) - (UI.SCROLL_GUTTER or 12)
+        if w < 60 then w = 600 end   -- not laid out yet (built hidden): OnSizeChanged lays it out again
+        content:SetWidth(w)
+        local two = w >= TWO_COLUMNS
+        local lw = two and math.floor((w - GUTTER) * LEFT_SHARE) or w
+        local rw = two and (w - GUTTER - lw) or w
+        -- 2px in, so the paper's shadow is not cut at the scroll area's edge.
+        local y = { 2, 2 }
+        for _, c in ipairs(s.cards) do
+            local right = two and c.col == 2
+            local cw = right and rw or lw
+            if c.col == 0 then cw = w end   -- a card across both columns, over them
+            local h = c.fill(cw) or 0
+            local slot = right and 2 or 1
+            c.frame:ClearAllPoints()
+            c.frame:SetPoint("TOPLEFT", right and (lw + GUTTER) or 0, -y[slot])
+            c.frame:SetSize(cw, math.max(1, h))
+            c.frame:SetShown(h > 0)
+            if h > 0 then y[slot] = y[slot] + h + GUTTER end
+            if c.col == 0 then y[2] = y[1] end
+        end
+        content:SetHeight(math.max(y[1], y[2]) + 8)
+    end
+    panel:SetScript("OnSizeChanged", function() GuildOS:SafeCall(s.layout) end)
+    return s
+end
+
+-- A short dark card of one paragraph (the mockup's H.dark with a .sm line).
+local function noteCard(parent, title, body)
+    local card = UI:CreateCard(parent, title, { dark = true })
+    card.body = text(card, 12, card.soft, nil, true)
+    card.body:SetPoint("TOPLEFT", PAD, -TOP)
+    card.body:SetText(body)
+    return card, function(w)
+        card.body:SetWidth(w - 2 * PAD)
+        return TOP + (card.body:GetStringHeight() or 14) + PAD
+    end
 end
 
 ----------------------------------------------------------------------
--- ACTIVITY sub-panel: recent guild activity (last 7 days)
+-- ACTIVITY sub-panel: recent guild activity (last 7 days), the Chronicle's mockup: one card, a glyph per line.
 ----------------------------------------------------------------------
 local function BuildActivitySub(panel)
-    local hint = UI:CreateText(panel, L["What's happened in the guild lately."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    hint:SetPoint("TOPLEFT", 0, -GAP)
-    local _, child = makeScroll(panel, "GuildOSHubActivityScroll", hint)
-
+    local screen = cardScreen(panel, "GuildOSHubActivityScroll")
+    -- The card's title is a sentence: the mockup's "O que aconteceu nos últimos 7 dias".
+    local card = UI:CreateCard(screen.content, L["What happened in the last 7 days"])
+    local rows = {}
+    local lines = {}
+    local ROW_H = 32
+    screen.add(card, 0, 1, function(w)
+        local y = TOP - 4
+        for i, line in ipairs(lines) do
+            local r = rows[i]
+            if not r then
+                r = CreateFrame("Frame", nil, card)
+                r:SetHeight(ROW_H)
+                r.glyph = UI:CreateGlyph(r, 26)
+                r.glyph:SetPoint("LEFT", 0, 0)
+                r.text = text(r, 13, card.ink)
+                r.text:SetPoint("LEFT", 35, 0)
+                r.text:SetPoint("RIGHT", 0, 0)
+                rows[i] = r
+            end
+            local plain = tostring(line):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+            r.glyph:Set(plain:match("^%d+") and "+" or UI.Initial(plain), GLYPHS[(i - 1) % #GLYPHS + 1])
+            r.text:SetText(line)
+            r:ClearAllPoints()
+            r:SetPoint("TOPLEFT", PAD, -y)
+            r:SetWidth(w - 2 * PAD)
+            r:Show()
+            y = y + ROW_H
+        end
+        for i = #lines + 1, #rows do rows[i]:Hide() end
+        if #lines == 0 then
+            card.empty = card.empty or text(card, 12, card.soft)
+            card.empty:SetText(L["Nothing new in the last 7 days."])
+            card.empty:SetPoint("TOPLEFT", PAD, -TOP)
+            card.empty:Show()
+            y = y + 22
+        elseif card.empty then
+            card.empty:Hide()
+        end
+        return y + PAD - 2
+    end)
     return function()
-        clear(child)
-        local lines = {}
+        lines = {}
         if GuildOS.Digest then
             local since = GetServerTime() - 7 * 86400
-            lines = GuildOS.Digest:Build(since)
+            lines = GuildOS.Digest:Build(since) or {}
         end
-        local y = 0
-        -- One line per thing that happened, as a plain list: no gold bullet before it (#371).
-        for _, line in ipairs(lines) do
-            local fs = UI:CreateText(child, line, 12, C.text.r, C.text.g, C.text.b)
-            fs:SetPoint("TOPLEFT", 0, -y)
-            fs:SetPoint("TOPRIGHT", 0, -y)
-            fs:SetJustifyH("LEFT")
-            y = y + math.max(20, (fs:GetStringHeight() or 14) + GAP)
-        end
-        if #lines == 0 then
-            local empty = UI:CreateText(child, L["Nothing new in the last 7 days."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-            empty:SetPoint("TOPLEFT", 0, 0)
-        end
-        child:SetHeight(math.max(1, y))
+        screen.layout()
     end
 end
 
 ----------------------------------------------------------------------
--- BULLETIN sub-panel
+-- BULLETIN sub-panel: the notices as pinned notes, the polls as bars, the officers' forms on the right.
 ----------------------------------------------------------------------
 -- The polls, drawn on the board under the notices (audit B24): what a poll is, a kind of notice.
 local function pollKey(name)
@@ -86,101 +202,256 @@ local function pollKey(name)
     return GuildOS:GetPlayerKey(short, GetRealmName())
 end
 
-local function drawPolls(child, y)
-    local polls = (GuildOS.Polls and GuildOS.Polls:GetSorted()) or {}
-    local isOfficer = GuildOS:IsOfficer()
-    local myKey = pollKey(GuildOS.Compat.PlayerName())
-    for _, p in ipairs(polls) do
-        -- The question in the text colour, a closed one in the soft one (#371).
-        local qc = p.closed and C.textSoft or C.text
-        local q = UI:CreateText(child, (p.closed and "[" .. L["closed"] .. "] " or "") .. p.question, 12, qc.r, qc.g, qc.b)
-        local closable = isOfficer and not p.closed
-        q:SetPoint("TOPLEFT", 0, -y)
-        q:SetPoint("TOPRIGHT", closable and -(56 + GAP) or 0, -y)
-        q:SetJustifyH("LEFT")
-        if closable then
-            local closeBtn = UI:CreateButton(child, L["Close"], 56, 18)
-            closeBtn:SetPoint("TOPRIGHT", 0, -y)
-            local id = p.id
-            closeBtn:SetScript("OnClick", function() if GuildOS.Polls then GuildOS.Polls:Close(id) end end)
-        end
-        y = y + math.max(18, (q:GetStringHeight() or 14) + 4)
-
-        local total, counts = 0, {}
-        for _, opt in pairs(p.votes or {}) do counts[opt] = (counts[opt] or 0) + 1; total = total + 1 end
-        local myVote = p.votes and p.votes[myKey]
-        for idx, optText in ipairs(p.options or {}) do
-            local n = counts[idx] or 0
-            local pct = total > 0 and math.floor(n / total * 100 + 0.5) or 0
-            local btn = UI:CreateButton(child, string.format("%s  (%d · %d%%)", optText, n, pct), 1, 20)
-            btn:SetPoint("TOPLEFT", 0, -y)
-            btn:SetPoint("TOPRIGHT", 0, -y)
-            -- My vote is the selected option, as every selection is marked (#371).
-            UI:SetSelected(btn, myVote == idx)
-            btn.label:ClearAllPoints()
-            btn.label:SetPoint("LEFT", 8, 0)
-            if not p.closed then
-                local id, oi = p.id, idx
-                btn:SetScript("OnClick", function() if GuildOS.Polls then GuildOS.Polls:Vote(id, oi) end end)
-            end
-            y = y + 22
-        end
-        local meta = UI:CreateText(child, string.format(L["%d vote(s) · by %s"], total, p.author or "?"),
-            11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        meta:SetPoint("TOPLEFT", 0, -y)
-        y = y + 22
+-- What a poll's bars show: { text, n, pct, mine } per option, the total and this player's vote.
+local function tally(p, myKey)
+    local total, counts = 0, {}
+    for _, opt in pairs(p.votes or {}) do counts[opt] = (counts[opt] or 0) + 1; total = total + 1 end
+    local out = {}
+    for idx, optText in ipairs(p.options or {}) do
+        local n = counts[idx] or 0
+        out[idx] = { text = optText, n = n, pct = total > 0 and math.floor(n / total * 100 + 0.5) or 0 }
     end
-    return y, #polls
+    return out, total, p.votes and p.votes[myKey]
+end
+
+-- One option of a poll (the mockup's .poll button): a light bar filled to its share, "Option · n · p%" on it,
+-- this player's vote outlined in the soft gold. A click votes while the poll is open.
+local function pollBar(card)
+    local b = CreateFrame("Button", nil, card)
+    b:SetHeight(30)
+    local bg = GuildOS.Style:Nine(b, "card", 5, "BACKGROUND", 1)
+    bg:SetColor(C.paperLight)
+    b.line = GuildOS.Style:Nine(b, "card-line", 5, "BORDER", 0)
+    b.fill = b:CreateTexture(nil, "BACKGROUND", nil, 2)
+    b.fill:SetTexture(WHITE)
+    b.fill:SetVertexColor(POLL_FILL.r, POLL_FILL.g, POLL_FILL.b, 1)
+    b.fill:SetPoint("TOPLEFT", 1, -1)
+    b.fill:SetPoint("BOTTOMLEFT", 1, 1)
+    b.label = text(b, 13, card.ink)
+    b.label:SetPoint("LEFT", 10, 0)
+    b.label:SetPoint("RIGHT", -10, 0)
+    b:SetScript("OnClick", function(self) if self.vote then self.vote() end end)
+    return b
+end
+
+local function drawPolls(card, y, w, p, myKey)
+    card.bars = card.bars or {}
+    local opts, total, myVote = tally(p, myKey)
+    for idx, o in ipairs(opts) do
+        local b = card.bars[idx] or pollBar(card)
+        card.bars[idx] = b
+        b:ClearAllPoints()
+        b:SetPoint("TOPLEFT", PAD, -y)
+        b:SetWidth(w - 2 * PAD)
+        b.fill:SetWidth(math.max(1, (w - 2 * PAD - 2) * o.pct / 100))
+        b.fill:SetShown(o.pct > 0)
+        b.label:SetText(string.format("%s \194\183 %d \194\183 %d%%", o.text, o.n, o.pct))
+        local mine = myVote == idx
+        b.line:SetColor(mine and C.paperTitle or C.paperRule)
+        b.mine = mine
+        local id, oi = p.id, idx
+        b.vote = (not p.closed) and function() if GuildOS.Polls then GuildOS.Polls:Vote(id, oi) end end or nil
+        b:Show()
+        y = y + 34
+    end
+    for idx = #opts + 1, #card.bars do card.bars[idx]:Hide() end
+    card.meta = card.meta or text(card, 12, card.soft)
+    card.meta:ClearAllPoints()
+    card.meta:SetPoint("TOPLEFT", PAD, -(y + 2))
+    card.meta:SetText(string.format(L["%d vote(s) · by %s"], total, p.author or "?"))
+    return y + 22
+end
+
+-- A pinned note (as the Salão's board): cream, a red pin, the notice in the reading face, who and until under it,
+-- and an officer's "Remove" link.
+local function pinnedNote(board)
+    local n = CreateFrame("Frame", nil, board)
+    local shade = GuildOS.Style:Nine(n, "shadow", 12, "BACKGROUND", 0, { -6, -5, -8, -10 })
+    shade:SetRGBA(0, 0, 0, 0.25)
+    local fill = GuildOS.Style:Nine(n, "card", 3, "BACKGROUND", 1)
+    fill:SetColor(C.paperLight)
+    n.pin = GuildOS.Style:Texture(n, "orb", "OVERLAY", 1)
+    n.pin:SetSize(11, 11)
+    n.pin:SetPoint("CENTER", n, "TOP", 0, 0)
+    n.pin:SetVertexColor(0.85, 0.2, 0.15, 1)
+    n.text = text(n, 13, C.paperInk, "reading", true)
+    n.text:SetPoint("TOPLEFT", 10, -12)
+    n.meta = text(n, 11, C.paperSoft, nil, true)
+    n.meta:SetPoint("TOPLEFT", n.text, "BOTTOMLEFT", 0, -6)
+    if GuildOS:IsOfficer() then
+        n.del = UI:SetButtonVariant(UI:CreateButton(n, L["Remove"], 50, 16), "ghost")
+        n.del:SetWidth(math.ceil(n.del.label:GetStringWidth()) + 4)
+        n.del:SetPoint("BOTTOMRIGHT", -8, 6)
+        n.del:SetScript("OnClick", function() if n.id and GuildOS.Bulletin then GuildOS.Bulletin:Remove(n.id) end end)
+    end
+    return n
 end
 
 local function BuildBulletinSub(panel)
-    local listTop = GAP
-    local box, pollForm
-    if GuildOS:IsOfficer() then
-        -- One field, so one label beside it, then its buttons (#371). A poll is the other kind of post.
-        local label = UI:CreateText(panel, L["Notice:"], 12)
-        local postBtn = UI:CreateButton(panel, L["Post"], 84, FIELD_H)
-        local pollBtn = UI:CreateButton(panel, L["New poll"], 96, FIELD_H)
+    local screen = cardScreen(panel, "GuildOSHubBulletinScroll")
+    local content = screen.content
+    local isOfficer = GuildOS:IsOfficer()
+    local msgs, polls, myKey = {}, {}, nil
+
+    -- The board: the notices as pinned notes, two or three to a row.
+    local board = UI:CreateCard(content, L["Notice board"])
+    board.notes = {}
+    board.empty = text(board, 12, board.soft)
+    board.empty:SetText(L["No notices yet."])
+    screen.add(board, 1, 1, function(w)
+        local inner = w - 2 * PAD
+        local perRow = inner >= 560 and 3 or (inner >= 300 and 2 or 1)
+        local noteW = math.floor((inner - (perRow - 1) * NOTE_GAP) / perRow)
+        local y = TOP + 6
+        local rowH = 0
+        for i, m in ipairs(msgs) do
+            local n = board.notes[i] or pinnedNote(board)
+            board.notes[i] = n
+            local col = (i - 1) % perRow
+            if col == 0 and i > 1 then y = y + rowH + NOTE_GAP + 4; rowH = 0 end
+            n.id = m.id
+            n.text:SetWidth(noteW - 20)
+            n.text:SetText(m.text or "")
+            n.meta:SetWidth(noteW - 20 - (n.del and (n.del:GetWidth() + 4) or 0))
+            n.meta:SetText(GuildOS.Bulletin.MetaText(m))
+            local h = 12 + (n.text:GetStringHeight() or 14) + 6 + (n.meta:GetStringHeight() or 12) + 10
+            if n.del then h = h + 4 end
+            rowH = math.max(rowH, h)
+            n:ClearAllPoints()
+            n:SetPoint("TOPLEFT", PAD + col * (noteW + NOTE_GAP), -y)
+            n:SetWidth(noteW)
+            n:Show()
+        end
+        -- Every note of a row as tall as its tallest.
+        local first = 1
+        for i = 1, #msgs do
+            if (i - 1) % perRow == perRow - 1 or i == #msgs then
+                local tall = 0
+                for j = first, i do
+                    local n = board.notes[j]
+                    tall = math.max(tall, 12 + (n.text:GetStringHeight() or 14) + 6 + (n.meta:GetStringHeight() or 12) + 10
+                        + (n.del and 4 or 0))
+                end
+                for j = first, i do board.notes[j]:SetHeight(tall) end
+                first = i + 1
+            end
+        end
+        for i = #msgs + 1, #board.notes do board.notes[i]:Hide() end
+        board.empty:ClearAllPoints()
+        board.empty:SetPoint("TOPLEFT", PAD, -(TOP))
+        board.empty:SetShown(#msgs == 0)
+        if #msgs == 0 then return TOP + 20 + PAD end
+        return y + rowH + PAD + 4
+    end)
+
+    -- A card per open poll: the question as its title, a bar per option; an officer closes it from the title's link.
+    local pollCards = {}
+    local function pollCard(i)
+        if pollCards[i] then return pollCards[i] end
+        local card = UI:CreateCard(content, "", isOfficer and { link = L["Close"] } or nil)
+        if card.link then
+            card.link:SetScript("OnClick", function() if card.pollId and GuildOS.Polls then GuildOS.Polls:Close(card.pollId) end end)
+        end
+        pollCards[i] = card
+        screen.add(card, 1, 10 + i, function(w)
+            local p = card.poll
+            if not p then return 0 end
+            GuildOS:SetTitleText(card.title, p.question or "")
+            return drawPolls(card, TOP, w, p, myKey) + PAD - 6
+        end)
+        return card
+    end
+
+    -- The closed polls, a line each: a square, the question, the winner under it.
+    local closed = UI:CreateCard(content, L["Closed"])
+    closed.rows = {}
+    screen.add(closed, 1, 100, function(w)
+        local y = TOP
+        local n = 0
+        for _, p in ipairs(polls) do
+            if p.closed then
+                n = n + 1
+                local r = closed.rows[n]
+                if not r then
+                    r = CreateFrame("Frame", nil, closed)
+                    r:SetHeight(40)
+                    r.sq = square(r, 28)
+                    r.sq:SetPoint("LEFT", 0, 0)
+                    r.main = text(r, 13, closed.ink, "memberName")
+                    r.main:SetPoint("TOPLEFT", 38, -3)
+                    r.main:SetPoint("RIGHT", 0, 0)
+                    r.side = text(r, 11, closed.soft)
+                    r.side:SetPoint("TOPLEFT", r.main, "BOTTOMLEFT", 0, -3)
+                    r.side:SetPoint("RIGHT", 0, 0)
+                    closed.rows[n] = r
+                end
+                local opts, total = tally(p, myKey)
+                local best
+                for _, o in ipairs(opts) do if o.n > 0 and (not best or o.n > best.n) then best = o end end
+                r.sq:Set(best and UI.Initial(best.text) or "-", SQUARE_PAST)
+                r.main:SetText(p.question or "")
+                r.side:SetText(best and string.format(L["%s won with %d of %d votes"], best.text, best.n, total)
+                    or L["closed"])
+                r:ClearAllPoints()
+                r:SetPoint("TOPLEFT", PAD, -y)
+                r:SetWidth(w - 2 * PAD)
+                r:Show()
+                y = y + 44
+            end
+        end
+        for i = n + 1, #closed.rows do closed.rows[i]:Hide() end
+        if n == 0 then return 0 end
+        return y + PAD - 6
+    end)
+
+    local box, lasts
+    if isOfficer then
+        -- The officers' forms, on the right: a notice, then a poll.
+        local form = UI:CreateCard(content, L["New notice"])
+        local l1 = label(form)
+        l1:SetText(L["Notice (up to 200 letters)"])
+        l1:SetPoint("TOPLEFT", PAD, -TOP)
+        box = UI:CreateInput(form, 0, FIELD_H, { max = 200, placeholder = L["E.g.: a meeting on Sunday after the run"] })
+        box:SetPoint("TOPLEFT", l1, "BOTTOMLEFT", 0, -6)
+        box:SetPoint("RIGHT", form, "RIGHT", -PAD, 0)
+        local l2 = label(form)
+        l2:SetText(L["Shown until"])
+        l2:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 0, -10)
         -- How long the notice lasts (issue #418): some days, or until an officer removes it.
-        local lasts = UI:CreateDropdown(panel, 120, FIELD_H)
+        lasts = UI:CreateDropdown(form, 160, FIELD_H)
         lasts:SetOptions(GuildOS.Bulletin and GuildOS.Bulletin:DurationOptions() or {})
         lasts:SetValue(0)
+        lasts:SetPoint("TOPLEFT", l2, "BOTTOMLEFT", 0, -6)
+        lasts:SetPoint("RIGHT", form, "RIGHT", -PAD, 0)
         panel.lasts = lasts
-        box = UI:CreateInput(panel, 0, FIELD_H, { max = 200 })
-        box:SetPoint("TOPLEFT", math.ceil(label:GetStringWidth() or 0) + GAP, -GAP)
-        box:SetPoint("TOPRIGHT", -(GAP + UI.ReserveFor(postBtn, GAP) + UI.ReserveFor(lasts, GAP)
-            + UI.ReserveFor(pollBtn, GAP)), -GAP)
-        label:SetPoint("RIGHT", box, "LEFT", -GAP, 0)
-        lasts:SetPoint("LEFT", box, "RIGHT", GAP, 0)
-        postBtn:SetPoint("LEFT", lasts, "RIGHT", GAP, 0)
-        pollBtn:SetPoint("LEFT", postBtn, "RIGHT", GAP, 0)
+        local postBtn = UI:SetButtonVariant(UI:CreateButton(form, L["Post"], 84, FIELD_H + 2), "primary")
+        postBtn:SetPoint("TOPLEFT", lasts, "BOTTOMLEFT", 0, -12)
         local function doPost()
             if GuildOS.Bulletin then GuildOS.Bulletin:Post(box:GetText(), lasts:GetValue()) end
             box:SetText(""); box:ClearFocus()
         end
         box:SetScript("OnEnterPressed", doPost)
         postBtn:SetScript("OnClick", doPost)
-        listTop = GAP + FIELD_H + GAP
+        screen.add(form, 2, 1, function() return TOP + 16 + 6 + FIELD_H + 10 + 16 + 6 + FIELD_H + 12 + FIELD_H + 2 + PAD end)
 
-        -- The poll's fields, under the notice's while "New poll" holds them open. The question says
-        -- what it is while empty; the options box is three lines tall with its hint right under it (#371).
-        pollForm = CreateFrame("Frame", nil, panel)
-        pollForm:SetPoint("TOPLEFT", 0, -listTop)
-        pollForm:SetPoint("TOPRIGHT", 0, -listTop)
-        pollForm:SetHeight(FIELD_H + GAP + 56 + 4 + 14)
-        pollForm:Hide()
-        local createBtn = UI:CreateButton(pollForm, L["Create Poll"], 110, FIELD_H)
-        local qBox = UI:CreateInput(pollForm, 0, FIELD_H, { max = 150, placeholder = L["Question..."] })
-        qBox:SetPoint("TOPLEFT", 0, 0)
-        qBox:SetPoint("TOPRIGHT", -(GAP + UI.ReserveFor(createBtn, GAP)), 0)
-        createBtn:SetPoint("LEFT", qBox, "RIGHT", GAP, 0)
-        local oArea = UI:CreateTextArea(pollForm, 0, 56)   -- a multi-line EditBox alone shrinks to one line
-        oArea:SetPoint("TOPLEFT", qBox, "BOTTOMLEFT", 0, -GAP)
-        oArea:SetPoint("TOPRIGHT", createBtn, "BOTTOMRIGHT", 0, -GAP)
+        -- The poll: the question, then three lines of options with what they take under it.
+        local pf = UI:CreateCard(content, L["New poll"])
+        local q1 = label(pf)
+        q1:SetText(L["Question"])
+        q1:SetPoint("TOPLEFT", PAD, -TOP)
+        local qBox = UI:CreateInput(pf, 0, FIELD_H, { max = 150, placeholder = L["Question..."] })
+        qBox:SetPoint("TOPLEFT", q1, "BOTTOMLEFT", 0, -6)
+        qBox:SetPoint("RIGHT", pf, "RIGHT", -PAD, 0)
+        local q2 = label(pf)
+        q2:SetText(L["One option per line (2-6)"])
+        q2:SetPoint("TOPLEFT", qBox, "BOTTOMLEFT", 0, -10)
+        local oArea = UI:CreateTextArea(pf, 0, 56)   -- a multi-line EditBox alone shrinks to one line
+        oArea:SetPoint("TOPLEFT", q2, "BOTTOMLEFT", 0, -6)
+        oArea:SetPoint("RIGHT", pf, "RIGHT", -PAD, 0)
         local oBox = oArea.edit
-        local hint = UI:CreateText(pollForm, L["One option per line (2-6)"], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        hint:SetPoint("TOPLEFT", oArea, "BOTTOMLEFT", 0, -4)
-        pollForm.create = function()
+        local createBtn = UI:SetButtonVariant(UI:CreateButton(pf, L["Create Poll"], 110, FIELD_H + 2), "primary")
+        createBtn:SetPoint("TOPLEFT", oArea, "BOTTOMLEFT", 0, -12)
+        createBtn:SetScript("OnClick", function()
             local opts = {}
             for line in (oBox:GetText() .. "\n"):gmatch("([^\n]*)\n") do
                 local t = strtrim(line)
@@ -188,53 +459,29 @@ local function BuildBulletinSub(panel)
             end
             if GuildOS.Polls then GuildOS.Polls:Create(qBox:GetText(), opts) end
             qBox:SetText(""); oBox:SetText(""); qBox:ClearFocus(); oBox:ClearFocus()
-        end
-        pollForm.button, pollForm.createBtn = pollBtn, createBtn
-    end
-    local holder, child = makeScroll(panel, "GuildOSHubBulletinScroll", listTop)
-    local function place()
-        local open = pollForm and pollForm:IsShown()
-        holder:ClearAllPoints()
-        holder:SetPoint("TOPLEFT", 0, -(listTop + (open and (pollForm:GetHeight() + GAP) or 0)))
-        holder:SetPoint("BOTTOMRIGHT", 0, 0)
-    end
-    if pollForm then
-        pollForm.button:SetScript("OnClick", function()
-            if pollForm:IsShown() then pollForm:Hide() else pollForm:Show() end
-            place()
         end)
-        pollForm.createBtn:SetScript("OnClick", function() pollForm.create(); pollForm:Hide(); place() end)
+        screen.add(pf, 2, 2, function() return TOP + 16 + 6 + FIELD_H + 10 + 16 + 6 + 56 + 12 + FIELD_H + 2 + PAD end)
+    else
+        local who, fill = noteCard(content, L["Who writes here"],
+            L["The officers post notices for the whole guild. The newest also show in the Salão."])
+        screen.add(who, 2, 1, fill)
     end
 
     local function refresh()
-        clear(child)
-        local msgs = (GuildOS.Bulletin and GuildOS.Bulletin:Listed()) or {}
-        local isOfficer = GuildOS:IsOfficer()
-        local y = 0
-        for _, m in ipairs(msgs) do
-            local textFS = UI:CreateText(child, m.text, 12, C.text.r, C.text.g, C.text.b)
-            textFS:SetPoint("TOPLEFT", 0, -y)
-            textFS:SetPoint("TOPRIGHT", isOfficer and -(22 + GAP) or 0, -y)
-            textFS:SetJustifyH("LEFT")
-            local th = textFS:GetStringHeight() or 14
-            local meta = UI:CreateText(child, GuildOS.Bulletin.MetaText(m),
-                11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-            meta:SetPoint("TOPLEFT", 0, -(y + th + 2))
-            if isOfficer then
-                local del = UI:CreateButton(child, "\195\151", 22, 18)
-                del:SetPoint("TOPRIGHT", 0, -y)
-                local id = m.id
-                del:SetScript("OnClick", function() if GuildOS.Bulletin then GuildOS.Bulletin:Remove(id) end end)
+        msgs = (GuildOS.Bulletin and GuildOS.Bulletin:Listed()) or {}
+        polls = (GuildOS.Polls and GuildOS.Polls:GetSorted()) or {}
+        myKey = pollKey(GuildOS.Compat.PlayerName())
+        local open = 0
+        for _, p in ipairs(polls) do
+            if not p.closed then
+                open = open + 1
+                local card = pollCard(open)
+                card.poll, card.pollId = p, p.id
+                if card.link then card.link:Show() end
             end
-            y = y + th + 22
         end
-        local polls
-        y, polls = drawPolls(child, y)
-        if #msgs == 0 and polls == 0 then
-            local empty = UI:CreateText(child, L["No notices yet."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-            empty:SetPoint("TOPLEFT", 0, 0)
-        end
-        child:SetHeight(math.max(1, y))
+        for i = open + 1, #pollCards do pollCards[i].poll = nil end
+        screen.layout()
     end
     if GuildOS.Bulletin then GuildOS.Bulletin.uiRefresh = refresh end
     if GuildOS.Polls then GuildOS.Polls.uiRefresh = refresh end
@@ -253,34 +500,40 @@ local RULE_WHY = {
 
 local function BuildGuildRulesSub(panel)
     local GR = GuildOS.GuildRules
-    local listTop = GAP
+    local screen = cardScreen(panel, "GuildOSHubRulesScroll")
+    local content = screen.content
     local editing   -- the number of the rule the form rewrites, nil while it adds one
     local titleBox, textBox, saveBtn, cancelBtn, result
+    local list = UI:CreateCard(content, L["The guild's rules"])
+
     if GuildOS:IsOfficer() and GR then
-        -- Two fields, title then text, each with its label beside it (#371), then the buttons.
-        local tLabel = UI:CreateText(panel, L["Title:"], 12)
-        titleBox = UI:CreateInput(panel, 0, FIELD_H, { max = GR.TITLE_MAX })
-        local xLabel = UI:CreateText(panel, L["Text:"], 12)
-        textBox = UI:CreateInput(panel, 0, FIELD_H, { max = GR.TEXT_MAX })
-        local labelW = math.ceil(math.max(tLabel:GetStringWidth() or 0, xLabel:GetStringWidth() or 0)) + GAP
-        titleBox:SetPoint("TOPLEFT", labelW, -GAP)
-        titleBox:SetPoint("TOPRIGHT", 0, -GAP)
-        tLabel:SetPoint("RIGHT", titleBox, "LEFT", -GAP, 0)
-        textBox:SetPoint("TOPLEFT", labelW, -(2 * GAP + FIELD_H))
-        textBox:SetPoint("TOPRIGHT", 0, -(2 * GAP + FIELD_H))
-        xLabel:SetPoint("RIGHT", textBox, "LEFT", -GAP, 0)
-        saveBtn = UI:CreateButton(panel, L["Add rule"], 120, FIELD_H)
-        saveBtn:SetPoint("TOPLEFT", labelW, -(3 * GAP + 2 * FIELD_H))
-        cancelBtn = UI:CreateButton(panel, L["Cancel"], 90, FIELD_H)
-        cancelBtn:SetPoint("LEFT", saveBtn, "RIGHT", GAP, 0)
+        -- Title then text, each with its label over it (the mockup's .field), then the buttons.
+        local form = UI:CreateCard(content, L["New rule"])
+        local tLabel = label(form)
+        tLabel:SetText(L["Title"])
+        tLabel:SetPoint("TOPLEFT", PAD, -TOP)
+        titleBox = UI:CreateInput(form, 0, FIELD_H, { max = GR.TITLE_MAX })
+        titleBox:SetPoint("TOPLEFT", tLabel, "BOTTOMLEFT", 0, -6)
+        titleBox:SetPoint("RIGHT", form, "RIGHT", -PAD, 0)
+        local xLabel = label(form)
+        xLabel:SetText(L["Text"])
+        xLabel:SetPoint("TOPLEFT", titleBox, "BOTTOMLEFT", 0, -10)
+        textBox = UI:CreateInput(form, 0, FIELD_H, { max = GR.TEXT_MAX })
+        textBox:SetPoint("TOPLEFT", xLabel, "BOTTOMLEFT", 0, -6)
+        textBox:SetPoint("RIGHT", form, "RIGHT", -PAD, 0)
+        saveBtn = UI:SetButtonVariant(UI:CreateButton(form, L["Add rule"], 120, FIELD_H + 2), "primary")
+        saveBtn:SetPoint("TOPLEFT", textBox, "BOTTOMLEFT", 0, -12)
+        cancelBtn = UI:CreateButton(form, L["Cancel"], 90, FIELD_H + 2)
+        cancelBtn:SetPoint("LEFT", saveBtn, "RIGHT", 8, 0)
         cancelBtn:Hide()
-        result = UI:CreateText(panel, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        result:SetPoint("LEFT", cancelBtn, "RIGHT", GAP, 0)
+        result = text(form, 11, form.soft, nil, true)
+        result:SetPoint("TOPLEFT", saveBtn, "BOTTOMLEFT", 0, -8)
         local function stopEditing()
             editing = nil
             titleBox:SetText(""); textBox:SetText("")
             titleBox:ClearFocus(); textBox:ClearFocus()
             saveBtn.label:SetText(L["Add rule"])
+            GuildOS:SetTitleText(form.title, L["New rule"])
             cancelBtn:Hide()
         end
         panel.stopEditing = stopEditing
@@ -307,64 +560,88 @@ local function BuildGuildRulesSub(panel)
             editing = n
             titleBox:SetText(r.title); textBox:SetText(r.text or "")
             saveBtn.label:SetText(L["Save rule"])
+            GuildOS:SetTitleText(form.title, L["Edit rule"])
             cancelBtn:Show()
         end
-        listTop = 4 * GAP + 3 * FIELD_H
+        screen.add(form, 2, 1, function(w)
+            result:SetWidth(w - 2 * PAD)
+            local rh = (result:GetText() or "") ~= "" and ((result:GetStringHeight() or 12) + 8) or 0
+            return TOP + 16 + 6 + FIELD_H + 10 + 16 + 6 + FIELD_H + 12 + FIELD_H + 2 + rh + PAD
+        end)
     end
-    local _, child = makeScroll(panel, "GuildOSHubRulesScroll", listTop)
+    local where, whereFill = noteCard(content, L["Where else it shows"],
+        L["The rules also go to the guild's page on the site, for whoever joins to read."])
+    screen.add(where, 2, 2, whereFill)
 
-    -- One frame per rule, made once and refilled (at most GR.RULES_MAX).
+    -- One frame per rule, made once and refilled (at most GR.RULES_MAX): its title in the title face and the
+    -- paper's red, the rule in the reading face, an officer's links under it.
     local rows = {}
     local function rowAt(i)
         if rows[i] then return rows[i] end
-        local row = CreateFrame("Frame", nil, child)
-        row.title = UI:CreateText(row, "", 13, C.text.r, C.text.g, C.text.b)
+        local row = CreateFrame("Frame", nil, list)
+        row.title = text(row, 12, C.paperTitle, "sectionTitle")
         row.title:SetPoint("TOPLEFT", 0, 0)
-        row.title:SetJustifyH("LEFT")
-        row.text = UI:CreateText(row, "", 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        row.text:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -2)
-        row.text:SetJustifyH("LEFT")
+        row.title:SetPoint("TOPRIGHT", 0, 0)
+        row.text = text(row, 13, list.ink, "reading", true)
+        row.text:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -5)
         if panel.editRule then
-            row.del = UI:CreateButton(row, "\195\151", 22, 18)   -- ×
-            row.del:SetPoint("TOPRIGHT", 0, 0)
-            row.del:SetScript("OnClick", function() GR:Remove(row.n); if panel.stopEditing then panel.stopEditing() end end)
-            row.up = UI:CreateButton(row, "\226\134\145", 22, 18)   -- ↑
-            row.up:SetPoint("RIGHT", row.del, "LEFT", -4, 0)
-            row.up:SetScript("OnClick", function() GR:MoveUp(row.n); if panel.stopEditing then panel.stopEditing() end end)
-            row.edit = UI:CreateButton(row, L["Edit"], 60, 18)
-            row.edit:SetPoint("RIGHT", row.up, "LEFT", -4, 0)
+            local function ghost(caption, w)
+                return UI:SetButtonVariant(UI:CreateButton(row, caption, w, 16), "ghost")
+            end
+            row.edit = ghost(L["Edit"], 40)
+            row.edit:SetWidth(math.ceil(row.edit.label:GetStringWidth()) + 4)
             row.edit:SetScript("OnClick", function() panel.editRule(row.n) end)
-            row.title:SetPoint("TOPRIGHT", -(22 + 4 + 22 + 4 + 60 + GAP), 0)
-        else
-            row.title:SetPoint("TOPRIGHT", 0, 0)
+            row.up = ghost(L["Move up"], 60)
+            row.up:SetWidth(math.ceil(row.up.label:GetStringWidth()) + 4)
+            row.up:SetPoint("LEFT", row.edit, "RIGHT", 10, 0)
+            row.up:SetScript("OnClick", function() GR:MoveUp(row.n); if panel.stopEditing then panel.stopEditing() end end)
+            row.del = ghost(L["Remove"], 60)
+            row.del:SetWidth(math.ceil(row.del.label:GetStringWidth()) + 4)
+            row.del:SetScript("OnClick", function() GR:Remove(row.n); if panel.stopEditing then panel.stopEditing() end end)
         end
-        row.text:SetPoint("TOPRIGHT", row.title, "BOTTOMRIGHT", 0, -2)
         rows[i] = row
         return row
     end
-    local empty = UI:CreateText(child, L["The guild has not written its rules yet."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    empty:SetPoint("TOPLEFT", 0, 0)
+    local empty = text(list, 12, list.soft, nil, true)
+    empty:SetText(L["The guild has not written its rules yet."])
+    empty:SetPoint("TOPLEFT", PAD, -TOP)
 
-    local function refresh()
-        local rules = GR and GR:Get() or {}
-        local y = 0
+    local rules = {}
+    screen.add(list, 1, 1, function(w)
+        local y = TOP
+        local inner = w - 2 * PAD
         for i, r in ipairs(rules) do
             local row = rowAt(i)
             row.n = i
             row:ClearAllPoints()
-            row:SetPoint("TOPLEFT", 0, -y)
-            row:SetPoint("TOPRIGHT", 0, -y)
-            row.title:SetText(string.format("%d. %s", i, r.title))
+            row:SetPoint("TOPLEFT", PAD, -y)
+            row:SetWidth(inner)
+            GuildOS:SetTitleText(row.title, r.title or "")
+            row.text:SetWidth(inner)
             row.text:SetText(r.text or "")
-            if row.up then row.up:SetShown(i > 1) end
-            local h = (row.title:GetStringHeight() or 14) + 2 + ((r.text ~= "" and row.text:GetStringHeight()) or 0)
-            row:SetHeight(math.max(18, h))
+            local h = 16 + (((r.text or "") ~= "") and (5 + (row.text:GetStringHeight() or 14)) or 0)
+            if row.edit then
+                row.edit:ClearAllPoints()
+                row.edit:SetPoint("TOPLEFT", 0, -(h + 4))
+                row.up:SetShown(i > 1)
+                row.del:ClearAllPoints()
+                row.del:SetPoint("LEFT", i > 1 and row.up or row.edit, "RIGHT", 10, 0)
+                h = h + 4 + 16
+            end
+            row:SetHeight(h)
             row:Show()
-            y = y + math.max(18, h) + GAP
+            y = y + h + 14
         end
         for i = #rules + 1, #rows do rows[i]:Hide() end
+        empty:SetWidth(inner)
         empty:SetShown(#rules == 0)
-        child:SetHeight(math.max(1, y))
+        if #rules == 0 then y = y + 22 end
+        return y + PAD - 10
+    end)
+
+    local function refresh()
+        rules = GR and GR:Get() or {}
+        screen.layout()
     end
     if GR then GR.uiRefresh = refresh end
     return refresh
@@ -377,65 +654,79 @@ end
 local function BuildCallToArmsSub(panel)
     local CTA = GuildOS.CallToArms
     local selected = "worldboss"
-    -- { row frame, its widgets, line height }: wrapped again on every resize. A row grows to the
-    -- lines it took, and what hangs below it moves down with it.
+    local screen = cardScreen(panel, "GuildOSHubCTAScroll")
+    local content = screen.content
+    -- { row frame, its widgets, line height }: wrapped again on every layout. A row grows to the lines it took,
+    -- and what hangs below it moves down with it.
     local rows = {}
-    local above             -- the last section placed; the next one hangs below it
-
-    local function reflow()
-        -- As wide as the content: flush left, GAP short of the right edge (#371).
-        local w = (panel:GetWidth() or 0) - GAP
-        if w < 200 then w = 600 end   -- not laid out yet: OnSizeChanged wraps it again
+    local function flow(width)
         for _, r in ipairs(rows) do
-            r[1]:SetWidth(w)
-            UI:FlowBar(r[1], r[2], { gap = 4, rowGap = 4, rowH = r[3] })
+            r[1]:SetWidth(math.max(60, width))
+            UI:FlowBar(r[1], r[2], { gap = 6, rowGap = 6, rowH = r[3] })
         end
     end
-    panel:SetScript("OnSizeChanged", reflow)
 
     if GuildOS:IsOfficer() then
-        local head = UI:CreateSectionTitle(panel, L["Send a call"], true)
-        head:SetPoint("TOPLEFT", 0, -GAP)
-        local tplRow, cells = CreateFrame("Frame", nil, panel), {}
-        tplRow:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -GAP)
+        local send = UI:CreateCard(content, L["Call the guild"])
+        local tplRow, cells = CreateFrame("Frame", nil, send), {}
+        tplRow:SetPoint("TOPLEFT", PAD, -TOP)
         rows[#rows + 1] = { tplRow, cells, 22 }
 
-        local sendBtn = UI:CreateButton(panel, L["Send"], 88, FIELD_H)
+        local l1 = label(send)
+        l1:SetText(L["Message (optional, {zone} becomes your zone)"])
+        l1:SetPoint("TOPLEFT", tplRow, "BOTTOMLEFT", 0, -10)
         -- Left empty, the call carries the template's own message: the hint says so (#371).
-        local msgBox = UI:CreateInput(panel, 0, FIELD_H, { placeholder = L["Message (optional)"] })
-        msgBox:SetPoint("TOPLEFT", tplRow, "BOTTOMLEFT", 0, -GAP)
-        -- The row is as wide as the content; the box leaves the button its room.
-        msgBox:SetPoint("TOPRIGHT", tplRow, "BOTTOMRIGHT", -UI.ReserveFor(sendBtn, GAP), -GAP)
+        local msgBox = UI:CreateInput(send, 0, FIELD_H, { placeholder = L["Message (optional)"] })
+        msgBox:SetPoint("TOPLEFT", l1, "BOTTOMLEFT", 0, -6)
+        msgBox:SetPoint("RIGHT", send, "RIGHT", -PAD, 0)
         msgBox:SetMaxBytes(CTA.TEXT_MAX + 1)   -- the call is cut at bytes, not letters: Cyrillic is two each
-        local function send()
+        local function sendNow()
             if CTA:Send(selected, msgBox:GetText()) then msgBox:ClearFocus() end
         end
-        sendBtn:SetPoint("LEFT", msgBox, "RIGHT", GAP, 0)
-        sendBtn:SetScript("OnClick", send)
-        msgBox:SetScript("OnEnterPressed", send)   -- a key press is a hardware event, as a click is
+        msgBox:SetScript("OnEnterPressed", sendNow)   -- a key press is a hardware event, as a click is
+        send.msgBox = msgBox
 
-        -- The chosen template is marked as every selection is, gold border and label, not with a
-        -- ">" before its name (#371).
+        local chatCb = UI:CreateCheckbox(send, L["Also post in guild chat"], 16)
+        chatCb:SetPoint("TOPLEFT", msgBox, "BOTTOMLEFT", 0, -8)
+        chatCb:SetWidth(30 + (chatCb.label:GetStringWidth() or 100))
+        -- UI:CreateCheckbox inks its label for the wood: on the paper it takes the card's.
+        chatCb.label:SetTextColor(send.ink.r, send.ink.g, send.ink.b)
+        chatCb.checkbox:SetChecked(CTA:ChatOn())
+        chatCb.checkbox.onChanged = function(_, checked) GuildOS:SetSetting("ctaChat", checked and true or false) end
+
+        local sendBtn = UI:SetButtonVariant(UI:CreateButton(send, L["Send"], 88, FIELD_H + 2), "primary")
+        sendBtn:SetPoint("TOPLEFT", chatCb, "BOTTOMLEFT", 0, -10)
+        sendBtn:SetScript("OnClick", sendNow)
+
+        -- A template's name is the title its calls go out under: saved from the message in the box.
+        local nameBox = UI:CreateInput(send, 140, FIELD_H, { placeholder = L["Title"] })
+        nameBox:SetMaxBytes(CTA.NAME_MAX + 1)
+        local saveBtn = UI:CreateButton(send, L["Save as template"], 130, FIELD_H)
+        saveBtn:SetPoint("TOPRIGHT", send, "TOPRIGHT", -PAD, 0)
+        nameBox:SetPoint("RIGHT", saveBtn, "LEFT", -6, 0)
+
+        -- The chosen template is marked as every selection is, the soft gold, never a ">" (#371).
         local function paintSelected()
             for _, cell in ipairs(cells) do
                 UI:SetSelected(cell.btn, cell.id == selected)
                 cell:SetWidth(cell.btn:GetWidth() + (cell.del and 19 or 0))
             end
-            reflow()
         end
         -- Built again only when the list changes; picking one only marks it.
-        local function buildTemplates()
+        local buildTemplates
+        buildTemplates = function()
             for i = #cells, 1, -1 do cells[i]:Hide(); cells[i] = nil end
             for _, t in ipairs(CTA:Templates()) do
                 local cell = CreateFrame("Frame", nil, tplRow)
                 cell:SetHeight(22)
                 cell.id = t.id
-                cell.btn = UI:CreateButton(cell, t.name, 112, 22)
+                cell.btn = UI:SetButtonVariant(UI:CreateButton(cell, t.name, 60, 22), "chip")
+                cell.btn:SetWidth(math.ceil(cell.btn.label:GetStringWidth()) + 22)
                 cell.btn:SetPoint("TOPLEFT")
-                local id, text = t.id, t.text
+                local id, msg = t.id, t.text
                 cell.btn:SetScript("OnClick", function()
                     selected = id
-                    msgBox:SetText(text)
+                    msgBox:SetText(msg)
                     paintSelected()
                 end)
                 if not t.builtin then
@@ -445,134 +736,138 @@ local function BuildCallToArmsSub(panel)
                         CTA:DeleteTemplate(id)
                         if selected == id then selected = "worldboss" end
                         buildTemplates()
+                        screen.layout()
                     end)
                 end
                 cells[#cells + 1] = cell
             end
             paintSelected()
         end
-
-        -- A template's name is the title its calls go out under.
-        local nameBox = UI:CreateInput(panel, 160, FIELD_H, { placeholder = L["Title"] })
-        nameBox:SetPoint("TOPLEFT", msgBox, "BOTTOMLEFT", 0, -GAP)
-        nameBox:SetMaxBytes(CTA.NAME_MAX + 1)
-        local saveBtn = UI:CreateButton(panel, L["Save as template"], 130, FIELD_H)
-        saveBtn:SetPoint("LEFT", nameBox, "RIGHT", GAP, 0)
         saveBtn:SetScript("OnClick", function()
             local tpl = CTA:Template(selected)
             local ok, why = CTA:SaveTemplate(nameBox:GetText(), msgBox:GetText(), tpl and tpl.kind)
             if not ok then GuildOS:Print(why) return end
             nameBox:SetText("")
             buildTemplates()
+            screen.layout()
         end)
-        local chatCb = UI:CreateCheckbox(panel, L["Also post in guild chat"], 16)
-        chatCb:SetPoint("LEFT", saveBtn, "RIGHT", 12, 0)
-        chatCb.checkbox:SetChecked(CTA:ChatOn())
-        chatCb.checkbox.onChanged = function(_, checked) GuildOS:SetSetting("ctaChat", checked and true or false) end
-        above = nameBox
-
+        screen.add(send, 1, 1, function(w)
+            flow(w - 2 * PAD)
+            local y = TOP + (tplRow:GetHeight() or 22) + 10 + 16 + 6 + FIELD_H + 8 + 18 + 10
+            saveBtn:ClearAllPoints()
+            saveBtn:SetPoint("TOPRIGHT", send, "TOPRIGHT", -PAD, -(y + 1))
+            return y + FIELD_H + 2 + PAD
+        end)
         buildTemplates()
         msgBox:SetText(CTA:Template(selected).text)
     end
 
-    -- Everyone: how a call reaches me. A row of what to do with a call, then the types to hear.
-    local mine = UI:CreateSectionTitle(panel, L["My alerts"], above == nil)
-    if above then mine:SetPoint("TOPLEFT", above, "BOTTOMLEFT", 0, -SECTION_SPACE) else mine:SetPoint("TOPLEFT", 0, -GAP) end
-    local function checkRow(anchor, items)
-        local row = CreateFrame("Frame", nil, panel)
-        row:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -GAP)
+    -- The recent calls (the mockup's .todo): a red square while a call is open, the paper's brown once past; the
+    -- call and its zone, who sent it and how many are on the way; "On my way" while it is open.
+    local recent = UI:CreateCard(content, L["Recent calls"], GuildOS.LFGBoard and { link = L["Groups"] } or nil)
+    -- /gos avail: who in the guild is free for a group, and listing yourself (#142).
+    if recent.link then recent.link:SetScript("OnClick", function() GuildOS.LFGBoard:Show() end) end
+    local lines = {}
+    local empty = text(recent, 12, recent.soft)
+    empty:SetText(L["No calls yet."])
+    empty:SetPoint("TOPLEFT", PAD, -TOP)
+    local function lineAt(i)
+        if lines[i] then return lines[i] end
+        local ln = CreateFrame("Frame", nil, recent)
+        ln.rule = rule(ln, recent)
+        ln.sq = square(ln, 28)
+        ln.sq:SetPoint("TOPLEFT", 0, -8)
+        ln.text = text(ln, 14, recent.ink, "itemName", true)
+        ln.text:SetPoint("TOPLEFT", 38, -6)
+        ln.meta = text(ln, 12, recent.soft, nil, true)
+        ln.meta:SetPoint("TOPLEFT", ln.text, "BOTTOMLEFT", 0, -3)
+        ln.go = UI:SetButtonVariant(UI:CreateButton(ln, L["On my way"], 90, 26), "primary")
+        ln.go:SetWidth(math.max(90, math.ceil(ln.go.label:GetStringWidth()) + 22))
+        ln.go:SetPoint("TOPRIGHT", 0, -8)
+        ln.go:SetScript("OnClick", function() CTA:Answer(ln.id) end)
+        lines[i] = ln
+        return ln
+    end
+    screen.add(recent, 1, 2, function(w)
+        local now, y = GetServerTime(), TOP - 4
+        local inner = w - 2 * PAD
+        for i, e in ipairs(CTA.recent) do
+            local ln = lineAt(i)
+            ln.id = e.id
+            -- Anybody who has not answered can, from here too: with popups off, in quiet mode
+            -- or after dismissing one, this is the only place to.
+            local live = now - (tonumber(e.ts) or 0) <= CTA.MAX_AGE
+            local open = not e.mine and not e.answered and live
+            ln.go:SetShown(open)
+            ln.rule:SetShown(i > 1)
+            ln.sq:Set("!", live and SQUARE_OPEN or SQUARE_PAST)
+            local tw = inner - 38 - (open and (ln.go:GetWidth() + 10) or 0)
+            ln.text:SetWidth(tw)
+            ln.meta:SetWidth(tw)
+            local title = e.title or ""
+            ln.text:SetText((e.text and e.text ~= "") and (title .. ": " .. e.text) or title)
+            local n = CTA:GoingCount(e)
+            local who = (Ambiguate and Ambiguate(e.sender or "", "short")) or (e.sender or "")
+            ln.meta:SetText(string.format("%s \194\183 %s \194\183 %s", e.zone or "", who,
+                n > 0 and string.format(L["%d on the way"], n) or date("%H:%M", e.at or 0)))
+            local h = math.max(44, 6 + (ln.text:GetStringHeight() or 16) + 3 + (ln.meta:GetStringHeight() or 14) + 8)
+            ln:ClearAllPoints()
+            ln:SetPoint("TOPLEFT", PAD, -y)
+            ln:SetSize(inner, h)
+            ln:Show()
+            y = y + h
+        end
+        for i = #CTA.recent + 1, #lines do lines[i]:Hide() end
+        empty:SetShown(#CTA.recent == 0)
+        if #CTA.recent == 0 then y = y + 24 end
+        return y + PAD - 4
+    end)
+
+    -- Everyone: how a call reaches me, then the types to hear (the mockup's dark "Meus avisos").
+    local mine = UI:CreateCard(content, L["My alerts"], { dark = true })
+    local function checkCol(anchor, items, dy)
         local boxes = {}
-        for _, it in ipairs(items) do
-            local cb = UI:CreateCheckbox(row, it[1], 16)
+        local prev = anchor
+        for i, it in ipairs(items) do
+            local cb = UI:CreateCheckbox(mine, it[1], 16)
             cb:SetWidth(30 + (cb.label:GetStringWidth() or 100))
+            if i == 1 and dy then
+                cb:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -dy)
+            elseif i == 1 then
+                cb:SetPoint("TOPLEFT", PAD, -TOP)
+            else
+                cb:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -5)
+            end
             cb.checkbox:SetChecked(it[2]())
             local set = it[3]
             cb.checkbox.onChanged = function(_, checked) set(checked and true or false) end
             boxes[#boxes + 1] = cb
+            prev = cb
         end
-        rows[#rows + 1] = { row, boxes, 18 }
-        return row
+        return prev, boxes
     end
     local function setting(key) return function(v) GuildOS:SetSetting(key, v) end end
-    local how = checkRow(mine, {
+    local lastHow, how = checkCol(nil, {
         { L["Show popups"], function() return CTA:PopupsOn() end, setting("ctaPopups") },
         { L["Play a sound"], function() return CTA:SoundOn() end, setting("ctaSound") },
         { L["Quiet in instances and combat"], function() return CTA:QuietOn() end, setting("ctaQuiet") },
     })
+    local hearHead = text(mine, 12, C.gold2, "sectionTitle")
+    hearHead:SetText(L["Calls I hear"])
+    hearHead:SetPoint("TOPLEFT", lastHow, "BOTTOMLEFT", 0, -14)
     local kinds = {}
     for _, k in ipairs(CTA.KINDS) do
         local id = k.id
         kinds[#kinds + 1] = { k.title, function() return not CTA:Muted(id) end,
                               function(v) GuildOS:SetSetting("ctaMute_" .. id, not v) end }
     end
-    local hear = checkRow(how, kinds)
-
-    local recentHead = UI:CreateSectionTitle(panel, L["Recent calls"])
-    recentHead:SetPoint("TOPLEFT", hear, "BOTTOMLEFT", 0, -SECTION_SPACE)
-    -- /gos avail: who in the guild is free for a group, and listing yourself (#142).
-    if GuildOS.LFGBoard then
-        local boardBtn = UI:CreateButton(panel, L["Groups"], 180, 18)
-        boardBtn:SetPoint("LEFT", recentHead, "RIGHT", 12, 0)
-        boardBtn:SetScript("OnClick", function() GuildOS.LFGBoard:Show() end)
-    end
-    local _, child = makeScroll(panel, "GuildOSHubCTAScroll", recentHead)
-    reflow()
-
-    -- The recent calls, one pooled line each (there are never more than CTA.KEEP): an answer
-    -- arriving repaints them in place rather than drawing them all again.
-    local lines = {}
-    local empty = UI:CreateText(child, L["No calls yet."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    empty:SetPoint("TOPLEFT", 0, 0)
-    local function lineAt(i)
-        if lines[i] then return lines[i] end
-        local ln = {}
-        ln.text = UI:CreateText(child, "", 12, C.text.r, C.text.g, C.text.b)
-        ln.text:SetJustifyH("LEFT")
-        ln.meta = UI:CreateText(child, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        ln.go = UI:CreateButton(child, L["On my way"], 90, 18)
-        ln.go:SetScript("OnClick", function() CTA:Answer(ln.id) end)
-        lines[i] = ln
-        return ln
-    end
+    local _, hear = checkCol(hearHead, kinds, 8)
+    screen.add(mine, 2, 1, function()
+        return TOP + #how * 21 + 14 + 16 + 8 + #hear * 21 + PAD - 4
+    end)
 
     local function refresh()
-        reflow()
-        local now, y = GetServerTime(), 0
-        for i, e in ipairs(CTA.recent) do
-            local ln = lineAt(i)
-            ln.id = e.id
-            -- Anybody who has not answered can, from here too: with popups off, in quiet mode
-            -- or after dismissing one, this is the only place to.
-            local open = not e.mine and not e.answered and now - (tonumber(e.ts) or 0) <= CTA.MAX_AGE
-            ln.go:SetShown(open)
-            ln.go:ClearAllPoints()
-            ln.go:SetPoint("TOPRIGHT", 0, -y)
-            -- The call's title is a name, in the text colour as every name (#371); the line wraps
-            -- short of the button when there is one.
-            ln.text:SetText(string.format("%s  %s", e.title or "", e.text or ""))
-            ln.text:ClearAllPoints()
-            ln.text:SetPoint("TOPLEFT", 0, -y)
-            if open then
-                ln.text:SetPoint("TOPRIGHT", ln.go, "TOPLEFT", -GAP, 0)
-            else
-                ln.text:SetPoint("TOPRIGHT", 0, -y)
-            end
-            ln.text:Show()
-            local th = ln.text:GetStringHeight() or 14
-            local n = CTA:GoingCount(e)
-            ln.meta:SetText(string.format("%s · %s · %s", e.zone or "",
-                (Ambiguate and Ambiguate(e.sender or "", "short")) or (e.sender or ""),
-                n > 0 and string.format(L["%d on the way"], n) or date("%H:%M", e.at or 0)))
-            ln.meta:ClearAllPoints()
-            ln.meta:SetPoint("TOPLEFT", 0, -(y + th + 2))
-            ln.meta:Show()
-            y = y + th + 22
-        end
-        for i = #CTA.recent + 1, #lines do
-            lines[i].text:Hide(); lines[i].meta:Hide(); lines[i].go:Hide()
-        end
-        empty:SetShown(#CTA.recent == 0)
-        child:SetHeight(math.max(1, y))
+        screen.layout()
     end
     -- Answers arrive by the dozen while the tab is closed; it catches up when it opens.
     CTA.uiRefresh = function() if panel:IsVisible() then refresh() end end
@@ -580,12 +875,17 @@ local function BuildCallToArmsSub(panel)
 end
 
 ----------------------------------------------------------------------
+-- CHAT sub-panel: the guild's chat in a dark card on the left (the mockup's .chat), the mentions on the right.
+----------------------------------------------------------------------
+local BuildChatSub   -- defined after the feed, below
+
+----------------------------------------------------------------------
 -- Guild chat feed (issues #124, #126), kept by Modules/GuildChat.lua. Laid out
 -- like the alliance feed: one card per run of lines from one speaker, newest at
 -- the bottom, a box underneath, and a tab per channel of the guild. Guild > Chat
 -- and the Now cards both build it.
 ----------------------------------------------------------------------
-local CLASS_TEX = "Interface\\WorldStateFrame\\Icons-Classes"
+local AVATAR = 22   -- the mockup's small avatar (.av.s)
 local feeds = 0   -- each feed's scroll frame needs its own global name
 
 -- A channel is { id, name, kind }; nil, and the Guild tab, mean /g.
@@ -610,8 +910,7 @@ function GuildOS:CreateGuildChatFeed(panel, top)
     -- The channel tabs, shown only when there is more than /g to choose from.
     local bar = CreateFrame("Frame", nil, panel)
     bar:SetPoint("TOPLEFT", 0, -top)
-    bar:SetSize(400, TAB_H)
-    UI:StyleSubTabBar(bar)
+    bar:SetSize(400, 24)
     bar:Hide()
     local tabs = {}
 
@@ -619,22 +918,22 @@ function GuildOS:CreateGuildChatFeed(panel, top)
     local function anchorHolder(belowTabs)
         holder:ClearAllPoints()
         if belowTabs then
-            holder:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -4)
+            holder:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -8)
         else
             holder:SetPoint("TOPLEFT", 0, -top)
         end
-        holder:SetPoint("BOTTOMRIGHT", 0, 32)
+        holder:SetPoint("BOTTOMRIGHT", 0, FIELD_H + 10)
     end
     anchorHolder(false)
     local scroll, content = UI:CreateScrollFrame(holder, "GuildOSGuildChatScroll" .. feeds)
     scroll:SetAllPoints()
 
-    local input = UI:CreateInput(panel, 100, FIELD_H)
-    input:SetPoint("BOTTOMLEFT", 0, 4)
-    input:SetPoint("BOTTOMRIGHT", -70, 4)
+    local input = UI:CreateInput(panel, 100, FIELD_H, { placeholder = L["Write to the guild"] })
+    input:SetPoint("BOTTOMLEFT", 0, 0)
+    input:SetPoint("BOTTOMRIGHT", -78, 0)
     input:SetMaxBytes(241)   -- what Send keeps (240 bytes), plus the terminator
-    local sendBtn = UI:CreateButton(panel, L["Send"], 62, FIELD_H)
-    sendBtn:SetPoint("BOTTOMRIGHT", 0, 4)
+    local sendBtn = UI:SetButtonVariant(UI:CreateButton(panel, L["Send"], 70, FIELD_H), "primary")
+    sendBtn:SetPoint("BOTTOMRIGHT", 0, 0)
 
     local empty = UI:CreateText(content, L["No guild chat yet."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     empty:SetPoint("TOPLEFT", 0, -4)
@@ -682,45 +981,48 @@ function GuildOS:CreateGuildChatFeed(panel, top)
         for i, s in ipairs(list) do
             local t = tabs[i]
             if not t then
-                t = UI:CreateTab(bar, "", TAB_MIN_W, true)
+                -- The channels as the mockup's chips (Guild, Officers, the guild's own).
+                t = UI:CreateTab(bar, "", 50, true)
+                t:SetHeight(24)
                 t:SetScript("OnClick", function(self) open(self.stream) end)
                 tabs[i] = t
             end
             t.stream = s
             t.label:SetText(streamLabel(s))
-            t:SetWidth(math.max(TAB_MIN_W, math.ceil(t.label:GetStringWidth()) + TAB_PAD))
+            t:SetWidth(math.max(50, math.ceil(t.label:GetStringWidth()) + 24))
             t:SetActive(idOf(s) == idOf(current))
             t:Show()
             shown[#shown + 1] = t
         end
         for i = #list + 1, #tabs do tabs[i]:Hide() end
-        bar:SetWidth(math.max(TAB_MIN_W, panel:GetWidth() or 0))
-        UI:FlowBar(bar, shown, { gap = 4, rowGap = 4, rowH = TAB_H })
+        bar:SetWidth(math.max(50, panel:GetWidth() or 0))
+        UI:FlowBar(bar, shown, { gap = 4, rowGap = 4, rowH = 24 })
     end
 
     -- Pooled: refresh runs on every line of chat, and WoW never frees a frame.
     local blocks = {}
     local function getBlock(i)
         if blocks[i] then return blocks[i] end
-        local card = CreateFrame("Frame", nil, content, "BackdropTemplate")
-        card:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(card) })
+        -- The mockup's .chat .ln: a small round class avatar, the name in the class's colour and the time beside
+        -- it, the lines under it. No box: the dark card is the feed's.
+        local card = CreateFrame("Frame", nil, content)
         -- A link in the line opens as it does in the chat frame.
         card:EnableMouse(true)
         card:SetHyperlinksEnabled(true)
-        card:SetScript("OnHyperlinkClick", function(_, link, text, button) SetItemRef(link, text, button) end)
-        local icon = card:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(20, 20)
-        icon:SetPoint("TOPLEFT", 8, -6)
-        icon:SetTexture(CLASS_TEX)
-        local nameFS = UI:CreateText(card, "", 11, C.text.r, C.text.g, C.text.b)
-        nameFS:SetPoint("TOPLEFT", 36, -7)
-        local timeFS = UI:CreateText(card, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
-        timeFS:SetPoint("TOPRIGHT", -8, -8)
-        local bodyFS = UI:CreateText(card, "", 11, C.text.r, C.text.g, C.text.b)
-        bodyFS:SetPoint("TOPLEFT", 36, -22)
+        card:SetScript("OnHyperlinkClick", function(_, link, linkText, button) SetItemRef(link, linkText, button) end)
+        local avatar = UI:CreateAvatar(card, AVATAR, false)
+        avatar:SetPoint("TOPLEFT", 0, -2)
+        avatar:EnableMouse(false)
+        local nameFS = UI:CreateText(card, "", 13, C.text.r, C.text.g, C.text.b)
+        GuildOS:ApplyFont(nameFS, 13, "itemName")
+        nameFS:SetPoint("TOPLEFT", AVATAR + 10, -1)
+        local timeFS = UI:CreateText(card, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        timeFS:SetPoint("LEFT", nameFS, "RIGHT", 6, 0)
+        local bodyFS = UI:CreateText(card, "", 13, C.text.r, C.text.g, C.text.b)
+        bodyFS:SetPoint("TOPLEFT", AVATAR + 10, -19)
         bodyFS:SetJustifyH("LEFT")
         bodyFS:SetWordWrap(true)
-        blocks[i] = { card = card, icon = icon, nameFS = nameFS, timeFS = timeFS, bodyFS = bodyFS }
+        blocks[i] = { card = card, avatar = avatar, nameFS = nameFS, timeFS = timeFS, bodyFS = bodyFS }
         return blocks[i]
     end
 
@@ -752,13 +1054,7 @@ function GuildOS:CreateGuildChatFeed(panel, top)
         for i, g in ipairs(groups) do
             local b = getBlock(i)
             local class = classOf[g.name]
-            local coords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[class]
-            if coords then
-                b.icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
-                b.icon:Show()
-            else
-                b.icon:Hide()
-            end
+            b.avatar:SetMember(g.name, class)
             -- A line from an allied guild (issue #344) says which one, in its colour.
             local who = g.name or "?"
             if g.guild and GuildOS.Alliance then
@@ -769,15 +1065,13 @@ function GuildOS:CreateGuildChatFeed(panel, top)
             -- The log outlives the session: a line from another day says which day.
             local t = tonumber(g.t)
             b.timeFS:SetText(t and GuildOS:LocalDate(date("%Y%m%d", t) == today and "%H:%M" or "%a %H:%M", t) or "")
-            b.bodyFS:SetWidth(width - 44)
+            b.bodyFS:SetWidth(width - AVATAR - 10)
             b.bodyFS:SetText(table.concat(g.lines, "\n"))
-            local h = math.max(34, (b.bodyFS:GetStringHeight() or 12) + 28)
-            b.card:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.55)
-            b.card:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.35)
+            local h = math.max(AVATAR + 4, (b.bodyFS:GetStringHeight() or 12) + 21)
             b.card:SetPoint("TOPLEFT", 0, -y)
             b.card:SetSize(width, h)
             b.card:Show()
-            y = y + h + 3
+            y = y + h + 8
         end
         for i = #groups + 1, #blocks do blocks[i].card:Hide() end
         empty:SetShown(#groups == 0)
@@ -816,6 +1110,77 @@ function GuildOS:CreateGuildChatFeed(panel, top)
         if panel:IsVisible() then refresh() end
     end)
     return refresh
+end
+
+-- The Chat entry: the feed in a dark card as tall as the view (the mockup's "Chat da guilda"), and the mentions
+-- this player was told about on the right (Modules/Mentions.lua's log, never shared).
+local MAX_MENTIONS = 3
+BuildChatSub = function(panel)
+    local screen = cardScreen(panel, "GuildOSHubChatScroll")
+    local content = screen.content
+    local chat = UI:CreateCard(content, L["Guild chat"], { dark = true })
+    local inner = CreateFrame("Frame", nil, chat)
+    inner:SetPoint("TOPLEFT", PAD, -(TOP - 4))
+    inner:SetPoint("BOTTOMRIGHT", -PAD, PAD - 2)
+    local refreshFeed = GuildOS:CreateGuildChatFeed(inner, 0)
+    screen.add(chat, 1, 1, function(w)
+        local h = math.max(300, (panel:GetHeight() or 0) - 6)
+        if (content:GetWidth() or 0) < TWO_COLUMNS then h = 380 end
+        inner:SetSize(w - 2 * PAD, h - (TOP - 4) - (PAD - 2))
+        return h
+    end)
+
+    local mentions = UI:CreateCard(content, L["Mentions"], { link = L["Adjust"] })
+    mentions.link:SetScript("OnClick", function() UI:OpenWindow("settings", "chat") end)
+    local intro = text(mentions, 12, mentions.soft, nil, true)
+    intro:SetText(L["We tell you when somebody says your name or a word you chose. None of it is shared."])
+    intro:SetPoint("TOPLEFT", PAD, -TOP)
+    local empty = text(mentions, 12, mentions.soft)
+    empty:SetText(L["Nobody has mentioned you yet."])
+    local rows = {}
+    screen.add(mentions, 2, 1, function(w)
+        local inner2 = w - 2 * PAD
+        intro:SetWidth(inner2)
+        local y = TOP + (intro:GetStringHeight() or 28) + 12
+        local log = GuildOS.db and GuildOS.db.mentions and GuildOS.db.mentions.log or {}
+        local n = math.min(#log, MAX_MENTIONS)
+        for i = 1, n do
+            local e = log[i]
+            local r = rows[i]
+            if not r then
+                r = CreateFrame("Frame", nil, mentions)
+                r.sq = square(r, 28)
+                r.sq:SetPoint("TOPLEFT", 0, -4)
+                r.sq:Set("@", hex("1d4f99"))
+                r.main = text(r, 13, mentions.ink, nil, true)
+                r.main:SetPoint("TOPLEFT", 40, -2)
+                r.side = text(r, 11, mentions.soft)
+                r.side:SetPoint("TOPLEFT", r.main, "BOTTOMLEFT", 0, -3)
+                rows[i] = r
+            end
+            local who = (Ambiguate and Ambiguate(e.sender or "?", "short")) or (e.sender or "?")
+            r.main:SetWidth(inner2 - 40)
+            r.main:SetText(string.format("%s: \"%s\"", GuildOS:SanitizeUserText(who), GuildOS:SanitizeUserText(e.msg or "")))
+            r.side:SetText(GuildOS:TimeAgo(e.ts or 0))
+            local h = math.max(36, (r.main:GetStringHeight() or 14) + 20)
+            r:ClearAllPoints()
+            r:SetPoint("TOPLEFT", PAD, -y)
+            r:SetSize(inner2, h)
+            r:Show()
+            y = y + h + 6
+        end
+        for i = n + 1, #rows do rows[i]:Hide() end
+        empty:ClearAllPoints()
+        empty:SetPoint("TOPLEFT", PAD, -y)
+        empty:SetShown(n == 0)
+        if n == 0 then y = y + 20 end
+        return y + PAD - 4
+    end)
+
+    return function()
+        screen.layout()
+        refreshFeed()
+    end
 end
 
 ----------------------------------------------------------------------
@@ -865,7 +1230,7 @@ function GuildOS:CreateGuildHub(parent, _mainFrame)
         calendar = function(p) return GuildOS:CreateCalendarSub(p) end,
         activity = BuildActivitySub, bulletin = BuildBulletinSub, cta = BuildCallToArmsSub,
         rules = BuildGuildRulesSub,
-        chat = function(p) return GuildOS:CreateGuildChatFeed(p, GAP) end,
+        chat = function(p) return BuildChatSub(p) end,
         journal = function(p) return GuildOS:CreateJournalPanel(p) end,
         achievements = function(p) return GuildOS:CreateAchievementsPanel(p) end,
     }

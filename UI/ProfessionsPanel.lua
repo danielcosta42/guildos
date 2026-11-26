@@ -6,6 +6,10 @@
 -- covers) and a Crafters view of the members with it. A recipe clicked opens in place with its
 -- reagents, source and crafters, and the craft order (issue #389). Everything comes from GuildOS.ProfDirectory; this file only draws.
 -- Replaces the Recipes panel on Forever (UI/Features.lua).
+--
+-- Drawn as the Workshop's mockup (#449 phase 3): the rail in a dark card ("Professions"), the catalog in a
+-- parchment card titled with the profession, its views and filters as pills, the table in the paper's ink, an
+-- item's icon framed in its quality, the crafters in their class's colour (deepened to read on the paper).
 ----------------------------------------------------------------------
 if GuildOS.Client.isAnniversary then return end
 
@@ -17,6 +21,9 @@ local RAIL_W     = 176
 local RAIL_ROW   = 36
 local SIDE       = 10
 local TOP        = 8
+local CARD_PAD   = 12       -- the rail's dark card and the catalog's paper card: padding
+local CARD_TOP   = 38       -- under a card's title
+local RAIL_CARD  = RAIL_W + 2 * CARD_PAD
 local TITLE_H    = 30
 local TOOLS_H    = 30
 local HEADER_H   = 24
@@ -63,13 +70,26 @@ local COLUMNS = {
     },
 }
 local HEADERS = {
-    recipes  = { name = L["RECIPE"], skill = L["SKILL"], who = L["CRAFTERS"], req = L["REQUIRES"] },
-    crafters = { name = L["MEMBER"], skill = L["LEVEL"], who = L["RECIPES"], req = L["SPECIALIZATION"] },
+    recipes  = { name = L["Recipe"], skill = L["Skill"], who = L["Crafters"], req = L["Requires"] },
+    crafters = { name = L["Member"], skill = L["Level"], who = L["Recipes"], req = L["Specialization"] },
 }
 
 local function hex(c) return string.format("%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255) end
+-- A class's colour deepened to read on the paper (the mockup's names on its cards): the bright ones (the
+-- priest's white, the rogue's yellow) would vanish on it.
+local function onPaper(r, g, b)
+    local lum = 0.3 * r + 0.59 * g + 0.11 * b
+    local k = lum > 0.55 and 0.55 or 0.8
+    return r * k, g * k, b * k
+end
 local function classHex(class)
-    local r, g, b = GuildOS:GetClassColor(class)
+    -- The shared paper inks (UI/Kit.lua's mockup class colours) where they are loaded.
+    local Kit = rawget(GuildOS, "Kit")
+    if Kit and Kit.ClassInk and class then
+        local r, g, b = Kit:ClassInk(class)
+        return string.format("%02x%02x%02x", r * 255, g * 255, b * 255)
+    end
+    local r, g, b = onPaper(GuildOS:GetClassColor(class))
     return string.format("%02x%02x%02x", r * 255, g * 255, b * 255)
 end
 
@@ -122,15 +142,15 @@ local function crafterList(keys, who)
 end
 
 local function whoText(keys, who)
-    if #keys == 0 then return "|cff" .. hex(C.red) .. L["nobody"] .. "|r" end
+    if #keys == 0 then return "|cff" .. hex(C.paperTitle) .. L["nobody"] .. "|r" end
     local list = crafterList(keys, who)
     local parts = {}
     for i = 1, math.min(3, #list) do
         local e = list[i]
-        parts[i] = e.online and ("|cff" .. classHex(e.class) .. e.name .. "|r") or ("|cff" .. hex(C.labelDim) .. e.name .. "|r")
+        parts[i] = e.online and ("|cff" .. classHex(e.class) .. e.name .. "|r") or ("|cff" .. hex(C.paperSoft) .. e.name .. "|r")
     end
     local text = table.concat(parts, ", ")
-    if #list > 3 then text = text .. string.format(" |cff%s+%d|r", hex(C.labelDim), #list - 3) end
+    if #list > 3 then text = text .. string.format(" |cff%s+%d|r", hex(C.paperSoft), #list - 3) end
     return text
 end
 
@@ -156,9 +176,13 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     ----------------------------------------------------------------
     -- Rail: every profession with its coverage
     ----------------------------------------------------------------
-    local rail = CreateFrame("Frame", nil, panel)
-    rail:SetPoint("TOPLEFT", SIDE, -TOP)
-    rail:SetPoint("BOTTOMLEFT", SIDE, SIDE)
+    local railCard = UI:CreateCard(panel, L["Professions"], { dark = true })
+    railCard:SetPoint("TOPLEFT", SIDE, -TOP)
+    railCard:SetPoint("BOTTOMLEFT", SIDE, SIDE)
+    railCard:SetWidth(RAIL_CARD)
+    local rail = CreateFrame("Frame", nil, railCard)
+    rail:SetPoint("TOPLEFT", CARD_PAD, -(CARD_TOP - 4))
+    rail:SetPoint("BOTTOMLEFT", CARD_PAD, CARD_PAD)
     rail:SetWidth(RAIL_W)
     local railButtons = {}
 
@@ -173,14 +197,14 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         icon:SetPoint("LEFT", 6, 0)
         icon:SetTexture(line and PROF_ICONS[line] or ALL_ICON)
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        local name = UI:CreateText(b, line and D.DisplayName(line) or L["All professions"], 11,
+        local name = UI:CreateText(b, line and D.DisplayName(line) or L["All professions"], 12,
             C.text.r, C.text.g, C.text.b)
         name:SetPoint("TOPLEFT", icon, "TOPRIGHT", 8, 2)
         name:SetWidth(RAIL_W - 42)
         name:SetJustifyH("LEFT")
         name:SetWordWrap(false)
         b.icon, b.name = icon, name
-        b.sub = UI:CreateText(b, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        b.sub = UI:CreateText(b, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
         b.sub:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 8, -2)
         b.sub:SetWidth(RAIL_W - 42)
         b.sub:SetJustifyH("LEFT")
@@ -208,10 +232,13 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
                 local pct = cov.total > 0 and math.floor(cov.covered * 100 / cov.total + 0.5) or 0
                 b.sub:SetText(string.format(L["%d crafters · %d%%"], cov.crafters, pct))
             end
+            -- The open one in the soft gold's wash, its name in the soft gold (the mockup's chosen line).
             if state.line == b.line then
-                b:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1)
+                b:SetBackdropColor(C.gold2.r, C.gold2.g, C.gold2.b, 0.14)
+                b.name:SetTextColor(C.gold2.r, C.gold2.g, C.gold2.b)
             else
                 b:SetBackdropColor(0, 0, 0, 0)
+                b.name:SetTextColor(C.text.r, C.text.g, C.text.b)
             end
         end
         -- Every recipe once: one two professions learn is not counted twice.
@@ -223,23 +250,31 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     ----------------------------------------------------------------
     -- Main area: title, view tabs, search and filters
     ----------------------------------------------------------------
-    local main = CreateFrame("Frame", nil, panel)
-    main:SetPoint("TOPLEFT", rail, "TOPRIGHT", 12, 0)
-    main:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -SIDE, SIDE)
+    local catalog = UI:CreateCard(panel, "")
+    catalog:SetPoint("TOPLEFT", railCard, "TOPRIGHT", 12, 0)
+    catalog:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -SIDE, SIDE)
+    local main = CreateFrame("Frame", nil, catalog)
+    main:SetPoint("TOPLEFT", CARD_PAD, -(CARD_TOP - TITLE_H))
+    main:SetPoint("BOTTOMRIGHT", -CARD_PAD, CARD_PAD - 4)
 
-    local title = UI:CreateTitle(main, "", 14)
-    title:SetPoint("TOPLEFT", 0, -2)
+    -- The card's title says what the catalog shows: a profession, all of them, or an item's recipes.
+    local title = catalog.title
 
-    local tabCrafters = UI:CreateTab(main, L["Crafters"], 90, true)
-    tabCrafters:SetPoint("TOPRIGHT", 0, 0)
-    local tabRecipes = UI:CreateTab(main, L["Recipes"], 90, true)
-    tabRecipes:SetPoint("RIGHT", tabCrafters, "LEFT", -4, 0)
+    -- The two views as pills (the mockup's Receitas / Artesãos), the chosen one filled.
+    local function pill(owner, label)
+        local t = UI:SetButtonVariant(UI:CreateButton(owner, label, 60, 22), "chip")
+        t:SetWidth(math.ceil(t.label:GetStringWidth()) + 22)
+        function t:SetActive(on) self.isActive = on and true or nil; UI:SetSelected(self, on) end
+        return t
+    end
+    local tabCrafters = pill(catalog, L["Crafters"])
+    tabCrafters:SetPoint("TOPRIGHT", -CARD_PAD, -9)
+    local tabRecipes = pill(catalog, L["Recipes"])
+    tabRecipes:SetPoint("RIGHT", tabCrafters, "LEFT", -6, 0)
     tabRecipes:SetScript("OnClick", function() state.mode = "recipes"; panel:Refresh(true) end)
     -- Who crafts an item on the realm is the Workshop's "Search the realm" (audit B27).
-    -- A narrow window cuts the title short rather than lay it over the tabs.
-    title:SetPoint("TOPRIGHT", tabRecipes, "TOPLEFT", -8, -2)
-    title:SetWordWrap(false)
-    title:SetJustifyH("LEFT")
+    -- A narrow window cuts the title short rather than lay it over the pills.
+    title:SetPoint("RIGHT", tabRecipes, "LEFT", -8, 0)
     tabCrafters:SetScript("OnClick", function() state.mode = "crafters"; panel:Refresh(true) end)
 
     local tools = CreateFrame("Frame", nil, main)
@@ -251,7 +286,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     -- 6px in), because this one also goes when the box is too narrow to hold it.
     local search = UI:CreateInput(tools, 220, 24, { max = 50 })
     search:SetPoint("LEFT", 0, 0)
-    local placeholder = UI:CreateText(search, L["Search recipes..."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local placeholder = UI:CreateText(search, L["Search recipes..."], 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     placeholder:SetPoint("LEFT", 6, 0)
     -- The placeholder only while the box is empty and wide enough to hold it.
     local function paintPlaceholder()
@@ -277,7 +312,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     local previous
     for i = #FILTERS, 1, -1 do
         local key, label = FILTERS[i][1], FILTERS[i][2]
-        local t = UI:CreateTab(tools, label, 60, true)
+        local t = pill(tools, label)
         if previous then t:SetPoint("RIGHT", previous, "LEFT", -4, 0) else t:SetPoint("RIGHT", 0, 0) end
         t.key = key
         t:SetScript("OnClick", function() state.filter = key; panel:Refresh(true) end)
@@ -315,10 +350,10 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         detail.onReflow = function() panel:Refresh() end
     end
 
-    local empty = UI:CreateText(list, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local empty = UI:CreateText(list, "", 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     empty:SetPoint("CENTER", 0, 20)
 
-    local footer = UI:CreateText(main, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    local footer = UI:CreateText(main, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     footer:SetPoint("BOTTOMLEFT", 0, 4)
 
     local rows = {}
@@ -331,13 +366,18 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         row.icon = row:CreateTexture(nil, "ARTWORK")
         row.icon:SetSize(18, 18)
         row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        -- The item's quality round its icon (the mockup's framed icons), one pixel out.
+        row.frame = row:CreateTexture(nil, "BORDER")
+        row.frame:SetTexture(WHITE8)
+        row.frame:SetPoint("TOPLEFT", row.icon, "TOPLEFT", -1, 1)
+        row.frame:SetPoint("BOTTOMRIGHT", row.icon, "BOTTOMRIGHT", 1, -1)
         row.dot = row:CreateTexture(nil, "OVERLAY")
         row.dot:SetSize(8, 8)
         row.dot:SetTexture(WHITE8)
         row.bar = UI:CreateProgressBar(row, 100, 8)
         for _, k in ipairs({ "t1", "t2", "t3", "t4" }) do
             local fs = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(fs, k == "t1" and 11 or 10)
+            GuildOS:ApplyFont(fs, k == "t1" and 12 or 11)
             fs:SetJustifyH("LEFT")
             fs:SetWordWrap(false)
             row[k] = fs
@@ -381,7 +421,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         end
 
         row:SetScript("OnEnter", function(self)
-            self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
+            self:SetBackdropColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 0.6)
             local e = self.data
             if e and state.mode == "recipes" then
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -394,8 +434,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
             end
         end)
         row:SetScript("OnLeave", function(self)
-            local bg = (index % 2 == 0) and C.row2 or C.row1
-            self:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
+            panel:PaintRowBg(self, index)
             GameTooltip:Hide()
         end)
         row:SetScript("OnClick", function(self)
@@ -412,6 +451,16 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         end)
         rows[index] = row
         return row
+    end
+
+    -- A row on the paper: a line of the paper's under it rather than stripes, the opened recipe washed.
+    function panel:PaintRowBg(row, _)
+        local open = row.data and state.mode == "recipes" and row.data.id == state.open
+        if open then
+            row:SetBackdropColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 0.8)
+        else
+            row:SetBackdropColor(0, 0, 0, 0)
+        end
     end
 
     panel.visibleRows = 0
@@ -434,26 +483,31 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
                 row:Hide()
             else
                 row:Show()
-                local bg = (i % 2 == 0) and C.row2 or C.row1
-                row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
+                panel:PaintRowBg(row, i)
                 if state.mode == "recipes" then
                     row.icon:Show()
                     row.dot:Hide()
                     row.bar:Hide()
                     row.icon:SetTexture(recipeIcon(e))
+                    local q = e.out and e.out > 0 and select(3, GuildOS.Compat.GetItemInfo(e.out))
+                    local qr, qg, qb = C.paperRule.r, C.paperRule.g, C.paperRule.b
+                    local qc = q and q >= 2 and GuildOS.QualityColors and GuildOS.QualityColors[q]
+                    if qc then qr, qg, qb = qc.r, qc.g, qc.b end
+                    row.frame:SetVertexColor(qr, qg, qb, 1)
+                    row.frame:Show()
                     row.t1:SetText(e.name .. panel:Badges(e))
-                    row.t1:SetTextColor(C.text.r, C.text.g, C.text.b)
-                    if e.id == state.open then
-                        row:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1)
-                    end
-                    -- A few recipes give no skill: the client's table says 0 for both. The range in
-                    -- `text` to `label`, not gold (#371).
-                    row.t2:SetText(e.grey > 0 and string.format("|cff%s%d|r–|cff%s%d|r", hex(C.text), e.yellow,
-                        hex(C.label), e.grey) or "")
+                    row.t1:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b)
+                    -- A few recipes give no skill: the client's table says 0 for both. The range in the
+                    -- paper's ink to its softer one, not gold (#371).
+                    row.t2:SetText(e.grey > 0 and string.format("|cff%s%d|r–|cff%s%d|r", hex(C.paperInk), e.yellow,
+                        hex(C.paperSoft), e.grey) or "")
+                    row.t2:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b)
                     row.t3:SetText(whoText(e.crafters, state.who))
+                    row.t3:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b)
                     row.t4:SetText(requiresText(e))
-                    row.t4:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
+                    row.t4:SetTextColor(C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
                 else
+                    row.frame:Hide()
                     row.icon:Hide()
                     row.dot:Show()
                     local dc = e.online and C.online or C.offline
@@ -461,15 +515,17 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
                     row.t1:SetText("|cff" .. classHex(e.class) .. e.name .. "|r")
                     if e.native then
                         row.bar:Hide()
-                        row.t2:SetText("|cff" .. hex(C.labelDim) .. L["no addon"] .. "|r")
+                        row.t2:SetText("|cff" .. hex(C.paperSoft) .. L["no addon"] .. "|r")
                     else
                         row.bar:SetShown(row.barAllowed)
                         row.bar:SetProgress((e.max or 0) > 0 and (e.rank or 0) / e.max or 0)
                         row.t2:SetText(string.format("%d / %d", e.rank or 0, e.max or 0))
                     end
+                    row.t2:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b)
                     row.t3:SetText(e.native and "" or tostring(e.count))
+                    row.t3:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b)
                     row.t4:SetText(specName(e.spec) or "")
-                    row.t4:SetTextColor(C.text.r, C.text.g, C.text.b)
+                    row.t4:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b)
                 end
             end
         end
@@ -495,9 +551,9 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         local O = GuildOS.CraftOrders
         if not O then return "" end
         local out = ""
-        if state.mine and state.mine[e.id] then out = out .. "  " .. "|cff" .. hex(C.ok) .. L["you craft"] .. "|r" end
+        if state.mine and state.mine[e.id] then out = out .. "  " .. "|cff" .. hex({ r = 0.184, g = 0.431, b = 0.2 }) .. L["you craft"] .. "|r" end
         local n = e.out and state.byItem and state.byItem[e.out]
-        if n and n > 0 then out = out .. "  " .. "|cff" .. hex(C.gold) .. string.format(L["%d orders"], n) .. "|r" end
+        if n and n > 0 then out = out .. "  " .. "|cff" .. hex(C.paperTitle) .. string.format(L["%d orders"], n) .. "|r" end
         return out
     end
 
@@ -554,7 +610,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
             if FauxScrollFrame_SetOffset then FauxScrollFrame_SetOffset(scroll, 0) end
         end
         local itemName = state.item and (GuildOS.Compat.GetItemInfo(state.item) or ("item:" .. state.item))
-        title:SetText(itemName and string.format(L["Recipes for %s"], itemName)
+        GuildOS:SetTitleText(title, itemName and string.format(L["Recipes for %s"], itemName)
             or (state.line and D.DisplayName(state.line)) or L["All professions"])
         tabRecipes:SetActive(state.mode == "recipes")
         tabCrafters:SetActive(state.mode == "crafters")
@@ -592,10 +648,11 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         w = w or parent:GetWidth()
         h = h or parent:GetHeight()
         if not w or not h or w < 1 or h < 1 then return end
-        local inner = w - SIDE * 2 - RAIL_W - 12
+        local inner = w - SIDE * 2 - RAIL_CARD - 12 - 2 * CARD_PAD
 
         -- The rail shrinks its rows to the height it has; the second line goes when they get short.
-        local railRow = math.max(20, math.min(RAIL_ROW, math.floor((h - TOP - SIDE) / #railButtons)))
+        local railRow = math.max(20, math.min(RAIL_ROW,
+            math.floor((h - TOP - SIDE - (CARD_TOP - 4) - CARD_PAD) / #railButtons)))
         for i, b in ipairs(railButtons) do
             b:SetHeight(railRow - 2)
             b:ClearAllPoints()
@@ -648,7 +705,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
                 fs:SetText(HEADERS[state.mode][col.key])
             end
         end
-        local listTop = TOP + TITLE_H + TOOLS_H + 4 + HEADER_H
+        local listTop = TOP + CARD_TOP + TOOLS_H + 4 + HEADER_H + CARD_PAD
         AcquireRows(UI:ResolveRows(h - listTop - FOOTER_H - SIDE, ROW_H, 0))
         for i = 1, self.visibleRows do rows[i]:ApplyColumns(layout, state.mode) end
         self:UpdateRows()

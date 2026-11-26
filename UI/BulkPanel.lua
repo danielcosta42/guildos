@@ -13,7 +13,19 @@
 -- window holding a protected button in combat.
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
-local C = GuildOS.Colors
+-- Drawn on a parchment card in the Officers' Room and Settings (specs/salao/fase3.md): the text takes the
+-- paper's inks and a class its colour on the paper (UI/Kit.lua); a floating window, the wood's (WOOD).
+local Kit = rawget(GuildOS, "Kit")
+local C = Kit and Kit.PAPER or GuildOS.Colors
+local function classInk(class)
+    if Kit then return Kit:ClassInk(class) end
+    return GuildOS:GetClassColor(class)
+end
+local function rule(row) if Kit then Kit:Rule(row) end end
+local function checkbox(parent, text, size)
+    if Kit then return Kit:Checkbox(parent, text, size) end
+    return GuildOS.UI:CreateCheckbox(parent, text, size)
+end
 local L = GuildOS.L
 
 local ROW_H = 24
@@ -114,17 +126,16 @@ function GuildOS:BuildBulkSub(panel)
     local action = "promote"
     local preview, previewWhy = nil, nil
 
-    local title = UI:CreateSectionTitle(panel, L["BULK ACTIONS"], true)
-    title:SetPoint("TOPLEFT", 0, -2)
+    -- Under the card's title ("Bulk actions").
     local hint = UI:CreateText(panel,
         L["Pick members by rules, then act on one per click of Next: the game lets a rank change or a removal come only from your click."],
         11, C.silver.r, C.silver.g, C.silver.b)
-    hint:SetPoint("TOPLEFT", 0, -24)
-    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -24)
+    hint:SetPoint("TOPLEFT", 0, 0)
+    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
     hint:SetJustifyH("LEFT")
 
     -- What to do.
-    local y = -52
+    local y = -28
     local actLbl = UI:CreateText(panel, L["Action"], 11, C.text.r, C.text.g, C.text.b)
     actLbl:SetPoint("TOPLEFT", 0, y - 4)
     local actBtns, prev = {}, actLbl
@@ -160,7 +171,7 @@ function GuildOS:BuildBulkSub(panel)
     local rankDD = UI:CreateDropdown(panel, 150, 22)
     rankDD:SetPoint("LEFT", rankLbl, "RIGHT", 8, 0)
     rankDD.onSelect = function() preview = nil; refresh() end
-    local noAddon = UI:CreateCheckbox(panel, L["Without GuildOS only"], 18)
+    local noAddon = checkbox(panel, L["Without GuildOS only"], 18)
     noAddon:SetPoint("LEFT", rankDD, "RIGHT", 16, 0)
     noAddon.checkbox.onChanged = function() preview = nil; refresh() end
 
@@ -193,6 +204,7 @@ function GuildOS:BuildBulkSub(panel)
     local summary = UI:CreateText(panel, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     summary:SetPoint("LEFT", previewBtn, "RIGHT", 12, 0)
     local startBtn = UI:CreateButton(panel, L["Start"], 90, 22)
+    UI:SetButtonVariant(startBtn, "primary")
     startBtn:SetPoint("TOPRIGHT", 0, y)
     previewBtn:SetScript("OnClick", function()
         preview, previewWhy = BA:Preview(rules(), action)
@@ -248,6 +260,7 @@ function GuildOS:BuildBulkSub(panel)
         local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
         row:SetHeight(ROW_H)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        rule(row)
         row.nameFS = UI:CreateText(row, "", 11)
         row.nameFS:SetPoint("LEFT", 8, 0)
         row.rankFS = UI:CreateText(row, "", 10, C.silver.r, C.silver.g, C.silver.b)
@@ -263,7 +276,7 @@ function GuildOS:BuildBulkSub(panel)
     local function fillRow(row, m, idx)
         local alt = (idx % 2 == 0) and C.row1 or C.row2
         row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
-        local cr, cg, cb = GuildOS:GetClassColor(m.class)
+        local cr, cg, cb = classInk(m.class)
         row.nameFS:SetText(m.name)
         row.nameFS:SetTextColor(cr, cg, cb)
         row.rankFS:SetText(m.rankName or "?")

@@ -58,26 +58,37 @@ local function Build()
     local f = CreateFrame("Frame", "GuildOSJoinRequests", UIParent, "BackdropTemplate")
     f:SetSize(WIDTH, HEIGHT)
     f:SetPoint("CENTER")
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
-    f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-    UI:StylePopup(f)
     f:SetFrameStrata("DIALOG")
-    f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    f:SetMovable(true); f:EnableMouse(true)
     table.insert(UISpecialFrames, "GuildOSJoinRequests")
 
-    local title = UI:CreateTitle(f, L["Join requests"], 14)
-    title:SetPoint("TOPLEFT", 14, -12)
-    local count = UI:CreateText(f, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    count:SetPoint("TOPRIGHT", -40, -15)
-    local close = UI:CreateCloseButton(f)
-    close:SetPoint("TOPRIGHT", -6, -6)
-    close:SetScript("OnClick", function() f:Hide() end)
+    -- A floating window (the mockup's .fw): "Join requests" in its header, how many are open beside it.
+    local Kit = rawget(GuildOS, "Kit")
+    local count, top
+    if Kit then
+        Kit:Dress(f, L["Join requests"])
+        count = f.subText
+        top = Kit.HEADER_H + 6
+    else
+        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
+        f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+        f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+        UI:StylePopup(f)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+        local title = UI:CreateTitle(f, L["Join requests"], 14)
+        title:SetPoint("TOPLEFT", 14, -12)
+        count = UI:CreateText(f, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        count:SetPoint("TOPRIGHT", -40, -15)
+        local close = UI:CreateCloseButton(f)
+        close:SetPoint("TOPRIGHT", -6, -6)
+        close:SetScript("OnClick", function() f:Hide() end)
+        top = 40
+    end
 
     local scroll, content = UI:CreateScrollFrame(f, "GuildOSJoinRequestsScroll")
-    scroll:SetPoint("TOPLEFT", 8, -40)
+    scroll:SetPoint("TOPLEFT", 8, -top)
     scroll:SetPoint("BOTTOMRIGHT", -28, 10)
     content:SetSize(WIDTH - 40, 1)
 
@@ -91,6 +102,13 @@ local function Build()
         if rows[i] then return rows[i] end
         local row = CreateFrame("Button", nil, content)
         row:SetSize(WIDTH - 40, ROW_H)
+        -- The rows apart by the window's dark line (the mockup's `.fw .li`).
+        local sep = row:CreateTexture(nil, "BACKGROUND")
+        sep:SetTexture("Interface\\Buttons\\WHITE8x8")
+        sep:SetPoint("BOTTOMLEFT", 0, 0)
+        sep:SetPoint("BOTTOMRIGHT", 0, 0)
+        if UI.Hairline then UI:Hairline(sep) end
+        sep:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
         row:EnableMouse(true); row:RegisterForClicks("LeftButtonUp")
         row.name = UI:CreateText(row, "", 12)
         row.name:SetPoint("TOPLEFT", 6, -8)
@@ -201,17 +219,29 @@ local function BuildToast()
     local t = CreateFrame("Button", "GuildOSJoinRequestToast", UIParent, "BackdropTemplate")
     t:SetSize(280, 62)
     t:SetPoint("TOP", 0, -150)
-    t:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(t) })
-    t:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-    t:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 0.9)
     t:SetFrameStrata("DIALOG")
+    -- The mockup's notice: the window's metal frame and dark body, a green "+" glyph, the title in Cinzel gold.
+    local x = 10
+    if GuildOS.Style and GuildOS.Style.Paint then
+        t:SetSize(300, 62)
+        GuildOS.Style:Paint(t, "window")
+        t:SetBackdropColor(0.114, 0.075, 0.039, 0.98)
+        local glyph = UI:CreateGlyph(t, 30)
+        glyph:SetPoint("LEFT", 12, 0)
+        glyph:Set("+", C.ok)
+        x = 52
+    else
+        t:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(t) })
+        t:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+        t:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 0.9)
+    end
     t.title = UI:CreateTitle(t, L["New guild request"], 12)
-    t.title:SetPoint("TOPLEFT", 10, -8)
+    t.title:SetPoint("TOPLEFT", x, -9)
     t.who = UI:CreateText(t, "", 11)
-    t.who:SetPoint("TOPLEFT", 10, -26)
-    t.who:SetWidth(260); t.who:SetJustifyH("LEFT"); t.who:SetWordWrap(false)
+    t.who:SetPoint("TOPLEFT", x, -27)
+    t.who:SetWidth(290 - x); t.who:SetJustifyH("LEFT"); t.who:SetWordWrap(false)
     t.hint = UI:CreateText(t, L["Click to see"], 10, C.label.r, C.label.g, C.label.b)
-    t.hint:SetPoint("TOPLEFT", 10, -44)
+    t.hint:SetPoint("TOPLEFT", x, -44)
     t:SetScript("OnClick", function(self)
         self:Hide()
         GuildOS:ShowJoinRequests()

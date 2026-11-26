@@ -4,10 +4,11 @@
 -- this draws. WoW: Forever only: the Guild tab's Achievements sub-tab since issue #367, offered only
 -- where the feature exists and is on (UI/CommunityPanel.lua, UI/Features.lua).
 --
--- "Insignia and collection" (#373): the insignia and the renown head the screen, with the points as
--- its metric; what is nearest to done is a row of cards; and what was earned reads as a collection:
--- a numbered series on one row of tier pills (with the tier being worked on shown dim after them),
--- "Prefix: part" titles under their prefix, the rest a row each.
+-- "Insignia and collection" (#373): the insignia and the renown head the screen, with the points beside
+-- the renown; what is nearest to done is a row of boxes; and what was earned reads as a collection:
+-- a numbered series with its row of tier pills (with the tier being worked on shown dim after them),
+-- "Prefix: part" titles under their prefix, the rest a row each. Drawn in cards as the Chronicle's
+-- mockup (#449 phase 3).
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
 local C = GuildOS.Colors
@@ -18,13 +19,10 @@ local function day(t) return date("%Y-%m-%d", t) end   -- the reader's own day
 -- GAP and the gutter are the shared grid's (#371); a test's stand-in UI carries neither.
 local GAP = type(UI.GAP) == "number" and UI.GAP or 8
 local GUTTER = type(UI.SCROLL_GUTTER) == "number" and UI.SCROLL_GUTTER or 12
-local SECTION_SPACE = 20   -- over a later section title: its rule sits 12px above it
-local ROW_GAP = 6
 local COL_W = 80           -- the right-hand column: a date
 
 local INSIGNIA = 64        -- the renown insignia, the screen's one picture (#373)
 local INSIGNIA_GAP = 12
-local CHIP_MIN = 34        -- as UI:CreateMetricChip sizes it: never narrower than this
 
 local CARD_MIN = 200       -- a nearest card is never narrower; the row takes as many as fit
 local CARD_PAD = 10
@@ -33,8 +31,6 @@ local NUM_H = 13           -- a line of the mono number font
 local BAR_H = 8
 local CARD_H = CARD_PAD + TITLE_H + GAP + NUM_H + CARD_PAD
 
-local NAME_W = 200         -- a series' or a group's name, so their pills and parts start in one column
-local NAME_SHARE = 0.4     -- at most this much of a narrow screen
 local PILL_H = 16          -- UI:CreateBadge's height
 local PILL_GAP = 4
 
@@ -223,58 +219,73 @@ local function newPool(make)
     return pool
 end
 
+-- The Chronicle's mockup (#449 phase 3): the renown in a dark card (the insignia, or a gold medal with the
+-- renown's number, the title in the soft gold and "Renown N · P points" under it); Nearest in a parchment card
+-- of small paper boxes (the title in the title face, the bar and how far along); Earned in a parchment card,
+-- each row its name in the title face with its date on the right and, under it, the series' tier pills or the
+-- group's parts.
+local HEAD_H = INSIGNIA + 2 * 16
+local CARD_TOP = 38        -- a card's first line, under its title
+local PAD = 14             -- a card's padding (UI.CARD_PAD)
+local NAME_H = 16          -- a row's name line
+
 function GuildOS:CreateAchievementsPanel(parent)
     local scroll, content = UI:CreateScrollFrame(parent, "GuildOSAchievementsScroll")
     scroll:SetPoint("TOPLEFT", 0, -GAP)
     scroll:SetPoint("BOTTOMRIGHT", 0, 0)
-    -- The content keeps the list's width, less the scroll bar's gutter: every line hangs from both of
+    -- The content keeps the list's width, less the scroll bar's gutter: every card hangs from both of
     -- its top corners, never from a width read while the tab was hidden.
     UI:BindScrollChildWidth(scroll, content)
 
     -- The width to lay the cards and the pills out in, read on every draw (on show and on every resize,
-    -- #373). A tab built hidden reads 0: then the cards stack, hung by both sides, until it is shown.
+    -- #373). A tab built hidden reads 0: then the boxes stack, hung by both sides, until it is shown.
     local function width()
         local w = scroll:GetWidth()
         return (type(w) == "number" and w > GUTTER + 1) and (w - GUTTER) or 0
     end
 
-    -- The header (#373): the insignia, its title (or the guild's name) with the renown under it, and
-    -- the points as the screen's metric on the right.
-    local insignia = content:CreateTexture(nil, "ARTWORK")
+    -- The three cards, hung by both top corners from the content.
+    local head = UI:CreateCard(content, "", { dark = true })
+    local near = UI:CreateCard(content, L["Nearest"])
+    local earnedCard = UI:CreateCard(content, L["Earned"])
+    local function place(card, top, h)
+        card:ClearAllPoints()
+        card:SetPoint("TOPLEFT", 0, -top)
+        card:SetPoint("TOPRIGHT", 0, -top)
+        card:SetHeight(h)
+        card:Show()
+        return top + h + GAP + 4
+    end
+
+    -- The header: the insignia, or the medal with the renown's number; the title beside it, the renown under.
+    local insignia = head:CreateTexture(nil, "ARTWORK")
     insignia:SetSize(INSIGNIA, INSIGNIA)
     insignia:Hide()
-    local nameFS = UI:CreateTitle(content, "", 18)
+    local medal = UI:CreateGlyph(head, INSIGNIA)
+    GuildOS:ApplyFont(medal.letter, 22, "metricValue")
+    medal.letter:SetTextColor(0.29, 0.15, 0.03)
+    medal:Hide()
+    local nameFS = UI:CreateTitle(head, "", 18)
     nameFS:SetJustifyH("LEFT")
-    local renownFS = UI:CreateText(content, "", 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    nameFS:SetTextColor(C.gold2.r, C.gold2.g, C.gold2.b)
+    local renownFS = UI:CreateText(head, "", 13, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     renownFS:SetJustifyH("LEFT")
-    local chip = UI:CreateMetricChip(content, "", L["points"])
-    chip:Hide()
-    -- The chip sizes itself to the value it was made with; the points change after that.
-    local function fitChip()
-        local v, l = chip.value, chip.label
-        if type(v) ~= "table" or type(l) ~= "table" then return end   -- a test's stand-in UI
-        chip:SetWidth(math.max(CHIP_MIN, v:GetStringWidth() or 0, l:GetStringWidth() or 0))
-    end
 
-    -- A later section in a frame of its own, so the title and the rule over it hide together.
-    local function section(text)
-        local box = CreateFrame("Frame", nil, content)
-        box.title = UI:CreateSectionTitle(box, text)
-        box.title:SetPoint("TOPLEFT", 0, 0)
-        return box
-    end
-    local nearHead, earnedHead = section(L["NEAREST"]), section(L["EARNED"])
-
-    local texts = newPool(function() return UI:CreateText(content, "", 12) end)
+    local texts = newPool(function() return UI:CreateText(earnedCard, "", 12) end)
+    local names = newPool(function()
+        local fs = UI:CreateText(earnedCard, "", 12)
+        GuildOS:ApplyFont(fs, 12, "sectionTitle")
+        return fs
+    end)
     local numbers = newPool(function()
-        local fs = UI:CreateText(content, "", 11)
+        local fs = UI:CreateText(earnedCard, "", 11)
         GuildOS:ApplyFont(fs, nil, "tableNum")
         return fs
     end)
     -- A pill shows its tier's tooltip; above the row's own hover area, so the pill wins under the cursor.
     local pills = newPool(function()
-        local p = UI:CreateBadge(content, "")
-        p:SetFrameLevel((content:GetFrameLevel() or 1) + 2)
+        local p = UI:CreateBadge(earnedCard, "")
+        p:SetFrameLevel((earnedCard:GetFrameLevel() or 1) + 2)
         p:EnableMouse(true)
         p:SetScript("OnEnter", function(self) showTip(self, self.entry) end)
         p:SetScript("OnLeave", hideTip)
@@ -282,24 +293,30 @@ function GuildOS:CreateAchievementsPanel(parent)
     end)
     -- A row's hover area, under its text and pills: the row's tooltip anywhere else on it.
     local hits = newPool(function()
-        local f = CreateFrame("Frame", nil, content)
-        f:SetFrameLevel((content:GetFrameLevel() or 1) + 1)
+        local f = CreateFrame("Frame", nil, earnedCard)
+        f:SetFrameLevel((earnedCard:GetFrameLevel() or 1) + 1)
         f:EnableMouse(true)
         f:SetScript("OnLeave", hideTip)
         return f
     end)
-    -- A nearest card: a panel with the title (two lines at most), the bar, and how far along.
+    -- A nearest box (the mockup's paper box in "Mais perto"): its title in the title face (two lines at most),
+    -- the bar and how far along.
     local cards = newPool(function()
-        local card = UI:CreatePanel(content)
-        card:SetFrameLevel((content:GetFrameLevel() or 1) + 1)   -- before its children, so they sit on it
-        card.title = UI:CreateText(card, "", 12)
+        local card = CreateFrame("Frame", nil, near)
+        card:SetFrameLevel((near:GetFrameLevel() or 1) + 1)   -- before its children, so they sit on it
+        local fill = GuildOS.Style:Nine(card, "card", 5, "BACKGROUND", 1)
+        fill:SetRGBA(0.937, 0.878, 0.741, 1)
+        local edge = GuildOS.Style:Nine(card, "card-line", 5, "BORDER", 0)
+        edge:SetColor(C.paperRule)
+        card.title = UI:CreateText(card, "", 12, C.paperTitle.r, C.paperTitle.g, C.paperTitle.b)
+        GuildOS:ApplyFont(card.title, 12, "sectionTitle")
         card.title:SetPoint("TOPLEFT", CARD_PAD, -CARD_PAD)
         card.title:SetPoint("TOPRIGHT", -CARD_PAD, -CARD_PAD)
         card.title:SetJustifyH("LEFT")
         card.title:SetJustifyV("TOP")
         card.title:SetWordWrap(true)
         if card.title.SetMaxLines then card.title:SetMaxLines(2) end
-        card.count = UI:CreateText(card, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        card.count = UI:CreateText(card, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         GuildOS:ApplyFont(card.count, nil, "tableNum")
         card.count:SetPoint("BOTTOMRIGHT", -CARD_PAD, CARD_PAD)
         card.count:SetJustifyH("RIGHT")
@@ -311,8 +328,12 @@ function GuildOS:CreateAchievementsPanel(parent)
     end)
     -- What the harness reads back: the cards and the earned rows as drawn.
     content.cards, content.rows = {}, {}
-
-    local y = 0
+    content.head, content.near, content.earned = head, near, earnedCard
+    local empty = UI:CreateText(content, "", 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    empty:SetPoint("TOPLEFT", 0, 0)
+    empty:SetPoint("TOPRIGHT", 0, 0)
+    empty:SetJustifyH("LEFT")
+    empty:Hide()
 
     local function take(pool, col)
         local fs = pool:Take()
@@ -322,90 +343,61 @@ function GuildOS:CreateAchievementsPanel(parent)
         return fs
     end
 
-    local function heading(box)
-        y = y + SECTION_SPACE
-        box:ClearAllPoints()
-        box:SetPoint("TOPLEFT", 0, -y)
-        box:SetPoint("TOPRIGHT", 0, -y)
-        local h = box.title:GetStringHeight() or 14
-        box:SetHeight(h)
-        box:Show()
-        y = y + h + GAP
-    end
-
-    -- A line across the content, wrapped.
-    local function line(text, col)
-        local fs = take(texts, col)
-        fs:SetPoint("TOPLEFT", 0, -y)
-        fs:SetPoint("TOPRIGHT", 0, -y)
-        fs:SetText(text)
-        y = y + (fs:GetStringHeight() or 14) + ROW_GAP
-    end
-
     local function header(A, level, points)
         local tex, title = A:Insignia()
         local guild = GetGuildInfo and GetGuildInfo("player")
         local renown = string.format(L["Renown %d"], level)
         -- The heading is the insignia's title, else the guild's name; with neither, the renown alone.
         local name = title or guild
-        local top = y
-
-        chip:SetValue(tostring(points or 0))
-        fitChip()
-        chip:ClearAllPoints()
-        chip:SetPoint("TOPRIGHT", 0, -top)
-        chip:Show()
-        local chipW = chip:GetWidth() or CHIP_MIN
-
-        local x = 0
+        local x = PAD + INSIGNIA + INSIGNIA_GAP
+        insignia:ClearAllPoints()
+        insignia:SetPoint("TOPLEFT", PAD, -16)
+        medal:ClearAllPoints()
+        medal:SetPoint("TOPLEFT", PAD, -16)
         if tex then
             insignia:SetTexture(tex)
-            insignia:ClearAllPoints()
-            insignia:SetPoint("TOPLEFT", 0, -top)
             insignia:Show()
-            x = INSIGNIA + INSIGNIA_GAP
+            medal:Hide()
+        else
+            medal:Set(tostring(level), C.metal2)
+            medal:Show()
         end
         nameFS:SetText(name or renown)
-        renownFS:SetText(renown)
-        renownFS:SetShown(name ~= nil)
-        -- Its width before its height: GetStringHeight measures the wrap at the width the title has now,
-        -- and anchors set below would not be resolved yet (#373).
-        local right = -(chipW + 2 * GAP)
-        local avail = width() - x + right
+        renownFS:SetText((name and (renown .. " \194\183 ") or "") .. string.format(L["%d points"], points or 0))
+        local avail = width() - x - PAD
         if avail > 1 then nameFS:SetWidth(avail) end
         local nameH = nameFS:GetStringHeight() or 20
-        local textH = nameH + (name and 4 + (renownFS:GetStringHeight() or 14) or 0)
-        -- Beside the insignia the two lines sit in its middle; without one, at the top.
-        local textTop = top + (tex and math.max(0, math.floor((INSIGNIA - textH) / 2)) or 0)
+        local textH = nameH + 4 + (renownFS:GetStringHeight() or 14)
+        local textTop = 16 + math.max(0, math.floor((INSIGNIA - textH) / 2))
         nameFS:ClearAllPoints()
         nameFS:SetPoint("TOPLEFT", x, -textTop)
-        nameFS:SetPoint("TOPRIGHT", right, -textTop)
+        nameFS:SetPoint("TOPRIGHT", -PAD, -textTop)
         nameFS:Show()
         renownFS:ClearAllPoints()
         renownFS:SetPoint("TOPLEFT", x, -(textTop + nameH + 4))
-        renownFS:SetPoint("TOPRIGHT", right, -(textTop + nameH + 4))
-
-        local chipH = chip:GetHeight() or 0
-        y = top + math.max(tex and INSIGNIA or 0, textTop - top + textH, chipH)
+        renownFS:SetPoint("TOPRIGHT", -PAD, -(textTop + nameH + 4))
+        renownFS:Show()
+        return math.max(HEAD_H, textTop + textH + 16)
     end
 
-    -- The nearest cards (#373): side by side as many as fit at CARD_MIN, wrapping onto more rows.
+    -- The nearest boxes (#373): side by side as many as fit at CARD_MIN, wrapping onto more rows.
     local function nearestCards(nearest)
         local W = width()
-        local cols = W > 0 and math.max(1, math.floor((W + GAP) / (CARD_MIN + GAP))) or 1
-        local cardW = W > 0 and math.floor((W - GAP * (cols - 1)) / cols) or nil
+        local inner = W > 0 and (W - 2 * PAD) or 0
+        local cols = inner > 0 and math.max(1, math.floor((inner + GAP) / (CARD_MIN + GAP))) or 1
+        local cardW = inner > 0 and math.floor((inner - GAP * (cols - 1)) / cols) or nil
         local rows = 0
         for i, n in ipairs(nearest) do
             local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
             rows = row + 1
-            local top = y + row * (CARD_H + GAP)
+            local top = CARD_TOP + row * (CARD_H + GAP)
             local card = cards:Take()
             if cardW then
-                card:SetPoint("TOPLEFT", col * (cardW + GAP), -top)
+                card:SetPoint("TOPLEFT", PAD + col * (cardW + GAP), -top)
                 card:SetWidth(cardW)
             else
-                card:SetPoint("TOPLEFT", 0, -top)
-                card:SetPoint("TOPRIGHT", 0, -top)
+                card:SetPoint("TOPLEFT", PAD, -top)
+                card:SetPoint("TOPRIGHT", -PAD, -top)
             end
             card:SetHeight(CARD_H)
             card.entry = n
@@ -426,71 +418,61 @@ function GuildOS:CreateAchievementsPanel(parent)
             bar:SetProgress(target > 0 and current / target or 0)
             content.cards[#content.cards + 1] = card
         end
-        y = y + rows * CARD_H + math.max(0, rows - 1) * GAP + ROW_GAP
+        return CARD_TOP + rows * CARD_H + math.max(0, rows - 1) * GAP + PAD
     end
 
-    -- One earned row: the date on the right always; on the left a single title, or a name followed by
-    -- the series' tier pills or the group's parts.
-    local function earnedRow(r, W)
+    -- One earned row: its name in the title face with the date on the right, and under it the series' tier
+    -- pills or the group's parts; a single is its name alone.
+    local function earnedRow(r, W, y)
         local drawn = { row = r, pills = {} }
-        local dateFS = take(numbers, C.textSoft)
-        dateFS:SetPoint("TOPRIGHT", 0, -y)
+        local inner = W > 0 and (W - 2 * PAD) or 0
+        local dateFS = take(numbers, C.paperSoft)
+        dateFS:SetPoint("TOPRIGHT", -PAD, -y)
         dateFS:SetWidth(COL_W)
         dateFS:SetJustifyH("RIGHT")
         dateFS:SetText(r.at > 0 and day(r.at) or "")
         drawn.date = dateFS
 
-        local title = take(texts, C.text)
+        local title = take(names, C.paperTitle)
         title:SetText(r.name)
+        title:SetPoint("TOPLEFT", PAD, -y)
+        title:SetPoint("TOPRIGHT", -(PAD + COL_W + GAP), -y)
         drawn.name = title
-        local h
-        if r.kind == "single" then
-            title:SetPoint("TOPLEFT", 0, -y)
-            title:SetPoint("TOPRIGHT", -(COL_W + GAP), -y)
-            h = title:GetStringHeight() or 14
-        else
-            local nameW = W > 0 and math.min(NAME_W, math.floor(W * NAME_SHARE)) or NAME_W
-            title:SetPoint("TOPLEFT", 0, -y)
-            title:SetWidth(nameW)
-            h = title:GetStringHeight() or 14
-            local x = nameW + GAP
-            if r.kind == "group" then
-                local parts = take(texts, C.textSoft)
-                parts:SetPoint("TOPLEFT", x, -y)
-                parts:SetPoint("TOPRIGHT", -(COL_W + GAP), -y)
-                parts:SetText(table.concat(r.parts, " · "))
-                drawn.parts = parts
-                h = math.max(h, parts:GetStringHeight() or 14)
-            else
-                -- Earned tiers in text on a lineHi frame; the one being worked on in label on a line
-                -- frame, dim beside them, so the collection shows what comes next. No gold: a pill is
-                -- not a selection.
-                local tiers = {}
-                for _, t in ipairs(r.tiers) do tiers[#tiers + 1] = { label = t.label, earned = true, entry = t.entry } end
-                if r.following then
-                    tiers[#tiers + 1] = { label = r.following.label, earned = false, entry = r.following.entry }
-                end
-                local avail = W > 0 and (W - x - COL_W - GAP) or math.huge
-                local px, py = x, 0
-                for _, t in ipairs(tiers) do
-                    local pill = pills:Take()
-                    pill:SetText(t.label, t.earned and C.text or C.label)
-                    if t.earned then pill:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1) end
-                    local pw = pill:GetWidth() or PILL_H
-                    if px > x and px + pw > x + avail then px, py = x, py + PILL_H + PILL_GAP end
-                    pill:SetPoint("TOPLEFT", px, -(y + py) + 1)   -- 1px up: centred on the 12px name
-                    pill.earned = t.earned
-                    pill.entry = t.entry
-                    drawn.pills[#drawn.pills + 1] = pill
-                    px = px + pw + PILL_GAP
-                end
-                h = math.max(h, py + PILL_H - 1)
+        local h = math.max(NAME_H, title:GetStringHeight() or 14)
+        if r.kind == "group" then
+            local parts = take(texts, C.paperInk)
+            parts:SetPoint("TOPLEFT", PAD, -(y + h + 4))
+            parts:SetPoint("TOPRIGHT", -PAD, -(y + h + 4))
+            parts:SetText(table.concat(r.parts, " \194\183 "))
+            drawn.parts = parts
+            h = h + 4 + (parts:GetStringHeight() or 14)
+        elseif r.kind == "series" then
+            -- Earned tiers as the gold-brown pills (the mockup's .tier); the one being worked on dim after
+            -- them, so the collection shows what comes next.
+            local tiers = {}
+            for _, t in ipairs(r.tiers) do tiers[#tiers + 1] = { label = t.label, earned = true, entry = t.entry } end
+            if r.following then
+                tiers[#tiers + 1] = { label = r.following.label, earned = false, entry = r.following.entry }
             end
+            local avail = inner > 0 and inner or math.huge
+            local px, py = PAD, h + 5
+            for _, t in ipairs(tiers) do
+                local pill = pills:Take()
+                pill:SetText(t.label, t.earned and C.text or C.label)
+                local pw = pill:GetWidth() or PILL_H
+                if px > PAD and px + pw > PAD + avail then px, py = PAD, py + PILL_H + PILL_GAP end
+                pill:SetPoint("TOPLEFT", px, -(y + py))
+                pill.earned = t.earned
+                pill.entry = t.entry
+                drawn.pills[#drawn.pills + 1] = pill
+                px = px + pw + PILL_GAP
+            end
+            h = py + PILL_H
         end
         -- The row's tooltip: a single's own, a series' newest tier, or a group's parts with their days.
         local hit = hits:Take()
-        hit:SetPoint("TOPLEFT", 0, -y)
-        hit:SetPoint("TOPRIGHT", 0, -y)
+        hit:SetPoint("TOPLEFT", PAD, -y)
+        hit:SetPoint("TOPRIGHT", -PAD, -y)
         hit:SetHeight(math.max(h, 14))
         hit:SetScript("OnEnter", function(self)
             if r.kind == "group" then showGroupTip(self, r)
@@ -498,45 +480,49 @@ function GuildOS:CreateAchievementsPanel(parent)
         end)
         drawn.hit = hit
         content.rows[#content.rows + 1] = drawn
-        y = y + math.max(h, 14) + ROW_GAP
+        return y + math.max(h, 14) + 12
     end
 
     local function refresh()
         local A = GuildOS.Achievements
         if not A then return end
         texts:Reset()
+        names:Reset()
         numbers:Reset()
         pills:Reset()
         hits:Reset()
         cards:Reset()
         insignia:Hide()
-        nameFS:Hide()
-        renownFS:Hide()
-        chip:Hide()
-        nearHead:Hide()
-        earnedHead:Hide()
+        medal:Hide()
+        head:Hide()
+        near:Hide()
+        earnedCard:Hide()
+        empty:Hide()
         content.cards, content.rows = {}, {}
-        y = 0
 
         local level, points = A:Renown()
         if not level then
-            line(L["Achievements come from guildos.me: the web companion brings them here when your guild has them."], C.textSoft)
-            content:SetHeight(math.max(1, y))
+            empty:SetText(L["Achievements come from guildos.me: the web companion brings them here when your guild has them."])
+            empty:Show()
+            content:SetHeight(math.max(1, (empty:GetStringHeight() or 14) + 4))
             return
         end
-        header(A, level, points)
+        local y = place(head, 2, header(A, level, points))
 
         local nearest = A:Next()
-        if #nearest > 0 then
-            heading(nearHead)
-            nearestCards(nearest)
-        end
+        if #nearest > 0 then y = place(near, y, nearestCards(nearest)) end
 
-        heading(earnedHead)
         local earned = A:Earned()
-        if #earned == 0 then line(L["Nothing earned yet."], C.textSoft) end
         local W = width()
-        for _, r in ipairs(GuildOS:AchievementCollection(earned, nearest)) do earnedRow(r, W) end
+        local ey = CARD_TOP
+        if #earned == 0 then
+            local fs = take(texts, C.paperSoft)
+            fs:SetPoint("TOPLEFT", PAD, -ey)
+            fs:SetText(L["Nothing earned yet."])
+            ey = ey + 20
+        end
+        for _, r in ipairs(GuildOS:AchievementCollection(earned, nearest)) do ey = earnedRow(r, W, ey) end
+        y = place(earnedCard, y, ey + PAD - 8)
         content:SetHeight(math.max(1, y))
     end
 

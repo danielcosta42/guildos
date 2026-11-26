@@ -297,7 +297,14 @@ function RecruitScanner:BuildInto(container)
     container._scannerBuilt = true
 
     local UI = GuildOS.UI
-    local C = GuildOS.Colors
+    -- Embedded in the Officers' Room it sits on a parchment card: the paper's inks and parts (UI/Kit.lua).
+    local Kit = rawget(GuildOS, "Kit")
+    local onPaper = Kit and UI.OnPaper and UI:OnPaper(container) and true or false
+    local C = onPaper and Kit.PAPER or GuildOS.Colors
+    local function checkbox(parent, text, size)
+        if onPaper then return Kit:Checkbox(parent, text, size) end
+        return UI:CreateCheckbox(parent, text, size)
+    end
     -- UI.GAP (#371), read the way Layout.lua reads UI.SCROLL_GUTTER: a stubbed UI in the tools
     -- answers something else for it.
     local GAP = type(UI.GAP) == "number" and UI.GAP or 8
@@ -409,7 +416,7 @@ function RecruitScanner:BuildInto(container)
         -- Separator under the filters bar.
         ------------------------------------------------------------
         local SEP1_Y = ROW1_Y - BTN_H - GAP
-        local sep1 = UI:CreateSeparator(f)
+        local sep1 = onPaper and Kit:Separator(f) or UI:CreateSeparator(f)
         sep1:SetPoint("TOPLEFT", 0, SEP1_Y)
         sep1:SetPoint("TOPRIGHT", -GAP, SEP1_Y)
 
@@ -419,12 +426,14 @@ function RecruitScanner:BuildInto(container)
         ------------------------------------------------------------
         local TAB_Y, TAB_H = SEP1_Y - GAP, 28
         local resultsTab = UI:CreateTab(f, L["Results"], 90)
+        if onPaper then Kit:PaperTab(resultsTab) end
         resultsTab:SetPoint("TOPLEFT", 0, TAB_Y)
         resultsTab:SetScript("OnClick", function()
             self._view = "results"
             GuildOS:SafeCall(refresh)
         end)
         local inboxTab = UI:CreateTab(f, L["Inbox"], 90)
+        if onPaper then Kit:PaperTab(inboxTab) end
         inboxTab:SetPoint("LEFT", resultsTab, "RIGHT", 4, 0)
         inboxTab:SetScript("OnClick", function()
             self._view = "inbox"
@@ -446,7 +455,7 @@ function RecruitScanner:BuildInto(container)
         selectedText:SetPoint("RIGHT", f, "TOPRIGHT", -GAP, TAB_Y - TAB_H / 2)
         f.selectedText = selectedText
 
-        local selectAllCb = UI:CreateCheckbox(f, L["Select all"], 16)
+        local selectAllCb = checkbox(f, L["Select all"], 16)
         -- CreateCheckbox pads its frame out to size+200 (room for long
         -- labels elsewhere in the app); shrink it to its visible content
         -- so it can be anchored snugly against selectedText instead of
@@ -473,10 +482,10 @@ function RecruitScanner:BuildInto(container)
         local colHeader = UI:CreateTableHeader(f)
         colHeader:SetPoint("TOPLEFT", 0, HEADER_Y)
         colHeader:SetPoint("TOPRIGHT", -GAP, HEADER_Y)
-        UI:CreateHeaderText(colHeader, L["PLAYER"]):SetPoint("LEFT", 30, 0)
-        UI:CreateHeaderText(colHeader, L["LVL"]):SetPoint("LEFT", 240, 0)
-        UI:CreateHeaderText(colHeader, L["CLASS"]):SetPoint("LEFT", 290, 0)
-        UI:CreateHeaderText(colHeader, L["ZONE"]):SetPoint("LEFT", 410, 0)
+        UI:CreateHeaderText(colHeader, L["Player"]):SetPoint("LEFT", 30, 0)
+        UI:CreateHeaderText(colHeader, L["Lvl"]):SetPoint("LEFT", 240, 0)
+        UI:CreateHeaderText(colHeader, L["Class"]):SetPoint("LEFT", 290, 0)
+        UI:CreateHeaderText(colHeader, L["Zone"]):SetPoint("LEFT", 410, 0)
         f.colHeader = { colHeader }
 
         ------------------------------------------------------------
@@ -586,7 +595,7 @@ function RecruitScanner:BuildInto(container)
         local y = 0
         if isResults then
             for _, cand in ipairs(results) do
-                local sel = UI:CreateCheckbox(child, "", 16)
+                local sel = checkbox(child, "", 16)
                 sel:SetPoint("TOPLEFT", 4, -y)
                 local who = RecruitScanner:Addr(cand)   -- realm and all on retail (#184)
                 sel.checkbox:SetChecked(self._selected[who] and true or false)
@@ -614,6 +623,10 @@ function RecruitScanner:BuildInto(container)
 
                 local classLabel = LOCALIZED_CLASS_NAMES_MALE[cand.class] or cand.class or "?"
                 local cc = RAID_CLASS_COLORS[cand.class]
+                if onPaper and cc then
+                    local r, g, b = Kit:ClassInk(cand.class)
+                    cc = { r = r, g = g, b = b }
+                end
                 local classFS = UI:CreateText(child, classLabel, 11,
                     cc and cc.r or C.textDim.r, cc and cc.g or C.textDim.g, cc and cc.b or C.textDim.b)
                 classFS:SetPoint("TOPLEFT", 290, -y)

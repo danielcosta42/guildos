@@ -6,13 +6,34 @@
 -- the standings and the movements. Visual layer only — all logic lives in GuildOS.Points, run on the
 -- pool of the core picked (Points:InCore).
 ----------------------------------------------------------------------
-local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
 
-local ROW_H    = 22
-local LOG_W    = 260     -- the movements column, when the table leaves room for it
-local LOG_MIN  = 640     -- below this the movements go under the standings' place (they drop)
+-- The Accounts are parchment cards (#449): on the paper a colour of the wood takes the paper's shade, and a
+-- switch's label its ink.
+local function same(r, g, b, c) return c and math.abs(r - c.r) < 1e-3 and math.abs(g - c.g) < 1e-3 and math.abs(b - c.b) < 1e-3 end
+local function onPaper(r, g, b)
+    if same(r, g, b, C.text) then return C.paperInk.r, C.paperInk.g, C.paperInk.b end
+    if same(r, g, b, C.textSoft) or same(r, g, b, C.label) or same(r, g, b, C.labelDim) then
+        return C.paperSoft.r, C.paperSoft.g, C.paperSoft.b
+    end
+    if (r + g + b) / 3 > 0.55 then return r * 0.6, g * 0.6, b * 0.6 end
+    return r, g, b
+end
+local function paperOf(parent) return GuildOS.UI.OnPaper ~= nil and GuildOS.UI:OnPaper(parent) end
+local UI = setmetatable({
+    CreateText = function(self, parent, text, size, r, g, b)
+        if r and paperOf(parent) then r, g, b = onPaper(r, g, b) end
+        return GuildOS.UI.CreateText(self, parent, text, size, r, g, b)
+    end,
+    CreateCheckbox = function(self, parent, ...)
+        local cb = GuildOS.UI.CreateCheckbox(self, parent, ...)
+        if cb and cb.label and paperOf(parent) then cb.label:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b) end
+        return cb
+    end,
+}, { __index = function(_, k) return GuildOS.UI[k] end })
+
+local ROW_H    = 28
 local OTHER    = "__other"   -- the reason the officer types
 -- The screen's margins (#371): flush with the sub-tab bar's left edge, GAP under it, the content ending
 -- GAP short of the right edge. A scroll child stops UI.SCROLL_GUTTER short of its frame, so a scroll
@@ -22,10 +43,25 @@ local GUTTER   = tonumber(UI.SCROLL_GUTTER) or 12
 local SCROLL_R = GUTTER - GAP
 local TOP_H    = 22      -- the selectors' row
 local HINT_H   = 14      -- a hint over a box
-local SUMMARY_Y = GAP + TOP_H + GAP
-local ROW_Y    = SUMMARY_Y + 14 + GAP + HINT_H   -- the award row, its hints over it
-local LOG_GAP  = GUTTER + 4   -- between the standings and the movements: the standings' bar sits in it
 local HEAD_ABOVE = 20    -- room over a later section title for its rule (UI:CreateSectionTitle)
+
+local PAD      = type(UI.CARD_PAD) == "number" and UI.CARD_PAD or 14
+local CARD_TOP = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
+local TWO_COLS = 760     -- px: two columns of cards from here
+local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
+local PAPER_OK, PAPER_BAD = hex("2f6e33"), hex("8f1b0b")
+-- A class's colour as the paper prints it (the mockup's .card .c-*).
+local PAPER_CLASS = {
+    PRIEST = hex("666666"), ROGUE = hex("857612"), HUNTER = hex("4f7319"), MAGE = hex("16758d"),
+    PALADIN = hex("a8457a"), DRUID = hex("b35400"), SHAMAN = hex("0b4fa0"), WARRIOR = hex("7e5a33"),
+    WARLOCK = hex("4b4cb0"),
+}
+local function paperClass(class)
+    local c = PAPER_CLASS[type(class) == "string" and class:upper() or ""]
+    if c then return c.r, c.g, c.b end
+    local r, g, b = GuildOS:GetClassColor(class)
+    return r * 0.6, g * 0.6, b * 0.6
+end
 
 -- A box: the shared field (#371), whose border turns gold while it has the keyboard.
 local function input(parent, width, numeric, maxLetters)
@@ -88,38 +124,45 @@ function GuildOS:BuildLootAccounts(panel)
         return (LR and rule) and LR:OwnAccounts(rule) or {}
     end
 
+    -- The mockup's saque-contas: parchment cards on the wood. "Balances" on the left (the core and the account,
+    -- what the pool plays, the standings); on the right "Give or charge points" (officers) over "Movements".
+    -- One column where the tab is narrow: the officers' card over the balances, and the movements drop.
+    local isOfficer = GuildOS:IsOfficer()
+    local balCard = UI:CreateCard(panel, L["Balances"])
+    local giveCard = isOfficer and UI:CreateCard(panel, L["Give or charge points"]) or nil
+    local moveCard = UI:CreateCard(panel, L["Movements"])
+
     -- ── The selectors ───────────────────────────────────────────────
-    local top = CreateFrame("Frame", nil, panel)
-    top:SetPoint("TOPLEFT", 0, -GAP)
-    top:SetPoint("TOPRIGHT", -GAP, -GAP)
+    local top = CreateFrame("Frame", nil, balCard)
+    top:SetPoint("TOPLEFT", PAD, -CARD_TOP + 2)
+    top:SetPoint("TOPRIGHT", -PAD, -CARD_TOP + 2)
     top:SetHeight(TOP_H)
-    local coreLbl = UI:CreateHeaderText(top, L["CORE"], 10)
+    local coreLbl = UI:CreateText(top, L["Core"], 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     coreLbl:SetPoint("LEFT", 0, 0)
-    local coreDD = UI:CreateDropdown(top, 160, 22)
+    local coreDD = UI:CreateDropdown(top, 150, 24)
     coreDD:SetPoint("LEFT", coreLbl, "RIGHT", 8, 0)
     coreDD.isScope = true
-    local acctLbl = UI:CreateHeaderText(top, L["ACCOUNT"], 10)
-    acctLbl:SetPoint("LEFT", coreDD, "RIGHT", 16, 0)
-    local acctDD = UI:CreateDropdown(top, 170, 22)
+    local acctLbl = UI:CreateText(top, L["Account"], 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    acctLbl:SetPoint("LEFT", coreDD, "RIGHT", 14, 0)
+    local acctDD = UI:CreateDropdown(top, 150, 24)
     acctDD:SetPoint("LEFT", acctLbl, "RIGHT", 8, 0)
     acctDD.isAccount = true
-    local summary = UI:CreateText(panel, "", 11, C.label.r, C.label.g, C.label.b)
-    summary:SetPoint("TOPLEFT", 0, -SUMMARY_Y)
-    summary:SetPoint("RIGHT", panel, "RIGHT", -GAP, 0)
+    local summary = UI:CreateText(balCard, "", 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    summary:SetPoint("TOPLEFT", PAD, -(CARD_TOP + TOP_H + 10))
+    summary:SetPoint("RIGHT", balCard, "RIGHT", -PAD, 0)
     summary:SetJustifyH("LEFT")
     if summary.SetWordWrap then summary:SetWordWrap(false) end
 
-    local isOfficer = GuildOS:IsOfficer()
-    local listTop = SUMMARY_Y + 14 + GAP
+    local listTop = CARD_TOP + TOP_H + 10 + 14 + GAP
     local status
 
     -- ── The award row (officers) ────────────────────────────────────
     local reasonDD, amountBox, nameBox, noteBox, settingsBtn
     local flow   -- the officer's rows, laid out again at every width
     if isOfficer then
-        local row = CreateFrame("Frame", nil, panel)
-        row:SetPoint("TOPLEFT", 0, -ROW_Y)
-        row:SetPoint("TOPRIGHT", -GAP, -ROW_Y)
+        local row = CreateFrame("Frame", nil, giveCard)
+        row:SetPoint("TOPLEFT", PAD, -(CARD_TOP + HINT_H))
+        row:SetPoint("TOPRIGHT", -PAD, -(CARD_TOP + HINT_H))
         row:SetHeight(24)
         nameBox = input(row, 130, false, 48)
         nameBox:SetPoint("LEFT", 0, 0)
@@ -166,9 +209,9 @@ function GuildOS:BuildLootAccounts(panel)
         awardBtn:SetScript("OnClick", function() doRow(false) end)
         chargeBtn:SetScript("OnClick", function() doRow(true) end)
 
-        local row2 = CreateFrame("Frame", nil, panel)
-        row2:SetPoint("TOPLEFT", 0, -(ROW_Y + 30))
-        row2:SetPoint("TOPRIGHT", -GAP, -(ROW_Y + 30))
+        local row2 = CreateFrame("Frame", nil, giveCard)
+        row2:SetPoint("TOPLEFT", PAD, -(CARD_TOP + HINT_H + 30))
+        row2:SetPoint("TOPRIGHT", -PAD, -(CARD_TOP + HINT_H + 30))
         row2:SetHeight(22)
         local raidBtn = UI:CreateButton(row2, L["Award Raid"], 100, 20)
         raidBtn:SetPoint("LEFT", 0, 0)
@@ -194,32 +237,31 @@ function GuildOS:BuildLootAccounts(panel)
         settingsBtn = UI:CreateButton(row2, L["Account settings"], 130, 20)
         settingsBtn:SetPoint("RIGHT", 0, 0)
         settingsBtn:ClearAllPoints()
-        status = UI:CreateText(panel, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        status = UI:CreateText(giveCard, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         status:SetPoint("TOPLEFT", row2, "BOTTOMLEFT", 0, -4)
-        status:SetPoint("RIGHT", panel, "RIGHT", -GAP, 0)
+        status:SetPoint("RIGHT", giveCard, "RIGHT", -PAD, 0)
         status:SetJustifyH("LEFT")
         if status.SetWordWrap then status:SetWordWrap(false) end
-        listTop = ROW_Y + 76
-        -- Both rows wrap where the window is too narrow for them (FlowBar), the hints over the boxes
-        -- keeping their room; what is under them follows.
-        flow = function(body)
+        -- Both rows wrap where the card is too narrow for them (FlowBar), the hints over the boxes
+        -- keeping their room. Returns the card's height.
+        flow = function(w)
+            row:SetWidth(w)
+            row2:SetWidth(w)
             local h1 = UI:FlowBar(row, { nameBox, reasonDD, amountBox, noteBox, awardBtn, chargeBtn }, { gap = 6, rowGap = HINT_H + 4, rowH = 22 })
-            local top2 = ROW_Y + h1 + GAP
+            local top2 = CARD_TOP + HINT_H + h1 + GAP
             row2:ClearAllPoints()
-            row2:SetPoint("TOPLEFT", 0, -top2)
-            row2:SetPoint("TOPRIGHT", -GAP, -top2)
+            row2:SetPoint("TOPLEFT", PAD, -top2)
+            row2:SetPoint("TOPRIGHT", -PAD, -top2)
             local h2 = UI:FlowBar(row2, { raidBtn, decayBtn, syncBtn, settingsBtn }, { gap = 6, rowGap = 4, rowH = 20 })
-            body:ClearAllPoints()
-            body:SetPoint("TOPLEFT", 0, -(top2 + h2 + 22))
-            body:SetPoint("BOTTOMRIGHT", 0, GAP)
+            return top2 + h2 + 4 + 16 + 10
         end
     end
 
     -- ── The standings and the movements ─────────────────────────────
-    -- The body spans to the panel's right edge; what is in it stops GAP short of it (#371).
-    local body = CreateFrame("Frame", nil, panel)
-    body:SetPoint("TOPLEFT", 0, -listTop)
-    body:SetPoint("BOTTOMRIGHT", 0, GAP)
+    -- The standings in the balances' card, under its selectors and its line.
+    local body = CreateFrame("Frame", nil, balCard)
+    body:SetPoint("TOPLEFT", PAD, -listTop)
+    body:SetPoint("BOTTOMRIGHT", -PAD + GAP, 10)
     -- The tables' header rows: the shared one, no fill and a 1px rule under it (#371).
     local standHead = UI:CreateTableHeader(body)
     standHead:SetPoint("TOPLEFT", 0, 0)
@@ -227,15 +269,14 @@ function GuildOS:BuildLootAccounts(panel)
     for _, col in ipairs(STAND_COLS) do heads[col.key] = UI:CreateHeaderText(standHead, "", 10) end
     local standScroll, standChild = UI:CreateScrollFrame(body, nil)
     standScroll:SetPoint("TOPLEFT", standHead, "BOTTOMLEFT", 0, 0)
-    local logHead = UI:CreateTableHeader(body)
-    logHead:SetPoint("TOPRIGHT", -GAP, 0)
-    logHead:SetWidth(LOG_W)
-    local logTitle = UI:CreateHeaderText(logHead, L["MOVEMENTS"], 10)
-    logTitle:SetPoint("LEFT", 4, 0)
-    local logScroll, logChild = UI:CreateScrollFrame(body, nil)
-    logScroll:SetPoint("TOPRIGHT", logHead, "BOTTOMRIGHT", GUTTER, 0)
-    logScroll:SetPoint("BOTTOMRIGHT", SCROLL_R, 0)
-    logScroll:SetWidth(LOG_W + GUTTER)
+    -- The movements: their own card, the newest first, two lines each.
+    local logHead = CreateFrame("Frame", nil, moveCard)
+    logHead:SetPoint("TOPLEFT", PAD, -CARD_TOP + 4)
+    logHead:SetPoint("TOPRIGHT", -PAD, -CARD_TOP + 4)
+    logHead:SetHeight(1)
+    local logScroll, logChild = UI:CreateScrollFrame(moveCard, nil)
+    logScroll:SetPoint("TOPLEFT", logHead, "BOTTOMLEFT", 0, 0)
+    logScroll:SetPoint("BOTTOMRIGHT", -PAD + GUTTER - 4, 10)
     UI:BindScrollChildWidth(logScroll, logChild)
     local standRows, logRows = {}, {}
 
@@ -249,9 +290,13 @@ function GuildOS:BuildLootAccounts(panel)
     local function standRow(i)
         local row = standRows[i]
         if not row then
-            row = CreateFrame("Frame", nil, standChild, "BackdropTemplate")
+            row = CreateFrame("Frame", nil, standChild)
             row:SetHeight(ROW_H)
-            row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+            local rule = row:CreateTexture(nil, "BACKGROUND")
+            rule:SetTexture("Interface\\Buttons\\WHITE8x8")
+            rule:SetHeight(1)
+            rule:SetPoint("BOTTOMLEFT"); rule:SetPoint("BOTTOMRIGHT")
+            rule:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
             row.cells = {}
             for _, col in ipairs(STAND_COLS) do
                 local fs = UI:CreateText(row, "", 11)
@@ -264,8 +309,6 @@ function GuildOS:BuildLootAccounts(panel)
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
         row:SetPoint("TOPRIGHT", 0, -(i - 1) * ROW_H)
-        local bg = (i % 2 == 1) and C.row1 or C.row2
-        row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a or 0.4)
         row:Show()
         return row
     end
@@ -275,11 +318,16 @@ function GuildOS:BuildLootAccounts(panel)
         if not row then
             row = CreateFrame("Frame", nil, logChild)
             row:SetHeight(30)
+            local rule = row:CreateTexture(nil, "BACKGROUND")
+            rule:SetTexture("Interface\\Buttons\\WHITE8x8")
+            rule:SetHeight(1)
+            rule:SetPoint("BOTTOMLEFT"); rule:SetPoint("BOTTOMRIGHT")
+            rule:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
             row.line = UI:CreateText(row, "", 11)
             row.line:SetPoint("TOPLEFT", 4, 0)
             row.line:SetPoint("RIGHT", row, "RIGHT", -4, 0)
             row.line:SetJustifyH("LEFT")
-            row.sub = UI:CreateText(row, "", 10, C.label.r, C.label.g, C.label.b)
+            row.sub = UI:CreateText(row, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
             row.sub:SetPoint("TOPLEFT", 12, -14)
             row.sub:SetPoint("RIGHT", row, "RIGHT", -4, 0)
             row.sub:SetJustifyH("LEFT")
@@ -293,9 +341,9 @@ function GuildOS:BuildLootAccounts(panel)
         return row
     end
 
-    local empty = UI:CreateText(standChild, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local empty = UI:CreateText(standChild, "", 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     empty:SetPoint("TOPLEFT", 4, -4)
-    local logEmpty = UI:CreateText(logChild, L["No history."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local logEmpty = UI:CreateText(logChild, L["No history."], 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     logEmpty:SetPoint("TOPLEFT", 4, -4)
 
     local drawSettings   -- below
@@ -332,15 +380,46 @@ function GuildOS:BuildLootAccounts(panel)
             if not keep then reasonDD:Select(ropts[1].value) end
         end
 
-        if flow then flow(body) end
+        -- The cards: two columns where the tab is wide, else the officers' over the balances.
+        local Wp = (panel:GetWidth() or 0) - GAP
+        if Wp < 100 then Wp = 700 end
+        local two = Wp >= TWO_COLS
+        local leftW = two and math.floor((Wp - GAP - 4) * 0.52) or Wp
+        local rightX, rightW = leftW + GAP + 4, Wp - leftW - GAP - 4
+        balCard:ClearAllPoints()
+        moveCard:ClearAllPoints()
+        local giveH = 0
+        if giveCard then
+            giveCard:ClearAllPoints()
+            giveH = flow((two and rightW or Wp) - 2 * PAD)
+            giveCard:SetHeight(giveH)
+            if two then
+                giveCard:SetPoint("TOPLEFT", rightX, -GAP)
+                giveCard:SetWidth(rightW)
+            else
+                giveCard:SetPoint("TOPLEFT", 0, -GAP)
+                giveCard:SetWidth(Wp)
+            end
+        end
+        if two then
+            balCard:SetPoint("TOPLEFT", 0, -GAP)
+            balCard:SetPoint("BOTTOMLEFT", 0, GAP)
+            balCard:SetWidth(leftW)
+            moveCard:SetPoint("TOPLEFT", rightX, -(GAP + (giveCard and (giveH + GAP + 4) or 0)))
+            moveCard:SetPoint("BOTTOMRIGHT", -GAP, GAP)
+        else
+            balCard:SetPoint("TOPLEFT", 0, -(GAP + (giveCard and (giveH + GAP + 4) or 0)))
+            balCard:SetPoint("BOTTOMRIGHT", -GAP, GAP)
+        end
+        moveCard:SetShown(two)
         local mode = inScope(P.GetMode, P)
         local cfg = inScope(function() return P:Pool().config end) or {}
         local MODE_NAME = { dkp = "DKP", epgp = "EPGP", council = L["Loot Council"] }
-        summary:SetText(string.format(L["%s  |  Boss award: %d  |  Decay: %d%%  |  Auto-award: %s"], MODE_NAME[mode] or tostring(mode),
+        summary:SetText(string.format(L["%s · Boss award: %d · Decay: %d%% · Auto-award: %s"], MODE_NAME[mode] or tostring(mode),
             cfg.bossAward or 0, cfg.decayPct or 0, cfg.autoAward and L["on"] or L["off"]))
 
         if settingsOpen then
-            standScroll:Hide(); logScroll:Hide(); standHead:Hide(); logHead:Hide()
+            standScroll:Hide(); standHead:Hide()
             setScroll:Show()
             drawSettings()
             return
@@ -351,10 +430,9 @@ function GuildOS:BuildLootAccounts(panel)
         -- The movements keep their column while the window leaves room for it; then they drop. The
         -- content stops GAP short of the right edge; the standings' scroll bar sits in its gutter.
         local W = (body:GetWidth() or 0) - GAP
-        local withLog = W >= LOG_MIN
-        logScroll:SetShown(withLog)
-        logHead:SetShown(withLog)
-        local standW = math.max(1, withLog and (W - LOG_W - LOG_GAP) or W)
+        if W < 60 then W = (two and leftW or Wp) - 2 * PAD end
+        local withLog = two
+        local standW = math.max(1, W)
         standHead:SetWidth(standW)
         standChild:SetWidth(standW)
         standScroll:ClearAllPoints()
@@ -364,10 +442,10 @@ function GuildOS:BuildLootAccounts(panel)
         local epgp = mode == "epgp"
         local queue = account and account.type == "queue"
         local TITLES = {
-            rank = "#", name = L["MEMBER"],
-            cur = (queue and L["PLACE"]) or (epgp and not account and "PR") or L["BALANCE"],
-            earned = account and "" or (epgp and "EP" or L["EARNED"]),
-            spent = account and "" or (epgp and "GP" or L["SPENT"]),
+            rank = "", name = L["Member"],
+            cur = (queue and L["Place"]) or (epgp and not account and "PR") or L["Balance"],
+            earned = account and "" or (epgp and "EP" or L["Earned"]),
+            spent = account and "" or (epgp and "GP" or L["Spent"]),
         }
         for _, col in ipairs(STAND_COLS) do
             local fs, at = heads[col.key], layout.byKey[col.key]
@@ -389,7 +467,7 @@ function GuildOS:BuildLootAccounts(panel)
         end
         for i, s in ipairs(list) do
             local row = standRow(i)
-            local cr, cg, cb = GuildOS:GetClassColor(s.class)
+            local cr, cg, cb = paperClass(s.class)
             local values = {
                 -- A bonus kept per item (issue #433): the row is the player's on that item.
                 rank = tostring(i), name = s.itemId and string.format("%s \194\183 %s", s.name,
@@ -407,12 +485,13 @@ function GuildOS:BuildLootAccounts(panel)
                 fs:SetShown(at.shown)
                 fs:SetText(values[col.key])
             end
-            -- The balance in the text colour, the figures behind it secondary (#371: it was gold).
+            -- The member in their class's colour as the paper prints it, the figures in the paper's ink.
             row.cells.name:SetTextColor(cr, cg, cb)
-            row.cells.cur:SetTextColor(C.text.r, C.text.g, C.text.b)
-            row.cells.earned:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
-            row.cells.spent:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
-            row.cells.rank:SetTextColor(C.label.r, C.label.g, C.label.b)
+            GuildOS:ApplyFont(row.cells.name, 12, "button")
+            row.cells.cur:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b)
+            row.cells.earned:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b)
+            row.cells.spent:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b)
+            row.cells.rank:SetTextColor(C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         end
         for i = #list + 1, #standRows do standRows[i]:Hide() end
         empty:SetText(account and L["Nobody on this account yet."] or L["No points recorded yet."])
@@ -424,7 +503,7 @@ function GuildOS:BuildLootAccounts(panel)
             for i, e in ipairs(log) do
                 local row = logRow(i)
                 local up = (e.delta or 0) >= 0
-                local col = up and C.ok or C.danger
+                local col = up and PAPER_OK or PAPER_BAD
                 row.line:SetText(GuildOS:ColorText((up and "+" or "") .. (e.delta or 0), col.r, col.g, col.b) .. " " .. (e.name or "?")
                     .. ((e.reason and e.reason ~= "") and (" \194\183 " .. e.reason) or ""))
                 row.sub:SetText(string.format(L["%s, by %s"], GuildOS:DateText(e.ts or 0, " %H:%M"), e.author or "?"))
@@ -522,7 +601,7 @@ function GuildOS:BuildLootAccounts(panel)
         -- The guild's own reasons to earn (issue #309): each with what it gives and how much a week.
         -- A section of the form, under the shared title (#371).
         y = y + HEAD_ABOVE
-        local rsTitle = UI:CreateSectionTitle(content, L["OTHER REASONS TO EARN POINTS"])
+        local rsTitle = UI:CreateSectionTitle(content, L["Other reasons to earn points"])
         rsTitle:SetPoint("TOPLEFT", 0, -y)
         y = y + 26
         for _, r in ipairs(inScope(P.GetReasons, P)) do

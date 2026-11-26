@@ -12,12 +12,11 @@ local C = GuildOS.Colors
 local L = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
-local LIST_MIN, LIST_MAX = 180, 240   -- the core list's column, by the window's width
+local LIST_MIN, LIST_MAX = 200, 280   -- the core list's column, by the window's width
 local LIST_SHARE = 0.28
-local CORE_ROW_H = 36
+local CORE_ROW_H = 46
 local GROUP_INDENT = 12   -- a group's row, under its elenco's (issue #352)
 local ROW_H = 22
-local METER_W = 120
 -- The screen's margins (#371): flush with the left edge, GAP under the top, the content ending GAP short
 -- of the right edge. A scroll child stops UI.SCROLL_GUTTER short of its frame, so a scroll frame's right
 -- edge sits SCROLL_R from its column's: its rows then end GAP short of it, the bar past them. Numbers
@@ -49,9 +48,45 @@ local function MakeInput(parent, w, numeric, placeholder)
         placeholder = placeholder })
 end
 
--- A line of text: textSoft unless a colour is given.
+-- The paper's own shades (the mockup's raides-cores): a state's, a role counter's box and the pink of one
+-- short of what the format asks, and a class's colour as the paper prints it (.card .c-*).
+local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
+local PAPER_OK, PAPER_WARN, PAPER_BAD = hex("2f6e33"), hex("a0560f"), hex("8f1b0b")
+local ROLE_FILL, ROLE_MISS = hex("efe0bd"), hex("f6d6c9")
+local PAPER_CLASS = {
+    PRIEST = hex("666666"), ROGUE = hex("857612"), HUNTER = hex("4f7319"), MAGE = hex("16758d"),
+    PALADIN = hex("a8457a"), DRUID = hex("b35400"), SHAMAN = hex("0b4fa0"), WARRIOR = hex("7e5a33"),
+    WARLOCK = hex("4b4cb0"),
+}
+local function paperClass(class)
+    local c = PAPER_CLASS[type(class) == "string" and class:upper() or ""]
+    if c then return c.r, c.g, c.b end
+    local r, g, b = GuildOS:GetClassColor(class)
+    return r * 0.6, g * 0.6, b * 0.6
+end
+local PAD = type(UI.CARD_PAD) == "number" and UI.CARD_PAD or 14
+local CARD_TOP = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
+
+-- The wood's colours, as the paper prints them: the ink, the soft ink, a state's deeper shade.
+local function same(r, g, b, c) return c and math.abs(r - c.r) < 1e-3 and math.abs(g - c.g) < 1e-3 and math.abs(b - c.b) < 1e-3 end
+local function onPaper(r, g, b)
+    if same(r, g, b, C.text) then return C.paperInk.r, C.paperInk.g, C.paperInk.b end
+    if same(r, g, b, C.textSoft) or same(r, g, b, C.label) or same(r, g, b, C.labelDim) then
+        return C.paperSoft.r, C.paperSoft.g, C.paperSoft.b
+    end
+    if same(r, g, b, C.ok) then return PAPER_OK.r, PAPER_OK.g, PAPER_OK.b end
+    if same(r, g, b, C.warn) then return PAPER_WARN.r, PAPER_WARN.g, PAPER_WARN.b end
+    if same(r, g, b, C.danger) then return PAPER_BAD.r, PAPER_BAD.g, PAPER_BAD.b end
+    -- Anything else light (a role's colour): darkened to read on the parchment.
+    if (r + g + b) / 3 > 0.55 then return r * 0.6, g * 0.6, b * 0.6 end
+    return r, g, b
+end
+
+-- A line of text: the soft ink unless a colour is given; on the parchment, the paper's own shade of it.
 local function MakeLabel(parent, text, size, r, g, b)
-    return UI:CreateText(parent, text, size or 11, r or C.textSoft.r, g or C.textSoft.g, b or C.textSoft.b)
+    r, g, b = r or C.textSoft.r, g or C.textSoft.g, b or C.textSoft.b
+    if UI:OnPaper(parent) then r, g, b = onPaper(r, g, b) end
+    return UI:CreateText(parent, text, size or 11, r, g, b)
 end
 
 -- A section title (#371): the shared one, at the content's left edge. The screen's first (y = 0) has no
@@ -79,43 +114,33 @@ function GuildOS:CreateCoresPanel(panel)
     ----------------------------------------------------------------
     -- Left column: the guild's cores
     ----------------------------------------------------------------
-    local leftCol = CreateFrame("Frame", nil, panel)
-    leftCol:SetPoint("TOPLEFT", 0, 0)
-    leftCol:SetPoint("BOTTOMLEFT", 0, 0)
+    -- A dark card on the wood (the mockup's "Cores da guilda"), GAP under the entries.
+    local leftCol = UI:CreateCard(panel, L["Guild cores"], { dark = true })
+    leftCol:SetPoint("TOPLEFT", 0, -GAP)
+    leftCol:SetPoint("BOTTOMLEFT", 0, GAP)
     leftCol:SetWidth(listW)
 
-    -- The list's title: the screen's first section, GAP under its top (#371).
-    local listTitle = UI:CreateSectionTitle(leftCol, L["GUILD CORES"], true)
-    listTitle:SetPoint("TOPLEFT", 0, -GAP)
-
-    local listDiv = leftCol:CreateTexture(nil, "ARTWORK")
-    listDiv:SetTexture(WHITE)
-    GuildOS.UI:Hairline(listDiv, "Width")
-    listDiv:SetPoint("TOPRIGHT", 0, 0)
-    listDiv:SetPoint("BOTTOMRIGHT", 0, 0)
-    listDiv:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
-
     local listScroll, listContent = UI:CreateScrollFrame(leftCol, "GuildOSCoreListScroll")
-    listScroll:SetPoint("TOPLEFT", 0, -(GAP + HEAD_H))
-    listScroll:SetPoint("BOTTOMRIGHT", 0, 92)   -- its bar inside the column, clear of the divider (#371)
+    listScroll:SetPoint("TOPLEFT", PAD, -CARD_TOP + 4)
+    listScroll:SetPoint("BOTTOMRIGHT", -PAD + 6, 102)   -- its bar inside the card (#371)
     UI:BindScrollChildWidth(listScroll, listContent)
 
     -- At the foot: how cores are born. A guild linked to the site creates them on Discord (#339): a
     -- sentence says so, and when the site last sent; after 30 days with no package from it, a button
     -- creates in game again. An unlinked guild names one and creates it here.
     local linkNote = MakeLabel(leftCol, L["This guild is linked to the site. New cores are born on Discord, with /core criar."], 11)
-    linkNote:SetPoint("BOTTOMLEFT", 0, 52)
-    linkNote:SetPoint("RIGHT", leftCol, "RIGHT", -GAP, 0)
+    linkNote:SetPoint("BOTTOMLEFT", PAD, 62)
+    linkNote:SetPoint("RIGHT", leftCol, "RIGHT", -PAD, 0)
     linkNote:SetJustifyH("LEFT")
     if linkNote.SetWordWrap then linkNote:SetWordWrap(true) end
     local seenNote = MakeLabel(leftCol, "", 11, C.label.r, C.label.g, C.label.b)
-    seenNote:SetPoint("BOTTOMLEFT", 0, 36)
-    local newInput = MakeInput(leftCol, listW - 72 - GAP, false, L["Core name"])
-    newInput:SetPoint("BOTTOMLEFT", 0, 6)
+    seenNote:SetPoint("BOTTOMLEFT", PAD, 44)
+    local newInput = MakeInput(leftCol, listW - 72 - 2 * PAD + 6, false, L["Core name"])
+    newInput:SetPoint("BOTTOMLEFT", PAD, 14)
     local createBtn = UI:CreateButton(leftCol, L["Create"], 60, 22)
     createBtn:SetPoint("LEFT", newInput, "RIGHT", 4, 0)
-    local againBtn = UI:CreateButton(leftCol, L["Create cores in game again"], listW - GAP, 22)
-    againBtn:SetPoint("BOTTOMLEFT", 0, 6)
+    local againBtn = UI:CreateButton(leftCol, L["Create cores in game again"], listW - 2 * PAD, 22)
+    againBtn:SetPoint("BOTTOMLEFT", PAD, 14)
     local function showIf(w, on)
         if on then w:Show() else w:Hide() end
     end
@@ -136,12 +161,14 @@ function GuildOS:CreateCoresPanel(panel)
     ----------------------------------------------------------------
     -- The core picked: its header GAP under the top, the sub-tab bar under it, and the sub-tab's
     -- content flush with that bar's left edge, GAP under it, ending GAP short of the right (#371).
-    local right = CreateFrame("Frame", nil, panel)
-    right:SetPoint("TOPLEFT", leftCol, "TOPRIGHT", GAP, 0)
-    right:SetPoint("BOTTOMRIGHT", 0, 0)
+    -- A parchment card (the mockup's core): the name and its buttons, the sub-tabs as pills, the content.
+    local right = UI:CreateCard(panel, "")
+    right.title:Hide()
+    right:SetPoint("TOPLEFT", leftCol, "TOPRIGHT", GAP + 4, 0)
+    right:SetPoint("BOTTOMRIGHT", -GAP, GAP)
 
     local statusLbl = MakeLabel(right, "", 11)
-    statusLbl:SetPoint("TOPRIGHT", -GAP, -GAP)
+    statusLbl:SetPoint("BOTTOMRIGHT", -PAD, 10)
     local function SetStatus(msg, color)
         statusLbl:SetText(msg or "")
         local col = color or C.textSoft
@@ -149,19 +176,18 @@ function GuildOS:CreateCoresPanel(panel)
     end
 
     local header = CreateFrame("Frame", nil, right)
-    header:SetPoint("TOPLEFT", 0, -GAP)
-    header:SetPoint("TOPRIGHT", -GAP, -GAP)
+    header:SetPoint("TOPLEFT", PAD, -10)
+    header:SetPoint("TOPRIGHT", -PAD, -10)
     header:SetHeight(HEADER_H)
-    local barTop = GAP + HEADER_H + 4
+    local barTop = 10 + HEADER_H + 6
     local subBar = CreateFrame("Frame", nil, right)
-    subBar:SetPoint("TOPLEFT", 0, -barTop)
-    subBar:SetPoint("TOPRIGHT", 0, -barTop)
+    subBar:SetPoint("TOPLEFT", PAD, -barTop)
+    subBar:SetPoint("TOPRIGHT", -PAD, -barTop)
     subBar:SetHeight(SUBBAR_H)
-    UI:StyleSubTabBar(subBar)
 
     local rightScroll, rightContent = UI:CreateScrollFrame(right, "GuildOSCoreSettingsScroll")
-    rightScroll:SetPoint("TOPLEFT", 0, -(barTop + SUBBAR_H + GAP))
-    rightScroll:SetPoint("BOTTOMRIGHT", SCROLL_R, 0)
+    rightScroll:SetPoint("TOPLEFT", PAD, -(barTop + SUBBAR_H + GAP))
+    rightScroll:SetPoint("BOTTOMRIGHT", -PAD + SCROLL_R + GAP - 2, 28)
     UI:BindScrollChildWidth(rightScroll, rightContent)
 
     -- Placeholder shown when no core is selected
@@ -197,7 +223,14 @@ function GuildOS:CreateCoresPanel(panel)
     local function roleOptions()
         local CM, opts = GuildOS.CoreManager, {}
         for _, role in ipairs({ "tank", "healer", "mdps", "rdps" }) do
-            opts[#opts + 1] = { value = role, text = CM.ROLE_LABELS[role] or role, color = CM.ROLE_COLORS[role] }
+            -- The role's colour as the parchment prints it: every one of these sits on the core's card.
+            local rc = CM.ROLE_COLORS[role]
+            local color
+            if rc then
+                local r, g, b = onPaper(rc.r, rc.g, rc.b)
+                color = { r = r, g = g, b = b }
+            end
+            opts[#opts + 1] = { value = role, text = CM.ROLE_LABELS[role] or role, color = color }
         end
         return opts
     end
@@ -220,8 +253,9 @@ function GuildOS:CreateCoresPanel(panel)
         local fromDiscord = CM:IsFromDiscord(coreName)
         local title = UI:CreateTitle(header, coreName, 15)
         title:SetPoint("LEFT", 0, 0)
-        local origin = track(UI:CreateBadge(header, originOf(CM, coreName)))
-        origin:SetPoint("LEFT", title, "RIGHT", 10, 0)
+        local origin = MakeLabel(header, originOf(CM, coreName), 12)
+        GuildOS:ApplyFont(origin, 12, "sectionTitle")
+        origin:SetPoint("LEFT", title, "RIGHT", 8, 0)
         local x = origin
         -- A group says its elenco, and where its points go (issue #352).
         local parent = CM:ParentOf(coreName)
@@ -233,7 +267,7 @@ function GuildOS:CreateCoresPanel(panel)
             x = grp
         end
         if coreName == GetActiveName() then
-            local active = track(UI:CreateBadge(header, L["active in the raid"]))
+            local active = track(UI:CreateBadge(header, L["active in the raid"], C.ok))
             active:SetPoint("LEFT", x, "RIGHT", 6, 0)
             x = active
         elseif GuildOS.RaidTracker then
@@ -293,9 +327,10 @@ function GuildOS:CreateCoresPanel(panel)
         if isOfficer then TABS[#TABS + 1] = { key = "config", label = L["Config"] } end
         local prev
         for _, t in ipairs(TABS) do
-            local tb = track(UI:CreateTab(subBar, t.label, 90, true))
-            if prev then tb:SetPoint("LEFT", prev, "RIGHT", 2, 0) else tb:SetPoint("LEFT", 4, 0) end
-            tb:SetActive(t.key == activeRightTab)
+            local tb = track(UI:SetButtonVariant(UI:CreateButton(subBar, t.label, 40, 22), "chip"))
+            tb:SetWidth(math.ceil(tb.label:GetStringWidth() or 30) + 22)
+            if prev then tb:SetPoint("LEFT", prev, "RIGHT", 6, 0) else tb:SetPoint("LEFT", 0, 0) end
+            UI:SetSelected(tb, t.key == activeRightTab)
             tb.key = t.key
             tb:SetScript("OnClick", function()
                 activeRightTab = t.key
@@ -323,23 +358,23 @@ function GuildOS:CreateCoresPanel(panel)
             { key = "tank", label = L["Tanks"] }, { key = "healer", label = L["Healers"] },
             { key = "mdps", label = L["Melee"] }, { key = "rdps", label = L["Ranged"] },
         }
-        local perRow = W >= 520 and 2 or 1
-        local colW = math.floor(W / perRow)
+        -- A box a role (the mockup's .roles): who it has of what the format asks, pink while it is short.
+        local bw = math.floor((W - 3 * 8) / 4)
         for i, m in ipairs(METERS) do
-            local col, row = (i - 1) % perRow, math.floor((i - 1) / perRow)
-            local mx, my = col * colW, y - row * 22
             local have, want = roles[m.key] or 0, T[m.key] or 0
-            local lbl = MakeLabel(rightContent, m.label, 12, C.text.r, C.text.g, C.text.b)
-            lbl:SetPoint("TOPLEFT", mx, my - 4)
-            local bar = track(UI:CreateProgressBar(rightContent, METER_W, 8))
-            bar:SetPoint("TOPLEFT", mx + 90, my - 7)
-            bar:SetProgress(want > 0 and have / want or 1)
-            -- A role short of what the format asks is a warning: gold is not a status (#371).
-            local full = have >= want and C.ok or C.warn
-            local count = MakeLabel(rightContent, string.format(L["%d of %d"], have, want), 11, full.r, full.g, full.b)
-            count:SetPoint("TOPLEFT", mx + 96 + METER_W, my - 4)
+            local box = track(CreateFrame("Frame", nil, rightContent))
+            box:SetSize(bw, 44)
+            box:SetPoint("TOPLEFT", (i - 1) * (bw + 8), y)
+            if GuildOS.Style then
+                GuildOS.Style:Nine(box, "card", 5, "BACKGROUND", -6):SetColor(have >= want and ROLE_FILL or ROLE_MISS)
+            end
+            local count = UI:CreateText(box, string.format(L["%d of %d"], have, want), 14, C.paperInk.r, C.paperInk.g, C.paperInk.b)
+            GuildOS:ApplyFont(count, 14, "button")
+            count:SetPoint("TOP", 0, -6)
+            local lbl = UI:CreateText(box, m.label, 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+            lbl:SetPoint("TOP", count, "BOTTOM", 0, -2)
         end
-        y = y - math.ceil(#METERS / perRow) * 22 - 6
+        y = y - 44 - 10
         local summary = string.format(L["%d of %d members"], comp.total, CM:GetRaidSize(coreName))
         if (comp.bench or 0) > 0 then summary = summary .. "  \194\183  " .. string.format(L["%d in reserve"], comp.bench) end
         local open = CM:OpenSlots(coreName)
@@ -385,7 +420,7 @@ function GuildOS:CreateCoresPanel(panel)
         local layout = UI:ResolveColumns(spec, W, 6)
         panel.memberLayout = layout
         local function at(key) return layout.byKey[key] end
-        local TITLES = { name = L["MEMBER"], role = L["ROLE"], place = L["PLACE"], origin = L["ORIGIN"], pres = L["PRES."], acts = "" }
+        local TITLES = { name = L["Member"], role = L["Role"], place = L["Place"], origin = L["Origin"], pres = L["Pres."], acts = "" }
         -- The table's header row: the shared one, no fill and a 1px rule under it (#371).
         local head = track(UI:CreateTableHeader(rightContent))
         head:SetPoint("TOPLEFT", 0, y)
@@ -414,18 +449,19 @@ function GuildOS:CreateCoresPanel(panel)
             emL:SetPoint("TOPLEFT", 4, y - 4)
             y = y - 20
         end
-        for i, entry in ipairs(sortedMbrs) do
+        for _, entry in ipairs(sortedMbrs) do
             local m, mk = entry.m, entry.key
             -- The row's band hangs by both top corners: a width read at build time is 0 on a hidden tab.
+            -- The row's line hangs by both top corners: a width read at build time is 0 on a hidden tab.
             local bg = rightContent:CreateTexture(nil, "BACKGROUND")
             bg:SetTexture(WHITE)
-            bg:SetPoint("TOPLEFT", 0, y)
-            bg:SetPoint("TOPRIGHT", 0, y)
-            bg:SetHeight(ROW_H)
-            local band = (i % 2 == 1) and C.row1 or C.row2
-            bg:SetVertexColor(band.r, band.g, band.b, band.a or 0.4)
-            local cr, cg, cb = GuildOS:GetClassColor(m.class or "WARRIOR")
+            bg:SetPoint("TOPLEFT", 0, y - ROW_H)
+            bg:SetPoint("TOPRIGHT", 0, y - ROW_H)
+            bg:SetHeight(1)
+            bg:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
+            local cr, cg, cb = paperClass(m.class or "WARRIOR")
             local nameFS = cell("name", m.name or mk, cr, cg, cb)
+            if nameFS then GuildOS:ApplyFont(nameFS, 12, "button") end
             if nameFS and m.status == "bench" then nameFS:SetAlpha(0.6) end
             -- The role: a dropdown for whoever may change it (a Discord core's people too, #135).
             local rc = at("role")
@@ -489,7 +525,7 @@ function GuildOS:CreateCoresPanel(panel)
             y = MakeSectionHeader(rightContent, string.format(L["Guests of the night (%d)"], #guestList), y)
             for _, entry in ipairs(guestList) do
                 local g, gk = entry.g, entry.key
-                local cr, cg, cb = GuildOS:GetClassColor(g.class or "WARRIOR")
+                local cr, cg, cb = paperClass(g.class or "WARRIOR")
                 local gLbl = MakeLabel(rightContent, string.format("%s \194\183 %s \194\183 %s", g.name or gk,
                     CM.ROLE_LABELS[g.role] or "?", g.stay and L["stays"] or L["leaves when the raid ends"]), 11, cr, cg, cb)
                 gLbl:SetPoint("TOPLEFT", 0, y - 4)
@@ -538,7 +574,7 @@ function GuildOS:CreateCoresPanel(panel)
                         color = { r = cr, g = cg, b = cb } }
                 end
             end
-            y = MakeSectionHeader(rightContent, takesGuests and L["INVITE FROM THE GUILD OR THE GROUP"] or L["ADD FROM THE GUILD"], y)
+            y = MakeSectionHeader(rightContent, takesGuests and L["Invite from the guild or the group"] or L["Add from the guild"], y)
             local gmPick = track(UI:CreateDropdown(rightContent, 190, 22))
             gmPick:SetPoint("TOPLEFT", 0, y)
             gmPick:SetPlaceholder(L["Select player..."])
@@ -632,7 +668,7 @@ function GuildOS:CreateCoresPanel(panel)
         local RL = CM.ROLE_LABELS
         for _, entry in ipairs(suList) do
             local su, sk = entry.su, entry.key
-            local cr, cg, cb = GuildOS:GetClassColor(su.class or "WARRIOR")
+            local cr, cg, cb = paperClass(su.class or "WARRIOR")
             local nameLbl = MakeLabel(rightContent, string.format("%s \194\183 %s", su.name or sk, (RL and RL[su.role]) or su.role or "?"),
                 12, cr, cg, cb)
             nameLbl:SetPoint("TOPLEFT", 0, y)
@@ -895,23 +931,40 @@ function GuildOS:CreateCoresPanel(panel)
         local active = GetActiveName()
         for idx, entry in ipairs(names) do
             local name, indent = entry.name, entry.depth * GROUP_INDENT
-            -- Hung by both top corners, as wide as the list leaves it (#371).
-            local row = CreateFrame("Button", nil, listContent, "BackdropTemplate")
-            row:SetHeight(CORE_ROW_H - 2)
+            -- Hung by both top corners, as wide as the list leaves it (#371): the core's glyph, its name (the
+            -- raid's with a badge saying so), and under it its size, fill and origin; a line between two.
+            local row = CreateFrame("Button", nil, listContent)
+            row:SetHeight(CORE_ROW_H)
             row:SetPoint("TOPLEFT", indent, -(idx - 1) * CORE_ROW_H)
             row:SetPoint("TOPRIGHT", 0, -(idx - 1) * CORE_ROW_H)
-            row:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(row) })
+            if idx > 1 then
+                local rule = row:CreateTexture(nil, "BACKGROUND")
+                rule:SetTexture(WHITE)
+                rule:SetHeight(1)
+                rule:SetPoint("TOPLEFT"); rule:SetPoint("TOPRIGHT")
+                rule:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
+            end
             local on = name == selectedCore
-            row:SetBackdropColor(C.well.r, C.well.g, C.well.b, on and 1 or 0)
-            local edge = on and C.gold or C.line
-            row:SetBackdropBorderColor(edge.r, edge.g, edge.b, on and 1 or 0)
+            local sel = UI:CreateRowSelection(row)
+            sel:SetShown(on)
+            local hover = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+            hover:SetTexture(WHITE)
+            hover:SetAllPoints()
+            hover:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 0.07)
+            hover:Hide()
 
-            local lbl = MakeLabel(row, name, 12, C.text.r, C.text.g, C.text.b)
-            lbl:SetPoint("TOPLEFT", 8, -4)
-            lbl:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            local glyph = UI:CreateGlyph(row, 24)
+            glyph:SetPoint("LEFT", 0, 0)
+            glyph:Set(UI.Initial and UI.Initial(name) or name:sub(1, 1), entry.depth > 0 and C.paperSoft or C.count)
+            local lbl = MakeLabel(row, name, 13, C.text.r, C.text.g, C.text.b)
+            lbl:SetPoint("TOPLEFT", 34, -5)
             lbl:SetJustifyH("LEFT")
-            -- The raid's core reads as live, in ok: gold is the selection's alone (#371).
-            if name == active then lbl:SetTextColor(C.ok.r, C.ok.g, C.ok.b) end
+            if lbl.SetWordWrap then lbl:SetWordWrap(false) end
+            -- The raid's core reads as live: a green badge beside its name.
+            if name == active then
+                local badge = UI:CreateBadge(row, L["active in the raid"], C.ok)
+                badge:SetPoint("LEFT", lbl, "RIGHT", 6, 0)
+            end
             local size = CM:GetRaidSize(name)
             local comp = CM:GetComposition(name)
             local subText = string.format(L["%d \194\183 %d of %d \194\183 %s"], size, comp.total, size, originOf(CM, name))
@@ -921,9 +974,9 @@ function GuildOS:CreateCoresPanel(panel)
             elseif nGroups > 0 then
                 subText = subText .. " \194\183 " .. string.format(L["split into %d groups"], nGroups)
             end
-            local sub = MakeLabel(row, subText, 11, C.labelDim.r, C.labelDim.g, C.labelDim.b)
-            sub:SetPoint("BOTTOMLEFT", 8, 4)
-            sub:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            local sub = MakeLabel(row, subText, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            sub:SetPoint("BOTTOMLEFT", 34, 5)
+            sub:SetPoint("RIGHT", row, "RIGHT", -4, 0)
             sub:SetJustifyH("LEFT")
             row.label, row.sub = lbl, sub
             row.coreName = name
@@ -933,12 +986,8 @@ function GuildOS:CreateCoresPanel(panel)
                 BuildSettings(name)
                 RebuildList()
             end)
-            row:SetScript("OnEnter", function(self)
-                if name ~= selectedCore then self:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1) end
-            end)
-            row:SetScript("OnLeave", function(self)
-                if name ~= selectedCore then self:SetBackdropColor(C.well.r, C.well.g, C.well.b, 0) end
-            end)
+            row:SetScript("OnEnter", function() hover:Show() end)
+            row:SetScript("OnLeave", function() hover:Hide() end)
             coreRows[#coreRows + 1] = row
         end
         listContent:SetHeight(math.max(1, #names * CORE_ROW_H))
@@ -999,8 +1048,8 @@ function GuildOS:CreateCoresPanel(panel)
         if want ~= listW then
             listW = want
             leftCol:SetWidth(listW)
-            newInput:SetWidth(listW - 72 - GAP)
-            againBtn:SetWidth(listW - GAP)
+            newInput:SetWidth(listW - 72 - 2 * PAD + 6)
+            againBtn:SetWidth(listW - 2 * PAD)
             RebuildList()
         end
         if selectedCore then BuildSettings(selectedCore) end

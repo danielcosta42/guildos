@@ -497,7 +497,7 @@ do
   tab("The guild's chain"); draw()
   check(say("THE GUILD'S CHAIN"), "the chain tab draws")
   officer = true; tab("Organize"); draw()
-  check(say("PARTICIPANTS"), "the officers' table draws")
+  check(say("Participants"), "the officers' table draws")
   tab("My secret friend"); draw()
 
   -- The link to the page says the guild's key, encoded; without a key it is the public page.

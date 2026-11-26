@@ -288,10 +288,10 @@ panel.railButtons[4].scripts.OnClick(panel.railButtons[4])
 check(#st.results == 0 and showing("Nobody in the guild has this profession yet."), "an empty profession says so")
 panel:Relayout(520, 400)
 check(panel.visibleRows > 0, "a narrow window still lays out")
-panel:Relayout(560, 500)
+panel:Relayout(600, 500)
 local filtersW = 0
 for _, t in ipairs(panel.filterTabs) do if t.shown ~= false then filtersW = filtersW + t.w + 4 end end
-local inner = 560 - 10 * 2 - 176 - 12
+local inner = 600 - 10 * 2 - (176 + 2 * 12) - 12 - 2 * 12   -- the rail's dark card and the catalog's padding (#449)
 check(panel.search.w < 220 and panel.search.w + filtersW + 12 <= inner,
       "the search box gives way to the filters in a narrow window: " .. tostring(panel.search.w))
 local placeholderShown = false

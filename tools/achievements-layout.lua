@@ -2,12 +2,13 @@
 -- Core/Core.lua, Core/Compat.lua, Core/Utils.lua, Core/Data.lua, Core/Style.lua, UI/Helpers.lua,
 -- UI/Layout.lua and UI/AchievementsPanel.lua under a stubbed client, in both interface styles.
 --
--- What this holds: the header is the insignia (64px), its title (or the guild's name) with "Renown N"
--- under it and the points as the metric chip on the right; NEAREST is one card per Next() entry, side
--- by side and wrapping, each with its title, its bar and "current / target"; EARNED is a collection:
--- a numbered series is one row of tier pills with the tier Next() is counting drawn dim after them,
--- "Prefix: part" titles share their prefix's row, the rest are a row each, every row dated by its
--- newest. The titles are the guild's real ones.
+-- What this holds, in the Chronicle's mockup (#449 phase 3): the header is a dark card with the insignia
+-- (64px) or the gold medal of the renown, its title (or the guild's name) with "Renown N · P points" under
+-- it; Nearest is a parchment card of one box per Next() entry, side by side and wrapping, each with its
+-- title, its bar and "current / target"; Earned is a parchment card holding the collection: a numbered
+-- series is its name with a row of tier pills under it, the tier Next() is counting drawn dim after them,
+-- "Prefix: part" titles share their prefix's row, the rest are a row each, every row dated by its newest.
+-- The titles are the guild's real ones.
 --
 --   luajit -e 'ADDON="."' tools/achievements-layout.lua
 --
@@ -271,66 +272,74 @@ for _, style in ipairs({ "guildos", "forever" }) do
   check(sp and sp[2] == 0 and sp[3] == -UI.GAP, style .. ": flush with the sub-tab bar, the first line GAP down")
   check(content.w == CONTENT_W, style .. ": the content keeps the scroll frame's width less the gutter")
 
+  -- The Chronicle's mockup (#449 phase 3): three cards, hung by both top corners from the content.
+  local PAD, GAP = 14, UI.GAP
+  local head, near, earnedCard = content.head, content.near, content.earned
+  check(head and head.__dark and head.shown and point(head, "TOPLEFT")[3] == -2 and point(head, "TOPRIGHT"),
+    style .. ": the renown in a dark card at the top")
+  check(near.shown and not near.__dark and earnedCard.shown and not earnedCard.__dark,
+    style .. ": Nearest and Earned in parchment cards")
+  check(point(near, "TOPLEFT")[3] < -(2 + head.h) and point(earnedCard, "TOPLEFT")[3] < point(near, "TOPLEFT")[3] - near.h,
+    style .. ": one under the other")
+
   -- The header.
   local insignia
   walk(content, function(c) if c.kind == "CreateTexture" and c.texture == TEX then insignia = c end end)
-  check(insignia and insignia.shown and insignia.w == 64 and insignia.h == 64, style .. ": the insignia, 64px")
+  check(insignia and insignia.shown and insignia.w == 64 and insignia.h == 64 and insignia.parent == head, style .. ": the insignia, 64px")
   local ip = insignia and point(insignia, "TOPLEFT")
-  check(ip and ip[2] == 0 and ip[3] == 0, style .. ": at the top left")
+  check(ip and ip[2] == PAD and ip[3] == -16, style .. ": at the card's top left")
   local name = shownText(content, "Guardiões do Forte")
-  check(name and point(name, "TOPLEFT")[2] == 64 + 12, style .. ": its title beside it")
-  local renown = shownText(content, "Renown 7")
-  check(renown and point(renown, "TOPLEFT")[3] < point(name, "TOPLEFT")[3], style .. ": \"Renown 7\" under the title")
-  local chip
-  walk(content, function(c) if c.rule and c.value and c.label then chip = c end end)
-  check(chip and chip.shown and chip.value.text == "1240" and chip.label.text == "points", style .. ": the points as the metric chip")
-  local cp = chip and point(chip, "TOPRIGHT")
-  check(cp and cp[2] == 0 and cp[3] == 0, style .. ": on the right")
-  check(chip.w >= #"1240" * 6 or chip.w >= 34, style .. ": as wide as its value")
-  check(same(chip.rule.color, C.gold), style .. ": its rule is the metric's gold")
-  check(point(name, "TOPRIGHT")[2] <= -(chip.w + UI.GAP), style .. ": the title stops short of the chip")
+  check(name and point(name, "TOPLEFT")[2] == PAD + 64 + 12 and same(name.color, C.gold2), style .. ": its title beside it, in the soft gold")
+  local renown = shownText(content, "Renown 7 · 1240 points")
+  check(renown and point(renown, "TOPLEFT")[3] < point(name, "TOPLEFT")[3], style .. ": \"Renown 7 · 1240 points\" under the title")
+  check(point(name, "TOPRIGHT")[2] == -PAD, style .. ": the title up to the card's padding")
 
-  -- The nearest cards: one per entry, three to a row at this width, the fourth wrapping.
+  -- The nearest boxes: one per entry, as many to a row as fit at 200px, wrapping.
   local cards = content.cards
-  check(#cards == #NEXT, style .. ": one card per Next() entry (got " .. #cards .. ")")
-  local cardW = math.floor((CONTENT_W - 2 * UI.GAP) / 3)
-  local top = point(cards[1], "TOPLEFT")[3]
+  check(#cards == #NEXT, style .. ": one box per Next() entry (got " .. #cards .. ")")
+  local inner = CONTENT_W - 2 * PAD
+  local cols = math.floor((inner + GAP) / (200 + GAP))
+  local cardW = math.floor((inner - GAP * (cols - 1)) / cols)
+  check(cols == 3, style .. ": three to a row at this width")
   for i, card in ipairs(cards) do
     local n, p = NEXT[i], point(card, "TOPLEFT")
-    local col, row = (i - 1) % 3, math.floor((i - 1) / 3)
-    check(card.shown and card.w == cardW, style .. ": card " .. i .. " is " .. cardW .. " wide (got " .. tostring(card.w) .. ")")
-    check(p[2] == col * (cardW + UI.GAP) and p[3] == top - row * (card.h + UI.GAP),
-      style .. ": card " .. i .. " in column " .. col .. ", row " .. row)
-    check(card.title.text == n.title and card.title.maxLines == 2, style .. ": card " .. i .. " has its title, two lines at most")
+    local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
+    check(card.shown and card.w == cardW and card.parent == near, style .. ": box " .. i .. " is " .. cardW .. " wide, in its card")
+    check(p[2] == PAD + col * (cardW + GAP) and p[3] == -38 - row * (card.h + GAP),
+      style .. ": box " .. i .. " in column " .. col .. ", row " .. row)
+    check(card.title.text == n.title and card.title.maxLines == 2 and same(card.title.color, C.paperTitle),
+      style .. ": box " .. i .. " has its title in the paper's red, two lines at most")
     local count = ("%d / %d"):format(n.current, n.target)
     check(card.count.text == count and card.count.font == (GuildOS.Style.gameFont and STANDARD_TEXT_FONT or GuildOS.Fonts.mono),
-      style .. ": card " .. i .. " says " .. count .. " in the number font")
+      style .. ": box " .. i .. " says " .. count .. " in the number font")
     local bar = card.bar
-    check(bar.shown and bar.w == cardW - 20 - #count * 6 - UI.GAP, style .. ": card " .. i .. "'s bar runs up to the numbers")
+    check(bar.shown and bar.w == cardW - 20 - #count * 6 - UI.GAP, style .. ": box " .. i .. "'s bar runs up to the numbers")
     local fill = math.max(1, (bar.w - 2) * (n.current / n.target))
-    check(math.abs(bar.bar.w - fill) < 1e-6, style .. ": card " .. i .. "'s bar is filled to " .. n.current .. "/" .. n.target)
-    check(not card.__nine, style .. ": card " .. i .. " is a flat surface")
+    check(math.abs(bar.bar.w - fill) < 1e-6, style .. ": box " .. i .. "'s bar is filled to " .. n.current .. "/" .. n.target)
   end
   check(same(cards[4].bar.bar.color, C.ok) and same(cards[1].bar.bar.color, C.textSoft),
     style .. ": a done bar is ok, one under way is textSoft")
-  check(point(cards[1], "TOPLEFT")[3] < -64, style .. ": the cards start under the header")
 
   -- The collection.
   local drawn = content.rows
   check(#drawn == 10, style .. ": ten earned rows (got " .. #drawn .. ")")
   for i, w in ipairs(want) do
     local d = drawn[i]
-    check(d.name.shown and d.name.text == w[2] and same(d.name.color, C.text), style .. ": row " .. i .. " is " .. w[2])
+    local ny = point(d.name, "TOPLEFT")[3]
+    check(d.name.shown and d.name.text == w[2] and same(d.name.color, C.paperTitle) and d.name.parent == earnedCard,
+      style .. ": row " .. i .. " is " .. w[2] .. ", in the paper's red")
     check(d.date.text == ymd(w[5]), style .. ": " .. w[2] .. " dated " .. ymd(w[5]))
-    check(point(d.date, "TOPRIGHT")[2] == 0 and point(d.date, "TOPRIGHT")[3] == point(d.name, "TOPLEFT")[3],
+    check(point(d.date, "TOPRIGHT")[2] == -PAD and point(d.date, "TOPRIGHT")[3] == ny,
       style .. ": " .. w[2] .. "'s date on the right, on its line")
+    check(point(d.name, "TOPLEFT")[2] == PAD and point(d.name, "TOPRIGHT")[2] == -(PAD + 80 + GAP),
+      style .. ": " .. w[2] .. "'s name up to the date")
     if w[1] == "series" then
-      local got, x = {}, 200 + UI.GAP
+      local got, x = {}, PAD
       for j, pill in ipairs(d.pills) do
         got[#got + 1] = pill.label.text
         local p = point(pill, "TOPLEFT")
-        check(pill.shown and p[2] == x and p[3] == point(d.name, "TOPLEFT")[3] + 1,
-          style .. ": " .. w[2] .. "'s pill " .. j .. " follows the one before it, on the name's line")
+        check(pill.shown and p[2] == x and p[3] == ny - 21,
+          style .. ": " .. w[2] .. "'s pill " .. j .. " follows the one before it, under the name")
         x = x + pill.w + 4
         if pill.earned then
           local f = pill.__look.fill.color
@@ -345,23 +354,21 @@ for _, style in ipairs({ "guildos", "forever" }) do
       check(table.concat(got, " ") == expect, style .. ": " .. w[2] .. " shows [" .. expect .. "] (got " .. table.concat(got, " ") .. ")")
       check(d.pills[#d.pills].earned == (w[4] == nil), style .. ": " .. w[2] .. (w[4] and " ends on its next tier" or " has no next tier"))
     elseif w[1] == "group" then
-      check(d.parts.text == w[3] and same(d.parts.color, C.textSoft) and point(d.parts, "TOPLEFT")[2] == 200 + UI.GAP,
-        style .. ": the group's parts beside its name, joined by \" · \"")
+      check(d.parts.text == w[3] and same(d.parts.color, C.paperInk) and point(d.parts, "TOPLEFT")[2] == PAD
+        and point(d.parts, "TOPLEFT")[3] < ny, style .. ": the group's parts under its name, joined by \" · \"")
     else
-      check(#d.pills == 0 and not d.parts and point(d.name, "TOPRIGHT")[2] == -(80 + UI.GAP),
-        style .. ": " .. w[2] .. " is a row of its own, up to the date")
+      check(#d.pills == 0 and not d.parts, style .. ": " .. w[2] .. " is a row of its own")
     end
   end
-  check(point(drawn[1].name, "TOPLEFT")[3] < point(cards[4], "TOPLEFT")[3] - cards[4].h, style .. ": EARNED comes after the cards")
   check(content.h > 0 and content.h < 15000, style .. ": the scroll child is " .. content.h .. "px, well under 15000")
-  check(shownText(content, "NEAREST") and shownText(content, "EARNED"), style .. ": both sections have their titles")
+  check(shownText(content, "Nearest") and shownText(content, "Earned"), style .. ": both cards have their titles, never upper case")
 
-  -- Gold is a title's (the Salão's phase 3, #449): the guild's name over the insignia is the one gold text.
+  -- Gold is the game's yellow, no text here takes it (the Salão's phase 3, #449): the title is the soft gold.
   local gold = {}
   walk(content, function(c)
     if c.kind == "CreateFontString" and c.shown and same(c.color, C.gold) then gold[#gold + 1] = tostring(c.text) end
   end)
-  check(#gold <= 1 and (gold[1] == nil or gold[1] == name.text), style .. ": no gold text but the title (" .. table.concat(gold, ", ") .. ")")
+  check(#gold == 0, style .. ": no gold text (" .. table.concat(gold, ", ") .. ")")
 
   -- A redraw takes its frames again.
   local before = 0
@@ -371,35 +378,33 @@ for _, style in ipairs({ "guildos", "forever" }) do
   walk(content, function() after = after + 1 end)
   check(after == before and #content.rows == 10 and #content.cards == 4, style .. ": a redraw makes no new frames")
 
-  -- Narrower: two cards to a row.
+  -- Narrower: one box to a row.
   tab.scroll.w = 430 + gutter
   tab.scroll.scripts.OnSizeChanged(tab.scroll)
-  local p3 = point(content.cards[3], "TOPLEFT")
-  check(content.cards[1].w == math.floor((430 - UI.GAP) / 2) and p3[2] == 0 and p3[3] < point(content.cards[1], "TOPLEFT")[3],
-    style .. ": at 430px two cards to a row, the third wrapping")
-  check(point(content.rows[1].pills[1], "TOPLEFT")[2] == math.floor(430 * 0.4) + UI.GAP,
-    style .. ": a narrow screen gives the name column 40% of it")
+  local p2 = point(content.cards[2], "TOPLEFT")
+  check(content.cards[1].w == 430 - 2 * PAD and p2[2] == PAD and p2[3] < point(content.cards[1], "TOPLEFT")[3],
+    style .. ": at 430px one box to a row, the second under it")
 
-  -- Built hidden, the width unknown: cards stack, hung by both sides, until it is laid out.
+  -- Built hidden, the width unknown: boxes stack, hung by both sides, until it is laid out.
   tab = build(data(), nil)
   check(#errors == 0 and #tab.content.cards == 4, style .. ": built hidden it draws")
   local c1 = tab.content.cards[1]
   check(point(c1, "TOPLEFT") and point(c1, "TOPRIGHT") and point(tab.content.cards[2], "TOPLEFT")[3] < point(c1, "TOPLEFT")[3],
-    style .. ": a card per row, hung by both sides")
+    style .. ": a box per row, hung by both sides")
   tab.scroll.w = CONTENT_W + gutter
   tab.scroll.scripts.OnSizeChanged(tab.scroll)
   check(tab.content.cards[1].w == cardW and not point(tab.content.cards[1], "TOPRIGHT"), style .. ": and laid out once it has a size")
 
-  -- The header without an insignia, without a title, without either.
+  -- The header without an insignia, without a title, without either: the gold medal with the renown's number.
   tab = build(data({ Insignia = function() return nil, nil end }), CONTENT_W + gutter)
   insignia = nil
-  walk(tab.content, function(c) if c.kind == "CreateTexture" and c.texture and c.shown and c.w == 64 then insignia = c end end)
+  walk(tab.content, function(c) if c.kind == "CreateTexture" and c.texture == TEX and c.shown then insignia = c end end)
   name = shownText(tab.content, "Ashen Vow")
-  check(not insignia and name and point(name, "TOPLEFT")[2] == 0 and point(name, "TOPLEFT")[3] == 0,
-    style .. ": no insignia nor title: the guild's name, at the top left")
-  check(shownText(tab.content, "Renown 7"), style .. ": with the renown under it")
+  check(not insignia and name and point(name, "TOPLEFT")[2] == PAD + 64 + 12 and shownText(tab.content, "7"),
+    style .. ": no insignia nor title: the guild's name beside the medal of renown 7")
+  check(shownText(tab.content, "Renown 7 · 1240 points"), style .. ": with the renown under it")
   tab = build(data({ Insignia = function() return TEX, nil end }), CONTENT_W + gutter)
-  check(shownText(tab.content, "Ashen Vow") and point(shownText(tab.content, "Ashen Vow"), "TOPLEFT")[2] == 76,
+  check(shownText(tab.content, "Ashen Vow") and point(shownText(tab.content, "Ashen Vow"), "TOPLEFT")[2] == PAD + 76,
     style .. ": an insignia with no title: the guild's name beside it")
   local realGuild = GetGuildInfo
   GetGuildInfo = function() return nil end
@@ -408,19 +413,19 @@ for _, style in ipairs({ "guildos", "forever" }) do
   local only = shownText(tab.content, "Renown 7")
   local count = 0
   walk(tab.content, function(c) if c.kind == "CreateFontString" and c.shown and c.text == "Renown 7" then count = count + 1 end end)
-  check(only and count == 1, style .. ": with neither, the renown alone is the heading")
+  check(only and count == 1 and shownText(tab.content, "1240 points"), style .. ": with neither, the renown alone is the heading")
 
   -- Empty states, with the screen's strings.
   tab = build(data({ Renown = function() return nil end }), CONTENT_W + gutter)
   local shownFrames = 0
   walk(tab.content, function(c) if c.shown and c.kind ~= "CreateFontString" and c.kind ~= "CreateTexture" and c.parent == tab.content then shownFrames = shownFrames + 1 end end)
   check(shownText(tab.content, "Achievements come from guildos.me: the web companion brings them here when your guild has them.")
-    and not shownText(tab.content, "NEAREST") and not shownText(tab.content, "EARNED") and shownFrames == 0,
+    and not shownText(tab.content, "Nearest") and not shownText(tab.content, "Earned") and shownFrames == 0,
     style .. ": no block: the line saying where they come from, and nothing else")
   tab = build(data({ Next = function() return {} end, Earned = function() return {} end }), CONTENT_W + gutter)
-  check(not shownText(tab.content, "NEAREST") and #tab.content.cards == 0, style .. ": nothing near: no NEAREST")
-  check(shownText(tab.content, "EARNED") and shownText(tab.content, "Nothing earned yet.") and #tab.content.rows == 0,
-    style .. ": nothing earned: EARNED says so")
+  check(not shownText(tab.content, "Nearest") and #tab.content.cards == 0, style .. ": nothing near: no Nearest")
+  check(shownText(tab.content, "Earned") and shownText(tab.content, "Nothing earned yet.") and #tab.content.rows == 0,
+    style .. ": nothing earned: Earned says so")
   check(#errors == 0, style .. ": no errors along the way (" .. table.concat(errors, "; ") .. ")")
 end
 

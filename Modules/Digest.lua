@@ -229,32 +229,42 @@ function Digest:Show(lines)
     local f = self.frame
     if not f then
         f = CreateFrame("Frame", "GuildOSDigestFrame", UIParent, "BackdropTemplate")
-        f:SetSize(360, 280)
+        f:SetSize(380, 280)
         f:SetPoint("TOP", UIParent, "TOP", 0, -140)
-        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
-        f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-        f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-        UI:StylePopup(f, { shadowSize = 16 })
         f:SetFrameStrata("HIGH")
         f:SetMovable(true)
         f:EnableMouse(true)
-        f:RegisterForDrag("LeftButton")
-        f:SetScript("OnDragStart", function(self2) self2:StartMoving() end)
-        f:SetScript("OnDragStop", function(self2) self2:StopMovingOrSizing() end)
-
-        f.title = UI:CreateTitle(f, L["Since your last login"], 15)
-        f.title:SetPoint("TOPLEFT", 16, -14)
-
-        f.close = UI:CreateCloseButton(f)
-        f.close:SetPoint("TOPRIGHT", -8, -8)
-        f.close:SetScript("OnClick", function() f:Hide() end)
+        -- A floating window (the mockup's .fw "digest"): its title in the header, a glyph and a line for each
+        -- thing that changed (the mockup's .mural), the way into the window in the footer.
+        local Kit = rawget(GuildOS, "Kit")
+        if Kit then
+            Kit:Dress(f, L["Since your last login"])
+            Kit:Footer(f)
+            f.title, f.close = f.titleText, f.closeBtn
+            f.top, f.bottom = Kit.HEADER_H + 10, Kit.FOOT_H + 8
+        else
+            f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
+            f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+            f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+            UI:StylePopup(f, { shadowSize = 16 })
+            f:RegisterForDrag("LeftButton")
+            f:SetScript("OnDragStart", function(self2) self2:StartMoving() end)
+            f:SetScript("OnDragStop", function(self2) self2:StopMovingOrSizing() end)
+            f.title = UI:CreateTitle(f, L["Since your last login"], 15)
+            f.title:SetPoint("TOPLEFT", 16, -14)
+            f.close = UI:CreateCloseButton(f)
+            f.close:SetPoint("TOPRIGHT", -8, -8)
+            f.close:SetScript("OnClick", function() f:Hide() end)
+            f.top, f.bottom = 44, 48
+        end
 
         f.body = CreateFrame("Frame", nil, f)
-        f.body:SetPoint("TOPLEFT", 16, -44)
-        f.body:SetPoint("BOTTOMRIGHT", -16, 48)
+        f.body:SetPoint("TOPLEFT", 16, -f.top)
+        f.body:SetPoint("BOTTOMRIGHT", -16, f.bottom)
 
-        f.openBtn = UI:CreateButton(f, L["Open Guild OS"], 140, 26)
-        f.openBtn:SetPoint("BOTTOM", 0, 14)
+        f.openBtn = UI:CreateButton(f.foot or f, L["Open Guild OS"], 140, 24)
+        UI:SetButtonVariant(f.openBtn, "primary")
+        if f.foot then f.foot:Lay(f.openBtn) else f.openBtn:SetPoint("BOTTOM", 0, 14) end
         f.openBtn:SetScript("OnClick", function()
             f:Hide()
             GuildOS:ToggleRoster()
@@ -272,18 +282,28 @@ function Digest:Show(lines)
         empty:SetPoint("TOPLEFT", 2, -y)
         empty:SetWidth(f.body:GetWidth() - 4)
     else
+        -- Each line on a round glyph with its first letter (the mockup's mural: a glyph, then the line).
+        local glyphs = UI.CreateGlyph ~= nil
+        local x = glyphs and 30 or 18
         for _, line in ipairs(lines) do
-            local dot = UI:CreateText(f.body, "|cffEDCC7B*|r", 12, C.gold.r, C.gold.g, C.gold.b)
-            dot:SetPoint("TOPLEFT", 2, -y)
+            if glyphs then
+                local g = UI:CreateGlyph(f.body, 22)
+                g:SetPoint("TOPLEFT", 0, -y + 3)
+                local plain = tostring(line):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+                g:Set((plain:match("^[%z\1-\127\194-\244][\128-\191]*") or ""):upper(), C.metal2 or C.gold)
+            else
+                local dot = UI:CreateText(f.body, "*", 12, C.label.r, C.label.g, C.label.b)
+                dot:SetPoint("TOPLEFT", 2, -y)
+            end
             local fs = UI:CreateText(f.body, line, 11, C.text.r, C.text.g, C.text.b)
-            fs:SetPoint("TOPLEFT", 18, -y)
-            fs:SetWidth(f.body:GetWidth() - 22)
+            fs:SetPoint("TOPLEFT", x, -y)
+            fs:SetWidth(f.body:GetWidth() - x - 4)
             fs:SetJustifyH("LEFT")
-            y = y + math.max(20, (fs:GetStringHeight() or 14) + 8)
+            y = y + math.max(26, (fs:GetStringHeight() or 14) + 10)
         end
     end
     -- The title above and the button below: a long digest grows, never runs under the button.
-    f:SetHeight(math.max(280, 44 + y + 48))
+    f:SetHeight(math.max(240, f.top + y + f.bottom))
 
     f:Show()
     return f

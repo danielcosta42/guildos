@@ -6,7 +6,11 @@
 -- (Rule 3 / Rule 10).
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
-local C = GuildOS.Colors
+-- The Officers' Room draws each screen on a parchment card (specs/salao/fase3.md): its text takes the paper's
+-- inks (UI/Kit.lua), and a floating window over it the wood's (WOOD).
+local Kit = rawget(GuildOS, "Kit")
+local C = Kit and Kit.PAPER or GuildOS.Colors
+local WOOD = GuildOS.Colors
 local L = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
@@ -46,6 +50,40 @@ local TITLE_H = 24         -- a section title and the gap under it
 local function hex(c)
     return string.format("%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255)
 end
+
+-- A member's class colour on the paper (Kit:ClassInk): the game's own read only on the wood.
+local function classInk(class)
+    if Kit then return Kit:ClassInk(class) end
+    return GuildOS:GetClassColor(class)
+end
+
+-- A checkbox and a rule drawn for the paper where the kit is loaded.
+local function checkbox(parent, text, size)
+    if Kit then return Kit:Checkbox(parent, text, size) end
+    return UI:CreateCheckbox(parent, text, size)
+end
+local function sectionTitle(parent, text, first)
+    if Kit then return Kit:SectionTitle(parent, text, first) end
+    return UI:CreateSectionTitle(parent, text, first)
+end
+local function separator(parent)
+    if Kit then return Kit:Separator(parent) end
+    return UI:CreateSeparator(parent)
+end
+
+-- A row's tan rule along its bottom, the paper's table line, in place of the wood's stripes.
+local function rule(row)
+    if Kit then Kit:Rule(row) end
+end
+
+-- Each sub-tab's card title, never upper case (the mockup's).
+local TITLES = {
+    ranks = L["Ranks"], inactive = L["Inactive members"], suggest = L["Suggestions"],
+    motd = L["Message of the day and guild info"], log = L["Action log"], ban = L["Banned players"],
+    engage = L["Recruitment engagement"], presets = L["Moderation presets"], bulk = L["Bulk actions"],
+    remind = L["Without GuildOS"], marks = L["Notes and marks"], alerts = L["Chat alerts"],
+    alertrules = L["Alert rules"],
+}
 
 -- Confirmation dialog for a bulk Apply. The full, already-formatted message
 -- is passed as text arg1 ("%s"); OnAccept runs the officer-gated ApplyPreset
@@ -99,6 +137,7 @@ local function MakeRow(content, yOff, index, height)
     row:SetBackdrop({ bgFile = WHITE })
     local alt = (index % 2 == 0) and C.row1 or C.row2
     row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
+    rule(row)
     return row
 end
 
@@ -110,7 +149,7 @@ local function MakeSectionHeader(content, text, yOff, first)
     f:SetHeight(18)
     f:SetPoint("TOPLEFT", 0, -yOff)
     f:SetPoint("TOPRIGHT", 0, -yOff)
-    local lbl = UI:CreateSectionTitle(f, text, first)
+    local lbl = sectionTitle(f, text, first)
     lbl:SetPoint("TOPLEFT", 0, 0)
     return f
 end
@@ -197,6 +236,7 @@ local function BuildRanksSub(panel)
         local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
         row:SetHeight(ROW_H)
         row:SetBackdrop({ bgFile = WHITE })
+        rule(row)
         row.nameFS = UI:CreateText(row, "", 11)
         row.nameFS:SetPoint("LEFT", 8, 0)
         row.rankFS = UI:CreateText(row, "", 10, C.silver.r, C.silver.g, C.silver.b)
@@ -224,10 +264,11 @@ local function BuildRanksSub(panel)
         row.member = m
         local alt = (idx % 2 == 0) and C.row1 or C.row2
         row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
-        local cr, cg, cb = GuildOS:GetClassColor(m.class)
+        local cr, cg, cb = classInk(m.class)
         local dim = m.online and 1 or 0.55
         row.nameFS:SetText(m.name)
-        row.nameFS:SetTextColor(cr * dim, cg * dim, cb * dim)
+        row.nameFS:SetTextColor(cr, cg, cb)
+        row.nameFS:SetAlpha(dim < 1 and 0.6 or 1)
         row.rankFS:SetText(m.rankName)
         row.lvlFS:SetText(L["Lv "] .. m.level)
         row.downBtn:SetShown(canDemote)
@@ -301,6 +342,7 @@ local function BuildInactiveSub(panel)
         local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
         row:SetHeight(ROW_H)
         row:SetBackdrop({ bgFile = WHITE })
+        rule(row)
         row.nameFS = UI:CreateText(row, "", 11)
         row.nameFS:SetPoint("LEFT", 8, 0)
         row.rankFS = UI:CreateText(row, "", 10, C.silver.r, C.silver.g, C.silver.b)
@@ -320,7 +362,7 @@ local function BuildInactiveSub(panel)
         row.member = m
         local alt = (idx % 2 == 0) and C.row1 or C.row2
         row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
-        local cr, cg, cb = GuildOS:GetClassColor(m.class)
+        local cr, cg, cb = classInk(m.class)
         row.nameFS:SetText(m.name)
         row.nameFS:SetTextColor(cr, cg, cb)
         row.rankFS:SetText(m.rankName or "?")
@@ -376,7 +418,7 @@ local function BuildSuggestSub(panel)
         local yOff = 0
 
         -- Trials ready for a decision
-        MakeSectionHeader(content, format(L["TRIALS READY FOR DECISION  (%d)"], #data.trialsReady), yOff, true)
+        MakeSectionHeader(content, format(L["Trials ready for a decision (%d)"], #data.trialsReady), yOff, true)
         yOff = yOff + TITLE_H
         if #data.trialsReady == 0 then
             local none = MakeRow(content, yOff, 1)
@@ -404,6 +446,7 @@ local function BuildSuggestSub(panel)
                 end)
 
                 local okBtn = UI:CreateButton(row, L["Approve"], 64, 18)
+                UI:SetButtonVariant(okBtn, "primary")
                 okBtn:SetPoint("RIGHT", denyBtn, "LEFT", -4, 0)
                 okBtn:SetScript("OnClick", function()
                     GuildOS.TrialTracker:UpdateStatus(key, GuildOS.TrialTracker.STATUS.APPROVED)
@@ -417,7 +460,7 @@ local function BuildSuggestSub(panel)
         yOff = yOff + SECTION_ABOVE
 
         -- Promotion candidates
-        MakeSectionHeader(content, format(L["PROMOTION CANDIDATES  (%d)"], #data.promoteCandidates), yOff)
+        MakeSectionHeader(content, format(L["Promotion candidates (%d)"], #data.promoteCandidates), yOff)
         yOff = yOff + TITLE_H
         if #data.promoteCandidates == 0 then
             local none = MakeRow(content, yOff, 1)
@@ -428,7 +471,7 @@ local function BuildSuggestSub(panel)
             local canPromote = GuildOS.GuildManager:CanPromote()
             for idx, m in ipairs(data.promoteCandidates) do
                 local row = MakeRow(content, yOff, idx)
-                local cr, cg, cb = GuildOS:GetClassColor(m.class)
+                local cr, cg, cb = classInk(m.class)
                 local nameFS = UI:CreateText(row, m.name, 11, cr, cg, cb)
                 nameFS:SetPoint("LEFT", 8, 0)
 
@@ -441,6 +484,7 @@ local function BuildSuggestSub(panel)
                 if canPromote then
                     local fullName = m.fullName
                     local promoBtn = UI:CreateButton(row, L["Promote"], 76, 18)
+                    UI:SetButtonVariant(promoBtn, "primary")
                     promoBtn:SetPoint("RIGHT", -8, 0)
                     promoBtn:SetScript("OnClick", function()
                         GuildOS.GuildManager:Promote(fullName)
@@ -469,7 +513,7 @@ end
 
 local function BuildMotdSub(panel)
     -- MOTD: the screen's first section title (#371), its field under it, both flush with the edges.
-    local motdLabel = UI:CreateSectionTitle(panel, L["MESSAGE OF THE DAY"], true)
+    local motdLabel = sectionTitle(panel, L["Message of the day"], true)
     motdLabel:SetPoint("TOPLEFT", 0, 0)
 
     local motdArea = MakeTextArea(panel, 50)
@@ -479,6 +523,7 @@ local function BuildMotdSub(panel)
     motdBox:SetMaxLetters(128)
 
     local motdBtn = UI:CreateButton(panel, L["Save MOTD"], 110, 24)
+    UI:SetButtonVariant(motdBtn, "primary")
     motdBtn:SetPoint("TOPLEFT", 0, -(TITLE_H + 50 + GAP))
     motdBtn:SetScript("OnClick", function()
         GuildOS.GuildManager:SetMOTD(motdBox:GetText())
@@ -490,7 +535,7 @@ local function BuildMotdSub(panel)
 
     -- Guild Info: a later section, its rule SECTION_ABOVE under the MOTD's button.
     local infoTop = TITLE_H + 50 + GAP + 24 + SECTION_ABOVE
-    local infoLabel = UI:CreateSectionTitle(panel, L["GUILD INFORMATION"])
+    local infoLabel = sectionTitle(panel, L["Guild information"])
     infoLabel:SetPoint("TOPLEFT", 0, -infoTop)
 
     local infoArea = MakeTextArea(panel, 120)
@@ -500,6 +545,7 @@ local function BuildMotdSub(panel)
     infoBox:SetMaxLetters(500)
 
     local infoBtn = UI:CreateButton(panel, L["Save Info"], 110, 24)
+    UI:SetButtonVariant(infoBtn, "primary")
     infoBtn:SetPoint("TOPLEFT", 0, -(infoTop + TITLE_H + 120 + GAP))
     infoBtn:SetScript("OnClick", function()
         GuildOS.GuildManager:SetGuildInfo(infoBox:GetText())
@@ -668,33 +714,47 @@ local function ShowShareDialog(key, name)
         f = CreateFrame("Frame", "GuildOSBanShareDialog", UIParent, "BackdropTemplate")
         f:SetSize(380, 176)
         f:SetPoint("CENTER")
-        f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = UI:Edge(f) })
-        f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-        UI:StylePopup(f)
         f:SetFrameStrata("DIALOG")
         f:EnableMouse(true)
-        f.title = UI:CreateText(f, "", 13, C.text.r, C.text.g, C.text.b)
-        f.title:SetPoint("TOP", 0, -12)
+        f:SetMovable(true)
+        -- A floating window (the mockup's .fw): the question in its header, the form on its dark body.
+        local DY = 0
+        if Kit then
+            Kit:Dress(f, L["Share"])
+            DY = Kit.HEADER_H - 4
+            f:SetHeight(176 + DY)
+            f.title = UI:CreateText(f, "", 12, WOOD.text.r, WOOD.text.g, WOOD.text.b)
+            f.title:SetPoint("TOPLEFT", 14, -(Kit.HEADER_H + 8))
+            f.title:SetPoint("TOPRIGHT", -14, -(Kit.HEADER_H + 8))
+            f.title:SetJustifyH("LEFT")
+        else
+            f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = UI:Edge(f) })
+            f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+            UI:StylePopup(f)
+            f.title = UI:CreateText(f, "", 13, WOOD.text.r, WOOD.text.g, WOOD.text.b)
+            f.title:SetPoint("TOP", 0, -12)
+        end
         local hint = UI:CreateText(f, L["The alliance's officers are alerted about them; nobody is banned for it."],
-            10, C.silver.r, C.silver.g, C.silver.b)
-        hint:SetPoint("TOPLEFT", 14, -34)
-        hint:SetPoint("TOPRIGHT", -14, -34)
+            10, WOOD.silver.r, WOOD.silver.g, WOOD.silver.b)
+        hint:SetPoint("TOPLEFT", 14, -(34 + DY))
+        hint:SetPoint("TOPRIGHT", -14, -(34 + DY))
         hint:SetJustifyH("LEFT")
-        local reasonLbl = UI:CreateText(f, L["Reason"], 11, C.text.r, C.text.g, C.text.b)
-        reasonLbl:SetPoint("TOPLEFT", 14, -66)
+        local reasonLbl = UI:CreateText(f, L["Reason"], 11, WOOD.text.r, WOOD.text.g, WOOD.text.b)
+        reasonLbl:SetPoint("TOPLEFT", 14, -(66 + DY))
         f.reason = UI:CreateDropdown(f, 220, 22)
         f.reason:SetPoint("LEFT", reasonLbl, "RIGHT", 8, 0)
         local opts = {}
         for _, r in ipairs(BL.SHARE_REASONS) do opts[#opts + 1] = { value = r, text = BL.ReasonText(r) } end
         f.reason:SetOptions(opts)
         f.reason:SetPlaceholder(L["Choose a reason"])
-        local noteLbl = UI:CreateText(f, L["Note (optional)"], 11, C.text.r, C.text.g, C.text.b)
-        noteLbl:SetPoint("TOPLEFT", 14, -98)
+        local noteLbl = UI:CreateText(f, L["Note (optional)"], 11, WOOD.text.r, WOOD.text.g, WOOD.text.b)
+        noteLbl:SetPoint("TOPLEFT", 14, -(98 + DY))
         f.note = UI:CreateInput(f, 250, 22, { max = BL.SHARE_NOTE_MAX })
         f.note:SetPoint("LEFT", noteLbl, "RIGHT", 8, 0)
-        f.result = UI:CreateText(f, "", 10, C.red.r, C.red.g, C.red.b)
+        f.result = UI:CreateText(f, "", 10, WOOD.red.r, WOOD.red.g, WOOD.red.b)
         f.result:SetPoint("BOTTOMLEFT", 14, 18)
         f.ok = UI:CreateButton(f, L["Share"], 90, 24)
+        UI:SetButtonVariant(f.ok, "primary")
         f.ok:SetPoint("BOTTOMRIGHT", -14, 12)
         local cancel = UI:CreateButton(f, L["Cancel"], 90, 24)
         cancel:SetPoint("RIGHT", f.ok, "LEFT", -8, 0)
@@ -719,19 +779,17 @@ end
 -- BAN LIST sub-panel — officer blacklist (add / search / remove)
 ----------------------------------------------------------------------
 local function BuildBanSub(panel)
-    -- Header + one-line context: the screen's first section title (#371).
-    local header = UI:CreateSectionTitle(panel, L["BANNED PLAYERS"], true)
-    header:SetPoint("TOPLEFT", 0, 0)
+    -- One line of context under the card's title ("Banned players").
     local hint = UI:CreateText(panel,
         L["Blocked from auto-invite. You're alerted when a banned player rejoins the guild or whispers you."],
         11, C.silver.r, C.silver.g, C.silver.b)
-    hint:SetPoint("TOPLEFT", 0, -TITLE_H)
-    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -TITLE_H)
+    hint:SetPoint("TOPLEFT", 0, 0)
+    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
     hint:SetJustifyH("LEFT")
 
     -- Add form, row 1: player + reason. Form labels in `text`, the shared fields (#371).
     local playerLbl = UI:CreateText(panel, L["Player"], 11, C.text.r, C.text.g, C.text.b)
-    playerLbl:SetPoint("TOPLEFT", 0, -52)
+    playerLbl:SetPoint("TOPLEFT", 0, -28)
     local nameBox = UI:CreateInput(panel, 140, 22, { max = 40 })
     nameBox:SetPoint("LEFT", playerLbl, "RIGHT", 8, 0)
 
@@ -741,8 +799,8 @@ local function BuildBanSub(panel)
     reasonBox:SetPoint("LEFT", reasonLbl, "RIGHT", 8, 0)
 
     -- Add form, row 2: temporary toggle (+days) and the Ban button
-    local tempChk = UI:CreateCheckbox(panel, L["Temporary"], 18)
-    tempChk:SetPoint("TOPLEFT", 0, -84)
+    local tempChk = checkbox(panel, L["Temporary"], 18)
+    tempChk:SetPoint("TOPLEFT", 0, -60)
     local daysBox = UI:CreateInput(panel, 42, 20, { numeric = true, max = 4 })
     daysBox:SetPoint("LEFT", tempChk, "LEFT", 104, 0)
     local daysLbl = UI:CreateText(panel, L["days"], 11, C.text.r, C.text.g, C.text.b)
@@ -754,7 +812,8 @@ local function BuildBanSub(panel)
     end
 
     local banBtn = UI:CreateButton(panel, L["Ban player"], 110, 24)
-    banBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -82)
+    UI:SetButtonVariant(banBtn, "primary")
+    banBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -58)
 
     local function doAdd()
         local n = strtrim(nameBox:GetText())
@@ -778,30 +837,30 @@ local function BuildBanSub(panel)
     daysBox:SetScript("OnEnterPressed", doAdd)
 
     -- Divider between the form and the list
-    local sep = UI:CreateSeparator(panel)
-    sep:SetPoint("TOPLEFT", 0, -114)
-    sep:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -114)
+    local sep = separator(panel)
+    sep:SetPoint("TOPLEFT", 0, -90)
+    sep:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -90)
 
     -- Filter + column headers: the shared table header, its labels over the cells below (#371).
     local filterLbl = UI:CreateText(panel, L["Filter"], 11, C.text.r, C.text.g, C.text.b)
-    filterLbl:SetPoint("TOPLEFT", 0, -128)
+    filterLbl:SetPoint("TOPLEFT", 0, -104)
     local searchBox = UI:CreateInput(panel, 180, 20)
     searchBox:SetPoint("LEFT", filterLbl, "RIGHT", 8, 0)
 
     local CELL_X = { 0, 152, 332, 422 }
-    local localHeader = MakeTableHeader(panel, { { L["PLAYER"], CELL_X[1] }, { L["REASON"], CELL_X[2] },
-        { L["BY"], CELL_X[3] }, { L["EXPIRES"], CELL_X[4] } }, 146)
+    local localHeader = MakeTableHeader(panel, { { L["Player"], CELL_X[1] }, { L["Reason"], CELL_X[2] },
+        { L["By"], CELL_X[3] }, { L["Expires"], CELL_X[4] } }, 122)
     -- The alliance's bans this client holds (#408): read-only, in memory, the guild that banned and when.
-    local allyHeader = MakeTableHeader(panel, { { L["PLAYER"], CELL_X[1] }, { L["REASON"], CELL_X[2] },
-        { L["GUILD"], CELL_X[3] }, { L["DATE"], CELL_X[4] } }, 146)
+    local allyHeader = MakeTableHeader(panel, { { L["Player"], CELL_X[1] }, { L["Reason"], CELL_X[2] },
+        { L["Guild"], CELL_X[3] }, { L["Date"], CELL_X[4] } }, 122)
     allyHeader:Hide()
     local showAlliance = false
     local allyBtn = UI:CreateButton(panel, L["Alliance bans"], 120, 20)
-    allyBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -126)
+    allyBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -102)
 
     -- List
     local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 0, -(146 + 22 + 4))
+    listHolder:SetPoint("TOPLEFT", 0, -(122 + 22 + 4))
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSMgmtBanScroll")
 
@@ -814,6 +873,7 @@ local function BuildBanSub(panel)
         if row then return row end
         row = CreateFrame("Frame", nil, content)
         row:SetHeight(ROW_H)
+        rule(row)
         row.cells = {}
         for c = 1, 4 do
             local fs = UI:CreateText(row, "", 11, C.text.r, C.text.g, C.text.b)
@@ -900,7 +960,7 @@ local function BuildBanSub(panel)
         local inGuild = (BA and GuildOS.BanList and filter == "")
             and GuildOS.BanList:StillInGuild(BA:Collect(false), BA:Context().meKey, now) or {}
         if #inGuild > 0 then
-            stillTitle:SetText(string.format(L["BANNED STILL IN THE GUILD (%d)"], #inGuild))
+            stillTitle:SetText(string.format(L["Banned and still in the guild (%d)"], #inGuild))
             stillTitle:ClearAllPoints(); stillTitle:SetPoint("TOPLEFT", 0, -y); stillTitle:Show()
             stillAll:ClearAllPoints(); stillAll:SetPoint("TOPRIGHT", 0, -y); stillAll:Show()
             stillAll:SetScript("OnClick", function() BA:StartListAndSay("remove", inGuild) end)
@@ -1013,8 +1073,8 @@ local function BuildEngageSub(panel)
     local COLS = { name = 8, status = 150, posts = 280, invites = 350, joined = 430, last = 510 }
     local headTop = 18 + 14 + GAP
     MakeTableHeader(panel, {
-        { L["MEMBER"], COLS.name }, { L["STATUS"], COLS.status }, { L["POSTS"], COLS.posts },
-        { L["INVITES"], COLS.invites }, { L["JOINED"], COLS.joined }, { L["LAST"], COLS.last },
+        { L["Member"], COLS.name }, { L["Status"], COLS.status }, { L["Posts"], COLS.posts },
+        { L["Invites"], COLS.invites }, { L["Joined"], COLS.joined }, { L["Last"], COLS.last },
     }, headTop)
 
     local listHolder = CreateFrame("Frame", nil, panel)
@@ -1161,10 +1221,7 @@ local function BuildPresetsSub(panel)
     panel.expanded = {}
     panel.showChooser = false
 
-    -- The screen's first section title, on the line of its one action (#371).
-    local title = UI:CreateSectionTitle(panel, L["MODERATION PRESETS"], true)
-    title:SetPoint("TOPLEFT", 0, -2)
-
+    -- The card's title says what this is ("Moderation presets"); its one action at the top right.
     local newBtn = UI:CreateButton(panel, L["+ New"], 80, 22)
     newBtn:SetPoint("TOPRIGHT", 0, 0)
 
@@ -1239,6 +1296,7 @@ local function BuildPresetsSub(panel)
             block:SetBackdrop({ bgFile = WHITE })
             local alt = (idx % 2 == 0) and C.row1 or C.row2
             block:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
+            rule(block)
 
             -- Header line: name + criteria summary + remove. The name in `text`, not gold (#371).
             local nameFS = UI:CreateText(block, MP:Name(preset), 12, C.text.r, C.text.g, C.text.b)
@@ -1282,6 +1340,7 @@ local function BuildPresetsSub(panel)
             countFS:SetPoint("TOPLEFT", math.max(x + 8, 320), cy - 2)
 
             local applyBtn = UI:CreateButton(block, L["Apply"], 70, 20)
+            UI:SetButtonVariant(applyBtn, "primary")
             applyBtn:SetPoint("TOPRIGHT", -8, cy)
             applyBtn:SetScript("OnClick", function()
                 if not GuildOS:IsOfficer() then GuildOS:Print(L["Officers only."]) return end
@@ -1353,6 +1412,7 @@ function GuildOS:CreateManagementPanel(parent, _mainFrame)
     local function selectSub(key)
         parent.activeSub = key
         for k, info in pairs(parent.subPanels) do
+            if info.card then info.card:SetShown(k == key) end
             info.panel:SetShown(k == key)
         end
         for k, btn in pairs(subTabBtns) do
@@ -1362,7 +1422,12 @@ function GuildOS:CreateManagementPanel(parent, _mainFrame)
         if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
     parent.SelectSub = selectSub   -- deep links: /gos banlist, the Now tab
-    UI:CollapsibleSubBar(parent, bar, function() return parent.subPanels end, { 0, -GAP })   -- the Officers' Room (#445)
+    -- The cards move up when the room hides the bar (#445).
+    UI:CollapsibleSubBar(parent, bar, function()
+        local cards = {}
+        for k, info in pairs(parent.subPanels) do cards[k] = info.card or info.panel end
+        return cards
+    end, { 0, -GAP })   -- the Officers' Room (#445)
 
     -- Refresh whatever sub-panel is currently visible (used by GuildManager).
     parent.RefreshActive = function()
@@ -1386,11 +1451,18 @@ function GuildOS:CreateManagementPanel(parent, _mainFrame)
     -- two-row tab bar pushes the content down instead of overlapping it.
     -- Flush with the bar's left edge, GAP under it, ending GAP short of its right edge (the bar spans
     -- the parent less 10px a side), as every screen's content does (#371).
-    local function makeSubPanel()
-        local p = CreateFrame("Frame", nil, parent)
-        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -GAP)
-        p:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -(10 + GAP), 10)
-        p:Hide()
+    -- Each screen is a parchment card titled as the mockup's (TITLES), its parts on the paper inside it: the
+    -- card is what shows and hides, `panel` the area its builder draws in.
+    local PAD, TOP = tonumber(UI.CARD_PAD) or 14, tonumber(UI.CARD_TOP) or 36
+    local function makeSubPanel(key)
+        local card = UI:CreateCard(parent, TITLES[key] or "")
+        card:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -GAP)
+        card:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -(10 + GAP), 10)
+        card:Hide()
+        local p = CreateFrame("Frame", nil, card)
+        p:SetPoint("TOPLEFT", PAD, -TOP)
+        p:SetPoint("BOTTOMRIGHT", -PAD, PAD - 4)
+        p.card = card
         return p
     end
 
@@ -1410,9 +1482,9 @@ function GuildOS:CreateManagementPanel(parent, _mainFrame)
         alertrules = function(p) return GuildOS.BuildModRulesSub and GuildOS:BuildModRulesSub(p) end,
     }
     for _, t in ipairs(SUBTABS) do
-        local p = makeSubPanel()
+        local p = makeSubPanel(t.key)
         local refresh = builders[t.key](p)
-        parent.subPanels[t.key] = { panel = p, refresh = refresh }
+        parent.subPanels[t.key] = { panel = p, card = rawget(p, "card"), refresh = refresh }
     end
 
     parent:SetScript("OnShow", function()

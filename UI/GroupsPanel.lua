@@ -44,6 +44,10 @@ local GROUP_H = ROW_ACT + 20 + 8
 -- My group as the leader's panel, and the summary over Active (#378), in one table: the tab's builder
 -- is one function, and Lua 5.1 lets a function reach at most 60 of the file's locals.
 local K = {}
+-- The card the view sits on (the Salão's, #449): its inset, where its content starts, the pills' height.
+K.PAD = type(UI.CARD_PAD) == "number" and UI.CARD_PAD or 14
+K.CARD_TOP = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
+K.CHIP_H = 22
 K.SEATS = BAND_H + 10
 K.FILL = K.SEATS + SLOT + 10
 K.META = K.FILL + 14
@@ -613,18 +617,23 @@ function GuildOS:CreateGroupsPanel(parent)
     -- With the game's icons a player's roles take three squares; spelled out they need the room.
     local rolesW = roleArtKind() and ROLE_ICONS_W or ROLES_W
 
-    -- Sub-tabs. Anchored on the left only: UI:FlowBar reads GetWidth to wrap (as the Guild hub).
-    local bar = CreateFrame("Frame", nil, parent)
-    bar:SetPoint("TOPLEFT", 10, -8)
-    bar:SetSize(400, TAB_H)
-    UI:StyleSubTabBar(bar)
+    -- One dark card on the wood (the mockup's raides-grupos): its title, what I play and the two actions on
+    -- the first line, the sub-tabs as pills under it, then the view. GAP under the room's entries.
+    local view = UI:CreateCard(parent, L["Guild groups"], { dark = true })
+    view:SetPoint("TOPLEFT", 0, -GAP)
+    view:SetPoint("BOTTOMRIGHT", -GAP, GAP)
+    parent.card = view
+
+    -- Sub-tabs, as pills. Anchored on the left only: UI:FlowBar reads GetWidth to wrap (as the Guild hub).
+    local bar = CreateFrame("Frame", nil, view)
+    bar:SetPoint("TOPLEFT", K.PAD, -(K.CARD_TOP + 30))
+    bar:SetSize(400, K.CHIP_H)
     local subTabs, subList = {}, {}
 
-    -- Actions: what I play, listing myself, forming a group. Flush with the bar's left edge, UI.GAP
-    -- under it, and ending UI.GAP short of its right edge, as every screen's content does (#371).
-    local actions = CreateFrame("Frame", nil, parent)
-    actions:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -UI.GAP)
-    actions:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", -UI.GAP, -UI.GAP)
+    -- Actions: what I play, listing myself, forming a group, on the card's first line.
+    local actions = CreateFrame("Frame", nil, view)
+    actions:SetPoint("TOPLEFT", K.PAD, -K.CARD_TOP + 4)
+    actions:SetPoint("TOPRIGHT", -K.PAD, -K.CARD_TOP + 4)
     actions:SetHeight(26)
 
     local rolesLabel = UI:CreateText(actions, L["I PLAY"], 11)   -- a form label (#371)
@@ -649,8 +658,8 @@ function GuildOS:CreateGroupsPanel(parent)
     -- reaches that far past the actions' right edge: the content then ends where the actions do, and
     -- nothing on its right (the scope button) runs under the bar (#371).
     local scroll, content = UI:CreateScrollFrame(parent, "GuildOSGroupsScroll")
-    scroll:SetPoint("TOPLEFT", actions, "BOTTOMLEFT", 0, -UI.GAP)
-    scroll:SetPoint("BOTTOMRIGHT", -(10 + UI.GAP - UI.SCROLL_GUTTER), 8)
+    scroll:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -10)
+    scroll:SetPoint("BOTTOMRIGHT", view, "BOTTOMRIGHT", -(K.PAD - UI.SCROLL_GUTTER), 10)
     UI:BindScrollChildWidth(scroll, content)
 
     ------------------------------------------------------------------
@@ -744,9 +753,10 @@ function GuildOS:CreateGroupsPanel(parent)
         return -x
     end
 
+    -- A group's box: the wood's rounded inset with its line, on the dark card.
     local function panelFrame()
         local f = CreateFrame("Frame", nil, content, "BackdropTemplate")
-        f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(f) })
+        if GuildOS.Style then GuildOS.Style:Paint(f, "panel") end
         f:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1)
         f:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
         return f
@@ -1233,7 +1243,7 @@ function GuildOS:CreateGroupsPanel(parent)
             for i, chip in ipairs(f.chips) do chip:SetPoint("TOPLEFT", (i - 1) * 110, 0) end
             f.filters = {}
             for _, def in ipairs(K.FILTERS) do
-                local b = fit(smallButton(f), def.label)
+                local b = fit(smallButton(f, "chip"), def.label)   -- a filter is a pill (#449)
                 local key = def.key
                 b:SetScript("OnClick", function()
                     B:SetPref("filterCat", key)
@@ -1241,7 +1251,7 @@ function GuildOS:CreateGroupsPanel(parent)
                 end)
                 f.filters[#f.filters + 1] = { key = key, button = b }
             end
-            f.level = fit(smallButton(f), L["My level only"])
+            f.level = fit(smallButton(f, "chip"), L["My level only"])
             f.level:SetScript("OnClick", function()
                 B:SetPref("filterLevel", not B:Pref("filterLevel"))
                 paint()
@@ -1527,20 +1537,20 @@ function GuildOS:CreateGroupsPanel(parent)
         local known = false
         for _, t in ipairs(SUBS) do known = known or t.key == key end
         parent.activeSub = known and key or "active"
-        for k, btn in pairs(subTabs) do btn:SetActive(k == parent.activeSub) end
+        for k, btn in pairs(subTabs) do UI:SetSelected(btn, k == parent.activeSub) end
         scroll:SetVerticalScroll(0)
         GuildOS:SafeCall(paint)
     end
     parent.SelectSub = selectSub   -- deep links: /gos avail, Guild > Call to Arms
 
     for _, t in ipairs(SUBS) do
-        local btn = UI:CreateTab(bar, t.label, TAB_MIN_W, true)
-        btn:SetWidth(math.max(TAB_MIN_W, math.ceil(btn.label:GetStringWidth()) + TAB_PAD))
+        local btn = UI:SetButtonVariant(UI:CreateButton(bar, t.label, 40, K.CHIP_H), "chip")
+        btn:SetWidth(math.ceil(btn.label:GetStringWidth() or 40) + 22)
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabs[t.key] = btn
         subList[#subList + 1] = btn
     end
-    UI:FlowBar(bar, subList, { gap = 4, rowGap = 4, rowH = TAB_H })
+    UI:FlowBar(bar, subList, { gap = 6, rowGap = 4, rowH = K.CHIP_H })
 
     for _, letter in ipairs(LETTERS) do
         myChips[letter]:SetScript("OnClick", function()
@@ -1580,8 +1590,8 @@ function GuildOS:CreateGroupsPanel(parent)
         GuildOS:SafeCall(paint)
     end)
     UI:MakeResponsive(parent, function(_, w)
-        bar:SetWidth(math.max(TAB_MIN_W, w - 20))
-        UI:FlowBar(bar, subList, { gap = 4, rowGap = 4, rowH = TAB_H })
+        bar:SetWidth(math.max(TAB_MIN_W, w - GAP - 2 * K.PAD))
+        UI:FlowBar(bar, subList, { gap = 6, rowGap = 4, rowH = K.CHIP_H })
         GuildOS:SafeCall(paint)
     end)
 end

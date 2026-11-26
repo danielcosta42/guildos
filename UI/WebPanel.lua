@@ -270,21 +270,9 @@ local function buildPrompt()
     local f = CreateFrame("Frame", "GuildOSRaidPromptFrame", UIParent, "BackdropTemplate")
     f:SetSize(PROMPT_W, PROMPT_H)
     f:SetPoint("TOP", UIParent, "TOP", 0, -140)
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(f) })
-    f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 0.98)
-    UI:StylePopup(f, { shadowSize = 16 })
     f:SetFrameStrata("HIGH")
     f:SetMovable(true)
     f:EnableMouse(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-
-    f.title = UI:CreateTitle(f, "", 15)
-    f.title:SetPoint("TOPLEFT", 16, -14)
-    f.title:SetPoint("RIGHT", f, "RIGHT", -36, 0)
-    f.title:SetJustifyH("LEFT")
-    f.title:SetWordWrap(false)
 
     -- Put off (Later, or the close button), not done: the digest that gave way to it at login has its turn.
     -- Later asks again in a while (audit B18); the close button does not.
@@ -292,12 +280,33 @@ local function buildPrompt()
         f:Hide()
         if GuildOS.RaidStart then GuildOS.RaidStart:PromptDismissed(f.roster, later == true) end
     end
-    f.close = UI:CreateCloseButton(f)
-    f.close:SetPoint("TOPRIGHT", -8, -8)
-    f.close:SetScript("OnClick", function() putOff(false) end)
+    -- A floating window (the mockup's .fw): the raid's name in Cinzel gold in its header, the round red close.
+    local Kit = rawget(GuildOS, "Kit")
+    local DY = 0
+    if Kit then
+        Kit:Dress(f, "", { onClose = function() putOff(false) end })
+        f.title, f.close = f.titleText, f.closeBtn
+        DY = Kit.HEADER_H - 30
+        f:SetHeight(PROMPT_H + DY)
+    else
+        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(f) })
+        f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 0.98)
+        UI:StylePopup(f, { shadowSize = 16 })
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+        f.title = UI:CreateTitle(f, "", 15)
+        f.title:SetPoint("TOPLEFT", 16, -14)
+        f.title:SetPoint("RIGHT", f, "RIGHT", -36, 0)
+        f.title:SetJustifyH("LEFT")
+        f.title:SetWordWrap(false)
+        f.close = UI:CreateCloseButton(f)
+        f.close:SetPoint("TOPRIGHT", -8, -8)
+        f.close:SetScript("OnClick", function() putOff(false) end)
+    end
 
     f.when = UI:CreateText(f, "", 11, C.label.r, C.label.g, C.label.b)
-    f.when:SetPoint("TOPLEFT", 16, -42)
+    f.when:SetPoint("TOPLEFT", 16, -(42 + DY))
     f.when:SetJustifyH("LEFT")
 
     -- The button on the raid this prompt is about, in its newest copy (a roster pasted since the inbox was read, with
@@ -312,7 +321,7 @@ local function buildPrompt()
         paint = function() if f.roster then f.when:SetText(promptWhen(raid())) end end,
         width = 200, height = PROMPT_BTN_H,
     }), "primary")
-    f.go:SetPoint("TOPLEFT", 16, -70)
+    f.go:SetPoint("TOPLEFT", 16, -(70 + DY))
     f.go.why:SetPoint("TOPLEFT", f.go, "BOTTOMLEFT", 0, -6)
     f.go.why:SetWidth(PROMPT_W - 32)
     -- Two lines fit above Later: a long list of who is offline is cut there, not drawn under the button.

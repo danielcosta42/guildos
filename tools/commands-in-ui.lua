@@ -45,7 +45,7 @@ local IN_UI = {
   bulletin    = { { "UI/CommunityPanel.lua", "BuildBulletinSub" } },
   -- The guild's rules are the Guild hub's Rules sub-tab, for every member (issue #407).
   rules       = { { "UI/CommunityPanel.lua", "BuildGuildRulesSub" } },
-  polls       = { { "UI/CommunityPanel.lua", "drawPolls(child, y)" } },
+  polls       = { { "UI/CommunityPanel.lua", "GuildOS.Polls:Vote(id, oi)" } },
   calendar    = { { "UI/CommunityPanel.lua", "CreateCalendarSub" } },
   cta         = { { "UI/CommunityPanel.lua", "BuildCallToArmsSub" } },
   analytics   = { { "UI/RosterFrame.lua", "GuildOS.GuildAnalytics:Show()" } },

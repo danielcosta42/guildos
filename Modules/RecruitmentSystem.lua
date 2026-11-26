@@ -1132,84 +1132,81 @@ function Recruitment:CreatePopupFrame()
 
     local C  = GuildOS.Colors
     local UI = GuildOS.UI
-    local PAD, WIDTH = 14, 360
+    local Kit = rawget(GuildOS, "Kit")
+    local PAD, WIDTH = 14, 380
     local cw = WIDTH - PAD * 2
 
+    -- A floating window (the mockup's .fw): the metal frame, the header with "Recruitment" in Cinzel gold
+    -- and the round red close, the channel line and the ad on the dark body, Post and Not now in the footer.
     local f = CreateFrame("Frame", "GuildOSRecruitPopup", UIParent, "BackdropTemplate")
     f:SetSize(WIDTH, 150)
     f:SetPoint("TOP", UIParent, "TOP", 0, -80)
-    f:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GuildOS.UI:Edge(f),
-    })
-    f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
     f:SetFrameStrata("DIALOG")
-    UI:StylePopup(f)
     f:SetMovable(true)
     f:EnableMouse(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     f:Hide()
-
-    -- Title: brand + localized subtitle ("Guild OS  ·  Recruitment"), in the text colour: gold is the
-    -- selection's, the primary button's and the active tab's (#371).
-    local title = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(title, 13)
-    title:SetPoint("TOPLEFT", PAD, -12)
-    title:SetTextColor(C.text.r, C.text.g, C.text.b)
-    title:SetText("Guild OS  |cff6c6c78" .. L["Recruitment"] .. "|r")
-
-    local sep = UI:CreateSeparator(f)
-    sep:SetPoint("TOPLEFT", PAD, -30)
-    sep:SetPoint("TOPRIGHT", -PAD, -30)
-
-    -- x dismiss (top-right).
-    local dismiss = CreateFrame("Button", nil, f)
-    dismiss:SetSize(20, 20)
-    dismiss:SetPoint("TOPRIGHT", -4, -6)
-    local dText = dismiss:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(dText, 14)
-    dText:SetPoint("CENTER")
-    dText:SetText("x")
-    dText:SetTextColor(0.6, 0.6, 0.6)
-    dismiss:SetScript("OnEnter", function() dText:SetTextColor(1, 0.3, 0.3) end)
-    dismiss:SetScript("OnLeave", function() dText:SetTextColor(0.6, 0.6, 0.6) end)
-    dismiss:SetScript("OnClick", function() f:Hide() end)
+    local top
+    if Kit then
+        Kit:Dress(f, L["Recruitment"], { sub = "Guild OS" })
+        Kit:Footer(f)
+        top = Kit.HEADER_H + 10
+    else
+        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = GuildOS.UI:Edge(f) })
+        f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
+        f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+        UI:StylePopup(f)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+        local title = f:CreateFontString(nil, "OVERLAY")
+        GuildOS:ApplyFont(title, 13)
+        title:SetPoint("TOPLEFT", PAD, -12)
+        title:SetTextColor(C.text.r, C.text.g, C.text.b)
+        title:SetText("Guild OS  " .. L["Recruitment"])
+        local close = UI:CreateCloseButton(f)
+        close:SetPoint("TOPRIGHT", -6, -6)
+        close:SetScript("OnClick", function() f:Hide() end)
+        top = 38
+    end
+    f.top = top
 
     -- Target channel line.
     local channelLine = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(channelLine, 11)
-    channelLine:SetPoint("TOPLEFT", PAD, -38)
+    channelLine:SetPoint("TOPLEFT", PAD, -top)
     channelLine:SetWidth(cw)
     channelLine:SetJustifyH("LEFT")
-    channelLine:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+    channelLine:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
     f.channelLine = channelLine
 
-    -- Message preview (wrapped; sized in ShowSendPopup).
+    -- Message preview (wrapped; sized in ShowSendPopup), in the reading face on the window's light wash
+    -- (the mockup's `.fw .msg`).
     local msgText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(msgText, 12)
-    msgText:SetPoint("TOPLEFT", PAD, -58)
-    msgText:SetWidth(cw)
+    GuildOS:ApplyFont(msgText, 12, "reading")
+    msgText:SetPoint("TOPLEFT", PAD + 8, -(top + 26))
+    msgText:SetWidth(cw - 16)
     msgText:SetJustifyH("LEFT")
     msgText:SetTextColor(C.text.r, C.text.g, C.text.b)
     f.msgText = msgText
+    local wash = f:CreateTexture(nil, "BORDER")
+    wash:SetTexture("Interface\\Buttons\\WHITE8x8")
+    wash:SetVertexColor(1, 1, 1, 0.07)
+    wash:SetPoint("TOPLEFT", msgText, "TOPLEFT", -8, 6)
+    wash:SetPoint("BOTTOMRIGHT", msgText, "BOTTOMRIGHT", 8, -6)
 
     -- "Join a channel" hint, shown instead of a dead Postar when nothing is joined.
     local hint = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(hint, 11)
     hint:SetWidth(cw)
     hint:SetJustifyH("LEFT")
-    hint:SetTextColor(C.red.r, C.red.g, C.red.b)
+    hint:SetTextColor(C.danger.r, C.danger.g, C.danger.b)
     hint:Hide()
     f.hint = hint
 
     -- Postar (the send): a hardware OnClick so SendChatMessage to a channel works.
     -- The popup's one action is its primary button, not a green fill (#371).
-    local postBtn = UI:CreateButton(f, L["Post"], 120, 26)
-    postBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -5, 14)
+    local postBtn = UI:CreateButton(f.foot or f, L["Post"], 110, 24)
     UI:SetButtonVariant(postBtn, "primary")
     postBtn:SetScript("OnClick", function()
         Recruitment:DoSendRecruitmentMessage()
@@ -1218,10 +1215,21 @@ function Recruitment:CreatePopupFrame()
     f.postBtn = postBtn
 
     -- "Agora nao" / dismiss.
-    local laterBtn = UI:CreateButton(f, L["Not now"], 120, 26)
-    laterBtn:SetPoint("BOTTOMLEFT", f, "BOTTOM", 5, 14)
+    local laterBtn = UI:CreateButton(f.foot or f, L["Not now"], 110, 24)
     laterBtn:SetScript("OnClick", function() f:Hide() end)
     f.laterBtn = laterBtn
+    -- The footer lays the answers from the right, the post first; with no kit, centred as before.
+    function f:LayButtons()
+        if self.foot then
+            self.foot:Lay(postBtn, laterBtn)
+        else
+            postBtn:ClearAllPoints()
+            postBtn:SetPoint("BOTTOMRIGHT", self, "BOTTOM", -5, 14)
+            laterBtn:ClearAllPoints()
+            laterBtn:SetPoint("BOTTOMLEFT", self, "BOTTOM", 5, 14)
+        end
+    end
+    f:LayButtons()
 
     self.popupFrame = f
 end
@@ -1232,53 +1240,64 @@ end
 ----------------------------------------------------------------------
 local function ActionPopup(title, y, okText, laterText)
     local C, UI = GuildOS.Colors, GuildOS.UI
-    local PAD, WIDTH = 14, 360
+    local Kit = rawget(GuildOS, "Kit")
+    local PAD, WIDTH = 14, 380
     local f = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     f:SetSize(WIDTH, 120)
     f:SetPoint("TOP", UIParent, "TOP", 0, y)
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
-    f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
     f:SetFrameStrata("DIALOG")
-    UI:StylePopup(f)
     f:SetMovable(true)
     f:EnableMouse(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); self.moved = true end)
     f:Hide()
-
-    local t = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(t, 13)
-    t:SetPoint("TOPLEFT", PAD, -12)
-    t:SetTextColor(C.text.r, C.text.g, C.text.b)   -- the text colour, as the recruit popup's (#371)
-    t:SetText("Guild OS  |cff6c6c78" .. title .. "|r")
-    local sep = UI:CreateSeparator(f)
-    sep:SetPoint("TOPLEFT", PAD, -30)
-    sep:SetPoint("TOPRIGHT", -PAD, -30)
+    -- A floating window as the recruit popup (the mockup's .fw): the title in its header, the answers in its footer.
+    local top
+    if Kit then
+        Kit:Dress(f, title, { sub = "Guild OS" })
+        Kit:Footer(f)
+        top = Kit.HEADER_H + 10
+    else
+        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
+        f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
+        f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+        UI:StylePopup(f)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); self.moved = true end)
+        local t = f:CreateFontString(nil, "OVERLAY")
+        GuildOS:ApplyFont(t, 13)
+        t:SetPoint("TOPLEFT", PAD, -12)
+        t:SetTextColor(C.text.r, C.text.g, C.text.b)
+        t:SetText("Guild OS  " .. title)
+        top = 38
+    end
 
     f.line = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(f.line, 12)
-    f.line:SetPoint("TOPLEFT", PAD, -38)
+    f.line:SetPoint("TOPLEFT", PAD, -top)
     f.line:SetWidth(WIDTH - PAD * 2)
     f.line:SetJustifyH("LEFT")
     f.line:SetTextColor(C.text.r, C.text.g, C.text.b)
 
     f.note = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(f.note, 10)
-    f.note:SetPoint("TOPLEFT", f.line, "BOTTOMLEFT", 0, -4)
+    GuildOS:ApplyFont(f.note, 11, "reading")
+    f.note:SetPoint("TOPLEFT", f.line, "BOTTOMLEFT", 0, -6)
     f.note:SetWidth(WIDTH - PAD * 2)
     f.note:SetJustifyH("LEFT")
-    f.note:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+    f.note:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
 
-    f.okBtn = UI:CreateButton(f, okText, 140, 26)
-    f.okBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -5, 12)
+    f.okBtn = UI:CreateButton(f.foot or f, okText, 130, 24)
     UI:SetButtonVariant(f.okBtn, "primary")   -- the click the popup carries, not a green fill (#371)
-    f.laterBtn = UI:CreateButton(f, laterText, 140, 26)
-    f.laterBtn:SetPoint("BOTTOMLEFT", f, "BOTTOM", 5, 12)
+    f.laterBtn = UI:CreateButton(f.foot or f, laterText, 130, 24)
+    if f.foot then
+        f.foot:Lay(f.okBtn, f.laterBtn)
+    else
+        f.okBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -5, 12)
+        f.laterBtn:SetPoint("BOTTOMLEFT", f, "BOTTOM", 5, 12)
+    end
     -- Grow to the text, like the recruit popup: the note is the line the click posts.
+    local footH = Kit and Kit.FOOT_H or 50
     function f:Fit()
-        self:SetHeight(38 + self.line:GetStringHeight() + 4 + self.note:GetStringHeight() + 12 + 26 + 12)
+        self:SetHeight(top + self.line:GetStringHeight() + 6 + self.note:GetStringHeight() + 14 + footH)
     end
     return f
 end
@@ -1337,7 +1356,7 @@ function Recruitment:ShowSendPopup()
 
     -- Layout: size the frame to the wrapped message, then the button row (or the
     -- join-channel hint if nothing is joined).
-    local y = 58 + math.max(f.msgText:GetStringHeight() or 14, 14) + 12
+    local y = (f.top or 38) + 26 + math.max(f.msgText:GetStringHeight() or 14, 14) + 16
     if joined == 0 then
         f.hint:ClearAllPoints()
         f.hint:SetPoint("TOPLEFT", PAD, -y)
@@ -1349,7 +1368,8 @@ function Recruitment:ShowSendPopup()
         f.hint:Hide()
         f.postBtn:Show()
     end
-    f:SetHeight(y + 26 + 14)
+    f:LayButtons()
+    f:SetHeight(y + (f.foot and rawget(GuildOS, "Kit") and GuildOS.Kit.FOOT_H or 40))
     f:Show()
 
     -- Auto-hide after 30s if not acted on.

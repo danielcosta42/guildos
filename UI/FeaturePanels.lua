@@ -87,9 +87,16 @@ local function RefreshCoreSignupFrame()
     -- One card a core (issue #346, Inscricao.dc.html): its name and size and where the player
     -- stands with it, always in sight; when it raids and who leads it; its loot rule in one line;
     -- the role coverage; and the one action that applies, Cancel request as visible as Ask.
+    -- Each card is parchment on the popup's dark (the mockup's raides-core): its text takes the paper's ink.
     local y = 0
-    local CARD_PAD = 8
+    local CARD_PAD = 12
+    local function ink(col)
+        if col == C.text then return C.paperInk end
+        if col == C.textDim or col == C.silver or col == C.textSoft or col == C.labelDim or col == C.label then return C.paperSoft end
+        return { r = col.r * 0.6, g = col.g * 0.6, b = col.b * 0.6 }
+    end
     local function line(text, size, col, x, yy, w)
+        col = ink(col)
         local fs = UI:CreateText(content, text, size, col.r, col.g, col.b)
         fs:SetPoint("TOPLEFT", x, yy)
         if w then fs:SetWidth(w) end
@@ -104,17 +111,17 @@ local function RefreshCoreSignupFrame()
         local raidSize = CM:GetRaidSize(coreName)
         local top      = y
 
-        -- The card's surface: a panel with a 1px line, gold when the player is on the core.
+        -- The card's surface: the parchment, under the texts drawn on the list.
         local card = CreateFrame("Frame", nil, content, "BackdropTemplate")
         card:SetPoint("TOPLEFT", 0, y)
         card:SetWidth(W)
-        if GuildOS.Style then GuildOS.Style:Paint(card, "panel") end
-        if st.member then card:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1) end
+        if GuildOS.Style then GuildOS.Style:Paint(card, "paper") end
         card:SetFrameLevel(content:GetFrameLevel())
 
-        -- Name, size, and the state on the right.
+        -- Name, size, and the state on the right, as the mockup's badge.
         local nameFS = line(coreName, nil, C.text, CARD_PAD, y - CARD_PAD)
         GuildOS:ApplyFont(nameFS, nil, "sectionTitle")
+        nameFS:SetTextColor(C.paperTitle.r, C.paperTitle.g, C.paperTitle.b)
         local sizeBadge = UI:CreateBadge(content, tostring(raidSize))
         sizeBadge:SetPoint("LEFT", nameFS, "RIGHT", 8, 0)
         local state, stateCol
@@ -131,11 +138,12 @@ local function RefreshCoreSignupFrame()
                 local n = st.missing[role] or 0
                 if n > 0 then short[#short + 1] = string.format(L["%d %s"], n, CM.ROLE_LABELS[role] or role) end
             end
-            state, stateCol = #short > 0 and string.format(L["missing %s"], table.concat(short, ", ")) or "", C.silver
+            state, stateCol = #short > 0 and string.format(L["missing %s"], table.concat(short, ", ")) or "", C.warn
         end
-        local stateFS = UI:CreateText(content, state, 10, stateCol.r, stateCol.g, stateCol.b)
-        stateFS:SetPoint("TOPRIGHT", -CARD_PAD, y - CARD_PAD - 2)
-        stateFS:SetJustifyH("RIGHT")
+        if state ~= "" then
+            local stateBadge = UI:CreateBadge(content, state, stateCol)
+            stateBadge:SetPoint("TOPRIGHT", -CARD_PAD, y - CARD_PAD - 1)
+        end
         f.states = f.states or {}
         f.states[coreName] = state
         y = y - 26
@@ -151,7 +159,7 @@ local function RefreshCoreSignupFrame()
             line(string.format(L["Loot: %s"], LR:ModelName(site or LR:For(coreName))), 10, C.text, CARD_PAD, y, W - 2 * CARD_PAD - 130)
         end
         if st.presence then
-            local presFS = UI:CreateText(content, string.format(L["your presence %d%%"], st.presence), 10, C.silver.r, C.silver.g, C.silver.b)
+            local presFS = UI:CreateText(content, string.format(L["your presence %d%%"], st.presence), 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
             presFS:SetPoint("TOPRIGHT", -CARD_PAD, y)
         end
         y = y - 18
@@ -167,7 +175,7 @@ local function RefreshCoreSignupFrame()
         local rx = CARD_PAD
         for _, rd in ipairs(ROLE_DEFS) do
             local cnt  = roles[rd.key] or 0
-            local rcol = CM.ROLE_COLORS[rd.key] or C.text
+            local rcol = ink(CM.ROLE_COLORS[rd.key] or C.text)
             local isMine = (rd.key == playerRole)
             local rlbl = content:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(rlbl, isMine and 12 or 10)
@@ -230,7 +238,7 @@ local function RefreshCoreSignupFrame()
     -- Where the requests of a Discord core go, under the cards.
     if CM:IsLinked() then
         local foot = UI:CreateText(content, L["The requests for a Discord core go to Discord: its leader answers there and the answer comes back here."],
-            9, C.textDim.r, C.textDim.g, C.textDim.b)
+            10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
         foot:SetPoint("TOPLEFT", 2, y)
         foot:SetWidth(W - 4)
         foot:SetJustifyH("LEFT")
@@ -313,6 +321,8 @@ local function BuildCoreSignupFrame()
     content:SetHeight(1)
     scroll:SetScrollChild(content)
     UI:BindScrollChildWidth(scroll, content, 4)
+    -- The cards on it are parchment: its fields and buttons are the paper's (every text sets its own ink).
+    content.__paper = true
 
     f.content = content
     return f
@@ -341,10 +351,53 @@ end
 ----------------------------------------------------------------------
 -- RAID ATTENDANCE PANEL
 ----------------------------------------------------------------------
--- The attendance table's columns, shared by its header and its rows (#371: the header left the scroll
--- child so it stays put while the rows scroll).
-local ATT_COLS = { player = 6, group = 145, pct = 240, raids = 295, avg = 355, last = 450, form = 540 }
-local ATT_LIST_H = 200   -- px the attendance list keeps under the sessions while there are sessions
+-- The Raids room's Sessions (the mockup's raides-presenca): a dark card with the lockouts, each a row with
+-- its raid's glyph that opens its nights and a night its players; under it a parchment card with each
+-- member's attendance. The attendance table's columns are shared by its header and its rows (#371: the
+-- header stays put while the rows scroll).
+local ATT_COLS = { player = 6, group = 150, pct = 250, raids = 305, avg = 365, last = 450, form = 540 }
+local ATT_CARD_H = 250   -- px the attendance card keeps under the sessions while there are sessions
+local SESS_PAD   = type(UI.CARD_PAD) == "number" and UI.CARD_PAD or 14
+local CARD_TOP   = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
+local SESS_TOP   = CARD_TOP + 28   -- the card's title and its filter chips over the list
+
+-- The paper's own shades of a state (the mockup's .b-ok, .b-warn, .b-bad) and a class's colour as the paper
+-- prints it (.card .c-*): the game's colours, darkened where they would not read on the parchment.
+local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
+local PAPER_OK, PAPER_WARN, PAPER_BAD = hex("2f6e33"), hex("a0560f"), hex("8f1b0b")
+local PAPER_CLASS = {
+    PRIEST = hex("666666"), ROGUE = hex("857612"), HUNTER = hex("4f7319"), MAGE = hex("16758d"),
+    PALADIN = hex("a8457a"), DRUID = hex("b35400"), SHAMAN = hex("0b4fa0"), WARRIOR = hex("7e5a33"),
+    WARLOCK = hex("4b4cb0"),
+}
+local function paperClass(class)
+    local c = PAPER_CLASS[type(class) == "string" and class:upper() or ""]
+    if c then return c.r, c.g, c.b end
+    local r, g, b = GuildOS:GetClassColor(class)
+    return r * 0.6, g * 0.6, b * 0.6
+end
+
+-- A 1px rule across the top of a row: the row lines of the mockup's tables, on the wood or the paper.
+local function rowRule(row, col)
+    local t = row:CreateTexture(nil, "BACKGROUND")
+    t:SetTexture(WHITE8)
+    t:SetHeight(1)
+    t:SetPoint("TOPLEFT")
+    t:SetPoint("TOPRIGHT")
+    t:SetVertexColor(col.r, col.g, col.b, 1)
+    return t
+end
+-- The soft gold wash a row takes under the cursor (the mockup's .t tr.click:hover).
+local function rowHover(row)
+    local t = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+    t:SetTexture(WHITE8)
+    t:SetAllPoints()
+    t:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 0.07)
+    t:Hide()
+    row:HookScript("OnEnter", function() t:Show() end)
+    row:HookScript("OnLeave", function() t:Hide() end)
+    return t
+end
 
 function GuildOS:CreateRaidsPanel(parent, _mainFrame)
     -- Flush with the sub-tab bar's left edge, the first line UI.GAP under it (#371).
@@ -352,66 +405,70 @@ function GuildOS:CreateRaidsPanel(parent, _mainFrame)
     scrollParent:SetPoint("TOPLEFT", 0, -GAP)
     scrollParent:SetPoint("BOTTOMRIGHT", -GAP, GAP)
 
-    local title = UI:CreateSectionTitle(scrollParent, L["Raid Attendance"], true)
-    title:SetPoint("TOPLEFT", 0, 0)
-
-    -- The count and the tracker's state, under the title they qualify: it floated beside it at x = 200 (#371).
-    local statusText = UI:CreateText(scrollParent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    statusText:SetPoint("TOPLEFT", 0, -22)
-
     ----------------------------------------------------------------
-    -- Sessions section
+    -- Sessions: a dark card, its title and the tracker's state on one line, the filter as chips
     ----------------------------------------------------------------
-    local FILTER_Y, LIST_TOP = -40, -40 - 20 - GAP
-    local sessionsLabel = UI:CreateHeaderText(scrollParent, L["Sessions"], 11)
-    sessionsLabel:SetPoint("LEFT", scrollParent, "TOPLEFT", 0, FILTER_Y - 10)
+    local sessCard = UI:CreateCard(scrollParent, L["Raid Attendance"], { dark = true })
+    sessCard:SetPoint("TOPLEFT", 0, 0)
+    sessCard:SetPoint("TOPRIGHT", 0, 0)
+    local title = sessCard.title
+    title:ClearAllPoints()
+    title:SetPoint("TOPLEFT", SESS_PAD, -12)
 
-    -- The filter: the shown one marked by UI:SetSelected, as every choice of a set (#371).
-    -- LockHighlight drew nothing on these flat buttons, so neither looked chosen.
-    local filterAllBtn  = UI:CreateButton(scrollParent, L["All"], 58, 20)
-    local filter25Btn   = UI:CreateButton(scrollParent, Prog(L["25-man"]), 62, 20)
-    filterAllBtn:SetPoint("LEFT", sessionsLabel, "RIGHT", 10, 0)
-    filter25Btn:SetPoint("LEFT", filterAllBtn,   "RIGHT",  4, 0)
+    -- The count and the tracker's state, after the title they qualify.
+    local statusText = UI:CreateText(sessCard, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    statusText:SetPoint("LEFT", title, "RIGHT", 8, 0)
+    statusText:SetJustifyH("LEFT")
+    if statusText.SetWordWrap then statusText:SetWordWrap(false) end
 
-    local sessionScroll, sessionContent = UI:CreateScrollFrame(scrollParent, "GuildOSRaidSessionScroll")
+    -- The filter: the shown one marked by UI:SetSelected, as every choice of a set (#371), as pills.
+    local filterAllBtn = UI:SetButtonVariant(UI:CreateButton(sessCard, L["All"], 44, 22), "chip")
+    local filter25Btn  = UI:SetButtonVariant(UI:CreateButton(sessCard, Prog(L["25-man"]), 52, 22), "chip")
+    filterAllBtn:SetPoint("TOPLEFT", SESS_PAD, -CARD_TOP + 4)
+    filter25Btn:SetPoint("LEFT", filterAllBtn, "RIGHT", 6, 0)
+
+    local sessionScroll, sessionContent = UI:CreateScrollFrame(sessCard, "GuildOSRaidSessionScroll")
+    sessionScroll:SetPoint("TOPLEFT", SESS_PAD, -SESS_TOP)
+    sessionScroll:SetPoint("BOTTOMRIGHT", -SESS_PAD + 6, 10)
     sessionContent:SetSize(1, 1)
     UI:BindScrollChildWidth(sessionScroll, sessionContent)
 
     ----------------------------------------------------------------
-    -- Attendance section: a section title, a table header that stays put, the rows that scroll
+    -- Attendance: a parchment card, a table header that stays put, the rows that scroll
     ----------------------------------------------------------------
-    local attHdr = UI:CreateTableHeader(scrollParent)
+    local attCard = UI:CreateCard(scrollParent, Prog(L["Member Attendance — 25-man only"]))
+    attCard:SetPoint("BOTTOMLEFT", 0, 0)
+    attCard:SetPoint("BOTTOMRIGHT", 0, 0)
+    local attHdr = UI:CreateTableHeader(attCard)
+    attHdr:SetPoint("TOPLEFT", SESS_PAD, -CARD_TOP + 2)
+    attHdr:SetPoint("TOPRIGHT", -SESS_PAD, -CARD_TOP + 2)
     local function AHdr(txt, x)
         UI:CreateHeaderText(attHdr, txt):SetPoint("LEFT", x, 0)
     end
-    AHdr(L["PLAYER"], ATT_COLS.player); AHdr(L["GROUP"], ATT_COLS.group); AHdr(L["ATT%"], ATT_COLS.pct)
-    AHdr(L["RAIDS"], ATT_COLS.raids); AHdr(L["AVG SCORE"], ATT_COLS.avg); AHdr(L["LAST RAID"], ATT_COLS.last)
+    AHdr(L["Player"], ATT_COLS.player); AHdr(L["Group"], ATT_COLS.group); AHdr(L["Att%"], ATT_COLS.pct)
+    AHdr(L["Raids"], ATT_COLS.raids); AHdr(L["Avg score"], ATT_COLS.avg); AHdr(L["Last raid"], ATT_COLS.last)
 
-    local attTitle = UI:CreateSectionTitle(scrollParent, Prog(L["Member Attendance — 25-man only"]))
-    attTitle:SetPoint("BOTTOMLEFT", attHdr, "TOPLEFT", 0, GAP)
-
-    local attScroll, attContent = UI:CreateScrollFrame(scrollParent, "GuildOSAttendanceScroll")
+    local attScroll, attContent = UI:CreateScrollFrame(attCard, "GuildOSAttendanceScroll")
     attScroll:SetPoint("TOPLEFT", attHdr, "BOTTOMLEFT", 0, 0)
-    attScroll:SetPoint("BOTTOMRIGHT", 0, 0)
+    attScroll:SetPoint("BOTTOMRIGHT", -SESS_PAD + 6, 10)
     attContent:SetSize(1, 1)
     UI:BindScrollChildWidth(attScroll, attContent)
 
-    -- The sessions list takes the room the attendance leaves it; with no session it has no empty
-    -- string to say so, so it folds away and the attendance moves up under the filter (#371): it
-    -- was a 400px black block. Left and right come from the parent, the bottom from the title.
-    sessionScroll:SetPoint("TOPLEFT", 0, LIST_TOP)
-    sessionScroll:SetPoint("TOPRIGHT", 0, LIST_TOP)
-    sessionScroll:SetPoint("BOTTOMLEFT", attTitle, "TOPLEFT", 0, 20)
+    -- With sessions, the sessions take the room the attendance leaves them; with none, the sessions' card
+    -- folds to its title and chips and the attendance takes the rest (#371: it was a 400px black block).
     sessionContent.placeBlocks = function(hasSessions)
-        attHdr:ClearAllPoints()
+        sessCard:ClearAllPoints()
+        attCard:ClearAllPoints()
+        sessCard:SetPoint("TOPLEFT", 0, 0)
+        sessCard:SetPoint("TOPRIGHT", 0, 0)
+        attCard:SetPoint("BOTTOMLEFT", 0, 0)
+        attCard:SetPoint("BOTTOMRIGHT", 0, 0)
         if hasSessions then
-            attHdr:SetPoint("TOPLEFT", scrollParent, "BOTTOMLEFT", 0, ATT_LIST_H + attHdr:GetHeight())
-            attHdr:SetPoint("TOPRIGHT", scrollParent, "BOTTOMRIGHT", 0, ATT_LIST_H + attHdr:GetHeight())
+            attCard:SetHeight(ATT_CARD_H)
+            sessCard:SetPoint("BOTTOM", attCard, "TOP", 0, GAP + 4)
         else
-            -- Under the filter row: 20px over the title for its rule, 18 for its line, UI.GAP to the header.
-            local top = (FILTER_Y - 20) - 20 - 18 - GAP
-            attHdr:SetPoint("TOPLEFT", scrollParent, "TOPLEFT", 0, top)
-            attHdr:SetPoint("TOPRIGHT", scrollParent, "TOPRIGHT", 0, top)
+            sessCard:SetHeight(SESS_TOP + 6)
+            attCard:SetPoint("TOP", sessCard, "BOTTOM", 0, -GAP - 4)
         end
         sessionScroll:SetShown(hasSessions)
     end
@@ -448,6 +505,8 @@ end
 local _sessionExpanded = {}
 local _groupExpanded   = {}
 
+local function hexOf(c) return string.format("|cff%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255) end
+
 function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
     if not GuildOS.RaidTracker then return end
 
@@ -460,8 +519,8 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
     local curGroup  = GuildOS.RaidTracker:GetCurrentGroup()
     local groupStr  = curGroup ~= "" and (curGroup .. "  ·  ") or ""
     local trackStr  = GuildOS.RaidTracker.trackingActive
-                      and "|cff00ff00" .. L["Tracking"] .. "|r" or "|cff888888" .. L["Idle"] .. "|r"
-    statusText:SetText(groupStr .. totalAll .. L[" lockouts ("] .. total25 .. Prog(L[" 25-man)  |  "]) .. trackStr)
+                      and hexOf(C.ok) .. L["Tracking"] .. "|r" or hexOf(C.labelDim) .. L["Idle"] .. "|r"
+    statusText:SetText("·  " .. groupStr .. totalAll .. L[" lockouts ("] .. total25 .. Prog(L[" 25-man)  |  "]) .. trackStr)
 
     ----------------------------------------------------------------
     -- Sessions grouped by instance + the region's reset week (guildos-web#199)
@@ -519,126 +578,114 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         return ga.name < gb.name
     end)
 
+    local soft, dim = C.textSoft, C.labelDim
+    local function kills(k, w)
+        local s = k .. L[" kills"]
+        if w > 0 then s = s .. " / " .. w .. L[" wipes"] end
+        return s
+    end
+
     local yOff = 0
 
-    for _, groupKey in ipairs(groupOrder) do
+    for gIdx, groupKey in ipairs(groupOrder) do
         local g          = groups[groupKey]
         local isGroupExp = _groupExpanded[groupKey]
         local is25       = GuildOS.RaidTracker:Is25Man(g.instanceID, g.size, g.difficultyID)
-        local gRowH      = 26
+        local gRowH      = 48
 
         -- Count unique players
         local uPlayers = 0
         for _ in pairs(g.allPlayers) do uPlayers = uPlayers + 1 end
 
-        -- Group header row, hung by both top corners: a width read while the tab is hidden is 0 (#371).
-        local gRow = CreateFrame("Button", nil, sessionContent, "BackdropTemplate")
+        -- The lockout's row, hung by both top corners: a width read while the tab is hidden is 0 (#371).
+        -- Its raid's glyph, the name and the week, the nights, players and kills under them, and the button
+        -- that opens it.
+        local gRow = CreateFrame("Button", nil, sessionContent)
         gRow:SetHeight(gRowH)
         gRow:SetPoint("TOPLEFT", 0, -yOff)
         gRow:SetPoint("TOPRIGHT", 0, -yOff)
-        gRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-        gRow:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, C.headerBg.a)
+        if gIdx > 1 then rowRule(gRow, C.line) end
+        rowHover(gRow)
 
-        -- Expand arrow
-        -- ASCII marks: the addon's fonts have no ▶ or ▼ glyph.
-        UI:CreateText(gRow, isGroupExp and "-" or "+", 9, C.label.r, C.label.g, C.label.b)
-            :SetPoint("LEFT", 4, 0)
+        local glyph = UI:CreateGlyph(gRow, 26)
+        glyph:SetPoint("LEFT", 0, 0)
+        glyph:Set(UI.Initial and UI.Initial(g.name) or g.name:sub(1, 1), is25 and C.count or C.paperSoft)
 
-        -- Raid name (paper for 25-man, silver for 10-man); the core's tag plain, not purple (#371)
-        local nameClr = is25 and C.text or C.silver
+        -- Raid name (the ink for a 25-man, the soft ink for a 10-man); the core's tag in brackets.
+        local nameClr = is25 and C.text or C.textSoft
         local nameLabel = g.difficulty and (g.name .. " (" .. g.difficulty .. ")") or g.name
         if g.groupTag and g.groupTag ~= "" then
             nameLabel = "[" .. g.groupTag .. "] " .. nameLabel
         end
-        UI:CreateText(gRow, nameLabel, 11, nameClr.r, nameClr.g, nameClr.b)
-            :SetPoint("LEFT", 18, 0)
-
-        -- Week range label  e.g.  "22/04 – 28/04"
         local weekLabel = GuildOS:DateText(g.weekStart) .. " – " .. GuildOS:DateText(g.weekStart + 6 * 86400)
-        Num(UI:CreateText(gRow, weekLabel, 10, C.silver.r, C.silver.g, C.silver.b))
-            :SetPoint("LEFT", 170, 0)
+        local nameFS = UI:CreateText(gRow, nameLabel, 13, nameClr.r, nameClr.g, nameClr.b)
+        GuildOS:ApplyFont(nameFS, 13, "button")
+        nameFS:SetPoint("TOPLEFT", 36, -7)
+        local weekFS = Num(UI:CreateText(gRow, "·  " .. weekLabel, 12, soft.r, soft.g, soft.b))
+        weekFS:SetPoint("LEFT", nameFS, "RIGHT", 6, 0)
 
-        -- Session count
-        UI:CreateText(gRow, #g.sessions .. L[" sess."], 9, C.label.r, C.label.g, C.label.b)
-            :SetPoint("LEFT", 280, 0)
+        local sub = #g.sessions .. L[" sess."] .. "  ·  " .. uPlayers .. L[" players"] .. "  ·  "
+            .. (g.kills > 0 and hexOf(C.ok) or "") .. kills(g.kills, g.wipes) .. (g.kills > 0 and "|r" or "")
+        UI:CreateText(gRow, sub, 11, soft.r, soft.g, soft.b):SetPoint("TOPLEFT", 36, -26)
 
-        -- Unique player count
-        UI:CreateText(gRow, uPlayers .. L[" players"], 9, C.text.r, C.text.g, C.text.b)
-            :SetPoint("LEFT", 340, 0)
-
-        -- Kills / wipes summary
-        local encStr = g.kills .. L[" kills"]
-        if g.wipes > 0 then encStr = encStr .. " / " .. g.wipes .. L[" wipes"] end
-        local encClr = g.kills > 0 and C.green or C.silver
-        UI:CreateText(gRow, encStr, 9, encClr.r, encClr.g, encClr.b)
-            :SetPoint("LEFT", 420, 0)
+        local openBtn = UI:CreateButton(gRow, isGroupExp and L["Close"] or L["Open"], 56, 24)
+        openBtn:SetPoint("RIGHT", 0, 0)
 
         local capturedGKey = groupKey
-        gRow:SetScript("OnClick", function()
+        local function toggleGroup()
             _groupExpanded[capturedGKey] = not _groupExpanded[capturedGKey]
             GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
-        end)
-        gRow:SetScript("OnEnter", function(self)
-            self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
-        end)
-        gRow:SetScript("OnLeave", function(self)
-            self:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, C.headerBg.a)
-        end)
+        end
+        gRow:SetScript("OnClick", toggleGroup)
+        openBtn:SetScript("OnClick", toggleGroup)
 
-        yOff = yOff + gRowH + 2
+        yOff = yOff + gRowH
 
         -- If expanded, show individual sessions inside this group (indented)
         if isGroupExp then
-            for idx, s in ipairs(g.sessions) do
+            for _, s in ipairs(g.sessions) do
                 local sd    = s.data
                 local isExp = _sessionExpanded[s.id]
-                local rowH  = 22
+                local rowH  = 26
 
-                local row = CreateFrame("Button", nil, sessionContent, "BackdropTemplate")
+                local row = CreateFrame("Button", nil, sessionContent)
                 row:SetHeight(rowH)
-                row:SetPoint("TOPLEFT", 20, -yOff)
+                row:SetPoint("TOPLEFT", 36, -yOff)
                 row:SetPoint("TOPRIGHT", 0, -yOff)
-                row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-                local bg = (idx % 2 == 1) and C.row1 or C.row2
-                row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
+                rowRule(row, C.line)
+                rowHover(row)
 
-                -- Expand arrow
-                UI:CreateText(row, isExp and "-" or "+", 8, C.label.r, C.label.g, C.label.b)
-                    :SetPoint("LEFT", 4, 0)
+                -- Open or shut: ASCII marks, the addon's fonts have no ▶ or ▼ glyph.
+                UI:CreateText(row, isExp and "-" or "+", 11, C.gold2.r, C.gold2.g, C.gold2.b)
+                    :SetPoint("LEFT", 2, 0)
 
                 -- Date + time
                 local dateStr = GuildOS:LocalDate("%a ", sd.startTime or 0) .. GuildOS:DateText(sd.startTime or 0, "  %H:%M")
-                Num(UI:CreateText(row, dateStr, 9, C.silver.r, C.silver.g, C.silver.b))
-                    :SetPoint("LEFT", 16, 0)
+                Num(UI:CreateText(row, dateStr, 12, C.text.r, C.text.g, C.text.b)):SetPoint("LEFT", 16, 0)
 
                 -- Duration
                 local dur = sd.duration or (sd.endTime and sd.startTime and (sd.endTime - sd.startTime))
                 if dur then
                     local durStr = format("%dh%02dm", floor(dur / 3600), floor((dur % 3600) / 60))
-                    Num(UI:CreateText(row, durStr, 9, C.silver.r, C.silver.g, C.silver.b))
-                        :SetPoint("LEFT", 165, 0)
+                    Num(UI:CreateText(row, durStr, 11, soft.r, soft.g, soft.b)):SetPoint("LEFT", 165, 0)
                 end
 
                 -- Player count
                 local pCount = GuildOS.RaidTracker:CountTable(sd.players or {})
-                UI:CreateText(row, pCount .. L[" players"], 9, C.text.r, C.text.g, C.text.b)
-                    :SetPoint("LEFT", 215, 0)
+                UI:CreateText(row, pCount .. L[" players"], 11, soft.r, soft.g, soft.b):SetPoint("LEFT", 225, 0)
 
                 -- Boss kills / wipes
                 local sk, sw = 0, 0
                 for _, enc in ipairs(sd.encounters or {}) do
                     if enc.success then sk = sk + 1 else sw = sw + 1 end
                 end
-                local sEncStr = sk .. L[" kills"]
-                if sw > 0 then sEncStr = sEncStr .. " / " .. sw .. L[" wipes"] end
-                local sEncClr = sk > 0 and C.green or C.silver
-                UI:CreateText(row, sEncStr, 9, sEncClr.r, sEncClr.g, sEncClr.b)
-                    :SetPoint("LEFT", 300, 0)
+                local sEncClr = sk > 0 and C.ok or soft
+                UI:CreateText(row, kills(sk, sw), 11, sEncClr.r, sEncClr.g, sEncClr.b):SetPoint("LEFT", 310, 0)
 
                 -- Delete button (officer only)
                 if GuildOS:IsOfficer() then
-                    local delBtn = UI:CreateButton(row, L["X"], 20, 16)
-                    delBtn:SetPoint("RIGHT", -2, 0)
+                    local delBtn = UI:SetButtonVariant(UI:CreateButton(row, L["X"], 22, 20), "danger")
+                    delBtn:SetPoint("RIGHT", 0, 0)
                     local capturedSID = s.id
                     delBtn:SetScript("OnClick", function()
                         GuildOS.RaidTracker:DeleteSession(capturedSID)
@@ -652,16 +699,10 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                     _sessionExpanded[capturedID] = not _sessionExpanded[capturedID]
                     GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                 end)
-                row:SetScript("OnEnter", function(self)
-                    self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
-                end)
-                row:SetScript("OnLeave", function(self)
-                    self:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
-                end)
 
-                yOff = yOff + rowH + 2
+                yOff = yOff + rowH
 
-                -- Expanded: per-player breakdown (same as before)
+                -- Expanded: the night's players, a table of their own
                 if isExp then
                     -- The night's presence and its score, as the attendance reads them (audit R5, R17).
                     local roll      = GuildOS.RaidTracker:RollUp(sd)
@@ -690,52 +731,49 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                         return a.name < b.name
                     end)
 
-                    -- The shared table header: no band, a 1px rule under it (#371).
+                    -- The shared table header: Cinzel in gold, a 1px rule under it (#371).
                     local hdrFrame = UI:CreateTableHeader(sessionContent)
-                    hdrFrame:SetPoint("TOPLEFT", 40, -yOff)
-                    hdrFrame:SetPoint("TOPRIGHT", 0, -yOff)
+                    hdrFrame:SetPoint("TOPLEFT", 52, -yOff - 4)
+                    hdrFrame:SetPoint("TOPRIGHT", 0, -yOff - 4)
                     local function Hdr(txt, x)
                         UI:CreateHeaderText(hdrFrame, txt):SetPoint("LEFT", x, 0)
                     end
-                    Hdr(L["PLAYER"], 6); Hdr(L["SCORE"], 120); Hdr(L["LATE"], 170); Hdr(L["LEFT EARLY"], 210)
-                    if GuildOS.ConsumableChecker then Hdr(L["NO CONS"], 290) end   -- TBC only (issue #184)
-                    yOff = yOff + hdrFrame:GetHeight() + 2
+                    Hdr(L["Player"], 6); Hdr(L["Score"], 140); Hdr(L["Late"], 200); Hdr(L["Left early"], 270)
+                    if GuildOS.ConsumableChecker then Hdr(L["No cons."], 360) end   -- TBC only (issue #184)
+                    yOff = yOff + 4 + hdrFrame:GetHeight()
 
                     for pIdx, p in ipairs(playerList) do
-                        local pRow = CreateFrame("Frame", nil, sessionContent, "BackdropTemplate")
-                        pRow:SetHeight(18)
-                        pRow:SetPoint("TOPLEFT", 40, -yOff)
+                        local pRow = CreateFrame("Frame", nil, sessionContent)
+                        pRow:SetHeight(22)
+                        pRow:SetPoint("TOPLEFT", 52, -yOff)
                         pRow:SetPoint("TOPRIGHT", 0, -yOff)
-                        pRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-                        -- The table's own zebra, not a purple tint of its own (#371).
-                        local pbg = (pIdx % 2 == 1) and C.row1 or C.row2
-                        pRow:SetBackdropColor(pbg.r, pbg.g, pbg.b, pbg.a)
+                        if pIdx > 1 then rowRule(pRow, C.line) end
 
                         local cr, cg, cb = GuildOS:GetClassColor(p.class)
-                        local nameT = UI:CreateText(pRow, p.name, 9, cr, cg, cb)
-                        nameT:SetPoint("LEFT", 6, 0); nameT:SetWidth(110)
+                        local nameT = UI:CreateText(pRow, p.name, 12, cr, cg, cb)
+                        GuildOS:ApplyFont(nameT, 12, "button")
+                        nameT:SetPoint("LEFT", 6, 0); nameT:SetWidth(128); nameT:SetJustifyH("LEFT")
 
-                        local sr, sg, sb = C.green.r, C.green.g, C.green.b
-                        if p.score < 75 then sr, sg, sb = C.warn.r, C.warn.g, C.warn.b end
-                        if p.score < 50 then sr, sg, sb = C.red.r,  C.red.g,  C.red.b  end
-                        Num(UI:CreateText(pRow, p.score .. "%", 9, sr, sg, sb)):SetPoint("LEFT", 120, 0)
+                        local sc = (p.score < 50 and C.danger) or (p.score < 75 and C.warn) or C.text
+                        Num(UI:CreateText(pRow, p.score .. "%", 12, sc.r, sc.g, sc.b)):SetPoint("LEFT", 140, 0)
 
-                        local function Flag(x, val, redTxt, greenTxt)
-                            local fr, fg, fb = val and C.red.r or C.green.r, val and C.red.g or C.green.g, val and C.red.b or C.green.b
-                            UI:CreateText(pRow, val and redTxt or greenTxt, 8, fr, fg, fb):SetPoint("LEFT", x, 0)
+                        -- A flag: the fault in red, or a dash where there is none.
+                        local function Flag(x, val, text)
+                            local col = val and C.danger or dim
+                            UI:CreateText(pRow, val and text or "—", 11, col.r, col.g, col.b):SetPoint("LEFT", x, 0)
                         end
-                        Flag(170, p.wasLate,   L["LATE"], L["OK"])
-                        Flag(210, p.leftEarly, L["LEFT"], L["OK"])
+                        Flag(200, p.wasLate,   L["Late"])
+                        Flag(270, p.leftEarly, L["Left early"])
 
                         if GuildOS.ConsumableChecker then
                             local consStr = p.consumeChecks > 0 and format("%d/%d", p.consumeHits, p.consumeChecks) or "-"
-                            local cr2 = not p.noConsumes and C.green or C.red
-                            Num(UI:CreateText(pRow, consStr, 8, cr2.r, cr2.g, cr2.b)):SetPoint("LEFT", 290, 0)
+                            local cr2 = p.noConsumes and C.danger or C.text
+                            Num(UI:CreateText(pRow, consStr, 11, cr2.r, cr2.g, cr2.b)):SetPoint("LEFT", 360, 0)
                         end
 
-                        yOff = yOff + 20
+                        yOff = yOff + 22
                     end
-                    yOff = yOff + 6
+                    yOff = yOff + 8
                 end
             end -- for sessions in group
         end -- if isGroupExp
@@ -769,86 +807,91 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         return pa > pb
     end)
 
-    -- The column labels are the panel's own header, outside the scroll (CreateRaidsPanel, #371).
+    -- The rows on the parchment: the paper's ink, its lines, its shades of a state.
+    local ink, psoft = C.paperInk, C.paperSoft
+    -- The column labels are the card's own header, outside the scroll (CreateRaidsPanel, #371).
     yOff = 0
     local lastGroupTag = nil
-    for idx, entry in ipairs(attList) do
-        -- Group separator when the group changes: a header row of the table, the tag in plain text (#371).
-        if entry.groupTag ~= lastGroupTag then
-            lastGroupTag = entry.groupTag
-            local ghRow = UI:CreateTableHeader(attContent, 18)
+    local groupsSeen = 0
+    for _, entry in pairs(attList) do
+        if entry.groupTag ~= lastGroupTag then groupsSeen = groupsSeen + 1; lastGroupTag = entry.groupTag end
+    end
+    lastGroupTag = nil
+    for _, entry in ipairs(attList) do
+        -- A group's own heading when there are more than one: the tag and its raids, in the title's red.
+        if groupsSeen > 1 and entry.groupTag ~= lastGroupTag then
+            local ghRow = CreateFrame("Frame", nil, attContent)
+            ghRow:SetHeight(22)
             ghRow:SetPoint("TOPLEFT", 0, -yOff)
             ghRow:SetPoint("TOPRIGHT", 0, -yOff)
             local groupLabel = entry.groupTag ~= "" and entry.groupTag or L["(no group)"]
             local total25g = GuildOS.RaidTracker:GetTotal25ManSessions(entry.groupTag)
-            local ghText = UI:CreateText(ghRow,
-                groupLabel .. "  ·  " .. total25g .. Prog(L[" 25-man raids"]),
-                9, C.text.r, C.text.g, C.text.b)
-            ghText:SetPoint("LEFT", ATT_COLS.player, 0)
-            yOff = yOff + 20
+            local ghText = UI:CreateText(ghRow, groupLabel .. "  ·  " .. total25g .. Prog(L[" 25-man raids"]),
+                11, C.paperTitle.r, C.paperTitle.g, C.paperTitle.b)
+            GuildOS:ApplyFont(ghText, 11, "sectionTitle")
+            ghText:SetPoint("LEFT", ATT_COLS.player, -2)
+            yOff = yOff + 22
         end
+        lastGroupTag = entry.groupTag
 
-        local row = CreateFrame("Frame", nil, attContent, "BackdropTemplate")
-        row:SetHeight(20)
+        local row = CreateFrame("Frame", nil, attContent)
+        row:SetHeight(24)
         row:SetPoint("TOPLEFT", 0, -yOff)
         row:SetPoint("TOPRIGHT", 0, -yOff)
-        row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-        local bg = (idx % 2 == 1) and C.row1 or C.row2
-        row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
+        rowRule(row, C.paperLine)
 
         local shortName = entry.key:match("^([^-]+)") or entry.key
         local memberData = GuildOS.db.members and GuildOS.db.members[entry.key]
         local class = memberData and memberData.class
-        local cr, cg, cb = GuildOS:GetClassColor(class)
-        local nameText = UI:CreateText(row, shortName, 10, cr, cg, cb)
+        local cr, cg, cb = paperClass(class)
+        local nameText = UI:CreateText(row, shortName, 12, cr, cg, cb)
+        GuildOS:ApplyFont(nameText, 12, "button")
         nameText:SetPoint("LEFT", ATT_COLS.player, 0)
 
         -- Group tag column
         local gtLabel = entry.groupTag ~= "" and entry.groupTag or "-"
-        UI:CreateText(row, gtLabel, 9, C.label.r, C.label.g, C.label.b):SetPoint("LEFT", ATT_COLS.group, 0)
+        UI:CreateText(row, gtLabel, 11, psoft.r, psoft.g, psoft.b):SetPoint("LEFT", ATT_COLS.group, 0)
 
         local total25g = GuildOS.RaidTracker:GetTotal25ManSessions(entry.groupTag)
         local pct      = GuildOS.RaidTracker:GetAttendance25ManPercent(entry.key, entry.groupTag)
-        local pctClr   = pct >= 75 and C.green or (pct >= 50 and C.warn or C.red)
-        local pctText  = Num(UI:CreateText(row, pct .. "%", 10, pctClr.r, pctClr.g, pctClr.b))
+        local pctClr   = pct >= 75 and PAPER_OK or (pct >= 50 and PAPER_WARN or PAPER_BAD)
+        local pctText  = Num(UI:CreateText(row, pct .. "%", 12, pctClr.r, pctClr.g, pctClr.b))
         pctText:SetPoint("LEFT", ATT_COLS.pct, 0)
 
         local raids25  = entry.data.raids25 or 0
-        local fracText = Num(UI:CreateText(row, raids25 .. "/" .. total25g, 10, C.silver.r, C.silver.g, C.silver.b))
+        local fracText = Num(UI:CreateText(row, raids25 .. "/" .. total25g, 12, ink.r, ink.g, ink.b))
         fracText:SetPoint("LEFT", ATT_COLS.raids, 0)
 
         local avgScore = 0
         if raids25 > 0 and entry.data.totalScore25 then
             avgScore = math.floor(entry.data.totalScore25 / raids25 + 0.5)
         end
-        local asr, asg, asb = C.green.r, C.green.g, C.green.b
-        if avgScore < 80 then asr, asg, asb = C.warn.r, C.warn.g, C.warn.b end
-        if avgScore < 60 then asr, asg, asb = C.red.r,  C.red.g,  C.red.b  end
-        local avgScoreText = Num(UI:CreateText(row, avgScore .. " pts", 9, asr, asg, asb))
+        local ac = (avgScore < 60 and PAPER_BAD) or (avgScore < 80 and PAPER_WARN) or PAPER_OK
+        local asr, asg, asb = ac.r, ac.g, ac.b
+        local avgScoreText = Num(UI:CreateText(row, avgScore .. " pts", 12, asr, asg, asb))
         avgScoreText:SetPoint("LEFT", ATT_COLS.avg, 0)
 
         local lastStr = entry.data.lastRaid and entry.data.lastRaid > 0
             and GuildOS:DateText(entry.data.lastRaid, "/%Y") or "-"
-        local lastText = Num(UI:CreateText(row, lastStr, 9, C.silver.r, C.silver.g, C.silver.b))
+        local lastText = Num(UI:CreateText(row, lastStr, 12, ink.r, ink.g, ink.b))
         lastText:SetPoint("LEFT", ATT_COLS.last, 0)
 
-        -- Recent form: flag members who missed the latest guild raid(s).
+        -- Recent form: flag members who missed the latest guild raid(s), as a badge.
         local missed = GuildOS.RaidTracker:GetMissedStreak(entry.key, entry.groupTag, 5)
-        if missed >= 2 then
-            local f = UI:CreateText(row, string.format(L["missed last %d"], missed), 9, C.red.r, C.red.g, C.red.b)
-            f:SetPoint("LEFT", ATT_COLS.form, 0)
-        elseif missed == 1 then
-            local f = UI:CreateText(row, L["missed last raid"], 9, C.warn.r, C.warn.g, C.warn.b)
-            f:SetPoint("LEFT", ATT_COLS.form, 0)
+        if missed >= 1 then
+            local b = UI:CreateBadge(row, missed >= 2 and string.format(L["missed last %d"], missed) or L["missed last raid"],
+                missed >= 2 and C.danger or C.warn)
+            b:SetPoint("LEFT", ATT_COLS.form, 0)
         end
 
         local capturedEntry = entry
         row:EnableMouse(true)
+        rowHover(row)
         row:SetScript("OnEnter", function(self)
-            self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine(shortName, cr, cg, cb)
+            local tr, tg, tb = GuildOS:GetClassColor(class)
+            GameTooltip:AddLine(shortName, tr, tg, tb)
             local gLabel = capturedEntry.groupTag ~= "" and capturedEntry.groupTag or L["(no group)"]
             GameTooltip:AddLine(L["Group: "] .. gLabel, C.label.r, C.label.g, C.label.b)
             GameTooltip:AddLine(Prog(L["25-man Attendance"]), C.text.r, C.text.g, C.text.b)
@@ -868,20 +911,18 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                 GameTooltip:AddLine("-" .. pen.NO_CONSUMES .. L[" No consumables"], 0.7,0.5,0.5)
             end
             GameTooltip:Show()
-            local _ = capturedEntry
         end)
-        row:SetScript("OnLeave", function(self)
-            self:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
+        row:SetScript("OnLeave", function()
             GameTooltip:Hide()
         end)
 
-        yOff = yOff + 22
+        yOff = yOff + 24
     end
 
     -- One empty line, kept: a new one each redraw stayed on screen under the rows that came later.
     if not attContent.emptyText then
-        attContent.emptyText = UI:CreateText(attContent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        attContent.emptyText:SetPoint("TOPLEFT", ATT_COLS.player, -6)
+        attContent.emptyText = UI:CreateText(attContent, "", 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+        attContent.emptyText:SetPoint("TOPLEFT", ATT_COLS.player, -8)
     end
     attContent.emptyText:SetText(Prog(L["No 25-man attendance data yet."]))
     attContent.emptyText:SetShown(#attList == 0)
@@ -893,24 +934,39 @@ end
 ----------------------------------------------------------------------
 -- TRIAL TRACKER PANEL
 ----------------------------------------------------------------------
+-- Trials is drawn on the Officers' Room's parchment card (specs/salao/fase3.md): P is the paper's inks, a class
+-- its colour on the paper (UI/Kit.lua); where the kit is absent, the shared colours.
+local function trialKit() return rawget(GuildOS, "Kit") end
+local P = setmetatable({}, { __index = function(_, k)
+    local Kit = trialKit()
+    return (Kit and Kit.PAPER or C)[k]
+end })
+local function trialClassInk(class)
+    local Kit = trialKit()
+    if Kit then return Kit:ClassInk(class) end
+    return GuildOS:GetClassColor(class)
+end
+local function trialCheckbox(parent, text, size)
+    local Kit = trialKit()
+    if Kit then return Kit:Checkbox(parent, text, size) end
+    return UI:CreateCheckbox(parent, text, size)
+end
+
 function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     -- Flush with the Recruitment sub-tab bar's left edge, the first line UI.GAP under it (#371).
     local scrollParent = CreateFrame("Frame", nil, parent)
     scrollParent:SetPoint("TOPLEFT", 0, -GAP)
     scrollParent:SetPoint("BOTTOMRIGHT", -GAP, GAP)
 
-    local title = UI:CreateSectionTitle(scrollParent, L["Trial Members"], true)
-    title:SetPoint("TOPLEFT", 0, 0)
-
-    -- The count under the title it qualifies, not floating at the top right (#371).
-    local statusText = UI:CreateText(scrollParent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    statusText:SetPoint("TOPLEFT", 0, -22)
+    -- The card's title says what this is ("Members on trial"); the count leads, under it.
+    local statusText = UI:CreateText(scrollParent, "", 10, P.textSoft.r, P.textSoft.g, P.textSoft.b)
+    statusText:SetPoint("TOPLEFT", 0, 0)
 
     -- The guild's length and its switch for new members (issue #249): an officer's, for the whole guild.
     -- The shared field (#371): it had a gold border and no inset, so "30" touched its edge.
     local TT = GuildOS.TrialTracker
-    local ROW_Y = -40
-    local daysLabel = UI:CreateText(scrollParent, L["Trial length (days)"], 11, C.text.r, C.text.g, C.text.b)
+    local ROW_Y = -18
+    local daysLabel = UI:CreateText(scrollParent, L["Trial length (days)"], 11, P.text.r, P.text.g, P.text.b)
     daysLabel:SetPoint("LEFT", scrollParent, "TOPLEFT", 0, ROW_Y - 11)
     -- Room for a 100 to be refused, not cut to 10.
     local daysBox = UI:CreateInput(scrollParent, 48, 22, { numeric = true, max = 3 })
@@ -929,7 +985,7 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
         GuildOS:RefreshTrialsPanel(parent)
     end)
 
-    local autoCb = UI:CreateCheckbox(scrollParent, L["Every new member starts as a trial"], 18)
+    local autoCb = trialCheckbox(scrollParent, L["Every new member starts as a trial"], 18)
     autoCb:SetPoint("LEFT", daysBox.saveButton, "RIGHT", 16, 0)
     autoCb.checkbox.onChanged = function(cb, checked)
         TT:SetAuto(checked)
@@ -939,7 +995,7 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     -- Under the row it explains, left-aligned (#371).
     local configHint = UI:CreateText(scrollParent,
         L["A new length moves the end of every running trial. Nobody already in the guild becomes a trial."],
-        10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        10, P.textSoft.r, P.textSoft.g, P.textSoft.b)
     configHint:SetPoint("TOPLEFT", 0, ROW_Y - 22 - 6)
 
     -- Column headers: the shared header, no band, its 1px rule under it (#371).
@@ -948,19 +1004,19 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     colHeader:SetPoint("TOPLEFT", 0, HEADER_Y)
     colHeader:SetPoint("TOPRIGHT", 0, HEADER_Y)
 
-    local hName = UI:CreateHeaderText(colHeader, L["MEMBER"], 10)
+    local hName = UI:CreateHeaderText(colHeader, L["Member"], 10)
     hName:SetPoint("LEFT", 6, 0)
-    local hIlvl = UI:CreateHeaderText(colHeader, L["iLVL"], 10)
+    local hIlvl = UI:CreateHeaderText(colHeader, L["iLvl"], 10)
     hIlvl:SetPoint("LEFT", 140, 0)
     if GuildOS.AttunementTracker then   -- attunements are TBC's (ADR-0014; issue #184)
-        local hAtt = UI:CreateHeaderText(colHeader, L["ATTUNE"], 10)
+        local hAtt = UI:CreateHeaderText(colHeader, L["Attuned"], 10)
         hAtt:SetPoint("LEFT", 210, 0)
     end
-    local hSponsor = UI:CreateHeaderText(colHeader, L["SPONSOR"], 10)
+    local hSponsor = UI:CreateHeaderText(colHeader, L["Sponsor"], 10)
     hSponsor:SetPoint("LEFT", 290, 0)
-    local hDays = UI:CreateHeaderText(colHeader, L["REMAINING"], 10)
+    local hDays = UI:CreateHeaderText(colHeader, L["Remaining"], 10)
     hDays:SetPoint("LEFT", 390, 0)
-    local hStatus = UI:CreateHeaderText(colHeader, L["STATUS"], 10)
+    local hStatus = UI:CreateHeaderText(colHeader, L["Status"], 10)
     hStatus:SetPoint("LEFT", 455, 0)
 
     local trialScroll = CreateFrame("ScrollFrame", "GuildOSTrialScroll", scrollParent, "UIPanelScrollFrameTemplate")
@@ -1023,22 +1079,24 @@ function GuildOS:RefreshTrialsPanel(parent)
         row:SetPoint("TOPLEFT", 0, -yOff)
         row:SetPoint("TOPRIGHT", 0, -yOff)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        local Kit = trialKit()
+        if Kit then Kit:Rule(row) end
 
         -- The table's zebra only: a trial waiting for a decision says so in its status column, and gold
         -- is the selection's colour, not a wash (#371).
         local rowIdx = math.floor(yOff / 26) % 2
-        local altIdx = (rowIdx == 0) and C.row1 or C.row2
+        local altIdx = (rowIdx == 0) and P.row1 or P.row2
         row:SetBackdropColor(altIdx.r, altIdx.g, altIdx.b, altIdx.a)
 
         -- Expand arrow
-        local arrow = UI:CreateText(row, isExpanded and "v" or ">", 10, C.label.r, C.label.g, C.label.b)
+        local arrow = UI:CreateText(row, isExpanded and "v" or ">", 10, P.label.r, P.label.g, P.label.b)
         arrow:SetPoint("LEFT", 2, 0)
 
         -- Name with class color
         local shortName = trial.key:match("^([^-]+)") or trial.key
         local pClass = memberData and memberData.class
-        local pr, pg, pb = 1, 1, 1
-        if pClass then pr, pg, pb = GuildOS:GetClassColor(pClass) end
+        local pr, pg, pb = P.text.r, P.text.g, P.text.b
+        if pClass then pr, pg, pb = trialClassInk(pClass) end
 
         local nameText = UI:CreateText(row, shortName, 10, pr, pg, pb)
         nameText:SetPoint("LEFT", 14, 0)
@@ -1046,14 +1104,14 @@ function GuildOS:RefreshTrialsPanel(parent)
         -- iLvl with delta
         if progress then
             local ilvlSign = progress.ilvlDelta > 0 and "+" or ""
-            local ilvlColor = progress.ilvlDelta > 0 and C.green or (progress.ilvlDelta < 0 and C.red or C.silver)
+            local ilvlColor = progress.ilvlDelta > 0 and P.green or (progress.ilvlDelta < 0 and P.red or P.silver)
             local ilvlStr = format("%d (%s%d)", progress.currentIlvl, ilvlSign, progress.ilvlDelta)
             local ilvlText = Num(UI:CreateText(row, ilvlStr, 9, ilvlColor.r, ilvlColor.g, ilvlColor.b))
             ilvlText:SetPoint("LEFT", 140, 0)
 
             -- Attunement progress
             if GuildOS.AttunementTracker then
-                local attColor = progress.attDelta > 0 and C.green or C.silver
+                local attColor = progress.attDelta > 0 and P.green or P.silver
                 local attStr = format("%d/%d (+%d)", progress.currentAttDone, progress.attTotal, progress.attDelta)
                 local attText = Num(UI:CreateText(row, attStr, 9, attColor.r, attColor.g, attColor.b))
                 attText:SetPoint("LEFT", 210, 0)
@@ -1061,41 +1119,41 @@ function GuildOS:RefreshTrialsPanel(parent)
         else
             local ilvlVal = memberData and memberData.avgIlvl or 0
             if ilvlVal > 0 then
-                local ilvlText = Num(UI:CreateText(row, tostring(ilvlVal), 9, C.silver.r, C.silver.g, C.silver.b))
+                local ilvlText = Num(UI:CreateText(row, tostring(ilvlVal), 9, P.silver.r, P.silver.g, P.silver.b))
                 ilvlText:SetPoint("LEFT", 140, 0)
             end
             if GuildOS.AttunementTracker then
-                local noProgText = UI:CreateText(row, "-", 9, C.silver.r, C.silver.g, C.silver.b)
+                local noProgText = UI:CreateText(row, "-", 9, P.silver.r, P.silver.g, P.silver.b)
                 noProgText:SetPoint("LEFT", 210, 0)
             end
         end
 
-        local sponsorText = UI:CreateText(row, data.sponsor or "?", 10, C.silver.r, C.silver.g, C.silver.b)
+        local sponsorText = UI:CreateText(row, data.sponsor or "?", 10, P.silver.r, P.silver.g, P.silver.b)
         sponsorText:SetPoint("LEFT", 290, 0)
 
         local daysRem = GuildOS.TrialTracker:GetDaysRemaining(trial.key)
         local daysStr = daysRem and (daysRem .. "d") or "-"
-        local daysColor = C.text
+        local daysColor = P.text
         if daysRem then
-            daysColor = daysRem > 14 and C.green or (daysRem > 7 and C.warn or C.red)
+            daysColor = daysRem > 14 and P.green or (daysRem > 7 and P.warn or P.red)
         end
         local daysText = Num(UI:CreateText(row, daysStr, 10, daysColor.r, daysColor.g, daysColor.b))
         daysText:SetPoint("LEFT", 390, 0)
 
         -- Status badge: the state worked out from the start and the guild's length, so a trial an older
         -- client stored as "expired" reads as running again once the guild lengthens its trials (#249).
-        local statusColor = C.silver
+        local statusColor = P.silver
         local statusStr = tostring(data.status or "?")
         if state == "trial" then
-            statusColor = C.textSoft; statusStr = L["TRIAL"]
+            statusColor = P.textSoft; statusStr = L["on trial"]
         elseif state == "review" then
-            statusColor = C.red; statusStr = L["READY TO REVIEW"]
+            statusColor = P.red; statusStr = L["ready to review"]
         elseif state == "left" then
-            statusColor = C.silver; statusStr = L["LEFT THE GUILD"]
+            statusColor = P.silver; statusStr = L["left the guild"]
         elseif state == "approved" then
-            statusColor = C.green; statusStr = L["APPROVED"]
+            statusColor = P.green; statusStr = L["approved"]
         elseif state == "denied" then
-            statusColor = C.red; statusStr = L["DENIED"]
+            statusColor = P.red; statusStr = L["denied"]
         end
         local sText = UI:CreateText(row, statusStr, 10, statusColor.r, statusColor.g, statusColor.b)
         sText:SetPoint("LEFT", 455, 0)
@@ -1128,7 +1186,7 @@ function GuildOS:RefreshTrialsPanel(parent)
         end)
 
         row:SetScript("OnEnter", function(self)
-            self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
+            self:SetBackdropColor(P.rowHover.r, P.rowHover.g, P.rowHover.b, P.rowHover.a)
         end)
         row:SetScript("OnLeave", function(self)
             self:SetBackdropColor(altIdx.r, altIdx.g, altIdx.b, altIdx.a)
@@ -1142,7 +1200,7 @@ function GuildOS:RefreshTrialsPanel(parent)
             detailFrame:SetPoint("TOPLEFT", 10, -yOff)
             detailFrame:SetPoint("TOPRIGHT", -10, -yOff)
             detailFrame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-            detailFrame:SetBackdropColor(0.066, 0.066, 0.084, 0.8)
+            detailFrame:SetBackdropColor(0.937, 0.878, 0.741, 1)   -- the paper's light box
 
             local dY = -6
 
@@ -1152,7 +1210,7 @@ function GuildOS:RefreshTrialsPanel(parent)
             local infoFS = detailFrame:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(infoFS, 9)
             infoFS:SetPoint("TOPLEFT", 10, dY)
-            infoFS:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            infoFS:SetTextColor(P.silver.r, P.silver.g, P.silver.b)
             infoFS:SetText(format(L["Started: %s  |  Day %d  |  Sponsor: %s"], startStr, daysSince or 0, data.sponsor or "?"))
             infoFS:Show()
             dY = dY - 16
@@ -1162,7 +1220,7 @@ function GuildOS:RefreshTrialsPanel(parent)
                 local notesLabel = detailFrame:CreateFontString(nil, "OVERLAY")
                 GuildOS:ApplyFont(notesLabel, 9)
                 notesLabel:SetPoint("TOPLEFT", 10, dY)
-                notesLabel:SetTextColor(C.label.r, C.label.g, C.label.b)
+                notesLabel:SetTextColor(P.label.r, P.label.g, P.label.b)
                 notesLabel:SetText(L["Comments:"])
                 notesLabel:Show()
                 dY = dY - 14
@@ -1216,7 +1274,7 @@ function GuildOS:RefreshTrialsPanel(parent)
 
     -- One empty line, kept: a new one each redraw stayed on screen under the trials that came later.
     if not parent.trialEmpty then
-        parent.trialEmpty = UI:CreateText(content, L["No trial members tracked."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        parent.trialEmpty = UI:CreateText(content, L["No trial members tracked."], 11, P.textSoft.r, P.textSoft.g, P.textSoft.b)
         parent.trialEmpty:SetPoint("TOPLEFT", 6, -6)
     end
     parent.trialEmpty:SetShown(#trials == 0)

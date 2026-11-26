@@ -6,7 +6,20 @@
 -- the guild's rules. The logic is ModAlerts' (and ModFlood's); this file only lays it out.
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
-local C = GuildOS.Colors
+-- Drawn on a parchment card in the Officers' Room and Settings (specs/salao/fase3.md): the text takes the
+-- paper's inks and a class its colour on the paper (UI/Kit.lua); a floating window, the wood's (WOOD).
+local Kit = rawget(GuildOS, "Kit")
+local C = Kit and Kit.PAPER or GuildOS.Colors
+local WOOD = GuildOS.Colors
+local function rule(row) if Kit then Kit:Rule(row) end end
+local function checkbox(parent, text, size)
+    if Kit then return Kit:Checkbox(parent, text, size) end
+    return GuildOS.UI:CreateCheckbox(parent, text, size)
+end
+local function sectionTitle(parent, text, first)
+    if Kit then return Kit:SectionTitle(parent, text, first) end
+    return GuildOS.UI:CreateSectionTitle(parent, text, first)
+end
 local L = GuildOS.L
 local WHITE8 = "Interface\\Buttons\\WHITE8x8"
 
@@ -51,48 +64,60 @@ function GuildOS:ShowModAlert(a)
     if not M or not GuildOS:IsOfficer() then return end
     local f = self.modAlertFrame
     if not f then
+        -- A floating window (the mockup's .fw "chatAlert"): the chat around the line, the line, what it is
+        -- about, and the answers in the footer, Warn the main one.
         f = CreateFrame("Frame", "GuildOSModAlert", UIParent, "BackdropTemplate")
-        f:SetSize(420, 210)
+        f:SetSize(420, 220)
         f:SetPoint("TOP", 0, -140)
-        f:SetBackdrop({ bgFile = WHITE8, edgeFile = WHITE8, edgeSize = UI:Edge(f) })
-        f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-        f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-        UI:StylePopup(f)
         f:SetFrameStrata("DIALOG")
         f:SetMovable(true)
         f:EnableMouse(true)
-        f:RegisterForDrag("LeftButton")
-        f:SetScript("OnDragStart", function(self) self:StartMoving() end)
-        f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+        if Kit then
+            Kit:Dress(f, L["Chat alert"])
+            Kit:Footer(f)
+        end
+        local top = Kit and (Kit.HEADER_H + 8) or 12
 
         f.title = f:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(f.title, nil, "sectionTitle")
-        f.title:SetPoint("TOPLEFT", 14, -10)
-        f.title:SetTextColor(C.text.r, C.text.g, C.text.b)
+        GuildOS:ApplyFont(f.title, 11, "caption")
+        f.title:SetTextColor(WOOD.textSoft.r, WOOD.textSoft.g, WOOD.textSoft.b)
+        f.title:SetJustifyH("LEFT")
 
-        f.context = text(f, 10, C.silver)
-        f.context:SetPoint("TOPLEFT", 14, -36)
+        f.context = text(f, 11, WOOD.textSoft)
+        f.context:SetPoint("TOPLEFT", 14, -top)
         f.context:SetWidth(392)
         f.context:SetWordWrap(true)
 
-        f.line = text(f, 12, C.text)
+        f.line = text(f, 12, WOOD.text)
         f.line:SetPoint("TOPLEFT", f.context, "BOTTOMLEFT", 0, -6)
         f.line:SetWidth(392)
         f.line:SetWordWrap(true)
+        -- The flagged line on a red wash, as the mockup marks it in the chat.
+        local wash = f:CreateTexture(nil, "BORDER")
+        wash:SetTexture(WHITE8)
+        wash:SetVertexColor(0.561, 0.106, 0.043, 0.3)
+        wash:SetPoint("TOPLEFT", f.line, "TOPLEFT", -4, 3)
+        wash:SetPoint("BOTTOMRIGHT", f.line, "BOTTOMRIGHT", 4, -3)
+        f.title:SetPoint("TOPLEFT", f.line, "BOTTOMLEFT", 0, -8)
+        f.title:SetWidth(392)
 
-        f.more = text(f, 9, C.silver)
-        f.more:SetPoint("BOTTOMLEFT", 14, 44)
-
-        f.warn = UI:CreateButton(f, L["Warn"], 90, 24)
-        f.warn:SetPoint("BOTTOMLEFT", 14, 12)
-        f.ignore = UI:CreateButton(f, L["Ignore"], 90, 24)
-        f.ignore:SetPoint("LEFT", f.warn, "RIGHT", 8, 0)
-        f.mute = UI:CreateButton(f, L["Mute this pattern for 1h"], 180, 24)
-        f.mute:SetPoint("LEFT", f.ignore, "RIGHT", 8, 0)
-
-        local closeBtn = UI:CreateCloseButton(f)
-        closeBtn:SetPoint("TOPRIGHT", -4, -4)
-        closeBtn:SetScript("OnClick", function() f:Hide() end)
+        f.more = text(f, 10, WOOD.textSoft)
+        f.warn = UI:CreateButton(rawget(f, "foot") or f, L["Warn"], 90, 24)
+        UI:SetButtonVariant(f.warn, "primary")
+        f.ignore = UI:CreateButton(rawget(f, "foot") or f, L["Ignore"], 90, 24)
+        f.mute = UI:CreateButton(rawget(f, "foot") or f, L["Mute this pattern for 1h"], 180, 24)
+        if rawget(f, "foot") then
+            f.more:SetPoint("LEFT", f.foot, "LEFT", 11, 0)
+            f.more:SetPoint("RIGHT", f.mute, "LEFT", -8, 0)
+        else
+            f.more:SetPoint("BOTTOMLEFT", 14, 44)
+            f.warn:SetPoint("BOTTOMLEFT", 14, 12)
+            f.ignore:SetPoint("LEFT", f.warn, "RIGHT", 8, 0)
+            f.mute:SetPoint("LEFT", f.ignore, "RIGHT", 8, 0)
+            local closeBtn = UI:CreateCloseButton(f)
+            closeBtn:SetPoint("TOPRIGHT", -4, -4)
+            closeBtn:SetScript("OnClick", function() f:Hide() end)
+        end
         self.modAlertFrame = f
 
         -- An alert acted on from the list closes the window showing it; one that grew redraws it.
@@ -104,7 +129,7 @@ function GuildOS:ShowModAlert(a)
         end
     end
     f.alert = a
-    f.title:SetText(string.format(L["Chat alert: %s"], aboutText(a)))
+    f.title:SetText(aboutText(a))
     local ctx = {}
     if a.lines then
         -- A surge (#405): its lines, the newest last.
@@ -122,6 +147,15 @@ function GuildOS:ShowModAlert(a)
     end
     f.more:SetText(waiting > 0 and string.format(L["%d more on Leadership > Chat alerts."], waiting) or "")
     f.mute:SetShown(a.rule ~= nil)
+    if rawget(f, "foot") then
+        f.foot:Lay(f.warn, f.mute, f.ignore)
+        f.more:SetPoint("RIGHT", (a.rule ~= nil) and f.mute or f.ignore, "LEFT", -8, 0)
+    end
+    -- Tall enough for the chat around the line and the line itself.
+    local top = Kit and (Kit.HEADER_H + 8) or 12
+    local function h(fs, d) return tonumber(fs:GetStringHeight()) or d end
+    f:SetHeight(math.max(160, top + h(f.context, 14) + 6 + h(f.line, 14) + 8 + h(f.title, 12) + 12
+        + (Kit and Kit.FOOT_H or 56)))
     local id = a.id
     f.warn:SetScript("OnClick", function() M:Warn(id); f:Hide() end)
     f.ignore:SetScript("OnClick", function() M:Ignore(id); f:Hide() end)
@@ -136,18 +170,17 @@ local STATE_TEXT = { warned = L["warned"], ignored = L["ignored"] }
 
 function GuildOS:BuildModAlertsSub(panel)
     local M = GuildOS.ModAlerts
-    local header = UI:CreateSectionTitle(panel, L["CHAT ALERTS"], true)
-    header:SetPoint("TOPLEFT", 0, 0)
+    -- Under the card's title ("Chat alerts").
     local hint = UI:CreateText(panel,
         L["Lines of guild chat that match the guild's rules, for the officers only. Kept in memory for two hours; a line is stored only when you warn."],
         11, C.silver.r, C.silver.g, C.silver.b)
-    hint:SetPoint("TOPLEFT", 0, -24)
-    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -24)
+    hint:SetPoint("TOPLEFT", 0, 0)
+    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
     hint:SetJustifyH("LEFT")
 
     local paused = UI:CreateText(panel, L["Alerts paused: the game hides the chat in instances and combat."],
         11, C.red.r, C.red.g, C.red.b)
-    paused:SetPoint("TOPLEFT", 0, -56)
+    paused:SetPoint("TOPLEFT", 0, -32)
     paused:Hide()
 
     -- This officer's own switches.
@@ -158,15 +191,15 @@ function GuildOS:BuildModAlertsSub(panel)
     }
     local x = 0
     for _, b in ipairs(boxes) do
-        local cb = UI:CreateCheckbox(panel, b[2], 18)
-        cb:SetPoint("TOPLEFT", x, -74)
+        local cb = checkbox(panel, b[2], 18)
+        cb:SetPoint("TOPLEFT", x, -50)
         cb.checkbox:SetChecked(prefs[b[1]] and true or false)
         cb.checkbox.onChanged = function(_, checked) prefs[b[1]] = checked and true or false end
         x = x + 150
     end
 
     local holder = CreateFrame("Frame", nil, panel)
-    holder:SetPoint("TOPLEFT", 0, -102)
+    holder:SetPoint("TOPLEFT", 0, -78)
     holder:SetPoint("BOTTOMRIGHT", 0, 0)
     local scroll = CreateFrame("ScrollFrame", "GuildOSModAlertsScroll", holder, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 0, 0)
@@ -186,6 +219,7 @@ function GuildOS:BuildModAlertsSub(panel)
         row:SetPoint("TOPLEFT", 0, -((i - 1) * (ROW_H + 2)))
         row:SetPoint("TOPRIGHT", 0, -((i - 1) * (ROW_H + 2)))
         row:SetBackdrop({ bgFile = WHITE8 })
+        rule(row)
         local alt = (i % 2 == 0) and C.row1 or C.row2
         row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
         row.top = text(row, 11, C.label)
@@ -201,6 +235,7 @@ function GuildOS:BuildModAlertsSub(panel)
         row.ignore = UI:CreateButton(row, L["Ignore"], 70, 20)
         row.ignore:SetPoint("RIGHT", -82, 0)
         row.warn = UI:CreateButton(row, L["Warn"], 70, 20)
+        UI:SetButtonVariant(row.warn, "primary")
         row.warn:SetPoint("RIGHT", -158, 0)
         row.mute:SetScript("OnClick", function() M:MuteRule(row.id) end)
         row.ignore:SetScript("OnClick", function() M:Ignore(row.id) end)
@@ -273,17 +308,16 @@ local RULE_WHY = {
 
 function GuildOS:BuildModRulesSub(panel)
     local M = GuildOS.ModAlerts
-    local header = UI:CreateSectionTitle(panel, L["ALERT RULES"], true)
-    header:SetPoint("TOPLEFT", 0, 0)
+    -- Under the card's title ("Alert rules").
     local hint = UI:CreateText(panel,
         L["The guild's words and patterns, shared by the officers. A word matches whole, without case or accents."],
         11, C.silver.r, C.silver.g, C.silver.b)
-    hint:SetPoint("TOPLEFT", 0, -24)
-    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -24)
+    hint:SetPoint("TOPLEFT", 0, 0)
+    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
     hint:SetJustifyH("LEFT")
 
     local input = UI:CreateInput(panel, 170, 22, { max = M and M.PATTERN_MAX or 60, placeholder = L["word or phrase"] })
-    input:SetPoint("TOPLEFT", 0, -50)
+    input:SetPoint("TOPLEFT", 0, -26)
     local catDD = UI:CreateDropdown(panel, 150, 22)
     catDD:SetPoint("LEFT", input, "RIGHT", 8, 0)
     local cats = {}
@@ -296,14 +330,15 @@ function GuildOS:BuildModRulesSub(panel)
     for _, s in ipairs(M and M.SEVERITIES or {}) do sevs[#sevs + 1] = { value = s, text = M.SeverityText(s) } end
     sevDD:SetOptions(sevs)
     sevDD:SetValue("med")
-    local luaChk = UI:CreateCheckbox(panel, L["Lua pattern"], 18)
-    luaChk:SetPoint("TOPLEFT", 0, -80)
+    local luaChk = checkbox(panel, L["Lua pattern"], 18)
+    luaChk:SetPoint("TOPLEFT", 0, -56)
     local addBtn = UI:CreateButton(panel, L["Add"], 70, 22)
+    UI:SetButtonVariant(addBtn, "primary")
     addBtn:SetPoint("LEFT", sevDD, "RIGHT", 8, 0)
     local result = UI:CreateText(panel, "", 11, C.silver.r, C.silver.g, C.silver.b)
-    result:SetPoint("TOPLEFT", 160, -82)
+    result:SetPoint("TOPLEFT", 160, -58)
     local restore = UI:CreateButton(panel, L["Restore the default list"], 170, 22)
-    restore:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -78)
+    restore:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -54)
 
     local function add()
         if not M then return end
@@ -322,12 +357,12 @@ function GuildOS:BuildModRulesSub(panel)
 
     -- The anti-flood's limits (#405) sit under the rules when that module is there.
     local floodH = 0
-    if GuildOS.BuildModFloodSection then floodH = GuildOS:BuildModFloodSection(panel, 110) or 0 end
+    if GuildOS.BuildModFloodSection then floodH = GuildOS:BuildModFloodSection(panel, 86) or 0 end
     -- And the newcomer's quarantine (#406) under them.
-    if GuildOS.BuildNewcomerSection then floodH = floodH + (GuildOS:BuildNewcomerSection(panel, 110 + floodH) or 0) end
+    if GuildOS.BuildNewcomerSection then floodH = floodH + (GuildOS:BuildNewcomerSection(panel, 86 + floodH) or 0) end
 
     local holder = CreateFrame("Frame", nil, panel)
-    holder:SetPoint("TOPLEFT", 0, -(110 + floodH))
+    holder:SetPoint("TOPLEFT", 0, -(86 + floodH))
     holder:SetPoint("BOTTOMRIGHT", 0, 0)
     local scroll = CreateFrame("ScrollFrame", "GuildOSModRulesScroll", holder, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 0, 0)
@@ -343,6 +378,7 @@ function GuildOS:BuildModRulesSub(panel)
         if rows[i] then return rows[i] end
         local row = CreateFrame("Frame", nil, content)
         row:SetHeight(22)
+        rule(row)
         row:SetPoint("TOPLEFT", 0, -((i - 1) * 24))
         row:SetPoint("TOPRIGHT", 0, -((i - 1) * 24))
         row.p = text(row, 11, C.text)
@@ -401,7 +437,7 @@ end
 function GuildOS:BuildModFloodSection(panel, top)
     local F = GuildOS.ModFlood
     if not F then return 0 end
-    local title = UI:CreateSectionTitle(panel, L["ANTI-FLOOD"], false)
+    local title = sectionTitle(panel, L["Anti-flood"], false)
     title:SetPoint("TOPLEFT", 0, -(top + 20))
     local hint = UI:CreateText(panel, L["Each signal flags one alert per person while the surge lasts. The game's item and spell links never count."],
         11, C.silver.r, C.silver.g, C.silver.b)
@@ -419,7 +455,7 @@ function GuildOS:BuildModFloodSection(panel, top)
     local fields = {}
     for i, row in ipairs(ROWS) do
         local y = -(top + 66 + (i - 1) * 26)
-        local cb = UI:CreateCheckbox(panel, row.label, 18)
+        local cb = checkbox(panel, row.label, 18)
         cb:SetPoint("TOPLEFT", 0, y)
         local boxA = UI:CreateInput(panel, 40, 20, { numeric = true, max = 3 })
         boxA:SetPoint("TOPLEFT", 200, y + 1)
@@ -470,7 +506,7 @@ end
 function GuildOS:BuildNewcomerSection(panel, top)
     local N = GuildOS.Newcomer
     if not N then return 0 end
-    local title = UI:CreateSectionTitle(panel, L["NEWCOMERS"], false)
+    local title = sectionTitle(panel, L["Newcomers"], false)
     title:SetPoint("TOPLEFT", 0, -(top + 8))
     local hint = UI:CreateText(panel,
         L["In a member's first days any link alerts and the anti-flood's limits are stricter. The join comes from the roster log: a member who joined before the addon is not a newcomer. Only officers see it."],
@@ -485,7 +521,7 @@ function GuildOS:BuildNewcomerSection(panel, top)
     box:SetPoint("LEFT", lead, "RIGHT", 6, 0)
     local tail = UI:CreateText(panel, L["days (0 turns it off)"], 11, C.text.r, C.text.g, C.text.b)
     tail:SetPoint("LEFT", box, "RIGHT", 6, 0)
-    local trial = UI:CreateCheckbox(panel, L["A trial counts as a newcomer"], 18)
+    local trial = checkbox(panel, L["A trial counts as a newcomer"], 18)
     trial:SetPoint("LEFT", tail, "RIGHT", 16, 0)
     local save = UI:CreateButton(panel, L["Save for the guild"], 140, 22)
     save:SetPoint("TOPLEFT", 0, y - 28)

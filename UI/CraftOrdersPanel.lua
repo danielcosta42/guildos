@@ -5,6 +5,8 @@
 -- opened in place with what it takes, who makes it and the order. Also the order dialog, Alt-click
 -- on an item, and the bars on the game's trade and mail windows that hand the materials or the
 -- item over in one click. Visual layer only: every change goes through GuildOS.CraftOrders.
+-- The queue is the Workshop's "Pedidos de craft" (#449 phase 3): a parchment card, its views as pills, each
+-- order a paper line with its item framed in its quality, the steps under it and its buttons.
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
@@ -145,48 +147,62 @@ end
 
 local QUEUE_TABS = { { "forme", L["For me"] }, { "mine", L["Mine"] }, { "open", L["Open"] } }
 
+-- The paper's colours for the queue: on a parchment card (the Workshop's), else the wood's.
+local function inks(paper)
+    if paper then
+        return { ink = C.paperInk, soft = C.paperSoft, line = C.paperRule, done = { r = 0.184, g = 0.431, b = 0.2 },
+                 now = C.paperTitle, todo = C.paperLine, fill = C.paperLight, act = C.paperTitle }
+    end
+    return { ink = C.text, soft = C.label, line = C.line, done = C.ok, now = C.gold, todo = C.line, fill = C.bg, act = C.gold }
+end
+
 function GuildOS:CreateOrderQueue(parent)
     local q = CreateFrame("Frame", nil, parent)
     q:SetAllPoints()
+    -- In a card, the card's title is the queue's: the views start under it.
+    local paper = UI:OnPaper(parent)
+    local P = inks(paper)
+    local top = paper and 34 or 36
 
     local title = UI:CreateTitle(q, L["Orders"], 13)
     title:SetPoint("TOPLEFT", 10, -10)
-    local hint = UI:CreateText(q, L["trade and mail in one click"], 10, C.label.r, C.label.g, C.label.b)
-    hint:SetPoint("TOPRIGHT", -10, -14)
+    title:SetShown(not paper and not parent.title)
+    local hint = UI:CreateText(q, L["trade and mail in one click"], 11, P.soft.r, P.soft.g, P.soft.b)
+    hint:SetPoint("TOPRIGHT", -14, -14)
 
-    -- The three views, one segmented row.
+    -- The three views, as pills (the mockup's Para mim / Meus / Abertos).
     local seg = CreateFrame("Frame", nil, q)
-    seg:SetPoint("TOPLEFT", 10, -36)
-    seg:SetPoint("TOPRIGHT", -10, -36)
+    seg:SetPoint("TOPLEFT", 14, -top)
+    seg:SetPoint("TOPRIGHT", -14, -top)
     seg:SetHeight(FIELD_H)
     q.tabs = {}
     for i, t in ipairs(QUEUE_TABS) do
-        local b = UI:CreateButton(seg, t[2], 80, FIELD_H)
+        local b = UI:SetButtonVariant(UI:CreateButton(seg, t[2], 80, FIELD_H), "chip")
         b.key, b.base = t[1], t[2]
         b:SetScript("OnClick", function() q:Select(t[1]) end)
         q.tabs[i] = b
     end
     function q:LayoutTabs()
-        local w = (seg:GetWidth() or 240)
-        local each = math.floor((w - 4) / #self.tabs)
-        for i, b in ipairs(self.tabs) do
-            b:SetWidth(each)
+        local x = 0
+        for _, b in ipairs(self.tabs) do
+            b:SetWidth(math.ceil(b.label:GetStringWidth() or 40) + 24)
             b:ClearAllPoints()
-            b:SetPoint("LEFT", (i - 1) * (each + 2), 0)
+            b:SetPoint("LEFT", x, 0)
+            x = x + b:GetWidth() + 6
         end
     end
 
-    local footer = UI:CreateText(q, L["Closed orders are kept 14 days."], 10, C.label.r, C.label.g, C.label.b)
-    footer:SetPoint("BOTTOMLEFT", 10, 8)
+    local footer = UI:CreateText(q, L["Closed orders are kept 14 days."], 11, P.soft.r, P.soft.g, P.soft.b)
+    footer:SetPoint("BOTTOMLEFT", 14, 10)
 
     -- The cards: pooled, over a FauxScrollFrame, as tall as the column allows.
     local area = CreateFrame("Frame", nil, q)
-    area:SetPoint("TOPLEFT", 10, -36 - FIELD_H - GAP)
-    area:SetPoint("BOTTOMRIGHT", -4, 26)
+    area:SetPoint("TOPLEFT", 14, -top - FIELD_H - GAP)
+    area:SetPoint("BOTTOMRIGHT", -6, 28)
     local scroll = CreateFrame("ScrollFrame", "GuildOSOrderQueueScroll", area, "FauxScrollFrameTemplate")
     scroll:SetAllPoints()
     UI:SkinScrollBar(scroll, "GuildOSOrderQueueScroll")
-    local empty = UI:CreateText(area, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local empty = UI:CreateText(area, "", 12, P.soft.r, P.soft.g, P.soft.b)
     empty:SetPoint("TOPLEFT", 4, -8)
     empty:SetPoint("RIGHT", -GUTTER, 0)
     empty:SetJustifyH("LEFT")
@@ -204,11 +220,11 @@ function GuildOS:CreateOrderQueue(parent)
         c.name:SetPoint("TOPLEFT", c.icon, "TOPRIGHT", 8, 0)
         c.name:SetPoint("RIGHT", c, "RIGHT", -54, 0)
         c.name:SetJustifyH("LEFT"); c.name:SetWordWrap(false)
-        c.who = UI:CreateText(c, "", 10, C.label.r, C.label.g, C.label.b)
+        c.who = UI:CreateText(c, "", 11, P.soft.r, P.soft.g, P.soft.b)
         c.who:SetPoint("TOPLEFT", c.name, "BOTTOMLEFT", 0, -2)
         c.who:SetPoint("RIGHT", c, "RIGHT", -8, 0)
         c.who:SetJustifyH("LEFT"); c.who:SetWordWrap(false)
-        c.when = UI:CreateText(c, "", 10, C.label.r, C.label.g, C.label.b)
+        c.when = UI:CreateText(c, "", 10, P.soft.r, P.soft.g, P.soft.b)
         GuildOS:ApplyFont(c.when, 10, "tableNum")
         c.when:SetPoint("TOPRIGHT", -8, -8)
         c.steps = {}
@@ -221,7 +237,7 @@ function GuildOS:CreateOrderQueue(parent)
             lab:SetJustifyH("LEFT"); lab:SetWordWrap(false)
             c.steps[s] = { bar = bar, label = lab }
         end
-        c.terms = UI:CreateText(c, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        c.terms = UI:CreateText(c, "", 10, P.soft.r, P.soft.g, P.soft.b)
         c.terms:SetPoint("BOTTOMLEFT", 8, 10)
         c.terms:SetJustifyH("LEFT"); c.terms:SetWordWrap(false)
         c.b1 = UI:CreateButton(c, "", 84, 20)
@@ -256,10 +272,10 @@ function GuildOS:CreateOrderQueue(parent)
             x.label:ClearAllPoints()
             x.label:SetPoint("TOPLEFT", x.bar, "BOTTOMLEFT", 0, -4)
             x.label:SetWidth(w)
-            local col = (s < at and C.ok) or (s == at and C.gold) or C.line
-            if at == 4 and s == 4 then col = C.ok end
+            local col = (s < at and P.done) or (s == at and P.now) or P.todo
+            if at == 4 and s == 4 then col = P.done end
             x.bar:SetVertexColor(col.r, col.g, col.b, 1)
-            local ink = (s == at and C.gold) or (s < at and C.textSoft) or C.labelDim
+            local ink = (s == at and P.now) or (s < at and P.ink) or P.soft
             x.label:SetTextColor(ink.r, ink.g, ink.b)
         end
     end
@@ -269,7 +285,12 @@ function GuildOS:CreateOrderQueue(parent)
         local name, _, quality, tex = itemInfo(o.item)
         c.icon.icon:SetTexture(tex or QUESTION)
         UI:SetIconQuality(c.icon, quality or 1)
-        local qc = (GuildOS.QualityColors and GuildOS.QualityColors[quality or 1]) or C.text
+        local qc = (GuildOS.QualityColors and GuildOS.QualityColors[quality or 1]) or P.ink
+        -- On the paper the common and the uncommon read in its ink, the rarer deepened (as the catalog's).
+        if paper then
+            if (quality or 1) <= 1 then qc = P.ink
+            else qc = { r = qc.r * 0.7, g = qc.g * 0.7, b = qc.b * 0.7 } end
+        end
         c.name:SetText((name or ("item:" .. o.item)) .. (o.n > 1 and (" × " .. o.n) or ""))
         c.name:SetTextColor(qc.r, qc.g, qc.b)
         c.who:SetText(cardWho(q.view, o))
@@ -289,8 +310,8 @@ function GuildOS:CreateOrderQueue(parent)
         -- The one waiting for me has the gold edge: the next step is mine.
         local mineToAct = a1 ~= nil and Orders().IsActive(o) and (q.view ~= "open")
             and not (q.view == "mine" and st == "open")
-        local edge = mineToAct and C.gold or C.line
-        c:SetBackdropColor(C.bg.r, C.bg.g, C.bg.b, 1)
+        local edge = mineToAct and P.act or P.line
+        c:SetBackdropColor(P.fill.r, P.fill.g, P.fill.b, paper and 0.7 or 1)
         c:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1)
     end
 
@@ -639,10 +660,8 @@ local QUEUE_MIN = 940    -- under this width the queue becomes a drawer
 
 function GuildOS:CreateCraftsTab(container, win)
     local host = CreateFrame("Frame", nil, container)
-    local dock = CreateFrame("Frame", nil, container, "BackdropTemplate")
-    dock:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(dock) })
-    dock:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1)
-    dock:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+    -- The queue in a parchment card of its own beside the catalog (the mockup's "Pedidos de craft").
+    local dock = UI:CreateCard(container, L["Orders"])
     dock:SetFrameLevel(container:GetFrameLevel() + 20)
     local queue = GuildOS.CraftOrders and GuildOS:CreateOrderQueue(dock)
 
@@ -666,10 +685,10 @@ function GuildOS:CreateCraftsTab(container, win)
         local wide = w >= QUEUE_MIN
         host:ClearAllPoints()
         host:SetPoint("TOPLEFT")
-        host:SetPoint("BOTTOMRIGHT", wide and -QUEUE_W or 0, 0)
+        host:SetPoint("BOTTOMRIGHT", wide and -(QUEUE_W + 12) or 0, 0)
         dock:ClearAllPoints()
-        dock:SetPoint("TOPRIGHT")
-        dock:SetPoint("BOTTOMRIGHT", 0, wide and 0 or 32)
+        dock:SetPoint("TOPRIGHT", -10, -8)
+        dock:SetPoint("BOTTOMRIGHT", -10, wide and 10 or 34)
         dock:SetWidth(QUEUE_W)
         dock:SetShown(queue ~= nil and (wide or drawerOpen))
         toggle:SetShown(queue ~= nil and not wide)

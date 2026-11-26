@@ -6,9 +6,42 @@
 -- point here). Visual layer only: every change goes through LootRule, LootMaster, Points and
 -- CoreManager, which keep the same keys as always.
 ----------------------------------------------------------------------
-local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
+
+-- The Loot room (specs/salao/fase3.md, the mockup's saque-*): its screens are parchment and dark cards on the
+-- wood. On the paper a colour of the wood takes the paper's shade: the ink, the soft ink, a state's deeper one;
+-- anything else light (an item quality's colour stays its own) is darkened to read.
+local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
+local PAPER_OK, PAPER_WARN, PAPER_BAD = hex("2f6e33"), hex("a0560f"), hex("8f1b0b")
+local function same(r, g, b, c) return c and math.abs(r - c.r) < 1e-3 and math.abs(g - c.g) < 1e-3 and math.abs(b - c.b) < 1e-3 end
+local function onPaper(r, g, b)
+    if same(r, g, b, C.text) then return C.paperInk.r, C.paperInk.g, C.paperInk.b end
+    if same(r, g, b, C.textSoft) or same(r, g, b, C.label) or same(r, g, b, C.labelDim) then
+        return C.paperSoft.r, C.paperSoft.g, C.paperSoft.b
+    end
+    if same(r, g, b, C.ok) then return PAPER_OK.r, PAPER_OK.g, PAPER_OK.b end
+    if same(r, g, b, C.warn) then return PAPER_WARN.r, PAPER_WARN.g, PAPER_WARN.b end
+    if same(r, g, b, C.danger) then return PAPER_BAD.r, PAPER_BAD.g, PAPER_BAD.b end
+    if (r + g + b) / 3 > 0.55 then return r * 0.6, g * 0.6, b * 0.6 end
+    return r, g, b
+end
+local function paperOf(parent) return GuildOS.UI.OnPaper ~= nil and GuildOS.UI:OnPaper(parent) end
+-- The shared components, with a text on the paper in the paper's shade and a switch's label in its ink.
+local UI = setmetatable({
+    CreateText = function(self, parent, text, size, r, g, b)
+        if r and paperOf(parent) then r, g, b = onPaper(r, g, b) end
+        return GuildOS.UI.CreateText(self, parent, text, size, r, g, b)
+    end,
+    CreateCheckbox = function(self, parent, ...)
+        local cb = GuildOS.UI.CreateCheckbox(self, parent, ...)
+        if cb and cb.label and paperOf(parent) then cb.label:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b) end
+        return cb
+    end,
+}, { __index = function(_, k) return GuildOS.UI[k] end })
+local PAD      = type(GuildOS.UI.CARD_PAD) == "number" and GuildOS.UI.CARD_PAD or 14
+local CARD_TOP = type(GuildOS.UI.CARD_TOP) == "number" and GuildOS.UI.CARD_TOP or 36
+local TWO_COLS = 760   -- px of the Rule tab: two columns from here, one under the other below
 
 local SUB_H      = 28    -- the sub-tab bar
 -- Between blocks, and under the sub-tab bar before a screen's first line (#371). A number even where a
@@ -578,17 +611,19 @@ local function drawModels(content, y, scope, redraw)
     for _, sys in ipairs(GuildOS:LootSystemsHere()) do
         list[#list + 1] = { key = sys.key, label = GuildOS:LootSystemLabel(sys) }
     end
+    -- The models as pills (the mockup's saque-regra), flowing over as many lines as the card needs; the one
+    -- in force filled in the title's red (UI:SetSelected).
     local W = content:GetWidth() or 0
-    local grid = UI:ChipGrid(#list, W, MODEL_GAP, W >= 560 and 5 or 8)
-    for i, choice in ipairs(list) do
-        local col, row = grid:Cell(i)
-        local b = UI:CreateButton(content, choice.label, math.floor(grid.w), MODEL_ROW_H - 2)
-        b:SetPoint("TOPLEFT", math.floor(col * (grid.w + MODEL_GAP)), -(y + row * MODEL_ROW_H))
-        b.label:ClearAllPoints()
-        b.label:SetPoint("LEFT", 8, 0)
-        b.label:SetJustifyH("LEFT")
+    if W < 60 then W = 400 end
+    local x, line = 0, 0
+    for _, choice in ipairs(list) do
+        local b = UI:CreateButton(content, choice.label, 40, MODEL_ROW_H - 2)
+        UI:SetButtonVariant(b, "chip")
+        b:SetWidth(math.ceil(b.label and b.label:GetStringWidth() or 40) + 22)
+        if x > 0 and x + b:GetWidth() > W then x, line = 0, line + 1 end
+        b:SetPoint("TOPLEFT", x, -(y + line * MODEL_ROW_H))
+        x = x + b:GetWidth() + MODEL_GAP + 2
         b.modelKey = choice.key
-        -- The model in force: the shared selection mark, a gold border and a gold label (#371).
         UI:SetSelected(b, (choice.key or nil) == own)
         b:SetScript("OnClick", function()
             local pickKey = choice.key or nil
@@ -599,7 +634,7 @@ local function drawModels(content, y, scope, redraw)
             redraw()
         end)
     end
-    y = y + grid.rows * MODEL_ROW_H + 4
+    y = y + (line + 1) * MODEL_ROW_H + 4
     if ofCore and not own then
         local followed = GuildOS:GetLootSystem("")
         for _, sys in ipairs(GuildOS:LootSystemsHere()) do
@@ -714,18 +749,44 @@ function GuildOS:RefreshLootRuleTab(content, scope)
         GuildOS:RefreshLootRuleTab(content, content.__lootScope)
         if content.onRedraw then content.onRedraw() end
     end
-    local y = 0
+
+    -- The mockup's saque-regra: on the left the rule's cards (whose it is, the model, its settings), on
+    -- the right how players will read it; one under the other where the tab is narrow.
+    local W = content:GetWidth()
+    if not W or W < 100 then W = 600 end
+    local two = W >= TWO_COLS
+    local leftW = two and math.floor((W - GAP - 4) * 0.53) or W
+    local rightX = two and (leftW + GAP + 4) or 0
+    local rightW = two and (W - rightX) or W
+    local below   -- the left column's bottom, as it grows
+    -- A parchment card at `x`, `top` of the tab, `w` wide, its content in `inner` from its title down.
+    local function card(title, x, top, w)
+        local c = UI:CreateCard(content, title)
+        c:SetPoint("TOPLEFT", x, -top)
+        c:SetWidth(w)
+        local inner = CreateFrame("Frame", nil, c)
+        inner:SetPoint("TOPLEFT", PAD, -CARD_TOP + 4)
+        inner:SetWidth(w - 2 * PAD)
+        inner:SetHeight(1)
+        return c, inner
+    end
+    local function close(c, inner, y)
+        inner:SetHeight(math.max(1, y))
+        local h = CARD_TOP - 4 + y + 14
+        c:SetHeight(h)
+        return h
+    end
 
     -- Whose rule: the guild's or a core's.
-    local ofLbl = UI:CreateHeaderText(content, L["RULE OF"], 10)
-    ofLbl:SetPoint("TOPLEFT", 0, -(y + 6))
-    local scopeDD = UI:CreateDropdown(content, 200, 22)
-    scopeDD:SetPoint("TOPLEFT", (ofLbl:GetStringWidth() or 50) + 10, -y)
+    local ofCard, of = card(L["Rule of"], 0, 0, leftW)
+    local y = 0
+    local scopeDD = UI:CreateDropdown(of, math.min(260, leftW - 2 * PAD), 24)
+    scopeDD:SetPoint("TOPLEFT", 0, -y)
     scopeDD:SetOptions(scopeOptions())
     scopeDD:SetValue(scope)
     scopeDD.isScope = true
     scopeDD.onSelect = function(_, v) content.__lootScope = v; redraw() end
-    y = y + 28
+    y = y + 32
     if scope == "" and CM then
         local followers = {}
         for _, name in ipairs(CM:GetSortedNames()) do
@@ -734,32 +795,33 @@ function GuildOS:RefreshLootRuleTab(content, scope)
             end
         end
         if #followers > 0 then
-            y = paragraph(content, string.format(L["%s follow the guild."], table.concat(followers, ", ")), y, 0, 11, C.label)
+            y = paragraph(of, string.format(L["%s follow the guild."], table.concat(followers, ", ")), y, 0, 11, C.label)
         end
     end
+    below = close(ofCard, of, y) + GAP + 4
 
     local siteRule = scope ~= "" and CM and CM.LootRuleFromSite and CM:LootRuleFromSite(scope)
     local inForce = GuildOS:GetLootSystem(scope)
     local rule = siteRule or LR:For(scope)
-    y = y + GAP
 
-    -- 1 · The model: the screen's first section, and so no rule over it (#371).
-    y = sectionTitle(content, L["1 \194\183 MODEL"], y, true)
+    -- 1 · The model.
+    local modelCard, model = card(L["1 · Model"], 0, below, leftW)
+    y = 0
     if siteRule then
-        y = paragraph(content, L["This core's loot rule is set on guildos.me, which sends it with the raid's roster."], y, 0, 11, C.label)
-        y = paragraph(content, string.format(L["Model: %s"], LR:ModelName(siteRule)), y, 0, 12, C.text)
+        y = paragraph(model, L["This core's loot rule is set on guildos.me, which sends it with the raid's roster."], y, 0, 11, C.label)
+        y = paragraph(model, string.format(L["Model: %s"], LR:ModelName(siteRule)), y, 0, 12, C.text)
     elseif isOfficer then
         -- The site's rule wins on raid night; the system chosen here plays only when the site sends none
         -- (audit B16).
-        y = paragraph(content, L["Without a rule from the site, use:"], y, 0, 11, C.label)
-        y = drawModels(content, y, scope, redraw)
+        y = paragraph(model, L["Without a rule from the site, use:"], y, 0, 11, C.label)
+        y = drawModels(model, y, scope, redraw)
     else
-        y = paragraph(content, string.format(L["Model: %s"], LR:ModelName(rule)), y, 0, 12, C.text)
+        y = paragraph(model, string.format(L["Model: %s"], LR:ModelName(rule)), y, 0, 12, C.text)
     end
     if inForce == "external" then
-        y = paragraph(content, L["GuildOS won't touch loot: no roll popups, wishlists, or history. Pick this if your guild distributes loot with Gargul, RCLootCouncil, etc."], y)
+        y = paragraph(model, L["GuildOS won't touch loot: no roll popups, wishlists, or history. Pick this if your guild distributes loot with Gargul, RCLootCouncil, etc."], y)
     elseif GuildOS.Client.isRetail then
-        y = paragraph(content, inForce == "rolls"
+        y = paragraph(model, inForce == "rolls"
             and L["Free roll: whoever received the item awards it to the best answer, Need before Greed, then the roll. Officers may award too."]
             or L["An officer awards an item a guildmate offers; whoever holds it then trades it to the winner."], y)
     end
@@ -768,57 +830,76 @@ function GuildOS:RefreshLootRuleTab(content, scope)
     -- guild loot system GuildOS runs.
     local council
     if GuildOS.TradeCouncil and GuildOS:LootSystemActive() then
-        council = UI:SetButtonVariant(UI:CreateButton(content, L["Loot Council"], 120, 22), "secondary")
+        council = UI:SetButtonVariant(UI:CreateButton(model, L["Loot Council"], 120, 22), "secondary")
         council:SetPoint("TOPLEFT", 0, -(y + 2))
         council:SetScript("OnClick", function() GuildOS:ShowTradeCouncil() end)
         y = y + 30
     end
     content.councilButton = council
+    -- What the model spends lives in Accounts: one place for each setting.
+    if isOfficer and GuildOS.Points and GuildOS:LootSystemUsesPoints(inForce) then
+        y = y + 4
+        local note = UI:CreateText(model, L["This model spends points: what they earn and cost is set in Accounts."], 11,
+            C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        note:SetPoint("TOPLEFT", 0, -(y + 4))
+        note:SetPoint("RIGHT", model, "RIGHT", 0, 0)
+        note:SetJustifyH("LEFT")
+        y = y + math.max(14, math.ceil(note:GetStringHeight() or 14)) + 8
+        local open = UI:CreateButton(model, L["Open Accounts"], 120, 22)
+        open:SetPoint("TOPLEFT", 0, -y)
+        open:SetScript("OnClick", function() if content.openSub then content.openSub("accounts", scope) end end)
+        y = y + 28
+    end
+    below = below + close(modelCard, model, y) + GAP + 4
 
     -- 2 · The model's settings and the answers (officers): one form, one label column for the
     -- settings and the rule's rows alike (#371).
     if isOfficer and not siteRule and inForce ~= "external" and LM then
-        y = sectionTitle(content, L["2 \194\183 SETTINGS OF THE MODEL"], y)
+        local setCard, set = card(L["2 · Settings of the model"], 0, below, leftW)
         local labels = {}
         for _, f in ipairs(settingsLabels(inForce)) do labels[#labels + 1] = f.text end
         if LR then
             for _, text in ipairs(ruleLabels(LR:For(scope ~= "" and scope or nil))) do labels[#labels + 1] = text end
         end
-        local col = labelColumn(content, labels)
-        y = drawLootSettings(content, y, scope, inForce, col)
-        if LR then y = GuildOS:BuildLootRuleEditor(content, y, scope ~= "" and scope or nil, redraw, col) end
-    end
-    -- What the model spends lives in Accounts: one place for each setting.
-    if isOfficer and GuildOS.Points and GuildOS:LootSystemUsesPoints(inForce) then
-        y = y + GAP
-        local note = UI:CreateText(content, L["This model spends points: what they earn and cost is set in Accounts."], 11,
-            C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        note:SetPoint("TOPLEFT", 0, -(y + 4))
-        local open = UI:CreateButton(content, L["Open Accounts"], 120, 22)
-        open:SetPoint("LEFT", note, "RIGHT", 10, 0)
-        open:SetScript("OnClick", function() if content.openSub then content.openSub("accounts", scope) end end)
-        y = y + 30
+        local col = labelColumn(set, labels)
+        y = drawLootSettings(set, 0, scope, inForce, col)
+        -- The exception being written outlives a drawing: it is the tab's, the card is drawn anew.
+        set.__lootException = content.__lootException
+        if LR then y = GuildOS:BuildLootRuleEditor(set, y, scope ~= "" and scope or nil, redraw, col) end
+        content.__lootException = set.__lootException
+        below = below + close(setCard, set, y) + GAP + 4
     end
 
-    -- How players will read it (everyone). Plain text: the lead-ins were painted white (#371).
+    -- How players will read it (everyone): each part under its small heading, in the reading size.
+    local readBottom = 0
     if inForce ~= "external" then
-        y = sectionTitle(content, L["HOW PLAYERS WILL READ IT"], y)
+        local top = two and 0 or below
+        local readCard, read = card(L["How players will read it"], rightX, top, rightW)
         local d = LR:Describe(rule, LM and LM:LootSettings(scope).rollDuration)
-        y = paragraph(content, L["Who may ask."] .. " " .. d.who, y, 0, 12, C.text)
-        y = paragraph(content, L["How to ask."] .. " " .. d.how, y, 0, 12, C.text)
-        y = paragraph(content, L["Who takes it."], y, 0, 12, C.text)
-        for i, line in ipairs(d.order) do
-            y = paragraph(content, string.format("%d. %s", i, line), y, 12, 12, C.text)
+        y = 0
+        local function part(head, text, more)
+            local h = UI:CreateText(read, head, 11, C.paperTitle.r, C.paperTitle.g, C.paperTitle.b)
+            GuildOS:ApplyFont(h, 11, "sectionTitle")
+            h:SetPoint("TOPLEFT", 0, -y)
+            y = y + 18
+            if text then y = paragraph(read, text, y, 0, 14, C.text) end
+            for _, line in ipairs(more or {}) do y = paragraph(read, line, y, 0, 14, C.text) end
+            y = y + 6
         end
-        if d.decide then y = paragraph(content, d.decide, y, 0, 12, C.text) end
-        if d.exceptions then
-            y = paragraph(content, L["Exceptions."] .. " " .. d.exceptions, y, 0, 12, C.text)
-        end
+        part(L["Who may ask."], d.who)
+        part(L["How to ask."], d.how)
+        local order = {}
+        for i, line in ipairs(d.order) do order[i] = string.format("%d. %s", i, line) end
+        if d.decide then order[#order + 1] = d.decide end
+        part(L["Who takes it."], nil, order)
+        if d.exceptions then part(L["Exceptions."], d.exceptions) end
         local at = LR:SavedAt(scope)
-        y = paragraph(content, at > 0 and string.format(L["Saved %s. The night's rule is locked when the raid starts."], GuildOS:DateText(at, " %H:%M"))
-            or L["The rule of the loot system. The night's rule is locked when the raid starts."], y + 4, 0, 11, C.label)
+        y = paragraph(read, at > 0 and string.format(L["Saved %s. The night's rule is locked when the raid starts."], GuildOS:DateText(at, " %H:%M"))
+            or L["The rule of the loot system. The night's rule is locked when the raid starts."], y, 0, 11, C.label)
+        readBottom = top + close(readCard, read, y)
     end
 
+    y = math.max(below, readBottom)
     content:SetHeight(math.max(1, y + 12))
     return y
 end
@@ -828,22 +909,31 @@ end
 -- priorities and the soft reserves, where they were.
 ----------------------------------------------------------------------
 local function buildLists(panel)
-    -- The views' toolbar: flush with the sub-tab bar's left edge, GAP under it (#371).
-    local bar = CreateFrame("Frame", nil, panel)
-    bar:SetPoint("TOPLEFT", 0, -GAP)
-    bar:SetPoint("TOPRIGHT", -GAP, -GAP)
+    -- One dark card on the wood (the mockup's saque-listas): "Lists", the two views as pills under its title.
+    local card = UI:CreateCard(panel, L["Lists"], { dark = true })
+    card:SetPoint("TOPLEFT", 0, -GAP)
+    card:SetPoint("BOTTOMRIGHT", -GAP, GAP)
+    local bar = CreateFrame("Frame", nil, card)
+    bar:SetPoint("TOPLEFT", PAD, -CARD_TOP + 6)
+    bar:SetPoint("TOPRIGHT", -PAD, -CARD_TOP + 6)
     bar:SetHeight(TOOLBAR_H)
-    local wishBtn = UI:CreateButton(bar, L["Wishlists"], 110, 22)
+    local wishBtn = UI:CreateButton(bar, L["Wishlists"], 40, 22)
+    UI:SetButtonVariant(wishBtn, "chip")
+    wishBtn:SetWidth(math.ceil(wishBtn.label and wishBtn.label:GetStringWidth() or 40) + 22)
     wishBtn:SetPoint("LEFT", 0, 0)
-    local srBtn = GuildOS.SoftRes and UI:CreateButton(bar, L["Soft Reserves"], 110, 22)
-    if srBtn then srBtn:SetPoint("LEFT", wishBtn, "RIGHT", 6, 0) end
+    local srBtn = GuildOS.SoftRes and UI:CreateButton(bar, L["Soft Reserves"], 40, 22)
+    if srBtn then
+        UI:SetButtonVariant(srBtn, "chip")
+        srBtn:SetWidth(math.ceil(srBtn.label and srBtn.label:GetStringWidth() or 40) + 22)
+        srBtn:SetPoint("LEFT", wishBtn, "RIGHT", 6, 0)
+    end
     -- "My Wishlist" is the guild list's own, beside Manage Prios: one here too showed it twice (#371).
-    local viewTop = GAP + TOOLBAR_H + GAP
+    local viewTop = CARD_TOP - 6 + TOOLBAR_H + 10
 
     -- Wishlists: the guild's, as the officers' Wishlist tab had it; a raider's own opens from the bar.
-    local wishView = CreateFrame("Frame", nil, panel)
-    wishView:SetPoint("TOPLEFT", 0, -viewTop)
-    wishView:SetPoint("BOTTOMRIGHT", 0, 0)
+    local wishView = CreateFrame("Frame", nil, card)
+    wishView:SetPoint("TOPLEFT", PAD, -viewTop)
+    wishView:SetPoint("BOTTOMRIGHT", -PAD + GAP, 10)
     local guildWish
     local memberNote = UI:CreateText(wishView, L["Your wishlist is yours to keep: the officers read every raider's here, beside their priorities."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     memberNote:SetPoint("TOPLEFT", 0, 0)
@@ -851,9 +941,9 @@ local function buildLists(panel)
     memberNote:SetJustifyH("LEFT")
 
     -- Soft reserves: the list, and for the officers the import and the clear.
-    local srView = CreateFrame("Frame", nil, panel)
-    srView:SetPoint("TOPLEFT", 0, -viewTop)
-    srView:SetPoint("BOTTOMRIGHT", 0, GAP)
+    local srView = CreateFrame("Frame", nil, card)
+    srView:SetPoint("TOPLEFT", PAD, -viewTop)
+    srView:SetPoint("BOTTOMRIGHT", -PAD + GAP, 10)
     srView:Hide()
     local srImportBtn = UI:CreateButton(srView, L["Import from softres.it"], 160, 22)
     srImportBtn:SetPoint("TOPLEFT", 0, 0)
@@ -875,9 +965,9 @@ local function buildLists(panel)
         { key = "raid", min = 70,  weight = 1, priority = 1 },
     }
     local srHead = {
-        item = UI:CreateHeaderText(srHeader, L["ITEM"], 10),
-        res = UI:CreateHeaderText(srHeader, L["RESERVED BY"], 10),
-        raid = UI:CreateHeaderText(srHeader, L["IN RAID"], 10),
+        item = UI:CreateHeaderText(srHeader, L["Item"], 10),
+        res = UI:CreateHeaderText(srHeader, L["Reserved by"], 10),
+        raid = UI:CreateHeaderText(srHeader, L["In raid"], 10),
     }
     local srScroll, srContent = UI:CreateScrollFrame(srView, "GuildOSLootSoftResScroll")
     srScroll:SetPoint("TOPLEFT", srHeader, "BOTTOMLEFT", 0, 0)
@@ -917,10 +1007,15 @@ local function buildLists(panel)
         for i, entry in ipairs(items) do
             local row = srRows[i]
             if not row then
-                row = CreateFrame("Frame", nil, srContent, "BackdropTemplate")
-                row:SetHeight(22)
-                row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-                row.item = UI:CreateText(row, "", 11)
+                row = CreateFrame("Frame", nil, srContent)
+                row:SetHeight(26)
+                local rule = row:CreateTexture(nil, "BACKGROUND")
+                rule:SetTexture("Interface\\Buttons\\WHITE8x8")
+                rule:SetHeight(1)
+                rule:SetPoint("BOTTOMLEFT"); rule:SetPoint("BOTTOMRIGHT")
+                rule:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
+                row.item = UI:CreateText(row, "", 12)
+                GuildOS:ApplyFont(row.item, 12, "button")
                 row.res = UI:CreateText(row, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
                 row.raid = UI:CreateText(row, "", 11)
                 for _, k in ipairs({ "item", "res", "raid" }) do
@@ -930,12 +1025,13 @@ local function buildLists(panel)
                 srRows[i] = row
             end
             row:ClearAllPoints()
-            row:SetPoint("TOPLEFT", 0, -(i - 1) * 22)
-            row:SetPoint("TOPRIGHT", 0, -(i - 1) * 22)
-            local bg = (i % 2 == 0) and C.row1 or C.row2
-            row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a or 0.4)
-            local itemName = GuildOS.Compat.GetItemInfo(entry.itemId)
+            row:SetPoint("TOPLEFT", 0, -(i - 1) * 26)
+            row:SetPoint("TOPRIGHT", 0, -(i - 1) * 26)
+            -- The item in its quality's colour (the mockup's .q-epic), as the game names it here.
+            local itemName, _, quality = GuildOS.Compat.GetItemInfo(entry.itemId)
+            local qc = GuildOS.QualityColors[quality or 1] or C.text
             row.item:SetText(itemName or ("Item #" .. entry.itemId))
+            row.item:SetTextColor(qc.r, qc.g, qc.b)
             local reserves = GuildOS.SoftRes:GetReservesForDisplay(entry.itemId)
             if ownOnly then reserves = GuildOS.SoftRes:OwnOnly(reserves) end
             local inRaid, names = 0, {}
@@ -957,7 +1053,7 @@ local function buildLists(panel)
             row:Show()
         end
         for i = #items + 1, #srRows do srRows[i]:Hide() end
-        srContent:SetHeight(math.max(1, #items * 22))
+        srContent:SetHeight(math.max(1, #items * 26))
     end
     GuildOS.softResRefresh = refreshSR
     srImportBtn:SetScript("OnClick", function() GuildOS:ShowSoftResImportPopup() end)
@@ -1030,16 +1126,28 @@ local function placeHeader(header, titles, layout)
 end
 
 -- A row of `content`, made once and reused; its cells are FontStrings by column key.
+-- A row on the dark card (the mockup's .dark .t): the wood's 1px line under it, a soft gold wash under the
+-- cursor where the row answers it.
+local TABLE_ROW_H = 30
 local function tableRow(content, i, keys)
     content.rows = content.rows or {}
     local row = content.rows[i]
     if not row then
-        row = CreateFrame("Frame", nil, content, "BackdropTemplate")
-        row:SetHeight(22)
-        row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        row = CreateFrame("Frame", nil, content)
+        row:SetHeight(TABLE_ROW_H)
+        local rule = row:CreateTexture(nil, "BACKGROUND")
+        rule:SetTexture("Interface\\Buttons\\WHITE8x8")
+        rule:SetHeight(1)
+        rule:SetPoint("BOTTOMLEFT"); rule:SetPoint("BOTTOMRIGHT")
+        rule:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
+        row.hover = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+        row.hover:SetTexture("Interface\\Buttons\\WHITE8x8")
+        row.hover:SetAllPoints()
+        row.hover:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 0.07)
+        row.hover:Hide()
         row.cells = {}
         for _, k in ipairs(keys) do
-            local fs = UI:CreateText(row, "", 11)
+            local fs = UI:CreateText(row, "", 12)
             fs:SetJustifyH("LEFT")
             if fs.SetWordWrap then fs:SetWordWrap(false) end
             row.cells[k] = fs
@@ -1047,11 +1155,8 @@ local function tableRow(content, i, keys)
         content.rows[i] = row
     end
     row:ClearAllPoints()
-    row:SetPoint("TOPLEFT", 0, -(i - 1) * 22)
-    row:SetPoint("TOPRIGHT", 0, -(i - 1) * 22)
-    local bg = (i % 2 == 1) and C.row1 or C.row2
-    row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a or 0.4)
-    row.bg = bg
+    row:SetPoint("TOPLEFT", 0, -(i - 1) * TABLE_ROW_H)
+    row:SetPoint("TOPRIGHT", 0, -(i - 1) * TABLE_ROW_H)
     row:Show()
     return row
 end
@@ -1085,15 +1190,26 @@ function GuildOS:RefreshLootPanel(content, countText, header)
     local history = GuildOS.LootTracker:GetHistory(100)
     countText:SetText(#GuildOS.db.lootHistory .. L[" items tracked"])
     local layout = UI:ResolveColumns(HISTORY_COLS, math.max(1, content:GetWidth() or 0), 6)
-    if header then placeHeader(header, { item = L["ITEM"], player = L["PLAYER"], raid = L["RAID"], date = L["DATE"] }, layout) end
+    if header then placeHeader(header, { item = L["Item"], player = L["Who took it"], raid = L["Where"], date = L["When"] }, layout) end
     hideRowsFrom(content, 1)
     for i, entry in ipairs(history) do
         local row = tableRow(content, i, { "item", "player", "raid", "date" })
         placeCells(row, layout)
-        -- The item in its quality's colour, by the name this client's language gives it.
+        -- The item in its quality's colour, by the name this client's language gives it, after its icon framed
+        -- in that colour (the mockup's .itm).
         local qColor = GuildOS.QualityColors[entry.quality] or GuildOS.QualityColors[1]
-        local localName, _, _, _, _, _, _, _, _, _, localQuality = GuildOS.Compat.GetItemInfo(entry.itemLink or entry.itemId or 0)
+        local localName, _, _, _, _, _, _, _, _, icon, localQuality = GuildOS.Compat.GetItemInfo(entry.itemLink or entry.itemId or 0)
         if localQuality then qColor = GuildOS.QualityColors[localQuality] or qColor end
+        if not row.icon then
+            row.icon = UI:CreateIcon(row, 18)
+            row.icon:SetPoint("LEFT", row, "LEFT", layout.byKey.item.x + 4, 0)
+        end
+        row.icon.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        UI:SetIconQuality(row.icon, localQuality or entry.quality or 1)
+        row.cells.item:ClearAllPoints()
+        row.cells.item:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+        row.cells.item:SetWidth(math.max(1, layout.byKey.item.w - 34))
+        GuildOS:ApplyFont(row.cells.item, 12, "button")
         row.cells.item:SetText(localName or entry.itemName or "?")
         row.cells.item:SetTextColor(qColor.r, qColor.g, qColor.b)
         local member = GuildOS.db.members[entry.playerKey]
@@ -1101,20 +1217,21 @@ function GuildOS:RefreshLootPanel(content, countText, header)
         if member and member.class then pr, pg, pb = GuildOS:GetClassColor(member.class) end
         row.cells.player:SetText(entry.player or "?")
         row.cells.player:SetTextColor(pr, pg, pb)
+        GuildOS:ApplyFont(row.cells.player, 12, "button")
         row.cells.raid:SetText(entry.raid or "")
-        row.cells.raid:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        row.cells.raid:SetTextColor(C.text.r, C.text.g, C.text.b)
         row.cells.date:SetText(GuildOS:DateText(entry.timestamp or 0, " %H:%M"))
-        row.cells.date:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        row.cells.date:SetTextColor(C.text.r, C.text.g, C.text.b)
         row:EnableMouse(entry.itemLink ~= nil)
         row:SetScript("OnEnter", entry.itemLink and function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetHyperlink(entry.itemLink)
             GameTooltip:Show()
-            self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
+            self.hover:Show()
         end or nil)
         row:SetScript("OnLeave", entry.itemLink and function(self)
             GameTooltip:Hide()
-            self:SetBackdropColor(self.bg.r, self.bg.g, self.bg.b, self.bg.a or 0.4)
+            self.hover:Hide()
         end or nil)
         -- My own personal item, still in my bags to trade: offered to the raid from here (retail, #185).
         local offerable = GuildOS.TradeCouncil and not entry.awarded and entry.itemLink
@@ -1131,7 +1248,7 @@ function GuildOS:RefreshLootPanel(content, countText, header)
         end
     end
     if #history == 0 then emptyLine(content, L["No loot recorded yet."]) end
-    content:SetHeight(math.max(1, #history * 22))
+    content:SetHeight(math.max(1, #history * TABLE_ROW_H))
 end
 
 function GuildOS:RefreshLootEquity(content, countText, header)
@@ -1140,8 +1257,8 @@ function GuildOS:RefreshLootEquity(content, countText, header)
     countText:SetText(string.format(L["%d members with loot/raid history"], #rows))
     local layout = UI:ResolveColumns(EQUITY_COLS, math.max(1, content:GetWidth() or 0), 6)
     if header then
-        placeHeader(header, { name = L["MEMBER"], items = L["ITEMS"], att = L["ATT%"], raids = L["RAIDS"],
-            per = L["ITEMS/RAID"], flag = "" }, layout)
+        placeHeader(header, { name = L["Member"], items = L["Items"], att = L["Att%"], raids = L["Raids"],
+            per = L["Items/raid"], flag = "" }, layout)
     end
     hideRowsFrom(content, 1)
     for i, r in ipairs(rows) do
@@ -1172,46 +1289,53 @@ function GuildOS:RefreshLootEquity(content, countText, header)
         end
     end
     if #rows == 0 then emptyLine(content, L["No loot or attendance data yet."]) end
-    content:SetHeight(math.max(1, #rows * 22))
+    content:SetHeight(math.max(1, #rows * TABLE_ROW_H))
 end
 
 ----------------------------------------------------------------------
 -- The History tab: the loot history and the equity, as the officers' Loot tab had them.
 ----------------------------------------------------------------------
 local function buildHistory(panel)
-    -- Flush with the sub-tab bar's left edge, GAP under it (#371).
-    local holder = CreateFrame("Frame", nil, panel)
+    -- One dark card on the wood (the mockup's saque-historico): "What dropped", History and Equity as pills,
+    -- the count and the loot master on a line with Export at its right, then the table.
+    local holder = UI:CreateCard(panel, L["What dropped"], { dark = true })
     holder:SetPoint("TOPLEFT", 0, -GAP)
-    holder:SetPoint("BOTTOMRIGHT", 0, GAP)
+    holder:SetPoint("BOTTOMRIGHT", -GAP, GAP)
 
-    local histBtn = UI:CreateButton(holder, L["History"], 90, 22)
-    histBtn:SetPoint("TOPLEFT", 0, 0)
-    local eqBtn = UI:CreateButton(holder, L["Equity"], 90, 22)
+    local histBtn = UI:CreateButton(holder, L["History"], 40, 22)
+    UI:SetButtonVariant(histBtn, "chip")
+    histBtn:SetWidth(math.ceil(histBtn.label and histBtn.label:GetStringWidth() or 40) + 22)
+    histBtn:SetPoint("TOPLEFT", PAD, -CARD_TOP + 6)
+    local eqBtn = UI:CreateButton(holder, L["Equity"], 40, 22)
+    UI:SetButtonVariant(eqBtn, "chip")
+    eqBtn:SetWidth(math.ceil(eqBtn.label and eqBtn.label:GetStringWidth() or 40) + 22)
     eqBtn:SetPoint("LEFT", histBtn, "RIGHT", 6, 0)
-    local exportBtn = UI:CreateButton(holder, L["Export"], 90, 22)
-    exportBtn:SetPoint("LEFT", eqBtn, "RIGHT", 6, 0)
+    local exportBtn = UI:CreateButton(holder, L["Export"], 70, 22)
+    exportBtn:SetPoint("TOPRIGHT", -PAD, -(CARD_TOP + 22))
     exportBtn:SetScript("OnClick", function() GuildOS:ShowExportPopup(L["Loot Export"], GuildOS:ExportLoot()) end)
-    local countText = UI:CreateText(holder, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    countText:SetPoint("TOPRIGHT", -GAP, -4)
-    local lmText = UI:CreateText(holder, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    lmText:SetPoint("TOPLEFT", 0, -(TOOLBAR_H + GAP))
-    lmText:SetPoint("RIGHT", holder, "RIGHT", -GAP, 0)
+    -- The count and who masters the loot now, one line under the pills.
+    local countText = UI:CreateText(holder, "", 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    countText:SetPoint("TOPLEFT", PAD, -(CARD_TOP + 26))
+    local lmText = UI:CreateText(holder, "", 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    lmText:SetPoint("LEFT", countText, "RIGHT", 0, 0)
+    lmText:SetPoint("RIGHT", exportBtn, "LEFT", -8, 0)
     lmText:SetJustifyH("LEFT")
     if lmText.SetWordWrap then lmText:SetWordWrap(false) end
+    local function master() local t = GuildOS:LootMasterStatus() or ""; return t ~= "" and ("  \194\183  " .. t) or "" end
     if GuildOS.LootMaster then
         local lmEvents = CreateFrame("Frame")
         GuildOS.Compat.RegisterEvent(lmEvents, "PARTY_LOOT_METHOD_CHANGED")
         GuildOS.Compat.RegisterEvent(lmEvents, "GROUP_ROSTER_UPDATE")
         lmEvents:SetScript("OnEvent", function()
-            if panel:IsVisible() then lmText:SetText(GuildOS:LootMasterStatus() or "") end
+            if panel:IsVisible() then lmText:SetText(master()) end
         end)
     end
 
     local function view(top)
         local v = CreateFrame("Frame", nil, holder)
-        v:SetPoint("TOPLEFT", 0, -top)
-        v:SetPoint("BOTTOMRIGHT", 0, 0)
-        -- The shared header row: no fill, its own 1px rule under it (#371).
+        v:SetPoint("TOPLEFT", PAD, -top)
+        v:SetPoint("BOTTOMRIGHT", -PAD + GAP, 10)
+        -- The shared header row: Cinzel in gold, the metal's 1px rule under it (#371).
         local header = UI:CreateTableHeader(v)
         header:SetPoint("TOPLEFT", 0, 0)
         header:SetPoint("TOPRIGHT", -GAP, 0)
@@ -1222,8 +1346,8 @@ local function buildHistory(panel)
         v.header, v.content = header, content
         return v
     end
-    -- Under the buttons and the master looter's line.
-    local viewTop = TOOLBAR_H + GAP + 14 + GAP
+    -- Under the pills and the count's line.
+    local viewTop = CARD_TOP + 26 + 22 + GAP
     local historyView = view(viewTop)
     local equityView = view(viewTop)
     equityView:Hide()
@@ -1235,7 +1359,7 @@ local function buildHistory(panel)
         equityView:SetShown(which == "equity")
         UI:SetSelected(histBtn, which == "history")
         UI:SetSelected(eqBtn, which == "equity")
-        lmText:SetText(GuildOS:LootMasterStatus() or "")
+        lmText:SetText(master())
         if which == "history" then
             GuildOS:RefreshLootPanel(historyView.content, countText, historyView.header)
         else

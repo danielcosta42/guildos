@@ -3065,16 +3065,25 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
     f:SetScript("OnDragStart", function(self) self:StartMoving() end)
     f:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
 
-    -- The header: "Loot", the clock, the close.
-    local head = UI:CreateHeaderText(f, L["LOOT"], 10)
-    head:SetPoint("TOPLEFT", POPUP_PAD, -10)
-    local clock = UI:CreateText(f, "", 11, C.text.r, C.text.g, C.text.b)   -- danger in the last 5s; gold is not a status (#371)
-    clock:SetPoint("TOPRIGHT", -34, -9)
-    f.clock = clock
-    local close = UI:CreateCloseButton(f)
-    close:SetPoint("TOPRIGHT", -6, -6)
-    close:SetScript("OnClick", function() f:Hide() end)
+    -- The header: "Loot", the clock, the close. With the kit, the floating window's (the mockup's .fw "lootRoll"):
+    -- "Loot" in Cinzel gold, the clock beside it.
+    local Kit = rawget(GuildOS, "Kit")
     local y = 30
+    if Kit then
+        Kit:Dress(f, L["Loot"])
+        f.clock = f.subText
+        y = Kit.HEADER_H + 10
+    else
+        local head = UI:CreateHeaderText(f, L["LOOT"], 10)
+        head:SetPoint("TOPLEFT", POPUP_PAD, -10)
+        local clock = UI:CreateText(f, "", 11, C.text.r, C.text.g, C.text.b)   -- danger in the last 5s; gold is not a status (#371)
+        clock:SetPoint("TOPRIGHT", -34, -9)
+        f.clock = clock
+        local close = UI:CreateCloseButton(f)
+        close:SetPoint("TOPRIGHT", -6, -6)
+        close:SetScript("OnClick", function() f:Hide() end)
+    end
+    local clock = f.clock
 
     -- The item, and what it is.
     local itemText = UI:CreateText(f, itemLink or L["Unknown Item"], 13)
@@ -3094,7 +3103,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
     -- What the player wears there.
     local worn, diff = self:EquippedFor(itemLink)
     if worn then
-        local wearHead = UI:CreateHeaderText(f, L["YOU WEAR"], 9)
+        local wearHead = UI:CreateHeaderText(f, L["You wear"], 9)
         wearHead:SetPoint("TOPLEFT", POPUP_PAD, -y)
         y = y + 14
         local wornText = UI:CreateText(f, worn, 11)
@@ -3112,7 +3121,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
     end
 
     -- Where the player stands in the rule.
-    local standHead = UI:CreateHeaderText(f, L["WHERE YOU STAND IN THIS RULE"], 9)
+    local standHead = UI:CreateHeaderText(f, L["Where you stand in this rule"], 9)
     standHead:SetPoint("TOPLEFT", POPUP_PAD, -y)
     y = y + 16
     local st = self:Standing(itemId, rule)
@@ -3373,19 +3382,29 @@ function LootMaster:BuildLootTable()
     f:SetScript("OnDragStop", f.StopMovingOrSizing)
     f:Hide()
 
-    -- Title: what is being given, by which rule, and the clock.
-    f.title = UI:CreateTitle(f, L["Loot table"], 14)
-    f.title:SetPoint("TOPLEFT", 12, -10)
-    f.ruleText = UI:CreateText(f, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
-    f.ruleText:SetPoint("LEFT", f.title, "RIGHT", 12, 0)
-    f.timerText = UI:CreateText(f, "", 10, C.silver.r, C.silver.g, C.silver.b)
-    f.timerText:SetPoint("TOPRIGHT", -34, -12)
-    local close = UI:CreateCloseButton(f)
-    close:SetPoint("TOPRIGHT", -6, -6)
-    close:SetScript("OnClick", function() f:Hide() end)
-    local titleSep = UI:CreateSeparator(f)
-    titleSep:SetPoint("TOPLEFT", 8, -32)
-    titleSep:SetPoint("TOPRIGHT", -8, -32)
+    -- Title: what is being given, by which rule, and the clock. With the kit, the floating window's header (the
+    -- mockup's .fw "lootMaster"): the title in Cinzel gold, the rule beside it, the clock by the round red close.
+    local Kit = rawget(GuildOS, "Kit")
+    if Kit then
+        Kit:Dress(f, L["Loot table"])
+        f.title, f.ruleText = f.titleText, f.subText
+        f.timerText = UI:CreateText(f.header, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        f.timerText:SetPoint("RIGHT", f.closeBtn, "LEFT", -10, 0)
+        f.ruleText:SetPoint("RIGHT", f.timerText, "LEFT", -10, 0)
+    else
+        f.title = UI:CreateTitle(f, L["Loot table"], 14)
+        f.title:SetPoint("TOPLEFT", 12, -10)
+        f.ruleText = UI:CreateText(f, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+        f.ruleText:SetPoint("LEFT", f.title, "RIGHT", 12, 0)
+        f.timerText = UI:CreateText(f, "", 10, C.silver.r, C.silver.g, C.silver.b)
+        f.timerText:SetPoint("TOPRIGHT", -34, -12)
+        local close = UI:CreateCloseButton(f)
+        close:SetPoint("TOPRIGHT", -6, -6)
+        close:SetScript("OnClick", function() f:Hide() end)
+        local titleSep = UI:CreateSeparator(f)
+        titleSep:SetPoint("TOPLEFT", 8, -32)
+        titleSep:SetPoint("TOPRIGHT", -8, -32)
+    end
 
     -- The resize grip.
     local grip = CreateFrame("Button", nil, f)
@@ -3406,11 +3425,11 @@ function LootMaster:BuildLootTable()
     left:SetPoint("BOTTOMLEFT", TABLE_PAD, TABLE_PAD)
     left:SetWidth(TABLE_LIST_W)
     f.left = left
-    local itemsHdr = UI:CreateHeaderText(left, L["BOSS ITEMS"], 10)
+    local itemsHdr = UI:CreateHeaderText(left, L["Boss items"], 10)
     itemsHdr:SetPoint("TOPLEFT", 0, 0)
     f.itemsHdr = itemsHdr
     f.itemRows = {}
-    local nightHdr = UI:CreateHeaderText(left, L["DELIVERED TONIGHT"], 10)
+    local nightHdr = UI:CreateHeaderText(left, L["Delivered tonight"], 10)
     f.nightHdr = nightHdr
     f.nightLines = {}
     local undoBtn = UI:CreateButton(left, L["Undo last award"], TABLE_LIST_W, 22)
@@ -3508,8 +3527,8 @@ function LootMaster:BuildLootTable()
     head:SetPoint("TOPRIGHT", -gutter, -50)
     f.head = head
     f.heads = {}
-    local TITLES = { rank = "#", name = L["PLAYER"], answer = L["ANSWER"], why = L["WHY THEY ARE HERE"],
-        plus = "+1", att = L["ATT%"], roll = L["ROLL"] }
+    local TITLES = { rank = "#", name = L["Player"], answer = L["Answer"], why = L["Why they are here"],
+        plus = "+1", att = L["Att%"], roll = L["Roll"] }
     for _, col in ipairs(TABLE_COLS) do f.heads[col.key] = UI:CreateHeaderText(head, TITLES[col.key], 9) end
     local scroll, child = UI:CreateScrollFrame(right, "GuildOSLootTableScroll")
     scroll:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, 0)

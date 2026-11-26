@@ -46,9 +46,8 @@ local function hex(c)
     return string.format("%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255)
 end
 
--- Room over a later section title for the rule UI:CreateSectionTitle draws 12px above it, and the
--- height a title takes with the gap under it (#371).
-local SECTION_ABOVE, TITLE_H = 20, 24
+-- Room over a later section title for the rule UI:CreateSectionTitle draws 12px above it (#371).
+local SECTION_ABOVE = 20
 
 -- A scroll frame filling `holder` and reaching UI.SCROLL_GUTTER past its right edge (#371).
 local function fillScroll(scroll, content)
@@ -102,7 +101,6 @@ local function BuildChat(panel)
     -- Blocks are POOLED. Refresh runs on every incoming message and WoW never
     -- frees a frame, so building widgets per refresh leaked for the whole
     -- session. Created on demand, parked when the log shrinks.
-    local CLASS_TEX = "Interface\\WorldStateFrame\\Icons-Classes"
     local blocks = {}
     -- Declared BEFORE getBlock: the hide button closes over it, and a later
     -- declaration would leave that closure pointing at a nil global.
@@ -125,18 +123,20 @@ local function BuildChat(panel)
         accent:SetPoint("BOTTOMLEFT", 0, 0)
         accent:SetWidth(3)
 
-        local icon = card:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(20, 20)
-        icon:SetPoint("TOPLEFT", 10, -7)
+        -- The mockup's chat line (.chat .ln): a small round avatar in the speaker's class, the name and the time
+        -- beside it, the lines under it; the guild's colour on a thin rail at the left.
+        local icon = UI:CreateAvatar(card, 22, false)
+        icon:SetPoint("TOPLEFT", 8, -4)
+        icon:EnableMouse(false)
 
-        local nameFS = UI:CreateText(card, "", 11, C.text.r, C.text.g, C.text.b)
-        nameFS:SetPoint("TOPLEFT", 38, -7)
+        local nameFS = UI:CreateText(card, "", 13, C.text.r, C.text.g, C.text.b)
+        nameFS:SetPoint("TOPLEFT", 38, -5)
         nameFS:SetJustifyH("LEFT")
 
-        local timeFS = UI:CreateText(card, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
-        timeFS:SetPoint("TOPRIGHT", -8, -8)
+        local timeFS = UI:CreateText(card, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        timeFS:SetPoint("TOPRIGHT", -24, -6)
 
-        local bodyFS = UI:CreateText(card, "", 11, C.text.r, C.text.g, C.text.b)
+        local bodyFS = UI:CreateText(card, "", 13, C.text.r, C.text.g, C.text.b)
         bodyFS:SetPoint("TOPLEFT", 38, -22)
         bodyFS:SetJustifyH("LEFT")
         bodyFS:SetWordWrap(true)
@@ -189,7 +189,7 @@ local function BuildChat(panel)
         blocks[i] = {
             card = card, accent = accent, icon = icon,
             nameFS = nameFS, timeFS = timeFS, bodyFS = bodyFS, hit = hit,
-            hide = hide, classTex = CLASS_TEX,
+            hide = hide,
         }
         return blocks[i]
     end
@@ -288,8 +288,9 @@ local function BuildChat(panel)
                 local cr, cg, cb = GuildOS:GetClassColor(info and info.class)
                 local own = (g.guild == myGuild)
 
-                b.card:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, own and 0.35 or 0.55)
-                b.card:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.35)
+                -- No box: the dark card is the room's; our own guild's lines sit a shade lighter.
+                b.card:SetBackdropColor(1, 1, 1, own and 0.03 or 0)
+                b.card:SetBackdropBorderColor(0, 0, 0, 0)
                 -- The rail is the GUILD's colour, matching the bulletin, so one
                 -- colour means one guild everywhere in this panel. Class still
                 -- reads off the icon and the name, which is where you look for
@@ -298,14 +299,8 @@ local function BuildChat(panel)
                 b.accent:SetColorTexture(gr, gg, gb, 0.95)
                 b.accent:Show()
 
-                local coords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[info and info.class]
-                if coords then
-                    b.icon:SetTexture(b.classTex)
-                    b.icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
-                    b.icon:Show()
-                else
-                    b.icon:Hide()
-                end
+                b.icon:SetMember(g.name, info and info.class and tostring(info.class):upper() or nil)
+                b.icon:Show()
 
                 -- The guild tag stays dim for our own guild: in an alliance
                 -- channel the signal worth reading is WHICH ALLY is speaking.
@@ -367,45 +362,63 @@ local function BuildChat(panel)
 end
 
 ----------------------------------------------------------------------
--- Salão › Alliance
+-- Salão › Alliance, as the mockup's (#449 phase 3): dark cards on the wood, in two columns from 700px and one
+-- under the other below. On the left the alliance (its name, its guilds in their colours, the raids open to it);
+-- on the right who is on now, and the alliance room as tall as what is left of the screen.
 ----------------------------------------------------------------------
+local HALL_TWO, HALL_SHARE, HALL_GUTTER = 700, 0.535, 12
+local HALL_PAD, HALL_TOP = 14, 16
+local ROOM_MIN = 240
+
 local function BuildHall(panel)
-    local title = UI:CreateSectionTitle(panel, "", true)
-    title:SetPoint("TOPLEFT", 0, 0)
-    local empty = wrapText(panel, 12, C.textSoft)
-    empty:SetPoint("TOPLEFT", 0, -TITLE_H)
-    addFlexHint(empty)
+    local info = UI:CreateCard(panel, "", { dark = true })
+    local onlineCard = UI:CreateCard(panel, "", { dark = true })
+    local roomCard = UI:CreateCard(panel, "", { dark = true })
 
-    local guildsFS = wrapText(panel, 11, C.text)
-    addFlexHint(guildsFS)
-    local onlineHdr = UI:CreateText(panel, L["Online now"], 11, C.label.r, C.label.g, C.label.b)
-    local onlineFS = wrapText(panel, 11, C.text)
-    addFlexHint(onlineFS)
-    local onlineHint = wrapText(panel, 9, C.textDim)
+    -- Each card's title, its own line in the title face (the soft gold on the dark card).
+    local title = UI:CreateSectionTitle(info, "", true)
+    local empty = wrapText(info, 12, C.textSoft)
+    local guildsFS = wrapText(info, 12, C.text)
+    local raidsHdr = UI:CreateSectionTitle(info, L["Open raids"], true)
+    local raidsFS = wrapText(info, 12, C.text)
+    local onlineHdr = UI:CreateSectionTitle(onlineCard, L["Online now"], true)
+    local onlineFS = wrapText(onlineCard, 12, C.text)
+    local onlineHint = wrapText(onlineCard, 11, C.textSoft)
     onlineHint:SetText(L["Best effort: only who spoke on the alliance channel or runs GuildOS is seen."])
-    addFlexHint(onlineHint)
-    local raidsHdr = UI:CreateText(panel, L["Open raids"], 11, C.label.r, C.label.g, C.label.b)
-    local raidsFS = wrapText(panel, 11, C.text)
-    addFlexHint(raidsFS)
-    local roomHdr = UI:CreateSectionTitle(panel, L["Alliance room"])
+    local roomHdr = UI:CreateSectionTitle(roomCard, L["Alliance room"], true)
+    roomHdr:SetPoint("TOPLEFT", HALL_PAD, -HALL_TOP)
 
-    -- The room fills what is left, under the lines above (placed on refresh: their height varies).
-    local room = CreateFrame("Frame", nil, panel)
-    room:SetPoint("BOTTOMRIGHT", 0, 0)
+    -- The room fills its card under the title.
+    local room = CreateFrame("Frame", nil, roomCard)
+    room:SetPoint("TOPLEFT", HALL_PAD, -(HALL_TOP + 24))
+    room:SetPoint("BOTTOMRIGHT", -HALL_PAD, HALL_PAD - 4)
     local refreshRoom = BuildChat(room)
 
-    local function place(fs, y)
+    -- A line of text in a card, at `y` from its top, `w` wide; the next line's y.
+    local function place(fs, y, w)
         fs:ClearAllPoints()
-        fs:SetPoint("TOPLEFT", 0, -y)
+        fs:SetPoint("TOPLEFT", HALL_PAD, -y)
+        if w then fs:SetWidth(w) end
         fs:Show()
-        return y + math.max(14, fs:GetStringHeight() or 12) + 4
+        return y + math.max(14, fs:GetStringHeight() or 12) + 6
+    end
+    local function put(card, x, y, w, h)
+        card:ClearAllPoints()
+        card:SetPoint("TOPLEFT", x, -y)
+        card:SetSize(w, h)
+        card:Show()
+        return y + h + HALL_GUTTER
     end
 
     local function refresh()
         local ally = ALLY()
         local pact = ally and ally:Get()
         local inPact = pact ~= nil
-        for _, w in ipairs({ guildsFS, onlineHdr, onlineFS, onlineHint, raidsHdr, raidsFS, roomHdr, room }) do
+        local W = math.max(260, (panel:GetWidth() or 0))
+        local two = W >= HALL_TWO
+        local lw = two and math.floor((W - HALL_GUTTER) * HALL_SHARE) or W
+        local rw = two and (W - HALL_GUTTER - lw) or W
+        for _, w in ipairs({ guildsFS, raidsHdr, raidsFS, onlineCard, roomCard, room }) do
             w:Hide()
         end
         setShown(empty, not inPact)
@@ -413,10 +426,14 @@ local function BuildHall(panel)
             title:SetText(L["Alliance"])
             local lines = { L["This guild is not in an alliance yet."], ALLY() and ALLY().MOVED or "" }
             empty:SetText(table.concat(lines, "\n"))
+            local y = place(title, HALL_TOP)
+            y = place(empty, y + 2, lw - 2 * HALL_PAD)
+            put(info, 0, 2, lw, y + HALL_PAD - 6)
             return
         end
         local name = ally:Name() or pact.tag
         title:SetText(name == pact.tag and name or string.format("%s [%s]", name, pact.tag))
+        local y = place(title, HALL_TOP)
 
         -- The guilds, in their colours, ours marked, the others with how many are seen on now.
         local parts = {}
@@ -426,7 +443,7 @@ local function BuildHall(panel)
         for _, g in ipairs(ally:Guilds()) do
             local label = "|cff" .. ally.GuildColorHex(g.name) .. g.name .. "|r"
             if counts[g.name] and counts[g.name] > 0 then
-                label = label .. " |cff" .. hex(C.textDim) .. string.format(L["(%d in the directory)"], counts[g.name]) .. "|r"
+                label = label .. " |cff" .. hex(C.textSoft) .. string.format(L["(%d in the directory)"], counts[g.name]) .. "|r"
             end
             if g.mine then
                 label = label .. " " .. L["(you)"]
@@ -435,27 +452,16 @@ local function BuildHall(panel)
             end
             parts[#parts + 1] = label
         end
-        guildsFS:SetText(table.concat(parts, "   "))
-        local y = place(guildsFS, TITLE_H)
-
-        y = place(onlineHdr, y + UI.GAP)
-        local online, names = ally:OnlineNow(), {}
-        for i = 1, math.min(#online, MAX_ONLINE) do
-            local p = online[i]
-            names[#names + 1] = p.name .. " |cff" .. ally.GuildColorHex(p.guild) .. "[" .. p.guild .. "]|r"
-        end
-        if #online > MAX_ONLINE then names[#names + 1] = "+" .. (#online - MAX_ONLINE) end
-        onlineFS:SetText(#names > 0 and table.concat(names, ", ") or L["nobody online"])
-        y = place(onlineFS, y)
-        y = place(onlineHint, y)
+        guildsFS:SetText(table.concat(parts, "\n"))
+        y = place(guildsFS, y + 2, lw - 2 * HALL_PAD)
 
         -- Raids open to the alliance, from guildos.me (GOSALLY1): nothing until the site sends them.
         local raids = ally:OpenRaids()
         if #raids > 0 then
             local asOf = ally:AsOf()
-            raidsHdr:SetText(L["Open raids"] .. (asOf and ("  |cff" .. hex(C.textDim)
+            raidsHdr:SetText(L["Open raids"] .. (asOf and ("  |cff" .. hex(C.textSoft)
                 .. string.format(L["(as of %s)"], GuildOS:LocalDate("%a %H:%M", asOf)) .. "|r") or ""))
-            y = place(raidsHdr, y + UI.GAP)
+            y = place(raidsHdr, y + 10)
             local lines = {}
             for i = 1, math.min(#raids, MAX_RAIDS) do
                 local r = raids[i]
@@ -469,15 +475,29 @@ local function BuildHall(panel)
                     .. "|cff" .. hex(C.textSoft) .. extra .. "|r"
             end
             -- Nothing here signs anybody up (alianca.md §3.2): the site and Discord do.
-            lines[#lines + 1] = "|cff" .. hex(C.textDim) .. L["Sign up in Discord or on the website."] .. "|r"
+            lines[#lines + 1] = "|cff" .. hex(C.textSoft) .. L["Sign up in Discord or on the website."] .. "|r"
             raidsFS:SetText(table.concat(lines, "\n"))
-            y = place(raidsFS, y)
+            y = place(raidsFS, y, lw - 2 * HALL_PAD)
         end
+        local yl = put(info, 0, 2, lw, y + HALL_PAD - 6)
 
-        y = place(roomHdr, y + SECTION_ABOVE)
-        room:ClearAllPoints()
-        room:SetPoint("TOPLEFT", 0, -(y + UI.GAP))
-        room:SetPoint("BOTTOMRIGHT", 0, 0)
+        -- Who of the alliance is on now, by guild.
+        local online, names = ally:OnlineNow(), {}
+        for i = 1, math.min(#online, MAX_ONLINE) do
+            local p = online[i]
+            names[#names + 1] = p.name .. " |cff" .. ally.GuildColorHex(p.guild) .. "[" .. p.guild .. "]|r"
+        end
+        if #online > MAX_ONLINE then names[#names + 1] = "+" .. (#online - MAX_ONLINE) end
+        onlineFS:SetText(#names > 0 and table.concat(names, ", ") or L["nobody online"])
+        local oy = place(onlineHdr, HALL_TOP)
+        oy = place(onlineFS, oy + 2, rw - 2 * HALL_PAD)
+        oy = place(onlineHint, oy, rw - 2 * HALL_PAD)
+        local xr, yr = two and (lw + HALL_GUTTER) or 0, two and 2 or yl
+        yr = put(onlineCard, xr, yr, rw, oy + HALL_PAD - 6)
+
+        -- The alliance room, as tall as what is left under the cards on its side.
+        local roomH = math.max(ROOM_MIN, (panel:GetHeight() or 0) - yr - 2)
+        put(roomCard, xr, yr, rw, roomH)
         room:Show()
         refreshRoom()
     end
@@ -487,24 +507,38 @@ local function BuildHall(panel)
             if panel:IsVisible() then refresh() end
         end)
     end
+    -- Laid out again at the screen's new width.
+    if panel.HookScript then
+        panel:HookScript("OnSizeChanged", function() if panel:IsVisible() then GuildOS:SafeCall(refresh) end end)
+    end
     return refresh
 end
 
 ----------------------------------------------------------------------
 -- Officers' Room › Alliance
 ----------------------------------------------------------------------
+-- The Officers' Room's Alliance is drawn on a parchment card (specs/salao/fase3.md): the paper's inks
+-- (UI/Kit.lua), the shared colours where the kit is absent.
+local P = setmetatable({}, { __index = function(_, k)
+    local Kit = rawget(GuildOS, "Kit")
+    return (Kit and Kit.PAPER or C)[k]
+end })
+local function setupSection(parent, text, first)
+    local Kit = rawget(GuildOS, "Kit")
+    if Kit then return Kit:SectionTitle(parent, text, first) end
+    return UI:CreateSectionTitle(parent, text, first)
+end
+
 local function BuildSetup(panel)
     local LINK = function() return GuildOS.AllianceLink end
 
-    -- The screen's first section title, then form labels in `text` over their fields (#371).
-    local hdr = UI:CreateSectionTitle(panel, L["Alliance code"], true)
-    hdr:SetPoint("TOPLEFT", 0, 0)
-    local status = UI:CreateText(panel, "", 11, C.text.r, C.text.g, C.text.b)
-    status:SetPoint("TOPLEFT", 0, -TITLE_H)
+    -- Under the card's title ("Alliance code"), form labels in the paper's ink over their fields (#371).
+    local status = UI:CreateText(panel, "", 11, P.text.r, P.text.g, P.text.b)
+    status:SetPoint("TOPLEFT", 0, 0)
     status:SetJustifyH("LEFT")
     -- Pasted by hand the code gives the chat only (alianca.md §3.3).
-    local chatOnly = wrapText(panel, 10, C.textSoft)
-    chatOnly:SetPoint("TOPLEFT", 0, -(TITLE_H + 18))
+    local chatOnly = wrapText(panel, 10, P.textSoft)
+    chatOnly:SetPoint("TOPLEFT", 0, -18)
     chatOnly:SetText(L["Chat only: the shared /g and the alliance room. Members, crafters, raids and bans come from guildos.me."])
     addFlexHint(chatOnly)
 
@@ -519,44 +553,45 @@ local function BuildSetup(panel)
     lineBox:SetPoint("TOPLEFT", tagBox, "BOTTOMLEFT", 0, -(UI.GAP + 4))
     lineBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     local writeBtn = UI:CreateButton(panel, L["Save for the guild"], 170, 24)
+    UI:SetButtonVariant(writeBtn, "primary")
     writeBtn:SetPoint("TOPLEFT", lineBox, "BOTTOMLEFT", 0, -UI.GAP)
     local removeBtn = UI:CreateButton(panel, L["Turn off for the guild"], 170, 24)
     removeBtn:SetPoint("LEFT", writeBtn, "RIGHT", UI.GAP, 0)
 
-    local hint = wrapText(panel, 10, C.textDim)
+    local hint = wrapText(panel, 10, P.textDim)
     hint:SetText(L["Paste this same code here in every guild of the alliance and save, once. It goes in the guild master's public note where the game allows it, and every member hands it on at login: nobody in particular has to be online."])
     hint:SetPoint("TOPLEFT", writeBtn, "BOTTOMLEFT", 0, -UI.GAP)
     addFlexHint(hint)
 
     -- An allied guild blocked on this account: its lines on the channel are not shown, and nobody is told.
-    local blockHdr = UI:CreateSectionTitle(panel, L["Ignore a guild locally"])
+    local blockHdr = setupSection(panel, L["Ignore a guild locally"])
     local blockBox = makeInput(panel, 200)
     blockBox:SetPoint("TOPLEFT", blockHdr, "BOTTOMLEFT", 0, -UI.GAP)
     local blockBtn = UI:CreateButton(panel, L["Block"], 90, 24)
     blockBtn:SetPoint("LEFT", blockBox, "RIGHT", UI.GAP, 0)
     local unblockBtn = UI:CreateButton(panel, L["Unblock"], 90, 24)
     unblockBtn:SetPoint("LEFT", blockBtn, "RIGHT", 6, 0)
-    local blockedFS = wrapText(panel, 10, C.textDim)
+    local blockedFS = wrapText(panel, 10, P.textDim)
     blockedFS:SetPoint("TOPLEFT", blockBox, "BOTTOMLEFT", 0, -UI.GAP)
     addFlexHint(blockedFS)
 
     -- The alliance's bans, guildos.me's (BanList, #408): read-only, an alert for the officers. Hidden while
     -- this guild has no alliance on the site (audit B7).
-    local bansHdr = UI:CreateSectionTitle(panel, L["The alliance's bans"])
+    local bansHdr = setupSection(panel, L["The alliance's bans"])
     bansHdr:SetPoint("TOPLEFT", blockedFS, "BOTTOMLEFT", 0, -SECTION_ABOVE - UI.GAP)
     local holder = CreateFrame("Frame", nil, panel)
     holder:SetPoint("TOPLEFT", bansHdr, "BOTTOMLEFT", 0, -UI.GAP)
     holder:SetPoint("BOTTOMRIGHT", 0, 0)
     local scroll, content = UI:CreateScrollFrame(holder, "GuildOSAllianceBansScroll")
     fillScroll(scroll, content)
-    local bansEmpty = wrapText(content, 11, C.textSoft)
+    local bansEmpty = wrapText(content, 11, P.textSoft)
     bansEmpty:SetPoint("TOPLEFT", 0, 0)
     bansEmpty:SetText(L["No bans from the alliance. The site sends them with the companion when other guilds share theirs."])
     addFlexHint(bansEmpty)
     local rows = {}
     local function row(i)
         if rows[i] then return rows[i] end
-        local fs = UI:CreateText(content, "", 11, C.text.r, C.text.g, C.text.b)
+        local fs = UI:CreateText(content, "", 11, P.text.r, P.text.g, P.text.b)
         fs:SetPoint("TOPLEFT", 0, -(i - 1) * BAN_ROW_H)
         fs:SetPoint("RIGHT", content, "RIGHT", 0, 0)
         fs:SetJustifyH("LEFT")
@@ -626,8 +661,8 @@ local function BuildSetup(panel)
         for _, b in ipairs(list or {}) do
             n = n + 1
             local fs = row(n)
-            fs:SetText(string.format("|cff%s%s|r  %s", hex(C.red), tostring(b.name or "?"), BL.AllianceLine(b))
-                .. (b.note and ("  |cff" .. hex(C.textDim) .. b.note .. "|r") or ""))
+            fs:SetText(string.format("|cff%s%s|r  %s", hex(P.red), tostring(b.name or "?"), BL.AllianceLine(b))
+                .. (b.note and ("  |cff" .. hex(P.textDim) .. b.note .. "|r") or ""))
             fs:Show()
         end
         setShown(bansEmpty, n == 0)
@@ -713,7 +748,10 @@ function GuildOS:CreateAlliancePanel(parent, _mainFrame)
     local function selectSub(key)
         if not btns[key] then key = "hall" end
         parent.activeSub = key
-        for k, info in pairs(parent.subPanels) do info.panel:SetShown(k == key) end
+        for k, info in pairs(parent.subPanels) do
+            if info.card then info.card:SetShown(k == key) end
+            info.panel:SetShown(k == key)
+        end
         for k, btn in pairs(btns) do btn:SetActive(k == key) end
         local info = parent.subPanels[key]
         if info and info.refresh then GuildOS:SafeCall(info.refresh) end
@@ -739,24 +777,42 @@ function GuildOS:CreateAlliancePanel(parent, _mainFrame)
     end
 
     -- Flush with the bar's left edge, UI.GAP under it, ending UI.GAP short of its right edge (#371).
-    local function makeSubPanel()
-        local p = CreateFrame("Frame", nil, parent)
-        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -UI.GAP)
-        p:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -(10 + UI.GAP), 10)
-        p:Hide()
+    -- The Officers' Room's setup is a parchment card titled "Alliance code" (the mockup's), its screen inside
+    -- it; the card is what shows, hides and moves with the bar.
+    local CARD_PAD, CARD_TOP = tonumber(UI.CARD_PAD) or 14, tonumber(UI.CARD_TOP) or 36
+    local function makeSubPanel(key)
+        if key ~= "setup" then
+            local p = CreateFrame("Frame", nil, parent)
+            p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -UI.GAP)
+            p:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -(10 + UI.GAP), 10)
+            p:Hide()
+            return p
+        end
+        local card = UI:CreateCard(parent, L["Alliance code"])
+        card:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -UI.GAP)
+        card:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -(10 + UI.GAP), 10)
+        card:Hide()
+        local p = CreateFrame("Frame", nil, card)
+        p:SetPoint("TOPLEFT", CARD_PAD, -CARD_TOP)
+        p:SetPoint("BOTTOMRIGHT", -CARD_PAD, CARD_PAD - 4)
+        p.card = card
         return p
     end
 
     local builders = { hall = BuildHall, setup = BuildSetup }
     flexHints = {}
     for _, t in ipairs(SUBTABS) do
-        local p = makeSubPanel()
-        parent.subPanels[t.key] = { panel = p, refresh = builders[t.key](p) }
+        local p = makeSubPanel(t.key)
+        parent.subPanels[t.key] = { panel = p, card = rawget(p, "card"), refresh = builders[t.key](p) }
     end
     local myHints = flexHints
     flexHints = nil
     -- Opened from a room entry that names a sub-tab, the room's row is the only row of tabs (#445).
-    UI:CollapsibleSubBar(parent, bar, function() return parent.subPanels end, { 0, -UI.GAP })
+    UI:CollapsibleSubBar(parent, bar, function()
+        local frames = {}
+        for k, info in pairs(parent.subPanels) do frames[k] = info.card or info.panel end
+        return frames
+    end, { 0, -UI.GAP })
 
     parent:SetScript("OnShow", function()
         layoutTabs()
@@ -769,6 +825,6 @@ function GuildOS:CreateAlliancePanel(parent, _mainFrame)
         bar:SetWidth(math.max(TAB_MIN_W, w - 20))
         layoutTabs()
         local hintW = math.max(220, w - 40)
-        for _, fs in ipairs(myHints) do fs:SetWidth(hintW) end
+        for _, fs in ipairs(myHints) do fs:SetWidth((UI.OnPaper and UI:OnPaper(fs)) and (hintW - 28) or hintW) end
     end)
 end

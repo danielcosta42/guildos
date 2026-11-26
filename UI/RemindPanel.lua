@@ -7,7 +7,19 @@
 -- and the whisper are GuildOS.AddonReminder's (Rule 10).
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
-local C = GuildOS.Colors
+-- Drawn on a parchment card in the Officers' Room and Settings (specs/salao/fase3.md): the text takes the
+-- paper's inks and a class its colour on the paper (UI/Kit.lua); a floating window, the wood's (WOOD).
+local Kit = rawget(GuildOS, "Kit")
+local C = Kit and Kit.PAPER or GuildOS.Colors
+local function classInk(class)
+    if Kit then return Kit:ClassInk(class) end
+    return GuildOS:GetClassColor(class)
+end
+local function rule(row) if Kit then Kit:Rule(row) end end
+local function checkbox(parent, text, size)
+    if Kit then return Kit:Checkbox(parent, text, size) end
+    return GuildOS.UI:CreateCheckbox(parent, text, size)
+end
 local L = GuildOS.L
 
 local ROW_H = 24
@@ -35,28 +47,27 @@ function GuildOS:BuildRemindSub(panel)
     if not R then return nil end
     local refresh
 
-    local title = UI:CreateSectionTitle(panel, L["WITHOUT GUILDOS"], true)
-    title:SetPoint("TOPLEFT", 0, -2)
+    -- Under the card's title ("Without GuildOS").
     -- Without the site's list (an older site), the old hint: the game does not know who linked Discord.
     local HINT_NO_SITE = L["Members this client never heard GuildOS from. Remind whispers one of them per click, at most once every few days each; whether they linked Discord on guildos.me is not known in the game."]
     local HINT_SITE = L["Members this client never heard GuildOS from, and the ones guildos.me says have no Discord linked. Remind whispers one of them per click, at most once every few days each."]
     local hint = UI:CreateText(panel, HINT_NO_SITE, 11, C.silver.r, C.silver.g, C.silver.b)
-    hint:SetPoint("TOPLEFT", 0, -24)
-    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -24)
+    hint:SetPoint("TOPLEFT", 0, 0)
+    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
     hint:SetJustifyH("LEFT")
 
     -- The filter.
-    local y = -56
+    local y = -32
     local search = UI:CreateInput(panel, 140, 22, { placeholder = L["Search"] })
     search:SetPoint("TOPLEFT", 0, y)
     search:HookScript("OnTextChanged", function() if refresh then refresh() end end)
     local rankDD = UI:CreateDropdown(panel, 140, 22)
     rankDD:SetPoint("LEFT", search, "RIGHT", 8, 0)
     rankDD.onSelect = function() refresh() end
-    local onlineCB = UI:CreateCheckbox(panel, L["Online only"], 18)
+    local onlineCB = checkbox(panel, L["Online only"], 18)
     onlineCB:SetPoint("LEFT", rankDD, "RIGHT", 12, 0)
     onlineCB.checkbox.onChanged = function() refresh() end
-    local recentCB = UI:CreateCheckbox(panel, L["Hide the ones reminded recently"], 18)
+    local recentCB = checkbox(panel, L["Hide the ones reminded recently"], 18)
     recentCB:SetPoint("TOPLEFT", 0, y - 30)
     recentCB.checkbox.onChanged = function() refresh() end
     -- Which lack: shown only when the site says who linked Discord.
@@ -88,7 +99,7 @@ function GuildOS:BuildRemindSub(panel)
     end
     daysBox:SetScript("OnEnterPressed", function(box) box:ClearFocus() end)
     daysBox:HookScript("OnEditFocusLost", function(box) saveDays(box); refresh() end)
-    local logCB = UI:CreateCheckbox(panel, L["Also file it on the disciplinary record (counts as a warning)"], 18)
+    local logCB = checkbox(panel, L["Also file it on the disciplinary record (counts as a warning)"], 18)
     logCB:SetPoint("TOPLEFT", 0, y - 30)
     logCB.checkbox.onChanged = function(_, on) R:SetLogDiscipline(on) end
 
@@ -135,6 +146,7 @@ function GuildOS:BuildRemindSub(panel)
         local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
         row:SetHeight(ROW_H)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        rule(row)
         row.nameFS = UI:CreateText(row, "", 11)
         row.nameFS:SetPoint("LEFT", 8, 0)
         row.rankFS = UI:CreateText(row, "", 10, C.silver.r, C.silver.g, C.silver.b)
@@ -144,6 +156,7 @@ function GuildOS:BuildRemindSub(panel)
         row.detailFS = UI:CreateText(row, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
         row.detailFS:SetPoint("LEFT", 350, 0)
         row.remind = UI:CreateButton(row, L["Remind"], REMIND_W, 20)
+        UI:SetButtonVariant(row.remind, "primary")
         row.remind:SetPoint("RIGHT", -4, 0)
         row.detailFS:SetPoint("RIGHT", row.remind, "LEFT", -8, 0)
         row.detailFS:SetJustifyH("LEFT")
@@ -165,7 +178,7 @@ function GuildOS:BuildRemindSub(panel)
         row.item = m
         local alt = (idx % 2 == 0) and C.row1 or C.row2
         row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
-        local cr, cg, cb = GuildOS:GetClassColor(m.class)
+        local cr, cg, cb = classInk(m.class)
         row.nameFS:SetText(m.name)
         row.nameFS:SetTextColor(cr, cg, cb)
         row.rankFS:SetText(m.rankName or "?")

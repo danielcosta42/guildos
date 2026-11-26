@@ -175,14 +175,14 @@ local function src(path)
 end
 local audit = src("UI/AuditPanel.lua")
 check(audit:find("local hasAttune, hasCons = GuildOS.AttunementTracker ~= nil, GuildOS.ConsumableChecker ~= nil", 1, true)
-  and audit:find("if hasAttune then\n?%s*targetBtn = UI:CreateButton") and audit:find('if hasAttune then hcol(L["ATTUNE"]', 1, true)
-  and audit:find('if hasCons then hcol(L["CONSUMES"]', 1, true),
+  and audit:find("if hasAttune then\n?%s*targetBtn = UI:CreateButton") and audit:find('if hasAttune then hcol(L["Attune"]', 1, true)
+  and audit:find('if hasCons then hcol(L["Consumables"]', 1, true),
   "readiness offers a raid target and the attunement and consumables columns only with their modules")
 local fp = src("UI/FeaturePanels.lua")
 -- The guild's penalties are Settings > Guild rules since issue #367.
 check(src("UI/SettingsPanel.lua"):find('if GuildOS.ConsumableChecker then\n?%s*penalties%[#penalties %+ 1%] = { key = "NO_CONSUMES"')
   and fp:find("pen.NO_CONSUMES > 0 and GuildOS.ConsumableChecker", 1, true)
-  and fp:find('if GuildOS.ConsumableChecker then Hdr(L["NO CONS"]', 1, true),
+  and fp:find('if GuildOS.ConsumableChecker then Hdr(L["No cons."]', 1, true),
   "the raid settings, the attendance tooltip and the session detail offer consumables only with the checker")
 check(fp:find('if GuildOS.AttunementTracker then[^\n]*\n%s*local hAtt')
   and fp:find("if GuildOS.AttunementTracker then%s*local attColor = progress.attDelta")

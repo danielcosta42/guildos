@@ -92,9 +92,9 @@ local function BuildFinder()
         h:SetPoint("LEFT", x, 0)
         return h
     end
-    Hdr(L["PLAYER"],     4)
-    Hdr(L["PROFESSION"], 140)
-    Hdr(L["WHERE"],      260)
+    Hdr(L["Player"],     4)
+    Hdr(L["Profession"], 140)
+    Hdr(L["Where"],      260)
 
     f.rows = {}
     f.query = nil

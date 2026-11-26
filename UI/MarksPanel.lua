@@ -5,7 +5,19 @@
 -- settings are GuildOS.NoteDates', GuildOS.MemberMarks' and GuildOS.MemberHistory's (Rule 10).
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
-local C = GuildOS.Colors
+-- Drawn on a parchment card in the Officers' Room and Settings (specs/salao/fase3.md): the text takes the
+-- paper's inks and a class its colour on the paper (UI/Kit.lua); a floating window, the wood's (WOOD).
+local Kit = rawget(GuildOS, "Kit")
+local C = Kit and Kit.PAPER or GuildOS.Colors
+local function rule(row) if Kit then Kit:Rule(row) end end
+local function checkbox(parent, text, size)
+    if Kit then return Kit:Checkbox(parent, text, size) end
+    return GuildOS.UI:CreateCheckbox(parent, text, size)
+end
+local function sectionTitle(parent, text, first)
+    if Kit then return Kit:SectionTitle(parent, text, first) end
+    return GuildOS.UI:CreateSectionTitle(parent, text, first)
+end
 local L = GuildOS.L
 
 local ROW_H = 22
@@ -76,7 +88,7 @@ function GuildOS:BuildMarksSub(panel)
     end
 
     -- ── Join dates in the notes ───────────────────────────────────────
-    local title = UI:CreateSectionTitle(panel, L["JOIN DATES IN NOTES"], true)
+    local title = sectionTitle(panel, L["Join dates in the notes"], true)
     title:SetPoint("TOPLEFT", 0, -2)
 
     local y = -28
@@ -94,10 +106,10 @@ function GuildOS:BuildMarksSub(panel)
     for _, f in ipairs(ND.FORMATS) do fmts[#fmts + 1] = { value = f, text = f } end
     fmtDD:SetOptions(fmts)
     fmtDD.onSelect = function(_, v) ND:SetFormat(v); plan = nil; refresh() end
-    local labelCB = UI:CreateCheckbox(panel, ND.LABEL .. "...", 18)
+    local labelCB = checkbox(panel, ND.LABEL .. "...", 18)
     labelCB:SetPoint("LEFT", fmtDD, "RIGHT", 12, 0)
     labelCB.checkbox.onChanged = function(_, checked) ND:SetLabel(checked); plan = nil; refresh() end
-    local seenCB = UI:CreateCheckbox(panel, L["Also dates GuildOS only saw"], 18)
+    local seenCB = checkbox(panel, L["Also dates GuildOS only saw"], 18)
     seenCB:SetPoint("LEFT", labelCB, "LEFT", 110, 0)
     seenCB.checkbox.onChanged = function(_, checked) ND:SetWithSeen(checked); plan = nil; refresh() end
 
@@ -137,7 +149,7 @@ function GuildOS:BuildMarksSub(panel)
 
     -- ── Safe list, nicknames, returns ─────────────────────────────────
     y = y - 50
-    local title2 = UI:CreateSectionTitle(panel, L["SAFE LIST AND NICKNAMES"])
+    local title2 = sectionTitle(panel, L["Safe list and nicknames"])
     title2:SetPoint("TOPLEFT", 0, y)
     -- WoW: Forever: the marks stay on this client (audit B11).
     local localOnly = GuildOS:LocalOnlyText()
@@ -197,6 +209,7 @@ function GuildOS:BuildMarksSub(panel)
         local row = CreateFrame("Button", nil, parent, "BackdropTemplate")
         row:SetHeight(ROW_H)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        rule(row)
         row.a = text(row, "", 11)
         row.a:SetPoint("LEFT", 8, 0)
         row.b = text(row, "", 10, C.silver)

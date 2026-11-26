@@ -776,7 +776,7 @@ local function popup()
   check(f and f:IsShown() and f.w == 380, "the popup opens")
   check(f.__look and f.__look.fill.color and f.__look.fill.color[4] == 1, "on a background of its own (#413)")
   check(shows(f, "Crown of the Abyssal Wind") and shows(f, "Head \194\183 Cloth \194\183 item level 76"), "with the item and what it is")
-  check(shows(f, "YOU WEAR") and shows(f, "Arcanist Cowl") and f.diffText.text == "+10 item level", "what the player wears there, and the gain")
+  check(shows(f, "You wear") and shows(f, "Arcanist Cowl") and f.diffText.text == "+10 item level", "what the player wears there, and the gain")
   check(f.standing[1] == "Reserved the item" and f.standing[2] == "Wishlist #2" and f.standing[3] == "+1 tonight: 0",
     "where they stand: the reserve, the wishlist place, the counter: " .. table.concat(f.standing, ", "))
   check(#buttons(f, "Main spec") == 1 and #buttons(f, "Off spec") == 1 and #buttons(f, "Transmog") == 1 and #buttons(f, "Pass") == 1,
@@ -798,7 +798,7 @@ local function popup()
   f = LM.rollPopup
   check(f.pointsText and f.pointsText.text == "Points: 18. Entering this roll costs 4; whoever loses gets 2 back.",
     "the balance and the price of entering: " .. tostring(f.pointsText and f.pointsText.text))
-  check(f.standing[1] == "Not on your lists" and not shows(f, "YOU WEAR"), "nothing worn or listed: it says so, and no empty block")
+  check(f.standing[1] == "Not on your lists" and not shows(f, "You wear"), "nothing worn or listed: it says so, and no empty block")
   -- A loot master from before: MS, OS and Pass by /roll.
   local rolled
   function RandomRoll(a, b) rolled = a .. "-" .. b end

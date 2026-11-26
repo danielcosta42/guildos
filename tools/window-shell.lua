@@ -434,8 +434,9 @@ check(f:IsShown(), "a left click on the minimap button opens the window")
 fire(mm, "OnClick", "LeftButton")
 check(not f:IsShown(), "and closes it")
 fire(mm, "OnClick", "RightButton")
+check(GuildOSMinimapMenu and GuildOSMinimapMenu:IsShown(), "a right click opens the minimap menu, GuildOS's own popup")
 local raidsItem
-for _, item in ipairs(menuItems) do if item.text == "Raids" then raidsItem = item end end
+for _, item in ipairs(GuildOS:MinimapMenuItems()) do if item.text == "Raids" then raidsItem = item end end
 check(raidsItem ~= nil, "the minimap menu lists the window's tabs")
 raidsItem.func()
 check(f:IsShown() and f.activeTab == "raids", "a tab picked there opens in the window")
@@ -1255,9 +1256,11 @@ do
       .. "are pills, the open one the soft gold pill (#449)")
   check(cal.viewYear == 2026 and cal.viewMonth == 1 and cal.selectedKey == 20260115,
     "showing the raid's month, with its day selected")
-  local function drawn(text)
-    for _, c in ipairs(cal.children) do
+  -- The month and the day head their parchment cards (the Raids room's calendar, #449).
+  local function drawn(text, root)
+    for _, c in ipairs((root or cal).children) do
       if c.kind == "FontString" and c.text == text then return true end
+      if c.kind ~= "FontString" and c.kind ~= "Texture" and drawn(text, c) then return true end
     end
     return false
   end
@@ -1510,9 +1513,9 @@ do
   win:Hide()
   CTA.recent[1].title = "Later"
   CTA.uiRefresh()
-  check(not find(p, "Later  Go"), "with the window closed, an answer arriving repaints nothing")
+  check(not find(p, "Later: Go"), "with the window closed, an answer arriving repaints nothing")
   UI:OpenWindow("guild", "cta")
-  check(find(p, "Later  Go"), "it catches up when the tab opens")
+  check(find(p, "Later: Go"), "it catches up when the tab opens (the call and its text, as the mockup's line, #449)")
   win:Hide()
   CTA.recent = {}
 
@@ -1554,10 +1557,14 @@ do
   end
   local nCells, clash, nRows = laid()
   check(nCells == 5 + CTA.TEMPLATES_MAX and not clash and nRows > 2, "seventeen templates flow over rows, none overlapping")
-  check(row.h == nRows * 22 + (nRows - 1) * 4, "and the row is as tall as the lines it took")
+  check(row.h == nRows * 22 + (nRows - 1) * 6, "and the row is as tall as the lines it took (6px apart, as the mockup's chips)")
+  -- The templates sit in the "Call the guild" card (#449): as wide as its inside, the scroll gutter and the
+  -- card's padding off the tab's width; a narrow tab stacks the cards, at the tab's width.
+  local wide = row.w
   p:SetSize(408, 500)
   local _, clash2, nRows2 = laid()
-  check(row.w == 400 and not clash2 and nRows2 > nRows, "a narrower tab wraps them again, at its own width")
+  check(row.w == 408 - UI.SCROLL_GUTTER - 2 * UI.CARD_PAD and row.w < wide and not clash2 and nRows2 > nRows,
+    "a narrower tab wraps them again, at its own width")
   local guild = win.tabPanels.guild
   local bar
   for _, c in ipairs(guild.children) do if c.bg then bar = c end end
@@ -1572,10 +1579,15 @@ do
   end
   check(bar.w == 280 and fits and bar.h > 28, "and the Guild tab's six sub-tabs wrap rather than run off a narrow window")
   local msg
-  for _, c in ipairs(p.children) do
-    if c.kind == "EditBox" and c.points[1] and c.points[1][2] == row then msg = c end
+  local function boxes(f)
+    for _, c in ipairs(f.children) do
+      if c.kind == "EditBox" and c.points[1] and c.points[1][2] and c.points[1][2].points
+        and c.points[1][2].points[1] and c.points[1][2].points[1][2] == row then msg = c end
+      boxes(c)
+    end
   end
-  check(msg ~= nil, "the message box hangs below the templates, so it moves down with them")
+  boxes(p)
+  check(msg ~= nil, "the message box hangs below the templates (under its label), so it moves down with them")
   check(msg.maxBytes == CTA.TEXT_MAX + 1, "and holds what a call carries in bytes, not letters: Cyrillic is two each")
   win:Hide()
   GuildOS.db.cta.templates = {}
@@ -1656,7 +1668,8 @@ do
   check(not caio.shown and find(p, "so eu").parent.shown, "a card the log no longer needs is hidden")
 
   local box
-  for _, c in ipairs(p.children) do if c.kind == "EditBox" then box = c end end
+  local function anyBox(f) for _, c in ipairs(f.children) do if c.kind == "EditBox" then box = c end anyBox(c) end end
+  anyBox(p)   -- the feed sits in the dark "Guild chat" card (#449)
   check(box and box.maxBytes == 241, "the box holds what /g will carry: 240 bytes")
   box:SetText("vamos")
   box.scripts.OnEnterPressed(box)
@@ -1879,8 +1892,6 @@ do
   -- Building these panels would pull in most of the addon; their bars are checked where they are made.
   for _, bars in ipairs({
     { "UI/ManagementPanel.lua", "local TAB_H = 28", "    bar:SetSize(400, TAB_H)\n    UI:StyleSubTabBar(bar)\n", "UI:CreateTab(bar, t.label, TAB_MIN_W, true)" },
-    { "UI/AuditPanel.lua", "    bar:SetHeight(28)\n    UI:StyleSubTabBar(bar)\n", "UI:CreateTab(bar, t.label, 130, true)" },
-    { "UI/RaidToolsPanel.lua", "    bar:SetHeight(28)\n    UI:StyleSubTabBar(bar)\n", "UI:CreateTab(bar, t.label, 130, true)" },
     { "UI/AlliancePanel.lua", "    bar:SetSize(400, 28)\n    UI:StyleSubTabBar(bar)\n", "UI:CreateTab(bar, t.label, TAB_MIN_W, true)" },
     { "UI/RosterFrame.lua", "    bar:SetSize(300, 28)\n    UI:StyleSubTabBar(bar)\n", "UI:CreateTab(bar, t.label, 90, true)" },
     { "UI/RosterFrame.lua", "subBar:SetHeight(SUB_H)", "    UI:StyleSubTabBar(subBar)\n", "UI:CreateTab(subBar, st.label, 110, true)" },
@@ -1889,6 +1900,13 @@ do
     local ok = true
     for i = 2, #bars do if not src:find(bars[i], 1, true) then ok = false end end
     check(ok, bars[1] .. ": a 28px sub-tab bar on panel, its tabs with the 1px rule (" .. bars[#bars] .. ")")
+  end
+  -- The Raids room's Audit and Raid Tools (#449): one card each, their sub-tabs pills under its title.
+  for _, p in ipairs({ "UI/AuditPanel.lua", "UI/RaidToolsPanel.lua" }) do
+    local src = read(p)
+    check(src:find("local card = UI:CreateCard(parent, ", 1, true)
+      and src:find('UI:SetButtonVariant(UI:CreateButton(bar, t.label, 40, 22), "chip")', 1, true)
+      and src:find("UI:SetSelected(btn, k == key)", 1, true), p .. ": a card, its sub-tabs pills, the open one selected")
   end
   check(read("UI/CommunityPanel.lua"):find("info.panel.ApplyFilter", 1, true)
     and read("UI/CalendarPanel.lua"):find("panel.ApplyFilter = function(when)", 1, true),

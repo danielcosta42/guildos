@@ -41,9 +41,24 @@ end
 ----------------------------------------------------------------------
 local panel
 
+-- The plan reads as the mockup's raides-plano: a parchment sheet, the bosses in the title's red, my task on
+-- a pale green band. The paper's shades of the wood's colours.
+local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
+local MINE_FILL, MINE_INK, BAD_INK = hex("d6ecd0"), hex("2f6e33"), hex("8f1b0b")
+
 local function build()
     local f = popup("GuildOSRaidPlan", W, H, L["Raid plan"])
-    f.sub = UI:CreateText(f, "", 10, C.silver.r, C.silver.g, C.silver.b)
+    -- The sheet: the parchment over the popup's dark, its title in the paper's red.
+    if GuildOS.Style then
+        local sheet = CreateFrame("Frame", nil, f)
+        sheet:SetPoint("TOPLEFT", 3, -3)
+        sheet:SetPoint("BOTTOMRIGHT", -3, 3)
+        sheet:SetFrameLevel(f:GetFrameLevel())
+        GuildOS.Style:Paint(sheet, "paper")
+        f.title:SetTextColor(C.paperTitle.r, C.paperTitle.g, C.paperTitle.b)
+    end
+    f.boxes = {}
+    f.sub = UI:CreateText(f, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     f.sub:SetPoint("TOPLEFT", PAD, -28)
     -- The frame reaches the scroll gutter past the content's right edge, and the child (fixed: the
     -- popup is) is the content's width, so the "Say in raid" buttons stop clear of the bar (#371).
@@ -51,8 +66,9 @@ local function build()
     f.scroll:SetPoint("TOPLEFT", PAD, -46)
     f.scroll:SetPoint("BOTTOMRIGHT", -PAD + UI.SCROLL_GUTTER, PAD)
     f.child:SetWidth(W - 2 * PAD)
+    f.child.__paper = GuildOS.Style ~= nil or nil   -- on the sheet: its buttons are the paper's cream ones
     f.texts, f.buttons = {}, {}
-    f.status = UI:CreateText(f, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    f.status = UI:CreateText(f, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     f.status:SetPoint("BOTTOMLEFT", PAD, 2)
     return f
 end
@@ -89,8 +105,8 @@ local function sayButton(f, i, y, boss)
         local said, err = Plan:Announce(boss)
         f.status:SetText(err or string.format(L["Said the note for %s in raid chat."], boss))
         -- Status: said is `ok`, not said a `warn` (gold is no status colour, #371).
-        if said and said > 0 then f.status:SetTextColor(C.green.r, C.green.g, C.green.b)
-        else f.status:SetTextColor(C.warn.r, C.warn.g, C.warn.b) end
+        if said and said > 0 then f.status:SetTextColor(MINE_INK.r, MINE_INK.g, MINE_INK.b)
+        else f.status:SetTextColor(BAD_INK.r, BAD_INK.g, BAD_INK.b) end
     end)
     b:Show()
 end
@@ -100,17 +116,52 @@ function Plan:Show()
     local f = panel
     for _, fs in ipairs(f.texts) do fs:Hide() end
     for _, b in ipairs(f.buttons) do b:Hide() end
+    for _, t in ipairs(f.boxes) do t:Hide() end
     f.status:SetText("")
     local plan, roster = self:Current()
     f.sub:SetText(roster and roster.title or "")
-    local y, n, nb = 0, 0, 0
+    local y, n, nb, nbox = 0, 0, 0, 0
+    -- The wood's colours as the paper prints them.
+    local INK = { [C.text] = C.paperInk, [C.silver] = C.paperSoft, [C.red] = BAD_INK, [C.green] = MINE_INK }
     local function add(text, size, color, role)
         n = n + 1
-        y = line(f, n, y, text, size, color, role)
+        y = line(f, n, y, text, size, INK[color] or color, role)
     end
-    -- A heading of the plan (the loot rules, a boss): the section title's font and colour (#371).
+    -- A heading of the plan (the loot rules, a boss): the section title's font, in the paper's red.
     local function heading(text)
-        add(text, 14, C.text, "sectionTitle")
+        add(text, 13, C.paperTitle, "sectionTitle")
+    end
+    -- My task on its pale green band, in the reading face.
+    local function mineBand(text)
+        nbox = nbox + 1
+        local box = f.boxes[nbox]
+        if not box then
+            box = f.child:CreateTexture(nil, "BACKGROUND")
+            box:SetTexture("Interface\\Buttons\\WHITE8x8")
+            f.boxes[nbox] = box
+        end
+        local top = y
+        y = y + 6
+        n = n + 1
+        local fs = f.texts[n] or UI:CreateText(f.child, "", 13)
+        f.texts[n] = fs
+        GuildOS:ApplyFont(fs, 13, "reading")
+        fs:SetJustifyH("LEFT")
+        fs:SetWordWrap(true)
+        fs:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b)
+        fs:SetWidth(f.child:GetWidth() - 20)
+        fs:ClearAllPoints()
+        fs:SetPoint("TOPLEFT", 10, -y)
+        fs:SetText(text)
+        fs:Show()
+        y = y + (fs:GetStringHeight() or 14) + 8
+        box:ClearAllPoints()
+        box:SetPoint("TOPLEFT", 0, -top)
+        box:SetPoint("TOPRIGHT", 0, -top)
+        box:SetHeight(y - top)
+        box:SetVertexColor(MINE_FILL.r, MINE_FILL.g, MINE_FILL.b, 1)
+        box:Show()
+        y = y + 4
     end
     -- The rule the raid plays by, or why this client does not play by it (the site's #516).
     local ruleLine, ruleWarning = self:LootRuleLine()
@@ -135,8 +186,11 @@ function Plan:Show()
             heading(boss)
             -- Mine says so in words and in `ok`; no marker in front of it (#371).
             for _, a in ipairs(self:TasksFor(boss)) do
-                local mine = self:IsMine(a)
-                add((mine and (L["Your task"] .. ": ") or (a.name .. ": ")) .. self:TaskLine(a), 11, mine and C.green or C.text)
+                if self:IsMine(a) then
+                    mineBand(L["Your task"] .. ": " .. self:TaskLine(a))
+                else
+                    add(a.name .. ": " .. self:TaskLine(a), 11, C.text)
+                end
             end
             local note = self:NoteFor(boss)
             if note then add(note, 10, C.silver) end

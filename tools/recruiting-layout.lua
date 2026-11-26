@@ -309,7 +309,7 @@ end
 freshDb()
 local t = build(1000, true)
 check(topX(t.scroll) == 0 and topY(t.scroll) == -UI.GAP, "the form starts flush with the sub-tab bar, UI.GAP below it")
-check(t.content.w == 1000 - 20 - UI.SCROLL_GUTTER, "the scroll child is as wide as the bar, less the scroll bar's gutter")
+check(t.content.w == 1000 - 20 - 28 - UI.SCROLL_GUTTER, "the scroll child is as wide as the bar, less the card's padding and the scroll bar's gutter")
 check(topX(t.strip) == 0 and topY(t.strip) == 0 and t.strip.points[1][2] == t.content, "the strip is the form's first line, at x = 0")
 check(t.state.text == "OFF" and same(t.state.color, C.danger) and same(t.dot.vertex, C.danger), "off: OFF and its dot in danger")
 check(t.toggle.label.text == "Enable", "the switch says what a click does")
@@ -504,7 +504,7 @@ GuildOS.JoinRequests, GuildOS.JoinRequestsOpenText = nil, nil
 
 -- ── 6. Narrow ───────────────────────────────────────────────────────────
 local n = build(400, true)
-check(n.content.w == 400 - 20 - UI.SCROLL_GUTTER, "narrow, the scroll child still stops short of the scroll bar")
+check(n.content.w == 400 - 20 - 28 - UI.SCROLL_GUTTER, "narrow, the scroll child still stops short of the scroll bar")
 check(n.strip.h > stripH, "the strip wraps onto another row")
 check(topX(textOf(n.sub, "^Preview$")) == 0, "and the preview goes under the ad")
 typeInto(n.msg, "Raiding Tue/Thu, whisper ginv")

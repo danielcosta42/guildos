@@ -3,6 +3,8 @@
 -- The Bank tab: Inventory · Tabs · Ledger · Needs · Requests, and the bar the addon docks under the
 -- game's own guild bank while it is open. Visual layer only: what the bank holds, its ledger, needs
 -- and requests come from GuildOS.GuildBank, and every change goes through it.
+-- Each sub-screen is a parchment card as the Workshop's mockup (#449 phase 3): its table in the paper's ink,
+-- an item framed in its quality, its name in that quality deepened to read on the paper.
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
@@ -34,6 +36,12 @@ local ANNOUNCE_MAX = 240  -- characters of one guild chat line
 
 local function Bank() return GuildOS.GuildBank end
 
+-- The Workshop's bank is drawn on parchment cards (#449 phase 3): a state's colour deepened to read on the
+-- paper, as the mockup's.
+local INK_OK     = { r = 0.184, g = 0.431, b = 0.2 }
+local INK_DANGER = { r = 0.561, g = 0.106, b = 0.043 }
+local INK_WARN   = { r = 0.541, g = 0.353, b = 0 }
+
 ----------------------------------------------------------------------
 -- Small pieces
 ----------------------------------------------------------------------
@@ -42,16 +50,25 @@ local function hex(c)
     return string.format("|cff%02x%02x%02x", math.floor(c.r * 255 + 0.5), math.floor(c.g * 255 + 0.5), math.floor(c.b * 255 + 0.5))
 end
 
-local function money(copper)
+local function money(copper, paper)
     copper = tonumber(copper) or 0
     local g = math.floor(copper / 10000)
     local s = math.floor((copper % 10000) / 100)
-    if g > 0 then return string.format("%d%sg|r %d%ss|r", g, hex(C.gold), s, hex(C.textSoft)) end
-    return string.format("%d%ss|r", s, hex(C.textSoft))
+    local gc, sc = paper and C.paperTitle or C.gold, paper and C.paperSoft or C.textSoft
+    if g > 0 then return string.format("%d%sg|r %d%ss|r", g, hex(gc), s, hex(sc)) end
+    return string.format("%d%ss|r", s, hex(sc))
 end
+-- On a parchment card (the bank's sub-screens).
+local function paperMoney(copper) return money(copper, true) end
 
-local function qualityColor(q)
+-- An item's quality colour; on the paper the common reads in its ink and the rest deepened (the mockup's
+-- quality names on the bank's card).
+local function qualityColor(q, paper)
     local qc = GuildOS.QualityColors and GuildOS.QualityColors[q or 1]
+    if paper then
+        if not qc or (q or 1) <= 1 then return C.paperInk end
+        return { r = qc.r * 0.7, g = qc.g * 0.7, b = qc.b * 0.7 }
+    end
     return qc or C.text
 end
 
@@ -100,7 +117,8 @@ local function acceptLinks(box)
 end
 
 local function fieldLabel(parent, text)
-    local fs = UI:CreateText(parent, text, 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local c = UI:OnPaper(parent) and C.paperSoft or C.textSoft
+    local fs = UI:CreateText(parent, text, 12, c.r, c.g, c.b)
     return fs
 end
 
@@ -111,9 +129,19 @@ local function makeList(parent, rowH, create, draw)
     listCount = listCount + 1
     local name = "GuildOSBankList" .. listCount
     local list = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    -- On a parchment card the list is the paper itself, a line under each row (the mockup's table); on the wood
+    -- (the drawer beside the game's bank) a dark well.
+    local paper = UI:OnPaper(parent)
+    list.paper = paper
+    local rowLine = paper and C.paperLine or C.panel
     list:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(list) })
-    list:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
-    list:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+    if paper then
+        list:SetBackdropColor(0, 0, 0, 0)
+        list:SetBackdropBorderColor(0, 0, 0, 0)
+    else
+        list:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+        list:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+    end
     local scroll = CreateFrame("ScrollFrame", name, list, "FauxScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 0, -1)
     scroll:SetPoint("BOTTOMRIGHT", -2, 1)
@@ -150,7 +178,7 @@ local function makeList(parent, rowH, create, draw)
             row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
             local hl = row:CreateTexture(nil, "BACKGROUND")
             hl:SetAllPoints()
-            hl:SetColorTexture(C.panel.r, C.panel.g, C.panel.b, 1)
+            hl:SetColorTexture(rowLine.r, rowLine.g, rowLine.b, paper and 0.6 or 1)
             hl:Hide()
             row.hl = hl
             row:HookScript("OnEnter", function(self) self.hl:Show() end)
@@ -158,7 +186,8 @@ local function makeList(parent, rowH, create, draw)
             local rule = row:CreateTexture(nil, "BORDER")
             rule:SetPoint("BOTTOMLEFT"); rule:SetPoint("BOTTOMRIGHT")
             UI:Hairline(rule)
-            rule:SetColorTexture(C.panel.r, C.panel.g, C.panel.b, 1)
+            rule:SetColorTexture(rowLine.r, rowLine.g, rowLine.b, 1)
+            row.paper = paper
             create(row)
             rows[i] = row
         end
@@ -177,7 +206,8 @@ local function makeList(parent, rowH, create, draw)
     end
     function list:SetEmptyText(text)
         if not self.empty then
-            self.empty = UI:CreateText(self, "", 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            local c = paper and C.paperSoft or C.textSoft
+            self.empty = UI:CreateText(self, "", 12, c.r, c.g, c.b)
             self.empty:SetPoint("TOPLEFT", 12, -14)
             self.empty:SetPoint("RIGHT", -12, 0)
             self.empty:SetJustifyH("LEFT")
@@ -201,7 +231,7 @@ local function paintItem(row, id, l, suffix)
     local info = Bank():ItemInfo(id, l)
     row.icon.icon:SetTexture(info.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
     UI:SetIconQuality(row.icon, info.quality or 1)
-    local qc = qualityColor(info.quality)
+    local qc = qualityColor(info.quality, row.paper)
     row.name:SetText((info.name or ("item:" .. tostring(id))) .. (suffix or ""))
     row.name:SetTextColor(qc.r, qc.g, qc.b)
     return info
@@ -280,15 +310,15 @@ local function buildInventory(p, panel)
     local head = UI:CreateTableHeader(p, HEAD_H)
     head:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -GAP)
     head:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
-    headerText(head, L["ITEM"], 32)
-    local hTotal = UI:CreateHeaderText(head, L["TOTAL"], 10)
-    local hWhere = UI:CreateHeaderText(head, L["WHERE"], 10)
-    local hNeed = UI:CreateHeaderText(head, L["NEED"], 10)
+    headerText(head, L["Item"], 32)
+    local hTotal = UI:CreateHeaderText(head, L["Total"], 10)
+    local hWhere = UI:CreateHeaderText(head, L["Where"], 10)
+    local hNeed = UI:CreateHeaderText(head, L["Need"], 10)
 
     local hint = UI:CreateText(p, L["Shift-click: link in chat · Right-click: ask the officers · Alt-click (officer): set a need"], 11,
-        C.label.r, C.label.g, C.label.b)
+        C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     hint:SetPoint("BOTTOMLEFT", 0, 4)
-    local countText = UI:CreateText(p, "", 11, C.label.r, C.label.g, C.label.b)
+    local countText = UI:CreateText(p, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     countText:SetPoint("BOTTOMRIGHT", -GAP, 4)
 
     local NEED_W, WHERE_W, TOTAL_W = 150, 230, 60
@@ -301,7 +331,7 @@ local function buildInventory(p, panel)
         GuildOS:ApplyFont(row.total, 11, "tableNum")
         row.total:SetJustifyH("RIGHT")
         row.total:SetWidth(TOTAL_W)
-        row.where = UI:CreateText(row, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        row.where = UI:CreateText(row, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         row.where:SetJustifyH("LEFT")
         row.where:SetWordWrap(false)
         row.where:SetWidth(WHERE_W)
@@ -358,7 +388,7 @@ local function buildInventory(p, panel)
         if need then
             local have = B:CountOf(it.id)
             row.bar:SetProgress(have / need)
-            local col = have >= need and C.ok or (have / need >= 0.6 and C.warn or C.danger)
+            local col = have >= need and INK_OK or (have / need >= 0.6 and INK_WARN or INK_DANGER)
             row.need:SetText(have >= need and L["met"] or string.format(L["%d short"], need - have))
             row.need:SetTextColor(col.r, col.g, col.b)
         end
@@ -399,7 +429,7 @@ local function buildInventory(p, panel)
             for _, it in ipairs(items) do
                 if it.group ~= last then
                     last = it.group
-                    out[#out + 1] = { header = true, label = string.format("%s · %d", L[GROUP_LABEL[it.group]]:upper(), counts[it.group]) }
+                    out[#out + 1] = { header = true, label = string.format("%s · %d", L[GROUP_LABEL[it.group]], counts[it.group]) }
                 end
                 out[#out + 1] = it
             end
@@ -408,7 +438,7 @@ local function buildInventory(p, panel)
         countText:SetText(string.format(L["%d of %d items"], #items, #index.list))
 
         local db = B:Store()
-        chips[1]:SetValue(db.moneyNow and money(db.moneyNow) or "—")
+        chips[1]:SetValue(db.moneyNow and paperMoney(db.moneyNow) or "—")
         local total = 0
         for _, e in ipairs(index.list) do total = total + e.total end
         chips[2]:SetValue(tostring(total))
@@ -452,7 +482,7 @@ local function buildTabs(p)
     side:SetPoint("TOPLEFT", 0, -GAP)
     side:SetPoint("BOTTOMLEFT", 0, GAP)
     side:SetWidth(190)
-    local sideTitle = UI:CreateHeaderText(side, L["BANK TABS"], 10)
+    local sideTitle = UI:CreateHeaderText(side, L["Bank tabs"], 10)
     sideTitle:SetPoint("TOPLEFT", 0, 0)
     local tabButtons = {}
     for tab = 1, 8 do
@@ -466,13 +496,13 @@ local function buildTabs(p)
         b.icon:SetSize(20, 20)
         b.icon:SetPoint("LEFT", 7, 0)
         b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        b.fill = UI:CreateText(b, "", 10, C.label.r, C.label.g, C.label.b)
+        b.fill = UI:CreateText(b, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         GuildOS:ApplyFont(b.fill, 10, "tableNum")
         b.fill:SetPoint("RIGHT", -8, 0)
         b:SetScript("OnClick", function() st.tab = tab; p.Draw() end)
         tabButtons[tab] = b
     end
-    local perm = UI:CreateText(side, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local perm = UI:CreateText(side, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     perm:SetPoint("BOTTOMLEFT", 0, 0)
     perm:SetPoint("RIGHT", side, "RIGHT", 0, 0)
     perm:SetJustifyH("LEFT")
@@ -482,7 +512,7 @@ local function buildTabs(p)
     main:SetPoint("BOTTOMRIGHT", -GAP, GAP)
     local title = UI:CreateSectionTitle(main, "", true)
     title:SetPoint("TOPLEFT", 0, 0)
-    local fillText = UI:CreateText(main, "", 11, C.label.r, C.label.g, C.label.b)
+    local fillText = UI:CreateText(main, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     fillText:SetPoint("LEFT", title, "RIGHT", 10, 0)
     local orgBtn = UI:CreateButton(main, L["Organized"], 96, FIELD_H)
     orgBtn:SetPoint("TOPRIGHT", 0, 2)
@@ -498,7 +528,7 @@ local function buildTabs(p)
         local cell = CreateFrame("Button", nil, grid, "BackdropTemplate")
         cell:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(cell) })
         cell:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
-        cell:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+        cell:SetBackdropBorderColor(C.paperRule.r, C.paperRule.g, C.paperRule.b, 1)
         cell.tex = cell:CreateTexture(nil, "ARTWORK")
         cell.tex:SetPoint("TOPLEFT", 2, -2)
         cell.tex:SetPoint("BOTTOMRIGHT", -2, 2)
@@ -514,8 +544,8 @@ local function buildTabs(p)
 
     local strip = CreateFrame("Frame", nil, main, "BackdropTemplate")
     strip:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(strip) })
-    strip:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1)
-    strip:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+    strip:SetBackdropColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
+    strip:SetBackdropBorderColor(C.paperRule.r, C.paperRule.g, C.paperRule.b, 1)
     strip:SetHeight(64)
     strip:SetPoint("TOPLEFT", grid, "BOTTOMLEFT", 0, -GAP * 2)
     strip:SetPoint("RIGHT", main, "RIGHT", 0, 0)
@@ -532,7 +562,7 @@ local function buildTabs(p)
     local stop = UI:CreateButton(strip, L["Stop"], 70, 28)
     stop:SetPoint("RIGHT", organize, "LEFT", -6, 0)
     stop:SetScript("OnClick", function() B:StopSort("cancel") end)
-    local note = UI:CreateText(strip, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local note = UI:CreateText(strip, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     note:SetPoint("LEFT", 216, 0)
     note:SetPoint("RIGHT", stop, "LEFT", -12, 0)
     note:SetJustifyH("LEFT")
@@ -540,7 +570,7 @@ local function buildTabs(p)
     local progress = UI:CreateProgressBar(strip, 100, 6)
     progress:SetPoint("BOTTOMLEFT", 216, 8)
     progress:SetPoint("RIGHT", stop, "LEFT", -12, 0)
-    local empty = UI:CreateText(main, emptyBankText(), 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local empty = UI:CreateText(main, emptyBankText(), 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     empty:SetPoint("TOPLEFT", 0, -36)
     empty:SetPoint("RIGHT", main, "RIGHT", 0, 0)
     empty:SetJustifyH("LEFT")
@@ -601,7 +631,7 @@ local function buildTabs(p)
             else
                 cell.tex:Hide()
                 cell.count:SetText("")
-                cell:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+                cell:SetBackdropBorderColor(C.paperRule.r, C.paperRule.g, C.paperRule.b, 1)
             end
         end
         movesChip:SetValue(tostring(moves))
@@ -675,17 +705,17 @@ local function buildLedger(p)
     head:SetPoint("TOPLEFT", 0, -(GAP + FIELD_H + GAP))
     head:SetPoint("RIGHT", side, "LEFT", -16, 0)
     local X = { when = 8, who = 76, verb = 190, item = 276 }
-    headerText(head, L["WHEN"], X.when)
-    headerText(head, L["WHO"], X.who)
-    headerText(head, L["WHAT"], X.verb)
-    headerText(head, L["ITEM"], X.item)
-    local hQty = UI:CreateHeaderText(head, L["QTY"], 10)
+    headerText(head, L["When"], X.when)
+    headerText(head, L["Who"], X.who)
+    headerText(head, L["What"], X.verb)
+    headerText(head, L["Item"], X.item)
+    local hQty = UI:CreateHeaderText(head, L["Qty"], 10)
     hQty:SetPoint("RIGHT", -(GUTTER + 52), 0)
-    local hTab = UI:CreateHeaderText(head, L["TAB"], 10)
+    local hTab = UI:CreateHeaderText(head, L["Tab"], 10)
     hTab:SetPoint("RIGHT", -(GUTTER + 6), 0)
 
     local list = makeList(p, ROW_H, function(row)
-        row.when = UI:CreateText(row, "", 11, C.label.r, C.label.g, C.label.b)
+        row.when = UI:CreateText(row, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         GuildOS:ApplyFont(row.when, 11, "tableNum")
         row.when:SetPoint("LEFT", X.when, 0)
         row.who = UI:CreateText(row, "", 12)
@@ -701,7 +731,7 @@ local function buildLedger(p)
         row.qty = UI:CreateText(row, "", 11)
         GuildOS:ApplyFont(row.qty, 11, "tableNum")
         row.qty:SetPoint("RIGHT", -52, 0)
-        row.tab = UI:CreateText(row, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        row.tab = UI:CreateText(row, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         GuildOS:ApplyFont(row.tab, 11, "tableNum")
         row.tab:SetPoint("RIGHT", -6, 0)
         row:SetScript("OnEnter", function(self)
@@ -721,8 +751,8 @@ local function buildLedger(p)
         row.verb:SetText(L[v[1]])
         row.verb:SetTextColor(vc.r, vc.g, vc.b)
         if e.k == 0 then
-            row.itemText:SetText(money(e.g))
-            row.itemText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+            row.itemText:SetText(paperMoney(e.g))
+            row.itemText:SetTextColor(C.paperTitle.r, C.paperTitle.g, C.paperTitle.b)
             row.qty:SetText("")
             row.tab:SetText("—")
         else
@@ -752,17 +782,17 @@ local function buildLedger(p)
     local base = chart:CreateTexture(nil, "BORDER")
     base:SetPoint("BOTTOMLEFT"); base:SetPoint("BOTTOMRIGHT")
     UI:Hairline(base)
-    base:SetColorTexture(C.line.r, C.line.g, C.line.b, 1)
+    base:SetColorTexture(C.paperRule.r, C.paperRule.g, C.paperRule.b, 1)
     local bars = {}
     local barW = math.floor(SIDE_W / CHART_DAYS)
     for i = 1, CHART_DAYS do
         local bar = chart:CreateTexture(nil, "ARTWORK")
-        bar:SetColorTexture(C.gold.r, C.gold.g, C.gold.b, 0.85)
+        bar:SetColorTexture(C.paperTitle.r, C.paperTitle.g, C.paperTitle.b, 0.85)
         bar:SetWidth(math.max(1, barW - 2))
         bar:SetPoint("BOTTOMLEFT", (i - 1) * barW, 1)
         bars[i] = bar
     end
-    local chartCap = UI:CreateText(side, L["Last 30 days, one bar a day"], 10, C.label.r, C.label.g, C.label.b)
+    local chartCap = UI:CreateText(side, L["Last 30 days, one bar a day"], 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     chartCap:SetPoint("TOPLEFT", chart, "BOTTOMLEFT", 0, -4)
 
     local topTitle = UI:CreateSectionTitle(side, L["Top contributors · 30 days"])
@@ -774,7 +804,7 @@ local function buildLedger(p)
         r:SetPoint("TOPLEFT", topTitle, "BOTTOMLEFT", 0, -8 - (i - 1) * 28)
         r.name = UI:CreateText(r, "", 12)
         r.name:SetPoint("TOPLEFT", 0, 0)
-        r.what = UI:CreateText(r, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        r.what = UI:CreateText(r, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         GuildOS:ApplyFont(r.what, 10, "tableNum")
         r.what:SetPoint("TOPRIGHT", 0, -1)
         r.bar = UI:CreateProgressBar(r, SIDE_W, 4)
@@ -782,7 +812,7 @@ local function buildLedger(p)
         r.bar:SetPoint("BOTTOMRIGHT", 0, 4)
         tops[i] = r
     end
-    local topNote = UI:CreateText(side, "", 10, C.label.r, C.label.g, C.label.b)
+    local topNote = UI:CreateText(side, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     topNote:SetPoint("BOTTOMLEFT", 0, 0)
     topNote:SetPoint("RIGHT", side, "RIGHT", 0, 0)
     topNote:SetJustifyH("LEFT")
@@ -805,14 +835,14 @@ local function buildLedger(p)
         list:SetData(rows)
 
         local db = B:Store()
-        goldValue:SetText(db.moneyNow and money(db.moneyNow) or "—")
+        goldValue:SetText(db.moneyNow and paperMoney(db.moneyNow) or "—")
         local readings, nowT = db.money, GetServerTime()
         local weekAgo
         for _, r in ipairs(readings) do if r.t <= nowT - 7 * 86400 then weekAgo = r.m end end
         if db.moneyNow and weekAgo then
             local d = db.moneyNow - weekAgo
-            local col = d >= 0 and C.ok or C.danger
-            goldDelta:SetText(string.format(L["%s%s in 7 days"], d >= 0 and "+" or "-", money(math.abs(d))))
+            local col = d >= 0 and INK_OK or INK_DANGER
+            goldDelta:SetText(string.format(L["%s%s in 7 days"], d >= 0 and "+" or "-", paperMoney(math.abs(d))))
             goldDelta:SetTextColor(col.r, col.g, col.b)
         else
             goldDelta:SetText("")
@@ -848,7 +878,7 @@ local function buildLedger(p)
                 row.name:SetText(string.format("%d  %s", i, shortName(x.name)))
                 row.name:SetTextColor(cc.r, cc.g, cc.b)
                 local what = string.format(L["%d items"], x.r.di)
-                if x.r.dg > 0 then what = what .. " · " .. money(x.r.dg) end
+                if x.r.dg > 0 then what = what .. " · " .. paperMoney(x.r.dg) end
                 if officer and (x.r.wi > 0 or x.r.wg > 0) then
                     what = what .. " · " .. string.format(L["out %d"], x.r.wi)
                 end
@@ -881,7 +911,7 @@ local function buildNeeds(p, panel)
     lowChip:SetPoint("TOPLEFT", CHIP_W + 16, -GAP)
     lowChip:SetWidth(CHIP_W)
     local blurb = UI:CreateText(p, L["Officers say how many of each item the bank should hold. Every member sees what is short, here and on the item's tooltip."],
-        12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     blurb:SetPoint("TOPLEFT", (CHIP_W + 16) * 2, -GAP - 4)
     blurb:SetPoint("RIGHT", p, "RIGHT", -(GAP + 330), 0)
     blurb:SetJustifyH("LEFT")
@@ -928,7 +958,7 @@ local function buildNeeds(p, panel)
     local noteBox = UI:CreateInput(form, 120, FIELD_H, { max = 80 })
     noteBox:SetPoint("LEFT", noteLabel, "RIGHT", 8, 0)
     noteBox:SetPoint("RIGHT", add, "LEFT", -8, 0)
-    local readOnly = UI:CreateText(p, L["Only officers change the needs."], 11, C.label.r, C.label.g, C.label.b)
+    local readOnly = UI:CreateText(p, L["Only officers change the needs."], 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     readOnly:SetPoint("TOPLEFT", 0, -(GAP + CHIP_H + GAP + 4))
     local function submit()
         local id = B:ParseItemInput(item:GetText())
@@ -943,17 +973,17 @@ local function buildNeeds(p, panel)
     local head = UI:CreateTableHeader(p, HEAD_H)
     head:SetPoint("TOPLEFT", form, "BOTTOMLEFT", 0, -GAP)
     head:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
-    headerText(head, L["ITEM"], 32)
+    headerText(head, L["Item"], 32)
     local hHave = UI:CreateHeaderText(head, L["HAVE / TARGET"], 10)
     hHave:SetPoint("RIGHT", -(GUTTER + 380), 0)
-    local hProg = UI:CreateHeaderText(head, L["PROGRESS"], 10)
+    local hProg = UI:CreateHeaderText(head, L["Progress"], 10)
     hProg:SetPoint("LEFT", head, "RIGHT", -(GUTTER + 360), 0)
-    local hMiss = UI:CreateHeaderText(head, L["SHORT"], 10)
+    local hMiss = UI:CreateHeaderText(head, L["Short"], 10)
     hMiss:SetPoint("LEFT", head, "RIGHT", -(GUTTER + 140), 0)
 
     local list = makeList(p, ROW_H + 8, function(row)
         itemCell(row, 8)
-        row.note = UI:CreateText(row, "", 10, C.label.r, C.label.g, C.label.b)
+        row.note = UI:CreateText(row, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         row.note:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -1)
         row.name:ClearAllPoints()
         row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 6)
@@ -982,7 +1012,7 @@ local function buildNeeds(p, panel)
         row.have:SetText(string.format("%d / %d", r.have, r.n))
         row.bar:SetProgress(r.have / r.n)
         local pct = r.have / r.n
-        local col = pct >= 1 and C.ok or (pct >= 0.6 and C.warn or C.danger)
+        local col = pct >= 1 and INK_OK or (pct >= 0.6 and INK_WARN or INK_DANGER)
         row.miss:SetText(pct >= 1 and L["met"] or string.format(L["%d short"], r.n - r.have))
         row.miss:SetTextColor(col.r, col.g, col.b)
         row.remove:SetShown(GuildOS:IsOfficer())
@@ -1055,14 +1085,14 @@ local function buildRequests(p)
     local head = UI:CreateTableHeader(p, HEAD_H)
     head:SetPoint("TOPLEFT", form, "BOTTOMLEFT", 0, -GAP)
     head:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
-    headerText(head, L["WHEN"], 8)
-    headerText(head, L["WHO"], 76)
-    headerText(head, L["ITEM"], 196)
-    local hState = UI:CreateHeaderText(head, L["STATE"], 10)
+    headerText(head, L["When"], 8)
+    headerText(head, L["Who"], 76)
+    headerText(head, L["Item"], 196)
+    local hState = UI:CreateHeaderText(head, L["State"], 10)
     hState:SetPoint("RIGHT", -(GUTTER + 170), 0)
 
     local list = makeList(p, ROW_H + 4, function(row)
-        row.when = UI:CreateText(row, "", 11, C.label.r, C.label.g, C.label.b)
+        row.when = UI:CreateText(row, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         GuildOS:ApplyFont(row.when, 11, "tableNum")
         row.when:SetPoint("LEFT", 8, 0)
         row.who = UI:CreateText(row, "", 12)
@@ -1096,8 +1126,8 @@ local function buildRequests(p)
         row.who:SetText(shortName(r.who))
         row.who:SetTextColor(cc.r, cc.g, cc.b)
         local have = B:CountOf(r.item)
-        paintItem(row, r.item, nil, string.format(" × %d", r.n) .. (r.note and ("  " .. hex(C.label) .. r.note .. "|r") or ""))
-        local col = (r.st == "open" and C.text) or (r.st == "done" and C.ok) or C.label
+        paintItem(row, r.item, nil, string.format(" × %d", r.n) .. (r.note and ("  " .. hex(C.paperSoft) .. r.note .. "|r") or ""))
+        local col = (r.st == "open" and C.paperInk) or (r.st == "done" and INK_OK) or C.paperSoft
         local stateText = L[REQ_TEXT[r.st] or "open"]
         if r.st == "open" then stateText = stateText .. " · " .. string.format(L["bank has %d"], have)
         elseif r.by then stateText = stateText .. " · " .. r.by end
@@ -1140,11 +1170,11 @@ end
 -- What a cleanup row is worth: where it sells for "sell", its vendor value otherwise.
 local function valueText(r)
     if r.verdict == "sell" then
-        if r.where == "ah" and r.ah then return L["AH"] .. " " .. money(r.ah) end
+        if r.where == "ah" and r.ah then return L["AH"] .. " " .. paperMoney(r.ah) end
         if r.noValue then return L["no vendor value"] end
-        return money(r.vendor)
+        return paperMoney(r.vendor)
     end
-    if r.vendorEach and r.vendorEach > 0 then return money(r.vendorEach * r.have) end
+    if r.vendorEach and r.vendorEach > 0 then return paperMoney(r.vendorEach * r.have) end
     return ""
 end
 
@@ -1166,7 +1196,7 @@ local function buildCleanup(p)
         chips[i] = chip
     end
     local blurb = UI:CreateText(p, L["What the bank holds that nobody takes. Mark what goes; at the bank the bar takes it out, at a vendor it sells only that, and the gold goes back in."],
-        11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     blurb:SetPoint("TOPLEFT", (CHIP_W + 16) * 4, -GAP - 2)
     blurb:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
     blurb:SetJustifyH("LEFT")
@@ -1200,12 +1230,12 @@ local function buildCleanup(p)
     local head = UI:CreateTableHeader(p, HEAD_H)
     head:SetPoint("TOPLEFT", filters, "BOTTOMLEFT", 0, -GAP)
     head:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
-    headerText(head, L["ITEM"], 32)
-    local hVerdict = UI:CreateHeaderText(head, L["VERDICT"], 10)
+    headerText(head, L["Item"], 32)
+    local hVerdict = UI:CreateHeaderText(head, L["Verdict"], 10)
     hVerdict:SetPoint("LEFT", head, "RIGHT", -(GUTTER + 520), 0)
-    local hWhy = UI:CreateHeaderText(head, L["WHY"], 10)
+    local hWhy = UI:CreateHeaderText(head, L["Why"], 10)
     hWhy:SetPoint("LEFT", head, "RIGHT", -(GUTTER + 440), 0)
-    local hValue = UI:CreateHeaderText(head, L["VALUE"], 10)
+    local hValue = UI:CreateHeaderText(head, L["Value"], 10)
     hValue:SetPoint("RIGHT", -(GUTTER + 36), 0)
 
     local list = makeList(p, ROW_H + 4, function(row)
@@ -1216,7 +1246,7 @@ local function buildCleanup(p)
         row.name:SetPoint("RIGHT", -530, 0)
         row.verdict = UI:CreateText(row, "", 11)
         row.verdict:SetPoint("LEFT", row, "RIGHT", -520, 0)
-        row.why = UI:CreateText(row, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        row.why = UI:CreateText(row, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         row.why:SetPoint("LEFT", row, "RIGHT", -440, 0)
         row.why:SetPoint("RIGHT", -150, 0)
         row.why:SetJustifyH("LEFT")
@@ -1250,7 +1280,7 @@ local function buildCleanup(p)
     list:SetEmptyText(emptyBankText())
 
     local gate = UI:CreateText(p, L["Only officers decide what leaves the bank. Ask an officer, or set your guild's officer ranks in Settings."],
-        12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     gate:SetPoint("TOPLEFT", 0, -GAP)
     gate:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
     gate:SetJustifyH("LEFT")
@@ -1266,11 +1296,11 @@ local function buildCleanup(p)
         local rows = CL:Rows()
         local items, value, slots = CL:Summary(rows)
         chips[1]:SetValue(tostring(items))
-        chips[2]:SetValue(value > 0 and money(value) or "—")
+        chips[2]:SetValue(value > 0 and paperMoney(value) or "—")
         chips[3]:SetValue("+" .. slots)
         local owed = CL:Owed()
         chips[4]:SetValue(tostring(CL:MarkedCount()))
-        chips[4].label:SetText(owed > 0 and string.format(L["Marked · %s to deposit"], money(owed)) or L["Marked"])
+        chips[4].label:SetText(owed > 0 and string.format(L["Marked · %s to deposit"], paperMoney(owed)) or L["Marked"])
         local shown = {}
         for _, r in ipairs(rows) do
             if st.show == "all" or r.verdict == st.show then shown[#shown + 1] = r end
@@ -1315,7 +1345,13 @@ function GuildOS:CreateGuildBankPanel(container, _mainFrame)
         local p = panels[key]
         if not built[key] then
             built[key] = true
-            for _, s in ipairs(SUBS) do if s.key == key then s.build(p, api) end end
+            for _, s in ipairs(SUBS) do
+                if s.key == key then
+                    s.build(p.inner, api)
+                    -- What the builder hangs on its frame is the sub-panel's: its redraw and its prefill.
+                    p.Draw, p.Prefill = p.inner.Draw, p.inner.Prefill
+                end
+            end
         end
         p:Show()
         if p.Draw then GuildOS:SafeCall(p.Draw) end
@@ -1333,6 +1369,15 @@ function GuildOS:CreateGuildBankPanel(container, _mainFrame)
         p:SetPoint("BOTTOMRIGHT", 0, 0)
         p:Hide()
         p:SetScript("OnShow", function(self) if self.Draw then GuildOS:SafeCall(self.Draw) end end)
+        -- The sub-screen on a parchment card titled with its name (the mockup's "Banco da guilda"); what it draws
+        -- sits inside the card's padding.
+        local card = UI:CreateCard(p, s.label)
+        card:SetPoint("TOPLEFT", 0, -2)
+        card:SetPoint("BOTTOMRIGHT", -2, 6)
+        local inner = CreateFrame("Frame", nil, card)
+        inner:SetPoint("TOPLEFT", UI.CARD_PAD or 14, -30)
+        inner:SetPoint("BOTTOMRIGHT", -(UI.CARD_PAD or 14), 10)
+        p.inner, p.card = inner, card
         panels[s.key] = p
         local tab = UI:CreateTab(subBar, s.label, 100, true)
         if prev then tab:SetPoint("LEFT", prev, "RIGHT", 2, 0) else tab:SetPoint("LEFT", 4, 0) end

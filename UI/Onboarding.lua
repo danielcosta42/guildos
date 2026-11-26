@@ -67,18 +67,54 @@ local function BuildFrame()
     f:SetScript("OnDragStart", function(self) self:StartMoving() end)
     f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     UI:StylePopup(f, { shadowSize = 18 })
-
-    local title = UI:CreateTitle(f, "", 18)
-    title:SetPoint("TOP", 0, -18)
+    -- A floating window (the mockup's .fw "onboarding"): "Welcome" in its header, the steps as a row of marks,
+    -- the step's title in Cinzel soft gold, its text, and the step count with the answers in the footer.
+    local Kit = rawget(GuildOS, "Kit")
+    local title, stepLbl
+    if Kit then
+        Kit:Dress(f, L["Welcome"])
+        Kit:Footer(f)
+        f:SetHeight(330)
+        f.dots = {}
+        title = UI:CreateTitle(f, "", 15)
+        title:SetTextColor(C.gold2.r, C.gold2.g, C.gold2.b)
+        title:SetPoint("TOPLEFT", 24, -52)
+        stepLbl = UI:CreateText(f.foot, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        stepLbl:SetPoint("LEFT", f.foot, "LEFT", 11, 0)
+    else
+        title = UI:CreateTitle(f, "", 18)
+        title:SetPoint("TOP", 0, -18)
+        stepLbl = UI:CreateText(f, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        stepLbl:SetPoint("TOP", title, "BOTTOM", 0, -4)
+    end
     f.title = title
-
-    local stepLbl = UI:CreateText(f, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
-    stepLbl:SetPoint("TOP", title, "BOTTOM", 0, -4)
     f.stepLbl = stepLbl
+    -- The steps as marks along the top, the ones reached in the soft gold (the mockup's .wizard-steps).
+    function f:PaintDots(step, count)
+        if not self.dots then return end
+        local w = math.floor((440 - 48 - (count - 1) * 4) / math.max(1, count))
+        for i = 1, math.max(count, #self.dots) do
+            local d = self.dots[i]
+            if not d and i <= count then
+                d = self:CreateTexture(nil, "ARTWORK")
+                d:SetTexture(WHITE)
+                d:SetHeight(4)
+                self.dots[i] = d
+            end
+            if d then
+                d:SetShown(i <= count)
+                d:ClearAllPoints()
+                d:SetPoint("TOPLEFT", 24 + (i - 1) * (w + 4), -(Kit.HEADER_H + 8))
+                d:SetWidth(w)
+                local c = i <= step and C.gold2 or C.lineHi
+                d:SetVertexColor(c.r, c.g, c.b, 1)
+            end
+        end
+    end
 
     local body = UI:CreateText(f, "", 12, C.text.r, C.text.g, C.text.b)
-    body:SetPoint("TOPLEFT", 24, -78)
-    body:SetPoint("TOPRIGHT", -24, -78)
+    body:SetPoint("TOPLEFT", 24, -80)
+    body:SetPoint("TOPRIGHT", -24, -80)
     body:SetJustifyH("LEFT")
     body:SetJustifyV("TOP")
     body:SetWordWrap(true)
@@ -136,15 +172,16 @@ local function BuildFrame()
     end
     f.styleCards = cards
 
-    local backBtn = UI:CreateButton(f, L["Back"], 90, 24)
+    local backBtn = UI:CreateButton(f.foot or f, L["Back"], 90, 24)
     backBtn:SetPoint("BOTTOMLEFT", 16, 16)
     f.backBtn = backBtn
 
-    local nextBtn = UI:CreateButton(f, L["Next"], 90, 24)
+    local nextBtn = UI:CreateButton(f.foot or f, L["Next"], 90, 24)
     nextBtn:SetPoint("BOTTOMRIGHT", -16, 16)
+    UI:SetButtonVariant(nextBtn, "primary")
     f.nextBtn = nextBtn
 
-    local settingsBtn = UI:CreateButton(f, L["Open Settings"], 120, 24)
+    local settingsBtn = UI:CreateButton(f.foot or f, L["Open Settings"], 120, 24)
     -- Beside Next, not centred: "Finish and reload" grows Next leftwards past the middle in the longer
     -- languages, and a centred button sat under it (ruRU, frFR; #375).
     settingsBtn:SetPoint("BOTTOMRIGHT", nextBtn, "BOTTOMLEFT", -8, 0)
@@ -162,6 +199,7 @@ local function BuildFrame()
         f.stepLbl:SetText(string.format(L["Step %d of %d"], f.step, #f.steps))
         f.body:SetText(s.body)
         f.backBtn:SetShown(f.step > 1)
+        f:PaintDots(f.step, #f.steps)
         -- A style picked that is not the one on screen: the last button says it reloads (#375).
         local reload = f.chosen ~= nil and f.chosen ~= f.startStyle
         f.nextBtn.label:SetText(f.step < #f.steps and L["Next"] or (reload and L["Finish and reload"] or L["Finish"]))
@@ -170,6 +208,10 @@ local function BuildFrame()
             UI:SetSelected(card, card.id == f.chosen)
         end
         f.settingsBtn:SetShown(f.step == #f.steps)
+        -- In the footer the answers sit from the right: Next, Settings on the last step, Back.
+        if f.foot then
+            f.foot:Lay(f.nextBtn, f.step == #f.steps and f.settingsBtn or nil, f.step > 1 and f.backBtn or nil)
+        end
         -- Guild-button takeover toggle: only on its step, reflecting the live setting.
         if s.guildButtonToggle then
             f.gbToggle.checkbox:SetChecked(GuildOS:IsGuildButtonHijacked())

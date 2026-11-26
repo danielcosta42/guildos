@@ -164,6 +164,7 @@ Modules\PugInspector.lua
 
 # UI
 UI\Helpers.lua
+UI\Kit.lua
 UI\StylePreview.lua
 UI\Layout.lua
 UI\WebPanel.lua

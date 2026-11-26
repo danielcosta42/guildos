@@ -159,26 +159,26 @@ local due, old, run, done = shown("Due"), shown("Old"), shown("Run"), shown("Don
 check(due and old and run and done and due < run and old < run and run < done,
   "ready to review first, then running, then decided")
 local review = 0
-for _, w in ipairs(texts) do if w.text == "READY TO REVIEW" then review = review + 1 end end
-check(review == 2 and shown("TRIAL") and shown("APPROVED"), "Due and Old read ready to review, Run is a trial, Done approved")
+for _, w in ipairs(texts) do if w.text == "ready to review" then review = review + 1 end end
+check(review == 2 and shown("on trial") and shown("approved"), "Due and Old read ready to review, Run is a trial, Done approved")
 check(not shown("EXPIRED") and not shown("expired"), "\"expired\" is never shown")
 check(count("OK") == 3 and count("X") == 3, "approve and deny on every trial nobody decided, ready to review included")
 check(panel.statusText.text == "3 active trials", "the count is of the trials nobody decided")
 db.settings.trialDays = 60
 refresh()
 review = 0
-for _, w in ipairs(texts) do if w.text == "READY TO REVIEW" then review = review + 1 end end
-check(review == 0 and shown("TRIAL"), "the guild lengthens its trials: nobody is ready to review any more, Old included")
+for _, w in ipairs(texts) do if w.text == "ready to review" then review = review + 1 end end
+check(review == 0 and shown("on trial"), "the guild lengthens its trials: nobody is ready to review any more, Old included")
 
 -- ── 3. Somebody who left: with the decided, and not counted ─────────────
 db.settings.trialDays = 14
 db.trials["Due-Realm"].leftAt = now
 refresh()
 local gone, decided = shown("Due"), shown("Done")
-check(shown("LEFT THE GUILD") and gone and gone > shown("Run"), "a trial whose member left reads so, listed with the decided")
+check(shown("left the guild") and gone and gone > shown("Run"), "a trial whose member left reads so, listed with the decided")
 check(decided and panel.statusText.text == "2 active trials", "and is not counted among the active ones")
 review = 0
-for _, w in ipairs(texts) do if w.text == "READY TO REVIEW" then review = review + 1 end end
+for _, w in ipairs(texts) do if w.text == "ready to review" then review = review + 1 end end
 check(review == 1, "only Old is still ready to review")
 
 -- ── 4. A setting from another officer redraws the open panel ────────────
@@ -188,6 +188,6 @@ TT:OnConfigSync({ act = "trialauto", rev = now + 10, data = { on = true } })
 check(TT:IsAutoOn() and panel.trialAutoCb.checked == true and shown("Run"), "the switch heard from the guild shows at once")
 texts = {}
 TT:OnConfigSync({ act = "trialdays", rev = now + 10, data = { days = 60 } })
-check(TT:GetDays() == 60 and shown("Run") and not shown("READY TO REVIEW"), "and so does the length, with the rows redrawn")
+check(TT:GetDays() == 60 and shown("Run") and not shown("ready to review"), "and so does the length, with the rows redrawn")
 
 print(("trial-panel: %d checks passed"):format(checks))

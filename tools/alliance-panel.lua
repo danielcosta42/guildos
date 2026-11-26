@@ -195,7 +195,9 @@ check(#A:OpenRaids() == 0, "the hook answers nothing by itself")
 -- ── 3. Officers' Room › Alliance ───────────────────────────────────────
 parent.SelectSub("setup")
 t = texts(setup)
-check(t:find("Alliance code", 1, true) and t:find("Active: NUCLEO, 3 guilds.", 1, true), "the code in force")
+check(t:find("Active: NUCLEO, 3 guilds.", 1, true), "the code in force")
+-- The setup is a parchment card titled with what it is (specs/salao/fase3.md).
+check(read("UI/AlliancePanel.lua"):find('UI:CreateCard(parent, L["Alliance code"])', 1, true), "under the card's title, Alliance code")
 check(t:find("Chat only: the shared /g and the alliance room. Members, crafters, raids and bans come from guildos.me.", 1, true),
   "pasted by hand, it is the chat only, and the rest comes from the site")
 check(t:find("Save for the guild", 1, true) and t:find("Generate", 1, true), "the field to paste it, and its buttons")

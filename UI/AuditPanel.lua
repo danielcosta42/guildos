@@ -4,10 +4,46 @@
 -- guild-wide enchant audit. Visual layout only — data comes from
 -- GuildOS.AttunementTracker and GuildOS.GearAudit (Rule 3 / Rule 10).
 ----------------------------------------------------------------------
-local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
+
+-- The Raids room's Audit (the mockup's raides-prontidao): one parchment card, its sub-tabs as pills, the
+-- tables on the paper. The paper's shades of a state, and a class's colour as the paper prints it.
+local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
+local PAPER_OK, PAPER_WARN, PAPER_BAD = hex("2f6e33"), hex("a0560f"), hex("8f1b0b")
+local PAPER_CLASS = {
+    PRIEST = hex("666666"), ROGUE = hex("857612"), HUNTER = hex("4f7319"), MAGE = hex("16758d"),
+    PALADIN = hex("a8457a"), DRUID = hex("b35400"), SHAMAN = hex("0b4fa0"), WARRIOR = hex("7e5a33"),
+    WARLOCK = hex("4b4cb0"),
+}
+local function paperClass(class)
+    local c = PAPER_CLASS[type(class) == "string" and class:upper() or ""]
+    if c then return c.r, c.g, c.b end
+    local r, g, b = GuildOS:GetClassColor(class)
+    return r * 0.6, g * 0.6, b * 0.6
+end
+-- The wood's colours as the paper prints them: the ink, the soft ink, a state's deeper shade; anything
+-- else light (a school's colour) darkened to read on the parchment.
+local function same(r, g, b, c) return c and math.abs(r - c.r) < 1e-3 and math.abs(g - c.g) < 1e-3 and math.abs(b - c.b) < 1e-3 end
+local function onPaper(r, g, b)
+    if same(r, g, b, C.text) then return C.paperInk.r, C.paperInk.g, C.paperInk.b end
+    if same(r, g, b, C.textSoft) or same(r, g, b, C.label) or same(r, g, b, C.labelDim) then
+        return C.paperSoft.r, C.paperSoft.g, C.paperSoft.b
+    end
+    if same(r, g, b, C.ok) then return PAPER_OK.r, PAPER_OK.g, PAPER_OK.b end
+    if same(r, g, b, C.warn) then return PAPER_WARN.r, PAPER_WARN.g, PAPER_WARN.b end
+    if same(r, g, b, C.danger) then return PAPER_BAD.r, PAPER_BAD.g, PAPER_BAD.b end
+    if (r + g + b) / 3 > 0.55 then return r * 0.6, g * 0.6, b * 0.6 end
+    return r, g, b
+end
+-- The shared components, with every text drawn on the paper taking the paper's shade of its colour.
+local UI = setmetatable({
+    CreateText = function(self, parent, text, size, r, g, b)
+        if r and GuildOS.UI.OnPaper and GuildOS.UI:OnPaper(parent) then r, g, b = onPaper(r, g, b) end
+        return GuildOS.UI.CreateText(self, parent, text, size, r, g, b)
+    end,
+}, { __index = function(_, k) return GuildOS.UI[k] end })
 
 local SUBTABS = {
     { key = "ready",   label = L["Readiness"] },
@@ -30,7 +66,11 @@ local HEAD_H = 26       -- a section title's line and the space under it
 local LINE_H = 16       -- a line of secondary text
 
 -- A status word in its status colour, from the palette's tokens (#371: they were hex codes).
-local function tint(text, col) return GuildOS:ColorText(text, col.r, col.g, col.b) end
+-- Every screen here is on the paper: the state's shade as the paper prints it.
+local function tint(text, col)
+    local r, g, b = onPaper(col.r, col.g, col.b)
+    return GuildOS:ColorText(text, r, g, b)
+end
 local DASH = "\226\128\147"   -- en dash: no data
 
 -- Ready-check icons render reliably inside FontStrings (no font-glyph risk).
@@ -51,14 +91,18 @@ local function MakeScrollList(panel, name, topInset)
 end
 
 -- A row hung by both top corners: a width read at refresh time is 0 on a hidden tab (#371).
-local function MakeRow(content, yOff, index)
-    local row = CreateFrame("Frame", nil, content, "BackdropTemplate")
+-- A 1px line of the paper's under it, as the mockup's tables.
+local function MakeRow(content, yOff)
+    local row = CreateFrame("Frame", nil, content)
     row:SetHeight(ROW_H)
     row:SetPoint("TOPLEFT", 0, -yOff)
     row:SetPoint("TOPRIGHT", 0, -yOff)
-    row:SetBackdrop({ bgFile = WHITE })
-    local alt = (index % 2 == 0) and C.row1 or C.row2
-    row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
+    local rule = row:CreateTexture(nil, "BACKGROUND")
+    rule:SetTexture(WHITE)
+    rule:SetHeight(1)
+    rule:SetPoint("TOPLEFT", 0, -ROW_H - 1)
+    rule:SetPoint("TOPRIGHT", 0, -ROW_H - 1)
+    rule:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
     return row
 end
 
@@ -102,63 +146,60 @@ local function BuildReadySub(panel)
     panel.statusIdx = 0   -- 0 = every status; 1..N = one of them (issue #220)
     local STATUSES = { { "ready", L["ready"] }, { "warn", L["check"] }, { "notready", L["not ready"] } }
 
-    local summary = UI:CreateText(panel, "", 11, C.text.r, C.text.g, C.text.b)
-    summary:SetPoint("TOPLEFT", 0, -4)
-
-    local targetBtn
-    if hasAttune then
-        targetBtn = UI:CreateButton(panel, L["Target: All raids"], 220, 20)
-        targetBtn:SetPoint("TOPRIGHT", -GAP, -2)
-    end
+    -- The counts on a line of the soft ink; under it the actions and the filters, small buttons in a row.
+    local summary = UI:CreateText(panel, "", 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    summary:SetPoint("TOPLEFT", 0, 0)
+    summary:SetPoint("TOPRIGHT", 0, 0)
 
     -- /gos specs: the group's talent specs, read now (#142).
     local specsBtn = UI:CreateButton(panel, L["Scan group talents"], 150, 20)
-    if targetBtn then
-        specsBtn:SetPoint("TOPRIGHT", targetBtn, "TOPLEFT", -6, 0)
-    else
-        specsBtn:SetPoint("TOPRIGHT", -GAP, -2)
+    specsBtn:SetPoint("TOPLEFT", 0, -20)
+    local targetBtn
+    if hasAttune then
+        targetBtn = UI:CreateButton(panel, L["Target: All raids"], 160, 20)
     end
     specsBtn:SetScript("OnClick", function()
         if GuildOS.SpecChecker then GuildOS.SpecChecker:ScanGroup() end
     end)
     -- /gos cons: the raid's consumables, read now, with the announce (on retail the Raid HUD that
     -- holds the other way in does not exist; issue #187).
-    local leftmost = specsBtn
+    local last = specsBtn
     if hasCons then
         local consBtn = UI:CreateButton(panel, L["Check Consumables"], 150, 20)
-        consBtn:SetPoint("TOPRIGHT", specsBtn, "TOPLEFT", -6, 0)
+        consBtn:SetPoint("LEFT", last, "RIGHT", 6, 0)
         consBtn:SetScript("OnClick", function() GuildOS:ShowConsumablePopup() end)
-        leftmost = consBtn
+        last = consBtn
+    end
+    if targetBtn then
+        targetBtn:SetPoint("LEFT", last, "RIGHT", 6, 0)
+        last = targetBtn
     end
     -- Forever's filters: a core and a status, each cycled like the target above (issue #220).
     local coreBtn, statusBtn
     if forever then
-        statusBtn = UI:CreateButton(panel, L["Status: All"], 120, 20)
-        statusBtn:SetPoint("TOPRIGHT", leftmost, "TOPLEFT", -6, 0)
-        coreBtn = UI:CreateButton(panel, L["Core: All"], 130, 20)
-        coreBtn:SetPoint("TOPRIGHT", statusBtn, "TOPLEFT", -6, 0)
-        leftmost = coreBtn
+        coreBtn = UI:CreateButton(panel, L["Core: All"], 110, 20)
+        coreBtn:SetPoint("LEFT", last, "RIGHT", 6, 0)
+        statusBtn = UI:CreateButton(panel, L["Status: All"], 110, 20)
+        statusBtn:SetPoint("LEFT", coreBtn, "RIGHT", 6, 0)
     end
-    -- A narrow window cuts the summary short rather than lay the buttons over it.
-    summary:SetPoint("TOPRIGHT", leftmost, "TOPLEFT", -8, -2)
     summary:SetWordWrap(false)
     summary:SetJustifyH("LEFT")
 
-    local header = MakeHeader(panel, 26)
+    local header = MakeHeader(panel, 48)
     local function hcol(txt, x)
-        local fs = UI:CreateHeaderText(header, txt, 9)
+        local fs = UI:CreateHeaderText(header, txt, 10)
         fs:SetPoint("LEFT", x, 0)
     end
-    hcol(L["MEMBER"], 8)
-    hcol(L["STATUS"], 160)
-    hcol(L["iLVL"], 250)
-    if hasAttune then hcol(L["ATTUNE"], 310) end
-    if forever then hcol(L["LEVEL"], 310) end
-    hcol(L["ENCHANTS"], 400)
-    if hasCons then hcol(L["CONSUMES"], 510) end
+    hcol(L["Member"], 8)
+    hcol(L["Status"], 160)
+    hcol(L["iLvl"], 250)
+    if hasAttune then hcol(L["Attune"], 310) end
+    if forever then hcol(L["Level"], 310) end
+    hcol(L["Enchants"], 400)
+    if hasCons then hcol(L["Consumables"], 510) end
     if forever then
-        hcol(L["CORE"], 470)
-        hcol(L["ROLE"], 580)
+        hcol(L["Core"], 470)
+        hcol(L["Role"], 580)
     end
 
     local foot = UI:CreateText(panel, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
@@ -166,7 +207,7 @@ local function BuildReadySub(panel)
     foot:SetJustifyH("LEFT")
 
     local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 0, -48)
+    listHolder:SetPoint("TOPLEFT", 0, -70)
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSAuditReadyScroll")
 
@@ -180,7 +221,7 @@ local function BuildReadySub(panel)
 
         local rows = GuildOS.Readiness:GetReport(targetShort)
         local c = GuildOS.Readiness:Summarize(rows)
-        summary:SetText(string.format(L["%d ready  |  %d need attention  |  %d not ready"],
+        summary:SetText(string.format(L["%d ready · %d need attention · %d not ready"],
             c.ready, c.warn, c.notready))
 
         if forever then
@@ -204,25 +245,29 @@ local function BuildReadySub(panel)
         end
 
         local yOff = 0
-        for idx, r in ipairs(rows) do
-            local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = GuildOS:GetClassColor(r.class)
-            local nameFS = UI:CreateText(row, r.name, 11, cr, cg, cb)
+        for _, r in ipairs(rows) do
+            local row = MakeRow(content, yOff)
+            local cr, cg, cb = paperClass(r.class)
+            local nameFS = UI:CreateText(row, r.name, 12, cr, cg, cb)
+            GuildOS:ApplyFont(nameFS, 12, "button")
             nameFS:SetPoint("LEFT", 8, 0)
             if r.status == "nodata" then nameFS:SetTextColor(C.labelDim.r, C.labelDim.g, C.labelDim.b) end
 
-            local stFS = UI:CreateText(row, "", 11, C.text.r, C.text.g, C.text.b)
-            stFS:SetPoint("LEFT", 160, 0)
+            -- The status as the mockup's badge: green ready, amber to check, red not ready.
+            local badge
             if r.status == "ready" then
-                stFS:SetText(ICON_DONE .. " " .. tint(L["ready"], C.ok))
+                badge = UI:CreateBadge(row, L["ready"], C.ok)
             elseif r.status == "notready" and r.reason == "level" then
-                stFS:SetText(ICON_NONE .. " " .. tint(L["Level"] .. " " .. (r.level or 0), C.danger))
+                badge = UI:CreateBadge(row, L["Level"] .. " " .. (r.level or 0), C.danger)
             elseif r.status == "notready" then
-                stFS:SetText(ICON_NONE .. " " .. tint(L["not attuned"], C.danger))
+                badge = UI:CreateBadge(row, L["not attuned"], C.danger)
             elseif r.status == "warn" then
-                stFS:SetText(tint("! " .. L["check"], C.warn))
+                badge = UI:CreateBadge(row, L["check"], C.warn)
+            end
+            if badge then
+                badge:SetPoint("LEFT", 160, 0)
             else
-                stFS:SetText(tint(DASH, C.labelDim))
+                UI:CreateText(row, tint(DASH, C.labelDim), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b):SetPoint("LEFT", 160, 0)
             end
 
             -- A 60 with no addon data is ready by level only, said where its item level would be (#207).
@@ -323,7 +368,7 @@ local function BuildAttuneSub(panel)
     -- Column header (fixed, above the scroll): two lines, the raid and how many have it.
     local header = MakeHeader(panel, 22, 30)
     panel.headerCells = {}
-    local hName = UI:CreateHeaderText(header, L["MEMBER"], 10)
+    local hName = UI:CreateHeaderText(header, L["Member"], 10)
     hName:SetPoint("LEFT", 8, 6)
 
     local listHolder = CreateFrame("Frame", nil, panel)
@@ -356,10 +401,11 @@ local function BuildAttuneSub(panel)
         end
 
         local yOff = 0
-        for idx, r in ipairs(rows) do
-            local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = GuildOS:GetClassColor(r.class)
-            local nameFS = UI:CreateText(row, r.name, 11, cr, cg, cb)
+        for _, r in ipairs(rows) do
+            local row = MakeRow(content, yOff)
+            local cr, cg, cb = paperClass(r.class)
+            local nameFS = UI:CreateText(row, r.name, 12, cr, cg, cb)
+            GuildOS:ApplyFont(nameFS, 12, "button")
             nameFS:SetPoint("LEFT", 8, 0)
             if not r.hasData then nameFS:SetTextColor(C.labelDim.r, C.labelDim.g, C.labelDim.b) end
 
@@ -404,7 +450,7 @@ local function BuildResistSub(panel)
 
     -- Column header: MEMBER + one column per school (coloured), fight/target below.
     local header = MakeHeader(panel, 22, 30)
-    local hName = UI:CreateHeaderText(header, L["MEMBER"], 10)
+    local hName = UI:CreateHeaderText(header, L["Member"], 10)
     hName:SetPoint("LEFT", 8, 6)
     for ci, sc in ipairs(R.SCHOOLS) do
         local x = NAME_W + (ci - 1) * COL_W
@@ -426,10 +472,11 @@ local function BuildResistSub(panel)
 
         local rows = R:GetRows()
         local yOff = 0
-        for idx, r in ipairs(rows) do
-            local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = GuildOS:GetClassColor(r.class)
-            local nameFS = UI:CreateText(row, r.name, 11, cr, cg, cb)
+        for _, r in ipairs(rows) do
+            local row = MakeRow(content, yOff)
+            local cr, cg, cb = paperClass(r.class)
+            local nameFS = UI:CreateText(row, r.name, 12, cr, cg, cb)
+            GuildOS:ApplyFont(nameFS, 12, "button")
             nameFS:SetPoint("LEFT", 8, 0)
 
             for ci, sc in ipairs(R.SCHOOLS) do
@@ -480,10 +527,11 @@ local function BuildEnchantSub(panel)
         summary:SetText(string.format(L["%d with missing enchants  |  %d scanned"], #problems, #all))
 
         local yOff = 0
-        for idx, r in ipairs(problems) do
-            local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = GuildOS:GetClassColor(r.class)
-            local nameFS = UI:CreateText(row, r.name, 11, cr, cg, cb)
+        for _, r in ipairs(problems) do
+            local row = MakeRow(content, yOff)
+            local cr, cg, cb = paperClass(r.class)
+            local nameFS = UI:CreateText(row, r.name, 12, cr, cg, cb)
+            GuildOS:ApplyFont(nameFS, 12, "button")
             nameFS:SetPoint("LEFT", 8, 0)
 
             local cntFS = UI:CreateText(row, string.format(L["%d missing"], r.missingCount), 11, C.danger.r, C.danger.g, C.danger.b)
@@ -691,10 +739,11 @@ local function BuildSyncSub(panel)
             yOff = yOff + LINE_H + GAP
         end
 
-        for idx, r in ipairs(rows) do
-            local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = GuildOS:GetClassColor(r.class)
-            local nameFS = UI:CreateText(row, r.name, 11, cr, cg, cb)
+        for _, r in ipairs(rows) do
+            local row = MakeRow(content, yOff)
+            local cr, cg, cb = paperClass(r.class)
+            local nameFS = UI:CreateText(row, r.name, 12, cr, cg, cb)
+            GuildOS:ApplyFont(nameFS, 12, "button")
             nameFS:SetPoint("LEFT", 8, 0)
 
             if not r.hasAddon then
@@ -747,18 +796,24 @@ function GuildOS:CreateAuditPanel(parent, _mainFrame)
         if not t.tbc or GuildOS.Client.isAnniversary then subtabs[#subtabs + 1] = t end
     end
 
-    -- Flush with the Raids sub-tab bar's left edge and GAP under it, as every screen (#371).
-    local bar = CreateFrame("Frame", nil, parent)
-    bar:SetPoint("TOPLEFT", 0, -GAP)
-    bar:SetPoint("TOPRIGHT", 0, -GAP)
-    bar:SetHeight(28)
-    UI:StyleSubTabBar(bar)
+    -- One parchment card, GAP under the room's entries (the mockup's "Prontidão da guilda"); its sub-tabs
+    -- are pills under its title, the chosen one in the title's red.
+    local PAD = type(UI.CARD_PAD) == "number" and UI.CARD_PAD or 14
+    local CARD_TOP = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
+    local card = UI:CreateCard(parent, L["Guild readiness"])
+    card:SetPoint("TOPLEFT", 0, -GAP)
+    card:SetPoint("BOTTOMRIGHT", -GAP, GAP)
+    parent.card = card
+    local bar = CreateFrame("Frame", nil, card)
+    bar:SetPoint("TOPLEFT", PAD, -CARD_TOP + 6)
+    bar:SetPoint("TOPRIGHT", -PAD, -CARD_TOP + 6)
+    bar:SetHeight(22)
 
     local subTabBtns = {}
     local function selectSub(key)
         parent.activeSub = key
         for k, info in pairs(parent.subPanels) do info.panel:SetShown(k == key) end
-        for k, btn in pairs(subTabBtns) do btn:SetActive(k == key) end
+        for k, btn in pairs(subTabBtns) do UI:SetSelected(btn, k == key) end
         local info = parent.subPanels[key]
         if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
@@ -771,18 +826,19 @@ function GuildOS:CreateAuditPanel(parent, _mainFrame)
 
     local x = 0
     for _, t in ipairs(subtabs) do
-        local btn = UI:CreateTab(bar, t.label, 130, true)
+        local btn = UI:SetButtonVariant(UI:CreateButton(bar, t.label, 40, 22), "chip")
+        btn:SetWidth(math.ceil(btn.label:GetStringWidth() or 40) + 22)
         btn:SetPoint("LEFT", x, 0)
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn
-        x = x + btn:GetWidth() + 4  -- a tab its label grew pushes the next one (issue #28)
+        x = x + btn:GetWidth() + 6  -- a pill its label grew pushes the next one (issue #28)
     end
 
-    -- A sub-tab's content: flush with the bar's left edge, its first line GAP under it.
+    -- A sub-tab's content: inside the card, under the pills.
     local function makeSubPanel()
-        local p = CreateFrame("Frame", nil, parent)
-        p:SetPoint("TOPLEFT", 0, -(GAP + 28 + GAP))
-        p:SetPoint("BOTTOMRIGHT", 0, GAP)
+        local p = CreateFrame("Frame", nil, card)
+        p:SetPoint("TOPLEFT", PAD, -(CARD_TOP + 26))
+        p:SetPoint("BOTTOMRIGHT", -PAD + GAP, 10)
         p:Hide()
         return p
     end

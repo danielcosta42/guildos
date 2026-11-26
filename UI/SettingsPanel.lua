@@ -6,7 +6,16 @@
 -- A change that needs a reload lights one strip at the bottom of the panel.
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
-local C = GuildOS.Colors
+-- Drawn on a parchment card in the Officers' Room and Settings (specs/salao/fase3.md): the text takes the
+-- paper's inks and a class its colour on the paper (UI/Kit.lua); a floating window, the wood's (WOOD).
+local Kit = rawget(GuildOS, "Kit")
+local C = Kit and Kit.PAPER or GuildOS.Colors
+local WOOD = GuildOS.Colors
+local function rule(row) if Kit then Kit:Rule(row) end end
+local function checkbox(parent, text, size)
+    if Kit then return Kit:Checkbox(parent, text, size) end
+    return GuildOS.UI:CreateCheckbox(parent, text, size)
+end
 local L = GuildOS.L
 local WHITE8 = "Interface\\Buttons\\WHITE8x8"
 
@@ -29,6 +38,7 @@ local NOTE_INDENT = 22    -- a checkbox's explanation starts where its label doe
 local LABEL_W     = 260   -- a field's label column, so the boxes line up; narrower on a narrow page
 local TAB_H, TAB_MIN, TAB_PAD = 28, 60, 20
 local STRIP_H     = 34
+local CARD_PAD, CARD_TOP, CARD_GAP = 14, 36, 12   -- a section's card: its padding, its title's band, between two
 
 -- Tabs have no description of their own in the registry; the Modules page says what each holds.
 local TAB_DESC = {
@@ -100,7 +110,7 @@ end
 function Form:Row(obj, opts)
     opts = opts or {}
     self.rows[#self.rows + 1] = { obj = obj, gap = opts.gap or ROW_GAP, indent = opts.indent or 0,
-        h = opts.h, wide = opts.wide, shown = opts.shown, place = opts.place }
+        h = opts.h, wide = opts.wide, shown = opts.shown, place = opts.place, card = opts.card }
     return obj
 end
 
@@ -120,41 +130,58 @@ function Form:Layout(width)
     if width < 1 then width = self.width or MAX_W end
     self.width = width
     local page = math.min(width, MAX_W)
+    -- A section is a parchment card (the mockup's Settings): its rows go CARD_PAD in, under its title, and
+    -- the card closes CARD_PAD under its last row. Rows before any section sit on the page itself.
     local y, first = 0, true
+    local card, cardTop, pad = nil, 0, 0
+    local function closeCard()
+        if card then card:SetHeight(math.max(1, y - cardTop + CARD_PAD)); y = y + CARD_PAD end
+        card = nil
+    end
     for _, r in ipairs(self.rows) do
         local on = not r.shown or r.shown() and true or false
         r.obj:SetShown(on)
-        if on then
+        if on and r.card then
+            closeCard()
+            if not first then y = y + CARD_GAP end
+            card, cardTop = r.obj, y
+            card:ClearAllPoints()
+            card:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -y)
+            card:SetWidth(math.max(1, page))
+            pad = CARD_PAD
+            y = y + CARD_TOP
+            first = true
+        elseif on then
             if not first then y = y + r.gap end
             first = false
+            local inner = page - 2 * pad
             r.obj:ClearAllPoints()
-            r.obj:SetPoint("TOPLEFT", self.content, "TOPLEFT", r.indent, -y)
-            if r.wide then r.obj:SetWidth(math.max(1, page - r.indent)) end
-            y = y + (r.place and r.place(r.obj, page - r.indent, width - r.indent) or r.h or textHeight(r.obj))
+            r.obj:SetPoint("TOPLEFT", self.content, "TOPLEFT", pad + r.indent, -y)
+            if r.wide then r.obj:SetWidth(math.max(1, inner - r.indent)) end
+            y = y + (r.place and r.place(r.obj, inner - r.indent, width - 2 * pad - r.indent) or r.h or textHeight(r.obj))
         end
     end
+    closeCard()
     self.content:SetHeight(math.max(1, y))
     return y
 end
 
--- A section: a 1px rule (none above the first) and its title in Sans SemiBold 14.
+-- A section: a parchment card titled `title` (Cinzel, the paper's dark red, never upper case), behind the rows
+-- that follow it up to the next section. Under the page's other parts, so their text draws over it.
 function Form:Section(title, shown)
-    if #self.rows > 0 then
-        self:Row(UI:CreateSeparator(self.content), { gap = 20, wide = true, h = 1, shown = shown })
-    end
-    local fs = self.content:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(fs, nil, "sectionTitle")
-    fs:SetShadowOffset(0, 0)
-    fs:SetTextColor(C.text.r, C.text.g, C.text.b)
-    fs:SetJustifyH("LEFT")
-    fs:SetText(title)
-    return self:Row(fs, { gap = 12, wide = true, shown = shown })
+    local card = UI:CreateCard(self.content, title)
+    card:SetFrameLevel(math.max(0, (self.content:GetFrameLevel() or 1) - 1))
+    card:SetHeight(CARD_TOP)
+    self.hasCard = true
+    return self:Row(card, { card = true, shown = shown })
 end
 
 -- A paragraph in Sans 11, textSoft, wrapped to the page.
 function Form:Note(text, opts)
     opts = opts or {}
-    local fs = UI:CreateText(self.content, text, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    -- Before the page's first card it is on the wood: the wood's soft ink there.
+    local ink = self.hasCard and C.textSoft or WOOD.textSoft
+    local fs = UI:CreateText(self.content, text, 11, ink.r, ink.g, ink.b)
     fs:SetJustifyH("LEFT")
     fs:SetWordWrap(true)
     return self:Row(fs, { gap = opts.gap or 2, indent = opts.indent, wide = true, shown = opts.shown })
@@ -165,7 +192,7 @@ end
 function Form:Check(label, desc, get, set, opts)
     opts = opts or {}
     local indent = opts.indent or 0
-    local f = UI:CreateCheckbox(self.content, label, 18)
+    local f = checkbox(self.content, label, 18)
     if f.label then   -- the label ends at the page's edge rather than running past it
         f.label:SetPoint("RIGHT", f, "RIGHT", 0, 0)
         f.label:SetJustifyH("LEFT")
@@ -245,8 +272,10 @@ function Form:Field(label, opts)
     local box = CreateFrame("EditBox", nil, holder, "BackdropTemplate")
     box:SetSize(opts.w or 160, 22)
     box:SetBackdrop({ bgFile = WHITE8, edgeFile = WHITE8, edgeSize = GuildOS.UI:Edge(box) })
-    box:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
-    box:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    rule(box)
+    -- The paper's light field and its tan line (the mockup's `.field input` on a card).
+    box:SetBackdropColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
+    box:SetBackdropBorderColor(C.paperEdge.r, C.paperEdge.g, C.paperEdge.b, 1)
     box:SetTextInsets(6, 6, 0, 0)
     GuildOS:ApplyFont(box, 12, opts.numeric and "tableNum" or nil)
     box:SetTextColor(C.text.r, C.text.g, C.text.b)
@@ -254,8 +283,8 @@ function Form:Field(label, opts)
     if opts.numeric then box:SetNumeric(true) end
     box:SetAutoFocus(false)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    box:SetScript("OnEditFocusGained", function(self) self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1) end)
-    box:SetScript("OnEditFocusLost", function(self) self:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1) end)
+    box:SetScript("OnEditFocusGained", function(self) self:SetBackdropBorderColor(WOOD.paperTitle.r, WOOD.paperTitle.g, WOOD.paperTitle.b, 1) end)
+    box:SetScript("OnEditFocusLost", function(self) self:SetBackdropBorderColor(C.paperEdge.r, C.paperEdge.g, C.paperEdge.b, 1) end)
     UI:AttachSaveButton(box, opts.save, { text = opts.saveText, parent = holder })
     if opts.hint then
         local hint = UI:CreateText(holder, opts.hint, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
@@ -634,7 +663,7 @@ local function moduleCell(F, holder, def)
     if host then label = string.format(L["%s (in %s)"], def.label, host.label) end
     local needsReload = def.restart or (def.module and not def.tab)
 
-    local f = UI:CreateCheckbox(cell, label, 18)
+    local f = checkbox(cell, label, 18)
     f:SetPoint("TOPLEFT", 0, 0)
     f:SetPoint("RIGHT", cell, "RIGHT", needsReload and -76 or 0, 0)
     if f.label then
@@ -789,7 +818,7 @@ PAGES.rules = function(F, isOfficer)
                 return list
             end
             F:Grid(function(holder, k)
-                local kb = UI:CreateCheckbox(holder, Cal:KindLabel(k), 18)
+                local kb = checkbox(holder, Cal:KindLabel(k), 18)
                 kb.kind = k
                 kb.checkbox.onChanged = function(box)
                     -- No longer an officer (a change from elsewhere, the panel still open): the tick goes back.
@@ -1121,9 +1150,10 @@ function GuildOS:CreateSettingsPanel(parent, _mainFrame)
     strip:SetPoint("BOTTOMRIGHT", -12, 8)
     strip:SetHeight(STRIP_H)
     strip:SetBackdrop({ bgFile = WHITE8, edgeFile = WHITE8, edgeSize = GuildOS.UI:Edge(strip) })
-    strip:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1)
-    strip:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
-    strip.text = UI:CreateText(strip, "", 12, C.text.r, C.text.g, C.text.b)
+    rule(strip)
+    strip:SetBackdropColor(WOOD.panel.r, WOOD.panel.g, WOOD.panel.b, 1)
+    strip:SetBackdropBorderColor(WOOD.line.r, WOOD.line.g, WOOD.line.b, 1)
+    strip.text = UI:CreateText(strip, "", 12, WOOD.text.r, WOOD.text.g, WOOD.text.b)
     strip.text:SetPoint("LEFT", 12, 0)
     local reload = UI:SetButtonVariant(UI:CreateButton(strip, L["Reload"], 120, 24), "primary")
     reload:SetPoint("RIGHT", -5, 0)
@@ -1172,6 +1202,8 @@ function GuildOS:CreateSettingsPanel(parent, _mainFrame)
         tabs[s.key] = t
         tabList[#tabList + 1] = t
         local scroll, content = UI:CreateScrollFrame(parent, "GuildOSSettings_" .. s.key)
+        -- Every part of a page sits on its sections' parchment cards: the controls take the paper's look.
+        if Kit then content.__paper = true end
         local info = { scroll = scroll, content = content }
         anchorScroll(info, false)
         UI:BindScrollChildWidth(scroll, content, 20)

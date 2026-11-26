@@ -485,6 +485,9 @@ GuildOS.UI = setmetatable({
     return b
   end,
   CreateCheckbox = function() return widget({ checkbox = widget() }) end,
+  -- The Salão's cards and variants (#449): a card has its title, a variant is the button it was given.
+  CreateCard = function() return widget({ title = widget() }) end,
+  SetButtonVariant = function(_, b) return b end,
   CreateScrollFrame = function() return widget(), widget() end,
   AttachSaveButton = function(_, box, onSave)
     box.saveButton = widget({ text = "Save" })

@@ -14,7 +14,7 @@ local SUBTABS = {
     { key = "cds",  label = L["Cooldowns"] },
 }
 
-local ROW_H = 24
+local ROW_H = 28
 local ICON_DONE = "|TInterface\\RAIDFRAME\\ReadyCheck-Ready:14:14|t"
 local ICON_NONE = "|TInterface\\RAIDFRAME\\ReadyCheck-NotReady:14:14|t"
 -- The screen's margins (#371): flush with the sub-tab bar's left edge, GAP under it, the content ending
@@ -22,8 +22,6 @@ local ICON_NONE = "|TInterface\\RAIDFRAME\\ReadyCheck-NotReady:14:14|t"
 -- frame's right edge sits SCROLL_R from the panel's.
 local GAP = UI.GAP
 local SCROLL_R = UI.SCROLL_GUTTER - UI.GAP
-local HEAD_ABOVE = 20   -- room over a later section title for its rule (UI:CreateSectionTitle)
-local HEAD_H = 26       -- a section title's line and the space under it
 
 -- The shared scroll frame (#371), anchored here: its child keeps the frame's width less the gutter.
 local function MakeScrollList(panel, name, topInset)
@@ -34,26 +32,35 @@ local function MakeScrollList(panel, name, topInset)
     return scroll, content
 end
 
--- A row hung by both top corners: a width read at refresh time is 0 on a hidden tab (#371).
-local function MakeRow(content, yOff, index)
-    local row = CreateFrame("Frame", nil, content, "BackdropTemplate")
+-- A row of a table on the dark card (the mockup's raides-ferramentas), between `x0` and `x1` of the
+-- content (x1 nil: its right edge), with the wood's 1px line under it.
+local function MakeRow(content, yOff, x0, x1)
+    local row = CreateFrame("Frame", nil, content)
     row:SetHeight(ROW_H)
-    row:SetPoint("TOPLEFT", 0, -yOff)
-    row:SetPoint("TOPRIGHT", 0, -yOff)
-    row:SetBackdrop({ bgFile = WHITE })
-    local alt = (index % 2 == 0) and C.row1 or C.row2
-    row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
+    row:SetPoint("TOPLEFT", x0 or 0, -yOff)
+    if x1 then row:SetWidth(x1 - (x0 or 0)) else row:SetPoint("TOPRIGHT", 0, -yOff) end
+    local rule = row:CreateTexture(nil, "BACKGROUND")
+    rule:SetTexture(WHITE)
+    rule:SetHeight(1)
+    rule:SetPoint("BOTTOMLEFT"); rule:SetPoint("BOTTOMRIGHT")
+    rule:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
     return row
 end
 
--- A section title (#371): the shared one, no band behind it. The list's first has no rule; a later one
--- leaves HEAD_ABOVE over itself for it. Returns the y under it.
-local function SectionHeader(content, text, yOff)
-    local first = yOff == 0
-    if not first then yOff = yOff + HEAD_ABOVE end
-    local t = UI:CreateSectionTitle(content, text, first)
-    t:SetPoint("TOPLEFT", 0, -yOff)
-    return yOff + HEAD_H
+-- A table's heading: its name in the soft ink, bold, and under it the column titles on the shared header
+-- (Cinzel in gold, the metal's rule). `cols` = { { text, x, right } }. Returns the y under it.
+local function TableHead(content, title, cols, yOff, x0, x1)
+    local t = UI:CreateText(content, title, 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    GuildOS:ApplyFont(t, 12, "button")
+    t:SetPoint("TOPLEFT", x0 or 0, -yOff)
+    local head = UI:CreateTableHeader(content, 20)
+    head:SetPoint("TOPLEFT", x0 or 0, -yOff - 18)
+    if x1 then head:SetWidth(x1 - (x0 or 0)) else head:SetPoint("TOPRIGHT", 0, -yOff - 18) end
+    for _, c in ipairs(cols) do
+        local h = UI:CreateHeaderText(head, c[1], 10)
+        if c[3] then h:SetPoint("RIGHT", head, "LEFT", c[2], 0) else h:SetPoint("LEFT", c[2], 0) end
+    end
+    return yOff + 18 + 20
 end
 
 -- What a refresh drew goes before the next one: the rows, and the titles drawn straight on the content.
@@ -82,11 +89,8 @@ end
 -- COMPOSITION sub-panel
 ----------------------------------------------------------------------
 local function BuildCompSub(panel)
-    local summary = UI:CreateText(panel, "", 12, C.text.r, C.text.g, C.text.b)
-    summary:SetPoint("TOPLEFT", 0, -4)
-
     local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 0, -(18 + GAP))
+    listHolder:SetPoint("TOPLEFT", 0, 0)
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSRaidCompScroll")
 
@@ -96,42 +100,48 @@ local function BuildCompSub(panel)
         local RT = GuildOS.RaidTools
         local list, label = RT:GetSource()
         local counts = RT:GetClassCounts(list)
-        summary:SetText(string.format(L["%s  \226\128\148  %d players"], label, #list))
+        panel.summary = string.format(L["%s  \226\128\148  %d players"], label, #list)
 
-        local yOff = 0
-        yOff = SectionHeader(content, L["CLASS BREAKDOWN"], yOff)
+        -- The classes on the left and the buffs they cover on the right; one under the other when narrow.
+        local W = content:GetWidth()
+        if not W or W < 100 then W = 600 end
+        local twoCols = W >= 520
+        local colW = twoCols and math.floor((W - 16) / 2) or W
+        local x2 = twoCols and (colW + 16) or 0
 
+        local yOff = TableHead(content, L["Classes"], { { L["Class"], 6 }, { L["Count"], colW - 6, true } }, 0, 0, colW)
         for _, classFile in ipairs(RT.CLASS_ORDER) do
             local c = counts[classFile] or 0
             if c > 0 then
-                local row = MakeRow(content, yOff, yOff / (ROW_H + 2))
+                local row = MakeRow(content, yOff, 0, colW)
                 local cc = GuildOS.ClassColors[classFile] or C.silver
-                local nameFS = UI:CreateText(row, ClassName(classFile), 11, cc.r, cc.g, cc.b)
-                nameFS:SetPoint("LEFT", 8, 0)
-                local cntFS = UI:CreateText(row, tostring(c), 11, C.text.r, C.text.g, C.text.b)
-                cntFS:SetPoint("LEFT", 150, 0)
-                yOff = yOff + ROW_H + 2
+                local nameFS = UI:CreateText(row, ClassName(classFile), 12, cc.r, cc.g, cc.b)
+                nameFS:SetPoint("LEFT", 6, 0)
+                local cntFS = UI:CreateText(row, tostring(c), 12, C.text.r, C.text.g, C.text.b)
+                cntFS:SetPoint("RIGHT", -6, 0)
+                yOff = yOff + ROW_H
             end
         end
+        local leftH = yOff
 
-        yOff = SectionHeader(content, L["BUFF COVERAGE"], yOff)
-
+        yOff = twoCols and 0 or (yOff + 16)
+        yOff = TableHead(content, L["Buff coverage"], { { L["Buff"], 6 }, { L["Who"], math.floor((W - x2) * 0.45) } }, yOff, x2, nil)
         local cov = RT:ResolveCoverage(RT.BUFFS, counts)
-        for idx, b in ipairs(cov) do
-            local row = MakeRow(content, yOff, idx)
+        for _, b in ipairs(cov) do
+            local row = MakeRow(content, yOff, x2, nil)
             local icon = UI:CreateText(row, b.covered and ICON_DONE or ICON_NONE, 11, C.text.r, C.text.g, C.text.b)
-            icon:SetPoint("LEFT", 8, 0)
-            local nameFS = UI:CreateText(row, b.name, 11,
+            icon:SetPoint("LEFT", 4, 0)
+            local nameFS = UI:CreateText(row, b.name, 12,
                 b.covered and C.text.r or C.label.r, b.covered and C.text.g or C.label.g, b.covered and C.text.b or C.label.b)
-            nameFS:SetPoint("LEFT", 34, 0)
+            nameFS:SetPoint("LEFT", 24, 0)
             if b.covered then
-                local prov = UI:CreateText(row, ProvidersText(b.providers), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-                prov:SetPoint("LEFT", 220, 0)
+                local prov = UI:CreateText(row, ProvidersText(b.providers), 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+                prov:SetPoint("LEFT", math.floor((W - x2) * 0.45), 0)
             end
-            yOff = yOff + ROW_H + 2
+            yOff = yOff + ROW_H
         end
 
-        content:SetHeight(math.max(1, yOff))
+        content:SetHeight(math.max(1, math.max(yOff, leftH)))
     end
 end
 
@@ -139,11 +149,8 @@ end
 -- COOLDOWNS sub-panel
 ----------------------------------------------------------------------
 local function BuildCdSub(panel)
-    local summary = UI:CreateText(panel, "", 12, C.text.r, C.text.g, C.text.b)
-    summary:SetPoint("TOPLEFT", 0, -4)
-
     local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 0, -(18 + GAP))
+    listHolder:SetPoint("TOPLEFT", 0, 0)
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSRaidCdScroll")
 
@@ -153,25 +160,25 @@ local function BuildCdSub(panel)
         local RT = GuildOS.RaidTools
         local list, label = RT:GetSource()
         local counts = RT:GetClassCounts(list)
-        summary:SetText(string.format(L["%s  \226\128\148  %d players"], label, #list))
+        panel.summary = string.format(L["%s  \226\128\148  %d players"], label, #list)
 
-        local yOff = 0
+        local yOff = TableHead(content, L["Cooldowns"], { { L["Cooldown"], 6 }, { L["Who"], 260 } }, 0)
         local cov = RT:ResolveCoverage(RT.COOLDOWNS, counts)
-        for idx, cd in ipairs(cov) do
-            local row = MakeRow(content, yOff, idx)
+        for _, cd in ipairs(cov) do
+            local row = MakeRow(content, yOff)
             local icon = UI:CreateText(row, cd.covered and ICON_DONE or ICON_NONE, 11, C.text.r, C.text.g, C.text.b)
-            icon:SetPoint("LEFT", 8, 0)
-            local nameFS = UI:CreateText(row, cd.name, 11,
+            icon:SetPoint("LEFT", 4, 0)
+            local nameFS = UI:CreateText(row, cd.name, 12,
                 cd.covered and C.text.r or C.label.r, cd.covered and C.text.g or C.label.g, cd.covered and C.text.b or C.label.b)
-            nameFS:SetPoint("LEFT", 34, 0)
+            nameFS:SetPoint("LEFT", 24, 0)
             if cd.covered then
-                local prov = UI:CreateText(row, ProvidersText(cd.providers), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-                prov:SetPoint("LEFT", 220, 0)
+                local prov = UI:CreateText(row, ProvidersText(cd.providers), 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+                prov:SetPoint("LEFT", 260, 0)
             else
-                local miss = UI:CreateText(row, L["missing"], 11, C.danger.r, C.danger.g, C.danger.b)
-                miss:SetPoint("LEFT", 220, 0)
+                local miss = UI:CreateBadge(row, L["missing"], C.danger)
+                miss:SetPoint("LEFT", 260, 0)
             end
-            yOff = yOff + ROW_H + 2
+            yOff = yOff + ROW_H
         end
 
         content:SetHeight(math.max(1, yOff))
@@ -185,46 +192,63 @@ function GuildOS:CreateRaidToolsPanel(parent, _mainFrame)
     parent.subPanels = {}
     parent.activeSub = "comp"
 
-    -- Flush with the Raids sub-tab bar's left edge and GAP under it, as every screen (#371).
-    local bar = CreateFrame("Frame", nil, parent)
-    bar:SetPoint("TOPLEFT", 0, -GAP)
-    bar:SetPoint("TOPRIGHT", 0, -GAP)
-    bar:SetHeight(28)
-    UI:StyleSubTabBar(bar)
+    -- One dark card on the wood, GAP under the room's entries (the mockup's "Ferramentas de raide"): its
+    -- title with whose raid it reads, the sub-tabs as pills, Refresh under them.
+    local PAD = type(UI.CARD_PAD) == "number" and UI.CARD_PAD or 14
+    local CARD_TOP = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
+    local card = UI:CreateCard(parent, L["Raid Tools"], { dark = true })
+    card:SetPoint("TOPLEFT", 0, -GAP)
+    card:SetPoint("BOTTOMRIGHT", -GAP, GAP)
+    parent.card = card
+    card.title:ClearAllPoints()
+    card.title:SetPoint("TOPLEFT", PAD, -12)
+    local summary = UI:CreateText(card, "", 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    GuildOS:ApplyFont(summary, 12, "button")
+    summary:SetPoint("LEFT", card.title, "RIGHT", 8, 0)
+    parent.summary = summary
+    local bar = CreateFrame("Frame", nil, card)
+    bar:SetPoint("TOPLEFT", PAD, -CARD_TOP + 6)
+    bar:SetPoint("TOPRIGHT", -PAD, -CARD_TOP + 6)
+    bar:SetHeight(22)
 
     local subTabBtns = {}
+    local function refreshSub(info)
+        if info and info.refresh then
+            GuildOS:SafeCall(info.refresh)
+            summary:SetText(info.panel.summary and ("\194\183  " .. info.panel.summary) or "")
+        end
+    end
     local function selectSub(key)
         parent.activeSub = key
         for k, info in pairs(parent.subPanels) do info.panel:SetShown(k == key) end
-        for k, btn in pairs(subTabBtns) do btn:SetActive(k == key) end
-        local info = parent.subPanels[key]
-        if info and info.refresh then GuildOS:SafeCall(info.refresh) end
+        for k, btn in pairs(subTabBtns) do UI:SetSelected(btn, k == key) end
+        refreshSub(parent.subPanels[key])
     end
     parent.SelectSub = selectSub
     parent.RefreshActive = function()
-        local info = parent.subPanels[parent.activeSub]
-        if info and info.refresh then GuildOS:SafeCall(info.refresh) end
+        refreshSub(parent.subPanels[parent.activeSub])
     end
 
     local x = 0
     for _, t in ipairs(SUBTABS) do
-        local btn = UI:CreateTab(bar, t.label, 130, true)
+        local btn = UI:SetButtonVariant(UI:CreateButton(bar, t.label, 40, 22), "chip")
+        btn:SetWidth(math.ceil(btn.label:GetStringWidth() or 40) + 22)
         btn:SetPoint("LEFT", x, 0)
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn
-        x = x + btn:GetWidth() + 4  -- a tab its label grew pushes the next one (issue #28)
+        x = x + btn:GetWidth() + 6  -- a pill its label grew pushes the next one (issue #28)
     end
 
     -- Manual refresh (group changes don't auto-refresh the panel)
-    local refreshBtn = UI:CreateButton(bar, L["Refresh"], 90, 22)
-    refreshBtn:SetPoint("RIGHT", 0, 0)
+    local refreshBtn = UI:CreateButton(card, L["Refresh"], 70, 22)
+    refreshBtn:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -8)
     refreshBtn:SetScript("OnClick", function() parent.RefreshActive() end)
 
-    -- A sub-tab's content: flush with the bar's left edge, its first line GAP under it.
+    -- A sub-tab's content: inside the card, under Refresh.
     local function makeSubPanel()
-        local p = CreateFrame("Frame", nil, parent)
-        p:SetPoint("TOPLEFT", 0, -(GAP + 28 + GAP))
-        p:SetPoint("BOTTOMRIGHT", 0, GAP)
+        local p = CreateFrame("Frame", nil, card)
+        p:SetPoint("TOPLEFT", PAD, -(CARD_TOP + 6 + 22 + 8 + 22 + 10))
+        p:SetPoint("BOTTOMRIGHT", -PAD + GAP, 10)
         p:Hide()
         return p
     end
