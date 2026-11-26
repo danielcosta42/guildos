@@ -40,6 +40,7 @@ local function printHelp()
     helpLine("/gos open <feature>", L["Open a tab (roster, raids, loot, guild...)"])
     helpLine("/gos find <text>", L["Search members by name, class, level or note"])
     helpLine("/gos sync",        L["Force a full data sync"])
+    if GuildOS.GuildMap then helpLine("/gos map", L["Open the live guild map"]) end
     helpLine("/gos craft <item>",  L["Who can craft an item"])
     helpLine("/gos order <item>",  L["Ask the guild's crafters to make an item"])
     if GuildOS.Companion then helpLine("/gos web [on|off]", L["Copy your guild into the web companion"]) end
@@ -364,6 +365,9 @@ local function handleCommand(msg)
         else
             GuildOS:OpenGuildFinder()
         end
+    elseif msg == "map" or msg == "guildmap" then
+        -- Anyone: the live guild map (world map pins and the list on it; issue #449).
+        if GuildOS.ToggleGuildMap then GuildOS:ToggleGuildMap() end
     elseif msg == "pug" then
         -- Anyone: classify the current party/raid against what GuildOS knows.
         if GuildOS.TogglePugInspector then GuildOS:TogglePugInspector() end

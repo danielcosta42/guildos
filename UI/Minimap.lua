@@ -118,7 +118,11 @@ function GuildOS:MinimapMenuItems()
             func = function() close(); openRoom("settings") end }
     end
 
-    items[#items + 1] = { text = L["Do I know this pug?"], rule = true, func = function()
+    items[#items + 1] = { text = L["Guild Map"], rule = true, func = function()
+        close()
+        if GuildOS.ToggleGuildMap then GuildOS:ToggleGuildMap() end
+    end }
+    items[#items + 1] = { text = L["Do I know this pug?"], func = function()
         close()
         if GuildOS.TogglePugInspector then GuildOS:TogglePugInspector() end
     end }
@@ -318,6 +322,9 @@ function GuildOS:CreateMinimapButton()
     GuildOS.Compat.After(1, function() UpdatePosition(btn) end)
 
     self.minimapButton = btn
+
+    -- The live guild map's minimap dots and world map pins (issue #449), now that the minimap exists.
+    if GuildOS.SetupGuildMapPresence then GuildOS:SafeCall(GuildOS.SetupGuildMapPresence, GuildOS) end
 
     return btn
 end

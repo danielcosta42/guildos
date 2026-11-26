@@ -218,8 +218,6 @@ function GuildOS:ResolveGuildDB()
     -- that reached it (a character who joined mid-session stays on it until the next login) made the
     -- next character with no guild at all be asked to post it (#150): it never stays here.
     if not guilded then guildDB.guildRecruitment = nil end
-    -- B23: the guild map is gone; its saved data goes with it (idempotent, so once per startup is enough).
-    guildDB.mapPeers, guildDB.guildMapPrefs = nil, nil
     -- Audit #448 (alianca.md §3.4): the ambassador pact and its whisper sync are gone, and what they kept goes
     -- too. The old pact's public channel (GOS<TAG>) is the client's saved channel: its name is kept until
     -- each of the account's characters has left it once (AllianceChat, per character).
@@ -362,6 +360,8 @@ local MODULE_START = {
     { "LFGBoard" },
     -- The groups being formed (issue #341). After the board, whose listings and cooldown line it shares.
     { "Groups" },
+    -- The live guild map (issue #449, specs/salao/mapa.md): positions only while somebody looks.
+    { "GuildMap" },
     { "PugInspector" },
     -- The Crafts switch stops every crafts module and its sync, not only the tab (audit B25).
     { "RecipeTracker", feature = "recipes", ui = "recipes", drop = true },

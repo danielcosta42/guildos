@@ -202,7 +202,8 @@ noRealm({
 check(GuildOS:GetPlayerKey("Cherry Arrow") == "Cherry Arrow-" .. OLD, "no realm: a member keys on the realm this character had")
 check(GuildOS:ResolveGuildDB() and GuildOS.guildKey == "Filhos da Horda-" .. OLD and GuildOS.db.settings.onboarded,
   "no realm: the guild's db is the one saved before, with what it held")
-check(GuildOS.db.mapPeers == nil and GuildOS.db.guildMapPrefs == nil, "B23: the guild map's orphaned saved data is deleted at startup")
+check(type(GuildOS.db.guildMapPrefs) == "table" and GuildOS.db.guildMapPrefs.shareExact == true,
+  "#449: the guild map is back, and its saved preferences are no longer deleted at startup")
 check(GuildOS.db.alliance == nil and GuildOS.db.allianceData == nil and GuildOS.db.allianceBoard == nil,
   "#448: the ambassador pact's saved data is deleted at startup")
 check(GuildOS.db.allianceLinkBlocked and GuildOS.db.allianceLinkBlocked.G == true and GuildOS.db.allianceLinkBlocked.H == true,

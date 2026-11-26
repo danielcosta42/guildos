@@ -58,7 +58,9 @@ local NAMESPACES = { "C_Item", "C_Spell", "C_UnitAuras", "C_Container", "C_Trade
                      -- The game's addon CPU meter, retail 11.0.2 on (issue #324).
                      "C_AddOnProfiler",
                      -- Whether the server opens a guild bank (issue #380).
-                     "C_GuildBank" }
+                     "C_GuildBank",
+                     -- The guild map's reads (#449): secret and missing answers are Compat's to handle.
+                     "C_Map" }
 
 -- Blank comments and strings, keeping every newline so line numbers stay true.
 local function blank(src)

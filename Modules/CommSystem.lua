@@ -32,6 +32,8 @@ CommSystem.MSG_TYPES = {
     LFG_JOIN  = "GJ",    -- a request for a spot and its answer (WHISPER only; issue #341)
     RECRUIT_STATS = "RE",-- self-reported recruitment engagement (sender bound; officers aggregate).
                          -- NOT "RS": that code is already RESPONSE above; "RE" is the free code.
+    MAP_POS   = "MP",    -- live guild-map position (sender bound; GUILD only; specs/salao/mapa.md)
+    MAP_WATCH = "MW",    -- "I have the guild map open on this map" (sender bound; GUILD only)
 }
 
 -- Throttle settings
@@ -499,6 +501,13 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         if GuildOS.RecruitEngagement then
             GuildOS.RecruitEngagement:HandleStats(sender, data, channel)
         end
+    elseif msgType == CommSystem.MSG_TYPES.MAP_POS then
+        -- A guildmate's own position (issue #449). Keyed by the envelope sender, GUILD only, every number
+        -- clamped (GuildMap:HandlePosition): a peer can place only its own pin.
+        if GuildOS.GuildMap then GuildOS.GuildMap:HandlePosition(sender, data, channel) end
+    elseif msgType == CommSystem.MSG_TYPES.MAP_WATCH then
+        -- A guildmate opened the guild map: who is on it owes them positions for WATCH_TTL seconds.
+        if GuildOS.GuildMap then GuildOS.GuildMap:HandleWatch(sender, data, channel) end
     end
 end
 

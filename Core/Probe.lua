@@ -114,6 +114,10 @@ Probe.APIS = {
     "C_GuildInfo.Invite", "GetBindingKey", "GetBindingText", "SetBindingClick", "SaveBindings", "GetCurrentBindingSet",
     "C_GuildInfo.GetGuildTabardInfo", "GetGuildLogoInfo", "GetGuildTabardFiles", "GetGuildTabardFileNames",
     "SetLargeGuildTabardTextures", "SetSmallGuildTabardTextures",
+    -- The guild map (#449, specs/salao/mapa.md): map points in world yards and back, a map on its parent, the
+    -- player's facing and the minimap's scale, the world map's zoom.
+    "C_Map.GetWorldPosFromMapPos", "C_Map.GetMapPosFromWorldPos", "C_Map.GetMapRectOnMap", "CreateVector2D",
+    "GetPlayerFacing", "IsIndoors", "Minimap.GetZoom", "WorldMapFrame.ScrollContainer", "WorldMapFrame.GetCanvasZoomPercent",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.

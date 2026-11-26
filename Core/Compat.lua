@@ -282,9 +282,13 @@ end
 
 -- Best map ID for a unit (C_Map on BCC/modern). Returns nil when the API is
 -- unavailable or the unit has no map (e.g. mid-loading-screen).
+-- A secret answer (WoW: Forever's restricted units) reads as no map (issue #449, the guild map).
 function Compat.GetBestMapForUnit(unit)
+    if Compat.IsSecret(unit) then return nil end
     if C_Map and C_Map.GetBestMapForUnit then
-        return C_Map.GetBestMapForUnit(unit)
+        local ok, map = pcall(C_Map.GetBestMapForUnit, unit)
+        if not ok or Compat.IsSecret(map) then return nil end
+        return tonumber(map)
     end
     return nil
 end
@@ -293,13 +297,19 @@ end
 -- instances (C_Map returns no position there) or when the API is unavailable.
 -- Handles both the Vector2DMixin return (has :GetXY()) and an older plain
 -- {x=,y=} table, so a missing API degrades to zone-only rather than erroring.
+-- A secret position, or one the client refuses (a restricted unit raises), is no position.
 function Compat.GetPlayerMapPosition(mapID, unit)
+    if Compat.IsSecret(unit) then return nil end
     if mapID and C_Map and C_Map.GetPlayerMapPosition then
-        local pos = C_Map.GetPlayerMapPosition(mapID, unit)
-        if pos then
-            if pos.GetXY then return pos:GetXY() end
-            if pos.x and pos.y then return pos.x, pos.y end
-        end
+        local ok, pos = pcall(C_Map.GetPlayerMapPosition, mapID, unit)
+        if not ok or not pos or Compat.IsSecret(pos) then return nil end
+        local x, y
+        if pos.GetXY then x, y = pos:GetXY() elseif pos.x then x, y = pos.x, pos.y end
+        if Compat.IsSecret(x, y) then return nil end
+        x, y = tonumber(x), tonumber(y)
+        -- (0, 0) is the client's "no position here" on some maps.
+        if not x or not y or (x == 0 and y == 0) then return nil end
+        return x, y
     end
     return nil
 end
@@ -312,6 +322,156 @@ function Compat.GetMapName(mapID)
         if info then return info.name end
     end
     return nil
+end
+
+----------------------------------------------------------------------
+-- The guild map's reads (issue #449, specs/salao/mapa.md): a map's place in the tree, a map point in world
+-- yards and back, a map's rectangle on another, the player's facing and the minimap's zoom. Every one answers
+-- nil where the client lacks it, refuses it or keeps it secret, and the map degrades instead of erroring.
+----------------------------------------------------------------------
+
+-- { name, mapType, parent } of a map (mapType: 0 cosmic, 1 world, 2 continent, 3 zone, 4 dungeon, 5 micro,
+-- 6 orphan), or nil.
+function Compat.MapInfo(mapID)
+    mapID = tonumber(mapID)
+    if not mapID or not (C_Map and C_Map.GetMapInfo) then return nil end
+    local ok, info = pcall(C_Map.GetMapInfo, mapID)
+    if not ok or type(info) ~= "table" or Compat.IsSecret(info.name, info.mapType, info.parentMapID) then return nil end
+    return { name = info.name, mapType = tonumber(info.mapType), parent = tonumber(info.parentMapID) }
+end
+
+local function vec(x, y)
+    if CreateVector2D then return CreateVector2D(x, y) end
+    return { x = x, y = y, GetXY = function(v) return v.x, v.y end }
+end
+
+-- A point of a map (0..1) in world yards: continent (instance) id, worldX (north) and worldY (west); nil without
+-- C_Map.GetWorldPosFromMapPos or where the map has no place in the world.
+function Compat.MapToWorld(mapID, x, y)
+    if not (mapID and x and y and C_Map and C_Map.GetWorldPosFromMapPos) then return nil end
+    local ok, cont, pos = pcall(C_Map.GetWorldPosFromMapPos, mapID, vec(x, y))
+    if not ok or not cont or not pos or Compat.IsSecret(cont, pos) then return nil end
+    local wx, wy
+    if pos.GetXY then wx, wy = pos:GetXY() else wx, wy = pos.x, pos.y end
+    if Compat.IsSecret(wx, wy) or not tonumber(wx) then return nil end
+    return cont, wx, wy
+end
+
+-- A world point back onto `mapID` (0..1), or nil.
+function Compat.WorldToMap(cont, wx, wy, mapID)
+    if not (cont and wx and wy and mapID and C_Map and C_Map.GetMapPosFromWorldPos) then return nil end
+    local ok, _, pos = pcall(C_Map.GetMapPosFromWorldPos, cont, vec(wx, wy), mapID)
+    if not ok or not pos or Compat.IsSecret(pos) then return nil end
+    local x, y
+    if pos.GetXY then x, y = pos:GetXY() else x, y = pos.x, pos.y end
+    if Compat.IsSecret(x, y) or not tonumber(x) then return nil end
+    return x, y
+end
+
+-- Where `child` sits on `parent`: minX, maxX, minY, maxY (0..1 of the parent), or nil.
+function Compat.MapRectOnMap(child, parent)
+    if not (child and parent and C_Map and C_Map.GetMapRectOnMap) then return nil end
+    local ok, a, b, c, d = pcall(C_Map.GetMapRectOnMap, child, parent)
+    if not ok or Compat.IsSecret(a, b, c, d) or not tonumber(a) then return nil end
+    return a, b, c, d
+end
+
+-- The player's facing in radians (0 north, counter-clockwise), or nil (restricted, secret, missing).
+function Compat.PlayerFacing()
+    if not GetPlayerFacing then return nil end
+    local ok, f = pcall(GetPlayerFacing)
+    if not ok or Compat.IsSecret(f) then return nil end
+    return tonumber(f)
+end
+
+-- Whether the player is in an instance (dungeon, raid, battleground, arena, scenario), and its type and name.
+-- A secret answer counts as inside: nothing of where the player is leaves then.
+function Compat.InstanceState()
+    local inside, kind = false, nil
+    if IsInInstance then
+        local ok, a, b = pcall(IsInInstance)
+        if not ok or Compat.IsSecret(a, b) then return true, nil, nil end
+        inside, kind = a and true or false, b
+    end
+    if not inside then return false, nil, nil end
+    local name
+    if GetInstanceInfo then
+        local ok, n = pcall(GetInstanceInfo)
+        if ok and type(n) == "string" and not Compat.IsSecret(n) then name = n end
+    end
+    return true, kind, name
+end
+
+-- The minimap's zoom level (0..5), whether the player is indoors (the minimap's other scale) and whether the
+-- minimap turns with the player; nil zoom without a minimap.
+function Compat.MinimapView()
+    local mm = Minimap
+    if not (mm and mm.GetZoom) then return nil end
+    local ok, zoom = pcall(mm.GetZoom, mm)
+    if not ok or Compat.IsSecret(zoom) then return nil end
+    local indoors = IsIndoors and IsIndoors() and true or false
+    local get = (C_CVar and C_CVar.GetCVar) or GetCVar
+    local rotate = false
+    if get then
+        local okR, v = pcall(get, "rotateMinimap")
+        rotate = okR and tostring(v) == "1"
+    end
+    return tonumber(zoom) or 0, indoors, rotate
+end
+
+-- The world map's zoom: the canvas scale and how far in it is (0..1); 1, 0 where the map does not say.
+function Compat.WorldMapZoom()
+    local wmf = WorldMapFrame
+    local sc = wmf and wmf.ScrollContainer
+    local scale, pct = 1, 0
+    if sc and sc.GetCanvasScale then
+        local ok, v = pcall(sc.GetCanvasScale, sc)
+        if ok and tonumber(v) and v > 0 then scale = v end
+    end
+    local getPct = (wmf and wmf.GetCanvasZoomPercent) and wmf or ((sc and sc.GetCanvasZoomPercent) and sc or nil)
+    if getPct then
+        local ok, v = pcall(getPct.GetCanvasZoomPercent, getPct)
+        if ok and tonumber(v) then pct = math.max(0, math.min(1, v)) end
+    end
+    return scale, pct
+end
+
+-- What the guild map can do on this client: { position, world, rect, canvas } each true or false.
+function Compat.MapAbilities()
+    local M = C_Map
+    return {
+        position = (M and M.GetBestMapForUnit and M.GetPlayerMapPosition) ~= nil,
+        world = (M and M.GetWorldPosFromMapPos and M.GetMapPosFromWorldPos) ~= nil,
+        rect = (M and M.GetMapRectOnMap) ~= nil,
+        canvas = Compat.GetWorldMapCanvas() ~= nil or ToggleWorldMap ~= nil,
+    }
+end
+
+-- The player's group, unit by unit: { { unit = "party1", key = "Bob-Realm", class = "MAGE" }, ... }, the player
+-- left out and every unit whose identity is secret skipped. Keys as Compat.GroupRoster builds them.
+function Compat.GroupUnits()
+    local out = {}
+    local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0
+    if n <= 1 then return out end
+    local raid = IsInRaid and IsInRaid()
+    local surnames = GuildOS.Client.has.surnames
+    local me = Compat.PlayerName()
+    for i = 1, raid and n or (n - 1) do
+        local unit = (raid and "raid" or "party") .. i
+        local name, second, classFile = Compat.UnitIdentity(unit)
+        if type(name) == "string" and name ~= "" then
+            if type(second) ~= "string" or second == "" then second = nil end
+            local whole, realm = name, second
+            if surnames then
+                whole, realm = (second and not name:find(" ", 1, true)) and (name .. " " .. second) or name, nil
+            end
+            if whole ~= me then
+                local key = GuildOS:GetPlayerKey(whole, realm or GetRealmName())
+                if key then out[#out + 1] = { unit = unit, key = key, class = classFile, name = whole } end
+            end
+        end
+    end
+    return out
 end
 
 ----------------------------------------------------------------------

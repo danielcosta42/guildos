@@ -438,12 +438,18 @@ PAGES.profile = function(F)
     F:Buttons({ { L["Show the digest now"], function() if GuildOS.Digest then GuildOS.Digest:Show() end end, w = 170 } },
         { indent = NOTE_INDENT })
 
-    -- WoW: Forever's guild feed on guildos.me (issue #205): the member's own choice.
+    -- WoW: Forever's guild feed on guildos.me (issue #205), and the live guild map (#449): the member's own choice.
+    if GuildOS.Journal or GuildOS.GuildMap then F:Section(L["Privacy"]) end
     if GuildOS.Journal then
-        F:Section(L["Privacy"])
         F:Check(L["Don't name me in Discord posts"], L["The guild's Discord posts leave your name out."],
             function() return GuildOS.Journal:IsOptedOut() end,
             function(checked) GuildOS.Journal:SetOptedOut(checked) end)
+    end
+    if GuildOS.GuildMap then
+        F:Check(L["Share my position with the guild"],
+            L["Only while a guildmate has the guild map open; never coordinates in an instance, nothing in combat there."],
+            function() return GuildOS.GuildMap:IsSharing() end,
+            function(checked) GuildOS.GuildMap:SetSharing(checked) end)
     end
 
     -- The member's own birthday (issue #428): the day and the month, for the guild's calendar.
@@ -523,6 +529,12 @@ PAGES.interface = function(F)
     F:Check(L["Show minimap button"], nil,
         function() return GuildOS.IsMinimapShown and GuildOS:IsMinimapShown() end,
         function(checked) if GuildOS.SetMinimapShown then GuildOS:SetMinimapShown(checked) end end)
+    -- The guildmates-in-your-zone dots on the minimap (#271, #449): where they really are.
+    if GuildOS.GuildMap then
+        F:Check(L["Show guildmates in your zone on the minimap"], nil,
+            function() return GuildOS.GuildMap:IsMinimapDots() end,
+            function(checked) GuildOS.GuildMap:SetMinimapDots(checked) end)
+    end
     F:Check(L["Guild button opens Guild OS"], L["Off: the game's guild button opens the game's own guild window."],
         function() return GuildOS:IsGuildButtonHijacked() end,
         function(checked) GuildOS:SetSetting("hijackGuildButton", checked) end)

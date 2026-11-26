@@ -56,6 +56,7 @@ local IN_UI = {
   craft       = { { "UI/Rooms.lua", 'feature = "recipes", sub = "realm"' }, { "UI/CraftFinder.lua", "function GuildOS:CreateRealmSearch" } },
   scout       = { { "UI/RosterFrame.lua", "GuildOS.RecruitScanner:BuildInto(" } },
   beacon      = { { "UI/RosterFrame.lua", 'L["Edit Beacon"]' } },
+  map         = { { "UI/Minimap.lua", "GuildOS:ToggleGuildMap()" } },
   pug         = { { "UI/Minimap.lua", "GuildOS:TogglePugInspector()" } },
   minimap     = { { "UI/SettingsPanel.lua", 'L["Show minimap button"]' } },
   guildbutton = { { "UI/SettingsPanel.lua", "hijackGuildButton" } },
@@ -124,7 +125,7 @@ local IN_UI = {
 local ALIAS = {
   points = { "dkp" }, equity = { "lootequity" }, bulletin = { "board" }, polls = { "poll" },
   calendar = { "cal", "events" }, analytics = { "stats" }, find = { "search" }, scout = { "recruitscan" },
-  beacon = { "recruitbeacon" }, recruit = { "recruiting" }, autoinvite = { "ai" },
+  beacon = { "recruitbeacon" }, map = { "guildmap" }, recruit = { "recruiting" }, autoinvite = { "ai" },
   cons = { "consumables" }, lm = { "lootmaster" }, web = { "companion" }, exportatt = { "exportattendance" },
   attune = { "attunements" }, signup = { "unsignup" }, ban = { "tempban", "unban", "banlist" },
   ally = { "alliance" }, birthday = { "aniversario" },

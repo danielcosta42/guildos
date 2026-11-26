@@ -387,7 +387,10 @@ read_globals = {
     "GuildFrame",
     "CommunitiesFrame",   -- modern (LoD) guild/communities UI; we attach a "Guild OS" button
     "FriendsFrame",
-    "WorldMapFrame",
+    "WorldMapFrame",      -- the live guild map (#449): our own pins on its canvas, through Compat
+    "CreateVector2D",     -- C_Map's world conversions take a vector (Compat.MapToWorld)
+    "GetPlayerFacing",    -- a rotating minimap's dots (Compat.PlayerFacing)
+    "IsIndoors",          -- the minimap's indoor scale (Compat.MinimapView)
     "ToggleWorldMap",     -- open the world map (loads Blizzard_WorldMap on demand)
     "ShowUIPanel",
     "HideUIPanel",

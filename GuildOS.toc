@@ -162,6 +162,7 @@ Modules\LevelQuery.lua
 Modules\LFGBoard.lua
 Data\GroupActivities.lua
 Modules\Groups.lua
+Modules\GuildMap.lua
 Modules\PugInspector.lua
 
 # UI
@@ -215,6 +216,7 @@ UI\LootCouncil.lua
 UI\CommunityPanel.lua
 UI\AlliancePanel.lua
 UI\RaidToolsPanel.lua
+UI\GuildMap.lua
 UI\Minimap.lua
 UI\PugInspector.lua
 UI\Onboarding.lua
