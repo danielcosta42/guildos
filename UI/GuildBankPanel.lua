@@ -1734,40 +1734,136 @@ end
 ----------------------------------------------------------------------
 -- The bar at a vendor: sell what the cleanup took out of the bank
 ----------------------------------------------------------------------
-local sellBar
+-- A small window in the Salão's look docked on the vendor's: its title, the items as icons (their count on
+-- them, the item's tooltip on hover, "+n" past the room), what they are worth, and one Sell all. Its close
+-- hides it until the next vendor. Nothing at a vendor with nothing from the bank.
+local SELL_ICON, SELL_GAP, SELL_W = 32, 6, 340
+local sellBar, sellDismissed
 local function buildSellBar()
     local CL = GuildOS.GuildBankCleanup
-    sellBar = CreateFrame("Frame", "GuildOSGuildBankSellBar", UIParent, "BackdropTemplate")
-    sellBar:SetSize(420, BAR_H + 8)
-    sellBar:SetFrameStrata("HIGH")
-    sellBar:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(sellBar) })
-    sellBar:SetBackdropColor(C.bg.r, C.bg.g, C.bg.b, 0.97)
-    sellBar:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
-    local mark = UI:CreateText(sellBar, "GUILD OS", 12)
-    GuildOS:ApplyFont(mark, 12, "sectionTitle")
-    mark:SetPoint("LEFT", 10, 0)
-    local sell = UI:CreateButton(sellBar, "", 200, BAR_H - 4)
-    UI:SetButtonVariant(sell, "primary")
-    sell:SetPoint("LEFT", mark, "RIGHT", 12, 0)
-    sell:SetScript("OnClick", function() CL:SellOut() end)
-    local note = UI:CreateText(sellBar, L["Only what came out of the guild bank."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    note:SetPoint("LEFT", sell, "RIGHT", 10, 0)
-    function sellBar:Draw()
-        local list, value = CL:ToSell()
-        local n = 0
-        for _ in pairs(list) do n = n + 1 end
-        self:SetShown(n > 0 and CL:IsMerchantOpen())
-        sell.label:SetText(string.format(L["Sell bank items (%d) · %s"], n, CL.MoneyText(value)))
+    local Kit = GuildOS.Kit
+    local SP = UI.SP
+    local f = CreateFrame("Frame", "GuildOSGuildBankSellBar", UIParent, "BackdropTemplate")
+    f:SetSize(SELL_W, 120)
+    f:SetFrameStrata("HIGH")
+    f:SetClampedToScreen(true)
+    f:EnableMouse(true)
+    f:Hide()
+    Kit:Dress(f, L["Guild bank leftovers"], { onClose = function(fr) sellDismissed = true; fr:Hide() end })
+    sellBar = f
+
+    local body = CreateFrame("Frame", nil, f)
+    body:SetPoint("TOPLEFT", Kit.PAD, -(Kit.HEADER_H + 10))
+    body:SetPoint("TOPRIGHT", -Kit.PAD, -(Kit.HEADER_H + 10))
+    body:SetHeight(1)
+
+    local icons = {}
+    local function iconAt(i)
+        if icons[i] then return icons[i] end
+        local b = CreateFrame("Button", nil, body)
+        b:SetSize(SELL_ICON, SELL_ICON)
+        b:SetPoint("TOPLEFT", (i - 1) * (SELL_ICON + SELL_GAP), 0)
+        local edge = b:CreateTexture(nil, "BACKGROUND")
+        edge:SetTexture("Interface\\Buttons\\WHITE8x8")
+        edge:SetPoint("TOPLEFT", -1, 1)
+        edge:SetPoint("BOTTOMRIGHT", 1, -1)
+        edge:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 0.7)
+        b.tex = b:CreateTexture(nil, "ARTWORK")
+        b.tex:SetAllPoints()
+        b.tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        b.count = UI:CreateText(b, "", 11, 1, 1, 1)
+        b.count:SetPoint("BOTTOMRIGHT", -2, 2)
+        b.more = UI:CreateText(b, "", 12, C.gold2.r, C.gold2.g, C.gold2.b)
+        b.more:SetPoint("CENTER")
+        b:SetScript("OnEnter", function(self)
+            if not self.id then return end
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetHyperlink("item:" .. self.id)
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        icons[i] = b
+        return b
     end
-    return sellBar
+
+    local sum = UI:CreateText(f, "", SP.BODY, C.text.r, C.text.g, C.text.b)
+    sum:SetJustifyH("LEFT")
+    local sell = UI:SetButtonVariant(UI:CreateButton(f, L["Sell all"], 100, SP.FIELD), "primary")
+    sell:SetScript("OnClick", function() CL:SellOut() end)
+    UI:AddTooltip(sell, L["Sell all"], { L["Only what came out of the guild bank."],
+        L["The gold is owed to the bank: deposit it the next time you open the guild bank."] })
+    local note = UI:CreateText(f, L["Only what came out of the guild bank."], SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    note:SetJustifyH("LEFT")
+    note:SetWordWrap(true)
+
+    function f:Draw()
+        local list, value = CL:ToSell()
+        local ids, total = {}, 0
+        for id, c in pairs(list) do ids[#ids + 1] = id; total = total + c end
+        table.sort(ids, function(a, b) return (list[a] or 0) * (GuildOS.Compat.ItemValue(a) or 0) > (list[b] or 0) * (GuildOS.Compat.ItemValue(b) or 0) end)
+        local selling = CL.SellProgress and CL:SellProgress()
+        local show = (#ids > 0 or selling) and CL:IsMerchantOpen() and not sellDismissed
+        self:SetShown(show and true or false)
+        if not show then return end
+        local w = self:GetWidth()
+        local inner = w - 2 * Kit.PAD
+        local room = math.max(1, math.floor((inner + SELL_GAP) / (SELL_ICON + SELL_GAP)))
+        local shown = (#ids > room) and (room - 1) or #ids
+        for i = 1, math.max(#icons, room) do
+            local b = (i <= room) and iconAt(i) or icons[i]
+            if b then
+                local id = ids[i]
+                if i <= shown and id then
+                    b.id = id
+                    b.tex:SetTexture(GuildOS.Compat.ItemIcon(id) or "Interface\\Icons\\INV_Misc_QuestionMark")
+                    b.tex:Show()
+                    b.count:SetText((list[id] or 1) > 1 and tostring(list[id]) or "")
+                    b.more:SetText("")
+                    b:Show()
+                elseif i == shown + 1 and #ids > shown then
+                    b.id = nil
+                    b.tex:Hide()
+                    b.count:SetText("")
+                    b.more:SetText("+" .. (#ids - shown))
+                    b:Show()
+                else
+                    b:Hide()
+                end
+            end
+        end
+        local iconsH = (#ids > 0) and SELL_ICON or 0
+        sell:ClearAllPoints()
+        sell:SetPoint("TOPRIGHT", self, "TOPRIGHT", -Kit.PAD, -(Kit.HEADER_H + 10 + iconsH + SP.FIELD_GAP))
+        if selling then
+            sell.label:SetText(string.format(L["Selling... %d"], selling))
+            sell:Disable()
+        else
+            sell.label:SetText(L["Sell all"])
+            sell:Enable()
+        end
+        sell:SetWidth(math.ceil(sell.label:GetStringWidth() or 60) + 28)
+        sum:ClearAllPoints()
+        sum:SetPoint("LEFT", self, "TOPLEFT", Kit.PAD, -(Kit.HEADER_H + 10 + iconsH + SP.FIELD_GAP + SP.FIELD / 2))
+        sum:SetPoint("RIGHT", sell, "LEFT", -SP.CELL, 0)
+        sum:SetText(string.format(L["%d items · %s"], total, CL.MoneyText(value)))
+        note:ClearAllPoints()
+        note:SetPoint("TOPLEFT", self, "TOPLEFT", Kit.PAD, -(Kit.HEADER_H + 10 + iconsH + SP.FIELD_GAP + SP.FIELD + 6))
+        note:SetWidth(inner)
+        local noteH = math.ceil(note:GetStringHeight() or 12)
+        self:SetHeight(Kit.HEADER_H + 10 + iconsH + SP.FIELD_GAP + SP.FIELD + 6 + noteH + Kit.PAD)
+    end
+    return f
 end
 
 if GuildOS.GuildBankCleanup then
     GuildOS.GuildBankCleanup.merchantOpened = function()
+        sellDismissed = false
         local b = sellBar or buildSellBar()
         b:ClearAllPoints()
         local host = MerchantFrame
-        if host and host:IsShown() then b:SetPoint("BOTTOMLEFT", host, "TOPLEFT", 0, 4)
+        local hw = host and host.GetWidth and tonumber(host:GetWidth()) or 0
+        b:SetWidth(hw > 200 and hw or SELL_W)
+        if host and host:IsShown() then b:SetPoint("BOTTOMLEFT", host, "TOPLEFT", 0, 6)
         else b:SetPoint("TOP", UIParent, "TOP", 0, -120) end
         b:Draw()
     end

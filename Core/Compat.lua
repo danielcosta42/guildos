@@ -1061,6 +1061,25 @@ function Compat.ItemValue(item)
     return tonumber(sellPrice) or 0, tonumber(reqLevel) or 0, tonumber(itemLevel) or 0
 end
 
+-- An item's icon from its id alone (no item cache needed where the client has an instant lookup).
+function Compat.ItemIcon(item)
+    if not item then return nil end
+    if C_Item and C_Item.GetItemIconByID then
+        local ok, t = pcall(C_Item.GetItemIconByID, item)
+        if ok and t then return t end
+    end
+    if GetItemIcon then
+        local ok, t = pcall(GetItemIcon, item)
+        if ok and t then return t end
+    end
+    local instant = C_Item and C_Item.GetItemInfoInstant or GetItemInfoInstant
+    if instant then
+        local ok, _, _, _, _, icon = pcall(instant, item)
+        if ok and icon then return icon end
+    end
+    return select(10, Compat.GetItemInfo(item))
+end
+
 -- What one sells for at the auction house, from an addon that knows (Auctionator, TSM), or nil.
 -- Both are optional and called under pcall: their APIs are theirs to change.
 function Compat.AuctionPrice(itemID)

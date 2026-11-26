@@ -176,6 +176,7 @@ GuildOS.Style:Resolve()
 dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Layout.lua")
+dofile(ADDON .. "/UI/Kit.lua")
 local wire = {}
 GuildOS.SyncService = {
   On = function() end,
@@ -401,5 +402,53 @@ p1 = barFrame.points[1]
 check(p1[1] == "BOTTOMLEFT" and p1[2] == UIParent and p1[4] == 100, "and is placed there next time")
 GuildOS:SetSetting("gbankBarPos", nil)
 Bank:OnEvent("GUILDBANKFRAME_CLOSED")
+
+-- At a vendor: the leftovers window, docked on the vendor's, its items as icons, one Sell all (#449).
+do
+  local CL = GuildOS.GuildBankCleanup
+  local realToSell, realOpen, realSell = CL.ToSell, CL.IsMerchantOpen, CL.SellOut
+  local items = {}
+  for i = 1, 12 do items[1000 + i] = i end
+  CL.ToSell = function() return items, 11744 end
+  CL.IsMerchantOpen = function() return true end
+  local sold = 0
+  CL.SellOut = function() sold = sold + 1 end
+  MerchantFrame = newFrame("Frame"); MerchantFrame.w = 336
+  CL.merchantOpened()
+  local w = _G.GuildOSGuildBankSellBar or nil
+  local bar
+  for _, c in ipairs(UIParent.children) do if c.titleText and c.titleText.text == "Guild bank leftovers" then bar = c end end
+  check(bar and bar.shown, "a vendor with leftovers opens the window")
+  check(bar.w == 336 and bar.points[1][1] == "BOTTOMLEFT" and bar.points[1][2] == MerchantFrame, "as wide as the vendor's, on top of it")
+  local icons, more, sum, sellBtn = 0, nil, nil, nil
+  local function walk(f)
+    for _, c in ipairs(f.children or {}) do
+      if c.kind == "Button" and c.tex and c.shown then
+        if c.id then icons = icons + 1 elseif c.more and c.more.text ~= "" then more = c.more.text end
+      end
+      if c.kind == "FontString" and type(c.text) == "string" and c.text:find("items") then sum = c.text end
+      if c.label and c.label.text == "Sell all" then sellBtn = c end
+      walk(c)
+    end
+  end
+  walk(bar)
+  check(icons >= 1 and more and more:find("^%+%d+$"), "the items as icons, the rest as +n (" .. icons .. ", " .. tostring(more) .. ")")
+  check(sum and sum:find("78 items", 1, true), "how many and what they are worth: " .. tostring(sum))
+  check(sellBtn and sellBtn.enabled, "one Sell all")
+  sellBtn.scripts.OnClick(sellBtn)
+  check(sold == 1, "which sells")
+  local h = bar.h
+  check(h > 60 and h < 200, "the window as tall as what it holds (" .. h .. ")")
+  bar.closeBtn.scripts.OnClick(bar.closeBtn)
+  CL.merchantRefresh()
+  check(not bar.shown, "closed, it stays closed at this vendor")
+  CL.merchantOpened()
+  check(bar.shown, "and comes back at the next")
+  items = {}
+  CL.merchantRefresh()
+  check(not bar.shown, "nothing left to sell: no window")
+  CL.ToSell, CL.IsMerchantOpen, CL.SellOut = realToSell, realOpen, realSell
+  MerchantFrame = nil
+end
 
 print(string.format("guild-bank-panel: %d checks passed", checks))
