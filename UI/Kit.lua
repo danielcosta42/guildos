@@ -248,67 +248,39 @@ function Kit:Float(title, opts)
 end
 
 ----------------------------------------------------------------------
--- Parts on the paper that UI/Helpers.lua draws for the wood only
+-- Parts on the paper: UI/Helpers.lua draws them for the paper itself now (#449); these stay for their callers.
 ----------------------------------------------------------------------
--- UI:CreateCheckbox on a card: the box the paper's light field with its tan line, the mark the card's dark red,
--- the label the paper's ink. A checkbox on the wood is left as it is. Returns the checkbox frame.
-local PAPER_BOX_LINE = hex("b49867")
+-- UI:CreateCheckbox, which on a card is the paper's light field with its tan line, the card's dark red mark and
+-- the paper's ink. Returns the checkbox frame.
 function Kit:Checkbox(parent, labelText, size)
-    local frame = UI:CreateCheckbox(parent, labelText, size)
-    if not UI:OnPaper(parent) then return frame end
-    local cb = frame.checkbox
-    frame.label:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b)
-    local border, fill = cb:GetRegions()
-    local function paint()
-        if fill and fill.SetVertexColor then fill:SetVertexColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1) end
-        if border and border.SetVertexColor and cb:IsEnabled() and not cb.__hovered then
-            border:SetVertexColor(PAPER_BOX_LINE.r, PAPER_BOX_LINE.g, PAPER_BOX_LINE.b, 1)
-        end
-    end
-    if cb.checkMark then cb.checkMark:SetVertexColor(C.paperTitle.r, C.paperTitle.g, C.paperTitle.b, 1) end
-    cb:HookScript("OnMouseUp", paint)
-    cb:HookScript("OnLeave", paint)
-    cb:HookScript("OnClick", paint)
-    local set = cb.SetChecked
-    cb.SetChecked = function(self, v) set(self, v); paint() end
-    paint()
-    return frame
+    return UI:CreateCheckbox(parent, labelText, size)
 end
 
--- UI:CreateSeparator in the paper's tan on a card (the wood's line elsewhere).
+-- UI:CreateSeparator, in the paper's tan on a card (the wood's line elsewhere).
 function Kit:Separator(parent)
-    local line = UI:CreateSeparator(parent)
-    if UI:OnPaper(parent) then line:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1) end
-    return line
+    return UI:CreateSeparator(parent)
 end
 
--- UI:CreateSectionTitle with its rule in the paper's tan on a card.
+-- UI:CreateSectionTitle, whose rule takes the paper's tan on a card.
 function Kit:SectionTitle(parent, text, first)
-    local fs = UI:CreateSectionTitle(parent, text, first)
-    if fs.rule and UI:OnPaper(parent) then fs.rule:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1) end
-    return fs
+    return UI:CreateSectionTitle(parent, text, first)
 end
 
 -- UI:CreateTab's pill on a card: its label at rest takes the quiet button's ink, the door's cream being
--- invisible on the paper. The open one keeps the soft gold pill. Returns the tab.
+-- invisible on the paper; the open one keeps the soft gold pill. CreateTab does this for a tab made on the
+-- paper; this is for one moved there after. Returns the tab.
 function Kit:PaperTab(tab)
-    if not UI:OnPaper(tab) then return tab end
-    local function ink()
-        if not tab.isActive then tab.label:SetTextColor(C.quietInk.r, C.quietInk.g, C.quietInk.b) end
-    end
-    local set = tab.SetActive
-    function tab:SetActive(active) set(self, active); ink() end
-    tab:HookScript("OnEnter", ink)
-    tab:HookScript("OnLeave", ink)
-    tab:HookScript("OnMouseUp", ink)
-    ink()
+    if not UI:OnPaper(tab) or tab.__paperInk then return tab end
+    tab.__paperInk = true
+    tab:SetActive(tab.isActive)
     return tab
 end
 
 ----------------------------------------------------------------------
 -- GuildOS's own confirmation box (GuildOS:ShowDialog, UI/Helpers.lua) as the mockup's modal: a parchment card
 -- (the mockup's `.modal .card`), its question in the paper's ink, the answer in the crimson primary button and
--- the others in the paper's quiet ones. Helpers builds the frame; the kit dresses it the first time it shows.
+-- the others in the paper's quiet ones. Helpers builds the frame; GuildOS:ShowDialog has the kit dress it the
+-- first time, before it lays the text and sizes the box (a dressing after the sizing overlapped on the first show).
 ----------------------------------------------------------------------
 function Kit:DressDialog(f)
     if not f or f.__kitDressed then return f end
@@ -323,13 +295,4 @@ function Kit:DressDialog(f)
         UI:SetButtonVariant(b, i == 1 and "primary" or "secondary")
     end
     return f
-end
-
-local showDialog = GuildOS.ShowDialog
-if showDialog then
-    function GuildOS:ShowDialog(...)
-        local f = showDialog(self, ...)
-        if f then Kit:DressDialog(f) end
-        return f
-    end
 end

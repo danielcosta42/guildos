@@ -375,7 +375,7 @@ function CTA:_ShowPopupNow(e)
     local k = self:Kind(e.kind)
     f.callId = e.id
     f.icon:SetTexture(k.icon)
-    f.title:SetText(e.title)
+    GuildOS:SetTitleText(f.title, e.title)
     f.text:SetText(e.text)
     local where = e.zone or ""
     if e.x and e.y then where = string.format("%s (%.1f, %.1f)", where, e.x, e.y) end

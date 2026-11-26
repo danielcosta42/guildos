@@ -620,6 +620,7 @@ local function createWindow()
     -- toggles and start-up failures all change it without a reload) and fall
     -- back to Now when the open tab is no longer allowed.
     function f:UpdateTabVisibility()
+        self:InvalidateOfficerCounts()
         -- An entry that may no longer open (a rank change, the Winter Veil event over) counts as closed.
         if self.activeEntry and not UI:EntryAllowed(self.activeEntry) then self.activeEntry = nil end
         -- A room that may no longer show (an officer demoted with the Officers' Room open) closes too.
@@ -636,13 +637,23 @@ local function createWindow()
         self:LayoutTabs()
     end
 
-    -- The officers' work waiting (UI.Agora:OfficerCounts): the door's total and each entry's own.
-    local function officerCounts()
+    -- The officers' work waiting (UI.Agora:OfficerCounts): the door's total and each entry's own. That walks
+    -- the whole roster (Agora:NeedsMe), so it is kept on the window and counted again only after the 10s tick, a
+    -- roster update or a re-check of the tabs drops it (UpdateTabVisibility); a layout or a resize reads it.
+    function f:RefreshOfficerCounts()
         local A = UI.Agora
-        if not (A and A.OfficerCounts) then return 0, {} end
         local total, by = 0, {}
-        GuildOS:SafeCall(function() total, by = A:OfficerCounts() end)
-        return total or 0, by or {}
+        if A and A.OfficerCounts then
+            GuildOS:SafeCall(function() total, by = A:OfficerCounts() end)
+        end
+        self.officerTotal, self.officerBy = total or 0, by or {}
+        return self.officerTotal, self.officerBy
+    end
+    -- Counted again at the next layout (a change the tick has not seen yet: a trial added, a rank changed).
+    function f:InvalidateOfficerCounts() self.officerTotal, self.officerBy = nil, nil end
+    local function officerCounts()
+        if f.officerTotal == nil then return f:RefreshOfficerCounts() end
+        return f.officerTotal, f.officerBy
     end
 
     -- Where the doors go: from past the guild's name to short of the tools.
@@ -1041,7 +1052,7 @@ local function createWindow()
         self:UpdateTabVisibility()
         self:RefreshTitle()
         if not self.ticker then
-            self.ticker = C_Timer.NewTicker(10, function() self:RefreshTitle() end)
+            self.ticker = C_Timer.NewTicker(10, function() self:InvalidateOfficerCounts(); self:RefreshTitle() end)
         end
     end)
     f:SetScript("OnHide", function(self)
@@ -1061,7 +1072,7 @@ local function createWindow()
     GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
     -- The title counts who is online over the whole roster: at most once every ROSTER_GAP (issue #324).
     local function shownTitle()
-        if f:IsShown() then f:RefreshTitle() end
+        if f:IsShown() then f:InvalidateOfficerCounts(); f:RefreshTitle() end
     end
     f:SetScript("OnEvent", function(self, event)
         if event == "GUILD_ROSTER_UPDATE" then

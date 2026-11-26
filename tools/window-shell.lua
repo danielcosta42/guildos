@@ -435,11 +435,49 @@ fire(mm, "OnClick", "LeftButton")
 check(not f:IsShown(), "and closes it")
 fire(mm, "OnClick", "RightButton")
 check(GuildOSMinimapMenu and GuildOSMinimapMenu:IsShown(), "a right click opens the minimap menu, GuildOS's own popup")
-local raidsItem
-for _, item in ipairs(GuildOS:MinimapMenuItems()) do if item.text == "Raids" then raidsItem = item end end
-check(raidsItem ~= nil, "the minimap menu lists the window's tabs")
+local raidsItem, settingsItem, pugItem
+local menuTexts = {}
+for _, item in ipairs(GuildOS:MinimapMenuItems()) do
+  menuTexts[item.text] = true
+  if item.text == "Raids" then raidsItem = item end
+  if item.text == "Settings" then settingsItem = item end
+  if item.text == "Do I know this pug?" then pugItem = item end
+end
+check(raidsItem ~= nil, "the minimap menu lists the window's rooms")
+-- The rooms, not the old features (#449): every room the top bar draws, and no feature that is not a room.
+for _, room in ipairs(UI:VisibleRooms()) do
+  check(menuTexts[room.label], "the minimap menu lists the room " .. room.label)
+end
+local roomLabel = {}
+for _, room in ipairs(UI.ROOMS) do roomLabel[room.label] = true end
+for _, def in ipairs(UI:VisibleFeatures("tab")) do
+  check(roomLabel[def.label] or not menuTexts[def.label],
+    "the minimap menu no longer lists the feature " .. tostring(def.label))
+end
+check(settingsItem ~= nil and pugItem ~= nil, "and Settings, which the gear opens, and the pug inspector")
 raidsItem.func()
-check(f:IsShown() and f.activeTab == "raids", "a tab picked there opens in the window")
+check(f:IsShown() and f.activeRoom == "raids", "a room picked there opens in the window")
+settingsItem.func()
+check(f:IsShown() and f.activeRoom == "settings", "Settings picked there opens the gear's room")
+-- Folded to the bar, a room picked from the menu opens the window back up.
+f:ToggleCollapsed()
+check(f.band == "bar", "folded to the bar")
+raidsItem.func()
+check(f.band ~= "bar" and f.activeRoom == "raids", "a room picked while folded unfolds the window")
+-- A click elsewhere closes the menu without a full-screen catcher (#449): GLOBAL_MOUSE_DOWN where it exists.
+fire(mm, "OnClick", "RightButton")
+local menu = GuildOSMinimapMenu
+check(menu:IsShown() and menu.events.GLOBAL_MOUSE_DOWN, "the menu hears GLOBAL_MOUSE_DOWN")
+for _, c in ipairs(UIParent.children) do
+  check(c.strata ~= "FULLSCREEN_DIALOG" or c == menu, "nothing but the menu covers the screen at FULLSCREEN_DIALOG")
+end
+local overMenu = true
+menu.IsMouseOver = function() return overMenu end
+fire(menu, "OnEvent", "GLOBAL_MOUSE_DOWN", "LeftButton")
+check(menu:IsShown(), "a press on the menu keeps it open")
+overMenu = false
+fire(menu, "OnEvent", "GLOBAL_MOUSE_DOWN", "LeftButton")
+check(not menu:IsShown(), "a press anywhere else closes it")
 
 f:Hide()
 GuildOS:HookGuildFrame()
@@ -911,6 +949,7 @@ check(f.content.points[#f.content.points - 1][2] > 12 or f.content.points[1][2] 
 do
   local realTT = GuildOS.TrialTracker
   GuildOS.TrialTracker = { CountReady = function() return 2 end }
+  f:InvalidateOfficerCounts()   -- what TrialTracker:RefreshUI does on a trial's change
   f:RefreshTitle()
   local door = tabOf(f, "officers")
   local trials
@@ -918,6 +957,7 @@ do
   check(door.count.shown and door.count.text.text == "2" and trials and trials.count.shown and trials.count.text.text == "2",
     "two trials to review: a red 2 on the Officers' Room's door and on its Trials entry")
   GuildOS.TrialTracker = realTT
+  f:InvalidateOfficerCounts()
   f:RefreshTitle()
   check(not door.count.shown, "and none once there is nothing")
 end
@@ -1912,6 +1952,80 @@ do
     and read("UI/CalendarPanel.lua"):find("panel.ApplyFilter = function(when)", 1, true),
     "the Guild tab hands a deep link's day to the calendar")
   check(read("UI/Salao.lua"):find("UI:OpenWindow(item.id, item.sub, item.filter)", 1, true), "the Salão opens screens through OpenWindow")
+end
+
+-- ── The officers' counts are cached (#449) ──────────────────────────────
+-- They walk the whole roster: a layout or a resize reads the window's cache, the 10s tick counts again.
+do
+  local calls, orig = 0, A.OfficerCounts
+  A.OfficerCounts = function(...) calls = calls + 1; return orig(...) end
+  f:Show()
+  f:RefreshTitle()
+  local before = calls
+  for _, w in ipairs({ 1200, 1000, 800, 1200 }) do f:Layout(w) end
+  f:LayoutTabs(); f:LayoutEntries()
+  check(calls == before, "a layout or a resize does not count the officers' work again (" .. (calls - before) .. " counts)")
+  f:RefreshTitle()
+  check(calls == before, "nor does the title")
+  liveTicker(10).fn()
+  check(calls == before + 1, "the 10s tick counts it once")
+  f:InvalidateOfficerCounts()
+  f:LayoutTabs()
+  check(calls == before + 2, "and a layout after an invalidation counts it once more")
+  check(read("UI/Window.lua"):find("function f:UpdateTabVisibility()\n        self:InvalidateOfficerCounts()", 1, true),
+    "a re-check of the tabs (a rank or group change) drops the cache")
+  A.OfficerCounts = orig
+end
+
+-- ── The Audit's rows are kept (#449) ────────────────────────────────────
+-- A refresh draws over the last one's rows and badges: the readiness list makes them once.
+do
+  dofile(ADDON .. "/UI/AuditPanel.lua")
+  local report = {
+    { name = "Ana", class = "MAGE", status = "ready", ilvl = 120, hasGear = true, missEnch = 0, seats = {} },
+    { name = "Bo", class = "PRIEST", status = "warn", ilvl = 110, hasGear = true, missEnch = 1, seats = {} },
+    { name = "Cy", class = "ROGUE", status = "notready", reason = "level", level = 58, ilvl = 0, hasGear = false,
+      missEnch = 0, seats = {} },
+  }
+  local realReadiness, realCM = GuildOS.Readiness, GuildOS.CoreManager
+  GuildOS.Readiness = {
+    GetTargets = function() return {} end,
+    GetReport = function() return report end,
+    Summarize = function() return { ready = 1, warn = 1, notready = 1 } end,
+    WithSeats = function() end,
+    Compositions = function() return {} end,
+    Filtered = function(rows) return rows end,
+  }
+  GuildOS.CoreManager = { GetSortedNames = function() return {} end, ROLE_LABELS = {} }
+  local host = CreateFrame("Frame", nil, UIParent)
+  GuildOS:CreateAuditPanel(host)
+  local made, badges = 0, 0
+  local realCreate, realBadge = CreateFrame, UI.CreateBadge
+  CreateFrame = function(...) made = made + 1; return realCreate(...) end
+  UI.CreateBadge = function(...) badges = badges + 1; return realBadge(...) end
+  host.SelectSub("ready")
+  local firstMade, firstBadges = made, badges
+  check(firstBadges == 3, "the first readiness refresh makes a badge per row (" .. firstBadges .. ")")
+  host.RefreshActive(); host.RefreshActive()
+  check(made == firstMade and badges == firstBadges,
+    "a refresh again makes no new row or badge (" .. (made - firstMade) .. " frames, " .. (badges - firstBadges) .. " badges)")
+  report[#report + 1] = { name = "Di", class = "MAGE", status = "ready", ilvl = 100, hasGear = true, missEnch = 0, seats = {} }
+  host.RefreshActive()
+  check(badges == firstBadges + 1, "a fourth member takes one row more")
+  table.remove(report); table.remove(report)
+  host.RefreshActive()
+  local content = host.subPanels.ready.panel
+  local shownRows = 0
+  local function walk(fr)
+    for _, c in ipairs(fr.children) do
+      if c.cells and c.kind == "Frame" and c:IsShown() then shownRows = shownRows + 1 end
+      walk(c)
+    end
+  end
+  walk(content)
+  check(shownRows == 2, "two members left: two rows shown, the others hidden (" .. shownRows .. ")")
+  CreateFrame, UI.CreateBadge = realCreate, realBadge
+  GuildOS.Readiness, GuildOS.CoreManager = realReadiness, realCM
 end
 
 -- ── In-game self-tests that need no live client ─────────────────────────

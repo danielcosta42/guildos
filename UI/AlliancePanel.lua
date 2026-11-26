@@ -432,7 +432,7 @@ local function BuildHall(panel)
             return
         end
         local name = ally:Name() or pact.tag
-        title:SetText(name == pact.tag and name or string.format("%s [%s]", name, pact.tag))
+        GuildOS:SetTitleText(title, name == pact.tag and name or string.format("%s [%s]", name, pact.tag))
         local y = place(title, HALL_TOP)
 
         -- The guilds, in their colours, ours marked, the others with how many are seen on now.

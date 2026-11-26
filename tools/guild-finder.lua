@@ -360,6 +360,8 @@ local function press(label, mouse) buttons[label].scripts.OnClick(buttons[label]
 local ARROW = " |TInterface\\Buttons\\Arrow-Down-Up:12:12|t"
 local CHECK = "|TInterface\\Buttons\\UI-CheckBox-Check:14:14|t "
 function GF:UtcOffset() return 0 end    -- the card's times are read at a known clock
+-- Core/Data.lua's, the face aside: the titles a player names go through it (#449).
+function GuildOS:SetTitleText(fs, t) fs:SetText(t) end
 GuildOSDB = {}
 GuildOS.db.recruitRelay = {}
 GF.sources = {}

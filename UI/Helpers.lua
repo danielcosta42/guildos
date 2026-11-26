@@ -329,12 +329,13 @@ function Helpers:CreateAccentLine(parent, thickness)
     return line
 end
 
--- Create a 1px separator in `line`.
+-- Create a 1px separator in `line` (the paper's tan on a parchment card).
 function Helpers:CreateSeparator(parent)
     local line = parent:CreateTexture(nil, "ARTWORK")
     line:SetTexture(WHITE)
     Helpers:Hairline(line)
-    line:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
+    local c = Helpers:OnPaper(parent) and C.paperLine or C.line
+    line:SetVertexColor(c.r, c.g, c.b, 1)
     return line
 end
 
@@ -821,9 +822,14 @@ end
 
 -- Create a checkbox with a label: a 14px box in `well` with a 1px border
 -- and, when checked, a solid 8px gold mark (a texture, not a glyph).
+-- On a parchment card the box is the paper's light field with its tan line, the mark the card's dark red and
+-- the label the paper's ink. cb.border and cb.fill are the box's two textures.
 -- `frame.checkbox.onChanged(cb, checked)` fires on click; SetChecked repaints.
 function Helpers:CreateCheckbox(parent, labelText, size)
     size = size or 20
+    local paper = Helpers:OnPaper(parent)
+    local well, pressed = paper and C.paperLight or C.well, paper and C.paperLine or C.popup
+    local rest = paper and C.paperEdge or C.lineHi
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(size + 200, size)
 
@@ -838,14 +844,15 @@ function Helpers:CreateCheckbox(parent, labelText, size)
     local fill = cb:CreateTexture(nil, "BACKGROUND", nil, 1)
     fill:SetTexture(WHITE)
     fill:SetAllPoints()
-    fill:SetVertexColor(C.well.r, C.well.g, C.well.b, 1)
+    fill:SetVertexColor(well.r, well.g, well.b, 1)
+    cb.border, cb.fill = border, fill
 
     local mark = cb:CreateTexture(nil, "OVERLAY")
     mark:SetTexture(WHITE)
     mark:SetSize(CHECK_MARK, CHECK_MARK)
     mark:SetPoint("CENTER")
-    mark:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
-    mark:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 1)
+    local ink = paper and C.paperTitle or C.gold2
+    mark:SetVertexColor(ink.r, ink.g, ink.b, 1)
     mark:Hide()
     cb.checkMark = mark
     local skinned = false
@@ -855,7 +862,7 @@ function Helpers:CreateCheckbox(parent, labelText, size)
         -- GetChecked() returns true or nil (never false) in TBC.
         mark:SetShown(cb:GetChecked() and true or false)
         mark:SetAlpha(enabled and 1 or DISABLED_GOLD)
-        local edge = (not enabled and C.disabled) or (cb.__hovered and C.label) or C.lineHi
+        local edge = (not enabled and C.disabled) or (cb.__hovered and C.label) or rest
         border:SetVertexColor(edge.r, edge.g, edge.b, 1)
     end
 
@@ -872,10 +879,10 @@ function Helpers:CreateCheckbox(parent, labelText, size)
     cb:SetScript("OnLeave", function(self) self.__hovered = false; paint() end)
     -- The flat box darkens while pressed; the Forever art keeps its own colour (#122).
     cb:SetScript("OnMouseDown", function()
-        if not skinned then fill:SetVertexColor(C.popup.r, C.popup.g, C.popup.b, 1) end
+        if not skinned then fill:SetVertexColor(pressed.r, pressed.g, pressed.b, 1) end
     end)
     cb:SetScript("OnMouseUp", function()
-        if not skinned then fill:SetVertexColor(C.well.r, C.well.g, C.well.b, 1) end
+        if not skinned then fill:SetVertexColor(well.r, well.g, well.b, 1) end
     end)
     cb:HookScript("OnDisable", paint)
     cb:HookScript("OnEnable", paint)
@@ -883,7 +890,8 @@ function Helpers:CreateCheckbox(parent, labelText, size)
 
     local label = newText(frame, nil, "body")
     label:SetPoint("LEFT", cb, "RIGHT", 6, 0)
-    label:SetTextColor(C.text.r, C.text.g, C.text.b)
+    local text = paper and C.paperInk or C.text
+    label:SetTextColor(text.r, text.g, text.b)
     label:SetText(labelText or "")
     frame.label = label
 
@@ -1353,11 +1361,15 @@ function Helpers:CreateProgressBar(parent, width, height, ramp)
     width = width or 100
     height = height or 8
 
+    -- On a parchment card: the paper's tan track and line, the progress in the paper's soft ink.
+    local paper = Helpers:OnPaper(parent)
+    local track, edge = paper and C.paperLine or C.well, paper and C.paperEdge or C.line
+    local going = paper and C.paperSoft or C.textSoft
     local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     frame:SetSize(width, height)
     frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(frame) })
-    frame:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
-    frame:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+    frame:SetBackdropColor(track.r, track.g, track.b, 1)
+    frame:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1)
 
     local bar = frame:CreateTexture(nil, "ARTWORK")
     bar:SetTexture(WHITE)
@@ -1377,7 +1389,7 @@ function Helpers:CreateProgressBar(parent, width, height, ramp)
         if ramp then
             col = (value >= PROGRESS_OK and C.ok) or (value >= PROGRESS_WARN and C.warn) or C.danger
         else
-            col = (value >= 1 and C.ok) or C.textSoft
+            col = (value >= 1 and C.ok) or going
         end
         self.bar:SetVertexColor(col.r, col.g, col.b, 1)
     end
@@ -1530,7 +1542,8 @@ function Helpers:CreateTab(parent, text, width, sub)
             self.__bold = active
             GuildOS:ApplyFont(self.label, 12, active and "button" or nil)
         end
-        local ink = (active and C.onGold) or (hovered and C.text) or C.door
+        -- On a parchment card the door's cream is invisible: at rest, and under the cursor, the quiet button's ink.
+        local ink = (active and C.onGold) or (self.__paperInk and C.quietInk) or (hovered and C.text) or C.door
         self.label:SetTextColor(ink.r, ink.g, ink.b)
     end
 
@@ -1538,6 +1551,7 @@ function Helpers:CreateTab(parent, text, width, sub)
         tab.isActive = active
         paint(tab, false)
     end
+    tab.__paperInk = Helpers:OnPaper(parent) or nil
 
     tab:SetActive(false)
 
@@ -1675,6 +1689,9 @@ function GuildOS:ShowDialog(which, textArg1, textArg2, data)
         end
     end
     f = f or newDialog(#dialogFrames + 1)
+    -- Dressed as the mockup's modal (UI/Kit.lua) before anything is laid out: the reading face changes the
+    -- text's height the box is sized from.
+    if GuildOS.Kit and GuildOS.Kit.DressDialog then GuildOS.Kit:DressDialog(f) end
 
     f.which, f.def, f.data, f.data2, f.answered = which, def, data, nil, false
     f.showing = (f.showing or 0) + 1

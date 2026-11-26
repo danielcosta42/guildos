@@ -44,7 +44,10 @@ local function session()
 end
 
 -- An open Trials panel's refresh, set by the panel (UI/FeaturePanels.lua); nil while none was built.
+-- The window's officers' counts (its Trials badge) are counted again at its next layout (#449).
 function TrialTracker:RefreshUI()
+    local w = GuildOS.RosterFrame
+    if w and w.InvalidateOfficerCounts then w:InvalidateOfficerCounts() end
     if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
 end
 

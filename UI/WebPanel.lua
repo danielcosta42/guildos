@@ -350,7 +350,7 @@ function GuildOS:ShowRaidPrompt(roster)
     if digest and digest:IsShown() then digest:Hide() end
     local title = roster.title
     if not title or title == "" then title = roster.instance or L["Raid"] end
-    prompt.title:SetText(GuildOS.SanitizeUserText and GuildOS:SanitizeUserText(title) or title)
+    GuildOS:SetTitleText(prompt.title, GuildOS.SanitizeUserText and GuildOS:SanitizeUserText(title) or title)
     prompt.roster = roster
     prompt.when:SetText(promptWhen(roster))
     if prompt:IsShown() then GuildOS:RefreshRaidSteppers() end

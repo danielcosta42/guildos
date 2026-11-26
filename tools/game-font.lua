@@ -73,4 +73,35 @@ GuildOS:SetTitleText(t, "Guardi\195\181es \226\128\148 Forte")
 check(t.file == F.title, "accents and a dash are still Latin")
 check(GuildOS.IsLatinText("\234\184\184\235\147\156") == false, "Hangul is not")
 
+-- Every title that is handed a player's or a site's text sets it through SetTitleText (#449): a guild, a
+-- player or an event named in Cyrillic or Greek would draw as boxes in Cinzel on a non-ruRU client.
+local function read(path)
+  local fh = assert(io.open(ADDON .. "/" .. path, "rb"))
+  local src = fh:read("*a")
+  fh:close()
+  return src
+end
+for _, site in ipairs({
+  { "UI/MemberDetail.lua", "GuildOS:SetTitleText(frame.nameText," },
+  { "UI/OfficerSheet.lua", "GuildOS:SetTitleText(f.title, string.format(L[\"Officer sheet: %s\"]" },
+  { "UI/GuildFinder.lua", "GuildOS:SetTitleText(gname, ad.n)" },
+  { "UI/GuildFinder.lua", "GuildOS:SetTitleText(shieldText, initial(ad.n))" },
+  { "UI/GuildFinder.lua", "GuildOS:SetTitleText(stateTitle, head)" },
+  { "UI/AlliancePanel.lua", "GuildOS:SetTitleText(title, name == pact.tag" },
+  { "UI/GuildBankPanel.lua", "GuildOS:SetTitleText(title, string.format(\"%d \194\183 %s\"" },
+  { "UI/WebPanel.lua", "GuildOS:SetTitleText(prompt.title," },
+  { "Modules/CallToArms.lua", "GuildOS:SetTitleText(f.title, e.title)" },
+  { "UI/AchievementsPanel.lua", "GuildOS:SetTitleText(nameFS, name or renown)" },
+  { "UI/WarnDialog.lua", "GuildOS:SetTitleText(title, string.format(L[\"Warn %s\"], name))" },
+  { "UI/RaidPlanPanel.lua", "GuildOS:SetTitleText(task.title, boss)" },
+}) do
+  check(read(site[1]):find(site[2], 1, true), site[1] .. " sets its title through SetTitleText: " .. site[2])
+end
+for _, bad in ipairs({
+  { "UI/GuildFinder.lua", "gname:SetText(" }, { "UI/MemberDetail.lua", "frame.nameText:SetText(" },
+  { "Modules/CallToArms.lua", "f.title:SetText(" }, { "UI/WebPanel.lua", "prompt.title:SetText(" },
+}) do
+  check(not read(bad[1]):find(bad[2], 1, true), bad[1] .. " no longer sets a title with SetText: " .. bad[2])
+end
+
 print(("game-font: %d checks passed"):format(checks))

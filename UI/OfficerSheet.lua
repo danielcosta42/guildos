@@ -296,7 +296,7 @@ function GuildOS:ShowOfficerSheetEditor(key, name)
     local f = RosterCard.editor or buildEditor()
     RosterCard.editor = f
     f.key, f.name = key, name or short(key)
-    f.title:SetText(string.format(L["Officer sheet: %s"], f.name))
+    GuildOS:SetTitleText(f.title, string.format(L["Officer sheet: %s"], f.name))
     -- WoW: Forever: the sheet stays on this client (audit B11).
     f.hint:SetText(self:LocalOnlyText() or L["Only officers receive and see it. Never sent to the website."])
     local sheet = self.OfficerNotes:GetSheet(key)

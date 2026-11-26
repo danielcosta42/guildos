@@ -91,24 +91,68 @@ local function MakeScrollList(panel, name, topInset)
 end
 
 -- A row hung by both top corners: a width read at refresh time is 0 on a hidden tab (#371).
--- A 1px line of the paper's under it, as the mockup's tables.
+-- A 1px line of the paper's under it, as the mockup's tables. Rows are kept on the content and handed out
+-- again in order (#449): a refresh draws over the last one's frames instead of leaving them under it.
 local function MakeRow(content, yOff)
-    local row = CreateFrame("Frame", nil, content)
-    row:SetHeight(ROW_H)
+    content.__rows = content.__rows or {}
+    content.__nRows = (content.__nRows or 0) + 1
+    local row = content.__rows[content.__nRows]
+    if not row then
+        row = CreateFrame("Frame", nil, content)
+        row:SetHeight(ROW_H)
+        local rule = row:CreateTexture(nil, "BACKGROUND")
+        rule:SetTexture(WHITE)
+        rule:SetHeight(1)
+        rule:SetPoint("TOPLEFT", 0, -ROW_H - 1)
+        rule:SetPoint("TOPRIGHT", 0, -ROW_H - 1)
+        rule:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
+        row.cells = {}
+        content.__rows[content.__nRows] = row
+    end
+    for _, cell in pairs(row.cells) do cell:Hide() end
+    row:ClearAllPoints()
     row:SetPoint("TOPLEFT", 0, -yOff)
     row:SetPoint("TOPRIGHT", 0, -yOff)
-    local rule = row:CreateTexture(nil, "BACKGROUND")
-    rule:SetTexture(WHITE)
-    rule:SetHeight(1)
-    rule:SetPoint("TOPLEFT", 0, -ROW_H - 1)
-    rule:SetPoint("TOPRIGHT", 0, -ROW_H - 1)
-    rule:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
+    row:Show()
     return row
 end
 
+-- A row's (or a header's) text `key`: made the first time, set again on every refresh after. Unanchored.
+local function Cell(owner, key, text, size, r, g, b)
+    owner.cells = owner.cells or {}
+    local fs = owner.cells[key]
+    if not fs then
+        fs = UI:CreateText(owner, "", size, r, g, b)
+        owner.cells[key] = fs
+    elseif r then
+        if GuildOS.UI.OnPaper and GuildOS.UI:OnPaper(owner) then r, g, b = onPaper(r, g, b) end
+        fs:SetTextColor(r, g, b)
+    end
+    fs:ClearAllPoints()
+    fs:SetText(text or "")
+    fs:Show()
+    return fs
+end
+
+-- A row's status badge `key`, kept like its texts.
+local function Badge(row, key, text, color)
+    local b = row.cells[key]
+    if b then b:SetText(text, color) else b = UI:CreateBadge(row, text, color); row.cells[key] = b end
+    b:ClearAllPoints()
+    b:Show()
+    return b
+end
+
+-- A line drawn straight on the content (an empty list's message, the sync's lines): the content's next one.
+local function Line(content, text, size, r, g, b)
+    content.__nLines = (content.__nLines or 0) + 1
+    return Cell(content, "line" .. content.__nLines, text, size, r, g, b)
+end
+
 -- What a refresh drew goes before the next one: the rows, and the lines and titles drawn straight on
--- the content (they stayed on, under the next drawing).
+-- the content; the next refresh takes them again from the first.
 local function ClearContent(content)
+    content.__nRows, content.__nLines, content.__nTitles = 0, 0, 0
     for _, child in pairs({ content:GetChildren() }) do child:Hide() end
     for _, region in pairs({ content:GetRegions() }) do region:Hide() end
 end
@@ -126,8 +170,18 @@ end
 local function SectionTitle(content, text, yOff)
     local first = yOff == 0
     if not first then yOff = yOff + HEAD_ABOVE end
-    local t = UI:CreateSectionTitle(content, text, first)
+    content.__titles = content.__titles or {}
+    content.__nTitles = (content.__nTitles or 0) + 1
+    local t = content.__titles[content.__nTitles]
+    if not t then
+        t = UI:CreateSectionTitle(content, "", false)
+        content.__titles[content.__nTitles] = t
+    end
+    GuildOS:SetTitleText(t, text)
+    t:ClearAllPoints()
     t:SetPoint("TOPLEFT", 0, -yOff)
+    t:Show()
+    if t.rule then t.rule:SetShown(not first) end
     return yOff + HEAD_H
 end
 
@@ -248,7 +302,7 @@ local function BuildReadySub(panel)
         for _, r in ipairs(rows) do
             local row = MakeRow(content, yOff)
             local cr, cg, cb = paperClass(r.class)
-            local nameFS = UI:CreateText(row, r.name, 12, cr, cg, cb)
+            local nameFS = Cell(row, "nameFS", r.name, 12, cr, cg, cb)
             GuildOS:ApplyFont(nameFS, 12, "button")
             nameFS:SetPoint("LEFT", 8, 0)
             if r.status == "nodata" then nameFS:SetTextColor(C.labelDim.r, C.labelDim.g, C.labelDim.b) end
@@ -256,28 +310,28 @@ local function BuildReadySub(panel)
             -- The status as the mockup's badge: green ready, amber to check, red not ready.
             local badge
             if r.status == "ready" then
-                badge = UI:CreateBadge(row, L["ready"], C.ok)
+                badge = Badge(row, "badge", L["ready"], C.ok)
             elseif r.status == "notready" and r.reason == "level" then
-                badge = UI:CreateBadge(row, L["Level"] .. " " .. (r.level or 0), C.danger)
+                badge = Badge(row, "badge", L["Level"] .. " " .. (r.level or 0), C.danger)
             elseif r.status == "notready" then
-                badge = UI:CreateBadge(row, L["not attuned"], C.danger)
+                badge = Badge(row, "badge", L["not attuned"], C.danger)
             elseif r.status == "warn" then
-                badge = UI:CreateBadge(row, L["check"], C.warn)
+                badge = Badge(row, "badge", L["check"], C.warn)
             end
             if badge then
                 badge:SetPoint("LEFT", 160, 0)
             else
-                UI:CreateText(row, tint(DASH, C.labelDim), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b):SetPoint("LEFT", 160, 0)
+                Cell(row, "dash", tint(DASH, C.labelDim), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b):SetPoint("LEFT", 160, 0)
             end
 
             -- A 60 with no addon data is ready by level only, said where its item level would be (#207).
-            local ilvlFS = UI:CreateText(row, r.levelOnly and L["level only"] or r.ilvl > 0 and tostring(r.ilvl) or "\226\128\148",
+            local ilvlFS = Cell(row, "ilvlFS", r.levelOnly and L["level only"] or r.ilvl > 0 and tostring(r.ilvl) or "\226\128\148",
                 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
             ilvlFS:SetPoint("LEFT", 250, 0)
             ilvlFS:SetWidth(56); ilvlFS:SetWordWrap(false); ilvlFS:SetJustifyH("LEFT")
 
             if forever then
-                local lvlFS = UI:CreateText(row, tostring(r.level or 0), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+                local lvlFS = Cell(row, "lvlFS", tostring(r.level or 0), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
                 lvlFS:SetPoint("LEFT", 310, 0)
             end
             if hasAttune then
@@ -285,7 +339,7 @@ local function BuildReadySub(panel)
                 local attColor = (r.attTotal > 0 and r.attDone == r.attTotal) and C.ok or C.warn
                 if r.targetOk == false then attColor = C.danger elseif r.targetOk == true then attColor = C.ok end
                 local attTxt = r.attTotal > 0 and (r.attDone .. "/" .. r.attTotal) or "\226\128\148"
-                local attFS = UI:CreateText(row, attTxt, 11, attColor.r, attColor.g, attColor.b)
+                local attFS = Cell(row, "attFS", attTxt, 11, attColor.r, attColor.g, attColor.b)
                 attFS:SetPoint("LEFT", 310, 0)
             end
 
@@ -293,7 +347,7 @@ local function BuildReadySub(panel)
             if not r.hasGear then enchTxt, ec = "\226\128\148", C.label
             elseif r.missEnch > 0 then enchTxt, ec = string.format(L["%d missing"], r.missEnch), C.danger
             else enchTxt, ec = "OK", C.ok end
-            local enchFS = UI:CreateText(row, enchTxt, 11, ec.r, ec.g, ec.b)
+            local enchFS = Cell(row, "enchFS", enchTxt, 11, ec.r, ec.g, ec.b)
             enchFS:SetPoint("LEFT", 400, 0)
 
             if forever then
@@ -303,12 +357,12 @@ local function BuildReadySub(panel)
                     if s.core == panel.coreName then seat = s end
                 end
                 local more = (#r.seats > 1 and not panel.coreName) and (" +" .. (#r.seats - 1)) or ""
-                local coreFS = UI:CreateText(row, seat and (seat.core .. more) or "\226\128\148", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+                local coreFS = Cell(row, "coreFS", seat and (seat.core .. more) or "\226\128\148", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
                 coreFS:SetPoint("LEFT", 470, 0)
                 coreFS:SetWidth(104); coreFS:SetWordWrap(false); coreFS:SetJustifyH("LEFT")
                 local rc = (seat and seat.main) and C.textSoft or C.label
                 local roleName = seat and GuildOS.CoreManager.ROLE_LABELS[seat.role]
-                local roleFS = UI:CreateText(row, roleName or "\226\128\148", 11, rc.r, rc.g, rc.b)
+                local roleFS = Cell(row, "roleFS", roleName or "\226\128\148", 11, rc.r, rc.g, rc.b)
                 roleFS:SetPoint("LEFT", 580, 0)
             end
 
@@ -317,7 +371,7 @@ local function BuildReadySub(panel)
                 if r.missCons == nil then consTxt, cc = "\226\128\148", C.label
                 elseif r.missCons > 0 then consTxt, cc = string.format(L["%d missing"], r.missCons), C.danger
                 else consTxt, cc = "OK", C.ok end
-                local consFS = UI:CreateText(row, consTxt, 11, cc.r, cc.g, cc.b)
+                local consFS = Cell(row, "consFS", consTxt, 11, cc.r, cc.g, cc.b)
                 consFS:SetPoint("LEFT", 510, 0)
             end
 
@@ -325,7 +379,7 @@ local function BuildReadySub(panel)
         end
 
         if #rows == 0 then
-            local empty = UI:CreateText(content, L["No roster data yet."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            local empty = Line(content, L["No roster data yet."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
             empty:SetPoint("TOPLEFT", 8, -4)
         end
         content:SetHeight(math.max(1, yOff))
@@ -378,7 +432,7 @@ local function BuildAttuneSub(panel)
 
     return function()
         ClearContent(content)
-        for _, fs in ipairs(panel.headerCells) do fs:Hide() end
+        for _, fs in pairs(panel.headerCells) do fs:Hide() end
 
         local cols, rows = GuildOS.AttunementTracker:GetGuildMatrix()
 
@@ -387,31 +441,38 @@ local function BuildAttuneSub(panel)
         for _, r in ipairs(rows) do if r.hasData then totalsWithData = totalsWithData + 1 end end
         for ci, col in ipairs(cols) do
             local x = NAME_W + (ci - 1) * COL_W
-            local lbl = UI:CreateHeaderText(header, col.short, 10)
+            -- Kept by column: a refresh sets them again (#449).
+            local lbl = panel.headerCells["lbl" .. ci]
+            if not lbl then
+                lbl = UI:CreateHeaderText(header, "", 10)
+                panel.headerCells["lbl" .. ci] = lbl
+            end
+            lbl:SetText(col.short)
+            lbl:ClearAllPoints()
             lbl:SetPoint("LEFT", x, 6)
-            panel.headerCells[#panel.headerCells + 1] = lbl
+            lbl:Show()
             local doneN = 0
             for _, r in ipairs(rows) do
                 local c = r.cells[col.short]
                 if c and c.complete then doneN = doneN + 1 end
             end
-            local cnt = UI:CreateText(header, doneN .. "/" .. totalsWithData, 10, C.label.r, C.label.g, C.label.b)
+            local cnt = Cell(header, "cnt" .. ci, doneN .. "/" .. totalsWithData, 10, C.label.r, C.label.g, C.label.b)
             cnt:SetPoint("LEFT", x, -8)
-            panel.headerCells[#panel.headerCells + 1] = cnt
+            panel.headerCells["cnt" .. ci] = cnt
         end
 
         local yOff = 0
         for _, r in ipairs(rows) do
             local row = MakeRow(content, yOff)
             local cr, cg, cb = paperClass(r.class)
-            local nameFS = UI:CreateText(row, r.name, 12, cr, cg, cb)
+            local nameFS = Cell(row, "nameFS", r.name, 12, cr, cg, cb)
             GuildOS:ApplyFont(nameFS, 12, "button")
             nameFS:SetPoint("LEFT", 8, 0)
             if not r.hasData then nameFS:SetTextColor(C.labelDim.r, C.labelDim.g, C.labelDim.b) end
 
             for ci, col in ipairs(cols) do
                 local x = NAME_W + (ci - 1) * COL_W
-                local cell = UI:CreateText(row, "", 11, C.text.r, C.text.g, C.text.b)
+                local cell = Cell(row, "cell" .. ci, "", 11, C.text.r, C.text.g, C.text.b)
                 cell:SetPoint("LEFT", x, 0)
                 local c = r.cells[col.short]
                 if not r.hasData or not c then
@@ -428,7 +489,7 @@ local function BuildAttuneSub(panel)
         end
 
         if #rows == 0 then
-            local empty = UI:CreateText(content, L["No roster data yet."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            local empty = Line(content, L["No roster data yet."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
             empty:SetPoint("TOPLEFT", 8, -4)
         end
         content:SetHeight(math.max(1, yOff))
@@ -475,7 +536,7 @@ local function BuildResistSub(panel)
         for _, r in ipairs(rows) do
             local row = MakeRow(content, yOff)
             local cr, cg, cb = paperClass(r.class)
-            local nameFS = UI:CreateText(row, r.name, 12, cr, cg, cb)
+            local nameFS = Cell(row, "nameFS", r.name, 12, cr, cg, cb)
             GuildOS:ApplyFont(nameFS, 12, "button")
             nameFS:SetPoint("LEFT", 8, 0)
 
@@ -489,14 +550,14 @@ local function BuildResistSub(panel)
                 elseif tier == "partial" then col = C.warn
                 elseif tier == "low" then col = C.textSoft end
                 local txt = v > 0 and tostring(v) or tint("\226\128\148", C.labelDim)
-                local cell = UI:CreateText(row, txt, 11, col.r, col.g, col.b)
+                local cell = Cell(row, "cell" .. ci, txt, 11, col.r, col.g, col.b)
                 cell:SetPoint("LEFT", x, 0)
             end
             yOff = yOff + ROW_H + 2
         end
 
         if #rows == 0 then
-            local empty = UI:CreateText(content, L["No resistance data synced yet."], 11,
+            local empty = Line(content, L["No resistance data synced yet."], 11,
                 C.textSoft.r, C.textSoft.g, C.textSoft.b)
             empty:SetPoint("TOPLEFT", 8, -4)
         end
@@ -530,16 +591,16 @@ local function BuildEnchantSub(panel)
         for _, r in ipairs(problems) do
             local row = MakeRow(content, yOff)
             local cr, cg, cb = paperClass(r.class)
-            local nameFS = UI:CreateText(row, r.name, 12, cr, cg, cb)
+            local nameFS = Cell(row, "nameFS", r.name, 12, cr, cg, cb)
             GuildOS:ApplyFont(nameFS, 12, "button")
             nameFS:SetPoint("LEFT", 8, 0)
 
-            local cntFS = UI:CreateText(row, string.format(L["%d missing"], r.missingCount), 11, C.danger.r, C.danger.g, C.danger.b)
+            local cntFS = Cell(row, "cntFS", string.format(L["%d missing"], r.missingCount), 11, C.danger.r, C.danger.g, C.danger.b)
             cntFS:SetPoint("LEFT", 150, 0)
 
             -- Up to the row's right edge by anchors: a width read at refresh time is 0 on a hidden tab.
             local slots = table.concat(r.missing, ", ")
-            local slotsFS = UI:CreateText(row, slots, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            local slotsFS = Cell(row, "slotsFS", slots, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
             slotsFS:SetPoint("LEFT", 250, 0)
             slotsFS:SetPoint("RIGHT", -8, 0)
             slotsFS:SetJustifyH("LEFT")
@@ -552,7 +613,7 @@ local function BuildEnchantSub(panel)
             -- Everyone enchanted is good news, in ok; no data yet is a plain line.
             local msg = #all == 0 and L["No gear data synced yet."] or L["Everyone is fully enchanted!"]
             local col = #all == 0 and C.textSoft or C.ok
-            local empty = UI:CreateText(content, msg, 11, col.r, col.g, col.b)
+            local empty = Line(content, msg, 11, col.r, col.g, col.b)
             empty:SetPoint("TOPLEFT", 8, -4)
         end
         content:SetHeight(math.max(1, yOff))
@@ -687,7 +748,7 @@ local function BuildSyncSub(panel)
                 line = line .. "  -  " .. string.format(L["top drop reason: %s"],
                     (cs.DROP_REASON_TEXT or {})[n.topReason] or n.topReason)
             end
-            local fs = UI:CreateText(content, line, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            local fs = Line(content, line, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
             fs:SetPoint("TOPLEFT", 0, -yOff)
             yOff = yOff + LINE_H + 2
         end
@@ -697,7 +758,7 @@ local function BuildSyncSub(panel)
         ------------------------------------------------------------------
         yOff = SectionTitle(content, L["Performance"], yOff)
         for _, line in ipairs(GuildOS.Perf:Lines()) do
-            local fs = UI:CreateText(content, line, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            local fs = Line(content, line, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
             fs:SetPoint("TOPLEFT", 0, -yOff)
             yOff = yOff + LINE_H
         end
@@ -717,7 +778,7 @@ local function BuildSyncSub(panel)
         if lines then
             yOff = SectionTitle(content, L["Recruitment"], yOff)
             for _, line in ipairs(lines) do
-                local fs = UI:CreateText(content, line, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+                local fs = Line(content, line, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
                 fs:SetPoint("TOPLEFT", 0, -yOff)
                 yOff = yOff + LINE_H
             end
@@ -734,7 +795,7 @@ local function BuildSyncSub(panel)
         local link = GuildOS.AllianceLink
         if link and link:Active() then
             yOff = SectionTitle(content, L["Alliance code"], yOff)
-            local stats = UI:CreateText(content, link:StatusLine(), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            local stats = Line(content, link:StatusLine(), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
             stats:SetPoint("TOPLEFT", 0, -yOff)
             yOff = yOff + LINE_H + GAP
         end
@@ -742,24 +803,24 @@ local function BuildSyncSub(panel)
         for _, r in ipairs(rows) do
             local row = MakeRow(content, yOff)
             local cr, cg, cb = paperClass(r.class)
-            local nameFS = UI:CreateText(row, r.name, 12, cr, cg, cb)
+            local nameFS = Cell(row, "nameFS", r.name, 12, cr, cg, cb)
             GuildOS:ApplyFont(nameFS, 12, "button")
             nameFS:SetPoint("LEFT", 8, 0)
 
             if not r.hasAddon then
-                local st = UI:CreateText(row, L["no addon"], 11, C.danger.r, C.danger.g, C.danger.b)
+                local st = Cell(row, "st", L["no addon"], 11, C.danger.r, C.danger.g, C.danger.b)
                 st:SetPoint("LEFT", 180, 0)
             else
-                local st = UI:CreateText(row, ICON_DONE, 11, C.text.r, C.text.g, C.text.b)
+                local st = Cell(row, "st", ICON_DONE, 11, C.text.r, C.text.g, C.text.b)
                 st:SetPoint("LEFT", 180, 0)
                 -- An outdated version is a warning: gold is not a status (#371).
                 local verColor = r.outdated and C.warn or C.textSoft
                 local verStr = r.version and ("v" .. r.version) or "?"
                 if r.outdated then verStr = verStr .. L[" (outdated)"] end
-                local ver = UI:CreateText(row, verStr, 11, verColor.r, verColor.g, verColor.b)
+                local ver = Cell(row, "ver", verStr, 11, verColor.r, verColor.g, verColor.b)
                 ver:SetPoint("LEFT", 220, 0)
 
-                local last = UI:CreateText(row, GuildOS:TimeAgo(r.lastUpdate), 11, C.label.r, C.label.g, C.label.b)
+                local last = Cell(row, "last", GuildOS:TimeAgo(r.lastUpdate), 11, C.label.r, C.label.g, C.label.b)
                 last:SetPoint("LEFT", 420, 0)
             end
 
@@ -767,7 +828,7 @@ local function BuildSyncSub(panel)
         end
 
         if #rows == 0 then
-            local empty = UI:CreateText(content, L["No roster data yet."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            local empty = Line(content, L["No roster data yet."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
             empty:SetPoint("TOPLEFT", 8, -(yOff + 4))
         end
         content:SetHeight(math.max(1, yOff))

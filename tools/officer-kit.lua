@@ -109,15 +109,28 @@ check(a.points[1][1] == "RIGHT" and a.points[1][2] == f.foot and bb.points[1][2]
 f:SetTitle("Warn", "Nyx")
 check(f.titleText:GetText() == "Warn" and f.subText:GetText() == "Nyx", "the title changes with SetTitle")
 
+local function read(p) return assert(io.open(ADDON .. "/" .. p, "rb")):read("*a") end
 -- ── The dialog as a parchment card ──────────────────────────────────────
 GuildOS.Dialogs.KIT = { text = "Remove %s?", button1 = "Remove", button2 = "Cancel" }
 local d = GuildOS:ShowDialog("KIT", "Nyx")
 check(d and d.__paper and d.button1.variant == "primary" and d.button1.__onPaper and d.button2.__onPaper,
   "GuildOS's dialog is a parchment card: the answer crimson, the others the paper's quiet buttons")
 check(d.text:GetText() == "Remove Nyx?", "and still says what it asks")
+-- Dressed before it is laid out (#449): the reading face's height is the one the box is sized from, the first
+-- time a frame shows too. The reading face here draws 40px tall, the stub's other faces 20px.
+local applyFont = GuildOS.ApplyFont
+function GuildOS:ApplyFont(fs, size, role)
+  if role == "reading" then fs.GetStringHeight = function() return 40 end end
+  return applyFont(self, fs, size, role)
+end
+local fresh = GuildOS:ShowDialog("GUILDOS_STYLE_RELOAD", "Reload?")
+GuildOS.ApplyFont = applyFont
+check(fresh and fresh ~= d and fresh.__kitDressed, "a second question takes a new frame, dressed")
+check(fresh.height == 40 + 72, "sized from the dressed text on its first show, not the undressed one (got " .. tostring(fresh.height) .. ")")
+check(not read("UI/Kit.lua"):find("showDialog(self", 1, true), "the kit no longer wraps ShowDialog to dress after the sizing")
+fresh:Hide()
 
 -- ── The screens and windows wear them ───────────────────────────────────
-local function read(p) return assert(io.open(ADDON .. "/" .. p, "rb")):read("*a") end
 check(read("GuildOS.toc"):find("UI\\Helpers.lua\r?\nUI\\Kit.lua"), "the kit loads right after the shared helpers")
 for _, p in ipairs({ "UI/ManagementPanel.lua", "UI/RosterFrame.lua", "UI/AlliancePanel.lua", "UI/SettingsPanel.lua" }) do
   check(read(p):find("UI:CreateCard(", 1, true), p .. " draws its screens on parchment cards")
@@ -133,6 +146,45 @@ for _, p in ipairs({ "UI/ManagementPanel.lua", "UI/BulkPanel.lua", "UI/RemindPan
     local t = line:match('[sS]ectionTitle%(%w+, L%["([^"]+)"%]') or line:match('CreateCard%(%w+, L%["([^"]+)"%]')
     if t then check(t ~= t:upper(), p .. ": " .. t .. " is not in upper case") end
   end
+end
+
+-- ── The shared parts on the paper (#449) ────────────────────────────────
+-- UI/Helpers.lua draws them for the paper itself; the kit's names hand them on. The checkbox keeps its box's
+-- textures by name (not by GetRegions' order) and repaints on enable as on disable.
+local function same(c, want) return c and math.abs(c[1] - want.r) < 1e-3 and math.abs(c[2] - want.g) < 1e-3 and math.abs(c[3] - want.b) < 1e-3 end
+local card = frame(UIParent)
+card.__paper = true
+local box = Kit:Checkbox(card, "Auto", 20)
+local cb = box.checkbox
+check(cb.border and cb.fill, "a checkbox keeps its border and fill by name")
+check(same(cb.fill.color, C.paperLight) and same(cb.border.color, C.paperEdge) and same(cb.checkMark.color, C.paperTitle)
+  and same(box.label.color, C.paperInk), "on a card: the paper's light field, its tan line, the dark red mark, the paper's ink")
+local enabled = true
+cb.IsEnabled = function() return enabled end
+enabled = false
+cb.scripts.OnDisable(cb)
+check(same(cb.border.color, C.disabled), "disabled, the line is the disabled one")
+enabled = true
+cb.scripts.OnEnable(cb)
+check(same(cb.border.color, C.paperEdge), "enabled again, back to the paper's tan line")
+local wood = UI:CreateCheckbox(frame(UIParent), "Auto", 20)
+check(same(wood.checkbox.fill.color, C.well) and same(wood.checkbox.border.color, C.lineHi) and same(wood.label.color, C.text),
+  "on the wood it is the wood's")
+check(same(Kit:Separator(card).color, C.paperLine) and same(UI:CreateSeparator(frame(UIParent)).color, C.line),
+  "a separator: the paper's tan on a card, the wood's line elsewhere")
+local tab = UI:CreateTab(card, "Rule", 80)
+check(same(tab.label.color, C.quietInk), "a tab at rest on a card takes the quiet button's ink")
+tab.scripts.OnEnter(tab)
+check(same(tab.label.color, C.quietInk), "and keeps it under the cursor")
+tab:SetActive(true)
+check(same(tab.label.color, C.onGold), "the open one the soft gold pill's dark ink")
+local woodTab = UI:CreateTab(frame(UIParent), "Rule", 80)
+check(same(woodTab.label.color, C.door), "on the wood the door's ink")
+local bar = UI:CreateProgressBar(card, 100, 8)
+bar:SetProgress(0.5)
+check(same(bar.bar.color, C.paperSoft), "a progress bar on a card fills in the paper's soft ink")
+for _, p in ipairs({ "UI/LootWindow.lua", "UI/PointsPanel.lua" }) do
+  check(not read(p):find("CreateCheckbox = function", 1, true), p .. " no longer repaints the shared checkbox for the paper")
 end
 
 print(("officer-kit: %d checks passed"):format(checks))

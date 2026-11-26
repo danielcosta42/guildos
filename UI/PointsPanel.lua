@@ -26,11 +26,6 @@ local UI = setmetatable({
         if r and paperOf(parent) then r, g, b = onPaper(r, g, b) end
         return GuildOS.UI.CreateText(self, parent, text, size, r, g, b)
     end,
-    CreateCheckbox = function(self, parent, ...)
-        local cb = GuildOS.UI.CreateCheckbox(self, parent, ...)
-        if cb and cb.label and paperOf(parent) then cb.label:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b) end
-        return cb
-    end,
 }, { __index = function(_, k) return GuildOS.UI[k] end })
 
 local ROW_H    = 28

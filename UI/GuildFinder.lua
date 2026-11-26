@@ -344,8 +344,8 @@ local function BuildFinder()
     local function DrawCard(ad)
         local tint = FACTION_TINT[ad.f] or { 0.25, 0.25, 0.28 }
         shield:SetBackdropColor(tint[1], tint[2], tint[3], 1)
-        shieldText:SetText(initial(ad.n))
-        gname:SetText(ad.n)
+        GuildOS:SetTitleText(shieldText, initial(ad.n))
+        GuildOS:SetTitleText(gname, ad.n)
         local world = {}
         if factionName(ad.f) then world[#world + 1] = factionName(ad.f) end
         if ad.w then world[#world + 1] = worldName(ad.w) end
@@ -590,8 +590,8 @@ local function BuildJoinForm()
         if not ad then return end
         local tint = FACTION_TINT[ad.f] or { 0.25, 0.25, 0.28 }
         shield:SetBackdropColor(tint[1], tint[2], tint[3], 1)
-        shieldText:SetText(initial(ad.n))
-        gname:SetText(ad.n)
+        GuildOS:SetTitleText(shieldText, initial(ad.n))
+        GuildOS:SetTitleText(gname, ad.n)
         gworld:SetText(ad.w and worldName(ad.w) or "")
 
         local e = JR():Latest(ad)
@@ -602,7 +602,7 @@ local function BuildJoinForm()
         if sent then
             local tone, head, line = StateOf(e)
             dot:SetVertexColor(TONE[tone][1], TONE[tone][2], TONE[tone][3], 1)
-            stateTitle:SetText(head)
+            GuildOS:SetTitleText(stateTitle, head)
             stateText:SetText(line)
         else
             local me = JR():Me()

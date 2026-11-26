@@ -95,11 +95,27 @@ function GuildOS:MinimapMenuItems()
             func = function() close(); GuildOS.UI:OpenWindow("recipes", "forme") end }
     end
 
+    -- The window's rooms, as its top bar draws them (#449), then the gear's Settings (never in VisibleRooms).
+    local UI = GuildOS.UI
+    local function openRoom(id)
+        local f = UI:GetMainWindow()
+        if not f then return end
+        f:Show()
+        -- A room asked for by name has to be seen, so the bar opens back up.
+        local g = GuildOS:GetSetting("window")
+        if (type(g) == "table" and g.collapsed) or f.band == "bar" then f:ToggleCollapsed() end
+        f:OpenRoom(id, true)
+    end
     local first = true
-    for _, def in ipairs(GuildOS.UI:VisibleFeatures("tab")) do
-        items[#items + 1] = { text = def.label, rule = first and #items > 1,
-            func = function() close(); GuildOS.UI:OpenWindow(def.id) end }
+    for _, room in ipairs(UI.VisibleRooms and UI:VisibleRooms() or {}) do
+        local id = room.id
+        items[#items + 1] = { text = room.label, rule = first and #items > 1,
+            func = function() close(); openRoom(id) end }
         first = false
+    end
+    if UI.RoomAllowed and UI:RoomAllowed("settings") then
+        items[#items + 1] = { text = L["Settings"], rule = first and #items > 1,
+            func = function() close(); openRoom("settings") end }
     end
 
     items[#items + 1] = { text = L["Do I know this pug?"], rule = true, func = function()
@@ -157,11 +173,22 @@ local function buildMenu()
     menuFrame.rows = {}
     menuFrame:Hide()
     table.insert(UISpecialFrames, "GuildOSMinimapMenu")   -- Escape closes it
-    -- A click anywhere else closes it: a see-through catcher under it, shown while it is.
+    -- A click anywhere else closes it. Where the client has GLOBAL_MOUSE_DOWN it is heard, and nothing
+    -- covers the screen; a press on the menu or on the button (whose own click toggles it) is not "else".
+    if GuildOS.Compat.RegisterEvent(menuFrame, "GLOBAL_MOUSE_DOWN", true) then
+        menuFrame:SetScript("OnEvent", function(self, event)
+            if event ~= "GLOBAL_MOUSE_DOWN" or not self:IsShown() or self:IsMouseOver() then return end
+            local btn = GuildOS.minimapButton
+            if btn and btn:IsMouseOver() then return end
+            self:Hide()
+        end)
+        return
+    end
+    -- Otherwise a see-through catcher, shown while it is: on DIALOG, under the menu's FULLSCREEN_DIALOG,
+    -- so the game's own full-screen dialogs stay above it.
     menuCatcher = CreateFrame("Button", nil, UIParent)
     menuCatcher:SetAllPoints(UIParent)
-    menuCatcher:SetFrameStrata("FULLSCREEN_DIALOG")
-    menuCatcher:SetFrameLevel(10)
+    menuCatcher:SetFrameStrata("DIALOG")
     menuCatcher:RegisterForClicks("AnyUp")
     menuCatcher:SetScript("OnClick", function() menuFrame:Hide() end)
     menuCatcher:Hide()

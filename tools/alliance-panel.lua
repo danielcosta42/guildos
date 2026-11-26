@@ -85,6 +85,7 @@ GuildOS = {
 function GuildOS:IsOfficer() return officer end
 function GuildOS:SafeCall(fn, ...) return true, fn(...) end
 function GuildOS:SanitizeUserText(t) return tostring(t or "") end
+function GuildOS:SetTitleText(fs, t) fs:SetText(t) end   -- Core/Data.lua's, the face aside
 function GuildOS:GetPlayerKey(n, r) return n .. "-" .. r end
 function GuildOS:LocalDate(fmt, ts) return os.date(fmt, ts) end
 function GuildOS:GetClassColor() return 1, 1, 1 end

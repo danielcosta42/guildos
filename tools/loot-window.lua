@@ -808,6 +808,25 @@ local function popup()
   check(f.ruleText.text:find("/roll", 1, true), "and the line says they are /roll")
   click(f, "OS")
   check(rolled == "1-99", "OS is /roll 1-99")
+
+  -- One popup frame, filled again on every roll (#449): no new frame for the same rule, and painted once.
+  local Style = GuildOS.Style
+  local paints, realPaint = 0, Style.Paint
+  Style.Paint = function(st, frame, ...) if frame == f then paints = paints + 1 end; return realPaint(st, frame, ...) end
+  LM:ShowRollPopup(LINK1, 30, 28770, ask)
+  local framesBefore = #allFrames
+  LM:ShowRollPopup(LINK1, 20, 28770, ask)
+  LM:ShowRollPopup(LINK1, 30, 28770, nil)
+  LM:ShowRollPopup(LINK1, 30, 28770, ask)
+  check(LM.rollPopup == f, "the same popup frame every roll")
+  check(#allFrames == framesBefore, "a roll again makes no new frame (" .. (#allFrames - framesBefore) .. " made)")
+  check(paints == 0, "and its surface is not painted again (" .. paints .. ")")
+  Style.Paint = realPaint
+  check(#buttons(f, "Main spec") == 1 and #buttons(f, "MS") == 0 and #buttons(f, "Pass") == 1,
+    "only this rule's buttons show, the other rule's set hidden")
+  check(f.clock.text == "0:30" and f.ruleText.text:find("Rule of", 1, true), "the clock and the rule's line are this roll's")
+  click(f, "Main spec")
+  check(sent[#sent].key == "MS" and not f:IsShown(), "and its answer still goes and closes it")
 end
 
 -- ── 5. Raids › Cores ───────────────────────────────────────────────────

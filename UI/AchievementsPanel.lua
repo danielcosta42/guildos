@@ -362,7 +362,7 @@ function GuildOS:CreateAchievementsPanel(parent)
             medal:Set(tostring(level), C.metal2)
             medal:Show()
         end
-        nameFS:SetText(name or renown)
+        GuildOS:SetTitleText(nameFS, name or renown)
         renownFS:SetText((name and (renown .. " \194\183 ") or "") .. string.format(L["%d points"], points or 0))
         local avail = width() - x - PAD
         if avail > 1 then nameFS:SetWidth(avail) end
@@ -434,7 +434,7 @@ function GuildOS:CreateAchievementsPanel(parent)
         drawn.date = dateFS
 
         local title = take(names, C.paperTitle)
-        title:SetText(r.name)
+        GuildOS:SetTitleText(title, r.name)
         title:SetPoint("TOPLEFT", PAD, -y)
         title:SetPoint("TOPRIGHT", -(PAD + COL_W + GAP), -y)
         drawn.name = title

@@ -67,7 +67,7 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
         GuildOS:ApplyFont(title, nil, "sectionTitle")
         title:SetPoint("TOP", 0, -10)
         title:SetTextColor(C.text.r, C.text.g, C.text.b)
-        title:SetText(string.format(L["Warn %s"], name))
+        GuildOS:SetTitleText(title, string.format(L["Warn %s"], name))
     end
 
     local sub = text(f, 10, C.silver)

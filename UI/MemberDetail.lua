@@ -285,7 +285,7 @@ function PopulateDetail(frame, data)
     -- Name
     -- A founding member's scroll and since when (WoW: Forever, issue #209).
     local founder = GuildOS.Founding and data.key and GuildOS.Founding:Founders()[data.key]
-    frame.nameText:SetText(founder and (data.name .. " " .. GuildOS.Founding.BADGE) or data.name)
+    GuildOS:SetTitleText(frame.nameText, founder and (data.name .. " " .. GuildOS.Founding.BADGE) or data.name)
     frame.nameText:SetTextColor(cr, cg, cb)
 
     -- Info line

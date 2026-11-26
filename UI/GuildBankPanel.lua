@@ -616,7 +616,7 @@ local function buildTabs(p)
         local shown = st.organized and preview or t.slots
         local used, after = 0, #preview
         for _ in pairs(t.slots) do used = used + 1 end
-        title:SetText(string.format("%d · %s", st.tab, t.name or ""))
+        GuildOS:SetTitleText(title, string.format("%d · %s", st.tab, t.name or ""))
         fillText:SetText(string.format(L["%d of 98 slots · read by %s %s"], st.organized and after or used, t.by or "?", GuildOS:TimeAgo(t.ts)))
         for i, cell in ipairs(cells) do
             local s = shown[i]

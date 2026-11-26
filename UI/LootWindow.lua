@@ -27,16 +27,11 @@ local function onPaper(r, g, b)
     return r, g, b
 end
 local function paperOf(parent) return GuildOS.UI.OnPaper ~= nil and GuildOS.UI:OnPaper(parent) end
--- The shared components, with a text on the paper in the paper's shade and a switch's label in its ink.
+-- The shared components, with a text on the paper in the paper's shade (a switch takes the paper's own).
 local UI = setmetatable({
     CreateText = function(self, parent, text, size, r, g, b)
         if r and paperOf(parent) then r, g, b = onPaper(r, g, b) end
         return GuildOS.UI.CreateText(self, parent, text, size, r, g, b)
-    end,
-    CreateCheckbox = function(self, parent, ...)
-        local cb = GuildOS.UI.CreateCheckbox(self, parent, ...)
-        if cb and cb.label and paperOf(parent) then cb.label:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b) end
-        return cb
     end,
 }, { __index = function(_, k) return GuildOS.UI[k] end })
 local PAD      = type(GuildOS.UI.CARD_PAD) == "number" and GuildOS.UI.CARD_PAD or 14

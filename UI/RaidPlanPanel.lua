@@ -88,7 +88,7 @@ local function line(f, i, y, text, size, color, role)
     fs:SetWidth(f.child:GetWidth())
     fs:ClearAllPoints()
     fs:SetPoint("TOPLEFT", 0, -y)
-    fs:SetText(text)
+    GuildOS:SetTitleText(fs, text)   -- a heading is an officer's text: Cinzel only when it is Latin
     fs:Show()
     return y + (fs:GetStringHeight() or 12) + 4
 end
@@ -222,7 +222,7 @@ function Plan:ShowTask(boss)
         task.all:SetPoint("BOTTOMRIGHT", -PAD, 10)
         task.all:SetScript("OnClick", function() task:Hide(); Plan:Show() end)
     end
-    task.title:SetText(boss)
+    GuildOS:SetTitleText(task.title, boss)
     local lines = {}
     for _, a in ipairs(self:MyTasks(boss)) do lines[#lines + 1] = L["Your task"] .. ": " .. self:TaskLine(a) end
     task.body:SetText(table.concat(lines, "\n"))

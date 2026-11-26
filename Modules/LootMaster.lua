@@ -2937,13 +2937,16 @@ end
 -- The rule's buttons at the foot of the roll popup, a box for the bid when an answer asks for one and
 -- one for the note when an answer needs it. Returns how much taller than the MS / OS / Pass row they
 -- are, for the popup to grow by.
-function LootMaster:BuildAnswerControls(f, ask, itemLink, width, foot)
+-- `holder` (default f) is where they are made: the popup keeps one holder per shape of answers (#449), while
+-- f is the popup an answer closes and that carries highText, replyText and answerBoxes.
+function LootMaster:BuildAnswerControls(f, ask, itemLink, width, foot, holder)
     local C, UI = GuildOS.Colors, GuildOS.UI
+    holder = holder or f
     local MARGIN, GAP, ROW, FOOT = 15, 6, 30, foot or 12
     local bidBox, noteBox, replyText
 
     local function label(text, x, y)
-        local t = f:CreateFontString(nil, "OVERLAY")
+        local t = holder:CreateFontString(nil, "OVERLAY")
         GuildOS:ApplyFont(t, 10)
         t:SetPoint("BOTTOMLEFT", x, y + 5)
         t:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
@@ -2972,18 +2975,18 @@ function LootMaster:BuildAnswerControls(f, ask, itemLink, width, foot)
             return
         end
         f:Hide()
-        GuildOS:Print(string.format(L["Answered |cff00ff00%s|r on %s"], r.label, itemLink or L["item"]))
+        GuildOS:Print(string.format(L["Answered |cff00ff00%s|r on %s"], r.label, f.itemLink or itemLink or L["item"]))
     end
 
     -- One button an answer, then Pass.
     local buttons = {}
     for i, r in ipairs(ask.responses) do
-        local b = UI:CreateButton(f, r.label, 90, 26)
+        local b = UI:CreateButton(holder, r.label, 90, 26)
         if i == 1 then UI:SetButtonVariant(b, "primary") end   -- the rule's first answer, as the design leads with it
         b:SetScript("OnClick", function() answer(r) end)
         buttons[#buttons + 1] = b
     end
-    local passBtn = UI:CreateButton(f, L["Pass"], 90, 26)
+    local passBtn = UI:CreateButton(holder, L["Pass"], 90, 26)
     UI:SetButtonVariant(passBtn, "ghost")
     passBtn:SetScript("OnClick", function()
         LootMaster:SendAnswer("PASS", 0, "")
@@ -3013,7 +3016,7 @@ function LootMaster:BuildAnswerControls(f, ask, itemLink, width, foot)
     local y = FOOT + rows * ROW
     if ask.bids then
         label(string.format(L["Your bid (from %d):"], ask.min), MARGIN, y)
-        bidBox = lootEditBox(f, 70, true, 7)
+        bidBox = lootEditBox(holder, 70, true, 7)
         bidBox:SetPoint("BOTTOMLEFT", 150, y)
         -- Open bids show the best one so far; sealed ones are nobody's to see.
         if not ask.sealed then
@@ -3026,7 +3029,7 @@ function LootMaster:BuildAnswerControls(f, ask, itemLink, width, foot)
     for _, r in ipairs(ask.responses) do
         if r.note and not noteBox then
             label(L["Note:"], MARGIN, y)
-            noteBox = lootEditBox(f, 240, false, NOTE_MAX)
+            noteBox = lootEditBox(holder, 240, false, NOTE_MAX)
             noteBox:SetPoint("BOTTOMLEFT", 70, y)
             y = y + ROW
         end
@@ -3036,6 +3039,10 @@ function LootMaster:BuildAnswerControls(f, ask, itemLink, width, foot)
         f.replyText = replyText
         y = y + 16
     end
+    local boxes = {}
+    if bidBox then boxes[#boxes + 1] = bidBox end
+    if noteBox then boxes[#boxes + 1] = noteBox end
+    f.answerBoxes = boxes
     return math.max(0, y - (FOOT + ROW))
 end
 
@@ -3047,46 +3054,92 @@ local POPUP_W   = 380
 local POPUP_PAD = 14
 local POPUP_FOOT = 30   -- the rule's line and the timer under the buttons
 
-function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
+-- The popup's frame, made once (#449): its surface and header painted once, then every roll fills it again.
+-- What a show draws on it lives in f.parts (by name) and f.badges, the answers in one set per rule's shape.
+function LootMaster:BuildRollPopup()
     local C, UI = GuildOS.Colors, GuildOS.UI
-    if self.rollPopup then self.rollPopup:Hide() end
-    local rule = self:Rule()
-
-    -- Its own surface, as every window of the addon (#413): StylePopup only borders a backdrop its
-    -- caller made, and with none the popup floated over the world.
-    local f = UI:CreatePanel(UIParent, "GuildOSRollPopup")
+    local Kit = rawget(GuildOS, "Kit")
+    local f
+    if Kit then
+        -- The kit's floating window (the mockup's .fw "lootRoll"): "Loot" in Cinzel gold, the clock beside it.
+        f = CreateFrame("Frame", "GuildOSRollPopup", UIParent, "BackdropTemplate")
+        Kit:Dress(f, L["Loot"])
+        f.clock, f.clockInk, f.top = f.subText, C.textSoft, Kit.HEADER_H + 10
+    else
+        -- Its own surface, as every window of the addon (#413): StylePopup only borders a backdrop its
+        -- caller made, and with none the popup floated over the world.
+        f = UI:CreatePanel(UIParent, "GuildOSRollPopup")
+        UI:StylePopup(f)
+        local head = UI:CreateHeaderText(f, L["LOOT"], 10)
+        head:SetPoint("TOPLEFT", POPUP_PAD, -10)
+        local clock = UI:CreateText(f, "", 11, C.text.r, C.text.g, C.text.b)   -- danger in the last 5s; gold is not a status (#371)
+        clock:SetPoint("TOPRIGHT", -34, -9)
+        f.clock, f.clockInk, f.top = clock, C.text, 30
+        local close = UI:CreateCloseButton(f)
+        close:SetPoint("TOPRIGHT", -6, -6)
+        close:SetScript("OnClick", function() f:Hide() end)
+    end
     f:SetWidth(POPUP_W)
     f:SetPoint("TOP", UIParent, "TOP", 0, -120)
-    UI:StylePopup(f)
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", function(self) self:StartMoving() end)
     f:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
+    f:SetScript("OnHide", function(self)
+        if self.ticker then self.ticker:Cancel(); self.ticker = nil end
+        LootMaster.testMode = false
+    end)
+    f.parts, f.badges, f.answerSets = {}, {}, {}
+    return f
+end
 
-    -- The header: "Loot", the clock, the close. With the kit, the floating window's (the mockup's .fw "lootRoll"):
-    -- "Loot" in Cinzel gold, the clock beside it.
-    local Kit = rawget(GuildOS, "Kit")
-    local y = 30
-    if Kit then
-        Kit:Dress(f, L["Loot"])
-        f.clock = f.subText
-        y = Kit.HEADER_H + 10
-    else
-        local head = UI:CreateHeaderText(f, L["LOOT"], 10)
-        head:SetPoint("TOPLEFT", POPUP_PAD, -10)
-        local clock = UI:CreateText(f, "", 11, C.text.r, C.text.g, C.text.b)   -- danger in the last 5s; gold is not a status (#371)
-        clock:SetPoint("TOPRIGHT", -34, -9)
-        f.clock = clock
-        local close = UI:CreateCloseButton(f)
-        close:SetPoint("TOPRIGHT", -6, -6)
-        close:SetScript("OnClick", function() f:Hide() end)
+-- The shape of a rule's answers: one set of buttons and boxes is made for each and kept.
+local function answerShape(ask)
+    if not ask then return "roll" end
+    local parts = { ask.bids and "b" or "-", ask.sealed and "s" or "-", tostring(ask.min or "") }
+    for _, r in ipairs(ask.responses or {}) do
+        parts[#parts + 1] = tostring(r.key) .. "=" .. tostring(r.label) .. (r.ask or "") .. (r.note and "n" or "")
+    end
+    return table.concat(parts, ";")
+end
+
+function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
+    local C, UI = GuildOS.Colors, GuildOS.UI
+    if self.rollPopup then self.rollPopup:Hide() end
+    local rule = self:Rule()
+    local f = self.rollPopup or self:BuildRollPopup()
+    self.rollPopup = f
+    f.itemLink = itemLink
+
+    -- What the last roll drew goes; each part this one uses is shown again, unanchored, by part().
+    for _, p in pairs(f.parts) do p:Hide() end
+    for _, b in ipairs(f.badges) do b:Hide() end
+    local function part(key, make)
+        local p = f.parts[key]
+        if not p then p = make(); f.parts[key] = p end
+        p:ClearAllPoints()
+        p:Show()
+        return p
+    end
+    local function text(key, value, size, col)
+        local fs = part(key, function() return UI:CreateText(f, "", size) end)
+        if col then fs:SetTextColor(col.r, col.g, col.b) end
+        fs:SetText(value or "")
+        return fs
+    end
+    local function head(key, value, size)
+        local fs = part(key, function() return UI:CreateHeaderText(f, "", size) end)
+        fs:SetText(value or "")
+        return fs
     end
     local clock = f.clock
+    clock:SetTextColor(f.clockInk.r, f.clockInk.g, f.clockInk.b)
+    local y = f.top
 
     -- The item, and what it is.
-    local itemText = UI:CreateText(f, itemLink or L["Unknown Item"], 13)
+    local itemText = text("item", itemLink or L["Unknown Item"], 13)
     itemText:SetPoint("TOPLEFT", POPUP_PAD, -y)
     itemText:SetWidth(POPUP_W - POPUP_PAD * 2)
     itemText:SetJustifyH("LEFT")
@@ -3094,7 +3147,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
     y = y + 18
     local what = self:ItemLine(itemLink)
     if what ~= "" then
-        local whatText = UI:CreateText(f, what, 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+        local whatText = text("what", what, 10, C.labelDim)
         whatText:SetPoint("TOPLEFT", POPUP_PAD, -y)
         y = y + 16
     end
@@ -3102,18 +3155,19 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
 
     -- What the player wears there.
     local worn, diff = self:EquippedFor(itemLink)
+    f.diffText = nil
     if worn then
-        local wearHead = UI:CreateHeaderText(f, L["You wear"], 9)
+        local wearHead = head("wearHead", L["You wear"], 9)
         wearHead:SetPoint("TOPLEFT", POPUP_PAD, -y)
         y = y + 14
-        local wornText = UI:CreateText(f, worn, 11)
+        local wornText = text("worn", worn, 11, C.text)
         wornText:SetPoint("TOPLEFT", POPUP_PAD, -y)
         wornText:SetWidth(POPUP_W - POPUP_PAD * 2 - 110)
         wornText:SetJustifyH("LEFT")
         if diff then
             local col = (diff > 0 and C.ok) or (diff < 0 and C.danger) or C.labelDim
-            local diffText = UI:CreateText(f, diff == 0 and L["same item level"]
-                or string.format(L["%+d item level"], diff), 10, col.r, col.g, col.b)
+            local diffText = text("diff", diff == 0 and L["same item level"]
+                or string.format(L["%+d item level"], diff), 10, col)
             diffText:SetPoint("TOPRIGHT", -POPUP_PAD, -y)
             f.diffText = diffText
         end
@@ -3121,7 +3175,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
     end
 
     -- Where the player stands in the rule.
-    local standHead = UI:CreateHeaderText(f, L["Where you stand in this rule"], 9)
+    local standHead = head("standHead", L["Where you stand in this rule"], 9)
     standHead:SetPoint("TOPLEFT", POPUP_PAD, -y)
     y = y + 16
     local st = self:Standing(itemId, rule)
@@ -3131,25 +3185,30 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
     if st.wishlist then chips[#chips + 1] = string.format(L["Wishlist #%d"], st.wishlist) end
     for _, c in ipairs(st.counters) do chips[#chips + 1] = string.format(L["%s tonight: %d"], c.name, c.value or 0) end
     if #chips == 0 then chips[1] = L["Not on your lists"] end
-    local badges, widths = {}, {}
-    for i, text in ipairs(chips) do
-        local b = UI:CreateBadge(f, text)
-        badges[i], widths[i] = b, b:GetWidth() or 60
+    local widths = {}
+    for i, chip in ipairs(chips) do
+        local b = f.badges[i]
+        if b then b:SetText(chip) else b = UI:CreateBadge(f, chip); f.badges[i] = b end
+        b:ClearAllPoints()
+        b:Show()
+        widths[i] = b:GetWidth() or 60
     end
     f.standing = chips
-    for r, row in ipairs(UI:FlowRows(widths, POPUP_W - POPUP_PAD * 2, 6)) do
+    local flow = UI:FlowRows(widths, POPUP_W - POPUP_PAD * 2, 6)
+    for r, row in ipairs(flow) do
         local x = POPUP_PAD
         for _, idx in ipairs(row) do
-            badges[idx]:SetPoint("TOPLEFT", x, -(y + (r - 1) * 20))
+            f.badges[idx]:SetPoint("TOPLEFT", x, -(y + (r - 1) * 20))
             x = x + widths[idx] + 6
         end
     end
-    y = y + #UI:FlowRows(widths, POPUP_W - POPUP_PAD * 2, 6) * 20 + 4
+    y = y + #flow * 20 + 4
+    f.pointsText = nil
     if st.points then
         local line = (st.entry or 0) > 0
             and string.format(L["Points: %d. Entering this roll costs %d; whoever loses gets %d back."], st.points, st.entry, st.refund or 0)
             or string.format(L["Points: %d."], st.points)
-        local pts = UI:CreateText(f, line, 10, C.silver.r, C.silver.g, C.silver.b)
+        local pts = text("points", line, 10, C.silver)
         pts:SetPoint("TOPLEFT", POPUP_PAD, -y)
         pts:SetWidth(POPUP_W - POPUP_PAD * 2)
         pts:SetJustifyH("LEFT")
@@ -3157,44 +3216,61 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
         y = y + 28
     end
     y = y + 6
-    local sep = UI:CreateSeparator(f)
+    local sep = part("sep", function() return UI:CreateSeparator(f) end)
     sep:SetPoint("TOPLEFT", POPUP_PAD, -y)
     sep:SetPoint("TOPRIGHT", -POPUP_PAD, -y)
 
-    -- The rule's buttons, then the line naming it.
+    -- The rule's buttons, then the line naming it: one set for each shape of answers, made once.
     local ROW_H = 30
-    local extra
-    if ask then
-        -- The rule's own buttons, answered by the addon (issue #334).
-        extra = self:BuildAnswerControls(f, ask, itemLink, POPUP_W, POPUP_FOOT)
+    for _, set in pairs(f.answerSets) do set:Hide() end
+    local shape = answerShape(ask)
+    local set = f.answerSets[shape]
+    if not set then
+        set = CreateFrame("Frame", nil, f)
+        set:SetAllPoints(f)
+        f.highText, f.replyText, f.answerBoxes = nil, nil, nil
+        if ask then
+            -- The rule's own buttons, answered by the addon (issue #334).
+            set.extra = self:BuildAnswerControls(f, ask, itemLink, POPUP_W, POPUP_FOOT, set)
+        else
+            local msBtn = UI:CreateButton(set, "MS", 100, 26)
+            msBtn:SetPoint("BOTTOMLEFT", POPUP_PAD, POPUP_FOOT)
+            UI:SetButtonVariant(msBtn, "primary")
+            msBtn:SetScript("OnClick", function()
+                RandomRoll(1, 100)
+                f:Hide()
+                GuildOS:Print(L["Rolled |cff00ff00MS|r on "] .. (f.itemLink or L["item"]) .. " — /roll 1-100")
+            end)
+            local osBtn = UI:CreateButton(set, "OS", 100, 26)
+            osBtn:SetPoint("BOTTOM", 0, POPUP_FOOT)
+            osBtn:SetScript("OnClick", function()
+                RandomRoll(1, 99)
+                f:Hide()
+                GuildOS:Print(L["Rolled |cffFFFF00OS|r on "] .. (f.itemLink or L["item"]) .. " — /roll 1-99")
+            end)
+            local passBtn = UI:CreateButton(set, L["Pass"], 100, 26)
+            passBtn:SetPoint("BOTTOMRIGHT", -POPUP_PAD, POPUP_FOOT)
+            UI:SetButtonVariant(passBtn, "ghost")
+            passBtn:SetScript("OnClick", function() f:Hide() end)
+            set.extra = 0
+        end
+        set.highText, set.replyText, set.boxes = f.highText, f.replyText, f.answerBoxes or {}
+        f.answerSets[shape] = set
     else
-        local msBtn = UI:CreateButton(f, "MS", 100, 26)
-        msBtn:SetPoint("BOTTOMLEFT", POPUP_PAD, POPUP_FOOT)
-        UI:SetButtonVariant(msBtn, "primary")
-        msBtn:SetScript("OnClick", function()
-            RandomRoll(1, 100)
-            f:Hide()
-            GuildOS:Print(L["Rolled |cff00ff00MS|r on "] .. (itemLink or L["item"]) .. " — /roll 1-100")
-        end)
-        local osBtn = UI:CreateButton(f, "OS", 100, 26)
-        osBtn:SetPoint("BOTTOM", 0, POPUP_FOOT)
-        osBtn:SetScript("OnClick", function()
-            RandomRoll(1, 99)
-            f:Hide()
-            GuildOS:Print(L["Rolled |cffFFFF00OS|r on "] .. (itemLink or L["item"]) .. " — /roll 1-99")
-        end)
-        local passBtn = UI:CreateButton(f, L["Pass"], 100, 26)
-        passBtn:SetPoint("BOTTOMRIGHT", -POPUP_PAD, POPUP_FOOT)
-        UI:SetButtonVariant(passBtn, "ghost")
-        passBtn:SetScript("OnClick", function() f:Hide() end)
-        extra = 0
+        -- Kept from an earlier roll: what was typed and said there goes.
+        for _, box in ipairs(set.boxes) do box:SetText("") end
+        if set.highText then set.highText:SetText(L["Highest bid: none yet"]) end
+        if set.replyText then set.replyText:SetText("") end
     end
+    f.highText, f.replyText = set.highText, set.replyText
+    set:Show()
+    local extra = set.extra
     local CM = GuildOS.CoreManager
     local core = CM and CM:GetActiveName() or ""
     local note = ask and string.format(L["Rule of %s: %s. The roll is drawn by the master looter's addon and shows here."],
         core ~= "" and core or L["the guild"], GuildOS.LootRule:ModelName(rule))
         or L["Rolls by /roll: 1-100 for the first answer, 1-99 for the second."]
-    local noteText = UI:CreateText(f, note, 9, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+    local noteText = text("rule", note, 9, C.labelDim)
     noteText:SetPoint("BOTTOMLEFT", POPUP_PAD, 10)
     noteText:SetWidth(POPUP_W - POPUP_PAD * 2)
     noteText:SetJustifyH("LEFT")
@@ -3202,10 +3278,13 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
     f:SetHeight(y + 12 + ROW_H + extra + POPUP_FOOT)
 
     -- The time left: the clock in the header, a thin bar at the foot, red and a sound in the last 5s.
-    local timerBar = CreateFrame("StatusBar", nil, f)
-    timerBar:SetSize(POPUP_W - 2, 3)
+    local timerBar = part("timer", function()
+        local bar = CreateFrame("StatusBar", nil, f)
+        bar:SetSize(POPUP_W - 2, 3)
+        bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        return bar
+    end)
     timerBar:SetPoint("BOTTOM", 0, 1)
-    timerBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
     timerBar:SetStatusBarColor(C.textSoft.r, C.textSoft.g, C.textSoft.b, 0.9)   -- progress, as the shared bars (#371)
     timerBar:SetMinMaxValues(0, duration)
     timerBar:SetValue(duration)
@@ -3215,7 +3294,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
         clock:SetText(string.format("%d:%02d", math.floor(remaining / 60), math.floor(remaining % 60)))
     end
     tick()
-    local ticker = C_Timer.NewTicker(0.1, function()
+    f.ticker = C_Timer.NewTicker(0.1, function()
         elapsed = elapsed + 0.1
         local remaining = duration - elapsed
         if remaining <= 0 then
@@ -3234,13 +3313,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
         end
     end)
 
-    f:SetScript("OnHide", function()
-        if ticker then ticker:Cancel() end
-        LootMaster.testMode = false
-    end)
-
     f:Show()
-    self.rollPopup = f
 end
 
 ----------------------------------------------------------------------
