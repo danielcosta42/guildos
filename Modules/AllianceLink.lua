@@ -311,6 +311,8 @@ function Link:SyncSite()
     local held = GuildOS.db.allianceLinkSite
     if site then
         if held and held.line == site.line and held.name == site.name and held.version == site.version then
+            -- This client's own block names it now: no longer only a relay's, so its end is told (SyncSite).
+            if held.relayed then held.relayed = nil end
             return false
         end
         GuildOS.db.allianceLinkSite = site

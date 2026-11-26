@@ -876,6 +876,17 @@ do
   for _, m in ipairs(published) do if m.data and m.data.gone then ended = true end end
   check(not ended and not GuildOS.db.allianceLinkSiteGoneOwn and GuildOS.db.allianceLinkSite == nil,
     "an officer's block that never named a relayed code drops it, and never tells the guild it ended")
+  -- The same code later named by this client's own block is its own: its end is told.
+  sync(env("site", { line = SITE4, name = "Pacto do Sul", version = 7 }), "Ofi-Realm")
+  blk = { guild = "Guilda A", alliance = { code = SITE4, name = "Pacto do Sul", version = 7 } }
+  Link:SyncSite()
+  check(GuildOS.db.allianceLinkSite and not GuildOS.db.allianceLinkSite.relayed, "an own block naming a relayed code makes it this client's own")
+  published = {}
+  blk = { guild = "Guilda A" }
+  Link:SyncSite()
+  local told = false
+  for _, m in ipairs(published) do if m.data and m.data.gone == SITE4 then told = true end end
+  check(told and GuildOS.db.allianceLinkSiteGoneOwn, "and when it ends, the guild is told")
   GuildOS.CompanionImport = realCI
 end
 print(("alliance-link: %d checks passed"):format(checks))
