@@ -23,7 +23,7 @@ local TITLE_H = 24   -- a section title and the gap under it
 local BTN_H   = 24
 local ROW_H   = 18
 local CARD_PAD, CARD_TOP = 14, 40   -- a card's padding, and where its content starts under its title
-local CARD_GAP    = 12
+local CARD_GAP    = UI.SP.GAP
 local TWO_CARDS_W = 900             -- Settings' (UI/SettingsPanel.lua): two columns of cards from this width
 
 -- The cut for both lists. This is a column inside another panel, not a roster
@@ -215,7 +215,7 @@ end
 --- with it), width, height. Returns the button; the line under it is btn.why, for the host to place.
 function UI:CreateRaidStepper(parent, opts)
     local btn = UI:CreateButton(parent, L["Start raid"], opts.width or 150, opts.height or BTN_H)
-    local why = UI:CreateText(parent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local why = UI:CreateText(parent, "", UI.SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     why:SetJustifyH("LEFT")
     why:SetWordWrap(true)
     btn.why = why
@@ -487,7 +487,7 @@ function GuildOS:CreateWebPanel(parent, _win)
             right:SetWordWrap(false)
             list.rows[i] = { left = left, right = right }
         end
-        list.more = paperText(raidCard, 10, SOFT)
+        list.more = paperText(raidCard, UI.SP.META, SOFT)
         return list
     end
 

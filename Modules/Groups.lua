@@ -58,9 +58,12 @@ function Groups:Initialize()
         self.frame = CreateFrame("Frame")
         GuildOS.Compat.RegisterEvent(self.frame, "GROUP_ROSTER_UPDATE")
         GuildOS.Compat.RegisterEvent(self.frame, "CHAT_MSG_WHISPER")
+        GuildOS.Compat.RegisterEvent(self.frame, "GUILD_ROSTER_UPDATE")
         self.frame:SetScript("OnEvent", function(_, event, text, sender)
             if event == "CHAT_MSG_WHISPER" then
                 GuildOS:SafeCall(Groups.OnWhisper, Groups, text, sender)
+            elseif event == "GUILD_ROSTER_UPDATE" then
+                GuildOS:SafeCall(Groups.OnGuildRoster, Groups)
             else
                 GuildOS:SafeCall(Groups.OnGroupRoster, Groups)
             end
@@ -195,26 +198,32 @@ end
 -- (#449): a leader offline invites nobody, a player offline joins nothing, and what I asked of a
 -- leader who left, or who asked me, goes with them. Nothing is said on the wire: when they come back
 -- their own client answers the login's request with what is still up (CommSystem:HandleRequest), at
--- its real age. Only with a roster that has me online in it: an empty one at login says nothing.
--- onlineSet is injectable for the tests. Returns how many entries it dropped.
-function Groups:SweepOffline(onlineSet)
+-- its real age. Only with a roster that has me online in it: an empty one at login says nothing. An entry
+-- heard after the roster was last read (entry.rx, stamped on arrival, against rosterAt: the last
+-- GUILD_ROSTER_UPDATE) stays: somebody who logged in and listed since is simply not in that roster yet.
+-- onlineSet and rosterAt are injectable for the tests. Returns how many entries it dropped.
+function Groups:SweepOffline(onlineSet, rosterAt)
     onlineSet = onlineSet or board():_BuildOnlineRoster()
+    rosterAt = rosterAt or self.rosterAt
     local me = myKey()
     if not onlineSet or not onlineSet[me] then return 0 end
     local dropped, s = 0, state()
+    local function fresh(entry) return type(entry) == "table" and entry.rx and (not rosterAt or entry.rx >= rosterAt) end
+    local kept = {}
     for _, store in ipairs({ GuildOS.db.lfgGroups or {}, GuildOS.db.lfgBoard or {} }) do
-        for key in pairs(store) do
-            if key ~= me and not onlineSet[key] then
+        for key, entry in pairs(store) do
+            if fresh(entry) then kept[key] = true end
+            if key ~= me and not onlineSet[key] and not fresh(entry) then
                 store[key] = nil
                 dropped = dropped + 1
             end
         end
     end
     for key in pairs(s.asked) do
-        if not onlineSet[key] then s.asked[key] = nil; dropped = dropped + 1 end
+        if not onlineSet[key] and not kept[key] then s.asked[key] = nil; dropped = dropped + 1 end
     end
     for key in pairs(s.requests) do
-        if not onlineSet[key] then s.requests[key] = nil; dropped = dropped + 1 end
+        if not onlineSet[key] and not kept[key] then s.requests[key] = nil; dropped = dropped + 1 end
     end
     return dropped
 end
@@ -396,8 +405,11 @@ function Groups:Tick(now)
     now = now or GetServerTime()
     -- Stale listings leave the board on their own, with the tab closed too (#449): what expired, and
     -- whoever is no longer online to form or join anything.
-    local dropped = self:Prune(now) + board():Prune(now) + self:SweepOffline()
+    local dropped = self:Prune(now) + board():Prune(now)
     if dropped > 0 then board():Refresh() end
+    -- Who went offline is read from a fresh roster: asked for here, swept when it lands (OnGuildRoster).
+    self.sweepPending = true
+    GuildOS.Compat.GuildRoster()
     self:_WarnExpiring(now)
     local g = self:Mine()
     if not g or not g.announce or self:OpenSpots(g.need) == 0 then return false end
@@ -405,6 +417,17 @@ function Groups:Tick(now)
     if not board():_SayInGuild(nil, nil, nil, self:_GuildLine(g)) then return false end
     g.announcedAt = now
     return true
+end
+
+-- The guild's roster landed (GUILD_ROSTER_UPDATE): its time is when it was read, and the sweep a Tick asked
+-- for runs against it.
+function Groups:OnGuildRoster(now)
+    self.rosterAt = now or GetServerTime()
+    if not self.sweepPending then return 0 end
+    self.sweepPending = false
+    local dropped = self:SweepOffline()
+    if dropped > 0 then board():Refresh() end
+    return dropped
 end
 
 -- My group or my own listing ends in WARN_BEFORE: say so once, with "+30 min" one click away
@@ -558,6 +581,7 @@ function Groups:HandleGroup(sender, data, channel)
             return
         end
         g.from = sender
+        g.rx = now   -- heard now: a roster read before this has not seen them online yet (SweepOffline)
         store[key] = g
         -- What I asked, I asked of the group that was listed.
         if not wasActive or was.act ~= g.act then state().asked[key] = nil end

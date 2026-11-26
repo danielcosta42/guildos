@@ -70,7 +70,7 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
         GuildOS:SetTitleText(title, string.format(L["Warn %s"], name))
     end
 
-    local sub = text(f, 10, C.silver)
+    local sub = text(f, UI.SP.META, C.silver)
     sub:SetPoint("TOPLEFT", 14, -(32 + DY))
     sub:SetText(string.format(L["Now on step %d; this warning makes it %d."], step, math.min(10, step + 1)))
 
@@ -106,7 +106,7 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
         return r and GR.RefText(n, r) or nil
     end
 
-    local msgLabel = text(f, 10, C.textSoft)
+    local msgLabel = text(f, UI.SP.META, C.textSoft)
     msgLabel:SetPoint("TOPLEFT", 14, -(116 + DY))
     msgLabel:SetText(L["The whisper (you can edit it before sending)"])
     local msg = UI:CreateInput(f, 412, 22, { max = D.WHISPER_MAX })
@@ -141,7 +141,7 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
         if D:SetTemplate(tplDD:GetValue(), typed) then GuildOS:Print(L["Template saved for the guild."]) end
     end)
 
-    local noteLabel = text(f, 10, C.textSoft)
+    local noteLabel = text(f, UI.SP.META, C.textSoft)
     noteLabel:SetPoint("TOPLEFT", 14, -(184 + DY))
     noteLabel:SetText(L["Officer note (only officers see it)"])
     local note = UI:CreateInput(f, 412, 22, { max = D.NOTE_MAX })
@@ -150,7 +150,7 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
     local silent = UI:CreateCheckbox(f, L["Only record it, without a whisper"])
     silent:SetPoint("TOPLEFT", 14, -(228 + DY))
 
-    local result = text(f, 10, C.text)
+    local result = text(f, UI.SP.META, C.text)
     result:SetPoint("TOPLEFT", 14, -(256 + DY))
     result:SetWidth(412)
     result:SetWordWrap(true)

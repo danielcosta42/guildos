@@ -116,6 +116,7 @@ local function load(game)
       return w
     end },
     { __index = function() return function() return stub end end })
+  dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
   dofile(ADDON .. "/UI/FeaturePanels.lua")
   SlashCmdList = {}
   dofile(ADDON .. "/Core/Commands.lua")

@@ -21,8 +21,8 @@ local MAX_ROWS   = 60      -- results drawn at most; the rest counted
 local SUGGEST_N  = 8
 local HOW_W      = 300
 local TWO_COLS   = 760     -- from this width the "How it works" card sits beside the search
-local CARD_PAD   = 14
-local CARD_TOP   = 40
+local CARD_PAD   = UI.SP.PAD
+local CARD_TOP   = UI.SP.TOP
 local WHITE8     = "Interface\\Buttons\\WHITE8x8"
 local QUESTION   = "Interface\\Icons\\INV_Misc_QuestionMark"
 
@@ -165,9 +165,9 @@ function GuildOS:CreateRealmSearch(parent)
     local header = UI:CreateTableHeader(card, 22)
     header:SetPoint("TOPLEFT", CARD_PAD, -(CARD_TOP + 88))
     header:SetPoint("TOPRIGHT", -CARD_PAD, -(CARD_TOP + 88))
-    local hName = UI:CreateHeaderText(header, L["Crafter"], 10)
-    local hProf = UI:CreateHeaderText(header, L["Profession"], 10)
-    local hWhere = UI:CreateHeaderText(header, L["Where"], 10)
+    local hName = UI:CreateHeaderText(header, L["Crafter"], UI.SP.META)
+    local hProf = UI:CreateHeaderText(header, L["Profession"], UI.SP.META)
+    local hWhere = UI:CreateHeaderText(header, L["Where"], UI.SP.META)
     for _, h in ipairs({ hName, hProf, hWhere }) do h:SetJustifyH("LEFT"); h:SetWordWrap(false) end
     f.header = header
 

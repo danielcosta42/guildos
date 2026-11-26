@@ -97,6 +97,7 @@ dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Style.lua")
 GuildOS.db = { settings = {}, digest = { enabled = true, lastSeen = 1, feedSeen = {} } }
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/UI/Kit.lua")

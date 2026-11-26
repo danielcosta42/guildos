@@ -124,7 +124,7 @@ local function MakeTableHeader(parent, cols, y)
     header:SetPoint("TOPLEFT", 0, -y)
     header:SetPoint("TOPRIGHT", 0, -y)
     for _, col in ipairs(cols) do
-        local fs = UI:CreateHeaderText(header, col[1], 10)
+        local fs = UI:CreateHeaderText(header, col[1], UI.SP.META)
         fs:SetPoint("LEFT", col[2], 0)
     end
     return header
@@ -610,8 +610,8 @@ local function BuildLogSub(panel)
             local e, meta = item.e, item.meta
             local row = MakeRow(content, yOff, idx)
 
-            local whenFS = UI:CreateText(row, GuildOS:DateText(e.timestamp or 0, " %H:%M"), 10, C.textDim.r, C.textDim.g, C.textDim.b)
-            GuildOS:ApplyFont(whenFS, 10, "tableNum")
+            local whenFS = UI:CreateText(row, GuildOS:DateText(e.timestamp or 0, " %H:%M"), UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
+            GuildOS:ApplyFont(whenFS, UI.SP.META, "tableNum")
             whenFS:SetPoint("LEFT", COL_WHEN + 2, 0)
 
             -- The action as a badge in its status (the mockup's), not a coloured word.
@@ -629,7 +629,7 @@ local function BuildLogSub(panel)
             descFS:SetWordWrap(false)
 
             -- A line of this client's roster diff has no officer: the roster only shows what changed.
-            local byFS = UI:CreateText(row, e.author or "—", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+            local byFS = UI:CreateText(row, e.author or "—", UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
             byFS:SetPoint("RIGHT", -4, 0)
             byFS:SetWidth(100)
             byFS:SetJustifyH("RIGHT")
@@ -698,7 +698,7 @@ local function ShowShareDialog(key, name)
             f.title:SetPoint("TOP", 0, -12)
         end
         local hint = UI:CreateText(f, L["The alliance's officers are alerted about them; nobody is banned for it."],
-            10, WOOD.silver.r, WOOD.silver.g, WOOD.silver.b)
+            UI.SP.META, WOOD.silver.r, WOOD.silver.g, WOOD.silver.b)
         hint:SetPoint("TOPLEFT", 14, -(34 + DY))
         hint:SetPoint("TOPRIGHT", -14, -(34 + DY))
         hint:SetJustifyH("LEFT")
@@ -714,7 +714,7 @@ local function ShowShareDialog(key, name)
         noteLbl:SetPoint("TOPLEFT", 14, -(98 + DY))
         f.note = UI:CreateInput(f, 250, 22, { max = BL.SHARE_NOTE_MAX })
         f.note:SetPoint("LEFT", noteLbl, "RIGHT", 8, 0)
-        f.result = UI:CreateText(f, "", 10, WOOD.red.r, WOOD.red.g, WOOD.red.b)
+        f.result = UI:CreateText(f, "", UI.SP.META, WOOD.red.r, WOOD.red.g, WOOD.red.b)
         f.result:SetPoint("BOTTOMLEFT", 14, 18)
         f.ok = UI:CreateButton(f, L["Share"], 90, 24)
         UI:SetButtonVariant(f.ok, "primary")
@@ -1011,7 +1011,7 @@ local function BuildEngageSub(panel)
     local trendRow = CreateFrame("Frame", nil, card)
     trendRow:SetSize(1, 14)
     card:Add(trendRow, { h = 14, wide = true, gap = 4 })
-    local trendFS = UI:CreateText(trendRow, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    local trendFS = UI:CreateText(trendRow, "", UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
     trendFS:SetPoint("LEFT", 0, 0)
 
     -- Invite sparkline as texture bars (glyph blocks do not render in the skin fonts).
@@ -1058,13 +1058,13 @@ local function BuildEngageSub(panel)
         row.nameFS:SetWordWrap(false)
         row.statusFS = Kit and Kit:Badge(row, "", "mute") or UI:CreateBadge(row, "", C.silver)
         row.statusFS:SetPoint("LEFT", COLS.status, 0)
-        row.postsFS = UI:CreateText(row, "", 10, C.text.r, C.text.g, C.text.b)
+        row.postsFS = UI:CreateText(row, "", UI.SP.META, C.text.r, C.text.g, C.text.b)
         row.postsFS:SetPoint("LEFT", COLS.posts, 0)
-        row.invitesFS = UI:CreateText(row, "", 10, C.text.r, C.text.g, C.text.b)
+        row.invitesFS = UI:CreateText(row, "", UI.SP.META, C.text.r, C.text.g, C.text.b)
         row.invitesFS:SetPoint("LEFT", COLS.invites, 0)
-        row.joinsFS = UI:CreateText(row, "", 10, C.text.r, C.text.g, C.text.b)
+        row.joinsFS = UI:CreateText(row, "", UI.SP.META, C.text.r, C.text.g, C.text.b)
         row.joinsFS:SetPoint("LEFT", COLS.joined, 0)
-        row.lastFS = UI:CreateText(row, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+        row.lastFS = UI:CreateText(row, "", UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
         row.lastFS:SetPoint("LEFT", COLS.last, 0)
         for _, fs in ipairs({ row.postsFS, row.invitesFS, row.joinsFS }) do GuildOS:ApplyFont(fs, 11, "tableNum") end
         rowPool[idx] = row
@@ -1267,7 +1267,7 @@ local function BuildPresetsSub(panel)
             -- Header line: name + criteria summary + remove. The name in `text`, not gold (#371).
             local nameFS = UI:CreateText(block, MP:Name(preset), 13, C.paperTitle.r, C.paperTitle.g, C.paperTitle.b)
             nameFS:SetPoint("TOPLEFT", 8, -5)
-            local sumFS = UI:CreateText(block, MP:Summarize(preset), 10, C.silver.r, C.silver.g, C.silver.b)
+            local sumFS = UI:CreateText(block, MP:Summarize(preset), UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
             -- After the name when the name runs past the column: French ones do (#114).
             sumFS:SetPoint("TOPLEFT", math.max(168, 8 + math.ceil(nameFS:GetStringWidth() or 0) + 16), -6)
 
@@ -1284,7 +1284,7 @@ local function BuildPresetsSub(panel)
             local cy = -(ROW_H + 2)
             local x = 8
             for _, field in ipairs(PRESET_FIELDS[preset.type] or {}) do
-                local flbl = UI:CreateText(block, field.label, 9, C.textDim.r, C.textDim.g, C.textDim.b)
+                local flbl = UI:CreateText(block, field.label, UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
                 flbl:SetPoint("TOPLEFT", x, cy - 2)
                 x = x + flbl:GetStringWidth() + 6
                 local fieldKey = field.key
@@ -1296,7 +1296,7 @@ local function BuildPresetsSub(panel)
                 if field.rank then
                     local rn = (GuildOS.GuildManager and GuildOS.GuildManager:GetRankName(
                         preset.thresholds and preset.thresholds[fieldKey] or 0)) or "?"
-                    local rnFS = UI:CreateText(block, "(" .. rn .. ")", 9, C.silver.r, C.silver.g, C.silver.b)
+                    local rnFS = UI:CreateText(block, "(" .. rn .. ")", UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
                     rnFS:SetPoint("TOPLEFT", x, cy - 2)
                     x = x + rnFS:GetStringWidth() + 10
                 end
@@ -1331,7 +1331,7 @@ local function BuildPresetsSub(panel)
                 local py = ROW_H + 24
                 if #matches == 0 then
                     local none = UI:CreateText(block, L["No members match this preset."],
-                        9, C.silver.r, C.silver.g, C.silver.b)
+                        UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
                     none:SetPoint("TOPLEFT", 16, -py)
                 else
                     -- No bullet in front (#371); the detail in `label`.

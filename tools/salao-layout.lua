@@ -136,11 +136,13 @@ for _, name in ipairs({ "SetShadowOffset", "SetShadowColor", "SetHorizTile", "Se
                         "SetFrameStrata", "SetMovable", "RegisterForDrag", "StartMoving", "StopMovingOrSizing",
                         "Raise",
                         -- The Guild chat card's box and feed (#449)
-                        "SetTextInsets", "SetAutoFocus", "SetMaxLetters", "SetNumeric", "SetMultiLine", "SetHyperlinksEnabled",
+                        "SetTextInsets", "SetAutoFocus", "SetNumeric", "SetMultiLine", "SetHyperlinksEnabled",
                         "SetFocus" }) do
   M[name] = function() end
 end
 function M:HasFocus() return false end
+function M:SetMaxLetters(n) self.maxLetters = n end
+function M:SetMaxBytes(n) self.maxBytes = n end
 function M:ClearFocus() self.focusCleared = true end
 function M:SetVerticalScroll(v) self.vscroll = v end
 function M:GetVerticalScroll() return self.vscroll or 0 end
@@ -227,6 +229,7 @@ function kit.client(opts)
   dofile(ADDON .. "/Core/Utils.lua")
   GuildOS.Print = function() end
   GuildOS.Style:Resolve()
+  dofile(ADDON .. "/UI/Spacing.lua")
   dofile(ADDON .. "/UI/Helpers.lua")
   dofile(ADDON .. "/UI/Layout.lua")
   -- No feature registry: a feature is allowed while the settings have it on (IsFeatureEnabled).
@@ -478,6 +481,7 @@ local function run(style)
     style .. ": its lines oldest first, the newest at the bottom, the officers' line among them for an officer")
   check(kit.shows(chat, "Officer") and kit.shows(chat, "promote Oruk"), style .. ": an officer's line is marked")
   check(chat.lines[1].avatar.letter.text == "L" and chat.lines[3].time.text ~= "", style .. ": each with its avatar and time")
+  check(chat.say.maxBytes == 241 and chat.say.maxLetters == nil, "the box takes what /g keeps: 240 bytes, never 255 letters")
   chat.say:SetText("on my way")
   chat.say.scripts.OnEnterPressed(chat.say)
   check(sent[1] and sent[1][1] == "on my way" and sent[1][2] == nil and chat.say:GetText() == "",

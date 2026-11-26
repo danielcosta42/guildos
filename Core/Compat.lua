@@ -838,6 +838,15 @@ function Compat.ClearCursor()
     if ClearCursor then ClearCursor() end
 end
 
+-- Whether an addon may read the combat log here (the raid HUD's cooldown timers, #449). TBC Anniversary only:
+-- WoW: Forever runs the mainline client, where COMBAT_LOG_EVENT_UNFILTERED carries HasRestrictions and its
+-- payload (the caster, the spell) arrives as Secret Values inside an encounter, exactly when a raid's cooldowns
+-- are used, and a secret can be neither matched nor compared (docs/forever/README.md); retail (Midnight) closes the
+-- log to addons in instances. Forever has the cooldown list (RaidTools:TrackedCooldowns), not the log to time it.
+function Compat.CanReadCombatLog()
+    return GuildOS.Client.isAnniversary == true
+end
+
 function Compat.InCombat()
     return (InCombatLockdown and InCombatLockdown()) and true or false
 end

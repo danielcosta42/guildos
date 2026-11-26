@@ -869,6 +869,46 @@ function GuildOS:SanitizeUserText(text, maxBytes)
     return s
 end
 
+-- A line the player typed for the guild's chat (#449 review): SanitizeUserText's cleaning, but an item link pasted
+-- whole (|cffxxxxxx|Hitem:…|h[Name]|h|r) goes through as the game made it, so /g shows it as a link. Any other
+-- "|" goes. Cut to `maxBytes` on a whole character; a link that does not fit whole is left as its [Name].
+local ITEM_LINK = "|c(%x%x%x%x%x%x%x%x)|H(item:[%-%d:]+)|h%[([^|%[%]]+)%]|h|r"
+function GuildOS:SanitizeChatLine(text, maxBytes)
+    local raw = tostring(text or "")
+    local segs, pos = {}, 1
+    while true do
+        local a, b, color, href, name = raw:find(ITEM_LINK, pos)
+        if not a then break end
+        if a > pos then segs[#segs + 1] = { text = raw:sub(pos, a - 1) } end
+        segs[#segs + 1] = { link = "|c" .. color .. "|H" .. href .. "|h[" .. name .. "]|h|r", name = "[" .. name .. "]" }
+        pos = b + 1
+    end
+    if pos <= #raw then segs[#segs + 1] = { text = raw:sub(pos) } end
+    -- The plain parts as SanitizeUserText cleans them; spaces gathered and trimmed over the whole line.
+    for i, sg in ipairs(segs) do
+        if sg.text then
+            local t = sg.text:gsub("|", ""):gsub("%c", " "):gsub("%s+", " ")
+            if i == 1 then t = t:gsub("^%s+", "") end
+            if i == #segs then t = t:gsub("%s+$", "") end
+            sg.text = t
+        end
+    end
+    local out, used = {}, 0
+    for _, sg in ipairs(segs) do
+        local piece = sg.text or sg.link
+        if maxBytes and used + #piece > maxBytes then
+            local room = maxBytes - used
+            if sg.link then piece = (#sg.name <= room) and sg.name or utf8Backoff(sg.name:sub(1, room))
+            else piece = utf8Backoff(piece:sub(1, room)) end
+            out[#out + 1] = piece
+            break
+        end
+        out[#out + 1] = piece
+        used = used + #piece
+    end
+    return strtrim(table.concat(out))
+end
+
 ----------------------------------------------------------------------
 -- Minimal recursive-descent JSON decoder
 -- Handles objects, arrays, strings, numbers, booleans, null.

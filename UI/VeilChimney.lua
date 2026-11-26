@@ -158,7 +158,7 @@ function Chimney.Create(parent, scope)
         local line = solid(col, "ARTWORK", C.line)
         line:SetSize(22, 1)
         line:SetPoint("TOPRIGHT", col, "TOPLEFT", ART_W, -y)
-        local t = mono(UI:CreateText(col, tostring(p), 10, C.labelDim.r, C.labelDim.g, C.labelDim.b), 10)
+        local t = mono(UI:CreateText(col, tostring(p), UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b), 10)
         t:SetPoint("TOPRIGHT", line, "BOTTOMRIGHT", 0, -1)
         ch.ticks[i] = { p = p, line = line, text = t }
     end
@@ -175,16 +175,16 @@ function Chimney.Create(parent, scope)
     gQuest:SetPoint("BOTTOM", gWrap, "TOP")
     ch.gWrap, ch.gQuest = gWrap, gQuest
 
-    local cap = mono(UI:CreateText(col, "", 10, C.label.r, C.label.g, C.label.b), 10)
+    local cap = mono(UI:CreateText(col, "", UI.SP.META, C.label.r, C.label.g, C.label.b), 10)
     cap:SetPoint("TOP", col, "TOPLEFT", ART_W / 2, -432)
     cap:SetWidth(ART_W)
     cap:SetJustifyH("CENTER")
     ch.cap = cap
 
     -- The odds at the opening.
-    local oddsT = mono(UI:CreateText(col, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b), 10)
+    local oddsT = mono(UI:CreateText(col, "", UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b), 10)
     oddsT:SetPoint("TOPLEFT", 0, -454)
-    local oddsR = mono(UI:CreateText(col, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b), 10)
+    local oddsR = mono(UI:CreateText(col, "", UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b), 10)
     oddsR:SetPoint("TOPRIGHT", col, "TOPLEFT", ART_W, -454)
     ch.oddsT, ch.oddsR = oddsT, oddsR
     ch.bars, ch.labels = {}, {}
@@ -192,7 +192,7 @@ function Chimney.Create(parent, scope)
         local c = Fx.Rarity(rar).text
         local b = solid(col, "ARTWORK", c)
         b:SetHeight(8)
-        local lab = mono(UI:CreateText(col, "", 10, c.r, c.g, c.b), 10)
+        local lab = mono(UI:CreateText(col, "", UI.SP.META, c.r, c.g, c.b), 10)
         lab:SetJustifyH("LEFT")
         ch.bars[i], ch.labels[i] = b, lab
     end

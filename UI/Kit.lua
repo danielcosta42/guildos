@@ -92,7 +92,7 @@ function Kit:Screen(parent, title, opts)
     local card = UI:CreateCard(parent, title, opts)
     local body = CreateFrame("Frame", nil, card)
     body:SetPoint("TOPLEFT", UI.CARD_PAD, -UI.CARD_TOP)
-    body:SetPoint("BOTTOMRIGHT", -UI.CARD_PAD, UI.CARD_PAD - 4)
+    body:SetPoint("BOTTOMRIGHT", -UI.CARD_PAD, UI.CARD_PAD)
     card.body = body
     return card, body
 end
@@ -101,8 +101,8 @@ end
 -- Floating windows (the mockup's .fw)
 ----------------------------------------------------------------------
 Kit.HEADER_H = 32   -- the header's height; a dressed frame's content starts under it
-Kit.FOOT_H = 40     -- a footer's height (a 24px button row with its padding)
-Kit.PAD = 12        -- the body's side padding
+Kit.FOOT_H = UI.SP.FIELD + 2 * 9   -- a footer's height (a form button's row with its padding)
+Kit.PAD = UI.SP.PAD   -- the body's side padding (a card's, #449)
 
 local FW_BODY = hex("1d130a")
 local FW_RULE = hex("3a2a17")
@@ -182,7 +182,7 @@ function Kit:Dress(f, title, opts)
     if opts.stack then
         sub:SetPoint("TOPLEFT", t, "BOTTOMLEFT", 0, -3)
         local extra = header:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(extra, 10, "caption")
+        GuildOS:ApplyFont(extra, UI.SP.META, "caption")
         extra:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
         extra:SetJustifyH("LEFT")
         extra:SetWordWrap(false)
@@ -241,7 +241,7 @@ function Kit:Footer(f)
             local b = select(i, ...)
             if b and b:IsShown() then
                 b:ClearAllPoints()
-                if prev then b:SetPoint("RIGHT", prev, "LEFT", -6, 0)
+                if prev then b:SetPoint("RIGHT", prev, "LEFT", -UI.SP.UNIT * 2, 0)
                 else b:SetPoint("RIGHT", foot, "RIGHT", -Kit.PAD + 3, -1) end
                 prev = b
             end

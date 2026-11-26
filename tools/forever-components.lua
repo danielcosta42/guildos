@@ -112,6 +112,7 @@ GuildOS = {
 }
 dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Style.lua")
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 local UI, C, F = GuildOS.UI, GuildOS.Colors, GuildOS.Fonts
 
@@ -366,8 +367,8 @@ local small = UI:CreateText(parent, "offline", 9)
 check(small.font.file == F.ui and small.font.size == 11 and small.font.flags == "" and small.shadow[1] == 0,
   "small text: Alegreya Sans at 11px, no outline, no shadow")
 local head = UI:CreateHeaderText(parent, "membro")
-check(head.font.file == F.title and head.font.size == 10 and same(head.color, C.gold),
-  "a header: Cinzel 10 in gold")
+check(head.font.file == F.title and head.font.size == 11 and same(head.color, C.gold),
+  "a header: Cinzel 11 (UI.SP.META) in gold")
 check(same(UI:CreateHeaderText(paperCard, "membro").color, C.paperTitle), "a header on the paper: dark red")
 
 -- ── Surfaces and rules ──────────────────────────────────────────────────
@@ -410,10 +411,10 @@ check(fades[#fades].frame == slow and near(fades[#fades].duration, 0.1), "no fad
 
 -- ── Metric chip: a small dark tile ──────────────────────────────────────
 local chip = UI:CreateMetricChip(parent, "41", "membros")
-check(chip.value.font.file == F.title and chip.value.font.size == 18 and same(chip.value.color, C.gold2)
+check(chip.value.font.file == F.title and chip.value.font.size == UI.SP.KPI and same(chip.value.color, C.gold2)
   and chip.label.font.file == F.ui and same(chip.label.color, C.textSoft) and not chip.rule.shown,
-  "a metric chip: Cinzel 18 in the soft gold, a soft caption, no rule")
-check(chip.value.points[1][1] == "TOPLEFT" and chip.value.points[1][2] == 10 and chip.value.points[1][3] == -6,
+  "a metric chip: Cinzel 22 (UI.SP.KPI) in the soft gold, a soft caption, no rule")
+check(chip.value.points[1][1] == "TOPLEFT" and chip.value.points[1][2] == 12 and chip.value.points[1][3] == -8,
   "the value sits inside the tile")
 local paperChip = UI:CreateMetricChip(paperCard, "76%", "presença")
 check(same(paperChip.value.color, C.paperTitle), "on the paper a tile's number is dark red")

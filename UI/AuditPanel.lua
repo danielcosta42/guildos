@@ -222,7 +222,7 @@ local function BuildReadySub(panel)
 
     local header = MakeHeader(panel, 48)
     local function hcol(txt, x)
-        local fs = UI:CreateHeaderText(header, txt, 10)
+        local fs = UI:CreateHeaderText(header, txt, 11)
         fs:SetPoint("LEFT", x, 0)
     end
     hcol(L["Member"], 8)
@@ -403,7 +403,7 @@ local function BuildAttuneSub(panel)
     -- Column header (fixed, above the scroll): two lines, the raid and how many have it.
     local header = MakeHeader(panel, 22, 30)
     panel.headerCells = {}
-    local hName = UI:CreateHeaderText(header, L["Member"], 10)
+    local hName = UI:CreateHeaderText(header, L["Member"], 11)
     hName:SetPoint("LEFT", 8, 6)
 
     local listHolder = CreateFrame("Frame", nil, panel)
@@ -425,7 +425,7 @@ local function BuildAttuneSub(panel)
             -- Kept by column: a refresh sets them again (#449).
             local lbl = panel.headerCells["lbl" .. ci]
             if not lbl then
-                lbl = UI:CreateHeaderText(header, "", 10)
+                lbl = UI:CreateHeaderText(header, "", 11)
                 panel.headerCells["lbl" .. ci] = lbl
             end
             lbl:SetText(col.short)
@@ -492,14 +492,14 @@ local function BuildResistSub(panel)
 
     -- Column header: MEMBER + one column per school (coloured), fight/target below.
     local header = MakeHeader(panel, 22, 30)
-    local hName = UI:CreateHeaderText(header, L["Member"], 10)
+    local hName = UI:CreateHeaderText(header, L["Member"], 11)
     hName:SetPoint("LEFT", 8, 6)
     for ci, sc in ipairs(R.SCHOOLS) do
         local x = NAME_W + (ci - 1) * COL_W
-        local lbl = UI:CreateHeaderText(header, sc.label, 10)
+        local lbl = UI:CreateHeaderText(header, sc.label, 11)
         lbl:SetPoint("LEFT", x, 6)
         lbl:SetTextColor(sc.r, sc.g, sc.b)
-        local sub = UI:CreateText(header, sc.fight .. " \226\137\165" .. sc.target, 10,
+        local sub = UI:CreateText(header, sc.fight .. " \226\137\165" .. sc.target, 11,
             C.label.r, C.label.g, C.label.b)
         sub:SetPoint("LEFT", x, -8)
     end

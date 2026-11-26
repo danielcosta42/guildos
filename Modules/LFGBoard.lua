@@ -347,6 +347,7 @@ function LFGBoard:HandleEntry(sender, data, channel)
         local now = GetServerTime()
         local wasActive = self:_IsActive(GuildOS.db.lfgBoard[key], now)
         local entry, age = self:_BuildEntry(p, now)
+        if type(entry) == "table" then entry.rx = now end   -- heard now (Groups:SweepOffline keeps it)
         GuildOS.db.lfgBoard[key] = entry
         -- Print the SANITIZED note, never the raw payload: string.format("%s")
         -- does not call tostring in Lua 5.1, so a peer sending a boolean or a

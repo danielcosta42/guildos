@@ -8,8 +8,11 @@
 --
 -- It shows in a raid while its switch is on (Settings › the "Raid CD Tracker" switch, or the Fight part's
 -- box) and it is not hidden: × hides it until the next raid, and the raid leader turns it off for good with
--- the switch. TBC content (ADR-0014): the combat log is read on TBC Anniversary only, and the cooldowns are
--- Raid Tools' one list (RaidTools:TrackedCooldowns, audit B19).
+-- the switch. TBC content (ADR-0014): the combat log is read on TBC Anniversary only (Compat.CanReadCombatLog:
+-- WoW: Forever has the cooldown list, but its combat log arrives as Secret Values inside an encounter, so no
+-- timer could be read there), and the cooldowns are Raid Tools' one list (RaidTools:TrackedCooldowns, audit B19).
+-- The log is listened to only while the HUD shows, the raid's members are read on a roster change (never on
+-- the half-second tick), and the tick redraws into the same tables (#449 review).
 ----------------------------------------------------------------------
 local RaidHUD = {}
 GuildOS.RaidHUD = RaidHUD
@@ -50,16 +53,37 @@ end
 --- many are ready, how many there are and the seconds until the next one is back (nil when one is ready or
 --- none was used). `state` is RaidHUD.state's shape. Pure.
 function RaidHUD.Rows(defs, members, state, now)
-    local rows = {}
+    return RaidHUD.RowsInto({}, defs, members, RaidHUD.CasterLists(defs, members), state, now)
+end
+
+--- Who can cast each cooldown: { [cd.key] = sorted names } of `members`. Built when the roster changes. Pure.
+function RaidHUD.CasterLists(defs, members)
+    local lists = {}
     for _, cd in ipairs(defs) do
         local names = {}
         for name, class in pairs(members) do
             if cd.classes[class] then names[#names + 1] = name end
         end
-        if #names > 0 then
-            table.sort(names)
-            local ready, nextIn, who = 0, nil, {}
-            for _, name in ipairs(names) do
+        table.sort(names)
+        lists[cd.key] = names
+    end
+    return lists
+end
+
+--- Rows' rows written into `out` (its tables reused, the ones left over dropped), from the caster lists
+--- (CasterLists'). The HUD's tick calls this: no table is made once the rows exist. Returns `out`.
+function RaidHUD.RowsInto(out, defs, members, lists, state, now)
+    local n = 0
+    for _, cd in ipairs(defs) do
+        local names = lists[cd.key]
+        if names and #names > 0 then
+            n = n + 1
+            local row = out[n] or {}
+            out[n] = row
+            local who = row.who or {}
+            row.who = who
+            local ready, nextIn = 0, nil
+            for i, name in ipairs(names) do
                 local st = state[name] and state[name][cd.key]
                 local left = st and (st.duration - (now - st.usedAt)) or 0
                 if left > 0 then
@@ -67,13 +91,17 @@ function RaidHUD.Rows(defs, members, state, now)
                 else
                     ready = ready + 1
                 end
-                who[#who + 1] = { name = name, left = left > 0 and left or nil, class = members[name] }
+                local w = who[i] or {}
+                who[i] = w
+                w.name, w.left, w.class = name, left > 0 and left or nil, members[name]
             end
-            rows[#rows + 1] = { key = cd.key, label = cd.short or cd.name, name = cd.name, iconID = cd.iconID,
-                                ready = ready, total = #names, nextIn = ready == 0 and nextIn or nil, soonest = nextIn, who = who }
+            for i = #names + 1, #who do who[i] = nil end
+            row.key, row.label, row.name, row.iconID = cd.key, cd.short or cd.name, cd.name, cd.iconID
+            row.ready, row.total, row.nextIn, row.soonest = ready, #names, ready == 0 and nextIn or nil, nextIn
         end
     end
-    return rows
+    for i = n + 1, #out do out[i] = nil end
+    return out
 end
 
 ----------------------------------------------------------------------
@@ -130,7 +158,7 @@ RaidHUD._RaidMembers = raidMembers
 
 function RaidHUD:State()
     return {
-        enabled = self:IsEnabled() and GuildOS.Client.isAnniversary == true,
+        enabled = self:IsEnabled() and GuildOS.Compat.CanReadCombatLog(),
         hidden = self:IsHidden(),
         inRaid = IsInRaid() and true or false,
         lead = IsInRaid() and GuildOS.Compat.IsLeaderOrAssist() or false,
@@ -308,7 +336,9 @@ function RaidHUD:Refresh()
         f.body:Hide()
     else
         f.body:Show()
-        h = self:FillBody(f.body, self.Rows(self:Tracked(), raidMembers(), self.state, GetTime()))
+        if not self._lists then self:ReadRoster() end
+        self._rows = self.RowsInto(self._rows or {}, self:Tracked(), self._members, self._lists, self.state, GetTime())
+        h = self:FillBody(f.body, self._rows)
         f.body:SetHeight(math.max(1, h))
     end
     local combat = GuildOS.Compat.InCombat()
@@ -316,7 +346,14 @@ function RaidHUD:Refresh()
     f:SetHeight(self.HEADER_H + h + ((not combat and not collapsed) and 20 or 4))
 end
 
---- Shows or hides the HUD by ShouldShow. Leaving the raid clears ×.
+--- The raid's members and who of them casts each cooldown, read again (on a roster change, never per tick).
+function RaidHUD:ReadRoster()
+    self._members = raidMembers()
+    self._lists = self.CasterLists(self:Tracked(), self._members)
+end
+
+--- Shows or hides the HUD by ShouldShow. Leaving the raid clears ×. The combat log is listened to only while
+--- it shows; the roster is read here, on the events that call this (a roster change, combat's edges, login).
 function RaidHUD:Update()
     local s = self:State()
     if not s.inRaid and GuildOS.db and GuildOS.db.settings and GuildOS.db.settings.raidHUDDismissed then
@@ -328,6 +365,8 @@ function RaidHUD:Update()
     if not self.frame then return end
     -- Out of the raid the consumables popup it opened goes with it; one opened elsewhere stays.
     if not s.inRaid and self.frame:IsShown() and GuildOS.HideConsumablePopup then GuildOS:HideConsumablePopup() end
+    self:ListenToLog(show)
+    if show then self:ReadRoster() end
     self.frame:SetShown(show)
     if show then self:Refresh() end
 end
@@ -350,8 +389,17 @@ function RaidHUD:OnCombatLog(event, srcName, srcFlags, spellID, now)
 end
 
 local clFrame = CreateFrame("Frame")
-if GuildOS.Client.isAnniversary then
-    GuildOS.Compat.RegisterEvent(clFrame, "COMBAT_LOG_EVENT_UNFILTERED")
+RaidHUD._logFrame = clFrame
+-- The combat log only while the HUD shows, and only where it may be read (Compat.CanReadCombatLog).
+function RaidHUD:ListenToLog(on)
+    on = on and GuildOS.Compat.CanReadCombatLog() or false
+    if on == (self._listening or false) then return end
+    if on then
+        GuildOS.Compat.RegisterEvent(clFrame, "COMBAT_LOG_EVENT_UNFILTERED")
+    elseif clFrame.UnregisterEvent then
+        clFrame:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    end
+    self._listening = on
 end
 clFrame:SetScript("OnEvent", function()
     local _, event, _, _, srcName, srcFlags, _, _, _, _, _, spellID = CombatLogGetCurrentEventInfo()

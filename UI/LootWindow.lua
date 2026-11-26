@@ -955,9 +955,9 @@ local function buildLists(panel)
         { key = "raid", min = 70,  weight = 1, priority = 1 },
     }
     local srHead = {
-        item = UI:CreateHeaderText(srHeader, L["Item"], 10),
-        res = UI:CreateHeaderText(srHeader, L["Reserved by"], 10),
-        raid = UI:CreateHeaderText(srHeader, L["In raid"], 10),
+        item = UI:CreateHeaderText(srHeader, L["Item"], 11),
+        res = UI:CreateHeaderText(srHeader, L["Reserved by"], 11),
+        raid = UI:CreateHeaderText(srHeader, L["In raid"], 11),
     }
     local srScroll, srContent = UI:CreateScrollFrame(srView, "GuildOSLootSoftResScroll")
     srScroll:SetPoint("TOPLEFT", srHeader, "BOTTOMLEFT", 0, 0)
@@ -1105,7 +1105,7 @@ local function placeHeader(header, titles, layout)
     for key, text in pairs(titles) do
         local fs = header.titles[key]
         if not fs then
-            fs = UI:CreateHeaderText(header, text, 10)
+            fs = UI:CreateHeaderText(header, text, 11)
             header.titles[key] = fs
         end
         local col = layout.byKey[key]

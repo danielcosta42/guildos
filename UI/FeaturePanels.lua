@@ -89,7 +89,7 @@ local function RefreshCoreSignupFrame()
     -- the role coverage; and the one action that applies, Cancel request as visible as Ask.
     -- Each card is parchment on the popup's dark (the mockup's raides-core): its text takes the paper's ink.
     local y = 0
-    local CARD_PAD = 12
+    local CARD_PAD = UI.SP.PAD
     local function ink(col)
         if col == C.text then return C.paperInk end
         if col == C.textDim or col == C.silver or col == C.textSoft or col == C.labelDim or col == C.label then return C.paperSoft end
@@ -159,7 +159,7 @@ local function RefreshCoreSignupFrame()
             line(string.format(L["Loot: %s"], LR:ModelName(site or LR:For(coreName))), 10, C.text, CARD_PAD, y, W - 2 * CARD_PAD - 130)
         end
         if st.presence then
-            local presFS = UI:CreateText(content, string.format(L["your presence %d%%"], st.presence), 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+            local presFS = UI:CreateText(content, string.format(L["your presence %d%%"], st.presence), UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
             presFS:SetPoint("TOPRIGHT", -CARD_PAD, y)
         end
         y = y - 18
@@ -238,7 +238,7 @@ local function RefreshCoreSignupFrame()
     -- Where the requests of a Discord core go, under the cards.
     if CM:IsLinked() then
         local foot = UI:CreateText(content, L["The requests for a Discord core go to Discord: its leader answers there and the answer comes back here."],
-            10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            UI.SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
         foot:SetPoint("TOPLEFT", 2, y)
         foot:SetWidth(W - 4)
         foot:SetJustifyH("LEFT")
@@ -276,7 +276,7 @@ local function BuildCoreSignupFrame()
     -- Player role strip: "I play as", and the roles the class can play.
 
     f.playerRoleLbl = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(f.playerRoleLbl, 10)
+    GuildOS:ApplyFont(f.playerRoleLbl, UI.SP.META)
     f.playerRoleLbl:SetPoint("TOPLEFT", 10, -37)
     f.playerRoleLbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
 
@@ -293,7 +293,7 @@ local function BuildCoreSignupFrame()
             local b = CreateFrame("Button", nil, f, "BackdropTemplate")
             b:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize = GuildOS.UI:Edge(b) })
             b.lbl = b:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(b.lbl, 10)
+            GuildOS:ApplyFont(b.lbl, UI.SP.META)
             b.lbl:SetPoint("CENTER")
             b.lbl:SetText(CM.ROLE_LABELS[role] or role)
             -- As wide as its name ("Curandeiro" is wider than "Healer"), never less than 54.
@@ -357,7 +357,7 @@ end
 -- header stays put while the rows scroll).
 local ATT_COLS = { player = 6, group = 150, pct = 250, raids = 305, avg = 365, last = 450, form = 540 }
 local ATT_CARD_H = 250   -- px the attendance card keeps under the sessions while there are sessions
-local SESS_PAD   = type(UI.CARD_PAD) == "number" and UI.CARD_PAD or 14
+local SESS_PAD   = UI.SP.PAD
 local CARD_TOP   = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
 local SESS_TOP   = CARD_TOP + 28   -- the card's title and its filter chips over the list
 
@@ -407,7 +407,7 @@ function GuildOS:CreateRaidsPanel(parent, _mainFrame)
     sessCard:SetPoint("TOPRIGHT", 0, 0)
     local title = sessCard.title
     title:ClearAllPoints()
-    title:SetPoint("TOPLEFT", SESS_PAD, -12)
+    title:SetPoint("TOPLEFT", SESS_PAD, -SESS_PAD)
 
     -- The count and the tracker's state, after the title they qualify.
     local statusText = UI:CreateText(sessCard, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
@@ -990,7 +990,7 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     -- Under the row it explains (#371).
     local configHint = UI:CreateText(card,
         L["A new length moves the end of every running trial. Nobody already in the guild becomes a trial."],
-        10, P.textSoft.r, P.textSoft.g, P.textSoft.b)
+        UI.SP.META, P.textSoft.r, P.textSoft.g, P.textSoft.b)
     configHint:SetJustifyH("LEFT")
     card:Add(configHint, { gap = 4, place = function(fs, w) fs:SetWidth(w); return math.ceil(tonumber(fs:GetStringHeight()) or 12) end })
 
@@ -998,19 +998,19 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     local colHeader = UI:CreateTableHeader(card, 20)
     card:Add(colHeader, { h = 20, wide = true, gap = 12 })
 
-    local hName = UI:CreateHeaderText(colHeader, L["Member"], 10)
+    local hName = UI:CreateHeaderText(colHeader, L["Member"], UI.SP.META)
     hName:SetPoint("LEFT", 14, 0)
-    local hIlvl = UI:CreateHeaderText(colHeader, L["iLvl"], 10)
+    local hIlvl = UI:CreateHeaderText(colHeader, L["iLvl"], UI.SP.META)
     hIlvl:SetPoint("LEFT", 120, 0)
     if GuildOS.AttunementTracker then   -- attunements are TBC's (ADR-0014; issue #184)
-        local hAtt = UI:CreateHeaderText(colHeader, L["Attuned"], 10)
+        local hAtt = UI:CreateHeaderText(colHeader, L["Attuned"], UI.SP.META)
         hAtt:SetPoint("LEFT", 180, 0)
     end
-    local hSponsor = UI:CreateHeaderText(colHeader, L["Sponsor"], 10)
+    local hSponsor = UI:CreateHeaderText(colHeader, L["Sponsor"], UI.SP.META)
     hSponsor:SetPoint("LEFT", 250, 0)
-    local hDays = UI:CreateHeaderText(colHeader, L["Remaining"], 10)
+    local hDays = UI:CreateHeaderText(colHeader, L["Remaining"], UI.SP.META)
     hDays:SetPoint("LEFT", 330, 0)
-    local hStatus = UI:CreateHeaderText(colHeader, L["Status"], 10)
+    local hStatus = UI:CreateHeaderText(colHeader, L["Status"], UI.SP.META)
     hStatus:SetPoint("LEFT", 390, 0)
     parent.trialHeads = { sponsor = hSponsor, days = hDays, status = hStatus }
 
@@ -1096,7 +1096,7 @@ function GuildOS:RefreshTrialsPanel(parent)
         row:SetBackdropColor(altIdx.r, altIdx.g, altIdx.b, altIdx.a)
 
         -- Expand arrow
-        local arrow = UI:CreateText(row, isExpanded and "v" or ">", 10, P.label.r, P.label.g, P.label.b)
+        local arrow = UI:CreateText(row, isExpanded and "v" or ">", UI.SP.META, P.label.r, P.label.g, P.label.b)
         arrow:SetPoint("LEFT", 2, 0)
 
         -- Name with class color
@@ -1105,7 +1105,7 @@ function GuildOS:RefreshTrialsPanel(parent)
         local pr, pg, pb = P.text.r, P.text.g, P.text.b
         if pClass then pr, pg, pb = trialClassInk(pClass) end
 
-        local nameText = UI:CreateText(row, shortName, 10, pr, pg, pb)
+        local nameText = UI:CreateText(row, shortName, UI.SP.META, pr, pg, pb)
         nameText:SetPoint("LEFT", 14, 0)
 
         -- iLvl with delta
@@ -1113,29 +1113,29 @@ function GuildOS:RefreshTrialsPanel(parent)
             local ilvlSign = progress.ilvlDelta > 0 and "+" or ""
             local ilvlColor = progress.ilvlDelta > 0 and P.green or (progress.ilvlDelta < 0 and P.red or P.silver)
             local ilvlStr = format("%d (%s%d)", progress.currentIlvl, ilvlSign, progress.ilvlDelta)
-            local ilvlText = Num(UI:CreateText(row, ilvlStr, 9, ilvlColor.r, ilvlColor.g, ilvlColor.b))
+            local ilvlText = Num(UI:CreateText(row, ilvlStr, UI.SP.META, ilvlColor.r, ilvlColor.g, ilvlColor.b))
             ilvlText:SetPoint("LEFT", 120, 0)
 
             -- Attunement progress
             if GuildOS.AttunementTracker then
                 local attColor = progress.attDelta > 0 and P.green or P.silver
                 local attStr = format("%d/%d (+%d)", progress.currentAttDone, progress.attTotal, progress.attDelta)
-                local attText = Num(UI:CreateText(row, attStr, 9, attColor.r, attColor.g, attColor.b))
+                local attText = Num(UI:CreateText(row, attStr, UI.SP.META, attColor.r, attColor.g, attColor.b))
                 attText:SetPoint("LEFT", 180, 0)
             end
         else
             local ilvlVal = memberData and memberData.avgIlvl or 0
             if ilvlVal > 0 then
-                local ilvlText = Num(UI:CreateText(row, tostring(ilvlVal), 9, P.silver.r, P.silver.g, P.silver.b))
+                local ilvlText = Num(UI:CreateText(row, tostring(ilvlVal), UI.SP.META, P.silver.r, P.silver.g, P.silver.b))
                 ilvlText:SetPoint("LEFT", 120, 0)
             end
             if GuildOS.AttunementTracker then
-                local noProgText = UI:CreateText(row, "-", 9, P.silver.r, P.silver.g, P.silver.b)
+                local noProgText = UI:CreateText(row, "-", UI.SP.META, P.silver.r, P.silver.g, P.silver.b)
                 noProgText:SetPoint("LEFT", 180, 0)
             end
         end
 
-        local sponsorText = UI:CreateText(row, data.sponsor or "?", 10, P.silver.r, P.silver.g, P.silver.b)
+        local sponsorText = UI:CreateText(row, data.sponsor or "?", UI.SP.META, P.silver.r, P.silver.g, P.silver.b)
         sponsorText:SetPoint("LEFT", 250, 0)
         sponsorText:SetShown(not narrow)
 
@@ -1145,7 +1145,7 @@ function GuildOS:RefreshTrialsPanel(parent)
         if daysRem then
             daysColor = daysRem > 14 and P.green or (daysRem > 7 and P.warn or P.red)
         end
-        local daysText = Num(UI:CreateText(row, daysStr, 10, daysColor.r, daysColor.g, daysColor.b))
+        local daysText = Num(UI:CreateText(row, daysStr, UI.SP.META, daysColor.r, daysColor.g, daysColor.b))
         daysText:SetPoint("LEFT", X.days, 0)
 
         -- Status badge: the state worked out from the start and the guild's length, so a trial an older
@@ -1171,7 +1171,7 @@ function GuildOS:RefreshTrialsPanel(parent)
             local badge = KitB:Badge(row, statusStr, kind)
             badge:SetPoint("LEFT", X.status, 0)
         else
-            local sText = UI:CreateText(row, statusStr, 10, statusColor.r, statusColor.g, statusColor.b)
+            local sText = UI:CreateText(row, statusStr, UI.SP.META, statusColor.r, statusColor.g, statusColor.b)
             sText:SetPoint("LEFT", X.status, 0)
             sText:SetWidth(140)
             sText:SetJustifyH("LEFT")
@@ -1226,7 +1226,7 @@ function GuildOS:RefreshTrialsPanel(parent)
             local startStr = GuildOS:DateText(data.startDate or 0, "/%y")
             local daysSince = GuildOS.TrialTracker:GetDaysSinceStart(trial.key)
             local infoFS = detailFrame:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(infoFS, 9)
+            GuildOS:ApplyFont(infoFS, UI.SP.META)
             infoFS:SetPoint("TOPLEFT", 10, dY)
             infoFS:SetTextColor(P.silver.r, P.silver.g, P.silver.b)
             infoFS:SetText(format(L["Started: %s  |  Day %d  |  Sponsor: %s"], startStr, daysSince or 0, data.sponsor or "?"))
@@ -1236,7 +1236,7 @@ function GuildOS:RefreshTrialsPanel(parent)
             -- Officer comments
             if data.notes and #data.notes > 0 then
                 local notesLabel = detailFrame:CreateFontString(nil, "OVERLAY")
-                GuildOS:ApplyFont(notesLabel, 9)
+                GuildOS:ApplyFont(notesLabel, UI.SP.META)
                 notesLabel:SetPoint("TOPLEFT", 10, dY)
                 notesLabel:SetTextColor(P.label.r, P.label.g, P.label.b)
                 notesLabel:SetText(L["Comments:"])
@@ -1245,7 +1245,7 @@ function GuildOS:RefreshTrialsPanel(parent)
 
                 for _, note in ipairs(data.notes) do
                     local noteFS = detailFrame:CreateFontString(nil, "OVERLAY")
-                    GuildOS:ApplyFont(noteFS, 9)
+                    GuildOS:ApplyFont(noteFS, UI.SP.META)
                     noteFS:SetPoint("TOPLEFT", 14, dY)
                     -- A set width, not a second anchor: GetStringHeight below measures the wrap at once, before
                     -- an anchored width would be resolved. `content` is bound to the scroll's width (#371).
@@ -1324,7 +1324,7 @@ function GuildOS:ShowExportChooser()
 
     local title = UI:CreateTitle(f, L["Export Data"], 16)
     title:SetPoint("TOP", 0, -12)
-    local hint = UI:CreateText(f, L["Pick a dataset and format. CSV = spreadsheets, Discord = pastebox."], 9, C.silver.r, C.silver.g, C.silver.b)
+    local hint = UI:CreateText(f, L["Pick a dataset and format. CSV = spreadsheets, Discord = pastebox."], UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
     hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
 
     local close = UI:CreateCloseButton(f)
@@ -1396,7 +1396,7 @@ function GuildOS:ShowExportPopup(titleStr, text)
     titleText:SetText(titleStr or L["Export"])
 
     local hint = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(hint, 10)
+    GuildOS:ApplyFont(hint, UI.SP.META)
     hint:SetPoint("TOP", 0, -28)
     hint:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
     hint:SetText(L["Press Ctrl+A to select all, then Ctrl+C to copy"])
@@ -1460,7 +1460,7 @@ function GuildOS:ShowSoftResImportPopup()
     titleText:SetText(L["Import SoftRes from softres.it"])
 
     local hint = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(hint, 10)
+    GuildOS:ApplyFont(hint, UI.SP.META)
     hint:SetPoint("TOP", 0, -28)
     hint:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
     hint:SetText(L["Paste the Gargul export string (or CSV) from softres.it, then click Import."])
@@ -1533,7 +1533,7 @@ function GuildOS:ShowImportPopup()
     titleText:SetText(L["Raid roster from the website"])
 
     local hint = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(hint, 10)
+    GuildOS:ApplyFont(hint, UI.SP.META)
     hint:SetPoint("TOP", 0, -26)
     hint:SetWidth(496)
     hint:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
@@ -1785,7 +1785,7 @@ local function BuildWishlistFrame()
 
         -- MS/OS badge
         local typeText = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(typeText, 10)
+        GuildOS:ApplyFont(typeText, UI.SP.META)
         typeText:SetPoint("LEFT", 308, 0)
         typeText:SetWidth(50)
         typeText:SetJustifyH("CENTER")
@@ -2397,7 +2397,7 @@ local function BuildPrioModal()
 
     -- Status line
     local statusText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(statusText, 10)
+    GuildOS:ApplyFont(statusText, UI.SP.META)
     statusText:SetPoint("LEFT", loadBtn, "RIGHT", 10, 0)
     statusText:SetWidth(120)
     statusText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
@@ -2535,7 +2535,7 @@ local function BuildPrioModal()
     f.cancelBtn = cancelBtn
 
     -- Help text in bottom bar
-    local bottomHelp = UI:CreateText(f, L["Reorder with the arrows. Only you see this before saving."], 9, 0.4, 0.4, 0.5)
+    local bottomHelp = UI:CreateText(f, L["Reorder with the arrows. Only you see this before saving."], UI.SP.META, 0.4, 0.4, 0.5)
     bottomHelp:SetPoint("BOTTOMLEFT", 10, 14)
     f.bottomHelp = bottomHelp
 
@@ -2546,7 +2546,7 @@ local function BuildPrioModal()
     siteBtn:SetScript("OnClick", function() GuildOS:ShowExportPopup(L["Edit on the site"], SITE_URL) end)
     siteBtn:Hide()
     f.siteBtn = siteBtn
-    local siteLine = UI:CreateText(f, L["Nights of cores whose priorities live on the site use the site's."], 9,
+    local siteLine = UI:CreateText(f, L["Nights of cores whose priorities live on the site use the site's."], UI.SP.META,
         C.textSoft.r, C.textSoft.g, C.textSoft.b)
     -- Its own row above the buttons, across the modal's width, with room for three wrapped lines (the German,
     -- French and Russian texts are long): ApplyPrioSource grows the bar by PRIO_SITE_ROW while it shows.

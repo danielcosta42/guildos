@@ -131,6 +131,7 @@ GuildOS.BanList = {
   AllianceLine = function(b) return "Banned in " .. b.guild .. " for " .. b.reason end,
 }
 
+dofile(ADDON .. "/UI/Spacing.lua"); rawset(GuildOS.UI, "SP", GuildOS.Spacing)   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/Forms.lua")
 dofile(ADDON .. "/UI/AlliancePanel.lua")
 local parent = Frame.new(nil)

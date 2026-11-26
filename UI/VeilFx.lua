@@ -497,8 +497,8 @@ function Fx.Bubble(parent, width)
     bg:SetAllPoints()
     bg:SetColorTexture(C.popup.r, C.popup.g, C.popup.b, 1)
     Fx.Border(f, C.line, 1, 0)
-    local label = UI:CreateText(f, "", 10, C.gold.r, C.gold.g, C.gold.b)
-    if GuildOS.ApplyFont then GuildOS:ApplyFont(label, 10, "caption") end
+    local label = UI:CreateText(f, "", 11, C.gold.r, C.gold.g, C.gold.b)
+    if GuildOS.ApplyFont then GuildOS:ApplyFont(label, 11, "caption") end
     label:SetPoint("TOPLEFT", 10, -8)
     local text = UI:CreateText(f, "", 12, C.text.r, C.text.g, C.text.b)
     text:SetPoint("TOPLEFT", 10, -8)

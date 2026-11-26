@@ -168,7 +168,7 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
     header:SetPoint("TOPLEFT", PAD, -CARD_TOP + 2)
     header:SetPoint("TOPRIGHT", -PAD, -CARD_TOP + 2)
     local function head(text, x)
-        local h = UI:CreateHeaderText(header, text, 10)
+        local h = UI:CreateHeaderText(header, text, UI.SP.META)
         h:SetPoint("LEFT", x, 0)
         return h
     end

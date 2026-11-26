@@ -84,7 +84,7 @@ local function BuildFrame()
     else
         title = UI:CreateTitle(f, "", 18)
         title:SetPoint("TOP", 0, -18)
-        stepLbl = UI:CreateText(f, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        stepLbl = UI:CreateText(f, "", UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
         stepLbl:SetPoint("TOP", title, "BOTTOM", 0, -4)
     end
     f.title = title

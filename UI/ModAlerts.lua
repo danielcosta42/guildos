@@ -20,6 +20,7 @@ local L = GuildOS.L
 local WHITE8 = "Interface\\Buttons\\WHITE8x8"
 
 local ROW_H = 44
+local RULE_ROW = UI.SP.ROW   -- a rule's row in the Alert rules list
 
 local function text(parent, size, color)
     local fs = parent:CreateFontString(nil, "OVERLAY")
@@ -157,7 +158,7 @@ function GuildOS:ShowModAlert(a)
         frule:SetPoint("TOPRIGHT", -3, 0)
         UI:Hairline(frule)
         frule:SetVertexColor(0.227, 0.165, 0.09, 1)
-        f.more = text(f.foot, 10, WOOD.textSoft)
+        f.more = text(f.foot, UI.SP.META, WOOD.textSoft)
         f.more:SetWordWrap(true)
         f.ignore = UI:CreateButton(f.foot, L["Ignore"], 90, 24)
         f.mute = UI:CreateButton(f.foot, L["Mute this pattern for 1h"], 180, 24)
@@ -474,28 +475,28 @@ function GuildOS:BuildModRulesSub(panel)
     local function rowAt(i)
         if rows[i] then return rows[i] end
         local row = CreateFrame("Frame", nil, content)
-        row:SetHeight(22)
+        row:SetHeight(RULE_ROW)
         rule(row)
-        row:SetPoint("TOPLEFT", 0, -((i - 1) * 24))
-        row:SetPoint("TOPRIGHT", 0, -((i - 1) * 24))
-        row.p = text(row, 11, C.text)
+        row:SetPoint("TOPLEFT", 0, -((i - 1) * RULE_ROW))
+        row:SetPoint("TOPRIGHT", 0, -((i - 1) * RULE_ROW))
+        row.p = text(row, UI.SP.BODY, C.text)
         row.p:SetPoint("LEFT", 0, 0)
         row.p:SetWidth(200)
         row.p:SetJustifyH("LEFT")
         row.p:SetWordWrap(false)
-        row.cat = text(row, 11, C.textDim)
+        row.cat = text(row, UI.SP.BODY, C.textDim)
         row.cat:SetPoint("LEFT", 210, 0)
         row.cat:SetWidth(140)
         row.cat:SetWordWrap(false)
         -- A click moves the severity on: low, medium, high (audit B5).
-        row.sev = UI:CreateButton(row, "", 150, 18)
+        row.sev = UI:CreateButton(row, "", 150, RULE_ROW - 6)
         row.sev:SetPoint("LEFT", 360, 0)
         row.sev:SetScript("OnClick", function()
             local r = M:GetRules()[row.index]
             if r then M:SetRuleSeverity(row.index, M.NextSeverity(r.sev)) end
         end)
         UI:AddTooltip(row.sev, L["Severity"], { L["Click to change: low only logs, medium alerts, high alerts with a sound."] })
-        row.del = UI:CreateButton(row, "\195\151", 22, 18)  -- ×
+        row.del = UI:CreateButton(row, "\195\151", UI.SP.HIT, RULE_ROW - 6)  -- ×
         row.del:SetPoint("RIGHT", 0, 0)
         row.del:SetScript("OnClick", function() M:RemoveRule(row.index) end)
         rows[i] = row
@@ -503,8 +504,12 @@ function GuildOS:BuildModRulesSub(panel)
     end
     local empty = UI:CreateText(content,
         L["The list is empty: nothing will alert. Add a word above, or restore the default list."],
-        11, C.silver.r, C.silver.g, C.silver.b)
-    empty:SetPoint("TOPLEFT", 0, -4)
+        UI.SP.BODY, C.silver.r, C.silver.g, C.silver.b)
+    -- An empty list is a centred line across it, never a grey line in its corner (#449).
+    empty:SetPoint("TOPLEFT", 0, -UI.SP.FIELD_GAP)
+    empty:SetPoint("TOPRIGHT", 0, -UI.SP.FIELD_GAP)
+    empty:SetJustifyH("CENTER")
+    empty:SetWordWrap(true)
 
     local function refresh()
         if not M or not panel:IsVisible() then return end
@@ -533,7 +538,7 @@ function GuildOS:BuildModRulesSub(panel)
         -- Until an officer saves, these are the defaults of this client's language (audit B5).
         hint:SetText(M:IsCustomList() and L["The guild's words and patterns, shared by the officers. A word matches whole, without case or accents."]
             or L["The default list in your language. Your first change makes it the one list every officer matches."])
-        content:SetHeight(math.max(1, #rules * 24))
+        content:SetHeight(#rules == 0 and 2 * UI.SP.FIELD_GAP + math.ceil(empty:GetStringHeight() or 14) or #rules * RULE_ROW)
         board:Layout()
     end
     if M then M.rulesRefresh = refresh end

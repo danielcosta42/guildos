@@ -27,7 +27,7 @@ local MAX_WALL     = 5
 local TWO_COLUMNS  = 700        -- from this content width the cards sit in two columns
 local LEFT_SHARE   = 0.535      -- the mockup's 1.15fr : 1fr
 local GUTTER       = 12
-local CARD_PAD     = 14
+local CARD_PAD     = UI.SP.PAD
 local ROW_H        = 26         -- a countdown's line
 local TODO_H       = 44         -- a For you line: the square, two lines of text, a button
 local TITLE_H      = 26
@@ -456,7 +456,7 @@ local function face(fire, i)
     b.name = text(b, 12, C.text)
     b.name:SetJustifyH("CENTER")
     b.name:SetPoint("TOP", b.avatar, "BOTTOM", 0, -4)
-    b.zone = text(b, 10, C.textSoft)
+    b.zone = text(b, UI.SP.META, C.textSoft)
     b.zone:SetJustifyH("CENTER")
     b.zone:SetPoint("TOP", b.name, "BOTTOM", 0, -1)
     b:SetScript("OnClick", function(self)
@@ -511,7 +511,7 @@ local function chatLine(chat, i)
     r.avatar:EnableMouse(false)
     r.name = text(r, 12, C.text, "itemName")
     r.name:SetPoint("TOPLEFT", CHAT_AV + 8, 0)
-    r.time = text(r, 10, C.textSoft)
+    r.time = text(r, UI.SP.META, C.textSoft)
     r.time:SetPoint("LEFT", r.name, "RIGHT", 6, 0)
     r.body = text(r, 12, C.text)
     r.body:SetPoint("TOPLEFT", CHAT_AV + 8, -15)
@@ -641,7 +641,8 @@ function GuildOS:CreateSalaoPanel(panel)
     chat.empty = text(ccontent, 12, C.textSoft)
     chat.empty:SetPoint("TOPLEFT", 0, -4)
     chat.empty:SetWordWrap(true)
-    local say = UI:CreateInput(chat, 200, CHAT_FIELD, { placeholder = L["Say to the guild…"], max = 255 })
+    local say = UI:CreateInput(chat, 200, CHAT_FIELD, { placeholder = L["Say to the guild…"] })
+    say:SetMaxBytes(241)   -- what GuildChat:Send keeps (240 bytes), plus the terminator, as the Chat entry's box
     say:SetPoint("BOTTOMLEFT", CARD_PAD, CARD_PAD)
     say:SetPoint("BOTTOMRIGHT", -CARD_PAD, CARD_PAD)
     chat.say = say
@@ -650,7 +651,7 @@ function GuildOS:CreateSalaoPanel(panel)
         local GC = GuildOS.GuildChat
         local msg = self:GetText() or ""
         if not GC or msg:gsub("%s", "") == "" then self:ClearFocus(); return end
-        local ok, why = GC:Send(msg:sub(1, 255))
+        local ok, why = GC:Send(msg)
         if ok then
             self:SetText("")
             chat.follow = true

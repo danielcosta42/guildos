@@ -910,7 +910,8 @@ function GuildOS:CreateGuildChatFeed(panel, top)
     -- The channel tabs, shown only when there is more than /g to choose from.
     local bar = CreateFrame("Frame", nil, panel)
     bar:SetPoint("TOPLEFT", 0, -top)
-    bar:SetSize(400, 24)
+    bar:SetPoint("TOPRIGHT", 0, -top)   -- as wide as the feed: its anchors size it, never a width read too early
+    bar:SetHeight(24)
     bar:Hide()
     local tabs = {}
 
@@ -927,6 +928,7 @@ function GuildOS:CreateGuildChatFeed(panel, top)
     anchorHolder(false)
     local scroll, content = UI:CreateScrollFrame(holder, "GuildOSGuildChatScroll" .. feeds)
     scroll:SetAllPoints()
+    UI:BindScrollChildWidth(scroll, content, 12)   -- the lines follow the feed's width as the window resizes
 
     local input = UI:CreateInput(panel, 100, FIELD_H, { placeholder = L["Write to the guild"] })
     input:SetPoint("BOTTOMLEFT", 0, 0)
@@ -995,7 +997,6 @@ function GuildOS:CreateGuildChatFeed(panel, top)
             shown[#shown + 1] = t
         end
         for i = #list + 1, #tabs do tabs[i]:Hide() end
-        bar:SetWidth(math.max(50, panel:GetWidth() or 0))
         UI:FlowBar(bar, shown, { gap = 4, rowGap = 4, rowH = 24 })
     end
 

@@ -16,7 +16,11 @@ local C = GuildOS.Colors
 local Style = GuildOS.Style
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
-local BUTTON_HEIGHT  = 26    -- default button height (handoff §8)
+-- The spacing standard (#449): UI/Spacing.lua, the one scale every screen and every primitive below reads.
+local SP = GuildOS.Spacing
+Helpers.SP = SP
+
+local BUTTON_HEIGHT  = SP.FIELD    -- default button height
 local DISABLED_GOLD  = 0.35  -- alpha of a disabled primary button or checkbox mark
 local FADE_MAX       = 0.1   -- seconds; the only motion the skin allows
 local SCROLL_WIDTH   = 8
@@ -414,7 +418,7 @@ end
 -- opts.link: a link at the title's right (an underlined word that opens something), card.link; set its click
 -- with card.link:SetScript("OnClick", ...). card.ink and card.soft are the colours its text takes. The title is
 -- never upper case. Size and place it as any frame; its content starts CARD_TOP down, CARD_PAD in.
-Helpers.CARD_PAD, Helpers.CARD_TOP = 14, 36
+Helpers.CARD_PAD, Helpers.CARD_TOP = SP.PAD, SP.TOP
 function Helpers:CreateCard(parent, title, opts)
     opts = opts or {}
     local f = CreateFrame("Frame", nil, parent, "BackdropTemplate")
@@ -424,18 +428,20 @@ function Helpers:CreateCard(parent, title, opts)
     f.ink = dark and C.text or C.paperInk
     f.soft = dark and C.textSoft or C.paperSoft
     f.lineColor = dark and C.line or C.paperLine
+    f.isCard = true   -- the room harness (tools/room-cards.lua) holds everything drawn on it inside it
     local t = newText(f, nil, "sectionTitle")
     local tc = dark and C.gold2 or C.paperTitle
     t:SetTextColor(tc.r, tc.g, tc.b)
     t:SetJustifyH("LEFT")
     t:SetWordWrap(false)
-    t:SetPoint("TOPLEFT", Helpers.CARD_PAD, -12)
+    GuildOS:ApplyFont(t, SP.TITLE, "sectionTitle")
+    t:SetPoint("TOPLEFT", Helpers.CARD_PAD, -Helpers.CARD_PAD)
     GuildOS:SetTitleText(t, title or "")
     f.title = t
     if opts.link then
         local link = self:SetButtonVariant(self:CreateButton(f, opts.link, 40, 18), "ghost")
         link:SetWidth(math.ceil(link.label:GetStringWidth()) + 4)
-        link:SetPoint("TOPRIGHT", -Helpers.CARD_PAD + 2, -10)
+        link:SetPoint("TOPRIGHT", -Helpers.CARD_PAD + 2, -(Helpers.CARD_PAD - 1))
         t:SetPoint("RIGHT", link, "LEFT", -8, 0)
         f.link = link
     else
@@ -475,7 +481,7 @@ function Helpers:CreateAvatar(parent, size, glow)
     a.dash = Style:Texture(a, "ring-dash", "ARTWORK", 2)
     a.dash:SetAllPoints()
     a.dash:Hide()
-    a.letter = newText(a, math.max(10, math.floor(size * 0.42)), "button")
+    a.letter = newText(a, math.max(SP.META, math.floor(size * 0.42)), "button")
     a.letter:SetPoint("CENTER", 0, 0)
     function a:SetMember(name, classFile, away)
         local cc = (classFile and GuildOS.ClassColors[classFile]) or C.textSoft
@@ -517,7 +523,7 @@ function Helpers:CreateGlyph(parent, size)
     g:SetSize(size, size)
     g.orb = Style:Texture(g, "orb", "ARTWORK", 0)
     g.orb:SetAllPoints()
-    g.letter = newText(g, math.max(10, math.floor(size * 0.42)), "button")
+    g.letter = newText(g, math.max(SP.META, math.floor(size * 0.42)), "button")
     g.letter:SetPoint("CENTER", 0, 0)
     g.letter:SetTextColor(1, 1, 1)
     function g:Set(letter, color)
@@ -528,6 +534,44 @@ function Helpers:CreateGlyph(parent, size)
     return g
 end
 
+-- An empty state as the standard draws it (#449, specs/salao/fase3.md "Espaçamento"): a centred block on a parchment
+-- card, never a grey line in a corner. A round glyph (`glyph`, a letter or a symbol), one line (wrapped) and the
+-- main action when there is one. Centre it where the screen's list would be: es:SetPoint("CENTER", host). es:Set(text,
+-- actionText, onClick) fills it (no actionText: no button) and sizes the card; es.text, es.glyph, es.action.
+function Helpers:CreateEmptyState(parent, glyph, width)
+    local es = self:CreateCard(parent, "")
+    es.title:Hide()
+    es:SetWidth(width or 380)
+    es.glyph = self:CreateGlyph(es, 40)
+    es.glyph:SetPoint("TOP", 0, -SP.PAD - 4)
+    es.glyph:Set(glyph or "?", C.paperTitle)
+    es.text = self:CreateText(es, "", SP.BODY, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    es.text:SetPoint("TOP", es.glyph, "BOTTOM", 0, -SP.FIELD_GAP)
+    es.text:SetJustifyH("CENTER")
+    es.text:SetWordWrap(true)
+    es.action = self:SetButtonVariant(self:CreateButton(es, "", 120, SP.FIELD), "primary")
+    es.action:Hide()
+    function es:Set(text, actionText, onClick)
+        local w = self:GetWidth() or 380
+        self.text:SetWidth(math.max(60, w - 2 * SP.PAD))
+        self.text:SetText(text or "")
+        local h = SP.PAD + 4 + 40 + SP.FIELD_GAP + math.ceil(self.text:GetStringHeight() or 14)
+        if actionText then
+            self.action.label:SetText(actionText)
+            self.action:SetWidth(math.ceil(self.action.label:GetStringWidth() or 80) + 32)
+            self.action:ClearAllPoints()
+            self.action:SetPoint("TOP", self.text, "BOTTOM", 0, -SP.SECTION)
+            self.action:SetScript("OnClick", onClick)
+            self.action:Show()
+            h = h + SP.SECTION + SP.FIELD
+        else
+            self.action:Hide()
+        end
+        self:SetHeight(h + SP.PAD)
+    end
+    return es
+end
+
 -- A red count (the Officers' Room's, an entry's): a small pill, hidden at zero. count:SetCount(n).
 function Helpers:CreateCount(parent)
     local f = CreateFrame("Frame", nil, parent)
@@ -535,7 +579,7 @@ function Helpers:CreateCount(parent)
     local fill = Style:Three(f, "pill", "ARTWORK", 0)
     fill:SetColor(C.count)
     f.fill = fill
-    f.text = newText(f, 10, "badge")
+    f.text = newText(f, SP.META, "badge")
     f.text:SetPoint("CENTER", 0, 0)
     f.text:SetTextColor(1, 1, 1)
     function f:SetCount(n)
@@ -618,7 +662,7 @@ end
 
 -- Create body or table text: Alegreya Sans, the wood's ink (the paper's on a card) unless a colour is given.
 function Helpers:CreateText(parent, text, size, r, g, b)
-    local fs = newText(parent, size or 12)
+    local fs = newText(parent, size or SP.BODY)
     local ink = (r == nil and Helpers:OnPaper(parent)) and C.paperInk or C.text
     fs:SetTextColor(r or ink.r, g or ink.g, b or ink.b)
     fs:SetText(text or "")
@@ -628,7 +672,7 @@ end
 -- Create a column header: Cinzel, small, gold on the wood and dark red on the paper (the mockup's .t th).
 -- A section of a screen takes CreateSectionTitle instead.
 function Helpers:CreateHeaderText(parent, text, size)
-    local fs = newText(parent, size or 10, "colHeader")
+    local fs = newText(parent, size or SP.META, "colHeader")
     local c = Helpers:OnPaper(parent) and C.paperTitle or C.gold
     fs:SetTextColor(c.r, c.g, c.b)
     fs:SetText(text or "")
@@ -641,9 +685,9 @@ end
 
 -- Space between blocks, and under a sub-tab bar before a screen's first line. A screen's content
 -- starts flush with the sub-tab bar's left edge (x = 0) and ends GAP short of the right one.
-Helpers.GAP = 8
+Helpers.GAP = SP.MARGIN
 
--- A section title as Settings draws it: Cinzel 13, the soft gold on the wood and dark red on the paper,
+-- A section title as Settings draws it: Cinzel 15 (UI.SP.TITLE), the soft gold on the wood and dark red on the paper,
 -- never upper case. Any section but a screen's first has a 1px `line` rule 12px above it, from the title's
 -- left to the parent's right edge, so leave about 20px over a later one. Returns the title; title.rule is that rule.
 function Helpers:CreateSectionTitle(parent, text, first)
@@ -682,7 +726,7 @@ end
 function Helpers:CreateInput(parent, width, height, opts)
     opts = opts or {}
     local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    box:SetSize(width or 160, height or 22)
+    box:SetSize(width or 160, height or SP.FIELD)
     local edge, ink, paper = fieldLook(box)
     box:SetTextInsets(8, 8, opts.multiline and 4 or 0, opts.multiline and 4 or 0)
     GuildOS:ApplyFont(box, 12, opts.numeric and "tableNum" or nil)
@@ -754,12 +798,12 @@ function Helpers:CreateTextArea(parent, width, height, opts)
     return area
 end
 
--- A table's header row (the mockup's .t th): 22px, no fill, a 1px rule along its bottom, the metal on the
+-- A table's header row (the mockup's .t th): UI.SP.HIT (24px) tall unless told, no fill, a 1px rule along its bottom, the metal on the
 -- wood and tan on the paper. Put the column labels on it with CreateHeaderText and anchor it by its top
 -- corners; the first row sits right under it.
 function Helpers:CreateTableHeader(parent, height)
     local f = CreateFrame("Frame", nil, parent)
-    f:SetHeight(height or 22)
+    f:SetHeight(height or SP.HIT)
     local rule = self:CreateSeparator(f)
     local c = Helpers:OnPaper(parent) and C.paperRule or C.lineHi
     rule:SetVertexColor(c.r, c.g, c.b, 1)
@@ -1134,7 +1178,7 @@ end
 -- the label the paper's ink. cb.border and cb.fill are the box's two textures.
 -- `frame.checkbox.onChanged(cb, checked)` fires on click; SetChecked repaints.
 function Helpers:CreateCheckbox(parent, labelText, size)
-    size = size or 20
+    size = size or SP.HIT
     local paper = Helpers:OnPaper(parent)
     local well, pressed = paper and C.paperLight or C.well, paper and C.paperLine or C.popup
     local rest = paper and C.paperEdge or C.lineHi
@@ -1399,7 +1443,7 @@ end
 function Helpers:CloseDropdown() closeDropdown() end
 
 function Helpers:CreateDropdown(parent, width, height)
-    local dd = self:CreateButton(parent, "", width or 140, height or 22)
+    local dd = self:CreateButton(parent, "", width or 140, height or SP.FIELD)
     -- The closed field looks like the text input beside it (#449): the select of the mockup, not a button.
     self:SetButtonVariant(dd, "field")
     GuildOS:ApplyFont(dd.label, 12)
@@ -1756,7 +1800,7 @@ end
 -- Create a metric chip (the mockup's .kpi): a small dark tile with the metal line, the number in Cinzel and
 -- the soft gold, its caption under it in the soft ink; on a parchment card, a darker paper with dark red.
 -- chip:SetValue(text) updates the number. chip.rule is kept (hidden) for the screens that read it.
-local KPI_PAD_X, KPI_PAD_Y = 10, 6
+local KPI_PAD_X, KPI_PAD_Y = 12, 8
 function Helpers:CreateMetricChip(parent, value, caption, size)
     local chip = CreateFrame("Frame", nil, parent)
     local paper = Helpers:OnPaper(parent)
@@ -1775,7 +1819,7 @@ function Helpers:CreateMetricChip(parent, value, caption, size)
     rule:SetPoint("TOPRIGHT")
     rule:Hide()
 
-    local px = size or GuildOS.Fonts.metricValue.size
+    local px = size or SP.KPI
     local v = newText(chip, px, "metricValue")
     v:SetPoint("TOPLEFT", KPI_PAD_X, -KPI_PAD_Y)
     local vc = paper and C.paperTitle or C.gold2
@@ -1863,11 +1907,11 @@ function Helpers:CollapsibleSubBar(host, bar, frames, under)
 end
 
 -- Create a tab (the mockup's .sub, an entry pill): the door's ink at rest, the metal's line under the cursor,
--- and the open one a soft gold pill with dark bold text. `sub` is kept for the callers that pass it; every tab
+-- and the open one a soft gold pill with dark bold text. `_sub` is kept for the callers that pass it; every tab, at least SP.HIT tall,
 -- is a pill now. tab.underline is kept, hidden.
-function Helpers:CreateTab(parent, text, width, sub)
+function Helpers:CreateTab(parent, text, width, _sub)
     local tab = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    tab:SetSize(width or 100, sub and 22 or 24)
+    tab:SetSize(width or 100, SP.HIT)
     local fill = Style:Three(tab, "pill", "BACKGROUND", 1)
     local line = Style:Three(tab, "pill-line", "BACKGROUND", 2)
     fill:SetColor(C.gold2)

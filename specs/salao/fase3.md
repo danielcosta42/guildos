@@ -97,8 +97,11 @@ latim (nome de guilda ou de evento em cirílico num cliente enUS) troca para a A
 ## Espaçamento
 
 O mantenedor, no jogo: "um pouco mais de espaço (problema geral nessas telas), densidade de opções e uso do
-espaço". O padrão abaixo vale para Raides › Cores e Grupos desde já (`SP` em `UI/CorePanel.lua` e
-`UI/GroupsPanel.lua`) e vira global depois, nos primitivos.
+espaço". O padrão abaixo é global: uma só escala, `UI.SP` (`UI/Spacing.lua`, carregado antes de
+`UI/Helpers.lua`), que os primitivos leem (o card e seu título, botões, campos, selects, caixas de seleção,
+cabeçalho de tabela, KPI, abas e pílulas, os tamanhos de texto por omissão; o Kit das janelas flutuantes; o
+Forms dos boards; a faixa de entradas da janela) e que as telas usam no lugar de números próprios. Os tamanhos de
+texto são os que a tela pede à API de texto (a Alegreya Sans desenha 1 px maior; a Cinzel, como pedido).
 
 - **Unidade 4.** Toda medida é múltiplo de 4 (2 só para linhas finas e ajuste ótico).
 - **Card:** padding 16; 14 entre cards; o conteúdo nunca encosta na borda. Título de seção **15 serifado**
@@ -111,8 +114,12 @@ espaço". O padrão abaixo vale para Raides › Cores e Grupos desde já (`SP` e
 - **Uso do espaço:** cards em grade de 2 colunas a partir de 900 px de tela; listas crescem até o fim da altura
   disponível; estado vazio é um bloco centrado e ilustrativo (glifo ou ícone, uma linha e a ação principal),
   nunca uma linha cinza no canto superior esquerdo.
-- **Teste:** todo descendente visível de um card fica dentro do card (`isCard`; `tools/groups-panel.lua` e a
-  parte de Cores de `tools/loot-window.lua` conferem pelas âncoras).
+- **Teste:** `tools/room-cards.lua` abre cada entrada de cada sala (e Configurações) a 1250 e a 800 px e confere,
+  em todo card (`UI:CreateCard` marca `isCard`): todo descendente visível dentro dele, nenhum par de cards
+  sobreposto, nenhum texto pedido abaixo de `SP.META` nem desenhado abaixo de 11 px, o título a `SP.PAD` do topo;
+  e que nenhuma tela guarda um `CARD_PAD`/`CARD_TOP`/`CARD_GAP` numérico próprio. `tools/groups-panel.lua`,
+  `tools/loot-window.lua` e `tools/officer-cards.lua` seguem conferindo as suas telas.
+- **Estado vazio:** `UI:CreateEmptyState(parent, glifo)` — um card centrado com o glifo, a linha e a ação.
 
 ## O que o WoW não reproduz do protótipo
 

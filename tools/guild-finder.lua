@@ -369,6 +369,7 @@ GF:AddSource("CR2", GF.HeardAds)
 RB:Ingest("CR2|Alpha Guild|H|HEALER+PALADIN+WARRIOR|Seg e Qua|Raide de noite|ptBR|RAID|"
   .. (NOW - 10) .. "|" .. (NOW + 86400) .. "|Ana-Realm", "Ana")
 RB:Ingest("CR2|Beta Guild|H|||Chill|enUS||" .. (NOW - 20) .. "|" .. (NOW + 86400) .. "|Bia", "Bia")
+dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/GuildFinder.lua")
 check(GuildOS.ShowGuildFinder and GuildOS.GuildFinderHeard, "the screen has the entries the plan names")
 

@@ -20,18 +20,20 @@ local UI = GuildOS.UI
 local Forms = {}
 GuildOS.Forms = Forms
 
-Forms.TWO_W     = 900   -- the board's width from which its cards go in two columns
-Forms.GAP       = 12    -- between two cards
-Forms.ROW_GAP   = 8     -- between two rows of a card
-Forms.LABEL_GAP = 3     -- a field's label to its field (the mockup's .field gap)
-Forms.FIELD_H   = 24    -- a text field's, a select's and a button's height in a form
-Forms.PILL_H    = 22
+local SP = UI.SP      -- the spacing standard (#449): every measure below comes from it
+Forms.TWO_W     = SP.TWO_COLS    -- the board's width from which its cards go in two columns
+Forms.GAP       = SP.GAP         -- between two cards
+Forms.ROW_GAP   = SP.FIELD_GAP   -- between two rows of a card
+Forms.LABEL_GAP = SP.LABEL_GAP   -- a field's label to its field (the mockup's .field gap)
+Forms.FIELD_H   = SP.FIELD       -- a text field's, a select's and a button's height in a form
+Forms.PILL_H    = SP.HIT
 Forms.PAIR_MIN  = 300   -- under this inner width a pair stacks
+Forms.TODO_H    = 40    -- a short list's two-line row (a title in BODY, a meta line under it)
 Forms.FILL_MIN  = 220   -- a filling card is never shorter
 
 local function num(v, fallback) return type(v) == "number" and v or fallback end
-local function pad() return num(UI.CARD_PAD, 14) end
-local function top() return num(UI.CARD_TOP, 36) end
+local function pad() return SP.PAD end
+local function top() return SP.TOP end
 
 local function laidHeight(f)
     local h = f and f.GetHeight and f:GetHeight()
@@ -59,7 +61,7 @@ end
 -- A text in the card's soft ink (the mockup's .sm and field labels), `size` (11) px, left-aligned.
 function Forms:Soft(parent, text, size)
     local ink = (UI:OnPaper(parent) and GuildOS.Colors.paperSoft) or GuildOS.Colors.textSoft
-    local fs = UI:CreateText(parent, text or "", size or 11, ink.r, ink.g, ink.b)
+    local fs = UI:CreateText(parent, text or "", size or SP.META, ink.r, ink.g, ink.b)
     fs:SetJustifyH("LEFT")
     return fs
 end
@@ -99,11 +101,11 @@ function Forms:MakeField(parent, label, control, opts)
     opts = opts or {}
     local holder = CreateFrame("Frame", nil, parent)
     holder:SetSize(1, 1)
-    local lbl = Forms:Soft(holder, label or "", 11)
+    local lbl = Forms:Soft(holder, label or "", SP.META)
     lbl:SetPoint("TOPLEFT", 0, 0)
     lbl:SetWordWrap(false)
     if control:GetParent() ~= holder and control.SetParent then control:SetParent(holder) end
-    local hint = opts.hint and Forms:Soft(holder, opts.hint, 10) or nil
+    local hint = opts.hint and Forms:Soft(holder, opts.hint, SP.META) or nil
     if hint then hint:SetWordWrap(true) end
     holder.label, holder.control, holder.hint, holder.button = lbl, control, hint, opts.button
     if opts.button and opts.button.SetParent then opts.button:SetParent(holder) end
@@ -301,7 +303,7 @@ function Card:LayoutRows(cw, extra)
             y = y + h
         end
     end
-    return y + P - 2
+    return y + P
 end
 
 -- A field (Forms:MakeField) as a row. Returns the holder (holder.control is the field).
@@ -323,10 +325,10 @@ function Card:Pair(a, b, opts)
     self:Add(holder, { gap = opts.gap, shown = opts.shown, place = function(_, w)
         local h
         if w >= Forms.PAIR_MIN then
-            local aw = math.floor((w - 8) * (opts.split or 0.5))
-            local ha, hb = a:Place(aw), b:Place(w - 8 - aw)
+            local aw = math.floor((w - SP.FIELD_GAP) * (opts.split or 0.5))
+            local ha, hb = a:Place(aw), b:Place(w - SP.FIELD_GAP - aw)
             a:ClearAllPoints(); a:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
-            b:ClearAllPoints(); b:SetPoint("TOPLEFT", holder, "TOPLEFT", aw + 8, 0)
+            b:ClearAllPoints(); b:SetPoint("TOPLEFT", holder, "TOPLEFT", aw + SP.FIELD_GAP, 0)
             h = math.max(ha, hb)
         else
             local ha = a:Place(w)
@@ -343,7 +345,7 @@ end
 
 -- Items along a line, wrapping as the card narrows (the mockup's .btns and .chips). `items` is a list, or
 -- a function that returns the ones to lay (a list that changes: the channels). opts.align "RIGHT": from the
--- right edge (a card's actions). opts.gapX (6), opts.rowH (the tallest item). Each item keeps its width,
+-- right edge (a card's actions). opts.gapX (8), opts.rowH (the tallest item). Each item keeps its width,
 -- cut to the row's. Returns the holder; holder.items.
 function Card:Flow(items, opts)
     opts = opts or {}
@@ -351,7 +353,7 @@ function Card:Flow(items, opts)
     holder:SetSize(1, 1)
     holder.items = type(items) == "table" and items or {}
     for _, it in ipairs(holder.items) do if it.SetParent then it:SetParent(holder) end end
-    local gx = opts.gapX or 6
+    local gx = opts.gapX or 2 * SP.UNIT
     self:Add(holder, { gap = opts.gap, shown = opts.shown, indent = opts.indent, place = function(_, w)
         local list = type(items) == "function" and items() or holder.items
         local shown, widths, rowH = {}, {}, 0
@@ -374,11 +376,11 @@ function Card:Flow(items, opts)
             for _, i in ipairs(row) do
                 local it = shown[i]
                 it:ClearAllPoints()
-                it:SetPoint("TOPLEFT", holder, "TOPLEFT", x, -((ri - 1) * (rowH + 6)))
+                it:SetPoint("TOPLEFT", holder, "TOPLEFT", x, -((ri - 1) * (rowH + 2 * SP.UNIT)))
                 x = x + widths[i] + gx
             end
         end
-        local h = #rows * rowH + (#rows - 1) * 6
+        local h = #rows * rowH + (#rows - 1) * 2 * SP.UNIT
         holder:SetSize(math.max(1, w), h)
         return h
     end })
@@ -390,7 +392,7 @@ end
 function Card:Actions(buttons, opts)
     opts = opts or {}
     opts.align = "RIGHT"
-    opts.gap = opts.gap or 12
+    opts.gap = opts.gap or SP.SECTION
     return self:Flow(buttons, opts)
 end
 
@@ -409,7 +411,7 @@ function Card:Check(label, hint, opts)
         f.checkbox:ClearAllPoints()
         f.checkbox:SetPoint("TOPLEFT", f, "TOPLEFT", 2, -2)
     end
-    local h2 = hint and Forms:Soft(f, hint, 10) or nil
+    local h2 = hint and Forms:Soft(f, hint, SP.META) or nil
     if h2 then h2:SetWordWrap(true) end
     f.hint = h2
     self:Add(f, { gap = opts.gap, indent = opts.indent, shown = opts.shown, place = function(_, w)
@@ -431,11 +433,11 @@ function Card:Check(label, hint, opts)
     return f
 end
 
--- A paragraph in the soft ink (the mockup's .sm, .note), wrapped at the card's width. opts.size (11),
+-- A paragraph in the soft ink (the mockup's .sm, .note), wrapped at the card's width. opts.size (SP.META),
 -- opts.ink (a colour), opts.shown, opts.gap. Returns the text.
 function Card:Note(text, opts)
     opts = opts or {}
-    local fs = Forms:Soft(self, text, opts.size or 11)
+    local fs = Forms:Soft(self, text, opts.size or SP.META)
     if opts.ink then fs:SetTextColor(opts.ink.r, opts.ink.g, opts.ink.b) end
     fs:SetWordWrap(true)
     self:Add(fs, { gap = opts.gap, shown = opts.shown, indent = opts.indent, place = function(_, w)
@@ -463,10 +465,10 @@ end
 -- rule under them. cols: { { text, x, justify }, ... } (x from the row's left; a negative x from its right).
 -- Returns the header, with header.cols (the texts).
 function Forms:TableHeader(parent, cols)
-    local header = UI:CreateTableHeader(parent, 20)
+    local header = UI:CreateTableHeader(parent, SP.HIT)
     header.cols = {}
     for i, col in ipairs(cols or {}) do
-        local fs = UI:CreateHeaderText(header, col[1], 10)
+        local fs = UI:CreateHeaderText(header, col[1], SP.META)
         local x = col[2] or 0
         if x < 0 then
             fs:SetPoint("RIGHT", header, "RIGHT", x, 0)
@@ -482,15 +484,15 @@ end
 
 -- A short list as rows (the mockup's .todo): `createRow(holder)` makes a row's parts once, `fillRow(row, item, i)`
 -- writes an item into it; holder:SetData(list) shows them, rowH apart, and lays the board out again. With
--- none, opts.empty (a text) says so. Rows are kept and reused. opts.rowH (34), opts.shown, opts.gap.
+-- none, opts.empty (a text) says so. Rows are kept and reused. opts.rowH (Forms.TODO_H), opts.shown, opts.gap.
 -- Returns the holder (holder.rows, holder.empty).
 function Card:Rows(createRow, fillRow, opts)
     opts = opts or {}
-    local rowH = opts.rowH or 34
+    local rowH = opts.rowH or Forms.TODO_H
     local holder = CreateFrame("Frame", nil, self)
     holder:SetSize(1, 1)
     holder.rows, holder.data = {}, {}
-    local empty = Forms:Soft(holder, opts.empty or "", 11)
+    local empty = Forms:Soft(holder, opts.empty or "", SP.META)
     empty:SetPoint("TOPLEFT", 0, -2)
     empty:SetWordWrap(true)
     holder.empty = empty
@@ -531,7 +533,7 @@ end
 function Forms:TodoRow(parent, opts)
     opts = opts or {}
     local row = CreateFrame("Frame", nil, parent)
-    row:SetHeight(34)
+    row:SetHeight(Forms.TODO_H)
     local Kit = rawget(GuildOS, "Kit")
     if Kit then Kit:Rule(row) end
     local x = 0
@@ -558,16 +560,16 @@ function Forms:TodoRow(parent, opts)
     end
     row.right = CreateFrame("Frame", nil, row)
     row.right:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-    row.right:SetSize(1, 22)
+    row.right:SetSize(1, SP.HIT)
     local ink = GuildOS.Colors.paperInk
-    row.title = UI:CreateText(row, "", 12, ink.r, ink.g, ink.b)
-    row.title:SetPoint("TOPLEFT", row, "TOPLEFT", x, -3)
-    row.title:SetPoint("RIGHT", row.right, "LEFT", -8, 0)
+    row.title = UI:CreateText(row, "", SP.BODY, ink.r, ink.g, ink.b)
+    row.title:SetPoint("TOPLEFT", row, "TOPLEFT", x, -SP.UNIT)
+    row.title:SetPoint("RIGHT", row.right, "LEFT", -SP.CELL, 0)
     row.title:SetJustifyH("LEFT")
     row.title:SetWordWrap(false)
-    row.sub = Forms:Soft(row, "", 10)
+    row.sub = Forms:Soft(row, "", SP.META)
     row.sub:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -2)
-    row.sub:SetPoint("RIGHT", row.right, "LEFT", -8, 0)
+    row.sub:SetPoint("RIGHT", row.right, "LEFT", -SP.CELL, 0)
     row.sub:SetWordWrap(false)
     row.buttons = {}
     -- Lay `buttons` (the shown ones) from the right edge leftwards; row.right takes their width.
@@ -580,17 +582,18 @@ function Forms:TodoRow(parent, opts)
                 if b:GetParent() ~= self.right and b.SetParent then b:SetParent(self.right) end
                 b:ClearAllPoints()
                 b:SetPoint("RIGHT", self.right, "RIGHT", -xr, 0)
-                xr = xr + num(b:GetWidth(), 40) + 6
+                xr = xr + num(b:GetWidth(), 40) + 2 * SP.UNIT
             end
         end
-        self.right:SetWidth(math.max(1, xr - 6))
+        self.right:SetWidth(math.max(1, xr - 2 * SP.UNIT))
     end
     return row
 end
 
--- A small button for a row's action (the mockup's .btn.s): 20px, sized to its label; variant as Forms:Button.
+-- A small button for a row's action (the mockup's .btn.s): the smallest hit target (SP.HIT), sized to its label;
+-- variant as Forms:Button.
 function Forms:SmallButton(parent, text, variant)
-    local b = UI:CreateButton(parent, text or "", 40, 20)
+    local b = UI:CreateButton(parent, text or "", 40, SP.HIT)
     if variant then UI:SetButtonVariant(b, variant) end
     b:SetWidth(math.ceil(num(b.label:GetStringWidth(), 30)) + 16)
     return b
@@ -604,7 +607,7 @@ function Card:Inline(items, opts)
     local holder = CreateFrame("Frame", nil, self)
     holder:SetSize(1, 1)
     for _, it in ipairs(items) do if it.SetParent then it:SetParent(holder) end end
-    local gx = opts.gapX or 10
+    local gx = opts.gapX or SP.CELL
     self:Add(holder, { gap = opts.gap, shown = opts.shown, place = function(_, w)
         local widths, heights, shown = {}, {}, {}
         for _, it in ipairs(items) do
@@ -633,9 +636,9 @@ function Card:Inline(items, opts)
                 it:SetPoint("TOPLEFT", holder, "TOPLEFT", x, -(y + rowH - heights[i]))
                 x = x + widths[i] + gx
             end
-            y = y + rowH + 6
+            y = y + rowH + SP.FIELD_GAP
         end
-        local h = math.max(0, y - 6)
+        local h = math.max(0, y - SP.FIELD_GAP)
         holder:SetSize(math.max(1, w), math.max(1, h))
         return h
     end })

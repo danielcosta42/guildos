@@ -148,6 +148,7 @@ check(R._welcomeIntents["New Guy"][OFFICER] and R._welcomedRecently["New Guy"] a
 dofile(ADDON .. "/Modules/DataCollector.lua")
 GuildOS.UI = { IsFeatureAllowed = function() return true end, GetFeature = function(_, id) return id end }
 GuildOS.Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1 } end })
+dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/Agora.lua")
 dofile(ADDON .. "/UI/Salao.lua")
 local A = GuildOS.UI.Agora

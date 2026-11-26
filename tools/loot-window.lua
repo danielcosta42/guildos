@@ -211,6 +211,7 @@ local function load(style)
   dofile(ADDON .. "/Core/Style.lua")
   dofile(ADDON .. "/Core/Utils.lua")
   GuildOS.Style:Resolve()
+  dofile(ADDON .. "/UI/Spacing.lua")
   dofile(ADDON .. "/UI/Helpers.lua")
   dofile(ADDON .. "/UI/Layout.lua")
   GuildOS.Print = function() end

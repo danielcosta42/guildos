@@ -173,6 +173,7 @@ dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Style.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 GuildOS.Style:Resolve()
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Layout.lua")
 local wire = {}

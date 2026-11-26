@@ -78,6 +78,7 @@ GuildOS.UI = setmetatable({
   CreateButton = function(_, _, t) local b = widget({ text = tostring(t) }); buttons[#buttons + 1] = b; return b end,
   CreateCheckbox = function() return widget({ checkbox = widget({}) }) end,
 }, { __index = function() return function() return stub end end })
+dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/FeaturePanels.lua")
 dofile(ADDON .. "/UI/SettingsPanel.lua")
 GuildOS.CreateRolePicker = function() return stub end

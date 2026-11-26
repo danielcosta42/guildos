@@ -39,12 +39,13 @@ local NAME_MIN     = 70
 local DOOR_H       = 32      -- a room's door, standing on the title bar's bottom line
 local DOOR_PAD     = 20
 local DOOR_GAP     = 1
-local ENTRY_H      = 34      -- the open room's entries, as pills on the strip under the bar (#445, #449)
-local PILL_H       = 22
-local PILL_PAD     = 22
-local PILL_GAP     = 4
+local SP           = UI.SP   -- the spacing standard (#449)
+local ENTRY_H      = 40      -- the open room's entries, as pills on the strip under the bar (#445, #449)
+local PILL_H       = SP.HIT
+local PILL_PAD     = 24
+local PILL_GAP     = 6
 local SIDE_W       = 190     -- a side room's bar of entries (the Officers' Room, #447): the mockup's .side-nav
-local SIDE_ROW     = 22
+local SIDE_ROW     = 22      -- the side bar fits the default 620px window with every entry
 local SIDE_HEAD    = 20
 local TAB_MIN_W    = 40
 local MORE_W       = 36
@@ -781,8 +782,8 @@ local function createWindow()
                 if self.activeEntry and self.activeEntry.id == entry.id then active = i end
             end
             -- Entries that do not fit fold into "»n", as the rooms do.
-            local fit, hidden = UI:FitTabs(widths, w - 2 * EDGE - 20, PILL_GAP, MORE_W, active)
-            local x, placed = 10, {}
+            local fit, hidden = UI:FitTabs(widths, w - 2 * EDGE - 2 * PAD, PILL_GAP, MORE_W, active)
+            local x, placed = PAD, {}
             for _, i in ipairs(fit) do
                 local btn = self.entryTabs[i]
                 btn:SetWidth(widths[i])

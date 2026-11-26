@@ -177,6 +177,7 @@ if STYLE == "forever" then
 end
 GuildOS.Style:Resolve()
 dofile(ADDON .. "/UI/StylePreview.lua")
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/UI/FeatureRegistry.lua")

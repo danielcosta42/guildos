@@ -78,6 +78,7 @@ GuildOS.UI = setmetatable({
   end,
   AttachSaveButton = function(_, box, fn) saves[#saves + 1] = fn; box.saveButton = stub; return stub end,
 }, { __index = function() return function() return stub end end })
+dofile(ADDON .. "/UI/Spacing.lua"); rawset(GuildOS.UI, "SP", GuildOS.Spacing)   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/Forms.lua")
 dofile(ADDON .. "/UI/FeaturePanels.lua")
 

@@ -21,8 +21,8 @@ local RAIL_W     = 176
 local RAIL_ROW   = 36
 local SIDE       = 10
 local TOP        = 8
-local CARD_PAD   = 12       -- the rail's dark card and the catalog's paper card: padding
-local CARD_TOP   = 38       -- under a card's title
+local CARD_PAD   = UI.SP.PAD       -- the rail's dark card and the catalog's paper card: padding
+local CARD_TOP   = UI.SP.TOP       -- under a card's title
 local RAIL_CARD  = RAIL_W + 2 * CARD_PAD
 local TITLE_H    = 30
 local TOOLS_H    = 30
@@ -193,7 +193,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         name:SetJustifyH("LEFT")
         name:SetWordWrap(false)
         b.icon, b.name = icon, name
-        b.sub = UI:CreateText(b, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        b.sub = UI:CreateText(b, "", UI.SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
         b.sub:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 8, -2)
         b.sub:SetWidth(RAIL_W - 42)
         b.sub:SetJustifyH("LEFT")
@@ -318,7 +318,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     header:SetPoint("TOPRIGHT", tools, "BOTTOMRIGHT", 0, -4)
     local headerCells = {}
     for _, key in ipairs({ "name", "skill", "who", "req" }) do
-        local fs = UI:CreateHeaderText(header, "", 10)
+        local fs = UI:CreateHeaderText(header, "", UI.SP.META)
         fs:SetJustifyH("LEFT")
         fs:SetWordWrap(false)
         headerCells[key] = fs

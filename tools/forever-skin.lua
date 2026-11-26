@@ -237,8 +237,8 @@ check(#fs.calls == 1, "a client that returns nothing on success is not pushed on
 
 -- ── 6. The roles: titles in Cinzel, the interface in Alegreya Sans, reading in Alegreya ──
 local SCALE = {
-  wordmark = { F.title, 16 }, windowTitle = { F.title, 15 }, sectionTitle = { F.title, 13 },
-  colHeader = { F.title, 10 }, metricValue = { F.title, 18 }, countdown = { F.title, 36 },
+  wordmark = { F.title, 16 }, windowTitle = { F.title, 15 }, sectionTitle = { F.title, 15 },
+  colHeader = { F.title, 11 }, metricValue = { F.title, 18 }, countdown = { F.title, 36 },
   body = { F.ui, 13 }, memberName = { F.uiMedium, 13 }, itemName = { F.uiBold, 14 },
   button = { F.uiBold, 12 }, caption = { F.ui, 11 }, tableNum = { F.ui, 12 }, badge = { F.uiBold, 11 },
   reading = { F.read, 13 },

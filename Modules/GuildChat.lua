@@ -184,7 +184,8 @@ end
 -- Only ever called from a tab's Enter or Send click. The line is not logged
 -- here: it shows when the game echoes it back.
 function GuildChat:Send(text, stream)
-    local clean = GuildOS:SanitizeUserText(text, 240)
+    -- An item link pasted into the box stays a link (#449 review); anything else that is not text goes.
+    local clean = GuildOS:SanitizeChatLine(text, 240)
     if clean == "" then
         return false
     end

@@ -25,8 +25,8 @@ local COLS, ROWS = 7, 6
 local GAP      = UI.GAP
 local NAV_Y    = -GAP
 local GRID_X   = 0
-local PAD      = type(UI.CARD_PAD) == "number" and UI.CARD_PAD or 14
-local CARD_TOP = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
+local PAD      = UI.SP.PAD
+local CARD_TOP = UI.SP.TOP
 local CELL_GAP = 3      -- between two days
 local MAX_BARS = 3      -- event bars a day shows; the rest are in its tooltip and the day's card
 local STACK_BELOW = 600 -- px: under this the day's card goes under the month's
@@ -295,7 +295,7 @@ local function buildEditor()
     -- An event made here never becomes a raid on the site or a Discord post (spec 075 in guildos-web):
     -- said where it is made, since "the bot didn't post my dungeon" is the question it answers.
     local HINT_ROW = 28
-    local gameOnly = UI:CreateText(f, L["Events made here stay in the game. For signups on Discord, create the raid on guildos.me or with /raid create."], 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    local gameOnly = UI:CreateText(f, L["Events made here stay in the game. For signups on Discord, create the raid on guildos.me or with /raid create."], UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
     gameOnly:SetPoint("BOTTOMLEFT", saveBtn, "TOPLEFT", 0, 6)
     gameOnly:SetWidth(332)
     gameOnly:SetJustifyH("LEFT")
@@ -424,24 +424,24 @@ function GuildOS:CreateCalendarSub(panel)
 
     -- Month navigation: ‹ the month › as the card's title, Today beside it; New Event at the card's right.
     local function arrow(text)
-        local b = UI:SetButtonVariant(UI:CreateButton(monthCard, text, 18, 20), "ghost")
+        local b = UI:SetButtonVariant(UI:CreateButton(monthCard, text, UI.SP.HIT, UI.SP.HIT), "ghost")
         if b.underline then b.underline:Hide() end
         GuildOS:ApplyFont(b.label, 14, "button")
         return b
     end
     local prevBtn = arrow("<")
-    prevBtn:SetPoint("TOPLEFT", PAD - 4, -9)
+    prevBtn:SetPoint("TOPLEFT", PAD - 4, -(PAD - 4))
     local monthLabel = monthCard.title
     monthLabel:ClearAllPoints()
     monthLabel:SetPoint("LEFT", prevBtn, "RIGHT", 2, 0)
     local nextBtn = arrow(">")
     nextBtn:SetPoint("LEFT", monthLabel, "RIGHT", 2, 0)
-    local todayBtn = UI:CreateButton(monthCard, L["Today"], 52, 20)
-    todayBtn:SetPoint("LEFT", nextBtn, "RIGHT", 6, 0)
+    local todayBtn = UI:CreateButton(monthCard, L["Today"], 52, UI.SP.HIT)
+    todayBtn:SetPoint("LEFT", nextBtn, "RIGHT", 2 * UI.SP.UNIT, 0)
 
     -- Officer "New Event": opens the editor popup for the selected day.
-    local newBtn = UI:SetButtonVariant(UI:CreateButton(monthCard, L["New Event"], 92, 22), "primary")
-    newBtn:SetPoint("TOPRIGHT", -PAD + 2, -9)
+    local newBtn = UI:SetButtonVariant(UI:CreateButton(monthCard, L["New Event"], 92, UI.SP.HIT), "primary")
+    newBtn:SetPoint("TOPRIGHT", -PAD, -(PAD - 4))
     newBtn:SetScript("OnClick", function()
         if f.selectedKey then openEditor(f.selectedKey, nil) end
     end)
@@ -469,8 +469,8 @@ function GuildOS:CreateCalendarSub(panel)
     -- Weekday headers: the grid's column labels, centred over their column (placed in Render).
     f.wdFS = {}
     for i = 1, COLS do
-        local fs = UI:CreateText(monthCard, WEEKDAYS[i], 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-        GuildOS:ApplyFont(fs, 10, "badge")
+        local fs = UI:CreateText(monthCard, WEEKDAYS[i], UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+        GuildOS:ApplyFont(fs, UI.SP.META, "badge")
         fs:SetJustifyH("CENTER")
         f.wdFS[i] = fs
     end
@@ -498,7 +498,7 @@ function GuildOS:CreateCalendarSub(panel)
         end
         -- The first event's name, where the cell is wide enough to read it (the bars always say what kind).
         cell.evtFS = cell:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(cell.evtFS, 9)
+        GuildOS:ApplyFont(cell.evtFS, UI.SP.META)
         cell.evtFS:SetPoint("BOTTOMLEFT", 4, 3)
         cell.evtFS:SetPoint("BOTTOMRIGHT", -4, 3)
         cell.evtFS:SetJustifyH("LEFT"); cell.evtFS:SetWordWrap(false)
@@ -532,7 +532,7 @@ function GuildOS:CreateCalendarSub(panel)
         it.bar:SetTexture(WHITE)
         it.bar:SetSize(12, 4)
         it.bar:SetPoint("LEFT", 0, 0)
-        it.fs = UI:CreateText(it, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+        it.fs = UI:CreateText(it, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         it.fs:SetPoint("LEFT", it.bar, "RIGHT", 4, 0)
         f.legend[i] = it
         return it
@@ -839,7 +839,7 @@ function GuildOS:CreateCalendarSub(panel)
                 local v = UI:CreateText(box, b.value, 14, ink.r, ink.g, ink.b)
                 GuildOS:ApplyFont(v, 14, "button")
                 v:SetPoint("TOP", 0, -5)
-                local cap = UI:CreateText(box, b.label, 10, soft.r, soft.g, soft.b)
+                local cap = UI:CreateText(box, b.label, UI.SP.META, soft.r, soft.g, soft.b)
                 cap:SetPoint("TOP", v, "BOTTOM", 0, -1)
             end
             return y + ROLE_H + 8

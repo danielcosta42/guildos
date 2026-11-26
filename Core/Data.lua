@@ -154,8 +154,8 @@ GuildOS.Fonts = {
     -- Roles. A title is never upper case and never letter-spaced: Cinzel's small capitals are the look.
     wordmark     = { file = TITLE,      size = 16 },
     windowTitle  = { file = TITLE,      size = 15 },
-    sectionTitle = { file = TITLE,      size = 13 },
-    colHeader    = { file = TITLE,      size = 10 },
+    sectionTitle = { file = TITLE,      size = 15 },   -- UI.SP.TITLE (#449)
+    colHeader    = { file = TITLE,      size = 11 },   -- UI.SP.META
     metricValue  = { file = TITLE,      size = 18 },
     countdown    = { file = TITLE,      size = 36 },
     body         = { file = UI_REGULAR, size = 13 },
@@ -211,7 +211,7 @@ function GuildOS:ApplyFont(fontString, size, role)
         px = math.max(UI_MIN, px + (tonumber(size) and UI_BUMP or 0))
     end
     local face = GuildOS:FontFace(file)
-    fontString.__gosFont = { file = file, face = face, px = px }
+    fontString.__gosFont = { file = file, face = face, px = px, asked = tonumber(size) or px }
     -- Only an explicit false means the file did not load; clients that return nothing on success must not be
     -- pushed onto the fallback.
     if fontString:SetFont(face, px, "") == false and face ~= STANDARD_TEXT_FONT then

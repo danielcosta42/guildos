@@ -19,14 +19,7 @@ local C = GuildOS.Colors
 local L = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
--- The spacing standard (#449). One table: a function in Lua 5.1 reaches at most 60 of the file's locals.
-local SP = {
-    PAD = 16, GAP = 14, SECTION = 18, TITLE_GAP = 8, FIELD = 26, LABEL_GAP = 4, FIELD_GAP = 12,
-    ROW = 28, ROW_AV = 32, CELL = 10, BODY = 13, META = 11, TITLE = 15, KPI = 22, HIT = 24,
-    TITLE_H = 18,         -- a 15px title's line
-    TWO_COLS = 900,       -- the content's width from which the lists sit side by side
-}
-SP.TOP = SP.PAD + SP.TITLE_H + SP.TITLE_GAP   -- where a titled card's content starts
+local SP = UI.SP                              -- the spacing standard (#449, UI/Helpers.lua)
 local M = tonumber(UI.GAP) or 8               -- the room's margin around a screen (#371)
 
 local ICON = 16
@@ -670,10 +663,14 @@ local function groupsToastNow(n)
     toast = toast or buildToast()
     local key = n.key
     if n.kind == "group" then
-        local role = G:BestRole(n.need, B:Pref("roles") or "")
+        -- The group as it is now, not as it was queued: a spot filled while the toast waited is not offered
+        -- (#449 review).
+        local live = GuildOS.db and GuildOS.db.lfgGroups and GuildOS.db.lfgGroups[key]
+        local need = (type(live) == "table" and live.need) or n.need
+        local role = G:BestRole(need, B:Pref("roles") or "")
         toast.title:SetText(L["Groups being formed"])
         local body = string.format("%s: %s", n.name, B:ActivityName(n.act)) .. DOT ..
-            string.format(L["open: %s"], G:NeedText(n.need))
+            string.format(L["open: %s"], G:NeedText(need))
         toast.body:SetText(body)
         fitButton(toast.primary, string.format(L["Ask as %s"], B:RoleName(ROLE_OF[role] or "ANY")))
         toast.primary:SetShown(role ~= nil)
@@ -1057,7 +1054,7 @@ function GuildOS:CreateGroupsPanel(parent)
             s.icon = s:CreateTexture(nil, "ARTWORK")
             s.icon:SetPoint("TOPLEFT", 1, -1)
             s.icon:SetPoint("BOTTOMRIGHT", -1, 1)
-            s.mark = UI:CreateText(s, "", 9)
+            s.mark = UI:CreateText(s, "", UI.SP.META)
             s.mark:SetPoint("CENTER", 0, 0)
             e.slots[i] = s
         end
@@ -1277,7 +1274,7 @@ function GuildOS:CreateGroupsPanel(parent)
         local h = P.acquire("seekhead" .. card.pk, function()
             local f = UI:CreateTableHeader(card)
             f.cols = {}
-            for i = 1, 4 do f.cols[i] = UI:CreateHeaderText(f, "", 10) end
+            for i = 1, 4 do f.cols[i] = UI:CreateHeaderText(f, "", UI.SP.META) end
             return f
         end)
         h:ClearAllPoints()

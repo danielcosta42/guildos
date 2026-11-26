@@ -137,6 +137,7 @@ dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Style.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 GuildOS.Style:Resolve()
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/Data/GroupActivities.lua")
@@ -742,5 +743,28 @@ check(#cards(foreverPanel) == 2 and #seekerRows(foreverPanel) == 3, "in the Fore
 check(chipsOf(foreverPanel).T.icon.atlas == ATLAS.T, "with the Forever client's role atlases")
 check(forYourLevel(picker(foreverPanel)) ~= nil, "and the picker opens on For your level")
 settles(foreverPanel, "in the Forever style")
+
+-- A notice queued for after combat says the group as it is when it shows, not as it was queued (#449 review).
+do
+  local B, G = GuildOS.LFGBoard, GuildOS.Groups
+  GuildOS.db.lfgPrefs = GuildOS.db.lfgPrefs or {}
+  GuildOS.db.lfgPrefs.roles = "TH"
+  local k = GuildOS:GetPlayerKey("Toastee", "Realm")
+  local now = GetServerTime()
+  GuildOS.db.lfgGroups = GuildOS.db.lfgGroups or {}
+  GuildOS.db.lfgGroups[k] = G:_BuildGroup({ act = "karazhan", need = { T = 0, H = 1, D = 0 }, ttl = 3600 }, now)
+  local shown
+  local oldClear = GuildOS.ShowWhenClear
+  GuildOS.ShowWhenClear = function(_, _, fn) shown = fn() end
+  GuildOS:GroupsToast({ kind = "group", key = k, name = "Toastee", act = "karazhan", need = { T = 1, H = 1, D = 0 } })
+  GuildOS.ShowWhenClear = oldClear
+  check(shown ~= nil, "the notice shows")
+  local body = shown.body.text or ""
+  check(body:find(G:NeedText({ T = 0, H = 1, D = 0 }), 1, true) ~= nil and not body:find(G:NeedText({ T = 1, H = 1, D = 0 }), 1, true),
+    "the open spots are the group's now: " .. body)
+  check((shown.primary.label.text or ""):find(B:RoleName("HEALER"), 1, true) ~= nil,
+    "and it offers the role still open: " .. tostring(shown.primary.label.text))
+  GuildOS.db.lfgGroups[k] = nil
+end
 
 print(checks .. " checks ok")

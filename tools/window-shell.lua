@@ -285,6 +285,7 @@ if STYLE == "forever" then
 end
 GuildOS.Style:Resolve()
 dofile(ADDON .. "/Core/Commands.lua")
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 -- Core/Utils.lua's UTF-8 head; this harness loads Utils further down. The calendar editor's kind
 -- buttons shorten a long label with it (#371).
@@ -716,8 +717,8 @@ check(f.syncText.text == "not synced yet", "before any sync it says so")
 check(f.minimise.x.text == "\226\128\148" and f.closeButton.shown and point(f.closeButton) == "RIGHT,-10,0"
   and f.closeButton.orb, "then the fold and the round close button at the right edge")
 check(point(f.settingsButton) == "RIGHT,-6,0" and f.settingsButton.points[1][2] == f.minimise, "Settings left of the fold")
-check(point(f.content, 1) == "TOPLEFT,15,-99" and point(f.content, 2) == "BOTTOMRIGHT,-15,39",
-  "content padding 12px inside the frame, under the 50px bar and the Salão's 34px strip, above the 24px footer")
+check(point(f.content, 1) == "TOPLEFT,15,-105" and point(f.content, 2) == "BOTTOMRIGHT,-15,39",
+  "content padding 12px inside the frame, under the 50px bar and the Salão's 40px strip, above the 24px footer")
 check(point(f.footer, 1) == "BOTTOMLEFT,3,3" and point(f.titleBar, 1) == "TOPLEFT,3,-3",
   "the footer and the title bar inside the 3px metal frame")
 
@@ -1863,7 +1864,7 @@ do
   local edge = UI:GetMainWindow()
   edge:Show()
   resize(edge, 620, 620)
-  check(edge.titleBar.h == 50 and point(edge.content, 1) == "TOPLEFT,15,-99" and edge.band == "narrow",
+  check(edge.titleBar.h == 50 and point(edge.content, 1) == "TOPLEFT,15,-105" and edge.band == "narrow",
     "at exactly 620px: the 50px title bar, the strip, 12px padding, and 596px of content, so narrow")
   edge:Hide()
 end

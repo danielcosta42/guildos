@@ -16,13 +16,7 @@ local C = GuildOS.Colors
 local L = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
--- The spacing standard (#449).
-local SP = {
-    PAD = 16, GAP = 14, SECTION = 18, TITLE_GAP = 8, FIELD = 26, LABEL_GAP = 4, FIELD_GAP = 12,
-    ROW = 28, ROW_AV = 32, CELL = 10, BODY = 13, META = 11, TITLE = 15, KPI = 22, HIT = 24, TITLE_H = 18,
-}
-SP.TOP = SP.PAD + SP.TITLE_H + SP.TITLE_GAP   -- where a titled card's content starts
-SP.FORM_ROW = SP.FIELD + SP.FIELD_GAP         -- one line of a form
+local SP = UI.SP                              -- the spacing standard (#449, UI/Helpers.lua)
 local M = tonumber(UI.GAP) or 8               -- the room's margin around a screen (#371)
 local SPLIT = 820                             -- the content's width from which the roster has a column beside it
 local SIDE_MIN, SIDE_MAX = 280, 340           -- that column
@@ -215,7 +209,10 @@ function GuildOS:CreateCoresPanel(panel)
 
     -- Shown when no core is selected
     local noCoreLbl = MakeLabel(head, L["Select or create a core on the left."], SP.BODY, C.label.r, C.label.g, C.label.b)
-    noCoreLbl:SetPoint("TOPLEFT", SP.PAD, -SP.PAD)
+    -- No core chosen: the line centred in its card, a block rather than a line in the corner (#449).
+    noCoreLbl:SetPoint("LEFT", SP.PAD, 0)
+    noCoreLbl:SetPoint("RIGHT", -SP.PAD, 0)
+    noCoreLbl:SetJustifyH("CENTER")
 
     ----------------------------------------------------------------
     -- State
@@ -257,7 +254,11 @@ function GuildOS:CreateCoresPanel(panel)
         return opts
     end
 
+    -- The cards a drawing lays (cardAt), kept and handed out again by their order on every build (#449 review:
+    -- each build made new ones, and the client never frees a frame).
+    local cardPool, cardsUsed = {}, 0
     local function ClearSettings()
+        cardsUsed = 0
         for _, w in ipairs(cfgWidgets) do
             if w.Hide then w:Hide() end
         end
@@ -285,22 +286,36 @@ function GuildOS:CreateCoresPanel(panel)
     -- A card on the scroll, at x, y (y down from the top), `w` wide; its body is where its content goes,
     -- CARD_PAD in, under its title. Returns the card and the body.
     local function cardAt(title, x, y, w, track)
-        local card = track(newCard(rightContent, title))
+        cardsUsed = cardsUsed + 1
+        local card = cardPool[cardsUsed]
+        if not card then
+            card = newCard(rightContent, "")
+            card.body = CreateFrame("Frame", nil, card)
+            -- The card's height from its body's (h, positive), never under `min`.
+            function card:Fit(h, min)
+                local top = self.titled and SP.TOP or SP.PAD
+                self:SetHeight(math.max(min or 0, top + h + SP.PAD))
+                self.body:SetHeight(math.max(1, h))
+                return self:GetHeight()
+            end
+            cardPool[cardsUsed] = card
+        end
+        track(card)
+        card.titled = (title and title ~= "") and true or false
+        GuildOS:SetTitleText(card.title, title or "")
+        card.title:SetShown(card.titled)
         card:ClearAllPoints()
         card:SetPoint("TOPLEFT", rightContent, "TOPLEFT", x, -y)
         card:SetWidth(w)
-        local body = CreateFrame("Frame", nil, card)
-        body:SetPoint("TOPLEFT", SP.PAD, -((title and title ~= "") and SP.TOP or SP.PAD))
-        body:SetPoint("TOPRIGHT", -SP.PAD, -((title and title ~= "") and SP.TOP or SP.PAD))
+        card:Show()
+        local body = card.body
+        -- What the last build drew on the body is hidden (tracked); this build draws on it afresh.
+        local top = card.titled and SP.TOP or SP.PAD
+        body:ClearAllPoints()
+        body:SetPoint("TOPLEFT", SP.PAD, -top)
+        body:SetPoint("TOPRIGHT", -SP.PAD, -top)
         body:SetHeight(1)
-        card.body = body
-        -- The card's height from its body's (h, positive), never under `min`.
-        function card:Fit(h, min)
-            local top = (title and title ~= "") and SP.TOP or SP.PAD
-            self:SetHeight(math.max(min or 0, top + h + SP.PAD))
-            body:SetHeight(math.max(1, h))
-            return self:GetHeight()
-        end
+        body:Show()
         return card, body
     end
 
@@ -491,7 +506,7 @@ function GuildOS:CreateCoresPanel(panel)
         for _, col in ipairs(spec) do
             local c = at(col.key)
             if c.shown and TITLES[col.key] ~= "" then
-                local h = UI:CreateHeaderText(thead, TITLES[col.key], 10)
+                local h = UI:CreateHeaderText(thead, TITLES[col.key], UI.SP.META)
                 if col.key == "pres" then
                     h:SetPoint("RIGHT", thead, "LEFT", c.x + c.w, 0)
                 else
@@ -1105,7 +1120,7 @@ function GuildOS:CreateCoresPanel(panel)
         local CM = GuildOS.CoreManager
         if not coreName or coreName == "" or not CM or not GuildOS.db.cores[coreName] then
             noCoreLbl:Show()
-            head:SetHeight(SP.PAD * 2 + 18)
+            head:SetHeight(SP.PAD * 2 + 18 + 2 * SP.SECTION)
             rightContent:SetHeight(1)
             return
         end
@@ -1137,51 +1152,71 @@ function GuildOS:CreateCoresPanel(panel)
     ----------------------------------------------------------------
     -- Core list rebuild
     ----------------------------------------------------------------
+    -- A core's row, made once by its place in the list and filled again on every rebuild (#449 review).
+    local function coreRow(idx)
+        local row = coreRows[idx]
+        if row then return row end
+        -- Hung by both top corners, as wide as the list leaves it (#371): the core's glyph, its name (the
+        -- raid's with a badge saying so), and under it its size, fill and origin; a line between two.
+        row = CreateFrame("Button", nil, listContent)
+        row:SetHeight(CORE_ROW_H)
+        local rule = row:CreateTexture(nil, "BACKGROUND")
+        rule:SetTexture(WHITE)
+        rule:SetHeight(1)
+        rule:SetPoint("TOPLEFT"); rule:SetPoint("TOPRIGHT")
+        rule:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
+        rule:SetShown(idx > 1)
+        row.sel = UI:CreateRowSelection(row)
+        local hover = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+        hover:SetTexture(WHITE)
+        hover:SetAllPoints()
+        hover:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 0.07)
+        hover:Hide()
+        row.glyph = UI:CreateGlyph(row, 28)
+        row.glyph:SetPoint("LEFT", 4, 0)
+        local lbl = MakeLabel(row, "", SP.BODY, C.text.r, C.text.g, C.text.b)
+        GuildOS:ApplyFont(lbl, SP.BODY, "memberName")
+        lbl:SetPoint("TOPLEFT", 42, -9)
+        lbl:SetJustifyH("LEFT")
+        if lbl.SetWordWrap then lbl:SetWordWrap(false) end
+        row.badge = UI:CreateBadge(row, L["active in the raid"], C.ok)
+        row.badge:SetPoint("LEFT", lbl, "RIGHT", 8, 0)
+        local sub = MakeLabel(row, "", SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        sub:SetPoint("BOTTOMLEFT", 42, 9)
+        sub:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+        sub:SetJustifyH("LEFT")
+        row.label, row.sub = lbl, sub
+        row:SetScript("OnClick", function(self)
+            selectedCore = self.coreName
+            BuildSettings(self.coreName)
+            RebuildList()
+        end)
+        row:SetScript("OnEnter", function() hover:Show() end)
+        row:SetScript("OnLeave", function() hover:Hide() end)
+        coreRows[idx] = row
+        return row
+    end
+
     RebuildList = function()
-        for _, row in pairs(coreRows) do row:Hide() end
-        coreRows = {}
         local CM = GuildOS.CoreManager
-        if not CM then return end
+        if not CM then
+            for _, row in ipairs(coreRows) do row:Hide() end
+            return
+        end
         -- Each elenco with its groups under it (issue #352); a core with neither lists as always.
         local names = CM:SortedTree()
         local active = GetActiveName()
         for idx, entry in ipairs(names) do
             local name, indent = entry.name, entry.depth * GROUP_INDENT
-            -- Hung by both top corners, as wide as the list leaves it (#371): the core's glyph, its name (the
-            -- raid's with a badge saying so), and under it its size, fill and origin; a line between two.
-            local row = CreateFrame("Button", nil, listContent)
-            row:SetHeight(CORE_ROW_H)
+            local row = coreRow(idx)
+            row:ClearAllPoints()
             row:SetPoint("TOPLEFT", indent, -(idx - 1) * CORE_ROW_H)
             row:SetPoint("TOPRIGHT", 0, -(idx - 1) * CORE_ROW_H)
-            if idx > 1 then
-                local rule = row:CreateTexture(nil, "BACKGROUND")
-                rule:SetTexture(WHITE)
-                rule:SetHeight(1)
-                rule:SetPoint("TOPLEFT"); rule:SetPoint("TOPRIGHT")
-                rule:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
-            end
-            local on = name == selectedCore
-            local sel = UI:CreateRowSelection(row)
-            sel:SetShown(on)
-            local hover = row:CreateTexture(nil, "BACKGROUND", nil, 1)
-            hover:SetTexture(WHITE)
-            hover:SetAllPoints()
-            hover:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 0.07)
-            hover:Hide()
-
-            local glyph = UI:CreateGlyph(row, 28)
-            glyph:SetPoint("LEFT", 4, 0)
-            glyph:Set(UI.Initial and UI.Initial(name) or name:sub(1, 1), entry.depth > 0 and C.paperSoft or C.count)
-            local lbl = MakeLabel(row, name, SP.BODY, C.text.r, C.text.g, C.text.b)
-            GuildOS:ApplyFont(lbl, SP.BODY, "memberName")
-            lbl:SetPoint("TOPLEFT", 42, -9)
-            lbl:SetJustifyH("LEFT")
-            if lbl.SetWordWrap then lbl:SetWordWrap(false) end
+            row.sel:SetShown(name == selectedCore)
+            row.glyph:Set(UI.Initial and UI.Initial(name) or name:sub(1, 1), entry.depth > 0 and C.paperSoft or C.count)
+            row.label:SetText(name)
             -- The raid's core reads as live: a green badge beside its name.
-            if name == active then
-                local badge = UI:CreateBadge(row, L["active in the raid"], C.ok)
-                badge:SetPoint("LEFT", lbl, "RIGHT", 8, 0)
-            end
+            row.badge:SetShown(name == active)
             local size = CM:GetRaidSize(name)
             local comp = CM:GetComposition(name)
             local subText = string.format(L["%d \194\183 %d of %d \194\183 %s"], size, comp.total, size, originOf(CM, name))
@@ -1191,22 +1226,11 @@ function GuildOS:CreateCoresPanel(panel)
             elseif nGroups > 0 then
                 subText = subText .. " \194\183 " .. string.format(L["split into %d groups"], nGroups)
             end
-            local sub = MakeLabel(row, subText, SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-            sub:SetPoint("BOTTOMLEFT", 42, 9)
-            sub:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-            sub:SetJustifyH("LEFT")
-            row.label, row.sub = lbl, sub
+            row.sub:SetText(subText)
             row.coreName = name
-
-            row:SetScript("OnClick", function()
-                selectedCore = name
-                BuildSettings(name)
-                RebuildList()
-            end)
-            row:SetScript("OnEnter", function() hover:Show() end)
-            row:SetScript("OnLeave", function() hover:Hide() end)
-            coreRows[#coreRows + 1] = row
+            row:Show()
         end
+        for idx = #names + 1, #coreRows do coreRows[idx]:Hide() end
         listContent:SetHeight(math.max(1, #names * CORE_ROW_H))
         ShowCreate()
     end

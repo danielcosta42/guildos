@@ -119,7 +119,7 @@ function GuildOS:BuildMarksSub(panel)
     local safe = board:Card(L["Safe list and nicknames"], { col = 2 })
     -- WoW: Forever: the marks stay on this client (audit B11).
     local localOnly = GuildOS:LocalOnlyText()
-    if localOnly then safe:Note(localOnly, { size = 10 }) end
+    if localOnly then safe:Note(localOnly, { size = UI.SP.META }) end
     local tagBox = UI:CreateInput(safe, 80, 24, { max = MM.TAG_MAX })
     local backBox = UI:CreateInput(safe, 60, 24, { numeric = true, max = 3, justify = "CENTER" })
     safe:Pair(Forms:MakeField(safe, L["Safe tag in notes"], tagBox, { w = 140 }),

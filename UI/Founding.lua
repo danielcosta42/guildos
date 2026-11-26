@@ -46,7 +46,7 @@ local function build()
     prev:SetScript("OnClick", function() move(-1) end)
     nextB:SetScript("OnClick", function() move(1) end)
 
-    local note = UI:CreateText(f, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    local note = UI:CreateText(f, "", UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
     note:SetPoint("TOP", dateFS, "BOTTOM", 0, -6)
     f.note = note
 

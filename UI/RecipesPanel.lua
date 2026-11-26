@@ -28,8 +28,8 @@ local TOP_PAD    = 8    -- panel top to the top bar
 local TITLE_H    = 26   -- title + search row, above the profession filters
 local HEADER_H   = 24   -- column header strip
 local LIST_BOTTOM = 40  -- footer strip under the list
-local CARD_PAD   = 14   -- the parchment card's padding
-local CARD_TOP   = 38   -- under the card's title
+local CARD_PAD   = UI.SP.PAD   -- the parchment card's padding
+local CARD_TOP   = UI.SP.TOP   -- under the card's title
 
 -- A colour deepened to read on the paper: the bright ones (a priest's white, a rogue's yellow) vanish on it.
 local function deep(c)
@@ -236,9 +236,9 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     -- Header cells are positioned by the layout pass, keyed the same way
     -- the row cells are so the two can never drift apart.
     local headerByKey = {
-        recipe     = UI:CreateHeaderText(headerFrame, L["Recipe"], 10),
-        profession = UI:CreateHeaderText(headerFrame, L["Profession"], 10),
-        crafters   = UI:CreateHeaderText(headerFrame, L["Crafters"], 10),
+        recipe     = UI:CreateHeaderText(headerFrame, L["Recipe"], UI.SP.META),
+        profession = UI:CreateHeaderText(headerFrame, L["Profession"], UI.SP.META),
+        crafters   = UI:CreateHeaderText(headerFrame, L["Crafters"], UI.SP.META),
     }
     for _, fs in pairs(headerByKey) do
         fs:SetJustifyH("LEFT")
@@ -303,7 +303,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         row.profIcon = profIcon
 
         local profName = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(profName, 10)
+        GuildOS:ApplyFont(profName, UI.SP.META)
         profName:SetPoint("LEFT", profIcon, "RIGHT", 4, 0)
         profName:SetJustifyH("LEFT")
         profName:SetWordWrap(false)

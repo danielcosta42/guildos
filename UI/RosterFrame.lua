@@ -354,7 +354,7 @@ local HEADER_HEIGHT = 24
 -- one dark card holding the toolbar, the filters as pills (the views, the ranks, the classes) and the table.
 -- The left rail went: its filters are the pills.
 local KPI_BAND_HEIGHT = 70      -- the tiles (56px) and the gap under them
-local CARD_TOP = 34             -- the list card's title
+local CARD_TOP = UI.SP.TOP             -- the list card's title
 local CARD_SIDE = 12            -- the list card's padding
 local CARD_BOTTOM = 10
 local TOOLBAR_H = 28
@@ -597,12 +597,12 @@ function GuildOS:CreateRosterPanel(parent, host)
         value:SetText("—")
         value:SetPoint("TOPLEFT", 10, -8)
 
-        local lbl = UI:CreateText(card, labelText, 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        local lbl = UI:CreateText(card, labelText, UI.SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
         lbl:SetPoint("TOPLEFT", value, "BOTTOMLEFT", 0, -3)
 
         local sub
         if subLabelText ~= nil then
-            sub = UI:CreateText(card, subLabelText, 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+            sub = UI:CreateText(card, subLabelText, UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b)
             sub:SetPoint("LEFT", lbl, "RIGHT", 4, 0)
         end
 
@@ -702,7 +702,7 @@ function GuildOS:CreateRosterPanel(parent, host)
         local b = UI:SetButtonVariant(UI:CreateButton(statsBar, label, 60, CHIP_H), "chip")
         b.label:ClearAllPoints()
         b.label:SetPoint("LEFT", 10, 0)
-        b.count = UI:CreateText(b, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+        b.count = UI:CreateText(b, "", UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b)
         b.count:SetPoint("LEFT", b.label, "RIGHT", 5, 0)
         function b:Fit()
             self:SetWidth(math.ceil(self.label:GetStringWidth()) + math.ceil(self.count:GetStringWidth() or 0) + 25)
@@ -784,7 +784,7 @@ function GuildOS:CreateRosterPanel(parent, host)
             btn:SetHeight(HEADER_HEIGHT)
             btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
-            local text = UI:CreateHeaderText(btn, col.label, 10)
+            local text = UI:CreateHeaderText(btn, col.label, UI.SP.META)
             if col.align == "CENTER" then
                 text:SetPoint("CENTER")
             elseif col.align == "RIGHT" then
@@ -796,7 +796,7 @@ function GuildOS:CreateRosterPanel(parent, host)
 
             -- Sort indicator
             local sortArrow = btn:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(sortArrow, 10)
+            GuildOS:ApplyFont(sortArrow, UI.SP.META)
             sortArrow:SetPoint("LEFT", text, "RIGHT", 3, 0)
             sortArrow:SetTextColor(C.text.r, C.text.g, C.text.b)
             sortArrow:Hide()
@@ -894,7 +894,7 @@ function GuildOS:CreateRosterPanel(parent, host)
         b.label:ClearAllPoints()
         b.label:SetPoint("LEFT", 10, 0)
         b.label:SetWordWrap(false)
-        b.count = UI:CreateText(b, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+        b.count = UI:CreateText(b, "", UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b)
         b.count:SetPoint("LEFT", b.label, "RIGHT", 5, 0)
         function b:Fit()
             local lw = math.min(140, math.ceil(self.label:GetStringWidth()))
@@ -923,7 +923,7 @@ function GuildOS:CreateRosterPanel(parent, host)
             icon:SetTexCoord(unpack(CLASS_ICON_TCOORDS[classFile]))
         end
         chip.icon = icon
-        local cnt = UI:CreateText(chip, "0", 10, C.door.r, C.door.g, C.door.b)
+        local cnt = UI:CreateText(chip, "0", UI.SP.META, C.door.r, C.door.g, C.door.b)
         cnt:SetPoint("LEFT", icon, "RIGHT", 4, 0)
         chip.count = cnt
         function chip:Fit() self:SetWidth(7 + 14 + 4 + math.ceil(cnt:GetStringWidth() or 0) + 9) end
@@ -1859,7 +1859,7 @@ local function BuildColumnsPanel()
     local close = UI:CreateCloseButton(f)
     close:SetPoint("TOPRIGHT", -6, -6)
     close:SetScript("OnClick", function() f:Hide() end)
-    local hint = UI:CreateText(f, L["Saved for every character on this account."], 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    local hint = UI:CreateText(f, L["Saved for every character on this account."], UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
     hint:SetPoint("TOPLEFT", 14, -34)
 
     local rows = {}
@@ -2341,7 +2341,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
     local wishSearch = UI:CreateInput(searchBar, 200, 22, { max = 30, placeholder = L["Player name..."] })
     wishSearch:SetPoint("LEFT", searchIcon, "RIGHT", 8, 0)
 
-    local charCountText = UI:CreateText(searchBar, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local charCountText = UI:CreateText(searchBar, "", UI.SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     charCountText:SetPoint("LEFT", wishSearch, "RIGHT", 12, 0)
 
     ----------------------------------------------------------------
@@ -2352,13 +2352,13 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
     colHeader:SetPoint("TOPLEFT", 0, HEADER_Y)
     colHeader:SetPoint("TOPRIGHT", 0, HEADER_Y)
 
-    local hName = UI:CreateHeaderText(colHeader, L["Character"], 10)
+    local hName = UI:CreateHeaderText(colHeader, L["Character"], UI.SP.META)
     hName:SetPoint("LEFT", 28, 0)
-    local hClass = UI:CreateHeaderText(colHeader, L["Class"], 10)
+    local hClass = UI:CreateHeaderText(colHeader, L["Class"], UI.SP.META)
     hClass:SetPoint("LEFT", 180, 0)
-    local hWish = UI:CreateHeaderText(colHeader, L["Wishlist"], 10)
+    local hWish = UI:CreateHeaderText(colHeader, L["Wishlist"], UI.SP.META)
     hWish:SetPoint("LEFT", 310, 0)
-    local hAtt = UI:CreateHeaderText(colHeader, L["Att%"], 10)
+    local hAtt = UI:CreateHeaderText(colHeader, L["Att%"], UI.SP.META)
     hAtt:SetPoint("LEFT", 400, 0)
 
     ----------------------------------------------------------------
@@ -2431,7 +2431,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
 
             -- Expand indicator
             local arrow = charRow:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(arrow, 10)
+            GuildOS:ApplyFont(arrow, UI.SP.META)
             arrow:SetPoint("LEFT", 8, 0)
             arrow:SetTextColor(C.label.r, C.label.g, C.label.b)
             arrow:SetText(isExpanded and "v" or ">")
@@ -2446,7 +2446,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
 
             -- Class
             local classStr = charRow:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(classStr, 10)
+            GuildOS:ApplyFont(classStr, UI.SP.META)
             classStr:SetPoint("LEFT", 180, 0)
             classStr:SetTextColor(cc.r, cc.g, cc.b, 0.7)
             classStr:SetText(charData.class or "")
@@ -2454,7 +2454,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
             -- Wishlist count, in the text colours: no blue of its own (#371)
             local wishItems = charData.wishlist or {}
             local wishCount = charRow:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(wishCount, 10)
+            GuildOS:ApplyFont(wishCount, UI.SP.META)
             wishCount:SetPoint("LEFT", 310, 0)
             wishCount:SetWidth(60)
             if #wishItems > 0 then
@@ -2566,7 +2566,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                     end
                     local itemName = GuildOS.Wishlist and GuildOS.Wishlist:GetItemName(item.itemId) or string.format(L["Item #%s"], item.itemId or "?")
                     local itemStr = iRow:CreateFontString(nil, "OVERLAY")
-                    GuildOS:ApplyFont(itemStr, 10)
+                    GuildOS:ApplyFont(itemStr, UI.SP.META)
                     itemStr:SetPoint("LEFT", 34, 0)
                     itemStr:SetPoint("RIGHT", -76, 0)
                     itemStr:SetJustifyH("LEFT")
@@ -2650,7 +2650,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                         pRow:SetBackdropColor(C.row1.r, C.row1.g, C.row1.b, C.row1.a)
 
                         local starStr = pRow:CreateFontString(nil, "OVERLAY")
-                        GuildOS:ApplyFont(starStr, 10, "tableNum")
+                        GuildOS:ApplyFont(starStr, UI.SP.META, "tableNum")
                         starStr:SetPoint("LEFT", 8, 0)
                         starStr:SetWidth(32)  -- "* #12" at 10px mono needs 30px
                         starStr:SetJustifyH("RIGHT")
@@ -2664,7 +2664,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                             pqColor = GuildOS.QualityColors[q] or C.text
                         end
                         local pItemStr = pRow:CreateFontString(nil, "OVERLAY")
-                        GuildOS:ApplyFont(pItemStr, 10)
+                        GuildOS:ApplyFont(pItemStr, UI.SP.META)
                         pItemStr:SetPoint("LEFT", 40, 0)
                         pItemStr:SetPoint("RIGHT", -80, 0)
                         pItemStr:SetJustifyH("LEFT")
@@ -3295,7 +3295,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     chanBox.saveButton = addChan
     chanCard:Field(noColon(L["Other channel:"]), chanBox, { button = addChan })
     -- Over the pills it explains, only while there is one (#265).
-    chanCard:Note(L["Click a channel below to stop posting to it."], { size = 10, shown = function() return customShown > 0 end })
+    chanCard:Note(L["Click a channel below to stop posting to it."], { size = UI.SP.META, shown = function() return customShown > 0 end })
     -- A channel of one's own is on, so its pill is on like an on preset's, and keeps its x: a click takes it
     -- off the list (#371).
     for i = 1, CUSTOM_MAX do
@@ -3310,7 +3310,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         customBtns[i] = b
     end
     chanCard:Flow(customBtns, { gapX = GAP_PILL, gap = 4, shown = function() return customShown > 0 end })
-    local customMore = chanCard:Note("", { size = 10, shown = function() return customOver end })
+    local customMore = chanCard:Note("", { size = UI.SP.META, shown = function() return customOver end })
     refreshCustomChans = function()
         local shown = 0
         for _, ch in ipairs(GuildOS.db.recruitment.channels) do
@@ -3390,12 +3390,12 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     local refreshWelcomes
     local welcomeList = CreateFrame("Frame", nil, welcomeCard)
     welcomeList:SetSize(1, 1)
-    local welcomeCap = Forms:Soft(welcomeList, noColon(L["Welcome Msg:"]), 11)
+    local welcomeCap = Forms:Soft(welcomeList, noColon(L["Welcome Msg:"]), UI.SP.META)
     welcomeCap:SetPoint("TOPLEFT", 0, 0)
     welcomeCap:SetWordWrap(false)
     for i = 1, WELCOME_MAX do
         local box = UI:CreateInput(welcomeList, 200, Forms.FIELD_H, { max = 255 })
-        local remove = UI:SetButtonVariant(UI:CreateButton(welcomeList, L["Remove"], 40, 18), "ghost")
+        local remove = UI:SetButtonVariant(UI:CreateButton(welcomeList, L["Remove"], 40, UI.SP.HIT), "ghost")
         remove:SetWidth(math.ceil(remove.label:GetStringWidth() or 30) + 6)
         remove:SetScript("OnClick", function()
             for _, row in ipairs(welcomeRows) do row.box:ClearFocus() end
@@ -3407,7 +3407,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end
     welcomeCard:Add(welcomeList, { place = function(_, w)
         welcomeCap:SetWidth(math.max(1, w))
-        local y = 17
+        local y = 14 + Forms.LABEL_GAP   -- under the label, as a field's (Forms:MakeField)
         local saved = #R.WelcomeList(GuildOS.db.recruitment)
         local rw = 0
         for _, row in ipairs(welcomeRows) do rw = math.max(rw, row.remove:GetWidth()) end
@@ -3420,19 +3420,19 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             if on then
                 row.box:ClearAllPoints()
                 row.box:SetPoint("TOPLEFT", welcomeList, "TOPLEFT", 0, -y)
-                row.box:SetWidth(math.max(40, w - rw - 10))
+                row.box:SetWidth(math.max(40, w - rw - UI.SP.CELL))
                 row.remove:ClearAllPoints()
                 row.remove:SetPoint("RIGHT", welcomeList, "TOPRIGHT", 0, -(y + Forms.FIELD_H / 2))
-                y = y + Forms.FIELD_H + 6
+                y = y + Forms.FIELD_H + Forms.ROW_GAP
             end
         end
-        local h = y - 6
+        local h = y - Forms.ROW_GAP
         welcomeList:SetSize(math.max(1, w), h)
         return h
     end })
     local welcomeAdd = Forms:Button(welcomeCard, L["Add message"])
     welcomeCard:Flow({ welcomeAdd }, { shown = function() return welcomeShown < WELCOME_MAX end })
-    welcomeCard:Note(L["Several messages: one is drawn at random for each welcome, never the same one twice in a row."], { size = 10 })
+    welcomeCard:Note(L["Several messages: one is drawn at random for each welcome, never the same one twice in a row."])
     welcomeAdd:SetScript("OnClick", function()
         welcomeShown = math.min(WELCOME_MAX, #R.WelcomeList(GuildOS.db.recruitment) + 1)
         refreshWelcomes()
@@ -3558,7 +3558,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         classBtns[i] = b
     end
     aiCard:Flow(classBtns, { gapX = GAP_PILL, gap = Forms.LABEL_GAP })
-    aiCard:Note(L["None selected = any class."], { size = 10, gap = 3 })
+    aiCard:Note(L["None selected = any class."], { size = UI.SP.META, gap = 3 })
 
     local fbDrop = UI:CreateDropdown(aiCard, 160, Forms.FIELD_H)
     fbDrop:SetOptions({ { value = "skip", text = L["Skip them"] }, { value = "invite", text = L["Invite them"] } })

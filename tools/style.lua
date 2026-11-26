@@ -144,6 +144,7 @@ local function load(opts)
   dofile(ADDON .. "/Core/Style.lua")
   GuildOS.RecordError = function(_, msg) errors[#errors + 1] = msg end
   GuildOS.db = { settings = {} }
+  dofile(ADDON .. "/UI/Spacing.lua")
   dofile(ADDON .. "/UI/Helpers.lua")
   function GuildOS:ShowDialog(which, text) popups[#popups + 1] = { which = which, text = text } end
   dofile(ADDON .. "/UI/StylePreview.lua")
@@ -418,8 +419,8 @@ local t2 = UI:CreateSectionTitle(host, "Notices")
 check(t1.rule == nil and t2.rule ~= nil and t2.rule.h ~= nil, "a later section title has a rule above it, the first none")
 check(same(t2.color, C.gold2) and t2.font == GuildOS.Fonts.title, "a section title is Cinzel in the soft gold")
 local th = UI:CreateTableHeader(host)
-check(th.h == 22 and th.rule and th.backdrop == nil and same(th.rule.color, C.lineHi),
-  "a table header is 22px with the metal's rule and no fill")
+check(th.h == UI.SP.HIT and th.rule and th.backdrop == nil and same(th.rule.color, C.lineHi),
+  "a table header is UI.SP.HIT (24px) tall with the metal's rule and no fill")
 
 -- Scrolling: no empty track when nothing scrolls.
 local scroll = UI:CreateScrollFrame(host, "TestScroll")

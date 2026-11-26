@@ -926,20 +926,60 @@ end
 -- Saying it in raid chat: one to three lines, never twice in a few seconds
 ----------------------------------------------------------------------
 
+-- `s` cut to `n` bytes on a whole UTF-8 character (GuildOS:CutBytes), plain where the addon's utils are absent.
+local function cutBytes(s, n)
+    if GuildOS.CutBytes then return GuildOS:CutBytes(s, n) end
+    s = s:sub(1, n)
+    while #s > 0 do
+        local b = s:byte(#s)
+        if b < 0x80 then break end
+        local i = #s
+        while i > 1 and s:byte(i) >= 0x80 and s:byte(i) < 0xC0 do i = i - 1 end
+        local lead, need = s:byte(i), 1
+        if lead >= 0xF0 then need = 4 elseif lead >= 0xE0 then need = 3 elseif lead >= 0xC0 then need = 2 end
+        if #s - i + 1 >= need then break end
+        s = s:sub(1, i - 1)
+    end
+    return s
+end
+
 --- `parts` (strings) joined with `sep` into at most SAY_LINES chat lines, `head` before the first; what does
---- not fit is cut with "…". Pure.
+--- not fit is cut with "…". A part longer than a line is split on its ", " items, an item longer than a line cut on
+--- a whole character; a line is never the head alone. The game raises on a bare "|" in chat (a site's note or a
+--- boss name can carry one), so every "|" goes. Pure.
+local ELLIPSIS = "\226\128\166"
 function RaidTools.Lines(head, parts, sep)
-    sep = sep or " · "
-    local lines, cur = {}, head or ""
-    for _, part in ipairs(parts) do
-        local add = (cur == "" or cur == head) and part or (sep .. part)
-        if #cur + #add > CHAT_LINE then
+    sep = sep or " \194\183 "
+    head = (head or ""):gsub("|", "")
+    -- The pieces to lay: each part, or the items of one too long for a line.
+    local pieces = {}
+    for _, part in ipairs(parts or {}) do
+        part = tostring(part or ""):gsub("|", "")
+        if part ~= "" then
+            if #head + #part <= CHAT_LINE then
+                pieces[#pieces + 1] = { text = part, sep = sep }
+            else
+                local first = true
+                for item in (part .. ", "):gmatch("(.-), ") do
+                    if item ~= "" then
+                        if #item > CHAT_LINE - #head then item = cutBytes(item, CHAT_LINE - #head - #ELLIPSIS) .. ELLIPSIS end
+                        pieces[#pieces + 1] = { text = item, sep = first and sep or ", " }
+                        first = false
+                    end
+                end
+            end
+        end
+    end
+    local lines, cur = {}, head
+    for _, pc in ipairs(pieces) do
+        local add = (cur == head) and pc.text or (pc.sep .. pc.text)
+        if #cur + #add > CHAT_LINE and cur ~= head then
             lines[#lines + 1] = cur
             if #lines >= SAY_LINES then
-                lines[#lines] = lines[#lines]:sub(1, CHAT_LINE - 3) .. "\226\128\166"
+                lines[#lines] = cutBytes(lines[#lines], CHAT_LINE - #ELLIPSIS) .. ELLIPSIS
                 return lines
             end
-            cur = part
+            cur = pc.text
         else
             cur = cur .. add
         end
@@ -951,13 +991,13 @@ end
 RaidTools._said = {}
 
 --- Says `lines` in the raid's chat (the party's in a party), at most three, `kind` at most once every few
---- seconds. Out of a group it prints them here. Returns (lines said, err).
+--- seconds. Out of a group it prints them here. Returns (lines said, err): no line gone is an error, and does not
+--- hold the next try back.
 function RaidTools:Say(kind, lines, now)
     now = now or GetTime()
     if #lines == 0 then return nil, L["Nothing to say."] end
     local last = self._said[kind]
     if last and now - last < SAY_GAP then return nil, L["Just said: wait a few seconds."] end
-    self._said[kind] = now
     local channel = (IsInRaid and IsInRaid()) and "RAID" or ((IsInGroup and IsInGroup()) and "PARTY" or nil)
     local said = 0
     for i = 1, math.min(SAY_LINES, #lines) do
@@ -968,6 +1008,8 @@ function RaidTools:Say(kind, lines, now)
             said = said + 1
         end
     end
+    if said == 0 then return nil, L["The chat did not take the message."] end
+    self._said[kind] = now
     return said
 end
 
@@ -981,7 +1023,7 @@ function RaidTools.GroupLines(parties)
             parts[#parts + 1] = string.format(L["G%d: %s"], g, table.concat(names, ", "))
         end
     end
-    return RaidTools.Lines("", parts, " | ")
+    return RaidTools.Lines("", parts, " / ")
 end
 
 --- Who is missing as chat lines: the roles short and the names signed up and not here.

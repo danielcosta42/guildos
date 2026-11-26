@@ -236,7 +236,7 @@ local function buildEditor()
     local close = UI:CreateCloseButton(f)
     close:SetPoint("TOPRIGHT", -6, -6)
     close:SetScript("OnClick", function() f:Hide() end)
-    f.hint = UI:CreateText(f, L["Only officers receive and see it. Never sent to the website."], 9,
+    f.hint = UI:CreateText(f, L["Only officers receive and see it. Never sent to the website."], UI.SP.META,
         C.textDim.r, C.textDim.g, C.textDim.b)
     f.hint:SetPoint("TOPLEFT", 14, -34)
 
@@ -264,9 +264,9 @@ local function buildEditor()
     well:SetScript("OnMouseDown", function() edit:SetFocus() end)
     f.edit = edit
 
-    f.count = UI:CreateText(f, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    f.count = UI:CreateText(f, "", UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
     f.count:SetPoint("BOTTOMLEFT", 14, 32)
-    f.byline = UI:CreateText(f, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    f.byline = UI:CreateText(f, "", UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
     f.byline:SetPoint("BOTTOMRIGHT", -14, 32)
     edit:SetScript("OnTextChanged", function(self)
         local n = GuildOS:Utf8Len(self:GetText() or "")

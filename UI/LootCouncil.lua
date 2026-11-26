@@ -71,7 +71,7 @@ local function build()
     local headers = { { L["Player"], 18 }, { L["Type"], 160 }, { L["Roll"], 210 }, { L["ATT%"], 280 }, { L["RECV"], 330 },
         { L["Points"], 380 }, { L["Votes"], 440 } }
     for _, h in ipairs(headers) do
-        local ht = UI:CreateHeaderText(head, h[1], 9)
+        local ht = UI:CreateHeaderText(head, h[1], UI.SP.META)
         ht:SetPoint("LEFT", h[2], 0)
     end
 

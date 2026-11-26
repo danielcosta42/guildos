@@ -117,6 +117,7 @@ local function load(style)
   GuildOS.RecordError = function(_, msg) errors[#errors + 1] = tostring(msg) end
   GuildOS.db = { settings = {} }
   GuildOS.Style:Resolve()
+  dofile(ADDON .. "/UI/Spacing.lua")
   dofile(ADDON .. "/UI/Helpers.lua")
   dofile(ADDON .. "/UI/Layout.lua")
   dofile(ADDON .. "/UI/AchievementsPanel.lua")
@@ -273,7 +274,7 @@ for _, style in ipairs({ "guildos", "forever" }) do
   check(content.w == CONTENT_W, style .. ": the content keeps the scroll frame's width less the gutter")
 
   -- The Chronicle's mockup (#449 phase 3): three cards, hung by both top corners from the content.
-  local PAD, GAP = 14, UI.GAP
+  local PAD, GAP = UI.SP.PAD, UI.GAP
   local head, near, earnedCard = content.head, content.near, content.earned
   check(head and head.__dark and head.shown and point(head, "TOPLEFT")[3] == -2 and point(head, "TOPRIGHT"),
     style .. ": the renown in a dark card at the top")
@@ -305,7 +306,7 @@ for _, style in ipairs({ "guildos", "forever" }) do
     local n, p = NEXT[i], point(card, "TOPLEFT")
     local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
     check(card.shown and card.w == cardW and card.parent == near, style .. ": box " .. i .. " is " .. cardW .. " wide, in its card")
-    check(p[2] == PAD + col * (cardW + GAP) and p[3] == -38 - row * (card.h + GAP),
+    check(p[2] == PAD + col * (cardW + GAP) and p[3] == -UI.SP.TOP - row * (card.h + GAP),
       style .. ": box " .. i .. " in column " .. col .. ", row " .. row)
     check(card.title.text == n.title and card.title.maxLines == 2 and same(card.title.color, C.paperTitle),
       style .. ": box " .. i .. " has its title in the paper's red, two lines at most")
@@ -313,7 +314,7 @@ for _, style in ipairs({ "guildos", "forever" }) do
     check(card.count.text == count and card.count.font == (GuildOS.Style.gameFont and STANDARD_TEXT_FONT or GuildOS.Fonts.mono),
       style .. ": box " .. i .. " says " .. count .. " in the number font")
     local bar = card.bar
-    check(bar.shown and bar.w == cardW - 20 - #count * 6 - UI.GAP, style .. ": box " .. i .. "'s bar runs up to the numbers")
+    check(bar.shown and bar.w == cardW - 24 - #count * 6 - UI.GAP, style .. ": box " .. i .. "'s bar runs up to the numbers")
     local fill = math.max(1, (bar.w - 2) * (n.current / n.target))
     check(math.abs(bar.bar.w - fill) < 1e-6, style .. ": box " .. i .. "'s bar is filled to " .. n.current .. "/" .. n.target)
   end
@@ -419,9 +420,13 @@ for _, style in ipairs({ "guildos", "forever" }) do
   tab = build(data({ Renown = function() return nil end }), CONTENT_W + gutter)
   local shownFrames = 0
   walk(tab.content, function(c) if c.shown and c.kind ~= "CreateFontString" and c.kind ~= "CreateTexture" and c.parent == tab.content then shownFrames = shownFrames + 1 end end)
-  check(shownText(tab.content, "Achievements come from guildos.me: the web companion brings them here when your guild has them.")
+  -- The line is a centred block on the screen (#449): a card with a glyph, never a grey line in the corner.
+  local es
+  for _, c in ipairs(tab.parent.children) do if rawget(c, "Set") and rawget(c, "glyph") and c.shown then es = c end end
+  check(es and shownText(es, "Achievements come from guildos.me: the web companion brings them here when your guild has them.")
+    and point(es, "CENTER") ~= nil
     and not shownText(tab.content, "Nearest") and not shownText(tab.content, "Earned") and shownFrames == 0,
-    style .. ": no block: the line saying where they come from, and nothing else")
+    style .. ": no block: a centred card with the line saying where they come from, and nothing else")
   tab = build(data({ Next = function() return {} end, Earned = function() return {} end }), CONTENT_W + gutter)
   check(not shownText(tab.content, "Nearest") and #tab.content.cards == 0, style .. ": nothing near: no Nearest")
   check(shownText(tab.content, "Earned") and shownText(tab.content, "Nothing earned yet.") and #tab.content.rows == 0,

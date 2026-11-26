@@ -247,7 +247,7 @@ function GuildOS:BuildLootAccounts(panel)
     local standHead = UI:CreateTableHeader(body)
     standHead:SetPoint("TOPLEFT", 0, 0)
     local heads = {}
-    for _, col in ipairs(STAND_COLS) do heads[col.key] = UI:CreateHeaderText(standHead, "", 10) end
+    for _, col in ipairs(STAND_COLS) do heads[col.key] = UI:CreateHeaderText(standHead, "", 11) end
     local standScroll, standChild = UI:CreateScrollFrame(body, nil)
     standScroll:SetPoint("TOPLEFT", standHead, "BOTTOMLEFT", 0, 0)
     -- The movements: their own card, the newest first, two lines each.
@@ -308,7 +308,7 @@ function GuildOS:BuildLootAccounts(panel)
             row.line:SetPoint("TOPLEFT", 4, 0)
             row.line:SetPoint("RIGHT", row, "RIGHT", -4, 0)
             row.line:SetJustifyH("LEFT")
-            row.sub = UI:CreateText(row, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+            row.sub = UI:CreateText(row, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
             row.sub:SetPoint("TOPLEFT", 12, -14)
             row.sub:SetPoint("RIGHT", row, "RIGHT", -4, 0)
             row.sub:SetJustifyH("LEFT")
@@ -410,8 +410,10 @@ function GuildOS:BuildLootAccounts(panel)
 
         -- The movements keep their column while the window leaves room for it; then they drop. The
         -- content stops GAP short of the right edge; the standings' scroll bar sits in its gutter.
-        local W = (body:GetWidth() or 0) - GAP
-        if W < 60 then W = (two and leftW or Wp) - 2 * PAD end
+        -- The balances card's width as just laid (its body reads its old width until the client lays it out):
+        -- the body is PAD in on the left and PAD - GAP on the right.
+        local cardW = two and leftW or Wp
+        local W = math.max(60, cardW - 2 * PAD)
         local withLog = two
         local standW = math.max(1, W)
         standHead:SetWidth(standW)

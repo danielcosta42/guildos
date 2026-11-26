@@ -235,6 +235,7 @@ UI.CreateTextArea = function(_, p) local f = CreateFrame("Frame", nil, p); f.edi
 UI.CreateMetricChip = function(_, p, v) local f = CreateFrame("Frame", nil, p); f.value = text(f, v); function f:SetValue(x) self.value.text = x end; return f end
 GuildOS.UI = UI
 
+dofile(ADDON .. "/UI/Spacing.lua"); UI.SP = GuildOS.Spacing   -- the spacing standard (#449)
 for _, f in ipairs({ "VeilFx", "VeilChimney", "VeilShelf", "WinterVeilPanel", "Snow" }) do dofile(ADDON .. "/UI/" .. f .. ".lua") end
 local Fx, Chimney, Shelf, Snow = GuildOS.VeilFx, GuildOS.VeilChimney, GuildOS.VeilShelf, GuildOS.Snow
 

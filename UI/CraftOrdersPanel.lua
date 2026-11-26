@@ -84,7 +84,7 @@ end
 -- For me · Mine · Open, one card per order with its four steps and the next thing to do.
 ----------------------------------------------------------------------
 local CARD_H   = 100
-local CARD_GAP = 8
+local CARD_GAP = UI.SP.GAP
 local STEP_LABELS = { L["Open"], L["Accepted"], L["Materials"], L["Ready"] }
 
 local function trade(key)
@@ -219,20 +219,20 @@ function GuildOS:CreateOrderQueue(parent)
         c.who:SetPoint("TOPLEFT", c.name, "BOTTOMLEFT", 0, -2)
         c.who:SetPoint("RIGHT", c, "RIGHT", -8, 0)
         c.who:SetJustifyH("LEFT"); c.who:SetWordWrap(false)
-        c.when = UI:CreateText(c, "", 10, P.soft.r, P.soft.g, P.soft.b)
-        GuildOS:ApplyFont(c.when, 10, "tableNum")
+        c.when = UI:CreateText(c, "", UI.SP.META, P.soft.r, P.soft.g, P.soft.b)
+        GuildOS:ApplyFont(c.when, UI.SP.META, "tableNum")
         c.when:SetPoint("TOPRIGHT", -8, -8)
         c.steps = {}
         for s = 1, 4 do
             local bar = c:CreateTexture(nil, "ARTWORK")
             bar:SetTexture("Interface\\Buttons\\WHITE8x8")
             bar:SetHeight(3)
-            local lab = UI:CreateText(c, STEP_LABELS[s], 10)
-            GuildOS:ApplyFont(lab, 10, "caption")
+            local lab = UI:CreateText(c, STEP_LABELS[s], UI.SP.META)
+            GuildOS:ApplyFont(lab, UI.SP.META, "caption")
             lab:SetJustifyH("LEFT"); lab:SetWordWrap(false)
             c.steps[s] = { bar = bar, label = lab }
         end
-        c.terms = UI:CreateText(c, "", 10, P.soft.r, P.soft.g, P.soft.b)
+        c.terms = UI:CreateText(c, "", UI.SP.META, P.soft.r, P.soft.g, P.soft.b)
         c.terms:SetPoint("BOTTOMLEFT", 8, 10)
         c.terms:SetJustifyH("LEFT"); c.terms:SetWordWrap(false)
         c.b1 = UI:CreateButton(c, "", 84, 20)
@@ -368,14 +368,15 @@ end
 -- quality, what it takes for the quantity chosen, who crafts it (the guild, then the alliance) and the order.
 -- "‹ Orders", Escape or the row clicked again close it.
 ----------------------------------------------------------------------
-local CARD_PAD   = 14
-local HEAD_TOP   = 40       -- under the "‹ Orders" pill
+local CARD_PAD   = UI.SP.PAD
+local HEAD_TOP   = UI.SP.PAD   -- the header (the item's icon, its name, "‹ Orders" at the right) on the card's first line
 local ICON_SIZE  = 36
-local MAT_H      = 22
-local MAT_BANK_H = 34       -- a material the guild bank also holds: a second line under its name
-local WHO_H      = 26
+local MAT_H      = 24
+local MAT_BANK_H = 38       -- a material the guild bank also holds: a second line under its name
+local MAT_MAX    = 5        -- material rows shown before the materials scroll on their own
+local WHO_H      = UI.SP.ROW_AV
 local WHO_MAX    = 40       -- crafter rows drawn at most; the rest counted
-local ORDER_H    = 176      -- the order block, pinned to the card's foot
+local ORDER_H    = 200      -- the order block, pinned to the card's foot (its Send and the line under it)
 local SCROLL_GUT = 14
 
 -- The paper's inks, read where the card is drawn.
@@ -416,29 +417,40 @@ function GuildOS:CreateRecipeCard(parent)
     d:Hide()
     d.qty, d.mode = 1, "mats"
 
-    -- Back to the Orders card (the column's own).
-    local back = UI:SetButtonVariant(UI:CreateButton(d, L["‹ Orders"], 80, 20), "chip")
+    -- Back to the Orders card (the column's own), at the header's right.
+    local back = UI:SetButtonVariant(UI:CreateButton(d, L["‹ Orders"], 80, UI.SP.HIT), "chip")
     back:SetWidth(math.ceil(back.label:GetStringWidth() or 50) + 22)
-    back:SetPoint("TOPLEFT", CARD_PAD - 2, -10)
+    back:SetPoint("TOPRIGHT", -CARD_PAD, -HEAD_TOP)
     d.back = back
 
-    -- The header: the item in its quality's frame, its name in the serif in the paper's quality ink.
-    local icon = UI:CreateIcon(d, ICON_SIZE)
-    icon:SetPoint("TOPLEFT", CARD_PAD, -HEAD_TOP)
+    -- The header (#449): the item's icon in its quality's frame beside its name, in the serif in the paper's
+    -- quality ink. The icon and its frame are drawn on the card itself, so nothing laid over the card hides them;
+    -- a frame over them takes the mouse (the tooltip, a shift-click).
+    local iconEdge = d:CreateTexture(nil, "ARTWORK", nil, 1)
+    iconEdge:SetTexture(WHITE8)
+    iconEdge:SetSize(ICON_SIZE + 4, ICON_SIZE + 4)
+    iconEdge:SetPoint("TOPLEFT", CARD_PAD, -HEAD_TOP)
+    local iconTex = d:CreateTexture(nil, "ARTWORK", nil, 2)
+    iconTex:SetPoint("TOPLEFT", iconEdge, "TOPLEFT", 2, -2)
+    iconTex:SetPoint("BOTTOMRIGHT", iconEdge, "BOTTOMRIGHT", -2, 2)
+    iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    local icon = CreateFrame("Frame", nil, d)
+    icon:SetAllPoints(iconEdge)
     icon:EnableMouse(true)
+    icon.icon, icon.edge = iconTex, iconEdge
     d.icon = icon
-    local name = UI:CreateTitle(d, "", 14)
-    name:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -1)
-    name:SetPoint("RIGHT", d, "RIGHT", -CARD_PAD, 0)
+    local name = UI:CreateTitle(d, "", UI.SP.TITLE)
+    name:SetPoint("TOPLEFT", iconEdge, "TOPRIGHT", UI.SP.CELL, -2)
+    name:SetPoint("RIGHT", back, "LEFT", -UI.SP.CELL, 0)
     name:SetJustifyH("LEFT")
     if name.SetWordWrap then name:SetWordWrap(true) end
     if name.SetMaxLines then name:SetMaxLines(2) end
     d.name = name
-    local meta = UI:CreateText(d, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    local meta = UI:CreateText(d, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     meta:SetJustifyH("LEFT")
     meta:SetWordWrap(true)
     d.meta = meta
-    local makes = UI:CreateText(d, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    local makes = UI:CreateText(d, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     makes:SetJustifyH("LEFT")
     d.makes = makes
 
@@ -459,14 +471,13 @@ function GuildOS:CreateRecipeCard(parent)
         if link and IsShiftKeyDown() and HandleModifiedItemClick then HandleModifiedItemClick(link) end
     end)
 
-    -- The middle scrolls: the materials and who crafts it.
+    -- The middle: the materials (scrolling on their own past MAT_MAX rows), then who crafts it in a list of its
+    -- own that scrolls and stops a section's gap above the order (#449: it ran into the Order block).
+    local matHead = UI:CreateHeaderText(d, L["Materials"], UI.SP.META)
     local scroll, body = UI:CreateScrollFrame(d, nil)
     d.scroll, d.body = scroll, body
     body.__paper = true
-
-    local matHead = UI:CreateHeaderText(body, L["Materials"], 11)
-    matHead:SetPoint("TOPLEFT", 0, 0)
-    local matNote = UI:CreateText(body, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    local matNote = UI:CreateText(body, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     matNote:SetJustifyH("LEFT")
     matNote:SetWordWrap(true)
     d.mats = {}
@@ -480,14 +491,14 @@ function GuildOS:CreateRecipeCard(parent)
         m.icon:SetPoint("TOPLEFT", 0, -3)
         m.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         m.name = UI:CreateText(m, "", 12)
-        m.name:SetPoint("TOPLEFT", 22, -4)
+        m.name:SetPoint("TOPLEFT", 22, -5)
         m.name:SetJustifyH("LEFT"); m.name:SetWordWrap(false)
         m.have = UI:CreateText(m, "", 12)
         GuildOS:ApplyFont(m.have, 12, "tableNum")
-        m.have:SetPoint("TOPRIGHT", 0, -4)
+        m.have:SetPoint("TOPRIGHT", 0, -5)
         m.have:SetJustifyH("RIGHT")
-        m.bank = UI:CreateText(m, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-        m.bank:SetPoint("TOPLEFT", 22, -19)
+        m.bank = UI:CreateText(m, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+        m.bank:SetPoint("TOPLEFT", 22, -21)
         m.bank:SetJustifyH("LEFT"); m.bank:SetWordWrap(false)
         m:SetScript("OnEnter", function(self)
             if not self.itemID then return end
@@ -504,14 +515,17 @@ function GuildOS:CreateRecipeCard(parent)
         return m
     end
 
-    local whoHead = UI:CreateHeaderText(body, "", 11)
+    local whoHead = UI:CreateHeaderText(d, "", UI.SP.META)
+    local whoScroll, whoBody = UI:CreateScrollFrame(d, nil)
+    whoBody.__paper = true
+    d.whoScroll, d.whoBody = whoScroll, whoBody
     d.who = {}
     local function whoRow(i)
         local w = d.who[i]
         if w then return w end
-        w = CreateFrame("Frame", nil, body)
+        w = CreateFrame("Frame", nil, whoBody)
         w:SetHeight(WHO_H)
-        w.avatar = UI:CreateAvatar(w, 20, false)
+        w.avatar = UI:CreateAvatar(w, 24, false)
         w.avatar:SetPoint("LEFT", 0, 0)
         w.avatar:EnableMouse(false)
         -- Online: a drawn dot, not a bullet character (the addon's fonts have no such glyph: it draws a box).
@@ -520,15 +534,15 @@ function GuildOS:CreateRecipeCard(parent)
         w.dot:SetSize(6, 6)
         w.dot:SetPoint("BOTTOMRIGHT", w.avatar, "BOTTOMRIGHT", 1, -1)
         w.name = UI:CreateText(w, "", 12)
-        w.name:SetPoint("LEFT", 28, 0)
+        w.name:SetPoint("LEFT", 32, 0)
         w.name:SetJustifyH("LEFT"); w.name:SetWordWrap(false)
-        w.skill = UI:CreateText(w, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-        GuildOS:ApplyFont(w.skill, 11, "tableNum")
+        w.skill = UI:CreateText(w, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+        GuildOS:ApplyFont(w.skill, UI.SP.META, "tableNum")
         w.skill:SetJustifyH("RIGHT")
-        w.whisper = UI:SetButtonVariant(UI:CreateButton(w, L["Whisper"], 50, 18), "ghost")
+        w.whisper = UI:SetButtonVariant(UI:CreateButton(w, L["Whisper"], 50, UI.SP.HIT), "ghost")
         w.whisper:SetWidth(math.ceil(w.whisper.label:GetStringWidth() or 40) + 4)
         w.whisper:SetPoint("RIGHT", 0, 0)
-        w.ask = UI:SetButtonVariant(UI:CreateButton(w, L["Order"], 40, 18), "ghost")
+        w.ask = UI:SetButtonVariant(UI:CreateButton(w, L["Order"], 40, UI.SP.HIT), "ghost")
         w.ask:SetWidth(math.ceil(w.ask.label:GetStringWidth() or 30) + 4)
         w.ask:SetPoint("RIGHT", w.whisper, "LEFT", -8, 0)
         w.skill:SetPoint("RIGHT", w.ask, "LEFT", -8, 0)
@@ -537,11 +551,11 @@ function GuildOS:CreateRecipeCard(parent)
         d.who[i] = w
         return w
     end
-    local whoMore = UI:CreateText(body, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    local whoMore = UI:CreateText(whoBody, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     whoMore:SetJustifyH("LEFT")
     whoMore:SetWordWrap(true)
     -- Nobody in the guild: the realm's search, opened on the item.
-    local realm = UI:SetButtonVariant(UI:CreateButton(body, L["Search the realm"], 100, 18), "ghost")
+    local realm = UI:SetButtonVariant(UI:CreateButton(whoBody, L["Search the realm"], 100, UI.SP.HIT), "ghost")
     realm:SetWidth(math.ceil(realm.label:GetStringWidth() or 80) + 4)
     realm:SetScript("OnClick", function()
         local r = d.recipe
@@ -551,48 +565,48 @@ function GuildOS:CreateRecipeCard(parent)
 
     -- The order, pinned to the card's foot under a rule.
     local box = CreateFrame("Frame", nil, d)
-    box:SetPoint("BOTTOMLEFT", CARD_PAD, CARD_PAD - 4)
-    box:SetPoint("BOTTOMRIGHT", -CARD_PAD, CARD_PAD - 4)
+    box:SetPoint("BOTTOMLEFT", CARD_PAD, CARD_PAD)
+    box:SetPoint("BOTTOMRIGHT", -CARD_PAD, CARD_PAD)
     box:SetHeight(ORDER_H)
     d.box = box
     local rule = UI:CreateSeparator(box)
     rule:SetVertexColor(C.paperRule.r, C.paperRule.g, C.paperRule.b, 1)
     rule:SetPoint("TOPLEFT", 0, 0)
     rule:SetPoint("TOPRIGHT", 0, 0)
-    local orderHead = UI:CreateHeaderText(box, L["Order"], 11)
-    orderHead:SetPoint("TOPLEFT", 0, -10)
+    local orderHead = UI:CreateHeaderText(box, L["Order"], UI.SP.META)
+    orderHead:SetPoint("TOPLEFT", 0, -UI.SP.FIELD_GAP)
     -- The quantity and the tip on one line, the materials' two ways under them, who it goes to, Send.
     local qtyLabel = UI:CreateText(box, L["Quantity"], 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    qtyLabel:SetPoint("TOPLEFT", 0, -36)
-    local minus = UI:CreateButton(box, "-", 22, 20)
+    qtyLabel:SetPoint("TOPLEFT", 0, -40)
+    local minus = UI:CreateButton(box, "-", UI.SP.HIT, UI.SP.HIT)
     minus:SetPoint("LEFT", qtyLabel, "RIGHT", 8, 0)
     local qtyText = UI:CreateText(box, "1", 13)
     GuildOS:ApplyFont(qtyText, 13, "tableNum")
     qtyText:SetPoint("LEFT", minus, "RIGHT", 2, 0)
     qtyText:SetWidth(28); qtyText:SetJustifyH("CENTER")
-    local plus = UI:CreateButton(box, "+", 22, 20)
+    local plus = UI:CreateButton(box, "+", UI.SP.HIT, UI.SP.HIT)
     plus:SetPoint("LEFT", qtyText, "RIGHT", 2, 0)
-    local tip = UI:CreateInput(box, 64, 22, { numeric = true, max = 6 })
-    tip:SetPoint("TOPRIGHT", 0, -31)
+    local tip = UI:CreateInput(box, 64, UI.SP.FIELD, { numeric = true, max = 6 })
+    tip:SetPoint("TOPRIGHT", 0, -34)
     local tipLabel = UI:CreateText(box, L["Tip (gold)"], 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     tipLabel:SetPoint("RIGHT", tip, "LEFT", -8, 0)
-    local modeMats = UI:SetButtonVariant(UI:CreateButton(box, L["I bring the materials"], 120, 22), "chip")
+    local modeMats = UI:SetButtonVariant(UI:CreateButton(box, L["I bring the materials"], 120, UI.SP.HIT), "chip")
     modeMats:SetWidth(math.ceil(modeMats.label:GetStringWidth() or 100) + 22)
-    modeMats:SetPoint("TOPLEFT", 0, -60)
-    local modeOwn = UI:SetButtonVariant(UI:CreateButton(box, L["Crafter's own"], 100, 22), "chip")
+    modeMats:SetPoint("TOPLEFT", 0, -72)
+    local modeOwn = UI:SetButtonVariant(UI:CreateButton(box, L["Crafter's own"], 100, UI.SP.HIT), "chip")
     modeOwn:SetWidth(math.ceil(modeOwn.label:GetStringWidth() or 80) + 22)
-    modeOwn:SetPoint("LEFT", modeMats, "RIGHT", 6, 0)
-    local toText = UI:CreateText(box, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    toText:SetPoint("TOPLEFT", 0, -92)
+    modeOwn:SetPoint("LEFT", modeMats, "RIGHT", 8, 0)
+    local toText = UI:CreateText(box, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    toText:SetPoint("TOPLEFT", 0, -108)
     toText:SetJustifyH("LEFT"); toText:SetWordWrap(false)
-    local toClear = UI:SetButtonVariant(UI:CreateButton(box, L["Send to anyone"], 100, 18), "ghost")
+    local toClear = UI:SetButtonVariant(UI:CreateButton(box, L["Send to anyone"], 100, UI.SP.HIT), "ghost")
     toClear:SetWidth(math.ceil(toClear.label:GetStringWidth() or 80) + 4)
-    toClear:SetPoint("TOPRIGHT", 0, -89)
+    toClear:SetPoint("TOPRIGHT", 0, -103)
     toText:SetPoint("RIGHT", toClear, "LEFT", -6, 0)
-    local send = UI:SetButtonVariant(UI:CreateButton(box, L["Send order"], 140, 26), "primary")
-    send:SetPoint("TOPLEFT", 0, -112)
-    send:SetPoint("TOPRIGHT", 0, -112)
-    local what = UI:CreateText(box, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    local send = UI:SetButtonVariant(UI:CreateButton(box, L["Send order"], 140, UI.SP.FIELD), "primary")
+    send:SetPoint("TOPLEFT", 0, -134)
+    send:SetPoint("TOPRIGHT", 0, -134)
+    local what = UI:CreateText(box, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     what:SetPoint("TOPLEFT", send, "BOTTOMLEFT", 0, -6)
     what:SetPoint("TOPRIGHT", send, "BOTTOMRIGHT", 0, -6)
     what:SetJustifyH("LEFT")
@@ -611,8 +625,13 @@ function GuildOS:CreateRecipeCard(parent)
         -- The header
         local q = r.quality or (r.item and select(3, itemInfo(r.item))) or 1
         icon.icon:SetTexture(r.icon or (r.item and select(4, itemInfo(r.item))) or QUESTION)
-        UI:SetIconQuality(icon, q)
-        name:SetWidth(math.max(60, inner - ICON_SIZE - 14))
+        do
+            local qc = GuildOS.QualityColors and GuildOS.QualityColors[q]
+            local er, eg, eb = C.paperRule.r, C.paperRule.g, C.paperRule.b
+            if qc and q >= 2 then er, eg, eb = qc.r, qc.g, qc.b end
+            icon.edge:SetVertexColor(er, eg, eb, 1)
+        end
+        name:SetWidth(math.max(60, inner - ICON_SIZE - 4 - 2 * UI.SP.CELL - (back:GetWidth() or 60)))
         name:SetText(r.name or (r.item and itemInfo(r.item)) or (r.item and ("item:" .. r.item)) or "?")
         name:SetTextColor(UI:InkFor("paper", "quality", q))
         local parts = {}
@@ -625,25 +644,26 @@ function GuildOS:CreateRecipeCard(parent)
         meta:SetText(table.concat(parts, " · "))
         meta:SetWidth(inner)
         meta:ClearAllPoints()
-        meta:SetPoint("TOPLEFT", CARD_PAD, -(HEAD_TOP + ICON_SIZE + 12))
+        meta:SetPoint("TOPLEFT", CARD_PAD, -(HEAD_TOP + ICON_SIZE + 4 + UI.SP.FIELD_GAP))
         local metaH = (meta:GetText() ~= "" and math.max(14, math.ceil(meta:GetStringHeight() or 14))) or 0
         local yield = r.item and O:Yield(r.item, nil, r.recipeId, self.toKey) or 1
         makes:SetText(string.format(L["Makes %d per craft"], yield))
         makes:ClearAllPoints()
-        makes:SetPoint("TOPLEFT", CARD_PAD, -(HEAD_TOP + ICON_SIZE + 12 + metaH + (metaH > 0 and 3 or 0)))
-        local headBottom = HEAD_TOP + ICON_SIZE + 12 + metaH + (metaH > 0 and 3 or 0) + 16 + 10
+        local headTop = HEAD_TOP + ICON_SIZE + 4 + UI.SP.FIELD_GAP
+        makes:SetPoint("TOPLEFT", CARD_PAD, -(headTop + metaH + (metaH > 0 and 3 or 0)))
+        local headBottom = headTop + metaH + (metaH > 0 and 3 or 0) + 16 + UI.SP.SECTION
 
-        scroll:ClearAllPoints()
-        scroll:SetPoint("TOPLEFT", CARD_PAD, -headBottom)
-        scroll:SetPoint("BOTTOMRIGHT", -(CARD_PAD - 4), CARD_PAD - 4 + ORDER_H + 8)
+        matHead:ClearAllPoints()
+        matHead:SetPoint("TOPLEFT", CARD_PAD, -headBottom)
         local bw = math.max(120, inner - SCROLL_GUT)
         body:SetWidth(bw)
+        whoBody:SetWidth(bw)
 
         -- Materials, for the quantity chosen
         local crafts = math.ceil(self.qty / math.max(1, yield))
         local rg = r.item and O:Reagents(r.item, nil, r.recipeId, self.toKey) or {}
         matHead:SetText(self.qty > 1 and string.format(L["Materials × %d"], self.qty) or L["Materials"])
-        local y = 20
+        local y = 0
         for _, m in ipairs(self.mats) do m:Hide() end
         for i, x in ipairs(rg) do
             local m = matRow(i)
@@ -677,7 +697,15 @@ function GuildOS:CreateRecipeCard(parent)
             matNote:SetPoint("TOPLEFT", 0, -y)
             y = y + math.max(16, math.ceil(matNote:GetStringHeight() or 16)) + 2
         end
-        y = y + 14
+        -- The materials' own area: as tall as they are, up to MAT_MAX rows, scrolling past that.
+        body:SetHeight(math.max(1, y))
+        local matTop = headBottom + 20
+        local matH = math.max(1, math.min(y, MAT_MAX * MAT_H + 4))
+        scroll:ClearAllPoints()
+        scroll:SetPoint("TOPLEFT", CARD_PAD, -matTop)
+        scroll:SetPoint("TOPRIGHT", -(CARD_PAD - 4), -matTop)
+        scroll:SetHeight(matH)
+        local whoTop = matTop + matH + UI.SP.SECTION
 
         -- Who crafts it: the guild's, online first, then the alliance's (marked with their guild).
         local list = {}
@@ -694,9 +722,13 @@ function GuildOS:CreateRecipeCard(parent)
         end
         local guildN = #list - allies
         whoHead:ClearAllPoints()
-        whoHead:SetPoint("TOPLEFT", 0, -y)
+        whoHead:SetPoint("TOPLEFT", CARD_PAD, -whoTop)
         whoHead:SetText(string.format(L["Who crafts it · %d"], #list))
-        y = y + 20
+        -- The list fills the room down to a section's gap above the order block, and scrolls in it.
+        whoScroll:ClearAllPoints()
+        whoScroll:SetPoint("TOPLEFT", CARD_PAD, -(whoTop + 20))
+        whoScroll:SetPoint("BOTTOMRIGHT", -(CARD_PAD - 4), CARD_PAD + ORDER_H + UI.SP.SECTION)
+        y = 0
         local me = O:MyKey()
         for _, w in ipairs(self.who) do w:Hide() end
         for i = 1, math.min(#list, WHO_MAX) do
@@ -722,7 +754,7 @@ function GuildOS:CreateRecipeCard(parent)
             w.ask:SetScript("OnClick", function() self.toKey = c.key; self:Paint() end)
             w:ClearAllPoints()
             w:SetPoint("TOPLEFT", 0, -y)
-            w:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            w:SetPoint("RIGHT", whoBody, "RIGHT", 0, 0)
             w:Show()
             y = y + WHO_H
         end
@@ -740,11 +772,11 @@ function GuildOS:CreateRecipeCard(parent)
             realm:ClearAllPoints()
             realm:SetPoint("TOPLEFT", whoMore, "BOTTOMLEFT", 0, -4)
             realm:SetShown(GuildOS.ShowCraftFinder ~= nil and r.item ~= nil)
-            y = y + 20 + (realm:IsShown() and 22 or 0)
+            y = y + 20 + (realm:IsShown() and (UI.SP.HIT + 4) or 0)
         else
             whoMore:Hide()
         end
-        body:SetHeight(y + 8)
+        whoBody:SetHeight(math.max(1, y + 4))
 
         -- The order
         qtyText:SetText(tostring(self.qty))
@@ -797,6 +829,7 @@ function GuildOS:CreateRecipeCard(parent)
             tip:SetText("")
             self.toKey = toKey
             scroll:SetVerticalScroll(0)
+            whoScroll:SetVerticalScroll(0)
         end
         self.recipe = recipe
         local was = self:IsShown()
@@ -1061,7 +1094,7 @@ local function buildDialog()
     f.itemName = UI:CreateText(f, "", 13)
     f.itemName:SetPoint("TOPLEFT", f.icon, "TOPRIGHT", 8, -1)
     f.itemName:SetWidth(DIALOG_W - 80); f.itemName:SetJustifyH("LEFT"); f.itemName:SetWordWrap(false)
-    f.to = UI:CreateText(f, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    f.to = UI:CreateText(f, "", UI.SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     f.to:SetPoint("TOPLEFT", f.itemName, "BOTTOMLEFT", 0, -3)
     f.toClear = UI:SetButtonVariant(UI:CreateButton(f, L["Send to anyone"], 110, 18), "ghost")
     f.toClear:SetPoint("TOPRIGHT", -14, -84)
@@ -1097,7 +1130,7 @@ local function buildDialog()
     f.note = UI:CreateInput(f, DIALOG_W - 104, FIELD_H, { max = 80 })
     f.note:SetPoint("TOPLEFT", 90, -164)
 
-    f.rgHeader = UI:CreateHeaderText(f, L["Materials"], 10)
+    f.rgHeader = UI:CreateHeaderText(f, L["Materials"], UI.SP.META)
     f.rgHeader:SetPoint("TOPLEFT", 14, -198)
     f.rg = {}
     for i = 1, REAGENT_LINES do
@@ -1112,13 +1145,13 @@ local function buildDialog()
         GuildOS:ApplyFont(have, 11, "tableNum")
         f.rg[i] = { icon = icon, text = text, have = have }
     end
-    f.rgNone = UI:CreateText(f, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    f.rgNone = UI:CreateText(f, "", UI.SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     f.rgNone:SetWidth(DIALOG_W - 28); f.rgNone:SetJustifyH("LEFT")
 
     f.send = UI:CreateButton(f, L["Send order"], 130, 24)
     UI:SetButtonVariant(f.send, "primary")
     f.send:SetPoint("BOTTOMRIGHT", -14, 12)
-    f.crafters = UI:CreateText(f, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    f.crafters = UI:CreateText(f, "", UI.SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     f.crafters:SetPoint("BOTTOMLEFT", 14, 18)
     f.crafters:SetPoint("RIGHT", f.send, "LEFT", -8, 0)
     f.crafters:SetJustifyH("LEFT")
@@ -1305,7 +1338,7 @@ local function paintMailBar()
         mailBar:SetWidth(260)
         mailBar:SetPoint("TOPLEFT", MailFrame, "TOPRIGHT", 4, 0)
         UI:StylePopup(mailBar)
-        local title = UI:CreateHeaderText(mailBar, L["Craft orders"], 10)
+        local title = UI:CreateHeaderText(mailBar, L["Craft orders"], UI.SP.META)
         title:SetPoint("TOPLEFT", 10, -10)
         mailBar.lines = {}
         for i = 1, MAIL_LINES do

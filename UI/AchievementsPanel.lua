@@ -25,11 +25,11 @@ local INSIGNIA = 64        -- the renown insignia, the screen's one picture (#37
 local INSIGNIA_GAP = 12
 
 local CARD_MIN = 200       -- a nearest card is never narrower; the row takes as many as fit
-local CARD_PAD = 10
+local BOX_PAD = 12            -- a nearest box's padding (a box inside the card, not a card)
 local TITLE_H = 30         -- two lines of 12px: every card keeps room for two, so the bars line up
 local NUM_H = 13           -- a line of the mono number font
 local BAR_H = 8
-local CARD_H = CARD_PAD + TITLE_H + GAP + NUM_H + CARD_PAD
+local CARD_H = BOX_PAD + TITLE_H + GAP + NUM_H + BOX_PAD
 
 local PILL_H = 16          -- UI:CreateBadge's height
 local PILL_GAP = 4
@@ -225,8 +225,8 @@ end
 -- each row its name in the title face with its date on the right and, under it, the series' tier pills or the
 -- group's parts.
 local HEAD_H = INSIGNIA + 2 * 16
-local CARD_TOP = 38        -- a card's first line, under its title
-local PAD = 14             -- a card's padding (UI.CARD_PAD)
+local CARD_TOP = UI.SP.TOP        -- a card's first line, under its title
+local PAD = UI.SP.PAD      -- a card's padding (UI.CARD_PAD)
 local NAME_H = 16          -- a row's name line
 
 function GuildOS:CreateAchievementsPanel(parent)
@@ -310,15 +310,15 @@ function GuildOS:CreateAchievementsPanel(parent)
         edge:SetColor(C.paperRule)
         card.title = UI:CreateText(card, "", 12, C.paperTitle.r, C.paperTitle.g, C.paperTitle.b)
         GuildOS:ApplyFont(card.title, 12, "sectionTitle")
-        card.title:SetPoint("TOPLEFT", CARD_PAD, -CARD_PAD)
-        card.title:SetPoint("TOPRIGHT", -CARD_PAD, -CARD_PAD)
+        card.title:SetPoint("TOPLEFT", BOX_PAD, -BOX_PAD)
+        card.title:SetPoint("TOPRIGHT", -BOX_PAD, -BOX_PAD)
         card.title:SetJustifyH("LEFT")
         card.title:SetJustifyV("TOP")
         card.title:SetWordWrap(true)
         if card.title.SetMaxLines then card.title:SetMaxLines(2) end
         card.count = UI:CreateText(card, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         GuildOS:ApplyFont(card.count, nil, "tableNum")
-        card.count:SetPoint("BOTTOMRIGHT", -CARD_PAD, CARD_PAD)
+        card.count:SetPoint("BOTTOMRIGHT", -BOX_PAD, BOX_PAD)
         card.count:SetJustifyH("RIGHT")
         card.bar = UI:CreateProgressBar(card, CARD_MIN, BAR_H)
         card:EnableMouse(true)
@@ -329,10 +329,9 @@ function GuildOS:CreateAchievementsPanel(parent)
     -- What the harness reads back: the cards and the earned rows as drawn.
     content.cards, content.rows = {}, {}
     content.head, content.near, content.earned = head, near, earnedCard
-    local empty = UI:CreateText(content, "", 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    empty:SetPoint("TOPLEFT", 0, 0)
-    empty:SetPoint("TOPRIGHT", 0, 0)
-    empty:SetJustifyH("LEFT")
+    -- No achievements yet: a centred block on the screen (#449), never a grey line in its corner.
+    local empty = UI.CreateEmptyState and UI:CreateEmptyState(parent, UI.Initial and UI.Initial(L["Achievements"]) or "A") or UI:CreateText(content, "", UI.SP.BODY)
+    empty:SetPoint("CENTER", parent, "CENTER", 0, 20)
     empty:Hide()
 
     local function take(pool, col)
@@ -408,10 +407,10 @@ function GuildOS:CreateAchievementsPanel(parent)
             local countW = card.count:GetStringWidth() or 0
             local bar = card.bar
             bar:ClearAllPoints()
-            bar:SetPoint("BOTTOMLEFT", CARD_PAD, CARD_PAD + math.floor((NUM_H - BAR_H) / 2))
+            bar:SetPoint("BOTTOMLEFT", BOX_PAD, BOX_PAD + math.floor((NUM_H - BAR_H) / 2))
             if cardW then
                 -- A set width, so the fill is measured against the bar as drawn.
-                bar:SetWidth(math.max(1, cardW - 2 * CARD_PAD - countW - GAP))
+                bar:SetWidth(math.max(1, cardW - 2 * BOX_PAD - countW - GAP))
             else
                 bar:SetPoint("RIGHT", card.count, "LEFT", -GAP, 0)
             end
@@ -502,9 +501,10 @@ function GuildOS:CreateAchievementsPanel(parent)
 
         local level, points = A:Renown()
         if not level then
-            empty:SetText(L["Achievements come from guildos.me: the web companion brings them here when your guild has them."])
+            local line = L["Achievements come from guildos.me: the web companion brings them here when your guild has them."]
+            if empty.Set then empty:Set(line) else empty:SetText(line) end
             empty:Show()
-            content:SetHeight(math.max(1, (empty:GetStringHeight() or 14) + 4))
+            content:SetHeight(1)
             return
         end
         local y = place(head, 2, header(A, level, points))

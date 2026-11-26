@@ -28,11 +28,11 @@ local SUBTABS = {
 
 local GAP = UI.GAP
 local SCROLL_R = UI.SCROLL_GUTTER - UI.GAP
-local PAD = type(UI.CARD_PAD) == "number" and UI.CARD_PAD or 14
-local CARD_TOP = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
-local ROW_H = 24
+local PAD = UI.SP.PAD
+local CARD_TOP = UI.SP.TOP
+local ROW_H = UI.SP.ROW
 local HEAD_H = 102          -- the header card: title, the pickers, the pills
-local TWO_COLS = 620        -- the content's width from which the cards stand in two columns
+local TWO_COLS = UI.SP.TWO_COLS   -- the content's width from which the cards stand in two columns
 local DASH = "\226\128\148"
 local ICON_DONE = "|TInterface\\RAIDFRAME\\ReadyCheck-Ready:12:12|t"
 local ICON_NONE = "|TInterface\\RAIDFRAME\\ReadyCheck-NotReady:12:12|t"
@@ -51,10 +51,22 @@ local function RT() return GuildOS.RaidTools end
 ----------------------------------------------------------------------
 -- Drawing helpers: a pool of regions per card, handed out again by id on every refresh (no frame leaks)
 ----------------------------------------------------------------------
+local POOLS = {}   -- every pool made, so the event redraw can tell a box is being typed in
 local function Pool(host)
     local pool = { host = host, items = {} }
+    POOLS[#POOLS + 1] = pool
+    -- Every region goes until taken again, but a box being typed in stays (#449: a roster change redrew the
+    -- screen and took the focus from the raid leader mid-word).
     function pool:Begin()
-        for _, it in pairs(self.items) do it:Hide() end
+        for _, it in pairs(self.items) do
+            if not (it.HasFocus and it:HasFocus()) then it:Hide() end
+        end
+    end
+    function pool:Typing()
+        for _, it in pairs(self.items) do
+            if it.HasFocus and it:HasFocus() then return true end
+        end
+        return false
     end
     function pool:Take(id, make)
         local it = self.items[id]
@@ -94,7 +106,7 @@ local function ClassText(pool, id, text, class, size)
 end
 
 local function Button(pool, id, label, variant, onClick, h)
-    local btn = pool:Take(id, function(host) return UI:CreateButton(host, "", 60, h or 22) end)
+    local btn = pool:Take(id, function(host) return UI:CreateButton(host, "", 60, h or UI.SP.HIT) end)
     UI:SetButtonVariant(btn, variant or "secondary")
     btn.label:SetText(label)
     btn:SetWidth(math.ceil(btn.label:GetStringWidth() or 40) + (variant == "ghost" and 4 or 22))
@@ -169,11 +181,11 @@ local function ButtonRow(buttons, x, y, w)
     local cx, cy = x, y
     for _, b in ipairs(buttons) do
         local bw = b:GetWidth()
-        if cx > x and cx + bw > x + w then cx, cy = x, cy + 28 end
+        if cx > x and cx + bw > x + w then cx, cy = x, cy + UI.SP.HIT + 8 end
         b:SetPoint("TOPLEFT", cx, -cy)
-        cx = cx + bw + 6
+        cx = cx + bw + 8
     end
-    return cy + 28
+    return cy + UI.SP.HIT + 8
 end
 
 local function setOff(btn, reason)
@@ -246,49 +258,54 @@ local function BuildBuild(panel, content)
         local counts = R.CountRoles(snap.people)
         local gaps = R.RoleGaps(counts, snap.targets)
         local inner = rw - 2 * PAD
-        local boxW = math.floor((inner - 2 * 6) / 3)
+        local boxW = math.floor((inner - 2 * 8) / 3)
         local y = CARD_TOP
         for i, g in ipairs(gaps) do
             local chip = p:Take("box" .. i, function(h) return UI:CreateMetricChip(h, "", "") end)
-            chip:SetSize(boxW, 54)
-            chip:SetPoint("TOPLEFT", PAD + (i - 1) * (boxW + 6), -y)
+            chip:SetSize(boxW, 62)
+            chip:SetPoint("TOPLEFT", PAD + (i - 1) * (boxW + 8), -y)
             chip:SetValue(string.format(L["%d of %d"], g.have, g.want))
             local col = g.short > 0 and C.danger or C.ok
             chip.value:SetTextColor(col.r, col.g, col.b)
             chip.label:SetText(ROLE_WORD[g.role])
         end
-        y = y + 54 + 10
-        -- The targets, the raid leader's for this raid: − and + by tanks and healers.
+        y = y + 62 + UI.SP.FIELD_GAP
+        -- The targets, the raid leader's for this raid: − and + by tanks and healers, a role going under the
+        -- label's line when the card is too narrow for both (#449: the + ran past the card's edge).
+        local HIT = UI.SP.HIT
         local tx = PAD
-        local tl = Text(p, "tLabel", L["Targets:"], 11, C.textSoft)
-        tl:SetPoint("TOPLEFT", tx, -(y + 4))
-        tx = tx + math.ceil(tl:GetStringWidth() or 40) + 8
+        local tl = Text(p, "tLabel", L["Targets:"], UI.SP.BODY, C.textSoft)
+        tl:SetPoint("TOPLEFT", tx, -(y + 5))
+        tx = tx + math.ceil(tl:GetStringWidth() or 40) + UI.SP.CELL
         for _, role in ipairs({ "tank", "healer" }) do
-            local word = Text(p, "tw" .. role, role == "tank" and L["Tanks"] or L["Healers"], 11, C.text)
-            word:SetPoint("TOPLEFT", tx, -(y + 4))
-            tx = tx + math.ceil(word:GetStringWidth() or 30) + 4
+            local word = Text(p, "tw" .. role, role == "tank" and L["Tanks"] or L["Healers"], UI.SP.BODY, C.text)
+            local wordW = math.ceil(word:GetStringWidth() or 30)
+            local groupW = wordW + 6 + HIT + 4 + 18 + 4 + HIT
+            if tx > PAD and tx + groupW > PAD + inner then tx, y = PAD, y + HIT + 8 end
+            word:SetPoint("TOPLEFT", tx, -(y + 5))
+            tx = tx + wordW + 6
             local minus = Button(p, "tm" .. role, "\226\136\146", "chip", function()
                 R:SetTarget(snap.inst, role, (snap.targets[role] or 0) - 1); panel.Refresh()
-            end, 18)
-            minus:SetWidth(20)
-            minus:SetPoint("TOPLEFT", tx, -(y + 2))
-            local num = Text(p, "tn" .. role, tostring(snap.targets[role] or 0), 12, C.text)
+            end, HIT)
+            minus:SetWidth(HIT)
+            minus:SetPoint("TOPLEFT", tx, -y)
+            local num = Text(p, "tn" .. role, tostring(snap.targets[role] or 0), UI.SP.BODY, C.text)
             num:SetPoint("LEFT", minus, "RIGHT", 4, 0)
             local plus = Button(p, "tp" .. role, "+", "chip", function()
                 R:SetTarget(snap.inst, role, (snap.targets[role] or 0) + 1); panel.Refresh()
-            end, 18)
-            plus:SetWidth(20)
-            plus:SetPoint("LEFT", minus, "RIGHT", 22, 0)
+            end, HIT)
+            plus:SetWidth(HIT)
+            plus:SetPoint("LEFT", minus, "RIGHT", 4 + 18 + 4, 0)
             if not snap.inst then setOff(minus, L["Pick a raid first."]); setOff(plus, L["Pick a raid first."]) end
-            tx = tx + 20 + 22 + 20 + 12
+            tx = tx + HIT + 4 + 18 + 4 + HIT + UI.SP.SECTION
         end
-        y = y + 26
+        y = y + HIT + UI.SP.FIELD_GAP
         local extra = {}
         extra[#extra + 1] = string.format(L["%d players for %d seats"], counts.total, snap.targets.size)
         if counts.UNKNOWN > 0 then extra[#extra + 1] = string.format(L["%d without a known role"], counts.UNKNOWN) end
         if snap.targets.edited then extra[#extra + 1] = L["your targets"] end
         local ex = Note(p, "extra", table.concat(extra, "  \194\183  "), C.textSoft, PAD, y, inner)
-        y = y + NoteHeight(ex, inner) + 10
+        y = y + NoteHeight(ex, inner) + UI.SP.FIELD_GAP
 
         -- The invite and the announcement.
         local missing = R.Missing(snap.people)
@@ -325,17 +342,17 @@ local function BuildBuild(panel, content)
         local function list(defs, x, idp)
             local yy = by
             for i, d in ipairs(R:ResolveCoverage(defs, classCounts)) do
-                local mark = Text(b, idp .. "m" .. i, d.covered and ICON_DONE or ICON_NONE, 11, C.text)
+                local mark = Text(b, idp .. "m" .. i, d.covered and ICON_DONE or ICON_NONE, UI.SP.BODY, C.text)
                 mark:SetPoint("TOPLEFT", x, -yy)
-                local nm = Text(b, idp .. "n" .. i, d.name, 11, d.covered and C.text or C.label)
-                nm:SetPoint("TOPLEFT", x + 14, -yy)
-                nm:SetWidth(half - 18)
-                yy = yy + 16
+                local nm = Text(b, idp .. "n" .. i, d.name, UI.SP.BODY, d.covered and C.text or C.label)
+                nm:SetPoint("TOPLEFT", x + 18, -yy)
+                nm:SetWidth(half - 22)
+                yy = yy + 20
             end
             return yy
         end
         local bh = math.max(list(R.BUFFS, PAD, "b"), list(R.COOLDOWNS, PAD + half, "c"))
-        local buffsH = bh + PAD - 6
+        local buffsH = bh + PAD
 
         -- Left: the roster.
         local q = roster.pool
@@ -349,7 +366,7 @@ local function BuildBuild(panel, content)
         local cols = { { L["Name"], 0 }, { L["Role"], cRole }, { snap.kind == "site" and L["Sign-up"] or L["Class"], cStatus },
                        { L["Group"], cGroup } }
         for i, c in ipairs(cols) do
-            local h = q:Take("h" .. i, function(host) return UI:CreateHeaderText(host, "", 10) end)
+            local h = q:Take("h" .. i, function(host) return UI:CreateHeaderText(host, "", UI.SP.META) end)
             h:SetText(c[1])
             h:SetPoint("TOPLEFT", PAD + c[2] + 4, -(hy + 5))
         end
@@ -638,7 +655,7 @@ local function BuildReady(panel, content)
         head:SetPoint("TOPLEFT", PAD, -CARD_TOP)
         head:SetWidth(iw)
         for i, c in ipairs(cols) do
-            local h = p:Take("h" .. i, function(host) return UI:CreateHeaderText(host, "", 10) end)
+            local h = p:Take("h" .. i, function(host) return UI:CreateHeaderText(host, "", UI.SP.META) end)
             h:SetText(c[1])
             h:SetPoint("TOPLEFT", PAD + math.floor(iw * c[2]) + 4, -(CARD_TOP + 5))
         end
@@ -896,7 +913,7 @@ local function BuildFight(panel, content)
         GuildOS:ApplyFont(ht, 12, "button")
         ht:SetPoint("TOPLEFT", PAD, -sy)
         sy = sy + 20
-        if HUD and GuildOS.Client.isAnniversary then
+        if HUD and GuildOS.Compat.CanReadCombatLog() then
             local cb = s:Take("hudOn", function(h) return UI:CreateCheckbox(h, L["Show it in raids (leader and assistants)"]) end)
             cb:SetPoint("TOPLEFT", PAD - 2, -sy)
             cb.checkbox:SetChecked(HUD:IsEnabled())
@@ -970,10 +987,10 @@ function GuildOS:CreateRaidToolsPanel(parent, _mainFrame)
     card:SetHeight(HEAD_H)
     parent.card = card
     card.title:ClearAllPoints()
-    card.title:SetPoint("TOPLEFT", PAD, -12)
+    card.title:SetPoint("TOPLEFT", PAD, -PAD)
     local summary = UI:CreateText(card, "", 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     GuildOS:ApplyFont(summary, 12, "button")
-    summary:SetPoint("LEFT", card.title, "RIGHT", 8, 0)
+    summary:SetPoint("LEFT", card.title, "RIGHT", UI.SP.CELL, 0)
     summary:SetJustifyH("LEFT")
     if summary.SetWordWrap then summary:SetWordWrap(false) end
     parent.summary = summary
@@ -1078,19 +1095,31 @@ function GuildOS:CreateRaidToolsPanel(parent, _mainFrame)
             content:SetHeight(math.max(1, h + GAP))
         end
         parent.subPanels[t.key] = info
+        -- A resized window lays the part's cards out again at the new width (one column under TWO_COLS).
+        UI:MakeResponsive(p, function() if p:IsVisible() then info.refresh() end end)
     end
 
     -- The group changes under the raid leader: redrawn at most twice a second while the screen shows.
     local ev = CreateFrame("Frame", nil, parent)
     local pending = false
     for _, e in ipairs({ "GROUP_ROSTER_UPDATE", "PLAYER_REGEN_ENABLED", "READY_CHECK_FINISHED" }) do GuildOS.Compat.RegisterEvent(ev, e) end
+    -- While the raid leader types in one of the screen's boxes the redraw waits for the box to let go.
+    local function typing()
+        for _, p in ipairs(POOLS) do if p.host:IsVisible() and p:Typing() then return true end end
+        return false
+    end
+    local function later()
+        GuildOS.Compat.After(0.5, function()
+            if not parent:IsVisible() then pending = false; return end
+            if typing() then later(); return end
+            pending = false
+            parent.RefreshActive()
+        end)
+    end
     ev:SetScript("OnEvent", function()
         if pending or not parent:IsVisible() then return end
         pending = true
-        GuildOS.Compat.After(0.5, function()
-            pending = false
-            if parent:IsVisible() then parent.RefreshActive() end
-        end)
+        later()
     end)
 
     parent:SetScript("OnShow", function()

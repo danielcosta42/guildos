@@ -119,6 +119,7 @@ GuildOS.UI = setmetatable({
   CreateInput = function() return widget({}) end,
   CreateText = function(_, _, t) return widget({ text = tostring(t) }) end,
 }, { __index = function() return function() return stub end end })
+dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/FeaturePanels.lua")
 function GuildOS:ApplyFont() end
 GuildOS.IsOfficer = function() return true end

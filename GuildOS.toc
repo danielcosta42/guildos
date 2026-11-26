@@ -164,6 +164,7 @@ Modules\Groups.lua
 Modules\PugInspector.lua
 
 # UI
+UI\Spacing.lua
 UI\Helpers.lua
 UI\Kit.lua
 UI\Forms.lua

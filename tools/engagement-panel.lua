@@ -87,6 +87,7 @@ GuildOS.RecruitEngagement = { GetAggregate = function()
   return { rows = rows, totals = { posts7 = 1, invites7 = 1, joins7 = 0, conv = 0, postsPrev = 0, invitesPrev = 0, joinsPrev = 0 } }
 end }
 
+dofile(ADDON .. "/UI/Spacing.lua"); rawset(GuildOS.UI, "SP", GuildOS.Spacing)   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/Forms.lua")
 GuildOS.Forms = rawget(GuildOS, "Forms")
 dofile(ADDON .. "/UI/ManagementPanel.lua")

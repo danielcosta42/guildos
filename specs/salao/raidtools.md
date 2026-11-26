@@ -55,7 +55,13 @@ Embaixo, na madeira, cards em duas colunas (uma sob a outra abaixo de 620px de c
 alguém da raide tem: ícone, nome curto, prontos/total (verde/vermelho), quando volta o próximo. Arrastável,
 posição salva. **Em combate só isso**: o link "Ferramentas de raide" some. Aparece em raide, para líder e
 assistentes, com o interruptor ligado (o recurso "Raid CD Tracker" das Configurações, ou a caixa na parte Luta);
-desligado nunca aparece, nem em combate. Só TBC Anniversary (lê o log de combate, ADR-0014). Nada mais da tela
+desligado nunca aparece, nem em combate. Só TBC Anniversary (lê o log de combate, ADR-0014;
+`Compat.CanReadCombatLog`). O WoW: Forever tem a lista de cooldowns (`RaidTools:TrackedCooldowns`), mas roda o
+cliente mainline: `COMBAT_LOG_EVENT_UNFILTERED` tem `HasRestrictions` e, dentro de um encontro — justo quando os
+cooldowns da raide são usados —, quem lançou e o feitiço chegam como Secret Values, que não se comparam nem se
+casam (`docs/forever/README.md`); um timer não se lê ali, então o HUD não aparece no Forever. O log só é ouvido
+enquanto o HUD aparece; a raide é lida numa mudança de grupo, nunca no tique de meio segundo, e o tique redesenha
+nas mesmas tabelas. Nada mais da tela
 abre sozinho: o resto segue a regra do `GuildOS:ShowWhenClear`.
 
 ## Testes

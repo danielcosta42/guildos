@@ -81,7 +81,13 @@ local function load(game)
   function SetRaidSubgroup(i, g) G.moves[#G.moves + 1] = { i, g } end
   function SwapRaidSubgroup(a, b) G.moves[#G.moves + 1] = { a, swap = b } end
   C_ChatInfo = { InChatMessagingLockdown = function() return false end }
-  function SendChatMessage(text, chatType) G.said[#G.said + 1] = { text = text, chat = chatType } end
+  -- The game raises on a bare "|" (an escape it cannot read) and on a line past 255 bytes.
+  function SendChatMessage(text, chatType)
+    if G.chatDown then error("chat down") end
+    if text:gsub("|[cHhrTtnA]", ""):find("|", 1, true) then error("Invalid escape code in chat message") end
+    if #text > 255 then error("message too long") end
+    G.said[#G.said + 1] = { text = text, chat = chatType }
+  end
   C_PlayerInfo = { ShouldDisplaySurname = function() return false end }
   C_Timer = { After = function() end, NewTicker = function() return { Cancel = function() end } end }
   function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
@@ -302,7 +308,7 @@ G.combat = true
 check(RT:ApplyGroups({}) == nil, "never in combat")
 G.combat, G.raid, G.party = false, false, {}
 local gl = RT.GroupLines({ { person("Alpha", "MAGE"), person("Beta", "MAGE") }, {}, { person("Gamma", "MAGE") } })
-check(#gl == 1 and gl[1] == "G1: Alpha, Beta | G3: Gamma", "the parties said in one line, the empty ones left out")
+check(#gl == 1 and gl[1] == "G1: Alpha, Beta / G3: Gamma", "the parties said in one line, the empty ones left out, never a bare | the game refuses")
 
 -- Saying: three lines at most, 240 bytes each, never twice in a few seconds.
 local parts = {}
@@ -318,6 +324,41 @@ check(RT:Say("y", { "a", "b" }) == 2 and G.said[1].chat == "PARTY", "in a party,
 check(RT:Say("y", { "a" }) == nil, "not twice in a few seconds")
 G.now = G.now + 9
 check(RT:Say("y", { "a" }) == 1, "a few seconds later, again")
+-- The parties of a full raid go to the chat (#449: " | " made the game refuse every line, "Said in 0 line(s)").
+G.said, G.now = {}, G.now + 9
+local full = {}
+for g = 1, 5 do
+  full[g] = {}
+  for k = 1, 5 do full[g][k] = person("Raider" .. g .. k, "MAGE") end
+end
+local fullLines = RT.GroupLines(full)
+check(RT:Say("groups", fullLines) == #fullLines and #G.said == #fullLines, "the groups announcement is said, every line")
+-- A site's note or boss name carrying a "|" never reaches the chat raw.
+local piped = RT.Lines("Boss|x: ", { "Main tank | Brakk", "Interrupt Kaelis" })
+for _, l in ipairs(piped) do check(not l:find("|", 1, true), "no bare | in a line: " .. l) end
+-- No line gone: an error, and the next try is not held back.
+G.chatDown, G.now = true, G.now + 9
+local n0, err0 = RT:Say("down", { "a" })
+check(n0 == nil and err0 ~= nil, "a chat that took nothing is an error, never \"Said in 0 line(s)\"")
+G.chatDown = false
+check(RT:Say("down", { "a" }) == 1, "and the retry is not blocked for the next seconds")
+-- One part longer than a line (25 names missing): split on its names, every line within the chat's limit,
+-- never a line that is the head alone, never a cut through a character.
+local many = {}
+for i = 1, 25 do many[i] = { name = "Personagemlongo" .. i .. "-Realm" } end
+local ml = RT.MissingLines({}, many)
+check(#ml >= 2 and #ml <= 3, "25 names missing: two or three lines (" .. #ml .. ")")
+for i, l in ipairs(ml) do
+  check(#l <= 243, "missing line " .. i .. " fits the chat (" .. #l .. " bytes)")
+  check(l ~= "Raid: " and l:gsub("%s", "") ~= "Raid:", "missing line " .. i .. " is more than the head")
+end
+local ul = RT.Lines("H: ", { string.rep("\195\169", 400) })
+for _, l in ipairs(ul) do
+  check(#l <= 243 and GuildOS:CutBytes(l, #l) == l and not l:find("[\195][^\128-\191]") and not l:find("\195$"),
+    "an overlong part is cut on a whole character")
+end
+local rl0 = RT.ReadyLines((function() local r = {} for i = 1, 30 do r[i] = { name = "Somebodylong" .. i, cons = 1 } end return r end)())
+for _, l in ipairs(rl0) do check(#l <= 243, "a ready line fits the chat") end
 G.party = {}
 
 -- ── 5. Readiness ───────────────────────────────────────────────────────
@@ -399,6 +440,44 @@ check(bl and bl.ready == 1 and bl.total == 2 and math.floor(bl.soonest) == 540 a
 local onlyOruk = HUD.Rows(defs, { Oruk = "SHAMAN" }, HUD.state, 160)
 check(onlyOruk[1].ready == 0 and math.floor(onlyOruk[1].nextIn) == 540, "none ready: when the next one is back")
 check(HUD.Clock(540) == "9m" and HUD.Clock(45) == "45s", "the clock")
+-- The tick redraws into the same tables (#449 review): no table made once the rows exist.
+local mem = { Oruk = "SHAMAN", Tessa = "SHAMAN", Lun = "DRUID" }
+local lists = HUD.CasterLists(defs, mem)
+local outRows = HUD.RowsInto({}, defs, mem, lists, HUD.state, 160)
+local firstRow, firstWho = outRows[1], outRows[1].who[1]
+local again = HUD.RowsInto(outRows, defs, mem, lists, HUD.state, 170)
+check(again == outRows and again[1] == firstRow and again[1].who[1] == firstWho and #again == #hrows,
+  "the next tick fills the same rows")
+-- The combat log only while the HUD shows; the raid read on a roster change, never on the tick.
+do
+  local registered, unregistered = 0, 0
+  local oldReg = GuildOS.Compat.RegisterEvent
+  GuildOS.Compat.RegisterEvent = function(_, e) if e == "COMBAT_LOG_EVENT_UNFILTERED" then registered = registered + 1 end return true end
+  HUD._logFrame.UnregisterEvent = function(_, e) if e == "COMBAT_LOG_EVENT_UNFILTERED" then unregistered = unregistered + 1 end end
+  local reads = 0
+  local oldInfo = GetRaidRosterInfo
+  GetRaidRosterInfo = function(i) reads = reads + 1; return oldInfo(i) end
+  local shown = false
+  HUD.frame = { IsShown = function() return shown end, SetShown = function(_, v) shown = v end }
+  local oldRefresh = HUD.Refresh
+  HUD.Refresh = function() end
+  G.raid, G.leader, G.party = true, true, { { "Oruk", "SHAMAN" }, { "Lun", "DRUID" } }
+  HUD:ListenToLog(false)
+  registered, unregistered = 0, 0
+  HUD:Update()
+  check(shown and registered == 1 and HUD._listening, "in a raid with the HUD up, the combat log is listened to")
+  check(reads == 2 and HUD._members.Oruk == "SHAMAN", "and the raid is read once, on the update")
+  HUD:Update()
+  check(registered == 1, "registered once, not again on every update")
+  HUD.Refresh = oldRefresh
+  G.raid, G.party = false, {}
+  HUD.Refresh = function() end
+  HUD:Update()
+  check(not shown and unregistered == 1 and not HUD._listening, "out of the raid the combat log is let go")
+  HUD.Refresh = oldRefresh
+  HUD.frame, GetRaidRosterInfo, GuildOS.Compat.RegisterEvent = nil, oldInfo, oldReg
+  G.leader = nil
+end
 for _, row in ipairs(hrows) do check(row.total > 0, "a row only for a cooldown somebody can cast") end
 local src = assert(io.open(ADDON .. "/Modules/RaidHUD.lua", "rb")):read("*a")
 check(src:find("f.link:SetShown(not combat and not collapsed)", 1, true),
@@ -408,6 +487,8 @@ check(src:find("f.link:SetShown(not combat and not collapsed)", 1, true),
 RT, HUD = load("forever")
 check(RT:Instance("tk") == nil and RT:Instance("forever-onyxia").size == 40, "Forever's raids are its own")
 check(not HUD:State().enabled and not HUD.ShouldShow(HUD:State()), "no cooldown HUD off TBC (it reads the combat log, ADR-0014)")
+check(#RT:TrackedCooldowns() > 0 and not GuildOS.Compat.CanReadCombatLog(),
+  "Forever has the cooldown list but not a combat log to time it (Secret Values in an encounter, Compat.CanReadCombatLog)")
 local fl = {}
 for i = 1, 6 do fl[i] = person("F" .. i, "MAGE", "DPS") end
 G.raid, G.party = true, { { "Ana", "PALADIN" } }

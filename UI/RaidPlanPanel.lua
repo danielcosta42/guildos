@@ -68,7 +68,7 @@ local function build()
     f.child:SetWidth(W - 2 * PAD)
     f.child.__paper = GuildOS.Style ~= nil or nil   -- on the sheet: its buttons are the paper's cream ones
     f.texts, f.buttons = {}, {}
-    f.status = UI:CreateText(f, "", 10, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    f.status = UI:CreateText(f, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     f.status:SetPoint("BOTTOMLEFT", PAD, 2)
     return f
 end

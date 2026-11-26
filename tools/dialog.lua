@@ -91,6 +91,7 @@ dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Style.lua")
 GuildOS.db = { settings = {} }
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 
 check(GuildOS.Dialogs.GUILDOS_STYLE_RELOAD, "a definition written at file load lands in GuildOS.Dialogs")

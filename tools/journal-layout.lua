@@ -168,6 +168,7 @@ local function client(style)
   GuildOS.RecordError = function() end
   GuildOS.Print = function() end
   GuildOS.Style:Resolve()
+  dofile(ADDON .. "/UI/Spacing.lua")
   dofile(ADDON .. "/UI/Helpers.lua")
   dofile(ADDON .. "/UI/Layout.lua")
   dofile(ADDON .. "/Data/ForeverDungeons.lua")

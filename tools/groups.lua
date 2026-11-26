@@ -792,13 +792,30 @@ GuildOS.db.lfgBoard[key("Cid")] = Board:_BuildEntry({ roles = "H", ttl = 3600 },
 GuildOS.db.lfgBoard[key("Dan")] = Board:_BuildEntry({ roles = "D", ttl = 3600 }, NOW)
 check(Groups:SweepOffline({}) == 0 and GuildOS.db.lfgGroups[key("Bea")], "a roster without me in it (not loaded yet) drops nothing")
 local online = { [Board:MyKey()] = true, [key("Dan")] = true }
-check(Groups:SweepOffline(online) == 3, "with the roster loaded, the offline leader, player and request go")
+-- Bea's listing was heard at NOW: a roster read before it has not seen her online yet, and keeps her (#449 review).
+check(Groups:SweepOffline(online, NOW - 30) == 1 and GuildOS.db.lfgGroups[key("Bea")] ~= nil and Groups:Asked(key("Bea")) ~= nil,
+  "a listing heard after the roster was read stays, and what I asked of it: she logged in after it")
+check(Groups:SweepOffline(online, NOW + 1) == 2, "with a roster read since, the offline leader and my request go too")
 check(GuildOS.db.lfgGroups[key("Bea")] == nil and Groups:Asked(key("Bea")) == nil and GuildOS.db.lfgBoard[key("Cid")] == nil
   and GuildOS.db.lfgBoard[key("Dan")] ~= nil, "and whoever is online stays")
+-- The minute's tick asks the game for a fresh roster and sweeps when it lands, never on the cached one.
+fresh()
+local asked = 0
+local oldRoster = GuildOS.Compat.GuildRoster
+GuildOS.Compat.GuildRoster = function() asked = asked + 1 end
+Groups:HandleGroup("Eve-Realm", { act = "steamvault", need = { T = 1 }, ttl = 3600 }, "GUILD")
+Groups:Tick(NOW + 60)
+check(asked == 1 and GuildOS.db.lfgGroups[key("Eve")] ~= nil, "the tick asks for the roster and drops nobody yet")
+local oldBuild = Board._BuildOnlineRoster
+Board._BuildOnlineRoster = function() return { [Board:MyKey()] = true } end
+check(Groups:OnGuildRoster(NOW + 61) == 1 and GuildOS.db.lfgGroups[key("Eve")] == nil,
+  "the roster that lands after it, without her, takes her listing down")
+check(Groups:OnGuildRoster(NOW + 62) == 0, "and a roster update nobody asked for sweeps nothing")
+Board._BuildOnlineRoster, GuildOS.Compat.GuildRoster = oldBuild, oldRoster
 fresh()
 Groups:Create("steamvault", { T = 1, D = 1 }, "", 3600, false)
 Groups:HandleJoin("Bea-Realm", { role = "T" }, "WHISPER")
-Groups:SweepOffline({ [Board:MyKey()] = true })
+Groups:SweepOffline({ [Board:MyKey()] = true }, NOW + 1)
 check(#Groups:Requests() == 0 and Groups:Mine() ~= nil, "a leader's queue drops who logged off, and keeps the group")
 
 -- Joining a guildmate's listed group, by their invite, takes my own listing down

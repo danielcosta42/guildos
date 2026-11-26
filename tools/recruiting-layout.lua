@@ -205,6 +205,7 @@ dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Style.lua")
 GuildOS.Style:Resolve()
 dofile(ADDON .. "/Core/Utils.lua")
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Forms.lua")
 dofile(ADDON .. "/UI/Layout.lua")
@@ -516,7 +517,7 @@ check(boxes[2].shown and not boxes[3].shown and #shownRemoves() == 0, "one welco
 local hOne = laid(welcome).h
 check(click(button(welcome, "Add message")) and boxes[3].shown and boxes[3].text == "", "Add opens an empty row")
 flush()
-check(laid(welcome).h == hOne + 30 and #shownRemoves() == 1, "the card grows by a row; only the new row can go, its Remove at its right")
+check(laid(welcome).h == hOne + GuildOS.Forms.FIELD_H + GuildOS.Forms.ROW_GAP and #shownRemoves() == 1, "the card grows by a row; only the new row can go, its Remove at its right")
 typeInto(boxes[3], "Glad to have you!")
 enter(boxes[3])
 local wl = GuildOS.db.recruitment.welcomeMessages
