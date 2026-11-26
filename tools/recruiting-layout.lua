@@ -286,7 +286,7 @@ local function build(width, anniversary)
   t.toggle = button(t.strip, "Enable") or button(t.strip, "Disable")
   t.interval = findAll(t.strip, function(f) return f.kind == "EditBox" end)[1]
   t.state = textOf(t.strip, "^O")
-  t.dot = findAll(t.strip, function(f) return f.kind == "Texture" and f.vertex end)[1]
+  t.dot = findAll(t.strip, function(f) return f.kind == "Texture" and f.vertex and not f.__art end)[1]
   t.area = findAll(t.sub, function(f) return f.edit ~= nil end)[1]
   t.msg = t.area.edit
   t.preview = textOf(t.sub, "Ana:") or textOf(t.sub, "Join a channel")
@@ -517,10 +517,10 @@ for _, b in ipairs(findAll(n.sub, function(f2) return f2.kind == "Button" and f2
 end
 check(n.content.h < 15000, "the narrow scroll child is well under 15000px")
 
--- ── 7. The Forever style ────────────────────────────────────────────────
+-- ── 7. The WoW: Forever client, with its atlases: the same look (#449) ───
 C_Texture = { GetAtlasInfo = function() return { width = 16, height = 16 } end }
 GuildOSDB.style = "forever"
-check(GuildOS.Style:Resolve() == "forever", "the stub draws the Forever style")
+check(GuildOS.Style:Resolve() == "salao", "the stub client has the atlases, the look stays the Salão's")
 freshDb()
 local fv = build(1000, true)
 check(fv.state.text == "OFF" and same(fv.state.color, GuildOS.Colors.danger) and fv.strip.h == stripH,

@@ -1055,7 +1055,10 @@ PAGES.data = function(F, isOfficer)
             .. "GitHub:  https://github.com/danielcosta42/GuildOS\n"
             .. "CurseForge:  https://www.curseforge.com/projects/1549177\n"
             .. "Wago:  https://addons.wago.io/addons/rNkyABKa")
-    end, w = 120 } }, { gap = 10 })
+    end, w = 120 },
+        -- The game's own guild window, which the window's footer linked to before the Salão's phase 3 (#449).
+        { L["Blizzard"], function() if GuildOS.OpenBlizzardGuildUI then GuildOS:OpenBlizzardGuildUI() end end, w = 120 } },
+        { gap = 10 })
     F:Note(L["Project page, bug reports and updates"], { gap = 6 })
 
     -- /gos reset, behind a confirmation: it cannot be undone. Last, and red.

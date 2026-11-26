@@ -102,9 +102,11 @@ end
 -- items whose screen this player can open, so every row is a way in.
 function Agora:NeedsMe()
     local urgent, normal = {}, {}
-    local function add(list, text, id, sub, filter)
+    -- `count`: how many things the line stands for (a red count on the Officers' Room and its entry, #449).
+    local function add(list, text, id, sub, filter, count)
         if allowed(id) then
-            list[#list + 1] = { text = text, urgent = list == urgent, id = id, sub = sub, filter = filter }
+            list[#list + 1] = { text = text, urgent = list == urgent, id = id, sub = sub, filter = filter,
+                                count = count, officer = GuildOS:IsOfficer() and id ~= "guild" or nil }
         end
     end
 
@@ -122,20 +124,20 @@ function Agora:NeedsMe()
         -- The trials ready to review, the count the login line gives (#249); the digest no longer repeats it (B10).
         if tt and tt.CountReady then
             local n = tt:CountReady()
-            if n > 0 then add(urgent, string.format(L["%d trial(s) ready to review"], n), "trials") end
+            if n > 0 then add(urgent, string.format(L["%d trial(s) ready to review"], n), "trials", nil, nil, n) end
         end
 
         local gm = GuildOS.GuildManager
         if gm and gm.GetInactiveMembers then
             local days = gm.DEFAULT_INACTIVE_DAYS or 30
             local n = #gm:GetInactiveMembers(days)
-            if n > 0 then add(normal, string.format(L["%d inactive over %dd"], n, days), "management", "inactive") end
+            if n > 0 then add(normal, string.format(L["%d inactive over %dd"], n, days), "management", "inactive", nil, n) end
         end
         if gm and gm.GetSuggestions then
             local s = gm:GetSuggestions()
             -- Promotions only: its ready trials are the ones the trials row counts.
             local n = #(s.promoteCandidates or {})
-            if n > 0 then add(normal, string.format(L["%d promotions to review"], n), "management", "suggest") end
+            if n > 0 then add(normal, string.format(L["%d promotions to review"], n), "management", "suggest", nil, n) end
         end
 
         local rs = GuildOS.RecruitScanner
@@ -148,12 +150,27 @@ function Agora:NeedsMe()
             for _, e in ipairs(rs:GetInbox()) do
                 if type(e) == "table" and (tonumber(e.ts) or 0) > readAt then n = n + 1 end
             end
-            if n > 0 then add(normal, string.format(L["%d applicants waiting"], n), "recruitment", "scanner") end
+            if n > 0 then add(normal, string.format(L["%d applicants waiting"], n), "recruitment", "scanner", nil, n) end
         end
     end
 
     for _, item in ipairs(normal) do urgent[#urgent + 1] = item end
     return urgent
+end
+
+-- The officers' work waiting, for the Officers' Room's door and its entries (#449): the total, and a count per
+-- feature and per feature:sub-tab. Only an officer's; a member gets 0 and an empty table.
+function Agora:OfficerCounts()
+    local total, by = 0, {}
+    if not GuildOS:IsOfficer() then return 0, by end
+    for _, n in ipairs(self:NeedsMe()) do
+        if n.officer and n.count then
+            total = total + n.count
+            by[n.id] = (by[n.id] or 0) + n.count
+            if n.sub then by[n.id .. ":" .. n.sub] = (by[n.id .. ":" .. n.sub] or 0) + n.count end
+        end
+    end
+    return total, by
 end
 
 -- The bulletin's newest active notices (issue #418): { ts, text, id, sub } each, opening the board. None when this

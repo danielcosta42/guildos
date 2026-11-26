@@ -215,7 +215,7 @@ local function load(style)
   dofile(ADDON .. "/UI/Layout.lua")
   GuildOS.Print = function() end
   GuildOS.SafeCall = function(_, fn, ...) return fn(...) end   -- an error in a paint fails the test, loudly
-  check(GuildOS.Style.current == style, "the " .. style .. " style is the one in force")
+  check(GuildOS.Style.current == "salao", "the Salão's one look on the " .. style .. " client")
   return GuildOS.UI
 end
 
@@ -655,7 +655,7 @@ local function lootTable()
   local f = _G.GuildOSLootTable
   check(f and f:IsShown() and LM.lootFrame == f and LM.rollFrame == f, "the loot window and the roll tracker are one table")
   -- A surface of its own (#413): with only StylePopup's border it opened see-through, the world behind it.
-  check(f.backdrop and f.backdrop.bgFile and f.bg and f.bg[4] == 1, "the table has an opaque background")
+  check(f.__look and f.__look.fill.color and f.__look.fill.color[4] == 1, "the table has an opaque background")
   -- The loot master's answer is on the item's line, not on the strip where it ran over "Enter answer" (#413).
   check(f.mine[2].points[1][2] == f.right and f.mineLabel.points[1][2] == f.mine[1]
     and f.itemText.points[2][1] == "RIGHT" and f.itemText.points[2][2] == f.mineLabel,
@@ -774,7 +774,7 @@ local function popup()
   LM:ShowRollPopup(LINK1, 30, 28770, ask)
   local f = LM.rollPopup
   check(f and f:IsShown() and f.w == 380, "the popup opens")
-  check(f.backdrop and f.backdrop.bgFile and f.bg and f.bg[4] == 1, "on a background of its own (#413)")
+  check(f.__look and f.__look.fill.color and f.__look.fill.color[4] == 1, "on a background of its own (#413)")
   check(shows(f, "Crown of the Abyssal Wind") and shows(f, "Head \194\183 Cloth \194\183 item level 76"), "with the item and what it is")
   check(shows(f, "YOU WEAR") and shows(f, "Arcanist Cowl") and f.diffText.text == "+10 item level", "what the player wears there, and the gain")
   check(f.standing[1] == "Reserved the item" and f.standing[2] == "Wishlist #2" and f.standing[3] == "+1 tonight: 0",

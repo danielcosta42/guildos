@@ -111,7 +111,7 @@ end
 --             sorted by; nil sorts last. The first eight draw themselves in UpdateRosterRow, the
 --             rest through
 --   text      (value, data) -> the cell's text and, optionally, its colour
---   num       the cell holds a number: IBM Plex Mono through the tableNum role (#363)
+--   num       the cell holds a number: drawn through the tableNum role (#363)
 --   prepare   (ctx) once per refresh, before any value: an index where a per-row read would scan
 -- Resolved per resize by UI:ResolveColumns (UI/Layout.lua): the rightmost shown column goes first
 -- as the window narrows, and only Member is never dropped.
@@ -348,20 +348,26 @@ local KPI_SPEC = {
     { key = "addon",   min = 96, weight = 1, priority = 50 },
 }
 
-local ROW_HEIGHT = 24          -- the sketch's table row (#377)
-local HEADER_HEIGHT = 36
-local RAIL_WIDTH = 156          -- left filter/segment rail (roster dashboard)
--- +16 over the original 66 so the "Players" card has room for its
--- "of N chars" sub-label under the usual caption; the other cards keep
--- their same anchors, just with a touch more breathing room below.
-local KPI_BAND_HEIGHT = 82      -- KPI card band above the table
+local ROW_HEIGHT = 26          -- the mockup's table row (.t td: 5px around a 13px line and its avatar)
+local HEADER_HEIGHT = 24
+-- The Salão's phase 3 (#449) drew the list as the mockup's membros-lista: the KPI tiles across the top, then
+-- one dark card holding the toolbar, the filters as pills (the views, the ranks, the classes) and the table.
+-- The left rail went: its filters are the pills.
+local KPI_BAND_HEIGHT = 70      -- the tiles (56px) and the gap under them
+local CARD_TOP = 34             -- the list card's title
+local CARD_SIDE = 12            -- the list card's padding
+local CARD_BOTTOM = 10
+local TOOLBAR_H = 28
+local CHIP_H = 22
+local CHIP_GAP = 6
+local CHIP_ROWS = 3             -- the pills wrap onto at most this many rows
 local COL_GAP = 10              -- space between two table columns
 local ROW_INSET = 10            -- x of the first column inside a row
 local SCROLL_GUTTER = 18        -- rows stop short of the scrollbar
--- Everything above the first row: KPI band, toolbar, column header, rule.
-local TABLE_RESERVED = KPI_BAND_HEIGHT + 28 + HEADER_HEIGHT + 1
-local KPI_GAP = 10
-local KPI_MARGIN = 12
+-- Everything above the first row but the pills: KPI band, card title, toolbar, column header, rule, card's bottom.
+local TABLE_RESERVED = KPI_BAND_HEIGHT + CARD_TOP + TOOLBAR_H + 6 + 6 + HEADER_HEIGHT + 1 + CARD_BOTTOM
+local KPI_GAP = 8
+local KPI_MARGIN = 0
 -- Global frame names must stay unique if a builder ever runs twice. The
 -- first instance keeps the historical names so nothing that hardcodes them breaks.
 local rosterInstances = 0
@@ -566,7 +572,7 @@ function GuildOS:CreateRosterPanel(parent, host)
     parent:HookScript("OnHide", function() GuildOS:HideColumnsPanel() end)
 
     ----------------------------------------------------------------
-    -- KPI band (summary cards across the top)
+    -- KPI band (the mockup's .kpi tiles across the top)
     ----------------------------------------------------------------
     local kpiBand = CreateFrame("Frame", nil, parent)
     kpiBand:SetPoint("TOPLEFT", 0, 0)
@@ -575,91 +581,71 @@ function GuildOS:CreateRosterPanel(parent, host)
 
     host.kpiCards = {}
 
-    -- subLabelText: optional; when given, the card gets a second, smaller
-    -- caption line below the main label (e.g. "of 62 chars" under "Players").
-    -- Returns the value FontString, and the sub-label FontString if requested.
-    -- The card frame itself is filed under `key` so the layout pass can
-    -- move and hide it; position and width come from ResolveColumns, not
-    -- from here.
+    -- A small dark tile: the number in the title serif and the soft gold, its caption under it in the soft
+    -- ink. subLabelText: optional, a second line under the caption ("of 62 chars" under "Players"). Returns the
+    -- value FontString, and the sub-label FontString if requested. The tile is filed under `key` so the layout
+    -- pass can move and hide it; position and width come from ResolveColumns, not from here.
     local function MakeKpiCard(key, labelText, valueColor, subLabelText)
         local card = UI:CreatePanel(kpiBand)
         -- CreatePanel pins level to 1; raise it above the main window's
         -- backdrop (level ~10) so the card and its text are actually visible.
         card:SetFrameLevel((kpiBand:GetFrameLevel() or 1) + 1)
-        card:SetHeight(KPI_BAND_HEIGHT - 16)
-        card:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.95)
+        card:SetHeight(KPI_BAND_HEIGHT - 14)
         host.kpiCards[key] = card
 
-        local value = UI:CreateText(card, "—", 20, valueColor.r, valueColor.g, valueColor.b)
-        -- The game's font sits higher in its box: on Forever the number touched the card's top
-        -- edge at 7 (#148). The guildos look keeps its 7.
-        value:SetPoint("TOPLEFT", 12, GuildOS.Style.current == "forever" and -10 or -7)
+        local value = card:CreateFontString(nil, "OVERLAY")
+        GuildOS:ApplyFont(value, nil, "metricValue")
+        value:SetShadowOffset(0, 0)
+        value:SetTextColor(valueColor.r, valueColor.g, valueColor.b)
+        value:SetText("—")
+        value:SetPoint("TOPLEFT", 10, -8)
 
-        local lbl = UI:CreateText(card, labelText, 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        local lbl = UI:CreateText(card, labelText, 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        lbl:SetPoint("TOPLEFT", value, "BOTTOMLEFT", 0, -3)
 
         local sub
         if subLabelText ~= nil then
-            -- Two-line caption: main label pushed up, sub-label takes the
-            -- usual bottom-padding slot the single-line siblings use.
-            lbl:SetPoint("BOTTOMLEFT", 12, 22)
-            sub = UI:CreateText(card, subLabelText, 8, C.textDim.r, C.textDim.g, C.textDim.b)
-            sub:SetPoint("BOTTOMLEFT", 12, 8)
-        else
-            lbl:SetPoint("BOTTOMLEFT", 12, 8)
+            sub = UI:CreateText(card, subLabelText, 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+            sub:SetPoint("LEFT", lbl, "RIGHT", 4, 0)
         end
 
         return value, sub
     end
 
-    host.kpiMembers = MakeKpiCard("members", L["MEMBERS"],        C.text)
+    host.kpiMembers = MakeKpiCard("members", L["members"],            C.gold2)
     host.kpiPlayers, host.kpiPlayersSub =
-                      MakeKpiCard("players", L["Players"],        C.text, "—")
-    host.kpiOnline  = MakeKpiCard("online",  L["ONLINE"],         C.online)
-    host.kpiIlvl    = MakeKpiCard("ilvl",    L["AVG iLVL"],       C.text)
-    host.kpiAtt     = MakeKpiCard("att",     L["AVG ATTENDANCE"], C.text)
-    host.kpiAddon   = MakeKpiCard("addon",   L["WITH GUILD OS"],  C.text)
-
-    -- KPI band bottom separator
-    local bandLine = UI:CreateSeparator(parent)
-    bandLine:SetPoint("TOPLEFT", 0, -KPI_BAND_HEIGHT)
-    bandLine:SetPoint("TOPRIGHT", 0, -KPI_BAND_HEIGHT)
+                      MakeKpiCard("players", L["players"],            C.gold2, "—")
+    host.kpiOnline  = MakeKpiCard("online",  L["online"],             C.online)
+    host.kpiIlvl    = MakeKpiCard("ilvl",    L["average iLvl"],       C.gold2)
+    host.kpiAtt     = MakeKpiCard("att",     L["average attendance"], C.gold2)
+    host.kpiAddon   = MakeKpiCard("addon",   L["with Guild OS"],      C.gold2)
 
     ----------------------------------------------------------------
-    -- Left filter / segment rail
+    -- The list: one dark card under the tiles (the mockup's "Membros"), holding the toolbar, the pills and
+    -- the table. `rail` is the pills' frame now (the name the filters always had).
     ----------------------------------------------------------------
-    local rail = CreateFrame("Frame", nil, parent)
-    rail:SetPoint("TOPLEFT", 0, -KPI_BAND_HEIGHT)
-    rail:SetPoint("BOTTOMLEFT", 0, 0)
-    rail:SetWidth(RAIL_WIDTH)
-    local railBg = rail:CreateTexture(nil, "BACKGROUND")
-    railBg:SetAllPoints()
-    railBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    railBg:SetVertexColor(C.bg0.r, C.bg0.g, C.bg0.b, 0.55)
-    local railDiv = rail:CreateTexture(nil, "ARTWORK")
-    railDiv:SetTexture("Interface\\Buttons\\WHITE8x8")
-    GuildOS.UI:Hairline(railDiv, "Width")
-    railDiv:SetPoint("TOPRIGHT", 0, 0)
-    railDiv:SetPoint("BOTTOMRIGHT", 0, 0)
-    railDiv:SetVertexColor(C.separator.r, C.separator.g, C.separator.b, C.separator.a)
+    local listCard = UI:CreateCard(parent, L["Members"], { dark = true })
+    listCard:SetFrameLevel((parent:GetFrameLevel() or 1) + 1)
+    listCard:SetPoint("TOPLEFT", 0, -KPI_BAND_HEIGHT)
+    listCard:SetPoint("BOTTOMRIGHT", 0, 0)
+    host.listCard = listCard
+
+    local tableArea = CreateFrame("Frame", nil, listCard)
+    tableArea:SetPoint("TOPLEFT", CARD_SIDE, -CARD_TOP)
+    tableArea:SetPoint("BOTTOMRIGHT", -CARD_SIDE, CARD_BOTTOM)
+
+    local rail = CreateFrame("Frame", nil, tableArea)
+    rail:SetPoint("TOPLEFT", 0, -(TOOLBAR_H + 6))
+    rail:SetPoint("TOPRIGHT", 0, -(TOOLBAR_H + 6))
+    rail:SetHeight(CHIP_H)
     host.rail = rail
-
-    ----------------------------------------------------------------
-    -- Table area (toolbar + headers + rows) to the right of the rail
-    ----------------------------------------------------------------
-    local tableArea = CreateFrame("Frame", nil, parent)
-    tableArea:SetPoint("TOPLEFT", RAIL_WIDTH, -KPI_BAND_HEIGHT)
-    tableArea:SetPoint("BOTTOMRIGHT", 0, 0)
+    host.filterH = CHIP_H
 
     -- Toolbar (search + filters) — the former stats bar, scoped to the table
     local statsBar = CreateFrame("Frame", nil, tableArea)
     statsBar:SetPoint("TOPLEFT", 0, 0)
     statsBar:SetPoint("TOPRIGHT", 0, 0)
-    statsBar:SetHeight(28)
-
-    local statsBg = statsBar:CreateTexture(nil, "BACKGROUND")
-    statsBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    statsBg:SetAllPoints()
-    statsBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
+    statsBar:SetHeight(TOOLBAR_H)
 
     -- Active-filter / result summary on the left of the toolbar
     local resultText = UI:CreateText(statsBar, "", 11, C.silver.r, C.silver.g, C.silver.b)
@@ -668,17 +654,13 @@ function GuildOS:CreateRosterPanel(parent, host)
     host.resultText = resultText
 
     -- Filter: Show offline toggle
-    local offlineBtn = UI:CreateButton(statsBar, L["Show Offline"], 100, 22)
+    local offlineBtn = UI:SetButtonVariant(UI:CreateButton(statsBar, L["Show Offline"], 100, CHIP_H), "chip")
     offlineBtn.isToggled = true
     local function paintOffline(on)
         offlineBtn.isToggled = on
-        if on then
-            offlineBtn.label:SetText(L["Show Offline"])
-            offlineBtn:SetBaseColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.92)
-        else
-            offlineBtn.label:SetText(L["Online Only"])
-            offlineBtn:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
-        end
+        offlineBtn.label:SetText(on and L["Show Offline"] or L["Online Only"])
+        offlineBtn:SetWidth(math.ceil(offlineBtn.label:GetStringWidth()) + 22)
+        UI:SetSelected(offlineBtn, not on)
     end
     offlineBtn:SetScript("OnClick", function(self)
         paintOffline(not self.isToggled)
@@ -689,12 +671,12 @@ function GuildOS:CreateRosterPanel(parent, host)
     host.offlineBtn = offlineBtn
 
     -- Which columns, in what order (#178). A right click on the header opens the same panel.
-    local columnsBtn = UI:CreateButton(statsBar, L["Columns"], 80, 22)
+    local columnsBtn = UI:CreateButton(statsBar, L["Columns"], 80, CHIP_H)
     columnsBtn:SetScript("OnClick", function(self) GuildOS:ToggleColumnsPanel(self) end)
 
     -- Search box: the shared field (#371). Its placeholder, its gold border while typing and its
     -- Escape are the component's; the filter hooks the text.
-    local searchBox = UI:CreateInput(statsBar, 160, 22, { max = 30, placeholder = L["Search / 60-70 / >=60"] })
+    local searchBox = UI:CreateInput(statsBar, 190, 24, { max = 30, placeholder = L["Search / 60-70 / >=60"] })
     searchBox:HookScript("OnTextChanged", function(self)
         host.searchFilter = self:GetText()
         host:RefreshRoster()
@@ -704,7 +686,7 @@ function GuildOS:CreateRosterPanel(parent, host)
 
     -- The guild's make-up by class, level, rank and zone (`/gos analytics`): every command has a
     -- way in here too (#137).
-    local analyticsBtn = UI:CreateButton(statsBar, L["Analytics"], 90, 22)
+    local analyticsBtn = UI:CreateButton(statsBar, L["Analytics"], 90, CHIP_H)
     analyticsBtn:SetScript("OnClick", function()
         if GuildOS.GuildAnalytics then GuildOS.GuildAnalytics:Show() end
     end)
@@ -717,14 +699,45 @@ function GuildOS:CreateRosterPanel(parent, host)
     -- on the header opens it too), Analytics, the invite field and the search box. Show Offline always
     -- stays. The invite field is only for who may invite: Anniversary only (#256), at a rank that
     -- invites; read again on every refresh.
-    local TOOLBAR_PAD, TOOLBAR_GAP = 12, 10
+    -- The views as pills in the toolbar, as the mockup's "Todos" and "Em casa": All, Online and, while the site
+    -- sent a directory, From the alliance. Each is a chip with its count; the chosen one fills gold.
+    local function viewChip(label, seg)
+        local b = UI:SetButtonVariant(UI:CreateButton(statsBar, label, 60, CHIP_H), "chip")
+        b.label:ClearAllPoints()
+        b.label:SetPoint("LEFT", 10, 0)
+        b.count = UI:CreateText(b, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+        b.count:SetPoint("LEFT", b.label, "RIGHT", 5, 0)
+        function b:Fit()
+            self:SetWidth(math.ceil(self.label:GetStringWidth()) + math.ceil(self.count:GetStringWidth() or 0) + 25)
+        end
+        function b:SetActive(active)
+            self.active = active
+            UI:SetSelected(self, active)
+            local c = active and C.onGold or C.labelDim
+            self.count:SetTextColor(c.r, c.g, c.b)
+        end
+        b:SetScript("OnClick", function() host:SetSegment(seg) end)
+        b:Fit()
+        return b
+    end
+    host.segBtns = {
+        all = viewChip(L["All"], "all"),
+        online = viewChip(L["Online"], "online"),
+        allied = viewChip(L["From the alliance"], "allied"),
+    }
+    host.segBtns.allied:Hide()
+
+    local TOOLBAR_PAD, TOOLBAR_GAP = 0, 6
     local TOOLBAR = {
-        { key = "result",    frame = resultText,   priority = 20, weight = 1, min = 60 },
-        { key = "analytics", frame = analyticsBtn, priority = 50 },
         { key = "search",    frame = searchBox,    priority = 90 },
-        { key = "columns",   frame = columnsBtn,   priority = 30 },
+        { key = "all",       frame = host.segBtns.all,    priority = 100, required = true },
+        { key = "online",    frame = host.segBtns.online, priority = 100, required = true },
+        { key = "allied",    frame = host.segBtns.allied, priority = 95, allied = true },
         { key = "offline",   frame = offlineBtn,   priority = 100, required = true },
+        { key = "columns",   frame = columnsBtn,   priority = 30 },
+        { key = "analytics", frame = analyticsBtn, priority = 50 },
         { key = "invite",    frame = invite,       priority = 70, invite = true },
+        { key = "result",    frame = resultText,   priority = 20, weight = 1, min = 60 },
     }
     function host:LayoutToolbar(w)
         w = w or self.toolbarW
@@ -732,7 +745,7 @@ function GuildOS:CreateRosterPanel(parent, host)
         self.toolbarW = w
         local spec, items = {}, {}
         for _, item in ipairs(TOOLBAR) do
-            if not item.invite or GuildOS.Compat.AddonMayInvite() then
+            if (not item.invite or GuildOS.Compat.AddonMayInvite()) and not (item.allied and not self.alliedShown) then
                 items[#items + 1] = item
                 spec[#spec + 1] = { key = item.key, min = item.min or item.frame:GetWidth(), weight = item.weight or 0,
                                     priority = item.priority, required = item.required }
@@ -753,16 +766,11 @@ function GuildOS:CreateRosterPanel(parent, host)
         end
     end
 
-    -- Column Headers
+    -- Column Headers (the mockup's .t th: the title serif, small, gold, a metal rule under them). Placed under
+    -- the pills by host:PlaceTable, as the pills' rows change.
     local headerFrame = CreateFrame("Frame", nil, tableArea)
-    headerFrame:SetPoint("TOPLEFT", 0, -28)
-    headerFrame:SetPoint("TOPRIGHT", 0, -28)
     headerFrame:SetHeight(HEADER_HEIGHT)
-
-    local headerBg = headerFrame:CreateTexture(nil, "BACKGROUND")
-    headerBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    headerBg:SetAllPoints()
-    headerBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
+    host.headerFrame = headerFrame
 
     -- A right click anywhere on the header opens the Columns panel, between the labels too.
     headerFrame:EnableMouse(true)
@@ -816,22 +824,34 @@ function GuildOS:CreateRosterPanel(parent, host)
                 self.text:SetTextColor(C.white.r, C.white.g, C.white.b)
             end)
             btn:SetScript("OnLeave", function(self)
-                self.text:SetTextColor(C.label.r, C.label.g, C.label.b)
+                self.text:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
             end)
 
             host.headerButtons[col.key] = btn
         end
     end
 
-    -- Header bottom line
+    -- Header bottom line: the metal.
     local headerLine = UI:CreateSeparator(tableArea)
-    headerLine:SetPoint("TOPLEFT", 0, -(28 + HEADER_HEIGHT))
-    headerLine:SetPoint("TOPRIGHT", 0, -(28 + HEADER_HEIGHT))
+    headerLine:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
 
     -- Scroll Frame for roster rows
     local rosterContainer = CreateFrame("Frame", "GuildOSRosterContainer" .. uid, tableArea)
-    rosterContainer:SetPoint("TOPLEFT", 1, -(28 + HEADER_HEIGHT + 1))
-    rosterContainer:SetPoint("BOTTOMRIGHT", -1, 0)
+
+    -- The header, its rule and the rows under the pills, however many rows of pills there are.
+    function host:PlaceTable()
+        local top = TOOLBAR_H + 6 + (self.filterH or CHIP_H) + 6
+        headerFrame:ClearAllPoints()
+        headerFrame:SetPoint("TOPLEFT", 0, -top)
+        headerFrame:SetPoint("TOPRIGHT", 0, -top)
+        headerLine:ClearAllPoints()
+        headerLine:SetPoint("TOPLEFT", 0, -(top + HEADER_HEIGHT))
+        headerLine:SetPoint("TOPRIGHT", 0, -(top + HEADER_HEIGHT))
+        rosterContainer:ClearAllPoints()
+        rosterContainer:SetPoint("TOPLEFT", 0, -(top + HEADER_HEIGHT + 1))
+        rosterContainer:SetPoint("BOTTOMRIGHT", 0, 0)
+    end
+    host:PlaceTable()
 
     local scrollFrame = CreateFrame("ScrollFrame", "GuildOSRosterScroll" .. uid, rosterContainer, "FauxScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 0, 0)
@@ -864,154 +884,95 @@ function GuildOS:CreateRosterPanel(parent, host)
     end)
 
     ----------------------------------------------------------------
-    -- RAIL CONTENT: segments + dynamic guild ranks + class chips
+    -- THE PILLS: the guild's ranks and its classes, under the toolbar, wrapping onto up to CHIP_ROWS rows
+    -- (the views are in the toolbar). A rank is a view of its own; a class filters whatever view is on.
     ----------------------------------------------------------------
-    local WHITE = "Interface\\Buttons\\WHITE8x8"
-    local RAIL_PAD = 8
-    local RAIL_BTN_W = RAIL_WIDTH - RAIL_PAD * 2 - 2
-
     host.segment = "all"     -- "all" | "online" | "allied" | "rank:<index>"
     host.classFilter = nil   -- classFile or nil
-    host.segBtns = {}
     host.rankBtns = {}       -- pooled, laid out in UpdateRail
     host.classChips = {}
 
-    local function RailSectionHeader(text, yOff)
-        local fs = UI:CreateHeaderText(rail, text)
-        fs:SetPoint("TOPLEFT", RAIL_PAD + 2, yOff)
-        return fs
-    end
-
-    -- Full-width rail button with a label and a right-aligned count
-    local function CreateRailButton()
-        local b = CreateFrame("Button", nil, rail, "BackdropTemplate")
-        b:SetSize(RAIL_BTN_W, 24)
-        b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(b) })
-        b:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.0)
-        b:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.0)
-
-        local lbl = UI:CreateText(b, "", 11, C.silver.r, C.silver.g, C.silver.b)
-        lbl:SetPoint("LEFT", 9, 0)
-        lbl:SetWidth(RAIL_BTN_W - 44)
-        lbl:SetJustifyH("LEFT")
-        lbl:SetWordWrap(false)
-        b.label = lbl
-
-        local cnt = UI:CreateText(b, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        cnt:SetPoint("RIGHT", -9, 0)
-        b.count = cnt
-
+    local function rankChip()
+        local b = UI:SetButtonVariant(UI:CreateButton(rail, "", 60, CHIP_H), "chip")
+        b.label:ClearAllPoints()
+        b.label:SetPoint("LEFT", 10, 0)
+        b.label:SetWordWrap(false)
+        b.count = UI:CreateText(b, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+        b.count:SetPoint("LEFT", b.label, "RIGHT", 5, 0)
+        function b:Fit()
+            local lw = math.min(140, math.ceil(self.label:GetStringWidth()))
+            self.label:SetWidth(lw)
+            self:SetWidth(lw + math.ceil(self.count:GetStringWidth() or 0) + 25)
+        end
         function b:SetActive(active)
             self.active = active
-            if active then
-                self:SetBackdropColor(C.accent.r * 0.30, C.accent.g * 0.30, C.accent.b * 0.30, 0.95)
-                self:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.7)
-                self.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-            else
-                self:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.0)
-                self:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.0)
-                self.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            end
+            UI:SetSelected(self, active)
+            local c = active and C.onGold or C.labelDim
+            self.count:SetTextColor(c.r, c.g, c.b)
         end
-        b:SetScript("OnEnter", function(self)
-            if not self.active then self:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.9) end
-        end)
-        b:SetScript("OnLeave", function(self)
-            if not self.active then self:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.0) end
-        end)
         return b
     end
 
-    -- VISÃO
-    RailSectionHeader(L["VIEW"], -10)
-    local segAll = CreateRailButton()
-    segAll:SetPoint("TOPLEFT", RAIL_PAD, -26)
-    segAll.label:SetText(L["All"])
-    segAll:SetScript("OnClick", function() host:SetSegment("all") end)
-    host.segBtns.all = segAll
-
-    local segOnline = CreateRailButton()
-    segOnline:SetPoint("TOPLEFT", RAIL_PAD, -52)
-    segOnline.label:SetText(L["Online"])
-    segOnline:SetScript("OnClick", function() host:SetSegment("online") end)
-    host.segBtns.online = segOnline
-
-    -- From the alliance: the allied guilds' members as guildos.me lists them (GOSALLY1, Alliance:Directory),
-    -- read-only. Shown only while the site sent a directory; the ranks move down under it.
-    local segAllied = CreateRailButton()
-    segAllied:SetPoint("TOPLEFT", RAIL_PAD, -78)
-    segAllied.label:SetText(L["From the alliance"])
-    segAllied:SetScript("OnClick", function() host:SetSegment("allied") end)
-    segAllied:Hide()
-    host.segBtns.allied = segAllied
-
-    -- RANKS (dynamic — populated from the guild's actual ranks in UpdateRail)
-    local ranksHeader = RailSectionHeader(L["RANKS"], -86)
-    local RANK_TOP, RANK_H = -106, 26
-    local ALLIED_SHIFT = 26   -- what the allied segment pushes the ranks down by
-
-    -- CLASSES (fixed chips, anchored to the bottom of the rail, growing upward)
+    -- A class: its icon and how many, a pill; the chosen one fills gold.
     local CLASS_ORDER = GuildOS.Client.classes   -- thirteen on retail
-    local CHIP_GAP = 6
-    local CHIP_H = 22
-    -- Five rows under the rank list: two chips to a row, three for retail's thirteen classes.
-    local GRID = UI:ChipGrid(#CLASS_ORDER, RAIL_BTN_W, CHIP_GAP, 5)
-    local CHIP_W = GRID.w
-
     local function CreateClassChip(classFile)
-        local chip = CreateFrame("Button", nil, rail, "BackdropTemplate")
-        chip:SetSize(CHIP_W, CHIP_H)
-        chip:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(chip) })
-        chip:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.5)
-        chip:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.0)
-
+        local chip = UI:SetButtonVariant(UI:CreateButton(rail, "", 46, CHIP_H), "chip")
+        chip.label:Hide()
         local icon = chip:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(15, 15)
-        icon:SetPoint("LEFT", 5, 0)
+        icon:SetSize(14, 14)
+        icon:SetPoint("LEFT", 7, 0)
         icon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CharacterCreate-Classes")
         if CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[classFile] then
             icon:SetTexCoord(unpack(CLASS_ICON_TCOORDS[classFile]))
         end
         chip.icon = icon
-
-        local cnt = UI:CreateText(chip, "0", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        cnt:SetPoint("RIGHT", -6, 0)
+        local cnt = UI:CreateText(chip, "0", 10, C.door.r, C.door.g, C.door.b)
+        cnt:SetPoint("LEFT", icon, "RIGHT", 4, 0)
         chip.count = cnt
-
-        local cc = GuildOS.ClassColors[classFile] or C.silver
+        function chip:Fit() self:SetWidth(7 + 14 + 4 + math.ceil(cnt:GetStringWidth() or 0) + 9) end
         function chip:SetActive(active)
             self.active = active
-            if active then
-                self:SetBackdropColor(cc.r * 0.30, cc.g * 0.30, cc.b * 0.30, 0.95)
-                self:SetBackdropBorderColor(cc.r, cc.g, cc.b, 0.85)
-                self.count:SetTextColor(C.white.r, C.white.g, C.white.b)
-            else
-                self:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.5)
-                self:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.0)
-                self.count:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
-            end
+            UI:SetSelected(self, active)
+            local c = active and C.onGold or C.door
+            self.count:SetTextColor(c.r, c.g, c.b)
         end
-        chip:SetScript("OnEnter", function(self)
-            if not self.active then self:SetBackdropBorderColor(cc.r, cc.g, cc.b, 0.5) end
-        end)
-        chip:SetScript("OnLeave", function(self)
-            if not self.active then self:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.0) end
-        end)
         chip:SetScript("OnClick", function() host:SetClassFilter(classFile) end)
+        chip:Fit()
         return chip
     end
-
-    local CHIP_ROW_H = CHIP_H + 4
-    for idx, classFile in ipairs(CLASS_ORDER) do
-        local chip = CreateClassChip(classFile)
-        local col, rowI = GRID:Cell(idx)
-        local x = RAIL_PAD + col * (CHIP_W + CHIP_GAP)
-        local y = 10 + (GRID.rows - 1 - rowI) * CHIP_ROW_H   -- bottom-up; row 0 highest
-        chip:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", x, y)
-        host.classChips[classFile] = chip
+    for _, classFile in ipairs(CLASS_ORDER) do
+        host.classChips[classFile] = CreateClassChip(classFile)
     end
-    local classHeader = UI:CreateHeaderText(rail, L["CLASSES"])
-    classHeader:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", RAIL_PAD + 2, 10 + GRID.rows * CHIP_ROW_H + 2)
+
+    -- Lay the pills out left to right, wrapping, and the table under them; returns their height.
+    function host:LayoutFilters(w)
+        w = w or self.filterW
+        if not w then return self.filterH end
+        self.filterW = w
+        local chips = {}
+        for _, b in ipairs(self.rankBtns) do if b.inUse then chips[#chips + 1] = b end end
+        for _, classFile in ipairs(CLASS_ORDER) do chips[#chips + 1] = self.classChips[classFile] end
+        local x, row = 0, 0
+        for _, b in ipairs(chips) do
+            local bw = b:GetWidth()
+            if x > 0 and x + bw > w then x, row = 0, row + 1 end
+            b:ClearAllPoints()
+            if row < CHIP_ROWS then
+                b:SetPoint("TOPLEFT", rail, "TOPLEFT", x, -row * (CHIP_H + 4))
+                b:Show()
+            else
+                b:Hide()
+            end
+            x = x + bw + CHIP_GAP
+        end
+        local rows = math.min(CHIP_ROWS, row + 1)
+        local h = rows * CHIP_H + (rows - 1) * 4
+        rail:SetHeight(h)
+        local changed = h ~= self.filterH
+        self.filterH = h
+        self:PlaceTable()
+        return h, changed
+    end
 
     function host:UpdateRailActive()
         self.segBtns.all:SetActive(self.segment == "all")
@@ -1045,46 +1006,55 @@ function GuildOS:CreateRosterPanel(parent, host)
             end
         end
 
-        self.segBtns.all.count:SetText(total)
-        self.segBtns.online.count:SetText(online)
+        self.segBtns.all.count:SetText(tostring(total))
+        self.segBtns.online.count:SetText(tostring(online))
         local alliedN = 0
         for _, g in ipairs(GuildOS.Alliance and GuildOS.Alliance:Directory() or {}) do alliedN = alliedN + #g.members end
-        self.segBtns.allied.count:SetText(alliedN)
+        self.segBtns.allied.count:SetText(tostring(alliedN))
+        for _, b in pairs(self.segBtns) do b:Fit() end
         self.segBtns.allied:SetShown(alliedN > 0)
         if alliedN == 0 and self.segment == "allied" then self.segment = "all" end   -- the directory went
-        local shift = alliedN > 0 and ALLIED_SHIFT or 0
-        ranksHeader:ClearAllPoints()
-        ranksHeader:SetPoint("TOPLEFT", RAIL_PAD + 2, -86 - shift)
+        if (alliedN > 0) ~= (self.alliedShown or false) then
+            self.alliedShown = alliedN > 0
+            self:LayoutToolbar()
+        end
 
-        -- Lay out one button per populated rank, sorted by rank index
+        -- One pill per populated rank, sorted by rank index; a click on the open one goes back to All.
         local indices = {}
         for idx in pairs(rankCount) do indices[#indices + 1] = idx end
         table.sort(indices)
         for slot, idx in ipairs(indices) do
             local b = self.rankBtns[slot]
             if not b then
-                b = CreateRailButton()
+                b = rankChip()
                 self.rankBtns[slot] = b
             end
-            b:ClearAllPoints()
-            b:SetPoint("TOPLEFT", RAIL_PAD, RANK_TOP - shift - (slot - 1) * RANK_H)
             b.rankIndex = idx
+            b.inUse = true
             b.label:SetText(rankName[idx] or string.format(L["Rank %d"], idx))
-            b.count:SetText(rankCount[idx] or 0)
-            b:SetScript("OnClick", function() host:SetSegment("rank:" .. idx) end)
+            b.count:SetText(tostring(rankCount[idx] or 0))
+            b:Fit()
+            b:SetScript("OnClick", function()
+                host:SetSegment(host.segment == ("rank:" .. idx) and "all" or ("rank:" .. idx))
+            end)
             b:Show()
         end
         for slot = #indices + 1, #self.rankBtns do
+            self.rankBtns[slot].inUse = nil
             self.rankBtns[slot]:Hide()
         end
 
         for classFile, chip in pairs(self.classChips) do
             local c = classCount[classFile] or 0
-            chip.count:SetText(c)
+            chip.count:SetText(tostring(c))
+            chip:Fit()
             chip:SetAlpha(c == 0 and 0.35 or 1)
         end
 
         self:UpdateRailActive()
+        local _, changed = self:LayoutFilters()
+        -- More or fewer rows of pills: the table under them gets its rows again.
+        if changed and UI.Relayout then UI:Relayout(parent) end
     end
 
     function host:GetSegmentLabel()
@@ -1446,16 +1416,18 @@ function GuildOS:CreateRosterPanel(parent, host)
                 card:SetShown(entry.shown)
                 if entry.shown then
                     card:ClearAllPoints()
-                    card:SetPoint("TOPLEFT", KPI_MARGIN + entry.x, -8)
+                    card:SetPoint("TOPLEFT", KPI_MARGIN + entry.x, -2)
                     card:SetWidth(entry.w)
                 end
             end
         end
 
-        host:LayoutToolbar(w - RAIL_WIDTH)
+        local inner = w - 2 * CARD_SIDE
+        host:LayoutToolbar(inner)
+        host:LayoutFilters(inner)
 
         -- Table columns.
-        local tableW = w - RAIL_WIDTH - ROW_INSET - SCROLL_GUTTER
+        local tableW = inner - ROW_INSET - SCROLL_GUTTER
         local spec
         spec, host.colSig = ChosenColumns()
         local layout = UI:ResolveColumns(spec, tableW, COL_GAP)
@@ -1474,7 +1446,7 @@ function GuildOS:CreateRosterPanel(parent, host)
         end
 
         -- Rows: how many fit, and where their cells sit.
-        host.AcquireRows(UI:ResolveRows(h - TABLE_RESERVED, ROW_HEIGHT, 0))
+        host.AcquireRows(UI:ResolveRows(h - TABLE_RESERVED - (host.filterH or CHIP_H), ROW_HEIGHT, 0))
         for i = 1, host.visibleRows do
             host.rows[i]:ApplyColumns(layout)
         end
@@ -1489,12 +1461,16 @@ end
 -- Create a single roster row
 ----------------------------------------------------------------------
 
--- One fill per state, the sketch's (#377): the table's well, panel under the cursor, popup for the
--- selected member, who also gets the gold edge. A selected row stays popup under the cursor.
+-- The mockup's rows (.t): nothing behind a row at rest, a faint gold wash under the cursor, and the selected
+-- member's a gold wash that fades to the right, with the gold edge on its left.
 local function PaintRow(row)
-    local c = (row.selected and C.popup) or (row.hovered and C.panel) or C.well
-    row:SetBackdropColor(c.r, c.g, c.b, 1)
+    if row.hovered and not row.selected then
+        row:SetBackdropColor(1, 0.843, 0.471, 0.07)
+    else
+        row:SetBackdropColor(0, 0, 0, 0)
+    end
     row.selMark:SetShown(row.selected == true)
+    if row.selFade then row.selFade:SetShown(row.selected == true) end
 end
 
 function CreateRosterRow(parent, rowIndex, uid, host)
@@ -1514,6 +1490,7 @@ function CreateRosterRow(parent, rowIndex, uid, host)
     rule:SetPoint("BOTTOMLEFT", 0, 0)
     rule:SetPoint("BOTTOMRIGHT", 0, 0)
     row.rule = rule
+    row.selFade = UI:CreateRowSelection(row)
     local mark = row:CreateTexture(nil, "OVERLAY")
     mark:SetTexture("Interface\\Buttons\\WHITE8x8")
     mark:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
@@ -1533,15 +1510,17 @@ function CreateRosterRow(parent, rowIndex, uid, host)
     statusDot:SetTexture("Interface\\COMMON\\Indicator-Green")
     row.statusDot = statusDot
 
-    -- Class icon + Name. 16px: the 24px row leaves a 20px icon no room (#377).
-    local classIcon = row:CreateTexture(nil, "OVERLAY")
-    classIcon:SetSize(16, 16)
-    classIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    -- The class's round avatar with the name's initial (the mockup's .av.s), then the name in the class's
+    -- colour. row.classIcon is the avatar's disc, so what read the icon reads the avatar.
+    local avatar = UI:CreateAvatar(row, 20, false)
+    avatar:EnableMouse(false)
+    row.avatar = avatar
+    local classIcon = avatar.disc
     row.classIcon = classIcon
 
     local nameText = row:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(nameText, nil, "memberName")   -- Plex Sans Medium 12, as the sketch's names
-    nameText:SetPoint("LEFT", classIcon, "RIGHT", 5, 0)
+    GuildOS:ApplyFont(nameText, nil, "memberName")
+    nameText:SetPoint("LEFT", avatar, "RIGHT", 6, 0)
     nameText:SetJustifyH("LEFT")
     nameText:SetWordWrap(false)
     row.nameText = nameText
@@ -1575,7 +1554,7 @@ function CreateRosterRow(parent, rowIndex, uid, host)
     -- Which elements belong to which column, so a dropped column takes
     -- everything it owns with it.
     row.cells = {
-        name        = { nameText, classIcon, statusDot, addonDot },
+        name        = { nameText, avatar, statusDot, addonDot },
         level       = { row.levelText },
         class       = { row.classText },
         avgIlvl     = { row.ilvlText },
@@ -1584,7 +1563,7 @@ function CreateRosterRow(parent, rowIndex, uid, host)
         professions = { row.profText },
         zone        = { row.zoneText },
     }
-    -- One plain cell per column that draws through its `text` (#178); a `num` column draws in IBM Plex Mono.
+    -- One plain cell per column that draws through its `text` (#178); a `num` column draws through the tableNum role.
     row.textCells = {}
     for _, col in ipairs(COLUMNS) do
         if col.text then
@@ -1616,9 +1595,9 @@ function CreateRosterRow(parent, rowIndex, uid, host)
         if nameCol and nameCol.shown then
             self.statusDot:ClearAllPoints()
             self.statusDot:SetPoint("LEFT", ROW_INSET + nameCol.x + 6, 0)
-            self.classIcon:ClearAllPoints()
-            self.classIcon:SetPoint("LEFT", ROW_INSET + nameCol.x + 20, 0)
-            self.nameText:SetWidth(math.max(20, nameCol.w - 48))
+            self.avatar:ClearAllPoints()
+            self.avatar:SetPoint("LEFT", ROW_INSET + nameCol.x + 16, 0)
+            self.nameText:SetWidth(math.max(20, nameCol.w - 52))
         end
 
         local function place(key, fs)
@@ -1752,15 +1731,8 @@ function UpdateRosterRow(row, data)
         row.statusDot:SetVertexColor(C.offline.r, C.offline.g, C.offline.b)
     end
 
-    -- Class icon
-    local classCoords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[data.class]
-    if classCoords then
-        row.classIcon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CharacterCreate-Classes")
-        row.classIcon:SetTexCoord(unpack(classCoords))
-        row.classIcon:SetDesaturated(not data.isOnline)
-    else
-        row.classIcon:SetTexture("")
-    end
+    -- The class's avatar, greyed while away.
+    row.avatar:SetMember(data.name, data.class, not data.isOnline)
 
     -- Name (class-colored, grayscale if offline)
     local cr, cg, cb = GuildOS:GetClassColor(data.class)
@@ -3487,7 +3459,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         rule:SetPoint("TOPLEFT", 0, 0)
         rule:SetPoint("TOPRIGHT", 0, 0)
         -- The caret in solid pixels, pointing right shut and down open, as the dropdown draws its arrow:
-        -- no glyph a font may lack (IBM Plex Mono has no triangles, and the Forever style takes the game's font).
+        -- no glyph a font may lack (the addon's fonts have no triangles, nor has every client's own).
         local shut, open = {}, {}
         for i, len in ipairs({ 7, 5, 3, 1 }) do
             local t = head:CreateTexture(nil, "OVERLAY")

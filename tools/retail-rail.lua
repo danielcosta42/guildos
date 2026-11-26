@@ -37,6 +37,9 @@ end
 check(select(2, g:Cell(13)) == 4 and select(2, g:Cell(1)) == 0, "the first chip is on the top row, the last on the bottom")
 
 local roster = io.open(ADDON .. "/UI/RosterFrame.lua", "rb"):read("*a")
-check(roster:find("UI:ChipGrid(#CLASS_ORDER", 1, true) ~= nil, "the roster rail lays its chips out with the grid")
+-- Since the Salão's phase 3 (#449) the roster's classes are pills that wrap under the toolbar (host:LayoutFilters),
+-- every one of retail's thirteen on its own pill; the grid stays for the loot rule's models.
+check(roster:find("function host:LayoutFilters", 1, true) ~= nil and roster:find("for _, classFile in ipairs(CLASS_ORDER)", 1, true),
+  "the roster lays every class's pill out, wrapping")
 
 print(("retail-rail: %d checks passed"):format(checks))

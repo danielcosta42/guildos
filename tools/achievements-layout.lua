@@ -261,7 +261,7 @@ end
 
 for _, style in ipairs({ "guildos", "forever" }) do
   local S = load(style)
-  check(S:Current() == style, style .. ": the style is in use")
+  check(S:Current() == "salao", style .. ": one look on every client, the Salão's")
   local C, UI = GuildOS.Colors, GuildOS.UI
   local gutter = UI.SCROLL_GUTTER
   local tab = build(data(), CONTENT_W + gutter)
@@ -333,9 +333,12 @@ for _, style in ipairs({ "guildos", "forever" }) do
           style .. ": " .. w[2] .. "'s pill " .. j .. " follows the one before it, on the name's line")
         x = x + pill.w + 4
         if pill.earned then
-          check(same(pill.label.color, C.text) and same(pill.border, C.lineHi), style .. ": an earned tier is text on lineHi")
+          local f = pill.__look.fill.color
+          check(f and math.abs(f[1] - 0.604) < 1e-3 and math.abs(f[3] - 0.071) < 1e-3,
+            style .. ": an earned tier is a gold-brown pill (the mockup's .tier)")
         else
-          check(same(pill.label.color, C.label) and same(pill.border, C.line), style .. ": the next tier is dim, label on line")
+          local f = pill.__look.fill.color
+          check(f and math.abs(f[1] - C.paperSoft.r) < 1e-6, style .. ": the next tier is the dim brown pill")
         end
       end
       local expect = w[3] .. (w[4] and (" " .. w[4]) or "")
@@ -353,12 +356,12 @@ for _, style in ipairs({ "guildos", "forever" }) do
   check(content.h > 0 and content.h < 15000, style .. ": the scroll child is " .. content.h .. "px, well under 15000")
   check(shownText(content, "NEAREST") and shownText(content, "EARNED"), style .. ": both sections have their titles")
 
-  -- Gold is the metric's rule only: no text of the screen is gold.
+  -- Gold is a title's (the Salão's phase 3, #449): the guild's name over the insignia is the one gold text.
   local gold = {}
   walk(content, function(c)
     if c.kind == "CreateFontString" and c.shown and same(c.color, C.gold) then gold[#gold + 1] = tostring(c.text) end
   end)
-  check(#gold == 0, style .. ": no gold text (" .. table.concat(gold, ", ") .. ")")
+  check(#gold <= 1 and (gold[1] == nil or gold[1] == name.text), style .. ": no gold text but the title (" .. table.concat(gold, ", ") .. ")")
 
   -- A redraw takes its frames again.
   local before = 0

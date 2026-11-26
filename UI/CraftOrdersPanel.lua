@@ -400,7 +400,7 @@ function GuildOS:CreateCraftDetail(parent)
         local name = UI:CreateText(d, "", 11)
         name:SetJustifyH("LEFT"); name:SetWordWrap(false)
         local ask = UI:SetButtonVariant(UI:CreateButton(d, L["Ask them"], 70, 18), "ghost")
-        -- Online: a drawn dot, not a bullet character (IBM Plex has no such glyph: it drew a box).
+        -- Online: a drawn dot, not a bullet character (the addon's fonts have no such glyph: it draws a box).
         local dot = d:CreateTexture(nil, "ARTWORK")
         dot:SetTexture("Interface\\Buttons\\WHITE8x8")
         dot:SetSize(6, 6)

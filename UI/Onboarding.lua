@@ -114,13 +114,9 @@ local function BuildFrame()
         sample:SetSize(110, 22)
         sample:SetPoint("TOPLEFT", 10, -32)
         sample:EnableMouse(false)   -- a click on it is the card's
-        if id == "forever" then
-            Style:_PaintThree(sample, Style.FOREVER.button.rest, "ARTWORK")
-        else
-            sample:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = UI:Edge(sample) })
-            sample:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
-            sample:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
-        end
+        sample:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = UI:Edge(sample) })
+        sample:SetBackdropColor(C.crimson.r, C.crimson.g, C.crimson.b, 1)
+        sample:SetBackdropBorderColor(C.crimsonLine.r, C.crimsonLine.g, C.crimsonLine.b, 1)
         local word = UI:CreateText(sample, L["Apply"], 11, C.text.r, C.text.g, C.text.b)
         word:SetPoint("CENTER", 0, 0)
         card.sample = sample

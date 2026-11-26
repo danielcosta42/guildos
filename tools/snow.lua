@@ -89,7 +89,7 @@ GuildOS.db.settings.snow = nil
 
 -- ── 3. Before the cutoff: the corner and its tooltip ──────────────────
 local win = newFrame()
-win.versionText = newFrame()
+win.footRight = newFrame()
 local footerLaidOut = 0
 function win:LayoutFooter() footerLaidOut = footerLaidOut + 1 end
 S:Attach(win)
@@ -101,7 +101,7 @@ check(S.corner.mouse == false and S.full.mouse == false, "neither snow layer tak
 check(S.corner.parcel.mouse == true and S.corner.hat.mouse == true, "only the parcel and the cap take the mouse")
 check(S.MOUSE_W <= 40, "and they are small: " .. S.MOUSE_W .. " px wide")
 local cp = S.corner.points[1]
-check(cp and cp[1] == "BOTTOMRIGHT" and cp[2] == win.versionText and cp[3] == "LEFT" and cp[4] - S.MOUSE_RIGHT < 0,
+check(cp and cp[1] == "BOTTOMRIGHT" and cp[2] == win.footRight and cp[3] == "LEFT" and cp[4] - S.MOUSE_RIGHT < 0,
   "the teaser stands left of the version, in the footer: the cap's right edge short of it")
 check(win.footReserve and win.footReserve >= S.MOUSE_W + 4 and footerLaidOut >= 1, "and the footer keeps its width free of links, laid out again")
 check(#S.corner.flakes <= S.MAX_FLAKES and #S.corner.flakes > 0, "the corner has a few flakes")

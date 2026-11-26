@@ -323,7 +323,7 @@ local function run(style)
   kit.client({ style = style, officer = true })
   local C = GuildOS.Colors
   GuildOS.SafeCall = function(_, fn, ...) return true, fn(...) end
-  check(GuildOS.Style:Current() == style, style .. ": the client draws the way asked for")
+  check(GuildOS.Style:Current() == "salao", style .. ": the Salão's one look on this client")
   fixture()
   local P = build(976, 516)
   local cards = P.cards
@@ -331,20 +331,34 @@ local function run(style)
   check(P.scroll.kind == "ScrollFrame" and P.scroll.scrollChild == P.content, style .. ": one scroll area")
   for _, key in ipairs({ "forYou", "board", "wall" }) do
     local c = cards[key]
-    check(same(c.bg, C.paper) and same(c.title.color, C.paperInk) and c.title.font == STANDARD_TEXT_FONT,
-      style .. ": " .. key .. " is parchment, its title in the paper's ink and the game's font")
+    check(c.__paper and same(c.__look.fill.color, C.paper) and same(c.title.color, C.paperTitle)
+      and c.title.font == GuildOS.Fonts.title,
+      style .. ": " .. key .. " is parchment, its title Cinzel in the dark red")
   end
-  check(same(cards.fire.title.color, C.gold), style .. ": by the fire is the dark card, its title in gold")
+  check(not cards.fire.__paper and same(cards.fire.title.color, C.gold2),
+    style .. ": by the fire is the dark card, its title in the soft gold")
+  check(cards.board.link.label.text == "Calendar" and cards.fire.link.label.text == "Members"
+    and cards.wall.link.label.text == "Activity", style .. ": each card's link at its title's right")
+  cards.fire.link.scripts.OnClick(cards.fire.link)
+  check(kit.opened[1] == "roster", style .. ": By the fire's link opens the members")
 
   local you = shownRows(cards.forYou)
   check(#you == 3 and you[1].main.text == "1 trial(s) ready to review" and you[1].btn.shown,
     style .. ": For you, three lines at most, the urgent one first, each with its button")
+  check(you[1].mark.text == "1" and you[1].icon.shown and you[1].btn.variant == "primary" and you[2].btn.variant == "secondary"
+    and you[2].btn.__onPaper, style .. ": a coloured square with the count, the first button crimson, the rest quiet")
   you[1].btn.scripts.OnClick(you[1].btn)
   check(kit.opened and kit.opened[1] == "trials", style .. ": the button opens the screen that owns the line")
 
-  local board = shownRows(cards.board)
-  check(board[1] and board[1].main.text == "Karazhan" and board[1].side.text:find("You are going", 1, true),
-    style .. ": the notice board shows the next event, its time and this player's answer")
+  local function notes(card)
+    local out = {}
+    for _, n in ipairs(card.notes) do if n.shown then out[#out + 1] = n end end
+    return out
+  end
+  local board = notes(cards.board)
+  check(board[1] and board[1].main.text == "Karazhan" and board[1].meta.text == "You are going" and board[1].pin
+    and board[1].outline[1].shown and same(board[1].outline[1].color, { r = 0x3e / 255, g = 0x8e / 255, b = 0x41 / 255 }),
+    style .. ": the notice board pins the next event, its time and this player's answer, outlined green")
   board[1].scripts.OnClick(board[1])
   check(kit.opened[1] == "guild" and kit.opened[2] == "calendar" and kit.opened[3] == KARAZHAN,
     style .. ": a click opens the calendar on that day")
@@ -355,9 +369,12 @@ local function run(style)
     { guild = "Iron Pact", title = "Gruul", when = NOW + 3600, going = 11, size = 25 },
     { guild = "Silver Hand", title = "Started", when = NOW - 60, going = 2, size = 10 } } end }
   P.Refresh()
-  board = shownRows(cards.board)
-  check(board[1] and board[1].main.text == "[Iron Pact] Gruul" and board[1].side.text:find("11/25", 1, true)
+  board = notes(cards.board)
+  check(board[1] and board[1].main.text == "Gruul" and board[1].meta.text:find("[Iron Pact]", 1, true)
+    and board[1].meta.text:find("11/25", 1, true) and not board[1].outline[1].shown
     and board[2].main.text == "Karazhan", style .. ": an allied open raid sits on the board in time, its guild and count shown")
+  check(board[1].points[1][3] == board[2].points[1][3] and board[2].points[1][2] > board[1].points[1][2],
+    style .. ": the notes side by side, three to a row")
   local begun = false
   for _, r in ipairs(board) do begun = begun or r.main.text:find("Started", 1, true) ~= nil end
   check(not begun, style .. ": one already begun is not on the board")
@@ -366,7 +383,14 @@ local function run(style)
   GuildOS.Alliance = keepAlly
   P.Refresh()
 
-  check(#shownRows(cards.wall) == 5, style .. ": the guild wall keeps to five lines")
+  local wall = shownRows(cards.wall)
+  check(#wall == 5 and wall[1].glyph.shown and wall[1].glyph.letter.text == "N" and wall[1].side.text ~= "",
+    style .. ": the guild wall keeps to five lines, each a glyph with its first letter and its time")
+  local faces = {}
+  for _, b in ipairs(cards.fire.faces) do if b.shown then faces[#faces + 1] = b end end
+  check(#faces == 2 and faces[1].avatar.letter.text == "M" and faces[2].name.text == "M3" and cards.fire.away.shown
+    and cards.fire.away.avatar.letter.text == "+1" and cards.fire.away.name.text == "away",
+    style .. ": by the fire, a round avatar per guildmate online and the dashed disc of who is away")
   check(not cards.chimney.shown, style .. ": no Winter Veil event, no Chimney")
   check(cards.board.points[1][2] == 0 and cards.fire.points[1][2] > 0, style .. ": wide, two columns")
 

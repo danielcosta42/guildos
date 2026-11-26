@@ -18,22 +18,31 @@ o cajado, as asas e o texto "GUILD OS" viram borrão.
 `minimap-ring.tga` é um `<circle cx=32 cy=32 r=30 stroke=white stroke-width=3>`
 rasterizado a 64x64 — a 30px na tela isso dá um traço de ~1.4px.
 
-## Fontes (Swiss 2.0, #361)
+## Fontes (o Salão, fase 3, #449)
 
-Fontes em `Fonts/`, todas sob a SIL Open Font License 1.1. A licença vai junto no pacote, como a
-OFL exige. A Plex Sans veio de `github.com/IBM/plex` (release `@ibm/plex-sans@1.1.0`,
-`packages/plex-sans/fonts/complete/ttf`); a Plex Mono, de `github.com/google/fonts` (`ofl/ibmplexmono`).
+Fontes em `Fonts/`, todas sob a SIL Open Font License 1.1, com as licenças junto, como a OFL exige.
+Vêm do Google Fonts (`github.com/google/fonts`: `ofl/cinzel`, `ofl/alegreya`, `ofl/alegreyasans`).
+Cinzel e Alegreya são fontes variáveis, e o WoW lê só a instância padrão (400) de uma: os arquivos
+aqui são instâncias estáticas cortadas com o fontTools (`fontTools.varLib.instancer`, Cinzel em 700,
+Alegreya em 400). Detalhes e fallbacks: `specs/salao/fase3.md`.
 
 | Arquivo | Uso |
 |---|---|
-| `Fonts/IBMPlexSans-Regular.ttf` | todo texto sem papel, corpo; nunca abaixo de 11px |
-| `Fonts/IBMPlexSans-Medium.ttf` | botão, nome de membro |
-| `Fonts/IBMPlexSans-SemiBold.ttf` | wordmark, título de janela e de seção, nome de item |
-| `Fonts/IBMPlexMono-Regular.ttf` | número de tabela, legenda, aba, distintivo, métrica; nunca abaixo de 10px |
-| `Fonts/IBMPlexMono-Medium.ttf` | cabeçalho de coluna |
-| `Fonts/OFL-IBMPlexSans.txt`, `Fonts/OFL-IBMPlexMono.txt` | licenças |
+| `Fonts/Cinzel-Bold.ttf` | títulos: nome da guilda, título de card, cabeçalho de tabela, número de bloco; nunca abaixo de 10px |
+| `Fonts/AlegreyaSans-Regular.ttf` | todo texto da interface; nunca abaixo de 11px |
+| `Fonts/AlegreyaSans-Medium.ttf` | nome de membro |
+| `Fonts/AlegreyaSans-Bold.ttf` | botão, distintivo, porta aberta, pílula escolhida |
+| `Fonts/Alegreya-Regular.ttf` | texto para ler: recado, mensagem, campo de várias linhas |
+| `Fonts/OFL-Cinzel.txt`, `Fonts/OFL-Alegreya.txt`, `Fonts/OFL-AlegreyaSans.txt` | licenças |
 
 Fonte nova só aparece depois de reiniciar o cliente: `/reload` não basta na primeira vez.
+
+## A arte do Salão (`Salao/`, fase 3, #449)
+
+Gerada por `python3 tools/salao_art.py` (Pillow; `--check` diz se os arquivos batem com o script).
+TGA 32-bit sem compressão, origem topo-esquerda (`0x28`), lados potência de dois. A lista e o uso de
+cada uma estão em `specs/salao/fase3.md`; `tools/salao-art.lua` confere que cada textura que o código
+nomeia existe e é um TGA que o WoW lê.
 
 Texturas geradas por script: TGA 32-bit sem compressão, origem embaixo-esquerda (descriptor
 `0x08`). `d` é a distância ao centro dividida pelo raio.

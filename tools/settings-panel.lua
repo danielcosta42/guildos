@@ -183,7 +183,7 @@ dofile(ADDON .. "/UI/FeatureRegistry.lua")
 dofile(ADDON .. "/UI/Features.lua")
 dofile(ADDON .. "/UI/SettingsPanel.lua")
 local UI = GuildOS.UI
-check(GuildOS.Style.current == STYLE, "the " .. STYLE .. " style is the one in force")
+check(GuildOS.Style.current == "salao", "the Salão's one look on the " .. STYLE .. " client")
 
 local printed = {}
 GuildOS.Print = function(_, msg) printed[#printed + 1] = tostring(msg) end
@@ -215,11 +215,9 @@ check(table.concat(labels, "|") == "Profile|Interface|Chat and alerts|Modules|Gu
 parent.SelectSub("profile")
 local profileTab
 walk(parent, function(f) if f.kind == "Button" and f.underline and f.label and f.label.text == "Profile" then profileTab = f end end)
-if STYLE == "forever" then
-  check(profileTab.__styleTab and not profileTab.underline.shown, "on Forever the sub-tabs wear the game's tab art, no gold rule")
-else
-  check(not profileTab.__styleTab and profileTab.underline.shown, "on GuildOS the open sub-tab has its gold rule")
-end
+-- One look on every client (#449): the open sub-tab is the soft gold pill, on Forever too.
+check(profileTab.isActive and profileTab.fill and profileTab.fill.shown and not profileTab.underline.shown,
+  "the open sub-tab is a soft gold pill, no rule, on every client")
 for old, page in pairs({ about = "data", officer = "rules", raid = "rules", general = "profile", loot = "profile",
                          nonsense = "profile" }) do
   parent.SelectSub(old)
@@ -278,7 +276,8 @@ check(strip:IsShown() and strip.text.text == "1 change applies after you reload 
   "switching a background module lights the strip")
 local reload = find(strip, "button", "Reload")
 check(reload and reload.variant == "primary", "with one Reload button, the primary one")
-check((STYLE == "forever") == (reload.__forever == true), "wearing the game's red button on Forever only")
+check(reload.__arts and reload.__arts.button and reload.__arts.button.shown,
+  "the crimson button of the Salão's art on every client, no game atlas")
 comm.checkbox.checked = not comm.checkbox.checked
 comm.checkbox.onChanged(comm.checkbox, comm.checkbox.checked)
 check(not strip:IsShown(), "switching it back puts the strip out")

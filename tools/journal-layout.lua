@@ -222,7 +222,7 @@ end
 local function run(style)
   client(style)
   local C, L = GuildOS.Colors, GuildOS.L
-  check(GuildOS.Style:Current() == style, style .. ": the client draws the style asked for")
+  check(GuildOS.Style:Current() == "salao", style .. ": the Salão's one look on this client")
   check(GuildOS.Journal and GuildOS.CreateJournalPanel, style .. ": the journal and its panel are on WoW: Forever")
   fixture()
 
@@ -303,7 +303,7 @@ local function run(style)
       style .. ": no art: no band and no rule, the name at the card's top")
     check(card.band.points[1][1] == "TOPLEFT" and card.band.points[2][1] == "TOPRIGHT",
       style .. ": the band hangs across the card's top")
-    check(card.bg and card.border and same(card.border, C.line), style .. ": a card is a surface the style paints, with its 1px line")
+    check(card.__look and card.__look.line and same(card.__look.line.color, C.lineHi), style .. ": a card is the dark card the look paints, with the metal's 1px line")
   end
   local rowTwo = cards[4]
   check(at(rowTwo) == 0 and select(2, at(rowTwo)) == firstRowY - cards[1].h - 8,
@@ -352,7 +352,7 @@ local function run(style)
     local tx, ty = at(r.text)
     local px, py = at(r.dot)
     check(r.date.text == day(mine[i].at) and r.text.text == want[i], style .. ": entry " .. i .. " is " .. want[i] .. " on its day")
-    check(dx == 0 and r.date.w == 80 and r.date.size == 11, style .. ": its date in a column of its own, flush left")
+    check(dx == 0 and r.date.w == 80 and r.date.size == 12, style .. ": its date in a column of its own, flush left")
     check(px >= 80 and tx > px + 5 and r.dot.w == 5 and r.dot.h == 5, style .. ": then its dot, then the entry")
     check(r.text.points[2][1] == "TOPRIGHT" and r.text.points[2][2] == 0, style .. ": the entry hangs from both sides")
     check(ty == dy and py < dy and py > dy - 14, style .. ": date, dot and entry on one line")

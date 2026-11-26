@@ -1,10 +1,10 @@
 -- Korean and Chinese clients draw GuildOS in the client's own font (issue #103), run against the
 -- real Core/Core.lua and Core/Data.lua under a stubbed client.
 --
--- IBM Plex Sans and Mono cover Latin and Cyrillic but no Hangul and no Han: on koKR, zhCN and
--- zhTW every character, guild, item and zone name the client gave drew as boxes unless the player found the
--- "Use the game's font" setting. There the client's font is now the only one; elsewhere nothing
--- changes, the setting included.
+-- The Salão's fonts (Cinzel, Alegreya Sans, Alegreya; #449) have no Hangul and no Han: on koKR, zhCN and
+-- zhTW every character, guild, item and zone name would draw as boxes. There the client's fonts are the only
+-- ones (a title takes the client's own title face, its quest titles'); Cinzel has no Cyrillic either, so on
+-- ruRU a title takes the game's. Elsewhere the addon's fonts.
 --
 --   luajit -e 'ADDON="."' tools/cjk-font.lua
 --
@@ -41,22 +41,35 @@ local function drawn(size, role)
   return fs.file, fs.px
 end
 
+local MORPHEUS = "Fonts\\MORPHEUS_LOCAL.TTF"
 for _, locale in ipairs({ "koKR", "zhCN", "zhTW" }) do
   load(locale, nil)
+  QuestTitleFont = nil
   local file, px = drawn(12)
-  check(file == STANDARD_TEXT_FONT and px == 12, locale .. ": text is drawn in the client's font, at its size")
+  check(file == STANDARD_TEXT_FONT and px == 13, locale .. ": text is drawn in the client's font, at its size")
   check(drawn(18) == STANDARD_TEXT_FONT and drawn(nil, "badge") == STANDARD_TEXT_FONT,
     locale .. ": large sizes and font roles too")
+  check(drawn(nil, "sectionTitle") == STANDARD_TEXT_FONT, locale .. ": a title too, with no quest-title font to take")
+  QuestTitleFont = { GetFont = function() return MORPHEUS, 18, "" end }
+  check(drawn(nil, "sectionTitle") == MORPHEUS, locale .. ": a title takes the client's own title face when it has one")
+  QuestTitleFont = nil
   check(GuildOS.GameFontOnly == true, locale .. ": the setting is forced on")
 end
 
 for _, locale in ipairs({ "enUS", "ptBR", "deDE", "esES", "esMX", "frFR", "ruRU", "itIT" }) do
   load(locale, nil)
-  check(drawn(12):find("IBMPlexSans", 1, true), locale .. ": text keeps GuildOS's sans")
-  check(drawn(nil, "tableNum"):find("IBMPlexMono", 1, true), locale .. ": numbers keep GuildOS's mono")
+  check(drawn(12):find("AlegreyaSans", 1, true), locale .. ": text keeps GuildOS's Alegreya Sans")
+  check(drawn(nil, "tableNum"):find("AlegreyaSans", 1, true), locale .. ": numbers too")
   check(GuildOS.GameFontOnly == false, locale .. ": nothing is forced")
+  QuestTitleFont = { GetFont = function() return MORPHEUS, 18, "" end }
+  if locale == "ruRU" then
+    check(drawn(nil, "sectionTitle") == MORPHEUS, "ruRU: Cinzel has no Cyrillic, a title takes the game's title face")
+  else
+    check(drawn(nil, "sectionTitle"):find("Cinzel", 1, true), locale .. ": a title is Cinzel")
+  end
+  QuestTitleFont = nil
   load(locale, "game")
-  check(drawn(12) == STANDARD_TEXT_FONT, locale .. ": and the player's choice of the game's font still holds")
+  check(drawn(12):find("AlegreyaSans", 1, true), locale .. ": a saved game-font choice from before is gone: one look")
 end
 
 print(("cjk-font: %d checks passed"):format(checks))

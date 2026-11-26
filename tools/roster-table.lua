@@ -284,21 +284,25 @@ local function same(color, token)
 end
 do
   local rows = parent.rows
-  check(#rows == math.floor((600 - (82 + 28 + 36 + 1)) / 24), "rows are 24px tall: as many as fit under the header")
+  -- The Salão's list (#449): the tiles (70), the card's title (34), the toolbar (28 and 6), the pills and 6, the
+  -- header (24 and its rule), the card's bottom (10).
+  local reserved = 70 + 34 + 28 + 6 + parent.filterH + 6 + 24 + 1 + 10
+  check(parent.filterH >= 22 and #rows == math.floor((600 - reserved) / 26), "rows are 26px tall: as many as fit under the header")
   local stacked, flat, ruled = true, true, true
   for i, row in ipairs(rows) do
     local p = row.points[1]
-    if row.h ~= 24 or p[1] ~= "TOPLEFT" or p[3] ~= -((i - 1) * 24) then stacked = false end
-    if i <= 4 and not same(row.bg, C.well) then flat = false end
+    if row.h ~= 26 or p[1] ~= "TOPLEFT" or p[3] ~= -((i - 1) * 26) then stacked = false end
+    if i <= 4 and not (row.bg and row.bg[4] == 0) then flat = false end
     local r = row.rule
     if not (r and r.h == 1 and same(r.color, C.line) and r.points[1][1] == "BOTTOMLEFT"
       and r.points[2][1] == "BOTTOMRIGHT") then ruled = false end
   end
-  check(stacked, "each one 24px under the one before")
-  check(flat, "no zebra: every row on the table's well")
+  check(stacked, "each one 26px under the one before")
+  check(flat, "no zebra: nothing behind a row at rest, the card shows through")
   check(ruled, "and a 1px line under each")
-  check(rowOf("Ana").classIcon.w == 16 and rowOf("Ana").nameText.font.file == STANDARD_TEXT_FONT,
-    "a 16px class icon in the 24px row, the name in the game's font (#445)")
+  check(rowOf("Ana").avatar.w == 20 and rowOf("Ana").avatar.letter.text == "A"
+    and rowOf("Ana").nameText.font.file == GuildOS.Fonts.uiMedium,
+    "a 20px round class avatar with the initial, the name in Alegreya Sans Medium (#449)")
   local marked = false
   for _, row in ipairs(rows) do if row.selMark.shown then marked = true end end
   check(not marked, "before any click no row is selected")
@@ -315,10 +319,10 @@ do
   local m = ana.selMark
   check(sheets[1] == "Ana" and m.shown and m.w == 2 and same(m.color, C.gold) and m.points[1][1] == "TOPLEFT"
     and m.points[1][2] == 0 and m.points[2][1] == "BOTTOMLEFT", "the selected row: a 2px gold edge down its left side")
-  check(same(ana.bg, C.popup), "on popup")
+  check(ana.selFade and ana.selFade.shown, "and the gold wash that fades to the right")
   local others = true
   for _, row in ipairs(parent.rows) do
-    if row ~= ana and row.shown and (row.selMark.shown or not same(row.bg, C.well)) then others = false end
+    if row ~= ana and row.shown and (row.selMark.shown or row.selFade.shown) then others = false end
   end
   check(others, "and only that one")
   -- The hover's tooltip reads half the addon; only the fill is under test here.
@@ -326,13 +330,13 @@ do
   local tooltip = ShowRowTooltip
   ShowRowTooltip = function() end
   fire(ana, "OnEnter")
-  check(same(ana.bg, C.popup), "a selected row stays popup under the cursor")
+  check(ana.selFade.shown and ana.bg[4] == 0, "a selected row keeps its gold wash under the cursor")
   fire(ana, "OnLeave")
   local beto = rowOf("Beto")
   fire(beto, "OnEnter")
-  check(same(beto.bg, C.panel) and not beto.selMark.shown, "another row turns panel under the cursor")
+  check(beto.bg and beto.bg[4] > 0 and beto.bg[4] < 0.1 and not beto.selMark.shown, "another row takes a faint gold under the cursor")
   fire(beto, "OnLeave")
-  check(same(beto.bg, C.well), "and back to well when it leaves")
+  check(beto.bg[4] == 0, "and nothing when it leaves")
   ShowRowTooltip = tooltip
 
   -- The list is virtual: the mark follows the member, not the row it was drawn on.
@@ -372,8 +376,8 @@ do
   GuildOS:RefreshRosterUI()
   check(field.shown, "on Anniversary, for a rank that invites, it shows")
   local function x(fr) return fr.points[1][4] end
-  check(x(field) > x(parent.offlineBtn) and x(parent.offlineBtn) > x(parent.searchBox) and x(parent.searchBox) > x(parent.resultText),
-    "at the bar's right end, past Show Offline")
+  check(x(field) > x(parent.offlineBtn) and x(parent.offlineBtn) > x(parent.searchBox) and x(parent.resultText) > x(field),
+    "past the search and Show Offline, before the summary")
   check(field.button.variant == "primary" and field.button.label.text == "Invite" and field.box.h == 22
     and field.box.placeholder.text == "Player name...", "a 22px name box and the screen's one primary button, Invite")
   printed = {}
@@ -391,7 +395,7 @@ do
 
   -- A narrow bar drops in a set order and nothing overlaps; Show Offline always stays.
   local function relayout(room)
-    parent.w = room + 2 * 12 + 156
+    parent.w = room + 2 * 12
     UI:Relayout(parent)
     flush()
   end
@@ -403,30 +407,30 @@ do
     table.sort(out, function(a, b) return x(a) < x(b) end)
     return out
   end
-  -- From the narrowest table the window draws: the watch band's 404px of content less the rail.
+  -- From the narrowest table the window draws: the watch band's 404px of content less the card's padding.
   local misfit
-  for room = 404 - 156 - 24, 1300, 7 do
+  for room = 404 - 24, 1300, 7 do
     relayout(room)
-    local edge = 12
+    local edge = 0
     for _, c in ipairs(parts()) do
-      if x(c) < edge or x(c) + c.w > 12 + room then misfit = misfit or room end
+      if x(c) < edge or x(c) + c.w > room then misfit = misfit or room end
       edge = x(c) + c.w
     end
     if not parent.offlineBtn.shown then misfit = misfit or room end
   end
   check(misfit == nil, "at every width the bar's parts stay inside it, apart, and Show Offline stays: " .. tostring(misfit))
-  relayout(738)
-  check(#parts() == 6 and field.shown, "738px holds all six")
+  relayout(900)
+  check(#parts() == 8 and field.shown, "900px holds all eight: the search, All, Online, Show Offline, Columns, Analytics, the invite field, the summary")
   -- Narrowing, what goes and in what order: the summary first, then Columns (a right click on the header
   -- opens it too), Analytics (the one way in to /gos analytics, #137), the invite field, and at the
   -- narrowest the search box; Show Offline stays.
   local named = { [parent.resultText] = "summary", [field] = "invite", [parent.searchBox] = "search",
-                  [parent.offlineBtn] = "offline" }
+                  [parent.offlineBtn] = "offline", [parent.segBtns.all] = "all", [parent.segBtns.online] = "online" }
   for _, c in ipairs(parts()) do
     if not named[c] then named[c] = c.label and c.label.text == "Analytics" and "analytics" or "columns" end
   end
   local gone, order = {}, {}
-  for room = 738, 404 - 156 - 24, -2 do
+  for room = 900, 404 - 24, -2 do
     relayout(room)
     for fr, name in pairs(named) do
       if not fr.shown and not gone[name] then gone[name] = room; order[#order + 1] = name end
@@ -435,7 +439,7 @@ do
   table.sort(order, function(p, q) return gone[p] > gone[q] end)
   check(table.concat(order, ",") == "summary,columns,analytics,invite,search",
     "narrowing drops the summary, Columns, Analytics, the invite field, then the search: " .. table.concat(order, ","))
-  check(not gone.offline and gone.invite >= 400, "Show Offline stays at every width, and at 400px the search still does")
+  check(not gone.offline and not gone.all and not gone.online, "Show Offline, All and Online stay at every width")
 
   -- A field kept is never hidden and shown again: the search filters on every keystroke and the roster
   -- updates while someone types a name, and a hidden EditBox loses the keyboard (B would open the bags).
@@ -582,7 +586,7 @@ GuildOS.db.settings.modules.trialTracker = nil
 -- ── A narrow window drops the rightmost first ───────────────────────────
 GuildOS.RosterColumns:Reset()
 tick("note", true)
-parent.w = 156 + 10 + 18 + 150 + 10 + 34 + 10 + 74 + 10 + 46 + 10 + 70 + 10 + 78 + 10 + 160 + 10 + 120
+parent.w = 2 * 12 + 10 + 18 + 150 + 10 + 34 + 10 + 74 + 10 + 46 + 10 + 70 + 10 + 78 + 10 + 160 + 10 + 120
 UI:Relayout(parent)
 flush()
 check(headers() == DEFAULT, "the note, last, is the first to go: " .. headers())
@@ -782,7 +786,7 @@ do
           { guild = "Silver Hand", members = { { key = "Xan", name = "Xan", class = "MAGE", level = 60, recipes = {} } } } }
   GuildOS:RefreshRosterUI()
   check(parent.segBtns.allied.shown and parent.segBtns.allied.label.text == "From the alliance"
-    and parent.segBtns.allied.count.text == 3, "with one, the rail offers From the alliance, with how many it lists")
+    and parent.segBtns.allied.count.text == "3", "with one, the rail offers From the alliance, with how many it lists")
   fire(parent.segBtns.allied, "OnClick")
   check(order():find("Zeca", 1, true) and order():find("Xan", 1, true) and not order():find("Ana", 1, true),
     "the table lists the allied members, none of the guild's")

@@ -1,14 +1,13 @@
 ----------------------------------------------------------------------
 -- Guild OS - UI Helpers
--- Reusable factories for the GuildOS style (Swiss Modernism 2.0;
--- docs/superpowers/specs/2026-11-17-swiss-identity-design.md): flat opaque
--- surfaces told apart by a 1px line, no glow and no shadow, gold only for
--- the primary button, focus, selection, the active tab and the metric rule,
--- IBM Plex Sans for words and Plex Mono for numbers and labels, and state
--- changes that land in the same frame. Public names, signatures and fields
--- are unchanged from Obsidian, except CreateDropShadow, frame.dropShadow and
--- btn.glow, which went with the shadow and the glow (#361).
--- The interface style (Core/Style.lua, #122) paints each surface and control through them.
+-- Reusable factories for the Salão's look (specs/salao/fase3.md): dark cards
+-- and fields on the wood, parchment cards with their own ink, a crimson
+-- primary button, dark and cream (quiet) buttons, pills for tabs and filters,
+-- round class avatars, Cinzel for titles and Alegreya Sans for the rest, and
+-- state changes that land in the same frame. Every screen is built through
+-- them, so every screen takes the look. Public names, signatures and fields
+-- are kept; a frame's backdrop colour calls land on its rounded art.
+-- The art and its layout live in Core/Style.lua.
 ----------------------------------------------------------------------
 local Helpers = {}
 GuildOS.UI = Helpers
@@ -18,7 +17,6 @@ local Style = GuildOS.Style
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 local BUTTON_HEIGHT  = 26    -- default button height (handoff §8)
-local DANGER_WASH    = 0.12  -- danger tint behind a hovered danger button
 local DISABLED_GOLD  = 0.35  -- alpha of a disabled primary button or checkbox mark
 local FADE_MAX       = 0.1   -- seconds; the only motion the skin allows
 local SCROLL_WIDTH   = 8
@@ -130,20 +128,171 @@ end
 -- Surfaces
 ----------------------------------------------------------------------
 
--- Create a window surface (elevation 2): `bg` with a 1px `line` border.
+-- Create a surface: a window at the top level (the metal frame), a dark card inside a screen (#122).
 function Helpers:CreatePanel(parent, name, level)
     local f = CreateFrame("Frame", name, parent, "BackdropTemplate")
     f:SetFrameLevel(level or 1)
-    -- A window at the top level; a block inside a screen is a panel (#122).
     Style:Paint(f, (parent == nil or parent == UIParent) and "window" or "panel")
     return f
 end
 
--- Create an inset surface (elevation 1: table body, field, scroll area).
+-- Create an inset surface on the wood (a table body, a scroll area, a side bar's well).
 function Helpers:CreateDarkPanel(parent, name, level)
     local f = CreateFrame("Frame", name, parent, "BackdropTemplate")
     f:SetFrameLevel(level or 1)
     Style:Paint(f, "well")
+    return f
+end
+
+-- Whether `frame` sits on a parchment card (a card made by CreateCard, or anything inside one): controls
+-- there take the paper's colours (a quiet button, a light field, a dark red title).
+function Helpers:OnPaper(frame)
+    local f, depth = frame, 0
+    while f and depth < 12 do
+        if rawget(f, "__paper") then return true end
+        if rawget(f, "__dark") then return false end
+        f = f.GetParent and f:GetParent() or nil
+        depth = depth + 1
+    end
+    return false
+end
+
+-- A card, as the mockup's .card and .dark: a parchment card (its paper, grain, darker bottom edge and soft
+-- shadow, a dark red title in Cinzel) or, with opts.dark, a dark card on the wood with a soft gold title.
+-- opts.link: a link at the title's right (an underlined word that opens something), card.link; set its click
+-- with card.link:SetScript("OnClick", ...). card.ink and card.soft are the colours its text takes. The title is
+-- never upper case. Size and place it as any frame; its content starts CARD_TOP down, CARD_PAD in.
+Helpers.CARD_PAD, Helpers.CARD_TOP = 14, 36
+function Helpers:CreateCard(parent, title, opts)
+    opts = opts or {}
+    local f = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    local dark = opts.dark and true or false
+    Style:Paint(f, dark and "panel" or "paper")
+    f.__dark = dark or nil
+    f.ink = dark and C.text or C.paperInk
+    f.soft = dark and C.textSoft or C.paperSoft
+    f.lineColor = dark and C.line or C.paperLine
+    local t = newText(f, nil, "sectionTitle")
+    local tc = dark and C.gold2 or C.paperTitle
+    t:SetTextColor(tc.r, tc.g, tc.b)
+    t:SetJustifyH("LEFT")
+    t:SetWordWrap(false)
+    t:SetPoint("TOPLEFT", Helpers.CARD_PAD, -12)
+    GuildOS:SetTitleText(t, title or "")
+    f.title = t
+    if opts.link then
+        local link = self:SetButtonVariant(self:CreateButton(f, opts.link, 40, 18), "ghost")
+        link:SetWidth(math.ceil(link.label:GetStringWidth()) + 4)
+        link:SetPoint("TOPRIGHT", -Helpers.CARD_PAD + 2, -10)
+        t:SetPoint("RIGHT", link, "LEFT", -8, 0)
+        f.link = link
+    else
+        t:SetPoint("RIGHT", f, "RIGHT", -Helpers.CARD_PAD, 0)
+    end
+    return f
+end
+
+-- The wood behind a screen (the window's view): boards, the fire's glow, snow in Winter Veil; drawn on
+-- `frame` over `area`.
+function Helpers:PaintWood(frame, area) return Style:PaintWood(frame, area) end
+
+-- The first character of `name` (a whole UTF-8 sequence), for an avatar's or the crest's initial.
+local function initial(name)
+    return tostring(name or "?"):match("^[%z\1-\127\194-\244][\128-\191]*") or "?"
+end
+Helpers.Initial = initial
+
+-- A round class avatar (the mockup's .av): a disc in the class's colour, lit from the top left, a soft gold
+-- ring, a warm glow from 32px up, and the name's initial. avatar:SetMember(name, classFile, away) paints it;
+-- away greys it out. avatar:SetCount(n) makes it the dashed "+n" disc. A Button: script its click.
+function Helpers:CreateAvatar(parent, size, glow)
+    size = size or 40
+    local a = CreateFrame("Button", nil, parent)
+    a:SetSize(size, size)
+    if glow == nil then glow = size >= 32 end
+    if glow then
+        local halo = Style:Texture(a, "halo", "BACKGROUND", 0)
+        halo:SetPoint("CENTER")
+        halo:SetSize(size * 1.5, size * 1.5)
+        a.halo = halo
+    end
+    a.disc = Style:Texture(a, "disc", "ARTWORK", 0)
+    a.disc:SetAllPoints()
+    a.ring = Style:Texture(a, "ring", "ARTWORK", 1)
+    a.ring:SetAllPoints()
+    a.dash = Style:Texture(a, "ring-dash", "ARTWORK", 2)
+    a.dash:SetAllPoints()
+    a.dash:Hide()
+    a.letter = newText(a, math.max(10, math.floor(size * 0.42)), "button")
+    a.letter:SetPoint("CENTER", 0, 0)
+    function a:SetMember(name, classFile, away)
+        local cc = (classFile and GuildOS.ClassColors[classFile]) or C.textSoft
+        -- The disc runs from a lighter cut of the class's colour to a darker one, as the mockup's gradient.
+        local r, g, b = cc.r + (1 - cc.r) * 0.3, cc.g + (1 - cc.g) * 0.3, cc.b + (1 - cc.b) * 0.3
+        if away then
+            local grey = (r + g + b) / 3 * 0.55
+            r, g, b = grey, grey, grey
+        end
+        self.disc:SetVertexColor(r, g, b, 1)
+        self.disc:Show()
+        local ring = away and C.lineHi or C.gold2
+        self.ring:SetVertexColor(ring.r, ring.g, ring.b, 1)
+        self.ring:Show()
+        self.dash:Hide()
+        if self.halo then self.halo:SetShown(not away) end
+        -- Dark classes (the shaman's blue) take a light initial.
+        local lum = 0.3 * cc.r + 0.59 * cc.g + 0.11 * cc.b
+        if lum < 0.45 then self.letter:SetTextColor(1, 1, 1) else self.letter:SetTextColor(0.14, 0.08, 0.04) end
+        self.letter:SetText(initial(name))
+    end
+    function a:SetCount(n)
+        self.disc:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
+        self.ring:Hide()
+        self.dash:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 1)
+        self.dash:Show()
+        if self.halo then self.halo:Hide() end
+        self.letter:SetTextColor(C.gold2.r, C.gold2.g, C.gold2.b)
+        self.letter:SetText("+" .. tostring(n or 0))
+    end
+    return a
+end
+
+-- A round glyph (the mockup's .glyph on the Guild wall): a lit sphere in one colour and a letter on it.
+-- glyph:Set(letter, color).
+function Helpers:CreateGlyph(parent, size)
+    size = size or 26
+    local g = CreateFrame("Frame", nil, parent)
+    g:SetSize(size, size)
+    g.orb = Style:Texture(g, "orb", "ARTWORK", 0)
+    g.orb:SetAllPoints()
+    g.letter = newText(g, math.max(10, math.floor(size * 0.42)), "button")
+    g.letter:SetPoint("CENTER", 0, 0)
+    g.letter:SetTextColor(1, 1, 1)
+    function g:Set(letter, color)
+        local c = color or C.paperSoft
+        self.orb:SetVertexColor(c.r, c.g, c.b, 1)
+        self.letter:SetText(letter or "")
+    end
+    return g
+end
+
+-- A red count (the Officers' Room's, an entry's): a small pill, hidden at zero. count:SetCount(n).
+function Helpers:CreateCount(parent)
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetSize(18, 15)
+    local fill = Style:Three(f, "pill", "ARTWORK", 0)
+    fill:SetColor(C.count)
+    f.fill = fill
+    f.text = newText(f, 10, "badge")
+    f.text:SetPoint("CENTER", 0, 0)
+    f.text:SetTextColor(1, 1, 1)
+    function f:SetCount(n)
+        n = tonumber(n) or 0
+        self.text:SetText(n > 99 and "99+" or tostring(n))
+        self:SetWidth(math.max(16, math.ceil(self.text:GetStringWidth() or 0) + 10))
+        self:SetShown(n > 0)
+    end
+    f:SetCount(0)
     return f
 end
 
@@ -162,7 +311,7 @@ end
 function Helpers:StylePopup(frame, opts)
     opts = opts or {}
     if frame.SetBackdropBorderColor then
-        frame:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+        frame:SetBackdropBorderColor(C.metal2.r, C.metal2.g, C.metal2.b, 1)
     end
     if not opts.noFade then self:EnableFadeIn(frame, opts.fadeDuration) end
     Style:Paint(frame, "popup")
@@ -193,27 +342,30 @@ end
 -- Text
 ----------------------------------------------------------------------
 
--- Create a window title: IBM Plex Sans SemiBold, paper.
+-- Create a window title: Cinzel, gold (dark red on a parchment card).
 function Helpers:CreateTitle(parent, text, size)
-    local fs = newText(parent, size or 16, "windowTitle")
-    fs:SetTextColor(C.text.r, C.text.g, C.text.b)
-    fs:SetText(text or "")
+    local fs = newText(parent, size or 15, "windowTitle")
+    local c = Helpers:OnPaper(parent) and C.paperTitle or C.gold
+    fs:SetTextColor(c.r, c.g, c.b)
+    GuildOS:SetTitleText(fs, text or "")
     return fs
 end
 
--- Create body or table text: IBM Plex Sans, paper unless a colour is given.
+-- Create body or table text: Alegreya Sans, the wood's ink (the paper's on a card) unless a colour is given.
 function Helpers:CreateText(parent, text, size, r, g, b)
     local fs = newText(parent, size or 12)
-    fs:SetTextColor(r or C.text.r, g or C.text.g, b or C.text.b)
+    local ink = (r == nil and Helpers:OnPaper(parent)) and C.paperInk or C.text
+    fs:SetTextColor(r or ink.r, g or ink.g, b or ink.b)
     fs:SetText(text or "")
     return fs
 end
 
--- Create a column header: IBM Plex Mono Medium in `label`. A section of a screen takes
--- CreateSectionTitle instead.
+-- Create a column header: Cinzel, small, gold on the wood and dark red on the paper (the mockup's .t th).
+-- A section of a screen takes CreateSectionTitle instead.
 function Helpers:CreateHeaderText(parent, text, size)
     local fs = newText(parent, size or 10, "colHeader")
-    fs:SetTextColor(C.label.r, C.label.g, C.label.b)
+    local c = Helpers:OnPaper(parent) and C.paperTitle or C.gold
+    fs:SetTextColor(c.r, c.g, c.b)
     fs:SetText(text or "")
     return fs
 end
@@ -226,14 +378,15 @@ end
 -- starts flush with the sub-tab bar's left edge (x = 0) and ends GAP short of the right one.
 Helpers.GAP = 8
 
--- A section title as Settings draws it: Sans SemiBold 14 in `text`. Any section but a screen's first
--- has a 1px `line` rule 12px above it, from the title's left to the parent's right edge, so leave
--- about 20px over a later one. Returns the title; title.rule is that rule.
+-- A section title as Settings draws it: Cinzel 13, the soft gold on the wood and dark red on the paper,
+-- never upper case. Any section but a screen's first has a 1px `line` rule 12px above it, from the title's
+-- left to the parent's right edge, so leave about 20px over a later one. Returns the title; title.rule is that rule.
 function Helpers:CreateSectionTitle(parent, text, first)
     local fs = newText(parent, nil, "sectionTitle")
-    fs:SetTextColor(C.text.r, C.text.g, C.text.b)
+    local c = Helpers:OnPaper(parent) and C.paperTitle or C.gold2
+    fs:SetTextColor(c.r, c.g, c.b)
     fs:SetJustifyH("LEFT")
-    fs:SetText(text or "")
+    GuildOS:SetTitleText(fs, text or "")
     if not first then
         local rule = self:CreateSeparator(parent)
         rule:SetPoint("BOTTOMLEFT", fs, "TOPLEFT", 0, 12)
@@ -243,37 +396,46 @@ function Helpers:CreateSectionTitle(parent, text, first)
     return fs
 end
 
--- A text field: `well` fill, 1px `lineHi` border that turns gold while typing, Sans 12 (Plex Mono for
--- numbers) inset 6px, Escape lets go. opts: numeric, max, multiline, placeholder (a hint shown while
--- empty), justify. Hook its scripts with HookScript: SetScript on the focus ones would drop the border.
+-- A field's rounded box (the mockup's .field input): on the wood the field's dark with the metal line, on
+-- the paper the light paper with a tan line; the line turns the soft gold while typing. Returns the field's
+-- resting line colour and its ink. Internal.
+local function fieldLook(frame, corner)
+    local paper = Helpers:OnPaper(frame)
+    if frame.SetBackdrop then frame:SetBackdrop(nil) end
+    local fill = Style:Nine(frame, "card", corner or 5, "BACKGROUND", -6)
+    local line = Style:Nine(frame, "card-line", corner or 5, "BACKGROUND", -5)
+    Style:Hand(frame, fill, line)
+    local bg, edge = paper and C.paperLight or C.well, paper and C.paperEdge or C.lineHi
+    frame:SetBackdropColor(bg.r, bg.g, bg.b, 1)
+    frame:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1)
+    return edge, paper and C.paperInk or C.text, paper
+end
+
+-- A text field: rounded, on the wood's dark or the paper's light, its line the soft gold while typing,
+-- Alegreya Sans 12 inset 8px, Escape lets go. opts: numeric, max, multiline, placeholder (a hint shown while
+-- empty), justify. Hook its scripts with HookScript: SetScript on the focus ones would drop the line.
 function Helpers:CreateInput(parent, width, height, opts)
     opts = opts or {}
     local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     box:SetSize(width or 160, height or 22)
-    -- The style paints a one-line field, as the fields it replaced were painted: flat, or in WoW: Forever
-    -- the game's search-box art (#122). That art is a 22px bar: a multi-line box (export, import) scaled
-    -- to it would be a giant blurred search bar, so it stays flat. Only a flat box takes the lineHi border.
-    local look = not opts.multiline and Style:Paint(box, "input")
-    if look ~= "art" then
-        box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = self:Edge(box) })
-        box:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
-        box:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
-    end
-    box:SetTextInsets(6, 6, opts.multiline and 4 or 0, opts.multiline and 4 or 0)
+    local edge, ink, paper = fieldLook(box)
+    box:SetTextInsets(8, 8, opts.multiline and 4 or 0, opts.multiline and 4 or 0)
     GuildOS:ApplyFont(box, 12, opts.numeric and "tableNum" or nil)
-    box:SetTextColor(C.text.r, C.text.g, C.text.b)
+    box:SetTextColor(ink.r, ink.g, ink.b)
     if opts.justify then box:SetJustifyH(opts.justify) end
     box:SetAutoFocus(false)
     if opts.multiline then box:SetMultiLine(true) end
     if opts.numeric then box:SetNumeric(true) end
     if opts.max then box:SetMaxLetters(opts.max) end
     box:HookScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    box:HookScript("OnEditFocusGained", function(self) self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1) end)
-    box:HookScript("OnEditFocusLost", function(self) self:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1) end)
+    local focus = paper and C.paperTitle or C.gold2
+    box:HookScript("OnEditFocusGained", function(self) self:SetBackdropBorderColor(focus.r, focus.g, focus.b, 1) end)
+    box:HookScript("OnEditFocusLost", function(self) self:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1) end)
     if opts.placeholder then
         local ph = newText(box, 12)
-        ph:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        ph:SetPoint(opts.multiline and "TOPLEFT" or "LEFT", 6, opts.multiline and -4 or 0)
+        local soft = paper and C.paperSoft or C.labelDim
+        ph:SetTextColor(soft.r, soft.g, soft.b)
+        ph:SetPoint(opts.multiline and "TOPLEFT" or "LEFT", 8, opts.multiline and -4 or 0)
         ph:SetText(opts.placeholder)
         local function sync() ph:SetShown((box:GetText() or "") == "" and not box:HasFocus()) end
         box:HookScript("OnTextChanged", sync)
@@ -294,26 +456,27 @@ function Helpers:CreateTextArea(parent, width, height, opts)
     opts = opts or {}
     local area = CreateFrame("Button", nil, parent, "BackdropTemplate")
     area:SetSize(width or 160, height or 56)
-    area:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = self:Edge(area) })
-    area:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
-    area:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    local edge, ink, paper = fieldLook(area)
     if area.SetClipsChildren then area:SetClipsChildren(true) end
     local edit = CreateFrame("EditBox", nil, area)
-    edit:SetPoint("TOPLEFT", 6, -4)
-    edit:SetPoint("TOPRIGHT", -6, -4)
+    edit:SetPoint("TOPLEFT", 8, -5)
+    edit:SetPoint("TOPRIGHT", -8, -5)
     edit:SetMultiLine(true)
     edit:SetAutoFocus(false)
-    GuildOS:ApplyFont(edit, 12)
-    edit:SetTextColor(C.text.r, C.text.g, C.text.b)
+    -- A text to be read (a note, a message) is in the reading face.
+    GuildOS:ApplyFont(edit, 12, "reading")
+    edit:SetTextColor(ink.r, ink.g, ink.b)
     if opts.max then edit:SetMaxLetters(opts.max) end
     edit:HookScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    edit:HookScript("OnEditFocusGained", function() area:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1) end)
-    edit:HookScript("OnEditFocusLost", function() area:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1) end)
+    local focus = paper and C.paperTitle or C.gold2
+    edit:HookScript("OnEditFocusGained", function() area:SetBackdropBorderColor(focus.r, focus.g, focus.b, 1) end)
+    edit:HookScript("OnEditFocusLost", function() area:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1) end)
     area:SetScript("OnClick", function() if edit:IsEnabled() then edit:SetFocus() end end)
     if opts.placeholder then
         local ph = newText(area, 12)
-        ph:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        ph:SetPoint("TOPLEFT", 6, -4)
+        local soft = paper and C.paperSoft or C.labelDim
+        ph:SetTextColor(soft.r, soft.g, soft.b)
+        ph:SetPoint("TOPLEFT", 8, -5)
         ph:SetText(opts.placeholder)
         local function sync() ph:SetShown((edit:GetText() or "") == "" and not edit:HasFocus()) end
         edit:HookScript("OnTextChanged", sync)
@@ -326,81 +489,146 @@ function Helpers:CreateTextArea(parent, width, height, opts)
     return area
 end
 
--- A table's header row: 22px, no fill, a 1px `line` rule along its bottom. Put the column labels on
--- it with CreateHeaderText and anchor it by its top corners; the first row sits right under it.
+-- A table's header row (the mockup's .t th): 22px, no fill, a 1px rule along its bottom, the metal on the
+-- wood and tan on the paper. Put the column labels on it with CreateHeaderText and anchor it by its top
+-- corners; the first row sits right under it.
 function Helpers:CreateTableHeader(parent, height)
     local f = CreateFrame("Frame", nil, parent)
     f:SetHeight(height or 22)
     local rule = self:CreateSeparator(f)
+    local c = Helpers:OnPaper(parent) and C.paperRule or C.lineHi
+    rule:SetVertexColor(c.r, c.g, c.b, 1)
     rule:SetPoint("BOTTOMLEFT", 0, 0)
     rule:SetPoint("BOTTOMRIGHT", 0, 0)
     f.rule = rule
     return f
 end
 
+-- A selected row's mark (the mockup's .t tr.sel): a gold wash that fades to the right. A texture on `row`,
+-- hidden; show it while the row is selected.
+function Helpers:CreateRowSelection(row)
+    local t = Style:Texture(row, "fade", "BACKGROUND", 2)
+    t:SetAllPoints()
+    t:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 0.2)
+    t:Hide()
+    return t
+end
+
 ----------------------------------------------------------------------
 -- Buttons
 ----------------------------------------------------------------------
 
+-- The variants' colours: the fill's art and colour, the line's colour and the ink, at rest. A secondary
+-- button is the dark one on the wood and the quiet (cream) one on a parchment card; a chip is a pill.
+local LOOKS
+local function looks()
+    LOOKS = LOOKS or {
+        primary   = { art = "button",      line = "button-line", fill = C.crimson,    edge = C.crimsonLine, ink = C.crimsonInk },
+        secondary = { art = "button",      line = "button-line", fill = C.darkButton, edge = C.lineHi,      ink = C.darkInk },
+        quiet     = { art = "button-soft", line = "button-line", fill = C.quiet,      edge = C.paperEdge,   ink = C.quietInk },
+        danger    = { art = "button",      line = "button-line", fill = C.darkButton, edge = C.danger,      ink = C.danger },
+        chip      = { art = "pill",        line = "pill-line",   fill = C.popup,      edge = C.lineHi,      ink = C.door },
+        paperChip = { art = "pill",        line = "pill-line",   fill = C.quiet,      edge = C.paperEdge,   ink = C.quietInk },
+        ghost     = { ink = C.textSoft },
+        paperGhost = { ink = C.paperLink },
+    }
+    return LOOKS
+end
+
+local function lookKey(btn)
+    local v = btn.variant
+    if btn.__onPaper then
+        if v == "secondary" then return "quiet" end
+        if v == "chip" then return "paperChip" end
+        if v == "ghost" then return "paperGhost" end
+    end
+    return v
+end
+
+-- The art a button wears (made the first time a variant needs it; one fill and one line shown).
+local function wear(btn, look)
+    btn.__arts = btn.__arts or {}
+    for name, art in pairs(btn.__arts) do art:SetShown(name == look.art or name == look.line) end
+    for _, name in ipairs({ look.art, look.line }) do
+        if name and not btn.__arts[name] then
+            local art = Style:Three(btn, name, "BACKGROUND", name:find("line") and 2 or 1)
+            btn.__arts[name] = art
+        end
+    end
+    return look.art and btn.__arts[look.art], look.line and btn.__arts[look.line]
+end
+
 -- Paint one button state: "rest", "hover", "pressed" or "disabled". Internal.
 -- Every colour lands in the same frame; there is no transition.
 function Helpers:_ButtonState(btn, state)
-    if btn.__forever then return Style:ButtonState(btn, state) end
     btn.__hovered = (state == "hover")
-    local variant = btn.variant
+    local key = lookKey(btn)
+    local look = looks()[key] or looks().secondary
+    local fillArt, lineArt = wear(btn, look)
     local base, text, border = btn.baseColor, btn.baseLabelColor, btn.baseBorder
     local r, g, b, a = base[1], base[2], base[3], base[4]
     local tr, tg, tb = text[1], text[2], text[3]
+    local paper = btn.__onPaper
+    local k = 1   -- the fill's light: up under the cursor, down while held
 
     if state == "disabled" then
-        tr, tg, tb = C.disabled.r, C.disabled.g, C.disabled.b
-        if variant == "primary" then a = DISABLED_GOLD end
+        local d = paper and C.paperSoft or C.disabled
+        tr, tg, tb = d.r, d.g, d.b
+        a = (a or 1) * 0.5
     elseif state == "hover" then
-        if variant == "primary" then
-            r, g, b = C.goldHover.r, C.goldHover.g, C.goldHover.b
-            border = C.goldHover
-        elseif variant == "danger" then
-            r, g, b, a = C.danger.r, C.danger.g, C.danger.b, DANGER_WASH
-        else
-            tr, tg, tb = C.text.r, C.text.g, C.text.b
-            if variant == "secondary" then border = C.label end
+        k = 1.14
+        if key == "ghost" or key == "paperGhost" then
+            local h = paper and C.paperInk or C.text
+            tr, tg, tb = h.r, h.g, h.b
+        elseif key == "secondary" or key == "chip" or key == "danger" then
+            border = (key == "danger") and C.danger or C.metal2
+            if key ~= "danger" then tr, tg, tb = C.text.r, C.text.g, C.text.b end
         end
     elseif state == "pressed" then
-        if variant == "primary" then
-            r, g, b = C.goldActive.r, C.goldActive.g, C.goldActive.b
-            border = C.goldActive
-        elseif variant ~= "ghost" then
-            r, g, b, a = C.popup.r, C.popup.g, C.popup.b, 1
+        k = 0.82
+    end
+
+    -- Selected (Helpers:SetSelected): the soft gold, the identity's selection, through hover and press (#371).
+    -- A chip fills with it (the mockup's chosen filter); any other button takes its line and ink. Disabled, it
+    -- keeps the mark: an event's kind the rank may no longer pick still shows as its kind.
+    if btn.__selected and key ~= "primary" then
+        local sel = paper and C.paperTitle or C.gold2
+        if key == "chip" or key == "paperChip" then
+            r, g, b, a = sel.r, sel.g, sel.b, (state == "disabled") and 0.5 or 1
+            border = sel
+            local on = paper and C.quiet or C.onGold
+            tr, tg, tb = on.r, on.g, on.b
+        else
+            border = sel
+            if state ~= "disabled" then tr, tg, tb = sel.r, sel.g, sel.b end
         end
     end
 
-    -- Selected (Helpers:SetSelected): gold border and gold label, through hover and press (#371).
-    -- Disabled, it keeps the border: an event's kind the rank may no longer pick still shows as its kind.
-    if btn.__selected and variant ~= "primary" then
-        border = C.gold
-        if state ~= "disabled" then tr, tg, tb = C.gold.r, C.gold.g, C.gold.b end
+    if fillArt then
+        fillArt:SetRGBA(math.min(1, r * k), math.min(1, g * k), math.min(1, b * k), a or 1)
     end
-
-    btn:SetBackdropColor(r, g, b, a)
-    if border then
-        btn:SetBackdropBorderColor(border.r, border.g, border.b, (variant == "primary" and a) or 1)
-    else
-        btn:SetBackdropBorderColor(0, 0, 0, 0)
+    if lineArt then
+        if border then
+            lineArt:SetRGBA(border.r, border.g, border.b, (state == "disabled") and 0.5 or 1)
+        else
+            lineArt:SetRGBA(0, 0, 0, 0)
+        end
     end
+    btn.__bg = { r, g, b, a or 1 }
     btn.label:SetTextColor(tr, tg, tb)
     if btn.underline then btn.underline:SetVertexColor(tr, tg, tb, 1) end
 end
 
--- Create a button. Secondary by default (1px `lineHi` border, paper text on no
--- fill); Helpers:SetButtonVariant switches it to primary, ghost or danger.
--- Toggle buttons keep calling btn:SetBaseColor so a resting colour survives
--- the hover; setting btn.baseLabelColor does the same for the label.
--- `name` and `template`, optional: a global name and a template added to BackdropTemplate (a secure
--- action button, issue #420; never SetScript("OnClick") on one, which would replace its secure handler).
+-- Create a button. Secondary by default: the dark button on the wood, the quiet cream one on a parchment
+-- card; Helpers:SetButtonVariant switches it to primary (crimson), ghost (an underlined link), danger or chip
+-- (a pill). Toggle buttons keep calling btn:SetBaseColor so a resting colour survives the hover; setting
+-- btn.baseLabelColor does the same for the label. btn:SetBackdropColor and SetBackdropBorderColor tint its
+-- rounded art. `name` and `template`, optional: a global name and a template added to BackdropTemplate (a
+-- secure action button, issue #420; never SetScript("OnClick") on one, which would replace its secure handler).
 function Helpers:CreateButton(parent, text, width, height, name, template)
     local btn = CreateFrame("Button", name, parent, template and ("BackdropTemplate," .. template) or "BackdropTemplate")
     btn:SetSize(width or 120, height or BUTTON_HEIGHT)
-    btn:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(btn) })
+    btn.__onPaper = Helpers:OnPaper(parent)
 
     local label = newText(btn, nil, "button")
     label:SetPoint("CENTER")
@@ -409,16 +637,20 @@ function Helpers:CreateButton(parent, text, width, height, name, template)
     fitToLabel(btn)
 
     btn.variant = "secondary"
-    btn.baseColor = { C.well.r, C.well.g, C.well.b, 0 }
-    btn.baseLabelColor = { C.text.r, C.text.g, C.text.b }
-    btn.baseBorder = C.lineHi
+    local look = looks()[lookKey(btn)]
+    btn.baseColor = { look.fill.r, look.fill.g, look.fill.b, 1 }
+    btn.baseLabelColor = { look.ink.r, look.ink.g, look.ink.b }
+    btn.baseBorder = look.edge
+
+    -- The backdrop's colour calls land on the art: the fill's and the line's, now.
+    local function fillOf() return btn.__arts and btn.__arts[(looks()[lookKey(btn)] or {}).art or ""] end
+    local function lineOf() return btn.__arts and btn.__arts[(looks()[lookKey(btn)] or {}).line or ""] end
+    Style:Hand(btn, { SetRGBA = function(_, ...) local f = fillOf(); if f then f:SetRGBA(...) end end },
+                    { SetRGBA = function(_, ...) local l = lineOf(); if l then l:SetRGBA(...) end end })
 
     function btn:SetBaseColor(r, g, b, a)
         self.baseColor = { r, g, b, a or 1 }
-        if self.__forever then return Style:ButtonTint(self, r, g, b, a) end   -- the game's art (#122)
-        if not self.__hovered then
-            self:SetBackdropColor(r, g, b, a or 1)
-        end
+        if not self.__hovered then Helpers:_ButtonState(self, self:IsEnabled() and "rest" or "disabled") end
     end
 
     local function idle(self) return self:IsEnabled() and "rest" or "disabled" end
@@ -435,13 +667,12 @@ function Helpers:CreateButton(parent, text, width, height, name, template)
     btn:HookScript("OnDisable", function(self) Helpers:_ButtonState(self, "disabled") end)
     btn:HookScript("OnEnable", function(self) Helpers:_ButtonState(self, "rest") end)
 
-    -- Flat in every style; only a primary button takes the game's art (SetButtonVariant, #148).
     self:_ButtonState(btn, "rest")
     return btn
 end
 
--- Mark a button as the chosen one of a set (a filter, a mode, a model): gold border and gold label,
--- the identity's only selection mark (#371). No ">" prefix, no tinted fill.
+-- Mark a button as the chosen one of a set (a filter, a mode, a model): a chip fills with the soft gold,
+-- any other button takes its line and ink (#371). No ">" prefix.
 function Helpers:SetSelected(btn, on)
     btn.__selected = on and true or nil
     if btn.label then
@@ -450,39 +681,38 @@ function Helpers:SetSelected(btn, on)
     return btn
 end
 
--- Switch a button to one of the variants: "primary" (flat gold fill; one per
--- screen), "secondary", "ghost" (mono label, underlined, no border) or
--- "danger". Returns the button.
+-- Switch a button to one of the variants: "primary" (the crimson button; one per screen), "secondary",
+-- "ghost" (an underlined link, no box), "danger" or "chip" (a pill: a filter). Returns the button.
 function Helpers:SetButtonVariant(btn, variant)
     variant = variant or "secondary"
     btn.variant = variant
     local label = btn.label
-    if variant == "primary" then
-        Style:SkinButton(btn)
-        btn.baseColor = { C.gold.r, C.gold.g, C.gold.b, 1 }
-        btn.baseLabelColor = { C.onGold.r, C.onGold.g, C.onGold.b }
-        btn.baseBorder = C.gold
-        GuildOS:ApplyFont(label, nil, "button")  -- IBM Plex Sans Medium
+    local look = looks()[lookKey(btn)] or looks().secondary
+    if variant == "ghost" then
+        GuildOS:ApplyFont(label, 11, "caption")
+    elseif variant == "chip" then
+        GuildOS:ApplyFont(label, 11, nil)
     else
-        Style:UnskinButton(btn)
-        if variant == "ghost" then
-            GuildOS:ApplyFont(label, 11, "caption")  -- IBM Plex Mono, a link
-        else
-            GuildOS:ApplyFont(label, nil, "button")
-        end
-        local ink = (variant == "ghost" and C.label) or (variant == "danger" and C.danger) or C.text
-        btn.baseLabelColor = { ink.r, ink.g, ink.b }
-        btn.baseColor = { C.well.r, C.well.g, C.well.b, 0 }
-        btn.baseBorder = (variant == "danger" and C.danger) or (variant ~= "ghost" and C.lineHi) or nil
-        if variant == "ghost" and not btn.underline then
-            local u = btn:CreateTexture(nil, "ARTWORK")
-            u:SetTexture(WHITE)
-            Helpers:Hairline(u)
-            u:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -3)
-            u:SetPoint("TOPRIGHT", label, "BOTTOMRIGHT", 0, -3)
-            btn.underline = u
-        end
-        if btn.underline then btn.underline:SetShown(variant == "ghost") end
+        GuildOS:ApplyFont(label, nil, "button")
+    end
+    btn.baseLabelColor = { look.ink.r, look.ink.g, look.ink.b }
+    if look.fill then
+        btn.baseColor = { look.fill.r, look.fill.g, look.fill.b, 1 }
+    else
+        btn.baseColor = { 0, 0, 0, 0 }
+    end
+    btn.baseBorder = look.edge
+    if variant == "ghost" and not btn.underline then
+        local u = btn:CreateTexture(nil, "ARTWORK")
+        u:SetTexture(WHITE)
+        Helpers:Hairline(u)
+        u:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -2)
+        u:SetPoint("TOPRIGHT", label, "BOTTOMRIGHT", 0, -2)
+        btn.underline = u
+    end
+    if btn.underline then btn.underline:SetShown(variant == "ghost") end
+    if not look.art and btn.__arts then
+        for _, art in pairs(btn.__arts) do art:SetShown(false) end
     end
     self:_ButtonState(btn, btn:IsEnabled() and "rest" or "disabled")
     return btn
@@ -615,9 +845,10 @@ function Helpers:CreateCheckbox(parent, labelText, size)
     mark:SetSize(CHECK_MARK, CHECK_MARK)
     mark:SetPoint("CENTER")
     mark:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
+    mark:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 1)
     mark:Hide()
     cb.checkMark = mark
-    local skinned = Style:SkinCheckbox(cb, border, fill, mark)
+    local skinned = false
 
     local function paint()
         local enabled = cb:IsEnabled()
@@ -696,7 +927,7 @@ local function dropdownArrow(btn)
     function btn:PaintArrow(col)
         for _, t in ipairs(rows) do t:SetVertexColor(col.r, col.g, col.b, 1) end
     end
-    btn:PaintArrow(C.label)
+    btn:PaintArrow(btn.__onPaper and C.paperSoft or C.textSoft)
 end
 
 local function closeDropdown()
@@ -749,6 +980,7 @@ local function dropdownRow(f, i)
     if row then return row end
     row = Helpers:CreateButton(f.child, "", 10, DROPDOWN_ROW_H)
     row.baseBorder = nil
+    row.baseColor = { 0, 0, 0, 0 }
     row.label:ClearAllPoints()
     row.label:SetPoint("LEFT", 8, 0)
     row.label:SetJustifyH("LEFT")
@@ -756,7 +988,7 @@ local function dropdownRow(f, i)
     mark:SetTexture(WHITE)
     mark:SetSize(2, DROPDOWN_ROW_H - 6)
     mark:SetPoint("LEFT", 2, 0)
-    mark:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
+    mark:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 1)
     row.mark = mark
     row:SetScript("OnClick", function(self)
         local owner = f.owner
@@ -837,7 +1069,7 @@ function Helpers:CreateDropdown(parent, width, height)
         local text, color = textOf(value)
         self.label:SetText(text or self.placeholder)
         -- A value with a colour of its own (an item quality) keeps it at rest.
-        local ink = color or (text and C.text) or C.label
+        local ink = color or (text and (self.__onPaper and C.paperInk or C.darkInk)) or (self.__onPaper and C.paperSoft or C.label)
         self.baseLabelColor = { ink.r, ink.g, ink.b }
         Helpers:_ButtonState(self, self:IsEnabled() and "rest" or "disabled")
     end
@@ -859,32 +1091,71 @@ function Helpers:CreateDropdown(parent, width, height)
     return dd
 end
 
--- Create a close button (×): `label` at rest, paper on a `popup` square when hovered.
+-- Create a close button (the mockup's .xbtn): a round crimson button with a gold ring and a light ×,
+-- brighter under the cursor. btn.x is the glyph.
+local CLOSE_RED = { r = 0.765, g = 0.153, b = 0.114 }
 function Helpers:CreateCloseButton(parent)
     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
     btn:SetSize(20, 20)
-    btn:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(btn) })
-    btn:SetBackdropColor(0, 0, 0, 0)
-    btn:SetBackdropBorderColor(0, 0, 0, 0)
+    local orb = Style:Texture(btn, "orb", "BACKGROUND", 1)
+    orb:SetAllPoints()
+    orb:SetVertexColor(CLOSE_RED.r, CLOSE_RED.g, CLOSE_RED.b, 1)
+    local ring = Style:Texture(btn, "ring", "BORDER", 0)
+    ring:SetAllPoints()
+    ring:SetVertexColor(C.crimsonLine.r, C.crimsonLine.g, C.crimsonLine.b, 1)
+    btn.orb, btn.ring = orb, ring
 
-    local x = newText(btn, 14)
+    local x = newText(btn, 12, "button")
     x:SetPoint("CENTER", 0, 0)
-    x:SetTextColor(C.label.r, C.label.g, C.label.b)
+    x:SetTextColor(1, 0.85, 0.69)
     x:SetText("\195\151")  -- multiplication sign (×) reads cleaner than letter X
     btn.x = x
 
     btn:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
-        self:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
-        self.x:SetTextColor(C.text.r, C.text.g, C.text.b)
+        self.orb:SetVertexColor(math.min(1, CLOSE_RED.r * 1.2), CLOSE_RED.g * 1.2, CLOSE_RED.b * 1.2, 1)
+        self.x:SetTextColor(1, 1, 1)
     end)
     btn:SetScript("OnLeave", function(self)
-        self:SetBackdropColor(0, 0, 0, 0)
-        self:SetBackdropBorderColor(0, 0, 0, 0)
-        self.x:SetTextColor(C.label.r, C.label.g, C.label.b)
+        self.orb:SetVertexColor(CLOSE_RED.r, CLOSE_RED.g, CLOSE_RED.b, 1)
+        self.x:SetTextColor(1, 0.85, 0.69)
     end)
+    return btn
+end
 
-    Style:SkinClose(btn, "close")
+-- A round tool (the mockup's .tool): a dark disc with the metal ring and an icon (Media/Salao's "icon-search"
+-- or "icon-gear") or a glyph in its middle; the ring and the icon take the soft gold under the cursor and
+-- while btn:SetPressed(true).
+function Helpers:CreateToolButton(parent, icon, size)
+    size = size or 28
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetSize(size, size)
+    local disc = Style:Texture(btn, "circle", "BACKGROUND", 1)
+    disc:SetAllPoints()
+    disc:SetVertexColor(C.popup.r, C.popup.g, C.popup.b, 1)
+    local ring = Style:Texture(btn, "ring", "BORDER", 0)
+    ring:SetAllPoints()
+    btn.disc, btn.ring = disc, ring
+    if icon and Style.ART[icon] then
+        local t = Style:Texture(btn, icon, "ARTWORK", 0)
+        t:SetSize(math.floor(size * 0.5), math.floor(size * 0.5))
+        t:SetPoint("CENTER", 0, 0)
+        btn.icon = t
+    else
+        local fs = newText(btn, 13, "button")
+        fs:SetPoint("CENTER", 0, 0)
+        fs:SetText(icon or "")
+        btn.icon, btn.glyph = fs, fs
+    end
+    local function paint(self)
+        local on = self.__pressed or self.__hovered
+        local ringC, ink = on and C.gold2 or C.lineHi, on and C.gold2 or C.door
+        self.ring:SetVertexColor(ringC.r, ringC.g, ringC.b, 1)
+        if self.glyph then self.glyph:SetTextColor(ink.r, ink.g, ink.b) else self.icon:SetVertexColor(ink.r, ink.g, ink.b, 1) end
+    end
+    function btn:SetPressed(on) self.__pressed = on and true or nil; paint(self) end
+    btn:SetScript("OnEnter", function(self) self.__hovered = true; paint(self) end)
+    btn:SetScript("OnLeave", function(self) self.__hovered = nil; paint(self) end)
+    paint(btn)
     return btn
 end
 
@@ -898,12 +1169,15 @@ end
 -- of the three title bars and forgotten at the other two, which is how
 -- every close button in the addon ended up dead, so it lives here now.
 --   kind == "close" -> CreateCloseButton(bar)
+--   kind == "tool"  -> CreateToolButton(bar, icon, size)
 --   kind == "text"  -> CreateButton(bar, text, width, height)
 ----------------------------------------------------------------------
 function Helpers:TitleBarButton(bar, kind, ...)
     local btn
     if kind == "close" then
         btn = self:CreateCloseButton(bar)
+    elseif kind == "tool" then
+        btn = self:CreateToolButton(bar, ...)
     else
         btn = self:CreateButton(bar, ...)
     end
@@ -945,14 +1219,13 @@ function Helpers:SkinScrollBar(scrollFrame, scrollName)
     local track = scrollBar:CreateTexture(nil, "BACKGROUND")
     track:SetAllPoints()
     track:SetTexture(WHITE)
-    track:SetVertexColor(C.well.r, C.well.g, C.well.b, 1)
+    track:SetVertexColor(C.well.r, C.well.g, C.well.b, 0.6)
 
     local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
     thumb:SetTexture(WHITE)
     thumb:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
     thumb:SetSize(SCROLL_WIDTH - 2, 40)
     scrollBar.customThumb = thumb
-    Style:SkinScrollBar(track, thumb)
 
     local function UpdateThumb()
         local min, max = scrollBar:GetMinMaxValues()
@@ -1030,22 +1303,34 @@ function Helpers:SetIconQuality(iconFrame, quality)
     iconFrame:SetBackdropBorderColor(color.r, color.g, color.b, 1)
 end
 
--- Create a badge: mono 10 in a 1px frame, never filled. A danger badge takes
--- a danger frame; any other colour is text on a `line` frame. Gold is not a
--- badge colour (the officer mark included), so gold reads as `label`, the default.
+-- Create a badge (the mockup's .badge): a small filled pill, bold white text on the colour's own deep
+-- shade (danger a deep red, ok a deep green, warn amber, info blue, epic violet, the ink an earned tier's gold
+-- brown, anything else the paper's brown). b:SetText(text, color) updates it.
+local function badgeFill(col)
+    if col == C.danger or col == C.red then return { r = 0.561, g = 0.106, b = 0.043 } end
+    if col == C.ok or col == C.green or col == C.online then return { r = 0.184, g = 0.431, b = 0.200 } end
+    if col == C.warn then return { r = 0.627, g = 0.337, b = 0.059 } end
+    if col == C.info or col == C.blue then return { r = 0.114, g = 0.310, b = 0.600 } end
+    if col == C.epic then return { r = 0.424, g = 0.184, b = 0.690 } end
+    -- The ink (an earned tier, the mockup's .tier): the gold's brown.
+    if col == C.text then return { r = 0.604, g = 0.416, b = 0.071 } end
+    if not col or col == C.gold or col == C.accent or col == C.label or col == C.textSoft then return C.paperSoft end
+    return { r = col.r * 0.55, g = col.g * 0.55, b = col.b * 0.55 }
+end
+
 function Helpers:CreateBadge(parent, text, color)
     local b = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(b) })
+    b:SetSize(20, 16)
+    local fill = Style:Three(b, "pill", "BACKGROUND", 1)
+    Style:Hand(b, fill, nil)
     local fs = newText(b, nil, "badge")
     fs:SetPoint("CENTER", 0, 0)
     b.label = fs
 
     local function paint(col)
-        if not col or col == C.gold or col == C.accent then col = C.label end
-        local edge = (col == C.danger or col == C.red) and col or C.line
-        b:SetBackdropColor(0, 0, 0, 0)
-        b:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1)
-        fs:SetTextColor(col.r, col.g, col.b)
+        local f = badgeFill(col)
+        fill:SetRGBA(f.r, f.g, f.b, 1)
+        fs:SetTextColor(1, 1, 1)
     end
 
     paint(color)
@@ -1101,28 +1386,45 @@ function Helpers:CreateProgressBar(parent, width, height, ramp)
     return frame
 end
 
--- Create a metric chip: a 1px gold rule across the top, a mono value under it
--- and a `label` caption under that. Never a box. chip:SetValue(text) updates the number.
+-- Create a metric chip (the mockup's .kpi): a small dark tile with the metal line, the number in Cinzel and
+-- the soft gold, its caption under it in the soft ink; on a parchment card, a darker paper with dark red.
+-- chip:SetValue(text) updates the number. chip.rule is kept (hidden) for the screens that read it.
+local KPI_PAD_X, KPI_PAD_Y = 10, 6
 function Helpers:CreateMetricChip(parent, value, caption, size)
     local chip = CreateFrame("Frame", nil, parent)
+    local paper = Helpers:OnPaper(parent)
+    local fill = Style:Nine(chip, "card", 6, "BACKGROUND", -6)
+    local line = Style:Nine(chip, "card-line", 6, "BACKGROUND", -5)
+    if paper then
+        fill:SetRGBA(0.937, 0.878, 0.741, 1)
+        line:SetColor(C.paperRule)
+    else
+        fill:SetRGBA(10 / 255, 5 / 255, 2 / 255, 0.5)
+        line:SetColor(C.lineHi)
+    end
+    chip.fill, chip.line = fill, line
     local rule = self:CreateAccentLine(chip, 1)
     rule:SetPoint("TOPLEFT")
     rule:SetPoint("TOPRIGHT")
+    rule:Hide()
 
     local px = size or GuildOS.Fonts.metricValue.size
     local v = newText(chip, px, "metricValue")
-    v:SetPoint("TOPLEFT", 0, -(1 + CHIP_PAD))
-    v:SetTextColor(C.text.r, C.text.g, C.text.b)
+    v:SetPoint("TOPLEFT", KPI_PAD_X, -KPI_PAD_Y)
+    local vc = paper and C.paperTitle or C.gold2
+    v:SetTextColor(vc.r, vc.g, vc.b)
     v:SetText(value or "")
 
     local l = newText(chip, nil, "caption")
     l:SetPoint("TOPLEFT", v, "BOTTOMLEFT", 0, -2)
-    l:SetTextColor(C.label.r, C.label.g, C.label.b)
+    local lc = paper and C.paperSoft or C.textSoft
+    l:SetTextColor(lc.r, lc.g, lc.b)
     l:SetText(caption or "")
 
     chip.value, chip.rule, chip.label = v, rule, l
     function chip:SetValue(t) self.value:SetText(t or "") end
-    chip:SetSize(math.max(CHIP_MIN, v:GetStringWidth() or 0, l:GetStringWidth() or 0), px + CHIP_PAD + 20)
+    chip:SetSize(math.max(CHIP_MIN, v:GetStringWidth() or 0, l:GetStringWidth() or 0) + 2 * KPI_PAD_X,
+        px + CHIP_PAD + 20)
     return chip
 end
 
@@ -1193,13 +1495,19 @@ function Helpers:CollapsibleSubBar(host, bar, frames, under)
     end
 end
 
+-- Create a tab (the mockup's .sub, an entry pill): the door's ink at rest, the metal's line under the cursor,
+-- and the open one a soft gold pill with dark bold text. `sub` is kept for the callers that pass it; every tab
+-- is a pill now. tab.underline is kept, hidden.
 function Helpers:CreateTab(parent, text, width, sub)
     local tab = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    tab:SetSize(width or 100, 28)
-    tab:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(tab) })
-    tab:SetBackdropBorderColor(0, 0, 0, 0)
+    tab:SetSize(width or 100, sub and 22 or 24)
+    local fill = Style:Three(tab, "pill", "BACKGROUND", 1)
+    local line = Style:Three(tab, "pill-line", "BACKGROUND", 2)
+    fill:SetColor(C.gold2)
+    line:SetColor(C.lineHi)
+    tab.fill, tab.line = fill, line
 
-    local label = newText(tab, 11, "caption")
+    local label = newText(tab, 12, nil)
     label:SetPoint("CENTER")
     label:SetText(text or "")
     tab.label = label
@@ -1207,22 +1515,23 @@ function Helpers:CreateTab(parent, text, width, sub)
 
     local underline = tab:CreateTexture(nil, "OVERLAY")
     underline:SetTexture(WHITE)
-    if sub then Helpers:Hairline(underline) else underline:SetHeight(2) end
+    Helpers:Hairline(underline)
     underline:SetPoint("BOTTOMLEFT", 2, 0)
     underline:SetPoint("BOTTOMRIGHT", -2, 0)
     underline:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
     underline:Hide()
     tab.underline = underline
-    Style:SkinTab(tab)
 
     local function paint(self, hovered)
-        -- The Forever tab art marks the open tab itself; the gold label and rule are the flat style's mark.
-        local flatActive = self.isActive and not self.__styleTab
-        local ink = (flatActive and C.gold) or ((self.isActive or hovered) and C.text) or C.label
-        self:SetBackdropColor(0, 0, 0, 0)
+        local active = self.isActive and true or false
+        fill:SetShown(active)
+        line:SetShown(hovered and not active or false)
+        if active ~= self.__bold then
+            self.__bold = active
+            GuildOS:ApplyFont(self.label, 12, active and "button" or nil)
+        end
+        local ink = (active and C.onGold) or (hovered and C.text) or C.door
         self.label:SetTextColor(ink.r, ink.g, ink.b)
-        self.underline:SetShown(flatActive and true or false)
-        if self.__styleTab then Style:TabState(self) end
     end
 
     function tab:SetActive(active)
@@ -1234,19 +1543,23 @@ function Helpers:CreateTab(parent, text, width, sub)
 
     tab:SetScript("OnEnter", function(self) paint(self, true) end)
     tab:SetScript("OnLeave", function(self) paint(self, false) end)
-    tab:SetScript("OnMouseDown", function(self) self:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1) end)
+    tab:SetScript("OnMouseDown", function() end)
     tab:SetScript("OnMouseUp", function(self) paint(self, self:IsMouseOver()) end)
 
     return tab
 end
 
--- Paint a sub-tab bar: sub-tabs sit on the `panel` surface.
+-- Paint a sub-tab bar: a screen's own row of pills, on a dark strip with a line under it.
 function Helpers:StyleSubTabBar(bar)
     local bg = bar:CreateTexture(nil, "BACKGROUND")
     bg:SetTexture(WHITE)
     bg:SetAllPoints()
-    bg:SetVertexColor(C.panel.r, C.panel.g, C.panel.b, 1)
+    bg:SetVertexColor(C.panel.r, C.panel.g, C.panel.b, 0.7)
     bar.bg = bg
+    local rule = self:CreateSeparator(bar)
+    rule:SetPoint("BOTTOMLEFT", 0, 0)
+    rule:SetPoint("BOTTOMRIGHT", 0, 0)
+    bar.rule = rule
     return bar
 end
 

@@ -65,6 +65,7 @@ read_globals = {
     "ChatFontNormal",
     "BackdropTemplateMixin",
     "STANDARD_TEXT_FONT",
+    "QuestTitleFont",
     "DEFAULT_CHAT_FRAME",
     "UIFrameFadeIn",
     "UIFrameFadeOut",

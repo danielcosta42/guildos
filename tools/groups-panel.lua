@@ -621,10 +621,10 @@ check(fc.T.icon.texture == "Interface\\LFGFrame\\UI-LFG-ICON-ROLES" and near(fc.
 check(fc.T.label.text == "" and fc.T.icon.shown, "and still stand in for the letter")
 settles(filePanel, "with the file")
 
--- The WoW: Forever style: the same screen on its palette
+-- The WoW: Forever client, with its atlases: the same screen, the same look (one look on every client, #449)
 C_Texture = { GetAtlasInfo = function() return { width = 32, height = 32 } end }
 GuildOSDB = { style = "forever" }
-check(GuildOS.Style:Resolve() == "forever", "the Forever style resolves where the client has its art")
+check(GuildOS.Style:Resolve() == "salao", "a saved style from before is ignored: the Salão's look on Forever too")
 dofile(ADDON .. "/UI/GroupsPanel.lua")
 filePanel:Hide()
 local foreverPanel = build()

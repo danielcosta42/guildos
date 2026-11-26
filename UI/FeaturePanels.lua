@@ -25,7 +25,7 @@ local WHITE8 = "Interface\\Buttons\\WHITE8x8"
 -- UI.SCROLL_GUTTER: a stubbed UI in the tools answers a function for it.
 local GAP = type(UI.GAP) == "number" and UI.GAP or 8
 
--- A numeric cell: IBM Plex Mono through the tableNum role (#363).
+-- A numeric cell: drawn through the tableNum role (#363).
 local function Num(fs)
     GuildOS:ApplyFont(fs, nil, "tableNum")
     return fs
@@ -540,7 +540,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         gRow:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, C.headerBg.a)
 
         -- Expand arrow
-        -- ASCII marks: IBM Plex Mono has no ▶ or ▼ glyph.
+        -- ASCII marks: the addon's fonts have no ▶ or ▼ glyph.
         UI:CreateText(gRow, isGroupExp and "-" or "+", 9, C.label.r, C.label.g, C.label.b)
             :SetPoint("LEFT", 4, 0)
 

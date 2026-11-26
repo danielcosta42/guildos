@@ -1,29 +1,17 @@
 ----------------------------------------------------------------------
--- Guild OS - /gos style preview (issue #122; spec §4.6)
--- Every piece of the Forever style's art side by side, each labelled with its role and atlas name,
--- and the ones this client lacks marked: the pieces are chosen from a beta screenshot of it.
+-- Guild OS - /gos style preview (issue #122; the Salão's phase 3, #449)
+-- Every texture of the look (Media/Salao, Core/Style.lua's ART) side by side, each with its name, on the
+-- wood: a texture the client failed to load shows as an empty square here, before it shows on a screen.
 ----------------------------------------------------------------------
 local Style = GuildOS.Style
 local L = GuildOS.L
 
--- The title bar, panels and wells paint without art since #148; they have no row here.
-local ROLES = { "window", "popup", "input",
-                "button", "tab", "checkbox", "close", "minimise", "scroll" }
-
-local function has(atlas)
-    local get = C_Texture and C_Texture.GetAtlasInfo
-    if not get then return false end
-    local ok, info = pcall(get, atlas)
-    return ok and info ~= nil
-end
-
 function Style:PreviewRows()
+    local names = {}
+    for name in pairs(self.ART) do names[#names + 1] = name end
+    table.sort(names)
     local rows = {}
-    for _, role in ipairs(ROLES) do
-        for _, atlas in ipairs(Style.AtlasNames(self.FOREVER[role])) do
-            rows[#rows + 1] = { role = role, atlas = atlas, has = has(atlas) }
-        end
-    end
+    for _, name in ipairs(names) do rows[#rows + 1] = { role = name, file = self.ART[name], has = true } end
     return rows
 end
 
@@ -57,9 +45,8 @@ function Style:ShowPreview()
             local tex = child:CreateTexture(nil, "ARTWORK")
             tex:SetPoint("TOPLEFT", x, -y)
             tex:SetSize(96, 60)
-            if r.has then tex:SetAtlas(r.atlas) else tex:SetColorTexture(0.4, 0, 0, 0.6) end
-            local label = UI:CreateText(child, r.role .. "\n" .. r.atlas
-                .. (r.has and "" or ("\n|cffFF4444" .. L["missing"] .. "|r")), 9, C.text.r, C.text.g, C.text.b)
+            tex:SetTexture(r.file)
+            local label = UI:CreateText(child, r.role .. "\n" .. r.file:match("[^\\]+$"), 9, C.text.r, C.text.g, C.text.b)
             label:SetPoint("TOPLEFT", x + 104, -y)
             label:SetWidth(230)
             label:SetJustifyH("LEFT")
