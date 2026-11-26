@@ -78,6 +78,12 @@ local function BuildChat(panel)
     -- The shared /g: the allied guilds' /g in our guild chat (issue #344), each player's switch.
     local gchatBtn = UI:CreateButton(panel, L["Allied /g"], 120, 20)
     gchatBtn:SetPoint("RIGHT", clearBtn, "LEFT", -6, 0)
+    if UI.AddTooltip then
+        UI:AddTooltip(gchatBtn, L["Allied /g"], {
+            L["Shows the allied guilds' /g in your guild chat, each line tagged with its guild."],
+            L["Only on this account. Your own /g still reaches the allied guilds."],
+        })
+    end
 
     local holder = CreateFrame("Frame", nil, panel)
     holder:SetPoint("TOPLEFT", 0, -(20 + UI.GAP))
@@ -154,7 +160,8 @@ local function BuildChat(panel)
             if col then nameFS:SetTextColor(col[1], col[2], col[3]) end
         end)
         hit:SetScript("OnClick", function(self)
-            if self.name and ChatFrame_SendTell then ChatFrame_SendTell(self.name) end
+            -- WoW: Forever's "First Surname" is whispered as "First-Surname" (WhisperTarget).
+            if self.name and ChatFrame_SendTell then ChatFrame_SendTell(GuildOS:WhisperTarget(self.name)) end
         end)
 
         local hide = CreateFrame("Button", nil, card)
@@ -234,9 +241,12 @@ local function BuildChat(panel)
         local prefs = chat:Prefs()
         sysBtn.label:SetText(prefs.system and L["Events: on"] or L["Events: off"])
         gchatBtn.label:SetText(prefs.guildBridge and L["Allied /g: shown"] or L["Allied /g: hidden"])
-        status:SetText(chat:IsConnected()
-            and string.format(L["%s connected"], chat:ChannelName() or "?")
-            or (chat:Prefs().chat and L["connecting..."] or L["not connected"]))
+        -- Where the room stands (#449): a refusal by the server is said with its fix, never as "connecting".
+        local state, err = chat:State()
+        status:SetText(state == "joined" and L["Connected to the alliance room."]
+            or state == "failed" and ("|cff" .. hex(C.warn) .. GuildOS.AllianceLink.JoinErrorText(err) .. "|r")
+            or state == "joining" and L["connecting..."]
+            or L["not connected"])
 
         local rawLog = chat:Log()
         local hidden = chat:HiddenSet()
@@ -384,10 +394,15 @@ local function BuildHall(panel)
     onlineHint:SetText(L["Best effort: only who spoke on the alliance channel or runs GuildOS is seen."])
     local roomHdr = UI:CreateSectionTitle(roomCard, L["Alliance room"], true)
     roomHdr:SetPoint("TOPLEFT", HALL_PAD, -HALL_TOP)
+    -- What the room is, under its title (#449): not /g, and readable by every allied member.
+    local roomHint = wrapText(roomCard, 11, C.textSoft)
+    roomHint:SetText(L["A chat for every guild of the alliance, apart from /g. Every member of every allied guild can read it."])
+    roomHint:SetPoint("TOPLEFT", HALL_PAD, -(HALL_TOP + 20))
+    roomHint:SetPoint("RIGHT", roomCard, "RIGHT", -HALL_PAD, 0)
 
-    -- The room fills its card under the title.
+    -- The room fills its card under the title and its hint.
     local room = CreateFrame("Frame", nil, roomCard)
-    room:SetPoint("TOPLEFT", HALL_PAD, -(HALL_TOP + 24))
+    room:SetPoint("TOPLEFT", HALL_PAD, -(HALL_TOP + 44))
     room:SetPoint("BOTTOMRIGHT", -HALL_PAD, HALL_PAD - 4)
     local refreshRoom = BuildChat(room)
 
@@ -421,7 +436,13 @@ local function BuildHall(panel)
         setShown(empty, not inPact)
         if not inPact then
             title:SetText(L["Alliance"])
-            local lines = { L["This guild is not in an alliance yet."], ALLY() and ALLY().MOVED or "" }
+            -- With the site's block read and naming none, guildos.me says so; with no block at all (a member without the
+            -- companion), the code may still be on its way from an officer who runs it (#449).
+            local link = GuildOS.AllianceLink
+            local siteSays = link and link:SiteCode()
+            local lines = { L["This guild is not in an alliance yet."],
+                siteSays == nil and L["If the guild is in an alliance on guildos.me, the code arrives when an officer who runs the companion is online."]
+                    or (ALLY() and ALLY().MOVED or "") }
             empty:SetText(table.concat(lines, "\n"))
             local y = place(title, HALL_TOP)
             y = place(empty, y + 2, lw - 2 * HALL_PAD)
@@ -680,7 +701,14 @@ local function BuildSetup(panel)
         elseif cfg then
             status:SetText(L["The code does not name this guild."])
         else
-            status:SetText(L["No alliance set up for this guild."])
+            status:SetText(L["No alliance set up for this guild."]
+                .. (link:SiteCode() == nil and ("\n" .. L["If the guild is in an alliance on guildos.me, the code arrives when an officer who runs the companion is online."]) or ""))
+        end
+        -- The server refused the channel (#449): said here too, with its fix, since the code is set here.
+        local chatState, chatErr
+        if GuildOS.AllianceChat then chatState, chatErr = GuildOS.AllianceChat:State() end
+        if chatState == "failed" and chatErr then
+            status:SetText((status:GetText() or "") .. "\n|cff" .. hex(P.red) .. link.JoinErrorText(chatErr) .. "|r")
         end
         local officer = GuildOS:IsOfficer()
         state.officer, state.site = officer and true or false, site and true or false

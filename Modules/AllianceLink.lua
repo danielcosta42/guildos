@@ -48,9 +48,12 @@
 --     same timestamp, same name link and class colour, the speaker's guild as
 --     a tag in front.
 --
--- On the channel a line is "<kind><code> <text>": kind G for /g, A for the
--- alliance room (Modules/AllianceChat.lua), code the speaker's guild
--- (Code). The speaker is the channel's sender, which nobody can forge.
+-- On the channel a line is "<kind><code> <guild># <text>" (protocol 2, #449): kind g for /g, a for the
+-- alliance room (Modules/AllianceChat.lua), code the speaker's guild's three characters (Code), then the
+-- speaker's guild by name, so every client names it even with no directory, no mesh and no list. The name
+-- counts only when its code is the line's. Protocol 1, "<kind><code> <text>" with kind G or A, is still read
+-- (its guild named by the list, the directory, the guilds heard or the mesh). The speaker is the channel's
+-- sender, which nobody can forge.
 --
 -- WHERE THE CODE COMES FROM, strongest first (alianca.md §3.2, §3.3):
 --   1. guildos.me's, in the companion's GOSGILD1 (`alliance.code`, SiteCode). It
@@ -105,6 +108,32 @@ Link.stats = { sent = 0, heard = 0, shown = 0, dropped = 0 }
 local function shortName(name)
     local s = tostring(name or "")
     return (Ambiguate and Ambiguate(s, "short")) or s
+end
+
+-- A channel sender as this client names them (#449): on WoW: Forever the roster's "First Surname" (the channel says
+-- "First-Surname": SenderName), elsewhere the name without this client's own realm and with anybody else's, so a
+-- cross-realm speaker reads "Bob-Other" and a whisper to them reaches them.
+local function bare(s) return (tostring(s or ""):gsub("[%s%-']", ""):lower()) end
+function Link.Speaker(author)
+    if type(author) ~= "string" then return "" end
+    local c = GuildOS.Client
+    if c and c.has and c.has.surnames then
+        -- "First-Sur-Name": the first hyphen is the surname's space, the rest of it is the surname's own hyphen
+        -- unless it is this client's realm (#449). A name with a space is the roster's already.
+        local first, rest = author:match("^([^%s%-]+)%-(.+)$")
+        if not first then return GuildOS:SenderName(author) or author end
+        local sur, tail = rest:match("^(.-)%-([^%-]+)$")
+        if sur and sur ~= "" and (bare(tail) == bare(GetRealmName and GetRealmName())
+                                  or bare(tail) == bare(GetNormalizedRealmName and GetNormalizedRealmName())) then
+            rest = sur
+        end
+        return first .. " " .. rest
+    end
+    local name, realm = author:match("^([^-]+)%-(.+)$")
+    if not name then return author end
+    local mine = (GetNormalizedRealmName and GetNormalizedRealmName()) or GetRealmName and GetRealmName()
+    if bare(realm) == bare(mine) or bare(realm) == bare(GetRealmName and GetRealmName()) then return name end
+    return author
 end
 
 local function trim(s)
@@ -233,37 +262,78 @@ function Link.Proof(key, name)
     return string.format("%08x", GuildOS.Alliance.Hash(tostring(key) .. "\0" .. shortName(name):lower()))
 end
 
--- A line on the channel: kind, guild code, text.
-function Link.Encode(kind, code, text)
-    return GuildOS:CutBytes(kind .. code .. " " .. tostring(text or ""), Link.MAX_LINE)
+-- The protocol of the lines this client says (#449). 2 carries the speaker's guild by name.
+Link.PROTO = 2
+Link.NAME_MAX = 48   -- bytes of a guild's name on the wire (the game's 24 letters, in UTF-8)
+
+-- Pure. Whether `guild` can ride a protocol 2 line: one line of text, no "#", 1 to NAME_MAX bytes.
+function Link.WireName(guild)
+    if type(guild) ~= "string" or guild == "" or #guild > Link.NAME_MAX or guild:find("[#|%c]") then return nil end
+    if guild:match("^%s") or guild:match("%s$") then return nil end
+    return guild
 end
 
--- Pure. The channel lines for one line of text: the frame costs 5 bytes, so a
--- line of /g near the game's 255 used to lose its end (issue #431). The rest
--- goes in a second line, cut on a UTF-8 boundary, inside the same key press.
+-- The frame in front of a line's text: "g" .. code .. " " .. guild .. "# " (protocol 2), or protocol 1's
+-- "G" .. code .. " " when there is no guild name to carry.
+local function frame(kind, code, guild)
+    local name = Link.WireName(guild)
+    if name then return kind:lower() .. code .. " " .. name .. "# " end
+    return kind:upper() .. code .. " "
+end
+
+-- A line on the channel: kind, guild code, text, and the speaker's guild when given (protocol 2).
+function Link.Encode(kind, code, text, guild)
+    return GuildOS:CutBytes(frame(kind, code, guild) .. tostring(text or ""), Link.MAX_LINE)
+end
+
+-- Pure. Where a cut at byte `at` of `s` falls inside an item, spell or other link (|c..|H..|h[..]|h|r): the byte
+-- before that link starts, so a link is never split between two lines (a broken link is refused by the server and
+-- the line lost). `at` itself when it is not inside one.
+function Link.LinkSafeCut(s, at)
+    local pos = 1
+    while true do
+        local a, b = s:find("|c%x%x%x%x%x%x%x%x|H.-|h.-|h|r", pos)
+        if not a or a > at then return at end
+        if at < b then return a - 1 end
+        pos = b + 1
+    end
+end
+
+-- Pure. The channel lines for one line of text: the frame costs up to 5 + the guild's name, so a line of /g
+-- near the game's 255 used to lose its end (issue #431). The rest goes in a second line, cut on a UTF-8
+-- boundary and never inside a link, inside the same key press.
 Link.MAX_PARTS = 3
-function Link.Split(kind, code, text)
+function Link.Split(kind, code, text, guild)
     local out, rest = {}, tostring(text or "")
-    local room = Link.MAX_LINE - #kind - #code - 1
+    local room = Link.MAX_LINE - #frame(kind, code, guild)
     while rest:match("%S") and #out < Link.MAX_PARTS do
         local piece = GuildOS:CutBytes(rest, room)
         if #rest > #piece then
             -- Prefer the last space, so a word is not split in two.
             local at = piece:match("^.*()%s")
             if at and at > room / 2 then piece = piece:sub(1, at - 1) end
+            local safe = Link.LinkSafeCut(rest, #piece)
+            if safe > 0 then piece = rest:sub(1, safe) end
         end
-        out[#out + 1] = Link.Encode(kind, code, piece)
+        out[#out + 1] = Link.Encode(kind, code, piece, guild)
         rest = rest:sub(#piece + 1):gsub("^%s+", "")
     end
     return out
 end
 
+-- Pure. A channel line: kind ("G" or "A"), code, text, the guild it names (protocol 2) and the protocol; nil
+-- when it is not one of ours.
 function Link.Decode(msg)
     if type(msg) ~= "string" then
         return nil
     end
-    local kind, code, text = msg:match("^([GA])(%w%w%w) (.+)$")
-    return kind, code, text
+    local kind, code, guild, text = msg:match("^([ga])(%w%w%w) ([^#]+)# (.+)$")
+    if kind and Link.WireName(guild) then
+        return kind:upper(), code, text, guild, 2
+    end
+    kind, code, text = msg:match("^([GA])(%w%w%w) (.+)$")
+    if kind then return kind, code, text, nil, 1 end
+    return nil
 end
 
 ----------------------------------------------------------------------
@@ -329,7 +399,7 @@ function Link:SyncSite()
         -- Seen to end by this client's own block: the only end it ever tells the guild (PublishSite), and the only
         -- one that also keeps the same code in the guild's own copy (the GM's note) from coming back.
         GuildOS.db.allianceLinkSiteGone, GuildOS.db.allianceLinkSiteGoneV = held.line, held.version
-        GuildOS.db.allianceLinkSiteGoneOwn = true
+        GuildOS.db.allianceLinkSiteGoneOwn, GuildOS.db.allianceLinkSiteGoneAt = true, GetServerTime()
     end
     self:_Changed()
     self:PublishSite()
@@ -339,12 +409,15 @@ end
 -- The record of the site code that ended, cleared by a new one and by an officer's own paste.
 function Link.ForgetGone()
     local db = GuildOS.db
-    if db then db.allianceLinkSiteGone, db.allianceLinkSiteGoneV, db.allianceLinkSiteGoneOwn = nil, nil, nil end
+    if db then
+        db.allianceLinkSiteGone, db.allianceLinkSiteGoneV, db.allianceLinkSiteGoneOwn, db.allianceLinkSiteGoneAt = nil, nil, nil, nil
+    end
 end
 
 -- An officer whose own client reads the site's block tells the guild what it says: the code, or the end of the one
 -- this client's own block saw end (never a code somebody asked about: audit #448 review). Nobody else ever sends it
 -- (the sync takes "site" from officers only).
+Link.GONE_TELL = 30 * 86400
 function Link:PublishSite()
     if not (GuildOS.SyncService and GuildOS:IsOfficer()) then return false end
     local site = self:SiteCode()
@@ -356,6 +429,8 @@ function Link:PublishSite()
     end
     local db = GuildOS.db
     if type(db.allianceLinkSiteGone) ~= "string" or not db.allianceLinkSiteGoneOwn then return false end
+    -- An end is told for GONE_TELL seconds: long enough for every member's client to log in once.
+    if GetServerTime() - (tonumber(db.allianceLinkSiteGoneAt) or 0) > Link.GONE_TELL then return false end
     GuildOS.SyncService:Publish("allylink", "site", { gone = db.allianceLinkSiteGone, version = db.allianceLinkSiteGoneV },
         { priority = "ALERT" })
     return true
@@ -464,8 +539,8 @@ function Link:Heard(guild)
     if not cfg or not cfg.open or type(guild) ~= "string" or guild == "" or guild == mine then
         return false
     end
-    guild = GuildOS:SanitizeUserText(guild, GuildOS.Alliance.GUILD_NAME_MAX or 24)
-    if guild == "" then
+    -- Whole or not at all: a name cut short would hash to another code and never name its lines again.
+    if GuildOS:SanitizeUserText(guild, Link.NAME_MAX) ~= guild then
         return false
     end
     local learned = self:Learned(cfg.tag)
@@ -621,6 +696,7 @@ function Link:EnsureJoined()
         GuildOS.Compat.JoinPrivateChannel(name, self:Config().key)
     end
     local ok = self:ChannelIndex() ~= nil
+    self:_JoinTried(name, ok)
     if ok then
         GuildOS.Compat.RemoveChannelFromFrames(name)
         local j = self:_Joined()
@@ -629,6 +705,75 @@ function Link:EnsureJoined()
         end
     end
     return ok
+end
+
+-- Why the channel could not be joined, for the screens and /gos ally status (#449): { name, reason, t } or nil.
+-- `reason` is the server's notice (WRONG_PASSWORD, INVALID_NAME, BANNED, ...) or NO_ANSWER when JOIN_TRIES joins in
+-- a row went unanswered. Cleared the moment the channel is joined, or when the code in force names another one.
+Link.JOIN_TRIES = 3
+Link.JOIN_GAP = 15   -- seconds between two counted tries
+function Link:JoinError()
+    local e = self._joinError
+    if e and e.name ~= self:ChannelName() then
+        self._joinError, self._tries = nil, 0
+        return nil
+    end
+    return e
+end
+
+function Link:_JoinTried(name, ok)
+    if ok then
+        if self._joinError then
+            self._joinError = nil
+            if GuildOS.AllianceChat then GuildOS.AllianceChat:_Notify() end
+        end
+        self._tries, self._triedAt = 0, nil
+        return
+    end
+    -- Tries are counted JOIN_GAP apart: the watchdog, the channel list's events and a login all call this, and a
+    -- burst of them before the server answers is one try, not three.
+    if self._triesFor ~= name then self._tries, self._triedAt, self._triesFor = 0, nil, name end
+    local now = (GetTime and GetTime()) or 0
+    if self._triedAt and now - self._triedAt < Link.JOIN_GAP then return end
+    self._triedAt = now
+    self._tries = (self._tries or 0) + 1
+    if self._tries >= Link.JOIN_TRIES and not (self._joinError and self._joinError.name == name) then
+        self._joinError = { name = name, reason = "NO_ANSWER", t = GetServerTime() }
+        if GuildOS.AllianceChat then GuildOS.AllianceChat:_Notify() end
+    end
+end
+
+-- The server's notices about channels (CHAT_MSG_CHANNEL_NOTICE): ours are hidden from the chat frames (_Filter),
+-- so a refusal is kept here, where the screens say it with its fix. `channel` is the event's base name, or its
+-- "5. Name" string when the client gives no base name.
+Link.NOTICE_OK = { YOU_JOINED = true, YOU_CHANGED = true, YOU_LEFT = true, SUSPENDED = true, THROTTLED = true }
+function Link:_OnNotice(notice, channel)
+    local name = self:ChannelName()
+    if not name or type(notice) ~= "string" or type(channel) ~= "string" then return end
+    local base = channel:match("^%d+%.%s*(.+)$") or channel
+    if base:lower() ~= name:lower() then return end
+    if Link.NOTICE_OK[notice] then
+        if notice ~= "YOU_LEFT" and self._joinError then
+            self._joinError = nil
+            if GuildOS.AllianceChat then GuildOS.AllianceChat:_Notify() end
+        end
+        return
+    end
+    self._joinError = { name = name, reason = notice, t = GetServerTime() }
+    if GuildOS.AllianceChat then GuildOS.AllianceChat:_Notify() end
+end
+
+-- What a join error means to the player, and what fixes it: one localized line.
+function Link.JoinErrorText(e)
+    if not e then return nil end
+    if e.reason == "WRONG_PASSWORD" then
+        return L["The alliance channel refused the key: the guilds do not hold the same code. Every guild needs the same one, from guildos.me or pasted by an officer."]
+    elseif e.reason == "INVALID_NAME" then
+        return L["The server refused the alliance channel's name. Use a shorter tag, letters and digits only, and save the code again."]
+    elseif e.reason == "BANNED" then
+        return L["This character was banned from the alliance channel."]
+    end
+    return L["The alliance channel did not answer. Try /reload; if it stays, send /gos ally status to the maintainer."]
 end
 
 ----------------------------------------------------------------------
@@ -642,10 +787,13 @@ function Link:Say(kind, text)
         return false
     end
     local ok = false
-    for _, part in ipairs(Link.Split(kind, Link.Code(mine), text)) do
+    for _, part in ipairs(Link.Split(kind, Link.Code(mine), text, mine)) do
         if GuildOS.Compat.SendChannelMessage(part, index) then
             ok = true
             self.stats.sent = self.stats.sent + 1
+        else
+            -- A chat lockdown (combat on WoW: Forever) or a client that refused it: the game's own /g still went.
+            self.stats.unsent = (self.stats.unsent or 0) + 1
         end
     end
     return ok
@@ -669,50 +817,71 @@ end
 -- realm, the index is by short name) and a stale one used to drop real lines in
 -- silence (issue #431). Our own guild's code counts only in the room: its /g we
 -- already hear from the game itself.
-function Link:GuildOfLine(code, author, kind)
+function Link:GuildOfLine(code, author, kind, said)
     local pact = self:Pact()
     if not pact then
         return nil
     end
-    local guild = self:GuildOfCode(code)
-    -- The alliance's directory from guildos.me names the guilds and their members (GOSALLY1): a guild whose code
+    local A = GuildOS.Alliance
+    local mine = A:MyGuildName()
+    local guild
+    -- 1. The listed code names its guilds itself.
+    local cfg = self:Config()
+    if cfg and cfg.codes[code] then guild = cfg.codes[code] end
+    -- 2. The line names its own guild (protocol 2, #449), believed when the name is the code's.
+    said = Link.WireName(said)
+    if not guild and said and Link.Code(said) == code then
+        guild = (mine and GuildOS.SameGuildName(said, mine)) and mine or said
+    end
+    -- 3. Ours, then the guilds heard before.
+    if not guild then guild = self:GuildOfCode(code) end
+    -- 4. The alliance's directory from guildos.me names the guilds and their members (GOSALLY1): a guild whose code
     -- the line carries, or the speaker's own guild there, before the generic "Allied guild" (#449).
     if not guild then
-        local A = GuildOS.Alliance
-        local dir = A and A.Directory and A:Directory() or {}
+        local dir = A.Directory and A:Directory() or {}
         for _, g in ipairs(dir) do
             if type(g) == "table" and type(g.guild) == "string" and Link.Code(g.guild) == code then
                 guild = g.guild
                 break
             end
         end
-        if not guild and A and A._DirectoryRow then
-            local _, dg = A:_DirectoryRow(shortName(author))
+        if not guild and A._DirectoryRow then
+            local _, dg = A:_DirectoryRow(Link.Speaker(author))
             if type(dg) == "string" and Link.Code(dg) == code then guild = dg end
         end
     end
     if not guild and pact.open then
         -- A guild we have not met: the speaker's own presence names it.
         local mesh = GuildOS.Mesh
-        local said = mesh and mesh.GetPeerGuild and mesh:GetPeerGuild(shortName(author))
-        if said and Link.Code(said) == code then
-            guild = said
+        local fromMesh = mesh and mesh.GetPeerGuild and mesh:GetPeerGuild(shortName(author))
+        if fromMesh and Link.Code(fromMesh) == code then
+            guild = fromMesh
         else
             guild = L["Allied guild"]   -- shown all the same, never dropped
         end
     end
-    if not guild or pact.blocked[guild] then
+    if not guild or A:IsBlocked(guild) then
         return nil
     end
-    if guild == GuildOS.Alliance:MyGuildName() and kind ~= "A" then
+    if guild == mine and kind ~= "A" then
         return nil
     end
     if guild ~= L["Allied guild"] then
         self:Heard(guild)   -- the line came through the key: it holds it
-        GuildOS.Alliance:Heard(author, guild)   -- and its speaker is on now
+        A:Heard(Link.Speaker(author), guild)   -- and its speaker is on now
     end
     return guild
 end
+
+-- Whether a channel sender is this character: by the name this client gives them (Speaker), so WoW: Forever's
+-- "First-Surname" is the player's "First Surname", and a namesake on another realm is not the player.
+function Link.IsMe(author)
+    local player = GuildOS.Compat.PlayerName() or ""
+    return Link.Speaker(author):lower() == player:lower()
+end
+
+-- The last line heard from each guild this session, for /gos ally status: { [guild] = { t, who, kind, proto } }.
+Link.last = {}
 
 function Link:_OnChannel(msg, author, lang, _, target, flags, _, _, chanBaseName,
                          _, lineID, guid)
@@ -723,25 +892,27 @@ function Link:_OnChannel(msg, author, lang, _, target, flags, _, _, chanBaseName
     if GuildOS.Compat.IsSecret(msg, author) or not msg or not author then
         return
     end
-    if shortName(author):lower() == (GuildOS.Compat.PlayerName() or ""):lower() then
+    if Link.IsMe(author) then
         return
     end
     self.stats.heard = self.stats.heard + 1
-    local kind, code, text = Link.Decode(msg)
-    local guild = kind and self:GuildOfLine(code, author, kind)
+    local kind, code, text, said, proto = Link.Decode(msg)
+    local guild = kind and self:GuildOfLine(code, author, kind, said)
     if not guild then
         self.stats.dropped = self.stats.dropped + 1
         return
     end
+    local who = Link.Speaker(author)
+    Link.last[guild] = { t = GetServerTime(), who = who, kind = kind, proto = proto }
     if GuildOS.Compat.IsIgnored(author) then
         return
     end
     local chat = GuildOS.AllianceChat
-    if chat and chat:HiddenSet()[chat.HiddenKey(shortName(author), text)] then
+    if chat and chat:HiddenSet()[chat.HiddenKey(who, text)] then
         return
     end
     if kind == "A" then
-        if chat then chat:PushLine(shortName(author), guild, text) end
+        if chat then chat:PushLine(who, guild, text) end
         return
     end
     if chat and not chat:Prefs().guildBridge then
@@ -764,14 +935,30 @@ function Link:_OnChannel(msg, author, lang, _, target, flags, _, _, chanBaseName
             local _, c = GetPlayerInfoByGUID(guid)
             if not GuildOS.Compat.IsSecret(c) then class = c end
         end
-        GuildOS.GuildChat:AddAllied(guild, { n = author, m = text, c = class })
+        GuildOS.GuildChat:AddAllied(guild, { n = who, m = text, c = class })
     end
+end
+
+-- Somebody joined or left the hidden channel (CHAT_MSG_CHANNEL_JOIN / _LEAVE): only who holds the key is there, so
+-- a member of an allied guild the directory names is on now before they say a word, and one who left is not (#449).
+function Link:_OnPresence(event, author, chanBaseName)
+    if not self:_Filter(chanBaseName) or type(author) ~= "string" or author == "" or Link.IsMe(author) then return end
+    local A = GuildOS.Alliance
+    local who = Link.Speaker(author)
+    if event == "CHAT_MSG_CHANNEL_LEAVE" then
+        A:Gone(who)
+    else
+        local _, guild = A:_DirectoryRow(who)
+        if type(guild) ~= "string" or A:IsBlocked(guild) then return end
+        A:Heard(who, guild)
+    end
+    if GuildOS.AllianceChat then GuildOS.AllianceChat:_Notify() end
 end
 
 -- Where a frame has no handler to replay through: the line as /g reads.
 function Link.FormatPlain(guild, author, text)
     local tag = "|cff" .. GuildOS.Alliance.GuildColorHex(guild) .. "[" .. guild .. "]|r"
-    local who = tag .. " |Hplayer:" .. author .. "|h[" .. shortName(author) .. "]|h"
+    local who = tag .. " |Hplayer:" .. author .. "|h[" .. Link.Speaker(author) .. "]|h"
     local head = (type(CHAT_GUILD_GET) == "string" and CHAT_GUILD_GET:find("%s", 1, true))
         and CHAT_GUILD_GET:format(who) or ("[" .. L["Guild"] .. "] " .. who .. ": ")
     return head .. text
@@ -1027,6 +1214,12 @@ function Link:Ask()
         local site = GuildOS.db.allianceLinkSite
         GuildOS.SyncService:Publish("allylink", "ask", { rev = tonumber(self:Store().rev) or 0,
                                                          site = type(site) == "table" and site.line or "" })
+        -- An officer logging in tells the guild what its own block says, once a session (#449): a member who
+        -- logged in while no officer was on, and asked nobody, gets the code, or its end, now.
+        if not self._toldSite and GuildOS:IsOfficer() then
+            self._toldSite = true
+            self:PublishSite()
+        end
     end
 end
 
@@ -1038,6 +1231,58 @@ function Link:Suggest()
         return held and held.line or nil   -- the site's key is never offered to copy
     end
     return cfg and cfg.line or nil
+end
+
+-- Where the code in force came from: "site" (this client's own block), "relay" (an officer's, for a member without
+-- the companion), "note" (the guild master's public note), "pasted" (an officer), or nil with none.
+function Link:Source()
+    local cfg = self:Config()
+    if not cfg then return nil end
+    if cfg.site then
+        local held = GuildOS.db and GuildOS.db.allianceLinkSite
+        return (held and held.relayed) and "relay" or "site"
+    end
+    local held = self:Store()
+    return held.by == Link.NOTE_BY and "note" or "pasted"
+end
+
+-- /gos ally status (#449): what to send the maintainer when the alliance fails. English, as the debug lines are.
+-- Never the key: the channel's name, whether it is joined, the code's source and key version, the protocol, the
+-- counts, the guilds heard and the last line of each.
+function Link:StatusReport(at)
+    at = at or GetServerTime()
+    local out = {}
+    local cfg = self:Config()
+    local db = GuildOS.db or {}
+    if not cfg then
+        local gone = db.allianceLinkSiteGone and (" · site code ended at v" .. tostring(db.allianceLinkSiteGoneV or "?")) or ""
+        out[1] = "alliance: none" .. gone .. " · companion block: " .. tostring(self:SiteCode() == nil and "none"
+            or (self:SiteCode() and "names one" or "names none"))
+        return out
+    end
+    local index = self:ChannelIndex()
+    local err = self:JoinError()
+    out[#out + 1] = string.format("alliance: %s [%s] · source: %s · key version: %s · protocol %d",
+        tostring(cfg.name or cfg.tag), cfg.tag, tostring(self:Source()), tostring(cfg.version or "-"), Link.PROTO)
+    out[#out + 1] = string.format("channel: %s · joined: %s%s", tostring(self:ChannelName() or "-"),
+        index and ("yes (#" .. index .. ")") or "no", err and (" · refused: " .. err.reason) or "")
+    local chat = GuildOS.AllianceChat
+    local prefs = chat and chat:Prefs() or {}
+    local st = self.stats
+    out[#out + 1] = string.format("shared /g: %s · room: %s · sent %d · unsent %d · heard %d · shown %d · dropped %d",
+        prefs.guildBridge and "shown" or "hidden", prefs.chat and "on" or "off",
+        st.sent, st.unsent or 0, st.heard, st.shown, st.dropped)
+    local names, seen = {}, {}
+    for name in pairs(self:Learned(cfg.tag)) do names[#names + 1] = name; seen[name] = true end
+    for name in pairs(Link.last) do if not seen[name] then names[#names + 1] = name end end
+    table.sort(names)
+    if #names == 0 then out[#out + 1] = "guilds heard: none yet" end
+    for _, name in ipairs(names) do
+        local last = Link.last[name]
+        out[#out + 1] = "  " .. name .. ": " .. (last and string.format("last %s %ds ago from %s (protocol %d)",
+            last.kind == "A" and "room line" or "/g line", at - last.t, last.who, last.proto or 1) or "not heard this session")
+    end
+    return out
 end
 
 function Link:StatusLine()
@@ -1076,6 +1321,9 @@ function Link:Initialize()
     end
     local f = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL_NOTICE")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL_JOIN")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL_LEAVE")
     GuildOS.Compat.RegisterEvent(f, "PLAYER_ENTERING_WORLD")
     GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
     GuildOS.Compat.RegisterEvent(f, "PLAYER_GUILD_UPDATE")
@@ -1085,6 +1333,14 @@ function Link:Initialize()
             if not Link:_Filter((select(9, ...))) then return end
             local args = { ... }
             GuildOS:SafeCall(function() Link:_OnChannel(unpack(args, 1, 12)) end)
+        elseif event == "CHAT_MSG_CHANNEL_JOIN" or event == "CHAT_MSG_CHANNEL_LEAVE" then
+            local _, author, _, _, _, _, _, _, base = ...
+            if GuildOS.Compat.IsSecret(author, base) or not Link:_Filter(base) then return end
+            GuildOS:SafeCall(function() Link:_OnPresence(event, author, base) end)
+        elseif event == "CHAT_MSG_CHANNEL_NOTICE" then
+            local notice, _, _, channelString, _, _, _, _, base = ...
+            if GuildOS.Compat.IsSecret(notice, channelString, base) then return end
+            GuildOS:SafeCall(function() Link:_OnNotice(notice, (base ~= nil and base ~= "") and base or channelString) end)
         elseif event == "GUILD_ROSTER_UPDATE" or event == "PLAYER_GUILD_UPDATE" then
             -- The guild master's row is a pass over the roster: at most one per ROSTER_GAP (audit D2).
             GuildOS:Coalesce("allylink.roster", Link.ROSTER_GAP, rosterRead)

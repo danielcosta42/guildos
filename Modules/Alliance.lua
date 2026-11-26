@@ -19,7 +19,9 @@ GuildOS.Alliance = Alliance
 local L = GuildOS.L
 
 Alliance.TAG_MAX        = 12
-Alliance.GUILD_NAME_MAX = 24
+-- Bytes of a guild's name: the game's 24 letters, in UTF-8 (a Cyrillic or accented name cut at 24 bytes was another
+-- guild to every comparison, #449).
+Alliance.GUILD_NAME_MAX = 48
 -- Seconds a speaker heard on the alliance channel counts as online now.
 Alliance.ONLINE_FOR     = 15 * 60
 -- What `/gos ally create|invite|leave` (and the pact's other verbs) answer now.
@@ -137,7 +139,13 @@ end
 -- on this account. Nothing is sent: the other guild is never told. Kept in the guild's db, through any key change.
 function Alliance:IsBlocked(guildName)
     local pact = self:Get()
-    return (pact and pact.blocked and type(guildName) == "string" and pact.blocked[guildName]) == true
+    if not (pact and pact.blocked and type(guildName) == "string") then return false end
+    if pact.blocked[guildName] == true then return true end
+    -- Capitals aside, as the site compares guilds: an officer types the name as they read it (#449).
+    for name, on in pairs(pact.blocked) do
+        if on == true and GuildOS.SameGuildName(name, guildName) then return true end
+    end
+    return false
 end
 
 function Alliance:Blocked()
@@ -336,10 +344,17 @@ end
 ----------------------------------------------------------------------
 Alliance._heard = {}
 
+-- `author` as AllianceLink names a speaker (Link.Speaker): WoW: Forever's "First Surname", a cross-realm "Bob-Other".
 function Alliance:Heard(author, guild)
     local short = shortName(author)
     if short == "" or type(guild) ~= "string" or guild == "" then return end
-    self._heard[short:lower()] = { name = short, guild = guild, t = now() }
+    self._heard[short:lower()] = { name = tostring(author), guild = guild, t = now() }
+end
+
+-- Somebody who left the alliance channel (logged off): not on now any more.
+function Alliance:Gone(author)
+    local short = shortName(author)
+    if short ~= "" then self._heard[short:lower()] = nil end
 end
 
 -- { { name, guild } } of the allied guilds' players seen now, by guild then name. Never ours.
@@ -540,6 +555,13 @@ function Alliance:HandleCommand(args)
         end
         GuildOS:Print((chat:Prefs().guildBridge and L["Allied /g: shown"] or L["Allied /g: hidden"])
             .. " · " .. link:StatusLine())
+        return
+    end
+    if verb == "status" then
+        -- What to send the maintainer when the alliance fails (#449): never the key.
+        local link = GuildOS.AllianceLink
+        if not link then return end
+        for _, line in ipairs(link:StatusReport()) do GuildOS:Print(line) end
         return
     end
     if verb == "block" or verb == "unblock" then

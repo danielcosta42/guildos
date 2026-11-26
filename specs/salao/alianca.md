@@ -71,6 +71,14 @@ Nobody pastes anything.
    code, pasted or the site's. The clients of a guild that was removed keep the old key and are left alone
    in the old channel; the addon leaves it on every client that has the new key, or no alliance any more.
 
+   **The line on the channel (protocol 2, #449).** Each line carries the speaker's guild by name:
+   `g<code> <guild># <text>` for the shared /g, `a<code> <guild># <text>` for the room, `<code>` the three
+   characters of the guild name's hash. The name counts only when it hashes to the code, so a client names every
+   guild even with a pasted code, no directory and no mesh: never "Allied guild" when the line says who. Protocol 1
+   (`G<code> <text>`, `A<code> <text>`) is still read, its guild named by the directory, the guilds heard or the
+   mesh. A client from before protocol 2 does not read protocol 2 lines: the guilds update together, as for the
+   channel's name. A long line goes in up to three parts, never cut inside a link or a letter.
+
    Precedence in the addon: the site's code, then the guild's own (pasted by an officer, or read from the
    guild master's note). When `GOSGILD1` names no alliance any more, the site's code ends and its channel is
    left; the same code left in the note does not bring it back, another code an officer pasted does.
@@ -80,7 +88,13 @@ Nobody pastes anything.
    receipt), the highest key version winning. The end goes the same way, naming the code and its key version,
    and only from an officer whose own block saw that code end. It ends only a site code a member holds, never
    a pasted one or the note's. An officer also answers a member's
-   login ask when their copies differ. It never goes in the guild master's note.
+   login ask when their copies differ, and tells the guild what its own block says once at its own login, so a
+   member who logged in while no officer was on gets it then (an end is told for 30 days). It never goes in the
+   guild master's note.
+
+   A channel the server refuses (its notice: wrong password, a name it refuses, a ban) or that never answers after
+   three tries is said on both screens with its fix, and `/gos ally status` prints the channel's name, whether it is
+   joined, the code's source and key version, the protocol, the counts and the last line heard from each guild.
 2. **The directory**, in a new block `GOSALLY1`: the allied guilds, their members (name, class, level, role,
    main) and their crafters (recipe ids per member). It comes from the rosters and professions the site
    already holds.

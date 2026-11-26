@@ -64,6 +64,19 @@ function AllianceChat:IsConnected()
     return (GetChannelName(name) or 0) > 0
 end
 
+-- Where the room stands, for the screens (#449): "none" (no alliance), "off" (the player turned the room off),
+-- "joined", "failed" (the server refused the channel, or never answered: the second value is AllianceLink's
+-- { name, reason }), or "joining".
+function AllianceChat:State()
+    local link = GuildOS.AllianceLink
+    if not (link and link:Active()) then return "none" end
+    if not self:Prefs().chat then return "off" end
+    if self:IsConnected() then return "joined" end
+    local err = link:JoinError()
+    if err then return "failed", err end
+    return "joining"
+end
+
 function AllianceChat:Prefs()
     GuildOS.db.alliancePrefs = GuildOS.db.alliancePrefs or {}
     for k, v in pairs(self.DEFAULTS) do
@@ -253,7 +266,7 @@ function AllianceChat:HideMessage(name, text)
     if not ally or not ally:CanAdminister() then
         return false, L["Only officers can do that."]
     end
-    local clean = GuildOS:SanitizeUserText(text, 240)
+    local clean = GuildOS:SanitizeChatLine(text, 255)
     if clean == "" or not name then
         return false
     end
@@ -285,7 +298,7 @@ function AllianceChat:OnHideSync(env)
             return
         end
     end
-    store[#store + 1] = { n = d.n, m = GuildOS:SanitizeUserText(d.m, 240), ts = GetServerTime() }
+    store[#store + 1] = { n = d.n, m = GuildOS:SanitizeChatLine(d.m, 255), ts = GetServerTime() }
     while #store > self.MAX_HIDDEN do
         table.remove(store, 1)
     end
@@ -345,7 +358,8 @@ end
 -- EditBox Enter, which ARE hardware events, so the CHANNEL restriction noted
 -- in Modules/RecruitmentSystem.lua does not apply here.
 function AllianceChat:Send(text)
-    local clean = GuildOS:SanitizeUserText(text, 240)
+    -- An item link goes through whole, as /g takes it (#449).
+    local clean = GuildOS:SanitizeChatLine(text, 240)
     if clean == "" then
         return false
     end
@@ -362,7 +376,7 @@ end
 
 -- A line of the room, already decoded (Modules/AllianceLink.lua, issue #348).
 function AllianceChat:PushLine(name, guild, text)
-    self:Push({ t = GetServerTime(), n = name, g = guild, m = GuildOS:SanitizeUserText(text, 240) })
+    self:Push({ t = GetServerTime(), n = name, g = guild, m = GuildOS:SanitizeChatLine(text, 255) })
 end
 
 ----------------------------------------------------------------------

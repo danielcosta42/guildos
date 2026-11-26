@@ -310,7 +310,7 @@ sent = {}
 box.attrs.chatType, box.text = "GUILD", "alguem pra kara?"
 box:ParseText(1)
 check(#sent == 1 and sent[1].chatType == "CHANNEL" and sent[1].target == 5, "a line of /g goes on the channel")
-check(sent[1].msg == "G" .. Link.Code("Guilda A") .. " alguem pra kara?", "framed with our guild's code")
+check(sent[1].msg == "g" .. Link.Code("Guilda A") .. " Guilda A# alguem pra kara?", "framed with our guild's code and name (protocol 2)")
 sent = {}
 box:ParseText(true)
 check(#sent == 1, "a client that sends with true sends too (issue #431)")
@@ -329,7 +329,7 @@ for _, m in ipairs(sent) do if m.chatType == "CHANNEL" then toChannel = toChanne
 check(toChannel == 1, "the Guild tab's Send goes on the channel too")
 sent = {}
 Chat:Send("oi alianca")
-check(#sent == 1 and sent[1].msg == "A" .. Link.Code("Guilda A") .. " oi alianca", "the room goes framed as A")
+check(#sent == 1 and sent[1].msg == "a" .. Link.Code("Guilda A") .. " Guilda A# oi alianca", "the room goes framed as A, with our name")
 local log = Chat:Log()
 check(log[#log].m == "oi alianca" and log[#log].g == "Guilda A", "and shows in our feed at once")
 

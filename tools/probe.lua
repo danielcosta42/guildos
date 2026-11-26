@@ -78,7 +78,7 @@ for _, name in ipairs(Probe.APIS) do
   check(not seen[name], "the inventory lists " .. name .. " once")
   seen[name] = true
 end
-check(#Probe.EVENTS == 68, "the probe checks the 68 events the addon registers")   -- +1: a click outside the minimap menu (#449); +1: a master-looted item leaving the corpse (#448 L2); +4: the game's calendar (#263); +2: the bank cleanup's vendor (#380); +1: the game's "too fast" (#422, #393)
+check(#Probe.EVENTS == 71, "the probe checks the 71 events the addon registers")   -- +3: the alliance channel's join, leave and notices (#449); +1: a click outside the minimap menu (#449); +1: a master-looted item leaving the corpse (#448 L2); +4: the game's calendar (#263); +2: the bank cleanup's vendor (#380); +1: the game's "too fast" (#422, #393)
 
 -- Drift: the events the addon's own files register are exactly Probe.EVENTS.
 -- Static reading: an event name held in a variable is out of its reach.
@@ -137,6 +137,9 @@ for i, name in ipairs(Probe.APIS) do
 end
 for i, t in ipairs(Probe.TEMPLATES) do KNOWN_TEMPLATES[t[1]] = (i % 2 == 1) end
 for i, e in ipairs(Probe.EVENTS) do KNOWN_EVENTS[e] = (i % 2 == 1) end
+-- The combat log on a client that hides it is recorded restricted, never registered (#449): this stub is not
+-- Anniversary, so it reads as missing whatever the stub would answer.
+KNOWN_EVENTS.COMBAT_LOG_EVENT_UNFILTERED = false
 
 -- The stubs the checks below read. Every call that matters lands in one ordered log.
 local NOTES = { "a public note", "an officer note" }

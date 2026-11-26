@@ -112,7 +112,7 @@ dofile(ADDON .. "/Modules/AllianceChat.lua")
 local A, Chat = GuildOS.Alliance, GuildOS.AllianceChat
 Chat:Prefs()
 
-local pact
+local pact, siteSays, joinErr = nil, false, nil
 GuildOS.AllianceLink = {
   Pact = function() return pact end,
   Active = function() return pact ~= nil end,
@@ -123,6 +123,10 @@ GuildOS.AllianceLink = {
   end,
   Suggest = function() return pact and "GOS=NUCLEO:Kx7Pq2Lm9Z" end,
   Parse = function() return { tag = "NUCLEO" } end,
+  -- What the companion's block says (nil: none to read), and why the channel was refused (#449).
+  SiteCode = function() return siteSays end,
+  JoinError = function() return joinErr end,
+  JoinErrorText = function(e) return "Refused: " .. e.reason .. ". The fix." end,
 }
 local siteAlliance, bans = false, nil
 GuildOS.BanList = {
@@ -159,12 +163,22 @@ local t = texts(hall)
 check(t:find("This guild is not in an alliance yet.", 1, true) and t:find("Alliances now live on guildos.me.", 1, true),
   "no alliance: the Salão says so, and where alliances live now")
 check(not t:find("Alliance room", 1, true), "and shows no room")
+-- No block to read (a member without the companion): the code may be on its way (#449).
+siteSays = nil
+parent.SelectSub("hall")
+t = texts(hall)
+check(t:find("the code arrives when an officer who runs the companion is online", 1, true),
+  "no companion block: the Salão says where the code comes from")
+parent.SelectSub("setup")
+check(texts(setup):find("No alliance set up for this guild.\nIf the guild is in an alliance on guildos.me", 1, true),
+  "and the Officers' Room too")
+siteSays = false
 
 -- ── 2. Salão › Alliance ────────────────────────────────────────────────
 pact = { source = "link", tag = "NUCLEO", name = "NUCLEO", open = true,
          guilds = { ["Guilda A"] = {}, ["Guilda B"] = {}, ["Guilda C"] = {} } }
-A:Heard("Bob-Realm", "Guilda B")
-A:Heard("Gui-Realm", "Guilda A")   -- ours: never counted as an ally on now
+A:Heard("Bob", "Guilda B")   -- as AllianceLink names a speaker (Link.Speaker: no own realm)
+A:Heard("Gui", "Guilda A")   -- ours: never counted as an ally on now
 parent.SelectSub("hall")
 t = texts(hall)
 check(t:find("NUCLEO", 1, true), "the alliance's name")
@@ -176,6 +190,17 @@ check(t:find("Online now", 1, true) and t:find("Bob |cff", 1, true) and not t:fi
 check(t:find("Best effort: only who spoke on the alliance channel or runs GuildOS is seen.", 1, true),
   "saying it is a best effort")
 check(t:find("Alliance room", 1, true), "the alliance room")
+check(t:find("apart from /g. Every member of every allied guild can read it.", 1, true), "what the room is, under its title")
+check(t:find("connecting...", 1, true), "joining: the room says connecting")
+joinErr = { name = "GOSANUCLEO", reason = "WRONG_PASSWORD" }
+parent.SelectSub("hall")
+check(texts(hall):find("Refused: WRONG_PASSWORD. The fix.", 1, true) and not texts(hall):find("connecting...", 1, true),
+  "a channel the server refused: said with its fix (#449)")
+parent.SelectSub("setup")
+check(texts(setup):find("Refused: WRONG_PASSWORD. The fix.", 1, true), "in the Officers' Room too")
+joinErr = nil
+parent.SelectSub("hall")
+t = texts(hall)
 check(t:find("Allied /g: shown", 1, true), "and the shared /g's switch, on by default")
 check(not t:find("Open raids", 1, true), "no open raids until the site sends some")
 local gchat
