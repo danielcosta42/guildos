@@ -118,6 +118,8 @@ Probe.APIS = {
     -- player's facing and the minimap's scale, the world map's zoom.
     "C_Map.GetWorldPosFromMapPos", "C_Map.GetMapPosFromWorldPos", "C_Map.GetMapRectOnMap", "CreateVector2D",
     "GetPlayerFacing", "IsIndoors", "Minimap.GetZoom", "WorldMapFrame.ScrollContainer", "WorldMapFrame.GetCanvasZoomPercent",
+    -- Whether OpenMap is loaded (#449: its guild dots beside Guild OS's).
+    "C_AddOns.IsAddOnLoaded", "IsAddOnLoaded",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.

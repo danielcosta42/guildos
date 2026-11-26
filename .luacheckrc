@@ -77,6 +77,7 @@ read_globals = {
     "C_GuildInfo",
     "C_AddOnProfiler",  -- the game's addon CPU meter, read by Compat.AddOnCPU (#324)
     "C_Map",
+    "C_AddOns",           -- whether another addon is loaded (Compat.IsAddOnLoaded, #449 OpenMap)
     "C_QuestLog",
     "C_Item",        -- Compat wrappers, preferred over the old globals (issue #10)
     "C_Spell",

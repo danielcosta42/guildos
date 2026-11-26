@@ -182,6 +182,16 @@ function Compat.RegisterAddonPrefix(prefix)
     if RegisterAddonMessagePrefix then return RegisterAddonMessagePrefix(prefix) end
 end
 
+-- Whether another addon is loaded, by its folder name (C_AddOns on retail, WoW: Forever and the 2.5.5 client;
+-- the old global elsewhere). False when the client cannot say.
+function Compat.IsAddOnLoaded(name)
+    local fn = (C_AddOns and C_AddOns.IsAddOnLoaded) or _G.IsAddOnLoaded
+    if type(name) ~= "string" or type(fn) ~= "function" then return false end
+    local ok, loaded = pcall(fn, name)
+    if not ok or Compat.IsSecret(loaded) then return false end
+    return loaded and true or false
+end
+
 -- Request a guild roster update
 function Compat.GuildRoster()
     if C_GuildInfo and C_GuildInfo.GuildRoster then

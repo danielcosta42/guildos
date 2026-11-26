@@ -188,6 +188,7 @@ end
 local function reset()
   sent = {}
   GM.watchers, GM.peers, GM.group, GM.watch, GM.sent = {}, {}, {}, {}, nil
+  GM.openMapSeen = {}
   GM._pinged, GM._pingAt, GM._pingPending, GM._answerPending = nil, nil, nil, nil
   timers = {}
 end
@@ -464,7 +465,131 @@ check(near(px, 0) and near(py, 35), "a rotating minimap, facing west: a guildmat
 px, py = GM:_MinimapOffset(0, -50, 100, 70, math.pi / 2)
 check(near(px, 35) and near(py, 0), "and one to the north is on the right")
 
--- ── 12. The budget: 100 online, 3 watchers ──────────────────────────────
+-- ── 12. OpenMap's lines, read only (specs/salao/mapa.md "OpenMap") ───────
+reset()
+check(GM:DecodeOpenMap("L0").retract, "OpenMap's L0 is a retraction")
+local om = GM:DecodeOpenMap("L1\t1955\t0.2500\t0.7500\tPRIEST\t70")
+check(om and om.mapID == 1955 and near(om.x, 0.25) and near(om.y, 0.75), "OpenMap's L1: its map, x and y")
+for _, bad in ipairs({ "L1\t1955\t1.5\t0.5\tMAGE\t70", "L1\t1955\t-0.1\t0.5", "L1\t0\t0.5\t0.5", "L1\t1955\tnan\t0.5",
+    "L1\t1955\t0\t0", "L1\t1955\t0.5", "L1\t99999999\t0.5\t0.5", "H1\tv0.8.13\tForever", "V1\tx\ty",
+    "L1\t1955\t1.2.3\t0.5", ("L1\t1955\t0.5\t0.5\t" .. string.rep("A", 120)), 42 }) do
+  check(GM:DecodeOpenMap(bad) == nil, "a bad OpenMap line is dropped: " .. tostring(bad))
+end
+GM:HandleOpenMap("Ann", "L1\t1955\t0.2500\t0.7500\tMAGE\t1", "WHISPER")
+check(next(GM.peers) == nil, "OpenMap's line only over GUILD")
+GM:HandleOpenMap("Stranger", "L1\t1955\t0.25\t0.75", "GUILD")
+check(next(GM.peers) == nil, "only from a guildmate on the roster")
+GM:HandleOpenMap("Me", "L1\t1955\t0.25\t0.75", "GUILD")
+check(next(GM.peers) == nil, "never this client's own")
+GM:HandleOpenMap("Ann", "L1\t4242\t0.25\t0.75", "GUILD")
+check(next(GM.peers) == nil, "nor on a map this client does not know")
+GM:HandleOpenMap("Ann", "L1\t1955\t0.2500\t0.7500\tMAGE\t1", "GUILD")
+p = GM:GetPeers()[1]
+check(p and p.via == "openmap" and p.class == "PRIEST" and p.level == 70 and near(p.x, 0.25),
+  "a guildmate with OpenMap shows, class and level from the roster (not the line's)")
+check(count("MP") + count("MW") == 0, "reading OpenMap sends nothing")
+clock = clock + 1
+GM:HandleOpenMap("Ann", "L1\t1955\t0.9\t0.9", "GUILD")
+check(near(GM.peers["Ann-Realm"].x, 0.25), "OpenMap lines faster than OPENMAP_GAP are dropped")
+clock = clock + GM.STALE_FADE + 5
+check(GM:GetPeers()[1].alpha == 1, "an OpenMap pin does not fade at Guild OS's pace (it sends a still place once a minute)")
+clock = clock + (GM.OPENMAP_GONE - GM.STALE_FADE)
+check(#GM:GetPeers() == 0, "and goes after OPENMAP_GONE")
+GM:HandleOpenMap("Ann", "L1\t1955\t0.25\t0.75", "GUILD")
+GM:HandleOpenMap("Ann", "L0", "GUILD")
+check(next(GM.peers) == nil, "OpenMap's L0 removes its pin")
+GM:HandlePosition("Bob", "1952,5000,5000,,0", "GUILD")
+clock = clock + 3
+GM:HandleOpenMap("Bob", "L1\t1952\t0.1\t0.1", "GUILD")
+check(GM.peers["Bob-Realm"].via == nil and near(GM.peers["Bob-Realm"].x, 0.5, 1e-3), "a guildmate with both: Guild OS's own line wins")
+GM:HandleOpenMap("Bob", "L0", "GUILD")
+check(GM.peers["Bob-Realm"] ~= nil, "and OpenMap's L0 leaves Guild OS's pin alone")
+clock = clock + GM.STALE_GONE + 1
+GM:HandleOpenMap("Bob", "L1\t1952\t0.1\t0.1", "GUILD")
+check(GM.peers["Bob-Realm"].via == "openmap", "once Guild OS's line is gone, OpenMap's shows")
+clock = clock + 3
+GM:HandlePosition("Bob", "1952,5000,5000,,0", "GUILD")
+check(GM.peers["Bob-Realm"].via == nil, "and Guild OS's next line takes over again")
+GM:HandleOpenMap("Cat", "L1\t1955\t0.3\t0.3", "GUILD")
+local here, all = GM:_Crowd(1955, clock)
+check(here == 0 and all == 1, "OpenMap's pins do not slow Guild OS's own pace (the crowd is Guild OS's senders)")
+
+-- The roster's guildmates in the shown zone with no place known (OpenMap's zone badge, as the list's line).
+reset()
+local rosterOnly = GM:RosterOnlyHere(1955, {})
+check(#rosterOnly == 3 and rosterOnly[1] == "Ann" and rosterOnly[2] == "Cat" and rosterOnly[3] == "Watcher",
+  "online in Shattrath by the roster, sorted, never me")
+check(#GM:RosterOnlyHere(1955, { ["Ann-Realm"] = true }) == 2, "minus those drawn")
+check(#GM:RosterOnlyHere(9999, {}) == 3, "a micro map inside the zone counts as the zone")
+check(#GM:RosterOnlyHere(1945, {}) == 0, "a continent has no roster line (the roster names zones)")
+
+-- Coordination: while OpenMap's map draws guildmates, Guild OS draws no pin or dot for those it draws (its own
+-- OpenMap-heard guildmates within OPENMAP_GONE; the group while its party dots are on) and lists everybody.
+local loaded = {}
+C_AddOns = { IsAddOnLoaded = function(n) return loaded[n] or false, loaded[n] or false end }
+local function drawn()
+  local out = {}
+  GM:ForEachLive(clock, function(q) out[#out + 1] = q.key end)
+  table.sort(out)
+  return table.concat(out, ",")
+end
+local function listed()
+  local out = {}
+  for _, q in ipairs(GM:GetPeers()) do out[#out + 1] = q.key .. (q.onOpenMap and "*" or "") end
+  return table.concat(out, ",")
+end
+local function recheck() GM:RefreshOpenMap(clock) end
+GuildOSDB = { openMapNotice = { ["Me-Realm"] = "never" } }
+GM:Initialize()
+check(GuildOSDB.openMapNotice == nil and GM.CheckOpenMap == nil and GM.OpenMapListLine == nil,
+  "the OpenMap notice is gone (and the test builds' answer with it)")
+reset()
+GM:HandlePosition("Bob", "1952,5000,5000,,0", "GUILD")          -- Guild OS only
+GM:HandleOpenMap("Cat", "L1\t1955\t0.3\t0.3", "GUILD")          -- OpenMap only
+GM:HandlePosition("Dee", "1952,2000,2000,,0", "GUILD")           -- both
+GM:HandleOpenMap("Dee", "L1\t1952\t0.2\t0.2", "GUILD")
+check(GM.peers["Dee-Realm"].via == nil and GM.openMapSeen["Dee-Realm"] == clock,
+  "a guildmate with both: Guild OS's line kept, OpenMap's remembered")
+groupN = 2; GM._groupAt = nil                                    -- Ann, in my party
+recheck()
+check(GM:OpenMapState() == nil and drawn() == "Ann-Realm,Bob-Realm,Cat-Realm,Dee-Realm",
+  "no OpenMap: Guild OS draws everybody")
+loaded.OpenMap = true
+OpenMapDB = { worldmap = { enabled = true, guild = false, group = true } }
+recheck()
+check(drawn() == "Ann-Realm,Bob-Realm,Cat-Realm,Dee-Realm", "OpenMap with its guild members off: Guild OS draws everybody")
+OpenMapDB.worldmap.guild = true
+check(drawn() == "Ann-Realm,Bob-Realm,Cat-Realm,Dee-Realm", "OpenMap's settings are not read per frame")
+clock = clock + GM.OPENMAP_RECHECK
+check(drawn() == "Bob-Realm", "read again within OPENMAP_RECHECK: only who shares through Guild OS alone is drawn")
+check(listed() == "Ann-Realm*,Bob-Realm,Cat-Realm*,Dee-Realm*", "and the list still names everybody, marked")
+OpenMapDB.worldmap.group = false
+recheck()
+check(drawn() == "Ann-Realm,Bob-Realm", "OpenMap's party dots off: the group is Guild OS's to draw")
+OpenMapDB.worldmap.group = true
+GM:HandleOpenMap("Dee", "L0", "GUILD")
+recheck()
+check(drawn() == "Bob-Realm,Dee-Realm" and GM.peers["Dee-Realm"].via == nil,
+  "OpenMap's L0: it no longer draws them, Guild OS does")
+clock = clock + 10
+GM:HandleOpenMap("Dee", "L1\t1952\t0.2\t0.2", "GUILD")
+clock = clock + GM.OPENMAP_GONE + 1
+GM:HandlePosition("Dee", "1952,2000,2000,,0", "GUILD")
+GM:HandlePosition("Bob", "1952,5000,5000,,0", "GUILD")
+GM:_Prune(clock)
+check(drawn() == "Bob-Realm,Dee-Realm" and GM.openMapSeen["Dee-Realm"] == nil,
+  "OpenMap silent past OPENMAP_GONE (its own lifetime): Guild OS draws them again")
+OpenMapDB = { worldmap = { enabled = false, guild = true, group = true } }
+recheck()
+check(drawn() == "Ann-Realm,Bob-Realm,Dee-Realm", "OpenMap's map off: it draws nobody, Guild OS draws everybody")
+OpenMapDB = nil
+check(GM:OpenMapState().guild and GM:OpenMapState().group, "an unknown OpenMap save reads as its defaults")
+loaded.OpenMap, OpenMapDB, C_AddOns, GuildOSDB = nil, nil, nil, nil
+groupN = 0; GM._groupAt = nil
+recheck()
+reset()
+
+-- ── 13. The budget: 100 online, 3 watchers ──────────────────────────────
 -- Every peer runs the module's own decision (GM:_Owe) each half second over five minutes; the watchers renew
 -- every WATCH_PING. A peer walking moves 7 yards a second on a 1000-yard zone.
 local ZONES = {}
@@ -527,6 +652,20 @@ for _, c in ipairs(cases) do
 end
 local quiet = simulate(true, {}, 0.6, SIM)
 check(quiet == 0, "nobody watching: the guild sends nothing")
+
+-- OpenMap's way, for comparison: everybody who shares sends always, every 10 s moving and 60 s still (its
+-- SEND_EVERY / STILL_EVERY), watched or not. Cheap per client, but the guild's cost grows with who is online and
+-- never stops: why Guild OS keeps sending only to watchers.
+local function alwaysOn(online, movingShare)
+  return online * (movingShare / 10 + (1 - movingShare) / 60), 1 / 10
+end
+for _, n in ipairs({ 100, 200 }) do
+  local rate, per = alwaysOn(n, 0.6)
+  print(("guild-map: OpenMap's always-on cadence, %d sharing: %.2f msg/s guild-wide (nobody looking too), %.2f per client")
+    :format(n, rate, per))
+end
+check(alwaysOn(100, 0.6) > quiet and alwaysOn(200, 0.6) > BUDGET_MSGS,
+  "always sending would cost the guild even with nobody looking, and pass the budget at 200 online")
 print(("guild-map: the guild's received bytes at the budget: %d B/s"):format(BUDGET_MSGS * posBytes))
 
 print(("guild-map: %d checks passed"):format(checks))

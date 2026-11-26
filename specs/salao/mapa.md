@@ -78,3 +78,36 @@ aqui). Sem o addon, sem pino. A lista lembra isso no rodapé.
 o que faltar degrada: sem posição, a lista diz "o mapa deste cliente não dá posições"; sem conversão, só os
 pinos do mapa mostrado; sem zoom do minimapa, sem pontos. Oito mapas do Forever ainda são criptografados
 (`docs/forever/README.md`): neles `GetMapInfo` pode faltar e a cadeia de pais para ali.
+
+## OpenMap (mesmo mapa, outro addon)
+
+[OpenMap](https://github.com/openmap-world/openmap) (MIT, WoW: Forever e retail; pasta `OpenMap`) também põe
+guildmates no mapa: com a opção dele **"Compartilhar sua localização"** (desligada por padrão) cada cliente manda,
+pelo canal GUILD e prefixo `OpenMapLoc`, `L1<tab>mapa<tab>x<tab>y<tab>classe<tab>nível` a cada 10 s andando e 60 s
+parado, olhando alguém ou não, e `L0` ao parar; nunca de dentro de instância. Quem não manda aparece como selo na
+zona, pelo roster.
+
+- **Guild OS lê, nunca manda, as linhas do OpenMap** (`GuildMap:HandleOpenMap`): só GUILD, só de quem está no roster,
+  nunca a própria, mapa conhecido, x e y em 0..1 (nunca 0,0), no máximo uma a cada 2 s por membro; classe e nível
+  vêm do roster. O pino esmaece após 70 s e some após 150 s (o ritmo parado dele). A linha do próprio Guild OS ganha
+  enquanto fresca; o `L0` do OpenMap tira só o pino do OpenMap. Os pinos do OpenMap não entram na "multidão" que
+  espaça o ritmo do Guild OS. Dica no pino: "Compartilhado pelo OpenMap".
+- **O ritmo do Guild OS fica** (sob demanda): o do OpenMap custa 6,7 msg/s com 100 compartilhando e 13,3 com 200,
+  mesmo sem ninguém olhando (`tools/guild-map.lua` imprime e confere); o do Guild OS é 0 sem ninguém olhando e
+  ≤ 8 com três olhando.
+- **Coordenadas:** o OpenMap manda o mesmo que o Guild OS (uiMapID + x, y do mapa) e converte com
+  `GetMapRectOnMap`; não usa HereBeDragons para os seus pontos nem `UnitPosition`. Nada a adotar aí. (Ele recoloca no
+  mapa costurado os pinos de outros addons feitos com HereBeDragons-Pins; os do Guild OS são quadro próprio sobre o
+  canvas e ficam no mapa de baixo.)
+- **Lista:** "Nesta zona pelo roster, sem posição (N)" — o selo de zona do OpenMap, como linha (só em mapa de zona).
+- **Coordenação, sem aviso:** com o OpenMap carregado e a opção dele "Membros da guilda no mapa" ligada (lida, nunca
+  escrita, de `OpenMapDB.worldmap.guild`; o mapa dele desligado conta como não), o Guild OS **não desenha pino nem
+  ponto no minimapa** de quem o OpenMap já mostra: quem teve linha do OpenMap ouvida aqui há até 150 s (o tempo de
+  vida do ponto dele; `GuildMap.openMapSeen`, guardado mesmo quando a linha do Guild OS ganha, e apagado pelo `L0`),
+  e os membros do grupo quando a opção dele "Membros do grupo e da raide" (`OpenMapDB.worldmap.group`) também está
+  ligada (o OpenMap tira o grupo dos pontos da guilda e o desenha à parte). Desenha só quem compartilha pelo Guild OS e
+  não pelo OpenMap (e o grupo, se o OpenMap não o desenha). Com a opção desligada ou sem o OpenMap, desenha todos. A
+  opção é relida ao abrir ou mudar o mapa e no máximo a cada 30 s (`OPENMAP_RECHECK`), nunca por quadro. A lista do
+  mapa continua com todos, com "no OpenMap" na linha (e "Desenhado pelo OpenMap" na dica) de quem ele desenha. O
+  aviso das versões de teste (janela única por personagem, linha na lista e `GuildOSDB.openMapNotice`) saiu; o
+  `GuildOSDB.openMapNotice` antigo é apagado ao carregar.

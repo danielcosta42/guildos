@@ -43,6 +43,8 @@ local GLOBALS = {
   "AutoStoreGuildBankItem", "DepositGuildBankMoney",
   -- The officer action queue's binding and the crest's tabard (#449): refused in combat, missing on some clients.
   "SetBindingClick", "SetLargeGuildTabardTextures", "SetSmallGuildTabardTextures",
+  -- Whether another addon is loaded (#449, OpenMap): C_AddOns or the old global, by client.
+  "IsAddOnLoaded",
 }
 -- Names only these APIs have: as a field or method of anything but Compat they are flagged too.
 local API_ONLY = { GuildRoster = true, RegisterAddonMessagePrefix = true, SendAddonMessage = true,
@@ -60,7 +62,9 @@ local NAMESPACES = { "C_Item", "C_Spell", "C_UnitAuras", "C_Container", "C_Trade
                      -- Whether the server opens a guild bank (issue #380).
                      "C_GuildBank",
                      -- The guild map's reads (#449): secret and missing answers are Compat's to handle.
-                     "C_Map" }
+                     "C_Map",
+                     -- Another addon's state (#449): C_AddOns or the old global, by client.
+                     "C_AddOns" }
 
 -- Blank comments and strings, keeping every newline so line numbers stay true.
 local function blank(src)

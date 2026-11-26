@@ -35,6 +35,18 @@ GuildMap.PING_GAP    = 2      -- a watcher never pings more often than this
 GuildMap.JITTER      = 1.5    -- a peer answers a new watch within this many seconds, spread
 GuildMap.MAX_INST    = 40     -- bytes of an instance's name
 
+-- OpenMap (github.com/openmap-world/openmap, MIT; WoW: Forever and retail) draws guild members on the map too, from
+-- its own GUILD line "L1<tab>map<tab>x<tab>y<tab>class<tab>level" (prefix OpenMapLoc, every 10 s moving, 60 s
+-- still, only from those who turned its "Share where you are" on) and "L0" (stopped). This client READS it, never
+-- sends it: a guildmate with OpenMap but not Guild OS shows here too, and one with both shows once (Guild OS's own
+-- line wins). While OpenMap's own map draws guildmates, Guild OS draws no pin for those it draws (OnOpenMap) and
+-- lists them. specs/salao/mapa.md "OpenMap".
+GuildMap.OPENMAP_ADDON  = "OpenMap"      -- its folder
+GuildMap.OPENMAP_PREFIX = "OpenMapLoc"
+GuildMap.OPENMAP_GAP    = 2              -- one guildmate's OpenMap lines, at most this often (more are dropped)
+GuildMap.OPENMAP_FADE   = 70             -- its pins fade after this (it sends a still place once a minute)
+GuildMap.OPENMAP_GONE   = 150            -- and go after this (OpenMap's own GONE_AFTER)
+
 -- Flags of a position line.
 GuildMap.F_COMBAT, GuildMap.F_INSTANCE, GuildMap.F_WHERE = 1, 2, 4
 
@@ -112,6 +124,18 @@ function GuildMap:DecodeWatch(s)
     return m, slow == "s"
 end
 
+-- OpenMap's line (untrusted): { mapID, x, y } for "L1", { retract = true } for "L0", nil for anything else (its
+-- hellos and version lines, or a malformed line). Its class and level are not read: the roster gives them.
+function GuildMap:DecodeOpenMap(s)
+    if type(s) ~= "string" or #s > 100 then return nil end
+    if s == "L0" then return { retract = true } end
+    local m, xs, ys = s:match("^L1\t(%d+)\t([%d%.]+)\t([%d%.]+)")
+    local mapID, x, y = tonumber(m), GuildOS.Finite(xs), GuildOS.Finite(ys)
+    if not (mapID and x and y) or mapID <= 0 or mapID > 1000000 then return nil end
+    if x < 0 or x > 1 or y < 0 or y > 1 or (x == 0 and y == 0) then return nil end
+    return { mapID = mapID, x = x, y = y, flags = 0 }
+end
+
 ----------------------------------------------------------------------
 -- Pure: who sends, and when
 ----------------------------------------------------------------------
@@ -174,10 +198,18 @@ end
 ----------------------------------------------------------------------
 
 -- How opaque a pin `age` seconds old is: 1 until STALE_FADE, down to 0.3 at STALE_GONE, 0 after.
-function GuildMap:_StaleAlpha(age)
-    if age <= self.STALE_FADE then return 1 end
-    if age > self.STALE_GONE then return 0 end
-    return 1 - 0.7 * (age - self.STALE_FADE) / (self.STALE_GONE - self.STALE_FADE)
+-- `fade` and `gone` for another pace (OpenMap's lines).
+function GuildMap:_StaleAlpha(age, fade, gone)
+    fade, gone = fade or self.STALE_FADE, gone or self.STALE_GONE
+    if age <= fade then return 1 end
+    if age > gone then return 0 end
+    return 1 - 0.7 * (age - fade) / (gone - fade)
+end
+
+-- How long a peer's pin stays whole and how long it stays at all: OpenMap's lines come slower.
+function GuildMap:_Lifetimes(p)
+    if p.via == "openmap" then return self.OPENMAP_FADE, self.OPENMAP_GONE end
+    return self.STALE_FADE, self.STALE_GONE
 end
 
 -- Where a peer is drawn at time t: from its last drawn spot to its newest one over lerpDur seconds.
@@ -288,6 +320,7 @@ end
 GuildMap.peers = {}      -- [key] = what the guildmate sent (see HandlePosition)
 GuildMap.group = {}      -- [key] = a party or raid member read here
 GuildMap.watchers = {}   -- [senderKey] = { scope, slow, untilT }
+GuildMap.openMapSeen = {} -- [key] = when this client last heard the guildmate's OpenMap line (what OpenMap draws)
 GuildMap.watch = {}      -- [reason] = scope: this client's own watches ("worldmap", "minimap")
 GuildMap.sent = nil      -- what this client last sent: { t, mapID, x, y, flags }
 GuildMap.stats = { sent = 0, pings = 0, bytes = 0, received = 0 }
@@ -427,7 +460,7 @@ end
 function GuildMap:_Crowd(mapID, t)
     local here, all = 0, 0
     for _, p in pairs(self.peers) do
-        if t - p.t <= 30 then
+        if t - p.t <= 30 and p.via ~= "openmap" then
             all = all + 1
             if p.mapID == mapID then here = here + 1 end
         end
@@ -540,7 +573,11 @@ function GuildMap:HandlePosition(sender, data, channel)
         if self.uiRefresh then self.uiRefresh() end
         return
     end
-    local t = now()
+    self:_Store(key, p, now())
+end
+
+-- A peer's new place, gliding from where it is drawn (a new map snaps). Class, level and name from the roster.
+function GuildMap:_Store(key, p, t)
     local old = self.peers[key]
     local m = self:_Member(key) or {}
     p.key, p.t = key, t
@@ -553,6 +590,34 @@ function GuildMap:HandlePosition(sender, data, channel)
     end
     self.peers[key] = p
     if self.uiRefresh then self.uiRefresh() end
+end
+
+-- OpenMap's line (GUILD only, from a guildmate on the roster, never this client's own). Read, never answered.
+-- Guild OS's own line from the same guildmate wins while it is fresh; an OpenMap "L0" removes only OpenMap's pin.
+-- Every valid line is remembered in openMapSeen (OpenMap draws that guildmate itself: GuildMap:OnOpenMap).
+function GuildMap:HandleOpenMap(sender, text, channel)
+    if channel ~= "GUILD" or type(sender) ~= "string" then return end
+    local p = self:DecodeOpenMap(text)
+    if not p then return end
+    local key = GuildOS:SenderKey(sender)
+    if not key or key == GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()) then return end
+    local t, old = now(), self.peers[key]
+    if p.retract then
+        self.openMapSeen[key] = nil
+        if old and old.via == "openmap" then
+            self.peers[key] = nil
+        end
+        if self.uiRefresh then self.uiRefresh() end
+        return
+    end
+    local seen = self.openMapSeen[key]
+    if seen and t - seen < self.OPENMAP_GAP then return end
+    if not self:_Roster()[key] or not GuildOS.Compat.MapInfo(p.mapID) then return end
+    self.openMapSeen[key] = t
+    self.stats.openmap = (self.stats.openmap or 0) + 1
+    if old and old.via ~= "openmap" and t - old.t <= self.STALE_GONE then return end
+    p.via = "openmap"
+    self:_Store(key, p, t)
 end
 
 ----------------------------------------------------------------------
@@ -601,7 +666,7 @@ function GuildMap:_MapName(mapID)
 end
 
 -- Every guildmate whose place is known, sorted by name: { key, name, class, level, mapID, x, y (drawn now),
--- alpha, age, flags, inst, isGroup, zone }. Group members come from here; the rest from what they sent,
+-- alpha, age, flags, inst, isGroup, zone, via, onOpenMap (OpenMap draws them: Guild OS lists them, no pin) }. Group members come from here; the rest from what they sent,
 -- within STALE_GONE.
 function GuildMap:GetPeers(t)
     t = t or now()
@@ -609,13 +674,14 @@ function GuildMap:GetPeers(t)
     local out, seen = {}, {}
     local function add(p)
         local age = t - p.t
-        if age > self.STALE_GONE then return end
+        local fade, gone = self:_Lifetimes(p)
+        if age > gone then return end
         local x, y = self:_Lerp(p, t)
         local inst = p.flags and p.flags % 4 >= 2
         out[#out + 1] = { key = p.key, name = p.name, class = p.class, level = p.level, mapID = p.mapID,
-            x = x, y = y, alpha = self:_StaleAlpha(age), age = age, flags = p.flags or 0, inst = p.inst,
-            isGroup = p.isGroup, combat = p.flags and p.flags % 2 == 1, inInstance = inst,
-            zone = (inst and p.inst) or self:_MapName(p.mapID) }
+            x = x, y = y, alpha = self:_StaleAlpha(age, fade, gone), age = age, flags = p.flags or 0, inst = p.inst,
+            isGroup = p.isGroup, combat = p.flags and p.flags % 2 == 1, inInstance = inst, via = p.via,
+            onOpenMap = self:OnOpenMap(p, t), zone = (inst and p.inst) or self:_MapName(p.mapID) }
         seen[p.key] = true
     end
     for _, p in pairs(self.group) do add(p) end
@@ -637,26 +703,95 @@ function GuildMap:_FreshGroup(t)
 end
 
 -- fn(p, x, y, alpha) for every guildmate drawn at time t (x, y nil when only the zone is known), group members
--- first; nothing allocated, for what redraws many times a second.
+-- first, but those OpenMap draws itself (OnOpenMap); nothing allocated, for what redraws many times a second.
 function GuildMap:ForEachLive(t, fn)
     self:_FreshGroup(t)
     for _, p in pairs(self.group) do
-        local x, y = self:_Lerp(p, t)
-        fn(p, x, y, 1)
+        if not self:OnOpenMap(p, t) then
+            local x, y = self:_Lerp(p, t)
+            fn(p, x, y, 1)
+        end
     end
     for k, p in pairs(self.peers) do
         local age = t - p.t
-        if not self.group[k] and age <= self.STALE_GONE then
+        local fade, gone = self:_Lifetimes(p)
+        if not self.group[k] and age <= gone and not self:OnOpenMap(p, t) then
             local x, y = self:_Lerp(p, t)
-            fn(p, x, y, self:_StaleAlpha(age))
+            fn(p, x, y, self:_StaleAlpha(age, fade, gone))
         end
     end
 end
 
 -- Drop what is older than STALE_GONE and the watches that ended.
 function GuildMap:_Prune(t)
-    for k, p in pairs(self.peers) do if t - p.t > self.STALE_GONE then self.peers[k] = nil end end
+    for k, p in pairs(self.peers) do
+        local _, gone = self:_Lifetimes(p)
+        if t - p.t > gone then self.peers[k] = nil end
+    end
     for k, w in pairs(self.watchers) do if w.untilT < t then self.watchers[k] = nil end end
+    for k, seen in pairs(self.openMapSeen) do if t - seen > self.OPENMAP_GONE then self.openMapSeen[k] = nil end end
+end
+
+-- The online guildmates the roster puts in the shown zone that have no place known here (no Guild OS, no OpenMap
+-- sharing, or not sharing): their names, sorted. OpenMap shows them as a badge on the zone; the list names them. The
+-- roster's zone is a name, so only a zone's own map (or a map inside it) matches; `known` holds the keys drawn.
+function GuildMap:RosterOnlyHere(shownMap, known)
+    local out = {}
+    local zone = shownMap and self:_ZoneOf(shownMap)
+    local info = zone and GuildOS.Compat.MapInfo(zone)
+    if not info or info.mapType ~= 3 then return out end
+    local name = GuildOS.Compat.GetMapName(zone)
+    if not name then return out end
+    local me = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName())
+    for key, m in pairs(self:_Roster()) do
+        if m.online and key ~= me and m.zone == name and not (known and known[key]) then out[#out + 1] = m.name or key end
+    end
+    table.sort(out, function(a, b) return a:lower() < b:lower() end)
+    return out
+end
+
+-- OpenMap: whether it is loaded here, and what its own settings say.
+function GuildMap:OpenMapLoaded() return GuildOS.Compat.IsAddOnLoaded(self.OPENMAP_ADDON) end
+
+-- OpenMap's settings, read only (OpenMapDB.worldmap, its account-wide save; never written): `guild`, whether its
+-- map draws guild members ("Guild members on the map", on by default), and `group`, whether it draws the party and
+-- raid ("Party and raid members", on by default; Blizzard's own dots stand in where its map is not shown). Its map
+-- off draws neither. nil without OpenMap; an unknown save reads as its defaults.
+function GuildMap:OpenMapState()
+    if not self:OpenMapLoaded() then return nil end
+    local db = _G.OpenMapDB   -- (another addon's saved table: read, never written)
+    local w = type(db) == "table" and type(db.worldmap) == "table" and db.worldmap or nil
+    if not w then return { guild = true, group = true } end
+    local on = w.enabled ~= false
+    return { guild = on and w.guild ~= false, group = on and w.group ~= false }
+end
+
+-- OpenMap's settings as last read: read again when the world map opens (RefreshOpenMap) and at most every
+-- OPENMAP_RECHECK seconds otherwise (from Tick), never per frame. nil when OpenMap does not draw guildmates here.
+GuildMap.OPENMAP_RECHECK = 30
+function GuildMap:RefreshOpenMap(t)
+    t = t or now()
+    local st = self:OpenMapState()
+    self._openMap = st and st.guild and st or nil
+    self._openMapAt = t
+    return self._openMap
+end
+
+function GuildMap:_OpenMapCoord(t)
+    if not self._openMapAt or t - self._openMapAt >= self.OPENMAP_RECHECK then self:RefreshOpenMap(t) end
+    return self._openMap
+end
+
+-- Whether OpenMap already draws guildmate `p` on this client (so Guild OS draws no pin or dot for them): only
+-- while OpenMap's "Guild members on the map" is on; a group member when its "Party and raid members" is on too
+-- (OpenMap leaves the group out of its guild dots); anyone else when their OpenMap line was heard within
+-- OPENMAP_GONE (OpenMap's own lifetime for a dot). The world map's list still names everybody.
+function GuildMap:OnOpenMap(p, t)
+    local om = self:_OpenMapCoord(t)
+    if not om then return false end
+    if p.isGroup then return om.group and true or false end
+    local seen = self.openMapSeen[p.key]
+    return seen ~= nil and t - seen <= self.OPENMAP_GONE
 end
 
 -- Whether some online guildmate's roster line names the zone `mapID` is in (the minimap watch's reason).
@@ -704,6 +839,7 @@ end
 function GuildMap:Initialize()
     local db = GuildOS.db
     db.mapPeers = nil   -- positions are live only; the old map's saved peers are not read (B23)
+    if type(GuildOSDB) == "table" then GuildOSDB.openMapNotice = nil end   -- (the test builds' OpenMap notice, gone)
     prefs()
     local f = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(f, "ZONE_CHANGED_NEW_AREA")
@@ -714,5 +850,14 @@ function GuildMap:Initialize()
         GuildMap:OnZoneEvent()
     end)
     self._frame = f
+    -- OpenMap's lines: read only (HandleOpenMap). Registering the prefix sends nothing.
+    pcall(GuildOS.Compat.RegisterAddonPrefix, self.OPENMAP_PREFIX)
+    local om = CreateFrame("Frame")
+    GuildOS.Compat.RegisterEvent(om, "CHAT_MSG_ADDON")
+    om:SetScript("OnEvent", function(_, _, prefix, text, channel, sender)
+        if prefix ~= GuildMap.OPENMAP_PREFIX or GuildOS.Compat.IsSecret(text, channel, sender) then return end
+        GuildOS:SafeCall(GuildMap.HandleOpenMap, GuildMap, sender, text, channel)
+    end)
+    self._openMapFrame = om
     self._ticker = GuildOS.Compat.NewTicker(1, function() GuildOS:SafeCall(GuildMap.Tick, GuildMap) end)
 end

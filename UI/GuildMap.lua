@@ -54,6 +54,11 @@ local function ShowPeerTooltip(owner, p, extra)
     end
     if p.combat then GameTooltip:AddLine(L["In combat"], C.danger.r, C.danger.g, C.danger.b) end
     if extra then GameTooltip:AddLine(extra, C.textSoft.r, C.textSoft.g, C.textSoft.b) end
+    if p.onOpenMap then
+        GameTooltip:AddLine(L["Drawn by OpenMap"], C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    elseif p.via == "openmap" then
+        GameTooltip:AddLine(L["Shared through OpenMap"], C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    end
     if p.isGroup then
         GameTooltip:AddLine(L["In your group"], C.textSoft.r, C.textSoft.g, C.textSoft.b)
     else
@@ -128,7 +133,7 @@ local function MovePins()
     for i = 1, nPins do if not pins[i].seen then pins[i]:Hide() end end
 end
 
--- Who is drawn on the shown map: everybody whose point lands on it.
+-- Who is drawn on the shown map: everybody whose point lands on it, but those OpenMap draws itself (listed only).
 local function LayoutPins()
     if not layer then return end
     local shown = Compat.GetShownMapID()
@@ -137,7 +142,7 @@ local function LayoutPins()
     local used = 0
     for _, p in ipairs(peers) do
         byKey[p.key] = p
-        if shown and p.x and GM():_PlaceOn(shown, p.mapID, p.x, p.y) then
+        if shown and p.x and not p.onOpenMap and GM():_PlaceOn(shown, p.mapID, p.x, p.y) then
             used = used + 1
             local pin = AcquirePin(used)
             pin.key = p.key
@@ -234,7 +239,7 @@ RefreshList = function()
         row.key = p.key
         row.av:SetMember(p.name, p.class, p.alpha < 1)
         row.name:SetText(p.name or "?")
-        row.meta:SetText(p.zone or "")
+        row.meta:SetText(p.onOpenMap and ((p.zone and p.zone .. " · " or "") .. L["on OpenMap"]) or p.zone or "")
         row:SetAlpha(math.max(0.5, p.alpha))
         row:Show()
     end
@@ -252,11 +257,19 @@ RefreshList = function()
         end
         notes[#notes + 1] = string.format(L["Elsewhere (%d)"], elsewhere) .. ": " .. table.concat(names, ", ")
     end
+    -- Online by the roster in the shown zone, with no place known here (OpenMap's zone badge, as a line).
+    local rosterOnly = GM():RosterOnlyHere(shown, byKey)
+    if #rosterOnly > 0 then
+        local names = {}
+        for i = 1, math.min(6, #rosterOnly) do names[i] = rosterOnly[i] end
+        notes[#notes + 1] = string.format(L["In this zone by the roster, no position (%d)"], #rosterOnly) .. ": "
+            .. table.concat(names, ", ") .. (#rosterOnly > 6 and ", ..." or "")
+    end
     if not Compat.MapAbilities().position then
         notes[#notes + 1] = L["This client's map gives no positions: guildmates are listed, not drawn."]
     end
     if not GM():IsSharing() then notes[#notes + 1] = L["You are not sharing your position (Settings > Privacy)."] end
-    notes[#notes + 1] = L["Only guildmates with Guild OS who share their position, and your group, show here."]
+    notes[#notes + 1] = L["Only guildmates who share their position (with Guild OS, or OpenMap's sharing), and your group, show here."]
     list.foot:SetText(table.concat(notes, "\n"))
     local rowsH = n * ROW_H
     list.foot:ClearAllPoints()
@@ -279,6 +292,7 @@ end
 
 local function OnMapChanged()
     dirty = true
+    GM():RefreshOpenMap()   -- OpenMap's settings, read again as the map opens or moves (cheap: a table read)
     WatchShownMap()
 end
 
