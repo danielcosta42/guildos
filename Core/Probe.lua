@@ -275,8 +275,14 @@ function Probe:Run()
     r.events, r.missingEvents = {}, {}
     local frameOk, frame = pcall(CreateFrame, "Frame")
     frameOk = frameOk and type(frame) == "table"
+    -- Registering a restricted event is ADDON_ACTION_FORBIDDEN, which no pcall holds back: the combat log on a client
+    -- that hides it (WoW: Forever's Secret Values) is recorded as restricted, never registered (#449).
+    local restricted = {}
+    if not (GuildOS.Compat.CanReadCombatLog and GuildOS.Compat.CanReadCombatLog()) then
+        restricted.COMBAT_LOG_EVENT_UNFILTERED = true
+    end
     for _, event in ipairs(self.EVENTS) do
-        local ok = frameOk and pcall(frame.RegisterEvent, frame, event) or false
+        local ok = (not restricted[event]) and frameOk and pcall(frame.RegisterEvent, frame, event) or false
         if ok then pcall(frame.UnregisterEvent, frame, event) end
         r.events[event] = ok
         if not ok then r.missingEvents[#r.missingEvents + 1] = event end

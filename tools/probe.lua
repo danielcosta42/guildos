@@ -376,4 +376,26 @@ CreateFrame, time, C_GameRules = realCreateFrame, realTime, nil
 check(ok4 and r4.at == 0 and r4.gameMode.missing and #r4.missingEvents == #Probe.EVENTS and r4.apis.BackdropTemplate == false,
   "no frame, no clock and a raising namespace still leave a record and never raise")
 
+-- A client that hides the combat log (WoW: Forever): registering it is ADDON_ACTION_FORBIDDEN, so the probe never tries.
+do
+  local triedCLEU = false
+  local saveCF, saveClient, saveCan = CreateFrame, GuildOS.Client, GuildOS.Compat.CanReadCombatLog
+  CreateFrame = function(...)
+    local f = saveCF(...)
+    if type(f) == "table" then
+      local reg = f.RegisterEvent
+      f.RegisterEvent = function(self, ev, ...)
+        if ev == "COMBAT_LOG_EVENT_UNFILTERED" then triedCLEU = true end
+        if reg then return reg(self, ev, ...) end
+      end
+    end
+    return f
+  end
+  GuildOS.Client = { isAnniversary = false, game = "FOREVER" }
+  GuildOS.Compat.CanReadCombatLog = function() return false end
+  local rf = Probe:Run()
+  check(not triedCLEU and rf and rf.events.COMBAT_LOG_EVENT_UNFILTERED == false,
+    "Forever: the probe records the combat log as restricted without registering it (#449)")
+  CreateFrame, GuildOS.Client, GuildOS.Compat.CanReadCombatLog = saveCF, saveClient, saveCan
+end
 print(("probe: %d checks passed"):format(checks))
