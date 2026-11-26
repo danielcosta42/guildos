@@ -719,8 +719,9 @@ local function handleCommand(msg)
         local rest = strtrim((msg:gsub("^tempban%s+", "")))
         -- Forever's two-word names (issue #49): the name runs up to the days, the first all-digit
         -- word (a name never holds a digit).
-        local name, days, reason = rest:match("^(.-)%s+(%d+)$")
-        if not name then name, days, reason = rest:match("^(.-)%s+(%d+)%s+(.*)$") end
+        -- With a reason first: a reason that ends in a number must not swallow the name and the days.
+        local name, days, reason = rest:match("^(.-)%s+(%d+)%s+(.*)$")
+        if not name then name, days = rest:match("^(.-)%s+(%d+)$") end
         name = name and strtrim(name)
         if name == "" then name = nil end
         reason = reason or ""
@@ -735,9 +736,20 @@ local function handleCommand(msg)
     elseif msg:match("^ban%s") then
         -- /gos ban <name> [reason]  — officer-gated inside BanList:Add.
         local rest = strtrim((msg:gsub("^ban%s+", "")))
-        -- A whole two-word Forever name, as /gos warn reads it (issue #49).
-        local name, reason = GuildOS:SplitNameAndText(rest)
-        if not name and rest ~= "" then name, reason = rest, "" end
+        -- "<name>: <reason>" says where the name ends (a two-word Forever name not on the roster: an
+        -- ex-member, an applicant). Else a whole two-word name on the roster, as /gos warn reads it (#49).
+        local name, reason = rest:match("^([^:]-)%s*:%s*(.*)$")
+        if name then
+            name = strtrim(name)
+            if name == "" then name = nil end
+        else
+            name, reason = GuildOS:SplitNameAndText(rest)
+            if not name and rest ~= "" then name, reason = rest, "" end
+            -- A surname client and a first word alone: say how to ban a two-word name.
+            if name and reason and reason ~= "" and GuildOS.Client.has.surnames and not name:find(" ", 1, true) then
+                GuildOS:Print(string.format(L["Read as %s, reason \"%s\". For a two-word name: /gos ban First Last: reason"], name, reason))
+            end
+        end
         if name then
             if GuildOS.BanList and GuildOS.BanList:Add(name, reason) then
                 GuildOS:Print(L["Banned "] .. name)

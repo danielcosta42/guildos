@@ -519,6 +519,13 @@ do
     "/gos tempban: the name runs up to the days")
   slash("tempban Bob 7")
   check(bans[#bans][1] == "Bob" and bans[#bans][3] == 7 * 86400 and bans[#bans][2] == "", "a one-word name, no reason")
+  slash("tempban Bob 7 left after boss 3")
+  check(bans[#bans][1] == "Bob" and bans[#bans][3] == 7 * 86400 and bans[#bans][2] == "left after boss 3",
+    "a reason that ends in a number keeps the name and the days")
+  slash("ban Ana Souza: ninja")
+  check(bans[#bans][1] == "Ana Souza" and bans[#bans][2] == "ninja", "a two-word name off the roster, with the colon")
+  slash("ban Ana Souza:")
+  check(bans[#bans][1] == "Ana Souza" and bans[#bans][2] == "", "and with no reason after it")
   local n = #bans
   slash("tempban Bob")
   check(#bans == n, "no days: nothing filed")

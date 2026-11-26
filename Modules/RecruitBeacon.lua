@@ -100,7 +100,7 @@ function RB:SetAdField(key, value)
     if key ~= "enabled" then ad.edited = true end
     -- N11: the switch rides the member broadcast (`beacon`), so the other officers re-elect the sender now.
     if key == "enabled" and GuildOS.CommSystem and GuildOS.CommSystem.BroadcastMyData then
-        GuildOS.CommSystem:BroadcastMyData()
+        GuildOS.CommSystem:BroadcastMyData(true)   -- past the 5 s throttle: the switch must not wait 5 min
     end
 end
 

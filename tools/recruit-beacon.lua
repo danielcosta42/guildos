@@ -374,7 +374,15 @@ RB:GetAd().enabled = false
 sent = {}
 RB:Broadcast()
 check(#sent == 0, "switch off: the site's ad does not go either")
-RB:SetAdField("enabled", true)
+do
+  local CS = GuildOS.CommSystem
+  local realB = CS and CS.BroadcastMyData
+  local forced
+  if CS then CS.BroadcastMyData = function(_, force) forced = force end end
+  RB:SetAdField("enabled", true)
+  check(not CS or forced == true, "the switch goes out at once, past the member broadcast's throttle")
+  if CS then CS.BroadcastMyData = realB end
+end
 check(not RB:GetAd().edited, "the switch is no edit of the ad")
 -- Another officer online with Guild OS, whose name comes first: they send, not me.
 local me = GuildOS.Compat.PlayerName()
