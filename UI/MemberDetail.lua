@@ -668,6 +668,21 @@ function PopulateDetail(frame, data)
         end
 
         yOff = yOff - 48
+        -- None of the attributes came through: the sender's game hid them (WoW: Forever's Secret Values) or they
+        -- were never sent. Say so instead of a row of dashes (#449).
+        local st = data.stats
+        if not (tonumber(st.strength) or tonumber(st.agility) or tonumber(st.stamina) or tonumber(st.intellect)
+                or tonumber(st.spirit) or tonumber(st[st.primary or ""])) then
+            local why = _pFS(child)
+            GuildOS:ApplyFont(why, UI.SP.META)
+            why:SetPoint("TOPLEFT", PADX, yOff + 18)
+            why:SetWidth(contentWidth - 2 * PADX)
+            why:SetJustifyH("LEFT")
+            ink(why, C.paperSoft)
+            why:SetText(L["The attributes did not come through: the game hides them on this client while it restricts data (WoW: Forever). They fill in when the member syncs without that restriction."])
+            why:Show()
+            yOff = yOff - 6
+        end
     end
 
     ----------------------------------------------------------------

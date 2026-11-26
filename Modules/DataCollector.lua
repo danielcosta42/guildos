@@ -676,7 +676,14 @@ function DataCollector:StoreReceivedData(playerKey, data)
 
     -- Merge with existing data (skip recipes and their hashes, handled separately)
     for k, v in pairs(data) do
-        if k ~= "recipes" and k ~= "rh" then
+        if k == "stats" and type(v) == "table" and type(existing.stats) == "table" then
+            -- Stats the sender's client could not read this time (secret while WoW: Forever restricts them) keep
+            -- the last values heard, instead of wiping them (#449).
+            local merged = {}
+            for sk, sv in pairs(existing.stats) do merged[sk] = sv end
+            for sk, sv in pairs(v) do merged[sk] = sv end
+            existing.stats = merged
+        elseif k ~= "recipes" and k ~= "rh" then
             existing[k] = v
         end
     end

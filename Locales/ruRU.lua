@@ -4511,3 +4511,4 @@ L["No guildmate on this map."] = "На этой карте нет согильд
 L["Only guildmates with Guild OS who share their position, and your group, show here."] = "Здесь видны только согильдийцы с Guild OS, показывающие своё местоположение, и ваша группа."
 L["Level %d %s"] = "Уровень %d, %s"
 L["%d yd"] = "%d м"
+L["The attributes did not come through: the game hides them on this client while it restricts data (WoW: Forever). They fill in when the member syncs without that restriction."] = "Характеристики не пришли: игра скрывает их на этом клиенте, пока ограничивает данные (WoW: Forever). Они появятся, когда участник синхронизируется без этого ограничения."

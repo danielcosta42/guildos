@@ -495,6 +495,12 @@ check(GuildOS.db.members[bobKey].spec == nil and GuildOS.db.members[bobKey].prof
 DC:StoreReceivedData(bobKey, { name = "Bob", class = "PRIEST", lastUpdate = 3, spec = { tree = "Shadow" }, professions = {} })
 check(GuildOS.db.members[bobKey].spec.tree == "Shadow" and type(GuildOS.db.members[bobKey].professions) == "table"
       and GuildOS.db.members[bobKey].absent == nil, "a later broadcast with both fields restores them and clears the marker")
+-- Stats the sender's game hid this time (secret on WoW: Forever) keep the last values heard (#449).
+DC:StoreReceivedData(bobKey, { name = "Bob", class = "PRIEST", lastUpdate = 4, stats = { health = 900, mana = 1000, strength = 40, spirit = 90 } })
+DC:StoreReceivedData(bobKey, { name = "Bob", class = "PRIEST", lastUpdate = 5, stats = { health = 950, mana = 1100 } })
+local bs = GuildOS.db.members[bobKey].stats
+check(bs.health == 950 and bs.mana == 1100 and bs.strength == 40 and bs.spirit == 90,
+      "a sync without the attributes keeps the ones heard before, and takes the new health and mana")
 
 local SC = GuildOS.SpecChecker
 local tabInspect
