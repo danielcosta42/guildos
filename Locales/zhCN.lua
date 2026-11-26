@@ -3978,3 +3978,18 @@ L["Wait: the last item is still on its way to its winner."] = "请稍候：上�
 L["%s is not on the open corpse: open the one that holds it, or close the loot window to give it by trade."] = "%s 不在已打开的尸体上：请打开装有它的尸体，或关闭拾取窗口以交易给出。"
 L["%s cannot take %s from this corpse (offline, outside the instance or not eligible). Nothing was recorded."] = "%s 无法从这具尸体获得 %s（离线、不在副本内或无资格）。未记录任何内容。"
 L["Giving to %s..."] = "正在给予 %s……"
+
+-- Loot rules and rooms (#448: L3-L9, B16, B24, B27)
+L["%s awarded an item by a loot rule this client does not have: %s's counters were not changed here."] = "%s 按本客户端没有的拾取规则分配了物品：此处未更改 %s 的计数。"
+L["This raid's loot is handled outside GuildOS (set on guildos.me)."] = "本团队的拾取在 GuildOS 之外分配（在 guildos.me 上设置）。"
+L["The Loot Council cannot apply the loot rule in force (it needs %s): %s applies."] = "拾取委员会无法应用当前的拾取规则（它需要%s）：改用 %s。"
+L["answers other than Need and Greed"] = "需求和贪婪以外的回答"
+L["bids"] = "出价"
+L["a check on who may ask"] = "对谁可以申请的检查"
+L["soft reserves"] = "软预留"
+L["officer priorities"] = "官员优先级"
+L["a counter"] = "计数器"
+L["Without a rule from the site, use:"] = "网站未发送规则时使用："
+L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "作为官员，你将解锁管理工具。在 设置 > 公会规则 中设定哪些公会会阶算作官员。在 拾取 窗口的 规则 标签页中选择公会的分配方式：/roll、心愿单或 DKP。"
+L["Search the realm"] = "在服务器中搜索"
+L["New poll"] = "新投票"

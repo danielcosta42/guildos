@@ -749,6 +749,9 @@ function GuildOS:RefreshLootRuleTab(content, scope)
         y = paragraph(content, L["This core's loot rule is set on guildos.me, which sends it with the raid's roster."], y, 0, 11, C.label)
         y = paragraph(content, string.format(L["Model: %s"], LR:ModelName(siteRule)), y, 0, 12, C.text)
     elseif isOfficer then
+        -- The site's rule wins on raid night; the system chosen here plays only when the site sends none
+        -- (audit B16).
+        y = paragraph(content, L["Without a rule from the site, use:"], y, 0, 11, C.label)
         y = drawModels(content, y, scope, redraw)
     else
         y = paragraph(content, string.format(L["Model: %s"], LR:ModelName(rule)), y, 0, 12, C.text)

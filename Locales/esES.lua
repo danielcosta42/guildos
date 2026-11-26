@@ -4099,3 +4099,18 @@ L["Wait: the last item is still on its way to its winner."] = "Espera: el últim
 L["%s is not on the open corpse: open the one that holds it, or close the loot window to give it by trade."] = "%s no está en el cadáver abierto: abre el que lo tiene, o cierra la ventana de botín para darlo por comercio."
 L["%s cannot take %s from this corpse (offline, outside the instance or not eligible). Nothing was recorded."] = "%s no puede recibir %s de este cadáver (desconectado, fuera de la instancia o sin derecho). No se registró nada."
 L["Giving to %s..."] = "Entregando a %s..."
+
+-- Loot rules and rooms (#448: L3-L9, B16, B24, B27)
+L["%s awarded an item by a loot rule this client does not have: %s's counters were not changed here."] = "%s entregó un objeto según una regla de botín que este cliente no tiene: los contadores de %s no se cambiaron aquí."
+L["This raid's loot is handled outside GuildOS (set on guildos.me)."] = "El botín de esta banda se gestiona fuera de GuildOS (configurado en guildos.me)."
+L["The Loot Council cannot apply the loot rule in force (it needs %s): %s applies."] = "El Consejo de botín no puede aplicar la regla de botín en vigor (necesita %s): se aplica %s."
+L["answers other than Need and Greed"] = "respuestas distintas de Necesidad y Codicia"
+L["bids"] = "pujas"
+L["a check on who may ask"] = "una comprobación de quién puede pedir"
+L["soft reserves"] = "reservas suaves"
+L["officer priorities"] = "prioridades de oficiales"
+L["a counter"] = "un contador"
+L["Without a rule from the site, use:"] = "Sin una regla del sitio, usar:"
+L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "Como oficial desbloqueas las herramientas de liderazgo. En Ajustes > Reglas de hermandad, define qué rangos cuentan como oficiales. En la pestaña Regla de la ventana de Botín, elige cómo reparte el botín la hermandad: /roll, Lista de Deseos o DKP."
+L["Search the realm"] = "Buscar en el reino"
+L["New poll"] = "Nueva encuesta"

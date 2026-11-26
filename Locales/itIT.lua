@@ -4122,3 +4122,18 @@ L["Wait: the last item is still on its way to its winner."] = "Attendi: l'ultimo
 L["%s is not on the open corpse: open the one that holds it, or close the loot window to give it by trade."] = "%s non è sul cadavere aperto: apri quello che lo contiene, o chiudi la finestra del bottino per darlo tramite scambio."
 L["%s cannot take %s from this corpse (offline, outside the instance or not eligible). Nothing was recorded."] = "%s non può ricevere %s da questo cadavere (offline, fuori dall'istanza o non idoneo). Nulla è stato registrato."
 L["Giving to %s..."] = "Consegna a %s..."
+
+-- Loot rules and rooms (#448: L3-L9, B16, B24, B27)
+L["%s awarded an item by a loot rule this client does not have: %s's counters were not changed here."] = "%s ha assegnato un oggetto con una regola del bottino che questo client non ha: i contatori di %s non sono stati modificati qui."
+L["This raid's loot is handled outside GuildOS (set on guildos.me)."] = "Il bottino di questa incursione è gestito fuori da GuildOS (impostato su guildos.me)."
+L["The Loot Council cannot apply the loot rule in force (it needs %s): %s applies."] = "Il Consiglio del bottino non può applicare la regola del bottino in vigore (richiede %s): si applica %s."
+L["answers other than Need and Greed"] = "risposte diverse da Necessità e Bramosia"
+L["bids"] = "offerte"
+L["a check on who may ask"] = "un controllo su chi può chiedere"
+L["soft reserves"] = "soft reserve"
+L["officer priorities"] = "priorità degli ufficiali"
+L["a counter"] = "un contatore"
+L["Without a rule from the site, use:"] = "Senza una regola dal sito, usa:"
+L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "Come ufficiale sblocchi gli strumenti di direzione. In Impostazioni > Regole di gilda, scegli quali gradi di gilda contano come ufficiali. Nella scheda Regola della finestra Bottino, scegli come la gilda distribuisce il bottino: /roll, lista dei desideri o DKP."
+L["Search the realm"] = "Cerca nel reame"
+L["New poll"] = "Nuovo sondaggio"

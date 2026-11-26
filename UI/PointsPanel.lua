@@ -464,10 +464,11 @@ function GuildOS:BuildLootAccounts(panel)
         end
         local x = UI.LabelColumn(widths, 0, 12, 200)
 
-        -- Mode: DKP or Loot Council; EPGP is the loot system's own (issue #319).
+        -- Mode: DKP; EPGP is the loot system's own (issue #319). The "Loot Council" mode is gone: it did
+        -- nothing DKP does not (audit R9, B16).
         if GuildOS:GetLootSystem(scope) ~= "epgp" then
             lbl(L["Mode:"], y)
-            local modes = { { value = "dkp", text = "DKP" }, { value = "council", text = L["Loot Council"] } }
+            local modes = { { value = "dkp", text = "DKP" } }
             if mode == "epgp" then table.insert(modes, 2, { value = "epgp", text = "EPGP" }) end
             local modeDD = UI:CreateDropdown(content, 160, 22)
             modeDD:SetPoint("TOPLEFT", x, -y)

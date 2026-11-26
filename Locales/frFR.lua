@@ -4098,3 +4098,18 @@ L["Wait: the last item is still on its way to its winner."] = "Attends : le dern
 L["%s is not on the open corpse: open the one that holds it, or close the loot window to give it by trade."] = "%s n'est pas sur le cadavre ouvert : ouvre celui qui le contient, ou ferme la fenêtre de butin pour le donner par échange."
 L["%s cannot take %s from this corpse (offline, outside the instance or not eligible). Nothing was recorded."] = "%s ne peut pas recevoir %s de ce cadavre (hors ligne, hors de l'instance ou non éligible). Rien n'a été enregistré."
 L["Giving to %s..."] = "Remise à %s..."
+
+-- Loot rules and rooms (#448: L3-L9, B16, B24, B27)
+L["%s awarded an item by a loot rule this client does not have: %s's counters were not changed here."] = "%s a attribué un objet selon une règle de butin que ce client n'a pas : les compteurs de %s n'ont pas été modifiés ici."
+L["This raid's loot is handled outside GuildOS (set on guildos.me)."] = "Le butin de ce raid est géré hors de GuildOS (réglé sur guildos.me)."
+L["The Loot Council cannot apply the loot rule in force (it needs %s): %s applies."] = "Le Conseil de butin ne peut pas appliquer la règle de butin en vigueur (elle demande %s) : %s s'applique."
+L["answers other than Need and Greed"] = "des réponses autres que Besoin et Cupidité"
+L["bids"] = "des enchères"
+L["a check on who may ask"] = "une vérification de qui peut demander"
+L["soft reserves"] = "des soft reserves"
+L["officer priorities"] = "des priorités d'officiers"
+L["a counter"] = "un compteur"
+L["Without a rule from the site, use:"] = "Sans règle du site, utiliser :"
+L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "En tant qu'officier, vous débloquez les outils de direction. Dans Paramètres > Règles de guilde, définissez quels rangs de guilde comptent comme officiers. Dans l'onglet Règle de la fenêtre Butin, choisissez comment la guilde distribue le butin : /roll, liste de souhaits ou DKP."
+L["Search the realm"] = "Chercher sur le royaume"
+L["New poll"] = "Nouveau sondage"

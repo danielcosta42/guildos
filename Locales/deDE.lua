@@ -4098,3 +4098,18 @@ L["Wait: the last item is still on its way to its winner."] = "Warte: Der letzte
 L["%s is not on the open corpse: open the one that holds it, or close the loot window to give it by trade."] = "%s ist nicht in der geöffneten Leiche: öffne die, die es enthält, oder schließe das Beutefenster, um es per Handel zu geben."
 L["%s cannot take %s from this corpse (offline, outside the instance or not eligible). Nothing was recorded."] = "%s kann %s nicht aus dieser Leiche erhalten (offline, außerhalb der Instanz oder nicht berechtigt). Nichts wurde erfasst."
 L["Giving to %s..."] = "Wird %s gegeben..."
+
+-- Loot rules and rooms (#448: L3-L9, B16, B24, B27)
+L["%s awarded an item by a loot rule this client does not have: %s's counters were not changed here."] = "%s hat einen Gegenstand nach einer Beuteregel vergeben, die dieser Client nicht hat: die Zähler von %s wurden hier nicht geändert."
+L["This raid's loot is handled outside GuildOS (set on guildos.me)."] = "Die Beute dieses Schlachtzugs wird außerhalb von GuildOS verteilt (auf guildos.me festgelegt)."
+L["The Loot Council cannot apply the loot rule in force (it needs %s): %s applies."] = "Der Beuterat kann die geltende Beuteregel nicht anwenden (sie braucht %s): es gilt %s."
+L["answers other than Need and Greed"] = "andere Antworten als Bedarf und Gier"
+L["bids"] = "Gebote"
+L["a check on who may ask"] = "eine Prüfung, wer fragen darf"
+L["soft reserves"] = "Soft Reserves"
+L["officer priorities"] = "Offiziersprioritäten"
+L["a counter"] = "einen Zähler"
+L["Without a rule from the site, use:"] = "Ohne Regel von der Website verwenden:"
+L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "Als Offizier schaltest du die Führungswerkzeuge frei. Lege unter Einstellungen > Gildenregeln fest, welche Gildenränge als Offiziere gelten. Wähle im Reiter Regel des Beutefensters, wie die Gilde Beute verteilt: /roll, Wunschliste oder DKP."
+L["Search the realm"] = "Im Realm suchen"
+L["New poll"] = "Neue Umfrage"

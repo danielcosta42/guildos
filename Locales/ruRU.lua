@@ -3978,3 +3978,18 @@ L["Wait: the last item is still on its way to its winner."] = "Подождит�
 L["%s is not on the open corpse: open the one that holds it, or close the loot window to give it by trade."] = "%s нет в открытом трупе: откройте тот, где он лежит, или закройте окно добычи, чтобы передать через обмен."
 L["%s cannot take %s from this corpse (offline, outside the instance or not eligible). Nothing was recorded."] = "%s не может получить %s из этого трупа (не в сети, вне подземелья или не имеет права). Ничего не записано."
 L["Giving to %s..."] = "Передаётся %s..."
+
+-- Loot rules and rooms (#448: L3-L9, B16, B24, B27)
+L["%s awarded an item by a loot rule this client does not have: %s's counters were not changed here."] = "%s выдал предмет по правилу добычи, которого нет у этого клиента: счётчики %s здесь не изменены."
+L["This raid's loot is handled outside GuildOS (set on guildos.me)."] = "Добыча этого рейда распределяется вне GuildOS (задано на guildos.me)."
+L["The Loot Council cannot apply the loot rule in force (it needs %s): %s applies."] = "Совет по добыче не может применить действующее правило добычи (ему нужно: %s): действует %s."
+L["answers other than Need and Greed"] = "ответы, кроме «Нужно» и «Не откажусь»"
+L["bids"] = "ставки"
+L["a check on who may ask"] = "проверку того, кто может просить"
+L["soft reserves"] = "мягкие резервы"
+L["officer priorities"] = "приоритеты офицеров"
+L["a counter"] = "счётчик"
+L["Without a rule from the site, use:"] = "Без правила с сайта использовать:"
+L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "Как офицеру вам доступны инструменты руководства. В разделе Настройки > Правила гильдии укажите, какие звания гильдии считаются офицерскими. Во вкладке «Правило» окна «Добыча» выберите, как гильдия распределяет добычу: /roll, вишлист или DKP."
+L["Search the realm"] = "Искать в игровом мире"
+L["New poll"] = "Новый опрос"

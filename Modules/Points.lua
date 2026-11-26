@@ -175,7 +175,7 @@ function Points:Initialize()
     -- Ensure the global/ungrouped pool is well-formed
     local p = GuildOS.db.points or {}
     GuildOS.db.points = p
-    p.mode = p.mode or "dkp"
+    p.mode = (p.mode == "council" and "dkp") or p.mode or "dkp"   -- audit R9, B16
     p.config = p.config or {}
     local c = p.config
     if c.bossAward      == nil then c.bossAward      = 10    end
@@ -234,11 +234,18 @@ end
 
 -- `coreName` (issue #338): another core's pool than the active one's, when a core picks its own loot
 -- system.
-function Points:GetMode(coreName) return poolOf(coreName).mode end
+-- The "Loot Council" mode did nothing apart from DKP (audit R9, B16): a pool saved with it, or a snapshot
+-- from a client before, reads as DKP.
+local function modeOf(mode)
+    if mode == "council" then return "dkp" end
+    return mode
+end
+
+function Points:GetMode(coreName) return modeOf(poolOf(coreName).mode) end
 
 function Points:SetMode(mode, coreName)
     if not GuildOS:IsOfficer() then return end
-    if mode ~= "dkp" and mode ~= "epgp" and mode ~= "council" then return end
+    if mode ~= "dkp" and mode ~= "epgp" then return end
     poolOf(coreName).mode = mode
     self:BroadcastSnapshot(coreName)
     self:Refresh()
@@ -1684,7 +1691,7 @@ function Points:OnSync(env)
         -- overwrite each other's revision counter.
         local domain = d.core and ("points:" .. d.core) or "points"
         if GuildOS.SyncService:ShouldApply(domain, "standings", env.rev) then
-            if d.mode     then pool.mode     = d.mode     end
+            if d.mode     then pool.mode     = modeOf(d.mode) end
             if d.config   then pool.config   = d.config   end
             if d.standings then
                 -- Keyed this client's way; one member under two of the sender's keys adds up (#97).

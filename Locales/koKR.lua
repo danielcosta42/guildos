@@ -3978,3 +3978,18 @@ L["Wait: the last item is still on its way to its winner."] = "잠시만요: 마
 L["%s is not on the open corpse: open the one that holds it, or close the loot window to give it by trade."] = "%s은(는) 열린 시체에 없습니다. 그 아이템이 있는 시체를 열거나, 전리품 창을 닫고 거래로 주세요."
 L["%s cannot take %s from this corpse (offline, outside the instance or not eligible). Nothing was recorded."] = "%s은(는) 이 시체에서 %s을(를) 받을 수 없습니다(오프라인, 인스턴스 밖 또는 자격 없음). 아무것도 기록되지 않았습니다."
 L["Giving to %s..."] = "%s에게 주는 중..."
+
+-- Loot rules and rooms (#448: L3-L9, B16, B24, B27)
+L["%s awarded an item by a loot rule this client does not have: %s's counters were not changed here."] = "%s 님이 이 클라이언트에 없는 전리품 규칙으로 아이템을 분배했습니다: %s 님의 카운터는 여기서 바뀌지 않았습니다."
+L["This raid's loot is handled outside GuildOS (set on guildos.me)."] = "이 공격대의 전리품은 GuildOS 밖에서 분배됩니다 (guildos.me에서 설정)."
+L["The Loot Council cannot apply the loot rule in force (it needs %s): %s applies."] = "전리품 위원회는 현재 전리품 규칙을 적용할 수 없습니다 (%s 필요): %s 규칙이 적용됩니다."
+L["answers other than Need and Greed"] = "입찰과 차비 외의 응답"
+L["bids"] = "입찰가"
+L["a check on who may ask"] = "요청 자격 확인"
+L["soft reserves"] = "소프트 리저브"
+L["officer priorities"] = "관리자 우선순위"
+L["a counter"] = "카운터"
+L["Without a rule from the site, use:"] = "사이트 규칙이 없을 때 사용:"
+L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "관리자는 운영 도구를 쓸 수 있습니다. 설정 > 길드 규칙에서 관리자로 볼 길드 등급을 정하세요. 전리품 창의 규칙 탭에서 분배 방식을 고르세요: /roll, 위시리스트, DKP."
+L["Search the realm"] = "서버에서 찾기"
+L["New poll"] = "새 투표"

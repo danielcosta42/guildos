@@ -7,7 +7,7 @@
 -- realm. Charging for an item happens when an award by trade is recorded (tools/retail-loot-council.lua),
 -- never from Master Loot. The guild's loot system decides who may award an offered item, so on retail
 -- an officer's choice reaches every member (`guildcfg`/`lootsys`, newest stamp wins), and since audit R1
--- Forever's too. TMB is Classic only and is not offered on retail.
+-- Forever's too. TMB is no more (audit R8, B16): it was the wishlist, and reads as it.
 --
 --   luajit -e 'ADDON="."' tools/retail-points.lua
 --
@@ -199,7 +199,7 @@ handler({ dom = "guildcfg", act = "lootsys", rev = NOW - 1, data = { sys = "dkp"
 check(GuildOS:GetLootSystem() == "dkp", "a member takes the guild's loot system")
 handler({ dom = "guildcfg", act = "lootsys", rev = NOW - 5, data = { sys = "external" } })
 check(GuildOS:GetLootSystem() == "dkp", "an older one does not replace it")
-handler({ dom = "guildcfg", act = "lootsys", rev = NOW, data = { sys = "tmb" } })
+handler({ dom = "guildcfg", act = "lootsys", rev = NOW, data = { sys = "plus1" } })
 handler({ dom = "guildcfg", act = "lootsys", rev = NOW, data = { sys = "nonsense" } })
 handler({ dom = "guildcfg", act = "lootsys", rev = NOW, data = { sys = SECRET } })
 check(GuildOS:GetLootSystem() == "dkp", "one retail does not run, or none at all, is turned away")
@@ -229,7 +229,8 @@ check(GuildOS.Points:Award("Ana", 5, "x").name == "Ana", "and names a member as 
 check(GuildOS.Points:KeyOf("Ana") == GuildOS:GetPlayerKey("Ana", GetRealmName()), "and keys a typed name as before")
 offered = {}
 for _, sys in ipairs(GuildOS:LootSystemsHere()) do offered[sys.key] = GuildOS:LootSystemLabel(sys) end
-check(offered.tmb == "TMB" and offered.rolls == "/roll (MS/OS)", "Forever offers every loot system, as before")
+check(offered.tmb == nil and offered.wishlist and offered.plus1 and offered.rolls == "/roll (MS/OS)",
+  "Forever offers every loot system, TMB no longer among them (audit R8, B16: it was the wishlist)")
 -- Audit R1: the officer's choice reaches every client, not only retail's.
 published = {}
 GuildOS:SetLootSystem("dkp")
@@ -240,7 +241,33 @@ GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootsys", rev =
 check(GuildOS:GetLootSystem() == "external", "and a Forever member takes the guild's (a raider set to external)")
 GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootsys", rev = NOW + 5, data = { sys = "dkp" } })
 check(GuildOS:GetLootSystem() == "external", "the newest stamp still wins on Forever")
-GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootsys", rev = NOW + 11, data = { sys = "tmb" } })
-check(GuildOS:GetLootSystem() == "tmb", "a Classic-only system is taken where the client offers it")
+GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootsys", rev = NOW + 11, data = { sys = "plus1" } })
+check(GuildOS:GetLootSystem() == "plus1", "a Classic-only system is taken where the client offers it")
+-- Audit R8, B16: "tmb" from an officer's client before, or saved, reads as the wishlist.
+GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootsys", rev = NOW + 12, data = { sys = "tmb" } })
+check(GuildOS.db.settings.lootSystem == "wishlist" and GuildOS:GetLootSystem() == "wishlist", "an old officer's TMB is taken as the wishlist")
+GuildOS.db.settings.lootSystem = "tmb"
+check(GuildOS:GetLootSystem() == "wishlist" and GuildOS:LootSystemShowsWishlist() == (GuildOS.Wishlist ~= nil),
+  "a guild saved with TMB reads as the wishlist")
+
+-- Audit L7: the guild's own rule travels on Forever too, over GUILD (guildcfg, never the OFFICER channel), and a
+-- newer loot system than a client's own old rule replaces it.
+dofile(ADDON .. "/Modules/LootRule.lua")
+local LR = GuildOS.LootRule
+check(not GuildOS.SyncService.OFFICER_CHANNEL_DOMAINS.guildcfg, "guildcfg goes over GUILD, which Forever has")
+published = {}
+local rule = { v = 1, model = "plus1", order = { { k = "response" }, { k = "roll" } } }
+check(LR:Set(rule) and last("guildcfg", "lootrule") and last("guildcfg", "lootrule").data.rule == rule,
+  "Forever's officer publishes the guild's rule")
+GuildOS.db.settings = { modules = {}, lootSystem = "rolls" }
+GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootrule", rev = NOW + 20, data = { rule = rule } })
+check(GuildOS.db.settings.lootRule and GuildOS.db.settings.lootRule.model == "plus1" and LR:For("").model == "plus1",
+  "and a Forever member takes it")
+GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootsys", rev = NOW + 15, data = { sys = "dkp" } })
+check(LR:For("").model == "plus1", "a loot system older than the rule leaves the rule")
+GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootsys", rev = NOW + 30, data = { sys = "dkp" } })
+check(GuildOS.db.settings.lootRule == nil and LR:For("").model == "dkp", "a newer one clears the older rule: the guild reads DKP")
+GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootrule", rev = NOW + 20, data = { rule = rule } })
+check(GuildOS.db.settings.lootRule == nil, "and the old rule re-sent is turned away")
 
 print(("retail-points: %d checks passed"):format(checks))

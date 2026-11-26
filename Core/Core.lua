@@ -1290,10 +1290,13 @@ end
 ----------------------------------------------------------------------
 -- Loot distribution system chosen by the guild (Settings, officer).
 -- Drives the default Loot Master flow; read by features that present
--- loot UI. "rolls" = /roll MS/OS (default), "tmb"/"wishlist" = interest
+-- loot UI. "rolls" = /roll MS/OS (default), "wishlist" = interest
 -- lists, "dkp" = the Points economy.
+--
+-- "tmb" is no longer one (audit R8, B16): it was the wishlist under another name. A guild or a core saved
+-- with it, or an officer's client from before that sends it, reads as "wishlist" (LootSystemKey).
 ----------------------------------------------------------------------
--- `retail = false`: not offered on retail. That's My BiS is Classic only (issue #185).
+-- `retail = false`: not offered on retail.
 -- "plus1", "dkpbid" and "dkpsealed" (issue #334) are ready-made loot rules of the loot master
 -- (LootRule:FromLegacy), which retail does not have: the +1 counter, and DKP won by an open bid or by
 -- a sealed one that pays the second price. "sk" and "karma" (issue #337) are two more: Suicide Kings,
@@ -1303,7 +1306,6 @@ end
 GuildOS.LOOT_SYSTEMS = {
     { key = "rolls",    label = "/roll (MS/OS)" },
     { key = "plus1",    label = "MS > OS +1", retail = false },
-    { key = "tmb",      label = "TMB", retail = false },
     { key = "wishlist", label = "Wishlist" },
     { key = "dkp",      label = "DKP / Points" },
     { key = "dkpbid",   label = "DKP bidding", retail = false },
@@ -1324,6 +1326,12 @@ function GuildOS:LootSystemsHere()
     return out
 end
 
+-- A loot system's key as this version reads it: the old "tmb" is the wishlist (audit R8, B16).
+function GuildOS.LootSystemKey(sys)
+    if sys == "tmb" then return "wishlist" end
+    return sys
+end
+
 -- Whether `key` is a loot system this client offers.
 local function lootSystemHere(key)
     for _, sys in ipairs(GuildOS:LootSystemsHere()) do
@@ -1340,6 +1348,8 @@ function GuildOS:IsLootSystemHere(key) return lootSystemHere(key) end
 function GuildOS:GetLootSystem(coreName)
     if coreName == nil then
         local LR = self.LootRule
+        -- A night whose loot the site says is outside GuildOS (audit L5) is "external", whatever was chosen here.
+        if LR and LR.NightExternal and self.db and LR:NightExternal() then return "external" end
         local night = LR and LR.Night and self.db and LR:Night()
         if night then return LR:SystemOf(night) end
     end
@@ -1353,7 +1363,7 @@ function GuildOS:BaseLootSystem(coreName)
         local own = CM:GetLootSystem(coreName)
         if own and lootSystemHere(own) then return own end
     end
-    return self:GetSetting("lootSystem") or "rolls"
+    return GuildOS.LootSystemKey(self:GetSetting("lootSystem")) or "rolls"
 end
 
 -- A loot system's name on its button. On retail nobody /rolls: "rolls" is the free roll, where whoever
@@ -1442,24 +1452,31 @@ function GuildOS:OnLootSystemSync(env)
     local data = env and env.data
     local at = env and tonumber(env.rev)
     local sys = type(data) == "table" and data.sys
-    if self.Compat.IsSecret(sys) or type(sys) ~= "string" or not lootSystemHere(sys) then return end
+    if self.Compat.IsSecret(sys) or type(sys) ~= "string" then return end
+    sys = GuildOS.LootSystemKey(sys)   -- an officer's client from before sends "tmb" (audit R8, B16)
+    if not lootSystemHere(sys) then return end
     if not (at and at > 0 and at < math.huge) then return end
     at = math.min(at, GetServerTime() + RANK_FUTURE_SLACK)
     local s = self.db.settings
     local held = s.lootSystemAt
     if held and (at < held or (at == held and sys >= self:GetLootSystem(""))) then return end
     s.lootSystem, s.lootSystemAt = sys, at
+    -- A guild rule older than the system just chosen gives way to it (audit L7): the officer who chose the
+    -- system dropped the rule (SetLootSystem), and a client that never heard that, or heard it from an
+    -- officer whose client did not send rules, must not keep master-looting by the old one. Its stamp moves
+    -- up with it, so the old rule re-sent later is turned away.
+    if s.lootRule ~= nil and (tonumber(s.lootRuleAt) or 0) < at then s.lootRule, s.lootRuleAt = nil, at end
     self:OnLootSystemChanged()   -- Loot Master follows it ("external" silences it), then the UI
 end
 
 -- Each loot system exposes only its own UI so players never see screens
--- that don't apply: wishlist/TMB -> wishlist access; DKP -> DKP access;
+-- that don't apply: wishlist -> wishlist access; DKP -> DKP access;
 -- plain /roll -> neither. A system whose module is absent (retail, ADR-0026) shows nothing.
 function GuildOS:LootSystemShowsWishlist()
     if not self.Wishlist then return false end
     local s = self:GetLootSystem()
     -- A loot council (issue #336) lists its candidates by the wishlist too.
-    return s == "wishlist" or s == "tmb" or s == "council"
+    return s == "wishlist" or s == "council"
 end
 
 -- Whether the loot system in force (or `sys`, the one an item was announced under) runs on the points

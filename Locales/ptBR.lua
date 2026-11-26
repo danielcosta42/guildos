@@ -4163,3 +4163,18 @@ L["Wait: the last item is still on its way to its winner."] = "Aguarde: o últim
 L["%s is not on the open corpse: open the one that holds it, or close the loot window to give it by trade."] = "%s não está no corpo aberto: abra o que tem o item, ou feche a janela de saque para entregar por troca."
 L["%s cannot take %s from this corpse (offline, outside the instance or not eligible). Nothing was recorded."] = "%s não pode receber %s deste corpo (offline, fora da instância ou sem direito). Nada foi registrado."
 L["Giving to %s..."] = "Entregando para %s..."
+
+-- Loot rules and rooms (#448: L3-L9, B16, B24, B27)
+L["%s awarded an item by a loot rule this client does not have: %s's counters were not changed here."] = "%s entregou um item por uma regra de loot que este cliente não tem: os contadores de %s não foram alterados aqui."
+L["This raid's loot is handled outside GuildOS (set on guildos.me)."] = "O loot desta raide é feito fora do GuildOS (definido no guildos.me)."
+L["The Loot Council cannot apply the loot rule in force (it needs %s): %s applies."] = "O Conselho de Loot não consegue aplicar a regra de loot em vigor (ela precisa de %s): vale %s."
+L["answers other than Need and Greed"] = "respostas além de Necessidade e Ganância"
+L["bids"] = "lances"
+L["a check on who may ask"] = "uma verificação de quem pode pedir"
+L["soft reserves"] = "soft reserves"
+L["officer priorities"] = "prioridades dos oficiais"
+L["a counter"] = "um contador"
+L["Without a rule from the site, use:"] = "Sem uma regra do site, usar:"
+L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "Como oficial, você desbloqueia ferramentas de liderança. Em Configurações > Regras da guilda, defina quais ranks contam como oficiais. Na aba Regra da janela de Loot, escolha como a guilda distribui o loot: /roll, Wishlist ou DKP."
+L["Search the realm"] = "Procurar no reino"
+L["New poll"] = "Nova enquete"

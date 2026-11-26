@@ -236,13 +236,20 @@ function TradeCouncil:Ranked(o)
             wish = self:WishOrder(o.itemId, key), points = P and P.GetDB and P:GetDB() and P:Get(key) or nil,
             pr = P and P.GetDB and P:GetDB() and P:GetMode() == "epgp" and P:PR(key) or nil,
         }
+        -- EP and GP apart, for a rule that orders by their ratio (the site's EPGP), as LootMaster keeps them.
+        local row = rows[#rows]
+        if row.pr then
+            row.gpBase = tonumber(P:GetDB().config and P:GetDB().config.baseGP) or 0
+            row.ep, row.gp = P:EP(key), P:GP(key) - row.gpBase
+        end
     end
     -- The guild's loot rule (issue #333), which on retail reads the answer, the points or the wishlist
-    -- place its loot system names, then the server's roll.
+    -- place its loot system names, then the server's roll. A rule that needs what an answer row cannot
+    -- hold is refused here, and the guild's applies (audit L8, LootRule:ForTradeCouncil).
     local LR = GuildOS.LootRule
     local cands = {}
     for i, row in ipairs(rows) do cands[i] = LR:FromAnswer(row) end
-    LR:Sort(cands)
+    LR:Sort(cands, (LR:ForTradeCouncil()))
     for i, c in ipairs(cands) do rows[i] = c.row end
     return rows
 end
@@ -561,7 +568,7 @@ end
 -- or the item's holder, so an award against the order reads "ml" as a master looter's does.
 function TradeCouncil:Why(o)
     local LR = GuildOS.LootRule
-    local rule = LR:Active()
+    local rule = LR:ForTradeCouncil()   -- the rule the answers were ranked by (audit L8)
     local sorted = {}
     for _, row in ipairs(self:Ranked(o)) do
         if row.choice ~= "P" then sorted[#sorted + 1] = LR:FromAnswer(row) end

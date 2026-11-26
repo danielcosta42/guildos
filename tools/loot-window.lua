@@ -380,6 +380,9 @@ local function lootTab(UI)
   check(#buttons(rule, "MS > OS +1") == 1 and #buttons(rule, "DKP / Points") == 1 and #buttons(rule, "Add answer") == 1,
     "an officer sees the models as a list and the answers' editor")
   check(#tagged(rule, "isScope") == 1, "and a selector: the guild or a core")
+  -- Audit R8, B16: no TMB among them (it was the wishlist), and the choice says it plays without the site's rule.
+  check(#buttons(rule, "TMB") == 0 and #buttons(rule, "Wishlist") == 1 and shows(rule, "Without a rule from the site, use:"),
+    "no TMB model, and the models are what plays without a rule from the site")
   check(shows(rule, "Who may ask.") and shows(rule, "Who takes it.") and shows(rule, "The higher roll"),
     "and the rule as players will read it, in the rule's order")
 
@@ -489,9 +492,13 @@ local function lootTab(UI)
   typeAndSave(boss, "15")
   check(P:GetDBForCore("Alpha").config.bossAward == 15 and P:GetDBForCore("").config.bossAward ~= 15, "and save on the core's pool")
   local mode = tagged(acc, "isMode")[1]
-  check(mode and #mode.options == 2, "the mode is a dropdown: DKP or a council")
-  mode:Select("council")
-  check(P:GetMode("Alpha") == "council", "and a choice changes it")
+  -- Audit R9, B16: the "Loot Council" mode did nothing; DKP is the one left, and a pool saved with it reads DKP.
+  check(mode and #mode.options == 1 and mode.options[1].value == "dkp", "the mode offers DKP alone, no council")
+  P:GetDBForCore("Alpha").mode = "council"
+  check(P:GetMode("Alpha") == "dkp", "a pool saved in the council mode reads as DKP")
+  P:InCore("Alpha", P.SetMode, P, "council")
+  check(P:GetDBForCore("Alpha").mode == "council" and P:GetMode("Alpha") == "dkp", "and the council mode cannot be chosen")
+  P:GetDBForCore("Alpha").mode = "dkp"
   click(acc, "Back to the standings")
 
   -- The core picked is renamed while the tab is open (another officer, or the Discord's rename by

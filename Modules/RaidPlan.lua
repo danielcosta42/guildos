@@ -48,12 +48,22 @@ function Plan:LootRuleLine()
     if not (LR and LR.NightStatus) then return nil end
     local state, rule, piece = LR:NightStatus()
     if not state then return nil end
+    if state == "external" then
+        -- Audit L5: the guild set this raid's loot outside GuildOS on the site.
+        return L["This raid's loot is handled outside GuildOS (set on guildos.me)."], false
+    end
     if state == "refused" then
         local what = piece and LR:UnsupportedText(piece)
         if what then
             return string.format(L["This raid's loot rule needs a newer GuildOS (%s). The guild's own rule stays in force."], what), true
         end
         return L["This raid's loot rule needs a newer GuildOS. The guild's own rule stays in force."], true
+    end
+    -- Retail's Trade Council fills fewer fields than the master looter (audit L8): a rule it cannot apply
+    -- whole is refused there, said the way a rule this client cannot read is.
+    if GuildOS.TradeCouncil and LR.TradeCouncilLine then
+        local tc = LR:TradeCouncilLine(rule)
+        if tc then return tc, true end
     end
     local name = LR:ModelName(rule)
     if state == "active" then

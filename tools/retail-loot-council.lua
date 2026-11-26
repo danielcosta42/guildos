@@ -323,6 +323,44 @@ GuildOS.db.settings.lootSystem = nil
 rows = TC:Ranked(o)
 check(rows[1].key == "Bob-TolBarad" and rows[1].roll == 70, "in a free roll, the higher roll first (Bob's roll kept from his Greed)")
 
+-- Audit L8: a rule that needs what an answer row cannot hold is refused on Trade Council, with the reason, and
+-- the guild's rule applies.
+do
+  local LR = GuildOS.LootRule
+  local function ruleOf(order, extra)
+    local r = { v = 1, model = "custom", order = order }
+    for k, v in pairs(extra or {}) do r[k] = v end
+    return r
+  end
+  check(LR:TradeCouncilGap(ruleOf({ { k = "response" }, { k = "wishlist" }, { k = "points" }, { k = "pr" }, { k = "roll" } })) == nil,
+    "the answer, the wishlist place, points, EP/GP and the roll are what Trade Council fills")
+  check(LR:TradeCouncilGap(ruleOf({ { k = "response" }, { k = "ratio", num = "ep", den = "gp" } })) == nil,
+    "and the site's EPGP ratio, from the row's EP and GP")
+  check(LR:TradeCouncilGap(ruleOf({ { k = "softres" }, { k = "roll" } })) == "softres", "a soft reserve is refused")
+  check(LR:TradeCouncilGap(ruleOf({ { k = "prio" } })) == "prio", "an officer priority")
+  check(LR:TradeCouncilGap(ruleOf({ { k = "received" } })) == "received", "items received")
+  check(LR:TradeCouncilGap(ruleOf({ { k = "attendance" } })) == "attendance", "attendance")
+  check(LR:TradeCouncilGap(ruleOf({ { k = "roll" } }, { accounts = { { key = "plus1", type = "counter", name = "+1" } } })) == "accounts",
+    "a counter")
+  check(LR:TradeCouncilGap(ruleOf({ { k = "roll" } }, { filters = { { k = "attendance", min = 50, act = "block" } } })) == "filters",
+    "a check on who may ask")
+  check(LR:TradeCouncilGap(ruleOf({ { k = "roll" } }, { responses = { { key = "BIS", ask = "roll" } } })) == "answers",
+    "and answers of its own")
+  -- The guild keeps a rule by soft reserve: Trade Council ranks by the plain roll and says why.
+  local custom = ruleOf({ { k = "response" }, { k = "softres" }, { k = "roll" } },
+    { responses = { { key = "MS", label = "MS", ask = "roll", plus = true, cost = 1 }, { key = "OS", label = "OS", ask = "roll", cost = 1 } } })
+  check(LR:Validate(custom), "the rule reads whole")
+  GuildOS.db.settings.lootRule = custom
+  local used, gap = LR:ForTradeCouncil()
+  check(gap == "softres" and used ~= custom and LR:TradeCouncilGap(used) == nil, "it is refused, and a rule Trade Council fills applies")
+  local line = LR:TradeCouncilLine()
+  check(line and line:find("soft reserves", 1, true), "and the reason is said: " .. tostring(line))
+  rows = TC:Ranked(o)
+  check(rows[1].key == "Bob-TolBarad" and rows[1].roll == 70, "the answers are ranked by the rule that applies")
+  GuildOS.db.settings.lootRule = nil
+  check(LR:TradeCouncilLine() == nil, "a rule Trade Council fills says nothing")
+end
+
 -- ── 5. Awarding, and the trade ────────────────────────────────────────
 GuildOS.db.settings.lootSystem = nil
 TC:Award(o.id, "Stranger-Nemesis")

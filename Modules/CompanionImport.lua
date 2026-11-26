@@ -420,6 +420,9 @@ function Import:Parse(raw)
         plan = Import.ReadPlan(data),
         -- v5 (the site's #516): the rule the raid plays by, nil when the site sent none.
         lootRule = Import.ReadLootRule(data.lootRule),
+        -- The raid's loot is outside GuildOS (audit L5): no GuildOS loot that night. The site never sends it
+        -- with a rule; were both there, this one wins (LootRule:Night), as no rule plays a night whose loot is elsewhere.
+        lootExternal = data.lootExternal == true or nil,
         title = data.title or "",
         instance = data.instance,
         instanceKey = type(data.instanceKey) == "string" and data.instanceKey or nil,
@@ -763,6 +766,19 @@ function Import:Freshest(roster)
         return kept
     end
     return roster
+end
+
+--- The roster of the raid `raidId`, the kept one first (the newest word on its raid, as in ButtonRaid), else this
+--- session's inbox copy; nil when neither holds it. The loot rule of the raid in progress is read through it
+--- (audit L3): with two raids in one night, the one the session was stamped with at zone-in, not the nearest start.
+function Import:RosterOf(raidId)
+    if raidId == nil then return nil end
+    local kept = self:Current()
+    if type(kept) == "table" and kept.raidId == raidId then return kept end
+    for _, roster in ipairs(self._webRaids or {}) do
+        if type(roster) == "table" and roster.raidId == raidId then return roster end
+    end
+    return nil
 end
 
 -- Whether this character owns `roster`: its name, in the form the client's members are keyed by, is one of

@@ -11,7 +11,7 @@
 -- added to a roll (karma, SR+), a summed score, and what was paid shared among the raid (zero-sum).
 --
 -- `order` is a list of criteria. Two candidates are compared by the first; a tie goes to the next.
--- Every loot system the guild could pick before this (rolls, tmb, wishlist, dkp) is a ready-made rule
+-- Every loot system the guild could pick before this (rolls, wishlist, dkp) is a ready-made rule
 -- (`FromLegacy`), built from the system and the loot settings the guild already had, so a guild that
 -- updates chooses nothing and sees no change. A custom rule, once an officer saves one, replaces it.
 --
@@ -1124,6 +1124,45 @@ function LootRule:Encode(rule, time)
     end
 end
 
+-- A rule's fingerprint on the wire: eight hex digits of a hash of the whole rule, keys in a fixed order, the
+-- same on every client that holds the same rule (audit L9). A master looter who is no officer sends it with
+-- WON, and the officer applies the counters by the rule with that fingerprint, never by its own rule in force.
+local function serial(v, out)
+    local t = type(v)
+    if t == "table" then
+        local keys = {}
+        for k in pairs(v) do keys[#keys + 1] = k end
+        table.sort(keys, function(a, b)
+            local ta, tb = type(a), type(b)
+            if ta ~= tb then return ta < tb end
+            return a < b
+        end)
+        out[#out + 1] = "{"
+        for _, k in ipairs(keys) do
+            serial(k, out)
+            out[#out + 1] = "="
+            serial(v[k], out)
+            out[#out + 1] = ","
+        end
+        out[#out + 1] = "}"
+    elseif t == "string" then
+        out[#out + 1] = string.format("%q", v)
+    else
+        out[#out + 1] = tostring(v)
+    end
+end
+
+function LootRule:Fingerprint(rule)
+    if type(rule) ~= "table" then return nil end
+    local out = {}
+    serial(rule, out)
+    local text = table.concat(out)
+    -- djb2 kept in 32 bits with plain arithmetic: no bit library is needed, and a double holds h * 33 exactly.
+    local h = 5381
+    for i = 1, #text do h = (h * 33 + text:byte(i)) % 4294967296 end
+    return string.format("%08X", h)
+end
+
 -- What another client's `Encode` said, or nil when any of it is not what this client writes: an addon
 -- message is read whole or not at all.
 function LootRule:Decode(text)
@@ -1343,10 +1382,22 @@ function LootRule.InWindow(startsAt, now) return inWindow(startsAt, now) end
 -- reads it (checked once per roster and kept, as the screens ask often). The roster in hand is the one the
 -- Raid plan window shows and the raid buttons act on (CompanionImport:ActiveRoster, issue #400): the raid of
 -- the window when there is one, else the roster kept.
+-- The raid in progress comes first (audit L3): Kara at 19:00 and Gruul at 21:00, Gruul's roster is the
+-- nearest at 20:10, but the raid stamped at zone-in (RaidTracker.currentRaid.raidId, as SiteLoot reads it) is
+-- still Kara, and Kara's rule stays. With no raid stamped, the roster in hand as before.
+local function stampedRaid()
+    local RT = GuildOS.RaidTracker
+    return RT and RT.currentRaid and RT.currentRaid.raidId or nil
+end
+
 local function rosterRule(self)
     local I = GuildOS.CompanionImport
     local roster
-    if I and I.ActiveRoster then roster = I:ActiveRoster() else roster = GuildOS.db and GuildOS.db.companionRoster end
+    local stamped = stampedRaid()
+    if stamped and I and I.RosterOf then roster = I:RosterOf(stamped) end
+    if not roster then
+        if I and I.ActiveRoster then roster = I:ActiveRoster() else roster = GuildOS.db and GuildOS.db.companionRoster end
+    end
     if type(roster) ~= "table" or roster.lootRule == nil then return roster, nil end
     local seen = self.nightSeen
     if not (seen and seen.roster == roster and seen.rule == roster.lootRule) then
@@ -1358,16 +1409,34 @@ local function rosterRule(self)
     return roster, seen
 end
 
+-- Whether the raid night's roster says its loot is outside GuildOS (audit L5, GOSROST1 `lootExternal`): in the
+-- raid, inside the night's window, for the raid in progress when one is stamped. That night is "external"
+-- (GuildOS:GetLootSystem): no popups, no rule, as a guild set to "external".
+function LootRule:NightExternal()
+    if not GuildOS.db then return false end
+    local roster = rosterRule(self)
+    if type(roster) ~= "table" or roster.lootExternal ~= true then return false end
+    local stamped = stampedRaid()
+    if stamped and roster.raidId ~= stamped then return false end
+    return inWindow(roster.startsAt, GetServerTime()) and IsInRaid() and true or false
+end
+
 function LootRule:Night()
     local db = GuildOS.db
     if not db then return nil end
+    if self:NightExternal() then return nil end
     local now = GetServerTime()
     local roster, seen = rosterRule(self)
+    -- A raid in progress whose roster is not in hand (audit L3): another raid's roster neither replaces the
+    -- rule kept for it nor brings its own, as SiteLoot never reads another raid's sheet.
+    local stamped = stampedRaid()
+    if stamped and roster and roster.raidId ~= stamped then roster, seen = nil, nil end
     local kept = db.lootNight
     if type(kept) ~= "table" or type(kept.rule) ~= "table" then kept = nil end
-    -- Over, or the roster in hand is now another raid's night.
+    -- Over, the roster in hand is now another raid's night, or the raid in progress is another (audit L3).
     if kept and (not inWindow(kept.startsAt, now)
-        or (roster and roster.raidId ~= kept.raidId and inWindow(roster.startsAt, now))) then
+        or (roster and roster.raidId ~= kept.raidId and inWindow(roster.startsAt, now))
+        or (stamped and kept.raidId ~= stamped)) then
         kept = nil
     end
     -- A kept rule is read again once per session: this client may be an older one than kept it.
@@ -1389,8 +1458,11 @@ end
 --   "active", rule             it is the rule in force
 --   "waiting", rule            it reads whole, and is taken once the raid is on
 --   "refused", nil, piece      this client cannot read it; `piece` names what is missing, when known
+--   "external"                 the site says the raid's loot is outside GuildOS (audit L5)
 function LootRule:NightStatus()
     local roster, seen = rosterRule(self)
+    -- The site says this raid's loot is outside GuildOS (audit L5).
+    if type(roster) == "table" and roster.lootExternal == true then return "external" end
     if not seen then return nil end
     if not seen.ok then return "refused", nil, self:Unsupported(seen.why) end
     local kept = GuildOS.db and GuildOS.db.lootNight
@@ -1416,7 +1488,8 @@ function LootRule:ModelName(rule)
     if model == "sk" then return L["Suicide Kings"] end
     if model == "karma" then return L["Karma"] end
     if model == "ranked" then return L["Ranked list"] end
-    if model == "tmb" then return L["TMB"] end
+    -- The site may still send the old model "tmb": it was the wishlist (audit R8, B16).
+    if model == "tmb" then return L["Wishlist"] end
     return L["Custom rule"]
 end
 
@@ -1770,13 +1843,93 @@ local CHOICE_AS = { N = "MS", G = "OS", P = "PASS" }
 function LootRule:FromAnswer(row)
     return {
         key = row.key, name = row.key, rollType = CHOICE_AS[row.choice] or row.choice, roll = row.roll,
-        wishlist = row.wish and { order = row.wish } or nil, dkp = row.points, pr = row.pr, row = row,
+        wishlist = row.wish and { order = row.wish } or nil, dkp = row.points, pr = row.pr,
+        ep = row.ep, gp = row.gp, gpBase = row.gpBase, row = row,
     }
 end
 
 ----------------------------------------------------------------------
--- The guild's own rule (an officer's): stamped, kept, and told to the guild where the loot system is
--- (retail, issue #185). `nil` goes back to the rule of the loot system.
+-- Retail Trade Council (audit L8): an answer row holds Need / Greed / Pass, the server's roll, the wishlist
+-- place and the points (DKP, EP, GP), nothing else. A rule that orders or filters by anything else (soft
+-- reserve, priority, items received, attendance, a counter, a bid, answers of its own) cannot be applied
+-- there whole, and is never applied in part: it is refused, the reason is shown (the Raid plan window and
+-- the Trade Council window), and the guild's rule applies.
+----------------------------------------------------------------------
+local TC_ANSWERS = { MS = true, OS = true }
+local TC_ORDER = { response = true, wishlist = true, points = true, pr = true, roll = true }
+local TC_GAP_OF = { softres = "softres", hardres = "softres", prio = "prio", received = "received",
+    attendance = "attendance", bid = "bid" }
+
+-- One block set (the rule, or an exception's `set`): what it needs that a row cannot give, or nil.
+local function tcGap(set)
+    for _, r in ipairs(set.responses or {}) do
+        if not TC_ANSWERS[r.key] then return "answers" end
+        if r.ask == "bid" then return "bid" end
+    end
+    if type(set.filters) == "table" and #set.filters > 0 then return "filters" end
+    for _, e in ipairs(set.order or {}) do
+        if TC_GAP_OF[e.k] then return TC_GAP_OF[e.k] end
+        -- The points' own accounts a row holds: an account or a ratio of DKP, EP and GP reads; any other
+        -- account, a score, or a roll with a bonus does not.
+        local points = (e.k == "account" and POINTS_ACCOUNTS[e.acct])
+            or (e.k == "ratio" and POINTS_ACCOUNTS[e.num] and POINTS_ACCOUNTS[e.den])
+        if not (TC_ORDER[e.k] or points) or (e.k == "roll" and e.bonus ~= nil) then return "accounts" end
+    end
+    return nil
+end
+
+-- What `rule` needs that Trade Council cannot fill, as a piece (TradeCouncilText), or nil when it fills all.
+function LootRule:TradeCouncilGap(rule)
+    if type(rule) ~= "table" then return nil end
+    for _, a in ipairs(rule.accounts or {}) do
+        if type(a) == "table" and not POINTS_ACCOUNTS[a.key] then return "accounts" end
+    end
+    local gap = tcGap(rule)
+    if gap then return gap end
+    for _, x in ipairs(rule.exceptions or {}) do
+        gap = type(x) == "table" and type(x.set) == "table" and tcGap(x.set)
+        if gap then return gap end
+    end
+    return nil
+end
+
+-- Each one by its own literal key, so every language file finds it.
+function LootRule:TradeCouncilText(piece)
+    if piece == "answers" then return L["answers other than Need and Greed"] end
+    if piece == "bid" then return L["bids"] end
+    if piece == "filters" then return L["a check on who may ask"] end
+    if piece == "softres" then return L["soft reserves"] end
+    if piece == "prio" then return L["officer priorities"] end
+    if piece == "received" then return L["items received"] end
+    if piece == "attendance" then return L["attendance"] end
+    return L["a counter"]
+end
+
+-- The rule Trade Council ranks by: `rule` (the one in force when nil) when it can fill it, else the guild's,
+-- else the plain roll; and the piece that was missing, when the rule in force was refused.
+function LootRule:ForTradeCouncil(rule)
+    rule = rule or self:Active()
+    local gap = self:TradeCouncilGap(rule)
+    if not gap then return rule end
+    local guild = self:For("")
+    if not self:TradeCouncilGap(guild) then return guild, gap end
+    return self:FromLegacy("rolls", {}), gap
+end
+
+-- The line that says so, or nil when the rule in force plays whole on Trade Council.
+function LootRule:TradeCouncilLine(rule)
+    local used, gap = self:ForTradeCouncil(rule)
+    if not gap then return nil end
+    return string.format(L["The Loot Council cannot apply the loot rule in force (it needs %s): %s applies."],
+        self:TradeCouncilText(gap), self:ModelName(used))
+end
+
+----------------------------------------------------------------------
+-- The guild's own rule (an officer's): stamped, kept, and told to the guild where the loot system is, on
+-- every client (audit L7: the loot system travels everywhere since audit R1, and a rule kept on TBC or
+-- Forever alone let an officer master-loot by an old rule while the screens read the system). Over
+-- guildcfg, which goes over GUILD, so Forever, with no OFFICER channel, has it too. `nil` goes back to
+-- the rule of the loot system.
 -- With `coreName`, that core's own rule (issue #338): kept with the core and told to the other
 -- officers with it (CoreManager); `nil` goes back to what the core follows.
 ----------------------------------------------------------------------
@@ -1802,7 +1955,6 @@ function LootRule:Set(rule, coreName)
 end
 
 function LootRule:Publish()
-    if not GuildOS.Client.isRetail then return end
     local s = GuildOS.db and GuildOS.db.settings
     if not (s and s.lootRuleAt and GuildOS.SyncService and GuildOS:IsOfficer()) then return end
     GuildOS.SyncService:Publish("guildcfg", "lootrule", { rule = s.lootRule or false }, { rev = s.lootRuleAt })
@@ -1811,7 +1963,6 @@ end
 -- An officer's rule from the guild (SyncService has checked the officer): the newest stamp wins, and a
 -- rule this client cannot read whole is left out, keeping the one it has.
 function LootRule:OnSync(env)
-    if not GuildOS.Client.isRetail then return end
     local data = env and env.data
     local at = env and tonumber(env.rev)
     if type(data) ~= "table" or not (at and at > 0 and at < math.huge) then return end

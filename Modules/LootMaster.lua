@@ -18,8 +18,10 @@
 --   BID|sid|name|KEY|bid                 loot master -> raid: an open bid it took
 --   ACK|sid|name|KEY                     loot master -> raid: an answer with nothing else to show
 --   NO|sid|name|why|number               loot master -> raid: an answer it refused
---   WON|sid|itemId|KEY|name              loot master who is no officer -> raid, after an award that
---                                        moved a counter: the officers' clients make the same entries
+--   WON|sid|itemId|KEY|name|fp           loot master who is no officer -> raid, after an award that
+--                                        moved a counter: the officers' clients make the same entries,
+--                                        by the rule whose fingerprint is `fp` (LootRule:Fingerprint,
+--                                        audit L9); without `fp` (a version from before) by their own
 -- Who answered is always the sender the game names, never a name inside the message. Who each message
 -- is read from:
 --   ASK, ANNOUNCE, ROLL, BID, ACK, NO   the raid's master looter (IsFromMasterLooter), by a raider's client
@@ -981,7 +983,7 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
     self.activeLoot.itemId = itemId
 
     -- The guild's chosen loot system (Settings) decides the default flow:
-    -- "wishlist"/"tmb" force wishlist auto-council; "dkp"/"rolls" open a roll
+    -- "wishlist" forces wishlist auto-council; "dkp"/"rolls" open a roll
     -- (DKP just changes how the roll frame ranks and what award charges).
     -- An item that follows another rule (issue #335): a fixed destination has no roll at all, and an
     -- exception that swaps blocks is the rule this item is announced and decided by.
@@ -1025,7 +1027,7 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
     end
 
     local lootSystem = system
-    local wishlistOnly = self.WISHLIST_ONLY_MODE or lootSystem == "wishlist" or lootSystem == "tmb"
+    local wishlistOnly = self.WISHLIST_ONLY_MODE or lootSystem == "wishlist"
 
     -- Check officer prios first — they override wishlist council
     if itemId and itemId > 0 then
@@ -2462,9 +2464,11 @@ function LootMaster:RecordAward(playerName, silent, free, awarded)
         -- A master looter who is no officer cannot tell the guild's accounts anything: the entries above
         -- stay on this client. The raid's officers hear who won with which answer and make the same
         -- entries themselves, under the same names, once (OnWonMessage).
+        -- With the fingerprint of the rule the item was given by (audit L9): the officers apply that rule, not
+        -- their own in force.
         if award.plus and opBase and not GuildOS:IsOfficer() then
-            self:SafeSendAddon(LootMaster.PREFIX, string.format("WON|%s|%d|%s|%s", self.activeLoot.sid, itemId,
-                row.rollType, playerName), "RAID")
+            self:SafeSendAddon(LootMaster.PREFIX, string.format("WON|%s|%d|%s|%s|%s", self.activeLoot.sid, itemId,
+                row.rollType, playerName, LR:Fingerprint(rule)), "RAID")
         end
     end
 
@@ -2550,6 +2554,21 @@ function LootMaster:CounterEffects(rule, response, pKey, opBase, award, itemId)
     return made
 end
 
+-- The rule with fingerprint `fp` among those this client holds (audit L9): the one in force, the raid night's,
+-- the guild's, and each core's. nil when none has it.
+function LootMaster:RuleByFingerprint(fp)
+    local LR, CM = GuildOS.LootRule, GuildOS.CoreManager
+    local function match(rule) return rule and LR:Fingerprint(rule) == fp and rule or nil end
+    local found = match(LR:Active()) or match(LR:Night()) or match(LR:For(""))
+        or (CM and CM.GetActiveName and match(LR:For(CM:GetActiveName() or "")))
+    if found then return found end
+    for name in pairs(GuildOS.db and GuildOS.db.cores or {}) do
+        found = type(name) == "string" and name ~= "" and match(LR:For(name))
+        if found then return found end
+    end
+    return nil
+end
+
 -- An officer's side: the raid's master looter, who is no officer, gave an item to `player` for the
 -- answer `key`. This client makes the counter entries that award makes, by its own rule in force and its
 -- own figures, and tells the guild, as it would for an award of its own; the entries carry the award's
@@ -2560,8 +2579,11 @@ function LootMaster:OnWonMessage(rest, sender)
     -- An officer's own award reaches the guild by the officers' sync: nothing to do for it here.
     if GuildOS:IsOfficerByName(sender) then return end
     local P = GuildOS.Points
-    if not (P and P.GetDB and P:GetDB()) or #rest > 120 then return end
-    local sid, itemId, key, player = rest:match("^(%x+)|(%d+)|([A-Z0-9]+)|([^|]+)$")
+    if not (P and P.GetDB and P:GetDB()) or #rest > 130 then return end
+    -- The rule's fingerprint comes last (audit L9); a WON from a master looter on a version from before has
+    -- none and is read as before, by this client's rule in force.
+    local sid, itemId, key, player, fp = rest:match("^(%x+)|(%d+)|([A-Z0-9]+)|([^|]+)|(%x%x%x%x%x%x%x%x)$")
+    if not sid then sid, itemId, key, player = rest:match("^(%x+)|(%d+)|([A-Z0-9]+)|([^|]+)$") end
     if not sid or #sid > 8 or #itemId > 9 or #key > 8 then return end
     -- Only for the roll this client heard that master looter announce, and once: a WON for a roll
     -- that never was, or the same one again under another id, would write the guild's counters at will.
@@ -2571,6 +2593,17 @@ function LootMaster:OnWonMessage(rest, sender)
     local name = self:RaidRollerName(player)
     if not name then return end
     local rule = GuildOS.LootRule:Active()
+    if fp then
+        rule = self:RuleByFingerprint(fp)
+        if not rule then
+            -- The master looter gave it by a rule this client does not hold (an old copy of the guild's, a
+            -- core's this client never heard): counters moved by a guess would be wrong, so none are, and
+            -- the officer is told.
+            GuildOS:Print(string.format(L["%s awarded an item by a loot rule this client does not have: %s's counters were not changed here."],
+                sender:match("^([^-]+)") or sender, name))
+            return
+        end
+    end
     local response = GuildOS.LootRule:Response(key, rule)
     if not response then return end
     local pKey = GuildOS:GetPlayerKey(name)

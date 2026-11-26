@@ -644,7 +644,7 @@ function CoreManager:GetLootConfig(coreName)
         dkpMinBid        = lmField(core, "dkpMinBid"),
         dkpBidTime       = lmField(core, "dkpBidTime"),
         -- The core's own choice (issue #338), never the guild's: nil follows the guild.
-        lootSystem       = core and core.lootMaster and core.lootMaster.lootSystem or nil,
+        lootSystem       = core and core.lootMaster and GuildOS.LootSystemKey(core.lootMaster.lootSystem) or nil,
         rule             = core and core.lootMaster and core.lootMaster.rule or nil,
     }
 end
@@ -673,7 +673,8 @@ end
 function CoreManager:GetLootSystem(coreName)
     local core = coreNamed(self, coreName)
     local sys = core and core.lootMaster and core.lootMaster.lootSystem
-    return type(sys) == "string" and sys or nil
+    -- A core saved with "tmb" reads as the wishlist it was (audit R8, B16).
+    return type(sys) == "string" and GuildOS.LootSystemKey(sys) or nil
 end
 
 function CoreManager:GetLootRule(coreName)
@@ -741,6 +742,7 @@ function CoreManager:OnLootSync(env)
     local sys, rule = d.sys, d.rule
     if sys == false then sys = nil end
     if rule == false then rule = nil end
+    if type(sys) == "string" then sys = GuildOS.LootSystemKey(sys) end   -- "tmb" from before (audit R8, B16)
     if sys ~= nil and (type(sys) ~= "string" or not GuildOS:IsLootSystemHere(sys)) then return false end
     if rule ~= nil and not (GuildOS.LootRule and GuildOS.LootRule:Validate(rule)) then return false end
     at = math.min(at, GetServerTime() + LOOT_FUTURE_SLACK)
@@ -764,44 +766,8 @@ function CoreManager:SetLootConfigKey(key, value, coreName)
     end
 end
 
-----------------------------------------------------------------------
--- TMB (That's My BiS) priority list — stored per core
-----------------------------------------------------------------------
-function CoreManager:GetTMBList(coreName)
-    local core = self:GetCore(coreName)
-    if not core then return {} end
-    if not core.lootMaster then core.lootMaster = {} end
-    if not core.lootMaster.tmbList then core.lootMaster.tmbList = {} end
-    return core.lootMaster.tmbList
-end
-
-function CoreManager:SetTMBList(list, coreName)
-    local core = self:GetCore(coreName)
-    if not core then return end
-    if not core.lootMaster then core.lootMaster = {} end
-    core.lootMaster.tmbList = list or {}
-end
-
--- Parses a CSV paste from TMB export: one entry per line, "player,item,priority"
--- Lines starting with # are treated as comments and skipped.
-function CoreManager:ParseTMBImport(text)
-    local list = {}
-    for line in (text or ""):gmatch("[^\r\n]+") do
-        line = strtrim(line)
-        if line ~= "" and not line:match("^#") and not line:match("^[Cc]haracter") then
-            local player, item, prio = line:match("^([^,\t]+)[,\t]([^,\t]+)[,\t]?(%d*)")
-            if player and item then
-                list[#list + 1] = {
-                    player   = strtrim(player),
-                    item     = strtrim(item),
-                    priority = tonumber(prio) or 1,
-                }
-            end
-        end
-    end
-    return list
-end
-
+-- The TMB (That's My BiS) import is gone (audit R8, B16): nothing called it, and the "tmb" system is the
+-- wishlist. A list saved by it before (core.lootMaster.tmbList) is still sent to the site (CompanionExport).
 ----------------------------------------------------------------------
 -- Returns the awardHistory table for the active (or named) core.
 function CoreManager:GetAwardHistory(coreName)

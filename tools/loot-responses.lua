@@ -762,10 +762,15 @@ GuildOS.IsOfficer = function() return false end
 published = {}
 res = rollOff({ { "Cy", "MS", 90 }, { "Dee", "MS", 10 } })
 sid = LM.activeLoot.sid
+local mlRule = LM:Rule()
 quiet()
 LM:AwardLoot("Cy")
 check(P:Counter("plus1", K("Cy")) == 1 and #published == 0, "a master looter who is no officer keeps the +1 and publishes nothing")
-local won = ("WON|%s|28770|MS|Cy"):format(sid)
+-- With the fingerprint of the rule the item was given by (audit L9).
+local fp = LR:Fingerprint(mlRule)
+check(type(fp) == "string" and fp:find("^%x%x%x%x%x%x%x%x$") and LR:Fingerprint(copyOf(mlRule)) == fp,
+  "a rule's fingerprint is eight hex digits, the same for the same rule")
+local won = ("WON|%s|28770|MS|Cy|%s"):format(sid, fp)
 local toldWon = false
 for _, payload in ipairs(sent) do toldWon = toldWon or payload == won end
 check(toldWon, "and tells the raid who won with which answer: " .. all(sent))
@@ -813,6 +818,25 @@ check(P:Counter("plus1", K("Cy")) == 1, "two officers in the raid add up to one 
 GuildOS.db.points = scratch
 P:OnSync({ act = "cdelta", data = { entries = { copyOf(wonEntry) } } })
 check(P:Counter("plus1", K("Cy")) == 1, "and the master looter's own client, hearing the officers, counts it once")
+-- Audit L9: an officer whose own rule is not the master looter's applies none, and says so; a WON from a
+-- version before the fingerprint is still read, by the officer's own rule.
+local third = copyOf(mine)
+third.config = mine.config
+GuildOS.db.points = third
+GuildOS.IsOfficer = function() return true end
+LM.heard = { sender = "Lead-Realm", sid = sid }
+quiet()
+LM:OnAddonMessage(LM.PREFIX, ("WON|%s|28770|MS|Cy|DEADBEEF"):format(sid), "RAID", "Lead-Realm")
+check(P:Counter("plus1", K("Cy")) == 0 and #printed == 1 and printed[1]:find("does not have", 1, true),
+  "a rule this client does not hold moves no counter, and the officer is told: " .. all(printed))
+LM.heard = { sender = "Lead-Realm", sid = sid }
+LM:OnAddonMessage(LM.PREFIX, ("WON|%s|28770|MS|Cy"):format(sid), "RAID", "Lead-Realm")
+check(P:Counter("plus1", K("Cy")) == 1, "the old WON, with no fingerprint, is read as before")
+LM.heard = { sender = "Lead-Realm", sid = sid }
+GuildOS.db.points = copyOf(mine)
+GuildOS.db.points.config = mine.config
+LM:OnAddonMessage(LM.PREFIX, won, "RAID", "Lead-Realm")
+check(P:Counter("plus1", K("Cy")) == 1, "and the fingerprint of a rule this client holds is applied by that rule")
 GuildOS.IsOfficer, GuildOS.IsOfficerByName = isOfficer, isOfficerByName
 isML = true
 published = {}

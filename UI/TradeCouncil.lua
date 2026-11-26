@@ -286,6 +286,9 @@ local function fillDetail(o)
         status = "|cffffd100" .. string.format(L["Awarded to %s: waiting for the trade."], o.award.winner) .. "|r"
     else
         status = o.free and L["Free roll: the holder or an officer awards it."] or L["An officer awards it."]
+        -- A rule Trade Council cannot fill is refused, and the window says which applies instead (audit L8).
+        local refused = GuildOS.LootRule and GuildOS.LootRule.TradeCouncilLine and GuildOS.LootRule:TradeCouncilLine()
+        if refused then status = status .. " |cffff6060" .. refused .. "|r" end
     end
     d.status:SetText(status)
     local wishers = {}
