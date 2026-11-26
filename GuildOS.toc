@@ -176,6 +176,7 @@ UI\WebPanel.lua
 UI\RaidPlanPanel.lua
 UI\FeatureRegistry.lua
 UI\Rooms.lua
+UI\SearchView.lua
 UI\Window.lua
 UI\Agora.lua
 UI\Salao.lua

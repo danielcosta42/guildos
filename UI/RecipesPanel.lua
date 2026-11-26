@@ -594,6 +594,29 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         return true
     end
 
+    -- Open a recipe from the window's search (#449), by its name (and profession): this list has no ids of the
+    -- Workshop's catalog, so `_id` is not read. The list is searched for the name, and the recipe of that name (else
+    -- the first found) opened.
+    function panel:FocusRecipe(_id, name, profName)
+        if type(name) ~= "string" or name == "" then return false end
+        state.profFilter = "All"
+        searchBox:SetText(name)
+        state.query, state.item = name, nil   -- after SetText: its handler runs the search where the game fires it
+        RefreshResults()
+        local hit
+        for _, x in ipairs(state.results) do
+            if x.name == name and (not profName or x.profName == profName) then hit = x; break end
+        end
+        hit = hit or state.results[1]
+        if not hit then return false end
+        state.open = keyOf(hit)
+        PaintFilters()
+        if FauxScrollFrame_SetOffset then FauxScrollFrame_SetOffset(scrollFrame, 0) end
+        self:UpdateRows()
+        self:PaintDetail(true)
+        return true
+    end
+
     ----------------------------------------------------------------
     -- Info bar at bottom
     ----------------------------------------------------------------

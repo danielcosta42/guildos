@@ -722,12 +722,13 @@ end
 
 -- A text field: rounded, on the wood's dark or the paper's light, its line the soft gold while typing,
 -- Alegreya Sans 12 inset 8px, Escape lets go. opts: numeric, max, multiline, placeholder (a hint shown while
--- empty), justify. Hook its scripts with HookScript: SetScript on the focus ones would drop the line.
+-- empty), justify, corner (the box's corner radius, 5 by default; half its height makes a pill). Hook its scripts
+-- with HookScript: SetScript on the focus ones would drop the line.
 function Helpers:CreateInput(parent, width, height, opts)
     opts = opts or {}
     local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     box:SetSize(width or 160, height or SP.FIELD)
-    local edge, ink, paper = fieldLook(box)
+    local edge, ink, paper = fieldLook(box, opts.corner)
     box:SetTextInsets(8, 8, opts.multiline and 4 or 0, opts.multiline and 4 or 0)
     GuildOS:ApplyFont(box, 12, opts.numeric and "tableNum" or nil)
     box:SetTextColor(ink.r, ink.g, ink.b)

@@ -4526,3 +4526,12 @@ L["OpenMap also draws guild members on the world map, so a guildmate can show tw
 L["OpenMap's \"Share where you are\" (its \"More\" tab) sends your place to the guild every few seconds even when nobody looks; Guild OS already shares it while a guildmate has the map open. Keep it on only for friends outside the guild."] = "OpenMap 的「分享你的位置」（「更多」分頁）即使沒人在看也會每隔幾秒把你的位置傳給公會；Guild OS 已經會在公會成員打開地圖時分享位置。只有公會外的好友需要時才保持開啟。"
 L["on OpenMap"] = "在 OpenMap 上"
 L["Drawn by OpenMap"] = "由 OpenMap 顯示"
+
+-- Search inside the window (#449)
+L["Search member, item, recipe or screen…"] = "搜尋成員、物品、配方或介面…"
+L["Screens"] = "介面"
+L["View card"] = "查看名片"
+L["View history"] = "查看記錄"
+L["View recipe"] = "查看配方"
+L["Go to"] = "開啟"
+L["Nothing found for \"%s\"."] = "找不到\"%s\"的結果。"

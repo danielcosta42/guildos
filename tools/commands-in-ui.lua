@@ -49,7 +49,8 @@ local IN_UI = {
   calendar    = { { "UI/CommunityPanel.lua", "CreateCalendarSub" } },
   cta         = { { "UI/CommunityPanel.lua", "BuildCallToArmsSub" } },
   analytics   = { { "UI/RosterFrame.lua", "GuildOS.GuildAnalytics:Show()" } },
-  find        = { { "UI/Window.lua", "GuildOS.Search:Show()" } },
+  -- The title bar's Search tool opens the search strip inside the window (#449).
+  find        = { { "UI/Window.lua", "f:ToggleSearch()" } },
   order       = { { "UI/CraftOrdersPanel.lua", "function GuildOS:CreateCraftsTab" },
                   { "UI/CraftFinder.lua", "GuildOS:ShowCraftFor(itemId, c.key)" } },
   -- The Workshop's Search the realm, a screen of the Crafts tab (#449).

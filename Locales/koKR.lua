@@ -4526,3 +4526,12 @@ L["OpenMap also draws guild members on the world map, so a guildmate can show tw
 L["OpenMap's \"Share where you are\" (its \"More\" tab) sends your place to the guild every few seconds even when nobody looks; Guild OS already shares it while a guildmate has the map open. Keep it on only for friends outside the guild."] = "OpenMap의 \"내 위치 공유\"(\"기타\" 탭)는 아무도 보지 않아도 몇 초마다 길드에 위치를 보냅니다. Guild OS는 길드원이 지도를 열어 둔 동안 이미 위치를 공유합니다. 길드 밖 친구에게 필요할 때만 켜 두세요."
 L["on OpenMap"] = "OpenMap에 표시"
 L["Drawn by OpenMap"] = "OpenMap이 표시함"
+
+-- Search inside the window (#449)
+L["Search member, item, recipe or screen…"] = "멤버, 아이템, 제조법 또는 화면 검색…"
+L["Screens"] = "화면"
+L["View card"] = "카드 보기"
+L["View history"] = "기록 보기"
+L["View recipe"] = "제조법 보기"
+L["Go to"] = "열기"
+L["Nothing found for \"%s\"."] = "\"%s\"에 대한 결과가 없습니다."

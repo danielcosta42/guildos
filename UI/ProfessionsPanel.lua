@@ -653,6 +653,27 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         return true
     end
 
+    -- Open a recipe from the window's search (#449): recipe `id` of the catalog, else the one named `name`; the
+    -- search box holds its name, so the list shows it. False when the catalog has neither.
+    function panel:FocusRecipe(id, name)
+        name = (id and D.RecipeName(id)) or name
+        if type(name) ~= "string" or name == "" then return false end
+        state.mode, state.line, state.filter, state.item = "recipes", nil, "all", nil
+        search:SetText(name)
+        state.query = name           -- where the game fires the box's handler, it already searched
+        self:Refresh(true)
+        local hit
+        for _, e in ipairs(state.results) do
+            if (id and e.id == id) or (not id and e.name == name) then hit = e; break end
+        end
+        hit = hit or (not id and state.results[1]) or nil
+        if not hit then return false end
+        state.open, state.openTo = hit.id, nil
+        self:UpdateRows()
+        self:PaintDetail(true)
+        return true
+    end
+
     function panel:Relayout(w, h)
         w = w or parent:GetWidth()
         h = h or parent:GetHeight()

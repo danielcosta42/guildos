@@ -8,7 +8,9 @@
 -- Since the Salão (specs/salao, #445; phase 3, #449) the title bar holds the
 -- guild's crest and name, the rooms (UI/Rooms.lua) as doors, and round tools
 -- (Search, Settings, fold, close); a strip under it the open room's entries as
--- pills, or for a side room (the Officers' Room) a side bar. Each entry opens
+-- pills, or for a side room (the Officers' Room) a side bar. The Search tool
+-- opens a strip under those (the mockup's .search): what it finds replaces the
+-- screen in the view while there is a query (UI/SearchView.lua). Each entry opens
 -- a feature's panel, on its sub-tab when it names one. Settings and Web are
 -- behind the gear. The screens sit on the wood; the footer says welcome and
 -- when the last sync ran.
@@ -44,6 +46,8 @@ local ENTRY_H      = 40      -- the open room's entries, as pills on the strip u
 local PILL_H       = SP.HIT
 local PILL_PAD     = 24
 local PILL_GAP     = 6
+local SEARCH_H     = 44      -- the search strip under the pills (the mockup's .search): 8 above and below its field
+local SEARCH_FIELD = 28      -- its field, rounded to a pill
 local SIDE_W       = 190     -- a side room's bar of entries (the Officers' Room, #447): the mockup's .side-nav
 local SIDE_ROW     = 22      -- the side bar fits the default 620px window with every entry
 local SIDE_HEAD    = 20
@@ -421,7 +425,8 @@ local function createWindow()
         b:HookScript("OnLeave", function() GameTooltip:Hide() end)
         return b
     end
-    local searchBtn = tool("icon-search", L["Search"], nil, function() if GuildOS.Search then GuildOS.Search:Show() end end)
+    -- Search opens and closes the strip under the pills (#449): no window of its own.
+    local searchBtn = tool("icon-search", L["Search"], nil, function() f:ToggleSearch() end)
     local gearBtn = tool("icon-gear", L["Settings"],
         { "Guild OS v" .. tostring(GuildOS.VERSION or ""), "guildos.me", "/gos help" },
         function() f:OpenRoom("settings", true) end)
@@ -537,6 +542,41 @@ local function createWindow()
     sideNav:SetWidth(SIDE_W)
     sideNav:Hide()
     f.sideNav, f.sideBtns, f.sideHeads = sideNav, {}, {}
+
+    ------------------------------------------------------------------
+    -- The search (#449, the mockup's .search): a strip under the pills with one rounded dark field across the
+    -- window, opened and closed by the Search tool, focused at once; Escape closes it too. While it holds a
+    -- query (Search.MIN characters) what it finds is drawn in the content's place (UI/SearchView.lua): Up and
+    -- Down choose a result, Enter opens it. Closing it shows the screen that was open again.
+    ------------------------------------------------------------------
+    local searchRow = CreateFrame("Frame", nil, f)
+    searchRow:SetHeight(SEARCH_H)
+    searchRow:SetFrameLevel(f:GetFrameLevel() + 3)
+    local searchBg = searchRow:CreateTexture(nil, "BACKGROUND")
+    searchBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    searchBg:SetAllPoints()
+    searchBg:SetVertexColor(C.popup.r, C.popup.g, C.popup.b, 1)
+    local searchLine = UI:CreateSeparator(searchRow)
+    searchLine:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    searchLine:SetPoint("BOTTOMLEFT", 0, 0)
+    searchLine:SetPoint("BOTTOMRIGHT", 0, 0)
+    searchRow:Hide()
+    local searchBox = UI:CreateInput(searchRow, 200, SEARCH_FIELD,
+        { max = 60, placeholder = L["Search member, item, recipe or screen…"], corner = SEARCH_FIELD / 2 })
+    searchBox:SetTextInsets(14, 14, 0, 0)
+    if searchBox.placeholder then
+        searchBox.placeholder:ClearAllPoints()
+        searchBox.placeholder:SetPoint("LEFT", 14, 0)
+    end
+    searchBox:SetPoint("LEFT", searchRow, "LEFT", PAD, 0)
+    searchBox:SetPoint("RIGHT", searchRow, "RIGHT", -PAD, 0)
+    f.searchRow, f.searchBox = searchRow, searchBox
+
+    -- The results: in the content's rectangle, shown in its place.
+    local results = CreateFrame("Frame", nil, f)
+    results:SetFrameLevel(f:GetFrameLevel() + 2)
+    results:Hide()
+    f.searchResults = results
 
     ------------------------------------------------------------------
     -- The view: the wood behind the screens (the mockup's .view), painted on the window itself so every
@@ -680,6 +720,8 @@ local function createWindow()
             GuildOS:SafeCall(entry.run)
             return true
         end
+        -- A screen asked for by the player (a door, a pill, a command) leaves the search's results.
+        if byUser and self.searching then self:CloseSearch() end
         local prevRoom, prevEntry = self.activeRoom, self.activeEntry
         self.activeRoom, self.activeEntry = roomId, entry
         if not self:SetActiveTab(entry.feature, byUser) then
@@ -730,6 +772,73 @@ local function createWindow()
         local saved = type(store().entries) == "table" and store().entries[roomId] or nil
         return self:SelectEntry(roomId, UI:RoomDefault(roomId, saved), byUser)
     end
+
+    ------------------------------------------------------------------
+    -- The search strip (#449)
+    ------------------------------------------------------------------
+    local function queryOf() return strtrim(searchBox:GetText() or "") end
+
+    -- Whether the results stand in the content's place: the strip open, not folded to the bar, with a query of
+    -- Search.MIN characters or more.
+    function f:SearchShowing()
+        local S = GuildOS.Search
+        if not (self.searchOpen and self.band ~= "bar" and S and S.Chars) then return false end
+        return S.Chars(queryOf()) >= (S.MIN or 2)
+    end
+
+    -- The results again, at the size the layout gave their frame.
+    function f:RenderSearch()
+        if self.searching and UI.SearchView then
+            GuildOS:SafeCall(UI.SearchView.Render, UI.SearchView, results, queryOf(), self.searchW or 1, self.searchH or 1)
+        end
+    end
+
+    -- The query changed: the content and the results swap when it crosses Search.MIN (a layout, which draws
+    -- the results), else the results follow it.
+    function f:RunSearch()
+        if self:SearchShowing() ~= (self.searching or false) then self:LayoutTabs() else self:RenderSearch() end
+    end
+
+    -- Open the strip, with `text` in it (/gos find), the field focused.
+    function f:OpenSearch(initial)
+        searchBox:SetText(initial or "")
+        self.searchOpen = true
+        searchBtn:SetPressed(true)
+        searchBox:SetFocus()
+        self:LayoutTabs()
+    end
+
+    -- Close it: the field emptied, the screen it covered shown again.
+    function f:CloseSearch()
+        if not self.searchOpen then return end
+        self.searchOpen = nil
+        searchBtn:SetPressed(false)
+        searchBox:SetText("")
+        searchBox:ClearFocus()
+        self:LayoutTabs()
+    end
+
+    function f:ToggleSearch()
+        if self.searchOpen then self:CloseSearch() else self:OpenSearch() end
+    end
+
+    -- The hint stays while the field is empty, focused or not (the mockup's placeholder): the strip opens
+    -- focused, and an empty strip has to say what it finds.
+    local function hint()
+        if searchBox.placeholder then searchBox.placeholder:SetShown((searchBox:GetText() or "") == "") end
+    end
+    searchBox:HookScript("OnEditFocusGained", hint)
+    searchBox:HookScript("OnTextChanged", hint)
+    searchBox:HookScript("OnTextChanged", function() if f.searchOpen then f:RunSearch() end end)
+    searchBox:HookScript("OnEscapePressed", function() f:CloseSearch() end)
+    searchBox:SetScript("OnEnterPressed", function()
+        if f.searching and UI.SearchView then UI.SearchView:Activate(results) end
+    end)
+    searchBox:SetScript("OnArrowPressed", function(_, key)
+        if not (f.searching and UI.SearchView) then return end
+        if key == "UP" then UI.SearchView:Move(results, -1) elseif key == "DOWN" then UI.SearchView:Move(results, 1) end
+    end)
+    if searchBox.SetAltArrowKeyMode then searchBox:SetAltArrowKeyMode(false) end
 
     -- Re-check which tabs may show (rank, loot system, alliance, Settings
     -- toggles and start-up failures all change it without a reload) and fall
@@ -865,7 +974,10 @@ local function createWindow()
             local room_h = (self:GetHeight() or 0) - (top + 2 * pad + EDGE + FOOT_H)
             side = need <= room_h
         end
-        sideNav:SetShown(side)
+        -- The search's results take the whole view: the side bar steps aside while they show.
+        local searching = self:SearchShowing()
+        self.searching = searching
+        sideNav:SetShown(side and not searching)
         for _, b in ipairs(self.sideBtns) do b:Hide() end
         for _, h in ipairs(self.sideHeads) do h:Hide() end
         local rowShown = not side and #list > 1 and self.band ~= "bar"
@@ -920,11 +1032,20 @@ local function createWindow()
             end
         end
         local below = top + (rowShown and ENTRY_H or 0)
+        -- The search strip, under the pills (or the bar when there are none).
+        local stripShown = self.searchOpen and self.band ~= "bar" or false
+        searchRow:SetShown(stripShown)
+        if stripShown then
+            searchRow:ClearAllPoints()
+            searchRow:SetPoint("TOPLEFT", EDGE, -below)
+            searchRow:SetPoint("TOPRIGHT", -EDGE, -below)
+            below = below + SEARCH_H
+        end
         view:ClearAllPoints()
         view:SetPoint("TOPLEFT", EDGE, -below)
         view:SetPoint("BOTTOMRIGHT", -EDGE, EDGE + FOOT_H)
         local left = pad
-        if side then
+        if side and not searching then
             local y0 = below + pad
             sideNav:ClearAllPoints()
             sideNav:SetPoint("TOPLEFT", EDGE + pad, -y0)
@@ -978,6 +1099,15 @@ local function createWindow()
         content:ClearAllPoints()
         content:SetPoint("TOPLEFT", EDGE + left, -(below + pad))
         content:SetPoint("BOTTOMRIGHT", -(EDGE + pad), EDGE + FOOT_H + pad)
+        -- The results in the content's place, at the size worked out here (never read back from a frame).
+        results:ClearAllPoints()
+        results:SetPoint("TOPLEFT", EDGE + pad, -(below + pad))
+        results:SetPoint("BOTTOMRIGHT", -(EDGE + pad), EDGE + FOOT_H + pad)
+        self.searchW = math.max(1, w - 2 * EDGE - 2 * pad)
+        self.searchH = math.max(1, (self:GetHeight() or 0) - (below + pad) - (EDGE + FOOT_H + pad))
+        if self.band ~= "bar" then content:SetShown(not searching) end
+        results:SetShown(searching)
+        if searching then self:RenderSearch() end
     end
 
     -- "Welcome back" keeps the left, shortened to what is left beside the sync line (and the snow's parcel,
@@ -1137,8 +1267,8 @@ local function createWindow()
         minimise.x:SetText(isBar and "+" or DASH)
         self:LayoutTitle(w)
 
-        content:SetShown(not isBar)
-        if isBar then entryRow:Hide(); sideNav:Hide() end
+        content:SetShown(not isBar and not self:SearchShowing())
+        if isBar then entryRow:Hide(); sideNav:Hide(); searchRow:Hide(); results:Hide() end
         foot:SetShown(not isBar)
         for _, t in pairs(f.wood) do if type(t) == "table" and t.SetShown then t:SetShown(not isBar) end end
         if not isBar and f.wood.SetWinter then f.wood:SetWinter(garland:IsShown()) end
@@ -1173,6 +1303,8 @@ local function createWindow()
         end
     end)
     f:SetScript("OnHide", function(self)
+        -- Opened again, the window shows its screen, not an old search.
+        self:CloseSearch()
         if self.ticker then
             self.ticker:Cancel()
             self.ticker = nil
@@ -1289,6 +1421,16 @@ function UI:OpenWindow(id, sub, filter)
     if not f:SetActiveTab(id, true) then return false end
     local panel = f.tabPanels[id]
     if sub and panel.SelectSub then panel.SelectSub(sub, filter) end
+    return true
+end
+
+-- The window with its search strip open, `text` in it (/gos find, /gos search; Search:Show).
+function UI:OpenSearch(text)
+    local f = self:GetMainWindow()
+    if not f then return false end
+    f:Show()
+    if store().collapsed or f.band == "bar" then f:ToggleCollapsed() end
+    f:OpenSearch(text)
     return true
 end
 

@@ -852,13 +852,16 @@ do
   check(f.activeTab == "settings" and f.activeRoom == "settings", "Settings opens Settings, which is no room on the bar")
   fire(tabOf(f, "salao"), "OnClick")
   check(f.activeRoom == "salao", "and the Salão's door brings the window back")
-  local ran, real = {}, { GuildOS.Search, GuildOS.CommSystem }
-  GuildOS.Search = { Show = function() ran.search = true end }
+  local ran, real = {}, { GuildOS.CommSystem }
   GuildOS.CommSystem = { FullSync = function() ran.sync = true end }
+  -- Search opens the strip inside the window (#449, tools/search-strip.lua tests it whole), and closes it.
   fire(search, "OnClick")
+  check(f.searchOpen and f.searchRow.shown and f.searchBox:HasFocus(), "Search opens the search strip, focused")
+  fire(search, "OnClick")
+  check(not f.searchOpen and not f.searchRow.shown, "and closes it")
   fire(f.syncButton, "OnClick")
-  check(ran.search and ran.sync and f.syncButton.parent == f.footer, "Search opens the search; the footer's Updated line syncs")
-  GuildOS.Search, GuildOS.CommSystem = real[1], real[2]
+  check(ran.sync and f.syncButton.parent == f.footer, "the footer's Updated line syncs")
+  GuildOS.CommSystem = real[1]
   -- The 10s tick and every roster update lay the bar out again: a tool is never hidden and shown again.
   local hides, hide = 0, search.Hide
   search.Hide = function(self) hides = hides + 1; return hide(self) end

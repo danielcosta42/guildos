@@ -4646,3 +4646,12 @@ L["OpenMap also draws guild members on the world map, so a guildmate can show tw
 L["OpenMap's \"Share where you are\" (its \"More\" tab) sends your place to the guild every few seconds even when nobody looks; Guild OS already shares it while a guildmate has the map open. Keep it on only for friends outside the guild."] = "OpenMaps „Standort teilen“ (Reiter „Mehr“) schickt deine Position alle paar Sekunden an die Gilde, auch wenn niemand hinsieht; Guild OS teilt sie bereits, solange ein Gildenmitglied die Karte offen hat. Lass es nur für Freunde außerhalb der Gilde an."
 L["on OpenMap"] = "bei OpenMap"
 L["Drawn by OpenMap"] = "Von OpenMap gezeichnet"
+
+-- Search inside the window (#449)
+L["Search member, item, recipe or screen…"] = "Mitglied, Gegenstand, Rezept oder Seite suchen…"
+L["Screens"] = "Seiten"
+L["View card"] = "Karte ansehen"
+L["View history"] = "Verlauf ansehen"
+L["View recipe"] = "Rezept ansehen"
+L["Go to"] = "Öffnen"
+L["Nothing found for \"%s\"."] = "Nichts gefunden für \"%s\"."
