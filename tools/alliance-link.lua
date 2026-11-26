@@ -859,4 +859,23 @@ for _, m in ipairs(published) do if m.act == "site" then siteSent = siteSent + 1
 check(siteSent == 0, "nobody answers twice: another officer's relay first silences ours")
 GuildOS.CompanionImport = nil
 
+-- A code this client only had from a relay: a block that names no alliance (older than it) drops it here and tells
+-- the guild nothing (audit #448 review).
+do
+  officer = true
+  GuildOS.db.allianceLinkSite = nil; Link.ForgetGone()
+  local blk = nil
+  local realCI = GuildOS.CompanionImport
+  GuildOS.CompanionImport = { GuildBlock = function() return blk end }
+  sync(env("site", { line = SITE4, name = "Pacto do Sul", version = 7 }), "Ofi-Realm")
+  check(GuildOS.db.allianceLinkSite and GuildOS.db.allianceLinkSite.relayed, "a relayed code is marked as relayed")
+  published = {}
+  blk = { guild = "Guilda A" }
+  Link:SyncSite()
+  local ended = false
+  for _, m in ipairs(published) do if m.data and m.data.gone then ended = true end end
+  check(not ended and not GuildOS.db.allianceLinkSiteGoneOwn and GuildOS.db.allianceLinkSite == nil,
+    "an officer's block that never named a relayed code drops it, and never tells the guild it ended")
+  GuildOS.CompanionImport = realCI
+end
 print(("alliance-link: %d checks passed"):format(checks))

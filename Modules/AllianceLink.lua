@@ -61,7 +61,9 @@
 --      names no alliance ends it (the guild left, was removed, or the alliance
 --      was dissolved): the channel is left, and the guild's own copy comes back
 --      into force only when it is ANOTHER code an officer pasted, never that
---      same dead code (db.allianceLinkSiteGone) until an officer pastes it again.
+--      same dead code (db.allianceLinkSiteGone) until an officer pastes it again
+--      — on the client whose own block saw it end. An end relayed by an officer
+--      never touches a pasted or note copy.
 --      Members without the companion get it from the guild (SyncService
 --      "allylink" "site"): only an officer whose own client reads it in its
 --      GOSGILD1 sends it, the sync takes it from officers only, and it is
@@ -316,6 +318,12 @@ function Link:SyncSite()
     else
         if not held then return false end
         GuildOS.db.allianceLinkSite = nil
+        -- A code this client only had from an officer's relay: dropped here, never told to the guild as an end. A
+        -- block that never named it cannot say it ended (it may be older than the alliance: audit #448 review).
+        if held.relayed then
+            self:_Changed()
+            return true
+        end
         -- Seen to end by this client's own block: the only end it ever tells the guild (PublishSite), and the only
         -- one that also keeps the same code in the guild's own copy (the GM's note) from coming back.
         GuildOS.db.allianceLinkSiteGone, GuildOS.db.allianceLinkSiteGoneV = held.line, held.version
@@ -380,6 +388,7 @@ function Link:_TakeSite(d, sender)
                  or (held.line == site.line and held.name == site.name and held.version == site.version)) then
         return false
     end
+    site.relayed = true   -- not this client's own block's: SyncSite never relays its end
     db.allianceLinkSite = site
     self:_Changed()
     return true
