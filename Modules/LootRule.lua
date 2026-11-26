@@ -1152,15 +1152,40 @@ local function serial(v, out)
     end
 end
 
-function LootRule:Fingerprint(rule)
-    if type(rule) ~= "table" then return nil end
+local function djb2(value)
     local out = {}
-    serial(rule, out)
+    serial(value, out)
     local text = table.concat(out)
     -- djb2 kept in 32 bits with plain arithmetic: no bit library is needed, and a double holds h * 33 exactly.
     local h = 5381
     for i = 1, #text do h = (h * 33 + text:byte(i)) % 4294967296 end
     return string.format("%08X", h)
+end
+
+-- L9: only what an award's counters depend on (the answers' key, +1 and cost; the accounts; the effects),
+-- so two officers' copies of the same legacy rule match whatever else of it is per client (minAttendancePct,
+-- v, "tmb" for "wishlist", labels, names).
+function LootRule:Fingerprint(rule)
+    if type(rule) ~= "table" then return nil end
+    local responses, accounts = {}, {}
+    for i, r in ipairs(type(rule.responses) == "table" and rule.responses or {}) do
+        if type(r) == "table" then responses[i] = { key = r.key, plus = r.plus == true, cost = tonumber(r.cost) or 1 } end
+    end
+    for i, a in ipairs(type(rule.accounts) == "table" and rule.accounts or {}) do
+        if type(a) == "table" then
+            local copy = {}
+            for k, v in pairs(a) do if k ~= "name" then copy[k] = v end end
+            accounts[i] = copy
+        end
+    end
+    return djb2({ responses = responses, accounts = accounts,
+        effects = type(rule.effects) == "table" and rule.effects or {} })
+end
+
+-- L9: the fingerprint a master looter on a version before sent: the whole rule.
+function LootRule:FingerprintWhole(rule)
+    if type(rule) ~= "table" then return nil end
+    return djb2(rule)
 end
 
 -- What another client's `Encode` said, or nil when any of it is not what this client writes: an addon
@@ -1346,7 +1371,11 @@ function LootRule:Active()
     local night = self:Night()
     if night then return night end
     local CM = GuildOS.CoreManager
-    return self:For(CM and CM.GetActiveName and CM:GetActiveName() or "")
+    local active = CM and CM.GetActiveName and CM:GetActiveName() or ""
+    -- L5: the site named only a loot system for tonight: its ready-made rule, on the core's/guild's own settings.
+    local sys = self:NightSystem()
+    if sys then return self:FromLegacy(sys, legacySettings(coreOrNil(active))) end
+    return self:For(active)
 end
 
 ----------------------------------------------------------------------
@@ -1421,6 +1450,26 @@ function LootRule:NightExternal()
     return inWindow(roster.startsAt, GetServerTime()) and IsInRaid() and true or false
 end
 
+-- L5: the loot system the raid night's roster names (GOSROST1 `lootSystem`, sent only with no lootRule and no
+-- lootExternal), under the same rules as NightExternal: in the raid, inside the window, the stamped raid's.
+-- nil when this client does not offer it, or the guild hands its loot to another addon. The guild's saved
+-- choice is never changed.
+function LootRule:NightSystem()
+    if not GuildOS.db then return nil end
+    local roster = rosterRule(self)
+    if type(roster) ~= "table" or roster.lootRule ~= nil or roster.lootExternal == true then return nil end
+    local sys = roster.lootSystem
+    local I = GuildOS.CompanionImport
+    if not (type(sys) == "string" and I and I.NIGHT_SYSTEMS and I.NIGHT_SYSTEMS[sys] and GuildOS:IsLootSystemHere(sys)) then
+        return nil
+    end
+    local stamped = stampedRaid()
+    if stamped and roster.raidId ~= stamped then return nil end
+    if not (inWindow(roster.startsAt, GetServerTime()) and IsInRaid()) then return nil end
+    if GuildOS.BaseLootSystem and GuildOS:BaseLootSystem() == "external" then return nil end
+    return sys
+end
+
 function LootRule:Night()
     local db = GuildOS.db
     if not db then return nil end
@@ -1459,10 +1508,19 @@ end
 --   "waiting", rule            it reads whole, and is taken once the raid is on
 --   "refused", nil, piece      this client cannot read it; `piece` names what is missing, when known
 --   "external"                 the site says the raid's loot is outside GuildOS (audit L5)
+--   "system", rule, active     the site names only a loot system (L5): its ready-made rule, and whether in force
 function LootRule:NightStatus()
     local roster, seen = rosterRule(self)
-    -- The site says this raid's loot is outside GuildOS (audit L5).
-    if type(roster) == "table" and roster.lootExternal == true then return "external" end
+    -- The site says this raid's loot is outside GuildOS (audit L5): only for the raid in progress, in its window.
+    if self:NightExternal() then return "external" end
+    local I = GuildOS.CompanionImport
+    if not seen and type(roster) == "table" and I and I.NIGHT_SYSTEMS and I.NIGHT_SYSTEMS[roster.lootSystem]
+        and GuildOS:IsLootSystemHere(roster.lootSystem) then
+        local CM = GuildOS.CoreManager
+        local active = CM and CM.GetActiveName and CM:GetActiveName() or ""
+        return "system", self:FromLegacy(roster.lootSystem, legacySettings(coreOrNil(active))),
+            self:NightSystem() ~= nil
+    end
     if not seen then return nil end
     if not seen.ok then return "refused", nil, self:Unsupported(seen.why) end
     local kept = GuildOS.db and GuildOS.db.lootNight
@@ -1844,7 +1902,7 @@ function LootRule:FromAnswer(row)
     return {
         key = row.key, name = row.key, rollType = CHOICE_AS[row.choice] or row.choice, roll = row.roll,
         wishlist = row.wish and { order = row.wish } or nil, dkp = row.points, pr = row.pr,
-        ep = row.ep, gp = row.gp, gpBase = row.gpBase, row = row,
+        ep = row.ep, gp = row.gp, gpBase = row.gpBase, att25 = row.att, row = row,
     }
 end
 
@@ -1866,7 +1924,13 @@ local function tcGap(set)
         if not TC_ANSWERS[r.key] then return "answers" end
         if r.ask == "bid" then return "bid" end
     end
-    if type(set.filters) == "table" and #set.filters > 0 then return "filters" end
+    -- L8: a filter on the points or on attendance reads the row (its points; its attendance, which Ranked
+    -- adds) and Ranked applies it (AnswerFor); any other is a gap. FromLegacy adds those two from ordinary
+    -- settings (an entry cost, a least attendance).
+    for _, f in ipairs(type(set.filters) == "table" and set.filters or {}) do
+        local fills = f.k == "points" or f.k == "attendance" or (f.k == "account" and POINTS_ACCOUNTS[f.acct])
+        if not fills then return "filters" end
+    end
     for _, e in ipairs(set.order or {}) do
         if TC_GAP_OF[e.k] then return TC_GAP_OF[e.k] end
         -- The points' own accounts a row holds: an account or a ratio of DKP, EP and GP reads; any other

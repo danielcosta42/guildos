@@ -4178,3 +4178,8 @@ L["Without a rule from the site, use:"] = "Sem uma regra do site, usar:"
 L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "Como oficial, você desbloqueia ferramentas de liderança. Em Configurações > Regras da guilda, defina quais ranks contam como oficiais. Na aba Regra da janela de Loot, escolha como a guilda distribui o loot: /roll, Wishlist ou DKP."
 L["Search the realm"] = "Procurar no reino"
 L["New poll"] = "Nova enquete"
+
+-- Review fixes (#448)
+L["The loot window closed before %s was confirmed delivered to %s. Nothing was recorded: award it again if they did not get it."] = "A janela de saque fechou antes de confirmar a entrega de %s a %s. Nada foi registrado: conceda de novo se não recebeu."
+L["Loot system: %s, set on guildos.me (in force for this raid)"] = "Sistema de saque: %s, definido no guildos.me (em vigor nesta raide)"
+L["Loot system: %s, set on guildos.me (in force once the raid is on)"] = "Sistema de saque: %s, definido no guildos.me (em vigor quando a raide começar)"

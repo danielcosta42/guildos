@@ -186,7 +186,8 @@ local function noRealm(chars)
   function GetGuildInfo() return "Filhos da Horda" end
   function UnitClass() return "Shaman", "SHAMAN" end
   function UnitLevel() return 45 end
-  GuildOSDB = { _dbVersion = 2, accountChars = chars, ["Filhos da Horda-" .. OLD] = { settings = { onboarded = true } } }
+  GuildOSDB = { _dbVersion = 2, accountChars = chars, ["Filhos da Horda-" .. OLD] = { settings = { onboarded = true },
+    mapPeers = { x = {} }, guildMapPrefs = { shareExact = true } } }
   GuildOS.db, GuildOS.guildKey = nil, nil
 end
 
@@ -199,6 +200,7 @@ noRealm({
 check(GuildOS:GetPlayerKey("Cherry Arrow") == "Cherry Arrow-" .. OLD, "no realm: a member keys on the realm this character had")
 check(GuildOS:ResolveGuildDB() and GuildOS.guildKey == "Filhos da Horda-" .. OLD and GuildOS.db.settings.onboarded,
   "no realm: the guild's db is the one saved before, with what it held")
+check(GuildOS.db.mapPeers == nil and GuildOS.db.guildMapPrefs == nil, "B23: the guild map's orphaned saved data is deleted at startup")
 dofile(ADDON .. "/Modules/AltAutoDetect.lua")
 GuildOS.AltAutoDetect:RecordSelf()
 local chars = GuildOSDB.accountChars

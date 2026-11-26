@@ -3993,3 +3993,8 @@ L["Without a rule from the site, use:"] = "사이트 규칙이 없을 때 사용
 L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "관리자는 운영 도구를 쓸 수 있습니다. 설정 > 길드 규칙에서 관리자로 볼 길드 등급을 정하세요. 전리품 창의 규칙 탭에서 분배 방식을 고르세요: /roll, 위시리스트, DKP."
 L["Search the realm"] = "서버에서 찾기"
 L["New poll"] = "새 투표"
+
+-- Review fixes (#448)
+L["The loot window closed before %s was confirmed delivered to %s. Nothing was recorded: award it again if they did not get it."] = "%s을(를) %s에게 전달했는지 확인되기 전에 전리품 창이 닫혔습니다. 아무것도 기록되지 않았습니다. 받지 못했다면 다시 분배하세요."
+L["Loot system: %s, set on guildos.me (in force for this raid)"] = "전리품 방식: %s, guildos.me에서 설정 (이 공격대에 적용 중)"
+L["Loot system: %s, set on guildos.me (in force once the raid is on)"] = "전리품 방식: %s, guildos.me에서 설정 (공격대가 시작되면 적용)"

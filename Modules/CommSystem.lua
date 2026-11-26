@@ -83,7 +83,7 @@ function CommSystem:Initialize()
                 end
                 -- And the guild's officer threshold, for a client that missed the change (issue #81),
                 -- and on retail its loot system (issue #185).
-                C_Timer.After(15, function() CommSystem:PublishOfficerConfig() end)
+                C_Timer.After(15, function() CommSystem:PublishOfficerConfig(true) end)   -- what changed (D1)
             end
         end
     end)
@@ -542,9 +542,20 @@ function CommSystem:BroadcastMyData(force, ifChanged)
 end
 
 -- The guild's officer settings, published by an officer: on the 5-minute push and in the answer to a
--- request (audit D8: one list, not two copies).
-function CommSystem:PublishOfficerConfig()
+-- request (audit D8: one list, not two copies). `ifChanged` (the 5-minute push, audit D1): a payload this
+-- session already sent unchanged stays home; the answer to a request and a manual Sync send everything.
+function CommSystem:PublishOfficerConfig(ifChanged)
     if not GuildOS:IsOfficer() then return end
+    local SS = GuildOS.SyncService
+    if not SS then return self:_PublishOfficerConfig() end
+    self._configSent = self._configSent or {}
+    SS._configScope = { sent = self._configSent, skip = ifChanged and true or false }
+    local ok, err = pcall(self._PublishOfficerConfig, self)
+    SS._configScope = nil
+    if not ok then error(err, 0) end
+end
+
+function CommSystem:_PublishOfficerConfig()
     GuildOS:PublishOfficerMaxRank()
     GuildOS:PublishEventMaxRank()   -- who creates events (issue #283)
     if GuildOS.Calendar then GuildOS.Calendar:PublishMemberKinds() end   -- and which kinds (issue #308)
@@ -919,6 +930,7 @@ function CommSystem:FullSync()
         if GuildOS.TrialTracker then
             GuildOS.TrialTracker:BroadcastTrials()
         end
+        self:PublishOfficerConfig()   -- a manual Sync sends the officer settings whole (D1)
     end)
 
     C_Timer.After(3, function()

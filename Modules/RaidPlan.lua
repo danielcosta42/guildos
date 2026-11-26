@@ -66,6 +66,11 @@ function Plan:LootRuleLine()
         if tc then return tc, true end
     end
     local name = LR:ModelName(rule)
+    if state == "system" then
+        -- L5: the site chose only the loot system; the guild's own settings shape it.
+        if piece then return string.format(L["Loot system: %s, set on guildos.me (in force for this raid)"], name), false end
+        return string.format(L["Loot system: %s, set on guildos.me (in force once the raid is on)"], name), false
+    end
     if state == "active" then
         return string.format(L["Loot rule: %s (in force for this raid)"], name), false
     end

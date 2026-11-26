@@ -4113,3 +4113,8 @@ L["Without a rule from the site, use:"] = "Ohne Regel von der Website verwenden:
 L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "Als Offizier schaltest du die Führungswerkzeuge frei. Lege unter Einstellungen > Gildenregeln fest, welche Gildenränge als Offiziere gelten. Wähle im Reiter Regel des Beutefensters, wie die Gilde Beute verteilt: /roll, Wunschliste oder DKP."
 L["Search the realm"] = "Im Realm suchen"
 L["New poll"] = "Neue Umfrage"
+
+-- Review fixes (#448)
+L["The loot window closed before %s was confirmed delivered to %s. Nothing was recorded: award it again if they did not get it."] = "Das Beutefenster wurde geschlossen, bevor die Übergabe von %s an %s bestätigt war. Nichts wurde erfasst: erneut vergeben, falls nicht erhalten."
+L["Loot system: %s, set on guildos.me (in force for this raid)"] = "Beutesystem: %s, auf guildos.me festgelegt (für diesen Schlachtzug in Kraft)"
+L["Loot system: %s, set on guildos.me (in force once the raid is on)"] = "Beutesystem: %s, auf guildos.me festgelegt (in Kraft, sobald der Schlachtzug läuft)"

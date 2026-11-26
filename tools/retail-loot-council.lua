@@ -342,8 +342,23 @@ do
   check(LR:TradeCouncilGap(ruleOf({ { k = "attendance" } })) == "attendance", "attendance")
   check(LR:TradeCouncilGap(ruleOf({ { k = "roll" } }, { accounts = { { key = "plus1", type = "counter", name = "+1" } } })) == "accounts",
     "a counter")
-  check(LR:TradeCouncilGap(ruleOf({ { k = "roll" } }, { filters = { { k = "attendance", min = 50, act = "block" } } })) == "filters",
-    "a check on who may ask")
+  check(LR:TradeCouncilGap(ruleOf({ { k = "roll" } }, { filters = { { k = "reserved", act = "block" } } })) == "filters",
+    "a check on who may ask the row cannot hold")
+  -- L8: the filters FromLegacy adds from ordinary settings (an entry cost, a least attendance) are filled.
+  check(LR:TradeCouncilGap(ruleOf({ { k = "roll" } }, { filters = { { k = "attendance", min = 50, act = "block" } } })) == nil,
+    "L8: an attendance filter reads the row's attendance")
+  check(LR:TradeCouncilGap(LR:FromLegacy("dkp", { entryCost = 10, minAttendancePct = 40 })) == nil,
+    "L8: a DKP guild with an entry cost and a least attendance keeps its rule on Trade Council")
+  do
+    local cands = {
+      LR:FromAnswer({ key = "Poor", choice = "N", roll = 99, points = 5 }),
+      LR:FromAnswer({ key = "Rich", choice = "N", roll = 10, points = 50 }),
+    }
+    local r = LR:FromLegacy("dkp", { entryCost = 10 })
+    for _, c in ipairs(cands) do c.rollType = LR:AnswerFor(c, c.rollType, r) or "PASS" end
+    LR:Sort(cands, r)
+    check(cands[1].key == "Rich" and cands[2].rollType == "PASS", "L8: who cannot pay the entry ranks as a pass")
+  end
   check(LR:TradeCouncilGap(ruleOf({ { k = "roll" } }, { responses = { { key = "BIS", ask = "roll" } } })) == "answers",
     "and answers of its own")
   -- The guild keeps a rule by soft reserve: Trade Council ranks by the plain roll and says why.

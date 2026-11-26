@@ -238,6 +238,7 @@ function TradeCouncil:Ranked(o)
         }
         -- EP and GP apart, for a rule that orders by their ratio (the site's EPGP), as LootMaster keeps them.
         local row = rows[#rows]
+        row.att = self:Context(key).att   -- for the rule's attendance filter (L8)
         if row.pr then
             row.gpBase = tonumber(P:GetDB().config and P:GetDB().config.baseGP) or 0
             row.ep, row.gp = P:EP(key), P:GP(key) - row.gpBase
@@ -248,8 +249,13 @@ function TradeCouncil:Ranked(o)
     -- hold is refused here, and the guild's applies (audit L8, LootRule:ForTradeCouncil).
     local LR = GuildOS.LootRule
     local cands = {}
-    for i, row in ipairs(rows) do cands[i] = LR:FromAnswer(row) end
-    LR:Sort(cands, (LR:ForTradeCouncil()))
+    local rule = (LR:ForTradeCouncil())
+    for i, row in ipairs(rows) do
+        cands[i] = LR:FromAnswer(row)
+        -- L8: the rule's filters (points, attendance) read the row: a blocked answer ranks as a pass.
+        cands[i].rollType = LR:AnswerFor(cands[i], cands[i].rollType, rule) or "PASS"
+    end
+    LR:Sort(cands, rule)
     for i, c in ipairs(cands) do rows[i] = c.row end
     return rows
 end

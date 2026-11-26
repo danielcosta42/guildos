@@ -98,6 +98,16 @@ function RB:SetAdField(key, value)
     if not ad or ad[key] == value then return end
     ad[key] = value
     if key ~= "enabled" then ad.edited = true end
+    -- N11: the switch rides the member broadcast (`beacon`), so the other officers re-elect the sender now.
+    if key == "enabled" and GuildOS.CommSystem and GuildOS.CommSystem.BroadcastMyData then
+        GuildOS.CommSystem:BroadcastMyData()
+    end
+end
+
+-- N11: whether this client advertises "Broadcast while I'm online" in its member broadcast.
+function RB:Advertises()
+    local ad = GuildOS.db and GuildOS.db.recruitBeacon
+    return (GuildOS.IsOfficer and GuildOS:IsOfficer() and ad and ad.enabled) and true or false
 end
 
 -- After an in-place edit of a list field (needs/langs/focus).
@@ -126,8 +136,9 @@ function RB.PickSender(candidates)
     return best
 end
 
--- Whether this client is the guild's one sender: the lowest name among the officers online who run Guild OS
--- (a member record their own client published), this one included.
+-- Whether this client is the guild's one sender: the lowest name among the officers online whose own client
+-- advertises the switch on (`beacon` in their member broadcast, audit N11), this one included. An officer on a
+-- version before that sends no `beacon` and is no candidate: an old client still elects as it did.
 function RB:IsSender()
     local me = GuildOS.Compat.PlayerName()
     local names = { me }
@@ -137,7 +148,7 @@ function RB:IsSender()
         local full, _, rankIndex, _, _, _, _, _, online = GetGuildRosterInfo(i)
         if full and online and rankIndex and rankIndex <= maxRank then
             local rec = members[GuildOS:KeyOfRosterName(full)]
-            if rec and (tonumber(rec.lastUpdate) or 0) > 0 then names[#names + 1] = full:match("^([^-]+)") or full end
+            if rec and rec.beacon == true and (tonumber(rec.lastUpdate) or 0) > 0 then names[#names + 1] = full:match("^([^-]+)") or full end
         end
     end
     return self.PickSender(names) == (me:match("^([^-]+)") or me)

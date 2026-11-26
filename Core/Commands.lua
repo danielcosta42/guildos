@@ -717,7 +717,13 @@ local function handleCommand(msg)
     elseif msg:match("^tempban%s") then
         -- /gos tempban <name> <days> [reason]  — officer-gated inside BanList:Add.
         local rest = strtrim((msg:gsub("^tempban%s+", "")))
-        local name, days, reason = rest:match("^(%S+)%s+(%d+)%s*(.*)$")
+        -- Forever's two-word names (issue #49): the name runs up to the days, the first all-digit
+        -- word (a name never holds a digit).
+        local name, days, reason = rest:match("^(.-)%s+(%d+)$")
+        if not name then name, days, reason = rest:match("^(.-)%s+(%d+)%s+(.*)$") end
+        name = name and strtrim(name)
+        if name == "" then name = nil end
+        reason = reason or ""
         local numDays = days and tonumber(days)
         if name and numDays and numDays > 0 then
             if GuildOS.BanList and GuildOS.BanList:Add(name, reason, numDays * 86400) then
@@ -729,7 +735,9 @@ local function handleCommand(msg)
     elseif msg:match("^ban%s") then
         -- /gos ban <name> [reason]  — officer-gated inside BanList:Add.
         local rest = strtrim((msg:gsub("^ban%s+", "")))
-        local name, reason = rest:match("^(%S+)%s*(.*)$")
+        -- A whole two-word Forever name, as /gos warn reads it (issue #49).
+        local name, reason = GuildOS:SplitNameAndText(rest)
+        if not name and rest ~= "" then name, reason = rest, "" end
         if name then
             if GuildOS.BanList and GuildOS.BanList:Add(name, reason) then
                 GuildOS:Print(L["Banned "] .. name)

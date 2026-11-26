@@ -4113,3 +4113,8 @@ L["Without a rule from the site, use:"] = "Sans règle du site, utiliser :"
 L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "En tant qu'officier, vous débloquez les outils de direction. Dans Paramètres > Règles de guilde, définissez quels rangs de guilde comptent comme officiers. Dans l'onglet Règle de la fenêtre Butin, choisissez comment la guilde distribue le butin : /roll, liste de souhaits ou DKP."
 L["Search the realm"] = "Chercher sur le royaume"
 L["New poll"] = "Nouveau sondage"
+
+-- Review fixes (#448)
+L["The loot window closed before %s was confirmed delivered to %s. Nothing was recorded: award it again if they did not get it."] = "La fenêtre de butin s'est fermée avant que la remise de %s à %s soit confirmée. Rien n'a été enregistré : attribuez-le à nouveau s'il ne l'a pas reçu."
+L["Loot system: %s, set on guildos.me (in force for this raid)"] = "Système de butin : %s, défini sur guildos.me (en vigueur pour ce raid)"
+L["Loot system: %s, set on guildos.me (in force once the raid is on)"] = "Système de butin : %s, défini sur guildos.me (en vigueur dès que le raid commence)"

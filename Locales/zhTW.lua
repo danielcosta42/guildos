@@ -3993,3 +3993,8 @@ L["Without a rule from the site, use:"] = "網站未傳送規則時使用："
 L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "身為幹部，你可以使用領導工具。在「設定 > 公會規則」中設定哪些公會階級算作幹部。在「戰利品」視窗的「規則」分頁中選擇公會分配戰利品的方式：/roll、願望單或 DKP。"
 L["Search the realm"] = "在伺服器中搜尋"
 L["New poll"] = "新投票"
+
+-- Review fixes (#448)
+L["The loot window closed before %s was confirmed delivered to %s. Nothing was recorded: award it again if they did not get it."] = "拾取視窗在確認 %s 交給 %s 之前關閉。未記錄任何內容：若對方沒有收到，請重新分配。"
+L["Loot system: %s, set on guildos.me (in force for this raid)"] = "拾取系統：%s，在 guildos.me 設定（本次團隊生效）"
+L["Loot system: %s, set on guildos.me (in force once the raid is on)"] = "拾取系統：%s，在 guildos.me 設定（團隊開始後生效）"

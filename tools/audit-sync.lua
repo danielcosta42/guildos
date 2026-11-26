@@ -187,6 +187,37 @@ check(count("BC") == 1, "D1: a member who logs in still gets my data, changed or
 check(read("Modules/CommSystem.lua"):find("CommSystem:BroadcastMyData(false, true)", 1, true),
   "D1: only the timer's push asks for a change")
 
+-- ── D1: the officer config on the 5-minute push only when it changed ─────
+do
+  dofile(ADDON .. "/Modules/SyncService.lua")
+  local realOfficer = GuildOS.IsOfficer
+  GuildOS.IsOfficer = function() return true end
+  local st = GuildOS.db.settings
+  st.officerMaxRank, st.officerMaxRankAt, st.lootSystem, st.lootSystemAt = 2, 100, "dkp", 100
+  sent = {}
+  CS:PublishOfficerConfig(true)
+  local first = count("SV")
+  check(first == 2, "D1: the first push sends the officer config (" .. first .. ")")
+  sent = {}
+  CS:PublishOfficerConfig(true)
+  check(count("SV") == 0, "D1: unchanged since this session sent it: the 5-minute push sends nothing")
+  st.officerMaxRank, st.officerMaxRankAt = 3, 200
+  sent = {}
+  CS:PublishOfficerConfig(true)
+  check(count("SV") == 1, "D1: only the payload that changed goes")
+  sent = {}
+  CS:PublishOfficerConfig()
+  check(count("SV") == 2, "D1: the answer to a request (and a manual Sync) sends it whole")
+  check(GuildOS.SyncService._configScope == nil, "D1: the scope ends with the call")
+  sent = {}
+  GuildOS.SyncService:Publish("guildcfg", "officers", { max = 3 }, { rev = 200 })
+  check(count("SV") == 1, "D1: a publish outside the officer config is never skipped")
+  check(read("Modules/CommSystem.lua"):find("CommSystem:PublishOfficerConfig(true)", 1, true),
+    "D1: the timer's push asks for a change")
+  GuildOS.IsOfficer = realOfficer
+  st.officerMaxRank, st.officerMaxRankAt, st.lootSystem, st.lootSystemAt = nil, nil, nil, nil
+end
+
 -- ── D10: an equipment swap, a burst of skill-ups ────────────────────────
 collected, sent = 0, {}
 advance(10)

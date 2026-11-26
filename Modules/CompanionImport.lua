@@ -145,6 +145,9 @@ local function boundedCopy(v, depth, budget)
     end
     return out
 end
+-- L5: the loot systems the site may name for a raid night (GOSROST1 `lootSystem`).
+Import.NIGHT_SYSTEMS = { rolls = true, wishlist = true, dkp = true, council = true }
+
 function Import.ReadLootRule(rule)
     if rule == nil then return nil end
     if type(rule) ~= "table" then return false end
@@ -423,6 +426,9 @@ function Import:Parse(raw)
         -- The raid's loot is outside GuildOS (audit L5): no GuildOS loot that night. The site never sends it
         -- with a rule; were both there, this one wins (LootRule:Night), as no rule plays a night whose loot is elsewhere.
         lootExternal = data.lootExternal == true or nil,
+        -- L5: a raid whose rule is only a loot system's (never with lootRule or lootExternal): one of these four.
+        lootSystem = (data.lootRule == nil and data.lootExternal ~= true and Import.NIGHT_SYSTEMS[data.lootSystem])
+            and data.lootSystem or nil,
         title = data.title or "",
         instance = data.instance,
         instanceKey = type(data.instanceKey) == "string" and data.instanceKey or nil,

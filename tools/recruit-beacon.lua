@@ -384,7 +384,11 @@ GetNumGuildMembers = function() return 1 end
 GetGuildRosterInfo = function() return first .. "-Realm", "Officer", 1, 70, "Warrior", "", "", "", true end
 GuildOS.db.members = GuildOS.db.members or {}
 GuildOS.db.members[GuildOS:KeyOfRosterName(first .. "-Realm")] = { lastUpdate = NOW }
-check(not RB:IsSender(), "the lowest name among the officers online sends")
+check(RB:IsSender(), "N11: an officer on an old client (no beacon flag) is no candidate")
+GuildOS.db.members[GuildOS:KeyOfRosterName(first .. "-Realm")] = { lastUpdate = NOW, beacon = false }
+check(RB:IsSender(), "N11: an officer with the switch off is no candidate: Alice off, Bob on, Bob sends")
+GuildOS.db.members[GuildOS:KeyOfRosterName(first .. "-Realm")] = { lastUpdate = NOW, beacon = true }
+check(not RB:IsSender(), "the lowest name among the officers online with the switch on sends")
 sent = {}
 RB:Broadcast()
 check(#sent == 0, "so this officer's minute ticks send nothing")
@@ -392,6 +396,10 @@ RB:Broadcast(true)
 check(#sent >= 1, "but Broadcast now still sends")
 GuildOS.db.members[GuildOS:KeyOfRosterName(first .. "-Realm")] = nil
 check(RB:IsSender(), "an officer without Guild OS is not counted")
+check(RB:Advertises() == true, "N11: this officer advertises the switch on")
+RB:SetAdField("enabled", false)
+check(RB:Advertises() == false, "N11: and off once it is off")
+RB:SetAdField("enabled", true)
 GetNumGuildMembers, GetGuildRosterInfo = realNum, realInfo
 check(RB.PickSender({ "Zed", "Ann", "Bob" }) == "Ann" and RB.PickSender({}) == nil, "the lowest name, the same on every client")
 -- Typing in the note: one version at the broadcast, not one per key.

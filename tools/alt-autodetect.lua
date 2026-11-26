@@ -275,7 +275,8 @@ do
   check(GuildOSDB.altDeclined and next(GuildOSDB.altDeclined) ~= nil, "Don't ask again is kept")
   local opened = {}
   local realShow, realQueue = GuildOS.ShowDialog, GuildOS.ShowWhenClear
-  GuildOS.ShowDialog = function(_, which) opened[#opened + 1] = which; return {} end
+  local dialog = {}
+  GuildOS.ShowDialog = function(_, which) opened[#opened + 1] = which; return dialog end
   local queued = {}
   GuildOS.ShowWhenClear = function(_, key, fn) queued[#queued + 1] = { key = key, fn = fn } end
   GuildOSDB.altDeclined, AD._prompted = nil, nil
@@ -285,8 +286,9 @@ do
   AD:_SchedulePrompt()
   for _, fn in ipairs(afters) do fn() end
   check(#queued == 1 and queued[1].key == "altdetect" and #opened == 0, "the login prompt queues, never straight on screen")
-  queued[1].fn()
+  local shown = queued[1].fn()
   check(opened[1] == "GUILDOS_ALT_AUTODETECT", "and opens when the queue lets it")
+  check(shown == dialog, "B21: the queued fn returns the dialog, so the queue holds its slot until it closes")
   GuildOS.ShowDialog, GuildOS.ShowWhenClear = realShow, realQueue
 end
 

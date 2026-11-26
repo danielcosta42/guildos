@@ -250,6 +250,25 @@ GuildOS.db.settings.lootSystem = "tmb"
 check(GuildOS:GetLootSystem() == "wishlist" and GuildOS:LootSystemShowsWishlist() == (GuildOS.Wishlist ~= nil),
   "a guild saved with TMB reads as the wishlist")
 
+-- Audit R1 migration: a guild that chose its system before the stamp existed publishes it, with the lowest stamp.
+GuildOS.db.settings = { modules = {}, lootSystem = "dkp" }
+published = {}
+GuildOS:PublishLootSystem()
+local mig = last("guildcfg", "lootsys")
+check(GuildOS.db.settings.lootSystemAt == 1 and mig and mig.rev == 1 and mig.data.sys == "dkp",
+  "R1: an officer's unstamped system gets stamp 1 and goes out")
+GuildOS.db.settings = { modules = {} }
+published = {}
+GuildOS:PublishLootSystem()
+check(#published == 0 and GuildOS.db.settings.lootSystemAt == nil, "R1: no system chosen, nothing to migrate")
+GuildOS.db.settings = { modules = {}, lootSystem = "rolls", lootSystemAt = NOW, lootRule = { v = 1 } }
+GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootsys", rev = 1, data = { sys = "dkp" } })
+check(GuildOS:GetLootSystem() == "rolls", "R1: any real stamp beats a migrated one")
+GuildOS.db.settings = { modules = {}, lootRule = { v = 1 } }
+GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootsys", rev = 1, data = { sys = "dkp" } })
+check(GuildOS.db.settings.lootSystem == "dkp" and GuildOS.db.settings.lootRule ~= nil,
+  "R1: a client with none takes the migrated one, and it drops no rule")
+
 -- Audit L7: the guild's own rule travels on Forever too, over GUILD (guildcfg, never the OFFICER channel), and a
 -- newer loot system than a client's own old rule replaces it.
 dofile(ADDON .. "/Modules/LootRule.lua")

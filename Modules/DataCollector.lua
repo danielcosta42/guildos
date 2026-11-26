@@ -805,6 +805,12 @@ function DataCollector:GetBroadcastData()
         clean.prefRoles = GuildOS.db.profile.prefRoles
     end
 
+    -- The recruit ad's "Broadcast while I'm online" (audit N11): always a boolean, so turning it off clears
+    -- what the receivers kept; the officers elect the ad's one sender among those with it on.
+    if GuildOS.RecruitBeacon and GuildOS.RecruitBeacon.Advertises then
+        clean.beacon = GuildOS.RecruitBeacon:Advertises()
+    end
+
     -- Not named on Discord (issue #205): always a boolean on WoW: Forever, so turning it off clears
     -- what the receivers kept — StoreReceivedData copies every key, false included.
     if GuildOS.Journal then

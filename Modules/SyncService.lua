@@ -217,9 +217,24 @@ function SyncService:Publish(domain, action, data, opts)
         if opts.target or not chan then return nil end
     end
 
+    -- D1: inside CommSystem:PublishOfficerConfig (`self._configScope`), each payload sent is remembered for the
+    -- session; on its regular tick (`skip`) one already sent unchanged, stamp included, does not go again.
+    local scope, sig = self._configScope, nil
+    if scope and not opts.target then
+        local okSig, s = pcall(function() return LibSerialize:Serialize({ domain, action, opts.rev or false, data }) end)
+        if okSig then
+            sig = s
+            if scope.skip and scope.sent[sig] then
+                if GuildOS.Perf and GuildOS.Perf.Count then GuildOS.Perf:Count("officer config unchanged") end
+                return nil
+            end
+        end
+    end
+
     local ok, serialized = pcall(function() return LibSerialize:Serialize(env) end)
     if not ok or type(serialized) ~= "string" then return nil end
     if not GuildOS.CommSystem then return nil end
+    if sig then scope.sent[sig] = true end
 
     if officersOnly then
         GuildOS.CommSystem:SendToOfficers(self.ENVELOPE_MSGTYPE, serialized, opts.priority,

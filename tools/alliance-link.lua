@@ -357,6 +357,38 @@ op("HEAD", { revs = {}, _g = "Guilda A", _k = Link.Proof("Kx7Pq2Lm9Z", "Bob") },
 check(got == nil, "nobody speaks for our own guild")
 op("HEAD", { revs = {}, _g = "Guilda Z", _k = Link.Proof("Kx7Pq2Lm9Z", "Zed") }, "Zed-Realm")
 check(got == nil, "nor for a guild outside the line")
+-- Audit B21: an alliance invite or join request, from the network, waits its turn in the popup queue.
+do
+  local realQueue, realDialog = GuildOS.ShowWhenClear, GuildOS.ShowDialog
+  local queued, opened = {}, {}
+  GuildOS.ShowWhenClear = function(_, key, fn) queued[#queued + 1] = { key = key, fn = fn } end
+  GuildOS.ShowDialog = function(_, which) opened[#opened + 1] = which; return { which = which } end
+  local fake = setmetatable({
+    Get = function() return nil end,
+    GuildOfSender = function() return "Guilda B" end,
+  }, { __index = A })
+  local realSan = A.SanitizePact
+  A.SanitizePact = function() return { tag = "ALI", name = "Alianca" } end
+  fake:_OnInvite({}, "Bob-Realm")
+  A.SanitizePact = realSan
+  check(#queued == 1 and queued[1].key:find("^allyinvite:") and #opened == 0, "B21: an alliance invite queues, not straight on screen")
+  local dlg = queued[1].fn()
+  check(opened[1] == "GUILDOS_ALLY_INVITE" and dlg and dlg.which == "GUILDOS_ALLY_INVITE", "B21: and opens its dialog, returned to the queue")
+  queued, opened = {}, {}
+  fake.Get = function() return { tag = "ALI" } end
+  fake.CanAdminister = function() return true end
+  fake.IsMemberGuild = function() return false end
+  fake.IsBlocked = function() return false end
+  local realNorm = A.NormalizeTag
+  A.NormalizeTag = function(t) return t end
+  fake:_OnJoinRequest({ tag = "ALI", guild = "Guilda C" }, "Cid-Realm")
+  A.NormalizeTag = realNorm
+  check(#queued == 1 and queued[1].key:find("^allyrequest:") and #opened == 0, "B21: a join request queues too")
+  dlg = queued[1].fn()
+  check(opened[1] == "GUILDOS_ALLY_REQUEST" and dlg, "B21: and opens when its turn comes")
+  GuildOS.ShowWhenClear, GuildOS.ShowDialog = realQueue, realDialog
+end
+
 local pacts = 0
 A._OnPact = function() pacts = pacts + 1 end
 A._OnInvite = function() pacts = pacts + 1 end

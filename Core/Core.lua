@@ -218,6 +218,8 @@ function GuildOS:ResolveGuildDB()
     -- that reached it (a character who joined mid-session stays on it until the next login) made the
     -- next character with no guild at all be asked to post it (#150): it never stays here.
     if not guilded then guildDB.guildRecruitment = nil end
+    -- B23: the guild map is gone; its saved data goes with it (idempotent, so once per startup is enough).
+    guildDB.mapPeers, guildDB.guildMapPrefs = nil, nil
 
     self.db = guildDB
     self.guildKey = dbKey
@@ -1352,6 +1354,9 @@ function GuildOS:GetLootSystem(coreName)
         if LR and LR.NightExternal and self.db and LR:NightExternal() then return "external" end
         local night = LR and LR.Night and self.db and LR:Night()
         if night then return LR:SystemOf(night) end
+        -- L5: the site named only a loot system for tonight: that one, the saved choice untouched.
+        local sys = LR and LR.NightSystem and self.db and LR:NightSystem()
+        if sys then return sys end
     end
     return self:BaseLootSystem(coreName)
 end
@@ -1437,11 +1442,18 @@ function GuildOS:OnLootSystemChanged()
     if self.UpdateLootSystemUI then self:UpdateLootSystemUI() end
 end
 
+-- R1: the stamp of a loot system chosen before stamps existed.
+local LOOTSYS_MIGRATED = 1
+
 -- An officer's loot system to the guild (issue #185, every client since audit R1): when it changes,
 -- and again on the officers' regular sync, for a client that missed it.
 function GuildOS:PublishLootSystem()
     local s = self.db and self.db.settings
-    if not (s and s.lootSystemAt and self.SyncService and self:IsOfficer()) then return end
+    if not (s and self.SyncService and self:IsOfficer()) then return end
+    -- R1 migration, once: a system chosen before the stamp existed gets the lowest one, so any real
+    -- later choice beats it, and it publishes.
+    if not s.lootSystemAt and s.lootSystem ~= nil then s.lootSystemAt = LOOTSYS_MIGRATED end
+    if not s.lootSystemAt then return end
     self.SyncService:Publish("guildcfg", "lootsys", { sys = self:GetLootSystem("") }, { rev = s.lootSystemAt })
 end
 
@@ -1465,7 +1477,8 @@ function GuildOS:OnLootSystemSync(env)
     -- system dropped the rule (SetLootSystem), and a client that never heard that, or heard it from an
     -- officer whose client did not send rules, must not keep master-looting by the old one. Its stamp moves
     -- up with it, so the old rule re-sent later is turned away.
-    if s.lootRule ~= nil and (tonumber(s.lootRuleAt) or 0) < at then s.lootRule, s.lootRuleAt = nil, at end
+    -- R1: a migrated stamp says nothing of when the system was chosen, so it drops no rule.
+    if at > LOOTSYS_MIGRATED and s.lootRule ~= nil and (tonumber(s.lootRuleAt) or 0) < at then s.lootRule, s.lootRuleAt = nil, at end
     self:OnLootSystemChanged()   -- Loot Master follows it ("external" silences it), then the UI
 end
 

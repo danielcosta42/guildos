@@ -1076,10 +1076,11 @@ function Alliance:_OnInvite(raw, sender)
         return
     end
 
-    GuildOS:ShowDialog("GUILDOS_ALLY_INVITE",
-        string.format(L["%s of %s invites your guild into the alliance %s."],
-            short, theirGuild, pact.name or pact.tag),
-        nil, { pact = pact, sender = sender })
+    -- One popup at a time, never in combat (audit B21).
+    local text = string.format(L["%s of %s invites your guild into the alliance %s."], short, theirGuild, pact.name or pact.tag)
+    GuildOS:ShowWhenClear("allyinvite:" .. short:lower(), function()
+        return GuildOS:ShowDialog("GUILDOS_ALLY_INVITE", text, nil, { pact = pact, sender = sender })
+    end)
 end
 
 function Alliance:AcceptInvite(pact, sender)
@@ -1797,10 +1798,11 @@ function Alliance:_OnJoinRequest(data, sender)
         return
     end
     self._reqPrompts[shortName(sender):lower()] = now
-    GuildOS:ShowDialog("GUILDOS_ALLY_REQUEST",
-        string.format(L["%s of %s asks to join the alliance. Invite them?"],
-            shortName(sender), guild),
-        nil, { sender = sender })
+    -- One popup at a time, never in combat (audit B21).
+    local text = string.format(L["%s of %s asks to join the alliance. Invite them?"], shortName(sender), guild)
+    GuildOS:ShowWhenClear("allyrequest:" .. shortName(sender):lower(), function()
+        return GuildOS:ShowDialog("GUILDOS_ALLY_REQUEST", text, nil, { sender = sender })
+    end)
 end
 
 ----------------------------------------------------------------------

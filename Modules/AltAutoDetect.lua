@@ -515,6 +515,7 @@ function AltAutoDetect:_ShowPrompt(r)
     local dlg = GuildOS:ShowDialog("GUILDOS_ALT_AUTODETECT", #r.group - 1, short, r)
     if dlg then dlg.data = r end
     self._prompted = true
+    return dlg   -- B21: the popup queue holds its slot until this closes
 end
 
 -- Called from Initialize, after the roster has had time to populate
@@ -530,7 +531,7 @@ function AltAutoDetect:_SchedulePrompt()
         if declined and declined[GroupSignature(r.group)] then return end
         -- Never in combat, one popup at a time (audit B21).
         AltAutoDetect._prompted = true
-        GuildOS:ShowWhenClear("altdetect", function() AltAutoDetect:_ShowPrompt(r) end)
+        GuildOS:ShowWhenClear("altdetect", function() return AltAutoDetect:_ShowPrompt(r) end)
     end)
 end
 

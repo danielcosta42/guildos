@@ -1909,3 +1909,8 @@ L["Without a rule from the site, use:"] = "Without a rule from the site, use:"
 L["As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."] = "As an officer you unlock leadership tools. In Settings > Guild rules, set which guild ranks count as officers. In the Loot window's Rule tab, choose how the guild hands out loot: /roll, Wishlist or DKP."
 L["Search the realm"] = "Search the realm"
 L["New poll"] = "New poll"
+
+-- Review fixes (#448)
+L["The loot window closed before %s was confirmed delivered to %s. Nothing was recorded: award it again if they did not get it."] = "The loot window closed before %s was confirmed delivered to %s. Nothing was recorded: award it again if they did not get it."
+L["Loot system: %s, set on guildos.me (in force for this raid)"] = "Loot system: %s, set on guildos.me (in force for this raid)"
+L["Loot system: %s, set on guildos.me (in force once the raid is on)"] = "Loot system: %s, set on guildos.me (in force once the raid is on)"

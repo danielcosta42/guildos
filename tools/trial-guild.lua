@@ -653,6 +653,36 @@ use("Off")
 table.insert(ROSTER, { "Spam", 6 }); rosterUpdate()
 check(gone.trials[spam].leftAt == nil and TT:GetState(spam) == "review" and TT:CountReady() == 1,
   "back in the guild: the mark goes, and the trial waits for a decision again")
+-- Audit N5: a roster read with a row unanswered stamps nobody left; Prune then reads the stamp ScanRoster wrote.
+do
+  leaves("Spam")
+  holeAt = 2
+  rosterUpdate()
+  check(gone.trials[spam].leftAt == nil, "N5: an incomplete roster read marks nobody left")
+  holeAt = nil
+  rosterUpdate()
+  check(gone.trials[spam].leftAt == now, "N5: the whole roster without them stamps leftAt")
+  local pruned = TT:Prune(now + (TT.PRUNE_DAYS + 1) * DAY)
+  check(#pruned == 1 and pruned[1] == spam and gone.trials[spam] == nil, "N5: Prune drops it PRUNE_DAYS after it was stamped")
+  gone.trialTombs[spam] = nil
+  table.insert(ROSTER, { "Spam", 6 }); rosterUpdate()
+end
+-- Audit D1: the 5-minute push sends every trial at most once per FULL_SEND_GAP, only what changed in between.
+do
+  TT:AddTrial(key("Zoe"))
+  now = now + TT.FULL_SEND_GAP
+  sent = {}
+  TT:BroadcastTrials()
+  check(count("TR") >= 1, "D1: a full send once FULL_SEND_GAP has passed")
+  now = now + 300
+  sent = {}
+  TT:BroadcastTrials()
+  check(count("TR") == 0, "D1: five minutes later, nothing changed: nothing sent")
+  now = now + 300
+  sent = {}
+  TT:BroadcastTrials()
+  check(count("TR") >= 1, "D1: and whole again after FULL_SEND_GAP")
+end
 
 -- ── 10. An officer who missed the join never reopens a decision ────────
 local function decidedAnn(offOnline)

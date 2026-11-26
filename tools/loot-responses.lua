@@ -770,6 +770,17 @@ check(P:Counter("plus1", K("Cy")) == 1 and #published == 0, "a master looter who
 local fp = LR:Fingerprint(mlRule)
 check(type(fp) == "string" and fp:find("^%x%x%x%x%x%x%x%x$") and LR:Fingerprint(copyOf(mlRule)) == fp,
   "a rule's fingerprint is eight hex digits, the same for the same rule")
+-- L9: only what the counters depend on: two officers' copies of a legacy rule that differ elsewhere match.
+do
+  local a = LR:FromLegacy("wishlist", { minAttendancePct = 40 })
+  local b = LR:FromLegacy("wishlist", {})
+  b.model, b.v = "tmb", (b.v or 1) + 1
+  check(LR:Fingerprint(a) == LR:Fingerprint(b), "L9: minAttendancePct, v and tmb/wishlist do not move the fingerprint")
+  local c = copyOf(a); c.responses[1].plus = false
+  check(LR:Fingerprint(c) ~= LR:Fingerprint(a), "L9: an answer's +1 does")
+  check(LR:Fingerprint(LR:FromLegacy("plus1")) ~= LR:Fingerprint(a), "L9: and so do accounts and effects")
+  check(LM:RuleByFingerprint(LR:FingerprintWhole(LR:Active())) ~= nil, "L9: an old master looter's whole-rule fingerprint is still read")
+end
 local won = ("WON|%s|28770|MS|Cy|%s"):format(sid, fp)
 local toldWon = false
 for _, payload in ipairs(sent) do toldWon = toldWon or payload == won end

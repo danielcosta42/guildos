@@ -759,6 +759,14 @@ function LootMaster:OnLootClosed()
     -- If there is a pending loot session (roll in progress or ended but not yet
     -- awarded), warn the ML and keep activeLoot intact so Award/DE still work
     -- via the trade path (lootWindowOpen=false → QueueForTrade).
+    -- L2: the slot can no longer clear: the item's delivery is unknown. Nothing was recorded.
+    local p = self.pendingGive
+    if p then
+        self.pendingGive = nil
+        GuildOS:Print("|cffFF9900[LootMaster]|r " .. string.format(L["The loot window closed before %s was confirmed delivered to %s. Nothing was recorded: award it again if they did not get it."],
+            p.link or "?", p.player or "?"))
+        return
+    end
     if self.activeLoot and not self.activeLoot.delivered then
         GuildOS:Print("|cffFF9900[LootMaster]|r " .. L["Loot window closed before delivery - use the roll frame to deliver the item via trade."])
     end
@@ -953,6 +961,7 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
         GuildOS:Print(L["You must be in a raid to announce loot."])
         return
     end
+    if self:RefuseWhileGiving() then return end
 
     -- The item before is over, whatever state it was left in: its timer (which used to run out on the
     -- next item and, with nobody asking for that one yet, send it to the disenchanter), its /roll
@@ -2247,11 +2256,17 @@ end
 -- was written and the master looter is told (audit L2).
 function LootMaster:AwaitGive(slot, link, playerName, silent, free)
     local token = {}
-    self.pendingGive = { slot = slot, link = link, token = token, finish = function()
+    -- The item and answers given (L2): the award is recorded against them, even if activeLoot moved meanwhile.
+    local loot, rolls = self.activeLoot, self.rolls
+    self.pendingGive = { slot = slot, link = link, player = playerName, token = token, finish = function()
         self.pendingGive = nil
-        -- The roll it belongs to is still the open one (nothing replaced it meanwhile).
-        if not (self.activeLoot and self.activeLoot.link == link) then return end
-        self:InLootCore(self.RecordAward, self, playerName, silent, free, true)
+        local cur, curRolls = self.activeLoot, self.rolls
+        if cur == loot then return self:InLootCore(self.RecordAward, self, playerName, silent, free, true) end
+        -- L2: the roll was cancelled or replaced meanwhile: record the captured item all the same, then put
+        -- back whatever is open now (its timers untouched).
+        self.activeLoot, self.rolls = loot, rolls
+        self:InLootCore(self.RecordAward, self, playerName, silent, free, true, cur ~= nil)
+        self.activeLoot, self.rolls = cur, curRolls
     end }
     GuildOS.Compat.After(5, function()
         local p = self.pendingGive
@@ -2323,7 +2338,8 @@ function LootMaster:AwardLootNow(playerName, silent, free)
 end
 
 -- What an award writes: the trade when it was not given, the history, the points, the counters.
-function LootMaster:RecordAward(playerName, silent, free, awarded)
+-- `other`: another roll is open now (L2, AwaitGive): its timers are not this award's to stop.
+function LootMaster:RecordAward(playerName, silent, free, awarded, other)
     local itemLink = self.activeLoot.link
     -- The winner's answer, when the item was rolled for: what it costs and whether it counts for the
     -- +1 come from it (issue #334). An item given straight from the loot window has none.
@@ -2481,6 +2497,7 @@ function LootMaster:RecordAward(playerName, silent, free, awarded)
     if self.activeLoot then self.activeLoot.delivered = true end
     self.activeLoot = nil
     self.rolls = {}
+    if other then return end
     -- Given before its time ran out: its timer and its /roll lines are over with it.
     self:StopListeningForRolls()
     self:StopRollTimer()
@@ -2558,7 +2575,10 @@ end
 -- the guild's, and each core's. nil when none has it.
 function LootMaster:RuleByFingerprint(fp)
     local LR, CM = GuildOS.LootRule, GuildOS.CoreManager
-    local function match(rule) return rule and LR:Fingerprint(rule) == fp and rule or nil end
+    -- L9: the counters' fingerprint, or the whole rule's a master looter on a version before sends.
+    local function match(rule)
+        return rule and (LR:Fingerprint(rule) == fp or LR:FingerprintWhole(rule) == fp) and rule or nil
+    end
     local found = match(LR:Active()) or match(LR:Night()) or match(LR:For(""))
         or (CM and CM.GetActiveName and match(LR:For(CM:GetActiveName() or "")))
     if found then return found end
@@ -3217,7 +3237,15 @@ end
 ----------------------------------------------------------------------
 -- Set active loot for direct award (without starting a roll session)
 ----------------------------------------------------------------------
+-- L2: the item given is still on its way: no other becomes the active one. True when refused.
+function LootMaster:RefuseWhileGiving()
+    if not self.pendingGive then return false end
+    GuildOS:Print("|cffFF9900[LootMaster]|r " .. L["Wait: the last item is still on its way to its winner."])
+    return true
+end
+
 function LootMaster:SetActiveLoot(link, slot, itemId)
+    if self:RefuseWhileGiving() then return false end
     self.activeLoot = {
         core      = self:ActiveCore(),
         pool      = self:LootPool(),
@@ -3228,6 +3256,7 @@ function LootMaster:SetActiveLoot(link, slot, itemId)
         endTime   = GetServerTime(),
     }
     self.rolls = {}
+    return true
 end
 
 ----------------------------------------------------------------------
@@ -3529,8 +3558,7 @@ function LootMaster:BuildLootTable()
             f.status:SetText("|cffFF4444" .. L["Roll in progress: "] .. open .. "|r")
             return false
         end
-        LootMaster:SetActiveLoot(item.link, item.slot, tonumber(item.link:match("item:(%d+)")))
-        return true
+        return LootMaster:SetActiveLoot(item.link, item.slot, tonumber(item.link:match("item:(%d+)")))
     end
     awardBtn:SetScript("OnClick", function()
         local item, who = f.selected, f.chosen
@@ -4308,7 +4336,7 @@ function LootMaster:SendToDestination(exception, itemLink, lootSlot, itemId, rea
         return false
     end
     self:StopRollTimer()
-    if not self.activeLoot then self:SetActiveLoot(itemLink or "", lootSlot, itemId or 0) end
+    if not self.activeLoot and not self:SetActiveLoot(itemLink or "", lootSlot, itemId or 0) then return false end
     local label = GuildOS.LootRule:ExceptionLabel(exception)
     local msg
     if toBank then
@@ -4334,9 +4362,7 @@ function LootMaster:SendToDisenchanter(itemLink, lootSlot, itemId, reason)
     end
 
     -- Ensure activeLoot is populated so AwardLoot can use it
-    if not self.activeLoot then
-        self:SetActiveLoot(itemLink or "", lootSlot, itemId or 0)
-    end
+    if not self.activeLoot and not self:SetActiveLoot(itemLink or "", lootSlot, itemId or 0) then return end
 
     local msg
     if reason == "norolls" then

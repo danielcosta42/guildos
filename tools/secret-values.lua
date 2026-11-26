@@ -446,6 +446,35 @@ do
   for _, fn in ipairs(afters) do fn() end
   check(recorded == 1 and LootMaster.pendingGive == nil and LootMaster.activeLoot ~= nil,
     "L2: the item never left (full bags): nothing written, the roll still there to award again")
+  -- L2: the roll cancelled while the item was on its way: still recorded, for the item given.
+  local realPrint = GuildOS.Print
+  local printed = {}
+  GuildOS.Print = function(_, m) printed[#printed + 1] = m end
+  LootMaster.activeLoot = { itemId = 1, link = "item:1", slot = 1 }
+  LootMaster:AwardLoot("Ana", true)
+  LootMaster.activeLoot = nil
+  LootMaster:OnLootSlotCleared(1)
+  check(recorded == 2 and LootMaster.pendingGive == nil and LootMaster.activeLoot == nil,
+    "L2: activeLoot changed meanwhile: the captured item's award is still written")
+  -- L2: while it is on its way no other item becomes the active one.
+  LootMaster.activeLoot = { itemId = 1, link = "item:1", slot = 1 }
+  LootMaster:AwardLoot("Ana", true)
+  local held = LootMaster.activeLoot
+  printed = {}
+  check(LootMaster:SetActiveLoot("item:9", 2, 9) == false and LootMaster.activeLoot == held and #printed == 1,
+    "L2: SetActiveLoot refused while an item is on its way")
+  local realInRaid = IsInRaid
+  IsInRaid = function() return true end
+  LootMaster:AnnounceItem("item:9", 2)
+  IsInRaid = realInRaid
+  check(LootMaster.activeLoot == held, "L2: and so is AnnounceItem")
+  -- L2: the loot window closes before the slot clears: nothing recorded, the officer told.
+  printed = {}
+  LootMaster:OnLootClosed()
+  check(LootMaster.pendingGive == nil and recorded == 2 and #printed == 1 and printed[1]:find("item:1", 1, true),
+    "L2: the loot window closed: pendingGive cleared, delivery unconfirmed, nothing recorded")
+  GuildOS.Print = realPrint
+  LootMaster.lootWindowOpen = true
   -- L12: a second copy of an item given still on the corpse is not "awarded".
   LootMaster.lootShownAt = 0
   local realNight = LootMaster.NightAwards

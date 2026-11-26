@@ -179,6 +179,14 @@ check(#out == 2 and out[1].type and out[1].subjectKey and out[1].id and out[1].a
 
 -- ── Not named on Discord ────────────────────────────────────────────────
 check(G.DataCollector:GetBroadcastData().feedOptOut == false, "the broadcast always says, so turning it off clears it")
+do   -- audit N11: the recruit ad's switch rides the member broadcast, always a boolean
+  local realRB = G.RecruitBeacon
+  G.RecruitBeacon = { Advertises = function() return false end }
+  check(G.DataCollector:GetBroadcastData().beacon == false, "N11: the broadcast says the ad's switch is off")
+  G.RecruitBeacon.Advertises = function() return true end
+  check(G.DataCollector:GetBroadcastData().beacon == true, "N11: and on")
+  G.RecruitBeacon = realRB
+end
 J:SetOptedOut(true)
 check(J:IsOptedOut() and G.db.members[me].feedOptOut == true, "opting out marks my own row")
 check(G.DataCollector:GetBroadcastData().feedOptOut == true, "and the broadcast says so")
