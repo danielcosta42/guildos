@@ -187,6 +187,7 @@ function Agora:Notices(limit)
     return out
 end
 
+local ROSTER_SAME = 15 * 60   -- seconds within which the same roster action on the same person is one happening
 local ROSTER_ACTION = {
     join    = L["%s joined the guild"],
     leave   = L["%s left the guild"],
@@ -219,9 +220,30 @@ function Agora:Activity(limit)
         out[#out + 1] = { ts = ts, text = text, id = id, sub = sub, key = key, target = target }
     end
 
-    for _, e in ipairs((db.rosterLog and db.rosterLog.events) or {}) do
+    -- One happening, one line (#449): the game's message and this client's roster diff (`loc`), or two officers'
+    -- copies, file the same join or leave twice, a few minutes apart. The same action on the same person within
+    -- ROSTER_SAME seconds is one; the game's line wins over the diff.
+    local events = (db.rosterLog and db.rosterLog.events) or {}
+    local function sameAs(a, b)
+        return a ~= b and a.action == b.action and tostring(a.target or ""):lower() == tostring(b.target or ""):lower()
+            and math.abs((a.timestamp or 0) - (b.timestamp or 0)) <= ROSTER_SAME
+    end
+    local shown = {}
+    for _, e in ipairs(events) do
         local fmt = ROSTER_ACTION[e.action]
+        local dup = false
         if fmt then
+            for _, o in ipairs(shown) do
+                if sameAs(e, o) then dup = true break end
+            end
+            if not dup and e.loc then
+                for _, o in ipairs(events) do
+                    if not o.loc and sameAs(e, o) then dup = true break end
+                end
+            end
+        end
+        if fmt and not dup then
+            shown[#shown + 1] = e
             add(e.timestamp, string.format(fmt, e.target or "?", e.detail or ""), "management", "log", nil, e.target)
         end
     end

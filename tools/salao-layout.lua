@@ -537,4 +537,29 @@ end
 
 run("guildos")
 run("forever")
+
+-- One happening, one line on the wall (#449): the game's "left the guild" and this client's roster diff file the
+-- same leave twice, minutes apart; two officers' copies too. One line each.
+do
+  kit.client({ style = "guildos", officer = true })
+  GuildOS.SafeCall = function(_, fn, ...) return true, fn(...) end
+  GuildOS.db.rosterLog = { events = {
+    { action = "leave", target = "Mega Mix", timestamp = NOW - 120 },
+    { action = "leave", target = "Mega Mix", timestamp = NOW - 115, loc = true },
+    { action = "leave", target = "mega mix", timestamp = NOW - 60 },
+    { action = "join", target = "Mega Mix", timestamp = NOW - 30 },
+    { action = "leave", target = "Other", timestamp = NOW - 100, loc = true },
+  } }
+  local feed = GuildOS.UI.Agora:Activity()
+  local leaves, joins, other = 0, 0, 0
+  for _, r in ipairs(feed) do
+    if r.text == "Mega Mix left the guild" or r.text == "mega mix left the guild" then leaves = leaves + 1 end
+    if r.text == "Mega Mix joined the guild" then joins = joins + 1 end
+    if r.text == "Other left the guild" then other = other + 1 end
+  end
+  check(leaves == 1, "the same leave filed by the game, the roster diff and another officer is one line (" .. leaves .. ")")
+  check(joins == 1, "a join after it is its own line")
+  check(other == 1, "a leave only the roster diff saw still shows")
+end
+
 print(("salao-layout: %d checks passed"):format(checks))
