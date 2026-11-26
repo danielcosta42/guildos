@@ -1,23 +1,17 @@
 ----------------------------------------------------------------------
--- Guild OS - Alliance chat channel
+-- Guild OS - The alliance room
 --
--- The social half of the alliance: every member auto-joins one custom game
--- channel derived from the pact tag ("GOSBRCORE"), and Guild OS prefixes each
--- line with the speaker's guild so a 7-guild channel stays readable.
+-- The social half of the alliance code (Modules/AllianceLink.lua): the room is
+-- the hidden, passworded channel the code names ("GOSA" .. TAG), whose lines
+-- AllianceLink decodes and hands here, each with the speaker's guild. This
+-- module keeps the player in the channel (a watchdog), keeps the feed the
+-- Salão shows, and the player's switches, the shared /g among them.
 --
--- WHY A REAL GAME CHANNEL: it is cross-guild, cross-zone and cross-layer, it
--- costs the addon nothing, and it works for people who do not run Guild OS at
--- all. Automated posting is NOT possible (SendChatMessage to a channel needs a
--- hardware event), but a human pressing Enter IS one, which is all this needs.
+-- Sending is only ever inside a key press (a button click, an EditBox Enter):
+-- the game lets an addon speak on a channel at no other moment.
 --
--- SCOPE DECISION: the channel carries human chat only. It is deliberately NOT
--- used as a presence source: GetChannelRosterInfo only populates when the UI
--- lists the channel, and Alliance:PeerTarget already answers "who of guild X is
--- online" from the presence mesh. Using it would add a flaky dependency for
--- nothing.
---
--- HONEST LIMIT, surfaced in the UI: a custom channel is public. Anyone who
--- guesses the name can join. Nothing sensitive belongs here.
+-- HONEST LIMIT, surfaced in the UI: the key is readable by every member of
+-- every guild in the alliance. Nothing sensitive belongs here.
 ----------------------------------------------------------------------
 local AllianceChat = {}
 GuildOS.AllianceChat = AllianceChat
@@ -25,11 +19,10 @@ local L = GuildOS.L
 
 AllianceChat.DEFAULTS = {
     chat        = true,   -- auto-join the channel
-    tags        = true,   -- guild tag prefix on each line
+    tags        = true,   -- the allied guild's tag on a whisper from one of its members
     history     = true,   -- keep a rolling log in SavedVariables
-    hideDefault = false,  -- suppress the channel from the default chat frame
     system      = true,   -- alliance events in the feed, not just conversation
-    guildBridge = true,   -- show the allied guilds' /g in our guild chat (issue #344)
+    guildBridge = true,   -- the shared /g: the allied guilds' /g in our guild chat (issue #344)
 }
 
 -- Capped on purpose: this is plain text on the player's disk, and an
@@ -59,18 +52,8 @@ end
 -- Channel membership
 ----------------------------------------------------------------------
 function AllianceChat:ChannelName()
-    -- An alliance set in the guild info (issue #348) has its own, hidden,
-    -- passworded channel.
     local link = GuildOS.AllianceLink
-    if link and link:Active() then
-        return link:ChannelName()
-    end
-    local ally = GuildOS.Alliance
-    local pact = ally and ally:Get()
-    if not pact then
-        return nil
-    end
-    return GuildOS.Alliance.ChannelName(pact.tag)
+    return (link and link:Active()) and link:ChannelName() or nil
 end
 
 function AllianceChat:IsConnected()
@@ -97,17 +80,13 @@ AllianceChat.JOIN_RETRY = 20
 
 -- Idempotent, and the ONLY thing that joins. Being out of the alliance channel
 -- is never an acceptable resting state: the chat system is not ready for a
--- while after a reload, and a fixed pair of attempts could land entirely
--- inside that window and leave the player silently outside until next login.
--- So this keeps running instead of giving up.
---
--- It stops for exactly one reason: the player turned the channel off. A kick
--- WILL be undone by this, deliberately, since a kick is a warning and a ban is
--- what actually removes somebody (the server refuses the rejoin).
+-- while after a reload, so this keeps running instead of giving up. It stops
+-- for exactly one reason: the player turned the room off.
 function AllianceChat:EnsureJoined()
     if not GuildOS.db or not GuildOS.db.alliancePrefs then
         return false
     end
+    self:_LeaveLegacy()
     if not self:Prefs().chat then
         return false
     end
@@ -115,17 +94,21 @@ function AllianceChat:EnsureJoined()
     if link and link:Active() then
         return link:EnsureJoined()
     end
-    local name = self:ChannelName()
-    if not name then
-        return false   -- no pact, nothing to join
+    return false
+end
+
+-- The old pact's public channel (GOS<TAG>) is the client's saved channel, and
+-- nothing reads it any more (audit #448): left once, then forgotten. Its name
+-- was kept when the pact's data was cleared (Core/Core.lua ResolveGuildDB).
+function AllianceChat:_LeaveLegacy()
+    local old = GuildOS.db and GuildOS.db.allianceLeaveChannel
+    if type(old) ~= "string" or not GetChannelName then
+        return
     end
-    if self:IsConnected() then
-        return true
+    if (GetChannelName(old) or 0) > 0 then
+        if LeaveChannelByName then LeaveChannelByName(old) end
+        GuildOS.db.allianceLeaveChannel = nil
     end
-    if JoinChannelByName then
-        JoinChannelByName(name)
-    end
-    return self:IsConnected()
 end
 
 function AllianceChat:Join()
@@ -146,153 +129,6 @@ function AllianceChat:SetEnabled(on)
     else
         self:Leave()
     end
-end
-
-----------------------------------------------------------------------
--- Channel moderation.
---
--- This is the ONLY real moderation available. A custom channel message is
--- delivered by the server to everyone in the channel and cannot be retracted:
--- once it is printed it is printed, in the default chat frame and in our feed.
--- What CAN be done is stop the person continuing, which is kick and ban.
---
--- Ownership is the catch. WoW hands a custom channel to whoever joined it
--- first, which for an alliance channel is very often a regular member rather
--- than an ambassador, so the people who need to moderate usually cannot. That
--- is why PromoteAmbassadors exists: the owner hands moderator to the pact's
--- ambassadors in one action.
-----------------------------------------------------------------------
-
--- Best effort. The channel roster is only populated while the client is
--- tracking it, so "unknown" is a real answer here and callers must treat it as
--- "try and let the server decide" rather than as a refusal.
-function AllianceChat:ModeratorState()
-    local name = self:ChannelName()
-    local id = name and GetChannelName and GetChannelName(name)
-    if not id or id == 0 or not GetChannelRosterInfo then
-        return "unknown"
-    end
-    local me = GuildOS.Compat.PlayerName()
-    for i = 1, 400 do
-        local ok, who, owner, moderator = pcall(GetChannelRosterInfo, id, i)
-        if not ok or not who then
-            break
-        end
-        if who == me then
-            if owner then return "owner" end
-            if moderator then return "moderator" end
-            return "member"
-        end
-    end
-    return "unknown"
-end
-
-function AllianceChat:CanModerate()
-    local state = self:ModeratorState()
-    return state == "owner" or state == "moderator" or state == "unknown"
-end
-
-local function channelName()
-    return GuildOS.AllianceChat:ChannelName()
-end
-
-function AllianceChat:Kick(playerName)
-    local ch = channelName()
-    if not ch or not playerName or playerName == "" or not ChannelKick then
-        return false
-    end
-    ChannelKick(ch, playerName)
-    return true
-end
-
-function AllianceChat:Ban(playerName)
-    local ch = channelName()
-    if not ch or not playerName or playerName == "" or not ChannelBan then
-        return false
-    end
-    ChannelBan(ch, playerName)
-    return true
-end
-
--- Names currently in the channel, lowercased. Empty when the roster is not
--- populated, which the callers treat as "cannot tell" rather than "nobody".
-function AllianceChat:_ChannelNames()
-    local out = {}
-    local name = self:ChannelName()
-    local id = name and GetChannelName and GetChannelName(name)
-    if not id or id == 0 or not GetChannelRosterInfo then
-        return out
-    end
-    for i = 1, 400 do
-        local ok, who = pcall(GetChannelRosterInfo, id, i)
-        if not ok or not who then
-            break
-        end
-        out[who:lower()] = who
-    end
-    return out
-end
-
--- If WE own the channel and are NOT an ambassador, hand ownership to one.
---
--- WoW gives a custom channel to whoever joined first, which is usually a
--- regular member, so moderation lands on the wrong person by default. This
--- runs on the OWNER's client, which is the only client allowed to transfer,
--- and does nothing anywhere else. If the owner does not run Guild OS there is
--- nothing any of us can do about it, and the Manage tab says so.
-function AllianceChat:EnsureAmbassadorOwnership()
-    local ally = GuildOS.Alliance
-    local pact = ally and ally:Get()
-    if not pact or not SetChannelOwner then
-        return false
-    end
-    if self:ModeratorState() ~= "owner" then
-        return false   -- only the owner can pass it on
-    end
-    local me = GuildOS.Compat.PlayerName()
-    if GuildOS.Alliance.IsAmbassadorAnywhere(pact, me) then
-        return false   -- already in the right hands
-    end
-
-    -- Prefer somebody actually in the channel: transferring to an absent
-    -- character is silently ignored by the server.
-    local present = self:_ChannelNames()
-    local ch = self:ChannelName()
-    for _, entry in pairs(pact.guilds) do
-        for _, amb in ipairs(entry.ambassadors or {}) do
-            if present[tostring(amb):lower()] then
-                SetChannelOwner(ch, amb)
-                GuildOS.Logger.Debug("Alliance: handed channel ownership to " .. amb)
-                self:PromoteAmbassadors()
-                return true
-            end
-        end
-    end
-    return false
-end
-
--- Hand channel moderator to every ambassador in the pact. Only the owner can
--- do this, and it is an explicit action rather than something that happens on
--- login: silently changing other people's channel permissions is not the kind
--- of thing an addon should decide on its own.
-function AllianceChat:PromoteAmbassadors()
-    local ch = channelName()
-    local ally = GuildOS.Alliance
-    local pact = ally and ally:Get()
-    if not ch or not pact or not ChannelModerator then
-        return 0
-    end
-    if self:ModeratorState() ~= "owner" then
-        return 0
-    end
-    local n = 0
-    for _, entry in pairs(pact.guilds) do
-        for _, amb in ipairs(entry.ambassadors or {}) do
-            ChannelModerator(ch, amb)
-            n = n + 1
-        end
-    end
-    return n
 end
 
 ----------------------------------------------------------------------
@@ -351,10 +187,9 @@ end
 ----------------------------------------------------------------------
 -- Hiding a message.
 --
--- Honest about what this is: the message was already delivered by the server
--- and already printed in the default chat frame, and people without the addon
--- still see it. This removes it from the Guild OS feed, alliance-wide, after
--- the fact. Ban is the tool that actually stops somebody.
+-- Honest about what this is: the message was already delivered by the server.
+-- This removes it from the Guild OS feed of this guild's members, after the
+-- fact: an officer's hide reaches the guild over SyncService ("allyhide").
 --
 -- Matched on speaker plus text rather than an id, because there is no id: each
 -- client stamps its own arrival time, so any hash including the timestamp
@@ -390,26 +225,15 @@ function AllianceChat.HiddenKey(name, text)
     return tostring(name or ""):lower() .. "\0" .. tostring(text or "")
 end
 
--- Every hide anyone in the alliance published, ours included.
+-- Every line this guild's officers hid.
 function AllianceChat:HiddenSet()
-    local lists = { self:HiddenStore() }
-    local sync = GuildOS.AllianceSync
-    local store = (GuildOS.db and GuildOS.db.allianceData) or {}
-    if sync then
-        for _, domains in pairs(store) do
-            local entry = domains.hidden
-            if entry and type(entry.data) == "table" then
-                lists[#lists + 1] = entry.data
-            end
-        end
-    end
-    return AllianceChat.BuildHiddenSet(lists)
+    return AllianceChat.BuildHiddenSet({ self:HiddenStore() })
 end
 
 function AllianceChat:HideMessage(name, text)
     local ally = GuildOS.Alliance
     if not ally or not ally:CanAdminister() then
-        return false, GuildOS.L["Only an alliance ambassador can do that."]
+        return false, L["Only officers can do that."]
     end
     local clean = GuildOS:SanitizeUserText(text, 240)
     if clean == "" or not name then
@@ -427,9 +251,6 @@ function AllianceChat:HideMessage(name, text)
     end
     if GuildOS.SyncService then
         GuildOS.SyncService:Publish("allyhide", "add", { n = name, m = clean })
-    end
-    if GuildOS.AllianceSync then
-        GuildOS.AllianceSync:RefreshLocal("hidden")
     end
     self:_Notify()
     return true
@@ -449,9 +270,6 @@ function AllianceChat:OnHideSync(env)
     store[#store + 1] = { n = d.n, m = GuildOS:SanitizeUserText(d.m, 240), ts = GetServerTime() }
     while #store > self.MAX_HIDDEN do
         table.remove(store, 1)
-    end
-    if GuildOS.AllianceSync then
-        GuildOS.AllianceSync:RefreshLocal("hidden")
     end
     self:_Notify()
 end
@@ -516,20 +334,11 @@ function AllianceChat:Send(text)
     -- On the hidden channel the room's lines are framed like /g's (issue #348),
     -- and nothing prints them but the feed, so ours goes in here.
     local link = GuildOS.AllianceLink
-    if link and link:Active() then
-        if not link:Say("A", clean) then
-            return false
-        end
-        local ally = GuildOS.Alliance
-        self:PushLine(GuildOS.Compat.PlayerName(), ally and ally:MyGuildName(), clean)
-        return true
-    end
-    local name = self:ChannelName()
-    local index = name and GetChannelName and GetChannelName(name)
-    if not index or index == 0 then
+    if not (link and link:Active()) or not link:Say("A", clean) then
         return false
     end
-    SendChatMessage(clean, "CHANNEL", nil, index)
+    local ally = GuildOS.Alliance
+    self:PushLine(GuildOS.Compat.PlayerName(), ally and ally:MyGuildName(), clean)
     return true
 end
 
@@ -538,72 +347,11 @@ function AllianceChat:PushLine(name, guild, text)
     self:Push({ t = GetServerTime(), n = name, g = guild, m = GuildOS:SanitizeUserText(text, 240) })
 end
 
--- Whether a channel line is the alliance room's, read by this module (not the hidden channel's, AllianceLink's).
-function AllianceChat:_IsRoom(chanBaseName)
-    if type(chanBaseName) ~= "string" then return false end
-    if GuildOS.AllianceLink and GuildOS.AllianceLink:Active() then return false end
-    local mine = self:ChannelName()
-    -- The lengths first: lowering every General line would allocate a string for each.
-    return mine ~= nil and #chanBaseName == #mine and chanBaseName:lower() == mine:lower()
-end
-
-function AllianceChat:_OnChannelMessage(msg, author, chanBaseName)
-    -- The hidden channel is read by AllianceLink, which decodes it.
-    if GuildOS.AllianceLink and GuildOS.AllianceLink:Active() then
-        return
-    end
-    local mine = self:ChannelName()
-    if not mine or not chanBaseName or chanBaseName:lower() ~= mine:lower() then
-        return
-    end
-    -- The channel's name is never secret; its line and sender are, in lockdown.
-    if GuildOS.Compat.IsSecret(msg, author) then return end
-    local ally = GuildOS.Alliance
-    local short = (Ambiguate and Ambiguate(author or "", "short")) or author
-    self:Push({
-        t = GetServerTime(),
-        n = short,
-        g = (ally and ally:GuildOfMember(author)) or (ally and ally:MyGuildName()) or nil,
-        m = GuildOS:SanitizeUserText(msg, 240),
-    })
-end
-
 ----------------------------------------------------------------------
--- Message decoration. A chat filter, exactly like ChatTweaks, so the author
--- link is never rewritten (only a prefix is added).
+-- A whisper from a member of an allied guild carries its tag: knowing a
+-- stranger is from an allied guild is exactly the moment you need it. A chat
+-- filter, so the author link is never rewritten (only a prefix is added).
 ----------------------------------------------------------------------
-function AllianceChat:_MakeFilter()
-    return function(_, _, msg, author, lang, channelString, target, flags,
-                    zoneID, chanIndex, chanBaseName, ...)
-        if not GuildOS.db or not GuildOS.db.alliancePrefs then
-            return false
-        end
-        if not GuildOS.db.alliancePrefs.tags then
-            return false
-        end
-        if GuildOS.AllianceLink and GuildOS.AllianceLink:Active() then
-            return false   -- AllianceLink hides the hidden channel itself
-        end
-        local mine = AllianceChat:ChannelName()
-        if not mine or not chanBaseName or chanBaseName:lower() ~= mine:lower() then
-            return false
-        end
-        -- Reading it in our own feed AND in the default frame means reading it
-        -- twice. Off by default: hiding a channel the player joined is the kind
-        -- of thing that must be asked for, never assumed.
-        if GuildOS.db.alliancePrefs.hideDefault then
-            return true
-        end
-        local ally = GuildOS.Alliance
-        local guild = ally and ally:GuildOfMember(author)
-        if not guild then
-            return false   -- unknown speaker: leave the line untouched
-        end
-        return false, AllianceChat.Decorate(msg, author, guild), author, lang,
-            channelString, target, flags, zoneID, chanIndex, chanBaseName, ...
-    end
-end
-
 function AllianceChat:_MakeWhisperFilter()
     return function(_, _, msg, author, ...)
         if not GuildOS.db or not GuildOS.db.alliancePrefs or not GuildOS.db.alliancePrefs.tags then
@@ -628,75 +376,30 @@ function AllianceChat:Initialize()
     if GuildOS.SyncService then
         GuildOS.SyncService:On("allyhide", function(env) AllianceChat:OnHideSync(env) end)
     end
-    if GuildOS.AllianceSync then
-        GuildOS.AllianceSync:Register("hidden", {
-            priority = "NORMAL",
-            cap = AllianceChat.MAX_HIDDEN,
-            build = function()
-                local out = {}
-                for _, h in ipairs(AllianceChat:HiddenStore()) do
-                    out[#out + 1] = { n = h.n, m = h.m }
-                end
-                table.sort(out, function(a, b)
-                    return (tostring(a.n) .. tostring(a.m)) < (tostring(b.n) .. tostring(b.m))
-                end)
-                return out
-            end,
-        })
-    end
-
     if ChatFrame_AddMessageEventFilter then
-        ChatFrame_AddMessageEventFilter("CHAT_MSG_CHANNEL", self:_MakeFilter())
-        -- Same tag on an incoming whisper: knowing a stranger is from an allied
-        -- guild is exactly the moment you need it, and it costs no extra sync.
         ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", self:_MakeWhisperFilter())
     end
 
     -- Channels are not available the instant the world loads, so join on a
-    -- delay and retry once. Joining is idempotent (IsConnected short-circuits).
-    -- CHAT_MSG_CHANNEL is captured HERE rather than in the display filter, so
-    -- the feed logs each line exactly once no matter how many chat tabs show
-    -- the channel.
+    -- delay, staggered; the watchdog below is what actually guarantees it.
     local f = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(f, "PLAYER_ENTERING_WORLD")
-    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL")
     -- Fires whenever the channel list changes, which after a reload is exactly
     -- the moment joining starts working.
     GuildOS.Compat.RegisterEvent(f, "CHANNEL_UI_UPDATE")
-    f:SetScript("OnEvent", function(_, event, msg, author, _, _, _, _, _, _, chanBaseName)
-        if event == "CHAT_MSG_CHANNEL" then
-            -- Every General and Trade line comes here: only the room's own costs a closure (audit D2).
-            if not AllianceChat:_IsRoom(chanBaseName) then return end
-            GuildOS:SafeCall(function()
-                AllianceChat:_OnChannelMessage(msg, author, chanBaseName)
-            end)
-            return
-        end
+    f:SetScript("OnEvent", function(_, event)
         if event == "CHANNEL_UI_UPDATE" then
             AllianceChat:EnsureJoined()
             return
         end
-        -- Staggered because the chat system comes up at an unpredictable time
-        -- after a reload. The watchdog below is what actually guarantees it;
-        -- these just make the common case fast.
         for _, delay in ipairs({ 3, 8, 15, 30 }) do
             GuildOS.Compat.After(delay, function() AllianceChat:EnsureJoined() end)
         end
-        -- Late, so the channel roster has had time to populate: the transfer
-        -- needs a target that is actually in the channel.
-        GuildOS.Compat.After(75, function() AllianceChat:EnsureAmbassadorOwnership() end)
     end)
 
     if GuildOS.Compat and GuildOS.Compat.NewTicker then
-        -- The watchdog. Never stops, because being outside the channel is not
-        -- a state the player should ever be left sitting in.
         GuildOS.Compat.NewTicker(self.JOIN_RETRY, function()
             AllianceChat:EnsureJoined()
-        end)
-        -- Ownership can land on us at any time: WoW passes it on when the
-        -- previous owner leaves.
-        GuildOS.Compat.NewTicker(300, function()
-            AllianceChat:EnsureAmbassadorOwnership()
         end)
     end
 end

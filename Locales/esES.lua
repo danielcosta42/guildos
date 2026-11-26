@@ -4120,3 +4120,14 @@ L["The loot window closed before %s was confirmed delivered to %s. Nothing was r
 L["Loot system: %s, set on guildos.me (in force for this raid)"] = "Sistema de botín: %s, fijado en guildos.me (en vigor para esta banda)"
 L["Loot system: %s, set on guildos.me (in force once the raid is on)"] = "Sistema de botín: %s, fijado en guildos.me (en vigor cuando empiece la banda)"
 L["Read as %s, reason \"%s\". For a two-word name: /gos ban First Last: reason"] = "Leído como %s, motivo \"%s\". Para un nombre de dos palabras: /gos ban Nombre Apellido: motivo"
+
+-- The alliance, redrawn (#448 B29)
+L["Alliances now live on guildos.me."] = "Las alianzas ahora están en guildos.me."
+L["The shared /g and the alliance room with allied guilds"] = "El /g compartido y la sala de la alianza con las hermandades aliadas"
+L["Online now"] = "En línea ahora"
+L["Best effort: only who spoke on the alliance channel or runs GuildOS is seen."] = "Aproximado: solo se ve a quien habló en el canal de la alianza o usa GuildOS."
+L["Open raids"] = "Bandas abiertas"
+L["Alliance room"] = "Sala de la alianza"
+L["Chat only: the shared /g and the alliance room. Members, crafters, raids and bans come from guildos.me."] = "Solo el chat: el /g compartido y la sala de la alianza. Miembros, artesanos, bandas y vetos vienen de guildos.me."
+L["Paste this same code here in every guild of the alliance and save, once. It goes in the guild master's public note where the game allows it, and every member hands it on at login: nobody in particular has to be online."] = "Pega este mismo código aquí en cada hermandad de la alianza y guarda, una vez. Va en la nota pública del maestro de la hermandad donde el juego lo permite, y cada miembro lo pasa al conectarse: nadie en particular tiene que estar en línea."
+L["The alliance's bans"] = "Los vetos de la alianza"

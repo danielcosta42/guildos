@@ -77,7 +77,7 @@ local function load(game)
   dofile(ADDON .. "/Core/Compat.lua")
   dofile(ADDON .. "/Core/Utils.lua")
   for _, m in ipairs({ "CommSystem", "RaidTracker", "Points", "AltAutoDetect", "AltSync", "OfficerNotes", "TrialTracker",
-                       "RaiderRoster", "CoreManager", "Alliance" }) do
+                       "RaiderRoster", "CoreManager" }) do
     dofile(ADDON .. "/Modules/" .. m .. ".lua")
   end
   GuildOS.db = { settings = {}, members = {}, altLinks = {}, officerNotes = {}, trials = {}, raiders = {}, cores = {},
@@ -219,14 +219,6 @@ check(GuildOS.db.cores.Main.signups[mine("Cherry Arrow")].name == "Cherry Arrow"
 handlers["core.roster"]({ data = { coreName = "Main", members = { [theirs("Cherry Arrow")] = { role = "mdps" } } } }, "Off Icer")
 check(GuildOS.db.cores.Main.members[mine("Cherry Arrow")] and GuildOS.db.cores.Main.members[theirs("Cherry Arrow")] == nil,
   "forever: a core roster from another officer keys its members this client's way")
-
--- ── 9. The alliance bridge: every client elects the same one ────────────
-local A = GuildOS.Alliance or GuildOS.Alliance
-local here = A.ElectBridge({ mine("Ann Lee"), mine("Bob Ray"), mine("Cid Moe"), mine("Dee Fox") })
-GetRealmName = function() return THEIRS end
-local there = A.ElectBridge({ theirs("Ann Lee"), theirs("Bob Ray"), theirs("Cid Moe"), theirs("Dee Fox") })
-GetRealmName = function() return MY end
-check(here:match("^([^-]+)") == there:match("^([^-]+)"), "forever: clients on different realms elect the same bridge")
 
 -- ── 9b. What an earlier version stored with another client's keys ───────
 load("forever")
@@ -384,13 +376,6 @@ load("anniversary")
 check(GuildOS:LocalMemberKey("Bob-Spineshatter") == "Bob-Spineshatter", "anniversary: another realm's key passes through")
 GuildOS.OfficerNotes:HandleIncoming(ser({ target = "Bob-Spineshatter", note = { author = "A", timestamp = 1 } }))
 check(GuildOS.db.officerNotes["Bob-Spineshatter"], "anniversary: a note for another realm's player stays theirs")
-A = GuildOS.Alliance or GuildOS.Alliance
-check(A.ElectBridge({ "Cid-R", "Ann-R", "Bob-R" }) == A.ElectBridge({ "Ann-R", "Bob-R", "Cid-R" }),
-  "anniversary: the bridge election is as it was")
-local loser, winner = "Ann-R1", "Ann-R2"
-if A.Hash(loser) < A.Hash(winner) then loser, winner = winner, loser end
-check(A.Hash(loser) ~= A.Hash(winner) and A.ElectBridge({ loser, winner }) == winner,
-  "anniversary: the election still hashes the whole key, realm included")
 GuildOS.CoreManager:InitSync()
 GuildOS.CoreManager:Create("Main")
 handlers["core.signup"]({ data = { coreName = "Main", info = {} } }, "Bob-Spineshatter")

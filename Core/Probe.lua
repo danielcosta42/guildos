@@ -19,11 +19,11 @@ local LIST_MAX = 10            -- missing names printed before the list is cut
 Probe.APIS = {
     -- Global functions
     "Ambiguate", "CanEditGuildInfo", "CanEditMOTD", "CanEditPublicNote", "CanGuildDemote", "CanGuildInvite",
-    "CanGuildPromote", "CanGuildRemove", "CanInspect", "CanViewOfficerNote", "ChannelBan", "ChannelKick", "ChannelModerator",
+    "CanGuildPromote", "CanGuildRemove", "CanInspect", "CanViewOfficerNote",
     "ChatFrame_AddMessageEventFilter", "ChatFrame_OpenChat", "ChatFrame_SendTell", "CloseDropDownMenus",
     "CombatLogGetCurrentEventInfo", "CreateColor", "CreateFrame", "FauxScrollFrame_GetOffset",
     "FauxScrollFrame_OnVerticalScroll", "FauxScrollFrame_Update", "GetBuildInfo", "GetChannelName",
-    "GetChannelRosterInfo", "GetContainerItemInfo", "GetContainerItemLink", "GetContainerNumSlots",
+    "GetContainerItemInfo", "GetContainerItemLink", "GetContainerNumSlots",
     "GetCraftDisplaySkillLine", "GetCraftInfo", "GetCraftItemLink", "GetCraftSpellLink", "GetCursorPosition",
     "GetGuildInfo", "GetGuildInfoText", "GetGuildRosterInfo", "GetGuildRosterLastOnline", "GetGuildRosterMOTD",
     "GetInstanceInfo", "GetInventoryItemLink", "GetItemCount", "GetItemInfo", "GetItemQualityColor",
@@ -37,7 +37,7 @@ Probe.APIS = {
     "IsAltKeyDown", "IsInGroup", "IsInGuild", "IsInInstance", "IsInRaid", "IsMasterLooter",
     "IsQuestFlaggedCompleted", "IsShiftKeyDown", "JoinChannelByName", "LeaveChannelByName", "NotifyInspect",
     "PlaySound", "RaidNotice_AddMessage", "RandomRoll", "ReloadUI", "SendChatMessage", "SendWho",
-    "SetChannelOwner", "SetGuildInfoText", "SetGuildTabardTextures", "SetRaidSubgroup", "SetWhoToUI",
+    "SetGuildInfoText", "SetGuildTabardTextures", "SetRaidSubgroup", "SetWhoToUI",
     "ShowUIPanel", "TargetUnit", "ToggleDropDownMenu", "ToggleGuildFrame", "ToggleWorldMap",
     "UIDropDownMenu_AddButton", "UIDropDownMenu_CreateInfo", "UIDropDownMenu_Initialize", "UIFrameFadeIn",
     "UnitBuff", "UnitClass", "UnitExists", "UnitFactionGroup", "UnitFullName", "UnitGUID", "UnitHealthMax", "UnitIsConnected",

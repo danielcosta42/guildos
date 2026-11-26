@@ -220,6 +220,16 @@ function GuildOS:ResolveGuildDB()
     if not guilded then guildDB.guildRecruitment = nil end
     -- B23: the guild map is gone; its saved data goes with it (idempotent, so once per startup is enough).
     guildDB.mapPeers, guildDB.guildMapPrefs = nil, nil
+    -- Audit #448 (alianca.md §3.4): the ambassador pact and its whisper sync are gone, and what they kept goes
+    -- too. The old pact's public channel (GOS<TAG>) is the client's saved channel: its name is kept until
+    -- AllianceChat has left it once.
+    local pact = guildDB.alliance
+    if type(pact) == "table" and type(pact.tag) == "string" and not guildDB.allianceLeaveChannel then
+        local tag = pact.tag:upper():gsub("[^A-Z0-9]", "")
+        if tag ~= "" then guildDB.allianceLeaveChannel = "GOS" .. tag:sub(1, 12) end
+    end
+    guildDB.alliance, guildDB.allianceData, guildDB.allianceBoard = nil, nil, nil
+    guildDB.allianceLinkBlocked = nil
 
     self.db = guildDB
     self.guildKey = dbKey
@@ -277,10 +287,10 @@ local MODULE_START = {
     { "DataCollector" },
     { "AttunementTracker" },
     { "SyncService" },
+    -- The alliance (specs/salao/alianca.md): the code, its hidden channel and the shared /g (issues #344,
+    -- #348), the room, and what guildos.me sends of it.
     { "Alliance", ui = "alliance" },
-    { "AllianceSync" },
     { "AllianceChat" },
-    -- The alliance set in the guild info, its hidden channel and the allied /g (issues #344, #348).
     { "AllianceLink" },
     { "GuildChat" },
     { "RosterLog" },

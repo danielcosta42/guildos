@@ -106,8 +106,9 @@ UI:RegisterFeature({
     tbc = false, retail = false,
 })
 
+-- The Salão's Alliance (`hall`) and the Officers' Room's (`setup`), specs/salao/alianca.md §3.5.
 UI:RegisterFeature({
-    id = "alliance", label = L["Alliance"], order = 60,
+    id = "alliance", label = L["Alliance"], order = 60, subs = { "hall", "setup" },
     condition = function()
         return (GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil) or GuildOS:IsOfficer()
     end,

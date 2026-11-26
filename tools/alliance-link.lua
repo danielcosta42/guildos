@@ -1,24 +1,27 @@
 -- The alliance the GreenWall way (issue #348), run against the real Core/Core.lua, Core/Compat.lua,
--- Core/Utils.lua, Libs (LibDeflate, LibSerialize), Modules/AllianceSync.lua, Modules/Alliance.lua,
--- Modules/AllianceChat.lua, Modules/GuildChat.lua and Modules/AllianceLink.lua under a stubbed client.
+-- Core/Utils.lua, Libs (LibDeflate, LibSerialize), Modules/Alliance.lua, Modules/AllianceChat.lua,
+-- Modules/GuildChat.lua and Modules/AllianceLink.lua under a stubbed client.
 --
 -- One client of "Guilda A". Proves:
 --   * the alliance code is read and refused when it is broken; an officer saves it, the guild hands it
 --     on (set / ask / have), the newest wins, a removal sticks, and only an officer's copy counts;
---   * it is the pact every module reads, it names no ambassadors, and the whisper ops that built the
---     old pact do nothing under it;
---   * the hidden channel is joined with the key and taken out of the chat frames, and its lines never
---     print raw;
+--   * it is the alliance every module reads and names no ambassadors; the ambassador pact is gone and
+--     its verbs say where alliances live now (audit #448, specs/salao/alianca.md §3.4);
+--   * the hidden channel is joined with the key and taken out of the chat frames, its lines never
+--     print raw, and the old pact's public channel is left once;
 --   * a line of /g the player sends from a chat box or the Guild tab goes on the channel, inside the
 --     key press; officer chat never does;
 --   * a channel line from an allied guild is drawn as /g by the frame's own handler, tagged, in the
---     frames that show /g only; ours, our own guild's /g, an unknown or blocked guild's are not; a
---     stale roster never drops a line; the room's lines go to the alliance feed, our guild's too;
+--     frames that show /g only; ours, our own guild's /g, an unknown guild's are not; the player's
+--     switch turns the shared /g off; the room's lines go to the alliance feed, our guild's too;
 --     a line too long for its frame goes in parts;
---   * a data op is believed for the guild it names only with the key's proof for its sender;
+--   * who is on now is who was heard on the channel, and the mesh's GuildOS clients of the allied
+--     guilds; a speaker's guild tags their whisper;
+--   * the hooks for the site's directory and open raids (GOSALLY1) answer nothing yet, and what reads
+--     them works once they do;
 --   * the short code goes in the guild master's public note and every member reads it from there,
---     nobody online; the guilds are learned from the channel, the mesh and the proofs; the relay
---     asks back a newer holder and keeps a copy that came before the roster (issue #431).
+--     nobody online; the guilds are the ones heard on the channel; the relay asks back a newer
+--     holder and keeps a copy that came before the roster (issue #431).
 --
 --   luajit -e 'ADDON="."' tools/alliance-link.lua
 --
@@ -151,7 +154,6 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Libs/LibDeflate.lua")
 dofile(ADDON .. "/Libs/LibSerialize.lua")
-dofile(ADDON .. "/Modules/AllianceSync.lua")
 dofile(ADDON .. "/Modules/Alliance.lua")
 dofile(ADDON .. "/Modules/AllianceChat.lua")
 dofile(ADDON .. "/Modules/GuildChat.lua")
@@ -172,8 +174,8 @@ GuildOS.SyncService = {
 local function setCode(line, rev) GuildOS.db.allianceLink = { line = line, rev = rev or 1 } end
 
 local A, Link, Chat, GC = GuildOS.Alliance, GuildOS.AllianceLink, GuildOS.AllianceChat, GuildOS.GuildChat
-local index = {}
-GuildOS.AllianceSync.MemberIndex = function() return index end
+local printed = {}
+GuildOS.Print = function(_, msg) printed[#printed + 1] = msg end
 Chat:Prefs()
 Link:Initialize()
 check(#(filters.CHAT_MSG_CHANNEL or {}) == 1, "the channel's lines get a filter")
@@ -202,33 +204,42 @@ check(k2 == "G" and c2 == "abc" and t2 == "oi gente", "decoded into kind, code a
 check(Link.Decode("oi gente") == nil, "a human line is not ours")
 check(#Link.Encode("G", "abc", string.rep("é", 200)) <= 255, "a long line fits the chat line")
 
--- ── 2. The pact comes from the alliance code ───────────────────────────
-check(A:Get() == nil, "no code, no pact")
-GuildOS.db.alliance = { tag = "OLD", guilds = { ["Guilda A"] = { ambassadors = { "Ana" } }, ["Guilda Z"] = { ambassadors = { "Zed" } } } }
-check(A:Get().tag == "OLD" and not A.InLink(), "without the line, the old pact")
-local suggest = Link.Parse(Link:Suggest())
-check(suggest and suggest.tag == "OLD" and suggest.open, "the panel offers a short code made from the old pact's tag")
+-- ── 2. The alliance comes from the alliance code ───────────────────────
+check(A:Get() == nil and A:Name() == nil, "no code, no alliance")
 setCode(line)
 local pact = A:Get()
-check(pact and pact.source == "link" and pact.tag == "NUCLEO", "the code wins over the old pact")
+check(pact and pact.source == "link" and pact.tag == "NUCLEO" and A:Name() == "NUCLEO", "the code is the alliance")
 check(pact.guilds["Guilda C"] and #pact.guilds["Guilda C"].ambassadors == 0, "and names no ambassadors")
-check(A.InLink(), "the pact is the code's")
-check(A:CanAdminister(), "an officer administers it")
-local ok, err = A:Invite("Zed")
-check(not ok and err == "This alliance is set in Alliance > Setup. Change it there.", "the whisper ops that build a pact do nothing")
-check(not A:Leave() and not A:Create("X", "Y"), "leave and create too")
+check(A:CanAdminister(), "an officer of a guild in it may hide a line of the room")
 setCode("GOS=NUCLEO:Kx7Pq2Lm9Z:Guilda B;Guilda C")
-check(A:Get().tag == "OLD", "a code that does not name this guild is not this guild's pact")
+check(A:Get() == nil, "a code that does not name this guild is not this guild's alliance")
 setCode(line)
+-- The ambassador pact is gone (audit #448): its verbs say where alliances live now.
+for _, verb in ipairs({ "create NUC Nucleo", "invite Zed", "leave", "join X-1", "code", "amb add Bob" }) do
+  printed = {}
+  A:HandleCommand(verb)
+  check(#printed == 1 and printed[1] == "Alliances now live on guildos.me.", "/gos ally " .. verb .. ": the migration line")
+end
+printed = {}
+A:HandleCommand("")
+check(printed[1] == "Alliance NUCLEO [NUCLEO] - 3 guilds", "/gos ally: the alliance and its guilds")
+for _, gone in ipairs({ "Create", "Invite", "Leave", "OnMessage", "Send", "ElectBridge", "SendToAmbassadors", "BoardPosts" }) do
+  check(A[gone] == nil, "the pact's " .. gone .. " is gone")
+end
+check(GuildOS.AllianceSync == nil and Link.Candidates == nil and Link.Learn == nil, "and so are its sync and its mesh discovery")
+check(Chat.PromoteAmbassadors == nil and Chat.EnsureAmbassadorOwnership == nil, "and the ambassadors' channel moderation")
 
 -- ── 3. The hidden channel ──────────────────────────────────────────────
 joined["GOSOLD"] = ""
+GuildOS.db.allianceLeaveChannel = "GOSOLD"   -- kept by ResolveGuildDB when it cleared the old pact
 local left = {}
 function LeaveChannelByName(name) left[#left + 1] = name; joined[name] = nil end
 check(Chat:EnsureJoined(), "the watchdog joins it")
-check(left[1] == "GOSOLD" and #left == 1, "and leaves the old pact's public channel")
+check(left[1] == "GOSOLD" and #left == 1 and GuildOS.db.allianceLeaveChannel == nil, "and leaves the old pact's public channel, once")
 check(joined["GOSANUCLEO"] == "Kx7Pq2Lm9Z", "with the key as the password")
 check(#removed == 1 and removed[1].frame == ChatFrame1 and removed[1].name == "GOSANUCLEO", "and takes it out of the frame that listed it")
+Chat:EnsureJoined()
+check(#left == 1, "the old channel is left never again")
 local hidden = filters.CHAT_MSG_CHANNEL[1](nil, "CHAT_MSG_CHANNEL", "Gabc x", "Bob", "", "", "", "", 0, 5, "GOSANUCLEO")
 check(hidden == true, "its lines never print raw")
 check(not filters.CHAT_MSG_CHANNEL[1](nil, "CHAT_MSG_CHANNEL", "oi", "Bob", "", "", "", "", 0, 1, "General"), "another channel passes")
@@ -290,23 +301,22 @@ hear("G" .. Link.Code("Guilda B") .. " outro canal", "Bob-Realm", "General")
 check(#replayed[1] == 0, "another channel is not ours")
 hear("oi humano", "Bob-Realm")
 check(#replayed[1] == 0, "a raw line is not ours")
-index.cid = { guild = "Guilda C" }
-hear("G" .. Link.Code("Guilda B") .. " mudou de guilda", "Cid-Realm")
+hear("G" .. Link.Code("Guilda B") .. " pelo codigo", "Cid-Realm")
 check(#replayed[1] == 1 and replayed[1][1].args[1]:find("[Guilda B]", 1, true),
-  "a stale roster does not drop the line: the guild comes from the code (issue #431)")
+  "the guild comes from the line's code, never from a roster (issue #431)")
 reset()
 ignored["Bob-Realm"] = true
 hear("G" .. Link.Code("Guilda B") .. " ignorado", "Bob-Realm")
 check(#replayed[1] == 0, "an ignored speaker is not shown")
 ignored["Bob-Realm"] = nil
-GuildOS.db.allianceLinkBlocked["Guilda B"] = true
-hear("G" .. Link.Code("Guilda B") .. " bloqueado", "Bob-Realm")
-check(#replayed[1] == 0, "a blocked guild is not shown")
-GuildOS.db.allianceLinkBlocked["Guilda B"] = nil
-Chat:Prefs().guildBridge = false
+check(Chat:Prefs().guildBridge == true, "the shared /g is on by default")
+printed = {}
+A:HandleCommand("gchat off")
+check(Chat:Prefs().guildBridge == false and printed[1]:find("Allied /g: hidden", 1, true), "/gos ally gchat off turns it off")
 hear("G" .. Link.Code("Guilda B") .. " desligado", "Bob-Realm")
-check(#replayed[1] == 0, "the preference off shows nothing")
-Chat:Prefs().guildBridge = true
+check(#replayed[1] == 0, "the switch off shows nothing")
+A:HandleCommand("gchat on")
+check(Chat:Prefs().guildBridge == true, "and on again")
 local before = #Chat:Log()
 hear("A" .. Link.Code("Guilda C") .. " oi sala", "Cy-Realm")
 check(#replayed[1] == 0 and #Chat:Log() == before + 1, "a room line goes to the alliance feed, not /g")
@@ -335,66 +345,38 @@ check(#Link.Split("G", "abc", "   ") == 0, "a blank line is nothing")
 local plain = Link.FormatPlain("Guilda B", "Bob-Realm", "oi")
 check(plain:find("|Hchannel:GUILD|h[Guild]|h", 1, true) and plain:find("|Hplayer:Bob-Realm|h", 1, true), "the plain line reads as /g")
 
--- ── 6. Data ops: the key's proof, not a list of names ──────────────────
-whispers = {}
-A:Send("HEAD", { revs = {} }, "Bob-Realm")
-local _, _, blob = strsplit("|", whispers[1].payload, 3)
-local data = A.Decode(blob)
-check(data._g == "Guilda A" and data._k == Link.Proof("Kx7Pq2Lm9Z", "Ana"), "every op names our guild and carries the proof")
-local got
-A.ops.HEAD = function(_, _, guild) got = guild end
-local function op(name, tbl, sender)
-  A:OnMessage(A.PROTO .. "|" .. name .. "|" .. A.Encode(tbl), sender, "WHISPER")
-end
-op("HEAD", { revs = {}, _g = "Guilda B", _k = Link.Proof("Kx7Pq2Lm9Z", "Bob") }, "Bob-Realm")
-check(got == "Guilda B", "the right proof speaks for the guild it names")
-got = nil
-op("HEAD", { revs = {}, _g = "Guilda B", _k = Link.Proof("Kx7Pq2Lm9Z", "Bob") }, "Eve-Realm")
-check(got == nil, "somebody else's proof does not")
-op("HEAD", { revs = {}, _g = "Guilda B", _k = Link.Proof("outra", "Bob") }, "Bob-Realm")
-check(got == nil, "nor a proof from another key")
-op("HEAD", { revs = {}, _g = "Guilda A", _k = Link.Proof("Kx7Pq2Lm9Z", "Bob") }, "Bob-Realm")
-check(got == nil, "nobody speaks for our own guild")
-op("HEAD", { revs = {}, _g = "Guilda Z", _k = Link.Proof("Kx7Pq2Lm9Z", "Zed") }, "Zed-Realm")
-check(got == nil, "nor for a guild outside the line")
--- Audit B21: an alliance invite or join request, from the network, waits its turn in the popup queue.
-do
-  local realQueue, realDialog = GuildOS.ShowWhenClear, GuildOS.ShowDialog
-  local queued, opened = {}, {}
-  GuildOS.ShowWhenClear = function(_, key, fn) queued[#queued + 1] = { key = key, fn = fn } end
-  GuildOS.ShowDialog = function(_, which) opened[#opened + 1] = which; return { which = which } end
-  local fake = setmetatable({
-    Get = function() return nil end,
-    GuildOfSender = function() return "Guilda B" end,
-  }, { __index = A })
-  local realSan = A.SanitizePact
-  A.SanitizePact = function() return { tag = "ALI", name = "Alianca" } end
-  fake:_OnInvite({}, "Bob-Realm")
-  A.SanitizePact = realSan
-  check(#queued == 1 and queued[1].key:find("^allyinvite:") and #opened == 0, "B21: an alliance invite queues, not straight on screen")
-  local dlg = queued[1].fn()
-  check(opened[1] == "GUILDOS_ALLY_INVITE" and dlg and dlg.which == "GUILDOS_ALLY_INVITE", "B21: and opens its dialog, returned to the queue")
-  queued, opened = {}, {}
-  fake.Get = function() return { tag = "ALI" } end
-  fake.CanAdminister = function() return true end
-  fake.IsMemberGuild = function() return false end
-  fake.IsBlocked = function() return false end
-  local realNorm = A.NormalizeTag
-  A.NormalizeTag = function(t) return t end
-  fake:_OnJoinRequest({ tag = "ALI", guild = "Guilda C" }, "Cid-Realm")
-  A.NormalizeTag = realNorm
-  check(#queued == 1 and queued[1].key:find("^allyrequest:") and #opened == 0, "B21: a join request queues too")
-  dlg = queued[1].fn()
-  check(opened[1] == "GUILDOS_ALLY_REQUEST" and dlg, "B21: and opens when its turn comes")
-  GuildOS.ShowWhenClear, GuildOS.ShowDialog = realQueue, realDialog
-end
-
-local pacts = 0
-A._OnPact = function() pacts = pacts + 1 end
-A._OnInvite = function() pacts = pacts + 1 end
-op("PACT", { _g = "Guilda B", _k = Link.Proof("Kx7Pq2Lm9Z", "Bob") }, "Bob-Realm")
-op("INV", {}, "Bob-Realm")
-check(pacts == 0, "the old pact's ops do nothing under the line")
+-- ── 6. Who is on now, and the site's hooks ─────────────────────────────
+local online = A:OnlineNow()
+local who = {}
+for _, p in ipairs(online) do who[#who + 1] = p.name .. "@" .. p.guild end
+check(table.concat(who, ",") == "Bob@Guilda B,Cid@Guilda B,Cy@Guilda C",
+  "who is on now: the allied speakers heard on the channel, never ours (" .. table.concat(who, ",") .. ")")
+local gl = A:Guilds()
+check(gl[1].name == "Guilda A" and gl[1].mine and gl[2].name == "Guilda B" and gl[2].online == 2 and gl[3].online == 1,
+  "the guilds, ours first, with how many are seen on")
+NOW = NOW + A.ONLINE_FOR + 1
+check(#A:OnlineNow() == 0, "a speaker silent for a while is no longer counted")
+check(A:GuildOfMember("Bob-Realm") == "Guilda B" and A:GuildOfMember("Gui") == nil, "a speaker heard is known by guild, not ours")
+local wf = filters.CHAT_MSG_WHISPER and filters.CHAT_MSG_WHISPER[1]
+check(wf == nil, "the room's module is not started here: its whisper filter is tested below")
+Chat:Initialize()
+wf = filters.CHAT_MSG_WHISPER[1]
+local _, tagged = wf(nil, "CHAT_MSG_WHISPER", "oi", "Bob-Realm")
+check(tagged and tagged:find("[Guilda B]", 1, true), "an allied speaker's whisper carries their guild")
+check(not wf(nil, "CHAT_MSG_WHISPER", "oi", "Estranho-Realm"), "a stranger's is left alone")
+-- GOSALLY1 (alianca.md §3.2): empty until the site sends it, and what reads it works once it does.
+check(#A:Directory() == 0 and #A:OpenRaids() == 0 and #A:FindCrafters(1234) == 0 and A:MemberInfo("Zeca") == nil,
+  "the directory and the open raids answer nothing yet")
+local realDir = A.Directory
+A.Directory = function() return { { guild = "Guilda C", members = {
+  { name = "Zeca", class = "MAGE", level = 70, role = "DPS", recipes = { [1234] = true }, prof = "Tailoring" } } } } end
+local info = A:MemberInfo("Zeca-Realm")
+check(info and info.guild == "Guilda C" and info.class == "MAGE" and A:GuildOfMember("Zeca") == "Guilda C",
+  "a directory row names the guild and the class")
+local crafters = A:FindCrafters(1234)
+check(#crafters == 1 and crafters[1].name == "Zeca" and crafters[1].guild == "Guilda C" and not crafters[1].online,
+  "and who crafts an item")
+A.Directory = realDir
 
 -- ── 7. Officers save the code, the guild hands it on ──────────────────
 published = {}
@@ -409,7 +391,7 @@ local held = GuildOS.db.allianceLink
 check(held.line == line and held.rev > revBefore and held.by == "Ana-Realm", "kept with a newer revision and its author")
 check(#published == 1 and published[1].dom == "allylink" and published[1].act == "set" and published[1].data.line == line,
       "and said to the guild at once")
-check(A:Get().source == "link", "and is the pact at once")
+check(A:Get().source == "link", "and is the alliance at once")
 
 local sync = syncHandlers.allylink
 check(type(sync) == "function", "the module listens to the guild's sync")
@@ -418,7 +400,7 @@ local line2 = Link.Build("NUCLEO", "Kx7Pq2Lm9Z", { "Guilda A", "Guilda B", "Guil
 sync(env("set", { line = line2, rev = held.rev - 5, by = "Ofi-Realm" }), "Ofi-Realm")
 check(GuildOS.db.allianceLink.line == line, "an older revision does not replace the code")
 sync(env("set", { line = line2, rev = held.rev + 10, by = "Ofi-Realm" }), "Ofi-Realm")
-check(GuildOS.db.allianceLink.line == line2 and A:Get().guilds["Guilda D"], "a newer one from an officer does, and is the pact")
+check(GuildOS.db.allianceLink.line == line2 and A:Get().guilds["Guilda D"], "a newer one from an officer does, and is the alliance")
 local r = GuildOS.db.allianceLink.rev
 sync(env("have", { line = line, rev = r + 1, by = "Leo-Realm" }), "Leo-Realm")
 check(GuildOS.db.allianceLink.line == line2, "a relayed copy naming somebody who is not an officer is refused")
@@ -445,7 +427,7 @@ defer = false
 
 -- Turning it off is a revision too: an old copy never brings it back.
 check(Link:SetCode(nil), "an officer turns it off")
-check(GuildOS.db.allianceLink.line == nil and A:Get().tag == "OLD", "the code is gone for the guild")
+check(GuildOS.db.allianceLink.line == nil and A:Get() == nil, "the code is gone for the guild")
 local off = GuildOS.db.allianceLink.rev
 sync(env("have", { line = line, rev = off - 1, by = "Ofi-Realm" }), "Leo-Realm")
 check(GuildOS.db.allianceLink.line == nil, "an older copy does not bring it back")
@@ -454,7 +436,7 @@ check(GuildOS.db.allianceLink.line == nil, "an older copy does not bring it back
 published = {}
 Link._asked = nil
 local login
-for _, f in ipairs(frames) do if f.events.PLAYER_ENTERING_WORLD and f.fn then login = f end end
+for _, f in ipairs(frames) do if f.events.PLAYER_ENTERING_WORLD and f.events.CHAT_MSG_CHANNEL and f.fn then login = f end end
 login.fn(login, "PLAYER_ENTERING_WORLD")
 check(#published == 1 and published[1].act == "ask" and published[1].data.rev == off, "at login it asks the guild")
 
@@ -482,7 +464,7 @@ check(roster ~= nil, "the module reads the roster when it comes in")
 local ok8, inNote = Link:SetCode(short)
 check(ok8 and inNote and noteWrites[1].name == "Rei-Realm" and gmNote == "GM " .. short, "the save writes the GM's note")
 check(GuildOS.db.allianceLink.note, "and remembers the note holds it")
-check(A:Get().open and A:Get().guilds["Guilda A"], "an open code is a pact with our guild in it")
+check(A:Get().open and A:Get().guilds["Guilda A"], "an open code is an alliance with our guild in it")
 
 -- A member with nothing, nobody online: the note alone sets them up.
 GuildOS.db.allianceLink = { rev = 0 }
@@ -537,38 +519,35 @@ sync(env("have", { line = Link.Build("FAKE", "abcd1234"), rev = 70, by = Link.NO
 check(GuildOS.db.allianceLink.line == short2, "a relay the GM's note does not back is refused")
 gmNote = ""
 
--- ── Guilds are learned, nobody lists them ──────────────────────────────
+-- ── Guilds are heard on the channel, nobody lists them ─────────────────
 setCode(short, GuildOS.db.allianceLink.rev + 1)
 Link._noteSeen = "Nova-Realm\0" .. gmNote
 check(A:Get().guilds["Guilda B"] == nil, "a guild nobody heard from is not known yet")
 -- From the mesh: the speaker's presence names their guild.
 local peerGuild = { Bia = "Guilda Bela" }
-GuildOS.Mesh = { GetPeerGuild = function(_, n) return peerGuild[n] end, GetPeerAlliance = function(_, n) return peerGuild[n] and "NUCLEO" end }
+GuildOS.Mesh = { GetPeerGuild = function(_, n) return peerGuild[n] end }
 reset()
 hear("G" .. Link.Code("Guilda Bela") .. " cheguei", "Bia-Realm")
 check(#replayed[1] == 1 and replayed[1][1].args[1]:find("[Guilda Bela]", 1, true), "a new guild's line is drawn under its name")
-check(A:Get().guilds["Guilda Bela"], "and the guild is learned")
+check(A:Get().guilds["Guilda Bela"], "and the guild is known from then on")
 reset()
 hear("G" .. Link.Code("Guilda Bela") .. " de novo", "Outro-Realm")
 check(#replayed[1] == 1 and replayed[1][1].args[1]:find("[Guilda Bela]", 1, true), "its code is known from then on")
 reset()
 hear("Gq9z ninguem sabe", "Xis-Realm")
 check(#replayed[1] == 1, "a line of a guild not met yet is shown all the same, never dropped")
--- From a data op with the key's proof.
-op("HEAD", { revs = {}, _g = "Guilda Nova", _k = Link.Proof("Kx7Pq2Lm9Z", "Nil") }, "Nil-Realm")
-check(A:Get().guilds["Guilda Nova"], "a guild proving the key in a data op is learned")
-op("HEAD", { revs = {}, _g = "Guilda Falsa", _k = Link.Proof("errada", "Fal") }, "Fal-Realm")
-check(A:Get().guilds["Guilda Falsa"] == nil, "a wrong proof teaches nothing")
--- From the mesh alone: only a candidate.
+-- The mesh's GuildOS clients of a guild of ours count as on now; of another guild, never.
 peerGuild.Cid = "Guilda Cid"
 _G.ChehulNet = { Peers = function() return { Cid = { ts = 1 }, Bia = { ts = 1 } } end }
-local cands = Link:Candidates()
-check(cands["Guilda Cid"] == "Cid" and cands["Guilda Bela"] == nil, "the mesh's guilds of our tag are candidates, the known ones are not")
-check(A:Get().guilds["Guilda Cid"] == nil, "a candidate is not a guild of ours until it proves the key")
+local seen = {}
+for _, p in ipairs(A:OnlineNow()) do seen[p.name] = p.guild end
+check(seen.Bia == "Guilda Bela" and seen.Cid == nil, "the mesh's peers of the alliance's guilds are on now, nobody else's")
+check(A:Get().guilds["Guilda Cid"] == nil, "the mesh alone teaches no guild")
 -- Forgotten after a month of silence.
-GuildOS.db.allianceLinkLearned.NUCLEO["Guilda Nova"] = NOW - Link.LEARN_TTL - 1
+check(A:Get().guilds["Guilda Bela"], "a guild heard is kept")
+GuildOS.db.allianceLinkLearned.NUCLEO["Guilda Bela"] = NOW - Link.LEARN_TTL - 1
 Link._learnRev = (Link._learnRev or 0) + 1
-check(A:Get().guilds["Guilda Nova"] == nil, "a guild silent for a month is forgotten")
+check(A:Get().guilds["Guilda Bela"] == nil, "a guild silent for a month is forgotten")
 _G.ChehulNet, GuildOS.Mesh = nil, nil
 setCode(line, GuildOS.db.allianceLink.rev + 1)
 rosterRows = 0

@@ -21,7 +21,7 @@ local ENTRY_COOLDOWN = 5   -- accept at most one entry per sender per 5s
 local GUILD_LINE_COOLDOWN = 300   -- at most one line in guild chat per 5 minutes
 
 LFGBoard.DEFAULTS = { notify = true, postToGuild = true, lastRole = "ANY", lastNote = "",
-                      lastTtl = DEFAULT_TTL, allianceScope = false, roles = "", lastMode = "seek",
+                      lastTtl = DEFAULT_TTL, roles = "", lastMode = "seek",
                       autoInvite = true, toast = true, filterCat = "all", filterLevel = false }
 LFGBoard.ROLES    = { "ANY", "TANK", "HEALER", "DPS" }
 -- The roles of a listing since issue #341: a subset of these letters, in this order. `role` above
@@ -44,36 +44,7 @@ function LFGBoard:Initialize()
     end
     self._cd = self._cd or {}
     self:Prune()
-    if GuildOS.AllianceSync then
-        GuildOS.AllianceSync:Register("lfg", {
-            priority = "NORMAL",
-            cap = 100,
-            build = function()
-                return LFGBoard._BuildAllianceLfg(GuildOS.db.lfgBoard, GetServerTime(), 100)
-            end,
-        })
-    end
     self:_RegisterTests()
-    self:_RegisterAllianceTests()
-end
-
-function LFGBoard:_RegisterAllianceTests()
-    if not GuildOS.SelfTest then return end
-    GuildOS.SelfTest:Register("lfgboard.alliance_build_prunes", function()
-        local store = {
-            ["Ann-R"] = { role = "TANK", note = "MC", ts = 1000, ttl = 600 },   -- alive at 1200
-            ["Bob-R"] = { role = "DPS",  note = "any", ts = 100,  ttl = 300 },  -- expired at 1200
-            ["Cid-R"] = { role = "HEALER", note = "", ts = 1100, ttl = 600 },   -- alive
-        }
-        local out = LFGBoard._BuildAllianceLfg(store, 1200, 100)
-        if #out ~= 2 then return false, "expired entry crossed the wire: " .. #out end
-        if out[1].n ~= "Ann" or out[2].n ~= "Cid" then return false, "not sorted by key" end
-        if out[1].r ~= "TANK" then return false, "role lost" end
-        if #LFGBoard._BuildAllianceLfg(store, 1200, 1) ~= 1 then return false, "cap not enforced" end
-        if #LFGBoard._BuildAllianceLfg(nil, 1200, 100) ~= 0 then return false, "nil must not error" end
-        if #LFGBoard._BuildAllianceLfg(store, 99999, 100) ~= 0 then return false, "all expired" end
-        return true
-    end)
 end
 
 ----------------------------------------------------------------------
@@ -112,84 +83,6 @@ function LFGBoard:ActiveList(store, now, onlineSet)
     table.sort(out, function(a, b)
         if (a.ts or 0) ~= (b.ts or 0) then return (a.ts or 0) > (b.ts or 0) end
         return a.key < b.key
-    end)
-    return out
-end
-
-----------------------------------------------------------------------
--- Alliance pool
-----------------------------------------------------------------------
-
--- Snapshot for the alliance `lfg` domain. Expired entries are pruned HERE, so
--- a dead listing never crosses the wire and never costs a revision on the
--- other side. Sorted by key so the change fingerprint is stable.
-function LFGBoard._BuildAllianceLfg(store, now, cap)
-    local out = {}
-    if type(store) ~= "table" then
-        return out
-    end
-    cap = tonumber(cap) or 100
-    local keys = {}
-    for key in pairs(store) do
-        if type(key) == "string" then
-            keys[#keys + 1] = key
-        end
-    end
-    table.sort(keys)
-    for _, key in ipairs(keys) do
-        if #out >= cap then
-            break
-        end
-        local e = store[key]
-        if LFGBoard:_IsActive(e, now) then
-            out[#out + 1] = {
-                n = key:match("^([^-]+)") or key,
-                r = e.role or "ANY",
-                t = e.note or "",
-                ts = e.ts,
-                ttl = e.ttl,
-            }
-        end
-    end
-    return out
-end
-
--- Allied listings, in the same row shape the board renderer already consumes.
--- The guild is folded into the note so no renderer change is needed; allied
--- rows carry no `key`, which is what makes them read-only in the board.
-function LFGBoard:AllianceList(now)
-    local ally, sync = GuildOS.Alliance, GuildOS.AllianceSync
-    local pact = ally and ally:Get()
-    local out = {}
-    if not pact or not sync then
-        return out
-    end
-    local mine = ally:MyGuildName()
-    for guildName in pairs(pact.guilds) do
-        if guildName ~= mine and not ally:IsBlocked(guildName) then
-            local entry = sync:Remote(guildName, "lfg")
-            if entry and type(entry.data) == "table" then
-                for _, row in ipairs(entry.data) do
-                    local e = { role = row.r, note = row.t, ts = row.ts, ttl = row.ttl }
-                    if self:_IsActive(e, now) then
-                        out[#out + 1] = {
-                            key   = nil,
-                            name  = row.n,
-                            role  = row.r or "ANY",
-                            roles = LETTER_OF[row.r or "ANY"] or "",
-                            note  = "|cff8888aa[" .. guildName .. "]|r " .. (row.t or ""),
-                            ts    = row.ts,
-                            ttl   = row.ttl,
-                            guild = guildName,
-                        }
-                    end
-                end
-            end
-        end
-    end
-    table.sort(out, function(a, b)
-        if (a.ts or 0) ~= (b.ts or 0) then return (a.ts or 0) > (b.ts or 0) end
-        return (a.name or "") < (b.name or "")
     end)
     return out
 end
@@ -561,7 +454,7 @@ end
 
 -- The few choices the Groups tab keeps between sessions. The panel asks and tells through these two:
 -- it never writes the saved table itself.
-local PREFS = { postToGuild = "boolean", allianceScope = "boolean", roles = "string", lastMode = "string",
+local PREFS = { postToGuild = "boolean", roles = "string", lastMode = "string",
                 autoInvite = "boolean", toast = "boolean", filterCat = "string", filterLevel = "boolean" }
 function LFGBoard:Pref(key)
     local prefs = GuildOS.db and GuildOS.db.lfgPrefs

@@ -3999,3 +3999,14 @@ L["The loot window closed before %s was confirmed delivered to %s. Nothing was r
 L["Loot system: %s, set on guildos.me (in force for this raid)"] = "Система добычи: %s, задана на guildos.me (действует в этом рейде)"
 L["Loot system: %s, set on guildos.me (in force once the raid is on)"] = "Система добычи: %s, задана на guildos.me (вступит в силу с началом рейда)"
 L["Read as %s, reason \"%s\". For a two-word name: /gos ban First Last: reason"] = "Прочитано как %s, причина «%s». Для имени из двух слов: /gos ban Имя Фамилия: причина"
+
+-- The alliance, redrawn (#448 B29)
+L["Alliances now live on guildos.me."] = "Альянсы теперь живут на guildos.me."
+L["The shared /g and the alliance room with allied guilds"] = "Общий /g и комната альянса с союзными гильдиями"
+L["Online now"] = "Сейчас в сети"
+L["Best effort: only who spoke on the alliance channel or runs GuildOS is seen."] = "Приблизительно: видны только те, кто писал в канале альянса или пользуется GuildOS."
+L["Open raids"] = "Открытые рейды"
+L["Alliance room"] = "Комната альянса"
+L["Chat only: the shared /g and the alliance room. Members, crafters, raids and bans come from guildos.me."] = "Только чат: общий /g и комната альянса. Участники, ремесленники, рейды и баны приходят с guildos.me."
+L["Paste this same code here in every guild of the alliance and save, once. It goes in the guild master's public note where the game allows it, and every member hands it on at login: nobody in particular has to be online."] = "Вставьте этот же код здесь в каждой гильдии альянса и сохраните, один раз. Он попадает в публичную заметку главы гильдии, где игра это позволяет, и каждый участник передаёт его при входе: никому конкретно не нужно быть в сети."
+L["The alliance's bans"] = "Баны альянса"

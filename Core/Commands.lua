@@ -275,8 +275,8 @@ local function handleCommand(msg)
             GuildOS:Print(L["Usage: /gos cta [worldboss|pvp|defend|event|rally] [message]"])
         end
     elseif msg == "ally" or msg:match("^ally%s") or msg == "alliance" or msg:match("^alliance%s") then
-        -- Cross-guild federation. Officer-only verbs refuse inside the module,
-        -- so this stays a thin router.
+        -- The alliance: its status and the shared /g's switch; the pact's old verbs say where
+        -- alliances live now (Modules/Alliance.lua).
         if GuildOS.Alliance then
             GuildOS.Alliance:HandleCommand(msg:match("^%a+%s+(.*)$") or "")
         end
@@ -328,7 +328,7 @@ local function handleCommand(msg)
             else
                 GuildOS:Print(string.format(L["No guild crafter for %s - asking the realm..."], itemName))
             end
-            -- Alliance: straight from the synced directory, offline crafters included.
+            -- Alliance: from guildos.me's directory (Alliance:FindCrafters), offline crafters included.
             if GuildOS.Alliance and GuildOS.Alliance:Get() then
                 for _, c in ipairs(GuildOS.Alliance:FindCrafters(itemId)) do
                     if not seen[c.name] then

@@ -432,7 +432,6 @@ end)
 local ALLOWED = {
   ["Core/Utils.lua"] = 1,              -- the rule itself
   ["Core/Core.lua"] = 1,               -- the per-guild database key, not a member's
-  ["Modules/Alliance.lua"] = 1,        -- a pair of guild ids
   ["Modules/GuildAnalytics.lua"] = 1,  -- a level bracket, "60-69"
   ["Modules/NoteCommand.lua"] = 1,     -- only when the author has a realm
   -- PugInspector goes through GetPlayerKey since issue #95.

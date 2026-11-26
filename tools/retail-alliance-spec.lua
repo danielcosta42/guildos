@@ -1,12 +1,10 @@
--- A spec in the alliance on retail (issue #184), run against the real Core/Compat.lua, Core/Utils.lua,
--- Modules/SpecChecker.lua, Modules/AllianceSync.lua and Modules/Alliance.lua under a stubbed retail
--- client.
+-- A spec in the alliance room on retail (issue #184), run against the real Core/Compat.lua,
+-- Core/Utils.lua, Modules/SpecChecker.lua and Modules/Alliance.lua under a stubbed retail client.
 --
--- The alliance roster sent a member's spec as its name, in the sender's language: an allied guild on
--- a Portuguese client showed "Sangue" to an English reader. On retail the spec has an id the client
--- names in the reader's language (SpecChecker:SpecName, issue #177). This proves the roster sends the
--- id beside the name, that the allied card and the alliance chat show it by the id, and that a row
--- from a sender without the id, or with one this client cannot name, keeps the sender's name.
+-- On retail a spec has an id the client names in the reader's language (SpecChecker:SpecName, issue
+-- #177). This proves a speaker of our own guild in the alliance room is named by the id, not by the
+-- name their client stored, and that a guildmate known only from the roster still has a class.
+-- (The allied roster that sent specs between guilds went with the whisper sync, audit #448.)
 --
 --   luajit -e 'ADDON="."' tools/retail-alliance-spec.lua
 --
@@ -43,34 +41,16 @@ GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), Sel
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/SpecChecker.lua")
-dofile(ADDON .. "/Modules/AllianceSync.lua")
 dofile(ADDON .. "/Modules/Alliance.lua")
 GuildOS.db = { members = {}, altLinks = {} }
 check(GuildOS.Client.isRetail, "the stub is retail")
 
--- ── 1. The roster sends the spec's id beside its name ──────────────────
-local rows = GuildOS.AllianceSync._BuildRoster({
-  ["Bo-Gallywix"] = { name = "Bo", class = "DEATHKNIGHT", level = 90, spec = { specID = 250, tree = "Sangue", role = "TANK" } },
-  ["Cy-Azralon"]  = { name = "Cy", class = "PRIEST", level = 90, spec = { tree = "Holy", points = { 41, 5, 15 } } },
-}, 10)
-check(rows[1].n == "Bo" and rows[1].s == "Sangue" and rows[1].si == 250, "a retail spec goes out with its id")
-check(rows[2].n == "Cy" and rows[2].s == "Holy" and rows[2].si == nil, "a classic spec goes out as it always did")
-
--- ── 2. An allied reader names it in their own language ─────────────────
-local A, index = GuildOS.Alliance, {}
-GuildOS.AllianceSync.MemberIndex = function() return index end
-index.bo = { guild = "Outra Guilda", row = rows[1] }
-check(A:MemberInfo("Bo").spec == "Blood", "the allied card names the spec in the reader's language")
-index.bo = { guild = "Outra Guilda", row = { n = "Bo", s = "Sangue" } }
-check(A:MemberInfo("Bo").spec == "Sangue", "a row from a sender before issue #184 keeps the sender's name")
-index.bo = { guild = "Outra Guilda", row = { n = "Bo", s = "Sangue", si = 9999 } }
-check(A:MemberInfo("Bo").spec == "Sangue", "and so does an id this client cannot name")
-
+local A = GuildOS.Alliance
 -- ── 3. One of ours speaking in the alliance channel ────────────────────
-index.bo = nil
 GuildOS.db.members["Dy-Azralon"] = { name = "Dy", class = "DEATHKNIGHT", level = 90,
                                      spec = { specID = 250, tree = "Sangue", role = "TANK" } }
 local info = A:SpeakerInfo("Dy")
-check(info and info.own and info.spec == "Blood", "our own speaker's card names the spec by its id too")
+check(info and info.own and info.spec == "Blood" and info.class == "DEATHKNIGHT", "our own speaker is named by the spec's id")
+check(A:SpeakerInfo("Nobody") == nil and A:SpeakerInfo("") == nil, "a speaker nothing is known of: nothing")
 
 print(("retail-alliance-spec: %d checks passed"):format(checks))

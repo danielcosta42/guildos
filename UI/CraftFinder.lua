@@ -214,8 +214,8 @@ local function BuildFinder()
             end
         end
 
-        -- Alliance: read straight from the synced directory, so an allied
-        -- crafter is found even while they are offline. No query, no waiting.
+        -- Alliance: read from guildos.me's directory (Alliance:FindCrafters), so an
+        -- allied crafter is found even while they are offline. No query, no waiting.
         if GuildOS.Alliance and GuildOS.Alliance:Get() then
             for _, c in ipairs(GuildOS.Alliance:FindCrafters(itemId)) do
                 if not f.query.seen[c.name] then

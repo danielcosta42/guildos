@@ -680,77 +680,15 @@ local function BuildSyncSub(panel)
         end
 
         ------------------------------------------------------------------
-        -- Alliance diagnostics. A cross-guild sync with no instrumentation
-        -- cannot be debugged in the field, so the counters and the per-guild
-        -- freshness live here, next to the mesh health line.
+        -- Alliance diagnostics: the alliance code's hidden channel, its lines sent, heard, shown and
+        -- dropped (Modules/AllianceLink.lua), next to the mesh health line.
         ------------------------------------------------------------------
-        local ally, async = GuildOS.Alliance, GuildOS.AllianceSync
-        if ally and async and ally:Get() then
-            local diag = async:Diagnostics()
-            local pact = ally:Get()
-            local bridge = ally:CurrentBridge() or L["nobody online"]
-            if ally:AmBridge() then bridge = bridge .. " " .. L["(you)"] end
-
-            yOff = SectionTitle(content, string.format(
-                L["Alliance %s  -  bridge: %s  -  probes %d"],
-                pact.tag, bridge, diag.stats.probes), yOff)
-
-            local counters = UI:CreateText(content, string.format(
-                L["head %d/%d  -  pull %d/%d  -  push %d/%d  -  rejected %d"],
-                diag.stats.headOut, diag.stats.headIn,
-                diag.stats.pullOut, diag.stats.pullIn,
-                diag.stats.pushOut, diag.stats.pushIn, diag.stats.rejected),
-                11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-            counters:SetPoint("TOPLEFT", 0, -yOff)
-            yOff = yOff + LINE_H + 4
-
-            -- The guilds' table: the shared header row, its labels column labels (#371).
-            local DOMAINS = { "roster", "craft", "events", "lfg", "board" }
-            local colHdr = { L["GUILD"], L["HEAD IN"], L["PUSH IN"] }
-            local xs = { 8, 130, 200 }
-            local th = UI:CreateTableHeader(content)
-            th:SetPoint("TOPLEFT", 0, -yOff)
-            th:SetPoint("TOPRIGHT", 0, -yOff)
-            for i, label in ipairs(colHdr) do
-                local fs = UI:CreateHeaderText(th, label, 9)
-                fs:SetPoint("LEFT", xs[i], 0)
-            end
-            for i, d in ipairs(DOMAINS) do
-                local fs = UI:CreateHeaderText(th, d, 9)
-                fs:SetPoint("LEFT", 275 + (i - 1) * 58, 0)
-            end
-            yOff = yOff + 26
-
-            for _, g in ipairs(diag.guilds) do
-                local nameFS = UI:CreateText(content, g.guild, 11, C.text.r, C.text.g, C.text.b)
-                nameFS:SetPoint("TOPLEFT", 8, -yOff)
-                nameFS:SetWidth(118)
-                nameFS:SetJustifyH("LEFT")
-                nameFS:SetWordWrap(false)
-
-                local headFS = UI:CreateText(content,
-                    g.lastHeadIn and GuildOS:TimeAgo(g.lastHeadIn) or L["never"],
-                    11, C.label.r, C.label.g, C.label.b)
-                headFS:SetPoint("TOPLEFT", 130, -yOff)
-
-                local pushFS = UI:CreateText(content,
-                    g.lastPushIn and GuildOS:TimeAgo(g.lastPushIn) or L["never"],
-                    11, C.label.r, C.label.g, C.label.b)
-                pushFS:SetPoint("TOPLEFT", 200, -yOff)
-
-                -- "--" means we have never received that domain from this guild.
-                for i, d in ipairs(DOMAINS) do
-                    local info = g.domains[d]
-                    local has = info and (info.theirs or 0) > 0
-                    local fs = UI:CreateText(content, has and L["ok"] or "--", 11,
-                        has and C.ok.r or C.disabled.r,
-                        has and C.ok.g or C.disabled.g,
-                        has and C.ok.b or C.disabled.b)
-                    fs:SetPoint("TOPLEFT", 275 + (i - 1) * 58, -yOff)
-                end
-                yOff = yOff + LINE_H
-            end
-            yOff = yOff + GAP
+        local link = GuildOS.AllianceLink
+        if link and link:Active() then
+            yOff = SectionTitle(content, L["Alliance code"], yOff)
+            local stats = UI:CreateText(content, link:StatusLine(), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            stats:SetPoint("TOPLEFT", 0, -yOff)
+            yOff = yOff + LINE_H + GAP
         end
 
         for idx, r in ipairs(rows) do

@@ -205,6 +205,7 @@ GuildOS.BanList = {
   StillInGuild = function() return {} end,
   IsShared = function() return false end,
   CanShare = function(_, key) return siteAlliance and key ~= "ban30" end,
+  HasSiteAlliance = function() return siteAlliance end,
   ConfirmRemoveKey = function(_, key) asked[#asked + 1] = key end,
   RemoveKey = function(_, key) lifted[#lifted + 1] = key end,
 }

@@ -150,12 +150,7 @@ read_globals = {
     "JoinChannelByName",
     "LeaveChannelByName",
     "EnumerateServerChannels",
-    "GetChannelRosterInfo",
-    "ChannelKick",
-    "ChannelBan",
     "ChannelUnban",
-    "ChannelModerator",
-    "SetChannelOwner",
     "ChatFrame_AddMessageEventFilter",
     -- The allied guilds' /g drawn as a line of /g (issue #344).
     "ChatFrame_ContainsMessageGroup",

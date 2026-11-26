@@ -3999,3 +3999,14 @@ L["The loot window closed before %s was confirmed delivered to %s. Nothing was r
 L["Loot system: %s, set on guildos.me (in force for this raid)"] = "전리품 방식: %s, guildos.me에서 설정 (이 공격대에 적용 중)"
 L["Loot system: %s, set on guildos.me (in force once the raid is on)"] = "전리품 방식: %s, guildos.me에서 설정 (공격대가 시작되면 적용)"
 L["Read as %s, reason \"%s\". For a two-word name: /gos ban First Last: reason"] = "%s(으)로 읽음, 사유 \"%s\". 두 단어 이름은: /gos ban 이름 성: 사유"
+
+-- The alliance, redrawn (#448 B29)
+L["Alliances now live on guildos.me."] = "이제 동맹은 guildos.me에서 관리합니다."
+L["The shared /g and the alliance room with allied guilds"] = "동맹 길드와 함께하는 공유 /g와 동맹 대화방"
+L["Online now"] = "현재 접속 중"
+L["Best effort: only who spoke on the alliance channel or runs GuildOS is seen."] = "추정치: 동맹 채널에서 말했거나 GuildOS를 쓰는 사람만 보입니다."
+L["Open raids"] = "공개 공격대"
+L["Alliance room"] = "동맹 대화방"
+L["Chat only: the shared /g and the alliance room. Members, crafters, raids and bans come from guildos.me."] = "채팅만: 공유 /g와 동맹 대화방입니다. 구성원, 제작자, 공격대와 차단은 guildos.me에서 옵니다."
+L["Paste this same code here in every guild of the alliance and save, once. It goes in the guild master's public note where the game allows it, and every member hands it on at login: nobody in particular has to be online."] = "동맹의 모든 길드에서 이 같은 코드를 여기에 붙여넣고 한 번 저장하세요. 게임이 허용하는 곳에서는 길드장의 공개 쪽지에 들어가고, 모든 구성원이 접속할 때 전달합니다: 특정한 누군가가 접속해 있을 필요는 없습니다."
+L["The alliance's bans"] = "동맹의 차단 목록"

@@ -131,13 +131,12 @@ function Digest:Build(since, opts)
         end
     end
 
-    -- Alliance: how many allied raids are coming up in the next week. One line,
-    -- and only when this guild is federated and something is actually scheduled.
-    if GuildOS.Alliance and GuildOS.Alliance:Get() and GuildOS.Calendar
-        and GuildOS.Calendar.AllianceEvents then
+    -- Alliance: how many raids open to the alliance are coming up in the next week (guildos.me's,
+    -- Alliance:OpenRaids). One line, and only when something is actually scheduled.
+    if GuildOS.Alliance and GuildOS.Alliance:Get() then
         local horizon = GetServerTime() + (7 * 86400)
         local count = 0
-        for _, e in ipairs(GuildOS.Calendar:AllianceEvents()) do
+        for _, e in ipairs(GuildOS.Alliance:OpenRaids()) do
             if (tonumber(e.when) or 0) <= horizon then
                 count = count + 1
             end

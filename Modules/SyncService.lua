@@ -43,8 +43,7 @@ SyncService.OFFICER_DOMAINS = {
     reminder  = true,  -- when an officer reminded a member to install GuildOS (issue #422)
     modalert  = true,  -- an officer claiming a flagged chat line, so the others do not alert (issue #404)
     audit    = true,   -- guild audit trail (officer-authoritative, id-deduped)
-    allyboard = true,  -- alliance bulletin posts this guild authored (ambassadors)
-    allyhide  = true,  -- chat lines an ambassador pulled from the alliance feed
+    allyhide  = true,  -- lines an officer hid from the alliance room
     guildcfg  = true,  -- the guild's officer threshold (issue #81), its loot system (#185) and rule (audit L7), its trials (#249)
     founding  = true,  -- WoW: Forever's founding and an officer's suggested date (issue #208)
     allylink  = true,  -- the alliance code an officer saved (issue #348); ask/have are member relays
@@ -58,7 +57,6 @@ SyncService.OFFICER_DOMAINS = {
 -- Domains outside OFFICER_DOMAINS whose handlers trust IsOfficerByName(sender) themselves.
 -- Handlers never see the channel, so the GUILD rule is held here (issue #81).
 SyncService.GUILD_ONLY_DOMAINS = {
-    alliance       = true,   -- AllianceSync's trusted fan-out
     ["core.roster"] = true,  -- CoreManager's officer roster updates
     journal        = true,   -- each member's own journal (#205): from the guild, never a whisper
     foundingSelf   = true,   -- each member's own join date (#208), filed under its sender

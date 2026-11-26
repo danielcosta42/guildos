@@ -25,7 +25,7 @@ UI.ROOMS = {
         { id = "rules",    label = L["Rules"],        feature = "guild", sub = "rules" },
         { id = "cta",      label = L["Call to Arms"], feature = "guild", sub = "cta" },
         { id = "chat",     label = L["Chat"],         feature = "guild", sub = "chat" },
-        { id = "alliance", label = L["Alliance"],     feature = "alliance" },
+        { id = "alliance", label = L["Alliance"],     feature = "alliance", sub = "hall" },
         { id = "veil",     label = L["Secret Santa"], feature = "winterveil" },
         { id = "recruit",  label = L["Recruitment"],  feature = "recruitment", members = true },
     } },
@@ -70,7 +70,7 @@ UI.ROOMS = {
         { id = "journal",      label = L["Journal"],      feature = "guild", sub = "journal", needs = "journal" },
         { id = "activity",     label = L["Activity"],     feature = "guild", sub = "activity" },
     } },
-    -- Sixteen entries: a side bar in groups instead of the row (`side`, UI/Window.lua).
+    -- Seventeen entries: a side bar in groups instead of the row (`side`, UI/Window.lua).
     { id = "officers", label = L["Officers' Room"], officer = true, side = true, entries = {
         { id = "recruiting", label = L["Recruiting"],       feature = "recruitment", sub = "recruiting", group = L["Recruitment"] },
         { id = "scanner",    label = L["Scanner"],          feature = "recruitment", sub = "scanner",    group = L["Recruitment"] },
@@ -89,6 +89,8 @@ UI.ROOMS = {
         { id = "ban",        label = L["Ban List"],         feature = "management",  sub = "ban",        group = L["Moderation"] },
         { id = "log",        label = L["Audit Log"],        feature = "management",  sub = "log",        group = L["Moderation"] },
         { id = "motd",       label = L["MOTD / Info"],      feature = "management",  sub = "motd",       group = L["Guild"] },
+        -- The alliance code pasted by hand (chat only) and the alliance's bans (specs/salao/alianca.md §3.3, §3.5).
+        { id = "alliance",   label = L["Alliance"],         feature = "alliance",    sub = "setup",      group = L["Guild"] },
     } },
     -- The Settings button in the title bar: never drawn among the rooms.
     { id = "settings", label = L["Settings"], gear = true, entries = {

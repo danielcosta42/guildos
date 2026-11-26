@@ -1075,7 +1075,7 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 
 | Symbol | Description |
 |---|---|
-| `AllianceSync._BuildRoster` row `si` | The spec's id beside its name (`s`); `Alliance:MemberInfo` and `SpeakerInfo` show it through `SpecChecker:SpecName`, the sender's name when there is no id or the client cannot name it |
+| `Alliance:SpeakerInfo(name)` | A speaker in the alliance room: an ally's from the site's directory, one of ours from the synced record (the spec through `SpecChecker:SpecName`) or the roster (the allied whisper sync that carried specs is gone, audit #448) |
 | `Exporter:RosterData()` / `ReadinessData()` / `GuildOS:ExportRoster()` | The Attunements / Attune column only with `GuildOS.AttunementTracker`, MissingConsumes only with `GuildOS.ConsumableChecker`; `ExportRoster` is the Audit > Sync tab's text |
 | `GuildOS:MemberStatCells(stats)` | UI/MemberDetail.lua: the member sheet's cells as `{ label, text, color }`, the client's list (retail: HP, the primary stat the member sent, STA, the four ratings in percent); a value that is not a number shows 0, stats that are not a table draw nothing (issue #184) |
 | Ban checks outside BanList | The keyword whisper (`author`), the invite popup's click (`e.full`) and the /who scanner (`cand.full`, /who's `fullName`) hand `IsBanned` the whole name (issue #184) |

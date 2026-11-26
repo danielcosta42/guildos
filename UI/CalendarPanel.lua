@@ -266,19 +266,6 @@ local function buildEditor()
     dateBox:HookScript("OnTextChanged", refreshRep)
     local REP_ROW = 32   -- the room the repeat row takes
 
-    -- Alliance sharing. The whole block only exists while this guild is in a
-    -- pact: with no alliance there is nothing to share with, and an unexplained
-    -- checkbox is worse than no checkbox.
-    local shareCb = UI:CreateCheckbox(f, L["Share with the alliance"], 18)
-    shareCb:SetPoint("TOPLEFT", 14, -276 - REP_ROW)
-    local shareHint = UI:CreateText(f,
-        L["Allied guilds see this event and can request a slot. Unchecked, it stays in the guild."],
-        9, C.textDim.r, C.textDim.g, C.textDim.b)
-    shareHint:SetPoint("TOPLEFT", 34, -296 - REP_ROW)
-    shareHint:SetWidth(310)
-    shareHint:SetJustifyH("LEFT")
-    shareHint:SetWordWrap(true)
-
     local saveBtn = UI:CreateButton(f, L["Create"], 110, 24)
     saveBtn:SetPoint("BOTTOMLEFT", 14, 14)
     local cancelBtn = UI:CreateButton(f, L["Cancel"], 80, 24)
@@ -302,19 +289,15 @@ local function buildEditor()
         local title = strtrim(titleBox:GetText() or "")
         if title == "" then GuildOS:Print(L["An event needs a title and a date/time."]); return end
         local when = time({ year = y, month = m, day = d, hour = hh, min = mm })
-        local inAlliance = GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil
-        local share = inAlliance and shareCb.checkbox:GetChecked() or nil
+        -- Alliance raids come from guildos.me (specs/salao/alianca.md): nothing here is shared with one.
         if f.editId and f.inSeries and laterCb.checkbox:GetChecked() then
-            CAL():UpdateSeries(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind, share)
+            CAL():UpdateSeries(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind)
         elseif f.editId then
-            CAL():Update(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "",
-                f.kind, share)
+            CAL():Update(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind)
         elseif f.rep ~= "none" then
-            CAL():CreateSeries(title, when, sizeBtn.sizeVal, descBox:GetText() or "",
-                f.kind, share and true or false, f.rep)
+            CAL():CreateSeries(title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind, false, f.rep)
         else
-            CAL():Create(title, when, sizeBtn.sizeVal, descBox:GetText() or "",
-                f.kind, share and true or false)
+            CAL():Create(title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind, false)
         end
         f:Hide()
     end
@@ -341,10 +324,7 @@ local function buildEditor()
             y = math.floor(dk / 10000); m = math.floor((dk % 10000) / 100); d = dk % 100
             hh, mm, size, title, note = 20, 0, CAL().SizesFor(f.kind, { DEFAULT_SIZE })[1], "", ""
         end
-        local inAlliance = GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil
-        shareCb:SetShown(inAlliance)
-        shareHint:SetShown(inAlliance)
-        f:SetHeight((inAlliance and 392 or 336) + REP_ROW + HINT_ROW)
+        f:SetHeight(336 + REP_ROW + HINT_ROW)
         -- New: pick a repeat. An event of a series: change only it, or every later date too.
         f.inSeries = event and type(event.series) == "table" or false
         f.rep = "none"
@@ -352,7 +332,6 @@ local function buildEditor()
         repBtn:SetShown(not event)
         laterCb:SetShown(f.inSeries)
         laterCb.checkbox:SetChecked(false)
-        shareCb.checkbox:SetChecked((event and event.shareAlliance) and true or false)
 
         dateBox:SetText(string.format("%04d-%02d-%02d", y, m, d))
         refreshRep()
@@ -574,7 +553,6 @@ function GuildOS:CreateCalendarSub(panel)
     -- Detail for the selected day
     ------------------------------------------------------------------
     function f.RenderDetail(byDay)
-        local isOfficer = GuildOS:IsOfficer()
         -- The guild's ranks (issue #283), and a kind left open to this one (#308).
         local canCreate = GuildOS:MayCreateEvents() and #CAL():CreatableKinds() > 0
         local sel = f.selectedKey
@@ -632,20 +610,13 @@ function GuildOS:CreateCalendarSub(panel)
 
             -- The kind keeps its colour: it is the same one the grid marks the day with.
             local tag = tint("[" .. kindLabel(e.kind) .. "]", kindColor(e.kind)) .. " "
-            -- Shared events carry a mark so an officer can see what is exposed
-            -- without opening each one. Marking the SHARED ones (not the
-            -- private ones) because exposure is the state that wants attention.
-            -- An [A] rather than a globe glyph: the skin fonts have no symbol
-            -- coverage and unicode marks render as a box in these fonts. In the
-            -- text colour, not gold: gold is the selection's (#371).
-            local shareMark = e.shareAlliance and "  [A]" or ""
             local inSeries = type(e.series) == "table"
             local repMark = inSeries and ("  " .. tint(L["(repeats)"], soft)) or ""
             -- One of the site's events that is not a raid (#652) has no size: nobody is counted against one.
             local siteEvent = CAL().IsSiteEvent and CAL():IsSiteEvent(e)
             local sizeMark = siteEvent and "" or ("  " .. tint("(" .. (e.size or DEFAULT_SIZE) .. ")", soft))
             local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. (e.title or "")
-                .. sizeMark .. shareMark .. repMark,
+                .. sizeMark .. repMark,
                 12, C.text.r, C.text.g, C.text.b)
             head:SetPoint("TOPLEFT", 0, -yy)
             if CAL():MayManage(e) then
@@ -767,41 +738,6 @@ function GuildOS:CreateCalendarSub(panel)
                     local goFS = UI:CreateText(child, L["Going: "] .. table.concat(going, ", "), 11, soft.r, soft.g, soft.b)
                     across(goFS, yy)
                     yy = yy + math.max(14, (goFS:GetStringHeight() or 12) + 4)
-                end
-            end
-
-            -- Cross-guild signup queue. Officers only: the request already
-            -- reached only ambassadors, and seating is an officer action.
-            local pending = isOfficer and CAL().AlliancePending and CAL():AlliancePending(e) or {}
-            if #pending > 0 then
-                -- The queue's own column label, not gold (#371).
-                local hdr = UI:CreateHeaderText(child, string.format(L["ALLIANCE PENDING (%d)"], #pending))
-                hdr:SetPoint("TOPLEFT", 0, -yy)
-                yy = yy + 16
-                for _, p in ipairs(pending) do
-                    local cr, cg, cb = GuildOS:GetClassColor(p.class)
-                    local line = string.format("|cff%02x%02x%02x%s|r  %s  %s  %s",
-                        cr * 255, cg * 255, cb * 255, p.name or "?",
-                        p.level and tostring(p.level) or "", roleLabel(p.role), tint(p.guild or "?", soft))
-                    if p.note and p.note ~= "" then
-                        line = line .. "  " .. tint("\"" .. p.note .. "\"", C.label)
-                    end
-                    local evId, pKey = e.id, p.key
-                    local noBtn = UI:CreateButton(child, L["Decline"], 62, 18)
-                    noBtn:SetPoint("TOPRIGHT", 0, -yy + 2)
-                    noBtn:SetScript("OnClick", function() CAL():DeclineAlliance(evId, pKey) end)
-                    local yesBtn = UI:CreateButton(child, L["Approve"], 62, 18)
-                    yesBtn:SetPoint("RIGHT", noBtn, "LEFT", -6, 0)
-                    yesBtn:SetScript("OnClick", function() CAL():ApproveAlliance(evId, pKey) end)
-
-                    -- One line, stopping short of its two buttons.
-                    local fs = UI:CreateText(child, line, 11, C.text.r, C.text.g, C.text.b)
-                    fs:SetPoint("TOPLEFT", 0, -yy)
-                    fs:SetPoint("TOPRIGHT", yesBtn, "TOPLEFT", -GAP, -2)
-                    fs:SetJustifyH("LEFT")
-                    fs:SetWordWrap(false)
-
-                    yy = yy + 20
                 end
             end
 

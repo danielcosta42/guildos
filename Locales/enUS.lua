@@ -1915,3 +1915,14 @@ L["The loot window closed before %s was confirmed delivered to %s. Nothing was r
 L["Loot system: %s, set on guildos.me (in force for this raid)"] = "Loot system: %s, set on guildos.me (in force for this raid)"
 L["Loot system: %s, set on guildos.me (in force once the raid is on)"] = "Loot system: %s, set on guildos.me (in force once the raid is on)"
 L["Read as %s, reason \"%s\". For a two-word name: /gos ban First Last: reason"] = "Read as %s, reason \"%s\". For a two-word name: /gos ban First Last: reason"
+
+-- The alliance, redrawn (#448 B29)
+L["Alliances now live on guildos.me."] = "Alliances now live on guildos.me."
+L["The shared /g and the alliance room with allied guilds"] = "The shared /g and the alliance room with allied guilds"
+L["Online now"] = "Online now"
+L["Best effort: only who spoke on the alliance channel or runs GuildOS is seen."] = "Best effort: only who spoke on the alliance channel or runs GuildOS is seen."
+L["Open raids"] = "Open raids"
+L["Alliance room"] = "Alliance room"
+L["Chat only: the shared /g and the alliance room. Members, crafters, raids and bans come from guildos.me."] = "Chat only: the shared /g and the alliance room. Members, crafters, raids and bans come from guildos.me."
+L["Paste this same code here in every guild of the alliance and save, once. It goes in the guild master's public note where the game allows it, and every member hands it on at login: nobody in particular has to be online."] = "Paste this same code here in every guild of the alliance and save, once. It goes in the guild master's public note where the game allows it, and every member hands it on at login: nobody in particular has to be online."
+L["The alliance's bans"] = "The alliance's bans"

@@ -3999,3 +3999,14 @@ L["The loot window closed before %s was confirmed delivered to %s. Nothing was r
 L["Loot system: %s, set on guildos.me (in force for this raid)"] = "拾取系统：%s，在 guildos.me 设置（本次团队生效）"
 L["Loot system: %s, set on guildos.me (in force once the raid is on)"] = "拾取系统：%s，在 guildos.me 设置（团队开始后生效）"
 L["Read as %s, reason \"%s\". For a two-word name: /gos ban First Last: reason"] = "识别为 %s，原因“%s”。两个词的名字：/gos ban 名 姓: 原因"
+
+-- The alliance, redrawn (#448 B29)
+L["Alliances now live on guildos.me."] = "联盟现在位于 guildos.me。"
+L["The shared /g and the alliance room with allied guilds"] = "与盟会共享的 /g 和联盟频道"
+L["Online now"] = "当前在线"
+L["Best effort: only who spoke on the alliance channel or runs GuildOS is seen."] = "尽力而为：只能看到在联盟频道发言过或使用 GuildOS 的人。"
+L["Open raids"] = "开放的团队副本"
+L["Alliance room"] = "联盟频道"
+L["Chat only: the shared /g and the alliance room. Members, crafters, raids and bans come from guildos.me."] = "仅聊天：共享的 /g 和联盟频道。成员、工匠、团队副本和封禁来自 guildos.me。"
+L["Paste this same code here in every guild of the alliance and save, once. It goes in the guild master's public note where the game allows it, and every member hands it on at login: nobody in particular has to be online."] = "在联盟的每个公会里把同一个代码粘贴到这里并保存一次。游戏允许时它会写入会长的公开备注，每个成员登录时都会传递它：不需要特定的人在线。"
+L["The alliance's bans"] = "联盟的封禁"

@@ -1309,22 +1309,6 @@ function GuildOS:CreateGroupsPanel(parent)
         y = y + ROW_H
     end
 
-    -- On its section title's line, flush with the content's right edge, which already stops clear of
-    -- the scroll bar (#371).
-    local function scopeButton(strip)
-        local b = acquire("scope", function()
-            local s = smallButton(content)
-            s:SetScript("OnClick", function()
-                B:SetPref("allianceScope", not B:Pref("allianceScope"))
-                paint()
-            end)
-            return s
-        end)
-        b.label:SetText(B:Pref("allianceScope") and L["Scope: Alliance"] or L["Scope: Guild"])
-        b:ClearAllPoints()
-        b:SetPoint("RIGHT", strip, "RIGHT", 0, 0)
-    end
-
     local function paintActive()
         local now = GetServerTime()
         local onlineSet, classByKey = B:_BuildOnlineRoster()
@@ -1358,11 +1342,6 @@ function GuildOS:CreateGroupsPanel(parent)
         for _, e in ipairs(B:ActiveList(GuildOS.db.lfgBoard, now, onlineSet)) do
             if keepsSeeker(e, cat, levelOnly, myLevel) then seekers[#seekers + 1] = e end
         end
-        local ally = GuildOS.Alliance
-        local inAlliance = ally and ally:Get() ~= nil
-        if inAlliance and B:Pref("allianceScope") then
-            for _, row in ipairs(B:AllianceList(now)) do seekers[#seekers + 1] = row end
-        end
 
         summary(#groups, #seekers, nForMe)
 
@@ -1393,8 +1372,7 @@ function GuildOS:CreateGroupsPanel(parent)
             groupGrid(groups, now, classByKey, forMe)
         end
 
-        local strip = head(L["Looking for a group"], tostring(#seekers))
-        if inAlliance then scopeButton(strip) end
+        head(L["Looking for a group"], tostring(#seekers))
         if #seekers == 0 then
             line(L["Nobody is available right now. Be the first!"])
             return

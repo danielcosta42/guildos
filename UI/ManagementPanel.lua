@@ -885,6 +885,10 @@ local function BuildBanSub(panel)
         clearList()
         local filter = strtrim(searchBox:GetText() or ""):lower()
         local held = GuildOS.BanList and GuildOS:IsOfficer() and GuildOS.BanList:AllianceBans() or nil
+        -- With no alliance on guildos.me there are no alliance's bans to show (audit B7).
+        local hasAlliance = (held and #held > 0) or (GuildOS.BanList and GuildOS.BanList:HasSiteAlliance())
+        if not hasAlliance then showAlliance = false end
+        allyBtn:SetShown(hasAlliance and true or false)
         allyBtn.label:SetText(showAlliance and L["Our bans"] or string.format(L["Alliance bans (%d)"], held and #held or 0))
         localHeader:SetShown(not showAlliance); allyHeader:SetShown(showAlliance)
         if showAlliance then return refreshAlliance(filter) end

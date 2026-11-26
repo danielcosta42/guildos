@@ -83,8 +83,6 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   check(GuildOS.db.calendar.events.nosize.size == default, game .. ": updating an event saved without a size gives it " .. default)
   local sized = Cal:UpsertWebRaid({ raidId = "r2", startsAt = 1790200000, title = "Barrow", size = 10, members = {} })
   check(sized and sized.size == 10, game .. ": a site raid keeps the site's own size, even with nobody invitable")
-  local twenty = Cal._AllianceSlotDecision({ when = 1790300000 }, 20, 1790000000)
-  check(twenty == (forever and "full" or "ok"), game .. ": an event with no size is full at " .. default)
   check(CM:GetRaidSize("Main") == default, game .. ": a new core starts at the same default")
 
   -- ── Default roles ──────────────────────────────────────────────────

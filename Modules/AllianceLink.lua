@@ -8,15 +8,15 @@
 --
 --         GOS=TAG:key
 --
---     An officer of each guild pastes it once in Alliance > Setup. It is NOT
+--     An officer of each guild pastes it once in Officers' Room > Alliance (or,
+--     later, guildos.me sends it through the companion). It is NOT
 --     sent between guilds: nobody has to be an ambassador. It lives in the
 --     PUBLIC NOTE OF THE GUILD MASTER, which the server hands every member
 --     with the roster, so a member gets it with nobody else online at all
 --     (issue #431). It is 27 bytes at most, so it fits the note's 31. The old
 --     form with the guilds listed (GOS=TAG:key:Guilda A;Guilda B) is still
 --     read; the short one lists none: who holds the key IS the alliance, and
---     the guilds are learned (Learn) from the channel, the presence mesh and
---     the data ops' proofs.
+--     the guilds are the ones heard on the channel (Heard).
 --     It is also the addon's own data (db.allianceLink), handed to the guild
 --     over the GUILD channel (SyncService "allylink") for a client that cannot
 --     write the note: an officer's "set" reaches whoever is online,
@@ -46,10 +46,9 @@
 -- alliance room (Modules/AllianceChat.lua), code the speaker's guild
 -- (Code). The speaker is the channel's sender, which nobody can forge.
 --
--- The data the alliance shares (rosters, calendars, crafters) still goes by
--- whisper, timers cannot speak on a channel. With this configuration it is
--- trusted by a proof only who read the key can make (Proof), never by a list
--- of names (Modules/Alliance.lua).
+-- This is the chat only. The alliance's members, crafters, raids and bans come
+-- from guildos.me through the companion (specs/salao/alianca.md); nothing goes
+-- between guilds by whisper any more (audit #448).
 --
 -- HONEST LIMITS, the same as GreenWall's: who does not run Guild OS does not
 -- see the other guilds; the key is readable by every member of every guild in
@@ -241,7 +240,7 @@ function Link:Config()
     return self._config
 end
 
--- The guilds this client learned for the alliance `tag`: { [name] = lastSeen }.
+-- The guilds this client heard on the alliance `tag`'s channel: { [name] = lastSeen }.
 function Link:Learned(tag)
     GuildOS.db.allianceLinkLearned = GuildOS.db.allianceLinkLearned or {}
     local all = GuildOS.db.allianceLinkLearned
@@ -251,10 +250,9 @@ function Link:Learned(tag)
     return tag and all[tag] or all
 end
 
--- A guild that proved it holds the key (a channel line, a data op with the
--- key's proof) or, for the code alone, one the mesh names. Only an open code
--- learns: a listed one says its guilds itself.
-function Link:Learn(guild)
+-- A guild heard on the channel holds the key: only who read it is there. Only
+-- an open code keeps them: a listed one says its guilds itself.
+function Link:Heard(guild)
     local cfg = self:Config()
     local mine = GuildOS.Alliance:MyGuildName()
     if not cfg or not cfg.open or type(guild) ~= "string" or guild == "" or guild == mine then
@@ -290,30 +288,6 @@ function Link:GuildOfCode(code)
     return nil
 end
 
--- Guilds the presence mesh says run this alliance's tag and we have not
--- learned yet: { [guild] = a peer of it }. The tag is public, so these are only
--- candidates: AllianceSync whispers them a HEAD, and a guild is learned when
--- its answer carries the key's proof.
-function Link:Candidates()
-    local out = {}
-    local cfg = self:Config()
-    local net, mesh = _G.ChehulNet, GuildOS.Mesh
-    if not cfg or not cfg.open or not net or not net.Peers or not mesh or not mesh.GetPeerAlliance then
-        return out
-    end
-    local mine = GuildOS.Alliance:MyGuildName()
-    local learned = self:Learned(cfg.tag)
-    for short in pairs(net:Peers()) do
-        if mesh:GetPeerAlliance(short) == cfg.tag then
-            local guild = mesh:GetPeerGuild(short)
-            if guild and guild ~= mine and not learned[guild] then
-                out[guild] = short
-            end
-        end
-    end
-    return out
-end
-
 -- The pact the rest of the alliance reads (Alliance:Get), or nil: only while
 -- the guild holds a code, and a listed one names this guild.
 function Link:Pact()
@@ -324,7 +298,6 @@ function Link:Pact()
     end
     local p = self._pact
     if not p or p.line ~= cfg.line or p.learnRev ~= (self._learnRev or 0) or p.mine ~= mine then
-        GuildOS.db.allianceLinkBlocked = GuildOS.db.allianceLinkBlocked or {}
         local guilds = { [mine] = { ambassadors = {}, joinedAt = 0 } }
         for _, name in ipairs(cfg.order) do
             guilds[name] = { ambassadors = {}, joinedAt = 0 }
@@ -347,7 +320,6 @@ function Link:Pact()
         }
         self._pact = p
     end
-    p.blocked = GuildOS.db.allianceLinkBlocked
     return p
 end
 
@@ -380,14 +352,6 @@ function Link:EnsureJoined()
     local ok = self:ChannelIndex() ~= nil
     if ok then
         GuildOS.Compat.RemoveChannelFromFrames(name)
-    end
-    -- The old pact's public channel (GOS<TAG>) is the client's saved channel:
-    -- with the line in force nothing reads it, so it is left once.
-    local legacy = GuildOS.db and GuildOS.db.alliance
-    local old = legacy and GuildOS.Alliance.ChannelName(legacy.tag)
-    if old and old:lower() ~= name:lower() and GetChannelName and (GetChannelName(old) or 0) > 0
-        and LeaveChannelByName then
-        LeaveChannelByName(old)
     end
     return ok
 end
@@ -446,14 +410,15 @@ function Link:GuildOfLine(code, author, kind)
             guild = L["Allied guild"]   -- shown all the same, never dropped
         end
     end
-    if not guild or pact.blocked[guild] then
+    if not guild then
         return nil
     end
     if guild == GuildOS.Alliance:MyGuildName() and kind ~= "A" then
         return nil
     end
     if guild ~= L["Allied guild"] then
-        self:Learn(guild)   -- the line came through the key: it holds it
+        self:Heard(guild)   -- the line came through the key: it holds it
+        GuildOS.Alliance:Heard(author, guild)   -- and its speaker is on now
     end
     return guild
 end
@@ -765,18 +730,10 @@ function Link:Ask()
     end
 end
 
--- What the panel offers: the line in force, or one made from the old pact
--- (tag and guilds kept, a new key), or nil.
+-- What the panel offers: the line in force, or nil.
 function Link:Suggest()
     local cfg = self:Config()
-    if cfg then
-        return cfg.line
-    end
-    local legacy = GuildOS.db and GuildOS.db.alliance
-    if legacy and legacy.tag then
-        return Link.Build(legacy.tag, Link.NewKey())
-    end
-    return nil
+    return cfg and cfg.line or nil
 end
 
 function Link:StatusLine()
