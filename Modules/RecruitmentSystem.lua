@@ -557,6 +557,7 @@ function Recruitment:SetWelcome(i, text)
         list[i] = text
     end
     writeWelcomes(r, list)
+    self:WelcomeChanged()
     return true
 end
 
@@ -567,6 +568,7 @@ function Recruitment:RemoveWelcome(i)
     if #list <= 1 or not list[i] then return false end
     table.remove(list, i)
     writeWelcomes(r, list)
+    self:WelcomeChanged()
     return true
 end
 
@@ -581,12 +583,82 @@ function Recruitment.PickWelcome(list, last, rnd)
     return pool[(rnd or math.random)(#pool)]
 end
 
+-- The welcomes for a member who returns (#449, specs/salao/saidas.md): a second list, empty by default, the empty
+-- ones left out. Pure on `r`.
+function Recruitment.WelcomeBackList(r)
+    local out = {}
+    local list = type(r) == "table" and r.welcomeBackMessages
+    if type(list) ~= "table" then return out end
+    for _, t in ipairs(list) do
+        if type(t) == "string" and t ~= "" and #out < Recruitment.WELCOME_MAX then out[#out + 1] = t end
+    end
+    return out
+end
+
+-- Puts `text` at place `i` of the returning members' list, or adds it past the end. False and why when the game
+-- would refuse it, or when the list is full.
+function Recruitment:SetWelcomeBack(i, text)
+    local r = GuildOS.db.recruitment
+    if not r then return false end
+    local problem = Recruitment.ChatTextProblem(text)
+    if problem then return false, problem end
+    local list = Recruitment.WelcomeBackList(r)
+    if i > #list then
+        if #list >= Recruitment.WELCOME_MAX then return false end
+        list[#list + 1] = text
+    else
+        list[i] = text
+    end
+    r.welcomeBackMessages = list
+    self:WelcomeChanged()
+    return true
+end
+
+-- Takes place `i` off the returning members' list; the last one may go (the normal welcome is used then).
+function Recruitment:RemoveWelcomeBack(i)
+    local r = GuildOS.db.recruitment
+    local list = Recruitment.WelcomeBackList(r)
+    if not list[i] then return false end
+    table.remove(list, i)
+    r.welcomeBackMessages = list
+    self:WelcomeChanged()
+    return true
+end
+
+-- What the welcome back fills in, when `who` is one member the history knows as a former one (an officer's
+-- client: the history is theirs): { days = days away, since = the date they left }. Nil otherwise: several who
+-- joined at once get the welcome for everybody.
+function Recruitment:BackInfo(who)
+    local names = type(who) == "table" and who or { who }
+    local MH = GuildOS.MemberHistory
+    if #names ~= 1 or type(names[1]) ~= "string" or not (MH and MH.ReturnInfo) or not GuildOS:IsOfficer() then return nil end
+    local key = MH:KeyOf(names[1])
+    local info = key and MH:ReturnInfo(key)
+    if not info then return nil end
+    return { days = info.away, since = GuildOS:DateText(info.leftAt, "/%Y") }
+end
+
 -- The welcome this client would send now (and shows in the Forever popup before the click). The
 -- one drawn stays until it is sent, so the popup shows the line the click posts; a draw no longer
--- on the list is drawn again.
-function Recruitment:WelcomeMessage()
+-- on the list is drawn again. `back` (BackInfo's): one of the returning members' list, when it has any.
+function Recruitment:WelcomeMessage(back)
     local r = GuildOS.db.recruitment
     local GR = GuildOS.GuildRules
+    local backList = back and Recruitment.WelcomeBackList(r) or {}
+    if #backList > 0 then
+        local drawnBack = self._drawnBack
+        local held = false
+        for _, t in ipairs(backList) do
+            if t == drawnBack then held = true break end
+        end
+        if not held then
+            drawnBack = Recruitment.PickWelcome(backList, r and r.welcomeBackLast)
+            self._drawnBack = drawnBack
+        end
+        self._usedBack = true
+        return Recruitment.WelcomeWithRules(drawnBack, r ~= nil and r.welcomeRules == true, GR ~= nil and GR:HasRules())
+    end
+    self._usedBack = nil
     local list = Recruitment.WelcomeList(r)
     local drawn = self._drawnWelcome
     local still = false
@@ -604,6 +676,11 @@ end
 -- A welcome went out: the next one is drawn among the others.
 function Recruitment:_WelcomeSent()
     local r = GuildOS.db.recruitment
+    if self._usedBack then
+        if r and self._drawnBack then r.welcomeBackLast = self._drawnBack end
+        self._drawnBack, self._usedBack = nil, nil
+        return
+    end
     if r and self._drawnWelcome then r.welcomeLast = self._drawnWelcome end
     self._drawnWelcome = nil
 end
@@ -612,7 +689,9 @@ end
 -- is checked first and a send the game raises on is said, never lost (#270). True when it went.
 -- The welcome's placeholders: {name} (also {nome}, {player}) becomes who joined — several joined at once, their
 -- names joined by commas — and {guild} the guild's name. Names go without their realm. Case does not matter.
-function Recruitment.FillWelcome(msg, who)
+-- `back` (a member who returns, BackInfo's): {days} (also {dias}) the days they were away, {since} (also {desde}) the
+-- date they left; without it those stay as written.
+function Recruitment.FillWelcome(msg, who, back)
     if type(msg) ~= "string" then return msg end
     local names = type(who) == "table" and who or (who and { who } or {})
     local short = {}
@@ -626,6 +705,8 @@ function Recruitment.FillWelcome(msg, who)
         local k = key:lower()
         if k == "name" or k == "nome" or k == "player" then return joined end
         if k == "guild" or k == "guilda" then return guild end
+        if back and (k == "days" or k == "dias") then return tostring(back.days or "?") end
+        if back and (k == "since" or k == "desde") then return tostring(back.since or "?") end
         return nil
     end)
     -- A name placeholder with nobody to name (a test from /gos) leaves no stray comma.
@@ -633,8 +714,8 @@ function Recruitment.FillWelcome(msg, who)
     return out
 end
 
-function Recruitment:SendWelcomeText(msg, who)
-    msg = Recruitment.FillWelcome(msg, who)
+function Recruitment:SendWelcomeText(msg, who, back)
+    msg = Recruitment.FillWelcome(msg, who, back)
     local problem = Recruitment.ChatTextProblem(msg)
     if problem then
         GuildOS:Print(string.format(L["The welcome was not sent: %s"], problem))
@@ -657,9 +738,10 @@ end
 -- game would not take the text: whoever waits keeps waiting for the fixed one.
 function Recruitment:SendPendingWelcome()
     local list = self._pendingWelcomes
-    local msg = self:WelcomeMessage()
+    local back = list and self:BackInfo(list)
+    local msg = self:WelcomeMessage(back)
     if not list or #list == 0 or not msg or msg == "" then return false end
-    if not self:SendWelcomeText(msg, list) then return false end
+    if not self:SendWelcomeText(msg, list, back) then return false end
     self._pendingWelcomes = {}
     if GuildOS.ActionQueue then GuildOS.ActionQueue:Remove("welcome") end
     return true
@@ -670,14 +752,185 @@ end
 -- take longer behind the guild's sync traffic, so two of them can each believe they won. The
 -- claims they then exchange settle it the same way on both sides: the lower name keeps it.
 function Recruitment:OnWelcomeClaim(member, sender)
+    -- Welcomed, guild-wide: this client never sends it within WELCOME_ONCE (#449).
+    if GuildOS.db and GuildOS.db.recruitment then self:MarkWelcomed(member) end
     local list = self._pendingWelcomes
     if not list then return end
-    local theirs = sender:match("^([^-]+)") or sender
-    if theirs >= GuildOS.Compat.PlayerName() then return end
+    -- The same order as the election (StableName): the realm plays no part; Forever's surnames are the roster's.
+    if not Recruitment.SortsBefore(GuildOS:SenderName(sender) or sender, GuildOS.Compat.PlayerName()) then return end
     for i = #list, 1, -1 do
         if list[i] == member then table.remove(list, i) end
     end
     self:ShowWelcomePopup()   -- redrawn without them, or hidden when nobody is left
+end
+
+----------------------------------------------------------------------
+-- The welcome is the guild's, not each officer's (#449): the switch, the welcomes (and the ones for members who
+-- return), the Discord and the rules' ending travel as one snapshot on the officers' guild settings ("guildcfg",
+-- act "welcome", over GUILD: WoW: Forever has no OFFICER channel, and the text is posted in guild chat anyway),
+-- officer-signed (SyncService checks the sender), the newest stamp winning on every client; an equal stamp goes
+-- to the lower author name, so two officers' first runs settle the same everywhere. A client before it reads the
+-- act as an officer threshold with no `max`, which it ignores.
+--   r.welcomeCfgAt, r.welcomeCfgBy   -- the stamp and the officer who last changed it
+-- First run: an officer whose client holds a welcome the guild never stamped shares it with the lowest stamp
+-- (MIGRATE_REV), so any officer's real change wins over it.
+----------------------------------------------------------------------
+Recruitment.MIGRATE_REV = 1
+local function serverNow() return (GetServerTime and GetServerTime()) or (time and time()) or os.time() end
+Recruitment.WELCOME_STAMP_SLACK = 300
+local DISCORD_MAX = 100
+
+-- The snapshot this client holds, as it travels. Pure on `r`.
+function Recruitment.WelcomeSnapshot(r)
+    if type(r) ~= "table" then return nil end
+    return { on = r.welcomeEnabled and true or false, msgs = Recruitment.WelcomeList(r),
+             back = Recruitment.WelcomeBackList(r), discord = type(r.discord) == "string" and r.discord or "",
+             rules = r.welcomeRules == true, by = r.welcomeCfgBy }
+end
+
+-- A snapshot off the network, checked field by field, or nil.
+function Recruitment.ValidWelcome(d)
+    if type(d) ~= "table" then return nil end
+    local function list(t)
+        local out = {}
+        if type(t) ~= "table" then return out end
+        for i = 1, math.min(#t, Recruitment.WELCOME_MAX) do
+            local x = t[i]
+            if type(x) == "string" and x ~= "" and not Recruitment.ChatTextProblem(x) then out[#out + 1] = x end
+        end
+        return out
+    end
+    local discord = type(d.discord) == "string" and GuildOS:SanitizeUserText(d.discord, DISCORD_MAX) or ""
+    local by = type(d.by) == "string" and d.by ~= "" and GuildOS:SanitizeUserText(d.by, 48) or nil
+    return { on = d.on == true, msgs = list(d.msgs), back = list(d.back), discord = discord, rules = d.rules == true, by = by }
+end
+
+-- The officer changed the welcome here: a new stamp, and the snapshot to the officers a moment later (a card's Save
+-- changes several things at once: one envelope).
+function Recruitment:WelcomeChanged()
+    local r = GuildOS.db and GuildOS.db.recruitment
+    if not (r and GuildOS:IsOfficer()) then return end
+    local now = serverNow()
+    r.welcomeCfgAt = math.max(now, (tonumber(r.welcomeCfgAt) or 0) + 1)
+    r.welcomeCfgBy = GuildOS:ShortName(GuildOS.Compat.PlayerName())
+    if self._welcomePublishSoon then return end
+    self._welcomePublishSoon = true
+    GuildOS.Compat.After(1, function()
+        Recruitment._welcomePublishSoon = nil
+        GuildOS:SafeCall(Recruitment.PublishWelcome, Recruitment)
+    end)
+end
+
+-- To the guild: on a change, on the officers' regular sync and their answer to a request. A client whose welcome
+-- the guild never stamped shares it at MIGRATE_REV (the first run).
+function Recruitment:PublishWelcome()
+    local r = GuildOS.db and GuildOS.db.recruitment
+    if not (r and GuildOS.SyncService and GuildOS:IsOfficer()) then return end
+    if not r.welcomeCfgAt then
+        if #Recruitment.WelcomeList(r) == 0 then return end
+        r.welcomeCfgAt, r.welcomeCfgBy = Recruitment.MIGRATE_REV, GuildOS:ShortName(GuildOS.Compat.PlayerName())
+    end
+    GuildOS.SyncService:Publish("guildcfg", "welcome", Recruitment.WelcomeSnapshot(r), { rev = r.welcomeCfgAt })
+end
+
+-- From an officer over GUILD (SyncService checked it): the newest stamp wins; an equal one, the lower author.
+function Recruitment:OnWelcomeConfigSync(env, sender)
+    local r = GuildOS.db and GuildOS.db.recruitment
+    if not r or type(env) ~= "table" or env.act ~= "welcome" then return false end
+    local at = GuildOS.Finite(env.rev)
+    if not (at and at > 0) then return false end
+    at = math.min(at, serverNow() + Recruitment.WELCOME_STAMP_SLACK)
+    local d = Recruitment.ValidWelcome(env.data)
+    if not d then return false end
+    local by = d.by or (sender and GuildOS:ShortName(sender)) or "?"
+    local held = tonumber(r.welcomeCfgAt)
+    if held and (at < held or (at == held and (by or ""):lower() >= (r.welcomeCfgBy or ""):lower())) then return false end
+    if #d.msgs > 0 then writeWelcomes(r, d.msgs) end
+    r.welcomeBackMessages = d.back
+    r.welcomeEnabled, r.discord, r.welcomeRules = d.on, d.discord, d.rules
+    r.welcomeCfgAt, r.welcomeCfgBy = at, by
+    self._drawnWelcome, self._drawnBack = nil, nil
+    if self.welcomeUiRefresh then GuildOS:SafeCall(self.welcomeUiRefresh) end
+    return true
+end
+
+-- "Shared with the officers · last changed by Ana, 03/11 21:40", or nil before anybody stamped it.
+function Recruitment:WelcomeSharedText()
+    local r = GuildOS.db and GuildOS.db.recruitment
+    if not (r and r.welcomeCfgAt) then return L["Shared with the officers: saving here sets it for all of them."] end
+    if r.welcomeCfgAt <= Recruitment.MIGRATE_REV then
+        return string.format(L["Shared with the officers · from %s's client"], r.welcomeCfgBy or "?")
+    end
+    return string.format(L["Shared with the officers · last changed by %s, %s"], r.welcomeCfgBy or "?",
+        GuildOS:DateText(r.welcomeCfgAt, " %H:%M"))
+end
+
+----------------------------------------------------------------------
+-- Who sends the welcome (#449: "more than one officer always sends it"). No race: every officer's client reads the
+-- same guild roster and ranks the officers online by their name (without the realm, lower case, as the roster
+-- spells it on every client: WoW: Forever's "First Surname" alike), its own character always counted. The first
+-- sends WELCOME_FIRST seconds after the game's line, each next one WELCOME_STEP seconds later only if no officer's
+-- claim came by then (the first is offline in a way the roster has not shown, runs no Guild OS, or an old one). The
+-- claim and the intent go on the ALERT priority, ahead of the guild's sync traffic; the intent still goes out for
+-- the officers on a client before this, whose own tie-break reads it. A claim, sent or heard, marks the member
+-- welcomed for WELCOME_ONCE seconds on this client (kept over a /reload): never welcomed twice in that time.
+-- Only the game's line starts a welcome; the roster diff (MemberHistory) never does.
+----------------------------------------------------------------------
+Recruitment.WELCOME_FIRST = 1
+Recruitment.WELCOME_STEP = 5
+Recruitment.WELCOME_ONCE = 600
+
+-- How a name is compared: the roster's name without the realm, lower case; the realm after it, apart.
+function Recruitment.StableName(name)
+    if type(name) ~= "string" or name == "" then return "" end
+    local shortName = (GuildOS:ShortName(name) or name):lower()
+    return shortName
+end
+
+-- Whether officer name `a` goes before `b` (StableName's order). Pure.
+function Recruitment.SortsBefore(a, b)
+    return Recruitment.StableName(a) < Recruitment.StableName(b)
+end
+
+-- This client's place (0 = first) among the officers online in the roster, by StableName.
+function Recruitment:WelcomePlace()
+    local me = Recruitment.StableName(GuildOS.Compat.PlayerName())
+    local maxRank = (GuildOS.db and GuildOS.db.settings and GuildOS.db.settings.officerMaxRank) or 1
+    local before, seen = 0, {}
+    for i = 1, GetNumGuildMembers() or 0 do
+        local full, _, rankIndex, _, _, _, _, _, online = GetGuildRosterInfo(i)
+        local n = full and Recruitment.StableName(full)
+        if n and n ~= "" and online and rankIndex and rankIndex <= maxRank and n ~= me and not seen[n] then
+            seen[n] = true
+            if n < me then before = before + 1 end
+        end
+    end
+    return before
+end
+
+local function welcomedStore()
+    local r = GuildOS.db and GuildOS.db.recruitment
+    if not r then return {} end
+    r.welcomedAt = type(r.welcomedAt) == "table" and r.welcomedAt or {}
+    return r.welcomedAt
+end
+
+-- Whether `name` was welcomed (here or by a claim heard) within WELCOME_ONCE seconds.
+function Recruitment:RecentlyWelcomed(name, now)
+    now = now or serverNow()
+    local t = welcomedStore()[Recruitment.StableName(name)]
+    return t ~= nil and now - t < Recruitment.WELCOME_ONCE
+end
+
+-- `name` is welcomed (a claim sent or heard): kept WELCOME_ONCE seconds; the old marks go.
+function Recruitment:MarkWelcomed(name, now)
+    now = now or serverNow()
+    local s = welcomedStore()
+    for k, t in pairs(s) do
+        if type(t) ~= "number" or now - t >= Recruitment.WELCOME_ONCE then s[k] = nil end
+    end
+    local k = Recruitment.StableName(name)
+    if k ~= "" then s[k] = now end
 end
 
 function Recruitment:DismissPendingWelcome()
@@ -730,7 +983,7 @@ function Recruitment:_FinishWho(sender, info)
     local cfg = GuildOS.db.recruitment.autoInvite
     -- Re-check cooldown/ban in case time passed.
     if GuildOS.BanList and (GuildOS.BanList:IsBanned(sender) or GuildOS.BanList:AllianceBansFor(sender)) then return end
-    if self:_OnInviteCooldown(sender, GetServerTime()) then return end
+    if self:_OnInviteCooldown(sender, serverNow()) then return end
     if info then
         if self:_PassesFilters(info, cfg) then self:_DoInvite(sender) end
     else
@@ -1484,7 +1737,8 @@ function Recruitment:ShowWelcomePopup()
     local list = self._pendingWelcomes or {}
     if #list == 0 then f:Hide() return end
     f.line:SetText(string.format(L["|cffFFFFFF%s|r joined the guild."], table.concat(list, ", ")))
-    f.note:SetText(Recruitment.FillWelcome(self:WelcomeMessage() or "", list))
+    local back = self:BackInfo(list)
+    f.note:SetText(Recruitment.FillWelcome(self:WelcomeMessage(back) or "", list, back))
     f:Fit()
     f:Show()
 end
@@ -1820,9 +2074,11 @@ function Recruitment:HandleCommand(args)
         local sub = args[2]
         if sub == "on" then
             GuildOS.db.recruitment.welcomeEnabled = true
+            Recruitment:WelcomeChanged()
             GuildOS:Print(L["Welcome message |cff4CFF4Cenabled|r."])
         elseif sub == "off" then
             GuildOS.db.recruitment.welcomeEnabled = false
+            Recruitment:WelcomeChanged()
             GuildOS:Print(L["Welcome message |cffFF4444disabled|r."])
         elseif sub == "msg" then
             table.remove(args, 1)
@@ -1844,6 +2100,7 @@ function Recruitment:HandleCommand(args)
         local link = args[2]
         if link and link ~= "" then
             GuildOS.db.recruitment.discord = link
+            Recruitment:WelcomeChanged()
             GuildOS:Print(L["Discord link set to: |cffFFFFFF"] .. link .. "|r")
         else
             GuildOS:Print(L["Discord: |cffFFFFFF"] .. GuildOS.db.recruitment.discord .. "|r")
@@ -2012,58 +2269,54 @@ function Recruitment:RegisterWelcomeEvent()
         -- The welcome message itself is opt-in and gated separately.
         if not GuildOS.db.recruitment.welcomeEnabled then return end
 
-        -- Dedup: if already handled on this client, skip
-        if Recruitment._welcomedRecently[newMember] then return end
-        Recruitment._welcomedRecently[newMember] = true
-        C_Timer.After(90, function()
-            Recruitment._welcomedRecently[newMember] = nil
-            Recruitment._welcomeIntents[newMember]  = nil
-        end)
-
-        -- Add to known members
         Recruitment._knownMembers[newMember] = true
-
-        -- Phase 1: broadcast intent immediately so all online officers can collect intents.
-        -- After 2 seconds the officer with the lexicographically lowest name wins and sends.
-        -- This is deterministic across all clients — no race condition.
-        Recruitment._welcomeIntents[newMember] = Recruitment._welcomeIntents[newMember] or {}
-        Recruitment._welcomeIntents[newMember][myName] = true
-
-        if GuildOS.CommSystem then
-            GuildOS.CommSystem:SendMessage(
-                GuildOS.CommSystem.MSG_TYPES.WELCOME_INTENT, newMember, nil, "NORMAL")
-        end
-
-        C_Timer.After(2, function()
-            -- Already suppressed by a WC claim from another officer?
-            if Recruitment._welcomedRecently[newMember .. "_sent"] then return end
-
-            -- Tiebreak: lowest name alphabetically among intents wins
-            local intents = Recruitment._welcomeIntents[newMember] or {}
-            local winner = myName
-            for name in pairs(intents) do
-                if name < winner then winner = name end
-            end
-            if winner ~= myName then return end  -- someone else wins
-
-            Recruitment._welcomedRecently[newMember .. "_sent"] = true
-
-            if GuildOS.CommSystem then
-                GuildOS.CommSystem:SendMessage(
-                    GuildOS.CommSystem.MSG_TYPES.WELCOME_CLAIM, newMember, nil, "NORMAL")
-            end
-
-            local welcomeMsg = Recruitment:WelcomeMessage()
-            if welcomeMsg and welcomeMsg ~= "" then
-                if GuildOS.Compat.NeedsClick() then
-                    -- Forever drops a line sent from this timer: the officer's click sends it (#61).
-                    -- The claim above already went out, so the other officers stand down: the
-                    -- popup stays up until this officer sends or dismisses it.
-                    Recruitment:QueueWelcome(newMember)
-                else
-                    Recruitment:SendWelcomeText(welcomeMsg, newMember)
-                end
-            end
-        end)
+        Recruitment:OnJoinWelcome(newMember)
     end)
+end
+
+-- The game's line said `newMember` joined, on an officer's client with the welcome on: the election (above) decides
+-- whether this client sends it, after its place's delay, unless a claim came first.
+function Recruitment:OnJoinWelcome(newMember)
+    local myName = GuildOS.Compat.PlayerName()
+    self._welcomedRecently = self._welcomedRecently or {}
+    self._welcomeIntents = self._welcomeIntents or {}
+    -- Dedup: already handled on this client, or welcomed within WELCOME_ONCE (a claim heard, a /reload since).
+    if self._welcomedRecently[newMember] or self:RecentlyWelcomed(newMember) then return false end
+    self._welcomedRecently[newMember] = true
+    C_Timer.After(90, function()
+        Recruitment._welcomedRecently[newMember] = nil
+        Recruitment._welcomeIntents[newMember]  = nil
+    end)
+    self._welcomeIntents[newMember] = self._welcomeIntents[newMember] or {}
+    self._welcomeIntents[newMember][myName] = true
+    -- For an officer on a client before #449: its tie-break reads the intents.
+    if GuildOS.CommSystem then
+        GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.WELCOME_INTENT, newMember, nil, "ALERT")
+    end
+    local delay = self.WELCOME_FIRST + self:WelcomePlace() * self.WELCOME_STEP
+    self._lastWelcomeDelay = delay   -- the tests read it
+    C_Timer.After(delay, function()
+        -- Another officer's claim came first (it marks the member welcomed here too).
+        if Recruitment._welcomedRecently[newMember .. "_sent"] then return end
+        if Recruitment:RecentlyWelcomed(newMember) then return end
+        Recruitment._welcomedRecently[newMember .. "_sent"] = true
+        Recruitment:MarkWelcomed(newMember)
+        if GuildOS.CommSystem then
+            GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.WELCOME_CLAIM, newMember, nil, "ALERT")
+        end
+        -- A member who returns gets the officers' welcome back, when they wrote one (#449).
+        local back = Recruitment:BackInfo(newMember)
+        local welcomeMsg = Recruitment:WelcomeMessage(back)
+        if welcomeMsg and welcomeMsg ~= "" then
+            if GuildOS.Compat.NeedsClick() then
+                -- Forever drops a line sent from this timer: the officer's click sends it (#61).
+                -- The claim above already went out, so the other officers stand down: the
+                -- popup stays up until this officer sends or dismisses it.
+                Recruitment:QueueWelcome(newMember)
+            else
+                Recruitment:SendWelcomeText(welcomeMsg, newMember, back)
+            end
+        end
+    end)
+    return true
 end

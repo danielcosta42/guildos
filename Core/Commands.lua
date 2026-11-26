@@ -228,6 +228,9 @@ local function handleCommand(msg)
         if GuildOS.SelfTest then GuildOS.SelfTest:Run() end
     elseif msg == "myalts" then
         if GuildOS.AltAutoDetect then GuildOS.AltAutoDetect:PromptNow() end
+    elseif msg == "myalts reset" then
+        -- The account's answers to the login prompt forgotten (#449): it may ask about each character again.
+        if GuildOS.AltAutoDetect then GuildOS.AltAutoDetect:ResetAnswers() end
     elseif msg == "sync" then
         if GuildOS.CommSystem then
             GuildOS.CommSystem:FullSync()

@@ -19,7 +19,7 @@ function RosterLog:Initialize()
     GuildOS.db.rosterLog = GuildOS.db.rosterLog or { events = {} }
     GuildOS.db.rosterLog.events = GuildOS.db.rosterLog.events or {}
     if GuildOS.SyncService then
-        GuildOS.SyncService:On("audit", function(env) RosterLog:OnSync(env) end)
+        GuildOS.SyncService:On("audit", function(env, sender) RosterLog:OnSync(env, sender) end)
     end
     self:_MigrateManagementLog()
     self:_SetupDetection()
@@ -193,8 +193,12 @@ function RosterLog:Clear()
     self:Refresh()
 end
 
-function RosterLog:OnSync(env)
-    if env.act == "add" and env.data and env.data.evt then
+function RosterLog:OnSync(env, sender)
+    if env.act == "dh" then
+        -- Another officer answered the departure popup (#449): their window closed, ours says who. A client before
+        -- it ignores the act.
+        if GuildOS.Departure then GuildOS.Departure:OnHandled(env.data, sender) end
+    elseif env.act == "add" and env.data and env.data.evt then
         if self:_Insert(env.data.evt) then
             self:_ToHistory(env.data.evt)
             self:Refresh()
@@ -246,11 +250,21 @@ function RosterLog:_SetupDetection()
         local evt = RosterLog:_ParseSystem(msg)
         -- Somebody the history says was a member before (issue #425): the log files it as a rejoin, still a
         -- "join" with the mark (the id, and every client before it, stay the same), and the officer is told.
-        local past = evt and evt.action == "join" and GuildOS.MemberHistory and GuildOS:IsOfficer()
-            and GuildOS.MemberHistory:Describe(evt.target)
+        local MH = GuildOS.MemberHistory
+        local past = evt and evt.action == "join" and MH and GuildOS:IsOfficer() and MH:Describe(evt.target)
+        -- What the welcome back says (#449): read before the join opens a passage.
+        local backKey = past and MH:KeyOf(evt.target)
+        local back = backKey and MH.ReturnInfo and MH:ReturnInfo(backKey)
         if past then evt.rejoin = true end
         if evt then RosterLog:Add(evt) end
-        if past then GuildOS.MemberHistory:Say(past) end
+        if past then MH:Say(past) end
+        if back and GuildOS.Departure then
+            GuildOS:SafeCall(GuildOS.Departure.OnReturn, GuildOS.Departure, backKey, evt.target, back)
+        end
+        -- Whoever leaves or is removed: every officer's popup (#449), one per happening.
+        if evt and (evt.action == "leave" or evt.action == "kick") and GuildOS.Departure then
+            GuildOS:SafeCall(GuildOS.Departure.OnRosterEvent, GuildOS.Departure, evt)
+        end
         -- With the guild's switch for new members on, an officer's client asks for a fresh roster: the
         -- trial starts from the roster line, never from this one's name (#249).
         if evt and evt.action == "join" and GuildOS.TrialTracker then
@@ -290,6 +304,7 @@ function RosterLog:Backfill()
     local recent = self:_Recent(nil, nil, synced)
     for i = 1, #recent do self:_Publish(recent[i]) end
     if GuildOS.MemberHistory then GuildOS.MemberHistory:Backfill() end
+    if GuildOS.Departure then GuildOS.Departure:Backfill() end
 end
 
 ----------------------------------------------------------------------

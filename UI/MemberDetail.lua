@@ -996,12 +996,17 @@ function PopulateDetail(frame, data)
     if MH and GuildOS:IsOfficer() then
         local hkey = data.key or GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
         local stints, ranks = MH:Stints(hkey), MH:Ranks(hkey)
-        if #stints > 0 or #ranks > 0 then
+        local pnote = MH.NoteFor and MH:NoteFor(hkey)   -- the permanent note (#449, specs/salao/saidas.md)
+        if #stints > 0 or #ranks > 0 or pnote then
             yOff = yOff - 10
             local total = MH:TenureDays(hkey)
             yOff = CreateSectionHeader(child, string.format(L["Membership · %s days in the guild"],
                 total and tostring(total) or "?"), yOff, contentWidth)
             local lines = {}
+            if pnote then
+                lines[#lines + 1] = "|cffFFD100" .. string.format(L["Permanent note (%s): %s"], GuildOS:SanitizeUserText(pnote.author or "?", 40),
+                    GuildOS:SanitizeUserText(pnote.text, 300)) .. "|r"
+            end
             for i = #stints, 1, -1 do lines[#lines + 1] = MH:StintLine(stints[i]) end
             for i = #ranks, math.max(1, #ranks - 4), -1 do
                 local rk = ranks[i]
@@ -1369,19 +1374,15 @@ function PopulateDetail(frame, data)
         local doLink = function()
             local altName = strtrim(addLinkBox:GetText())
             if altName == "" then return end
-            local realm = data.realm or GetRealmName()
-            local altKey = GuildOS:GetPlayerKey(altName, realm)
-            -- playerKey is treated as the main; altKey as the alt.
-            -- Officers apply directly; members route through the self-claim
-            -- (applied locally + broadcast for an officer to replay).
-            local applied
-            if GuildOS:IsOfficer() then
-                applied = GuildOS:LinkAlt(altKey, playerKey)
-            else
-                GuildOS.AltAutoDetect:LinkOwnAlts(playerKey, { altKey })
-                applied = true
+            -- A member of the guild, as the roster keys them (WoW: Forever's "Chehul-Costa" is "Chehul Costa"): a
+            -- typo, or somebody who left, is never linked (#449). Linked under the group's main, whose card this is
+            -- or not; officers write it, a member's goes to them as a claim of the whole group.
+            local altKey = GuildOS.AltAutoDetect.FindMember(roster.names, altName, playerKey)
+            if not altKey then
+                GuildOS:Print(string.format(L["%s is not in the guild roster."], altName))
+                return
             end
-            if applied then
+            if GuildOS.AltAutoDetect:AddAlt(playerKey, altKey) then
                 addLinkBox:SetText("")
                 addLinkBox:ClearFocus()
                 PopulateDetail(frame, data)

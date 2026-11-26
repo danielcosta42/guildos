@@ -39,6 +39,7 @@ SyncService.OFFICER_DOMAINS = {
     ban      = true,   -- blacklist add/remove (officer-authoritative)
     alt      = true,   -- alt links, one entry per alt with a tombstone on unlink (issue #424)
     osheet   = true,   -- a member's officer sheet, the long text (issue #427): officers write, and only officers keep it
+    hnote    = true,   -- a player's permanent officer note, kept with their history (#449, specs/salao/saidas.md)
     discipline = true, -- the disciplinary record (issue #402): officers write, and only officers keep it
     reminder  = true,  -- when an officer reminded a member to install GuildOS (issue #422)
     modalert  = true,  -- an officer claiming a flagged chat line, so the others do not alert (issue #404)
@@ -71,6 +72,7 @@ SyncService.GUILD_ONLY_DOMAINS = {
 -- whisper. On a client without that channel (Compat.OfficerAddonChannel) they are not sent at all.
 SyncService.OFFICER_CHANNEL_DOMAINS = {
     osheet = true,
+    hnote  = true,   -- the permanent note about a player who left or came back (#449)
     marks  = true,   -- the safe list and nicknames (#429): what officers call a member
     trial  = true,   -- a trial's evaluation notes (audit N5): never the whole table over GUILD again
 }
@@ -108,7 +110,7 @@ function SyncService:Initialize()
     self.pendingAcks = {}
     -- The guild's settings an officer decides: the officer threshold (issue #81) and, on retail, the
     -- loot system (issue #185). A client before #185 reads a loot system as a threshold with no `max`.
-    self:On("guildcfg", function(env)
+    self:On("guildcfg", function(env, sender)
         if env.act == "lootsys" then return GuildOS:OnLootSystemSync(env) end
         -- The guild's own loot rule (issue #333); a client before it reads a threshold with no `max`.
         if env.act == "lootrule" then
@@ -144,6 +146,13 @@ function SyncService:Initialize()
         -- And the newcomer's quarantine (issue #406); it carries no `max`.
         if env.act == "newcomer" then
             if GuildOS.Newcomer then GuildOS.Newcomer:OnConfigSync(env) end
+            return
+        end
+        -- The guild's welcome (#449): the switch, the messages, the Discord; it carries no `max`.
+        if env.act == "welcome" then
+            if GuildOS.Recruitment and GuildOS.Recruitment.OnWelcomeConfigSync then
+                GuildOS.Recruitment:OnWelcomeConfigSync(env, sender)
+            end
             return
         end
         -- The guild's rules (issue #407), kept on every client; it carries no `max`.

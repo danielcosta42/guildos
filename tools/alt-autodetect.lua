@@ -130,8 +130,8 @@ check(GuildOS.db.altLinks[ALT] == nil and GuildOS.db.altLinks[MAIN] == ALT and G
 client("Off")
 GuildOS.db.altLinks = { [ALT] = MAIN }
 check(AD:LinkOwnAlts(MAIN, { MAIN, ALT }) == 0 and #sentOf("AL") == 0, "nothing to change: nothing sent")
-AD:_RegisterPopup()
-GuildOS.Dialogs.GUILDOS_ALT_AUTODETECT.OnAccept(nil, { main = MAIN, group = { MAIN, ALT } })
+GuildOSDB.accountChars = { [MAIN] = { level = 70 }, [ALT] = { level = 60 } }
+AD:Accept({ list = { ALT }, chars = { MAIN, ALT }, choices = { MAIN }, main = MAIN }, MAIN)
 check(#printed == 0, "and no \"Linked\" line for a link that did not happen")
 
 -- ── 3. A member's accept: no loop, and it survives an officer list ───────
@@ -260,26 +260,15 @@ for _, p in pairs(GuildOSDB.altPending) do p.guild = "Guild"; p.ts = now - 31 * 
 AD:ResendPending()
 check(#sentOf("SA") == 0 and next(GuildOSDB.altPending) == nil, "a claim past thirty days is dropped")
 
--- "Not now" is this session only; "Don't ask again" is for good (audit B12). The prompt waits for the popup queue.
+-- The login prompt waits for the popup queue, and opens when it lets it (B21). Its answers: tools/alt-prompt.lua.
 do
-  GuildOS.Dialogs = GuildOS.Dialogs or {}
-  AD:_RegisterPopup()
-  local def = GuildOS.Dialogs["GUILDOS_ALT_AUTODETECT"]
-  check(def.button2 == "Not now" and def.button3 == "Don't ask again" and def.OnAlt, "the prompt has Not now and Don't ask again")
-  local r = { group = { MAIN, ALT }, main = MAIN }
-  GuildOSDB.altDeclined = nil
-  AD._prompted = nil
-  def.OnCancel(nil, r)
-  check(AD._prompted and not (GuildOSDB.altDeclined and next(GuildOSDB.altDeclined)), "Not now stores nothing: asked again next session")
-  def.OnAlt(nil, r)
-  check(GuildOSDB.altDeclined and next(GuildOSDB.altDeclined) ~= nil, "Don't ask again is kept")
   local opened = {}
-  local realShow, realQueue = GuildOS.ShowDialog, GuildOS.ShowWhenClear
-  local dialog = {}
-  GuildOS.ShowDialog = function(_, which) opened[#opened + 1] = which; return dialog end
+  local realShow, realQueue = GuildOS.ShowAltPrompt, GuildOS.ShowWhenClear
+  local dialog = { IsShown = function() return true end }
+  GuildOS.ShowAltPrompt = function(_, plan) opened[#opened + 1] = plan; return dialog end
   local queued = {}
   GuildOS.ShowWhenClear = function(_, key, fn) queued[#queued + 1] = { key = key, fn = fn } end
-  GuildOSDB.altDeclined, AD._prompted = nil, nil
+  GuildOSDB.altAsk, AD._prompted, AD._asksTable = nil, nil, nil
   GuildOSDB.accountChars = { [MAIN] = { level = 70 }, [ALT] = { level = 60 } }
   GuildOS.db.altLinks = {}
   afters = {}
@@ -287,9 +276,9 @@ do
   for _, fn in ipairs(afters) do fn() end
   check(#queued == 1 and queued[1].key == "altdetect" and #opened == 0, "the login prompt queues, never straight on screen")
   local shown = queued[1].fn()
-  check(opened[1] == "GUILDOS_ALT_AUTODETECT", "and opens when the queue lets it")
-  check(shown == dialog, "B21: the queued fn returns the dialog, so the queue holds its slot until it closes")
-  GuildOS.ShowDialog, GuildOS.ShowWhenClear = realShow, realQueue
+  check(#opened == 1 and opened[1].list[1] == ALT and opened[1].main == MAIN, "and opens when the queue lets it")
+  check(shown == dialog, "B21: the queued fn returns the window, so the queue holds its slot until it closes")
+  GuildOS.ShowAltPrompt, GuildOS.ShowWhenClear = realShow, realQueue
 end
 
 print(("alt-autodetect: %d checks passed"):format(checks))

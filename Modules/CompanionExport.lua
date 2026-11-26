@@ -282,8 +282,16 @@ end
 -- v14: the main an officer linked this character to, as `db.altLinks` holds it ([altKey] = mainKey,
 -- officer-maintained and synced, keyed the way `key` is). Nil -- the key absent -- for a main, for
 -- anybody nobody linked, and for a link to itself or anything that is not a key, which links nobody.
+-- The officers' word (#449): AltSync's view without a member's own claims still waiting (AltAutoDetect:Overlay), so
+-- the site sees the links every officer's client has, whoever exports. Taken once per payload (BuildPayload).
+local exportLinks
+local function officersLinks()
+    if GuildOS.AltSync and GuildOS.AltSync.BaseView then return GuildOS.AltSync:BaseView() end
+    return GuildOS.db.altLinks
+end
+
 local function mainOf(key)
-    local links = GuildOS.db.altLinks
+    local links = exportLinks or GuildOS.db.altLinks
     local main = type(links) == "table" and links[key] or nil
     if type(main) ~= "string" or main == "" or main == key then return nil end
     return main
@@ -1004,6 +1012,7 @@ function Companion:BuildPayload()
     local retail = GuildOS.Client.isRetail
 
     local members, count = {}, 0
+    exportLinks = officersLinks()
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
         local fullName, rankName, rankIndex, level, _, _, _, _, _, _, classFile =
@@ -1016,6 +1025,7 @@ function Companion:BuildPayload()
             members[count] = memberLine(key, short, classFile, level, rankName, rankIndex)
         end
     end
+    exportLinks = nil
 
     local loot, whys = {}, 0
     if GuildOS.LootTracker then

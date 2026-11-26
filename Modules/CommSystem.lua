@@ -577,6 +577,7 @@ function CommSystem:_PublishOfficerConfig()
     if GuildOS.Discipline then GuildOS.Discipline:PublishConfig() end  -- the record's term and ladder (#402)
     if GuildOS.ModAlerts then GuildOS.ModAlerts:PublishConfig() end  -- the chat alerts' list (#404)
     if GuildOS.GuildRules then GuildOS.GuildRules:PublishConfig() end  -- the guild's rules (#407)
+    if GuildOS.Recruitment and GuildOS.Recruitment.PublishWelcome then GuildOS.Recruitment:PublishWelcome() end  -- the welcome (#449)
 end
 
 ----------------------------------------------------------------------

@@ -136,6 +136,13 @@ function RosterCard:AddLines(tip, data, idx)
         add(tip, string.format(L["Joined %s, %s days in the guild"], when, days and tostring(days) or "?"), C.silver)
     end
 
+    -- The permanent note the officers keep with the history (#449, specs/salao/saidas.md).
+    local pnote = MH and MH.NoteFor and MH:NoteFor(key)
+    if pnote then
+        add(tip, string.format(L["Permanent note (%s): %s"], GuildOS:SanitizeUserText(pnote.author or "?", 40),
+            GuildOS:SanitizeUserText(pnote.text, 300)), C.gold, true)
+    end
+
     -- The game's officer note.
     if data.officerNote and data.officerNote ~= "" and GuildOS.Compat.CanViewOfficerNote() then
         add(tip, string.format(L["Officer note: %s"], GuildOS:SanitizeUserText(data.officerNote, 200)), C.silver, true)

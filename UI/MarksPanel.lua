@@ -134,6 +134,13 @@ function GuildOS:BuildMarksSub(panel)
     saveBtn:SetScript("OnClick", saveBoth)
     safe:Actions({ saveBtn })
     tagBox.saveButton, backBox.saveButton = saveBtn, saveBtn
+    -- Who leaves or is removed: the officers' popup (#449, specs/salao/saidas.md), on this client.
+    local DP = GuildOS.Departure
+    local departCB = DP and safe:Check(L["Ask me when somebody leaves or is removed"],
+        L["A small window: their other characters, a permanent note, a ban or a suspension."], { gap = 4 })
+    if departCB then
+        departCB.checkbox.onChanged = function(_, checked) DP:SetEnabled(checked) end
+    end
 
     local memberBox = UI:CreateInput(safe, 150, 24, { max = 60 })
     local nickBox = UI:CreateInput(safe, 120, 24, { max = MM.NICK_MAX })
@@ -271,6 +278,7 @@ function GuildOS:BuildMarksSub(panel)
         orderDD:SetValue(ND:OrderSetting())
         if not tagBox:HasFocus() then tagBox:SetText(MM:SafeTag()) end
         if not backBox:HasFocus() then backBox:SetText(tostring(MH:BackDays())) end
+        if departCB then departCB.checkbox:SetChecked(DP:Enabled()) end
 
         local open = ND:TakeOpen()
         if open == "plan" then plan, planLeft = ND:Plan(); mode = "plan"

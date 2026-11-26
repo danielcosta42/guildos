@@ -117,6 +117,7 @@ Modules\ModPresets.lua
 Modules\BulkActions.lua
 Modules\ActionQueue.lua
 Modules\AltDeparture.lua
+Modules\Departure.lua
 Modules\AddonReminder.lua
 Modules\GearAudit.lua
 Modules\Readiness.lua
@@ -203,6 +204,7 @@ UI\RosterFrame.lua
 UI\MemberDetail.lua
 UI\WarnDialog.lua
 UI\AltDepartureDialog.lua
+UI\DeparturePopup.lua
 UI\ModAlerts.lua
 UI\BulkPanel.lua
 UI\ActionQueue.lua

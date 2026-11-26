@@ -12,6 +12,12 @@
 --   }
 --   db.memberHistoryBase = { at, m = { [key] = { r, rn, lv, n, o, off } } }   -- the roster last seen
 --   db.memberHistoryOut  = { rec, ... }   -- the last records this client sent, for the login backfill
+--   db.memberHistory[key].note = { text, author, ts, rev }   -- the officers' permanent note (#449, saidas.md)
+--   db.memberHistory[key].cls  = "WARRIOR"                    -- the class last seen, for a character gone since
+--
+-- The permanent note travels only over the game's OFFICER addon channel (SyncService domain "hnote", like the
+-- officer sheet): a member's client never gets the bytes; without that channel it stays on this client. The newer
+-- revision wins. A member with a note is never dropped by the ceiling below.
 --
 -- `joinEst` / `leftEst`: the time is when GuildOS saw it (a roster diff, or firstSeen before the
 -- history existed), not the game's line: the true time is at or before it. A join nobody saw has no
@@ -42,6 +48,10 @@ local NEAR = 300                   -- seconds within which two exact records of 
 local FUTURE_SLACK = 300           -- a record's time may run this far past this client's clock
 local STR_MAX = 48                 -- bytes of a name or rank off the network
 local NAMES_SHOWN = 5              -- names in the login line before "+N"
+MemberHistory.NOTE_MAX = 300       -- bytes of a permanent note
+MemberHistory.NOTE_DOMAIN = "hnote"
+MemberHistory.NOTE_BATCH = 4       -- notes per envelope of a backfill
+MemberHistory.NOTE_BACKFILL = 40   -- the newest notes re-sent on a sync request
 
 local function session()
     GuildOS.State.memberHistory = GuildOS.State.memberHistory or { seen = {} }
@@ -52,6 +62,9 @@ function MemberHistory:Initialize()
     local db = GuildOS.db
     db.memberHistory = type(db.memberHistory) == "table" and db.memberHistory or {}
     db.memberHistoryOut = type(db.memberHistoryOut) == "table" and db.memberHistoryOut or {}
+    if GuildOS.SyncService then
+        GuildOS.SyncService:On(self.NOTE_DOMAIN, function(env, sender) MemberHistory:OnNoteSync(env, sender) end)
+    end
     local st = session()
     st.settled, st.diffed = nil, nil
     GuildOS.Compat.After(self.SETTLE_SECONDS, function()
@@ -254,7 +267,8 @@ function MemberHistory.Cap(h, max)
         n = n + 1
         local s = type(r) == "table" and r.stints
         local last = s and s[#s]
-        if not last or last.leftAt then former[#former + 1] = { key = key, at = last and last.leftAt or 0 } end
+        local noted = type(r) == "table" and type(r.note) == "table"
+        if (not last or last.leftAt) and not noted then former[#former + 1] = { key = key, at = last and last.leftAt or 0 } end
     end
     if n <= max then return 0 end
     table.sort(former, function(a, b) return a.at < b.at end)
@@ -462,6 +476,147 @@ function MemberHistory:Former()
     return out
 end
 
+-- A former member coming back (#449, specs/salao/saidas.md): { leftAt, leftEst, how, by, away = days from the departure
+-- to the return, past = days in the guild over the passages before, times = how many passages ended }. Asked before
+-- the join opens a passage (the last one is closed: the return is `now`), or just after (the last one is open and the
+-- one before it closed: the return is its start). Nil for somebody the history never saw leave.
+function MemberHistory:ReturnInfo(key, now, dateFn)
+    now = now or GetServerTime()
+    local s = self:Stints(key)
+    local last = s[#s]
+    if not last then return nil end
+    local gone, backAt, upto = last, now, #s
+    if not last.leftAt then
+        gone, backAt, upto = s[#s - 1], last.joinAt or now, #s - 1
+        if not (gone and gone.leftAt) then return nil end
+    end
+    local past, any = 0, false
+    for i = 1, upto do
+        local st = s[i]
+        if st.joinAt and st.leftAt then
+            past, any = past + (MemberHistory.DaysBetween(st.joinAt, st.leftAt, dateFn) or 0), true
+        end
+    end
+    return { leftAt = gone.leftAt, leftEst = gone.leftEst, how = gone.how, by = gone.by,
+             away = math.max(0, MemberHistory.DaysBetween(gone.leftAt, backAt, dateFn) or 0),
+             past = any and past or nil, times = upto }
+end
+
+-- The class last seen for `key` (kept past the member row, which goes with them, #203), or nil.
+function MemberHistory:ClassOf(key)
+    local h = store()
+    local r = h and key and h[key]
+    return type(r) == "table" and type(r.cls) == "string" and r.cls or nil
+end
+
+----------------------------------------------------------------------
+-- The permanent note (#449): what the officers keep about a player, past any departure
+----------------------------------------------------------------------
+-- The note of `key` ({ text, author, ts, rev }), or nil. Officers only.
+function MemberHistory:GetNote(key)
+    if not GuildOS:IsOfficer() then return nil end
+    local h = store()
+    local r = h and key and h[key]
+    local n = type(r) == "table" and r.note
+    if type(n) ~= "table" or type(n.text) ~= "string" or n.text == "" then return nil end
+    return n
+end
+
+-- The note of `key`, else the newest of its other characters' (the alt links): a note is about the player.
+function MemberHistory:NoteFor(key)
+    local own = self:GetNote(key)
+    if own or not key then return own end
+    local best
+    for _, k in ipairs(GuildOS:GetLinkedChars(key)) do
+        local n = k ~= key and self:GetNote(k)
+        if n and (not best or (n.rev or 0) > (best.rev or 0)) then best = n end
+    end
+    return best
+end
+
+-- The text as it is kept: one line, no codes, NOTE_MAX bytes. "" empties the note.
+function MemberHistory.CleanNote(text)
+    if type(text) ~= "string" then return nil end
+    return GuildOS:SanitizeUserText(text, MemberHistory.NOTE_MAX)
+end
+
+local function noteWire(k, n) return { k = k, x = n.text, a = n.author, t = n.ts, r = n.rev } end
+
+local function publishNotes(items)
+    local SS = GuildOS.SyncService
+    if not SS or #items == 0 then return end
+    for i = 1, #items, MemberHistory.NOTE_BATCH do
+        local batch = {}
+        for j = i, math.min(i + MemberHistory.NOTE_BATCH - 1, #items) do batch[#batch + 1] = items[j] end
+        SS:Publish(MemberHistory.NOTE_DOMAIN, "set", { notes = batch }, { priority = "BULK" })
+    end
+end
+
+-- Writes `key`'s note as this officer's and sends it to the officers. Whether it changed.
+function MemberHistory:SetNote(key, text)
+    if not GuildOS:IsOfficer() or type(key) ~= "string" or key == "" then return false end
+    local h = store()
+    if not h then return false end
+    local clean = MemberHistory.CleanNote(text)
+    if not clean then return false end
+    local r = recOf(h, key, true)
+    local held = type(r.note) == "table" and r.note or nil
+    if (held and held.text or "") == clean then return false end
+    local now = GetServerTime()
+    r.note = { text = clean, author = GuildOS.Compat.PlayerName(), ts = now,
+               rev = math.max(now, (held and tonumber(held.rev) or 0) + 1) }
+    publishNotes({ noteWire(key, r.note) })
+    if GuildOS.RosterLog then GuildOS.RosterLog:Refresh() end
+    return true
+end
+
+-- Notes off the network ({ k, x, a, t, r } each), the newer revision winning. How many were taken.
+function MemberHistory:ApplyNotes(list, sender)
+    local h = store()
+    if type(list) ~= "table" or not h then return 0 end
+    local n = 0
+    for i = 1, math.min(#list, MemberHistory.NOTE_BATCH * 2) do
+        local it = list[i]
+        local k = type(it) == "table" and type(it.k) == "string" and it.k ~= "" and #it.k <= 64
+            and not it.k:find("|", 1, true) and GuildOS:LocalMemberKey(it.k)
+        local rev = k and GuildOS.Finite(it.r)
+        local text = k and type(it.x) == "string" and #it.x <= MemberHistory.NOTE_MAX * 2 and MemberHistory.CleanNote(it.x)
+        if k and rev and rev >= 1 and text then
+            local r = recOf(h, k, true)
+            local held = type(r.note) == "table" and r.note or nil
+            if not held or rev > (tonumber(held.rev) or 0) then
+                local a = it.a
+                if type(a) ~= "string" or a == "" or #a > STR_MAX or a:find("|", 1, true) then a = sender end
+                r.note = { text = text, author = a, ts = GuildOS.Finite(it.t) or 0, rev = rev }
+                n = n + 1
+            end
+        end
+    end
+    return n
+end
+
+-- From an officer over OFFICER (SyncService checked both). A member's client keeps nothing.
+function MemberHistory:OnNoteSync(env, sender)
+    if not GuildOS:IsOfficer() or type(env) ~= "table" or env.act ~= "set" or type(env.data) ~= "table" then return end
+    if self:ApplyNotes(env.data.notes, sender and GuildOS:ShortName(sender)) > 0 and GuildOS.RosterLog then
+        GuildOS.RosterLog:Refresh()
+    end
+end
+
+-- The newest NOTE_BACKFILL notes again (a sync request's answer).
+function MemberHistory:BackfillNotes()
+    if not (GuildOS:IsOfficer() and GuildOS.SyncService) then return end
+    if GuildOS.Compat.OfficerAddonChannel and not GuildOS.Compat.OfficerAddonChannel() then return end
+    local items = {}
+    for k, r in pairs(store() or {}) do
+        local n = type(r) == "table" and r.note
+        if type(n) == "table" and type(n.text) == "string" then items[#items + 1] = noteWire(k, n) end
+    end
+    table.sort(items, function(a, b) return (a.r or 0) > (b.r or 0) end)
+    for i = #items, self.NOTE_BACKFILL + 1, -1 do items[i] = nil end
+    publishNotes(items)
+end
+
 ----------------------------------------------------------------------
 -- Feeding: the Roster Log's events, the network, the roster diff
 ----------------------------------------------------------------------
@@ -512,6 +667,7 @@ function MemberHistory:Backfill()
     for _, rec in ipairs(GuildOS.db.memberHistoryOut) do
         GuildOS.SyncService:Publish("audit", "hist", { r = rec })
     end
+    self:BackfillNotes()
 end
 
 local function cleanStr(v)
@@ -594,7 +750,7 @@ local function readRoster()
     local onotes = GuildOS.Compat.CanViewOfficerNote and GuildOS.Compat.CanViewOfficerNote()
     local rows = {}
     for i = 1, n do
-        local full, rankName, rankIndex, level, _, _, note, onote, online = GetGuildRosterInfo(i)
+        local full, rankName, rankIndex, level, _, _, note, onote, online, _, classFile = GetGuildRosterInfo(i)
         if not full then return nil end
         local off = 0
         if not online and GetGuildRosterLastOnline then
@@ -602,7 +758,8 @@ local function readRoster()
             off = (y or 0) * 365 + (mo or 0) * 30 + (d or 0)
         end
         rows[i] = { key = GuildOS:KeyOfRosterName(full), r = rankIndex, rn = rankName,
-            lv = level, n = note or "", o = onotes and (onote or "") or nil, off = off }
+            lv = level, n = note or "", o = onotes and (onote or "") or nil, off = off,
+            cls = type(classFile) == "string" and classFile ~= "" and classFile or nil }
     end
     return rows
 end
@@ -654,6 +811,11 @@ function MemberHistory:Scan()
     if not rows then return end
     local now, h = GetServerTime(), db.memberHistory
     self:Migrate(rows, now)
+    -- The class each member has, for when they are gone (the departure popup's list of characters, #449).
+    for _, row in ipairs(rows) do
+        local r = row.cls and h[row.key]
+        if type(r) == "table" and r.cls ~= row.cls then r.cls = row.cls end
+    end
     local base = db.memberHistoryBase
     local changes, shared
     if type(base) == "table" and type(base.m) == "table" and next(base.m) then
@@ -678,13 +840,19 @@ function MemberHistory:Scan()
         local k = c.key
         if c.kind == "join" then
             local past = self:Describe(short(k), k)   -- before the join opens a passage
+            local backInfo = self:ReturnInfo(k, now)
             local res = MemberHistory.ApplyJoin(h, k, now, true)
             joined[#joined + 1] = short(k)
             added = true
             if res == "join" or res == "rejoin" then
                 logLocal("join", k, sinceLogin, nil, res == "rejoin")
                 self:_Publish({ k = k, a = "j", t = now, e = true })
-                if res == "rejoin" then self:Say(past) end
+                if res == "rejoin" then
+                    self:Say(past)
+                    if backInfo and GuildOS.Departure then
+                        GuildOS:SafeCall(GuildOS.Departure.OnReturn, GuildOS.Departure, k, short(k), backInfo)
+                    end
+                end
             end
         elseif c.kind == "gone" then
             local changed = MemberHistory.ApplyLeave(h, k, now, "gone", nil, true)
@@ -693,6 +861,8 @@ function MemberHistory:Scan()
             if changed then
                 logLocal("gone", k, sinceLogin)
                 self:_Publish({ k = k, a = "l", t = now, e = true, h = "gone" })
+                -- Nobody saw the game's line here: the departure popup asks about it (deduped with the line, #449).
+                if GuildOS.Departure then GuildOS:SafeCall(GuildOS.Departure.OnGone, GuildOS.Departure, k, now) end
             end
             base.m[k] = nil
         elseif c.kind == "rank" then

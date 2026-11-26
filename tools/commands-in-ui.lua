@@ -137,6 +137,7 @@ local CHAT_ONLY = {
   lfg = "opens by itself for a player with no guild",
   ["debug resscan"] = "debug: the resistance scan, printed",
   altlimit = "an audit printed in chat, as GRM's /grm altlimit (issue #424)",
+  ["myalts reset"] = "forgets the login prompt's answers; Detect my alts on one's sheet asks whatever was answered (#449)",
   ["debug attune"] = "debug: the attunement quests, one by one", ["debug dumpquests"] = "debug: a quest-id dump",
 }
 

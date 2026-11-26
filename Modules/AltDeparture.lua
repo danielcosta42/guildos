@@ -144,6 +144,10 @@ function AltDeparture:Flush()
     local groups = self:TakeGroups(roster())
     if #groups == 0 then return end
     self.lastRemoved = groups   -- the tests read it
+    -- The departure popup (#449, Modules/Departure.lua) asks the same about everyone who leaves or is removed, on
+    -- every officer's client: while it is on, this question would be the second window about one removal.
+    local DP = GuildOS.Departure
+    if DP and DP:MayAsk() then return end
     -- Never in combat, one popup at a time (audit B21).
     if GuildOS.ShowAltRemovedDialog then
         GuildOS:ShowWhenClear("altremoved", function() return GuildOS:ShowAltRemovedDialog(groups) end)
@@ -225,4 +229,70 @@ end
 function AltDeparture.WhyText(why)
     if why == "officer" then return L["|cffFF4444Officers only.|r"] end
     return L["The alt links already changed (another officer may have answered): nothing was done."]
+end
+
+----------------------------------------------------------------------
+-- A main who is not in the guild any more (#449): the departure the game's line never told this client (no officer
+-- online when they left, a lockdown, a diff only). At an officer's login, once the roster is whole, the first such
+-- group is asked about with the same question as a main who left (Set A as main / Unlink / Keep), once a session;
+-- Keep, or ORPHAN_MAX times asked, and that group is not asked about again on this client. Never moves a link by
+-- itself: whoever answers, the answer is synced (AltSync).
+----------------------------------------------------------------------
+AltDeparture.ORPHAN_MAX = 3
+AltDeparture.ORPHAN_DELAY = 30   -- seconds after login: past the roster's settle and the login popups
+
+--- Pure: the groups whose main is not in `members` (roster lines with `key`) while some of its alts are, not in
+--- `kept` (a set of mains): { { key = main, others = the alts' roster lines } }, by main.
+function AltDeparture.Orphans(links, members, kept)
+    local byKey = {}
+    for _, m in ipairs(members or {}) do byKey[m.key] = m end
+    local groups, order = {}, {}
+    for alt, main in pairs(links or {}) do
+        if byKey[alt] and not byKey[main] and not (kept and kept[main]) then
+            if not groups[main] then groups[main] = {}; order[#order + 1] = main end
+            table.insert(groups[main], byKey[alt])
+        end
+    end
+    table.sort(order)
+    local out = {}
+    for _, main in ipairs(order) do
+        table.sort(groups[main], function(a, b) return (a.name or ""):lower() < (b.name or ""):lower() end)
+        out[#out + 1] = { key = main, name = short(main), others = groups[main] }
+    end
+    return out
+end
+
+local function orphanStore()
+    local d = GuildOS.db
+    if type(d) ~= "table" then return {} end
+    if type(d.altOrphans) ~= "table" then d.altOrphans = {} end
+    return d.altOrphans
+end
+
+--- Once a session, an officer, the whole roster: the first group whose main is gone, asked about.
+function AltDeparture:CheckOrphans()
+    local s = state()
+    if s.orphansChecked or not GuildOS:IsOfficer() or not ready() then return end
+    if not (GuildOS.WholeRoster and GuildOS:WholeRoster()) then return end
+    s.orphansChecked = true
+    local asked = orphanStore()
+    local kept = {}
+    for main, n in pairs(asked) do
+        if (tonumber(n) or 0) >= self.ORPHAN_MAX then kept[main] = true end
+    end
+    for k in pairs(s.left) do kept[k] = true end   -- already asked live this session
+    local info = self.Orphans(GuildOS.db and GuildOS.db.altLinks, roster(), kept)[1]
+    if not info then return end
+    info.orphan = true
+    s.left[info.key] = true
+    asked[info.key] = (tonumber(asked[info.key]) or 0) + 1
+    self.lastOrphan = info   -- the tests read it
+    if GuildOS.ShowMainLeftDialog then
+        GuildOS:ShowWhenClear("mainleft:" .. info.key, function() return GuildOS:ShowMainLeftDialog(info) end)
+    end
+end
+
+--- "Keep" on a gone main's group: not asked about again on this client.
+function AltDeparture:KeepOrphan(main)
+    if main then orphanStore()[main] = self.ORPHAN_MAX end
 end

@@ -300,6 +300,8 @@ local MODULE_START = {
     { "RosterLog" },
     -- Each member's passages and rank changes, kept past the log's 90 days (issue #425).
     { "MemberHistory" },
+    -- Who left or was removed, asked about on every officer's client, and who comes back (#449, specs/salao/saidas.md).
+    { "Departure" },
     -- The officers' safe list and nicknames (issue #429), synced among them; dates in the notes.
     { "MemberMarks" },
     { "NoteDates" },

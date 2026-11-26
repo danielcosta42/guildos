@@ -986,6 +986,41 @@ do
   check(md:find('L["No talent scan yet"]', 1, true), "a scan that counted no talent says so, not \"0\"")
 end
 
+-- The one question about one's own characters (#449): one window, every character listed, its four answers inside it.
+do
+  local K = function(n) return GuildOS:GetPlayerKey(n, GetRealmName()) end
+  GuildOSDB = GuildOSDB or {}
+  GuildOSDB.accountChars = { [K("Ana")] = { name = "Ana", class = "MAGE", level = 70 },
+    [K("Bia")] = { name = "Bia", class = "ROGUE", level = 60 }, [K("Cid")] = { name = "Cid", class = "PRIEST", level = 50 } }
+  local plan = { list = { K("Bia"), K("Cid") }, chars = { K("Ana"), K("Bia"), K("Cid") }, choices = { K("Ana"), K("Bia"), K("Cid") }, main = K("Ana") }
+  local got
+  local realAccept = GuildOS.AltAutoDetect.Accept
+  GuildOS.AltAutoDetect.Accept = function(_, p, main, picked) got = { p = p, main = main, picked = picked } return 0 end
+  local ok, f = pcall(GuildOS.ShowAltPrompt, GuildOS, plan, false)
+  check(ok and f and f.shown, "the prompt about one's characters opens: " .. tostring(f))
+  if ok and f then
+    check(plain(f.text.text):find("Bia", 1, true) and plain(f.text.text):find("Cid", 1, true), "it names every character at once")
+    local resolve = resolver(f, f.w, f.h)
+    local fr = { l = 0, r = f.w }
+    local last
+    for _, b in ipairs({ f.neverBtn, f.laterBtn, f.chooseBtn, f.linkBtn }) do
+      if b.shown then
+        local r = resolve(b)
+        check(r.l >= fr.l and r.r <= fr.r + SLACK, "its answer \"" .. plain(b.label.text) .. "\" inside the window")
+        if last then check(r.l >= last - SLACK, "the answers do not overlap") end
+        last = r.r
+      end
+    end
+    check(not f.checks[1].shown, "no ticks until Choose...")
+    f.chooseBtn.scripts.OnClick(f.chooseBtn)
+    check(f.checks[1].shown and f.checks[2].shown and plain(f.linkBtn.label.text) == GuildOS.L["Link selected"], "Choose... shows a tick per character")
+    f.checks[2].checkbox:SetChecked(false)
+    f.linkBtn.scripts.OnClick(f.linkBtn)
+    check(got and got.main == K("Ana") and got.picked[K("Bia")] and not got.picked[K("Cid")], "Link selected links the ticked ones")
+  end
+  GuildOS.AltAutoDetect.Accept = realAccept
+end
+
 check(opened >= 80, "every room's screens were opened at both widths (" .. opened .. ")")
 
 print(("room-cards: %d checks passed"):format(checks))

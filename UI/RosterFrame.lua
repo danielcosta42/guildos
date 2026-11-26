@@ -3797,6 +3797,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end
     welcomeChk.checkbox.onChanged = function(_, checked)
         GuildOS.db.recruitment.welcomeEnabled = checked and true or false
+        R:WelcomeChanged()   -- the guild's switch, for every officer (#449)
         local state = GuildOS.db.recruitment.welcomeEnabled and L["enabled"] or L["disabled"]
         GuildOS:Print(string.format(L["Welcome message %s."], state))
     end
@@ -3862,13 +3863,21 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- rules and the whole fits the game's 255 bytes; the popup's preview shows the text as it goes.
     local welcomeRules = welcomeCard:Check(L["End it with \"Type /gos rules\" when the guild has rules"])
     welcomeRules.checkbox:SetChecked(GuildOS.db.recruitment.welcomeRules == true)
-    welcomeRules.checkbox.onChanged = function(_, checked) GuildOS.db.recruitment.welcomeRules = checked and true or false end
+    welcomeRules.checkbox.onChanged = function(_, checked)
+        GuildOS.db.recruitment.welcomeRules = checked and true or false
+        R:WelcomeChanged()
+    end
+    -- The second list, for a member who returns (#449, UI/DeparturePopup.lua): saved with the card's Save.
+    local welcomeBack = UI.WelcomeBackList and UI:WelcomeBackList(welcomeCard, function() relayout() end)
+    -- One welcome for the guild (#449): who changed it last; another officer's change redraws the card.
+    local welcomeShared = R.WelcomeSharedText and welcomeCard:Note(R:WelcomeSharedText())
 
     -- The card's Save: the Discord (left alone while empty, as it always was) and every message shown.
     local function commitDiscord()
         local txt = discordBox:GetText()
         if txt and txt ~= "" and txt ~= GuildOS.db.recruitment.discord then
             GuildOS.db.recruitment.discord = txt
+            R:WelcomeChanged()
             GuildOS:Print(L["Discord link updated."])
         end
     end
@@ -3887,6 +3896,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         for i = 1, welcomeShown do
             if not commitWelcome(i) then break end
         end
+        if welcomeBack then welcomeBack.commit() end
         for _, row in ipairs(welcomeRows) do row.box:ClearFocus() end
         discordBox:ClearFocus()
         refreshWelcomes()
@@ -3905,7 +3915,14 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             local box = welcomeRows[i].box
             if not box:HasFocus() then box:SetText(list[i] or "") end
         end
-        relayout()
+        if welcomeShared then welcomeShared:SetText(R:WelcomeSharedText()) end
+        if welcomeBack then welcomeBack.refresh() else relayout() end
+    end
+    R.welcomeUiRefresh = function()
+        UpdateWelcomeStatus()
+        welcomeRules.checkbox:SetChecked(GuildOS.db.recruitment.welcomeRules == true)
+        if not discordBox:HasFocus() then discordBox:SetText(GuildOS.db.recruitment.discord or "") end
+        refreshWelcomes()
     end
 
     ----------------------------------------------------------------
