@@ -88,6 +88,12 @@ function GuildOS:CutBytes(s) return s end
 function GuildOS.Finite(v) return tonumber(v) end
 local warned
 function GuildOS:ShowWarnDialog(key, name, opts) warned = { key = key, name = name, opts = opts } end
+-- The one popup queue (Core/Utils.lua, tools/popup-queue.lua): out of combat it shows at once.
+local inCombat = false
+function GuildOS:InCombat() return inCombat end
+function GuildOS:ShowWhenClear(_, fn) if not inCombat then fn() end end
+local printed = {}
+function GuildOS:Print(m) printed[#printed + 1] = m end
 
 dofile(ADDON .. "/Modules/ModAlerts.lua")
 dofile(ADDON .. "/Modules/ModFlood.lua")
@@ -160,15 +166,15 @@ check(#M:GetRules() == nRules - 1, "and it removes the rule")
 check(type(rulesPanel.floodRefresh) == "function", "the anti-flood's section builds under the rules")
 local nInputs = 0
 local function walkAll(fr, fn) for _, c in ipairs(fr.children) do fn(c); walkAll(c, fn) end end
-walkAll(rulesPanel, function(c) if rawget(c, "text") == "5" or rawget(c, "text") == "10" then nInputs = nInputs + 1 end end)
+walkAll(rulesPanel, function(c) if rawget(c, "text") == "6" or rawget(c, "text") == "10" then nInputs = nInputs + 1 end end)
 check(nInputs >= 2, "its fields show the guild's limits")
 local saveBtn = find(rulesPanel, function(c) local l = rawget(c, "label"); return l and rawget(l, "text") == "Save limits" end)
 local got
 local realSet = F.SetConfig
 F.SetConfig = function(_, cfg) got = cfg; return true end
 saveBtn:Click()
-check(got and got.burst.n == 5 and got.burst.secs == 10 and got.caps.pct == 70 and got.caps.min == 12 and got.links.n == 2,
-      "Save sends what the fields hold")
+check(got and got.burst.n == 6 and got.burst.secs == 10 and got.caps.pct == 85 and got.caps.min == 20 and got.links.n == 3
+      and got.links.secs == 120, "Save sends what the fields hold")
 F.SetConfig = realSet
 -- A surge's alert names its signals.
 M:Deliver({ kind = "flood", signals = { "burst", "repeat" }, who = "Thrall", key = "Thrall", line = "x", lines = { "a", "b", "x" },
@@ -191,5 +197,32 @@ GuildOS.Newcomer.SetConfig = realNc
 M:Deliver({ kind = "flood", signals = { "links" }, who = "Rexxar", key = "Rexxar", line = "x", lines = { "x" }, count = 1,
   cat = "flood", sev = "med", rule = "F:links", claim = "000000cc", newcomer = { day = 2, of = 7 } })
 check(GuildOS.modAlertFrame.title.text:find("newcomer (day 2 of 7)", 1, true), "a newcomer's alert carries the badge")
+
+-- In combat (audit B4): the panel only, unclaimed, no window, no sound; one line once combat ends.
+GuildOS.modAlertFrame:Hide()
+local played = 0
+PlaySound = function() played = played + 1 end
+inCombat = true
+M:Deliver({ kind = "subject", who = "Thrall", key = "Thrall", line = "sell gold now", cat = "trade", sev = "high",
+  rule = "W:sell gold", claim = "000000dd" })
+local held = M:Feed()[1]
+check(held.held and not held.shown and not GuildOS.modAlertFrame.shown and played == 0, "in combat an alert goes to the panel only")
+check(not (M.claims["000000dd"] and M.claims["000000dd"].mine), "and is not claimed, so an officer out of combat gets it")
+check(M:FightEnded() == 0, "no summary while still in combat")
+inCombat = false
+check(M:FightEnded() == 1 and printed[#printed]:find("1 chat alert", 1, true), "one summary line once combat ends")
+check(M:FightEnded() == 0, "and only once")
+
+-- Severity per rule (audit B5): a click on it moves it on, through the module.
+GuildOS.db.settings.modAlertRules, GuildOS.db.settings.modAlertRulesAt = nil, nil
+drawRules()
+local hint = find(rulesPanel, function(c) local t = rawget(c, "text"); return type(t) == "string" and t:find("first change", 1, true) end)
+check(hint ~= nil, "until an officer saves, the tab says the list is this language's defaults")
+local sevBtn = find(rulesPanel, function(c) local l = rawget(c, "label"); return l and rawget(l, "text") == "Low: log only" and c.shown end)
+check(sevBtn ~= nil, "each rule's severity is a button (offence defaults to low, B2)")
+local firstSev = M:GetRules()[1].sev
+sevBtn:Click()
+check(M:GetRules()[1].sev == M.NextSeverity(firstSev) and GuildOS.db.settings.modAlertRulesAt ~= nil,
+      "a click sets the next severity, and makes the list the guild's")
 
 print(("mod-alerts-ui: %d checks passed"):format(checks))

@@ -326,4 +326,16 @@ check(GuildOS.db and GuildOS.db.guildRecruitment == nil and GuildOS.isGuilded ==
   "the guildless db keeps no guild's ad")
 IsInGuild = inGuild
 
+-- /gos recruit invite takes the whole name (audit M14): "Chehul Costa" is one player on WoW: Forever.
+strtrim = strtrim or function(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+local invitedName
+local canInvite, ginvite = CanGuildInvite, GuildInvite
+CanGuildInvite = function() return true end
+GuildInvite = function(n) invitedName = n end
+R:HandleCommand({ "invite", "Chehul", "Costa" })
+check(invitedName == "Chehul Costa", "/gos recruit invite Chehul Costa invites the whole name (" .. tostring(invitedName) .. ")")
+R:HandleCommand({ "invite", "Thrall" })
+check(invitedName == "Thrall", "a one-word name as before")
+CanGuildInvite, GuildInvite = canInvite, ginvite
+
 print(("recruit-module-off: %d checks passed"):format(checks))

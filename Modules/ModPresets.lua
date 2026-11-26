@@ -4,33 +4,37 @@
 --   * purge_inactive   -- inactive too long AND at/below a rank
 --   * promote_regulars -- strong raid attendance
 --   * trial_cleanup    -- long-running trials with weak attendance
--- Business logic only, no UI frames (Rule 2 / Rule 10). The pure matchers
--- take an explicit member list so self-tests pin them without a live roster.
--- Apply routes every action through GuildManager, whose rank/kick handoffs
--- are Blizzard-protected (they open the native guild panel; ADR-0010). This
--- module NEVER calls a protected guild API directly.
+-- Business logic only, no UI frames (Rule 2 / Rule 10). Each preset is a saved
+-- Bulk actions rule set (audit B8): it matches through BulkActions.Match (the
+-- safe list, the rank limits, an unknown attendance meeting no attendance
+-- rule) and Apply queues it in Bulk actions, one click of Next per member.
+-- This module NEVER calls a protected guild API directly.
 ----------------------------------------------------------------------
 local ModPresets = {}
 GuildOS.ModPresets = ModPresets
 local L = GuildOS.L
 
+-- The attendance (%) that makes a regular worth promoting: the promote preset's default, and what Suggestions
+-- read (PromoteAttendance), where it was 80 and the preset 90 (audit B8).
+ModPresets.PROMOTE_ATTENDANCE = 80
+
 -- Built-in preset TYPES. `defaults` seeds a new instance's thresholds;
--- `action` picks the GuildManager handoff Apply uses ("kick" / "promote").
+-- `action` is the Bulk actions queue Apply starts ("remove" / "promote").
 ModPresets.TYPES = {
     purge_inactive = {
         name     = L["Purge inactive"],
         defaults = { days = 30, minRankIndex = 4 },
-        action   = "kick",
+        action   = "remove",
     },
     promote_regulars = {
         name     = L["Promote regulars"],
-        defaults = { minAttendance = 90 },
+        defaults = { minAttendance = ModPresets.PROMOTE_ATTENDANCE },
         action   = "promote",
     },
     trial_cleanup = {
         name     = L["Trial cleanup"],
         defaults = { minDays = 14, maxAttendance = 50 },
-        action   = "kick",
+        action   = "remove",
     },
 }
 
@@ -45,6 +49,15 @@ function ModPresets:Initialize()
         GuildOS.db.modPresets = {}
         for _, key in ipairs(self.TYPE_ORDER) do
             self:_AppendDefault(key)
+        end
+    end
+    -- The old default of 90% becomes the one threshold Suggestions use too (audit B8), once.
+    if not GuildOS.db.modPresetsB8 then
+        GuildOS.db.modPresetsB8 = true
+        for _, p in ipairs(GuildOS.db.modPresets) do
+            if p.type == "promote_regulars" and p.thresholds and p.thresholds.minAttendance == 90 then
+                p.thresholds.minAttendance = self.PROMOTE_ATTENDANCE
+            end
         end
     end
     self:_RegisterTests()
@@ -73,7 +86,7 @@ end
 
 function ModPresets:GetAction(preset)
     local t = preset and self.TYPES[preset.type]
-    return (t and t.action) or "kick"
+    return (t and t.action) or "remove"
 end
 
 -- Officer-gated mutations (Rule: officer-only actions).
@@ -121,220 +134,135 @@ function ModPresets:Summarize(preset)
 end
 
 ----------------------------------------------------------------------
--- PURE matchers (deterministic; unit-tested via /gos selftest).
--- Each takes an explicit member list + thresholds and returns the subset
--- that matches. No roster / db access here.
+-- Audit B8: a preset is a saved Bulk actions rule set. It matches through BulkActions.Match, so it keeps every
+-- rule the Bulk tab keeps: never oneself nor a rank at or above one's own (the rank limits), never a member on the
+-- safe list in a removal (#429), and an unknown attendance meets no attendance rule (a trial with no raids tracked
+-- is no "low attendance" removal). It runs as Bulk actions' queue, one member per click of Next.
 ----------------------------------------------------------------------
--- Offline for at least `days` AND rankIndex at/below `minRankIndex`
--- (higher index = lower privilege, so >= protects officers / the GM).
-function ModPresets:_MatchInactive(members, days, minRankIndex)
-    local out = {}
-    for _, m in ipairs(members) do
-        if (m.daysOffline or 0) >= days and (m.rankIndex or 0) >= minRankIndex then
-            out[#out + 1] = m
-        end
-    end
-    return out
-end
-
--- Attendance at or above `minAttendance` percent.
-function ModPresets:_MatchPromote(members, minAttendance)
-    local out = {}
-    for _, m in ipairs(members) do
-        if (m.attendance or 0) >= minAttendance then
-            out[#out + 1] = m
-        end
-    end
-    return out
-end
-
--- Trials started at least `minDays` ago AND attendance strictly below
--- `maxAttendance` percent.
-function ModPresets:_MatchTrialCleanup(members, minDays, maxAttendance)
-    local out = {}
-    for _, m in ipairs(members) do
-        if (m.daysSince or 0) >= minDays and (m.attendance or 0) < maxAttendance then
-            out[#out + 1] = m
-        end
-    end
-    return out
-end
-
-----------------------------------------------------------------------
--- Live member-list resolvers (impure; reuse the existing data sources).
-----------------------------------------------------------------------
--- Non-officer, non-trial roster members with their 25-man attendance.
--- Mirrors GuildManager:GetSuggestions' population but WITHOUT the fixed
--- attendance floor, so the preset threshold is authoritative.
-function ModPresets:_CollectPromotable()
-    local out = {}
-    if not GuildOS.RaidTracker then return out end
-    local officerMaxRank = GuildOS:GetSetting("officerMaxRank") or 1
-    local n = GetNumGuildMembers() or 0
-    for i = 1, n do
-        local name, rankName, rankIndex, _, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
-        if name then
-            local short = name:match("^([^-]+)") or name
-            local realm = name:match("-(.+)$") or GetRealmName()
-            local key = GuildOS:GetPlayerKey(short, realm)
-            local isTrial = GuildOS.TrialTracker and GuildOS.TrialTracker:IsTrial(key)
-            local isOfficer = rankIndex and rankIndex <= officerMaxRank
-            if not isTrial and not isOfficer then
-                out[#out + 1] = {
-                    name       = short,
-                    fullName   = name,
-                    rankName   = rankName,
-                    rankIndex  = rankIndex,
-                    class      = classFile or "",
-                    attendance = GuildOS.RaidTracker:GetAttendance25ManPercent(key) or 0,
-                }
-            end
-        end
-    end
-    return out
-end
-
--- Active trials with days-since-start and 25-man attendance.
-function ModPresets:_CollectTrials()
-    local out = {}
-    if not GuildOS.TrialTracker then return out end
-    for _, t in ipairs(GuildOS.TrialTracker:GetActiveTrials()) do
-        local key = t.key
-        local short = key:match("^([^-]+)") or key
-        local att = (GuildOS.RaidTracker and GuildOS.RaidTracker:GetAttendance25ManPercent(key)) or 0
-        out[#out + 1] = {
-            name       = short,
-            fullName   = key,
-            daysSince  = GuildOS.TrialTracker:GetDaysSinceStart(key) or 0,
-            attendance = att,
-        }
-    end
-    return out
-end
-
-----------------------------------------------------------------------
--- GetMatches — resolve the live member list for a preset and run its
--- matcher. Returns UI rows { name, fullName, detail }.
-----------------------------------------------------------------------
-function ModPresets:GetMatches(preset)
-    if not preset then return {} end
-    local th = preset.thresholds or {}
-
+-- The Bulk actions rules a preset stands for (BulkActions.Rules' raw shape), from its thresholds.
+function ModPresets.BulkRules(preset)
+    local th = (preset and preset.thresholds) or {}
     if preset.type == "purge_inactive" then
-        local days = th.days or 0
-        local members = (GuildOS.GuildManager and GuildOS.GuildManager:GetInactiveMembers(days)) or {}
-        local matched = self:_MatchInactive(members, days, th.minRankIndex or 0)
-        local out = {}
-        for _, m in ipairs(matched) do
-            local rn = (GuildOS.GuildManager and GuildOS.GuildManager:GetRankName(m.rankIndex)) or "?"
-            out[#out + 1] = {
-                name     = m.name,
-                fullName = m.fullName,
-                detail   = (m.daysOffline or 0) .. L["d offline"] .. "  " .. rn,
-            }
-        end
-        return out
-
+        return { days = math.max(1, th.days or 0) }
     elseif preset.type == "promote_regulars" then
-        local matched = self:_MatchPromote(self:_CollectPromotable(), th.minAttendance or 0)
-        local out = {}
-        for _, m in ipairs(matched) do
-            out[#out + 1] = {
-                name     = m.name,
-                fullName = m.fullName,
-                detail   = format(L["%d%% attendance"], m.attendance or 0),
-            }
-        end
-        return out
-
+        return { attMin = th.minAttendance or ModPresets.PROMOTE_ATTENDANCE }
     elseif preset.type == "trial_cleanup" then
-        local matched = self:_MatchTrialCleanup(self:_CollectTrials(), th.minDays or 0, th.maxAttendance or 0)
-        local out = {}
-        for _, m in ipairs(matched) do
-            out[#out + 1] = {
-                name     = m.name,
-                fullName = m.fullName,
-                detail   = format(L["day %d, %d%% att"], m.daysSince or 0, m.attendance or 0),
-            }
-        end
-        return out
+        return { attMax = math.max(0, (th.maxAttendance or 0) - 1) }   -- strictly below the threshold
     end
-
     return {}
 end
 
+-- What a preset asks beyond the Bulk rules, on member `m` (Collect's line, with `trial`, `trialDays` added):
+-- the removal of the inactive only at or below its rank; promotion never of a trial or an officer's rank; the
+-- trial clean-up only trials running at least its days. Pure.
+function ModPresets.Extra(preset, m, officerMaxRank)
+    local th = (preset and preset.thresholds) or {}
+    if preset.type == "purge_inactive" then
+        return (m.rankIndex or 0) >= (th.minRankIndex or 0)
+    elseif preset.type == "promote_regulars" then
+        return not m.trial and m.rankIndex ~= nil and m.rankIndex > (officerMaxRank or 1)
+    elseif preset.type == "trial_cleanup" then
+        return m.trial == true and (m.trialDays or 0) >= (th.minDays or 0)
+    end
+    return false
+end
+
+-- The members of `members` the preset touches, through BulkActions.Match with `ctx` (BulkActions:Context()). Pure.
+function ModPresets.Match(preset, members, ctx, officerMaxRank)
+    local BA = GuildOS.BulkActions
+    if not (BA and preset and ModPresets.TYPES[preset.type]) then return {} end
+    local action = ModPresets.TYPES[preset.type].action
+    local out = {}
+    for _, m in ipairs((BA.Match(members, BA.Rules(ModPresets.BulkRules(preset)), action, ctx))) do
+        if ModPresets.Extra(preset, m, officerMaxRank) then out[#out + 1] = m end
+    end
+    return out
+end
+
+-- The attendance the promotion suggestions read: the guild's promote preset's, so both say the same (audit B8).
+function ModPresets:PromoteAttendance()
+    for _, p in ipairs(self:GetPresets()) do
+        if p.type == "promote_regulars" and p.thresholds and p.thresholds.minAttendance then
+            return p.thresholds.minAttendance
+        end
+    end
+    return self.PROMOTE_ATTENDANCE
+end
+
 ----------------------------------------------------------------------
--- Apply — act on the matched members. Officer-gated. Rank changes and
--- kicks are Blizzard-protected, so each is handed off to GuildManager,
--- which opens the native guild panel for the officer to confirm. This
--- function performs NO protected call itself (ADR-0010).
+-- GetMatches: the live roster (BulkActions:Collect, attendance included) through Match. Rows
+-- { name, fullName, key, detail }.
+----------------------------------------------------------------------
+function ModPresets:GetMatches(preset)
+    local BA = GuildOS.BulkActions
+    if not (preset and BA) then return {} end
+    local TT = GuildOS.TrialTracker
+    local members = BA:Collect(true)
+    for _, m in ipairs(members) do
+        if TT and TT:IsTrial(m.key) then m.trial, m.trialDays = true, TT:GetDaysSinceStart(m.key) or 0 end
+    end
+    local matched = self.Match(preset, members, BA:Context(), GuildOS:GetSetting("officerMaxRank") or 1)
+    local out = {}
+    for _, m in ipairs(matched) do
+        local detail
+        if preset.type == "purge_inactive" then
+            detail = (m.daysOffline or 0) .. L["d offline"] .. "  " .. (m.rankName or "?")
+        elseif preset.type == "promote_regulars" then
+            detail = format(L["%d%% attendance"], m.attendance or 0)
+        else
+            detail = format(L["day %d, %d%% att"], m.trialDays or 0, m.attendance or 0)
+        end
+        out[#out + 1] = { name = m.name, fullName = m.fullName, key = m.key, detail = detail }
+    end
+    return out
+end
+
+----------------------------------------------------------------------
+-- Apply: the matched members into Bulk actions' queue (one click of Next each, the only way the game takes a rank
+-- change or a removal from an addon, ADR-0038). Officer-gated; the panel's confirmation is the officer's yes.
 ----------------------------------------------------------------------
 function ModPresets:ApplyPreset(preset, matches)
     if not GuildOS:IsOfficer() then GuildOS:Print(L["Officers only."]) return false end
     if not preset then return false end
     matches = matches or self:GetMatches(preset)
     if #matches == 0 then return false end
-    local GM = GuildOS.GuildManager
-    if not GM then return false end
-    local action = self:GetAction(preset)
-    -- Kicks and rank changes are Blizzard-protected, so we cannot perform them.
-    -- List the targets once and open the native guild panel ONCE for the officer
-    -- to action them there. Looping GM:ConfirmKick/Promote per member would spam
-    -- chat and toggle the panel shut for an even match count. ADR-0010.
-    local names = {}
-    for _, m in ipairs(matches) do
-        names[#names + 1] = m.name or (m.fullName and (m.fullName:match("^([^-]+)") or m.fullName)) or "?"
-    end
-    local verb = (action == "promote") and L["Promote"] or L["Remove from guild"]
-    GuildOS:Print(string.format(L["%s in the guild panel: %s"], verb, table.concat(names, ", ")))
-    if GM.OpenNativeGuild then GM:OpenNativeGuild() end
-    GM:RefreshUI()
-    return true
+    local BA = GuildOS.BulkActions
+    if not BA then return false end
+    local keys = {}
+    for _, m in ipairs(matches) do keys[#keys + 1] = m.key or GuildOS:KeyOfRosterName(m.fullName or m.name) end
+    return BA:StartListAndSay(self:GetAction(preset), BA:ListFor(keys))
 end
 
 ----------------------------------------------------------------------
--- Self-tests (pure matchers only; boundary cases at / just inside / just
--- outside each threshold). Injected member lists, never the live roster.
+-- Self-tests (pure: injected members and context, never the live roster).
 ----------------------------------------------------------------------
 function ModPresets:_RegisterTests()
     if not GuildOS.SelfTest then return end
     local S = GuildOS.SelfTest
+    local ctx = { myRank = 1, lowestRank = 9, meKey = "Me" }
 
-    S:Register("modpresets.inactive_boundary", function()
+    S:Register("modpresets.unknown_attendance", function()
+        local p = { type = "trial_cleanup", thresholds = { minDays = 14, maxAttendance = 50 } }
         local members = {
-            { name = "A", rankIndex = 4, daysOffline = 30 },  -- at both -> match
-            { name = "B", rankIndex = 9, daysOffline = 29 },  -- below days -> no
-            { name = "C", rankIndex = 3, daysOffline = 45 },  -- rank too senior -> no
-            { name = "D", rankIndex = 5, daysOffline = 31 },  -- inside -> match
+            { key = "A", name = "A", rankIndex = 8, trial = true, trialDays = 20, attendance = 10 },
+            { key = "B", name = "B", rankIndex = 8, trial = true, trialDays = 20, attendance = nil },  -- no raid tracked
+            { key = "C", name = "C", rankIndex = 8, trial = true, trialDays = 20, attendance = 50 },  -- not below
         }
-        local out = ModPresets:_MatchInactive(members, 30, 4)
-        if #out ~= 2 then return false, "expected 2, got " .. #out end
-        if out[1].name ~= "A" or out[2].name ~= "D" then return false, "wrong subset" end
+        local out = ModPresets.Match(p, members, ctx, 1)
+        if #out ~= 1 or out[1].key ~= "A" then return false, "only the known low attendance" end
         return true
     end)
 
-    S:Register("modpresets.promote_boundary", function()
+    S:Register("modpresets.safe_and_ranks", function()
+        local p = { type = "purge_inactive", thresholds = { days = 30, minRankIndex = 4 } }
         local members = {
-            { name = "A", attendance = 90 },  -- at threshold -> match
-            { name = "B", attendance = 89 },  -- just outside -> no
-            { name = "C", attendance = 91 },  -- inside -> match
+            { key = "A", name = "A", rankIndex = 5, daysOffline = 40 },
+            { key = "S", name = "S", rankIndex = 5, daysOffline = 40, safe = true },   -- on the safe list
+            { key = "O", name = "O", rankIndex = 1, daysOffline = 99 },                -- my own rank
+            { key = "Me", name = "Me", rankIndex = 6, daysOffline = 99 },
         }
-        local out = ModPresets:_MatchPromote(members, 90)
-        if #out ~= 2 then return false, "expected 2, got " .. #out end
-        if out[1].name ~= "A" or out[2].name ~= "C" then return false, "wrong subset" end
-        return true
-    end)
-
-    S:Register("modpresets.trial_boundary", function()
-        local members = {
-            { name = "A", daysSince = 14, attendance = 49 },  -- both inside -> match
-            { name = "B", daysSince = 14, attendance = 50 },  -- att not < 50 -> no
-            { name = "C", daysSince = 13, attendance = 10 },  -- days outside -> no
-            { name = "D", daysSince = 20, attendance = 49 },  -- inside -> match
-        }
-        local out = ModPresets:_MatchTrialCleanup(members, 14, 50)
-        if #out ~= 2 then return false, "expected 2, got " .. #out end
-        if out[1].name ~= "A" or out[2].name ~= "D" then return false, "wrong subset" end
+        local out = ModPresets.Match(p, members, ctx, 1)
+        if #out ~= 1 or out[1].key ~= "A" then return false, "the safe list and the rank limits hold" end
         return true
     end)
 end

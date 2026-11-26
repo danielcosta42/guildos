@@ -49,7 +49,7 @@ local function isGMKey(key)
     for i = 1, n do
         local name, _, rankIndex = GetGuildRosterInfo(i)
         if name and rankIndex == 0 then
-            return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("-(.+)$")) == key
+            return GuildOS:KeyOfRosterName(name) == key
         end
     end
     return false
@@ -270,7 +270,7 @@ function Founding:_Founders()
     for i = 1, n do
         local name, _, rankIndex = GetGuildRosterInfo(i)
         if name then
-            local key = GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("-(.+)$"))
+            local key = GuildOS:KeyOfRosterName(name)
             -- The member's own claim and this client's first sighting both only bound the join from
             -- above (each is "known since"): the earlier is the better guess.
             -- Switched on with no /reload, Initialize has not made this table yet.

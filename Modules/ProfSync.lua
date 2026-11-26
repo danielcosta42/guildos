@@ -27,11 +27,14 @@ function ProfSync:Initialize()
     self.asked = {}      -- [sender .. ":" .. line] = { h = hash, at = time }
     self.outgoing = {}   -- [line] = { [requester] = true }
     GuildOS.SyncService:On(DOMAIN, function(env, sender) ProfSync:OnEnvelope(env, sender) end)
-    Compat.After(math.random(5, 15), function()
-        ProfSync:PublishSummary()
-        GuildOS.SyncService:Publish(DOMAIN, "ask", {})
-    end)
+    Compat.After(math.random(5, 15), function() ProfSync:Refresh() end)
     Compat.NewTicker(self.SUMMARY_EVERY, function() ProfSync:PublishSummary() end)
+end
+
+-- My summary out, and everyone's asked for: at login and on the window's Sync (audit B26).
+function ProfSync:Refresh()
+    self:PublishSummary()
+    GuildOS.SyncService:Publish(DOMAIN, "ask", {})
 end
 
 function ProfSync:PublishSummary()

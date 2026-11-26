@@ -428,13 +428,14 @@ function MemberHistory:Describe(name, key)
     return string.format(L["%s was a member: %s."], who, line)
 end
 
--- The officer is told, in chat, when somebody they invite, who joins or who whispers was a member.
--- True when a line was printed.
+-- A former member whispering (BanList's whisper check, issue #425): the officer is told, in chat, that they
+-- were a member. True when a line was printed.
 function MemberHistory:Warn(name, key)
     return self:Say(self:Describe(name, key))
 end
 
--- A line Describe made, to an officer's chat. True when printed.
+-- A line Describe made, to an officer's chat: when somebody rejoins (the roster log here) or is about to be
+-- invited (BanList's invite check). True when printed.
 function MemberHistory:Say(text)
     if not text or not GuildOS:IsOfficer() then return false end
     GuildOS:Print("|cffFFAA33" .. text .. "|r")

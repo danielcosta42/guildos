@@ -663,9 +663,8 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
 
                 -- Expanded: per-player breakdown (same as before)
                 if isExp then
-                    local snapshots = sd.snapshots or {}
-                    local firstSnap = snapshots[1]
-                    local lastSnap  = snapshots[#snapshots]
+                    -- The night's presence and its score, as the attendance reads them (audit R5, R17).
+                    local roll      = GuildOS.RaidTracker:RollUp(sd)
                     local pen       = GuildOS.RaidTracker:GetPenalties(sd.groupTag)
 
                     local playerList = {}
@@ -674,24 +673,8 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                         local memberData = GuildOS.db.members and GuildOS.db.members[key]
                         local class      = memberData and memberData.class or nil
 
-                        local wasLate   = firstSnap and firstSnap.members and not firstSnap.members[key]
-                        local leftEarly = lastSnap  and lastSnap.members  and not lastSnap.members[key]
-
-                        local consumeChecks, consumeHits = 0, 0
-                        for _, snap in ipairs(snapshots) do
-                            if snap.members and snap.members[key] then
-                                consumeChecks = consumeChecks + 1
-                                -- Unread (retail, nil) is never missing, as the score counts it (#187).
-                                if snap.members[key].hasConsumes ~= false then consumeHits = consumeHits + 1 end
-                            end
-                        end
-                        local noConsumes = consumeChecks > 0 and (consumeHits / consumeChecks) < 0.5
-
-                        local score = 100
-                        if wasLate    then score = score - pen.LATE end
-                        if leftEarly  then score = score - pen.LEFT_EARLY end
-                        if noConsumes then score = score - pen.NO_CONSUMES end
-                        score = math.max(0, math.min(100, score))
+                        local score, wasLate, leftEarly, noConsumes, consumeHits, consumeChecks =
+                            GuildOS.RaidTracker:NightScore(key, roll, pen)
 
                         table.insert(playerList, {
                             key = key, name = shortName, class = class,
@@ -1810,8 +1793,8 @@ local function BuildWishlistFrame()
     bottomBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
 
     -- MS/OS radio buttons
-    -- Layout (500px frame): [10] [msBtn 56] [4] [osBtn 56] [6] [addBox 162] [6] [addBtn 88] [8] [syncBtn 80] [8]
-    -- Total: 10+56+4+56+6+162+6+88+8+80+8 = 484, centred with margins ✓
+    -- Layout (500px frame): [10] [msBtn 56] [4] [osBtn 56] [6] [addBox 132] [6] [addBtn 88] [8] [syncBtn 110] [8]
+    -- Total: 10+56+4+56+6+132+6+88+8+110+8 = 484, centred with margins ✓
     f.isOS = false   -- false = Main Spec, true = Off Spec
 
     local msBtn = UI:CreateButton(f, L["MS"], 56, 28)
@@ -1854,7 +1837,7 @@ local function BuildWishlistFrame()
     SetSpecType(false)   -- initialise with MS selected
 
     -- Add item: the shared field and its placeholder (#371).
-    local addBox = UI:CreateInput(f, 162, 28, { max = 200, placeholder = L["Search item or paste link..."] })
+    local addBox = UI:CreateInput(f, 132, 28, { max = 200, placeholder = L["Search item or paste link..."] })
     addBox:SetPoint("BOTTOMLEFT", osBtn, "BOTTOMRIGHT", 6, 0)
 
     -- Search dropdown — appears above the addBox
@@ -2004,7 +1987,7 @@ local function BuildWishlistFrame()
     f.addBtn = addBtn
 
     -- Sync button — anchored to the right, with guaranteed gap from addBtn
-    local syncBtn = UI:CreateButton(f, L["Sync"], 80, 28)
+    local syncBtn = UI:CreateButton(f, L["Send to guild"], 110, 28)   -- it only sends (audit B26)
     syncBtn:SetPoint("BOTTOMRIGHT", -8, 11)
     syncBtn:SetScript("OnClick", function()
         if GuildOS.Wishlist then GuildOS.Wishlist:BroadcastMyWishlist(true) end

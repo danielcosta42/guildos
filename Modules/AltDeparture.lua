@@ -144,7 +144,10 @@ function AltDeparture:Flush()
     local groups = self:TakeGroups(roster())
     if #groups == 0 then return end
     self.lastRemoved = groups   -- the tests read it
-    if GuildOS.ShowAltRemovedDialog then GuildOS:ShowAltRemovedDialog(groups) end
+    -- Never in combat, one popup at a time (audit B21).
+    if GuildOS.ShowAltRemovedDialog then
+        GuildOS:ShowWhenClear("altremoved", function() return GuildOS:ShowAltRemovedDialog(groups) end)
+    end
 end
 
 --- "Remove them too": the others of every group, into a removal queue of Bulk actions (one per click). True or false.
@@ -189,7 +192,9 @@ function AltDeparture:OnLeave(evt)
     s.left[seen], s.left[key] = true, true
     local info = { key = key, name = short(key), others = others }
     self.lastLeft = info   -- the tests read it
-    if GuildOS.ShowMainLeftDialog then GuildOS:ShowMainLeftDialog(info) end
+    if GuildOS.ShowMainLeftDialog then
+        GuildOS:ShowWhenClear("mainleft:" .. key, function() return GuildOS:ShowMainLeftDialog(info) end)
+    end
 end
 
 -- Whether `departed` still heads a group: some alt still points at them (another officer may have answered).

@@ -172,4 +172,40 @@ SlashCmdList.GUILDOS("signup")
 check(opened == 1 and not said("Usage: /gos signup"), "/gos signup alone opens the sign-up window")
 GuildOS.ShowCoreSignupFrame = realSignup
 
+-- /gos reset asks first, as the Settings button does (audit C15).
+GuildOSDB["Guild-Realm"], popped, reloaded = { members = {} }, nil, 0
+SlashCmdList.GUILDOS("reset")
+check(popped == "GUILDOS_ERASE_GUILD" and reloaded == 0 and GuildOSDB["Guild-Realm"], "/gos reset asks, and nothing is gone yet")
+GuildOS.Dialogs.GUILDOS_ERASE_GUILD.OnAccept()
+check(GuildOSDB["Guild-Realm"] == nil and reloaded == 1, "confirmed, it erases this guild's data and reloads")
+
+-- The verb in any case; an unknown one opens nothing and says how to list them (audit C16).
+local toggled = 0
+GuildOS.ToggleRoster = function() toggled = toggled + 1 end
+printed = {}
+SlashCmdList.GUILDOS("ERRORS")
+check(said("Modules/Broken.lua: boom"), "/gos ERRORS is /gos errors")
+printed = {}
+SlashCmdList.GUILDOS("Debug Errors")
+check(said("Modules/Broken.lua: boom"), "/gos debug errors, in any case")
+printed = {}
+SlashCmdList.GUILDOS("nonsense")
+check(toggled == 0 and said("Unknown command."), "an unknown verb opens nothing and points at /gos help")
+SlashCmdList.GUILDOS("")
+check(toggled == 1, "a bare /gos still opens the window")
+-- No prefix swallows its neighbour (audit B22): "crafts" is not /gos craft, "trials" not /gos trial.
+local crafted = 0
+GuildOS.ShowCraftFinder = function() crafted = crafted + 1 end
+printed = {}
+SlashCmdList.GUILDOS("crafts")
+check(crafted == 0 and said("Unknown command."), "/gos crafts is not /gos craft")
+SlashCmdList.GUILDOS("Craft")
+check(crafted == 1, "/gos Craft is /gos craft")
+
+-- The help is short (audit B22): the diagnostics are one /gos debug line.
+printed = {}
+SlashCmdList.GUILDOS("help")
+check(said("/gos open <feature>") and said("/gos find <text>") and said("/gos debug [selftest"), "the help keeps open, find and debug")
+check(not said("/gos selftest") and not said("/gos probe chat") and not said("/gos map"), "and leaves the rest to the window")
+
 print(("commands-ui-click: %d checks passed"):format(checks))

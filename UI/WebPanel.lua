@@ -287,13 +287,14 @@ local function buildPrompt()
     f.title:SetWordWrap(false)
 
     -- Put off (Later, or the close button), not done: the digest that gave way to it at login has its turn.
-    local function putOff()
+    -- Later asks again in a while (audit B18); the close button does not.
+    local function putOff(later)
         f:Hide()
-        if GuildOS.RaidStart then GuildOS.RaidStart:PromptDismissed(f.roster) end
+        if GuildOS.RaidStart then GuildOS.RaidStart:PromptDismissed(f.roster, later == true) end
     end
     f.close = UI:CreateCloseButton(f)
     f.close:SetPoint("TOPRIGHT", -8, -8)
-    f.close:SetScript("OnClick", putOff)
+    f.close:SetScript("OnClick", function() putOff(false) end)
 
     f.when = UI:CreateText(f, "", 11, C.label.r, C.label.g, C.label.b)
     f.when:SetPoint("TOPLEFT", 16, -42)
@@ -319,7 +320,7 @@ local function buildPrompt()
 
     f.later = UI:CreateButton(f, L["Later"], 90, PROMPT_BTN_H)
     f.later:SetPoint("BOTTOMRIGHT", -16, 14)
-    f.later:SetScript("OnClick", putOff)
+    f.later:SetScript("OnClick", function() putOff(true) end)
 
     f:Hide()
     return f
@@ -346,6 +347,7 @@ function GuildOS:ShowRaidPrompt(roster)
     if prompt:IsShown() then GuildOS:RefreshRaidSteppers() end
     prompt:Show()
     prompt:Raise()
+    return prompt
 end
 
 function GuildOS:CreateWebPanel(parent, _win)

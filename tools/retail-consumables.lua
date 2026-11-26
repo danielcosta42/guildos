@@ -294,10 +294,28 @@ local function source(path)
   f:close()
   return s
 end
-check(source("Modules/CompanionExport.lua"):find("if m.hasConsumes ~= false then p.chits = (p.chits or 0) + 1 end", 1, true),
+-- The export and the score read the same roll-up (audit R5, R17).
+check(source("Modules/RaidTracker.lua"):find("if hasConsumes ~= false then p.chits = (p.chits or 0) + 1 end", 1, true)
+  and source("Modules/CompanionExport.lua"):find("RT:RollUp(session)", 1, true),
   "the export counts an unread snapshot for the player, as the score does")
-check(source("UI/FeaturePanels.lua"):find("if snap.members[key].hasConsumes ~= false then consumeHits = consumeHits + 1 end", 1, true),
+local roll = RT:RollUp(GuildOS.db.raidTracker.sessions[T])
+check(roll.n == 4 and roll.people.Bia.chits == 2 and roll.people.Cid.chits == 1 and roll.people.Ana.chits == 4,
+  "the roll-up counts the chits the score reads")
+-- Once compacted (audit R5) the night scores the same, from its roll-up alone.
+RT:CompactSession(GuildOS.db.raidTracker.sessions[T])
+check(GuildOS.db.raidTracker.sessions[T].snapshots == nil and GuildOS.db.raidTracker.sessions[T].roll.n == 4,
+  "an ended night's snapshots give way to their roll-up")
+RT:RebuildAttendanceFromSessions()
+att = GuildOS.db.raidTracker.attendance[""] or {}
+check(score("Ana") == 100 and score("Bia") == 100 and score("Cid") == 75 and score("Dan") == 100,
+  "and its attendance is the same")
+-- One score, not two (audit R17): the session detail asks NightScore, as the attendance does.
+check(source("UI/FeaturePanels.lua"):find("GuildOS.RaidTracker:NightScore(key, roll, pen)", 1, true)
+  and not source("UI/FeaturePanels.lua"):find("score = score - pen.LATE", 1, true),
   "and so does the session detail's NO CONS count")
+local _, _, _, noCons, hits, checksN = RT:NightScore("Cid", RT:RollUp(GuildOS.db.raidTracker.sessions[T]),
+  { LATE = 10, LEFT_EARLY = 10, NO_CONSUMES = 25 })
+check(noCons and hits == 1 and checksN == 4, "NightScore gives the panel its NO CONS count")
 local hud = source("UI/RaidHUD.lua")
 check(hud:find("local problems, total, ready, unread = CC:Tally(results)", 1, true)
   and hud:find("elseif #problems == 0 and unread > 0 then", 1, true),
@@ -330,6 +348,24 @@ check(rows[key("Cid")].missCons == 2 and rows[key("Cid")].status == "warn", "rea
 check(rows[key("Eva", "Gallywix")].missCons == nil, "nothing read: no count, never 'all missing'")
 check(rows[key("Eva")].missCons == 0, "a namesake on another realm is her own raider, by key")
 check(rows[key("Fay")].missCons == nil, "not in the raid: no count, though a Fay from Gallywix is")
+-- Audit B15: a check older than 12 hours is not tonight's: readiness ignores it.
+check(GuildOS.db.consumableChecks.lastAt == GetServerTime(), "a check is saved with when it was made")
+local realServerTime = GetServerTime
+GetServerTime = function() return realServerTime() + 12 * 3600 end
+rows = {}
+for _, r in ipairs(GuildOS.Readiness:GetReport()) do rows[r.key] = r end
+check(rows[key("Cid")].missCons == 2, "twelve hours on, the check still counts")
+GetServerTime = function() return realServerTime() + 12 * 3600 + 1 end
+rows = {}
+for _, r in ipairs(GuildOS.Readiness:GetReport()) do rows[r.key] = r end
+check(rows[key("Cid")].missCons == nil and rows[key("Cid")].status ~= "warn", "past twelve hours it is ignored")
+GetServerTime = realServerTime
+local heldCheck = CC.lastCheck
+CC.lastCheck, GuildOS.db.consumableChecks.lastAt = nil, nil
+rows = {}
+for _, r in ipairs(GuildOS.Readiness:GetReport()) do rows[r.key] = r end
+check(rows[key("Cid")].missCons == nil, "a saved check of unknown age is ignored too")
+CC.lastCheck = heldCheck
 
 -- ── 7. Forever has none; Anniversary's verdict is TBC's ───────────────
 CC = load("forever")

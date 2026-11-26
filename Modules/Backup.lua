@@ -55,6 +55,26 @@ function Backup:Import(text)
     return true
 end
 
+-- The restore button: the string is checked first, then a confirmation, since the whole guild database is
+-- replaced and there is no undo (audit D11).
+function Backup:AskImport(text)
+    local _, err = self:Decode(text)
+    if err then
+        GuildOS:Print(L["|cffFF4444Restore failed:|r "] .. tostring(err))
+        return
+    end
+    GuildOS.Dialogs["GUILDOS_RESTORE_BACKUP"] = GuildOS.Dialogs["GUILDOS_RESTORE_BACKUP"] or {
+        text = L["Replace this guild's whole Guild OS database with the backup and reload? This cannot be undone."],
+        button1 = L["Restore & Reload"], button2 = L["Cancel"],
+        OnAccept = function(dialog)
+            local ok, why = Backup:Import(dialog and dialog.data and dialog.data.text)
+            if not ok then GuildOS:Print(L["|cffFF4444Restore failed:|r "] .. tostring(why)) end
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
+    GuildOS:ShowDialog("GUILDOS_RESTORE_BACKUP", nil, nil, { text = text })
+end
+
 ----------------------------------------------------------------------
 -- UI: export popup + restore paste window.
 ----------------------------------------------------------------------
@@ -87,7 +107,7 @@ function Backup:ShowRestore()
         f:SetScript("OnDragStart", function(s) s:StartMoving() end)
         f:SetScript("OnDragStop", function(s) s:StopMovingOrSizing() end)
 
-        local title = UI:CreateTitle(f, L["Restore Backup"], 15)
+        local title = UI:CreateTitle(f, L["Whole guild database"], 15)
         title:SetPoint("TOPLEFT", 16, -14)
 
         local close = UI:CreateCloseButton(f)
@@ -118,12 +138,7 @@ function Backup:ShowRestore()
         local restoreBtn = UI:CreateButton(f, L["Restore & Reload"], 160, 26)
         restoreBtn:SetPoint("BOTTOM", 0, 14)
         restoreBtn:SetBaseColor(C.red.r * 0.30, C.red.g * 0.30, C.red.b * 0.30, 0.9)
-        restoreBtn:SetScript("OnClick", function()
-            local ok, err = GuildOS.Backup:Import(box:GetText())
-            if not ok then
-                GuildOS:Print(L["|cffFF4444Restore failed:|r "] .. tostring(err))
-            end
-        end)
+        restoreBtn:SetScript("OnClick", function() GuildOS.Backup:AskImport(box:GetText()) end)
 
         self.restoreFrame = f
     end

@@ -224,6 +224,11 @@ end
 function GuildOS:JoinRequestsHeard(r)
     if self.SetMinimapAlert then self:SetMinimapAlert(true) end
     if not (UI and r) then return end
+    -- Never in combat, one popup at a time (audit B21): the minimap lights now, the notice waits.
+    self:ShowWhenClear("joinrequest:" .. tostring(r.character), function() return self:_JoinRequestToastNow(r) end)
+end
+
+function GuildOS:_JoinRequestToastNow(r)
     toast = toast or BuildToast()
     local detail = Detail(r, ", ")
     toast.who:SetText(r.character .. (detail ~= "" and (", " .. detail) or ""))
@@ -238,4 +243,5 @@ function GuildOS:JoinRequestsHeard(r)
     GuildOS.Compat.After(TOAST_SECONDS, function()
         if toast and toast.shownAt == shownAt then toast:Hide() end
     end)
+    return toast
 end

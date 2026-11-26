@@ -34,7 +34,7 @@ end
 -- under the key the roster, the fallback and the prune look up.
 function Professions.KeyFor(name)
     if type(name) ~= "string" or name == "" then return nil end
-    return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("-(.+)$"))
+    return GuildOS:KeyOfRosterName(name)
 end
 
 -- Sorted copy of a list of positive integer IDs, duplicates dropped; nil when it is not a
@@ -71,12 +71,24 @@ function Professions:Initialize()
                              "TRADE_SKILL_LIST_UPDATE", "GUILD_ROSTER_UPDATE" }) do
         Compat.RegisterEvent(f, event)
     end
+    Compat.RegisterEvent(f, "PLAYER_LOGOUT")
     f:SetScript("OnEvent", function(_, event, ...) Professions:OnEvent(event, ...) end)
+    self:ProjectAll()
     Compat.After(4, function() Professions:Scan() end)
 end
 
+-- db.recipes is a view of db.professions here (audit D4): built at login and on every change, never saved, so
+-- the recipes are not stored twice. The recipes panel, Search, the tooltips, CraftNet, the alliance directory
+-- and the exports read it as before.
+function Professions:ProjectAll()
+    GuildOS.db.recipes = {}
+    for key in pairs(GuildOS.db.professions) do self:Project(key) end
+end
+
 function Professions:OnEvent(event, arg1)
-    if event == "TRADE_SKILL_LIST_UPDATE" then
+    if event == "PLAYER_LOGOUT" then
+        GuildOS.db.recipes = nil   -- the view goes; db.professions is what is saved
+    elseif event == "TRADE_SKILL_LIST_UPDATE" then
         self:ScheduleWindow()
     elseif event == "GUILD_ROSTER_UPDATE" then
         self:ReadNative()

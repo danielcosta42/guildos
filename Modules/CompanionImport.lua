@@ -1932,7 +1932,8 @@ function RaidStart:Prompt(roster, now)
     local key, set = promptKey(roster), self:PromptedSet(now)
     if not (key and set and GuildOS.ShowRaidPrompt) then return false end
     set[key] = now or GetServerTime()
-    GuildOS:ShowRaidPrompt(roster)
+    -- Never in combat, one popup at a time (audit B21): it waits for combat to end.
+    GuildOS:ShowWhenClear("raidprompt", function() return GuildOS:ShowRaidPrompt(roster) end)
     return true
 end
 
@@ -1966,6 +1967,7 @@ function RaidStart:PromptedAtLogin()
 end
 
 local PROMPT_RETRY = 2 * 60      -- seconds a raid's prompt waits while another raid's prompt is still being worked
+local PROMPT_LATER = 10 * 60     -- seconds after Later before the prompt asks again (audit B18)
 
 -- The timer that calls Due for `roster` after `delay` seconds.
 local function schedule(roster, delay)
@@ -2008,7 +2010,15 @@ end
 --- The prompt for `roster` was closed with Later or its close button, not by Raid ready: the login's digest, which
 --- gave way to it (Digest:ShowOnLogin), has its turn now, or at its own time if that has not come. Closed by Raid
 --- ready, the raid is under way and the digest waits for the next login.
-function RaidStart:PromptDismissed(roster)
+--- `later`: it was Later (audit B18), which asks again in PROMPT_LATER seconds, until an hour after the start (Due);
+--- the close button puts it off for good, as before.
+function RaidStart:PromptDismissed(roster, later)
+    local key = later and promptKey(roster)
+    local set = key and self:PromptedSet()
+    if set then
+        set[key] = nil
+        schedule(roster, PROMPT_LATER)
+    end
     if not (self._loginPrompt and self._loginPrompt == roster) then return end
     self._loginPrompt = nil
     local D = GuildOS.Digest

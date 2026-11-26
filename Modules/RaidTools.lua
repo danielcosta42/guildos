@@ -21,15 +21,37 @@ RaidTools.BUFFS = {
     { name = L["Totems"],         classes = { SHAMAN = true } },
 }
 
--- Key raid cooldowns and their provider classes.
+-- Key raid cooldowns and their provider classes: the one list Raid Tools' coverage and the raid
+-- cooldown HUD both read (audit B19). For the HUD, an entry it tracks has `key`, `iconID` (the icon's
+-- spell), `spellIDs` (every rank that counts as a use), `cooldown` (approximate seconds, for the
+-- timer only) and `short`, its label in the HUD's narrow column; one without spellIDs is coverage only.
 RaidTools.COOLDOWNS = {
-    { name = L["Bloodlust/Heroism"], classes = { SHAMAN = true }, tbc = true },  -- TBC spells (ADR-0014)
-    { name = L["Battle Rez"],        classes = { DRUID = true } },
-    { name = L["Innervate"],         classes = { DRUID = true } },
-    { name = L["Power Infusion"],    classes = { PRIEST = true } },
-    { name = L["Misdirection"],      classes = { HUNTER = true }, tbc = true },
+    { name = L["Bloodlust/Heroism"], short = L["Bloodlust/Hero"], classes = { SHAMAN = true }, tbc = true,  -- TBC spells (ADR-0014)
+      key = "bloodlust", iconID = 2825, cooldown = 600, spellIDs = { 2825, 32182 } },
+    { name = L["Battle Rez"], classes = { DRUID = true },
+      key = "rebirth", iconID = 20484, cooldown = 1800, spellIDs = { 20484, 20748, 20747, 20742, 20739, 20737 } },
+    { name = L["Innervate"], classes = { DRUID = true },
+      key = "innervate", iconID = 29166, cooldown = 360, spellIDs = { 29166 } },
+    { name = L["Power Infusion"], classes = { PRIEST = true },
+      key = "pi", iconID = 10060, cooldown = 180, spellIDs = { 10060 } },
+    { name = L["Misdirection"], classes = { HUNTER = true }, tbc = true,
+      key = "md", iconID = 34477, cooldown = 30, spellIDs = { 34477 } },
     { name = L["Soulstone"],         classes = { WARLOCK = true } },
     { name = L["Salvation"],         classes = { PALADIN = true } },
+    { name = L["Lay on Hands"], classes = { PALADIN = true },
+      key = "loh", iconID = 633, cooldown = 3600, spellIDs = { 633, 2800, 10310 } },
+    { name = L["Div. Intervention"], classes = { PALADIN = true },
+      key = "di", iconID = 19752, cooldown = 3600, spellIDs = { 19752 } },
+    { name = L["Pain Suppression"], classes = { PRIEST = true }, tbc = true,
+      key = "ps", iconID = 33206, cooldown = 180, spellIDs = { 33206 } },
+    { name = L["Shadowfiend"], classes = { PRIEST = true }, tbc = true,
+      key = "sf", iconID = 34433, cooldown = 300, spellIDs = { 34433 } },
+    { name = L["Tranquility"], classes = { DRUID = true },
+      key = "tranquility", iconID = 740, cooldown = 300, spellIDs = { 740, 8918, 9862, 9863 } },
+    { name = L["Shield Wall"], classes = { WARRIOR = true },
+      key = "shieldwall", iconID = 871, cooldown = 1800, spellIDs = { 871 } },
+    { name = L["Last Stand"], classes = { WARRIOR = true },
+      key = "laststand", iconID = 12975, cooldown = 480, spellIDs = { 12975 } },
 }
 
 -- Retail's (Midnight, ADR-0026): one class per raid buff, and the cooldowns several classes share.
@@ -55,6 +77,35 @@ if GuildOS.Client.isRetail then
         { spell = 10060, name = "Power Infusion", classes = { PRIEST = true } },
         { spell = 20707, name = "Soulstone",      classes = { WARLOCK = true } },
     }
+end
+
+-- The cooldowns the raid HUD tracks: COOLDOWNS' entries with spells, this game's only (ADR-0014).
+function RaidTools:TrackedCooldowns()
+    local out = {}
+    for _, def in ipairs(self.COOLDOWNS) do
+        if def.spellIDs and (not def.tbc or GuildOS.Client.isAnniversary) then out[#out + 1] = def end
+    end
+    return out
+end
+
+-- The tracked cooldown a spell id is a use of, or nil.
+function RaidTools:CooldownOfSpell(spellID)
+    if not self._bySpell then
+        self._bySpell = {}
+        for _, def in ipairs(self:TrackedCooldowns()) do
+            for _, sid in ipairs(def.spellIDs) do self._bySpell[sid] = def end
+        end
+    end
+    return self._bySpell[spellID]
+end
+
+-- The combat log's affiliation bits are its flags' lowest three: mine, my party's, my raid's (the
+-- client's COMBATLOG_OBJECT_AFFILIATION_MINE 0x1, _PARTY 0x2 and _RAID 0x4); outsiders have 0x8.
+local AFFILIATION_GROUP_BITS = 8   -- flags modulo this keep the three group bits
+-- Whether a combat log caster is one of the raid (audit B19): the HUD logs nobody else's cooldowns.
+function RaidTools:IsRaidCaster(srcFlags)
+    local flags = tonumber(srcFlags)
+    return flags ~= nil and flags >= 0 and flags % AFFILIATION_GROUP_BITS ~= 0
 end
 
 -- Returns (list, sourceLabel). list = { { name, class }, ... }.

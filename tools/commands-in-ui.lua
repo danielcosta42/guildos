@@ -28,8 +28,9 @@ end
 -- with their verb. A subcommand (`ally request`, `mentions add`) is reached from its verb's place.
 local IN_UI = {
   open        = { { "UI/Window.lua", "SetActiveTab" } },
-  scan        = { { "UI/SettingsPanel.lua", "GuildOS:CollectMyDataNow()" } },
-  selftest    = { { "UI/SettingsPanel.lua", "GuildOS.SelfTest:Run()" } },
+  -- The diagnostics are under /gos debug (audit B22); their old verbs are unlisted aliases.
+  ["debug scan"] = { { "UI/SettingsPanel.lua", "GuildOS:CollectMyDataNow()" } },
+  ["debug selftest"] = { { "UI/SettingsPanel.lua", "GuildOS.SelfTest:Run()" } },
   myalts      = { { "UI/MemberDetail.lua", "GuildOS.AltAutoDetect:PromptNow()" } },
   sync        = { { "UI/Window.lua", "GuildOS.CommSystem:FullSync()" } },
   -- The points and the equity are the Loot window's Accounts and History (issue #346).
@@ -60,14 +61,15 @@ local IN_UI = {
   minimap     = { { "UI/SettingsPanel.lua", 'L["Show minimap button"]' } },
   guildbutton = { { "UI/SettingsPanel.lua", "hijackGuildButton" } },
   debug       = { { "UI/SettingsPanel.lua", "GuildOS.Logger.debug = checked" } },
-  errors      = { { "UI/SettingsPanel.lua", "GuildOS:ShowErrors()" } },
+  ["debug errors"] = { { "UI/SettingsPanel.lua", "GuildOS:ShowErrors()" } },
   style       = { { "UI/StylePreview.lua", "self:Apply(id)" }, { "UI/SettingsPanel.lua", "GuildOS.Style:ShowPreview()" } },
-  probe       = { { "UI/SettingsPanel.lua", "GuildOS.Probe:Run()" } },
-  ["probe chat"] = { { "UI/SettingsPanel.lua", "GuildOS.Probe:RunChat()" } },
-  ["probe channel"] = { { "UI/AuditPanel.lua", "GuildOS.Probe:RunChannel()" } },
-  perf        = { { "UI/AuditPanel.lua", "GuildOS.Perf:Print()" } },
-  ["perf reset"] = { { "UI/AuditPanel.lua", "GuildOS.Perf:Reset()" } },
-  reset       = { { "UI/SettingsPanel.lua", "GuildOS:EraseGuildData()" } },
+  ["debug probe"] = { { "UI/SettingsPanel.lua", "GuildOS.Probe:Run()" } },
+  ["debug probe chat"] = { { "UI/SettingsPanel.lua", "GuildOS.Probe:RunChat()" } },
+  ["debug probe channel"] = { { "UI/AuditPanel.lua", "GuildOS.Probe:RunChannel()" } },
+  ["debug perf"] = { { "UI/AuditPanel.lua", "GuildOS.Perf:Print()" } },
+  ["debug perf reset"] = { { "UI/AuditPanel.lua", "GuildOS.Perf:Reset()" } },
+  -- Asked first, from the command too (audit C15).
+  reset       = { { "UI/SettingsPanel.lua", "GuildOS:AskEraseGuildData()" } },
   recruit     = { { "UI/RosterFrame.lua", 'L["Invite players who whisper the keyword"]' } },
   autoinvite  = { { "UI/RosterFrame.lua", 'L["Invite players who whisper the keyword"]' } },
   -- The Raid HUD is TBC's; on retail the readiness tab is the way in (issue #187).
@@ -90,7 +92,7 @@ local IN_UI = {
   exportatt   = { { "UI/SettingsPanel.lua", 'L["Test Attendance Export"]' } },
   export      = { { "UI/SettingsPanel.lua", 'L["Export Data"]' } },
   wish        = { { "UI/RosterFrame.lua", 'L["My Wishlist"]' } },
-  mergeraids  = { { "UI/AuditPanel.lua", "GuildOS:MergeRaidSessions()" } },
+  ["debug mergeraids"] = { { "UI/AuditPanel.lua", "GuildOS:MergeRaidSessions()" } },
   specs       = { { "UI/AuditPanel.lua", "GuildOS.SpecChecker:ScanGroup()" } },
   attune      = { { "UI/AuditPanel.lua", "BuildAttuneSub" } },
   signup      = { { "UI/RosterFrame.lua", "GuildOS:ShowCoreSignupFrame()" } },   -- the Raids screen's button (#377)
@@ -127,9 +129,9 @@ local ALIAS = {
 local CHAT_ONLY = {
   help = "prints the list of commands", commands = "help's alias",
   lfg = "opens by itself for a player with no guild",
-  resscan = "debug: the resistance scan, printed",
+  ["debug resscan"] = "debug: the resistance scan, printed",
   altlimit = "an audit printed in chat, as GRM's /grm altlimit (issue #424)",
-  ["attune debug"] = "debug", ["attunements debug"] = "debug", ["attune dumpquests"] = "debug: a quest-id dump",
+  ["debug attune"] = "debug: the attunement quests, one by one", ["debug dumpquests"] = "debug: a quest-id dump",
 }
 
 -- The verbs the router matches: `msg == "x"` and `msg:match("^x")`. Any other way of telling one
@@ -140,7 +142,7 @@ check(not src:find("msg:find(", 1, true) and not src:find("msg:sub(", 1, true) a
 local verbs = {}
 for v in src:gmatch('msg == "([%a ]+)"') do verbs[v] = true end
 for v in src:gmatch('msg:match%("%^(%a+)') do verbs[v] = true end
-check(next(verbs) ~= nil and verbs.analytics and verbs["probe chat"], "the router's verbs are read")
+check(next(verbs) ~= nil and verbs.analytics and verbs["debug probe chat"], "the router's verbs are read")
 
 local known = {}
 for verb, ways in pairs(IN_UI) do
@@ -160,5 +162,13 @@ end
 for verb in pairs(known) do
   check(verbs[verb], "/gos " .. verb .. " is still a command")
 end
+
+-- No prefix that swallows its neighbours (audit B22): a verb that takes words is matched with its space.
+for _, v in ipairs({ "find", "web", "craft", "order", "wish", "trial", "recruit", "roster", "export", "signup", "unsignup" }) do
+  check(not src:find('msg:match("^' .. v .. '")', 1, true), "/gos " .. v .. " is matched whole or with a space, never as a bare prefix")
+end
+-- The verb in any case (audit C16), and an unknown one opens nothing.
+check(src:find("msg = normalize(strtrim(msg or \"\"))", 1, true), "the verb is lowercased before the router")
+check(not src:find("        GuildOS:ToggleRoster()\n    end\nend", 1, true), "an unknown verb no longer opens the roster")
 
 print(("commands-in-ui: %d checks passed"):format(checks))

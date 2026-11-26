@@ -70,6 +70,8 @@ local function load(retail)
     function GetBuildInfo() return "1.60.1", "70450", "", 16001 end
     WOW_PROJECT_ID = 99
   end
+  -- Forever spells names with a surname (audit R3: its senders write "First-Surname").
+  C_PlayerInfo = not retail and { ShouldDisplaySurname = function() return true end } or nil
   WOW_PROJECT_MAINLINE, WOW_PROJECT_BURNING_CRUSADE_CLASSIC = 1, 5
   function issecretvalue() return false end
   function CreateFrame()
@@ -96,6 +98,8 @@ local function load(retail)
   function GetNumGuildMembers() return #roster end
   function GetGuildRosterInfo(i) return roster[i] end
   function UnitName() return "Chehul" end
+  function UnitFullName() return "Chehul" end   -- no surname: my own name stays "Chehul"
+
   function UnitClass() return "Druid", "DRUID", 11 end
   C_Item = { GetItemInfo = function(item)
     local id = tonumber(tostring(item):match("item:(%d+)") or item)
@@ -248,8 +252,17 @@ check(W.catalog == nil or next(W.catalog) == nil, "Forever reads no journal")
 CACHED[250002] = { "Dreamrift Band", 4 }
 W:AddToWishlist(250002, nil, false)
 check(sent[#sent].data.name == "Chehul" and GuildOS.db.guildWishlists.chehul ~= nil, "Forever keys a list by the name, as before")
-W:HandleWishlistBroadcast("Ana-Gallywix", { name = "Ana", class = "MAGE", wishlist = { { itemId = 250001, order = 1 } } })
-check(GuildOS.db.guildWishlists.ana ~= nil, "and a guildmate's by the name it carries")
+-- Audit R3: on Forever too the list is its sender's, over GUILD only; a Forever sender spells the
+-- surname with a hyphen, and the list lands under the roster's "First Surname".
+W:HandleWishlistBroadcast("Ana-Lima", { name = "Ana", class = "MAGE", wishlist = { { itemId = 250001, order = 1 } } }, "GUILD")
+check(GuildOS.db.guildWishlists["ana lima"] ~= nil and GuildOS.db.guildWishlists.ana == nil,
+  "and a guildmate's by who sent it, the surname whole, never the name it carries")
+W:HandleWishlistBroadcast("Bob", { name = "Chehul", class = "MAGE", wishlist = { { itemId = 250001, order = 1 } } }, "GUILD")
+check(#GuildOS.db.guildWishlists.chehul.wishlist == 1 and GuildOS.db.guildWishlists.bob ~= nil,
+  "nobody posts a list in another player's name")
+W:HandleWishlistBroadcast("Cy", { name = "Cy", class = "MAGE", wishlist = { { itemId = 250001, order = 1 } } }, "WHISPER")
+W:HandleWishlistBroadcast("Dee", { name = "Dee", class = "MAGE", wishlist = { { itemId = 250001, order = 1 } } })
+check(GuildOS.db.guildWishlists.cy == nil and GuildOS.db.guildWishlists.dee == nil, "and only over GUILD")
 GuildOS.db.lootHistory = { { itemId = 250002, playerKey = GuildOS:GetPlayerKey("Chehul"), timestamp = NOW } }
 check(not W:IsItemDelivered(250002), "Forever counts only a master-loot award as delivered")
 GuildOS.db.lootHistory[1].fromML = true

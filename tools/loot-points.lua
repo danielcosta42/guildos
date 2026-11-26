@@ -106,6 +106,21 @@ GuildOS.db.points = { mode = "dkp", config = cfg, standings = {}, log = {}, appl
 P:OnSync({ act = "delta", data = { entries = { { op = "6AC0B3C0-1F2E", key = K("Ana"), delta = 5, reason = "old", kind = "award", core = "" } } } })
 P:OnSync({ act = "delta", data = { entries = { { op = "6AC0B3C0-1F2E", key = K("Ana"), delta = 5, reason = "old", kind = "award", core = "" } } } })
 check(P:Get(K("Ana")) == 5, "an entry named the way of before is still read, once")
+-- Audit R15: past 2,000 applied ops the oldest go, never the newest: a resent op still applies once.
+local pool = GuildOS.db.points
+pool.appliedOps["legacy-op"], pool.appliedCount = true, pool.appliedCount + 1
+for i = 1, 2005 do P:MarkApplied("op" .. i, pool) end
+check(pool.appliedCount <= 2000 and pool.appliedOps.op2005 and pool.appliedOps.op1000,
+  "the de-dupe set drops its oldest ops, and keeps the newest")
+check(pool.appliedOps.op1 == nil and pool.appliedOps["legacy-op"] == nil, "an op from before is among the oldest")
+local n = 0
+for _ in pairs(pool.appliedOps) do n = n + 1 end
+check(n == pool.appliedCount, "and the count matches what is kept")
+P:OnSync({ act = "delta", data = { entries = { { op = "6AC0B3C0-1F2F", key = K("Ana"), delta = 5, reason = "new", kind = "award", core = "" } } } })
+for i = 2006, 2600 do P:MarkApplied("op" .. i, pool) end   -- the set passes 2,000 again and is pruned
+check(pool.appliedCount < 2000, "the set was pruned")
+P:OnSync({ act = "delta", data = { entries = { { op = "6AC0B3C0-1F2F", key = K("Ana"), delta = 5, reason = "new", kind = "award", core = "" } } } })
+check(P:Get(K("Ana")) == 10, "an op resent across a prune still applies once")
 GuildOS.db.points = home
 
 -- ── The cap ─────────────────────────────────────────────────────────

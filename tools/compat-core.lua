@@ -498,6 +498,9 @@ check(GuildOS.db.members[bobKey].spec.tree == "Shadow" and type(GuildOS.db.membe
 
 local SC = GuildOS.SpecChecker
 local tabInspect
+-- Only a guildmate's record takes an inspect (audit R2): Bob is on the roster.
+function GetNumGuildMembers() return 1 end
+function GetGuildRosterInfo(i) if i == 1 then return bobKey end end
 GetNumTalentTabs = function(inspect) tabInspect = inspect; return 3 end
 GetNumTalents = function() return 2 end
 GetTalentInfo = function(tab, i, inspect)

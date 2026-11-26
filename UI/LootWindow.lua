@@ -1260,7 +1260,8 @@ function GuildOS:CreateLootWindow(container, _mainFrame)
         { key = "rule",     label = L["Rule"] },
         { key = "accounts", label = L["Accounts"], absent = not GuildOS.Points },
         { key = "lists",    label = L["Lists"],    absent = not (GuildOS.Wishlist or GuildOS.SoftRes) },
-        { key = "history",  label = L["History"] },
+        -- Settings' Loot Tracker switch hides the history (audit B17); the awards are still recorded.
+        { key = "history",  label = L["History"],  absent = not GuildOS:IsFeatureEnabled("lootTracker") },
     }
     local panels, tabs, built = {}, {}, {}
     local active

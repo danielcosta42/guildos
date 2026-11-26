@@ -333,6 +333,7 @@ function ConsumableChecker:CheckRaid(quiet)
         results = results,
     }
     GuildOS.db.consumableChecks.lastResults = results
+    GuildOS.db.consumableChecks.lastAt = self.lastCheck.time   -- how old a saved check is (audit B15)
     return results
 end
 
@@ -357,6 +358,14 @@ function ConsumableChecker:UnitHasBuff(unit, spellID, _nameHint)
         end
     end
     return nil
+end
+
+-- When the last check was made (the server's clock), this session's or the saved one's; nil when it is
+-- not known (none yet, or saved before checks were stamped).
+function ConsumableChecker:LastCheckAt()
+    if self.lastCheck then return self.lastCheck.time end
+    local saved = GuildOS.db and GuildOS.db.consumableChecks
+    return saved and tonumber(saved.lastAt) or nil
 end
 
 function ConsumableChecker:GetLastResults()

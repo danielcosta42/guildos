@@ -191,4 +191,61 @@ parent.SelectSub("motd")
 check(not motdArea.edit.disabled and motdBtn.label.text == "Save MOTD" and motdNote.text == "",
   "elsewhere the field is edited and saved from the addon")
 
+-- Officers' Room > Ban list (audit M3): every keystroke in its filter and every ban that syncs in repaints it, and
+-- each repaint made a new row of frames per ban. The rows are reused now. Lifting asks first, and Share is
+-- offered only for a ban in force while the guild has an alliance on guildos.me (audit B6, B7).
+local bans = {}
+for i = 1, 30 do bans[i] = { key = "ban" .. i, name = "Banned" .. i, reason = "r", author = "Off", ts = 1 } end
+bans[30].expiry = 1   -- a temporary ban that ran out
+local lifted, asked = {}, {}
+local siteAlliance = false
+GuildOS.BanList = {
+  List = function() return bans end,
+  AllianceBans = function() return nil end,
+  StillInGuild = function() return {} end,
+  IsShared = function() return false end,
+  CanShare = function(_, key) return siteAlliance and key ~= "ban30" end,
+  ConfirmRemoveKey = function(_, key) asked[#asked + 1] = key end,
+  RemoveKey = function(_, key) lifted[#lifted + 1] = key end,
+}
+GuildOS.BulkActions = { Collect = function() return {} end, Context = function() return {} end }
+-- The stub frames answer an unset text with a function: an empty filter.
+strtrim = strtrim or function(x) return type(x) == "string" and (x:gsub("^%s+", ""):gsub("%s+$", "")) or "" end
+parent.SelectSub("ban")
+local banRefresh = parent.subPanels.ban.refresh   -- built with the panel
+check(type(banRefresh) == "function", "the ban list registers its repaint")
+banRefresh()
+local afterBans = created
+for _ = 1, 200 do banRefresh() end
+check(created == afterBans, "200 repaints of the ban list reuse its rows (" .. (created - afterBans) .. " made)")
+local banPanel = parent.subPanels.ban.panel
+local function banRows()
+  local out = {}
+  local function walk(f)
+    for _, c in ipairs(f.children) do
+      if rawget(c, "cells") and rawget(c, "shown") then out[#out + 1] = c end
+      walk(c)
+    end
+  end
+  walk(banPanel)
+  return out
+end
+local shown = banRows()
+check(#shown == 30, "every ban has a row (" .. #shown .. ")")
+local anyShare = false
+for _, r in ipairs(shown) do if r.share.shown then anyShare = true end end
+check(not anyShare, "with no alliance on guildos.me, no Share button")
+siteAlliance = true
+banRefresh()
+shown = banRows()
+local shareShown = 0
+for _, r in ipairs(shown) do if r.share.shown then shareShown = shareShown + 1 end end
+check(shareShown == 29, "with one, Share on each ban in force, not on the one that ran out (" .. shareShown .. ")")
+for i = 11, 30 do bans[i] = nil end
+banRefresh()
+check(#banRows() == 10 and created == afterBans, "fewer bans: the extra rows hide, nothing new is made")
+local ui = assert(io.open(ADDON .. "/UI/ManagementPanel.lua", "rb")):read("*a")
+check(ui:find("GuildOS.BanList:ConfirmRemoveKey(key, who)", 1, true) and not ui:find("BanList:RemoveKey(key) end end)", 1, true),
+  "the x asks before it lifts")
+
 print("engagement-panel: " .. checks .. " checks passed")

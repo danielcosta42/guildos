@@ -237,6 +237,28 @@ for _, case in ipairs(CLIENTS) do
   -- Retail has its own list, named by the client from the spell (issue #166): the battle rez is Rebirth.
   local rez = case.retail and "Rebirth" or "Battle Rez"
   check(cds[rez] == true and cds["Innervate"] == true, "generic raid cooldowns stay in Raid Tools on " .. case.label)
+  -- Audit B19: the HUD tracks Raid Tools' own list, and logs only the raid's casters.
+  local RTools = GuildOS.RaidTools
+  if case.tbc then
+    local tracked = {}
+    for _, def in ipairs(RTools:TrackedCooldowns()) do tracked[def.key] = def end
+    check(tracked.bloodlust and tracked.rebirth and tracked.shieldwall and RTools:CooldownOfSpell(20748) == tracked.rebirth,
+      "the HUD's cooldowns are Raid Tools' list, every rank counted, on " .. case.label)
+    local inList = {}
+    for _, def in ipairs(RTools.COOLDOWNS) do inList[def] = true end
+    for _, def in pairs(tracked) do check(inList[def], "a tracked cooldown is one of Raid Tools' own: " .. def.key) end
+    check(RTools:IsRaidCaster(0x514) and RTools:IsRaidCaster(0x511) and not RTools:IsRaidCaster(0x548)
+      and not RTools:IsRaidCaster(nil), "the HUD logs a raid or party member's cast, never an outsider's")
+  end
+  if case.retail then check(#RTools:TrackedCooldowns() == 0, "retail's list has no HUD entries (the HUD is TBC's)") end
+end
+-- One list (audit B19): the HUD keeps none of its own.
+do
+  local f = assert(io.open(ADDON .. "/UI/RaidHUD.lua", "rb"))
+  local hud = f:read("*a")
+  f:close()
+  check(hud:find("RT_TOOLS:TrackedCooldowns()", 1, true) and not hud:find("spellIDs = {", 1, true),
+    "the raid HUD reads Raid Tools' cooldowns and lists none of its own")
 end
 
 -- ── 4. The hub and the Settings list ────────────────────────────────────

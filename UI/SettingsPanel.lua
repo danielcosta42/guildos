@@ -895,8 +895,8 @@ PAGES.rules = function(F, isOfficer)
     end
 
     -- !note (issue #59): members set their public note by typing !note in guild chat, and a client that
-    -- can edit notes applies it.
-    if isOfficer then
+    -- can edit notes applies it. TBC Anniversary only (audit B11).
+    if isOfficer and GuildOS.Client.isAnniversary then
         F:Section(L["The !note command"])
         F:Check(L["Apply !note requests from guild chat on this client"],
             L["Members set their public note by typing !note in guild chat."],
@@ -910,9 +910,13 @@ end
 PAGES.data = function(F, isOfficer)
     F:Section(L["Your data"])
     F:Buttons({
+        { L["Export Data"], function() if GuildOS.ShowExportChooser then GuildOS:ShowExportChooser() end end, w = 140 },
+    })
+    -- A backup and its restore are the guild's whole database, not "your data" (audit D11); the restore asks first.
+    F:Section(L["Whole guild database"])
+    F:Buttons({
         { L["Backup"], function() if GuildOS.Backup then GuildOS.Backup:ShowExport() end end, w = 120 },
         { L["Restore"], function() if GuildOS.Backup then GuildOS.Backup:ShowRestore() end end, w = 120 },
-        { L["Export Data"], function() if GuildOS.ShowExportChooser then GuildOS:ShowExportChooser() end end, w = 140 },
     })
     F:Note(L["Export/import all Guild OS data for this guild"], { gap = 6 })
 
@@ -961,12 +965,20 @@ PAGES.data = function(F, isOfficer)
         -- The Loot Master's tests: only where it exists, never on retail (ADR-0026).
         local LM = GuildOS.LootMaster
         if LM then
+            -- A real roll in progress is never overwritten by a test (audit R20).
+            local function rollOpen()
+                if not LM:RollOpen() then return false end
+                GuildOS:Print(L["|cffFFAA00A roll is open: the loot tests wait until it ends.|r"])
+                return true
+            end
             F:Action(L["Test Roll Popup"], L["Shows the raider roll popup with a sample item"], function()
+                if rollOpen() then return end
                 LM.testMode = true
                 LM:ShowRollPopup("|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r", 15, 32837)
                 GuildOS:Print(L["Test roll popup shown (15s timer). Try MS/OS/Pass buttons."])
             end)
             F:Action(L["Test Wishlist Council"], L["Shows the ML council result frame with sample data"], function()
+                if rollOpen() then return end
                 LM.testMode = true
                 local link = "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r"
                 local fakeWinner = { name = GuildOS.Compat.PlayerName(), class = select(2, UnitClass("player")), wishlistType = "wishlist", order = 1 }
@@ -980,6 +992,7 @@ PAGES.data = function(F, isOfficer)
                 GuildOS:Print(L["Test council frame shown. Award button won't work (no loot slot)."])
             end)
             F:Action(L["Test Roll Tracker"], L["Shows the ML roll tracker with sample roll data"], function()
+                if rollOpen() then return end
                 LM.testMode = true
                 LM.activeLoot = {
                     link = "|cffa335ee|Hitem:30110::::::::70:::::|h[Tsunami Talisman]|h|r",
@@ -995,6 +1008,7 @@ PAGES.data = function(F, isOfficer)
                 GuildOS:Print(L["Test roll tracker shown with sample rolls."])
             end)
             F:Action(L["Test Loot Frame"], L["Opens the ML loot frame with sample items"], function()
+                if rollOpen() then return end
                 LM.testMode = true
                 LM:ShowLootFrame({
                     { slot = 1, link = "|cffa335ee|Hitem:30110::::::::70:::::|h[Tsunami Talisman]|h|r",   name = "Tsunami Talisman",    quality = 4 },
@@ -1045,15 +1059,7 @@ PAGES.data = function(F, isOfficer)
 
     -- /gos reset, behind a confirmation: it cannot be undone. Last, and red.
     F:Section(L["Danger zone"])
-    F:Buttons({ { L["Erase guild data"], function()
-        GuildOS.Dialogs["GUILDOS_ERASE_GUILD"] = GuildOS.Dialogs["GUILDOS_ERASE_GUILD"] or {
-            text = L["Erase all Guild OS data for this guild and reload the interface? This cannot be undone."],
-            button1 = L["Erase guild data"], button2 = L["Cancel"],
-            OnAccept = function() GuildOS:EraseGuildData() end,
-            timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-        }
-        GuildOS:ShowDialog("GUILDOS_ERASE_GUILD")
-    end, w = 170, variant = "danger" } })
+    F:Buttons({ { L["Erase guild data"], function() GuildOS:AskEraseGuildData() end, w = 170, variant = "danger" } })
     F:Note(L["Removes every Guild OS record of this guild on this PC, then reloads."], { gap = 6 })
 end
 

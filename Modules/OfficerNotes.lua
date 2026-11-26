@@ -3,7 +3,7 @@
 -- Private notes per member, synced between officers via comm system
 --
 -- Two things per member, both officers only:
---   * the dated notes (`notes`) and tags, a list each officer adds to, synced as "ON" (one) and "OA" (all),
+--   * the dated notes (`notes`; `tags`, which nothing sets any more, still merged for older clients), a list each officer adds to, synced as "ON" (one) and "OA" (all),
 --     only over the game's OFFICER addon channel (CommSystem:SendToOfficers, issue #430), as the sheet below: a
 --     member's client never gets the bytes; without that channel they stay on this client. A client before
 --     #430 still sends "ON" over GUILD; read during the transition (CommSystem.OFFICER_TYPES_LEGACY_GUILD);
@@ -65,14 +65,6 @@ function OfficerNotes:AddNote(playerKey, text)
     return true
 end
 
-function OfficerNotes:DeleteNote(playerKey, index)
-    if not GuildOS:IsOfficer() then return end
-    local data = GuildOS.db.officerNotes[playerKey]
-    if data and data.notes[index] then
-        table.remove(data.notes, index)
-    end
-end
-
 function OfficerNotes:GetNotes(playerKey)
     local data = GuildOS.db.officerNotes[playerKey]
     if data then
@@ -81,36 +73,28 @@ function OfficerNotes:GetNotes(playerKey)
     return {}
 end
 
-function OfficerNotes:SetTag(playerKey, tag, value)
-    if not GuildOS:IsOfficer() then return end
-    if not GuildOS.db.officerNotes[playerKey] then
-        GuildOS.db.officerNotes[playerKey] = { notes = {}, tags = {} }
+-- What officers wrote about a member, as one timeline (audit B10): the dated notes and the trial's evaluation
+-- notes, newest first, each { text, author, timestamp, kind = "note" | "trial" }. The sheet stays apart: it is
+-- the long text. Copies; nothing is written.
+function OfficerNotes:Timeline(playerKey)
+    local out = {}
+    for _, n in ipairs(self:GetNotes(playerKey)) do
+        if type(n) == "table" then
+            out[#out + 1] = { text = n.text, author = n.author, timestamp = tonumber(n.timestamp) or 0, kind = "note" }
+        end
     end
-    GuildOS.db.officerNotes[playerKey].tags[tag] = value
-end
-
-function OfficerNotes:GetTag(playerKey, tag)
-    local data = GuildOS.db.officerNotes[playerKey]
-    if data and data.tags then
-        return data.tags[tag]
+    local trial = GuildOS.TrialTracker and GuildOS.TrialTracker:GetTrial(playerKey)
+    for _, n in ipairs(type(trial) == "table" and type(trial.notes) == "table" and trial.notes or {}) do
+        if type(n) == "table" then
+            out[#out + 1] = { text = n.text, author = n.author, timestamp = tonumber(n.timestamp) or 0, kind = "trial" }
+        end
     end
-    return nil
+    table.sort(out, function(a, b)
+        if a.timestamp ~= b.timestamp then return a.timestamp > b.timestamp end
+        return a.kind < b.kind
+    end)
+    return out
 end
-
-function OfficerNotes:GetAllTags(playerKey)
-    local data = GuildOS.db.officerNotes[playerKey]
-    if data and data.tags then
-        return data.tags
-    end
-    return {}
-end
-
--- Predefined tags for quick marking
-OfficerNotes.QUICK_TAGS = {
-    { key = "role",     label = "Role",       options = { "Tank", "Healer", "DPS", "Flex" } },
-    { key = "priority", label = "Prioridade", options = { "Alta", "Media", "Baixa" } },
-    { key = "status",   label = "Status",     options = { "Core", "Reserva", "Trial", "Social" } },
-}
 
 ----------------------------------------------------------------------
 -- Comm sync (officer-only broadcast)

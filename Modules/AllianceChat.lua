@@ -538,6 +538,15 @@ function AllianceChat:PushLine(name, guild, text)
     self:Push({ t = GetServerTime(), n = name, g = guild, m = GuildOS:SanitizeUserText(text, 240) })
 end
 
+-- Whether a channel line is the alliance room's, read by this module (not the hidden channel's, AllianceLink's).
+function AllianceChat:_IsRoom(chanBaseName)
+    if type(chanBaseName) ~= "string" then return false end
+    if GuildOS.AllianceLink and GuildOS.AllianceLink:Active() then return false end
+    local mine = self:ChannelName()
+    -- The lengths first: lowering every General line would allocate a string for each.
+    return mine ~= nil and #chanBaseName == #mine and chanBaseName:lower() == mine:lower()
+end
+
 function AllianceChat:_OnChannelMessage(msg, author, chanBaseName)
     -- The hidden channel is read by AllianceLink, which decodes it.
     if GuildOS.AllianceLink and GuildOS.AllianceLink:Active() then
@@ -656,6 +665,8 @@ function AllianceChat:Initialize()
     GuildOS.Compat.RegisterEvent(f, "CHANNEL_UI_UPDATE")
     f:SetScript("OnEvent", function(_, event, msg, author, _, _, _, _, _, _, chanBaseName)
         if event == "CHAT_MSG_CHANNEL" then
+            -- Every General and Trade line comes here: only the room's own costs a closure (audit D2).
+            if not AllianceChat:_IsRoom(chanBaseName) then return end
             GuildOS:SafeCall(function()
                 AllianceChat:_OnChannelMessage(msg, author, chanBaseName)
             end)

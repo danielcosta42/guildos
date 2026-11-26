@@ -171,7 +171,7 @@ local function BuildComposer()
     noteBox:HookScript("OnTextChanged", function(self) RB():SetAdField("note", self:GetText() or "") end)
 
     -- Reach hint + broadcast: the hint over the button it explains, a note in textSoft, not gold (#371)
-    local hint = UI:CreateText(f, L["Yelled zone-wide (cities) + your guild while enabled."], 9, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local hint = UI:CreateText(f, L["Sent to your guild and to the Guild OS players around while enabled; one officer online sends it."], 9, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     hint:SetPoint("BOTTOMLEFT", 12, 40)
 
     local castBtn = UI:CreateButton(f, L["Broadcast now"], 120, 24)
@@ -179,7 +179,7 @@ local function BuildComposer()
     castBtn:SetScript("OnClick", function()
         RB():SetAdField("enabled", true)
         enable.checkbox:SetChecked(true)
-        RB():Broadcast()
+        RB():Broadcast(true)
         GuildOS:Print(L["Recruitment beacon sent."])
     end)
 

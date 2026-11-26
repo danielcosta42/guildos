@@ -49,6 +49,7 @@ local function load(retail)
   function GetServerTime() return NOW end
   function GetTime() return NOW end
   time = function() return NOW end
+  date = os.date
   function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
   issecretvalue = function(v) return v == SECRET end
   function IsInGuild() return true end
@@ -99,6 +100,22 @@ check(B:ForExport() == nil, "nothing shared yet: no banShares")
 check(select(2, B:Share("thrall", "theft")) == "reason" and select(2, B:Share("thrall")) == "reason",
   "a reason from the list is required")
 check(select(2, B:Share("nobody", "scam")) == "missing", "only a standing ban is shared")
+-- A temporary ban that ran out is never shared, nor offered (audit B6); Share means the site's alliance (B7).
+store.runout = { name = "Runout", reason = "r", author = "Off", ts = NOW - 100, expiry = NOW - 1 }
+check(select(2, B:Share("runout", "scam")) == "expired" and not B:IsShared("runout"), "an expired temporary ban cannot be shared")
+BLOCK = nil
+check(not B:HasSiteAlliance() and not B:CanShare("thrall"), "no alliance on the site: nothing is offered for sharing")
+BLOCK = { allianceBans = {} }
+check(B:HasSiteAlliance() and B:CanShare("thrall") and not B:CanShare("runout"),
+  "with one: a ban in force is offered, the one that ran out is not")
+BLOCK = nil
+store.runout = nil
+-- Lifting from the list asks first (audit B6).
+dialogs = {}
+check(B:ConfirmRemoveKey("thrall", "Thrall") and not store.thrall.removed and dialogs[1].which == "GUILDOS_BAN_LIFT"
+  and dialogs[1].text == "Thrall" and dialogs[1].data == "thrall", "the x asks before it lifts")
+check(GuildOS.Dialogs.GUILDOS_BAN_LIFT.button1 == "Lift", "the question's yes is Lift")
+dialogs = {}
 officer = false
 check(select(2, B:Share("thrall", "scam")) == "officer" and not B:IsShared("thrall"), "a member cannot share")
 officer = true
@@ -277,6 +294,21 @@ check(not B:HoldInvite("Thrall", invite) and #dialogs == 1, "somebody the allian
 officer = false
 check(not B:HoldInvite("Gul", invite), "a member's invite is never held")
 officer = true
+
+-- The guild's own ban holds a manual invite first (audit M2), alone or with the alliance's.
+B:Add("Thrall", "ninja")
+dialogs, invited = {}, 0
+check(B:HoldInvite("Thrall", invite) and invited == 0, "an invite to somebody the guild banned waits")
+check(#dialogs == 1 and dialogs[1].which == "GUILDOS_ALLIANCE_BAN_INVITE" and dialogs[1].text:find("Banned Thrall (ninja)", 1, true)
+      and not dialogs[1].text:find("The alliance has banned", 1, true), "the guild's ban, its reason and who, is said")
+GuildOS.Dialogs.GUILDOS_ALLIANCE_BAN_INVITE.OnAccept({}, dialogs[1].data)
+check(invited == 1, "Invite anyway invites past the guild's ban")
+B:Add("Gul", "scam")
+dialogs = {}
+check(B:HoldInvite("Gul", invite) and dialogs[1].text:find("^Banned Gul %(scam%)") and dialogs[1].text:find("The alliance has banned Gul:", 1, true),
+  "both bans: the guild's first, then the alliance's")
+B:RemoveKey(B:_NormalizeKey("Thrall")); B:RemoveKey(B:_NormalizeKey("Gul"))
+dialogs = {}
 
 -- Every manual guild invite asks first; the auto-invite does not.
 local function src(rel) return assert(io.open(ADDON .. "/" .. rel, "rb")):read("*a") end

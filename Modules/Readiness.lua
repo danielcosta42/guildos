@@ -15,6 +15,7 @@ local STATUS_RANK = { notready = 0, warn = 1, ready = 2, nodata = 3 }
 -- Drakefire Amulet, which nothing here reads: a 40 counts who is at the cap, not who holds it.
 local FOREVER = not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail
 local MIN_ILVL_MAX = 1000
+local CONSUMES_MAX_AGE = 12 * 3600   -- seconds a consumables check counts for readiness (audit B15)
 local STAMP_FUTURE_SLACK = 300   -- seconds an officer's stamp may run ahead of this clock, as the rank's
 
 -- The raids that open on 9 December 2026, 00:00 UTC until the hour is known (guildos.me #241).
@@ -281,8 +282,11 @@ function Readiness:GetReport(targetShort)
 
     -- Index the last consumable check by player key, and by lowercase short name (live, in-raid).
     -- On retail by the key alone: two namesakes on connected realms are two raiders (issue #187).
+    -- A check older than CONSUMES_MAX_AGE, or of an unknown age, is not tonight's: it is ignored (audit B15).
     local consumeByName, consumeByKey = {}, {}
-    if GuildOS.ConsumableChecker then
+    local CC = GuildOS.ConsumableChecker
+    local checkedAt = CC and CC.LastCheckAt and CC:LastCheckAt()
+    if CC and checkedAt and GetServerTime() - checkedAt <= CONSUMES_MAX_AGE then
         for key, res in pairs(GuildOS.ConsumableChecker:GetLastResults() or {}) do
             local short = (res.name or ""):match("^([^-]+)") or res.name
             if short and short ~= "" then consumeByName[short:lower()] = res end

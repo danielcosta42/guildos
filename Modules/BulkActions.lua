@@ -354,6 +354,52 @@ function BulkActions:StartListAndSay(action, list)
     return ok
 end
 
+--- Start a queue of one member, `key` (audit M11): the roster's right-click menu, Ranks, Inactivity, Suggestions and
+--- Discipline's rank step act on one member through this queue, one click of Next, the only way the game takes a rank
+--- change or a removal from an addon (ADR-0038). `target`, optional, a 0-based rank for a promotion or a demotion: the
+--- member is taken there one step per click, as a group's alts are (#424). Never replaces a queue still running.
+--- Returns true, or false and why: "action", "combat", "permission", "busy", "member", "safe", "one" or "at".
+function BulkActions:StartOne(action, key, target)
+    if not LOG_ACTION[action] then return false, "action" end
+    if action == "remove" then target = nil end
+    if GuildOS.Compat.InCombat() then return false, "combat" end
+    if not self:Allowed(action) then return false, "permission" end
+    if self:Busy() then return false, "busy" end
+    local m = key and self:ListFor({ key })[1]
+    if not m then return false, "member" end
+    if target ~= nil and not self.Toward(m.rankIndex, action, target) then return false, "at", m end
+    if not self.Eligible(m, action, self:Context()) then return false, (m.safe and action ~= "promote") and "safe" or "one", m end
+    if target ~= nil then
+        self:_Queue({ action = action, target = target }, { m })
+    else
+        self:_Queue({ action = action, list = true }, { m })
+    end
+    return true
+end
+
+--- StartOne, and say why not when it does not; started, the Bulk actions tab opens on the queue. `name` is how a
+--- refusal names the member when the roster does not.
+function BulkActions:StartOneAndSay(action, key, target, name)
+    local ok, why, m = self:StartOne(action, key, target)
+    if ok then
+        if GuildOS.UI and GuildOS.UI.OpenWindow then GuildOS.UI:OpenWindow("management", "bulk") end
+        return true
+    end
+    local who = (m and m.name) or name or (key and short(key)) or "?"
+    if why == "member" then
+        GuildOS:Print(string.format(L["%s is not in the guild roster."], who))
+    elseif why == "safe" then
+        GuildOS:Print(string.format(L["%s is on the safe list: never in a bulk removal or demotion."], who))
+    elseif why == "one" then
+        GuildOS:Print(string.format(L["Your guild rank may not do this to %s."], who))
+    elseif why == "at" then
+        GuildOS:Print(string.format(L["%s is already at that rank."], who))
+    else
+        GuildOS:Print(self:WhyText(why))
+    end
+    return false
+end
+
 local WHY = {
     busy = L["A bulk action is still running: finish it or stop it first."],
     listEmpty = L["Your guild rank may not do this to any of them."],
@@ -603,6 +649,26 @@ function BulkActions:Skip()
     return true
 end
 
+--- Put every member the roster never showed changed ("unconfirmed") back in the queue, next (audit M13). On WoW:
+--- Forever a member is marked sent as soon as their line prints, typed or not; one the officer never typed, or whose
+--- line the game refused, would otherwise stay out for good. Checked again before their click like any other.
+--- Returns how many went back.
+function BulkActions:RetryUnconfirmed()
+    local q = self:Queue()
+    if not q then return 0 end
+    local n, first = 0, nil
+    for i, item in ipairs(q.items) do
+        if item.status == "unconfirmed" then
+            item.status, item.why, item.sentAt, item.sentClock = "pending", nil, nil, nil
+            n = n + 1
+            first = first or i
+        end
+    end
+    if first and first < q.pos then q.pos = first end
+    if n > 0 then self:Refresh() end
+    return n
+end
+
 function BulkActions:_Sent(item, line)
     local q = self:Queue()
     item.status, item.sentAt, item.sentClock = "sent", GetServerTime(), GetTime()
@@ -707,19 +773,21 @@ function BulkActions:Refresh()
     if AD and AD.HasPending and AD:HasPending() then GuildOS:SafeCall(AD.Flush, AD) end
 end
 
---- `/gos bulk [next | skip | stop]`.
+--- `/gos bulk [next | skip | retry | stop]`.
 function BulkActions:Command(rest)
     rest = strtrim(rest or ""):lower()
     if rest == "" then
         GuildOS.UI:OpenWindow("management", "bulk")
     elseif rest == "next" then
         self:CommandNext()
+    elseif rest == "retry" then
+        if self:RetryUnconfirmed() == 0 then GuildOS:Print(L["No member is waiting to be retried."]) end
     elseif rest == "skip" then
         if not self:Skip() then GuildOS:Print(L["No bulk action is running. Set one up in Leadership > Bulk actions."]) end
     elseif rest == "stop" then
         self:Stop()
         GuildOS:Print(L["Bulk action stopped."])
     else
-        GuildOS:Print(L["Usage: /gos bulk [next | skip | stop]"])
+        GuildOS:Print(L["Usage: /gos bulk [next | skip | retry | stop]"])
     end
 end

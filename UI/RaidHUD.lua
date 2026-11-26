@@ -9,118 +9,10 @@ local C      = GuildOS.Colors
 local L      = GuildOS.L
 
 ----------------------------------------------------------------------
--- TBC RAID CD DEFINITIONS
--- iconID   = spellID whose texture is used as the column icon
--- spellIDs = all spellIDs that count as this CD (all ranks)
--- cooldown = approx seconds (for timer display, not enforcement)
--- class    = UnitClassBase / GetRaidRosterInfo fileName
+-- The raid cooldowns: Raid Tools' one list (audit B19), the entries it tracks by their spells.
 ----------------------------------------------------------------------
-local RAID_CDS = {
-    {
-        key      = "rebirth",
-        label    = L["Battle Rez"],
-        class    = "DRUID",
-        iconID   = 20484,
-        cooldown = 1800,
-        spellIDs = { 20484, 20748, 20747, 20742, 20739, 20737 },
-    },
-    {
-        key      = "bloodlust",
-        label    = L["Bloodlust/Hero"],
-        class    = "SHAMAN",
-        iconID   = 2825,
-        cooldown = 600,
-        spellIDs = { 2825, 32182 },
-    },
-    {
-        key      = "innervate",
-        label    = L["Innervate"],
-        class    = "DRUID",
-        iconID   = 29166,
-        cooldown = 360,
-        spellIDs = { 29166 },
-    },
-    {
-        key      = "pi",
-        label    = L["Power Infusion"],
-        class    = "PRIEST",
-        iconID   = 10060,
-        cooldown = 180,
-        spellIDs = { 10060 },
-    },
-    {
-        key      = "md",
-        label    = L["Misdirection"],
-        class    = "HUNTER",
-        iconID   = 34477,
-        cooldown = 30,
-        spellIDs = { 34477 },
-    },
-    {
-        key      = "loh",
-        label    = L["Lay on Hands"],
-        class    = "PALADIN",
-        iconID   = 633,
-        cooldown = 3600,
-        spellIDs = { 633, 2800, 10310 },
-    },
-    {
-        key      = "di",
-        label    = L["Div. Intervention"],
-        class    = "PALADIN",
-        iconID   = 19752,
-        cooldown = 3600,
-        spellIDs = { 19752 },
-    },
-    {
-        key      = "ps",
-        label    = L["Pain Suppression"],
-        class    = "PRIEST",
-        iconID   = 33206,
-        cooldown = 180,
-        spellIDs = { 33206 },
-    },
-    {
-        key      = "sf",
-        label    = L["Shadowfiend"],
-        class    = "PRIEST",
-        iconID   = 34433,
-        cooldown = 300,
-        spellIDs = { 34433 },
-    },
-    {
-        key      = "tranquility",
-        label    = L["Tranquility"],
-        class    = "DRUID",
-        iconID   = 740,
-        cooldown = 300,
-        spellIDs = { 740, 8918, 9862, 9863 },
-    },
-    {
-        key      = "shieldwall",
-        label    = L["Shield Wall"],
-        class    = "WARRIOR",
-        iconID   = 871,
-        cooldown = 1800,
-        spellIDs = { 871 },
-    },
-    {
-        key      = "laststand",
-        label    = L["Last Stand"],
-        class    = "WARRIOR",
-        iconID   = 12975,
-        cooldown = 480,
-        spellIDs = { 12975 },
-    },
-}
-
--- Reverse lookup: spellID -> cd entry
-local SPELL_TO_CD = {}
-for _, cd in ipairs(RAID_CDS) do
-    for _, sid in ipairs(cd.spellIDs) do
-        SPELL_TO_CD[sid] = cd
-    end
-end
+local RT_TOOLS = GuildOS.RaidTools
+local RAID_CDS = RT_TOOLS and RT_TOOLS:TrackedCooldowns() or {}
 
 ----------------------------------------------------------------------
 -- MODULE STATE
@@ -188,11 +80,12 @@ if GuildOS.Client.isAnniversary then
     GuildOS.Compat.RegisterEvent(_clFrame, "COMBAT_LOG_EVENT_UNFILTERED")
 end
 _clFrame:SetScript("OnEvent", function()
-    local _, event, _, _, srcName, _, _, _, _, _, _, spellID =
+    local _, event, _, _, srcName, srcFlags, _, _, _, _, _, spellID =
         CombatLogGetCurrentEventInfo()
     if event ~= "SPELL_CAST_SUCCESS" or not srcName then return end
-    local cd = SPELL_TO_CD[spellID]
-    if not cd then return end
+    local cd = RT_TOOLS and RT_TOOLS:CooldownOfSpell(spellID)
+    -- Only the raid's own (audit B19): a stranger's cast nearby is nobody the HUD shows.
+    if not cd or not RT_TOOLS:IsRaidCaster(srcFlags) then return end
     if not _cdState[srcName] then _cdState[srcName] = {} end
     _cdState[srcName][cd.key] = { usedAt = GetTime(), duration = cd.cooldown }
 end)
@@ -230,7 +123,7 @@ local function BuildHUDRows(f)
     for _, cd in ipairs(RAID_CDS) do
         local players = {}
         for name, classFile in pairs(_raidMembers) do
-            if classFile == cd.class then
+            if cd.classes[classFile] then
                 local shortName = GuildOS:Utf8Head(name, 12)
                 local hex = GuildOS:GetClassColorHex(classFile)
                 table.insert(players, { name = name, shortName = shortName, colorHex = hex })
@@ -269,7 +162,7 @@ local function BuildHUDRows(f)
             lbl:SetWidth(LABEL_W)
             lbl:SetJustifyH("LEFT")
             lbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            lbl:SetText(cd.label)
+            lbl:SetText(cd.short or cd.name)
 
             -- Player name list (colored, updated by ticker)
             local pText = row:CreateFontString(nil, "OVERLAY")
@@ -284,7 +177,7 @@ local function BuildHUDRows(f)
             row:SetScript("OnEnter", function(self)
                 GameTooltip:SetOwner(self, "ANCHOR_LEFT")
                 GameTooltip:ClearLines()
-                GameTooltip:AddLine(cd.label, C.gold.r, C.gold.g, C.gold.b)
+                GameTooltip:AddLine(cd.name, C.gold.r, C.gold.g, C.gold.b)
                 local now2 = GetTime()
                 for _, p in ipairs(self.players) do
                     local st = _cdState[p.name] and _cdState[p.name][self.cdKey]

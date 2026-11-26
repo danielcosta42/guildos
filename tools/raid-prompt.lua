@@ -113,6 +113,10 @@ function GuildOS:ShowRaidPrompt(roster)
   OPEN = roster
 end
 function GuildOS:RaidPromptShowing() return OPEN end
+-- The prompt and the digest go through the one popup queue (audit B21; the queue itself is tools/popup-queue.lua):
+-- here it shows at once, out of combat, and the keys it was given are kept.
+local QUEUED = {}
+function GuildOS:ShowWhenClear(key, fn) QUEUED[key] = (QUEUED[key] or 0) + 1; fn() end
 local REPAINTS = 0
 function GuildOS:RefreshRaidSteppers() REPAINTS = REPAINTS + 1 end
 
@@ -438,6 +442,31 @@ Digest.shownThisSession = nil
 Digest:ShowOnLogin()
 check(digestShown and GuildOS.db.digest.lastSeen == NOW, "with no prompt, the digest shows as before")
 
+-- ── Later asks again later (audit B18); the close button does not ───────────────────────────────
+fresh()
+login(START - 14 * MIN, { block({ id = "l", at = START }) })
+check(#SHOWN == 1, "the login's prompt shows")
+local laterRoster = OPEN
+OPEN = nil
+RS:PromptDismissed(laterRoster, true)
+advance(START - 5 * MIN)
+check(#SHOWN == 1, "Later: nothing before ten minutes")
+advance(START - 4 * MIN)
+check(#SHOWN == 2 and SHOWN[2] == "l@" .. START, "Later: the prompt asks again ten minutes on")
+OPEN = nil
+RS:PromptDismissed(laterRoster, false)
+advance(START + 30 * MIN)
+check(#SHOWN == 2, "the close button puts it off for good, as before")
+RS:PromptDismissed(laterRoster, true)
+OPEN = nil
+advance(START + 45 * MIN)
+check(#SHOWN == 3, "Later again: asks again")
+OPEN = nil
+NOW = START + 55 * MIN
+RS:PromptDismissed(laterRoster, true)
+advance(START + 3 * H)
+check(#SHOWN == 3, "but never past an hour after the start")
+
 -- ── A click, from any button or /gos raid start: the step, said, and the buttons repainted ───────
 fresh()
 login(START - 20 * MIN, { block({ id = "c", at = START }) })
@@ -489,4 +518,5 @@ plan, roster = Plan:Current()
 check(roster and roster.raidId == "kept", "outside the window, the kept roster's, as before")
 Import._webRaids = nil
 
+check((QUEUED.raidprompt or 0) > 0 and (QUEUED.digest or 0) > 0, "the prompt and the digest went through the popup queue")
 print(string.format("raid-prompt: %d checks passed", checks))

@@ -331,6 +331,42 @@ function GuildOS:KeyOfRosterName(full)
     return self:GetPlayerKey(full:match("^([^-]+)") or full, full:match("^[^-]+%-(.+)$"))
 end
 
+-- Whether names here carry a surname (WoW: Forever), as WhisperTarget asks it.
+local function hasSurnames()
+    local c = GuildOS.Client
+    return (c and c.has and c.has.surnames) and true or false
+end
+
+-- A chat or addon-message sender as the guild roster spells it (audit M1, N1, N2). WoW: Forever's names carry a
+-- surname: the roster says "Chehul Costa", chat and addon senders "Chehul-Costa", and a whisper may come back as
+-- "Chehul Costa-Realm". There the hyphen is the surname's space and the realm goes (Forever has no realms that set
+-- players apart): a cut at the first hyphen read every "First-Surname" as the first name alone. A hyphen after a
+-- name with a space, or before this client's own realm, is a realm's. Elsewhere the sender is returned as given.
+function GuildOS:SenderName(sender)
+    if type(sender) ~= "string" or not hasSurnames() then return sender end
+    if sender:find(" ", 1, true) then return sender:match("^([^-]+)") or sender end
+    local first, rest = sender:match("^([^-]+)%-(.+)$")
+    if not first then return sender end
+    local surname = rest:match("^([^-]+)") or rest
+    local realm = self:GetClientRealm()
+    if realm and surname:gsub("%s", ""):lower() == realm:gsub("%s", ""):lower() then return first end
+    return first .. " " .. surname
+end
+
+-- A name without its realm, the short form a ban, a roster event and the officer check compare: the roster's
+-- whole "First Surname" on WoW: Forever (SenderName), what comes before the first hyphen elsewhere.
+function GuildOS:ShortName(name)
+    if type(name) ~= "string" then return name end
+    if hasSurnames() then return self:SenderName(name) end
+    return name:match("^([^-]+)") or name
+end
+
+-- The member key of a chat or addon-message sender: the key the roster line of that member has.
+function GuildOS:SenderKey(sender)
+    if type(sender) ~= "string" or sender == "" then return nil end
+    return self:KeyOfRosterName(self:SenderName(sender))
+end
+
 -- A number off the network, or nil. tonumber takes "nan" and "inf" as text and reads "1e999" as inf. NaN answers
 -- false to every comparison, so it passes any check written as a refusal, and inf passes any "> 0"; and neither may
 -- ever reach a saved table, where a NaN is an unknown risk to the whole GuildOSDB file.
@@ -546,6 +582,12 @@ function GuildOS:LocalizeStoredMemberTables()
                     session.players = self:LocalizeMemberTable(session.players)
                     for _, snap in ipairs(type(session.snapshots) == "table" and session.snapshots or {}) do
                         if type(snap) == "table" then snap.members = self:LocalizeMemberTable(snap.members) end
+                    end
+                    -- And what is kept of them once the night ended (RaidTracker:CompactSession, audit R5).
+                    local roll = session.roll
+                    if type(roll) == "table" then
+                        roll.first, roll.last = self:LocalizeMemberTable(roll.first), self:LocalizeMemberTable(roll.last)
+                        roll.people = self:LocalizeMemberTable(roll.people)
                     end
                 end
             end
@@ -1071,7 +1113,8 @@ function GuildOS:CheckProfessionFreshness()
     local stale = self:GetStaleProfessions()
     if #stale == 0 then return end
 
-    self:ShowProfessionReminder(stale)
+    -- Never in combat, one popup at a time (audit B21).
+    self:ShowWhenClear("profreminder", function() return self:ShowProfessionReminder(stale) end)
     self:Print(string.format(L["|cffFFAA00You have %d profession(s) with outdated recipe data.|r Open them to sync!"], #stale))
 end
 
@@ -1178,6 +1221,7 @@ function GuildOS:ShowProfessionReminder(staleProfessions)
     for _, name in ipairs(staleProfessions) do
         self.profReminderStale[name] = true
     end
+    return frame
 end
 
 function GuildOS:CheckAndDismissProfessionReminder()
@@ -1328,8 +1372,7 @@ end
 -- only: a guild changed mid-session would be read against the wrong roster). The player's own
 -- records always stay: were the own key ever to differ from the roster's (a surname the client
 -- did not give), dropping them would wipe what this client publishes.
--- ponytail: a full pass on every GUILD_ROSTER_UPDATE, like RecordFirstSeen's; throttle it if a big
--- guild ever shows it in a profile.
+-- A full pass, at most once a minute (GuildOS.DEPARTED_GAP, audit D2).
 ----------------------------------------------------------------------
 function GuildOS:DropDeparted()
     local roster = self.db and self:IsOnGuildDB() and self:WholeRoster()
@@ -1366,4 +1409,108 @@ function GuildOS:DropDeparted()
     for key in pairs(self.db.guildWishlists or {}) do
         if not names[key] then self.db.guildWishlists[key] = nil end
     end
+end
+
+----------------------------------------------------------------------
+-- One popup at a time, never in combat (audit B21, and the maintainer's "nothing drawn over the screen opens
+-- in combat"). Every window an event or the login opens goes through GuildOS:ShowWhenClear: it shows now when
+-- the player is out of combat and nothing else from the queue is on screen, else it waits. In combat the queue
+-- waits for PLAYER_REGEN_ENABLED. The next one shows when the previous closes (fn returned its frame), or after
+-- POPUP_GAP seconds when fn returned none, and at most POPUP_HOLD seconds after it opened, so a window left open
+-- never holds the rest for good. Login popups carry an `order` and go in it (the raid prompt, which cannot wait,
+-- then onboarding, the founding letter, the digest); the others queue behind them in the order they came.
+-- Session only, nothing stored.
+----------------------------------------------------------------------
+local POPUP_GAP = 2        -- seconds between two popups when the first gave no frame to watch
+local POPUP_HOLD = 30      -- seconds a popup left open holds the queue at most
+local POPUP_LATE = 100     -- the order of a popup that is not a login one
+GuildOS.POPUP_ORDER = { raidprompt = 1, onboarding = 2, founding = 3, digest = 4 }
+
+local popupQueue = { items = {}, seq = 0 }
+GuildOS._popupQueue = popupQueue
+
+-- Whether the player is in combat: no window opens over the raid frames then.
+function GuildOS:InCombat()
+    if InCombatLockdown and InCombatLockdown() then return true end
+    local unitInCombat = _G.UnitAffectingCombat
+    if unitInCombat and unitInCombat("player") then return true end
+    return false
+end
+
+local function popupRelease(token)
+    if popupQueue.current ~= token then return end
+    popupQueue.current, popupQueue.currentKey = nil, nil
+    GuildOS:_PumpPopups()
+end
+
+local function popupWaitCombat()
+    if popupQueue.combatFrame then return end
+    local f = CreateFrame("Frame")
+    popupQueue.combatFrame = f
+    f:RegisterEvent("PLAYER_REGEN_ENABLED")
+    f:SetScript("OnEvent", function() GuildOS:SafeCall(GuildOS._PumpPopups, GuildOS) end)
+end
+
+-- Shows the next queued popup when nothing else is up and the player is out of combat.
+function GuildOS:_PumpPopups()
+    if popupQueue.current or #popupQueue.items == 0 then return end
+    if self:InCombat() then return popupWaitCombat() end
+    local item = table.remove(popupQueue.items, 1)
+    local token = {}
+    popupQueue.current, popupQueue.currentKey = token, item.key
+    local ok, frame = pcall(item.fn)
+    if not ok then
+        if self.Logger and self.Logger.Debug then self.Logger.Debug("popup " .. tostring(item.key) .. ": " .. tostring(frame)) end
+        frame = nil
+    end
+    local watched = type(frame) == "table" and frame.IsShown and frame.HookScript and frame:IsShown()
+    if watched then
+        frame._gosPopupToken = token
+        if not frame._gosPopupHooked then
+            frame._gosPopupHooked = true
+            frame:HookScript("OnHide", function(f) popupRelease(f._gosPopupToken) end)
+        end
+        self.Compat.After(POPUP_HOLD, function() popupRelease(token) end)
+    else
+        self.Compat.After(POPUP_GAP, function() popupRelease(token) end)
+    end
+end
+
+-- Queues `fn` (it opens a window and may return it) under `key`: a key already waiting is replaced, so one
+-- event that fires twice shows once. `order`: a login popup's place (POPUP_ORDER), the rest after them.
+function GuildOS:ShowWhenClear(key, fn, order)
+    if type(fn) ~= "function" then return end
+    -- The window on screen now is this key's: it is redrawn in place (a newer call to arms, a grown alert).
+    if popupQueue.current and popupQueue.currentKey == key and not self:InCombat() then
+        local ok, err = pcall(fn)
+        if not ok and self.Logger and self.Logger.Debug then self.Logger.Debug("popup " .. tostring(key) .. ": " .. tostring(err)) end
+        return
+    end
+    order = tonumber(order) or self.POPUP_ORDER[key] or POPUP_LATE
+    for i, item in ipairs(popupQueue.items) do
+        if item.key == key then table.remove(popupQueue.items, i); break end
+    end
+    popupQueue.seq = popupQueue.seq + 1
+    local item = { key = key, fn = fn, order = order, seq = popupQueue.seq }
+    local at = #popupQueue.items + 1
+    for i, other in ipairs(popupQueue.items) do
+        if order < other.order then at = i; break end
+    end
+    table.insert(popupQueue.items, at, item)
+    self:_PumpPopups()
+end
+
+-- Drops a queued popup that no longer applies (its moment passed). Whether one was waiting.
+function GuildOS:CancelWhenClear(key)
+    for i, item in ipairs(popupQueue.items) do
+        if item.key == key then table.remove(popupQueue.items, i); return true end
+    end
+    return false
+end
+
+-- Where officers' notes, sheets and marks are edited (audit B11): on a client with no OFFICER addon channel (WoW:
+-- Forever, or a rank that may not speak there) what is written is not shared. The line that says so, or nil.
+function GuildOS:LocalOnlyText()
+    if self.Compat.OfficerAddonChannel and self.Compat.OfficerAddonChannel() then return nil end
+    return self.L["Kept on this client only: this game has no officer channel to share it with the other officers."]
 end

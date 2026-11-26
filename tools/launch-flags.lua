@@ -68,6 +68,21 @@ f:close()
 check(source:find('{ "Journal", feature = "journal" }', 1, true), "the journal's start asks the switch")
 check(source:find('{ "DungeonLog", feature = "journal" }', 1, true), "the dungeons go with it: they write into the journal")
 check(source:find('{ "Founding", feature = "founding" }', 1, true), "the founding's start asks the switch")
-check(source:find("local OFF_UNTIL_TESTED = {}", 1, true), "the list is empty: nothing ships off for whoever never chose")
+check(not source:find("OFF_UNTIL_TESTED", 1, true), "no list holds anything off for whoever never chose (audit D5)")
+
+-- ── A switch stops its module and its sync, or it goes (audit B25) ───────
+for _, name in ipairs({ "RecipeTracker", "CraftNet", "CraftOrders", "Professions", "ProfSync" }) do
+  check(source:find('{ "' .. name .. '", feature = "recipes"', 1, true), name .. " follows the Crafts switch")
+end
+check(source:find('{ "Points", feature = "dkp"', 1, true), "the points follow the DKP switch, the one CompanionExport reads")
+started = 0
+GuildOS.CraftNet = { Initialize = function() started = started + 1 end }
+fresh({ recipes = false })
+check(GuildOS:StartModule({ "CraftNet", feature = "recipes", drop = true }) == false and started == 0
+  and GuildOS.CraftNet == nil, "Crafts off: CraftNet never starts and goes for the session, as on a client without it")
+check(GuildOS.State.startup.dropped.recipes, "and its switch is marked: switched back on, it waits for the reload")
+GuildOS.CraftNet = { Initialize = function() started = started + 1 end }
+fresh({ recipes = true })
+check(GuildOS:StartModule({ "CraftNet", feature = "recipes", drop = true }) and started == 1 and GuildOS.CraftNet, "on: started")
 
 print("launch-flags: " .. checks .. " checks passed")

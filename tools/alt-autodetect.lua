@@ -260,4 +260,34 @@ for _, p in pairs(GuildOSDB.altPending) do p.guild = "Guild"; p.ts = now - 31 * 
 AD:ResendPending()
 check(#sentOf("SA") == 0 and next(GuildOSDB.altPending) == nil, "a claim past thirty days is dropped")
 
+-- "Not now" is this session only; "Don't ask again" is for good (audit B12). The prompt waits for the popup queue.
+do
+  GuildOS.Dialogs = GuildOS.Dialogs or {}
+  AD:_RegisterPopup()
+  local def = GuildOS.Dialogs["GUILDOS_ALT_AUTODETECT"]
+  check(def.button2 == "Not now" and def.button3 == "Don't ask again" and def.OnAlt, "the prompt has Not now and Don't ask again")
+  local r = { group = { MAIN, ALT }, main = MAIN }
+  GuildOSDB.altDeclined = nil
+  AD._prompted = nil
+  def.OnCancel(nil, r)
+  check(AD._prompted and not (GuildOSDB.altDeclined and next(GuildOSDB.altDeclined)), "Not now stores nothing: asked again next session")
+  def.OnAlt(nil, r)
+  check(GuildOSDB.altDeclined and next(GuildOSDB.altDeclined) ~= nil, "Don't ask again is kept")
+  local opened = {}
+  local realShow, realQueue = GuildOS.ShowDialog, GuildOS.ShowWhenClear
+  GuildOS.ShowDialog = function(_, which) opened[#opened + 1] = which; return {} end
+  local queued = {}
+  GuildOS.ShowWhenClear = function(_, key, fn) queued[#queued + 1] = { key = key, fn = fn } end
+  GuildOSDB.altDeclined, AD._prompted = nil, nil
+  GuildOSDB.accountChars = { [MAIN] = { level = 70 }, [ALT] = { level = 60 } }
+  GuildOS.db.altLinks = {}
+  afters = {}
+  AD:_SchedulePrompt()
+  for _, fn in ipairs(afters) do fn() end
+  check(#queued == 1 and queued[1].key == "altdetect" and #opened == 0, "the login prompt queues, never straight on screen")
+  queued[1].fn()
+  check(opened[1] == "GUILDOS_ALT_AUTODETECT", "and opens when the queue lets it")
+  GuildOS.ShowDialog, GuildOS.ShowWhenClear = realShow, realQueue
+end
+
 print(("alt-autodetect: %d checks passed"):format(checks))

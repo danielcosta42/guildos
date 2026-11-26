@@ -119,7 +119,7 @@ function Agora:NeedsMe()
 
     if GuildOS:IsOfficer() then
         local tt = GuildOS.TrialTracker
-        -- The trials ready to review, the count the login line and the digest give (#249).
+        -- The trials ready to review, the count the login line gives (#249); the digest no longer repeats it (B10).
         if tt and tt.CountReady then
             local n = tt:CountReady()
             if n > 0 then add(urgent, string.format(L["%d trial(s) ready to review"], n), "trials") end
@@ -208,7 +208,8 @@ function Agora:Activity(limit)
             add(e.timestamp, string.format(fmt, e.target or "?", e.detail or ""), "management", "log", nil, e.target)
         end
     end
-    for _, e in ipairs(db.lootHistory or {}) do
+    -- The Loot Tracker switch hides the loot history here too (audit B17).
+    for _, e in ipairs(GuildOS:IsFeatureEnabled("lootTracker") and db.lootHistory or {}) do
         add(e.timestamp, string.format(L["%s received %s"], e.player or "?", e.itemLink or e.itemName or "?"), "loot",
             "history", e.playerKey)
     end

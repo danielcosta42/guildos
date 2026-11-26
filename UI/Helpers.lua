@@ -1315,6 +1315,17 @@ local function newDialog(i)
     f.button2 = Helpers:CreateButton(f, "", 130, 24)
     f.button2:SetPoint("BOTTOMLEFT", f, "BOTTOM", 6, 14)
     f.button2:SetScript("OnClick", function() f:Hide() end)
+    -- A third answer (def.button3, def.OnAlt), under the other two: "Don't ask again" (audit B12).
+    f.button3 = Helpers:CreateButton(f, "", 272, 22)
+    f.button3:SetPoint("BOTTOM", f, "BOTTOM", 0, 14)
+    f.button3:SetScript("OnClick", function()
+        local def = f.def
+        if not def then return end
+        f.answered = true
+        if def.OnAlt then GuildOS:SafeCall(def.OnAlt, f, f.data, f.data2) end
+        f:Hide()
+    end)
+    f.button3:Hide()
 
     f:SetScript("OnHide", function(self)
         -- Still shown: it went with the whole interface (Alt-Z), and comes back with it.
@@ -1358,10 +1369,17 @@ function GuildOS:ShowDialog(which, textArg1, textArg2, data)
     f.text:SetText(string.format(def.text or "%s", textArg1 or "", textArg2 or ""))
     f.button1.label:SetText(def.button1)
     f.button2.label:SetText(def.button2 or CANCEL)
+    f.button3:SetShown(def.button3 ~= nil)
+    if def.button3 then f.button3.label:SetText(def.button3) end
+    local rowY = def.button3 and 42 or 14   -- the two answers sit above the third one
+    f.button1:ClearAllPoints()
+    f.button1:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -6, rowY)
+    f.button2:ClearAllPoints()
+    f.button2:SetPoint("BOTTOMLEFT", f, "BOTTOM", 6, rowY)
     f.editBox:SetShown(def.hasEditBox and true or false)
     f.editBox:SetMaxLetters(def.maxLetters or 0)
     f.editBox:SetText("")
-    f:SetHeight(f.text:GetStringHeight() + (def.hasEditBox and 104 or 72))
+    f:SetHeight(f.text:GetStringHeight() + (def.hasEditBox and 104 or 72) + (def.button3 and 28 or 0))
     f:Show()
     if def.hasEditBox then f.editBox:SetFocus() end
     if def.OnShow then self:SafeCall(def.OnShow, f, data) end

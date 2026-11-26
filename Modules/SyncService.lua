@@ -51,6 +51,8 @@ SyncService.OFFICER_DOMAINS = {
     gbankneed = true,  -- how much of each item the guild bank should hold (issue #380)
     gbankclean = true, -- what officers marked to take out of the guild bank and sell (issue #380)
     marks     = true,  -- the officers' safe list and nicknames (issue #429)
+    trial     = true,  -- one trial and its evaluation notes, or a pruned trial's tombstone (audit N5)
+    trialg    = true,  -- the same without its notes, over GUILD, where the client has no OFFICER channel (Forever)
 }
 
 -- Domains outside OFFICER_DOMAINS whose handlers trust IsOfficerByName(sender) themselves.
@@ -72,6 +74,7 @@ SyncService.GUILD_ONLY_DOMAINS = {
 SyncService.OFFICER_CHANNEL_DOMAINS = {
     osheet = true,
     marks  = true,   -- the safe list and nicknames (#429): what officers call a member
+    trial  = true,   -- a trial's evaluation notes (audit N5): never the whole table over GUILD again
 }
 
 -- Actions any guild member may perform inside an officer domain, over GUILD. Keyed by domain:

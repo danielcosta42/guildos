@@ -383,7 +383,10 @@ Removed: `Compat.NewTimer`.
 | `RaidTracker:Initialize()` | DB setup, migration, registers zone/roster/encounter events |
 | `RaidTracker:CheckZone()` | Manages session start/resume/end based on GetInstanceInfo |
 | `RaidTracker:StartSession(instanceID)` | Creates currentRaid table, starts 5-min snapshot ticker |
-| `RaidTracker:IsGuildRaid(session)` | Returns true if ≥50% players are in guild DB/roster |
+| `RaidTracker:IsGuildRaid(session)` | Returns true if ≥50% players are on the guild roster (never db.members, audit R2) |
+| `RaidTracker:RollUp(session)` / `MergeRolls(rolls)` / `CompactSession(session)` | A night's presence rolled up (`{ n, firstAt, lastAt, first, last, people = { [key] = { n, first, last, chits, offline, consumes } } }`), from its snapshots or the `roll` kept in their place; several as one; an ended session's snapshots replaced by their roll-up (audit R5). Attendance, the raids panel and CompanionExport read RollUp |
+| `RaidTracker:NightScore(playerKey, roll, penalties)` | The one per-night score (audit R17): 100 less late, left early and dry; returns score, wasLate, leftEarly, noConsumes, hits, checks |
+| `RaidTracker:PruneHistory(now)` | Compacts ended sessions, drops pug nights after 90 days and tombstones/merge notes after 180; the officers' broadcast sends 28 days of sessions, and HandleIncoming takes none older than 180 days (audit R5) |
 | `RaidTracker:EndSession(away)` | Finalizes session, discards if <10min, saves. `away` (retail: `ElsewhereInGrace()`, asked before the grace timer is cleared, when the grace runs out or another raid begins) skips the `session_end` snapshot of a group that is not the session's (issue #183) |
 | `RaidTracker:ElsewhereInGrace()` | Retail only: while the session waits out its grace, whether this client stands in another instance or the session's raid on another difficulty (Raid Finder after the guild's Heroic, a dungeon). The open world (the run-back) is not elsewhere. `TakeSnapshot`, `OnEncounterStart` and `OnEncounterEnd` return at once when it is, `EndSession` takes no last snapshot, and `LootTracker` records no loot (issue #183) |
 | `RaidTracker:TakeSnapshot(reason)` | Captures raid roster with consume check into snapshots |
@@ -475,6 +478,7 @@ Removed: `Compat.NewTimer`.
 
 | Function | Description |
 |---|---|
+| `LootMaster:RollOpen()` | A real roll is open (an item in hand, or a raider's popup on screen; not a test's leftovers): Settings' loot tests refuse then (audit R20) |
 | `LootMaster:SafeSendChat(msg, channel)` | Sends to raid if in raid + not testMode, else prints locally |
 | `LootMaster:SafeSendChatAuto(msg, channel)` | A line sent from an event or a timer: on WoW: Forever (`Compat.NeedsClick`) it prints for the loot master only, else `SafeSendChat`. Used by `RegisterRoll`'s per-roll lines and the timer path of `EndRolling(byClick)`; `ScheduleCountdownWarnings` does nothing on Forever (issue #63) |
 | `LootMaster:SafeSendAddon(prefix, payload, channel)` | Sends addon message if in raid + not testMode |
@@ -762,6 +766,7 @@ UI: `UI/RemindPanel.lua` — `GuildOS:BuildRemindSub(panel)`. Store: `GuildOS.db
 | `RaidTracker:GetMissedStreak(key, group, cap)` | Consecutive recent 25-man guild raids missed |
 | `CommSystem:GetSyncHealth()` | (rows, withAddon, outdated) addon adoption / version / last sync |
 | `RaidTools:GetSource()` | (list, label) raid → party → online guild fallback |
+| `RaidTools:TrackedCooldowns()` / `:CooldownOfSpell(spellID)` / `:IsRaidCaster(srcFlags)` | The raid HUD's cooldowns are `COOLDOWNS`' entries with `spellIDs` (one list, audit B19); the entry a spell is a use of; whether a combat-log caster is mine, my party's or my raid's (the HUD logs nobody else) |
 | `RaidTools:GetClassCounts(list)` / `:ResolveCoverage(defs, counts)` | Class tally + buff/CD coverage resolution; definitions with `tbc = true` are skipped outside TBC Anniversary (ADR-0014) |
 | `GuildOS:ExportRoster()` / `:ExportLoot()` | Tab-separated exports for Sheets (English headers) |
 | `GuildOS:RecordFirstSeen()` / `:GetFirstSeen(key)` | "Known to GuildOS since" tracking (no join-date API) |
@@ -776,6 +781,7 @@ UI: `UI/RemindPanel.lua` — `GuildOS:BuildRemindSub(panel)`. Store: `GuildOS.db
 
 | Function | Description |
 |---|---|
+| `ConsumableChecker:LastCheckAt()` | When the last check was made (this session's, or the saved `lastAt`); nil when unknown. Readiness ignores a check older than 12 h or of unknown age (audit B15) |
 | `ConsumableChecker:Initialize()` | Ensures consumableChecks DB table exists; on retail registers READY_CHECK and READY_CHECK_FINISHED (issue #187) |
 | `ConsumableChecker:CheckRaid(quiet)` | Checks all connected raid members: TBC's five categories on Anniversary; on retail flask, food, rune (by the catalog's spell ids) and my own weapon, each raider's row with `buffs`, `missing` and `unknown` (never read: out of range, secret, in combat; the weapon only for me). `quiet` says nothing outside a raid |
 | `ConsumableChecker:OnReadyCheck()` | Retail: a quiet `CheckRaid` when the ready check starts and when it ends (whoever eats in answer is read with the food on), for the screens and for the pull's snapshot |
@@ -795,6 +801,7 @@ UI: `UI/RemindPanel.lua` — `GuildOS:BuildRemindSub(panel)`. Store: `GuildOS.db
 
 | Function | Description |
 |---|---|
+| `SpecChecker:OnInspectTimeout(entry)` / `:InspectedMemberRecord(entry)` | An inspect unanswered after 3 s moves the scan on (audit R12); an inspect writes only a guildmate's record (`IsGuildmate`, audit R2) |
 | `local CountTabPoints(tabIndex, isInspect)` | Sums GetTalentInfo currentRank for all talents in a tab |
 | `local CollectTabTalents(tabIndex, isInspect)` | Returns array of {name,icon,tier,column,currentRank,maxRank} |
 | `SpecChecker:CollectOwnSpec()` | Scans own talent tabs, builds spec record with full talent data |
@@ -1399,7 +1406,9 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `CompanionImport:SayForeign(guild)` / `:ForeignLine()` | An inbox whose rosters were all dropped for their guild says so, once a session, in chat: "The website's raids are for the guild %s, not %s.", names inert; a character with no guild gets "…, and this character is in none." on the Web tab only, no chat. The line stays for the Web tab's reason line (while nothing is in hand) until an inbox with this guild's raid is read |
 | `CompanionImport:OutsideThePlan(roster)` | Fit to plan reads the group as the stepper does (`planned`, `planMatcher`, `unitKey`): a Forever unit with its surname apart, or a first name one planned person has, is that person; a first name two share stays; me never, by unit (`Compat.IsPlayer`) |
 | `RaidStart:OnLogin(now)` | Core's InitModules, 4 s after the inbox read: the owner's prompt for the owned raid (`Owned`: inbox, this guild, `IsMine`) from 30 min before its start to 60 min after, the nearest, unless shown; a timer at start − 15 min for each owned raid further away (`Arm`, once a session; `Due` when it fires; while the prompt is up for another raid whose step is not done, `Due` asks again 2 min later, and never past an hour after the raid's start) |
-| `RaidStart:PromptDismissed(roster)` | The prompt put off (Later or ×, not Raid ready): if it was the login's, the deferred digest (`Digest.deferred`) shows now, or at its own time |
+| `RaidStart:PromptDismissed(roster, later)` | The prompt put off (Later or ×, not Raid ready): if it was the login's, the deferred digest (`Digest.deferred`) shows now, or at its own time. `later` (the Later button, audit B18): asks again in 10 min, until an hour after the start; × puts it off for good |
+| `SoftRes:SheetInForce(now)` | The imported sheet counts until its raid night is over (`LootRule.InWindow` of `meta.raidStartsAt`, else `importedAt`), or while its night is to come; `ActiveItems` returns nothing after (audit B14) |
+| `CoreManager:FindCore(name)` | The core named (active when nil), or nil: never made. The read-only getters (`GetRaidSize`, `GetLootConfig`, `GetPenalties`, `GetMembers`, `GetSignups`) use it; `GetCore` still makes one on demand for writers (audit R19) |
 | `RaidStart:PromptedSet(now)` / `RaidStart.PromptKey(roster)` | `GuildOS.db.raidPrompted = { [raidId .. ":" .. startsAt] = shownAt }`, over a week old dropped on every read: one prompt per raid and start, across logins and the owner's characters; a moved start asks again |
 | `RaidStart:Prompt(roster, now)` / `:PromptedAtLogin()` | Remembers, then `GuildOS:ShowRaidPrompt`; whether this login showed one, so `Digest:ShowOnLogin` gives way (its news wait, untouched) |
 | `GuildOS:ShowRaidPrompt(roster)` / `GuildOS:RaidPromptShowing()` (UI/WebPanel.lua) | The prompt: the raid's name, "Starts in N min" / "Started N min ago", how many are coming, the stepper (primary) and Later. "Raid ready" closes it; Later and × put it off (`PromptDismissed`); blocked is greyed with the reason (two lines at most), never hidden. Closes a digest still open. `RaidPromptShowing`: the roster it is up for, or nil |

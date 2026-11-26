@@ -25,7 +25,8 @@ function DataCollector:Initialize()
     GuildOS.Compat.RegisterEvent(frame, "CHARACTER_POINTS_CHANGED")
     frame:SetScript("OnEvent", function(_, event)
         if event == "PLAYER_EQUIPMENT_CHANGED" then
-            C_Timer.After(0.5, function()
+            -- A swap fires once per slot: one collection and one broadcast for the burst (audit D10).
+            DataCollector:Soon("gear", function()
                 DataCollector:CollectMyData()
                 -- Broadcast updated gear to guild after a short delay
                 C_Timer.After(2, function()
@@ -35,7 +36,7 @@ function DataCollector:Initialize()
                 end)
             end)
         elseif event == "SKILL_LINES_CHANGED" or event == "CHAT_MSG_SKILL" then
-            C_Timer.After(1, function() DataCollector:CollectProfessions() end)
+            DataCollector:Soon("skills", function() DataCollector:CollectProfessions() end)
         elseif event == "GET_ITEM_INFO_RECEIVED" or event == "PLAYER_TALENT_UPDATE"
             or event == "CHARACTER_POINTS_CHANGED" then
             -- Only react while a prior snapshot was known-incomplete (these events,
@@ -61,10 +62,36 @@ function DataCollector:Initialize()
     end)
 end
 
+-- Run `fn` once, COALESCE seconds after the last of a burst of calls under `name` (audit D10).
+DataCollector.COALESCE = 1   -- seconds a burst of equipment or skill events is gathered into one collection
+DataCollector._soon = {}
+function DataCollector:Soon(name, fn)
+    local pending = self._soon[name]
+    self._soon[name] = { fn = fn, at = GetTime() + self.COALESCE }
+    if pending then return end
+    local function fire()
+        local p = self._soon[name]
+        if not p then return end
+        local wait = p.at - GetTime()
+        if wait > 0 then return C_Timer.After(wait, fire) end
+        self._soon[name] = nil
+        p.fn()
+    end
+    C_Timer.After(self.COALESCE, fire)
+end
+
+-- Whether my data was collected within FRESH seconds: the login's broadcast follows the login's collection
+-- instead of collecting again (audit D9).
+DataCollector.FRESH = 10
+function DataCollector:Fresh()
+    return self.collectedAt ~= nil and GetTime() - self.collectedAt < self.FRESH
+end
+
 ----------------------------------------------------------------------
 -- Collect all local player data
 ----------------------------------------------------------------------
 function DataCollector:CollectMyData()
+    self.collectedAt = GetTime and GetTime() or nil   -- the harnesses' clients may have no clock
     local name = GuildOS.Compat.PlayerName()
     local realm = GetRealmName()
     local key = GuildOS:GetPlayerKey(name, realm)
@@ -647,9 +674,9 @@ function DataCollector:StoreReceivedData(playerKey, data)
         end
     end
 
-    -- Merge with existing data (skip recipes, handled separately)
+    -- Merge with existing data (skip recipes and their hashes, handled separately)
     for k, v in pairs(data) do
-        if k ~= "recipes" then
+        if k ~= "recipes" and k ~= "rh" then
             existing[k] = v
         end
     end
@@ -668,8 +695,8 @@ function DataCollector:StoreReceivedData(playerKey, data)
         GuildOS.Milestones:Check(playerKey, existing, prevLevel, prevAttune, hadPrior)
     end
 
-    -- Store recipes if included in broadcast
-    if data.recipes then
+    -- Store recipes if included in broadcast (a client before audit D3; none with Crafts off, B25)
+    if data.recipes and GuildOS.RecipeTracker then
         if not GuildOS.db.recipes then GuildOS.db.recipes = {} end
         if not GuildOS.db.recipes[playerKey] then GuildOS.db.recipes[playerKey] = {} end
         local DC = GuildOS.DataCollector
@@ -797,11 +824,10 @@ function DataCollector:GetBroadcastData()
         clean.resistances = myData.resistances
     end
 
-    -- Include recipes (keyed by profession). On WoW: Forever ProfSync carries them, by hash,
-    -- instead of every broadcast (issue #31).
-    local myKey = GuildOS:GetPlayerKey(myData.name, myData.realm or GetRealmName())
-    if not GuildOS.Professions and GuildOS.db.recipes and GuildOS.db.recipes[myKey] then
-        clean.recipes = GuildOS.db.recipes[myKey]
+    -- The recipes' hashes, one per profession, never the lists (audit D3): a guildmate whose copy differs
+    -- asks for that list (RecipeTracker). On WoW: Forever and retail ProfSync carries them (issue #31).
+    if not GuildOS.Professions and GuildOS.RecipeTracker then
+        clean.rh = GuildOS.RecipeTracker:OwnHashes()
     end
 
     return clean

@@ -226,13 +226,28 @@ function SoftRes:GetDB()
     return GuildOS.db and GuildOS.db.softRes
 end
 
+-- Whether the imported sheet still counts (audit B14): until its raid night is over, in the window the
+-- site's sheets keep (LootRule.InWindow). Its night starts at the sheet's own raid time when it gave one,
+-- else when it was imported; a night still to come counts too.
+function SoftRes:SheetInForce(now)
+    local db = self:GetDB()
+    local meta = db and db.meta or {}
+    local startsAt = tonumber(meta.raidStartsAt) or 0
+    if startsAt <= 0 then startsAt = tonumber(meta.importedAt) or 0 end
+    if startsAt <= 0 then return true end   -- a sheet from before the import was stamped: as before
+    now = now or GetServerTime()
+    local LR = GuildOS.LootRule
+    return now < startsAt or (LR and LR.InWindow and LR.InWindow(startsAt, now)) or false
+end
+
 -- The reserves in force: the site's while its raid's night lasts (never copied into db.softRes), else
--- the imported sheet's. Every reader goes through here.
+-- the imported sheet's while its own night lasts. Every reader goes through here.
 function SoftRes:ActiveItems()
     local site = GuildOS.SiteLoot and GuildOS.SiteLoot:Reserves()
     if site then return site.items end
     local db = self:GetDB()
-    return db and db.items
+    if not (db and self:SheetInForce()) then return nil end
+    return db.items
 end
 
 -- Raw list of reservers for an item (all players, any status)

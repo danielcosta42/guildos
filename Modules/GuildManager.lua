@@ -13,9 +13,13 @@ local LOG_MAX = 200
 -- Default inactivity threshold (days) for the purge report.
 local DEFAULT_INACTIVE_DAYS = 30
 GuildManager.DEFAULT_INACTIVE_DAYS = DEFAULT_INACTIVE_DAYS
--- Attendance % at/above which a non-officer member is flagged a promotion
--- candidate in the suggestions view.
+-- Attendance % at/above which a non-officer member is flagged a promotion candidate in the suggestions view:
+-- the "Promote regulars" preset's own threshold (#448 B8), so Suggestions and Presets never disagree.
 local PROMO_ATTENDANCE_MIN = 80
+local function promoAttendanceMin()
+    local MP = GuildOS.ModPresets
+    return (MP and MP.PromoteAttendance and MP:PromoteAttendance()) or PROMO_ATTENDANCE_MIN
+end
 
 function GuildManager:Initialize()
     if not GuildOS.db.managementLog then
@@ -133,21 +137,31 @@ function GuildManager:_protectedNotice(actionLabel, name)
     return false
 end
 
--- All four route to the protected-action handoff (see header note above).
-function GuildManager:Promote(name)
-    return self:_protectedNotice(L["Promote"], name)
+-- One member's promotion, demotion or removal (audit M11): a Bulk actions queue of that one member, done by one click
+-- of its Next button, the way the game takes it from an addon (ADR-0038), never the protected call. `name` is the
+-- roster's name (with its realm where it has one), `key` the member key when the caller holds it; `target`, optional,
+-- a 0-based rank to take them to, one step per click. Without Bulk actions, the game's guild panel as before.
+-- True when the queue started; otherwise it says why.
+function GuildManager:QueueRankAction(action, name, key, target)
+    local BA = GuildOS.BulkActions
+    if not BA then
+        local label = action == "promote" and L["Promote"] or action == "demote" and L["Demote"] or L["Remove from guild"]
+        return self:_protectedNotice(label, name)
+    end
+    key = key or (type(name) == "string" and name ~= "" and GuildOS:KeyOfRosterName(name)) or nil
+    return BA:StartOneAndSay(action, key, target, name and (name:match("^([^-]+)") or name))
 end
 
-function GuildManager:Demote(name)
-    return self:_protectedNotice(L["Demote"], name)
+function GuildManager:Promote(name, key)
+    return self:QueueRankAction("promote", name, key)
 end
 
-function GuildManager:SetRank(name)
-    return self:_protectedNotice(L["Set Rank"], name)
+function GuildManager:Demote(name, key)
+    return self:QueueRankAction("demote", name, key)
 end
 
-function GuildManager:Kick(name)
-    return self:_protectedNotice(L["Remove from guild"], name)
+function GuildManager:Kick(name, key)
+    return self:QueueRankAction("remove", name, key)
 end
 
 -- Set the guild Message of the Day.
@@ -278,7 +292,7 @@ function GuildManager:GetSuggestions()
                 local isOfficer = rankIndex and rankIndex <= officerMaxRank
                 if not isTrial and not isOfficer then
                     local att = GuildOS.RaidTracker:GetAttendance25ManPercent(key)
-                    if att and att >= PROMO_ATTENDANCE_MIN then
+                    if att and att >= promoAttendanceMin() then
                         table.insert(promoteCandidates, {
                             key        = key,
                             name       = short,
@@ -365,14 +379,9 @@ function GuildManager:RefreshUI()
 end
 
 ----------------------------------------------------------------------
--- Action entry points (kept for the panel / context-menu call sites).
--- These are rank/membership changes, which are Blizzard-protected, so they
--- route to the native-panel handoff rather than executing directly.
+-- Action entry point (kept for the panel / context-menu call sites). A removal
+-- is Blizzard-protected: it is queued in Bulk actions, one click of Next.
 ----------------------------------------------------------------------
-function GuildManager:ConfirmSetRank(name)
-    self:_protectedNotice(L["Set Rank"], name)
-end
-
-function GuildManager:ConfirmKick(name)
-    self:_protectedNotice(L["Remove from guild"], name)
+function GuildManager:ConfirmKick(name, key)
+    return self:Kick(name, key)
 end

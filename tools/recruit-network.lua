@@ -293,6 +293,12 @@ local function client(name, o)
   assert(env.GuildOS:ResolveGuildDB(), "the guild's db resolves")
   env.ChehulMesh.YELL_PERCENT = 100
   env.GuildOS:InitModules()
+  -- An officer with the site's ad has "Broadcast while I'm online" on unless said: the switch holds the site's ad
+  -- too now (audit N11).
+  if o.own and o.beacon ~= false and c.RB.GetAd then
+    local ad = c.RB:GetAd()
+    if ad then ad.enabled = true end
+  end
   return c
 end
 

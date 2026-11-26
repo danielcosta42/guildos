@@ -95,6 +95,9 @@ function UI:IsFeatureAllowed(def)
     if not GuildOS:IsFeatureEnabled(def.id) then return false end
     -- A tab whose module failed to start would error while it builds.
     if GuildOS:FeatureStartFailed(def.id) then return false end
+    -- Off at login, its modules went for the session (audit B25): switched back on, it waits for the reload.
+    local startup = GuildOS.State and GuildOS.State.startup
+    if startup and startup.dropped and startup.dropped[def.id] then return false end
     -- Another tab's sub-tab (issue #367) goes with its host: with Recruitment off, Trials is nowhere.
     if def.opens and not def.tab then
         local host = self:GetFeature(def.opens[1])

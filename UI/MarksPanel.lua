@@ -139,6 +139,13 @@ function GuildOS:BuildMarksSub(panel)
     y = y - 50
     local title2 = UI:CreateSectionTitle(panel, L["SAFE LIST AND NICKNAMES"])
     title2:SetPoint("TOPLEFT", 0, y)
+    -- WoW: Forever: the marks stay on this client (audit B11).
+    local localOnly = GuildOS:LocalOnlyText()
+    if localOnly then
+        local lo = text(panel, localOnly, 10, C.silver)
+        lo:SetPoint("TOPLEFT", 0, y - 16)
+        y = y - 14
+    end
     y = y - 26
     local tagLbl = text(panel, L["Safe tag in notes"])
     tagLbl:SetPoint("TOPLEFT", 0, y - 4)

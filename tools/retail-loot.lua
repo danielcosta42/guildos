@@ -274,7 +274,8 @@ check(#history == 11, "another difficulty of the same raid is not the session's,
 INSTANCE[3] = 15
 GuildOS.db.settings.modules.lootTracker = false
 fire("ENCOUNTER_LOOT_RECEIVED", BOSS + 3, 250001, HELM, 1, "Chehul", "DRUID")
-check(#history == 11, "the Loot Tracker switched off in Settings records nothing")
+check(#history == 12, "the Loot Tracker switched off in Settings still records (audit B17)")
+table.remove(history, 1)
 GuildOS.db.settings.modules.lootTracker = nil
 before = snapshots()
 realSnapshot(RT, "roster_change")
@@ -289,6 +290,11 @@ for _, r in ipairs(report) do rows[r.name] = r end
 check(total == 11 and rows["Ana-Gallywix"].total == 3 and rows["Ana-Azralon"].total == 1
   and rows["Chehul-TolBarad"].total == 4, "equity counts each player, two namesakes apart")
 check(rows["Ana-Gallywix"].epics == 3 and rows["Ana-Azralon"].epics == 0, "and their epics")
+-- Audit R10: one award is one item in the report, as the tracker counts it, whatever the stack says.
+local stackOf = 0
+for _, r in ipairs(report) do stackOf = stackOf + r.total end
+check(stackOf == total and rows["Ana-Gallywix"].total == LT:GetLootCount("Ana-Gallywix"),
+  "the equity report counts awards as the Loot Tracker does")
 
 dofile(ADDON .. "/Modules/ExportImport.lua")
 local Ex = GuildOS.Exporter
@@ -349,7 +355,17 @@ C_Timer.NewTimer = function(_, fn) fireTimer = fn; return { Cancel = function() 
 local GUILD = { { "Chehul" }, { "Ana", "Gallywix" }, { "Fulano", "Azralon" } }
 local PUG = { { "Chehul" }, { "Stranger", "Nemesis" }, { "Other", "Nemesis" } }
 local function setGroup(g) for i = 1, math.max(#GROUP, #g) do GROUP[i] = g[i] end end
-local function lastSnap(session) return session.snapshots[#session.snapshots] end
+-- An ended night's snapshots give way to their roll-up (audit R5): its last one is kept here as it went.
+local endSnaps = {}
+local function keepEndSnaps(rt)
+  local real = rt.CompactSession
+  rt.CompactSession = function(self, s)
+    if type(s) == "table" and type(s.snapshots) == "table" then endSnaps[s] = s.snapshots[#s.snapshots] end
+    return real(self, s)
+  end
+end
+keepEndSnaps(RT)
+local function lastSnap(session) return endSnaps[session] or session.snapshots[#session.snapshots] end
 local function guildNight()
   setGroup(GUILD)
   inside("raid", 15, 2912)
@@ -367,6 +383,8 @@ RT:CheckZone()
 NOW = NOW + 1200
 fireTimer()
 check(not RT.trackingActive and lastSnap(night).reason == "session_end", "a grace ending in the open world snapshots the group")
+check(night.snapshots == nil and night.roll and night.roll.n > 0 and night.roll.last ~= nil,
+  "and the ended night keeps its roll-up in place of the snapshots (audit R5)")
 -- Out of the guild's Heroic into Raid Finder of the same raid, and the twenty minutes run out there.
 night = guildNight()
 inside("raid", 17, 2912)
@@ -393,6 +411,7 @@ NOW = 1791000000
 load(false)
 check(not GuildOS.Client.isRetail and not GuildOS.Client.isAnniversary, "the stub is Forever")
 LT, RT = GuildOS.LootTracker, GuildOS.RaidTracker
+keepEndSnaps(RT)
 check(GuildOS:StartModule({ "LootTracker", feature = "lootTracker" }), "the tracker starts on Forever")
 check(not listens("ENCOUNTER_LOOT_RECEIVED"), "Forever does not listen for personal loot")
 RT:CheckZone()
@@ -412,7 +431,7 @@ do
   RT.TakeSnapshot = realSnapshot
   NOW = NOW + 1800
   fire2()
-  check(not RT.trackingActive and fnight.snapshots[#fnight.snapshots].reason == "session_end",
+  check(not RT.trackingActive and lastSnap(fnight).reason == "session_end",
     "and a Forever grace running out in another instance ends with its snapshot, as before")
   RT.TakeSnapshot = function() end
   C_Timer.NewTimer = realTimer

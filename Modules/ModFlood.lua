@@ -6,10 +6,11 @@
 -- officer's, through #403.
 --
 -- Four signals, each on or off with the guild's limits (guildcfg "modflood", newest stamp wins):
---   burst   N lines in X seconds (5 in 10)
---   repeat  the same line N times in X seconds (3 in 60)
---   caps    a line of at least M letters, P% of them capitals (12, 70%)
---   links   N links in X seconds (2 in 60)
+--   burst   N lines in X seconds (6 in 10)
+--   repeat  the same line N times in X seconds (4 in 60); a line under 4 letters never counts ("gz gz gz")
+--   caps    a line of at least M letters, P% of them capitals (20, 85%)
+--   links   N links in X seconds (3 in 120)
+-- Those are the audit's calibration (B3, B1): the guild's banter no longer reads as spam.
 -- The game's own links (an item, a spell, an achievement: |H...|h[...]|h) never count as a link nor as
 -- capitals. A surge is ONE alert per person and signal while it lasts (it ends X seconds after its last
 -- line), with the count and its lines; the officers settle who shows it the way #404 does.
@@ -23,11 +24,12 @@ local L = GuildOS.L
 
 ModFlood.SIGNALS = { "burst", "repeat", "caps", "links" }
 ModFlood.DEFAULTS = {
-    burst = { on = true, n = 5, secs = 10 },
-    ["repeat"] = { on = true, n = 3, secs = 60 },
-    caps = { on = true, pct = 70, min = 12 },
-    links = { on = true, n = 2, secs = 60 },
+    burst = { on = true, n = 6, secs = 10 },
+    ["repeat"] = { on = true, n = 4, secs = 60 },
+    caps = { on = true, pct = 85, min = 20 },
+    links = { on = true, n = 3, secs = 120 },
 }
+ModFlood.REPEAT_MIN_LETTERS = 4   -- a repeated line with fewer letters (its words counted once) is banter
 -- What each limit may be.
 ModFlood.RANGE = { n = { 2, 50 }, secs = { 5, 600 }, pct = { 50, 100 }, min = { 5, 100 } }
 ModFlood.KEEP = 600            -- seconds of a speaker's lines kept (the longest window)
@@ -51,7 +53,8 @@ end
 
 -- A bare domain ("cheapgold.com/x"): a word, a dot, one of these, then the end of the word. Made once.
 local DOMAIN_PATTERNS = {}
-for _, tld in ipairs({ "com", "net", "org", "gg", "io", "tv", "ru", "br", "de", "fr", "me", "co", "xyz", "shop", "info" }) do
+-- Not "me", "co" nor "de": "vem.me", "ok.co" and "sai.de" are Portuguese and Spanish chat, not links (audit B3).
+for _, tld in ipairs({ "com", "net", "org", "gg", "io", "tv", "ru", "br", "fr", "xyz", "shop", "info" }) do
     DOMAIN_PATTERNS[#DOMAIN_PATTERNS + 1] = "%f[%w][%w%-]+%." .. tld .. "%f[^%w][^%s]*"
 end
 
@@ -87,6 +90,20 @@ function ModFlood.Caps(s)
     local letters = up + low
     if letters == 0 then return 0, 0 end
     return math.floor(up * 100 / letters), letters
+end
+
+-- The letters a line carries with each word counted once ("gz gz gz" has two). Under REPEAT_MIN_LETTERS, the
+-- repeat signal leaves the line alone.
+function ModFlood.DistinctLetters(s)
+    local seen, n = {}, 0
+    for w in tostring(s or ""):lower():gmatch("%S+") do
+        if not seen[w] then
+            seen[w] = true
+            local _, letters = ModFlood.Caps(w)
+            n = n + letters
+        end
+    end
+    return n
 end
 
 -- How many entries of a speaker's list (oldest first, each with `t`) fall inside the last `secs`
@@ -142,6 +159,8 @@ end
 -- An officer saves the limits. True, or false and "officer".
 function ModFlood:SetConfig(t)
     if not GuildOS:IsOfficer() then return false, "officer" end
+    -- The first save on the rules tab makes this officer's list the guild's one list (audit B5).
+    if GuildOS.ModAlerts and GuildOS.ModAlerts.SeedShared then GuildOS.ModAlerts:SeedShared() end
     local s = settings()
     s.modFlood = self.ValidConfig(t)
     self._cfg = nil
@@ -201,7 +220,7 @@ function ModFlood.Fired(cfg, list, now, entry, capsPct, letters)
     local b = cfg.burst
     if b.on and ModFlood.InWindow(list, now, b.secs) >= b.n then out[#out + 1] = "burst" end
     local r = cfg["repeat"]
-    if r.on and ModFlood.InWindow(list, now, r.secs, entry.h) >= r.n then
+    if r.on and not entry.short and ModFlood.InWindow(list, now, r.secs, entry.h) >= r.n then
         out[#out + 1] = "repeat"
     end
     local c = cfg.caps
@@ -240,6 +259,7 @@ function ModFlood:OnLine(msg, author, now, folded)
         t = now, h = (M and M.Hash or tostring)(strtrim(folded or tostring(msg):lower())),
         links = self.CountLinks(bare), m = GuildOS:CutBytes((tostring(msg):gsub("%c", " ")), 255),
     }
+    if self.DistinctLetters(bare) < self.REPEAT_MIN_LETTERS then entry.short = true end
     list[#list + 1] = entry
     while #list > self.PER_SPEAKER do table.remove(list, 1) end
     local cfg = self:GetConfig()

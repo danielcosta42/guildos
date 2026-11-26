@@ -6,8 +6,8 @@
 -- standings and their export load there as on Forever, every guildmate keyed and named by their own
 -- realm. Charging for an item happens when an award by trade is recorded (tools/retail-loot-council.lua),
 -- never from Master Loot. The guild's loot system decides who may award an offered item, so on retail
--- an officer's choice reaches every member (`guildcfg`/`lootsys`, newest stamp wins); Forever keeps the
--- setting each client's own, as before. TMB is Classic only and is not offered on retail.
+-- an officer's choice reaches every member (`guildcfg`/`lootsys`, newest stamp wins), and since audit R1
+-- Forever's too. TMB is Classic only and is not offered on retail.
 --
 --   luajit -e 'ADDON="."' tools/retail-points.lua
 --
@@ -230,10 +230,17 @@ check(GuildOS.Points:KeyOf("Ana") == GuildOS:GetPlayerKey("Ana", GetRealmName())
 offered = {}
 for _, sys in ipairs(GuildOS:LootSystemsHere()) do offered[sys.key] = GuildOS:LootSystemLabel(sys) end
 check(offered.tmb == "TMB" and offered.rolls == "/roll (MS/OS)", "Forever offers every loot system, as before")
+-- Audit R1: the officer's choice reaches every client, not only retail's.
+published = {}
 GuildOS:SetLootSystem("dkp")
-check(GuildOS:GetLootSystem() == "dkp" and last("guildcfg", "lootsys") == nil, "Forever's choice stays on the client")
-GuildOS.db.settings.lootSystem = "rolls"
-GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootsys", rev = NOW + 10, data = { sys = "dkp" } })
-check(GuildOS:GetLootSystem() == "rolls", "and Forever takes none from the guild")
+local fsent = last("guildcfg", "lootsys")
+check(GuildOS:GetLootSystem() == "dkp" and fsent and fsent.data.sys == "dkp", "Forever's officer publishes the choice too")
+GuildOS.db.settings = { modules = {}, lootSystem = "rolls" }
+GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootsys", rev = NOW + 10, data = { sys = "external" } })
+check(GuildOS:GetLootSystem() == "external", "and a Forever member takes the guild's (a raider set to external)")
+GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootsys", rev = NOW + 5, data = { sys = "dkp" } })
+check(GuildOS:GetLootSystem() == "external", "the newest stamp still wins on Forever")
+GuildOS.SyncService.handlers.guildcfg({ dom = "guildcfg", act = "lootsys", rev = NOW + 11, data = { sys = "tmb" } })
+check(GuildOS:GetLootSystem() == "tmb", "a Classic-only system is taken where the client offers it")
 
 print(("retail-points: %d checks passed"):format(checks))

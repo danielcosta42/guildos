@@ -43,7 +43,8 @@ GuildOS.Points = Points
 local L = GuildOS.L
 
 local LOG_MAX = 500
-local OPS_MAX = 2000
+local OPS_MAX = 2000               -- applied op ids a pool remembers, to apply a resent op once
+local OPS_KEEP = 1500              -- how many of the newest stay when OPS_MAX is passed (audit R15)
 local WEEK = 604800               -- seconds: a reason's weekly cap counts within one of these
 local MAX_REASONS = 12            -- named reasons a pool keeps
 local EARN_KINDS = { award = true, raid = true, reason = true }   -- what the caps hold back
@@ -357,16 +358,27 @@ function Points:ApplyEntry(e, pool)
     while #log > LOG_MAX do table.remove(log) end
 end
 
--- Mark an op as applied in a specific pool (nil → active pool).
+-- Mark an op as applied in a specific pool (nil → active pool). Each op holds its place in the order
+-- applied (an op from before holds `true`, the oldest of all): past OPS_MAX the oldest go and the
+-- newest OPS_KEEP stay (audit R15). Wiping the whole set let an op resent just after apply twice.
 function Points:MarkApplied(op, pool)
     if not op then return end
     pool = pool or self:Pool()
     if not pool.appliedOps[op] then
-        pool.appliedOps[op] = true
+        local seq = (tonumber(pool.appliedSeq) or 0) + 1
+        pool.appliedSeq = seq
+        pool.appliedOps[op] = seq
         pool.appliedCount = (pool.appliedCount or 0) + 1
         if pool.appliedCount > OPS_MAX then
-            wipe(pool.appliedOps)
-            pool.appliedCount = 0
+            local count = 0
+            for k, at in pairs(pool.appliedOps) do
+                if type(at) ~= "number" or at <= seq - OPS_KEEP then
+                    pool.appliedOps[k] = nil
+                else
+                    count = count + 1
+                end
+            end
+            pool.appliedCount = count
         end
     end
 end

@@ -99,6 +99,10 @@ end
 -- At login, to the GM of a guild with no founding yet (Core.lua after the onboarding).
 function GuildOS:MaybeShowFoundingLetter()
     if self.Founding and self:IsFeatureEnabled("founding") and self.Founding:ShouldPrompt(GetServerTime()) then
-        self:ShowFoundingLetter(true)
+        -- Never in combat, and one login popup at a time (audit B21).
+        self:ShowWhenClear("founding", function()
+            self:ShowFoundingLetter(true)
+            return self.foundingFrame
+        end)
     end
 end

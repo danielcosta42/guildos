@@ -284,6 +284,7 @@ function RecipeTracker:StoreMyRecipes(profName, recipes)
         end
     end
 
+    local old = GuildOS.db.recipes[key][profName]
     GuildOS.db.recipes[key][profName] = recipes
 
     -- Track scan timestamps per profession
@@ -292,7 +293,12 @@ function RecipeTracker:StoreMyRecipes(profName, recipes)
     end
     GuildOS.db.recipeScanTimes[profName] = time()
 
-    GuildOS:Print(string.format(L["|cff00ff00Recipes scanned:|r %d %s recipes indexed."], #recipes, L[profName]))
+    -- Every opening of the window used to print and send the whole list (audit D3): a line only when the
+    -- count moved, and the list to the guild only when it changed.
+    if not old or #old ~= #recipes then
+        GuildOS:Print(string.format(L["|cff00ff00Recipes scanned:|r %d %s recipes indexed."], #recipes, L[profName]))
+    end
+    local changed = not old or RecipeTracker.Hash(old) ~= RecipeTracker.Hash(recipes)
 
     -- Dismiss the profession reminder if all professions are now scanned
     if GuildOS.profReminderFrame then
@@ -300,7 +306,92 @@ function RecipeTracker:StoreMyRecipes(profName, recipes)
     end
 
     -- Broadcast to guild
-    self:BroadcastRecipes(profName, recipes)
+    if changed then self:BroadcastRecipes(profName, recipes) end
+end
+
+----------------------------------------------------------------------
+-- Recipes by hash (audit D3). The member broadcast carries one hash per profession of my lists; a
+-- guildmate whose copy hashes differently asks for that list by whisper ("RA"), and I answer once on
+-- GUILD for everybody who asked within ASK_GATHER seconds. A list goes when it changes or is asked for,
+-- never on a timer.
+----------------------------------------------------------------------
+RecipeTracker.ASK_GATHER = 3      -- seconds asks for one list are gathered before it goes out
+RecipeTracker.ANSWER_GAP = 60     -- seconds between two answers with the same list
+RecipeTracker.REASK_AFTER = 120   -- seconds before a list that never came is asked for again
+RecipeTracker.MAX_PROFS = 16      -- professions read from one broadcast's hashes
+local hashOf = setmetatable({}, { __mode = "k" })   -- [recipe list] = { h = its hash, n = its length }
+
+-- Adler-32 of the recipes' names, sorted: the same list hashes the same on every client of one locale,
+-- whatever spell IDs a receiver merged in (MergeSpellIds keeps the names).
+function RecipeTracker.Hash(recipes)
+    if type(recipes) ~= "table" then return nil end
+    local held = hashOf[recipes]
+    if held and held.n == #recipes then return held.h end
+    local names = {}
+    for _, r in ipairs(recipes) do
+        if type(r) == "table" then names[#names + 1] = tostring(r.name or r.spellId or r.itemId or "") end
+    end
+    table.sort(names)
+    local h = LibStub("LibDeflate"):Adler32(table.concat(names, "\n"))
+    hashOf[recipes] = { h = h, n = #recipes }
+    return h
+end
+
+-- { [profession] = hash } of my own lists, or nil when I have none.
+function RecipeTracker:OwnHashes()
+    local key = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
+    local mine = GuildOS.db.recipes and GuildOS.db.recipes[key]
+    if type(mine) ~= "table" then return nil end
+    local out
+    for prof, list in pairs(mine) do
+        local h = self.Hash(list)
+        if h then
+            out = out or {}
+            out[prof] = h
+        end
+    end
+    return out
+end
+
+-- A guildmate's hashes, from their broadcast: each list held differently (or not at all) is asked for.
+function RecipeTracker:OnHashes(key, sender, rh)
+    self._asked = self._asked or {}
+    local held = GuildOS.db.recipes and GuildOS.db.recipes[key]
+    local DC, n, now = GuildOS.DataCollector, 0, GetTime()
+    for prof, h in pairs(rh) do
+        n = n + 1
+        if n > self.MAX_PROFS then break end
+        if type(prof) == "string" and type(h) == "number" then
+            local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(prof) or prof
+            local list = held and held[canonical]
+            local id = key .. "\0" .. canonical
+            local last = self._asked[id]
+            if (not list or self.Hash(list) ~= h) and not (last and last.h == h and now - last.at < self.REASK_AFTER) then
+                self._asked[id] = { h = h, at = now }
+                GuildOS.CommSystem:SendMessage("RA", prof, sender)
+            end
+        end
+    end
+end
+
+-- A guildmate asked for my list of `prof`: it goes on GUILD once the asks of the next seconds are in.
+function RecipeTracker:OnAsk(_sender, prof)
+    if type(prof) ~= "string" or not IsInGuild() then return end
+    local key = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
+    local list = GuildOS.db.recipes and GuildOS.db.recipes[key] and GuildOS.db.recipes[key][prof]
+    if type(list) ~= "table" then return end
+    self._answerDue = self._answerDue or {}
+    self._answeredAt = self._answeredAt or {}
+    if self._answerDue[prof] then return end
+    local last = self._answeredAt[prof]
+    local wait = self.ASK_GATHER
+    if last then wait = math.max(wait, last + self.ANSWER_GAP - GetTime()) end
+    self._answerDue[prof] = true
+    GuildOS.Compat.After(wait, function()
+        self._answerDue[prof], self._answeredAt[prof] = nil, GetTime()
+        local now = GuildOS.db.recipes and GuildOS.db.recipes[key] and GuildOS.db.recipes[key][prof]
+        if type(now) == "table" then self:BroadcastRecipes(prof, now) end
+    end)
 end
 
 ----------------------------------------------------------------------

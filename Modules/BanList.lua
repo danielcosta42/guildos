@@ -45,8 +45,8 @@ end
 function BanList:_NormalizeKey(name)
     if not name or name == "" then return "" end
     if GuildOS.Client.isRetail then return (GuildOS:KeyOfRosterName(name) or ""):lower() end
-    local short = name:match("^([^-]+)") or name
-    return short:lower()
+    -- On WoW: Forever "Chehul-Costa" from chat is the roster's "Chehul Costa", not "Chehul" (audit M1).
+    return (GuildOS:ShortName(name) or ""):lower()
 end
 
 -- A ban in force at `now`: neither lifted nor a temporary one run out.
@@ -93,7 +93,7 @@ end
 -- retail, where a name that comes without one is on this client's realm; the name alone elsewhere.
 function BanList:_Who(name)
     if GuildOS.Client.isRetail then return GuildOS:KeyOfRosterName(name) end
-    return name:match("^([^-]+)") or name
+    return GuildOS:ShortName(name)   -- the whole "First Surname" on WoW: Forever (audit M1)
 end
 
 function BanList:IsBanned(name, now, store)
@@ -358,11 +358,41 @@ function BanList:Share(key, reason, note)
     if not GuildOS:IsOfficer() then return false, "officer" end
     local e = key and GuildOS.db.banList[key]
     if type(e) ~= "table" or e.removed then return false, "missing" end
+    -- A temporary ban that ran out is over: nothing to warn the alliance about (audit B6).
+    if e.expiry and e.expiry <= GetServerTime() then return false, "expired" end
     reason = BanList.ShareReason(reason)
     if not reason then return false, "reason" end
     e.share = { reason = reason, note = BanList.CleanNote(note), at = GetServerTime() }
     self:_Publish(key, e)
     self:Refresh()
+    return true
+end
+
+-- Whether the ban filed under `key` may be offered for sharing (audit B6, B7): a ban in force, while the guild has an
+-- alliance on guildos.me. A temporary ban that ran out never is.
+function BanList:CanShare(key, store, now)
+    store = store or GuildOS.db.banList or {}
+    return inForce(store[key], now or GetServerTime()) and self:HasSiteAlliance()
+end
+
+-- Whether this guild is in an alliance on guildos.me (audit B7): sharing a ban means that alliance, never the
+-- in-game alliance code. The companion's GOSGILD1 says so with `alliance` (alianca.md) or with the bans the
+-- alliance's other guilds shared (`allianceBans`).
+function BanList:HasSiteAlliance()
+    local I = GuildOS.CompanionImport
+    local block = I and I.GuildBlock and I:GuildBlock()
+    if type(block) ~= "table" then return false end
+    return type(block.alliance) == "table" or type(block.allianceBans) == "table"
+end
+
+-- Lift the ban filed under `key` once the officer says yes (audit B6): the ban list's × asks first. `name` is
+-- how the question names them. Without the dialog it lifts at once, as before.
+function BanList:ConfirmRemoveKey(key, name)
+    if not key or key == "" then return false end
+    if not GuildOS.ShowDialog or not (GuildOS.Dialogs and GuildOS.Dialogs["GUILDOS_BAN_LIFT"]) then
+        return self:RemoveKey(key)
+    end
+    GuildOS:ShowDialog("GUILDOS_BAN_LIFT", name or key, nil, key)
     return true
 end
 
@@ -495,22 +525,43 @@ end
 -- stands in the way (the caller invites as it always did). Never blocks: an alert, not a ban.
 -- Somebody who was a member before (issue #425) is never held for it: the officer reads when, for how
 -- long and how they went, in chat, or in the dialog when the alliance's ban holds the invite anyway.
+-- The guild's own ban comes first (audit M2): a ban in force on `name` holds the invite the same way, with the
+-- reason, who banned and when, and "Invite anyway".
 function BanList:HoldInvite(name, invite)
     local MH = GuildOS.MemberHistory
     local past = MH and GuildOS:IsOfficer() and MH:Describe(name)
+    local own = type(name) == "string" and name ~= "" and self:IsBanned(name) and self:Get(name) or nil
     local bans = self:AllianceBansFor(name)
-    if not bans or type(invite) ~= "function" or not GuildOS.ShowDialog then
+    if (not bans and not own) or type(invite) ~= "function" or not GuildOS.ShowDialog then
         if past then MH:Say(past) end
         return false
     end
-    local lines = { string.format(L["The alliance has banned %s:"], name) }
-    for i = 1, math.min(#bans, 3) do
+    local lines = {}
+    if own then
+        lines[1] = string.format(L["Banned %s (%s) — banned by %s on %s"], own.name or name,
+            own.reason or "?", own.author or "?", date("%Y-%m-%d", own.ts or 0))
+        if own.expiry then lines[1] = lines[1] .. " · " .. string.format(L["until %s"], date("%Y-%m-%d", own.expiry)) end
+    end
+    if bans then lines[#lines + 1] = string.format(L["The alliance has banned %s:"], name) end
+    for i = 1, math.min(bans and #bans or 0, 3) do
         lines[#lines + 1] = BanList.AllianceLine(bans[i]) .. (bans[i].note and (" — " .. bans[i].note) or "")
     end
-    if #bans > 3 then lines[#lines + 1] = string.format(L["and %d more"], #bans - 3) end
+    if bans and #bans > 3 then lines[#lines + 1] = string.format(L["and %d more"], #bans - 3) end
     if past then lines[#lines + 1] = past end
     GuildOS:ShowDialog("GUILDOS_ALLIANCE_BAN_INVITE", table.concat(lines, "\n"), nil, invite)
     return true
+end
+
+if GuildOS.Dialogs and not GuildOS.Dialogs["GUILDOS_BAN_LIFT"] then
+    GuildOS.Dialogs["GUILDOS_BAN_LIFT"] = {
+        text = L["Lift the ban on %s?"],
+        button1 = L["Lift"], button2 = L["Cancel"],
+        OnAccept = function(dlg, data)
+            local key = data or (dlg and dlg.data)
+            if type(key) == "string" then BanList:RemoveKey(key) end
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true,
+    }
 end
 
 if GuildOS.Dialogs and not GuildOS.Dialogs["GUILDOS_ALLIANCE_BAN_INVITE"] then

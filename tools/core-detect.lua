@@ -564,10 +564,12 @@ end
 cfg("Alpha", { roll = 15, auto = true, wish = true, de = "Ann", thr = 4 })
 cfg("Bravo", { roll = 45, auto = false, wish = false, de = "Bob", thr = 2 })
 RT:SetGroupTag("Alpha")
-check(LM.ROLL_DURATION == 15 and LM.AUTO_ANNOUNCE == true and LM.WISHLIST_ONLY_MODE == true and LM.disenchanter == "Ann"
+check(LM.ROLL_DURATION == 15 and LM:GetCfg().autoAnnounce == true and LM.WISHLIST_ONLY_MODE == true and LM.disenchanter == "Ann"
   and LM.LOOT_THRESHOLD == 4, "loot: switching the active core loads all of its cached rules")
 RT:SetGroupTag("Bravo")
-check(LM.ROLL_DURATION == 45 and LM.AUTO_ANNOUNCE == false and LM.WISHLIST_ONLY_MODE == false and LM.disenchanter == "Bob"
+check(LM.ROLL_DURATION == 45 and LM:GetCfg().autoAnnounce == false and LM.WISHLIST_ONLY_MODE == false and LM.disenchanter == "Bob"
   and LM.LOOT_THRESHOLD == 2, "loot: and switching back loads the other's")
 
+-- Audit R16: the auto-announce switch is read where it acts (GetCfg), never through a dead cache.
+check(LM.AUTO_ANNOUNCE == nil, "loot: no AUTO_ANNOUNCE cache is kept")
 print(("core-detect: %d checks passed"):format(checks))

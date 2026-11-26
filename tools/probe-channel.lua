@@ -315,7 +315,7 @@ check(not stillJoined(), "and ends again")
 local f = io.open(ADDON .. "/Core/Commands.lua", "rb")
 local src = f:read("*a")
 f:close()
-check(src:find('msg == "probe channel"', 1, true) and src:find("Probe:RunChannel()", 1, true), "/gos probe channel runs it")
+check(src:find('msg == "debug probe channel"', 1, true) and src:find("Probe:RunChannel()", 1, true), "/gos debug probe channel runs it")
 
 -- The Audit panel's button reads the result: not before the verdict is out.
 check(Probe.CHANNEL_WAIT == 15, "the wait until the verdict is the module's to say")

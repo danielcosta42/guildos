@@ -345,9 +345,9 @@ function RecruitEngagement:HandleStats(sender, data, channel)
     if not ok or type(p) ~= "table" then return end
     local now = time()
     local entry = self:_SanitizeStats(p, now)
-    local short = sender:match("^([^-]+)") or sender
-    local realm = sender:match("-(.+)$") or GetRealmName()
-    local key = GuildOS:GetPlayerKey(short, realm)
+    -- The roster's key of the sender: on WoW: Forever "Chehul-Costa" is "Chehul Costa" (audit N12).
+    local key = GuildOS:SenderKey(sender)
+    if not key then return end
     GuildOS.db.recruitStats = GuildOS.db.recruitStats or {}
     GuildOS.db.recruitStats[key] = entry
     self:_PruneStore(GuildOS.db.recruitStats, now)

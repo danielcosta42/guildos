@@ -483,27 +483,31 @@ function Wishlist:BroadcastMyWishlist(force)
     end
 end
 
--- Handle an incoming wishlist broadcast from another guild member. `channel`: how it arrived (retail
--- takes it only over GUILD, issue #185; Forever and Anniversary as before, from anywhere).
+-- Handle an incoming wishlist broadcast from another guild member. `channel`: how it arrived (only
+-- GUILD is taken: retail since issue #185, every client since audit R3).
 function Wishlist:HandleWishlistBroadcast(sender, data, channel)
     local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, payload = LibSerialize:Deserialize(data)
     if not ok or type(payload) ~= "table" then return end
 
-    local name     = payload.name or sender
+    local name
     local class    = payload.class or ""
     local wishlist = payload.wishlist
     if not wishlist or type(wishlist) ~= "table" then return end
-    -- On retail the list is its sender's, by their whole key: never the name it carries, so nobody
-    -- files a list under a guildmate's name, and namesakes on connected realms stay apart; and only a
-    -- guildmate's, over GUILD, so nobody outside the guild shows up as one (issue #185).
+    -- The list is its sender's, by their whole key: never the name it carries, so nobody files a list
+    -- under a guildmate's name, and namesakes on connected realms stay apart; and only over GUILD, so
+    -- nobody outside the guild shows up as one (issue #185 on retail, audit R3 on every client).
+    -- SenderKey reads Forever's "First-Surname" sender as the roster's "First Surname".
+    if type(sender) ~= "string" or sender == "" or channel ~= "GUILD" then return end
+    local senderKey = GuildOS:SenderKey(sender)
     local me = GuildOS.Compat.PlayerName() or ""
     if isRetail then
-        if type(sender) ~= "string" or sender == "" or channel ~= "GUILD" then return end
-        name, me = GuildOS:KeyOfRosterName(sender), GuildOS:GetPlayerKey(me)
+        name, me = senderKey, GuildOS:GetPlayerKey(me)
         if not GuildOS:IsGuildmate(name) then return end
+    else
+        name = GuildOS:ShortName(senderKey)   -- kept by the name off retail, as always (storeKey)
     end
-    if type(name) ~= "string" then return end
+    if type(name) ~= "string" or name == "" then return end
 
     -- Don't overwrite our own data with a stale broadcast of ourselves
     if strlower(name) == strlower(me) then return end

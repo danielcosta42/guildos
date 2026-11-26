@@ -16,7 +16,11 @@
 -- (#424). Applied on officers' clients only. On a client without that channel (Compat.OfficerAddonChannel)
 -- nothing is sent: the marks stay on the client of the officer who wrote them.
 --
---   db.memberMarks = { safe = { [key] = { v = true|false, at, by } }, nick = { [key] = { v = "text"|"", at, by } } }
+-- A tombstone goes after TOMBSTONE_TTL, but its time stays for good in `rev` (audit N6, as AltSync keeps its
+-- revisions): an officer's copy older than it, sent months later, never brings a removed mark back.
+--
+--   db.memberMarks = { safe = { [key] = { v = true|false, at, by } }, nick = { [key] = { v = "text"|"", at, by } },
+--                      rev = { safe = { [key] = at }, nick = { [key] = at } } }
 ----------------------------------------------------------------------
 local MemberMarks = {}
 GuildOS.MemberMarks = MemberMarks
@@ -41,7 +45,17 @@ local function store()
     local s = d.memberMarks
     if type(s.safe) ~= "table" then s.safe = {} end
     if type(s.nick) ~= "table" then s.nick = {} end
+    if type(s.rev) ~= "table" then s.rev = {} end
+    if type(s.rev.safe) ~= "table" then s.rev.safe = {} end
+    if type(s.rev.nick) ~= "table" then s.rev.nick = {} end
     return s
+end
+
+-- The last time known for `kind` and `key`: the entry's, or the pruned tombstone's kept in `rev`. 0 when none.
+local function lastAt(s, kind, key)
+    local e = s[kind][key]
+    if type(e) == "table" and type(e.at) == "number" then return e.at end
+    return tonumber(s.rev[kind][key]) or 0
 end
 
 function MemberMarks:Initialize()
@@ -133,10 +147,11 @@ end
 -- One entry of `kind` for `key`, as this officer's, now; published.
 function MemberMarks:_Write(kind, key, v)
     if not GuildOS:IsOfficer() or not self.KINDS[kind] or type(key) ~= "string" or key == "" then return false end
-    local list = store()[kind]
-    local held = list[key]
+    local s = store()
+    local list = s[kind]
     local at = GetServerTime()
-    if type(held) == "table" and (held.at or 0) >= at then at = held.at + 1 end
+    local last = lastAt(s, kind, key)
+    if last >= at then at = last + 1 end
     local e = { v = v, at = at, by = GuildOS.Compat.PlayerName() }
     list[key] = e
     publish({ wire(kind, key, e) })
@@ -157,14 +172,19 @@ function MemberMarks:SetNick(key, text)
     return self:_Write("nick", key, v)
 end
 
---- Drop tombstones older than TOMBSTONE_TTL.
+--- Drop tombstones older than TOMBSTONE_TTL. Their time stays in `rev` (audit N6).
 function MemberMarks:Prune(now)
     now = now or (GetServerTime and GetServerTime()) or 0
     local s = store()
     for kind in pairs(self.KINDS) do
         for k, e in pairs(s[kind]) do
             local dead = type(e) ~= "table" or e.v == false or e.v == ""
-            if dead and (type(e) ~= "table" or now - (e.at or 0) > self.TOMBSTONE_TTL) then s[kind][k] = nil end
+            if dead and (type(e) ~= "table" or now - (e.at or 0) > self.TOMBSTONE_TTL) then
+                if type(e) == "table" and type(e.at) == "number" then
+                    s.rev[kind][k] = math.max(tonumber(s.rev[kind][k]) or 0, e.at)
+                end
+                s[kind][k] = nil
+            end
         end
     end
 end
@@ -197,6 +217,8 @@ function MemberMarks:Apply(items, sender)
     local s, now, n = store(), GetServerTime(), 0
     for _, it in ipairs(items) do
         local kind, key, e = self.Valid(it, now, sender)
+        -- No entry held: a pruned tombstone's time still refuses anything no newer (audit N6).
+        if kind and s[kind][key] == nil and e.at <= (tonumber(s.rev[kind][key]) or 0) then kind = nil end
         if kind and self.Wins(e, s[kind][key]) then
             s[kind][key] = e
             n = n + 1

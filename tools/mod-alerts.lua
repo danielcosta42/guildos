@@ -113,6 +113,22 @@ check(M.Match(cjk, folded, words, nil, 0), "a CJK word is any stretch of the lin
 local defaults = M.DefaultRules()
 check(#defaults >= 10 and M:GetRules()[1].p == defaults[1].p, "the default list before any officer chose one")
 for _, r in ipairs(defaults) do check(M.CleanRule(r), "every default cleans: " .. r.p) end
+-- The audit's calibration: no default link words (B1, the anti-flood has links), offence logs, poaching alerts (B2).
+local sevOf = {}
+for _, r in ipairs(defaults) do
+  check(r.cat ~= "link", "no default link word: " .. r.p)
+  sevOf[r.cat] = r.sev
+end
+check(sevOf.offense == "low" and sevOf.poaching == "med" and sevOf.trade == "high", "offence low, poaching medium, trade high")
+-- None of the languages' defaults flags the guild's own recruiting nor "burro".
+for _, loc in ipairs({ "ptBR", "zhCN", "zhTW", "koKR" }) do
+  local src = io.open(ADDON .. "/Locales/" .. loc .. ".lua"):read("*a")
+  local line = src:match('L%["join my guild, join our guild, come to my guild, leave this guild"%] = "([^"]*)"') or ""
+  check(not line:find("recrutando", 1, true) and not line:find("招人", 1, true) and not line:find("길드원 모집", 1, true),
+        loc .. ": no recruiting phrase among the poaching defaults")
+  local off = src:match('L%["idiot, moron, stupid, imbecile"%] = "([^"]*)"') or ""
+  check(not off:find("burro", 1, true), loc .. ": no \"burro\" among the offence defaults")
+end
 
 -- ── Alerts ──────────────────────────────────────────────────────────────
 chatLog[#chatLog + 1] = { n = "Jaina", m = "hello" }
@@ -225,6 +241,22 @@ local n = #M:Feed()
 say("Thrall", "sell gold")
 check(#M:Feed() == n, "and with it nothing fires")
 check(M:RestoreDefaults() and #M:GetRules() == #defaults, "the defaults come back")
+-- Severity per rule (B5).
+check(M:SetRuleSeverity(1, "high") and M:GetRules()[1].sev == "high", "an officer sets one rule's severity")
+check(select(2, M:SetRuleSeverity(1, "loud")) == "severity" and select(2, M:SetRuleSeverity(999, "low")) == "missing",
+      "a bad severity or a missing rule is refused")
+check(M.NextSeverity("low") == "med" and M.NextSeverity("med") == "high" and M.NextSeverity("high") == "low", "the click goes round")
+check(M:SetRuleSeverity(1, defaults[1].sev), "and back")
+-- One shared list (B5): the first save seeds this officer's defaults as the guild's list; once there is one, never again.
+do
+  local keepRules, keepAt = s.modAlertRules, s.modAlertRulesAt
+  s.modAlertRules, s.modAlertRulesAt = nil, nil
+  local before = #sent
+  check(M:SeedShared() and M:IsCustomList() and #s.modAlertRules == #defaults, "the first save seeds the shared list")
+  check(#sent > before and sent[before + 1].act == "modrules", "and sends it to the officers")
+  check(not M:SeedShared(), "seeded once only")
+  s.modAlertRules, s.modAlertRulesAt = keepRules, keepAt
+end
 officer = false
 check(not M:AddRule("x1x", "custom", "low") and not M:RemoveRule(1), "a member edits nothing")
 officer = true

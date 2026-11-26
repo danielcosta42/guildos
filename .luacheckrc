@@ -286,6 +286,7 @@ read_globals = {
     "IsLoggedIn",
     "ReloadUI",
     "InCombatLockdown",
+    "UnitAffectingCombat",
     "PlaySound",
     "hooksecurefunc",
     "securecallfunction",

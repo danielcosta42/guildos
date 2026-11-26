@@ -525,7 +525,9 @@ end
 -- channel is the addon's wire, not a room.
 function Link:_Filter(chanBaseName)
     local name = self:ChannelName()
-    return name ~= nil and type(chanBaseName) == "string" and chanBaseName:lower() == name:lower()
+    -- The lengths first: lowering every General line would allocate a string for each (audit D2).
+    return name ~= nil and type(chanBaseName) == "string" and #chanBaseName == #name
+        and chanBaseName:lower() == name:lower()
 end
 
 ----------------------------------------------------------------------
@@ -786,6 +788,19 @@ end
 ----------------------------------------------------------------------
 -- Lifecycle
 ----------------------------------------------------------------------
+Link.ROSTER_GAP = 5   -- seconds between two reads of the guild master's note
+
+local function rosterRead()
+    GuildOS:SafeCall(function()
+        Link:ReadGuildMasterNote()
+        local wait = Link._pending
+        if wait and (GetNumGuildMembers and GetNumGuildMembers() or 0) > 0 then
+            Link._pending = nil
+            Link:_Take(wait.d, wait.sender, false)
+        end
+    end)
+end
+
 function Link:Initialize()
     GuildOS.Compat.HookChatSend(function(chatType, text)
         GuildOS:SafeCall(function() Link:OnPlayerChat(chatType, text) end)
@@ -804,17 +819,13 @@ function Link:Initialize()
     GuildOS.Compat.RegisterEvent(f, "PLAYER_GUILD_UPDATE")
     f:SetScript("OnEvent", function(_, event, ...)
         if event == "CHAT_MSG_CHANNEL" then
+            -- Every General and Trade line comes here: only the hidden channel's costs a table (audit D2).
+            if not Link:_Filter((select(9, ...))) then return end
             local args = { ... }
             GuildOS:SafeCall(function() Link:_OnChannel(unpack(args, 1, 12)) end)
         elseif event == "GUILD_ROSTER_UPDATE" or event == "PLAYER_GUILD_UPDATE" then
-            GuildOS:SafeCall(function()
-                Link:ReadGuildMasterNote()
-                local wait = Link._pending
-                if wait and (GetNumGuildMembers and GetNumGuildMembers() or 0) > 0 then
-                    Link._pending = nil
-                    Link:_Take(wait.d, wait.sender, false)
-                end
-            end)
+            -- The guild master's row is a pass over the roster: at most one per ROSTER_GAP (audit D2).
+            GuildOS:Coalesce("allylink.roster", Link.ROSTER_GAP, rosterRead)
         elseif not Link._asked then
             -- Once a session: whatever the guild has newer than ours (a code saved
             -- while we were away, or ours lost with a reinstall) comes now.

@@ -272,8 +272,10 @@ me = "Mem"
 sent = {}
 Cal:PublishMemberKinds()
 check(#sent == 0, "a member never sends it")
-local _, resends = read("Modules/CommSystem.lua"):gsub("GuildOS%.Calendar:PublishMemberKinds%(%)", "")
-check(resends == 2, "on the officers' regular sync and in their answer to a request, next to the ranks")
+local commSrc = read("Modules/CommSystem.lua")
+local _, resends = commSrc:gsub("GuildOS%.Calendar:PublishMemberKinds%(%)", "")
+local _, configs = commSrc:gsub("[%w]+:PublishOfficerConfig%(%)", "")   -- its definition and its two calls
+check(resends == 1 and configs - 1 == 2, "in the one officer config (audit D8), on the officers' regular sync and in their answer to a request")
 
 -- ── 8. The dungeon's list ───────────────────────────────────────────────────
 check(GuildOS.ForeverDungeons == nil and #Cal:DungeonChoices() == 0, "on TBC Anniversary there is no list: the title is typed")

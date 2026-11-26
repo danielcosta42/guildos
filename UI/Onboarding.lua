@@ -260,5 +260,10 @@ end
 function GuildOS:MaybeShowOnboarding()
     if not IsInGuild() then return end
     if self:GetSetting("onboarded") then return end
-    self:ShowOnboarding()
+    -- Never in combat, and one login popup at a time (audit B21).
+    self:ShowWhenClear("onboarding", function()
+        if self:GetSetting("onboarded") then return nil end
+        self:ShowOnboarding()
+        return self.onboardingFrame
+    end)
 end

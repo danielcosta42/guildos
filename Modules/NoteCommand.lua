@@ -18,7 +18,9 @@ function NoteCommand:Initialize()
     GuildOS.db.noteCommand = GuildOS.db.noteCommand or {}
     if GuildOS.db.noteCommand.enabled == nil then GuildOS.db.noteCommand.enabled = true end
     self._cd = {}
-    self:_SetupHook()
+    -- Only TBC Anniversary lets a member's client not edit their own note while an addon may (audit B11): the
+    -- !note listener and its setting exist there only. The roster's "Add note" box (Set) works everywhere.
+    if GuildOS.Client and GuildOS.Client.isAnniversary then self:_SetupHook() end
     self:_RegisterTests()
 end
 

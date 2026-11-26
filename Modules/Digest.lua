@@ -181,13 +181,7 @@ function Digest:Build(since, opts)
 
     -- Officer-only catch-up
     if GuildOS:IsOfficer() then
-        if GuildOS.TrialTracker then
-            -- Ready to review: their end, from the guild's length, has passed with no decision (#249).
-            local due = GuildOS.TrialTracker:CountReady()
-            if due > 0 then
-                lines[#lines + 1] = string.format(L["%d trial(s) ready for decision"], due)
-            end
-        end
+        -- Trials ready to review are not repeated here: the panel's badge and the login line say it (audit B10).
         if GuildOS.GuildManager and GuildOS.GuildManager.GetInactiveMembers then
             local inactive = GuildOS.GuildManager:GetInactiveMembers(GuildOS.GuildManager.DEFAULT_INACTIVE_DAYS)
             if inactive and #inactive > 0 then
@@ -338,6 +332,7 @@ function Digest:ShowOnLogin()
     GuildOS.db.digest.lastSeen = GetServerTime()
     self.shownThisSession = true
     if #lines > 0 then
-        self:Show(lines)
+        -- Never in combat, one login popup at a time (audit B21).
+        GuildOS:ShowWhenClear("digest", function() return self:Show(lines) end)
     end
 end

@@ -151,10 +151,27 @@ local function settle()
   afters = {}
   for _, fn in ipairs(due) do fn() end
 end
+-- Trials go to the officers one per message over the OFFICER channel (audit N5): SyncService's "trial" domain.
+-- "TR" below names them all: lastOf("TR") is every trial message sent since `sent` was emptied, delivered
+-- together over OFFICER; count("TR") how many there were. A real "TR" (a client before N5) is still read.
+GuildOS.Compat.OfficerAddonChannel = function() return "OFFICER" end
+CS.SendMessage = function(_, msgType, data, target, _, _, channel)
+  sent[#sent + 1] = { t = msgType, data = data, target = target, channel = channel }
+end
+local function isTrial(m) return m.t == "SV" and store[m.data] and store[m.data].dom == "trial" end
 local function deliver(msg, sender, channel)
-  CS:OnMessageReceived("S:" .. msg.t .. ":" .. msg.data, channel or "GUILD", sender)
+  if msg.bundle then
+    for _, m in ipairs(msg.bundle) do CS:OnMessageReceived("S:" .. m.t .. ":" .. m.data, channel or "OFFICER", sender) end
+    return
+  end
+  CS:OnMessageReceived("S:" .. msg.t .. ":" .. msg.data, channel or msg.channel or "GUILD", sender)
 end
 local function lastOf(kind, act)
+  if kind == "TR" then
+    local b = {}
+    for _, m in ipairs(sent) do if isTrial(m) then b[#b + 1] = m end end
+    return #b > 0 and { bundle = b } or nil
+  end
   for i = #sent, 1, -1 do
     local m = sent[i]
     if m.t == kind and (not act or (store[m.data] and store[m.data].act == act)) then return m end
@@ -162,7 +179,9 @@ local function lastOf(kind, act)
 end
 local function count(kind)
   local c = 0
-  for _, m in ipairs(sent) do if m.t == kind then c = c + 1 end end
+  for _, m in ipairs(sent) do
+    if (kind == "TR" and isTrial(m)) or (kind ~= "TR" and m.t == kind) then c = c + 1 end
+  end
   return c
 end
 local function join(name) fire("CHAT_MSG_SYSTEM", name .. " has joined the guild.") end
@@ -476,9 +495,9 @@ check(db.trials[key("LateOfficer")] == nil, "but nobody on an officer rank")
 check(db.trials[key("Mem")] == nil and db.trials[key("Quiet")] == nil and db.trials[key("Off2")] == nil,
   "and nobody who was already there")
 check(db.trialBaseline[key("Old")], "Old left with no leave line read: still in the roster seen")
-check(count("TR") == 1, "told to the other officers in one message")
+check(count("TR") == 2, "told to the other officers, one message per trial")
 rosterUpdate()
-check(trials(db) == 2 and count("TR") == 1, "the next roster update starts nothing more")
+check(trials(db) == 2 and count("TR") == 2, "the next roster update starts nothing more, and resends nothing unchanged")
 table.insert(ROSTER, { "Old", 5 })
 rosterUpdate()
 check(db.trials[key("Old")] == nil, "so Old coming back is no newcomer: the consequence the roster seen accepts")
@@ -767,6 +786,138 @@ for _, who in ipairs({ "Off", "Off2" }) do
   use(who)
   rosterUpdate()
   check(trials(GuildOS.db) == 1, who .. ": the next roster update starts no second trial")
+end
+
+-- ── Audit N4: a decided trial beats an undecided one; the notes merge ──
+local approvedCopy = function()
+  return { status = "approved", startDate = 10, resolvedDate = 50, notes = { { author = "Off", timestamp = 40, text = "ok" } } }
+end
+local lateNote = function()
+  return { status = "trial", startDate = 10, sponsor = "Off2", notes = { { author = "Off2", timestamp = 90, text = "late" } } }
+end
+local m1, m2 = TT:Merge(approvedCopy(), lateNote()), TT:Merge(lateNote(), approvedCopy())
+check(m1.status == "approved" and m2.status == "approved", "a late note on an undecided copy never undoes an approval")
+check(#m1.notes == 2 and #m2.notes == 2 and m1.notes[2].text == "late", "and both copies' notes are kept, in time order")
+local both = TT:Merge({ status = "denied", startDate = 5, resolvedDate = 60, notes = { { author = "A", timestamp = 61 } } },
+  { status = "approved", startDate = 5, resolvedDate = 70, notes = { { author = "B", timestamp = 20 } } })
+check(both.status == "approved" and #both.notes == 2, "two decisions: the newer wins, with every note")
+
+-- ── Audit N5: over OFFICER, one trial per message, snapshots capped, pruned with a tombstone ──
+roster({ { "Off", 1 }, { "Off2", 1 }, { "Mem", 5 }, { "Ivy", 6 }, { "Joe", 6 } })
+now = now + 400 * DAY
+local o = use("Off", true)
+TT:AddTrial(key("Ivy")); TT:AddTrial(key("Joe"))
+sent = {}
+TT:BroadcastTrials()
+local wire = lastOf("TR")
+check(count("TR") == 2 and #wire.bundle == 2, "every trial goes, one per message")
+local overGuild, rawTR = false, false
+for _, m in ipairs(sent) do
+  if m.t == "TR" then rawTR = true end
+  if isTrial(m) and m.channel ~= "OFFICER" then overGuild = true end
+end
+check(not rawTR and not overGuild, "over OFFICER only: never the old whole table over GUILD")
+TT:BroadcastTrials()
+check(count("TR") == 2, "a second send within ten minutes sends only what changed: nothing")
+TT:AddTrialNote(key("Ivy"), "kind")
+check(count("TR") == 3 and store[sent[#sent].data].data.k == key("Ivy"), "a note sends that trial alone")
+use("Off2", true)
+deliver(wire, "Off", "GUILD")
+check(trials(GuildOS.db) == 0, "a trial over GUILD is refused")
+deliver(wire, "Off")
+check(trials(GuildOS.db) == 2, "over OFFICER an officer takes it")
+use("Mem", true)
+deliver(wire, "Off")
+check(trials(GuildOS.db) == 0, "a member's client keeps nothing")
+GuildOS.Compat.OfficerAddonChannel = function() return nil end
+use("Off")
+sent = {}
+TT:AddTrialNote(key("Joe"), "kept here")
+check(count("TR") == 0 and #o.trials[key("Joe")].notes == 1, "no OFFICER channel (WoW: Forever): kept on this client only")
+GuildOS.Compat.OfficerAddonChannel = function() return "OFFICER" end
+-- Snapshots capped, the first one kept.
+local snapT = { status = "trial", startDate = now, notes = {}, snapshots = {} }
+for i = 1, TT.SNAPSHOTS_MAX + 15 do snapT.snapshots[i] = { timestamp = i } end
+TT.CapSnapshots(snapT)
+check(#snapT.snapshots == TT.SNAPSHOTS_MAX and snapT.snapshots[1].timestamp == 1
+  and snapT.snapshots[#snapT.snapshots].timestamp == TT.SNAPSHOTS_MAX + 15, "snapshots capped: the first and the newest")
+-- Pruned after PRUNE_DAYS: a decision, or a member who left; a tombstone keeps an older copy out.
+o.trials[key("Ivy")].status, o.trials[key("Ivy")].resolvedDate = "approved", now
+o.trials[key("Joe")].leftAt = now
+local oldIvy = copy(o.trials[key("Ivy")])
+check(#TT:Prune(now + 10 * DAY) == 0, "nothing pruned before its time")
+local later = now + (TT.PRUNE_DAYS + 1) * DAY
+local pruned = TT:Prune(later)
+check(#pruned == 2 and o.trials[key("Ivy")] == nil and o.trials[key("Joe")] == nil and o.trialTombs[key("Ivy")] == later,
+  "a decided trial and a departed one are pruned, each with a tombstone")
+TT:Receive(key("Ivy"), copy(oldIvy))
+check(o.trials[key("Ivy")] == nil, "another officer's older copy does not bring it back")
+sent = {}
+TT:BroadcastTrials(key("Ivy"))
+local drop = lastOf("TR")
+check(drop and store[drop.bundle[1].data].act == "drop", "the tombstone goes to the officers")
+local o2 = use("Off2")
+deliver(drop, "Off")
+check(o2.trials[key("Ivy")] == nil and o2.trialTombs[key("Ivy")], "and their copy goes too")
+TT:Receive(key("Ivy"), { status = "trial", startDate = later + DAY, sponsor = "Off2", notes = {}, snapshots = {} })
+check(o2.trials[key("Ivy")] and o2.trialTombs[key("Ivy")] == nil, "a trial started after the prune is taken, the tombstone gone")
+TT:Prune(later + (TT.TOMB_DAYS + 1) * DAY)
+check(next(o.trialTombs) ~= nil and next(o2.trialTombs) == nil, "tombstones themselves go after TOMB_DAYS (on the client that prunes)")
+
+-- ── Audit B9: approving offers to queue the promotion in Bulk actions ──
+do
+  use("Off", true)
+  TT:AddTrial(key("Ivy"))
+  local asked, queued
+  GuildOS.Dialogs = GuildOS.Dialogs or {}
+  local realShow = GuildOS.ShowDialog
+  GuildOS.ShowDialog = function(_, which, a, _, data) asked = { which = which, text = a, data = data }; return {} end
+  GuildOS.BulkActions = { StartOneAndSay = function(_, action, k) queued = { action, k }; return true end }
+  TT:UpdateStatus(key("Ivy"), TT.STATUS.APPROVED)
+  check(asked and asked.which == "GUILDOS_TRIAL_PROMOTE" and asked.data == key("Ivy") and not queued,
+    "an approval asks whether to queue the promotion, and queues nothing by itself")
+  GuildOS.Dialogs.GUILDOS_TRIAL_PROMOTE.OnAccept(nil, asked.data)
+  check(queued and queued[1] == "promote" and queued[2] == key("Ivy"), "yes queues a one-member promotion in Bulk actions")
+  asked = nil
+  TT:UpdateStatus(key("Ivy"), TT.STATUS.DENIED)
+  check(asked == nil, "a denial asks nothing")
+  GuildOS.ShowDialog, GuildOS.BulkActions = realShow, nil
+end
+
+-- ── Audit B10: dated notes and trial comments as one timeline ──
+do
+  dofile(ADDON .. "/Modules/OfficerNotes.lua")
+  local ON = GuildOS.OfficerNotes
+  local db = use("Off", true)
+  ON:Initialize()
+  db.officerNotes[key("Ivy")] = { notes = { { text = "dated", author = "Off", timestamp = 300 } } }
+  db.trials[key("Ivy")] = { status = "trial", startDate = 100, notes = { { text = "t1", author = "Off2", timestamp = 200 },
+    { text = "t2", author = "Off", timestamp = 400 } }, snapshots = {} }
+  local tl = ON:Timeline(key("Ivy"))
+  check(#tl == 3 and tl[1].text == "t2" and tl[1].kind == "trial" and tl[2].kind == "note" and tl[3].text == "t1",
+    "one timeline, newest first, each entry saying where it came from")
+  check(#ON:Timeline(key("Nobody")) == 0, "nothing written: an empty timeline")
+  local digest = io.open(ADDON .. "/Modules/Digest.lua"):read("*a")
+  check(not digest:find("ready for decision", 1, true), "the digest no longer repeats the trials ready (the badge and the login line say it)")
+end
+
+-- WoW: Forever has no OFFICER addon channel: a trial still reaches the other officers, over GUILD, without its notes.
+do
+  local fdb = use("Off", true)
+  fdb.trials[key("Ivy")] = { status = "trial", startDate = 100, notes = {}, snapshots = {} }
+  local realChan = CS.OfficerChannel
+  CS.OfficerChannel = function() return nil end
+  TT:AddTrialNote(key("Ivy"), "private words")
+  sent = {}
+  TT:BroadcastTrials(key("Ivy"))
+  local g
+  for _, m in ipairs(sent) do
+    if m.t == "SV" and store[m.data] and store[m.data].dom == "trialg" then g = m end
+  end
+  local body = g and store[g.data].data
+  check(g ~= nil and g.channel ~= "OFFICER", "without an OFFICER channel a trial goes over GUILD as trialg")
+  check(body and body.t and body.t.status and body.t.notes == nil, "with its status and dates, never its notes")
+  CS.OfficerChannel = realChan
 end
 
 print(("trial-guild: %d checks passed"):format(checks))

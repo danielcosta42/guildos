@@ -702,14 +702,15 @@ local function ShowShareDialog(key, name)
         table.insert(UISpecialFrames, "GuildOSBanShareDialog")   -- ESC closes it
         shareDialog = f
     end
-    f.title:SetText(string.format(L["Share the ban on %s with the alliance"], name or "?"))
+    f.title:SetText(string.format(L["Share the ban on %s with your guildos.me alliance"], name or "?"))
     f.reason:SetValue(nil)
     f.note:SetText("")
     f.result:SetText("")
     f.ok:SetScript("OnClick", function()
         local ok, why = BL:Share(key, f.reason:GetValue(), f.note:GetText())
         if ok then f:Hide(); return end
-        f.result:SetText(why == "reason" and L["Choose a reason first."] or L["Nothing was shared."])
+        f.result:SetText(why == "reason" and L["Choose a reason first."]
+            or why == "expired" and L["This ban has run out: there is nothing to share."] or L["Nothing was shared."])
     end)
     f:Show()
 end
@@ -804,10 +805,60 @@ local function BuildBanSub(panel)
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSMgmtBanScroll")
 
-    local function cell(text, x, w, y, r, g, b)
-        local fs = UI:CreateText(content, text, 11, r, g, b)
-        fs:SetPoint("TOPLEFT", x, -y)
-        fs:SetWidth(w); fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
+    -- Every widget of the list is made once and reused (audit M3): a refresh, which every keystroke in the filter
+    -- and every ban that syncs in runs, used to make a new row of frames for each ban and only hide the old ones.
+    local CELL_W = { 148, 176, 86, 82 }
+    local rowPool, used = {}, 0
+    local function rowAt(idx)
+        local row = rowPool[idx]
+        if row then return row end
+        row = CreateFrame("Frame", nil, content)
+        row:SetHeight(ROW_H)
+        row.cells = {}
+        for c = 1, 4 do
+            local fs = UI:CreateText(row, "", 11, C.text.r, C.text.g, C.text.b)
+            fs:SetPoint("TOPLEFT", CELL_X[c], 0)
+            fs:SetWidth(CELL_W[c]); fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
+            row.cells[c] = fs
+        end
+        row.del = UI:CreateButton(row, "\195\151", 22, 18)  -- ×
+        row.del:SetPoint("TOPRIGHT", 0, 0)
+        row.share = UI:CreateButton(row, L["Share"], 70, 18)
+        row.share:SetPoint("RIGHT", row.del, "LEFT", -4, 0)
+        rowPool[idx] = row
+        return row
+    end
+    -- The next pooled row, placed at `y`, its four cells' text and colour set: { text, color } each.
+    local function placeRow(y, cells)
+        used = used + 1
+        local row = rowAt(used)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 0, -y)
+        row:SetPoint("TOPRIGHT", 0, -y)
+        for c = 1, 4 do
+            local fs, col = row.cells[c], cells[c][2]
+            fs:SetText(cells[c][1])
+            fs:SetTextColor(col.r, col.g, col.b)
+        end
+        row.del:Hide(); row.share:Hide()
+        row:Show()
+        return row
+    end
+    local stillTitle = UI:CreateText(content, "", 11, C.red.r, C.red.g, C.red.b)
+    local stillAll = UI:CreateButton(content, L["Remove all"], 110, 18)
+    local stillNames = UI:CreateText(content, "", 11, C.text.r, C.text.g, C.text.b)
+    stillNames:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+    stillNames:SetJustifyH("LEFT"); stillNames:SetWordWrap(true)
+    local emptyFS = UI:CreateText(content, "", 11, C.silver.r, C.silver.g, C.silver.b)
+    emptyFS:SetPoint("TOPLEFT", 0, -4)
+    local function clearList()
+        for idx = 1, #rowPool do rowPool[idx]:Hide() end
+        used = 0
+        stillTitle:Hide(); stillAll:Hide(); stillNames:Hide(); emptyFS:Hide()
+    end
+    local function showEmpty(text)
+        emptyFS:SetText(text)
+        emptyFS:Show()
     end
 
     -- The alliance's bans, read-only: an alert for the officers, never a ban here (#408).
@@ -819,25 +870,19 @@ local function BuildBanSub(panel)
             if filter == "" or (b.name or ""):lower():find(filter, 1, true) then
                 local why = BL.ReasonText(b.reason) .. (b.appeal and (" " .. L["(under appeal)"]) or "")
                 if b.note then why = why .. " — " .. b.note end
-                cell(b.name or "?", CELL_X[1], 148, y, C.red.r, C.red.g, C.red.b)
-                cell(why, CELL_X[2], 176, y, C.text.r, C.text.g, C.text.b)
-                cell(b.guild or "?", CELL_X[3], 86, y, C.textDim.r, C.textDim.g, C.textDim.b)
-                cell(GuildOS:DateText(b.at, "/%y"), CELL_X[4], 82, y, C.textDim.r, C.textDim.g, C.textDim.b)
+                placeRow(y, { { b.name or "?", C.red }, { why, C.text }, { b.guild or "?", C.textDim },
+                    { GuildOS:DateText(b.at, "/%y"), C.textDim } })
                 y = y + ROW_H
             end
         end
         if y == 0 then
-            local empty = UI:CreateText(content,
-                L["No bans from the alliance. The site sends them with the companion when other guilds share theirs."],
-                11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 0, -4)
+            showEmpty(L["No bans from the alliance. The site sends them with the companion when other guilds share theirs."])
         end
         content:SetHeight(math.max(1, y))
     end
 
     local function refresh()
-        for _, c in pairs({ content:GetChildren() }) do c:Hide() end
-        for _, r in pairs({ content:GetRegions() }) do r:Hide() end
+        clearList()
         local filter = strtrim(searchBox:GetText() or ""):lower()
         local held = GuildOS.BanList and GuildOS:IsOfficer() and GuildOS.BanList:AllianceBans() or nil
         allyBtn.label:SetText(showAlliance and L["Our bans"] or string.format(L["Alliance bans (%d)"], held and #held or 0))
@@ -851,31 +896,26 @@ local function BuildBanSub(panel)
         local inGuild = (BA and GuildOS.BanList and filter == "")
             and GuildOS.BanList:StillInGuild(BA:Collect(false), BA:Context().meKey, now) or {}
         if #inGuild > 0 then
-            local title = UI:CreateText(content, string.format(L["BANNED STILL IN THE GUILD (%d)"], #inGuild),
-                11, C.red.r, C.red.g, C.red.b)
-            title:SetPoint("TOPLEFT", 0, -y)
-            local all = UI:CreateButton(content, L["Remove all"], 110, 18)
-            all:SetPoint("TOPRIGHT", 0, -y)
-            all:SetScript("OnClick", function() BA:StartListAndSay("remove", inGuild) end)
+            stillTitle:SetText(string.format(L["BANNED STILL IN THE GUILD (%d)"], #inGuild))
+            stillTitle:ClearAllPoints(); stillTitle:SetPoint("TOPLEFT", 0, -y); stillTitle:Show()
+            stillAll:ClearAllPoints(); stillAll:SetPoint("TOPRIGHT", 0, -y); stillAll:Show()
+            stillAll:SetScript("OnClick", function() BA:StartListAndSay("remove", inGuild) end)
             y = y + ROW_H
-            local names = GuildOS.AltDeparture and GuildOS.AltDeparture.ColoredNames(inGuild) or ""
-            local fs = UI:CreateText(content, names, 11, C.text.r, C.text.g, C.text.b)
-            fs:SetPoint("TOPLEFT", 0, -y)
-            fs:SetPoint("RIGHT", content, "RIGHT", 0, 0)
-            fs:SetJustifyH("LEFT"); fs:SetWordWrap(true)
-            y = y + math.max(ROW_H, math.ceil(fs:GetStringHeight() or 0) + 4) + 6
+            stillNames:SetText(GuildOS.AltDeparture and GuildOS.AltDeparture.ColoredNames(inGuild) or "")
+            stillNames:SetPoint("TOPLEFT", 0, -y); stillNames:Show()
+            y = y + math.max(ROW_H, math.ceil(stillNames:GetStringHeight() or 0) + 4) + 6
         end
         local officer = GuildOS:IsOfficer()
         for _, e in ipairs(list) do
             if filter == "" or (e.name or ""):lower():find(filter, 1, true) then
                 local expired = e.expiry and e.expiry <= now
-                local nr, ng, nb = C.red.r, C.red.g, C.red.b
+                local nameColor = C.red
                 local expTxt
                 if not e.expiry then
                     expTxt = L["permanent"]
                 elseif expired then
                     expTxt = L["(expired)"]
-                    nr, ng, nb = C.silver.r, C.silver.g, C.silver.b
+                    nameColor = C.silver
                 else
                     expTxt = GuildOS:DateText(e.expiry, "/%y")
                 end
@@ -884,33 +924,29 @@ local function BuildBanSub(panel)
                 if e.group then shownName = shownName .. " " .. string.format(L["(group of %s)"], e.group) end
                 local why = e.reason or ""
                 if officer and e.note then why = why .. " — " .. e.note end
-                cell(shownName, CELL_X[1], 148, y, nr, ng, nb)
-                cell(why, CELL_X[2], 176, y, C.text.r, C.text.g, C.text.b)
-                cell(e.author or "?", CELL_X[3], 86, y, C.textDim.r, C.textDim.g, C.textDim.b)
-                cell(expTxt, CELL_X[4], 82, y, C.textDim.r, C.textDim.g, C.textDim.b)
-                local del = UI:CreateButton(content, "\195\151", 22, 18)  -- ×
-                del:SetPoint("TOPRIGHT", 0, -y)
-                -- By the row's own key: on retail a name alone is a different ban from Name-Realm (#184).
-                local key = e.key
-                del:SetScript("OnClick", function() if GuildOS.BanList then GuildOS.BanList:RemoveKey(key) end end)
-                -- Share with the alliance, or stop sharing (#408).
-                local shared = GuildOS.BanList and GuildOS.BanList:IsShared(key)
-                local share = UI:CreateButton(content, shared and L["Unshare"] or L["Share"], 70, 18)
-                share:SetPoint("RIGHT", del, "LEFT", -4, 0)
-                local who = e.name
-                share:SetScript("OnClick", function()
-                    if not GuildOS.BanList then return end
-                    if shared then GuildOS.BanList:Unshare(key) else ShowShareDialog(key, who) end
-                end)
+                local row = placeRow(y, { { shownName, nameColor }, { why, C.text }, { e.author or "?", C.textDim },
+                    { expTxt, C.textDim } })
+                -- By the row's own key: on retail a name alone is a different ban from Name-Realm (#184). Lifting
+                -- asks first (audit B6).
+                local key, who = e.key, e.name
+                row.del:SetScript("OnClick", function() if GuildOS.BanList then GuildOS.BanList:ConfirmRemoveKey(key, who) end end)
+                row.del:Show()
+                -- Share with the guild's alliance on guildos.me, or stop sharing (#408): offered only while the guild
+                -- has one, and never for a temporary ban that ran out (audit B6, B7). A share stays withdrawable.
+                local BL = GuildOS.BanList
+                local shared = BL and BL:IsShared(key)
+                if shared or (BL and BL:CanShare(key, nil, now)) then
+                    row.share.label:SetText(shared and L["Unshare"] or L["Share"])
+                    row.share:SetScript("OnClick", function()
+                        if not GuildOS.BanList then return end
+                        if shared then GuildOS.BanList:Unshare(key) else ShowShareDialog(key, who) end
+                    end)
+                    row.share:Show()
+                end
                 y = y + ROW_H
             end
         end
-        if y == 0 then
-            local empty = UI:CreateText(content,
-                L["No banned players yet. Add one above to block them."],
-                11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 0, -4)
-        end
+        if y == 0 then showEmpty(L["No banned players yet. Add one above to block them."]) end
         content:SetHeight(math.max(1, y))
     end
 
@@ -1114,7 +1150,7 @@ local function presetApplyText(preset, matches)
         or  format(L["Remove %d member(s) from the guild:"], #matches)
     return format(L["Apply preset \"%s\"?"], MP:Name(preset)) .. "\n"
         .. line .. " " .. list .. "\n\n"
-        .. L["Rank and removal are Blizzard-protected: the guild panel opens, do them there."]
+        .. L["They go to the Bulk actions queue: one click of Next each, the safe list and your rank's limits kept."]
 end
 
 local function BuildPresetsSub(panel)

@@ -71,4 +71,28 @@ for game, cap in pairs({ anniversary = 70, forever = 60 }) do
   check(B.RecruitScanner.DEFAULTS.maxLevel == cap, game .. ": the scan's default top level is the cap")
 end
 
+-- A scan whose /who came back with nobody says, on WoW: Forever, that the client may block it (audit B13, #45).
+for game, said in pairs({ anniversary = false, forever = true }) do
+  local B = load(game)
+  dofile(ADDON .. "/Core/Utils.lua")
+  local R = B.RecruitScanner
+  B.db.recruitScanner = {}
+  local whoN = 0
+  C_FriendList = { GetNumWhoResults = function() return whoN end,
+                   GetWhoInfo = function() return { fullName = "Guilded", level = 10, filename = "MAGE", fullGuildName = "G" } end }
+  check(not R:WhoMaybeBlocked(), game .. ": before any scan, nothing is said")
+  R:_OnWhoResult()
+  check(R:WhoMaybeBlocked() == said, game .. ": an empty /who " .. (said and "says it may be blocked" or "says nothing more"))
+  R._whoRaw, R._scanDone = nil, nil
+  R:_FinishScan()   -- the 6 s timeout, no WHO_LIST_UPDATE at all
+  check(R:WhoMaybeBlocked() == said, game .. ": so does a /who that never answered")
+  whoN = 3
+  R._CandidateOK = function() return false end   -- every one filtered out: the /who did answer
+  R:_OnWhoResult()
+  check(not R:WhoMaybeBlocked(), game .. ": a /who that answered, every one filtered out, is not blocked")
+  C_FriendList = nil
+end
+local scannerSrc = assert(io.open(ADDON .. "/Modules/RecruitScanner.lua", "rb")):read("*a")
+check(scannerSrc:find("RecruitScanner:WhoMaybeBlocked()\n", 1, true), "the results list asks before it says \"No candidates.\"")
+
 print(("level-cap: %d checks passed"):format(checks))

@@ -88,6 +88,7 @@ function UnitName(unit)
   return i and raid[i] or nil
 end
 function UnitExists(unit) return UnitName(unit) ~= nil end
+function UnitFullName(unit) return UnitName(unit) end
 C_Timer = { After = function() end, NewTicker = function() return { Cancel = function() end } end,
   NewTimer = function() return { Cancel = function() end } end }
 Enum = { SendAddonMessageResult = {} }
@@ -374,6 +375,15 @@ check(LM:IsFromMasterLooter("Ana") == false, "two raiders called Ana: the first 
 check(LM:IsFromMasterLooter("Ana Lima") == true and LM:IsFromMasterLooter("Ana Costa") == false, "the whole name still is")
 apart.raid2 = { "Bo", "Reis" }
 check(LM:IsFromMasterLooter("Ana") == true and LM:SenderRaidIndex("Bo") == 2, "and a first name only one raider has is theirs, with the surname handed apart")
+-- Audit R4: a /roll or an answer follows the same rule, never the first raider who shares the first name.
+apart.raid2 = { "Ana", "Costa" }
+check(LM:RaidRollerName("Ana") == nil, "a /roll by a first name two raiders share is nobody's")
+check(LM:RaidRollerName("Ana Costa") == "Ana Costa" and LM:RaidRollerName("Ana-Costa") == "Ana Costa",
+  "the whole name, or Forever's hyphenated sender, is the one raider's")
+apart.raid2 = { "Bo", "Reis" }
+check(LM:RaidRollerName("Ana") == "Ana Lima" and LM:RaidRollerName("Bo") == "Bo Reis",
+  "a first name only one raider has is theirs, whole")
+check(LM:RaidRollerName("Zed") == nil, "and somebody outside the raid is nobody")
 GuildOS.Compat.UnitIdentity = realIdentity
 raid[1], raid[2] = "Lead", "Ana"
 GuildOS.Client.has.surnames = false
@@ -1260,4 +1270,22 @@ check(drewAccounts, "the Accounts tab draws: " .. tostring(whyNot))
 local settingsBtn = button("Account settings")
 check(settingsBtn, "with its settings behind one button")
 math.random = realRandom
+
+-- Audit R20: Settings' loot tests never overwrite a real roll in progress.
+do
+  local heldLoot, heldTest, heldPopup = LM.activeLoot, LM.testMode, LM.rollPopup
+  LM.testMode, LM.rollPopup = false, nil
+  LM.activeLoot = { link = "real", itemId = 1 }
+  check(LM:RollOpen(), "an item in hand is a roll open")
+  LM.activeLoot = nil
+  check(not LM:RollOpen(), "no item, no popup: none")
+  LM.rollPopup = { IsShown = function() return true end }
+  check(LM:RollOpen(), "a raider's popup on screen is one too")
+  LM.testMode = true
+  check(not LM:RollOpen(), "a test's own leftovers are not")
+  LM.activeLoot, LM.testMode, LM.rollPopup = heldLoot, heldTest, heldPopup
+  local sp = assert(io.open(ADDON .. "/UI/SettingsPanel.lua", "rb")):read("*a")
+  local _, guards = sp:gsub("if rollOpen%(%) then return end\n%s*LM%.testMode = true", "")
+  check(guards == 4, "each of Settings' four loot tests refuses while a roll is open")
+end
 print(("loot-responses: %d checks passed"):format(checks))

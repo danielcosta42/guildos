@@ -313,32 +313,27 @@ end
 -- person's count against the session's is the fraction of the night they were
 -- there, which is partial attendance without the whole timeline.
 ----------------------------------------------------------------------
+-- The snapshots themselves go once a night has ended (audit R5): RaidTracker:RollUp reads them while a
+-- session has them, else the roll-up kept in their place, and either says the same.
+local function sessionRollUp(session)
+    local RT = GuildOS.RaidTracker
+    return RT and RT.RollUp and RT:RollUp(session) or { n = 0, people = {} }
+end
+
 local function rollUpPlayers(session, startTime)
     local seen = {}
-    for _, snap in ipairs(session.snapshots or {}) do
-        local at = tonumber(snap.time) or 0
-        for key, m in pairs(snap.members or {}) do
-            local p = seen[key]
-            if not p then
-                p = { key = key, snapshots = 0, first = at, last = at,
-                      offline = false, consumes = false }
-                seen[key] = p
-            end
-            p.snapshots = p.snapshots + 1
-            if at < p.first then p.first = at end
-            if at > p.last then p.last = at end
-            -- Both flags are "at least once". Someone who dropped for one
-            -- snapshot dropped; someone who had a flask for one had one.
-            if m.online == false then p.offline = true end
-            if m.hasConsumes then p.consumes = true end
-            -- The count as well as the flag, because the attendance penalty is a
-            -- ratio: `RaidTracker:UpdateAttendanceForLockout` docks the score when
-            -- consumables show up in under half the snapshots that saw the person.
-            -- "At least once" cannot answer that, so the site could never arrive at
-            -- the same number the game shows. A snapshot whose consumables retail could
-            -- not read (nil) counts as the addon counts it, for the player (issue #187).
-            if m.hasConsumes ~= false then p.chits = (p.chits or 0) + 1 end
-        end
+    for key, r in pairs(sessionRollUp(session).people or {}) do
+        -- Both flags are "at least once". Someone who dropped for one
+        -- snapshot dropped; someone who had a flask for one had one.
+        -- The count as well as the flag (`chits`), because the attendance penalty is a
+        -- ratio: `RaidTracker:NightScore` docks the score when
+        -- consumables show up in under half the snapshots that saw the person.
+        -- "At least once" cannot answer that, so the site could never arrive at
+        -- the same number the game shows. A snapshot whose consumables retail could
+        -- not read (nil) counts as the addon counts it, for the player (issue #187).
+        seen[key] = { key = key, snapshots = r.n or 0, first = r.first or 0, last = r.last or 0,
+                      offline = r.offline and true or false, consumes = r.consumes and true or false,
+                      chits = r.chits }
     end
 
     -- Whoever the session knows was there but no snapshot ever caught.
@@ -453,7 +448,7 @@ local function raidSessions()
                 startTime = math.floor(startTime),
                 endTime = s.endTime and math.floor(s.endTime) or nil,
                 -- The denominator every player's count is read against.
-                snapshots = #(s.snapshots or {}),
+                snapshots = sessionRollUp(s).n or 0,
                 encounters = encounters,
                 players = rollUpPlayers(s, startTime),
             }

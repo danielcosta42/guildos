@@ -536,8 +536,7 @@ local function fitButton(b, text)
 end
 
 -- n = { kind, key, name, act?, need?, note?, role? }, from Modules/Groups.lua.
-function GuildOS:GroupsToast(n)
-    if not (n and n.kind and TOAST_SECONDS[n.kind]) then return end
+local function groupsToastNow(n)
     local B, G = GuildOS.LFGBoard, GuildOS.Groups
     toast = toast or buildToast()
     local key = n.key
@@ -596,6 +595,13 @@ function GuildOS:GroupsToast(n)
     GuildOS.Compat.After(TOAST_SECONDS[n.kind], function()
         if toast and toast.shownAt == shownAt then toast:Hide() end
     end)
+    return toast
+end
+
+-- Never in combat, one popup at a time (audit B21): the toast waits for combat to end.
+function GuildOS:GroupsToast(n)
+    if not (n and n.kind and TOAST_SECONDS[n.kind]) then return end
+    self:ShowWhenClear("groups:" .. n.kind .. ":" .. tostring(n.key or n.what), function() return groupsToastNow(n) end)
 end
 
 ----------------------------------------------------------------------

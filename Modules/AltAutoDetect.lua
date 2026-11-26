@@ -407,10 +407,10 @@ function AltAutoDetect:HandleSelfClaim(sender, data)
     local ok, claim = LibSerialize:Deserialize(data)
     if not ok or type(claim) ~= "table" then return end
 
-    local sShort = sender and (sender:match("^([^-]+)") or sender)
-    if not sShort then return end
-    local sRealm = (sender:match("-(.+)$")) or GetRealmName()
-    local senderKey = GuildOS:GetPlayerKey(sShort, sRealm)
+    if type(sender) ~= "string" or sender == "" then return end
+    -- The roster's key of the sender: on WoW: Forever "Chehul-Costa" is "Chehul Costa" (audit N2).
+    local senderKey = GuildOS:SenderKey(sender)
+    if not senderKey then return end
     -- The claim's keys were built on the sender's client: as this client keys them (#97).
     if claim.main then claim.main = GuildOS:LocalMemberKey(claim.main) end
     if type(claim.alts) == "table" then
@@ -469,9 +469,10 @@ end
 ----------------------------------------------------------------------
 -- Login suggestion prompt: "Link N chars as alts of [Main]?"
 -- Suggest + one-click confirm. Nagging is guarded two ways: at most once
--- per session, and a persisted per-group "declined" marker so a login
--- doesn't re-offer the exact same group forever (a new/removed alt changes
--- the signature and is re-offered).
+-- per session ("Not now" lasts this session only, audit B12), and "Don't ask
+-- again", a persisted per-group "declined" marker so a login doesn't re-offer
+-- the exact same group forever (a new/removed alt changes the signature and
+-- is re-offered).
 ----------------------------------------------------------------------
 function AltAutoDetect:_RegisterPopup()
     if GuildOS.Dialogs["GUILDOS_ALT_AUTODETECT"] then return end
@@ -479,6 +480,7 @@ function AltAutoDetect:_RegisterPopup()
         text = L["Found %d of your characters in this guild. Link them as alts of %s?"],
         button1 = L["Link"],
         button2 = L["Not now"],
+        button3 = L["Don't ask again"],
         OnAccept = function(dlg, data)
             local r = data or (dlg and dlg.data)
             if not r then return end
@@ -487,14 +489,21 @@ function AltAutoDetect:_RegisterPopup()
                 GuildOS:Print(string.format(L["Linked %d alt(s) to %s."], #r.group - 1, short))
             end
         end,
-        OnCancel = function(dlg, data)
+        -- "Not now": this session only (the once-a-session guard already holds it back).
+        OnCancel = function() AltAutoDetect._prompted = true end,
+        OnAlt = function(dlg, data)
             local r = data or (dlg and dlg.data)
-            if not r then return end
-            GuildOSDB.altDeclined = GuildOSDB.altDeclined or {}
-            GuildOSDB.altDeclined[GroupSignature(r.group)] = true
+            if r then AltAutoDetect:DeclineForGood(r) end
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
+end
+
+-- "Don't ask again" for this exact group of characters, kept across sessions.
+function AltAutoDetect:DeclineForGood(r)
+    if type(r) ~= "table" or type(r.group) ~= "table" then return end
+    GuildOSDB.altDeclined = GuildOSDB.altDeclined or {}
+    GuildOSDB.altDeclined[GroupSignature(r.group)] = true
 end
 
 -- Shows the confirm popup for a detected group `r` ({ group = {keys...}, main = key }).
@@ -519,7 +528,9 @@ function AltAutoDetect:_SchedulePrompt()
         if not r then return end
         local declined = GuildOSDB.altDeclined
         if declined and declined[GroupSignature(r.group)] then return end
-        AltAutoDetect:_ShowPrompt(r)
+        -- Never in combat, one popup at a time (audit B21).
+        AltAutoDetect._prompted = true
+        GuildOS:ShowWhenClear("altdetect", function() AltAutoDetect:_ShowPrompt(r) end)
     end)
 end
 

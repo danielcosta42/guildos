@@ -157,10 +157,14 @@ function GuildOS:IsOnGuildDB() return onGuildDB end
 -- The real audit: the export asks it which slot needs an enchant, as the member sheet does (issue #182).
 dofile(ADDON .. "/Modules/GearAudit.lua")
 
+-- The real roll-up of a night's snapshots (audit R5): the export reads presence through it.
+dofile(ADDON .. "/Modules/RaidTracker.lua")
+local realRT = GuildOS.RaidTracker
 GuildOS.RaidTracker = {
   GetAttendance25ManPercent = function(_, key)
     return ({ ["Chehul-Firemaw"] = 92, ["Fulano-Firemaw"] = 78 })[key] or 0
   end,
+  RollUp = realRT.RollUp, MergeRolls = realRT.MergeRolls,
 }
 
 GuildOS.AttunementTracker = {

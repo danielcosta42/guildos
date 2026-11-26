@@ -36,7 +36,7 @@ end
 function RosterLog:_NormShort(name)
     if not name or name == "" then return name end
     if GuildOS.Client and GuildOS.Client.isRetail then return GuildOS:KeyOfRosterName(name) end
-    return name:match("^([^-]+)") or name
+    return GuildOS:ShortName(name)   -- the whole "First Surname" on WoW: Forever (audit M1)
 end
 
 function RosterLog:_EventId(action, target, author, ts)

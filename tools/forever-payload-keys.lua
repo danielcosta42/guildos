@@ -103,7 +103,7 @@ check(GuildOS:LocalMemberKey("ally:Chehul Costa") == "ally:Chehul Costa", "forev
 -- ── 1. Raid attendance and sessions ─────────────────────────────────────
 GuildOS.RaidTracker:HandleIncoming(ser({
   attendance = { [""] = { [theirs("Cherry Arrow")] = { raids = 3, lastRaid = 100 } } },
-  sessions = { s1 = { players = { [theirs("Cherry Arrow")] = true }, startTime = 1, instanceID = 409 } },
+  sessions = { s1 = { players = { [theirs("Cherry Arrow")] = true }, startTime = GetServerTime() - 100, instanceID = 409 } },   -- recent (audit R5)
 }))
 local rt = GuildOS.db.raidTracker
 check(rt.attendance[""][mine("Cherry Arrow")] and rt.attendance[""][theirs("Cherry Arrow")] == nil,

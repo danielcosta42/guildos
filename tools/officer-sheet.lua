@@ -422,6 +422,20 @@ check(as("OffA", function() return MM:SetNick(K("OffC"), "Cee") end), "without O
 as("OffA", function() MM:Backfill() end)
 check(#wire == 0 and as("OffA", function() return MM:Nick(K("OffC")) end) == "Cee", "kept here, nothing sent")
 GuildOS.Compat.OfficerAddonChannel = realChan
+-- Audit N6: a removed mark does not come back once its tombstone is pruned.
+as("OffB", function()
+  local s = GuildOS.db.memberMarks
+  local old = { s = "safe", k = K("OffB"), v = true, t = now - 100, b = "OffC" }   -- an officer's stale copy
+  MM:SetSafe(K("OffB"), false)
+  local cleared = s.safe[K("OffB")].at
+  MM:Prune(cleared + MM.TOMBSTONE_TTL + 1)
+  check(s.safe[K("OffB")] == nil and s.rev.safe[K("OffB")] == cleared, "the tombstone goes, its time stays")
+  check(MM:Apply({ old }, "OffC") == 0 and not MM:IsMarkedSafe(K("OffB")), "an older copy months later is refused")
+  check(MM:Apply({ { s = "safe", k = K("OffB"), v = true, t = cleared + 1, b = "OffC" } }, "OffC") == 1
+    and MM:IsMarkedSafe(K("OffB")), "a newer mark is taken")
+  MM:SetSafe(K("OffB"), false)
+  check(s.safe[K("OffB")].at > cleared + 1, "a write after it stamps past every time known")
+end)
 
 -- ── 8. A rank that may not speak in officer chat (#427) ─────────────────
 check(GuildOS.Compat.CanSpeakOfficerChat() == nil and GuildOS.Compat.OfficerAddonChannel() == "OFFICER",

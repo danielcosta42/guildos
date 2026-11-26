@@ -577,8 +577,9 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     local infoText = UI:CreateText(infoBar, "", 10, C.label.r, C.label.g, C.label.b)
     infoText:SetPoint("LEFT", 0, 0)
 
-    -- A hint, in `textSoft`: not the dimmed gold it used to be (#371).
-    local scanHint = UI:CreateText(infoBar, L["Open your tradeskill window to share your recipes"], 10,
+    -- A hint, in `textSoft`: not the dimmed gold it used to be (#371). Anniversary has no other way to
+    -- read a profession than its open window (audit B28).
+    local scanHint = UI:CreateText(infoBar, L["Open each profession once to share it."], 10,
         C.textSoft.r, C.textSoft.g, C.textSoft.b)
     scanHint:SetPoint("RIGHT", 0, 0)
 

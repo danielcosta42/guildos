@@ -26,7 +26,7 @@ GuildOS.State = {
     errors      = {},  -- session error ring (see GuildOS:RecordError / /guildos errors)
     -- What failed to start (GuildOS:RunStartup) and what this client lacks
     -- (GuildOS:RecordMissing). Feeds /guildos errors and the login line.
-    startup     = { failed = {}, failedFeatures = {}, stacks = {} },
+    startup     = { failed = {}, failedFeatures = {}, stacks = {}, dropped = {} },
     missing     = {},
     perf        = { rows = {} },              -- GuildOS.Perf: calls and ms per label (issue #324)
     coalesce    = { at = {}, waiting = {} },  -- GuildOS:Coalesce: last run and the call held, per name
@@ -67,7 +67,6 @@ local DB_DEFAULTS = {
         },
     },
     myData = {},
-    lastSync = 0,
     guildWishlists = {},  -- [lowerName] = { name, class, wishlist = {} }
     lootPrios = {},       -- [itemId(num)] = { {name, class, order}, ... } officer-set priorities
     raidTracker = {
@@ -269,6 +268,8 @@ end
 --            window refuses to open instead of erroring while it builds
 --   method   start function, when it is not Initialize
 --   after    second function, run only when the first one succeeded
+--   drop     switched off, the module goes from GuildOS for the session, as on a client without it:
+--            every caller already reads its absence, so nothing it syncs is sent or taken (audit B25)
 ----------------------------------------------------------------------
 local MODULE_START = {
     { "DataCollector" },
@@ -304,11 +305,13 @@ local MODULE_START = {
     { "SoftRes" },
     { "CoreManager" },
     { "RaidTracker", feature = "raidTracker", ui = "raids" },
-    { "LootTracker", feature = "lootTracker" },
+    -- Always started (audit B17): every award is recorded; the "lootTracker" switch only hides its screens.
+    { "LootTracker" },
     { "LootMaster", feature = "lootMaster", ui = "loot" },
     -- The night's plan from the site, shown out of combat (issue #296).
     { "RaidPlan" },
-    { "Points", feature = "points", ui = "dkp" },
+    -- The DKP switch (Settings' "DKP", the export's "dkp") is the points' switch too (audit B25).
+    { "Points", feature = "dkp", ui = "dkp", drop = true },
     -- Retail only (issue #185): the loot council by trade; the module does not exist elsewhere.
     { "TradeCouncil" },
     { "Digest" },
@@ -343,15 +346,16 @@ local MODULE_START = {
     { "Groups" },
     { "GuildMap" },
     { "PugInspector" },
-    { "RecipeTracker", ui = "recipes" },
-    { "CraftNet" },
+    -- The Crafts switch stops every crafts module and its sync, not only the tab (audit B25).
+    { "RecipeTracker", feature = "recipes", ui = "recipes", drop = true },
+    { "CraftNet", feature = "recipes", drop = true },
     -- Craft orders (issue #389): ask the guild's crafters to make an item, deliver by trade or mail.
-    { "CraftOrders", ui = "recipes" },
+    { "CraftOrders", feature = "recipes", ui = "recipes", drop = true },
     -- Winter Veil's Secret Santa (issue #437): shown while the site sends this year's event.
     { "WinterVeil", ui = "winterveil" },
     -- WoW: Forever only (issue #31); on Anniversary the module does not exist and is skipped.
-    { "Professions" },
-    { "ProfSync" },
+    { "Professions", feature = "recipes", drop = true },
+    { "ProfSync", feature = "recipes", drop = true },
     -- WoW: Forever only (issue #37): the look, read in the barber's chair.
     { "Look" },
     { "RecruitBeacon" },
@@ -537,7 +541,13 @@ function GuildOS:StartModule(entry)
     local name = entry[1]
     local mod = self[name]
     if not mod then return false end
-    if entry.feature and not self:IsFeatureEnabled(entry.feature) then return false end
+    if entry.feature and not self:IsFeatureEnabled(entry.feature) then
+        if entry.drop then
+            self[name] = nil
+            self.State.startup.dropped[entry.feature] = true
+        end
+        return false
+    end
     local method = entry.method or "Initialize"
     -- "Module:Method" for anything but Initialize, so two stages of one
     -- module (Recruitment, TrialTracker) never overwrite each other's record.
@@ -627,10 +637,14 @@ end
 
 -- The passes over the whole roster, each a loop over every member (issue #324: on a 700-member guild the
 -- event comes in bursts, and four passes ran on every one of them).
+local function dropDeparted() GuildOS:DropDeparted() end
+GuildOS.DEPARTED_GAP = 60   -- seconds between two passes that drop who left the guild
+
 local function rosterPass()
     local t = GuildOS.Perf:Start()
     if GuildOS.RecordFirstSeen then GuildOS:RecordFirstSeen() end
-    if GuildOS.DropDeparted then GuildOS:DropDeparted() end
+    -- At most once a minute (audit D2): the first pass at once, a burst's last at the minute's end.
+    if GuildOS.DropDeparted then GuildOS:Coalesce("departed", GuildOS.DEPARTED_GAP, dropDeparted) end
     -- Who joined since this client last saw the whole roster: a trial each, with the guild's switch on (#249).
     if GuildOS.TrialTracker then GuildOS:SafeCall(GuildOS.TrialTracker.ScanRoster, GuildOS.TrialTracker) end
     -- What changed since the roster last seen (#425): at most a pass a minute, whatever the bursts.
@@ -1170,13 +1184,14 @@ function GuildOS:HasRankUpToByName(fullName, maxRank)
         end
         return false
     end
-    -- Normalise: strip realm if present
-    local shortName = fullName:match("^([^-]+)") or fullName
+    -- Normalise: strip realm if present. On WoW: Forever a sender's "Chehul-Costa" is the roster's "Chehul Costa",
+    -- never every officer named Chehul (audit N1).
+    local shortName = self:ShortName(fullName)
     local numMembers = GetNumGuildMembers() or 0
     for i = 1, numMembers do
         local name, _, rankIndex = GetGuildRosterInfo(i)
         if name then
-            local memberShort = name:match("^([^-]+)") or name
+            local memberShort = self:ShortName(name)
             if memberShort == shortName and rankIndex and rankIndex <= maxRank then
                 return true
             end
@@ -1250,21 +1265,12 @@ end
 -- never be turned off — that is how a user would lock themselves out of
 -- the Settings window that would turn them back on.
 ----------------------------------------------------------------------
--- Off for whoever has not chosen, until a release takes the name off this list (issue #232): these
--- publish on the guild's channel or open a window, and they shipped with no client to try them on.
--- A list and not a default in db.settings.modules: a default is saved into every player's file, and a
--- later release could not turn it on for them. Somebody who chose keeps their choice either way.
--- Empty since the journal and the founding were tried on the live game (issue #289): left off, no
--- founding reached guildos.me and the site's founding achievements were never earned.
-local OFF_UNTIL_TESTED = {}
-
 function GuildOS:IsFeatureEnabled(id)
     if type(id) ~= "string" then return false end
     -- UI loads after Core, so the registry is resolved per call, not per load.
     local def = self.UI and self.UI.GetFeature and self.UI:GetFeature(id)
     if def and def.core then return true end
     local mods = self.db and self.db.settings and self.db.settings.modules
-    if OFF_UNTIL_TESTED[id] and (not mods or mods[id] == nil) then return false end
     if not mods then return true end
     return mods[id] ~= false
 end
@@ -1396,9 +1402,10 @@ function GuildOS:SetLootSystem(sys, coreName)
         and self:IsOfficer() then
         self.LootRule:Set(nil)
     end
-    -- On retail the system decides who may award an offered item, on every member's client: an
-    -- officer's choice is stamped and published, as the officer threshold is (issue #185).
-    if not ofCore and self.Client.isRetail and self:IsOfficer() then
+    -- The system decides who may award an offered item and whether the master looter's popups open,
+    -- on every member's client: an officer's choice is stamped and published, as the officer threshold
+    -- is (issue #185; on every client since audit R1).
+    if not ofCore and self:IsOfficer() then
         local s = self.db.settings
         s.lootSystemAt = math.max(GetServerTime(), (s.lootSystemAt or 0) + 1)
         self:PublishLootSystem()
@@ -1421,19 +1428,18 @@ function GuildOS:OnLootSystemChanged()
     if self.UpdateLootSystemUI then self:UpdateLootSystemUI() end
 end
 
--- An officer's loot system to the guild, on retail (issue #185): when it changes, and again on the
--- officers' regular sync, for a client that missed it. Forever keeps it each client's own, as before.
+-- An officer's loot system to the guild (issue #185, every client since audit R1): when it changes,
+-- and again on the officers' regular sync, for a client that missed it.
 function GuildOS:PublishLootSystem()
-    if not self.Client.isRetail then return end
     local s = self.db and self.db.settings
     if not (s and s.lootSystemAt and self.SyncService and self:IsOfficer()) then return end
     self.SyncService:Publish("guildcfg", "lootsys", { sys = self:GetLootSystem("") }, { rev = s.lootSystemAt })
 end
 
 -- The guild's loot system from an officer (SyncService has checked the officer and GUILD): the newest
--- stamp wins, and two in the same second settle on the same one on every client. Retail only.
+-- stamp wins, and two in the same second settle on the same one on every client. Every client (audit
+-- R1): a raider whose guild runs "external" must not get the master looter's popups.
 function GuildOS:OnLootSystemSync(env)
-    if not self.Client.isRetail then return end
     local data = env and env.data
     local at = env and tonumber(env.rev)
     local sys = type(data) == "table" and data.sys
@@ -1444,7 +1450,7 @@ function GuildOS:OnLootSystemSync(env)
     local held = s.lootSystemAt
     if held and (at < held or (at == held and sys >= self:GetLootSystem(""))) then return end
     s.lootSystem, s.lootSystemAt = sys, at
-    if self.UpdateLootSystemUI then self:UpdateLootSystemUI() end
+    self:OnLootSystemChanged()   -- Loot Master follows it ("external" silences it), then the UI
 end
 
 -- Each loot system exposes only its own UI so players never see screens

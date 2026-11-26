@@ -395,7 +395,7 @@ function Recruitment:_HandleKeywordWhisper(sender, author)
     if filtered and not GuildOS.Compat.NeedsClick() then
         self:_QualifyAndInvite(sender)
     else
-        self:_DoInvite(sender, author)
+        self:_DoInvite(sender)
     end
 end
 
@@ -414,7 +414,8 @@ end
 function Recruitment:QueueWelcome(name)
     self._pendingWelcomes = self._pendingWelcomes or {}
     addOnce(self._pendingWelcomes, name)
-    self:ShowWelcomePopup()
+    -- Never in combat, one popup at a time (audit B21): a join mid-fight waits for its end.
+    GuildOS:ShowWhenClear("welcome", function() self:ShowWelcomePopup(); return self.welcomePopup end)
 end
 
 -- Why the game would refuse `msg` as a chat line, in the reader's words, or nil (#270). A "|" that is
@@ -760,7 +761,8 @@ end
 -- one (issue #84).
 function Recruitment:_OfficerTick()
     if not GuildOS:IsFeatureEnabled("recruitment") then return end
-    self:ShowSendPopup()
+    -- Never in combat, one popup at a time (audit B21).
+    GuildOS:ShowWhenClear("recruitsend", function() self:ShowSendPopup(); return self.popupFrame end)
 end
 
 ----------------------------------------------------------------------
@@ -884,7 +886,7 @@ function Recruitment:_AutoTick()
         return self:SyncMemberParticipation()
     end
     self._autoPopups = (self._autoPopups or 0) + 1
-    self:ShowSendPopup()
+    GuildOS:ShowWhenClear("recruitsend", function() self:ShowSendPopup(); return self.popupFrame end)
 end
 
 function Recruitment:StopMemberRecruit()
@@ -1543,7 +1545,8 @@ function Recruitment:HandleCommand(args)
             GuildOS:Print(L["Discord: |cffFFFFFF"] .. GuildOS.db.recruitment.discord .. "|r")
         end
     elseif cmd == "invite" then
-        local target = args[2]
+        -- The whole name: on WoW: Forever "/gos recruit invite Chehul Costa" is one player (audit M14).
+        local target = args[2] and strtrim(table.concat(args, " ", 2)) or nil
         if target and target ~= "" then
             if not CanGuildInvite() then
                 GuildOS:Print(L["|cffFF4444You don't have permission to invite.|r"])

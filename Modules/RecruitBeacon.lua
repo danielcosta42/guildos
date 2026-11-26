@@ -4,14 +4,17 @@
 --
 -- Two sides on the shared transport _G.ChehulMesh:
 --   * Officers compose an ad (roles/classes wanted, languages, guild focus,
---     days, a note, how long to stay live) and re-broadcast it while online.
+--     days, a note, how long to stay live) and re-broadcast it while online and
+--     the switch is on, the site's ad as much as the /gos beacon one (audit N11).
+--     One officer sends: the lowest name among the officers online with Guild OS.
 --   * EVERY client caches ads it hears (persisted, capped, expiry-pruned) and
 --     relays a rotating subset each cycle. So the ad propagates epidemically and
 --     survives any single officer/relayer logging off, up to its officer-set TTL.
 --     A client that logs back in re-seeds the network from its persisted cache.
 --
--- Reach per hop is YELL (zone/city-wide, same-faction/layer); multi-hop gossip
--- spreads it across zones and relayers over time. Freshness uses GetServerTime()
+-- Reach per hop is the mesh's realm bus (the Guild OS players it reaches; whispers
+-- on WoW: Forever, through the WhisperQueue); multi-hop gossip spreads it across
+-- zones and relayers over time. Freshness uses GetServerTime()
 -- (consistent across a realm): version = edit time (newer content wins); expiry
 -- = "live until" (slides forward while the officer broadcasts, then counts down).
 --
@@ -33,7 +36,7 @@ RB.PROTO3 = "CR3"
 
 RB.BROADCAST_INTERVAL = 60    -- officer re-broadcast cadence (also refreshes expiry)
 RB.RELAY_INTERVAL     = 30    -- everyone: relay a subset of cached ads
-RB.RELAY_PER_TICK     = 4     -- cap ads yelled per relay cycle (anti-spam)
+RB.RELAY_PER_TICK     = 4     -- cap ads relayed per cycle (anti-spam)
 RB.CACHE_CAP          = 40    -- max cached ads (evict soonest-to-expire over cap)
 RB.DEFAULT_TTL_DAYS   = 7
 RB.MAX_AHEAD          = 72 * 3600   -- a CR3's validity is cut to this far ahead on arrival
@@ -88,18 +91,56 @@ function RB:GetAd()
     return ad
 end
 
--- Any edit bumps the version so relayers adopt the new content.
+-- An edit marks the ad changed; its version moves once, at the next broadcast, so relayers adopt the new content
+-- without a new version per keystroke (audit N11). The switch alone is no edit of the content.
 function RB:SetAdField(key, value)
     local ad = self:GetAd()
-    if not ad then return end
+    if not ad or ad[key] == value then return end
     ad[key] = value
-    ad.version = now()
+    if key ~= "enabled" then ad.edited = true end
 end
 
--- Bump the version after an in-place edit of a list field (needs/langs/focus).
+-- After an in-place edit of a list field (needs/langs/focus).
 function RB:MarkEdited()
     local ad = self:GetAd()
-    if ad then ad.version = now() end
+    if ad then ad.edited = true end
+end
+
+-- The edits since the last broadcast, as one new version. Returns the version.
+function RB:CommitEdits()
+    local ad = self:GetAd()
+    if not ad then return 0 end
+    if ad.edited then
+        ad.version = math.max(now(), (ad.version or 0) + 1)
+        ad.edited = nil
+    end
+    return ad.version
+end
+
+-- Who sends the guild's ad among `candidates` (names): the lowest, so every officer's client picks the same one.
+function RB.PickSender(candidates)
+    local best
+    for _, n in ipairs(candidates or {}) do
+        if type(n) == "string" and n ~= "" and (not best or n < best) then best = n end
+    end
+    return best
+end
+
+-- Whether this client is the guild's one sender: the lowest name among the officers online who run Guild OS
+-- (a member record their own client published), this one included.
+function RB:IsSender()
+    local me = GuildOS.Compat.PlayerName()
+    local names = { me }
+    local maxRank = GuildOS:GetSetting("officerMaxRank") or 1
+    local members = GuildOS.db and GuildOS.db.members or {}
+    for i = 1, (GetNumGuildMembers and GetNumGuildMembers() or 0) do
+        local full, _, rankIndex, _, _, _, _, _, online = GetGuildRosterInfo(i)
+        if full and online and rankIndex and rankIndex <= maxRank then
+            local rec = members[GuildOS:KeyOfRosterName(full)]
+            if rec and (tonumber(rec.lastUpdate) or 0) > 0 then names[#names + 1] = full:match("^([^-]+)") or full end
+        end
+    end
+    return self.PickSender(names) == (me:match("^([^-]+)") or me)
 end
 
 ----------------------------------------------------------------------
@@ -387,7 +428,7 @@ local function CacheRecordToPayload(ad)
 end
 
 ----------------------------------------------------------------------
--- Officer side: broadcast the guild's ad (guild bus + zone-wide YELL) and seed
+-- Officer side: broadcast the guild's ad (guild bus + the realm bus) and seed
 -- it into our own cache so guildmates relay it too. Refreshes expiry each cycle
 -- (keeps the ad alive while any officer is online; it decays after they leave).
 ----------------------------------------------------------------------
@@ -407,7 +448,8 @@ local function OwnAdAsCR2(own, guild, faction)
     })
 end
 
-function RB:Broadcast()
+-- `now`: the officer's "Broadcast now" click, which sends whoever the guild's one sender is.
+function RB:Broadcast(sendNow)
     if not (GuildOS.IsOfficer and GuildOS:IsOfficer()) then return end
     if IsInGuild and not IsInGuild() then return end
     -- A raid is no time for the ad: it pauses where the gossip does, and the ticker picks it up on the way out.
@@ -417,6 +459,11 @@ function RB:Broadcast()
     if not guild or guild == "" then return end
     local mesh = _G.ChehulMesh
     if not mesh then return end
+    -- "Broadcast while I'm online" off: nothing goes, the site's ad neither (audit N11).
+    local ad = self:GetAd()
+    if not ad or not ad.enabled then return end
+    -- One officer sends, not every officer every minute.
+    if not sendNow and not self:IsSender() then return end
 
     -- The site's ad, when there is one, is what the guild spreads: a CR3 to the guild (the beacon and the
     -- gossip carry it from there) and a CR2 of it for old clients. The /gos beacon ad is the fallback.
@@ -431,9 +478,7 @@ function RB:Broadcast()
         return
     end
 
-    local ad = self:GetAd()
-    if not ad or not ad.enabled then return end
-
+    self:CommitEdits()
     local faction = (UnitFactionGroup and UnitFactionGroup("player") == "Alliance") and "A" or "H"
     local expiry  = now() + (ad.ttlDays or self.DEFAULT_TTL_DAYS) * 86400
     local payload = RecordToPayload({
@@ -449,7 +494,7 @@ function RB:Broadcast()
 end
 
 ----------------------------------------------------------------------
--- Gossip relay: re-yell a rotating subset of non-expired cached ads. Runs on
+-- Gossip relay: re-send a rotating subset of non-expired cached ads. Runs on
 -- EVERY client, which is what keeps ads alive with no officer online.
 ----------------------------------------------------------------------
 function RB:RelayTick()

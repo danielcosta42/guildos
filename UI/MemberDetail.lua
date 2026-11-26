@@ -8,6 +8,7 @@ local L = GuildOS.L
 
 local DETAIL_WIDTH = 460
 local DETAIL_HEIGHT = 620
+local TIMELINE_SHOWN = 8   -- entries of the officers' timeline (dated notes and trial comments) the sheet shows
 
 -- Static stat list — defined once at module level to avoid per-call allocation.
 local STATS_LIST = {
@@ -772,30 +773,7 @@ function PopulateDetail(frame, data)
                 yOff = yOff - 16
             end
 
-            -- Trial notes (all of them, not just 3)
-            if trial.notes and #trial.notes > 0 then
-                local notesLabel = _pFS(child)
-                GuildOS:ApplyFont(notesLabel, 9)
-                notesLabel:SetPoint("TOPLEFT", 15, yOff - 6)
-                notesLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                notesLabel:SetText(L["Officer Comments ("] .. #trial.notes .. ")")
-                notesLabel:Show()
-                yOff = yOff - 18
-
-                for _, note in ipairs(trial.notes) do
-                    local noteFS = _pFS(child)
-                    GuildOS:ApplyFont(noteFS, 9)
-                    noteFS:SetPoint("TOPLEFT", 20, yOff - 2)
-                    noteFS:SetWidth(contentWidth - 40)
-                    noteFS:SetJustifyH("LEFT")
-                    noteFS:SetWordWrap(true)
-                    local dateStr = note.timestamp and GuildOS:DateText(note.timestamp, " %H:%M") or ""
-                    noteFS:SetText(format("|cffAAAAAA[%s %s]|r %s", note.author or "?", dateStr, note.text or ""))
-                    noteFS:Show()
-                    yOff = yOff - (noteFS:GetStringHeight() + 4)
-                end
-            end
-
+            -- The trial's comments are read on the officer notes' timeline below, with the dated notes (audit B10).
             -- Add note input
             local addNoteBox = CreateFrame("EditBox", nil, child, "BackdropTemplate")
             addNoteBox:SetSize(contentWidth - 100, 22)
@@ -887,25 +865,25 @@ function PopulateDetail(frame, data)
     if GuildOS.OfficerNotes and GuildOS:IsOfficer() then
         yOff = yOff - 10
         playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
-        local notes = GuildOS.OfficerNotes:GetNotes(playerKey)
+        -- One timeline: the dated notes and the trial's comments (audit B10).
+        local notes = GuildOS.OfficerNotes:Timeline(playerKey)
         local notesHeader = L["OFFICER NOTES  --  "] .. #notes .. L[" notes"]
         yOff = CreateSectionHeader(child, notesHeader, yOff, contentWidth)
-
-        -- Show tags
-        local tags = GuildOS.OfficerNotes:GetAllTags(playerKey)
-        if next(tags) then
-            local tagParts = {}
-            for k, v in pairs(tags) do
-                table.insert(tagParts, k .. ": " .. tostring(v))
-            end
-            local tagStr = _pFS(child)
-            GuildOS:ApplyFont(tagStr, 9)
-            tagStr:SetPoint("TOPLEFT", 15, yOff - 5)
-            tagStr:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
-            tagStr:SetText(table.concat(tagParts, "  |  "))
-            tagStr:Show()
-            yOff = yOff - 16
+        -- WoW: Forever: what is written here stays on this client (audit B11).
+        local localOnly = GuildOS:LocalOnlyText()
+        if localOnly then
+            local lo = _pFS(child)
+            GuildOS:ApplyFont(lo, 9)
+            lo:SetPoint("TOPLEFT", 15, yOff - 3)
+            lo:SetWidth(contentWidth - 30)
+            lo:SetJustifyH("LEFT")
+            lo:SetWordWrap(true)
+            lo:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            lo:SetText(localOnly)
+            lo:Show()
+            yOff = yOff - (lo:GetStringHeight() + 6)
         end
+
 
         -- The member's sheet, whole (issue #427), and the button that edits it.
         local sheet = GuildOS.OfficerNotes:GetSheet(playerKey)
@@ -959,8 +937,8 @@ function PopulateDetail(frame, data)
             end)
         end
 
-        -- Show last 3 notes
-        for i = 1, math.min(3, #notes) do
+        -- The newest of the timeline; a trial's comment says so.
+        for i = 1, math.min(TIMELINE_SHOWN, #notes) do
             local note = notes[i]
             local noteStr = _pFS(child)
             GuildOS:ApplyFont(noteStr, 9)
@@ -968,8 +946,9 @@ function PopulateDetail(frame, data)
             noteStr:SetWidth(contentWidth - 30)
             noteStr:SetJustifyH("LEFT")
             noteStr:SetWordWrap(true)
-            local dateStr = note.timestamp and GuildOS:DateText(note.timestamp) or ""
-            noteStr:SetText("|cffAAAAAA[" .. (note.author or "?") .. " " .. dateStr .. "]|r " .. (note.text or ""))
+            local dateStr = note.timestamp > 0 and GuildOS:DateText(note.timestamp) or ""
+            local kind = note.kind == "trial" and (" |cffEDCC7B" .. L["trial"] .. "|r") or ""
+            noteStr:SetText("|cffAAAAAA[" .. (note.author or "?") .. " " .. dateStr .. "]|r" .. kind .. " " .. (note.text or ""))
             noteStr:Show()
             yOff = yOff - (noteStr:GetStringHeight() + 4)
         end

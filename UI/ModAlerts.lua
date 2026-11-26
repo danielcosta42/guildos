@@ -222,6 +222,8 @@ function GuildOS:BuildModAlertsSub(panel)
             local status = STATE_TEXT[a.state] or ""
             if a.by then status = string.format(L["alerted on %s's screen"], a.by) .. (status ~= "" and (", " .. status) or "") end
             if a.sev == "low" and status == "" then status = L["logged"] end
+            -- Heard in combat or an instance (audit B4): no window was opened for it.
+            if a.held then status = L["in combat: panel only"] .. (status ~= "" and (", " .. status) or "") end
             -- Said while this officer was away (#411): when it was said, and so marked.
             if a.away then status = L["while you were away"] .. (status ~= "" and (", " .. status) or "") end
             local who = a.count and string.format(L["%s (%d lines)"], a.who, a.count) or a.who
@@ -349,8 +351,14 @@ function GuildOS:BuildModRulesSub(panel)
         row.p:SetWordWrap(false)
         row.cat = text(row, 11, C.textDim)
         row.cat:SetPoint("LEFT", 210, 0)
-        row.sev = text(row, 11, C.textDim)
+        -- A click moves the severity on: low, medium, high (audit B5).
+        row.sev = UI:CreateButton(row, "", 170, 18)
         row.sev:SetPoint("LEFT", 380, 0)
+        row.sev:SetScript("OnClick", function()
+            local r = M:GetRules()[row.index]
+            if r then M:SetRuleSeverity(row.index, M.NextSeverity(r.sev)) end
+        end)
+        UI:AddTooltip(row.sev, L["Severity"], { L["Click to change: low only logs, medium alerts, high alerts with a sound."] })
         row.del = UI:CreateButton(row, "\195\151", 22, 18)  -- ×
         row.del:SetPoint("RIGHT", 0, 0)
         row.del:SetScript("OnClick", function() M:RemoveRule(row.index) end)
@@ -372,13 +380,14 @@ function GuildOS:BuildModRulesSub(panel)
             row.index = i
             row.p:SetText(r.lua and (r.p .. "  |cff888888(" .. L["Lua pattern"] .. ")|r") or r.p)
             row.cat:SetText(M.CategoryText(r.cat))
-            local ink = r.sev == "high" and C.red or C.textDim
-            row.sev:SetTextColor(ink.r, ink.g, ink.b)
-            row.sev:SetText(M.SeverityText(r.sev))
+            row.sev.label:SetText(M.SeverityText(r.sev))
             row:Show()
         end
         for i = #rules + 1, #rows do rows[i]:Hide() end
         empty:SetShown(#rules == 0)
+        -- Until an officer saves, these are the defaults of this client's language (audit B5).
+        hint:SetText(M:IsCustomList() and L["The guild's words and patterns, shared by the officers. A word matches whole, without case or accents."]
+            or L["The default list in your language. Your first change makes it the one list every officer matches."])
         content:SetHeight(math.max(1, #rules * 24))
     end
     if M then M.rulesRefresh = refresh end
@@ -464,7 +473,7 @@ function GuildOS:BuildNewcomerSection(panel, top)
     local title = UI:CreateSectionTitle(panel, L["NEWCOMERS"], false)
     title:SetPoint("TOPLEFT", 0, -(top + 8))
     local hint = UI:CreateText(panel,
-        L["In a member's first days any link alerts and the anti-flood's limits are halved. The join comes from the roster log: a member who joined before the addon is not a newcomer. Only officers see it."],
+        L["In a member's first days any link alerts and the anti-flood's limits are stricter. The join comes from the roster log: a member who joined before the addon is not a newcomer. Only officers see it."],
         11, C.silver.r, C.silver.g, C.silver.b)
     hint:SetPoint("TOPLEFT", 0, -(top + 32))
     hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -(top + 32))

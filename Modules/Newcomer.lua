@@ -5,8 +5,8 @@
 -- N days of a member (default 7, 0 to 30; 0 turns it off) the officers' alerts are stricter on them:
 --   * any link outside the game is an alert (the anti-flood's links signal at one link, on even when the
 --     guild switched it off);
---   * the anti-flood's other limits are halved (lines and repeats at half, never under two; capitals on
---     lines of half the letters);
+--   * the anti-flood's other limits are stricter (lines at two thirds, 4 in 10 s by default; repeats at
+--     half; never under two; capitals on lines of 70% the letters, 14 by default; audit B3);
 --   * the alert carries the badge "newcomer (day X of N)".
 -- A trial (TrialTracker) still running counts as a newcomer too, when the guild says so.
 --
@@ -60,7 +60,8 @@ function Newcomer.DayOf(joinAt, now, days)
 end
 
 -- The anti-flood's limits for a newcomer (pure on `cfg`, a ModFlood.ValidConfig): links on at one link,
--- lines and repeats halved (rounded up, at least two), capitals on lines of half the letters (at least 5).
+-- lines at two thirds and repeats at half (rounded up, at least two), capitals on lines of 70% of the letters
+-- (rounded up, at least 5): 4 lines in 10 s and 14 letters on the guild's defaults (audit B3).
 -- The percentages, the windows and the guild's switches of the other signals stay as they are.
 function Newcomer.Strict(cfg)
     local out = {}
@@ -69,9 +70,9 @@ function Newcomer.Strict(cfg)
         for k, v in pairs(c) do copy[k] = v end
         out[sig] = copy
     end
-    if out.burst then out.burst.n = math.max(2, math.ceil(out.burst.n / 2)) end
+    if out.burst then out.burst.n = math.max(2, math.ceil(out.burst.n * 2 / 3)) end
     if out["repeat"] then out["repeat"].n = math.max(2, math.ceil(out["repeat"].n / 2)) end
-    if out.caps then out.caps.min = math.max(5, math.ceil(out.caps.min / 2)) end
+    if out.caps then out.caps.min = math.max(5, math.ceil(out.caps.min * 7 / 10)) end
     if out.links then out.links.on, out.links.n = true, 1 end
     return out
 end
@@ -104,6 +105,8 @@ end
 -- An officer saves both. True, or false and "officer" or "range".
 function Newcomer:SetConfig(days, trial)
     if not GuildOS:IsOfficer() then return false, "officer" end
+    -- The first save on the rules tab makes this officer's list the guild's one list (audit B5).
+    if GuildOS.ModAlerts and GuildOS.ModAlerts.SeedShared then GuildOS.ModAlerts:SeedShared() end
     local d = self.ValidDays(days)
     if d == nil then return false, "range" end
     local s = settings()
@@ -216,8 +219,8 @@ function Newcomer:_RegisterTests()
             caps = { on = true, pct = 70, min = 12 }, links = { on = false, n = 2, secs = 60 },
         }
         local st = N.Strict(cfg)
-        if st.burst.n ~= 3 or st["repeat"].n ~= 2 or st["repeat"].on then return false, "halved, switches kept" end
-        if st.caps.min ~= 6 or st.caps.pct ~= 70 then return false, "capitals on half the letters" end
+        if st.burst.n ~= 4 or st["repeat"].n ~= 2 or st["repeat"].on then return false, "stricter, switches kept" end
+        if st.caps.min ~= 9 or st.caps.pct ~= 70 then return false, "capitals on 70% of the letters" end
         if not st.links.on or st.links.n ~= 1 then return false, "any link" end
         if cfg.burst.n ~= 5 or cfg.links.on then return false, "the guild's limits untouched" end
         return true

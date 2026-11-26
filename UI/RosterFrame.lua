@@ -277,7 +277,7 @@ local COLUMNS = {
       value = function(d, ctx) return ctx.cores[d.key] and table.concat(ctx.cores[d.key], " / ") or nil end,
       text = function(v) return v, C.text end },
     { key = "dkp",         label = L["DKP"],          name = L["DKP"],          min = 50,  weight = 0, align = "CENTER", num = true,
-      offered = function() return GuildOS:LootSystemShowsDKP() end,
+      offered = function() return GuildOS.Points ~= nil and GuildOS:LootSystemShowsDKP() end,   -- off with the DKP switch (B25)
       value = function(d) return GuildOS.Points:Get(d.key) end,
       text = function(v) return v, C.text end },
     { key = "loot",        label = L["LOOT"],         name = L["Loot received"], min = 46, weight = 0, align = "CENTER", num = true,
@@ -1905,32 +1905,9 @@ end
 ----------------------------------------------------------------------
 local memberDropdown = CreateFrame("Frame", "GuildOSMemberDropdown", UIParent, "UIDropDownMenuTemplate")
 
-local function MemberDropdown_Initialize(self, level, menuList)
+local function MemberDropdown_Initialize(self, level)
     local data = self.memberData
     if not data then return end
-
-    -- Submenu: "Definir Rank" rank picker (level 2)
-    if level == 2 and menuList == "SETRANK" then
-        local GM = GuildOS.GuildManager
-        if not GM then return end
-        local currentRank = GM:GetRankIndex(data.fullName or data.name)   -- the realm tells namesakes apart (#184)
-        for _, rank in ipairs(GM:GetRanks()) do
-            -- Skip Guild Master (rank 0): GuildPromote cannot grant GM rank.
-            if rank.index > 0 then
-                local rinfo = UIDropDownMenu_CreateInfo()
-                rinfo.text = rank.name
-                rinfo.checked = (rank.index == currentRank)
-                rinfo.disabled = (rank.index == currentRank)
-                local targetRank = rank.index
-                rinfo.func = function()
-                    GuildOS.GuildManager:ConfirmSetRank(data.name, targetRank)
-                    if CloseDropDownMenus then CloseDropDownMenus() end
-                end
-                UIDropDownMenu_AddButton(rinfo, level)
-            end
-        end
-        return
-    end
 
     local info = UIDropDownMenu_CreateInfo()
     local myName = GuildOS.Compat.PlayerName()
@@ -1983,8 +1960,9 @@ local function MemberDropdown_Initialize(self, level, menuList)
             info = UIDropDownMenu_CreateInfo()
             info.notCheckable = true
             info.text = "|cff66FF66" .. (GUILD_PROMOTE or L["Promote"]) .. "|r"
+            -- Queued in Bulk actions, one click of Next (audit M11): the game takes it from no other button.
             info.func = function()
-                GuildOS.GuildManager:Promote(data.name)
+                GuildOS.GuildManager:Promote(data.fullName or data.name, data.key)
                 GuildOS.GuildManager:RefreshUI()
             end
             UIDropDownMenu_AddButton(info, level)
@@ -1995,20 +1973,12 @@ local function MemberDropdown_Initialize(self, level, menuList)
             info.notCheckable = true
             info.text = "|cffFFCC66" .. (GUILD_DEMOTE or L["Demote"]) .. "|r"
             info.func = function()
-                GuildOS.GuildManager:Demote(data.name)
+                GuildOS.GuildManager:Demote(data.fullName or data.name, data.key)
                 GuildOS.GuildManager:RefreshUI()
             end
             UIDropDownMenu_AddButton(info, level)
         end
 
-        if canPromote or canDemote then
-            info = UIDropDownMenu_CreateInfo()
-            info.notCheckable = true
-            info.hasArrow = true
-            info.text = L["Set Rank"]
-            info.menuList = "SETRANK"
-            UIDropDownMenu_AddButton(info, level)
-        end
     end
 
     -- Guild remove (with confirmation + action logging)
@@ -2017,7 +1987,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
         info.notCheckable = true
         info.text = "|cffFF6666" .. (GUILD_UNINVITE or L["Remove from guild"]) .. "|r"
         info.func = function()
-            GuildOS.GuildManager:ConfirmKick(data.name)
+            GuildOS.GuildManager:ConfirmKick(data.fullName or data.name, data.key)
         end
         UIDropDownMenu_AddButton(info, level)
     end

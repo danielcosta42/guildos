@@ -156,7 +156,7 @@ end
 
 -- A size this game lacks (a 25 saved by a version that only knew TBC) reads as the default.
 function CoreManager:GetRaidSize(coreName)
-    local core = self:GetCore(coreName)
+    local core = self:FindCore(coreName)
     local size = core and core.raidSize
     if isSizeOfThisGame(size) then return size end
     local _, default = sizesOfThisGame()
@@ -593,6 +593,16 @@ function CoreManager:GetCore(name)
     return GuildOS.db.cores[name]
 end
 
+-- The core table for `name` (the active core when nil), or nil when there is none: never made here.
+-- What only reads a core's settings asks this, so a look at a name no core has creates none (audit
+-- R19); GetCore, which makes one on demand, is for what writes.
+function CoreManager:FindCore(name)
+    if name == nil then name = self:GetActiveName() end
+    if type(name) ~= "string" or name == "" then return nil end
+    local core = GuildOS.db.cores and GuildOS.db.cores[name]
+    return type(core) == "table" and core or nil
+end
+
 -- Alphabetically sorted list of named core names.
 function CoreManager:GetSortedNames()
     local names = {}
@@ -620,7 +630,7 @@ local function lmField(core, key)
 end
 
 function CoreManager:GetLootConfig(coreName)
-    local core = self:GetCore(coreName)
+    local core = self:FindCore(coreName)
     return {
         rollDuration     = lmField(core, "rollDuration"),
         autoAnnounce     = lmField(core, "autoAnnounce"),
@@ -818,7 +828,7 @@ end
 -- change a thing.
 ----------------------------------------------------------------------
 function CoreManager:GetPenalties(coreName)
-    local core = self:GetCore(coreName)
+    local core = self:FindCore(coreName)
     local own = core and core.attendance and core.attendance.penalties or {}
     local guild = GuildOS.db.attendancePenalties or {}
     local out = {}
@@ -929,7 +939,7 @@ end
 -- Core roster — rich member records { name, class, role, note }
 ----------------------------------------------------------------------
 function CoreManager:GetMembers(coreName)
-    local core = self:GetCore(coreName)
+    local core = self:FindCore(coreName)
     if not core then return {} end
     if not core.members then core.members = {} end
     return core.members
@@ -1275,7 +1285,7 @@ end
 -- Sign-up queue — player applications to join a core
 ----------------------------------------------------------------------
 function CoreManager:GetSignups(coreName)
-    local core = self:GetCore(coreName)
+    local core = self:FindCore(coreName)
     if not core then return {} end
     if not core.signups then core.signups = {} end
     return core.signups

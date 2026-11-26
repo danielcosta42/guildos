@@ -90,7 +90,7 @@ end
 -- "Name". Compared by player key.
 local function keyName(name)
     if type(name) ~= "string" or name == "" then return nil end
-    return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("^[^-]+%-(.+)$"))
+    return GuildOS:KeyOfRosterName(name)
 end
 local function sameName(a, b)
     local ka = keyName(a)

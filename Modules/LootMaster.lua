@@ -71,7 +71,6 @@ local ANSWER_REPEAT = 5       -- seconds within which the same answer sent again
 
 -- Config defaults
 LootMaster.ROLL_DURATION = 30     -- seconds to wait for rolls
-LootMaster.AUTO_ANNOUNCE = true   -- auto-announce when ML loot window opens
 LootMaster.WISHLIST_ONLY_MODE = false  -- only show roll popup to players with item on their wishlist
 
 ----------------------------------------------------------------------
@@ -143,7 +142,6 @@ end
 function LootMaster:LoadCfg()
     local cfg = self:GetCfg()
     self.ROLL_DURATION      = cfg.rollDuration or 30
-    self.AUTO_ANNOUNCE      = cfg.autoAnnounce
     self.WISHLIST_ONLY_MODE = cfg.wishlistOnlyMode or false
     self.disenchanter       = cfg.disenchanter or ""
     self.LOOT_THRESHOLD     = cfg.lootThreshold or 3
@@ -436,6 +434,14 @@ function LootMaster:GetPlayerContext(playerName)
     return ctx
 end
 
+-- Whether a real roll is open on this client (audit R20): the master looter's item in hand, or a
+-- raider's roll popup on screen. Settings' loot tests write the same state, so they refuse while one
+-- is; a test's own leftovers (testMode) are not a roll.
+function LootMaster:RollOpen()
+    if self.testMode then return false end
+    return self.activeLoot ~= nil or (self.rollPopup ~= nil and self.rollPopup:IsShown() and true or false)
+end
+
 ----------------------------------------------------------------------
 -- Check if the local player is the designated Master Looter.
 --
@@ -667,23 +673,28 @@ end
 ----------------------------------------------------------------------
 -- The name a roller or the sender of an answer has in this raid, or nil for somebody outside it: only
 -- a raid member's roll or answer counts. `roller` is the name of a /roll line or of an addon
--- message's sender, with or without its realm.
+-- message's sender, with or without its realm. Who it is follows SenderRaidIndex's rule (audit R4,
+-- issue #48): the whole name, or a first name only when exactly one raider has it, never the first
+-- raider who shares it. WoW: Forever's "First-Surname" sender is read as "First Surname" first.
 ----------------------------------------------------------------------
 function LootMaster:RaidRollerName(roller)
     if GuildOS.Compat.IsSecret(roller) or type(roller) ~= "string" or roller == "" then return nil end
     -- Strip realm suffix that may appear in some client versions
     local cleanName = roller:match("^([^%-]+)") or roller
     if self.testMode then return cleanName end
-    local numMembers = GetNumGroupMembers() or 0
-    for i = 1, numMembers do
-        local uName, uSecond = GuildOS.Compat.UnitIdentity("raid" .. i)
-        local whole = uName and GuildOS.Client.has.surnames
-            and self:WholeRollerName(cleanName, uName, uSecond)
-        if whole then return whole end
-        if uName and (uName == cleanName or uName == roller) then return cleanName end
+    local whole = GuildOS:SenderName(roller)
+    local i = self:SenderRaidIndex(whole)
+    local uName, uSecond
+    if i then uName, uSecond = GuildOS.Compat.UnitIdentity("raid" .. i) end
+    if uName then
+        if not GuildOS.Client.has.surnames then return cleanName end
+        local surnamed = uSecond and uSecond ~= ""
+        return self:WholeRollerName(whole, uName, uSecond) or (surnamed and (uName .. " " .. uSecond) or uName)
     end
     -- Also accept own roll (solo / testMode outside raid)
-    if cleanName == GuildOS.Compat.PlayerName() then return cleanName end
+    local me = GuildOS.Compat.PlayerName()
+    if cleanName == me then return cleanName end
+    if whole == me then return whole end
     return nil
 end
 

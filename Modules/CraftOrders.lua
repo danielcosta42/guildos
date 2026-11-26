@@ -51,7 +51,7 @@ CraftOrders.Store = store
 -- A member key from a name as a message or the roster says it ("Bob", "Bob-Realm").
 function CraftOrders.KeyOf(name)
     if type(name) ~= "string" or name == "" then return nil end
-    return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("-(.+)$"))
+    return GuildOS:KeyOfRosterName(name)
 end
 local keyOf = CraftOrders.KeyOf
 

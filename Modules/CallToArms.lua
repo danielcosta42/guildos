@@ -365,7 +365,12 @@ function CTA:PaintCount(e)
     if e.answered then f.go:Disable() else f.go:Enable() end
 end
 
+-- Never in combat, one popup at a time (audit B21): a call heard mid-fight shows once it ends.
 function CTA:ShowPopup(e)
+    GuildOS:ShowWhenClear("cta", function() return CTA:_ShowPopupNow(e) end)
+end
+
+function CTA:_ShowPopupNow(e)
     local f = self.popup or self:BuildPopup()
     local k = self:Kind(e.kind)
     f.callId = e.id
@@ -382,4 +387,5 @@ function CTA:ShowPopup(e)
     self.hideTimer = C_Timer.NewTimer(self.SHOW_FOR, function()
         if f.callId == e.id then f:Hide() end
     end)
+    return f
 end

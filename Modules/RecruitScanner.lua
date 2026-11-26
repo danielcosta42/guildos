@@ -78,6 +78,7 @@ function RecruitScanner:Scan(onDone)
     if self._scanBusy then return end
     self._scanBusy = true
     self._results = {}
+    self._whoRaw, self._scanDone = nil, nil   -- what the /who answered, before any filter (audit B13)
     self._whisperQueue = nil    -- a new scan drops a Forever batch left half sent (issue #61)
     local cfg = GuildOS.db.recruitScanner
     if not self._whoFrame then
@@ -103,6 +104,7 @@ function RecruitScanner:_OnWhoResult()
     local out = {}
     if C_FriendList and C_FriendList.GetNumWhoResults then
         local n = C_FriendList.GetNumWhoResults() or 0
+        self._whoRaw = n
         for i = 1, n do
             local w = C_FriendList.GetWhoInfo(i)
             if w and w.fullName then
@@ -123,10 +125,18 @@ function RecruitScanner:_FinishScan()
     if self._whoFrame then self._whoFrame:UnregisterEvent("WHO_LIST_UPDATE") end
     GuildOS.Compat.SetWhoToUI(false)
     self._scanBusy = nil
+    self._scanDone = true
     if self._onScanDone then GuildOS:SafeCall(self._onScanDone) end
 end
 
 function RecruitScanner:GetResults() return self._results or {} end
+
+-- Whether the last scan's /who came back with nobody at all on WoW: Forever (audit B13, issue #45): there the client
+-- may block a /who an addon sends, so an empty list would read as "nobody is online". Never elsewhere.
+function RecruitScanner:WhoMaybeBlocked()
+    if GuildOS:RealmBound() then return false end
+    return self._scanDone == true and (self._whoRaw or 0) == 0
+end
 
 ----------------------------------------------------------------------
 -- Mass-whisper (throttled, cooldown, batch-capped)
@@ -618,9 +628,14 @@ function RecruitScanner:BuildInto(container)
                 y = y + ROW_HEIGHT
             end
             if #results == 0 then
-                local empty = UI:CreateText(child, L["No candidates."], 11, C.silver.r, C.silver.g, C.silver.b)
+                local none = RecruitScanner:WhoMaybeBlocked()
+                    and L["No candidates. The /who came back empty: on WoW: Forever it may be blocked on this client."]
+                    or L["No candidates."]
+                local empty = UI:CreateText(child, none, 11, C.silver.r, C.silver.g, C.silver.b)
                 empty:SetPoint("TOPLEFT", 4, -4)
-                y = 20
+                empty:SetPoint("RIGHT", child, "RIGHT", -4, 0)
+                empty:SetJustifyH("LEFT"); empty:SetWordWrap(true)
+                y = math.max(20, math.ceil(empty:GetStringHeight() or 0) + 8)
             end
         else -- inbox
             local inbox = RecruitScanner:GetInbox()

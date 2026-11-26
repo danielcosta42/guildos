@@ -140,6 +140,7 @@ function GuildOS:ShowAltRemovedDialog(groups)
         end
     end)
     f:Show()
+    return f
 end
 
 ----------------------------------------------------------------------
@@ -207,4 +208,5 @@ function GuildOS:ShowMainLeftDialog(info)
         done(ok, why, L["The alts are unlinked."])
     end)
     f:Show()
+    return f
 end
