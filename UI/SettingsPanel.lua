@@ -26,6 +26,7 @@ local SUBS = {
     { key = "modules",   label = L["Modules"] },
     { key = "rules",     label = L["Guild rules"] },
     { key = "data",      label = L["Data and support"] },
+    { key = "credits",   label = L["Credits"] },
 }
 -- The categories before #367, so an old deep link or command still lands on the right page.
 local OLD_KEYS = { general = "profile", raid = "rules", officer = "rules", about = "data" }
@@ -1161,6 +1162,191 @@ PAGES.data = function(F, isOfficer)
     F:Section(L["Danger zone"])
     F:Buttons({ { L["Erase guild data"], function() GuildOS:AskEraseGuildData() end, w = 170, variant = "danger" } })
     F:Note(L["Removes every Guild OS record of this guild on this PC, then reloads."], { gap = 6 })
+end
+
+----------------------------------------------------------------------
+-- Credits (#449): what a player wants to know about the addon, on one page. On the wood, the crest: the
+-- logo in its ring, the name in Cinzel gold, what it is, the version and the game as pills. Then the cards:
+-- who made it, where to find the community (each link with a Copy that opens it in a box to select), the
+-- thanks, the licence (its full text a click away), what it is built with, and this copy's details for a
+-- bug report.
+----------------------------------------------------------------------
+local LINKS = {
+    { key = "discord", glyph = "D", label = "Discord",    url = "https://discord.gg/8XA6gmNjja",                  note = "Help, bugs and ideas" },
+    { key = "site",    glyph = "G", label = "guildos.me", url = "https://guildos.me",                             note = "The companion site of your guild" },
+    { key = "github",  glyph = "</>", label = "GitHub",   url = "https://github.com/danielcosta42/GuildOS",       note = "Source code and bug reports" },
+    { key = "curse",   glyph = "C", label = "CurseForge", url = "https://www.curseforge.com/projects/1549177",    note = "Downloads and updates" },
+    { key = "wago",    glyph = "W", label = "Wago",       url = "https://addons.wago.io/addons/rNkyABKa",         note = "Downloads and updates" },
+}
+local MIT = "MIT License\n\nCopyright (c) 2026 danielcosta42\n\n"
+    .. "Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated "
+    .. "documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation "
+    .. "the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to "
+    .. "permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\n"
+    .. "The above copyright notice and this permission notice shall be included in all copies or substantial portions of "
+    .. "the Software.\n\n"
+    .. "THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO "
+    .. "THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE "
+    .. "AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, "
+    .. "TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE "
+    .. "SOFTWARE."
+local BUILT_WITH = {
+    { "Ace3: AceComm-3.0, CallbackHandler-1.0", "BSD" },
+    { "LibStub", "Public domain" },
+    { "ChatThrottleLib", "Public domain" },
+    { "LibDeflate", "zlib" },
+    { "LibSerialize", "MIT" },
+    { "Cinzel, Alegreya, Alegreya Sans", "SIL Open Font License" },
+}
+
+local function gameName()
+    local c = GuildOS.Client or {}
+    if c.isAnniversary then return L["TBC Anniversary"] end
+    if c.isRetail then return L["Retail"] end
+    return L["WoW: Forever"]
+end
+
+local function details()
+    local c = GuildOS.Client or {}
+    return table.concat({
+        "Guild OS v" .. tostring(GuildOS.VERSION or "?"),
+        L["Game"] .. ": " .. gameName() .. " " .. tostring(c.version or "") .. " (" .. tostring(c.build or "") .. ", " .. tostring(c.interface or "") .. ")",
+        L["Language"] .. ": " .. tostring(GetLocale and GetLocale() or "?"),
+    }, "\n")
+end
+
+-- A pill on the wood: a soft gold outline round a short text.
+local function pill(parent, text)
+    local p = CreateFrame("Frame", nil, parent)
+    p:SetHeight(20)
+    local fill = GuildOS.Style:Nine(p, "pill-line", 10, "BACKGROUND", 1)
+    fill:SetColor(WOOD.gold2)
+    p.text = UI:CreateText(p, text, 11, WOOD.gold2.r, WOOD.gold2.g, WOOD.gold2.b)
+    p.text:SetPoint("CENTER", 0, 0)
+    p:SetWidth(math.ceil(UI:TextWidth(p.text, 40)) + 28)
+    return p
+end
+
+-- One line of the community card: a round glyph, the name and what it is for, the address, Copy.
+local function linkRow(F, link)
+    local row = CreateFrame("Frame", nil, F.content)
+    row:SetSize(1, 40)
+    local g = UI:CreateGlyph(row, 30)
+    g:SetPoint("LEFT", 0, 0)
+    g:Set(link.glyph, C.paperTitle)
+    local name = UI:CreateText(row, link.label, 13, C.text.r, C.text.g, C.text.b)
+    GuildOS:ApplyFont(name, 13, "button")
+    name:SetPoint("TOPLEFT", g, "TOPRIGHT", 10, 1)
+    local note = UI:CreateText(row, L[link.note], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    note:SetPoint("LEFT", name, "RIGHT", 8, 0)
+    note:SetWordWrap(false)
+    note:SetJustifyH("LEFT")
+    local url = UI:CreateText(row, link.url, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    url:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
+    url:SetWordWrap(false)
+    url:SetJustifyH("LEFT")
+    local copy = UI:SetButtonVariant(UI:CreateButton(row, L["Copy"], 70, 24), "ghost")
+    copy:SetPoint("RIGHT", 0, 0)
+    copy:SetScript("OnClick", function() GuildOS:ShowExportPopup(link.label, link.url) end)
+    UI:AddTooltip(copy, link.label, { link.url, L["Opens the address in a box: Ctrl+C copies it."] })
+    row.copy, row.url, row.note = copy, url, note
+    F:Row(row, { gap = 6, wide = true, place = function(r, w)
+        r:SetWidth(math.max(1, w))
+        local room = math.max(40, w - 30 - 10 - copy:GetWidth() - 8)
+        url:SetWidth(room)
+        note:SetWidth(math.max(1, room - UI:TextWidth(name, 60) - 8))
+        return 40
+    end })
+    return row
+end
+
+PAGES.credits = function(F)
+    -- The crest, on the wood.
+    local hero = CreateFrame("Frame", nil, F.content)
+    hero:SetSize(1, 96)
+    local glow = hero:CreateTexture(nil, "BACKGROUND")
+    glow:SetTexture(GuildOS.Style.ART and GuildOS.Style.ART.halo or "Interface\\AddOns\\GuildOS\\Media\\Salao\\halo")
+    glow:SetSize(120, 120)
+    glow:SetPoint("LEFT", -18, 0)
+    glow:SetVertexColor(WOOD.gold2.r, WOOD.gold2.g, WOOD.gold2.b, 0.35)
+    local logo = hero:CreateTexture(nil, "ARTWORK")
+    logo:SetTexture("Interface\\AddOns\\GuildOS\\Media\\minimap-logo")
+    logo:SetSize(72, 72)
+    logo:SetPoint("LEFT", 6, 0)
+    local ring = hero:CreateTexture(nil, "OVERLAY")
+    ring:SetTexture(GuildOS.Style.ART and GuildOS.Style.ART.ring or "Interface\\AddOns\\GuildOS\\Media\\Salao\\ring")
+    ring:SetSize(84, 84)
+    ring:SetPoint("CENTER", logo, "CENTER", 0, 0)
+    ring:SetVertexColor(WOOD.gold2.r, WOOD.gold2.g, WOOD.gold2.b, 1)
+    local title = UI:CreateText(hero, "Guild OS", 28, WOOD.gold.r, WOOD.gold.g, WOOD.gold.b)
+    GuildOS:ApplyFont(title, 28, "windowTitle")
+    title:SetTextColor(WOOD.gold.r, WOOD.gold.g, WOOD.gold.b)
+    title:SetPoint("TOPLEFT", logo, "TOPRIGHT", 20, 2)
+    local tag = UI:CreateText(hero, L["The guild manager for WoW: Forever, TBC Anniversary and Retail."], 12,
+        WOOD.textSoft.r, WOOD.textSoft.g, WOOD.textSoft.b)
+    tag:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 1, -4)
+    tag:SetJustifyH("LEFT")
+    local pills = { pill(hero, "v" .. tostring(GuildOS.VERSION or "?")), pill(hero, gameName()), pill(hero, "MIT") }
+    local x = 0
+    for _, p in ipairs(pills) do
+        p:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", x, -8)
+        x = x + p:GetWidth() + 6
+    end
+    F:Row(hero, { gap = 4, wide = true, place = function(h, w)
+        h:SetWidth(math.max(1, w))
+        tag:SetWidth(math.max(1, w - 72 - 26))
+        return math.max(96, 2 + 32 + 4 + math.ceil(tag:GetStringHeight() or 14) + 8 + 20 + 6)
+    end })
+    F.hero = hero
+
+    -- Who made it.
+    F:Section(L["Made by"])
+    local who = CreateFrame("Frame", nil, F.content)
+    who:SetSize(1, 52)
+    local av = UI:CreateGlyph(who, 44)
+    av:SetPoint("LEFT", 0, 0)
+    av:Set("C", C.paperTitle)
+    local nm = UI:CreateText(who, "Chehul", 16, C.text.r, C.text.g, C.text.b)
+    GuildOS:ApplyFont(nm, 16, "sectionTitle")
+    nm:SetPoint("TOPLEFT", av, "TOPRIGHT", 12, -4)
+    local handle = UI:CreateText(who, "danielcosta42", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    handle:SetPoint("LEFT", nm, "RIGHT", 8, -1)
+    local role = UI:CreateText(who, L["Creator and developer"], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    role:SetPoint("TOPLEFT", nm, "BOTTOMLEFT", 0, -4)
+    F:Row(who, { gap = 4, wide = true, h = 52 })
+    F:Note(L["Made with care for the guilds that play together, in every client the addon runs on."], { gap = 8 })
+
+    -- Where to find the community.
+    F:Section(L["Community and links"])
+    for _, link in ipairs(LINKS) do linkRow(F, link) end
+
+    -- The thanks.
+    F:Section(L["Thanks"])
+    F:Note(L["To the supporters on Discord, whose ideas and screenshots shaped this redesign, and to every guild that tested Guild OS in its raids and its chat."])
+    F:Note(L["Found a bug or have an idea? The Discord is the quickest way to reach us."], { gap = 8 })
+    F:Buttons({ { L["Join the Discord"], function() GuildOS:ShowExportPopup("Discord", LINKS[1].url) end, w = 160, variant = "primary" } },
+        { gap = 10 })
+
+    -- The licence.
+    F:Section(L["License"])
+    F:Value(L["License"], function() return "MIT" end)
+    F:Value(L["Copyright"], function() return "2026 danielcosta42" end)
+    F:Note(L["Free to use, change and share, with the copyright notice kept. It comes with no warranty."], { gap = 8 })
+    F:Buttons({ { L["Read the license"], function() GuildOS:ShowExportPopup(L["License"], MIT) end, w = 160 } }, { gap = 10 })
+
+    -- What it is built with.
+    F:Section(L["Built with"])
+    for _, lib in ipairs(BUILT_WITH) do F:Value(lib[1], function() return lib[2] end) end
+    F:Note(L["Thanks to their authors: each keeps its own license."], { gap = 8 })
+
+    -- This copy, for a bug report.
+    F:Section(L["This copy"])
+    F:Value(L["Version"], function() return "v" .. tostring(GuildOS.VERSION or "?") end)
+    F:Value(L["Game"], gameName)
+    F:Value(L["Language"], function() return GetLocale and GetLocale() or "?" end)
+    F:Buttons({ { L["Copy for a bug report"], function() GuildOS:ShowExportPopup(L["This copy"], details()) end, w = 190 } },
+        { gap = 10 })
+    F:Note(L["Type /gos help to see every command."], { gap = 8 })
 end
 
 ----------------------------------------------------------------------

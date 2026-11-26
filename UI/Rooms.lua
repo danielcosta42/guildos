@@ -100,6 +100,7 @@ UI.ROOMS = {
         { id = "modules",   label = L["Modules"],          feature = "settings", sub = "modules" },
         { id = "rules",     label = L["Guild rules"],      feature = "settings", sub = "rules" },
         { id = "data",      label = L["Data and support"], feature = "settings", sub = "data" },
+        { id = "credits",   label = L["Credits"],          feature = "settings", sub = "credits" },
         { id = "web",       label = L["Web"],              feature = "web" },
     } },
 }

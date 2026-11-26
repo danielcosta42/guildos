@@ -211,8 +211,8 @@ local labels = {}
 walk(parent, function(f)
   if f.kind == "Button" and f.underline and f.label then labels[#labels + 1] = f.label.text end
 end)
-check(table.concat(labels, "|") == "Profile|Interface|Chat and alerts|Modules|Guild rules|Data and support",
-  "six sub-tabs, in order (" .. table.concat(labels, "|") .. ")")
+check(table.concat(labels, "|") == "Profile|Interface|Chat and alerts|Modules|Guild rules|Data and support|Credits",
+  "seven sub-tabs, in order (" .. table.concat(labels, "|") .. ")")
 parent.SelectSub("profile")
 local profileTab
 walk(parent, function(f) if f.kind == "Button" and f.underline and f.label and f.label.text == "Profile" then profileTab = f end end)
@@ -227,7 +227,7 @@ end
 check(UI:GetFeature("settings") and UI:GetFeature("settings").core, "Settings itself has no switch")
 
 -- ── 2. Built once: switching and resizing create nothing ────────────────
-local PAGES = { "profile", "interface", "chat", "modules", "rules", "data" }
+local PAGES = { "profile", "interface", "chat", "modules", "rules", "data", "credits" }
 for _, p in ipairs(PAGES) do parent.SelectSub(p) end   -- every page built
 local frames = #allFrames
 for _ = 1, 3 do
@@ -240,7 +240,7 @@ end
 check(#allFrames == frames, "laying the pages out at four widths builds nothing new")
 for _, p in ipairs(PAGES) do
   local info = parent.subPanels[p]
-  check(info.scroll:IsShown() == (p == "data"), p .. " is shown only while its sub-tab is open")
+  check(info.scroll:IsShown() == (p == "credits"), p .. " is shown only while its sub-tab is open")
   check(info.content.h > 0, p .. " has a height for its scroll frame")
 end
 
@@ -411,6 +411,29 @@ for _, label in ipairs({ "Show welcome again", "Show the digest now", "Recent me
   check(find(everything, "button", label), "Settings still has the \"" .. label .. "\" button")
 end
 check(shows(everything, "UI scale") and shows(everything, "Watch-words:"), "and the scale and the watch-words")
+-- Credits: who made it, the links each with Copy, the licence, what it is built with, this copy's details.
+do
+  local credits = newFrame("Frame", UIParent)
+  credits:SetSize(900, 1)
+  GuildOS:RefreshSettingsPanel(credits, "credits")
+  for _, t in ipairs({ "Guild OS", "Chehul", "Made by", "Community and links", "Thanks", "License", "Built with", "This copy",
+    "https://discord.gg/8XA6gmNjja", "https://guildos.me", "MIT" }) do
+    check(shows(credits, t), "Credits shows \"" .. t .. "\"")
+  end
+  local copies = 0
+  walk(credits, function(f) if f.kind == "Button" and f.label and f.label.text == "Copy" then copies = copies + 1 end end)
+  check(copies == 5, "each link has its Copy (" .. copies .. ")")
+  for _, label in ipairs({ "Read the license", "Copy for a bug report", "Join the Discord" }) do
+    check(find(credits, "button", label), "Credits has the \"" .. label .. "\" button")
+  end
+  local narrow = newFrame("Frame", UIParent)
+  narrow:SetSize(380, 1)
+  local F = GuildOS:RefreshSettingsPanel(narrow, "credits")
+  F:Layout(380)
+  local inside = true
+  for _, pl in ipairs(F.placed or {}) do if pl.x + pl.w > pl.cardW + 1 then inside = false end end
+  check(inside, "at 380px every row stays inside its card")
+end
 local errorsButtons = 0
 walk(everything, function(f)
   if f.kind == "Button" and f.label and f.label.text == "View Errors" then errorsButtons = errorsButtons + 1 end
