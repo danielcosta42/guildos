@@ -4486,3 +4486,13 @@ L["one channel per key press"] = "每次按鍵一個頻道"
 L["every channel on one click"] = "一次點擊所有頻道"
 L["Sent to: %s"] = "已發送到：%s"
 L["Not shown in: %s. The game took the line but the channel did not show it: you may be muted there, or the server filtered it. Try typing in that channel yourself."] = "未顯示於：%s。遊戲接受了該行，但頻道沒有顯示：你可能在那裡被禁言，或被伺服器過濾。請自己在該頻道輸入試試。"
+
+-- The member window (#449)
+L["No talent scan yet"] = "尚未掃描天賦"
+L["Average item level %d"] = "平均物品等級 %d"
+L["Officer comment"] = "幹部評論"
+L["Discipline rules"] = "紀律規則"
+L["Term (days)"] = "期限（天）"
+L["Alt"] = "分身"
+L["Add alt"] = "新增分身"
+L["Character name"] = "角色名稱"

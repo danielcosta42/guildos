@@ -345,9 +345,9 @@ function Founding:Later(now)
 end
 
 ----------------------------------------------------------------------
--- The badge (issue #209): a scroll by a founding member's name, in the roster and their card.
+-- The badge (issue #209): the founder's banner mark by a founding member's name, in the roster and their card
+-- (#449: UI.RosterMarks' "founder", Media/Salao/mark-banner.tga, with the Members list's tooltip).
 ----------------------------------------------------------------------
-Founding.BADGE = "|TInterface\\Icons\\INV_Scroll_03:12|t"
 
 -- Days since 1970-01-01 of a UTC calendar date (H. Hinnant's days_from_civil), so an anniversary
 -- needs no time zone: the client's own clock zone is not the guild's.

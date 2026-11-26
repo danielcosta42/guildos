@@ -910,6 +910,82 @@ for _, W in ipairs({ 1250, 800 }) do
   check(inside, "Members at " .. W .. ": every line of the rail and every part of the list inside its card")
 end
 
+-- The member window (#449, the maintainer: "inside the character card the fields look bad"), at its default size,
+-- as an officer opens a member with a trial, a warning, a note and a linked alt: every part of every section lies
+-- inside the parchment, its content SP.PAD in from the sheet's left and ending SP.PAD and the scroll bar short of
+-- its right; the sections' titles in the serif face in normal case; every field the paper's light one with its
+-- label above it; each block's primary action at its bottom right; nothing in the wood's dark on the paper.
+do
+  ChehulNet = false   -- no sibling addon on the mesh (the stub answers any global)
+  local key = GuildOS:GetPlayerKey("Lunara", GetRealmName())
+  local alt = GuildOS:GetPlayerKey("Velyra", GetRealmName())
+  GuildOS.db.altLinks = GuildOS.db.altLinks or {}
+  GuildOS.db.altLinks[alt] = key
+  if GuildOS.Discipline then pcall(GuildOS.Discipline.Add, GuildOS.Discipline, key, "spam", { note = "Flood" }) end
+  if GuildOS.TrialTracker then pcall(GuildOS.TrialTracker.AddTrial, GuildOS.TrialTracker, key, "Chehul") end
+  if GuildOS.OfficerNotes then pcall(GuildOS.OfficerNotes.AddNote, GuildOS.OfficerNotes, key, "Boa cura.") end
+  GuildOS.db.members = GuildOS.db.members or {}
+  GuildOS.db.members[key] = GuildOS.db.members[key] or {}
+  GuildOS.db.members[key].spec = { points = { 0 }, names = { "Equilibrio" }, tree = "Equilibrio", scannedAt = GetServerTime() }
+  local gear = {}
+  for i, sl in ipairs(GuildOS.SlotIDs) do gear[sl.id] = { id = 1000 + i, name = "Peca de nome comprido " .. i, quality = 3, ilvl = 100 + i } end
+  local data = { name = "Lunara", key = key, class = "DRUID", level = 70, race = "Elfa", rank = "Oficial", avgIlvl = 110, gear = gear,
+    stats = { health = 9000, mana = 1, strength = 1, agility = 1, stamina = 1, intellect = 1, spirit = 1 } }
+  local ok, err = pcall(GuildOS.ShowMemberDetail, GuildOS, data)
+  check(ok, "the member window opens: " .. tostring(err))
+  pcall(FLUSH)
+  local f = GuildOS.DetailFrame
+  check(f and f.w == 460 and f.h == 620, "the member window at its default size")
+  local resolve = resolver(f, f.w, f.h)
+  local sheet, child = resolve(f.sheet), f.content
+  local scroll = resolve(child:GetParent())
+  local left, right = sheet.l + SP.PAD, sheet.r - SP.PAD - 8
+  check(right <= scroll.r - UI.SCROLL_GUTTER + SLACK, "the content ends clear of the scroll bar")
+  local titles, fields, primaries, n = 0, 0, 0, 0
+  local function walk(fr)
+    for _, k in ipairs(fr.children) do
+      if k.shown then
+        local r = resolve(k)
+        local empty = k.kind == "FontString" and plain(k.text) == ""
+        if not empty and (r.r - r.l) >= 1 then
+          n = n + 1
+          local name = tostring(k.kind) .. " \"" .. plain(k.text or (rawget(k, "label") and k.label.text) or "") .. "\""
+          check(r.l >= left - SLACK and r.r <= right + SLACK,
+            string.format("the member window holds its %s inside the parchment's padding (%d..%d in %d..%d)", name, r.l, r.r, left, right))
+        end
+        local font = k.kind == "FontString" and rawget(k, "__gosFont")
+        if font and font.file == GuildOS.Fonts.read and k.parent == child and not empty then
+          titles = titles + 1
+          check(plain(k.text) ~= plain(k.text):upper(), "a section title in normal case: " .. plain(k.text))
+        end
+        if font then check(font.file ~= GuildOS.Fonts.title or k.parent ~= child, "no section title in the capitals' face: " .. plain(k.text)) end
+        if k.kind == "EditBox" then
+          fields = fields + 1
+          local bg = { k:GetBackdropColor() }
+          check(bg[1] and math.abs(bg[1] - GuildOS.Colors.paperLight.r) < 0.01, "a field on the paper is the paper's light one, not the wood's dark")
+          local holder = k.parent
+          if rawget(holder, "label") and plain(holder.label.text) ~= "" then
+            check(resolve(holder.label).b <= r.t + SLACK, "a field's label sits above it: " .. plain(holder.label.text))
+          else
+            check(false, "every field has its label above it")
+          end
+        end
+        if rawget(k, "variant") == "primary" then
+          primaries = primaries + 1
+          check(math.abs(r.r - right) <= SLACK, "a block's primary action sits at its right edge: " .. plain(k.label and k.label.text))
+        end
+        walk(k)
+      end
+    end
+  end
+  walk(child)
+  check(n > 40 and titles >= 6, "the member window drew its sections (" .. n .. " parts, " .. titles .. " titles)")
+  check(fields >= 3 and primaries >= 4, "its forms: the trial's comment, the term, the alt, and a primary per block (" .. fields .. ", " .. primaries .. ")")
+  local md = io.open(ADDON .. "/UI/MemberDetail.lua", "rb"):read("*a")
+  check(not md:find('CreateFrame("EditBox", nil, child', 1, true), "no hand-made dark field left on the member window's paper")
+  check(md:find('L["No talent scan yet"]', 1, true), "a scan that counted no talent says so, not \"0\"")
+end
+
 check(opened >= 80, "every room's screens were opened at both widths (" .. opened .. ")")
 
 print(("room-cards: %d checks passed"):format(checks))

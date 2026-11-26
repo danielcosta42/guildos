@@ -11,6 +11,28 @@ local DETAIL_HEIGHT = 620
 local HEADER_H = 62    -- the card's header: the portrait, the name, the line under it and an alt's line
 local PORTRAIT = 44
 local TIMELINE_SHOWN = 8   -- entries of the officers' timeline (dated notes and trial comments) the sheet shows
+local SP = UI.SP or GuildOS.Spacing   -- read at load only for PADX: a test loads this file alone for its stat cells
+-- The parchment body (#449): the scroll frame sits SHEET_IN inside it and reaches SCROLL_IN from its right edge,
+-- its bar inside that padding; the content's sections stand PADX in from the content's sides, so a section's text
+-- is SHEET_IN + PADX (a card's padding, SP.PAD) from the sheet's left, and ends SP.PAD + the bar short of its right.
+local SHEET_IN = 8
+local SCROLL_IN = 4
+local PADX = (SP and SP.PAD or 16) - SHEET_IN
+local GEAR_ROW = 40       -- an equipment row: the slot, the 28px icon, the name over its enchant, the item level
+local GEAR_SLOT_W = 72
+local GEAR_ICON = 24      -- UI:CreateIcon's art; its quality frame is 4px more (28)
+local GEAR_ILVL_W = 36
+local SECTION_ROLE = "reading"   -- a section title's face: serif, in normal case (CreateSectionHeader)
+
+-- The scroll child's width: the scroll frame's, as its anchors make it, less the bar and the padding it keeps
+-- clear (the content's right edge SP.PAD + the bar's width from the sheet's).
+local function ContentWidth(scroll)
+    local w = UI:LaidWidth(scroll)
+    if w < 1 then w = DETAIL_WIDTH - 2 * 8 - SHEET_IN - SCROLL_IN end
+    -- The child ends SP.PAD - SCROLL_IN short of the scroll frame's right: its sections, PADX in from that,
+    -- end SP.PAD + the bar's width (8) short of the sheet's edge; the bar, 2px inside the frame, is clear of them.
+    return math.max(200, math.floor(w - (SP.PAD - SCROLL_IN)))
+end
 
 -- Static stat list — defined once at module level to avoid per-call allocation.
 local STATS_LIST = {
@@ -114,6 +136,147 @@ local function _pBG(parent)
 end
 
 ----------------------------------------------------------------------
+-- The header's marks (#449): the founder's banner and the member's Guild OS crest (or its out-of-date warning)
+-- after the name, the Members list's own marks (UI.RosterMarks) with its tooltips. The name gives way to them.
+----------------------------------------------------------------------
+local function LayHeaderMarks(frame, data, founder)
+    local Marks = UI.RosterMarks
+    local marks = frame.marks or {}
+    for _, m in ipairs(marks) do m:Hide() end
+    local kinds = {}
+    if founder then kinds[#kinds + 1] = { "founder" } end
+    if Marks and data.key and GetNumGuildMembers then
+        local ok, scan = pcall(Marks.Scan)
+        local mine = ok and scan and scan.byKey[data.key]
+        if mine and (mine.status == "cur" or mine.status == "old") then
+            kinds[#kinds + 1] = { mine.status, mine.version, scan.latest }
+        end
+    end
+    local name = frame.nameText
+    local maxW = (frame.nameMaxW and frame.nameMaxW > 0) and frame.nameMaxW or UI:LaidWidth(name)
+    local room = math.max(40, maxW - #kinds * ((Marks and Marks.SIZE or 18) + SP.UNIT) - SP.UNIT)
+    local textW = math.ceil((name.GetUnboundedStringWidth and name:GetUnboundedStringWidth()) or name:GetStringWidth() or 0)
+    name:SetWidth(math.max(20, math.min(room, textW + 4)))
+    local prev
+    for i, k in ipairs(kinds) do
+        local m = marks[i]
+        if m then
+            m:SetKind(k[1], k[2], k[3])
+            m:ClearAllPoints()
+            if prev then m:SetPoint("LEFT", prev, "RIGHT", SP.UNIT, 0)
+            else m:SetPoint("LEFT", name, "RIGHT", SP.UNIT + 2, 0) end
+            m:Show()
+            prev = m
+        end
+    end
+end
+
+----------------------------------------------------------------------
+-- The card's forms (#449, the Officers' Room's standard, UI/Forms.lua): a section is a block under its title,
+-- its fields with their label above them on the paper's light fields, two side by side as a pair, and its
+-- buttons at the block's bottom right, the primary one rightmost. The controls are made once for the panel's
+-- life (kept) and laid again on each fill; the fill hides every child of the content first, and kept shows
+-- the ones it lays.
+----------------------------------------------------------------------
+local function kept(child, name, make)
+    child._kept = child._kept or {}
+    local f = child._kept[name]
+    if not f then f = make(); child._kept[name] = f end
+    f:ClearAllPoints()
+    f:Show()
+    return f
+end
+
+-- A field: `label` above `control` (Forms:MakeField), laid at x, y and w wide. Returns its height.
+local function placeField(child, name, label, control, x, y, w)
+    local holder = kept(child, name .. ".field", function() return GuildOS.Forms:MakeField(child, label, control) end)
+    holder:SetPoint("TOPLEFT", child, "TOPLEFT", x, y)
+    control:Show()
+    return holder:Place(w)
+end
+
+-- A pair of fields side by side (Forms' .row2), each half the row; one under the other when the row is narrow.
+-- Returns the height.
+local function placePair(child, a, b, y, width)
+    local w = width - 2 * PADX
+    if w >= GuildOS.Forms.PAIR_MIN then
+        local aw = math.floor((w - SP.FIELD_GAP) / 2)
+        return math.max(placeField(child, a[1], a[2], a[3], PADX, y, aw),
+            placeField(child, b[1], b[2], b[3], PADX + aw + SP.FIELD_GAP, y, w - aw - SP.FIELD_GAP))
+    end
+    local ha = placeField(child, a[1], a[2], a[3], PADX, y, w)
+    return ha + SP.FIELD_GAP + placeField(child, b[1], b[2], b[3], PADX, y - ha - SP.FIELD_GAP, w)
+end
+
+-- The block's buttons at its bottom right (Forms' card:Actions): the last one given rightmost (the primary),
+-- wrapping to a new line when the row runs out. Laid `gap` (SP.FIELD_GAP) under `yOff`; returns the new yOff.
+local function placeActions(child, buttons, yOff, width, gap)
+    local gx = 2 * SP.UNIT
+    local right = width - PADX
+    local x, y, rowH = right, yOff - (gap or SP.FIELD_GAP), 0
+    for i = #buttons, 1, -1 do
+        local b = buttons[i]
+        local bw = b:GetWidth() or 60
+        if x < right and x - bw < PADX then y, x, rowH = y - rowH - gx, right, 0 end
+        b:ClearAllPoints()
+        b:SetPoint("TOPRIGHT", child, "TOPLEFT", x, y)
+        b:Show()
+        x = x - bw - gx
+        rowH = math.max(rowH, b:GetHeight() or SP.FIELD)
+    end
+    return y - rowH
+end
+
+-- The guild roster once per fill: byKey[key] = { name, class (its file), rank }, and the names in roster order.
+local function RosterIndex()
+    local idx = { byKey = {}, names = {} }
+    if not (GetNumGuildMembers and GetGuildRosterInfo) then return idx end
+    for i = 1, GetNumGuildMembers() or 0 do
+        local full, rank, _, _, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
+        if type(full) == "string" and full ~= "" then
+            local short = full:match("^([^-]+)") or full
+            local key = GuildOS:GetPlayerKey(short, full:match("-(.+)$") or GetRealmName())
+            if key then
+                idx.byKey[key] = { name = short, class = classFile, rank = rank }
+                idx.names[#idx.names + 1] = { name = short, key = key }
+            end
+        end
+    end
+    return idx
+end
+
+-- The first character of the roster whose name starts with `typed` (any case), not one of `taken` (keys):
+-- the Add alt field's suggestion. Nil under two letters or with none.
+local function SuggestCharacter(roster, typed, taken)
+    typed = (typed or ""):lower()
+    if #typed < 2 then return nil end
+    local best
+    for _, n in ipairs(roster.names) do
+        if not taken[n.key] and n.name:lower():sub(1, #typed) == typed then
+            if not best or n.name < best then best = n.name end
+        end
+    end
+    return best
+end
+
+-- A link on a row (the mockup's underlined word): the paper's link ink, sized to its label.
+local function rowLink(parent, text)
+    local b = UI:SetButtonVariant(UI:CreateButton(parent, text, 40, SP.HIT), "ghost")
+    b:SetWidth(math.ceil(b.label:GetStringWidth() or 30) + 6)
+    return b
+end
+
+-- A text in the paper's ink `c` (paperInk unless given), kept from paperInks' remapping.
+local function ink(fs, c, a)
+    c = c or C.paperInk
+    fs:SetTextColor(c.r, c.g, c.b, a or 1)
+    fs.__ownInk = true
+    return fs
+end
+-- A status colour of the wood (a green, a red) as the paper reads it.
+local function paperInk(c) return UI:Ink("paper", c) end
+
+----------------------------------------------------------------------
 -- Create an invisible tooltip hover zone over a region
 -- anchor: FontString or Frame to overlay
 -- link: itemLink string OR itemId number
@@ -185,8 +348,27 @@ function CreateDetailFrame()
 
     frame.nameText = frame.titleText
     GuildOS:ApplyFont(frame.nameText, 17, "windowTitle")
+    frame.nameMaxW = UI:LaidWidth(frame.nameText)
     frame.infoText = frame.subText
     frame.altTagText = frame.header.extra
+    -- The marks after the name, as the Members list draws them (UI.RosterMarks: the founder's banner, the Guild OS
+    -- crest or its out-of-date warning), each with the list's tooltip.
+    local Marks = UI.RosterMarks
+    frame.marks = Marks and { Marks.Create(frame.header), Marks.Create(frame.header) } or {}
+    for _, m in ipairs(frame.marks) do m:Hide() end
+
+    -- An item the client had not cached draws from what the member sent, with its icon from the item's id; when
+    -- the client's answer arrives the card draws again (once per burst, never under the officer's typing).
+    GuildOS.Compat.RegisterEvent(frame, "GET_ITEM_INFO_RECEIVED")
+    frame:SetScript("OnEvent", function(self)
+        if not self._itemsPending or not self:IsShown() then return end
+        GuildOS:Coalesce("memberDetail.items", 1, function()
+            if not self._itemsPending or not self:IsShown() or not self._data then return end
+            local focus = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+            if focus and focus.IsVisible and focus:IsVisible() then return end
+            PopulateDetail(self, self._data)
+        end)
+    end)
 
     ----------------------------------------------------------------
     -- Content scroll
@@ -199,13 +381,16 @@ function CreateDetailFrame()
     GuildOS.Style:Paint(sheet, "paper")
     sheet.__paper = true
     frame.sheet = sheet
+    -- The scroll frame reaches into the sheet's right padding, where its bar sits (UI:SkinScrollBar puts it 2px
+    -- inside the frame's right edge): the content ends a card's padding plus the bar short of the sheet's edge
+    -- (ContentWidth), so nothing (an item level, a row's rule) runs under the bar.
     local content = CreateFrame("ScrollFrame", "GuildOSDetailScroll", sheet, "UIPanelScrollFrameTemplate")
-    content:SetPoint("TOPLEFT", 8, -8)
-    content:SetPoint("BOTTOMRIGHT", -UI.SCROLL_GUTTER, 8)
+    content:SetPoint("TOPLEFT", SHEET_IN, -SHEET_IN)
+    content:SetPoint("BOTTOMRIGHT", -SCROLL_IN, SHEET_IN)
     UI:SkinScrollBar(content, "GuildOSDetailScroll")
 
     local child = CreateFrame("Frame", "GuildOSDetailScrollChild", content)
-    child:SetWidth(DETAIL_WIDTH - 35)
+    child:SetWidth(ContentWidth(content))
     child:SetHeight(1) -- will grow
     content:SetScrollChild(child)
     frame.content = child
@@ -229,10 +414,11 @@ function PopulateDetail(frame, data)
     end
     local p = child._p
     for _, fs in ipairs(p.fs) do
-        fs:Hide(); fs:ClearAllPoints(); fs:SetText(""); fs:SetWidth(0); fs:SetWordWrap(false)
+        fs:Hide(); fs:ClearAllPoints(); fs:SetText(""); fs:SetWidth(0); fs:SetWordWrap(false); fs:SetJustifyH("LEFT"); fs.__ownInk = nil
     end
-    for _, tx in ipairs(p.bg) do tx:Hide(); tx:ClearAllPoints() end
+    for _, tx in ipairs(p.bg) do tx:Hide(); tx:ClearAllPoints(); tx.__ownInk = nil end
     p.fsCur, p.bgCur = 0, 0
+    frame._data, frame._itemsPending = data, nil
     -- Hide non-pooled child frames (Buttons, EditBoxes, plain Frames created
     -- by interactive sections such as alt-links and trial notes).
     local children = { child:GetChildren() }
@@ -245,8 +431,9 @@ function PopulateDetail(frame, data)
     local cr, cg, cb = GuildOS:GetClassColor(data.class)
     frame.avatar:SetMember(data.name, data.class and tostring(data.class):upper())
     local founder = GuildOS.Founding and data.key and GuildOS.Founding:Founders()[data.key]
-    GuildOS:SetTitleText(frame.nameText, founder and (data.name .. " " .. GuildOS.Founding.BADGE) or data.name)
+    GuildOS:SetTitleText(frame.nameText, data.name)
     frame.nameText:SetTextColor(cr, cg, cb)   -- the name in the class's colour on the dark header (the mockup)
+    LayHeaderMarks(frame, data, founder)
 
     -- Info line
     -- Defence in depth: string.format on a nil takes the WHOLE panel down, and
@@ -257,22 +444,28 @@ function PopulateDetail(frame, data)
     local raceStr = (data.race and data.race ~= "") and data.race or L["Unknown"]
     local infoLine = string.format(L["Level %d %s %s  |  %s"],
         data.level or 0, raceStr, data.classDisplay or data.class or "?", data.rank or "?")
+    -- The parts with the card's " · " between them (#449), whatever bar the translation put there.
+    infoLine = infoLine:gsub("%s*|%s+", " \194\183 ")
     -- Cross-addon presence: append which sibling Chehul addons this player is
     -- currently broadcasting on the mesh (e.g. "· PartyLens"). Empty if none.
     if GuildOS.Mesh then
         infoLine = infoLine .. GuildOS.Mesh:PresenceSuffix(data.name)
     end
-    if founder then
-        infoLine = infoLine .. "  |  " .. string.format(L["Founding member · joined %s"], date("!%Y-%m-%d", founder.joinedAt))
-    end
     frame.infoText:SetText(infoLine)
 
-    -- Alt-of indicator: nil unless this member is linked to a main.
+    -- The line under it: since when a founder is one, and whose alt this is (nil unless linked to a main).
     local memberKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
-    frame.altTagText:SetText((GuildOS.GetAltTag and GuildOS:GetAltTag(memberKey)) or "")
+    local extra = {}
+    if founder then
+        extra[#extra + 1] = string.format(L["Founding member · joined %s"], date("!%Y-%m-%d", founder.joinedAt))
+    end
+    local altTag = GuildOS.GetAltTag and GuildOS:GetAltTag(memberKey)
+    if altTag and altTag ~= "" then extra[#extra + 1] = altTag end
+    frame.altTagText:SetText(table.concat(extra, " \194\183 "))
 
-    local yOff = -5
-    local contentWidth = DETAIL_WIDTH - 35
+    local yOff = -4
+    local contentWidth = ContentWidth(child:GetParent())
+    child:SetWidth(contentWidth)
 
     ----------------------------------------------------------------
     -- Section: Spec
@@ -281,16 +474,23 @@ function PopulateDetail(frame, data)
     local specLabel = GuildOS.SpecChecker and GuildOS.SpecChecker:GetSpecLabel(playerKey)
 
     yOff = CreateSectionHeader(child, L["Talent spec"], yOff, contentWidth)
-    yOff = yOff - 5
 
-    if specLabel then
-        local spec = GuildOS.db.members and GuildOS.db.members[playerKey] and GuildOS.db.members[playerKey].spec
+    local spec = GuildOS.db.members and GuildOS.db.members[playerKey] and GuildOS.db.members[playerKey].spec
+    -- A scan that counted no point (a tree's name and a lone 0: the talents never read) is no scan (#449).
+    local scanned = specLabel ~= nil
+    if scanned and spec and not spec.specID then
+        local total = 0
+        for _, pts in ipairs(spec.points or {}) do total = total + (tonumber(pts) or 0) end
+        scanned = total > 0
+    end
+    local barW = contentWidth - 2 * PADX
 
+    if scanned then
         -- Talent distribution bar (one segment per tree; clickable to view tree)
         if spec and spec.points and spec.names then
             local barFrame = CreateFrame("Button", nil, child)
-            barFrame:SetPoint("TOPLEFT", 10, yOff)
-            barFrame:SetSize(contentWidth - 20, 20)
+            barFrame:SetPoint("TOPLEFT", PADX, yOff)
+            barFrame:SetSize(barW, 20)
             barFrame:RegisterForClicks("LeftButtonUp")
             if spec.talents then
                 barFrame:SetScript("OnClick", function()
@@ -307,16 +507,26 @@ function PopulateDetail(frame, data)
             end
             barFrame:Show()
 
+            -- The light track under the trees (#449): the paper's field.
+            local track = barFrame:CreateTexture(nil, "ARTWORK")
+            track:SetTexture("Interface\\Buttons\\WHITE8x8")
+            track:SetPoint("TOPLEFT", 0, 0)
+            track:SetSize(barW, 18)
+            track:SetVertexColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
+
             local total = 0
             for _, pts in ipairs(spec.points) do total = total + pts end
             if total == 0 then total = 1 end
 
-            -- The trees in the paper's colours (#449): the class's ink, a softer cut of it, the paper's tan.
+            -- The trees in soft cuts of the class's paper ink (#449): washed toward the light field, so the
+            -- paper's ink reads on every one of them.
             local ir, ig, ib = UI:InkFor("paper", "class", data.class)
-            local function mix(t) return { r = ir + (C.paperEdge.r - ir) * t, g = ig + (C.paperEdge.g - ig) * t, b = ib + (C.paperEdge.b - ib) * t } end
-            local treeColors = { mix(0), mix(0.45), { r = C.paperRule.r, g = C.paperRule.g, b = C.paperRule.b } }
+            local function mix(t)
+                return { r = ir + (C.paperLight.r - ir) * t, g = ig + (C.paperLight.g - ig) * t, b = ib + (C.paperLight.b - ib) * t }
+            end
+            local treeColors = { mix(0.55), mix(0.75), { r = C.paperLine.r, g = C.paperLine.g, b = C.paperLine.b } }
 
-            local BAR_W = contentWidth - 20
+            local BAR_W = barW
             local xPos = 0
             local nonZero = 0
             for _, pts in ipairs(spec.points) do if pts > 0 then nonZero = nonZero + 1 end end
@@ -346,13 +556,11 @@ function PopulateDetail(frame, data)
                     local segLabel = barFrame:CreateFontString(nil, "OVERLAY")
                     GuildOS:ApplyFont(segLabel, UI.SP.META)
                     segLabel:SetPoint("TOPLEFT", xPos + 4, -1)
-                    segLabel:SetSize(segW - 8, 18)
+                    segLabel:SetSize(math.max(1, segW - 8), 18)
                     segLabel:SetJustifyH("CENTER")
                     segLabel:SetJustifyV("MIDDLE")
                     segLabel:SetWordWrap(false)
-                    -- White on the class's ink, the paper's ink on the lighter trees.
-                    if i == 1 then segLabel:SetTextColor(1, 0.97, 0.9, 1)
-                    else segLabel:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b, 1) end
+                    segLabel:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b, 1)   -- the paper's ink on every tree
                     if segW >= 55 then
                         segLabel:SetText(pts .. "  " .. (spec.names[i] or ""))
                     elseif segW >= 22 then
@@ -369,24 +577,26 @@ function PopulateDetail(frame, data)
                         div:SetPoint("TOPLEFT", xPos, 0)
                         div:SetHeight(18)
                         GuildOS.UI:Hairline(div, "Width")
-                        div:SetVertexColor(0, 0, 0, 0.7)
+                        div:SetVertexColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
                         div:Show()
                     end
 
                     xPos = xPos + segW
                 end
             end
-            yOff = yOff - 24
+            yOff = yOff - 26
         end
 
         -- Text label: e.g.  "41 / 5 / 15  (Protection)"
         local specText = _pFS(child)
-        GuildOS:ApplyFont(specText, 13)
-        specText:SetPoint("TOPLEFT", 10, yOff)
-        specText:SetTextColor(cr, cg, cb)
+        GuildOS:ApplyFont(specText, SP.BODY)
+        specText:SetPoint("TOPLEFT", PADX, yOff)
+        specText:SetJustifyH("LEFT")
+        local sr, sg, sb = UI:InkFor("paper", "class", data.class)
+        ink(specText, { r = sr, g = sg, b = sb })
         specText:SetText(specLabel)
         specText:Show()
-        yOff = yOff - 22
+        yOff = yOff - 20
 
         if spec and spec.scannedAt and spec.scannedAt > 0 then
             local age = GetServerTime() - spec.scannedAt
@@ -400,20 +610,25 @@ function PopulateDetail(frame, data)
             end
             local scanText = _pFS(child)
             GuildOS:ApplyFont(scanText, UI.SP.META)
-            scanText:SetPoint("TOPLEFT", 10, yOff)
-            scanText:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.6)
+            scanText:SetPoint("TOPLEFT", PADX, yOff)
+            scanText:SetJustifyH("LEFT")
+            ink(scanText, C.paperSoft)
             scanText:SetText(L["Last scanned: "] .. ageStr)
             scanText:Show()
             yOff = yOff - 18
         end
     else
         local noSpec = _pFS(child)
-        GuildOS:ApplyFont(noSpec, 11)
-        noSpec:SetPoint("TOPLEFT", 15, yOff)
-        noSpec:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
-        noSpec:SetText(L["No spec data. Use /guildos specs to scan the group."])
+        GuildOS:ApplyFont(noSpec, UI.SP.META)
+        noSpec:SetPoint("TOPLEFT", PADX, yOff)
+        noSpec:SetWidth(barW)
+        noSpec:SetJustifyH("LEFT")
+        noSpec:SetWordWrap(true)
+        ink(noSpec, C.paperSoft)
+        -- A scan that counted nothing says so; a member never read, how to read them.
+        noSpec:SetText(specLabel and L["No talent scan yet"] or L["No spec data. Use /guildos specs to scan the group."])
         noSpec:Show()
-        yOff = yOff - 25
+        yOff = yOff - (math.ceil(noSpec:GetStringHeight() or 14) + 8)
     end
 
     yOff = yOff - 8
@@ -423,35 +638,36 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     if data.stats then
         yOff = CreateSectionHeader(child, L["Character stats"], yOff, contentWidth)
-        yOff = yOff - 5
 
         local statsGrid = CreateFrame("Frame", nil, child)
-        statsGrid:SetPoint("TOPLEFT", 10, yOff)
-        statsGrid:SetSize(contentWidth - 20, 40)
+        statsGrid:SetPoint("TOPLEFT", PADX, yOff)
+        statsGrid:SetSize(contentWidth - 2 * PADX, 40)
         statsGrid:Show()
 
-        local colWidth = (contentWidth - 20) / 4
+        local colWidth = (contentWidth - 2 * PADX) / 4
         for i, stat in ipairs(GuildOS:MemberStatCells(data.stats)) do
             local col = ((i - 1) % 4)
             local row = math.floor((i - 1) / 4)
-            local sc = stat.color and C[stat.color] or C.white
+            -- The label in the paper's soft ink, the value in its ink (a health or mana value in the paper's
+            -- cut of its colour).
+            local sc = stat.color and paperInk(C[stat.color]) or C.paperInk
 
             local label = _pFS(child)
             GuildOS:ApplyFont(label, UI.SP.META)
             label:SetPoint("TOPLEFT", statsGrid, "TOPLEFT", col * colWidth, -(row * 20))
-            label:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
+            ink(label, C.paperSoft)
             label:SetText(stat.label)
             label:Show()
 
             local value = _pFS(child)
-            GuildOS:ApplyFont(value, 11)
+            GuildOS:ApplyFont(value, SP.META)
             value:SetPoint("LEFT", label, "RIGHT", 4, 0)
-            value:SetTextColor(sc.r, sc.g, sc.b)
+            ink(value, sc)
             value:SetText(stat.text)
             value:Show()
         end
 
-        yOff = yOff - 50
+        yOff = yOff - 48
     end
 
     ----------------------------------------------------------------
@@ -464,38 +680,35 @@ function PopulateDetail(frame, data)
             local l = _pFS(child)
             GuildOS:ApplyFont(l, UI.SP.META)
             l:SetPoint("TOPLEFT", x, y)
-            l:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
+            ink(l, C.paperSoft)
             l:SetText(label)
             l:Show()
             local v = _pFS(child)
-            GuildOS:ApplyFont(v, 11)
+            GuildOS:ApplyFont(v, SP.META)
             v:SetPoint("LEFT", l, "RIGHT", 4, 0)
-            color = color or C.white
-            v:SetTextColor(color.r, color.g, color.b)
+            ink(v, color and paperInk(color) or C.paperInk)
             v:SetText(text)
             v:Show()
         end
 
         yOff = CreateSectionHeader(child, L["Mythic+"], yOff, contentWidth)
-        yOff = yOff - 5
         local rating = MP:Rating(data.mplus)
         local r, g, b = GuildOS.Compat.RatingColor(rating)
-        cell(L["Rating"], rating and tostring(rating) or "\226\128\148", 10, yOff, r and { r = r, g = g, b = b } or C.gold)
-        cell(L["Keystone"], MP:KeystoneText(data.mplus) or L["none"], 10 + (contentWidth - 20) / 3, yOff)
+        cell(L["Rating"], rating and tostring(rating) or "\226\128\148", PADX, yOff, r and { r = r, g = g, b = b } or C.gold)
+        cell(L["Keystone"], MP:KeystoneText(data.mplus) or L["none"], PADX + (contentWidth - 2 * PADX) / 3, yOff)
         yOff = yOff - 26
 
         yOff = CreateSectionHeader(child, L["Great Vault"], yOff, contentWidth)
-        yOff = yOff - 5
         local cells, why = MP:VaultCells(data.vault, GuildOS.Compat.WeekStart())
         if cells then
             for i, c in ipairs(cells) do
-                cell(c.label, c.text, 10 + (i - 1) * (contentWidth - 20) / 3, yOff)
+                cell(c.label, c.text, PADX + (i - 1) * (contentWidth - 2 * PADX) / 3, yOff)
             end
         else
             local none = _pFS(child)
             GuildOS:ApplyFont(none, 11)
-            none:SetPoint("TOPLEFT", 15, yOff)
-            none:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
+            none:SetPoint("TOPLEFT", PADX, yOff)
+            ink(none, C.paperSoft)
             none:SetText(why == "old" and L["Not updated since the weekly reset."] or L["No vault data yet."])
             none:Show()
         end
@@ -505,19 +718,22 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     -- Section: Equipment
     ----------------------------------------------------------------
-     yOff = CreateSectionHeader(child, L["Equipment"] .. (data.avgIlvl and data.avgIlvl > 0 and (L["  -  Avg iLvl: "] .. data.avgIlvl) or ""), yOff, contentWidth)
-    yOff = yOff - 5
+    -- The average item level as the title's soft meta at its right (#449).
+    local avgMeta = (data.avgIlvl and data.avgIlvl > 0) and string.format(L["Average item level %d"], data.avgIlvl) or nil
+    yOff = CreateSectionHeader(child, L["Equipment"], yOff, contentWidth, avgMeta)
 
     if data.gear then
-        for _, slotInfo in ipairs(GuildOS.SlotIDs) do
+        -- Fixed rows, a rule only between two of them.
+        for i, slotInfo in ipairs(GuildOS.SlotIDs) do
             local item = data.gear[slotInfo.id]
-            yOff = CreateGearRow(child, slotInfo.id, item, yOff, contentWidth)
+            if CreateGearRow(child, slotInfo.id, item, yOff, contentWidth, i > 1) then frame._itemsPending = true end
+            yOff = yOff - GEAR_ROW
         end
     else
         local noData = _pFS(child)
         GuildOS:ApplyFont(noData, 11)
-        noData:SetPoint("TOPLEFT", 15, yOff)
-        noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
+        noData:SetPoint("TOPLEFT", PADX, yOff)
+        ink(noData, C.paperSoft)
         noData:SetText(L["No gear data available. Player needs Guild OS addon."])
         noData:Show()
         yOff = yOff - 25
@@ -537,8 +753,8 @@ function PopulateDetail(frame, data)
     else
         local noData = _pFS(child)
         GuildOS:ApplyFont(noData, 11)
-        noData:SetPoint("TOPLEFT", 15, yOff)
-        noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
+        noData:SetPoint("TOPLEFT", PADX, yOff)
+        ink(noData, C.paperSoft)
         noData:SetText(L["No profession data available."])
         noData:Show()
         yOff = yOff - 25
@@ -567,8 +783,8 @@ function PopulateDetail(frame, data)
         else
             local noData = _pFS(child)
             GuildOS:ApplyFont(noData, 11)
-            noData:SetPoint("TOPLEFT", 15, yOff)
-            noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
+            noData:SetPoint("TOPLEFT", PADX, yOff)
+            ink(noData, C.paperSoft)
             noData:SetText(L["No attunement data available."])
             noData:Show()
             yOff = yOff - 25
@@ -597,7 +813,7 @@ function PopulateDetail(frame, data)
             local itemStr = _pFS(child)
             GuildOS:ApplyFont(itemStr, UI.SP.META)
             itemStr:SetPoint("TOPLEFT", 20, yOff)
-            itemStr:SetWidth(contentWidth - 30)
+            itemStr:SetWidth(contentWidth - 2 * PADX)
             itemStr:SetJustifyH("LEFT")
             itemStr:SetWordWrap(false)
             itemStr:SetTextColor(qColor.r, qColor.g, qColor.b)
@@ -632,8 +848,8 @@ function PopulateDetail(frame, data)
         if att.lastRaid > 0 then
             local lastStr = _pFS(child)
             GuildOS:ApplyFont(lastStr, UI.SP.META)
-            lastStr:SetPoint("TOPLEFT", 15, yOff - 5)
-            lastStr:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            lastStr:SetPoint("TOPLEFT", PADX, yOff - 5)
+            ink(lastStr, C.paperSoft)
             lastStr:SetText(L["Last raid: "] .. GuildOS:DateText(att.lastRaid, "/%Y"))
             lastStr:Show()
             yOff = yOff - 20
@@ -655,8 +871,8 @@ function PopulateDetail(frame, data)
             local qColor = GuildOS.QualityColors[entry.quality] or GuildOS.QualityColors[1]
             local itemStr = _pFS(child)
             GuildOS:ApplyFont(itemStr, UI.SP.META)
-            itemStr:SetPoint("TOPLEFT", 15, yOff - 5)
-            itemStr:SetWidth(contentWidth - 30)
+            itemStr:SetPoint("TOPLEFT", PADX, yOff - 5)
+            itemStr:SetWidth(contentWidth - 2 * PADX)
             itemStr:SetJustifyH("LEFT")
             itemStr:SetWordWrap(false)
             -- Resolve item name via GetItemInfo for correct client locale.
@@ -699,8 +915,8 @@ function PopulateDetail(frame, data)
 
             local infoStr = _pFS(child)
             GuildOS:ApplyFont(infoStr, UI.SP.META)
-            infoStr:SetPoint("TOPLEFT", 15, yOff - 5)
-            infoStr:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            infoStr:SetPoint("TOPLEFT", PADX, yOff - 5)
+            ink(infoStr, C.paperSoft)
             infoStr:SetText(L["Sponsor: "] .. (trial.sponsor or "?") .. L["  |  Day "] .. (daysSince or 0))
             infoStr:Show()
             yOff = yOff - 20
@@ -714,7 +930,7 @@ function PopulateDetail(frame, data)
                 local ilvlStr = format(L["iLvl: %d >> %d  (%s%d)"], progress.startIlvl, progress.currentIlvl, ilvlSign, progress.ilvlDelta)
                 local ilvlText = _pFS(child)
                 GuildOS:ApplyFont(ilvlText, UI.SP.META)
-                ilvlText:SetPoint("TOPLEFT", 15, yOff - 3)
+                ilvlText:SetPoint("TOPLEFT", PADX, yOff - 3)
                 ilvlText:SetTextColor(ilvlColor.r, ilvlColor.g, ilvlColor.b)
                 ilvlText:SetText(ilvlStr)
                 ilvlText:Show()
@@ -725,7 +941,7 @@ function PopulateDetail(frame, data)
                     local attStr = format(L["Attunements: %d/%d >> %d/%d  (+%d)"], progress.startAttDone, progress.attTotal, progress.currentAttDone, progress.attTotal, progress.attDelta)
                     local attText = _pFS(child)
                     GuildOS:ApplyFont(attText, UI.SP.META)
-                    attText:SetPoint("TOPLEFT", contentWidth / 2, yOff - 3)
+                    attText:SetPoint("TOPLEFT", PADX + (contentWidth - 2 * PADX) / 2, yOff - 3)
                     attText:SetTextColor(attColor.r, attColor.g, attColor.b)
                     attText:SetText(attStr)
                     attText:Show()
@@ -734,34 +950,16 @@ function PopulateDetail(frame, data)
             end
 
             -- The trial's comments are read on the officer notes' timeline below, with the dated notes (audit B10).
-            -- Add note input
-            local addNoteBox = CreateFrame("EditBox", nil, child, "BackdropTemplate")
-            addNoteBox:SetSize(contentWidth - 100, 22)
-            addNoteBox:SetPoint("TOPLEFT", 15, yOff - 8)
-            addNoteBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(addNoteBox) })
-            addNoteBox:SetBackdropColor(0.050, 0.050, 0.066, 1)
-            addNoteBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-            GuildOS:ApplyFont(addNoteBox, UI.SP.META)
-            addNoteBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-            addNoteBox:SetTextInsets(6, 6, 2, 2)
-            addNoteBox:SetAutoFocus(false)
-            addNoteBox:SetMaxLetters(200)
-            addNoteBox:Show()
-
-            local placeholder = addNoteBox:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(placeholder, UI.SP.META)
-            placeholder:SetPoint("LEFT", 6, 0)
-            placeholder:SetTextColor(0.35, 0.35, 0.35)
-            placeholder:SetText(L["Add officer comment..."])
-            addNoteBox:SetScript("OnTextChanged", function(self)
-                if self:GetText() ~= "" then placeholder:Hide() else placeholder:Show() end
+            -- A comment: its field with the label above it, the block's Add at its bottom right (#449).
+            local addNoteBox = kept(child, "trial.note", function()
+                local box = UI:CreateInput(child, 200, SP.FIELD, { max = 200, placeholder = L["Add officer comment..."] })
+                box:HookScript("OnEnterPressed", function(self) if self.onEnter then self.onEnter() end end)
+                return box
             end)
-            addNoteBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-            local addBtn = UI:CreateButton(child, L["Add"], 60, 22)
-            addBtn:SetPoint("LEFT", addNoteBox, "RIGHT", 6, 0)
-            addNoteBox:SetWidth(contentWidth - 12 - 15 - 6 - addBtn:GetWidth())
-            addBtn:SetScript("OnClick", function()
+            yOff = yOff - SP.SECTION / 2
+            yOff = yOff - placeField(child, "trial.note", L["Officer comment"], addNoteBox, PADX, yOff, contentWidth - 2 * PADX)
+            local addBtn = kept(child, "trial.add", function() return GuildOS.Forms:Button(child, L["Add"], "primary") end)
+            local function addComment()
                 local text = addNoteBox:GetText()
                 if text and strtrim(text) ~= "" then
                     GuildOS.TrialTracker:AddTrialNote(playerKey, strtrim(text))
@@ -769,18 +967,10 @@ function PopulateDetail(frame, data)
                     addNoteBox:ClearFocus()
                     PopulateDetail(frame, data)
                 end
-            end)
-            addNoteBox:SetScript("OnEnterPressed", function(self)
-                local text = self:GetText()
-                if text and strtrim(text) ~= "" then
-                    GuildOS.TrialTracker:AddTrialNote(playerKey, strtrim(text))
-                    self:SetText("")
-                    self:ClearFocus()
-                    PopulateDetail(frame, data)
-                end
-            end)
-
-            yOff = yOff - 36
+            end
+            addBtn:SetScript("OnClick", addComment)
+            addNoteBox.onEnter = addComment
+            yOff = placeActions(child, { addBtn }, yOff, contentWidth) - SP.UNIT
         end
     end
 
@@ -808,8 +998,8 @@ function PopulateDetail(frame, data)
             for _, text in ipairs(lines) do
                 local fs = _pFS(child)
                 GuildOS:ApplyFont(fs, UI.SP.META)
-                fs:SetPoint("TOPLEFT", 15, yOff - 3)
-                fs:SetWidth(contentWidth - 30)
+                fs:SetPoint("TOPLEFT", PADX, yOff - 3)
+                fs:SetWidth(contentWidth - 2 * PADX)
                 fs:SetJustifyH("LEFT")
                 fs:SetWordWrap(true)
                 fs:SetText(text)
@@ -834,11 +1024,11 @@ function PopulateDetail(frame, data)
         if localOnly then
             local lo = _pFS(child)
             GuildOS:ApplyFont(lo, UI.SP.META)
-            lo:SetPoint("TOPLEFT", 15, yOff - 3)
-            lo:SetWidth(contentWidth - 30)
+            lo:SetPoint("TOPLEFT", PADX, yOff - 3)
+            lo:SetWidth(contentWidth - 2 * PADX)
             lo:SetJustifyH("LEFT")
             lo:SetWordWrap(true)
-            lo:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            ink(lo, C.paperSoft)
             lo:SetText(localOnly)
             lo:Show()
             yOff = yOff - (lo:GetStringHeight() + 6)
@@ -850,15 +1040,15 @@ function PopulateDetail(frame, data)
         if sheet then
             local by = _pFS(child)
             GuildOS:ApplyFont(by, UI.SP.META)
-            by:SetPoint("TOPLEFT", 15, yOff - 3)
+            by:SetPoint("TOPLEFT", PADX, yOff - 3)
             by:SetText("|cffAAAAAA" .. string.format(L["Officer sheet (%s, %s):"], sheet.author or "?",
                 GuildOS:DateText(sheet.ts or 0, "/%Y")) .. "|r")
             by:Show()
             yOff = yOff - 16
             local body = _pFS(child)
             GuildOS:ApplyFont(body, UI.SP.META)
-            body:SetPoint("TOPLEFT", 15, yOff - 3)
-            body:SetWidth(contentWidth - 30)
+            body:SetPoint("TOPLEFT", PADX, yOff - 3)
+            body:SetWidth(contentWidth - 2 * PADX)
             body:SetJustifyH("LEFT")
             body:SetWordWrap(true)
             body:SetText(sheet.text)   -- kept without "|" (OfficerNotes.CleanSheetText)
@@ -866,17 +1056,6 @@ function PopulateDetail(frame, data)
             yOff = yOff - (body:GetStringHeight() + 6)
         end
         local sheetKey, sheetName = playerKey, data.name
-        -- One button for the panel's life (#427): a redraw per backfill envelope made a new one each time.
-        local editSheet = child._editSheet
-        if not editSheet then
-            editSheet = UI:CreateButton(child, L["Edit sheet"], 100, 20)
-            child._editSheet = editSheet
-        end
-        editSheet:ClearAllPoints()
-        editSheet:SetPoint("TOPLEFT", 15, yOff - 4)
-        editSheet:SetScript("OnClick", function() GuildOS:ShowOfficerSheetEditor(sheetKey, sheetName) end)
-        editSheet:Show()
-        yOff = yOff - 28
         -- A sheet saved here or by another officer redraws the card, unless the officer is typing in it. Only
         -- when this member's sheet changed, and at most once per SHEET_GAP + 1 seconds: a backfill sends an
         -- envelope every SHEET_GAP seconds, most of them other members' sheets (#427).
@@ -902,8 +1081,8 @@ function PopulateDetail(frame, data)
             local note = notes[i]
             local noteStr = _pFS(child)
             GuildOS:ApplyFont(noteStr, UI.SP.META)
-            noteStr:SetPoint("TOPLEFT", 15, yOff - 3)
-            noteStr:SetWidth(contentWidth - 30)
+            noteStr:SetPoint("TOPLEFT", PADX, yOff - 3)
+            noteStr:SetWidth(contentWidth - 2 * PADX)
             noteStr:SetJustifyH("LEFT")
             noteStr:SetWordWrap(true)
             local dateStr = note.timestamp > 0 and GuildOS:DateText(note.timestamp) or ""
@@ -912,6 +1091,15 @@ function PopulateDetail(frame, data)
             noteStr:Show()
             yOff = yOff - (noteStr:GetStringHeight() + 4)
         end
+        -- The block's one action at its bottom right (#449). One button for the panel's life (#427): a redraw per
+        -- backfill envelope made a new one each time.
+        local editSheet = child._editSheet
+        if not editSheet then
+            editSheet = GuildOS.Forms:Button(child, L["Edit sheet"], "primary")
+            child._editSheet = editSheet
+        end
+        editSheet:SetScript("OnClick", function() GuildOS:ShowOfficerSheetEditor(sheetKey, sheetName) end)
+        yOff = placeActions(child, { editSheet }, yOff, contentWidth, SP.UNIT * 2) - SP.UNIT
     end
 
     ----------------------------------------------------------------
@@ -929,45 +1117,48 @@ function PopulateDetail(frame, data)
         if #record == 0 then
             local none = _pFS(child)
             GuildOS:ApplyFont(none, UI.SP.META)
-            none:SetPoint("TOPLEFT", 15, yOff - 3)
-            none:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            none:SetPoint("TOPLEFT", PADX, yOff)
+            ink(none, C.paperSoft)
             none:SetText(L["No warnings."])
             none:Show()
             yOff = yOff - 16
         end
+        -- The warnings as rows (#449): the reason (a Discord one says so) over the date, who gave it, its state and
+        -- the note; a standing one given here a Revoke link at the right.
         for i = 1, math.min(10, #record) do
             local w = record[i]
             local active = D.Active(w, term, now)
             local state = w.revokedAt and L["revoked"] or (active and L["standing"] or L["lapsed"])
-            local row = _pFS(child)
-            GuildOS:ApplyFont(row, UI.SP.META)
-            row:SetPoint("TOPLEFT", 15, yOff - 3)
-            row:SetWidth(contentWidth - 100)
-            row:SetJustifyH("LEFT")
-            row:SetWordWrap(true)
-            local color = active and C.white or C.silver
-            row:SetTextColor(color.r, color.g, color.b)
-            row:SetText(format("|cffAAAAAA[%s %s]|r %s%s — %s%s",
-                w.by or "?", GuildOS:DateText(w.at or 0), D.ReasonText(w.reason), w.discord and (" |cff7289DA" .. L["(Discord)"] .. "|r") or "",
-                state, w.note and ("  |cffAAAAAA" .. GuildOS:SanitizeUserText(w.note, 200) .. "|r") or ""))
-            row:Show()
-            if active and not w.discord then
-                local revoke = UI:CreateButton(child, L["Revoke"], 70, 18)
-                revoke:SetPoint("TOPRIGHT", child, "TOPLEFT", contentWidth - 10, yOff - 1)
+            local row = kept(child, "warn.row" .. i, function()
+                local r = GuildOS.Forms:TodoRow(child, { none = true })
+                r.revoke = rowLink(r, L["Revoke"])
+                return r
+            end)
+            row:SetPoint("TOPLEFT", child, "TOPLEFT", PADX, yOff)
+            row:SetWidth(contentWidth - 2 * PADX)
+            ink(row.title, active and C.paperInk or C.paperSoft)
+            row.title:SetText(D.ReasonText(w.reason) .. (w.discord and ("  " .. L["(Discord)"]) or ""))
+            local sub = { GuildOS:DateText(w.at or 0), string.format(L["by %s"], w.by or "?"), state }
+            if w.note then sub[#sub + 1] = GuildOS:SanitizeUserText(w.note, 200) end
+            row.sub:SetText(table.concat(sub, " \194\183 "))
+            local canRevoke = active and not w.discord
+            row.revoke:SetShown(canRevoke and true or false)
+            if canRevoke then
                 local id = w.id
-                revoke:SetScript("OnClick", function()
+                row.revoke:SetScript("OnClick", function()
                     D:Revoke(id)   -- the sheet redraws through D.uiRefresh
                 end)
             end
-            yOff = yOff - math.max(20, row:GetStringHeight() + 6)
+            row:Right({ row.revoke })
+            yOff = yOff - GuildOS.Forms.TODO_H
         end
 
-        -- Warn (issue #403): the window files it, whispers on the click and suggests the step's rung.
+        -- Warn (issue #403): the window files it, whispers on the click and suggests the step's rung. The block's
+        -- one action, at its bottom right.
         local who = data.name
-        local warnBtn = UI:CreateButton(child, L["Warn"], 80, 20)
-        warnBtn:SetPoint("TOPLEFT", 15, yOff - 6)
+        local warnBtn = kept(child, "warn.go", function() return GuildOS.Forms:Button(child, L["Warn"], "primary") end)
         warnBtn:SetScript("OnClick", function() GuildOS:ShowWarnDialog(playerKey, who) end)
-        yOff = yOff - 30
+        yOff = placeActions(child, { warnBtn }, yOff, contentWidth) - SP.UNIT
         -- A warning or a setting that changes (here or from another officer) redraws the sheet, unless the
         -- officer is typing in it: the sheet would scroll back to the top and lose what they typed.
         D.uiRefresh = function()
@@ -977,39 +1168,54 @@ function PopulateDetail(frame, data)
             PopulateDetail(frame, data)
         end
 
-        -- The guild's term, which every warning on every sheet counts by.
-        local termBox = CreateFrame("EditBox", nil, child, "BackdropTemplate")
-        termBox:SetSize(50, 20)
-        termBox:SetPoint("TOPLEFT", 15, yOff - 6)
-        termBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(termBox) })
-        termBox:SetBackdropColor(0.050, 0.050, 0.066, 1)
-        termBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-        GuildOS:ApplyFont(termBox, UI.SP.META)
-        termBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-        termBox:SetTextInsets(6, 6, 2, 2)
-        termBox:SetAutoFocus(false)
-        termBox:SetNumeric(true)
-        termBox:SetMaxLetters(3)
+        -- The guild's rules every sheet counts by (#449): the term and the punishment rank as a pair, the rank one
+        -- of the guild's ranks (a free field where the client lists none), saved by the block's one button.
+        yOff = yOff - 10
+        yOff = CreateSectionHeader(child, L["Discipline rules"], yOff, contentWidth)
+        local termBox = kept(child, "rules.term", function()
+            local box = UI:CreateInput(child, 60, SP.FIELD, { numeric = true, max = 3 })
+            box:HookScript("OnEnterPressed", function(self) if self.onEnter then self.onEnter() end end)
+            return box
+        end)
         termBox:SetText(tostring(term))
-        termBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-        local setTerm = UI:CreateButton(child, L["Set term (days)"], 110, 20)
-        setTerm:SetPoint("LEFT", termBox, "RIGHT", 6, 0)
-        local function applyTerm()
-            termBox:ClearFocus()
-            if not D:SetTerm(termBox:GetText()) then termBox:SetText(tostring(D:GetTerm())) end   -- taken: D.uiRefresh redraws
+        local ranks = GuildOS.GuildManager and GuildOS.GuildManager:GetRanks() or {}
+        local rankCtl
+        local held = D:GetPunishRank()
+        if #ranks > 0 then
+            rankCtl = kept(child, "rules.rankList", function() return UI:CreateDropdown(child, 120, SP.FIELD) end)
+            local opts, known = { { value = "", text = L["None"] } }, false
+            for _, r in ipairs(ranks) do
+                opts[#opts + 1] = { value = r.name, text = r.name }
+                known = known or r.name == held
+            end
+            -- A rank saved that the guild no longer has stays offered, so saving keeps it.
+            if held and not known then opts[#opts + 1] = { value = held, text = held } end
+            rankCtl:SetOptions(opts)
+            rankCtl:SetValue(held or "")
+        else
+            rankCtl = kept(child, "rules.rankText", function()
+                return UI:CreateInput(child, 120, SP.FIELD, { max = 48, placeholder = L["Punishment rank"] })
+            end)
+            rankCtl:SetText(held or "")
         end
-        setTerm:SetScript("OnClick", applyTerm)
-        termBox:SetScript("OnEnterPressed", function(self) self:ClearFocus(); applyTerm() end)
-        termBox:Show()
-
-        -- The guild's punishment rank, which a rung of the ladder may suggest (issue #403).
-        local rankBox = UI:CreateInput(child, 120, 20, { max = 48, placeholder = L["Punishment rank"] })
-        rankBox:SetPoint("LEFT", setTerm, "RIGHT", 16, 0)
-        rankBox:SetText(D:GetPunishRank() or "")
-        local setRank = UI:CreateButton(child, L["Set rank"], 80, 20)
-        setRank:SetPoint("LEFT", rankBox, "RIGHT", 6, 0)
-        setRank:SetScript("OnClick", function() D:SetPunishRank(rankBox:GetText()) end)
-        yOff = yOff - 30
+        yOff = yOff - placePair(child, { "rules.term", L["Term (days)"], termBox },
+            { #ranks > 0 and "rules.rankList" or "rules.rankText", L["Punishment rank"], rankCtl }, yOff, contentWidth)
+        local saveRules = kept(child, "rules.save", function() return GuildOS.Forms:Button(child, L["Save"], "primary") end)
+        local function applyRules()
+            termBox:ClearFocus()
+            local days = termBox:GetText()
+            local rank
+            if rankCtl.GetValue then rank = rankCtl:GetValue() else rank = rankCtl:GetText() end
+            rank = rank or ""
+            -- Each setting that changed, the rank's read before the term's redraw (D.uiRefresh) refills the fields.
+            if tostring(days) ~= tostring(D:GetTerm()) then
+                if not D:SetTerm(days) then termBox:SetText(tostring(D:GetTerm())) end
+            end
+            if rank ~= (D:GetPunishRank() or "") then D:SetPunishRank(rank) end
+        end
+        saveRules:SetScript("OnClick", applyRules)
+        termBox.onEnter = applyRules
+        yOff = placeActions(child, { saveRules }, yOff, contentWidth) - SP.UNIT
     end
 
     ----------------------------------------------------------------
@@ -1022,12 +1228,12 @@ function PopulateDetail(frame, data)
         yOff = yOff - 10
         local linkedKeys = GuildOS:GetLinkedChars(playerKey)
         local altLinks = (GuildOS.db and GuildOS.db.altLinks) or {}
+        local roster = RosterIndex()
 
         -- Header shows how many chars are linked
         local linkCount = #linkedKeys - 1  -- exclude self
         local hdrSuffix = linkCount > 0 and (" · " .. linkCount .. L[" linked"]) or ""
         yOff = CreateSectionHeader(child, L["Linked characters"] .. hdrSuffix, yOff, contentWidth)
-        yOff = yOff - 5
 
         -- The officer's note is about attunements: none where the game has none (issue #184).
         local noteText = not GuildOS:IsOfficer()
@@ -1036,155 +1242,114 @@ function PopulateDetail(frame, data)
         if noteText then
             local noteLabel = _pFS(child)
             GuildOS:ApplyFont(noteLabel, UI.SP.META)
-            noteLabel:SetPoint("TOPLEFT", 12, yOff)
-            noteLabel:SetWidth(contentWidth - 24)
+            noteLabel:SetPoint("TOPLEFT", PADX, yOff)
+            noteLabel:SetWidth(contentWidth - 2 * PADX)
             noteLabel:SetJustifyH("LEFT")
             noteLabel:SetWordWrap(true)
-            noteLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
+            ink(noteLabel, C.paperSoft)
             noteLabel:SetText(noteText)
             noteLabel:Show()
             yOff = yOff - noteLabel:GetStringHeight() - 6
         end
 
-        -- /gos myalts: on your own sheet, find your characters in the guild and offer to link them (#142).
-        if isSelfManage and GuildOS.AltAutoDetect then
-            local detectBtn = UI:CreateButton(child, L["Detect my alts"], 140, 20)
-            detectBtn:SetPoint("TOPLEFT", 12, yOff)
-            detectBtn:SetScript("OnClick", function() GuildOS.AltAutoDetect:PromptNow() end)
-            yOff = yOff - 26
+        -- The group as rows (#449): the round avatar in the class's colour, the name in the class's paper ink, a
+        -- Main or Alt badge, and at the right its links: Set as main on an alt, Unlink on any character but the
+        -- one this card is about (its own row, kept so the character shown can be made the main without logging an
+        -- alt; "(you)" on your own). Officers apply directly; members route through the self-claim.
+        local function doUnlink(k)
+            if GuildOS:IsOfficer() then GuildOS:UnlinkAlt(k)
+            else GuildOS.AltAutoDetect:UnlinkOwnAlt(k) end
         end
-
-        -- Each row's buttons end here, right-aligned; a button's RIGHT is anchored to its
-        -- row label's LEFT (x = 12) so it also sits on the label's vertical centre.
-        local rightX = contentWidth - 12
-
-        -- The viewed character is excluded from the list below, so without this
-        -- row you could not promote your CURRENT character to main (you would
-        -- have to log an alt). Show it here with a "Set as main" when it is an
-        -- alt. Labelled "(you)" when it is your own character; for an officer
-        -- viewing someone else it is just their name and the officer path applies.
+        local function doSetMain(k)
+            if GuildOS:IsOfficer() then GuildOS:SetMain(k)
+            else GuildOS.AltAutoDetect:SetOwnMain(k) end
+        end
         if #linkedKeys > 1 then
-            local selfIsMain = (altLinks[playerKey] == nil)
-            local selfName = playerKey:match("^([^-]+)") or playerKey
-            local selfLabel = _pFS(child)
-            GuildOS:ApplyFont(selfLabel, UI.SP.META)
-            selfLabel:SetPoint("TOPLEFT", 12, yOff)
-            selfLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-            selfLabel:SetText(selfName
-                .. (isSelfManage and ("  " .. L["(you)"]) or "")
-                .. (selfIsMain and ("  " .. L["(main)"]) or ""))
-            selfLabel:Show()
-            if not selfIsMain then
-                local setSelfMain = UI:CreateButton(child, L["Set as main"], 90, 18)
-                setSelfMain:SetPoint("RIGHT", selfLabel, "LEFT", rightX - 12, 0)
-                selfLabel:SetWidth(rightX - 12 - 8 - setSelfMain:GetWidth())
-                selfLabel:SetJustifyH("LEFT")
-                setSelfMain:SetScript("OnClick", function()
-                    if GuildOS:IsOfficer() then GuildOS:SetMain(playerKey)
-                    else GuildOS.AltAutoDetect:SetOwnMain(playerKey) end
-                    PopulateDetail(frame, data)
+            local order = { playerKey }
+            for _, lk in ipairs(linkedKeys) do if lk ~= playerKey then order[#order + 1] = lk end end
+            for i, lk in ipairs(order) do
+                local row = kept(child, "alt.row" .. i, function()
+                    local r = GuildOS.Forms:TodoRow(child)
+                    r.badge = GuildOS.Kit:Badge(r, "", "mute")
+                    r.setMain = rowLink(r, L["Set as main"])
+                    r.unlink = rowLink(r, L["Unlink"])
+                    return r
                 end)
-            end
-            yOff = yOff - 22
-        end
-
-        -- List currently linked chars (excluding self)
-        for _, lk in ipairs(linkedKeys) do
-            if lk ~= playerKey then
-                local lkName = lk:match("^([^-]+)") or lk
-                local lkIsMain = (altLinks[lk] == nil)
-                local lkLabel = _pFS(child)
-                GuildOS:ApplyFont(lkLabel, UI.SP.META)
-                lkLabel:SetPoint("TOPLEFT", 12, yOff)
-                lkLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                lkLabel:SetText(lkName .. (lkIsMain and ("  " .. L["(main)"]) or ""))
-                lkLabel:Show()
-
-                -- Unlink button (placed below: rightmost, or left of "Set as main")
-                local unlinkBtn = UI:CreateButton(child, L["Unlink"], 80, 18)
+                row:SetPoint("TOPLEFT", child, "TOPLEFT", PADX, yOff)
+                row:SetWidth(contentWidth - 2 * PADX)
+                local isMain = (altLinks[lk] == nil)
+                local isSelf = (lk == playerKey)
+                local info = roster.byKey[lk]
+                local name = (info and info.name) or lk:match("^([^-]+)") or lk
+                local class = info and info.class
+                    or (GuildOS.db.members and GuildOS.db.members[lk] and GuildOS.db.members[lk].class)
+                    or (isSelf and data.class) or nil
+                row.av:SetMember(name, class and tostring(class):upper() or nil)
+                local r, g, b = UI:InkFor("paper", "class", class)
+                if not class then r, g, b = C.paperInk.r, C.paperInk.g, C.paperInk.b end
+                row.title:SetTextColor(r, g, b)
+                row.title:SetText(name)
+                local sub = {}
+                if info and info.rank then sub[#sub + 1] = info.rank end
+                if isSelf and isSelfManage then sub[#sub + 1] = L["(you)"] end
+                row.sub:SetText(table.concat(sub, " \194\183 "))
+                row.badge:SetText(isMain and L["Main"] or L["Alt"], isMain and C.gold or C.paperSoft)
+                -- The badge right after the name.
+                row.badge:ClearAllPoints()
+                row.badge:SetPoint("LEFT", row.title, "LEFT",
+                    math.min(math.ceil(row.title:GetStringWidth() or 0) + SP.UNIT * 2, (contentWidth - 2 * PADX) - 220), 0)
                 local capturedKey = lk
-                unlinkBtn:SetScript("OnClick", function()
-                    -- If lk is the main, unlink playerKey from it; else unlink lk.
-                    -- Officers apply directly; members route through the self-claim.
-                    local function doUnlink(k)
-                        if GuildOS:IsOfficer() then GuildOS:UnlinkAlt(k)
-                        else GuildOS.AltAutoDetect:UnlinkOwnAlt(k) end
-                    end
-                    if lkIsMain then doUnlink(playerKey) else doUnlink(capturedKey) end
+                row.setMain:SetShown(not isMain)
+                row.setMain:SetScript("OnClick", function()
+                    doSetMain(capturedKey)
                     PopulateDetail(frame, data)
                 end)
-
-                -- "Set as main" on every listed char that is NOT the current
-                -- main. Officers apply directly; members route through the
-                -- self-claim (SetOwnMain is sender-bound, same as Unlink).
-                local buttonsWidth = unlinkBtn:GetWidth()
-                if not lkIsMain then
-                    local setMainBtn = UI:CreateButton(child, L["Set as main"], 90, 18)
-                    setMainBtn:SetPoint("RIGHT", lkLabel, "LEFT", rightX - 12, 0)
-                    unlinkBtn:SetPoint("RIGHT", setMainBtn, "LEFT", -6, 0)
-                    buttonsWidth = buttonsWidth + 6 + setMainBtn:GetWidth()
-                    setMainBtn:SetScript("OnClick", function()
-                        if GuildOS:IsOfficer() then GuildOS:SetMain(capturedKey)
-                        else GuildOS.AltAutoDetect:SetOwnMain(capturedKey) end
-                        PopulateDetail(frame, data)
-                    end)
-                else
-                    unlinkBtn:SetPoint("RIGHT", lkLabel, "LEFT", rightX - 12, 0)
-                end
-                -- A long name is cut short of the buttons instead of running under them.
-                lkLabel:SetWidth(rightX - 12 - 8 - buttonsWidth)
-                lkLabel:SetJustifyH("LEFT")
-                yOff = yOff - 22
-            end
-        end
-
-        -- The group's alts to the main's rank (issue #424): a queue in Leadership > Bulk actions, one alt per
-        -- click of its Next button; the game's rank commands only ever run from that click.
-        if GuildOS:IsOfficer() and GuildOS.BulkActions and #linkedKeys > 1 then
-            local promoteBtn = UI:CreateButton(child, L["Promote alts"], 110, 20)
-            promoteBtn:SetPoint("TOPLEFT", 12, yOff)
-            promoteBtn:SetScript("OnClick", function() GuildOS.BulkActions:StartGroupAndSay(playerKey, "promote") end)
-            local demoteBtn = UI:CreateButton(child, L["Demote alts"], 110, 20)
-            demoteBtn:SetPoint("LEFT", promoteBtn, "RIGHT", 6, 0)
-            demoteBtn:SetScript("OnClick", function() GuildOS.BulkActions:StartGroupAndSay(playerKey, "demote") end)
-            for _, b in ipairs({ promoteBtn, demoteBtn }) do
-                b:HookScript("OnEnter", function(self)
-                    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-                    GameTooltip:SetText(L["To the main's rank, one alt per click of Next in Leadership > Bulk actions."], 1, 1, 1, 1, true)
-                    GameTooltip:Show()
+                row.unlink:SetShown(not isSelf)
+                row.unlink:SetScript("OnClick", function()
+                    -- If lk is the main, unlink playerKey from it; else unlink lk.
+                    if isMain then doUnlink(playerKey) else doUnlink(capturedKey) end
+                    PopulateDetail(frame, data)
                 end)
-                b:HookScript("OnLeave", function() GameTooltip:Hide() end)
+                row:Right({ row.unlink, row.setMain })
+                yOff = yOff - GuildOS.Forms.TODO_H
             end
-            yOff = yOff - 26
         end
 
-        -- Input to add a new link
-        local addLinkBox = CreateFrame("EditBox", nil, child, "BackdropTemplate")
-        addLinkBox:SetSize(contentWidth - 110, 22)
-        addLinkBox:SetPoint("TOPLEFT", 12, yOff - 6)
-        addLinkBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(addLinkBox) })
-        addLinkBox:SetBackdropColor(0.050, 0.050, 0.066, 1)
-        addLinkBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-        GuildOS:ApplyFont(addLinkBox, UI.SP.META)
-        addLinkBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-        addLinkBox:SetTextInsets(6, 6, 2, 2)
-        addLinkBox:SetAutoFocus(false)
-        addLinkBox:SetMaxLetters(60)
-        addLinkBox:Show()
-
-        local addLinkPlaceholder = addLinkBox:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(addLinkPlaceholder, UI.SP.META)
-        addLinkPlaceholder:SetPoint("LEFT", 6, 0)
-        addLinkPlaceholder:SetTextColor(0.35, 0.35, 0.35)
-        addLinkPlaceholder:SetText(L["AltName (this is the main)"])
-        addLinkBox:SetScript("OnTextChanged", function(self)
-            if self:GetText() ~= "" then addLinkPlaceholder:Hide() else addLinkPlaceholder:Show() end
+        -- Add an alt: the field with its label above it, a character of the guild suggested as one types (Tab or a
+        -- click on it takes it), and the block's Link at its bottom right with the group's other actions.
+        local addLinkBox = kept(child, "alt.add", function()
+            local box = UI:CreateInput(child, 200, SP.FIELD, { max = 60, placeholder = L["Character name"] })
+            local hint = rowLink(box, "")
+            hint:SetPoint("RIGHT", box, "RIGHT", -SP.UNIT, 0)
+            hint:Hide()
+            box.hint = hint
+            hint:SetScript("OnClick", function()
+                if hint.name then box:SetText(hint.name); box:SetCursorPosition(#hint.name); hint:Hide() end
+            end)
+            box:HookScript("OnTextChanged", function(self) if self.onChange then self.onChange(self) end end)
+            box:HookScript("OnEnterPressed", function(self) if self.onEnter then self.onEnter() end end)
+            box:HookScript("OnTabPressed", function(self) if self.hint.name and self.hint:IsShown() then self.hint:Click() end end)
+            return box
         end)
-        addLinkBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-        local addLinkBtn = UI:CreateButton(child, L["Link alt"], 90, 22)
-        addLinkBtn:SetPoint("LEFT", addLinkBox, "RIGHT", 6, 0)
-        addLinkBox:SetWidth(rightX - 12 - 6 - addLinkBtn:GetWidth())
+        local taken = {}
+        for _, lk in ipairs(linkedKeys) do taken[lk] = true end
+        taken[playerKey] = true
+        addLinkBox.onChange = function(self)
+            local typed = strtrim(self:GetText() or "")
+            local pick = SuggestCharacter(roster, typed, taken)
+            local hint = self.hint
+            hint.name = pick
+            if pick and pick:lower() ~= typed:lower() then
+                hint.label:SetText(pick)
+                hint:SetWidth(math.ceil(hint.label:GetStringWidth() or 30) + 6)
+                hint:Show()
+            else
+                hint:Hide()
+            end
+        end
+        addLinkBox.hint:Hide()
+        yOff = yOff - SP.FIELD_GAP
+        yOff = yOff - placeField(child, "alt.add", L["Add alt"], addLinkBox, PADX, yOff, contentWidth - 2 * PADX)
 
         local doLink = function()
             local altName = strtrim(addLinkBox:GetText())
@@ -1207,10 +1372,47 @@ function PopulateDetail(frame, data)
                 PopulateDetail(frame, data)
             end
         end
+        local addLinkBtn = kept(child, "alt.link", function() return GuildOS.Forms:Button(child, L["Link"], "primary") end)
         addLinkBtn:SetScript("OnClick", doLink)
-        addLinkBox:SetScript("OnEnterPressed", doLink)
+        addLinkBox.onEnter = doLink
 
-        yOff = yOff - 34
+        -- The group's other actions, cream, left of Link.
+        local buttons = {}
+        -- /gos myalts: on your own sheet, find your characters in the guild and offer to link them (#142).
+        if isSelfManage and GuildOS.AltAutoDetect then
+            local detectBtn = kept(child, "alt.detect", function() return GuildOS.Forms:Button(child, L["Detect my alts"]) end)
+            detectBtn:SetScript("OnClick", function() GuildOS.AltAutoDetect:PromptNow() end)
+            buttons[#buttons + 1] = detectBtn
+        end
+        -- The group's alts to the main's rank (issue #424): a queue in Leadership > Bulk actions, one alt per
+        -- click of its Next button; the game's rank commands only ever run from that click.
+        if GuildOS:IsOfficer() and GuildOS.BulkActions and #linkedKeys > 1 then
+            local promoteBtn = kept(child, "alt.promote", function()
+                local b = GuildOS.Forms:Button(child, L["Promote alts"])
+                return b
+            end)
+            local demoteBtn = kept(child, "alt.demote", function()
+                local b = GuildOS.Forms:Button(child, L["Demote alts"])
+                return b
+            end)
+            promoteBtn:SetScript("OnClick", function() GuildOS.BulkActions:StartGroupAndSay(playerKey, "promote") end)
+            demoteBtn:SetScript("OnClick", function() GuildOS.BulkActions:StartGroupAndSay(playerKey, "demote") end)
+            for _, b in ipairs({ promoteBtn, demoteBtn }) do
+                if not b.tipHooked then
+                    b.tipHooked = true
+                    b:HookScript("OnEnter", function(self)
+                        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                        GameTooltip:SetText(L["To the main's rank, one alt per click of Next in Leadership > Bulk actions."], 1, 1, 1, 1, true)
+                        GameTooltip:Show()
+                    end)
+                    b:HookScript("OnLeave", function() GameTooltip:Hide() end)
+                end
+            end
+            buttons[#buttons + 1] = promoteBtn
+            buttons[#buttons + 1] = demoteBtn
+        end
+        buttons[#buttons + 1] = addLinkBtn
+        yOff = placeActions(child, buttons, yOff, contentWidth) - SP.UNIT
     end
 
     -- Update scroll child height and refresh the scroll range so the
@@ -1223,91 +1425,132 @@ end
 ----------------------------------------------------------------------
 -- Create a section header
 ----------------------------------------------------------------------
--- A section of the card (the mockup's .fw .sec > b): its title in the section face, the soft gold, in normal
--- case, a thin dark line above it (none over the first). No band: the body's own dark is the ground.
-function CreateSectionHeader(parent, text, yOff, width)
+-- A section of the card (#449, the Officers' Room's blocks): its title in the serif face (SECTION_ROLE: Alegreya,
+-- in normal case, never the capitals the title face draws) in the paper's dark red, a soft tan rule above it
+-- (none over the first), and `meta`, a soft line at the title's right (the equipment's average item level).
+-- Returns the y its content starts at.
+function CreateSectionHeader(parent, text, yOff, width, meta)
     if yOff < -6 then
         local line = _pBG(parent)
         line:SetTexture("Interface\\Buttons\\WHITE8x8")
-        line:SetPoint("TOPLEFT", 0, yOff - 2)
+        line:SetPoint("TOPLEFT", PADX, yOff - 2)
         -- A pooled texture (_pBG) comes back as a band or a row later: size it, never register it (#369).
-        line:SetSize(width, GuildOS.UI:Px(line))
-        line:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)   -- the card's tan rule
+        line:SetSize(width - 2 * PADX, GuildOS.UI:Px(line))
+        line:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)   -- the card's soft tan rule
         line.__ownInk = true
         line:Show()
     end
 
     local label = _pFS(parent)
-    GuildOS:ApplyFont(label, 13, "sectionTitle")
-    label:SetPoint("TOPLEFT", 2, yOff - 8)
-    label:SetTextColor(C.paperTitle.r, C.paperTitle.g, C.paperTitle.b, 1)
+    GuildOS:ApplyFont(label, SP.TITLE - 1, SECTION_ROLE)   -- the reading face draws a px larger: SP.TITLE
+    label:SetPoint("TOPLEFT", PADX, yOff - 8)
+    ink(label, C.paperTitle)
     label:SetJustifyH("LEFT")
-    label:SetWidth(width - 4)
     label:SetWordWrap(false)
+    local metaW = 0
+    if meta and meta ~= "" then
+        local m = _pFS(parent)
+        GuildOS:ApplyFont(m, SP.META)
+        ink(m, C.paperSoft)
+        m:SetJustifyH("RIGHT")
+        m:SetWordWrap(false)
+        m:SetText(meta)
+        metaW = math.ceil(m:GetStringWidth() or 0) + 2
+        m:SetWidth(metaW)
+        m:SetPoint("TOPRIGHT", parent, "TOPLEFT", width - PADX, yOff - 11)
+        m:Show()
+    end
+    label:SetWidth(math.max(40, width - 2 * PADX - (metaW > 0 and metaW + SP.CELL or 0)))
     GuildOS:SetTitleText(label, text)
     label:Show()
 
-    return yOff - 28
+    return yOff - 8 - SP.TITLE_H - SP.TITLE_GAP
 end
 
 ----------------------------------------------------------------------
 -- Create a gear slot row (with enchant & gem display)
 ----------------------------------------------------------------------
 
-function CreateGearRow(parent, slotId, item, yOff, width)
-    local ROW_H = 26
-    local subRowH = 14
+-- One equipment row (#449), GEAR_ROW tall whatever it holds: the slot's name in the paper's soft ink, centred in
+-- its column on the left; the item's icon in its quality's frame (from the item's id when the client has not
+-- cached it, else a question mark in that frame); the name in the paper's cut of its quality on the first line
+-- and the enchant (or "Not enchanted") under it, at the name's left; the item level right-aligned and centred in
+-- its column. `rule`: a thin rule above it, between two rows, clear of the icons. Returns true when the client
+-- had not cached the item yet (the card draws again when it has).
+function CreateGearRow(parent, slotId, item, yOff, width, rule)
     local slotName = GuildOS.SlotNames[slotId] or L["Slot "] .. slotId
-    local hasExtra = false
+    local pending = false
+    local mid = yOff - GEAR_ROW / 2
+    local iconX = PADX + GEAR_SLOT_W + SP.UNIT * 2
+    local nameX = iconX + GEAR_ICON + 4 + SP.UNIT * 2
+    local right = width - PADX
+    local nameW = math.max(40, right - GEAR_ILVL_W - SP.UNIT * 2 - nameX)
+
+    if rule then
+        local sep = _pBG(parent)
+        sep:SetTexture("Interface\\Buttons\\WHITE8x8")
+        sep:SetPoint("TOPLEFT", PADX, yOff)
+        sep:SetSize(width - 2 * PADX, GuildOS.UI:Px(sep))   -- pooled, like the line above: not registered
+        sep:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
+        sep.__ownInk = true
+        sep:Show()
+    end
 
     -- Slot label
     local slotLabel = _pFS(parent)
     GuildOS:ApplyFont(slotLabel, UI.SP.META)
-    slotLabel:SetPoint("TOPLEFT", 10, yOff - 4)
-    slotLabel:SetWidth(65)
-    slotLabel:SetJustifyH("RIGHT")
-    slotLabel:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b, 1)   -- readable on the card (#449)
+    slotLabel:SetPoint("LEFT", parent, "TOPLEFT", PADX, mid)
+    slotLabel:SetWidth(GEAR_SLOT_W)
+    slotLabel:SetJustifyH("LEFT")
+    ink(slotLabel, C.paperSoft)
     slotLabel:SetText(slotName)
     slotLabel:Show()
 
     if item and item.name and item.name ~= "" then
         -- Resolve localized item name and icon from client cache
         local localName, _, _, _, _, _, _, _, _, itemIcon = GuildOS.Compat.GetItemInfo(item.id or 0)
+        if not localName and item.id then pending = true end
         local displayName = (localName and localName ~= "") and localName or item.name
-        local icon = (itemIcon and itemIcon ~= "") and itemIcon or ""
-
-        -- Item icon
-        if icon ~= "" then
-            local iconFrame = UI:CreateIcon(parent, 18, icon)
-            iconFrame:SetPoint("TOPLEFT", 80, yOff - 1)
-            iconFrame:Show()
-            UI:SetIconQuality(iconFrame, item.quality)
+        local icon = (itemIcon and itemIcon ~= "") and itemIcon or nil
+        if not icon then
+            local _, instant = GuildOS.Compat.ItemInstant(item.link or item.id)
+            icon = instant
         end
 
-        -- Item name (colored by quality)
-        local qColor = GuildOS.QualityColors[item.quality] or GuildOS.QualityColors[1]
+        -- Item icon, always in its quality's frame
+        local iconFrame = UI:CreateIcon(parent, GEAR_ICON, icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        iconFrame:SetPoint("LEFT", parent, "TOPLEFT", iconX, mid)
+        iconFrame:SetBackdropColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
+        iconFrame:Show()
+        UI:SetIconQuality(iconFrame, item.quality)
+
+        -- Item name, in the paper's cut of its quality (contrast on the parchment)
+        local qr, qg, qb = UI:InkFor("paper", "quality", item.quality or 1)
         local nameText = _pFS(parent)
-        GuildOS:ApplyFont(nameText, UI.SP.META)
-        nameText:SetPoint("TOPLEFT", 106, yOff - 5)
+        GuildOS:ApplyFont(nameText, SP.BODY)
+        nameText:SetPoint("TOPLEFT", nameX, mid + 15)
         nameText:SetJustifyH("LEFT")
         nameText:SetWordWrap(false)
-        nameText:SetTextColor(qColor.r, qColor.g, qColor.b)
+        ink(nameText, { r = qr, g = qg, b = qb })
         nameText:SetText(displayName)
         nameText:Show()
 
         -- Tooltip hover zone over gear row
         CreateItemTooltipZone(parent, nameText, item.link or item.id)
 
-        -- Gem icons — inline after item name on the same row
+        -- Gem icons — inline after item name on the same row; the name gives them room
         local gemAnchor = nameText
+        local gems = 0
         if item.gems and #item.gems > 0 then
             for _, gem in ipairs(item.gems) do
                 local _, _, _, _, _, _, _, _, _, gemIcon = GuildOS.Compat.GetItemInfo(gem.id or 0)
+                if not gemIcon and gem.id then local _, gi = GuildOS.Compat.ItemInstant(gem.id); gemIcon = gi end
                 if gemIcon and gemIcon ~= "" then
                     local gemFrame = UI:CreateIcon(parent, 12, gemIcon)
                     gemFrame:SetPoint("LEFT", gemAnchor, "RIGHT", 4, 0)
                     gemFrame:Show()
                     gemAnchor = gemFrame
+                    gems = gems + 1
 
                     -- Gem tooltip on hover
                     if gem.id then
@@ -1324,64 +1567,53 @@ function CreateGearRow(parent, slotId, item, yOff, width)
                 end
             end
         end
+        local gemRoom = gems * 20
+        local textW = math.ceil(nameText:GetStringWidth() or 0) + 2
+        nameText:SetWidth(math.max(20, math.min(textW, nameW - gemRoom)))
 
-        -- Item level
+        -- Item level, in the paper's ink, right-aligned in its column
         local ilvlText = _pFS(parent)
-        GuildOS:ApplyFont(ilvlText, UI.SP.META)
-        ilvlText:SetPoint("TOPRIGHT", -10, yOff - 5)
-        ilvlText:SetText(GuildOS:FormatItemLevel(item.ilvl))
+        GuildOS:ApplyFont(ilvlText, SP.META, "tableNum")
+        ilvlText:SetPoint("RIGHT", parent, "TOPLEFT", right, mid)
+        ilvlText:SetWidth(GEAR_ILVL_W)
+        ilvlText:SetJustifyH("RIGHT")
+        ink(ilvlText, C.paperInk)
+        ilvlText:SetText(UI:PaperText(GuildOS:FormatItemLevel(item.ilvl), "paper"))
         ilvlText:Show()
 
         -- Enchant line — resolve name from DataCollector cache, same as local player
-        local enchantY = yOff - ROW_H
+        local enchantY = mid - 2
         local enchantName = item.enchantId and item.enchantId > 0
             and GuildOS.DataCollector and GuildOS.DataCollector:GetEnchantName(item.enchantId)
+        local line, lineInk
         if enchantName then
-            local enchText = _pFS(parent)
-            GuildOS:ApplyFont(enchText, UI.SP.META)
-            enchText:SetPoint("TOPLEFT", 106, enchantY)
-            enchText:SetTextColor(0.0, 0.8, 0.0)
-            enchText:SetText(enchantName)
-            enchText:Show()
-            hasExtra = true
+            line, lineInk = enchantName, UI.QUALITY_INK[2]
         elseif item.enchantId and item.enchantId > 0 then
+            line, lineInk = L["Enchanted"], UI.QUALITY_INK[2]
+        elseif GuildOS.GearAudit and GuildOS.GearAudit:NeedsEnchant(slotId, item) then   -- ADR-0026, #177
+            line, lineInk = L["Not enchanted"], paperInk(C.red)
+        end
+        if line then
             local enchText = _pFS(parent)
             GuildOS:ApplyFont(enchText, UI.SP.META)
-            enchText:SetPoint("TOPLEFT", 106, enchantY)
-            enchText:SetTextColor(0.0, 0.8, 0.0)
-            enchText:SetText(L["Enchanted"])
+            enchText:SetPoint("TOPLEFT", nameX, enchantY)
+            enchText:SetWidth(nameW)
+            enchText:SetJustifyH("LEFT")
+            ink(enchText, lineInk)
+            enchText:SetText(line)
             enchText:Show()
-            hasExtra = true
-        elseif GuildOS.GearAudit and GuildOS.GearAudit:NeedsEnchant(slotId, item) then   -- ADR-0026, #177
-            local warnText = _pFS(parent)
-            GuildOS:ApplyFont(warnText, UI.SP.META)
-            warnText:SetPoint("TOPLEFT", 106, enchantY)
-            warnText:SetTextColor(C.red.r, C.red.g, C.red.b, 0.7)
-            warnText:SetText(L["Not enchanted"])
-            warnText:Show()
-            hasExtra = true
         end
     else
         -- Empty slot
         local emptyText = _pFS(parent)
         GuildOS:ApplyFont(emptyText, UI.SP.META)
-        emptyText:SetPoint("TOPLEFT", 82, yOff - 5)
-        emptyText:SetTextColor(0.3, 0.3, 0.3)
+        emptyText:SetPoint("LEFT", parent, "TOPLEFT", iconX, mid)
+        ink(emptyText, C.paperSoft)
         emptyText:SetText(L["- Empty -"])
         emptyText:Show()
     end
 
-    local totalH = ROW_H + (hasExtra and subRowH or 0)
-
-    -- Separator
-    local sep = _pBG(parent)
-    sep:SetTexture("Interface\\Buttons\\WHITE8x8")
-    sep:SetPoint("TOPLEFT", 10, yOff - totalH)
-    sep:SetSize(width - 20, GuildOS.UI:Px(sep))   -- pooled, like the line above: not registered
-    sep:SetVertexColor(C.separator.r, C.separator.g, C.separator.b, 0.2)
-    sep:Show()
-
-    return yOff - totalH
+    return pending
 end
 
 ----------------------------------------------------------------------
@@ -1391,26 +1623,26 @@ function CreateProfessionRow(parent, prof, yOff, width)
     local ROW_H = 30
 
     -- Profession name
-    local nameColor = prof.isPrimary and C.gold or C.silver
+    local nameColor = prof.isPrimary and C.paperInk or C.paperSoft
     local nameText = _pFS(parent)
     GuildOS:ApplyFont(nameText, 11)
-    nameText:SetPoint("TOPLEFT", 15, yOff - 3)
-    nameText:SetTextColor(nameColor.r, nameColor.g, nameColor.b)
+    nameText:SetPoint("TOPLEFT", PADX, yOff - 3)
+    ink(nameText, nameColor)
     nameText:SetText(L[prof.name])
     nameText:Show()
 
     -- Skill level text
     local skillText = _pFS(parent)
     GuildOS:ApplyFont(skillText, UI.SP.META)
-    skillText:SetPoint("TOPRIGHT", -10, yOff - 4)
-    skillText:SetTextColor(C.white.r, C.white.g, C.white.b)
+    skillText:SetPoint("TOPRIGHT", -PADX, yOff - 4)
+    ink(skillText, C.paperInk)
     -- A profession known from the guild roster only has no rank (issue #31).
     skillText:SetText(prof.rank and string.format("%d / %d", prof.rank, prof.maxRank or 0) or "")
     skillText:Show()
 
     -- Progress bar
-    local progressBar = UI:CreateProgressBar(parent, width - 30, 6)
-    progressBar:SetPoint("TOPLEFT", 15, yOff - 18)
+    local progressBar = UI:CreateProgressBar(parent, width - 2 * PADX, 6)
+    progressBar:SetPoint("TOPLEFT", PADX, yOff - 18)
     progressBar:SetProgress((prof.rank and (prof.maxRank or 0) > 0) and (prof.rank / prof.maxRank) or 0)
     progressBar:Show()
 
@@ -1426,8 +1658,8 @@ function CreateAttunementRow(parent, att, yOff, width)
     -- Background with subtle color coding
     local rowBg = _pBG(parent)
     rowBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    rowBg:SetPoint("TOPLEFT", 5, yOff)
-    rowBg:SetSize(width - 10, ROW_H - 2)
+    rowBg:SetPoint("TOPLEFT", PADX, yOff)
+    rowBg:SetSize(width - 2 * PADX, ROW_H - 2)
     if att.complete then
         rowBg:SetVertexColor(C.green.r * 0.1, C.green.g * 0.1, C.green.b * 0.1, 0.3)
     else
@@ -1437,8 +1669,8 @@ function CreateAttunementRow(parent, att, yOff, width)
 
     -- Tier badge
     local tierBadge = _pFS(parent)
-    GuildOS:ApplyFont(tierBadge, 8)
-    tierBadge:SetPoint("TOPLEFT", 10, yOff - 4)
+    GuildOS:ApplyFont(tierBadge, SP.META)
+    tierBadge:SetPoint("TOPLEFT", PADX, yOff - 4)
     tierBadge:SetTextColor(C.accentDim.r, C.accentDim.g, C.accentDim.b)
     tierBadge:SetText("[" .. att.tier .. "]")
     tierBadge:Show()
@@ -1452,7 +1684,7 @@ function CreateAttunementRow(parent, att, yOff, width)
     -- Status
     local statusText = _pFS(parent)
     GuildOS:ApplyFont(statusText, UI.SP.META)
-    statusText:SetPoint("TOPRIGHT", -10, yOff - 4)
+    statusText:SetPoint("TOPRIGHT", -PADX, yOff - 4)
     statusText:Show()
 
     if att.complete then
@@ -1479,8 +1711,8 @@ function CreateAttunementRow(parent, att, yOff, width)
 
     -- Progress bar (only for in-progress attunements, not completed ones)
     if not att.complete and att.questsTotal and att.questsTotal > 0 then
-        local progressBar = UI:CreateProgressBar(parent, width - 30, 5)
-        progressBar:SetPoint("TOPLEFT", 10, yOff - 20)
+        local progressBar = UI:CreateProgressBar(parent, width - 2 * PADX - 8, 5)
+        progressBar:SetPoint("TOPLEFT", PADX, yOff - 20)
         progressBar:SetProgress(att.progress or 0)
         progressBar:Show()
     end

@@ -4486,3 +4486,13 @@ L["one channel per key press"] = "по одному каналу за нажат
 L["every channel on one click"] = "во все каналы одним щелчком"
 L["Sent to: %s"] = "Отправлено в: %s"
 L["Not shown in: %s. The game took the line but the channel did not show it: you may be muted there, or the server filtered it. Try typing in that channel yourself."] = "Не показано в: %s. Игра приняла строку, но канал её не показал: возможно, вам запретили писать там или сервер её отфильтровал. Попробуйте написать в этот канал сами."
+
+-- The member window (#449)
+L["No talent scan yet"] = "Таланты ещё не сканировались"
+L["Average item level %d"] = "Средний уровень предметов %d"
+L["Officer comment"] = "Комментарий офицера"
+L["Discipline rules"] = "Правила дисциплины"
+L["Term (days)"] = "Срок (дни)"
+L["Alt"] = "Твинк"
+L["Add alt"] = "Добавить твинка"
+L["Character name"] = "Имя персонажа"

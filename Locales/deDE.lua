@@ -4606,3 +4606,13 @@ L["one channel per key press"] = "einen Kanal pro Tastendruck"
 L["every channel on one click"] = "alle Kanäle mit einem Klick"
 L["Sent to: %s"] = "Gesendet an: %s"
 L["Not shown in: %s. The game took the line but the channel did not show it: you may be muted there, or the server filtered it. Try typing in that channel yourself."] = "Nicht angezeigt in: %s. Das Spiel hat die Zeile angenommen, aber der Kanal hat sie nicht gezeigt: Vielleicht bist du dort stummgeschaltet oder der Server hat sie gefiltert. Schreib selbst in diesen Kanal."
+
+-- The member window (#449)
+L["No talent scan yet"] = "Talente noch nicht gescannt"
+L["Average item level %d"] = "Durchschnittliche Gegenstandsstufe %d"
+L["Officer comment"] = "Offizierskommentar"
+L["Discipline rules"] = "Disziplinarregeln"
+L["Term (days)"] = "Frist (Tage)"
+L["Alt"] = "Twink"
+L["Add alt"] = "Twink hinzufügen"
+L["Character name"] = "Charaktername"

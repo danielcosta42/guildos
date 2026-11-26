@@ -2402,3 +2402,13 @@ L["one channel per key press"] = "one channel per key press"
 L["every channel on one click"] = "every channel on one click"
 L["Sent to: %s"] = "Sent to: %s"
 L["Not shown in: %s. The game took the line but the channel did not show it: you may be muted there, or the server filtered it. Try typing in that channel yourself."] = "Not shown in: %s. The game took the line but the channel did not show it: you may be muted there, or the server filtered it. Try typing in that channel yourself."
+
+-- The member window (#449)
+L["No talent scan yet"] = "No talent scan yet"
+L["Average item level %d"] = "Average item level %d"
+L["Officer comment"] = "Officer comment"
+L["Discipline rules"] = "Discipline rules"
+L["Term (days)"] = "Term (days)"
+L["Alt"] = "Alt"
+L["Add alt"] = "Add alt"
+L["Character name"] = "Character name"

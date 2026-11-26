@@ -4486,3 +4486,13 @@ L["one channel per key press"] = "키 입력마다 채널 하나씩"
 L["every channel on one click"] = "한 번의 클릭으로 모든 채널에"
 L["Sent to: %s"] = "보냄: %s"
 L["Not shown in: %s. The game took the line but the channel did not show it: you may be muted there, or the server filtered it. Try typing in that channel yourself."] = "표시되지 않음: %s. 게임은 줄을 받았지만 채널에 표시되지 않았습니다: 그 채널에서 차단되었거나 서버가 걸렀을 수 있습니다. 그 채널에 직접 입력해 보세요."
+
+-- The member window (#449)
+L["No talent scan yet"] = "특성 스캔 기록 없음"
+L["Average item level %d"] = "평균 아이템 레벨 %d"
+L["Officer comment"] = "관리자 의견"
+L["Discipline rules"] = "징계 규칙"
+L["Term (days)"] = "기간(일)"
+L["Alt"] = "부캐"
+L["Add alt"] = "부캐 추가"
+L["Character name"] = "캐릭터 이름"

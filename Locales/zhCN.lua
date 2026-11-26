@@ -4486,3 +4486,13 @@ L["one channel per key press"] = "每次按键一个频道"
 L["every channel on one click"] = "一次点击所有频道"
 L["Sent to: %s"] = "已发送到：%s"
 L["Not shown in: %s. The game took the line but the channel did not show it: you may be muted there, or the server filtered it. Try typing in that channel yourself."] = "未显示于：%s。游戏接受了该行，但频道没有显示：你可能在那里被禁言，或被服务器过滤。请自己在该频道输入试试。"
+
+-- The member window (#449)
+L["No talent scan yet"] = "尚未扫描天赋"
+L["Average item level %d"] = "平均物品等级 %d"
+L["Officer comment"] = "官员评论"
+L["Discipline rules"] = "纪律规则"
+L["Term (days)"] = "期限（天）"
+L["Alt"] = "小号"
+L["Add alt"] = "添加小号"
+L["Character name"] = "角色名"
