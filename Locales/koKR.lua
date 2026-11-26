@@ -4446,3 +4446,5 @@ L["Nothing new in the last 30 days."] = "지난 30일 동안 새로운 소식이
 L["Nothing new today."] = "오늘은 새로운 소식이 없습니다."
 L["Reached level %s"] = "레벨 %s 달성"
 L["Show less"] = "간략히"
+L["Right-click to invite to the guild: %s"] = "우클릭하여 길드에 초대: %s"
+L["%s whispered the keyword. The game lets no addon invite here: right-click their name in the chat and pick the guild invite, or copy the line and send it (Ctrl+C, Enter, Ctrl+V, Enter)."] = "%s님이 키워드를 귓속말했습니다. 이 게임에서는 애드온이 초대할 수 없습니다: 채팅에서 이름을 우클릭해 길드 초대를 선택하거나, 줄을 복사해 보내세요 (Ctrl+C, Enter, Ctrl+V, Enter)."

@@ -160,8 +160,9 @@ GuildInvite = nil
 check(Compat.GuildInvite("Cid") == false and said("Type /ginvite Cid to invite them."), "with neither, the line to type")
 CanGuildInvite = function() return false end
 check(Compat.AddonMayInvite() == false, "a rank that may not invite may not")
-check(Compat.NeedsHardware("guildInvite") and Compat.NeedsHardware("who") and Compat.NeedsHardware("groupInvite")
-  and Compat.NeedsHardware("whisper"), "retail: every kind needs a key press until the probe says otherwise")
+check(Compat.NeedsHardware("guildInvite") and Compat.NeedsHardware("who") and Compat.NeedsHardware("whisper"),
+  "retail: guild invite, /who and whisper need a key press until the probe says otherwise")
+check(not Compat.NeedsHardware("groupInvite"), "a group invite needs none (InviteUnit has no #hwevent; it works from a whisper on Forever)")
 
 -- The probe's measurement wins, on its own build only.
 GuildOSDB.probeInvite = { build = B.Client.build, results = { groupInvite = { click = true, timer = true },
@@ -170,7 +171,7 @@ check(not Compat.NeedsHardware("groupInvite"), "a group invite the probe saw go 
 check(Compat.NeedsHardware("who"), "a /who refused from a timer and taken from a click waits for one")
 check(Compat.ProbedImpossible("guildInvite") and not Compat.ProbedImpossible("who"), "refused from a click too: impossible here")
 GuildOSDB.probeInvite.build = "1"
-check(Compat.NeedsHardware("groupInvite") and not Compat.ProbedImpossible("guildInvite"),
+check(Compat.NeedsHardware("who") and not Compat.ProbedImpossible("guildInvite"),
   "a measurement from another build is not read")
 GuildOSDB.probeInvite = nil
 

@@ -196,7 +196,14 @@ function AQ:ShowTyped()
     local f = buildTyped()
     f.lineText, f.shownName = AQ.TypedLine(name), name
     local more = n > 1 and (" \194\183 " .. string.format(L["%d more"], n - 1)) or ""
-    f.note:SetText(string.format(L["%s whispered the keyword. The game lets no addon invite here: copy the line and send it yourself (Ctrl+C, Enter, Ctrl+V, Enter)."], name) .. more)
+    f.note:SetText(string.format(L["%s whispered the keyword. The game lets no addon invite here: right-click their name in the chat and pick the guild invite, or copy the line and send it (Ctrl+C, Enter, Ctrl+V, Enter)."], name) .. more)
+    -- The name as a player link in the chat: a right-click opens the game's own menu, whose guild invite is the
+    -- game's code from the player's click (no addon call, no taint: #256).
+    if f.linkedName ~= name and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        f.linkedName = name
+        DEFAULT_CHAT_FRAME:AddMessage("|cffd4a017[Guild OS]|r " .. string.format(L["Right-click to invite to the guild: %s"],
+            "|Hplayer:" .. name .. "|h[" .. name .. "]|h"))
+    end
     f.box:SetText(f.lineText)
     local Kit = GuildOS.Kit
     f:SetHeight(Kit.HEADER_H + 8 + 2 + math.ceil(f.note:GetStringHeight() or 14) + UI.SP.FIELD_GAP + UI.SP.FIELD + 10)

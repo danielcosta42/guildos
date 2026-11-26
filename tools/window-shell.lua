@@ -705,18 +705,22 @@ do
   check(cr.tabBg.texture:find("Salao\\circle.tga", 1, true) and #masks >= 1 and masks[1][1] == cr.tabEmblem,
     "on the round disc, the emblem masked round")
   check(cr.ring.drawSub == nil or cr.ring.drawSub == 4, "the ring above the tabard")
-  -- Where the game draws it itself (retail, WoW: Forever: SetLargeGuildTabardTextures) and textures take a mask, its
-  -- drawing wins over the data: round, its square border left to the crest's ring.
+  -- The data wins over the game's own drawing (SetLargeGuildTabardTextures places the emblem for a tabard's shape,
+  -- and in the small crest it fell outside the disc on WoW: Forever, #449): with both, the data's disc.
   Frame.GetTexture = function(self) return self.texture end
   SetLargeGuildTabardTextures = function(unit, emblem, bgTex, border)
     if unit == "player" then emblem:SetTexture(5000); bgTex:SetTexture(5001); border:SetTexture(5002) end
   end
   masks = {}
   f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
-  check(cr.tabard == "game" and cr.tabEmblem.texture == 5000 and cr.tabBg.shown and not cr.tabBorder.shown
-      and #masks == 2 and not cr.letter.shown, "the game's own tabard, masked round, the ring its border")
-  SetLargeGuildTabardTextures, Frame.GetTexture = nil, nil
+  check(cr.tabard == "info" and cr.tabEmblem.texture == 414975, "with the data and the game's drawing, the data's disc")
+  -- Without the data, the game's drawing: round, its square border left to the crest's ring.
   GetGuildLogoInfo = nil
+  masks = {}
+  f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
+  check(cr.tabard == "game" and cr.tabEmblem.texture == 5000 and cr.tabBg.shown and not cr.tabBorder.shown
+      and #masks == 1 and masks[1][1] == cr.tabBg and not cr.letter.shown, "the game's own tabard, masked round, the ring its border")
+  SetLargeGuildTabardTextures, Frame.GetTexture = nil, nil
   Frame.SetMask = nil
   f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
   check(cr.tabard == nil and cr.letter.shown and not cr.tabEmblem.shown, "no tabard: the initial again")

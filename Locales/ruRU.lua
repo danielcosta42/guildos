@@ -4446,3 +4446,5 @@ L["Nothing new in the last 30 days."] = "За последние 30 дней н�
 L["Nothing new today."] = "Сегодня ничего нового."
 L["Reached level %s"] = "Достигли уровня %s"
 L["Show less"] = "Свернуть"
+L["Right-click to invite to the guild: %s"] = "Правый клик — пригласить в гильдию: %s"
+L["%s whispered the keyword. The game lets no addon invite here: right-click their name in the chat and pick the guild invite, or copy the line and send it (Ctrl+C, Enter, Ctrl+V, Enter)."] = "%s шепнул ключевое слово. Игра не позволяет аддонам приглашать здесь: правый клик по имени в чате и приглашение в гильдию, или скопируйте строку и отправьте (Ctrl+C, Enter, Ctrl+V, Enter)."

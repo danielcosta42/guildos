@@ -2309,7 +2309,7 @@ end
 -- or a click of its toast; false, and it runs at once, from the event or the timer that asked for it.
 --   guildInvite  C_GuildInfo.Invite, #hwevent on every client (wiki); Anniversary invited from a whisper event
 --                before (Compat.NeedsClick false), so there it runs at once until the probe says otherwise
---   groupInvite  C_PartyInfo.InviteUnit: dropped from a timer on Forever (#61), and so assumed on retail
+--   groupInvite  C_PartyInfo.InviteUnit: needs no key press; from a whisper event it works on Forever (maintainer, #449; a timer is untested there)
 --   who          C_FriendList.SendWho: a hardware event since 1.13.2 on every client (wiki)
 --   whisper/chat SendChatMessage: dropped from a timer on Forever (#61) and retail (NeedsClick)
 -- `/gos probe invite` measures each from a click and from a timer and keeps it in GuildOSDB.probeInvite; a
@@ -2321,6 +2321,9 @@ local function assumedHardware(kind)
     local c = GuildOS.Client
     if kind == "who" then return true end
     if kind == "guildInvite" then return not c.isAnniversary end
+    -- A group invite needs no key press anywhere (C_PartyInfo.InviteUnit has no #hwevent); on WoW: Forever the
+    -- maintainer saw it work from a whisper (#449), where the probe's unknown name only gets no answer.
+    if kind == "groupInvite" then return false end
     return Compat.NeedsClick()
 end
 

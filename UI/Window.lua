@@ -97,38 +97,40 @@ function UI:DrawTabard(crest)
     local bg, em, bd = crest.tabBg, crest.tabEmblem, crest.tabBorder
     local disc = Style.ART.circle
     local how
-    -- The game's own drawing first where textures take a mask (retail and WoW: Forever run the modern client): it
-    -- knows its emblems and colours; its square background is made round.
-    local canMask = bg.SetMask ~= nil
-    if canMask and Compat.SetGuildTabardTextures(em, bg, bd) then
-        Compat.SetMask(bg, disc)
-        Compat.SetMask(em, disc)
-        bg:ClearAllPoints()
-        bg:SetPoint("TOPLEFT", TABARD_INSET, -TABARD_INSET)
-        bg:SetPoint("BOTTOMRIGHT", -TABARD_INSET, TABARD_INSET)
-        bd:Hide()   -- its square frame: the crest's own ring is the border
-        how = "game"
-    end
-    local info = not how and Compat.GuildTabardInfo()
+    -- The guild's colours and emblem first (C_GuildInfo.GetGuildTabardInfo / GetGuildLogoInfo): a disc in the
+    -- background colour, the emblem centred in its colour, the ring in the border colour. The game's own drawing
+    -- (SetLargeGuildTabardTextures) places the emblem for a tabard's shape, and in the small round crest it fell
+    -- outside the disc: only the background showed (WoW: Forever, #449). It is the fallback.
+    local info = Compat.GuildTabardInfo()
     if info then
         bg:ClearAllPoints()
         bg:SetPoint("TOPLEFT", TABARD_INSET, -TABARD_INSET)
         bg:SetPoint("BOTTOMRIGHT", -TABARD_INSET, TABARD_INSET)
         bg:SetTexture(disc)
+        bg:SetTexCoord(0, 1, 0, 1)
         bg:SetVertexColor(info.background.r, info.background.g, info.background.b, 1)
         em:SetTexture(info.emblemFile)
+        em:SetTexCoord(0, 1, 0, 1)
         em:SetVertexColor(info.emblem.r, info.emblem.g, info.emblem.b, 1)
         Compat.SetMask(em, disc)
         bd:SetTexture(Style.ART.ring)
+        bd:SetTexCoord(0, 1, 0, 1)
         bd:SetVertexColor(info.border.r, info.border.g, info.border.b, 1)
         bd:Show()
         how = "info"
-    elseif not how and Compat.SetGuildTabardTextures(em, bg, bd) then
-        -- No masks: the game's square background inside the circle.
-        bg:ClearAllPoints()
-        bg:SetPoint("TOPLEFT", SQUARE_INSET, -SQUARE_INSET)
-        bg:SetPoint("BOTTOMRIGHT", -SQUARE_INSET, SQUARE_INSET)
-        bd:Hide()
+    elseif Compat.SetGuildTabardTextures(em, bg, bd) then
+        if bg.SetMask ~= nil then
+            Compat.SetMask(bg, disc)
+            bg:ClearAllPoints()
+            bg:SetPoint("TOPLEFT", TABARD_INSET, -TABARD_INSET)
+            bg:SetPoint("BOTTOMRIGHT", -TABARD_INSET, TABARD_INSET)
+        else
+            -- No masks: the game's square background inside the circle.
+            bg:ClearAllPoints()
+            bg:SetPoint("TOPLEFT", SQUARE_INSET, -SQUARE_INSET)
+            bg:SetPoint("BOTTOMRIGHT", -SQUARE_INSET, SQUARE_INSET)
+        end
+        bd:Hide()   -- its square frame: the crest's own ring is the border
         how = "game"
     end
     bg:SetShown(how ~= nil)
