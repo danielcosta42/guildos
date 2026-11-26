@@ -820,6 +820,19 @@ do
     end
   end
   check(overlap == nil, "no link runs into the version: " .. tostring(overlap))
+  -- The snow's parcel (UI/Snow.lua) keeps `footReserve` px left of the version: no link runs into it either.
+  f.footReserve = 26
+  overlap = nil
+  for w = 100, 1000, 3 do
+    f:LayoutFooter(w)
+    local reservedLeft = w - 26 - #v.text * 6 - f.footReserve
+    for _, k in ipairs({ "site", "help", "blizzard" }) do
+      local link = f.footItems[k]
+      if link.shown and link.points[1][4] + link.w > reservedLeft - 4 then overlap = overlap or (k .. " at " .. w) end
+    end
+  end
+  check(overlap == nil, "no link runs into the snow's parcel: " .. tostring(overlap))
+  f.footReserve = nil
   f:LayoutFooter(240)
   check(not footShown("blizzard") and footShown("help") and footShown("site"), "narrower: Blizzard goes first")
   f:LayoutFooter(190)

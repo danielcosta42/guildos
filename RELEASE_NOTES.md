@@ -1,4 +1,4 @@
-## [1.43.4] - 2026-11-25
+## [1.43.5] - 2026-11-25
 
 ### Other
-- Winter Veil quests done in the game now count toward the guild's Chimney, and the Winter Veil tab shows whether yours was registered.
+- The Winter Veil tab was redesigned (animated chimney, gift boxes, one-click opening, collection shelf), and the addon now gets the event from the companion alone, without the old pair relay.
