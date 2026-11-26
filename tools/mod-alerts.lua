@@ -310,4 +310,35 @@ check(M.Match(zh, f2, w2, nil, 0) ~= nil, "a Chinese rule matches inside a line 
 local acc = M.Compile({ { p = "pão%d", cat = "custom", sev = "low", lua = true } })
 local f3, w3 = M.Prepare("PÃO5")
 check(M.Match(acc, f3, w3, nil, 0) ~= nil, "a pattern's accents are folded as the line's")
+-- The plain-language helper: no officer has to write a Lua pattern.
+do
+  local function catches(mode, text, line)
+    local p, isLua, kind = M.FromMode(mode, text)
+    local r = M.CleanRule({ p = p, cat = "custom", sev = "med", lua = isLua or nil, k = kind })
+    if not r then return nil end
+    local folded, words = M.Prepare(line)
+    return M.Match(M.Compile({ r }), folded, words) ~= nil, r
+  end
+  check(catches("word", "gold", "buy gold now") and not catches("word", "gold", "my golden axe"), "whole word: gold, not golden")
+  check(catches("part", "gold", "my golden axe") and catches("part", "gold", "GOLDSELLER here"), "inside other words: golden, goldseller")
+  check(catches("part", "1.5k", "only 1.5k each") and not catches("part", "1.5k", "only 105k each"), "inside words: a dot is a real dot")
+  for _, line in ipairs({ "g o l d", "g.o.l.d cheap", "G-O-L-D", "gold" }) do
+    check(catches("spaced", "gold", line), "spaced or with symbols catches " .. line)
+  end
+  check(not catches("spaced", "gold", "go lead"), "spaced: not other letters between")
+  local _, r = catches("spaced", "gold", "gold")
+  check(r.k == "spaced" and M.Describe(r) == "gold", "the list reads a spaced rule back as its word")
+  _, r = catches("part", "wts.", "x")
+  check(r.k == "part" and M.Describe(r) == "wts.", "and a part rule as its text")
+  check(select(2, catches("spaced", "\208\183\208\190\208\187", "x")).k == "part", "a Cyrillic word falls back to inside other words")
+  for _, tp in ipairs(M.TEMPLATES) do
+    check(M.CleanRule({ p = tp.p, cat = "custom", sev = "med", lua = true }) ~= nil, "the ready-made " .. tp.id .. " is a valid rule")
+    check(M.Describe({ p = tp.p, lua = true }) == tp.text, "and reads as its description")
+  end
+  check(catches("lua", "%d%d%d+ ?g", "selling 500g") and catches("lua", "%d%d%d+ ?g", "1000 gold cheap"), "the gold price catches 500g and 1000 gold")
+  check(catches("lua", "discord%.gg", "join discord.gg/abc"), "the Discord invite")
+  local back = M.ValidRules({ { p = "g%W?o%W?l%W?d", cat = "custom", sev = "med", lua = true, k = "spaced" }, { p = "x", cat = "custom", sev = "med", k = "spaced" } })
+  check(back[1].k == "spaced" and back[2].k == nil, "the kind survives the sync, only on a pattern")
+end
+
 print(("mod-alerts: %d checks passed"):format(checks))

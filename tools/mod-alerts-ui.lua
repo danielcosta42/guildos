@@ -156,7 +156,7 @@ M.AddRule = function(_, p, cat, sev, isLua) added = { p, cat, sev, isLua }; retu
 local addBtn = find(rulesPanel, function(c) local l = rawget(c, "label"); return l and rawget(l, "text") == "Add" end)
 check(addBtn ~= nil, "the Add button")
 addBtn:Click()
-check(added and added[1] == nil and added[2] == "custom" and added[3] == "med" and added[4] == false, "it adds with the chosen category and severity")
+check(added and (added[1] == nil or added[1] == "") and added[2] == "custom" and added[3] == "med" and added[4] == false, "it adds with the chosen category and severity")
 M.AddRule = realAdd
 local nRules = #M:GetRules()
 local del = find(rulesPanel, function(c) local l = rawget(c, "label"); return l and rawget(l, "text") == "\195\151" and c.shown end)

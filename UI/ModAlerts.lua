@@ -419,7 +419,32 @@ function GuildOS:BuildModRulesSub(panel)
     local card = board:Card(L["Alert rules"], { col = 1, fill = true, minH = 360 })
     local hint = card:Note(L["The guild's words and patterns, shared by the officers. A word matches whole, without case or accents."])
     local input = UI:CreateInput(card, 170, 24, { max = M and M.PATTERN_MAX or 60, placeholder = L["word or phrase"] })
-    card:Field("", input, { gap = 10 })
+    card:Field(L["Word or pattern"], input, { gap = 10 })
+    -- How the text matches, in plain words, and patterns ready to use: nobody has to know Lua to catch
+    -- "g.o.l.d" or "500g". The Lua pattern stays, last, for whoever wants it.
+    local MODE_TEXT = {
+        word = L["Whole word"], part = L["Inside other words too"],
+        spaced = L["Even spaced or with symbols"], lua = L["Advanced: Lua pattern"],
+    }
+    local MODE_HINT = {
+        word = L["\"gold\" catches \"buy gold now\", not \"golden\"."],
+        part = L["\"gold\" catches \"gold\", \"golden\" and \"goldseller\"."],
+        spaced = L["\"gold\" catches \"gold\", \"g o l d\", \"g.o.l.d\" and \"g-o-l-d\"."],
+        lua = L["%d a digit, %a a letter, . any character, + one or more of the one before it, ? maybe, ^ the line's start, $ its end, %. a real dot. Example: %d%d%d+ ?g catches \"500g\" and \"1000 g\"."],
+    }
+    local mode = "word"
+    local modeDD = UI:CreateDropdown(card, 200, 24)
+    local modes = {}
+    for _, m in ipairs(M and M.MODES or { "word" }) do modes[#modes + 1] = { value = m, text = MODE_TEXT[m] } end
+    modeDD:SetOptions(modes)
+    modeDD:SetValue(mode)
+    local tplDD = UI:CreateDropdown(card, 200, 24)
+    local tpls = { { value = "", text = L["Pick one..."] } }
+    for _, t in ipairs(M and M.TEMPLATES or {}) do tpls[#tpls + 1] = { value = t.id, text = t.text } end
+    tplDD:SetOptions(tpls)
+    tplDD:SetValue("")
+    card:Pair(Forms:MakeField(card, L["How it matches"], modeDD), Forms:MakeField(card, L["Ready-made"], tplDD))
+    local modeHint = card:Note(MODE_HINT.word)
     local catDD = UI:CreateDropdown(card, 150, 24)
     local cats = {}
     for _, c in ipairs(M and M.CATEGORIES or {}) do cats[#cats + 1] = { value = c, text = M.CategoryText(c) } end
@@ -431,17 +456,67 @@ function GuildOS:BuildModRulesSub(panel)
     sevDD:SetOptions(sevs)
     sevDD:SetValue("med")
     card:Pair(Forms:MakeField(card, L["Category"], catDD), Forms:MakeField(card, L["Severity"], sevDD))
-    local luaChk = card:Check(L["Lua pattern"])
     local result = card:Note("", { ink = C.red })
     local restore = UI:CreateButton(card, L["Restore the default list"], 170, 24)
     restore:SetWidth(math.ceil(tonumber(restore.label:GetStringWidth()) or 150) + 24)
     local addBtn = UI:CreateButton(card, L["Add"], 70, 24)
     UI:SetButtonVariant(addBtn, "primary")
     card:Actions({ restore, addBtn })
+    -- Try a line before saving: which rule (the one being typed, or one on the list) would catch it.
+    local testInput = UI:CreateInput(card, 170, 24, { max = 255, placeholder = L["type a line as someone would write it"] })
+    card:Field(L["Test a line"], testInput)
+    local testResult = card:Note("")
+
+    -- The rule the form describes now, or nil and why.
+    local function draft()
+        if not M then return nil, "empty" end
+        local p, isLua, kind = M.FromMode(mode, input:GetText())
+        return M.CleanRule({ p = p, cat = catDD:GetValue() or "custom", sev = sevDD:GetValue() or "med", lua = isLua or nil, k = kind })
+    end
+    local function test()
+        if not M then return end
+        local line = testInput:GetText() or ""
+        if strtrim(line) == "" then testResult:SetText(""); return end
+        local folded, words = M.Prepare(line)
+        local d = draft()
+        if d and M.Match(M.Compile({ d }), folded, words) then
+            testResult:SetText("|cff2E7D32" .. L["The rule you are writing catches this line."] .. "|r")
+        else
+            local hit = M.Match(M.Compile(M:GetRules()), folded, words)
+            if hit then
+                local shown = M.Describe(hit)
+                testResult:SetText(string.format(L["Caught by the rule \"%s\" (%s)."], shown, M.CategoryText(hit.cat)))
+            else
+                testResult:SetText(L["No rule catches this line."])
+            end
+        end
+        board:Layout()
+    end
+    local function setMode(m)
+        mode = m or "word"
+        modeHint:SetText(MODE_HINT[mode] or "")
+        result:SetText("")
+        test()
+        board:Layout()
+    end
+    modeDD.onSelect = function(_, v) setMode(v) end
+    tplDD.onSelect = function(dd, v)
+        for _, t in ipairs(M and M.TEMPLATES or {}) do
+            if t.id == v then
+                input:SetText(t.p)
+                modeDD:SetValue("lua")
+                setMode("lua")
+            end
+        end
+        dd:SetValue("")
+    end
+    input:HookScript("OnTextChanged", function() test() end)
+    testInput:HookScript("OnTextChanged", function() test() end)
 
     local function add()
         if not M then return end
-        local ok, why = M:AddRule(input:GetText(), catDD:GetValue(), sevDD:GetValue(), luaChk.checkbox:GetChecked() and true or false)
+        local p, isLua, kind = M.FromMode(mode, input:GetText())
+        local ok, why = M:AddRule(p, catDD:GetValue(), sevDD:GetValue(), isLua, kind)
         if ok then
             input:SetText("")
             input:ClearFocus()
@@ -528,7 +603,8 @@ function GuildOS:BuildModRulesSub(panel)
             row.p:SetWidth(catX - 8)
             row.cat:ClearAllPoints(); row.cat:SetPoint("LEFT", catX, 0); row.cat:SetWidth(sevX - catX - 8)
             row.sev:ClearAllPoints(); row.sev:SetPoint("LEFT", sevX, 0); row.sev:SetWidth(sevW)
-            row.p:SetText(r.lua and (r.p .. "  |cff888888(" .. L["Lua pattern"] .. ")|r") or r.p)
+            local shown, how = M.Describe(r)
+            row.p:SetText(how and (shown .. "  |cff888888(" .. how .. ")|r") or shown)
             row.cat:SetText(M.CategoryText(r.cat))
             row.sev.label:SetText(M.SeverityText(r.sev))
             row:Show()

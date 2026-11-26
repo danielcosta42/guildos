@@ -156,6 +156,51 @@ function ModAlerts.CheckLuaPattern(p)
     return nil
 end
 
+-- Plain-language ways to write a rule, for officers who never wrote a Lua pattern: each turns the text
+-- typed into the rule that would otherwise be written by hand. "word" is a whole word (no pattern), "part"
+-- the text anywhere, even inside a longer word, "spaced" the letters with a space or a symbol allowed
+-- between them ("g.o.l.d", "g o l d"), "lua" the pattern as typed.
+ModAlerts.MODES = { "word", "part", "spaced", "lua" }
+local MAGIC = "([%^%$%(%)%%%.%[%]%*%+%-%?])"
+function ModAlerts.Escape(s) return (tostring(s or ""):gsub(MAGIC, "%%%1")) end
+-- The rule's pattern, whether it is a Lua pattern, and its kind (kept so the list can read it back).
+function ModAlerts.FromMode(mode, text)
+    text = strtrim(tostring(text or ""))
+    if mode == "part" then return ModAlerts.Escape(ModAlerts.Fold(text)), true, "part" end
+    if mode == "spaced" then
+        local bare = ModAlerts.Fold(text):gsub("[%s%p]+", "")
+        -- A letter of more than one byte cannot be split from its neighbours byte by byte.
+        if bare:find("[\128-\255]") or #bare < 2 then return ModAlerts.Escape(ModAlerts.Fold(text)), true, "part" end
+        local parts = {}
+        for ch in bare:gmatch(".") do parts[#parts + 1] = ch end
+        return table.concat(parts, "%W?"), true, "spaced"
+    end
+    if mode == "lua" then return text, true, nil end
+    return text, false, nil
+end
+
+-- Ready-made patterns, in words: what an officer most often wants to catch.
+ModAlerts.TEMPLATES = {
+    { id = "gold",    p = "%d%d%d+ ?g",       text = L["A price in gold (500g, 1000 g)"] },
+    { id = "www",     p = "www%.",            text = L["A website address (www.)"] },
+    { id = "com",     p = "%a%.com",          text = L["A .com address"] },
+    { id = "discord", p = "discord%.gg",      text = L["A Discord invite"] },
+    { id = "number",  p = "%d%d%d%d%d%d%d%d", text = L["A long number (8 digits or more)"] },
+}
+
+-- How the list shows a rule: the text an officer would recognise, and how it matches (nil: a whole word).
+function ModAlerts.Describe(r)
+    if r.k == "part" then return (r.p:gsub("%%(.)", "%1")), L["inside other words too"] end
+    if r.k == "spaced" then return (r.p:gsub("%%W%?", "")), L["even spaced or with symbols"] end
+    if r.lua then
+        for _, t in ipairs(ModAlerts.TEMPLATES) do
+            if t.p == r.p then return t.text, L["ready-made"] end
+        end
+        return r.p, L["Lua pattern"]
+    end
+    return r.p, nil
+end
+
 -- One rule off a box or the network, cleaned: { p, cat, sev, lua }; or nil and why
 -- ("empty", "long", "category", "severity", "invalid", "broad").
 function ModAlerts.CleanRule(r)
@@ -172,7 +217,8 @@ function ModAlerts.CleanRule(r)
     elseif not ModAlerts.Words(ModAlerts.Fold(p)):find("[^ ]") then
         return nil, "empty"
     end
-    return { p = p, cat = r.cat, sev = r.sev, lua = isLua or nil }
+    local kind = isLua and (r.k == "part" or r.k == "spaced") and r.k or nil
+    return { p = p, cat = r.cat, sev = r.sev, lua = isLua or nil, k = kind }
 end
 
 -- What identifies a rule (for muting it and refusing a duplicate).
@@ -320,9 +366,9 @@ local function saveRules(self, rules)
 end
 
 -- An officer adds a rule. True, or false and why ("officer", "full", "dupe", or CleanRule's).
-function ModAlerts:AddRule(p, cat, sev, isLua)
+function ModAlerts:AddRule(p, cat, sev, isLua, kind)
     if not GuildOS:IsOfficer() then return false, "officer" end
-    local r, why = self.CleanRule({ p = p, cat = cat, sev = sev, lua = isLua and true or nil })
+    local r, why = self.CleanRule({ p = p, cat = cat, sev = sev, lua = isLua and true or nil, k = kind })
     if not r then return false, why end
     local rules = self:GetRules()
     if #rules >= self.RULES_MAX then return false, "full" end
