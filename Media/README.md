@@ -79,3 +79,12 @@ node tools/render-veil-assets.js                                                
 
 Peso: `Globes/` 128 px 1,56 MB · `Globes/256/` 5,0 MB · `Veil/` 2,9 MB · **total 9,4 MB** (9 896 836 bytes).
 Chaminé, atlas e Frimm vêm do código do protótipo (`prototipo-addon.html` da spec 122), copiado no gerador.
+
+## As pinturas do onboarding (`Salao/onboarding/`, #449)
+
+Uma por chave de `UI.Picture` (What's new, boas-vindas, o balão do tour, os guias da Ajuda), 512x256, TGA 32-bit
+sem compressão (`0x28`), geradas por `python3 tools/onboarding_art.py` (Pillow; `--check` diz se batem com o
+script, `--png DIR` grava prévias) com a madeira, o pergaminho e o metal do Salão. Sem palavras (o addon está em
+11 línguas). O que importa fica na faixa do meio (y 48..208): `UI.Picture` recorta por texcoords no formato do
+quadro, sem esticar. `tools/salao-art.lua` confere cada arquivo e que toda `ill` do código tem pintura.
+22 × 512 KB (11 MB no disco, ~3,7 MB no zip).
