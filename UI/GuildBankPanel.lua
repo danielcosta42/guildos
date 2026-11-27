@@ -1,38 +1,44 @@
 ----------------------------------------------------------------------
 -- Guild OS - Guild bank window (issue #380)
--- The Bank tab: Inventory · Tabs · Ledger · Needs · Requests, and the bar the addon docks under the
+-- The Bank tab: Inventory · Tabs · Ledger · Needs · Requests · Cleanup, and the bar the addon docks over the
 -- game's own guild bank while it is open. Visual layer only: what the bank holds, its ledger, needs
 -- and requests come from GuildOS.GuildBank, and every change goes through it.
--- Each sub-screen is a parchment card as the Workshop's mockup (#449 phase 3): its table in the paper's ink,
--- an item framed in its quality, its name in that quality deepened to read on the paper.
+-- Each sub-screen is a board of parchment cards as the Salão's other screens (#449 phase 3, UI/Forms.lua): its
+-- numbers, its form (labels above the fields), its table and the empty state, every width measured in the
+-- client's language and laid again as the window narrows, so a long German or Russian label never runs into its
+-- neighbour. An item is framed in its quality, its name in that quality deepened to read on the paper.
 ----------------------------------------------------------------------
 local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
+local SP = UI.SP
+local Forms = GuildOS.Forms
 
 local SUB_H     = 28    -- the sub-tab bar
-local GAP       = tonumber(UI.GAP) or 8
 local GUTTER    = tonumber(UI.SCROLL_GUTTER) or 12
-local ROW_H     = 26    -- a list row
-local HEAD_H    = 22    -- a list's column header
-local CHIP_W    = 150   -- a metric chip's slot
-local CHIP_H    = 52
-local FIELD_H   = 22
+local ROW_H     = SP.ROW
 local ICON      = 18    -- an item's icon in a list
+local ITEM_X    = ICON + 4 + 6   -- an item's name from its column's left: the framed icon, then a gap
+local BTN_GAP   = 2 * SP.UNIT    -- two buttons of one group
+local KPI_MIN   = 64    -- a KPI's text, at least
+local BODY_MIN  = 160   -- a list's body, at least: room for its empty state
+local ITEM_MAX  = 360   -- the item field asks for no more than this before the others
 local SLOT_MAX  = 40    -- a slot of the tab grid, at most
 local SLOT_MIN  = 24
 local SLOT_GAP  = 2
 local GRID_COLS = 14    -- the game draws a tab 14 slots across (7 columns of two)
 local GRID_ROWS = 7
-local SIDE_W    = 280   -- the ledger's side column
-local SIDE_MIN  = 760   -- under this width the ledger's side column goes
-local WHERE_MIN = 640   -- under this width the inventory's "where" column goes
+local TABS_W    = 232   -- the Tabs screen's list of tabs, beside the grid
+local TAB_BTN_H = 30
+local LEDGER_LEFT = 0.66   -- the Ledger's list, of two columns
 local CHART_H   = 60
 local CHART_DAYS = 30
 local TOP_N     = 8     -- contributors shown
 local TAX_N     = 4     -- members who owe the bank tax, shown (Ley)
 local ANNOUNCE_MAX = 240  -- characters of one guild chat line
+local LABEL_H   = 14 + SP.LABEL_GAP   -- a field's label over its box (Forms:MakeField)
+local DROP_ARROW = 30   -- a select's text inset and its arrow (UI:CreateDropdown)
 
 local function Bank() return GuildOS.GuildBank end
 
@@ -122,12 +128,6 @@ local function acceptLinks(box)
     if ChatEdit_InsertLink then hooksecurefunc("ChatEdit_InsertLink", insert) end
 end
 
-local function fieldLabel(parent, text)
-    local c = UI:OnPaper(parent) and C.paperSoft or C.textSoft
-    local fs = UI:CreateText(parent, text, 12, c.r, c.g, c.b)
-    return fs
-end
-
 -- A list with pooled rows over a FauxScrollFrame. `create(row)` builds a row once; `draw(row, item)`
 -- paints it. list:SetData(items) redraws.
 local listCount = 0
@@ -169,7 +169,6 @@ local function makeList(parent, rowH, create, draw)
                 row:Hide()
             end
         end
-        if list.empty then list.empty:SetShown(#list.data == 0) end
     end
     list.Update = update
 
@@ -210,27 +209,387 @@ local function makeList(parent, rowH, create, draw)
         self.data = items or {}
         update()
     end
-    function list:SetEmptyText(text)
-        if not self.empty then
-            local c = paper and C.paperSoft or C.textSoft
-            self.empty = UI:CreateText(self, "", 12, c.r, c.g, c.b)
-            self.empty:SetPoint("TOPLEFT", 12, -14)
-            self.empty:SetPoint("RIGHT", -12, 0)
-            self.empty:SetJustifyH("LEFT")
-        end
-        self.empty:SetText(text)
-    end
     return list
 end
 
--- An item's icon and name in a row: row.icon, row.name.
-local function itemCell(row, x)
+----------------------------------------------------------------------
+-- Laying a sub-screen out (#449 phase 3): every width measured in the client's language
+----------------------------------------------------------------------
+local function textW(fs) return math.ceil(tonumber(fs and fs:GetStringWidth()) or 0) end
+
+-- A text's height as it wraps (14 for one line before the client measured it).
+local function textH(fs)
+    local h = tonumber(fs:GetStringHeight()) or 0
+    return h > 0 and math.ceil(h) or 14
+end
+
+-- `text` in `fs`, cut with an ellipsis to `maxW` when it is wider (the client measures it: a German placeholder
+-- is half as long again as the English one). Returns whether it was cut.
+local ELLIPSIS = "\226\128\166"
+local function fitText(fs, text, maxW)
+    fs:SetText(text)
+    if textW(fs) <= maxW then return false end
+    local chars = {}
+    for ch in tostring(text):gmatch("[%z\1-\127\194-\244][\128-\191]*") do chars[#chars + 1] = ch end
+    local lo, hi = 0, #chars
+    while lo < hi do
+        local mid = math.floor((lo + hi + 1) / 2)
+        fs:SetText(table.concat(chars, "", 1, mid) .. ELLIPSIS)
+        if textW(fs) <= maxW then lo = mid else hi = mid - 1 end
+    end
+    fs:SetText(table.concat(chars, "", 1, lo) .. ELLIPSIS)
+    return true
+end
+
+-- A field's placeholder kept inside its box, `w` wide: as wide as the box less its insets, on one line, cut short
+-- where the language makes it longer (it ran under the next field's label in German, #449).
+local function fitPlaceholder(box, w)
+    local ph = box.placeholder
+    if type(ph) ~= "table" then return end   -- a select keeps its placeholder as a string
+    box.phText = box.phText or ph:GetText() or ""
+    local inner = math.max(8, w - 16)
+    ph:ClearAllPoints()
+    ph:SetPoint("LEFT", box, "LEFT", 8, 0)
+    ph:SetWidth(inner)
+    ph:SetJustifyH("LEFT")
+    ph:SetWordWrap(false)
+    fitText(ph, box.phText, inner)
+end
+
+-- A button whose label is one of `texts` (Decline or Cancel): as wide as the widest of them.
+local function buttonFor(parent, texts, variant, h)
+    local b = UI:CreateButton(parent, texts[1], 40, h or SP.FIELD)
+    if variant then UI:SetButtonVariant(b, variant) end
+    local w = 0
+    for _, t in ipairs(texts) do
+        b.label:SetText(t)
+        w = math.max(w, textW(b.label))
+    end
+    b.label:SetText(texts[1])
+    b:SetWidth(w + ((h or SP.FIELD) < SP.FIELD and 16 or 24))
+    return b
+end
+
+-- A select as wide as its widest option, its text inset and arrow beside it.
+local function fitDropdown(dd)
+    local w, keep = 0, dd.label:GetText()
+    for _, opt in ipairs(dd.options or {}) do
+        dd.label:SetText(opt.text or tostring(opt.value))
+        w = math.max(w, textW(dd.label))
+    end
+    dd.label:SetText(keep)
+    dd:SetWidth(w + DROP_ARROW)
+    return w + DROP_ARROW
+end
+
+-- A KPI (the mockup's .kpi) as wide as its number or its caption, whichever is wider. Returns whether it changed.
+local function fitChip(chip)
+    local w = math.max(KPI_MIN, textW(chip.value), textW(chip.label)) + 24
+    if chip:GetWidth() ~= w then chip:SetWidth(w); return true end
+    return false
+end
+
+-- Indices of `widths` in lines no wider than `w`, `gap` apart.
+local function flowRows(widths, w, gap)
+    local rows, cur, used = {}, {}, 0
+    for i, iw in ipairs(widths) do
+        local adv = (#cur > 0) and (gap + iw) or iw
+        if #cur > 0 and used + adv > w then rows[#rows + 1] = cur; cur, used, adv = {}, 0, iw end
+        cur[#cur + 1] = i
+        used = used + adv
+    end
+    if #cur > 0 then rows[#rows + 1] = cur end
+    return rows
+end
+
+-- The shown frames of `items` along lines inside `w` on `holder`, from `y0` down (align "RIGHT": from the right
+-- edge), each line as tall as its tallest, the others centred on it. Returns the height used.
+local function flowItems(holder, items, w, y0, gap, align)
+    local shown, widths = {}, {}
+    for _, it in ipairs(items) do
+        if it:IsShown() then
+            local iw = math.min(w, tonumber(it:GetWidth()) or 40)
+            if iw < (tonumber(it:GetWidth()) or 0) then it:SetWidth(iw) end
+            shown[#shown + 1], widths[#widths + 1] = it, iw
+        end
+    end
+    if #shown == 0 then return 0 end
+    local y = y0
+    for _, row in ipairs(flowRows(widths, w, gap)) do
+        local rowW, rowH = 0, 0
+        for k, i in ipairs(row) do
+            rowW = rowW + widths[i] + (k > 1 and gap or 0)
+            rowH = math.max(rowH, tonumber(shown[i]:GetHeight()) or SP.FIELD)
+        end
+        local x = (align == "RIGHT") and (w - rowW) or 0
+        for _, i in ipairs(row) do
+            local it = shown[i]
+            it:ClearAllPoints()
+            it:SetPoint("TOPLEFT", holder, "TOPLEFT", x, -(y + math.floor((rowH - (tonumber(it:GetHeight()) or rowH)) / 2)))
+            x = x + widths[i] + gap
+        end
+        y = y + rowH + BTN_GAP
+    end
+    return y - BTN_GAP - y0
+end
+
+-- A frame on `card` laid as one of its rows by `place(holder, w)` (returns its height). opts: Card:Add's.
+local function cardRow(card, place, opts)
+    opts = opts or {}
+    local holder = CreateFrame("Frame", nil, card)
+    holder:SetSize(1, 1)
+    card:Add(holder, { gap = opts.gap, shown = opts.shown, place = function(_, w)
+        local h = place(holder, w) or 0
+        holder:SetSize(math.max(1, w), math.max(1, h))
+        return h
+    end })
+    return holder
+end
+
+-- The screen's numbers (KPIs, holder.chips) at the left and its buttons (holder.buttons) at the right of one line;
+-- where both do not fit, the buttons go on the next. Make both on the holder.
+local function kpiRow(card, opts)
+    local holder
+    holder = cardRow(card, function(_, w)
+        local chipsW, chipH = 0, 0
+        for i, c in ipairs(holder.chips) do
+            fitChip(c)
+            chipsW = chipsW + c:GetWidth() + (i > 1 and SP.FIELD_GAP or 0)
+            chipH = math.max(chipH, c:GetHeight())
+        end
+        local btnW, nb = 0, 0
+        for _, b in ipairs(holder.buttons) do
+            if b:IsShown() then
+                btnW = btnW + b:GetWidth() + (nb > 0 and BTN_GAP or 0)
+                nb = nb + 1
+            end
+        end
+        local h = flowItems(holder, holder.chips, w, 0, SP.FIELD_GAP)
+        if nb > 0 then
+            if chipsW + SP.SECTION + btnW <= w then
+                flowItems(holder, holder.buttons, w, math.max(0, math.floor((chipH - SP.FIELD) / 2)), BTN_GAP, "RIGHT")
+                h = math.max(h, SP.FIELD)
+            else
+                local y = h > 0 and (h + SP.FIELD_GAP) or 0
+                h = y + flowItems(holder, holder.buttons, w, y, BTN_GAP)
+            end
+        end
+        return h
+    end, opts)
+    holder.chips, holder.buttons = {}, {}
+    return holder
+end
+
+-- Fields and buttons of one form line (row:Field(label, control, spec), row.buttons): each label above its field
+-- (Forms:MakeField), the buttons level with the boxes at the right. A field is at least spec.min and its label's
+-- width; the growing ones (spec.grow, a weight) share the rest. Too narrow for one line: the first field takes a
+-- line of its own and the others share the next; narrower still, one per line. A placeholder is kept in its box.
+local function formRow(card, opts)
+    local row
+    local function need(s) return math.max(s.min or 60, textW(s.field.label)) end
+    local function labelOf(list)
+        for _, s in ipairs(list) do
+            if (s.field.label:GetText() or "") ~= "" then return LABEL_H end
+        end
+        return 0
+    end
+    local function buttonsW()
+        local w, n = 0, 0
+        for _, b in ipairs(row.buttons) do
+            if b:IsShown() then w = w + b:GetWidth() + (n > 0 and BTN_GAP or 0); n = n + 1 end
+        end
+        return w, n
+    end
+    -- The room a line takes beyond its fields' widths, or nil when it does not fit in `w`.
+    local function free(list, withButtons, w)
+        local total, weights = 0, 0
+        for i, s in ipairs(list) do
+            total = total + need(s) + (i > 1 and SP.FIELD_GAP or 0)
+            weights = weights + (s.grow or 0)
+        end
+        local bw, nb = 0, 0
+        if withButtons then bw, nb = buttonsW() end
+        if nb > 0 then total = total + bw + (#list > 0 and SP.FIELD_GAP or 0) end
+        if total > w then return nil end
+        return w - total, weights, bw, nb
+    end
+    -- Lay `list` (and the buttons) on one line at `y`. Returns its height.
+    local function line(list, y, withButtons, w)
+        local extra, weights, _, nb = free(list, withButtons, w)
+        if not extra then
+            extra, weights = 0, 0
+            nb = select(2, buttonsW())
+        end
+        local lh = labelOf(list)
+        local lastGrow
+        for i, s in ipairs(list) do if (s.grow or 0) > 0 then lastGrow = i end end
+        local x, h, left = 0, 0, extra
+        for i, s in ipairs(list) do
+            local add = 0
+            if weights > 0 and (s.grow or 0) > 0 then
+                add = math.floor(extra * s.grow / weights)
+                left = left - add
+            end
+            -- The rounding's last pixels go to the last growing field, so the line ends where the buttons start.
+            if i == lastGrow then add = add + math.max(0, left) end
+            local fw = need(s) + add
+            if not withButtons and #list == 1 then fw = w end
+            s.field:Place(fw)
+            -- A field with no label sits level with its neighbours' boxes.
+            local own = ((s.field.label:GetText() or "") ~= "") and LABEL_H or 0
+            s.field:ClearAllPoints()
+            s.field:SetPoint("TOPLEFT", row, "TOPLEFT", x, -(y + lh - own))
+            fitPlaceholder(s.field.control, fw)
+            s.laidW = fw
+            x = x + fw + SP.FIELD_GAP
+            h = math.max(h, lh + SP.FIELD)
+        end
+        if withButtons and nb > 0 then
+            h = math.max(h, lh + flowItems(row, row.buttons, w, y + lh, BTN_GAP, "RIGHT"))
+        end
+        return h
+    end
+    row = cardRow(card, function(_, w)
+        local all = row.specs
+        if free(all, true, w) then return line(all, 0, true, w) end
+        local rest = {}
+        for i = 2, #all do rest[#rest + 1] = all[i] end
+        if #all > 1 and free(rest, true, w) then
+            local h1 = line({ all[1] }, 0, false, w)
+            return h1 + SP.FIELD_GAP + line(rest, h1 + SP.FIELD_GAP, true, w)
+        end
+        local y = 0
+        for _, s in ipairs(all) do y = y + line({ s }, y, false, w) + SP.FIELD_GAP end
+        local bh = flowItems(row, row.buttons, w, y, BTN_GAP)
+        return bh > 0 and (y + bh) or (y - SP.FIELD_GAP)
+    end, opts)
+    row.specs, row.buttons = {}, {}
+    -- A field on the line: `control` made on the row, under `label` ("" for none). spec: min, grow.
+    function row:Field(label, control, spec)
+        spec = spec or {}
+        spec.field = Forms:MakeField(self, label, control)
+        self.specs[#self.specs + 1] = spec
+        return control
+    end
+    return row
+end
+
+----------------------------------------------------------------------
+-- A table on a card: its columns, laid in the client's language
+----------------------------------------------------------------------
+-- Lay `specs` across `w`: a fixed column as wide as it needs (spec.need: spec.w, its header, its widest sample),
+-- the growing ones (spec.grow, a weight; never under spec.min) sharing what is left; while they would be under
+-- their min, the optional columns go (spec.drop: the highest first). spec.when (a function) hides a column
+-- outright. Sets spec.on, spec.x, spec.cw.
+local function layColumns(specs, w)
+    for _, s in ipairs(specs) do s.on = (not s.when) or (s.when() and true or false) end
+    while true do
+        local fixed, minGrow, weights, n = 0, 0, 0, 0
+        for _, s in ipairs(specs) do
+            if s.on then
+                n = n + 1
+                if s.grow then minGrow = minGrow + s.min; weights = weights + s.grow
+                else fixed = fixed + s.need end
+            end
+        end
+        local room = w - fixed - SP.CELL * math.max(0, n - 1)
+        local worst
+        if room < minGrow then
+            for _, s in ipairs(specs) do
+                if s.on and s.drop and (not worst or s.drop > worst.drop) then worst = s end
+            end
+        end
+        if not worst then
+            local x, left = 0, room
+            local last
+            for _, s in ipairs(specs) do if s.on and s.grow then last = s end end
+            for _, s in ipairs(specs) do
+                if s.on then
+                    if s.grow then
+                        s.cw = (s == last) and math.max(1, left) or math.max(1, math.floor(room * s.grow / weights))
+                        left = left - s.cw
+                    else
+                        s.cw = s.need
+                    end
+                    s.x = x
+                    x = x + s.cw + SP.CELL
+                end
+            end
+            return
+        end
+        worst.on = false
+    end
+end
+
+-- A table's header on `card` (the mockup's .t th) over columns `specs` ({ key, head, w, min, grow, drop, when,
+-- justify, headX (the header's text that far in), samples (texts its cells may hold, measured at `size`) }).
+-- Laid with the card at the rows' width (a list's rows stop GUTTER short of its right). Returns the header and
+-- `cols`: cols.by[key] (the spec: on, x, cw), cols.v (bumped on every layout: a row re-lays its cells when it
+-- differs from row.colsV).
+local function tableHead(card, specs, opts)
+    opts = opts or {}
+    local head = UI:CreateTableHeader(card, SP.HIT)
+    local probe = UI:CreateText(head, "", opts.size or SP.META)
+    probe:Hide()
+    local cols = { specs = specs, by = {}, v = 0 }
+    for _, s in ipairs(specs) do
+        cols.by[s.key] = s
+        local hw = 0
+        if s.head then
+            s.fs = UI:CreateHeaderText(head, s.head, SP.META)
+            s.fs:SetWordWrap(false)
+            hw = textW(s.fs) + (s.headX or 0)
+        end
+        local sw = 0
+        for _, t in ipairs(s.samples or {}) do probe:SetText(t); sw = math.max(sw, textW(probe)) end
+        s.need = math.max(s.w or 0, hw, sw + (s.pad or 0))
+        if s.grow then s.min = math.max(s.min or 80, hw) end
+        s.on, s.x, s.cw = true, 0, s.need   -- until the card lays it out
+    end
+    card:Add(head, { h = SP.HIT, wide = true, gap = opts.gap, shown = opts.shown, place = function(f, w)
+        f:SetSize(math.max(1, w), SP.HIT)
+        layColumns(specs, w - 1 - GUTTER)
+        cols.v = cols.v + 1
+        for _, s in ipairs(specs) do
+            if s.fs then s.fs:SetShown(s.on) end
+            if s.fs and s.on then
+                local hx = s.headX or 0
+                s.fs:ClearAllPoints()
+                s.fs:SetPoint("LEFT", f, "LEFT", 1 + s.x + hx, 0)
+                s.fs:SetWidth(math.max(1, s.cw - hx))
+                s.fs:SetJustifyH(s.justify or "LEFT")
+            end
+        end
+        if cols.onLayout then cols.onLayout() end
+        return SP.HIT
+    end })
+    return head, cols
+end
+
+-- A text of a row in column `s`: as wide as the column, cut short past it.
+local function putCell(fs, row, s, y)
+    fs:ClearAllPoints()
+    fs:SetPoint("LEFT", row, "LEFT", s.x, y or 0)
+    fs:SetWidth(math.max(1, s.cw))
+    fs:SetJustifyH(s.justify or "LEFT")
+    fs:SetWordWrap(false)
+end
+
+-- An item's icon and name in a row: row.icon, row.name; placed in a column by putItem.
+local function itemCell(row)
     row.icon = UI:CreateIcon(row, ICON)
-    row.icon:SetPoint("LEFT", x or 6, 0)
     row.name = UI:CreateText(row, "", 12)
-    row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
     row.name:SetJustifyH("LEFT")
     row.name:SetWordWrap(false)
+end
+
+-- The icon at the column's left, the name after it to the column's right (raised `y` for a second line).
+local function putItem(row, s, y)
+    row.icon:ClearAllPoints()
+    row.icon:SetPoint("LEFT", row, "LEFT", s.x, 0)
+    row.name:ClearAllPoints()
+    row.name:SetPoint("LEFT", row, "LEFT", s.x + ITEM_X, y or 0)
+    row.name:SetWidth(math.max(1, s.cw - ITEM_X))
 end
 
 local function paintItem(row, id, l, suffix)
@@ -243,37 +602,59 @@ local function paintItem(row, id, l, suffix)
     return info
 end
 
-local function headerText(parent, text, x, justify)
-    local fs = UI:CreateHeaderText(parent, text, UI.SP.META)
-    fs:SetPoint("LEFT", x, 0)
-    fs:SetJustifyH(justify or "LEFT")
-    return fs
+-- The list of a card: a body that takes the card's room left (its fill row), the pooled rows on it and its empty
+-- state (UI:CreateEmptyState) at its top. list:ShowEmpty(text) shows it with `text`, list:ShowEmpty() hides it.
+local function listBody(card, rowH, create, draw, glyph)
+    local body = card:Body(math.max(4 * rowH, BODY_MIN), { gap = 0 })
+    local list = makeList(body, rowH, create, draw)
+    list:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
+    list:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
+    local es = UI:CreateEmptyState(body, glyph or "?", 380)
+    es:Hide()
+    list.es = es
+    function list:ShowEmpty(text)
+        es:SetShown(text ~= nil)
+        if not text then return end
+        local w = UI:LaidWidth(body)
+        es:SetWidth(math.max(200, math.min(420, (w > 0 and w or 420) - 4)))
+        es:Set(text)
+        es:ClearAllPoints()
+        es:SetPoint("TOP", body, "TOP", 0, -SP.SECTION)
+    end
+    return list, body
 end
 
--- A row of chip buttons, one chosen: opts = { { key, label } }, onPick(key). Returns the bar and its
--- Select(key).
-local function chipBar(parent, opts, onPick, width)
-    local bar = CreateFrame("Frame", nil, parent)
-    bar:SetHeight(FIELD_H)
-    local buttons, prev = {}, nil
-    for _, o in ipairs(opts) do
-        local b = UI:CreateButton(bar, o[2], width or 60, FIELD_H)
-        if prev then b:SetPoint("LEFT", prev, "RIGHT", 4, 0) else b:SetPoint("LEFT", 0, 0) end
-        b.key = o[1]
-        b:SetScript("OnClick", function() bar.Select(o[1]); onPick(o[1]) end)
-        buttons[#buttons + 1] = b
-        prev = b
-    end
-    function bar.Select(key)
-        for _, b in ipairs(buttons) do UI:SetSelected(b, b.key == key) end
-    end
-    bar.buttons = buttons
-    bar.last = prev
-    return bar
+-- A card's empty state on a row of its own (the screen has nothing to show at all), centred.
+local function emptyRow(card, glyph, shown)
+    local es
+    local holder = cardRow(card, function(h, w)
+        es:SetWidth(math.max(200, math.min(420, w)))
+        es:Set(es.want or "")
+        es:ClearAllPoints()
+        es:SetPoint("TOP", h, "TOP", 0, -SP.SECTION)
+        return SP.SECTION + (tonumber(es:GetHeight()) or 120)
+    end, { shown = shown })
+    es = UI:CreateEmptyState(holder, glyph, 380)
+    holder.es = es
+    return holder
+end
+
+-- A card's blurb (the mockup's .sm) wrapped at its width.
+local function blurb(card, text, opts)
+    local fs = card:Note(text, opts)
+    fs:SetJustifyH("LEFT")
+    return fs
 end
 
 local function emptyBankText()
     return L["Nobody with Guild OS has opened the guild bank yet. Open it once and every member sees it here."]
+end
+
+-- A sub-screen's board (UI:CreateBoard) on `p`, its cards' layout redone with board:Layout().
+local function newBoard(p, key, opts)
+    opts = opts or {}
+    opts.name = "GuildOSBank" .. key .. "Board"
+    return UI:CreateBoard(p, opts)
 end
 
 ----------------------------------------------------------------------
@@ -287,63 +668,56 @@ local GROUP_LABEL = {
 local function buildInventory(p, panel)
     local B = Bank()
     local st = { query = "", sort = "cat", group = "all" }
+    local board = newBoard(p, "Inventory")
+    local card = board:Card(L["Inventory"], { fill = true })
 
-    local chips = {}
-    local captions = { L["Gold"], L["Items"], L["Free slots"], L["Last read"] }
-    for i, cap in ipairs(captions) do
-        local chip = UI:CreateMetricChip(p, "—", cap)
-        chip:SetPoint("TOPLEFT", (i - 1) * (CHIP_W + 16), -GAP)
-        chip:SetWidth(CHIP_W)
-        chips[i] = chip
+    -- The bank in four numbers.
+    local top = kpiRow(card)
+    for i, cap in ipairs({ L["Gold"], L["Items"], L["Free slots"], L["Last read"] }) do
+        top.chips[i] = UI:CreateMetricChip(top, "—", cap)
     end
+    local chips = top.chips
 
-    local search = UI:CreateInput(p, 200, FIELD_H, { placeholder = L["Search items…"], max = 60 })
-    search:SetPoint("TOPLEFT", 0, -(GAP + CHIP_H + GAP))
-    local sortDD = UI:CreateDropdown(p, 150, FIELD_H)
-    sortDD:SetPoint("LEFT", search, "RIGHT", 8, 0)
+    -- Find, sort and filter: the search grows, each select as wide as its widest choice.
+    local tools = formRow(card)
+    local search = tools:Field("", UI:CreateInput(tools, 200, SP.FIELD, { placeholder = L["Search items…"], max = 60 }),
+        { min = 180, grow = 1 })
+    local sortDD = UI:CreateDropdown(tools, 150, SP.FIELD)
     sortDD:SetOptions({
         { value = "cat", text = L["By category"] }, { value = "name", text = L["By name"] },
         { value = "count", text = L["By quantity"] }, { value = "quality", text = L["By quality"] },
     })
     sortDD:SetValue("cat")
-    local groupDD = UI:CreateDropdown(p, 180, FIELD_H)
-    groupDD:SetPoint("LEFT", sortDD, "RIGHT", 8, 0)
+    tools:Field("", sortDD, { min = fitDropdown(sortDD) })
+    local groupDD = UI:CreateDropdown(tools, 180, SP.FIELD)
     local gopts = { { value = "all", text = L["All categories"] } }
     for _, g in ipairs(GuildOS.GuildBankPlan.GROUPS) do gopts[#gopts + 1] = { value = g, text = L[GROUP_LABEL[g]] } end
     groupDD:SetOptions(gopts)
     groupDD:SetValue("all")
+    tools:Field("", groupDD, { min = fitDropdown(groupDD) })
 
-    local head = UI:CreateTableHeader(p, HEAD_H)
-    head:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -GAP)
-    head:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
-    headerText(head, L["Item"], 32)
-    local hTotal = UI:CreateHeaderText(head, L["Total"], UI.SP.META)
-    local hWhere = UI:CreateHeaderText(head, L["Where"], UI.SP.META)
-    local hNeed = UI:CreateHeaderText(head, L["Need"], UI.SP.META)
+    -- The table: the item, how many, where (it goes first on a narrow window) and what a need still lacks.
+    local NEED_BAR = 56
+    local _, cols = tableHead(card, {
+        { key = "item", head = L["Item"], grow = 1, min = 160, headX = ITEM_X },
+        { key = "total", head = L["Total"], w = 40, justify = "RIGHT", samples = { "9999" } },
+        { key = "where", head = L["Where"], w = 160, drop = 1 },
+        { key = "need", head = L["Need"], w = 120, pad = NEED_BAR + 6,
+          samples = { string.format(L["%d short"], 999), L["met"] } },
+    }, { gap = SP.SECTION })
+    local by = cols.by
 
-    local hint = UI:CreateText(p, L["Shift-click: link in chat · Right-click: ask the officers · Alt-click (officer): set a need"], 11,
-        C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    hint:SetPoint("BOTTOMLEFT", 0, 4)
-    local countText = UI:CreateText(p, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    countText:SetPoint("BOTTOMRIGHT", -GAP, 4)
-
-    local NEED_W, WHERE_W, TOTAL_W = 150, 230, 60
-    local showWhere = true
-    local list = makeList(p, ROW_H, function(row)
-        itemCell(row, 8)
-        row.group = UI:CreateHeaderText(row, "", UI.SP.META)
-        row.group:SetPoint("BOTTOMLEFT", 8, 4)
+    local list = listBody(card, ROW_H, function(row)
+        itemCell(row)
+        row.group = UI:CreateHeaderText(row, "", SP.META)
+        row.group:SetPoint("LEFT", 0, 0)
+        row.group:SetJustifyH("LEFT")
+        row.group:SetWordWrap(false)
         row.total = UI:CreateText(row, "", 11)
         GuildOS:ApplyFont(row.total, 11, "tableNum")
-        row.total:SetJustifyH("RIGHT")
-        row.total:SetWidth(TOTAL_W)
         row.where = UI:CreateText(row, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-        row.where:SetJustifyH("LEFT")
-        row.where:SetWordWrap(false)
-        row.where:SetWidth(WHERE_W)
-        row.bar = UI:CreateProgressBar(row, 60, 6)
-        row.need = UI:CreateText(row, "", UI.SP.META)
-        row.need:SetJustifyH("LEFT")
+        row.bar = UI:CreateProgressBar(row, NEED_BAR, 6)
+        row.need = UI:CreateText(row, "", SP.META)
         row:SetScript("OnEnter", function(self)
             self.hl:Show()
             if self.data and not self.data.header then showItemTooltip(self, self.data.id, self.data.l) end
@@ -355,32 +729,28 @@ local function buildInventory(p, panel)
             elseif IsAltKeyDown() and GuildOS:IsOfficer() then panel.Prefill("needs", it.id)
             elseif button == "RightButton" then panel.Prefill("requests", it.id) end
         end)
-        row.Layout = function(self)
-            self.need:ClearAllPoints()
-            self.bar:ClearAllPoints()
-            self.bar:SetPoint("RIGHT", -(NEED_W - 60), 0)
-            self.need:SetPoint("LEFT", self.bar, "RIGHT", 6, 0)
-            self.where:ClearAllPoints()
-            self.where:SetPoint("RIGHT", -(NEED_W + 10), 0)
-            self.where:SetShown(showWhere)
-            self.total:ClearAllPoints()
-            self.total:SetPoint("RIGHT", -(NEED_W + 10 + (showWhere and (WHERE_W + 10) or 0)), 0)
-            self.name:SetPoint("RIGHT", self.total, "LEFT", -10, 0)
-        end
-        row:Layout()
     end, function(row, it)
+        if row.colsV ~= cols.v then
+            row.colsV = cols.v
+            putItem(row, by.item)
+            row.group:SetWidth(math.max(1, by.item.cw + by.total.cw))
+            putCell(row.total, row, by.total)
+            if by.where.on then putCell(row.where, row, by.where) end
+            row.bar:ClearAllPoints()
+            row.bar:SetPoint("LEFT", row, "LEFT", by.need.x, 0)
+            putCell(row.need, row, { x = by.need.x + NEED_BAR + 6, cw = by.need.cw - NEED_BAR - 6 })
+        end
         local isHead = it.header and true or false
         row.group:SetShown(isHead)
         row.icon:SetShown(not isHead)
         row.name:SetShown(not isHead)
         row.total:SetShown(not isHead)
-        row.where:SetShown(not isHead and showWhere)
+        row.where:SetShown(not isHead and by.where.on)
         if isHead then
             row.group:SetText(it.label)
             row.bar:Hide(); row.need:Hide()
             return
         end
-        if row.layoutWhere ~= showWhere then row.layoutWhere = showWhere; row:Layout() end
         paintItem(row, it.id, it.l)
         row.total:SetText(tostring(it.total))
         local parts, tabs = {}, {}
@@ -398,10 +768,25 @@ local function buildInventory(p, panel)
             row.need:SetText(have >= need and L["met"] or string.format(L["%d short"], need - have))
             row.need:SetTextColor(col.r, col.g, col.b)
         end
-    end)
-    list:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, 0)
-    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -GAP, 22)
-    list:SetEmptyText(emptyBankText())
+    end, "B")
+    cols.onLayout = function() list:Update() end
+
+    -- How to use the rows, and how many show.
+    local hint = Forms:Soft(card, L["Shift-click: link in chat · Right-click: ask the officers · Alt-click (officer): set a need"], SP.META)
+    hint:SetWordWrap(true)
+    local countText = Forms:Soft(card, "", SP.META)
+    countText:SetJustifyH("RIGHT")
+    countText:SetWordWrap(false)
+    cardRow(card, function(h, w)
+        local cw = textW(countText)
+        countText:ClearAllPoints()
+        countText:SetPoint("TOPRIGHT", h, "TOPRIGHT", 0, 0)
+        countText:SetWidth(math.max(1, cw))
+        hint:ClearAllPoints()
+        hint:SetPoint("TOPLEFT", h, "TOPLEFT", 0, 0)
+        hint:SetWidth(math.max(1, w - cw - SP.SECTION))
+        return math.max(textH(hint), 14)
+    end, { gap = SP.FIELD_GAP })
 
     local function rebuild()
         local index = B:Index()
@@ -441,6 +826,7 @@ local function buildInventory(p, panel)
             end
         end
         list:SetData(out)
+        list:ShowEmpty(#index.list == 0 and emptyBankText() or nil)
         countText:SetText(string.format(L["%d of %d items"], #items, #index.list))
 
         local db = B:Store()
@@ -450,25 +836,20 @@ local function buildInventory(p, panel)
         chips[2]:SetValue(tostring(total))
         local used, slots = B:Fill()
         chips[3]:SetValue(slots > 0 and string.format("%d / %d", slots - used, slots) or "—")
-        local ts, by = B:Newest()
+        local ts, by2 = B:Newest()
         chips[4]:SetValue(ts > 0 and GuildOS:TimeAgo(ts) or "—")
-        chips[4].label:SetText(by and string.format(L["Read by %s"], by) or L["Last read"])
+        chips[4].label:SetText(by2 and string.format(L["Read by %s"], by2) or L["Last read"])
+        -- A number or a count wider than before lays the screen out again.
+        local changed = math.ceil(textW(countText)) ~= (st.countW or -1)
+        st.countW = math.ceil(textW(countText))
+        for _, c in ipairs(chips) do if fitChip(c) then changed = true end end
+        if changed then board:Layout() end
     end
     p.Draw = rebuild
 
     search:HookScript("OnTextChanged", function(self) st.query = self:GetText() or ""; rebuild() end)
     sortDD.onSelect = function(_, v) st.sort = v; rebuild() end
     groupDD.onSelect = function(_, v) st.group = v; rebuild() end
-
-    UI:MakeResponsive(p, function(_, w)
-        showWhere = w >= WHERE_MIN
-        hWhere:SetShown(showWhere)
-        hNeed:ClearAllPoints(); hNeed:SetPoint("LEFT", head, "RIGHT", -(NEED_W + GUTTER), 0)
-        hWhere:ClearAllPoints(); hWhere:SetPoint("LEFT", head, "RIGHT", -(NEED_W + 10 + WHERE_W + GUTTER), 0)
-        hTotal:ClearAllPoints()
-        hTotal:SetPoint("RIGHT", head, "RIGHT", -(NEED_W + 10 + (showWhere and (WHERE_W + 10) or 0) + GUTTER), 0)
-        list:Update()
-    end)
 end
 
 ----------------------------------------------------------------------
@@ -482,116 +863,138 @@ end
 
 local function buildTabs(p)
     local B = Bank()
-    local st = { tab = 1, organized = false }
+    local st = { tab = 1, organized = false, seen = true }
+    local board = newBoard(p, "Tabs", { leftW = TABS_W })
 
-    local side = CreateFrame("Frame", nil, p)
-    side:SetPoint("TOPLEFT", 0, -GAP)
-    side:SetPoint("BOTTOMLEFT", 0, GAP)
-    side:SetWidth(190)
-    local sideTitle = UI:CreateHeaderText(side, L["Bank tabs"], UI.SP.META)
-    sideTitle:SetPoint("TOPLEFT", 0, 0)
+    -- The bank's tabs, one button each (beside the grid; on a narrow window a line of them above it).
+    local side = board:Card(L["Bank tabs"], { col = 1 })
     local tabButtons = {}
     for tab = 1, 8 do
-        local b = UI:CreateButton(side, "", 190, 30)
-        b:SetPoint("TOPLEFT", 0, -16 - (tab - 1) * 34)
+        local b = UI:CreateButton(side, "", TABS_W - 2 * SP.PAD, TAB_BTN_H)
         b.label:ClearAllPoints()
         b.label:SetPoint("LEFT", 34, 0)
-        b.label:SetPoint("RIGHT", -44, 0)
+        b.label:SetPoint("RIGHT", -48, 0)
         b.label:SetJustifyH("LEFT")
+        b.label:SetWordWrap(false)
         b.icon = b:CreateTexture(nil, "ARTWORK")
         b.icon:SetSize(20, 20)
         b.icon:SetPoint("LEFT", 7, 0)
         b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        b.fill = UI:CreateText(b, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-        GuildOS:ApplyFont(b.fill, UI.SP.META, "tableNum")
+        b.fill = UI:CreateText(b, "", SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+        GuildOS:ApplyFont(b.fill, SP.META, "tableNum")
         b.fill:SetPoint("RIGHT", -8, 0)
         b:SetScript("OnClick", function() st.tab = tab; p.Draw() end)
         tabButtons[tab] = b
     end
-    local perm = UI:CreateText(side, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    perm:SetPoint("BOTTOMLEFT", 0, 0)
-    perm:SetPoint("RIGHT", side, "RIGHT", 0, 0)
-    perm:SetJustifyH("LEFT")
+    side:Flow(tabButtons, { gapX = BTN_GAP })
+    local perm = blurb(side, "")
 
-    local main = CreateFrame("Frame", nil, p)
-    main:SetPoint("TOPLEFT", side, "TOPRIGHT", 16, 0)
-    main:SetPoint("BOTTOMRIGHT", -GAP, GAP)
-    local title = UI:CreateSectionTitle(main, "", true)
-    title:SetPoint("TOPLEFT", 0, 0)
-    local fillText = UI:CreateText(main, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    fillText:SetPoint("LEFT", title, "RIGHT", 10, 0)
-    local orgBtn = UI:CreateButton(main, L["Organized"], 96, FIELD_H)
-    orgBtn:SetPoint("TOPRIGHT", 0, 2)
-    local asBtn = UI:CreateButton(main, L["As it is"], 96, FIELD_H)
-    asBtn:SetPoint("RIGHT", orgBtn, "LEFT", -4, 0)
+    -- The tab: its slots as they are or organized, and the organizer under them.
+    local main = board:Card(L["Bank"], { col = 2, fill = true })
+    local title = main.title
+    local fillText = Forms:Soft(main, "", SP.META)
+    fillText:SetWordWrap(true)
+    local asBtn = Forms:Pill(main, L["As it is"])
+    local orgBtn = Forms:Pill(main, L["Organized"])
     asBtn:SetScript("OnClick", function() st.organized = false; p.Draw() end)
     orgBtn:SetScript("OnClick", function() st.organized = true; p.Draw() end)
+    local function seen() return st.seen end
+    cardRow(main, function(h, w)
+        local pw = asBtn:GetWidth() + BTN_GAP + orgBtn:GetWidth()
+        local textRoom = w - pw - SP.SECTION
+        asBtn:ClearAllPoints(); orgBtn:ClearAllPoints()
+        fillText:ClearAllPoints()
+        fillText:SetPoint("TOPLEFT", h, "TOPLEFT", 0, -4)
+        if textRoom >= 160 then
+            fillText:SetWidth(textRoom)
+            orgBtn:SetPoint("TOPRIGHT", h, "TOPRIGHT", 0, 0)
+            asBtn:SetPoint("RIGHT", orgBtn, "LEFT", -BTN_GAP, 0)
+            return math.max(SP.HIT, textH(fillText) + 4)
+        end
+        fillText:SetWidth(w)
+        local th = textH(fillText) + 4
+        asBtn:SetPoint("TOPLEFT", h, "TOPLEFT", 0, -(th + BTN_GAP))
+        orgBtn:SetPoint("LEFT", asBtn, "RIGHT", BTN_GAP, 0)
+        return th + BTN_GAP + SP.HIT
+    end, { shown = seen })
 
     local grid = CreateFrame("Frame", nil, main)
-    grid:SetPoint("TOPLEFT", 0, -32)
     local cells = {}
     for i = 1, GRID_COLS * GRID_ROWS do
         local cell = CreateFrame("Button", nil, grid, "BackdropTemplate")
         cell:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(cell) })
-        cell:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+        cell:SetBackdropColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
         cell:SetBackdropBorderColor(C.paperRule.r, C.paperRule.g, C.paperRule.b, 1)
         cell.tex = cell:CreateTexture(nil, "ARTWORK")
         cell.tex:SetPoint("TOPLEFT", 2, -2)
         cell.tex:SetPoint("BOTTOMRIGHT", -2, 2)
         cell.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        cell.count = UI:CreateText(cell, "", UI.SP.META)
-        GuildOS:ApplyFont(cell.count, UI.SP.META, "tableNum")
+        cell.count = UI:CreateText(cell, "", SP.META)
+        GuildOS:ApplyFont(cell.count, SP.META, "tableNum")
         cell.count:SetPoint("BOTTOMRIGHT", -2, 2)
         cell:SetScript("OnEnter", function(self) if self.slot then showItemTooltip(self, self.slot.id, self.slot.l) end end)
         cell:SetScript("OnLeave", function() GameTooltip:Hide() end)
         cell:SetScript("OnClick", function(self) if self.slot and IsShiftKeyDown() then linkToChat(self.slot.id, self.slot.l) end end)
         cells[i] = cell
     end
-
-    local strip = CreateFrame("Frame", nil, main, "BackdropTemplate")
-    strip:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(strip) })
-    strip:SetBackdropColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
-    strip:SetBackdropBorderColor(C.paperRule.r, C.paperRule.g, C.paperRule.b, 1)
-    strip:SetHeight(64)
-    strip:SetPoint("TOPLEFT", grid, "BOTTOMLEFT", 0, -GAP * 2)
-    strip:SetPoint("RIGHT", main, "RIGHT", 0, 0)
-    local movesChip = UI:CreateMetricChip(strip, "0", L["Moves"])
-    movesChip:SetPoint("TOPLEFT", 12, -8)
-    movesChip:SetWidth(80)
-    local freedChip = UI:CreateMetricChip(strip, "0", L["Slots freed"])
-    freedChip:SetPoint("TOPLEFT", 108, -8)
-    freedChip:SetWidth(90)
-    local organize = UI:CreateButton(strip, L["Organize at the bank"], 170, 28)
-    UI:SetButtonVariant(organize, "primary")
-    organize:SetPoint("RIGHT", -12, 0)
-    organize:SetScript("OnClick", function() B:StartSort(st.tab) end)
-    local stop = UI:CreateButton(strip, L["Stop"], 70, 28)
-    stop:SetPoint("RIGHT", organize, "LEFT", -6, 0)
-    stop:SetScript("OnClick", function() B:StopSort("cancel") end)
-    local note = UI:CreateText(strip, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    note:SetPoint("LEFT", 216, 0)
-    note:SetPoint("RIGHT", stop, "LEFT", -12, 0)
-    note:SetJustifyH("LEFT")
-    note:SetWordWrap(true)
-    local progress = UI:CreateProgressBar(strip, 100, 6)
-    progress:SetPoint("BOTTOMLEFT", 216, 8)
-    progress:SetPoint("RIGHT", stop, "LEFT", -12, 0)
-    local empty = UI:CreateText(main, emptyBankText(), 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    empty:SetPoint("TOPLEFT", 0, -36)
-    empty:SetPoint("RIGHT", main, "RIGHT", 0, 0)
-    empty:SetJustifyH("LEFT")
-
-    local cellSize = SLOT_MAX
-    local function layoutGrid()
-        grid:SetSize(GRID_COLS * (cellSize + SLOT_GAP), GRID_ROWS * (cellSize + SLOT_GAP))
-        for i, cell in ipairs(cells) do
-            local x, y = slotPosition(i)
-            cell:SetSize(cellSize, cellSize)
-            cell:ClearAllPoints()
-            cell:SetPoint("TOPLEFT", x * (cellSize + SLOT_GAP), -y * (cellSize + SLOT_GAP))
+    local cellSize = 0
+    main:Add(grid, { gap = SP.FIELD_GAP, shown = seen, place = function(_, w)
+        local size = math.floor((w + SLOT_GAP) / GRID_COLS) - SLOT_GAP
+        size = math.max(SLOT_MIN, math.min(SLOT_MAX, size))
+        if size ~= cellSize then
+            cellSize = size
+            for i, cell in ipairs(cells) do
+                local x, y = slotPosition(i)
+                cell:SetSize(size, size)
+                cell:ClearAllPoints()
+                cell:SetPoint("TOPLEFT", x * (size + SLOT_GAP), -y * (size + SLOT_GAP))
+            end
         end
-    end
-    layoutGrid()
+        local h = GRID_ROWS * (size + SLOT_GAP) - SLOT_GAP
+        grid:SetSize(GRID_COLS * (size + SLOT_GAP) - SLOT_GAP, h)
+        return h
+    end })
+
+    -- The organizer: what it would do, and the button that does it at the bank.
+    local strip
+    strip = cardRow(main, function(h, w)
+        local chips, btns = strip.chips, strip.buttons
+        local chipsW, chipH = 0, 0
+        for i, c in ipairs(chips) do fitChip(c); chipsW = chipsW + c:GetWidth() + (i > 1 and SP.FIELD_GAP or 0); chipH = math.max(chipH, c:GetHeight()) end
+        local btnW = 0
+        for _, b in ipairs(btns) do if b:IsShown() then btnW = btnW + b:GetWidth() + (btnW > 0 and BTN_GAP or 0) end end
+        local y = flowItems(h, chips, w, 0, SP.FIELD_GAP)
+        if chipsW + SP.SECTION + btnW <= w then
+            flowItems(h, btns, w, math.floor((chipH - SP.FIELD) / 2), BTN_GAP, "RIGHT")
+        else
+            y = y + SP.FIELD_GAP + flowItems(h, btns, w, y + SP.FIELD_GAP, BTN_GAP, "RIGHT")
+        end
+        strip.note:ClearAllPoints()
+        strip.note:SetPoint("TOPLEFT", h, "TOPLEFT", 0, -(y + SP.FIELD_GAP))
+        strip.note:SetWidth(w)
+        y = y + SP.FIELD_GAP + textH(strip.note)
+        strip.progress:ClearAllPoints()
+        if strip.progress:IsShown() then
+            strip.progress:SetPoint("TOPLEFT", h, "TOPLEFT", 0, -(y + BTN_GAP))
+            strip.progress:SetWidth(w)
+            y = y + BTN_GAP + 6
+        end
+        return y
+    end, { gap = SP.SECTION, shown = seen })
+    local movesChip = UI:CreateMetricChip(strip, "0", L["Moves"])
+    local freedChip = UI:CreateMetricChip(strip, "0", L["Slots freed"])
+    strip.chips = { movesChip, freedChip }
+    local stop = Forms:Button(strip, L["Stop"])
+    stop:SetScript("OnClick", function() B:StopSort("cancel") end)
+    local organize = Forms:Button(strip, L["Organize at the bank"], "primary")
+    organize:SetScript("OnClick", function() B:StartSort(st.tab) end)
+    strip.buttons = { stop, organize }
+    strip.note = Forms:Soft(strip, "", SP.META)
+    strip.note:SetWordWrap(true)
+    local note = strip.note
+    local progress = UI:CreateProgressBar(strip, 100, 6)
+    strip.progress = progress
+    local empty = emptyRow(main, "T", function() return not st.seen end)
 
     p.Draw = function()
         local db = B:Store()
@@ -600,8 +1003,10 @@ local function buildTabs(p)
         if not db.tabs[st.tab] then
             for tab = 1, count do if db.tabs[tab] then st.tab = tab; break end end
         end
+        local layout = false
         for tab, b in ipairs(tabButtons) do
             local t = db.tabs[tab]
+            if b:IsShown() ~= (tab <= count) then layout = true end
             b:SetShown(tab <= count)
             b.label:SetText(string.format("%d  %s", tab, (t and t.name) or L["Not seen yet"]))
             b.icon:SetTexture(t and t.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
@@ -610,14 +1015,27 @@ local function buildTabs(p)
             b.fill:SetText(t and string.format("%d/98", used) or "")
             UI:SetSelected(b, tab == st.tab)
         end
-        UI:SetSelected(asBtn, not st.organized)
-        UI:SetSelected(orgBtn, st.organized)
+        Forms:SetOn(asBtn, not st.organized)
+        Forms:SetOn(orgBtn, st.organized)
 
         local t = db.tabs[st.tab]
-        empty:SetShown(t == nil)
-        grid:SetShown(t ~= nil)
-        strip:SetShown(t ~= nil)
-        if not t then title:SetText(L["Bank"]); fillText:SetText(""); perm:SetText(""); return end
+        if st.seen ~= (t ~= nil) then layout = true end
+        st.seen = t ~= nil
+        if B:IsOpen() then
+            local _, _, _, canDeposit, _, remaining = GuildOS.Compat.GuildBankTabInfo(st.tab)
+            perm:SetText(string.format(L["Your rank: %s · %s"], canDeposit and L["deposits"] or L["no deposits"],
+                tonumber(remaining) == -1 and L["withdraws without limit"]
+                    or string.format(L["%s withdrawals left today"], tostring(remaining or 0))))
+        else
+            perm:SetText(L["At the bank, this shows what your rank may do here."])
+        end
+        if not t then
+            title:SetText(L["Bank"])
+            fillText:SetText("")
+            empty.es.want = emptyBankText()
+            board:Layout()
+            return
+        end
         local preview, moves, full = B:Preview(st.tab)
         local shown = st.organized and preview or t.slots
         local used, after = 0, #preview
@@ -645,6 +1063,7 @@ local function buildTabs(p)
 
         local run = B:SortState()
         local can, why = B:CanOrganize(st.tab)
+        local wasRun = stop:IsShown()
         if run then
             organize:Disable()
             stop:Show()
@@ -661,23 +1080,13 @@ local function buildTabs(p)
             elseif can then note:SetText(L["Merges stacks and sorts by category, quality and name, one move at a time."])
             else note:SetText(why or "") end
         end
-        if B:IsOpen() then
-            local _, _, _, canDeposit, _, remaining = GuildOS.Compat.GuildBankTabInfo(st.tab)
-            perm:SetText(string.format(L["Your rank: %s · %s"], canDeposit and L["deposits"] or L["no deposits"],
-                tonumber(remaining) == -1 and L["withdraws without limit"]
-                    or string.format(L["%s withdrawals left today"], tostring(remaining or 0))))
-        else
-            perm:SetText(L["At the bank, this shows what your rank may do here."])
-        end
+        if wasRun ~= (run ~= nil) then layout = true end
+        for _, c in ipairs(strip.chips) do if fitChip(c) then layout = true end end
+        -- The lines above the grid and under it wrap as they change: laid out again whenever a text did.
+        local key = (fillText:GetText() or "") .. "|" .. (note:GetText() or "") .. "|" .. (perm:GetText() or "")
+        if key ~= st.texts then st.texts = key; layout = true end
+        if layout then board:Layout() end
     end
-
-    UI:MakeResponsive(p, function(_, w, h)
-        local availW = w - 190 - 16 - GAP
-        local availH = h - GAP * 2 - 32 - 64 - GAP * 2
-        local size = math.floor(math.min((availW + SLOT_GAP) / GRID_COLS, (availH + SLOT_GAP) / GRID_ROWS)) - SLOT_GAP
-        size = math.max(SLOT_MIN, math.min(SLOT_MAX, size))
-        if size ~= cellSize then cellSize = size; layoutGrid() end
-    end)
 end
 
 ----------------------------------------------------------------------
@@ -691,61 +1100,57 @@ local VERB = {
 local function buildLedger(p)
     local B = Bank()
     local st = { kind = "all", who = "" }
+    -- The ledger and, beside it (under it on a narrow window), the bank's gold and who gave most.
+    local board = newBoard(p, "Ledger", { left = LEDGER_LEFT })
+    local card = board:Card(L["Ledger"], { col = 1, fill = true })
 
-    local filters = chipBar(p, {
-        { "all", L["All"] }, { "d", L["Deposits"] }, { "w", L["Withdrawals"] }, { "m", L["Moves"] }, { "gold", L["Gold"] },
-    }, function(k) st.kind = k; p.Draw() end)
-    filters:SetPoint("TOPLEFT", 0, -GAP)
-    filters:SetWidth(400)
-    filters.Select("all")
-    local who = UI:CreateInput(p, 150, FIELD_H, { placeholder = L["Member"], max = 40 })
-    who:SetPoint("LEFT", filters.last, "RIGHT", 12, 0)
+    -- What to show: a pill per kind of line, and a member's name.
+    local pills = {}
+    for _, o in ipairs({ { "all", L["All"] }, { "d", L["Deposits"] }, { "w", L["Withdrawals"] }, { "m", L["Moves"] }, { "gold", L["Gold"] } }) do
+        local b = Forms:Pill(card, o[2])
+        b.key = o[1]
+        b:SetScript("OnClick", function()
+            st.kind = o[1]
+            for _, x in ipairs(pills) do Forms:SetOn(x, x.key == st.kind) end
+            p.Draw()
+        end)
+        pills[#pills + 1] = b
+    end
+    for _, x in ipairs(pills) do Forms:SetOn(x, x.key == st.kind) end
+    local who = UI:CreateInput(card, 180, SP.FIELD, { placeholder = L["Member"], max = 40 })
     who:HookScript("OnTextChanged", function(self) st.who = (self:GetText() or ""):lower(); p.Draw() end)
+    local filters = {}
+    for _, b in ipairs(pills) do filters[#filters + 1] = b end
+    filters[#filters + 1] = who
+    card:Flow(filters, { gapX = BTN_GAP })
+    fitPlaceholder(who, 180)
 
-    local side = CreateFrame("Frame", nil, p)
-    side:SetPoint("TOPRIGHT", -GAP, -GAP)
-    side:SetPoint("BOTTOMRIGHT", -GAP, GAP)
-    side:SetWidth(SIDE_W)
+    local verbs = {}
+    for _, v in pairs(VERB) do verbs[#verbs + 1] = L[v[1]] end
+    local _, cols = tableHead(card, {
+        { key = "when", head = L["When"], w = 64, samples = { GuildOS:TimeAgo(GetServerTime() - 50 * 60) } },
+        { key = "who", head = L["Who"], grow = 1, min = 96 },
+        { key = "verb", head = L["What"], w = 60, samples = verbs },
+        { key = "item", head = L["Item"], grow = 3, min = 120 },
+        -- The bank tax a withdrawal owes (Ley): only while the guild has one.
+        { key = "tax", head = L["Tax"], w = 64, justify = "RIGHT", when = function() return st.taxOn end },
+        { key = "qty", head = L["Qty"], w = 32, justify = "RIGHT", samples = { "999" } },
+        { key = "tab", head = L["Tab"], w = 32, justify = "RIGHT", samples = { "8→8" } },
+    }, { gap = SP.SECTION })
+    local by = cols.by
 
-    local head = UI:CreateTableHeader(p, HEAD_H)
-    head:SetPoint("TOPLEFT", 0, -(GAP + FIELD_H + GAP))
-    head:SetPoint("RIGHT", side, "LEFT", -16, 0)
-    local X = { when = 8, who = 76, verb = 190, item = 276 }
-    headerText(head, L["When"], X.when)
-    headerText(head, L["Who"], X.who)
-    headerText(head, L["What"], X.verb)
-    headerText(head, L["Item"], X.item)
-    local hQty = UI:CreateHeaderText(head, L["Qty"], UI.SP.META)
-    hQty:SetPoint("RIGHT", -(GUTTER + 52), 0)
-    local hTab = UI:CreateHeaderText(head, L["Tab"], UI.SP.META)
-    hTab:SetPoint("RIGHT", -(GUTTER + 6), 0)
-    -- The bank tax a withdrawal owes (Ley): only while the guild has one.
-    local hTax = UI:CreateHeaderText(head, L["Tax"], UI.SP.META)
-    hTax:SetPoint("RIGHT", -(GUTTER + 100), 0)
-
-    local list = makeList(p, ROW_H, function(row)
+    local list = listBody(card, ROW_H, function(row)
         row.when = UI:CreateText(row, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         GuildOS:ApplyFont(row.when, 11, "tableNum")
-        row.when:SetPoint("LEFT", X.when, 0)
         row.who = UI:CreateText(row, "", 12)
-        row.who:SetPoint("LEFT", X.who, 0)
-        row.who:SetWidth(X.verb - X.who - 6)
-        row.who:SetJustifyH("LEFT"); row.who:SetWordWrap(false)
         row.verb = UI:CreateText(row, "", 11)
-        row.verb:SetPoint("LEFT", X.verb, 0)
         row.itemText = UI:CreateText(row, "", 12)
-        row.itemText:SetPoint("LEFT", X.item, 0)
-        row.itemText:SetPoint("RIGHT", -96, 0)
-        row.itemText:SetJustifyH("LEFT"); row.itemText:SetWordWrap(false)
         row.qty = UI:CreateText(row, "", 11)
         GuildOS:ApplyFont(row.qty, 11, "tableNum")
-        row.qty:SetPoint("RIGHT", -52, 0)
         row.tab = UI:CreateText(row, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         GuildOS:ApplyFont(row.tab, 11, "tableNum")
-        row.tab:SetPoint("RIGHT", -6, 0)
         row.tax = UI:CreateText(row, "", 11)
         GuildOS:ApplyFont(row.tax, 11, "tableNum")
-        row.tax:SetPoint("RIGHT", -100, 0)
         row:SetScript("OnEnter", function(self)
             self.hl:Show()
             if self.data and self.data.id then showItemTooltip(self, self.data.id) end
@@ -754,6 +1159,17 @@ local function buildLedger(p)
             if self.data and self.data.id and IsShiftKeyDown() then linkToChat(self.data.id) end
         end)
     end, function(row, e)
+        if row.colsV ~= cols.v then
+            row.colsV = cols.v
+            putCell(row.when, row, by.when)
+            putCell(row.who, row, by.who)
+            putCell(row.verb, row, by.verb)
+            putCell(row.itemText, row, by.item)
+            putCell(row.qty, row, by.qty)
+            putCell(row.tab, row, by.tab)
+            if by.tax.on then putCell(row.tax, row, by.tax) end
+            row.tax:SetShown(by.tax.on)
+        end
         row.when:SetText(GuildOS:TimeAgo(e.t))
         local cc = classColor(e.n, row)
         row.who:SetText(shortName(e.n))
@@ -777,79 +1193,126 @@ local function buildLedger(p)
         end
         local tax = st.taxOn and B:LineTax(e) or nil
         row.tax:SetText(tax and (tax > 0 and paperMoney(tax) or "—") or "")
-        row.itemText:SetPoint("RIGHT", st.taxOn and -170 or -96, 0)
-    end)
-    list:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, 0)
-    list:SetPoint("BOTTOMRIGHT", side, "BOTTOMLEFT", -16, 0)
-    list:SetEmptyText(L["No ledger lines yet. They are read each time someone with Guild OS opens the bank."])
+    end, "L")
+    cols.onLayout = function() list:Update() end
 
-    -- Side: the bank's gold and who gave most.
-    local goldTitle = UI:CreateSectionTitle(side, L["Bank gold"], true)
-    goldTitle:SetPoint("TOPLEFT", 0, 0)
-    local goldValue = UI:CreateText(side, "—", 20)
-    GuildOS:ApplyFont(goldValue, 20, "metricValue")
-    goldValue:SetPoint("TOPLEFT", goldTitle, "BOTTOMLEFT", 0, -8)
-    local goldDelta = UI:CreateText(side, "", 11)
-    goldDelta:SetPoint("LEFT", goldValue, "RIGHT", 10, 0)
+    -- The side: the bank's gold and its last 30 days, who gave most, who owes the bank tax.
+    local side = board:Card(L["Bank gold"], { col = 2 })
+    local goldValue = UI:CreateText(side, "—", SP.KPI)
+    GuildOS:ApplyFont(goldValue, SP.KPI, "metricValue")
+    goldValue:SetTextColor(C.paperTitle.r, C.paperTitle.g, C.paperTitle.b)
+    goldValue:SetWordWrap(false)
+    local goldDelta = UI:CreateText(side, "", SP.META)
+    goldDelta:SetWordWrap(false)
+    side:Add(goldValue, { place = function(_, w)
+        goldValue:SetWidth(math.max(1, math.min(w, textW(goldValue))))
+        return SP.KPI + 4
+    end })
+    side:Add(goldDelta, { gap = 2, shown = function() return (goldDelta:GetText() or "") ~= "" end, place = function(_, w)
+        goldDelta:SetWidth(math.max(1, w))
+        return 14
+    end })
     local chart = CreateFrame("Frame", nil, side)
-    chart:SetPoint("TOPLEFT", goldValue, "BOTTOMLEFT", 0, -10)
-    chart:SetSize(SIDE_W, CHART_H)
     local base = chart:CreateTexture(nil, "BORDER")
     base:SetPoint("BOTTOMLEFT"); base:SetPoint("BOTTOMRIGHT")
     UI:Hairline(base)
     base:SetColorTexture(C.paperRule.r, C.paperRule.g, C.paperRule.b, 1)
     local bars = {}
-    local barW = math.floor(SIDE_W / CHART_DAYS)
     for i = 1, CHART_DAYS do
         local bar = chart:CreateTexture(nil, "ARTWORK")
         bar:SetColorTexture(C.paperTitle.r, C.paperTitle.g, C.paperTitle.b, 0.85)
-        bar:SetWidth(math.max(1, barW - 2))
-        bar:SetPoint("BOTTOMLEFT", (i - 1) * barW, 1)
         bars[i] = bar
     end
-    local chartCap = UI:CreateText(side, L["Last 30 days, one bar a day"], UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    chartCap:SetPoint("TOPLEFT", chart, "BOTTOMLEFT", 0, -4)
+    side:Add(chart, { gap = SP.FIELD_GAP, place = function(_, w)
+        chart:SetSize(math.max(1, w), CHART_H)
+        local barW = math.max(2, math.floor(w / CHART_DAYS))
+        for i, bar in ipairs(bars) do
+            bar:SetWidth(math.max(1, barW - 2))
+            bar:ClearAllPoints()
+            bar:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", (i - 1) * barW, 1)
+        end
+        return CHART_H
+    end })
+    blurb(side, L["Last 30 days, one bar a day"], { gap = 4 })
 
-    local topTitle = UI:CreateSectionTitle(side, L["Top contributors · 30 days"])
-    topTitle:SetPoint("TOPLEFT", chartCap, "BOTTOMLEFT", 0, -28)
+    local topTitle = UI:CreateSectionTitle(side, L["Top contributors · 30 days"], true)
+    side:Add(topTitle, { gap = SP.SECTION })
     local tops = {}
+    local topRows
+    topRows = cardRow(side, function(h, w)
+        local y = 0
+        for _, r in ipairs(tops) do
+            r:ClearAllPoints()
+            if r:IsShown() then
+                r:SetPoint("TOPLEFT", h, "TOPLEFT", 0, -y)
+                r:SetSize(math.max(1, w), 26)
+                -- The figures at the right as wide as they are; the name takes the rest.
+                local ww = math.min(math.floor(w * 0.6), textW(r.what))
+                r.what:SetWidth(math.max(1, ww))
+                r.name:SetWidth(math.max(1, w - ww - SP.CELL))
+                y = y + 28
+            end
+        end
+        return math.max(0, y - 2)
+    end, { gap = SP.TITLE_GAP })
     for i = 1, TOP_N do
-        local r = CreateFrame("Frame", nil, side)
-        r:SetSize(SIDE_W, 26)
-        r:SetPoint("TOPLEFT", topTitle, "BOTTOMLEFT", 0, -8 - (i - 1) * 28)
+        local r = CreateFrame("Frame", nil, topRows)
+        r:SetSize(200, 26)
         r.name = UI:CreateText(r, "", 12)
         r.name:SetPoint("TOPLEFT", 0, 0)
-        r.what = UI:CreateText(r, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-        GuildOS:ApplyFont(r.what, UI.SP.META, "tableNum")
+        r.name:SetJustifyH("LEFT")
+        r.name:SetWordWrap(false)
+        r.what = UI:CreateText(r, "", SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+        GuildOS:ApplyFont(r.what, SP.META, "tableNum")
         r.what:SetPoint("TOPRIGHT", 0, -1)
-        r.bar = UI:CreateProgressBar(r, SIDE_W, 4)
+        r.what:SetJustifyH("RIGHT")
+        r.what:SetWordWrap(false)
+        r.bar = UI:CreateProgressBar(r, 200, 4)
         r.bar:SetPoint("BOTTOMLEFT", 0, 4)
         r.bar:SetPoint("BOTTOMRIGHT", 0, 4)
+        r:Hide()
         tops[i] = r
     end
     -- Who owes the bank tax, most first (Ley): under the contributors, only while there is one.
-    local taxTitle = UI:CreateSectionTitle(side, L["Bank tax owed"])
-    taxTitle:SetPoint("TOPLEFT", tops[TOP_N], "BOTTOMLEFT", 0, -20)
+    local taxTitle = UI:CreateSectionTitle(side, L["Bank tax owed"], true)
+    side:Add(taxTitle, { gap = SP.SECTION, shown = function() return st.taxOn end })
     local taxRows = {}
+    local taxHolder
+    taxHolder = cardRow(side, function(h, w)
+        local y = 0
+        for _, r in ipairs(taxRows) do
+            r:ClearAllPoints()
+            if r:IsShown() then
+                r:SetPoint("TOPLEFT", h, "TOPLEFT", 0, -y)
+                r:SetSize(math.max(1, w), 18)
+                local ww = textW(r.what)
+                r.what:SetWidth(math.max(1, ww))
+                r.name:SetWidth(math.max(1, w - ww - SP.CELL))
+                y = y + 18
+            end
+        end
+        return y
+    end, { gap = SP.TITLE_GAP, shown = function() return st.taxOn end })
     for i = 1, TAX_N do
-        local r = CreateFrame("Frame", nil, side)
-        r:SetSize(SIDE_W, 18)
-        r:SetPoint("TOPLEFT", taxTitle, "BOTTOMLEFT", 0, -6 - (i - 1) * 18)
+        local r = CreateFrame("Frame", nil, taxHolder)
+        r:SetSize(200, 18)
         r.name = UI:CreateText(r, "", 12)
         r.name:SetPoint("LEFT", 0, 0)
-        r.what = UI:CreateText(r, "", UI.SP.META)
-        GuildOS:ApplyFont(r.what, UI.SP.META, "tableNum")
+        r.name:SetJustifyH("LEFT")
+        r.name:SetWordWrap(false)
+        r.what = UI:CreateText(r, "", SP.META)
+        GuildOS:ApplyFont(r.what, SP.META, "tableNum")
         r.what:SetPoint("RIGHT", 0, 0)
+        r.what:SetJustifyH("RIGHT")
+        r:Hide()
         taxRows[i] = r
     end
-    local topNote = UI:CreateText(side, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    topNote:SetPoint("BOTTOMLEFT", 0, 0)
-    topNote:SetPoint("RIGHT", side, "RIGHT", 0, 0)
-    topNote:SetJustifyH("LEFT")
+    local topNote = blurb(side, "", { gap = SP.SECTION })
 
     p.Draw = function()
-        st.taxOn = B.TaxOn and B:TaxOn() or false
-        hTax:SetShown(st.taxOn)
+        local taxOn = B.TaxOn and B:TaxOn() or false
+        local layout = taxOn ~= st.taxOn
+        st.taxOn = taxOn
         local rows = {}
         local ledger = B:Store().ledger
         for i = #ledger, 1, -1 do
@@ -865,12 +1328,14 @@ local function buildLedger(p)
             return order[a] < order[b]
         end)
         list:SetData(rows)
+        list:ShowEmpty(#rows == 0 and L["No ledger lines yet. They are read each time someone with Guild OS opens the bank."] or nil)
 
         local db = B:Store()
         goldValue:SetText(db.moneyNow and paperMoney(db.moneyNow) or "—")
         local readings, nowT = db.money, GetServerTime()
         local weekAgo
         for _, r in ipairs(readings) do if r.t <= nowT - 7 * 86400 then weekAgo = r.m end end
+        local hadDelta = (goldDelta:GetText() or "") ~= ""
         if db.moneyNow and weekAgo then
             local d = db.moneyNow - weekAgo
             local col = d >= 0 and INK_OK or INK_DANGER
@@ -879,6 +1344,7 @@ local function buildLedger(p)
         else
             goldDelta:SetText("")
         end
+        if hadDelta ~= ((goldDelta:GetText() or "") ~= "") then layout = true end
         local perDay, maxM = {}, 0
         for _, r in ipairs(readings) do
             local day = math.floor((nowT - r.t) / 86400)
@@ -904,6 +1370,7 @@ local function buildLedger(p)
         local officer = GuildOS:IsOfficer()
         for i, row in ipairs(tops) do
             local x = list2[i]
+            if row:IsShown() ~= (x ~= nil) then layout = true end
             row:SetShown(x ~= nil)
             if x then
                 local cc = classColor(x.name, row)
@@ -928,12 +1395,11 @@ local function buildLedger(p)
             for _, r in ipairs(taxList) do
                 if r.owed > 0 and (officer or B:IsMe(r.name)) then owing[#owing + 1] = r end
             end
+            GuildOS:SetTitleText(taxTitle, string.format(L["Bank tax owed · %d%%"], B:TaxRate()))
         end
-        taxTitle:SetShown(st.taxOn)
-        if taxTitle.rule then taxTitle.rule:SetShown(st.taxOn) end
-        if st.taxOn then GuildOS:SetTitleText(taxTitle, string.format(L["Bank tax owed · %d%%"], B:TaxRate())) end
         for i, row in ipairs(taxRows) do
             local x = owing[i]
+            if row:IsShown() ~= (x ~= nil) then layout = true end
             row:SetShown(x ~= nil)
             if x then
                 local cc = classColor(x.name, row)
@@ -942,15 +1408,8 @@ local function buildLedger(p)
                 row.what:SetText(paperMoney(x.owed))
             end
         end
+        if layout or not st.laid then st.laid = true; board:Layout() end
     end
-
-    UI:MakeResponsive(p, function(_, w)
-        local wide = w >= SIDE_MIN
-        side:SetShown(wide)
-        head:SetPoint("RIGHT", wide and side or p, wide and "LEFT" or "RIGHT", wide and -16 or -GAP, 0)
-        list:SetPoint("BOTTOMRIGHT", wide and side or p, wide and "BOTTOMLEFT" or "BOTTOMRIGHT", wide and -16 or -GAP, wide and 0 or GAP)
-        list:Update()
-    end)
 end
 
 ----------------------------------------------------------------------
@@ -958,26 +1417,17 @@ end
 ----------------------------------------------------------------------
 local function buildNeeds(p, panel)
     local B = Bank()
-    local metChip = UI:CreateMetricChip(p, "—", L["Needs met"])
-    metChip:SetPoint("TOPLEFT", 0, -GAP)
-    metChip:SetWidth(CHIP_W)
-    local lowChip = UI:CreateMetricChip(p, "—", L["Under 60%"])
-    lowChip:SetPoint("TOPLEFT", CHIP_W + 16, -GAP)
-    lowChip:SetWidth(CHIP_W)
-    local blurb = UI:CreateText(p, L["Officers say how many of each item the bank should hold. Every member sees what is short, here and on the item's tooltip."],
-        12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    blurb:SetPoint("TOPLEFT", (CHIP_W + 16) * 2, -GAP - 4)
-    blurb:SetPoint("RIGHT", p, "RIGHT", -(GAP + 330), 0)
-    blurb:SetJustifyH("LEFT")
-    local listBtn = UI:CreateButton(p, L["Shopping list"], 120, FIELD_H)
-    listBtn:SetPoint("TOPRIGHT", -GAP, -GAP)
-    listBtn:SetScript("OnClick", function()
-        local lines = B:ShoppingList()
-        if #lines == 0 then GuildOS:Print(L["The bank has everything it needs."]) end
-        for _, line in ipairs(lines) do GuildOS:Print(line) end
-    end)
-    local announce = UI:CreateButton(p, L["Announce in guild chat"], 190, FIELD_H)
-    announce:SetPoint("RIGHT", listBtn, "LEFT", -6, 0)
+    local st = {}
+    local board = newBoard(p, "Needs")
+    local card = board:Card(L["Needs"], { fill = true })
+    blurb(card, L["Officers say how many of each item the bank should hold. Every member sees what is short, here and on the item's tooltip."])
+
+    -- How the needs stand, and what the officers do with the list.
+    local top = kpiRow(card, { gap = SP.FIELD_GAP })
+    local metChip = UI:CreateMetricChip(top, "—", L["Needs met"])
+    local lowChip = UI:CreateMetricChip(top, "—", L["Under 60%"])
+    top.chips = { metChip, lowChip }
+    local announce = Forms:Button(top, L["Announce in guild chat"])
     announce:SetScript("OnClick", function()
         local lines = B:ShoppingList()
         if #lines == 0 then return end
@@ -990,30 +1440,26 @@ local function buildNeeds(p, panel)
         end
         SendChatMessage(text, "GUILD")
     end)
+    local listBtn = Forms:Button(top, L["Shopping list"])
+    listBtn:SetScript("OnClick", function()
+        local lines = B:ShoppingList()
+        if #lines == 0 then GuildOS:Print(L["The bank has everything it needs."]) end
+        for _, line in ipairs(lines) do GuildOS:Print(line) end
+    end)
+    top.buttons = { announce, listBtn }
 
-    local form = CreateFrame("Frame", nil, p)
-    form:SetPoint("TOPLEFT", 0, -(GAP + CHIP_H + GAP))
-    form:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
-    form:SetHeight(FIELD_H)
-    local itemLabel = fieldLabel(form, L["Item"])
-    itemLabel:SetPoint("LEFT", 0, 0)
-    local item = UI:CreateInput(form, 260, FIELD_H, { placeholder = L["Shift-click an item, or type its name"], max = 255 })
-    item:SetPoint("LEFT", itemLabel, "RIGHT", 8, 0)
+    -- An officer sets a need: the item (it grows), how many, a note, and the button.
+    local function officer() return st.officer == true end
+    local form = formRow(card, { gap = SP.SECTION, shown = officer })
+    local item = form:Field(L["Item"], UI:CreateInput(form, 260, SP.FIELD, { placeholder = L["Shift-click an item, or type its name"], max = 255 }),
+        { grow = 2 })
     acceptLinks(item)
-    local qtyLabel = fieldLabel(form, L["Target"])
-    qtyLabel:SetPoint("LEFT", item, "RIGHT", 12, 0)
-    local qty = UI:CreateInput(form, 60, FIELD_H, { numeric = true, max = 6 })
-    qty:SetPoint("LEFT", qtyLabel, "RIGHT", 8, 0)
-    local noteLabel = fieldLabel(form, L["Note"])
-    noteLabel:SetPoint("LEFT", qty, "RIGHT", 12, 0)
-    local add = UI:CreateButton(form, L["Set need"], 100, FIELD_H)
-    UI:SetButtonVariant(add, "primary")
-    add:SetPoint("RIGHT", 0, 0)
-    local noteBox = UI:CreateInput(form, 120, FIELD_H, { max = 80 })
-    noteBox:SetPoint("LEFT", noteLabel, "RIGHT", 8, 0)
-    noteBox:SetPoint("RIGHT", add, "LEFT", -8, 0)
-    local readOnly = UI:CreateText(p, L["Only officers change the needs."], 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    readOnly:SetPoint("TOPLEFT", 0, -(GAP + CHIP_H + GAP + 4))
+    form.specs[1].min = math.min(ITEM_MAX, textW(item.placeholder) + 16)
+    local qty = form:Field(L["Target"], UI:CreateInput(form, 72, SP.FIELD, { numeric = true, max = 6 }), { min = 72 })
+    local noteBox = form:Field(L["Note"], UI:CreateInput(form, 140, SP.FIELD, { max = 80 }), { min = 140, grow = 1 })
+    local add = Forms:Button(form, L["Set need"], "primary")
+    form.buttons = { add }
+    blurb(card, L["Only officers change the needs."], { gap = SP.SECTION, shown = function() return not officer() end })
     local function submit()
         local id = B:ParseItemInput(item:GetText())
         if not id then GuildOS:Print(L["That names no item. Shift-click one, or type a name the bank holds."]); return end
@@ -1024,35 +1470,25 @@ local function buildNeeds(p, panel)
     add:SetScript("OnClick", submit)
     qty:HookScript("OnEnterPressed", submit)
 
-    local head = UI:CreateTableHeader(p, HEAD_H)
-    head:SetPoint("TOPLEFT", form, "BOTTOMLEFT", 0, -GAP)
-    head:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
-    headerText(head, L["Item"], 32)
-    local hHave = UI:CreateHeaderText(head, L["HAVE / TARGET"], UI.SP.META)
-    hHave:SetPoint("RIGHT", -(GUTTER + 380), 0)
-    local hProg = UI:CreateHeaderText(head, L["Progress"], UI.SP.META)
-    hProg:SetPoint("LEFT", head, "RIGHT", -(GUTTER + 360), 0)
-    local hMiss = UI:CreateHeaderText(head, L["Short"], UI.SP.META)
-    hMiss:SetPoint("LEFT", head, "RIGHT", -(GUTTER + 140), 0)
+    local _, cols = tableHead(card, {
+        { key = "item", head = L["Item"], grow = 3, min = 160, headX = ITEM_X },
+        { key = "have", head = L["HAVE / TARGET"], w = 56, justify = "RIGHT", samples = { "999 / 999" } },
+        { key = "bar", head = L["Progress"], grow = 1, min = 80 },
+        { key = "miss", head = L["Short"], w = 72, samples = { string.format(L["%d short"], 999), L["met"] } },
+        { key = "remove", w = 20 },
+    }, { gap = SP.SECTION })
+    local by = cols.by
 
-    local list = makeList(p, ROW_H + 8, function(row)
-        itemCell(row, 8)
-        row.note = UI:CreateText(row, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-        row.note:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -1)
-        row.name:ClearAllPoints()
-        row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 6)
-        row.name:SetPoint("RIGHT", -400, 0)
+    local list = listBody(card, ROW_H + 8, function(row)
+        itemCell(row)
+        row.note = UI:CreateText(row, "", SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         row.have = UI:CreateText(row, "", 11)
         GuildOS:ApplyFont(row.have, 11, "tableNum")
-        row.have:SetPoint("RIGHT", -380, 0)
-        row.bar = UI:CreateProgressBar(row, 200, 8)
-        row.bar:SetPoint("LEFT", row, "RIGHT", -360, 0)
+        row.bar = UI:CreateProgressBar(row, 120, 8)
         row.miss = UI:CreateText(row, "", 11)
         GuildOS:ApplyFont(row.miss, 11, "tableNum")
-        row.miss:SetPoint("LEFT", row, "RIGHT", -140, 0)
         row.remove = UI:CreateCloseButton(row)
         row.remove:SetSize(20, 20)
-        row.remove:SetPoint("RIGHT", -4, 0)
         row.remove:SetScript("OnClick", function() if row.data then B:SetNeed(row.data.id, 0) end end)
         row:SetScript("OnEnter", function(self) self.hl:Show(); if self.data then showItemTooltip(self, self.data.id) end end)
         row:SetScript("OnClick", function(self, button)
@@ -1061,6 +1497,18 @@ local function buildNeeds(p, panel)
             elseif button == "RightButton" then panel.Prefill("requests", self.data.id) end
         end)
     end, function(row, r)
+        if row.colsV ~= cols.v then
+            row.colsV = cols.v
+            putItem(row, by.item, 8)
+            putCell(row.note, row, { x = by.item.x + ITEM_X, cw = by.item.cw - ITEM_X }, -8)
+            putCell(row.have, row, by.have)
+            row.bar:ClearAllPoints()
+            row.bar:SetPoint("LEFT", row, "LEFT", by.bar.x, 0)
+            row.bar:SetWidth(math.max(8, by.bar.cw))
+            putCell(row.miss, row, by.miss)
+            row.remove:ClearAllPoints()
+            row.remove:SetPoint("LEFT", row, "LEFT", by.remove.x, 0)
+        end
         paintItem(row, r.id)
         row.note:SetText(r.note or (r.by and string.format(L["by %s"], r.by)) or "")
         row.have:SetText(string.format("%d / %d", r.have, r.n))
@@ -1070,10 +1518,8 @@ local function buildNeeds(p, panel)
         row.miss:SetText(pct >= 1 and L["met"] or string.format(L["%d short"], r.n - r.have))
         row.miss:SetTextColor(col.r, col.g, col.b)
         row.remove:SetShown(GuildOS:IsOfficer())
-    end)
-    list:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, 0)
-    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -GAP, GAP)
-    list:SetEmptyText(L["No needs yet. An officer sets one above, or Alt-clicks an item in the Inventory."])
+    end, "N")
+    cols.onLayout = function() list:Update() end
 
     p.Prefill = function(id)
         local link = B:LinkOf(id)
@@ -1081,10 +1527,10 @@ local function buildNeeds(p, panel)
         qty:SetFocus()
     end
     p.Draw = function()
-        local officer = GuildOS:IsOfficer()
-        form:SetShown(officer)
-        readOnly:SetShown(not officer)
-        announce:SetShown(officer)
+        local isOfficer = GuildOS:IsOfficer() and true or false
+        local layout = isOfficer ~= st.officer
+        st.officer = isOfficer
+        announce:SetShown(isOfficer)
         local rows = B:NeedRows()
         local met, low = 0, 0
         for _, r in ipairs(rows) do
@@ -1093,6 +1539,9 @@ local function buildNeeds(p, panel)
         metChip:SetValue(#rows > 0 and string.format("%d / %d", met, #rows) or "—")
         lowChip:SetValue(tostring(low))
         list:SetData(rows)
+        list:ShowEmpty(#rows == 0 and L["No needs yet. An officer sets one above, or Alt-clicks an item in the Inventory."] or nil)
+        for _, c in ipairs(top.chips) do if fitChip(c) then layout = true end end
+        if layout then board:Layout() end
     end
 end
 
@@ -1103,27 +1552,19 @@ local REQ_TEXT = { open = "open", done = "filled", declined = "declined", cancel
 
 local function buildRequests(p)
     local B = Bank()
-    local form = CreateFrame("Frame", nil, p)
-    form:SetPoint("TOPLEFT", 0, -GAP)
-    form:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
-    form:SetHeight(FIELD_H)
-    local itemLabel = fieldLabel(form, L["Item"])
-    itemLabel:SetPoint("LEFT", 0, 0)
-    local item = UI:CreateInput(form, 260, FIELD_H, { placeholder = L["Shift-click an item, or type its name"], max = 255 })
-    item:SetPoint("LEFT", itemLabel, "RIGHT", 8, 0)
+    local board = newBoard(p, "Requests")
+    local card = board:Card(L["Requests"], { fill = true })
+
+    -- Ask the officers for an item: the item (it grows), how many, why, and the button.
+    local form = formRow(card)
+    local item = form:Field(L["Item"], UI:CreateInput(form, 260, SP.FIELD, { placeholder = L["Shift-click an item, or type its name"], max = 255 }),
+        { grow = 2 })
     acceptLinks(item)
-    local qtyLabel = fieldLabel(form, L["Quantity"])
-    qtyLabel:SetPoint("LEFT", item, "RIGHT", 12, 0)
-    local qty = UI:CreateInput(form, 60, FIELD_H, { numeric = true, max = 4 })
-    qty:SetPoint("LEFT", qtyLabel, "RIGHT", 8, 0)
-    local noteLabel = fieldLabel(form, L["Why"])
-    noteLabel:SetPoint("LEFT", qty, "RIGHT", 12, 0)
-    local ask = UI:CreateButton(form, L["Ask the officers"], 140, FIELD_H)
-    UI:SetButtonVariant(ask, "primary")
-    ask:SetPoint("RIGHT", 0, 0)
-    local noteBox = UI:CreateInput(form, 120, FIELD_H, { max = 80 })
-    noteBox:SetPoint("LEFT", noteLabel, "RIGHT", 8, 0)
-    noteBox:SetPoint("RIGHT", ask, "LEFT", -8, 0)
+    form.specs[1].min = math.min(ITEM_MAX, textW(item.placeholder) + 16)
+    local qty = form:Field(L["Quantity"], UI:CreateInput(form, 72, SP.FIELD, { numeric = true, max = 4 }), { min = 72 })
+    local noteBox = form:Field(L["Why"], UI:CreateInput(form, 140, SP.FIELD, { max = 80 }), { min = 140, grow = 1 })
+    local ask = Forms:Button(form, L["Ask the officers"], "primary")
+    form.buttons = { ask }
     local function submit()
         local id = B:ParseItemInput(item:GetText())
         if not id then GuildOS:Print(L["That names no item. Shift-click one, or type a name the bank holds."]); return end
@@ -1136,31 +1577,31 @@ local function buildRequests(p)
     ask:SetScript("OnClick", submit)
     qty:HookScript("OnEnterPressed", submit)
 
-    local head = UI:CreateTableHeader(p, HEAD_H)
-    head:SetPoint("TOPLEFT", form, "BOTTOMLEFT", 0, -GAP)
-    head:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
-    headerText(head, L["When"], 8)
-    headerText(head, L["Who"], 76)
-    headerText(head, L["Item"], 196)
-    local hState = UI:CreateHeaderText(head, L["State"], UI.SP.META)
-    hState:SetPoint("RIGHT", -(GUTTER + 170), 0)
+    -- A row's buttons, as wide as their widest label in this language.
+    local probeFill = Forms:SmallButton(card, L["Filled"])
+    local fillW = math.ceil(probeFill:GetWidth())
+    probeFill:Hide()
+    local probeNo = buttonFor(card, { L["Decline"], L["Cancel"] }, nil, SP.HIT)
+    local noW = math.ceil(probeNo:GetWidth())
+    probeNo:Hide()
+    local _, cols = tableHead(card, {
+        { key = "when", head = L["When"], w = 64, samples = { GuildOS:TimeAgo(GetServerTime() - 50 * 60) } },
+        { key = "who", head = L["Who"], grow = 1, min = 104 },
+        { key = "item", head = L["Item"], grow = 3, min = 150, headX = ITEM_X },
+        { key = "state", head = L["State"], w = 132, drop = 1 },
+        { key = "act", w = fillW + BTN_GAP + noW },
+    }, { gap = SP.SECTION })
+    local by = cols.by
 
-    local list = makeList(p, ROW_H + 4, function(row)
+    local list = listBody(card, ROW_H + 4, function(row)
         row.when = UI:CreateText(row, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         GuildOS:ApplyFont(row.when, 11, "tableNum")
-        row.when:SetPoint("LEFT", 8, 0)
         row.who = UI:CreateText(row, "", 12)
-        row.who:SetPoint("LEFT", 76, 0)
-        row.who:SetWidth(112)
-        row.who:SetJustifyH("LEFT"); row.who:SetWordWrap(false)
-        itemCell(row, 196)
-        row.name:SetPoint("RIGHT", -260, 0)
+        itemCell(row)
         row.state = UI:CreateText(row, "", 11)
-        row.state:SetPoint("RIGHT", -170, 0)
-        row.b1 = UI:CreateButton(row, L["Filled"], 76, 20)
-        row.b1:SetPoint("RIGHT", -84, 0)
-        row.b2 = UI:CreateButton(row, L["Decline"], 76, 20)
-        row.b2:SetPoint("RIGHT", -4, 0)
+        row.b1 = Forms:SmallButton(row, L["Filled"])
+        row.b1:SetWidth(fillW)
+        row.b2 = buttonFor(row, { L["Decline"], L["Cancel"] }, nil, SP.HIT)
         row.b1:SetScript("OnClick", function() if row.data then B:SetRequestState(row.data.id, "done") end end)
         row.b2:SetScript("OnClick", function()
             if not row.data then return end
@@ -1175,6 +1616,17 @@ local function buildRequests(p)
         end)
         row:SetScript("OnClick", function(self) if self.data and IsShiftKeyDown() then linkToChat(self.data.item) end end)
     end, function(row, r)
+        if row.colsV ~= cols.v then
+            row.colsV = cols.v
+            putCell(row.when, row, by.when)
+            putCell(row.who, row, by.who)
+            putItem(row, by.item)
+            if by.state.on then putCell(row.state, row, by.state) end
+            row.b2:ClearAllPoints()
+            row.b2:SetPoint("RIGHT", row, "LEFT", by.act.x + by.act.cw, 0)
+            row.b1:ClearAllPoints()
+            row.b1:SetPoint("RIGHT", row.b2, "LEFT", -BTN_GAP, 0)
+        end
         row.when:SetText(GuildOS:TimeAgo(r.ts))
         local cc = classColor(r.who, row)
         row.who:SetText(shortName(r.who))
@@ -1187,21 +1639,24 @@ local function buildRequests(p)
         elseif r.by then stateText = stateText .. " · " .. r.by end
         row.state:SetText(stateText)
         row.state:SetTextColor(col.r, col.g, col.b)
+        row.state:SetShown(by.state.on)
         local officer = GuildOS:IsOfficer()
         local mine = B:IsMe(r.who)
         row.b1:SetShown(r.st == "open" and officer)
         row.b2:SetShown(r.st == "open" and (officer or mine))
         row.b2.label:SetText((mine and not officer) and L["Cancel"] or L["Decline"])
-    end)
-    list:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, 0)
-    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -GAP, GAP)
-    list:SetEmptyText(L["No requests. Ask for an item above, or right-click it in the Inventory."])
+    end, "R")
+    cols.onLayout = function() list:Update() end
 
     p.Prefill = function(id)
         item:SetText(B:LinkOf(id) or tostring(id))
         qty:SetFocus()
     end
-    p.Draw = function() list:SetData(B:RequestRows()) end
+    p.Draw = function()
+        local rows = B:RequestRows()
+        list:SetData(rows)
+        list:ShowEmpty(#rows == 0 and L["No requests. Ask for an item above, or right-click it in the Inventory."] or nil)
+    end
 end
 
 ----------------------------------------------------------------------
@@ -1240,74 +1695,66 @@ end
 local function buildCleanup(p)
     local CL = GuildOS.GuildBankCleanup
     local st = { show = "sell" }
+    local board = newBoard(p, "Cleanup")
+    local card = board:Card(L["Cleanup"], { fill = true })
+    local function officer() return st.officer == true end
 
-    local chips = {}
-    local caps = { L["To sell"], L["Gold back"], L["Slots freed"], L["Marked"] }
-    for i, cap in ipairs(caps) do
-        local chip = UI:CreateMetricChip(p, "—", cap)
-        chip:SetPoint("TOPLEFT", (i - 1) * (CHIP_W + 16), -GAP)
-        chip:SetWidth(CHIP_W)
-        chips[i] = chip
+    blurb(card, L["What the bank holds that nobody takes. Mark what goes; at the bank the bar takes it out, at a vendor it sells only that, and the gold goes back in."],
+        { shown = officer })
+    local top = kpiRow(card, { gap = SP.FIELD_GAP, shown = officer })
+    for i, cap in ipairs({ L["To sell"], L["Gold back"], L["Slots freed"], L["Marked"] }) do
+        top.chips[i] = UI:CreateMetricChip(top, "—", cap)
     end
-    local blurb = UI:CreateText(p, L["What the bank holds that nobody takes. Mark what goes; at the bank the bar takes it out, at a vendor it sells only that, and the gold goes back in."],
-        11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    blurb:SetPoint("TOPLEFT", (CHIP_W + 16) * 4, -GAP - 2)
-    blurb:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
-    blurb:SetJustifyH("LEFT")
+    local chips = top.chips
 
-    local filters = chipBar(p, {
-        { "sell", L["Sell"] }, { "review", L["Review"] }, { "keep", L["Keep"] }, { "all", L["All"] },
-    }, function(k) st.show = k; p.Draw() end)
-    filters:SetPoint("TOPLEFT", 0, -(GAP + CHIP_H + GAP))
-    filters:SetWidth(320)
-    filters.Select("sell")
-    -- The level under which an item counts as low (officers; the whole guild's setting on this client).
-    local lowLabel = fieldLabel(p, L["Low level below"])
-    lowLabel:SetPoint("LEFT", filters.last, "RIGHT", 16, 0)
-    local lowDD = UI:CreateDropdown(p, 70, FIELD_H)
-    lowDD:SetPoint("LEFT", lowLabel, "RIGHT", 8, 0)
+    -- Which verdict to list, the level under which an item counts as low (the guild's setting), and the marks.
+    local pills = {}
+    for _, o in ipairs({ { "sell", L["Sell"] }, { "review", L["Review"] }, { "keep", L["Keep"] }, { "all", L["All"] } }) do
+        local b = Forms:Pill(card, o[2])
+        b.key = o[1]
+        b:SetScript("OnClick", function()
+            st.show = o[1]
+            for _, x in ipairs(pills) do Forms:SetOn(x, x.key == st.show) end
+            p.Draw()
+        end)
+        pills[#pills + 1] = b
+    end
+    for _, x in ipairs(pills) do Forms:SetOn(x, x.key == st.show) end
+    card:Flow(pills, { gapX = BTN_GAP, gap = SP.SECTION, shown = officer })
+    local tools = formRow(card, { shown = officer })
+    local lowDD = UI:CreateDropdown(tools, 70, SP.FIELD)
     local opts = {}
     for lv = 10, GuildOS.Client.maxLevel - 10, 10 do opts[#opts + 1] = { value = lv, text = tostring(lv) } end
     lowDD:SetOptions(opts)
     lowDD.onSelect = function(_, v) GuildOS:SetSetting("gbankCleanLow", v); p.Draw() end
-    local clear = UI:CreateButton(p, L["Clear marks"], 110, FIELD_H)
-    clear:SetPoint("TOPRIGHT", -GAP, -(GAP + CHIP_H + GAP))
-    clear:SetScript("OnClick", function() CL:ClearMarks() end)
-    local markAll = UI:CreateButton(p, L["Mark all suggested"], 170, FIELD_H)
-    UI:SetButtonVariant(markAll, "primary")
-    markAll:SetPoint("RIGHT", clear, "LEFT", -6, 0)
+    tools:Field(L["Low level below"], lowDD, { min = math.max(72, fitDropdown(lowDD)) })
+    local markAll = Forms:Button(tools, L["Mark all suggested"], "primary")
     markAll:SetScript("OnClick", function()
         local n = CL:MarkSuggested()
         GuildOS:Print(string.format(L["%d items marked to go."], n))
     end)
+    local clear = Forms:Button(tools, L["Clear marks"])
+    clear:SetScript("OnClick", function() CL:ClearMarks() end)
+    tools.buttons = { clear, markAll }
 
-    local head = UI:CreateTableHeader(p, HEAD_H)
-    head:SetPoint("TOPLEFT", filters, "BOTTOMLEFT", 0, -GAP)
-    head:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
-    headerText(head, L["Item"], 32)
-    local hVerdict = UI:CreateHeaderText(head, L["Verdict"], UI.SP.META)
-    hVerdict:SetPoint("LEFT", head, "RIGHT", -(GUTTER + 520), 0)
-    local hWhy = UI:CreateHeaderText(head, L["Why"], UI.SP.META)
-    hWhy:SetPoint("LEFT", head, "RIGHT", -(GUTTER + 440), 0)
-    local hValue = UI:CreateHeaderText(head, L["Value"], UI.SP.META)
-    hValue:SetPoint("RIGHT", -(GUTTER + 36), 0)
+    local verdicts = {}
+    for _, v in pairs(VERDICT) do verdicts[#verdicts + 1] = L[v[1]] .. " 99" end
+    local _, cols = tableHead(card, {
+        { key = "item", head = L["Item"], grow = 2, min = 150, headX = ITEM_X },
+        { key = "verdict", head = L["Verdict"], w = 56, samples = verdicts },
+        { key = "why", head = L["Why"], grow = 3, min = 100, drop = 1 },
+        { key = "value", head = L["Value"], w = 72, justify = "RIGHT" },
+        { key = "mark", w = 18 },
+    }, { gap = SP.SECTION, shown = officer })
+    local by = cols.by
 
-    local list = makeList(p, ROW_H + 4, function(row)
+    local list, body = listBody(card, ROW_H + 4, function(row)
         row.mark = UI:CreateCheckbox(row, "", 14)
-        row.mark:SetPoint("RIGHT", -6, 0)
         row.mark:SetWidth(18)
-        itemCell(row, 8)
-        row.name:SetPoint("RIGHT", -530, 0)
+        itemCell(row)
         row.verdict = UI:CreateText(row, "", 11)
-        row.verdict:SetPoint("LEFT", row, "RIGHT", -520, 0)
         row.why = UI:CreateText(row, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-        row.why:SetPoint("LEFT", row, "RIGHT", -440, 0)
-        row.why:SetPoint("RIGHT", -150, 0)
-        row.why:SetJustifyH("LEFT")
-        row.why:SetWordWrap(false)
         row.value = UI:CreateText(row, "", 11)
-        row.value:SetPoint("RIGHT", -36, 0)
-        row.value:SetJustifyH("RIGHT")
         local function toggle() toggleMark(row.data) end
         row.mark.checkbox.onChanged = function() toggle() end
         row:SetScript("OnEnter", function(self)
@@ -1318,6 +1765,15 @@ local function buildCleanup(p)
             if self.data and IsShiftKeyDown() then linkToChat(self.data.id, self.data.l) else toggle() end
         end)
     end, function(row, r)
+        if row.colsV ~= cols.v then
+            row.colsV = cols.v
+            putItem(row, by.item)
+            putCell(row.verdict, row, by.verdict)
+            if by.why.on then putCell(row.why, row, by.why) end
+            putCell(row.value, row, by.value)
+            row.mark:ClearAllPoints()
+            row.mark:SetPoint("LEFT", row, "LEFT", by.mark.x, 0)
+        end
         paintItem(row, r.id, r.l, string.format(" × %d", r.have))
         local v = VERDICT[r.verdict]
         local vc = UI:Ink(row, C[v[2]] or C.text)
@@ -1326,26 +1782,27 @@ local function buildCleanup(p)
         row.verdict:SetText(verdictText)
         row.verdict:SetTextColor(vc.r, vc.g, vc.b)
         row.why:SetText(whyText(r))
+        row.why:SetShown(by.why.on)
         row.value:SetText(valueText(r))
         row.mark.checkbox:SetChecked(r.marked)
-    end)
-    list:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, 0)
-    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -GAP, GAP)
-    list:SetEmptyText(emptyBankText())
-
-    local gate = UI:CreateText(p, L["Only officers decide what leaves the bank. Ask an officer, or set your guild's officer ranks in Settings."],
-        12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
-    gate:SetPoint("TOPLEFT", 0, -GAP)
-    gate:SetPoint("RIGHT", p, "RIGHT", -GAP, 0)
-    gate:SetJustifyH("LEFT")
-    local parts = { blurb, filters, clear, markAll, head, list, lowLabel, lowDD }
-    for _, c in ipairs(chips) do parts[#parts + 1] = c end
+    end, "C")
+    cols.onLayout = function() list:Update() end
+    -- A member: why the cleanup is not theirs, in place of all of it.
+    local gate = emptyRow(card, "!", function() return not officer() end)
+    gate.es.want = L["Only officers decide what leaves the bank. Ask an officer, or set your guild's officer ranks in Settings."]
+    local parts = { top, tools, body }
+    for _, b in ipairs(pills) do parts[#parts + 1] = b end
 
     p.Draw = function()
-        local officer = GuildOS:IsOfficer()
-        gate:SetShown(not officer)
-        for _, part in ipairs(parts) do part:SetShown(officer) end
-        if not officer then return end
+        local isOfficer = GuildOS:IsOfficer() and true or false
+        local layout = isOfficer ~= st.officer
+        st.officer = isOfficer
+        for _, part in ipairs(parts) do part:SetShown(isOfficer) end
+        gate:SetShown(not isOfficer)
+        if not isOfficer then
+            if layout then board:Layout() end
+            return
+        end
         lowDD:SetValue(CL:LowBelow())
         local rows = CL:Rows()
         local items, value, slots = CL:Summary(rows)
@@ -1359,8 +1816,10 @@ local function buildCleanup(p)
         for _, r in ipairs(rows) do
             if st.show == "all" or r.verdict == st.show then shown[#shown + 1] = r end
         end
-        list:SetEmptyText(#rows == 0 and emptyBankText() or L["Nothing here: try another verdict above."])
         list:SetData(shown)
+        list:ShowEmpty(#shown == 0 and (#rows == 0 and emptyBankText() or L["Nothing here: try another verdict above."]) or nil)
+        for _, c in ipairs(chips) do if fitChip(c) then layout = true end end
+        if layout then board:Layout() end
     end
 end
 
@@ -1399,13 +1858,8 @@ function GuildOS:CreateGuildBankPanel(container, _mainFrame)
         local p = panels[key]
         if not built[key] then
             built[key] = true
-            for _, s in ipairs(SUBS) do
-                if s.key == key then
-                    s.build(p.inner, api)
-                    -- What the builder hangs on its frame is the sub-panel's: its redraw and its prefill.
-                    p.Draw, p.Prefill = p.inner.Draw, p.inner.Prefill
-                end
-            end
+            -- The builder hangs its redraw and its prefill on the sub-panel, and lays its board of cards on it.
+            for _, s in ipairs(SUBS) do if s.key == key then s.build(p, api) end end
         end
         p:Show()
         if p.Draw then GuildOS:SafeCall(p.Draw) end
@@ -1423,15 +1877,6 @@ function GuildOS:CreateGuildBankPanel(container, _mainFrame)
         p:SetPoint("BOTTOMRIGHT", 0, 0)
         p:Hide()
         p:SetScript("OnShow", function(self) if self.Draw then GuildOS:SafeCall(self.Draw) end end)
-        -- The sub-screen on a parchment card titled with its name (the mockup's "Banco da guilda"); what it draws
-        -- sits inside the card's padding.
-        local card = UI:CreateCard(p, s.label)
-        card:SetPoint("TOPLEFT", 0, -2)
-        card:SetPoint("BOTTOMRIGHT", -2, 6)
-        local inner = CreateFrame("Frame", nil, card)
-        inner:SetPoint("TOPLEFT", UI.CARD_PAD or 14, -30)
-        inner:SetPoint("BOTTOMRIGHT", -(UI.CARD_PAD or 14), 10)
-        p.inner, p.card = inner, card
         panels[s.key] = p
         local tab = UI:CreateTab(subBar, s.label, 100, true)
         if prev then tab:SetPoint("LEFT", prev, "RIGHT", 2, 0) else tab:SetPoint("LEFT", 4, 0) end
@@ -1688,7 +2133,7 @@ local function stepper(parent, labels, tips)
 end
 
 local function buildDrawer()
-    local B, CL, Kit, SP = Bank(), GuildOS.GuildBankCleanup, GuildOS.Kit, UI.SP
+    local B, CL, Kit = Bank(), GuildOS.GuildBankCleanup, GuildOS.Kit
     local INNER = DRAWER_W - 2 * Kit.PAD
     local st = { show = "sell" }
     drawer = CreateFrame("Frame", "GuildOSGuildBankCleanup", UIParent, "BackdropTemplate")
@@ -1916,7 +2361,7 @@ local BAR_SEP   = 12               -- each side of the line between the groups, 
 local BAR_STATUS_MAX = 280         -- a run's progress line, at most
 
 local function buildBar()
-    local B, CL, Kit, SP = Bank(), GuildOS.GuildBankCleanup, GuildOS.Kit, UI.SP
+    local B, CL, Kit = Bank(), GuildOS.GuildBankCleanup, GuildOS.Kit
     bar = CreateFrame("Frame", "GuildOSGuildBankBar", UIParent, "BackdropTemplate")
     bar:SetSize(480, BAR_H)
     bar:SetFrameStrata("HIGH")
@@ -2118,7 +2563,6 @@ local sellBar, sellDismissed
 local function buildSellBar()
     local CL = GuildOS.GuildBankCleanup
     local Kit = GuildOS.Kit
-    local SP = UI.SP
     local f = CreateFrame("Frame", "GuildOSGuildBankSellBar", UIParent, "BackdropTemplate")
     f:SetSize(SELL_W, 120)
     f:SetFrameStrata("HIGH")

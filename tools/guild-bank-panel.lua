@@ -15,7 +15,8 @@ local function check(cond, what)
   checks = checks + 1
   if not cond then
     io.stderr:write("FAIL: " .. what .. "\n")
-    os.exit(1)
+    -- GBP_ALL=1 lists every failure instead of stopping at the first.
+    if os.getenv("GBP_ALL") ~= "1" then os.exit(1) end
   end
 end
 
@@ -177,6 +178,7 @@ dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/UI/Kit.lua")
+dofile(ADDON .. "/UI/Forms.lua")
 local wire = {}
 GuildOS.SyncService = {
   On = function() end,
@@ -220,10 +222,11 @@ local function buttons(root, label)
   end)
   return out
 end
--- The stub has no layout engine: give every list a size and run what a resize runs.
+-- The stub has no layout engine: give every list and every board (its scroll frame) a size and run what a
+-- resize runs.
 local function lay(root)
   walk(root, function(f)
-    if f.scripts.OnSizeChanged and f.kind == "Frame" then
+    if f.scripts.OnSizeChanged and (f.kind == "Frame" or f.kind == "ScrollFrame") then
       if (f.w or 0) == 0 then f:SetSize(700, 400) end
       f.scripts.OnSizeChanged(f)
     end
@@ -609,6 +612,250 @@ do
   check(not bar.shown, "nothing left to sell: no window")
   CL.ToSell, CL.IsMerchantOpen, CL.SellOut = realToSell, realOpen, realSell
   MerchantFrame = nil
+end
+
+
+-- ── Every sub-screen in every language (#449): nothing runs past its box, nothing over its neighbour ──
+-- The report: in German the Needs form's placeholder ran under the next field's label, the labels into the boxes,
+-- and the header's text into the numbers and the buttons. Each sub-screen is built anew with each locale's
+-- strings (as the client would load them) and laid out at 1000 and 800 px; then, from the anchors as the client
+-- would resolve them, every text, field, button and number must fit its box and the card, and no two of them may
+-- cross; in a list's rows, no two cells may cross either.
+do
+  local realW, realH, realFont, realAll, realWrap = Frame.GetStringWidth, Frame.GetStringHeight, Frame.SetFont,
+    Frame.SetAllPoints, Frame.SetWordWrap
+  local function plain(t) return tostring(t or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "") end
+  -- Text widths as the client draws them, near enough: a Latin or Cyrillic letter 6.5 px at 12 px, a Hangul or
+  -- Han one 12, both scaled with the font's size; a wrapped text as many lines as its width makes.
+  function Frame:SetFont(_, px) self.px = px; return true end
+  function Frame:GetStringWidth()
+    local w = 0
+    for ch in plain(self.text):gmatch("[%z\1-\127\194-\244][\128-\191]*") do w = w + (ch:byte() >= 0xE0 and 12 or 6.5) end
+    return w * (self.px or 12) / 12
+  end
+  function Frame:GetStringHeight()
+    local line = math.ceil((self.px or 12) * 1.25)
+    if self.wrap ~= false and (self.w or 0) > 0 then return math.max(1, math.ceil(self:GetStringWidth() / self.w)) * line end
+    return line
+  end
+  function Frame:SetWordWrap(v) self.wrap = v and true or false end
+  function Frame:SetAllPoints(other) self.points = { { "ALL", other } } end
+
+  -- Where a frame lies, from its anchors, in the panel's coordinates (y down): the client's layout, as
+  -- tools/room-cards.lua resolves it.
+  local function resolver(root, W, H)
+    local rects, owner = {}, {}
+    local function scan(fr) if fr.scrollChild then owner[fr.scrollChild] = fr end for _, c in ipairs(fr.children) do scan(c) end end
+    scan(root)
+    local resolve
+    resolve = function(fr, depth)
+      if rects[fr] then return rects[fr] end
+      depth = (depth or 0) + 1
+      if fr == root or depth > 60 then rects[fr] = { l = 0, t = 0, r = W, b = H }; return rects[fr] end
+      local w, h = fr.w or 0, fr.h or 0
+      if fr.kind == "FontString" then
+        if w == 0 then w = fr:GetStringWidth() end
+        if h == 0 then h = fr:GetStringHeight() end
+      end
+      local pts = fr.points or {}
+      if #pts == 0 then
+        local base = owner[fr] and resolve(owner[fr], depth) or (fr.parent and resolve(fr.parent, depth)) or { l = 0, t = 0 }
+        rects[fr] = { l = base.l, t = base.t, r = base.l + w, b = base.t + h }
+        return rects[fr]
+      end
+      local Lx, Rx, T, B, CX, CY
+      for _, p in ipairs(pts) do
+        if p[1] == "ALL" then
+          local o = resolve(p[2] or fr.parent, depth)
+          Lx, Rx, T, B = o.l, o.r, o.t, o.b
+        else
+          local point, rel, relPoint, x, y = p[1], nil, nil, 0, 0
+          if type(p[2]) == "number" or p[2] == nil then x, y = p[2] or 0, p[3] or 0
+          else rel, relPoint, x, y = p[2], p[3], p[4] or 0, p[5] or 0 end
+          if type(relPoint) == "number" then relPoint, x, y = point, relPoint, x end
+          rel = rel or fr.parent
+          relPoint = relPoint or point
+          local o = rel and resolve(rel, depth) or { l = 0, t = 0, r = W, b = H }
+          local ax = (relPoint:find("LEFT") and o.l) or (relPoint:find("RIGHT") and o.r) or (o.l + o.r) / 2
+          local ay = (relPoint:find("TOP") and o.t) or (relPoint:find("BOTTOM") and o.b) or (o.t + o.b) / 2
+          ax, ay = ax + x, ay - y
+          if point:find("LEFT") then Lx = ax elseif point:find("RIGHT") then Rx = ax else CX = ax end
+          if point:find("TOP") then T = ay elseif point:find("BOTTOM") then B = ay else CY = ay end
+        end
+      end
+      if not Lx and not Rx then Lx = (CX or 0) - w / 2; Rx = Lx + w elseif not Lx then Lx = Rx - w elseif not Rx then Rx = Lx + w end
+      if not T and not B then T = (CY or 0) - h / 2; B = T + h elseif not T then T = B - h elseif not B then B = T + h end
+      rects[fr] = { l = Lx, t = T, r = Rx, b = B }
+      return rects[fr]
+    end
+    return resolve
+  end
+  -- The client sizes a frame from its anchors a frame later, and tells it: here, from the resolved anchors.
+  local function settle(root, W, H)
+    for _ = 1, 4 do
+      local resolve = resolver(root, W, H)
+      local function visit(fr)
+        if fr.shown and fr.kind ~= "Texture" and fr.kind ~= "FontString" and #(fr.points or {}) >= 2 then
+          local r = resolve(fr)
+          local w, h = math.floor(r.r - r.l + 0.5), math.floor(r.b - r.t + 0.5)
+          if w > 0 and h > 0 and (w ~= fr.w or h ~= fr.h) then
+            fr.w, fr.h = w, h
+            if fr.scripts.OnSizeChanged then fr.scripts.OnSizeChanged(fr, w, h) end
+          end
+        end
+        for _, c in ipairs(fr.children) do visit(c) end
+      end
+      visit(root)
+    end
+  end
+
+  local function visible(f, top)
+    local x = f
+    while x and x ~= top do if not x.shown then return false end x = x.parent end
+    return true
+  end
+  local function isRow(f) return f.kind == "Button" and rawget(f, "hl") ~= nil end
+  -- A piece the screen shows: a text, a field, a button, a number (KPI), a progress bar, an icon, a box, an empty state.
+  local function isControl(f)
+    if f.kind == "FontString" then return plain(f.text) ~= "" end
+    if f.kind == "Button" or f.kind == "EditBox" or f.kind == "CheckButton" then return true end
+    if rawget(f, "isCard") and rawget(f, "glyph") then return true end   -- an empty state
+    if f.kind == "Frame" and rawget(f, "value") and rawget(f, "label") then return true end   -- a KPI
+    if rawget(f, "bar") and rawget(f, "SetProgress") then return true end
+    if rawget(f, "checkbox") then return true end
+    if rawget(f, "icon") and f.kind == "Frame" and (f.w or 0) <= 40 then return true end
+    return false
+  end
+  -- The screen's pieces outside the lists, and each shown row's cells.
+  local function collect(root)
+    local out, rows = {}, {}
+    local function walk(f, into)
+      for _, c in ipairs(f.children) do
+        if c.shown and c.kind ~= "Texture" then
+          if isRow(c) then
+            local cells = {}
+            rows[#rows + 1] = { row = c, cells = cells }
+            walk(c, cells)
+          elseif isControl(c) then
+            into[#into + 1] = c
+          else
+            walk(c, into)
+          end
+        end
+      end
+    end
+    walk(root, out)
+    return out, rows
+  end
+  local function cardOf(f)
+    local x = f.parent
+    while x do
+      if rawget(x, "isCard") and not rawget(x, "glyph") then return x end
+      x = x.parent
+    end
+  end
+  local function name(f)
+    local t = f.kind == "FontString" and f.text or (rawget(f, "label") and f.label.text) or (rawget(f, "value") and f.value.text)
+      or (rawget(f, "placeholder") and type(f.placeholder) == "table" and f.placeholder.text) or ""
+    return f.kind .. " \"" .. plain(t) .. "\""
+  end
+  local function crosses(a, b)
+    local ix = math.min(a.r, b.r) - math.max(a.l, b.l)
+    local iy = math.min(a.b, b.b) - math.max(a.t, b.t)
+    return ix > 0.5 and iy > 0.5, ix, iy
+  end
+
+  local function screenFits(root, W, H, what)
+    local resolve = resolver(root, W, H)
+    local controls, rows = collect(root)
+    check(#controls >= 2, what .. ": the screen shows its pieces (" .. #controls .. ")")
+    for _, f in ipairs(controls) do
+      local r = resolve(f)
+      local card = cardOf(f)
+      if card then
+        local c = resolve(card)
+        check(r.l >= c.l - 1 and r.r <= c.r + 1, string.format("%s: %s inside its card across (%d..%d in %d..%d)", what, name(f), r.l, r.r, c.l, c.r))
+      end
+      -- A text on one line fits its own box (a wrapped one is as tall as its lines); a button's label, a field's
+      -- placeholder and a number fit theirs.
+      if f.kind == "FontString" and f.wrap == false then
+        check(f:GetStringWidth() <= (r.r - r.l) + 1, string.format("%s: %s fits its box (%d > %d)", what, name(f), f:GetStringWidth(), r.r - r.l))
+      end
+      local label = rawget(f, "label")
+      if f.kind == "Button" and label and plain(label.text) ~= "" then
+        local lr = resolve(label)
+        local room = math.min(r.r - r.l - 8, (#(label.points or {}) >= 2) and (lr.r - lr.l) or math.huge)
+        check(label:GetStringWidth() <= room + 1, string.format("%s: %s fits its button (%d > %d)", what, name(f), label:GetStringWidth(), room))
+      end
+      local ph = rawget(f, "placeholder")
+      if f.kind == "EditBox" and type(ph) == "table" and ph.shown then
+        check(ph:GetStringWidth() <= (r.r - r.l) - 16 + 1, string.format("%s: %s placeholder inside its box (%d > %d)", what, name(f), ph:GetStringWidth(), r.r - r.l - 16))
+      end
+      if f.kind == "Frame" and rawget(f, "value") and label then
+        for _, t in ipairs({ f.value, label }) do
+          check(t:GetStringWidth() <= (r.r - r.l) - 24 + 1, string.format("%s: KPI text \"%s\" inside it", what, plain(t.text)))
+        end
+      end
+    end
+    for i = 1, #controls do
+      local a = resolve(controls[i])
+      if (a.r - a.l) >= 1 and (a.b - a.t) >= 1 then
+        for j = i + 1, #controls do
+          local b = resolve(controls[j])
+          local hit, ix, iy = crosses(a, b)
+          check(not hit, string.format("%s: %s and %s do not cross (%dx%d)", what, name(controls[i]), name(controls[j]), ix, iy))
+        end
+      end
+    end
+    for _, rw in ipairs(rows) do
+      local cells = rw.cells
+      for i = 1, #cells do
+        local a = resolve(cells[i])
+        for j = i + 1, #cells do
+          local hit, ix, iy = crosses(a, resolve(cells[j]))
+          check(not hit, string.format("%s: in a row, %s and %s do not cross (%dx%d)", what, name(cells[i]), name(cells[j]), ix, iy))
+        end
+        local rr = resolve(rw.row)
+        check(a.l >= rr.l - 1 and a.r <= rr.r + 1, string.format("%s: in a row, %s inside it across", what, name(cells[i])))
+      end
+    end
+    return #controls, #rows
+  end
+
+  local codes = { "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW", "itIT" }
+  local saveL, saveGL, saveOfficer = GuildOS.L, GetLocale, officer
+  local SUBS = { "inventory", "tabs", "ledger", "needs", "requests", "cleanup" }
+  local laidRows = 0
+  for _, code in ipairs(codes) do
+    local T = setmetatable({}, { __index = function(_, k) return k end })
+    GuildOS.L, GetLocale = T, function() return code end
+    dofile(ADDON .. "/Locales/" .. code .. ".lua")
+    dofile(ADDON .. "/UI/GuildBankPanel.lua")
+    for _, W in ipairs({ 1000, 800 }) do
+      local H = 640
+      local host = newFrame("Frame", UIParent)
+      host:SetSize(W, H)
+      GuildOS:CreateGuildBankPanel(host)
+      for _, sub in ipairs(SUBS) do
+        for _, asOfficer in ipairs({ true, false }) do
+          if asOfficer or sub == "needs" or sub == "cleanup" or sub == "requests" then
+            officer = asOfficer
+            host.SelectSub(sub)
+            local p = host.panels[sub]
+            settle(p, W, H - 28)
+            p.Draw()
+            settle(p, W, H - 28)
+            local _, nr = screenFits(p, W, H - 28, string.format("%s %s at %d%s", code, sub, W, asOfficer and "" or " (member)"))
+            laidRows = laidRows + nr
+          end
+        end
+      end
+      officer = true
+    end
+  end
+  check(laidRows > 100, "the lists' rows were laid and checked (" .. laidRows .. ")")
+  GuildOS.L, GetLocale, officer = saveL, saveGL, saveOfficer
+  Frame.GetStringWidth, Frame.GetStringHeight, Frame.SetFont, Frame.SetAllPoints, Frame.SetWordWrap = realW, realH, realFont, realAll, realWrap
 end
 
 print(string.format("guild-bank-panel: %d checks passed", checks))
