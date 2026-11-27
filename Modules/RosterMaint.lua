@@ -368,8 +368,9 @@ end
 
 --- Members in their rank for StuckDays or more, the longest first, at most STUCK_MAX: never a trial, an officer, nor
 --- one whose next step up is an officer's rank (that is the officers' own decision, not a suggestion);
---- { key, name, fullName, class, rankName, rankIndex, rankDays, est }. Only for a rank that may promote.
-function RosterMaint:StuckInRank(now)
+--- { key, name, fullName, class, rankName, rankIndex, rankDays, est }. Only for a rank that may promote. `all`: every
+--- one, not only the first STUCK_MAX (the login digest's count).
+function RosterMaint:StuckInRank(now, all)
     local GM = GuildOS.GuildManager
     if not (GuildOS:IsOfficer() and GM and GM:CanPromote() and GuildOS.MemberHistory) then return {} end
     now = now or GetServerTime()
@@ -394,6 +395,8 @@ function RosterMaint:StuckInRank(now)
         if a.rankDays ~= b.rankDays then return a.rankDays > b.rankDays end
         return a.name:lower() < b.name:lower()
     end)
-    for i = #out, self.STUCK_MAX + 1, -1 do out[i] = nil end
+    if not all then
+        for i = #out, self.STUCK_MAX + 1, -1 do out[i] = nil end
+    end
     return out
 end

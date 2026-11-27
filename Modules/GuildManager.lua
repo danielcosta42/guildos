@@ -225,19 +225,24 @@ end
 -- Roster members offline for at least `days`, sorted most-inactive first. `countAlts` (nil: the Inactivity screen's
 -- setting, on by default; specs/salao/manutencao-roster.md): a character whose main or another alt of the same
 -- player was seen within `days` is not inactive. Each entry carries `seen`, the group's most recently seen other
--- character ({ name, days, main }, RosterMaint.GroupSeen), when it has one.
-function GuildManager:GetInactiveMembers(days, countAlts)
+-- character ({ name, days, main }, RosterMaint.GroupSeen), when it has one, and `safe` when the member is on the
+-- safe list now (MemberMarks:IsSafe: a mark past its end no longer counts). `skipSafe`: those are left out (the
+-- digest's "to review" count: the officers already said to keep them).
+function GuildManager:GetInactiveMembers(days, countAlts, skipSafe)
     days = days or DEFAULT_INACTIVE_DAYS
     local RM = GuildOS.RosterMaint
+    local MM = GuildOS.MemberMarks
+    local noteOf = RM and RM.NoteText or function(v) return type(v) == "string" and v or "" end
+    local onotes = MM and GuildOS.Compat.CanViewOfficerNote()
     if countAlts == nil then countAlts = not RM or RM:CountAlts() end
     local lines = {}
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
-        local name, rankName, rankIndex, level, _, _, _, _, isOnline, _, classFile = GetGuildRosterInfo(i)
+        local name, rankName, rankIndex, level, _, _, note, onote, isOnline, _, classFile = GetGuildRosterInfo(i)
         if name then
             local off = (not isOnline) and self:GetDaysOffline(i) or nil
             lines[#lines + 1] = { i = i, name = name, rankName = rankName, rankIndex = rankIndex, level = level,
-                class = classFile, online = isOnline, off = off,
+                class = classFile, online = isOnline, off = off, note = note, onote = onote,
                 key = GuildOS:KeyOfRosterName(name), short = name:match("^([^-]+)") or name,
                 days = isOnline and 0 or (off and math.floor(off)) or nil }
         end
@@ -253,7 +258,8 @@ function GuildManager:GetInactiveMembers(days, countAlts)
     for _, l in ipairs(lines) do
         if not l.online and l.off and l.off >= days then
             local other = seen[l.key]
-            if not (countAlts and other and other.days < days) then
+            local safe = MM and MM:IsSafe(l.key, noteOf(l.note), onotes and noteOf(l.onote) or nil) or false
+            if not (countAlts and other and other.days < days) and not (skipSafe and safe) then
                 table.insert(result, {
                     index       = l.i,
                     key         = l.key,
@@ -265,6 +271,7 @@ function GuildManager:GetInactiveMembers(days, countAlts)
                     class       = l.class or "",
                     daysOffline = math.floor(l.off),
                     seen        = other,
+                    safe        = safe or nil,
                 })
             end
         end

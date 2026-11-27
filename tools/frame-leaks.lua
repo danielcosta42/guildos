@@ -491,6 +491,16 @@ do
   end
   if GuildOS.BanList then pcall(GuildOS.BanList.Add, GuildOS.BanList, "Grimlock", "Ninja de loot em Karazhan") end
   if GuildOS.GuildManager and GuildOS.GuildManager.Log then pcall(GuildOS.GuildManager.Log, GuildOS.GuildManager, "promote", "Kaelis", "Raider") end
+  -- Former members (Officers' Room > Members > Former members): the history keeps them past the departure.
+  local h = GuildOS.db.memberHistory
+  if h then
+    local T = GetServerTime()
+    h["Grimlock-MundodeForever"] = { cls = "WARRIOR", stints = { { joinAt = T - 90 * 86400, leftAt = T - 30 * 86400, how = "kick", by = "Chehul" } }, ranks = {} }
+    h["Aelwyn-MundodeForever"] = { cls = "MAGE", stints = { { joinAt = T - 400 * 86400, leftAt = T - 300 * 86400, how = "leave" },
+      { joinAt = T - 200 * 86400, leftAt = T - 5 * 86400, how = "leave" } }, ranks = {},
+      note = { text = "Voltou duas vezes; bom raider, sai em silencio.", author = "Chehul", ts = T, rev = T } }
+    h["Borrin-MundodeForever"] = { cls = "PRIEST", stints = { { joinAt = T - 60 * 86400, leftAt = T - 2 * 86400, leftEst = true, how = "gone" } }, ranks = {} }
+  end
   local _ = R
 end
 
@@ -520,6 +530,16 @@ do
   end
   if GuildOS.BanList then pcall(GuildOS.BanList.Add, GuildOS.BanList, "Grimlock", "Ninja de loot em Karazhan") end
   if GuildOS.GuildManager and GuildOS.GuildManager.Log then pcall(GuildOS.GuildManager.Log, GuildOS.GuildManager, "promote", "Kaelis", "Raider") end
+  -- Former members (Officers' Room > Members > Former members): the history keeps them past the departure.
+  local h = GuildOS.db.memberHistory
+  if h then
+    local T = GetServerTime()
+    h["Grimlock-MundodeForever"] = { cls = "WARRIOR", stints = { { joinAt = T - 90 * 86400, leftAt = T - 30 * 86400, how = "kick", by = "Chehul" } }, ranks = {} }
+    h["Aelwyn-MundodeForever"] = { cls = "MAGE", stints = { { joinAt = T - 400 * 86400, leftAt = T - 300 * 86400, how = "leave" },
+      { joinAt = T - 200 * 86400, leftAt = T - 5 * 86400, how = "leave" } }, ranks = {},
+      note = { text = "Voltou duas vezes; bom raider, sai em silencio.", author = "Chehul", ts = T, rev = T } }
+    h["Borrin-MundodeForever"] = { cls = "PRIEST", stints = { { joinAt = T - 60 * 86400, leftAt = T - 2 * 86400, leftEst = true, how = "gone" } }, ranks = {} }
+  end
   local _ = R
 end
 
@@ -775,6 +795,25 @@ do
   if home and home.RefreshActive then steady("Raid audit", function() home.RefreshActive() end) end
   _, home = open("officers", "audit")
   if home and home.RefreshActive then steady("Data audit", function() home.RefreshActive() end) end
+  -- Former members: its list redrawn, a ban or a note that changes (the hooks it joins), and the member window for
+  -- somebody no longer in the roster, opened again and again.
+  local FM = GuildOS.FormerMembers
+  _, home = open("officers", "former")
+  check(home and shownText(home, "Aelwyn"), "the former members screen lists who left")
+  if home and home.RefreshActive then steady("Former members", function() home.RefreshActive() end) end
+  if FM and FM.uiRefresh then
+    steady("Former members (a change on screen)", function() FM.uiRefresh() end)
+    if GuildOS.BanList and GuildOS.BanList.uiRefresh then
+      steady("Former members (a ban synced)", function() GuildOS.BanList.uiRefresh() end)
+    end
+    local rows = FM:Rows(true).rows
+    if rows[1] then
+      steady("Former member's card", function()
+        for _, r in ipairs(rows) do FM:Open(r) end
+      end)
+      if GuildOS.DetailFrame then GuildOS.DetailFrame:Hide() end
+    end
+  end
 end
 
 -- Settings: each page refreshed in place; a page whose shape comes back is the one built before.

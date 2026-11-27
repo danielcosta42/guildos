@@ -33,6 +33,8 @@ local SUBTABS = {
     { key = "marks",    label = L["Notes and marks"] },
     -- Who lacks a join date or an alt link, or whose note's date is not the history's (UI/DataAuditPanel.lua).
     { key = "audit",    label = L["Data audit"] },
+    -- Who left the guild, from what Guild OS keeps past a departure (UI/FormerMembersPanel.lua).
+    { key = "former",   label = L["Former members"] },
     -- The officers' chat alerts and their rules (issues #404, #405): UI/ModAlerts.lua builds both.
     { key = "alerts",   label = L["Chat alerts"] },
     { key = "alertrules", label = L["Alert rules"] },
@@ -1687,6 +1689,7 @@ function GuildOS:CreateManagementPanel(parent, _mainFrame)
         remind   = function(p) return GuildOS.BuildRemindSub and GuildOS:BuildRemindSub(p) end,
         marks    = function(p) return GuildOS.BuildMarksSub and GuildOS:BuildMarksSub(p) end,
         audit    = function(p) return GuildOS.BuildDataAuditSub and GuildOS:BuildDataAuditSub(p) end,
+        former   = function(p) return GuildOS.BuildFormerMembersSub and GuildOS:BuildFormerMembersSub(p) end,
         alerts   = function(p) return GuildOS.BuildModAlertsSub and GuildOS:BuildModAlertsSub(p) end,
         alertrules = function(p) return GuildOS.BuildModRulesSub and GuildOS:BuildModRulesSub(p) end,
     }

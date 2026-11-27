@@ -70,7 +70,7 @@ UI.ROOMS = {
         { id = "journal",      label = L["Journal"],      feature = "guild", sub = "journal", needs = "journal" },
         { id = "activity",     label = L["Activity"],     feature = "guild", sub = "activity" },
     } },
-    -- Eighteen entries: a side bar in groups instead of the row (`side`, UI/Window.lua).
+    -- Nineteen entries: a side bar in groups instead of the row (`side`, UI/Window.lua).
     { id = "officers", label = L["Officers' Room"], officer = true, side = true, entries = {
         { id = "recruiting", label = L["Recruiting"],       feature = "recruitment", sub = "recruiting", group = L["Recruitment"] },
         { id = "scanner",    label = L["Scanner"],          feature = "recruitment", sub = "scanner",    group = L["Recruitment"] },
@@ -86,6 +86,8 @@ UI.ROOMS = {
         { id = "marks",      label = L["Notes and marks"],  feature = "management",  sub = "marks",      group = L["Members"] },
         -- Who lacks a real join date, an alt link, or has a note's date that is not the history's (manutencao-roster.md).
         { id = "audit",      label = L["Data audit"],       feature = "management",  sub = "audit",      group = L["Members"] },
+        -- Who left the guild: history, bans, notes and alts, and Ban / Invite back / Forget (manutencao-roster.md §6).
+        { id = "former",     label = L["Former members"],   feature = "management",  sub = "former",     group = L["Members"] },
         { id = "alerts",     label = L["Chat alerts"],      feature = "management",  sub = "alerts",     group = L["Moderation"] },
         { id = "alertrules", label = L["Alert rules"],      feature = "management",  sub = "alertrules", group = L["Moderation"] },
         { id = "ban",        label = L["Ban List"],         feature = "management",  sub = "ban",        group = L["Moderation"] },

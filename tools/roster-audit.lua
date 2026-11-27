@@ -323,6 +323,18 @@ check(gone.seen and gone.seen.name == "Main" and gone.seen.main and RM.SeenText(
 RM:SetCountAlts(false)
 check(inactive(30) == "Gone,Alt,Gone2,Solo" and GuildOS.db.settings.inactiveCountAlts == false, "the screen's setting")
 RM:SetCountAlts(true)
+-- A safe mark with an end: it keeps the member out of the review (and the bulk removal) only until then.
+check(MM:SetSafe(K("Solo"), true, NOW + 5 * DAY), "Solo safe for five days")
+check(inactive(30, nil, true) == "Gone,Gone2", "the review count leaves the safe out: " .. inactive(30, nil, true))
+members = BA:Collect(false)
+check(#BA.Match(members, BA.Rules({ days = 30, countAlts = true }), "remove", BA:Context()) == 2, "and so does a removal")
+local realNow = NOW
+NOW = NOW + 6 * DAY
+check(inactive(30, nil, true) == "Gone,Gone2,Solo", "past its end, Solo is to review again")
+members = BA:Collect(false)
+check(#BA.Match(members, BA.Rules({ days = 30, countAlts = true }), "remove", BA:Context()) == 3, "and in a removal")
+NOW = realNow
+MM:SetSafe(K("Solo"), false)
 
 members = BA:Collect(false)
 local function pick(raw, action)

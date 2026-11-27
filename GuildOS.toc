@@ -121,6 +121,7 @@ Modules\RosterMaint.lua
 Modules\ActionQueue.lua
 Modules\AltDeparture.lua
 Modules\Departure.lua
+Modules\FormerMembers.lua
 Modules\AddonReminder.lua
 Modules\GearAudit.lua
 Modules\Readiness.lua
@@ -214,6 +215,7 @@ UI\ActionQueue.lua
 UI\RemindPanel.lua
 UI\MarksPanel.lua
 UI\DataAuditPanel.lua
+UI\FormerMembersPanel.lua
 UI\CorePanel.lua
 UI\ManagementPanel.lua
 UI\AuditPanel.lua

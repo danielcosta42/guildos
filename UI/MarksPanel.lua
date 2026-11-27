@@ -34,6 +34,16 @@ GuildOS.Dialogs["GUILDOS_NOTE_DATE_RUN"] = {
     timeout = 0, whileDead = true, hideOnEscape = true, showAlert = true, preferredIndex = 3,
 }
 
+-- A main's join date for their alts with no real date (NoteDates:OfferAlts): one question for the whole group.
+GuildOS.Dialogs["GUILDOS_NOTE_DATE_ALTS"] = {
+    text = "%s",
+    button1 = L["Apply"], button2 = L["Cancel"],
+    OnAccept = function(_, data)
+        if GuildOS.NoteDates then GuildOS.NoteDates:ApplyToAlts(data) end
+    end,
+    timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+}
+
 -- The note to copy where the game does not let an addon write it: the box holds it, selected.
 GuildOS.Dialogs["GUILDOS_NOTE_DATE_COPY"] = {
     text = "%s",
@@ -146,8 +156,25 @@ function GuildOS:BuildMarksSub(panel)
     local memberBox = UI:CreateInput(safe, 150, 24, { max = 60 })
     local nickBox = UI:CreateInput(safe, 120, 24, { max = MM.NICK_MAX })
     safe:Pair(Forms:MakeField(safe, L["Member"], memberBox), Forms:MakeField(safe, L["Nickname"], nickBox), { gap = 14 })
+    -- How long a new safe mark lasts: for good, 7, 14 or 30 days, or until a date (MemberMarks.UntilOf reads it).
+    local forDD = UI:CreateDropdown(safe, 120, 24)
+    local forOpts = { { value = "forever", text = L["Forever"] } }
+    for _, d in ipairs(MM.DURATIONS) do forOpts[#forOpts + 1] = { value = tostring(d), text = string.format(L["%d days"], d) } end
+    forOpts[#forOpts + 1] = { value = "date", text = L["Until a date"] }
+    forDD:SetOptions(forOpts)
+    forDD:SetValue("forever")
+    local untilBox = UI:CreateInput(safe, 100, 24, { max = 24 })
+    forDD.onSelect = function(_, v) if v == "date" then untilBox:SetFocus() end end
+    safe:Pair(Forms:MakeField(safe, L["Safe for"], forDD),
+              Forms:MakeField(safe, L["Until"], untilBox, { w = 110, hint = L["a date, as 15/01/2027"] }), { gap = 14 })
     local safeBtn = Forms:Button(safe, L["Safe on / off"])
-    safeBtn:SetScript("OnClick", function() MM:CommandSafe(memberBox:GetText() or ""); mode = "safe"; refresh() end)
+    safeBtn:SetScript("OnClick", function()
+        local u, why = MM.UntilOf(forDD:GetValue(), strtrim(untilBox:GetText() or ""))
+        if why == "bad" then GuildOS:Print(L["Write a date after today, as 15/01/2027."]) return end
+        MM:CommandSafe(memberBox:GetText() or "", u)
+        mode = "safe"
+        refresh()
+    end)
     local nickBtn = Forms:Button(safe, L["Set nickname"])
     nickBtn:SetScript("OnClick", function()
         MM:CommandNick(strtrim(memberBox:GetText() or "") .. " " .. strtrim(nickBox:GetText() or ""))
@@ -185,6 +212,16 @@ function GuildOS:BuildMarksSub(panel)
         row.c:SetPoint("LEFT", 390, 0)
         row.d = text(row, "", 10, C.textSoft)
         row.d:SetPoint("RIGHT", -8, 0)
+        -- The safe list: the mark's tooltip (its end, as the roster's says it).
+        row:SetScript("OnEnter", function(self)
+            local it = self.item
+            if mode ~= "safe" or not (it and it.key and GameTooltip) then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(it.name, 1, 1, 1)
+            MM:TooltipLines(GameTooltip, it.key)
+            GameTooltip:Show()
+        end)
+        row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
         row:SetScript("OnClick", function(self)
             -- In the import's review a click takes a member in or out (only those it would take).
             local it = self.item
@@ -229,7 +266,9 @@ function GuildOS:BuildMarksSub(panel)
         local out, seen = {}, {}
         for _, k in ipairs(MM:SafeKeys()) do
             seen[k] = true
-            out[#out + 1] = { name = k:match("^([^-]+)") or k, why = L["marked by hand"], nick = MM:Nick(k) }
+            local u = MM:SafeUntil(k)
+            out[#out + 1] = { name = k:match("^([^-]+)") or k, nick = MM:Nick(k), key = k,
+                why = u and (L["marked by hand"] .. ", " .. MM:UntilText(u)) or L["marked by hand"] }
         end
         local tag = MM:SafeTag()
         local onotes = GuildOS.Compat.CanViewOfficerNote()

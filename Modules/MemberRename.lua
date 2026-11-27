@@ -251,7 +251,7 @@ function MemberRename:Apply(old, new, how)
     local MM = GuildOS.MemberMarks
     if MM and officer then
         if MM:IsMarkedSafe(old) then
-            SC(MM.SetSafe, MM, new, true); SC(MM.SetSafe, MM, old, false); did("safe")
+            SC(MM.SetSafe, MM, new, true, MM:SafeUntil(old)); SC(MM.SetSafe, MM, old, false); did("safe")
         end
         local nick = MM:Nick(old)
         if nick then

@@ -221,13 +221,20 @@ function Digest:Collect(since, opts)
     end
 
     -- Officer-only catch-up
+    local toReview
     if GuildOS:IsOfficer() then
         -- Trials ready to review are not repeated here: the panel's badge and the login line say it (audit B10).
-        if GuildOS.GuildManager and GuildOS.GuildManager.GetInactiveMembers then
-            local inactive = GuildOS.GuildManager:GetInactiveMembers(GuildOS.GuildManager.DEFAULT_INACTIVE_DAYS)
+        local GM = GuildOS.GuildManager
+        if GM and GM.GetInactiveMembers then
+            local inactive = GM:GetInactiveMembers(GM.DEFAULT_INACTIVE_DAYS)
+            toReview = 0
             if inactive and #inactive > 0 then
                 mem.inactive = #inactive
-                add("members", string.format(L["%d inactive member(s)"], #inactive))
+                for _, e in ipairs(inactive) do if not e.safe then toReview = toReview + 1 end end
+                -- An officer who may remove gets the recommendation below instead (opts.recommend).
+                if not (opts and opts.recommend and GM:CanKick()) then
+                    add("members", string.format(L["%d inactive member(s)"], #inactive))
+                end
             end
         end
     end
@@ -246,8 +253,61 @@ function Digest:Collect(since, opts)
         if any then add("renown", nearest) end
     end
 
+    -- The officers' recommendations, each line a way into its Officers' Room screen. At login only beside other
+    -- news (never a reason on its own to open the digest at every login); on demand always.
+    if opts and opts.recommend then
+        local any = #feed > 0 or not opts.login
+        for _, c in ipairs(self.CATEGORIES) do any = any or #m[c.id].lines > 0 end
+        if any then
+            for _, r in ipairs(self:Recommendations(toReview)) do
+                add("members", r.text)
+                mem.actions = mem.actions or {}
+                mem.actions[#mem.lines] = r.open
+            end
+        end
+    end
+
     for _, item in ipairs(feed) do add("site", item.text) end
     return m
+end
+
+local LINK = "|cff4CB8FF"   -- a line the digest opens a screen from
+
+--- The officers' recommendations: { { id, n, text, open = { tab, sub } } }, only those with something to do and only
+--- for a rank that may act on them. "inactive": the inactive members to review, alt-aware (a character whose main or
+--- alt was seen is not inactive) and without the safe list (`toReview`, Collect's count; computed here when nil),
+--- where this rank may remove members. "promote": the members long in their rank (RosterMaint:StuckInRank), where
+--- this rank may promote.
+function Digest:Recommendations(toReview)
+    local out = {}
+    local GM, RM = GuildOS.GuildManager, GuildOS.RosterMaint
+    if not (GuildOS:IsOfficer() and GM) then return out end
+    if GM:CanKick() then
+        if toReview == nil and GM.GetInactiveMembers then
+            toReview = #GM:GetInactiveMembers(GM.DEFAULT_INACTIVE_DAYS, nil, true)
+        end
+        if (toReview or 0) > 0 then
+            out[#out + 1] = { id = "inactive", n = toReview, open = { "management", "inactive" },
+                text = LINK .. string.format(L["%d to review for inactivity"], toReview) .. "|r" }
+        end
+    end
+    if GM:CanPromote() and RM then
+        local n = #RM:StuckInRank(nil, true)
+        if n > 0 then
+            out[#out + 1] = { id = "promote", n = n, open = { "management", "suggest" },
+                text = LINK .. string.format(L["%d ready for promotion"], n) .. "|r" }
+        end
+    end
+    return out
+end
+
+--- A recommendation line's click: the digest closes and its Officers' Room screen opens.
+function Digest:OpenRecommendation(open)
+    if type(open) ~= "table" then return false end
+    if self.frame then self.frame:Hide() end
+    local UI = GuildOS.UI
+    if UI and UI.OpenWindow then return UI:OpenWindow(open[1], open[2]) ~= false end
+    return false
 end
 
 -- The categories that have something to say: { id, title (translated), glyph, color, lines }, in order.
@@ -256,7 +316,8 @@ function Digest:Groups(model)
     for _, c in ipairs(self.CATEGORIES) do
         local lines = model[c.id] and model[c.id].lines or {}
         if #lines > 0 then
-            out[#out + 1] = { id = c.id, title = c.title, glyph = c.glyph, color = c.color, lines = lines }
+            out[#out + 1] = { id = c.id, title = c.title, glyph = c.glyph, color = c.color, lines = lines,
+                              actions = model[c.id].actions }
         end
     end
     return out
@@ -266,10 +327,13 @@ end
 -- Build the digest lines for everything that changed since `since`
 -- (a server timestamp). Returns an array of strings, category by category.
 ----------------------------------------------------------------------
--- lines.groups: the same lines by category (Digest:Groups), which the popup draws under small headers.
+-- lines.groups: the same lines by category (Digest:Groups), which the popup draws under small headers. The officers'
+-- recommendations are the popup's (opts.recommend), each group's `actions` the screen a line opens.
 function Digest:Build(since, opts)
     local lines = {}
-    lines.groups = self:Groups(self:Collect(since, opts))
+    local o = { recommend = true }
+    for k, v in pairs(opts or {}) do o[k] = v end
+    lines.groups = self:Groups(self:Collect(since, o))
     for _, g in ipairs(lines.groups) do
         if g.id == "site" then lines[#lines + 1] = "|cffEDCC7B" .. L["From guildos.me"] .. "|r" end
         for _, line in ipairs(g.lines) do lines[#lines + 1] = line end
@@ -408,7 +472,7 @@ function Digest:Show(lines)
                 hd:SetWidth(UI:TextWidth(f.body, 4))
                 y = y + 18
             end
-            for _, line in ipairs(grp.lines) do
+            for li, line in ipairs(grp.lines) do
                 if glyphs then
                     local g = pool.Take("glyph", function() return UI:CreateGlyph(f.body, 22) end)
                     g:SetPoint("TOPLEFT", 0, -y + 3)
@@ -425,6 +489,25 @@ function Digest:Show(lines)
                 -- Not f.body:GetWidth(): the body is placed by its anchors and reads 0 until the game lays it out, and
                 -- a text 34px less than that drew nothing (#449). TextWidth reads the anchors.
                 fs:SetWidth(UI:TextWidth(f.body, x + 4))
+                -- A recommendation opens its screen: a click anywhere on the line (pooled like the rest).
+                local act = grp.actions and grp.actions[li]
+                if act then
+                    local b = pool.Take("link", function()
+                        local btn = CreateFrame("Button", nil, f.body)
+                        btn:SetScript("OnClick", function(self2) Digest:OpenRecommendation(self2.open) end)
+                        btn:SetScript("OnEnter", function(self2)
+                            if not GameTooltip then return end
+                            GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+                            GameTooltip:AddLine(L["Click to open it in the Officers' Room."], 1, 1, 1, true)
+                            GameTooltip:Show()
+                        end)
+                        btn:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+                        return btn
+                    end)
+                    b.open = act
+                    b:SetPoint("TOPLEFT", fs, "TOPLEFT", -x, 4)
+                    b:SetPoint("BOTTOMRIGHT", fs, "BOTTOMRIGHT", 0, -4)
+                end
                 y = y + math.max(26, (fs:GetStringHeight() or 14) + 10)
             end
         end

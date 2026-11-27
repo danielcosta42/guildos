@@ -263,6 +263,12 @@ local function RosterIndex()
     return idx
 end
 
+-- The key a card is about: a former member's own (FormerMembers:Record, no longer in the roster), else the name's.
+local function DetailKey(data)
+    if data.former and data.key then return data.key end
+    return GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+end
+
 -- The first character of the roster whose name starts with `typed` (any case), not one of `taken` (keys):
 -- the Add alt field's suggestion. Nil under two letters or with none.
 local function SuggestCharacter(roster, typed, taken)
@@ -473,26 +479,40 @@ function PopulateDetail(frame, data)
     -- data, so any caller holding only a db.members entry would crash here.
     -- GuildOS:GetMemberRecord builds the correct merged record; this is the net
     -- under it, not a substitute for it.
-    local raceStr = (data.race and data.race ~= "") and data.race or L["Unknown"]
-    local infoLine = string.format(L["Level %d %s %s  |  %s"],
-        data.level or 0, raceStr, data.classDisplay or data.class or "?", data.rank or "?")
-    -- The parts with the card's " · " between them (#449), whatever bar the translation put there.
-    infoLine = infoLine:gsub("%s*|%s+", " \194\183 ")
-    -- Cross-addon presence: append which sibling Chehul addons this player is
-    -- currently broadcasting on the mesh (e.g. "· PartyLens"). Empty if none.
-    if GuildOS.Mesh then
-        infoLine = infoLine .. GuildOS.Mesh:PresenceSuffix(data.name)
+    local infoLine
+    if data.former then
+        -- A former member (FormerMembers:Record): no level, race or rank of theirs is kept; when they left instead.
+        local parts = { data.rank or L["Ex-member"] }
+        if data.classDisplay and data.classDisplay ~= "" then parts[#parts + 1] = data.classDisplay end
+        if data.leftAt then
+            parts[#parts + 1] = string.format(L["Left the guild on %s"], GuildOS:DateText(data.leftAt, "/%Y"))
+        end
+        infoLine = table.concat(parts, " \194\183 ")
+    else
+        local raceStr = (data.race and data.race ~= "") and data.race or L["Unknown"]
+        infoLine = string.format(L["Level %d %s %s  |  %s"],
+            data.level or 0, raceStr, data.classDisplay or data.class or "?", data.rank or "?")
+        -- The parts with the card's " · " between them (#449), whatever bar the translation put there.
+        infoLine = infoLine:gsub("%s*|%s+", " \194\183 ")
+        -- Cross-addon presence: append which sibling Chehul addons this player is
+        -- currently broadcasting on the mesh (e.g. "· PartyLens"). Empty if none.
+        if GuildOS.Mesh then
+            infoLine = infoLine .. GuildOS.Mesh:PresenceSuffix(data.name)
+        end
     end
     frame.infoText:SetText(infoLine)
 
     -- The line under it: since when a founder is one, and whose alt this is (nil unless linked to a main).
-    local memberKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+    local memberKey = DetailKey(data)
     local extra = {}
     if founder then
         extra[#extra + 1] = string.format(L["Founding member · joined %s"], date("!%Y-%m-%d", founder.joinedAt))
     end
     local altTag = GuildOS.GetAltTag and GuildOS:GetAltTag(memberKey)
     if altTag and altTag ~= "" then extra[#extra + 1] = altTag end
+    -- A former member's ban or suspension, from the ban list (they may be back to ask for an invite).
+    local banLine = data.former and GuildOS.FormerMembers and GuildOS.FormerMembers:BanLine(memberKey)
+    if banLine then extra[#extra + 1] = banLine end
     frame.altTagText:SetText(table.concat(extra, " \194\183 "))
 
     local yOff = -4
@@ -502,373 +522,379 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     -- Section: Spec
     ----------------------------------------------------------------
-    local playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
-    local specLabel = GuildOS.SpecChecker and GuildOS.SpecChecker:GetSpecLabel(playerKey)
+    local playerKey = DetailKey(data)
+    -- What only a present member has (their client's scan, gear, professions, attunements): none for a former
+    -- member, whose current data left with them (Core/Utils.lua DropDeparted; FormerMembers:Record).
+    if not data.former then
+        local specLabel = GuildOS.SpecChecker and GuildOS.SpecChecker:GetSpecLabel(playerKey)
 
-    yOff = CreateSectionHeader(child, L["Talent spec"], yOff, contentWidth)
+        yOff = CreateSectionHeader(child, L["Talent spec"], yOff, contentWidth)
 
-    local spec = GuildOS.db.members and GuildOS.db.members[playerKey] and GuildOS.db.members[playerKey].spec
-    -- A scan that counted no point (a tree's name and a lone 0: the talents never read) is no scan (#449).
-    local scanned = specLabel ~= nil
-    if scanned and spec and not spec.specID then
-        local total = 0
-        for _, pts in ipairs(spec.points or {}) do total = total + (tonumber(pts) or 0) end
-        scanned = total > 0
-    end
-    local barW = contentWidth - 2 * PADX
-
-    if scanned then
-        -- Talent distribution bar (one segment per tree; clickable to view tree)
-        if spec and spec.points and spec.names then
-            local barFrame = _pF(child, "talentBar", function()
-                local b = CreateFrame("Button", nil, child)
-                b:RegisterForClicks("LeftButtonUp")
-                -- The light track under the trees (#449): the paper's field.
-                b.track = b:CreateTexture(nil, "ARTWORK")
-                b.track:SetTexture("Interface\\Buttons\\WHITE8x8")
-                b.track:SetPoint("TOPLEFT", 0, 0)
-                b.track:SetVertexColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
-                b.segs, b.labels, b.divs = {}, {}, {}
-                return b
-            end)
-            barFrame:SetPoint("TOPLEFT", PADX, yOff)
-            barFrame:SetSize(barW, 20)
-            for _, list in ipairs({ barFrame.segs, barFrame.labels, barFrame.divs }) do
-                for _, part in ipairs(list) do part:Hide() end
-            end
-            barFrame:SetScript("OnClick", nil)
-            barFrame:SetScript("OnEnter", nil)
-            barFrame:SetScript("OnLeave", nil)
-            if spec.talents then
-                barFrame:SetScript("OnClick", function()
-                    local freshSpec = GuildOS.db.members[playerKey]
-                        and GuildOS.db.members[playerKey].spec
-                    GuildOS:ShowTalentViewer(freshSpec or spec, data.name, data.class)
-                end)
-                barFrame:SetScript("OnEnter", function(self)
-                    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-                    GameTooltip:SetText(L["Click to view talent tree"], 1, 1, 0.6)
-                    GameTooltip:Show()
-                end)
-                barFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
-            end
-            barFrame:Show()
-
-            barFrame.track:SetSize(barW, 18)
-
+        local spec = GuildOS.db.members and GuildOS.db.members[playerKey] and GuildOS.db.members[playerKey].spec
+        -- A scan that counted no point (a tree's name and a lone 0: the talents never read) is no scan (#449).
+        local scanned = specLabel ~= nil
+        if scanned and spec and not spec.specID then
             local total = 0
-            for _, pts in ipairs(spec.points) do total = total + pts end
-            if total == 0 then total = 1 end
+            for _, pts in ipairs(spec.points or {}) do total = total + (tonumber(pts) or 0) end
+            scanned = total > 0
+        end
+        local barW = contentWidth - 2 * PADX
 
-            -- The trees in soft cuts of the class's paper ink (#449): washed toward the light field, so the
-            -- paper's ink reads on every one of them.
-            local ir, ig, ib = UI:InkFor("paper", "class", data.class)
-            local function mix(t)
-                return { r = ir + (C.paperLight.r - ir) * t, g = ig + (C.paperLight.g - ig) * t, b = ib + (C.paperLight.b - ib) * t }
-            end
-            local treeColors = { mix(0.55), mix(0.75), { r = C.paperLine.r, g = C.paperLine.g, b = C.paperLine.b } }
-
-            local BAR_W = barW
-            local xPos = 0
-            local nonZero = 0
-            for _, pts in ipairs(spec.points) do if pts > 0 then nonZero = nonZero + 1 end end
-
-            local drawn, nDivs = 0, 0
-            for i, pts in ipairs(spec.points) do
-                if pts > 0 then
-                    drawn = drawn + 1
-                    -- Last drawn segment gets the remainder to absorb rounding drift.
-                    local segW
-                    if drawn == nonZero then
-                        segW = BAR_W - xPos
-                    else
-                        segW = math.floor((pts / total) * BAR_W + 0.5)
-                    end
-
-                    -- Segment fill
-                    local seg = barFrame.segs[drawn]
-                    if not seg then
-                        seg = barFrame:CreateTexture(nil, "OVERLAY")
-                        seg:SetTexture("Interface\\Buttons\\WHITE8x8")
-                        barFrame.segs[drawn] = seg
-                    end
-                    seg:ClearAllPoints()
-                    seg:SetPoint("TOPLEFT", xPos, 0)
-                    seg:SetSize(segW, 18)
-                    local tc = treeColors[i] or treeColors[1]
-                    seg:SetVertexColor(tc.r, tc.g, tc.b, 1)
-                    seg:Show()
-
-                    -- Label clipped to segment width; text adapts to available space
-                    local segLabel = barFrame.labels[drawn]
-                    if not segLabel then
-                        segLabel = barFrame:CreateFontString(nil, "OVERLAY")
-                        GuildOS:ApplyFont(segLabel, UI.SP.META)
-                        barFrame.labels[drawn] = segLabel
-                    end
-                    segLabel:ClearAllPoints()
-                    segLabel:SetPoint("TOPLEFT", xPos + 4, -1)
-                    segLabel:SetSize(math.max(1, segW - 8), 18)
-                    segLabel:SetJustifyH("CENTER")
-                    segLabel:SetJustifyV("MIDDLE")
-                    segLabel:SetWordWrap(false)
-                    segLabel:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b, 1)   -- the paper's ink on every tree
-                    if segW >= 55 then
-                        segLabel:SetText(pts .. "  " .. (spec.names[i] or ""))
-                    elseif segW >= 22 then
-                        segLabel:SetText(tostring(pts))
-                    else
-                        segLabel:SetText("")
-                    end
-                    segLabel:Show()
-
-                    -- 1-px divider before each segment except the first
-                    if xPos > 0 then
-                        nDivs = nDivs + 1
-                        local div = barFrame.divs[nDivs]
-                        if not div then
-                            div = barFrame:CreateTexture(nil, "OVERLAY")
-                            div:SetTexture("Interface\\Buttons\\WHITE8x8")
-                            div:SetHeight(18)
-                            GuildOS.UI:Hairline(div, "Width")
-                            div:SetVertexColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
-                            barFrame.divs[nDivs] = div
-                        end
-                        div:ClearAllPoints()
-                        div:SetPoint("TOPLEFT", xPos, 0)
-                        div:Show()
-                    end
-
-                    xPos = xPos + segW
+        if scanned then
+            -- Talent distribution bar (one segment per tree; clickable to view tree)
+            if spec and spec.points and spec.names then
+                local barFrame = _pF(child, "talentBar", function()
+                    local b = CreateFrame("Button", nil, child)
+                    b:RegisterForClicks("LeftButtonUp")
+                    -- The light track under the trees (#449): the paper's field.
+                    b.track = b:CreateTexture(nil, "ARTWORK")
+                    b.track:SetTexture("Interface\\Buttons\\WHITE8x8")
+                    b.track:SetPoint("TOPLEFT", 0, 0)
+                    b.track:SetVertexColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
+                    b.segs, b.labels, b.divs = {}, {}, {}
+                    return b
+                end)
+                barFrame:SetPoint("TOPLEFT", PADX, yOff)
+                barFrame:SetSize(barW, 20)
+                for _, list in ipairs({ barFrame.segs, barFrame.labels, barFrame.divs }) do
+                    for _, part in ipairs(list) do part:Hide() end
                 end
+                barFrame:SetScript("OnClick", nil)
+                barFrame:SetScript("OnEnter", nil)
+                barFrame:SetScript("OnLeave", nil)
+                if spec.talents then
+                    barFrame:SetScript("OnClick", function()
+                        local freshSpec = GuildOS.db.members[playerKey]
+                            and GuildOS.db.members[playerKey].spec
+                        GuildOS:ShowTalentViewer(freshSpec or spec, data.name, data.class)
+                    end)
+                    barFrame:SetScript("OnEnter", function(self)
+                        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                        GameTooltip:SetText(L["Click to view talent tree"], 1, 1, 0.6)
+                        GameTooltip:Show()
+                    end)
+                    barFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                end
+                barFrame:Show()
+
+                barFrame.track:SetSize(barW, 18)
+
+                local total = 0
+                for _, pts in ipairs(spec.points) do total = total + pts end
+                if total == 0 then total = 1 end
+
+                -- The trees in soft cuts of the class's paper ink (#449): washed toward the light field, so the
+                -- paper's ink reads on every one of them.
+                local ir, ig, ib = UI:InkFor("paper", "class", data.class)
+                local function mix(t)
+                    return { r = ir + (C.paperLight.r - ir) * t, g = ig + (C.paperLight.g - ig) * t, b = ib + (C.paperLight.b - ib) * t }
+                end
+                local treeColors = { mix(0.55), mix(0.75), { r = C.paperLine.r, g = C.paperLine.g, b = C.paperLine.b } }
+
+                local BAR_W = barW
+                local xPos = 0
+                local nonZero = 0
+                for _, pts in ipairs(spec.points) do if pts > 0 then nonZero = nonZero + 1 end end
+
+                local drawn, nDivs = 0, 0
+                for i, pts in ipairs(spec.points) do
+                    if pts > 0 then
+                        drawn = drawn + 1
+                        -- Last drawn segment gets the remainder to absorb rounding drift.
+                        local segW
+                        if drawn == nonZero then
+                            segW = BAR_W - xPos
+                        else
+                            segW = math.floor((pts / total) * BAR_W + 0.5)
+                        end
+
+                        -- Segment fill
+                        local seg = barFrame.segs[drawn]
+                        if not seg then
+                            seg = barFrame:CreateTexture(nil, "OVERLAY")
+                            seg:SetTexture("Interface\\Buttons\\WHITE8x8")
+                            barFrame.segs[drawn] = seg
+                        end
+                        seg:ClearAllPoints()
+                        seg:SetPoint("TOPLEFT", xPos, 0)
+                        seg:SetSize(segW, 18)
+                        local tc = treeColors[i] or treeColors[1]
+                        seg:SetVertexColor(tc.r, tc.g, tc.b, 1)
+                        seg:Show()
+
+                        -- Label clipped to segment width; text adapts to available space
+                        local segLabel = barFrame.labels[drawn]
+                        if not segLabel then
+                            segLabel = barFrame:CreateFontString(nil, "OVERLAY")
+                            GuildOS:ApplyFont(segLabel, UI.SP.META)
+                            barFrame.labels[drawn] = segLabel
+                        end
+                        segLabel:ClearAllPoints()
+                        segLabel:SetPoint("TOPLEFT", xPos + 4, -1)
+                        segLabel:SetSize(math.max(1, segW - 8), 18)
+                        segLabel:SetJustifyH("CENTER")
+                        segLabel:SetJustifyV("MIDDLE")
+                        segLabel:SetWordWrap(false)
+                        segLabel:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b, 1)   -- the paper's ink on every tree
+                        if segW >= 55 then
+                            segLabel:SetText(pts .. "  " .. (spec.names[i] or ""))
+                        elseif segW >= 22 then
+                            segLabel:SetText(tostring(pts))
+                        else
+                            segLabel:SetText("")
+                        end
+                        segLabel:Show()
+
+                        -- 1-px divider before each segment except the first
+                        if xPos > 0 then
+                            nDivs = nDivs + 1
+                            local div = barFrame.divs[nDivs]
+                            if not div then
+                                div = barFrame:CreateTexture(nil, "OVERLAY")
+                                div:SetTexture("Interface\\Buttons\\WHITE8x8")
+                                div:SetHeight(18)
+                                GuildOS.UI:Hairline(div, "Width")
+                                div:SetVertexColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
+                                barFrame.divs[nDivs] = div
+                            end
+                            div:ClearAllPoints()
+                            div:SetPoint("TOPLEFT", xPos, 0)
+                            div:Show()
+                        end
+
+                        xPos = xPos + segW
+                    end
+                end
+                yOff = yOff - 26
+            end
+
+            -- Text label: e.g.  "41 / 5 / 15  (Protection)"
+            local specText = _pFS(child)
+            GuildOS:ApplyFont(specText, SP.BODY)
+            specText:SetPoint("TOPLEFT", PADX, yOff)
+            specText:SetJustifyH("LEFT")
+            local sr, sg, sb = UI:InkFor("paper", "class", data.class)
+            ink(specText, { r = sr, g = sg, b = sb })
+            specText:SetText(specLabel)
+            specText:Show()
+            yOff = yOff - 20
+
+            if spec and spec.scannedAt and spec.scannedAt > 0 then
+                local age = GetServerTime() - spec.scannedAt
+                local ageStr
+                if age < 3600 then
+                    ageStr = math.floor(age / 60) .. L["m ago"]
+                elseif age < 86400 then
+                    ageStr = math.floor(age / 3600) .. L["h ago"]
+                else
+                    ageStr = math.floor(age / 86400) .. L["d ago"]
+                end
+                local scanText = _pFS(child)
+                GuildOS:ApplyFont(scanText, UI.SP.META)
+                scanText:SetPoint("TOPLEFT", PADX, yOff)
+                scanText:SetJustifyH("LEFT")
+                ink(scanText, C.paperSoft)
+                scanText:SetText(L["Last scanned: "] .. ageStr)
+                scanText:Show()
+                yOff = yOff - 18
+            end
+        else
+            local noSpec = _pFS(child)
+            GuildOS:ApplyFont(noSpec, UI.SP.META)
+            noSpec:SetPoint("TOPLEFT", PADX, yOff)
+            noSpec:SetWidth(barW)
+            noSpec:SetJustifyH("LEFT")
+            noSpec:SetWordWrap(true)
+            ink(noSpec, C.paperSoft)
+            -- A scan that counted nothing says so; a member never read, how to read them.
+            noSpec:SetText(specLabel and L["No talent scan yet"] or L["No spec data. Use /guildos specs to scan the group."])
+            noSpec:Show()
+            yOff = yOff - (math.ceil(noSpec:GetStringHeight() or 14) + 8)
+        end
+
+        yOff = yOff - 8
+
+        ----------------------------------------------------------------
+        -- Section: Stats
+        ----------------------------------------------------------------
+        if data.stats then
+            yOff = CreateSectionHeader(child, L["Character stats"], yOff, contentWidth)
+
+            local statsGrid = _pF(child, "statsGrid", function() return CreateFrame("Frame", nil, child) end)
+            statsGrid:SetPoint("TOPLEFT", PADX, yOff)
+            statsGrid:SetSize(contentWidth - 2 * PADX, 40)
+            statsGrid:Show()
+
+            local colWidth = (contentWidth - 2 * PADX) / 4
+            for i, stat in ipairs(GuildOS:MemberStatCells(data.stats)) do
+                local col = ((i - 1) % 4)
+                local row = math.floor((i - 1) / 4)
+                -- The label in the paper's soft ink, the value in its ink (a health or mana value in the paper's
+                -- cut of its colour).
+                local sc = stat.color and paperInk(C[stat.color]) or C.paperInk
+
+                local label = _pFS(child)
+                GuildOS:ApplyFont(label, UI.SP.META)
+                label:SetPoint("TOPLEFT", statsGrid, "TOPLEFT", col * colWidth, -(row * 20))
+                ink(label, C.paperSoft)
+                label:SetText(stat.label)
+                label:Show()
+
+                local value = _pFS(child)
+                GuildOS:ApplyFont(value, SP.META)
+                value:SetPoint("LEFT", label, "RIGHT", 4, 0)
+                ink(value, sc)
+                value:SetText(stat.text)
+                value:Show()
+            end
+
+            yOff = yOff - 48
+            -- None of the attributes came through: the sender's game hid them (WoW: Forever's Secret Values) or they
+            -- were never sent. Say so instead of a row of dashes (#449).
+            local st = data.stats
+            if not (tonumber(st.strength) or tonumber(st.agility) or tonumber(st.stamina) or tonumber(st.intellect)
+                    or tonumber(st.spirit) or tonumber(st[st.primary or ""])) then
+                local why = _pFS(child)
+                GuildOS:ApplyFont(why, UI.SP.META)
+                why:SetPoint("TOPLEFT", PADX, yOff + 18)
+                why:SetWidth(contentWidth - 2 * PADX)
+                why:SetJustifyH("LEFT")
+                ink(why, C.paperSoft)
+                why:SetText(L["The attributes did not come through: the game hides them on this client while it restricts data (WoW: Forever). They fill in when the member syncs without that restriction."])
+                why:Show()
+                yOff = yOff - 6
+            end
+        end
+
+        ----------------------------------------------------------------
+        -- Section: Mythic+ and the Great Vault (retail, issue #187): what the member's own client sent.
+        -- A guildmate without Guild OS sent nothing, and has no section.
+        ----------------------------------------------------------------
+        local MP = GuildOS.MythicPlus
+        if MP and (type(data.mplus) == "table" or type(data.vault) == "table") then
+            local function cell(label, text, x, y, color)
+                local l = _pFS(child)
+                GuildOS:ApplyFont(l, UI.SP.META)
+                l:SetPoint("TOPLEFT", x, y)
+                ink(l, C.paperSoft)
+                l:SetText(label)
+                l:Show()
+                local v = _pFS(child)
+                GuildOS:ApplyFont(v, SP.META)
+                v:SetPoint("LEFT", l, "RIGHT", 4, 0)
+                ink(v, color and paperInk(color) or C.paperInk)
+                v:SetText(text)
+                v:Show()
+            end
+
+            yOff = CreateSectionHeader(child, L["Mythic+"], yOff, contentWidth)
+            local rating = MP:Rating(data.mplus)
+            local r, g, b = GuildOS.Compat.RatingColor(rating)
+            cell(L["Rating"], rating and tostring(rating) or "\226\128\148", PADX, yOff, r and { r = r, g = g, b = b } or C.gold)
+            cell(L["Keystone"], MP:KeystoneText(data.mplus) or L["none"], PADX + (contentWidth - 2 * PADX) / 3, yOff)
+            yOff = yOff - 26
+
+            yOff = CreateSectionHeader(child, L["Great Vault"], yOff, contentWidth)
+            local cells, why = MP:VaultCells(data.vault, GuildOS.Compat.WeekStart())
+            if cells then
+                for i, c in ipairs(cells) do
+                    cell(c.label, c.text, PADX + (i - 1) * (contentWidth - 2 * PADX) / 3, yOff)
+                end
+            else
+                local none = _pFS(child)
+                GuildOS:ApplyFont(none, 11)
+                none:SetPoint("TOPLEFT", PADX, yOff)
+                ink(none, C.paperSoft)
+                none:SetText(why == "old" and L["Not updated since the weekly reset."] or L["No vault data yet."])
+                none:Show()
             end
             yOff = yOff - 26
         end
 
-        -- Text label: e.g.  "41 / 5 / 15  (Protection)"
-        local specText = _pFS(child)
-        GuildOS:ApplyFont(specText, SP.BODY)
-        specText:SetPoint("TOPLEFT", PADX, yOff)
-        specText:SetJustifyH("LEFT")
-        local sr, sg, sb = UI:InkFor("paper", "class", data.class)
-        ink(specText, { r = sr, g = sg, b = sb })
-        specText:SetText(specLabel)
-        specText:Show()
-        yOff = yOff - 20
+        ----------------------------------------------------------------
+        -- Section: Equipment
+        ----------------------------------------------------------------
+        -- The average item level as the title's soft meta at its right (#449).
+        local avgMeta = (data.avgIlvl and data.avgIlvl > 0) and string.format(L["Average item level %d"], data.avgIlvl) or nil
+        yOff = CreateSectionHeader(child, L["Equipment"], yOff, contentWidth, avgMeta)
 
-        if spec and spec.scannedAt and spec.scannedAt > 0 then
-            local age = GetServerTime() - spec.scannedAt
-            local ageStr
-            if age < 3600 then
-                ageStr = math.floor(age / 60) .. L["m ago"]
-            elseif age < 86400 then
-                ageStr = math.floor(age / 3600) .. L["h ago"]
-            else
-                ageStr = math.floor(age / 86400) .. L["d ago"]
-            end
-            local scanText = _pFS(child)
-            GuildOS:ApplyFont(scanText, UI.SP.META)
-            scanText:SetPoint("TOPLEFT", PADX, yOff)
-            scanText:SetJustifyH("LEFT")
-            ink(scanText, C.paperSoft)
-            scanText:SetText(L["Last scanned: "] .. ageStr)
-            scanText:Show()
-            yOff = yOff - 18
-        end
-    else
-        local noSpec = _pFS(child)
-        GuildOS:ApplyFont(noSpec, UI.SP.META)
-        noSpec:SetPoint("TOPLEFT", PADX, yOff)
-        noSpec:SetWidth(barW)
-        noSpec:SetJustifyH("LEFT")
-        noSpec:SetWordWrap(true)
-        ink(noSpec, C.paperSoft)
-        -- A scan that counted nothing says so; a member never read, how to read them.
-        noSpec:SetText(specLabel and L["No talent scan yet"] or L["No spec data. Use /guildos specs to scan the group."])
-        noSpec:Show()
-        yOff = yOff - (math.ceil(noSpec:GetStringHeight() or 14) + 8)
-    end
-
-    yOff = yOff - 8
-
-    ----------------------------------------------------------------
-    -- Section: Stats
-    ----------------------------------------------------------------
-    if data.stats then
-        yOff = CreateSectionHeader(child, L["Character stats"], yOff, contentWidth)
-
-        local statsGrid = _pF(child, "statsGrid", function() return CreateFrame("Frame", nil, child) end)
-        statsGrid:SetPoint("TOPLEFT", PADX, yOff)
-        statsGrid:SetSize(contentWidth - 2 * PADX, 40)
-        statsGrid:Show()
-
-        local colWidth = (contentWidth - 2 * PADX) / 4
-        for i, stat in ipairs(GuildOS:MemberStatCells(data.stats)) do
-            local col = ((i - 1) % 4)
-            local row = math.floor((i - 1) / 4)
-            -- The label in the paper's soft ink, the value in its ink (a health or mana value in the paper's
-            -- cut of its colour).
-            local sc = stat.color and paperInk(C[stat.color]) or C.paperInk
-
-            local label = _pFS(child)
-            GuildOS:ApplyFont(label, UI.SP.META)
-            label:SetPoint("TOPLEFT", statsGrid, "TOPLEFT", col * colWidth, -(row * 20))
-            ink(label, C.paperSoft)
-            label:SetText(stat.label)
-            label:Show()
-
-            local value = _pFS(child)
-            GuildOS:ApplyFont(value, SP.META)
-            value:SetPoint("LEFT", label, "RIGHT", 4, 0)
-            ink(value, sc)
-            value:SetText(stat.text)
-            value:Show()
-        end
-
-        yOff = yOff - 48
-        -- None of the attributes came through: the sender's game hid them (WoW: Forever's Secret Values) or they
-        -- were never sent. Say so instead of a row of dashes (#449).
-        local st = data.stats
-        if not (tonumber(st.strength) or tonumber(st.agility) or tonumber(st.stamina) or tonumber(st.intellect)
-                or tonumber(st.spirit) or tonumber(st[st.primary or ""])) then
-            local why = _pFS(child)
-            GuildOS:ApplyFont(why, UI.SP.META)
-            why:SetPoint("TOPLEFT", PADX, yOff + 18)
-            why:SetWidth(contentWidth - 2 * PADX)
-            why:SetJustifyH("LEFT")
-            ink(why, C.paperSoft)
-            why:SetText(L["The attributes did not come through: the game hides them on this client while it restricts data (WoW: Forever). They fill in when the member syncs without that restriction."])
-            why:Show()
-            yOff = yOff - 6
-        end
-    end
-
-    ----------------------------------------------------------------
-    -- Section: Mythic+ and the Great Vault (retail, issue #187): what the member's own client sent.
-    -- A guildmate without Guild OS sent nothing, and has no section.
-    ----------------------------------------------------------------
-    local MP = GuildOS.MythicPlus
-    if MP and (type(data.mplus) == "table" or type(data.vault) == "table") then
-        local function cell(label, text, x, y, color)
-            local l = _pFS(child)
-            GuildOS:ApplyFont(l, UI.SP.META)
-            l:SetPoint("TOPLEFT", x, y)
-            ink(l, C.paperSoft)
-            l:SetText(label)
-            l:Show()
-            local v = _pFS(child)
-            GuildOS:ApplyFont(v, SP.META)
-            v:SetPoint("LEFT", l, "RIGHT", 4, 0)
-            ink(v, color and paperInk(color) or C.paperInk)
-            v:SetText(text)
-            v:Show()
-        end
-
-        yOff = CreateSectionHeader(child, L["Mythic+"], yOff, contentWidth)
-        local rating = MP:Rating(data.mplus)
-        local r, g, b = GuildOS.Compat.RatingColor(rating)
-        cell(L["Rating"], rating and tostring(rating) or "\226\128\148", PADX, yOff, r and { r = r, g = g, b = b } or C.gold)
-        cell(L["Keystone"], MP:KeystoneText(data.mplus) or L["none"], PADX + (contentWidth - 2 * PADX) / 3, yOff)
-        yOff = yOff - 26
-
-        yOff = CreateSectionHeader(child, L["Great Vault"], yOff, contentWidth)
-        local cells, why = MP:VaultCells(data.vault, GuildOS.Compat.WeekStart())
-        if cells then
-            for i, c in ipairs(cells) do
-                cell(c.label, c.text, PADX + (i - 1) * (contentWidth - 2 * PADX) / 3, yOff)
-            end
-        else
-            local none = _pFS(child)
-            GuildOS:ApplyFont(none, 11)
-            none:SetPoint("TOPLEFT", PADX, yOff)
-            ink(none, C.paperSoft)
-            none:SetText(why == "old" and L["Not updated since the weekly reset."] or L["No vault data yet."])
-            none:Show()
-        end
-        yOff = yOff - 26
-    end
-
-    ----------------------------------------------------------------
-    -- Section: Equipment
-    ----------------------------------------------------------------
-    -- The average item level as the title's soft meta at its right (#449).
-    local avgMeta = (data.avgIlvl and data.avgIlvl > 0) and string.format(L["Average item level %d"], data.avgIlvl) or nil
-    yOff = CreateSectionHeader(child, L["Equipment"], yOff, contentWidth, avgMeta)
-
-    if data.gear then
-        -- Fixed rows, a rule only between two of them.
-        for i, slotInfo in ipairs(GuildOS.SlotIDs) do
-            local item = data.gear[slotInfo.id]
-            if CreateGearRow(child, slotInfo.id, item, yOff, contentWidth, i > 1) then frame._itemsPending = true end
-            yOff = yOff - GEAR_ROW
-        end
-    else
-        local noData = _pFS(child)
-        GuildOS:ApplyFont(noData, 11)
-        noData:SetPoint("TOPLEFT", PADX, yOff)
-        ink(noData, C.paperSoft)
-        noData:SetText(L["No gear data available. Player needs Guild OS addon."])
-        noData:Show()
-        yOff = yOff - 25
-    end
-
-    ----------------------------------------------------------------
-    -- Section: Professions
-    ----------------------------------------------------------------
-    yOff = yOff - 10
-    yOff = CreateSectionHeader(child, L["Professions"], yOff, contentWidth)
-    yOff = yOff - 5
-
-    if data.professions and #data.professions > 0 then
-        for _, prof in ipairs(data.professions) do
-            yOff = CreateProfessionRow(child, prof, yOff, contentWidth)
-        end
-    else
-        local noData = _pFS(child)
-        GuildOS:ApplyFont(noData, 11)
-        noData:SetPoint("TOPLEFT", PADX, yOff)
-        ink(noData, C.paperSoft)
-        noData:SetText(L["No profession data available."])
-        noData:Show()
-        yOff = yOff - 25
-    end
-
-    ----------------------------------------------------------------
-    -- Section: Attunements (account-wide propagation from linked chars).
-    -- TBC content: only on TBC Anniversary (ADR-0014).
-    ----------------------------------------------------------------
-    if GuildOS.Client.isAnniversary then
-        yOff = yOff - 10
-        yOff = CreateSectionHeader(child, L["Raid attunements"], yOff, contentWidth)
-        yOff = yOff - 5
-
-        local attsToShow
-        if GuildOS.AttunementTracker then
-            attsToShow = GuildOS.AttunementTracker:GetEffectiveAttunements(playerKey)
-        else
-            attsToShow = data.attunements
-        end
-
-        if attsToShow and #attsToShow > 0 then
-            for _, att in ipairs(attsToShow) do
-                yOff = CreateAttunementRow(child, att, yOff, contentWidth)
+        if data.gear then
+            -- Fixed rows, a rule only between two of them.
+            for i, slotInfo in ipairs(GuildOS.SlotIDs) do
+                local item = data.gear[slotInfo.id]
+                if CreateGearRow(child, slotInfo.id, item, yOff, contentWidth, i > 1) then frame._itemsPending = true end
+                yOff = yOff - GEAR_ROW
             end
         else
             local noData = _pFS(child)
             GuildOS:ApplyFont(noData, 11)
             noData:SetPoint("TOPLEFT", PADX, yOff)
             ink(noData, C.paperSoft)
-            noData:SetText(L["No attunement data available."])
+            noData:SetText(L["No gear data available. Player needs Guild OS addon."])
             noData:Show()
             yOff = yOff - 25
         end
+
+        ----------------------------------------------------------------
+        -- Section: Professions
+        ----------------------------------------------------------------
+        yOff = yOff - 10
+        yOff = CreateSectionHeader(child, L["Professions"], yOff, contentWidth)
+        yOff = yOff - 5
+
+        if data.professions and #data.professions > 0 then
+            for _, prof in ipairs(data.professions) do
+                yOff = CreateProfessionRow(child, prof, yOff, contentWidth)
+            end
+        else
+            local noData = _pFS(child)
+            GuildOS:ApplyFont(noData, 11)
+            noData:SetPoint("TOPLEFT", PADX, yOff)
+            ink(noData, C.paperSoft)
+            noData:SetText(L["No profession data available."])
+            noData:Show()
+            yOff = yOff - 25
+        end
+
+        ----------------------------------------------------------------
+        -- Section: Attunements (account-wide propagation from linked chars).
+        -- TBC content: only on TBC Anniversary (ADR-0014).
+        ----------------------------------------------------------------
+        if GuildOS.Client.isAnniversary then
+            yOff = yOff - 10
+            yOff = CreateSectionHeader(child, L["Raid attunements"], yOff, contentWidth)
+            yOff = yOff - 5
+
+            local attsToShow
+            if GuildOS.AttunementTracker then
+                attsToShow = GuildOS.AttunementTracker:GetEffectiveAttunements(playerKey)
+            else
+                attsToShow = data.attunements
+            end
+
+            if attsToShow and #attsToShow > 0 then
+                for _, att in ipairs(attsToShow) do
+                    yOff = CreateAttunementRow(child, att, yOff, contentWidth)
+                end
+            else
+                local noData = _pFS(child)
+                GuildOS:ApplyFont(noData, 11)
+                noData:SetPoint("TOPLEFT", PADX, yOff)
+                ink(noData, C.paperSoft)
+                noData:SetText(L["No attunement data available."])
+                noData:Show()
+                yOff = yOff - 25
+            end
+        end
+    else
+        yOff = yOff + 10   -- the next section's gap is taken off the card's top: no rule over the first section
     end
 
     ----------------------------------------------------------------
     -- Section: Wishlist (nativa)
     ----------------------------------------------------------------
     -- By the whole key on retail, where a list is filed under it (issue #185).
-    local wishData = GuildOS.Wishlist and GuildOS.Wishlist:ListFor(playerKey, data.name)
+    local wishData = not data.former and GuildOS.Wishlist and GuildOS.Wishlist:ListFor(playerKey, data.name)
     if wishData and wishData.wishlist and #wishData.wishlist > 0 then
         yOff = yOff - 10
         local wishHeader = L["Wishlist"] .. " · " .. #wishData.wishlist .. L[" item(s)"]
@@ -902,7 +928,7 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     if GuildOS.RaidTracker then
         yOff = yOff - 10
-        playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        playerKey = DetailKey(data)
         -- The core with the most nights that count, as the roster's figure (#134); with none anywhere
         -- (not even nights with no core), the one with the most raids.
         local playerGroup  = GuildOS.RaidTracker:GetPlayerGroup(playerKey, "raids25")
@@ -934,7 +960,7 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     if GuildOS.LootTracker then
         yOff = yOff - 10
-        playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        playerKey = DetailKey(data)
         local lootCount = GuildOS.LootTracker:GetLootCount(playerKey)
         local lootHeader = L["Loot history"] .. " · " .. lootCount .. L[" items"]
         yOff = CreateSectionHeader(child, lootHeader, yOff, contentWidth)
@@ -972,7 +998,7 @@ function PopulateDetail(frame, data)
     -- Section: Trial Status (officer only)
     ----------------------------------------------------------------
     if GuildOS.TrialTracker and GuildOS:IsOfficer() then
-        playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        playerKey = DetailKey(data)
         local trial = GuildOS.TrialTracker:GetTrial(playerKey)
         if trial then
             yOff = yOff - 10
@@ -1052,7 +1078,7 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     local MH = GuildOS.MemberHistory
     if MH and GuildOS:IsOfficer() then
-        local hkey = data.key or GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        local hkey = data.key or DetailKey(data)
         local stints, ranks = MH:Stints(hkey), MH:Ranks(hkey)
         local pnote = MH.NoteFor and MH:NoteFor(hkey)   -- the permanent note (#449, specs/salao/saidas.md)
         if #stints > 0 or #ranks > 0 or pnote then
@@ -1098,7 +1124,7 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     if GuildOS.OfficerNotes and GuildOS:IsOfficer() then
         yOff = yOff - 10
-        playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        playerKey = DetailKey(data)
         -- One timeline: the dated notes and the trial's comments (audit B10).
         local notes = GuildOS.OfficerNotes:Timeline(playerKey)
         local notesHeader = L["Officer notes"] .. " · " .. #notes .. L[" notes"]
@@ -1191,7 +1217,7 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     if GuildOS.Discipline and GuildOS:IsOfficer() then
         yOff = yOff - 10
-        playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        playerKey = DetailKey(data)
         local D = GuildOS.Discipline
         local now = GetServerTime()
         local term = D:GetTerm()
@@ -1239,10 +1265,12 @@ function PopulateDetail(frame, data)
 
         -- Warn (issue #403): the window files it, whispers on the click and suggests the step's rung. The block's
         -- one action, at its bottom right.
-        local who = data.name
-        local warnBtn = kept(child, "warn.go", function() return GuildOS.Forms:Button(child, L["Warn"], "primary") end)
-        warnBtn:SetScript("OnClick", function() GuildOS:ShowWarnDialog(playerKey, who) end)
-        yOff = placeActions(child, { warnBtn }, yOff, contentWidth) - SP.UNIT
+        if not data.former then
+            local who = data.name
+            local warnBtn = kept(child, "warn.go", function() return GuildOS.Forms:Button(child, L["Warn"], "primary") end)
+            warnBtn:SetScript("OnClick", function() GuildOS:ShowWarnDialog(playerKey, who) end)
+            yOff = placeActions(child, { warnBtn }, yOff, contentWidth) - SP.UNIT
+        end
         -- A warning or a setting that changes (here or from another officer) redraws the sheet, unless the
         -- officer is typing in it: the sheet would scroll back to the top and lose what they typed.
         D.uiRefresh = function()
@@ -1252,54 +1280,57 @@ function PopulateDetail(frame, data)
             PopulateDetail(frame, data)
         end
 
-        -- The guild's rules every sheet counts by (#449): the term and the punishment rank as a pair, the rank one
-        -- of the guild's ranks (a free field where the client lists none), saved by the block's one button.
-        yOff = yOff - 10
-        yOff = CreateSectionHeader(child, L["Discipline rules"], yOff, contentWidth)
-        local termBox = kept(child, "rules.term", function()
-            local box = UI:CreateInput(child, 60, SP.FIELD, { numeric = true, max = 3 })
-            box:HookScript("OnEnterPressed", function(self) if self.onEnter then self.onEnter() end end)
-            return box
-        end)
-        termBox:SetText(tostring(term))
-        local ranks = GuildOS.GuildManager and GuildOS.GuildManager:GetRanks() or {}
-        local rankCtl
-        local held = D:GetPunishRank()
-        if #ranks > 0 then
-            rankCtl = kept(child, "rules.rankList", function() return UI:CreateDropdown(child, 120, SP.FIELD) end)
-            local opts, known = { { value = "", text = L["None"] } }, false
-            for _, r in ipairs(ranks) do
-                opts[#opts + 1] = { value = r.name, text = r.name }
-                known = known or r.name == held
-            end
-            -- A rank saved that the guild no longer has stays offered, so saving keeps it.
-            if held and not known then opts[#opts + 1] = { value = held, text = held } end
-            rankCtl:SetOptions(opts)
-            rankCtl:SetValue(held or "")
-        else
-            rankCtl = kept(child, "rules.rankText", function()
-                return UI:CreateInput(child, 120, SP.FIELD, { max = 48, placeholder = L["Punishment rank"] })
+        -- A former member is warned of nothing, and the guild's rules are a present member's card's.
+        if not data.former then
+            -- The guild's rules every sheet counts by (#449): the term and the punishment rank as a pair, the rank one
+            -- of the guild's ranks (a free field where the client lists none), saved by the block's one button.
+            yOff = yOff - 10
+            yOff = CreateSectionHeader(child, L["Discipline rules"], yOff, contentWidth)
+            local termBox = kept(child, "rules.term", function()
+                local box = UI:CreateInput(child, 60, SP.FIELD, { numeric = true, max = 3 })
+                box:HookScript("OnEnterPressed", function(self) if self.onEnter then self.onEnter() end end)
+                return box
             end)
-            rankCtl:SetText(held or "")
-        end
-        yOff = yOff - placePair(child, { "rules.term", L["Term (days)"], termBox },
-            { #ranks > 0 and "rules.rankList" or "rules.rankText", L["Punishment rank"], rankCtl }, yOff, contentWidth)
-        local saveRules = kept(child, "rules.save", function() return GuildOS.Forms:Button(child, L["Save"], "primary") end)
-        local function applyRules()
-            termBox:ClearFocus()
-            local days = termBox:GetText()
-            local rank
-            if rankCtl.GetValue then rank = rankCtl:GetValue() else rank = rankCtl:GetText() end
-            rank = rank or ""
-            -- Each setting that changed, the rank's read before the term's redraw (D.uiRefresh) refills the fields.
-            if tostring(days) ~= tostring(D:GetTerm()) then
-                if not D:SetTerm(days) then termBox:SetText(tostring(D:GetTerm())) end
+            termBox:SetText(tostring(term))
+            local ranks = GuildOS.GuildManager and GuildOS.GuildManager:GetRanks() or {}
+            local rankCtl
+            local held = D:GetPunishRank()
+            if #ranks > 0 then
+                rankCtl = kept(child, "rules.rankList", function() return UI:CreateDropdown(child, 120, SP.FIELD) end)
+                local opts, known = { { value = "", text = L["None"] } }, false
+                for _, r in ipairs(ranks) do
+                    opts[#opts + 1] = { value = r.name, text = r.name }
+                    known = known or r.name == held
+                end
+                -- A rank saved that the guild no longer has stays offered, so saving keeps it.
+                if held and not known then opts[#opts + 1] = { value = held, text = held } end
+                rankCtl:SetOptions(opts)
+                rankCtl:SetValue(held or "")
+            else
+                rankCtl = kept(child, "rules.rankText", function()
+                    return UI:CreateInput(child, 120, SP.FIELD, { max = 48, placeholder = L["Punishment rank"] })
+                end)
+                rankCtl:SetText(held or "")
             end
-            if rank ~= (D:GetPunishRank() or "") then D:SetPunishRank(rank) end
+            yOff = yOff - placePair(child, { "rules.term", L["Term (days)"], termBox },
+                { #ranks > 0 and "rules.rankList" or "rules.rankText", L["Punishment rank"], rankCtl }, yOff, contentWidth)
+            local saveRules = kept(child, "rules.save", function() return GuildOS.Forms:Button(child, L["Save"], "primary") end)
+            local function applyRules()
+                termBox:ClearFocus()
+                local days = termBox:GetText()
+                local rank
+                if rankCtl.GetValue then rank = rankCtl:GetValue() else rank = rankCtl:GetText() end
+                rank = rank or ""
+                -- Each setting that changed, the rank's read before the term's redraw (D.uiRefresh) refills the fields.
+                if tostring(days) ~= tostring(D:GetTerm()) then
+                    if not D:SetTerm(days) then termBox:SetText(tostring(D:GetTerm())) end
+                end
+                if rank ~= (D:GetPunishRank() or "") then D:SetPunishRank(rank) end
+            end
+            saveRules:SetScript("OnClick", applyRules)
+            termBox.onEnter = applyRules
+            yOff = placeActions(child, { saveRules }, yOff, contentWidth) - SP.UNIT
         end
-        saveRules:SetScript("OnClick", applyRules)
-        termBox.onEnter = applyRules
-        yOff = placeActions(child, { saveRules }, yOff, contentWidth) - SP.UNIT
     end
 
     ----------------------------------------------------------------
@@ -1367,6 +1398,7 @@ function PopulateDetail(frame, data)
                 local name = (info and info.name) or lk:match("^([^-]+)") or lk
                 local class = info and info.class
                     or (GuildOS.db.members and GuildOS.db.members[lk] and GuildOS.db.members[lk].class)
+                    or (GuildOS.MemberHistory and GuildOS.MemberHistory:ClassOf(lk))   -- a character gone since
                     or (isSelf and data.class) or nil
                 row.av:SetMember(name, class and tostring(class):upper() or nil)
                 local r, g, b = UI:InkFor("paper", "class", class)
@@ -1466,7 +1498,7 @@ function PopulateDetail(frame, data)
         end
         -- The group's alts to the main's rank (issue #424): a queue in Leadership > Bulk actions, one alt per
         -- click of its Next button; the game's rank commands only ever run from that click.
-        if GuildOS:IsOfficer() and GuildOS.BulkActions and #linkedKeys > 1 then
+        if GuildOS:IsOfficer() and GuildOS.BulkActions and #linkedKeys > 1 and not data.former then
             local promoteBtn = kept(child, "alt.promote", function()
                 local b = GuildOS.Forms:Button(child, L["Promote alts"])
                 return b
