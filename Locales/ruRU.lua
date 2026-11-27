@@ -4834,3 +4834,5 @@ L["All of them: about %.1f MB in the saved variables (Settings › Data and supp
 L["Recipes (compact): %d lists, %d recipes, about %.1f KB (%.0f bytes a recipe); %d lists in the old shape."] = "Рецепты (компактно): списков %d, рецептов %d, около %.1f КБ (%.0f байт на рецепт); в старом формате: %d."
 L["Members: about %.1f KB (%.0f bytes a row); gear compact on %d rows (%.0f bytes a row), %d rows in the old shape."] = "Участники: около %.1f КБ (%.0f байт на строку); экипировка компактно в строках: %d (%.0f байт на строку), в старом формате: %d."
 L["Member history: %d of %d keys, about %.1f KB (%.0f bytes a key)."] = "История участников: ключей %d из %d, около %.1f КБ (%.0f байт на ключ)."
+L["Not shown in: %s"] = "Не показано в: %s"
+L["Skipped, the server is limiting chat: %s"] = "Пропущено, сервер ограничивает чат: %s"

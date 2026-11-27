@@ -5019,3 +5019,5 @@ L["All of them: about %.1f MB in the saved variables (Settings › Data and supp
 L["Recipes (compact): %d lists, %d recipes, about %.1f KB (%.0f bytes a recipe); %d lists in the old shape."] = "Receitas (compactas): %d listas, %d receitas, cerca de %.1f KB (%.0f bytes por receita); %d listas no formato antigo."
 L["Members: about %.1f KB (%.0f bytes a row); gear compact on %d rows (%.0f bytes a row), %d rows in the old shape."] = "Membros: cerca de %.1f KB (%.0f bytes por linha); equipamento compacto em %d linhas (%.0f bytes por linha), %d linhas no formato antigo."
 L["Member history: %d of %d keys, about %.1f KB (%.0f bytes a key)."] = "Histórico de membros: %d de %d chaves, cerca de %.1f KB (%.0f bytes por chave)."
+L["Not shown in: %s"] = "Não apareceu em: %s"
+L["Skipped, the server is limiting chat: %s"] = "Pulado, o servidor está limitando o chat: %s"

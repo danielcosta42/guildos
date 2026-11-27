@@ -4834,3 +4834,5 @@ L["All of them: about %.1f MB in the saved variables (Settings › Data and supp
 L["Recipes (compact): %d lists, %d recipes, about %.1f KB (%.0f bytes a recipe); %d lists in the old shape."] = "配方（精簡）：%d 個列表，%d 個配方，約 %.1f KB（每個配方 %.0f 位元組）；舊格式列表 %d 個。"
 L["Members: about %.1f KB (%.0f bytes a row); gear compact on %d rows (%.0f bytes a row), %d rows in the old shape."] = "成員：約 %.1f KB（每列 %.0f 位元組）；%d 列裝備已精簡（每列 %.0f 位元組），舊格式 %d 列。"
 L["Member history: %d of %d keys, about %.1f KB (%.0f bytes a key)."] = "成員歷史：%d/%d 個鍵，約 %.1f KB（每個鍵 %.0f 位元組）。"
+L["Not shown in: %s"] = "未顯示於：%s"
+L["Skipped, the server is limiting chat: %s"] = "已略過，伺服器正在限制聊天：%s"

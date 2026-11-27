@@ -1543,7 +1543,7 @@ function Recruitment:RoundSummary(round)
     list(round.notJoined, L["Not joined: %s"])
     list(round.iconsOnly, L["Only raid icons, which it hides: %s"])
     list(round.waiting, L["Waiting for a key press: %s"])
-    list(round.throttled, L["Held, the server is limiting chat: %s — click Post again to send there"])
+    list(round.throttled, L["Skipped, the server is limiting chat: %s"])
     if #parts == 0 then return nil end
     return table.concat(parts, " \194\183 ")
 end
@@ -1770,9 +1770,6 @@ function Recruitment:ShowSendPopup()
 
     -- Channel line.
     local names, joined = self:_ResolveChannels(settings)
-    -- A round's channels that did not show it: the click posts there alone.
-    local retry = self:RetryChannels()
-    if retry then names, joined = retry, #retry end
     local chLabel = (#names > 0) and table.concat(names, ", ") or "-"
     f.channelLine:SetText(string.format(L["Post to channel: %s"], chLabel))
 
@@ -1824,8 +1821,7 @@ function Recruitment:DoSendRecruitmentMessage()
     end
     -- Min send gap: refuse a send too soon after the last one. Covers reflexive
     -- rapid clicking and any forged low interval. Silent no-op when throttled.
-    -- The channels a round could not show (RetryChannels) are that round's, not a new one: no gap for them.
-    if not self:RetryChannels() and not self:_CanSendNow(self._lastSendAt, GetTime(), self.SEND_MIN_GAP) then return end
+    if not self:_CanSendNow(self._lastSendAt, GetTime(), self.SEND_MIN_GAP) then return end
 
     -- Officers use their own config; members use the guild-broadcast config.
     local settings = self:_ActiveConfig()
@@ -1875,28 +1871,14 @@ function Recruitment:PostRound(settings, msg)
     end
     self._queuedAds = {}
     self:_WatchThrottle()
-    -- The channels the last round could not show, and only them: the same round, a second try.
-    local retry = self:RetryChannels()
-    self._retry = nil
     local targets, notJoined = plan.targets, plan.notJoined
-    if retry then
-        local want, found = {}, {}
-        for _, name in ipairs(retry) do want[name:lower()] = name end
-        targets = {}
-        for _, t in ipairs(plan.targets) do
-            if want[t.name:lower()] then targets[#targets + 1] = t; found[t.name:lower()] = true end
-        end
-        notJoined = {}
-        for low, name in pairs(want) do if not found[low] then notJoined[#notJoined + 1] = name end end
-        table.sort(notJoined)
-    end
     local per = self:PostsPerClick()
     if not AQ then per = math.huge end
     local round = { posted = {}, notJoined = notJoined, waiting = {}, iconsOnly = {}, throttled = {}, msg = msg }
     local went = 0
     for _, t in ipairs(targets) do
         if self:_Throttled() then
-            -- The server said "throttled" during the round: the rest wait for the next click, not hammered now.
+            -- The server said "throttled" during the round: the rest are skipped and said, not hammered.
             round.throttled[#round.throttled + 1] = t.name
         elseif went >= per then
             round.waiting[#round.waiting + 1] = t.name
@@ -1911,8 +1893,7 @@ function Recruitment:PostRound(settings, msg)
         end
     end
     for _, name in ipairs(round.waiting) do self:_QueueAd(name, msg) end
-    self:_AddRetry(round.throttled, msg)
-    self:_FinishRound(round, retry ~= nil)
+    self:_FinishRound(round, false)
     return round
 end
 
@@ -1927,45 +1908,6 @@ function Recruitment:_QueueAd(name, msg)
         kind = "channel", key = key, name = name, verb = L["post the ad in"],
         run = function() return Recruitment:_PostQueued(name, msg) end,
     })
-end
-
--- The channels a round did not show (the echo never came back: the server's flood limit) or did not reach (the
--- server said "throttled"): the next click of Post goes to them alone, as part of that round. Kept RETRY_KEEP
--- seconds; then the next click is a new round again.
-Recruitment.RETRY_KEEP = 120
-function Recruitment:RetryChannels()
-    local r = self._retry
-    if not r or #r.names == 0 then return nil end
-    if GetTime() - r.at > self.RETRY_KEEP then
-        self._retry = nil
-        return nil
-    end
-    return r.names
-end
-
-function Recruitment:_AddRetry(names, msg)
-    if not names or #names == 0 then return end
-    local r = self:RetryChannels() and self._retry or { names = {} }
-    r.at, r.msg = GetTime(), msg or r.msg
-    local have = {}
-    for _, n in ipairs(r.names) do have[n:lower()] = true end
-    for _, n in ipairs(names) do
-        if not have[n:lower()] then r.names[#r.names + 1] = n; have[n:lower()] = true end
-    end
-    self._retry = r
-    -- Where a channel line wants a key press, each one also waits in the action queue: its key press posts it.
-    if GuildOS.ActionQueue and GuildOS.Compat.NeedsHardware("channel") and msg then
-        self._queuedAds = self._queuedAds or {}
-        for _, n in ipairs(names) do self:_QueueAd(n, msg) end
-    end
-end
-
-function Recruitment:_DropRetry(name)
-    local r = self._retry
-    if not r then return end
-    for i = #r.names, 1, -1 do
-        if r.names[i]:lower() == tostring(name):lower() then table.remove(r.names, i) end
-    end
 end
 
 -- The server's "throttled" answer (a channel notice, or the chat error): THROTTLE_HOLD seconds without a channel line.
@@ -2003,14 +1945,11 @@ function Recruitment:_PostQueued(name, msg)
         if k == key then table.remove(self._queuedAds, i) break end
     end
     if self:_Throttled() then
-        -- Not now: the next click of Post (or this channel's next key press) takes it.
-        local again = { name }
-        self:_AddRetry(again, msg)
-        round.throttled = again
+        -- Not now: said, and left (a channel that will not take it is not insisted on).
+        round.throttled = { name }
         self:_FinishRound(round, true)
         return false
     end
-    self:_DropRetry(name)
     local r = num > 0 and self:_PostTo(real, num, msg)
     if r == "posted" then
         round.posted[1] = { name = real, num = num }
@@ -2034,7 +1973,7 @@ end
 -- filter, a channel that only some may speak in): nothing says so. Each post waits for its own line to come back on
 -- CHAT_MSG_CHANNEL; one that has not after ECHO_WAIT seconds is said to have been dropped (#449).
 Recruitment.ECHO_WAIT = 5
-function Recruitment:_WatchEcho(posted, msg)
+function Recruitment:_WatchEcho(posted)
     if not (CreateFrame and GuildOS.Compat.After) then return end
     self._echo = self._echo or {}
     local watch = {}
@@ -2056,22 +1995,18 @@ function Recruitment:_WatchEcho(posted, msg)
         self._echoFrame = f
     end
     GuildOS.Compat.After(self.ECHO_WAIT, function()
-        local dropped, names = {}, {}
+        local dropped = {}
         for _, p in ipairs(watch) do
             local e = Recruitment._echo[p.num]
             if e and not e.seen then
                 dropped[#dropped + 1] = string.format("[%d] %s", p.num, p.name)
-                names[#names + 1] = p.name
             end
             Recruitment._echo[p.num] = nil
         end
         if #dropped > 0 then
-            -- Most often the server's flood limit on a round of many channels: those go back for the next click.
-            Recruitment:_AddRetry(names, msg)
-            GuildOS:Print("|cffFF9900" .. string.format(L["Not shown in: %s — click Post again to send there."],
-                table.concat(dropped, ", ")) .. "|r")
-            -- The popup the player posted from comes back, naming only those channels.
-            if Recruitment.popupFrame then GuildOS:SafeCall(Recruitment.ShowSendPopup, Recruitment) end
+            -- A channel that would not show it (Trade outside a city, a muted channel, the flood limit): said once,
+            -- never insisted on (#449: the maintainer's "accept the errors and just say so").
+            GuildOS:Print("|cffFF9900" .. string.format(L["Not shown in: %s"], table.concat(dropped, ", ")) .. "|r")
         end
     end)
 end

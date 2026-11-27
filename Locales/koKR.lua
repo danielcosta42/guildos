@@ -4834,3 +4834,5 @@ L["All of them: about %.1f MB in the saved variables (Settings › Data and supp
 L["Recipes (compact): %d lists, %d recipes, about %.1f KB (%.0f bytes a recipe); %d lists in the old shape."] = "제조법(압축): 목록 %d개, 제조법 %d개, 약 %.1f KB(제조법당 %.0f바이트), 이전 형식 목록 %d개."
 L["Members: about %.1f KB (%.0f bytes a row); gear compact on %d rows (%.0f bytes a row), %d rows in the old shape."] = "구성원: 약 %.1f KB(행당 %.0f바이트), 장비 압축 행 %d개(행당 %.0f바이트), 이전 형식 행 %d개."
 L["Member history: %d of %d keys, about %.1f KB (%.0f bytes a key)."] = "구성원 기록: 키 %d/%d개, 약 %.1f KB(키당 %.0f바이트)."
+L["Not shown in: %s"] = "표시되지 않음: %s"
+L["Skipped, the server is limiting chat: %s"] = "건너뜀, 서버가 채팅을 제한하는 중: %s"

@@ -12,9 +12,8 @@
 --   * the same channel saved twice is posted to once;
 --   * every round ends with one line: "Sent to: [3] ... · Not joined: ... · Waiting for a key press: ...";
 --   * the consent popup's button says "Post (1 of 3)" where a click carries one channel;
---   * a channel whose echo never came back (the server's flood limit) goes back for the next click of Post, alone and
---     inside the same round (no new cooldown, no post counted), and where a channel line wants a key press it waits in
---     the action queue too; the server's "throttled" during a round holds the rest of it for the next click.
+--   * a channel whose echo never came back is named once and left (never insisted on); the server's "throttled"
+--     during a round skips the rest of it, said in the round's line.
 --
 --   luajit -e 'ADDON="."' tools/recruit-post-round.lua
 --
@@ -208,10 +207,9 @@ do
   GuildOS.Compat.After = realAfter
 end
 
--- ── A channel that did not show the line goes back for the next click (the server's flood limit) ──
--- One click still posts everywhere. The channels whose echo never came back are the next click's, alone, as part
--- of the same round: no new cooldown, no new post counted. Where a channel line wants a key press they also wait in
--- the action queue. A "throttled" answer during a round holds the rest of it for the next click.
+-- ── A channel that did not show the line is said, never insisted on (#449: "accept the errors, just say so") ──
+-- One click posts everywhere; a channel whose echo never came back (Trade outside a city, a muted channel, the flood
+-- limit) is named once and left. A "throttled" answer during a round skips the rest of it, said in the round's line.
 local function rig(game)
   local R2, AQ2 = load(game, MAINTAINER, SAVED)
   local scripts, afters = {}, {}
@@ -243,64 +241,33 @@ do
   local R2, AQ2, _, echo, timeout, posts = rig("anniversary")
   R2:DoSendRecruitmentMessage()
   check(nums() == "3,4,5" and posts() == 1, "Anniversary: one click, every channel, one post counted")
-  local roundAt = R2._lastSendAt
   echo(3)
   timeout()
-  check(has(last(), "Not shown in: [4] Trade, [5] LookingForGuild \226\128\148 click Post again to send there"),
-    "the line says which channels did not show it and that the next click sends there: " .. last())
-  local retry = R2:RetryChannels()
-  check(retry and #retry == 2 and retry[1] == "Trade" and retry[2] == "LookingForGuild", "those two wait for the next click")
-  check(AQ2:Pending() == 0, "where a click carries every channel nothing waits in the queue")
+  check(has(last(), "Not shown in: [4] Trade, [5] LookingForGuild") and not has(last(), "click Post again"),
+    "the line names the channels that did not show it, and nothing more: " .. last())
+  check(R2.RetryChannels == nil and AQ2:Pending() == 0, "nothing is kept to send again")
   env.sent = {}
-  env.clock = env.clock + 6   -- well inside SEND_MIN_GAP
+  env.clock = env.clock + 6
   R2:DoSendRecruitmentMessage()
-  check(nums() == "4,5", "the next click posts only to them, inside the round's gap: " .. nums())
-  check(R2._lastSendAt == roundAt and posts() == 1, "and is the same round: no new cooldown, no new post counted")
-  check(R2:RetryChannels() == nil, "nothing waits any more")
-  check(has(last(), "Sent to: [4] Trade, [5] LookingForGuild"), "its line: " .. last())
-  echo(4); echo(5)
-  timeout()
-  check(R2:RetryChannels() == nil, "both showed it this time")
-  env.sent = {}
-  R2:DoSendRecruitmentMessage()
-  check(nums() == "", "a further click inside the gap is still refused")
+  check(nums() == "", "a click inside the gap is refused as before")
   env.clock = env.clock + R2.SEND_MIN_GAP
   R2:DoSendRecruitmentMessage()
   check(nums() == "3,4,5" and posts() == 2, "past it, a new round to every channel")
-  -- A retry not taken goes stale: then the next click is a new round again.
-  timeout()
-  check(R2:RetryChannels() and #R2:RetryChannels() == 3, "none showed it")
-  env.clock = env.clock + R2.RETRY_KEEP + R2.SEND_MIN_GAP
-  env.sent = {}
-  check(R2:RetryChannels() == nil, "after RETRY_KEEP it is forgotten")
-  R2:DoSendRecruitmentMessage()
-  check(nums() == "3,4,5" and posts() == 3, "and the next click is a whole round")
 end
 
 for _, game in ipairs({ "forever", "retail" }) do
-  local R2, AQ2, _, echo, timeout, posts = rig(game)
-  check(GuildOS.Compat.NeedsHardware("channel"), game .. ": a channel line wants a key press")
+  local R2, AQ2, _, echo, timeout = rig(game)
   R2:DoSendRecruitmentMessage()
   check(nums() == "3,4,5" and AQ2:Pending() == 0, game .. ": one click, every channel")
   echo(3); echo(5)
   timeout()
   check(has(last(), "Not shown in: [4] Trade"), game .. ": " .. last())
-  check(AQ2:Pending() == 1 and AQ2:Peek().name == "Trade", game .. ": Trade waits in the action queue for a key press")
-  env.sent = {}
-  AQ2:Next(true)
-  check(nums() == "4" and posts() == 1 and R2:RetryChannels() == nil, game .. ": the key press posts there, same round, nothing left")
-  -- Or the click of Post takes it, and the queue's copy goes with it.
-  timeout()
-  check(AQ2:Pending() == 1 and R2:RetryChannels(), game .. ": dropped again, waiting again")
-  env.sent = {}
-  env.clock = env.clock + 6
-  R2:DoSendRecruitmentMessage()
-  check(nums() == "4" and AQ2:Pending() == 0 and posts() == 1, game .. ": a click of Post sends it once, the queue's copy is gone")
+  check(AQ2:Pending() == 0, game .. ": Trade is not queued again")
 end
 
--- The server's "throttled" during a round: the rest of the round waits for the next click.
+-- The server's "throttled" during a round: the rest of the round is skipped and said.
 do
-  local R2, AQ2, fire, echo, timeout, posts = rig("anniversary")
+  local R2, AQ2, fire, _, _, posts = rig("anniversary")
   local realSend = SendChatMessage
   local once = true
   SendChatMessage = function(...)
@@ -309,40 +276,17 @@ do
   end
   R2:DoSendRecruitmentMessage()
   check(nums() == "3", "after the throttled notice nothing more goes in that round: " .. nums())
-  check(has(last(), "Held, the server is limiting chat: Trade, LookingForGuild"), "the line says which wait: " .. last())
-  check(posts() == 1 and AQ2:Pending() == 0, "the round counted once")
+  check(has(last(), "Skipped, the server is limiting chat: Trade, LookingForGuild"), "the line says which were skipped: " .. last())
+  check(posts() == 1 and AQ2:Pending() == 0, "the round counted once, nothing queued")
   env.sent = {}
   env.clock = env.clock + 1
   R2:DoSendRecruitmentMessage()
   check(nums() == "" and has(last(), "limiting your chat"), "a click during the hold sends nothing and says why")
-  env.clock = env.clock + R2.THROTTLE_HOLD
-  echo(3)
-  timeout()
-  R2:DoSendRecruitmentMessage()
-  check(nums() == "4,5" and posts() == 1, "after the hold the next click sends the held channels alone, same round: " .. nums())
   SendChatMessage = realSend
-  -- The chat's own throttle error holds too.
   ERR_CHAT_THROTTLED = "The number of messages that can be sent to this channel is limited."
   fire("CHAT_MSG_SYSTEM", ERR_CHAT_THROTTLED)
   check(R2:_Throttled(), "ERR_CHAT_THROTTLED holds the channel lines too")
   ERR_CHAT_THROTTLED = nil
-end
-
--- Forever: a queued channel's key press during the hold keeps it for later instead of sending.
-do
-  local R2, AQ2, fire, echo, timeout = rig("forever")
-  R2:DoSendRecruitmentMessage()
-  echo(3); echo(4)
-  timeout()
-  check(AQ2:Pending() == 1, "LookingForGuild waits for a key press")
-  fire("CHAT_MSG_CHANNEL_NOTICE", "THROTTLED", "", "", "3. LookingForGroup")
-  env.sent = {}
-  AQ2:Next(true)
-  check(nums() == "" and AQ2:Pending() == 1 and R2:RetryChannels()[1] == "LookingForGuild",
-    "the key press in the hold sends nothing; the channel waits for the next one")
-  env.clock = env.clock + R2.THROTTLE_HOLD
-  AQ2:Next(true)
-  check(nums() == "5" and AQ2:Pending() == 0 and R2:RetryChannels() == nil, "after it, the key press posts it")
 end
 
 print(("recruit-post-round: %d checks passed"):format(checks))
