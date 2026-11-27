@@ -173,6 +173,7 @@ for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "Raise",
   "HighlightText" }) do
   Frame[name] = function() end
 end
+function Frame:SetTexture(t) self.texture = t end
 
 function CreateFrame(kind, name, parent)
   local f = newFrame(kind, parent)
@@ -235,7 +236,7 @@ function hooksecurefunc(name, fn) hooks[name] = fn end
 function debugstack() return "" end
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 -- The face a text should have: the Forever style draws every text in the game's font (#122).
-local function face(file) return STYLE == "forever" and STANDARD_TEXT_FONT or file end
+local function face() return STANDARD_TEXT_FONT end   -- the game's font on every client since #445
 strtrim = function(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 C_GuildInfo = { GuildRoster = function() end }
 function UnitName() return "Ana" end
@@ -284,18 +285,21 @@ if STYLE == "forever" then
 end
 GuildOS.Style:Resolve()
 dofile(ADDON .. "/Core/Commands.lua")
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 -- Core/Utils.lua's UTF-8 head; this harness loads Utils further down. The calendar editor's kind
 -- buttons shorten a long label with it (#371).
 function GuildOS:Utf8Head(s, n) return tostring(s):sub(1, n) end
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/UI/FeatureRegistry.lua")
+dofile(ADDON .. "/UI/Rooms.lua")
 local UI, C = GuildOS.UI, GuildOS.Colors
 -- A tab this client does not support, and one whose panel raises while building.
 UI:RegisterFeature({ id = "tbcOnly", label = "TBC only", order = 200, tbc = true, build = function() end })
 UI:RegisterFeature({ id = "boom", label = "Boom", order = 210, build = function() error("boom") end })
 dofile(ADDON .. "/UI/Window.lua")
 dofile(ADDON .. "/UI/Agora.lua")
+dofile(ADDON .. "/UI/Salao.lua")
 dofile(ADDON .. "/UI/CalendarPanel.lua")
 dofile(ADDON .. "/UI/Minimap.lua")
 dofile(ADDON .. "/UI/Features.lua")
@@ -328,7 +332,7 @@ end
 -- The Loot window took the Loot, DKP and Wishlist tabs' panels (issue #346), with sub-tabs. The
 -- Recruitment tab took Trials, the Guild tab Journal and Achievements (issue #367).
 for _, n in ipairs({ "CreateRosterPanel",
-  "CreateRecipesPanel", "CreateWebPanel", "CreateSettingsPanel", "CreateDashboardPanel" }) do
+  "CreateRecipesPanel", "CreateWebPanel", "CreateSettingsPanel" }) do
   builder(n)
 end
 for _, n in ipairs({ "CreateRaidHubPanel", "CreateGuildHub", "CreateAlliancePanel", "CreateRecruitmentPanel",
@@ -339,15 +343,16 @@ end
 local function tabOf(f, key)
   for _, t in ipairs(f.tabs) do if t.key == key then return t end end
 end
-local function listed(f, key)
-  if tabOf(f, key).shown then return true end
-  for _, k in ipairs(f.overflow) do if k == key then return true end end
+-- A feature is reachable when some room the bar shows opens it (the rooms, #445).
+local function listed(_, key)
+  for _, room in ipairs(UI:VisibleRooms()) do
+    for _, e in ipairs(UI:RoomEntries(room.id)) do if e.feature == key then return true end end
+  end
+  for _, e in ipairs(UI:RoomEntries("settings")) do if e.feature == key then return true end end
   return false
 end
-local function allowedCount(f)
-  local n = 0
-  for _, t in ipairs(f.tabs) do if UI:IsFeatureAllowed(UI:GetFeature(t.key)) then n = n + 1 end end
-  return n
+local function allowedCount()
+  return #UI:VisibleRooms()
 end
 local function shownTabs(f)
   local n = 0
@@ -400,7 +405,7 @@ flush()
 check(f and f:IsShown() and f.name == "GuildOSWindow", "/gos opens the one window")
 check(f.w == 1000 and f.h == 620 and f.points[1][1] == "CENTER", "no saved geometry: 1000×620, centred")
 check(f.resizeBounds and f.resizeBounds[1] == 320 and f.resizeBounds[2] == 28, "resizable down to 320×28")
-check(f.grip.w == 16 and f.grip.h == 16 and point(f.grip) == "BOTTOMRIGHT,-1,1", "from a 16×16 grip in the corner")
+check(f.grip.w == 16 and f.grip.h == 16 and point(f.grip) == "BOTTOMRIGHT,-3,3", "from a 16×16 grip in the corner, inside the 3px metal frame")
 check(f.content.clips, "the content is clipped at the window's edge")
 check(f.strata == "HIGH", "on the HIGH strata")
 check(f.titleBar.dragButton == "LeftButton", "the title bar takes a left-button drag")
@@ -412,9 +417,10 @@ fire(f.grip, "OnMouseDown")
 check(f.sizing == "BOTTOMRIGHT", "the grip resizes the window from its bottom-right corner")
 fire(f.grip, "OnMouseUp")
 check(not f.sizing, "until it is let go")
-check(f.activeTab == "home" and tabOf(f, "home").label.text == "Now", "it opens on Now, the first tab")
-check(f.tabs[1].key == "home" and UI:GetFeature("home").core,
-  "Now is the first tab, and core: it cannot be switched off, so the fall-back always exists")
+check(f.activeTab == "home" and f.activeRoom == "salao" and tabOf(f, "salao").label.text == "Salão",
+  "it opens on the Salão's Home (#445)")
+check(f.tabs[1].key == "salao" and UI:GetFeature("home").core,
+  "the Salão is the first room, and Home is core: it cannot be switched off, so the fall-back always exists")
 check(GuildOS:IsFrontDoorShown(), "the guild-frame hook sees the window open")
 local esc = false
 for _, n in ipairs(UISpecialFrames) do if n == "GuildOSWindow" then esc = true end end
@@ -429,11 +435,50 @@ check(f:IsShown(), "a left click on the minimap button opens the window")
 fire(mm, "OnClick", "LeftButton")
 check(not f:IsShown(), "and closes it")
 fire(mm, "OnClick", "RightButton")
-local raidsItem
-for _, item in ipairs(menuItems) do if item.text == "Raids" then raidsItem = item end end
-check(raidsItem ~= nil, "the minimap menu lists the window's tabs")
+check(GuildOSMinimapMenu and GuildOSMinimapMenu:IsShown(), "a right click opens the minimap menu, GuildOS's own popup")
+local raidsItem, settingsItem, pugItem
+local menuTexts = {}
+for _, item in ipairs(GuildOS:MinimapMenuItems()) do
+  menuTexts[item.text] = true
+  if item.text == "Raids" then raidsItem = item end
+  if item.text == "Settings" then settingsItem = item end
+  if item.text == "Do I know this pug?" then pugItem = item end
+end
+check(raidsItem ~= nil, "the minimap menu lists the window's rooms")
+-- The rooms, not the old features (#449): every room the top bar draws, and no feature that is not a room.
+for _, room in ipairs(UI:VisibleRooms()) do
+  check(menuTexts[room.label], "the minimap menu lists the room " .. room.label)
+end
+local roomLabel = {}
+for _, room in ipairs(UI.ROOMS) do roomLabel[room.label] = true end
+for _, def in ipairs(UI:VisibleFeatures("tab")) do
+  check(roomLabel[def.label] or not menuTexts[def.label],
+    "the minimap menu no longer lists the feature " .. tostring(def.label))
+end
+check(settingsItem ~= nil and pugItem ~= nil, "and Settings, which the gear opens, and the pug inspector")
 raidsItem.func()
-check(f:IsShown() and f.activeTab == "raids", "a tab picked there opens in the window")
+check(f:IsShown() and f.activeRoom == "raids", "a room picked there opens in the window")
+settingsItem.func()
+check(f:IsShown() and f.activeRoom == "settings", "Settings picked there opens the gear's room")
+-- Folded to the bar, a room picked from the menu opens the window back up.
+f:ToggleCollapsed()
+check(f.band == "bar", "folded to the bar")
+raidsItem.func()
+check(f.band ~= "bar" and f.activeRoom == "raids", "a room picked while folded unfolds the window")
+-- A click elsewhere closes the menu without a full-screen catcher (#449): GLOBAL_MOUSE_DOWN where it exists.
+fire(mm, "OnClick", "RightButton")
+local menu = GuildOSMinimapMenu
+check(menu:IsShown() and menu.events.GLOBAL_MOUSE_DOWN, "the menu hears GLOBAL_MOUSE_DOWN")
+for _, c in ipairs(UIParent.children) do
+  check(c.strata ~= "FULLSCREEN_DIALOG" or c == menu, "nothing but the menu covers the screen at FULLSCREEN_DIALOG")
+end
+local overMenu = true
+menu.IsMouseOver = function() return overMenu end
+fire(menu, "OnEvent", "GLOBAL_MOUSE_DOWN", "LeftButton")
+check(menu:IsShown(), "a press on the menu keeps it open")
+overMenu = false
+fire(menu, "OnEvent", "GLOBAL_MOUSE_DOWN", "LeftButton")
+check(not menu:IsShown(), "a press anywhere else closes it")
 
 f:Hide()
 GuildOS:HookGuildFrame()
@@ -472,7 +517,7 @@ local bindings = read("Bindings.xml")
 check(bindings:find('name="GUILDOS_TOGGLE"', 1, true) and bindings:find('category="ADDONS"', 1, true)
   and bindings:find("GuildOS:ToggleRoster()", 1, true), "the key binding, in the AddOns category, opens the window")
 check(read("Modules/Digest.lua"):find("GuildOS:ToggleRoster()", 1, true)
-  and read("UI/Onboarding.lua"):find('OpenWindow("settings")', 1, true),
+  and read("UI/Onboarding.lua"):find('OpenWindow("settings", "help")', 1, true),
   "the digest and onboarding open the window through the same calls")
 
 do
@@ -625,10 +670,7 @@ end }
 GuildOS.db.settings.uiScale = 0.5
 GuildOS.RosterFrame = nil
 f = UI:GetMainWindow()
-if STYLE ~= "forever" then
-  check(f.backdrop and math.abs(f.backdrop.edgeSize * f:GetEffectiveScale() * 1080 / 768 - 1) < 1e-9,
-    "the window's border is one screen pixel at its own scale")
-end
+check(f.__look and f.__look.fill and f.__edge3 == 3, "the window is the Salão's metal frame, 3px, drawn from its art (#449)")
 PixelUtil = nil
 GuildOS.db.settings.uiScale = 1.1
 UI:ApplyScale()
@@ -641,59 +683,121 @@ f:Show()
 resize(f, 1000, 620)
 g = GuildOS.db.settings.window
 
--- ── Title bar, footer, refresh ──────────────────────────────────────────
-check(f.band == "full" and f.titleBar.h == 30, "at 1000px the title bar is 30px")
+-- ── Title bar, footer, refresh (the mockup's .bar and .foot, #449) ─────
+check(f.band == "full" and f.titleBar.h == 50, "at 1000px the title bar is 50px")
 do
   local F = GuildOS.Fonts
-  local wordmark, barBg
-  for _, c in ipairs(f.titleBar.children) do
-    if c.kind == "FontString" and c.text == "GuildOS" then wordmark = c end
-    if c.kind == "Texture" and c.layer == "BACKGROUND" then barBg = c end
+  check(f.crest.shown and f.crest.letter.text == "C" and f.crest.orb.texture:find("Salao\\orb.tga", 1, true),
+    "left: the round crest with the guild's initial")
+  check(f.crest.tabBg and not f.crest.tabBg.shown and not f.crest.tabEmblem.shown,
+    "a client that gives no tabard keeps the initial, the tabard's layers hidden (#449)")
+  -- The guild's tabard in the crest (#449): GetGuildLogoInfo's colours and emblem, drawn inside the ring and masked
+  -- round where textures take a mask; PLAYER_GUILD_UPDATE draws it again, and without it the initial comes back.
+  local masks, added = {}, {}
+  Frame.SetMask = function(self, path) masks[#masks + 1] = { self, path } end
+  Frame.SetTexCoord = function(self, ...) self.texCoord = { ... } end
+  Frame.AddMaskTexture = function(self, m) added[#added + 1] = { self, m } end
+  GetGuildLogoInfo = function() return 33, 220, 255, 255, 255, 255, 223, 165, 90, 414975, 69 end
+  f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
+  local cr = f.crest
+  local L, R = cr.tabEmblem, cr.tabEmblemR
+  check(cr.tabard == "info" and L.shown and R.shown and L.texture == 414975 and R.texture == 414975 and cr.tabBg.shown
+      and not cr.letter.shown, "the tabard replaces the initial: its emblem (both halves) and background drawn")
+  check(math.abs(cr.tabBg.color[1] - 33 / 255) < 1e-6 and math.abs(L.color[2] - 165 / 255) < 1e-6
+      and math.abs(R.color[2] - 165 / 255) < 1e-6, "in the guild's own colours")
+  -- The emblem file holds the emblem's right half: Blizzard's crop (Blizzard_AchievementUI.xml), the left mirrored.
+  local function coords(c, want)
+    if not c or #c ~= #want then return false end
+    for i = 1, #want do if math.abs(c[i] - want[i]) > 1e-9 then return false end end
+    return true
   end
-  check(wordmark and wordmark.font.file == face(F.wordmark.file) and wordmark.font.size == 18 and same(wordmark.color, C.gold),
-    "left: the gold wordmark, GuildOS, in its own face")
-  if STYLE == "forever" then
-    -- The metal frame's top edge is the bar: a band over it met the frame's corner off true (#148).
-    check(not barBg, "in the Forever style the title bar paints no band of its own")
-  else
-    check(barBg and same(barBg.color, C.panel), "the title bar sits on panel")
+  check(coords(L.texCoord, { 0.7, 0, 0.15, 0.85 }) and coords(R.texCoord, { 0, 0.7, 0.15, 0.85 }),
+    "Blizzard's texcoords: the left half mirrored, u 0..0.7, v 0.15..0.85")
+  -- Each half is half the disc wide and the disc tall (34 - 2 * 3 = 28), meeting at the crest's centre.
+  check(L.w == 14 and L.h == 28 and R.w == 14 and R.h == 28, "the halves fill the disc: 14x28 each, a 28px square")
+  check(#L.points == 1 and L.points[1][1] == "RIGHT" and L.points[1][2] == cr and L.points[1][3] == "CENTER"
+      and L.points[1][4] == 0 and L.points[1][5] == 0 and #R.points == 1 and R.points[1][1] == "LEFT"
+      and R.points[1][2] == cr and R.points[1][3] == "CENTER", "centred: the halves meet on the crest's centre")
+  check(cr.tabBg.texture:find("Salao\\circle.tga", 1, true) and #masks == 0,
+    "on the round disc; no SetMask on a half (it would stretch the circle to the half)")
+  check(cr.tabMask == nil and #added == 0, "a client without mask textures: the halves unmasked, inside the ring")
+  -- With mask textures: one round mask over the disc, under both halves.
+  Frame.CreateMaskTexture = function(self) local m = newFrame("MaskTexture", self); return m end
+  local crest2 = CreateFrame("Frame", nil, UIParent)
+  crest2:SetSize(34, 34)
+  UI:TabardLayers(crest2)
+  check(crest2.tabMask and crest2.tabMask.texture:find("Salao\\circle.tga", 1, true) and #crest2.tabMask.points == 2
+      and crest2.tabMask.points[1][4] == 3, "the disc's mask, inside the ring")
+  added = {}
+  UI:DrawTabard(crest2)
+  check(#added == 2 and added[1][2] == crest2.tabMask and added[2][2] == crest2.tabMask
+      and added[1][1] == crest2.tabEmblem and added[2][1] == crest2.tabEmblemR, "both halves under the round mask")
+  Frame.CreateMaskTexture = nil
+  check(cr.ring.drawSub == nil or cr.ring.drawSub == 4, "the ring above the tabard")
+  -- The data wins over the game's own drawing (SetLargeGuildTabardTextures places the emblem for a tabard's shape,
+  -- and in the small crest it fell outside the disc on WoW: Forever, #449): with both, the data's disc.
+  Frame.GetTexture = function(self) return self.texture end
+  SetLargeGuildTabardTextures = function(unit, emblem, bgTex, border)
+    if unit == "player" then emblem:SetTexture(5000); bgTex:SetTexture(5001); border:SetTexture(5002) end
   end
-  check(same(f.metaText.color, C.label) and same(f.syncText.color, C.label) and f.metaText.font.file == face(F.mono)
-    and f.syncText.font.size == 10, "the meta line and the sync time in label, both mono 10")
-  local label = tabOf(f, "roster").label
-  check(label.font.file == face(F.mono) and label.font.size == 11, "tab labels are mono 11")
-  local ruleLine
-  for _, c in ipairs(f.rule.children) do if c.kind == "Texture" and c.h == 1 then ruleLine = c end end
-  check(ruleLine and same(ruleLine.color, C.line), "with a 1px line under the tab rule")
-  local barLine, footLine
-  for _, c in ipairs(f.titleBar.children) do if c.kind == "Texture" and c.h == 1 then barLine = c end end
+  masks = {}
+  f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
+  check(cr.tabard == "info" and cr.tabEmblem.texture == 414975, "with the data and the game's drawing, the data's disc")
+  -- Without the data, the game's drawing: round, its square border left to the crest's ring.
+  GetGuildLogoInfo = nil
+  masks = {}
+  f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
+  check(cr.tabard == "game" and cr.tabEmblem.texture == 5000 and cr.tabBg.shown and not cr.tabBorder.shown
+      and #masks == 1 and masks[1][1] == cr.tabBg and not cr.letter.shown, "the game's own tabard, masked round, the ring its border")
+  check(not R.shown and math.abs(L.w - 28 * 42 / 51 * 7 / 8) < 1e-9 and math.abs(L.h - 28 * 42 / 51) < 1e-9 and #L.points == 1
+      and L.points[1][1] == "CENTER" and L.points[1][2] == cr, "the sheet's emblem centred, 7/8 wide, 42/51 of the disc")
+  -- A client whose game drawing leaves the whole sheet (no cell picked): no tabard, the initial.
+  Frame.GetTexCoord = function(self) local c = self.texCoord or { 0, 1, 0, 1 }
+    return c[1], c[3], c[1], c[4], c[2], c[3], c[2], c[4] end
+  f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
+  check(cr.tabard == nil and cr.letter.shown, "the game's drawing with the whole sheet is no tabard")
+  SetLargeGuildTabardTextures = function(unit, emblem, bgTex)
+    if unit == "player" then emblem:SetTexture(5000); emblem:SetTexCoord(0.25, 0.3125, 0.625, 0.6875); bgTex:SetTexture(5001) end
+  end
+  f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
+  check(cr.tabard == "game" and coords(cr.tabEmblem.texCoord, { 0.25, 0.3125, 0.625, 0.6875 }), "a cell of it is: the game's coordinates kept")
+  SetLargeGuildTabardTextures, Frame.GetTexture, Frame.GetTexCoord = nil, nil, nil
+  Frame.SetMask, Frame.AddMaskTexture = nil, nil
+  Frame.SetTexCoord = function() end
+  f.scripts.OnEvent(f, "PLAYER_GUILD_UPDATE")
+  check(cr.tabard == nil and cr.letter.shown and not cr.tabEmblem.shown, "no tabard: the initial again")
+  check(f.nameText.text == "Chama" and f.nameText.font.file == F.title and same(f.nameText.color, C.gold),
+    "the guild's name in Cinzel and gold")
+  check(f.titleBar.__styleBg and f.titleBar.__styleBg.texture:find("titlebar.tga", 1, true), "the bar's warm gradient")
+  check(same(f.metaText.color, C.textSoft) and f.metaText.font.file == F.ui and same(f.syncText.color, C.label),
+    "the line under the name in the soft ink, the sync line in the footer's")
+  local label = tabOf(f, "members").label
+  check(label.font.file == F.ui and label.font.size >= 13, "a door's name is Alegreya Sans")
+  check(tabOf(f, "members").parent == f.rule and f.rule.parent == f.titleBar, "the rooms are doors in the title bar")
+  check(f.barLine.h == 2 and same(f.barLine.color, C.lineHi), "a 2px metal line under the title bar")
+  local footLine
   for _, c in ipairs(f.footer.children) do if c.kind == "Texture" and c.h == 1 then footLine = c end end
-  check(barLine and same(barLine.color, C.line) and footLine and same(footLine.color, C.line),
-    "a 1px line under the title bar and above the footer")
+  check(footLine and same(footLine.color, C.lineHi), "and a 1px metal line above the footer")
 end
 fire(f.closeButton, "OnClick")
 check(not f:IsShown(), "× closes the window")
 f:Show()
 flush()
-check(f.metaText.shown and f.metaText.text == "Chama · 2 online", "left: the guild and who is online")
+check(f.metaText.shown and f.metaText.text == "2 online", "under the name: who is online")
+check(f.welcomeText.text == "Welcome back, Ana.", "the footer welcomes the player")
 GuildOS.db.members = { a = { lastSync = NOW - 300 }, b = { lastSync = NOW - 60 }, c = "junk" }
 f:RefreshTitle()
-check(f.syncText.shown and f.syncText.text == "sync T60", "right: the newest sync time")
+check(f.syncText.shown and f.syncText.text == "Updated: T60" and f.syncDot.shown, "right: the newest sync time, by its dot")
 GuildOS.db.members = {}
 f:RefreshTitle()
 check(f.syncText.text == "not synced yet", "before any sync it says so")
-check(STYLE ~= "forever" or (f.minimise.__art and f.minimise.__art.atlas == "128-RedButton-Minus"
-  and f.closeButton.__art.atlas == "128-RedButton-Exit"), "in the Forever style, the game's minus and exit buttons")
-check(f.minimise.x.text == "\226\128\148" and f.closeButton.shown and point(f.closeButton) == "RIGHT,-6,0",
-  "then minimise and close at the right edge")
--- On the game's metal frame the footer stands on the frame's bottom edge and the title bar starts
--- under its top one: 7px, set by eye in the beta, not its atlas pieces' height (#148).
-local footLift = STYLE == "forever" and 7 or 0
-local topInset = footLift
-check(point(f.content, 1) == "TOPLEFT,12," .. -(70 + topInset) and point(f.content, 2) == "BOTTOMRIGHT,-12," .. (34 + footLift),
-  "content padding 12px under the 30px title bar and the tab rule, and above the 22px footer")
-check(point(f.footer, 1) == "BOTTOMLEFT,0," .. footLift and point(f.titleBar, 1) == "TOPLEFT,0," .. -topInset,
-  "the footer stands on the frame's bottom edge, the title bar under its top one")
+check(f.minimise.x.text == "\226\128\148" and f.closeButton.shown and point(f.closeButton) == "RIGHT,-10,0"
+  and f.closeButton.orb, "then the fold and the round close button at the right edge")
+check(point(f.settingsButton) == "RIGHT,-6,0" and f.settingsButton.points[1][2] == f.minimise, "Settings left of the fold")
+check(point(f.content, 1) == "TOPLEFT,15,-105" and point(f.content, 2) == "BOTTOMRIGHT,-15,39",
+  "content padding 12px inside the frame, under the 50px bar and the Salão's 40px strip, above the 24px footer")
+check(point(f.footer, 1) == "BOTTOMLEFT,3,3" and point(f.titleBar, 1) == "TOPLEFT,3,-3",
+  "the footer and the title bar inside the 3px metal frame")
 
 check(f.events.GROUP_ROSTER_UPDATE and f.events.RAID_ROSTER_UPDATE and f.events.PARTY_LOOT_METHOD_CHANGED
   and f.events.GUILD_ROSTER_UPDATE, "the window listens for group, raid, loot-method and roster changes")
@@ -702,14 +806,14 @@ do
   check(titleTicker ~= nil, "while shown, the title refreshes every 10s")
   roster[2][2] = true
   titleTicker.fn()
-  check(f.metaText.text == "Chama · 3 online", "and the tick picks up who came online")
+  check(f.metaText.text == "3 online", "and the tick picks up who came online")
   roster[2][2] = false
   fire(f, "OnEvent", "GUILD_ROSTER_UPDATE")
-  check(f.metaText.text == "Chama · 2 online", "so does a roster update")
+  check(f.metaText.text == "2 online", "so does a roster update")
   f:Hide()
   roster[2][2] = true
   fire(f, "OnEvent", "GUILD_ROSTER_UPDATE")
-  check(f.metaText.text == "Chama · 2 online", "closed, the window does not refresh on a roster update")
+  check(f.metaText.text == "2 online", "closed, the window does not refresh on a roster update")
   roster[2][2] = false
   f:Show()
   flush()
@@ -721,152 +825,113 @@ do
   check(listed(f, "management"), "so does a loot-method change")
   roster = {}
   f:RefreshTitle()
-  check(f.metaText.text == "Chama · \226\128\148", "while the roster loads, a dash instead of 0 online")
+  check(f.metaText.text == "\226\128\148", "while the roster loads, a dash instead of 0 online")
   roster = fullRoster
   f:RefreshTitle()
 end
 
--- The title bar's actions (#377): Search and Sync moved here from the footer, children of the bar
--- so its drag does not eat their clicks, after the sync time and before minimise and close.
-local function titleRight(win) return win.w - 6 - win.closeButton.w - 2 - win.minimise.w end
-local function titleItems(win)
-  local out = {}
-  for _, k in ipairs({ "metaText", "syncText", "searchButton", "syncButton" }) do
-    local fr = win[k]
-    if fr.shown then out[#out + 1] = { key = k, x = fr.points[1][4], w = fr.w } end
-  end
-  return out
-end
--- Nothing on the bar overlaps the next item or runs under the minimise button.
-local function titleFits(win)
-  local items, edge = titleItems(win), 10 + #"GuildOS" * 6
-  for _, it in ipairs(items) do
-    if type(it.x) ~= "number" or it.x < edge or it.x + it.w > titleRight(win) then return false, it.key end
-    edge = it.x + it.w
-  end
-  return true
-end
+-- The title bar's tools (#449): round Search and Settings beside the fold, children of the bar so its drag
+-- does not eat their clicks. The sync moved to the footer's "Updated" line; the footer's links went: the site
+-- and /gos help are in the gear's tooltip and on Settings' Data page, the Blizzard window a button there.
+local tip = {}
+GameTooltip = { SetOwner = function() tip = {} end, AddLine = function(_, t) tip[#tip + 1] = t end,
+                Show = function() end, Hide = function() end, SetText = function(_, t) tip[#tip + 1] = t end }
 do
-  local search, syncB = f.searchButton, f.syncButton
-  check(search.parent == f.titleBar and syncB.parent == f.titleBar and search.level > f.titleBar.level
-    and syncB.level > f.titleBar.level, "Search and Sync are the title bar's children, above it, so a click is theirs")
-  check(search.label.text == "Search" and syncB.label.text == "Sync" and search.variant == "ghost"
-    and syncB.variant == "ghost" and search.h == 20, "as 20px ghost buttons labelled Search and Sync")
-  check(search.shown and syncB.shown and f.syncText.shown and f.metaText.shown, "at 1000px the bar holds them all")
-  local items = titleItems(f)
-  check(#items == 4 and items[1].key == "metaText" and items[2].key == "syncText" and items[3].key == "searchButton"
-    and items[4].key == "syncButton" and items[2].x < items[3].x, "left to right: meta, sync time, Search, Sync")
-  check(titleFits(f), "none of them overlaps or runs under the minimise button")
-  check(items[4].x + items[4].w == titleRight(f) - 8, "Sync stands 8px short of the minimise button")
-  local ran, real = {}, { GuildOS.Search, GuildOS.CommSystem }
-  GuildOS.Search = { Show = function() ran.search = true end }
+  local search, gear = f.searchButton, f.settingsButton
+  check(search.parent == f.titleBar and gear.parent == f.titleBar and search.level > f.titleBar.level
+    and gear.level > f.titleBar.level, "Search and Settings are the title bar's children, above it, so a click is theirs")
+  check(search.w == 28 and gear.w == 28 and search.icon.texture:find("icon-search", 1, true)
+    and gear.icon.texture:find("icon-gear", 1, true), "as round 28px tools with their icons")
+  local help = f.helpButton
+  check(help and point(help) == "RIGHT,-6,0" and help.points[1][2] == gear, "Help (\"?\") left of Settings")
+  check(point(search) == "RIGHT,-6,0" and search.points[1][2] == help, "Search left of Help")
+  check(help.parent == f.titleBar and help.w == 28 and help.glyph and help.glyph.text == "?", "Help is a round ? tool on the bar")
+  fire(gear, "OnEnter")
+  local said2 = table.concat(tip, "|")
+  check(said2:find("Settings", 1, true) and said2:find("guildos.me", 1, true) and said2:find("/gos help", 1, true),
+    "the gear's tooltip names the site and /gos help: " .. said2)
+  fire(gear, "OnLeave")
+  fire(f.settingsButton, "OnClick")
+  check(f.activeTab == "settings" and f.activeRoom == "settings", "Settings opens Settings, which is no room on the bar")
+  fire(tabOf(f, "salao"), "OnClick")
+  check(f.activeRoom == "salao", "and the Salão's door brings the window back")
+  local ran, real = {}, { GuildOS.CommSystem }
   GuildOS.CommSystem = { FullSync = function() ran.sync = true end }
+  -- Search opens the strip inside the window (#449, tools/search-strip.lua tests it whole), and closes it.
   fire(search, "OnClick")
-  fire(syncB, "OnClick")
-  check(ran.search and ran.sync, "Search opens the search, Sync runs a full sync")
-  GuildOS.Search, GuildOS.CommSystem = real[1], real[2]
-  -- The 10s tick and every roster update lay the bar out again: a button kept is never hidden and shown
-  -- again, or a press in progress loses its click (#377).
+  check(f.searchOpen and f.searchRow.shown and f.searchBox:HasFocus(), "Search opens the search strip, focused")
+  fire(search, "OnClick")
+  check(not f.searchOpen and not f.searchRow.shown, "and closes it")
+  fire(f.syncButton, "OnClick")
+  check(ran.sync and f.syncButton.parent == f.footer, "the footer's Updated line syncs")
+  GuildOS.CommSystem = real[1]
+  -- The 10s tick and every roster update lay the bar out again: a tool is never hidden and shown again.
   local hides, hide = 0, search.Hide
   search.Hide = function(self) hides = hides + 1; return hide(self) end
-  syncB.Hide = search.Hide
+  gear.Hide = search.Hide
   for _ = 1, 3 do f:RefreshTitle() end
-  search.Hide, syncB.Hide = nil, nil
-  check(hides == 0 and search.shown and syncB.shown, "refreshing the title hides neither button (" .. hides .. ")")
+  search.Hide, gear.Hide = nil, nil
+  check(hides == 0 and search.shown and gear.shown, "refreshing the title hides neither tool (" .. hides .. ")")
 end
 
--- The footer is links and the version (#377): every action it held went to where it is used.
+-- The footer (#449): the welcome on the left, the sync line on the right, nothing else.
 do
-  local function footShown(key) return f.footItems[key].shown end
-  f:LayoutFooter(1000)
-  local keys, buttons, boxes = {}, 0, 0
-  for k in pairs(f.footItems) do keys[#keys + 1] = k end
-  table.sort(keys)
+  local buttons, boxes = 0, 0
   for _, c in ipairs(f.footer.children) do
-    if c.kind == "Button" then buttons = buttons + 1 end
+    -- The tour's offer (specs/salao/onboarding.md) is a button of its own, hidden unless a tour waits.
+    if c.kind == "Button" and c ~= f.tourOffer then buttons = buttons + 1 end
     if c.kind == "EditBox" then boxes = boxes + 1 end
   end
-  check(table.concat(keys, ",") == "blizzard,help,site" and buttons == 3 and boxes == 1,
-    "the footer holds three links and the site's copy box, no action: " .. table.concat(keys, ","))
-  check(footShown("site") and footShown("help") and footShown("blizzard"), "at 1000px every link shows")
-  check(f.footItems.site.label.text == "guildos.me" and f.footItems.help.label.text == "/gos help"
-    and f.footItems.blizzard.label.text == "Blizzard", "guildos.me, /gos help and Blizzard")
-  check(f.footItems.site.variant == "ghost" and f.footItems.help.variant == "ghost"
-    and f.footItems.blizzard.variant == "ghost", "as links")
-  local function x(k) return f.footItems[k].points[1][4] end
-  check(point(f.footItems.site) == "LEFT,6,0" and x("site") < x("help") and x("help") < x("blizzard"),
-    "in that order, the first one's text 10px in")
-  local v = f.versionText
-  check(v.shown and v.text == "vtest" and point(v) == "RIGHT,-26,0" and v.font.size == 10
-    and v.font.file == face(GuildOS.Fonts.mono) and same(v.color, C.label),
-    "and the version at the right, clear of the grip, mono 10 in label")
-  -- The links never run into the version, at any width the footer is drawn at.
-  local overlap
-  for w = 100, 1000, 3 do
-    f:LayoutFooter(w)
-    local versionLeft = w - 26 - #v.text * 6
-    for _, k in ipairs({ "site", "help", "blizzard" }) do
-      local link = f.footItems[k]
-      if link.shown and link.points[1][4] + link.w > versionLeft - 4 then overlap = overlap or (k .. " at " .. w) end
-    end
-  end
-  check(overlap == nil, "no link runs into the version: " .. tostring(overlap))
-  -- The snow's parcel (UI/Snow.lua) keeps `footReserve` px left of the version: no link runs into it either.
-  f.footReserve = 26
-  overlap = nil
-  for w = 100, 1000, 3 do
-    f:LayoutFooter(w)
-    local reservedLeft = w - 26 - #v.text * 6 - f.footReserve
-    for _, k in ipairs({ "site", "help", "blizzard" }) do
-      local link = f.footItems[k]
-      if link.shown and link.points[1][4] + link.w > reservedLeft - 4 then overlap = overlap or (k .. " at " .. w) end
-    end
-  end
-  check(overlap == nil, "no link runs into the snow's parcel: " .. tostring(overlap))
-  f.footReserve = nil
-  f:LayoutFooter(240)
-  check(not footShown("blizzard") and footShown("help") and footShown("site"), "narrower: Blizzard goes first")
-  f:LayoutFooter(190)
-  check(not footShown("help") and footShown("site") and v.shown, "then /gos help; guildos.me and the version stay longest")
+  check(buttons == 1 and boxes == 0 and f.footItems == nil and f.versionText == nil,
+    "no links, no copy box, no version: only the sync line is a button")
+  check(f.tourOffer and not f.tourOffer.shown, "the tour's offer waits hidden in the footer")
+  check(point(f.welcomeText) == "LEFT,12,0" and point(f.syncText) == "RIGHT,-28,0", "welcome on the left, the sync line on the right")
   f:LayoutFooter(1000)
-
-  local ran, real = {}, GuildOS.OpenBlizzardGuildUI
-  GuildOS.OpenBlizzardGuildUI = function() ran.blizzard = true end
-  fire(f.footItems.blizzard, "OnClick")
-  check(ran.blizzard, "Blizzard opens the game's own guild window")
-  GuildOS.OpenBlizzardGuildUI = real
-  printed = {}
-  fire(f.footItems.help, "OnClick")
-  check(said("Guild OS commands (/gos or /guildos):"), "/gos help prints the commands")
-  local box = f.siteBox
-  check(not box.shown, "the site's copy box waits hidden")
-  printed = {}
-  fire(f.footItems.site, "OnClick")
-  check(box.shown and box.text == "https://guildos.me" and box.focused and box.level > f.footer.level
-    and said("Ctrl+C"), "guildos.me puts the address in a box over the links, focused for Ctrl+C")
-  box:SetText("typed over")
-  fire(box, "OnTextChanged")
-  check(box.text == "https://guildos.me", "the box is read-only: an edit snaps back to the address")
-  fire(box, "OnEditFocusLost")
-  check(not box.shown, "and it goes once it lets go")
+  local wide = f.welcomeText.w
+  f.footReserve = 26
+  f:LayoutFooter(1000)
+  check(f.welcomeText.w == wide - 26, "the snow's parcel keeps its width free of the welcome")
+  f.footReserve = nil
+  f:LayoutFooter(150)
+  check(not f.welcomeText.shown and f.syncText.shown, "too narrow, the welcome goes and the sync line stays")
+  f:LayoutFooter(1000)
+  check(f.welcomeText.shown, "and comes back")
 end
 
--- ── Tab rule and »n ─────────────────────────────────────────────────────
-check(shownTabs(f) == allowedCount(f) and not f.more.shown and #f.overflow == 0, "at 1000px every tab fits")
+-- ── The rooms on the rule (#445) ────────────────────────────────────────
+check(shownTabs(f) == allowedCount(f) and not f.more.shown and #f.overflow == 0, "at 1000px every room fits")
 do
-  local x = 6
+  local x = 0
   for _, tab in ipairs(f.tabs) do
     if tab.shown then
-      check(point(tab) == "LEFT," .. x .. ",0", tab.key .. " sits after the one before it")
-      check(tab.label.text == UI:GetFeature(tab.key).label and tab.w >= 48, tab.key .. " shows its name, never an icon")
-      x = x + tab.w + 2
+      check(point(tab) == "BOTTOMLEFT," .. x .. ",2", tab.key .. " stands after the one before it, on the bar's line")
+      check(tab.label.text == UI:RoomById(tab.key).label and tab.w >= 40, tab.key .. " shows its name, never an icon")
+      x = x + tab.w + 1
     end
   end
+  local open = tabOf(f, f.activeRoom)
+  check(open.fill.shown and open.edge.shown and same(open.label.color, C.gold) and same(open.fill.color, C.wood),
+    "the open door is raised in the wood, the metal round it, its name gold")
+  local officers = tabOf(f, "officers")
+  check(officers.count and same(officers.label.color, C.gold2), "the Officers' Room's name is the soft gold, with its count")
 end
-check(tabOf(f, f.activeTab).isActive, "the open tab carries the rule")
-fire(tabOf(f, "loot"), "OnClick")
-check(f.activeTab == "loot" and g.tab == "loot" and tabOf(f, "loot").isActive,
-  "clicking a tab on the rule opens it, marks it and remembers it")
+check(tabOf(f, f.activeRoom).isActive, "the open room carries the rule")
+fire(tabOf(f, "members"), "OnClick")
+check(f.activeTab == "roster" and f.activeRoom == "members" and g.tab == "roster" and g.room == "members" and tabOf(f, "members").isActive,
+  "clicking a room opens its entry, marks it and remembers it")
+check(not f.entryRow.shown, "a room with one entry draws no entries row")
+fire(tabOf(f, "raids"), "OnClick")
+check(f.entryRow.shown and f.activeRoom == "raids" and f.activeTab == "guild" and selected[#selected] == "CreateGuildHub:calendar",
+  "Raids opens on its first entry, the calendar, with the row of its entries")
+local raidsEntry
+for _, b in ipairs(f.entryTabs) do if b.shown and b.entry.id == "sessions" then raidsEntry = b end end
+fire(raidsEntry, "OnClick")
+check(f.activeTab == "raids" and raidsEntry.isActive and g.entries.raids == "sessions" and selected[#selected] == "CreateRaidHubPanel:sessions",
+  "an entry opens its panel on its sub-tab and is remembered")
+fire(tabOf(f, "members"), "OnClick")
+fire(tabOf(f, "raids"), "OnClick")
+check(f.activeTab == "raids", "and the room opens again where it was left")
+fire(tabOf(f, "members"), "OnClick")
 
 resize(f, 890)
 check(f.band == "full", "890px (content 866) is still full: 16px past the line before the band changes")
@@ -874,77 +939,188 @@ resize(f, 887)
 check(f.band == "wide", "887px (content 863) is wide: the band is measured on the content, not the window")
 
 resize(f, 600)
-check(f.band == "compact" and f.titleBar.h == 28, "under 620px the title bar is 28px")
-check(point(f.content, 1) == "TOPLEFT,8," .. -(64 + topInset) and point(f.content, 2) == "BOTTOMRIGHT,-8," .. (30 + footLift), "and the padding 8px")
-check(f.more.shown and #f.overflow > 0 and f.more.label.text == "\194\187" .. #f.overflow,
-  "tabs that do not fit fold into »n, which counts them")
-check(shownTabs(f) + #f.overflow == allowedCount(f), "every allowed tab is on the rule or behind »n")
-check(point(f.more) == "RIGHT,-6,0", "»n sits at the rule's right edge")
+check(f.band == "compact" and f.titleBar.h == 50, "under 620px the title bar keeps its 50px")
+check(point(f.content, 1) == "TOPLEFT,11,-61" and point(f.content, 2) == "BOTTOMRIGHT,-11,35", "and the padding 8px")
+check(shownTabs(f) + #f.overflow == allowedCount(f), "every room is a door or behind »n")
+check(f.more.shown and f.more.points[1][2] == f.rule, "»n stands after the last door")
 check(f.more.variant == "ghost", "»n is a ghost button")
 do
   local widths, active = {}, nil
   for _, tab in ipairs(f.tabs) do
-    if UI:IsFeatureAllowed(UI:GetFeature(tab.key)) then
-      widths[#widths + 1] = math.max(48, #tab.label.text * 6 + 20)
-      if tab.key == f.activeTab then active = #widths end
+    if UI:RoomAllowed(tab.key) then
+      widths[#widths + 1] = tab:Width()
+      if tab.key == f.activeRoom then active = #widths end
     end
   end
-  local _, hidden = UI:FitTabs(widths, 600 - 12, 2, 36, active)
+  local _, span = f:DoorSpan(600)
+  local _, hidden = UI:FitTabs(widths, span, 1, 36, active)
   check(#f.overflow == hidden, "the fold is UI:FitTabs' answer")
-  fire(f.more, "OnClick")
-  check(menuAnchor == f.more and #menuItems == #f.overflow, "»n opens a menu of the tabs it holds")
-  for i, item in ipairs(menuItems) do
-    check(item.text == UI:GetFeature(f.overflow[i]).label, "menu entry " .. i .. " names its tab")
-  end
-  -- The last folded tab that builds: "boom" is made to raise.
-  local pick = #f.overflow
-  while f.overflow[pick] == "boom" do pick = pick - 1 end
-  local picked = f.overflow[pick]
-  menuItems[pick].func()
-  check(f.activeTab == picked and tabOf(f, picked).shown, "a tab picked from »n opens and joins the rule")
-  check(g.tab == picked, "and is remembered")
 end
 
--- ── Watch: the selector and Now ─────────────────────────────────────────
+-- ── Watch: the selector and the Salão ──────────────────────────────────
 UI:OpenWindow("raids")
 resize(f, 500)
-check(f.band == "watch" and f.activeTab == "home", "under 520px the content switches to Now")
-check(f.selector.shown and shownTabs(f) == 0 and not f.more.shown, "and the tab rule becomes a one-line selector")
-check(f.selector.label.text == "Now \194\187", "the selector names the open tab")
+check(f.band == "watch" and f.activeTab == "home" and f.activeRoom == "salao", "under 520px the content switches to the Salão's Home")
+check(f.selector.shown and shownTabs(f) == 0 and not f.more.shown, "and the rooms become a one-line selector")
+check(f.selector.label.text == "Salão \194\187", "the selector names the open room")
 check(f.selector.variant == "ghost", "the selector is a ghost button")
-check(g.tab == "raids", "the switch to Now is not remembered as a choice")
+check(g.tab == "raids", "the switch to Home is not remembered as a choice")
 fire(f.selector, "OnClick")
-check(#menuItems == allowedCount(f), "the selector lists every tab")
+menuItems = UI.lastMenuItems or {}
+check(#menuItems == allowedCount(f), "the selector lists every room")
+check(GuildOSTabMenu and GuildOSTabMenu.shown and GuildOSTabMenu.points[1][2] == f.selector, "in the addon's own menu, under the selector")
+GuildOSTabMenu:Hide()
 do
-  local nowItem
-  for _, item in ipairs(menuItems) do if item.text == "Now" then nowItem = item end end
-  check(nowItem and nowItem.checked, "with the open one checked")
+  local salao
+  for _, item in ipairs(menuItems) do if item.text == "Salão" then salao = item end end
+  check(salao and salao.checked, "with the open one checked")
 end
 resize(f, 700)
-check(f.band == "compact" and f.activeTab == "raids", "wide again, the tab that was open comes back")
-check(not f.selector.shown and shownTabs(f) > 0, "and the tab rule replaces the selector")
+check(f.band == "compact" and f.activeTab == "raids", "wide again, the screen that was open comes back")
+check(not f.selector.shown and shownTabs(f) > 0, "and the rooms replace the selector")
+-- Back from the narrow band: the room and the entry that were open, not just the feature (#445).
+UI:OpenWindow("guild", "bulletin")
+resize(f, 500)
+check(f.activeTab == "home", "narrow, the Salão's Home again")
+resize(f, 700)
+check(f.activeRoom == "salao" and f.activeEntry.id == "bulletin" and selected[#selected] == "CreateGuildHub:bulletin",
+  "wide again: the same room, entry and sub-tab, not the calendar")
+-- The entries row folds into »n when it does not fit, as the rooms do.
+fire(tabOf(f, "salao"), "OnClick")
+resize(f, 430)
+local entryShown = 0
+for _, b in ipairs(f.entryTabs) do if b.shown then entryShown = entryShown + 1 end end
+check(f.entryMore.shown and #f.entryOverflow > 0 and entryShown + #f.entryOverflow == #UI:RoomEntries("salao"),
+  "a narrow window folds the Salão's entries into »n, none lost")
+fire(f.entryMore, "OnClick")
+menuItems = UI.lastMenuItems or {}
+GuildOSTabMenu:Hide()
+check(#menuItems == #f.entryOverflow and menuItems[1].text == f.entryOverflow[1].label, "»n lists the folded entries")
+resize(f, 700)
+-- An officer demoted with the Officers' Room open leaves it.
+UI:OpenWindow("recruitment")
+check(f.activeRoom == "officers", "an officer's Recruitment is in the Officers' Room")
+officer = false
+f:UpdateTabVisibility()
+check(f.activeRoom ~= "officers", "demoted, the window leaves the Officers' Room")
+officer = true
+f:UpdateTabVisibility()
+-- One row only (#447): each screen's sub-tabs are its room's entries.
+check(UI:OpenWindow("raids") and f.activeRoom == "raids" and f.activeEntry.id == "sessions"
+  and selected[#selected] == "CreateRaidHubPanel:sessions", "Raids by name opens on its first sub-tab, Sessions")
+local signupRan = false
+local realSignup = GuildOS.ShowCoreSignupFrame
+GuildOS.ShowCoreSignupFrame = function() signupRan = true end
+local signupBtn
+for _, b in ipairs(f.entryTabs) do if b.shown and b.entry.id == "signup" then signupBtn = b end end
+if not signupBtn then
+  fire(f.entryMore, "OnClick")
+  for _, item in ipairs(menuItems) do if item.text == "Core Sign-up" then item.func() end end
+else
+  fire(signupBtn, "OnClick")
+end
+check(signupRan and f.activeTab == "raids" and f.activeEntry.id == "sessions",
+  "Core Sign-up is an entry that opens the sign-up window and leaves the screen as it was")
+GuildOS.ShowCoreSignupFrame = realSignup
+officer = false
+f:UpdateTabVisibility()
+local coresListed = false
+for _, e in ipairs(UI:RoomEntries("raids")) do if e.id == "cores" then coresListed = true end end
+check(not coresListed, "a member's Raids has no Cores entry")
+officer = true
+f:UpdateTabVisibility()
+resize(f, 1000, 620)
+slash("open management inactive")
+local sideActive
+for _, b in ipairs(f.sideBtns) do if b.shown and b.isActive then sideActive = b end end
+check(f.sideNav.shown and not f.entryRow.shown and sideActive and sideActive.entry.id == "inactive",
+  "the Officers' Room lists its entries in a side bar, the open one marked")
+check(f.content.points[#f.content.points - 1][2] > 12 or f.content.points[1][2] > 12, "and the content starts right of it")
+-- The officers' work waiting (#449): a red count on the room's door and on the entry it opens.
+do
+  local realTT = GuildOS.TrialTracker
+  GuildOS.TrialTracker = { CountReady = function() return 2 end }
+  f:InvalidateOfficerCounts()   -- what TrialTracker:RefreshUI does on a trial's change
+  f:RefreshTitle()
+  local door = tabOf(f, "officers")
+  local trials
+  for _, b in ipairs(f.sideBtns) do if b.shown and b.entry.id == "trials" then trials = b end end
+  check(door.count.shown and door.count.text.text == "2" and trials and trials.count.shown and trials.count.text.text == "2",
+    "two trials to review: a red 2 on the Officers' Room's door and on its Trials entry")
+  GuildOS.TrialTracker = realTT
+  f:InvalidateOfficerCounts()
+  f:RefreshTitle()
+  check(not door.count.shown, "and none once there is nothing")
+end
+resize(f, 700, 620)
+check(not f.sideNav.shown and f.entryRow.shown, "narrow, the side bar folds into the row: the content keeps its width")
+resize(f, 1000, 380)
+check(not f.sideNav.shown and f.entryRow.shown, "and so it does in a window too short for every row")
+resize(f, 1000, 620)
+check(f.sideNav.shown, "with room again, the side bar comes back")
+-- A sub-tab the screen opens itself (a button inside it) is the entry the room marks and remembers.
+f.tabPanels.management.OnSubChanged("ban")
+check(f.activeEntry.id == "ban" and g.entries.officers == "ban", "a sub-tab opened from inside the screen moves the mark")
+-- Switching screens is no choice of a sub-tab: the hub's old sub-tab showing on the way must not overwrite
+-- another room's memory (the Guild hub lives in the Salão, Raids and the Chronicle).
+do
+  local guild = f.tabPanels.guild
+  local realShown = guild.SetShown
+  -- The stub fires no OnShow for children: the hub's left-over sub-tab reports itself as the client would.
+  guild.SetShown = function(self, v)
+    realShown(self, v)
+    if v and f.switching ~= nil and guild.OnSubChanged then guild.OnSubChanged("bulletin") end
+  end
+  UI:OpenWindow("guild", "bulletin")
+  fire(tabOf(f, "salao"), "OnClick")
+  for _, b in ipairs(f.entryTabs) do if b.shown and b.entry.id == "home" then fire(b, "OnClick") end end
+  check(g.entries.salao == "home", "the Salão remembers Home")
+  UI:OpenWindow("guild", "calendar")
+  check(g.entries.salao == "home" and f.activeEntry.id == "calendar",
+    "opening Raids' Calendar leaves the Salão's memory alone")
+  guild.SetShown = realShown
+end
+-- A deep link to a sub-tab this player may not open falls back to the screen's default.
+officer = false
+f:UpdateTabVisibility()
+check(UI:OpenWindow("raids", "cores") and f.activeEntry.id == "sessions", "a member's link to Cores opens Sessions")
+officer = true
+f:UpdateTabVisibility()
+resize(f, 700, 620)
 resize(f, 500)
 fire(f.selector, "OnClick")
-for _, item in ipairs(menuItems) do if item.text == "Roster" then item.func() end end
-check(f.activeTab == "roster" and g.tab == "roster", "a tab picked from the selector opens and is remembered")
+menuItems = UI.lastMenuItems or {}
+for _, item in ipairs(menuItems) do if item.text == "Members" then item.func() end end
+check(f.activeTab == "roster" and g.tab == "roster" and g.room == "members", "a room picked from the selector opens and is remembered")
 resize(f, 900)
 check(f.band == "wide" and f.activeTab == "roster", "and stays open when the window widens")
 
 -- ── Bar ─────────────────────────────────────────────────────────────────
 resize(f, 1000, 620)
 fire(f.grip, "OnMouseDown")
+check(f.resizeBounds and f.resizeBounds[1] > 420, "an open window's grip stops at the watch band")
 resize(f, 400, 620)
-check(f.band == "bar" and not f.rule.shown and not f.content.shown and not f.footer.shown,
-  "under 420px only the title bar stays")
-check(f.summaryText.shown and not f.metaText.shown and f.summaryText.text == A:BarText(),
-  "with the three numbers in place of the meta line")
-check(f.minimise.x.text == "+" and point(f.closeButton) == "RIGHT,-20,0",
-  "the dash becomes the way back out, and close clears the grip")
 fire(f.grip, "OnMouseUp")
 flush()
-check(f.h == 28 and g.collapsed and g.restoreW == 1000 and g.restoreH == 620, "let go in the bar: 28px tall, the old size kept")
-check(g.w == 400 and g.h == 28 and g.left and g.top, "and the fold is saved")
+check(not g.collapsed and f.w > 420 and f.h == 620 and f.band == "watch",
+  "dragged narrower anyway, it stays open at the narrowest open width: only minimise folds it")
+check(f.resizeBounds[1] == 320, "and the grip's bounds go back")
+resize(f, 1000, 620)
+fire(f.minimise, "OnClick")
+check(f.band == "bar" and not f.rule.shown and not f.content.shown and not f.footer.shown,
+  "folded, only the title bar stays")
+check(f.summaryText.shown and not f.metaText.shown and f.summaryText.text == A:BarText(),
+  "with the three numbers in place of the meta line")
+check(f.minimise.x.text == "+" and point(f.closeButton) == "RIGHT,-18,0",
+  "the dash becomes the way back out, and close clears the grip")
+check(f.h == 28 and g.collapsed and g.restoreW == 1000 and g.restoreH == 620, "28px tall, the old size kept")
+check(g.h == 28 and g.left and g.top, "and the fold is saved")
 check(f.points[1][1] == "TOPLEFT", "it folds from its top-left corner")
+check(f.summaryHit and f.summaryHit.shown, "the numbers take the pointer")
+fire(f.summaryHit, "OnEnter")
+fire(f.summaryHit, "OnClick")
+check(not g.collapsed and f.band ~= "bar", "and a click on them opens the window back up")
+fire(f.minimise, "OnClick")
 fire(f.minimise, "OnClick")
 check(f.w == 1000 and f.h == 620 and not g.collapsed and f.band == "full", "the bar opens back to that size, laid out at once")
 check(g.w == 1000 and g.h == 620, "and that size is saved")
@@ -953,7 +1129,7 @@ check(f.w == 320 and f.h == 28 and g.collapsed and f.band == "bar", "minimise fo
 check(g.w == 320 and g.h == 28 and g.restoreW == 1000 and g.restoreH == 620, "and saves the fold")
 roster[2][2] = true
 fire(f.minimise, "OnClick")
-check(f.metaText.text == "Chama · 3 online", "unfolding refreshes the title at once, not on the next tick")
+check(f.metaText.text == "3 online", "unfolding refreshes the title at once, not on the next tick")
 roster[2][2] = false
 fire(f.minimise, "OnClick")
 f:Hide()
@@ -975,9 +1151,8 @@ fire(f.grip, "OnMouseDown")
 resize(f, 350)
 fire(f.grip, "OnMouseUp")
 flush()
-check(g.restoreW == 430 and g.restoreH == 500, "the size kept is the one the drag started from")
-fire(f.minimise, "OnClick")
-check(f.w == 452 and f.h == 500 and f.band == "watch", "the way back out always lands past the bar band")
+check(not g.collapsed and f.w == 452 and f.h == 500 and f.band == "watch",
+  "an open window dragged under the bar band stays open, at the width that clears it")
 resize(f, 1000, 620)
 fire(f.minimise, "OnClick")
 fire(f.grip, "OnMouseDown")
@@ -1137,211 +1312,52 @@ do
   events, officer = saved, true
 end
 
--- ── Now: the column ─────────────────────────────────────────────────────
+-- ── The Salão's Home (#445) ─────────────────────────────────────────────
 UI:OpenWindow("home")
-local now = f.tabPanels.home
-now.Refresh()
-check(now.column and now.needsList and now.feedList, "Now builds its live column")
-local nowTicker = liveTicker(1)
-check(nowTicker ~= nil, "its clock ticks every second while on screen")
-now:SetSize(976, 520)
+local home = f.tabPanels.home
+home:SetSize(976, 520)
 flush()
--- The column and the cards as the approved sketch (#377); tools/dashboard-layout.lua checks the
--- grid itself. The tab scrolls: its child stops the scroll bar's gutter short.
--- Every Now tab builds its cards with it (each window this harness opened did): count from here.
-local nowW, dashBuilds = 976 - UI.SCROLL_GUTTER, built.CreateDashboardPanel
-check(dashBuilds and now.home.shown and now.column.w == math.floor((nowW - 24) / 3)
-  and not now.gridRule.shown, "wide: the cards beside the column, a third of the tab")
-now:SetSize(700, 520)
-flush()
-check(now.home.shown and now.column.w == 700 - UI.SCROLL_GUTTER and now.gridRule.shown
-  and point(now.home) == "TOPLEFT,0," .. -(now.column.h + 28), "under 780px: the cards under the column, below a rule")
-now:SetSize(976, 520)
-flush()
-check(built.CreateDashboardPanel == dashBuilds, "the home cards build once, not again on a resize")
-do
-  local p = now.home.points[1]
-  check(p and p[1] == "TOPLEFT" and p[2] == now.column and p[3] == "TOPRIGHT" and p[4] == 12 and p[5] == 0,
-    "the home cards sit 12px beside the column, not over it")
-  check(now.needsList.parent == now.column and now.feedList.parent == now.column and now.clock.parent == now.column
-    and not now.column.backdrop and now.raidTitle.rule == nil and now.needsTitle.rule and now.feedTitle.rule,
-    "the sections stand on the tab, no box, a rule over every title but the first")
-  now:SetSize(780, 520)
-  flush()
-  check(not now.gridRule.shown and now.column.w == math.floor((780 - UI.SCROLL_GUTTER - 24) / 3),
-    "from 780px the home cards are beside the column")
-  now:SetSize(779, 520)
-  flush()
-  check(now.gridRule.shown and now.column.w == 779 - UI.SCROLL_GUTTER, "at 779px they go under it")
-  now:SetSize(976, 520)
-  flush()
+home.Refresh()
+local cards = home.cards
+check(cards and cards.forYou and cards.board and cards.fire and cards.wall, "Home builds its four cards")
+local function shownRows(c)
+  local out = {}
+  for _, r in ipairs(c.rows) do if r.shown then out[#out + 1] = r end end
+  return out
 end
-
-check(now.clock.text == "4:12:38", "the countdown to the next raid")
-check(same(now.clock.color, C.text) and now.clock.font.file == face(GuildOS.Fonts.countdown.file) and now.clock.font.size == 40,
-  "in paper, in the countdown's mono face at 40px")
-check(now.raidName.text == "Karazhan" and now.raidMeta.text == GuildOS:LocalDate("%a %d %b, %H:%M", KARAZHAN) .. " · 9 going",
-  "its title, then its time and who is going")
-check(now.openCalendar.shown and now.openCalendar.variant == "ghost", "and a link to the calendar")
-
-local needRows, feedRows = now.needsList.rows, now.feedList.rows
-check(visible(now.needsList) == 5 and now.needsList.h == 5 * 24 and needRows[1].h == 24, "five 24px rows of what needs me")
-check(needRows[1].mark.shown and needRows[1].mark.w == 6 and needRows[1].mark.h == 6
-  and needRows[1].mark.color[1] == C.danger.r and needRows[1].text.text == "1 trial(s) ready to review",
-  "urgent rows carry the 6px danger mark")
-check(same(needRows[2].mark.color, C.label), "the others a neutral one: gold is not a status")
-check(point(needRows[1]) == "TOPLEFT,0,0" and point(needRows[2]) == "TOPLEFT,0,-24",
-  "rows stack 24px apart, no frame around the list")
-check(needRows[1].line.shown and not needRows[5].line.shown, "a 1px line between rows, none under the last")
-check(point(needRows[1].text, 1) == "LEFT,14,0" and needRows[1].arrow.shown, "a need's text starts after its mark, a > on its right")
-fire(needRows[1], "OnEnter")
-check(needRows[1].hover.shown, "a row lights up under the cursor")
-fire(needRows[1], "OnLeave")
-check(visible(now.feedList) == 7 and feedRows[1].time.shown and feedRows[1].time.w == 44
-  and feedRows[1].time.text == os.date("%H:%M", NOW - 50) and point(feedRows[1].time) == "RIGHT,0,0",
-  "activity fills the column's height, each row's 44px time on its right")
-check(point(feedRows[1].text, 1) == "LEFT,0,0" and point(feedRows[1].text, 2) == "RIGHT,-52,0",
-  "the text runs from the left edge to the time")
-now:SetSize(976, 1000)
-flush()
-check(visible(now.feedList) == 10, "a taller column shows more of it")
-check(feedRows[10].time.text == os.date("%a", NOW - 47 * 3600), "a row older than a day shows its weekday, not a time")
-do
-  local savedLog, many = GuildOS.db.rosterLog, {}
-  for i = 1, 14 do many[i] = { action = "join", target = "N" .. i, timestamp = NOW - i } end
-  GuildOS.db.rosterLog = { events = many }
-  now.Refresh()
-  check(visible(now.feedList) == 12, "however tall the column, at most 12 rows")
-  GuildOS.db.rosterLog = savedLog
-  now.Refresh()
-end
-do
-  local saved = { GuildOS.db.rosterLog, GuildOS.db.lootHistory, GuildOS.db.milestones, GuildOS.db.raidTracker }
-  GuildOS.db.rosterLog = { events = { { action = "join", target = "Late", timestamp = NOW - 23 * 3600 } } }
-  GuildOS.db.lootHistory, GuildOS.db.milestones, GuildOS.db.raidTracker = nil, nil, nil
-  now.Refresh()
-  check(feedRows[1].time.text == os.date("%H:%M", NOW - 23 * 3600), "23 hours ago still shows the time")
-  GuildOS.db.rosterLog, GuildOS.db.lootHistory, GuildOS.db.milestones, GuildOS.db.raidTracker = saved[1], saved[2], saved[3], saved[4]
-  now.Refresh()
-end
-now:SetSize(976, 520)
-flush()
-
-do
-  local calls, real = 0, A.NeedsMe
-  A.NeedsMe = function(self) calls = calls + 1; return real(self) end
-  now:SetSize(900, 520)
-  flush()
-  now:SetSize(976, 520)
-  flush()
-  f:RefreshTitle()
-  A.NeedsMe = real
-  check(calls == 0, "resizing Now, and the title outside the bar, do not walk the officer work again")
-end
-
-do
-  GuildOS.RecruitScanner = replies(3)
-  for _ = 1, 9 do nowTicker.fn() end
-  check(needRows[5].text.text == "2 applicants waiting", "between refreshes the lists stay as they were")
-  nowTicker.fn()
-  check(needRows[5].text.text == "3 applicants waiting", "the tenth tick refreshes them")
-  NOW = NOW + 60
-  nowTicker.fn()
-  check(now.clock.text == "4:11:38", "every tick moves the clock")
-  NOW = NOW - 60
-  check(now.events.GUILD_ROSTER_UPDATE, "Now listens for roster updates")
-  GuildOS.RecruitScanner = replies(2)
-  fire(now, "OnEvent", "GUILD_ROSTER_UPDATE")
-  check(needRows[5].text.text == "2 applicants waiting", "and refreshes on one")
-end
-
-fire(needRows[3], "OnClick")
-check(f.activeTab == "management" and selected[#selected] == "CreateManagementPanel:inactive",
-  "a row opens its screen on its sub-tab")
-check(nowTicker.cancelled, "leaving Now stops its clock")
-GuildOS.RecruitScanner = replies(4)
-fire(now, "OnEvent", "GUILD_ROSTER_UPDATE")
-check(needRows[5].text.text == "2 applicants waiting", "off screen, a roster update does not refresh Now")
-GuildOS.RecruitScanner = replies(2)
+local you = shownRows(cards.forYou)
+check(#you == 3, "For you holds three lines at most, of five things that need this officer")
+check(you[1].main.text == "1 trial(s) ready to review" and you[1].btn.shown and you[1].btn.label.text == "Open",
+  "the urgent one first, each with one action")
+fire(you[1].btn, "OnClick")
+check(f.activeTab == "recruitment" and selected[#selected] == "CreateRecruitmentPanel:trials" and f.activeRoom == "officers",
+  "which opens the screen that owns it, in its room")
 UI:OpenWindow("home")
-fire(needRows[2], "OnClick")
-check(f.activeTab == "guild" and selected[#selected] == "CreateGuildHub:calendar:" .. KARAZHAN,
-  "the unanswered raid opens the calendar on the raid's day")
+local karaRow
+for _, r in ipairs(cards.board.notes) do if r.shown and r.main.text == "Karazhan" then karaRow = r end end
+check(karaRow and karaRow.side.shown and karaRow.side.text ~= "", "the notice board: the next events pinned, each with its time")
+fire(karaRow, "OnClick")
+check(f.activeTab == "guild" and f.activeRoom == "raids" and selected[#selected] == "CreateGuildHub:calendar:" .. KARAZHAN,
+  "a click opens Raids › Calendar on that day")
 UI:OpenWindow("home")
-fire(now.openCalendar, "OnClick")
-check(f.activeTab == "guild" and selected[#selected] == "CreateGuildHub:calendar:" .. KARAZHAN,
-  "so does the next raid's calendar button")
-do
-  local member
-  function GuildOS:ShowMemberDetail(d) member = d end
-  GuildOS.db.members["Caio-Firemaw"] = { name = "Caio" }
-  UI:OpenWindow("home")
-  fire(feedRows[7], "OnClick")
-  check(f.activeTab == "roster" and member and member.name == "Caio", "a milestone row opens the roster and the member")
-  UI:OpenWindow("home")
-  fire(feedRows[1], "OnClick")
-  check(f.activeTab == "management" and selected[#selected] == "CreateManagementPanel:log"
-    and member == GuildOS.db.members["Ana-Firemaw"], "a roster change opens the audit log and the member")
-end
-
-UI:OpenWindow("home")
+local faces = {}
+for _, b in ipairs(cards.fire.faces) do if b.shown then faces[#faces + 1] = b end end
+check(#faces == 1 and faces[1].name.text == "Caio", "by the fire: who is online, this player left out")
+fire(faces[1], "OnClick")
+check(menuItems[1] ~= nil, "a name opens the member's menu")
+check(#shownRows(cards.wall) >= 1, "the guild wall shows what just happened")
+check(not cards.chimney.shown, "no Winter Veil event, no Chimney")
+check(cards.board.points[1][2] == 0 and cards.fire.points[1][2] > 0, "wide: two columns")
+home:SetSize(600, 520)
+flush()
+home.Refresh()
+check(cards.fire.points[1][2] == 0, "narrow: the cards stack in one column")
+home:SetSize(976, 520)
+flush()
 officer = false
-events[3].mine = { status = "yes" }
-now.Refresh()
-check(visible(now.needsList) == 1 and needRows[1].text.text == "All caught up" and not needRows[1].mark.shown
-  and needRows[1].go == nil, "nothing to do: one empty line, not a button")
-fire(needRows[1], "OnEnter")
-check(not needRows[1].hover.shown, "and it does not light up under the cursor")
-GuildOS.db.rosterLog, GuildOS.db.lootHistory, GuildOS.db.milestones, GuildOS.db.raidTracker = nil, nil, nil, nil
-now.Refresh()
-check(visible(now.feedList) == 1 and feedRows[1].text.text == "Nothing in the last 48 hours." and feedRows[1].go == nil,
-  "no activity: one empty line")
-roster = {}
-now.Refresh()
-check(visible(now.needsList) == 3 and needRows[1].bar.shown and not needRows[1].text.shown
-  and needRows[1].bar.w == 180 and needRows[2].bar.w == 130 and needRows[3].bar.w == 160,
-  "while the roster loads: static bars, not zeros")
-roster = fullRoster
-GuildOS:SetFeatureEnabled("guild", false)
-now.Refresh()
-check(not now.openCalendar.shown, "no calendar button when the Guild tab is off")
-GuildOS:SetFeatureEnabled("guild", true)
-events = {}
-now.Refresh()
-check(now.clock.text == "\226\128\148" and now.raidMeta.text == "No raid scheduled.", "no raid: a dash and one line")
+home.Refresh()
 officer = true
-
-do
-  local sync, activity = A.LastSync, A.Activity
-  A.LastSync = function() error("sync exploded") end
-  A.Activity = function() error("activity exploded") end
-  check(pcall(f.RefreshTitle, f) and pcall(now.Refresh), "a module that raises does not break the title or Now")
-  A.LastSync, A.Activity = sync, activity
-end
-
-f:Hide()
-do
-  local running = 0
-  for _, tk in ipairs(tickers) do if not tk.cancelled then running = running + 1 end end
-  check(running == 0, "a hidden window runs no timers")
-end
-
--- A Now tab that failed to build is not retried each time the window narrows.
-do
-  local real = UI.features.home.build
-  UI.features.home.build = function() error("no now") end
-  GuildOS.RosterFrame, GuildOS.db.settings.window = nil, nil
-  local broken = UI:GetMainWindow()
-  broken:Show()
-  resize(broken, 1000, 620)
-  printed = {}
-  resize(broken, 500)
-  resize(broken, 1000)
-  resize(broken, 500)
-  check(broken.band == "watch" and not said("could not start"), "a Now tab that failed to build is refused once, not on every narrowing")
-  UI.features.home.build = real
-  broken:Hide()
-end
+home.Refresh()
 
 -- The calendar filter, through the real Guild tab and the real calendar.
 do
@@ -1374,17 +1390,19 @@ do
       if c.isActive then open = c end
     end
   end
-  check(bar and bar.h == 28 and same(bar.bg.color, C.panel), "the Guild tab's sub-tab bar is 28px on panel")
-  check(subTabs == 9 and #visibleSubs == 9 and visibleSubs[1] == "Achievements" and visibleSubs[5] == "Rules"
-    and visibleSubs[8] == "Chat" and visibleSubs[9] == "Journal" and open and open.label.text == "Calendar"
-    and (open.underline.shown or (STYLE == "forever" and open.__styleTab)),
-    "its nine sub-tabs on WoW: Forever (Achievements first, #373; Rules after the Bulletin, #407; Chat the eighth; Journal last) "
-      .. "carry a 1px gold rule, shown under the open one")
+  check(bar and bar.h == 28 and same(bar.bg.color, C.panel), "the Guild tab's sub-tab bar is 28px on the dark strip")
+  check(subTabs == 8 and #visibleSubs == 8 and visibleSubs[1] == "Achievements" and visibleSubs[5] == "Rules"
+    and visibleSubs[7] == "Chat" and visibleSubs[8] == "Journal" and open and open.label.text == "Calendar"
+    and open.fill.shown and not open.underline.shown,
+    "its eight sub-tabs on WoW: Forever (Achievements first, #373; Rules after the Bulletin, #407; the polls on the Bulletin, #448 B24; Journal last) "
+      .. "are pills, the open one the soft gold pill (#449)")
   check(cal.viewYear == 2026 and cal.viewMonth == 1 and cal.selectedKey == 20260115,
     "showing the raid's month, with its day selected")
-  local function drawn(text)
-    for _, c in ipairs(cal.children) do
+  -- The month and the day head their parchment cards (the Raids room's calendar, #449).
+  local function drawn(text, root)
+    for _, c in ipairs((root or cal).children) do
       if c.kind == "FontString" and c.text == text then return true end
+      if c.kind ~= "FontString" and c.kind ~= "Texture" and drawn(text, c) then return true end
     end
     return false
   end
@@ -1393,6 +1411,34 @@ do
     "and drawn: that month's name and the day's heading")
   UI:OpenWindow("guild", "calendar")
   check(cal.selectedKey == 20260115, "opening the calendar without a day leaves the selection alone")
+
+  -- An allied guild's raid open to the alliance (guildos.me's GOSALLY1): on the day, read-only, never stored.
+  local keepAlly = GuildOS.Alliance
+  local gruul = os.time({ year = 2026, month = 1, day = 15, hour = 21, min = 0 })
+  GuildOS.Alliance = {
+    OpenRaids = function() return { { guild = "Iron Pact", title = "Gruul", when = gruul, where = "Gruul's Lair",
+                                      leader = "Mira", going = 11, size = 25 } } end,
+    AsOf = function() return gruul - 86400 end,
+  }
+  cal.Render()
+  local found = {}
+  local function walk(f)
+    for _, c in ipairs(f.children or {}) do
+      if c.shown ~= false and type(c.text) == "string" then found[#found + 1] = c.text end
+      walk(c)
+    end
+  end
+  walk(cal.child)
+  local said = table.concat(found, "\n")
+  check(said:find("[Iron Pact] Gruul", 1, true) and said:find("11/25", 1, true) and said:find("Gruul's Lair", 1, true)
+    and said:find("led by Mira", 1, true) and said:find("Sign up in Discord or on the website.", 1, true)
+    and said:find("(as of ", 1, true), "Raids › Calendar shows the alliance's open raid on its day, read-only, signed up to elsewhere")
+  local cell
+  for _, c in ipairs(cal.cells) do if c.dkey == 20260115 then cell = c end end
+  check(cell and cell.evtFS.text:find("Iron Pact", 1, true), "and the day's cell names it")
+  check(#GuildOS.Calendar.GetEvents() == 0, "the calendar stores nothing of it")
+  GuildOS.Alliance = keepAlly
+  cal.Render()
 
   -- The event editor (#308): only the kinds this rank creates, and a dungeon from the game's list.
   -- Calendar's own rules are tools/event-kinds.lua's.
@@ -1513,8 +1559,10 @@ do
   GuildOS:SetFeatureEnabled("achievements", false)
   win:Hide()
   win:Show()
-  check(guild.activeSub == "calendar" and not subTab("Achievements").shown,
-    "the open sub-tab switched off falls back to the calendar the next time the tab shows")
+  check(win.activeTab == "home" and win.activeRoom == "salao",
+    "the open entry switched off falls back to the Salão's Home the next time the window shows (#445)")
+  check(UI:OpenWindow("guild") and guild.activeSub == "calendar" and not subTab("Achievements").shown,
+    "and the Guild hub by name opens on the calendar, without the Achievements sub-tab")
   GuildOS:SetFeatureEnabled("journal", true)
   GuildOS:SetFeatureEnabled("achievements", true)
 
@@ -1607,9 +1655,9 @@ do
   win:Hide()
   CTA.recent[1].title = "Later"
   CTA.uiRefresh()
-  check(not find(p, "Later  Go"), "with the window closed, an answer arriving repaints nothing")
+  check(not find(p, "Later: Go"), "with the window closed, an answer arriving repaints nothing")
   UI:OpenWindow("guild", "cta")
-  check(find(p, "Later  Go"), "it catches up when the tab opens")
+  check(find(p, "Later: Go"), "it catches up when the tab opens (the call and its text, as the mockup's line, #449)")
   win:Hide()
   CTA.recent = {}
 
@@ -1651,10 +1699,14 @@ do
   end
   local nCells, clash, nRows = laid()
   check(nCells == 5 + CTA.TEMPLATES_MAX and not clash and nRows > 2, "seventeen templates flow over rows, none overlapping")
-  check(row.h == nRows * 22 + (nRows - 1) * 4, "and the row is as tall as the lines it took")
+  check(row.h == nRows * 22 + (nRows - 1) * 6, "and the row is as tall as the lines it took (6px apart, as the mockup's chips)")
+  -- The templates sit in the "Call the guild" card (#449): as wide as its inside, the scroll gutter and the
+  -- card's padding off the tab's width; a narrow tab stacks the cards, at the tab's width.
+  local wide = row.w
   p:SetSize(408, 500)
   local _, clash2, nRows2 = laid()
-  check(row.w == 400 and not clash2 and nRows2 > nRows, "a narrower tab wraps them again, at its own width")
+  check(row.w == 408 - UI.SCROLL_GUTTER - 2 * UI.CARD_PAD and row.w < wide and not clash2 and nRows2 > nRows,
+    "a narrower tab wraps them again, at its own width")
   local guild = win.tabPanels.guild
   local bar
   for _, c in ipairs(guild.children) do if c.bg then bar = c end end
@@ -1669,10 +1721,15 @@ do
   end
   check(bar.w == 280 and fits and bar.h > 28, "and the Guild tab's six sub-tabs wrap rather than run off a narrow window")
   local msg
-  for _, c in ipairs(p.children) do
-    if c.kind == "EditBox" and c.points[1] and c.points[1][2] == row then msg = c end
+  local function boxes(f)
+    for _, c in ipairs(f.children) do
+      if c.kind == "EditBox" and c.points[1] and c.points[1][2] and c.points[1][2].points
+        and c.points[1][2].points[1] and c.points[1][2].points[1][2] == row then msg = c end
+      boxes(c)
+    end
   end
-  check(msg ~= nil, "the message box hangs below the templates, so it moves down with them")
+  boxes(p)
+  check(msg ~= nil, "the message box hangs below the templates (under its label), so it moves down with them")
   check(msg.maxBytes == CTA.TEXT_MAX + 1, "and holds what a call carries in bytes, not letters: Cyrillic is two each")
   win:Hide()
   GuildOS.db.cta.templates = {}
@@ -1753,7 +1810,8 @@ do
   check(not caio.shown and find(p, "so eu").parent.shown, "a card the log no longer needs is hidden")
 
   local box
-  for _, c in ipairs(p.children) do if c.kind == "EditBox" then box = c end end
+  local function anyBox(f) for _, c in ipairs(f.children) do if c.kind == "EditBox" then box = c end anyBox(c) end end
+  anyBox(p)   -- the feed sits in the dark "Guild chat" card (#449)
   check(box and box.maxBytes == 241, "the box holds what /g will carry: 240 bytes")
   box:SetText("vamos")
   box.scripts.OnEnterPressed(box)
@@ -1907,45 +1965,47 @@ do
   local edge = UI:GetMainWindow()
   edge:Show()
   resize(edge, 620, 620)
-  check(edge.titleBar.h == 30 and point(edge.content, 1) == "TOPLEFT,12," .. -(70 + topInset) and edge.band == "narrow",
-    "at exactly 620px: the 30px title bar, 12px padding, and 596px of content, so narrow")
+  check(edge.titleBar.h == 50 and point(edge.content, 1) == "TOPLEFT,15,-105" and edge.band == "narrow",
+    "at exactly 620px: the 50px title bar, the strip, 12px padding, and 596px of content, so narrow")
   edge:Hide()
 end
 
--- ── The title bar at every width (#377) ─────────────────────────────────
--- With labels as long as a translation's, the sync time goes first, then Search, then Sync, and
--- nothing runs under the minimise button down to MIN_W, where only the three numbers stay.
+-- ── The title bar at every width (#377, #449) ───────────────────────────
+-- With a guild name as long as they come, the crest and the name keep the left, the doors take what is left
+-- short of the tools and fold into »n, and nothing runs into the tools, down to MIN_W, where only the three
+-- numbers stay.
 do
-  rawset(GuildOS.L, "Search", "Rechercher dans la guilde")
-  rawset(GuildOS.L, "Sync", "Synchroniser maintenant")
   GuildOS.RosterFrame, GuildOS.db.settings.window = nil, nil
+  local realInfo = GetGuildInfo
+  GetGuildInfo = function() return "Os Cavaleiros da Távola Redonda", "Rank", 0 end
   local win = UI:GetMainWindow()
   win:Show()
-  local misfit, disorder
+  local misfit
   for w = 320, 1000 do
     resize(win, w, 620)
-    local ok, key = titleFits(win)
-    if not ok then misfit = misfit or (w .. "px: " .. tostring(key)) end
-    local t, s, y = win.syncText.shown, win.searchButton.shown, win.syncButton.shown
-    if (t and not s) or (s and not y) then disorder = disorder or w end
+    if win.band ~= "bar" and win.band ~= "watch" then
+      local x0, span = win:DoorSpan(w)
+      local toolsLeft = (w - 6) - (10 + 24 + 4 * 34)
+      if x0 + span > toolsLeft then misfit = misfit or (w .. "px: the doors reach the tools") end
+      if x0 < 10 + 34 + 8 + win.nameText.w then misfit = misfit or (w .. "px: the doors over the name") end
+      for _, d in ipairs(win.tabs) do
+        if d.shown and d.points[1][4] + d.w > span then misfit = misfit or (w .. "px: " .. d.key .. " past the span") end
+      end
+      if win.more.shown and win.more.points[1][4] + win.more.w > span + 40 then misfit = misfit or (w .. "px: »n") end
+      if not (win.searchButton.shown and win.helpButton.shown and win.settingsButton.shown and win.minimise.shown) then
+        misfit = misfit or (w .. "px: a tool went")
+      end
+    end
   end
-  check(misfit == nil, "from 320px to 1000px nothing on the title bar overlaps or runs under minimise: " .. tostring(misfit))
-  check(disorder == nil, "and what goes, goes in order: the sync time, then Search, then Sync: " .. tostring(disorder))
+  check(misfit == nil, "from 320px to 1000px nothing on the title bar runs into the next part: " .. tostring(misfit))
   resize(win, 1000, 620)
-  check(win.syncText.shown and win.searchButton.shown and win.syncButton.shown, "at 1000px the long labels all fit")
-  resize(win, 560, 620)
-  check(not win.syncText.shown and win.searchButton.shown and win.syncButton.shown and win.metaText.shown,
-    "at 560px the sync time has gone")
-  resize(win, 480, 620)
-  check(not win.searchButton.shown and win.syncButton.shown and win.metaText.shown and win.band ~= "bar",
-    "at 480px Search has too, Sync and the meta line stay")
+  check(win.nameText.w <= 220 and win.nameText.w >= 70, "a long name keeps at most 220px (" .. win.nameText.w .. ")")
   resize(win, 320, 620)
   check(win.band == "bar" and win.summaryText.shown and point(win.summaryText, 2) == "RIGHT,-6,0"
-    and not (win.metaText.shown or win.syncText.shown or win.searchButton.shown or win.syncButton.shown),
-    "at MIN_W, folded to the bar, the three numbers end short of minimise and the buttons wait")
+    and not (win.metaText.shown or win.nameText.shown or win.crest.shown or win.searchButton.shown or win.helpButton.shown or win.settingsButton.shown),
+    "at MIN_W, folded to the bar, the three numbers end short of the fold and the tools wait")
   win:Hide()
-  rawset(GuildOS.L, "Search", nil)
-  rawset(GuildOS.L, "Sync", nil)
+  GetGuildInfo = realInfo
 end
 
 -- ── What is gone, and who opens what ────────────────────────────────────
@@ -1974,8 +2034,6 @@ do
   -- Building these panels would pull in most of the addon; their bars are checked where they are made.
   for _, bars in ipairs({
     { "UI/ManagementPanel.lua", "local TAB_H = 28", "    bar:SetSize(400, TAB_H)\n    UI:StyleSubTabBar(bar)\n", "UI:CreateTab(bar, t.label, TAB_MIN_W, true)" },
-    { "UI/AuditPanel.lua", "    bar:SetHeight(28)\n    UI:StyleSubTabBar(bar)\n", "UI:CreateTab(bar, t.label, 130, true)" },
-    { "UI/RaidToolsPanel.lua", "    bar:SetHeight(28)\n    UI:StyleSubTabBar(bar)\n", "UI:CreateTab(bar, t.label, 130, true)" },
     { "UI/AlliancePanel.lua", "    bar:SetSize(400, 28)\n    UI:StyleSubTabBar(bar)\n", "UI:CreateTab(bar, t.label, TAB_MIN_W, true)" },
     { "UI/RosterFrame.lua", "    bar:SetSize(300, 28)\n    UI:StyleSubTabBar(bar)\n", "UI:CreateTab(bar, t.label, 90, true)" },
     { "UI/RosterFrame.lua", "subBar:SetHeight(SUB_H)", "    UI:StyleSubTabBar(subBar)\n", "UI:CreateTab(subBar, st.label, 110, true)" },
@@ -1985,10 +2043,91 @@ do
     for i = 2, #bars do if not src:find(bars[i], 1, true) then ok = false end end
     check(ok, bars[1] .. ": a 28px sub-tab bar on panel, its tabs with the 1px rule (" .. bars[#bars] .. ")")
   end
+  -- The Raids room's Audit and Raid Tools (#449): one card each, their sub-tabs pills under its title.
+  for _, p in ipairs({ "UI/AuditPanel.lua", "UI/RaidToolsPanel.lua" }) do
+    local src = read(p)
+    check(src:find("local card = UI:CreateCard(parent, ", 1, true)
+      and src:find('UI:SetButtonVariant(UI:CreateButton(bar, t.label, 40, 22), "chip")', 1, true)
+      and src:find("UI:SetSelected(btn, k == key)", 1, true), p .. ": a card, its sub-tabs pills, the open one selected")
+  end
   check(read("UI/CommunityPanel.lua"):find("info.panel.ApplyFilter", 1, true)
     and read("UI/CalendarPanel.lua"):find("panel.ApplyFilter = function(when)", 1, true),
     "the Guild tab hands a deep link's day to the calendar")
-  check(read("UI/Dashboard.lua"):find("UI:OpenWindow(tabKey, subKey)", 1, true), "the home cards open tabs through OpenWindow")
+  check(read("UI/Salao.lua"):find("UI:OpenWindow(item.id, item.sub, item.filter)", 1, true), "the Salão opens screens through OpenWindow")
+end
+
+-- ── The officers' counts are cached (#449) ──────────────────────────────
+-- They walk the whole roster: a layout or a resize reads the window's cache, the 10s tick counts again.
+do
+  local calls, orig = 0, A.OfficerCounts
+  A.OfficerCounts = function(...) calls = calls + 1; return orig(...) end
+  f:Show()
+  f:RefreshTitle()
+  local before = calls
+  for _, w in ipairs({ 1200, 1000, 800, 1200 }) do f:Layout(w) end
+  f:LayoutTabs(); f:LayoutEntries()
+  check(calls == before, "a layout or a resize does not count the officers' work again (" .. (calls - before) .. " counts)")
+  f:RefreshTitle()
+  check(calls == before, "nor does the title")
+  liveTicker(10).fn()
+  check(calls == before + 1, "the 10s tick counts it once")
+  f:InvalidateOfficerCounts()
+  f:LayoutTabs()
+  check(calls == before + 2, "and a layout after an invalidation counts it once more")
+  check(read("UI/Window.lua"):find("function f:UpdateTabVisibility()\n        self:InvalidateOfficerCounts()", 1, true),
+    "a re-check of the tabs (a rank or group change) drops the cache")
+  A.OfficerCounts = orig
+end
+
+-- ── The Audit's rows are kept (#449) ────────────────────────────────────
+-- A refresh draws over the last one's rows and badges: the readiness list makes them once.
+do
+  dofile(ADDON .. "/UI/AuditPanel.lua")
+  local report = {
+    { name = "Ana", class = "MAGE", status = "ready", ilvl = 120, hasGear = true, missEnch = 0, seats = {} },
+    { name = "Bo", class = "PRIEST", status = "warn", ilvl = 110, hasGear = true, missEnch = 1, seats = {} },
+    { name = "Cy", class = "ROGUE", status = "notready", reason = "level", level = 58, ilvl = 0, hasGear = false,
+      missEnch = 0, seats = {} },
+  }
+  local realReadiness, realCM = GuildOS.Readiness, GuildOS.CoreManager
+  GuildOS.Readiness = {
+    GetTargets = function() return {} end,
+    GetReport = function() return report end,
+    Summarize = function() return { ready = 1, warn = 1, notready = 1 } end,
+    WithSeats = function() end,
+    Compositions = function() return {} end,
+    Filtered = function(rows) return rows end,
+  }
+  GuildOS.CoreManager = { GetSortedNames = function() return {} end, ROLE_LABELS = {} }
+  local host = CreateFrame("Frame", nil, UIParent)
+  GuildOS:CreateAuditPanel(host)
+  local made, badges = 0, 0
+  local realCreate, realBadge = CreateFrame, UI.CreateBadge
+  CreateFrame = function(...) made = made + 1; return realCreate(...) end
+  UI.CreateBadge = function(...) badges = badges + 1; return realBadge(...) end
+  host.SelectSub("ready")
+  local firstMade, firstBadges = made, badges
+  check(firstBadges == 3, "the first readiness refresh makes a badge per row (" .. firstBadges .. ")")
+  host.RefreshActive(); host.RefreshActive()
+  check(made == firstMade and badges == firstBadges,
+    "a refresh again makes no new row or badge (" .. (made - firstMade) .. " frames, " .. (badges - firstBadges) .. " badges)")
+  report[#report + 1] = { name = "Di", class = "MAGE", status = "ready", ilvl = 100, hasGear = true, missEnch = 0, seats = {} }
+  host.RefreshActive()
+  check(badges == firstBadges + 1, "a fourth member takes one row more")
+  table.remove(report); table.remove(report)
+  host.RefreshActive()
+  local content = host.subPanels.ready.panel
+  local shownRows = 0
+  local function walk(fr)
+    for _, c in ipairs(fr.children) do
+      if c.cells and c.kind == "Frame" and c:IsShown() then shownRows = shownRows + 1 end
+      walk(c)
+    end
+  end
+  walk(content)
+  check(shownRows == 2, "two members left: two rows shown, the others hidden (" .. shownRows .. ")")
+  CreateFrame, UI.CreateBadge = realCreate, realBadge
+  GuildOS.Readiness, GuildOS.CoreManager = realReadiness, realCM
 end
 
 -- ── In-game self-tests that need no live client ─────────────────────────

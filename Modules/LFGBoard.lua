@@ -21,8 +21,10 @@ local ENTRY_COOLDOWN = 5   -- accept at most one entry per sender per 5s
 local GUILD_LINE_COOLDOWN = 300   -- at most one line in guild chat per 5 minutes
 
 LFGBoard.DEFAULTS = { notify = true, postToGuild = true, lastRole = "ANY", lastNote = "",
-                      lastTtl = DEFAULT_TTL, allianceScope = false, roles = "", lastMode = "seek",
-                      autoInvite = true, toast = true, filterCat = "all", filterLevel = false }
+                      lastTtl = DEFAULT_TTL, roles = "", lastMode = "seek",
+                      autoInvite = true, toast = true, filterCat = "all", filterLevel = false,
+                      -- Off by default (#450): the group quests in my log go out only when I say so.
+                      shareQuests = false }
 LFGBoard.ROLES    = { "ANY", "TANK", "HEALER", "DPS" }
 -- The roles of a listing since issue #341: a subset of these letters, in this order. `role` above
 -- still goes out beside it, which is all a client before #341 reads.
@@ -30,6 +32,11 @@ LFGBoard.ROLE_LETTERS = { "T", "H", "D" }
 LFGBoard.DURATIONS = { TTL_MIN, 3600, DEFAULT_TTL, TTL_MAX }
 local LETTER_OF = { TANK = "T", HEALER = "H", DPS = "D" }
 local ROLE_OF   = { T = "TANK", H = "HEALER", D = "DPS" }
+-- The catalogue's own card for quests: a listing that names quests (#450) names it too, which is what a
+-- client before #450 shows for it.
+local QUEST_ACT = "elite-quests"
+LFGBoard.QUEST_ACT = QUEST_ACT
+local function quests() return GuildOS.GroupQuests end
 
 function LFGBoard:Initialize()
     GuildOS.db.lfgBoard = GuildOS.db.lfgBoard or {}
@@ -44,36 +51,7 @@ function LFGBoard:Initialize()
     end
     self._cd = self._cd or {}
     self:Prune()
-    if GuildOS.AllianceSync then
-        GuildOS.AllianceSync:Register("lfg", {
-            priority = "NORMAL",
-            cap = 100,
-            build = function()
-                return LFGBoard._BuildAllianceLfg(GuildOS.db.lfgBoard, GetServerTime(), 100)
-            end,
-        })
-    end
     self:_RegisterTests()
-    self:_RegisterAllianceTests()
-end
-
-function LFGBoard:_RegisterAllianceTests()
-    if not GuildOS.SelfTest then return end
-    GuildOS.SelfTest:Register("lfgboard.alliance_build_prunes", function()
-        local store = {
-            ["Ann-R"] = { role = "TANK", note = "MC", ts = 1000, ttl = 600 },   -- alive at 1200
-            ["Bob-R"] = { role = "DPS",  note = "any", ts = 100,  ttl = 300 },  -- expired at 1200
-            ["Cid-R"] = { role = "HEALER", note = "", ts = 1100, ttl = 600 },   -- alive
-        }
-        local out = LFGBoard._BuildAllianceLfg(store, 1200, 100)
-        if #out ~= 2 then return false, "expired entry crossed the wire: " .. #out end
-        if out[1].n ~= "Ann" or out[2].n ~= "Cid" then return false, "not sorted by key" end
-        if out[1].r ~= "TANK" then return false, "role lost" end
-        if #LFGBoard._BuildAllianceLfg(store, 1200, 1) ~= 1 then return false, "cap not enforced" end
-        if #LFGBoard._BuildAllianceLfg(nil, 1200, 100) ~= 0 then return false, "nil must not error" end
-        if #LFGBoard._BuildAllianceLfg(store, 99999, 100) ~= 0 then return false, "all expired" end
-        return true
-    end)
 end
 
 ----------------------------------------------------------------------
@@ -102,6 +80,7 @@ function LFGBoard:ActiveList(store, now, onlineSet)
                 key = key, name = key:match("^([^-]+)") or key,
                 role = e.role or "ANY", note = e.note or "", ts = e.ts, ttl = e.ttl,
                 roles = e.roles or LETTER_OF[e.role or "ANY"] or "", acts = e.acts or {},
+                quests = e.quests or {}, shared = e.shared or {},
             }
         end
     end
@@ -112,84 +91,6 @@ function LFGBoard:ActiveList(store, now, onlineSet)
     table.sort(out, function(a, b)
         if (a.ts or 0) ~= (b.ts or 0) then return (a.ts or 0) > (b.ts or 0) end
         return a.key < b.key
-    end)
-    return out
-end
-
-----------------------------------------------------------------------
--- Alliance pool
-----------------------------------------------------------------------
-
--- Snapshot for the alliance `lfg` domain. Expired entries are pruned HERE, so
--- a dead listing never crosses the wire and never costs a revision on the
--- other side. Sorted by key so the change fingerprint is stable.
-function LFGBoard._BuildAllianceLfg(store, now, cap)
-    local out = {}
-    if type(store) ~= "table" then
-        return out
-    end
-    cap = tonumber(cap) or 100
-    local keys = {}
-    for key in pairs(store) do
-        if type(key) == "string" then
-            keys[#keys + 1] = key
-        end
-    end
-    table.sort(keys)
-    for _, key in ipairs(keys) do
-        if #out >= cap then
-            break
-        end
-        local e = store[key]
-        if LFGBoard:_IsActive(e, now) then
-            out[#out + 1] = {
-                n = key:match("^([^-]+)") or key,
-                r = e.role or "ANY",
-                t = e.note or "",
-                ts = e.ts,
-                ttl = e.ttl,
-            }
-        end
-    end
-    return out
-end
-
--- Allied listings, in the same row shape the board renderer already consumes.
--- The guild is folded into the note so no renderer change is needed; allied
--- rows carry no `key`, which is what makes them read-only in the board.
-function LFGBoard:AllianceList(now)
-    local ally, sync = GuildOS.Alliance, GuildOS.AllianceSync
-    local pact = ally and ally:Get()
-    local out = {}
-    if not pact or not sync then
-        return out
-    end
-    local mine = ally:MyGuildName()
-    for guildName in pairs(pact.guilds) do
-        if guildName ~= mine and not ally:IsBlocked(guildName) then
-            local entry = sync:Remote(guildName, "lfg")
-            if entry and type(entry.data) == "table" then
-                for _, row in ipairs(entry.data) do
-                    local e = { role = row.r, note = row.t, ts = row.ts, ttl = row.ttl }
-                    if self:_IsActive(e, now) then
-                        out[#out + 1] = {
-                            key   = nil,
-                            name  = row.n,
-                            role  = row.r or "ANY",
-                            roles = LETTER_OF[row.r or "ANY"] or "",
-                            note  = "|cff8888aa[" .. guildName .. "]|r " .. (row.t or ""),
-                            ts    = row.ts,
-                            ttl   = row.ttl,
-                            guild = guildName,
-                        }
-                    end
-                end
-            end
-        end
-    end
-    table.sort(out, function(a, b)
-        if (a.ts or 0) ~= (b.ts or 0) then return (a.ts or 0) > (b.ts or 0) end
-        return (a.name or "") < (b.name or "")
     end)
     return out
 end
@@ -286,10 +187,14 @@ function LFGBoard:_BuildEntry(p, now)
     local role = self:_SanitizeRole(p and p.role)
     local roles = self:_SanitizeRoles(p and p.roles)
     if roles == "" then roles = LETTER_OF[role] or "" end
+    local Q = quests()
     return {
         role = role,
         roles = roles,
         acts = self:_SanitizeActs(p and p.acts),
+        -- The quests picked and, opted in, the ids shared from the log (#450): a client before it ignores both.
+        quests = Q and Q:_SanitizeQuests(p and p.quests) or {},
+        shared = Q and Q:_SanitizeIds(p and p.shared) or {},
         note = GuildOS:SanitizeUserText(p and p.note, NOTE_MAX),
         ts = now - age,
         ttl = ttl,
@@ -358,7 +263,9 @@ end
 -- slash command never speaks in guild chat, where nobody who typed it agreed to be heard.
 -- `roles` and `acts` are the Groups tab's (issue #341): given roles decide `role`, the one a client
 -- before #341 reads.
-function LFGBoard:SetAvailable(role, note, ttl, toGuild, roles, acts)
+-- `picked` are the quests of my log the form picked (#450, { {id, t} }): they go out with Elite quests
+-- among the activities, and, with the share preference on, up to SHARE_MAX ids of my log's group quests.
+function LFGBoard:SetAvailable(role, note, ttl, toGuild, roles, acts, picked)
     note = GuildOS:SanitizeUserText(note, NOTE_MAX)
     ttl = self:_ClampTtl(ttl or GuildOS.db.lfgPrefs.lastTtl or DEFAULT_TTL)
     if roles ~= nil then
@@ -369,14 +276,23 @@ function LFGBoard:SetAvailable(role, note, ttl, toGuild, roles, acts)
         roles = LETTER_OF[role] or ""
     end
     acts = self:_SanitizeActs(acts)
-    local entry = { role = role, roles = roles, acts = acts, note = note, ts = GetServerTime(), ttl = ttl }
-    GuildOS.db.lfgBoard[myKey()] = entry
+    local Q = quests()
+    picked = Q and Q:_SanitizeQuests(picked) or {}
+    local questAct
+    if #picked > 0 and not tContains(acts, QUEST_ACT) and #acts < ACTS_MAX then
+        acts[#acts + 1], questAct = QUEST_ACT, true
+    end
     local prefs = GuildOS.db.lfgPrefs
+    local shared = (Q and prefs.shareQuests) and Q:SharedIds(picked) or {}
+    local entry = { role = role, roles = roles, acts = acts, note = note, ts = GetServerTime(), ttl = ttl,
+                    quests = picked, shared = shared, questAct = questAct }
+    GuildOS.db.lfgBoard[myKey()] = entry
     prefs.lastRole, prefs.lastNote, prefs.lastTtl, prefs.roles = role, note, ttl, roles
-    if toGuild then self:_SayInGuild(role, note, acts) end
+    if toGuild then self:_SayInGuild(role, note, acts, nil, picked) end
     if GuildOS.CommSystem then
         GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.LFG,
-            LibSerialize:Serialize({ role = role, roles = roles, acts = acts, note = note, ttl = ttl }))
+            LibSerialize:Serialize({ role = role, roles = roles, acts = acts, note = note, ttl = ttl,
+                quests = #picked > 0 and picked or nil, shared = #shared > 0 and shared or nil }))
     end
     self:Refresh()
     return entry
@@ -421,7 +337,9 @@ function LFGBoard:Rebroadcast()
     if age < 0 then age = 0 end
     GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.LFG,
         LibSerialize:Serialize({ role = entry.role, roles = entry.roles, acts = entry.acts, note = entry.note,
-            ttl = entry.ttl, age = age }))
+            ttl = entry.ttl, age = age,
+            quests = (entry.quests and #entry.quests > 0) and entry.quests or nil,
+            shared = (entry.shared and #entry.shared > 0) and entry.shared or nil }))
     return true
 end
 
@@ -430,22 +348,31 @@ end
 -- anybody (issue #341; `channel` is nil only from a harness that passes none).
 function LFGBoard:HandleEntry(sender, data, channel)
     if not sender or (channel ~= nil and channel ~= "GUILD") then return end
-    -- Cooldown first, before the deserialize and before any repaint, so a
-    -- flooding peer costs us nothing. Keyed on the short name so "Bob" and
-    -- "Bob-Realm" share one bucket.
-    if self:_RateLimited(sender:match("^([^-]+)") or sender) then return end
-    local ok, p = LibSerialize:Deserialize(data)
-    if not ok or type(p) ~= "table" then return end
     local short = sender:match("^([^-]+)") or sender
     local realm = sender:match("-(.+)$") or GetRealmName()
     local key = GuildOS:GetPlayerKey(short, realm)
     GuildOS.db.lfgBoard = GuildOS.db.lfgBoard or {}
-    if p.clear then
+    -- Taking a listing down is heard whatever the cooldown says, as a group's (Groups:HandleGroup):
+    -- it changes something only when we hold that listing, once. Dropped, it left a player who listed
+    -- and then formed a group (which takes the listing down a moment later) on the board for 90
+    -- minutes (#449). Peeked before the cooldown, which only ever drops.
+    local okPeek, peek = LibSerialize:Deserialize(data)
+    if okPeek and type(peek) == "table" and peek.clear then
+        if GuildOS.db.lfgBoard[key] == nil then return end
         GuildOS.db.lfgBoard[key] = nil
-    else
+        self:Refresh()
+        return
+    end
+    -- Cooldown before any repaint, so a flooding peer costs us nothing. Keyed on the short name so
+    -- "Bob" and "Bob-Realm" share one bucket.
+    if self:_RateLimited(short) then return end
+    local ok, p = okPeek, peek
+    if not ok or type(p) ~= "table" then return end
+    do
         local now = GetServerTime()
         local wasActive = self:_IsActive(GuildOS.db.lfgBoard[key], now)
         local entry, age = self:_BuildEntry(p, now)
+        if type(entry) == "table" then entry.rx = now end   -- heard now (Groups:SweepOffline keeps it)
         GuildOS.db.lfgBoard[key] = entry
         -- Print the SANITIZED note, never the raw payload: string.format("%s")
         -- does not call tostring in Lua 5.1, so a peer sending a boolean or a
@@ -487,9 +414,14 @@ function LFGBoard:ActivityName(id)
 end
 
 -- The activities of a listing and its note, as one line: "Deadmines, Gnomeregan: until 23h".
+-- A listing's quests (#450) by their titles, my log's where I have them; Elite quests is then not said again.
 function LFGBoard:Describe(entry)
     local names = {}
-    for _, id in ipairs(entry.acts or {}) do names[#names + 1] = self:ActivityName(id) end
+    local qs, Q = entry.quests or {}, quests()
+    for _, id in ipairs(entry.acts or {}) do
+        if not (id == QUEST_ACT and #qs > 0) then names[#names + 1] = self:ActivityName(id) end
+    end
+    for _, q in ipairs(qs) do names[#names + 1] = Q and Q:Title(q.id, q.t) or q.t end
     local what, note = table.concat(names, ", "), entry.note or ""
     if what ~= "" and note ~= "" then return what .. ": " .. note end
     return what ~= "" and what or note
@@ -501,12 +433,12 @@ end
 -- it says the same thing: a line can be dropped with no error (a rank that may not speak), and not
 -- everybody shows guild chat, so nothing here can know the line reached anyone. `line` is the whole
 -- line when Modules/Groups.lua speaks for a group: one cooldown for both, so a leader cannot say two.
-function LFGBoard:_SayInGuild(role, note, acts, line)
+function LFGBoard:_SayInGuild(role, note, acts, line, picked)
     local prefs, now = GuildOS.db.lfgPrefs, GetServerTime()
     if not IsInGuild() or now - (prefs.lastGuildLine or 0) < GUILD_LINE_COOLDOWN then return false end
     if not line then
         line = role == "ANY" and L["[Guild OS] LFG"] or string.format(L["[Guild OS] LFG as %s"], roleDisplay(role))
-        local what = self:Describe({ acts = acts, note = note })
+        local what = self:Describe({ acts = acts, note = note, quests = picked })
         if what ~= "" then line = line .. ": " .. what end
     end
     if not GuildOS.Compat.SendChatMessage(line, "GUILD") then return false end
@@ -561,8 +493,9 @@ end
 
 -- The few choices the Groups tab keeps between sessions. The panel asks and tells through these two:
 -- it never writes the saved table itself.
-local PREFS = { postToGuild = "boolean", allianceScope = "boolean", roles = "string", lastMode = "string",
-                autoInvite = "boolean", toast = "boolean", filterCat = "string", filterLevel = "boolean" }
+local PREFS = { postToGuild = "boolean", roles = "string", lastMode = "string",
+                autoInvite = "boolean", toast = "boolean", filterCat = "string", filterLevel = "boolean",
+                shareQuests = "boolean" }
 function LFGBoard:Pref(key)
     local prefs = GuildOS.db and GuildOS.db.lfgPrefs
     return prefs and PREFS[key] and prefs[key]

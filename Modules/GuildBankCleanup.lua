@@ -10,6 +10,7 @@
 -- the bags one at a time; at a vendor only what came out of the bank is sold; the next time the bank
 -- opens, the gold it made goes back in.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Cleanup = {}
 GuildOS.GuildBankCleanup = Cleanup
 local L = GuildOS.L
@@ -566,12 +567,18 @@ function Cleanup:ToSell()
 end
 
 function Cleanup:IsMerchantOpen() return state().merchant == true end
+-- A sale under way: the stacks sold so far, or nil.
+function Cleanup:SellProgress()
+    local run = state().selling
+    return run and run.sold or nil
+end
 
 -- Sell, one stack at a time, only what came out of the bank.
 function Cleanup:SellOut()
     local s = state()
     if not s.merchant or s.selling then return false end
     s.selling = { sold = 0, made = 0 }
+    if self.merchantRefresh then GuildOS:SafeCall(self.merchantRefresh) end
     self:SellStep()
     return true
 end
@@ -592,6 +599,7 @@ function Cleanup:SellStep()
                 local made = (GuildOS.Compat.ItemValue(x.id) or 0) * x.c
                 mine.toDeposit = (mine.toDeposit or 0) + made
                 run.sold, run.made = run.sold + 1, run.made + made
+                if self.merchantRefresh then GuildOS:SafeCall(self.merchantRefresh) end
                 GuildOS.Compat.After(SELL_GAP, function() GuildOS:SafeCall(Cleanup.SellStep, Cleanup) end)
                 return
             end

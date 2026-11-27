@@ -6,6 +6,7 @@
 -- augment rune and weapon enhancement (issue #187; the buffs are Data/ConsumablesRetail.lua's).
 -- WoW: Forever has no table: there this module does not exist, and every reader already treats a
 -- missing module as absent (ADR-0014, ADR-0026).
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local client = GuildOS.Client
 if not (client.isAnniversary or client.isRetail) then return end
 local isRetail = client.isRetail
@@ -333,6 +334,7 @@ function ConsumableChecker:CheckRaid(quiet)
         results = results,
     }
     GuildOS.db.consumableChecks.lastResults = results
+    GuildOS.db.consumableChecks.lastAt = self.lastCheck.time   -- how old a saved check is (audit B15)
     return results
 end
 
@@ -357,6 +359,14 @@ function ConsumableChecker:UnitHasBuff(unit, spellID, _nameHint)
         end
     end
     return nil
+end
+
+-- When the last check was made (the server's clock), this session's or the saved one's; nil when it is
+-- not known (none yet, or saved before checks were stamped).
+function ConsumableChecker:LastCheckAt()
+    if self.lastCheck then return self.lastCheck.time end
+    local saved = GuildOS.db and GuildOS.db.consumableChecks
+    return saved and tonumber(saved.lastAt) or nil
 end
 
 function ConsumableChecker:GetLastResults()

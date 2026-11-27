@@ -16,6 +16,7 @@
 -- whose rank changed since the list was made is skipped. A change the roster
 -- then shows goes to the Roster Log. Session state only (GuildOS.State).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local BulkActions = {}
 GuildOS.BulkActions = BulkActions
 local L = GuildOS.L
@@ -67,9 +68,12 @@ local function num(v, lo, hi)
     return math.floor(v)
 end
 
---- The rules from what the screen holds: { days, rank, levelMin, levelMax, attMin, attMax, noAddon }, each nil
---- when not set. days: offline at least that many days (1+); rank: the current 0-based rank (any when nil or
---- negative); level and attendance (%) bounds, inclusive; noAddon: only members whose GuildOS this client never heard.
+--- The rules from what the screen holds: { days, rank, levelMin, levelMax, attMin, attMax, noAddon, rankDaysMin,
+--- tenureDaysMin, countAlts, wholeGroup }, each nil when not set. days: offline at least that many days (1+); rank: the
+--- current 0-based rank (any when nil or negative); level and attendance (%) bounds, inclusive; noAddon: only members
+--- whose GuildOS this client never heard; rankDaysMin: at least that many days in the current rank, tenureDaysMin in
+--- the guild (the member history's, specs/salao/manutencao-roster.md). countAlts and wholeGroup only change how the
+--- days rule reads (the player's alts) and are no rule of their own.
 function BulkActions.Rules(raw)
     raw = type(raw) == "table" and raw or {}
     local rank = GuildOS.Finite(raw.rank)
@@ -79,13 +83,15 @@ function BulkActions.Rules(raw)
         levelMin = num(raw.levelMin, 1, MAX_LEVEL_RULE), levelMax = num(raw.levelMax, 1, MAX_LEVEL_RULE),
         attMin = num(raw.attMin, 0, 100), attMax = num(raw.attMax, 0, 100),
         noAddon = raw.noAddon and true or nil,
+        rankDaysMin = num(raw.rankDaysMin, 1, MAX_DAYS_RULE), tenureDaysMin = num(raw.tenureDaysMin, 1, MAX_DAYS_RULE),
+        countAlts = raw.countAlts and true or nil, wholeGroup = raw.wholeGroup and true or nil,
     }
 end
 
 --- Whether `rules` set anything: with none, nothing is picked (never the whole guild by accident).
 function BulkActions.HasRule(rules)
     return rules ~= nil and (rules.days or rules.rank or rules.levelMin or rules.levelMax
-        or rules.attMin or rules.attMax or rules.noAddon) ~= nil
+        or rules.attMin or rules.attMax or rules.noAddon or rules.rankDaysMin or rules.tenureDaysMin) ~= nil
 end
 
 --- Whether this rank may do `action` to member `m` at all, whatever the rules: never oneself, never someone at or
@@ -101,9 +107,15 @@ function BulkActions.Eligible(m, action, ctx)
     return action == "remove"
 end
 
---- Whether member `m` meets every rule set. An unknown attendance meets no attendance rule.
+--- Whether member `m` meets every rule set. An unknown attendance meets no attendance rule, an unknown time in rank or
+--- in the guild no rule on them. With countAlts the days rule reads the player's (m.playerDays: the least of the
+--- character's and its group's other characters', RosterMaint.PlayerDays).
 function BulkActions.Meets(m, rules)
-    if rules.days and not (m.daysOffline and m.daysOffline >= rules.days) then return false end
+    local off = m.daysOffline
+    if rules.countAlts and off and m.playerDays then off = m.playerDays end
+    if rules.days and not (off and off >= rules.days) then return false end
+    if rules.rankDaysMin and not (m.rankDays and m.rankDays >= rules.rankDaysMin) then return false end
+    if rules.tenureDaysMin and not (m.tenureDays and m.tenureDays >= rules.tenureDaysMin) then return false end
     if rules.rank and m.rankIndex ~= rules.rank then return false end
     local lvl = m.level or 0
     if rules.levelMin and lvl < rules.levelMin then return false end
@@ -138,14 +150,52 @@ function BulkActions.GroupMatch(members, group, mainKey, action, target, ctx)
     return out
 end
 
+-- A removal by days with wholeGroup (specs/salao/manutencao-roster.md): a matched member's alt group goes whole, and only
+-- when every character of it on the roster is offline for the rule's days; a group with one still about stays. The
+-- characters it adds that the rules alone did not pick are marked viaGroup (their click checks only the days).
+local function wholeGroups(members, out, rules, action, ctx)
+    local byGroup = {}
+    for _, m in ipairs(members or {}) do
+        if m.group then
+            local g = byGroup[m.group] or {}
+            g[#g + 1] = m
+            byGroup[m.group] = g
+        end
+    end
+    local picked, kept = {}, {}
+    for _, m in ipairs(out) do picked[m] = true end
+    local done = {}
+    for _, m in ipairs(out) do
+        local g = m.group and byGroup[m.group]
+        if not g or #g < 2 then
+            kept[#kept + 1] = m
+        elseif not done[m.group] then
+            done[m.group] = true
+            local all = true
+            for _, x in ipairs(g) do
+                if not (x.daysOffline and x.daysOffline >= rules.days) then all = false break end
+            end
+            if all then
+                for _, x in ipairs(g) do
+                    if picked[x] then kept[#kept + 1] = x
+                    elseif BulkActions.Eligible(x, action, ctx) then x.viaGroup = true; kept[#kept + 1] = x end
+                end
+            end
+        end
+    end
+    return kept
+end
+
 --- The members of `members` that `action` would touch under `rules`: longest offline first, then by name.
 --- Returns the list, and "rule" when no rule is set (then the list is empty).
 function BulkActions.Match(members, rules, action, ctx)
     local out = {}
     if not BulkActions.HasRule(rules) then return out, "rule" end
     for _, m in ipairs(members or {}) do
+        m.viaGroup = nil
         if BulkActions.Eligible(m, action, ctx) and BulkActions.Meets(m, rules) then out[#out + 1] = m end
     end
+    if rules.wholeGroup and rules.days and action == "remove" then out = wholeGroups(members, out, rules, action, ctx) end
     table.sort(out, function(a, b)
         local da, db = a.daysOffline or -1, b.daysOffline or -1
         if da ~= db then return da > db end
@@ -191,6 +241,8 @@ local function memberAt(i, att)
     local key = GuildOS:KeyOfRosterName(name)
     local d = members[key]
     local off = (not online and GM) and GM:GetDaysOffline(i) or nil
+    local RM = GuildOS.RosterMaint
+    local now = GetServerTime()
     return {
         fullName = name, name = short(name), key = key,
         rankIndex = rankIndex, rankName = rankName or "?", level = level or 0,
@@ -199,7 +251,25 @@ local function memberAt(i, att)
         hasAddon = (d and (d.lastUpdate or 0) > 0) and true or false,
         attendance = att and attendanceOf(key) or nil,
         safe = (GuildOS.MemberMarks and GuildOS.MemberMarks:IsSafe(key, note, onote)) or nil,   -- issue #429
+        -- Time in rank and in the guild (the member history's; nil when it does not know).
+        rankDays = RM and (RM:RankDays(key, now)) or nil,
+        tenureDays = RM and RM:TenureDays(key, now) or nil,
     }
+end
+
+-- The alt groups on `out` (Collect's lines): each member's group main (m.group, in a group of two or more), the
+-- group's most recently seen other character (m.seen) and the player's days offline (m.playerDays). One pass.
+local function annotateGroups(out)
+    local RM = GuildOS.RosterMaint
+    if not RM then return out end
+    local rows = {}
+    for k, m in ipairs(out) do rows[k] = { key = m.key, name = m.name, days = m.online and 0 or m.daysOffline } end
+    local seen, mainOf = RM.GroupSeen(rows, GuildOS.db and GuildOS.db.altLinks)
+    for _, m in ipairs(out) do
+        m.group, m.seen = mainOf[m.key], seen[m.key]
+        m.playerDays = RM.PlayerDays(m.daysOffline, m.seen)
+    end
+    return out
 end
 
 -- Whether the rules read the raid attendance.
@@ -214,7 +284,7 @@ function BulkActions:Collect(withAttendance)
     for i = 1, GetNumGuildMembers() or 0 do
         out[#out + 1] = memberAt(i, att)
     end
-    return out
+    return annotateGroups(out)
 end
 
 --- Whether this character's rank may do `action` in the game.
@@ -267,7 +337,7 @@ end
 local function itemOf(m)
     return { fullName = m.fullName, name = m.name, key = m.key, rankIndex = m.rankIndex,
              rankName = m.rankName, class = m.class, level = m.level, daysOffline = m.daysOffline,
-             attendance = m.attendance, hasAddon = m.hasAddon, status = "pending" }
+             attendance = m.attendance, hasAddon = m.hasAddon, viaGroup = m.viaGroup, seen = m.seen, status = "pending" }
 end
 
 -- The queue `q` ({ action, rules } or { action, target }) of the members of `list`, from its first.
@@ -352,6 +422,52 @@ function BulkActions:StartListAndSay(action, list)
         GuildOS.UI:OpenWindow("management", "bulk")
     end
     return ok
+end
+
+--- Start a queue of one member, `key` (audit M11): the roster's right-click menu, Ranks, Inactivity, Suggestions and
+--- Discipline's rank step act on one member through this queue, one click of Next, the only way the game takes a rank
+--- change or a removal from an addon (ADR-0038). `target`, optional, a 0-based rank for a promotion or a demotion: the
+--- member is taken there one step per click, as a group's alts are (#424). Never replaces a queue still running.
+--- Returns true, or false and why: "action", "combat", "permission", "busy", "member", "safe", "one" or "at".
+function BulkActions:StartOne(action, key, target)
+    if not LOG_ACTION[action] then return false, "action" end
+    if action == "remove" then target = nil end
+    if GuildOS.Compat.InCombat() then return false, "combat" end
+    if not self:Allowed(action) then return false, "permission" end
+    if self:Busy() then return false, "busy" end
+    local m = key and self:ListFor({ key })[1]
+    if not m then return false, "member" end
+    if target ~= nil and not self.Toward(m.rankIndex, action, target) then return false, "at", m end
+    if not self.Eligible(m, action, self:Context()) then return false, (m.safe and action ~= "promote") and "safe" or "one", m end
+    if target ~= nil then
+        self:_Queue({ action = action, target = target }, { m })
+    else
+        self:_Queue({ action = action, list = true }, { m })
+    end
+    return true
+end
+
+--- StartOne, and say why not when it does not; started, the Bulk actions tab opens on the queue. `name` is how a
+--- refusal names the member when the roster does not.
+function BulkActions:StartOneAndSay(action, key, target, name)
+    local ok, why, m = self:StartOne(action, key, target)
+    if ok then
+        if GuildOS.UI and GuildOS.UI.OpenWindow then GuildOS.UI:OpenWindow("management", "bulk") end
+        return true
+    end
+    local who = (m and m.name) or name or (key and short(key)) or "?"
+    if why == "member" then
+        GuildOS:Print(string.format(L["%s is not in the guild roster."], who))
+    elseif why == "safe" then
+        GuildOS:Print(string.format(L["%s is on the safe list: never in a bulk removal or demotion."], who))
+    elseif why == "one" then
+        GuildOS:Print(string.format(L["Your guild rank may not do this to %s."], who))
+    elseif why == "at" then
+        GuildOS:Print(string.format(L["%s is already at that rank."], who))
+    else
+        GuildOS:Print(self:WhyText(why))
+    end
+    return false
 end
 
 local WHY = {
@@ -445,7 +561,7 @@ end
 function BulkActions:Current()
     local q = self:Queue()
     if not q then return nil end
-    local ctx
+    local ctx, players
     while q.items[q.pos] do
         local item = q.items[q.pos]
         if item.status == "pending" then
@@ -455,8 +571,23 @@ function BulkActions:Current()
             -- A queue from rules checks them again; one for a group of alts, that the target is still ahead (#424);
             -- one of a list (#426), only that this rank may still do it.
             local still
-            if m and q.rules then
-                still = self.Meets(m, q.rules)
+            if m and q.rules and (q.rules.countAlts or q.rules.wholeGroup) then
+                -- The player's days as the roster reads them now: an alt seen since keeps the character.
+                if not players then
+                    players = {}
+                    for _, p in ipairs(self:Collect(false)) do players[p.key] = p end
+                end
+                local p = players[m.key]
+                if p then m.playerDays, m.seen, m.group = p.playerDays, p.seen, p.group end
+            end
+            local groupOut = not (q.rules and q.rules.wholeGroup and q.rules.days) or m == nil
+                or (m.playerDays or m.daysOffline or -1) >= q.rules.days
+            if m and q.rules and item.viaGroup then
+                -- Taken with its group (wholeGroup): only still as long offline as the rule's days, the whole group too.
+                local off = m.daysOffline
+                still = off ~= nil and off >= (q.rules.days or 0) and groupOut
+            elseif m and q.rules then
+                still = self.Meets(m, q.rules) and groupOut
             elseif m and q.target then
                 still = self.Toward(m.rankIndex, q.action, q.target)
             else
@@ -603,6 +734,26 @@ function BulkActions:Skip()
     return true
 end
 
+--- Put every member the roster never showed changed ("unconfirmed") back in the queue, next (audit M13). On WoW:
+--- Forever a member is marked sent as soon as their line prints, typed or not; one the officer never typed, or whose
+--- line the game refused, would otherwise stay out for good. Checked again before their click like any other.
+--- Returns how many went back.
+function BulkActions:RetryUnconfirmed()
+    local q = self:Queue()
+    if not q then return 0 end
+    local n, first = 0, nil
+    for i, item in ipairs(q.items) do
+        if item.status == "unconfirmed" then
+            item.status, item.why, item.sentAt, item.sentClock = "pending", nil, nil, nil
+            n = n + 1
+            first = first or i
+        end
+    end
+    if first and first < q.pos then q.pos = first end
+    if n > 0 then self:Refresh() end
+    return n
+end
+
 function BulkActions:_Sent(item, line)
     local q = self:Queue()
     item.status, item.sentAt, item.sentClock = "sent", GetServerTime(), GetTime()
@@ -707,19 +858,21 @@ function BulkActions:Refresh()
     if AD and AD.HasPending and AD:HasPending() then GuildOS:SafeCall(AD.Flush, AD) end
 end
 
---- `/gos bulk [next | skip | stop]`.
+--- `/gos bulk [next | skip | retry | stop]`.
 function BulkActions:Command(rest)
     rest = strtrim(rest or ""):lower()
     if rest == "" then
         GuildOS.UI:OpenWindow("management", "bulk")
     elseif rest == "next" then
         self:CommandNext()
+    elseif rest == "retry" then
+        if self:RetryUnconfirmed() == 0 then GuildOS:Print(L["No member is waiting to be retried."]) end
     elseif rest == "skip" then
         if not self:Skip() then GuildOS:Print(L["No bulk action is running. Set one up in Leadership > Bulk actions."]) end
     elseif rest == "stop" then
         self:Stop()
         GuildOS:Print(L["Bulk action stopped."])
     else
-        GuildOS:Print(L["Usage: /gos bulk [next | skip | stop]"])
+        GuildOS:Print(L["Usage: /gos bulk [next | skip | retry | stop]"])
     end
 end

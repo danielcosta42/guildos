@@ -6,6 +6,7 @@
 -- hardware event). When the new step's rung asks for something, a second step SUGGESTS it and does it only
 -- on Confirm. The logic is Discipline's; this file only lays it out.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
@@ -38,34 +39,44 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
     opts = opts or {}
     if self.warnDialog then self.warnDialog:Hide() end
 
+    -- A floating window (the mockup's .fw "warn"): "Warn" and the member in its header, the form on its dark
+    -- body, Cancel and Warn in its footer.
+    local Kit = rawget(GuildOS, "Kit")
     local f = CreateFrame("Frame", "GuildOSWarnDialog", UIParent, "BackdropTemplate")
     f:SetSize(440, 360)
     f:SetPoint("CENTER")
-    f:SetBackdrop({ bgFile = WHITE8, edgeFile = WHITE8, edgeSize = GuildOS.UI:Edge(f) })
-    f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-    UI:StylePopup(f)
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
     f:EnableMouse(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     self.warnDialog = f
-
+    local DY = 0   -- how far the form sits under the header
     local step = D:StepOf(playerKey)
-    local title = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(title, nil, "sectionTitle")
-    title:SetPoint("TOP", 0, -10)
-    title:SetTextColor(C.text.r, C.text.g, C.text.b)
-    title:SetText(string.format(L["Warn %s"], name))
+    if Kit then
+        Kit:Dress(f, L["Warn"], { sub = name })
+        Kit:Footer(f)
+        DY = 10
+        f:SetHeight(360 + DY)
+    else
+        f:SetBackdrop({ bgFile = WHITE8, edgeFile = WHITE8, edgeSize = GuildOS.UI:Edge(f) })
+        f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+        f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+        UI:StylePopup(f)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+        local title = f:CreateFontString(nil, "OVERLAY")
+        GuildOS:ApplyFont(title, nil, "sectionTitle")
+        title:SetPoint("TOP", 0, -10)
+        title:SetTextColor(C.text.r, C.text.g, C.text.b)
+        GuildOS:SetTitleText(title, string.format(L["Warn %s"], name))
+    end
 
-    local sub = text(f, 10, C.silver)
-    sub:SetPoint("TOPLEFT", 14, -32)
+    local sub = text(f, UI.SP.META, C.silver)
+    sub:SetPoint("TOPLEFT", 14, -(32 + DY))
     sub:SetText(string.format(L["Now on step %d; this warning makes it %d."], step, math.min(10, step + 1)))
 
     local reasonDD = UI:CreateDropdown(f, 200, 22)
-    reasonDD:SetPoint("TOPLEFT", 14, -54)
+    reasonDD:SetPoint("TOPLEFT", 14, -(54 + DY))
     local reasons = {}
     for _, r in ipairs(D.REASONS) do reasons[#reasons + 1] = { value = r, text = D.ReasonText(r) } end
     reasonDD:SetOptions(reasons)
@@ -85,7 +96,7 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
     -- The guild rule this warning is about (#407): {rule} in the template names it.
     local GR = GuildOS.GuildRules
     local ruleDD = UI:CreateDropdown(f, 412, 22)
-    ruleDD:SetPoint("TOPLEFT", 14, -84)
+    ruleDD:SetPoint("TOPLEFT", 14, -(84 + DY))
     local ruleOpts = { { value = 0, text = L["Rule: none named"] } }
     for i, r in ipairs(GR and GR:Get() or {}) do ruleOpts[#ruleOpts + 1] = { value = i, text = GR.RefText(i, r) } end
     ruleDD:SetOptions(ruleOpts)
@@ -96,11 +107,11 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
         return r and GR.RefText(n, r) or nil
     end
 
-    local msgLabel = text(f, 9, C.gold)
-    msgLabel:SetPoint("TOPLEFT", 14, -116)
+    local msgLabel = text(f, UI.SP.META, C.textSoft)
+    msgLabel:SetPoint("TOPLEFT", 14, -(116 + DY))
     msgLabel:SetText(L["The whisper (you can edit it before sending)"])
     local msg = UI:CreateInput(f, 412, 22, { max = D.WHISPER_MAX })
-    msg:SetPoint("TOPLEFT", 14, -130)
+    msg:SetPoint("TOPLEFT", 14, -(130 + DY))
 
     local edited = false
     local function refill()
@@ -114,7 +125,7 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
     refill()
 
     local saveTpl = UI:CreateButton(f, L["Save as the guild's template"], 200, 20)
-    saveTpl:SetPoint("TOPLEFT", 14, -156)
+    saveTpl:SetPoint("TOPLEFT", 14, -(156 + DY))
     saveTpl:SetScript("OnClick", function()
         -- What was typed, with the name, the reason and the rule named put back as their placeholders.
         local typed = msg:GetText() or ""
@@ -131,32 +142,39 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
         if D:SetTemplate(tplDD:GetValue(), typed) then GuildOS:Print(L["Template saved for the guild."]) end
     end)
 
-    local noteLabel = text(f, 9, C.gold)
-    noteLabel:SetPoint("TOPLEFT", 14, -184)
+    local noteLabel = text(f, UI.SP.META, C.textSoft)
+    noteLabel:SetPoint("TOPLEFT", 14, -(184 + DY))
     noteLabel:SetText(L["Officer note (only officers see it)"])
     local note = UI:CreateInput(f, 412, 22, { max = D.NOTE_MAX })
-    note:SetPoint("TOPLEFT", 14, -198)
+    note:SetPoint("TOPLEFT", 14, -(198 + DY))
 
     local silent = UI:CreateCheckbox(f, L["Only record it, without a whisper"])
-    silent:SetPoint("TOPLEFT", 14, -228)
+    silent:SetPoint("TOPLEFT", 14, -(228 + DY))
 
-    local result = text(f, 10, C.text)
-    result:SetPoint("TOPLEFT", 14, -256)
+    local result = text(f, UI.SP.META, C.text)
+    result:SetPoint("TOPLEFT", 14, -(256 + DY))
     result:SetWidth(412)
     result:SetWordWrap(true)
 
-    local warnBtn = UI:CreateButton(f, L["Warn"], 100, 24)
+    local warnBtn = UI:CreateButton(f.foot or f, L["Warn"], 100, 24)
+    UI:SetButtonVariant(warnBtn, "primary")
     warnBtn:SetPoint("BOTTOMRIGHT", -14, 12)
-    local cancel = UI:CreateButton(f, L["Cancel"], 90, 24)
+    local cancel = UI:CreateButton(f.foot or f, L["Cancel"], 90, 24)
     cancel:SetPoint("RIGHT", warnBtn, "LEFT", -8, 0)
     cancel:SetScript("OnClick", function() f:Hide() end)
-    local confirm = UI:CreateButton(f, L["Confirm"], 100, 24)
+    local confirm = UI:CreateButton(f.foot or f, L["Confirm"], 100, 24)
+    UI:SetButtonVariant(confirm, "primary")
     confirm:SetPoint("BOTTOMRIGHT", -14, 12)
     confirm:Hide()
-
-    local closeBtn = UI:CreateCloseButton(f)
-    closeBtn:SetPoint("TOPRIGHT", -4, -4)
-    closeBtn:SetScript("OnClick", function() f:Hide() end)
+    if f.foot then
+        f.foot:Lay(warnBtn, cancel)
+        confirm:ClearAllPoints()
+        confirm:SetPoint("RIGHT", f.foot, "RIGHT", -9, -1)
+    else
+        local closeBtn = UI:CreateCloseButton(f)
+        closeBtn:SetPoint("TOPRIGHT", -4, -4)
+        closeBtn:SetScript("OnClick", function() f:Hide() end)
+    end
 
     warnBtn:SetScript("OnClick", function()
         local reason = reasonDD:GetValue()
@@ -189,7 +207,7 @@ function GuildOS:ShowWarnDialog(playerKey, name, opts)
         cancel:ClearAllPoints()
         cancel:SetPoint("RIGHT", confirm, "LEFT", -8, 0)
         confirm:SetScript("OnClick", function()
-            D:ApplySuggestion(name, s, reason)
+            D:ApplySuggestion(name, s, reason, playerKey)
             f:Hide()
         end)
     end)

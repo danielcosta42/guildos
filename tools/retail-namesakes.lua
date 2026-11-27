@@ -148,7 +148,7 @@ check(B:RemoveKey(rows["Bob-Gallywix"]) and store["bob-gallywix"].removed and no
   "the x on Bob-Gallywix's row lifts his ban")
 B:Add("Bob-Gallywix", "again")
 local manage = assert(io.open(ADDON .. "/UI/ManagementPanel.lua", "rb")):read("*a")
-check(manage:find("GuildOS.BanList:RemoveKey(key)", 1, true) and not manage:find("BanList:Remove(nm)", 1, true),
+check(manage:find("GuildOS.BanList:ConfirmRemoveKey(key, who)", 1, true) and not manage:find("BanList:Remove(nm)", 1, true),
   "the ban list's x lifts by the row's key")
 
 -- The game's own names: a whisper, a join and a unit's tooltip.
@@ -285,8 +285,16 @@ local RT = GuildOS.RaidTracker
 check(not RT:IsGuildRaid({ players = { ["Bob-TolBarad"] = {}, ["Zed-TolBarad"] = {}, ["Ana-Azralon"] = {} } }),
   "a raid of two strangers and one guildmate is not a guild raid, whatever their names share")
 check(RT:IsGuildRaid({ players = { ["Bob-Gallywix"] = {}, ["Zed-TolBarad"] = {} } }), "half of the guild is")
+-- Audit R2: a pug with a saved record (an inspect, a broadcast) is still not the guild's.
+GuildOS.db.members = GuildOS.db.members or {}
+GuildOS.db.members["Zed-TolBarad"], GuildOS.db.members["Yan-TolBarad"] = { name = "Zed" }, { name = "Yan" }
+check(not RT:IsGuildRaid({ players = { ["Bob-Gallywix"] = {}, ["Zed-TolBarad"] = {}, ["Yan-TolBarad"] = {} } }),
+  "a pug's saved record does not make them the guild's: the roster decides")
+GuildOS.db.members["Zed-TolBarad"], GuildOS.db.members["Yan-TolBarad"] = nil, nil
 local src = assert(io.open(ADDON .. "/UI/RosterFrame.lua", "rb")):read("*a")
-check(src:find("GM:GetRankIndex(data.fullName or data.name)", 1, true), "the roster's rank menu asks with the whole name")
+check(src:find("GuildManager:Promote(data.fullName or data.name, data.key)", 1, true)
+  and src:find("GuildManager:ConfirmKick(data.fullName or data.name, data.key)", 1, true),
+  "the roster's rank menu acts on the whole name and key (the Set Rank submenu went with audit M11)")
 
 -- ── 4. Forever keeps the name alone ───────────────────────────────────
 B = load(false)

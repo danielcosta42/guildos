@@ -49,6 +49,7 @@ local function load(retail)
   function GetServerTime() return NOW end
   function GetTime() return NOW end
   time = function() return NOW end
+  date = os.date
   function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
   issecretvalue = function(v) return v == SECRET end
   function IsInGuild() return true end
@@ -99,6 +100,22 @@ check(B:ForExport() == nil, "nothing shared yet: no banShares")
 check(select(2, B:Share("thrall", "theft")) == "reason" and select(2, B:Share("thrall")) == "reason",
   "a reason from the list is required")
 check(select(2, B:Share("nobody", "scam")) == "missing", "only a standing ban is shared")
+-- A temporary ban that ran out is never shared, nor offered (audit B6); Share means the site's alliance (B7).
+store.runout = { name = "Runout", reason = "r", author = "Off", ts = NOW - 100, expiry = NOW - 1 }
+check(select(2, B:Share("runout", "scam")) == "expired" and not B:IsShared("runout"), "an expired temporary ban cannot be shared")
+BLOCK = nil
+check(not B:HasSiteAlliance() and not B:CanShare("thrall"), "no alliance on the site: nothing is offered for sharing")
+BLOCK = { allianceBans = {} }
+check(B:HasSiteAlliance() and B:CanShare("thrall") and not B:CanShare("runout"),
+  "with one: a ban in force is offered, the one that ran out is not")
+BLOCK = nil
+store.runout = nil
+-- Lifting from the list asks first (audit B6).
+dialogs = {}
+check(B:ConfirmRemoveKey("thrall", "Thrall") and not store.thrall.removed and dialogs[1].which == "GUILDOS_BAN_LIFT"
+  and dialogs[1].text == "Thrall" and dialogs[1].data == "thrall", "the x asks before it lifts")
+check(GuildOS.Dialogs.GUILDOS_BAN_LIFT.button1 == "Lift", "the question's yes is Lift")
+dialogs = {}
 officer = false
 check(select(2, B:Share("thrall", "scam")) == "officer" and not B:IsShared("thrall"), "a member cannot share")
 officer = true
@@ -253,7 +270,8 @@ end
 GuildOS.Compat.UnitIdentity = function() return "Gul", nil end
 local tt = tooltip("Gul")
 hooks.OnTooltipSetUnit(tt)
-check(#tt.lines == 2 and tt.lines[1]:find("Banned in Horde Co for Scam", 1, true), "the tooltip shows the alliance's bans")
+check(#tt.lines == 3 and tt.lines[1] == "The alliance's bans" and tt.lines[2]:find("Banned in Horde Co for Scam", 1, true),
+  "the tooltip shows the alliance's bans, labelled the alliance's")
 officer = false
 tt = tooltip("Gul")
 hooks.OnTooltipSetUnit(tt)
@@ -278,6 +296,21 @@ officer = false
 check(not B:HoldInvite("Gul", invite), "a member's invite is never held")
 officer = true
 
+-- The guild's own ban holds a manual invite first (audit M2), alone or with the alliance's.
+B:Add("Thrall", "ninja")
+dialogs, invited = {}, 0
+check(B:HoldInvite("Thrall", invite) and invited == 0, "an invite to somebody the guild banned waits")
+check(#dialogs == 1 and dialogs[1].which == "GUILDOS_ALLIANCE_BAN_INVITE" and dialogs[1].text:find("Banned Thrall (ninja)", 1, true)
+      and not dialogs[1].text:find("The alliance has banned", 1, true), "the guild's ban, its reason and who, is said")
+GuildOS.Dialogs.GUILDOS_ALLIANCE_BAN_INVITE.OnAccept({}, dialogs[1].data)
+check(invited == 1, "Invite anyway invites past the guild's ban")
+B:Add("Gul", "scam")
+dialogs = {}
+check(B:HoldInvite("Gul", invite) and dialogs[1].text:find("^Banned Gul %(scam%)") and dialogs[1].text:find("The alliance has banned Gul:", 1, true),
+  "both bans: the guild's first, then the alliance's")
+B:RemoveKey(B:_NormalizeKey("Thrall")); B:RemoveKey(B:_NormalizeKey("Gul"))
+dialogs = {}
+
 -- Every manual guild invite asks first; the auto-invite does not.
 local function src(rel) return assert(io.open(ADDON .. "/" .. rel, "rb")):read("*a") end
 check(src("Modules/RecruitmentSystem.lua"):find("BL:HoldInvite(target, invite)", 1, true), "/gos recruit invite asks")
@@ -286,6 +319,17 @@ check(src("UI/RosterFrame.lua"):find("BL:HoldInvite(target, send)", 1, true), "t
 check(src("Core/Utils.lua"):find("BL:HoldInvite(name, send)", 1, true), "Alt+Click asks")
 local auto = src("Modules/RecruitmentSystem.lua"):match("function Recruitment:_InviteNow(.-)\nend\n")
 check(auto and not auto:find("HoldInvite", 1, true), "the auto-invite is never held")
+-- Audit M2: nor does it invite somebody the alliance banned, by itself; the whisper's alert tells the officer.
+local whisper = src("Modules/RecruitmentSystem.lua"):match("function Recruitment:_HandleKeywordWhisper(.-)\nend\n")
+local afterWho = src("Modules/RecruitmentSystem.lua"):match("function Recruitment:_FinishWho(.-)\nend\n")
+check(whisper and whisper:find("AllianceBansFor(author or sender)", 1, true)
+  and afterWho and afterWho:find("AllianceBansFor(sender)", 1, true), "M2: the auto-invite passes over an allied ban, before and after /who")
+-- Every guild invite the addon sends goes through one of the paths above (Compat.GuildInvite's callers).
+local callers = 0
+for _, rel in ipairs({ "Modules/JoinRequests.lua", "Modules/RecruitmentSystem.lua", "UI/RosterFrame.lua", "Core/Utils.lua" }) do
+  for _ in src(rel):gmatch("Compat%.GuildInvite%(") do callers = callers + 1 end
+end
+check(callers == 5, "M2: five calls to GuildInvite, every one of them behind an allied-ban check (" .. callers .. ")")
 local banSrc = src("Modules/BanList.lua")
 local isBanned = banSrc:match("function BanList:IsBanned(.-)\nend\n")
 check(isBanned and not isBanned:find("Alliance", 1, true), "IsBanned does not look at the alliance")

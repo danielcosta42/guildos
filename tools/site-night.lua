@@ -748,4 +748,24 @@ for _, k in ipairs({ "softRes", "lootPrios", "wishlists", "guildWishlists" }) do
   check(same(GuildOS.db[k], BEFORE[k]), k .. " is still what it was after all of it")
 end
 
+-- ── Audit B14: an imported sheet stops counting once its raid night is over ─
+do
+  GuildOS.db.siteLoot = nil
+  local meta, held = GuildOS.db.softRes.meta, clock
+  GuildOS.db.softRes.meta = { importedAt = NOW, raidStartsAt = 0 }
+  clock = NOW + 3600
+  check(names(SR:GetReserves(ITEM)) == "Bo", "an imported sheet counts on its night")
+  clock = NOW + 9 * 3600
+  check(#SR:GetReserves(ITEM) == 0 and #SR:GetAllItems() == 0 and not SR:SheetInForce(),
+    "and stops counting once the night's window (the site's) is over")
+  GuildOS.db.softRes.meta = { importedAt = NOW - 3 * 86400, raidStartsAt = NOW + 3600 }
+  clock = NOW
+  check(names(SR:GetReserves(ITEM)) == "Bo", "a sheet imported days before its raid counts until it")
+  clock = NOW + 3600 + 8 * 3600 + 1
+  check(#SR:GetReserves(ITEM) == 0, "and not after that raid's night")
+  GuildOS.db.softRes.meta = {}
+  check(names(SR:GetReserves(ITEM)) == "Bo", "a sheet saved before imports were stamped counts as before")
+  GuildOS.db.softRes.meta, clock = meta, held
+end
+
 print("site-night: " .. checks .. " checks passed")

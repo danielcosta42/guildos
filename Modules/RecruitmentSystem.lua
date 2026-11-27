@@ -3,6 +3,7 @@
 -- Automatic recruitment messages + right-click guild invite
 -- Only officers (rank index <= 1) or configurable rank can use this
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Recruitment = {}
 GuildOS.Recruitment = Recruitment
 local L = GuildOS.L
@@ -193,9 +194,42 @@ function Recruitment:HasChannel(list, name)
     return false
 end
 
+-- The channel `saved` names, as this character has it: its name and number, or the name and 0 when it is not
+-- joined. The game is asked by name first (a zone channel answers to its shortcut, "Trade"); then the joined
+-- channels are read and compared in any case, so a "LookingforGuild" typed by hand finds the "LookingForGuild"
+-- the player is in (#449), and a zone channel's full name ("Trade - City") answers to its shortcut too. A preset
+-- named in any language is this client's first (ChannelName).
+local function baseName(name)
+    return (tostring(name):match("^(.-)%s+%-%s+") or tostring(name)):lower()
+end
+function Recruitment:ResolveChannel(saved)
+    local name = self:ChannelName(strtrim(tostring(saved or "")))
+    if name == "" then return name, 0 end
+    local Compat = GuildOS.Compat
+    local want = name:lower()
+    local joined = Compat.JoinedChannels and Compat.JoinedChannels() or {}
+    local num = Compat.ChannelId(name)
+    if num > 0 then
+        for _, ch in ipairs(joined) do
+            if ch.num == num and ch.name:lower() == want then return ch.name, num end
+        end
+        return name, num
+    end
+    for _, ch in ipairs(joined) do
+        if ch.name:lower() == want then return ch.name, ch.num end
+    end
+    for _, ch in ipairs(joined) do
+        if baseName(ch.name) == want then return name, ch.num end
+    end
+    return name, 0
+end
+
 function Recruitment:AddChannel(list, name)
     name = strtrim(tostring(name or ""))
     if name == "" or self:HasChannel(list, name) then return false end
+    -- Saved as the game names the channel when the player is in it: "lookingforguild" goes in as "LookingForGuild".
+    local real, num = self:ResolveChannel(name)
+    if num > 0 and real:lower() == self:ChannelName(name):lower() then name = real end
     list[#list + 1] = name
     return true
 end
@@ -359,7 +393,9 @@ function Recruitment:RegisterAutoInviteEvent()
         if GuildOS.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
         local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
         if not cfg or not cfg.enabled then return end
-        if not GuildOS.Compat.AddonMayInvite() then return end   -- Anniversary only (#256)
+        -- Anniversary and retail invite (one key press each where the game wants it, #449); WoW: Forever lets
+        -- no addon invite (#256), and there the officer gets the /ginvite line to copy.
+        if not (GuildOS.Compat.AddonMayInvite() or Recruitment:_InviteIsTyped()) then return end
         if not Recruitment:_MatchKeyword(msg, cfg.keyword) then return end
         local sender = author and (author:match("^([^-]+)") or author)
         if sender and sender ~= "" then
@@ -368,18 +404,39 @@ function Recruitment:RegisterAutoInviteEvent()
     end)
 end
 
--- An invite the whisper earned. Only TBC Anniversary gets here (#256): the popup that held it for a
--- click on WoW: Forever (#61) went with the invite the game took away from addons there.
+-- Whether an invite here is a line the officer copies and sends (WoW: Forever, #256): the game lets no addon
+-- invite, from a click either.
+function Recruitment:_InviteIsTyped()
+    local c = GuildOS.Client
+    return not (c.isAnniversary or c.isRetail) and (CanGuildInvite and CanGuildInvite()) == true
+end
+
+-- An invite the whisper earned (#449). Through the officer action queue: at once where the game lets an addon
+-- invite from an event, else on the next key press of the queue's binding or a click of its toast. On WoW:
+-- Forever, the /ginvite line to copy. Without the queue (a test), at once.
 function Recruitment:_DoInvite(name)
-    self:_InviteNow(name)
+    local AQ = GuildOS.ActionQueue
+    if self:_InviteIsTyped() then
+        if AQ then AQ:OfferTyped(name) end
+        return
+    end
+    if not AQ then return self:_InviteNow(name) end
+    AQ:Add({ kind = "guildInvite", key = "ginv:" .. name, name = name,
+             valid = function()
+                 local BL = GuildOS.BanList
+                 if BL and (BL:IsBanned(name) or BL:AllianceBansFor(name)) then return false end
+                 return not self:_OnInviteCooldown(name, GetServerTime())
+             end,
+             run = function() return self:_InviteNow(name) end })
 end
 
 function Recruitment:_InviteNow(name, full)
     local cfg = GuildOS.db.recruitment.autoInvite
-    if not GuildOS.Compat.GuildInvite(full or name) then return end
+    if not GuildOS.Compat.GuildInvite(full or name) then return false end
     if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(name) end
     self:_MarkInvited(name, GetServerTime(), cfg.cooldownSec)
     GuildOS:Print(string.format(L["Auto-invited |cffFFFFFF%s|r to the guild."], name))
+    return true
 end
 
 function Recruitment:_HandleKeywordWhisper(sender, author)
@@ -387,15 +444,24 @@ function Recruitment:_HandleKeywordWhisper(sender, author)
     -- Ban gate (BanList already alerts on a banned whisper). The whole sender: on retail the realm
     -- tells a banned namesake from this realm's (issue #184).
     if GuildOS.BanList and GuildOS.BanList:IsBanned(author or sender) then return end
+    -- The alliance's ban (audit M2): never invited by itself; the whisper's alert tells the officer why, and
+    -- inviting is theirs to do by hand, where HoldInvite asks first.
+    if GuildOS.BanList and GuildOS.BanList:AllianceBansFor(author or sender) then return end
     -- Cooldown
     if self:_OnInviteCooldown(sender, GetServerTime()) then return end
-    -- Filters need a /who, which Forever runs only from a click: there the officer's click on
-    -- the popup is the check, and the filters stay for Anniversary.
+    -- Filters need a /who (#449). C_FriendList.SendWho wants a hardware event (wiki; /gos probe invite measures
+    -- it): there the /who waits in the officer action queue, its key press runs it, and the invite follows (at
+    -- once, or on the next key press). Where the officer copies the invite (Forever), the copy is the check.
     local filtered = (cfg.minLevel or 0) > 0 or (cfg.classes and next(cfg.classes) ~= nil)
-    if filtered and not GuildOS.Compat.NeedsClick() then
-        self:_QualifyAndInvite(sender)
+    local AQ = GuildOS.ActionQueue
+    if not filtered or self:_InviteIsTyped() then
+        self:_DoInvite(sender)
+    elseif GuildOS.Compat.NeedsHardware("who") and AQ then
+        AQ:Add({ kind = "who", key = "who:" .. sender, name = sender,
+                 valid = function() return not self:_OnInviteCooldown(sender, GetServerTime()) end,
+                 run = function() return self:_QualifyAndInvite(sender) ~= false end })
     else
-        self:_DoInvite(sender, author)
+        self:_QualifyAndInvite(sender)
     end
 end
 
@@ -414,7 +480,19 @@ end
 function Recruitment:QueueWelcome(name)
     self._pendingWelcomes = self._pendingWelcomes or {}
     addOnce(self._pendingWelcomes, name)
-    self:ShowWelcomePopup()
+    -- The queue's key press sends it too (#449); the popup is its window, so the toast stays out.
+    local AQ = GuildOS.ActionQueue
+    if AQ then
+        AQ:Add({ kind = "chat", key = "welcome", name = table.concat(self._pendingWelcomes, ", "),
+                 verb = L["welcome"], ownWindow = true,
+                 run = function()
+                     local went = self:SendPendingWelcome()
+                     if self.welcomePopup then self.welcomePopup:Hide() end
+                     return went
+                 end })
+    end
+    -- Never in combat, one popup at a time (audit B21): a join mid-fight waits for its end.
+    GuildOS:ShowWhenClear("welcome", function() self:ShowWelcomePopup(); return self.welcomePopup end)
 end
 
 -- Why the game would refuse `msg` as a chat line, in the reader's words, or nil (#270). A "|" that is
@@ -480,6 +558,7 @@ function Recruitment:SetWelcome(i, text)
         list[i] = text
     end
     writeWelcomes(r, list)
+    self:WelcomeChanged()
     return true
 end
 
@@ -490,6 +569,7 @@ function Recruitment:RemoveWelcome(i)
     if #list <= 1 or not list[i] then return false end
     table.remove(list, i)
     writeWelcomes(r, list)
+    self:WelcomeChanged()
     return true
 end
 
@@ -504,12 +584,82 @@ function Recruitment.PickWelcome(list, last, rnd)
     return pool[(rnd or math.random)(#pool)]
 end
 
+-- The welcomes for a member who returns (#449, specs/salao/saidas.md): a second list, empty by default, the empty
+-- ones left out. Pure on `r`.
+function Recruitment.WelcomeBackList(r)
+    local out = {}
+    local list = type(r) == "table" and r.welcomeBackMessages
+    if type(list) ~= "table" then return out end
+    for _, t in ipairs(list) do
+        if type(t) == "string" and t ~= "" and #out < Recruitment.WELCOME_MAX then out[#out + 1] = t end
+    end
+    return out
+end
+
+-- Puts `text` at place `i` of the returning members' list, or adds it past the end. False and why when the game
+-- would refuse it, or when the list is full.
+function Recruitment:SetWelcomeBack(i, text)
+    local r = GuildOS.db.recruitment
+    if not r then return false end
+    local problem = Recruitment.ChatTextProblem(text)
+    if problem then return false, problem end
+    local list = Recruitment.WelcomeBackList(r)
+    if i > #list then
+        if #list >= Recruitment.WELCOME_MAX then return false end
+        list[#list + 1] = text
+    else
+        list[i] = text
+    end
+    r.welcomeBackMessages = list
+    self:WelcomeChanged()
+    return true
+end
+
+-- Takes place `i` off the returning members' list; the last one may go (the normal welcome is used then).
+function Recruitment:RemoveWelcomeBack(i)
+    local r = GuildOS.db.recruitment
+    local list = Recruitment.WelcomeBackList(r)
+    if not list[i] then return false end
+    table.remove(list, i)
+    r.welcomeBackMessages = list
+    self:WelcomeChanged()
+    return true
+end
+
+-- What the welcome back fills in, when `who` is one member the history knows as a former one (an officer's
+-- client: the history is theirs): { days = days away, since = the date they left }. Nil otherwise: several who
+-- joined at once get the welcome for everybody.
+function Recruitment:BackInfo(who)
+    local names = type(who) == "table" and who or { who }
+    local MH = GuildOS.MemberHistory
+    if #names ~= 1 or type(names[1]) ~= "string" or not (MH and MH.ReturnInfo) or not GuildOS:IsOfficer() then return nil end
+    local key = MH:KeyOf(names[1])
+    local info = key and MH:ReturnInfo(key)
+    if not info then return nil end
+    return { days = info.away, since = GuildOS:DateText(info.leftAt, "/%Y") }
+end
+
 -- The welcome this client would send now (and shows in the Forever popup before the click). The
 -- one drawn stays until it is sent, so the popup shows the line the click posts; a draw no longer
--- on the list is drawn again.
-function Recruitment:WelcomeMessage()
+-- on the list is drawn again. `back` (BackInfo's): one of the returning members' list, when it has any.
+function Recruitment:WelcomeMessage(back)
     local r = GuildOS.db.recruitment
     local GR = GuildOS.GuildRules
+    local backList = back and Recruitment.WelcomeBackList(r) or {}
+    if #backList > 0 then
+        local drawnBack = self._drawnBack
+        local held = false
+        for _, t in ipairs(backList) do
+            if t == drawnBack then held = true break end
+        end
+        if not held then
+            drawnBack = Recruitment.PickWelcome(backList, r and r.welcomeBackLast)
+            self._drawnBack = drawnBack
+        end
+        self._usedBack = true
+        return Recruitment.WelcomeWithRules(drawnBack, r ~= nil and r.welcomeRules == true, GR ~= nil and GR:HasRules())
+    end
+    self._usedBack = nil
     local list = Recruitment.WelcomeList(r)
     local drawn = self._drawnWelcome
     local still = false
@@ -527,13 +677,46 @@ end
 -- A welcome went out: the next one is drawn among the others.
 function Recruitment:_WelcomeSent()
     local r = GuildOS.db.recruitment
+    if self._usedBack then
+        if r and self._drawnBack then r.welcomeBackLast = self._drawnBack end
+        self._drawnBack, self._usedBack = nil, nil
+        return
+    end
     if r and self._drawnWelcome then r.welcomeLast = self._drawnWelcome end
     self._drawnWelcome = nil
 end
 
 -- The one way a welcome reaches guild chat, clicked (Forever) or on its own (Anniversary): the text
 -- is checked first and a send the game raises on is said, never lost (#270). True when it went.
-function Recruitment:SendWelcomeText(msg, who)
+-- The welcome's placeholders: {name} (also {nome}, {player}) becomes who joined — several joined at once, their
+-- names joined by commas — and {guild} the guild's name. Names go without their realm. Case does not matter.
+-- `back` (a member who returns, BackInfo's): {days} (also {dias}) the days they were away, {since} (also {desde}) the
+-- date they left; without it those stay as written.
+function Recruitment.FillWelcome(msg, who, back)
+    if type(msg) ~= "string" then return msg end
+    local names = type(who) == "table" and who or (who and { who } or {})
+    local short = {}
+    for _, n in ipairs(names) do
+        local nm = tostring(n)
+        short[#short + 1] = (GuildOS.ShortName and GuildOS:ShortName(nm)) or nm:match("^([^-]+)") or nm
+    end
+    local joined = table.concat(short, ", ")
+    local guild = (GetGuildInfo and GetGuildInfo("player")) or ""
+    local out = msg:gsub("{(%a+)}", function(key)
+        local k = key:lower()
+        if k == "name" or k == "nome" or k == "player" then return joined end
+        if k == "guild" or k == "guilda" then return guild end
+        if back and (k == "days" or k == "dias") then return tostring(back.days or "?") end
+        if back and (k == "since" or k == "desde") then return tostring(back.since or "?") end
+        return nil
+    end)
+    -- A name placeholder with nobody to name (a test from /gos) leaves no stray comma.
+    out = out:gsub("%s+([,!.?])", "%1"):gsub("^%s+", "")
+    return out
+end
+
+function Recruitment:SendWelcomeText(msg, who, back)
+    msg = Recruitment.FillWelcome(msg, who, back)
     local problem = Recruitment.ChatTextProblem(msg)
     if problem then
         GuildOS:Print(string.format(L["The welcome was not sent: %s"], problem))
@@ -545,7 +728,10 @@ function Recruitment:SendWelcomeText(msg, who)
         return false
     end
     self:_WelcomeSent()
-    if who then GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. who .. L["|r in guild chat."]) end
+    if who then
+        local w = type(who) == "table" and table.concat(who, ", ") or tostring(who)
+        GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. w .. L["|r in guild chat."])
+    end
     return true
 end
 
@@ -553,11 +739,12 @@ end
 -- game would not take the text: whoever waits keeps waiting for the fixed one.
 function Recruitment:SendPendingWelcome()
     local list = self._pendingWelcomes
-    local msg = self:WelcomeMessage()
+    local back = list and self:BackInfo(list)
+    local msg = self:WelcomeMessage(back)
     if not list or #list == 0 or not msg or msg == "" then return false end
-    if not self:SendWelcomeText(msg) then return false end
-    GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. table.concat(list, ", ") .. L["|r in guild chat."])
+    if not self:SendWelcomeText(msg, list, back) then return false end
     self._pendingWelcomes = {}
+    if GuildOS.ActionQueue then GuildOS.ActionQueue:Remove("welcome") end
     return true
 end
 
@@ -566,18 +753,190 @@ end
 -- take longer behind the guild's sync traffic, so two of them can each believe they won. The
 -- claims they then exchange settle it the same way on both sides: the lower name keeps it.
 function Recruitment:OnWelcomeClaim(member, sender)
+    -- Welcomed, guild-wide: this client never sends it within WELCOME_ONCE (#449).
+    if GuildOS.db and GuildOS.db.recruitment then self:MarkWelcomed(member) end
     local list = self._pendingWelcomes
     if not list then return end
-    local theirs = sender:match("^([^-]+)") or sender
-    if theirs >= GuildOS.Compat.PlayerName() then return end
+    -- The same order as the election (StableName): the realm plays no part; Forever's surnames are the roster's.
+    if not Recruitment.SortsBefore(GuildOS:SenderName(sender) or sender, GuildOS.Compat.PlayerName()) then return end
     for i = #list, 1, -1 do
         if list[i] == member then table.remove(list, i) end
     end
     self:ShowWelcomePopup()   -- redrawn without them, or hidden when nobody is left
 end
 
+----------------------------------------------------------------------
+-- The welcome is the guild's, not each officer's (#449): the switch, the welcomes (and the ones for members who
+-- return), the Discord and the rules' ending travel as one snapshot on the officers' guild settings ("guildcfg",
+-- act "welcome", over GUILD: WoW: Forever has no OFFICER channel, and the text is posted in guild chat anyway),
+-- officer-signed (SyncService checks the sender), the newest stamp winning on every client; an equal stamp goes
+-- to the lower author name, so two officers' first runs settle the same everywhere. A client before it reads the
+-- act as an officer threshold with no `max`, which it ignores.
+--   r.welcomeCfgAt, r.welcomeCfgBy   -- the stamp and the officer who last changed it
+-- First run: an officer whose client holds a welcome the guild never stamped shares it with the lowest stamp
+-- (MIGRATE_REV), so any officer's real change wins over it.
+----------------------------------------------------------------------
+Recruitment.MIGRATE_REV = 1
+local function serverNow() return (GetServerTime and GetServerTime()) or (time and time()) or os.time() end
+Recruitment.WELCOME_STAMP_SLACK = 300
+local DISCORD_MAX = 100
+
+-- The snapshot this client holds, as it travels. Pure on `r`.
+function Recruitment.WelcomeSnapshot(r)
+    if type(r) ~= "table" then return nil end
+    return { on = r.welcomeEnabled and true or false, msgs = Recruitment.WelcomeList(r),
+             back = Recruitment.WelcomeBackList(r), discord = type(r.discord) == "string" and r.discord or "",
+             rules = r.welcomeRules == true, by = r.welcomeCfgBy }
+end
+
+-- A snapshot off the network, checked field by field, or nil.
+function Recruitment.ValidWelcome(d)
+    if type(d) ~= "table" then return nil end
+    local function list(t)
+        local out = {}
+        if type(t) ~= "table" then return out end
+        for i = 1, math.min(#t, Recruitment.WELCOME_MAX) do
+            local x = t[i]
+            if type(x) == "string" and x ~= "" and not Recruitment.ChatTextProblem(x) then out[#out + 1] = x end
+        end
+        return out
+    end
+    local discord = type(d.discord) == "string" and GuildOS:SanitizeUserText(d.discord, DISCORD_MAX) or ""
+    local by = type(d.by) == "string" and d.by ~= "" and GuildOS:SanitizeUserText(d.by, 48) or nil
+    return { on = d.on == true, msgs = list(d.msgs), back = list(d.back), discord = discord, rules = d.rules == true, by = by }
+end
+
+-- The officer changed the welcome here: a new stamp, and the snapshot to the officers a moment later (a card's Save
+-- changes several things at once: one envelope).
+function Recruitment:WelcomeChanged()
+    local r = GuildOS.db and GuildOS.db.recruitment
+    if not (r and GuildOS:IsOfficer()) then return end
+    local now = serverNow()
+    r.welcomeCfgAt = math.max(now, (tonumber(r.welcomeCfgAt) or 0) + 1)
+    r.welcomeCfgBy = GuildOS:ShortName(GuildOS.Compat.PlayerName())
+    if self._welcomePublishSoon then return end
+    self._welcomePublishSoon = true
+    GuildOS.Compat.After(1, function()
+        Recruitment._welcomePublishSoon = nil
+        GuildOS:SafeCall(Recruitment.PublishWelcome, Recruitment)
+    end)
+end
+
+-- To the guild: on a change, on the officers' regular sync and their answer to a request. A client whose welcome
+-- the guild never stamped shares it at MIGRATE_REV (the first run).
+function Recruitment:PublishWelcome()
+    local r = GuildOS.db and GuildOS.db.recruitment
+    if not (r and GuildOS.SyncService and GuildOS:IsOfficer()) then return end
+    if not r.welcomeCfgAt then
+        if #Recruitment.WelcomeList(r) == 0 then return end
+        r.welcomeCfgAt, r.welcomeCfgBy = Recruitment.MIGRATE_REV, GuildOS:ShortName(GuildOS.Compat.PlayerName())
+    end
+    GuildOS.SyncService:Publish("guildcfg", "welcome", Recruitment.WelcomeSnapshot(r), { rev = r.welcomeCfgAt })
+end
+
+-- From an officer over GUILD (SyncService checked it): the newest stamp wins; an equal one, the lower author.
+function Recruitment:OnWelcomeConfigSync(env, sender)
+    local r = GuildOS.db and GuildOS.db.recruitment
+    if not r or type(env) ~= "table" or env.act ~= "welcome" then return false end
+    local at = GuildOS.Finite(env.rev)
+    if not (at and at > 0) then return false end
+    at = math.min(at, serverNow() + Recruitment.WELCOME_STAMP_SLACK)
+    local d = Recruitment.ValidWelcome(env.data)
+    if not d then return false end
+    local by = d.by or (sender and GuildOS:ShortName(sender)) or "?"
+    local held = tonumber(r.welcomeCfgAt)
+    if held and (at < held or (at == held and (by or ""):lower() >= (r.welcomeCfgBy or ""):lower())) then return false end
+    if #d.msgs > 0 then writeWelcomes(r, d.msgs) end
+    r.welcomeBackMessages = d.back
+    r.welcomeEnabled, r.discord, r.welcomeRules = d.on, d.discord, d.rules
+    r.welcomeCfgAt, r.welcomeCfgBy = at, by
+    self._drawnWelcome, self._drawnBack = nil, nil
+    if self.welcomeUiRefresh then GuildOS:SafeCall(self.welcomeUiRefresh) end
+    return true
+end
+
+-- "Shared with the officers · last changed by Ana, 03/11 21:40", or nil before anybody stamped it.
+function Recruitment:WelcomeSharedText()
+    local r = GuildOS.db and GuildOS.db.recruitment
+    if not (r and r.welcomeCfgAt) then return L["Shared with the officers: saving here sets it for all of them."] end
+    if r.welcomeCfgAt <= Recruitment.MIGRATE_REV then
+        return string.format(L["Shared with the officers · from %s's client"], r.welcomeCfgBy or "?")
+    end
+    return string.format(L["Shared with the officers · last changed by %s, %s"], r.welcomeCfgBy or "?",
+        GuildOS:DateText(r.welcomeCfgAt, " %H:%M"))
+end
+
+----------------------------------------------------------------------
+-- Who sends the welcome (#449: "more than one officer always sends it"). No race: every officer's client reads the
+-- same guild roster and ranks the officers online by their name (without the realm, lower case, as the roster
+-- spells it on every client: WoW: Forever's "First Surname" alike), its own character always counted. The first
+-- sends WELCOME_FIRST seconds after the game's line, each next one WELCOME_STEP seconds later only if no officer's
+-- claim came by then (the first is offline in a way the roster has not shown, runs no Guild OS, or an old one). The
+-- claim and the intent go on the ALERT priority, ahead of the guild's sync traffic; the intent still goes out for
+-- the officers on a client before this, whose own tie-break reads it. A claim, sent or heard, marks the member
+-- welcomed for WELCOME_ONCE seconds on this client (kept over a /reload): never welcomed twice in that time.
+-- Only the game's line starts a welcome; the roster diff (MemberHistory) never does.
+----------------------------------------------------------------------
+Recruitment.WELCOME_FIRST = 1
+Recruitment.WELCOME_STEP = 5
+Recruitment.WELCOME_ONCE = 600
+
+-- How a name is compared: the roster's name without the realm, lower case; the realm after it, apart.
+function Recruitment.StableName(name)
+    if type(name) ~= "string" or name == "" then return "" end
+    local shortName = (GuildOS:ShortName(name) or name):lower()
+    return shortName
+end
+
+-- Whether officer name `a` goes before `b` (StableName's order). Pure.
+function Recruitment.SortsBefore(a, b)
+    return Recruitment.StableName(a) < Recruitment.StableName(b)
+end
+
+-- This client's place (0 = first) among the officers online in the roster, by StableName.
+function Recruitment:WelcomePlace()
+    local me = Recruitment.StableName(GuildOS.Compat.PlayerName())
+    local maxRank = (GuildOS.db and GuildOS.db.settings and GuildOS.db.settings.officerMaxRank) or 1
+    local before, seen = 0, {}
+    for i = 1, GetNumGuildMembers() or 0 do
+        local full, _, rankIndex, _, _, _, _, _, online = GetGuildRosterInfo(i)
+        local n = full and Recruitment.StableName(full)
+        if n and n ~= "" and online and rankIndex and rankIndex <= maxRank and n ~= me and not seen[n] then
+            seen[n] = true
+            if n < me then before = before + 1 end
+        end
+    end
+    return before
+end
+
+local function welcomedStore()
+    local r = GuildOS.db and GuildOS.db.recruitment
+    if not r then return {} end
+    r.welcomedAt = type(r.welcomedAt) == "table" and r.welcomedAt or {}
+    return r.welcomedAt
+end
+
+-- Whether `name` was welcomed (here or by a claim heard) within WELCOME_ONCE seconds.
+function Recruitment:RecentlyWelcomed(name, now)
+    now = now or serverNow()
+    local t = welcomedStore()[Recruitment.StableName(name)]
+    return t ~= nil and now - t < Recruitment.WELCOME_ONCE
+end
+
+-- `name` is welcomed (a claim sent or heard): kept WELCOME_ONCE seconds; the old marks go.
+function Recruitment:MarkWelcomed(name, now)
+    now = now or serverNow()
+    local s = welcomedStore()
+    for k, t in pairs(s) do
+        if type(t) ~= "number" or now - t >= Recruitment.WELCOME_ONCE then s[k] = nil end
+    end
+    local k = Recruitment.StableName(name)
+    if k ~= "" then s[k] = now end
+end
+
 function Recruitment:DismissPendingWelcome()
     self._pendingWelcomes = {}
+    if GuildOS.ActionQueue then GuildOS.ActionQueue:Remove("welcome") end
 end
 
 -- Async /who lookup, one query at a time. Fail-safe: on timeout / no result,
@@ -585,7 +944,7 @@ end
 function Recruitment:_QualifyAndInvite(sender)
     if self._whoBusy then
         -- one lookup at a time; drop extra concurrent triggers (cooldown will let them retry)
-        return
+        return false
     end
     self._whoBusy = sender
     if not self._whoFrame then
@@ -624,8 +983,8 @@ function Recruitment:_FinishWho(sender, info)
     self._whoBusy = nil
     local cfg = GuildOS.db.recruitment.autoInvite
     -- Re-check cooldown/ban in case time passed.
-    if GuildOS.BanList and GuildOS.BanList:IsBanned(sender) then return end
-    if self:_OnInviteCooldown(sender, GetServerTime()) then return end
+    if GuildOS.BanList and (GuildOS.BanList:IsBanned(sender) or GuildOS.BanList:AllianceBansFor(sender)) then return end
+    if self:_OnInviteCooldown(sender, serverNow()) then return end
     if info then
         if self:_PassesFilters(info, cfg) then self:_DoInvite(sender) end
     else
@@ -760,7 +1119,8 @@ end
 -- one (issue #84).
 function Recruitment:_OfficerTick()
     if not GuildOS:IsFeatureEnabled("recruitment") then return end
-    self:ShowSendPopup()
+    -- Never in combat, one popup at a time (audit B21).
+    GuildOS:ShowWhenClear("recruitsend", function() self:ShowSendPopup(); return self.popupFrame end)
 end
 
 ----------------------------------------------------------------------
@@ -884,7 +1244,7 @@ function Recruitment:_AutoTick()
         return self:SyncMemberParticipation()
     end
     self._autoPopups = (self._autoPopups or 0) + 1
-    self:ShowSendPopup()
+    GuildOS:ShowWhenClear("recruitsend", function() self:ShowSendPopup(); return self.popupFrame end)
 end
 
 function Recruitment:StopMemberRecruit()
@@ -1021,6 +1381,25 @@ function Recruitment:CyclePostMaxRank()
     return nextLimit
 end
 
+-- The limits CyclePostMaxRank goes through, in its order: nil (every rank), then each member rank. The
+-- officer's Recruiting screen lists them in a select (#449). Returns a list of limits (nil first).
+function Recruitment:PostMaxRankChoices()
+    local n = (GuildControlGetNumRanks and GuildControlGetNumRanks()) or 0
+    if n < 1 then n = 10 end
+    local first = ((GuildOS.db.settings and GuildOS.db.settings.officerMaxRank) or 1) + 1
+    local out = { false }
+    for limit = first, n - 2 do out[#out + 1] = limit end
+    return out
+end
+
+-- Set the members' rank limit to `limit` (nil or false: every rank), as CyclePostMaxRank does: sent to the
+-- guild only while this officer's recruiting is on. Returns the limit.
+function Recruitment:SetPostMaxRank(limit)
+    GuildOS.db.recruitment.postMaxRank = limit or nil
+    if GuildOS.db.recruitment.enabled then self:BroadcastStatus(true) end
+    return GuildOS.db.recruitment.postMaxRank
+end
+
 -- Member opt-in choice (persisted). nil = never touched, true = helping,
 -- false = turned off.
 function Recruitment:SetParticipation(v)
@@ -1101,21 +1480,72 @@ function Recruitment:_ActiveConfig()
     return GuildOS:IsOfficer() and GuildOS.db.recruitment or GuildOS.db.guildRecruitment
 end
 
--- Configured channel names, and how many of them the player has actually joined
--- right now. GetChannelName returns 0 for a channel the player is not in, so
--- with zero joined there is nothing to post to.
-function Recruitment:_ResolveChannels(settings)
-    local names, joined, seen = {}, 0, {}
-    for _, ch in ipairs(settings and settings.channels or {}) do
-        ch = self:ChannelName(ch)
-        if not seen[ch:lower()] then   -- the same channel saved in two languages is one
-            seen[ch:lower()] = true
-            names[#names + 1] = ch
-            local num = GetChannelName(ch)
-            if num and num > 0 then joined = joined + 1 end
+-- The post round's plan (#449): every configured channel once, whatever the case or the language it was saved in,
+-- resolved against the channels the player is in. { targets = { { name, num } ... } in the saved order, one per
+-- channel number; notJoined = { name ... } }.
+function Recruitment:PostPlan(settings)
+    local plan, seenName, seenNum = { targets = {}, notJoined = {} }, {}, {}
+    for _, saved in ipairs(settings and settings.channels or {}) do
+        local name, num = self:ResolveChannel(saved)
+        local key = name:lower()
+        if name ~= "" and not seenName[key] and not (num > 0 and seenNum[num]) then
+            seenName[key] = true
+            if num > 0 then
+                seenNum[num] = true
+                plan.targets[#plan.targets + 1] = { name = name, num = num }
+            else
+                plan.notJoined[#plan.notJoined + 1] = name
+            end
         end
     end
+    return plan
+end
+
+-- Configured channel names (once each), and how many of them the player has actually joined right now: with zero
+-- joined there is nothing to post to.
+function Recruitment:_ResolveChannels(settings)
+    local names, joined = {}, 0
+    local plan = self:PostPlan(settings)
+    for _, t in ipairs(plan.targets) do
+        names[#names + 1] = t.name
+        joined = joined + 1
+    end
+    for _, n in ipairs(plan.notJoined) do names[#names + 1] = n end
     return names, joined
+end
+
+-- How many channel lines one key press or click may carry. Where the game wants a hardware event for a channel
+-- line (Compat.NeedsHardware("channel"): WoW: Forever and retail, or as /gos debug probe invite measured it), the
+-- maintainer saw a round post to the first channels and not to the last (#449): one line per key press there,
+-- unless the probe heard a second line from the same key press come back. Elsewhere every channel at once.
+-- One click posts in every channel (the maintainer, #449: the channel that stayed empty had dropped the line itself,
+-- which the echo check now says; posting one channel per key press was not the cause and is gone).
+function Recruitment:PostsPerClick()
+    return math.huge
+end
+
+-- The consent popup's Post button: one click posts in every channel.
+function Recruitment:PostButtonText()
+    return L["Post"]
+end
+
+-- The line after a post round: "Sent to: [3] LookingForGroup, [4] Trade · Not joined: General · Waiting for a
+-- key press: LookingForGuild", only the parts that apply. `round` = { posted = { {name, num} }, notJoined = { name },
+-- waiting = { name }, iconsOnly = { name } }. Nil when nothing applies.
+function Recruitment:RoundSummary(round)
+    local parts = {}
+    local function list(t, fmt)
+        if t and #t > 0 then parts[#parts + 1] = string.format(fmt, table.concat(t, ", ")) end
+    end
+    local posted = {}
+    for _, p in ipairs(round.posted or {}) do posted[#posted + 1] = string.format("[%d] %s", p.num, p.name) end
+    list(posted, L["Sent to: %s"])
+    list(round.notJoined, L["Not joined: %s"])
+    list(round.iconsOnly, L["Only raid icons, which it hides: %s"])
+    list(round.waiting, L["Waiting for a key press: %s"])
+    list(round.throttled, L["Skipped, the server is limiting chat: %s"])
+    if #parts == 0 then return nil end
+    return table.concat(parts, " \194\183 ")
 end
 
 ----------------------------------------------------------------------
@@ -1127,84 +1557,81 @@ function Recruitment:CreatePopupFrame()
 
     local C  = GuildOS.Colors
     local UI = GuildOS.UI
-    local PAD, WIDTH = 14, 360
+    local Kit = rawget(GuildOS, "Kit")
+    local PAD, WIDTH = 14, 380
     local cw = WIDTH - PAD * 2
 
+    -- A floating window (the mockup's .fw): the metal frame, the header with "Recruitment" in Cinzel gold
+    -- and the round red close, the channel line and the ad on the dark body, Post and Not now in the footer.
     local f = CreateFrame("Frame", "GuildOSRecruitPopup", UIParent, "BackdropTemplate")
     f:SetSize(WIDTH, 150)
     f:SetPoint("TOP", UIParent, "TOP", 0, -80)
-    f:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GuildOS.UI:Edge(f),
-    })
-    f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
     f:SetFrameStrata("DIALOG")
-    UI:StylePopup(f)
     f:SetMovable(true)
     f:EnableMouse(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     f:Hide()
-
-    -- Title: brand + localized subtitle ("Guild OS  ·  Recruitment"), in the text colour: gold is the
-    -- selection's, the primary button's and the active tab's (#371).
-    local title = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(title, 13)
-    title:SetPoint("TOPLEFT", PAD, -12)
-    title:SetTextColor(C.text.r, C.text.g, C.text.b)
-    title:SetText("Guild OS  |cff6c6c78" .. L["Recruitment"] .. "|r")
-
-    local sep = UI:CreateSeparator(f)
-    sep:SetPoint("TOPLEFT", PAD, -30)
-    sep:SetPoint("TOPRIGHT", -PAD, -30)
-
-    -- x dismiss (top-right).
-    local dismiss = CreateFrame("Button", nil, f)
-    dismiss:SetSize(20, 20)
-    dismiss:SetPoint("TOPRIGHT", -4, -6)
-    local dText = dismiss:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(dText, 14)
-    dText:SetPoint("CENTER")
-    dText:SetText("x")
-    dText:SetTextColor(0.6, 0.6, 0.6)
-    dismiss:SetScript("OnEnter", function() dText:SetTextColor(1, 0.3, 0.3) end)
-    dismiss:SetScript("OnLeave", function() dText:SetTextColor(0.6, 0.6, 0.6) end)
-    dismiss:SetScript("OnClick", function() f:Hide() end)
+    local top
+    if Kit then
+        Kit:Dress(f, L["Recruitment"], { sub = "Guild OS" })
+        Kit:Footer(f)
+        top = Kit.HEADER_H + 10
+    else
+        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = GuildOS.UI:Edge(f) })
+        f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
+        f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+        UI:StylePopup(f)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+        local title = f:CreateFontString(nil, "OVERLAY")
+        GuildOS:ApplyFont(title, 13)
+        title:SetPoint("TOPLEFT", PAD, -12)
+        title:SetTextColor(C.text.r, C.text.g, C.text.b)
+        title:SetText("Guild OS  " .. L["Recruitment"])
+        local close = UI:CreateCloseButton(f)
+        close:SetPoint("TOPRIGHT", -6, -6)
+        close:SetScript("OnClick", function() f:Hide() end)
+        top = 38
+    end
+    f.top = top
 
     -- Target channel line.
     local channelLine = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(channelLine, 11)
-    channelLine:SetPoint("TOPLEFT", PAD, -38)
+    channelLine:SetPoint("TOPLEFT", PAD, -top)
     channelLine:SetWidth(cw)
     channelLine:SetJustifyH("LEFT")
-    channelLine:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+    channelLine:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
     f.channelLine = channelLine
 
-    -- Message preview (wrapped; sized in ShowSendPopup).
+    -- Message preview (wrapped; sized in ShowSendPopup), in the reading face on the window's light wash
+    -- (the mockup's `.fw .msg`).
     local msgText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(msgText, 12)
-    msgText:SetPoint("TOPLEFT", PAD, -58)
-    msgText:SetWidth(cw)
+    GuildOS:ApplyFont(msgText, 12, "reading")
+    msgText:SetPoint("TOPLEFT", PAD + 8, -(top + 26))
+    msgText:SetWidth(cw - 16)
     msgText:SetJustifyH("LEFT")
     msgText:SetTextColor(C.text.r, C.text.g, C.text.b)
     f.msgText = msgText
+    local wash = f:CreateTexture(nil, "BORDER")
+    wash:SetTexture("Interface\\Buttons\\WHITE8x8")
+    wash:SetVertexColor(1, 1, 1, 0.07)
+    wash:SetPoint("TOPLEFT", msgText, "TOPLEFT", -8, 6)
+    wash:SetPoint("BOTTOMRIGHT", msgText, "BOTTOMRIGHT", 8, -6)
 
     -- "Join a channel" hint, shown instead of a dead Postar when nothing is joined.
     local hint = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(hint, 11)
     hint:SetWidth(cw)
     hint:SetJustifyH("LEFT")
-    hint:SetTextColor(C.red.r, C.red.g, C.red.b)
+    hint:SetTextColor(C.danger.r, C.danger.g, C.danger.b)
     hint:Hide()
     f.hint = hint
 
     -- Postar (the send): a hardware OnClick so SendChatMessage to a channel works.
     -- The popup's one action is its primary button, not a green fill (#371).
-    local postBtn = UI:CreateButton(f, L["Post"], 120, 26)
-    postBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -5, 14)
+    local postBtn = UI:CreateButton(f.foot or f, L["Post"], 110, 24)
     UI:SetButtonVariant(postBtn, "primary")
     postBtn:SetScript("OnClick", function()
         Recruitment:DoSendRecruitmentMessage()
@@ -1213,10 +1640,21 @@ function Recruitment:CreatePopupFrame()
     f.postBtn = postBtn
 
     -- "Agora nao" / dismiss.
-    local laterBtn = UI:CreateButton(f, L["Not now"], 120, 26)
-    laterBtn:SetPoint("BOTTOMLEFT", f, "BOTTOM", 5, 14)
+    local laterBtn = UI:CreateButton(f.foot or f, L["Not now"], 110, 24)
     laterBtn:SetScript("OnClick", function() f:Hide() end)
     f.laterBtn = laterBtn
+    -- The footer lays the answers from the right, the post first; with no kit, centred as before.
+    function f:LayButtons()
+        if self.foot then
+            self.foot:Lay(postBtn, laterBtn)
+        else
+            postBtn:ClearAllPoints()
+            postBtn:SetPoint("BOTTOMRIGHT", self, "BOTTOM", -5, 14)
+            laterBtn:ClearAllPoints()
+            laterBtn:SetPoint("BOTTOMLEFT", self, "BOTTOM", 5, 14)
+        end
+    end
+    f:LayButtons()
 
     self.popupFrame = f
 end
@@ -1227,53 +1665,64 @@ end
 ----------------------------------------------------------------------
 local function ActionPopup(title, y, okText, laterText)
     local C, UI = GuildOS.Colors, GuildOS.UI
-    local PAD, WIDTH = 14, 360
+    local Kit = rawget(GuildOS, "Kit")
+    local PAD, WIDTH = 14, 380
     local f = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     f:SetSize(WIDTH, 120)
     f:SetPoint("TOP", UIParent, "TOP", 0, y)
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
-    f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
     f:SetFrameStrata("DIALOG")
-    UI:StylePopup(f)
     f:SetMovable(true)
     f:EnableMouse(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); self.moved = true end)
     f:Hide()
-
-    local t = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(t, 13)
-    t:SetPoint("TOPLEFT", PAD, -12)
-    t:SetTextColor(C.text.r, C.text.g, C.text.b)   -- the text colour, as the recruit popup's (#371)
-    t:SetText("Guild OS  |cff6c6c78" .. title .. "|r")
-    local sep = UI:CreateSeparator(f)
-    sep:SetPoint("TOPLEFT", PAD, -30)
-    sep:SetPoint("TOPRIGHT", -PAD, -30)
+    -- A floating window as the recruit popup (the mockup's .fw): the title in its header, the answers in its footer.
+    local top
+    if Kit then
+        Kit:Dress(f, title, { sub = "Guild OS" })
+        Kit:Footer(f)
+        top = Kit.HEADER_H + 10
+    else
+        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
+        f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
+        f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+        UI:StylePopup(f)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); self.moved = true end)
+        local t = f:CreateFontString(nil, "OVERLAY")
+        GuildOS:ApplyFont(t, 13)
+        t:SetPoint("TOPLEFT", PAD, -12)
+        t:SetTextColor(C.text.r, C.text.g, C.text.b)
+        t:SetText("Guild OS  " .. title)
+        top = 38
+    end
 
     f.line = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(f.line, 12)
-    f.line:SetPoint("TOPLEFT", PAD, -38)
+    f.line:SetPoint("TOPLEFT", PAD, -top)
     f.line:SetWidth(WIDTH - PAD * 2)
     f.line:SetJustifyH("LEFT")
     f.line:SetTextColor(C.text.r, C.text.g, C.text.b)
 
     f.note = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(f.note, 10)
-    f.note:SetPoint("TOPLEFT", f.line, "BOTTOMLEFT", 0, -4)
+    GuildOS:ApplyFont(f.note, 11, "reading")
+    f.note:SetPoint("TOPLEFT", f.line, "BOTTOMLEFT", 0, -6)
     f.note:SetWidth(WIDTH - PAD * 2)
     f.note:SetJustifyH("LEFT")
-    f.note:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+    f.note:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
 
-    f.okBtn = UI:CreateButton(f, okText, 140, 26)
-    f.okBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -5, 12)
+    f.okBtn = UI:CreateButton(f.foot or f, okText, 130, 24)
     UI:SetButtonVariant(f.okBtn, "primary")   -- the click the popup carries, not a green fill (#371)
-    f.laterBtn = UI:CreateButton(f, laterText, 140, 26)
-    f.laterBtn:SetPoint("BOTTOMLEFT", f, "BOTTOM", 5, 12)
+    f.laterBtn = UI:CreateButton(f.foot or f, laterText, 130, 24)
+    if f.foot then
+        f.foot:Lay(f.okBtn, f.laterBtn)
+    else
+        f.okBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -5, 12)
+        f.laterBtn:SetPoint("BOTTOMLEFT", f, "BOTTOM", 5, 12)
+    end
     -- Grow to the text, like the recruit popup: the note is the line the click posts.
+    local footH = Kit and Kit.FOOT_H or 50
     function f:Fit()
-        self:SetHeight(38 + self.line:GetStringHeight() + 4 + self.note:GetStringHeight() + 12 + 26 + 12)
+        self:SetHeight(top + self.line:GetStringHeight() + 6 + self.note:GetStringHeight() + 14 + footH)
     end
     return f
 end
@@ -1290,7 +1739,8 @@ function Recruitment:ShowWelcomePopup()
     local list = self._pendingWelcomes or {}
     if #list == 0 then f:Hide() return end
     f.line:SetText(string.format(L["|cffFFFFFF%s|r joined the guild."], table.concat(list, ", ")))
-    f.note:SetText(self:WelcomeMessage() or "")
+    local back = self:BackInfo(list)
+    f.note:SetText(Recruitment.FillWelcome(self:WelcomeMessage(back) or "", list, back))
     f:Fit()
     f:Show()
 end
@@ -1332,7 +1782,7 @@ function Recruitment:ShowSendPopup()
 
     -- Layout: size the frame to the wrapped message, then the button row (or the
     -- join-channel hint if nothing is joined).
-    local y = 58 + math.max(f.msgText:GetStringHeight() or 14, 14) + 12
+    local y = (f.top or 38) + 26 + math.max(f.msgText:GetStringHeight() or 14, 14) + 16
     if joined == 0 then
         f.hint:ClearAllPoints()
         f.hint:SetPoint("TOPLEFT", PAD, -y)
@@ -1344,7 +1794,10 @@ function Recruitment:ShowSendPopup()
         f.hint:Hide()
         f.postBtn:Show()
     end
-    f:SetHeight(y + 26 + 14)
+    -- Where a click carries one channel line, the button says which of how many it posts (#449).
+    if f.postBtn.label then f.postBtn.label:SetText(self:PostButtonText(joined)) end
+    f:LayButtons()
+    f:SetHeight(y + (f.foot and rawget(GuildOS, "Kit") and GuildOS.Kit.FOOT_H or 40))
     f:Show()
 
     -- Auto-hide after 30s if not acted on.
@@ -1361,6 +1814,11 @@ end
 function Recruitment:DoSendRecruitmentMessage()
     if not IsInGuild() then return end
 
+    -- The server said "throttled" a moment ago: nothing goes until it has had its few seconds.
+    if self:_Throttled() then
+        GuildOS:Print("|cffFF9900" .. L["The server is limiting your chat lines. Wait a few seconds and click Post again."] .. "|r")
+        return
+    end
     -- Min send gap: refuse a send too soon after the last one. Covers reflexive
     -- rapid clicking and any forged low interval. Silent no-op when throttled.
     if not self:_CanSendNow(self._lastSendAt, GetTime(), self.SEND_MIN_GAP) then return end
@@ -1387,33 +1845,188 @@ function Recruitment:DoSendRecruitmentMessage()
         return
     end
 
-    local sent, iconsOnly, posted = false, false, {}
-    for _, saved in ipairs(settings.channels or {}) do
-        local channelName = self:ChannelName(saved)
-        local channelNum = GetChannelName(channelName)
-        -- One post per channel: the same one saved in two languages resolves to one number.
-        if channelNum and channelNum > 0 and not posted[channelNum] then
-            posted[channelNum] = true
-            -- Where the server hides raid icons, the copy goes without their codes (issue #64).
-            local text = GuildOS.Compat.ChannelHidesRaidIcons(channelName, channelNum) and self:_StripRaidIcons(msg) or msg
-            if text ~= "" then
-                SendChatMessage(text, "CHANNEL", nil, channelNum)
-                sent = true
-            else
-                iconsOnly = true
+    self:PostRound(settings, msg)
+end
+
+-- The key of a channel's ad waiting in the officer action queue.
+local function adKey(name) return "recruitAd:" .. tostring(name):lower() end
+
+-- Posts `msg` to one resolved channel, raid icons left out where the server hides them (issue #64). "posted",
+-- "icons" (nothing left to post there) or false (the game would not take it).
+function Recruitment:_PostTo(name, num, msg)
+    local text = GuildOS.Compat.ChannelHidesRaidIcons(name, num) and self:_StripRaidIcons(msg) or msg
+    if text == "" then return "icons" end
+    return GuildOS.Compat.SendChannelMessage(text, num) and "posted" or false
+end
+
+-- One post round, from a key press or a click. Every channel at once where one click may carry them all; else the
+-- first now and each of the rest in the officer action queue, one per key press of its binding or click of its
+-- toast ("Press [key] to post the ad in LookingForGuild · 2 more"). Ends with the round's line (RoundSummary).
+function Recruitment:PostRound(settings, msg)
+    local plan = self:PostPlan(settings)
+    local AQ = GuildOS.ActionQueue
+    -- A new round replaces what an older one left waiting.
+    if AQ then
+        for _, key in ipairs(self._queuedAds or {}) do AQ:Remove(key) end
+    end
+    self._queuedAds = {}
+    self:_WatchThrottle()
+    local targets, notJoined = plan.targets, plan.notJoined
+    local per = self:PostsPerClick()
+    if not AQ then per = math.huge end
+    local round = { posted = {}, notJoined = notJoined, waiting = {}, iconsOnly = {}, throttled = {}, msg = msg }
+    local went = 0
+    for _, t in ipairs(targets) do
+        if self:_Throttled() then
+            -- The server said "throttled" during the round: the rest are skipped and said, not hammered.
+            round.throttled[#round.throttled + 1] = t.name
+        elseif went >= per then
+            round.waiting[#round.waiting + 1] = t.name
+        else
+            local r = self:_PostTo(t.name, t.num, msg)
+            if r == "posted" then
+                went = went + 1
+                round.posted[#round.posted + 1] = t
+            elseif r == "icons" then
+                round.iconsOnly[#round.iconsOnly + 1] = t.name
             end
         end
     end
+    for _, name in ipairs(round.waiting) do self:_QueueAd(name, msg) end
+    self:_FinishRound(round, false)
+    return round
+end
 
-    if sent then
+-- A channel's ad waiting in the officer action queue for a key press or a click of its toast.
+function Recruitment:_QueueAd(name, msg)
+    local AQ = GuildOS.ActionQueue
+    if not AQ then return end
+    local key = adKey(name)
+    for _, k in ipairs(self._queuedAds) do if k == key then return end end
+    self._queuedAds[#self._queuedAds + 1] = key
+    AQ:Add({
+        kind = "channel", key = key, name = name, verb = L["post the ad in"],
+        run = function() return Recruitment:_PostQueued(name, msg) end,
+    })
+end
+
+-- The server's "throttled" answer (a channel notice, or the chat error): THROTTLE_HOLD seconds without a channel line.
+Recruitment.THROTTLE_HOLD = 10
+function Recruitment:_Throttled()
+    return self._throttledAt ~= nil and GetTime() - self._throttledAt < self.THROTTLE_HOLD
+end
+
+function Recruitment:_OnThrottle()
+    self._throttledAt = GetTime()
+end
+
+function Recruitment:_WatchThrottle()
+    if self._throttleFrame or not CreateFrame then return end
+    local f = CreateFrame("Frame")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL_NOTICE")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_SYSTEM")
+    f:SetScript("OnEvent", function(_, event, text)
+        if GuildOS.Compat.IsSecret(text) then return end
+        if (event == "CHAT_MSG_CHANNEL_NOTICE" and text == "THROTTLED")
+            or (event == "CHAT_MSG_SYSTEM" and type(_G.ERR_CHAT_THROTTLED) == "string" and text == _G.ERR_CHAT_THROTTLED) then
+            Recruitment:_OnThrottle()
+        end
+    end)
+    self._throttleFrame = f
+end
+
+-- A queued channel's turn, from the key press or the click that runs it: resolved again (the player may have left
+-- it, or its number changed), posted, and the line says what is left.
+function Recruitment:_PostQueued(name, msg)
+    local real, num = self:ResolveChannel(name)
+    local round = { posted = {}, notJoined = {}, waiting = {}, iconsOnly = {} }
+    local key = adKey(name)
+    for i, k in ipairs(self._queuedAds or {}) do
+        if k == key then table.remove(self._queuedAds, i) break end
+    end
+    if self:_Throttled() then
+        -- Not now: said, and left (a channel that will not take it is not insisted on).
+        round.throttled = { name }
+        self:_FinishRound(round, true)
+        return false
+    end
+    local r = num > 0 and self:_PostTo(real, num, msg)
+    if r == "posted" then
+        round.posted[1] = { name = real, num = num }
+    elseif r == "icons" then
+        round.iconsOnly[1] = real
+    elseif num == 0 then
+        round.notJoined[1] = real
+    end
+    local AQ = GuildOS.ActionQueue
+    for _, item in ipairs(AQ and AQ._state and AQ._state.items or {}) do
+        if item.kind == "channel" and tostring(item.key):find("^recruitAd:") and item.key ~= key then
+            round.waiting[#round.waiting + 1] = item.name
+        end
+    end
+    round.msg = msg
+    self:_FinishRound(round, true)
+    return r == "posted"
+end
+
+-- The game takes a channel line and may still not show it (a channel's moderator muted the player, a server spam
+-- filter, a channel that only some may speak in): nothing says so. Each post waits for its own line to come back on
+-- CHAT_MSG_CHANNEL; one that has not after ECHO_WAIT seconds is said to have been dropped (#449).
+Recruitment.ECHO_WAIT = 5
+function Recruitment:_WatchEcho(posted)
+    if not (CreateFrame and GuildOS.Compat.After) then return end
+    self._echo = self._echo or {}
+    local watch = {}
+    for _, p in ipairs(posted or {}) do
+        watch[#watch + 1] = p
+        self._echo[p.num] = { name = p.name, seen = false }
+    end
+    if #watch == 0 then return end
+    if not self._echoFrame then
+        local f = CreateFrame("Frame")
+        GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL")
+        f:SetScript("OnEvent", function(_, _, _, sender, _, _, _, _, _, num)
+            local e = Recruitment._echo and Recruitment._echo[tonumber(num) or -1]
+            if not e or e.seen then return end
+            if GuildOS.Compat.IsSecret and GuildOS.Compat.IsSecret(sender) then return end
+            local me = GuildOS.Compat.PlayerName and GuildOS.Compat.PlayerName()
+            if me and GuildOS.SenderName and GuildOS:SenderName(sender) == me then e.seen = true end
+        end)
+        self._echoFrame = f
+    end
+    GuildOS.Compat.After(self.ECHO_WAIT, function()
+        local dropped = {}
+        for _, p in ipairs(watch) do
+            local e = Recruitment._echo[p.num]
+            if e and not e.seen then
+                dropped[#dropped + 1] = string.format("[%d] %s", p.num, p.name)
+            end
+            Recruitment._echo[p.num] = nil
+        end
+        if #dropped > 0 then
+            -- A channel that would not show it (Trade outside a city, a muted channel, the flood limit): said once,
+            -- never insisted on (#449: the maintainer's "accept the errors and just say so").
+            GuildOS:Print("|cffFF9900" .. string.format(L["Not shown in: %s"], table.concat(dropped, ", ")) .. "|r")
+        end
+    end)
+end
+
+-- The round's bookkeeping and its line. A queued channel's post counts as part of its round, not a new send.
+function Recruitment:_FinishRound(round, queued)
+    self:_WatchEcho(round.posted, round.msg)
+    if #round.posted > 0 and not queued then
         self._lastSendAt = GetTime()
         self.lastSend = GetTime()
         if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordPost() end
-        GuildOS:Print(L["Recruitment message sent!"])
-    elseif iconsOnly then
-        GuildOS:Print(L["|cffFF4444The message is only raid icons, which this channel does not show: nothing posted.|r"])
-    else
-        GuildOS:Print(L["|cffFF4444No valid channels found. Join a channel first.|r"])
+    end
+    local line = self:RoundSummary(round)
+    if line then GuildOS:Print(line) end
+    if #round.posted == 0 and #round.waiting == 0 and #(round.throttled or {}) == 0 and not queued then
+        if #round.iconsOnly > 0 then
+            GuildOS:Print(L["|cffFF4444The message is only raid icons, which this channel does not show: nothing posted.|r"])
+        else
+            GuildOS:Print(L["|cffFF4444No valid channels found. Join a channel first.|r"])
+        end
     end
 end
 
@@ -1514,9 +2127,11 @@ function Recruitment:HandleCommand(args)
         local sub = args[2]
         if sub == "on" then
             GuildOS.db.recruitment.welcomeEnabled = true
+            Recruitment:WelcomeChanged()
             GuildOS:Print(L["Welcome message |cff4CFF4Cenabled|r."])
         elseif sub == "off" then
             GuildOS.db.recruitment.welcomeEnabled = false
+            Recruitment:WelcomeChanged()
             GuildOS:Print(L["Welcome message |cffFF4444disabled|r."])
         elseif sub == "msg" then
             table.remove(args, 1)
@@ -1538,12 +2153,14 @@ function Recruitment:HandleCommand(args)
         local link = args[2]
         if link and link ~= "" then
             GuildOS.db.recruitment.discord = link
+            Recruitment:WelcomeChanged()
             GuildOS:Print(L["Discord link set to: |cffFFFFFF"] .. link .. "|r")
         else
             GuildOS:Print(L["Discord: |cffFFFFFF"] .. GuildOS.db.recruitment.discord .. "|r")
         end
     elseif cmd == "invite" then
-        local target = args[2]
+        -- The whole name: on WoW: Forever "/gos recruit invite Chehul Costa" is one player (audit M14).
+        local target = args[2] and strtrim(table.concat(args, " ", 2)) or nil
         if target and target ~= "" then
             if not CanGuildInvite() then
                 GuildOS:Print(L["|cffFF4444You don't have permission to invite.|r"])
@@ -1705,58 +2322,54 @@ function Recruitment:RegisterWelcomeEvent()
         -- The welcome message itself is opt-in and gated separately.
         if not GuildOS.db.recruitment.welcomeEnabled then return end
 
-        -- Dedup: if already handled on this client, skip
-        if Recruitment._welcomedRecently[newMember] then return end
-        Recruitment._welcomedRecently[newMember] = true
-        C_Timer.After(90, function()
-            Recruitment._welcomedRecently[newMember] = nil
-            Recruitment._welcomeIntents[newMember]  = nil
-        end)
-
-        -- Add to known members
         Recruitment._knownMembers[newMember] = true
-
-        -- Phase 1: broadcast intent immediately so all online officers can collect intents.
-        -- After 2 seconds the officer with the lexicographically lowest name wins and sends.
-        -- This is deterministic across all clients — no race condition.
-        Recruitment._welcomeIntents[newMember] = Recruitment._welcomeIntents[newMember] or {}
-        Recruitment._welcomeIntents[newMember][myName] = true
-
-        if GuildOS.CommSystem then
-            GuildOS.CommSystem:SendMessage(
-                GuildOS.CommSystem.MSG_TYPES.WELCOME_INTENT, newMember, nil, "NORMAL")
-        end
-
-        C_Timer.After(2, function()
-            -- Already suppressed by a WC claim from another officer?
-            if Recruitment._welcomedRecently[newMember .. "_sent"] then return end
-
-            -- Tiebreak: lowest name alphabetically among intents wins
-            local intents = Recruitment._welcomeIntents[newMember] or {}
-            local winner = myName
-            for name in pairs(intents) do
-                if name < winner then winner = name end
-            end
-            if winner ~= myName then return end  -- someone else wins
-
-            Recruitment._welcomedRecently[newMember .. "_sent"] = true
-
-            if GuildOS.CommSystem then
-                GuildOS.CommSystem:SendMessage(
-                    GuildOS.CommSystem.MSG_TYPES.WELCOME_CLAIM, newMember, nil, "NORMAL")
-            end
-
-            local welcomeMsg = Recruitment:WelcomeMessage()
-            if welcomeMsg and welcomeMsg ~= "" then
-                if GuildOS.Compat.NeedsClick() then
-                    -- Forever drops a line sent from this timer: the officer's click sends it (#61).
-                    -- The claim above already went out, so the other officers stand down: the
-                    -- popup stays up until this officer sends or dismisses it.
-                    Recruitment:QueueWelcome(newMember)
-                else
-                    Recruitment:SendWelcomeText(welcomeMsg, newMember)
-                end
-            end
-        end)
+        Recruitment:OnJoinWelcome(newMember)
     end)
+end
+
+-- The game's line said `newMember` joined, on an officer's client with the welcome on: the election (above) decides
+-- whether this client sends it, after its place's delay, unless a claim came first.
+function Recruitment:OnJoinWelcome(newMember)
+    local myName = GuildOS.Compat.PlayerName()
+    self._welcomedRecently = self._welcomedRecently or {}
+    self._welcomeIntents = self._welcomeIntents or {}
+    -- Dedup: already handled on this client, or welcomed within WELCOME_ONCE (a claim heard, a /reload since).
+    if self._welcomedRecently[newMember] or self:RecentlyWelcomed(newMember) then return false end
+    self._welcomedRecently[newMember] = true
+    C_Timer.After(90, function()
+        Recruitment._welcomedRecently[newMember] = nil
+        Recruitment._welcomeIntents[newMember]  = nil
+    end)
+    self._welcomeIntents[newMember] = self._welcomeIntents[newMember] or {}
+    self._welcomeIntents[newMember][myName] = true
+    -- For an officer on a client before #449: its tie-break reads the intents.
+    if GuildOS.CommSystem then
+        GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.WELCOME_INTENT, newMember, nil, "ALERT")
+    end
+    local delay = self.WELCOME_FIRST + self:WelcomePlace() * self.WELCOME_STEP
+    self._lastWelcomeDelay = delay   -- the tests read it
+    C_Timer.After(delay, function()
+        -- Another officer's claim came first (it marks the member welcomed here too).
+        if Recruitment._welcomedRecently[newMember .. "_sent"] then return end
+        if Recruitment:RecentlyWelcomed(newMember) then return end
+        Recruitment._welcomedRecently[newMember .. "_sent"] = true
+        Recruitment:MarkWelcomed(newMember)
+        if GuildOS.CommSystem then
+            GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.WELCOME_CLAIM, newMember, nil, "ALERT")
+        end
+        -- A member who returns gets the officers' welcome back, when they wrote one (#449).
+        local back = Recruitment:BackInfo(newMember)
+        local welcomeMsg = Recruitment:WelcomeMessage(back)
+        if welcomeMsg and welcomeMsg ~= "" then
+            if GuildOS.Compat.NeedsClick() then
+                -- Forever drops a line sent from this timer: the officer's click sends it (#61).
+                -- The claim above already went out, so the other officers stand down: the
+                -- popup stays up until this officer sends or dismisses it.
+                Recruitment:QueueWelcome(newMember)
+            else
+                Recruitment:SendWelcomeText(welcomeMsg, newMember, back)
+            end
+        end
+    end)
+    return true
 end

@@ -3,6 +3,7 @@
 -- Collects gear, professions, and stats from the local player
 -- and stores data received from other guild members
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local DataCollector = {}
 GuildOS.DataCollector = DataCollector
 
@@ -10,6 +11,9 @@ function DataCollector:Initialize()
     GuildOS:RekeyMembersToThisRealm()   -- Forever: one key per member (issue #95)
     -- and in every table synced from another client (#97); bad stored data must not stop start-up
     GuildOS:SafeCall(GuildOS.LocalizeStoredMemberTables, GuildOS)
+    -- Every member row's gear kept compact (db.schema.gear, memoria.md); idempotent, so also what an older
+    -- version wrote since the last load.
+    GuildOS:SafeCall(GuildOS.Gear.MigrateDB, GuildOS.db)
     -- Register inventory change events
     local frame = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(frame, "PLAYER_EQUIPMENT_CHANGED")
@@ -25,7 +29,8 @@ function DataCollector:Initialize()
     GuildOS.Compat.RegisterEvent(frame, "CHARACTER_POINTS_CHANGED")
     frame:SetScript("OnEvent", function(_, event)
         if event == "PLAYER_EQUIPMENT_CHANGED" then
-            C_Timer.After(0.5, function()
+            -- A swap fires once per slot: one collection and one broadcast for the burst (audit D10).
+            DataCollector:Soon("gear", function()
                 DataCollector:CollectMyData()
                 -- Broadcast updated gear to guild after a short delay
                 C_Timer.After(2, function()
@@ -35,7 +40,7 @@ function DataCollector:Initialize()
                 end)
             end)
         elseif event == "SKILL_LINES_CHANGED" or event == "CHAT_MSG_SKILL" then
-            C_Timer.After(1, function() DataCollector:CollectProfessions() end)
+            DataCollector:Soon("skills", function() DataCollector:CollectProfessions() end)
         elseif event == "GET_ITEM_INFO_RECEIVED" or event == "PLAYER_TALENT_UPDATE"
             or event == "CHARACTER_POINTS_CHANGED" then
             -- Only react while a prior snapshot was known-incomplete (these events,
@@ -61,10 +66,36 @@ function DataCollector:Initialize()
     end)
 end
 
+-- Run `fn` once, COALESCE seconds after the last of a burst of calls under `name` (audit D10).
+DataCollector.COALESCE = 1   -- seconds a burst of equipment or skill events is gathered into one collection
+DataCollector._soon = {}
+function DataCollector:Soon(name, fn)
+    local pending = self._soon[name]
+    self._soon[name] = { fn = fn, at = GetTime() + self.COALESCE }
+    if pending then return end
+    local function fire()
+        local p = self._soon[name]
+        if not p then return end
+        local wait = p.at - GetTime()
+        if wait > 0 then return C_Timer.After(wait, fire) end
+        self._soon[name] = nil
+        p.fn()
+    end
+    C_Timer.After(self.COALESCE, fire)
+end
+
+-- Whether my data was collected within FRESH seconds: the login's broadcast follows the login's collection
+-- instead of collecting again (audit D9).
+DataCollector.FRESH = 10
+function DataCollector:Fresh()
+    return self.collectedAt ~= nil and GetTime() - self.collectedAt < self.FRESH
+end
+
 ----------------------------------------------------------------------
 -- Collect all local player data
 ----------------------------------------------------------------------
 function DataCollector:CollectMyData()
+    self.collectedAt = GetTime and GetTime() or nil   -- the harnesses' clients may have no clock
     local name = GuildOS.Compat.PlayerName()
     local realm = GetRealmName()
     local key = GuildOS:GetPlayerKey(name, realm)
@@ -92,10 +123,11 @@ function DataCollector:CollectMyData()
     data.sex = sex
     data.lastUpdate = time()
 
-    -- Collect gear
+    -- Collect gear: kept compact (row.gc, one string per slot; GuildOS:MemberGear reads it, memoria.md)
     local gear, gearIncomplete = self:CollectGear()
-    data.gear = gear
-    data.avgIlvl = GuildOS.Compat.AverageItemLevel() or self:CalculateAvgIlvl(data.gear)
+    data.gc = GuildOS.Gear.PackSet(gear)
+    data.gear = nil
+    data.avgIlvl = GuildOS.Compat.AverageItemLevel() or self:CalculateAvgIlvl(gear)
 
     -- Collect professions
     data.professions = self:CollectProfessions()
@@ -647,9 +679,22 @@ function DataCollector:StoreReceivedData(playerKey, data)
         end
     end
 
-    -- Merge with existing data (skip recipes, handled separately)
+    -- Merge with existing data (skip recipes and their hashes, handled separately)
     for k, v in pairs(data) do
-        if k ~= "recipes" then
+        if k == "stats" and type(v) == "table" and type(existing.stats) == "table" then
+            -- Stats the sender's client could not read this time (secret while WoW: Forever restricts them) keep
+            -- the last values heard, instead of wiping them (#449).
+            local merged = {}
+            for sk, sv in pairs(existing.stats) do merged[sk] = sv end
+            for sk, sv in pairs(v) do merged[sk] = sv end
+            existing.stats = merged
+        elseif k == "gear" then
+            -- Kept compact (memoria.md): the old shape any version sends becomes row.gc.
+            if type(v) == "table" then
+                existing.gc = GuildOS.Gear.PackSet(v)
+                existing.gear = nil
+            end
+        elseif k ~= "recipes" and k ~= "rh" and k ~= "gc" then
             existing[k] = v
         end
     end
@@ -668,25 +713,16 @@ function DataCollector:StoreReceivedData(playerKey, data)
         GuildOS.Milestones:Check(playerKey, existing, prevLevel, prevAttune, hadPrior)
     end
 
-    -- Store recipes if included in broadcast
-    if data.recipes then
-        if not GuildOS.db.recipes then GuildOS.db.recipes = {} end
-        if not GuildOS.db.recipes[playerKey] then GuildOS.db.recipes[playerKey] = {} end
+    -- Store recipes if included in broadcast (a client before audit D3; none with Crafts off, B25)
+    -- In the old shape, converted into the compact store (RecipeTracker:Put keeps the spell IDs it had).
+    if type(data.recipes) == "table" and GuildOS.RecipeTracker then
         local DC = GuildOS.DataCollector
+        local own = GuildOS.RecipeTracker:OwnKeys()[playerKey]
         for profName, recipes in pairs(data.recipes) do
-            local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
-            -- Remove old localized keys that map to the same canonical profession
-            for oldKey, _ in pairs(GuildOS.db.recipes[playerKey]) do
-                if oldKey ~= canonical and DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(oldKey) == canonical then
-                    GuildOS.db.recipes[playerKey][oldKey] = nil
-                end
+            if type(profName) == "string" and type(recipes) == "table" then
+                local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
+                GuildOS.RecipeTracker:Put(playerKey, canonical, recipes, own)
             end
-            -- Preserve spellIds: merge from existing data into incoming
-            -- (same player = same locale, names match)
-            if GuildOS.RecipeTracker then
-                GuildOS.RecipeTracker:MergeSpellIds(GuildOS.db.recipes[playerKey][canonical], recipes)
-            end
-            GuildOS.db.recipes[playerKey][canonical] = recipes
         end
     end
 
@@ -733,11 +769,14 @@ function DataCollector:GetBroadcastData()
         addonVersion = GuildOS.VERSION,
     }
 
-    -- Serialize gear with just essential info
-    if myData.gear then
+    -- Serialize gear with just essential info, in the old shape every version reads (memoria.md)
+    local myGear = GuildOS:MemberGear(myData)
+    if myGear then
         clean.gear = {}
-        for slotId, item in pairs(myData.gear) do
-            local gearEntry = {
+        for _, slotId in ipairs(GuildOS.Gear.Slots(myGear)) do
+            local item = myGear[slotId]
+            if type(item) ~= "table" then item = nil end
+            local gearEntry = item and {
                 id = item.id,
                 name = item.name,
                 quality = item.quality,
@@ -745,7 +784,7 @@ function DataCollector:GetBroadcastData()
                 enchantId = item.enchantId,
                 suffix = item.suffix,   -- issue #399; absent without one
             }
-            if item.gems and #item.gems > 0 then
+            if item and item.gems and #item.gems > 0 then
                 gearEntry.gems = {}
                 for _, gem in ipairs(item.gems) do
                     tinsert(gearEntry.gems, { id = gem.id })
@@ -778,6 +817,12 @@ function DataCollector:GetBroadcastData()
         clean.prefRoles = GuildOS.db.profile.prefRoles
     end
 
+    -- The recruit ad's "Broadcast while I'm online" (audit N11): always a boolean, so turning it off clears
+    -- what the receivers kept; the officers elect the ad's one sender among those with it on.
+    if GuildOS.RecruitBeacon and GuildOS.RecruitBeacon.Advertises then
+        clean.beacon = GuildOS.RecruitBeacon:Advertises()
+    end
+
     -- Not named on Discord (issue #205): always a boolean on WoW: Forever, so turning it off clears
     -- what the receivers kept — StoreReceivedData copies every key, false included.
     if GuildOS.Journal then
@@ -797,11 +842,10 @@ function DataCollector:GetBroadcastData()
         clean.resistances = myData.resistances
     end
 
-    -- Include recipes (keyed by profession). On WoW: Forever ProfSync carries them, by hash,
-    -- instead of every broadcast (issue #31).
-    local myKey = GuildOS:GetPlayerKey(myData.name, myData.realm or GetRealmName())
-    if not GuildOS.Professions and GuildOS.db.recipes and GuildOS.db.recipes[myKey] then
-        clean.recipes = GuildOS.db.recipes[myKey]
+    -- The recipes' hashes, one per profession, never the lists (audit D3): a guildmate whose copy differs
+    -- asks for that list (RecipeTracker). On WoW: Forever and retail ProfSync carries them (issue #31).
+    if not GuildOS.Professions and GuildOS.RecipeTracker then
+        clean.rh = GuildOS.RecipeTracker:OwnHashes()
     end
 
     return clean

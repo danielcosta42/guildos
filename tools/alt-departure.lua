@@ -129,6 +129,10 @@ local CS, SS, AS, BL, BA, AD, RL = GuildOS.CommSystem, GuildOS.SyncService, Guil
 local shown = {}
 function GuildOS:ShowAltRemovedDialog(groups) shown[me].removed[#shown[me].removed + 1] = groups end
 function GuildOS:ShowMainLeftDialog(info) shown[me].left[#shown[me].left + 1] = info end
+-- Both dialogs go through the one popup queue (audit B21; the queue itself is tools/popup-queue.lua). The clients
+-- here share one process, so it runs at once, and the keys it was given are kept.
+local queued = {}
+function GuildOS:ShowWhenClear(key, fn) queued[#queued + 1] = key; fn() end
 
 -- ── The clients ─────────────────────────────────────────────────────────
 local clients, wire, online = {}, {}, {}
@@ -400,4 +404,10 @@ check(#shown.OffA.left == before, "an alt leaving asks nothing")
 check(clients.OffA.db.rosterLog.events[#clients.OffA.db.rosterLog.events].target == "AltB", "only its line in the log")
 
 check(#errors == 0, "no error: " .. table.concat(errors, " | "))
+local qRemoved, qLeft = false, false
+for _, k in ipairs(queued) do
+  if k == "altremoved" then qRemoved = true end
+  if k:find("^mainleft:") then qLeft = true end
+end
+check(qRemoved and qLeft, "both dialogs went through the popup queue, never straight onto the screen")
 print(string.format("alt-departure: %d checks passed", checks))

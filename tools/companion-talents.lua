@@ -191,7 +191,8 @@ GuildOS.RefreshRosterUI = function() end
 local ok = DC:StoreReceivedData("Fulano-Classic Beta PvE 2",
   { name = "Fulano", class = "PRIEST", lastUpdate = 1, talents = { { 135001, 5 } }, gear = { [15] = { id = 10148, suffix = 590 } } })
 local row = GuildOS.db.members["Fulano-Classic Beta PvE 2"]
-check(ok and json(row.talents) == "[[135001,5]]" and row.gear[15].suffix == 590, "a received record keeps talents and suffix")
+check(ok and json(row.talents) == "[[135001,5]]" and GuildOS:MemberGear(row)[15].suffix == 590 and row.gear == nil,
+  "a received record keeps talents and suffix (the gear kept compact, memoria.md)")
 
 -- Inspect: the talents come along when the client lets the trait API read the inspected tree.
 check(SpecChecker:InspectedTalents() == nil, "no inspect config on the client: no inspected talents")

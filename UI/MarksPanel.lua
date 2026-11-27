@@ -4,8 +4,13 @@
 -- "back after N days offline" line. Visual layout only: the plans, the writes, the marks and the
 -- settings are GuildOS.NoteDates', GuildOS.MemberMarks' and GuildOS.MemberHistory's (Rule 10).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
-local C = GuildOS.Colors
+-- Drawn on a parchment card in the Officers' Room and Settings (specs/salao/fase3.md): the text takes the
+-- paper's inks and a class its colour on the paper (UI/Kit.lua); a floating window, the wood's (WOOD).
+local Kit = rawget(GuildOS, "Kit")
+local C = Kit and Kit.PAPER or GuildOS.Colors
+local function rule(row) if Kit then Kit:Rule(row) end end
 local L = GuildOS.L
 
 local ROW_H = 22
@@ -27,6 +32,16 @@ GuildOS.Dialogs["GUILDOS_NOTE_DATE_RUN"] = {
         if GuildOS.NoteDates then GuildOS.NoteDates:StartAndSay(data, true) end
     end,
     timeout = 0, whileDead = true, hideOnEscape = true, showAlert = true, preferredIndex = 3,
+}
+
+-- A main's join date for their alts with no real date (NoteDates:OfferAlts): one question for the whole group.
+GuildOS.Dialogs["GUILDOS_NOTE_DATE_ALTS"] = {
+    text = "%s",
+    button1 = L["Apply"], button2 = L["Cancel"],
+    OnAccept = function(_, data)
+        if GuildOS.NoteDates then GuildOS.NoteDates:ApplyToAlts(data) end
+    end,
+    timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
 }
 
 -- The note to copy where the game does not let an addon write it: the box holds it, selected.
@@ -74,122 +89,121 @@ function GuildOS:BuildMarksSub(panel)
         col = col or C.text
         return UI:CreateText(parent, s, size or 11, col.r, col.g, col.b)
     end
+    local Forms = GuildOS.Forms
+    local board = UI:CreateBoard(panel, { name = "GuildOSMgmtMarksBoard" })
 
-    -- ── Join dates in the notes ───────────────────────────────────────
-    local title = UI:CreateSectionTitle(panel, L["JOIN DATES IN NOTES"], true)
-    title:SetPoint("TOPLEFT", 0, -2)
-
-    local y = -28
-    local noteLbl = text(panel, L["Note"])
-    noteLbl:SetPoint("TOPLEFT", 0, y - 4)
-    local offBtn = UI:CreateButton(panel, L["Officer"], 70, 22)
-    offBtn:SetPoint("LEFT", noteLbl, "RIGHT", 8, 0)
+    -- ── Join dates in the notes (the mockup's first card) ─────────────
+    local dates = board:Card(L["Join dates in the notes"], { col = 1 })
+    local offBtn = Forms:Pill(dates, L["Officer"])
     offBtn:SetScript("OnClick", function() ND:SetTarget("officer"); plan = nil; refresh() end)
-    local pubBtn = UI:CreateButton(panel, L["Public"], 70, 22)
-    pubBtn:SetPoint("LEFT", offBtn, "RIGHT", 4, 0)
+    local pubBtn = Forms:Pill(dates, L["Public"])
     pubBtn:SetScript("OnClick", function() ND:SetTarget("public"); plan = nil; refresh() end)
-    local fmtDD = UI:CreateDropdown(panel, 110, 22)
-    fmtDD:SetPoint("LEFT", pubBtn, "RIGHT", 12, 0)
+    dates:Note(L["Note"])
+    dates:Flow({ offBtn, pubBtn }, { gap = Forms.LABEL_GAP })
+    local fmtDD = UI:CreateDropdown(dates, 110, 24)
     local fmts = {}
     for _, f in ipairs(ND.FORMATS) do fmts[#fmts + 1] = { value = f, text = f } end
     fmtDD:SetOptions(fmts)
     fmtDD.onSelect = function(_, v) ND:SetFormat(v); plan = nil; refresh() end
-    local labelCB = UI:CreateCheckbox(panel, ND.LABEL .. "...", 18)
-    labelCB:SetPoint("LEFT", fmtDD, "RIGHT", 12, 0)
-    labelCB.checkbox.onChanged = function(_, checked) ND:SetLabel(checked); plan = nil; refresh() end
-    local seenCB = UI:CreateCheckbox(panel, L["Also dates GuildOS only saw"], 18)
-    seenCB:SetPoint("LEFT", labelCB, "LEFT", 110, 0)
-    seenCB.checkbox.onChanged = function(_, checked) ND:SetWithSeen(checked); plan = nil; refresh() end
-
-    y = y - 30
-    local nameBox = UI:CreateInput(panel, 150, 22, { max = 60 })
-    nameBox:SetPoint("TOPLEFT", 0, y)
-    local writeBtn = UI:CreateButton(panel, L["Write date"], 90, 22)
-    writeBtn:SetPoint("LEFT", nameBox, "RIGHT", 6, 0)
-    writeBtn:SetScript("OnClick", function() ND:WriteOne(strtrim(nameBox:GetText() or "")); refresh() end)
-    nameBox:SetScript("OnEnterPressed", function(s) s:ClearFocus(); ND:WriteOne(strtrim(s:GetText() or "")); refresh() end)
-    local planBtn = UI:CreateButton(panel, L["Whole guild"], 100, 22)
-    planBtn:SetPoint("LEFT", writeBtn, "RIGHT", 12, 0)
-    planBtn:SetScript("OnClick", function() plan, planLeft = ND:Plan(); mode = "plan"; refresh() end)
-    local importBtn = UI:CreateButton(panel, L["Read dates from notes"], 150, 22)
-    importBtn:SetPoint("LEFT", planBtn, "RIGHT", 12, 0)
-    importBtn:SetScript("OnClick", function() imports = ND:ImportPlan(); mode = "import"; refresh() end)
-    local orderDD = UI:CreateDropdown(panel, 120, 22)
-    orderDD:SetPoint("LEFT", importBtn, "RIGHT", 6, 0)
+    local orderDD = UI:CreateDropdown(dates, 120, 24)
     orderDD:SetOptions({ { value = "auto", text = L["By language"] }, { value = "dmy", text = L["Day first"] },
                          { value = "mdy", text = L["Month first"] } })
     orderDD.onSelect = function(_, v) ND:SetOrder(v); if mode == "import" then imports = ND:ImportPlan() end; refresh() end
+    dates:Pair(Forms:MakeField(dates, L["Date format"], fmtDD), Forms:MakeField(dates, L["Order"], orderDD))
+    local labelCB = dates:Check(ND.LABEL .. "...")
+    labelCB.checkbox.onChanged = function(_, checked) ND:SetLabel(checked); plan = nil; refresh() end
+    local seenCB = dates:Check(L["Also dates GuildOS only saw"], nil, { gap = 4 })
+    seenCB.checkbox.onChanged = function(_, checked) ND:SetWithSeen(checked); plan = nil; refresh() end
 
-    y = y - 30
-    local runFS = text(panel, "", 11, C.textSoft)
-    runFS:SetPoint("TOPLEFT", 0, y - 4)
-    local stopBtn = UI:CreateButton(panel, L["Stop"], 70, 22)
-    stopBtn:SetPoint("TOPRIGHT", 0, y)
-    stopBtn:SetScript("OnClick", function() ND:Stop() end)
-    local nextBtn = UI:CreateButton(panel, L["Next"], 150, 22)
-    nextBtn:SetPoint("RIGHT", stopBtn, "LEFT", -6, 0)
-    nextBtn:SetScript("OnClick", function() ND:Next() end)
-    local askBtn = UI:CreateButton(panel, L["Rewrite those too"], 140, 22)
-    askBtn:SetPoint("RIGHT", nextBtn, "LEFT", -6, 0)
-    local goBtn = UI:CreateButton(panel, L["Start"], 90, 22)
-    goBtn:SetPoint("RIGHT", askBtn, "LEFT", -6, 0)
-    UI:SetButtonVariant(goBtn, "primary")
+    local nameBox = UI:CreateInput(dates, 150, 24, { max = 60 })
+    local writeBtn = Forms:Button(dates, L["Write date"])
+    writeBtn:SetScript("OnClick", function() ND:WriteOne(strtrim(nameBox:GetText() or "")); refresh() end)
+    nameBox:SetScript("OnEnterPressed", function(s) s:ClearFocus(); ND:WriteOne(strtrim(s:GetText() or "")); refresh() end)
+    dates:Field(L["Member"], nameBox, { button = writeBtn, gap = 10 })
+    local planBtn = Forms:Button(dates, L["Whole guild"])
+    planBtn:SetScript("OnClick", function() plan, planLeft = ND:Plan(); mode = "plan"; refresh() end)
+    local importBtn = Forms:Button(dates, L["Read dates from notes"])
+    importBtn:SetScript("OnClick", function() imports = ND:ImportPlan(); mode = "import"; refresh() end)
+    dates:Flow({ planBtn, importBtn })
 
     -- ── Safe list, nicknames, returns ─────────────────────────────────
-    y = y - 50
-    local title2 = UI:CreateSectionTitle(panel, L["SAFE LIST AND NICKNAMES"])
-    title2:SetPoint("TOPLEFT", 0, y)
-    y = y - 26
-    local tagLbl = text(panel, L["Safe tag in notes"])
-    tagLbl:SetPoint("TOPLEFT", 0, y - 4)
-    local tagBox = UI:CreateInput(panel, 80, 22, { max = MM.TAG_MAX })
-    tagBox:SetPoint("LEFT", tagLbl, "RIGHT", 8, 0)
-    local function saveTag() MM:SetSafeTag(tagBox:GetText() or ""); tagBox:ClearFocus(); refresh() end
-    tagBox:SetScript("OnEnterPressed", saveTag)
-    local tagSave = UI:CreateButton(panel, L["Save"], 60, 22)
-    tagSave:SetPoint("LEFT", tagBox, "RIGHT", 4, 0)
-    tagSave:SetScript("OnClick", saveTag)
-    local backLbl = text(panel, L["Tell me who comes back after"])
-    backLbl:SetPoint("LEFT", tagSave, "RIGHT", 20, 0)
-    local backBox = UI:CreateInput(panel, 44, 22, { numeric = true, max = 3, justify = "CENTER" })
-    backBox:SetPoint("LEFT", backLbl, "RIGHT", 8, 0)
-    local function saveBack() MH:SetBackDays(tonumber(backBox:GetText() or "") or 0); backBox:ClearFocus(); refresh() end
-    backBox:SetScript("OnEnterPressed", saveBack)
-    local backDays = text(panel, L["days offline (0: never)"])
-    backDays:SetPoint("LEFT", backBox, "RIGHT", 6, 0)
-    local backSave = UI:CreateButton(panel, L["Save"], 60, 22)
-    backSave:SetPoint("LEFT", backDays, "RIGHT", 6, 0)
-    backSave:SetScript("OnClick", saveBack)
+    local safe = board:Card(L["Safe list and nicknames"], { col = 2 })
+    -- WoW: Forever: the marks stay on this client (audit B11).
+    local localOnly = GuildOS:LocalOnlyText()
+    if localOnly then safe:Note(localOnly, { size = UI.SP.META }) end
+    local tagBox = UI:CreateInput(safe, 80, 24, { max = MM.TAG_MAX })
+    local backBox = UI:CreateInput(safe, 60, 24, { numeric = true, max = 3, justify = "CENTER" })
+    safe:Pair(Forms:MakeField(safe, L["Safe tag in notes"], tagBox, { w = 140 }),
+              Forms:MakeField(safe, L["Tell me who comes back after"], backBox, { w = 80, hint = L["days offline (0: never)"] }))
+    -- One Save for both: Enter in either does the same.
+    local function saveTag() MM:SetSafeTag(tagBox:GetText() or ""); tagBox:ClearFocus() end
+    local function saveBack() MH:SetBackDays(tonumber(backBox:GetText() or "") or 0); backBox:ClearFocus() end
+    local function saveBoth() saveTag(); saveBack(); refresh() end
+    tagBox:SetScript("OnEnterPressed", function() saveTag(); refresh() end)
+    backBox:SetScript("OnEnterPressed", function() saveBack(); refresh() end)
+    local saveBtn = Forms:Button(safe, L["Save"], "primary")
+    saveBtn:SetScript("OnClick", saveBoth)
+    safe:Actions({ saveBtn })
+    tagBox.saveButton, backBox.saveButton = saveBtn, saveBtn
+    -- Who leaves or is removed: the officers' popup (#449, specs/salao/saidas.md), on this client.
+    local DP = GuildOS.Departure
+    local departCB = DP and safe:Check(L["Ask me when somebody leaves or is removed"],
+        L["A small window: their other characters, a permanent note, a ban or a suspension."], { gap = 4 })
+    if departCB then
+        departCB.checkbox.onChanged = function(_, checked) DP:SetEnabled(checked) end
+    end
 
-    y = y - 30
-    local memberBox = UI:CreateInput(panel, 150, 22, { max = 60 })
-    memberBox:SetPoint("TOPLEFT", 0, y)
-    local safeBtn = UI:CreateButton(panel, L["Safe on / off"], 100, 22)
-    safeBtn:SetPoint("LEFT", memberBox, "RIGHT", 6, 0)
-    safeBtn:SetScript("OnClick", function() MM:CommandSafe(memberBox:GetText() or ""); mode = "safe"; refresh() end)
-    local nickBox = UI:CreateInput(panel, 120, 22, { max = MM.NICK_MAX })
-    nickBox:SetPoint("LEFT", safeBtn, "RIGHT", 12, 0)
-    local nickBtn = UI:CreateButton(panel, L["Set nickname"], 100, 22)
-    nickBtn:SetPoint("LEFT", nickBox, "RIGHT", 6, 0)
+    local memberBox = UI:CreateInput(safe, 150, 24, { max = 60 })
+    local nickBox = UI:CreateInput(safe, 120, 24, { max = MM.NICK_MAX })
+    safe:Pair(Forms:MakeField(safe, L["Member"], memberBox), Forms:MakeField(safe, L["Nickname"], nickBox), { gap = 14 })
+    -- How long a new safe mark lasts: for good, 7, 14 or 30 days, or until a date (MemberMarks.UntilOf reads it).
+    local forDD = UI:CreateDropdown(safe, 120, 24)
+    local forOpts = { { value = "forever", text = L["Forever"] } }
+    for _, d in ipairs(MM.DURATIONS) do forOpts[#forOpts + 1] = { value = tostring(d), text = string.format(L["%d days"], d) } end
+    forOpts[#forOpts + 1] = { value = "date", text = L["Until a date"] }
+    forDD:SetOptions(forOpts)
+    forDD:SetValue("forever")
+    local untilBox = UI:CreateInput(safe, 100, 24, { max = 24 })
+    forDD.onSelect = function(_, v) if v == "date" then untilBox:SetFocus() end end
+    safe:Pair(Forms:MakeField(safe, L["Safe for"], forDD),
+              Forms:MakeField(safe, L["Until"], untilBox, { w = 110, hint = L["a date, as 15/01/2027"] }), { gap = 14 })
+    local safeBtn = Forms:Button(safe, L["Safe on / off"])
+    safeBtn:SetScript("OnClick", function()
+        local u, why = MM.UntilOf(forDD:GetValue(), strtrim(untilBox:GetText() or ""))
+        if why == "bad" then GuildOS:Print(L["Write a date after today, as 15/01/2027."]) return end
+        MM:CommandSafe(memberBox:GetText() or "", u)
+        mode = "safe"
+        refresh()
+    end)
+    local nickBtn = Forms:Button(safe, L["Set nickname"])
     nickBtn:SetScript("OnClick", function()
         MM:CommandNick(strtrim(memberBox:GetText() or "") .. " " .. strtrim(nickBox:GetText() or ""))
         refresh()
     end)
-    local safeListBtn = UI:CreateButton(panel, L["Safe list"], 90, 22)
-    safeListBtn:SetPoint("LEFT", nickBtn, "RIGHT", 12, 0)
+    local safeListBtn = Forms:Button(safe, L["Safe list"])
     safeListBtn:SetScript("OnClick", function() mode = "safe"; refresh() end)
+    safe:Flow({ safeBtn, nickBtn, safeListBtn })
 
     -- ── The list: the plan, the import's review or the safe list ──────
-    y = y - 32
-    local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 0, y)
-    listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
+    local listCard = board:Card(L["Members"], { fill = true, minH = 260 })
+    local runFS = listCard:Note("")
+    local goBtn = Forms:Button(listCard, L["Start"], "primary")
+    local askBtn = Forms:Button(listCard, L["Rewrite those too"])
+    local nextBtn = Forms:Button(listCard, L["Next"])
+    nextBtn:SetWidth(150)
+    nextBtn:SetScript("OnClick", function() ND:Next() end)
+    local stopBtn = Forms:Button(listCard, L["Stop"])
+    stopBtn:SetScript("OnClick", function() ND:Stop() end)
+    listCard:Flow({ stopBtn, nextBtn, askBtn, goBtn }, { align = "RIGHT", gap = 6,
+        shown = function() return goBtn:IsShown() or askBtn:IsShown() or nextBtn:IsShown() or stopBtn:IsShown() end })
+    local listHolder = listCard:Body(ROW_H * 4, { gap = 10 })
     local empty = text(listHolder, "", 11, C.silver)
     empty:SetPoint("TOPLEFT", 0, -4)
     local function createRow(parent)
         local row = CreateFrame("Button", nil, parent, "BackdropTemplate")
         row:SetHeight(ROW_H)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        rule(row)
         row.a = text(row, "", 11)
         row.a:SetPoint("LEFT", 8, 0)
         row.b = text(row, "", 10, C.silver)
@@ -198,6 +212,16 @@ function GuildOS:BuildMarksSub(panel)
         row.c:SetPoint("LEFT", 390, 0)
         row.d = text(row, "", 10, C.textSoft)
         row.d:SetPoint("RIGHT", -8, 0)
+        -- The safe list: the mark's tooltip (its end, as the roster's says it).
+        row:SetScript("OnEnter", function(self)
+            local it = self.item
+            if mode ~= "safe" or not (it and it.key and GameTooltip) then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(it.name, 1, 1, 1)
+            MM:TooltipLines(GameTooltip, it.key)
+            GameTooltip:Show()
+        end)
+        row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
         row:SetScript("OnClick", function(self)
             -- In the import's review a click takes a member in or out (only those it would take).
             local it = self.item
@@ -242,7 +266,9 @@ function GuildOS:BuildMarksSub(panel)
         local out, seen = {}, {}
         for _, k in ipairs(MM:SafeKeys()) do
             seen[k] = true
-            out[#out + 1] = { name = k:match("^([^-]+)") or k, why = L["marked by hand"], nick = MM:Nick(k) }
+            local u = MM:SafeUntil(k)
+            out[#out + 1] = { name = k:match("^([^-]+)") or k, nick = MM:Nick(k), key = k,
+                why = u and (L["marked by hand"] .. ", " .. MM:UntilText(u)) or L["marked by hand"] }
         end
         local tag = MM:SafeTag()
         local onotes = GuildOS.Compat.CanViewOfficerNote()
@@ -284,16 +310,20 @@ function GuildOS:BuildMarksSub(panel)
 
     refresh = function()
         local which = ND:Target()
-        UI:SetSelected(offBtn, which == "officer")
-        UI:SetSelected(pubBtn, which == "public")
+        Forms:SetOn(offBtn, which == "officer")
+        Forms:SetOn(pubBtn, which == "public")
         fmtDD:SetValue(ND:FormatId())
         labelCB.checkbox:SetChecked(ND:UseLabel())
         seenCB.checkbox:SetChecked(ND:WithSeen())
         orderDD:SetValue(ND:OrderSetting())
         if not tagBox:HasFocus() then tagBox:SetText(MM:SafeTag()) end
         if not backBox:HasFocus() then backBox:SetText(tostring(MH:BackDays())) end
+        if departCB then departCB.checkbox:SetChecked(DP:Enabled()) end
 
         local open = ND:TakeOpen()
+        -- From the data audit's "Write date": its member in the box, ready for Write date.
+        local pre = ND.TakePrefill and ND:TakePrefill()
+        if pre then nameBox:SetText(pre); nameBox:SetFocus() end
         if open == "plan" then plan, planLeft = ND:Plan(); mode = "plan"
         elseif open == "import" then imports = ND:ImportPlan(); mode = "import" end
 
@@ -301,6 +331,7 @@ function GuildOS:BuildMarksSub(panel)
         local m = ND:Mode(which)
         nextBtn:SetShown(run ~= nil and m ~= "write" and ND:Current() ~= nil)
         nextBtn.label:SetText(ND:NextLabel())
+        Forms:FitPill(nextBtn)
         stopBtn:SetShown(run ~= nil)
         askBtn:Hide()
         goBtn:Hide()
@@ -319,6 +350,7 @@ function GuildOS:BuildMarksSub(panel)
             runFS:SetText(string.format(L["%d date(s) found in notes; %d ticked to take into the history. Click a row to change it."],
                 #(imports or {}), n))
             goBtn.label:SetText(L["Take ticked"])
+            Forms:FitPill(goBtn)
             goBtn:SetShown(n > 0)
             empty:SetText((imports and #imports == 0) and L["No note holds a date."] or "")
             list:SetData(imports or {})
@@ -335,6 +367,7 @@ function GuildOS:BuildMarksSub(panel)
             runFS:SetText(string.format(L["%d to write, %d to confirm; %d already there, %d without a known date, %d only seen by GuildOS."],
                 silent, #plan - silent, left.same or 0, left.date or 0, left.seen or 0) .. (why ~= "" and ("  " .. why) or ""))
             goBtn.label:SetText(L["Start"])
+            Forms:FitPill(goBtn)
             goBtn:SetShown(silent > 0 and m ~= nil)
             askBtn:SetShown(#plan - silent > 0 and m ~= nil)
             empty:SetText(#plan == 0 and L["Every note with a known date already says it."] or "")
@@ -346,6 +379,13 @@ function GuildOS:BuildMarksSub(panel)
         end
     end
 
-    ND.uiRefresh, MM.uiRefresh = refresh, refresh
+    local fill = refresh
+    refresh = function()
+        fill()
+        board:Layout()
+    end
+    -- Only while it is on screen (memory audit): showing it refreshes it anyway.
+    local function onChange() if panel:IsVisible() then refresh() end end
+    ND.uiRefresh, MM.uiRefresh = onChange, onChange
     return refresh
 end

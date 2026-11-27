@@ -4,6 +4,7 @@
 -- Never scatter C_* guards across feature modules.
 ----------------------------------------------------------------------
 
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 GuildOS.Compat = {}
 local Compat = GuildOS.Compat
 
@@ -182,6 +183,29 @@ function Compat.RegisterAddonPrefix(prefix)
     if RegisterAddonMessagePrefix then return RegisterAddonMessagePrefix(prefix) end
 end
 
+-- Whether another addon is loaded, by its folder name (C_AddOns on retail, WoW: Forever and the 2.5.5 client;
+-- the old global elsewhere). False when the client cannot say.
+function Compat.IsAddOnLoaded(name)
+    local fn = (C_AddOns and C_AddOns.IsAddOnLoaded) or _G.IsAddOnLoaded
+    if type(name) ~= "string" or type(fn) ~= "function" then return false end
+    local ok, loaded = pcall(fn, name)
+    if not ok or Compat.IsSecret(loaded) then return false end
+    return loaded and true or false
+end
+
+-- Guild OS's own memory in KB, as the client counts it (/gos debug mem): UpdateAddOnMemoryUsage then
+-- GetAddOnMemoryUsage, in C_AddOns where the client keeps them (retail, WoW: Forever, the 2.5.5 client), the old
+-- globals elsewhere. nil when the client cannot say.
+function Compat.AddonMemoryKB(name)
+    local update = (C_AddOns and C_AddOns.UpdateAddOnMemoryUsage) or _G.UpdateAddOnMemoryUsage
+    local get = (C_AddOns and C_AddOns.GetAddOnMemoryUsage) or _G.GetAddOnMemoryUsage
+    if type(get) ~= "function" then return nil end
+    if type(update) == "function" then pcall(update) end
+    local ok, kb = pcall(get, name or "GuildOS")
+    if not ok or Compat.IsSecret(kb) or type(kb) ~= "number" then return nil end
+    return kb
+end
+
 -- Request a guild roster update
 function Compat.GuildRoster()
     if C_GuildInfo and C_GuildInfo.GuildRoster then
@@ -200,6 +224,117 @@ function Compat.IsQuestComplete(questId)
         return IsQuestFlaggedCompleted(questId)
     end
     return false
+end
+
+-- A quest's title by its id, where the client can name it (nil for one it has not seen).
+function Compat.QuestTitle(questId)
+    if not (C_QuestLog and C_QuestLog.GetTitleForQuestID) then return nil end
+    local ok, title = pcall(C_QuestLog.GetTitleForQuestID, questId)
+    if not ok or Compat.IsSecret(title) or type(title) ~= "string" or title == "" then return nil end
+    return title
+end
+
+----------------------------------------------------------------------
+-- The player's quest log (the guild LFG's "My quests", issue #450). Modern clients read C_QuestLog:
+-- GetNumQuestLogEntries, GetInfo, GetQuestTagInfo and GetSuggestedGroupSize; the Classic-era client the
+-- globals GetNumQuestLogEntries, GetQuestLogTitle (title, level, suggestedGroup, isHeader, isCollapsed,
+-- isComplete, frequency, questID) and GetQuestTagInfo(questID) (tagID, tagName). A header is the zone of
+-- the quests under it. Anything secret (Forever's Secret Values) or of the wrong type is left out.
+----------------------------------------------------------------------
+local QUEST_LOG_MAX = 120        -- log lines read at most: a full log and its headers is about 60
+-- The game's quest tags that are content for a group: Group, Raid, Dungeon, Heroic, Raid (10), Raid (25).
+local GROUP_QUEST_TAGS = { [1] = true, [62] = true, [81] = true, [85] = true, [88] = true, [89] = true }
+
+local function questTag(id)
+    local Q = C_QuestLog
+    if Q and Q.GetQuestTagInfo then
+        local ok, info = pcall(Q.GetQuestTagInfo, id)
+        if not ok or Compat.IsSecret(info) or type(info) ~= "table" then return nil end
+        local tagID, tagName, elite = info.tagID, info.tagName, info.isElite
+        if Compat.IsSecret(tagID, tagName, elite) then return nil end
+        return type(tagID) == "number" and tagID or nil, type(tagName) == "string" and tagName or nil, elite == true
+    end
+    if GetQuestTagInfo then
+        local ok, tagID, tagName = pcall(GetQuestTagInfo, id)
+        if not ok or Compat.IsSecret(tagID, tagName) then return nil end
+        return type(tagID) == "number" and tagID or nil, type(tagName) == "string" and tagName or nil, false
+    end
+    return nil
+end
+
+local function suggestedSize(id, given)
+    local Q = C_QuestLog
+    if Q and Q.GetSuggestedGroupSize then
+        local ok, n = pcall(Q.GetSuggestedGroupSize, id)
+        -- The larger of the two: either can answer 0 where the other knows.
+        if ok and not Compat.IsSecret(n) and type(n) == "number" and (type(given) ~= "number" or n > given) then given = n end
+    end
+    if type(given) ~= "number" or given ~= given or given < 0 then return 0 end
+    return math.min(40, math.floor(given))
+end
+
+-- One quest into `out[n]`, its table kept from the last read: a read makes no table it had before.
+local function fillQuest(out, n, id, title, level, zone, size)
+    local q = out[n]
+    if not q then
+        q = {}
+        out[n] = q
+    end
+    local tagID, tagName, elite = questTag(id)
+    q.id, q.title, q.zone, q.order = id, title, zone, n
+    q.level = (type(level) == "number" and level > 0) and level or nil
+    q.size = suggestedSize(id, size)
+    q.tagID, q.tag, q.elite = tagID, tagName, elite or false
+    q.group = q.size > 1 or q.elite or (tagID ~= nil and GROUP_QUEST_TAGS[tagID] == true)
+end
+
+local function okQuest(id, title)
+    return type(id) == "number" and id > 0 and id == math.floor(id) and type(title) == "string" and title ~= ""
+end
+
+--- The quests in the player's log, into `out` (an array refilled in place; entries past the count are
+--- cleared). Each is { id, title, level, zone, size (suggested players, 0 for none), tagID, tag (the
+--- client's own name for it), elite, group (a size over one, elite, or a group tag), order }.
+--- Returns `out` and the count.
+function Compat.QuestLog(out)
+    out = out or {}
+    local n, zone = 0, nil
+    local Q = C_QuestLog
+    if Q and Q.GetNumQuestLogEntries and Q.GetInfo then
+        local ok, total = pcall(Q.GetNumQuestLogEntries)
+        if not ok or Compat.IsSecret(total) or type(total) ~= "number" then total = 0 end
+        for i = 1, math.min(total, QUEST_LOG_MAX) do
+            local okI, info = pcall(Q.GetInfo, i)
+            if okI and not Compat.IsSecret(info) and type(info) == "table" then
+                local title, id, header, hidden = info.title, info.questID, info.isHeader, info.isHidden
+                local level, size = info.level, info.suggestedGroup
+                if not Compat.IsSecret(title, id, header, hidden, level, size) then
+                    if header then
+                        zone = type(title) == "string" and title or nil
+                    elseif not hidden and okQuest(id, title) then
+                        n = n + 1
+                        fillQuest(out, n, id, title, level, zone, size)
+                    end
+                end
+            end
+        end
+    elseif GetNumQuestLogEntries and GetQuestLogTitle then
+        local ok, total = pcall(GetNumQuestLogEntries)
+        if not ok or Compat.IsSecret(total) or type(total) ~= "number" then total = 0 end
+        for i = 1, math.min(total, QUEST_LOG_MAX) do
+            local okI, title, level, size, header, _, _, _, id = pcall(GetQuestLogTitle, i)
+            if okI and not Compat.IsSecret(title, level, size, header, id) then
+                if header then
+                    zone = type(title) == "string" and title or nil
+                elseif okQuest(id, title) then
+                    n = n + 1
+                    fillQuest(out, n, id, title, level, zone, size)
+                end
+            end
+        end
+    end
+    for i = n + 1, #out do out[i] = nil end
+    return out, n
 end
 
 -- Schedule a one-shot callback after `delay` seconds
@@ -282,9 +417,13 @@ end
 
 -- Best map ID for a unit (C_Map on BCC/modern). Returns nil when the API is
 -- unavailable or the unit has no map (e.g. mid-loading-screen).
+-- A secret answer (WoW: Forever's restricted units) reads as no map (issue #449, the guild map).
 function Compat.GetBestMapForUnit(unit)
+    if Compat.IsSecret(unit) then return nil end
     if C_Map and C_Map.GetBestMapForUnit then
-        return C_Map.GetBestMapForUnit(unit)
+        local ok, map = pcall(C_Map.GetBestMapForUnit, unit)
+        if not ok or Compat.IsSecret(map) then return nil end
+        return tonumber(map)
     end
     return nil
 end
@@ -293,13 +432,19 @@ end
 -- instances (C_Map returns no position there) or when the API is unavailable.
 -- Handles both the Vector2DMixin return (has :GetXY()) and an older plain
 -- {x=,y=} table, so a missing API degrades to zone-only rather than erroring.
+-- A secret position, or one the client refuses (a restricted unit raises), is no position.
 function Compat.GetPlayerMapPosition(mapID, unit)
+    if Compat.IsSecret(unit) then return nil end
     if mapID and C_Map and C_Map.GetPlayerMapPosition then
-        local pos = C_Map.GetPlayerMapPosition(mapID, unit)
-        if pos then
-            if pos.GetXY then return pos:GetXY() end
-            if pos.x and pos.y then return pos.x, pos.y end
-        end
+        local ok, pos = pcall(C_Map.GetPlayerMapPosition, mapID, unit)
+        if not ok or not pos or Compat.IsSecret(pos) then return nil end
+        local x, y
+        if pos.GetXY then x, y = pos:GetXY() elseif pos.x then x, y = pos.x, pos.y end
+        if Compat.IsSecret(x, y) then return nil end
+        x, y = tonumber(x), tonumber(y)
+        -- (0, 0) is the client's "no position here" on some maps.
+        if not x or not y or (x == 0 and y == 0) then return nil end
+        return x, y
     end
     return nil
 end
@@ -312,6 +457,186 @@ function Compat.GetMapName(mapID)
         if info then return info.name end
     end
     return nil
+end
+
+----------------------------------------------------------------------
+-- The guild map's reads (issue #449, specs/salao/mapa.md): a map's place in the tree, a map point in world
+-- yards and back, a map's rectangle on another, the player's facing and the minimap's zoom. Every one answers
+-- nil where the client lacks it, refuses it or keeps it secret, and the map degrades instead of erroring.
+----------------------------------------------------------------------
+
+-- { name, mapType, parent } of a map (mapType: 0 cosmic, 1 world, 2 continent, 3 zone, 4 dungeon, 5 micro,
+-- 6 orphan), or nil.
+function Compat.MapInfo(mapID)
+    mapID = tonumber(mapID)
+    if not mapID or not (C_Map and C_Map.GetMapInfo) then return nil end
+    local ok, info = pcall(C_Map.GetMapInfo, mapID)
+    if not ok or type(info) ~= "table" or Compat.IsSecret(info.name, info.mapType, info.parentMapID) then return nil end
+    return { name = info.name, mapType = tonumber(info.mapType), parent = tonumber(info.parentMapID) }
+end
+
+local function vec(x, y)
+    if CreateVector2D then return CreateVector2D(x, y) end
+    return { x = x, y = y, GetXY = function(v) return v.x, v.y end }
+end
+
+-- A point of a map (0..1) in world yards: continent (instance) id, worldX (north) and worldY (west); nil without
+-- C_Map.GetWorldPosFromMapPos or where the map has no place in the world.
+function Compat.MapToWorld(mapID, x, y)
+    if not (mapID and x and y and C_Map and C_Map.GetWorldPosFromMapPos) then return nil end
+    local ok, cont, pos = pcall(C_Map.GetWorldPosFromMapPos, mapID, vec(x, y))
+    if not ok or not cont or not pos or Compat.IsSecret(cont, pos) then return nil end
+    local wx, wy
+    if pos.GetXY then wx, wy = pos:GetXY() else wx, wy = pos.x, pos.y end
+    if Compat.IsSecret(wx, wy) or not tonumber(wx) then return nil end
+    return cont, wx, wy
+end
+
+-- A world point back onto `mapID` (0..1), or nil.
+function Compat.WorldToMap(cont, wx, wy, mapID)
+    if not (cont and wx and wy and mapID and C_Map and C_Map.GetMapPosFromWorldPos) then return nil end
+    local ok, _, pos = pcall(C_Map.GetMapPosFromWorldPos, cont, vec(wx, wy), mapID)
+    if not ok or not pos or Compat.IsSecret(pos) then return nil end
+    local x, y
+    if pos.GetXY then x, y = pos:GetXY() else x, y = pos.x, pos.y end
+    if Compat.IsSecret(x, y) or not tonumber(x) then return nil end
+    return x, y
+end
+
+-- The game's own map pin (the one the world map's Ctrl-click sets) at (x, y) of `mapID`, followed on screen: true
+-- when it was set, false where the client has no user waypoint or refuses one on that map.
+function Compat.SetUserWaypoint(mapID, x, y)
+    mapID, x, y = tonumber(mapID), tonumber(x), tonumber(y)
+    if not (mapID and x and y and C_Map and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates) then
+        return false
+    end
+    if C_Map.CanSetUserWaypointOnMap then
+        local ok, can = pcall(C_Map.CanSetUserWaypointOnMap, mapID)
+        if not ok or Compat.IsSecret(can) or not can then return false end
+    end
+    local ok, point = pcall(UiMapPoint.CreateFromCoordinates, mapID, x, y)
+    if not ok or not point or not pcall(C_Map.SetUserWaypoint, point) then return false end
+    if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
+        pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, true)
+    end
+    return true
+end
+
+-- Where `child` sits on `parent`: minX, maxX, minY, maxY (0..1 of the parent), or nil.
+function Compat.MapRectOnMap(child, parent)
+    if not (child and parent and C_Map and C_Map.GetMapRectOnMap) then return nil end
+    local ok, a, b, c, d = pcall(C_Map.GetMapRectOnMap, child, parent)
+    if not ok or Compat.IsSecret(a, b, c, d) or not tonumber(a) then return nil end
+    return a, b, c, d
+end
+
+-- The player's facing in radians (0 north, counter-clockwise), or nil (restricted, secret, missing).
+function Compat.PlayerFacing()
+    if not GetPlayerFacing then return nil end
+    local ok, f = pcall(GetPlayerFacing)
+    if not ok or Compat.IsSecret(f) then return nil end
+    return tonumber(f)
+end
+
+-- Whether the player is in an instance (dungeon, raid, battleground, arena, scenario), and its type and name.
+-- A secret answer counts as inside: nothing of where the player is leaves then.
+function Compat.InstanceState()
+    local inside, kind = false, nil
+    if IsInInstance then
+        local ok, a, b = pcall(IsInInstance)
+        if not ok or Compat.IsSecret(a, b) then return true, nil, nil end
+        inside, kind = a and true or false, b
+    end
+    if not inside then return false, nil, nil end
+    local name
+    if GetInstanceInfo then
+        local ok, n = pcall(GetInstanceInfo)
+        if ok and type(n) == "string" and not Compat.IsSecret(n) then name = n end
+    end
+    return true, kind, name
+end
+
+-- The minimap's zoom level (0..5), whether the player is indoors (the minimap's other scale) and whether the
+-- minimap turns with the player; nil zoom without a minimap.
+function Compat.MinimapView()
+    local mm = Minimap
+    if not (mm and mm.GetZoom) then return nil end
+    local ok, zoom = pcall(mm.GetZoom, mm)
+    if not ok or Compat.IsSecret(zoom) then return nil end
+    local indoors = IsIndoors and IsIndoors() and true or false
+    local get = (C_CVar and C_CVar.GetCVar) or GetCVar
+    local rotate = false
+    if get then
+        local okR, v = pcall(get, "rotateMinimap")
+        rotate = okR and tostring(v) == "1"
+    end
+    return tonumber(zoom) or 0, indoors, rotate
+end
+
+-- The world map's zoom: the canvas scale and how far in it is (0..1); 1, 0 where the map does not say.
+function Compat.WorldMapZoom()
+    local wmf = WorldMapFrame
+    local sc = wmf and wmf.ScrollContainer
+    local scale, pct = 1, 0
+    if sc and sc.GetCanvasScale then
+        local ok, v = pcall(sc.GetCanvasScale, sc)
+        if ok and tonumber(v) and v > 0 then scale = v end
+    end
+    local getPct = (wmf and wmf.GetCanvasZoomPercent) and wmf or ((sc and sc.GetCanvasZoomPercent) and sc or nil)
+    if getPct then
+        local ok, v = pcall(getPct.GetCanvasZoomPercent, getPct)
+        if ok and tonumber(v) then pct = math.max(0, math.min(1, v)) end
+    end
+    return scale, pct
+end
+
+-- What the guild map can do on this client: { position, world, rect, canvas } each true or false.
+function Compat.MapAbilities()
+    local M = C_Map
+    return {
+        position = (M and M.GetBestMapForUnit and M.GetPlayerMapPosition) ~= nil,
+        world = (M and M.GetWorldPosFromMapPos and M.GetMapPosFromWorldPos) ~= nil,
+        rect = (M and M.GetMapRectOnMap) ~= nil,
+        canvas = Compat.GetWorldMapCanvas() ~= nil or ToggleWorldMap ~= nil,
+    }
+end
+
+-- The player's group, unit by unit: { { unit = "party1", key = "Bob-Realm", class = "MAGE" }, ... }, the player
+-- left out and every unit whose identity is secret skipped. Keys as Compat.GroupRoster builds them.
+function Compat.GroupUnits(into)
+    -- `into`: a list kept by the caller, filled again with its own entry tables (the guild map reads the group
+    -- twice a second; memoria.md). Without it, a new list.
+    local out, count = into or {}, 0
+    local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0
+    if n <= 1 then
+        for i = #out, 1, -1 do out[i] = nil end
+        return out
+    end
+    local raid = IsInRaid and IsInRaid()
+    local surnames = GuildOS.Client.has.surnames
+    local me = Compat.PlayerName()
+    for i = 1, raid and n or (n - 1) do
+        local unit = (raid and "raid" or "party") .. i
+        local name, second, classFile = Compat.UnitIdentity(unit)
+        if type(name) == "string" and name ~= "" then
+            if type(second) ~= "string" or second == "" then second = nil end
+            local whole, realm = name, second
+            if surnames then
+                whole, realm = (second and not name:find(" ", 1, true)) and (name .. " " .. second) or name, nil
+            end
+            if whole ~= me then
+                local key = GuildOS:GetPlayerKey(whole, realm or GetRealmName())
+                if key then
+                    count = count + 1
+                    local e = out[count]
+                    if not e then e = {}; out[count] = e end
+                    e.unit, e.key, e.class, e.name = unit, key, classFile, whole
+                end
+            end
+        end
+    end
+    for i = #out, count + 1, -1 do out[i] = nil end
+    return out
 end
 
 ----------------------------------------------------------------------
@@ -372,6 +697,36 @@ function Compat.OpenWorldMap()
 end
 
 -- Whether this client may edit guild public notes
+-- Clickable chat lines of Guild OS's own (Discord 1575506871723364392: reopen the loot table from the chat).
+-- The game's "addon" link type (|Haddon:GuildOS:<action>|h[text]|h): local only, SetItemRef hands it to
+-- LinkUtil's AddOn handler, which only fires the "SetItemRef" event and opens no tooltip, so nothing is
+-- replaced or tainted. A client without that handler would route it to the item tooltip: there the line
+-- carries no link, and says the command instead.
+function Compat.AddonLinks()
+    return type(LinkUtil) == "table" and type(LinkUtil.RegisterLinkHandler) == "function"
+        and type(LinkTypes) == "table" and LinkTypes.AddOn == "addon" and type(hooksecurefunc) == "function"
+end
+
+-- The link text for `action`, coloured as the game's links, or nil where the client has no addon links.
+function Compat.AddonLink(action, text)
+    if not Compat.AddonLinks() then return nil end
+    return "|cff71d5ff|Haddon:GuildOS:" .. tostring(action) .. "|h[" .. tostring(text) .. "]|h|r"
+end
+
+-- Runs `onClick(action, button)` for a click on one of Guild OS's links; installed once, after the game's own
+-- SetItemRef (hooksecurefunc). False where the client has no addon links.
+local linkHooked
+function Compat.HookAddonLinks(onClick)
+    if linkHooked then return true end
+    if not Compat.AddonLinks() then return false end
+    linkHooked = true
+    hooksecurefunc("SetItemRef", function(link, _, button)
+        local action = type(link) == "string" and link:match("^addon:GuildOS:(.+)$")
+        if action then onClick(action, button) end
+    end)
+    return true
+end
+
 -- Whether Guild OS may write a member's public note. Only TBC Anniversary lets an addon: WoW: Forever
 -- 1.60.1.70790 forbids C_GuildInfo.SetNote to addons (ADDON_ACTION_FORBIDDEN on the roster's Add note,
 -- 2026-11-05), as it forbids GuildInvite (#256), and retail runs the same API (#259).
@@ -737,6 +1092,27 @@ function Compat.GuildBankMaxTabs()
     return tonumber(MAX_GUILDBANK_TABS) or (GuildOS.Client.isAnniversary and 6 or 8)
 end
 
+-- The game's own buttons down the guild bank's right edge (the tabs, GuildBankTab1..n with their inner
+-- GuildBankTabNButton, the "buy a tab" one among them; retail's host.BankTabs too), for a window docked beside
+-- the bank that must clear them. Frames only; empty where the bank is not built.
+function Compat.GuildBankSideButtons(host)
+    local out, seen = {}, {}
+    local function add(f)
+        if type(f) == "table" and type(f.GetRight) == "function" and not seen[f] then
+            seen[f] = true
+            out[#out + 1] = f
+        end
+    end
+    for i = 1, math.max(Compat.GuildBankMaxTabs(), 8) do
+        add(_G["GuildBankTab" .. i])
+        add(_G["GuildBankTab" .. i .. "Button"])
+    end
+    if type(host) == "table" and type(host.BankTabs) == "table" then
+        for _, f in ipairs(host.BankTabs) do add(f) end
+    end
+    return out
+end
+
 function Compat.GuildBankTabCount()
     return GetNumGuildBankTabs and tonumber(GetNumGuildBankTabs()) or 0
 end
@@ -782,6 +1158,70 @@ function Compat.GuildBankItemLog(tab)
         end
     end
     return out
+end
+
+----------------------------------------------------------------------
+-- The guild's event log (the game's "Guild Log": who invited, removed, promoted, demoted). The globals
+-- QueryGuildEventLog(), GetNumGuildEvents() and GetGuildEventInfo(i), the answer coming with
+-- GUILD_EVENT_LOG_UPDATE; GetGuildEventInfo(i) is
+--   type, player1, player2, rank, years, months, days, hours = GetGuildEventInfo(i)
+-- with type "invite" (player1 invited player2), "join" (player1), "promote"/"demote" (player1 moved player2 to
+-- the rank named `rank`), "remove" (player1 removed player2), "quit" (player1), and the time as how long AGO.
+-- Retail kept the globals (C_GuildInfo has no copy; one is asked for first should a client move them there),
+-- the 2.5.x and 1.15.x clients have them, and WoW: Forever 1.60.1 lists the event; any of them missing reads
+-- as no log: nil, never an error.
+----------------------------------------------------------------------
+local function guildEventFn(name)
+    local ns = C_GuildInfo and C_GuildInfo[name]
+    if type(ns) == "function" then return ns end
+    local g = _G[name]
+    return type(g) == "function" and g or nil
+end
+
+-- Whether this client has a guild event log to ask for and read.
+function Compat.HasGuildEventLog()
+    return guildEventFn("QueryGuildEventLog") ~= nil and guildEventFn("GetNumGuildEvents") ~= nil
+        and guildEventFn("GetGuildEventInfo") ~= nil
+end
+
+-- Asks the server for the log (the answer is GUILD_EVENT_LOG_UPDATE). True when asked.
+function Compat.QueryGuildEventLog()
+    if not Compat.HasGuildEventLog() then return false end
+    return pcall(guildEventFn("QueryGuildEventLog")) and true or false
+end
+
+-- The log as the client holds it: { type, p1, p2, rank, ago (seconds), tol (seconds: how far `ago` may be
+-- off) }, in the client's order. Nil when the client has none; an entry with a secret or missing part is left out.
+function Compat.GuildEventLog()
+    if not Compat.HasGuildEventLog() then return nil end
+    local numFn, infoFn = guildEventFn("GetNumGuildEvents"), guildEventFn("GetGuildEventInfo")
+    local okN, n = pcall(numFn)
+    if not okN or Compat.IsSecret(n) then return nil end
+    local out = {}
+    for i = 1, tonumber(n) or 0 do
+        local ok, kind, p1, p2, rank, y, mo, d, h = pcall(infoFn, i)
+        if ok and type(kind) == "string" and type(p1) == "string" and p1 ~= ""
+            and not Compat.IsSecret(kind, p1, p2, rank, y, mo, d, h) then
+            y, mo, d, h = tonumber(y) or 0, tonumber(mo) or 0, tonumber(d) or 0, tonumber(h) or 0
+            out[#out + 1] = {
+                type = kind, p1 = p1, p2 = (type(p2) == "string" and p2 ~= "") and p2 or nil,
+                rank = (type(rank) == "string" and rank ~= "") and rank or nil,
+                ago = (((y * 365 + mo * 30 + d) * 24) + h) * 3600,
+                -- A month read as 30 days: a log that says months ago is days off, one that says hours an hour.
+                tol = (y > 0 or mo > 0) and 3 * 86400 or 2 * 3600,
+            }
+        end
+    end
+    return out
+end
+
+-- A guild roster line's GUID (the 17th return of GetGuildRosterInfo), or nil where the client gives none
+-- or keeps it secret. Outlives a rename; a realm transfer changes it.
+function Compat.GuildRosterGUID(index)
+    if not GetGuildRosterInfo then return nil end
+    local guid = select(17, GetGuildRosterInfo(index))
+    if type(guid) ~= "string" or guid == "" or Compat.IsSecret(guid) then return nil end
+    return guid
 end
 
 -- The money log, oldest first: { type, name, amount, ago } with `amount` in copper and `ago` in hours.
@@ -838,6 +1278,15 @@ function Compat.ClearCursor()
     if ClearCursor then ClearCursor() end
 end
 
+-- Whether an addon may read the combat log here (the raid HUD's cooldown timers, #449). TBC Anniversary only:
+-- WoW: Forever runs the mainline client, where COMBAT_LOG_EVENT_UNFILTERED carries HasRestrictions and its
+-- payload (the caster, the spell) arrives as Secret Values inside an encounter, exactly when a raid's cooldowns
+-- are used, and a secret can be neither matched nor compared (docs/forever/README.md); retail (Midnight) closes the
+-- log to addons in instances. Forever has the cooldown list (RaidTools:TrackedCooldowns), not the log to time it.
+function Compat.CanReadCombatLog()
+    return GuildOS.Client.isAnniversary == true
+end
+
 function Compat.InCombat()
     return (InCombatLockdown and InCombatLockdown()) and true or false
 end
@@ -880,6 +1329,25 @@ function Compat.ItemValue(item)
     local name, _, _, itemLevel, reqLevel, _, _, _, _, _, sellPrice = Compat.GetItemInfo(item)
     if not name then return nil end
     return tonumber(sellPrice) or 0, tonumber(reqLevel) or 0, tonumber(itemLevel) or 0
+end
+
+-- An item's icon from its id alone (no item cache needed where the client has an instant lookup).
+function Compat.ItemIcon(item)
+    if not item then return nil end
+    if C_Item and C_Item.GetItemIconByID then
+        local ok, t = pcall(C_Item.GetItemIconByID, item)
+        if ok and t then return t end
+    end
+    if GetItemIcon then
+        local ok, t = pcall(GetItemIcon, item)
+        if ok and t then return t end
+    end
+    local instant = C_Item and C_Item.GetItemInfoInstant or GetItemInfoInstant
+    if instant then
+        local ok, _, _, _, _, icon = pcall(instant, item)
+        if ok and icon then return icon end
+    end
+    return select(10, Compat.GetItemInfo(item))
 end
 
 -- What one sells for at the auction house, from an addon that knows (Auctionator, TSM), or nil.
@@ -1503,6 +1971,14 @@ function Compat.AddChatFilter(event, fn)
     return true
 end
 
+-- Takes off a filter Compat.AddChatFilter put on. Whether the client had a way to.
+function Compat.RemoveChatFilter(event, fn)
+    local remove = (ChatFrameUtil and ChatFrameUtil.RemoveMessageEventFilter) or ChatFrame_RemoveMessageEventFilter
+    if not remove then return false end
+    remove(event, fn)
+    return true
+end
+
 -- Does a chat frame show a message group ("GUILD")? Retail moved the check to ChatFrameUtil; a client with
 -- neither is read from the frame's own list (issue #344).
 function Compat.ChatFrameShows(frame, group)
@@ -1746,6 +2222,42 @@ end
 function Compat.DoReadyCheck()
     if not DoReadyCheck then return false end
     return (pcall(DoReadyCheck))
+end
+
+-- A role check (Raid Tools, #449): InitiateRolePoll where the client has it (it is not on every Classic build).
+function Compat.CanRolePoll()
+    return InitiateRolePoll ~= nil
+end
+function Compat.DoRolePoll()
+    if not InitiateRolePoll then return false end
+    return (pcall(InitiateRolePoll))
+end
+
+-- The game's own pull countdown (Raid Tools, #449): C_PartyInfo.DoCountdown where the client has it. False
+-- where it is missing or refused; the caller then says the pull in chat.
+function Compat.CanCountdown()
+    return (C_PartyInfo and C_PartyInfo.DoCountdown) ~= nil
+end
+function Compat.DoCountdown(seconds)
+    local fn = C_PartyInfo and C_PartyInfo.DoCountdown
+    if not fn then return false end
+    local ok, res = pcall(fn, seconds)
+    return ok and res ~= false
+end
+
+-- A raid target mark (1 star .. 8 skull, 0 clears) on `unit` (Raid Tools, #449). False where it is missing or raises.
+function Compat.SetRaidTarget(unit, index)
+    if not SetRaidTarget then return false end
+    return (pcall(SetRaidTarget, unit, index))
+end
+
+-- Where the player is: the instance's map id (GetInstanceInfo's eighth answer), its type and its size; nil
+-- outside an instance or where the answer is secret (Raid Tools, #449).
+function Compat.CurrentInstance()
+    if not GetInstanceInfo then return nil end
+    local ok, name, kind, _, _, maxPlayers, _, _, mapID = pcall(GetInstanceInfo)
+    if not ok or Compat.IsSecret(name, kind, maxPlayers, mapID) or kind == "none" then return nil end
+    return tonumber(mapID), kind, tonumber(maxPlayers)
 end
 
 -- Whether I may invite somebody: alone, the group's leader, or a raid's assistant (issue #341), read past the
@@ -2231,21 +2743,259 @@ function Compat.NeedsClick()
     return not GuildOS.Client.isAnniversary
 end
 
--- A guild invite (#256). Only TBC Anniversary lets an addon invite to the guild. WoW: Forever
--- 1.60.1.70790 refused all three ways one has, in game on 2026-11-04: GuildInvite itself, which is only
--- C_GuildInfo.Invite there (ADDON_ACTION_FORBIDDEN, from a click too); a secure button running a
--- /ginvite the addon wrote (MACRO_ACTION_BLOCKED); and that line left in the chat box for the player's
--- Enter (blocked, and the box stayed tainted until a /reload). Retail runs the same API. So off
--- Anniversary nothing offers an invite, and what still asks for one is told the /ginvite line to type.
+-- A guild invite (#256, #449). WoW: Forever 1.60.1.70790 refused all three ways one has, in game on 2026-11-04:
+-- GuildInvite itself, which is only C_GuildInfo.Invite there (ADDON_ACTION_FORBIDDEN, from a click too); a secure
+-- button running a /ginvite the addon wrote (MACRO_ACTION_BLOCKED); and that line left in the chat box for the
+-- player's Enter (blocked, and the box stayed tainted until a /reload). A fourth, on 2026-11-27: a saved character
+-- macro the addon wrote with EditMacro, clicked by the player on an action bar, was blocked too ("A macro script has
+-- been blocked from an action only available to the Blizzard UI"). The game's player menu has no guild invite. So on Forever nothing offers an invite,
+-- and what still asks for one is shown the /ginvite line to copy (UI/ActionQueue.lua). TBC Anniversary and retail
+-- let an addon invite: C_GuildInfo.Invite is restricted #hwevent there (https://warcraft.wiki.gg/wiki/
+-- API_C_GuildInfo.Invite), so one key press or click per invite (Compat.NeedsHardware("guildInvite"); the
+-- officer action queue, Modules/ActionQueue.lua, asks for it).
 function Compat.AddonMayInvite()
-    return GuildOS.Client.isAnniversary == true and CanGuildInvite() == true
+    local c = GuildOS.Client
+    if not (c.isAnniversary or c.isRetail) then return false end
+    return (CanGuildInvite and CanGuildInvite()) == true
 end
 
+-- The guild invite itself: C_GuildInfo.Invite where the client has it (the global GuildInvite went in 2.5.5,
+-- 1.15.2 and 10.2.6), else the global. True when the call was made (the game's own line says whether it went).
 function Compat.GuildInvite(name)
     if type(name) ~= "string" or name == "" then return false end
-    if GuildOS.Client.isAnniversary then GuildInvite(name); return true end
+    local c = GuildOS.Client
+    if c.isAnniversary or c.isRetail then
+        local invite = (C_GuildInfo and C_GuildInfo.Invite) or GuildInvite
+        if invite then invite(name); return true end
+    end
     GuildOS:Print(string.format(GuildOS.L["Type /ginvite %s to invite them."], name))
     return false
+end
+
+----------------------------------------------------------------------
+-- What needs a key press or a click behind it (#449). The officer action queue (Modules/ActionQueue.lua) asks
+-- this before each action: true, and the action waits for the next key press of the "next in the queue" binding
+-- or a click of its toast; false, and it runs at once, from the event or the timer that asked for it.
+--   guildInvite  C_GuildInfo.Invite, #hwevent on every client (wiki); Anniversary invited from a whisper event
+--                before (Compat.NeedsClick false), so there it runs at once until the probe says otherwise
+--   groupInvite  C_PartyInfo.InviteUnit: needs no key press; from a whisper event it works on Forever (maintainer, #449; a timer is untested there)
+--   who          C_FriendList.SendWho: a hardware event since 1.13.2 on every client (wiki)
+--   whisper/chat SendChatMessage: dropped from a timer on Forever (#61) and retail (NeedsClick)
+-- `/gos probe invite` measures each from a click and from a timer and keeps it in GuildOSDB.probeInvite; a
+-- measurement made on this build wins over the assumption.
+----------------------------------------------------------------------
+Compat.HARDWARE_KINDS = { "guildInvite", "groupInvite", "who", "whisper", "channel" }
+
+local function assumedHardware(kind)
+    local c = GuildOS.Client
+    if kind == "who" then return true end
+    if kind == "guildInvite" then return not c.isAnniversary end
+    -- A group invite needs no key press anywhere (C_PartyInfo.InviteUnit has no #hwevent); on WoW: Forever the
+    -- maintainer saw it work from a whisper (#449), where the probe's unknown name only gets no answer.
+    if kind == "groupInvite" then return false end
+    return Compat.NeedsClick()
+end
+
+-- What the probe measured for `kind` on this build: { click = true|false|nil, timer = true|false|nil } or nil.
+function Compat.ProbedHardware(kind)
+    local p = type(GuildOSDB) == "table" and GuildOSDB.probeInvite
+    if type(p) ~= "table" or type(p.results) ~= "table" then return nil end
+    if p.build ~= nil and tostring(p.build) ~= tostring(GuildOS.Client.build) then return nil end
+    local r = p.results[kind]
+    return type(r) == "table" and r or nil
+end
+
+function Compat.NeedsHardware(kind)
+    local r = Compat.ProbedHardware(kind)
+    if r and r.timer == true then return false end
+    if r and r.timer == false and r.click == true then return true end
+    return assumedHardware(kind)
+end
+
+-- Whether the probe found `kind` refused even from a click (then nothing the addon does can do it here).
+function Compat.ProbedImpossible(kind)
+    local r = Compat.ProbedHardware(kind)
+    return r ~= nil and r.click == false
+end
+
+-- The key bound to a binding command (a "CLICK Button:LeftButton" one too), as the game names it, or nil.
+function Compat.BindingKey(command)
+    if not GetBindingKey then return nil end
+    local ok, key = pcall(GetBindingKey, command)
+    if ok and type(key) == "string" and key ~= "" then return key end
+    return nil
+end
+
+-- The key's name as the player reads it ("CTRL-N" as the client shows it), or the key itself.
+function Compat.BindingKeyText(key)
+    if type(key) ~= "string" then return nil end
+    if GetBindingText then
+        local ok, text = pcall(GetBindingText, key)
+        if ok and type(text) == "string" and text ~= "" then return text end
+    end
+    return key
+end
+
+-- Binds `key` to a click of button `buttonName`, saved with the character's bindings. Never in combat, where the
+-- game refuses a binding change. Returns whether it was set.
+function Compat.SetBindingClick(key, buttonName)
+    if Compat.InCombat() or not SetBindingClick or type(key) ~= "string" or key == "" then return false end
+    local ok, done = pcall(SetBindingClick, key, buttonName, "LeftButton")
+    if not ok or done == false then return false end
+    if SaveBindings then
+        local set = GetCurrentBindingSet and GetCurrentBindingSet() or 2
+        pcall(SaveBindings, set)
+    end
+    return true
+end
+
+-- Masks texture `tex` with the file at `path` (a round one makes it round). False on a client without masks.
+function Compat.SetMask(tex, path)
+    if not (tex and tex.SetMask) then return false end
+    return (pcall(tex.SetMask, tex, path))
+end
+
+-- A mask of the file at `path` on `parent`, `inset` px inside its edges, for textures that do not cover that
+-- whole area (SetMask stretches the mask over the masked texture's own rectangle: on half a disc, half an
+-- ellipse). Nil on a client without mask textures. Compat.AddMask puts a texture under it.
+function Compat.NewMask(parent, path, inset)
+    if not (parent and parent.CreateMaskTexture) then return nil end
+    local ok, m = pcall(parent.CreateMaskTexture, parent)
+    if not ok or type(m) ~= "table" then return nil end
+    inset = inset or 0
+    pcall(m.SetTexture, m, path, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    m:SetPoint("TOPLEFT", parent, "TOPLEFT", inset, -inset)
+    m:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -inset, inset)
+    return m
+end
+
+function Compat.AddMask(tex, mask)
+    if not (tex and mask and tex.AddMaskTexture) then return false end
+    return (pcall(tex.AddMaskTexture, tex, mask))
+end
+
+----------------------------------------------------------------------
+-- The guild's tabard on the window's crest (#449). Three ways a client may give it, asked in this order:
+--   C_GuildInfo.GetGuildTabardInfo(unit): { backgroundColor, borderColor, emblemColor (colours), emblemFileID }
+--   GetGuildLogoInfo(): the three colours as bytes, the emblem's file and its style (Compat.GuildTabard)
+--   SetLargeGuildTabardTextures / SetSmallGuildTabardTextures(unit, emblemTex, backgroundTex, borderTex): the
+--   game draws its own textures, colours included (the guild frame's way)
+-- Each is nil-guarded and pcalled; nothing secret is drawn. The emblem file of the first two is half an emblem,
+-- drawn twice and mirrored (UI:DrawTabard has Blizzard's crop and the source links); the third draws from a sheet
+-- of whole emblems.
+----------------------------------------------------------------------
+local function colorOf(c)
+    if type(c) ~= "table" then return nil end
+    local r, g, b
+    if c.GetRGB then
+        local ok, rr, gg, bb = pcall(c.GetRGB, c)
+        if ok then r, g, b = rr, gg, bb end
+    else
+        r, g, b = c.r, c.g, c.b
+    end
+    if Compat.IsSecret(r, g, b) or type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then return nil end
+    return { r = r, g = g, b = b }
+end
+
+-- The crest's data: { background, border, emblem = { r, g, b } in 0..1, emblemFile, source }, or nil.
+function Compat.GuildTabardInfo()
+    if not (IsInGuild and IsInGuild()) then return nil end
+    local get = C_GuildInfo and C_GuildInfo.GetGuildTabardInfo
+    if get then
+        local ok, t = pcall(get, "player")
+        if ok and type(t) == "table" then
+            local file = t.emblemFileID
+            local bg, border, emblem = colorOf(t.backgroundColor), colorOf(t.borderColor), colorOf(t.emblemColor)
+            if bg and emblem and not Compat.IsSecret(file) and (type(file) == "number" or type(file) == "string") then
+                return { background = bg, border = border or bg, emblem = emblem, emblemFile = file, source = "info" }
+            end
+        end
+    end
+    if GetGuildLogoInfo then
+        local ok, br, bgc, bb, rr, rg, rb, er, eg, eb, file = pcall(GetGuildLogoInfo)
+        local nums = { br, bgc, bb, rr, rg, rb, er, eg, eb }
+        local good = ok and #nums == 9 and not Compat.IsSecret(file) and (type(file) == "number" or type(file) == "string")
+        for i = 1, 9 do
+            if not good then break end
+            if Compat.IsSecret(nums[i]) or type(nums[i]) ~= "number" then good = false end
+        end
+        if good then
+            local function c(r, g, b) return { r = r / 255, g = g / 255, b = b / 255 } end
+            return { background = c(br, bgc, bb), border = c(rr, rg, rb), emblem = c(er, eg, eb),
+                     emblemFile = file, source = "logo" }
+        end
+    end
+    return nil
+end
+
+-- Has the game draw the tabard on the three textures (the guild frame's way). True when the emblem got a file.
+function Compat.SetGuildTabardTextures(emblemTex, backgroundTex, borderTex)
+    if not (IsInGuild and IsInGuild()) then return false end
+    local set = SetLargeGuildTabardTextures or SetSmallGuildTabardTextures
+    if not set or not emblemTex then return false end
+    -- The game picks the emblem's cell in its sheet by SetTexCoord (GuildUtil.lua's SetGuildTabardTextures, see
+    -- UI:DrawTabard); a client whose tabard info lacks the emblem's style leaves the coordinates alone and the whole
+    -- sheet would be drawn (or it set the no-design picture, whole). Reset first, then a cell or nothing.
+    if emblemTex.SetTexCoord then emblemTex:SetTexCoord(0, 1, 0, 1) end
+    local ok = pcall(set, "player", emblemTex, backgroundTex, borderTex)
+    if not ok then return false end
+    local got = emblemTex.GetTexture and emblemTex:GetTexture()
+    if got == nil or got == "" or Compat.IsSecret(got) then return false end
+    if emblemTex.GetTexCoord then
+        local ok2, ulx, _, _, _, urx = pcall(emblemTex.GetTexCoord, emblemTex)
+        if ok2 and type(ulx) == "number" and type(urx) == "number" and not Compat.IsSecret(ulx, urx)
+            and math.abs(urx - ulx) > 0.5 then
+            return false
+        end
+    end
+    return true
+end
+
+-- What the crest would draw the tabard with here, for /gos debug probe: the API used ("SetLargeGuildTabardTextures
+-- (masked round)", "C_GuildInfo.GetGuildTabardInfo", "GetGuildLogoInfo", ...) or "none: why". Second: TabardApis().
+function Compat.TabardReport()
+    local apis = Compat.TabardApis()
+    local have = {}
+    for _, n in ipairs({ "GetGuildTabardInfo", "GetGuildLogoInfo", "GetGuildTabardFiles", "GetGuildTabardFileNames",
+                         "SetLargeGuildTabardTextures", "SetSmallGuildTabardTextures" }) do
+        if apis[n] then have[#have + 1] = n end
+    end
+    if not (IsInGuild and IsInGuild()) then return "none: not in a guild", apis end
+    local used
+    if UIParent and UIParent.CreateTexture then
+        local t = {}
+        for i = 1, 3 do
+            local ok, tex = pcall(UIParent.CreateTexture, UIParent)
+            t[i] = ok and tex or nil
+        end
+        if t[1] and t[2] and t[3] and Compat.SetGuildTabardTextures(t[1], t[2], t[3]) then
+            used = SetLargeGuildTabardTextures and "SetLargeGuildTabardTextures" or "SetSmallGuildTabardTextures"
+        end
+        for i = 1, 3 do if t[i] and t[i].Hide then pcall(t[i].Hide, t[i]) end end
+    end
+    if not used then
+        local info = Compat.GuildTabardInfo()
+        if info then used = info.source == "info" and "C_GuildInfo.GetGuildTabardInfo" or "GetGuildLogoInfo" end
+    end
+    if used then return used .. (apis.SetMask and " (masked round)" or " (no masks)"), apis end
+    if #have == 0 then return "none: no tabard API on this client", apis end
+    return "none: the guild's tabard did not answer (has " .. table.concat(have, ", ") .. ")", apis
+end
+
+-- Which of the tabard's APIs this client has (the probe keeps it).
+function Compat.TabardApis()
+    return {
+        GetGuildTabardInfo = (C_GuildInfo and C_GuildInfo.GetGuildTabardInfo) ~= nil,
+        GetGuildLogoInfo = GetGuildLogoInfo ~= nil,
+        GetGuildTabardFiles = GetGuildTabardFiles ~= nil,
+        GetGuildTabardFileNames = GetGuildTabardFileNames ~= nil,
+        SetLargeGuildTabardTextures = SetLargeGuildTabardTextures ~= nil,
+        SetSmallGuildTabardTextures = SetSmallGuildTabardTextures ~= nil,
+        SetMask = (UIParent and UIParent.CreateTexture and (function()
+            local ok, t = pcall(UIParent.CreateTexture, UIParent)
+            return ok and type(t) == "table" and t.SetMask ~= nil
+        end)()) or false,
+    }
 end
 
 -- Does the server show this channel without raid icons? It is the ChatChannels table's
@@ -2324,6 +3074,45 @@ function Compat.ChannelId(name)
     local ok, id = pcall(GetChannelName, name)
     id = ok and not Compat.IsSecret(id) and tonumber(id) or 0
     return id
+end
+
+-- The channels this character is in, as { { num = 3, name = "LookingForGroup" }, ... } in number order. Read from
+-- GetChannelList (number, name[, disabled] per channel: the third value is there on retail and the classic clients,
+-- not on older ones, so a number followed by a name starts each entry), else by asking GetChannelName for each
+-- number. A zone channel's full name ("Trade - City") is kept as the game gives it. Empty when nothing answers.
+local MAX_CHANNELS = 20
+function Compat.JoinedChannels()
+    local out, seen = {}, {}
+    local function add(num, name)
+        num = tonumber(num)
+        if num and num > 0 and type(name) == "string" and name ~= "" and not seen[num]
+            and not Compat.IsSecret(name) then
+            seen[num] = true
+            out[#out + 1] = { num = num, name = name }
+        end
+    end
+    if GetChannelList then
+        local ok, list = pcall(function() return { GetChannelList() } end)
+        if ok and type(list) == "table" then
+            local i = 1
+            while list[i] ~= nil do
+                if type(list[i]) == "number" and type(list[i + 1]) == "string" then
+                    add(list[i], list[i + 1])
+                    i = i + 2
+                else
+                    i = i + 1
+                end
+            end
+        end
+    end
+    if #out == 0 and GetChannelName then
+        for i = 1, MAX_CHANNELS do
+            local ok, id, name = pcall(GetChannelName, i)
+            if ok and not Compat.IsSecret(id) then add(id, name) end
+        end
+    end
+    table.sort(out, function(a, b) return a.num < b.num end)
+    return out
 end
 
 -- Leaves `name`. True when the call went, whether or not the channel was joined.
@@ -2430,6 +3219,12 @@ function Compat.OnCalendarUpdate(fn)
     Compat._calendarListeners[#Compat._calendarListeners + 1] = fn
 end
 
+--- `v` unless the client keeps it secret (then nil).
+function Compat.PlainValue(v)
+    if v ~= nil and not Compat.IsSecret(v) then return v end
+    return nil
+end
+
 --- The guild's events between two UTC instants, holidays and personal events left out:
 --- { offset, day, index, title, calendarType, startsAt }; nil while the game has not read its calendar
 --- yet (Compat.CalendarRequest asks). The calendar reads months relative to the one its window shows, so
@@ -2454,8 +3249,13 @@ function Compat.CalendarGuildEvents(fromEpoch, toEpoch)
                     local s = e.startTime
                     local startsAt = Compat.EpochOfRealm({ year = s.year, month = s.month, day = s.monthDay, hour = s.hour, minute = s.minute })
                     if startsAt >= fromEpoch and startsAt <= toEpoch then
+                        -- What else the day's list says (the companion export, CalendarSnapshot): the event's
+                        -- own id, its kind of event and who made or invited, when the client tells.
+                        local plain = Compat.PlainValue
                         out[#out + 1] = { offset = offset, day = day, index = index, title = tostring(e.title),
-                                          calendarType = e.calendarType, startsAt = startsAt }
+                                          calendarType = e.calendarType, startsAt = startsAt,
+                                          eventID = plain(e.eventID), eventType = plain(e.eventType),
+                                          invitedBy = plain(e.invitedBy) }
                     end
                 end
             end
@@ -2524,6 +3324,51 @@ function Compat.CalendarOpenedEvent()
     if type(t) ~= "table" then return nil end
     return { title = info.title,
              startsAt = Compat.EpochOfRealm({ year = t.year, month = t.month, day = t.monthDay, hour = t.hour, minute = t.minute }) }
+end
+
+-- The answers an invite can carry (Enum.CalendarStatus), by the names the companion export uses.
+local INVITE_STATUS = { [0] = "invited", [1] = "accepted", [2] = "declined", [3] = "confirmed", [4] = "out",
+                        [5] = "standby", [6] = "signedup", [7] = "notsignedup", [8] = "tentative" }
+Compat.CALENDAR_INVITE_STATUS = INVITE_STATUS
+
+--- What the game holds of the event it has open (after CalendarOpenEvent and its CALENDAR_OPEN_EVENT), as
+--- { title, description, creator, eventType, calendarType, startsAt, invites = { { name, status, classFile } } },
+--- or nil. A value the client keeps secret is left out; an invite with a secret name is not listed.
+function Compat.CalendarEventDetails()
+    if not Compat.CalendarAvailable() or not C_Calendar.GetEventInfo then return nil end
+    local ok, info = pcall(C_Calendar.GetEventInfo)
+    if not ok or type(info) ~= "table" then return nil end
+    local plain = Compat.PlainValue
+    local t = info.time
+    local out = {
+        title = plain(info.title), description = plain(info.description), creator = plain(info.creator),
+        eventType = plain(info.eventType), calendarType = plain(info.calendarType), invites = {},
+        startsAt = type(t) == "table" and Compat.EpochOfRealm({ year = t.year, month = t.month, day = t.monthDay,
+            hour = t.hour, minute = t.minute }) or nil,
+    }
+    local okN, n = pcall(C_Calendar.GetNumInvites)
+    for i = 1, (okN and tonumber(n) or 0) do
+        local okI, inv = pcall(C_Calendar.EventGetInvite, i)
+        if okI and type(inv) == "table" then
+            local name = plain(inv.name)
+            if type(name) == "string" and name ~= "" then
+                out.invites[#out.invites + 1] = { name = name, status = INVITE_STATUS[tonumber(plain(inv.inviteStatus)) or -1],
+                    classFile = plain(inv.classFilename), role = plain(inv.role) }
+            end
+        end
+    end
+    return out
+end
+
+--- Whether the game's own calendar window is open (the player is looking at it, or editing an event there).
+function Compat.CalendarWindowShown()
+    local frame = rawget(_G, "CalendarFrame")
+    return type(frame) == "table" and type(frame.IsShown) == "function" and frame:IsShown() and true or false
+end
+
+--- Closes the event the game has open, if any.
+function Compat.CalendarCloseEvent()
+    if Compat.CalendarAvailable() and C_Calendar.CloseEvent then pcall(C_Calendar.CloseEvent) end
 end
 
 --- Saves { title, startsAt, description } onto the open event, from a click, and closes it. With no

@@ -43,7 +43,8 @@ GuildOS.Points = Points
 local L = GuildOS.L
 
 local LOG_MAX = 500
-local OPS_MAX = 2000
+local OPS_MAX = 2000               -- applied op ids a pool remembers, to apply a resent op once
+local OPS_KEEP = 1500              -- how many of the newest stay when OPS_MAX is passed (audit R15)
 local WEEK = 604800               -- seconds: a reason's weekly cap counts within one of these
 local MAX_REASONS = 12            -- named reasons a pool keeps
 local EARN_KINDS = { award = true, raid = true, reason = true }   -- what the caps hold back
@@ -174,7 +175,7 @@ function Points:Initialize()
     -- Ensure the global/ungrouped pool is well-formed
     local p = GuildOS.db.points or {}
     GuildOS.db.points = p
-    p.mode = p.mode or "dkp"
+    p.mode = (p.mode == "council" and "dkp") or p.mode or "dkp"   -- audit R9, B16
     p.config = p.config or {}
     local c = p.config
     if c.bossAward      == nil then c.bossAward      = 10    end
@@ -233,11 +234,18 @@ end
 
 -- `coreName` (issue #338): another core's pool than the active one's, when a core picks its own loot
 -- system.
-function Points:GetMode(coreName) return poolOf(coreName).mode end
+-- The "Loot Council" mode did nothing apart from DKP (audit R9, B16): a pool saved with it, or a snapshot
+-- from a client before, reads as DKP.
+local function modeOf(mode)
+    if mode == "council" then return "dkp" end
+    return mode
+end
+
+function Points:GetMode(coreName) return modeOf(poolOf(coreName).mode) end
 
 function Points:SetMode(mode, coreName)
     if not GuildOS:IsOfficer() then return end
-    if mode ~= "dkp" and mode ~= "epgp" and mode ~= "council" then return end
+    if mode ~= "dkp" and mode ~= "epgp" then return end
     poolOf(coreName).mode = mode
     self:BroadcastSnapshot(coreName)
     self:Refresh()
@@ -349,24 +357,37 @@ function Points:ApplyEntry(e, pool)
             t[wk] = (t[wk] or 0) + e.delta
         end
     end
+    -- A bank donation's EP (Snuchyboochy): its ledger line, granted once, on every officer's client.
+    if type(e.lid) == "string" then self:NoteBankDone(pool, e.lid, e.bt, e.bs) end
     local log = pool.log
     table.insert(log, 1, {
         ts = e.ts, key = e.key, name = e.name, delta = e.delta,
-        reason = e.reason, author = e.author, kind = e.kind, rk = e.rk,
+        reason = e.reason, author = e.author, kind = e.kind, rk = e.rk, lid = e.lid,
     })
     while #log > LOG_MAX do table.remove(log) end
 end
 
--- Mark an op as applied in a specific pool (nil → active pool).
+-- Mark an op as applied in a specific pool (nil → active pool). Each op holds its place in the order
+-- applied (an op from before holds `true`, the oldest of all): past OPS_MAX the oldest go and the
+-- newest OPS_KEEP stay (audit R15). Wiping the whole set let an op resent just after apply twice.
 function Points:MarkApplied(op, pool)
     if not op then return end
     pool = pool or self:Pool()
     if not pool.appliedOps[op] then
-        pool.appliedOps[op] = true
+        local seq = (tonumber(pool.appliedSeq) or 0) + 1
+        pool.appliedSeq = seq
+        pool.appliedOps[op] = seq
         pool.appliedCount = (pool.appliedCount or 0) + 1
         if pool.appliedCount > OPS_MAX then
-            wipe(pool.appliedOps)
-            pool.appliedCount = 0
+            local count = 0
+            for k, at in pairs(pool.appliedOps) do
+                if type(at) ~= "number" or at <= seq - OPS_KEEP then
+                    pool.appliedOps[k] = nil
+                else
+                    count = count + 1
+                end
+            end
+            pool.appliedCount = count
         end
     end
 end
@@ -579,6 +600,166 @@ function Points:SetConfigKey(key, value, coreName)
     self:BroadcastSnapshot(coreName)
     self:Refresh()
     return value
+end
+
+----------------------------------------------------------------------
+-- EP for what members give the guild bank (Snuchyboochy): an officer's switch, off by default, in the
+-- guild's own pool (""). Each deposit in the bank's ledger (Modules/GuildBank.lua) after the switch went on
+-- earns `bankEpRate` EP for each gold it is worth (gold as it is; an item at its auction or vendor price
+-- times the count, GuildBank:LineValue), rounded down, under one of the guild's named reasons
+-- (`bankEpReason`), so that reason's weekly cap holds it. A line is granted once, by its ledger id
+-- (GuildBank's `lid`), which every officer's client learns from the grant itself (`pool.bankDone`, kept in
+-- the snapshot too); a grant under an id this ledger does not hold, for the same deposit within the hour two
+-- reads may differ by, counts as this line's. Only one officer's client grants: the one whose name sorts first
+-- among the officers online who run Guild OS (BankEpApplier), as the welcome's election orders them.
+----------------------------------------------------------------------
+local BANK_KEEP = 60 * 86400         -- seconds a granted line's id is remembered
+local BANK_DONE_MAX = 3000           -- ids remembered at most
+local BANK_SAME = 3600 + 120         -- two reads of one deposit: under an hour apart (GuildBank's SAME_EVENT)
+local BANK_RATE_MAX = 1000           -- EP for one gold, at most
+
+local function bankSig(e)
+    return table.concat({ tostring(e.n or ""), tostring(e.k or 0), tostring(e.id or 0), tostring(e.c or 0),
+        tostring(e.g or 0) }, "|")
+end
+
+function Points:NoteBankDone(pool, lid, t, sig)
+    pool.bankDone = type(pool.bankDone) == "table" and pool.bankDone or {}
+    if pool.bankDone[lid] then return end
+    pool.bankDone[lid] = { t = tonumber(t) or GetServerTime(), s = type(sig) == "string" and sig:sub(1, 160) or nil }
+    pool.bankCount = (pool.bankCount or 0) + 1
+    if pool.bankCount > BANK_DONE_MAX then
+        local cut, n = GetServerTime() - BANK_KEEP, 0
+        for k, v in pairs(pool.bankDone) do
+            if type(v) ~= "table" or (v.t or 0) < cut then pool.bankDone[k] = nil else n = n + 1 end
+        end
+        pool.bankCount = n
+    end
+end
+
+-- The guild pool's switch, as { on, rate, reason, since }.
+function Points:BankEpConfig()
+    local p = GuildOS.db.points
+    local c = p and p.config or {}
+    return { on = c.bankEp == true, rate = tonumber(c.bankEpRate) or 0, reason = c.bankEpReason, since = tonumber(c.bankEpSince) }
+end
+
+-- An officer turns it on or off, with its rate and its named reason. Returns whether it was taken, and why not
+-- ("officer", "rate", "reason").
+function Points:SetBankEp(on, rate, reasonKey)
+    if not GuildOS:IsOfficer() then return false, "officer" end
+    local p = GuildOS.db.points
+    if not p then return false, "officer" end
+    local c = p.config
+    if on then
+        rate = tonumber(rate)
+        if not rate or rate <= 0 or rate > BANK_RATE_MAX then return false, "rate" end
+        if not self:GetReason(reasonKey, p) then return false, "reason" end
+        if not c.bankEp then c.bankEpSince = GetServerTime() end
+        c.bankEp, c.bankEpRate, c.bankEpReason = true, rate, reasonKey
+    else
+        c.bankEp, c.bankEpSince = false, nil
+    end
+    self:InPool("", self.BroadcastSnapshot, self)
+    self:Refresh()
+    if on then self:ApplyBankDonations() end
+    return true
+end
+
+-- Whether this client is the one that grants: an officer, and first by name among the officers online with Guild
+-- OS (a record in db.members). `roster`: { { name, rankIndex, online } } for a test; else the guild roster.
+function Points.BankEpApplier(me, roster, maxRank, runsAddon)
+    local function stable(n)
+        local short = (GuildOS.ShortName and GuildOS:ShortName(n)) or n
+        return tostring(short or ""):lower()
+    end
+    local mine = stable(me)
+    for _, r in ipairs(roster) do
+        local n = stable(r.name)
+        if n ~= "" and n ~= mine and r.online and r.rankIndex and r.rankIndex <= maxRank and runsAddon(r.name) and n < mine then
+            return false
+        end
+    end
+    return true
+end
+
+function Points:IsBankEpApplier()
+    if not GuildOS:IsOfficer() then return false end
+    local roster = {}
+    for i = 1, GetNumGuildMembers() or 0 do
+        local name, _, rankIndex, _, _, _, _, _, online = GetGuildRosterInfo(i)
+        if name then roster[#roster + 1] = { name = name, rankIndex = rankIndex, online = online } end
+    end
+    local maxRank = (GuildOS.db.settings and GuildOS.db.settings.officerMaxRank) or 1
+    local members = GuildOS.db.members or {}
+    return Points.BankEpApplier(GuildOS.Compat.PlayerName(), roster, maxRank, function(name)
+        local short = name:match("^([^-]+)") or name
+        local d = members[GuildOS:GetPlayerKey(short, name:match("-(.+)$"))]
+        return d ~= nil and (tonumber(d.lastUpdate) or 0) > 0
+    end)
+end
+
+-- What a ledger line is worth, in copper, for its EP: gold as it is, an item by GuildBank:LineValue.
+local function depositValue(B, e)
+    if e.k == 0 then return tonumber(e.g) or 0 end
+    return B:LineValue(e) or nil
+end
+
+-- Grant what the ledger's deposits since the switch earn and was not granted yet. Returns the entries made.
+function Points:ApplyBankDonations()
+    local B = GuildOS.GuildBank
+    local bank = self:BankEpConfig()
+    if not (B and bank.on and bank.since and bank.rate > 0) then return {} end
+    local pool = GuildOS.db.points
+    if not (pool and self:GetReason(bank.reason, pool) and self:IsBankEpApplier()) then return {} end
+    local done = type(pool.bankDone) == "table" and pool.bankDone or {}
+    local ledger = B:Store().ledger
+    -- Grants under ids this ledger does not hold: maybe one of its lines under another client's name.
+    local held, foreign = {}, {}
+    for _, e in ipairs(ledger) do if e.lid then held[e.lid] = true end end
+    for lid, v in pairs(done) do
+        if not held[lid] and type(v) == "table" and v.s then
+            foreign[v.s] = foreign[v.s] or {}
+            table.insert(foreign[v.s], v)
+        end
+    end
+    local made = {}
+    self:InPool("", function()
+        for _, e in ipairs(ledger) do
+            local named = type(e.n) == "string" and e.n ~= "" and e.n ~= "?"
+            if e.ty == "d" and named and e.lid and not done[e.lid] and (e.t or 0) >= bank.since then
+                local sig = bankSig(e)
+                local twin, twinD
+                for _, v in ipairs(foreign[sig] or {}) do
+                    local d = math.abs((v.t or 0) - (e.t or 0))
+                    if not v.used and d < BANK_SAME and (not twinD or d < twinD) then twin, twinD = v, d end
+                end
+                local value = not twin and depositValue(B, e) or nil
+                if twin then
+                    twin.used = true
+                    self:NoteBankDone(pool, e.lid, e.t, sig)
+                elseif value then
+                    local ep = math.floor(value / 10000 * bank.rate)
+                    if ep > 0 then
+                        local what = e.k == 0 and B.Coins(value) or string.format("%dx item:%d", e.c or 0, e.id or 0)
+                        local entry = self:EarnEntry(self:KeyOf(e.n), ep,
+                            string.format(L["Bank donation: %s (line %s)"], what, e.lid), "reason", bank.reason)
+                        entry.lid, entry.bt, entry.bs = e.lid, e.t, sig
+                        self:ApplyEntry(entry)
+                        self:MarkApplied(entry.op)
+                        made[#made + 1] = entry
+                    else
+                        self:NoteBankDone(pool, e.lid, e.t, sig)   -- worth under one EP: nothing to give, ever
+                    end
+                end
+            end
+        end
+    end)
+    if #made > 0 then
+        publishDelta(made)
+        self:Refresh()
+    end
+    return made
 end
 
 -- Award the same amount to every player currently in the raid.
@@ -1672,7 +1853,7 @@ function Points:OnSync(env)
         -- overwrite each other's revision counter.
         local domain = d.core and ("points:" .. d.core) or "points"
         if GuildOS.SyncService:ShouldApply(domain, "standings", env.rev) then
-            if d.mode     then pool.mode     = d.mode     end
+            if d.mode     then pool.mode     = modeOf(d.mode) end
             if d.config   then pool.config   = d.config   end
             if d.standings then
                 -- Keyed this client's way; one member under two of the sender's keys adds up (#97).
@@ -1690,6 +1871,12 @@ function Points:OnSync(env)
             if type(d.accounts) == "table" then self:MergeAccounts(pool, d.accounts) end
             -- What each named reason has given this week, for its cap: the higher figure of each.
             self:MergeWeekly(pool, d.weekly)
+            -- The bank lines granted already: merged, so no officer grants one again.
+            if type(d.bankDone) == "table" then
+                for lid, v in pairs(d.bankDone) do
+                    if type(lid) == "string" and #lid <= 80 and type(v) == "table" then self:NoteBankDone(pool, lid, v.t, v.s) end
+                end
+            end
             -- The queues (issue #337): each one's newest order wins, as with its entries.
             if type(d.queues) == "table" then
                 for _, e in pairs(localQueues(d.queues)) do self:ApplyQueueEntry(e, pool) end
@@ -1721,6 +1908,8 @@ function Points:BroadcastSnapshot(coreName)
         queues   = pool.queues,
         -- This week's figures of the named reasons' caps; a client from before reads none of it.
         weekly   = { w = self:Week(), v = (pool.weekly and pool.weekly[self:Week()]) or {} },
+        -- The bank lines whose EP was granted (Snuchyboochy), the guild's pool only.
+        bankDone = coreName == "" and pool.bankDone or nil,
     }, { rev = rev })
 end
 

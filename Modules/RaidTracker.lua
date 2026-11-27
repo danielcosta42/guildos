@@ -2,6 +2,7 @@
 -- Guild OS - Raid Attendance Tracker
 -- Tracks raid attendance, logs raid sessions, computes attendance %
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local RaidTracker = {}
 GuildOS.RaidTracker = RaidTracker
 local L = GuildOS.L
@@ -239,6 +240,12 @@ function RaidTracker:LockoutKey(session)
     return difficulty and (key .. "_d" .. difficulty) or key
 end
 
+-- A roster change's snapshot (the group events, coalesced): only while a session is tracked.
+RaidTracker.ROSTER_SNAP_GAP = 30
+local function rosterSnapshot()
+    if RaidTracker.trackingActive then RaidTracker:TakeSnapshot("roster_change") end
+end
+
 function RaidTracker:Initialize()
     if not GuildOS.db.raidTracker then
         GuildOS.db.raidTracker = { sessions = {}, attendance = {}, currentGroupTag = "" }
@@ -254,6 +261,7 @@ function RaidTracker:Initialize()
 
     -- One-time migration: detect old flat attendance structure and rebuild
     self:MigrateAttendanceIfNeeded()
+    self:PruneHistory()   -- ended sessions compacted, old pug nights and tombstones gone (audit R5)
     self:_RegisterTests()
 
     local frame = CreateFrame("Frame")
@@ -267,8 +275,11 @@ function RaidTracker:Initialize()
         if event == "ZONE_CHANGED_NEW_AREA" then
             RaidTracker:CheckZone()
         elseif event == "RAID_ROSTER_UPDATE" or event == "GROUP_ROSTER_UPDATE" then
+            -- A raid's group fires these many times a minute (a role, an online flag, a subgroup); each snapshot
+            -- is a table per raider kept in the session until it ends. At most one every ROSTER_SNAP_GAP
+            -- seconds, the last change never lost (Coalesce; memory audit, memoria.md).
             if RaidTracker.trackingActive then
-                RaidTracker:TakeSnapshot("roster_change")
+                GuildOS:Coalesce("raidRosterSnapshot", RaidTracker.ROSTER_SNAP_GAP, rosterSnapshot)
             end
         elseif event == "ENCOUNTER_START" then
             local encounterID, encounterName = ...
@@ -500,33 +511,23 @@ function RaidTracker:IsGuildRaid(session)
     local myGuild = GetGuildInfo("player")
     if not myGuild then return false end
 
-    local players = session.players or {}
+    -- Who is in the guild is the roster's answer, never db.members (audit R2): a pug inspected or
+    -- heard once has a record there too. On retail by the whole key, since a guildmate's namesake on
+    -- another connected realm is not one (issue #184); elsewhere by the name.
+    local retail = GuildOS.Client.isRetail
+    local onRoster = {}
+    for i = 1, GetNumGuildMembers() or 0 do
+        local fullName = GetGuildRosterInfo(i)
+        if fullName then
+            onRoster[retail and GuildOS:KeyOfRosterName(fullName) or (fullName:match("^([^-]+)") or fullName)] = true
+        end
+    end
+
     local total = 0
     local guildCount = 0
-
-    for key in pairs(players) do
+    for key in pairs(session.players or {}) do
         total = total + 1
-        local name = key:match("^([^-]+)") or key
-        local memberData = GuildOS.db.members and GuildOS.db.members[key]
-        -- Check via member DB (fastest path — already synced)
-        if memberData then
-            guildCount = guildCount + 1
-        else
-            -- Fallback: scan guild roster for this name; on retail for the whole key, since a
-            -- guildmate's namesake on another connected realm is not one (issue #184).
-            local retail = GuildOS.Client.isRetail
-            local numMembers = GetNumGuildMembers() or 0
-            for i = 1, numMembers do
-                local fullName = GetGuildRosterInfo(i)
-                if fullName then
-                    local short = fullName:match("^([^-]+)") or fullName
-                    if (retail and GuildOS:KeyOfRosterName(fullName) == key) or (not retail and short == name) then
-                        guildCount = guildCount + 1
-                        break
-                    end
-                end
-            end
-        end
+        if onRoster[retail and key or (key:match("^([^-]+)") or key)] then guildCount = guildCount + 1 end
     end
 
     if total == 0 then return false end
@@ -586,7 +587,11 @@ function RaidTracker:EndSession(away, at)
     if GuildOS.CoreManager and GuildOS.CoreManager.EndNight then
         GuildOS:SafeCall(GuildOS.CoreManager.EndNight, GuildOS.CoreManager, self.currentRaid.groupTag, self.currentRaid)
     end
+    -- Its attendance is built: the snapshots give way to their roll-up, and old history goes (audit R5).
+    local ended = self.currentRaid
     self.currentRaid = nil
+    self:CompactSession(ended)
+    self:PruneHistory()
 
     -- Broadcast updated raid data to all officer clients
     C_Timer.After(1, function()
@@ -1061,9 +1066,6 @@ function RaidTracker:MergeDuplicateSessions()
                             a.data.players[k] = true
                         end
 
-                        -- Normalise nil fields on old DB records
-                        if not a.data.snapshots then a.data.snapshots = {} end
-                        if not b.data.snapshots then b.data.snapshots = {} end
 
                         -- Merge encounters.
                         -- Collect all encounters from both sessions, sort by startTime,
@@ -1096,13 +1098,11 @@ function RaidTracker:MergeDuplicateSessions()
                         end
                         a.data.encounters = dedupedEncs
 
-                        -- Merge snapshots
-                        for _, snap in ipairs(b.data.snapshots) do
-                            table.insert(a.data.snapshots, snap)
-                        end
-                        table.sort(a.data.snapshots, function(x, y)
-                            return (x.time or 0) < (y.time or 0)
-                        end)
+                        -- Merge the two nights' presence: their snapshots, or what is kept of
+                        -- them, as one roll-up (audit R5).
+                        local roll = self:MergeRolls({ self:RollUp(a.data), self:RollUp(b.data) })
+                        a.data.roll = roll.n > 0 and roll or nil
+                        a.data.snapshots = nil
 
                         -- Preserve isGuildRaid: if either session was a guild raid, mark merged as such
                         if b.data.isGuildRaid then
@@ -1165,6 +1165,151 @@ function RaidTracker:RebuildAttendanceFromSessions()
 end
 
 ----------------------------------------------------------------------
+-- A night's presence, rolled up (audit R5). A session's five-minute snapshots are its evidence of
+-- who was there, and a four-hour night of 25 is over a thousand entries kept forever; once the
+-- session has ended its attendance is built and the snapshots give way to this, which holds
+-- everything the score, the raids panel and the site's export read of them:
+--   { n = snapshots, firstAt, lastAt, first = { [key] = true }, last = { [key] = true },
+--     people = { [key] = { n, first, last, chits, offline, consumes } } }
+-- `first`/`last`: who the earliest and the latest snapshot saw (nil when that snapshot named nobody).
+-- A person's `chits`: the snapshots whose consumables did not read missing (unread counts, #187).
+----------------------------------------------------------------------
+local function rollUpSnapshots(snaps)
+    local roll = { n = 0, people = {} }
+    local firstSnap, lastSnap
+    for _, snap in ipairs(type(snaps) == "table" and snaps or {}) do
+        if type(snap) == "table" then
+            roll.n = roll.n + 1
+            local at = tonumber(snap.time) or 0
+            if not firstSnap or at < (tonumber(firstSnap.time) or 0) then firstSnap = snap end
+            if not lastSnap or at >= (tonumber(lastSnap.time) or 0) then lastSnap = snap end
+            for key, m in pairs(type(snap.members) == "table" and snap.members or {}) do
+                local p = roll.people[key]
+                if not p then
+                    p = { n = 0, first = at, last = at }
+                    roll.people[key] = p
+                end
+                p.n = p.n + 1
+                if at < p.first then p.first = at end
+                if at > p.last then p.last = at end
+                local hasConsumes = type(m) == "table" and m.hasConsumes
+                if type(m) == "table" and m.online == false then p.offline = true end
+                if hasConsumes then p.consumes = true end
+                if hasConsumes ~= false then p.chits = (p.chits or 0) + 1 end
+            end
+        end
+    end
+    local function keysOf(snap)
+        if not (snap and type(snap.members) == "table") then return nil end
+        local set = {}
+        for key in pairs(snap.members) do set[key] = true end
+        return set
+    end
+    if firstSnap then
+        roll.firstAt, roll.first = tonumber(firstSnap.time) or 0, keysOf(firstSnap)
+        roll.lastAt, roll.last = tonumber(lastSnap.time) or 0, keysOf(lastSnap)
+    end
+    return roll
+end
+
+-- Several rolls as one, as if their snapshots had been one list: a lockout's sessions, or two halves
+-- of a night merged.
+function RaidTracker:MergeRolls(rolls)
+    local out = { n = 0, people = {} }
+    for _, r in ipairs(rolls) do
+        if type(r) == "table" and (tonumber(r.n) or 0) > 0 then
+            out.n = out.n + r.n
+            if r.firstAt and (not out.firstAt or r.firstAt < out.firstAt) then out.firstAt, out.first = r.firstAt, r.first end
+            if r.lastAt and (not out.lastAt or r.lastAt >= out.lastAt) then out.lastAt, out.last = r.lastAt, r.last end
+            for key, p in pairs(type(r.people) == "table" and r.people or {}) do
+                local o = out.people[key]
+                if not o then
+                    o = { n = 0, first = p.first, last = p.last }
+                    out.people[key] = o
+                end
+                o.n = o.n + (tonumber(p.n) or 0)
+                if p.chits then o.chits = (o.chits or 0) + p.chits end
+                if (p.first or 0) < (o.first or 0) then o.first = p.first end
+                if (p.last or 0) > (o.last or 0) then o.last = p.last end
+                if p.offline then o.offline = true end
+                if p.consumes then o.consumes = true end
+            end
+        end
+    end
+    return out
+end
+
+-- A session's roll-up: from its snapshots while it has them, else the one kept when they went.
+function RaidTracker:RollUp(session)
+    if type(session) ~= "table" then return { n = 0, people = {} } end
+    local snaps = session.snapshots
+    if type(snaps) == "table" and #snaps > 0 then
+        if type(session.roll) == "table" then return self:MergeRolls({ session.roll, rollUpSnapshots(snaps) }) end
+        return rollUpSnapshots(snaps)
+    end
+    return type(session.roll) == "table" and session.roll or { n = 0, people = {} }
+end
+
+-- An ended session's snapshots give way to their roll-up (audit R5). Nothing that reads presence
+-- changes: every reader asks RollUp. The open session keeps its own.
+function RaidTracker:CompactSession(session)
+    if type(session) ~= "table" or session == self.currentRaid then return end
+    local rtDB = GuildOS.db.raidTracker
+    if rtDB and session == rtDB.openSession then return end
+    if type(session.snapshots) == "table" and #session.snapshots > 0 then
+        session.roll = self:RollUp(session)
+    end
+    session.snapshots = nil
+end
+
+-- One player's score for a night, or a lockout's merged nights: 100, less the core's weights for
+-- arriving late, leaving early and raiding dry. The attendance and the raids panel both read it
+-- (audit R17). Returns score, wasLate, leftEarly, noConsumes, consumeHits, consumeChecks.
+function RaidTracker:NightScore(playerKey, roll, penalties)
+    local wasLate   = roll.first ~= nil and not roll.first[playerKey]
+    local leftEarly = roll.last ~= nil and not roll.last[playerKey]
+    local p = roll.people and roll.people[playerKey]
+    local checks, hits = p and p.n or 0, p and p.chits or 0
+    -- A snapshot whose consumables the client could not read (retail, nil) counts for the player:
+    -- unknown is never missing, and the site counts the same way (CompanionExport's chits; #187).
+    local noConsumes = checks > 0 and (hits / checks) < 0.5
+    local score = 100
+    if wasLate then score = score - penalties.LATE end
+    if leftEarly then score = score - penalties.LEFT_EARLY end
+    if noConsumes then score = score - penalties.NO_CONSUMES end
+    return math.max(0, math.min(100, score)), wasLate, leftEarly, noConsumes, hits, checks
+end
+
+-- Raid history kept within bounds (audit R5): a pug night (not a guild raid, never counted) goes
+-- after PUG_SESSION_AGE; a tombstone, or the note of a half merged away, after TOMBSTONE_AGE, past
+-- which no session that old is taken from a peer (HandleIncoming); every ended session is compacted.
+-- Guild nights stay: attendance is counted over all of them.
+local PUG_SESSION_AGE = 90 * 86400    -- seconds a pug night is kept
+local TOMBSTONE_AGE   = 180 * 86400   -- seconds a deletion or merge is remembered
+local SEND_AGE        = 28 * 86400    -- seconds back the officers' broadcast carries sessions
+function RaidTracker:PruneHistory(now)
+    local rtDB = GuildOS.db.raidTracker
+    if not rtDB then return end
+    now = now or GetServerTime()
+    for id, s in pairs(rtDB.sessions or {}) do
+        if type(s) == "table" then
+            local at = tonumber(s.startTime) or tonumber(id) or 0
+            if s.isGuildRaid == false and at < now - PUG_SESSION_AGE then
+                rtDB.sessions[id] = nil
+            else
+                self:CompactSession(s)
+            end
+        end
+    end
+    for _, set in ipairs({ rtDB.deletedSessions or {}, rtDB.mergedSessions or {} }) do
+        for id in pairs(set) do
+            local at = tonumber(id)
+            if at and at < now - TOMBSTONE_AGE then set[id] = nil end
+        end
+    end
+end
+
+----------------------------------------------------------------------
 -- Compute attendance for ONE lockout.
 -- Results are stored under attendance[groupTag][playerKey].
 ----------------------------------------------------------------------
@@ -1178,7 +1323,7 @@ function RaidTracker:UpdateAttendanceForLockout(lockout)
     local groupAtt = att[groupTag]
 
     local allPlayers   = {}
-    local allSnapshots = {}
+    local rolls        = {}
     local lastRaid     = 0
     local size         = 0   -- the lockout's raid size, from its sessions (issue #90)
 
@@ -1187,18 +1332,13 @@ function RaidTracker:UpdateAttendanceForLockout(lockout)
         for playerKey in pairs(session.players or {}) do
             allPlayers[playerKey] = true
         end
-        for _, snap in ipairs(session.snapshots or {}) do
-            table.insert(allSnapshots, snap)
-        end
+        rolls[#rolls + 1] = self:RollUp(session)
         if (session.startTime or 0) > lastRaid then
             lastRaid = session.startTime or 0
         end
     end
-
-    table.sort(allSnapshots, function(a, b) return (a.time or 0) < (b.time or 0) end)
-
-    local firstSnap = allSnapshots[1]
-    local lastSnap  = allSnapshots[#allSnapshots]
+    -- The lockout's snapshots as one list: its earliest and latest, and every check of consumables.
+    local roll = self:MergeRolls(rolls)
 
     local penalties = self:GetPenalties(groupTag)
 
@@ -1213,28 +1353,7 @@ function RaidTracker:UpdateAttendanceForLockout(lockout)
         groupAtt[playerKey].raids   = groupAtt[playerKey].raids + 1
         groupAtt[playerKey].lastRaid = math.max(groupAtt[playerKey].lastRaid, lastRaid)
 
-        local score = 100
-        if firstSnap and firstSnap.members and not firstSnap.members[playerKey] then
-            score = score - penalties.LATE
-        end
-        if lastSnap and lastSnap.members and not lastSnap.members[playerKey] then
-            score = score - penalties.LEFT_EARLY
-        end
-        -- A snapshot whose consumables the client could not read (retail, nil) counts for the player:
-        -- unknown is never missing, and the site counts the same way (CompanionExport's chits; #187).
-        local consumeChecks, consumeHits = 0, 0
-        for _, snap in ipairs(allSnapshots) do
-            if snap.members and snap.members[playerKey] then
-                consumeChecks = consumeChecks + 1
-                if snap.members[playerKey].hasConsumes ~= false then
-                    consumeHits = consumeHits + 1
-                end
-            end
-        end
-        if consumeChecks > 0 and (consumeHits / consumeChecks) < 0.5 then
-            score = score - penalties.NO_CONSUMES
-        end
-        score = math.max(0, math.min(100, score))
+        local score = self:NightScore(playerKey, roll, penalties)
         groupAtt[playerKey].totalScore = groupAtt[playerKey].totalScore + score
 
         if self:Is25Man(instanceID, size, lockout.difficulty) then
@@ -1328,13 +1447,15 @@ function RaidTracker:BroadcastRaidData()
     local raidDB = GuildOS.db.raidTracker
     if not raidDB then return end
 
-    -- Build a compact payload: full attendance + session metadata (no snapshots)
+    -- Build a compact payload: full attendance + session metadata (no snapshots), of the recent
+    -- sessions only (audit R5): every older one went out at its own time, after each raid since.
     local payload = {
         attendance = raidDB.attendance or {},
         sessions   = {},
     }
+    local since = GetServerTime() - SEND_AGE
     for sessionID, session in pairs(raidDB.sessions or {}) do
-        payload.sessions[sessionID] = {
+        if (tonumber(session.startTime) or tonumber(sessionID) or 0) >= since then payload.sessions[sessionID] = {
             instanceID = session.instanceID,
             name       = session.name,
             size       = session.size,   -- issue #90
@@ -1347,7 +1468,7 @@ function RaidTracker:BroadcastRaidData()
             endTime    = session.endTime,
             players    = session.players,
             encounters = session.encounters,
-        }
+        } end
     end
 
     -- Include tombstone set so peers learn about deletions even if they
@@ -1443,7 +1564,11 @@ function RaidTracker:HandleIncoming(data)
             if mine.difficulty == nil then mine.difficulty = tonumber(session.difficulty) end
             if mine.isGuildRaid == nil and session.isGuildRaid ~= nil then mine.isGuildRaid = session.isGuildRaid == true end
         end
-        if not deleted[sessionID] and not raidDB.sessions[sessionID] and not foldedHere(sessionID) then
+        -- Past TOMBSTONE_AGE a deletion here may have been forgotten: a session that old is not taken
+        -- (audit R5), or an officer on an older addon, who sends everything, would bring it back.
+        local tooOld = (tonumber(type(session) == "table" and session.startTime) or tonumber(sessionID) or 0)
+            < GetServerTime() - TOMBSTONE_AGE
+        if not tooOld and not deleted[sessionID] and not raidDB.sessions[sessionID] and not foldedHere(sessionID) then
             if type(session) == "table" and type(session.players) == "table" then
                 session.players = GuildOS:LocalizeMemberTable(session.players)   -- issue #97
             end

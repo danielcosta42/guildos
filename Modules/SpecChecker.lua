@@ -3,6 +3,7 @@
 -- Collects talent spec data for the local player and, for group
 -- members, via the Inspect API (NotifyInspect + INSPECT_READY).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local SpecChecker = {}  -- luacheck: ignore 111
 GuildOS.SpecChecker = SpecChecker
 local L = GuildOS.L
@@ -12,6 +13,9 @@ local INSPECT_DELAY = 1.5
 -- Seconds after PLAYER_SPECIALIZATION_CHANGED before my spec is read: the client settles the
 -- talents and the loadout's gear a moment after the event (issue #184).
 local SPEC_SETTLE = 1
+-- Seconds an inspect may go unanswered before the scan moves on (audit R12): the server drops an
+-- inspect now and then, and the queue otherwise waits for INSPECT_READY for good.
+local INSPECT_TIMEOUT = 3
 
 -- Internal state
 local inspectQueue   = {}
@@ -316,10 +320,28 @@ function SpecChecker:ProcessNextInspect()
     if UnitExists(entry.unit) and CanInspect(entry.unit) then
         inspectPending = entry
         NotifyInspect(entry.unit)
+        C_Timer.After(INSPECT_TIMEOUT, function() SpecChecker:OnInspectTimeout(entry) end)
     else
         -- Unit out of range or offline — skip and continue
         C_Timer.After(0.1, function() SpecChecker:ProcessNextInspect() end)
     end
+end
+
+-- An inspect that never answered (audit R12): give up on it and go on with the queue. A late answer
+-- finds another inspect pending, or none, and is not stored as this one's.
+function SpecChecker:OnInspectTimeout(entry)
+    if inspectPending ~= entry then return end
+    inspectPending = nil
+    self:ProcessNextInspect()
+end
+
+-- The saved record an inspect may write to: a guild member's only (audit R2). Inspecting a pug in
+-- the group must not file them as a member, or a pug raid could count for attendance.
+function SpecChecker:InspectedMemberRecord(entry)
+    local members = GuildOS.db.members
+    if not (entry and entry.key and GuildOS:IsGuildmate(entry.key)) then return nil end
+    members[entry.key] = members[entry.key] or { name = entry.name }
+    return members[entry.key]
 end
 
 -- An inspected average item level kept on the member's record (retail, issue #184), unless their
@@ -348,25 +370,23 @@ function SpecChecker:OnInspectReady(guid)
     if GuildOS.Client.isRetail then
         local spec = self:RetailSpec(inspectPending.unit)
         local ilvl = GuildOS.Compat.InspectItemLevel(inspectPending.unit)
-        if spec or ilvl then
-            local key = inspectPending.key
-            GuildOS.db.members[key] = GuildOS.db.members[key] or { name = inspectPending.name }
-            if spec then GuildOS.db.members[key].spec = spec end
-            if ilvl then self:KeepInspectedItemLevel(GuildOS.db.members[key], ilvl) end
+        local rec = (spec or ilvl) and self:InspectedMemberRecord(inspectPending)
+        if rec then
+            if spec then rec.spec = spec end
+            if ilvl then self:KeepInspectedItemLevel(rec, ilvl) end
         end
         inspectPending = nil
         C_Timer.After(INSPECT_DELAY, function() SpecChecker:ProcessNextInspect() end)
         return
     end
 
-    local talents = self:InspectedTalents()
+    local member = self:InspectedMemberRecord(inspectPending)
+    local talents = member and self:InspectedTalents()
     if talents then
-        local key = inspectPending.key
-        GuildOS.db.members[key] = GuildOS.db.members[key] or { name = inspectPending.name }
-        self:KeepInspectedTalents(GuildOS.db.members[key], talents)
+        self:KeepInspectedTalents(member, talents)
     end
 
-    local numTabs = GuildOS.Compat.GetNumTalentTabs(true)   -- true = isInspect
+    local numTabs = member and GuildOS.Compat.GetNumTalentTabs(true)   -- true = isInspect
     if not numTabs or numTabs == 0 then
         inspectPending = nil
         C_Timer.After(INSPECT_DELAY, function() SpecChecker:ProcessNextInspect() end)
@@ -390,10 +410,7 @@ function SpecChecker:OnInspectReady(guid)
     end
     spec.talents = talentsPerTab
 
-    if not GuildOS.db.members[inspectPending.key] then
-        GuildOS.db.members[inspectPending.key] = { name = inspectPending.name }
-    end
-    GuildOS.db.members[inspectPending.key].spec = spec
+    member.spec = spec
 
     inspectPending = nil
 

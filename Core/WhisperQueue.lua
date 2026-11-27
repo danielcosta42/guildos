@@ -32,7 +32,10 @@
 --   WhisperQueue:PushAddonGroup(prefix, payloads, target, prio, send)  one message's parts, all or none
 --   WhisperQueue:Realm(prefix, payload, key)         an item for the mesh's realm bus; whether it went in
 --   WhisperQueue:Release()                           from a click: what waits for one goes now
+--   WhisperQueue:QuietMesh(seconds) / :RestoreMesh() the mesh's relay and realm flush off for a while (the error)
+--   WhisperQueue.MeshGate(target, parts, prefix)     ChehulMesh.whisperGate (v12): a mesh whisper paid from here
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Q = {}
 GuildOS.WhisperQueue = Q
 
@@ -48,6 +51,9 @@ Q.REALM_PER_MINUTE = 6     -- parts a minute the realm bus's whispers may take, 
 Q.REALM_BURST      = 6
 Q.ENVELOPE         = 90    -- bytes the mesh's relay envelope adds to a realm item (RL1|id|hops|origin|prefix|)
 Q.enabled          = nil   -- nil: on where the game is WoW: Forever; true/false forces it (tests)
+Q.MESH_QUIET       = 60    -- seconds the shared mesh is kept quiet after the server's throttle error
+Q.MESH_KNOBS       = { "RELAY_BUDGET", "YELL_PER_FLUSH" }   -- the mesh's own pacing fields set to 0 meanwhile
+Q.PREPAID_MAX      = 24    -- parts of realm items paid in :Realm that the mesh's gate may still draw on
 
 local RANK = { high = 1, normal = 2, low = 3 }
 
@@ -59,7 +65,12 @@ local S = {
     interval = Q.INTERVAL,
     stepAt   = 0,      -- when the interval last changed
     armed    = false,  -- a timer is set to pump
-    stats    = { sent = 0, queued = 0, dropped = 0, throttled = 0, realmIn = 0, realmSkipped = 0 },
+    stats    = { sent = 0, queued = 0, dropped = 0, throttled = 0, realmIn = 0, realmSkipped = 0,
+                 meshIn = 0, meshVeto = 0 },
+    prepaid  = 0,      -- parts :Realm paid for the mesh's flush whispers, drawn on by MeshGate
+    quietUntil = nil,  -- after the throttle error: no mesh whisper through the gate before this
+    meshKept = nil,    -- the mesh's knobs as they were before QuietMesh set them to 0
+    sending  = false,  -- inside one of our own items' send: a mesh whisper then is that item, already paid
 }
 Q._state = S
 
@@ -123,7 +134,9 @@ local function Drop(i)
 end
 
 local function Send(item)
+    S.sending = true
     local ok, went = pcall(item.send)
+    S.sending = false
     if not ok then Fail(went); went = false end
     if went == false then
         S.tokens = S.tokens + item.cost -- nothing reached the server: nothing paid
@@ -315,6 +328,8 @@ function Q:Realm(prefix, payload, key)
     end
     local cost = (tonumber(mesh.REALM_FANOUT) or 3) * Q.Parts(#payload + Q.ENVELOPE)
     S.tokens, S.realm = S.tokens - cost, S.realm - cost
+    -- Paid now: the mesh's gate lets the flush's whispers for it through without paying twice.
+    if mesh.whisperGate == Q.MeshGate then S.prepaid = math.min(Q.PREPAID_MAX, S.prepaid + cost) end
     S.stats.realmIn = S.stats.realmIn + 1
     mesh:Realm(prefix, payload, key)
     return true
@@ -325,7 +340,8 @@ function Q:Release()
     if Active() then Pump(false) end
 end
 
--- The server said "too fast": the interval doubles and the bucket empties.
+-- The server said "too fast": the interval doubles and the bucket empties, and the shared mesh goes quiet too
+-- for MESH_QUIET seconds (its whispers count against the same ~30 a minute).
 function Q:OnThrottle()
     if not Active() then return end
     local t = now()
@@ -334,8 +350,87 @@ function Q:OnThrottle()
     S.stepAt = t
     S.tokens = math.min(S.tokens, 0)
     S.realm = math.min(S.realm, 0)
+    S.prepaid = 0
     S.stats.throttled = S.stats.throttled + 1
+    S.quietUntil = t + Q.MESH_QUIET
+    Q:HookMesh()
+    Q:QuietMesh(Q.MESH_QUIET)
     Arm()
+end
+
+----------------------------------------------------------------------
+-- The shared mesh (Libs/LibChehulMesh.lua, not ours to change). Until its own whisper budget (v12) is what every
+-- Chehul addon loads, two guards from here, each a no-op where the mesh has not got what it reads:
+--   * QuietMesh: after the throttle error its relay budget and its realm flush are set to 0 for MESH_QUIET
+--     seconds, then put back as they were (a value somebody else changed meanwhile stands);
+--   * MeshGate: where the mesh asks a host before each whisper (ChehulMesh.whisperGate, v12), each one is paid
+--     from this queue's bucket, vetoed while our own whispers wait, the bucket is empty or the error is fresh.
+--     A realm item :Realm already paid for passes on what it paid; a whisper that is one of our own items (its
+--     send goes through the mesh) passes free, being paid already.
+----------------------------------------------------------------------
+function Q:QuietMesh(seconds)
+    local mesh = _G.ChehulMesh
+    if type(mesh) ~= "table" then return false end
+    seconds = seconds or Q.MESH_QUIET
+    local kept, any = S.meshKept or {}, false
+    for _, k in ipairs(Q.MESH_KNOBS) do
+        if type(mesh[k]) == "number" then
+            if kept[k] == nil then kept[k] = mesh[k] end
+            mesh[k] = 0
+            any = true
+        end
+    end
+    if not any then return false end
+    S.meshKept, S.meshOf, S.meshUntil = kept, mesh, now() + seconds
+    Compat.After(seconds, function()
+        local ok, err = pcall(Q.RestoreMesh, Q)
+        if not ok then Fail(err) end
+    end)
+    return true
+end
+
+-- Puts the knobs back once the last quiet spell is over (a later error's own timer does it then).
+function Q:RestoreMesh(force)
+    local kept, mesh = S.meshKept, S.meshOf
+    if not kept then return false end
+    if not force and now() < (S.meshUntil or 0) then return false end
+    for k, v in pairs(kept) do
+        if mesh[k] == 0 then mesh[k] = v end
+    end
+    S.meshKept, S.meshOf, S.meshUntil = nil, nil, nil
+    return true
+end
+
+-- ChehulMesh.whisperGate(target, parts, prefix): false vetoes the whisper; anything else lets it go, paid.
+function Q.MeshGate(_, parts, _)
+    if S.sending or not Active() then return true end
+    local t = now()
+    Fill(t)
+    parts = math.max(1, math.floor(tonumber(parts) or 1))
+    if S.prepaid > 0 then
+        local use = math.min(S.prepaid, parts)
+        S.prepaid, parts = S.prepaid - use, parts - use
+        if parts == 0 then
+            S.stats.meshIn = S.stats.meshIn + 1
+            return true
+        end
+    end
+    if (S.quietUntil and t < S.quietUntil) or Waiting() or S.tokens < 1 then
+        S.stats.meshVeto = S.stats.meshVeto + 1
+        return false
+    end
+    S.tokens = S.tokens - parts
+    S.stats.meshIn = S.stats.meshIn + 1
+    return true
+end
+
+-- Registers MeshGate where the mesh asks a host (v12 and later) and no other host holds the gate.
+function Q:HookMesh()
+    local mesh = _G.ChehulMesh
+    if type(mesh) ~= "table" or (tonumber(mesh.version) or 0) < 12 then return false end
+    if mesh.whisperGate ~= nil and mesh.whisperGate ~= Q.MeshGate then return false end
+    mesh.whisperGate = Q.MeshGate
+    return true
 end
 
 function Q:Pending() return #S.items end
@@ -358,11 +453,16 @@ function Q.IsThrottle(...)
     return false
 end
 
+Q:HookMesh()   -- the mesh in Libs loaded before this file; a newer one another addon loads is hooked at login
+
 if CreateFrame then
     local f = CreateFrame("Frame")
     Compat.RegisterEvent(f, "UI_ERROR_MESSAGE")
-    f:SetScript("OnEvent", function(_, _, ...)
-        if Q.IsThrottle(...) then
+    Compat.RegisterEvent(f, "PLAYER_LOGIN")
+    f:SetScript("OnEvent", function(_, event, ...)
+        if event == "PLAYER_LOGIN" then
+            pcall(Q.HookMesh, Q)
+        elseif Q.IsThrottle(...) then
             local ok, err = pcall(Q.OnThrottle, Q)
             if not ok then Fail(err) end
         end

@@ -114,7 +114,6 @@ check(GC:Send("   ") == false and #sent == 1, "an empty box sends nothing")
 GC:Send(string.rep("a", 300))
 check(#sent[2].msg == 240, "a long line is cut to 240 bytes")
 check(#GC:Log() == 0, "the sent line is not logged twice: it shows when the game echoes it back")
-
 -- Forever drops a line sent while an encounter locks chat, without an error (as CallToArms knows).
 local locked = true
 C_ChatInfo = { InChatMessagingLockdown = function() return locked end }
@@ -123,6 +122,19 @@ check(ok == false and why == "locked" and #sent == 2, "in a chat lockdown nothin
 locked = false
 check(GC:Send("bora") == true and sent[3].msg == "bora", "and once it lifts, it is")
 C_ChatInfo = nil
+local n0 = #sent
+-- An item link pasted in the box goes as the game made it (#449 review); a broken one loses its codes.
+local link = "|cffa335ee|Hitem:30311:0:0:0:0:0:0:0|h[Warp Slicer]|h|r"
+GC:Send("quem tem " .. link .. "?")
+check(sent[n0 + 1].msg == "quem tem " .. link .. "?", "a pasted item link stays a link: " .. sent[n0 + 1].msg)
+GC:Send("x |Hitem:1|h[Bad]|h y")
+check(not sent[n0 + 2].msg:find("|", 1, true), "a link that is not whole loses every escape: " .. sent[n0 + 2].msg)
+GC:Send(string.rep("a", 220) .. " " .. link)
+check(#sent[n0 + 3].msg <= 240 and sent[n0 + 3].msg:sub(-13) == "[Warp Slicer]" and not sent[n0 + 3].msg:find("|", 1, true),
+  "a link that does not fit whole is left as its name: " .. sent[n0 + 3].msg:sub(-20))
+check(GuildOS:SanitizeChatLine(string.rep("\195\169", 130), 241):len() <= 241
+  and not GuildOS:SanitizeChatLine(string.rep("\195\169", 130), 241):find("\195$"), "and a cut never splits a character")
+
 
 -- ── Outside a guild ─────────────────────────────────────────────────────
 -- The data the addon resolved at login is a guildless one, shared by every guildless character on the

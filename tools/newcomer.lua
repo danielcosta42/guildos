@@ -2,7 +2,8 @@
 -- Core/Utils.lua, Modules/RosterLog.lua, Modules/TrialTracker.lua, Modules/ModAlerts.lua,
 -- Modules/ModFlood.lua and Modules/Newcomer.lua under a stubbed client.
 --
--- In a member's first N days (RosterLog's join) any link alerts and the anti-flood's limits are halved,
+-- In a member's first N days (RosterLog's join) any link alerts and the anti-flood's limits are stricter
+-- (4 lines in 10 s, capitals on 14 letters, repeats at half: audit B3),
 -- with the badge "newcomer (day X of N)" on the officers' alerts; a member with no known join is not a
 -- newcomer; a running trial counts when the guild says so; 0 days turns it off; the end is worked out,
 -- never stored; the setting is the officers', newest stamp wins.
@@ -95,9 +96,9 @@ check(N.ValidDays(0) == 0 and N.ValidDays("30") == 30 and not N.ValidDays(31) an
       "0 to 30 whole days")
 local base = F.ValidConfig({ links = { on = false } })
 local st = N.Strict(base)
-check(st.burst.n == 3 and st["repeat"].n == 2 and st.caps.min == 6 and st.caps.pct == 70 and st.links.on and st.links.n == 1,
-      "halved limits, any link")
-check(base.burst.n == 5 and base.links.on == false, "the guild's own limits are untouched")
+check(st.burst.n == 4 and st["repeat"].n == 2 and st.caps.min == 14 and st.caps.pct == 85 and st.links.on and st.links.n == 1,
+      "stricter limits (4 lines, 14 letters), any link")
+check(base.burst.n == 6 and base.links.on == false, "the guild's own limits are untouched")
 check(N.BadgeText({ day = 2, of = 7 }) == "newcomer (day 2 of 7)" and N.BadgeText({ trial = true }) == "newcomer (trial)"
       and N.BadgeText(nil) == nil, "the badge")
 check(N:GetDays() == 7 and not N:TrialCounts(), "7 days and trials off by default")
@@ -142,12 +143,14 @@ local a = alertsOf("Thrall")[1]
 check(a and a.kind == "flood" and a.signal == "links", "a newcomer's one link alerts")
 check(a.newcomer and a.newcomer.day == 3 and a.newcomer.of == 7, "with the badge's facts")
 runTimers()
--- Half the burst: three lines in ten seconds.
+-- A stricter burst: four lines in ten seconds.
 NOW = NOW + 700
 F.speakers, F.speakerCount, F.surges = {}, 0, {}
 for i = 1, 3 do say("Garrosh", "line " .. i); say("Thrall", "line " .. i) end
-check(#alertsOf("Garrosh") == 0, "three lines are fine for a veteran")
-check(alertsOf("Thrall")[1].signal == "burst", "three lines are a burst for a newcomer")
+check(#alertsOf("Thrall") == 1, "three lines are fine for a newcomer too")
+say("Garrosh", "line 4"); say("Thrall", "line 4")
+check(#alertsOf("Garrosh") == 0, "four lines are fine for a veteran")
+check(alertsOf("Thrall")[1].signal == "burst", "four lines are a burst for a newcomer")
 runTimers()
 -- Even with the guild's links signal off.
 check(F:SetConfig({ links = { on = false, n = 2, secs = 60 } }), "the guild switches links off")

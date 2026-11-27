@@ -1,8 +1,8 @@
 -- Forever skin (issue #13), run against the real Core/Data.lua.
 --
 -- Every existing screen reads GuildOS.Colors and sets fonts, so the skin lives
--- in two tables and one helper. This proves the tokens carry the design
--- handoff's values, that each legacy key the old screens read points at the
+-- in two tables and one helper. This proves the tokens carry the Salão mockup's
+-- values (#449), that each legacy key the old screens read points at the
 -- right token (as its own copy), that violet only ever means epic — in the
 -- palette and in the source — that the accent picker is gone, and that
 -- ApplyFont enforces the type rules. It also checks the fonts and textures
@@ -34,13 +34,16 @@ local function hex(t)
   return string.format("#%02x%02x%02x", byte(t.r), byte(t.g), byte(t.b))
 end
 
--- ── 1. Tokens carry the handoff values ──────────────────────────────────
+-- ── 1. Tokens carry the Salão mockup's values (phase 3, #449) ───────────
 local HANDOFF = {
-  bg = "#100f16", panel = "#17161f", popup = "#1d1b26", well = "#0c0b10",
-  line = "#2a2733", lineHi = "#6f6878", text = "#ece7e0", textSoft = "#a9a2b0",
-  label = "#97909f", labelDim = "#6f6878", disabled = "#4b4553", gold = "#d9a94f",
-  goldHover = "#e3b968", goldActive = "#c4943f", onGold = "#17130a",
+  bg = "#24170d", panel = "#2a1a0d", popup = "#1a1009", well = "#120b06",
+  line = "#3a2a17", lineHi = "#6b5326", text = "#f6e9cf", textSoft = "#cdb98e",
+  label = "#bba57a", labelDim = "#9e8f77", disabled = "#5b5348", gold = "#ffd100",
+  goldHover = "#ffe04d", goldActive = "#d9b200", onGold = "#3b2512",
   ok = "#7dd88f", danger = "#ef7b72", warn = "#e89a5a", info = "#5b93cf", epic = "#a86fe0",
+  gold2 = "#ffd77a", metal2 = "#c9a24a", door = "#e6d2a5", wood = "#3b2614", crimson = "#b0261b",
+  paper = "#f3e4c2", paperInk = "#3a2a17", paperSoft = "#6f5a3c", paperTitle = "#6b1d0e", paperEdge = "#b49867",
+  paperLight = "#fffaf0", quiet = "#fff6de",
 }
 for key, want in pairs(HANDOFF) do
   check(C[key] and hex(C[key]) == want, key .. " is " .. want .. " (got " .. (C[key] and hex(C[key]) or "nil") .. ")")
@@ -203,28 +206,22 @@ end
 
 local fs = fontString(true)
 GuildOS:ApplyFont(fs, 18)
-check(fs.calls[1].file == F.sans and fs.calls[1].size == 18, "18px is IBM Plex Sans")
-fs = fontString(true)
-GuildOS:ApplyFont(fs, 12)
-check(fs.calls[1].file == F.sans and fs.calls[1].size == 12, "12px with no role is IBM Plex Sans")
+check(fs.calls[1].file == F.ui and fs.calls[1].size == 19, "18px is Alegreya Sans, a size larger")
 fs = fontString(true)
 GuildOS:ApplyFont(fs, 9)
-check(fs.calls[1].file == F.sans and fs.calls[1].size == 11, "9px is clamped to 11px sans")
+check(fs.calls[1].file == F.ui and fs.calls[1].size == 11, "9px is clamped to 11px")
 fs = fontString(true)
 GuildOS:ApplyFont(fs, nil)
-check(fs.calls[1].file == F.sans and fs.calls[1].size == 11, "no size means 11px sans")
+check(fs.calls[1].file == F.ui and fs.calls[1].size == 11, "no size means 11px")
 fs = fontString(true)
 GuildOS:ApplyFont(fs, 15, "wordmark")
-check(fs.calls[1].file == F.sansStrong and fs.calls[1].size == 15, "a role picks the file; a given size wins")
-fs = fontString(true)
-GuildOS:ApplyFont(fs, 9, "sectionTitle")
-check(fs.calls[1].file == F.sansStrong and fs.calls[1].size == 11, "a sans role keeps its weight and is clamped to 11px")
+check(fs.calls[1].file == F.title and fs.calls[1].size == 15, "a role picks the file; a given size wins")
 fs = fontString(true)
 GuildOS:ApplyFont(fs, 8, "colHeader")
-check(fs.calls[1].file == F.monoStrong and fs.calls[1].size == 10, "a mono role keeps its weight and is clamped to 10px")
+check(fs.calls[1].file == F.title and fs.calls[1].size == 10, "a title role keeps its face and is clamped to 10px")
 fs = fontString(true)
 GuildOS:ApplyFont(fs, nil, "countdown")
-check(fs.calls[1].file == F.mono and fs.calls[1].size == 40, "a role without a size uses the role size")
+check(fs.calls[1].file == F.title and fs.calls[1].size == 36, "a role without a size uses the role size")
 for _, size in ipairs({ 7, 10, 14, 22 }) do
   fs = fontString(true)
   GuildOS:ApplyFont(fs, size)
@@ -232,37 +229,33 @@ for _, size in ipairs({ 7, 10, 14, 22 }) do
 end
 fs = fontString(false)
 GuildOS:ApplyFont(fs, 12)
-check(#fs.calls == 2 and fs.calls[2].file == STANDARD_TEXT_FONT and fs.calls[2].size == 12 and fs.calls[2].flags == "",
+check(#fs.calls == 2 and fs.calls[2].file == STANDARD_TEXT_FONT and fs.calls[2].size == 13 and fs.calls[2].flags == "",
   "a font that fails to load falls back to the client font, still not outlined")
 fs = fontString(nil)
 GuildOS:ApplyFont(fs, 12)
 check(#fs.calls == 1, "a client that returns nothing on success is not pushed onto the fallback")
 
--- ── 6. The type scale (spec §2.3), and every role follows the floors ─────
+-- ── 6. The roles: titles in Cinzel, the interface in Alegreya Sans, reading in Alegreya ──
 local SCALE = {
-  wordmark = { F.sansStrong, 18 }, windowTitle = { F.sansStrong, 16 }, sectionTitle = { F.sansStrong, 14 },
-  body     = { F.sans, 12 },       memberName = { F.sansMedium, 12 }, itemName     = { F.sansStrong, 14 },
-  button   = { F.sansMedium, 12 }, caption    = { F.mono, 10 },       tableNum     = { F.mono, 11 },
-  colHeader = { F.monoStrong, 10 }, metricValue = { F.mono, 24 },    countdown    = { F.mono, 40 },
-  badge    = { F.mono, 10 },
+  wordmark = { F.title, 16 }, windowTitle = { F.title, 15 }, sectionTitle = { F.title, 15 },
+  colHeader = { F.title, 11 }, metricValue = { F.title, 18 }, countdown = { F.title, 36 },
+  body = { F.ui, 13 }, memberName = { F.uiMedium, 13 }, itemName = { F.uiBold, 14 },
+  button = { F.uiBold, 12 }, caption = { F.ui, 11 }, tableNum = { F.ui, 12 }, badge = { F.uiBold, 11 },
+  reading = { F.read, 13 },
 }
-local SCALE_PX = { [10] = true, [11] = true, [12] = true, [14] = true, [16] = true, [18] = true, [24] = true, [40] = true }
 for role, want in pairs(SCALE) do
   local spec = F[role]
   check(type(spec) == "table" and spec.file == want[1] and spec.size == want[2],
     role .. " is " .. want[2] .. "px in " .. tostring(want[1]):match("[^\\]+$"))
-  check(SCALE_PX[spec.size], role .. " sits on the type scale")
-  local mono = spec.file == F.mono or spec.file == F.monoStrong
-  check(spec.size >= (mono and 10 or 11), role .. " respects its face's floor")
+  check(spec.size >= (spec.file == F.title and 10 or 11), role .. " respects its face's floor")
 end
 for key, spec in pairs(F) do
   check(type(spec) ~= "table" or SCALE[key], key .. " is a role the scale lists")
 end
-check(F.normal == F.sans and F.number == F.mono, "the old normal alias is sans and number is mono")
-check(F.sans:find("IBMPlexSans%-Regular%.ttf$") and F.sansMedium:find("IBMPlexSans%-Medium%.ttf$")
-  and F.sansStrong:find("IBMPlexSans%-SemiBold%.ttf$")
-  and F.mono:find("IBMPlexMono%-Regular%.ttf$") and F.monoStrong:find("IBMPlexMono%-Medium%.ttf$"),
-  "each font file is the weight its name says")
+check(F.normal == F.ui and F.number == F.ui and F.sans == F.ui and F.mono == F.ui, "the old names point at Alegreya Sans")
+check(F.title:find("Cinzel%-Bold%.ttf$") and F.ui:find("AlegreyaSans%-Regular%.ttf$")
+  and F.uiMedium:find("AlegreyaSans%-Medium%.ttf$") and F.uiBold:find("AlegreyaSans%-Bold%.ttf$")
+  and F.read:find("Alegreya%-Regular%.ttf$"), "each font file is the face and weight its name says")
 
 -- ── 7. The fonts and textures really ship ───────────────────────────────
 local function onDisk(path)
@@ -272,11 +265,23 @@ local function onDisk(path)
   f:close()
   return data
 end
-for _, key in ipairs({ "sans", "sansMedium", "sansStrong", "mono", "monoStrong" }) do
+-- A static instance: WoW reads only a variable font's default instance, so no file may carry an fvar table.
+local function isStatic(data)
+  local n = data:byte(5) * 256 + data:byte(6)
+  for i = 0, n - 1 do
+    if data:sub(13 + i * 16, 16 + i * 16) == "fvar" then return false end
+  end
+  return true
+end
+for _, key in ipairs({ "title", "ui", "uiMedium", "uiBold", "read" }) do
   local data = onDisk(F[key])
   check(data and #data > 10000 and data:sub(1, 4) == "\0\1\0\0", key .. " font file exists and is a TrueType font")
+  check(isStatic(data), key .. " is a static font, not a variable one")
 end
-check(onDisk("Media/Fonts/OFL-IBMPlexSans.txt") and onDisk("Media/Fonts/OFL-IBMPlexMono.txt"), "both font licences ship")
+check(onDisk("Media/Fonts/OFL-Cinzel.txt") and onDisk("Media/Fonts/OFL-Alegreya.txt")
+  and onDisk("Media/Fonts/OFL-AlegreyaSans.txt"), "the three font licences ship")
+check(not onDisk("Media/Fonts/IBMPlexSans-Regular.ttf") and not onDisk("Media/Fonts/IBMPlexMono-Regular.ttf"),
+  "IBM Plex no longer ships")
 check(not onDisk("Media/Fonts/Spectral-Regular.ttf") and not onDisk("Media/glow-gold.tga")
   and not onDisk("Media/drop-shadow.tga"), "Spectral, the glow and the drop shadow no longer ship")
 

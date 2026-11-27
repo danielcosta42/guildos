@@ -516,6 +516,66 @@ local left = 0
 for _, p in pairs(clients.Mem.acc.altPending or {}) do if p.unlink then left = left + 1 end end
 check(left == 0 and linksOf("Mem")[OTHER] == nil, "and the officer's tombstone answers the member's unlink")
 
+-- ── 14. Conflicting links and loops from two officers at once (#449) ────
+local function agree(what, fn)
+  for _, name in ipairs({ "OffA", "OffB", "Mem" }) do check(fn(linksOf(name)), name .. ": " .. what) end
+end
+online.OffA, online.OffB = true, true
+as("OffA", function() for _, k in ipairs({ X, Y, Z, OTHER }) do GuildOS:UnlinkAlt(k) end end)
+flush()
+now = now + 10
+-- A says X is Y's alt while B says Y is Main's: every client ends with X and Y under Main, never X under an alt.
+as("OffA", function() GuildOS:LinkAlt(X, Y) end)
+as("OffB", function() GuildOS:LinkAlt(Y, MAIN) end)
+flush()
+agree("a chain made by two officers is flat: X under Main", function(l) return l[X] == MAIN and l[Y] == MAIN and l[MAIN] == nil end)
+-- A loop: X to Y on one officer, Y to X on another, the same second.
+as("OffA", function() for _, k in ipairs({ X, Y }) do GuildOS:UnlinkAlt(k) end end)
+flush()
+now = now + 10
+as("OffA", function() GuildOS:LinkAlt(X, Y) end)
+as("OffB", function() GuildOS:LinkAlt(Y, X) end)
+flush()
+local lowest = X < Y and X or Y
+agree("a loop settles on one main, the same everywhere", function(l)
+  local other = lowest == X and Y or X
+  return l[lowest] == nil and l[other] == lowest
+end)
+-- The next officer edit writes the settled view: no loop is stored for good.
+now = now + 10
+as("OffB", function() GuildOS:LinkAlt(Z, lowest) end)
+flush()
+agree("a later edit keeps the group whole", function(l) return l[Z] == lowest and l[lowest] == nil end)
+-- An unlink reaches every client, and a stale backfill of the old link does not undo it.
+local beforeUnlink = {}
+for k, e in pairs(clients.OffB.db.altSync.links) do beforeUnlink[k] = e end
+now = now + 10
+as("OffA", function() GuildOS:UnlinkAlt(Z) end)
+flush()
+agree("the unlink propagates", function(l) return l[Z] == nil end)
+as("OffB", function()
+  AS:Apply({ { k = Z, m = lowest, a = "OffB", t = now - 10, r = now - 10 } }, "OffB")
+  AS:Rebuild()
+end)
+check(linksOf("OffB")[Z] == nil, "an older entry replayed does not bring the unlinked alt back")
+as("OffA", function() for _, k in ipairs({ X, Y, Z }) do GuildOS:UnlinkAlt(k) end end)
+flush()
+
+-- A member logged on an alt unlinks a sibling: the officers apply it (it was refused, and re-sent for 30 days).
+as("OffA", function() GuildOS:LinkAlt(X, MAIN); GuildOS:LinkAlt(Y, MAIN) end)
+flush()
+as("OffA", function()
+  AD:HandleSelfClaim("AltX-Realm", LibStub("GuildOS-LibSerialize"):Serialize({ unlink = { Y } }))
+end)
+flush()
+agree("an alt's own unlink of its sibling is applied", function(l) return l[Y] == nil and l[X] == MAIN end)
+as("OffA", function()
+  AD:HandleSelfClaim("Other-Realm", LibStub("GuildOS-LibSerialize"):Serialize({ unlink = { X } }))
+end)
+check(linksOf("OffA")[X] == MAIN, "somebody outside the group still cannot unlink it")
+as("OffA", function() GuildOS:UnlinkAlt(X) end)
+flush()
+
 -- ── 8. WoW: Forever keys with and without the realm are one member ──────
 boot("forever")
 CS, SS, AS, AD = GuildOS.CommSystem, GuildOS.SyncService, GuildOS.AltSync, GuildOS.AltAutoDetect

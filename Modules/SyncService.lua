@@ -39,24 +39,25 @@ SyncService.OFFICER_DOMAINS = {
     ban      = true,   -- blacklist add/remove (officer-authoritative)
     alt      = true,   -- alt links, one entry per alt with a tombstone on unlink (issue #424)
     osheet   = true,   -- a member's officer sheet, the long text (issue #427): officers write, and only officers keep it
+    hnote    = true,   -- a player's permanent officer note, kept with their history (#449, specs/salao/saidas.md)
     discipline = true, -- the disciplinary record (issue #402): officers write, and only officers keep it
     reminder  = true,  -- when an officer reminded a member to install GuildOS (issue #422)
     modalert  = true,  -- an officer claiming a flagged chat line, so the others do not alert (issue #404)
     audit    = true,   -- guild audit trail (officer-authoritative, id-deduped)
-    allyboard = true,  -- alliance bulletin posts this guild authored (ambassadors)
-    allyhide  = true,  -- chat lines an ambassador pulled from the alliance feed
-    guildcfg  = true,  -- the guild's officer threshold (issue #81), on retail its loot system (#185), its trials (#249)
+    allyhide  = true,  -- lines an officer hid from the alliance room
+    guildcfg  = true,  -- the guild's officer threshold (issue #81), its loot system (#185) and rule (audit L7), its trials (#249)
     founding  = true,  -- WoW: Forever's founding and an officer's suggested date (issue #208)
     allylink  = true,  -- the alliance code an officer saved (issue #348); ask/have are member relays
     gbankneed = true,  -- how much of each item the guild bank should hold (issue #380)
     gbankclean = true, -- what officers marked to take out of the guild bank and sell (issue #380)
     marks     = true,  -- the officers' safe list and nicknames (issue #429)
+    trial     = true,  -- one trial and its evaluation notes, or a pruned trial's tombstone (audit N5)
+    trialg    = true,  -- the same without its notes, over GUILD, where the client has no OFFICER channel (Forever)
 }
 
 -- Domains outside OFFICER_DOMAINS whose handlers trust IsOfficerByName(sender) themselves.
 -- Handlers never see the channel, so the GUILD rule is held here (issue #81).
 SyncService.GUILD_ONLY_DOMAINS = {
-    alliance       = true,   -- AllianceSync's trusted fan-out
     ["core.roster"] = true,  -- CoreManager's officer roster updates
     journal        = true,   -- each member's own journal (#205): from the guild, never a whisper
     foundingSelf   = true,   -- each member's own join date (#208), filed under its sender
@@ -71,7 +72,9 @@ SyncService.GUILD_ONLY_DOMAINS = {
 -- whisper. On a client without that channel (Compat.OfficerAddonChannel) they are not sent at all.
 SyncService.OFFICER_CHANNEL_DOMAINS = {
     osheet = true,
+    hnote  = true,   -- the permanent note about a player who left or came back (#449)
     marks  = true,   -- the safe list and nicknames (#429): what officers call a member
+    trial  = true,   -- a trial's evaluation notes (audit N5): never the whole table over GUILD again
 }
 
 -- Actions any guild member may perform inside an officer domain, over GUILD. Keyed by domain:
@@ -107,7 +110,7 @@ function SyncService:Initialize()
     self.pendingAcks = {}
     -- The guild's settings an officer decides: the officer threshold (issue #81) and, on retail, the
     -- loot system (issue #185). A client before #185 reads a loot system as a threshold with no `max`.
-    self:On("guildcfg", function(env)
+    self:On("guildcfg", function(env, sender)
         if env.act == "lootsys" then return GuildOS:OnLootSystemSync(env) end
         -- The guild's own loot rule (issue #333); a client before it reads a threshold with no `max`.
         if env.act == "lootrule" then
@@ -145,9 +148,21 @@ function SyncService:Initialize()
             if GuildOS.Newcomer then GuildOS.Newcomer:OnConfigSync(env) end
             return
         end
+        -- The guild's welcome (#449): the switch, the messages, the Discord; it carries no `max`.
+        if env.act == "welcome" then
+            if GuildOS.Recruitment and GuildOS.Recruitment.OnWelcomeConfigSync then
+                GuildOS.Recruitment:OnWelcomeConfigSync(env, sender)
+            end
+            return
+        end
         -- The guild's rules (issue #407), kept on every client; it carries no `max`.
         if env.act == "rules" then
             if GuildOS.GuildRules then GuildOS.GuildRules:OnConfigSync(env) end
+            return
+        end
+        -- The guild bank's tax (Ley), set by the Guild Master; it carries no `max`.
+        if env.act == "banktax" then
+            if GuildOS.GuildBank and GuildOS.GuildBank.OnTaxSync then GuildOS.GuildBank:OnTaxSync(env) end
             return
         end
         -- Who creates calendar events (issue #283).
@@ -214,9 +229,24 @@ function SyncService:Publish(domain, action, data, opts)
         if opts.target or not chan then return nil end
     end
 
+    -- D1: inside CommSystem:PublishOfficerConfig (`self._configScope`), each payload sent is remembered for the
+    -- session; on its regular tick (`skip`) one already sent unchanged, stamp included, does not go again.
+    local scope, sig = self._configScope, nil
+    if scope and not opts.target then
+        local okSig, s = pcall(function() return LibSerialize:Serialize({ domain, action, opts.rev or false, data }) end)
+        if okSig then
+            sig = s
+            if scope.skip and scope.sent[sig] then
+                if GuildOS.Perf and GuildOS.Perf.Count then GuildOS.Perf:Count("officer config unchanged") end
+                return nil
+            end
+        end
+    end
+
     local ok, serialized = pcall(function() return LibSerialize:Serialize(env) end)
     if not ok or type(serialized) ~= "string" then return nil end
     if not GuildOS.CommSystem then return nil end
+    if sig then scope.sent[sig] = true end
 
     if officersOnly then
         GuildOS.CommSystem:SendToOfficers(self.ENVELOPE_MSGTYPE, serialized, opts.priority,

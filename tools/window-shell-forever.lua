@@ -1,5 +1,5 @@
--- The one-window harness (tools/window-shell.lua) again, under the WoW: Forever style (#122): the same
--- layout and every check, with the client's art and palette. The Helpers' API did not change.
+-- The one-window harness (tools/window-shell.lua) again, on a WoW: Forever client with its atlases (#122): the same
+-- layout and every check: since the Salão's phase 3 (#449) no atlas changes the look, so nothing differs.
 --
 --   luajit -e 'ADDON="."' tools/window-shell-forever.lua
 ADDON = ADDON or "."

@@ -3,6 +3,7 @@
 -- Composition distributions (class / level / rank / zone) as pure
 -- aggregation over the guild roster, shown as bars in a /gos analytics window.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local GuildAnalytics = {}
 GuildOS.GuildAnalytics = GuildAnalytics
 
@@ -172,33 +173,44 @@ function GuildAnalytics:Show()
             end
         end
 
-        -- Reset ALL row state before repaint (regions and any child frames).
+        -- The bars are the last repaint's, refilled (memory audit): a repaint used to make every one again.
         local child = f.child
-        for _, c in pairs({ child:GetChildren() }) do c:Hide() end
-        for _, r in pairs({ child:GetRegions() }) do r:Hide() end
-        child:SetWidth(f.holder:GetWidth() - 12)
+        local hw = UI:LaidWidth(f.holder)
+        if type(hw) ~= "number" then hw = f.holder:GetWidth() or 0 end
+        child:SetWidth(math.max(1, hw - 12))   -- read from the anchors (#449)
+        self._rows = self._rows or {}   -- the frame's bars, kept on the module (one frame, built once)
+        local rows = self._rows
 
         local entries = self:Distribution(self._dim, self._onlineOnly, nil, self._maxOnly)
         local y = 0
-        for _, e in ipairs(entries) do
+        for i, e in ipairs(entries) do
             local label = e.label
             if self._dim == "class" then
                 label = LOCALIZED_CLASS_NAMES_MALE[e.label] or e.label
             end
 
-            local labelFS = UI:CreateText(child, label, 11, C.text.r, C.text.g, C.text.b)
-            labelFS:SetPoint("TOPLEFT", 4, -(y + 4))
-            labelFS:SetWidth(LABEL_WIDTH - 8)
-            labelFS:SetJustifyH("LEFT")
-
-            local barBG = child:CreateTexture(nil, "BACKGROUND")
-            barBG:SetTexture("Interface\\Buttons\\WHITE8x8")
-            barBG:SetPoint("TOPLEFT", LABEL_WIDTH, -(y + 3))
-            barBG:SetSize(BAR_MAX, ROW_HEIGHT - 6)
-            barBG:SetVertexColor(C.bg0.r, C.bg0.g, C.bg0.b, 0.6)
-
-            local bar = child:CreateTexture(nil, "ARTWORK")
-            bar:SetTexture("Interface\\Buttons\\WHITE8x8")
+            local row = rows[i]
+            if not row then
+                row = {}
+                row.labelFS = UI:CreateText(child, "", 11, C.text.r, C.text.g, C.text.b)
+                row.labelFS:SetWidth(LABEL_WIDTH - 8)
+                row.labelFS:SetJustifyH("LEFT")
+                row.barBG = child:CreateTexture(nil, "BACKGROUND")
+                row.barBG:SetTexture("Interface\\Buttons\\WHITE8x8")
+                row.barBG:SetSize(BAR_MAX, ROW_HEIGHT - 6)
+                row.barBG:SetVertexColor(C.bg0.r, C.bg0.g, C.bg0.b, 0.6)
+                row.bar = child:CreateTexture(nil, "ARTWORK")
+                row.bar:SetTexture("Interface\\Buttons\\WHITE8x8")
+                row.valueFS = UI:CreateText(child, "", 11, C.textDim.r, C.textDim.g, C.textDim.b)
+                rows[i] = row
+            end
+            row.labelFS:SetText(label)
+            row.labelFS:ClearAllPoints()
+            row.labelFS:SetPoint("TOPLEFT", 4, -(y + 4))
+            row.barBG:ClearAllPoints()
+            row.barBG:SetPoint("TOPLEFT", LABEL_WIDTH, -(y + 3))
+            local bar = row.bar
+            bar:ClearAllPoints()
             bar:SetPoint("TOPLEFT", LABEL_WIDTH, -(y + 3))
             bar:SetSize(math.max(1, (e.pct / 100) * BAR_MAX), ROW_HEIGHT - 6)
             if self._dim == "class" and e.colorKey and RAID_CLASS_COLORS[e.colorKey] then
@@ -207,20 +219,23 @@ function GuildAnalytics:Show()
             else
                 bar:SetVertexColor(C.accent.r, C.accent.g, C.accent.b)
             end
-
-            local valueFS = UI:CreateText(child,
-                e.count .. " (" .. string.format("%.0f%%", e.pct) .. ")",
-                11, C.textDim.r, C.textDim.g, C.textDim.b)
-            valueFS:SetPoint("TOPLEFT", LABEL_WIDTH + BAR_MAX + 8, -(y + 4))
+            row.valueFS:SetText(e.count .. " (" .. string.format("%.0f%%", e.pct) .. ")")
+            row.valueFS:ClearAllPoints()
+            row.valueFS:SetPoint("TOPLEFT", LABEL_WIDTH + BAR_MAX + 8, -(y + 4))
+            for _, part in pairs(row) do part:Show() end
 
             y = y + ROW_HEIGHT
         end
-
-        if #entries == 0 then
-            local empty = UI:CreateText(child, L["No data."], 11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 4, -4)
-            y = 20
+        for i = #entries + 1, #rows do
+            for _, part in pairs(rows[i]) do part:Hide() end
         end
+
+        if not self._emptyFS then
+            self._emptyFS = UI:CreateText(child, L["No data."], 11, C.silver.r, C.silver.g, C.silver.b)
+            self._emptyFS:SetPoint("TOPLEFT", 4, -4)
+        end
+        self._emptyFS:SetShown(#entries == 0)
+        if #entries == 0 then y = 20 end
 
         child:SetHeight(math.max(1, y))
     end

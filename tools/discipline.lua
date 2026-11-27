@@ -252,10 +252,27 @@ officer = true
 
 -- The suggestion happens only on Confirm, by the ways that exist.
 local handed, banned = nil, nil
-GuildOS.GuildManager = { SetRank = function(_, name) handed = name end }
+-- The rank step goes through Bulk actions' one-per-click queue, toward that rank (audit M11).
+local queued, panel = nil, 0
+GuildOS.GuildManager = {
+  GetRanks = function() return { { index = 0, name = "GM" }, { index = 3, name = "Membro" }, { index = 5, name = "Castigo" } } end,
+  QueueRankAction = function(_, action, name, key, target) queued = { action, name, key, target } return true end,
+  OpenNativeGuild = function() panel = panel + 1 end,
+}
+local rankNow = 3
+GuildOS.BulkActions = { ListFor = function(_, keys) return keys[1] == THRALL and { { key = THRALL, rankIndex = rankNow } } or {} end }
 GuildOS.BanList = { Add = function(_, name, reason, secs) banned = { name, reason, secs } return true end }
-check(not D:ApplySuggestion("Thrall", { action = "rank" }, "spam") and handed == nil, "no rank set: nothing is done")
-check(D:ApplySuggestion("Thrall", { action = "rank", rank = "Castigo" }, "spam") and handed == "Thrall", "a rank is handed to the game's panel")
+check(not D:ApplySuggestion("Thrall", { action = "rank" }, "spam") and queued == nil, "no rank set: nothing is done")
+check(D:ApplySuggestion("Thrall", { action = "rank", rank = "Castigo" }, "spam", THRALL) and queued
+  and queued[1] == "demote" and queued[3] == THRALL and queued[4] == 5 and panel == 0,
+  "a rank below queues the demotion toward it, in Bulk actions")
+queued, rankNow = nil, 5
+check(not D:ApplySuggestion("Thrall", { action = "rank", rank = "castigo" }, "spam", THRALL) and queued == nil,
+  "a member already at that rank: nothing is queued")
+queued = nil
+check(D:ApplySuggestion("Thrall", { action = "rank", rank = "Gone" }, "spam", THRALL) and queued == nil and panel == 1,
+  "a rank the guild no longer has: the game's panel, with the rank named")
+GuildOS.BulkActions = nil
 check(D:ApplySuggestion("Thrall", { action = "tempban", days = 7 }, "spam") and banned[3] == 7 * 86400, "a ban is filed for its days")
 officer = false
 banned = nil

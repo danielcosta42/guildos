@@ -5,6 +5,7 @@
 -- event a raid becomes, which game event is the raid's, and whether the site still has the raid.
 -- The calls themselves are in Core/Compat.lua; the clicks, further down.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local GameCalendar = {}
 GuildOS.GameCalendar = GameCalendar
 local L = GuildOS.L

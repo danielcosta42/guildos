@@ -432,7 +432,6 @@ end)
 local ALLOWED = {
   ["Core/Utils.lua"] = 1,              -- the rule itself
   ["Core/Core.lua"] = 1,               -- the per-guild database key, not a member's
-  ["Modules/Alliance.lua"] = 1,        -- a pair of guild ids
   ["Modules/GuildAnalytics.lua"] = 1,  -- a level bracket, "60-69"
   ["Modules/NoteCommand.lua"] = 1,     -- only when the author has a realm
   -- PugInspector goes through GetPlayerKey since issue #95.
@@ -502,6 +501,35 @@ issecretvalue = function(v) return v == "secret" end
 local realUnitIsUnit = UnitIsUnit
 UnitIsUnit = function() return "secret" end
 check(GuildOS.Compat.IsPlayer("raid1") == false, "a comparison the client keeps secret counts as not me")
+-- /gos ban and /gos tempban take a whole two-word Forever name, as /gos warn does.
+do
+  local bans = {}
+  local realBan, realOfficer = GuildOS.BanList, GuildOS.IsOfficer
+  GuildOS.BanList = { Add = function(_, name, reason, dur) bans[#bans + 1] = { name, reason, dur }; return true end }
+  ROSTER = { "Chehul Costa", "Bob" }
+  slash("ban Chehul Costa")
+  check(bans[#bans][1] == "Chehul Costa", "/gos ban takes a whole two-word name")
+  slash("ban Chehul Costa ninja looted")
+  check(bans[#bans][1] == "Chehul Costa" and bans[#bans][2] == "ninja looted", "and the reason after it")
+  slash("ban Bob spam")
+  check(bans[#bans][1] == "Bob" and bans[#bans][2] == "spam", "a one-word name as before")
+  slash("tempban Chehul Costa 3 spam in chat")
+  check(bans[#bans][1] == "Chehul Costa" and bans[#bans][3] == 3 * 86400 and bans[#bans][2] == "spam in chat",
+    "/gos tempban: the name runs up to the days")
+  slash("tempban Bob 7")
+  check(bans[#bans][1] == "Bob" and bans[#bans][3] == 7 * 86400 and bans[#bans][2] == "", "a one-word name, no reason")
+  slash("tempban Bob 7 left after boss 3")
+  check(bans[#bans][1] == "Bob" and bans[#bans][3] == 7 * 86400 and bans[#bans][2] == "left after boss 3",
+    "a reason that ends in a number keeps the name and the days")
+  slash("ban Ana Souza: ninja")
+  check(bans[#bans][1] == "Ana Souza" and bans[#bans][2] == "ninja", "a two-word name off the roster, with the colon")
+  slash("ban Ana Souza:")
+  check(bans[#bans][1] == "Ana Souza" and bans[#bans][2] == "", "and with no reason after it")
+  local n = #bans
+  slash("tempban Bob")
+  check(#bans == n, "no days: nothing filed")
+  GuildOS.BanList, GuildOS.IsOfficer = realBan, realOfficer
+end
 UnitIsUnit, issecretvalue, GROUP, SELF_UNIT = realUnitIsUnit, nil, {}, nil
 GuildOS.Client.has.surnames, REALM, ME, UnitFullName = false, "Firemaw", "Ana", nil
 GuildOS.DataCollector = dataCollector

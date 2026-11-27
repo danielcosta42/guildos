@@ -59,3 +59,7 @@ too many alts.
   the clients that had a table of their own: an officer links it again.
 - A new install takes the old tables' links without knowing which were unlinked before this version.
 - Revisions use the server time: on the same realm every client reads the same clock.
+
+## See also
+
+- specs/salao/alts.md (#449): the login prompt about one's own characters, its answers, renames and a main found gone.

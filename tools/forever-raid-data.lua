@@ -83,8 +83,6 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   check(GuildOS.db.calendar.events.nosize.size == default, game .. ": updating an event saved without a size gives it " .. default)
   local sized = Cal:UpsertWebRaid({ raidId = "r2", startsAt = 1790200000, title = "Barrow", size = 10, members = {} })
   check(sized and sized.size == 10, game .. ": a site raid keeps the site's own size, even with nobody invitable")
-  local twenty = Cal._AllianceSlotDecision({ when = 1790300000 }, 20, 1790000000)
-  check(twenty == (forever and "full" or "ok"), game .. ": an event with no size is full at " .. default)
   check(CM:GetRaidSize("Main") == default, game .. ": a new core starts at the same default")
 
   -- ── Default roles ──────────────────────────────────────────────────
@@ -122,7 +120,7 @@ check(panel:find("local SIZES%s*=%s*GuildOS%.Client%.raidSizes"), "the calendar'
 for _, path in ipairs({ "UI/CalendarPanel.lua", "Modules/Calendar.lua", "UI/AlliancePanel.lua" }) do
   check(not code(path):find("%f[%d]25%f[%D]"), path .. " holds no 25 of its own: sizes come from the game")
 end
-check(read("UI/CorePanel.lua"):find('if #comp.buffStatus > 0 then%s+y = MakeSectionHeader%(rightContent, L%["Raid Buffs"%]'),
+check(read("UI/CorePanel.lua"):find('if #comp.buffStatus > 0 then%s+side%[#side %+ 1%] = function%(at%) return BuffsCard%('),
   "the core screen leaves out the Raid Buffs section when the game has none")
 
 print(("forever-raid-data: %d checks passed"):format(checks))

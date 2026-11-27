@@ -54,8 +54,8 @@ All notable changes to this project will be documented in this file.
 - The SR+ loot rule can count its bonus per item: each raid you reserve an item without winning it adds to that item, and winning it or a raid without reserving it empties it (#433)
 
 ### Fixed
-- SR+ por item ignora a folha da raide anterior da mesma noite (#433)
-- SR+ por item sobrevive à sincronia e só lê a folha da noite (#433)
+- SR+ per item ignores the sheet of an earlier raid on the same night (#433)
+- SR+ per item survives a sync and reads only that night's sheet (#433)
 
 
 ## [1.40.0] - 2026-11-23
@@ -117,9 +117,9 @@ All notable changes to this project will be documented in this file.
 - Officers can promote or demote a member's alts to the main's rank from the member's sheet or /gos altgroup, one click per alt (#424)
 - /gos altlimit N lists the alt groups with more than N alts (#424)
 - Join requests: hover a request to read the whole note, or click it to unfold the note in the list.
-- Atividade volta a listar os boletins, migração marca o quadro como visto e aviso sem id não repete (#418)
+- Activity lists the bulletin notices again, the migration marks the board as seen, and a notice without an id is no longer repeated (#418)
 - The guild bank ledger cleanup of "?" lines runs once, so a deposit whose member name never loaded is never removed later.
-- nomes do bloco da receita nunca com largura zero ou negativa (#415)
+- The names in a recipe's block are never laid out with a zero or negative width (#415)
 - Alt-clicking a bag item no longer opens the Crafts tab while the auction house, mail, trade, a vendor or the guild bank is open, so Auctionator's Alt-click to sell works again.
 - New setting (Interface): turn off Alt-click opening an item's recipe in Crafts.
 - The order box of an opened recipe no longer has the crafters' "Ask them" buttons drawn over it in a narrow window: it moves under the materials and crafters.
@@ -167,16 +167,16 @@ All notable changes to this project will be documented in this file.
 ## [1.35.0] - 2026-11-22
 
 ### Added
-- os talentos e o sufixo de cada item vão para o companion (#399)
+- Talents and each item's random suffix are sent to the companion (#399)
 
 ### Fixed
-- o Luacheck conhece Constants, e uma inspeção de outra pessoa não grava nada no membro da fila (#399)
+- Luacheck knows Constants, and someone else's inspect no longer writes anything to the queued member (#399)
 
 
 ## [1.34.3] - 2026-11-22
 
 ### Fixed
-- o Guild Finder nomeia o ruleset RP-PvP (danielcosta42/guildos-web#568)
+- The Guild Finder names the RP-PvP ruleset (danielcosta42/guildos-web#568)
 
 
 ## [1.34.2] - 2026-11-22
@@ -189,7 +189,7 @@ All notable changes to this project will be documented in this file.
 ## [1.34.1] - 2026-11-22
 
 ### Fixed
-- no WoW: Forever, o reino que o cliente deixou de dizer no patch de 21/11 não abre mais um Guild OS vazio: cada personagem volta ao reino que tinha, e as configurações, os membros e os dados de antes reaparecem (#394)
+- WoW: Forever: the realm the client stopped reporting in the November 21 patch no longer opens an empty Guild OS: each character goes back to the realm it had, and the settings, members and data from before reappear (#394)
 
 
 ## [1.34.0] - 2026-11-19
@@ -214,13 +214,13 @@ All notable changes to this project will be documented in this file.
 ## [1.33.0] - 2026-11-18
 
 ### Added
-- a limpeza do banco acontece toda numa gaveta ao lado do banco do jogo, aberta pelo botão Cleanup da barra: marcar, tirar e devolver o gold sem abrir o Guild OS (#384)
+- The guild bank cleanup now happens entirely in a drawer beside the game's bank, opened by the bar's Cleanup button: mark, take out and put the gold back without opening Guild OS (#384)
 
 
 ## [1.32.1] - 2026-11-18
 
 ### Fixed
-- o livro-caixa do banco não repete mais linhas: cada leitura é alinhada pela posição, um log em cache relido é ignorado e o ledger salvo antes recomeça uma vez, sem que a limpeza venda o que a guilda usa (#383)
+- The guild bank ledger no longer repeats lines: each read is aligned by position, a cached log read again is ignored, and a ledger saved before starts over once, without the cleanup selling what the guild uses (#383)
 
 
 ## [1.32.0] - 2026-11-18
@@ -247,11 +247,11 @@ All notable changes to this project will be documented in this file.
 ## [1.30.0] - 2026-11-18
 
 ### Added
-- a aba Agora fica sem caixas, com a contagem grande e seis cartões iguais; o rodapé fica só com links e versão, com Buscar e Sincronizar na barra de título, Convidar em Membros e Inscrição no Core em Raides; e a tabela de Membros ganha linhas de 24px e a borda dourada na selecionada (#377)
-- o addon avisa no chat quando um colega de guilda usa uma versão mais nova do Guild OS, sempre a mais nova que já viu (#377)
+- The Now tab loses its boxes, with the big count and six equal cards; the footer keeps only links and the version, with Search and Sync in the title bar, Invite in Members and Core Sign-up in Raids; and the Members table gets 24px rows and a gold border on the selected one (#377)
+- The addon says in chat when a guildmate uses a newer version of Guild OS, always the newest it has seen (#377)
 
 ### Fixed
-- no WoW: Forever, salvar a mensagem do dia abre o painel de guilda do jogo, que é o único que pode mudá-la (#377)
+- WoW: Forever: saving the message of the day opens the game's guild panel, the only one that can change it (#377)
 
 
 ## [1.29.0] - 2026-11-18

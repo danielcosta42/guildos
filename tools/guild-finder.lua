@@ -360,6 +360,8 @@ local function press(label, mouse) buttons[label].scripts.OnClick(buttons[label]
 local ARROW = " |TInterface\\Buttons\\Arrow-Down-Up:12:12|t"
 local CHECK = "|TInterface\\Buttons\\UI-CheckBox-Check:14:14|t "
 function GF:UtcOffset() return 0 end    -- the card's times are read at a known clock
+-- Core/Data.lua's, the face aside: the titles a player names go through it (#449).
+function GuildOS:SetTitleText(fs, t) fs:SetText(t) end
 GuildOSDB = {}
 GuildOS.db.recruitRelay = {}
 GF.sources = {}
@@ -367,6 +369,7 @@ GF:AddSource("CR2", GF.HeardAds)
 RB:Ingest("CR2|Alpha Guild|H|HEALER+PALADIN+WARRIOR|Seg e Qua|Raide de noite|ptBR|RAID|"
   .. (NOW - 10) .. "|" .. (NOW + 86400) .. "|Ana-Realm", "Ana")
 RB:Ingest("CR2|Beta Guild|H|||Chill|enUS||" .. (NOW - 20) .. "|" .. (NOW + 86400) .. "|Bia", "Bia")
+dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/GuildFinder.lua")
 check(GuildOS.ShowGuildFinder and GuildOS.GuildFinderHeard, "the screen has the entries the plan names")
 

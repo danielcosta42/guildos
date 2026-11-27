@@ -1,14 +1,13 @@
 -- The "No player named" line of GuildOS's own addon whispers (issue #326), run against the real Core/Core.lua,
--- Core/Compat.lua, Core/Utils.lua, Modules/CommSystem.lua, Modules/AllianceSync.lua, Modules/Alliance.lua and
--- Modules/CraftNet.lua under a stubbed WoW: Forever client, on a fake mesh and a fake clock.
+-- Core/Compat.lua, Core/Utils.lua, Modules/CommSystem.lua and Modules/CraftNet.lua under a stubbed WoW: Forever
+-- client, on a fake mesh and a fake clock.
 --
 -- An addon whisper to somebody who logged off a moment ago makes the client print ERR_CHAT_PLAYER_NOT_FOUND_S, once
 -- per part of the message, in every chat frame. The vendored mesh hides the line only for the names it whispers
--- itself, and the bridge's heartbeat (AllianceSync:Tick, every 120 s, to any peer heard in the last 600 s) and the
--- login probe (ProbeStaleGuilds, blind) whispered through Mesh:Whisper noting nothing: on Forever a player saw the
--- yellow line spam the chat. The rules: the heartbeat, the probe, CraftNet's answer and a targeted CommSystem message
--- each hide that line for their target, whichever way the game spells the name back (case, hyphen or space, a realm
--- on the end); every part of a long message is hidden, however long the parts take; anybody else's line, any other
+-- itself, and the alliance bridge's whispers (gone since audit #448) noted nothing: on Forever a player saw the
+-- yellow line spam the chat. The rules: CraftNet's answer and a targeted CommSystem message each hide that line for
+-- their target, whichever way the game spells the name back (case, hyphen or space, a realm on the end); every part
+-- of a long message is hidden, however long the parts take; anybody else's line, any other
 -- line and a line once the window is over still show; a secret line is left alone unread; a client with no chat
 -- filter is no error. And a scan of every Lua file the TOC loads (Libs and the vendored ChehulNet.lua aside) fails on
 -- any addon whisper that does not note its target first, so a new one cannot let the line through either.
@@ -149,8 +148,6 @@ ChehulMesh = {
   Register = function() end, Guild = function() return true end, Proximity = function() return true end,
   Realm = function() end,
 }
--- Presence: "Bruno Melo" of "Outra Guilda" was heard 590 s ago, and has logged off since.
-ChehulNet = { Peers = function() return { ["Bruno Melo"] = { ts = time() - 590 } } end }
 
 dofile(ADDON .. "/Libs/LibStub.lua")
 dofile(ADDON .. "/Libs/LibSerialize.lua")
@@ -163,51 +160,20 @@ dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/CommSystem.lua")
-dofile(ADDON .. "/Modules/AllianceSync.lua")
-dofile(ADDON .. "/Modules/Alliance.lua")
 dofile(ADDON .. "/Modules/CraftNet.lua")
 check(not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail and GuildOS.Client.has.surnames,
       "the stub is WoW: Forever, with surnames")
 
-local A, AS = GuildOS.Alliance, GuildOS.AllianceSync
-GuildOS.Mesh = { GetPeerGuild = function(_, short) return short == "Bruno Melo" and "Outra Guilda" or nil end }
-A.AmBridge = function() return true end   -- the election is not what this is about
-GuildOS.db = {
-  members = {},
-  alliance = { tag = "BR", guilds = {
-    ["Minha Guilda"]    = { ambassadors = { "Chehul Costa" } },
-    ["Outra Guilda"]    = { ambassadors = { "Bruno Melo" } },
-    -- Silent for over an hour and invisible: the probe whispers its ambassadors blind, as the pact spells them.
-    ["Terceira Guilda"] = { ambassadors = { "Dora-Rosa", "Eva Lima-Azralon" } },
-  } },
-}
-echo["Dora-Rosa"], echo["Eva Lima-Azralon"] = "Dora Rosa", "Eva Lima"
+GuildOS.db = { members = {} }
 
--- ── 1. The bridge's heartbeat: a peer presence still lists, gone since ──
-check(A:PeerTarget("Outra Guilda") == "Bruno Melo", "presence still names a peer heard 590 s ago")
-AS:Tick()
-check(#whispers == 1 and whispers[1].target == "Bruno Melo", "the heartbeat whispers that peer")
-run(1)
-check(#chat == 0, "and the line the game answers is hidden: the heartbeat noted its target")
-check(#(filters.CHAT_MSG_SYSTEM or {}) == 1, "by one filter on the system chat")
-run(130)
-AS:Tick()
-run(1)
-check(#whispers == 2 and #chat == 0, "and so is the next tick's, 120 s on")
-
--- ── 2. The login probe, blind, to the pact's own spelling ───────────────
-AS:ProbeStaleGuilds()
-check(#whispers == 4 and AS.stats.probes == 2, "the probe whispers the silent guild's two ambassadors")
-run(1)
-check(#chat == 0, "and both lines are hidden, a hyphen for a space and a realm on the end included")
-
--- ── 3. CraftNet answers an asker who has just logged off ────────────────
+-- ── 1. CraftNet answers an asker who has just logged off ────────────────
 GuildOS.RecipeTracker = { LocalCrafts = function() return "Alchemy" end }
 echo["Fábio Reis-Azralon"] = "Fábio Reis"
 GuildOS.CraftNet:OnMessage("CC1|Q|1234|q1", "Fábio Reis-Azralon", "YELL")
-check(#whispers == 5 and whispers[5].target == "Fábio Reis-Azralon", "CraftNet whispers its answer to the asker")
+check(#whispers == 1 and whispers[1].target == "Fábio Reis-Azralon", "CraftNet whispers its answer to the asker")
 run(1)
-check(#chat == 0, "and that line is hidden too")
+check(#chat == 0, "and the line the game answers is hidden: CraftNet noted its target")
+check(#(filters.CHAT_MSG_SYSTEM or {}) == 1, "by one filter on the system chat")
 
 -- Text that does not compress, so it leaves in as many parts as its length says.
 math.randomseed(326)
@@ -217,7 +183,7 @@ local function noise(n)
   return table.concat(out)
 end
 
--- ── 4. A targeted CommSystem message, in several chunks ─────────────────
+-- ── 2. A targeted CommSystem message, in several chunks ─────────────────
 local before = #whispers
 echo["gil souza"] = "Gil Souza"
 GuildOS.CommSystem:SendMessage("RS", noise(2000), "gil souza")
@@ -226,28 +192,19 @@ check(#whispers - before >= 3 and whispers[#whispers].target == "gil souza",
       "CommSystem whispers a guildmate, chunk by chunk")
 check(#chat == 0, "and every chunk's line is hidden, the game's capitals included")
 
--- ── 5. A long message: each part answers, for as long as the parts take ───
-world.partGap = 4
-A:Send("PUSH", { blob = noise(30 * PART) }, "Hugo Alves")
-check(math.ceil(#whispers[#whispers].text / PART) * world.partGap > 3 * 30,
-      "the push takes three windows and more to answer, part by part")
-run(200)
-check(#chat == 0, "and it is hidden from the first line to the last")
-world.partGap = 0.1
-
--- ── 6. Only our lines, only while they are ours ─────────────────────────
+-- ── 3. Only our lines, only while they are ours ─────────────────────────
 system(NOT_FOUND:format("Iris Prado"))
 check(shown("Iris Prado") == 1, "somebody else's line still shows")
 system("Iris Prado has come online.")
 check(#chat == 2, "and so does every other line")
 run(60)
-system(NOT_FOUND:format("Bruno Melo"))
-check(shown("Bruno Melo") == 1, "once the window is over the same name's line shows again")
+system(NOT_FOUND:format("Fábio Reis"))
+check(shown("Fábio Reis") == 1, "once the window is over the same name's line shows again")
 system(SECRET)
 check(chat[#chat] == SECRET, "a line in lockdown is secret: left alone")
 check(#GuildOS.State.errors == 0, "and never read, which would raise")
 
--- ── 7. The shared helper ────────────────────────────────────────────────
+-- ── 4. The shared helper ────────────────────────────────────────────────
 local gone = {}
 GuildOS:OnWhisperNotFound(function(name) gone[#gone + 1] = name end)
 check(GuildOS:NoteWhisper("joana-lins") == true, "a note says a filter is there to hide the line")
@@ -265,10 +222,10 @@ GuildOS.MatchFormat = broken
 check(#(filters.CHAT_MSG_SYSTEM or {}) == 1, "however many whispers went, the filter went in once")
 
 GuildOS.State.whispers, ChatFrame_AddMessageEventFilter = nil, nil
-check(GuildOS:NoteWhisper("Bruno Melo") == false and #GuildOS.State.errors == 1,
+check(GuildOS:NoteWhisper("Fábio Reis") == false and #GuildOS.State.errors == 1,
       "a client with no chat filter notes the name, says so, and that is no error")
 
--- ── 8. Every addon whisper of GuildOS's own notes its target first ──────
+-- ── 5. Every addon whisper of GuildOS's own notes its target first ──────
 COMPAT_GUARD_LIBRARY = true
 local G = dofile(ADDON .. "/tools/compat-guard.lua")
 COMPAT_GUARD_LIBRARY = nil
@@ -316,8 +273,8 @@ for _, rel in ipairs(G.files(ADDON)) do
   end
 end
 check(#misses == 0, "every addon whisper notes its target first (GuildOS:NoteWhisper): " .. table.concat(misses, ", "))
-check((perFile["Modules/Alliance.lua"] or 0) >= 1 and (perFile["Modules/CraftNet.lua"] or 0) >= 1
+check((perFile["Modules/CraftNet.lua"] or 0) >= 1
   and (perFile["Modules/CommSystem.lua"] or 0) >= 1 and (perFile["Modules/ChehulGossip.lua"] or 0) >= 2,
-  "and the scan sees the whispers it guards: the alliance, CraftNet, CommSystem and the gossip")
+  "and the scan sees the whispers it guards: CraftNet, CommSystem and the gossip")
 
 print(("whisper-not-found: %d checks passed"):format(checks))

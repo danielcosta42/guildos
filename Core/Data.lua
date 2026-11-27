@@ -5,39 +5,65 @@
 ----------------------------------------------------------------------
 
 -- UI color constants
--- ── The GuildOS style's palette ──────────────────────────────────────
--- Derived from the guildos.me production tokens (design handoff; see
--- docs/superpowers/specs/2026-09-14-forever-skin-design.md). Near-monochrome
--- with ONE accent: gold is the only colour allowed as a background, and violet
--- only ever means epic item quality. Class and item-quality colours never
--- live here; they come from the game.
+-- ── The Salão's palette (specs/salao/fase3.md) ───────────────────────
+-- The approved mockup's: dark wood and bronze around parchment cards, the
+-- game's yellow and a softer gold for what is chosen, a crimson primary
+-- button. Violet only ever means epic item quality. Class and item-quality
+-- colours never live here; they come from the game.
 local function rgb(r, g, b, a) return { r = r, g = g, b = b, a = a or 1 } end
+local function hex(h, a)
+    return rgb(tonumber(h:sub(1, 2), 16) / 255, tonumber(h:sub(3, 4), 16) / 255, tonumber(h:sub(5, 6), 16) / 255, a)
+end
 
 -- A legacy key gets its own copy, so code that tweaks a colour in place can
 -- never recolour the token behind it.
 local function alias(t, a) return rgb(t.r, t.g, t.b, a or t.a) end
 
 local T = {
-    bg       = rgb(0.063, 0.059, 0.086),  -- #100f16 window background (elevation 2)
-    panel    = rgb(0.090, 0.086, 0.122),  -- #17161f card, title bar, column header (3)
-    popup    = rgb(0.114, 0.106, 0.149),  -- #1d1b26 popup, dropdown, tooltip, selected row (4)
-    well     = rgb(0.047, 0.043, 0.063),  -- #0c0b10 table body, input, scroll area (1)
-    line     = rgb(0.165, 0.153, 0.200),  -- #2a2733 1px border and separator
-    lineHi   = rgb(0.435, 0.408, 0.471),  -- #6f6878 control border, popup border, scroll thumb (3.56:1)
-    text     = rgb(0.925, 0.906, 0.878),  -- #ece7e0 primary text
-    textSoft = rgb(0.663, 0.635, 0.690),  -- #a9a2b0 supporting text
-    label    = rgb(0.592, 0.565, 0.624),  -- #97909f mono label, section caption
-    labelDim = rgb(0.435, 0.408, 0.471),  -- #6f6878 metric label, secondary column, footer
-    disabled = rgb(0.294, 0.271, 0.325),  -- #4b4553 disabled and ghost text
-    gold     = rgb(0.851, 0.663, 0.310),  -- #d9a94f the only brand accent
-    goldHover  = rgb(0.890, 0.725, 0.408),  -- #e3b968 primary button under the cursor
-    goldActive = rgb(0.769, 0.580, 0.247),  -- #c4943f primary button held down
-    onGold   = rgb(0.090, 0.075, 0.039),  -- #17130a text on gold
-    ok       = rgb(0.490, 0.847, 0.561),  -- #7dd88f present, online, confirmed
-    danger   = rgb(0.937, 0.482, 0.447),  -- #ef7b72 absence, penalty, kick, ban, error
-    warn     = rgb(0.910, 0.604, 0.353),  -- #e89a5a a score between ok and danger
-    info     = rgb(0.357, 0.576, 0.812),  -- #5b93cf the tank role, a link to the site, sync
-    epic     = rgb(0.659, 0.435, 0.878),  -- #a86fe0 epic item quality, nothing else
+    bg       = hex("24170d"),  -- the window, behind the wood
+    panel    = hex("2a1a0d"),  -- the room's entry strip, a dark tile, a column header
+    popup    = hex("1a1009"),  -- popup, dropdown, tooltip, footer, a round tool
+    well     = hex("120b06"),  -- a field, a table body, an inset on the wood
+    line     = hex("3a2a17"),  -- a row's line and a separator on the wood
+    lineHi   = hex("6b5326"),  -- the metal: a control's, a dark card's and the frame's border
+    text     = hex("f6e9cf"),  -- the ink on the wood
+    textSoft = hex("cdb98e"),  -- supporting text on the wood
+    label    = hex("bba57a"),  -- a caption, the footer
+    labelDim = hex("9e8f77"),  -- a secondary caption
+    disabled = hex("5b5348"),  -- disabled text, an offline dot
+    gold     = hex("ffd100"),  -- the game's yellow: the guild's name, the open room, a table's header
+    goldHover  = hex("ffe04d"),
+    goldActive = hex("d9b200"),
+    onGold   = hex("3b2512"),  -- text on gold
+    ok       = hex("7dd88f"),  -- present, online, confirmed
+    danger   = hex("ef7b72"),  -- absence, penalty, kick, ban, error
+    warn     = hex("e89a5a"),  -- a score between ok and danger
+    info     = hex("5b93cf"),  -- the tank role, a link to the site, sync
+    epic     = hex("a86fe0"),  -- epic item quality, nothing else
+    -- The Salão's own (fase 3).
+    gold2     = hex("ffd77a"),  -- the soft gold: a chosen pill, a dark card's title, an avatar's ring
+    metal2    = hex("c9a24a"),  -- the bright metal: the frame's inner line, the crest's ring
+    door      = hex("e6d2a5"),  -- a room's door, an entry pill at rest
+    wood      = hex("3b2614"),  -- the open door, the wood's first board
+    crimson   = hex("b0261b"),  -- the primary button (its light falls to #6a0f08)
+    crimsonLine = hex("d6a84b"),
+    crimsonInk  = hex("ffe08a"),
+    count     = hex("c0392b"),  -- a red count on a door or an entry
+    darkButton  = hex("3a2c17"),  -- the dark button (its light falls to #20180d)
+    darkInk     = hex("f2d68a"),
+    darkCard  = rgb(10 / 255, 5 / 255, 2 / 255, 0.55),  -- a dark card on the wood
+    -- The parchment cards: the paper, its ink and its softer ink, its lines, its title and its shadowed edge.
+    paper      = hex("f3e4c2"),
+    paperInk   = hex("3a2a17"),
+    paperSoft  = hex("6f5a3c"),
+    paperLine  = hex("dcc79c"),
+    paperRule  = hex("c9b48a"),
+    paperTitle = hex("6b1d0e"),
+    paperEdge  = hex("b49867"),
+    paperLight = hex("fffaf0"),  -- a field and a pinned note on the paper
+    paperLink  = hex("8a5a20"),
+    quiet      = hex("fff6de"),  -- the quiet button, cream on the paper (its light falls to #e8d3a6)
+    quietInk   = hex("5a3b17"),
 }
 
 local ACCENT_DIM  = 0.54  -- dimmed gold for secondary marks
@@ -50,6 +76,12 @@ GuildOS.Colors = {
     disabled = T.disabled,
     gold = T.gold, goldHover = T.goldHover, goldActive = T.goldActive, onGold = T.onGold,
     ok = T.ok, danger = T.danger, warn = T.warn, info = T.info, epic = T.epic,
+    gold2 = T.gold2, metal2 = T.metal2, door = T.door, wood = T.wood, crimson = T.crimson,
+    crimsonLine = T.crimsonLine, crimsonInk = T.crimsonInk, count = T.count, darkCard = T.darkCard,
+    darkButton = T.darkButton, darkInk = T.darkInk,
+    paper = T.paper, paperInk = T.paperInk, paperSoft = T.paperSoft, paperLine = T.paperLine,
+    paperRule = T.paperRule, paperTitle = T.paperTitle, paperEdge = T.paperEdge, paperLight = T.paperLight,
+    paperLink = T.paperLink, quiet = T.quiet, quietInk = T.quietInk,
 
     -- Legacy keys. Screens older than the Forever skin still read these; each
     -- one points at the token that plays its role now. New code uses the tokens.
@@ -99,72 +131,141 @@ function GuildOS:RepointColors(tokens)
     end
 end
 
--- Fonts. Five OFL files ship in Media/Fonts with their licences: IBM Plex Sans
--- for words, IBM Plex Mono only through the roles that ask for it (numbers,
--- captions, column headers, badges). Sans never under 11px, mono never under
--- 10px; no outline anywhere (docs/superpowers/specs/2026-11-17-swiss-identity-design.md).
-local FONT_DIR    = "Interface\\AddOns\\GuildOS\\Media\\Fonts\\"
-local SANS        = FONT_DIR .. "IBMPlexSans-Regular.ttf"
-local SANS_MEDIUM = FONT_DIR .. "IBMPlexSans-Medium.ttf"
-local SANS_STRONG = FONT_DIR .. "IBMPlexSans-SemiBold.ttf"
-local MONO        = FONT_DIR .. "IBMPlexMono-Regular.ttf"
-local MONO_STRONG = FONT_DIR .. "IBMPlexMono-Medium.ttf"
+-- Fonts (specs/salao/fase3.md). The mockup's three, under the SIL Open Font License, in Media/Fonts with
+-- their licences: Cinzel Bold for titles (the guild's name, a card's title, a table's header, a number in a
+-- tile), Alegreya Sans for the interface (regular, medium, bold) and Alegreya for reading (a note, a message).
+-- Cinzel and Alegreya ship as variable fonts and WoW reads only a variable font's default instance, so the
+-- files here are static instances cut with fontTools (Cinzel at 700, Alegreya at 400).
+-- The Salão's phase 1 drew everything in the game's font (#445); phase 3 reverses that on purpose: the
+-- game's font with the game's art read as generic Forever, and IBM Plex as a dashboard.
+local FONT_DIR   = "Interface\\AddOns\\GuildOS\\Media\\Fonts\\"
+local TITLE      = FONT_DIR .. "Cinzel-Bold.ttf"
+local UI_REGULAR = FONT_DIR .. "AlegreyaSans-Regular.ttf"
+local UI_MEDIUM  = FONT_DIR .. "AlegreyaSans-Medium.ttf"
+local UI_BOLD    = FONT_DIR .. "AlegreyaSans-Bold.ttf"
+local READING    = FONT_DIR .. "Alegreya-Regular.ttf"
+GuildOS.FONT_DIR = FONT_DIR
 
 GuildOS.Fonts = {
-    sans = SANS, sansMedium = SANS_MEDIUM, sansStrong = SANS_STRONG, mono = MONO, monoStrong = MONO_STRONG,
+    title = TITLE, ui = UI_REGULAR, uiMedium = UI_MEDIUM, uiBold = UI_BOLD, read = READING,
+    -- The names older readers know, on the faces that play their part now.
+    sans = UI_REGULAR, sansMedium = UI_MEDIUM, sansStrong = UI_BOLD, mono = UI_REGULAR, monoStrong = UI_BOLD,
 
-    -- Roles from the type scale (10, 11, 12, 14, 16, 18, 24, 40).
-    wordmark     = { file = SANS_STRONG, size = 18 },
-    windowTitle  = { file = SANS_STRONG, size = 16 },
-    sectionTitle = { file = SANS_STRONG, size = 14 },
-    body         = { file = SANS,        size = 12 },
-    memberName   = { file = SANS_MEDIUM, size = 12 },
-    itemName     = { file = SANS_STRONG, size = 14 },
-    button       = { file = SANS_MEDIUM, size = 12 },
-    caption      = { file = MONO,        size = 10 },
-    tableNum     = { file = MONO,        size = 11 },
-    colHeader    = { file = MONO_STRONG, size = 10 },
-    metricValue  = { file = MONO,        size = 24 },
-    countdown    = { file = MONO,        size = 40 },
-    badge        = { file = MONO,        size = 10 },
+    -- Roles. A title is never upper case and never letter-spaced: Cinzel's small capitals are the look.
+    wordmark     = { file = TITLE,      size = 16 },
+    windowTitle  = { file = TITLE,      size = 15 },
+    sectionTitle = { file = TITLE,      size = 15 },   -- UI.SP.TITLE (#449)
+    colHeader    = { file = TITLE,      size = 11 },   -- UI.SP.META
+    metricValue  = { file = TITLE,      size = 18 },
+    countdown    = { file = TITLE,      size = 36 },
+    body         = { file = UI_REGULAR, size = 13 },
+    memberName   = { file = UI_MEDIUM,  size = 13 },
+    itemName     = { file = UI_BOLD,    size = 14 },
+    button       = { file = UI_BOLD,    size = 12 },
+    caption      = { file = UI_REGULAR, size = 11 },
+    tableNum     = { file = UI_REGULAR, size = 12 },
+    badge        = { file = UI_BOLD,    size = 11 },
+    reading      = { file = READING,    size = 13 },
 
-    -- Older readers expect one font for words and one for numbers.
-    normal = SANS,
-    number = MONO,
+    normal = UI_REGULAR,
+    number = UI_REGULAR,
 }
 
-local SANS_MIN = 11  -- sans reads poorly below this at UI scale 1.0
-local MONO_MIN = 10  -- nothing reads below this
+local UI_MIN    = 11  -- Alegreya Sans reads poorly below this at UI scale 1.0
+local TITLE_MIN = 10  -- Cinzel's small capitals read down to here
+-- Alegreya Sans is smaller on its body than the fonts the screens were laid out with: a size a screen asks
+-- for draws this much larger, so a 12 reads as a 12 did.
+local UI_BUMP   = 1
 
--- Korean and Chinese clients (issue #103): IBM Plex Sans and Mono carry Latin and Cyrillic but
--- no Hangul and no Han, so every character, guild, item and zone name the client gave in those
--- languages drew as boxes. There the client's own font, which has the language, is the only one
--- used, whatever the setting says.
+-- Korean and Chinese clients (issue #103): none of the three has Hangul or Han, so every character, guild,
+-- item and zone name the client gave in those languages would draw as boxes. There the client's own fonts
+-- are the only ones used. Cinzel has no Cyrillic either: on a Russian client a title takes the game's.
 GuildOS.GameFontOnly = ({ koKR = true, zhCN = true, zhTW = true })[GuildOS.Locale or ""] == true
+local LATIN_ONLY = { [TITLE] = true }
 
--- Set a FontString's font. A role from GuildOS.Fonts picks the file (and the
--- size unless one is given); text with no role is IBM Plex Sans. Sans is
--- clamped to 11px and mono to 10px. Never outlined. Returns the file and size used.
+-- The game's title face where the client has one: the font its quest titles use (Morpheus on Latin clients,
+-- its Cyrillic cut on ruRU, the client's own on koKR, zhCN and zhTW), else its standard text font.
+local function gameTitleFont()
+    local f = QuestTitleFont and QuestTitleFont.GetFont and select(1, QuestTitleFont:GetFont())
+    return f or STANDARD_TEXT_FONT
+end
+
+-- The player's own choice of the game's font (Settings > Interface, "Use the game's font"): saved at the account's
+-- root as GuildOSDB.gameFont, read once at load by Style:Resolve, so a change waits for /reload. The key is new on
+-- purpose: GuildOSDB.font = "game" from before the Salão (#445) stays ignored, nobody is switched back unasked.
+function GuildOS:UsesGameFont()
+    return GuildOS.GameFontOnly or (GuildOS.Style ~= nil and GuildOS.Style.gameFont == true)
+end
+
+-- The file `file` draws with on this client: itself, or the game's font where it lacks the language or the
+-- player chose the game's.
+function GuildOS:FontFace(file)
+    if GuildOS:UsesGameFont() or (LATIN_ONLY[file] and GuildOS.Locale == "ruRU") then
+        return file == TITLE and gameTitleFont() or STANDARD_TEXT_FONT
+    end
+    return file
+end
+
+-- Set a FontString's font. A role from GuildOS.Fonts picks the file (and the size unless one is given);
+-- text with no role is Alegreya Sans. The interface's faces draw UI_BUMP larger and never under 11px, a
+-- title never under 10px. Never outlined. Returns the file and size used.
 function GuildOS:ApplyFont(fontString, size, role)
     local spec = role and GuildOS.Fonts[role]
-    local file = type(spec) == "table" and spec.file or SANS
-    local px = tonumber(size) or (type(spec) == "table" and spec.size) or SANS_MIN
-    px = math.max((file == MONO or file == MONO_STRONG) and MONO_MIN or SANS_MIN, px)
-    -- The player's choice (issue #57): the client's own font at the same sizes. A personal
-    -- display preference, so it lives at the account root (GuildOSDB.font) and follows the
-    -- player to every alt and guild, as the minimap button's does. Read on every call; a
-    -- text drawn before a change keeps its font until the interface reloads.
-    if GuildOS.GameFontOnly or (GuildOS.Style and GuildOS.Style.gameFont)
-        or (type(GuildOSDB) == "table" and GuildOSDB.font == "game") then
+    local file = type(spec) == "table" and spec.file or UI_REGULAR
+    local px = tonumber(size) or (type(spec) == "table" and spec.size) or UI_MIN
+    if file == TITLE then
+        px = math.max(TITLE_MIN, px)
+    else
+        px = math.max(UI_MIN, px + (tonumber(size) and UI_BUMP or 0))
+    end
+    local face = GuildOS:FontFace(file)
+    fontString.__gosFont = { file = file, face = face, px = px, asked = tonumber(size) or px }
+    -- Only an explicit false means the file did not load; clients that return nothing on success must not be
+    -- pushed onto the fallback.
+    if fontString:SetFont(face, px, "") == false and face ~= STANDARD_TEXT_FONT then
         fontString:SetFont(STANDARD_TEXT_FONT, px, "")
         return STANDARD_TEXT_FONT, px
     end
-    -- Only an explicit false means the file did not load; clients that return
-    -- nothing on success must not be pushed onto the fallback.
-    if fontString:SetFont(file, px, "") == false then
-        fontString:SetFont(STANDARD_TEXT_FONT, px, "")
+    return face, px
+end
+
+-- Whether `text` draws in a Latin font: every character Latin (to U+024F) or general punctuation
+-- (U+2000-U+206F). A player's text (a guild's name, an event's title) can be Cyrillic or Hangul on any client.
+function GuildOS.IsLatinText(text)
+    local s, i, n = tostring(text or ""), 1, #tostring(text or "")
+    while i <= n do
+        local b = s:byte(i)
+        if b < 0x80 then
+            i = i + 1
+        elseif b >= 0xC0 and b < 0xE0 then
+            local cp = (b - 0xC0) * 64 + ((s:byte(i + 1) or 0x80) - 0x80)
+            if cp > 0x24F then return false end
+            i = i + 2
+        elseif b >= 0xE0 and b < 0xF0 then
+            local cp = (b - 0xE0) * 4096 + ((s:byte(i + 1) or 0x80) - 0x80) * 64 + ((s:byte(i + 2) or 0x80) - 0x80)
+            if cp < 0x2000 or cp > 0x206F then return false end
+            i = i + 3
+        elseif b >= 0xF0 then
+            return false
+        else
+            i = i + 1   -- a stray continuation byte
+        end
     end
-    return file, px
+    return true
+end
+
+-- Set a title's text: in its title face when the text is Latin, else in the interface's bold face (which has
+-- Cyrillic and Greek) or the game's font, so a guild or an event named in another script never draws as boxes.
+function GuildOS:SetTitleText(fontString, text)
+    local f = fontString.__gosFont
+    if f and f.file == TITLE then
+        local want = GuildOS.IsLatinText(text) and GuildOS:FontFace(TITLE) or GuildOS:FontFace(UI_BOLD)
+        if want ~= f.face then
+            fontString:SetFont(want, f.px, "")
+            f.face = want
+        end
+    end
+    fontString:SetText(text)
 end
 
 -- Class colors (TBC)

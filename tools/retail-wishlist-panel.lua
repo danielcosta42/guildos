@@ -120,6 +120,7 @@ local function load(retail)
   dofile(ADDON .. "/Modules/LootRule.lua")
   dofile(ADDON .. "/Modules/LootMaster.lua")
   dofile(ADDON .. "/Modules/SiteLoot.lua")
+  dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
   dofile(ADDON .. "/UI/RosterFrame.lua")
 end
 

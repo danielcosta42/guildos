@@ -4,6 +4,7 @@
 -- catch-up shown once on login (and on demand via /guildos digest).
 -- Build() is pure data; the popup uses the UI factories at runtime.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Digest = {}
 GuildOS.Digest = Digest
 local L = GuildOS.L
@@ -36,60 +37,103 @@ local function myKey()
     return GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
 end
 
+-- The categories a digest's news falls in (#449), in the order they are told: the Chronicle's Activity draws
+-- each as a card, the login digest as a small header over its lines. id, title, glyph (the round mark of its
+-- rows) and its colour, the same wherever it is drawn.
+Digest.CATEGORIES = {
+    { id = "members",  title = L["Members"],               glyph = "M", color = "3e8e41" },
+    { id = "levels",   title = L["Levels and milestones"], glyph = "L", color = "b38a1a" },
+    { id = "dungeons", title = L["Dungeons and raids"],    glyph = "D", color = "1d4f99" },
+    { id = "loot",     title = L["Loot"],                  glyph = "$", color = "7a3d9a" },
+    { id = "renown",   title = L["Achievements and renown"], glyph = "A", color = "b0261b" },
+    { id = "guild",    title = L["Guild life"],            glyph = "G", color = "6f5a3c" },
+    { id = "site",     title = L["From guildos.me"],       glyph = "W", color = "8a6a2a" },
+}
+
+-- A category's colour ("rrggbb") as { r, g, b }.
+function Digest.Color(h)
+    return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 }
+end
+
+local function shortOf(key) return tostring(key):match("^([^-]+)") or tostring(key) end
+
 ----------------------------------------------------------------------
--- Build the digest lines for everything that changed since `since`
--- (a server timestamp). Returns an array of strings.
-----------------------------------------------------------------------
+-- What changed since `since` (a server timestamp), as data: one table per category of Digest.CATEGORIES, each
+-- with its `lines` (what the login digest says) and what the Activity screen draws:
+--   members   joined { key, name, at } newest first; left, kick { name, at }; promote, demote { name, detail, at };
+--             anniversaries (Milestones:Collect's)
+--   levels    dings, attunes, levels (Milestones:Collect's)
+--   dungeons  clears (Milestones:Collect's), raids { name, at } newest first
+--   loot      items { link, quality, player, at } newest first
 -- opts.login: the login's digest, where the bulletin tells only the notices not told yet (#418); elsewhere (the
 -- Activity sub-tab, /gos digest) it lists the notices posted since `since`, as it always did.
-function Digest:Build(since, opts)
+----------------------------------------------------------------------
+local LINK_EARLY = "|cff4CB8FF"   -- a line the digest opens a screen from (LINK, below)
+function Digest:Collect(since, opts)
     since = since or GuildOS.db.digest.lastSeen or 0
-    local lines = {}
+    local m = {}
+    for _, c in ipairs(self.CATEGORIES) do m[c.id] = { lines = {} } end
+    local function add(cat, line) local l = m[cat].lines; l[#l + 1] = line end
     local feed, told = fromSite()
+    local mem = m.members
 
-    -- New members (first observed by Guild OS since last login, after its first look at the guild)
-    local newCount, newNames = 0, {}
+    -- New members (first observed by Guild OS since `since`, after its first look at the guild)
+    mem.joined = {}
     local newSince = math.max(since, GuildOS.db.firstSeenSince or 0)
     for key, ts in pairs(GuildOS.db.firstSeen or {}) do
-        if ts and ts > newSince then
-            newCount = newCount + 1
-            if #newNames < 3 then newNames[#newNames + 1] = key:match("^([^-]+)") or key end
-        end
+        if ts and ts > newSince then mem.joined[#mem.joined + 1] = { key = key, name = shortOf(key), at = ts } end
     end
-    if newCount > 0 then
-        local names = table.concat(newNames, ", ")
-        if newCount > #newNames then names = names .. " +" .. (newCount - #newNames) end
-        lines[#lines + 1] = string.format(L["%d new member(s): %s"], newCount, names)
-    end
-
-    -- Roster changes since last login (from the audit log)
-    if GuildOS.RosterLog then
-        local c = GuildOS.RosterLog:CountsSince(since)
-        if c.kick > 0 then lines[#lines + 1] = string.format(L["%d member(s) removed"], c.kick) end
-        if c.leave > 0 then lines[#lines + 1] = string.format(L["%d member(s) left"], c.leave) end
+    table.sort(mem.joined, function(x, y)
+        if x.at ~= y.at then return x.at > y.at end
+        return x.name < y.name
+    end)
+    if #mem.joined > 0 then
+        local named = {}
+        for i = 1, math.min(3, #mem.joined) do named[i] = mem.joined[i].name end
+        local names = table.concat(named, ", ")
+        if #mem.joined > #named then names = names .. " +" .. (#mem.joined - #named) end
+        add("members", string.format(L["%d new member(s): %s"], #mem.joined, names))
     end
 
-    -- Raid sessions tracked since last login
-    local raidCount = 0
+    -- Roster changes (from the audit log): who left, was removed, promoted or demoted
+    mem.left, mem.kick, mem.promote, mem.demote = {}, {}, {}, {}
+    local AS = { leave = mem.left, kick = mem.kick, promote = mem.promote, demote = mem.demote }
+    for _, e in ipairs((GuildOS.RosterLog and GuildOS.RosterLog:EventsSince(since)) or {}) do
+        local list = AS[e.action]
+        if list then list[#list + 1] = { name = e.target or "?", detail = e.detail, at = e.timestamp or 0 } end
+    end
+    for _, list in pairs(AS) do table.sort(list, function(x, y) return x.at > y.at end) end
+    if #mem.kick > 0 then add("members", string.format(L["%d member(s) removed"], #mem.kick)) end
+    if #mem.left > 0 then add("members", string.format(L["%d member(s) left"], #mem.left)) end
+
+    -- Raid sessions tracked
+    m.dungeons.raids = {}
     if GuildOS.db.raidTracker and GuildOS.db.raidTracker.sessions then
-        for _, s in pairs(GuildOS.db.raidTracker.sessions) do
-            if s.startTime and s.startTime > since then raidCount = raidCount + 1 end
+        for id, s in pairs(GuildOS.db.raidTracker.sessions) do
+            if s.startTime and s.startTime > since then
+                m.dungeons.raids[#m.dungeons.raids + 1] = { id = id, name = s.name or s.raidName or L["Unknown"], at = s.startTime }
+            end
+        end
+        table.sort(m.dungeons.raids, function(x, y) return x.at > y.at end)
+    end
+    if #m.dungeons.raids > 0 then
+        add("dungeons", string.format(L["%d raid session(s) tracked"], #m.dungeons.raids))
+    end
+
+    -- Loot recorded
+    m.loot.items = {}
+    for _, e in ipairs(GuildOS.db.lootHistory or {}) do
+        if (e.timestamp or 0) > since then
+            m.loot.items[#m.loot.items + 1] = { link = e.itemLink or e.item or e.itemName or "?", quality = e.quality,
+                player = e.player or e.playerKey, at = e.timestamp }
         end
     end
-    if raidCount > 0 then
-        lines[#lines + 1] = string.format(L["%d raid session(s) tracked"], raidCount)
+    table.sort(m.loot.items, function(x, y) return x.at > y.at end)
+    if #m.loot.items > 0 then
+        add("loot", string.format(L["%d item(s) looted"], #m.loot.items))
     end
 
-    -- Loot recorded since last login
-    local lootCount = 0
-    for _, e in ipairs(GuildOS.db.lootHistory or {}) do
-        if (e.timestamp or 0) > since then lootCount = lootCount + 1 end
-    end
-    if lootCount > 0 then
-        lines[#lines + 1] = string.format(L["%d item(s) looted"], lootCount)
-    end
-
-    -- Your own points change since last login
+    -- Your own points change
     if GuildOS.Points and GuildOS.db.points and GuildOS.db.points.log then
         local mk = myKey()
         local delta = 0
@@ -97,55 +141,53 @@ function Digest:Build(since, opts)
             if e.key == mk and (e.ts or 0) > since then delta = delta + (e.delta or 0) end
         end
         if delta ~= 0 then
-            lines[#lines + 1] = string.format(L["Your points changed by %+d (now %d)"], delta, GuildOS.Points:Get(mk))
+            add("renown", string.format(L["Your points changed by %+d (now %d)"], delta, GuildOS.Points:Get(mk)))
         end
     end
 
-    -- Milestones & guild anniversaries
+    -- Milestones (the cap, attunements, every ten levels, dungeon clears) and guild anniversaries
     if GuildOS.Milestones then
-        for _, line in ipairs(GuildOS.Milestones:GetDigestLines(since, told)) do
-            lines[#lines + 1] = line
+        local ms = GuildOS.Milestones:Collect(since, told)
+        m.levels.dings, m.levels.attunes, m.levels.levels = ms.dings, ms.attunes, ms.levels
+        m.dungeons.clears, mem.anniversaries = ms.clears, ms.anniversaries
+        local by = GuildOS.Milestones:Lines(ms)
+        for _, cat in ipairs({ "levels", "dungeons", "members" }) do
+            for _, line in ipairs(by[cat]) do add(cat, line) end
         end
     end
     -- WoW: Forever's founding: who joined as a founder, the window, the guild's anniversaries (#209)
     if GuildOS.Founding then
-        for _, line in ipairs(GuildOS.Founding:GetDigestLines(since, GetServerTime(), told)) do
-            lines[#lines + 1] = line
-        end
+        for _, line in ipairs(GuildOS.Founding:GetDigestLines(since, GetServerTime(), told)) do add("guild", line) end
     end
 
     -- Today's birthdays and join anniversaries (#428): at the first login of the day, and on demand.
     if GuildOS.Birthdays and not (opts and opts.login and GuildOS.Birthdays:ToldToday(GetServerTime())) then
         for _, line in ipairs(GuildOS.Birthdays:GetDigestLines(GetServerTime())) do
-            lines[#lines + 1] = "|cffEDCC7B" .. line .. "|r"
+            add("guild", "|cffEDCC7B" .. line .. "|r")
         end
     end
 
     -- Upcoming raid reminder (event within the next 24h)
     if GuildOS.Calendar and GuildOS.Calendar.GetDigestLines then
-        local calLines = GuildOS.Calendar:GetDigestLines()
-        if calLines then
-            for _, line in ipairs(calLines) do
-                lines[#lines + 1] = "|cff4CB8FF" .. line .. "|r"
-            end
+        for _, line in ipairs(GuildOS.Calendar:GetDigestLines() or {}) do
+            add("guild", "|cff4CB8FF" .. line .. "|r")
         end
     end
 
-    -- Alliance: how many allied raids are coming up in the next week. One line,
-    -- and only when this guild is federated and something is actually scheduled.
-    if GuildOS.Alliance and GuildOS.Alliance:Get() and GuildOS.Calendar
-        and GuildOS.Calendar.AllianceEvents then
+    -- Alliance: how many raids open to the alliance are coming up in the next week (guildos.me's,
+    -- Alliance:OpenRaids). One line, and only when something is actually scheduled.
+    if GuildOS.Alliance and GuildOS.Alliance:Get() then
         local horizon = GetServerTime() + (7 * 86400)
         local count = 0
-        for _, e in ipairs(GuildOS.Calendar:AllianceEvents()) do
+        for _, e in ipairs(GuildOS.Alliance:OpenRaids()) do
             if (tonumber(e.when) or 0) <= horizon then
                 count = count + 1
             end
         end
         if count > 0 then
             local gold = GuildOS.Colors.gold
-            lines[#lines + 1] = string.format("|cff%02x%02x%02x", gold.r * 255, gold.g * 255, gold.b * 255) ..
-                string.format(L["%d allied event(s) this week"], count) .. "|r"
+            add("guild", string.format("|cff%02x%02x%02x", gold.r * 255, gold.g * 255, gold.b * 255) ..
+                string.format(L["%d allied event(s) this week"], count) .. "|r")
         end
     end
 
@@ -154,65 +196,162 @@ function Digest:Build(since, opts)
     -- else, the most recent few posted since `since`.
     if GuildOS.Bulletin then
         if opts and opts.login then
-            for _, m in ipairs(GuildOS.Bulletin:Unseen(GetServerTime(), 3)) do
-                lines[#lines + 1] = GuildOS.Bulletin.Line(m)
+            for _, msg in ipairs(GuildOS.Bulletin:Unseen(GetServerTime(), 3)) do
+                add("guild", GuildOS.Bulletin.Line(msg))
             end
         else
             local shown = 0
-            for _, m in ipairs(GuildOS.Bulletin:GetMessages()) do
-                if type(m) == "table" and (tonumber(m.ts) or 0) > since and shown < 3 then
-                    lines[#lines + 1] = GuildOS.Bulletin.Line(m)
+            for _, msg in ipairs(GuildOS.Bulletin:GetMessages()) do
+                if type(msg) == "table" and (tonumber(msg.ts) or 0) > since and shown < 3 then
+                    add("guild", GuildOS.Bulletin.Line(msg))
                     shown = shown + 1
                 end
             end
         end
     end
 
-    -- New polls opened since last login
+    -- New polls opened
     if GuildOS.Polls then
         local newPolls = 0
         for _, p in pairs(GuildOS.Polls:GetList()) do
             if not p.closed and (p.ts or 0) > since then newPolls = newPolls + 1 end
         end
         if newPolls > 0 then
-            lines[#lines + 1] = string.format(L["%d new poll(s) — cast your vote"], newPolls)
+            add("guild", string.format(L["%d new poll(s) — cast your vote"], newPolls))
         end
     end
 
     -- Officer-only catch-up
+    local toReview
     if GuildOS:IsOfficer() then
-        if GuildOS.TrialTracker then
-            -- Ready to review: their end, from the guild's length, has passed with no decision (#249).
-            local due = GuildOS.TrialTracker:CountReady()
-            if due > 0 then
-                lines[#lines + 1] = string.format(L["%d trial(s) ready for decision"], due)
-            end
-        end
-        if GuildOS.GuildManager and GuildOS.GuildManager.GetInactiveMembers then
-            local inactive = GuildOS.GuildManager:GetInactiveMembers(GuildOS.GuildManager.DEFAULT_INACTIVE_DAYS)
+        -- Trials ready to review are not repeated here: the panel's badge and the login line say it (audit B10).
+        local GM = GuildOS.GuildManager
+        if GM and GM.GetInactiveMembers then
+            local inactive = GM:GetInactiveMembers(GM.DEFAULT_INACTIVE_DAYS)
+            toReview = 0
             if inactive and #inactive > 0 then
-                lines[#lines + 1] = string.format(L["%d inactive member(s)"], #inactive)
+                mem.inactive = #inactive
+                for _, e in ipairs(inactive) do if not e.safe then toReview = toReview + 1 end end
+                -- An officer who may remove gets the recommendation below instead (opts.recommend).
+                if not (opts and opts.recommend and GM:CanKick()) then
+                    add("members", string.format(L["%d inactive member(s)"], #inactive))
+                end
             end
         end
     end
 
     -- WoW: Forever: what the guild earned (#216), and the officers' reminder of its setup (#217)
     if GuildOS.Achievements then
-        for _, line in ipairs(GuildOS.Achievements:GetDigestLines(told)) do
-            lines[#lines + 1] = line
-        end
+        for _, line in ipairs(GuildOS.Achievements:GetDigestLines(told)) do add("renown", line) end
     end
     local setup = GuildOS.Activation and GuildOS.Activation:GetDigestLine(GetServerTime())
-    if setup then lines[#lines + 1] = setup end
+    if setup then add("guild", setup) end
+    -- The account's other guild databases not opened in 90 days (memoria.md): said once per database, at login,
+    -- beside other news; ShowOnLogin marks them told. Deleting is the player's, in Settings › Data and support.
+    if opts and opts.login and GuildOS.StaleGuildDBLine then
+        local line, stale = GuildOS:StaleGuildDBLine(GetServerTime())
+        if line then
+            add("guild", LINK_EARLY .. line .. "|r")
+            m.guild.actions = m.guild.actions or {}
+            m.guild.actions[#m.guild.lines] = { "settings", "data" }
+            m.staleDBs = stale
+        end
+    end
     -- Beside other news, never a reason to open the digest on its own at every login.
     local nearest = GuildOS.Achievements and GuildOS.Achievements:NextLine()
-    if nearest and (#lines > 0 or #feed > 0) then lines[#lines + 1] = nearest end
-
-    if #feed > 0 then
-        lines[#lines + 1] = "|cffEDCC7B" .. L["From guildos.me"] .. "|r"
-        for _, item in ipairs(feed) do lines[#lines + 1] = item.text end
+    if nearest then
+        local any = #feed > 0
+        for _, c in ipairs(self.CATEGORIES) do any = any or #m[c.id].lines > 0 end
+        if any then add("renown", nearest) end
     end
 
+    -- The officers' recommendations, each line a way into its Officers' Room screen. At login only beside other
+    -- news (never a reason on its own to open the digest at every login); on demand always.
+    if opts and opts.recommend then
+        local any = #feed > 0 or not opts.login
+        for _, c in ipairs(self.CATEGORIES) do any = any or #m[c.id].lines > 0 end
+        if any then
+            for _, r in ipairs(self:Recommendations(toReview)) do
+                add("members", r.text)
+                mem.actions = mem.actions or {}
+                mem.actions[#mem.lines] = r.open
+            end
+        end
+    end
+
+    for _, item in ipairs(feed) do add("site", item.text) end
+    return m
+end
+
+local LINK = "|cff4CB8FF"   -- a line the digest opens a screen from
+
+--- The officers' recommendations: { { id, n, text, open = { tab, sub } } }, only those with something to do and only
+--- for a rank that may act on them. "inactive": the inactive members to review, alt-aware (a character whose main or
+--- alt was seen is not inactive) and without the safe list (`toReview`, Collect's count; computed here when nil),
+--- where this rank may remove members. "promote": the members long in their rank (RosterMaint:StuckInRank), where
+--- this rank may promote.
+function Digest:Recommendations(toReview)
+    local out = {}
+    local GM, RM = GuildOS.GuildManager, GuildOS.RosterMaint
+    if not (GuildOS:IsOfficer() and GM) then return out end
+    if GM:CanKick() then
+        if toReview == nil and GM.GetInactiveMembers then
+            toReview = #GM:GetInactiveMembers(GM.DEFAULT_INACTIVE_DAYS, nil, true)
+        end
+        if (toReview or 0) > 0 then
+            out[#out + 1] = { id = "inactive", n = toReview, open = { "management", "inactive" },
+                text = LINK .. string.format(L["%d to review for inactivity"], toReview) .. "|r" }
+        end
+    end
+    if GM:CanPromote() and RM then
+        local n = #RM:StuckInRank(nil, true)
+        if n > 0 then
+            out[#out + 1] = { id = "promote", n = n, open = { "management", "suggest" },
+                text = LINK .. string.format(L["%d ready for promotion"], n) .. "|r" }
+        end
+    end
+    return out
+end
+
+--- A recommendation line's click: the digest closes and its Officers' Room screen opens.
+function Digest:OpenRecommendation(open)
+    if type(open) ~= "table" then return false end
+    if self.frame then self.frame:Hide() end
+    local UI = GuildOS.UI
+    if UI and UI.OpenWindow then return UI:OpenWindow(open[1], open[2]) ~= false end
+    return false
+end
+
+-- The categories that have something to say: { id, title (translated), glyph, color, lines }, in order.
+function Digest:Groups(model)
+    local out = {}
+    for _, c in ipairs(self.CATEGORIES) do
+        local lines = model[c.id] and model[c.id].lines or {}
+        if #lines > 0 then
+            out[#out + 1] = { id = c.id, title = c.title, glyph = c.glyph, color = c.color, lines = lines,
+                              actions = model[c.id].actions }
+        end
+    end
+    return out
+end
+
+----------------------------------------------------------------------
+-- Build the digest lines for everything that changed since `since`
+-- (a server timestamp). Returns an array of strings, category by category.
+----------------------------------------------------------------------
+-- lines.groups: the same lines by category (Digest:Groups), which the popup draws under small headers. The officers'
+-- recommendations are the popup's (opts.recommend), each group's `actions` the screen a line opens.
+function Digest:Build(since, opts)
+    local lines = {}
+    local o = { recommend = true }
+    for k, v in pairs(opts or {}) do o[k] = v end
+    local model = self:Collect(since, o)
+    lines.groups = self:Groups(model)
+    lines.staleDBs = model.staleDBs
+    for _, g in ipairs(lines.groups) do
+        if g.id == "site" then lines[#lines + 1] = "|cffEDCC7B" .. L["From guildos.me"] .. "|r" end
+        for _, line in ipairs(g.lines) do lines[#lines + 1] = line end
+    end
     return lines
 end
 
@@ -225,6 +364,37 @@ function Digest:MarkFeedSeen(now)
     end
 end
 
+-- Widgets reused across redraws (memory audit): a frame, texture or text the client makes is never freed,
+-- so a redraw takes the ones the last one made, by the part each plays (`key`), makes only what is missing
+-- and hides what is left over. Take returns the widget and whether it was reused. Kept local to the file:
+-- the tools load screens one at a time, under a stubbed UI.
+local function NewPool()
+    local made, used, pool = {}, {}, {}
+    function pool.Begin() for k in pairs(used) do used[k] = 0 end end
+    function pool.Take(key, make)
+        local n = (used[key] or 0) + 1
+        used[key] = n
+        local list = made[key]
+        if not list then list = {}; made[key] = list end
+        local w = list[n]
+        if w then
+            w:ClearAllPoints()
+            w:Show()
+            return w, true
+        end
+        w = make()
+        list[n] = w
+        return w, false
+    end
+    function pool.End()
+        for key, list in pairs(made) do
+            for i = (used[key] or 0) + 1, #list do list[i]:Hide() end
+        end
+    end
+    return pool
+end
+
+
 ----------------------------------------------------------------------
 -- The popup window.
 ----------------------------------------------------------------------
@@ -236,32 +406,42 @@ function Digest:Show(lines)
     local f = self.frame
     if not f then
         f = CreateFrame("Frame", "GuildOSDigestFrame", UIParent, "BackdropTemplate")
-        f:SetSize(360, 280)
+        f:SetSize(380, 280)
         f:SetPoint("TOP", UIParent, "TOP", 0, -140)
-        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
-        f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-        f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-        UI:StylePopup(f, { shadowSize = 16 })
         f:SetFrameStrata("HIGH")
         f:SetMovable(true)
         f:EnableMouse(true)
-        f:RegisterForDrag("LeftButton")
-        f:SetScript("OnDragStart", function(self2) self2:StartMoving() end)
-        f:SetScript("OnDragStop", function(self2) self2:StopMovingOrSizing() end)
-
-        f.title = UI:CreateTitle(f, L["Since your last login"], 15)
-        f.title:SetPoint("TOPLEFT", 16, -14)
-
-        f.close = UI:CreateCloseButton(f)
-        f.close:SetPoint("TOPRIGHT", -8, -8)
-        f.close:SetScript("OnClick", function() f:Hide() end)
+        -- A floating window (the mockup's .fw "digest"): its title in the header, a glyph and a line for each
+        -- thing that changed (the mockup's .mural), the way into the window in the footer.
+        local Kit = rawget(GuildOS, "Kit")
+        if Kit then
+            Kit:Dress(f, L["Since your last login"])
+            Kit:Footer(f)
+            f.title, f.close = f.titleText, f.closeBtn
+            f.top, f.bottom = Kit.HEADER_H + 10, Kit.FOOT_H + 8
+        else
+            f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
+            f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+            f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+            UI:StylePopup(f, { shadowSize = 16 })
+            f:RegisterForDrag("LeftButton")
+            f:SetScript("OnDragStart", function(self2) self2:StartMoving() end)
+            f:SetScript("OnDragStop", function(self2) self2:StopMovingOrSizing() end)
+            f.title = UI:CreateTitle(f, L["Since your last login"], 15)
+            f.title:SetPoint("TOPLEFT", 16, -14)
+            f.close = UI:CreateCloseButton(f)
+            f.close:SetPoint("TOPRIGHT", -8, -8)
+            f.close:SetScript("OnClick", function() f:Hide() end)
+            f.top, f.bottom = 44, 48
+        end
 
         f.body = CreateFrame("Frame", nil, f)
-        f.body:SetPoint("TOPLEFT", 16, -44)
-        f.body:SetPoint("BOTTOMRIGHT", -16, 48)
+        f.body:SetPoint("TOPLEFT", 16, -f.top)
+        f.body:SetPoint("BOTTOMRIGHT", -16, f.bottom)
 
-        f.openBtn = UI:CreateButton(f, L["Open Guild OS"], 140, 26)
-        f.openBtn:SetPoint("BOTTOM", 0, 14)
+        f.openBtn = UI:CreateButton(f.foot or f, L["Open Guild OS"], 140, 24)
+        UI:SetButtonVariant(f.openBtn, "primary")
+        if f.foot then f.foot:Lay(f.openBtn) else f.openBtn:SetPoint("BOTTOM", 0, 14) end
         f.openBtn:SetScript("OnClick", function()
             f:Hide()
             GuildOS:ToggleRoster()
@@ -269,28 +449,86 @@ function Digest:Show(lines)
         self.frame = f
     end
 
-    -- (Re)populate the body
-    for _, c in pairs({ f.body:GetChildren() }) do c:Hide() end
-    for _, r in pairs({ f.body:GetRegions() }) do r:Hide() end
+    -- (Re)populate the body, on the parts the last showing made (memory audit): /gos digest shows it again.
+    self._bodyPool = self._bodyPool or NewPool()
+    local pool = self._bodyPool
+    pool.Begin()
+    local function text(key, size, col)
+        return pool.Take(key, function()
+            local t = UI:CreateText(f.body, "", size, col.r, col.g, col.b)
+            t:SetJustifyH("LEFT")
+            return t
+        end)
+    end
 
     local y = 0
     if #lines == 0 then
-        local empty = UI:CreateText(f.body, L["Nothing new since your last login."], 11, C.silver.r, C.silver.g, C.silver.b)
+        local empty = text("empty", 11, C.silver)
+        empty:SetText(L["Nothing new since your last login."])
         empty:SetPoint("TOPLEFT", 2, -y)
-        empty:SetWidth(f.body:GetWidth() - 4)
+        empty:SetWidth(UI:TextWidth(f.body, 4))
     else
-        for _, line in ipairs(lines) do
-            local dot = UI:CreateText(f.body, "|cffEDCC7B*|r", 12, C.gold.r, C.gold.g, C.gold.b)
-            dot:SetPoint("TOPLEFT", 2, -y)
-            local fs = UI:CreateText(f.body, line, 11, C.text.r, C.text.g, C.text.b)
-            fs:SetPoint("TOPLEFT", 18, -y)
-            fs:SetWidth(f.body:GetWidth() - 22)
-            fs:SetJustifyH("LEFT")
-            y = y + math.max(20, (fs:GetStringHeight() or 14) + 8)
+        -- Each line on a round glyph (the mockup's mural: a glyph, then the line). Built by Build, the lines come
+        -- by category (#449): a small header over each, its rows on its glyph in its colour. Lines from elsewhere
+        -- take their first letter on the metal.
+        local glyphs = UI.CreateGlyph ~= nil
+        local x = glyphs and 30 or 18
+        local groups = lines.groups
+        if not groups then groups = { { lines = lines } } end
+        for gi, grp in ipairs(groups) do
+            local color = grp.color and Digest.Color(grp.color) or (C.metal2 or C.gold)
+            if grp.title and #groups > 1 then
+                if gi > 1 then y = y + 4 end
+                local hc = C.gold2 or C.gold
+                local hd = text("heading", 11, hc)
+                hd:SetText(grp.title)
+                hd:SetPoint("TOPLEFT", 0, -y)
+                hd:SetWidth(UI:TextWidth(f.body, 4))
+                y = y + 18
+            end
+            for li, line in ipairs(grp.lines) do
+                if glyphs then
+                    local g = pool.Take("glyph", function() return UI:CreateGlyph(f.body, 22) end)
+                    g:SetPoint("TOPLEFT", 0, -y + 3)
+                    local plain = tostring(line):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+                    g:Set(grp.glyph or (plain:match("^[%z\1-\127\194-\244][\128-\191]*") or ""):upper(), color)
+                else
+                    local dot = text("dot", 12, C.label)
+                    dot:SetText("*")
+                    dot:SetPoint("TOPLEFT", 2, -y)
+                end
+                local fs = text("line", 11, C.text)
+                fs:SetText(line)
+                fs:SetPoint("TOPLEFT", x, -y)
+                -- Not f.body:GetWidth(): the body is placed by its anchors and reads 0 until the game lays it out, and
+                -- a text 34px less than that drew nothing (#449). TextWidth reads the anchors.
+                fs:SetWidth(UI:TextWidth(f.body, x + 4))
+                -- A recommendation opens its screen: a click anywhere on the line (pooled like the rest).
+                local act = grp.actions and grp.actions[li]
+                if act then
+                    local b = pool.Take("link", function()
+                        local btn = CreateFrame("Button", nil, f.body)
+                        btn:SetScript("OnClick", function(self2) Digest:OpenRecommendation(self2.open) end)
+                        btn:SetScript("OnEnter", function(self2)
+                            if not GameTooltip then return end
+                            GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+                            GameTooltip:AddLine(L["Click to open it in the Officers' Room."], 1, 1, 1, true)
+                            GameTooltip:Show()
+                        end)
+                        btn:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+                        return btn
+                    end)
+                    b.open = act
+                    b:SetPoint("TOPLEFT", fs, "TOPLEFT", -x, 4)
+                    b:SetPoint("BOTTOMRIGHT", fs, "BOTTOMRIGHT", 0, -4)
+                end
+                y = y + math.max(26, (fs:GetStringHeight() or 14) + 10)
+            end
         end
     end
+    pool.End()
     -- The title above and the button below: a long digest grows, never runs under the button.
-    f:SetHeight(math.max(280, 44 + y + 48))
+    f:SetHeight(math.max(240, f.top + y + f.bottom))
 
     f:Show()
     return f
@@ -328,6 +566,7 @@ function Digest:ShowOnLogin()
     end
 
     local lines = self:Build(since, { login = true })
+    if lines.staleDBs then GuildOS:MarkStaleGuildDBsTold(lines.staleDBs) end
     self:MarkFeedSeen(GetServerTime())
     if B then B:MarkSeen(GetServerTime()) end
     if GuildOS.Achievements then GuildOS.Achievements:MarkSeen() end
@@ -338,6 +577,7 @@ function Digest:ShowOnLogin()
     GuildOS.db.digest.lastSeen = GetServerTime()
     self.shownThisSession = true
     if #lines > 0 then
-        self:Show(lines)
+        -- Never in combat, one login popup at a time (audit B21).
+        GuildOS:ShowWhenClear("digest", function() return self:Show(lines) end)
     end
 end

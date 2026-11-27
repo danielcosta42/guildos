@@ -153,9 +153,9 @@ check(CM:GetPointsDB("Fresh").config.bossAward == 5, "and what the core set stay
 GuildOS.db.lootHistory = {}
 GuildOS.db.settings.modules = { lootTracker = false }
 LT:RecordMLAward({ itemLink = LINK, player = "Dee", timestamp = NOW, fromML = true })
-check(#GuildOS.db.lootHistory == 0, "switched off, the loot history records nothing")
+check(#GuildOS.db.lootHistory == 1, "switched off, the loot history still records (audit B17): the switch only hides it")
 GuildOS.db.settings.modules = { lootTracker = true }
 LT:RecordMLAward({ itemLink = LINK, player = "Dee", timestamp = NOW, fromML = true })
-check(#GuildOS.db.lootHistory == 1, "switched on, it records as before")
+check(#GuildOS.db.lootHistory == 2, "switched on, it records as before")
 
 print(("loot-undo: %d checks passed"):format(checks))

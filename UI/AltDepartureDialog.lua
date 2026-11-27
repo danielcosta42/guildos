@@ -4,8 +4,10 @@
 -- GuildOS's own windows (never a StaticPopup, #315). The removal one: remove the alts too (a queue of
 -- Bulk actions), ban the whole group (a term or permanent, a note for the officers) or nothing. The
 -- departure one: set an alt as the new main, unlink the group or keep it. The logic is AltDeparture's;
--- this file only lays it out and never removes, bans or relinks by itself.
+-- this file only lays it out and never removes, bans or relinks by itself. Also the one question about the
+-- player's own characters (#449, AltAutoDetect's), at the end.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
@@ -58,7 +60,7 @@ function GuildOS:ShowAltRemovedDialog(groups)
     if not f then
         f = frame("GuildOSAltRemovedDialog", 300)
         f.removeBtn = UI:CreateButton(f, L["Remove them too"], 150, 22)
-        f.banTitle = text(f, 9, C.gold)
+        f.banTitle = text(f, UI.SP.META, C.gold)
         f.banTitle:SetText(L["Or ban the whole group"])
         f.reasonLbl = text(f, 11, C.text)
         f.reasonLbl:SetText(L["Reason"])
@@ -66,13 +68,13 @@ function GuildOS:ShowAltRemovedDialog(groups)
         f.daysLbl = text(f, 11, C.text)
         f.daysLbl:SetText(L["days"])
         f.days = UI:CreateInput(f, 46, 22, { numeric = true, max = 4 })
-        f.daysHint = text(f, 9, C.silver)
+        f.daysHint = text(f, UI.SP.META, C.silver)
         f.daysHint:SetText(L["(empty: permanent)"])
-        f.noteLbl = text(f, 9, C.gold)
+        f.noteLbl = text(f, UI.SP.META, C.gold)
         f.noteLbl:SetText(L["Note (kept only on your client, never sent)"])
         f.note = UI:CreateInput(f, WIDTH - 28, 22, { max = GuildOS.BanList and GuildOS.BanList.SHARE_NOTE_MAX or 200 })
         f.banBtn = UI:CreateButton(f, L["Ban the group"], 150, 22)
-        f.result = text(f, 10, C.text)
+        f.result = text(f, UI.SP.META, C.text)
         f.result:SetWidth(WIDTH - 28)
         f.result:SetWordWrap(true)
         f.nothing = UI:CreateButton(f, L["Do nothing"], 110, 24)
@@ -140,6 +142,7 @@ function GuildOS:ShowAltRemovedDialog(groups)
         end
     end)
     f:Show()
+    return f
 end
 
 ----------------------------------------------------------------------
@@ -159,14 +162,21 @@ function GuildOS:ShowMainLeftDialog(info)
         f.keepBtn:SetPoint("BOTTOMRIGHT", -14, 12)
         f.keepBtn:SetScript("OnClick", function() f:Hide() end)
         f.unlinkBtn:SetPoint("RIGHT", f.keepBtn, "LEFT", -8, 0)
-        f.result = text(f, 10, C.text)
+        f.result = text(f, UI.SP.META, C.text)
         f.result:SetWidth(WIDTH - 28)
         leftDialog = f
     end
     local others = info.others
     f.title:SetText(L["A main left the guild"])
-    f.body:SetText(string.format(L["%s left and still has %d alt(s) in the guild: %s. Did the main change?"],
+    -- A main found gone at login (#449), not seen leaving: Keep is for good on this client.
+    f.body:SetText(string.format(info.orphan
+        and L["%s is not in the guild any more and still has %d alt(s) in it: %s. Did the main change?"]
+        or L["%s left and still has %d alt(s) in the guild: %s. Did the main change?"],
         info.name, #others, AD.ColoredNames(others)))
+    f.keepBtn:SetScript("OnClick", function()
+        if info.orphan and AD.KeepOrphan then AD:KeepOrphan(info.key) end
+        f:Hide()
+    end)
     local bodyH = math.ceil(f.body:GetStringHeight() or 14)
     f.pick:ClearAllPoints(); f.pick:SetPoint("TOPLEFT", 14, -34 - bodyH - 12)
     f.setBtn:ClearAllPoints(); f.setBtn:SetPoint("LEFT", f.pick, "RIGHT", 10, 0)
@@ -207,4 +217,134 @@ function GuildOS:ShowMainLeftDialog(info)
         done(ok, why, L["The alts are unlinked."])
     end)
     f:Show()
+    return f
+end
+
+----------------------------------------------------------------------
+-- Your own characters (#449): the one question AltAutoDetect asks for every undecided character of the account,
+--   "These characters are on your account: A, B, C." / "Link them as alts of [main]"
+--   Link all · Choose... (a tick per character, then Link selected) · Not now · Don't ask again
+-- The close and Escape are a Not now. The logic (what to ask, what an answer keeps) is AltAutoDetect's.
+----------------------------------------------------------------------
+local promptDialog
+local PROMPT_W = 540
+local CHECK_H = 22
+
+-- The account's record of a key (class, name), read the way the plan keys it (WoW: Forever, #97).
+local function accountInfo(key)
+    for k, info in pairs(type(GuildOSDB) == "table" and GuildOSDB.accountChars or {}) do
+        if type(info) == "table" and GuildOS:LocalMemberKey(k) == key then return info end
+    end
+    return nil
+end
+
+local function charLine(key)
+    local info = accountInfo(key)
+    local name = (info and info.name) or (key:match("^([^-]+)") or key)
+    return { key = key, name = name, class = info and info.class }
+end
+
+function GuildOS:ShowAltPrompt(plan, manual)
+    local AAD = GuildOS.AltAutoDetect
+    if not AAD or type(plan) ~= "table" or type(plan.list) ~= "table" or #plan.list == 0 then return nil end
+    local Kit = GuildOS.Kit
+    local f = promptDialog
+    if not f then
+        f = Kit:Float(L["Your characters"], {
+            name = "GuildOSAltPrompt", width = PROMPT_W, height = 200, foot = true,
+            onClose = function(fr) fr:Hide() end,
+        })
+        f.text = text(f.body, UI.SP.BODY, C.text)
+        f.text:SetPoint("TOPLEFT", 0, -2)
+        f.text:SetWidth(PROMPT_W - 2 * Kit.PAD)
+        f.text:SetWordWrap(true)
+        f.checks = {}
+        f.asLbl = text(f.body, UI.SP.BODY, C.text)
+        f.asLbl:SetText(L["Link them as alts of"])
+        f.pick = UI:CreateDropdown(f.body, 180, 22)
+        f.linkBtn = UI:SetButtonVariant(UI:CreateButton(f.foot, L["Link all"], 110, UI.SP.FIELD), "primary")
+        f.chooseBtn = UI:CreateButton(f.foot, L["Choose..."], 90, UI.SP.FIELD)
+        f.laterBtn = UI:CreateButton(f.foot, L["Not now"], 80, UI.SP.FIELD)
+        f.neverBtn = UI:CreateButton(f.foot, L["Don't ask again"], 120, UI.SP.FIELD)
+        f.laterBtn:SetScript("OnClick", function() f:Hide() end)
+        promptDialog = f
+    end
+    f.plan, f.choosing = plan, false
+
+    -- The characters linked under the main picked (AltAutoDetect.Candidates): picking another main lists the one
+    -- suggested instead. One tick each, shown under Choose...; a tick taken off stays off while the window is up.
+    local lines = {}
+    f.unticked = {}
+    local function fill()
+        lines = {}
+        for i, k in ipairs(AAD.Candidates(plan, f.pick:GetValue() or plan.main)) do lines[i] = charLine(k) end
+        f.text:SetText(string.format(L["These characters are on your account: %s."], GuildOS.AltDeparture
+            and GuildOS.AltDeparture.ColoredNames(lines) or ""))
+        for _, cb in ipairs(f.checks) do cb:Hide() end
+        for i, m in ipairs(lines) do
+            local cb = f.checks[i]
+            if not cb then
+                cb = UI:CreateCheckbox(f.body, "", CHECK_H)
+                f.checks[i] = cb
+                cb.checkbox.onChanged = function(box, on) if box.key then f.unticked[box.key] = not on or nil end end
+            end
+            cb.checkbox.key = m.key
+            cb.label:SetText(m.name)
+            cb.checkbox:SetChecked(not f.unticked[m.key])
+        end
+    end
+
+    local opts = {}
+    for i, k in ipairs(plan.choices) do opts[i] = { value = k, text = charLine(k).name } end
+    f.pick:SetOptions(opts)
+    f.pick:SetValue(plan.main)
+    fill()
+
+    local function layout()
+        local y = -2 - math.ceil(f.text:GetStringHeight() or 14) - 10
+        for i, cb in ipairs(f.checks) do
+            cb:ClearAllPoints()
+            if f.choosing and lines[i] then
+                cb:SetPoint("TOPLEFT", 0, y)
+                cb:Show()
+                y = y - CHECK_H
+            else
+                cb:Hide()
+            end
+        end
+        if f.choosing then y = y - 6 end
+        f.asLbl:ClearAllPoints(); f.asLbl:SetPoint("TOPLEFT", 0, y - 4)
+        f.pick:ClearAllPoints(); f.pick:SetPoint("LEFT", f.asLbl, "RIGHT", 8, 0)
+        y = y - 22 - 10
+        f:SetHeight(Kit.HEADER_H + 8 - y + Kit.FOOT_H + 4)
+        f.linkBtn.label:SetText(f.choosing and L["Link selected"] or L["Link all"])
+        f.chooseBtn:SetShown(not f.choosing and #lines > 1)
+        for _, b in ipairs({ f.linkBtn, f.chooseBtn, f.laterBtn, f.neverBtn }) do
+            b:SetWidth(math.ceil(b.label:GetStringWidth() or 60) + 24)   -- to its label, in every language
+        end
+        f.foot:Lay(f.linkBtn, f.chooseBtn, f.laterBtn, f.neverBtn)
+    end
+
+    f.chooseBtn:SetScript("OnClick", function() f.choosing = true; layout() end)
+    f.pick.onSelect = function() fill(); layout() end
+    f.linkBtn:SetScript("OnClick", function()
+        local picked
+        if f.choosing then
+            picked = {}
+            for i, cb in ipairs(f.checks) do
+                if lines[i] and cb.checkbox:GetChecked() then picked[cb.checkbox.key] = true end
+            end
+        end
+        f:Hide()
+        AAD:Accept(plan, f.pick:GetValue() or plan.main, picked)
+    end)
+    f.neverBtn:SetScript("OnClick", function()
+        f:Hide()
+        AAD:Decline(plan)
+    end)
+    -- Asked for (Detect my alts, /gos myalts): nothing counts as asked, so it closes rather than waits.
+    f.laterBtn.label:SetText(manual and L["Close"] or L["Not now"])
+    layout()
+    f:Show()
+    return f
 end

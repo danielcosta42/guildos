@@ -11,6 +11,7 @@
 --     until Escape, another Shift+click on the same member, or a Shift+click on another one.
 -- And the editor of the member's sheet (GuildOS:ShowOfficerSheetEditor). The data is OfficerNotes'.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
@@ -29,12 +30,31 @@ local GREY = { r = 0.5, g = 0.5, b = 0.5 }
 ----------------------------------------------------------------------
 -- The index (one per roster refresh)
 ----------------------------------------------------------------------
---- A new index on `links` ([altKey] = mainKey, flat): who is whose alt, both ways, alts sorted by key.
-function RosterCard.NewIndex(links)
-    local idx = { links = type(links) == "table" and links or {}, altsOf = {}, byKey = {} }
+--- A new index on `links` ([altKey] = mainKey, flat): who is whose alt, both ways, alts sorted by key. `into`: the
+--- last refresh's index, emptied and filled again with its own tables (memory audit, memoria.md: a table a member
+--- and one a main each refresh); without it, a new one.
+function RosterCard.NewIndex(links, into)
+    local idx = into
+    if idx then
+        idx.links = type(links) == "table" and links or {}
+        idx.pool, idx.lists = idx.pool or {}, idx.lists or {}
+        for k in pairs(idx.pool) do idx.pool[k] = nil end   -- only the last refresh's rows wait for reuse
+        for k, row in pairs(idx.byKey) do idx.pool[k], idx.byKey[k] = row, nil end
+        for main, list in pairs(idx.altsOf) do
+            for i = #list, 1, -1 do list[i] = nil end
+            idx.lists[#idx.lists + 1], idx.altsOf[main] = list, nil
+        end
+    else
+        idx = { links = type(links) == "table" and links or {}, altsOf = {}, byKey = {} }
+    end
     for alt, main in pairs(idx.links) do
         local list = idx.altsOf[main]
-        if not list then list = {}; idx.altsOf[main] = list end
+        if not list then
+            local spare = idx.lists
+            list = spare and spare[#spare] or {}
+            if spare then spare[#spare] = nil end
+            idx.altsOf[main] = list
+        end
         list[#list + 1] = alt
     end
     for _, list in pairs(idx.altsOf) do table.sort(list) end
@@ -43,7 +63,11 @@ end
 
 --- One roster line into the index: its name, class file and whether it is online.
 function RosterCard.IndexRow(idx, key, name, class, online)
-    if idx and key then idx.byKey[key] = { name = name, class = class, online = online and true or false } end
+    if not (idx and key) then return end
+    local row = idx.pool and idx.pool[key]
+    if row then idx.pool[key] = nil else row = {} end
+    row.name, row.class, row.online = name, class, online and true or false
+    idx.byKey[key] = row
 end
 
 local function short(key) return (key:match("^([^-]+)") or key) end
@@ -134,6 +158,13 @@ function RosterCard:AddLines(tip, data, idx)
         local days = MH:TenureDays(key)
         local when = (est and "~" or "") .. GuildOS:DateText(joinedAt, "/%Y")
         add(tip, string.format(L["Joined %s, %s days in the guild"], when, days and tostring(days) or "?"), C.silver)
+    end
+
+    -- The permanent note the officers keep with the history (#449, specs/salao/saidas.md).
+    local pnote = MH and MH.NoteFor and MH:NoteFor(key)
+    if pnote then
+        add(tip, string.format(L["Permanent note (%s): %s"], GuildOS:SanitizeUserText(pnote.author or "?", 40),
+            GuildOS:SanitizeUserText(pnote.text, 300)), C.gold, true)
     end
 
     -- The game's officer note.
@@ -236,7 +267,7 @@ local function buildEditor()
     local close = UI:CreateCloseButton(f)
     close:SetPoint("TOPRIGHT", -6, -6)
     close:SetScript("OnClick", function() f:Hide() end)
-    f.hint = UI:CreateText(f, L["Only officers receive and see it. Never sent to the website."], 9,
+    f.hint = UI:CreateText(f, L["Only officers receive and see it. Never sent to the website."], UI.SP.META,
         C.textDim.r, C.textDim.g, C.textDim.b)
     f.hint:SetPoint("TOPLEFT", 14, -34)
 
@@ -264,9 +295,9 @@ local function buildEditor()
     well:SetScript("OnMouseDown", function() edit:SetFocus() end)
     f.edit = edit
 
-    f.count = UI:CreateText(f, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    f.count = UI:CreateText(f, "", UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
     f.count:SetPoint("BOTTOMLEFT", 14, 32)
-    f.byline = UI:CreateText(f, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    f.byline = UI:CreateText(f, "", UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
     f.byline:SetPoint("BOTTOMRIGHT", -14, 32)
     edit:SetScript("OnTextChanged", function(self)
         local n = GuildOS:Utf8Len(self:GetText() or "")
@@ -296,7 +327,9 @@ function GuildOS:ShowOfficerSheetEditor(key, name)
     local f = RosterCard.editor or buildEditor()
     RosterCard.editor = f
     f.key, f.name = key, name or short(key)
-    f.title:SetText(string.format(L["Officer sheet: %s"], f.name))
+    GuildOS:SetTitleText(f.title, string.format(L["Officer sheet: %s"], f.name))
+    -- WoW: Forever: the sheet stays on this client (audit B11).
+    f.hint:SetText(self:LocalOnlyText() or L["Only officers receive and see it. Never sent to the website."])
     local sheet = self.OfficerNotes:GetSheet(key)
     f.edit:SetText(sheet and sheet.text or "")
     f.byline:SetText(sheet and string.format(L["Last edited by %s on %s"], sheet.author or "?",

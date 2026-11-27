@@ -113,6 +113,22 @@ check(M.Match(cjk, folded, words, nil, 0), "a CJK word is any stretch of the lin
 local defaults = M.DefaultRules()
 check(#defaults >= 10 and M:GetRules()[1].p == defaults[1].p, "the default list before any officer chose one")
 for _, r in ipairs(defaults) do check(M.CleanRule(r), "every default cleans: " .. r.p) end
+-- The audit's calibration: no default link words (B1, the anti-flood has links), offence logs, poaching alerts (B2).
+local sevOf = {}
+for _, r in ipairs(defaults) do
+  check(r.cat ~= "link", "no default link word: " .. r.p)
+  sevOf[r.cat] = r.sev
+end
+check(sevOf.offense == "low" and sevOf.poaching == "med" and sevOf.trade == "high", "offence low, poaching medium, trade high")
+-- None of the languages' defaults flags the guild's own recruiting nor "burro".
+for _, loc in ipairs({ "ptBR", "zhCN", "zhTW", "koKR" }) do
+  local src = io.open(ADDON .. "/Locales/" .. loc .. ".lua"):read("*a")
+  local line = src:match('L%["join my guild, join our guild, come to my guild, leave this guild"%] = "([^"]*)"') or ""
+  check(not line:find("recrutando", 1, true) and not line:find("招人", 1, true) and not line:find("길드원 모집", 1, true),
+        loc .. ": no recruiting phrase among the poaching defaults")
+  local off = src:match('L%["idiot, moron, stupid, imbecile"%] = "([^"]*)"') or ""
+  check(not off:find("burro", 1, true), loc .. ": no \"burro\" among the offence defaults")
+end
 
 -- ── Alerts ──────────────────────────────────────────────────────────────
 chatLog[#chatLog + 1] = { n = "Jaina", m = "hello" }
@@ -225,6 +241,22 @@ local n = #M:Feed()
 say("Thrall", "sell gold")
 check(#M:Feed() == n, "and with it nothing fires")
 check(M:RestoreDefaults() and #M:GetRules() == #defaults, "the defaults come back")
+-- Severity per rule (B5).
+check(M:SetRuleSeverity(1, "high") and M:GetRules()[1].sev == "high", "an officer sets one rule's severity")
+check(select(2, M:SetRuleSeverity(1, "loud")) == "severity" and select(2, M:SetRuleSeverity(999, "low")) == "missing",
+      "a bad severity or a missing rule is refused")
+check(M.NextSeverity("low") == "med" and M.NextSeverity("med") == "high" and M.NextSeverity("high") == "low", "the click goes round")
+check(M:SetRuleSeverity(1, defaults[1].sev), "and back")
+-- One shared list (B5): the first save seeds this officer's defaults as the guild's list; once there is one, never again.
+do
+  local keepRules, keepAt = s.modAlertRules, s.modAlertRulesAt
+  s.modAlertRules, s.modAlertRulesAt = nil, nil
+  local before = #sent
+  check(M:SeedShared() and M:IsCustomList() and #s.modAlertRules == #defaults, "the first save seeds the shared list")
+  check(#sent > before and sent[before + 1].act == "modrules", "and sends it to the officers")
+  check(not M:SeedShared(), "seeded once only")
+  s.modAlertRules, s.modAlertRulesAt = keepRules, keepAt
+end
 officer = false
 check(not M:AddRule("x1x", "custom", "low") and not M:RemoveRule(1), "a member edits nothing")
 officer = true
@@ -278,4 +310,35 @@ check(M.Match(zh, f2, w2, nil, 0) ~= nil, "a Chinese rule matches inside a line 
 local acc = M.Compile({ { p = "pão%d", cat = "custom", sev = "low", lua = true } })
 local f3, w3 = M.Prepare("PÃO5")
 check(M.Match(acc, f3, w3, nil, 0) ~= nil, "a pattern's accents are folded as the line's")
+-- The plain-language helper: no officer has to write a Lua pattern.
+do
+  local function catches(mode, text, line)
+    local p, isLua, kind = M.FromMode(mode, text)
+    local r = M.CleanRule({ p = p, cat = "custom", sev = "med", lua = isLua or nil, k = kind })
+    if not r then return nil end
+    local folded, words = M.Prepare(line)
+    return M.Match(M.Compile({ r }), folded, words) ~= nil, r
+  end
+  check(catches("word", "gold", "buy gold now") and not catches("word", "gold", "my golden axe"), "whole word: gold, not golden")
+  check(catches("part", "gold", "my golden axe") and catches("part", "gold", "GOLDSELLER here"), "inside other words: golden, goldseller")
+  check(catches("part", "1.5k", "only 1.5k each") and not catches("part", "1.5k", "only 105k each"), "inside words: a dot is a real dot")
+  for _, line in ipairs({ "g o l d", "g.o.l.d cheap", "G-O-L-D", "gold" }) do
+    check(catches("spaced", "gold", line), "spaced or with symbols catches " .. line)
+  end
+  check(not catches("spaced", "gold", "go lead"), "spaced: not other letters between")
+  local _, r = catches("spaced", "gold", "gold")
+  check(r.k == "spaced" and M.Describe(r) == "gold", "the list reads a spaced rule back as its word")
+  _, r = catches("part", "wts.", "x")
+  check(r.k == "part" and M.Describe(r) == "wts.", "and a part rule as its text")
+  check(select(2, catches("spaced", "\208\183\208\190\208\187", "x")).k == "part", "a Cyrillic word falls back to inside other words")
+  for _, tp in ipairs(M.TEMPLATES) do
+    check(M.CleanRule({ p = tp.p, cat = "custom", sev = "med", lua = true }) ~= nil, "the ready-made " .. tp.id .. " is a valid rule")
+    check(M.Describe({ p = tp.p, lua = true }) == tp.text, "and reads as its description")
+  end
+  check(catches("lua", "%d%d%d+ ?g", "selling 500g") and catches("lua", "%d%d%d+ ?g", "1000 gold cheap"), "the gold price catches 500g and 1000 gold")
+  check(catches("lua", "discord%.gg", "join discord.gg/abc"), "the Discord invite")
+  local back = M.ValidRules({ { p = "g%W?o%W?l%W?d", cat = "custom", sev = "med", lua = true, k = "spaced" }, { p = "x", cat = "custom", sev = "med", k = "spaced" } })
+  check(back[1].k == "spaced" and back[2].k == nil, "the kind survives the sync, only on a pattern")
+end
+
 print(("mod-alerts: %d checks passed"):format(checks))

@@ -278,6 +278,7 @@ do
   UI.CreateTextArea = function() local f = new(); f.edit = new(); return f end
   UI.CreateTab = function() local f = new(); function f:SetActive() end; return f end
   GuildOS.UI = UI
+  dofile(ADDON .. "/UI/Spacing.lua"); UI.SP = GuildOS.Spacing   -- the spacing standard (#449)
   GuildOS.Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1 } end })
   GuildOS.QualityColors = GuildOS.Colors
   GuildOS.L = setmetatable({}, { __index = function(_, k) return k end })

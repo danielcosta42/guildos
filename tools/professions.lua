@@ -205,6 +205,18 @@ GuildOS.db = { members = {}, settings = {} }
 dofile(ADDON .. "/Modules/Professions.lua")
 local P = GuildOS.Professions
 check(P ~= nil, "Professions exists on Forever")
+-- The recipe tracker's readers (memoria.md): no per-member copy, the lists read through RecipesOf.
+strlower = strlower or string.lower
+dofile(ADDON .. "/Modules/RecipeTracker.lua")
+local RTX = GuildOS.RecipeTracker
+local function projected(key, prof)
+  local out
+  for _, sid, iid, name in RTX:RecipesOf(key, prof) do
+    out = out or {}
+    out[#out + 1] = { spellId = sid, itemId = iid, name = name }
+  end
+  return out
+end
 local ME = P.OwnKey()
 check(ME == "Ana Silva-Classic Beta PvE 2", "my key is my whole name and the client's realm: " .. tostring(ME))
 
@@ -231,9 +243,14 @@ local legacy = P:LegacyList(ME)
 check(#legacy == 2 and legacy[1].name == "Cooking" and legacy[2].name == "Mining" and legacy[2].rank == 21
       and legacy[2].maxRank == 75 and legacy[2].isPrimary == true and legacy[1].isPrimary == false,
       "the adapter writes DataCollector's shape, canonical English names")
-local mine = GuildOS.db.recipes[ME].Mining
-check(mine and mine[1].spellId == 2657 and mine[1].itemId == 2840 and mine[1].name == "Spell 2657",
-      "the adapter writes the recipe tracker's shape, localized name and output item")
+local mine = projected(ME, "Mining")
+check(mine and mine[1].spellId == 2657 and mine[1].itemId == 2840 and mine[1].name == nil and GuildOS.db.recipes == nil,
+      "the recipe tracker reads the spell and its output item, no copy kept")
+local idx = RTX:BuildRecipeIndex()
+local found
+for _, e in ipairs(idx) do if e.spellId == 2657 then found = e end end
+check(found and found.name == "Spell 2657" and found.itemId == 2840 and found.profName == "Mining",
+      "and names it with the client's spell name")
 SLOTS[2], PROFS[4], KNOWN[9788], KNOWN[9950] = 4, { "Ferraria", 210, 300, 164 }, true, true
 fire("SKILL_LINES_CHANGED")
 runTimers()
@@ -259,7 +276,7 @@ rec = GuildOS.db.professions[ME]
 check(rec.profs[186].extra[1] == 999001 and rec.profs[186].n == 3
       and rec.profs[186].h == P.Hash({ 2657, 3304 }, { 999001 }),
       "the own window adds a learned recipe the catalog lacks as extra")
-check(GuildOS.db.recipes[ME].Mining[3].spellId == 999001, "an extra recipe reaches the recipe tracker too")
+check(projected(ME, "Mining")[3].spellId == 999001, "an extra recipe reaches the recipe tracker too")
 WINDOW = { line = 186, linked = true, all = { 888001 }, learned = { 888001 } }
 fire("TRADE_SKILL_LIST_UPDATE")
 runTimers()
@@ -270,7 +287,7 @@ GuildOS.ProfCatalog.recipes[999001] = { 186, 1, 2, 0, 0, 0, 0, 0, 0, 1, 0, 0, {}
 table.insert(GuildOS.ProfCatalog.byLine[186], 999001)
 P:Scan()
 rec = GuildOS.db.professions[ME]
-check(#rec.profs[186].extra == 0 and rec.profs[186].recipes[3] == 999001 and #GuildOS.db.recipes[ME].Mining == 3,
+check(#rec.profs[186].extra == 0 and rec.profs[186].recipes[3] == 999001 and #projected(ME, "Mining") == 3,
       "an extra the regenerated catalog lists becomes a plain recipe, listed once")
 GuildOS.ProfCatalog.recipes[999001] = nil
 table.remove(GuildOS.ProfCatalog.byLine[186])
@@ -370,31 +387,29 @@ check(GuildOS.db.professions[BOB].profs[186].recipes == nil, "malformed lists ar
 deliver("list", { l = 186, h = h1, r = { 2657 }, x = {} }, "Bob")
 check(GuildOS.db.professions[BOB].profs[186].recipes[1] == 2657 and P:KnowsRecipe(BOB, 2657)
       and #P:CraftersOf(2657) == 2, "a list matching the summary is stored and indexed")
-check(GuildOS.db.recipes[BOB].Mining[1].itemId == 2840, "and reaches the recipe tracker's shape")
+check(projected(BOB, "Mining")[1].itemId == 2840, "and reaches the recipe tracker's readers")
 check(P:ApplyList(BOB, 186, h1, { 2657 }, {}) == false, "a list already held is not applied twice")
 local h2 = P.Hash({ 2657, 3304 })
 sent = {}
 deliver("sum", { p = { [186] = { r = 52, m = 75, h = h2, n = 2 } } }, "Bob")
-check(GuildOS.db.professions[BOB].profs[186].recipes == nil and GuildOS.db.recipes[BOB]
-      and #GuildOS.db.recipes[BOB].Mining == 1
+check(GuildOS.db.professions[BOB].profs[186].recipes == nil and projected(BOB, "Mining")
+      and #projected(BOB, "Mining") == 1
       and P:KnowsRecipe(BOB, 2657), "while a changed list is on its way the previous one still stands")
 deliver("list", { l = 186, h = h2, r = { 2657, 3304 }, x = {} }, "Bob")
-check(#GuildOS.db.recipes[BOB].Mining == 2 and GuildOS.db.professions[BOB].profs[186].stale == nil,
+check(#projected(BOB, "Mining") == 2 and GuildOS.db.professions[BOB].profs[186].stale == nil,
       "the new list replaces it")
 runTimers()
 check(#sentOf("req") == 0, "a list that arrived meanwhile is not asked for")
 local CID = GuildOS:GetPlayerKey("Cid")
 GuildOS.db.professions[CID] = { src = "addon", ts = NOW, profs = { [185] = { rank = 5, max = 75, h = 1, n = 1,
   recipes = {}, extra = { 2538 } } } }
-P:Project(CID)
-check(GuildOS.db.recipes[CID].Cooking[1].itemId == 2679, "an extra this client's catalog knows keeps its output item")
+check(projected(CID, "Cooking")[1].itemId == 2679, "an extra this client's catalog knows keeps its output item")
 GuildOS.db.professions[CID] = nil
-P:Project(CID)
-local projected, realProject = 0, P.Project
-P.Project = function(self, key) projected = projected + 1; return realProject(self, key) end
+local changedN, realChanged = 0, P.Changed
+P.Changed = function(self, key) changedN = changedN + 1; return realChanged(self, key) end
 deliver("sum", { p = { [186] = { r = 52, m = 75, h = h2, n = 2 } } }, "Bob")
-check(projected == 0, "a summary with nothing new rebuilds nothing")
-P.Project = realProject
+check(changedN == 0, "a summary with nothing new rebuilds nothing")
+P.Changed = realChanged
 local before = GuildOS.db.professions[BOB].profs[186].rank
 deliver("sum", { p = { [186] = { r = "x", m = 75, h = h1, n = 1 } } }, "Bob")
 deliver("sum", { p = { [999] = { r = 1, m = 75, h = h1, n = 1 } } }, "Bob")
@@ -444,7 +459,7 @@ check(type(own) == "table" and #own == 2 and own[2].name == "Mining", "CollectPr
 GuildOS.db.members[ME], GuildOS.db.professions[ME], P.scanned = nil, nil, false
 check(#DC:CollectProfessions() == 2, "and scans first when the login scan has not run, never empty")
 GuildOS.db.myData = { name = "Ana Silva", realm = "Classic Beta PvE 2", lastUpdate = NOW }
-check(GuildOS.db.recipes[ME] ~= nil and DC:GetBroadcastData().recipes == nil,
+check(projected(ME, "Mining") ~= nil and DC:GetBroadcastData().recipes == nil,
       "the member broadcast carries no recipes on Forever")
 local reminded = false
 GuildOS.ShowProfessionReminder = function() reminded = true end
@@ -463,7 +478,7 @@ check(GuildOS.db.members[DEE].professions == nil and dee.professions and dee.pro
       "a broadcast from a version that sends no professions does not hide the roster's")
 -- Whoever leaves goes with it, on the roster update, with no button (issue #203).
 local CID = GuildOS:GetPlayerKey("Cid")
-GuildOS.db.recipes[GONE] = { Alchemy = { { name = "Elixir", spellId = 2329 } } }   -- no professions record
+GuildOS.db.recipeIds = { [GONE] = { Alchemy = { h = 1, 2329, 0 } } }   -- no professions record
 GuildOS.db.firstSeen = { [DEE] = NOW, [CID] = NOW }
 GuildOS.db.guildWishlists = { dee = { name = "Dee" }, cid = { name = "Cid" }, ["ana silva"] = { name = "Ana Silva" } }
 GuildOS.db.officerNotes = { [DEE] = "kept" }
@@ -471,21 +486,21 @@ local PUG = GuildOS:GetPlayerKey("Pug")
 GuildOS.db.members[PUG] = { name = "Pug", spec = { specID = 62 } }   -- inspected, never published
 ROSTER = {}
 fire("GUILD_ROSTER_UPDATE")
-check(GuildOS.db.recipes[GONE] and GuildOS.db.members[DEE], "a roster that has not loaded drops nobody")
+check(GuildOS.db.recipeIds[GONE] and GuildOS.db.members[DEE], "a roster that has not loaded drops nobody")
 ROSTER = { "Ana Silva", "Cid" }
 local count = GetNumGuildMembers
 GetNumGuildMembers = function() return 3 end   -- a row the client did not answer
 fire("GUILD_ROSTER_UPDATE")
-check(GuildOS.db.recipes[GONE] and GuildOS.db.members[DEE], "a roster with a row missing drops nobody")
+check(GuildOS.db.recipeIds[GONE] and GuildOS.db.members[DEE], "a roster with a row missing drops nobody")
 GetNumGuildMembers = count
 ON_GUILD_DB = false
 fire("GUILD_ROSTER_UPDATE")
-check(GuildOS.db.recipes[GONE] and GuildOS.db.members[DEE], "another guild's db is never read against this roster")
+check(GuildOS.db.recipeIds[GONE] and GuildOS.db.members[DEE], "another guild's db is never read against this roster")
 ON_GUILD_DB = true
 fire("GUILD_ROSTER_UPDATE")
-check(GuildOS.db.professions[BOB] == nil and GuildOS.db.recipes[BOB] == nil and GuildOS.db.professions[ME],
+check(GuildOS.db.professions[BOB] == nil and projected(BOB, "Mining") == nil and GuildOS.db.professions[ME],
       "a member who left loses the profession record and its projection")
-check(GuildOS.db.recipes[GONE] == nil, "recipes with no profession record go too")
+check(GuildOS.db.recipeIds[GONE] == nil, "recipes with no profession record go too")
 check(GuildOS.db.members[DEE] == nil and GuildOS.db.firstSeen[DEE] == nil and GuildOS.db.firstSeen[CID],
       "the member row and first-seen go, a guildmate's stay")
 local wl = GuildOS.db.guildWishlists

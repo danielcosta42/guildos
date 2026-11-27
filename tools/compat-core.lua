@@ -440,7 +440,7 @@ end
 
 talents(true); skills(true)
 local d = DC:CollectMyData()
-check(d.spec and d.spec.treeIndex == 2 and d.professions and #d.professions == 1 and d.gear[1].name == "Hood",
+check(d.spec and d.spec.treeIndex == 2 and d.professions and #d.professions == 1 and GuildOS:MemberGear(d)[1].name == "Hood",
       "with every API: spec, professions and gear are collected")
 check(#bagReads == 10 and bagReads[10] == "4:2", "the resistance scan reads every slot of the five bags through Compat")
 local b = DC:GetBroadcastData()
@@ -449,14 +449,14 @@ check(type(b.professions) == "table" and #b.professions == 1 and b.absent == nil
 
 skills(false)
 d = DC:CollectMyData()
-check(d.professions == nil and d.spec and d.gear[1].name == "Hood", "no skill-line API: professions absent, the rest collected")
+check(d.professions == nil and d.spec and GuildOS:MemberGear(d)[1].name == "Hood", "no skill-line API: professions absent, the rest collected")
 b = DC:GetBroadcastData()
 check(b.professions == nil and b.gear ~= nil and b.absent and b.absent.professions and not b.absent.spec,
       "the broadcast leaves the professions field out and names it as absent")
 
 talents(false)
 d = DC:CollectMyData()
-check(d.spec == nil and not DC._snapshotIncomplete and d.gear[1].name == "Hood" and d.absent.spec and d.absent.professions,
+check(d.spec == nil and not DC._snapshotIncomplete and GuildOS:MemberGear(d)[1].name == "Hood" and d.absent.spec and d.absent.professions,
       "no talent API: the saved spec is removed, no re-collect is waited for, gear still collected, both named absent")
 
 GetNumTalentTabs = function() return 0 end   -- the API is there; the talents have not loaded yet
@@ -495,9 +495,18 @@ check(GuildOS.db.members[bobKey].spec == nil and GuildOS.db.members[bobKey].prof
 DC:StoreReceivedData(bobKey, { name = "Bob", class = "PRIEST", lastUpdate = 3, spec = { tree = "Shadow" }, professions = {} })
 check(GuildOS.db.members[bobKey].spec.tree == "Shadow" and type(GuildOS.db.members[bobKey].professions) == "table"
       and GuildOS.db.members[bobKey].absent == nil, "a later broadcast with both fields restores them and clears the marker")
+-- Stats the sender's game hid this time (secret on WoW: Forever) keep the last values heard (#449).
+DC:StoreReceivedData(bobKey, { name = "Bob", class = "PRIEST", lastUpdate = 4, stats = { health = 900, mana = 1000, strength = 40, spirit = 90 } })
+DC:StoreReceivedData(bobKey, { name = "Bob", class = "PRIEST", lastUpdate = 5, stats = { health = 950, mana = 1100 } })
+local bs = GuildOS.db.members[bobKey].stats
+check(bs.health == 950 and bs.mana == 1100 and bs.strength == 40 and bs.spirit == 90,
+      "a sync without the attributes keeps the ones heard before, and takes the new health and mana")
 
 local SC = GuildOS.SpecChecker
 local tabInspect
+-- Only a guildmate's record takes an inspect (audit R2): Bob is on the roster.
+function GetNumGuildMembers() return 1 end
+function GetGuildRosterInfo(i) if i == 1 then return bobKey end end
 GetNumTalentTabs = function(inspect) tabInspect = inspect; return 3 end
 GetNumTalents = function() return 2 end
 GetTalentInfo = function(tab, i, inspect)

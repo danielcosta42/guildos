@@ -157,10 +157,14 @@ function GuildOS:IsOnGuildDB() return onGuildDB end
 -- The real audit: the export asks it which slot needs an enchant, as the member sheet does (issue #182).
 dofile(ADDON .. "/Modules/GearAudit.lua")
 
+-- The real roll-up of a night's snapshots (audit R5): the export reads presence through it.
+dofile(ADDON .. "/Modules/RaidTracker.lua")
+local realRT = GuildOS.RaidTracker
 GuildOS.RaidTracker = {
   GetAttendance25ManPercent = function(_, key)
     return ({ ["Chehul-Firemaw"] = 92, ["Fulano-Firemaw"] = 78 })[key] or 0
   end,
+  RollUp = realRT.RollUp, MergeRolls = realRT.MergeRolls,
 }
 
 GuildOS.AttunementTracker = {
@@ -219,6 +223,7 @@ GuildOS.LootTracker = {
 }
 
 dofile(ADDON .. "/Libs/LibDeflate.lua")
+dofile(ADDON .. "/Modules/AltRoster.lua")   -- which alt group runs GuildOS (addonOnAccount)
 dofile(ADDON .. "/Modules/CompanionExport.lua")
 
 -- The payload says which game the client is, so the site can build a Forever guild's
@@ -451,6 +456,32 @@ do
   by, json = lines()
   for key in pairs(by) do assert(noMain(by, json, key), "a link that links nobody sends no main for " .. key) end
   GuildOS.db.altLinks = nil
+
+  -- The addon on the account (Discord #general: alts read as "no addon"): `addonOnAccount` true on every character
+  -- of a group where one runs GuildOS; `lastUpdate` stays each character's own; absent for the rest.
+  local mem = GuildOS.db.members
+  local keepF, keepC = mem["Fulano-Firemaw"], mem["Chehul-Firemaw"]
+  mem["Fulano-Firemaw"] = nil
+  mem["Chehul-Firemaw"] = mem["Chehul-Firemaw"] or {}
+  local keepAt = mem["Chehul-Firemaw"].lastUpdate
+  mem["Chehul-Firemaw"].lastUpdate = 1700000000
+  GuildOS.db.altLinks = { ["Fulano-Firemaw"] = "Chehul-Firemaw" }
+  by, json = lines()
+  assert(by["Fulano-Firemaw"].addonOnAccount == true and by["Fulano-Firemaw"].lastUpdate == 0,
+    "an alt whose main runs GuildOS: the account has it, its own lastUpdate still 0")
+  assert(json["Fulano-Firemaw"]:find('"addonOnAccount":true', 1, true), "as a plain true on the wire")
+  assert(by["Chehul-Firemaw"].addonOnAccount == true, "the main itself too")
+  assert(by["Semdados-Firemaw"].addonOnAccount == false and json["Semdados-Firemaw"]:find('"addonOnAccount":false', 1, true),
+    "nobody in the group runs it: an explicit false, so the site can clear it")
+  mem["Chehul-Firemaw"].lastUpdate = nil
+  mem["Fulano-Firemaw"] = { lastUpdate = 1700000000 }
+  by = lines()
+  assert(by["Chehul-Firemaw"].addonOnAccount == true, "a main whose alt runs GuildOS: the account has it")
+  GuildOS.db.altLinks = nil
+  by = lines()
+  assert(by["Chehul-Firemaw"].addonOnAccount == false, "unlinked and not running it: false")
+  mem["Fulano-Firemaw"], mem["Chehul-Firemaw"] = keepF, keepC
+  if keepC then keepC.lastUpdate = keepAt end
 end
 -- v12 (issue #205) starts the WoW: Forever guild feed: no journal outside Forever (tools/journal.lua).
 assert(anniversary.journal == nil, "no journal on TBC Anniversary")
@@ -896,6 +927,34 @@ do
   GuildOS.db.cores, GuildOS.db.coreLink = savedCores, savedLink
   GuildOS.RecordError = nil
   GuildOS.IsFeatureEnabled = enabled   -- the loot book stays on for the string below
+end
+
+-- Within 17 (specs/game-calendar-export): the game's calendar's guild events and their answers, from what
+-- CalendarSnapshot kept; absent before the calendar was ever read, and never in the pack.
+do
+  dofile(ADDON .. "/Modules/CalendarSnapshot.lua")
+  assert(GuildOS.Companion:BuildPayload().gameCalendar == nil, "no calendar read: no gameCalendar")
+  GuildOS.db.gameCalendar = { at = 1754399000, events = {
+    ["e77"] = { key = "e77", eventId = "77", title = "Onyxia \"40\"", startsAt = 1754500000, calendarType = "GUILD_EVENT",
+      guildEvent = true, eventType = 0, description = "Bring fire resist\nguildos:abc123", creator = "Chehul",
+      invitedBy = "Chehul", detailsAt = 1754399500,
+      rsvps = { { name = "Chehul", status = "signedup", role = "TANK" }, { name = "Fulano", status = "declined" } },
+      where = { offset = 0, day = 3, index = 1 } },
+    ["t1754400000:Social"] = { key = "t1754400000:Social", title = "Social", startsAt = 1754400000,
+      calendarType = "GUILD_ANNOUNCEMENT", guildEvent = false },
+  } }
+  local gc = GuildOS.Companion:BuildPayload().gameCalendar
+  assert(gc and gc.at == 1754399000 and #gc.events == 2, "the calendar goes up with its events")
+  assert(gc.events[1].key == "t1754400000:Social" and gc.events[1].guildEvent == false and gc.events[1].rsvps == nil,
+    "soonest first; an announcement, its details not read yet, carries no rsvps")
+  local ony = gc.events[2]
+  assert(ony.eventId == "77" and ony.creator == "Chehul" and ony.guildEvent == true and #ony.rsvps == 2
+    and ony.rsvps[1].role == "TANK" and ony.rsvps[2].role == nil and ony.where == nil, "an event with its answers, and never where the game keeps it")
+  local json = GuildOS.Companion.EncodeJson(gc)
+  assert(json:find('"title":"Onyxia \\"40\\""', 1, true) and json:find('"description":"Bring fire resist\\nguildos:abc123"', 1, true)
+    and json:find('"status":"declined"', 1, true), "and it encodes as JSON the site reads: " .. json)
+  GuildOS.db.gameCalendar = nil
+  GuildOS.CalendarSnapshot = nil
 end
 
 -- The string printed below carries one alt (v14), so the site's fixture decodes a real `main`.

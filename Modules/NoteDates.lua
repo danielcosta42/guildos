@@ -15,6 +15,7 @@
 -- of Next; one it forbids (ADDON_ACTION_FORBIDDEN, as WoW: Forever and retail do) turns it into "copy
 -- the text": each click shows the note to paste into the game's roster. Session state only.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local NoteDates = {}
 GuildOS.NoteDates = NoteDates
 local L = GuildOS.L
@@ -96,15 +97,184 @@ local function dayMonth(a, b, sep, order)
 end
 
 -- The date patterns, each with how its captures read. %f keeps a number whole: "12025-01-02" is no date.
+-- "yy2" is three two-digit numbers with dashes read yy-mm-dd ("24-01-29": 29 Jan 2024), and only where dd-mm-yy (or
+-- mm-dd-yy, by `order`) is no real day of the game's era: "xy2" comes first and wins a tie, so "15-01-25" stays
+-- 15 Jan 2025, as most of the guilds write it.
 local PATTERNS = {
     { "%f[%d](%d%d%d%d)([-/.])(%d%d?)[-/.](%d%d?)%f[%D]", "ymd" },
     { "%f[%d](%d%d?)([-/.])(%d%d?)[-/.](%d%d%d%d)%f[%D]", "xy4" },
     { "%f[%d](%d%d?)([-/.])(%d%d?)[-/.](%d%d)%f[%D]", "xy2" },
+    { "%f[%d](%d%d)(%-)(%d%d)%-(%d%d)%f[%D]", "yy2" },
 }
 
+----------------------------------------------------------------------
+-- Months by name: "15 Jan 2025", "15 de janeiro de 2025", "Jan 15, 2025", "15. Januar 2025", "15 января 2025",
+-- "2025年1月15日", "2025년 1월 15일". English always, and the client's language (its short and full names, the ones
+-- GuildOS:LocalDate writes). Only read; a date is still written in FORMATS.
+----------------------------------------------------------------------
+local EN_MONTHS = {
+    { "jan", "january" }, { "feb", "february" }, { "mar", "march" }, { "apr", "april" }, { "may", "may" },
+    { "jun", "june" }, { "jul", "july" }, { "aug", "august" }, { "sep", "september", "sept" }, { "oct", "october" },
+    { "nov", "november" }, { "dec", "december" },
+}
+local MONTH_KEYS = {
+    { "Jan", "January" }, { "Feb", "February" }, { "Mar", "March" }, { "Apr", "April" }, { "May", "May" },
+    { "Jun", "June" }, { "Jul", "July" }, { "Aug", "August" }, { "Sep", "September" }, { "Oct", "October" },
+    { "Nov", "November" }, { "Dec", "December" },
+}
+-- Words that may stand between the day, the month and the year: "15 de jan", "the 15th of", "1er janvier".
+local FILLER = { de = true, del = true, of = true, the = true, st = true, nd = true, rd = true, th = true, er = true,
+                 ["\194\186"] = true, ["\194\170"] = true }   -- º ª
+-- The CJK year, month and day marks (年 월 ...): a number then its mark.
+local YEAR_MARK = { ["\229\185\180"] = true, ["\235\133\132"] = true }    -- 年 년
+local MONTH_MARK = { ["\230\156\136"] = true, ["\236\155\148"] = true }   -- 月 월
+local DAY_MARK = { ["\230\151\165"] = true, ["\236\157\188"] = true }     -- 日 일
+local SHORT_MIN = 3   -- bytes a short name needs before a longer word starting with it reads as that month
+
+--- `s` in lower case: ASCII, the accented Latin capitals (À-Þ) and Cyrillic (А-Я, Ё). A trailing dot goes.
+function NoteDates.Fold(s)
+    s = tostring(s or ""):lower()
+    s = s:gsub("\195([\128-\158])", function(c) return "\195" .. string.char(c:byte() + 32) end)
+    s = s:gsub("\208([\144-\175])", function(c)
+        local b = c:byte()
+        if b < 160 then return "\208" .. string.char(b + 32) end
+        return "\209" .. string.char(b - 32)
+    end)
+    s = s:gsub("\208\129", "\209\145")
+    return (s:gsub("%.$", ""))
+end
+local fold = NoteDates.Fold
+
+local monthNames, shortNames   -- built at the first read, once the Locales have filled L
+
+--- The month names read: { [folded name] = month }, and the short ones ({ name, month }, longest first) a longer word
+--- may start with ("января" reads as "янв", "sept." as "sep"). English, then `L`'s (the client's language).
+function NoteDates.MonthNames(L2)
+    if not L2 and monthNames then return monthNames, shortNames end
+    local names, shorts = {}, {}
+    local function add(word, m, short)
+        word = fold(word)
+        if word == "" or word:find("%d") then return end   -- "1月", "1월": the CJK marks read those
+        names[word] = names[word] or m
+        if short and #word >= SHORT_MIN then shorts[#shorts + 1] = { word, m } end
+    end
+    for m, list in ipairs(EN_MONTHS) do
+        for i, w in ipairs(list) do add(w, m, i == 1 or i == 3) end
+    end
+    local tr = L2 or L
+    for m, keys in ipairs(MONTH_KEYS) do
+        local sh, full = rawget(tr, keys[1]) or tr[keys[1]], rawget(tr, keys[2]) or tr[keys[2]]
+        if type(sh) == "string" then add(sh, m, true) end
+        if type(full) == "string" then add(full, m, false) end
+    end
+    table.sort(shorts, function(a, b) return #a[1] > #b[1] end)
+    if not L2 then monthNames, shortNames = names, shorts end
+    return names, shorts
+end
+
+--- Forget the names built (a test that changes the language's).
+function NoteDates.ForgetMonthNames()
+    monthNames, shortNames = nil, nil
+end
+
+-- The month a word names, or nil.
+local function monthOf(word, names, shorts)
+    local w = fold(word)
+    if names[w] then return names[w] end
+    if #w < SHORT_MIN then return nil end
+    for _, sh in ipairs(shorts) do
+        if w:sub(1, #sh[1]) == sh[1] then return sh[2] end
+    end
+    return nil
+end
+
+-- The words and numbers of `text`, each { kind = "n" | "w", v, s, e, gap }: gap is true when what stands before it
+-- is more than spaces and ". , - /" (the sequence breaks there).
+local function tokens(text)
+    local out, i, n = {}, 1, #text
+    local lastEnd = 0
+    while i <= n do
+        local s, e = text:find("^%d+", i)
+        local kind = "n"
+        if not s then
+            s, e = text:find("^[%a\128-\255]+", i)
+            kind = "w"
+        end
+        if s then
+            local between = text:sub(lastEnd + 1, s - 1)
+            out[#out + 1] = { kind = kind, v = text:sub(s, e), s = s, e = e,
+                gap = lastEnd > 0 and between:find("[^%s%.,%-/]") ~= nil }
+            lastEnd, i = e, e + 1
+        else
+            i = i + 1
+        end
+    end
+    return out
+end
+
+-- The tokens from `i` on with the fillers between them skipped: the next token's index, or nil (a gap breaks it).
+local function nextTok(tk, i)
+    while tk[i] and tk[i].kind == "w" and FILLER[fold(tk[i].v)] do
+        i = i + 1
+        if tk[i] and tk[i].gap then return nil end
+    end
+    if tk[i] and tk[i].gap then return nil end
+    return tk[i] and i or nil
+end
+
+local function yearOf(v, two)
+    if #v == 4 then return tonumber(v) end
+    if two and #v == 2 then return 2000 + tonumber(v) end
+    return nil
+end
+
+-- The first date written with a month name or the CJK marks: { year, month, day, s, e }, or nil.
+local function namedDate(text, maxYear)
+    if not text:find("[%a\128-\255]") then return nil end
+    local tk = tokens(text)
+    if #tk < 3 then return nil end
+    local names, shorts = NoteDates.MonthNames()
+    for i = 1, #tk do
+        local a = tk[i]
+        local y, m, d, last
+        if a.kind == "n" and #a.v <= 2 then
+            -- "15 Jan 2025", "15 de jan de 25", "15th of January 2025", "15. Januar 2025"
+            local j = nextTok(tk, i + 1)
+            local mm = j and tk[j].kind == "w" and monthOf(tk[j].v, names, shorts)
+            local k = mm and nextTok(tk, j + 1)
+            if k and tk[k].kind == "n" then
+                y, m, d, last = yearOf(tk[k].v, true), mm, tonumber(a.v), k
+            end
+        elseif a.kind == "w" then
+            -- "Jan 15, 2025", "January 15th 2025": a four-digit year only.
+            local mm = monthOf(a.v, names, shorts)
+            local j = mm and nextTok(tk, i + 1)
+            if j and tk[j].kind == "n" and #tk[j].v <= 2 then
+                local k = nextTok(tk, j + 1)
+                if k and tk[k].kind == "n" then y, m, d, last = yearOf(tk[k].v, false), mm, tonumber(tk[j].v), k end
+            end
+        elseif a.kind == "n" and #a.v == 4 then
+            -- "2025年1月15日", "2025년 1월 15일"
+            local b, c, dd, e = tk[i + 1], tk[i + 2], tk[i + 3], tk[i + 4]
+            if b and c and dd and e and YEAR_MARK[b.v] and c.kind == "n" and MONTH_MARK[dd.v] and e.kind == "n"
+                and not (b.gap or c.gap or dd.gap or e.gap) then
+                y, m, d, last = tonumber(a.v), tonumber(c.v), tonumber(e.v), i + 4
+                if tk[i + 5] and DAY_MARK[tk[i + 5].v] and not tk[i + 5].gap then last = i + 5 end
+            end
+        end
+        if y and NoteDates.ValidDay(y, m, d, maxYear) then
+            return { year = y, month = m, day = d, s = a.s, e = tk[last].e }
+        end
+    end
+    return nil
+end
+
 --- The first date written in `text`: { year, month, day }, and where it starts and ends, a "word:" just before it
---- included ("Joined: 03/02/25"), and where the date itself starts. Read: yyyy-mm-dd (or / and .), dd.mm.yyyy and dd.mm.yy, and with / or - the day
---- and month in `order` ("dmy" or "mdy") unless a number above 12 says which is which. A two-digit year is 20yy.
+--- included ("Joined: 03/02/25"), and where the date itself starts. Read: yyyy-mm-dd (or / and .), dd.mm.yyyy and dd.mm.yy,
+--- yy-mm-dd (three two-digit numbers with dashes, only when dd-mm-yy is no real day of the era), with / or - the day and month in `order`
+--- ("dmy" or "mdy") unless a number above 12 says which is which (so mm/dd/yyyy reads on a day-first client only when
+--- the day is above 12), and a month by name (English and the client's language: "15 Jan 2025", "15 de jan 2025",
+--- "Jan 15, 2025") or with the CJK marks ("2025年1月15日"). A two-digit year is 20yy.
 --- `maxYear`: a later year is no date (a note's "12/31/99" is not this century's guild). Nil when there is none.
 function NoteDates.Parse(text, order, maxYear)
     if type(text) ~= "string" or text == "" then return nil end
@@ -117,18 +287,25 @@ function NoteDates.Parse(text, order, maxYear)
             local y, m, d
             if p[2] == "ymd" then
                 y, m, d = tonumber(c1), tonumber(c2), tonumber(c3)
+            elseif p[2] == "yy2" then
+                y, m, d = 2000 + tonumber(c1), tonumber(c2), tonumber(c3)
+                -- Only where dd-mm-yy / mm-dd-yy is no real day: the same text read that way is not this one.
+                local dd, mm = dayMonth(tonumber(c1), tonumber(c2), sep, order)
+                if NoteDates.ValidDay(2000 + tonumber(c3), mm, dd, maxYear) then y = nil end
             else
                 y = tonumber(c3)
                 if p[2] == "xy2" then y = 2000 + y end
                 d, m = dayMonth(tonumber(c1), tonumber(c2), sep, order)
             end
-            if NoteDates.ValidDay(y, m, d, maxYear) then
+            if y and NoteDates.ValidDay(y, m, d, maxYear) then
                 if not best or s < best.s then best = { year = y, month = m, day = d, s = s, e = e } end
                 break
             end
             init = s + 1
         end
     end
+    local named = namedDate(text, maxYear)
+    if named and (not best or named.s < best.s) then best = named end
     if not best then return nil end
     local from = best.s
     local ls = text:sub(1, best.s - 1):find("[%a][%a]*:%s*$")
@@ -347,12 +524,12 @@ function NoteDates:_WriteNow(item, confirmed)
     return "done"
 end
 
---- `/gos joindate <name>` and the panel's one-member write: the member's date into the chosen note. A note that
---- would lose text asks first (the confirmation calls back with `confirmed`). True when it reads as asked, or the
---- copy box is open.
-function NoteDates:WriteOne(name, confirmed)
+--- `/gos joindate <name>` and the panel's one-member write: the member's date into the chosen note (`which`, the
+--- data audit's "Fix note": the note that differs; else the setting's). A note that would lose text asks first (the
+--- confirmation calls back with `confirmed`). True when it reads as asked, or the copy box is open.
+function NoteDates:WriteOne(name, confirmed, which)
     if not GuildOS:IsOfficer() then GuildOS:Print(L["Only officers can do that."]) return false end
-    local which = self:Target()
+    which = (which == "public" or which == "officer") and which or self:Target()
     if not self:Mode(which) then GuildOS:Print(L["Your guild rank may not edit that note."]) return false end
     local full, key, note, onote = lineOf(name or "")
     if not full then GuildOS:Print(string.format(L["%s is not in the guild roster."], name or "?")) return false end
@@ -368,13 +545,20 @@ function NoteDates:WriteOne(name, confirmed)
         self:AskReplace(item)
         return false
     end
-    return self:_Say(item, self:_WriteNow(item, confirmed))
+    return self:_SayAndOffer(item, self:_WriteNow(item, confirmed))
 end
 
 --- The confirmation's Start: exactly the text it showed, or nothing (the note changed: asked again).
 function NoteDates:ConfirmWrite(item)
     if type(item) ~= "table" or not GuildOS:IsOfficer() then return false end
-    return self:_Say(item, self:_WriteNow(item, true))
+    return self:_SayAndOffer(item, self:_WriteNow(item, true))
+end
+
+-- _Say, then, when a main's date went into the note (or into the copy box), the offer for their alts.
+function NoteDates:_SayAndOffer(item, res)
+    local ok = self:_Say(item, res)
+    if res == "done" or res == "copy" then self:OfferAlts({ item.key }) end
+    return ok
 end
 
 -- A one-member write's answer, to chat.
@@ -486,6 +670,16 @@ local function finish()
     local c = NoteDates:Counts()
     GuildOS:Print(string.format(L["Join dates done: %d written, %d copied, %d already there, %d skipped."],
         c.done, c.copied, c.same, c.skipped))
+    -- The mains whose date went in: one offer for all their alts, once a run.
+    local r = NoteDates:Run()
+    if r and not r.altsOffered then
+        r.altsOffered = true
+        local keys = {}
+        for _, it in ipairs(r.items) do
+            if it.status == "done" or it.status == "copied" then keys[#keys + 1] = it.key end
+        end
+        NoteDates:OfferAlts(keys)
+    end
 end
 
 -- One step of the run on `item`: the write's answer becomes its status.
@@ -664,11 +858,129 @@ end
 function NoteDates:ApplyImport(items)
     local MH = GuildOS.MemberHistory
     if not (MH and GuildOS:IsOfficer()) then return 0 end
-    local n = 0
+    local n, keys = 0, {}
     for _, it in ipairs(items or {}) do
-        if it.pick and (it.status == "new" or it.status == "earlier") and MH:ImportJoin(it.key, it.t) then n = n + 1 end
+        if it.pick and (it.status == "new" or it.status == "earlier") and MH:ImportJoin(it.key, it.t) then
+            n = n + 1
+            keys[#keys + 1] = it.key
+        end
     end
     GuildOS:Print(string.format(L["Join dates: %d taken from the notes into the history."], n))
+    self:Refresh()
+    if n > 0 then self:OfferAlts(keys) end
+    return n
+end
+
+----------------------------------------------------------------------
+-- The whole alt group: a main's date for their alts
+----------------------------------------------------------------------
+--- Whether an alt's open passage (`last`, MemberHistory's stint) would take the day filed at `t`: it has no real date
+--- (no start, or one GuildOS only saw, not read from a note) and that one is later. Pure.
+function NoteDates.AltTakes(last, t)
+    if type(last) ~= "table" or last.leftAt ~= nil or type(t) ~= "number" then return false end
+    if last.joinAt == nil then return true end
+    return last.joinEst == true and last.joinSrc ~= "note" and t < last.joinAt
+end
+
+--- What the offer for `mainKeys` holds: one entry per main with a real join date (the game's, or a day read from a
+--- note) and alts on the roster that would take it: { key, name, day, t, alts = { { key, fullName, name } } }, by
+--- name. One pass over the roster and one over the links, whatever the guild's size.
+function NoteDates:AltOffers(mainKeys)
+    local MH = GuildOS.MemberHistory
+    local links = GuildOS.db and GuildOS.db.altLinks
+    if not (MH and type(links) == "table" and type(mainKeys) == "table") then return {} end
+    local want, any = {}, false
+    for _, key in ipairs(mainKeys) do
+        local t, est = MH:JoinedAt(key)
+        if t and not want[key] and (not est or MH:JoinedFromNote(key)) then
+            local day = date("*t", t)
+            day = { year = day.year, month = day.month, day = day.day }
+            want[key] = { key = key, name = short(key), day = day, t = self.ImportTime(day), alts = {} }
+            any = true
+        end
+    end
+    if not any then return {} end
+    local fullOf = {}
+    for i = 1, GetNumGuildMembers() or 0 do
+        local full = GetGuildRosterInfo(i)
+        if full then fullOf[GuildOS:KeyOfRosterName(full)] = full end
+    end
+    for alt, main in pairs(links) do
+        local o = want[main]
+        if o and alt ~= main and fullOf[alt] then
+            local st = MH:Stints(alt)
+            if self.AltTakes(st[#st], o.t) then
+                o.alts[#o.alts + 1] = { key = alt, fullName = fullOf[alt], name = short(fullOf[alt]) }
+            end
+        end
+    end
+    local out = {}
+    for _, o in pairs(want) do
+        if #o.alts > 0 then
+            table.sort(o.alts, function(a, b) return a.name:lower() < b.name:lower() end)
+            out[#out + 1] = o
+        end
+    end
+    table.sort(out, function(a, b) return a.name:lower() < b.name:lower() end)
+    return out
+end
+
+--- After a main's date was written or imported: one question for every alt of theirs with no real date ("apply the
+--- same date to them?"). Officers only. Whether it was asked.
+function NoteDates:OfferAlts(mainKeys)
+    if not GuildOS:IsOfficer() or not GuildOS.ShowDialog then return false end
+    local offers = self:AltOffers(mainKeys)
+    if #offers == 0 then return false end
+    local names, n = {}, 0
+    for _, o in ipairs(offers) do
+        for _, a in ipairs(o.alts) do
+            n = n + 1
+            if #names < 8 then names[#names + 1] = a.name end
+        end
+    end
+    local list = table.concat(names, ", ") .. (n > #names and (" +" .. (n - #names)) or "")
+    local text
+    if #offers == 1 then
+        text = string.format(L["%s's join date is %s. Apply it to their %d alt(s) with no real date (%s)?"],
+            offers[1].name, self.Format(offers[1].day, self:FormatId()), n, list)
+    else
+        text = string.format(L["%d mains got a join date. Apply each one's to their %d alt(s) with no real date (%s)?"],
+            #offers, n, list)
+    end
+    text = text .. "\n\n" .. L["Their notes get it where there is room; a note that would lose text is left for you to confirm (Whole guild)."]
+    GuildOS:ShowDialog("GUILDOS_NOTE_DATE_ALTS", text, nil, offers)
+    return true
+end
+
+--- The offer's Apply: each alt's history takes its main's day (as one read from a note: the game's exact line still
+--- replaces it), then their notes are written through a run of the silent ones only (an empty note, or one with
+--- room); a note that would lose text is left for the Whole guild list, which asks. How many alts took the date.
+function NoteDates:ApplyToAlts(offers)
+    local MH = GuildOS.MemberHistory
+    if not (MH and GuildOS:IsOfficer() and type(offers) == "table") then return 0 end
+    local which = self:Target()
+    local onotes = GuildOS.Compat.CanViewOfficerNote()
+    local n, items, asks = 0, {}, 0
+    for _, o in ipairs(offers) do
+        for _, a in ipairs(type(o) == "table" and type(o.alts) == "table" and o.alts or {}) do
+            if type(a.key) == "string" and type(o.t) == "number" and MH:ImportJoin(a.key, o.t) then
+                n = n + 1
+                local idx = GuildOS.Compat.FindGuildRosterIndex(a.fullName or a.key)
+                local full, key, note, onote = nil, nil, nil, nil
+                if idx then full, key, note, onote = rosterLine(idx, onotes) end
+                local item = full and self:ItemFor(full, key, note, onote, which)
+                if item and self.Silent(item.how) then items[#items + 1] = item
+                elseif item and item.how ~= "same" then asks = asks + 1 end
+            end
+        end
+    end
+    local busy = self:Current() ~= nil
+    local started = #items > 0 and not busy and self:Mode(which) ~= nil and self:Start(items, false)
+    GuildOS:Print(string.format(L["Join dates: %d alt(s) took their main's date; %d note(s) to write, %d to confirm."],
+        n, started and #items or 0, asks))
+    if busy and #items > 0 then GuildOS:Print(L["A run is still going: write the alts' notes from Whole guild once it ends."]) end
+    if asks > 0 then GuildOS:Print(L["Whole guild lists the notes that would lose text, each old and new, to confirm."]) end
+    if GuildOS.RosterMaint then GuildOS.RosterMaint:Invalidate() end
     self:Refresh()
     return n
 end
@@ -689,6 +1001,18 @@ function NoteDates:Command(rest)
         return
     end
     self:WriteOne(rest)
+end
+
+--- The member the panel's box should hold when it opens next (the data audit's "Write date"), and that name once.
+function NoteDates:Prefill(name)
+    state().prefill = type(name) == "string" and name or nil
+end
+
+function NoteDates:TakePrefill()
+    local s = state()
+    local v = s.prefill
+    s.prefill = nil
+    return v
 end
 
 --- What the panel should open on ("plan" or "import"), once.

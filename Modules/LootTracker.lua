@@ -7,6 +7,7 @@
 -- inside a tracked raid session, via OnEncounterLoot (issue #183), and
 -- the awards of the loot council by trade, via RecordTradeAward (#185).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local LootTracker = {}
 GuildOS.LootTracker = LootTracker
 
@@ -30,9 +31,9 @@ function LootTracker:Initialize()
     end
 end
 
+-- Every award is recorded, whatever Settings' Loot Tracker switch says (audit B17): the "already
+-- received" rules read this history, and the switch only hides its screens.
 local function remember(entry)
-    -- Switched off in Settings, the history records nothing (issue #294): the switch used to do nothing.
-    if GuildOS.IsFeatureEnabled and not GuildOS:IsFeatureEnabled("lootTracker") then return end
     if not GuildOS.db.lootHistory then
         GuildOS.db.lootHistory = {}
     end
@@ -109,7 +110,6 @@ function LootTracker:OnEncounterLoot(encounterID, itemID, itemLink, quantity, pl
     -- without it would be half a record, so the item is skipped whole.
     if GuildOS.Compat.IsSecret(encounterID, itemID, itemLink, quantity, playerName, className) then return end
     if type(itemLink) ~= "string" or type(playerName) ~= "string" or playerName == "" then return end
-    if not GuildOS:IsFeatureEnabled("lootTracker") then return end
     local session = sessionHere()
     if not session then return end
 

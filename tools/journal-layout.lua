@@ -3,12 +3,13 @@
 -- UI/Layout.lua, Data/ForeverDungeons.lua, Data/GroupActivities.lua and Modules/Journal.lua, under a
 -- stubbed WoW: Forever client, in both interface styles ("guildos" and "forever").
 --
--- This week is three metric chips side by side, with the week's numbers. Each guild first is a card
--- in rows that wrap (about three at 1000px, never under 180px): the dungeon's Groups art on top, or a
--- flat `panel` band where it has none, then its name, "date · N bosses" and who was there in their
--- class colour. My own entries are a timeline: the date in its own column, a dot on a 1px rail, the
--- entry. Each section says so when it is empty; gold is only the chips' rule; a redraw makes no new
--- frames; and the scroll child stays well under the 15000px the client draws.
+-- Drawn as the Chronicle's mockup (#449 phase 3): three parchment cards, This week and the guild's firsts on
+-- the left and my journal on the right from 700px, stacked below it. This week is three metric blocks side by
+-- side, with the week's numbers. Each guild first is a paper box in rows that wrap (never under 180px): the
+-- dungeon's Groups art on top where it has some, then its name, "date · N bosses" and who was there in their
+-- class colour. My own entries are a timeline: a gold dot on a rail, the entry, its day under it. Each card
+-- says so when it is empty; gold is only the chips' rule; a redraw makes no new frames; and the scroll child
+-- stays under the 15000px the client draws.
 --
 --   luajit -e 'ADDON="."' tools/journal-layout.lua
 --
@@ -167,6 +168,7 @@ local function client(style)
   GuildOS.RecordError = function() end
   GuildOS.Print = function() end
   GuildOS.Style:Resolve()
+  dofile(ADDON .. "/UI/Spacing.lua")
   dofile(ADDON .. "/UI/Helpers.lua")
   dofile(ADDON .. "/UI/Layout.lua")
   dofile(ADDON .. "/Data/ForeverDungeons.lua")
@@ -222,7 +224,7 @@ end
 local function run(style)
   client(style)
   local C, L = GuildOS.Colors, GuildOS.L
-  check(GuildOS.Style:Current() == style, style .. ": the client draws the style asked for")
+  check(GuildOS.Style:Current() == "salao", style .. ": the Salão's one look on this client")
   check(GuildOS.Journal and GuildOS.CreateJournalPanel, style .. ": the journal and its panel are on WoW: Forever")
   fixture()
 
@@ -245,12 +247,20 @@ local function run(style)
   local width = 1000 - GuildOS.UI.SCROLL_GUTTER
   check(content.w == width, style .. ": the content is the scroll area less the bar's gutter (" .. tostring(content.w) .. ")")
 
-  -- Sections, in order, flush left.
+  -- The Chronicle's mockup (#449 phase 3): three parchment cards, the week and the firsts on the left, my journal
+  -- on the right from 700px.
+  local PAD = 14
+  local lw = math.floor((width - 12) * 0.535)
   local hw, hf, hm = P.heads.week, P.heads.firsts, P.heads.mine
-  check(hw.text == L["THIS WEEK"] and hf.text == L["GUILD FIRSTS"] and hm.text == L["YOUR JOURNAL"],
-    style .. ": the three section titles")
-  check(at(hw) == 0 and at(hf) == 0 and at(hm) == 0 and select(2, at(hw)) == 0, style .. ": each flush left, the first at the top")
-  check(hw.rule == nil and hf.rule and hm.rule, style .. ": the later two with their rule")
+  check(hw.text == L["This week"] and hf.text == L["Guild firsts in dungeons"] and hm.text == L["Your journal"],
+    style .. ": the three cards' titles, never upper case")
+  local B = P.blocks
+  check(hw.parent == B.week and hf.parent == B.firsts and hm.parent == B.mine and B.week.__look, style .. ": each the title of its card")
+  check(at(B.week) == 0 and select(2, at(B.week)) == -2 and at(B.firsts) == 0 and B.week.w == lw and B.firsts.w == lw,
+    style .. ": the week and the firsts in the left column")
+  check(at(B.mine) == lw + 12 and select(2, at(B.mine)) == -2 and B.mine.w == width - 12 - lw,
+    style .. ": my journal in the right one")
+  check(select(2, at(B.firsts)) == -(2 + B.week.h + 12), style .. ": the firsts under the week")
 
   -- ── This week: three chips side by side ─────────────────────────────
   local week = GuildOS.Journal:ThisWeek(NOW)
@@ -260,63 +270,64 @@ local function run(style)
   local captions = { "Level milestones", "Members leveling", "Dungeon clears" }
   local values = { week.milestones, week.members, week.clears }
   local cx1, cy1 = at(chips[1])
-  check(select(2, at(hw)) > cy1, style .. ": the chips under the week's title")
+  check(cx1 == PAD and cy1 < -30 and chips[1].parent == B.week, style .. ": the chips in the week's card, under its title")
   for i, chip in ipairs(chips) do
     local x, y = at(chip)
     check(chip.value.text == tostring(values[i]) and chip.label.text == L[captions[i]],
       style .. ": chip " .. i .. " says " .. values[i] .. " " .. captions[i])
     check(y == cy1, style .. ": chip " .. i .. " on the same line")
-    check(x == cx1 + (i - 1) * (chips[1].w + 24) and chip.w == chips[1].w and chip.w >= 120,
-      style .. ": chip " .. i .. " beside the last, as wide as the others")
-    check(same(chip.rule.color, C.gold) and same(chip.value.color, C.text) and same(chip.label.color, C.label),
-      style .. ": a gold rule over a paper number and a label caption")
+    check(x == cx1 + (i - 1) * (chips[1].w + 8) and chip.w == chips[1].w and x + chip.w <= lw - PAD,
+      style .. ": chip " .. i .. " beside the last, as wide as the others, inside the card")
+    check(same(chip.value.color, C.paperTitle) and same(chip.label.color, C.paperSoft),
+      style .. ": on the paper, a dark red number and a soft caption")
     check(chip.shown, style .. ": chip " .. i .. " shown")
   end
 
-  -- ── Guild firsts: one card each, three in a row at 1000px ───────────
+  -- ── Guild firsts: one box each, in the left column ──────────────────
   local firsts = GuildOS.Journal:GuildFirsts()
   check(#firsts == 4, style .. ": the fixture has four firsts")
   local cards = shownOf(P.cards)
-  check(#cards == 4 and not P.empty.firsts.shown, style .. ": one card per first, and no empty line")
-  local cols = math.max(1, math.min(math.floor((width + 8) / 188), math.floor((width + 8) / 308 + 0.5)))
-  local cw = math.floor((width - 8 * (cols - 1)) / cols)
-  check(cols == 3, style .. ": three cards in a row at 1000px")
-  local _, fy = at(hf)
+  check(#cards == 4 and not P.empty.firsts.shown, style .. ": one box per first, and no empty line")
+  local inner = lw - 2 * PAD
+  local cols = math.max(1, math.min(math.floor((inner + 8) / 188), math.floor((inner + 8) / 208 + 0.5)))
+  local cw = math.floor((inner - 8 * (cols - 1)) / cols)
+  check(cols == 2, style .. ": two boxes in a row in the left column at 1000px")
   local _, firstRowY = at(cards[1])
-  check(fy < select(2, at(chips[1])) - chips[1].h and firstRowY < fy, style .. ": the cards under their title, under the chips")
+  check(firstRowY < -30 and cards[1].parent == B.firsts, style .. ": the boxes in their card, under its title")
   local classHex = function(cls) return GuildOS:GetClassColorHex(cls) end
-  local textHex = string.format("%02x%02x%02x", C.text.r * 255, C.text.g * 255, C.text.b * 255)
+  local inkHex = string.format("%02x%02x%02x", C.paperInk.r * 255, C.paperInk.g * 255, C.paperInk.b * 255)
   for i, f in ipairs(firsts) do
     local card = cards[i]
     local x, y = at(card)
     local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
-    check(card.w == cw and cw >= 180, style .. ": card " .. i .. " is " .. cw .. "px wide")
-    check(x == col * (cw + 8), style .. ": card " .. i .. " in column " .. col)
-    if row == 0 then check(y == firstRowY, style .. ": card " .. i .. " in the first row") end
-    check(x + card.w <= width, style .. ": card " .. i .. " inside the content")
-    check(card.name.text == f.name and card.name.wordWrap == false, style .. ": card " .. i .. " named " .. f.name)
-    check(card.meta.text == day(f.at) .. " · " .. f.bosses .. " bosses", style .. ": card " .. i .. " has its date and bosses")
-    check(same(card.name.color, C.text) and same(card.meta.color, C.textSoft), style .. ": name in paper, the rest softer")
+    check(card.w == cw and cw >= 180, style .. ": box " .. i .. " is " .. cw .. "px wide")
+    check(x == PAD + col * (cw + 8), style .. ": box " .. i .. " in column " .. col)
+    if row == 0 then check(y == firstRowY, style .. ": box " .. i .. " in the first row") end
+    check(x + card.w <= lw - PAD, style .. ": box " .. i .. " inside the card")
+    check(card.name.text == f.name and card.name.wordWrap == false, style .. ": box " .. i .. " named " .. f.name)
+    check(card.meta.text == day(f.at) .. " · " .. f.bosses .. " bosses", style .. ": box " .. i .. " has its date and bosses")
+    check(same(card.name.color, C.paperTitle) and same(card.meta.color, C.paperSoft),
+      style .. ": the dungeon in the paper's red, the rest softer")
     -- Every new dungeon of Forever is without art in the Groups catalogue: no band at all, not an empty
-    -- block in the card's own colour over the name (review, #373).
+    -- block in the box's own colour over the name (review, #373).
     check(not card.art.shown and not card.band.shown and not card.rule.shown and card.band.h < 1,
-      style .. ": no art: no band and no rule, the name at the card's top")
+      style .. ": no art: no band and no rule, the name at the box's top")
     check(card.band.points[1][1] == "TOPLEFT" and card.band.points[2][1] == "TOPRIGHT",
-      style .. ": the band hangs across the card's top")
-    check(card.bg and card.border and same(card.border, C.line), style .. ": a card is a surface the style paints, with its 1px line")
+      style .. ": the band hangs across the box's top")
+    check(card.edge and same(card.edge.color, C.paperRule), style .. ": a box is a paper box with the paper's line")
   end
-  local rowTwo = cards[4]
-  check(at(rowTwo) == 0 and select(2, at(rowTwo)) == firstRowY - cards[1].h - 8,
-    style .. ": the fourth wraps to the next row, GAP under the first")
-  check(cards[1].h == cards[2].h and cards[2].h == cards[3].h, style .. ": a row's cards share one height")
+  local rowTwo = cards[3]
+  check(at(rowTwo) == PAD and select(2, at(rowTwo)) == firstRowY - cards[1].h - 8,
+    style .. ": the third wraps to the next row, GAP under the first")
+  check(cards[1].h == cards[2].h, style .. ": a row's boxes share one height")
   -- Who was there, by class: Mage Ana, Priest Bea, Warrior Cid; Eva has none and Dan opted out.
-  check(firsts[1].name == "Excavation Site: Wetlands" and cards[1].who.text == "|cff" .. textHex .. "Eva|r",
-    style .. ": a member who chose not to be named is not, and one with no class stays paper")
-  check(cards[2].who.text == "|cff" .. classHex("MAGE") .. "Ana|r", style .. ": Ana in the Mage colour")
-  check(cards[3].who.text == "|cff" .. classHex("WARRIOR") .. "Cid|r", style .. ": Cid in the Warrior colour")
-  check(cards[4].who.text == "|cff" .. classHex("MAGE") .. "Ana|r · |cff" .. classHex("PRIEST") .. "Bea|r",
+  check(firsts[1].name == "Excavation Site: Wetlands" and cards[1].who.text == "|cff" .. inkHex .. "Eva|r",
+    style .. ": a member who chose not to be named is not, and one with no class takes the paper's ink")
+  check(cards[2].who.text == GuildOS.UI:PaperText("|cff" .. classHex("MAGE") .. "Ana|r", "paper"), style .. ": Ana in the Mage colour, as the paper prints it (#449)")
+  check(cards[3].who.text == GuildOS.UI:PaperText("|cff" .. classHex("WARRIOR") .. "Cid|r", "paper"), style .. ": Cid in the Warrior colour, as the paper prints it")
+  check(cards[4].who.text == GuildOS.UI:PaperText("|cff" .. classHex("MAGE") .. "Ana|r · |cff" .. classHex("PRIEST") .. "Bea|r", "paper"),
     style .. ": a group, each in their class colour, between soft dots")
-  check(same(cards[4].who.color, C.textSoft) and cards[4].who.wordWrap == true, style .. ": the line wraps, in textSoft")
+  check(same(cards[4].who.color, C.paperSoft) and cards[4].who.wordWrap == true, style .. ": the line wraps, soft")
 
   -- The art, where the Groups catalogue has it and the client has the file: the tile's crop and alpha.
   local dalaran = GuildOS.GroupActivities.byId["city-of-dalaran"]
@@ -327,7 +338,7 @@ local function run(style)
   cards = shownOf(P.cards)
   local c4 = cards[4]
   check(c4.art.shown and c4.art.texture == dalaran.art and same(c4.band.color, C.well) and c4.band.shown
-    and c4.band.h == 64 and c4.rule.shown and same(c4.rule.color, C.line),
+    and c4.band.h == 64 and c4.rule.shown and same(c4.rule.color, C.paperRule),
     style .. ": a dungeon with art shows it in a 64px band on the well, a 1px line under it")
   check(c4.art.texCoord and c4.art.texCoord[1] == 0 and c4.art.texCoord[2] == 1 and c4.art.texCoord[3] == 0.08
     and c4.art.texCoord[4] == 0.72 and c4.art.alpha == 0.55 and c4.art.points[1][1] == "ALL" and c4.art.points[1][2] == c4.band,
@@ -344,7 +355,6 @@ local function run(style)
   local rows = {}
   for _, r in ipairs(P.rows) do if r.date.shown then rows[#rows + 1] = r end end
   check(#rows == 3 and not P.empty.mine.shown, style .. ": one timeline entry per entry, and no empty line")
-  local _, my = at(hm)
   local want = { "City of Dalaran · 7 bosses", "Level 20", "The Hall of Thanes · 4 bosses" }
   local lastY, dotX
   for i, r in ipairs(rows) do
@@ -352,26 +362,25 @@ local function run(style)
     local tx, ty = at(r.text)
     local px, py = at(r.dot)
     check(r.date.text == day(mine[i].at) and r.text.text == want[i], style .. ": entry " .. i .. " is " .. want[i] .. " on its day")
-    check(dx == 0 and r.date.w == 80 and r.date.size == 11, style .. ": its date in a column of its own, flush left")
-    check(px >= 80 and tx > px + 5 and r.dot.w == 5 and r.dot.h == 5, style .. ": then its dot, then the entry")
-    check(r.text.points[2][1] == "TOPRIGHT" and r.text.points[2][2] == 0, style .. ": the entry hangs from both sides")
-    check(ty == dy and py < dy and py > dy - 14, style .. ": date, dot and entry on one line")
-    check(dy < my and (not lastY or dy < lastY), style .. ": under the title, newest first, downwards")
-    check(same(r.date.color, C.textSoft) and same(r.text.color, C.text) and same(r.dot.color, C.label),
-      style .. ": a soft date, a paper entry, a label dot")
+    check(px == PAD and r.dot.w == 10 and r.dot.h == 10 and tx > px + 10 and dx == tx, style .. ": its dot, then the entry with its day under it")
+    check(r.text.points[2][1] == "TOPRIGHT" and r.text.points[2][2] == -PAD, style .. ": the entry hangs from both sides")
+    check(dy < ty and py <= ty and py > ty - 14, style .. ": the dot on the entry's line, the day under it")
+    check(ty < -30 and (not lastY or ty < lastY), style .. ": under the title, newest first, downwards")
+    check(same(r.date.color, C.paperSoft) and same(r.text.color, C.paperInk) and same(r.dot.color, C.metal2),
+      style .. ": a soft day, an inked entry, a gold dot")
     check(dotX == nil or dotX == px, style .. ": every dot on the one rail")
-    lastY, dotX = dy, px
+    lastY, dotX = ty, px
   end
   local rail = P.rail
   local rx, ry = at(rail, 1)
   local p2 = rail.points[2]
-  check(rail.shown and rail.w == 1 and same(rail.color, C.line), style .. ": a 1px line joins the entries")
-  check(rx == dotX + 2 and p2[1] == "BOTTOMLEFT" and p2[2] == content and p2[4] == rx
-    and ry == select(2, at(rows[1].dot)) - 2 and p2[5] == select(2, at(rows[3].dot)) - 2,
-    style .. ": through the middle of the dots, from the first to the last")
+  check(rail.shown and rail.w == 2 and same(rail.color, C.paperRule), style .. ": a line joins the entries")
+  check(rx == dotX + 4 and p2[1] == "BOTTOMLEFT" and p2[2] == B.mine and p2[4] == rx
+    and ry == select(2, at(rows[1].dot)) - 5 and p2[5] < select(2, at(rows[3].date)),
+    style .. ": through the middle of the dots, from the first to the last entry's day")
   check(content.h > 0 and content.h < 15000, style .. ": the scroll child is as tall as what it holds (" .. content.h .. ")")
 
-  -- ── Gold only on the chips' rule ────────────────────────────────────
+  -- ── No gold text: the chips' rule is the only gold ──────────────────
   local golds = {}
   walk(content, function(f)
     if f.color and same(f.color, C.gold) then golds[#golds + 1] = f end
@@ -386,26 +395,29 @@ local function run(style)
   hub:Hide(); hub:Show()
   check(created == settled, style .. ": five redraws and a show make no new frame (" .. (created - settled) .. " new)")
 
-  -- ── Narrower: the cards wrap, never under 180px ─────────────────────
+  -- ── Narrower: one column, the boxes wrap, never under 180px ─────────
   scroll:SetSize(400, 560)
   local narrow = 400 - GuildOS.UI.SCROLL_GUTTER
   cards = shownOf(P.cards)
-  check(#cards == 4, style .. ": still four cards at 400px")
+  check(#cards == 4 and B.mine.w == narrow and at(B.mine) == 0 and select(2, at(B.mine)) < select(2, at(B.firsts)),
+    style .. ": still four boxes at 400px, my journal under the firsts")
   for i, card in ipairs(cards) do
-    check(at(card) == 0 and card.w == narrow, style .. ": card " .. i .. " alone in its row at 400px")
+    check(at(card) == PAD and card.w == narrow - 2 * PAD, style .. ": box " .. i .. " alone in its row at 400px")
   end
-  check(chips[1].w * 3 + 2 * 24 <= narrow and at(chips[3]) + chips[3].w <= narrow and chips[1].label.w == chips[1].w,
+  check(at(chips[3]) + chips[3].w <= narrow - PAD and chips[1].label.w == chips[1].w - 20,
     style .. ": the three chips share a narrow width, captions cut to it")
   scroll:SetSize(612, 560)
   cards = shownOf(P.cards)
-  check(cards[1].w == math.floor((600 - 8) / 2) and at(cards[2]) == cards[1].w + 8 and at(cards[3]) == 0,
-    style .. ": two in a row at 600px")
+  local in600 = 600 - 2 * PAD
+  local c3 = math.floor((in600 - 16) / 3)
+  check(cards[1].w == c3 and at(cards[2]) == PAD + c3 + 8 and at(cards[4]) == PAD, style .. ": three in a row at 600px")
   for sw = 200, 1700, 7 do
     scroll:SetSize(sw, 560)
     local cwid = sw - GuildOS.UI.SCROLL_GUTTER
+    local colW = cwid >= 700 and math.floor((cwid - 12) * 0.535) or cwid
     for i, card in ipairs(shownOf(P.cards)) do
-      check(card.w >= 180 or card.w == cwid, style .. ": card " .. i .. " never under 180px at " .. sw)
-      check(at(card) + card.w <= cwid, style .. ": card " .. i .. " inside the content at " .. sw)
+      check(card.w >= 180 or card.w == colW - 2 * PAD, style .. ": box " .. i .. " never under 180px at " .. sw)
+      check(at(card) + card.w <= colW - PAD, style .. ": box " .. i .. " inside its card at " .. sw)
     end
   end
   scroll:SetSize(1000, 560)
@@ -422,9 +434,8 @@ local function run(style)
     style .. ": nothing of mine: the existing line, no entry and no rail")
   check(chips[1].value.text == "0" and chips[2].value.text == "0" and chips[3].value.text == "0" and chips[1].shown,
     style .. ": a quiet week is three zeros, as the line said")
-  local _, ey = at(P.empty.firsts)
-  check(ey < select(2, at(hf)) and select(2, at(hm)) < ey and P.empty.firsts.points[2][1] == "TOPRIGHT",
-    style .. ": the empty line in its section, across the content")
+  check(P.empty.firsts.parent == B.firsts and P.empty.firsts.points[2][1] == "TOPRIGHT",
+    style .. ": the empty line in its card, across it")
 
   -- One entry: a dot and no rail.
   GuildOS.db.journal.entries = { { id = "x", subjectKey = GuildOS:GetPlayerKey("Ana"), at = NOW - 60, type = "member.level60", data = {} } }
@@ -442,8 +453,8 @@ local function run(style)
   refresh()
   local drawn = 0
   for _, r in ipairs(P.rows) do if r.date.shown then drawn = drawn + 1 end end
-  check(drawn == 400 and P.more.shown and P.more.text == string.format(L["... and %d more."], 50),
-    style .. ": 400 entries drawn and the other 50 counted")
+  check(drawn == 300 and P.more.shown and P.more.text == string.format(L["... and %d more."], 150),
+    style .. ": 300 entries drawn (two lines each, #449) and the other 150 counted")
   check(content.h < 15000, style .. ": the scroll child stays under the 15000px the client draws (" .. content.h .. ")")
 end
 

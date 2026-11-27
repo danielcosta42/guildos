@@ -51,6 +51,7 @@ function Proxy:GetHeight() return self.h end
 function Proxy:SetText(t) self.text = t end
 function Proxy:GetText() return self.text end
 function Proxy:GetStringWidth() return #(self.text or "") * 6 end
+function Proxy:GetStringHeight() return 14 end
 function Proxy:Show() self.shown = true end
 function Proxy:Hide() self.shown = false end
 function Proxy:SetShown(v) self.shown = v and true or false end
@@ -58,7 +59,8 @@ function Proxy:IsShown() return self.shown end
 function Proxy:IsVisible() return self.shown end
 function Proxy:GetObjectType() return self.kind end
 function Proxy:IsMouseOver() return false end
-function Proxy:IsEnabled() return true end
+function Proxy:IsEnabled() return rawget(self, "enabled") ~= false end
+function Proxy:SetEnabled(v) self.enabled = v and true or false end
 function Proxy:GetFrameLevel() return 1 end
 function Proxy:GetName() return self.name end
 function Proxy:GetParent() return self.parent end
@@ -145,6 +147,7 @@ dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Libs/LibDeflate.lua")
 dofile(ADDON .. "/Core/Style.lua")
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Layout.lua")
 GuildOS.ProfCatalog = {
@@ -237,34 +240,51 @@ end
 row.scripts.OnEnter(row)
 row.scripts.OnLeave(row)
 UNCACHED[7978] = true
+local before = #st.results
 row.scripts.OnClick(row)
-check(st.open == 9950 and st.detailAt ~= nil, "a click opens the recipe in place")
-check(panel.detail and panel.detail.shown, "its block shows over the rows it takes")
-local holes = 0
-for _, e in ipairs(st.results) do if e.__detail then holes = holes + 1 end end
-check(holes == st.detailRows and holes > 0 and st.results[st.detailAt].__detail == 1,
-      "the list makes room for it right after the recipe")
+check(st.open == 9950, "a click chooses the recipe")
+check(panel.detail and panel.detail.shown, "its card shows beside the table (#449)")
+check(#st.results == before and row.mark.shown, "the table keeps its rows, nothing opened inside it, and marks the chosen one")
 check(not showing("Item 7978") and showing("Recipe item"), "an uncached recipe item shows as a plain source")
 UNCACHED[7978] = nil
 panel.itemEvents.scripts.OnEvent(panel.itemEvents, "GET_ITEM_INFO_RECEIVED", 7978)
 runTimers()
-check(showing("Item 7978"), "the block repaints when the item's data arrives")
-check(showing("CRAFTERS · 1"), "it says who makes it")
-local asked = false
-for _, o in ipairs(all) do
-  local label = rawget(o, "label")
-  if o.kind == "Button" and o.shown and label and label.text == "Ask them" and o.scripts.OnClick then
-    o.scripts.OnClick(o)
-    asked = true
-    break
-  end
-end
-check(asked and panel.detail.toKey == BOB and showing("To Bob only"), "Ask them sends the order to that crafter alone")
+check(showing("Item 7978"), "the card repaints when the item's data arrives")
+check(showing("Who crafts it · 1") and showing("Requires Spell 9788") and showing("skill 210–230"),
+      "the card says who makes it, what it requires and its skill range")
+local bobRow = panel.detail.who[1]
+check(bobRow.shown and bobRow.skill.text == "210" and bobRow.whisper.shown, "a crafter: their skill and a Whisper link")
+check(panel.detail.send:IsEnabled() and showing("The 1 guild crafters who know it see it"),
+      "Send order is on and says what happens")
+bobRow.ask.scripts.OnClick(bobRow.ask)
+check(panel.detail.toKey == BOB and showing("To Bob only"), "Order sends it to that crafter alone")
 panel.itemEvents.scripts.OnEvent(panel.itemEvents, "GET_ITEM_INFO_RECEIVED", 2770)
 runTimers()
 check(panel.detail.toKey == BOB, "and a repaint (an item's data arriving, an order synced) keeps that choice")
+panel.detail.plus.scripts.OnClick(panel.detail.plus)
+check(panel.detail.qty == 2 and showing("Materials"), "the stepper counts up")
 row.scripts.OnClick(row)
-check(st.open == nil and not panel.detail.shown, "a second click closes it")
+check(st.open == nil and not panel.detail.shown and not row.mark.shown, "a second click closes it")
+row.scripts.OnClick(row)
+panel.detail.scripts.OnKeyDown(panel.detail, "ESCAPE")
+check(st.open == nil and not panel.detail.shown, "Escape closes it")
+row.scripts.OnClick(row)
+panel.detail.back.scripts.OnClick(panel.detail.back)
+check(st.open == nil and not panel.detail.shown, "and so does its ‹ Orders")
+-- Nobody in the guild: the realm's search, on the item.
+local gap
+for _, r in ipairs(panel.rows) do
+  local d = rawget(r, "data")
+  if d and d.id == 2660 then gap = r end
+end
+local searched
+GuildOS.ShowCraftFinder = function(_, id) searched = id end
+gap.scripts.OnClick(gap)
+check(showing("Nobody in the guild crafts this.") and panel.detail.realm.shown, "nobody crafts it: the card offers the realm's search")
+check(not panel.detail.send:IsEnabled() and panel.detail.send.disabledReason ~= nil, "and its Send says why it is off")
+panel.detail.realm.scripts.OnClick(panel.detail.realm)
+check(searched == 2862, "which opens on the item")
+gap.scripts.OnClick(gap)
 local smelt
 panel.railButtons[1].scripts.OnClick(panel.railButtons[1])
 for _, r in ipairs(panel.rows) do
@@ -272,7 +292,9 @@ for _, r in ipairs(panel.rows) do
   if d and d.id == 2657 then smelt = r end
 end
 smelt.scripts.OnClick(smelt)
-check(showing("CRAFTERS · 10") and showing("+7 more"), "past three crafters the block counts the rest")
+local drawn = 0
+for _, w in ipairs(panel.detail.who) do if w.shown then drawn = drawn + 1 end end
+check(showing("Who crafts it · 10") and drawn == 10, "every crafter has a row on the card")
 check(showing("you craft"), "a recipe I know is marked in the list")
 smelt.scripts.OnClick(smelt)
 panel.railButtons[2].scripts.OnClick(panel.railButtons[2])
@@ -288,10 +310,10 @@ panel.railButtons[4].scripts.OnClick(panel.railButtons[4])
 check(#st.results == 0 and showing("Nobody in the guild has this profession yet."), "an empty profession says so")
 panel:Relayout(520, 400)
 check(panel.visibleRows > 0, "a narrow window still lays out")
-panel:Relayout(560, 500)
+panel:Relayout(600, 500)
 local filtersW = 0
 for _, t in ipairs(panel.filterTabs) do if t.shown ~= false then filtersW = filtersW + t.w + 4 end end
-local inner = 560 - 10 * 2 - 176 - 12
+local inner = 600 - 10 * 2 - (176 + 2 * 12) - 12 - 2 * 12   -- the rail's dark card and the catalog's padding (#449)
 check(panel.search.w < 220 and panel.search.w + filtersW + 12 <= inner,
       "the search box gives way to the filters in a narrow window: " .. tostring(panel.search.w))
 local placeholderShown = false

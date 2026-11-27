@@ -10,9 +10,9 @@
 --
 -- Exits 1 on the first failed check.
 ADDON = ADDON or "."
-DASHBOARD_KIT = true
-local kit = dofile(ADDON .. "/tools/dashboard-layout.lua")
-DASHBOARD_KIT = nil
+SALAO_KIT = true
+local kit = dofile(ADDON .. "/tools/salao-layout.lua")
+SALAO_KIT = nil
 local check, fire, flush = kit.check, kit.fire, kit.flush
 
 kit.client({ style = "forever", officer = true })
@@ -74,7 +74,6 @@ check(type(UI.CreateRaidStepper) == "function" and type(GuildOS.ShowRaidPrompt) 
 
 -- A redraw that raises fails here, loudly, not in /gos errors. The home cards are not this test's.
 GuildOS.SafeCall = function(_, fn, ...) return true, fn(...) end
-GuildOS.CreateDashboardPanel = function() end
 GuildOS.db.settings.companion = true
 GuildOS.Companion.Build = function() return "GOSCOMP1:x", 3 end
 
@@ -87,12 +86,12 @@ local function reset()
   GROUP, RAID, LEADER = {}, false, true
 end
 
--- ── The Now tab ──────────────────────────────────────────────────────────────────────────────
+-- ── The Salão (#445) ──────────────────────────────────────────────────────────────────────────────
 reset()
 Import._webRaids = { ONYXIA }
 local now = kit.newFrame("Frame", UIParent)
 now:Hide()
-GuildOS:CreateNowPanel(now)
+GuildOS:CreateSalaoPanel(now)
 now:Show()
 now:SetSize(976, 516)
 flush()

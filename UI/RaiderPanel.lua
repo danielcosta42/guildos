@@ -6,6 +6,7 @@
 -- iLvl + spec read-only when that player DOES run the addon.
 -- Backed by GuildOS.RaiderRoster (officer-synced).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
@@ -13,14 +14,7 @@ local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 local function RR() return GuildOS.RaiderRoster end
 
-local ROLE_COL = {
-    TANK   = { r = 0.42, g = 0.62, b = 0.96 },
-    HEALER = { r = 0.40, g = 0.85, b = 0.50 },
-    DPS    = { r = 0.92, g = 0.46, b = 0.46 },
-}
 local ROLE_LETTER = { TANK = "T", HEALER = "H", DPS = "D" }
--- A raider's gear in the palette's status colours (#371).
-local GEAR_COL = { ready = C.ok, gearing = C.warn, missing = C.danger }
 local function gearLabel(g)
     if g == "ready"   then return L["Ready"]   end
     if g == "gearing" then return L["Gearing"] end
@@ -29,13 +23,11 @@ local function gearLabel(g)
 end
 
 -- Column x-offsets inside the scroll child.
-local NAME_X, ROLE_X, GEAR_X, ILVL_X, SPEC_X, NOTE_X = 6, 160, 276, 360, 414, 524
-local ROW_H = 26
+local NAME_X, ROLE_X, GEAR_X, ILVL_X, SPEC_X, NOTE_X = 6, 150, 268, 380, 410, 540
+local ROW_H = 34
 -- The screen's margins (#371): flush with the sub-tab bar's left edge, GAP under it, the content ending
--- GAP short of the right edge. A scroll child stops UI.SCROLL_GUTTER short of its frame, so a scroll
--- frame's right edge sits SCROLL_R from the panel's.
+-- GAP short of the right edge.
 local GAP = UI.GAP
-local SCROLL_R = UI.SCROLL_GUTTER - UI.GAP
 local HEAD_H = 22   -- the table's header row (UI:CreateTableHeader)
 
 -- A button's label in a status colour that survives the hover: the resting colour, repainted.
@@ -109,44 +101,75 @@ end
 
 ----------------------------------------------------------------------
 -- Build the raiders panel; return its refresh fn.
+-- The mockup's raides-raiders: the coverage as dark KPI tiles on the wood, then the pool on a parchment
+-- card: a raider in their class's colour, the roles as round letters (the ones they play filled in the
+-- title's red), the gear as a pill, the item level, the spec and the officer's note as a link.
 ----------------------------------------------------------------------
+local PAD = type(UI.CARD_PAD) == "number" and UI.CARD_PAD or 14
+local CARD_TOP = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
+local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
+-- The paper's shades of a gear state, and a class's colour as the paper prints it (the mockup's .card .c-*).
+local PAPER_GEAR = { ready = hex("2f6e33"), gearing = hex("a0560f"), missing = hex("8f1b0b") }
+local function paperClass(class)
+    return GuildOS.UI:InkFor("paper", "class", class)   -- the paper's class inks (UI/Helpers.lua, #449)
+end
+
+-- A role as a round letter (the mockup's T C D): cream with a tan ring at rest, the title's red filled when
+-- the raider plays it. toggle:SetOn(on).
+local function roleToggle(parent, letter)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(22, 22)
+    local disc = GuildOS.Style:Texture(b, "circle", "ARTWORK", 0)
+    disc:SetAllPoints()
+    local ring = GuildOS.Style:Texture(b, "ring", "ARTWORK", 1)
+    ring:SetAllPoints()
+    b.disc, b.ring = disc, ring
+    b.label = UI:CreateText(b, letter, 11, C.paperInk.r, C.paperInk.g, C.paperInk.b)
+    GuildOS:ApplyFont(b.label, 11, "button")
+    b.label:SetPoint("CENTER", 0, 0)
+    function b:SetOn(on)
+        self.on = on and true or false
+        local fill = on and C.paperTitle or C.quiet
+        disc:SetVertexColor(fill.r, fill.g, fill.b, 1)
+        local edge = on and C.paperTitle or C.paperEdge
+        ring:SetVertexColor(edge.r, edge.g, edge.b, 1)
+        local ink = on and C.quiet or C.quietInk
+        self.label:SetTextColor(ink.r, ink.g, ink.b)
+    end
+    b:SetOn(false)
+    return b
+end
+
 function GuildOS:CreateRaiderPanel(panel, _mainFrame)
     local f = CreateFrame("Frame", nil, panel)
     f:SetAllPoints(panel)
 
-    -- KPI band (same card style as the Roster tab): raid coverage at a glance.
-    -- Values filled + cards positioned responsively in Refresh.
+    -- KPI band: raid coverage at a glance, as the mockup's dark tiles. Positioned in Refresh.
     local KPI_H = 66
     local band = CreateFrame("Frame", nil, f)
     band:SetPoint("TOPLEFT", 0, 0); band:SetPoint("TOPRIGHT", 0, 0); band:SetHeight(KPI_H)
 
-    -- The count of raiders in the text colour; the others keep their role's or status's (#371: gold).
-    local KPI_DEFS = {
-        { label = L["RAIDERS"], col = C.text },
-        { label = L["ONLINE"],  col = C.ok },
-        { label = L["TANKS"],   col = ROLE_COL.TANK },
-        { label = L["HEALERS"], col = ROLE_COL.HEALER },
-        { label = L["DPS"],     col = ROLE_COL.DPS },
-        { label = L["READY"],   col = GEAR_COL.ready },
-    }
+    local KPI_DEFS = { L["Raiders"], L["Online"], L["Tanks"], L["Healers"], L["DPS"], L["Ready"] }
     f.kpi = {}
-    for i, k in ipairs(KPI_DEFS) do
-        local card = UI:CreatePanel(band)
+    for i, label in ipairs(KPI_DEFS) do
+        local card = UI:CreateMetricChip(band, "—", label)
         card:SetFrameLevel((band:GetFrameLevel() or 1) + 1)
-        local val = UI:CreateText(card, "—", 20, k.col.r, k.col.g, k.col.b)
-        val:SetPoint("TOPLEFT", 12, -7)
-        local lbl = UI:CreateText(card, k.label, 10, C.label.r, C.label.g, C.label.b)
-        lbl:SetPoint("BOTTOMLEFT", 12, 8)
-        f.kpi[i] = { card = card, val = val }
+        f.kpi[i] = { card = card, val = card.value }
     end
     f.KPI_H = KPI_H
 
-    -- The table's header row, under the band: the shared one, no fill and a 1px rule under it (#371).
-    local header = UI:CreateTableHeader(f, HEAD_H)
-    header:SetPoint("TOPLEFT", 0, -KPI_H)
-    header:SetPoint("TOPRIGHT", -GAP, -KPI_H)
+    -- The pool on a parchment card under the band.
+    local card = UI:CreateCard(f, L["The guild's raiders"])
+    card:SetPoint("TOPLEFT", 0, -KPI_H - 4)
+    card:SetPoint("BOTTOMRIGHT", -GAP, GAP)
+    f.card = card
+
+    -- The table's header row: the shared one, the paper's red Cinzel and a 1px rule under it (#371).
+    local header = UI:CreateTableHeader(card, HEAD_H)
+    header:SetPoint("TOPLEFT", PAD, -CARD_TOP + 2)
+    header:SetPoint("TOPRIGHT", -PAD, -CARD_TOP + 2)
     local function head(text, x)
-        local h = UI:CreateHeaderText(header, text, 10)
+        local h = UI:CreateHeaderText(header, text, UI.SP.META)
         h:SetPoint("LEFT", x, 0)
         return h
     end
@@ -159,46 +182,59 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
 
     -- Scrollable list: its child keeps the frame's width less the gutter, so the rows end where the
     -- header does and nothing runs under the bar (#371).
-    local holder = CreateFrame("Frame", nil, f)
-    holder:SetPoint("TOPLEFT", 0, -(KPI_H + HEAD_H))
-    holder:SetPoint("BOTTOMRIGHT", 0, GAP)
+    local holder = CreateFrame("Frame", nil, card)
+    holder:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
+    holder:SetPoint("BOTTOMRIGHT", -PAD + UI.SCROLL_GUTTER - 4, 10)
     f.holder = holder
     local scroll, child = UI:CreateScrollFrame(holder, "GuildOSRaiderScroll")
     scroll:SetPoint("TOPLEFT", 0, 0)   -- else the viewport is 0x0 and clips everything
-    scroll:SetPoint("BOTTOMRIGHT", SCROLL_R, 0)
+    scroll:SetPoint("BOTTOMRIGHT", 0, 0)
     UI:BindScrollChildWidth(scroll, child)
     f.child = child
 
     -- Row pool (reused across refreshes so editing doesn't leak frames).
     f.rows = {}
     local function buildRow()
-        local row = CreateFrame("Frame", nil, child, "BackdropTemplate")
+        local row = CreateFrame("Frame", nil, child)
         row:SetHeight(ROW_H)
-        row:SetBackdrop({ bgFile = WHITE })
+        local rule = row:CreateTexture(nil, "BACKGROUND")
+        rule:SetTexture(WHITE)
+        rule:SetHeight(1)
+        rule:SetPoint("BOTTOMLEFT"); rule:SetPoint("BOTTOMRIGHT")
+        rule:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
 
-        row.nameFS = UI:CreateText(row, "", 12, C.text.r, C.text.g, C.text.b)
+        row.nameFS = UI:CreateText(row, "", 12, C.paperInk.r, C.paperInk.g, C.paperInk.b)
+        GuildOS:ApplyFont(row.nameFS, 12, "button")
         row.nameFS:SetPoint("LEFT", NAME_X, 0); row.nameFS:SetWidth(ROLE_X - NAME_X - 6); row.nameFS:SetJustifyH("LEFT")
 
         row.roleBtns = {}
         for ri, role in ipairs(RR().ROLES) do
-            local b = UI:CreateButton(row, ROLE_LETTER[role], 24, 18)
-            b:SetPoint("LEFT", ROLE_X + (ri - 1) * 28, 0)
+            local b = roleToggle(row, ROLE_LETTER[role])
+            b:SetPoint("LEFT", ROLE_X + (ri - 1) * 26, 0)
             b.role = role
             row.roleBtns[ri] = b
         end
 
-        row.gearBtn = UI:CreateButton(row, "", 74, 18)
+        row.gearBtn = UI:SetButtonVariant(UI:CreateButton(row, "", 74, 20), "chip")
         row.gearBtn:SetPoint("LEFT", GEAR_X, 0)
 
-        row.ilvlFS = UI:CreateText(row, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        row.ilvlFS:SetPoint("LEFT", ILVL_X, 0)
-        row.specFS = UI:CreateText(row, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        row.ilvlFS = UI:CreateText(row, "", 12, C.paperInk.r, C.paperInk.g, C.paperInk.b)
+        row.ilvlFS:SetPoint("RIGHT", row, "LEFT", SPEC_X - 14, 0); row.ilvlFS:SetJustifyH("RIGHT")
+        row.specFS = UI:CreateText(row, "", 12, C.paperInk.r, C.paperInk.g, C.paperInk.b)
         row.specFS:SetPoint("LEFT", SPEC_X, 0); row.specFS:SetWidth(NOTE_X - SPEC_X - 6); row.specFS:SetJustifyH("LEFT")
 
+        -- The note as the paper's link: underlined, the officer clicks it to write one.
         row.noteBtn = CreateFrame("Button", nil, row)
         row.noteBtn:SetPoint("LEFT", NOTE_X, 0); row.noteBtn:SetPoint("RIGHT", -6, 0); row.noteBtn:SetHeight(ROW_H)
-        row.noteFS = UI:CreateText(row.noteBtn, "", 11, C.text.r, C.text.g, C.text.b)
-        row.noteFS:SetPoint("LEFT", 0, 0); row.noteFS:SetPoint("RIGHT", 0, 0); row.noteFS:SetJustifyH("LEFT")
+        row.noteFS = UI:CreateText(row.noteBtn, "", 12, C.paperLink.r, C.paperLink.g, C.paperLink.b)
+        row.noteFS:SetPoint("LEFT", 0, 0); row.noteFS:SetJustifyH("LEFT")
+        if row.noteFS.SetWordWrap then row.noteFS:SetWordWrap(false) end
+        row.noteLine = row.noteBtn:CreateTexture(nil, "ARTWORK")
+        row.noteLine:SetTexture(WHITE)
+        row.noteLine:SetHeight(1)
+        row.noteLine:SetPoint("TOPLEFT", row.noteFS, "BOTTOMLEFT", 0, -1)
+        row.noteLine:SetPoint("TOPRIGHT", row.noteFS, "BOTTOMRIGHT", 0, -1)
+        row.noteLine:SetVertexColor(C.paperLink.r, C.paperLink.g, C.paperLink.b, 1)
         return row
     end
 
@@ -230,7 +266,6 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", 0, -(idx - 1) * ROW_H)
             row:SetPoint("TOPRIGHT", 0, -(idx - 1) * ROW_H)
-            row:SetBackdropColor(C.well.r, C.well.g, C.well.b, (idx % 2 == 0) and 0.5 or 0.0)
             row:Show()
 
             local rec = RR():Get(m.key) or {}
@@ -245,14 +280,14 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
             if eff.DPS    then rD = rD + 1 end
             if (rec.gear or "") == "ready" then gReady = gReady + 1 end
 
-            -- Name (class-colored; dim when offline)
-            local cr, cg, cb = GuildOS:GetClassColor(m.class)
-            if not m.online then cr, cg, cb = cr * 0.55, cg * 0.55, cb * 0.55 end
-            row.nameFS:SetText(m.name); row.nameFS:SetTextColor(cr, cg, cb)
+            -- Name (the class's colour on the paper; faded when offline)
+            local cr, cg, cb = paperClass(m.class)
+            row.nameFS:SetText(m.name); row.nameFS:SetTextColor(cr, cg, cb, m.online and 1 or 0.6)
+            row.nameFS:SetAlpha(m.online and 1 or 0.6)
 
-            -- Roles (multi-toggle; shows the effective set): the shared selection mark (#371).
+            -- Roles (multi-toggle; shows the effective set).
             for _, b in ipairs(row.roleBtns) do
-                UI:SetSelected(b, eff[b.role])
+                b:SetOn(eff[b.role])
                 if isOfficer then
                     local key, role = m.key, b.role
                     b:EnableMouse(true)
@@ -262,11 +297,10 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
                 end
             end
 
-            -- Gear status
-            -- Gear status: its status colour on the label, no tinted fill (#371).
+            -- Gear status: a pill, its label in the state's colour.
             local g = rec.gear or ""
             row.gearBtn.label:SetText(gearLabel(g))
-            statusLabel(row.gearBtn, GEAR_COL[g] or C.label)
+            statusLabel(row.gearBtn, PAPER_GEAR[g] or C.paperSoft)
             if isOfficer then
                 local key = m.key
                 row.gearBtn:EnableMouse(true)
@@ -285,9 +319,9 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
             local note = isOfficer and rec.note or ""
             local hasNote = note ~= ""
             row.noteFS:SetText(hasNote and note or (isOfficer and L["+ add note"] or "—"))
-            row.noteFS:SetTextColor(hasNote and C.text.r or C.label.r,
-                                    hasNote and C.text.g or C.label.g,
-                                    hasNote and C.text.b or C.label.b)
+            local nc = (hasNote or isOfficer) and C.paperLink or C.paperSoft
+            row.noteFS:SetTextColor(nc.r, nc.g, nc.b)
+            row.noteLine:SetShown(isOfficer)
             if isOfficer then
                 local key, nm = m.key, m.name
                 row.noteBtn:EnableMouse(true)
@@ -304,15 +338,14 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
         -- Hide any leftover pooled rows.
         for i = #list + 1, #f.rows do f.rows[i]:Hide() end
 
-        -- KPI band: position cards responsively (like the roster band) + fill. Flush with the left
-        -- edge, GAP under the top, ending GAP short of the right (#371).
+        -- KPI band: tiles across the width, GAP apart, ending GAP short of the right (#371).
         local W = f:GetWidth(); if not W or W < 200 then W = 1000 end
         local G, N = GAP, #f.kpi
         local cw = math.floor((W - GAP - G * (N - 1)) / N)
         for i, c in ipairs(f.kpi) do
             c.card:ClearAllPoints()
             c.card:SetPoint("TOPLEFT", (i - 1) * (cw + G), -GAP)
-            c.card:SetSize(cw, f.KPI_H - GAP - 8)
+            c.card:SetSize(cw, f.KPI_H - GAP - 6)
         end
         f.kpi[1].val:SetText(tostring(#list))
         f.kpi[2].val:SetText(tostring(online))
@@ -325,8 +358,8 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
 
         if #list == 0 then
             if not f.emptyFS then
-                f.emptyFS = UI:CreateText(child2, string.format(L["No level-%d members found."], GuildOS.Client.maxLevel), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-                f.emptyFS:SetPoint("TOPLEFT", 6, -6)
+                f.emptyFS = UI:CreateText(child2, string.format(L["No level-%d members found."], GuildOS.Client.maxLevel), 12, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+                f.emptyFS:SetPoint("TOPLEFT", 6, -8)
             end
             f.emptyFS:Show()
         elseif f.emptyFS then
@@ -335,7 +368,8 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
     end
 
     -- Live refresh on synced edits + when the tab is shown.
-    if RR() then RR().uiRefresh = function() if panel:IsShown() then f.Refresh() end end end
+    -- IsVisible: the tab stays shown under a closed window (memory audit); OnShow refreshes it.
+    if RR() then RR().uiRefresh = function() if panel:IsVisible() then f.Refresh() end end end
     panel:HookScript("OnShow", function() GuildOS:SafeCall(f.Refresh) end)
 
     return f.Refresh

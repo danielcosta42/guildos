@@ -4,6 +4,9 @@
 -- SavedVariables (GuildOSDB is shared across all chars on the game account)
 -- and offers a one-click link. Own alts only; others' alts are never
 -- auto-detectable (no API reveals another player's account).
+-- One question for every undecided character of the account, its answers
+-- kept per pair of characters for the whole account, a day between two
+-- asks and three at most (#449, specs/salao/alts.md).
 ----------------------------------------------------------------------
 local AltAutoDetect = {}
 GuildOS.AltAutoDetect = AltAutoDetect
@@ -38,10 +41,23 @@ function AltAutoDetect:RecordSelf()
     local realm = GuildOS:RealmName()
     local key = GuildOS:GetPlayerKey(name, realm)
     local _, classFile = UnitClass("player")
+    -- The GUID outlives a rename (#449): the same one under another key is this character's old name, whose links
+    -- and answers move to the new one once the roster is there (CheckRename).
+    local guid = UnitGUID and UnitGUID("player") or nil
+    if type(guid) == "string" and guid ~= "" then
+        for k, info in pairs(GuildOSDB.accountChars) do
+            if k ~= key and type(info) == "table" and info.guid == guid then
+                GuildOSDB.accountChars[k] = nil
+                GuildOSDB.altRenamed = { from = k, to = key, ts = GetServerTime() }
+            end
+        end
+    else
+        guid = nil
+    end
     GuildOSDB.accountChars[key] = {
         name = name, realm = realm, class = classFile,
         level = UnitLevel("player"), guild = GetGuildInfo("player"),
-        ts = GetServerTime(),
+        ts = GetServerTime(), guid = guid,
     }
 end
 
@@ -407,10 +423,10 @@ function AltAutoDetect:HandleSelfClaim(sender, data)
     local ok, claim = LibSerialize:Deserialize(data)
     if not ok or type(claim) ~= "table" then return end
 
-    local sShort = sender and (sender:match("^([^-]+)") or sender)
-    if not sShort then return end
-    local sRealm = (sender:match("-(.+)$")) or GetRealmName()
-    local senderKey = GuildOS:GetPlayerKey(sShort, sRealm)
+    if type(sender) ~= "string" or sender == "" then return end
+    -- The roster's key of the sender: on WoW: Forever "Chehul-Costa" is "Chehul Costa" (audit N2).
+    local senderKey = GuildOS:SenderKey(sender)
+    if not senderKey then return end
     -- The claim's keys were built on the sender's client: as this client keys them (#97).
     if claim.main then claim.main = GuildOS:LocalMemberKey(claim.main) end
     if type(claim.alts) == "table" then
@@ -455,10 +471,12 @@ function AltAutoDetect:HandleSelfClaim(sender, data)
         end
     end
     if type(claim.unlink) == "table" then
-        -- Only unlink a key the sender owns: themselves, or an alt whose
-        -- main is the sender.
+        -- Only unlink a key the sender owns: themselves, an alt whose main is the sender, or (#449) another
+        -- alt of the sender's own main: a member logged on an alt unlinking a sibling was refused here, and the
+        -- unlink waited and went again every session for thirty days.
+        local senderMain = GuildOS.db.altLinks and GuildOS.db.altLinks[senderKey]
         for _, k in ipairs(claim.unlink) do
-            if k == senderKey or links[k] == senderKey then links[k] = nil end
+            if k == senderKey or links[k] == senderKey or (senderMain and links[k] == senderMain) then links[k] = nil end
         end
     end
     -- One write for the whole claim, through the officers' synced links (#424).
@@ -467,69 +485,431 @@ function AltAutoDetect:HandleSelfClaim(sender, data)
 end
 
 ----------------------------------------------------------------------
--- Login suggestion prompt: "Link N chars as alts of [Main]?"
--- Suggest + one-click confirm. Nagging is guarded two ways: at most once
--- per session, and a persisted per-group "declined" marker so a login
--- doesn't re-offer the exact same group forever (a new/removed alt changes
--- the signature and is re-offered).
+-- The login prompt (#449): ONE question for every character of the account not decided yet,
+--   "These characters are on your account: A, B, C. Link them as alts of [main]?"
+--   Link all / Choose... / Not now / Don't ask again
+-- instead of one per group that came back on every login, reload and character.
+--
+-- What it remembers is the account's (GuildOSDB.altAsk, the root every character reads; a /gos reset,
+-- a guild left and joined again or a new guild db keeps it), per PAIR of characters:
+--   * `d`: decided for good. "link" (linked from the prompt), "no" (Don't ask again, or left unticked
+--     under Choose...), "linked" (seen in one group: an officer's later unlink is the officers' word and
+--     does not bring the question back), "gone" (asked MAX_ASKS times without an answer);
+--   * `n`, `at`: how many times it was SHOWN and when. Shown counts, not answered: a /reload, an Escape
+--     or the close with the window up is a "Not now" too. A pair comes back at most once a SNOOZE
+--     (a day) and never after MAX_ASKS (three) times.
+-- A character is listed while it has a pair still open with another character of the account in the
+-- guild; one that was answered for good about any of them (or is already in a group) is left out when
+-- a character nobody was asked about is there: a new alt is asked about alone. The main's change, a
+-- rename, an officer's sync or a second client never reopen a pair that was decided.
+-- At most once a session, never in combat, after the login's popups (GuildOS:ShowWhenClear), and the
+-- question is worked out again when it gets its turn: what changed while it waited is not asked.
 ----------------------------------------------------------------------
-function AltAutoDetect:_RegisterPopup()
-    if GuildOS.Dialogs["GUILDOS_ALT_AUTODETECT"] then return end
-    GuildOS.Dialogs["GUILDOS_ALT_AUTODETECT"] = {
-        text = L["Found %d of your characters in this guild. Link them as alts of %s?"],
-        button1 = L["Link"],
-        button2 = L["Not now"],
-        OnAccept = function(dlg, data)
-            local r = data or (dlg and dlg.data)
-            if not r then return end
-            if AltAutoDetect:LinkOwnAlts(r.main, r.group) > 0 then
-                local short = r.main:match("^([^-]+)") or r.main
-                GuildOS:Print(string.format(L["Linked %d alt(s) to %s."], #r.group - 1, short))
+AltAutoDetect.SNOOZE = 86400
+AltAutoDetect.MAX_ASKS = 3
+AltAutoDetect.PROMPT_DELAY = 20   -- seconds after login: past the roster's settle and the login popups' burst
+
+local function pairKey(a, b)
+    if a < b then return a .. "|" .. b end
+    return b .. "|" .. a
+end
+AltAutoDetect.PairKey = pairKey
+
+local function mergeAsk(a, b)
+    if type(a) ~= "table" then return b end
+    if type(b) ~= "table" then return a end
+    return { d = a.d or b.d, n = math.max(a.n or 0, b.n or 0), at = math.max(a.at or 0, b.at or 0) }
+end
+
+-- The account's answers, keyed this client's way (WoW: Forever rewrites a realm, #97), with the groups an
+-- older version's "Don't ask again" kept (GuildOSDB.altDeclined) as declined pairs. Once per table.
+function AltAutoDetect:_Asks()
+    if type(GuildOSDB) ~= "table" then return {} end
+    local a = GuildOSDB.altAsk
+    if type(a) ~= "table" or type(a.pairs) ~= "table" then
+        a = { v = 1, pairs = {} }
+        GuildOSDB.altAsk = a
+    end
+    if self._asksTable == a then return a.pairs end
+    local out = {}
+    for pk, p in pairs(a.pairs) do
+        local x, y
+        if type(pk) == "string" then x, y = pk:match("^(.-)|(.+)$") end
+        if x and type(p) == "table" then
+            x, y = GuildOS:LocalMemberKey(x), GuildOS:LocalMemberKey(y)
+            if x ~= "" and y ~= "" and x ~= y then out[pairKey(x, y)] = mergeAsk(out[pairKey(x, y)], p) end
+        end
+    end
+    if type(GuildOSDB.altDeclined) == "table" then
+        for sig in pairs(GuildOSDB.altDeclined) do
+            local keys = {}
+            for k in tostring(sig):gmatch("[^|]+") do keys[#keys + 1] = GuildOS:LocalMemberKey(k) end
+            for i = 1, #keys do
+                for j = i + 1, #keys do
+                    if keys[i] ~= keys[j] then
+                        local k = pairKey(keys[i], keys[j])
+                        out[k] = out[k] or {}
+                        out[k].d = out[k].d or "no"
+                    end
+                end
             end
-        end,
-        OnCancel = function(dlg, data)
-            local r = data or (dlg and dlg.data)
-            if not r then return end
-            GuildOSDB.altDeclined = GuildOSDB.altDeclined or {}
-            GuildOSDB.altDeclined[GroupSignature(r.group)] = true
-        end,
-        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-    }
+        end
+        GuildOSDB.altDeclined = nil
+    end
+    a.pairs, a.v = out, 1
+    self._asksTable = a
+    return out
 end
 
--- Shows the confirm popup for a detected group `r` ({ group = {keys...}, main = key }).
--- `r` is passed through the dialog's text/data args rather than captured
--- by closure, so a stale `r` from an earlier scan can never be shown/applied.
-function AltAutoDetect:_ShowPrompt(r)
-    self:_RegisterPopup()
-    local short = r.main:match("^([^-]+)") or r.main
-    local dlg = GuildOS:ShowDialog("GUILDOS_ALT_AUTODETECT", #r.group - 1, short, r)
-    if dlg then dlg.data = r end
-    self._prompted = true
+-- Pure: the characters of `accountChars` in the guild (`guildSet`), highest level first, then by key.
+local function inGuild(accountChars, guildSet)
+    local level, chars = {}, {}
+    for key, info in pairs(accountChars or {}) do
+        local lk = GuildOS:LocalMemberKey(key)   -- recorded on another realm's client (#97)
+        if type(lk) == "string" and guildSet[lk] then
+            local lv = type(info) == "table" and tonumber(info.level) or 0
+            if level[lk] == nil then
+                chars[#chars + 1] = lk
+                level[lk] = lv
+            elseif lv > level[lk] then
+                level[lk] = lv
+            end
+        end
+    end
+    table.sort(chars, function(a, b)
+        if level[a] ~= level[b] then return level[a] > level[b] end
+        return a < b
+    end)
+    return chars
+end
+AltAutoDetect.InGuild = inGuild
+
+--- Pure: what the prompt would ask now, or nil. `asks` is the account's pairs, `now` the server time; `manual`
+--- (/gos myalts, Detect my alts) asks about every character not in one group, whatever was answered. Returns
+--- { list = the characters to link (keys), choices = the mains to offer (keys), main = the one suggested,
+---   chars = every character of the account in the guild }.
+--- The main suggested is the group the account already has (the one with the most of its characters), else
+--- the highest level, a tie to the key: the same characters always get the same answer (#353).
+function AltAutoDetect.Plan(accountChars, guildSet, altLinks, asks, now, manual)
+    altLinks, asks, now = altLinks or {}, asks or {}, now or 0
+    local chars = inGuild(accountChars, guildSet or {})
+    if #chars < 2 then return nil end
+    local function root(k) return altLinks[k] or k end
+    local function final(p) return type(p) == "table" and (p.d ~= nil or (p.n or 0) >= AltAutoDetect.MAX_ASKS) end
+    local function open(a, b)
+        if root(a) == root(b) then return false end
+        if manual then return true end
+        local p = asks[pairKey(a, b)]
+        if type(p) ~= "table" then return true end
+        if final(p) then return false end
+        return now - (p.at or 0) >= AltAutoDetect.SNOOZE
+    end
+    local has, any = {}, false
+    for i = 1, #chars do
+        for j = i + 1, #chars do
+            if open(chars[i], chars[j]) then has[chars[i]], has[chars[j]], any = true, true, true end
+        end
+    end
+    if not any then return nil end
+    -- Answered for good about some other character, or already in a group with one.
+    local function settled(k)
+        for _, o in ipairs(chars) do
+            if o ~= k and (root(o) == root(k) or (not manual and final(asks[pairKey(k, o)]))) then return true end
+        end
+        return false
+    end
+    local list = {}
+    for _, k in ipairs(chars) do
+        if has[k] and not settled(k) then list[#list + 1] = k end
+    end
+    if #list == 0 then
+        for _, k in ipairs(chars) do if has[k] then list[#list + 1] = k end end
+    end
+    -- The mains to offer: the account's characters and the mains they are linked to in the guild; never the
+    -- one character asked about alone (it cannot be its own alt).
+    local choices, seen, count = {}, {}, {}
+    local function offer(k)
+        if seen[k] or (#list == 1 and k == list[1]) then return end
+        seen[k] = true
+        choices[#choices + 1] = k
+    end
+    for _, k in ipairs(chars) do
+        local r = root(k)
+        count[r] = (count[r] or 0) + 1
+        if r ~= k and guildSet[r] then offer(r) end
+        offer(k)
+    end
+    local main
+    for _, k in ipairs(choices) do
+        if altLinks[k] == nil and (count[k] or 0) >= 2 and (not main or count[k] > count[main]) then main = k end
+    end
+    if not main then
+        for _, k in ipairs(chars) do if seen[k] then main = k; break end end
+    end
+    if not main then return nil end
+    local out = {}
+    for _, k in ipairs(list) do
+        if root(k) ~= root(main) then out[#out + 1] = k end
+    end
+    if #out == 0 then return nil end
+    return { list = out, choices = choices, main = main, chars = chars }
 end
 
--- Called from Initialize, after the roster has had time to populate
--- (cold-login timing — GetGuildRosterInfo is empty for the first few
--- seconds after login).
-function AltAutoDetect:_SchedulePrompt()
-    GuildOS.Compat.After(10, function()
-        AltAutoDetect:ResendPending()
-        if AltAutoDetect._prompted then return end
-        local r = AltAutoDetect:DetectOwnAlts(GuildOSDB.accountChars, AltAutoDetect:_GuildSet(), GuildOS.db.altLinks)
-        if not r then return end
-        local declined = GuildOSDB.altDeclined
-        if declined and declined[GroupSignature(r.group)] then return end
-        AltAutoDetect:_ShowPrompt(r)
+-- Each pair of a listed character with another character of the account: fn(pairKey, listed, other).
+local function eachPair(plan, fn)
+    for _, k in ipairs(plan.list or {}) do
+        for _, o in ipairs(plan.chars or {}) do
+            if o ~= k then fn(pairKey(k, o), k, o) end
+        end
+    end
+end
+
+--- The prompt was shown: one more time for each of its pairs still open; after MAX_ASKS they are not asked again.
+function AltAutoDetect:MarkShown(plan, now)
+    local asks = self:_Asks()
+    now = now or GetServerTime()
+    local links = GuildOS.db and GuildOS.db.altLinks or {}
+    eachPair(plan, function(pk, k, o)
+        if (links[k] or k) == (links[o] or o) then return end
+        local p = asks[pk] or {}
+        asks[pk] = p
+        if p.d then return end
+        p.n, p.at = (p.n or 0) + 1, now
+        if p.n >= self.MAX_ASKS then p.d = "gone" end
     end)
 end
 
--- Manual trigger for /gos myalts: ignores the session/declined guards.
+--- The prompt was answered for good: `how` "link" (the characters in `picked`, a set; every listed one when nil)
+--- or "no". A listed character left unticked under Choose... is a "no".
+function AltAutoDetect:Answer(plan, how, picked)
+    local asks = self:_Asks()
+    eachPair(plan, function(pk, k)
+        local d = (how == "link" and (picked == nil or picked[k])) and "link" or "no"
+        local p = asks[pk] or {}
+        asks[pk] = p
+        if p.d ~= "link" then p.d = d end
+    end)
+end
+
+-- Every pair of the account's characters found in one group is decided: the officers linked them, or the player
+-- did. An officer's unlink later is theirs to make; the prompt does not ask to undo it.
+function AltAutoDetect:_NoteLinked(chars, links)
+    local asks = self:_Asks()
+    for i = 1, #chars do
+        for j = i + 1, #chars do
+            local a, b = chars[i], chars[j]
+            if (links[a] or a) == (links[b] or b) then
+                local pk = pairKey(a, b)
+                asks[pk] = asks[pk] or {}
+                asks[pk].d = asks[pk].d or "linked"
+            end
+        end
+    end
+end
+
+-- The question as of now, or nil.
+function AltAutoDetect:_Plan(manual)
+    if type(GuildOSDB) ~= "table" then return nil end
+    local guildSet = self:_GuildSet()
+    local links = (GuildOS.db and GuildOS.db.altLinks) or {}
+    self:_NoteLinked(inGuild(GuildOSDB.accountChars, guildSet), links)
+    return AltAutoDetect.Plan(GuildOSDB.accountChars, guildSet, links, self:_Asks(), GetServerTime(), manual)
+end
+
+--- Pure: the characters the prompt links under `main`: the listed ones, and the main it suggested when another one
+--- is picked (the account is one player), never `main` itself.
+function AltAutoDetect.Candidates(plan, main)
+    local out, seen = {}, { [main or ""] = true }
+    for _, k in ipairs(plan.list or {}) do
+        if not seen[k] then seen[k] = true; out[#out + 1] = k end
+    end
+    local sug = plan.main
+    if sug and not seen[sug] then
+        local inChars = false
+        for _, k in ipairs(plan.chars or {}) do if k == sug then inChars = true; break end end
+        if inChars then out[#out + 1] = sug end
+    end
+    return out
+end
+
+--- "Link all" / "Link selected": the ticked characters (`picked`, a set; nil: all of Candidates) become alts of
+--- `main`, with the group `main` already has and the groups they head. Returns how many links changed.
+function AltAutoDetect:Accept(plan, main, picked)
+    if type(plan) ~= "table" or not main then return 0 end
+    self:Answer(plan, "link", picked)
+    local group, inGroup = {}, {}
+    local function add(k)
+        if not inGroup[k] then inGroup[k] = true; group[#group + 1] = k end
+    end
+    add(main)
+    for _, k in ipairs(GuildOS:GetLinkedChars(main)) do add(k) end
+    local n = 0
+    for _, k in ipairs(AltAutoDetect.Candidates(plan, main)) do
+        if picked == nil or picked[k] then
+            n = n + 1
+            for _, g in ipairs(GuildOS:GetLinkedChars(k)) do add(g) end
+        end
+    end
+    if n == 0 then return 0 end
+    local changed = self:LinkOwnAlts(main, group)
+    if changed > 0 then
+        GuildOS:Print(string.format(L["Linked %d alt(s) to %s."], n, main:match("^([^-]+)") or main))
+    end
+    return changed
+end
+
+--- "Don't ask again": none of the listed characters is asked about again (with any of the account's).
+function AltAutoDetect:Decline(plan)
+    if type(plan) == "table" then self:Answer(plan, "no") end
+end
+
+-- Opens the window (UI/AltDepartureDialog.lua) and returns it, so the popup queue holds its slot (B21).
+function AltAutoDetect:_Show(plan, manual)
+    if GuildOS.ShowAltPrompt then return GuildOS:ShowAltPrompt(plan, manual) end
+    return nil
+end
+
+--- At login, once a session: the question, if there is one, when the popup queue lets it (never in combat, after
+--- the login's own popups). Counted as asked only when it is on screen.
+function AltAutoDetect:OfferAtLogin()
+    if self._prompted then return end
+    if not self:_Plan(false) then return end
+    self._prompted = true
+    GuildOS:ShowWhenClear("altdetect", function()
+        local plan = AltAutoDetect:_Plan(false)   -- the links may have changed while it waited
+        if not plan then return nil end
+        local f = AltAutoDetect:_Show(plan, false)
+        if f then AltAutoDetect:MarkShown(plan) end
+        return f
+    end)
+end
+
+-- Called from Initialize: the claims go again once the roster is there; the question after the login's popups.
+function AltAutoDetect:_SchedulePrompt()
+    GuildOS.Compat.After(10, function()
+        AltAutoDetect:ResendPending()
+        AltAutoDetect:CheckRename()
+    end)
+    GuildOS.Compat.After(self.PROMPT_DELAY, function() AltAutoDetect:OfferAtLogin() end)
+    -- An officer: a group whose main is not in the guild any more, asked about once (AltDeparture, #449).
+    local AD = GuildOS.AltDeparture
+    if AD and AD.CheckOrphans then
+        GuildOS.Compat.After(AD.ORPHAN_DELAY, function() GuildOS:SafeCall(AD.CheckOrphans, AD) end)
+    end
+end
+
+--- /gos myalts, Detect my alts: every character of the account not in one group, whatever was answered.
 function AltAutoDetect:PromptNow()
-    local r = self:DetectOwnAlts(GuildOSDB.accountChars, self:_GuildSet(), GuildOS.db.altLinks)
-    if r then
-        self:_ShowPrompt(r)
-    else
+    local plan = self:_Plan(true)
+    if not plan then
         GuildOS:Print(L["No other characters of yours found in this guild."])
+        return
+    end
+    GuildOS:ShowWhenClear("altdetect", function()
+        local p = AltAutoDetect:_Plan(true)
+        return p and AltAutoDetect:_Show(p, true) or nil
+    end)
+end
+
+--- /gos myalts reset: forget every answer, so the login prompt may ask again.
+function AltAutoDetect:ResetAnswers()
+    if type(GuildOSDB) ~= "table" then return end
+    GuildOSDB.altAsk, GuildOSDB.altDeclined, self._asksTable = nil, nil, nil
+    GuildOS:Print(L["Your answers about your alts are forgotten: the login prompt may ask again."])
+end
+
+----------------------------------------------------------------------
+-- The member sheet's Add alt (#449)
+----------------------------------------------------------------------
+--- Pure: the key of the guild member `typed` names in `names` ({ { name, key } }, the roster), or nil. Any case; on
+--- WoW: Forever the chat's "Chehul-Costa" is the roster's "Chehul Costa" (audit N2). Two namesakes of connected
+--- realms (retail): the one whose key is `realmOf`'s realm, else the first.
+function AltAutoDetect.FindMember(names, typed, realmOf)
+    typed = strtrim(typed or ""):lower()
+    if typed == "" then return nil end
+    local spaced = typed:gsub("%-", " ")
+    local want = realmOf and realmOf:match("%-(.+)$")
+    local found
+    for _, n in ipairs(names or {}) do
+        local nm = type(n.name) == "string" and n.name:lower()
+        if nm and (nm == typed or nm == spaced or (type(n.key) == "string" and n.key:lower() == typed)) then
+            if not found or (want and n.key:match("%-(.+)$") == want) then found = n.key end
+        end
+    end
+    return found
+end
+
+--- `altKey` linked to the group `cardKey` is in, under that group's main (an alt's sheet links to its main, never
+--- to the alt: LinkAlt refused that, and a member's claim was dropped by the officers). Officers write it; a
+--- member's goes as a claim of the whole group, which names the member. True, or false and why: "self" (the same
+--- group already), "officer" (refused by LinkAlt).
+function AltAutoDetect:AddAlt(cardKey, altKey)
+    if not cardKey or not altKey or cardKey == altKey then return false, "self" end
+    local links = (GuildOS.db and GuildOS.db.altLinks) or {}
+    local main = links[cardKey] or cardKey
+    if (links[altKey] or altKey) == main then return false, "self" end
+    if GuildOS:IsOfficer() then
+        return GuildOS:LinkAlt(altKey, main) and true or false, "officer"
+    end
+    local group = GuildOS:GetLinkedChars(main)
+    group[#group + 1] = altKey
+    self:LinkOwnAlts(main, group)
+    return true
+end
+
+----------------------------------------------------------------------
+-- A renamed character (#449): the same GUID under a new name. Its links move to the new name (an officer writes
+-- them; a member's view and claim carry the new name into the group) and so do the account's answers about it.
+-- A realm transfer changes the GUID: that character is a new one, asked about once like any other.
+----------------------------------------------------------------------
+--- Pure: `links` with `old` renamed `new` (its own link and every alt pointing at it). A new table.
+function AltAutoDetect.PlanRename(links, old, new)
+    local out = {}
+    for k, v in pairs(links or {}) do
+        if k ~= old then out[k] = (v == old) and new or v end
+    end
+    local m = (links or {})[old]
+    if m and m ~= new then out[new] = m end
+    if out[new] == new then out[new] = nil end
+    return out
+end
+
+function AltAutoDetect:CheckRename()
+    local r = GuildOSDB and GuildOSDB.altRenamed
+    if type(r) ~= "table" or type(r.from) ~= "string" or type(r.to) ~= "string" then return end
+    local roster = GuildOS.WholeRoster and GuildOS:WholeRoster()
+    if not roster then return end   -- not the whole guild yet: try at the next login
+    GuildOSDB.altRenamed = nil
+    local guildSet = self:_GuildSet()
+    local old, new = GuildOS:LocalMemberKey(r.from), GuildOS:LocalMemberKey(r.to)
+    if guildSet[old] or not guildSet[new] then return end
+    -- The account's answers about the old name are the new one's.
+    local asks = self:_Asks()
+    for pk, p in pairs(asks) do
+        local x, y = pk:match("^(.-)|(.+)$")
+        if x == old or y == old then
+            local o = (x == old) and y or x
+            asks[pk] = nil
+            if o ~= new then asks[pairKey(new, o)] = mergeAsk(asks[pairKey(new, o)], p) end
+        end
+    end
+    local links = (GuildOS.db and GuildOS.db.altLinks) or {}
+    local main = links[old]
+    local heads = false
+    for _, m in pairs(links) do if m == old then heads = true; break end end
+    if not main and not heads then return end
+    local planned = AltAutoDetect.PlanRename(links, old, new)
+    if GuildOS:IsOfficer() then
+        if GuildOS.AltSync then GuildOS.AltSync:Commit(planned) else GuildOS.db.altLinks = planned end
+    else
+        local head = planned[new] or new
+        local group = GuildOS:GetLinkedChars(old)
+        local keys = { head }
+        for _, k in ipairs(group) do
+            local nk = (k == old) and new or k
+            if nk ~= head then keys[#keys + 1] = nk end
+        end
+        if #keys > 1 then self:LinkOwnAlts(head, keys) end
     end
 end
 

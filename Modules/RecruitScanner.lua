@@ -3,6 +3,7 @@
 -- Active recruiting: /who-scan unguilded candidates, mass-whisper a
 -- template, capture replies. Officer-gated, OFF by default, fail-safe.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local RecruitScanner = {}
 GuildOS.RecruitScanner = RecruitScanner
 local L = GuildOS.L
@@ -78,6 +79,7 @@ function RecruitScanner:Scan(onDone)
     if self._scanBusy then return end
     self._scanBusy = true
     self._results = {}
+    self._whoRaw, self._scanDone = nil, nil   -- what the /who answered, before any filter (audit B13)
     self._whisperQueue = nil    -- a new scan drops a Forever batch left half sent (issue #61)
     local cfg = GuildOS.db.recruitScanner
     if not self._whoFrame then
@@ -103,6 +105,7 @@ function RecruitScanner:_OnWhoResult()
     local out = {}
     if C_FriendList and C_FriendList.GetNumWhoResults then
         local n = C_FriendList.GetNumWhoResults() or 0
+        self._whoRaw = n
         for i = 1, n do
             local w = C_FriendList.GetWhoInfo(i)
             if w and w.fullName then
@@ -123,10 +126,18 @@ function RecruitScanner:_FinishScan()
     if self._whoFrame then self._whoFrame:UnregisterEvent("WHO_LIST_UPDATE") end
     GuildOS.Compat.SetWhoToUI(false)
     self._scanBusy = nil
+    self._scanDone = true
     if self._onScanDone then GuildOS:SafeCall(self._onScanDone) end
 end
 
 function RecruitScanner:GetResults() return self._results or {} end
+
+-- Whether the last scan's /who came back with nobody at all on WoW: Forever (audit B13, issue #45): there the client
+-- may block a /who an addon sends, so an empty list would read as "nobody is online". Never elsewhere.
+function RecruitScanner:WhoMaybeBlocked()
+    if GuildOS:RealmBound() then return false end
+    return self._scanDone == true and (self._whoRaw or 0) == 0
+end
 
 ----------------------------------------------------------------------
 -- Mass-whisper (throttled, cooldown, batch-capped)
@@ -149,11 +160,21 @@ function RecruitScanner:WhisperSelected(names)
         end
     end
     if #plan == 0 then return end
-    if GuildOS.Compat.NeedsClick() then
+    if GuildOS.Compat.NeedsHardware("whisper") then
         -- WoW: Forever drops a whisper sent from a timer (issue #61): the first goes out in
-        -- this click, the rest one per click on "Whisper next".
+        -- this click, the rest one per click on "Whisper next", or one per key press of the
+        -- officer action queue's binding or click of its toast (#449).
         self._whisperQueue = plan
         self:WhisperNext()
+        local AQ = GuildOS.ActionQueue
+        if AQ then
+            for _, w in ipairs(plan) do
+                local name = w.name
+                AQ:Add({ kind = "whisper", key = "scan:" .. name, name = name,
+                         valid = function() return self:_Waiting(name) end,
+                         run = function() return self:_WhisperOne(name) end })
+            end
+        end
         if #plan > 0 then
             GuildOS:Print(string.format(GuildOS.L["%d more: click Whisper next to send each one."], #plan))
         end
@@ -173,10 +194,32 @@ function RecruitScanner:PendingWhispers()
     return self._whisperQueue and #self._whisperQueue or 0
 end
 
+-- Whether `name`'s whisper still waits (a new scan drops the batch).
+function RecruitScanner:_Waiting(name)
+    for _, w in ipairs(self._whisperQueue or {}) do
+        if w.name == name then return true end
+    end
+    return false
+end
+
+-- One whisper waiting, by name, taken off the list: the officer action queue's key press (#449). Whether it went.
+function RecruitScanner:_WhisperOne(name)
+    local q = self._whisperQueue or {}
+    for i, w in ipairs(q) do
+        if w.name == name then
+            table.insert(q, 1, table.remove(q, i))
+            self:WhisperNext()
+            return true
+        end
+    end
+    return false
+end
+
 -- The click: send the next whisper waiting. Returns how many are left.
 function RecruitScanner:WhisperNext()
     local q = self._whisperQueue
     local w = q and table.remove(q, 1)
+    if w and GuildOS.ActionQueue then GuildOS.ActionQueue:Remove("scan:" .. w.name) end
     if w then
         -- The click sends it, and the WhisperQueue counts it against WoW: Forever's limit (issue #393).
         local queue = GuildOS.WhisperQueue
@@ -274,6 +317,37 @@ end
 ----------------------------------------------------------------------
 local ROW_HEIGHT = 20
 
+-- Widgets reused across redraws (memory audit): a frame, texture or text the client makes is never freed,
+-- so a redraw takes the ones the last one made, by the part each plays (`key`), makes only what is missing
+-- and hides what is left over. Take returns the widget and whether it was reused. Kept local to the file:
+-- the tools load screens one at a time, under a stubbed UI.
+local function NewPool()
+    local made, used, pool = {}, {}, {}
+    function pool.Begin() for k in pairs(used) do used[k] = 0 end end
+    function pool.Take(key, make)
+        local n = (used[key] or 0) + 1
+        used[key] = n
+        local list = made[key]
+        if not list then list = {}; made[key] = list end
+        local w = list[n]
+        if w then
+            w:ClearAllPoints()
+            w:Show()
+            return w, true
+        end
+        w = make()
+        list[n] = w
+        return w, false
+    end
+    function pool.End()
+        for key, list in pairs(made) do
+            for i = (used[key] or 0) + 1, #list do list[i]:Hide() end
+        end
+    end
+    return pool
+end
+
+
 ----------------------------------------------------------------------
 -- Build all scanner controls (filters, Scan button, Results/Inbox tabs,
 -- results list, template box, Whisper button) as children of `container`.
@@ -285,9 +359,18 @@ function RecruitScanner:BuildInto(container)
     if not container then return end
     if container._scannerBuilt then return container._scannerRefresh end
     container._scannerBuilt = true
+    local pool = NewPool()   -- this container's list rows (memory audit)
 
     local UI = GuildOS.UI
-    local C = GuildOS.Colors
+    -- Embedded in the Officers' Room it sits on a parchment card: the paper's inks and parts (UI/Kit.lua).
+    local Kit = rawget(GuildOS, "Kit")
+    -- Its card is parchment wherever it is built (the Officers' Room's area or the popup's body).
+    local onPaper = Kit and true or false
+    local C = onPaper and Kit.PAPER or GuildOS.Colors
+    local function checkbox(parent, text, size)
+        if onPaper then return Kit:Checkbox(parent, text, size) end
+        return UI:CreateCheckbox(parent, text, size)
+    end
     -- UI.GAP (#371), read the way Layout.lua reads UI.SCROLL_GUTTER: a stubbed UI in the tools
     -- answers something else for it.
     local GAP = type(UI.GAP) == "number" and UI.GAP or 8
@@ -303,7 +386,8 @@ function RecruitScanner:BuildInto(container)
     -- controls are ever created for them.
     f.isOfficer = GuildOS:IsOfficer()
     if not f.isOfficer then
-        local notice = UI:CreateText(f, L["Officers only."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        local W = GuildOS.Colors.textSoft
+        local notice = UI:CreateText(f, L["Officers only."], 12, W.r, W.g, W.b)
         notice:SetPoint("TOPLEFT", 0, -GAP)
     else
         self._selected = self._selected or {}
@@ -312,20 +396,17 @@ function RecruitScanner:BuildInto(container)
         cfg.classes = cfg.classes or {}
 
         ------------------------------------------------------------
-        -- Every row starts flush with the container's left edge (the Recruitment sub-tab bar's), the
-        -- first UI.GAP under its top, and stops UI.GAP short of its right (#371): they sat 12px in.
+        -- One card on a board (UI/Forms.lua, the mockup's "Scanner of players without a guild"): the filters
+        -- as fields above their boxes and Scan beside them, Results and Inbox as pills, the table, then the
+        -- message's template and Whisper at the card's bottom right.
         ------------------------------------------------------------
-        local ROW1_Y = -GAP
+        local Forms = GuildOS.Forms
+        local board = UI:CreateBoard(f, { name = "GuildOSRecruitScannerBoard" })
+        local card = board:Card(L["Scanner of players without a guild"], { fill = true })
+        f.board = board
         local BTN_H = 24
 
-        ------------------------------------------------------------
-        -- Row 1: filters bar. Min level / Max level / Class / Scan, and the count the scan found right
-        -- after it. The level fields are the shared field (#371): they had the gold Blizzard border.
-        ------------------------------------------------------------
-        local minLbl = UI:CreateText(f, L["Min level"], 11, C.text.r, C.text.g, C.text.b)
-        minLbl:SetPoint("LEFT", f, "TOPLEFT", 0, ROW1_Y - BTN_H / 2)
-        local minBox = UI:CreateInput(f, 36, 22, { numeric = true, max = 2 })
-        minBox:SetPoint("LEFT", minLbl, "RIGHT", 6, 0)
+        local minBox = UI:CreateInput(card, 60, BTN_H, { numeric = true, max = 2, justify = "CENTER" })
         minBox:SetText(tostring(cfg.minLevel or 0))
         local function commitMin(s)
             cfg.minLevel = math.max(0, math.min(GuildOS.Client.maxLevel, tonumber(s:GetText()) or 0))
@@ -335,10 +416,7 @@ function RecruitScanner:BuildInto(container)
         minBox:SetScript("OnEnterPressed", commitMin)
         minBox:HookScript("OnEditFocusLost", commitMin)
 
-        local maxLbl = UI:CreateText(f, L["Max level"], 11, C.text.r, C.text.g, C.text.b)
-        maxLbl:SetPoint("LEFT", minBox, "RIGHT", 14, 0)
-        local maxBox = UI:CreateInput(f, 36, 22, { numeric = true, max = 2 })
-        maxBox:SetPoint("LEFT", maxLbl, "RIGHT", 6, 0)
+        local maxBox = UI:CreateInput(card, 60, BTN_H, { numeric = true, max = 2, justify = "CENTER" })
         local cap = GuildOS.Client.maxLevel
         maxBox:SetText(tostring(math.min(cfg.maxLevel or cap, cap)))
         local function commitMax(s)
@@ -349,39 +427,29 @@ function RecruitScanner:BuildInto(container)
         maxBox:SetScript("OnEnterPressed", commitMax)
         maxBox:HookScript("OnEditFocusLost", commitMax)
 
-        -- Class cycle button: Any -> the 9 TBC classes -> Any. Reuses the
-        -- class order already defined for the recruitment beacon instead
-        -- of duplicating the list here.
-        local classBtn = UI:CreateButton(f, "", 132, BTN_H)
-        classBtn:SetPoint("LEFT", maxBox, "RIGHT", 14, 0)
+        -- The class: any, or one of the classes the recruitment beacon lists (a select, not a button that cycles).
+        local classBtn = UI:CreateDropdown(card, 150, BTN_H)
         local function currentClass()
             return next(cfg.classes)
         end
         local function classNameFor(cls)
             return cls and (LOCALIZED_CLASS_NAMES_MALE[cls] or cls) or L["Any"]
         end
-        local function paintClassBtn()
-            classBtn.label:SetText(string.format(L["Class: %s"], classNameFor(currentClass())))
+        local classOpts = { { value = "any", text = L["Any"] } }
+        for _, cls in ipairs((GuildOS.Recruitment and GuildOS.Recruitment.CLASSES) or {}) do
+            classOpts[#classOpts + 1] = { value = cls, text = classNameFor(cls) }
         end
-        classBtn:SetScript("OnClick", function()
-            local order = (GuildOS.Recruitment and GuildOS.Recruitment.CLASSES) or {}
-            local cur = currentClass()
-            local nextCls
-            if cur then
-                for i, cls in ipairs(order) do
-                    if cls == cur then nextCls = order[i + 1]; break end
-                end
-            else
-                nextCls = order[1]
-            end
-            cfg.classes = nextCls and { [nextCls] = true } or {}
+        classBtn:SetOptions(classOpts)
+        local function paintClassBtn() classBtn:SetValue(currentClass() or "any") end
+        classBtn.onSelect = function(_, v)
+            cfg.classes = (v and v ~= "any") and { [v] = true } or {}
             paintClassBtn()
-        end)
+        end
         paintClassBtn()
         f.classBtn = classBtn
 
-        local scanBtn = UI:CreateButton(f, L["Scan"], 90, BTN_H)
-        scanBtn:SetPoint("LEFT", classBtn, "RIGHT", 14, 0)
+        local scanBtn = UI:CreateButton(card, L["Scan"], 90, BTN_H)
+        UI:SetButtonVariant(scanBtn, "primary")
         scanBtn:SetScript("OnClick", function()
             RecruitScanner:Scan(function()
                 self._selected = {}
@@ -390,60 +458,36 @@ function RecruitScanner:BuildInto(container)
             GuildOS:SafeCall(refresh) -- immediate busy-state repaint
         end)
         f.scanBtn = scanBtn
-
-        local foundText = UI:CreateText(f, string.format(L["%d found"], 0), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        foundText:SetPoint("LEFT", scanBtn, "RIGHT", 12, 0)
+        local foundText = UI:CreateText(card, string.format(L["%d found"], 0), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        foundText:SetSize(90, BTN_H)
+        foundText:SetJustifyH("LEFT")
         f.foundText = foundText
+        local minF = Forms:MakeField(card, L["Min level"], minBox); minF.fw = 90
+        local maxF = Forms:MakeField(card, L["Max level"], maxBox); maxF.fw = 90
+        local classF = Forms:MakeField(card, L["Class"], classBtn); classF.fw = 170
+        card:Inline({ minF, maxF, classF, scanBtn, foundText })
 
-        ------------------------------------------------------------
-        -- Separator under the filters bar.
-        ------------------------------------------------------------
-        local SEP1_Y = ROW1_Y - BTN_H - GAP
-        local sep1 = UI:CreateSeparator(f)
-        sep1:SetPoint("TOPLEFT", 0, SEP1_Y)
-        sep1:SetPoint("TOPRIGHT", -GAP, SEP1_Y)
-
-        ------------------------------------------------------------
-        -- Row 2: view toggle. Results / Inbox tabs (left) and a
-        -- Select-all checkbox + "N selected" count (right).
-        ------------------------------------------------------------
-        local TAB_Y, TAB_H = SEP1_Y - GAP, 28
-        local resultsTab = UI:CreateTab(f, L["Results"], 90)
-        resultsTab:SetPoint("TOPLEFT", 0, TAB_Y)
+        -- Results / Inbox as pills; Clear on the inbox; select all and the count at the right.
+        local resultsTab = Forms:Pill(card, L["Results"])
         resultsTab:SetScript("OnClick", function()
             self._view = "results"
             GuildOS:SafeCall(refresh)
         end)
-        local inboxTab = UI:CreateTab(f, L["Inbox"], 90)
-        inboxTab:SetPoint("LEFT", resultsTab, "RIGHT", 4, 0)
+        local inboxTab = Forms:Pill(card, L["Inbox"])
         inboxTab:SetScript("OnClick", function()
             self._view = "inbox"
             GuildOS:SafeCall(refresh)
         end)
         f.tabs = { results = resultsTab, inbox = inboxTab }
-
         -- Inbox view only: empties it, so old replies stop reading as applicants (issue #311).
-        local clearBtn = UI:CreateButton(f, L["Clear"], 70, 20)
-        clearBtn:SetPoint("LEFT", inboxTab, "RIGHT", 12, 0)
+        local clearBtn = Forms:SmallButton(card, L["Clear"])
         clearBtn:SetScript("OnClick", function()
             RecruitScanner:ClearInbox()
             GuildOS:SafeCall(refresh)
         end)
         f.clearBtn = clearBtn
-
-        local selectedText = UI:CreateText(f, string.format(L["%d selected"], 0), 11,
-            C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        selectedText:SetPoint("RIGHT", f, "TOPRIGHT", -GAP, TAB_Y - TAB_H / 2)
-        f.selectedText = selectedText
-
-        local selectAllCb = UI:CreateCheckbox(f, L["Select all"], 16)
-        -- CreateCheckbox pads its frame out to size+200 (room for long
-        -- labels elsewhere in the app); shrink it to its visible content
-        -- so it can be anchored snugly against selectedText instead of
-        -- floating 200px past the label, per the ScrollFrame-gotcha-style
-        -- lesson of not trusting a helper's default frame bounds.
+        local selectAllCb = checkbox(card, L["Select all"], 16)
         selectAllCb:SetWidth(16 + 6 + (selectAllCb.label:GetStringWidth() or 50) + 4)
-        selectAllCb:SetPoint("RIGHT", selectedText, "LEFT", -14, 0)
         selectAllCb.checkbox.onChanged = function(_, checked)
             local results = RecruitScanner:GetResults()
             for _, cand in ipairs(results) do
@@ -453,46 +497,52 @@ function RecruitScanner:BuildInto(container)
             GuildOS:SafeCall(refresh)
         end
         f.selectAllCb = selectAllCb
+        local selectedText = UI:CreateText(card, string.format(L["%d selected"], 0), 11,
+            C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        selectedText:SetJustifyH("RIGHT")
+        selectedText:SetWordWrap(false)
+        f.selectedText = selectedText
+        local viewRow = CreateFrame("Frame", nil, card)
+        viewRow:SetSize(1, 22)
+        for _, w in ipairs({ resultsTab, inboxTab, clearBtn, selectAllCb, selectedText }) do w:SetParent(viewRow) end
+        card:Add(viewRow, { gap = 12, place = function(_, w)
+            resultsTab:ClearAllPoints(); resultsTab:SetPoint("LEFT", viewRow, "LEFT", 0, 0)
+            inboxTab:ClearAllPoints(); inboxTab:SetPoint("LEFT", resultsTab, "RIGHT", 6, 0)
+            clearBtn:ClearAllPoints(); clearBtn:SetPoint("LEFT", inboxTab, "RIGHT", 10, 0)
+            selectedText:ClearAllPoints(); selectedText:SetPoint("RIGHT", viewRow, "RIGHT", 0, 0)
+            selectedText:SetWidth(100)
+            selectAllCb:ClearAllPoints(); selectAllCb:SetPoint("RIGHT", selectedText, "LEFT", -10, 0)
+            local leftW = (resultsTab:GetWidth() or 60) + 6 + (inboxTab:GetWidth() or 60) + 10 + (clearBtn:GetWidth() or 50)
+            local fits = leftW + 20 + (selectAllCb:GetWidth() or 80) + 110 <= w
+            selectAllCb:SetShown(fits or self._view ~= "results")
+            viewRow:SetSize(math.max(1, w), 22)
+            return 22
+        end })
 
-        ------------------------------------------------------------
-        -- Row 3: column header (Results view only). The shared header (#371): no band, its 1px rule
-        -- under it, the column labels the table's. Its x offsets are the rows' below, the scroll
-        -- child being flush with the holder, so headers line up with the data.
-        ------------------------------------------------------------
-        local HEADER_Y = TAB_Y - TAB_H - 4
-        local colHeader = UI:CreateTableHeader(f)
-        colHeader:SetPoint("TOPLEFT", 0, HEADER_Y)
-        colHeader:SetPoint("TOPRIGHT", -GAP, HEADER_Y)
-        UI:CreateHeaderText(colHeader, L["PLAYER"]):SetPoint("LEFT", 30, 0)
-        UI:CreateHeaderText(colHeader, L["LVL"]):SetPoint("LEFT", 240, 0)
-        UI:CreateHeaderText(colHeader, L["CLASS"]):SetPoint("LEFT", 290, 0)
-        UI:CreateHeaderText(colHeader, L["ZONE"]):SetPoint("LEFT", 410, 0)
+        -- The table: its header (Results view only), then the list, filling the card.
+        local colHeader = Forms:TableHeader(card, { { L["Player"], 30 }, { L["Lvl"], 240 }, { L["Class"], 290 },
+            { L["Zone"], 410 } })
+        card:Add(colHeader, { h = 20, wide = true, gap = 8 })
         f.colHeader = { colHeader }
-
-        ------------------------------------------------------------
-        -- Row 4 (THE HERO): scroll list. Hung just below the column header and just above the
-        -- footer, so it fills the middle and grows with the window.
-        -- ScrollFrame gotcha: CreateScrollFrame does NOT anchor the
-        -- scroll frame itself: SetAllPoints() here, or content is
-        -- clipped to 0x0. The child keeps the frame's width less the bar's gutter (#371).
-        ------------------------------------------------------------
-        local FOOTER_H = 94
-        local holder = CreateFrame("Frame", nil, f)
-        holder:SetPoint("TOPLEFT", colHeader, "BOTTOMLEFT", 0, -2)
-        holder:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -GAP, FOOTER_H)
+        local holder = card:Body(ROW_HEIGHT * 4, { gap = 2 })
         local scroll, child = UI:CreateScrollFrame(holder, "GuildOSRecruitScannerScroll")
         scroll:SetAllPoints()
         UI:BindScrollChildWidth(scroll, child)
         f.child = child
         f.holder = holder
 
-        ------------------------------------------------------------
-        -- Footer: fixed at the container bottom. The template's label, the
-        -- full-width template box (the shared field, in its font, #371), and under it the tokens
-        -- it takes and the Whisper-selected button.
-        ------------------------------------------------------------
-        local whisperBtn = UI:CreateButton(f, string.format(L["Whisper selected (%d)"], 0), 190, 28)
-        whisperBtn:SetPoint("BOTTOMRIGHT", -GAP, GAP)
+        -- The message the whisper says, the tokens it takes under it, and Whisper at the card's bottom right.
+        local tmplBox = UI:CreateInput(card, 200, BTN_H, { max = 255 })
+        tmplBox:SetText(cfg.template or "")
+        local function commitTemplate(s)
+            cfg.template = s:GetText()
+            s:ClearFocus()
+        end
+        tmplBox:SetScript("OnEnterPressed", commitTemplate)
+        tmplBox:HookScript("OnEditFocusLost", commitTemplate)
+        card:Field(L["Message template"], tmplBox, { hint = L["Tokens: [player] [class] [level]"], gap = 12 })
+        local whisperBtn = UI:CreateButton(card, string.format(L["Whisper selected (%d)"], 0), 190, 26)
+        UI:SetButtonVariant(whisperBtn, "primary")
         whisperBtn:SetScript("OnClick", function()
             -- WoW: Forever: the last batch's whispers go out one per click (issue #61).
             if RecruitScanner:PendingWhispers() > 0 then
@@ -507,27 +557,12 @@ function RecruitScanner:BuildInto(container)
             if dlg then dlg.data, dlg.data2 = names, refresh end
         end)
         f.whisperBtn = whisperBtn
-
-        local tmplBox = UI:CreateInput(f, 200, 22, { max = 255 })
-        tmplBox:SetPoint("BOTTOMLEFT", 0, 44)
-        tmplBox:SetPoint("BOTTOMRIGHT", -GAP, 44)
-        tmplBox:SetText(cfg.template or "")
-        local function commitTemplate(s)
-            cfg.template = s:GetText()
-            s:ClearFocus()
-        end
-        tmplBox:SetScript("OnEnterPressed", commitTemplate)
-        tmplBox:HookScript("OnEditFocusLost", commitTemplate)
-
-        local tmplLbl = UI:CreateText(f, L["Message template"], 11, C.text.r, C.text.g, C.text.b)
-        tmplLbl:SetPoint("BOTTOMLEFT", tmplBox, "TOPLEFT", 0, 6)
-        -- The tokens under the box they fill, left-aligned (#371): they trailed its label after a dot.
-        local hint = UI:CreateText(f, L["Tokens: [player] [class] [level]"], 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        hint:SetPoint("TOPLEFT", tmplBox, "BOTTOMLEFT", 0, -6)
+        card:Actions({ whisperBtn })
     end
 
     refresh = function()
-        if not f:IsShown() or not f.isOfficer then return end
+        -- Off screen nothing is drawn: OnShow draws it (memory audit; IsShown is true under a hidden window).
+        if not f:IsVisible() or not f.isOfficer then return end
 
         if RecruitScanner._scanBusy then
             f.scanBtn:Disable()
@@ -536,7 +571,7 @@ function RecruitScanner:BuildInto(container)
             f.scanBtn:Enable()
             f.scanBtn.label:SetText(L["Scan"])
         end
-        for view, tab in pairs(f.tabs) do tab:SetActive(view == self._view) end
+        for view, tab in pairs(f.tabs) do GuildOS.Forms:SetOn(tab, view == self._view) end
 
         local results = RecruitScanner:GetResults()
         f.foundText:SetText(string.format(L["%d found"], #results))
@@ -551,6 +586,7 @@ function RecruitScanner:BuildInto(container)
         local isResults = (self._view == "results")
         for _, hdr in ipairs(f.colHeader) do hdr:SetShown(isResults) end
         f.clearBtn:SetShown(not isResults)
+        if f.board then f.board:Layout() end
         -- Seeing the inbox is reading it: the Now tab stops counting these replies (issue #311).
         -- Only on screen: the view is shared by both containers, and building the hidden one
         -- would otherwise mark replies read that nobody saw.
@@ -568,15 +604,18 @@ function RecruitScanner:BuildInto(container)
             f.selectAllCb.checkbox:Disable()
         end
 
-        -- Reset ALL row state before repaint (regions and any child frames).
+        -- The rows are the last repaint's, refilled (memory audit): every tick of a box repaints the list, and
+        -- each repaint made all its rows again.
         local child = f.child
-        for _, c in pairs({ child:GetChildren() }) do c:Hide() end
-        for _, r in pairs({ child:GetRegions() }) do r:Hide() end
+        pool.Begin()
+        local function text(key, size, col)
+            return pool.Take(key, function() return UI:CreateText(child, "", size, col.r, col.g, col.b) end)
+        end
 
         local y = 0
         if isResults then
             for _, cand in ipairs(results) do
-                local sel = UI:CreateCheckbox(child, "", 16)
+                local sel = pool.Take("select", function() return checkbox(child, "", 16) end)
                 sel:SetPoint("TOPLEFT", 4, -y)
                 local who = RecruitScanner:Addr(cand)   -- realm and all on retail (#184)
                 sel.checkbox:SetChecked(self._selected[who] and true or false)
@@ -593,62 +632,80 @@ function RecruitScanner:BuildInto(container)
                 -- (e.g. a row element vs. the whole scroll child) — explicit
                 -- -y on every column sidesteps that entirely. Offsets mirror
                 -- the column header row above (HDR + this offset).
-                local nameFS = UI:CreateText(child, who or "?", 11, C.text.r, C.text.g, C.text.b)
+                local nameFS, reused = text("name", 11, C.text)
+                if not reused then nameFS:SetWidth(200); nameFS:SetJustifyH("LEFT") end
+                nameFS:SetText(who or "?")
                 nameFS:SetPoint("TOPLEFT", 30, -y)
-                nameFS:SetWidth(200)
-                nameFS:SetJustifyH("LEFT")
 
-                local lvlFS = UI:CreateText(child, tostring(cand.level or "?"), 11, C.textDim.r, C.textDim.g, C.textDim.b)
+                local lvlFS
+                lvlFS, reused = text("level", 11, C.textDim)
+                if not reused then lvlFS:SetWidth(40) end
+                lvlFS:SetText(tostring(cand.level or "?"))
                 lvlFS:SetPoint("TOPLEFT", 240, -y)
-                lvlFS:SetWidth(40)
 
                 local classLabel = LOCALIZED_CLASS_NAMES_MALE[cand.class] or cand.class or "?"
                 local cc = RAID_CLASS_COLORS[cand.class]
-                local classFS = UI:CreateText(child, classLabel, 11,
-                    cc and cc.r or C.textDim.r, cc and cc.g or C.textDim.g, cc and cc.b or C.textDim.b)
+                if onPaper and cc then
+                    local r, g, b = Kit:ClassInk(cand.class)
+                    cc = { r = r, g = g, b = b }
+                end
+                local classFS
+                classFS, reused = text("class", 11, C.textDim)
+                if not reused then classFS:SetWidth(110); classFS:SetJustifyH("LEFT") end
+                classFS:SetText(classLabel)
+                classFS:SetTextColor(cc and cc.r or C.textDim.r, cc and cc.g or C.textDim.g, cc and cc.b or C.textDim.b)
                 classFS:SetPoint("TOPLEFT", 290, -y)
-                classFS:SetWidth(110)
-                classFS:SetJustifyH("LEFT")
 
-                local zoneFS = UI:CreateText(child, cand.zone or "", 10, C.silver.r, C.silver.g, C.silver.b)
+                local zoneFS
+                zoneFS, reused = text("zone", 10, C.silver)
+                if not reused then zoneFS:SetWidth(300); zoneFS:SetJustifyH("LEFT") end
+                zoneFS:SetText(cand.zone or "")
                 zoneFS:SetPoint("TOPLEFT", 410, -y)
-                zoneFS:SetWidth(300)
-                zoneFS:SetJustifyH("LEFT")
 
                 y = y + ROW_HEIGHT
             end
             if #results == 0 then
-                local empty = UI:CreateText(child, L["No candidates."], 11, C.silver.r, C.silver.g, C.silver.b)
+                local none = RecruitScanner:WhoMaybeBlocked()
+                    and L["No candidates. The /who came back empty: on WoW: Forever it may be blocked on this client."]
+                    or L["No candidates."]
+                local empty, reused = text("noneFound", 11, C.silver)
+                if not reused then empty:SetJustifyH("LEFT"); empty:SetWordWrap(true) end
+                empty:SetText(none)
                 empty:SetPoint("TOPLEFT", 4, -4)
-                y = 20
+                empty:SetPoint("RIGHT", child, "RIGHT", -4, 0)
+                y = math.max(20, math.ceil(empty:GetStringHeight() or 0) + 8)
             end
         else -- inbox
             local inbox = RecruitScanner:GetInbox()
             for _, entry in ipairs(inbox) do
                 -- A name in the text colour: gold is the selection's (#371).
-                local nameFS = UI:CreateText(child, entry.name or "?", 11, C.text.r, C.text.g, C.text.b)
+                local nameFS, reused = text("replyName", 11, C.text)
+                if not reused then nameFS:SetWidth(88); nameFS:SetJustifyH("LEFT") end
+                nameFS:SetText(entry.name or "?")
                 nameFS:SetPoint("TOPLEFT", 4, -y)
-                nameFS:SetWidth(88)
-                nameFS:SetJustifyH("LEFT")
 
-                local msgFS = UI:CreateText(child, entry.msg or "", 10, C.text.r, C.text.g, C.text.b)
+                local msgFS
+                msgFS, reused = text("replyMsg", 10, C.text)
+                if not reused then msgFS:SetJustifyH("LEFT"); msgFS:SetWordWrap(false) end
+                msgFS:SetText(entry.msg or "")
                 msgFS:SetPoint("TOPLEFT", 98, -y)
                 msgFS:SetPoint("TOPRIGHT", child, "TOPRIGHT", -54, -y)
-                msgFS:SetJustifyH("LEFT")
-                msgFS:SetWordWrap(false)
 
-                local tsFS = UI:CreateText(child, date("%H:%M", entry.ts or 0), 9, C.silver.r, C.silver.g, C.silver.b)
+                local tsFS = text("replyTime", 9, C.silver)
+                tsFS:SetText(date("%H:%M", entry.ts or 0))
                 tsFS:SetPoint("TOPRIGHT", child, "TOPRIGHT", -4, -y)
 
                 local rowH = math.max(nameFS:GetStringHeight() or 14, msgFS:GetStringHeight() or 14)
                 y = y + rowH + 6
             end
             if #inbox == 0 then
-                local empty = UI:CreateText(child, L["No replies yet."], 11, C.silver.r, C.silver.g, C.silver.b)
+                local empty = text("noReplies", 11, C.silver)
+                empty:SetText(L["No replies yet."])
                 empty:SetPoint("TOPLEFT", 4, -4)
                 y = 20
             end
         end
+        pool.End()
         child:SetHeight(math.max(1, y))
     end
 

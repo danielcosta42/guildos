@@ -228,8 +228,8 @@ SS:On("event", function() rsvps = rsvps + 1 end)
 deliver({ t = "SV", data = env }, "Alt")      -- another member (my own lines are skipped)
 check(rsvps == 1, "a member-level action inside an officer domain is not held to the officer's rule")
 
--- The two domains whose handlers check the officer themselves: GUILD too.
-for _, dom in ipairs({ "alliance", "core.roster" }) do
+-- A domain whose handler checks the officer itself: GUILD too.
+for _, dom in ipairs({ "core.roster" }) do
   local hits = 0
   SS:On(dom, function() hits = hits + 1 end)
   store[env] = { v = 2, id = dom .. "1", dom = dom, act = "snap", data = {} }

@@ -118,12 +118,42 @@ function IsInGuild() return true end
 function GuildOS:IsOfficer() return true end
 GuildOS.CommSystem = { MSG_TYPES = { RAID_DATA = "RAID_DATA" }, SendMessage = function(_, _, p) sent = p end }
 C_Timer.NewTimer = function() return { Cancel = function() end } end
-GuildOS.db.raidTracker.sessions = { [100] = { instanceID = 2912, difficulty = 16, startTime = 100, players = {} } }
+-- A recent night (audit R5: the sync carries the last four weeks only).
+local S = GetServerTime() - 100
+GuildOS.db.raidTracker.sessions = { [S] = { instanceID = 2912, difficulty = 16, startTime = S, players = {} } }
 RT:BroadcastRaidData()
-check(sent.sessions[100].difficulty == 16, "the raid sync carries the difficulty")
-GuildOS.db.raidTracker.sessions = { [100] = { instanceID = 2912, startTime = 100, players = {} } }
+check(sent.sessions[S].difficulty == 16, "the raid sync carries the difficulty")
+GuildOS.db.raidTracker.sessions = { [S] = { instanceID = 2912, startTime = S, players = {} } }
 RT:HandleIncoming(sent)
-check(GuildOS.db.raidTracker.sessions[100].difficulty == 16, "a session that lacked it takes it from the sync")
+check(GuildOS.db.raidTracker.sessions[S].difficulty == 16, "a session that lacked it takes it from the sync")
+-- Audit R5: the sync carries recent nights only; history is kept within bounds.
+do
+  local rtdb = GuildOS.db.raidTracker
+  local now, DAY = GetServerTime(), 86400
+  local old, older = now - 60 * DAY, now - 200 * DAY
+  rtdb.sessions = {
+    [S] = { instanceID = 2912, startTime = S, players = {} },
+    [old] = { instanceID = 2912, startTime = old, players = {}, isGuildRaid = true,
+      snapshots = { { time = old, members = { ["Ana-Azralon"] = { hasConsumes = true } } } } },
+    [old + 1] = { instanceID = 2912, startTime = old + 1, players = {}, isGuildRaid = false },
+    [now - 100 * DAY] = { instanceID = 2912, startTime = now - 100 * DAY, players = {}, isGuildRaid = false },
+  }
+  rtdb.deletedSessions = { [older] = true, [old] = true }
+  rtdb.mergedSessions = { [older] = old }
+  RT:BroadcastRaidData()
+  check(sent.sessions[S] and sent.sessions[old] == nil, "the raid sync sends the last four weeks of nights only")
+  RT:PruneHistory()
+  check(rtdb.sessions[old] and rtdb.sessions[old].snapshots == nil and rtdb.sessions[old].roll.n == 1
+    and rtdb.sessions[old].roll.people["Ana-Azralon"].chits == 1, "an ended guild night is kept, its snapshots rolled up")
+  check(rtdb.sessions[old + 1] and rtdb.sessions[now - 100 * DAY] == nil, "a pug night goes after 90 days")
+  check(rtdb.deletedSessions[older] == nil and rtdb.deletedSessions[old] and rtdb.mergedSessions[older] == nil,
+    "tombstones and merge notes go after 180 days")
+  RT:HandleIncoming({ sessions = { [older] = { instanceID = 2912, startTime = older, players = {} } } })
+  check(rtdb.sessions[older] == nil, "a night older than any tombstone kept is not taken from a peer")
+  RT:HandleIncoming({ sessions = { [old + 5] = { instanceID = 2912, startTime = old + 5, players = {} } } })
+  check(rtdb.sessions[old + 5] ~= nil, "a younger one still is")
+  rtdb.sessions, rtdb.deletedSessions, rtdb.mergedSessions = {}, {}, {}
+end
 
 -- Back in on Heroic during the Normal session's grace: a new session, not the Normal one resumed.
 C_Timer.NewTimer = function() return { Cancel = function() end } end

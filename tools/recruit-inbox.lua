@@ -61,7 +61,9 @@ function GuildOS:IsOfficer() return true end
 -- The Now tab's data half needs only these of the UI.
 local realUI = { IsFeatureAllowed = function() return true end, GetFeature = function(_, id) return id end }
 GuildOS.UI, GuildOS.Colors = realUI, setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1 } end })
+dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/Agora.lua")
+dofile(ADDON .. "/UI/Salao.lua")
 local A = realUI.Agora
 
 local S = GuildOS.RecruitScanner
@@ -125,6 +127,7 @@ node = function(name)
   })
 end
 GuildOS.UI = node()
+GuildOS.Forms = node()   -- the board's builders (UI/Forms.lua), answering as the frames do
 CreateFrame = function() return node() end
 local panel = node()
 panel._scannerBuilt = false   -- a node answers every field; this one the build reads first

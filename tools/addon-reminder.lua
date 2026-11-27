@@ -98,6 +98,7 @@ dofile(ADDON .. "/Core/WhisperQueue.lua")
 dofile(ADDON .. "/Modules/CompanionImport.lua")
 dofile(ADDON .. "/Modules/GuildManager.lua")
 dofile(ADDON .. "/Modules/Discipline.lua")
+dofile(ADDON .. "/Modules/AltRoster.lua")
 dofile(ADDON .. "/Modules/AddonReminder.lua")
 
 -- The officers' channel: what this client publishes, and what reaches it.
@@ -250,6 +251,24 @@ check(not ok and why == "addon", "who has GuildOS now is not reminded")
 table.remove(roster, 2)
 ok, why = R:Remind(key("Bob"))
 check(not ok and why == "gone", "who left is not reminded")
+
+-- An alt whose main runs GuildOS has it on the account (Discord #general): off the list, never whispered, and the
+-- reason said; unless the officer counts each character alone.
+GuildOS.db.altLinks = { [key("Cid")] = key("Dan") }
+local function listed(n) for _, m in ipairs(R:List({})) do if m.name == n then return m end end end
+check(R:CountsAlts() and not listed("Cid"), "Cid, an alt of Dan who runs GuildOS, is not listed")
+local cid = R:Member(key("Cid"))
+check(cid.hasAddon and cid.addonOn == key("Dan"), "his GuildOS is Dan's")
+ok, why = R:Remind(key("Cid"))
+check(not ok and why == "addon", "and he is not reminded")
+GuildOS.db.altLinks = { [key("Dan")] = key("Cid") }
+check(not listed("Cid"), "a main whose alt runs it neither")
+R:SetCountsAlts(false)
+check(not R:CountsAlts() and listed("Cid") and not listed("Cid").addonOn, "the officer's setting: each character alone")
+R:SetCountsAlts(true)
+check(GuildOS.db.settings.reminderOwnChar == nil, "back on: nothing saved")
+GuildOS.db.altLinks = nil
+check(listed("Cid"), "unlinked: listed again")
 
 -- The dates are forgotten past keeping.
 GuildOS.db.reminders.old = NOW - 100 * day

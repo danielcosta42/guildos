@@ -2431,6 +2431,8 @@ local function DecodeUntilEndOfBlock(state, lcodes_huffman_bitlens,
 
     if buffer_size >= 65536 then
       result_buffer[#result_buffer + 1] = table_concat(buffer, "", 1, 32768)
+      -- Guild OS (audit #448): stop once the output passes the caller's cap.
+      if state.max_chunks and #result_buffer > state.max_chunks then return -100 end
       for i = 32769, buffer_size do buffer[i - 32768] = buffer[i] end
       buffer_size = buffer_size - 32768
       buffer[buffer_size + 1] = nil
@@ -2482,6 +2484,8 @@ local function DecompressStoreBlock(state)
   -- memory clean up when there are enough bytes in the buffer.
   if buffer_size >= 65536 then
     result_buffer[#result_buffer + 1] = table_concat(buffer, "", 1, 32768)
+    -- Guild OS (audit #448): stop once the output passes the caller's cap.
+    if state.max_chunks and #result_buffer > state.max_chunks then return -100 end
     for i = 32769, buffer_size do buffer[i - 32768] = buffer[i] end
     buffer_size = buffer_size - 32768
     buffer[buffer_size + 1] = nil
@@ -2653,6 +2657,23 @@ local function DecompressDeflateInternal(str, dictionary)
   local bitlen_left = state.ReaderBitlenLeft()
   local bytelen_left = (bitlen_left - bitlen_left % 8) / 8
   return result, bytelen_left
+end
+
+-- Guild OS (audit #448): DecompressDeflate with a cap on the output, so a small hostile string cannot inflate to
+-- hundreds of megabytes before anything checks its size. nil, -100 once the output passes `max_bytes`; the
+-- buffers hold at most 64 KiB past the cap meanwhile. Not part of upstream LibDeflate.
+function LibDeflate:DecompressDeflateLimited(str, max_bytes)
+  local arg_valid, arg_err = IsValidArguments(str)
+  if not arg_valid then
+    error(("Usage: LibDeflate:DecompressDeflateLimited(str, max_bytes): " .. arg_err), 2)
+  end
+  local state = CreateDecompressState(str)
+  state.max_chunks = math.floor((tonumber(max_bytes) or 0) / 32768)
+  local result, status = Inflate(state)
+  if not result then return nil, status end
+  if #result > max_bytes then return nil, -100 end
+  local bitlen_left = state.ReaderBitlenLeft()
+  return result, (bitlen_left - bitlen_left % 8) / 8
 end
 
 -- @see LibDeflate:DecompressZlib(str)

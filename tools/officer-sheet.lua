@@ -382,10 +382,10 @@ GuildOS.Birthdays = { TooltipLine = function(_, key) return key == MAIN and "Bir
 check((card("Mem", data)):find("Birthday: 12/03", 1, true), "the birthday line shows when its module gives one")
 GuildOS.Birthdays = nil
 
--- The source: the roster builds the index once per refresh, and the card reads it.
+-- The source: the roster builds the index once per refresh (into the last one, memoria.md), and the card reads it.
 local function src(p) local f = assert(io.open(ADDON .. "/" .. p, "rb")); local s = f:read("*a"); f:close(); return s end
 local roster = src("UI/RosterFrame.lua")
-check(roster:find("GuildOS.RosterCard.NewIndex(GuildOS.db.altLinks)", 1, true)
+check(roster:find("GuildOS.RosterCard.NewIndex(GuildOS.db.altLinks, self.tipIndex)", 1, true)
   and roster:find("RosterCard:AddLines(tip, data, row.host and row.host.tipIndex)", 1, true), "the roster indexes once and the card reads it")
 check(roster:find('key = "joined"', 1, true), "the roster has a Joined column")
 local export = src("Modules/CompanionExport.lua")
@@ -422,6 +422,20 @@ check(as("OffA", function() return MM:SetNick(K("OffC"), "Cee") end), "without O
 as("OffA", function() MM:Backfill() end)
 check(#wire == 0 and as("OffA", function() return MM:Nick(K("OffC")) end) == "Cee", "kept here, nothing sent")
 GuildOS.Compat.OfficerAddonChannel = realChan
+-- Audit N6: a removed mark does not come back once its tombstone is pruned.
+as("OffB", function()
+  local s = GuildOS.db.memberMarks
+  local old = { s = "safe", k = K("OffB"), v = true, t = now - 100, b = "OffC" }   -- an officer's stale copy
+  MM:SetSafe(K("OffB"), false)
+  local cleared = s.safe[K("OffB")].at
+  MM:Prune(cleared + MM.TOMBSTONE_TTL + 1)
+  check(s.safe[K("OffB")] == nil and s.rev.safe[K("OffB")] == cleared, "the tombstone goes, its time stays")
+  check(MM:Apply({ old }, "OffC") == 0 and not MM:IsMarkedSafe(K("OffB")), "an older copy months later is refused")
+  check(MM:Apply({ { s = "safe", k = K("OffB"), v = true, t = cleared + 1, b = "OffC" } }, "OffC") == 1
+    and MM:IsMarkedSafe(K("OffB")), "a newer mark is taken")
+  MM:SetSafe(K("OffB"), false)
+  check(s.safe[K("OffB")].at > cleared + 1, "a write after it stamps past every time known")
+end)
 
 -- ── 8. A rank that may not speak in officer chat (#427) ─────────────────
 check(GuildOS.Compat.CanSpeakOfficerChat() == nil and GuildOS.Compat.OfficerAddonChannel() == "OFFICER",

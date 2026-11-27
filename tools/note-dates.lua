@@ -12,6 +12,12 @@
 --   * The safe list: marked or tagged members never in a removal or demotion preview, nor at their click.
 --   * Back after N days offline: one line to the officer, once a return, with the threshold.
 --   * Nicknames: synced between officers (later wins, officers only), in the chat prefix.
+--   * More formats read (yy-mm-dd, dd.mm.yyyy, mm/dd/yyyy only when the day says so, month names in English and the
+--     client's language, the CJK marks); the written formats unchanged.
+--   * A main's date for the whole alt group: one question, then only the silent notes written (31 bytes, the
+--     confirmation rule); after one write, an import and at a run's end.
+--   * Safe marks with an end: they stop counting, are pruned, and their end syncs (validated; older clients' copies
+--     never take it away).
 --
 --   luajit -e 'ADDON="."' tools/note-dates.lua
 --
@@ -413,6 +419,45 @@ check(select(2, filter(nil, "CHAT_MSG_PARTY", "x", "Bob-Nightslayer")) == nil, "
 GuildOS.db.chatTweaks.whisper = true
 check(select(2, filter(nil, "CHAT_MSG_WHISPER", "x", "Bob-Nightslayer")) == nil, "nor in a whisper")
 GuildOS.db.chatTweaks.whisper = false
+-- Party and raid only when asked: off, a guild member's party line is left as it is.
+GuildOS.db.chatTweaks.group = false
+check(select(2, filter(nil, "CHAT_MSG_PARTY", "x", "Bob")) == nil and select(2, filter(nil, "CHAT_MSG_RAID", "x", "Bob")) == nil
+  and select(2, filter(nil, "CHAT_MSG_RAID_LEADER", "x", "Bob")) == nil, "party and raid off: no prefix")
+GuildOS.db.chatTweaks.group = true
+GuildOS.db.chatTweaks.whisper = true
+_, msg = filter(nil, "CHAT_MSG_WHISPER", "psst", "Bob")
+check(msg and msg:find("Bobby", 1, true) and msg:find("psst$"), "whispers when asked")
+GuildOS.db.chatTweaks.whisper = false
+-- A sender's prefix is built once a roster refresh, not per line; a nickname changed is seen at the next line.
+local builds, realBuild = 0, CT._BuildPrefix
+CT._BuildPrefix = function(...) builds = builds + 1; return realBuild(...) end
+CT:_RefreshCache()
+for _ = 1, 20 do filter(nil, "CHAT_MSG_GUILD", "hi", "Bob") end
+check(builds == 1, "twenty lines, one prefix built (" .. builds .. ")")
+MM:SetNick(K("Bob"), "Bobster")
+_, msg = filter(nil, "CHAT_MSG_GUILD", "hi", "Bob")
+check(builds == 2 and msg:find("Bobster", 1, true), "a new nickname: built again at the next line")
+GuildOS.db.chatTweaks.level = true
+filter(nil, "CHAT_MSG_GUILD", "hi", "Bob")
+check(builds == 3, "a setting changed: built again")
+GuildOS.db.chatTweaks.level = false
+CT._BuildPrefix = realBuild
+-- A guild member's linked character outside the guild is known too (the alt tag), a stranger still is not.
+GuildOS.db.chatTweaks.altTag = true
+GuildOS.db.altLinks = { [K("Bobalt")] = K("Bob") }
+local savedTag = GuildOS.GetAltTag
+GuildOS.GetAltTag = function(_, key) return key == K("Bobalt") and "alt of Bob" or nil end
+CT:_RefreshCache()
+_, msg = filter(nil, "CHAT_MSG_WHISPER", "x", "Bobalt")
+check(msg == nil, "an alt's whisper: whispers still off")
+GuildOS.db.chatTweaks.whisper = true
+_, msg = filter(nil, "CHAT_MSG_WHISPER", "hey", "Bobalt")
+check(msg and msg:find("alt of Bob", 1, true), "a linked alt outside the guild gets its tag in a whisper")
+check(select(2, filter(nil, "CHAT_MSG_WHISPER", "x", "Stranger")) == nil, "a stranger still gets none")
+GuildOS.db.chatTweaks.whisper, GuildOS.db.chatTweaks.altTag, GuildOS.db.altLinks = false, false, {}
+GuildOS.GetAltTag = savedTag
+CT:_RefreshCache()
+MM:SetNick(K("Bob"), "Bobby")
 local tips = {}
 MM:TooltipLines({ AddLine = function(_, l) tips[#tips + 1] = l end }, K("Bob"), "alt [safe]", "")
 check(tips[1] == "Nickname: Bobby" and tips[2] == "On the safe list (tag in the note)", "the tooltip's lines")
@@ -425,5 +470,257 @@ do
   check(src:find('back    = { txt = L["Back from inactivity"]', 1, true)
     and src:find('onote   = { txt = L["Officer note changed"]', 1, true), "the log's Back and Officer note tags")
 end
+
+-- ── 8. More date formats read from notes ────────────────────────────────
+check(ymd("03/02/2025", "dmy") == "2025-02-03" and ymd("03/02/2025", "mdy") == "2025-03-02", "dd/mm/yyyy, and mm/dd/yyyy month first")
+check(ymd("02/13/2025", "dmy") == "2025-02-13", "mm/dd/yyyy on a day-first client: read when the day is above 12")
+check(ymd("02/03/2025", "dmy") == "2025-03-02", "and when it is not, the client's order decides (2 March, not 3 February)")
+check(ymd("15.01.2025", "mdy") == "2025-01-15" and ymd("5.1.2025", "mdy") == "2025-01-05", "dd.mm.yyyy, day first everywhere")
+check(ymd("15-01-25", "dmy") == "2025-01-15" and ymd("15-01-25", "mdy") == "2025-01-15",
+  "dd-mm-yy first whenever it is a real day: 15-01-25 is 15 Jan 2025, never 2015-01-25")
+check(ymd("03-02-25", "dmy") == "2025-02-03" and ymd("03-02-25", "mdy") == "2025-03-02", "a valid dd-mm-yy keeps the order rule")
+check(ymd("24-01-29", "dmy") == "2024-01-29" and ymd("24-01-29", "mdy") == "2024-01-29",
+  "yy-mm-dd only where dd-mm-yy is impossible (2029 is after maxYear): 29 Jan 2024")
+check(ymd("25-12-31", "dmy") == "2025-12-31", "25-12-31: no year 2031, so 31 Dec 2025")
+check(ymd("26-02-30", "dmy") == nil, "neither reading a real day (2030; 30 Feb): no date")
+check(ymd("25/01/15", "dmy") == "2015-01-25", "yy-mm-dd only with dashes: slashes keep dd/mm/yy")
+check(ymd("25-13-01", "dmy") == nil, "no month 13 either way")
+check(ymd("15 Jan 2025", "mdy") == "2025-01-15" and ymd("15 January 2025", "dmy") == "2025-01-15", "15 Jan 2025, 15 January 2025")
+check(ymd("Jan 15, 2025", "dmy") == "2025-01-15" and ymd("January 15 2025", "dmy") == "2025-01-15", "Jan 15, 2025")
+check(ymd("15th of March 2025", "dmy") == "2025-03-15" and ymd("15-Mar-2025", "dmy") == "2025-03-15", "15th of March, 15-Mar-2025")
+check(ymd("15 sept. 2025", "dmy") == "2025-09-15" and ymd("JAN 2 2025", "dmy") == "2025-01-02", "a short name with a dot, any case")
+check(ymd("tank 15 Jan 25 ok", "dmy") == "2025-01-15", "a two-digit year after a month name")
+check(ymd("Jan 15 25", "dmy") == nil, "month first takes a four-digit year only")
+check(ymd("31 Feb 2025", "dmy") == nil and ymd("Feb 29, 2024", "dmy") == "2024-02-29", "an impossible day is still no date")
+check(ymd("May 2025", "dmy") == nil and ymd("15 Foo 2025", "dmy") == nil, "no day, or no month: no date")
+check(ymd("15 Jan 2031", "dmy") == nil, "a named month's year after maxYear is no date")
+check(ymd("2025年1月15日", "mdy") == "2025-01-15" and ymd("2025년 1월 15일", "dmy") == "2025-01-15", "the CJK year, month and day marks")
+local _, ns, ne = ND.Parse("main Joined: Jan 5, 2025 ok", "dmy", 2026)
+check(ns == 6 and ne == 24, "a named date's span, its \"word:\" included (" .. tostring(ns) .. "," .. tostring(ne) .. ")")
+check(ymd("Jan 5, 2025 and 03/02/24", "dmy") == "2025-01-05" and ymd("03/02/24 and Jan 5, 2025", "dmy") == "2024-02-03",
+  "the first date written wins, named or not")
+t, how = ND.Compose("tank 15 Jan 2024", "03/02/25", "dmy", 2026)
+check(t == "tank 03/02/25" and how == "replace", "a named date in a note is a date Compose swaps, from a confirmation")
+-- The client's language: its short and full names (as Locales give them), Russian in the genitive, any case.
+local L = GuildOS.L
+local function lang(t2)
+  for k, v in pairs(t2) do rawset(L, k, v) end
+  ND.ForgetMonthNames()
+end
+lang({ Jan = "jan", January = "janeiro", Feb = "fev", February = "fevereiro", Dec = "dez", December = "dezembro" })
+check(ymd("15 de jan 2025", "dmy") == "2025-01-15" and ymd("15 de janeiro de 2025", "dmy") == "2025-01-15", "15 de jan 2025, ptBR")
+check(ymd("3 fev 2025", "dmy") == "2025-02-03" and ymd("24 de dezembro de 2024", "dmy") == "2024-12-24", "fev, dezembro")
+lang({ Jan = "янв", January = "январь", Feb = "фев", February = "февраль", Dec = "дек", December = "декабрь" })
+check(ymd("15 января 2025", "dmy") == "2025-01-15" and ymd("15 ЯНВАРЯ 2025", "dmy") == "2025-01-15", "Russian, genitive, capitals")
+check(ymd("3 фев 2025", "dmy") == "2025-02-03" and ymd("Jan 15, 2025", "dmy") == "2025-01-15", "a short name, and English still")
+lang({ Jan = "janv.", January = "janvier", Feb = "févr.", February = "février", Dec = "déc.", December = "décembre" })
+check(ymd("1er janvier 2025", "dmy") == "2025-01-01" and ymd("3 févr. 2025", "dmy") == "2025-02-03"
+  and ymd("24 DÉCEMBRE 2024", "dmy") == "2024-12-24", "French: 1er janvier, févr., accented capitals")
+lang({ Jan = "1월", January = "1월" })
+check(ND.MonthNames()["1월"] == nil, "a name with a digit (koKR, zhCN) is left to the CJK marks")
+for _, k in ipairs({ "Jan", "January", "Feb", "February", "Dec", "December" }) do rawset(L, k, nil) end
+ND.ForgetMonthNames()
+check(ND.Fold("ÉTÉ Январь.") == "été январь", "the fold: ASCII, accented capitals, Cyrillic, a trailing dot")
+-- Writing is unchanged: the four formats only.
+check(#ND.FORMATS == 4 and ND.Format(day, "dd/mm/yy") == "03/02/25", "the written formats are the same four")
+
+-- ── 9. A main's date for the whole alt group ────────────────────────────
+GuildOS.db.memberHistory, GuildOS.State.noteDates = {}, {}
+ND:Initialize()
+h = GuildOS.db.memberHistory
+ND:SetTarget("officer")
+ND:SetLabel(false)
+ND:SetWithSeen(false)
+roster = {
+  { "Arthas", 1, 70, true, 0, "", "" },
+  { "Mainy", 3, 70, true, 0, "", "" },
+  { "Alta", 3, 70, true, 0, "", "" },                       -- seen by GuildOS later: takes it
+  { "Altb", 3, 70, true, 0, "", "" },                       -- seen earlier than the main's day: not taken
+  { "Altc", 3, 70, true, 0, "", "Joined: 01/01/24" },       -- a real day from a note: not taken
+  { "Altd", 3, 70, true, 0, "", string.rep("n", 27) },      -- seen later, no room in the note: asked, not written
+  { "Solo", 3, 70, true, 0, "", "" },
+}
+local mainT = os.time({ year = 2025, month = 2, day = 3, hour = 20 })
+MH.ApplyJoin(h, K("Mainy"), mainT, false)
+MH.EnsureOpen(h, K("Alta"), NOW - 5 * 86400)
+MH.EnsureOpen(h, K("Altb"), os.time({ year = 2024, month = 6, day = 1, hour = 9 }))
+MH.EnsureOpen(h, K("Altc"), NOW - 5 * 86400)
+MH.ApplyNoteJoin(h, K("Altc"), os.time({ year = 2024, month = 1, day = 1, hour = 23 }))
+MH.EnsureOpen(h, K("Altd"), NOW - 5 * 86400)
+MH.EnsureOpen(h, K("Solo"), NOW - 5 * 86400)
+GuildOS.db.altLinks = { [K("Alta")] = K("Mainy"), [K("Altb")] = K("Mainy"), [K("Altc")] = K("Mainy"), [K("Altd")] = K("Mainy"),
+                        [K("Gonealt")] = K("Mainy") }   -- Gonealt is not on the roster
+check(ND.AltTakes({ joinAt = NOW, joinEst = true }, NOW - 10) and not ND.AltTakes({ joinAt = NOW, joinEst = true }, NOW + 10)
+  and not ND.AltTakes({ joinAt = NOW }, NOW - 10) and ND.AltTakes({}, NOW)
+  and not ND.AltTakes({ joinAt = NOW, joinEst = true, joinSrc = "note" }, NOW - 10)
+  and not ND.AltTakes({ joinAt = NOW - 99, leftAt = NOW }, NOW - 100), "which alt takes the main's day")
+local offers = ND:AltOffers({ K("Mainy"), K("Solo") })
+local altNames = {}
+for _, a in ipairs(offers[1] and offers[1].alts or {}) do altNames[#altNames + 1] = a.name end
+check(#offers == 1 and table.concat(altNames, ",") == "Alta,Altd", "the main's alts without a real date: " .. table.concat(altNames, ","))
+check(#ND:AltOffers({ K("Solo") }) == 0 and #ND:AltOffers({ K("Alta") }) == 0, "no offer for a member only seen, nor for an alt")
+shown = nil
+printed = {}
+ND:WriteOne("Mainy")
+check(roster[2][7] == "03/02/25", "the main's note is written")
+check(shown and shown.which == "GUILDOS_NOTE_DATE_ALTS" and shown.text:find("Alta, Altd", 1, true) and shown.text:find("2 alt", 1, true),
+  "then one question for the group: " .. tostring(shown and shown.text))
+local offerData = shown.data
+writes = {}
+check(ND:ApplyToAlts(offerData) == 2, "accepted: both alts' histories take the main's day")
+local aT, aEst = MH:JoinedAt(K("Alta"))
+check(os.date("%Y-%m-%d", aT) == "2025-02-03" and aEst and MH:JoinedFromNote(K("Alta")), "as a day read from a note (the game's line still wins)")
+check(#writes == 0 and ND:Run() and #ND:Run().items == 1 and ND:Run().items[1].name == "Alta", "a run of the silent notes only")
+runTimers()
+check(roster[3][7] == "03/02/25" and roster[6][7] == string.rep("n", 27), "Alta's note written; Altd's, without room, untouched")
+check(said("2 alt(s) took their main's date; 1 note(s) to write, 1 to confirm."), "the officer is told the rest waits for a confirmation")
+for _, w in ipairs(writes) do check(#w.note <= 31, "within 31 bytes") end
+check(roster[4][7] == "" and roster[5][7] == "Joined: 01/01/24", "the others' notes are left alone")
+local planned = {}
+for _, it in ipairs((ND:Plan())) do planned[it.name] = it.how end
+check(planned.Altd == "full", "Altd waits in Whole guild, which asks before cutting its note")
+ND:Stop()
+-- The finished run asks no second time for the same group (its alts have a date now).
+shown = nil
+ND:WriteOne("Mainy")
+check(shown == nil, "no alt left without a date: no question")
+-- An import of a main's date from a note offers the same.
+GuildOS.db.memberHistory = {}
+h = GuildOS.db.memberHistory
+roster[2][7], roster[3][7] = "Joined: 05/06/24", ""
+MH.EnsureOpen(h, K("Mainy"), NOW - 3 * 86400)
+MH.EnsureOpen(h, K("Alta"), NOW - 3 * 86400)
+shown = nil
+local imp2 = ND:ImportPlan("dmy")
+check(ND:ApplyImport(imp2) >= 1 and shown and shown.which == "GUILDOS_NOTE_DATE_ALTS" and shown.data[1].alts[1].name == "Alta",
+  "an import of the main's date offers it to the alts")
+check(ND:ApplyToAlts(shown.data) == 1 and os.date("%Y-%m-%d", (MH:JoinedAt(K("Alta")))) == "2024-06-05", "Alta takes 05/06/24")
+ND:Stop()
+-- A whole-guild run asks once, at its end, for every main it wrote.
+GuildOS.db.memberHistory = {}
+h = GuildOS.db.memberHistory
+for _, m in ipairs(roster) do m[7] = "" end
+MH.ApplyJoin(h, K("Mainy"), mainT, false)
+MH.EnsureOpen(h, K("Alta"), NOW - 3 * 86400)
+local asked = 0
+GuildOS.ShowDialog = function(_, which, text, _, data)
+  if which == "GUILDOS_NOTE_DATE_ALTS" then asked = asked + 1 end
+  shown = { which = which, text = text, data = data }
+end
+ND:Start((ND:Plan()))
+for _ = 1, 5 do runTimers() end
+ND:Next()
+check(asked == 1 and roster[2][7] == "03/02/25", "the run's end: one question for the group, once (" .. asked .. ")")
+ND:Stop()
+myRank = 3
+check(ND:ApplyToAlts(shown.data) == 0 and not ND:OfferAlts({ K("Mainy") }), "a member can neither apply nor be asked")
+myRank = 1
+GuildOS.db.altLinks = {}
+
+-- ── 10. Safe marks with an end ──────────────────────────────────────────
+GuildOS.db.memberMarks = nil
+GuildOS.ShowDialog = function() end
+roster = {
+  { "Arthas", 1, 70, true, 0, "", "" },
+  { "Ana", 3, 70, false, 60, "", "" },
+  { "Bob", 3, 70, false, 60, "", "" },
+  { "Cid", 3, 70, false, 60, "", "" },
+}
+local DAYS = 86400
+local u7 = MM.UntilOf("7", nil, NOW)
+local d7 = os.date("*t", u7)
+check(d7.day == 30 and d7.month == 11 and d7.hour == 23 and d7.min == 59, "7 days: to the end of the seventh day from now")
+check(MM.UntilOf("forever", nil, NOW) == nil and select(2, MM.UntilOf("forever", nil, NOW)) == "forever"
+  and MM.UntilOf(nil, nil, NOW) == nil, "forever: no end")
+local uDate = MM.UntilOf("date", "15/01/2027", NOW, "dmy")
+check(uDate and os.date("%Y-%m-%d %H:%M", uDate) == "2027-01-15 23:59", "until a date the notes' parser reads")
+check(os.date("%Y-%m-%d", (MM.UntilOf("date", "Jan 15, 2027", NOW, "dmy"))) == "2027-01-15", "a named month too")
+check(select(2, MM.UntilOf("date", "15/01/2025", NOW, "dmy")) == "bad" and select(2, MM.UntilOf("date", "soon", NOW)) == "bad"
+  and select(2, MM.UntilOf("0", nil, NOW)) == "bad" and select(2, MM.UntilOf("date", "15/01/2040", NOW, "dmy")) == "bad",
+  "a past date, no date, 0 days or one too far ahead: refused")
+published = {}
+check(MM:SetSafe(K("Ana"), true, u7) and MM:IsMarkedSafe(K("Ana")) and MM:SafeUntil(K("Ana")) == u7, "safe for 7 days")
+check(published[1].data.items[1].u == u7, "the end goes on the wire as u")
+check(not MM:SetSafe(K("Ana"), true, u7), "the same mark again: nothing")
+check(MM:SetSafe(K("Ana"), true, uDate) and MM:SafeUntil(K("Ana")) == uDate, "another end: the mark changes")
+check(MM:SetSafe(K("Ana"), true, u7) and not MM:SetSafe(K("Bob"), true, NOW - 10) and not MM:IsMarkedSafe(K("Bob")),
+  "an end in the past is refused")
+check(MM:SetSafe(K("Bob"), true) and MM:SafeUntil(K("Bob")) == nil, "Bob for good")
+check(MM:IsMarkedSafe(K("Ana"), u7 - 1) and not MM:IsMarkedSafe(K("Ana"), u7) and MM:IsMarkedSafe(K("Bob"), NOW + 400 * DAYS),
+  "a mark counts until its end, and not from then on")
+local tips2 = {}
+MM:TooltipLines({ AddLine = function(_, l) tips2[#tips2 + 1] = l end }, K("Ana"), "", "")
+check(tips2[1] == "On the safe list until 30/11", "the tooltip says until when: " .. tostring(tips2[1]))
+check(MM:UntilText(u7) == "until 30/11" and MM:UntilText(uDate) == "until 15/01/2027", "until 30/11; another year has its year")
+-- The bulk actions and the inactivity: protected until the end, not after it.
+check(preview("remove") == "Cid", "before the end: Ana and Bob are out of a removal")
+local savedNow = NOW
+NOW = u7 + 60
+check(preview("remove") == "Ana,Cid" and preview("demote") == "Ana,Cid", "after Ana's end: she is in a removal and a demotion again")
+local inact = {}
+for _, m in ipairs(GuildOS.GuildManager:GetInactiveMembers(30)) do inact[m.name] = m.safe or false end
+check(inact.Ana == false and inact.Bob == true and inact.Cid == false, "the inactivity list marks who is safe now")
+local review = {}
+for _, m in ipairs(GuildOS.GuildManager:GetInactiveMembers(30, nil, true)) do review[#review + 1] = m.name end
+table.sort(review)
+check(table.concat(review, ",") == "Ana,Cid", "and leaves them out when asked (the digest's count)")
+-- Lazily cleaned: the next look drops it, its time kept so no copy brings it back.
+local held = GuildOS.db.memberMarks.safe[K("Ana")]
+local heldAt = held.at
+check(table.concat(MM:SafeKeys(), ",") == K("Bob") and GuildOS.db.memberMarks.safe[K("Ana")] == nil
+  and GuildOS.db.memberMarks.rev.safe[K("Ana")] == heldAt, "the safe list drops the ended mark; its time stays in rev")
+check(MM:Apply({ { s = "safe", k = K("Ana"), v = true, t = heldAt, b = "Arthas", u = u7 } }, "Jaina") == 0
+  and MM:Apply({ { s = "safe", k = K("Ana"), v = true, t = heldAt, b = "Arthas" } }, "Jaina") == 0,
+  "an officer's copy of it, with its end or (an older client's) without, does not come back")
+check(MM:SetSafe(K("Ana"), true) and GuildOS.db.memberMarks.safe[K("Ana")].at > heldAt and MM:IsMarkedSafe(K("Ana")),
+  "marked again: a later time")
+NOW = savedNow
+-- The sync: the end checked off the network; an older client's entry (no u) still taken.
+local t0 = NOW - 100
+check(MM:Apply({ { s = "safe", k = K("Cid"), v = true, t = t0, b = "Jaina" } }, "Jaina") == 1 and MM:SafeUntil(K("Cid")) == nil,
+  "an older client's mark, without an end: for good")
+local bad = {
+  { s = "safe", k = K("Cid"), v = true, t = t0 + 1, u = "soon" },
+  { s = "safe", k = K("Cid"), v = true, t = t0 + 1, u = 0 / 0 },
+  { s = "safe", k = K("Cid"), v = true, t = t0 + 1, u = math.huge },
+  { s = "safe", k = K("Cid"), v = true, t = t0 + 1, u = t0 },
+  { s = "safe", k = K("Cid"), v = true, t = t0 + 1, u = t0 + 1 + MM.UNTIL_MAX + 1 },
+  { s = "safe", k = K("Cid"), v = true, t = t0 + 1, u = { 1 } },
+}
+for i, it in ipairs(bad) do check(MM.Valid(it, NOW, "Jaina") == nil, "a bad end is refused (" .. i .. ")") end
+check(MM:Apply(bad, "Jaina") == 0 and MM:SafeUntil(K("Cid")) == nil, "and none of them applies")
+local _, _, e2 = MM.Valid({ s = "safe", k = K("Cid"), v = false, t = t0 + 2, u = NOW + 10 }, NOW, "Jaina")
+check(e2 and e2.u == nil, "an end on a cleared mark means nothing: dropped")
+_, _, e2 = MM.Valid({ s = "nick", k = K("Cid"), v = "C", t = t0 + 2, u = "x" }, NOW, "Jaina")
+check(e2 and e2.u == nil, "a nickname never has one")
+check(MM:Apply({ { s = "safe", k = K("Cid"), v = true, t = t0 + 3, b = "Jaina", u = NOW + 3 * DAYS + 0.5 } }, "Jaina") == 1
+  and MM:SafeUntil(K("Cid")) == math.floor(NOW + 3 * DAYS + 0.5), "a good end is taken, whole seconds")
+check(MM:Apply({ { s = "safe", k = K("Cid"), v = true, t = t0 + 3, b = "Jaina" } }, "Jaina") == 0
+  and MM:SafeUntil(K("Cid")) ~= nil, "the same mark from an older client (no u) never takes the end away")
+check(MM.Wins({ at = 5, v = true, by = "J", u = 9 }, { at = 5, v = true, by = "J" })
+  and not MM.Wins({ at = 5, v = true, by = "J" }, { at = 5, v = true, by = "J", u = 9 }), "at the same time, the end wins")
+check(MM:Apply({ { s = "safe", k = K("Bob"), v = true, t = NOW + 1, b = "Jaina", u = NOW + 2 } }, "Jaina") == 1, "a short mark arrives")
+NOW = NOW + 10
+check(not MM:IsMarkedSafe(K("Bob")), "and ends")
+published = {}
+MM:Backfill()
+local sentBob = false
+for _, it in ipairs(published[1] and published[1].data.items or {}) do if it.k == K("Bob") then sentBob = true end end
+check(not sentBob and GuildOS.db.memberMarks.safe[K("Bob")] == nil, "an ended mark is not sent at the backfill: pruned")
+NOW = savedNow
+-- The command: "/gos safe Ana 14d" marks with an end; a plain name still toggles.
+MM:SetSafe(K("Ana"), false)
+printed = {}
+MM:CommandSafe("Ana 14d")
+check(MM:IsMarkedSafe(K("Ana")) and MM:SafeUntil(K("Ana")) == MM.UntilOf("14", nil, NOW) and said("until"), "safe for 14 days by command")
+MM:CommandSafe("Ana 30d")
+check(MM:SafeUntil(K("Ana")) == MM.UntilOf("30", nil, NOW), "a new end on a marked member")
+MM:CommandSafe("Ana")
+check(not MM:IsMarkedSafe(K("Ana")), "the name alone takes it off")
+MM:CommandSafe("Ana", u7)
+check(MM:SafeUntil(K("Ana")) == u7, "the screen's end comes with the name")
+printed = {}
+MM:CommandSafe("")
+check(said("Ana (until 30/11)"), "the list says until when")
 
 print(("note-dates: %d checks passed"):format(checks))

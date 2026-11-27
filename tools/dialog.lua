@@ -91,6 +91,7 @@ dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Style.lua")
 GuildOS.db = { settings = {} }
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 
 check(GuildOS.Dialogs.GUILDOS_STYLE_RELOAD, "a definition written at file load lands in GuildOS.Dialogs")
@@ -168,5 +169,20 @@ check(saved == "Ana-Realm=plain", "with no handler of its own, Enter is Save")
 d = GuildOS:ShowDialog("NOTE", "Ana", nil, "Ana-Realm")
 box.scripts.OnEscapePressed(box)
 check(not d:IsShown() and saved == "Ana-Realm=plain", "Escape in the box closes it and saves nothing")
+
+-- A third answer (audit B12: "Don't ask again"): shown only when the definition has one; it is no cancel.
+log = {}
+GuildOS.Dialogs.THREE = {
+  text = "Link?", button1 = "Link", button2 = "Not now", button3 = "Never",
+  OnAlt = function(_, data) log[#log + 1] = "alt:" .. tostring(data) end,
+  OnCancel = function(_, data) log[#log + 1] = "cancel:" .. tostring(data) end,
+}
+d = GuildOS:ShowDialog("THREE", nil, nil, "g")
+check(d.button3:IsShown() and d.button3.label:GetText() == "Never", "the third button shows with its label")
+d.button3.scripts.OnClick()
+check(not d:IsShown() and table.concat(log, ",") == "alt:g", "it runs OnAlt, and no cancel")
+d = GuildOS:ShowDialog("T", 1, "Bo", "two")
+check(not d.button3:IsShown(), "a two-answer dialog hides it")
+d:Hide()
 
 print(("dialog: %d checks passed"):format(checks))

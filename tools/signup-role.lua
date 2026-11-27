@@ -116,6 +116,7 @@ local function load(game)
       return w
     end },
     { __index = function() return function() return stub end end })
+  dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
   dofile(ADDON .. "/UI/FeaturePanels.lua")
   SlashCmdList = {}
   dofile(ADDON .. "/Core/Commands.lua")
@@ -206,7 +207,6 @@ for _, game in ipairs({ "forever", "anniversary" }) do
       end
     end
   end
-  local before = #made
   signUp(1)
   check(sent and sent.core == "Main" and sent.role == CM.CLASS_DEFAULT_ROLE.PRIEST, G("signing up untouched sends the class's own"))
   check(frame.roleBtns.healer.lbl.text == "Heiler" and frame.roleBtns.rdps.lbl.text == "Ranged", G("each button is its role's name, translated"))
@@ -229,20 +229,21 @@ for _, game in ipairs({ "forever", "anniversary" }) do
     for i = from, #made do if made[i].kind == "EditBox" then list[#list + 1] = made[i] end end
     return list
   end
-  local typed = noteBoxes(before + 1)[1]   -- the window as Sign Up redrew it
+  -- The window as Sign Up redrew it: on the widgets it made the first time (memory audit), so from the first.
+  local typed = noteBoxes(1)[1]
   typed:SetText("can heal if needed")
   typed.scripts.OnTextChanged(typed)
   local mark = #made
   frame.roleBtns[other].scripts.OnClick()
-  check(frame.pickedRole == other and #made > mark, G("picking the other role redraws the window"))
+  check(frame.pickedRole == other and #made == mark, G("picking the other role redraws the window, on the widgets it has"))
   check(frame.playerRoleLbl.text:find(otherName, 1, true), G("the strip names the pick"))
   check(frame.roleBtns[other].border == 0.9 and frame.roleBtns[own].border == 0.3, G("and the pick is the one lit"))
   check(coverage(other) == 12 and coverage(own) == 10, G("and the one the core's coverage row marks"))
-  local redrawn = noteBoxes(mark + 1)
+  local redrawn = noteBoxes(1)
   check(redrawn[1]:GetText() == "can heal if needed" and redrawn[2]:GetText() == "",
     G("a note typed before the pick is still there, in its own core's box"))
   sent = nil
-  signUp(mark + 1)
+  signUp(1)
   check(sent and sent.role == other and sent.note == "can heal if needed", G("and Sign Up sends the pick, with the note"))
 
   CLASS = "DRUID"

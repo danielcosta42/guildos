@@ -12,9 +12,11 @@ GuildOS.Readiness = Readiness
 local STATUS_RANK = { notready = 0, warn = 1, ready = 2, nodata = 3 }
 
 -- WoW: Forever's door to a raid is level 60 (issue #206, guildos.me #238). Onyxia's also asks for the
--- Drakefire Amulet, which nothing here reads: a 40 counts who is at the cap, not who holds it.
+-- Drakefire Amulet: the attunement tracker reads it (Ricki), and a report aimed at Onyxia ("Ony") holds a
+-- 60 whose own client says they are not attuned as not ready. The count of who is at the cap stays the cap's.
 local FOREVER = not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail
 local MIN_ILVL_MAX = 1000
+local CONSUMES_MAX_AGE = 12 * 3600   -- seconds a consumables check counts for readiness (audit B15)
 local STAMP_FUTURE_SLACK = 300   -- seconds an officer's stamp may run ahead of this clock, as the rank's
 
 -- The raids that open on 9 December 2026, 00:00 UTC until the hour is known (guildos.me #241).
@@ -52,7 +54,7 @@ end
 -- The countdown to the raids on WoW: Forever (issue #207), from a report's rows: how many days, how
 -- many of each core are at the cap (its titulars; up to three cores, largest first), how many of the
 -- guild, and me. Nil off Forever, and a week after the raids opened.
--- Business logic only: UI/Dashboard.lua draws it.
+-- Business logic only: UI/Salao.lua draws it (#445).
 ----------------------------------------------------------------------
 function Readiness:Countdown(rows, now)
     if not FOREVER then return nil end
@@ -281,8 +283,11 @@ function Readiness:GetReport(targetShort)
 
     -- Index the last consumable check by player key, and by lowercase short name (live, in-raid).
     -- On retail by the key alone: two namesakes on connected realms are two raiders (issue #187).
+    -- A check older than CONSUMES_MAX_AGE, or of an unknown age, is not tonight's: it is ignored (audit B15).
     local consumeByName, consumeByKey = {}, {}
-    if GuildOS.ConsumableChecker then
+    local CC = GuildOS.ConsumableChecker
+    local checkedAt = CC and CC.LastCheckAt and CC:LastCheckAt()
+    if CC and checkedAt and GetServerTime() - checkedAt <= CONSUMES_MAX_AGE then
         for key, res in pairs(GuildOS.ConsumableChecker:GetLastResults() or {}) do
             local short = (res.name or ""):match("^([^-]+)") or res.name
             if short and short ~= "" then consumeByName[short:lower()] = res end
@@ -332,6 +337,11 @@ function Readiness:GetReport(targetShort)
             if FOREVER then
                 status, reason, levelOnly = Readiness.ForeverStatus(
                     { level = level, hasGear = hasGear, ilvl = ilvl, missEnch = missEnch }, minIlvl, cap)
+                -- Aimed at an attunement raid: a 60 whose own client read no attunement is not ready. Who never
+                -- published has no answer (targetOk nil) and keeps the rule above, as guildos.me has it.
+                if targetShort and targetOk == false and status ~= "notready" then
+                    status, reason, levelOnly = "notready", "attune", false
+                end
             elseif targetShort and targetOk == false then
                 status = "notready"
             elseif (missEnch > 0) or (missCons and missCons > 0) then
@@ -359,6 +369,29 @@ function Readiness:GetReport(targetShort)
         if FOREVER and a.level ~= b.level then return a.level > b.level end
         return a.name:lower() < b.name:lower()
     end)
+    return rows
+end
+
+----------------------------------------------------------------------
+-- The roster's keys and levels alone, { name, key, level } a member, all the countdown reads (Countdown). The
+-- Hall asks for it every minute: the full report decodes every member's gear (memory audit, memoria.md).
+-- `into`: the caller's list, filled again with its own entry tables.
+----------------------------------------------------------------------
+function Readiness:LevelRows(into)
+    local rows, count = into or {}, 0
+    local n = GetNumGuildMembers() or 0
+    for i = 1, n do
+        local name, _, _, level = GetGuildRosterInfo(i)
+        if name then
+            local short = name:match("^([^-]+)") or name
+            local realm = name:match("-(.+)$") or GetRealmName()
+            count = count + 1
+            local r = rows[count]
+            if not r then r = {}; rows[count] = r end
+            r.name, r.key, r.level = short, GuildOS:GetPlayerKey(short, realm), level or 0
+        end
+    end
+    for i = #rows, count + 1, -1 do rows[i] = nil end
     return rows
 end
 

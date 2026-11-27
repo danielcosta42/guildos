@@ -26,7 +26,13 @@ DEFAULT_CHAT_FRAME = { AddMessage = function() end }
 function CreateFrame() return setmetatable({}, { __index = function() return function() end end }) end
 function GetServerTime() return 1791000000 end
 time = function() return 1791000000 end
-C_Timer = { After = function(_, fn) fn() end }
+-- Short waits run at once; the 3 s inspect timeout (audit R12) is held for the test to run.
+local held = {}
+C_Timer = { After = function(d, fn) if d >= 3 then held[#held + 1] = fn else fn() end end }
+-- The guild roster (audit R2): Bo is a guildmate; a pug inspected in the group is not.
+local GUILD = { "Bo-Gallywix", "Ana-Azralon" }
+function GetNumGuildMembers() return #GUILD end
+function GetGuildRosterInfo(i) return GUILD[i] end
 -- The inspected average (issue #184): raid1 wears 247.6 on average.
 C_PaperDollInfo = { GetInspectItemLevel = function(u) return u == "raid1" and 247.6 or 0 end }
 function GetBuildInfo() return "12.1.5", "70448", "", 120105 end
@@ -92,6 +98,29 @@ local bo = GuildOS.db.members["Bo-Gallywix"]
 check(bo and bo.spec and bo.spec.specID == 250 and bo.spec.tree == "Blood" and bo.spec.role == "TANK",
   "an inspected spec lands on the member's own realm key")
 check(SC:GetSpecLabel("Bo-Gallywix") == "Blood", "and is labelled by its name")
+
+-- ── 3b. A pug is not filed as a member (audit R2) ─────────────────────
+GUILD = { "Ana-Azralon" }
+GuildOS.db.members["Bo-Gallywix"] = nil
+SC:ScanGroup()
+SC:OnInspectReady()
+check(GuildOS.db.members["Bo-Gallywix"] == nil, "inspecting a pug writes no member record")
+GUILD = { "Bo-Gallywix", "Ana-Azralon" }
+SC:ScanGroup()
+SC:OnInspectReady()
+bo = GuildOS.db.members["Bo-Gallywix"]
+
+-- ── 3c. An inspect that never answers does not stall the scan (audit R12) ─
+held = {}
+local done = false
+local realPrint = GuildOS.Print
+function GuildOS:Print(m) if m == "|cff00FF00Spec scan complete.|r" then done = true end end
+SC:ScanGroup()
+check(#held == 1 and not done, "an inspect waits for its answer, with a timeout armed")
+held[1]()
+check(done, "after the timeout the scan moves on and completes")
+SC:OnInspectReady()
+GuildOS.Print = realPrint
 
 -- ── 4. A synced spec reads in my language (issue #177) ─────────────────
 -- A guildmate on a Portuguese client sent "Sangue"; this client names spec 250 itself.

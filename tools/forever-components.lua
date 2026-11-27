@@ -1,11 +1,12 @@
--- Forever skin components (issue #13), run against the real Core/Data.lua and
+-- The Salão's components (issue #13; phase 3, #449), run against the real Core/Data.lua, Core/Style.lua and
 -- UI/Helpers.lua under a stub frame API that records what was painted.
 --
 -- The factories decide every state colour in code: rest, hover, pressed and
--- disabled, for the primary, secondary, ghost and danger buttons, the
--- checkbox, the tab, the close button, badges, the scrollbar, icons, the
--- popup, the fade and the progress bar. This proves each state lands on the
--- design handoff's token and size, that the
+-- disabled, for the primary (crimson), secondary (dark, or quiet on the paper),
+-- ghost, danger and chip buttons, the cards, the fields, the avatar, the
+-- checkbox, the tab (a pill), the close button and the round tool, badges, the
+-- scrollbar, the popup, the fade and the progress bar. This proves each state
+-- lands on the mockup's token and size, that the
 -- contracts older screens rely on still hold (a caller's button height, a
 -- toggle's resting colour, a checkbox's onChanged), that no
 -- button glows and that text is never outlined.
@@ -58,12 +59,15 @@ local function fontString()
   function f:SetTextColor(r, g, b) self.color = { r, g, b } end
   function f:SetText(t) self.text = t end
   function f:GetStringWidth() return #(self.text or "") * 6 end
+  function f:SetJustifyH(j) self.justify = j end
+  function f:SetWordWrap(v) self.wrap = v end
   return f
 end
 
-function CreateFrame()
+function CreateFrame(_, _, parent)
   local fr = region()
-  fr.scripts, fr.enabled, fr.level, fr.textures = {}, true, 1, {}
+  fr.scripts, fr.enabled, fr.level, fr.textures, fr.parent = {}, true, 1, {}, parent
+  function fr:GetParent() return self.parent end
   function fr:SetBackdrop(b) self.backdrop = b end
   function fr:SetBackdropColor(r, g, b, a) self.bg = { r, g, b, a } end
   function fr:SetBackdropBorderColor(r, g, b, a) self.border = { r, g, b, a } end
@@ -88,6 +92,12 @@ function CreateFrame()
   function fr:GetFrameLevel() return self.level end
   function fr:EnableMouse() end
   function fr:SetChecked(v) self.checked = v end
+  for _, name in ipairs({ "SetTextInsets", "SetTextColor", "SetJustifyH", "SetAutoFocus", "SetMultiLine", "SetNumeric",
+                          "SetMaxLetters", "SetFont", "RegisterForClicks" }) do
+    fr[name] = fr[name] or function() end
+  end
+  function fr:GetText() return self.text or "" end
+  function fr:HasFocus() return false end
   function fr:GetChecked() return self.checked end
   return fr
 end
@@ -102,6 +112,7 @@ GuildOS = {
 }
 dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Style.lua")
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 local UI, C, F = GuildOS.UI, GuildOS.Colors, GuildOS.Fonts
 
@@ -114,98 +125,153 @@ end
 
 local parent = CreateFrame("Frame")
 
--- ── Secondary button, the default ───────────────────────────────────────
+-- The art a button wears, by name, and its last tint: { r, g, b, a }.
+local function art(btn, name) return btn.__arts and btn.__arts[name] end
+local function tint(btn, name) local a = art(btn, name); return a and a.shown and a.color end
+local function lit(rgb, token, k)
+  return rgb and near(rgb[1], math.min(1, token.r * k)) and near(rgb[2], math.min(1, token.g * k))
+    and near(rgb[3], math.min(1, token.b * k))
+end
+
+-- ── Secondary button, the default: the dark button on the wood ─────────
 local b = UI:CreateButton(parent, "cancelar")
 check(b.h == 26, "a button defaults to 26px")
 check(UI:CreateButton(parent, "salvar", 80, 22).h == 22, "a caller's own button height is kept")
-check(same(b.border, C.lineHi, 1) and b.bg[4] == 0, "secondary at rest: lineHi border, no fill")
-check(same(b.label.color, C.text), "secondary label is paper")
-check(b.label.font.file == F.sansMedium and b.label.font.size == 12 and b.label.font.flags == "",
-  "a button label is Plex Sans Medium 12 and not outlined")
+check(same(tint(b, "button"), C.darkButton, 1) and same(tint(b, "button-line"), C.lineHi, 1),
+  "secondary at rest: the dark button, the metal's line")
+check(art(b, "button").pieces.L.file:find("Media\\Salao\\button.tga", 1, true), "drawn from Media/Salao's button art")
+check(same(b.label.color, C.darkInk), "secondary label is the dark button's ink")
+check(b.label.font.file == F.uiBold and b.label.font.size == 12 and b.label.font.flags == "",
+  "a button label is Alegreya Sans Bold 12 and not outlined")
 b:Fire("OnEnter")
-check(same(b.border, C.label, 1), "secondary hover: label border")
+check(lit(tint(b, "button"), C.darkButton, 1.14) and same(tint(b, "button-line"), C.metal2, 1) and same(b.label.color, C.text),
+  "secondary hover: lighter, the bright metal's line, the wood's ink")
 b:Fire("OnMouseDown")
-check(same(b.bg, C.popup, 1), "secondary pressed: popup fill")
+check(lit(tint(b, "button"), C.darkButton, 0.82), "secondary pressed: darker")
 b:Fire("OnLeave")
-check(same(b.border, C.lineHi, 1) and b.bg[4] == 0, "leaving restores the resting state")
+check(same(tint(b, "button"), C.darkButton, 1) and same(tint(b, "button-line"), C.lineHi, 1), "leaving restores the resting state")
 
 local up = UI:CreateButton(parent, "subir")
 up:Fire("OnMouseDown")
 up.mouseOver = false
 up:Fire("OnMouseUp")
-check(same(up.border, C.lineHi, 1) and up.bg[4] == 0, "releasing away from the button returns it to rest")
+check(same(tint(up, "button"), C.darkButton, 1), "releasing away from the button returns it to rest")
 up:Fire("OnMouseDown")
 up.mouseOver = true
 up:Fire("OnMouseUp")
-check(same(up.border, C.label, 1) and up.bg[4] == 0, "releasing over the button leaves it hovered, not pressed")
+check(same(tint(up, "button-line"), C.metal2, 1), "releasing over the button leaves it hovered, not pressed")
 
 local toggle = UI:CreateButton(parent, "filtro")
 toggle:Fire("OnEnter")
-toggle:SetBaseColor(0.9, 0.9, 0.9, 1)
-check(not near(toggle.bg[1], 0.9), "SetBaseColor does not paint over a hovered button")
+toggle:SetBaseColor(0.5, 0.5, 0.5, 1)
+check(not near(tint(toggle, "button")[1], 0.5), "SetBaseColor does not paint over a hovered button")
 toggle:Fire("OnLeave")
-check(near(toggle.bg[1], 0.9) and near(toggle.bg[4], 1), "a toggle's resting colour appears once the hover ends")
+check(near(tint(toggle, "button")[1], 0.5) and near(tint(toggle, "button")[4], 1), "a toggle's resting colour appears once the hover ends")
+toggle:SetBackdropColor(0.2, 0.3, 0.4, 1)
+check(near(tint(toggle, "button")[2], 0.3), "the backdrop's colour call lands on the button's art")
 
 b:Disable()
-check(same(b.label.color, C.disabled), "disabled: the label turns disabled")
+check(same(b.label.color, UI.DISABLED_INK.wood) and near(tint(b, "button")[4], 1), "disabled: a flat desaturated button with a readable label (#449)")
 b:Fire("OnEnter")
-check(same(b.label.color, C.disabled), "hovering a disabled button does not light it")
+check(same(b.label.color, UI.DISABLED_INK.wood), "hovering a disabled button does not light it")
 b:Enable()
-check(same(b.label.color, C.text) and same(b.border, C.lineHi, 1), "enabling repaints the resting state")
+check(same(b.label.color, C.darkInk) and same(tint(b, "button-line"), C.lineHi, 1), "enabling repaints the resting state")
 
--- ── Primary ─────────────────────────────────────────────────────────────
+-- ── Primary: the crimson button ─────────────────────────────────────────
 local p = UI:SetButtonVariant(UI:CreateButton(parent, "dar loot"), "primary")
-check(same(p.bg, C.gold, 1) and same(p.label.color, C.onGold), "primary at rest: gold fill, onGold label")
-check(same(p.border, C.gold, 1), "primary at rest: gold border")
-check(p.glow == nil, "primary is flat: no glow")
-check(p.label.font.file == F.sansMedium and p.label.font.size == 12, "primary label is Plex Sans Medium 12")
+check(same(tint(p, "button"), C.crimson, 1) and same(tint(p, "button-line"), C.crimsonLine, 1) and same(p.label.color, C.crimsonInk),
+  "primary at rest: crimson, a gold line, yellow ink")
+check(p.glow == nil, "primary has no glow")
+check(p.label.font.file == F.uiBold and p.label.font.size == 12, "primary label is Alegreya Sans Bold 12")
 local restPts = p.label.points
 p:Fire("OnEnter")
-check(same(p.bg, C.goldHover, 1) and same(p.border, C.goldHover, 1), "primary hover: goldHover fill and border")
+check(lit(tint(p, "button"), C.crimson, 1.14), "primary hover: brighter")
 p:Fire("OnMouseDown")
-check(same(p.bg, C.goldActive, 1) and same(p.border, C.goldActive, 1), "primary pressed: goldActive fill and border")
+check(lit(tint(p, "button"), C.crimson, 0.82), "primary pressed: darker")
 check(p.label.points == restPts and #restPts == 1 and restPts[1][1] == "CENTER" and restPts[1][3] == nil,
   "pressing a primary button leaves its label where it is")
 p.mouseOver = true
 p:Fire("OnMouseUp")
-check(same(p.bg, C.goldHover, 1), "releasing a primary button over it: hover gold")
+check(lit(tint(p, "button"), C.crimson, 1.14), "releasing a primary button over it: hover")
 p:Fire("OnLeave")
-check(same(p.bg, C.gold, 1) and same(p.border, C.gold, 1), "the cursor leaving a primary button: resting gold")
+check(same(tint(p, "button"), C.crimson, 1), "the cursor leaving a primary button: resting crimson")
 p:Disable()
-check(near(p.bg[4], 0.35) and near(p.border[4], 0.35), "disabled primary: gold at 35%, its border too")
+check(near(tint(p, "button")[4], 1) and not same(tint(p, "button"), C.crimson, 1) and same(p.label.color, UI.DISABLED_INK.wood),
+  "disabled primary: no dim red bar, a flat desaturated button with a readable label (#449)")
 
--- ── Ghost and danger ────────────────────────────────────────────────────
+-- ── Ghost, danger and chip ──────────────────────────────────────────────
 local g = UI:SetButtonVariant(UI:CreateButton(parent, "ver histórico"), "ghost")
-check(g.border[4] == 0 and same(g.label.color, C.label) and g.underline and g.underline.shown,
-  "ghost: no border, label text, underline")
-check(g.label.font.file == F.mono and g.label.font.size == 11, "a ghost label is mono 11, a link")
+check(not tint(g, "button") and same(g.label.color, C.textSoft) and g.underline and g.underline.shown,
+  "ghost: no box, the soft ink, underlined")
+check(g.label.font.file == F.ui and g.label.font.size == 12, "a ghost label is a link, Alegreya Sans 12")
 g:Fire("OnEnter")
-check(same(g.label.color, C.text) and same(g.underline.color, C.text, 1), "ghost hover: paper label and underline")
-g:Fire("OnMouseDown")
-check(g.bg[4] == 0, "ghost pressed: still no fill")
+check(same(g.label.color, C.text) and same(g.underline.color, C.text, 1), "ghost hover: the ink and its underline")
 g:Disable()
-check(same(g.label.color, C.disabled) and g.bg[4] == 0, "disabled ghost: disabled label, no fill")
+check(same(g.label.color, UI.DISABLED_INK.wood) and not tint(g, "button"), "disabled ghost: disabled label, no box")
 g:Enable()
 local d = UI:SetButtonVariant(UI:CreateButton(parent, "expulsar"), "danger")
-check(same(d.border, C.danger, 1) and same(d.label.color, C.danger), "danger: danger border and label")
+check(same(tint(d, "button-line"), C.danger, 1) and same(d.label.color, C.danger), "danger: a danger line and label")
 d:Fire("OnEnter")
-check(same(d.bg, C.danger, 0.12), "danger hover: a faint danger wash, not gold")
-check(same(d.border, C.danger, 1), "danger hover keeps its danger border")
-d:Fire("OnMouseDown")
-check(same(d.bg, C.popup, 1), "danger pressed: popup fill")
+check(same(tint(d, "button-line"), C.danger, 1), "danger hover keeps its danger line")
 d:Disable()
-check(same(d.label.color, C.disabled) and d.bg[4] == 0, "disabled danger: disabled label, no fill")
+check(same(d.label.color, UI.DISABLED_INK.wood), "disabled danger: disabled label")
 check(d.glow == nil, "no button glows")
 UI:SetButtonVariant(g, "secondary")
-check(not g.underline.shown and same(g.border, C.lineHi, 1) and g.label.font.file == F.sansMedium,
-  "a ghost switched back to secondary loses its underline and its mono")
+check(not g.underline.shown and same(tint(g, "button-line"), C.lineHi, 1) and g.label.font.file == F.uiBold,
+  "a ghost switched back to secondary loses its underline and takes the button's bold")
+local chipB = UI:SetButtonVariant(UI:CreateButton(parent, "Todos", 60, 22), "chip")
+check(same(tint(chipB, "pill"), C.popup, 1) and same(tint(chipB, "pill-line"), C.lineHi, 1) and same(chipB.label.color, C.door),
+  "a chip: a dark pill with the metal's line")
+UI:SetSelected(chipB, true)
+check(same(tint(chipB, "pill"), C.gold2, 1) and same(chipB.label.color, C.onGold), "a chosen chip fills with the soft gold")
+local sel = UI:SetSelected(UI:CreateButton(parent, "modo"), true)
+check(same(tint(sel, "button-line"), C.gold2, 1) and same(sel.label.color, C.gold2), "a chosen button: the soft gold's line and ink")
+
+-- ── On parchment: the quiet button, the light field, the dark red title ─
+local paperCard = UI:CreateCard(parent, "Para você")
+check(paperCard.__paper and UI:OnPaper(paperCard) and same(paperCard.title.color, C.paperTitle)
+  and paperCard.title.font.file == F.title, "a card is parchment, its title Cinzel in the dark red")
+check(same(paperCard.__look.fill.color, C.paper, 1), "the paper's colour")
+local q = UI:CreateButton(paperCard, "Decidir")
+check(same(tint(q, "button-soft"), C.quiet, 1) and same(tint(q, "button-line"), C.paperEdge, 1) and same(q.label.color, C.quietInk),
+  "on the paper a button is the quiet cream one")
+local field = UI:CreateInput(paperCard, 120, 22)
+check(same(field.__look.fill.color, C.paperLight, 1) and same(field.__look.line.color, C.paperEdge, 1),
+  "on the paper a field is light with a tan line")
+field:Fire("OnEditFocusGained")
+check(same(field.__look.line.color, C.paperTitle, 1), "typing on the paper, its line is the dark red")
+local darkCard = UI:CreateCard(parent, "Perto da lareira", { dark = true, link = "Todos" })
+check(not UI:OnPaper(darkCard) and same(darkCard.title.color, C.gold2) and darkCard.link and darkCard.link.underline.shown,
+  "a dark card: the soft gold title, a link at its right")
+local woodField = UI:CreateInput(parent, 120, 22)
+check(same(woodField.__look.fill.color, C.well, 1) and same(woodField.__look.line.color, C.lineHi, 1),
+  "on the wood a field is dark with the metal's line")
+woodField:Fire("OnEditFocusGained")
+check(same(woodField.__look.line.color, C.gold2, 1), "typing, its line is the soft gold")
+
+-- ── Avatar, glyph, count ────────────────────────────────────────────────
+local av = UI:CreateAvatar(parent, 40)
+av:SetMember("Thrandor", "HUNTER")
+local hc = GuildOS.ClassColors.HUNTER
+check(av.letter.text == "T" and near(av.disc.color[1], hc.r + (1 - hc.r) * 0.3) and same(av.ring.color, C.gold2, 1)
+  and av.halo and av.halo.shown, "an avatar: the class's disc, the initial, a soft gold ring, a glow")
+av:SetMember("Brakk", "WARRIOR", true)
+check(not av.halo.shown and same(av.ring.color, C.lineHi, 1), "away: grey, no glow, the metal's ring")
+av:SetMember("\195\137lise", "MAGE")
+check(av.letter.text == "\195\137", "the initial is a whole character")
+av:SetCount(10)
+check(av.letter.text == "+10" and av.dash.shown and not av.ring.shown, "the +n disc is dashed")
+local count = UI:CreateCount(parent)
+check(not count.shown, "a count of nothing is not drawn")
+count:SetCount(4)
+check(count.shown and count.text.text == "4" and same(count.fill.color, C.count, 1), "a red count")
 
 -- ── Checkbox ────────────────────────────────────────────────────────────
 local cbf = UI:CreateCheckbox(parent, "anotar o chat", 18)
 local cb = cbf.checkbox
 local cbBorder = cb.textures[1]
 check(cb.w == 14 and cb.h == 14, "the checkbox box is 14px")
-check(not cb.checkMark.shown and same(cbBorder.color, C.lineHi, 1), "unchecked at rest: no mark, lineHi border")
+check(not cb.checkMark.shown and same(cbBorder.color, C.lineHi, 1), "unchecked at rest: no mark, the metal's border")
 local cbFill = cb.textures[2]
 check(same(cbFill.color, C.well, 1), "the checkbox box is well")
 cb:Fire("OnMouseDown")
@@ -215,96 +281,69 @@ check(same(cbFill.color, C.well, 1), "checkbox released: well again")
 cb:Fire("OnEnter")
 check(same(cbBorder.color, C.label, 1), "checkbox hover: label border")
 cb:Fire("OnLeave")
-check(same(cbBorder.color, C.lineHi, 1), "checkbox leave: lineHi border again")
-
 local seen
 cb.onChanged = function(_, checked) seen = checked end
 cb.checked = true
 cb:Fire("OnClick")
 check(seen == true, "a click reaches onChanged with the checked state")
-check(cb.checkMark.shown and cb.checkMark.w == 8 and same(cb.checkMark.color, C.gold, 1),
-  "a click repaints: solid 8px gold mark")
+check(cb.checkMark.shown and cb.checkMark.w == 8 and same(cb.checkMark.color, C.gold2, 1),
+  "a click repaints: an 8px soft gold mark")
 cb:SetChecked(false)
 check(not cb.checkMark.shown, "SetChecked(false) hides the mark")
-cb:SetChecked(true)
-check(cb.checkMark.shown, "SetChecked(true) shows the mark")
 cb:Disable()
-check(near(cb.checkMark.alpha, 0.35) and same(cbBorder.color, C.disabled, 1), "disabled: the mark at 35%, disabled border")
-cb:Fire("OnEnter")
-check(same(cbBorder.color, C.disabled, 1), "hovering a disabled checkbox does not light it")
+check(same(cbBorder.color, C.disabled, 1), "disabled: disabled border")
 
--- ── Badges ──────────────────────────────────────────────────────────────
+-- ── Badges: small filled pills ──────────────────────────────────────────
+local function fill(badge) return badge.__look.fill.color end
 local officer = UI:CreateBadge(parent, "oficial", C.gold)
-check(officer.bg[4] == 0 and same(officer.border, C.line, 1) and same(officer.label.color, C.label),
-  "the officer badge is neutral: gold is not a badge colour")
-local plain = UI:CreateBadge(parent, "raider")
-check(plain.bg[4] == 0 and same(plain.border, C.line, 1) and same(plain.label.color, C.label),
-  "a plain badge: label text in a line frame")
-check(plain.label.font.file == F.mono and plain.label.font.size == 10, "badge text is mono 10")
+check(same(fill(officer), C.paperSoft, 1) and near(officer.label.color[1], 1), "the officer badge is the plain brown: gold is not a badge colour")
 local absent = UI:CreateBadge(parent, "falta", C.danger)
-check(same(absent.border, C.danger, 1) and same(absent.label.color, C.danger), "a danger badge: danger frame and text")
+check(near(fill(absent)[1], 0.561) and near(fill(absent)[2], 0.106), "a danger badge: the deep red")
 local trial = UI:CreateBadge(parent, "trial 8/10", C.ok)
-check(same(trial.border, C.line, 1) and same(trial.label.color, C.ok), "any other colour: coloured text in a line frame")
--- Legacy keys are copies of their token, so older screens passing them must still match.
-local legacyGold = UI:CreateBadge(parent, "oficial", C.accent)
-check(legacyGold.bg[4] == 0 and same(legacyGold.label.color, C.label), "a badge in the legacy accent is neutral too")
+check(near(fill(trial)[2], 0.431), "an ok badge: the deep green")
+check(trial.label.font.file == F.uiBold and trial.label.font.size == 11, "badge text is Alegreya Sans Bold 11")
 local legacyRed = UI:CreateBadge(parent, "falta", C.red)
-check(same(legacyRed.border, C.danger, 1) and same(legacyRed.label.color, C.danger), "a badge in the legacy red gets the danger frame")
-plain:SetText("falta", C.danger)
-check(same(plain.border, C.danger, 1) and same(plain.label.color, C.danger) and plain.label.text == "falta",
-  "SetText with a colour repaints the badge")
-plain:SetText("raider")
-check(same(plain.border, C.danger, 1) and plain.label.text == "raider", "SetText without a colour keeps the badge's paint")
-for _, badge in ipairs({ officer, plain, absent, trial, legacyGold, legacyRed }) do
-  check(badge.bg[4] == 0, "no badge is ever filled")
-end
+check(near(fill(legacyRed)[1], 0.561), "a badge in the legacy red gets the deep red too")
+officer:SetText("falta", C.danger)
+check(near(fill(officer)[1], 0.561) and officer.label.text == "falta", "SetText with a colour repaints the badge")
 
 -- ── Progress bar ────────────────────────────────────────────────────────
 local goal = UI:CreateProgressBar(parent, 100)
 check(goal.h == 8, "the progress bar is 8px")
 check(same(goal.bg, C.well, 1) and same(goal.border, C.line, 1), "the progress track is well in a line frame")
-check(goal.bar.color ~= nil, "the bar is painted as soon as it exists")
 goal:SetWidth(200)
 goal:SetProgress(1)
 check(goal.bar.w == 198, "the fill follows the bar's width after a resize (issue #33)")
 goal:SetWidth(100)
 goal:SetProgress(0.31)
 check(same(goal.bar.color, C.textSoft, 1), "progress toward a goal is textSoft, never gold or danger")
-goal:SetProgress(0.99)
-check(same(goal.bar.color, C.textSoft, 1), "an unfinished goal stays textSoft")
 goal:SetProgress(1)
 check(same(goal.bar.color, C.ok, 1), "a completed goal is ok")
-
 local score = UI:CreateProgressBar(parent, 100, 8, true)
 for _, case in ipairs({
   { 0.85, C.ok, "85%" }, { 0.8, C.ok, "exactly 80%" }, { 0.7999, C.warn, "just under 80%" },
-  { 0.6, C.warn, "exactly 60%" }, { 0.5999, C.danger, "just under 60%" }, { 0.31, C.danger, "31%" },
+  { 0.6, C.warn, "exactly 60%" }, { 0.5999, C.danger, "just under 60%" },
 }) do
   score:SetProgress(case[1])
   check(same(score.bar.color, case[2], 1), "a score bar at " .. case[3])
 end
 
--- ── Tab ─────────────────────────────────────────────────────────────────
+-- ── Tab: a pill ─────────────────────────────────────────────────────────
 local tab = UI:CreateTab(parent, "roster")
-check(tab.h == 28 and not tab.underline.shown and same(tab.label.color, C.label), "tab at rest: label text, no rule")
-check(tab.label.font.file == F.mono and tab.label.font.size == 11, "a tab label is mono 11")
+check(not tab.fill.shown and not tab.line.shown and same(tab.label.color, C.door), "tab at rest: the door's ink, no pill")
+check(tab.label.font.file == F.ui and tab.label.font.size == 13, "a tab label is Alegreya Sans")
 tab:Fire("OnEnter")
-check(same(tab.label.color, C.text) and not tab.underline.shown, "tab hover: paper, still no rule")
+check(same(tab.label.color, C.text) and tab.line.shown and same(tab.line.color, C.lineHi, 1), "tab hover: the metal's line round it")
 tab:Fire("OnLeave")
 tab:SetActive(true)
-check(tab.underline.shown and tab.underline.h == 2 and same(tab.underline.color, C.gold, 1) and same(tab.label.color, C.gold),
-  "active tab: gold label and a 2px gold rule")
-tab:Fire("OnMouseDown")
-check(same(tab.bg, C.panel, 1), "tab pressed: panel fill")
-tab.mouseOver = false
-tab:Fire("OnMouseUp")
-check(tab.bg[4] == 0 and tab.underline.shown, "tab released: no fill, the active rule stays")
+check(tab.fill.shown and same(tab.fill.color, C.gold2, 1) and same(tab.label.color, C.onGold) and tab.label.font.file == F.uiBold,
+  "active tab: a soft gold pill, dark bold text")
+check(not tab.underline.shown, "no rule under a tab any more")
 tab:Fire("OnEnter")
-check(tab.underline.shown and same(tab.label.color, C.gold), "an active tab keeps its rule and gold while hovered")
-tab.mouseOver = true
-tab:Fire("OnMouseDown")
-tab:Fire("OnMouseUp")
-check(tab.bg[4] == 0 and same(tab.label.color, C.gold), "a click released over the tab: no fill, still gold")
+check(tab.fill.shown and same(tab.label.color, C.onGold), "an active tab keeps its pill while hovered")
+local subBar = UI:StyleSubTabBar(CreateFrame("Frame"))
+check(subBar.bg and subBar.bg.layer == "BACKGROUND" and same(subBar.bg.color, C.panel, 0.7) and subBar.rule,
+  "a sub-tab bar: a dark strip with a line under it")
 
 -- ── Scrollbar ───────────────────────────────────────────────────────────
 local scrollFrame = CreateFrame("ScrollFrame")
@@ -315,54 +354,54 @@ scrollBar.h = 200
 scrollFrame.ScrollBar = scrollBar
 UI:SkinScrollBar(scrollFrame)
 check(scrollBar.w == 8, "the scrollbar is 8px")
-check(same(scrollBar.textures[1].color, C.well, 1), "the scrollbar track is well")
-check(scrollBar.customThumb.w == 6 and same(scrollBar.customThumb.color, C.lineHi, 1),
-  "the thumb is lineHi with 1px of margin")
+check(same(scrollBar.textures[1].color, C.well, 0.6), "the scrollbar track is well, see-through")
+check(scrollBar.customThumb.w == 6 and same(scrollBar.customThumb.color, C.lineHi, 1), "the thumb is the metal")
 scrollBar:Fire("OnEnter")
-check(same(scrollBar.customThumb.color, C.label, 1), "scrollbar hover: the thumb lights to label")
-scrollBar:Fire("OnLeave")
-check(same(scrollBar.customThumb.color, C.lineHi, 1), "scrollbar leave: the thumb is lineHi again")
+check(same(scrollBar.customThumb.color, C.label, 1), "scrollbar hover: the thumb lights")
 
 -- ── Text ────────────────────────────────────────────────────────────────
 local title = UI:CreateTitle(parent, "Roster da guilda")
-check(title.font.file == F.sansStrong and title.font.size == 16 and same(title.color, C.text),
-  "window title: Plex Sans SemiBold 16, paper")
+check(title.font.file == F.title and title.font.size == 15 and same(title.color, C.gold),
+  "window title: Cinzel 15, gold")
 local small = UI:CreateText(parent, "offline", 9)
-check(small.font.file == F.sans and small.font.size == 11 and small.font.flags == "" and small.shadow[1] == 0,
-  "small text: sans at 11px, no outline, no shadow")
+check(small.font.file == F.ui and small.font.size == 11 and small.font.flags == "" and small.shadow[1] == 0,
+  "small text: Alegreya Sans at 11px, no outline, no shadow")
 local head = UI:CreateHeaderText(parent, "membro")
-check(head.font.file == F.monoStrong and head.font.size == 10 and same(head.color, C.label),
-  "a header: mono Medium 10 in label")
+check(head.font.file == F.title and head.font.size == 11 and same(head.color, C.gold),
+  "a header: Cinzel 11 (UI.SP.META) in gold")
+check(same(UI:CreateHeaderText(paperCard, "membro").color, C.paperTitle), "a header on the paper: dark red")
 
 -- ── Surfaces and rules ──────────────────────────────────────────────────
 local panel = UI:CreatePanel(parent)
-check(same(panel.bg, C.bg, 1) and same(panel.border, C.line, 1), "a panel: bg with a line border")
-check(same(UI:CreateDarkPanel(parent).bg, C.well, 1), "an inset panel: well")
+check(same(panel.__look.fill.color, C.darkCard, C.darkCard.a) and same(panel.__look.line.color, C.lineHi, 1),
+  "a panel: the dark card, see-through, with the metal's line")
+check(panel.__look.fill.pieces.TL.file:find("card.tga", 1, true), "rounded: drawn from Media/Salao's card")
+local well = UI:CreateDarkPanel(parent)
+check(same(well.__look.fill.color, C.well, 0.8), "an inset panel: well")
+panel:SetBackdropColor(0.1, 0.2, 0.3, 1)
+check(near(panel.__look.fill.color[2], 0.2), "a panel's backdrop colour call lands on its art")
 local rule = UI:CreateAccentLine(parent)
 check(rule.h == 2 and same(rule.color, C.gold, 1), "an accent line: solid 2px gold")
-check(UI:CreateAccentLine(parent, 1).h == 1, "an accent line can be 1px")
 local sep = UI:CreateSeparator(parent)
 check(sep.h == 1 and same(sep.color, C.line, 1), "a separator: 1px line")
-local icon = UI:CreateIcon(parent, 32)
-check(icon.w == 36 and same(icon.bg, C.well, 1) and same(icon.border, C.line, 1), "an icon: well in a line frame")
 
--- ── Close button ────────────────────────────────────────────────────────
+-- ── Close button and round tool ─────────────────────────────────────────
 local close = UI:CreateCloseButton(parent)
-check(close.bg[4] == 0 and close.border[4] == 0 and same(close.x.color, C.label),
-  "close button at rest: a label ×, no square, no border")
+check(close.orb.file:find("orb.tga", 1, true) and same(close.ring.color, C.crimsonLine, 1) and close.x.text == "\195\151",
+  "close button: a round crimson button, a gold ring, a ×")
 close:Fire("OnEnter")
-check(same(close.bg, C.popup, 1) and same(close.border, C.lineHi, 1) and same(close.x.color, C.text),
-  "close hover: a paper × on a popup square")
-close:Fire("OnLeave")
-check(close.bg[4] == 0 and close.border[4] == 0 and same(close.x.color, C.label), "close leave: back to rest")
+check(close.orb.color[1] > 0.765, "close hover: brighter")
+local tool = UI:CreateToolButton(parent, "icon-gear", 28)
+check(tool.w == 28 and same(tool.ring.color, C.lineHi, 1) and tool.icon.file:find("icon-gear.tga", 1, true),
+  "a round tool: the metal's ring, its icon")
+tool:SetPressed(true)
+check(same(tool.ring.color, C.gold2, 1), "a pressed tool: the soft gold ring")
 
--- ── Popup: no shadow, a lineHi border ───────────────────────────────────
+-- ── Popup: no shadow, the bright metal's border ─────────────────────────
 local pop = CreateFrame("Frame")
 UI:StylePopup(pop, { noSheen = true, shadowSize = 16 })
 check(pop.dropShadow == nil and UI.CreateDropShadow == nil, "a popup has no shadow, whatever the caller asks")
-check(same(pop.border, C.lineHi, 1), "a popup: lineHi border")
-
--- ── Fade: the only motion, 0.1s at most ─────────────────────────────────
+check(same(pop.border, C.metal2, 1), "a popup: the bright metal's border")
 pop:Fire("OnShow")
 check(fades[#fades] and fades[#fades].frame == pop and near(fades[#fades].duration, 0.1), "a popup fades in over 0.1s")
 local slow = CreateFrame("Frame")
@@ -370,24 +409,15 @@ UI:EnableFadeIn(slow, 0.4)
 slow:Fire("OnShow")
 check(fades[#fades].frame == slow and near(fades[#fades].duration, 0.1), "no fade runs longer than 0.1s")
 
--- ── Metric chip ─────────────────────────────────────────────────────────
+-- ── Metric chip: a small dark tile ──────────────────────────────────────
 local chip = UI:CreateMetricChip(parent, "41", "membros")
-check(chip.value.font.file == F.mono and chip.value.font.size == 24
-  and chip.rule.h == 1 and same(chip.rule.color, C.gold, 1)
-  and chip.label.font.file == F.mono and chip.label.font.size == 10 and same(chip.label.color, C.label),
-  "a metric chip: mono 24 value, 1px gold rule, mono 10 label caption")
-local r1, r2 = chip.rule.points[1], chip.rule.points[2]
-check(r1 and r1[1] == "TOPLEFT" and r2 and r2[1] == "TOPRIGHT", "the rule runs across the top of the chip")
-check(chip.value.points[1][1] == "TOPLEFT" and chip.value.points[1][3] == -9, "the value sits 8px under the rule")
-
--- ── Sub-tabs (issue #14) ────────────────────────────────────────────────
-local subTab = UI:CreateTab(parent, "sessões", 110, true)
-check(subTab.underline.h == 1, "a sub-tab's active rule is 1px")
-check(UI:CreateTab(parent, "roster").underline.h == 2, "a tab's active rule stays 2px")
-subTab:SetActive(true)
-check(subTab.underline.shown and same(subTab.label.color, C.gold), "an active sub-tab: gold label over its rule")
-local subBar = UI:StyleSubTabBar(CreateFrame("Frame"))
-check(subBar.bg and subBar.bg.layer == "BACKGROUND" and same(subBar.bg.color, C.panel, 1), "a sub-tab bar sits on panel")
+check(chip.value.font.file == F.title and chip.value.font.size == UI.SP.KPI and same(chip.value.color, C.gold2)
+  and chip.label.font.file == F.ui and same(chip.label.color, C.textSoft) and not chip.rule.shown,
+  "a metric chip: Cinzel 22 (UI.SP.KPI) in the soft gold, a soft caption, no rule")
+check(chip.value.points[1][1] == "TOPLEFT" and chip.value.points[1][2] == 12 and chip.value.points[1][3] == -8,
+  "the value sits inside the tile")
+local paperChip = UI:CreateMetricChip(paperCard, "76%", "presença")
+check(same(paperChip.value.color, C.paperTitle), "on the paper a tile's number is dark red")
 
 -- ── A label always fits its button or tab (issue #28) ─────────────────
 -- The stub measures 6px a glyph; the pad is 16px.

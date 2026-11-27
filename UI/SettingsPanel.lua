@@ -5,8 +5,18 @@
 -- window changes size. Members read the guild's rules; officers change them.
 -- A change that needs a reload lights one strip at the bottom of the panel.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
-local C = GuildOS.Colors
+-- Drawn on a parchment card in the Officers' Room and Settings (specs/salao/fase3.md): the text takes the
+-- paper's inks and a class its colour on the paper (UI/Kit.lua); a floating window, the wood's (WOOD).
+local Kit = rawget(GuildOS, "Kit")
+local C = Kit and Kit.PAPER or GuildOS.Colors
+local WOOD = GuildOS.Colors
+local function rule(row) if Kit then Kit:Rule(row) end end
+local function checkbox(parent, text, size)
+    if Kit then return Kit:Checkbox(parent, text, size) end
+    return GuildOS.UI:CreateCheckbox(parent, text, size)
+end
 local L = GuildOS.L
 local WHITE8 = "Interface\\Buttons\\WHITE8x8"
 
@@ -17,18 +27,22 @@ local SUBS = {
     { key = "modules",   label = L["Modules"] },
     { key = "rules",     label = L["Guild rules"] },
     { key = "data",      label = L["Data and support"] },
+    { key = "credits",   label = L["Credits"] },
+    -- The help hub (specs/salao/onboarding.md): UI/HelpPanel.lua builds it on this page's form.
+    { key = "help",      label = L["Help"] },
 }
 -- The categories before #367, so an old deep link or command still lands on the right page.
 local OLD_KEYS = { general = "profile", raid = "rules", officer = "rules", about = "data" }
 
-local MAX_W       = 640   -- one column of settings reads best at this width
-local TWO_COL_W   = 830   -- the module lists split in two from here (a 900px window: 900 - 2x12 - 24 - 20)
+local TWO_CARDS_W = 900   -- a page lays its cards in two columns from here (#449), one below
+local GRID_TWO_W  = 560   -- a card's own grid (the module lists) splits in two from this inner width
 local ROW_GAP     = 8
 local SUB_INDENT  = 22    -- a sub-option sits under its parent's label
 local NOTE_INDENT = 22    -- a checkbox's explanation starts where its label does
 local LABEL_W     = 260   -- a field's label column, so the boxes line up; narrower on a narrow page
 local TAB_H, TAB_MIN, TAB_PAD = 28, 60, 20
 local STRIP_H     = 34
+local CARD_PAD, CARD_TOP, CARD_GAP = 14, 36, 12   -- a section's card: its padding, its title's band, between two
 
 -- Tabs have no description of their own in the registry; the Modules page says what each holds.
 local TAB_DESC = {
@@ -41,7 +55,7 @@ local TAB_DESC = {
     groups       = L["Groups being formed and who is looking"],
     journal      = L["The guild's journal"],
     achievements = L["What the guild has earned"],
-    alliance     = L["Pacts with other guilds"],
+    alliance     = L["The shared /g and the alliance room with allied guilds"],
     recruitment  = L["Recruiting, the scanner and auto-invite"],
     trials       = L["Trial members and their progress"],
     management   = L["Ranks, inactivity, bans and the audit log"],
@@ -100,7 +114,7 @@ end
 function Form:Row(obj, opts)
     opts = opts or {}
     self.rows[#self.rows + 1] = { obj = obj, gap = opts.gap or ROW_GAP, indent = opts.indent or 0,
-        h = opts.h, wide = opts.wide, shown = opts.shown, place = opts.place }
+        h = opts.h, wide = opts.wide, shown = opts.shown, place = opts.place, card = opts.card, span = opts.span }
     return obj
 end
 
@@ -114,14 +128,31 @@ function Form:Refresh()
     return self:Layout()
 end
 
+-- The page (#449, the mockup's config screens): what comes before the first section sits on the wood across
+-- the page; each section is a parchment card, its rows laid inside the card's own width (CARD_PAD in, under
+-- its title) and anchored to the card, so a row never runs past it. From TWO_CARDS_W the cards go in two
+-- columns, each to the shorter one (masonry, in order); a card made with `span` (a module grid) takes the
+-- whole width under both. Below TWO_CARDS_W one column, the cards as wide as the page. Records each card's
+-- place and each row's box in self.placed, for the tests.
 function Form:Layout(width)
     width = num(width, 0)
-    if width < 1 then width = num(self.content:GetWidth(), 0) end
-    if width < 1 then width = self.width or MAX_W end
+    if width < 1 then width = num(UI.LaidWidth and UI:LaidWidth(self.content), 0) end
+    if width < 1 then width = self.width or 640 end
     self.width = width
-    local page = math.min(width, MAX_W)
-    local y, first = 0, true
+    local two = width >= TWO_CARDS_W
+    local colW = two and math.floor((width - CARD_GAP) / 2) or width
+    self.placed = {}
+
+    -- Blocks: the rows on the wood before any section, then a section with its rows.
+    local pre, blocks, cur = {}, {}, nil
     for _, r in ipairs(self.rows) do
+        if r.card then cur = { card = r, rows = {} }; blocks[#blocks + 1] = cur
+        elseif cur then cur.rows[#cur.rows + 1] = r
+        else pre[#pre + 1] = r end
+    end
+
+    local y, first = 0, true
+    for _, r in ipairs(pre) do
         local on = not r.shown or r.shown() and true or false
         r.obj:SetShown(on)
         if on then
@@ -129,32 +160,79 @@ function Form:Layout(width)
             first = false
             r.obj:ClearAllPoints()
             r.obj:SetPoint("TOPLEFT", self.content, "TOPLEFT", r.indent, -y)
-            if r.wide then r.obj:SetWidth(math.max(1, page - r.indent)) end
-            y = y + (r.place and r.place(r.obj, page - r.indent, width - r.indent) or r.h or textHeight(r.obj))
+            if r.wide then r.obj:SetWidth(math.max(1, width - r.indent)) end
+            y = y + (r.place and r.place(r.obj, width - r.indent, width - r.indent) or r.h or textHeight(r.obj))
         end
     end
-    self.content:SetHeight(math.max(1, y))
-    return y
+    if y > 0 then y = y + CARD_GAP end
+
+    local colY = { y, y }
+    for _, b in ipairs(blocks) do
+        local card = b.card.obj
+        local on = not b.card.shown or b.card.shown() and true or false
+        card:SetShown(on)
+        if not on then
+            for _, r in ipairs(b.rows) do r.obj:SetShown(false) end
+        else
+            local span = b.card.span or not two
+            local cw = span and width or colW
+            local inner = cw - 2 * CARD_PAD
+            card:SetWidth(math.max(1, cw))
+            local yy, firstRow = CARD_TOP, true
+            for _, r in ipairs(b.rows) do
+                local ron = not r.shown or r.shown() and true or false
+                r.obj:SetShown(ron)
+                if ron then
+                    if not firstRow then yy = yy + r.gap end
+                    firstRow = false
+                    local w = inner - r.indent
+                    r.obj:ClearAllPoints()
+                    r.obj:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD + r.indent, -yy)
+                    if r.wide then r.obj:SetWidth(math.max(1, w)) end
+                    local h = r.place and r.place(r.obj, w, w) or r.h or textHeight(r.obj)
+                    self.placed[#self.placed + 1] = { card = card, row = r.obj, x = CARD_PAD + r.indent, w = w, cardW = cw }
+                    yy = yy + h
+                end
+            end
+            local ch = yy + CARD_PAD
+            card:SetHeight(math.max(1, ch))
+            card:ClearAllPoints()
+            local x, top
+            if span then
+                top = math.max(colY[1], colY[2])
+                x = 0
+                colY[1], colY[2] = top + ch + CARD_GAP, top + ch + CARD_GAP
+            else
+                local c = (colY[2] < colY[1]) and 2 or 1
+                top, x = colY[c], (c - 1) * (colW + CARD_GAP)
+                colY[c] = top + ch + CARD_GAP
+            end
+            card:SetPoint("TOPLEFT", self.content, "TOPLEFT", x, -top)
+        end
+    end
+    local h = math.max(colY[1], colY[2])
+    if #blocks > 0 then h = h - CARD_GAP end
+    self.content:SetHeight(math.max(1, h))
+    return h
 end
 
--- A section: a 1px rule (none above the first) and its title in Sans SemiBold 14.
-function Form:Section(title, shown)
-    if #self.rows > 0 then
-        self:Row(UI:CreateSeparator(self.content), { gap = 20, wide = true, h = 1, shown = shown })
-    end
-    local fs = self.content:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(fs, nil, "sectionTitle")
-    fs:SetShadowOffset(0, 0)
-    fs:SetTextColor(C.text.r, C.text.g, C.text.b)
-    fs:SetJustifyH("LEFT")
-    fs:SetText(title)
-    return self:Row(fs, { gap = 12, wide = true, shown = shown })
+-- A section: a parchment card titled `title` (Cinzel, the paper's dark red, never upper case), behind the rows
+-- that follow it up to the next section. Under the page's other parts, so their text draws over it.
+-- opts.span: the card takes the page's whole width (a grid of its own), under both columns.
+function Form:Section(title, shown, opts)
+    local card = UI:CreateCard(self.content, title)
+    card:SetFrameLevel(math.max(0, (self.content:GetFrameLevel() or 1) - 1))
+    card:SetHeight(CARD_TOP)
+    self.hasCard = true
+    return self:Row(card, { card = true, shown = shown, span = opts and opts.span })
 end
 
 -- A paragraph in Sans 11, textSoft, wrapped to the page.
 function Form:Note(text, opts)
     opts = opts or {}
-    local fs = UI:CreateText(self.content, text, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    -- Before the page's first card it is on the wood: the wood's soft ink there.
+    local ink = self.hasCard and C.textSoft or WOOD.textSoft
+    local fs = UI:CreateText(self.content, text, 11, ink.r, ink.g, ink.b)
     fs:SetJustifyH("LEFT")
     fs:SetWordWrap(true)
     return self:Row(fs, { gap = opts.gap or 2, indent = opts.indent, wide = true, shown = opts.shown })
@@ -165,7 +243,7 @@ end
 function Form:Check(label, desc, get, set, opts)
     opts = opts or {}
     local indent = opts.indent or 0
-    local f = UI:CreateCheckbox(self.content, label, 18)
+    local f = checkbox(self.content, label, 18)
     if f.label then   -- the label ends at the page's edge rather than running past it
         f.label:SetPoint("RIGHT", f, "RIGHT", 0, 0)
         f.label:SetJustifyH("LEFT")
@@ -245,8 +323,10 @@ function Form:Field(label, opts)
     local box = CreateFrame("EditBox", nil, holder, "BackdropTemplate")
     box:SetSize(opts.w or 160, 22)
     box:SetBackdrop({ bgFile = WHITE8, edgeFile = WHITE8, edgeSize = GuildOS.UI:Edge(box) })
-    box:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
-    box:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    rule(box)
+    -- The paper's light field and its tan line (the mockup's `.field input` on a card).
+    box:SetBackdropColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
+    box:SetBackdropBorderColor(C.paperEdge.r, C.paperEdge.g, C.paperEdge.b, 1)
     box:SetTextInsets(6, 6, 0, 0)
     GuildOS:ApplyFont(box, 12, opts.numeric and "tableNum" or nil)
     box:SetTextColor(C.text.r, C.text.g, C.text.b)
@@ -254,8 +334,8 @@ function Form:Field(label, opts)
     if opts.numeric then box:SetNumeric(true) end
     box:SetAutoFocus(false)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    box:SetScript("OnEditFocusGained", function(self) self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1) end)
-    box:SetScript("OnEditFocusLost", function(self) self:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1) end)
+    box:SetScript("OnEditFocusGained", function(self) self:SetBackdropBorderColor(WOOD.paperTitle.r, WOOD.paperTitle.g, WOOD.paperTitle.b, 1) end)
+    box:SetScript("OnEditFocusLost", function(self) self:SetBackdropBorderColor(C.paperEdge.r, C.paperEdge.g, C.paperEdge.b, 1) end)
     UI:AttachSaveButton(box, opts.save, { text = opts.saveText, parent = holder })
     if opts.hint then
         local hint = UI:CreateText(holder, opts.hint, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
@@ -323,7 +403,7 @@ function Form:Grid(make, list, cellH, opts)
             colW = opts.colW
             cols = math.max(1, math.floor((w + 24) / (colW + 24)))
         else
-            cols = (full >= TWO_COL_W and #cells > 1) and 2 or 1
+            cols = (full >= GRID_TWO_W and #cells > 1) and 2 or 1
             colW = cols == 2 and math.floor((full - 24) / 2) or w
         end
         for i, c in ipairs(cells) do
@@ -331,6 +411,7 @@ function Form:Grid(make, list, cellH, opts)
             c:ClearAllPoints()
             c:SetPoint("TOPLEFT", holder, "TOPLEFT", col * (colW + 24), -row * (cellH + 8))
             c:SetWidth(colW)
+            if c.Relayout then c:Relayout(colW) end
         end
         local h = math.max(1, math.ceil(#cells / cols) * (cellH + 8) - 8)
         holder:SetSize(cols == 2 and full or w, h)
@@ -361,12 +442,32 @@ PAGES.profile = function(F)
     F:Buttons({ { L["Show the digest now"], function() if GuildOS.Digest then GuildOS.Digest:Show() end end, w = 170 } },
         { indent = NOTE_INDENT })
 
-    -- WoW: Forever's guild feed on guildos.me (issue #205): the member's own choice.
+    -- WoW: Forever's guild feed on guildos.me (issue #205), and the live guild map (#449): the member's own choice.
+    if GuildOS.Journal or GuildOS.GuildMap then F:Section(L["Privacy"]) end
     if GuildOS.Journal then
-        F:Section(L["Privacy"])
         F:Check(L["Don't name me in Discord posts"], L["The guild's Discord posts leave your name out."],
             function() return GuildOS.Journal:IsOptedOut() end,
             function(checked) GuildOS.Journal:SetOptedOut(checked) end)
+    end
+    if GuildOS.GuildMap then
+        F:Check(L["Share my position with the guild"],
+            L["Only while a guildmate has the guild map open; never coordinates in an instance, nothing in combat there."],
+            function() return GuildOS.GuildMap:IsSharing() end,
+            function(checked) GuildOS.GuildMap:SetSharing(checked) end)
+    end
+    -- The campfire beacon (ChehulNet v17, Modules/ChehulNetWire.lua): WoW: Forever only, where the camp kits are. On
+    -- unless turned off ("default" counts as on); the realm bus carries an ownerless sighting, off by default on PvP.
+    local CN = _G.ChehulNet
+    if CN and CN.SetCampConsent and CN.CampState and CN.SetCampRealm and CN.CampRealmOn
+        and not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail then
+        local function camping() local st = CN:CampState(); return st == "on" or st == "default" end
+        F:Check(L["Announce my campfires"], nil, camping, function(checked) CN:SetCampConsent(checked) end)
+        F:Check(L["Also to the whole realm, without my name"],
+            CN.IsPvPRealm and CN:IsPvPRealm() and L["Off by default on PvP realms, like this one."]
+                or L["Off by default on PvP realms."],
+            function() return CN:CampRealmOn() end,
+            function(checked) CN:SetCampRealm(checked) end,
+            { indent = SUB_INDENT, enabled = camping })
     end
 
     -- The member's own birthday (issue #428): the day and the month, for the guild's calendar.
@@ -389,9 +490,9 @@ PAGES.profile = function(F)
             { shown = function() return GuildOS:IsOfficer() end })
     end
 
-    F:Section(L["Getting started"])
-    F:Buttons({ { L["Show welcome again"], function() if GuildOS.ShowOnboarding then GuildOS:ShowOnboarding() end end, w = 170 } })
-    F:Note(L["Replay the first-run intro"], { gap = 6 })
+    -- Where the welcome's replay was: the help hub (Settings › Help, the title bar's "?") holds the tours,
+    -- What's new and "Show tips again" now.
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("settings.roles", picker) end
 end
 
 PAGES.interface = function(F)
@@ -440,24 +541,25 @@ PAGES.interface = function(F)
         styleRow:Hide()
     end
 
-    -- The game's own font instead of GuildOS's (issue #57), for the whole account. A Korean or Chinese
-    -- client, and the Forever style, always use it (#103).
-    local forced = GuildOS.GameFontOnly or GuildOS.Style.gameFont
-    F:Check(L["Use the game's font"],
-        forced and L["This client always uses the game's font."]
-            or L["Swaps IBM Plex Sans and Mono for the client's own font. Applies after a reload."],
-        function() return GuildOSDB.font == "game" or forced end,
+    -- The game's font, back as a choice (Discord 1556991354478010459): the addon's fonts stay the default; ticked,
+    -- every text draws in the game's after a reload. Korean and Chinese clients always use the game's (#103).
+    local fontCheck = F:Check(L["Use the game's font"],
+        GuildOS.GameFontOnly and L["Your game's language needs its own font, so Guild OS always uses it."]
+            or L["Draws Guild OS in the same font as the rest of the game. Applies after you reload the interface."],
+        function() return GuildOS.Style:WantsGameFont() end,
         function(checked)
-            GuildOSDB.font = checked and "game" or nil
-            markReload("font", checked ~= boot.font)
+            GuildOS.Style:SetGameFont(checked)
+            markReload("font", (checked and true or false) ~= boot.font)
         end,
-        { enabled = function() return not forced end, gap = 12 })
+        { enabled = function() return not GuildOS.GameFontOnly end })
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("settings.font", fontCheck) end
 
     F:Section(L["In the game"])
-    F:Check(L["Show minimap button"], nil,
+    local minimapCheck = F:Check(L["Show minimap button"], nil,
         function() return GuildOS.IsMinimapShown and GuildOS:IsMinimapShown() end,
         function(checked) if GuildOS.SetMinimapShown then GuildOS:SetMinimapShown(checked) end end)
-    -- The guildmates-in-your-zone dots under the minimap (#271).
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("settings.minimap", minimapCheck) end
+    -- The guildmates-in-your-zone dots on the minimap (#271, #449): where they really are.
     if GuildOS.GuildMap then
         F:Check(L["Show guildmates in your zone on the minimap"], nil,
             function() return GuildOS.GuildMap:IsMinimapDots() end,
@@ -651,18 +753,23 @@ local function moduleCell(F, holder, def)
     if host then label = string.format(L["%s (in %s)"], def.label, host.label) end
     local needsReload = def.restart or (def.module and not def.tab)
 
-    local f = UI:CreateCheckbox(cell, label, 18)
+    local f = checkbox(cell, label, 18)
     f:SetPoint("TOPLEFT", 0, 0)
-    f:SetPoint("RIGHT", cell, "RIGHT", needsReload and -76 or 0, 0)
     if f.label then
         f.label:SetPoint("RIGHT", f, "RIGHT", 0, 0)
         f.label:SetJustifyH("LEFT")
         f.label:SetWordWrap(false)
     end
-    if needsReload then
-        local badge = UI:CreateBadge(cell, L["reload"])
-        badge:SetPoint("TOPRIGHT", cell, "TOPRIGHT", 0, -1)
+    -- "reload" right after the label, inside the cell (#449): the switch is as wide as its label, the
+    -- badge beside it; a label too long for the cell is cut before the badge.
+    local badge = needsReload and UI:CreateBadge(cell, L["reload"]) or nil
+    if badge then badge:SetPoint("LEFT", f, "RIGHT", 6, 0) end
+    function cell:Relayout(w)
+        local textW = math.ceil(num(f.label and f.label.GetStringWidth and f.label:GetStringWidth(), 0))
+        local room = w - (badge and (num(badge:GetWidth(), 50) + 6) or 0)
+        f:SetWidth(math.max(40, math.min(room, 22 + 6 + textW + 2)))
     end
+    cell:Relayout(300)
     local desc = UI:CreateText(cell, TAB_DESC[def.id] or def.desc or "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     desc:SetPoint("TOPLEFT", cell, "TOPLEFT", NOTE_INDENT, -21)
     desc:SetPoint("RIGHT", cell, "RIGHT", 0, 0)
@@ -694,11 +801,11 @@ PAGES.modules = function(F)
         end
     end
     local function cell(holder, def) return moduleCell(F, holder, def) end
-    F:Section(L["Window tabs"])
+    F:Section(L["Window tabs"], nil, { span = true })
     F:Note(L["Turning one off hides it; nothing is deleted."], { gap = 6 })
     F:Grid(cell, tabs, 40, { gap = 12 })
     if #background > 0 then
-        F:Section(L["In the background"])
+        F:Section(L["In the background"], nil, { span = true })
         F:Note(L["These run without a tab of their own."], { gap = 6 })
         F:Grid(cell, background, 40, { gap = 12 })
     end
@@ -717,7 +824,8 @@ PAGES.rules = function(F, isOfficer)
     end
 
     -- Who is an officer (issue #81): the guild's threshold, rank 0 (the guild master) always in.
-    F:Section(L["Who is an officer in Guild OS"])
+    local officerCard = F:Section(L["Who is an officer in Guild OS"])
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("settings.officerRanks", officerCard) end
     if numRanks == 0 then
         F:Note(L["Guild rank info not available. Open the Guild panel first."])
     elseif isOfficer then
@@ -806,7 +914,7 @@ PAGES.rules = function(F, isOfficer)
                 return list
             end
             F:Grid(function(holder, k)
-                local kb = UI:CreateCheckbox(holder, Cal:KindLabel(k), 18)
+                local kb = checkbox(holder, Cal:KindLabel(k), 18)
                 kb.kind = k
                 kb.checkbox.onChanged = function(box)
                     -- No longer an officer (a change from elsewhere, the panel still open): the tick goes back.
@@ -912,9 +1020,31 @@ PAGES.rules = function(F, isOfficer)
         end
     end
 
+    -- The guild bank's tax (Ley): the Guild Master sets it, everybody reads it. Off (0) by default.
+    if GuildOS.GuildBank and GuildOS.GuildBank.TaxRate and GuildOS:IsFeatureEnabled("bank") then
+        local B = GuildOS.GuildBank
+        F:Section(L["Guild bank tax"])
+        if GuildOS.Compat.IsGuildLeader() then
+            local taxBox = F:Field(L["Tax on each withdrawal (%):"], { w = 50, max = 2, numeric = true,
+                get = function() return B:TaxRate() > 0 and B:TaxRate() or "" end,
+                save = function(box)
+                    if not B:SetTax(tonumber(box:GetText()) or 0) then
+                        GuildOS:Print(string.format(L["The bank tax is a whole number from 0 to %d."], B.TAX_MAX))
+                    end
+                    box:SetText(B:TaxRate() > 0 and tostring(B:TaxRate()) or "")
+                end })
+            if UI.RegisterTourAnchor then UI:RegisterTourAnchor("settings.bankTax", taxBox) end   -- the tour (UI/Tour.lua)
+        else
+            F:Value(L["Tax on each withdrawal (%):"], function()
+                return B:TaxRate() > 0 and B:TaxRate() or L["Off"]
+            end, { numeric = true })
+        end
+        F:Note(L["Each item taken out owes the guild this share of its auction price (or vendor price). A gold deposit pays it back. Empty or 0: off."])
+    end
+
     -- !note (issue #59): members set their public note by typing !note in guild chat, and a client that
-    -- can edit notes applies it.
-    if isOfficer then
+    -- can edit notes applies it. TBC Anniversary only (audit B11).
+    if isOfficer and GuildOS.Client.isAnniversary then
         F:Section(L["The !note command"])
         F:Check(L["Apply !note requests from guild chat on this client"],
             L["Members set their public note by typing !note in guild chat."],
@@ -928,11 +1058,65 @@ end
 PAGES.data = function(F, isOfficer)
     F:Section(L["Your data"])
     F:Buttons({
-        { L["Backup"], function() if GuildOS.Backup then GuildOS.Backup:ShowExport() end end, w = 120 },
-        { L["Restore"], function() if GuildOS.Backup then GuildOS.Backup:ShowRestore() end end, w = 120 },
         { L["Export Data"], function() if GuildOS.ShowExportChooser then GuildOS:ShowExportChooser() end end, w = 140 },
     })
+    -- A backup and its restore are the guild's whole database, not "your data" (audit D11); the restore asks first.
+    F:Section(L["Whole guild database"])
+    F:Buttons({
+        { L["Backup"], function() if GuildOS.Backup then GuildOS.Backup:ShowExport() end end, w = 120 },
+        { L["Restore"], function() if GuildOS.Backup then GuildOS.Backup:ShowRestore() end end, w = 120 },
+    })
     F:Note(L["Export/import all Guild OS data for this guild"], { gap = 6 })
+
+    -- Every guild database this account keeps (memoria.md): all of them load at every login. One the player
+    -- no longer needs is deleted here, behind a confirmation, never the one in use, never on its own. A fixed
+    -- set of rows filled on each refresh, so the page keeps its shape (the memory audit's rule).
+    local GUILD_DB_ROWS = 8
+    F:Section(L["Guild data on this account"])
+    F:Note(L["Each guild a character of this account was in keeps its own Guild OS data, and all of it loads at every login."], { gap = 2 })
+    local dbList = {}
+    F:Sync(function() dbList = GuildOS.GuildDatabases and GuildOS:GuildDatabases() or {} end)
+    local function sizeText(bytes)
+        if bytes >= 1024 * 1024 then return string.format(L["%.1f MB"], bytes / (1024 * 1024)) end
+        return string.format(L["%d KB"], math.max(1, math.floor(bytes / 1024 + 0.5)))
+    end
+    for i = 1, GUILD_DB_ROWS do
+        local holder = CreateFrame("Frame", nil, F.content)
+        holder:SetSize(1, 26)
+        local label = UI:CreateText(holder, "", 12, C.text.r, C.text.g, C.text.b)
+        label:SetPoint("LEFT", 0, 0)
+        label:SetJustifyH("LEFT")
+        label:SetWordWrap(false)
+        local del = UI:CreateButton(holder, L["Delete"], 90, 24)
+        UI:SetButtonVariant(del, "danger")
+        del:SetPoint("RIGHT", holder, "RIGHT", 0, 0)
+        local inUse = UI:CreateText(holder, L["In use"], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        inUse:SetPoint("RIGHT", holder, "RIGHT", 0, 0)
+        label:SetPoint("RIGHT", del, "LEFT", -8, 0)
+        del:SetScript("OnClick", function()
+            local e = dbList[i]
+            if e and not e.current and not e.protected then
+                GuildOS:AskDeleteGuildDB(e.key, function() F:Refresh() end)
+            end
+        end)
+        F:Sync(function()
+            local e = dbList[i]
+            if not e then return end
+            local when
+            if not e.opened then when = L["never"]
+            elseif e.est then when = string.format(L["before %s"], GuildOS:DateText(e.opened, "/%Y"))
+            else when = GuildOS:DateText(e.opened, "/%Y") end
+            label:SetText(string.format(L["%s · %s · last opened %s"], GuildOS:GuildDBLabel(e), sizeText(e.bytes), when))
+            -- The one in use, and this guild's under another realm's key (#394), are never offered for deletion.
+            local kept = e.current or e.protected
+            del:SetShown(not kept)
+            inUse:SetText(e.current and L["In use"] or L["This guild"])
+            inUse:SetShown(kept and true or false)
+        end)
+        F:Row(holder, { h = 26, wide = true, gap = 4, shown = function() return dbList[i] ~= nil end })
+    end
+    F:Note(L["More guilds than shown: delete some and the rest appear here."], { gap = 4,
+        shown = function() return #dbList > GUILD_DB_ROWS end })
 
     -- What /gos scan, errors, selftest, probe, probe chat and style preview do (#142).
     F:Section(L["Diagnostics"])
@@ -951,6 +1135,8 @@ PAGES.data = function(F, isOfficer)
             }
             GuildOS:ShowDialog("GUILDOS_PROBE_CHAT")
         end },
+        -- What needs a key press on this client (#449): no dialog, nobody is invited or whispered.
+        { L["Probe invites"], function() if GuildOS.Probe then GuildOS.Probe:RunInvite() end end },
         { L["Style preview"], function() if GuildOS.Style then GuildOS.Style:ShowPreview() end end },
     })
     F:Note(L["The results go to the chat window."], { gap = 6 })
@@ -979,12 +1165,20 @@ PAGES.data = function(F, isOfficer)
         -- The Loot Master's tests: only where it exists, never on retail (ADR-0026).
         local LM = GuildOS.LootMaster
         if LM then
+            -- A real roll in progress is never overwritten by a test (audit R20).
+            local function rollOpen()
+                if not LM:RollOpen() then return false end
+                GuildOS:Print(L["|cffFFAA00A roll is open: the loot tests wait until it ends.|r"])
+                return true
+            end
             F:Action(L["Test Roll Popup"], L["Shows the raider roll popup with a sample item"], function()
+                if rollOpen() then return end
                 LM.testMode = true
                 LM:ShowRollPopup("|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r", 15, 32837)
                 GuildOS:Print(L["Test roll popup shown (15s timer). Try MS/OS/Pass buttons."])
             end)
             F:Action(L["Test Wishlist Council"], L["Shows the ML council result frame with sample data"], function()
+                if rollOpen() then return end
                 LM.testMode = true
                 local link = "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r"
                 local fakeWinner = { name = GuildOS.Compat.PlayerName(), class = select(2, UnitClass("player")), wishlistType = "wishlist", order = 1 }
@@ -998,6 +1192,7 @@ PAGES.data = function(F, isOfficer)
                 GuildOS:Print(L["Test council frame shown. Award button won't work (no loot slot)."])
             end)
             F:Action(L["Test Roll Tracker"], L["Shows the ML roll tracker with sample roll data"], function()
+                if rollOpen() then return end
                 LM.testMode = true
                 LM.activeLoot = {
                     link = "|cffa335ee|Hitem:30110::::::::70:::::|h[Tsunami Talisman]|h|r",
@@ -1013,6 +1208,7 @@ PAGES.data = function(F, isOfficer)
                 GuildOS:Print(L["Test roll tracker shown with sample rolls."])
             end)
             F:Action(L["Test Loot Frame"], L["Opens the ML loot frame with sample items"], function()
+                if rollOpen() then return end
                 LM.testMode = true
                 LM:ShowLootFrame({
                     { slot = 1, link = "|cffa335ee|Hitem:30110::::::::70:::::|h[Tsunami Talisman]|h|r",   name = "Tsunami Talisman",    quality = 4 },
@@ -1058,21 +1254,231 @@ PAGES.data = function(F, isOfficer)
             .. "GitHub:  https://github.com/danielcosta42/GuildOS\n"
             .. "CurseForge:  https://www.curseforge.com/projects/1549177\n"
             .. "Wago:  https://addons.wago.io/addons/rNkyABKa")
-    end, w = 120 } }, { gap = 10 })
+    end, w = 120 },
+        -- The game's own guild window, which the window's footer linked to before the Salão's phase 3 (#449).
+        { L["Blizzard"], function() if GuildOS.OpenBlizzardGuildUI then GuildOS:OpenBlizzardGuildUI() end end, w = 120 } },
+        { gap = 10 })
     F:Note(L["Project page, bug reports and updates"], { gap = 6 })
 
     -- /gos reset, behind a confirmation: it cannot be undone. Last, and red.
     F:Section(L["Danger zone"])
-    F:Buttons({ { L["Erase guild data"], function()
-        GuildOS.Dialogs["GUILDOS_ERASE_GUILD"] = GuildOS.Dialogs["GUILDOS_ERASE_GUILD"] or {
-            text = L["Erase all Guild OS data for this guild and reload the interface? This cannot be undone."],
-            button1 = L["Erase guild data"], button2 = L["Cancel"],
-            OnAccept = function() GuildOS:EraseGuildData() end,
-            timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-        }
-        GuildOS:ShowDialog("GUILDOS_ERASE_GUILD")
-    end, w = 170, variant = "danger" } })
+    F:Buttons({ { L["Erase guild data"], function() GuildOS:AskEraseGuildData() end, w = 170, variant = "danger" } })
     F:Note(L["Removes every Guild OS record of this guild on this PC, then reloads."], { gap = 6 })
+end
+
+----------------------------------------------------------------------
+-- Credits (#449): what a player wants to know about the addon, on one page. On the wood, the crest: the
+-- logo in its ring, the name in Cinzel gold, what it is, the version and the game as pills. Then the cards:
+-- who made it, where to find the community (each link with a Copy that opens it in a box to select), the
+-- thanks, the licence (its full text a click away), what it is built with, and this copy's details for a
+-- bug report.
+----------------------------------------------------------------------
+local LINKS = {
+    { key = "discord", glyph = "D", label = "Discord",    url = "https://discord.gg/8XA6gmNjja",                  note = "Help, bugs and ideas" },
+    { key = "site",    glyph = "G", label = "guildos.me", url = "https://guildos.me",                             note = "The companion site of your guild" },
+    { key = "github",  glyph = "</>", label = "GitHub",   url = "https://github.com/danielcosta42/GuildOS",       note = "Source code and bug reports" },
+    { key = "curse",   glyph = "C", label = "CurseForge", url = "https://www.curseforge.com/projects/1549177",    note = "Downloads and updates" },
+    { key = "wago",    glyph = "W", label = "Wago",       url = "https://addons.wago.io/addons/rNkyABKa",         note = "Downloads and updates" },
+}
+-- The rest of the Chehul family on WoW: Forever (they share ChehulNet, the hidden network): what each is for and
+-- its CurseForge page. ProfessionHelper stays out until it runs on Forever.
+local FAMILY = {
+    { key = "lodestar", glyph = "L", label = "Lodestar",  url = "https://www.curseforge.com/wow/addons/lodestar",                               note = "Leveling guides with an arrow to the next quest" },
+    { key = "party",    glyph = "P", label = "PartyLens", url = "https://www.curseforge.com/wow/addons/partylens-lfg-group-finder",             note = "Group radar: the LFG channel and listings in one panel" },
+    { key = "warmth",   glyph = "W", label = "Warmth",    url = "https://www.curseforge.com/wow/addons/warmth-campfires-camps-for-wow-forever",  note = "Campfires on your map and who is around them" },
+}
+local MIT = "MIT License\n\nCopyright (c) 2026 danielcosta42\n\n"
+    .. "Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated "
+    .. "documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation "
+    .. "the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to "
+    .. "permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\n"
+    .. "The above copyright notice and this permission notice shall be included in all copies or substantial portions of "
+    .. "the Software.\n\n"
+    .. "THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO "
+    .. "THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE "
+    .. "AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, "
+    .. "TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE "
+    .. "SOFTWARE."
+local BUILT_WITH = {
+    { "Ace3: AceComm-3.0, CallbackHandler-1.0", "BSD" },
+    { "LibStub", "Public domain" },
+    { "ChatThrottleLib", "Public domain" },
+    { "LibDeflate", "zlib" },
+    { "Lib" .. "Serialize (its own copy)", "MIT" },
+    { "Cinzel, Alegreya, Alegreya Sans", "SIL Open Font License" },
+}
+
+-- The help hub (UI/HelpPanel.lua), on this page's form.
+PAGES.help = function(F, isOfficer)
+    if UI.HelpPanel then UI.HelpPanel:Build(F, isOfficer) end
+end
+
+local function gameName()
+    local c = GuildOS.Client or {}
+    if c.isAnniversary then return L["TBC Anniversary"] end
+    if c.isRetail then return L["Retail"] end
+    return L["WoW: Forever"]
+end
+
+local function details()
+    local c = GuildOS.Client or {}
+    return table.concat({
+        "Guild OS v" .. tostring(GuildOS.VERSION or "?"),
+        L["Game"] .. ": " .. gameName() .. " " .. tostring(c.version or "") .. " (" .. tostring(c.build or "") .. ", " .. tostring(c.interface or "") .. ")",
+        L["Language"] .. ": " .. tostring(GetLocale and GetLocale() or "?"),
+    }, "\n")
+end
+
+-- A pill on the wood: a soft gold outline round a short text.
+local function pill(parent, text)
+    local p = CreateFrame("Frame", nil, parent)
+    p:SetHeight(20)
+    local fill = GuildOS.Style:Nine(p, "pill-line", 10, "BACKGROUND", 1)
+    fill:SetColor(WOOD.gold2)
+    p.text = UI:CreateText(p, text, 11, WOOD.gold2.r, WOOD.gold2.g, WOOD.gold2.b)
+    p.text:SetPoint("CENTER", 0, 0)
+    -- Measured again at each layout (a font not loaded yet measures short, #449 "WoW: Forever" spilled out);
+    -- never under the label's length at the caption size, so a short measure cannot cut it.
+    function p:Fit()
+        local measured = math.ceil(tonumber(UI:TextWidth(self.text, 40)) or 40)
+        local floor = math.ceil(#(self.text:GetText() or "") * 6.2)
+        self:SetWidth(math.max(measured, floor) + 30)
+    end
+    p:Fit()
+    return p
+end
+
+-- One line of the community card: a round glyph, the name and what it is for, the address, Copy.
+local function linkRow(F, link)
+    local row = CreateFrame("Frame", nil, F.content)
+    row:SetSize(1, 40)
+    local g = UI:CreateGlyph(row, 30)
+    g:SetPoint("LEFT", 0, 0)
+    g:Set(link.glyph, C.paperTitle)
+    local name = UI:CreateText(row, link.label, 13, C.text.r, C.text.g, C.text.b)
+    GuildOS:ApplyFont(name, 13, "button")
+    name:SetPoint("TOPLEFT", g, "TOPRIGHT", 10, 1)
+    local note = UI:CreateText(row, L[link.note], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    note:SetPoint("LEFT", name, "RIGHT", 8, 0)
+    note:SetWordWrap(false)
+    note:SetJustifyH("LEFT")
+    local url = UI:CreateText(row, link.url, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    url:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
+    url:SetWordWrap(false)
+    url:SetJustifyH("LEFT")
+    local copy = UI:SetButtonVariant(UI:CreateButton(row, L["Copy"], 70, 24), "ghost")
+    copy:SetPoint("RIGHT", 0, 0)
+    copy:SetScript("OnClick", function() GuildOS:ShowExportPopup(link.label, link.url) end)
+    UI:AddTooltip(copy, link.label, { link.url, L["Opens the address in a box: Ctrl+C copies it."] })
+    row.copy, row.url, row.note = copy, url, note
+    F:Row(row, { gap = 6, wide = true, place = function(r, w)
+        r:SetWidth(math.max(1, w))
+        local room = math.max(40, w - 30 - 10 - copy:GetWidth() - 8)
+        url:SetWidth(room)
+        note:SetWidth(math.max(1, room - UI:TextWidth(name, 60) - 8))
+        return 40
+    end })
+    return row
+end
+
+PAGES.credits = function(F)
+    -- The crest, on the wood.
+    local hero = CreateFrame("Frame", nil, F.content)
+    hero:SetSize(1, 96)
+    local glow = hero:CreateTexture(nil, "BACKGROUND")
+    glow:SetTexture(GuildOS.Style.ART and GuildOS.Style.ART.halo or "Interface\\AddOns\\GuildOS\\Media\\Salao\\halo")
+    glow:SetSize(120, 120)
+    glow:SetPoint("LEFT", -18, 0)
+    glow:SetVertexColor(WOOD.gold2.r, WOOD.gold2.g, WOOD.gold2.b, 0.35)
+    local logo = hero:CreateTexture(nil, "ARTWORK")
+    logo:SetTexture("Interface\\AddOns\\GuildOS\\Media\\minimap-logo")
+    logo:SetSize(72, 72)
+    logo:SetPoint("LEFT", 6, 0)
+    local ring = hero:CreateTexture(nil, "OVERLAY")
+    ring:SetTexture(GuildOS.Style.ART and GuildOS.Style.ART.ring or "Interface\\AddOns\\GuildOS\\Media\\Salao\\ring")
+    ring:SetSize(84, 84)
+    ring:SetPoint("CENTER", logo, "CENTER", 0, 0)
+    ring:SetVertexColor(WOOD.gold2.r, WOOD.gold2.g, WOOD.gold2.b, 1)
+    local title = UI:CreateText(hero, "Guild OS", 28, WOOD.gold.r, WOOD.gold.g, WOOD.gold.b)
+    GuildOS:ApplyFont(title, 28, "windowTitle")
+    title:SetTextColor(WOOD.gold.r, WOOD.gold.g, WOOD.gold.b)
+    title:SetPoint("TOPLEFT", logo, "TOPRIGHT", 20, 2)
+    local tag = UI:CreateText(hero, L["The guild manager for WoW: Forever, TBC Anniversary and Retail."], 12,
+        WOOD.textSoft.r, WOOD.textSoft.g, WOOD.textSoft.b)
+    tag:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 1, -4)
+    tag:SetJustifyH("LEFT")
+    local pills = { pill(hero, "v" .. tostring(GuildOS.VERSION or "?")), pill(hero, gameName()), pill(hero, "MIT") }
+    local function placePills()
+        local x = 0
+        for _, p in ipairs(pills) do
+            p:Fit()
+            p:ClearAllPoints()
+            p:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", x, -8)
+            x = x + p:GetWidth() + 6
+        end
+    end
+    placePills()
+    F:Row(hero, { gap = 4, wide = true, place = function(h, w)
+        placePills()
+        h:SetWidth(math.max(1, w))
+        tag:SetWidth(math.max(1, w - 72 - 26))
+        return math.max(96, 2 + 32 + 4 + math.ceil(tag:GetStringHeight() or 14) + 8 + 20 + 6)
+    end })
+    F.hero = hero
+
+    -- Who made it.
+    F:Section(L["Made by"])
+    local who = CreateFrame("Frame", nil, F.content)
+    who:SetSize(1, 52)
+    local av = UI:CreateGlyph(who, 44)
+    av:SetPoint("LEFT", 0, 0)
+    av:Set("C", C.paperTitle)
+    local nm = UI:CreateText(who, "Chehul", 16, C.text.r, C.text.g, C.text.b)
+    GuildOS:ApplyFont(nm, 16, "sectionTitle")
+    nm:SetPoint("TOPLEFT", av, "TOPRIGHT", 12, -4)
+    local handle = UI:CreateText(who, "danielcosta42", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    handle:SetPoint("LEFT", nm, "RIGHT", 8, -1)
+    local role = UI:CreateText(who, L["Creator and developer"], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    role:SetPoint("TOPLEFT", nm, "BOTTOMLEFT", 0, -4)
+    F:Row(who, { gap = 4, wide = true, h = 52 })
+    F:Note(L["Made with care for the guilds that play together, in every client the addon runs on."], { gap = 8 })
+
+    -- Where to find the community.
+    F:Section(L["Community and links"])
+    for _, link in ipairs(LINKS) do linkRow(F, link) end
+
+    -- The rest of the family.
+    F:Section(L["The Chehul family"])
+    F:Note(L["Guild OS has siblings, made by the same hands and talking over the same hidden network."], { gap = 2 })
+    for _, link in ipairs(FAMILY) do linkRow(F, link) end
+
+    -- The thanks.
+    F:Section(L["Thanks"])
+    F:Note(L["To the supporters on Discord, whose ideas and screenshots shaped this redesign, and to every guild that tested Guild OS in its raids and its chat."])
+    F:Note(L["Found a bug or have an idea? The Discord is the quickest way to reach us."], { gap = 8 })
+    F:Buttons({ { L["Join the Discord"], function() GuildOS:ShowExportPopup("Discord", LINKS[1].url) end, w = 160, variant = "primary" } },
+        { gap = 10 })
+
+    -- The licence.
+    F:Section(L["License"])
+    F:Value(L["License"], function() return "MIT" end)
+    F:Value(L["Copyright"], function() return "2026 danielcosta42" end)
+    F:Note(L["Free to use, change and share, with the copyright notice kept. It comes with no warranty."], { gap = 8 })
+    F:Buttons({ { L["Read the license"], function() GuildOS:ShowExportPopup(L["License"], MIT) end, w = 160 } }, { gap = 10 })
+
+    -- What it is built with.
+    F:Section(L["Built with"])
+    for _, lib in ipairs(BUILT_WITH) do F:Value(lib[1], function() return lib[2] end) end
+    F:Note(L["Thanks to their authors: each keeps its own license."], { gap = 8 })
+
+    -- This copy, for a bug report.
+    F:Section(L["This copy"])
+    F:Value(L["Version"], function() return "v" .. tostring(GuildOS.VERSION or "?") end)
+    F:Value(L["Game"], gameName)
+    F:Value(L["Language"], function() return GetLocale and GetLocale() or "?" end)
+    F:Buttons({ { L["Copy for a bug report"], function() GuildOS:ShowExportPopup(L["This copy"], details()) end, w = 190 } },
+        { gap = 10 })
+    F:Note(L["Type /gos help to see every command."], { gap = 8 })
 end
 
 ----------------------------------------------------------------------
@@ -1080,6 +1486,7 @@ end
 -- changed shape (rank, the guild's ranks, a module's data appearing); the
 -- values are re-read on every refresh.
 ----------------------------------------------------------------------
+local builtPages = setmetatable({}, { __mode = "k" })   -- content -> { [shape] = { form, parts } }
 local function shapeOf(key, isOfficer)
     local parts = { key, isOfficer and "officer" or "member" }
     if key == "rules" and GuildControlGetNumRanks then
@@ -1090,6 +1497,9 @@ local function shapeOf(key, isOfficer)
         for _, def in ipairs(UI:AllFeatures(nil)) do parts[#parts + 1] = def.id end
     elseif key == "chat" then
         parts[#parts + 1] = (GuildOS.db.mentions and "mentions" or "") .. (GuildOS.db.lfgPrefs and "lfg" or "")
+    elseif key == "help" then
+        -- The tours and the guides differ for the Guild Master.
+        parts[#parts + 1] = GuildOS.Onboarding and GuildOS.Onboarding.Role() or ""
     end
     return table.concat(parts, ":")
 end
@@ -1097,17 +1507,38 @@ end
 function GuildOS:RefreshSettingsPanel(content, key)
     key = OLD_KEYS[key] or key
     if not PAGES[key] then key = "profile" end
-    boot = boot or { font = GuildOSDB and GuildOSDB.font == "game", modules = {} }
+    boot = boot or { font = (GuildOS.Style and GuildOS.Style.gameFont) == true, modules = {} }
     local isOfficer = GuildOS:IsOfficer()
     local shape = shapeOf(key, isOfficer)
     local F = content.__settingsForm
     if not F or content.__settingsShape ~= shape then
-        if F then
+        -- Each shape's page is built once and kept (memory audit): what a build made is set aside when the
+        -- shape changes and shown again when it comes back, so an officer flag that flips at login, or two
+        -- shapes taken in turn, no longer leave a whole page of frames behind on every change.
+        local cache = builtPages[content]
+        if not cache then cache = {}; builtPages[content] = cache end
+        local old = content.__settingsShape and cache[content.__settingsShape]
+        if old then
+            for _, part in ipairs(old.parts) do part:Hide() end
+        elseif F then
             for _, child in pairs({ content:GetChildren() }) do child:Hide() end
             for _, region in pairs({ content:GetRegions() }) do region:Hide() end
         end
-        F = newForm(content)
-        PAGES[key](F, isOfficer)
+        local kept = cache[shape]
+        if kept then
+            for _, part in ipairs(kept.parts) do part:Show() end
+            F = kept.form
+        else
+            local before = {}
+            for _, child in ipairs({ content:GetChildren() }) do before[child] = true end
+            for _, region in ipairs({ content:GetRegions() }) do before[region] = true end
+            F = newForm(content)
+            PAGES[key](F, isOfficer)
+            local parts = {}
+            for _, child in ipairs({ content:GetChildren() }) do if not before[child] then parts[#parts + 1] = child end end
+            for _, region in ipairs({ content:GetRegions() }) do if not before[region] then parts[#parts + 1] = region end end
+            cache[shape] = { form = F, parts = parts }
+        end
         content.__settingsForm, content.__settingsShape = F, shape
     end
     F:Refresh()
@@ -1129,9 +1560,10 @@ function GuildOS:CreateSettingsPanel(parent, _mainFrame)
     strip:SetPoint("BOTTOMRIGHT", -12, 8)
     strip:SetHeight(STRIP_H)
     strip:SetBackdrop({ bgFile = WHITE8, edgeFile = WHITE8, edgeSize = GuildOS.UI:Edge(strip) })
-    strip:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1)
-    strip:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
-    strip.text = UI:CreateText(strip, "", 12, C.text.r, C.text.g, C.text.b)
+    rule(strip)
+    strip:SetBackdropColor(WOOD.panel.r, WOOD.panel.g, WOOD.panel.b, 1)
+    strip:SetBackdropBorderColor(WOOD.line.r, WOOD.line.g, WOOD.line.b, 1)
+    strip.text = UI:CreateText(strip, "", 12, WOOD.text.r, WOOD.text.g, WOOD.text.b)
     strip.text:SetPoint("LEFT", 12, 0)
     local reload = UI:SetButtonVariant(UI:CreateButton(strip, L["Reload"], 120, 24), "primary")
     reload:SetPoint("RIGHT", -5, 0)
@@ -1143,7 +1575,11 @@ function GuildOS:CreateSettingsPanel(parent, _mainFrame)
     local tabs, tabList = {}, {}
     local function anchorScroll(info, stripShown)
         info.scroll:ClearAllPoints()
-        info.scroll:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 2, -10)
+        if parent.PlaceUnderSubBar then
+            parent.PlaceUnderSubBar(info.scroll)
+        else
+            info.scroll:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 2, -10)
+        end
         info.scroll:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -12, stripShown and (STRIP_H + 16) or 10)
     end
     strip.onToggle = function(shown)
@@ -1160,8 +1596,15 @@ function GuildOS:CreateSettingsPanel(parent, _mainFrame)
         GuildOS:SafeCall(function()
             info.form = GuildOS:RefreshSettingsPanel(info.content, key)
         end)
+        if key == "help" and UI.HelpPanel then UI.HelpPanel:Opened() end
     end
     parent.SelectSub = selectSub   -- deep links: /gos open settings <page>
+    -- The Settings button's entries open these pages themselves (#445).
+    UI:CollapsibleSubBar(parent, bar, function()
+        local t = {}
+        for key, info in pairs(parent.subPanels) do t[key] = info.scroll end
+        return t
+    end, { 2, -10 })
 
     for _, s in ipairs(SUBS) do
         local t = UI:CreateTab(bar, s.label, TAB_MIN, true)
@@ -1170,6 +1613,8 @@ function GuildOS:CreateSettingsPanel(parent, _mainFrame)
         tabs[s.key] = t
         tabList[#tabList + 1] = t
         local scroll, content = UI:CreateScrollFrame(parent, "GuildOSSettings_" .. s.key)
+        -- Every part of a page sits on its sections' parchment cards: the controls take the paper's look.
+        if Kit then content.__paper = true end
         local info = { scroll = scroll, content = content }
         anchorScroll(info, false)
         UI:BindScrollChildWidth(scroll, content, 20)

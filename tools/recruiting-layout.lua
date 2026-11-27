@@ -57,6 +57,15 @@ function Frame:SetPoint(...) self.points[#self.points + 1] = { ... } end
 function Frame:ClearAllPoints() self.points = {} end
 function Frame:SetAllPoints(other) self.points = { { "ALL", other } } end
 function Frame:GetParent() return self.parent end
+-- Moved under another frame, as the client moves it: out of its old parent's children, into the new one's.
+function Frame:SetParent(p)
+  if p == self.parent then return end
+  if self.parent then
+    for i, c in ipairs(self.parent.children) do if c == self then table.remove(self.parent.children, i); break end end
+  end
+  self.parent = p
+  if p then p.children[#p.children + 1] = self; self.level = (p.level or 0) + 1 end
+end
 function Frame:GetObjectType() return self.kind end
 function Frame:IsShown() return self.shown end
 function Frame:IsVisible()
@@ -196,7 +205,9 @@ dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Style.lua")
 GuildOS.Style:Resolve()
 dofile(ADDON .. "/Core/Utils.lua")
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
+dofile(ADDON .. "/UI/Forms.lua")
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/Modules/RosterColumns.lua")
 dofile(ADDON .. "/Modules/GearAudit.lua")
@@ -265,6 +276,74 @@ local function topX(f)
   return p and (type(p[2]) == "table" and p[4] or p[2])
 end
 
+-- Where a frame lies, from its points, in the panel's coordinates (y down): left, top, right, bottom. A text
+-- with no width set is as wide as it reads. Enough of the client's anchoring for the cards' rows.
+local function rectOf(f, memo)
+  memo = memo or {}
+  if memo[f] then return memo[f] end
+  local w, h = f.w or 0, f.h or 0
+  if f.kind == "FontString" then
+    if w == 0 then w = f:GetStringWidth() end
+    if h == 0 then h = f:GetStringHeight() end
+  end
+  if not f.parent or #f.points == 0 then
+    local base = f.parent and rectOf(f.parent, memo) or { l = 0, t = 0, r = w, b = h }
+    if f.scrollOwner then base = rectOf(f.scrollOwner, memo) end
+    local r = { l = base.l, t = base.t, r = base.l + w, b = base.t + h }
+    memo[f] = r
+    return r
+  end
+  local L, R, T, B, CX, CY
+  for _, p in ipairs(f.points) do
+    if p[1] == "ALL" then
+      local o = rectOf(p[2] or f.parent, memo)
+      L, R, T, B = o.l, o.r, o.t, o.b
+    else
+      local point, rel, relPoint, x, y = p[1], nil, nil, 0, 0
+      if type(p[2]) == "number" or p[2] == nil then x, y = p[2] or 0, p[3] or 0
+      else rel, relPoint, x, y = p[2], p[3], p[4] or 0, p[5] or 0 end
+      if type(relPoint) == "number" then relPoint, x, y = point, relPoint, x end
+      rel = rel or f.parent
+      relPoint = relPoint or point
+      local o = rectOf(rel, memo)
+      local ax = (relPoint:find("LEFT") and o.l) or (relPoint:find("RIGHT") and o.r) or (o.l + o.r) / 2
+      local ay = (relPoint:find("TOP") and o.t) or (relPoint:find("BOTTOM") and o.b) or (o.t + o.b) / 2
+      ax, ay = ax + x, ay - y
+      if point:find("LEFT") then L = ax elseif point:find("RIGHT") then R = ax else CX = ax end
+      if point:find("TOP") then T = ay elseif point:find("BOTTOM") then B = ay else CY = ay end
+    end
+  end
+  if not L and not R then L = (CX or 0) - w / 2; R = L + w elseif not L then L = R - w elseif not R then R = L + w end
+  if not T and not B then T = (CY or 0) - h / 2; B = T + h elseif not T then T = B - h elseif not B then B = T + h end
+  memo[f] = { l = L, t = T, r = R, b = B }
+  return memo[f]
+end
+-- Every shown descendant of each shown card lies inside the card (a pixel of slack for rounding).
+local function cardsHoldTheirParts(board, what)
+  local memo = {}
+  for _, card in ipairs(board.cards) do
+    if card.shown then
+      local c = rectOf(card, memo)
+      local function walk(f)
+        for _, k in ipairs(f.children) do
+          if k.shown and not k.__art then
+            local r = rectOf(k, memo)
+            local empty = (k.kind == "FontString" and plainText(k.text) == "") or (r.r - r.l < 1 and r.b - r.t < 1)
+            if not empty then
+              check(r.l >= c.l - 1 and r.r <= c.r + 1 and r.t >= c.t - 1 and r.b <= c.b + 1,
+                what .. ": inside the card \"" .. tostring(card.title and card.title.text) .. "\" (" .. tostring(k.kind) .. " "
+                .. tostring(k.text or (k.label and k.label.text) or "") .. " at " .. math.floor(r.l - c.l) .. "," .. math.floor(r.t - c.t)
+                .. " " .. math.floor(r.r - r.l) .. "x" .. math.floor(r.b - r.t) .. " in " .. math.floor(c.r - c.l) .. "x" .. math.floor(c.b - c.t) .. ")")
+            end
+            walk(k)
+          end
+        end
+      end
+      walk(card)
+    end
+  end
+end
+
 -- Builds an officer's tab at `width` and opens the Recruiting sub-tab. Returns what the checks read.
 local function build(width, anniversary)
   GuildOS.Client.isAnniversary = anniversary
@@ -278,66 +357,66 @@ local function build(width, anniversary)
   -- The layout runs under SafeCall: an error in it would only be recorded.
   local errs = GuildOS.State.errors
   check(#errs == 0, "the tab lays itself out without an error: " .. tostring(errs[#errs] and errs[#errs].msg))
-  local t = { panel = panel, sub = panel.subPanels.recruiting.panel }
-  t.scroll = findAll(t.sub, function(f) return f.kind == "ScrollFrame" end)[1]
-  t.content = t.scroll.children[1]
-  t.sendNow = button(t.sub, "Send Now")
-  t.strip = t.sendNow.parent
-  t.toggle = button(t.strip, "Enable") or button(t.strip, "Disable")
-  t.interval = findAll(t.strip, function(f) return f.kind == "EditBox" end)[1]
-  t.state = textOf(t.strip, "^O")
-  t.dot = findAll(t.strip, function(f) return f.kind == "Texture" and f.vertex end)[1]
-  t.area = findAll(t.sub, function(f) return f.edit ~= nil end)[1]
+  local t = { panel = panel, sub = panel.subPanels.recruiting.panel, board = panel.recruitBoard, cards = panel.recruitCards }
+  t.content = t.board.content
+  t.content.scrollOwner = t.board.scroll
+  local post = t.cards.post
+  t.sendNow = button(post, "Send Now")
+  t.toggle = button(post, "Enable") or button(post, "Disable")
+  t.interval = findAll(post, function(f) return f.kind == "EditBox" end)[1]
+  t.state = textOf(post, "^O")
+  t.dot = findAll(post, function(f) return f.kind == "Texture" and f.vertex and not f.__art end)[1]
+  t.area = findAll(t.cards.message, function(f) return f.edit ~= nil end)[1]
   t.msg = t.area.edit
+  t.msgSave = button(t.cards.message, "Save")
   t.preview = textOf(t.sub, "Ana:") or textOf(t.sub, "Join a channel")
   t.count = textOf(t.sub, "^%d+/255$")
-  t.sections = {}
-  for _, title in ipairs({ "Welcome Message (New Members)", "Auto-Invite (whisper keyword)", "Recruitment Beacon (mesh)" }) do
-    local head = findAll(t.content, function(f)
-      return f.kind == "Button" and f.parent == t.content and textOf(f, "^" .. title:gsub("%p", "%%%0") .. "$") ~= nil
-    end)[1]
-    check(head, "a section header for " .. title)
-    local i
-    for k, c in ipairs(t.content.children) do if c == head then i = k end end
-    t.sections[#t.sections + 1] = { head = head, body = t.content.children[i + 1],
-      status = findAll(head, function(f) return f.kind == "FontString" and f.points[1] and f.points[1][1] == "RIGHT" end)[1] }
-  end
   return t
 end
+local function enter(box) fire(box, "OnEnterPressed") end
+local function laid(card) return card.laid or {} end
 
--- ── 1. The strip ────────────────────────────────────────────────────────
+-- ── 1. Posting: on or off, the interval, Send now ───────────────────────
 freshDb()
 local t = build(1000, true)
-check(topX(t.scroll) == 0 and topY(t.scroll) == -UI.GAP, "the form starts flush with the sub-tab bar, UI.GAP below it")
-check(t.content.w == 1000 - 20 - UI.SCROLL_GUTTER, "the scroll child is as wide as the bar, less the scroll bar's gutter")
-check(topX(t.strip) == 0 and topY(t.strip) == 0 and t.strip.points[1][2] == t.content, "the strip is the form's first line, at x = 0")
+check(t.board.width == 1000 - 20 - UI.SCROLL_GUTTER, "the board is as wide as the area under the bar, less the scroll bar's gutter")
+check(t.board.two, "from 900px the cards go in two columns")
+check(laid(t.cards.post).x == 0 and laid(t.cards.post).y == 0, "Post in the channels leads, top left")
+check(laid(t.cards.welcome).x > 0 and laid(t.cards.welcome).y == 0, "Welcome leads the right column")
+for _, k in ipairs({ "message", "channels", "help" }) do
+  check(laid(t.cards[k]).x == 0, k .. " is in the left column, under posting")
+end
+check(laid(t.cards.invite).x > 0, "auto-invite is in the right column")
 check(t.state.text == "OFF" and same(t.state.color, C.danger) and same(t.dot.vertex, C.danger), "off: OFF and its dot in danger")
-check(t.toggle.label.text == "Enable", "the switch says what a click does")
+check(t.toggle.label.text == "Enable" and t.toggle.variant == "primary", "the switch is the card's primary action and says what a click does")
 check(click(t.toggle) and GuildOS.db.recruitment.enabled == true, "Enable switches recruiting on (db.recruitment.enabled)")
 check(t.state.text == "ON" and same(t.state.color, C.ok) and same(t.dot.vertex, C.ok) and t.toggle.label.text == "Disable",
   "on: ON and its dot in ok, and the switch offers Disable")
 click(t.toggle)
 check(GuildOS.db.recruitment.enabled == false and t.state.text == "OFF", "and Disable switches it off again")
 check(t.interval.text == "180", "the interval field shows the saved interval")
+check(textOf(t.cards.post, "^Interval %(sec%)$"), "its label is above it, without the colon")
 typeInto(t.interval, "300")
-click(t.interval.saveButton)
-check(GuildOS.db.recruitment.interval == 300, "its Save writes db.recruitment.interval")
+enter(t.interval)
+check(GuildOS.db.recruitment.interval == 300, "Enter writes db.recruitment.interval: the field saves on its own")
+typeInto(t.interval, "240")
+fire(t.interval, "OnEditFocusLost")
+check(GuildOS.db.recruitment.interval == 240, "and so does leaving the field")
 typeInto(t.interval, "30")
-click(t.interval.saveButton)
-check(GuildOS.db.recruitment.interval == 300 and t.interval.text == "300", "under 60 seconds is refused and the field put back")
-check(not textOf(t.strip, "next post"), "no next-post countdown: the module keeps no next time")
+enter(t.interval)
+check(GuildOS.db.recruitment.interval == 240 and t.interval.text == "240", "under 60 seconds is refused and the field put back")
+check(not textOf(t.cards.post, "next post"), "no next-post countdown: the module keeps no next time")
 sent = {}
 click(t.sendNow)
 check(#sent == 1 and sent[1].text == AD and sent[1].num == 2, "Send now posts the ad to the saved channel")
-local stripH = t.strip.h
-check(stripH == 2 * UI.GAP + 22, "wide, the strip is one row")
+check(not button(t.cards.post, "Save"), "no Save beside the interval")
 
 -- ── 2. The ad and how it appears ────────────────────────────────────────
 check(t.msg.text == AD and t.area.h == 72, "the ad sits in a five-line field, so a full 255-byte ad fits, the saved message in it")
 check(plainText(t.preview.text) == "[2. Trade] Ana: " .. AD, "the preview is the chat line: first channel, its number, this character")
 check(t.count.text == #AD .. "/255" and same(t.count.color, C.textSoft), "the count is the ad's length against 255")
-local twoColX = topX(textOf(t.sub, "^Preview$"))
-check(twoColX and twoColX > 0, "wide, the preview is a column beside the ad")
+local memo = {}
+check(rectOf(textOf(t.cards.message, "^Preview$"), memo).l > rectOf(t.area, memo).r, "wide, the preview is a column beside the ad")
 typeInto(t.msg, AD .. " Extra")
 check(plainText(t.preview.text) == "[2. Trade] Ana: " .. AD .. " Extra" and t.count.text == (#AD + 6) .. "/255",
   "typing changes the preview and the count at once")
@@ -353,30 +432,31 @@ typeInto(t.msg, string.rep("a", 240))
 check(same(t.count.color, C.warn), "near the limit the count turns warn")
 typeInto(t.msg, string.rep("\208\175", 130))
 check(t.count.text == "260/255" and same(t.count.color, C.danger), "past 255 bytes it is danger")
-click(t.msg.saveButton)
+click(t.msgSave)
 check(GuildOS.db.recruitment.message == AD and said[#said] == "The game sends at most 255 characters.",
-  "and Save refuses it, saying why")
+  "and the card's Save refuses it, saying why")
+check(t.msgSave.variant == "primary", "the message card's one Save is its primary action")
 typeInto(t.msg, "Raiding Tue/Thu, whisper ginv")
-local chanBlock = t.content.children[5]
-check(button(chanBlock, "Trade"), "the channels come under the ad")
-local chanTop = topY(chanBlock)
+local chanTop = laid(t.cards.channels).y
 typeInto(t.msg, string.rep("word ", 50))
--- Wide, a full ad wraps to four lines: inside the five-line field, nothing below moves.
-check(topY(chanBlock) == chanTop, "a full ad fits beside the field: what is under it stays")
+flush()
+check(laid(t.cards.channels).y > chanTop, "a full ad's chat line wraps past the field's height: the preview grows, the cards under it move")
 typeInto(t.msg, "Raiding Tue/Thu, whisper ginv")
-click(t.msg.saveButton)
-check(GuildOS.db.recruitment.message == "Raiding Tue/Thu, whisper ginv", "Save writes db.recruitment.message")
-check(topY(chanBlock) == chanTop, "and a short ad puts the rows back")
+flush()
+check(laid(t.cards.channels).y == chanTop, "and a short ad puts them back")
+enter(t.msg)
+check(GuildOS.db.recruitment.message == "Raiding Tue/Thu, whisper ginv", "Enter saves db.recruitment.message")
 typeInto(t.msg, "Ana | Bob")
-click(t.msg.saveButton)
+click(t.msgSave)
 check(GuildOS.db.recruitment.message == "Raiding Tue/Thu, whisper ginv", "a | the game refuses is not kept")
 
 -- ── 3. The channels, who helps, the broadcast ───────────────────────────
-local trade, lfg, gr = button(t.sub, "Trade"), button(t.sub, "LookingForGroup"), button(t.sub, "GuildRecruitment")
-check(trade and lfg and gr, "Anniversary offers its three channels as chips")
-check(trade.__selected and not lfg.__selected and not gr.__selected, "the channel it posts to is the selected chip")
+local chans = t.cards.channels
+local trade, lfg, gr = button(chans, "Trade"), button(chans, "LookingForGroup"), button(chans, "GuildRecruitment")
+check(trade and lfg and gr, "Anniversary offers its three channels as pills")
+check(trade.variant == "chip" and trade.__selected and not lfg.__selected and not gr.__selected, "the channel it posts to is an on pill")
 click(lfg)
-check(R:HasChannel(GuildOS.db.recruitment.channels, "LookingForGroup") and lfg.__selected, "a chip adds its channel")
+check(R:HasChannel(GuildOS.db.recruitment.channels, "LookingForGroup") and lfg.__selected, "a pill adds its channel")
 click(trade)
 check(not R:HasChannel(GuildOS.db.recruitment.channels, "Trade") and not trade.__selected, "and takes it off")
 check(plainText(t.preview.text) == "Join a channel to post the recruitment message.",
@@ -386,152 +466,163 @@ check(plainText(t.preview.text):find("^%[2%. Trade%] Ana: "),
   "the preview takes the first saved channel this character is in, as the send does")
 click(trade); click(lfg)
 check(plainText(t.preview.text) == "Join a channel to post the recruitment message.", "with no channel it says to pick one")
-local chanBox = findAll(t.sub, function(f) return f.kind == "EditBox" and f.saveButton and f.saveButton.label.text == "Add" end)[1]
-local hint = textOf(t.sub, "^Click a channel below")
-check(chanBox and not hint.shown, "the other-channel field, and no hint while there is no channel of one's own")
+local chanBox = findAll(chans, function(f) return f.kind == "EditBox" end)[1]
+local hint = textOf(chans, "^Click a channel below")
+check(chanBox and chanBox.saveButton.label.text == "Add" and not hint.shown, "the other-channel field, its Add, and no hint while there is no channel of one's own")
 JOINED.ChamaAds = 5   -- this character is in it, so the ad can go there
 typeInto(chanBox, "ChamaAds")
 click(chanBox.saveButton)
 check(GuildOS.db.recruitment.channels[1] == "ChamaAds", "Add writes the channel into db.recruitment.channels")
-local custom = findAll(t.sub, function(f) return f.kind == "Button" and f.shown and f._ch == "ChamaAds" end)[1]
-check(custom and custom.__selected and custom.label.text:find("x$") and hint.shown, "its chip is selected, keeps its x, under the hint")
+local custom = findAll(chans, function(f) return f.kind == "Button" and f.shown and f._ch == "ChamaAds" end)[1]
+flush()
+check(custom and custom.__selected and custom.label.text:find("x$") and hint.shown, "its pill is on, keeps its x, under the hint")
 check(plainText(t.preview.text):find("^%[5%. ChamaAds%] Ana: "), "and, being in it, it is now the preview's channel")
 click(custom)
-check(#GuildOS.db.recruitment.channels == 0 and not custom.shown and not hint.shown, "a click on its chip takes it off")
+check(#GuildOS.db.recruitment.channels == 0 and not custom.shown and not hint.shown, "a click on its pill takes it off")
 click(trade)
-local rankBtn = button(t.sub, "Any rank")
-check(rankBtn and click(rankBtn) and GuildOS.db.recruitment.postMaxRank == 2 and rankBtn.label.text == "Up to Veteran",
-  "who helps cycles db.recruitment.postMaxRank")
+local rankDrop = findAll(t.cards.help, function(f) return f.options ~= nil and f.Select end)[1]
+check(rankDrop and rankDrop.label.text == "Any rank", "who helps is a select, on every rank")
+local values = {}
+for _, o in ipairs(rankDrop.options) do values[#values + 1] = o.text end
+check(table.concat(values, ",") == "Any rank,Up to Veteran,Up to Member,Up to Alt", "it lists every rank and the member ranks in turn")
+rankDrop:Select(2)
+check(GuildOS.db.recruitment.postMaxRank == 2 and rankDrop.label.text == "Up to Veteran", "a choice writes db.recruitment.postMaxRank")
+rankDrop:Select(rankDrop.options[1].value)
+check(GuildOS.db.recruitment.postMaxRank == nil, "and every rank clears it")
 local before = broadcasts
-check(click(button(t.sub, "Broadcast to Members")) and broadcasts == before + 1, "Broadcast to Members sends the settings")
+check(click(button(t.cards.help, "Broadcast to Members")) and broadcasts == before + 1, "Broadcast to Members sends the settings")
 
--- ── 4. The sections ─────────────────────────────────────────────────────
-local welcome, invite, beacon = t.sections[1], t.sections[2], t.sections[3]
-check(not welcome.body.shown and not invite.body.shown and not beacon.body.shown, "the three sections start shut")
-check(welcome.status.text == "ON" and same(welcome.status.color, C.ok), "Welcome's header says ON")
-check(invite.status.text == "OFF", "Auto-invite's header says OFF where the game lets an addon invite")
-check(beacon.status.text == "Off", "the beacon's header says it is off")
-local h0, inviteY = t.content.h, topY(invite.head)
-check(t.content.h < 15000 and t.content.h > -topY(beacon.head) + 28, "the scroll child holds every row, well under 15000px")
-click(welcome.head)
-check(welcome.body.shown and button(welcome.body, "Disable"), "opening Welcome shows its controls")
-check(topY(invite.head) == inviteY - 4 - welcome.body.h - UI.GAP, "and moves what is under it down by its height")
-check(t.content.h == h0 + 4 + welcome.body.h + UI.GAP, "and the scroll child grows by as much")
-check(click(button(welcome.body, "Disable")) and GuildOS.db.recruitment.welcomeEnabled == false
-  and welcome.status.text == "OFF" and same(welcome.status.color, C.danger), "its switch writes welcomeEnabled, the header follows")
-local boxes = findAll(welcome.body, function(f) return f.kind == "EditBox" end)
+-- ── 4. Welcome, auto-invite, the beacon ─────────────────────────────────
+local welcome = t.cards.welcome
+local wcb = findAll(welcome, function(f) return f.kind == "CheckButton" end)[1]
+check(wcb.checked, "the welcome's switch reads on")
+wcb:SetChecked(false)
+fire(wcb, "OnClick")
+check(GuildOS.db.recruitment.welcomeEnabled == false, "its checkbox writes welcomeEnabled at once")
+local boxes = findAll(welcome, function(f) return f.kind == "EditBox" end)
 check(boxes[1].text == "discord.gg/chama" and boxes[2].text == "Welcome!", "the Discord link and welcome are in their fields")
+local wsave = button(welcome, "Save")
+check(wsave and wsave.variant == "primary", "one Save for the card")
+check(#findAll(welcome, function(f) return f.kind == "Button" and f.label and f.label.text == "Save" end) == 1, "and no other")
 typeInto(boxes[1], "discord.gg/new")
-click(boxes[1].saveButton)
 typeInto(boxes[2], "Hi there!")
-click(boxes[2].saveButton)
+click(wsave)
 check(GuildOS.db.recruitment.discord == "discord.gg/new" and GuildOS.db.recruitment.welcomeMessage == "Hi there!",
-  "their Saves write discord and welcomeMessage")
--- Several welcomes (#419): Add opens a row under the first, its Save puts a second on the list.
+  "the card's Save writes discord and welcomeMessage")
+-- Several welcomes (#419): Add opens a row under the first, the Save puts a second on the list.
 local function shownRemoves()
-  return findAll(welcome.body, function(f) return f.kind == "Button" and f.shown and f.label and f.label.text == "Remove" end)
+  return findAll(welcome, function(f) return f.kind == "Button" and f.shown and f.label and f.label.text == "Remove" end)
 end
 check(boxes[2].shown and not boxes[3].shown and #shownRemoves() == 0, "one welcome: one row, which cannot be removed")
-local hOne = welcome.body.h
-check(click(button(welcome.body, "Add message")) and boxes[3].shown and boxes[3].text == "", "Add opens an empty row")
-check(welcome.body.h == hOne + 28 and #shownRemoves() == 1, "the section grows by a row; only the new row can go")
+local hOne = laid(welcome).h
+check(click(button(welcome, "Add message")) and boxes[3].shown and boxes[3].text == "", "Add opens an empty row")
+flush()
+check(laid(welcome).h == hOne + GuildOS.Forms.FIELD_H + GuildOS.Forms.ROW_GAP and #shownRemoves() == 1, "the card grows by a row; only the new row can go, its Remove at its right")
 typeInto(boxes[3], "Glad to have you!")
-click(boxes[3].saveButton)
+enter(boxes[3])
 local wl = GuildOS.db.recruitment.welcomeMessages
 check(#wl == 2 and wl[1] == "Hi there!" and wl[2] == "Glad to have you!" and GuildOS.db.recruitment.welcomeMessage == "Hi there!",
-  "its Save adds the second welcome; the first stays welcomeMessage")
+  "Enter saves the second welcome; the first stays welcomeMessage")
 check(#shownRemoves() == 2, "with two, either can go")
 click(shownRemoves()[1])
+flush()
 wl = GuildOS.db.recruitment.welcomeMessages
 check(#wl == 1 and GuildOS.db.recruitment.welcomeMessage == "Glad to have you!" and boxes[2].text == "Glad to have you!"
-  and not boxes[3].shown and welcome.body.h == hOne, "Remove on the first: the second moves up, the row goes")
-click(welcome.head)
-check(not welcome.body.shown and topY(invite.head) == inviteY and t.content.h == h0, "shut again, it gives the room back")
+  and not boxes[3].shown and laid(welcome).h == hOne, "Remove on the first: the second moves up, the row goes")
+-- Typed and not saved, then Add (the bug reported in game): the text stays and is saved, a new row opens.
+check(click(button(welcome, "Add message")) and boxes[3].shown, "Add again opens a second row")
+typeInto(boxes[3], "Typed, no Enter")
+click(button(welcome, "Add message"))
+flush()
+wl = GuildOS.db.recruitment.welcomeMessages
+check(#wl == 2 and wl[2] == "Typed, no Enter" and boxes[3].text == "Typed, no Enter" and boxes[4].shown and boxes[4].text == "",
+  "Add keeps what was typed without Enter: saved, and a new empty row under it")
+typeInto(boxes[4], "Still typing")
+click(shownRemoves()[1])
+flush()
+check(boxes[2].text == "Typed, no Enter" and boxes[3].text == "Still typing" and boxes[4].text == "" and not boxes[4].shown,
+  "Remove on the first moves the rest up, unsaved text too, with no duplicate")
+click(shownRemoves()[#shownRemoves()])
+flush()
+local rules = findAll(welcome, function(f) return f.kind == "CheckButton" end)[2]
+rules:SetChecked(true)
+fire(rules, "OnClick")
+check(GuildOS.db.recruitment.welcomeRules == true, "the rules' ending writes welcomeRules at once")
 
-click(invite.head)
-local cb = findAll(invite.body, function(f) return f.kind == "CheckButton" end)[1]
-check(invite.body.shown and cb and cb:IsEnabled(), "opening Auto-invite shows its controls, enabled on Anniversary")
+local invite = t.cards.invite
+local cb = findAll(invite, function(f) return f.kind == "CheckButton" end)[1]
+check(cb and cb:IsEnabled(), "auto-invite's controls are enabled on Anniversary")
 cb:SetChecked(true)
 fire(cb, "OnClick")
 local ai = GuildOS.db.recruitment.autoInvite
-check(ai.enabled == true and invite.status.text == "ON", "its checkbox writes autoInvite.enabled, the header follows")
-local kw, lvl = unpack(findAll(invite.body, function(f) return f.kind == "EditBox" end))
+check(ai.enabled == true, "its checkbox writes autoInvite.enabled")
+local kw, lvl = unpack(findAll(invite, function(f) return f.kind == "EditBox" end))
 typeInto(kw, "Join")
-click(kw.saveButton)
 typeInto(lvl, "58")
-click(lvl.saveButton)
-check(ai.keyword == "join" and ai.minLevel == 58, "the keyword and level Saves write autoInvite")
-check(click(button(invite.body, "MAGE")) and ai.classes.MAGE and button(invite.body, "MAGE").__selected, "a class chip writes autoInvite.classes")
-check(click(button(invite.body, "Skip them")) and ai.whoFallback == "invite", "the fallback writes autoInvite.whoFallback")
-local beaconY = topY(beacon.head)
-check(beaconY < topY(invite.head) - 28, "the beacon's header sits under the open section")
-click(beacon.head)
-check(beacon.body.shown and click(button(beacon.body, "Edit Beacon")) and beaconOpened == 1, "the beacon opens its composer")
-
--- Open for the session: a tab built again keeps them open; the narrow tab below reads them shut.
-local again = build(1000, true)
-check(again.sections[2].body.shown and again.sections[3].body.shown and not again.sections[1].body.shown,
-  "built again in the same session, the sections open stay open")
-click(again.sections[2].head)
-click(again.sections[3].head)
+click(button(invite, "Save"))
+check(ai.keyword == "join" and ai.minLevel == 58, "the card's Save writes the keyword and the level")
+check(click(button(invite, "MAGE")) and ai.classes.MAGE and button(invite, "MAGE").__selected, "a class pill writes autoInvite.classes")
+local fb = findAll(invite, function(f) return f.options ~= nil and f.Select end)[1]
+fb:Select("invite")
+check(ai.whoFallback == "invite" and fb.label.text == "Invite them", "the fallback is a select and writes autoInvite.whoFallback")
+check(textOf(t.cards.beacon, "^Off$") and click(button(t.cards.beacon, "Edit Beacon")) and beaconOpened == 1,
+  "the beacon says it is off and opens its composer")
+cardsHoldTheirParts(t.board, "wide")
+check(t.content.h < 15000, "the board's content holds every card, well under 15000px")
 
 -- ── 5. Not on this client ───────────────────────────────────────────────
 freshDb()
 local f = build(1000, false)
-local fi = f.sections[2]
-check(fi.status.text == "not on this client" and same(fi.status.color, C.textSoft), "where no addon may invite, the header says so")
-check(not button(f.sub, "GuildRecruitment"), "and the Anniversary-only channel is not offered")
-click(fi.head)
-check(textOf(fi.body, "^This game does not let an addon invite"), "opened, it says why first")
-local fcb = findAll(fi.body, function(f2) return f2.kind == "CheckButton" end)[1]
-local fkw = findAll(fi.body, function(f2) return f2.kind == "EditBox" end)[1]
-check(not fcb:IsEnabled() and not fkw.saveButton:IsEnabled() and not button(fi.body, "MAGE"):IsEnabled()
-  and not button(fi.body, "Skip them"):IsEnabled(), "and its controls are kept, disabled")
-click(fi.head)
+local fi = f.cards.invite
+check(not button(f.cards.channels, "GuildRecruitment"), "the Anniversary-only channel is not offered")
+check(textOf(fi, "^This game does not let an addon invite"), "where no addon may invite, the card says why first")
+local fcb = findAll(fi, function(f2) return f2.kind == "CheckButton" end)[1]
+-- The keyword still brings up the /ginvite line to copy there (#449): its switch and keyword stay; the filters, which
+-- need the invite's /who, are kept, disabled.
+check(fcb:IsEnabled() and button(fi, "Save"):IsEnabled() and not button(fi, "MAGE"):IsEnabled()
+  and not findAll(fi, function(f2) return f2.options ~= nil and f2.Select end)[1]:IsEnabled(),
+  "its switch and keyword work, the filters are kept, disabled")
 
--- Join requests, where its module runs (not Anniversary), is one more section of the same kind.
+-- Join requests, where its module runs (not Anniversary), is one more card.
 GuildOS.JoinRequests = { OpenCount = function() return 2 end }
 function GuildOS:JoinRequestsOpenText(k) return k .. " open" end
 local jr = build(1000, false)
-local jrHead = findAll(jr.content, function(f2) return f2.kind == "Button" and textOf(f2, "^Join requests$") end)[1]
-local jrBody
-for k, c in ipairs(jr.content.children) do if c == jrHead then jrBody = jr.content.children[k + 1] end end
-check(jrHead and textOf(jrHead, "^2 open$") and not jrBody.shown, "join requests: shut, its count on the header")
-click(jrHead)
-check(jrBody.shown and button(jrBody, "Open the list"), "and opened, its button")
-click(jrHead)
+local jrCard
+for _, c in ipairs(jr.board.cards) do if c.title and c.title.text == "Join requests" then jrCard = c end end
+check(jrCard and textOf(jrCard, "^2 open$") and button(jrCard, "Open the list"), "join requests: its count and its button")
 GuildOS.JoinRequests, GuildOS.JoinRequestsOpenText = nil, nil
 
 -- ── 6. Narrow ───────────────────────────────────────────────────────────
-local n = build(400, true)
-check(n.content.w == 400 - 20 - UI.SCROLL_GUTTER, "narrow, the scroll child still stops short of the scroll bar")
-check(n.strip.h > stripH, "the strip wraps onto another row")
-check(topX(textOf(n.sub, "^Preview$")) == 0, "and the preview goes under the ad")
-typeInto(n.msg, "Raiding Tue/Thu, whisper ginv")
-local nChan = n.content.children[5]
-local nChanTop = topY(nChan)
-typeInto(n.msg, string.rep("word ", 50))
-check(topY(nChan) < nChanTop, "narrow, a long line wraps past the field: the preview grows and what is under it moves down")
-for _, b in ipairs(findAll(n.sub, function(f2) return f2.kind == "Button" and f2._ch and f2.shown end)) do
-  check(topX(b) + b.w <= n.content.w, "chip " .. b._ch .. " stays inside the width")
+freshDb()
+local n = build(440, true)
+check(not n.board.two, "narrow, one column")
+local order, prevY = { "post", "message", "channels", "help", "welcome", "invite", "beacon" }, -1
+for _, k in ipairs(order) do
+  check(laid(n.cards[k]).x == 0 and laid(n.cards[k]).y > prevY, k .. " comes in order, as wide as the board")
+  prevY = laid(n.cards[k]).y
 end
-check(n.content.h < 15000, "the narrow scroll child is well under 15000px")
+local nm = {}
+check(rectOf(textOf(n.cards.message, "^Preview$"), nm).l == rectOf(n.area, nm).l, "and the preview goes under the ad")
+typeInto(n.msg, "Raiding Tue/Thu, whisper ginv")
+flush()
+local nChanTop = laid(n.cards.channels).y
+typeInto(n.msg, string.rep("word ", 50))
+flush()
+check(laid(n.cards.channels).y > nChanTop, "a long line wraps past the field: the preview grows and the cards under it move down")
+cardsHoldTheirParts(n.board, "narrow")
+check(n.content.h < 15000, "the narrow board is well under 15000px")
 
--- ── 7. The Forever style ────────────────────────────────────────────────
+-- ── 7. The WoW: Forever client, with its atlases: the same look (#449) ───
 C_Texture = { GetAtlasInfo = function() return { width = 16, height = 16 } end }
 GuildOSDB.style = "forever"
-check(GuildOS.Style:Resolve() == "forever", "the stub draws the Forever style")
+check(GuildOS.Style:Resolve() == "salao", "the stub client has the atlases, the look stays the Salão's")
 freshDb()
 local fv = build(1000, true)
-check(fv.state.text == "OFF" and same(fv.state.color, GuildOS.Colors.danger) and fv.strip.h == stripH,
-  "Forever: the same strip")
+check(fv.state.text == "OFF" and same(fv.state.color, GuildOS.Colors.danger), "Forever: the same status")
 check(plainText(fv.preview.text) == "[2. Trade] Ana: " .. AD and fv.count.text == #AD .. "/255", "Forever: the same preview")
-check(not fv.sections[1].body.shown and not fv.sections[2].body.shown and not fv.sections[3].body.shown,
-  "Forever: the sections start shut")
-click(fv.sections[2].head)
-check(fv.sections[2].body.shown and topY(fv.sections[3].head) < topY(fv.sections[2].head) - 28, "Forever: a section opens in place")
 click(fv.toggle)
 check(GuildOS.db.recruitment.enabled == true and fv.state.text == "ON", "Forever: the switch still writes enabled")
+cardsHoldTheirParts(fv.board, "Forever")
 
 flush()
 check(#GuildOS.State.errors == 0, "no click or relayout recorded an error: "

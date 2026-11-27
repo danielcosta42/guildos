@@ -33,7 +33,9 @@ stub = setmetatable({}, {
 })
 local printed = {}
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) printed[#printed + 1] = tostring(m) end }
-function CreateFrame() return stub end
+local widget
+-- Each frame its own (the rows are made once and refilled, memory audit), hidden or shown as asked.
+function CreateFrame() return widget and widget({}) or stub end
 function hooksecurefunc() end
 function GetBuildInfo() return "2.5.6", "60000", "", 20506 end
 WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 5
@@ -59,8 +61,11 @@ local TT = GuildOS.TrialTracker
 
 -- What the panel draws and wires, as it draws it.
 local texts, buttons, boxes, saves = {}, {}, {}, {}
-local function widget(fields)
+function widget(fields)
   local w = setmetatable(fields, { __index = stub })
+  function w:Hide() self.hidden = true end
+  function w:Show() self.hidden = false end
+  function w:SetShown(v) self.hidden = not v end
   function w:SetScript(_, fn) self.onClick = fn end
   function w:SetChecked(v) self.checked = v end
   function w:SetText(v) self.text = v end
@@ -69,8 +74,8 @@ local function widget(fields)
 end
 GuildOS.UI = setmetatable({
   GetFeature = function() return nil end,
-  CreateText = function(_, _, t) local w = widget({ text = tostring(t) }); texts[#texts + 1] = w; return w end,
-  CreateButton = function(_, _, t) local b = widget({ text = tostring(t) }); buttons[#buttons + 1] = b; return b end,
+  CreateText = function(_, p, t) local w = widget({ text = tostring(t), parent = p }); texts[#texts + 1] = w; return w end,
+  CreateButton = function(_, p, t) local b = widget({ text = tostring(t), parent = p }); buttons[#buttons + 1] = b; return b end,
   CreateCheckbox = function(_, _, label)
     local cb = widget({ checkbox = widget({}) })
     boxes[tostring(label)] = cb
@@ -78,6 +83,8 @@ GuildOS.UI = setmetatable({
   end,
   AttachSaveButton = function(_, box, fn) saves[#saves + 1] = fn; box.saveButton = stub; return stub end,
 }, { __index = function() return function() return stub end end })
+dofile(ADDON .. "/UI/Spacing.lua"); rawset(GuildOS.UI, "SP", GuildOS.Spacing)   -- the spacing standard (#449)
+dofile(ADDON .. "/UI/Forms.lua")
 dofile(ADDON .. "/UI/FeaturePanels.lua")
 
 local published = {}
@@ -97,17 +104,25 @@ local function open(db)
   local ok, err = pcall(GuildOS.CreateTrialsPanel, GuildOS, panel)
   check(ok, "the Trials panel builds (" .. tostring(err) .. ")")
 end
+-- What is on screen now: a text or button shown, on a row shown. The rows are reused, so every one made counts.
+local function onScreen(w)
+  while w do
+    if rawget(w, "hidden") then return false end
+    w = rawget(w, "parent")
+  end
+  return true
+end
+local draws = 0
 local function refresh()
-  texts, buttons = {}, {}
   local ok, err = pcall(GuildOS.RefreshTrialsPanel, GuildOS, panel)
   check(ok, "the Trials panel draws its rows (" .. tostring(err) .. ")")
 end
 local function shown(s)
-  for i, w in ipairs(texts) do if w.text == s then return i end end
+  for i, w in ipairs(texts) do if w.text == s and onScreen(w) then return i end end
 end
 local function count(label)
   local n = 0
-  for _, b in ipairs(buttons) do if b.text == label then n = n + 1 end end
+  for _, b in ipairs(buttons) do if b.text == label and onScreen(b) then n = n + 1 end end
   return n
 end
 local function typed(v)
@@ -159,35 +174,38 @@ local due, old, run, done = shown("Due"), shown("Old"), shown("Run"), shown("Don
 check(due and old and run and done and due < run and old < run and run < done,
   "ready to review first, then running, then decided")
 local review = 0
-for _, w in ipairs(texts) do if w.text == "READY TO REVIEW" then review = review + 1 end end
-check(review == 2 and shown("TRIAL") and shown("APPROVED"), "Due and Old read ready to review, Run is a trial, Done approved")
+for _, w in ipairs(texts) do if w.text == "ready to review" and onScreen(w) then review = review + 1 end end
+check(review == 2 and shown("on trial") and shown("approved"), "Due and Old read ready to review, Run is a trial, Done approved")
 check(not shown("EXPIRED") and not shown("expired"), "\"expired\" is never shown")
 check(count("OK") == 3 and count("X") == 3, "approve and deny on every trial nobody decided, ready to review included")
 check(panel.statusText.text == "3 active trials", "the count is of the trials nobody decided")
 db.settings.trialDays = 60
 refresh()
 review = 0
-for _, w in ipairs(texts) do if w.text == "READY TO REVIEW" then review = review + 1 end end
-check(review == 0 and shown("TRIAL"), "the guild lengthens its trials: nobody is ready to review any more, Old included")
+for _, w in ipairs(texts) do if w.text == "ready to review" and onScreen(w) then review = review + 1 end end
+check(review == 0 and shown("on trial"), "the guild lengthens its trials: nobody is ready to review any more, Old included")
 
 -- ── 3. Somebody who left: with the decided, and not counted ─────────────
 db.settings.trialDays = 14
 db.trials["Due-Realm"].leftAt = now
 refresh()
 local gone, decided = shown("Due"), shown("Done")
-check(shown("LEFT THE GUILD") and gone and gone > shown("Run"), "a trial whose member left reads so, listed with the decided")
+check(shown("left the guild") and gone and gone > shown("Run"), "a trial whose member left reads so, listed with the decided")
 check(decided and panel.statusText.text == "2 active trials", "and is not counted among the active ones")
 review = 0
-for _, w in ipairs(texts) do if w.text == "READY TO REVIEW" then review = review + 1 end end
+for _, w in ipairs(texts) do if w.text == "ready to review" and onScreen(w) then review = review + 1 end end
 check(review == 1, "only Old is still ready to review")
 
 -- ── 4. A setting from another officer redraws the open panel ────────────
-texts = {}
+GuildOS.RefreshTrialsPanel = (function(real)
+  return function(...) draws = draws + 1; return real(...) end
+end)(GuildOS.RefreshTrialsPanel)
+local made = #texts
 panel.trialAutoCb.checked = nil
 TT:OnConfigSync({ act = "trialauto", rev = now + 10, data = { on = true } })
-check(TT:IsAutoOn() and panel.trialAutoCb.checked == true and shown("Run"), "the switch heard from the guild shows at once")
-texts = {}
+check(TT:IsAutoOn() and panel.trialAutoCb.checked == true and shown("Run") and draws == 1, "the switch heard from the guild shows at once")
 TT:OnConfigSync({ act = "trialdays", rev = now + 10, data = { days = 60 } })
-check(TT:GetDays() == 60 and shown("Run") and not shown("READY TO REVIEW"), "and so does the length, with the rows redrawn")
+check(TT:GetDays() == 60 and shown("Run") and not shown("ready to review") and draws == 2, "and so does the length, with the rows redrawn")
+check(#texts == made, "redrawn on the rows already made: no new texts (" .. (#texts - made) .. ")")
 
 print(("trial-panel: %d checks passed"):format(checks))

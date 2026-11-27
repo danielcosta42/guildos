@@ -17,9 +17,12 @@
 -- Therefore, attunement status for alts with account-wide access
 -- will show as incomplete in this addon. This is a known limitation.
 ----------------------------------------------------------------------
--- TBC content: outside TBC Anniversary this module does not exist, and every
--- reader already treats a missing module as absent (ADR-0014).
-if not GuildOS.Client.isAnniversary then return end
+-- TBC content on TBC Anniversary; on WoW: Forever one table of its own, Onyxia's Lair (Ricki): the
+-- Drakefire Amulet's quest chains. On retail this module does not exist, and every reader already
+-- treats a missing module as absent (ADR-0014).
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
+if GuildOS.Client.isRetail then return end
+local ANNIVERSARY = GuildOS.Client.isAnniversary
 
 local AttunementTracker = {}
 GuildOS.AttunementTracker = AttunementTracker
@@ -29,7 +32,7 @@ local L = GuildOS.L
 -- TBC Attunement Data
 -- Quest IDs for attunement chains
 ----------------------------------------------------------------------
-AttunementTracker.ATTUNEMENTS = {
+AttunementTracker.TBC_ATTUNEMENTS = {
     {
         name = "Karazhan",
         short = "Kara",
@@ -150,8 +153,81 @@ AttunementTracker.ATTUNEMENTS = {
     },
 }
 
--- Heroic Key Quest IDs
-AttunementTracker.HEROIC_KEYS = {
+----------------------------------------------------------------------
+-- WoW: Forever: Onyxia's Lair (Ricki). The classic chains, one per faction, by quest id as Classic Era
+-- has them: wowhead classic, read 2026-11-27 (https://www.wowhead.com/classic/quest=4903 and the series
+-- boxes of quests 4182, 4264, 4322, 6403, 6502, 6566, 6567, 6569, 6582-6585, 6602), the order checked against
+-- warcraft.wiki.gg (https://warcraft.wiki.gg/wiki/Onyxia%27s_Lair_attunement). UNVERIFIED on Forever: its
+-- guides name the Horde chain's first quest "Blood and Thunder", which may be a new quest. The Drakefire
+-- Amulet (item 16309, bags or bank) is the confirmation that holds whatever the quest ids turn out to be.
+-- `factions`: the chain the player's faction walks; the Horde's three Tests of Skulls are one step each.
+----------------------------------------------------------------------
+AttunementTracker.FOREVER_ATTUNEMENTS = {
+    {
+        name = "Onyxia's Lair",
+        short = "Ony",
+        icon = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
+        tier = "T2",
+        unverified = true,
+        keyItemId = 16309,   -- Drakefire Amulet
+        factions = {
+            Horde = {
+                finalQuestId = 6602,
+                quests = {
+                    { id = 4903, name = "Warlord's Command" },
+                    { id = 4941, name = "Eitrigg's Wisdom" },
+                    { id = 4974, name = "For The Horde!" },
+                    { id = 6566, name = "What the Wind Carries" },
+                    { id = 6567, name = "The Champion of the Horde" },
+                    { id = 6568, name = "The Testament of Rexxar" },
+                    { id = 6569, name = "Oculus Illusions" },
+                    { id = 6570, name = "Emberstrife" },
+                    { id = 6582, name = "The Test of Skulls, Scryer" },
+                    { id = 6583, name = "The Test of Skulls, Somnus" },
+                    { id = 6584, name = "The Test of Skulls, Chronalis" },
+                    { id = 6585, name = "The Test of Skulls, Axtroz" },
+                    { id = 6601, name = "Ascension..." },
+                    { id = 6602, name = "Blood of the Black Dragon Champion" },
+                },
+            },
+            Alliance = {
+                finalQuestId = 6502,
+                quests = {
+                    { id = 4182, name = "Dragonkin Menace" },
+                    { id = 4183, name = "The True Masters" },
+                    { id = 4184, name = "The True Masters" },
+                    { id = 4185, name = "The True Masters" },
+                    { id = 4186, name = "The True Masters" },
+                    { id = 4223, name = "The True Masters" },
+                    { id = 4224, name = "The True Masters" },
+                    { id = 4241, name = "Marshal Windsor" },
+                    { id = 4242, name = "Abandoned Hope" },
+                    { id = 4264, name = "A Crumpled Up Note" },
+                    { id = 4282, name = "A Shred of Hope" },
+                    { id = 4322, name = "Jail Break!" },
+                    { id = 6402, name = "Stormwind Rendezvous" },
+                    { id = 6403, name = "The Great Masquerade" },
+                    { id = 6501, name = "The Dragon's Eye" },
+                    { id = 6502, name = "Drakefire Amulet" },
+                },
+            },
+        },
+    },
+}
+
+-- This game's table: TBC's on Anniversary, Onyxia's alone on Forever.
+AttunementTracker.ATTUNEMENTS = ANNIVERSARY and AttunementTracker.TBC_ATTUNEMENTS or AttunementTracker.FOREVER_ATTUNEMENTS
+
+-- The chain `attunement` asks of a player of `faction` ("Horde"/"Alliance"): { quests, finalQuestId }. A
+-- table with no factions is the same for both; one whose faction is unknown has no quests to read, and
+-- only its key item says anything.
+function AttunementTracker.ChainOf(attunement, faction)
+    if not attunement.factions then return attunement end
+    return attunement.factions[faction or ""] or { quests = {}, finalQuestId = nil }
+end
+
+-- Heroic Key Quest IDs (TBC Anniversary)
+AttunementTracker.HEROIC_KEYS = ANNIVERSARY and {
     {
         name = "Hellfire Citadel (Honor Hold/Thrallmar)",
         short = "HC: HFC",
@@ -183,7 +259,7 @@ AttunementTracker.HEROIC_KEYS = {
         repFaction = "Keepers of Time",
         repRequired = "Revered",
     },
-}
+} or {}
 
 function AttunementTracker:Initialize()
     local frame = CreateFrame("Frame")
@@ -200,9 +276,11 @@ end
 ----------------------------------------------------------------------
 function AttunementTracker:ScanAttunements()
     local attunements = {}
+    local faction = UnitFactionGroup and UnitFactionGroup("player") or nil
 
     -- Check raid attunements
     for _, attunement in ipairs(self.ATTUNEMENTS) do
+        local chain = AttunementTracker.ChainOf(attunement, faction)
         local entry = {
             name = attunement.name,
             short = attunement.short,
@@ -217,10 +295,10 @@ function AttunementTracker:ScanAttunements()
             entry.questsTotal = 0
         else
             local done = 0
-            local total = #attunement.quests
+            local total = #chain.quests
             local questStatus = {}
 
-            for _, quest in ipairs(attunement.quests) do
+            for _, quest in ipairs(chain.quests) do
                 local isComplete = false
                 if quest.ids then
                     -- OR-logic: Aldor/Scryers parallel paths — done if ANY variant is complete
@@ -236,15 +314,17 @@ function AttunementTracker:ScanAttunements()
                 if isComplete then done = done + 1 end
             end
 
-            entry.complete = attunement.finalQuestId and questStatus[attunement.finalQuestId] or false
+            entry.complete = chain.finalQuestId and questStatus[chain.finalQuestId] or false
             -- Secondary check: if the attunement awards a physical key item,
             -- verify possession as well. This catches cases where the quest
             -- flag is not yet cached but the character already has the key
             -- (e.g. Karazhan Master's Key, item 24490).
+            -- On Forever the bank counts too: an amulet kept there is still the door (Onyxia).
             if not entry.complete and attunement.keyItemId then
-                entry.complete = (GuildOS.Compat.GetItemCount(attunement.keyItemId) or 0) > 0
+                entry.complete = (GuildOS.Compat.GetItemCount(attunement.keyItemId, not ANNIVERSARY) or 0) > 0
             end
             entry.progress = total > 0 and (done / total) or 0
+            if entry.complete and not ANNIVERSARY then entry.progress = 1 end
             entry.questsDone = done
             entry.questsTotal = total
             entry.questStatus = questStatus
@@ -272,15 +352,7 @@ end
 -- Check if a quest is completed
 ----------------------------------------------------------------------
 function AttunementTracker:IsQuestComplete(questId)
-    -- Use C_QuestLog if available (TBC Classic may have it)
-    if C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
-        return C_QuestLog.IsQuestFlaggedCompleted(questId)
-    end
-    -- Fallback
-    if IsQuestFlaggedCompleted then
-        return IsQuestFlaggedCompleted(questId)
-    end
-    return false
+    return GuildOS.Compat.IsQuestComplete(questId) and true or false
 end
 
 ----------------------------------------------------------------------
@@ -320,7 +392,7 @@ end
 function AttunementTracker:GetGuildColumns()
     local cols = {}
     for _, def in ipairs(self.ATTUNEMENTS) do
-        if not def.alwaysComplete and def.finalQuestId and #def.quests > 0 then
+        if not def.alwaysComplete and ((def.finalQuestId and #def.quests > 0) or def.factions) then
             cols[#cols + 1] = { short = def.short, name = def.name, tier = def.tier, icon = def.icon }
         end
     end

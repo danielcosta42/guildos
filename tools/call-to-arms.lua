@@ -226,7 +226,12 @@ combat = true
 check(CTA:Send("pvp") and not (CTA.popup and CTA.popup.shown) and #sounds == 0, "nor mid-fight with quiet on")
 GuildOS:SetSetting("ctaQuiet", false)
 now = now + CTA.COOLDOWN
-check(CTA:Send("pvp") and CTA.popup and CTA.popup.shown, "unless they want popups there too")
+-- Nothing drawn over the screen opens in combat (the maintainer, audit B21): wanted there too, it waits for the end.
+check(CTA:Send("pvp") and not (CTA.popup and CTA.popup.shown), "wanted mid-fight too, the popup still waits for combat to end")
+combat = false
+GuildOS:_PumpPopups()
+check(CTA.popup and CTA.popup.shown, "and shows once it ends")
+combat = true
 combat = false
 
 -- ── Receiving ──────────────────────────────────────────────────────────

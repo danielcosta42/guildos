@@ -1,470 +1,539 @@
 ----------------------------------------------------------------------
--- Guild OS - Live Guild Map (UI layer)
+-- Guild OS - Live Guild Map (UI layer; issue #449, specs/salao/mapa.md)
 --
--- Draws guildmates on Blizzard's world map (our OWN pin textures parented
--- to the map canvas), a draggable roster-style list overlay with a
--- "share my live position" checkbox, and an ambient minimap indicator that
--- counts guildmates in the player's current zone.
+-- Guildmates drawn where they are, as they move:
+--   * On the world map: a round class avatar with the gold ring (UI:CreateAvatar) per guildmate on the shown
+--     map, a zone's or a continent's (points converted between maps by GuildMap:_PlaceOn); it glides between
+--     updates, fades after GuildMap.STALE_FADE and goes after STALE_GONE, and grows a little with the zoom.
+--     Hover: name, level, class, zone, how long ago. A small list on the map ("Guildmates on this map"); a
+--     click flashes the pin, or opens the guildmate's map.
+--   * WoW: Forever, without Warmth: a flame per guildmate's campfire heard over GUILD (GuildMap:GetCamps); hover
+--     says who lit it, where and the kit's tier, a click sets the game's waypoint there. The list's foot points to
+--     Warmth, which draws the circle and builds camps.
+--   * On the minimap: a dot per guildmate in the zone, at their bearing and distance (held at the edge when
+--     out of range), turning with a rotating minimap; none in an instance.
+-- While the world map is open this client watches the shown map (GuildMap:SetWatch), and that is what makes
+-- guildmates send.
 --
--- TAINT SAFETY: we NEVER overwrite a Blizzard global function. Our pins are
--- our own frames parented to the world map canvas; we react to the map
--- opening / the displayed map changing ONLY through hooksecurefunc and
--- HookScript, and we never call a protected function from an insecure
--- handler. Every world map / C_Map read goes through GuildOS.Compat (Rule 4).
--- The UI holds no domain logic (Rule 10): it renders GuildMap:GetPeers and
--- flips the shareExact pref through GuildMap methods.
---
--- v1 SCOPE: pins are drawn only for peers whose mapID equals the map the
--- user is currently viewing. Peers on other maps appear in the LIST with
--- click-to-navigate (cross-map coordinate translation is unreliable in BCC),
--- never as pins. Zone-only peers (no exact x/y) are placed at the map centre
--- and dimmed.
+-- TAINT SAFETY: no Blizzard function is replaced. Our own frames sit on the map's canvas and on the minimap;
+-- the map is followed with hooksecurefunc and HookScript only. Every map read goes through GuildOS.Compat.
+-- The UI holds no protocol: it draws GuildMap:GetPeers() and tells GuildMap what it shows.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
-local WHITE = "Interface\\Buttons\\WHITE8x8"
+local SP = GuildOS.Spacing
+local Compat = GuildOS.Compat
 
-local PIN_SIZE          = 12
-local LIST_ROW_H        = 20
-local POS_THROTTLE      = 0.1   -- seconds between pin reposition passes (zoom/pan)
-local DOT_SIZE          = 8
-local DOT_GAP           = 4
-local MINIMAP_DOTS_MAX  = 5
+local PIN_SIZE      = 20     -- a pin at the map's widest; up to PIN_ZOOM times that zoomed in
+local PIN_ZOOM      = 1.5
+local DOT_SIZE      = 12
+local FRAME_GAP     = 1 / 30 -- seconds between two pin moves (the glide)
+local LIST_GAP      = 0.5    -- seconds between two rebuilds of who is drawn
+local LIST_W        = 240
+local LIST_ROWS     = 10
+local ROW_H         = SP.HIT
+local FLASH_TIME    = 3
+local CAMP_SIZE     = 18     -- a campfire's flame at the map's widest
+local CAMP_ICON     = "Interface\\Icons\\Spell_Fire_Fire"   -- a game icon every client ships
 
-local function ModGM() return GuildOS.GuildMap end
+local function GM() return GuildOS.GuildMap end
 
--- Localized zone name for a mapID, with a safe fallback.
-local function zoneName(mapID)
-    return (mapID and GuildOS.Compat.GetMapName(mapID)) or L["Unknown zone"]
+local function className(class)
+    return (class and LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class or ""
+end
+
+-- The tooltip of a guildmate: name, level and class, zone, and how fresh it is.
+local function ShowPeerTooltip(owner, p, extra)
+    if not p then return end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    local cc = GuildOS.ClassColors[p.class or ""] or C.text
+    GameTooltip:AddLine(p.name or "?", cc.r, cc.g, cc.b)
+    if p.level then
+        GameTooltip:AddLine(string.format(L["Level %d %s"], p.level, className(p.class)), C.text.r, C.text.g, C.text.b)
+    end
+    if p.inInstance then
+        GameTooltip:AddLine(string.format(L["In an instance: %s"], p.inst or L["Unknown zone"]), C.gold2.r, C.gold2.g, C.gold2.b)
+    else
+        GameTooltip:AddLine(p.zone or L["Unknown zone"], C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    end
+    if p.combat then GameTooltip:AddLine(L["In combat"], C.danger.r, C.danger.g, C.danger.b) end
+    if extra then GameTooltip:AddLine(extra, C.textSoft.r, C.textSoft.g, C.textSoft.b) end
+    if p.onOpenMap then
+        GameTooltip:AddLine(L["Drawn by OpenMap"], C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    elseif p.via == "openmap" then
+        GameTooltip:AddLine(L["Shared through OpenMap"], C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    end
+    if p.isGroup then
+        GameTooltip:AddLine(L["In your group"], C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    else
+        GameTooltip:AddLine(string.format(L["Updated %d s ago"], math.floor((p.age or 0) + 0.5)),
+            C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    end
+    GameTooltip:Show()
 end
 
 ----------------------------------------------------------------------
--- Shared state + forward declarations
+-- State
 ----------------------------------------------------------------------
-local cachedPeers = {}          -- last GuildMap:GetPeers() snapshot
-local pins        = {}          -- world-map pin frame pool
-local pinContainer              -- our frame covering the map canvas
-local activePins  = 0
-local hooked      = false
-local listFrame, listContent    -- the draggable list overlay
-local overlayEnabled = false    -- guild overlay is tied to the world map while on
-local listRows    = {}
-local dotsFrame                 -- minimap "guildmates in your zone" indicator
-
-local PositionPins, LayoutPins, RefreshData, RefreshList, RefreshMinimapDots
+local peers = {}           -- the last GuildMap:GetPeers()
+local byKey = {}           -- key -> its row in peers
+local pinOf = {}           -- key -> its pin
+local layer                -- our frame over the world map's canvas
+local pins, nPins = {}, 0
+local list                 -- the list on the world map
+local dots, dotsDriver = {}, nil
+local hooked = false
+local dirty = true
+local flashKey, flashUntil
+local camps = {}           -- the last GuildMap:GetCamps() drawn on the shown map
+local campPins, nCampPins = {}, 0
 
 ----------------------------------------------------------------------
 -- World map pins
 ----------------------------------------------------------------------
-
--- Acquire (or reuse) pin frame i.
 local function AcquirePin(i)
     local pin = pins[i]
     if pin then return pin end
-    pin = CreateFrame("Frame", nil, pinContainer)
-    pin:SetSize(PIN_SIZE, PIN_SIZE)
+    pin = UI:CreateAvatar(layer, PIN_SIZE, false)
     pin:EnableMouse(true)
-
-    local border = pin:CreateTexture(nil, "BACKGROUND")
-    border:SetTexture(WHITE)
-    border:SetPoint("TOPLEFT", -1, 1)
-    border:SetPoint("BOTTOMRIGHT", 1, -1)
-    border:SetVertexColor(0, 0, 0, 0.85)
-
-    local dot = pin:CreateTexture(nil, "ARTWORK")
-    dot:SetTexture(WHITE)
-    dot:SetAllPoints()
-    pin.dot = dot
-
-    pin:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(self.pinName or "?", self.cr or 1, self.cg or 1, self.cb or 1)
-        if self.zoneText then GameTooltip:AddLine(self.zoneText, C.silver.r, C.silver.g, C.silver.b) end
-        if self.subText then GameTooltip:AddLine(self.subText, C.textDim.r, C.textDim.g, C.textDim.b) end
-        GameTooltip:Show()
-    end)
+    local halo = GuildOS.Style:Texture(pin, "halo", "BACKGROUND", 0)
+    halo:SetPoint("CENTER")
+    halo:SetSize(PIN_SIZE * 2.2, PIN_SIZE * 2.2)
+    halo:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 1)
+    halo:Hide()
+    pin.flash = halo
+    pin:SetScript("OnEnter", function(self) ShowPeerTooltip(self, byKey[self.key]) end)
     pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
     pins[i] = pin
     return pin
 end
 
--- Reposition the currently active pins to the current canvas size. Cheap:
--- only reads the container size and moves our own frames (no roster scan, no
--- protected call), so it is safe to run on a throttled OnUpdate to follow
--- zoom/pan. Blizzard's own pins use the same normalized -> canvas formula.
-PositionPins = function()
-    if not pinContainer then return end
-    local w, h = pinContainer:GetWidth(), pinContainer:GetHeight()
-    if not w or w <= 0 or not h or h <= 0 then return end
-    for i = 1, activePins do
-        local pin = pins[i]
-        if pin and pin.nx then
+----------------------------------------------------------------------
+-- Guildmates' campfires (WoW: Forever, without Warmth)
+----------------------------------------------------------------------
+local function ShowCampTooltip(owner, c)
+    if not c then return end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(GM():CampText(c), C.gold2.r, C.gold2.g, C.gold2.b)
+    GameTooltip:AddLine(L["Click to set a waypoint"], C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    GameTooltip:Show()
+end
+
+local function AcquireCampPin(i)
+    local pin = campPins[i]
+    if pin then return pin end
+    pin = CreateFrame("Button", nil, layer)
+    pin:SetSize(CAMP_SIZE, CAMP_SIZE)
+    pin:SetFrameLevel((layer:GetFrameLevel() or 1) + 1)
+    pin.icon = pin:CreateTexture(nil, "ARTWORK")
+    pin.icon:SetAllPoints()
+    pin.icon:SetTexture(CAMP_ICON)
+    pin.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    pin:EnableMouse(true)
+    pin:SetScript("OnEnter", function(self) ShowCampTooltip(self, self.camp) end)
+    pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    pin:SetScript("OnClick", function(self)
+        local c = self.camp
+        if c then Compat.SetUserWaypoint(c.mapID, c.x, c.y) end
+    end)
+    campPins[i] = pin
+    return pin
+end
+
+-- The flames at their spots, at the zoom's size (the shown map's own frame: they do not move).
+local function MoveCampPins(shown, w, h, scale)
+    for i = 1, nCampPins do
+        local pin = campPins[i]
+        local c = pin.camp
+        local sx, sy
+        if c then sx, sy = GM():_PlaceOn(shown, c.mapID, c.x, c.y) end
+        if sx then
+            pin:SetScale(scale)
             pin:ClearAllPoints()
-            pin:SetPoint("CENTER", pinContainer, "TOPLEFT", pin.nx * w, -pin.ny * h)
+            pin:SetPoint("CENTER", layer, "TOPLEFT", sx * w / scale, -sy * h / scale)
+            pin:Show()
+        else
+            pin:Hide()
         end
     end
 end
 
--- Decide which cached peers belong on the displayed map, bind them to pins,
--- then position. Called on data refresh and whenever the displayed map
--- changes (OnMapChanged hook).
-LayoutPins = function()
-    if not pinContainer then return end
-    local shownMap = GuildOS.Compat.GetShownMapID()
+-- Which camps land on the shown map; none while the layer is off (off WoW: Forever, or Warmth loaded).
+local function LayoutCampPins(shown)
+    camps = GM().GetCamps and GM():GetCamps() or {}
     local used = 0
-    if shownMap then
-        for _, p in ipairs(cachedPeers) do
-            if p.mapID == shownMap then
-                used = used + 1
-                local pin = AcquirePin(used)
-                local cr, cg, cb = GuildOS:GetClassColor(p.class)
-                pin.dot:SetVertexColor(cr, cg, cb, 1)
-                pin.cr, pin.cg, pin.cb = cr, cg, cb
-                pin.pinName  = p.name
-                pin.zoneText = zoneName(p.mapID)
-                if p.exact and p.x and p.y then
-                    pin.nx, pin.ny = p.x, p.y
-                    pin.subText = p.level and (L["Lv "] .. p.level) or nil
-                    pin:SetAlpha(1)
-                else
-                    pin.nx, pin.ny = 0.5, 0.5   -- zone-only -> map centre
-                    pin.subText = L["Somewhere in this zone"]
-                    pin:SetAlpha(0.65)
-                end
-                pin:Show()
-            end
+    for _, c in ipairs(camps) do
+        if shown and GM():_PlaceOn(shown, c.mapID, c.x, c.y) then
+            used = used + 1
+            AcquireCampPin(used).camp = c
         end
     end
-    for i = used + 1, #pins do pins[i]:Hide() end
-    activePins = used
-    PositionPins()
+    for i = used + 1, #campPins do campPins[i]:Hide(); campPins[i].camp = nil end
+    nCampPins = used
 end
 
--- React to the world map opening / changing maps with taint-safe hooks only.
-local function InstallMapHooks()
-    if hooked then return end
-    local wmf = GuildOS.Compat.GetWorldMapFrame()
-    if not wmf then return end
-    hooked = true
-    -- Displayed map changed -> re-pick which peers are pinned. hooksecurefunc
-    -- POST-hooks the Blizzard method without replacing it (no taint).
-    if wmf.OnMapChanged then
-        hooksecurefunc(wmf, "OnMapChanged", function() GuildOS:SafeCall(LayoutPins) end)
+-- Moves every drawn pin to where its guildmate is now (the glide), at the zoom's size. Cheap: affine maths on
+-- cached transforms, our own frames only.
+local function MovePins()
+    if not layer or (nPins == 0 and nCampPins == 0) then return end
+    local w, h = layer:GetWidth(), layer:GetHeight()
+    if not w or w <= 0 or not h or h <= 0 then return end
+    local shown = Compat.GetShownMapID()
+    local canvasScale, pct = Compat.WorldMapZoom()
+    local scale = (1 + (PIN_ZOOM - 1) * pct) / canvasScale
+    MoveCampPins(shown, w, h, scale)
+    if nPins == 0 then return end
+    local t = GetTime()
+    local G = GM()
+    for i = 1, nPins do pins[i].seen = false end
+    G:ForEachLive(t, function(p, x, y, alpha)
+        local pin = pinOf[p.key]
+        if not pin then return end
+        local sx, sy
+        if x then sx, sy = G:_PlaceOn(shown, p.mapID, x, y) end
+        if not sx then return end
+        pin.seen = true
+        pin:SetScale(scale)
+        pin:ClearAllPoints()
+        pin:SetPoint("CENTER", layer, "TOPLEFT", sx * w / scale, -sy * h / scale)
+        pin:SetAlpha(alpha)
+        local flashing = flashKey == p.key and flashUntil and t < flashUntil
+        pin.flash:SetShown(flashing and true or false)
+        if flashing then pin.flash:SetAlpha(0.5 + 0.5 * math.abs(math.sin(t * 6))) end
+        pin:Show()
+    end)
+    for i = 1, nPins do if not pins[i].seen then pins[i]:Hide() end end
+end
+
+-- Who is drawn on the shown map: everybody whose point lands on it, but those OpenMap draws itself (listed only).
+local function LayoutPins()
+    if not layer then return end
+    local shown = Compat.GetShownMapID()
+    peers = GM():GetPeers()
+    byKey, pinOf = {}, {}
+    local used = 0
+    for _, p in ipairs(peers) do
+        byKey[p.key] = p
+        if shown and p.x and not p.onOpenMap and GM():_PlaceOn(shown, p.mapID, p.x, p.y) then
+            used = used + 1
+            local pin = AcquirePin(used)
+            pin.key = p.key
+            pinOf[p.key] = pin
+            pin:SetMember(p.name, p.class, false)
+        end
     end
-    -- Map opened -> if the guild overlay is on, show it and repaint.
-    wmf:HookScript("OnShow", function()
-        if overlayEnabled and listFrame then listFrame:Show() end
-        GuildOS:SafeCall(RefreshData)
-    end)
-    -- Map closed -> hide the overlay so it never floats over the game world.
-    -- overlayEnabled stays on, so reopening the map brings it back.
-    wmf:HookScript("OnHide", function()
-        if listFrame then listFrame:Hide() end
-    end)
-end
-
--- Lazily build our pin container over the map canvas. Returns nil until the
--- world map (and its canvas) exists.
-local function EnsurePinLayer()
-    if pinContainer then return pinContainer end
-    local canvas = GuildOS.Compat.GetWorldMapCanvas()
-    if not canvas then return nil end
-    pinContainer = CreateFrame("Frame", nil, canvas)
-    pinContainer:SetAllPoints(canvas)   -- track the canvas rect through zoom/pan
-    pinContainer:SetFrameStrata("HIGH")
-    pinContainer._elapsed = 0
-    pinContainer:SetScript("OnUpdate", function(self, dt)
-        self._elapsed = self._elapsed + dt
-        if self._elapsed < POS_THROTTLE then return end
-        self._elapsed = 0
-        PositionPins()
-    end)
-    InstallMapHooks()
-    return pinContainer
+    for i = used + 1, #pins do pins[i]:Hide(); pins[i].key = nil end
+    nPins = used
+    LayoutCampPins(shown)
+    MovePins()
 end
 
 ----------------------------------------------------------------------
--- List overlay
+-- The list on the world map
 ----------------------------------------------------------------------
+local RefreshList
 
-local function GetListRow(i)
-    local row = listRows[i]
+local function ListRow(i)
+    local row = list.rows[i]
     if row then return row end
-    row = CreateFrame("Button", nil, listContent, "BackdropTemplate")
-    row:SetHeight(LIST_ROW_H)
-    row:SetPoint("TOPLEFT", 0, -(i - 1) * LIST_ROW_H)
-    row:SetPoint("TOPRIGHT", 0, -(i - 1) * LIST_ROW_H)
-    row:SetBackdrop({ bgFile = WHITE })
-    row:SetBackdropColor(0, 0, 0, 0)
-
-    local dot = row:CreateTexture(nil, "ARTWORK")
-    dot:SetTexture(WHITE)
-    dot:SetSize(8, 8)
-    dot:SetPoint("LEFT", 4, 0)
-    row.dot = dot
-
-    local nameFS = UI:CreateText(row, "", 11)
-    nameFS:SetPoint("LEFT", 16, 0)
-    nameFS:SetJustifyH("LEFT")
-    row.nameFS = nameFS
-
-    local zoneFS = UI:CreateText(row, "", 9, C.silver.r, C.silver.g, C.silver.b)
-    zoneFS:SetPoint("LEFT", 92, 0)
-    zoneFS:SetPoint("RIGHT", -6, 0)
-    zoneFS:SetJustifyH("RIGHT")
-    zoneFS:SetWordWrap(false)
-    row.zoneFS = zoneFS
-
-    row:SetScript("OnEnter", function(self) self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, 0.5) end)
-    row:SetScript("OnLeave", function(self) self:SetBackdropColor(0, 0, 0, 0) end)
-
-    listRows[i] = row
+    row = CreateFrame("Button", nil, list)
+    row:SetHeight(ROW_H)
+    row:SetPoint("TOPLEFT", SP.PAD - 4, -(list.top + (i - 1) * ROW_H))
+    row:SetPoint("TOPRIGHT", -(SP.PAD - 4), -(list.top + (i - 1) * ROW_H))
+    UI:CreateRowSelection(row)
+    row.av = UI:CreateAvatar(row, 18, false)
+    row.av:SetPoint("LEFT", 0, 0)
+    row.av:EnableMouse(false)
+    row.name = UI:CreateText(row, "", SP.BODY)
+    row.name:SetPoint("LEFT", row.av, "RIGHT", 6, 0)
+    row.name:SetJustifyH("LEFT")
+    row.name:SetWordWrap(false)
+    row.meta = UI:CreateText(row, "", SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    row.meta:SetPoint("RIGHT", 0, 0)
+    row.meta:SetJustifyH("RIGHT")
+    row.meta:SetWordWrap(false)
+    row.name:SetPoint("RIGHT", row.meta, "LEFT", -6, 0)
+    row:SetScript("OnEnter", function(self) ShowPeerTooltip(self, byKey[self.key]) end)
+    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    row:SetScript("OnClick", function(self)
+        local p = byKey[self.key]
+        if not p then return end
+        local shown = Compat.GetShownMapID()
+        if not (shown and p.x and GM():_PlaceOn(shown, p.mapID, p.x, p.y)) and p.mapID and p.mapID > 0 then
+            Compat.SetShownMapID(p.mapID)
+        end
+        flashKey, flashUntil = p.key, GetTime() + FLASH_TIME
+        dirty = true
+    end)
+    list.rows[i] = row
     return row
 end
 
-local function BuildListFrame()
-    local f = CreateFrame("Frame", "GuildOSGuildMapList", UIParent, "BackdropTemplate")
-    f:SetSize(240, 360)
-    f:SetPoint("TOPLEFT", 40, -200)
-    f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(f) })
-    f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-    UI:StylePopup(f)
-    f:SetFrameStrata("FULLSCREEN_DIALOG")   -- above the world map window
-    f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-    table.insert(UISpecialFrames, "GuildOSGuildMapList")
-
-    local title = UI:CreateTitle(f, L["Guild Map"], 13)
-    title:SetPoint("TOPLEFT", 12, -10)
+local function BuildList()
+    local wmf = Compat.GetWorldMapFrame()
+    local host = wmf and (wmf.ScrollContainer or wmf)
+    if not host then return nil end
+    local f = UI:CreateCard(host, L["Guild Map"], { dark = true })
+    f:SetWidth(LIST_W)
+    f:SetPoint("TOPRIGHT", host, "TOPRIGHT", -SP.MARGIN, -SP.MARGIN)
+    f:SetFrameLevel((host:GetFrameLevel() or 1) + 600)
+    f:EnableMouse(true)
     local close = UI:CreateCloseButton(f)
-    close:SetPoint("TOPRIGHT", -6, -6)
-    -- The X dismisses the overlay for good (until /gos map re-enables it), so it
-    -- does not pop back the next time the world map is opened.
-    close:SetScript("OnClick", function() overlayEnabled = false; f:Hide() end)
-
-    local chk = UI:CreateCheckbox(f, L["Share my live position"], 16)
-    chk:SetPoint("TOPLEFT", 10, -34)
-    chk.checkbox.onChanged = function(_, checked)
-        ModGM():SetShareExact(checked and true or false)
-    end
-    f.shareChk = chk
-
-    local hint = UI:CreateText(f, L["Click a name to jump to their zone."], 9,
-        C.accentDim.r, C.accentDim.g, C.accentDim.b)
-    hint:SetPoint("TOPLEFT", 12, -56)
-
-    local status = UI:CreateText(f, "", 9, C.silver.r, C.silver.g, C.silver.b)
-    status:SetPoint("TOPLEFT", 12, -70)
-    f.statusFS = status
-
-    local scroll = CreateFrame("ScrollFrame", "GuildOSGuildMapListScroll", f, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", 8, -88)
-    scroll:SetPoint("BOTTOMRIGHT", -10, 10)
-    UI:SkinScrollBar(scroll, "GuildOSGuildMapListScroll")
-    local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(1, 1)
-    scroll:SetScrollChild(content)
-    f.scroll = scroll
-    listContent = content
-
-    -- Frames are shown on creation; hide it so ToggleGuildMap's first call
-    -- opens it instead of seeing IsShown()==true and immediately hiding it.
+    close:SetPoint("TOPRIGHT", -SP.PAD + 6, -SP.PAD + 6)
+    close:SetScript("OnClick", function() GM():SetListShown(false); f:Hide() end)
+    f.title:SetPoint("RIGHT", close, "LEFT", -4, 0)
+    f.head = UI:CreateText(f, "", SP.META, C.gold2.r, C.gold2.g, C.gold2.b)
+    f.head:SetPoint("TOPLEFT", SP.PAD, -SP.TOP)
+    f.head:SetPoint("RIGHT", f, "RIGHT", -SP.PAD, 0)
+    f.head:SetJustifyH("LEFT")
+    f.top = SP.TOP + 18
+    f.rows = {}
+    f.foot = UI:CreateText(f, "", SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    f.foot:SetPoint("LEFT", f, "LEFT", SP.PAD, 0)
+    f.foot:SetPoint("RIGHT", f, "RIGHT", -SP.PAD, 0)
+    f.foot:SetJustifyH("LEFT")
+    f.foot:SetWordWrap(true)
     f:Hide()
     return f
 end
 
 RefreshList = function()
-    if not listFrame then return end
-    listFrame.shareChk.checkbox:SetChecked(ModGM():IsShareExact())
-    listContent:SetWidth(listFrame.scroll:GetWidth())
-
-    local shownMap = GuildOS.Compat.GetShownMapID()
-    for i, p in ipairs(cachedPeers) do
-        local row = GetListRow(i)
-        local cr, cg, cb = GuildOS:GetClassColor(p.class)
-        row.dot:SetVertexColor(cr, cg, cb, 1)
-        row.nameFS:SetText(p.name)
-        row.nameFS:SetTextColor(cr, cg, cb)
-        row.zoneFS:SetText(zoneName(p.mapID))
-        if shownMap and p.mapID == shownMap then
-            row.zoneFS:SetTextColor(C.gold.r, C.gold.g, C.gold.b)   -- on the map you're viewing
-        else
-            row.zoneFS:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-        end
-        local mid = p.mapID
-        row:SetScript("OnClick", function() GuildOS:GuildMapFocus(mid) end)
+    if not list or not list:IsShown() then return end
+    local shown = Compat.GetShownMapID()
+    local here, elsewhere = {}, 0
+    for _, p in ipairs(peers) do
+        if shown and p.x and GM():_PlaceOn(shown, p.mapID, p.x, p.y) then here[#here + 1] = p
+        else elsewhere = elsewhere + 1 end
+    end
+    list.head:SetText(string.format(L["Guildmates on this map (%d)"], #here))
+    local n = math.min(#here, LIST_ROWS)
+    for i = 1, n do
+        local p, row = here[i], ListRow(i)
+        row.key = p.key
+        row.av:SetMember(p.name, p.class, p.alpha < 1)
+        row.name:SetText(p.name or "?")
+        row.meta:SetText(p.onOpenMap and ((p.zone and p.zone .. " · " or "") .. L["on OpenMap"]) or p.zone or "")
+        row:SetAlpha(math.max(0.5, p.alpha))
         row:Show()
     end
-    for i = #cachedPeers + 1, #listRows do listRows[i]:Hide() end
-    listContent:SetHeight(math.max(1, #cachedPeers * LIST_ROW_H))
-    listFrame.statusFS:SetText(string.format(L["%d guildmate(s) on the map"], #cachedPeers))
+    for i = n + 1, #list.rows do list.rows[i]:Hide() end
+    -- Under the rows: who is elsewhere, why this client may not draw or send, and who can show at all.
+    local notes = {}
+    if #here == 0 then notes[#notes + 1] = L["No guildmate on this map."] end
+    if elsewhere > 0 then
+        local names = {}
+        for _, p in ipairs(peers) do
+            if not (shown and p.x and GM():_PlaceOn(shown, p.mapID, p.x, p.y)) and #names < 6 then
+                local where = p.inInstance and string.format(L["In an instance: %s"], p.inst or "?") or p.zone or "?"
+                names[#names + 1] = (p.name or "?") .. " (" .. where .. ")"
+            end
+        end
+        notes[#notes + 1] = string.format(L["Elsewhere (%d)"], elsewhere) .. ": " .. table.concat(names, ", ")
+    end
+    -- Online by the roster in the shown zone, with no place known here (OpenMap's zone badge, as a line).
+    local rosterOnly = GM():RosterOnlyHere(shown, byKey)
+    if #rosterOnly > 0 then
+        local names = {}
+        for i = 1, math.min(6, #rosterOnly) do names[i] = rosterOnly[i] end
+        notes[#notes + 1] = string.format(L["In this zone by the roster, no position (%d)"], #rosterOnly) .. ": "
+            .. table.concat(names, ", ") .. (#rosterOnly > 6 and ", ..." or "")
+    end
+    if not Compat.MapAbilities().position then
+        notes[#notes + 1] = L["This client's map gives no positions: guildmates are listed, not drawn."]
+    end
+    if not GM():IsSharing() then notes[#notes + 1] = L["You are not sharing your position (Settings > Privacy)."] end
+    notes[#notes + 1] = L["Only guildmates who share their position (with Guild OS, or OpenMap's sharing), and your group, show here."]
+    -- WoW: Forever without Warmth: guildmates' campfires are drawn here; Warmth draws them with their circle.
+    if GM().CampsOn and GM():CampsOn() then
+        notes[#notes + 1] = L["Install Warmth to see the circle and build your own"]
+    end
+    list.foot:SetText(table.concat(notes, "\n"))
+    local rowsH = n * ROW_H
+    list.foot:ClearAllPoints()
+    list.foot:SetPoint("TOPLEFT", list, "TOPLEFT", SP.PAD, -(list.top + rowsH + 6))
+    list.foot:SetPoint("RIGHT", list, "RIGHT", -SP.PAD, 0)
+    list:SetHeight(list.top + rowsH + 6 + math.ceil(list.foot:GetStringHeight() or 0) + SP.PAD)
 end
 
 ----------------------------------------------------------------------
--- Minimap indicator: class-coloured dots for guildmates in your zone.
--- BCC has no reliable insecure math to place them geographically (minimap
--- yards-per-pixel + rotation are not exposed), so this is an honest count
--- indicator: one dot per same-zone guildmate (capped, with a "+N" overflow)
--- and a tooltip listing their names.
+-- The world map: layer, hooks, watch
 ----------------------------------------------------------------------
-local function BuildDotsFrame()
-    local f = CreateFrame("Frame", nil, Minimap)
-    f:SetSize(MINIMAP_DOTS_MAX * (DOT_SIZE + DOT_GAP) + 22, DOT_SIZE + 6)
-    f:SetPoint("BOTTOM", Minimap, "BOTTOM", 0, 3)
-    f:SetFrameStrata("MEDIUM")
-    f:SetFrameLevel((Minimap:GetFrameLevel() or 1) + 6)
-    f.dots = {}
-    for i = 1, MINIMAP_DOTS_MAX do
-        local d = CreateFrame("Frame", nil, f)
-        d:SetSize(DOT_SIZE, DOT_SIZE)
-        d:SetPoint("LEFT", (i - 1) * (DOT_SIZE + DOT_GAP), 0)
-        local border = d:CreateTexture(nil, "BACKGROUND")
-        border:SetTexture(WHITE)
-        UI:Outset(border)
-        border:SetVertexColor(0, 0, 0, 0.85)
-        local tex = d:CreateTexture(nil, "ARTWORK")
-        tex:SetTexture(WHITE)
-        tex:SetAllPoints()
-        d.tex = tex
-        d:Hide()
-        f.dots[i] = d
-    end
-    local more = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(more, 9)
-    more:SetPoint("LEFT", f.dots[MINIMAP_DOTS_MAX], "RIGHT", 3, 0)
-    more:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    f.more = more
-    -- "+N" sits on the minimap with no outline: a dark chip behind it keeps it
-    -- readable over bright terrain. Shown and hidden together with the text.
-    local moreBg = f:CreateTexture(nil, "ARTWORK")
-    moreBg:SetTexture(WHITE)
-    moreBg:SetPoint("TOPLEFT", more, "TOPLEFT", -2, 1)
-    moreBg:SetPoint("BOTTOMRIGHT", more, "BOTTOMRIGHT", 2, -1)
-    moreBg:SetVertexColor(C.well.r, C.well.g, C.well.b, 0.85)  -- dark enough over bright terrain
-    moreBg:Hide()
-    f.moreBg = moreBg
-
-    f:EnableMouse(true)
-    f:SetScript("OnEnter", function(self)
-        if not self.here or #self.here == 0 then return end
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine(L["Guildmates in your zone"], C.gold.r, C.gold.g, C.gold.b)
-        for _, p in ipairs(self.here) do
-            local cr, cg, cb = GuildOS:GetClassColor(p.class)
-            GameTooltip:AddLine(p.name, cr, cg, cb)
-        end
-        GameTooltip:Show()
-    end)
-    f:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    f:Hide()
-    return f
-end
-
-RefreshMinimapDots = function()
-    if not dotsFrame then return end
-    local myMap = tonumber(GuildOS.Compat.GetBestMapForUnit("player"))
-    local here = {}
-    if myMap and myMap > 0 then
-        for _, p in ipairs(cachedPeers) do
-            if p.mapID == myMap then here[#here + 1] = p end
-        end
-    end
-    local n = #here
-    local shown = math.min(n, MINIMAP_DOTS_MAX)
-    for i = 1, shown do
-        local cr, cg, cb = GuildOS:GetClassColor(here[i].class)
-        dotsFrame.dots[i].tex:SetVertexColor(cr, cg, cb, 1)
-        dotsFrame.dots[i]:Show()
-    end
-    for i = shown + 1, MINIMAP_DOTS_MAX do dotsFrame.dots[i]:Hide() end
-    if n > MINIMAP_DOTS_MAX then
-        dotsFrame.more:SetText("+" .. (n - MINIMAP_DOTS_MAX))
-        dotsFrame.more:Show()
-        dotsFrame.moreBg:Show()
+local function WatchShownMap()
+    local wmf = Compat.GetWorldMapFrame()
+    if wmf and wmf:IsShown() then
+        GM():SetWatch("worldmap", Compat.GetShownMapID())
     else
-        dotsFrame.more:Hide()
-        dotsFrame.moreBg:Hide()
+        GM():SetWatch("worldmap", nil)
     end
-    dotsFrame.here = here
-    dotsFrame:SetShown(n > 0 and (not GuildOS.GuildMap or GuildOS.GuildMap:IsMinimapDots()))
+end
+
+local function OnMapChanged()
+    dirty = true
+    GM():RefreshOpenMap()   -- OpenMap's settings, read again as the map opens or moves (cheap: a table read)
+    WatchShownMap()
+end
+
+local function InstallMapHooks()
+    if hooked then return end
+    local wmf = Compat.GetWorldMapFrame()
+    if not wmf then return end
+    hooked = true
+    if wmf.OnMapChanged then
+        hooksecurefunc(wmf, "OnMapChanged", function() GuildOS:SafeCall(OnMapChanged) end)
+    end
+    wmf:HookScript("OnShow", function()
+        if list and GM():IsListShown() then list:Show() end
+        GuildOS:SafeCall(OnMapChanged)
+    end)
+    wmf:HookScript("OnHide", function()
+        GM():SetWatch("worldmap", nil)
+        if list then list:Hide() end
+    end)
+end
+
+local function EnsureLayer()
+    if layer then return layer end
+    local canvas = Compat.GetWorldMapCanvas()
+    if not canvas then return nil end
+    layer = CreateFrame("Frame", nil, canvas)
+    layer:SetAllPoints(canvas)
+    layer:SetFrameLevel((canvas:GetFrameLevel() or 1) + 50)
+    local acc, accList = 0, 0
+    layer:SetScript("OnUpdate", function(_, dt)
+        acc, accList = acc + dt, accList + dt
+        if dirty or accList >= LIST_GAP then
+            accList, dirty = 0, false
+            GuildOS:SafeCall(LayoutPins)
+            GuildOS:SafeCall(RefreshList)
+        elseif acc >= FRAME_GAP then
+            acc = 0
+            GuildOS:SafeCall(MovePins)
+        end
+    end)
+    list = list or BuildList()
+    InstallMapHooks()
+    return layer
 end
 
 ----------------------------------------------------------------------
--- Refresh orchestration
+-- Minimap dots
 ----------------------------------------------------------------------
+local function AcquireDot(i)
+    local d = dots[i]
+    if d then return d end
+    d = CreateFrame("Frame", nil, Minimap)
+    d:SetSize(DOT_SIZE, DOT_SIZE)
+    d:SetFrameLevel((Minimap:GetFrameLevel() or 1) + 6)
+    d.disc = GuildOS.Style:Texture(d, "disc", "ARTWORK", 0)
+    d.disc:SetAllPoints()
+    d.ring = GuildOS.Style:Texture(d, "ring", "ARTWORK", 1)
+    d.ring:SetAllPoints()
+    d.ring:SetVertexColor(C.gold2.r, C.gold2.g, C.gold2.b, 1)
+    d:EnableMouse(true)
+    d:SetScript("OnEnter", function(self)
+        local p
+        for _, row in ipairs(GM():GetPeers()) do if row.key == self.key then p = row end end
+        ShowPeerTooltip(self, p, self.yards and string.format(L["%d yd"], math.floor(self.yards + 0.5)))
+    end)
+    d:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    dots[i] = d
+    return d
+end
 
--- Recompute the peer snapshot (the only place that scans the roster) and
--- repaint every surface that is currently live.
-RefreshData = function()
-    cachedPeers = (GuildOS.GuildMap and GuildOS.GuildMap:GetPeers()) or {}
-    if listFrame and listFrame:IsShown() then RefreshList() end
-    LayoutPins()
-    RefreshMinimapDots()
+-- Every guildmate on the player's map, at their bearing and distance.
+-- One dot, for ForEachLive: a function made once, reading the frame's view from these upvalues (memory audit,
+-- memoria.md: a closure ten times a second was garbage of its own).
+local dotsUsed, dotsG, dotsMap, dotsMX, dotsMY, dotsYW, dotsYH, dotsRYd, dotsRPx, dotsFacing = 0
+local function placeDot(p, x, y, alpha)
+    local px, py
+    if x then px, py = dotsG:_PlaceOn(dotsMap, p.mapID, x, y) end
+    if not px then return end
+    local ox, oy, edge, yards = dotsG:_MinimapOffset((px - dotsMX) * dotsYW, (py - dotsMY) * dotsYH, dotsRYd, dotsRPx,
+        dotsFacing)
+    dotsUsed = dotsUsed + 1
+    local d = AcquireDot(dotsUsed)
+    local cc = GuildOS.ClassColors[p.class or ""] or C.textSoft
+    d.disc:SetVertexColor(cc.r, cc.g, cc.b, 1)
+    d.key, d.yards, d.peer = p.key, yards, nil
+    d:ClearAllPoints()
+    d:SetPoint("CENTER", Minimap, "CENTER", ox, oy)
+    d:SetAlpha(alpha * (edge and 0.6 or 1))
+    d:Show()
+end
+
+local function RefreshDots()
+    dotsUsed = 0
+    local G = GM()
+    -- Nobody to draw (no guildmate heard, no group member read): no map reads at all, ten times a second.
+    local show = G:IsMinimapDots() and (next(G.peers) ~= nil or (IsInGroup and IsInGroup()) or next(G.group) ~= nil)
+        and not Compat.InstanceState()
+    local myMap = show and Compat.GetBestMapForUnit("player")
+    local mx, my
+    if myMap then mx, my = Compat.GetPlayerMapPosition(myMap, "player") end
+    local yw, yh
+    if mx then yw, yh = G:_MapYards(myMap, Compat) end
+    local zoom, indoors, rotate
+    if yw then zoom, indoors, rotate = Compat.MinimapView() end
+    if yw and zoom then
+        dotsG, dotsMap, dotsMX, dotsMY, dotsYW, dotsYH = G, myMap, mx, my, yw, yh
+        dotsRYd = G:_MinimapRadius(zoom, indoors)
+        dotsRPx = (Minimap:GetWidth() or 140) / 2 - DOT_SIZE / 2
+        dotsFacing = rotate and Compat.PlayerFacing() or nil
+        G:ForEachLive(GetTime(), placeDot)
+    end
+    local used = dotsUsed
+    for i = used + 1, #dots do dots[i]:Hide() end
 end
 
 ----------------------------------------------------------------------
--- Public entry points
+-- Entry points
 ----------------------------------------------------------------------
 
--- Open the world map on a peer's zone (used by list-row clicks). OnMapChanged
--- will relayout the pins; LayoutPins() is a belt-and-suspenders for clients
--- whose map lacks that method.
-function GuildOS:GuildMapFocus(mapID)
-    GuildOS.Compat.OpenWorldMap()
-    EnsurePinLayer()
-    GuildOS.Compat.SetShownMapID(mapID)
-    GuildOS:SafeCall(LayoutPins)
-end
-
--- /gos map and the minimap menu entry. Toggles the list overlay; opening it
--- also opens the world map and builds the pin layer.
+-- /gos map and the minimap menu: opens the world map with the guild list on it; again, closes the list.
 function GuildOS:ToggleGuildMap()
-    local f = listFrame or BuildListFrame()
-    listFrame = f
-    if overlayEnabled then
-        -- Turn the guild overlay off; leave the world map as the player had it.
-        overlayEnabled = false
-        f:Hide()
+    local wmf = Compat.GetWorldMapFrame()
+    if wmf and wmf:IsShown() and list and list:IsShown() then
+        GM():SetListShown(false)
+        list:Hide()
         return
     end
-    overlayEnabled = true
-    GuildOS.Compat.OpenWorldMap()
-    EnsurePinLayer()
-    f:Show(); f:Raise()
-    RefreshData()
-    -- The map addon may have loaded on demand this frame; retry the layer +
-    -- repaint (and re-show the overlay) once the canvas certainly exists.
-    GuildOS.Compat.After(0, function()
-        EnsurePinLayer()
-        if overlayEnabled and listFrame then listFrame:Show() end
-        RefreshData()
-    end)
+    GM():SetListShown(true)
+    Compat.OpenWorldMap()
+    local function show()
+        if not EnsureLayer() then return end
+        if list and Compat.GetWorldMapFrame() and Compat.GetWorldMapFrame():IsShown() then list:Show() end
+        dirty = true
+        WatchShownMap()
+    end
+    show()
+    -- The map may have loaded on demand this frame.
+    Compat.After(0, show)
 end
 
--- One-time wiring: bind the data-layer refresh hook, build the minimap
--- indicator, and watch our own zone changes. Called from CreateMinimapButton
--- so no Core file needs editing and Minimap is guaranteed to exist.
+-- One-time wiring, from CreateMinimapButton: the minimap dots and the world map layer (as soon as the map
+-- exists; it may load on demand).
 function GuildOS:SetupGuildMapPresence()
-    if GuildOS._guildMapPresence then return end
+    if GuildOS._guildMapPresence or not GM() then return end
     GuildOS._guildMapPresence = true
-
-    if Minimap then dotsFrame = BuildDotsFrame() end
-
-    -- Incoming positions (GuildMap:HandlePosition) repaint everything live.
-    if GuildOS.GuildMap then
-        GuildOS.GuildMap.uiRefresh = function() GuildOS:SafeCall(RefreshData) end
+    GM().uiRefresh = function() dirty = true end
+    if Minimap then
+        dotsDriver = CreateFrame("Frame", nil, Minimap)
+        local acc = 0
+        dotsDriver:SetScript("OnUpdate", function(_, dt)
+            acc = acc + dt
+            if acc < 0.1 then return end
+            acc = 0
+            GuildOS:SafeCall(RefreshDots)
+        end)
     end
-
-    -- Our own zone change alters who counts as "in your zone".
-    local ev = CreateFrame("Frame")
-    GuildOS.Compat.RegisterEvent(ev, "ZONE_CHANGED_NEW_AREA")
-    GuildOS.Compat.RegisterEvent(ev, "PLAYER_ENTERING_WORLD")
-    ev:SetScript("OnEvent", function() GuildOS:SafeCall(RefreshData) end)
-    GuildOS._guildMapPresenceFrame = ev
-
-    RefreshData()
+    if not EnsureLayer() then
+        -- Blizzard_WorldMap loads on demand on some clients: try again when it does.
+        local ev = CreateFrame("Frame")
+        Compat.RegisterEvent(ev, "ADDON_LOADED")
+        ev:SetScript("OnEvent", function(self)
+            if EnsureLayer() then self:UnregisterAllEvents() end
+        end)
+    end
 end

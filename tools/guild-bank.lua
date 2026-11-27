@@ -1295,4 +1295,99 @@ check(Bank:ParseItemInput(linkOf(22854)) == 22854 and Bank:ParseItemInput("22832
 check(Bank:ParseItemInput("fel iron") == 23445 and Bank:ParseItemInput("Nothing at all") == nil,
   "a name the bank holds names its item; any other names none")
 
+-- ── Line ids and the bank tax (Ley) ─────────────────────────────────────
+do
+  fresh()
+  PLAYER = "Ana"
+  local H = 3600
+  local function W(t, n, id, c) return { t = t, ty = "w", n = n, id = id, c = c } end
+  local function D(t, n, g) return { t = t, ty = "d", n = n, g = g } end
+  -- Every line gets an id, two equal ones of one time two ids.
+  Bank:MergeStream(1, { W(NOW - 2 * H, "Cid", 22854, 2), W(NOW - 2 * H, "Cid", 22854, 2) })
+  local st = Bank:Stream(1)
+  check(#st == 2 and Bank.ValidLid(st[1].lid) and Bank.ValidLid(st[2].lid) and st[1].lid ~= st[2].lid,
+    "each ledger line has an id, two equal lines of one time two")
+  local keptLid = st[1].lid
+  -- A peer read the same lines on its own, an hour off, under other ids: the lines pair, and settle on the lower id.
+  local peerA, peerB = W(NOW - 2 * H + 1800, "Cid", 22854, 2), W(NOW - 2 * H + 1800, "Cid", 22854, 2)
+  peerA.lid, peerB.lid = "0:peer:a", "0:peer:b"
+  check(Bank:MergeStream(1, { peerA, peerB }) == 0, "a peer's own read of the same withdrawals adds nothing")
+  st = Bank:Stream(1)
+  check(st[1].lid == "0:peer:a" and st[2].lid == "0:peer:b", "and both clients settle on the lower id of each line")
+  check(keptLid > "0:peer:a", "(the kept id was the higher)")
+  -- The ids go out with a read and come back in a history.
+  wire = {}
+  Bank:PublishHistory(0)
+  local hist = last("gbank", "hist")
+  check(hist and hist.data.reads[1].list[1].lid == "0:peer:a", "a history carries each line's id")
+  local before = #Bank:Store().ledger
+  deliver(hist, "Bea")
+  check(#Bank:Store().ledger == before, "and taking it back adds nothing")
+  GuildOS.SyncService.handlers.gbank({ act = "log", data = { v = Bank.LEDGER_V, reads = { { k = 3, list = {
+    { t = NOW, ty = "w", n = "Dan", id = 21877, c = 1, lid = "bad id with spaces" },
+    { t = NOW, ty = "w", n = "Eva", id = 21877, c = 1, lid = "3:w:21877:1:0:0:1790000000:x" } } } } } }, "Fae")
+  local s3 = Bank:Stream(3)
+  check(#s3 == 2 and s3[1].lid ~= "bad id with spaces" and Bank.ValidLid(s3[1].lid) and s3[2].lid == "3:w:21877:1:0:0:1790000000:x",
+    "a shared id is taken when it is well formed, else the line is named here")
+
+  -- The tax: off by default.
+  fresh()
+  GuildOS.State.coalesce.waiting["gbank.tax"], GuildOS.State.coalesce.at["gbank.tax"] = nil, nil   -- a wait from before, timers gone
+  check(Bank:TaxRate() == 0 and not Bank:TaxOn() and next((Bank:TaxBalances())) == nil, "the bank tax is off by default")
+  Bank:MergeStream(1, { W(NOW - 5 * H, "Ana", 22854, 4) })
+  check(Bank:LineTax(Bank:Stream(1)[1]) == nil, "and taxes nothing")
+  BANK.leader = false
+  check(not Bank:SetTax(10), "only the Guild Master sets it")
+  BANK.leader = true
+  wire = {}
+  check(Bank:SetTax(10) and Bank:TaxRate() == 10 and Bank:TaxSince() == NOW, "the Guild Master sets 10%, from now")
+  local sent = last("guildcfg", "banktax")
+  check(sent and sent.data.pct == 10 and sent.data.since == NOW and sent.rev == GuildOS.db.settings.bankTaxAt,
+    "it goes to the officers' guild settings with its stamp")
+  check(not Bank:SetTax(51) and not Bank:SetTax(2.5) and Bank:TaxRate() == 10, "a rate past 50% or not whole is refused")
+  -- Prices: Auctionator's for the flask, the vendor's for the fel iron, none for the third item.
+  local prices = { [22854] = 30000 }
+  GuildOS.Compat.AuctionPrice = function(id) return prices[id] end
+  GuildOS.Compat.ItemValue = function(id) return id == 23445 and 1000 or 0 end
+  NOW = NOW + 60
+  printed = {}
+  Bank:MergeStream(1, { W(NOW, "Ana", 22854, 2), W(NOW, "Ana", 23445, 20), W(NOW, "Bea", 99999, 1),
+    { t = NOW, ty = "d", n = "Ana", id = 23445, c = 5 } })
+  Bank:MergeStream(0, { D(NOW, "Bea", 500) })
+  runTimers()
+  local by, rows = Bank:TaxBalances()
+  check(by.Ana and by.Ana.tax == 6000 + 2000 and by.Ana.owed == 8000 and by.Ana.lines == 2,
+    "a withdrawal's tax is its auction price, else its vendor price, times the count, times the rate; deposits of items pay nothing")
+  check(by.Bea and by.Bea.tax == 0 and by.Bea.owed == 0 and by.Bea.paid == 500, "an item with no price is taxed nothing yet, and owing never goes below nothing")
+  check(rows[1].name == "Ana" and rows[1].owed == 8000, "who owes most comes first")
+  check(Bank:LineTax(Bank:Stream(1)[1]) == nil, "the withdrawal before the tax started is not taxed")
+  check(#printed == 1 and printed[1]:find("You owe the guild 80s 0c (bank tax 10%)", 1, true), "my client says what I owe, gently: " .. tostring(printed[1]))
+  Bank:MergeStream(0, { D(NOW, "Cid", 100) })
+  runTimers()
+  check(#printed == 1, "and says it once for each new figure")
+  prices[22854] = 90000
+  check(Bank:TaxBalances().Ana.owed == 8000, "a price that moves later does not move what was owed")
+  -- Gold deposited after the tax started pays it back.
+  Bank:MergeStream(0, { D(NOW + 1, "Ana", 5000) })
+  check(Bank:TaxBalances().Ana.owed == 3000 and Bank:MyTaxOwed() == 3000, "a gold deposit pays it back")
+  -- Two officers' reads of the same withdrawal: one line, one tax.
+  GuildOS.SyncService.handlers.gbank({ act = "log", data = { v = Bank.LEDGER_V, reads = { { k = 1, list = {
+    W(NOW + 600, "Ana", 22854, 2), W(NOW + 600, "Ana", 23445, 20), W(NOW + 600, "Bea", 99999, 1),
+    { t = NOW + 600, ty = "d", n = "Ana", id = 23445, c = 5 } } } } } }, "Cid")
+  check(Bank:TaxBalances().Ana.owed == 3000, "another officer's read of the same lines counts nothing twice")
+  -- From the guild settings: newest stamp wins, one in the same second keeps the lower rate.
+  local at = GuildOS.db.settings.bankTaxAt
+  Bank:OnTaxSync({ rev = at - 5, data = { pct = 30, since = NOW } })
+  check(Bank:TaxRate() == 10, "an older stamp changes nothing")
+  Bank:OnTaxSync({ rev = at, data = { pct = 20, since = NOW } })
+  check(Bank:TaxRate() == 10, "the same stamp keeps the lower rate")
+  Bank:OnTaxSync({ rev = at, data = { pct = 5, since = NOW } })
+  check(Bank:TaxRate() == 5, "and takes a lower one")
+  Bank:OnTaxSync({ rev = at + 10, data = { pct = 15 } })
+  check(Bank:TaxRate() == 5, "a rate with no start is refused")
+  Bank:OnTaxSync({ rev = at + 10, data = { pct = 0 } })
+  check(Bank:TaxRate() == 0 and not Bank:TaxOn() and next((Bank:TaxBalances())) == nil, "a newer 0 switches it off everywhere")
+  BANK.leader = nil
+end
+
 print(string.format("guild-bank: %d checks passed", checks))

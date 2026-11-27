@@ -15,6 +15,7 @@
 --   * Needs: officers set how many of an item the bank should hold (domain "gbankneed").
 --   * Requests: a member asks for an item; an officer fills or declines it (domain "gbankreq").
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local GuildBank = {}
 GuildOS.GuildBank = GuildBank
 local L = GuildOS.L
@@ -90,7 +91,7 @@ end
 -- "Name". Compared by player key.
 local function keyName(name)
     if type(name) ~= "string" or name == "" then return nil end
-    return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("^[^-]+%-(.+)$"))
+    return GuildOS:KeyOfRosterName(name)
 end
 local function sameName(a, b)
     local ka = keyName(a)
@@ -120,12 +121,16 @@ function GuildBank:Store()
     db.tabs = db.tabs or {}
     -- Ledgers kept before LEDGER_V hold copies of recent lines that cannot be told from real
     -- repeats: started over once, refilled by the next bank read.
-    if db.ledgerV ~= LEDGER_V then db.ledger, db.ledgerV, db.ledgerSince, db.lastRead = {}, LEDGER_V, now(), {} end
+    if db.ledgerV ~= LEDGER_V then
+        db.ledger, db.ledgerV, db.ledgerSince, db.lastRead = {}, LEDGER_V, now(), {}
+        if GuildOS.State.gbank then GuildOS.State.gbank.lids = nil end
+    end
     db.ledger = db.ledger or {}
     db.lastRead = db.lastRead or {}
     db.money = db.money or {}
     db.needs = db.needs or {}
     db.requests = db.requests or {}
+    db.taxValue = db.taxValue or {}
     return db
 end
 
@@ -151,9 +156,20 @@ function GuildBank:Initialize()
         GuildOS.Compat.RegisterGuildBankEvents(self.frame)
         self.frame:SetScript("OnEvent", function(_, event, ...) GuildOS:SafeCall(GuildBank.OnEvent, GuildBank, event, ...) end)
     end
+    self:EnsureLids()
+    -- The values the tax froze, for lines the ledger still holds.
+    local live = self:LidSet()
+    for lid in pairs(db.taxValue or {}) do
+        if not live[lid] then db.taxValue[lid] = nil end
+    end
     self:PruneRequests()
     self:HookTooltips()
-    GuildOS.Compat.After(ASK_DELAY, function() GuildOS:SafeCall(GuildBank.Ask, GuildBank) end)
+    GuildOS.Compat.After(ASK_DELAY, function()
+        GuildOS:SafeCall(GuildBank.Ask, GuildBank)
+        GuildOS:SafeCall(GuildBank.NoteMyTax, GuildBank)   -- what I owe, said once a login (Ley)
+        local P = GuildOS.Points   -- donations made while no granting officer was online (Snuchyboochy)
+        if P and P.ApplyBankDonations then GuildOS:SafeCall(P.ApplyBankDonations, P) end
+    end)
 end
 
 -- Whether this client has a guild bank (WoW: Forever's servers may not open one).
@@ -415,6 +431,63 @@ local function sameWho(a, b)
 end
 GuildBank.LEDGER_V = LEDGER_V
 
+-- A ledger line's id (`lid`): what the bank tax and the donations' EP count each line by, once (Ley,
+-- Snuchyboochy). The game's log has none. A line is named when it first goes into a ledger, from its stream,
+-- what it says and its time, with "#n" when an equal line of the same time is already there (two equal
+-- deposits in one hour stay two); the name travels with the line in every read and history shared. Two
+-- clients that read the same line on their own give it two names: when a shared read pairs with a kept line,
+-- the kept line takes the lower of the two, so every client settles on one name for it (MergeStream).
+local LID_MAX = 80
+local function baseLid(k, e)
+    return string.format("%d:%s:%d:%d:%d:%d:%.0f", tonumber(k) or 0, tostring(e.ty or "?"), tonumber(e.id) or 0,
+        tonumber(e.c) or 0, tonumber(e.g) or 0, tonumber(e.t2) or 0, tonumber(e.t) or 0)
+end
+local function validLid(v)
+    return type(v) == "string" and #v > 0 and #v <= LID_MAX and v:find("^[%w:#%.%-]+$") ~= nil
+end
+GuildBank.ValidLid = validLid
+
+-- The lids in use in this client's ledger, built once and kept as lines go in.
+local function lidSet(self)
+    local s = GuildOS.State.gbank
+    if s and s.lids then return s.lids end
+    local set = {}
+    for _, e in ipairs(self:Store().ledger) do
+        if e.lid then set[e.lid] = true end
+    end
+    if s then s.lids = set end
+    return set
+end
+
+function GuildBank:LidSet() return lidSet(self) end
+
+-- A free lid for line `e` of stream `k`: `want` (a shared read's) when it is free, else its own name.
+local function freshLid(self, k, e, want)
+    local set = lidSet(self)
+    if validLid(want) and not set[want] then return want end
+    local base = baseLid(k, e)
+    local lid, n = base, 1
+    while set[lid] do
+        n = n + 1
+        lid = base .. "#" .. n
+    end
+    return lid
+end
+
+-- Every kept line has a lid: those from before lids existed get theirs, in the ledger's order.
+function GuildBank:EnsureLids()
+    local set = lidSet(self)
+    local n = 0
+    for _, e in ipairs(self:Store().ledger) do
+        if not validLid(e.lid) then
+            e.lid = freshLid(self, e.k, e)
+            set[e.lid] = true
+            n = n + 1
+        end
+    end
+    return n
+end
+
 -- The lines of stream `k` (a tab, or 0 for money) in the ledger, in the order they were added.
 function GuildBank:Stream(k)
     local out = {}
@@ -441,13 +514,22 @@ end
 -- Returns how many lines were added, then how many kept lines got their name. Pure apart from the
 -- ledger it writes.
 function GuildBank:MergeStream(k, list)
+    self:EnsureLids()
     local kept = self:Stream(k)
     local ks, ls, newest = {}, {}, -math.huge
     for i, e in ipairs(kept) do ks[i] = body(e); newest = math.max(newest, e.t or 0) end
     for i, e in ipairs(list) do ls[i] = body(e) end
     local filled = 0
+    local lids = lidSet(self)
     local function fill(keptLine, read)   -- a kept line without a name takes the read's
         if not named(keptLine) and named(read) then keptLine.n = read.n; filled = filled + 1 end
+        -- One event, two names: both settle on the lower (never one another line of this ledger holds).
+        if validLid(read.lid) and read.lid < keptLine.lid and not lids[read.lid] then
+            lids[keptLine.lid] = nil
+            keptLine.lid = read.lid
+            lids[read.lid] = true
+        end
+        read.lid = keptLine.lid
     end
     local function runAt(j, n)   -- list[1..n] is kept[j..j+n-1], read again
         for i = 1, n do
@@ -514,9 +596,16 @@ function GuildBank:MergeStream(k, list)
                 end
             end
         end
-        table.insert(ledger, pos, { k = k, t = e.t, ty = e.ty, n = e.n, id = e.id, c = e.c, g = e.g, t2 = e.t2 })
+        local lid = freshLid(self, k, e, e.lid)
+        lids[lid] = true
+        e.lid = lid   -- the read shared after this carries it
+        table.insert(ledger, pos, { k = k, t = e.t, ty = e.ty, n = e.n, id = e.id, c = e.c, g = e.g, t2 = e.t2, lid = lid })
     end
-    while #ledger > LOG_KEEP do table.remove(ledger, 1) end
+    while #ledger > LOG_KEEP do
+        local gone = table.remove(ledger, 1)
+        if gone and gone.lid then lids[gone.lid] = nil end
+    end
+    if #new > 0 or filled > 0 then self:LedgerChanged() end
     return #new, filled
 end
 
@@ -553,6 +642,7 @@ function GuildBank:DropNameless()
     for i = #ledger, 1, -1 do
         if drop[ledger[i]] then table.remove(ledger, i); n = n + 1 end
     end
+    if n > 0 and GuildOS.State.gbank then GuildOS.State.gbank.lids = nil end
     return n
 end
 
@@ -843,7 +933,8 @@ local function cleanRead(read, limit)
                 id = (id and id > 0 and id < MAX_ITEM_ID) and id or nil,
                 c = GuildOS.Finite(e.c) and math.max(0, math.min(MAX_COUNT, math.floor(e.c))) or nil,
                 g = GuildOS.Finite(e.g) and math.max(0, math.floor(e.g)) or nil,
-                t2 = tonumber(e.t2) and math.floor(e.t2) or nil }
+                t2 = tonumber(e.t2) and math.floor(e.t2) or nil,
+                lid = validLid(e.lid) and e.lid or nil }
         end
     end
     -- In time order, lines of one time kept in the order sent (table.sort is not stable).
@@ -1716,6 +1807,170 @@ function GuildBank:ClassOf(name)
     local key = keyName(name)
     local m = key and GuildOS.db.members and GuildOS.db.members[key]
     return m and m.class
+end
+
+----------------------------------------------------------------------
+-- Bank tax (Ley): a share of what each member takes out, owed to the guild until paid back in gold.
+--
+-- The Guild Master sets the rate (0 is off, the default); it reaches every client on the officers' guild
+-- settings ("guildcfg", act "banktax", newest stamp wins, a tie keeps the lower rate), relayed by any officer
+-- who holds it. `since` is when the tax was switched on: nothing before it is taxed or counts as paid.
+-- Each item withdrawn after it is worth its auction price (Compat.AuctionPrice: Auctionator or TSM) or its
+-- vendor price, times the count, valued once by this client and kept by the line's id, so a price moving
+-- later does not move what was owed; its tax is that value times the rate, rounded down to the copper.
+-- What a member owes is the sum of their withdrawals' tax less the gold they deposited after `since`,
+-- never below nothing. Every client computes it from its own merged ledger, where each line is there once
+-- (MergeStream), so two officers who both read a withdrawal never count it twice.
+----------------------------------------------------------------------
+local TAX_MAX = 50                 -- percent, at most
+local TAX_FUTURE_SLACK = 300       -- seconds a stamp may run ahead of this clock
+
+function GuildBank:TaxRate()
+    local s = GuildOS.db and GuildOS.db.settings
+    local pct = s and tonumber(s.bankTaxPct) or 0
+    return (pct > 0 and pct <= TAX_MAX) and pct or 0
+end
+function GuildBank:TaxSince()
+    local s = GuildOS.db and GuildOS.db.settings
+    return s and tonumber(s.bankTaxSince) or nil
+end
+function GuildBank:TaxOn() return self:TaxRate() > 0 and self:TaxSince() ~= nil end
+
+local function saneTax(pct)
+    return type(pct) == "number" and pct == math.floor(pct) and pct >= 0 and pct <= TAX_MAX
+end
+GuildBank.TAX_MAX = TAX_MAX
+
+-- The Guild Master sets it; 0 switches it off. Returns whether it was taken.
+function GuildBank:SetTax(pct)
+    pct = tonumber(pct)
+    if not saneTax(pct) or not GuildOS.Compat.IsGuildLeader() then return false end
+    local s = GuildOS.db.settings
+    local was = self:TaxRate()
+    s.bankTaxPct = pct > 0 and pct or nil
+    if pct == 0 then s.bankTaxSince = nil elseif was == 0 or not s.bankTaxSince then s.bankTaxSince = now() end
+    s.bankTaxAt = math.max(now(), (tonumber(s.bankTaxAt) or 0) + 1)
+    self:PublishTax()
+    self:LedgerChanged()
+    return true
+end
+
+function GuildBank:PublishTax()
+    local s = GuildOS.db and GuildOS.db.settings
+    if not (s and s.bankTaxAt and GuildOS.SyncService and GuildOS:IsOfficer()) then return end
+    GuildOS.SyncService:Publish("guildcfg", "banktax", { pct = self:TaxRate(), since = s.bankTaxSince }, { rev = s.bankTaxAt })
+end
+
+-- From an officer (SyncService checked the officer and GUILD): the newest stamp wins; two in one second keep
+-- the lower rate on every client.
+function GuildBank:OnTaxSync(env)
+    local data = env and env.data
+    local pct = type(data) == "table" and tonumber(data.pct) or nil
+    local since = type(data) == "table" and GuildOS.Finite(data.since) or nil
+    local at = env and tonumber(env.rev)
+    if not saneTax(pct) or not (at and at > 0 and at < math.huge) then return end
+    if pct > 0 and not (since and since > 0) then return end
+    at = math.min(at, now() + TAX_FUTURE_SLACK)
+    local s = GuildOS.db.settings
+    local held = tonumber(s.bankTaxAt)
+    if held and (at < held or (at == held and pct >= self:TaxRate())) then return end
+    s.bankTaxPct, s.bankTaxSince, s.bankTaxAt = pct > 0 and pct or nil, pct > 0 and math.floor(since) or nil, at
+    self:LedgerChanged()
+end
+
+-- What an item withdrawal of line `e` is worth, in copper: kept by its lid once known (nil while the client
+-- knows no price for it yet).
+function GuildBank:LineValue(e)
+    if not (e and e.id and (e.c or 0) > 0) then return nil end
+    local held = e.lid and self:Store().taxValue[e.lid]
+    if held then return held end
+    local unit = GuildOS.Compat.AuctionPrice(e.id)
+    if not unit then
+        local sell = GuildOS.Compat.ItemValue(e.id)
+        unit = (tonumber(sell) or 0) > 0 and sell or nil
+    end
+    if not unit then return nil end
+    local v = math.floor(unit * e.c)
+    if e.lid then self:Store().taxValue[e.lid] = v end
+    return v
+end
+
+-- The tax on one ledger line, or nil when it carries none: an item withdrawal after the tax started.
+function GuildBank:LineTax(e, pct, since)
+    pct, since = pct or self:TaxRate(), since or self:TaxSince()
+    if pct <= 0 or not since or not e or e.ty ~= "w" or e.k == 0 or (e.t or 0) < since then return nil end
+    local v = self:LineValue(e)
+    return v and math.floor(v * pct / 100) or 0
+end
+
+-- Who owes what: { [name] = { tax, paid, owed, lines } } over the whole merged ledger, and the rows sorted by
+-- what is owed, most first. Empty while the tax is off.
+function GuildBank:TaxBalances()
+    local out, rows = {}, {}
+    local pct, since = self:TaxRate(), self:TaxSince()
+    if pct <= 0 or not since then return out, rows end
+    for _, e in ipairs(self:Store().ledger) do
+        if named(e) and (e.t or 0) >= since then
+            local tax = self:LineTax(e, pct, since)
+            local paid = (e.k == 0 and e.ty == "d") and (e.g or 0) or 0
+            if tax or paid > 0 then
+                local r = out[e.n]
+                if not r then r = { name = e.n, tax = 0, paid = 0, lines = 0 }; out[e.n] = r end
+                r.tax, r.paid, r.lines = r.tax + (tax or 0), r.paid + paid, r.lines + (tax and 1 or 0)
+            end
+        end
+    end
+    for _, r in pairs(out) do
+        r.owed = math.max(0, r.tax - r.paid)
+        rows[#rows + 1] = r
+    end
+    table.sort(rows, function(a, b)
+        if a.owed ~= b.owed then return a.owed > b.owed end
+        return a.name < b.name
+    end)
+    return out, rows
+end
+
+-- What I owe, in copper (0 when nothing, or the tax is off).
+function GuildBank:MyTaxOwed()
+    if not self:TaxOn() then return 0 end
+    local by = self:TaxBalances()
+    for name, r in pairs(by) do
+        if self:IsMe(name) then return r.owed end
+    end
+    return 0
+end
+
+local function coins(copper)
+    copper = math.floor(tonumber(copper) or 0)
+    local g, sv, c = math.floor(copper / 10000), math.floor((copper % 10000) / 100), copper % 100
+    if g > 0 then return string.format("%dg %ds", g, sv) end
+    if sv > 0 then return string.format("%ds %dc", sv, c) end
+    return string.format("%dc", c)
+end
+GuildBank.Coins = coins
+
+-- The ledger moved (a read, a peer's lines, the rate): my own client says, gently and once for each new figure,
+-- what I owe. Nothing while I owe nothing.
+function GuildBank:LedgerChanged()
+    GuildOS:Coalesce("gbank.tax", 2, function() GuildOS:SafeCall(GuildBank.NoteMyTax, GuildBank) end)
+    -- And the donations' EP, on the one officer's client that grants it (Modules/Points.lua, Snuchyboochy).
+    local P = GuildOS.Points
+    if P and P.ApplyBankDonations then
+        GuildOS:Coalesce("gbank.ep", 5, function() GuildOS:SafeCall(P.ApplyBankDonations, P) end)
+    end
+end
+
+function GuildBank:NoteMyTax()
+    local s = state()
+    local owed = self:MyTaxOwed()
+    if owed <= 0 then s.taxNoted = nil return nil end
+    if s.taxNoted and owed <= s.taxNoted then return nil end
+    s.taxNoted = owed
+    local text = string.format(L["You owe the guild %s (bank tax %d%%). A gold deposit to the guild bank pays it."],
+        coins(owed), self:TaxRate())
+    GuildOS:Print(text)
+    return text
 end
 
 ----------------------------------------------------------------------

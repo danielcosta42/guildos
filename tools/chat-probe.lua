@@ -301,7 +301,7 @@ check(#GuildOSDB.probeChat.blocked == 31 and blockLines == 5 and said("... and 2
 local f = assert(io.open(ADDON .. "/Core/Commands.lua", "rb"))
 local src = f:read("*a")
 f:close()
-check(src:find('msg == "probe chat"', 1, true) and src:find("Probe:RunChat()", 1, true),
-  "/guildos probe chat runs it")
+check(src:find('msg == "debug probe chat"', 1, true) and src:find("Probe:RunChat()", 1, true),
+  "/guildos debug probe chat runs it (and probe chat, its alias)")
 
 print(("chat-probe: %d checks passed"):format(checks))

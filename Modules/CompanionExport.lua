@@ -15,6 +15,7 @@
 --
 -- Business logic only — UI calls Build() and shows the result.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Companion = {}
 GuildOS.Companion = Companion
 local L = GuildOS.L
@@ -68,7 +69,12 @@ local FMT = "GOSCOMP1"
 -- gear slot's `suffix`, the item's random suffix id from its link ("of the Eagle"), absent on an
 -- item without one; and each member's `talents` on WoW: Forever, [[definitionID, rank], ...] from
 -- the game's trait tree, only the talents with a rank, sorted by id (see talentsFor() below). Both
--- absent when unknown: a reader from before never looks at them.
+-- absent when unknown: a reader from before never looks at them. Also within 17, each member's
+-- `addonOnAccount`: true when a character of their alt group runs GuildOS, false when none does as far as this
+-- client knows (a reader from before treats false as saying nothing; guildos-web PR #690 clears it). Also within 17,
+-- `gameCalendar` on WoW: Forever: the guild's events in the game's own calendar as the exporting player sees them,
+-- and who answered each (specs/game-calendar-export/spec.md; Modules/CalendarSnapshot.lua). Absent until the game's
+-- calendar was read on this client; a reader from before never looks at it.
 local PAYLOAD_VERSION = 17
 
 ----------------------------------------------------------------------
@@ -177,11 +183,12 @@ end
 -- somebody else's script has loaded is not readable. Item names repeat across a guild,
 -- so deflate charges very little for them.
 local function gearFor(data)
-    if not data or not data.gear then return nil end
+    local gear = GuildOS:MemberGear(data)
+    if not gear then return nil end
 
     local out = {}
     for _, slotInfo in ipairs(GuildOS.SlotIDs) do
-        local item = data.gear[slotInfo.id]
+        local item = gear[slotInfo.id]
         if item and item.id then
             local entry = {
                 slot = slotInfo.id,
@@ -249,6 +256,9 @@ local function attunementsFor(key)
     end
     return out
 end
+-- Every attunement the tracker holds for a member, as it goes up: TBC's on Anniversary, Onyxia's on WoW: Forever
+-- (`short = "Ony"`, Ricki): the same field and shape, so a reader from before takes it as it is.
+Companion.AttunementsFor = attunementsFor
 
 -- v7, WoW: Forever only: every profession line of a member by skill-line ID. For one whose
 -- own addon reported it, the rank, max, specialization and every recipe they know (catalog
@@ -282,11 +292,31 @@ end
 -- v14: the main an officer linked this character to, as `db.altLinks` holds it ([altKey] = mainKey,
 -- officer-maintained and synced, keyed the way `key` is). Nil -- the key absent -- for a main, for
 -- anybody nobody linked, and for a link to itself or anything that is not a key, which links nobody.
+-- The officers' word (#449): AltSync's view without a member's own claims still waiting (AltAutoDetect:Overlay), so
+-- the site sees the links every officer's client has, whoever exports. Taken once per payload (BuildPayload).
+local exportLinks
+local function officersLinks()
+    if GuildOS.AltSync and GuildOS.AltSync.BaseView then return GuildOS.AltSync:BaseView() end
+    return GuildOS.db.altLinks
+end
+
 local function mainOf(key)
-    local links = GuildOS.db.altLinks
+    local links = exportLinks or GuildOS.db.altLinks
     local main = type(links) == "table" and links[key] or nil
     if type(main) ~= "string" or main == "" or main == key then return nil end
     return main
+end
+
+-- The groups with a character running GuildOS, by the export's links (AltRoster:AddonCarriers), read once per
+-- payload; nil outside one.
+local exportCarriers
+local function accountCarrier(key)
+    local AR = GuildOS.AltRoster
+    if not AR then return nil end
+    local links = exportLinks or GuildOS.db.altLinks
+    if type(links) ~= "table" then links = {} end
+    if not exportCarriers then return AR:AddonCarrier(key, nil, links, GuildOS.db.members or {}) end
+    return AR:AddonCarrier(key, exportCarriers, links, GuildOS.db.members or {})
 end
 
 local function professionsFor(data)
@@ -313,32 +343,27 @@ end
 -- person's count against the session's is the fraction of the night they were
 -- there, which is partial attendance without the whole timeline.
 ----------------------------------------------------------------------
+-- The snapshots themselves go once a night has ended (audit R5): RaidTracker:RollUp reads them while a
+-- session has them, else the roll-up kept in their place, and either says the same.
+local function sessionRollUp(session)
+    local RT = GuildOS.RaidTracker
+    return RT and RT.RollUp and RT:RollUp(session) or { n = 0, people = {} }
+end
+
 local function rollUpPlayers(session, startTime)
     local seen = {}
-    for _, snap in ipairs(session.snapshots or {}) do
-        local at = tonumber(snap.time) or 0
-        for key, m in pairs(snap.members or {}) do
-            local p = seen[key]
-            if not p then
-                p = { key = key, snapshots = 0, first = at, last = at,
-                      offline = false, consumes = false }
-                seen[key] = p
-            end
-            p.snapshots = p.snapshots + 1
-            if at < p.first then p.first = at end
-            if at > p.last then p.last = at end
-            -- Both flags are "at least once". Someone who dropped for one
-            -- snapshot dropped; someone who had a flask for one had one.
-            if m.online == false then p.offline = true end
-            if m.hasConsumes then p.consumes = true end
-            -- The count as well as the flag, because the attendance penalty is a
-            -- ratio: `RaidTracker:UpdateAttendanceForLockout` docks the score when
-            -- consumables show up in under half the snapshots that saw the person.
-            -- "At least once" cannot answer that, so the site could never arrive at
-            -- the same number the game shows. A snapshot whose consumables retail could
-            -- not read (nil) counts as the addon counts it, for the player (issue #187).
-            if m.hasConsumes ~= false then p.chits = (p.chits or 0) + 1 end
-        end
+    for key, r in pairs(sessionRollUp(session).people or {}) do
+        -- Both flags are "at least once". Someone who dropped for one
+        -- snapshot dropped; someone who had a flask for one had one.
+        -- The count as well as the flag (`chits`), because the attendance penalty is a
+        -- ratio: `RaidTracker:NightScore` docks the score when
+        -- consumables show up in under half the snapshots that saw the person.
+        -- "At least once" cannot answer that, so the site could never arrive at
+        -- the same number the game shows. A snapshot whose consumables retail could
+        -- not read (nil) counts as the addon counts it, for the player (issue #187).
+        seen[key] = { key = key, snapshots = r.n or 0, first = r.first or 0, last = r.last or 0,
+                      offline = r.offline and true or false, consumes = r.consumes and true or false,
+                      chits = r.chits }
     end
 
     -- Whoever the session knows was there but no snapshot ever caught.
@@ -453,7 +478,7 @@ local function raidSessions()
                 startTime = math.floor(startTime),
                 endTime = s.endTime and math.floor(s.endTime) or nil,
                 -- The denominator every player's count is read against.
-                snapshots = #(s.snapshots or {}),
+                snapshots = sessionRollUp(s).n or 0,
                 encounters = encounters,
                 players = rollUpPlayers(s, startTime),
             }
@@ -563,7 +588,7 @@ local function memberLine(key, short, classFile, level, rankName, rankIndex)
         professions = professions,
         attunements = attunementsFor(key),
         att25 = tonumber(att) or 0,
-        enchants = enchantSummary(data.gear),
+        enchants = enchantSummary(GuildOS:MemberGear(data)),
         -- v5. Absent for anybody whose client has never published, which is
         -- most of a guild's roster and is the honest answer for them.
         gear = gearFor(data),
@@ -580,6 +605,11 @@ local function memberLine(key, short, classFile, level, rankName, rankIndex)
         joinedAt = GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") and GuildOS.Founding:JoinedAtOf(key) or nil,
         -- v14 (issue #251): whose alt this is, the main's key; absent for everybody else.
         main = mainOf(key),
+        -- Within 17: true when a character of this member's alt group runs GuildOS, this one or another
+        -- (`lastUpdate` above stays this character's own): the site counts the account as having the addon.
+        -- False when no character of the group runs it as far as this client knows, so the site can clear a member
+        -- who uninstalled it everywhere (guildos-web #690; a reader from before treats false as saying nothing).
+        addonOnAccount = accountCarrier(key) and true or false,
     }
 end
 
@@ -1009,6 +1039,9 @@ function Companion:BuildPayload()
     local retail = GuildOS.Client.isRetail
 
     local members, count = {}, 0
+    exportLinks = officersLinks()
+    exportCarriers = GuildOS.AltRoster and GuildOS.AltRoster:AddonCarriers(
+        type(exportLinks) == "table" and exportLinks or {}, GuildOS.db.members or {}) or nil
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
         local fullName, rankName, rankIndex, level, _, _, _, _, _, _, classFile =
@@ -1021,6 +1054,7 @@ function Companion:BuildPayload()
             members[count] = memberLine(key, short, classFile, level, rankName, rankIndex)
         end
     end
+    exportLinks, exportCarriers = nil, nil
 
     local loot, whys = {}, 0
     if GuildOS.LootTracker then
@@ -1097,6 +1131,10 @@ function Companion:BuildPayload()
     -- shared any. Never in the pack.
     payload.banShares = GuildOS.BanList and GuildOS.BanList.ForExport
         and optional("banShares", GuildOS.BanList.ForExport, GuildOS.BanList) or nil
+    -- Within 17 (specs/game-calendar-export): the game's calendar's guild events and their answers, WoW: Forever
+    -- only, from what CalendarSnapshot read while the game could be asked. Never in the pack.
+    payload.gameCalendar = GuildOS.CalendarSnapshot
+        and optional("gameCalendar", GuildOS.CalendarSnapshot.ForExport, GuildOS.CalendarSnapshot) or nil
     return payload
 end
 

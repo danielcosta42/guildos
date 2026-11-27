@@ -2,6 +2,7 @@
 -- Guild OS - Utilities
 -- Pure helper functions. No business logic, no persistent state writes.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local L = GuildOS.L
 
 ----------------------------------------------------------------------
@@ -331,6 +332,42 @@ function GuildOS:KeyOfRosterName(full)
     return self:GetPlayerKey(full:match("^([^-]+)") or full, full:match("^[^-]+%-(.+)$"))
 end
 
+-- Whether names here carry a surname (WoW: Forever), as WhisperTarget asks it.
+local function hasSurnames()
+    local c = GuildOS.Client
+    return (c and c.has and c.has.surnames) and true or false
+end
+
+-- A chat or addon-message sender as the guild roster spells it (audit M1, N1, N2). WoW: Forever's names carry a
+-- surname: the roster says "Chehul Costa", chat and addon senders "Chehul-Costa", and a whisper may come back as
+-- "Chehul Costa-Realm". There the hyphen is the surname's space and the realm goes (Forever has no realms that set
+-- players apart): a cut at the first hyphen read every "First-Surname" as the first name alone. A hyphen after a
+-- name with a space, or before this client's own realm, is a realm's. Elsewhere the sender is returned as given.
+function GuildOS:SenderName(sender)
+    if type(sender) ~= "string" or not hasSurnames() then return sender end
+    if sender:find(" ", 1, true) then return sender:match("^([^-]+)") or sender end
+    local first, rest = sender:match("^([^-]+)%-(.+)$")
+    if not first then return sender end
+    local surname = rest:match("^([^-]+)") or rest
+    local realm = self:GetClientRealm()
+    if realm and surname:gsub("%s", ""):lower() == realm:gsub("%s", ""):lower() then return first end
+    return first .. " " .. surname
+end
+
+-- A name without its realm, the short form a ban, a roster event and the officer check compare: the roster's
+-- whole "First Surname" on WoW: Forever (SenderName), what comes before the first hyphen elsewhere.
+function GuildOS:ShortName(name)
+    if type(name) ~= "string" then return name end
+    if hasSurnames() then return self:SenderName(name) end
+    return name:match("^([^-]+)") or name
+end
+
+-- The member key of a chat or addon-message sender: the key the roster line of that member has.
+function GuildOS:SenderKey(sender)
+    if type(sender) ~= "string" or sender == "" then return nil end
+    return self:KeyOfRosterName(self:SenderName(sender))
+end
+
 -- A number off the network, or nil. tonumber takes "nan" and "inf" as text and reads "1e999" as inf. NaN answers
 -- false to every comparison, so it passes any check written as a refusal, and inf passes any "> 0"; and neither may
 -- ever reach a saved table, where a NaN is an unknown risk to the whole GuildOSDB file.
@@ -547,6 +584,12 @@ function GuildOS:LocalizeStoredMemberTables()
                     for _, snap in ipairs(type(session.snapshots) == "table" and session.snapshots or {}) do
                         if type(snap) == "table" then snap.members = self:LocalizeMemberTable(snap.members) end
                     end
+                    -- And what is kept of them once the night ended (RaidTracker:CompactSession, audit R5).
+                    local roll = session.roll
+                    if type(roll) == "table" then
+                        roll.first, roll.last = self:LocalizeMemberTable(roll.first), self:LocalizeMemberTable(roll.last)
+                        roll.people = self:LocalizeMemberTable(roll.people)
+                    end
                 end
             end
         end,
@@ -732,7 +775,7 @@ function GuildOS:GetMemberRecord(name, realm)
         isOnline     = isOnline,
         status       = status or "",
         avgIlvl      = data.avgIlvl or 0,
-        gear         = data.gear,
+        gear         = self:MemberGear(data),   -- decoded on read (memoria.md)
         -- WoW: Forever: the guild roster's professions for a member whose client sent none (issue #31).
         professions  = data.professions or (self.Professions and self.Professions:LegacyList(key)),
         attunements  = data.attunements,
@@ -825,6 +868,46 @@ function GuildOS:SanitizeUserText(text, maxBytes)
         s = utf8Backoff(s:sub(1, maxBytes))
     end
     return s
+end
+
+-- A line the player typed for the guild's chat (#449 review): SanitizeUserText's cleaning, but an item link pasted
+-- whole (|cffxxxxxx|Hitem:…|h[Name]|h|r) goes through as the game made it, so /g shows it as a link. Any other
+-- "|" goes. Cut to `maxBytes` on a whole character; a link that does not fit whole is left as its [Name].
+local ITEM_LINK = "|c(%x%x%x%x%x%x%x%x)|H(item:[%-%d:]+)|h%[([^|%[%]]+)%]|h|r"
+function GuildOS:SanitizeChatLine(text, maxBytes)
+    local raw = tostring(text or "")
+    local segs, pos = {}, 1
+    while true do
+        local a, b, color, href, name = raw:find(ITEM_LINK, pos)
+        if not a then break end
+        if a > pos then segs[#segs + 1] = { text = raw:sub(pos, a - 1) } end
+        segs[#segs + 1] = { link = "|c" .. color .. "|H" .. href .. "|h[" .. name .. "]|h|r", name = "[" .. name .. "]" }
+        pos = b + 1
+    end
+    if pos <= #raw then segs[#segs + 1] = { text = raw:sub(pos) } end
+    -- The plain parts as SanitizeUserText cleans them; spaces gathered and trimmed over the whole line.
+    for i, sg in ipairs(segs) do
+        if sg.text then
+            local t = sg.text:gsub("|", ""):gsub("%c", " "):gsub("%s+", " ")
+            if i == 1 then t = t:gsub("^%s+", "") end
+            if i == #segs then t = t:gsub("%s+$", "") end
+            sg.text = t
+        end
+    end
+    local out, used = {}, 0
+    for _, sg in ipairs(segs) do
+        local piece = sg.text or sg.link
+        if maxBytes and used + #piece > maxBytes then
+            local room = maxBytes - used
+            if sg.link then piece = (#sg.name <= room) and sg.name or utf8Backoff(sg.name:sub(1, room))
+            else piece = utf8Backoff(piece:sub(1, room)) end
+            out[#out + 1] = piece
+            break
+        end
+        out[#out + 1] = piece
+        used = used + #piece
+    end
+    return strtrim(table.concat(out))
 end
 
 ----------------------------------------------------------------------
@@ -1017,12 +1100,30 @@ function GuildOS:TimeAgo(timestamp)
 end
 
 ----------------------------------------------------------------------
+-- Guild OS's own chat links (Compat.AddonLink): GuildOS:ChatLink(action, text) is the link to put in a line
+-- (nil on a client without them), GuildOS:OnChatLink(action, fn) what a click on it does.
+----------------------------------------------------------------------
+local chatLinks = {}
+function GuildOS:OnChatLink(action, fn)
+    chatLinks[action] = fn
+    GuildOS.Compat.HookAddonLinks(function(a, button)
+        local run = chatLinks[a]
+        if run then GuildOS:SafeCall(run, button) end
+    end)
+end
+
+function GuildOS:ChatLink(action, text)
+    if not chatLinks[action] then return nil end
+    return GuildOS.Compat.AddonLink(action, text)
+end
+
+----------------------------------------------------------------------
 -- Chat Player Link: Guild Invite
 -- Alt+Click a player name in chat to send a guild invite
 ----------------------------------------------------------------------
 function GuildOS:HookChatInvite()
     hooksecurefunc("SetItemRef", function(link, _, button)
-        if not GuildOS.Compat.AddonMayInvite() then return end   -- Anniversary only (#256)
+        if not GuildOS.Compat.AddonMayInvite() then return end   -- Anniversary and retail; never Forever (#256, #449)
         if button ~= "LeftButton" or not IsAltKeyDown() then return end
         if not link then return end
 
@@ -1071,7 +1172,8 @@ function GuildOS:CheckProfessionFreshness()
     local stale = self:GetStaleProfessions()
     if #stale == 0 then return end
 
-    self:ShowProfessionReminder(stale)
+    -- Never in combat, one popup at a time (audit B21).
+    self:ShowWhenClear("profreminder", function() return self:ShowProfessionReminder(stale) end)
     self:Print(string.format(L["|cffFFAA00You have %d profession(s) with outdated recipe data.|r Open them to sync!"], #stale))
 end
 
@@ -1178,6 +1280,7 @@ function GuildOS:ShowProfessionReminder(staleProfessions)
     for _, name in ipairs(staleProfessions) do
         self.profReminderStale[name] = true
     end
+    return frame
 end
 
 function GuildOS:CheckAndDismissProfessionReminder()
@@ -1307,15 +1410,17 @@ end
 -- GetNumGuildMembers counts the whole guild either way, and with it off retail 12.1.5 still
 -- answered all 943 rows of a guild with 10 online; a client that hid them would leave rows empty.
 ----------------------------------------------------------------------
-function GuildOS:WholeRoster()
+-- `into`, optional: a list to fill instead of a new one (a pass that keeps nothing of it, DropDeparted).
+function GuildOS:WholeRoster(into)
     local n = GetNumGuildMembers() or 0
     if n == 0 then return nil end
-    local names = {}
+    local names = into or {}
     for i = 1, n do
         local full = GetGuildRosterInfo(i)
         if not full then return nil end
         names[i] = full
     end
+    for i = #names, n + 1, -1 do names[i] = nil end
     return names
 end
 
@@ -1328,16 +1433,21 @@ end
 -- only: a guild changed mid-session would be read against the wrong roster). The player's own
 -- records always stay: were the own key ever to differ from the roster's (a surname the client
 -- did not give), dropping them would wipe what this client publishes.
--- ponytail: a full pass on every GUILD_ROSTER_UPDATE, like RecordFirstSeen's; throttle it if a big
--- guild ever shows it in a profile.
+-- A full pass, at most once a minute (GuildOS.DEPARTED_GAP, audit D2).
 ----------------------------------------------------------------------
+-- The pass's tables are the last pass's, emptied (memory audit: three tables of the whole guild a minute).
+-- Founding and Birthdays read `present` during the call and keep nothing of it.
+local wipe = wipe or function(t) for k in pairs(t) do t[k] = nil end return t end   -- the game's; a stub may lack it
+local departedScratch = { roster = {}, present = {}, names = {} }
 function GuildOS:DropDeparted()
-    local roster = self.db and self:IsOnGuildDB() and self:WholeRoster()
+    local roster = self.db and self:IsOnGuildDB() and self:WholeRoster(departedScratch.roster)
     if not roster then return end
     local me = self:GetPlayerKey(self.Compat.PlayerName())
-    local present = { [me] = true }
+    local present = wipe(departedScratch.present)
+    present[me] = true
     -- guildWishlists is keyed by the name lowercased, with its realm on retail only.
-    local names = { [me:lower()] = true, [(self.Compat.PlayerName() or ""):lower()] = true }
+    local names = wipe(departedScratch.names)
+    names[me:lower()], names[(self.Compat.PlayerName() or ""):lower()] = true, true
     for _, full in ipairs(roster) do
         local key = self:KeyOfRosterName(full)
         present[key] = true
@@ -1352,11 +1462,12 @@ function GuildOS:DropDeparted()
     if self.Founding then self.Founding:Departed(present) end
     -- A birthday is personal data: it goes with its member (issue #428).
     if self.Birthdays then self.Birthdays:Departed(present) end
-    for _, store in ipairs({ "firstSeen", "recipes" }) do
+    for _, store in ipairs({ "firstSeen", "recipes", "recipeIds" }) do
         for key in pairs(self.db[store] or {}) do
             if not present[key] then self.db[store][key] = nil end
         end
     end
+    if self.RecipeTracker and self.RecipeTracker.Changed then self.RecipeTracker:Changed() end
     for key in pairs(self.db.professions or {}) do
         if not present[key] then
             self.db.professions[key] = nil
@@ -1366,4 +1477,426 @@ function GuildOS:DropDeparted()
     for key in pairs(self.db.guildWishlists or {}) do
         if not names[key] then self.db.guildWishlists[key] = nil end
     end
+end
+
+----------------------------------------------------------------------
+-- One popup at a time, never in combat (audit B21, and the maintainer's "nothing drawn over the screen opens
+-- in combat"). Every window an event or the login opens goes through GuildOS:ShowWhenClear: it shows now when
+-- the player is out of combat and nothing else from the queue is on screen, else it waits. In combat the queue
+-- waits for PLAYER_REGEN_ENABLED. The next one shows when the previous closes (fn returned its frame), or after
+-- POPUP_GAP seconds when fn returned none, and at most POPUP_HOLD seconds after it opened, so a window left open
+-- never holds the rest for good. Login popups carry an `order` and go in it (the raid prompt, which cannot wait,
+-- then onboarding, the founding letter, the digest); the others queue behind them in the order they came.
+-- Session only, nothing stored.
+----------------------------------------------------------------------
+local POPUP_GAP = 2        -- seconds between two popups when the first gave no frame to watch
+local POPUP_HOLD = 30      -- seconds a popup left open holds the queue at most
+local POPUP_LATE = 100     -- the order of a popup that is not a login one
+GuildOS.POPUP_ORDER = { raidprompt = 1, onboarding = 2, founding = 3, digest = 4 }
+
+local popupQueue = { items = {}, seq = 0 }
+GuildOS._popupQueue = popupQueue
+
+-- Whether the player is in combat: no window opens over the raid frames then.
+function GuildOS:InCombat()
+    if InCombatLockdown and InCombatLockdown() then return true end
+    local unitInCombat = _G.UnitAffectingCombat
+    if unitInCombat and unitInCombat("player") then return true end
+    return false
+end
+
+local function popupRelease(token)
+    if popupQueue.current ~= token then return end
+    popupQueue.current, popupQueue.currentKey = nil, nil
+    GuildOS:_PumpPopups()
+end
+
+local function popupWaitCombat()
+    if popupQueue.combatFrame then return end
+    local f = CreateFrame("Frame")
+    popupQueue.combatFrame = f
+    f:RegisterEvent("PLAYER_REGEN_ENABLED")
+    f:SetScript("OnEvent", function() GuildOS:SafeCall(GuildOS._PumpPopups, GuildOS) end)
+end
+
+-- Shows the next queued popup when nothing else is up and the player is out of combat.
+function GuildOS:_PumpPopups()
+    if popupQueue.current or #popupQueue.items == 0 then return end
+    if self:InCombat() then return popupWaitCombat() end
+    local item = table.remove(popupQueue.items, 1)
+    local token = {}
+    popupQueue.current, popupQueue.currentKey = token, item.key
+    local ok, frame = pcall(item.fn)
+    if not ok then
+        if self.Logger and self.Logger.Debug then self.Logger.Debug("popup " .. tostring(item.key) .. ": " .. tostring(frame)) end
+        frame = nil
+    end
+    local watched = type(frame) == "table" and frame.IsShown and frame.HookScript and frame:IsShown()
+    if watched then
+        frame._gosPopupToken = token
+        if not frame._gosPopupHooked then
+            frame._gosPopupHooked = true
+            frame:HookScript("OnHide", function(f) popupRelease(f._gosPopupToken) end)
+        end
+        self.Compat.After(POPUP_HOLD, function() popupRelease(token) end)
+    else
+        self.Compat.After(POPUP_GAP, function() popupRelease(token) end)
+    end
+end
+
+-- Queues `fn` (it opens a window and may return it) under `key`: a key already waiting is replaced, so one
+-- event that fires twice shows once. `order`: a login popup's place (POPUP_ORDER), the rest after them.
+function GuildOS:ShowWhenClear(key, fn, order)
+    if type(fn) ~= "function" then return end
+    -- The window on screen now is this key's: it is redrawn in place (a newer call to arms, a grown alert).
+    if popupQueue.current and popupQueue.currentKey == key and not self:InCombat() then
+        local ok, err = pcall(fn)
+        if not ok and self.Logger and self.Logger.Debug then self.Logger.Debug("popup " .. tostring(key) .. ": " .. tostring(err)) end
+        return
+    end
+    order = tonumber(order) or self.POPUP_ORDER[key] or POPUP_LATE
+    for i, item in ipairs(popupQueue.items) do
+        if item.key == key then table.remove(popupQueue.items, i); break end
+    end
+    popupQueue.seq = popupQueue.seq + 1
+    local item = { key = key, fn = fn, order = order, seq = popupQueue.seq }
+    local at = #popupQueue.items + 1
+    for i, other in ipairs(popupQueue.items) do
+        if order < other.order then at = i; break end
+    end
+    table.insert(popupQueue.items, at, item)
+    self:_PumpPopups()
+end
+
+-- Drops a queued popup that no longer applies (its moment passed). Whether one was waiting.
+function GuildOS:CancelWhenClear(key)
+    for i, item in ipairs(popupQueue.items) do
+        if item.key == key then table.remove(popupQueue.items, i); return true end
+    end
+    return false
+end
+
+-- Where officers' notes, sheets and marks are edited (audit B11): on a client with no OFFICER addon channel (WoW:
+-- Forever, or a rank that may not speak there) what is written is not shared. The line that says so, or nil.
+function GuildOS:LocalOnlyText()
+    if self.Compat.OfficerAddonChannel and self.Compat.OfficerAddonChannel() then return nil end
+    return self.L["Kept on this client only: this game has no officer channel to share it with the other officers."]
+end
+
+----------------------------------------------------------------------
+-- Gear, compact (specs/salao/memoria.md). A member row keeps its equipment as one string per slot,
+--   row.gc[slotId] = "id:enchant:gem1.gem2.gem3.gem4:suffix:ilvl:quality\tname[\tlink]"
+-- (the link only on rows this account's own client collected), instead of a table per item with a
+-- gems table inside. The same item, enchant and gems is one string for the whole guild (Lua interns
+-- them). Readers never see the string: GuildOS:MemberGear(row) gives the slots in the old shape
+-- ({ link, id, name, quality, ilvl, enchantId, gems = { { id } }, suffix }), decoded on first read of a
+-- slot and not kept. A row an older version wrote (row.gear, a table per item) is read as it is and
+-- converted on the next write or load (Gear.Normalize); the wire keeps the old shape.
+----------------------------------------------------------------------
+local Gear = {}
+GuildOS.Gear = Gear
+Gear.SCHEMA = 1   -- db.schema.gear: 1 = row.gc
+
+local function gnum(v)
+    v = tonumber(v)
+    if v and v ~= 0 then return tostring(v) end
+    return ""
+end
+local function gtext(v)
+    if type(v) ~= "string" then return "" end
+    return (v:gsub("[\t]", " "))
+end
+
+-- One item (the old shape) as its string; a string is already one. nil for anything else.
+function Gear.Pack(item)
+    if type(item) == "string" then return item end
+    if type(item) ~= "table" then return nil end
+    local gems = {}
+    for _, g in ipairs(type(item.gems) == "table" and item.gems or {}) do
+        local id = tonumber(type(g) == "table" and g.id or g)
+        if id and id > 0 and id == math.floor(id) then gems[#gems + 1] = tostring(id) end
+    end
+    local s = table.concat({ gnum(item.id), gnum(item.enchantId), table.concat(gems, "."), gnum(item.suffix),
+        gnum(item.ilvl), gnum(item.quality) }, ":") .. "\t" .. gtext(item.name)
+    if type(item.link) == "string" and item.link ~= "" then s = s .. "\t" .. gtext(item.link) end
+    return s
+end
+
+-- The item a string holds, in the old shape (a fresh table: the caller may keep it); nil when malformed.
+-- `quality` and `ilvl` read 0 when absent, and `name` "", as DataCollector always wrote them; `enchantId`
+-- and `suffix` nil without one, `gems` an empty list without any.
+function Gear.Unpack(s)
+    if type(s) ~= "string" then return nil end
+    local id, ench, gems, suffix, ilvl, q, rest = s:match("^([^:]*):([^:]*):([^:]*):([^:]*):([^:]*):([^\t]*)\t?(.*)$")
+    if not id then return nil end
+    local name, link = rest:match("^([^\t]*)\t(.*)$")
+    name = name or rest
+    local item = { id = tonumber(id), enchantId = tonumber(ench), suffix = tonumber(suffix),
+                   ilvl = tonumber(ilvl) or 0, quality = tonumber(q) or 0, name = name, gems = {} }
+    if link and link ~= "" then item.link = link end
+    for g in gems:gmatch("%d+") do item.gems[#item.gems + 1] = { id = tonumber(g) } end
+    return item
+end
+
+-- A whole gear table (slot -> item, the old shape) as slot -> string.
+function Gear.PackSet(gear)
+    if type(gear) ~= "table" then return nil end
+    local out = {}
+    for slot, item in pairs(gear) do
+        local s = (type(slot) == "number") and Gear.Pack(item) or nil
+        if s then out[slot] = s end
+    end
+    return out
+end
+
+-- A row's slots, decoded on read. Indexing works as on the old table (view[slotId]); pairs() does not: walk
+-- GuildOS.SlotIDs, or Gear.Slots for the slot numbers held.
+local viewMeta = {
+    __index = function(view, slot)
+        local s = rawget(view, "__gc")[slot]
+        if s == nil then return nil end
+        local item = Gear.Unpack(s)
+        rawset(view, slot, item)
+        return item
+    end,
+}
+local viewOf = setmetatable({}, { __mode = "kv" })   -- [row.gc] = its view, while somebody holds the view
+
+-- The slot numbers a gear table (a view or the old shape) holds, sorted.
+function Gear.Slots(gear)
+    local src = type(gear) == "table" and (rawget(gear, "__gc") or gear) or {}
+    local out = {}
+    for slot in pairs(src) do
+        if type(slot) == "number" then out[#out + 1] = slot end
+    end
+    table.sort(out)
+    return out
+end
+
+-- A row's equipment in the old shape, or nil when the row has none. A row an older version wrote keeps its
+-- table, which is read as it is.
+function GuildOS:MemberGear(row)
+    if type(row) ~= "table" then return nil end
+    if type(row.gear) == "table" then return row.gear end
+    local gc = row.gc
+    if type(gc) ~= "table" then return nil end
+    local view = viewOf[gc]
+    if not view then
+        view = setmetatable({ __gc = gc }, viewMeta)
+        viewOf[gc] = view
+    end
+    return view
+end
+
+-- The row's old-shape gear, if any, moved into row.gc. True when the row changed.
+function Gear.Normalize(row)
+    if type(row) ~= "table" or type(row.gear) ~= "table" then return false end
+    row.gc = Gear.PackSet(row.gear)
+    row.gear = nil
+    return true
+end
+
+-- Every row of `members` in the compact shape (db.schema.gear). Idempotent: a row already compact is left
+-- alone, so it runs at every load and also takes what an older version wrote since. How many rows changed.
+function Gear.MigrateDB(db)
+    if type(db) ~= "table" then return 0 end
+    db.schema = type(db.schema) == "table" and db.schema or {}
+    local n = 0
+    for _, row in pairs(type(db.members) == "table" and db.members or {}) do
+        if Gear.Normalize(row) then n = n + 1 end
+    end
+    db.schema.gear = Gear.SCHEMA
+    return n
+end
+
+----------------------------------------------------------------------
+-- The account's other guild databases (memoria.md): GuildOSDB keeps one per guild key a character of the
+-- account ever opened, every one loaded at every login. Settings › Data and support lists them (name, size,
+-- last opened) and deletes one on request, never the one in use; the digest says once when one has not been
+-- opened in GUILD_DB_STALE_DAYS. Nothing is ever deleted on its own.
+----------------------------------------------------------------------
+GuildOS.GUILD_DB_STALE_DAYS = 90
+GuildOS.GUILD_DB_SIZE_TTL = 60   -- seconds the size of the database in use is kept before it is measured again
+
+-- A guild's database is keyed "Guild-Realm" (a character with no guild, "_noguild-Realm"); the account's own
+-- tables (accountChars, minimap...) have no dash.
+function GuildOS.IsGuildDBKey(k, v)
+    return type(k) == "string" and type(v) == "table" and k:find("-", 1, true) ~= nil
+end
+
+-- About how many bytes `t` takes in the SavedVariables file (keys, values and their punctuation), walked
+-- without recursion; a table deeper than 64 levels is not followed.
+function GuildOS.EstimateBytes(root)
+    if type(root) ~= "table" then return 0 end
+    local total, stack, depths = 0, { root }, { 0 }
+    while #stack > 0 do
+        local n = #stack
+        local t, d = stack[n], depths[n]
+        stack[n], depths[n] = nil, nil
+        total = total + 4
+        for k, v in pairs(t) do
+            total = total + ((type(k) == "string") and (#k + 7) or 10)
+            local tv = type(v)
+            if tv == "string" then total = total + #v + 4
+            elseif tv == "number" then total = total + 10
+            elseif tv == "boolean" then total = total + 6
+            elseif tv == "table" and d < 64 then
+                stack[#stack + 1], depths[#depths + 1] = v, d + 1
+            end
+        end
+    end
+    return total
+end
+
+local sizeOf = {}   -- [key] = { t = the table measured, bytes, at }: another guild's does not change this session
+local function measured(key, db, current)
+    local c = sizeOf[key]
+    local now = GetTime and GetTime() or 0
+    if not c or c.t ~= db or (current and now - c.at > GuildOS.GUILD_DB_SIZE_TTL) then
+        c = { t = db, bytes = GuildOS.EstimateBytes(db), at = now }
+        sizeOf[key] = c
+    end
+    return c.bytes
+end
+
+-- When a guild's database was last opened: db._opened, stamped at each login (ResolveGuildDB). One this
+-- version never opened gets the time it was first seen here, marked as such (`_openedEst`): opened then or
+-- before. Called once per login, over every database of the account.
+function GuildOS:StampGuildDBs(now)
+    now = now or time()
+    for k, v in pairs(GuildOSDB or {}) do
+        if GuildOS.IsGuildDBKey(k, v) and k ~= self.guildKey and tonumber(v._opened) == nil then
+            v._opened, v._openedEst = now, true
+        end
+    end
+    if self.db then self.db._opened, self.db._openedEst = now, nil end
+end
+
+-- The guild's name and realm in a database key ("Guild-Azjol-Nerub": "Guild", "Azjol-Nerub"; "Guild-": the realm
+-- empty, as WoW: Forever's client gave it for a day, #394).
+local function splitDBKey(k)
+    return k:match("^(.-)%-(.*)$")
+end
+
+-- Whether `key` must never be offered for deletion (release safety S1): the database in use; any other database of
+-- the guild this character is in, whatever realm its key carries (WoW: Forever's empty realm of 2026-11-21 made a
+-- "Guild-" one, and the 1.34.1 recovery went back to "Guild-<the realm remembered>": either may hold that guild's
+-- data); the guildless one of this realm under another spelling of it; and everything while the database in use
+-- is not settled yet (the guild's name not arrived), when nothing can tell which is whose.
+function GuildOS:IsProtectedGuildDB(key)
+    if type(key) ~= "string" then return true end
+    if not (self.guildKey and self.db) then return true end
+    if key == self.guildKey then return true end
+    local name, realm = splitDBKey(key)
+    if not name then return true end
+    local curName, curRealm = splitDBKey(self.guildKey)
+    if name ~= "_noguild" and name == curName then return true end
+    local guild = IsInGuild and IsInGuild() and GetGuildInfo and GetGuildInfo("player") or nil
+    if guild and guild == name then return true end
+    if name == curName then
+        -- The guildless one: this realm by any of the names it was saved under.
+        local aliases = { [curRealm or ""] = true, [""] = true, Unknown = true }
+        local raw = GetRealmName and GetRealmName()
+        if raw then aliases[raw] = true end
+        local remembered = self.RealmName and self:RealmName()
+        if remembered then aliases[remembered] = true end
+        if aliases[realm or ""] then return true end
+    end
+    return false
+end
+
+-- The account's guild databases: { { key, name (nil for the guildless one), realm, noGuild, opened, est,
+-- current, protected (this guild's under another key: never deleted), bytes } }, the one in use first, then the
+-- most recently opened.
+function GuildOS:GuildDatabases()
+    local out = {}
+    for k, v in pairs(GuildOSDB or {}) do
+        if GuildOS.IsGuildDBKey(k, v) then
+            local name, realm = splitDBKey(k)
+            local current = k == self.guildKey
+            out[#out + 1] = { key = k, name = (name ~= "_noguild") and name or nil, realm = realm,
+                noGuild = name == "_noguild", opened = tonumber(v._opened), est = v._openedEst and true or nil,
+                current = current, protected = (not current and self:IsProtectedGuildDB(k)) or nil,
+                bytes = measured(k, v, current) }
+        end
+    end
+    table.sort(out, function(a, b)
+        if a.current ~= b.current then return a.current end
+        if (a.opened or 0) ~= (b.opened or 0) then return (a.opened or 0) > (b.opened or 0) end
+        return a.key < b.key
+    end)
+    return out
+end
+
+-- The other databases not opened in `days` (GUILD_DB_STALE_DAYS) at `now`.
+function GuildOS:StaleGuildDBs(now, days)
+    now = now or time()
+    local limit = (days or self.GUILD_DB_STALE_DAYS) * 86400
+    local out = {}
+    for k, v in pairs(GuildOSDB or {}) do
+        if GuildOS.IsGuildDBKey(k, v) and not self:IsProtectedGuildDB(k) then
+            local at = tonumber(v._opened)
+            if at and now - at >= limit then out[#out + 1] = k end
+        end
+    end
+    table.sort(out)
+    return out
+end
+
+-- How a database is named on screen: "Guild (Realm)", or "No guild (Realm)".
+function GuildOS:GuildDBLabel(e)
+    local realm = (e.realm and e.realm ~= "") and e.realm or "?"
+    if e.noGuild then return string.format(L["No guild (%s)"], realm) end
+    return string.format("%s (%s)", e.name or "?", realm)
+end
+
+-- Deletes another guild's database from this account. Never the one in use. True when one went.
+function GuildOS:DeleteGuildDB(key)
+    if type(GuildOSDB) ~= "table" or self:IsProtectedGuildDB(key) or not GuildOS.IsGuildDBKey(key, GuildOSDB[key]) then
+        return false
+    end
+    GuildOSDB[key] = nil
+    sizeOf[key] = nil
+    if type(GuildOSDB._staleDbTold) == "table" then GuildOSDB._staleDbTold[key] = nil end
+    return true
+end
+
+-- Settings' Delete beside one of them: asked first, since it cannot be undone. `after` runs once it went.
+function GuildOS:AskDeleteGuildDB(key, after)
+    if self:IsProtectedGuildDB(key) or not GuildOS.IsGuildDBKey(key, GuildOSDB and GuildOSDB[key]) then return false end
+    GuildOS.Dialogs["GUILDOS_DELETE_GUILD_DB"] = GuildOS.Dialogs["GUILDOS_DELETE_GUILD_DB"] or {
+        text = L["Delete every Guild OS record of %s on this account? This cannot be undone."],
+        button1 = L["Delete"], button2 = L["Cancel"],
+        OnAccept = function(dialog)
+            local d = dialog and dialog.data
+            if d and GuildOS:DeleteGuildDB(d.key) then
+                GuildOS:Print(string.format(L["Deleted the Guild OS data of %s."], d.label))
+                if d.after then d.after() end
+            end
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
+    local name, realm = splitDBKey(key)
+    local label = self:GuildDBLabel({ key = key, name = name, realm = realm, noGuild = name == "_noguild" })
+    GuildOS:ShowDialog("GUILDOS_DELETE_GUILD_DB", label, nil, { key = key, label = label, after = after })
+    return true
+end
+
+-- The digest's line, once per database (GuildOSDB._staleDbTold): how many of the account's other guild
+-- databases were not opened in 90 days, and where to delete them. nil when there is none not told yet.
+function GuildOS:StaleGuildDBLine(now)
+    local told = type(GuildOSDB) == "table" and type(GuildOSDB._staleDbTold) == "table" and GuildOSDB._staleDbTold or {}
+    local stale, fresh = self:StaleGuildDBs(now), false
+    for _, k in ipairs(stale) do
+        if not told[k] then fresh = true end
+    end
+    if not fresh then return nil, stale end
+    return string.format(L["%d guild database(s) on this account not opened in %d days: Settings › Data and support"],
+        #stale, self.GUILD_DB_STALE_DAYS), stale
+end
+
+function GuildOS:MarkStaleGuildDBsTold(keys)
+    if type(GuildOSDB) ~= "table" then return end
+    GuildOSDB._staleDbTold = type(GuildOSDB._staleDbTold) == "table" and GuildOSDB._staleDbTold or {}
+    for _, k in ipairs(keys or {}) do GuildOSDB._staleDbTold[k] = true end
 end

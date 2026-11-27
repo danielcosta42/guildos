@@ -177,13 +177,19 @@ if STYLE == "forever" then
 end
 GuildOS.Style:Resolve()
 dofile(ADDON .. "/UI/StylePreview.lua")
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/UI/FeatureRegistry.lua")
 dofile(ADDON .. "/UI/Features.lua")
 dofile(ADDON .. "/UI/SettingsPanel.lua")
+-- The help hub's page (specs/salao/onboarding.md) and what it reads.
+dofile(ADDON .. "/Modules/Onboarding.lua")
+dofile(ADDON .. "/UI/Tour.lua")
+dofile(ADDON .. "/UI/Onboarding.lua")
+dofile(ADDON .. "/UI/HelpPanel.lua")
 local UI = GuildOS.UI
-check(GuildOS.Style.current == STYLE, "the " .. STYLE .. " style is the one in force")
+check(GuildOS.Style.current == "salao", "the Salão's one look on the " .. STYLE .. " client")
 
 local printed = {}
 GuildOS.Print = function(_, msg) printed[#printed + 1] = tostring(msg) end
@@ -210,16 +216,14 @@ local labels = {}
 walk(parent, function(f)
   if f.kind == "Button" and f.underline and f.label then labels[#labels + 1] = f.label.text end
 end)
-check(table.concat(labels, "|") == "Profile|Interface|Chat and alerts|Modules|Guild rules|Data and support",
-  "six sub-tabs, in order (" .. table.concat(labels, "|") .. ")")
+check(table.concat(labels, "|") == "Profile|Interface|Chat and alerts|Modules|Guild rules|Data and support|Credits|Help",
+  "eight sub-tabs, in order (" .. table.concat(labels, "|") .. ")")
 parent.SelectSub("profile")
 local profileTab
 walk(parent, function(f) if f.kind == "Button" and f.underline and f.label and f.label.text == "Profile" then profileTab = f end end)
-if STYLE == "forever" then
-  check(profileTab.__styleTab and not profileTab.underline.shown, "on Forever the sub-tabs wear the game's tab art, no gold rule")
-else
-  check(not profileTab.__styleTab and profileTab.underline.shown, "on GuildOS the open sub-tab has its gold rule")
-end
+-- One look on every client (#449): the open sub-tab is the soft gold pill, on Forever too.
+check(profileTab.isActive and profileTab.fill and profileTab.fill.shown and not profileTab.underline.shown,
+  "the open sub-tab is a soft gold pill, no rule, on every client")
 for old, page in pairs({ about = "data", officer = "rules", raid = "rules", general = "profile", loot = "profile",
                          nonsense = "profile" }) do
   parent.SelectSub(old)
@@ -228,7 +232,7 @@ end
 check(UI:GetFeature("settings") and UI:GetFeature("settings").core, "Settings itself has no switch")
 
 -- ── 2. Built once: switching and resizing create nothing ────────────────
-local PAGES = { "profile", "interface", "chat", "modules", "rules", "data" }
+local PAGES = { "profile", "interface", "chat", "modules", "rules", "data", "help", "credits" }
 for _, p in ipairs(PAGES) do parent.SelectSub(p) end   -- every page built
 local frames = #allFrames
 for _ = 1, 3 do
@@ -241,8 +245,53 @@ end
 check(#allFrames == frames, "laying the pages out at four widths builds nothing new")
 for _, p in ipairs(PAGES) do
   local info = parent.subPanels[p]
-  check(info.scroll:IsShown() == (p == "data"), p .. " is shown only while its sub-tab is open")
+  check(info.scroll:IsShown() == (p == "credits"), p .. " is shown only while its sub-tab is open")
   check(info.content.h > 0, p .. " has a height for its scroll frame")
+end
+
+-- ── 2b. Every part of a page lies inside its card (#449) ────────────────
+-- In the game the module lists were laid out by the window's width while their card had a fixed one: the right
+-- column, its descriptions and "reload" badges sat on the wood. Now a card is its column's width and lays its
+-- rows in its own: every row (and every cell of a row's grid) ends inside the card, at a 1250px and an 800px
+-- window (about 1200px and 750px of page), and two cards never overlap.
+for _, pageW in ipairs({ 1200, 750 }) do
+  for _, p in ipairs(PAGES) do
+    local form = parent.subPanels[p].form
+    form:Layout(pageW)
+    check(form.placed and #form.placed > 0, p .. " lays rows in cards at " .. pageW)
+    for _, pl in ipairs(form.placed) do
+      local ow = pl.row.w or 0
+      check(pl.x + math.min(ow, pl.w) <= pl.cardW - 14 + 0.5 and pl.w <= pl.cardW - 28 + 0.5,
+        ("%s at %d: a row ends inside its card (x %d + %d of %d)"):format(p, pageW, pl.x, ow, pl.cardW))
+      for _, c in ipairs(pl.row.children or {}) do
+        local pt = c.points and c.points[1]
+        if c.shown and pt and pt[1] == "TOPLEFT" and pt[2] == pl.row and type(pt[4]) == "number" and (c.w or 0) > 0 then
+          check(pt[4] + c.w <= pl.w + 0.5, ("%s at %d: a cell (%d + %d) ends inside its row of %d"):format(p, pageW, pt[4], c.w, pl.w))
+        end
+      end
+    end
+    -- The cards themselves: inside the page, side by side or one under the other, never over each other.
+    local boxes = {}
+    for _, c in ipairs(parent.subPanels[p].content.children) do
+      local pt = c.points and c.points[1]
+      if c.shown and c.__paper and pt and pt[2] == parent.subPanels[p].content then
+        boxes[#boxes + 1] = { x = pt[4], y = -pt[5], w = c.w, h = c.h }
+        check(pt[4] >= 0 and pt[4] + c.w <= pageW + 0.5, ("%s at %d: a card inside the page"):format(p, pageW))
+      end
+    end
+    for i = 1, #boxes do for j = i + 1, #boxes do
+      local a2, b2 = boxes[i], boxes[j]
+      local apart = a2.x + a2.w <= b2.x or b2.x + b2.w <= a2.x or a2.y + a2.h <= b2.y or b2.y + b2.h <= a2.y
+      check(apart, ("%s at %d: two cards do not overlap"):format(p, pageW))
+    end end
+    if pageW >= 900 and #boxes >= 2 and p ~= "modules" then
+      local xs = {}
+      for _, bx in ipairs(boxes) do xs[bx.x] = true end
+      local n = 0
+      for _ in pairs(xs) do n = n + 1 end
+      check(n == 2, p .. " lays its cards in two columns on a wide page")
+    end
+  end
 end
 
 -- ── 3. Module lists: one column, two from a 900px window ────────────────
@@ -278,7 +327,8 @@ check(strip:IsShown() and strip.text.text == "1 change applies after you reload 
   "switching a background module lights the strip")
 local reload = find(strip, "button", "Reload")
 check(reload and reload.variant == "primary", "with one Reload button, the primary one")
-check((STYLE == "forever") == (reload.__forever == true), "wearing the game's red button on Forever only")
+check(reload.__arts and reload.__arts.button and reload.__arts.button.shown,
+  "the crimson button of the Salão's art on every client, no game atlas")
 comm.checkbox.checked = not comm.checkbox.checked
 comm.checkbox.onChanged(comm.checkbox, comm.checkbox.checked)
 check(not strip:IsShown(), "switching it back puts the strip out")
@@ -288,20 +338,18 @@ check(not strip:IsShown() and not GuildOS:IsFeatureEnabled("groups"), "a tab swi
 groups.checkbox.onChanged(groups.checkbox, true)
 parent.SelectSub("interface")
 local interface = parent.subPanels.interface.content
-local font = find(interface, "check", "Use the game's font")
-if STYLE == "forever" then
-  -- The Forever style always draws in the game's font: the box says so and cannot be changed.
-  check(font.checkbox.checked and not font.checkbox:IsEnabled() and shows(interface, "This client always uses the game's font."),
-    "on Forever the game's font is ticked, locked, and says why")
-  check(find(interface, "button", "In use") and find(interface, "button", "Apply"),
-    "and the style picker offers the other style")
-else
-  font.checkbox.onChanged(font.checkbox, true)
-  check(GuildOSDB.font == "game" and strip:IsShown(), "the game's font waits for a reload")
-  font.checkbox.onChanged(font.checkbox, false)
-  check(GuildOSDB.font == nil and not strip:IsShown(), "and is no change once switched back")
-  check(not find(interface, "button", "Apply"), "with one style there is no style picker")
-end
+-- One look since the Salão (#445): no style picker. The game's font is a choice again (Discord 1556991354478010459):
+-- saved at the account root as GuildOSDB.gameFont, applied after a reload (the strip lights), undone by unticking.
+check(not find(interface, "button", "Apply"), "no style picker, on any client")
+local gameFont = find(interface, "check", "Use the game's font")
+check(gameFont and not gameFont.checkbox.checked and shows(interface, "Applies after you reload the interface"),
+  "Interface has \"Use the game's font\", off by default, saying it needs a reload")
+GuildOSDB = GuildOSDB or {}
+gameFont.checkbox.onChanged(gameFont.checkbox, true)
+check(GuildOSDB.gameFont == true and strip:IsShown(), "ticked: saved for the account and the reload strip lit")
+check(GuildOS:FontFace(GuildOS.Fonts.ui) == GuildOS.Fonts.ui, "the font in use changes only after the reload")
+gameFont.checkbox.onChanged(gameFont.checkbox, false)
+check(GuildOSDB.gameFont == nil and not strip:IsShown(), "unticked: nothing saved, nothing waits for a reload")
 
 -- ── 5. A sub-option greys out with its parent ───────────────────────────
 parent.SelectSub("chat")
@@ -363,7 +411,7 @@ for _, p in ipairs(PAGES) do
   GuildOS:RefreshSettingsPanel(content, p)
 end
 for _, label in ipairs({ "Show minimap button", "Guild button opens Guild OS", "Guild info on item tooltips",
-  "Only while holding Shift", "Use the game's font", "Show login digest",
+  "Only while holding Shift", "Show login digest",
   "Annotate guild chat (class icon, level, alt tag)", "Class icon", "Level", "Alt tag",
   "Short tag: [M] on a main, [Main] on an alt", "Alert me when my name or a watch-word comes up in chat",
   "My own name", "Guild chat", "Officer chat", "When somebody calls the officers in guild chat (officers only)",
@@ -371,12 +419,40 @@ for _, label in ipairs({ "Show minimap button", "Guild button opens Guild OS", "
   "Apply !note requests from guild chat on this client" }) do
   check(find(everything, "check", label), "Settings still has \"" .. label .. "\"")
 end
-for _, label in ipairs({ "Show welcome again", "Show the digest now", "Recent mentions", "Clear watch-words",
+for _, label in ipairs({ "Show tips again", "Show the digest now", "Recent mentions", "Clear watch-words",
   "Backup", "Restore", "Export Data", "Collect my data", "View Errors", "Self-test", "Probe the client", "Probe chat",
   "Style preview", "Links", "Erase guild data", "Test Raid Status", "Test Attendance Export" }) do
   check(find(everything, "button", label), "Settings still has the \"" .. label .. "\" button")
 end
 check(shows(everything, "UI scale") and shows(everything, "Watch-words:"), "and the scale and the watch-words")
+-- Credits: who made it, the links each with Copy, the licence, what it is built with, this copy's details.
+do
+  local credits = newFrame("Frame", UIParent)
+  credits:SetSize(900, 1)
+  GuildOS:RefreshSettingsPanel(credits, "credits")
+  for _, t in ipairs({ "Guild OS", "Chehul", "Made by", "Community and links", "Thanks", "License", "Built with", "This copy",
+    "https://discord.gg/8XA6gmNjja", "https://guildos.me", "MIT" }) do
+    check(shows(credits, t), "Credits shows \"" .. t .. "\"")
+  end
+  local copies = 0
+  walk(credits, function(f) if f.kind == "Button" and f.label and f.label.text == "Copy" then copies = copies + 1 end end)
+  check(copies == 8, "each link, and each of the family's addons, has its Copy (" .. copies .. ")")
+  check(not shows(credits, "ProfessionHelper"), "ProfessionHelper stays out until it runs on Forever")
+  check(shows(credits, "https://www.curseforge.com/wow/addons/lodestar"), "the family links go to CurseForge")
+  for _, t in ipairs({ "The Chehul family", "Lodestar", "PartyLens", "Warmth" }) do
+    check(shows(credits, t), "Credits shows \"" .. t .. "\"")
+  end
+  for _, label in ipairs({ "Read the license", "Copy for a bug report", "Join the Discord" }) do
+    check(find(credits, "button", label), "Credits has the \"" .. label .. "\" button")
+  end
+  local narrow = newFrame("Frame", UIParent)
+  narrow:SetSize(380, 1)
+  local F = GuildOS:RefreshSettingsPanel(narrow, "credits")
+  F:Layout(380)
+  local inside = true
+  for _, pl in ipairs(F.placed or {}) do if pl.x + pl.w > pl.cardW + 1 then inside = false end end
+  check(inside, "at 380px every row stays inside its card")
+end
 local errorsButtons = 0
 walk(everything, function(f)
   if f.kind == "Button" and f.label and f.label.text == "View Errors" then errorsButtons = errorsButtons + 1 end
@@ -389,5 +465,36 @@ for _, gone in ipairs({ "Loot & DKP", "My Wishlist", "Loot Council", "Loot Equit
 end
 local danger = find(everything, "button", "Erase guild data")
 check(danger.variant == "danger", "erasing is the danger button")
+
+-- ── The help page stays light (#449): its guide tiles are paintings, two regions each ─────────
+do
+  local n0 = #allFrames
+  local help = newFrame("Frame", UIParent)
+  help:SetSize(900, 1)
+  GuildOS:RefreshSettingsPanel(help, "help")
+  local made = #allFrames - n0
+  check(made < 500, "Settings › Help makes " .. made .. " frames and regions, under 500")
+  local n1 = #allFrames
+  GuildOS:RefreshSettingsPanel(help, "help")
+  check(#allFrames == n1, "and drawing it again makes nothing new")
+
+  local P = UI.Picture
+  local h = newFrame("Frame", UIParent)
+  local m0 = #allFrames
+  P:Draw(h, "raids", 520, 180)
+  check(#allFrames - m0 == 2 and h.__pic.art.shown and h.__pic.path:find("onboarding\\raids%.tga$"),
+    "a picture is its painting and its line: two regions")
+  P:Draw(h, "officers", 396, 128)
+  P:Draw(h, "officers", 396, 128)
+  check(#allFrames - m0 == 2 and h.__pic.key == "officers", "another picture, another size: the same two regions")
+  local u0, u1, v0, v1 = P:Crop(300, 100)
+  check(u0 == 0 and u1 == 1 and math.abs((v1 - v0) * 256 * 3 - 512) < 1e-6, "a wide holder shows the painting's middle band, not stretched")
+  u0, u1, v0, v1 = P:Crop(100, 100)
+  check(v0 == 0 and v1 == 1 and math.abs((u1 - u0) * 512 - 256) < 1e-6, "a square one its middle, full height")
+  P:Draw(h, "no-such-picture", 200, 80)
+  check(not h.__pic.art.shown and h.__pic.crest and h.__pic.crest.shown, "a key with no painting: the crest on the wood")
+  check(P:GuideKey({ id = "loot", ill = "bank" }) == "wishlist" and P:GuideKey({ id = "rooms", ill = "salao" }) == "salao",
+    "a guide shows its own painting")
+end
 
 io.write(string.format("settings-panel: %d checks passed\n", checks))

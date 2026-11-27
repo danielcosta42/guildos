@@ -27,6 +27,8 @@ Mesh.ADDON_LABELS = {
     gos = "Guild OS",
     pl  = "PartyLens",
     ph  = "ProfessionHelper",
+    cf  = "Warmth",      -- the family's campfire addon: the member window says who runs it
+    ls  = "Lodestar",
 }
 
 ----------------------------------------------------------------------
@@ -37,11 +39,11 @@ Mesh.ADDON_LABELS = {
 function Mesh:BuildCaps()
     local caps = "gosv=" .. (GuildOS.VERSION or "0")
     -- Guild name, ONLY while this client is in an alliance. That is the one
-    -- feature that needs it (a bridge must find an online player of an allied
-    -- guild to whisper), and gating it keeps the caps string tiny for everyone
-    -- else -- it rides a public realm-wide post. Guild membership is public
-    -- in-game anyway, so this exposes nothing new. Commas are stripped because
-    -- they separate caps entries.
+    -- feature that needs it (the alliance room names a speaker of a guild it has
+    -- not heard yet, and counts who is on now), and gating it keeps the caps
+    -- string tiny for everyone else -- it rides a public realm-wide post. Guild
+    -- membership is public in-game anyway, so this exposes nothing new. Commas
+    -- are stripped because they separate caps entries.
     local ally = GuildOS.Alliance
     local pact = ally and ally.Get and ally:Get()
     if pact then
@@ -49,28 +51,12 @@ function Mesh:BuildCaps()
         if guild and guild ~= "" then
             caps = caps .. ",gosg=" .. (GuildOS:SanitizeUserText(guild, 24):gsub(",", ""))
         end
-        -- The alliance TAG, so a guild holding only a join token can find
-        -- somebody to talk to without being handed a contact name. The tag is
-        -- half of a token anyone is meant to be able to paste, and the channel
-        -- derived from it is public anyway, so this leaks nothing new.
-        if pact.tag and pact.tag ~= "" then
-            caps = caps .. ",gosa=" .. pact.tag
-        end
     end
     return caps
 end
 
--- The alliance tag a peer advertises, or nil.
-function Mesh:GetPeerAlliance(name)
-    local p = self:GetPeer(name)
-    local caps = p and p.caps
-    if type(caps) ~= "string" then return nil end
-    return caps:match("gosa=([^,]+)")
-end
-
--- The guild a peer advertises in its merged caps string, or nil. Used by the
--- alliance bridge to pick a whisper target it believes is online (whispering an
--- offline player prints a visible "no player named X" system message).
+-- The guild a peer advertises in its merged caps string, or nil. The alliance
+-- room names an unknown speaker's guild by it, and Alliance:OnlineNow counts it.
 function Mesh:GetPeerGuild(name)
     local p = self:GetPeer(name)
     local caps = p and p.caps

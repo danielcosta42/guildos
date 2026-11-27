@@ -6,6 +6,7 @@
 -- instead of typing /dump for an hour. Every read is guarded: a missing or
 -- raising API is recorded and the probe carries on (Rule 4).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Probe = {}
 GuildOS.Probe = Probe
 local L = GuildOS.L
@@ -19,11 +20,11 @@ local LIST_MAX = 10            -- missing names printed before the list is cut
 Probe.APIS = {
     -- Global functions
     "Ambiguate", "CanEditGuildInfo", "CanEditMOTD", "CanEditPublicNote", "CanGuildDemote", "CanGuildInvite",
-    "CanGuildPromote", "CanGuildRemove", "CanInspect", "CanViewOfficerNote", "ChannelBan", "ChannelKick", "ChannelModerator",
+    "CanGuildPromote", "CanGuildRemove", "CanInspect", "CanViewOfficerNote",
     "ChatFrame_AddMessageEventFilter", "ChatFrame_OpenChat", "ChatFrame_SendTell", "CloseDropDownMenus",
     "CombatLogGetCurrentEventInfo", "CreateColor", "CreateFrame", "FauxScrollFrame_GetOffset",
     "FauxScrollFrame_OnVerticalScroll", "FauxScrollFrame_Update", "GetBuildInfo", "GetChannelName",
-    "GetChannelRosterInfo", "GetContainerItemInfo", "GetContainerItemLink", "GetContainerNumSlots",
+    "GetContainerItemInfo", "GetContainerItemLink", "GetContainerNumSlots",
     "GetCraftDisplaySkillLine", "GetCraftInfo", "GetCraftItemLink", "GetCraftSpellLink", "GetCursorPosition",
     "GetGuildInfo", "GetGuildInfoText", "GetGuildRosterInfo", "GetGuildRosterLastOnline", "GetGuildRosterMOTD",
     "GetInstanceInfo", "GetInventoryItemLink", "GetItemCount", "GetItemInfo", "GetItemQualityColor",
@@ -37,7 +38,7 @@ Probe.APIS = {
     "IsAltKeyDown", "IsInGroup", "IsInGuild", "IsInInstance", "IsInRaid", "IsMasterLooter",
     "IsQuestFlaggedCompleted", "IsShiftKeyDown", "JoinChannelByName", "LeaveChannelByName", "NotifyInspect",
     "PlaySound", "RaidNotice_AddMessage", "RandomRoll", "ReloadUI", "SendChatMessage", "SendWho",
-    "SetChannelOwner", "SetGuildInfoText", "SetGuildTabardTextures", "SetRaidSubgroup", "SetWhoToUI",
+    "SetGuildInfoText", "SetGuildTabardTextures", "SetRaidSubgroup", "SetWhoToUI",
     "ShowUIPanel", "TargetUnit", "ToggleDropDownMenu", "ToggleGuildFrame", "ToggleWorldMap",
     "UIDropDownMenu_AddButton", "UIDropDownMenu_CreateInfo", "UIDropDownMenu_Initialize", "UIFrameFadeIn",
     "UnitBuff", "UnitClass", "UnitExists", "UnitFactionGroup", "UnitFullName", "UnitGUID", "UnitHealthMax", "UnitIsConnected",
@@ -110,6 +111,18 @@ Probe.APIS = {
     "INT_SPELL_DURATION_HOURS", "INT_SPELL_DURATION_MIN",
     -- Starting the raid (issue #400): the party turned into a raid, and two raid members trading groups.
     "C_PartyInfo.ConvertToRaid", "ConvertToRaid", "SwapRaidSubgroup",
+    -- The officer action queue and its binding (#449): the guild invite, the binding's key, the crest's tabard.
+    "C_GuildInfo.Invite", "GetBindingKey", "GetBindingText", "SetBindingClick", "SaveBindings", "GetCurrentBindingSet",
+    "C_GuildInfo.GetGuildTabardInfo", "GetGuildLogoInfo", "GetGuildTabardFiles", "GetGuildTabardFileNames",
+    "SetLargeGuildTabardTextures", "SetSmallGuildTabardTextures",
+    -- The guild map (#449, specs/salao/mapa.md): map points in world yards and back, a map on its parent, the
+    -- player's facing and the minimap's scale, the world map's zoom.
+    "C_Map.GetWorldPosFromMapPos", "C_Map.GetMapPosFromWorldPos", "C_Map.GetMapRectOnMap", "CreateVector2D",
+    "GetPlayerFacing", "IsIndoors", "Minimap.GetZoom", "WorldMapFrame.ScrollContainer", "WorldMapFrame.GetCanvasZoomPercent",
+    -- Whether OpenMap is loaded (#449: its guild dots beside Guild OS's).
+    "C_AddOns.IsAddOnLoaded", "IsAddOnLoaded",
+    -- The guild's event log (who invited, removed, promoted or demoted while this officer was away).
+    "QueryGuildEventLog", "GetNumGuildEvents", "GetGuildEventInfo",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.
@@ -131,19 +144,22 @@ Probe.SCRIPTS = { "OnTooltipSetItem", "OnTooltipSetSpell", "OnTooltipSetUnit", "
 Probe.EVENTS = {
     "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "ADDON_LOADED",
     "CALENDAR_CLOSE_EVENT", "CALENDAR_NEW_EVENT", "CALENDAR_UPDATE_ERROR", "CALENDAR_UPDATE_EVENT_LIST",   -- the game's calendar (#263)
+    "CALENDAR_OPEN_EVENT",   -- an event's details and invites, for the companion export (CalendarSnapshot)
     "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_MAPS_UPDATE",
     "MERCHANT_CLOSED", "MERCHANT_SHOW",   -- the guild bank cleanup sells at a vendor (#380)
-    "CHANNEL_UI_UPDATE", "CHARACTER_POINTS_CHANGED", "CHAT_MSG_ADDON", "CHAT_MSG_CHANNEL",
+    "CHANNEL_UI_UPDATE", "CHARACTER_POINTS_CHANGED", "CHAT_MSG_ADDON", "CHAT_MSG_CHANNEL", "CHAT_MSG_CHANNEL_JOIN", "CHAT_MSG_CHANNEL_LEAVE", "CHAT_MSG_CHANNEL_NOTICE",
     "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER", "CHAT_MSG_SKILL", "CHAT_MSG_SYSTEM", "CHAT_MSG_WHISPER", "CLUB_MESSAGE_ADDED",
     "CLUB_MESSAGE_HISTORY_RECEIVED", "CLUB_STREAM_ADDED", "CLUB_STREAM_REMOVED", "CLUB_STREAMS_LOADED",
     "COMBAT_LOG_EVENT_UNFILTERED", "CRAFT_SHOW", "EJ_LOOT_DATA_RECIEVED", "ENCOUNTER_END", "ENCOUNTER_LOOT_RECEIVED", "ENCOUNTER_START", "GET_ITEM_INFO_RECEIVED",
-    "GROUP_ROSTER_UPDATE", "GUILD_ROSTER_UPDATE", "INSPECT_READY", "LOOT_CLOSED", "LOOT_OPENED",
+    "GLOBAL_MOUSE_DOWN",   -- a click outside the minimap menu closes it (#449)
+    "GROUP_ROSTER_UPDATE", "GUILD_EVENT_LOG_UPDATE", "GUILD_ROSTER_UPDATE", "INSPECT_READY", "LOOT_CLOSED", "LOOT_OPENED", "LOOT_SLOT_CLEARED",
     "MACRO_ACTION_BLOCKED", "MACRO_ACTION_FORBIDDEN", "PARTY_LOOT_METHOD_CHANGED", "PLAYER_ENTERING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_GUILD_UPDATE", "PLAYER_LEVEL_UP",
     "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_TALENT_UPDATE",
-    "PLAYER_TARGET_CHANGED", "QUEST_TURNED_IN", "RAID_ROSTER_UPDATE", "READY_CHECK", "READY_CHECK_FINISHED",
+    "PLAYER_TARGET_CHANGED", "QUEST_LOG_UPDATE", "QUEST_TURNED_IN", "RAID_ROSTER_UPDATE", "READY_CHECK", "READY_CHECK_FINISHED",
     "SKILL_LINES_CHANGED",
     "TRADE_ACCEPT_UPDATE", "TRADE_PLAYER_ITEM_CHANGED", "TRADE_SHOW", "TRADE_SKILL_SHOW", "UI_INFO_MESSAGE",
     "UI_ERROR_MESSAGE",   -- the game's "too fast": holds the officers' reminders (#422) and backs the WhisperQueue off (#393)
+    "UNIT_SPELLCAST_SUCCEEDED",   -- ChehulNet v16's campfire beacon: the player's camp kit (WoW: Forever)
     "UPDATE_MOUSEOVER_UNIT", "WEEKLY_REWARDS_UPDATE", "WHO_LIST_UPDATE",
     "ZONE_CHANGED_NEW_AREA",
 }
@@ -270,17 +286,92 @@ function Probe:Run()
     r.events, r.missingEvents = {}, {}
     local frameOk, frame = pcall(CreateFrame, "Frame")
     frameOk = frameOk and type(frame) == "table"
+    -- Registering a restricted event is ADDON_ACTION_FORBIDDEN, which no pcall holds back: the combat log on a client
+    -- that hides it (WoW: Forever's Secret Values) is recorded as restricted, never registered (#449).
+    local restricted = {}
+    if not (GuildOS.Compat.CanReadCombatLog and GuildOS.Compat.CanReadCombatLog()) then
+        restricted.COMBAT_LOG_EVENT_UNFILTERED = true
+    end
     for _, event in ipairs(self.EVENTS) do
-        local ok = frameOk and pcall(frame.RegisterEvent, frame, event) or false
+        local ok = (not restricted[event]) and frameOk and pcall(frame.RegisterEvent, frame, event) or false
         if ok then pcall(frame.UnregisterEvent, frame, event) end
         r.events[event] = ok
         if not ok then r.missingEvents[#r.missingEvents + 1] = event end
     end
 
+    -- The crest's tabard (#449): which API draws it here, or why none does.
+    local tOk, used, apis = pcall(GuildOS.Compat.TabardReport)
+    r.tabard = tOk and { used = used, apis = apis } or { used = "error: " .. tostring(used) }
+    -- The guild's event log: whether this client can ask for it and read it (Compat.HasGuildEventLog).
+    local gOk, has = pcall(GuildOS.Compat.HasGuildEventLog)
+    if gOk then r.guildEventLog = has and true or false else r.guildEventLog = "error: " .. tostring(has) end
+
+    -- The dungeons and encounters the game sent (Modules/DungeonLog.lua, WoW: Forever): the registry's unverified
+    -- entries confirmed from a paste (Data/ForeverDungeons.lua).
+    if GuildOS.DungeonLog and GuildOS.DungeonLog.SeenReport then
+        local dOk, seen = pcall(GuildOS.DungeonLog.SeenReport, GuildOS.DungeonLog)
+        if dOk then
+            r.dungeons = seen
+            r.dungeonReport = Probe.DungeonReportText(seen, r.addonVersion, first(r.build) and table.concat({
+                tostring(first(r.build)), tostring(r.build[2]) }, ".") or "?")
+        else
+            r.dungeons = "error: " .. tostring(seen)
+        end
+    end
+
     if not GuildOSDB then GuildOSDB = {} end
     GuildOSDB.probe = r
     self:PrintSummary(r)
+    if r.dungeonReport then self:ShowDungeonReport(r.dungeonReport) end
     return r
+end
+
+local REPORT_MAX = 1800   -- bytes of the dungeon report: one Discord message with room to spare
+
+-- The dungeon report as one line to paste in Discord: the version and the build, then every instance and
+-- encounter seen that the registry does not hold as confirmed ("new" or "unverified"), by id, with what the
+-- game called it, and how many confirmed ones were seen. Pure.
+function Probe.DungeonReportText(seen, version, build)
+    local parts, known = {}, 0
+    for _, i in ipairs(seen and seen.instances or {}) do
+        if i.status == "known" then
+            known = known + 1
+        else
+            parts[#parts + 1] = string.format("I%d %s [%s%s] %s", i.id, i.name or "?", tostring(i.kind or "?"),
+                i.difficulty and (" d" .. i.difficulty) or "", i.status)
+        end
+    end
+    for _, e in ipairs(seen and seen.encounters or {}) do
+        if e.status == "known" then
+            known = known + 1
+        else
+            parts[#parts + 1] = string.format("E%d %s [i%s%s k%d] %s", e.id, e.name or "?", tostring(e.instance or "?"),
+                e.difficulty and (" d" .. e.difficulty) or "", e.kills or 0, e.status)
+        end
+    end
+    local head = string.format("GuildOS %s dungeons, build %s, %d confirmed: ", tostring(version), tostring(build), known)
+    local text = head .. (#parts > 0 and table.concat(parts, "; ") or "nothing new")
+    if #text > REPORT_MAX then text = text:sub(1, REPORT_MAX - 4) .. " ..." end
+    return text
+end
+
+GuildOS.Dialogs["GUILDOS_PROBE_DUNGEONS"] = {
+    text = L["The dungeons and bosses this client saw. Copy it (Ctrl+C) and paste it in Guild OS's Discord."],
+    button1 = L["Close"], hasEditBox = true, maxLetters = 0,
+    timeout = 0, whileDead = true, hideOnEscape = true,
+}
+
+-- The report in a box to copy from, and its first words in chat.
+function Probe:ShowDungeonReport(text)
+    GuildOS:Print(L["Dungeon report:"] .. " " .. text:sub(1, 200))
+    if not GuildOS.ShowDialog then return end
+    local dialog = GuildOS:ShowDialog("GUILDOS_PROBE_DUNGEONS")
+    local box = dialog and GuildOS.Compat.PopupEditBox and GuildOS.Compat.PopupEditBox(dialog)
+    if box then
+        box:SetText(text)
+        box:HighlightText()
+        box:SetFocus()
+    end
 end
 
 -- true/false as yes/no; "missing" and errors as they are.
@@ -316,6 +407,9 @@ function Probe:PrintSummary(r)
         #r.missingApis, #self.APIS + #self.TEMPLATES + #self.SCRIPTS, #r.missingEvents, #self.EVENTS))
     if #r.missingApis > 0 then GuildOS:Print(names(r.missingApis)) end
     if #r.missingEvents > 0 then GuildOS:Print(names(r.missingEvents)) end
+    -- API names, not prose: the line is read back from a screenshot.
+    if r.tabard then GuildOS:Print("tabard: " .. tostring(r.tabard.used)) end
+    if r.guildEventLog ~= nil then GuildOS:Print("guild event log: " .. answer(r.guildEventLog)) end
     GuildOS:Print(L["Saved in GuildOSDB.probe. Type /reload to write it to disk."])
 end
 
@@ -347,6 +441,10 @@ blockedFrame:SetScript("OnEvent", function(_, event, addon, func)
     local run = Probe._chat
     if run then
         run.blocked[#run.blocked + 1] = { event = event, addon = addon, func = func, after = GetTime() - run.started }
+    end
+    local inv = Probe._invite
+    if inv then
+        inv.blocked[#inv.blocked + 1] = { event = event, addon = addon, func = func, after = GetTime() - inv.started }
     end
 end)
 
@@ -511,11 +609,27 @@ local STALE_TRIES = 5          -- leaves at most, per login or run
 
 -- The join and leave lines of the probe's channel are the player's own business, and none needs reading.
 -- The client hands the channel as "5. GOSProbe1234" and its base name ninth, so either one names it.
-local function hideChannelNotice(_, _, _, _, _, channel, _, _, _, _, base)
-    local name = Probe._channelName
-    if not name or GuildOS.Compat.IsSecret(channel, base) then return false end
+local function hidesName(name, channel, base)
+    if not name then return false end
     if type(base) == "string" and base == name then return true end
     return type(channel) == "string" and channel:find(name, 1, true) ~= nil
+end
+local function hideChannelNotice(_, _, _, _, _, channel, _, _, _, _, base)
+    if GuildOS.Compat.IsSecret(channel, base) then return false end
+    return hidesName(Probe._channelName, channel, base) or hidesName(Probe._staleName, channel, base)
+end
+
+-- The filter is on while a run or a leftover's leave can still bring a notice; off again once both are over.
+function Probe:_HideNotices()
+    if not self._noticeFilter then
+        self._noticeFilter = GuildOS.Compat.AddChatFilter("CHAT_MSG_CHANNEL_NOTICE", hideChannelNotice)
+    end
+end
+
+function Probe:_ShowNotices()
+    if not self._noticeFilter or self._channel or self._invite or self._staleName then return end
+    GuildOS.Compat.RemoveChatFilter("CHAT_MSG_CHANNEL_NOTICE", hideChannelNotice)
+    self._noticeFilter = nil
 end
 
 -- A run that a /reload cut short leaves its channel joined: the name was kept in GuildOSDB, and it goes now.
@@ -530,11 +644,23 @@ function Probe:LeaveStaleChannel(stale, try)
     local Compat = GuildOS.Compat
     if try > 1 and Compat.ChannelId(stale) <= 0 then
         if GuildOSDB and GuildOSDB.probeChannelOpen == stale then GuildOSDB.probeChannelOpen = nil end
+        self:_StaleDone(stale)
         return
     end
-    if try > STALE_TRIES then return end
+    if try > STALE_TRIES then self:_StaleDone(stale) return end
+    -- Its "Left Channel" notice is the player's own business too: hidden before the leave, at login as in a run.
+    self._staleName = stale
+    if not self._channel and not self._invite then self._channelName = stale end
+    self:_HideNotices()
     Compat.LeaveChannel(stale)
     Compat.After(STALE_AGAIN, function() GuildOS:SafeCall(Probe.LeaveStaleChannel, Probe, stale, try + 1) end)
+end
+
+-- A leftover's leave is over (seen gone, or out of tries): its notices are no longer hidden, and the filter comes
+-- off a moment later, once the game's own notice of the leave has come.
+function Probe:_StaleDone(stale)
+    if self._staleName == stale then self._staleName = nil end
+    GuildOS.Compat.After(STALE_AGAIN, function() GuildOS:SafeCall(Probe._ShowNotices, Probe) end)
 end
 
 -- Started with the modules. At PLAYER_LOGIN the game has not joined the character's channels yet, and
@@ -588,7 +714,7 @@ function Probe:RunChannel()
     Compat.After(CHANNEL_WAIT, function() Probe:FinishChannel(run) end)
 
     pcall(function()
-        if not self._noticeFilter then self._noticeFilter = Compat.AddChatFilter("CHAT_MSG_CHANNEL_NOTICE", hideChannelNotice) end
+        self:_HideNotices()
         self._channelFrame = self._channelFrame or CreateFrame("Frame")
         self._channelFrame:SetScript("OnEvent", function(_, _, prefix, text, dist)
             if Compat.IsSecret(prefix, text, dist) then return end
@@ -652,4 +778,264 @@ function Probe:FinishChannel(run)
         GuildOS:Print(string.format("  %s: %s", labels[how], outcome))
     end
     GuildOS:Print(L["Saved in GuildOSDB.probeChannel. Type /reload to write it to disk."])
+end
+
+----------------------------------------------------------------------
+-- /gos probe invite (#449; specs/salao/convites.md)
+-- Whether this client lets an addon do, from a key press and from a timer, what the officer action queue
+-- (Modules/ActionQueue.lua) does: a guild invite, a group invite, a /who, a whisper and a chat line in a
+-- channel. Measured without inviting or whispering anybody:
+--   * the invites and the whisper go to a name no character can have (letters and digits: "Gosprobe4821"):
+--     the game answers "not found" with that name in it, which shows the call ran; nobody is asked;
+--   * the /who asks for that name: WHO_LIST_UPDATE (or its "0 players" line) is the answer;
+--   * the channel line goes into a temporary channel only this character is in, and its echo is the answer;
+--     from the key press a second line follows the first (results.channelTwice), to tell whether one key press
+--     carries one channel line or several (Recruitment:PostsPerClick, #449).
+-- The command's own Enter is the key press; the second attempt comes from a timer INVITE_TIMER_AT seconds
+-- later, past the /who's own cooldown. Each attempt reads true (answered), false (the game reported it blocked:
+-- ADDON_ACTION_BLOCKED/FORBIDDEN naming the call) or "silent" (no answer: dropped, the usual fate of a #hwevent
+-- call without one), or is skipped (and why). WoW: Forever's guild invite is not tried: the game forbids it to
+-- addons (#256), and the forbidden call would show its error. It is recorded as refused from a click.
+-- GuildOSDB.probeInvite = { at, build, version, game, results = { [kind] = { click, timer } }, raw, tabard };
+-- results holds true where the game answered, false where it did not, nil where not tried:
+-- Compat.NeedsHardware reads it for this build.
+----------------------------------------------------------------------
+local INVITE_TIMER_AT = 6   -- seconds: the timer's attempts, after the /who's cooldown
+local INVITE_WAIT = 12      -- seconds until the verdict
+Probe.INVITE_WAIT = INVITE_WAIT
+
+-- Which call a blocked event names, as a kind (whisper and channel share SendChatMessage).
+local function blockedKinds(func)
+    func = tostring(func or "")
+    if func:find("InviteUnit", 1, true) or func:find("InviteByName", 1, true) then return { "groupInvite" } end
+    if func:find("Invite", 1, true) then return { "guildInvite" } end
+    if func:find("SendWho", 1, true) then return { "who" } end
+    if func:find("SendChatMessage", 1, true) then return { "whisper", "channel", "channelTwice" } end
+    return {}
+end
+
+-- What the probe measures: the queue's kinds, and a second channel line from the same key press (#449): the
+-- recruitment ad posted to the first channels of a round and not the last on WoW: Forever, so whether one key press
+-- carries two channel lines is measured on its own (from a click only: from a timer the first already says it).
+local function probeKinds()
+    local out = {}
+    for _, k in ipairs(GuildOS.Compat.HARDWARE_KINDS) do out[#out + 1] = k end
+    out[#out + 1] = "channelTwice"
+    return out
+end
+
+local function fakeName()
+    return "Gosprobe" .. math.random(1000, 9999)
+end
+
+function Probe:InviteAttempt(run, how)
+    local Compat = GuildOS.Compat
+    local at = GetTime() - run.started
+    local function try(kind, fn)
+        local step = run.raw[kind][how]
+        if step.skipped then return end
+        step.tried, step.after = true, at
+        local ok, err = pcall(fn, step)
+        if not ok then step.error = tostring(err) end
+    end
+    if run.raw.guildInvite[how].skipped == nil then
+        try("guildInvite", function(step)
+            local invite = (C_GuildInfo and C_GuildInfo.Invite) or GuildInvite
+            invite(step.name)
+        end)
+    end
+    try("groupInvite", function(step) Compat.InviteUnit(step.name) end)
+    try("who", function(step)
+        Compat.SetWhoToUI(true)
+        Compat.SendWho(Compat.WhoExact(step.name))
+    end)
+    try("whisper", function(step)
+        local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+        send("Guild OS probe", "WHISPER", nil, step.name)
+    end)
+    local ch = run.raw.channel[how]
+    if not ch.skipped then
+        local id = Compat.ChannelId(run.channelName)
+        if id <= 0 then
+            ch.skipped = "no channel number"
+        else
+            try("channel", function(step)
+                local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+                send(step.name, "CHANNEL", nil, id)
+            end)
+            -- The second line, right after the first, inside the same key press.
+            if how == "click" then
+                try("channelTwice", function(step)
+                    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+                    send(step.name, "CHANNEL", nil, id)
+                end)
+            end
+        end
+    end
+end
+
+function Probe:RunInvite()
+    if InCombatLockdown and InCombatLockdown() then
+        GuildOS:Print(L["The probe does not run in combat. Try again after the fight."])
+        return nil
+    end
+    local running = self._invite
+    if running then
+        -- A second press: the channel line the first could not send for want of a number goes now.
+        local ch = running.raw.channel.click
+        if ch.skipped == "no channel number" then
+            ch.skipped = nil
+            self:InviteAttempt(running, "click")
+            return running
+        end
+        GuildOS:Print(L["The invite probe is already running."])
+        return nil
+    end
+    local Compat = GuildOS.Compat
+    local game = GuildOS.Client.game
+    local run = { started = GetTime(), blocked = {}, raw = {}, channelName = "GOSInv" .. math.random(1000, 9999), sysLines = 0 }
+    for _, kind in ipairs(probeKinds()) do
+        run.raw[kind] = { click = { name = fakeName() }, timer = { name = fakeName() } }
+    end
+    run.raw.channel.click.name = run.channelName .. " click"
+    run.raw.channel.timer.name = run.channelName .. " timer"
+    run.raw.channelTwice.click.name = run.channelName .. " second"
+    run.raw.channelTwice.timer.skipped = "from a key press only"
+    if game == "FOREVER" then
+        run.raw.guildInvite.click.skipped = "forbidden to addons (#256)"
+        run.raw.guildInvite.timer.skipped = "forbidden to addons (#256)"
+    elseif not (IsInGuild and IsInGuild()) or not (CanGuildInvite and CanGuildInvite()) then
+        run.raw.guildInvite.click.skipped = "no guild invite right"
+        run.raw.guildInvite.timer.skipped = "no guild invite right"
+    end
+    self._invite = run
+    Compat.After(INVITE_WAIT, function() Probe:FinishInvite(run) end)
+
+    -- Every answer: a system or error line with one of the names, a /who's list, the channel's echo.
+    self._inviteFrame = self._inviteFrame or CreateFrame("Frame")
+    self._inviteFrame:SetScript("OnEvent", function(_, event, a1, a2)
+        if Probe._invite ~= run then return end
+        local after = GetTime() - run.started
+        local how = after < INVITE_TIMER_AT and "click" or "timer"
+        if event == "WHO_LIST_UPDATE" then
+            local step = run.raw.who[how]
+            if step.tried then step.answered = true end
+            return
+        end
+        local text = event == "UI_ERROR_MESSAGE" and (type(a2) == "string" and a2 or a1) or a1
+        if Compat.IsSecret(text) or type(text) ~= "string" then
+            run.unreadable = true
+            return
+        end
+        for _, kind in ipairs(probeKinds()) do
+            for _, h in ipairs({ "click", "timer" }) do
+                local step = run.raw[kind][h]
+                if step.tried and text:find(step.name, 1, true) then step.answered = true end
+            end
+        end
+        if event == "CHAT_MSG_SYSTEM" then run.sysLines = run.sysLines + 1 end
+    end)
+    local f = self._inviteFrame
+    Compat.RegisterEvent(f, "CHAT_MSG_SYSTEM")
+    Compat.RegisterEvent(f, "UI_ERROR_MESSAGE")
+    Compat.RegisterEvent(f, "WHO_LIST_UPDATE")
+    Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL")
+    pcall(function()
+        self:_HideNotices()
+        self._channelName = run.channelName
+        self:LeaveStaleChannel()
+        if type(GuildOSDB) == "table" then GuildOSDB.probeChannelOpen = run.channelName end
+        Compat.JoinChannel(run.channelName)
+    end)
+
+    GuildOS:Print(L["Invite probe: a guild invite, a group invite, a /who and a whisper go to a name nobody can have, and a line to a channel only you are in, now and from a timer. Nobody is invited. The verdict follows in a few seconds."])
+    self:InviteAttempt(run, "click")
+    if run.raw.channel.click.skipped == "no channel number" then
+        GuildOS:Print(L["The channel has no number yet: press the command or the button again within a few seconds. The second press is the one that counts."])
+    end
+    Compat.After(INVITE_TIMER_AT, function()
+        if Probe._invite == run then Probe:InviteAttempt(run, "timer") end
+    end)
+    return run
+end
+
+-- One attempt's verdict: true, false, "silent", or nil (not tried).
+local function verdictOf(step, blocked, kind, how)
+    if not step.tried then return nil end
+    for _, b in ipairs(blocked) do
+        local bHow = b.after < INVITE_TIMER_AT and "click" or "timer"
+        if bHow == how then
+            for _, k in ipairs(blockedKinds(b.func)) do
+                if k == kind then return false end
+            end
+        end
+    end
+    if step.answered then return true end
+    return "silent"
+end
+
+function Probe:FinishInvite(run)
+    if self._invite ~= run then return end
+    self._invite = nil
+    local Compat = GuildOS.Compat
+    pcall(function()
+        for _, e in ipairs({ "CHAT_MSG_SYSTEM", "UI_ERROR_MESSAGE", "WHO_LIST_UPDATE", "CHAT_MSG_CHANNEL" }) do
+            self._inviteFrame:UnregisterEvent(e)
+        end
+    end)
+    pcall(Compat.SetWhoToUI, false)
+    pcall(function()
+        Compat.LeaveChannel(run.channelName)
+        self:LeaveStaleChannel(run.channelName, 2)
+    end)
+    local clockOk, now = pcall(GetServerTime)
+    local out = { at = (clockOk and now) or 0, build = GuildOS.Client.build, version = GuildOS.Client.version,
+                  game = GuildOS.Client.game, results = {}, raw = {}, unreadable = run.unreadable,
+                  blocked = run.blocked, tabard = Compat.TabardApis() }
+    for _, kind in ipairs(probeKinds()) do
+        local res, raw = {}, {}
+        for _, how in ipairs({ "click", "timer" }) do
+            local step = run.raw[kind][how]
+            local v = verdictOf(step, run.blocked, kind, how)
+            raw[how] = v == nil and (step.skipped or "not tried") or v
+            if v == true then res[how] = true elseif v ~= nil then res[how] = false end
+            if step.error then raw[how .. "Error"] = step.error end
+        end
+        if kind == "guildInvite" and GuildOS.Client.game == "FOREVER" then res.click, res.timer = false, false end
+        out.results[kind], out.raw[kind] = res, raw
+    end
+    local info = Compat.GuildTabardInfo()
+    out.tabard.source = info and info.source or "none"
+    local rOk, used = pcall(Compat.TabardReport)
+    out.tabard.used = rOk and used or nil
+    if not GuildOSDB then GuildOSDB = {} end
+    GuildOSDB.probeInvite = out
+
+    GuildOS:Print(string.format(L["Invite probe, build %s:"], tostring(out.build)))
+    local labels = { guildInvite = L["guild invite"], groupInvite = L["group invite"], who = "/who",
+                     whisper = L["whisper"], channel = L["channel line"] }
+    local function word(v)
+        if v == true then return L["works"] end
+        if v == false then return L["blocked"] end
+        if v == "silent" then return L["no answer"] end
+        return tostring(v)
+    end
+    for _, kind in ipairs(Compat.HARDWARE_KINDS) do
+        local raw = out.raw[kind]
+        GuildOS:Print(string.format("  " .. L["%s: from a key press %s, from a timer %s. Needs a key press: %s."],
+            labels[kind], word(raw.click), word(raw.timer), answer(Compat.NeedsHardware(kind))))
+    end
+    -- The second channel line from the same key press: whether the recruitment ad's round posts every channel on
+    -- one click or one channel per key press (Recruitment:PostsPerClick).
+    GuildOS:Print("  " .. string.format(L["A second channel line from the same key press: %s. The recruitment ad posts %s."],
+        word(out.raw.channelTwice.click),
+        (GuildOS.Recruitment and GuildOS.Recruitment:PostsPerClick() == 1) and L["one channel per key press"]
+            or L["every channel on one click"]))
+    local tb = out.tabard
+    GuildOS:Print("  " .. string.format(L["Tabard: %s (GetGuildTabardInfo %s, GetGuildLogoInfo %s, SetLargeGuildTabardTextures %s, masks %s)."],
+        tostring(tb.source), answer(tb.GetGuildTabardInfo), answer(tb.GetGuildLogoInfo),
+        answer(tb.SetLargeGuildTabardTextures), answer(tb.SetMask)))
+    if run.unreadable then GuildOS:Print("  " .. L["Some answers were unreadable here (chat lockdown)."]) end
+    GuildOS:Print(L["Saved in GuildOSDB.probeInvite. Type /reload to write it to disk."])
+    return out
 end

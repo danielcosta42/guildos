@@ -35,7 +35,9 @@ function Milestones:Check(key, data, prevLevel, prevAttune, hadPrior)
     local name = data.name or (key:match("^([^-]+)") or key)
 
     local cap = GuildOS.Client.maxLevel
-    if prevLevel and prevLevel < cap and (data.level or 0) >= cap then
+    -- Where the journal exists (WoW: Forever) the cap comes from it, written by whoever dinged: one
+    -- source, not two (audit B24).
+    if not GuildOS.Journal and prevLevel and prevLevel < cap and (data.level or 0) >= cap then
         self:Record("ding", key, name, tostring(cap))
     end
 
@@ -51,75 +53,128 @@ function Milestones:Check(key, data, prevLevel, prevAttune, hadPrior)
 end
 
 ----------------------------------------------------------------------
--- Digest lines for milestones + guild anniversaries since `since`. `told` is what guildos.me says
--- in this digest (guildos-web #259): a ding it tells is not told twice.
+-- What happened since `since`, as data (#449: the Chronicle's Activity draws it in categories, the login
+-- digest says it in lines). `told` is what guildos.me says in this digest (guildos-web #259): a ding it tells is
+-- not told twice. Returns
+--   dings          { key, name, at } newest first, each person once, whichever source told it
+--   attunes        { key, name, at } newest first, each person once
+--   levels         { level, names } highest level first, each person once per level
+--   clears         { id, name, names, first } a dungeon's clears, each person once; first: the guild's first of it
+--   anniversaries  { key, name, years }
 ----------------------------------------------------------------------
-function Milestones:GetDigestLines(since, told)
+local function short(k) return (k:match("^(.-)%-[^-]*$") or k) end
+
+function Milestones:Collect(since, told)
     since = since or 0
-    local out = {}
+    local m = { dings = {}, attunes = {}, levels = {}, clears = {}, anniversaries = {} }
+    local dinged, attuned = {}, {}
+    local function isTold(key, k)
+        return told ~= nil and (told["member.level60|" .. tostring(key)] or told["member.level60|" .. tostring(k)]) and true or false
+    end
+    -- The cap comes from two places (#449): the fifty events (a ding seen in synced member data, written before
+    -- audit B24, or where there is no journal) and WoW: Forever's journal. Merged by the member's key, each once:
+    -- before, a ding both held was told twice, the same names in two runs one under the other.
+    local function ding(key, name, at)
+        local k = GuildOS:LocalMemberKey(key)
+        if type(k) ~= "string" or dinged[k] or isTold(key, k) then return end
+        dinged[k] = true
+        m.dings[#m.dings + 1] = { key = k, name = name or short(k), at = at or 0 }
+    end
 
     for _, ev in ipairs((GuildOS.db.milestones and GuildOS.db.milestones.events) or {}) do
-        if (ev.ts or 0) > since then
+        if (ev.ts or 0) > since and ev.key then
             if ev.type == "ding" then
-                if not (told and told["member.level60|" .. tostring(ev.key)]) then
-                    out[#out + 1] = string.format(L["%s reached level %s!"], ev.name or "?", ev.detail or tostring(GuildOS.Client.maxLevel))
-                end
+                ding(ev.key, ev.name, ev.ts)
             elseif ev.type == "attune" then
-                out[#out + 1] = string.format(L["%s completed a new attunement"], ev.name or "?")
+                local k = GuildOS:LocalMemberKey(ev.key)
+                if not attuned[k] then
+                    attuned[k] = true
+                    m.attunes[#m.attunes + 1] = { key = k, name = ev.name or short(k), at = ev.ts or 0 }
+                end
             end
         end
     end
 
-    -- WoW: Forever's journal (issue #211): the milestones every ten levels and the dungeon clears,
-    -- one line per level and per dungeon, each person once — a few names, or how many. Read from
-    -- the journal, which keeps a month of them, not from the fifty events above, which a launch
-    -- week would flood. The cap is the ding above.
-    local groups = {}
+    -- WoW: Forever's journal (issue #211): the milestones every ten levels and the dungeon clears, grouped by
+    -- level and by dungeon, each person once. Read from the journal, which keeps a month of them, not from the
+    -- fifty events above, which a launch week would flood.
+    local levels, clears = {}, {}
+    local firsts = GuildOS.db.journal and GuildOS.db.journal.firsts or {}
     for _, e in ipairs(GuildOS.Journal and GuildOS.Journal:GetSince(since) or {}) do
-        local g = e.type == "member.level" and { level = e.data.level, sort = 1000 - e.data.level }
-            or e.type == "dungeon.clear" and { name = e.data.dungeonName or e.data.dungeonId, sort = 2000 }
-        if g then
-            local id = (g.level or g.name)
-            groups[id] = groups[id] or { g = g, who = {} }
-            groups[id].who[GuildOS:LocalMemberKey(e.subjectKey)] = true
+        local k = GuildOS:LocalMemberKey(e.subjectKey)
+        if e.type == "member.level60" then
+            ding(e.subjectKey, short(k), e.at)
+        elseif e.type == "member.level" and e.data.level then
+            local g = levels[e.data.level] or { level = e.data.level, who = {} }
+            levels[e.data.level] = g
+            g.who[k] = true
+        elseif e.type == "dungeon.clear" then
+            local id = e.data.dungeonId or e.data.dungeonName
+            local g = clears[id] or { id = id, name = e.data.dungeonName or id, who = {} }
+            clears[id] = g
+            g.who[k] = true
+            local f = firsts[id]
+            if f and f.at > since and math.abs((e.at or 0) - f.at) <= 120 then g.first = true end
         end
     end
-    local list = {}
-    for _, grp in pairs(groups) do
-        local names = {}
-        for k in pairs(grp.who) do names[#names + 1] = k:match("^(.-)%-[^-]*$") or k end
-        table.sort(names)
-        grp.names = names
-        list[#list + 1] = grp
+    local function names(who)
+        local out = {}
+        for k in pairs(who) do out[#out + 1] = short(k) end
+        table.sort(out)
+        return out
     end
-    table.sort(list, function(a, b)
-        if a.g.sort ~= b.g.sort then return a.g.sort < b.g.sort end
-        return tostring(a.g.name) < tostring(b.g.name)
-    end)
-    for _, grp in ipairs(list) do
-        local n, named = #grp.names, table.concat(grp.names, ", ")
-        if grp.g.level then
-            out[#out + 1] = n <= NAMED and string.format(L["Level %s reached by %s"], tostring(grp.g.level), named)
-                or string.format(L["%d members reached level %s"], n, tostring(grp.g.level))
-        else
-            out[#out + 1] = n <= NAMED and string.format(L["Dungeon cleared — %s: %s"], grp.g.name, named)
-                or string.format(L["Dungeon cleared — %s: %d members"], grp.g.name, n)
-        end
-    end
+    for _, g in pairs(levels) do m.levels[#m.levels + 1] = { level = g.level, names = names(g.who) } end
+    table.sort(m.levels, function(a, b) return a.level > b.level end)
+    for _, g in pairs(clears) do m.clears[#m.clears + 1] = { id = g.id, name = g.name, names = names(g.who), first = g.first } end
+    table.sort(m.clears, function(a, b) return tostring(a.name) < tostring(b.name) end)
+    table.sort(m.dings, function(a, b) return a.at > b.at end)
+    table.sort(m.attunes, function(a, b) return a.at > b.at end)
 
-    -- Guild anniversaries: first-seen date crossed a whole-year boundary
-    -- since the last login.
+    -- Guild anniversaries: first-seen date crossed a whole-year boundary since `since`.
     local now = GetServerTime()
     for key, ts in pairs(GuildOS.db.firstSeen or {}) do
         if ts and ts > 0 then
             local yNow = math.floor((now - ts) / YEAR)
             local ySince = math.floor((math.max(since, ts) - ts) / YEAR)
             if yNow >= 1 and yNow > ySince then
-                local nm = key:match("^([^-]+)") or key
-                out[#out + 1] = string.format(L["%s is celebrating %d year(s) with the guild!"], nm, yNow)
+                m.anniversaries[#m.anniversaries + 1] = { key = key, name = key:match("^([^-]+)") or key, years = yNow }
             end
         end
     end
+    table.sort(m.anniversaries, function(a, b) return a.name < b.name end)
+    return m
+end
 
+-- The lines of what Collect returned, by category: levels (the cap, attunements, every ten levels), dungeons
+-- (the clears) and members (the anniversaries).
+function Milestones:Lines(m)
+    local cap = tostring(GuildOS.Client.maxLevel)
+    local out = { levels = {}, dungeons = {}, members = {} }
+    local function add(cat, line) out[cat][#out[cat] + 1] = line end
+    for _, d in ipairs(m.dings) do add("levels", string.format(L["%s reached level %s!"], d.name, cap)) end
+    for _, a in ipairs(m.attunes) do add("levels", string.format(L["%s completed a new attunement"], a.name)) end
+    for _, g in ipairs(m.levels) do
+        local n = #g.names
+        add("levels", n <= NAMED and string.format(L["Level %s reached by %s"], tostring(g.level), table.concat(g.names, ", "))
+            or string.format(L["%d members reached level %s"], n, tostring(g.level)))
+    end
+    for _, g in ipairs(m.clears) do
+        local n = #g.names
+        add("dungeons", n <= NAMED and string.format(L["Dungeon cleared — %s: %s"], g.name, table.concat(g.names, ", "))
+            or string.format(L["Dungeon cleared — %s: %d members"], g.name, n))
+    end
+    for _, a in ipairs(m.anniversaries) do
+        add("members", string.format(L["%s is celebrating %d year(s) with the guild!"], a.name, a.years))
+    end
+    return out
+end
+
+-- Digest lines for milestones + guild anniversaries since `since`, in one list.
+function Milestones:GetDigestLines(since, told)
+    local by = self:Lines(self:Collect(since, told))
+    local out = {}
+    for _, cat in ipairs({ "levels", "dungeons", "members" }) do
+        for _, line in ipairs(by[cat]) do out[#out + 1] = line end
+    end
     return out
 end

@@ -61,4 +61,72 @@ files[6] = 180292
 GetGuildTabardFiles = nil
 check(Compat.GuildTabard() == nil, "a client without the call has none")
 
+-- ── The crest's tabard (#449): which API draws it, and the probe's "tabard:" line ──────────────
+Compat.IsSecret = function() return false end
+GetGuildTabardFiles = function() return unpack(files) end
+local inGuild = false
+function IsInGuild() return inGuild end
+check(Compat.GuildTabardInfo() == nil and Compat.TabardReport() == "none: not in a guild", "no guild: no tabard, and why")
+inGuild = true
+local info = Compat.GuildTabardInfo()
+check(info and info.source == "logo" and info.emblemFile == 414975 and math.abs(info.background.g - 220 / 255) < 1e-9,
+  "GetGuildLogoInfo: the colours in 0..1 and the emblem's file")
+check(Compat.TabardReport() == "GetGuildLogoInfo (no masks)", "the report names it: " .. Compat.TabardReport())
+-- Retail's and Forever's C_GuildInfo.GetGuildTabardInfo, its colours as ColorMixins, comes first.
+local function color(r, g, b) return { GetRGB = function() return r, g, b end } end
+C_GuildInfo = { GetGuildTabardInfo = function(unit)
+  if unit == "player" then return { backgroundColor = color(0.1, 0.2, 0.3), borderColor = color(1, 1, 1),
+    emblemColor = color(0.9, 0.8, 0.7), emblemFileID = 123, emblemStyle = 5 } end end }
+info = Compat.GuildTabardInfo()
+check(info.source == "info" and info.emblemFile == 123 and info.emblem.r == 0.9, "GetGuildTabardInfo first")
+-- The game's own drawing (SetLargeGuildTabardTextures), on textures that take a mask.
+local function tex() return { SetTexture = function(t, f) t.file = f end, GetTexture = function(t) return t.file end,
+                              SetMask = function() end, Hide = function() end } end
+UIParent = { CreateTexture = function() return tex() end }
+SetLargeGuildTabardTextures = function(unit, em) if unit == "player" then em:SetTexture(77) end end
+check(Compat.TabardReport() == "SetLargeGuildTabardTextures (masked round)", "the game's drawing, round")
+local e, b2, b3 = tex(), tex(), tex()
+check(Compat.SetGuildTabardTextures(e, b2, b3) and e.file == 77, "and it draws on the crest's textures")
+-- The game picks the emblem's cell in its sheet (GuildEmblemsLG_01, 16 columns of 64/1024) by SetTexCoord; Compat
+-- resets the coordinates first and takes the whole sheet left as no emblem.
+local function ctex()
+  local t = tex()
+  t.SetTexCoord = function(self, ...) self.tc = { ... } end
+  t.GetTexCoord = function(self) local c = self.tc
+    return c[1], c[3], c[1], c[4], c[2], c[3], c[2], c[4] end
+  return t
+end
+local ce = ctex()
+ce.tc = { 0.5, 0.5625, 0, 0.0625 }
+SetLargeGuildTabardTextures = function(unit, em) if unit == "player" then em:SetTexture(77) end end
+check(not Compat.SetGuildTabardTextures(ce, tex(), tex()) and ce.tc[2] == 1, "the whole sheet (no cell picked): no tabard")
+SetLargeGuildTabardTextures = function(unit, em)   -- style 164: column 4, row 10
+  if unit == "player" then em:SetTexture(77); em:SetTexCoord(4 / 16, 5 / 16, 10 / 16, 11 / 16) end
+end
+check(Compat.SetGuildTabardTextures(ce, tex(), tex()) and ce.tc[1] == 0.25 and ce.tc[4] == 11 / 16, "a cell: drawn")
+-- A round mask over an area (the crest's disc), for textures that cover only part of it (the emblem's halves).
+check(Compat.NewMask({}, "circle", 3) == nil and Compat.AddMask(tex(), nil) == false, "no mask textures: none")
+local pts = {}
+local parent = { CreateMaskTexture = function() return { SetTexture = function(m, f) m.file = f end,
+  SetPoint = function(_, ...) pts[#pts + 1] = { ... } end } end }
+local m = Compat.NewMask(parent, "circle", 3)
+check(m and m.file == "circle" and #pts == 2 and pts[1][1] == "TOPLEFT" and pts[1][4] == 3 and pts[2][5] == 3,
+  "the mask, inset inside its parent")
+local under
+check(Compat.AddMask({ AddMaskTexture = function(_, mm) under = mm end }, m) and under == m, "a texture under it")
+SetLargeGuildTabardTextures = function() end
+C_GuildInfo, GetGuildLogoInfo = nil, nil
+check(Compat.TabardReport():find("^none: the guild's tabard did not answer %(has GetGuildTabardFiles, SetLargeGuildTabardTextures%)"),
+  "APIs that answer nothing are named: " .. Compat.TabardReport())
+SetLargeGuildTabardTextures, GetGuildTabardFiles = nil, nil
+check(Compat.TabardReport() == "none: no tabard API on this client", "a client with none says so")
+local fh = assert(io.open(ADDON .. "/Core/Probe.lua", "rb"))
+local probe = fh:read("*a")
+fh:close()
+check(probe:find('GuildOS:Print("tabard: " .. tostring(r.tabard.used))', 1, true), "/gos debug probe prints the tabard: line")
+for _, api in ipairs({ "C_GuildInfo.GetGuildTabardInfo", "GetGuildLogoInfo", "GetGuildTabardFiles", "GetGuildTabardFileNames",
+                       "SetLargeGuildTabardTextures", "SetSmallGuildTabardTextures" }) do
+  check(probe:find('"' .. api .. '"', 1, true), "the probe lists " .. api)
+end
+
 print(("tabard: %d checks passed"):format(checks))

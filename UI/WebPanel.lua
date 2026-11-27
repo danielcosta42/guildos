@@ -1,8 +1,10 @@
 ----------------------------------------------------------------------
 -- Guild OS - Web panel
 -- The web companion's four slash commands, as buttons that explain
--- themselves. A disabled button prints its reason underneath rather
--- than making you click and then read the refusal in chat.
+-- themselves. A disabled button says why in its tooltip and prints its
+-- reason underneath rather than making you click and then read the
+-- refusal in chat. Drawn as Settings (#449): each section a parchment
+-- card, Publishing beside the planned raid, the actions a row of buttons.
 --
 -- What this panel may claim is bounded by what the addon can know: it
 -- writes GuildOSDB.__companion at logout and the Go companion forwards
@@ -10,20 +12,20 @@
 -- its own half — but the companion now leaves what the site answered in
 -- the inbox, and that line is allowed to say "the site has it".
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
 
 local SITE    = "guildos.me"
--- Where every tab's content starts (#371): 10px in, as the other tabs' sub-tab bars, the first line
--- UI.GAP from the top, and the content ends UI.GAP short of that 10px on the right.
-local INSET   = 10
 local GAP     = UI.GAP   -- between stacked lines
-local RIGHT_INSET = INSET + GAP
 local SECTION = 20   -- over a later section title, for the rule UI:CreateSectionTitle draws 12px above it
 local TITLE_H = 24   -- a section title and the gap under it
-local BTN_H   = 22
-local ROW_H   = 16
+local BTN_H   = 24
+local ROW_H   = 18
+local CARD_PAD, CARD_TOP = 14, 40   -- a card's padding, and where its content starts under its title
+local CARD_GAP    = UI.SP.GAP
+local TWO_CARDS_W = 900             -- Settings' (UI/SettingsPanel.lua): two columns of cards from this width
 
 -- The cut for both lists. This is a column inside another panel, not a roster
 -- browser: a standby of eight people is a question for the website, and the two
@@ -38,8 +40,7 @@ local LIST_ROWS = 5
 -- hour while it can reach the site, so three days means three days of failing.
 local ACK_STALE = 3 * 24 * 60 * 60
 
--- Same shape as UI/Dashboard.lua's countdown, kept local so this panel
--- does not depend on the dashboard having been built.
+-- A countdown in the shape the Now cards had ("2d 4h", "4:12"), kept local.
 local function fmtCountdown(dt)
     if dt <= 0 then return L["now"] end
     local d = math.floor(dt / 86400)
@@ -215,7 +216,7 @@ end
 --- with it), width, height. Returns the button; the line under it is btn.why, for the host to place.
 function UI:CreateRaidStepper(parent, opts)
     local btn = UI:CreateButton(parent, L["Start raid"], opts.width or 150, opts.height or BTN_H)
-    local why = UI:CreateText(parent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local why = UI:CreateText(parent, "", UI.SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     why:SetJustifyH("LEFT")
     why:SetWordWrap(true)
     btn.why = why
@@ -271,33 +272,43 @@ local function buildPrompt()
     local f = CreateFrame("Frame", "GuildOSRaidPromptFrame", UIParent, "BackdropTemplate")
     f:SetSize(PROMPT_W, PROMPT_H)
     f:SetPoint("TOP", UIParent, "TOP", 0, -140)
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(f) })
-    f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 0.98)
-    UI:StylePopup(f, { shadowSize = 16 })
     f:SetFrameStrata("HIGH")
     f:SetMovable(true)
     f:EnableMouse(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-
-    f.title = UI:CreateTitle(f, "", 15)
-    f.title:SetPoint("TOPLEFT", 16, -14)
-    f.title:SetPoint("RIGHT", f, "RIGHT", -36, 0)
-    f.title:SetJustifyH("LEFT")
-    f.title:SetWordWrap(false)
 
     -- Put off (Later, or the close button), not done: the digest that gave way to it at login has its turn.
-    local function putOff()
+    -- Later asks again in a while (audit B18); the close button does not.
+    local function putOff(later)
         f:Hide()
-        if GuildOS.RaidStart then GuildOS.RaidStart:PromptDismissed(f.roster) end
+        if GuildOS.RaidStart then GuildOS.RaidStart:PromptDismissed(f.roster, later == true) end
     end
-    f.close = UI:CreateCloseButton(f)
-    f.close:SetPoint("TOPRIGHT", -8, -8)
-    f.close:SetScript("OnClick", putOff)
+    -- A floating window (the mockup's .fw): the raid's name in Cinzel gold in its header, the round red close.
+    local Kit = rawget(GuildOS, "Kit")
+    local DY = 0
+    if Kit then
+        Kit:Dress(f, "", { onClose = function() putOff(false) end })
+        f.title, f.close = f.titleText, f.closeBtn
+        DY = Kit.HEADER_H - 30
+        f:SetHeight(PROMPT_H + DY)
+    else
+        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = UI:Edge(f) })
+        f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 0.98)
+        UI:StylePopup(f, { shadowSize = 16 })
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+        f.title = UI:CreateTitle(f, "", 15)
+        f.title:SetPoint("TOPLEFT", 16, -14)
+        f.title:SetPoint("RIGHT", f, "RIGHT", -36, 0)
+        f.title:SetJustifyH("LEFT")
+        f.title:SetWordWrap(false)
+        f.close = UI:CreateCloseButton(f)
+        f.close:SetPoint("TOPRIGHT", -8, -8)
+        f.close:SetScript("OnClick", function() putOff(false) end)
+    end
 
     f.when = UI:CreateText(f, "", 11, C.label.r, C.label.g, C.label.b)
-    f.when:SetPoint("TOPLEFT", 16, -42)
+    f.when:SetPoint("TOPLEFT", 16, -(42 + DY))
     f.when:SetJustifyH("LEFT")
 
     -- The button on the raid this prompt is about, in its newest copy (a roster pasted since the inbox was read, with
@@ -312,7 +323,7 @@ local function buildPrompt()
         paint = function() if f.roster then f.when:SetText(promptWhen(raid())) end end,
         width = 200, height = PROMPT_BTN_H,
     }), "primary")
-    f.go:SetPoint("TOPLEFT", 16, -70)
+    f.go:SetPoint("TOPLEFT", 16, -(70 + DY))
     f.go.why:SetPoint("TOPLEFT", f.go, "BOTTOMLEFT", 0, -6)
     f.go.why:SetWidth(PROMPT_W - 32)
     -- Two lines fit above Later: a long list of who is offline is cut there, not drawn under the button.
@@ -320,7 +331,7 @@ local function buildPrompt()
 
     f.later = UI:CreateButton(f, L["Later"], 90, PROMPT_BTN_H)
     f.later:SetPoint("BOTTOMRIGHT", -16, 14)
-    f.later:SetScript("OnClick", putOff)
+    f.later:SetScript("OnClick", function() putOff(true) end)
 
     f:Hide()
     return f
@@ -341,87 +352,103 @@ function GuildOS:ShowRaidPrompt(roster)
     if digest and digest:IsShown() then digest:Hide() end
     local title = roster.title
     if not title or title == "" then title = roster.instance or L["Raid"] end
-    prompt.title:SetText(GuildOS.SanitizeUserText and GuildOS:SanitizeUserText(title) or title)
+    GuildOS:SetTitleText(prompt.title, GuildOS.SanitizeUserText and GuildOS:SanitizeUserText(title) or title)
     prompt.roster = roster
     prompt.when:SetText(promptWhen(roster))
     if prompt:IsShown() then GuildOS:RefreshRaidSteppers() end
     prompt:Show()
     prompt:Raise()
+    return prompt
 end
 
 function GuildOS:CreateWebPanel(parent, _win)
     local panel = CreateFrame("Frame", nil, parent)
     panel:SetAllPoints()
 
-    -- A section title as every screen draws it (#371). A later one's rule stops where the content
-    -- does, not at the panel's edge.
-    local function sectionTitle(text, first)
-        local fs = UI:CreateSectionTitle(panel, text, first)
-        if fs.rule then fs.rule:SetPoint("RIGHT", panel, "RIGHT", -RIGHT_INSET, 0) end
+    -- Settings' look (#449): each section a parchment card, Publishing and the planned raid side by side from
+    -- TWO_CARDS_W, one under the other below it, in a scroll area.
+    local scroll, content = UI:CreateScrollFrame(panel, "GuildOSWebScroll")
+    scroll:SetAllPoints(panel)
+    UI:BindScrollChildWidth(scroll, content)
+    panel.scroll, panel.content = scroll, content
+
+    local pubCard   = UI:CreateCard(content, L["Publishing"])
+    local raidCard  = UI:CreateCard(content, L["Planned raid"])
+    local firstCard = UI:CreateCard(content, L["First time?"])
+    panel.cards = { publishing = pubCard, raid = raidCard, first = firstCard }
+    -- The tour (UI/Tour.lua): the site and the companion, and where the guild is linked.
+    if UI.RegisterTourAnchor then
+        UI:RegisterTourAnchor("web.site", firstCard)
+        UI:RegisterTourAnchor("web.link", pubCard)
+    end
+
+    local INK, SOFT = C.paperInk, C.paperSoft
+    local S = UI.STATUS_INK or {}
+    local function paperText(card, size, c)
+        c = c or INK
+        local fs = UI:CreateText(card, "", size, c.r, c.g, c.b)
+        fs:SetJustifyH("LEFT")
+        return fs
+    end
+
+    -- A list inside the raid's card, under a section title of its own (Standby, Needs a look).
+    local function sectionTitle(card, text)
+        local fs = UI:CreateSectionTitle(card, text)
+        if fs.rule then fs.rule:SetPoint("RIGHT", card, "RIGHT", -CARD_PAD, 0) end
         return fs
     end
 
     ----------------------------------------------------------------
-    -- PUBLISHING
+    -- PUBLISHING: the state with its dot, what goes out, the site's answer, the actions as one row
     ----------------------------------------------------------------
-    local pubHead = sectionTitle(L["PUBLISHING"], true)
-
-    local stateDot = panel:CreateTexture(nil, "OVERLAY")
+    local stateDot = pubCard:CreateTexture(nil, "OVERLAY")
     stateDot:SetTexture("Interface\\Buttons\\WHITE8x8")
-    stateDot:SetSize(6, 6)
+    stateDot:SetSize(8, 8)
 
-    local stateText = UI:CreateText(panel, "", 11, C.text.r, C.text.g, C.text.b)
-    local toggleBtn = UI:CreateButton(panel, L["Turn on"], 90, BTN_H)
-    -- /gos web: the string to paste into the companion, while it is on (#142).
-    local pasteBtn = UI:CreateButton(panel, L["Show the paste text"], 170, BTN_H)
-    pasteBtn:SetScript("OnClick", function() GuildOS:ShowWebString() end)
-
-    local countText   = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    -- On the state's line, after "On": it says when that state last reached the disk (#371).
-    local writtenText = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    writtenText:SetJustifyH("LEFT")
+    local stateText = paperText(pubCard, 13, INK)
+    local writtenText = paperText(pubCard, 11, SOFT)
+    local countText   = paperText(pubCard, 11, SOFT)
+    countText:SetWordWrap(true)
     -- The other half of the round trip, and the only line on this panel that is not
     -- about what the game did. The companion leaves it in the inbox after the site
     -- accepts an export.
-    local ackText     = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    countText:SetJustifyH("LEFT")
-    countText:SetWordWrap(true)
-    ackText:SetJustifyH("LEFT")
+    local ackText     = paperText(pubCard, 11, SOFT)
     ackText:SetWordWrap(true)   -- the no-ack lines say what to do, and run past one row
 
-    -- Why a button is off: a hint in `textSoft`, not gold (#371).
-    local publishBtn  = UI:CreateButton(panel, L["Publish now"], 120, BTN_H)
-    local publishWhy  = UI:CreateText(panel, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    local publishNote = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    local toggleBtn = UI:CreateButton(pubCard, L["Turn on"], 90, BTN_H)
+    -- /gos web: the string to paste into the companion, while it is on (#142).
+    local pasteBtn = UI:CreateButton(pubCard, L["Show the paste text"], 170, BTN_H)
+    pasteBtn:SetScript("OnClick", function() GuildOS:ShowWebString() end)
+    local publishBtn  = UI:SetButtonVariant(UI:CreateButton(pubCard, L["Publish now"], 120, BTN_H), "primary")
+    for _, b in ipairs({ toggleBtn, pasteBtn, publishBtn }) do b:SetWidth(math.ceil(b.label:GetStringWidth() or 60) + 28) end
+    -- Why a button is off: its tooltip, and a line under the row (#371).
+    local publishWhy  = paperText(pubCard, 11, SOFT)
+    publishWhy:SetWordWrap(true)
+    local publishNote = paperText(pubCard, 11, SOFT)
     publishNote:SetWordWrap(true)
-    publishNote:SetJustifyH("LEFT")
-    publishWhy:SetJustifyH("LEFT")
 
     ----------------------------------------------------------------
     -- PLANNED RAID
     ----------------------------------------------------------------
-    local raidHead  = sectionTitle(L["PLANNED RAID"])
-    -- How many are coming follows the title as secondary text, not gold in the far corner (#371).
-    local raidCount = UI:CreateText(panel, "", 11, C.label.r, C.label.g, C.label.b)
-    local raidTitle = UI:CreateText(panel, "", 12, C.text.r, C.text.g, C.text.b)
-    local raidWhen  = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    raidTitle:SetJustifyH("LEFT")
+    -- How many are coming, at the card's title's right in the soft ink.
+    local raidCount = paperText(raidCard, 11, SOFT)
+    raidCount:SetJustifyH("RIGHT")
+    raidCount:SetPoint("TOPRIGHT", -CARD_PAD, -15)
+    local raidTitle = paperText(raidCard, 13, INK)
+    local raidWhen  = paperText(raidCard, 11, SOFT)
     raidTitle:SetWordWrap(false)
-    raidWhen:SetJustifyH("LEFT")
 
     -- The composition, and the people who are not in it. Both are silent on a v1
     -- payload: an older site sends no `signups`, and inventing zeroes from that
     -- would report a raid nobody declined as one nobody wanted.
-    local raidRoles = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    local raidOut   = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    raidRoles:SetJustifyH("LEFT")
-    raidOut:SetJustifyH("LEFT")
+    local raidRoles = paperText(raidCard, 11, SOFT)
+    local raidOut   = paperText(raidCard, 11, SOFT)
 
-    local bringBtn  = UI:CreateButton(panel, L["Bring roster"], 110, BTN_H)
+    local bringBtn  = UI:CreateButton(raidCard, L["Bring roster"], 110, BTN_H)
     -- Iniciar raide (issue #400): invite, convert, invite the rest and arrange, one click a step, on the raid of the
     -- window, in place of the Invite and Groups buttons it walks through. The screen's one primary. Under it, why it
-    -- is off, or who was passed over for being offline, in `textSoft` (#371).
-    local startBtn  = UI:SetButtonVariant(UI:CreateRaidStepper(panel, {
+    -- is off, or who was passed over for being offline, in the paper's soft ink (#371).
+    local startBtn  = UI:SetButtonVariant(UI:CreateRaidStepper(raidCard, {
         roster = function()
             local I = GuildOS.CompanionImport
             return I and I:ActiveRoster()
@@ -441,10 +468,12 @@ function GuildOS:CreateWebPanel(parent, _win)
         width = 160,
     }), "primary")
     local raidWhy   = startBtn.why
+    raidWhy:SetTextColor(SOFT.r, SOFT.g, SOFT.b)
     -- Out of the group whoever is not in the plan, after a confirmation naming them (issue #292).
-    local trimBtn   = UI:CreateButton(panel, L["Fit to plan"], 100, BTN_H)
+    local trimBtn   = UI:CreateButton(raidCard, L["Fit to plan"], 100, BTN_H)
     -- The night's plan from the site, of the raid the button acts on: notes, tasks and loot rules (issue #296).
-    local planBtn   = UI:CreateButton(panel, L["Raid plan"], 90, BTN_H)
+    local planBtn   = UI:CreateButton(raidCard, L["Raid plan"], 90, BTN_H)
+    for _, b in ipairs({ bringBtn, trimBtn, planBtn }) do b:SetWidth(math.ceil(b.label:GetStringWidth() or 60) + 28) end
 
     ----------------------------------------------------------------
     -- STANDBY / NEEDS A LOOK
@@ -456,21 +485,20 @@ function GuildOS:CreateWebPanel(parent, _win)
     local function makeList(headText)
         -- Zeroed, not nil: a resize can reach Relayout before the first Refresh has
         -- ever run, and the layout reads these to decide it can skip the section.
-        local list = { head = sectionTitle(headText), rows = {}, shown = 0, rest = 0 }
+        local list = { head = sectionTitle(raidCard, headText), rows = {}, shown = 0, rest = 0 }
         for i = 1, LIST_ROWS do
-            local left  = UI:CreateText(panel, "", 10, C.text.r, C.text.g, C.text.b)
-            local right = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-            left:SetJustifyH("LEFT");  left:SetWordWrap(false)
-            right:SetJustifyH("LEFT"); right:SetWordWrap(false)
+            local left  = paperText(raidCard, 11, INK)
+            local right = paperText(raidCard, 11, SOFT)
+            left:SetWordWrap(false)
+            right:SetWordWrap(false)
             list.rows[i] = { left = left, right = right }
         end
-        list.more = UI:CreateText(panel, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
-        list.more:SetJustifyH("LEFT")
+        list.more = paperText(raidCard, UI.SP.META, SOFT)
         return list
     end
 
-    local standby = makeList(L["STANDBY"])
-    local look    = makeList(L["NEEDS A LOOK"])
+    local standby = makeList(L["Standby"])
+    local look    = makeList(L["Needs a look"])
     for _, list in ipairs({ standby, look }) do
         list.head:Hide()
         list.head.rule:Hide()
@@ -481,23 +509,19 @@ function GuildOS:CreateWebPanel(parent, _win)
     ----------------------------------------------------------------
     -- FIRST TIME?
     ----------------------------------------------------------------
-    local firstHead = sectionTitle(L["FIRST TIME?"])
-    local step1 = UI:CreateText(panel, string.format(L["1. Open %s"], SITE),
-        10, C.text.r, C.text.g, C.text.b)
-    local step2 = UI:CreateText(panel, L["2. Download the companion and paste the token"],
-        10, C.textDim.r, C.textDim.g, C.textDim.b)
-    local step3 = UI:CreateText(panel, L["3. Log out of the game once"],
-        10, C.textDim.r, C.textDim.g, C.textDim.b)
-    for _, fs in ipairs({ step1, step2, step3 }) do
-        fs:SetJustifyH("LEFT")
-        fs:SetWordWrap(false)
-    end
-    local copyBtn = UI:CreateButton(panel, L["Copy"], 70, 18)
+    local step1 = paperText(firstCard, 12, INK)
+    step1:SetText(string.format(L["1. Open %s"], SITE))
+    local step2 = paperText(firstCard, 12, SOFT)
+    step2:SetText(L["2. Download the companion and paste the token"])
+    local step3 = paperText(firstCard, 12, SOFT)
+    step3:SetText(L["3. Log out of the game once"])
+    for _, fs in ipairs({ step1, step2, step3 }) do fs:SetWordWrap(false) end
+    local copyBtn = UI:CreateButton(firstCard, L["Copy"], 70, 20)
 
     -- WoW cannot open a browser, so the address goes into a pre-selected
     -- read-only box for Ctrl+C. Same idiom as GuildOS:ShowExportPopup.
     -- The shared field (#371): its Escape and focus handlers are its own.
-    local copyBox = UI:CreateInput(panel, 200, 20)
+    local copyBox = UI:CreateInput(firstCard, 200, 22)
     copyBox:SetText(SITE)
     copyBox:SetScript("OnEnterPressed", function(s) s:ClearFocus() end)
     -- Read-only: any edit snaps back to the full address, still selected. Hooked, as the field's own
@@ -553,12 +577,14 @@ function GuildOS:CreateWebPanel(parent, _win)
     ----------------------------------------------------------------
     -- These are UI:CreateButton buttons: their own disabled state already greys
     -- the label, and dimming the whole button on top of that made it vanish.
-    local function setEnabled(btn, ok)
+    -- Off, a button says why in its tooltip (UI:SetDisabledReason).
+    local function setEnabled(btn, ok, why)
         if ok then
             btn:Enable()
         else
             btn:Disable()
         end
+        UI:SetDisabledReason(btn, (not ok) and why or nil)
     end
 
     --- lines is an array of { leftText, rightText }. Everything past LIST_ROWS
@@ -592,7 +618,7 @@ function GuildOS:CreateWebPanel(parent, _win)
         local on = (co and co:IsEnabled()) and true or false
         self.publishing = on
 
-        local dot = on and C.online or C.textDim
+        local dot = on and (S.ok or C.ok) or (S.mute or SOFT)
         stateDot:SetVertexColor(dot.r, dot.g, dot.b, 1)
         stateText:SetText(on and L["On"] or L["Off"])
         toggleBtn.label:SetText(on and L["Turn off"] or L["Turn on"])
@@ -617,7 +643,7 @@ function GuildOS:CreateWebPanel(parent, _win)
             if I then ackAt, ackCount = I:Ack() end
 
             -- A companion that is silent or stale is a warning: `warn`, not gold (#371).
-            local dim, warn = C.textDim, C.warn
+            local dim, warn = SOFT, S.warn or C.warn
             if not ackAt then
                 -- No ack: a companion that wrote blocks without one has no guild link for this
                 -- folder; an empty inbox is the one the addon package ships, not written over yet.
@@ -653,7 +679,7 @@ function GuildOS:CreateWebPanel(parent, _win)
         ackText:SetShown(on)
 
         local pubOk, pubWhy = canPublishNow()
-        setEnabled(publishBtn, pubOk)
+        setEnabled(publishBtn, pubOk, pubWhy)
         publishWhy:SetText(pubOk and "" or (pubWhy or ""))
 
         -- The raid the buttons below act on: the one of the window when there is one (issue #400).
@@ -715,8 +741,9 @@ function GuildOS:CreateWebPanel(parent, _win)
         -- cannot run, and an enabled button that does nothing when clicked is
         -- the exact failure this panel exists to remove.
         local trimOk = I and I:CanTrim() or false
-        setEnabled(bringBtn, on)
-        setEnabled(trimBtn, trimOk and true or false)
+        setEnabled(bringBtn, on, L["Turn publishing on first."])
+        setEnabled(trimBtn, trimOk and true or false, roster and L["Everyone in the group is in the plan."]
+            or L["Import a roster first."])
         -- Iniciar raide paints its own label, gate and reason line, the prompt's and the Now tab's with it: one reason
         -- line, the first thing standing in the way (RaidStart:Next), not a wall of them. Laid out below, once.
         self.refreshing = true
@@ -740,9 +767,7 @@ function GuildOS:CreateWebPanel(parent, _win)
         -- The toggle already answers "has this person set it up", so the
         -- first-run block needs no state of its own.
         self.showFirstRun = not on
-        for _, r in ipairs({ firstHead, firstHead.rule, step1, step2, step3, copyBtn }) do
-            r:SetShown(self.showFirstRun)
-        end
+        firstCard:SetShown(self.showFirstRun)
         if not self.showFirstRun then copyBox:Hide() end
 
         self:Relayout()
@@ -752,134 +777,154 @@ function GuildOS:CreateWebPanel(parent, _win)
     -- Layout: one vertical stack; a hidden section costs no height.
     ----------------------------------------------------------------
     function panel:Relayout(w, _h)
-        w = w or parent:GetWidth()
+        w = w or UI:LaidWidth(parent)
         if not w or w < 1 then return end
-        local inner = math.max(120, w - INSET - RIGHT_INSET)
-        local y = GAP
+        w = math.max(200, w - (UI.SCROLL_GUTTER or 0))
+        content:SetWidth(w)
+        local two = w >= TWO_CARDS_W
+        local colW = two and math.floor((w - CARD_GAP) / 2) or w
+        local inner = math.max(120, colW - 2 * CARD_PAD)
 
-        local function place(region, dx, dy)
+        -- Lays `region` at y in `card`, dx in.
+        local function place(card, region, y, dx)
             region:ClearAllPoints()
-            region:SetPoint("TOPLEFT", panel, "TOPLEFT", INSET + (dx or 0), -(y + (dy or 0)))
+            region:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD + (dx or 0), -y)
+        end
+        local function textH(fs, min)
+            return math.max(min or ROW_H, math.ceil(fs:GetStringHeight() or 0) + 4)
+        end
+        -- A row of buttons from x = 0; the shown ones only.
+        local function buttonRow(card, y, list)
+            local x = 0
+            for _, b in ipairs(list) do
+                if b:IsShown() then
+                    place(card, b, y, x)
+                    x = x + (b:GetWidth() or 80) + 6
+                end
+            end
         end
 
-        place(pubHead)
-        y = y + TITLE_H
-
-        -- One line says the state and when it was last written, and its two buttons follow it
-        -- there instead of sitting in the far corner (#371). The texts take the width they need.
-        place(stateDot, 2, 8)
-        place(stateText, 14, 4)
+        -- Publishing
+        local y = CARD_TOP
+        place(pubCard, stateDot, y + 5, 1)
+        place(pubCard, stateText, y + 1, 16)
         writtenText:ClearAllPoints()
-        writtenText:SetPoint("LEFT", stateText, "RIGHT", GAP * 2, 0)
-        toggleBtn:ClearAllPoints()
-        toggleBtn:SetPoint("LEFT", writtenText, "RIGHT", GAP * 2, 0)
-        pasteBtn:ClearAllPoints()
-        pasteBtn:SetPoint("LEFT", toggleBtn, "RIGHT", 6, 0)
-        pasteBtn:SetShown(self.publishing and true or false)
-        y = y + BTN_H + 4
-
-        place(countText); countText:SetWidth(inner)
-        y = y + ROW_H
+        writtenText:SetPoint("LEFT", stateText, "RIGHT", GAP, 0)
+        y = y + 22
+        countText:SetShown((countText:GetText() or "") ~= "")
+        if countText:IsShown() then
+            place(pubCard, countText, y); countText:SetWidth(inner)
+            y = y + textH(countText)
+        end
         if ackText:IsShown() then
-            place(ackText); ackText:SetWidth(inner)
-            y = y + math.max(ROW_H, math.ceil(ackText:GetStringHeight() or 0) + 2)
+            place(pubCard, ackText, y); ackText:SetWidth(inner)
+            y = y + textH(ackText)
         end
         y = y + GAP
-
-        local on = self.publishing
+        local on = self.publishing and true or false
+        pasteBtn:SetShown(on)
         publishBtn:SetShown(on)
-        publishWhy:SetShown(on)
-        publishNote:SetShown(on)
-        if on then
-            publishBtn:ClearAllPoints()
-            publishBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", INSET, -y)
-            place(publishWhy, 128, 6)
-            publishWhy:SetWidth(math.max(60, inner - 128))
-            y = y + BTN_H + 2
-            place(publishNote); publishNote:SetWidth(inner)
-            y = y + math.max(ROW_H * 2, math.ceil(publishNote:GetStringHeight() or 0) + 2)
+        buttonRow(pubCard, y, { toggleBtn, pasteBtn, publishBtn })
+        y = y + BTN_H + 6
+        publishWhy:SetShown(on and (publishWhy:GetText() or "") ~= "")
+        if publishWhy:IsShown() then
+            place(pubCard, publishWhy, y); publishWhy:SetWidth(inner)
+            y = y + textH(publishWhy)
+        end
+        publishNote:SetShown(on and (publishNote:GetText() or "") ~= "")
+        if publishNote:IsShown() then
+            place(pubCard, publishNote, y); publishNote:SetWidth(inner)
+            y = y + textH(publishNote)
+        end
+        local hPub = y + CARD_PAD - 4
+
+        -- First time? (only while publishing is off)
+        local hFirst = 0
+        if self.showFirstRun then
+            y = CARD_TOP
+            -- The address and its Copy button on one line, side by side (#371).
+            place(firstCard, step1, y + 3)
+            copyBtn:ClearAllPoints()
+            copyBtn:SetPoint("LEFT", step1, "RIGHT", GAP, 0)
+            y = y + 26
+            place(firstCard, step2, y); step2:SetWidth(inner)
+            y = y + ROW_H + 2
+            place(firstCard, step3, y); step3:SetWidth(inner)
+            y = y + ROW_H + 4
+            if copyBox:IsShown() then
+                place(firstCard, copyBox, y); copyBox:SetWidth(inner)
+                y = y + 28
+            end
+            hFirst = y + CARD_PAD - 4
         end
 
-        y = y + SECTION
-        place(raidHead)
-        raidCount:ClearAllPoints()
-        raidCount:SetPoint("LEFT", raidHead, "RIGHT", GAP, 0)
-        y = y + TITLE_H
-        place(raidTitle); raidTitle:SetWidth(inner)
+        -- The planned raid
+        y = CARD_TOP
+        place(raidCard, raidTitle, y); raidTitle:SetWidth(inner)
         y = y + ROW_H + 2
-        place(raidWhen); raidWhen:SetWidth(inner)
-        y = y + ROW_H
-
-        -- Both go quiet on a v1 payload rather than drawing an empty row.
-        if raidRoles:GetText() ~= "" then
-            place(raidRoles); raidRoles:SetWidth(inner)
+        if (raidWhen:GetText() or "") ~= "" then
+            place(raidCard, raidWhen, y); raidWhen:SetWidth(inner)
             y = y + ROW_H
         end
-        if raidOut:GetText() ~= "" then
-            place(raidOut); raidOut:SetWidth(inner)
+        -- Both go quiet on a v1 payload rather than drawing an empty row.
+        raidRoles:SetShown((raidRoles:GetText() or "") ~= "")
+        if raidRoles:IsShown() then
+            place(raidCard, raidRoles, y); raidRoles:SetWidth(inner)
+            y = y + ROW_H
+        end
+        raidOut:SetShown((raidOut:GetText() or "") ~= "")
+        if raidOut:IsShown() then
+            place(raidCard, raidOut, y); raidOut:SetWidth(inner)
             y = y + ROW_H
         end
         y = y + GAP
-
         -- Iniciar raide on a row of its own: its label grows with the step ("Convert to raid (12 to invite)"), and
-        -- its reason line under it. Then the roster's other three.
-        startBtn:ClearAllPoints()
-        startBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", INSET, -y)
+        -- its reason line under it. Then the roster's other three, as one row.
+        place(raidCard, startBtn, y)
         y = y + BTN_H + 4
-        place(raidWhy); raidWhy:SetWidth(inner)
-        y = y + math.max(ROW_H, math.ceil(raidWhy:GetStringHeight() or 0) + 2) + 2
-        bringBtn:ClearAllPoints()
-        bringBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", INSET, -y)
-        trimBtn:ClearAllPoints()
-        trimBtn:SetPoint("LEFT", bringBtn, "RIGHT", 6, 0)
-        planBtn:ClearAllPoints()
-        planBtn:SetPoint("LEFT", trimBtn, "RIGHT", 6, 0)
+        place(raidCard, raidWhy, y); raidWhy:SetWidth(inner)
+        y = y + textH(raidWhy) + 2
+        buttonRow(raidCard, y, { bringBtn, trimBtn, planBtn })
         y = y + BTN_H + 4
 
         -- The name column is fixed rather than measured: two columns that reflow per
         -- row read as a ragged mess, and a name long enough to reach the second
         -- column is a name the player chose to make everybody's problem.
-        local NAME_W = math.min(120, math.floor(inner * 0.38))
+        local NAME_W = math.min(140, math.floor(inner * 0.38))
         local function placeList(list)
             if list.shown == 0 and list.rest == 0 then return end
             y = y + SECTION
-            place(list.head)
+            place(raidCard, list.head, y)
             y = y + TITLE_H
             for i = 1, list.shown do
                 local row = list.rows[i]
-                place(row.left); row.left:SetWidth(NAME_W)
-                place(row.right, NAME_W + 8)
+                place(raidCard, row.left, y); row.left:SetWidth(NAME_W)
+                place(raidCard, row.right, y, NAME_W + 8)
                 row.right:SetWidth(math.max(40, inner - NAME_W - 8))
                 y = y + ROW_H
             end
             if list.rest > 0 then
-                place(list.more); list.more:SetWidth(inner)
+                place(raidCard, list.more, y); list.more:SetWidth(inner)
                 y = y + ROW_H
             end
         end
         placeList(standby)
         placeList(look)
+        local hRaid = y + CARD_PAD - 4
 
-        if self.showFirstRun then
-            y = y + SECTION
-            place(firstHead)
-            y = y + TITLE_H
-            -- The address and its Copy button on one line, side by side (#371).
-            place(step1)
-            copyBtn:ClearAllPoints()
-            copyBtn:SetPoint("LEFT", step1, "RIGHT", GAP, 0)
-            y = y + ROW_H + 4
-            place(step2); step2:SetWidth(inner)
-            y = y + ROW_H
-            place(step3); step3:SetWidth(inner)
-            y = y + ROW_H + 4
-            if copyBox:IsShown() then
-                place(copyBox); copyBox:SetWidth(inner)
-                y = y + 20
-            end
+        -- The cards: Publishing (and First time? under it) on the left, the raid on the right; one column when narrow.
+        local function card(f, x, top, h)
+            f:ClearAllPoints()
+            f:SetPoint("TOPLEFT", content, "TOPLEFT", x, -top)
+            f:SetSize(colW, h)
+            return top + h + CARD_GAP
         end
-
-        self.contentHeight = y + GAP
+        local yl = card(pubCard, 0, 2, hPub)
+        if hFirst > 0 then yl = card(firstCard, 0, yl, hFirst) end
+        local yr = two and card(raidCard, colW + CARD_GAP, 2, hRaid) or card(raidCard, 0, yl, hRaid)
+        if not two then yl = yr end
+        self.contentHeight = math.max(yl, yr)
+        content:SetHeight(self.contentHeight + 4)
     end
 
     ----------------------------------------------------------------

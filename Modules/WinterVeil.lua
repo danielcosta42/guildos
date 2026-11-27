@@ -16,6 +16,7 @@
 -- it); wrapping and opening are the player's own export's, or the site's. There is no relay of pairs: a player without
 -- the companion wraps on the site.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local WV = {}
 GuildOS.WinterVeil = WV
 

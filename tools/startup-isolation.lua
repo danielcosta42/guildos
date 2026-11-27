@@ -130,8 +130,8 @@ check(startup.failed.Wishlist and startup.failed.Wishlist:find("exploded", 1, tr
   "the failure is recorded against the module")
 check(startup.stacks.Wishlist == "stack!", "the stack of the failure is kept")
 check(GuildOS:FeatureStartFailed("wishlist") == "Wishlist", "the wishlist window knows its module failed")
-check(GuildOS:FeatureStartFailed("points") == "Points" and GuildOS:FeatureStartFailed("dkp") == "Points",
-  "both the toggle and the window of a failed module are marked")
+check(GuildOS:FeatureStartFailed("dkp") == "Points",   -- the DKP switch is the points module's (audit B25)
+  "the toggle and the window of a failed module are marked")
 check(GuildOS:FeatureStartFailed("recipes") == nil, "a module that started does not mark its window")
 check(GuildOS.UI:IsFeatureAllowed({ id = "wishlist" }) == false, "the window of a failed module refuses to open")
 check(GuildOS.UI:IsFeatureAllowed({ id = "recipes" }) == true, "the window of a module that started still opens")

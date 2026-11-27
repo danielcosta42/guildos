@@ -485,6 +485,9 @@ GuildOS.UI = setmetatable({
     return b
   end,
   CreateCheckbox = function() return widget({ checkbox = widget() }) end,
+  -- The Salão's cards and variants (#449): a card has its title, a variant is the button it was given.
+  CreateCard = function() return widget({ title = widget() }) end,
+  SetButtonVariant = function(_, b) return b end,
   CreateScrollFrame = function() return widget(), widget() end,
   AttachSaveButton = function(_, box, onSave)
     box.saveButton = widget({ text = "Save" })
@@ -492,6 +495,7 @@ GuildOS.UI = setmetatable({
     return box.saveButton
   end,
 }, { __index = function() return function() return widget() end end })
+dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/Layout.lua")
 -- The newest dropdown that offers `text`, and whether one does; `choose` picks it there.
 local function offered(text)
@@ -554,6 +558,24 @@ check(LR:Counters(LR:For("Beta"))[1].reset == "night" and LR:IsCustom("Beta") an
 check(button("Back to the loot system's rule"), "and offers the way back")
 click("Back to the loot system's rule")
 check(not LR:IsCustom("Beta"), "which is a click")
+
+-- A Discord core whose rule the site sends (in game: "attempt to index local 'rule' (a boolean value)"):
+-- LootRuleFromSite answers true/false, the tab reads the rule from the roster, never the boolean.
+do
+  local realFrom = CM.LootRuleFromSite
+  CM.LootRuleFromSite = function() return true end
+  GuildOS.db.companionRoster = { lootRule = LR:For("Beta") }
+  widgets, buttons, dropdowns = {}, {}, {}
+  drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, content, "Beta")
+  check(drew, "the Rule tab draws while the site's rule plays (" .. tostring(problem) .. ")")
+  GuildOS.db.companionRoster = {}
+  widgets, buttons, dropdowns = {}, {}, {}
+  drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, content, "Beta")
+  check(drew, "and when the roster carries no readable rule (" .. tostring(problem) .. ")")
+  CM.LootRuleFromSite = realFrom
+  GuildOS.db.companionRoster = nil
+end
+check(pcall(LR.Describe, LR, true), "Describe never indexes a boolean")
 
 -- The Rule tab on a core: every loot system this client offers, and Follow the guild (they were the
 -- core's Config tab's until issue #346).

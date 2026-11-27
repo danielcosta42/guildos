@@ -23,6 +23,28 @@ if CN.EnableAlerts then
     })
 end
 
+-- ChehulNet v17: the campfire beacon (chehulnet#13), WoW: Forever only (the camp kits exist nowhere else), on unless
+-- the player turned it off (default = true). The lib decides everything: the named announce goes to guild and group
+-- only, the realm bus gets an ownerless sighting (off by default on PvP rulesets), and nothing at all goes with
+-- Warmth loaded. At the first kit the player lights, once ever, one chat line says so and how to turn it off. Guild OS
+-- keeps the answers (GuildOSDB.camps: consent, realm, noticed); Settings › Profile › Privacy and /gos campfire change
+-- them (CN:SetCampConsent, CN:SetCampRealm).
+if CN.EnableCamps and GuildOS and GuildOS.Client and not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail then
+    CN:EnableCamps({
+        store = function()
+            GuildOSDB = GuildOSDB or {}
+            GuildOSDB.camps = GuildOSDB.camps or {}
+            return GuildOSDB.camps
+        end,
+        default = true,
+        notice = function()
+            if GuildOS.Print then
+                GuildOS:Print(GuildOS.L["Your campfire shows on the map for guildmates and players with Warmth (anonymous outside your guild and group). To turn it off: /gos campfire off"])
+            end
+        end,
+    })
+end
+
 -- LibChehulMesh v7: the Chehul clients the mesh heard outlive a /reload and start the next login's peer exchange
 -- (GuildOSDB.meshPeers, name -> time()).
 local Mesh = _G.ChehulMesh

@@ -303,6 +303,21 @@ BA:Start({ days = 30 }, "promote")
 printed = {}
 BA:Command("next")
 check(BA:Queue().items[1].status == "sent" and said("Type /gpromote Bob in chat"), "Forever: /gos bulk next prints the line")
+-- Never typed: the roster shows no change, the member reads "not confirmed", and Retry puts them back next (audit M13).
+CLOCK = CLOCK + 16
+BA:Confirm()
+check(BA:Queue().items[1].status == "unconfirmed" and BA:Current() == nil, "unconfirmed after the wait, and no longer next")
+check(BA:RetryUnconfirmed() == 1 and BA:Queue().items[1].status == "pending" and BA:Current() == BA:Queue().items[1],
+      "Retry puts the member back in the queue, next")
+printed = {}
+BA:Command("next")
+check(BA:Queue().items[1].status == "sent" and said("Type /gpromote Bob in chat"), "and the next click prints their line again")
+check(BA:RetryUnconfirmed() == 0, "a member just sent is not retried")
+CLOCK = CLOCK + 16
+BA:Confirm()
+BA:Command("retry")
+check(BA:Queue().items[1].status == "pending", "/gos bulk retry does the same")
+BA:Stop()
 GuildOS.Client.game, GuildOS.Client.isAnniversary, GuildOS.Client.has.surnames = "ANNIVERSARY", true, false
 roster[2][2] = 4
 
@@ -341,5 +356,47 @@ check(#BA:Queue().items == 1 and BA:Queue().items[1].fullName == "Bob-Azralon", 
 table.remove(roster, 2)
 check(BA:Arm(false) == nil and BA:Queue().items[1].why == "left", "Bob-Azralon left: Bob-Gallywix does not stand in for him")
 GuildOS.Client.isRetail = false
+
+-- One member from the roster's menu, Ranks, Inactivity, Suggestions or Discipline (audit M11): a queue of one, run by
+-- one click of Next, never the protected call and never the game's panel.
+local GM = GuildOS.GuildManager
+setRoster({ { "Arthas", 1, 60, true }, { "Bob", 4, 60, false, 45 }, { "Cid", 3, 60, false, 2 }, { "Dee", 2, 60, true } })
+printed = {}
+check(GM:Promote("Bob") and BA:Queue() and #BA:Queue().items == 1 and BA:Queue().items[1].fullName == "Bob"
+  and BA:Queue().action == "promote", "Promote queues that one member")
+check(BA:Arm(false) == "/gpromote Bob", "and the click runs the game's /gpromote for them")
+BA:AfterClick(false)
+check(not GM:Demote("Cid") and said("still running"), "a queue still waiting for the roster is never replaced")
+roster[2][2] = 3
+BA:Confirm()
+check(BA:Queue().items[1].status == "done", "the roster shows it: done")
+check(GM:Kick("Cid") and BA:Queue().action == "remove" and BA:Arm(false) == "/gremove Cid", "Remove queues the removal")
+BA:AfterClick(false)
+BA:Stop()
+printed = {}
+check(not GM:Promote("Nobody") and said("Nobody is not in the guild roster."), "somebody not on the roster: said so")
+check(not GM:Promote("Dee") and said("Your guild rank may not do this to Dee."), "a promotion up to one's own rank is refused")
+-- Toward a rank, one step per click (Discipline's rank step).
+check(GM:QueueRankAction("demote", "Cid", nil, 4) and BA:Queue().target == 4 and BA:Arm(false) == Compat.GuildRankCommand("demote", "Cid"),
+  "toward a rank: a demotion step")
+BA:AfterClick(false)
+BA:Stop()
+check(not GM:QueueRankAction("demote", "Bob", nil, 3) and said("Bob is already at that rank."), "already there: said so")
+local menuSrc = assert(io.open(ADDON .. "/UI/RosterFrame.lua", "rb")):read("*a")
+check(not menuSrc:find("SETRANK", 1, true) and not menuSrc:find("ConfirmSetRank", 1, true), "the Set Rank submenu is gone")
+local gmSrc = assert(io.open(ADDON .. "/Modules/GuildManager.lua", "rb")):read("*a")
+check(not gmSrc:find("function GuildManager:SetRank", 1, true), "and so is SetRank, whose rank choice was thrown away")
+
+-- ── Time in rank and in the guild, the player's alts (specs/salao/manutencao-roster.md) ──
+local rr = BA.Rules({ rankDaysMin = "60", tenureDaysMin = "365", countAlts = true })
+check(rr.rankDaysMin == 60 and rr.tenureDaysMin == 365 and rr.countAlts and BA.HasRule(rr), "days in rank and in the guild are rules")
+check(BA.Rules({ rankDaysMin = "0", tenureDaysMin = "abc" }).rankDaysMin == nil and not BA.HasRule(BA.Rules({ countAlts = true })),
+  "nothing set is none; counting alts alone picks nobody")
+check(BA.Meets({ rankDays = 60, tenureDays = 400 }, rr) and not BA.Meets({ rankDays = 59, tenureDays = 400 }, rr)
+  and not BA.Meets({ rankDays = 60 }, rr), "both must hold; an unknown time meets neither")
+local byDays = BA.Rules({ days = 30, countAlts = true })
+check(not BA.Meets({ daysOffline = 45, playerDays = 3 }, byDays) and BA.Meets({ daysOffline = 45, playerDays = 31 }, byDays)
+  and BA.Meets({ daysOffline = 45 }, byDays) and BA.Meets({ daysOffline = 45, playerDays = 3 }, BA.Rules({ days = 30 })),
+  "counting the alts, a character whose alt was seen within the days is kept; without, it is not")
 
 print("bulk-actions: " .. checks .. " checks passed")

@@ -13,9 +13,13 @@ local LOG_MAX = 200
 -- Default inactivity threshold (days) for the purge report.
 local DEFAULT_INACTIVE_DAYS = 30
 GuildManager.DEFAULT_INACTIVE_DAYS = DEFAULT_INACTIVE_DAYS
--- Attendance % at/above which a non-officer member is flagged a promotion
--- candidate in the suggestions view.
+-- Attendance % at/above which a non-officer member is flagged a promotion candidate in the suggestions view:
+-- the "Promote regulars" preset's own threshold (#448 B8), so Suggestions and Presets never disagree.
 local PROMO_ATTENDANCE_MIN = 80
+local function promoAttendanceMin()
+    local MP = GuildOS.ModPresets
+    return (MP and MP.PromoteAttendance and MP:PromoteAttendance()) or PROMO_ATTENDANCE_MIN
+end
 
 function GuildManager:Initialize()
     if not GuildOS.db.managementLog then
@@ -133,21 +137,31 @@ function GuildManager:_protectedNotice(actionLabel, name)
     return false
 end
 
--- All four route to the protected-action handoff (see header note above).
-function GuildManager:Promote(name)
-    return self:_protectedNotice(L["Promote"], name)
+-- One member's promotion, demotion or removal (audit M11): a Bulk actions queue of that one member, done by one click
+-- of its Next button, the way the game takes it from an addon (ADR-0038), never the protected call. `name` is the
+-- roster's name (with its realm where it has one), `key` the member key when the caller holds it; `target`, optional,
+-- a 0-based rank to take them to, one step per click. Without Bulk actions, the game's guild panel as before.
+-- True when the queue started; otherwise it says why.
+function GuildManager:QueueRankAction(action, name, key, target)
+    local BA = GuildOS.BulkActions
+    if not BA then
+        local label = action == "promote" and L["Promote"] or action == "demote" and L["Demote"] or L["Remove from guild"]
+        return self:_protectedNotice(label, name)
+    end
+    key = key or (type(name) == "string" and name ~= "" and GuildOS:KeyOfRosterName(name)) or nil
+    return BA:StartOneAndSay(action, key, target, name and (name:match("^([^-]+)") or name))
 end
 
-function GuildManager:Demote(name)
-    return self:_protectedNotice(L["Demote"], name)
+function GuildManager:Promote(name, key)
+    return self:QueueRankAction("promote", name, key)
 end
 
-function GuildManager:SetRank(name)
-    return self:_protectedNotice(L["Set Rank"], name)
+function GuildManager:Demote(name, key)
+    return self:QueueRankAction("demote", name, key)
 end
 
-function GuildManager:Kick(name)
-    return self:_protectedNotice(L["Remove from guild"], name)
+function GuildManager:Kick(name, key)
+    return self:QueueRankAction("remove", name, key)
 end
 
 -- Set the guild Message of the Day.
@@ -208,26 +222,68 @@ function GuildManager:GetDaysOffline(rosterIndex)
     return (years or 0) * 365 + (months or 0) * 30 + (days or 0) + (hours or 0) / 24
 end
 
--- Roster members offline for at least `days`, sorted most-inactive first.
-function GuildManager:GetInactiveMembers(days)
+local scratchLines, scratchRows = {}, {}   -- GetInactiveMembers' own, filled again each call
+-- Roster members offline for at least `days`, sorted most-inactive first. `countAlts` (nil: the Inactivity screen's
+-- setting, on by default; specs/salao/manutencao-roster.md): a character whose main or another alt of the same
+-- player was seen within `days` is not inactive. Each entry carries `seen`, the group's most recently seen other
+-- character ({ name, days, main }, RosterMaint.GroupSeen), when it has one, and `safe` when the member is on the
+-- safe list now (MemberMarks:IsSafe: a mark past its end no longer counts). `skipSafe`: those are left out (the
+-- digest's "to review" count: the officers already said to keep them).
+function GuildManager:GetInactiveMembers(days, countAlts, skipSafe)
     days = days or DEFAULT_INACTIVE_DAYS
-    local result = {}
+    local RM = GuildOS.RosterMaint
+    local MM = GuildOS.MemberMarks
+    local noteOf = RM and RM.NoteText or function(v) return type(v) == "string" and v or "" end
+    local onotes = MM and GuildOS.Compat.CanViewOfficerNote()
+    if countAlts == nil then countAlts = not RM or RM:CountAlts() end
+    -- One line a member, in tables kept between calls and filled again (memory audit, memoria.md): only the
+    -- result and the groups' "seen" leave this function.
+    local lines, rows = scratchLines, scratchRows
+    local count = 0
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
-        local name, rankName, rankIndex, level, _, _, _, _, isOnline, _, classFile = GetGuildRosterInfo(i)
-        if name and not isOnline then
-            local off = self:GetDaysOffline(i)
-            if off and off >= days then
-                local short = name:match("^([^-]+)") or name
+        local name, rankName, rankIndex, level, _, _, note, onote, isOnline, _, classFile = GetGuildRosterInfo(i)
+        if name then
+            local off = (not isOnline) and self:GetDaysOffline(i) or nil
+            count = count + 1
+            local l = lines[count]
+            if not l then l = {}; lines[count] = l end
+            l.i, l.name, l.rankName, l.rankIndex, l.level = i, name, rankName, rankIndex, level
+            l.class, l.online, l.off, l.note, l.onote = classFile, isOnline, off, note, onote
+            l.key, l.short = GuildOS:KeyOfRosterName(name), name:match("^([^-]+)") or name
+            l.days = isOnline and 0 or (off and math.floor(off)) or nil
+        end
+    end
+    for k = #lines, count + 1, -1 do lines[k] = nil end
+    -- The groups in one pass over the lines (never GetLinkedChars per member: it walks every link).
+    local seen = {}
+    if RM then
+        for k = 1, count do
+            local l, r = lines[k], rows[k]
+            if not r then r = {}; rows[k] = r end
+            r.key, r.name, r.days = l.key, l.short, l.days
+        end
+        for k = #rows, count + 1, -1 do rows[k] = nil end
+        seen = RM.GroupSeen(rows, GuildOS.db and GuildOS.db.altLinks)
+    end
+    local result = {}
+    for _, l in ipairs(lines) do
+        if not l.online and l.off and l.off >= days then
+            local other = seen[l.key]
+            local safe = MM and MM:IsSafe(l.key, noteOf(l.note), onotes and noteOf(l.onote) or nil) or false
+            if not (countAlts and other and other.days < days) and not (skipSafe and safe) then
                 table.insert(result, {
-                    index       = i,
-                    name        = short,
-                    fullName    = name,
-                    rankName    = rankName,
-                    rankIndex   = rankIndex,
-                    level       = level or 0,
-                    class       = classFile or "",
-                    daysOffline = math.floor(off),
+                    index       = l.i,
+                    key         = l.key,
+                    name        = l.short,
+                    fullName    = l.name,
+                    rankName    = l.rankName,
+                    rankIndex   = l.rankIndex,
+                    level       = l.level or 0,
+                    class       = l.class or "",
+                    daysOffline = math.floor(l.off),
+                    seen        = other,
+                    safe        = safe or nil,
                 })
             end
         end
@@ -241,7 +297,7 @@ end
 -- Combines GuildOS-only data (trial progress, raid attendance) into
 -- actionable leadership prompts.
 ----------------------------------------------------------------------
--- Returns { trialsReady = { ... }, promoteCandidates = { ... } }.
+-- Returns { trialsReady = { ... }, promoteCandidates = { ... }, stuckInRank = { ... } }.
 function GuildManager:GetSuggestions()
     local trialsReady, promoteCandidates = {}, {}
 
@@ -278,7 +334,7 @@ function GuildManager:GetSuggestions()
                 local isOfficer = rankIndex and rankIndex <= officerMaxRank
                 if not isTrial and not isOfficer then
                     local att = GuildOS.RaidTracker:GetAttendance25ManPercent(key)
-                    if att and att >= PROMO_ATTENDANCE_MIN then
+                    if att and att >= promoAttendanceMin() then
                         table.insert(promoteCandidates, {
                             key        = key,
                             name       = short,
@@ -295,7 +351,11 @@ function GuildManager:GetSuggestions()
         table.sort(promoteCandidates, function(a, b) return a.attendance > b.attendance end)
     end
 
-    return { trialsReady = trialsReady, promoteCandidates = promoteCandidates }
+    -- Long in their rank (specs/salao/manutencao-roster.md): only where this rank may promote.
+    local RM = GuildOS.RosterMaint
+    local stuckInRank = RM and RM:StuckInRank() or {}
+
+    return { trialsReady = trialsReady, promoteCandidates = promoteCandidates, stuckInRank = stuckInRank }
 end
 
 ----------------------------------------------------------------------
@@ -365,14 +425,9 @@ function GuildManager:RefreshUI()
 end
 
 ----------------------------------------------------------------------
--- Action entry points (kept for the panel / context-menu call sites).
--- These are rank/membership changes, which are Blizzard-protected, so they
--- route to the native-panel handoff rather than executing directly.
+-- Action entry point (kept for the panel / context-menu call sites). A removal
+-- is Blizzard-protected: it is queued in Bulk actions, one click of Next.
 ----------------------------------------------------------------------
-function GuildManager:ConfirmSetRank(name)
-    self:_protectedNotice(L["Set Rank"], name)
-end
-
-function GuildManager:ConfirmKick(name)
-    self:_protectedNotice(L["Remove from guild"], name)
+function GuildManager:ConfirmKick(name, key)
+    return self:Kick(name, key)
 end

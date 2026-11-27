@@ -6,6 +6,7 @@
 -- a persisted pref via the module getters/setters, and a friendly solo
 -- state. The UI holds no classification logic (Rule 10).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
@@ -46,7 +47,7 @@ local function GetRow(i)
     nameFS:SetWidth(96); nameFS:SetJustifyH("LEFT"); nameFS:SetWordWrap(false)
     row.nameFS = nameFS
 
-    local classFS = UI:CreateText(row, "", 10, C.silver.r, C.silver.g, C.silver.b)
+    local classFS = UI:CreateText(row, "", UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
     classFS:SetPoint("LEFT", 104, 0)
     classFS:SetWidth(66); classFS:SetJustifyH("LEFT"); classFS:SetWordWrap(false)
     row.classFS = classFS
@@ -130,7 +131,7 @@ local function BuildFrame()
     local title = UI:CreateTitle(f, L["Do I know this pug?"], 13)
     title:SetPoint("TOPLEFT", 12, -10)
 
-    local count = UI:CreateText(f, "", 10, C.silver.r, C.silver.g, C.silver.b)
+    local count = UI:CreateText(f, "", UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
     count:SetPoint("LEFT", title, "RIGHT", 8, 0)
     f.countFS = count
 

@@ -10,6 +10,7 @@
 -- The `snow` option is shown as "Winter Veil animations": it also stops the embers and rays of the Winter Veil tab
 -- (UI/VeilFx.lua). The saved key stays `snow`.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local L = GuildOS.L
 
@@ -24,8 +25,8 @@ Snow.MAX_FLAKES = 20
 Snow.STEP = 0.05
 local TEASER_W, TEASER_H = 72, 72
 local TEASER_FLAKES = 8
--- The teaser stands on the window's footer, left of the version, where nothing else is: the footer keeps that width
--- free of its links (`footReserve`, UI/Window.lua). Only the parcel and Frimm's cap take the mouse; the snow over them
+-- The teaser stands on the window's footer, left of the sync line (`footRight`), where nothing else is: the footer
+-- keeps that width free of its welcome (`footReserve`, UI/Window.lua). Only the parcel and Frimm's cap take the mouse; the snow over them
 -- lets every click through to what is under it.
 local GIFT_GAP = 6
 
@@ -227,12 +228,12 @@ function Snow:Refresh()
         stopLayer(self.full)
     end
     if mode == "teaser" then
-        -- The parcel and the cap stand on the footer, GIFT_GAP left of the version (the footer is 22 px high: the box's
-        -- floor is its floor); the window's footer keeps their width free of links.
+        -- The parcel and the cap stand on the footer, GIFT_GAP left of the sync line (the footer is 24 px high: the
+        -- box's floor is its floor); the window's footer keeps their width free of its welcome.
         local box = self.corner
         box:ClearAllPoints()
-        if win.versionText then
-            box:SetPoint("BOTTOMRIGHT", win.versionText, "LEFT", MOUSE_RIGHT - GIFT_GAP, -11)
+        if win.footRight then
+            box:SetPoint("BOTTOMRIGHT", win.footRight, "LEFT", MOUSE_RIGHT - GIFT_GAP - 13, -12)
         else
             box:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", -8, 30)
         end
@@ -244,7 +245,7 @@ function Snow:Refresh()
     elseif self.corner then
         stopLayer(self.corner)
     end
-    local reserve = mode == "teaser" and win.versionText and (self.MOUSE_W + 2 * GIFT_GAP) or 0
+    local reserve = mode == "teaser" and win.footRight and (self.MOUSE_W + 2 * GIFT_GAP) or 0
     if win.footReserve ~= reserve then
         win.footReserve = reserve
         if win.LayoutFooter then win:LayoutFooter() end

@@ -8,6 +8,7 @@
 -- The numbers are the site's (lib/veil-rules.ts rarityOf: cuts 60/85/97, full 20/70/94): the game only shows them.
 -- Layout only: the state is GuildOS.WinterVeil.ChimneyState's.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
@@ -158,7 +159,7 @@ function Chimney.Create(parent, scope)
         local line = solid(col, "ARTWORK", C.line)
         line:SetSize(22, 1)
         line:SetPoint("TOPRIGHT", col, "TOPLEFT", ART_W, -y)
-        local t = mono(UI:CreateText(col, tostring(p), 10, C.labelDim.r, C.labelDim.g, C.labelDim.b), 10)
+        local t = mono(UI:CreateText(col, tostring(p), UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b), 10)
         t:SetPoint("TOPRIGHT", line, "BOTTOMRIGHT", 0, -1)
         ch.ticks[i] = { p = p, line = line, text = t }
     end
@@ -175,16 +176,16 @@ function Chimney.Create(parent, scope)
     gQuest:SetPoint("BOTTOM", gWrap, "TOP")
     ch.gWrap, ch.gQuest = gWrap, gQuest
 
-    local cap = mono(UI:CreateText(col, "", 10, C.label.r, C.label.g, C.label.b), 10)
+    local cap = mono(UI:CreateText(col, "", UI.SP.META, C.label.r, C.label.g, C.label.b), 10)
     cap:SetPoint("TOP", col, "TOPLEFT", ART_W / 2, -432)
     cap:SetWidth(ART_W)
     cap:SetJustifyH("CENTER")
     ch.cap = cap
 
     -- The odds at the opening.
-    local oddsT = mono(UI:CreateText(col, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b), 10)
+    local oddsT = mono(UI:CreateText(col, "", UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b), 10)
     oddsT:SetPoint("TOPLEFT", 0, -454)
-    local oddsR = mono(UI:CreateText(col, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b), 10)
+    local oddsR = mono(UI:CreateText(col, "", UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b), 10)
     oddsR:SetPoint("TOPRIGHT", col, "TOPLEFT", ART_W, -454)
     ch.oddsT, ch.oddsR = oddsT, oddsR
     ch.bars, ch.labels = {}, {}
@@ -192,7 +193,7 @@ function Chimney.Create(parent, scope)
         local c = Fx.Rarity(rar).text
         local b = solid(col, "ARTWORK", c)
         b:SetHeight(8)
-        local lab = mono(UI:CreateText(col, "", 10, c.r, c.g, c.b), 10)
+        local lab = mono(UI:CreateText(col, "", UI.SP.META, c.r, c.g, c.b), 10)
         lab:SetJustifyH("LEFT")
         ch.bars[i], ch.labels[i] = b, lab
     end
@@ -201,7 +202,7 @@ function Chimney.Create(parent, scope)
     col:SetScript("OnEnter", function(f)
         local info = ch.info
         if not (info and GameTooltip) then return end
-        GameTooltip:SetOwner(f, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(f, "ANCHOR_CURSOR")   -- at the mouse: the chimney is tall, its right edge is far from the pointer
         GameTooltip:SetText(info.pct and string.format(L["The Chimney · %d%%"], info.pct) or L["The Chimney"], 1, 1, 1)
         if info.state == "off" then
             GameTooltip:AddLine(L["It lights after the draw and warms up with every globe wrapped."], C.textSoft.r, C.textSoft.g, C.textSoft.b, true)

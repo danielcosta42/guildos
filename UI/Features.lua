@@ -14,7 +14,8 @@ local L  = GuildOS.L
 -- `retail = false`: not on retail (ADR-0026), which has no Master Loot: the loot master (issue #185).
 UI:RegisterFeature({
     id = "home", label = L["Now"], order = 5, core = true,
-    build = function(c, win) GuildOS:CreateNowPanel(c, win) end,
+    -- The Salão's Home (specs/salao, #445), in place of the Now column and its cards.
+    build = function(c) GuildOS:CreateSalaoPanel(c) end,
 })
 
 UI:RegisterFeature({
@@ -41,6 +42,7 @@ UI:RegisterFeature({
 UI:RegisterFeature({
     id = "dkp", label = L["DKP"], order = 35, tab = false, opens = { "loot", "accounts" },   -- retail too since #185
     condition = function() return GuildOS:LootSystemShowsDKP() end,
+    restart = true,   -- the points module follows this switch, at login (audit B25)
 })
 
 UI:RegisterFeature({
@@ -53,6 +55,8 @@ UI:RegisterFeature({
 -- covers it and who does not) and the recipe search on Anniversary; the order queue sits beside it.
 UI:RegisterFeature({
     id = "recipes", label = L["Crafts"], order = 40,
+    -- The switch stops the crafts modules and their sync too (audit B25): they start at login only.
+    restart = true,
     build = function(c, win) return GuildOS:CreateCraftsTab(c, win) end,
 })
 
@@ -60,7 +64,7 @@ UI:RegisterFeature({
 -- feature is present and switched on.
 UI:RegisterFeature({
     id = "guild", label = L["Guild"], order = 50,
-    subs = { "achievements", "calendar", "activity", "bulletin", "cta", "polls", "chat", "journal" },
+    subs = { "achievements", "calendar", "activity", "bulletin", "cta", "chat", "journal" },
     build = function(c, win) GuildOS:CreateGuildHub(c, win) end,
 })
 
@@ -102,8 +106,9 @@ UI:RegisterFeature({
     tbc = false, retail = false,
 })
 
+-- The Salão's Alliance (`hall`) and the Officers' Room's (`setup`), specs/salao/alianca.md §3.5.
 UI:RegisterFeature({
-    id = "alliance", label = L["Alliance"], order = 60,
+    id = "alliance", label = L["Alliance"], order = 60, subs = { "hall", "setup" },
     condition = function()
         return (GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil) or GuildOS:IsOfficer()
     end,
@@ -154,7 +159,8 @@ local function background(id, label, desc, officerOnly, tbc, retail, forever)
 end
 
 background("raidTracker",       L["Raid Tracker"],       L["Track raid attendance, penalties, and sessions"], true)
-background("lootTracker",       L["Loot Tracker"],       L["Record loot drops from boss kills"])  -- personal loot on retail (#183)
+-- Awards are always recorded (audit B17): the switch shows or hides the loot history.
+background("lootTracker",       L["Loot Tracker"],       L["Show the loot history (awards are always recorded)"])  -- personal loot on retail (#183)
 background("lootMaster",        L["Loot Master"],        L["Master Loot with wishlist auto-council"], nil, nil, false)
 -- Anniversary's and retail's (Midnight's flask, food and rune; issue #187); WoW: Forever has none.
 background("consumableChecker", L["Consumable Checker"], L["Scan raid for missing flasks/food/elixirs"], nil, nil, nil, false)

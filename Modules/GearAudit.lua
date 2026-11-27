@@ -1,7 +1,7 @@
 ----------------------------------------------------------------------
 -- Guild OS - Gear Audit
 -- Guild-wide enchant audit built from the synced gear data that
--- DataCollector already stores per member (db.members[key].gear).
+-- DataCollector already stores per member (db.members[key].gc, read through GuildOS:MemberGear).
 -- Business logic only — no UI (Rule 2 / Rule 10).
 ----------------------------------------------------------------------
 local GearAudit = {}
@@ -54,7 +54,7 @@ function GearAudit:GetGuildEnchantAudit()
             local realm = name:match("-(.+)$") or GetRealmName()
             local key = GuildOS:GetPlayerKey(short, realm)
             local data = GuildOS.db.members[key]
-            local gear = data and data.gear
+            local gear = data and GuildOS:MemberGear(data)
             if gear then
                 local missing = self:MissingEnchants(gear)
                 rows[#rows + 1] = {

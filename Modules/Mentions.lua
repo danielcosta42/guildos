@@ -3,6 +3,7 @@
 -- Alerts you when your name (or a watch-word) appears in guild/officer
 -- chat. Personal, no sync. Keeps a small capped recent-mentions log.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Mentions = {}
 GuildOS.Mentions = Mentions
 local L = GuildOS.L

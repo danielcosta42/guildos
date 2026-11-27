@@ -534,14 +534,34 @@ function Discipline:Warn(playerKey, name, reason, opts)
     return w, GuildOS.Compat.SendWhisper(text, target) and "sent" or "failed"
 end
 
--- The officer confirmed the suggestion. "rank" hands off to the game's own guild panel (a rank change is
--- Blizzard-protected) and says which rank; "tempban" files the ban. Whether something was done.
-function Discipline:ApplySuggestion(name, suggestion, reason)
+-- The officer confirmed the suggestion. "rank" queues the member in Bulk actions toward that rank, one step per
+-- click of Next (audit M11: a rank change is Blizzard-protected, and the game takes it only from that click); a rank
+-- the guild no longer has, or a member not on the roster, says which rank to set in the game's own panel. "tempban"
+-- files the ban. Whether something was done. `key`, optional: the member's key (else the roster's, by name).
+function Discipline:ApplySuggestion(name, suggestion, reason, key)
     if not GuildOS:IsOfficer() or type(suggestion) ~= "table" then return false end
     if suggestion.action == "rank" then
         if not suggestion.rank then return false end
+        local GM = GuildOS.GuildManager
+        local target, current
+        for _, r in ipairs(GM and GM.GetRanks and GM:GetRanks() or {}) do
+            if type(r.name) == "string" and r.name:lower() == suggestion.rank:lower() then target = r.index break end
+        end
+        key = key or (GuildOS.RosterKey and GuildOS:RosterKey(name)) or nil
+        local BA = GuildOS.BulkActions
+        if target and key and BA then
+            local m = BA:ListFor({ key })[1]
+            current = m and m.rankIndex
+        end
+        if target and current == target then
+            GuildOS:Print(string.format(L["%s is already at that rank."], name))
+            return false
+        end
+        if target and current and GM.QueueRankAction then
+            return GM:QueueRankAction(current > target and "promote" or "demote", name, key, target) and true or false
+        end
         GuildOS:Print(string.format(L["Move %s to the rank %s in the game's guild panel."], name, suggestion.rank))
-        if GuildOS.GuildManager then GuildOS.GuildManager:SetRank(name) end
+        if GM and GM.OpenNativeGuild then GM:OpenNativeGuild() end
         return true
     elseif suggestion.action == "tempban" then
         return GuildOS.BanList ~= nil and GuildOS.BanList:Add(name, self.ReasonText(reason), suggestion.days * 86400) == true

@@ -192,10 +192,10 @@ for _ in pairs(fixtures.models) do count = count + 1 end
 check(count == #MODELS, "fourteen models, as the site has")
 
 -- A roster from the site carrying a rule, as the wire string the companion writes.
-local function wire(raidId, startsAt, ruleJson)
+local function wire(raidId, startsAt, ruleJson, extra)
   local json = string.format('{"fmt":"GOSROST1","v":5,"raidId":"%s","title":"Raid %s","startsAt":%d,'
-    .. '"instanceKey":"kara","members":[{"key":"Ana","name":"Ana","class":"MAGE"}]%s}',
-    raidId, raidId, startsAt, ruleJson and (',"lootRule":' .. ruleJson) or "")
+    .. '"instanceKey":"kara","members":[{"key":"Ana","name":"Ana","class":"MAGE"}]%s%s}',
+    raidId, raidId, startsAt, ruleJson and (',"lootRule":' .. ruleJson) or "", extra or "")
   return "GOSROST1:" .. LD:EncodeForPrint(LD:CompressDeflate(json))
 end
 -- The night starts over: nothing kept, nothing in hand.
@@ -1020,12 +1020,112 @@ check(planRoster.raidId == "w1" and Plan:LootRuleLine() == "Loot rule: MS > OS +
   "and the plan window names the same raid's rule: " .. tostring(Plan:LootRuleLine()))
 Import._webRaids = nil
 
+-- Two raids in one night (audit L3): Kara began at 19:00 and Gruul starts at 21:00. At 20:10 Gruul's roster is the
+-- nearest, but the raid in progress (stamped at zone-in) is Kara, and Kara's rule stays.
+dawn()
+local kara = Import:Parse(wire("kara", NOW - 70 * 60, jsonOf("dkp")))
+local gruul = Import:Parse(wire("gruul", NOW + 50 * 60, jsonOf("plus1")))
+Import._webRaids = { kara, gruul }
+check(Import:ButtonRaid() == gruul and Import:RosterOf("kara") == kara, "Gruul's roster is the nearest, Kara's still found")
+check(LR:Active().model == "plus1", "with no raid in progress the nearest roster's rule, as before")
+dawn()
+RT.currentRaid = { raidId = "kara" }
+check(LR:Active().model == "dkp" and GuildOS.db.lootNight.raidId == "kara", "the raid in progress keeps its own rule")
+check((LR:NightStatus()) == "active", "and it is the one said in force")
+RT.currentRaid = { raidId = "elsewhere" }
+check(LR:Night() == nil and LR:Active().model == "rolls", "a raid in progress with no roster in hand takes no other raid's rule")
+RT.currentRaid = nil
+Import._webRaids = nil
+
 -- A guild that hands its loot to another addon takes no rule from the site.
 dawn()
 GuildOS.db.settings.lootSystem = "external"
 Import:Load(wire("n9", NOW, jsonOf("dkp")))
 check(LR:Night() == nil and not GuildOS:LootSystemActive(), "external stays external")
 GuildOS.db.settings.lootSystem = "rolls"
+
+-- Audit L5: the site says a raid's loot is outside GuildOS (`lootExternal`): that night GuildOS runs no loot.
+dawn()
+check(Import:Load(wire("x1", NOW, nil, ',"lootExternal":true')) == 1 and GuildOS.db.companionRoster.lootExternal == true,
+  "a roster whose loot is outside GuildOS loads, and says so")
+check(LR:NightExternal() and LR:Night() == nil and GuildOS:GetLootSystem() == "external" and not GuildOS:LootSystemActive(),
+  "in the raid that night GuildOS runs no loot")
+check(GuildOS:BaseLootSystem() == "rolls", "and the guild's own choice is left as it was")
+line, warning = Plan:LootRuleLine()
+check(line == "This raid's loot is handled outside GuildOS (set on guildos.me)." and not warning,
+  "the plan window says the loot is outside GuildOS: " .. tostring(line))
+inRaid = false
+check(not LR:NightExternal() and GuildOS:LootSystemActive(), "outside the raid nothing changes")
+check(LR:NightStatus() ~= "external", "L5: and the plan window does not call it external outside the raid")
+inRaid = true
+check(LR:NightStatus() == "external", "L5: in the raid it does")
+NOW = NOW + 9 * 3600
+check(not LR:NightExternal() and GuildOS:LootSystemActive(), "nor once the night is over")
+check(LR:NightStatus() ~= "external", "L5: nor once the night is over")
+NOW = NOW - 9 * 3600
+dawn()
+Import:Load(wire("x2", NOW, nil, ',"lootExternal":false'))
+check(GuildOS.db.companionRoster.lootExternal == nil and GuildOS:LootSystemActive(), "only a true lootExternal counts")
+dawn()
+Import:Load(wire("x3", NOW, jsonOf("dkp"), ',"lootExternal":true'))
+check(LR:Night() == nil and not GuildOS:LootSystemActive(), "with a rule beside it, outside GuildOS still wins")
+
+-- L5: the site names only a loot system for a raid (`lootSystem`): that night it is the system in force, on the
+-- guild's own settings, and the guild's saved choice is left alone.
+dawn()
+check(Import:Load(wire("s1", NOW, nil, ',"lootSystem":"dkp"')) == 1 and GuildOS.db.companionRoster.lootSystem == "dkp",
+  "L5: a roster naming a loot system loads, and keeps it")
+local cfg = GuildOS.db.lootMaster
+local realMinAtt = cfg.minAttendancePct
+cfg.minAttendancePct = 40
+check(GuildOS:GetLootSystem() == "dkp" and GuildOS:BaseLootSystem() == "rolls" and GuildOS.db.settings.lootSystem == "rolls",
+  "L5: in the raid that night the system is the site's; the guild's choice is unchanged")
+local act = LR:Active()
+check(act.model == "dkp" and act.filters[1] and act.filters[1].k == "attendance" and act.filters[1].min == 40,
+  "L5: the rule in force is the system's ready-made one, with the guild's own settings (attendance)")
+line, warning = Plan:LootRuleLine()
+check(line and line:find("guildos.me", 1, true) and line:find("in force for this raid", 1, true) and not warning,
+  "L5: the plan window says the system comes from guildos.me: " .. tostring(line))
+inRaid = false
+check(GuildOS:GetLootSystem() == "rolls" and LR:Active().model == "rolls", "L5: outside the raid the guild's system")
+line = Plan:LootRuleLine()
+check(line and line:find("once the raid is on", 1, true), "L5: and the plan window says it waits: " .. tostring(line))
+inRaid = true
+NOW = NOW + 9 * 3600
+check(GuildOS:GetLootSystem() == "rolls", "L5: nor once the night is over")
+NOW = NOW - 9 * 3600
+cfg.minAttendancePct = realMinAtt
+dawn()
+Import:Load(wire("s2", NOW, nil, ',"lootSystem":"epgp"'))
+check(GuildOS.db.companionRoster.lootSystem == nil and GuildOS:GetLootSystem() == "rolls", "L5: only rolls, wishlist, dkp, council")
+dawn()
+Import:Load(wire("s3", NOW, jsonOf("plus1"), ',"lootSystem":"dkp"'))
+check(GuildOS.db.companionRoster.lootSystem == nil and LR:Active().model == "plus1", "L5: never beside a site rule: the rule wins")
+dawn()
+Import:Load(wire("s4", NOW, nil, ',"lootSystem":"council"'))
+GuildOS.db.settings.lootSystem = "external"
+check(GuildOS:GetLootSystem() == "external", "L5: a guild that hands its loot elsewhere takes no system from the site")
+GuildOS.db.settings.lootSystem = "rolls"
+check(GuildOS:GetLootSystem() == "council" and LR:Active().decide.by == "council", "L5: a council night plays the council")
+
+-- Audit R8, B16: "tmb" was the wishlist. A core saved with it reads as the wishlist, and the site's model "tmb"
+-- is named the wishlist.
+CM:Create("Beta")
+GuildOS.db.cores.Beta.lootMaster = GuildOS.db.cores.Beta.lootMaster or {}
+GuildOS.db.cores.Beta.lootMaster.lootSystem = "tmb"
+check(CM:GetLootSystem("Beta") == "wishlist" and GuildOS:BaseLootSystem("Beta") == "wishlist" and LR:For("Beta").model == "wishlist",
+  "a core saved with TMB plays the wishlist")
+check(LR:ModelName({ model = "tmb" }) == "Wishlist" and not GuildOS:IsLootSystemHere("tmb"), "the site's tmb reads as the wishlist, never offered")
+
+-- Audit L8: where Trade Council runs the loot (retail), the plan window says a rule it cannot fill is refused,
+-- the way it says a rule this client cannot read is.
+dawn()
+GuildOS.TradeCouncil = {}
+Import:Load(wire("tc1", NOW, jsonOf("softres")))
+line, warning = Plan:LootRuleLine()
+check(warning and line:find("Loot Council cannot apply", 1, true) and line:find("soft reserves", 1, true),
+  "a soft reserve night is refused on Trade Council, with the reason: " .. tostring(line))
+GuildOS.TradeCouncil = nil
 
 -- An item keeps the night's rule it was announced under.
 dawn()

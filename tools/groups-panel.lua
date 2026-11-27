@@ -1,9 +1,15 @@
 -- The Groups tab (issue #341): the real UI/GroupsPanel.lua built on the real helpers, under a
 -- stubbed client, and driven by its own buttons.
 --
--- Every view paints with nothing and with something in it; a tile opens the composer on its
--- activity; publishing lists me or my group; a card's role button asks for a spot; the queue's
--- buttons invite and decline; and a repaint reuses its rows instead of creating them again.
+-- The board paints with nothing and with something in it; the forms open in place, with no window of
+-- their own (#449, option E): Form a group turns the left column into a grid of activity cards that
+-- count who is forming and looking, a card picked moves to the spots and times (Change goes back),
+-- the players' list lights who would fit, and Publish hands the module the activity, spots, note,
+-- duration, start, chat line and auto-invite; I am looking picks several cards in the right column;
+-- Esc and Cancel go back. A card's role button asks for a spot; the queue's buttons invite and decline;
+-- the filters are pills; a repaint reuses its rows instead of creating them again; the lists (and the
+-- forms) sit side by side from 900px and one under the other below; and everything drawn on a card
+-- lies inside it (#449).
 --
 --   luajit -e 'ADDON="."' tools/groups-panel.lua
 --
@@ -44,6 +50,14 @@ function Frame:SetHeight(h) self.h = h end
 function Frame:GetWidth() return self.w end
 function Frame:GetHeight() return self.h end
 function Frame:GetParent() return self.parent end
+-- UI/Forms.lua moves a field into its row's holder: the frame changes parent, as on the client.
+function Frame:SetParent(p)
+  if p == self.parent then return end
+  local old = self.parent and self.parent.children
+  if old then for i, c in ipairs(old) do if c == self then table.remove(old, i) break end end end
+  self.parent = p
+  if p and p.children then p.children[#p.children + 1] = self end
+end
 function Frame:IsShown() return self.shown end
 function Frame:IsVisible()
   local f = self
@@ -77,6 +91,7 @@ function Frame:Disable() self.enabled = false end
 function Frame:SetEnabled(v) self.enabled = v and true or false end
 function Frame:IsEnabled() return self.enabled end
 function Frame:IsMouseOver() return false end
+function Frame:HasFocus() return false end
 function Frame:SetChecked(v) self.checked = v and true or false end
 function Frame:GetChecked() return self.checked end
 function Frame:SetTexture(t) self.texture = t end
@@ -133,13 +148,32 @@ dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Style.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 GuildOS.Style:Resolve()
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Layout.lua")
+dofile(ADDON .. "/UI/Forms.lua")
 dofile(ADDON .. "/Data/GroupActivities.lua")
 
 local passThrough = { Serialize = function(_, t) return t end, Deserialize = function(_, d) return true, d end }
 LibStub = function() return passThrough end
 dofile(ADDON .. "/Modules/LFGBoard.lua")
+-- My quest log (#450), in the modern shape: a solo quest first in the log, two group ones after it.
+local QUEST_LOG = {
+  { title = "Hellfire Peninsula", isHeader = true },
+  { title = "Fel Orc Scavengers", questID = 10482, level = 61 },
+  { title = "Wanted: Worg Master Kruush", questID = 10809, level = 62 },
+  { title = "Zangarmarsh", isHeader = true },
+  { title = "Lost in Action", questID = 9738, level = 64 },
+  { title = "The Dying Balance", questID = 9895, level = 63 },
+}
+local QUEST_TAGS = { [10809] = { tagID = 1, tagName = "Group", isElite = true }, [9738] = { tagID = 81, tagName = "Dungeon" } }
+C_QuestLog = {
+  GetNumQuestLogEntries = function() return #QUEST_LOG end,
+  GetInfo = function(i) return QUEST_LOG[i] end,
+  GetQuestTagInfo = function(id) return QUEST_TAGS[id] end,
+  GetSuggestedGroupSize = function(id) return id == 10809 and 3 or 0 end,
+}
+dofile(ADDON .. "/Modules/GroupQuests.lua")
 dofile(ADDON .. "/Modules/Groups.lua")
 dofile(ADDON .. "/UI/GroupsPanel.lua")
 
@@ -197,104 +231,456 @@ check(type(panel.SelectSub) == "function", "the tab takes a deep link")
 walk(panel, function(f) if f.kind == "ScrollFrame" then f:SetSize(860, 500) end end)
 panel.scripts.OnShow(panel)
 
-check(shows(panel, "Groups being formed") and shows(panel, "Looking for a group"), "Active shows its two lists")
-check(shows(panel, "No group is being formed right now. Pick an activity to start one."), "with nothing forming, it says so")
-check(shows(panel, "Nobody is available right now. Be the first!"), "and with nobody looking")
-
-for _, sub in ipairs({ "dungeon", "raid", "other" }) do
-  panel.SelectSub(sub)
-  check(panel.activeSub == sub, sub .. " opens")
+-- ── Where things are: every frame's box, from its anchors, as the client lays it out ──
+local function rectOf(f, memo)
+  if memo[f] then return memo[f] end
+  memo[f] = { l = 0, t = 0, r = 0, b = 0 }   -- a cycle reads as nothing
+  local w = (f.w or 0) > 0 and f.w or (f.kind == "FontString" and f:GetStringWidth() or 0)
+  local h = (f.h or 0) > 0 and f.h or (f.kind == "FontString" and f:GetStringHeight() or 0)
+  local pts = f.points or {}
+  local r
+  if #pts == 0 then
+    local base = f.scrollOwner and rectOf(f.scrollOwner, memo) or (f.parent and rectOf(f.parent, memo)) or { l = 0, t = 0 }
+    r = { l = base.l, t = base.t, r = base.l + w, b = base.t + h }
+  else
+    local L, R, T, B, CX, CY
+    for _, p in ipairs(pts) do
+      local point, rel, relPoint, x, y = p[1], nil, nil, 0, 0
+      if type(p[2]) == "table" then
+        rel = p[2]
+        if type(p[3]) == "string" then relPoint, x, y = p[3], p[4] or 0, p[5] or 0 else x, y = p[3] or 0, p[4] or 0 end
+      else
+        x, y = p[2] or 0, p[3] or 0
+      end
+      rel = rel or f.parent
+      relPoint = relPoint or point
+      local o = rel and rectOf(rel, memo) or { l = 0, t = 0, r = 0, b = 0 }
+      local ax = (relPoint:find("LEFT") and o.l) or (relPoint:find("RIGHT") and o.r) or (o.l + o.r) / 2
+      local ay = (relPoint:find("TOP") and o.t) or (relPoint:find("BOTTOM") and o.b) or (o.t + o.b) / 2
+      ax, ay = ax + x, ay - y
+      if point:find("LEFT") then L = ax elseif point:find("RIGHT") then R = ax else CX = ax end
+      if point:find("TOP") then T = ay elseif point:find("BOTTOM") then B = ay else CY = ay end
+    end
+    if not L and not R then L = (CX or 0) - w / 2; R = L + w elseif not L then L = R - w elseif not R then R = L + w end
+    if not T and not B then T = (CY or 0) - h / 2; B = T + h elseif not T then T = B - h elseif not B then B = T + h end
+    r = { l = L, t = T, r = R, b = B }
+  end
+  memo[f] = r
+  return r
 end
-panel.SelectSub("dungeon")
-check(shows(panel, "The Steamvault") and shows(panel, "Heroic dungeon"), "Dungeons shows this client's dungeons")
-panel.SelectSub("raid")
-check(shows(panel, "Karazhan") and not shows(panel, "The Steamvault"), "Raids shows the raids, and only them")
-panel.SelectSub("nonsense")
-check(panel.activeSub == "active", "a sub-tab that is none opens Active")
+-- Every visible text and frame drawn on a card lies inside the card (#449): nothing runs past its edge,
+-- nothing touches it either (a card's content is CARD_PAD in, its decorations are textures and skipped).
+local function insideCards(root, what)
+  walk(root, function(f) if f.scrollChild then f.scrollChild.scrollOwner = f end end)
+  local memo, n = {}, 0
+  walk(root, function(card)
+    if not (card.isCard and card:IsVisible()) then return end
+    local box = rectOf(card, memo)
+    walk(card, function(d)
+      if d == card or d.kind == "Texture" or not d:IsVisible() then return end
+      if d.kind == "FontString" and (d.text or "") == "" then return end
+      local r = rectOf(d, memo)
+      n = n + 1
+      -- Inside a scroll frame of the card's own (a form's grid) a row may run past the bottom: the frame
+      -- clips it. Across, it still stays inside.
+      local clipped = false
+      local x = d.parent
+      while x and x ~= card do
+        if x.kind == "ScrollFrame" then clipped = true end
+        x = x.parent
+      end
+      local inside = r.l >= box.l - 0.5 and r.r <= box.r + 0.5
+        and (clipped or (r.t >= box.t - 0.5 and r.b <= box.b + 0.5))
+      check(inside, what .. ": " .. tostring(d.kind) .. " \"" .. tostring(d.text or (d.label and d.label.text) or "")
+        .. "\" lies inside its card " .. string.format("(%d,%d,%d,%d in %d,%d,%d,%d)", r.l, r.t, r.r, r.b, box.l, box.t, box.r, box.b))
+    end)
+  end)
+  return n
+end
 
--- A tile opens the composer on its activity
-local function tileOf(name)
+local function cardTitled(root, title)
   local found
-  walk(panel, function(f)
-    if f.kind == "Button" and f:IsVisible() and f.title == name then found = f end
+  walk(root, function(f)
+    if f.isCard and f:IsVisible() and f.title and (f.title.text or ""):find(title, 1, true) == 1 then found = f end
   end)
   return found
 end
-panel.SelectSub("raid")
-local kara = tileOf("Karazhan")
-check(kara ~= nil and kara.alpha == 1, "a raid of my level is lit")
-panel.SelectSub("dungeon")
-local ramparts = tileOf("Hellfire Ramparts")
-check(ramparts ~= nil and ramparts.alpha < 1, "a dungeon I outgrew is dimmed")
-panel.SelectSub("raid")
-kara = tileOf("Karazhan")
-kara.scripts.OnEnter(kara)
-kara.scripts.OnLeave(kara)
-kara.scripts.OnClick(kara)
-local composer
-walk(UIParent, function(f) if f.Open and f.SetMode then composer = f end end)
-check(composer ~= nil and composer:IsShown(), "clicking a tile opens the composer")
-check(shows(composer, "Karazhan"), "on that tile's activity")
+local function picker(root)
+  local found
+  walk(root, function(f) if f.isActivityPicker and f:IsVisible() then found = f end end)
+  return found
+end
+local function optionTexts(dd)
+  local out = {}
+  for _, o in ipairs(dd.options) do out[#out + 1] = o.text end
+  return table.concat(out, "\n")
+end
 
--- I am looking
-composer:SetMode("seek")
-local chips = {}
-walk(composer, function(f) if f.kind == "Button" and f.letter and f:IsVisible() and f.scripts.OnClick then chips[f.letter] = f end end)
-check(chips.T and chips.H and chips.D, "the composer offers the three roles")
-chips.H.scripts.OnClick(chips.H)
-click(composer, "60m")
-click(composer, "Publish")
-local mine = Board:Mine()
-check(mine ~= nil and mine.roles == "H" and mine.acts[1] == "karazhan" and mine.ttl == 3600, "publishing lists me, with my role, the activity and the duration")
-check(not composer:IsShown(), "and closes the composer")
-check(wire[#wire].kind == "LG" and wire[#wire].p.roles == "H", "the guild hears it")
-panel.SelectSub("active")
-check(shows(panel, "(you)") and shows(panel, "Karazhan") and shows(panel, "Healer"), "my listing is on the board, marked as mine")
-check(#buttons(panel, "Stop looking") == 1, "and the button now takes it down")
+check(shows(panel, "Groups being formed") and shows(panel, "Looking for a group"), "Active shows its two lists")
+check(shows(panel, "No group is being formed right now. Pick an activity to start one."), "with nothing forming, it says so")
+check(shows(panel, "Nobody is available right now. Be the first!"), "and with nobody looking")
+local gc, sk = cardTitled(panel, "Groups being formed"), cardTitled(panel, "Looking for a group")
+check(gc and sk and #buttons(gc, "+ Form a group") == 1 and #buttons(sk, "I am looking") == 1,
+  "an empty list is a block with the action that fills it (#449)")
+check(insideCards(panel, "empty") > 10, "the empty board stays inside its cards")
 
--- A second tile adds to what I am looking for
-panel.SelectSub("dungeon")
-local vault = tileOf("The Steamvault")
-vault.scripts.OnClick(vault)
-check(composer.mode == "seek" and #composer.acts == 2, "another tile adds its activity to my listing")
-check(#buttons(composer, "Update") == 1 and #buttons(composer, "Take down") == 1, "a listing I have is updated or taken down")
-click(composer, "Only this one")
-check(#composer.acts == 1 and composer.acts[1] == "steamvault", "or replaces the others")
-click(composer, "Take down")
-check(Board:Mine() == nil, "taking it down from the composer delists me")
+-- The categories are pills that filter the board; a deep link to one opens the board on it (#449)
+for _, sub in ipairs({ "dungeon", "raid", "other" }) do
+  panel.SelectSub(sub)
+  check(panel.activeSub == "active" and Board:Pref("filterCat") == sub, sub .. " opens the board on that filter")
+end
+panel.SelectSub("all")
+check(Board:Pref("filterCat") == "all", "and All on them all")
+panel.SelectSub("nonsense")
+check(Board:Pref("filterCat") == "all", "a category that is none changes nothing")
 
--- Forming a group
-vault.scripts.OnClick(vault)
-composer:SetMode("group")
-check(shows(composer, "OPEN SPOTS"), "the group mode asks for the open spots")
-local before = Groups:OpenSpots(composer.need)
-composer:Step("D", 1)
-check(Groups:OpenSpots(composer.need) == before, "the spots never pass the room a party has")
-composer:Step("T", -1)
-composer:Step("T", -1)
-check(composer.need.T == 0, "nor go below none")
-click(composer, "Publish")
+-- ── The forms, in place (#449, option E) ────────────────────────────────
+-- No window of their own: Form a group turns the left column into the form, I am looking the right one.
+local function vis(root, pred)
+  local out = {}
+  walk(root, function(f) if f:IsVisible() and pred(f) then out[#out + 1] = f end end)
+  return out
+end
+local function formOf(flag) return vis(panel, function(f) return f[flag] == true end)[1] end
+local function tilesOf(root) return vis(root, function(f) return f.isActivityTile == true end) end
+local function tileOf(root, act) for _, t in ipairs(tilesOf(root)) do if t.act == act then return t end end end
+local function rowNamed(name) for _, r in ipairs(vis(panel, function(f) return f.roleIcons ~= nil end)) do if r.name.text:find(name, 1, true) then return r end end end
+-- A checkbox by its label (UI:CreateCheckbox), ticked or not, as a click would.
+local function tick(root, label, on)
+  local box
+  walk(root, function(f) if f.checkbox and f.label and f.label.text == label and f:IsVisible() then box = f end end)
+  check(box ~= nil, "there is a box \"" .. label .. "\"")
+  box.checkbox:SetChecked(on)
+  box.checkbox.onChanged(box.checkbox, on)
+end
+local function inputOf(root) return vis(root, function(f) return f.kind == "EditBox" end)[1] end
+local function stepper(root, letter, label)
+  return vis(root, function(f) return f.kind == "Button" and f.stepRole == letter and f.label.text == label end)[1]
+end
+local windows = #UIParent.children
+
+check(picker(panel) == nil and inputOf(cardTitled(panel, "Guild groups")) == nil,
+  "the top card has no activity picker nor note: they moved into the forms")
+
+-- Something to count: a group and a player for Karazhan, a player for The Steamvault
+local T0 = GetServerTime()
+GuildOS.db.lfgGroups[key("Bea")] = Groups:_BuildGroup({ act = "karazhan", need = { T = 1, D = 1 }, ttl = 3600 }, T0)
+GuildOS.db.lfgBoard[key("Eve")] = (Board:_BuildEntry({ roles = "D", acts = { "karazhan" }, ttl = 3600 }, T0))
+GuildOS.db.lfgBoard[key("Fay")] = (Board:_BuildEntry({ roles = "H", acts = { "steamvault" }, ttl = 3600 }, T0))
+Board:Refresh()
+
+-- Step 1: what it is for, as cards (the two boxes start as saved: both off here)
+Board:SetPref("autoInvite", false)
+Board:SetPref("postToGuild", false)
+-- In combat neither form opens: the lists stay.
+do
+  local realCombat = GuildOS.InCombat
+  GuildOS.InCombat = function() return true end
+  click(panel, "+ Form a group")
+  check(formOf("isGroupForm") == nil and cardTitled(panel, "Groups being formed") ~= nil, "in combat, Form a group does not open")
+  GuildOS.InCombat = realCombat
+end
+click(panel, "+ Form a group")
+local fg = formOf("isGroupForm")
+check(fg ~= nil and fg.isCard, "Form a group turns the left column into the form, a parchment card")
+check(cardTitled(panel, "Groups being formed") == nil and cardTitled(panel, "Looking for a group") ~= nil,
+  "in place of the groups being formed, the players' list beside it")
+check(shows(fg, "1 · What is it for?") and #buttons(fg, "Cancel") == 1 and #buttons(fg, "Publish group") == 0,
+  "on its first step, with Cancel and nothing to publish yet")
+check(#UIParent.children == windows, "and no window of its own is made")
+click(fg, "Raids")
+local kt = tileOf(fg, "karazhan")
+check(kt ~= nil and #tilesOf(fg) == 9, "the raids are cards (" .. #tilesOf(fg) .. ")")
+check(kt.name.text == "Karazhan" and kt.meta.text:find("Level 70", 1, true) and kt.meta.text:find("group of 10", 1, true),
+  "a card names its activity, its level and its size: " .. tostring(kt.meta.text))
+check(kt.live.text:find("1 forming", 1, true) and kt.live.text:find("1 looking", 1, true),
+  "and who is forming or looking for it: " .. tostring(kt.live.text))
+check(tileOf(fg, "gruuls-lair").live.text == "quiet", "a card nobody wants says it is quiet")
+check(tilesOf(fg)[1].act == "karazhan", "what is busy comes first")
+check(kt.icon.glyph.shown and kt.icon.glyph.letter.text == "K" and not kt.icon.art.shown,
+  "with no art on this client a card's emblem is a disc with its initial")
+click(fg, "Dungeons")
+check(tileOf(fg, "steamvault") ~= nil and tileOf(fg, "classic-dungeon") == nil, "my level only keeps the dungeons of my level")
+tick(fg, "My level only", false)
+check(tileOf(fg, "classic-dungeon") ~= nil and #tilesOf(fg) == 18, "without it every dungeon is a card (" .. #tilesOf(fg) .. ")")
+local grid = vis(fg, function(f) return f.kind == "ScrollFrame" end)[1]
+check(grid ~= nil and grid.h < grid.scrollChild.h, "a grid taller than its room scrolls inside the form")
+tick(fg, "My level only", true)
+
+-- Step 2: who and when
+click(fg, "Raids")
+kt = tileOf(fg, "karazhan")
+kt.scripts.OnClick(kt)
+check(shows(fg, "2 · Who and when") and #tilesOf(fg) == 0, "picking a card moves to the second step")
+check(fg.picked:IsVisible() and shows(fg.picked, "Karazhan") and #buttons(fg.picked, "Change") == 1,
+  "with the card picked at its top and a way back")
+local sk = cardTitled(panel, "Looking for a group")
+check(shows(sk, "1 would fit Karazhan"), "the players' list says how many would fit")
+check(rowNamed("Eve").fits and not rowNamed("Fay").fits, "and lights them")
+click(fg.picked, "Change")
+check(shows(fg, "1 · What is it for?") and tileOf(fg, "karazhan").on and tileOf(fg, "karazhan").check.shown,
+  "Change goes back to the cards, the one picked still chosen")
+tileOf(fg, "karazhan").scripts.OnClick(tileOf(fg, "karazhan"))
+check(shows(fg, "OPEN SPOTS") and shows(fg, "STARTS") and shows(fg, "LISTED FOR"), "the spots beside when it starts and how long")
+stepper(fg, "H", "+").scripts.OnClick(stepper(fg, "H", "+"))
+stepper(fg, "T", "-").scripts.OnClick(stepper(fg, "T", "-"))
+stepper(fg, "T", "-").scripts.OnClick(stepper(fg, "T", "-"))
+check(shows(fg, "You + 5 open of 10"), "the steppers count the spots: " .. texts(fg):match("You[^\n]*"))
+click(fg, "in 15m")
+click(fg, "60m")
+inputOf(fg):SetText("first night")
+tick(fg, "Also post in guild chat", true)
+tick(fg, "Invite whoever asks", true)
+check(shows(fg, "Guild chat:") and fg.preview.line.text:find("Group for Karazhan", 1, true)
+  and fg.preview.line.text:find("first night", 1, true) and fg.preview.line.text:find("inv", 1, true),
+  "posting to chat shows the line it will say: " .. tostring(fg.preview.line.text))
+tick(fg, "Also post in guild chat", false)
+check(not shows(fg, "Guild chat:") and shows(fg, "Only guildmates with Guild OS will see it (in this list and as a tile)."),
+  "and not posting says who sees it")
+tick(fg, "Also post in guild chat", true)
+check(Board:Pref("autoInvite") == false and Board:Pref("postToGuild") == false, "the boxes are not saved before Publish")
+check(insideCards(panel, "the form's second step") > 20, "the form stays inside its card")
+local sent
+local realCreate = Groups.Create
+Groups.Create = function(self, ...) sent = { ... }; return realCreate(self, ...) end
+click(fg, "Publish group")
+Groups.Create = realCreate
+check(sent and sent[1] == "karazhan" and sent[2].T == 0 and sent[2].H == 2 and sent[2].D == 3 and sent[3] == "first night"
+  and sent[4] == 3600 and sent[5] == true and sent[6] == 900,
+  "Publish lists the group with its activity, spots, note, duration, chat line and start")
+check(Board:Pref("autoInvite") == true and Board:Pref("postToGuild") == true, "and saves the two boxes (invite whoever asks)")
+check(not fg:IsVisible() and shows(panel, "Your group: Karazhan"), "then the left column is my group")
+check(Groups:Mine().start == T0 + 900 and Groups:Mine().note == "first night", "listed as chosen")
+
+-- Change on my group opens the second step on what it has
+click(cardTitled(panel, "Your group"), "Change")
+check(fg:IsVisible() and shows(fg, "2 · Who and when") and inputOf(fg):GetText() == "first night" and #buttons(fg, "Update") == 1,
+  "Change on my group opens the form on its values")
+check(buttons(fg, "in 15m")[1].__selected and buttons(fg, "60m")[1].__selected, "its start and its duration lit")
+check(#buttons(fg, "Take down") == 0, "Take down is on my group's card, not in the form")
+for _ = 1, 6 do
+  stepper(fg, "H", "-").scripts.OnClick(stepper(fg, "H", "-"))
+  stepper(fg, "D", "-").scripts.OnClick(stepper(fg, "D", "-"))
+end
+check(not buttons(fg, "Update")[1].enabled, "a group with no open spot cannot go up")
+stepper(fg, "D", "+").scripts.OnClick(stepper(fg, "D", "+"))
+local canInvite = GuildOS.Compat.CanInvite
+GuildOS.Compat.CanInvite = function() return false end
+click(fg, "Update")
+GuildOS.Compat.CanInvite = canInvite
+check(fg:IsVisible() and shows(fg, "Only the group's leader can list it."), "a group the module refuses stays in the form, with the reason")
+panel.scripts.OnKeyDown(panel, "ESCAPE")
+check(not fg:IsVisible() and shows(panel, "Your group: Karazhan") and Groups:Mine().need.H == 2, "Esc goes back to the lists, nothing changed")
+click(panel, "Take down")
+check(Groups:Mine() == nil, "Take down removes my group")
+click(panel, "+ Form a group")
+click(fg, "Cancel")
+check(not fg:IsVisible() and cardTitled(panel, "Groups being formed") ~= nil, "Cancel goes back to the lists")
+
+-- I am looking: the same cards, several at once
+click(panel, "I am looking")
+local sf = formOf("isSeekForm")
+check(sf ~= nil and sf.isCard and cardTitled(panel, "Looking for a group") == nil and cardTitled(panel, "Groups being formed") ~= nil,
+  "I am looking turns the right column into its form, the groups beside it")
+check(shows(sf, "none picked: anything") and #buttons(sf, "Start looking") == 1, "with nothing picked: anything")
+check(#UIParent.children == windows, "still no window of its own")
+click(sf, "Raids")
+tileOf(sf, "karazhan").scripts.OnClick(tileOf(sf, "karazhan"))
+click(sf, "Dungeons")
+tileOf(sf, "steamvault").scripts.OnClick(tileOf(sf, "steamvault"))
+check(shows(sf, "2 picked") and tileOf(sf, "steamvault").on and tileOf(sf, "steamvault").check.shown, "a card picked is ticked, and counted")
+click(sf, "Raids")
+tileOf(sf, "karazhan").scripts.OnClick(tileOf(sf, "karazhan"))
+check(shows(sf, "1 picked") and not tileOf(sf, "karazhan").on, "a second click takes it back")
+local toggles = {}
+walk(sf, function(f) if f.kind == "Button" and f.letter and f:IsVisible() and f.scripts.OnClick then toggles[f.letter] = f end end)
+check(toggles.T and toggles.H and toggles.D and shows(sf, "MY ROLES (NONE IS ANY)"), "my roles are pills")
+toggles.H.scripts.OnClick(toggles.H)
+click(sf, "60m")
+inputOf(sf):SetText("SP")
+tick(sf, "Also post in guild chat", false)
+check(insideCards(panel, "the looking form") > 20, "the looking form stays inside its card")
+click(sf, "Start looking")
+mine = Board:Mine()
+check(mine ~= nil and #mine.acts == 1 and mine.acts[1] == "steamvault" and mine.roles == "H" and mine.ttl == 3600 and mine.note == "SP",
+  "Start looking lists me with the activities, roles, duration and note")
+check(Board:Pref("roles") == "H", "the roles I listed are the ones I play")
+check(not sf:IsVisible() and shows(panel, "(you)") and #buttons(panel, "Stop looking") == 1 and shows(panel, "60m left"),
+  "then the list shows me, and the top card my listing's time and Stop")
+click(cardTitled(panel, "Guild groups"), "Change")
+check(sf:IsVisible() and shows(sf, "1 picked") and tileOf(sf, "steamvault") and #buttons(sf, "Update") == 1
+  and inputOf(sf):GetText() == "SP", "Change opens the form on my listing")
+panel.scripts.OnKeyDown(panel, "ESCAPE")
+check(not sf:IsVisible(), "Esc closes it")
+click(panel, "Stop looking")
+check(Board:Mine() == nil, "Stop looking takes me down")
+check(#UIParent.children == windows, "and no form ever made a window")
+GuildOS.db.lfgGroups[key("Bea")], GuildOS.db.lfgBoard[key("Eve")], GuildOS.db.lfgBoard[key("Fay")] = nil, nil, nil
+Board:Refresh()
+
+-- ── My quests (#450) ────────────────────────────────────────────────────
+do
+  local Q = GuildOS.GroupQuests
+  Q:Refresh()
+  local function questTile(root, id) for _, t in ipairs(tilesOf(root)) do if t.act == "q:" .. id then return t end end end
+  -- Form a group: My quests is a pill beside the catalogue's, its cards my log's, group quests first.
+  click(panel, "+ Form a group")
+  check(#buttons(fg, "My quests") == 1 and #buttons(fg, "Quests and more") == 1, "My quests is a category beside Quests and more")
+  click(fg, "My quests")
+  local ts = tilesOf(fg)
+  check(#ts == 4 and ts[1].act == "q:10809" and ts[2].act == "q:9738", "a card per quest of my log, the group ones first")
+  local kt = questTile(fg, 10809)
+  check(kt.name.text == "Wanted: Worg Master Kruush" and kt.meta.text:find("Level 62", 1, true)
+    and kt.meta.text:find("Group", 1, true) and kt.meta.text:find("group of 3", 1, true),
+    "a quest's card says its level, its tag and its suggested players: " .. tostring(kt.meta.text))
+  check(kt.live.text == "Hellfire Peninsula", "and its zone while nobody is on it")
+  check(questTile(fg, 9738).meta.text:find("Dungeon", 1, true), "a dungeon quest says so")
+  check(not shows(fg, "My level only"), "the quests of my log need no level filter")
+  check(insideCards(panel, "the quest cards") > 20, "the quest cards stay inside the form")
+  -- Single pick: a card moves to the second step; another replaces it.
+  questTile(fg, 9738).scripts.OnClick(questTile(fg, 9738))
+  check(shows(fg.picked, "Lost in Action") and shows(fg, "2 · Who and when"), "picking a quest moves to the second step, its title on top")
+  click(fg.picked, "Change")
+  check(questTile(fg, 9738).on and not questTile(fg, 10809).on, "the quest picked is the one chosen")
+  questTile(fg, 10809).scripts.OnClick(questTile(fg, 10809))
+  check(not shows(fg.picked, "Lost in Action") and shows(fg.picked, "Wanted: Worg Master Kruush"), "another pick replaces it: one quest a group")
+  -- A guildmate who shares this quest lights up while the group is formed.
+  GuildOS.db.lfgBoard[key("Eve")] = (Board:_BuildEntry({ roles = "D", acts = { "deadmines" }, shared = { 10809 }, ttl = 3600 }, T0))
+  GuildOS.db.lfgBoard[key("Fay")] = (Board:_BuildEntry({ roles = "H", acts = { "karazhan" }, ttl = 3600,
+    quests = { { id = 9738, t = "Lost in Action" } } }, T0))
+  Board:Refresh()
+  check(rowNamed("Eve").fits and rowNamed("Eve").questMark.text == "also on this quest" and rowNamed("Eve").questMark.shown,
+    "who has the quest fits, marked \"also on this quest\"")
+  check(not rowNamed("Fay").fits and rowNamed("Fay").questMark.text == "you have this quest",
+    "who is on another quest of my log is marked \"you have this quest\"")
+  check(shows(cardTitled(panel, "Looking for a group"), "1 would fit Wanted: Worg Master Kruush"), "the chip names the quest")
+  local sentQ
+  local realCreate = Groups.Create
+  Groups.Create = function(self, ...) sentQ = { ... }; return realCreate(self, ...) end
+  GuildOS.State.groups.lastPublish = -100   -- past the publish window: the stub clock stands still
+  click(fg, "Publish group")
+  Groups.Create = realCreate
+  check(sentQ and sentQ[7] and sentQ[7].id == 10809 and sentQ[7].t == "Wanted: Worg Master Kruush", "Publish hands the module the quest")
+  local mine = Groups:Mine()
+  check(mine.act == "elite-quests" and mine.quest.id == 10809 and wire[#wire].p.quest.id == 10809, "listed under Elite quests, with its quest")
+  check(shows(panel, "Your group: Wanted: Worg Master Kruush"), "my group is named by its quest")
+  check(shows(panel, "Fits your group") and shows(panel, "also on this quest"), "the leader's matches mark who has the quest")
+  check(insideCards(panel, "my quest group") > 20, "and stay inside their cards")
+  click(cardTitled(panel, "Your group"), "Change")
+  check(shows(fg.picked, "Wanted: Worg Master Kruush"), "Change opens the form on the group's quest")
+  panel.scripts.OnKeyDown(panel, "ESCAPE")
+  click(panel, "Take down")
+
+  -- Somebody else's group for a quest of my log: "you have this quest" on its card.
+  Groups:HandleGroup("Bea-Realm", { act = "elite-quests", need = { D = 2 }, ttl = 3600, quest = { id = 9738, t = "Lost in Action" } }, "GUILD")
+  Groups:HandleGroup("Cid-Realm", { act = "elite-quests", need = { D = 2 }, ttl = 3600, quest = { id = 777, t = "Not mine" } }, "GUILD")
+  local bc, cc
+  walk(panel, function(f) if f.lead and f:IsVisible() and f.title.text == "Lost in Action" then bc = f end end)
+  walk(panel, function(f) if f.lead and f:IsVisible() and f.title.text == "Not mine" then cc = f end end)
+  check(bc and bc.questBadge.shown and bc.questBadge.label.text == "you have this quest", "a group for a quest I have says so")
+  check(bc.range.text == "Level 64", "with the quest's level from my log")
+  check(cc and not cc.questBadge.shown, "a group for a quest I do not have says nothing")
+  check(insideCards(panel, "quest groups") > 20, "the quest groups stay inside their cards")
+
+  -- I am looking: several quests, capped; the opt-in off by default; only the picks go out.
+  click(panel, "I am looking")
+  local sf2 = formOf("isSeekForm")
+  click(sf2, "My quests")
+  for _, id in ipairs({ 10809, 9738, 10482, 9895 }) do questTile(sf2, id).scripts.OnClick(questTile(sf2, id)) end
+  check(shows(sf2, "3 picked") and questTile(sf2, 10809).on and not questTile(sf2, 9895).on, "several quests, at most three")
+  questTile(sf2, 10482).scripts.OnClick(questTile(sf2, 10482))
+  check(shows(sf2, "2 picked"), "a second click takes one back")
+  local share
+  walk(sf2, function(f) if f.checkbox and f.label and f.label.text == "Share the group quests in my log with the guild LFG" then share = f end end)
+  check(share and share:IsVisible() and not share.checkbox:GetChecked(), "the opt-in is there, off by default")
+  check(insideCards(panel, "the looking form on my quests") > 20, "the looking form stays inside its card")
+  click(sf2, "Start looking")
+  local p = wire[#wire].p
+  check(wire[#wire].kind == "LG" and #p.quests == 2 and p.quests[1].id == 10809 and p.quests[2].id == 9738 and p.shared == nil,
+    "the listing carries the two quests picked and nothing else of my log")
+  check(Board:Pref("shareQuests") == false, "the opt-in stays off")
+  click(cardTitled(panel, "Guild groups"), "Change")
+  check(shows(sf2, "2 picked"), "Change opens on the quests, Elite quests not counted as a pick")
+  questTile(sf2, 9738).scripts.OnClick(questTile(sf2, 9738))
+  tick(sf2, "Share the group quests in my log with the guild LFG", true)
+  Board._cd = {}
+  click(sf2, "Update")
+  p = wire[#wire].p
+  check(Board:Pref("shareQuests") == true and #p.quests == 1 and p.shared and #p.shared == 1 and p.shared[1] == 9738,
+    "opted in, the group quests of my log not picked go too, as ids only")
+  Board:SetPref("shareQuests", false)
+
+  -- Classic's shape draws the same cards.
+  local modern = C_QuestLog
+  C_QuestLog = nil
+  GetNumQuestLogEntries = function() return 2 end
+  GetQuestLogTitle = function(i)
+    if i == 1 then return "Hellfire Peninsula", 0, 0, true end
+    return "Wanted: Worg Master Kruush", 62, 3, false, false, false, 0, 10809
+  end
+  GetQuestTagInfo = function() return 1, "Group" end
+  Q:Refresh()
+  click(panel, "+ Form a group")
+  click(fg, "My quests")
+  check(#tilesOf(fg) == 1 and questTile(fg, 10809).meta.text:find("group of 3", 1, true), "the Classic log draws the same card")
+  -- An empty log says so.
+  GetNumQuestLogEntries = function() return 0 end
+  Q:Refresh()
+  Board:Refresh()
+  check(#tilesOf(fg) == 0 and shows(fg, "Your quest log has no quest."), "an empty log says so")
+  click(fg, "Cancel")
+  GetNumQuestLogEntries, GetQuestLogTitle, GetQuestTagInfo = nil, nil, nil
+  C_QuestLog = modern
+  Q:Refresh()
+
+  -- Both widths: the quest cards stay inside their forms, a repaint makes no frame.
+  for _, size in ipairs({ { 560, 580 }, { 1180, 1200 } }) do
+    walk(panel, function(f) if f.kind == "ScrollFrame" then f:SetSize(size[1], 500) end end)
+    panel:SetSize(size[2], 600)
+    click(panel, "+ Form a group")
+    click(fg, "My quests")
+    check(#tilesOf(fg) == 4 and insideCards(panel, size[2] .. "px, quest cards") > 20, size[2] .. "px: the quest cards stay inside the form")
+    local before = created
+    for _ = 1, 3 do click(fg, "Raids"); click(fg, "My quests") end
+    check(created == before, size[2] .. "px: repainting the quest cards makes no frame (" .. (created - before) .. " new)")
+    click(fg, "Cancel")
+    click(panel, "I am looking")
+    click(formOf("isSeekForm"), "My quests")
+    check(insideCards(panel, size[2] .. "px, looking on quests") > 20, size[2] .. "px: the looking form on quests stays inside")
+    click(formOf("isSeekForm"), "Cancel")
+  end
+  walk(panel, function(f) if f.kind == "ScrollFrame" then f:SetSize(860, 500) end end)
+  panel:SetSize(900, 600)
+
+  click(panel, "Stop looking")
+  GuildOS.db.lfgGroups[key("Bea")], GuildOS.db.lfgGroups[key("Cid")] = nil, nil
+  GuildOS.db.lfgBoard[key("Eve")], GuildOS.db.lfgBoard[key("Fay")] = nil, nil
+  Board._cd, GuildOS.State.groups.groupCd = {}, {}
+  Board:Refresh()
+end
+
+-- Forming a group, as before the queue below needs it
+click(panel, "+ Form a group")
+click(fg, "Dungeons")
+tileOf(fg, "steamvault").scripts.OnClick(tileOf(fg, "steamvault"))
+stepper(fg, "D", "+").scripts.OnClick(stepper(fg, "D", "+"))
+check(shows(fg, "You + 4 open of 5"), "the spots never pass the room a party has")
+stepper(fg, "T", "-").scripts.OnClick(stepper(fg, "T", "-"))
+stepper(fg, "T", "-").scripts.OnClick(stepper(fg, "T", "-"))
+click(fg, "Publish group")
 local group = Groups:Mine()
 check(group ~= nil and group.act == "steamvault" and group.need.T == 0 and group.need.D == 3, "publishing lists my group with the spots chosen")
 check(group.need.H == 0, "and no spot is offered for the one role I play myself")
-panel.SelectSub("active")
-check(shows(panel, "Your group: The Steamvault"), "my group heads the Active view")
+check(shows(panel, "Your group: The Steamvault"), "my group heads the left column")
 check(shows(panel, "Nobody asked for a spot yet. Guildmates see your group here and in the tiles."), "with an empty queue said as such")
-check(#buttons(panel, "My group") == 1, "and the button now opens it")
-
--- A group with no spot is refused in the composer, with the reason
-click(panel, "Change")
-check(composer:IsShown() and composer.mode == "group" and composer.act == "steamvault", "Change opens the composer on my group")
-for _ = 1, 6 do composer:Step("H", -1); composer:Step("D", -1) end
-click(composer, "Update")
-check(composer:IsShown() and shows(composer, "A group needs at least one open spot."), "a group with no open spot stays in the composer, with the reason")
-composer:Hide()
+check(#buttons(panel, "My group") == 1, "and the top card's button now opens it")
 
 -- The queue
 Groups:HandleJoin("Bea-Realm", { role = "D" }, "WHISPER")
 check(shows(panel, "Asking for a spot") and shows(panel, "Bea"), "a request shows in the queue")
 click(panel, "Invite")
 check(invited[1] == "Bea-Realm" and shows(panel, "invited"), "Invite calls the game's invite and marks the row")
+check(insideCards(panel, "my group") > 10, "my group's card holds its queue")
 click(panel, "Decline")
 check(#Groups:Requests() == 0 and wire[#wire].to == "Bea-Realm" and wire[#wire].p.decline == true, "Decline tells the asker and clears the row")
 click(panel, "Take down")
@@ -303,34 +689,38 @@ check(Groups:Mine() == nil, "Take down removes my group")
 -- Somebody else's group, and who is looking
 Groups:HandleGroup("Cid-Realm", { act = "karazhan", need = { T = 1, D = 2 }, note = "first night", ttl = 3600 }, "GUILD")
 Board:HandleEntry("Dan-Realm", { roles = "TD", acts = { "karazhan" }, note = "until 23h", ttl = 3600 })
-check(shows(panel, "first night") and shows(panel, "missing 1 Tank, 2 DPS"), "a group shows its note and what it is missing")
-check(#buttons(panel, "Tank") == 1 and #buttons(panel, "DPS") == 1 and #buttons(panel, "Healer") == 0,
+gc = cardTitled(panel, "Groups being formed")
+check(shows(gc, "first night") and shows(gc, "missing 1 Tank, 2 DPS"), "a group shows its note and what it is missing")
+check(#buttons(gc, "Tank") == 1 and #buttons(gc, "DPS") == 1 and #buttons(gc, "Healer") == 0,
   "and offers the roles it has a spot for, and no other")
 check(shows(panel, "Karazhan: until 23h") and shows(panel, "Tank, DPS"), "a player looking shows the activities, the note and the roles")
-click(panel, "Whisper")
+click(gc, "Whisper")
 check(tells[1] == "Cid", "Whisper opens a whisper to the leader")
-click(panel, "Invite")
+click(cardTitled(panel, "Looking for a group"), "Invite")
 check(invited[#invited] == "Dan", "Invite on a player looking invites them")
-click(panel, "Tank")
+click(gc, "Tank")
 check(wire[#wire].kind == "GJ" and wire[#wire].to == "Cid-Realm" and wire[#wire].p.role == "T", "a role button asks the leader for that spot")
-check(shows(panel, "asked as Tank") and #buttons(panel, "Tank") == 0, "and the card then says what I asked")
-click(panel, "Take it back")
-check(Groups:Asked(key("Cid")) == nil and #buttons(panel, "Tank") == 1, "taking it back offers the roles again")
+check(shows(gc, "asked as Tank") and #buttons(gc, "Tank") == 0, "and the card then says what I asked")
+click(gc, "Take it back")
+check(Groups:Asked(key("Cid")) == nil and #buttons(gc, "Tank") == 1, "taking it back offers the roles again")
+check(insideCards(panel, "the board") > 20, "the board's groups and players stay inside their cards")
 
--- ── The summary, the filters and the leader's panel (#378) ─────────────
-check(shows(panel, "groups forming") and shows(panel, "looking") and shows(panel, "for you"), "Active opens on its figures")
-click(panel, "Dungeons", 2)   -- the first is the sub-tab
+-- ── The figures, the filters and the leader's card (#378) ───────────────
+check(shows(panel, "groups forming") and shows(panel, "looking") and shows(panel, "for you"), "the board opens on its figures")
+click(panel, "Dungeons")
 check(Board:Pref("filterCat") == "dungeon" and not shows(panel, "first night")
   and shows(panel, "No group is being formed right now. Pick an activity to start one."), "a filter leaves out the other activities")
 check(shows(panel, "Karazhan: until 23h") == false, "and who is looking only for them")
-click(panel, "Raids", 2)
+click(panel, "Raids")
 check(shows(panel, "first night") and shows(panel, "Karazhan: until 23h"), "the raids' filter keeps the raid")
 click(panel, "All")
 local before = Board:Pref("roles")
 Board:SetPref("roles", "T")
 Board:Refresh()
-check(shows(panel, "for you"), "a group of my level with a spot in my role says it is for me")
+check(shows(cardTitled(panel, "Groups being formed"), "for you"), "a group of my level with a spot in my role says it is for me")
 Board:SetPref("roles", before)
+Board:Refresh()
+check(not shows(cardTitled(panel, "Groups being formed"), "for you"), "and one with no spot in my role does not")
 click(panel, "My level only")
 check(Board:Pref("filterLevel") == true and shows(panel, "first night"), "my level only keeps a group of my level")
 click(panel, "My level only")
@@ -339,7 +729,7 @@ check(Board:Pref("filterLevel") == false, "and a second click shows them all aga
 Groups:Create("steamvault", { T = 0, H = 0, D = 2 }, "SP", 3600, false, 900)
 Board:HandleEntry("Fay-Realm", { roles = "D", acts = {}, note = "anything", ttl = 3600 })
 check(shows(panel, "Your group: The Steamvault") and shows(panel, "starts in 15m") and shows(panel, "1/5"),
-  "the leader's panel names the group, when it starts and how full it is")
+  "the leader's card names the group, when it starts and how full it is")
 check(#buttons(panel, "+30 min") >= 1 and #buttons(panel, "Change") == 1 and #buttons(panel, "Take down") == 1,
   "and gives the leader what to do with it")
 GuildOS.db.lfgPrefs.lastGuildLine = 0
@@ -357,20 +747,17 @@ local inviteAs
 walk(panel, function(f)
   if f.kind == "Button" and f:IsVisible() and f.label and f.label.text and f.label.text:find("Invite as", 1, true) then inviteAs = f end
 end)
-check(inviteAs ~= nil, "with an invite in the role they fit")
+check(inviteAs ~= nil and inviteAs.variant == "primary", "with an invite in the role they fit")
 inviteAs.scripts.OnClick(inviteAs)
 check(invited[#invited] == "Fay" and Groups:Requests()[1].state == "invited", "which invites them and keeps their spot")
 check(not shows(panel, "Fits your group"), "and they are no longer offered")
+check(insideCards(panel, "leader") > 20, "the leader's card and the lists stay inside their cards")
 click(panel, "+30 min")
 check(Groups:Mine().ttl > 3600 - 1, "+30 min gives my group more time")
 click(panel, "Take down")
 GuildOS.db.lfgBoard[key("Fay")] = nil
 Board._cd = {}   -- the stub never ends a cooldown; Fay speaks again below
 Board:Refresh()
-
--- The tiles count what is there
-panel.SelectSub("raid")
-check(shows(panel, "1 forming") and shows(panel, "1 looking"), "a tile counts its groups and its players")
 
 -- The roles I play
 local play = {}
@@ -412,9 +799,10 @@ local function chipsOf(root)
   return out
 end
 
--- This client has no role art: every role keeps its letter.
+-- This client has no role art: every role is spelled out.
 for _, letter in ipairs({ "T", "H", "D" }) do
-  check(play[letter].label.text == letter and not play[letter].icon.shown, "with no role art the " .. letter .. " toggle keeps its letter")
+  check(play[letter].label.text == Board:RoleName(({ T = "TANK", H = "HEALER", D = "DPS" })[letter]) and not play[letter].icon.shown,
+    "with no role art the " .. letter .. " toggle says its role's name")
 end
 
 -- One card per group being formed, its seats as its listing counts them
@@ -428,12 +816,16 @@ local taken, open = seatsOf(kc)
 check(taken == 1 and open == "TDD", "a card's seats: its leader, then one per open spot by role (" .. taken .. " " .. open .. ")")
 taken, open = seatsOf(sc)
 check(taken == 3 and open == "H", "and another group's seats are its own (" .. taken .. " " .. open .. ")")
-check(kc.range.text == "70" and sc.range.text == "68\226\128\14770", "a card shows its activity's level range")
-check(kc.lead.text == "led by |cff" .. GuildOS:GetClassColorHex("PRIEST") .. "Cid|r", "and who leads it, in their class colour")
+check(kc.range.text == "Level 70" and sc.range.text == "Level 68\226\128\14770", "a card shows its activity's level range")
+local priest = string.format("%02x%02x%02x", (function(r, g, b) return math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5) end)(UI:InkFor("paper", "class", "PRIEST")))
+check(kc.lead.text == "led by |cff" .. priest .. "Cid|r", "and who leads it, in their class's ink on the paper")
+check(kc.avatar:IsShown() and kc.avatar.letter.text == "C", "with the leader's avatar")
 check(kc.when.text:find("1/10", 1, true) and kc.when.text:find("60m", 1, true), "how full it is and for how long")
+check(kc.ago.text ~= "", "and how long ago it was listed")
 check(shows(kc, "missing 1 Tank, 2 DPS") and shows(sc, "missing 1 Healer"), "and what it is missing")
 check(#buttons(sc, "Healer") == 1 and #buttons(sc, "Tank") == 0 and #buttons(sc, "Whisper") == 1,
   "a card keeps its Join action for the roles it has open")
+check(buttons(sc, "Healer")[1].variant == "primary", "the role I would ask as is the primary one")
 for _, s in ipairs(kc.slots) do
   if s:IsShown() and not s.filled then check(s.mark.text == s.role, "with no role art an open seat shows its letter") end
 end
@@ -442,76 +834,27 @@ end
 local rows = seekerRows(panel)
 check(#rows == 2, "one row per player looking (" .. #rows .. ")")
 local dan, fay = rowOf(rows, "Dan"), rowOf(rows, "Fay")
-check(dan.level.text == "Lv 68" and fay.level.text == "Lv 62", "a row says the player's level, from the roster")
+check(dan.levelText.text == "Lv 68" and fay.levelText.text == "Lv 62", "a row says the player's level, from the roster")
 check(dan.roles.text == "Tank, DPS" and fay.roles.text == "Healer", "with no role art the roles are spelled out")
 check(dan.what.text == "Karazhan: until 23h" and fay.what.text == "The Steamvault", "and what they want")
-check(#buttons(dan, "Invite") == 1 and not dan.class.shown, "the row keeps its Invite, and shows no class icon the client lacks")
+check(#buttons(dan, "Invite") == 1 and #buttons(dan, "Whisper") == 1, "the row invites and whispers")
+check(dan.avatar:IsShown() and dan.avatar.letter.text == "D", "with the player's avatar")
 
--- Dungeons opens on the tiles of my level
-local function yOf(f) return -f.points[1][3] end
-local function sectionTiles(root, title)
-  local heads, tiles = {}, {}
-  walk(root, function(f)
-    if f:IsVisible() and type(f.title) == "table" and f.title.rule ~= nil then heads[#heads + 1] = f end
-    if f:IsVisible() and f.kind == "Button" and type(f.title) == "string" then tiles[#tiles + 1] = f end
-  end)
-  table.sort(heads, function(a, b) return yOf(a) < yOf(b) end)
-  local top, bottom, first
-  for i, h in ipairs(heads) do
-    if h.title.text == title then
-      top, bottom, first = yOf(h), heads[i + 1] and yOf(heads[i + 1]) or math.huge, i == 1
-    end
-  end
-  if not top then return nil end
-  local out = {}
-  for _, t in ipairs(tiles) do
-    if yOf(t) > top and yOf(t) < bottom then out[#out + 1] = t end
-  end
-  return out, first
-end
-local function inRange(level)
-  local want, seen = {}, {}
-  for _, s in ipairs(GuildOS.GroupActivities:Sections("dungeon")) do
-    for _, it in ipairs(s.items) do
-      if it.min and level >= it.min and level <= it.max and not seen[it.id] then
-        seen[it.id] = true
-        want[#want + 1] = Board:ActivityName(it.id)
-      end
-    end
-  end
-  table.sort(want)
-  return want
-end
-local function names(tiles)
-  local out = {}
-  for _, t in ipairs(tiles) do out[#out + 1] = t.title end
-  table.sort(out)
-  return out
-end
-for _, level in ipairs({ 70, 60 }) do
+-- The form's cards follow my level: "My level only" keeps the dungeons of my level (give or take five)
+local function formTiles(level)
   UnitLevel = function() return level end
-  panel.SelectSub("dungeon")
-  local got, first = sectionTiles(panel, "For your level")
-  local want = inRange(level)
-  check(#want > 0 and got ~= nil and first, "at level " .. level .. " Dungeons opens on For your level")
-  check(table.concat(names(got), ",") == table.concat(want, ","),
-    "holding exactly the tiles whose range has level " .. level .. ": " .. table.concat(names(got), ","))
-  for _, t in ipairs(got) do check(t.alpha == 1, "every tile for my level is lit") end
+  click(panel, "+ Form a group")
+  local f = formOf("isGroupForm")
+  click(f, "Dungeons")
+  local got = {}
+  for _, t in ipairs(tilesOf(f)) do got[t.act] = true end
+  click(f, "Cancel")
+  return got
 end
+local at70, at60 = formTiles(70), formTiles(60)
+check(at70["steamvault"] and not at70["classic-dungeon"] and not at70["hellfire-ramparts"], "at level 70 the cards are the dungeons of 70")
+check(at60["classic-dungeon"] and at60["hellfire-ramparts"] and not at60["steamvault"], "at level 60 those of 60")
 UnitLevel = function() return 70 end
-panel.SelectSub("dungeon")
-local vaultHere
-for _, t in ipairs((sectionTiles(panel, "For your level"))) do if t.title == "The Steamvault" then vaultHere = t end end
-check(vaultHere.groups.text == "1 forming" and vaultHere.seekers.text == "1 looking", "a tile for my level says who wants to go")
-vaultHere.scripts.OnClick(vaultHere)
-check(composer:IsShown() and composer.picked == "steamvault", "and opens the composer on its activity, as every tile")
-composer:Hide()
-UnitLevel = function() return 5 end
-panel.SelectSub("dungeon")
-check(not shows(panel, "For your level"), "a level no dungeon has shows no For your level")
-UnitLevel = function() return 70 end
-panel.SelectSub("raid")
-check(not shows(panel, "For your level"), "and Raids has none")
 
 -- A repaint reuses what it drew
 panel.SelectSub("active")
@@ -519,7 +862,7 @@ local settled = created
 for _ = 1, 5 do
   panel.SelectSub("dungeon")
   panel.SelectSub("raid")
-  panel.SelectSub("active")
+  panel.SelectSub("all")
 end
 check(created == settled, "repainting creates no frame it already has (" .. (created - settled) .. " new)")
 
@@ -530,6 +873,58 @@ Board:HandleEntry("Bea-Realm", { roles = "H", ttl = 3600 })
 panel:Show()
 panel.scripts.OnShow(panel)
 check(shows(panel, "Bea"), "what arrived while the tab was closed is there when it opens")
+
+-- Narrow: the lists one under the other, still inside their cards
+walk(panel, function(f) if f.kind == "ScrollFrame" then f:SetSize(560, 500) end end)
+panel:SetSize(580, 600)
+panel.SelectSub("all")
+gc, sk = cardTitled(panel, "Groups being formed"), cardTitled(panel, "Looking for a group")
+local gr, sr = rectOf(gc, {}), rectOf(sk, {})
+check(sr.t >= gr.b, "on a narrow window the players' list is under the groups'")
+check(insideCards(panel, "narrow") > 20, "and everything stays inside its card")
+-- The forms at both widths: nothing past a card's edge, each grid one card to a row when narrow
+local function perRow(ts)
+  local x1 = rectOf(ts[1], {}).l
+  return math.abs(rectOf(ts[2], {}).l - x1) < 1 and 1 or 2
+end
+local function formsInside(what, stacked, gCols, sCols)
+  local cols = stacked and 1 or 2
+  click(panel, "+ Form a group")
+  local f = formOf("isGroupForm")
+  click(f, "Raids")
+  local ts = tilesOf(f)
+  check(#ts > 1 and perRow(ts) == gCols, what .. ": the form's grid is " .. gCols .. " card(s) to a row")
+  check(insideCards(panel, what .. ", form step 1") > 20, what .. ": the form's cards stay inside it")
+  ts[1].scripts.OnClick(ts[1])
+  check(insideCards(panel, what .. ", form step 2") > 20, what .. ": its second step stays inside it")
+  local fr, lr = rectOf(f, {}), rectOf(cardTitled(panel, "Looking for a group"), {})
+  if cols == 1 then check(lr.t >= fr.b, what .. ": the players' list goes under the form")
+  else check(math.abs(lr.t - fr.t) < 1 and lr.l > fr.r, what .. ": the players' list beside the form") end
+  click(f, "Cancel")
+  click(panel, "I am looking")
+  local sf2 = formOf("isSeekForm")
+  click(sf2, "Raids")
+  check(perRow(tilesOf(sf2)) == sCols, what .. ": the looking form's grid is " .. sCols .. " card(s) to a row")
+  check(insideCards(panel, what .. ", looking form") > 20, what .. ": the looking form stays inside its card")
+  if cols == 1 then check(rectOf(sf2, {}).t < rectOf(cardTitled(panel, "Groups being formed"), {}).t, what .. ": an open form takes the top slot") end
+  click(sf2, "Cancel")
+end
+formsInside("narrow", true, 2, 2)
+walk(panel, function(f) if f.kind == "ScrollFrame" then f:SetSize(1180, 500) end end)
+panel:SetSize(1200, 600)
+panel.SelectSub("all")
+gr, sr = rectOf(gc, {}), rectOf(sk, {})
+check(math.abs(sr.t - gr.t) < 1 and sr.l > gr.r, "from 900px they sit side by side")
+check(math.abs((gr.b - gr.t) - (sr.b - sr.t)) < 1 and gr.b - gr.t >= 500 - 1, "as tall as each other, filling the height left")
+check(insideCards(panel, "wide") > 20, "and everything stays inside its card")
+walk(panel, function(f) if f.kind == "ScrollFrame" then f:SetSize(1180, 500) end end)
+formsInside("wide", false, 2, 2)
+-- A column narrower than two cards takes one: the right one at 900px
+walk(panel, function(f) if f.kind == "ScrollFrame" then f:SetSize(920, 500) end end)
+panel:SetSize(940, 600)
+formsInside("900px", false, 2, 1)
+walk(panel, function(f) if f.kind == "ScrollFrame" then f:SetSize(860, 500) end end)
+panel:SetSize(900, 600)
 
 -- ── The game's role icons (#373) ────────────────────────────────────────
 -- The client's art is asked once a load, so each client below loads the panel again.
@@ -546,16 +941,16 @@ local function near(a, b)
   for i = 1, #b do if math.abs(a[i] - b[i]) > 1e-6 then return false end end
   return true
 end
--- A fresh panel makes each tab's frames on its first visit: visit them all once, then count.
+-- A fresh panel makes its frames on its first paints: paint each filter once, then count.
 local function settles(p, what)
   p.SelectSub("dungeon")
   p.SelectSub("raid")
-  p.SelectSub("active")
+  p.SelectSub("all")
   local before = created
   for _ = 1, 3 do
     p.SelectSub("dungeon")
     p.SelectSub("raid")
-    p.SelectSub("active")
+    p.SelectSub("all")
   end
   check(created == before, what .. ": repainting creates no frame it already has (" .. (created - before) .. " new)")
 end
@@ -565,7 +960,6 @@ local ATLAS = { T = "groupfinder-icon-role-large-tank", H = "groupfinder-icon-ro
 C_Texture = { GetAtlasInfo = function(name)
   for _, a in pairs(ATLAS) do if a == name then return { width = 32, height = 32 } end end
 end }
-CLASS_ICON_TCOORDS = { PRIEST = { 0.5, 0.75, 0.25, 0.5 }, MAGE = { 0.25, 0.5, 0, 0.25 } }
 function GetFileIDFromPath() return 1 end
 for _, it in pairs(GuildOS.GroupActivities.byId) do it.artOk = nil end
 dofile(ADDON .. "/UI/GroupsPanel.lua")
@@ -574,8 +968,8 @@ local iconPanel = build()
 
 local ic = chipsOf(iconPanel)
 for letter, atlas in pairs(ATLAS) do
-  check(ic[letter].icon.shown and ic[letter].icon.atlas == atlas and ic[letter].label.text == "",
-    "with the atlases a role toggle is the game's icon, not its letter: " .. atlas)
+  check(ic[letter].icon.shown and ic[letter].icon.atlas == atlas and ic[letter].label.text ~= "",
+    "with the atlases a role toggle is the game's icon and its name: " .. atlas)
 end
 check(ic.H.__selected and ic.D.__selected and not ic.T.__selected, "the roles I play are marked selected")
 check(ic.T.icon.desaturated and not ic.H.icon.desaturated, "and a role I do not play is greyed")
@@ -584,8 +978,9 @@ check(Board:Pref("roles") == "THD" and ic.T.__selected and not ic.T.icon.desatur
 ic.T.scripts.OnClick(ic.T)
 
 local ikc = cardOf(iconPanel, "Karazhan")
-check(ikc.art.shown and ikc.art.texture == "Interface\\LFGFrame\\UI-LFG-BACKGROUND-Karazhan"
-  and near(ikc.art.coords, { 0, 1, 0.08, 0.72 }), "a card's band is its activity's art, cut as the tiles cut it")
+check(ikc.icon.art.shown and ikc.icon.art.texture == "Interface\\LFGFrame\\UI-LFG-BACKGROUND-Karazhan"
+  and near(ikc.icon.art.coords, { 0.32, 0.68, 0.12, 0.84 }) and not ikc.icon.glyph.shown,
+  "a card's icon is its activity's art, cut square")
 taken, open = seatsOf(ikc)
 check(taken == 1 and open == "TDD", "the icons change no seat")
 for _, s in ipairs(ikc.slots) do
@@ -602,11 +997,17 @@ local shownIcons = {}
 for _, t in ipairs(dan.roleIcons) do if t.shown then shownIcons[#shownIcons + 1] = t.atlas end end
 check(#shownIcons == 2 and shownIcons[1] == ATLAS.T and shownIcons[2] == ATLAS.D and dan.roles.text == "",
   "a row's roles are the game's icons")
-check(dan.class.shown and dan.class.texture:find("UI-CharacterCreate-Classes", 1, true)
-  and near(dan.class.coords, CLASS_ICON_TCOORDS.PRIEST), "and its class is the game's class icon")
 local bea = rowOf(rows, "Bea")
 check(bea.roleIcons[1].shown and not bea.roleIcons[2].shown, "a player with one role shows one icon")
+check(insideCards(iconPanel, "with icons") > 20, "with icons everything stays inside its card")
 settles(iconPanel, "with icons")
+
+-- An activity with no art of its own is its initial
+GuildOS.GroupActivities.byId.karazhan.artOk = false
+iconPanel.SelectSub("all")
+ikc = cardOf(iconPanel, "Karazhan")
+check(not ikc.icon.art.shown and ikc.icon.glyph.shown and ikc.icon.glyph.letter.text == "K", "an activity the client has no art for shows its initial")
+GuildOS.GroupActivities.byId.karazhan.artOk = nil
 
 -- A client with only the LFG frame's file: Blizzard's own cut of it (GetTexCoordsForRole)
 C_Texture = nil
@@ -618,20 +1019,44 @@ local fc, cell = chipsOf(filePanel), 67 / 256
 check(fc.T.icon.texture == "Interface\\LFGFrame\\UI-LFG-ICON-ROLES" and near(fc.T.icon.coords, { 0, cell, cell, 2 * cell })
   and near(fc.H.icon.coords, { cell, 2 * cell, 0, cell }) and near(fc.D.icon.coords, { cell, 2 * cell, cell, 2 * cell }),
   "without the atlases the role icons come from the LFG frame's file")
-check(fc.T.label.text == "" and fc.T.icon.shown, "and still stand in for the letter")
+check(fc.T.icon.shown, "and still stand beside the role's name")
 settles(filePanel, "with the file")
 
--- The WoW: Forever style: the same screen on its palette
+-- The WoW: Forever client, with its atlases: the same screen, the same look (one look on every client, #449)
 C_Texture = { GetAtlasInfo = function() return { width = 32, height = 32 } end }
 GuildOSDB = { style = "forever" }
-check(GuildOS.Style:Resolve() == "forever", "the Forever style resolves where the client has its art")
+check(GuildOS.Style:Resolve() == "salao", "a saved style from before is ignored: the Salão's look on Forever too")
 dofile(ADDON .. "/UI/GroupsPanel.lua")
 filePanel:Hide()
 local foreverPanel = build()
 check(#cards(foreverPanel) == 2 and #seekerRows(foreverPanel) == 3, "in the Forever style the cards and rows are the same")
 check(chipsOf(foreverPanel).T.icon.atlas == ATLAS.T, "with the Forever client's role atlases")
-foreverPanel.SelectSub("dungeon")
-check(sectionTiles(foreverPanel, "For your level") ~= nil, "and Dungeons opens on For your level")
+click(foreverPanel, "+ Form a group")
+check(#tilesOf(foreverPanel) > 0 and insideCards(foreverPanel, "the Forever form") > 20, "and the form's cards are the same")
+click(foreverPanel, "Cancel")
 settles(foreverPanel, "in the Forever style")
+
+-- A notice queued for after combat says the group as it is when it shows, not as it was queued (#449 review).
+do
+  local B, G = GuildOS.LFGBoard, GuildOS.Groups
+  GuildOS.db.lfgPrefs = GuildOS.db.lfgPrefs or {}
+  GuildOS.db.lfgPrefs.roles = "TH"
+  local k = GuildOS:GetPlayerKey("Toastee", "Realm")
+  local now = GetServerTime()
+  GuildOS.db.lfgGroups = GuildOS.db.lfgGroups or {}
+  GuildOS.db.lfgGroups[k] = G:_BuildGroup({ act = "karazhan", need = { T = 0, H = 1, D = 0 }, ttl = 3600 }, now)
+  local shown
+  local oldClear = GuildOS.ShowWhenClear
+  GuildOS.ShowWhenClear = function(_, _, fn) shown = fn() end
+  GuildOS:GroupsToast({ kind = "group", key = k, name = "Toastee", act = "karazhan", need = { T = 1, H = 1, D = 0 } })
+  GuildOS.ShowWhenClear = oldClear
+  check(shown ~= nil, "the notice shows")
+  local body = shown.body.text or ""
+  check(body:find(G:NeedText({ T = 0, H = 1, D = 0 }), 1, true) ~= nil and not body:find(G:NeedText({ T = 1, H = 1, D = 0 }), 1, true),
+    "the open spots are the group's now: " .. body)
+  check((shown.primary.label.text or ""):find(B:RoleName("HEALER"), 1, true) ~= nil,
+    "and it offers the role still open: " .. tostring(shown.primary.label.text))
+  GuildOS.db.lfgGroups[k] = nil
+end
 
 print(checks .. " checks ok")

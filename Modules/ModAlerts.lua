@@ -24,6 +24,7 @@
 -- Chat lockdown (WoW: Forever, retail): the lines arrive secret and are not read at all. The panel
 -- says the alerts are paused while it lasts.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local ModAlerts = {}
 GuildOS.ModAlerts = ModAlerts
 local L = GuildOS.L
@@ -44,7 +45,8 @@ ModAlerts.MUTE_SECS = 3600
 ModAlerts.REASON_OF = {
     offense = "language", trade = "trade", link = "spam", poaching = "poaching", custom = "conduct", flood = "spam",
 }
-local DEFAULT_SEV = { offense = "med", trade = "high", link = "med", poaching = "high", custom = "med" }
+-- Banter is common and seldom a matter for an officer: offence only logs; poaching alerts (audit B2).
+local DEFAULT_SEV = { offense = "low", trade = "high", link = "med", poaching = "med", custom = "med" }
 local SEV_RANK = { low = 1, med = 2, high = 3 }
 local CAT_SET = {}
 for _, c in ipairs(ModAlerts.CATEGORIES) do CAT_SET[c] = true end
@@ -155,6 +157,51 @@ function ModAlerts.CheckLuaPattern(p)
     return nil
 end
 
+-- Plain-language ways to write a rule, for officers who never wrote a Lua pattern: each turns the text
+-- typed into the rule that would otherwise be written by hand. "word" is a whole word (no pattern), "part"
+-- the text anywhere, even inside a longer word, "spaced" the letters with a space or a symbol allowed
+-- between them ("g.o.l.d", "g o l d"), "lua" the pattern as typed.
+ModAlerts.MODES = { "word", "part", "spaced", "lua" }
+local MAGIC = "([%^%$%(%)%%%.%[%]%*%+%-%?])"
+function ModAlerts.Escape(s) return (tostring(s or ""):gsub(MAGIC, "%%%1")) end
+-- The rule's pattern, whether it is a Lua pattern, and its kind (kept so the list can read it back).
+function ModAlerts.FromMode(mode, text)
+    text = strtrim(tostring(text or ""))
+    if mode == "part" then return ModAlerts.Escape(ModAlerts.Fold(text)), true, "part" end
+    if mode == "spaced" then
+        local bare = ModAlerts.Fold(text):gsub("[%s%p]+", "")
+        -- A letter of more than one byte cannot be split from its neighbours byte by byte.
+        if bare:find("[\128-\255]") or #bare < 2 then return ModAlerts.Escape(ModAlerts.Fold(text)), true, "part" end
+        local parts = {}
+        for ch in bare:gmatch(".") do parts[#parts + 1] = ch end
+        return table.concat(parts, "%W?"), true, "spaced"
+    end
+    if mode == "lua" then return text, true, nil end
+    return text, false, nil
+end
+
+-- Ready-made patterns, in words: what an officer most often wants to catch.
+ModAlerts.TEMPLATES = {
+    { id = "gold",    p = "%d%d%d+ ?g",       text = L["A price in gold (500g, 1000 g)"] },
+    { id = "www",     p = "www%.",            text = L["A website address (www.)"] },
+    { id = "com",     p = "%a%.com",          text = L["A .com address"] },
+    { id = "discord", p = "discord%.gg",      text = L["A Discord invite"] },
+    { id = "number",  p = "%d%d%d%d%d%d%d%d", text = L["A long number (8 digits or more)"] },
+}
+
+-- How the list shows a rule: the text an officer would recognise, and how it matches (nil: a whole word).
+function ModAlerts.Describe(r)
+    if r.k == "part" then return (r.p:gsub("%%(.)", "%1")), L["inside other words too"] end
+    if r.k == "spaced" then return (r.p:gsub("%%W%?", "")), L["even spaced or with symbols"] end
+    if r.lua then
+        for _, t in ipairs(ModAlerts.TEMPLATES) do
+            if t.p == r.p then return t.text, L["ready-made"] end
+        end
+        return r.p, L["Lua pattern"]
+    end
+    return r.p, nil
+end
+
 -- One rule off a box or the network, cleaned: { p, cat, sev, lua }; or nil and why
 -- ("empty", "long", "category", "severity", "invalid", "broad").
 function ModAlerts.CleanRule(r)
@@ -171,7 +218,8 @@ function ModAlerts.CleanRule(r)
     elseif not ModAlerts.Words(ModAlerts.Fold(p)):find("[^ ]") then
         return nil, "empty"
     end
-    return { p = p, cat = r.cat, sev = r.sev, lua = isLua or nil }
+    local kind = isLua and (r.k == "part" or r.k == "spaced") and r.k or nil
+    return { p = p, cat = r.cat, sev = r.sev, lua = isLua or nil, k = kind }
 end
 
 -- What identifies a rule (for muting it and refusing a duplicate).
@@ -194,12 +242,12 @@ function ModAlerts.ValidRules(t)
     return out
 end
 
--- The list before the officers chose one, in this client's language.
+-- The list before the officers chose one, in this client's language. No default link words: a link is the
+-- anti-flood's (3 in 120 s), or one link would raise two alerts (audit B1).
 function ModAlerts.DefaultRules()
     local words = {
         offense = L["idiot, moron, stupid, imbecile"],
         trade = L["buy gold, sell gold, cheap gold, gold for sale, selling boost, wts boost"],
-        link = L["www, http, https, discord gg"],
         poaching = L["join my guild, join our guild, come to my guild, leave this guild"],
     }
     local out = {}
@@ -319,9 +367,9 @@ local function saveRules(self, rules)
 end
 
 -- An officer adds a rule. True, or false and why ("officer", "full", "dupe", or CleanRule's).
-function ModAlerts:AddRule(p, cat, sev, isLua)
+function ModAlerts:AddRule(p, cat, sev, isLua, kind)
     if not GuildOS:IsOfficer() then return false, "officer" end
-    local r, why = self.CleanRule({ p = p, cat = cat, sev = sev, lua = isLua and true or nil })
+    local r, why = self.CleanRule({ p = p, cat = cat, sev = sev, lua = isLua and true or nil, k = kind })
     if not r then return false, why end
     local rules = self:GetRules()
     if #rules >= self.RULES_MAX then return false, "full" end
@@ -341,6 +389,33 @@ function ModAlerts:RemoveRule(index)
     if not rules[index] then return false end
     table.remove(rules, index)
     saveRules(self, rules)
+    return true
+end
+
+-- An officer changes the severity of the rule at `index` of GetRules() (audit B5). True, or false and why
+-- ("officer", "missing", "severity").
+function ModAlerts:SetRuleSeverity(index, sev)
+    if not GuildOS:IsOfficer() then return false, "officer" end
+    if not SEV_RANK[sev] then return false, "severity" end
+    local rules = self:GetRules()
+    if not rules[index] then return false, "missing" end
+    rules[index].sev = sev
+    saveRules(self, rules)
+    return true
+end
+
+-- The severity after `sev`, round: low, medium, high, low. What a click on a rule's severity sets.
+function ModAlerts.NextSeverity(sev)
+    local i = SEV_RANK[sev] or 0
+    return ModAlerts.SEVERITIES[i % #ModAlerts.SEVERITIES + 1]
+end
+
+-- One list for every officer (audit B5): until an officer chooses one, each matches the defaults of their own
+-- language. The first save of anything on the Alert rules tab (a rule, the anti-flood's limits, the newcomers')
+-- stamps this officer's defaults as the guild's list, so every officer matches the same one from then on.
+function ModAlerts:SeedShared()
+    if self:IsCustomList() or not GuildOS:IsOfficer() then return false end
+    saveRules(self, self:GetRules())
     return true
 end
 
@@ -653,9 +728,42 @@ function ModAlerts:Deliver(a, now)
             self:Refresh()
             return
         end
+        -- In combat or an instance: the panel only, and unclaimed, so an officer out of it gets the window.
+        if self:InFight() then return self:_Hold(a) end
         self:_Claim(a.claim)
         self:_Show(a)
     end)
+end
+
+----------------------------------------------------------------------
+-- In combat or an instance (audit B4): an alert goes to the panel only, with no window over the raid frames
+-- and no raid-warning sound, and one chat line sums them up once combat ends.
+----------------------------------------------------------------------
+function ModAlerts:InFight()
+    if GuildOS:InCombat() then return true end
+    if IsInInstance and IsInInstance() then return true end
+    return false
+end
+
+function ModAlerts:_Hold(a)
+    a.held = true
+    self.heldCount = (self.heldCount or 0) + 1
+    if not self.fightFrame then
+        local f = CreateFrame("Frame")
+        self.fightFrame = f
+        GuildOS.Compat.RegisterEvent(f, "PLAYER_REGEN_ENABLED")
+        f:SetScript("OnEvent", function() GuildOS:SafeCall(ModAlerts.FightEnded, ModAlerts) end)
+    end
+    self:Refresh()
+end
+
+-- Combat ended: one line for what was held, never a window. Returns how many it summed up.
+function ModAlerts:FightEnded()
+    local n = self.heldCount or 0
+    if n == 0 or GuildOS:InCombat() then return 0 end
+    self.heldCount = 0
+    GuildOS:Print(string.format(L["%d chat alert(s) during combat: see Leadership > Chat alerts."], n))
+    return n
 end
 
 function ModAlerts:_Claim(key)
@@ -705,13 +813,18 @@ function ModAlerts:_PruneFeed(now)
     end
 end
 
+-- The alert's window, through the one popup queue (audit B21): never two at once, never in combat.
 function ModAlerts:_Show(a)
     a.shown = true
     self.onScreen = a
-    if a.sev == "high" and self:Prefs().sound and PlaySound then
-        pcall(PlaySound, (SOUNDKIT and SOUNDKIT.RAID_WARNING) or 8959, "Master")
-    end
-    if GuildOS.ShowModAlert then GuildOS:ShowModAlert(a) end
+    GuildOS:ShowWhenClear("modalert", function()
+        if a.state ~= "new" then return nil end   -- acted on from the panel while it waited
+        if a.sev == "high" and self:Prefs().sound and PlaySound then
+            pcall(PlaySound, (SOUNDKIT and SOUNDKIT.RAID_WARNING) or 8959, "Master")
+        end
+        if GuildOS.ShowModAlert then GuildOS:ShowModAlert(a) end
+        return GuildOS.modAlertFrame
+    end)
     self:Refresh()
 end
 

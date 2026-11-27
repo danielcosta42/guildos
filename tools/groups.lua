@@ -547,6 +547,23 @@ PARTY = {}
 Groups:Disband()
 check(not Groups:OnWhisper("inv", "Cid-Realm"), "a group taken down invites nobody")
 
+-- Where the game drops an invite sent from the whisper's event (#449, Compat.NeedsHardware), it waits in the officer
+-- action queue, and the key press (ActionQueue:Next) sends it; one that no longer applies is passed over.
+fresh()
+dofile(ADDON .. "/Modules/ActionQueue.lua")
+local needs = GuildOS.Compat.NeedsHardware
+GuildOS.Compat.NeedsHardware = function(kind) return kind == "groupInvite" end
+Groups:Create("steamvault", { T = 1, D = 1 }, "", 3600, false)
+GuildOS.db.lfgPrefs.autoInvite = true
+invited = {}
+check(Groups:OnWhisper("inv", "Dan-Realm") and #invited == 0 and GuildOS.ActionQueue:Pending() == 1,
+  "queued: the whisper's event invites nobody, the queue holds it")
+check(GuildOS.ActionQueue:Next() and invited[1] == "Dan-Realm" and GuildOS.ActionQueue:Pending() == 0,
+  "the key press invites them")
+GuildOS.Compat.NeedsHardware = needs
+GuildOS.ActionQueue = nil
+Groups:Disband()
+
 -- A raid-sized group turns the party into a raid
 fresh()
 converted = 0
@@ -610,25 +627,53 @@ check(not Groups:FitsLevel("not-an-activity", 70), "an unknown activity fits nob
 check(Groups:BestRole({ T = 0, H = 1, D = 2 }, "D") == "D" and Groups:BestRole({ T = 1, D = 2 }, "") == "T"
   and Groups:BestRole({ T = 1 }, "H") == nil, "the role asked is the first of mine with a spot")
 local dm = listing("steamvault", { T = 1, D = 1 })
-check(Groups:_ShouldToast(dm, 70, false, false), "a group for my level, free, gets a notice")
-check(not Groups:_ShouldToast(dm, 50, false, false), "not one for another level")
-check(not Groups:_ShouldToast(dm, 70, true, false), "not in combat")
-check(not Groups:_ShouldToast(dm, 70, false, true), "not in a group")
+check(Groups:_ShouldToast(dm, 70, false), "a group for my level, free, gets a notice")
+check(not Groups:_ShouldToast(dm, 50, false), "not one for another level")
+check(not Groups:_ShouldToast(dm, 70, true), "not in a group")
 Board:SetPref("roles", "H")
-check(not Groups:_ShouldToast(dm, 70, false, false), "not with no spot for any role of mine")
+check(not Groups:_ShouldToast(dm, 70, false), "not with no spot for any role of mine")
 Board:SetPref("roles", "")
 GuildOS.db.lfgPrefs.toast = false
-check(not Groups:_ShouldToast(dm, 70, false, false), "and not with the notices off")
+check(not Groups:_ShouldToast(dm, 70, false), "and not with the notices off")
 GuildOS.db.lfgPrefs.toast = true
 Groups:Create("steamvault", { T = 1 }, "", 3600, false)
-check(not Groups:_ShouldToast(dm, 70, false, false), "nor while I lead a group of my own")
+check(not Groups:_ShouldToast(dm, 70, false), "nor while I lead a group of my own")
 Groups:Disband()
 check(Groups:_Announce(key("Bea"), "Bea", Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 3600 }, NOW)) == "toast"
   and toasts[1].kind == "group" and toasts[1].act == "karazhan" and #printed == 0,
   "a new group that fits a level-less client is a notice, not a chat line")
+-- In combat the notice is still asked for (#449): GuildOS:ShowWhenClear holds it until combat ends,
+-- where before it was dropped for good.
+function InCombatLockdown() return true end
+toasts = {}
+check(Groups:_Announce(key("Cid"), "Cid", Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 3600 }, NOW)) == "toast"
+  and #toasts == 1, "in combat a group that fits is still a notice, held for after it")
+InCombatLockdown = nil
+local panelSrc = assert(io.open(ADDON .. "/UI/GroupsPanel.lua", "rb")):read("*a")
+check(panelSrc:find("self:ShowWhenClear(\"groups:\"", 1, true) ~= nil, "and the notice opens through ShowWhenClear, never in combat")
+check(panelSrc:find("G:StillTrue(n)", 1, true) ~= nil, "and checks, when it shows, that it is still true")
 GuildOS.db.lfgPrefs.toast = false
 check(Groups:_Announce(key("Bea"), "Bea", dm) == "chat" and #printed == 1, "with the notices off it is the chat line")
 GuildOS.GroupsToast = nil
+
+-- A notice that waited behind combat says only what is still true (#449)
+fresh()
+GuildOS.db.lfgGroups[key("Bea")] = Groups:_BuildGroup({ act = "steamvault", need = { T = 1 }, ttl = 3600 }, NOW)
+GuildOS.db.lfgGroups[key("Bea")].from = "Bea-Realm"
+local note = { kind = "group", key = key("Bea") }
+check(Groups:StillTrue(note), "a group still up with a spot for me is still news")
+Board:SetPref("roles", "H")
+check(not Groups:StillTrue(note), "not once it has no spot in a role of mine")
+Board:SetPref("roles", "")
+Groups:RequestSpot(key("Bea"), "T")
+check(not Groups:StillTrue(note), "nor once I asked it already")
+Groups:CancelRequest(key("Bea"))
+NOW = NOW + 3600
+check(not Groups:StillTrue(note), "nor once it ended")
+NOW = NOW - 3600
+check(not Groups:StillTrue({ kind = "request", key = key("Cid") }), "a request nobody is waiting on is not")
+check(not Groups:StillTrue({ kind = "expiring", what = "group" }) and not Groups:StillTrue({ kind = "nonsense" }),
+  "nor a warning about a listing I no longer have, nor anything else")
 
 -- ── The leader's tools (#378) ───────────────────────────────────────────
 -- A start later on crosses the wire as seconds from now, and never past the listing's end
@@ -732,6 +777,244 @@ check(Groups:FitsMe(fit70, 70, "T") and not Groups:FitsMe(fit70, 70, "H") and no
   "a group is for me at my level with a spot in my role")
 fit70.key = Board:MyKey()
 check(not Groups:FitsMe(fit70, 70, "T"), "and never my own")
+
+-- ── The board keeps itself clean (#449) ─────────────────────────────────
+-- A listing heard with no spot left is a group that filled: it closes, and nothing lists it
+fresh()
+Groups:HandleGroup("Bea-Realm", { act = "steamvault", need = { T = 1 }, ttl = 3600 }, "GUILD")
+Groups:RequestSpot(key("Bea"), "T")
+runTimers()
+Groups:HandleGroup("Bea-Realm", { act = "steamvault", need = { T = 0, H = 0, D = 0 }, n = 5, ttl = 3600 }, "GUILD")
+check(GuildOS.db.lfgGroups[key("Bea")] == nil and Groups:Asked(key("Bea")) == nil, "a full group heard closes, and so does what I asked of it")
+GuildOS.db.lfgGroups[key("Cid")] = { act = "steamvault", need = { T = 0, H = 0, D = 0 }, n = 5, max = 5, ts = NOW, ttl = 3600 }
+check(#Groups:ActiveList(GuildOS.db.lfgGroups, NOW) == 0, "and a full one stored from before is not listed")
+
+-- Expired listings leave on the minute's tick, with the tab closed too
+fresh()
+local refreshed = 0
+Board.uiRefresh = function() refreshed = refreshed + 1 end
+GuildOS.db.lfgGroups[key("Bea")] = Groups:_BuildGroup({ act = "steamvault", need = { T = 1 }, ttl = 1800 }, NOW)
+GuildOS.db.lfgBoard[key("Cid")] = Board:_BuildEntry({ roles = "H", ttl = 1800 }, NOW)
+Groups:Tick(NOW + 60)
+check(GuildOS.db.lfgGroups[key("Bea")] and GuildOS.db.lfgBoard[key("Cid")] and refreshed == 0, "a live listing stays, and nothing repaints")
+Groups:Tick(NOW + 1801)
+check(GuildOS.db.lfgGroups[key("Bea")] == nil and GuildOS.db.lfgBoard[key("Cid")] == nil and refreshed == 1,
+  "an expired group and an expired player leave the saved board, and the tab repaints once")
+
+-- Whoever logs off or leaves the guild leaves the board, and what was asked of them
+fresh()
+Groups:HandleGroup("Bea-Realm", { act = "steamvault", need = { T = 1 }, ttl = 3600 }, "GUILD")
+Groups:RequestSpot(key("Bea"), "T")
+GuildOS.db.lfgBoard[key("Cid")] = Board:_BuildEntry({ roles = "H", ttl = 3600 }, NOW)
+GuildOS.db.lfgBoard[key("Dan")] = Board:_BuildEntry({ roles = "D", ttl = 3600 }, NOW)
+check(Groups:SweepOffline({}) == 0 and GuildOS.db.lfgGroups[key("Bea")], "a roster without me in it (not loaded yet) drops nothing")
+local online = { [Board:MyKey()] = true, [key("Dan")] = true }
+-- Bea's listing was heard at NOW: a roster read before it has not seen her online yet, and keeps her (#449 review).
+check(Groups:SweepOffline(online, NOW - 30) == 1 and GuildOS.db.lfgGroups[key("Bea")] ~= nil and Groups:Asked(key("Bea")) ~= nil,
+  "a listing heard after the roster was read stays, and what I asked of it: she logged in after it")
+check(Groups:SweepOffline(online, NOW + 1) == 2, "with a roster read since, the offline leader and my request go too")
+check(GuildOS.db.lfgGroups[key("Bea")] == nil and Groups:Asked(key("Bea")) == nil and GuildOS.db.lfgBoard[key("Cid")] == nil
+  and GuildOS.db.lfgBoard[key("Dan")] ~= nil, "and whoever is online stays")
+-- The minute's tick asks the game for a fresh roster and sweeps when it lands, never on the cached one.
+fresh()
+local asked = 0
+local oldRoster = GuildOS.Compat.GuildRoster
+GuildOS.Compat.GuildRoster = function() asked = asked + 1 end
+Groups:HandleGroup("Eve-Realm", { act = "steamvault", need = { T = 1 }, ttl = 3600 }, "GUILD")
+Groups:Tick(NOW + 60)
+check(asked == 1 and GuildOS.db.lfgGroups[key("Eve")] ~= nil, "the tick asks for the roster and drops nobody yet")
+local oldBuild = Board._BuildOnlineRoster
+Board._BuildOnlineRoster = function() return { [Board:MyKey()] = true } end
+check(Groups:OnGuildRoster(NOW + 61) == 1 and GuildOS.db.lfgGroups[key("Eve")] == nil,
+  "the roster that lands after it, without her, takes her listing down")
+check(Groups:OnGuildRoster(NOW + 62) == 0, "and a roster update nobody asked for sweeps nothing")
+Board._BuildOnlineRoster, GuildOS.Compat.GuildRoster = oldBuild, oldRoster
+fresh()
+Groups:Create("steamvault", { T = 1, D = 1 }, "", 3600, false)
+Groups:HandleJoin("Bea-Realm", { role = "T" }, "WHISPER")
+Groups:SweepOffline({ [Board:MyKey()] = true }, NOW + 1)
+check(#Groups:Requests() == 0 and Groups:Mine() ~= nil, "a leader's queue drops who logged off, and keeps the group")
+
+-- Joining a guildmate's listed group, by their invite, takes my own listing down
+fresh()
+Board:SetAvailable(nil, "x", 3600, false, "T", { "steamvault" })
+Groups:HandleGroup("Bea-Realm", { act = "steamvault", need = { T = 1 }, ttl = 3600 }, "GUILD")
+PARTY = { "Cid" }
+Groups:OnGroupRoster()
+check(Board:AmAvailable(), "a party with somebody else in it leaves me listed")
+PARTY = { "Bea" }
+Groups:OnGroupRoster()
+check(not Board:AmAvailable() and last(TYPES.LFG).p.clear == true, "in the party of a listed group I am no longer looking, and the guild hears it")
+
+-- A take-down is heard inside the cooldown of the listing before it
+fresh()
+Board:HandleEntry("Bea-Realm", { roles = "T", ttl = 3600 }, "GUILD")
+check(GuildOS.db.lfgBoard[key("Bea")] ~= nil, "a guildmate lists")
+Board:HandleEntry("Bea-Realm", { clear = true }, "GUILD")
+check(GuildOS.db.lfgBoard[key("Bea")] == nil, "and taking it down a moment later is heard, cooldown or not")
+Board:HandleEntry("Bea-Realm", { roles = "H", ttl = 3600 }, "GUILD")
+check(GuildOS.db.lfgBoard[key("Bea")] == nil, "while a new listing still waits out the cooldown")
+Board.uiRefresh = nil
+
+-- ── My quests in the guild LFG (#450) ───────────────────────────────────
+do
+  dofile(ADDON .. "/Modules/GroupQuests.lua")
+  local Q = GuildOS.GroupQuests
+  local Compat = GuildOS.Compat
+  local SECRET = {}
+  issecretvalue = function(v) return v == SECRET end
+
+  -- The modern shape: C_QuestLog's GetInfo tables, tags as tables, the suggested size asked apart.
+  local LOG = {
+    { title = "Westfall", isHeader = true },
+    { title = "The Defias Brotherhood", questID = 155, level = 22, suggestedGroup = 5 },
+    { title = "Red Leather Bandanas", questID = 153, level = 15 },
+    { title = "Hidden thing", questID = 999, level = 20, isHidden = true },
+    { title = "Hellfire Peninsula", isHeader = true },
+    { title = "Wanted: Worg Master Kruush", questID = 10809, level = 62 },
+    { title = SECRET, questID = 4242, level = 62 },
+    { title = "Bad id", questID = 1.5, level = 1 },
+  }
+  local TAGS = { [10809] = { tagID = 1, tagName = "Group", isElite = true } }
+  local SIZES = { [10809] = 3 }
+  C_QuestLog = {
+    GetNumQuestLogEntries = function() return #LOG end,
+    GetInfo = function(i) return LOG[i] end,
+    GetQuestTagInfo = function(id) return TAGS[id] end,
+    GetSuggestedGroupSize = function(id) return SIZES[id] or 0 end,
+  }
+  local out, n = Compat.QuestLog({})
+  check(n == 3 and #out == 3, "modern log: three quests read, the header, the hidden, the secret and the bad id left out (" .. n .. ")")
+  check(out[1].id == 155 and out[1].zone == "Westfall" and out[1].level == 22 and out[1].size == 5 and out[1].group,
+    "a quest has its zone (its header), level and suggested players, and a size over one is a group quest")
+  check(out[2].id == 153 and not out[2].group and out[2].size == 0, "a solo quest is no group quest")
+  check(out[3].zone == "Hellfire Peninsula" and out[3].tag == "Group" and out[3].elite and out[3].size == 3 and out[3].group,
+    "the client's tag, elite and GetSuggestedGroupSize are read")
+  local kept = out[1]
+  Compat.QuestLog(out)
+  check(out[1] == kept, "a second read refills the same tables")
+
+  -- The Classic-era shape: the globals, the tag by quest id.
+  C_QuestLog = nil
+  local CLASSIC = {
+    { "Elwynn Forest", 0, 0, true },
+    { "Kobold Camp Cleanup", 7, 0, false, false, false, 0, 7 },
+    { "The Stockade Riots", 26, 0, false, false, false, 0, 391 },
+    { SECRET, 5, 0, false, false, false, 0, 11 },
+  }
+  GetNumQuestLogEntries = function() return #CLASSIC, 3 end
+  GetQuestLogTitle = function(i) return unpack(CLASSIC[i]) end
+  GetQuestTagInfo = function(id) if id == 391 then return 81, "Dungeon" end end
+  out, n = Compat.QuestLog({})
+  check(n == 2 and out[1].id == 7 and out[1].zone == "Elwynn Forest" and not out[1].group,
+    "Classic log: the quests under their zone header, the secret one left out")
+  check(out[2].id == 391 and out[2].tag == "Dungeon" and out[2].tagID == 81 and out[2].group, "a dungeon tag is a group quest")
+  GetNumQuestLogEntries, GetQuestLogTitle, GetQuestTagInfo = nil, nil, nil
+  C_QuestLog = { GetNumQuestLogEntries = function() return #LOG end, GetInfo = function(i) return LOG[i] end,
+    GetQuestTagInfo = function(id) return TAGS[id] end, GetSuggestedGroupSize = function(id) return SIZES[id] or 0 end }
+
+  -- The cache: group quests first, one read for a burst of events, a repaint only when it changed.
+  fresh()
+  local repaints = 0
+  Board.uiRefresh = function() repaints = repaints + 1 end
+  Q:Refresh()
+  local list = Q:List()
+  check(list[1].id == 155 and list[2].id == 10809 and list[3].id == 153, "group quests come first, the log's order kept")
+  check(Q:Has(10809) and not Q:Has(999) and Q:Title(153) == "Red Leather Bandanas", "what is in my log, by id")
+  check(Q:Title(424242, "Their title") == "Their title", "a quest not in my log keeps the listing's title")
+  for _ = 1, 10 do Q._OnEvent() end
+  check(#timers == 1, "ten QUEST_LOG_UPDATEs make one read (" .. #timers .. " timers)")
+  runTimers()
+  check(repaints == 0, "a read that changed nothing repaints nothing")
+  LOG[#LOG + 1] = { title = "Fel Orc Scavengers", questID = 10482, level = 61 }
+  Q._OnEvent()
+  runTimers()
+  check(repaints == 1 and Q:Has(10482), "a quest picked up repaints once")
+  Board.uiRefresh = nil
+
+  -- Off the wire: whole ids, plain capped titles, each once, never more than the cap.
+  check(Q:_SanitizeId(12) == 12 and not Q:_SanitizeId(0) and not Q:_SanitizeId(-3) and not Q:_SanitizeId(1.5)
+    and not Q:_SanitizeId(2 ^ 30) and not Q:_SanitizeId("12") and not Q:_SanitizeId(0 / 0), "an id is a whole number in range")
+  local q = Q:_SanitizeQuest({ id = 5, t = "|cffff0000Evil|r |TInterface\\X:64|t" .. string.rep("x", 200) })
+  check(q and not q.t:find("|", 1, true) and #q.t <= Q.TITLE_MAX, "a title loses its escapes and is capped: " .. tostring(q and #q.t))
+  check(Q:_SanitizeQuest({ id = 5, t = {} }).t == "" and Q:_SanitizeQuest("x") == nil, "a title that is no string is none")
+  local qs = Q:_SanitizeQuests({ { id = 1, t = "a" }, { id = 1, t = "dup" }, "junk", { id = 2 }, { id = 3 }, { id = 4 }, { id = 5 } })
+  check(#qs == Q.PICK_MAX and qs[1].t == "a" and qs[2].id == 2, "quests: each once, at most PICK_MAX (" .. #qs .. ")")
+  check(#Q:_SanitizeQuests("nope") == 0 and #Q:_SanitizeIds(7) == 0, "a list that is no table is empty")
+  local many = {}
+  for i = 1, 40 do many[i] = i end
+  check(#Q:_SanitizeIds(many) == Q.SHARE_MAX, "shared ids are capped at SHARE_MAX")
+
+  -- Looking: only the quests picked go out, with Elite quests for a client before #450; nothing shared by default.
+  check(GuildOS.db.lfgPrefs.shareQuests == false and Board:Pref("shareQuests") == false, "sharing my log is off by default")
+  Board:SetAvailable(nil, "", 3600, false, "D", { "karazhan" }, { { id = 155, t = "The Defias Brotherhood" } })
+  local p = last("LG").p
+  check(p.quests and #p.quests == 1 and p.quests[1].id == 155 and p.quests[1].t == "The Defias Brotherhood",
+    "the listing carries the quest picked, id and title")
+  check(p.shared == nil, "and none of the rest of my log")
+  check(tContains(p.acts, "karazhan") and tContains(p.acts, "elite-quests") and #p.acts == 2,
+    "Elite quests goes out with them, which an old client knows")
+  check(Board:Mine().questAct == true, "remembered as added for the quests, not picked")
+  local keys = 0
+  for _ in pairs(p) do keys = keys + 1 end
+  check(keys == 6, "the payload is the old one plus quests (" .. keys .. " fields)")
+  Board:SetAvailable(nil, "", 3600, false, "D", { "karazhan" })
+  p = last("LG").p
+  check(p.quests == nil and p.shared == nil and #p.acts == 1, "with no quest picked the payload is the one before #450")
+  Board:SetPref("shareQuests", true)
+  Board:SetAvailable(nil, "", 3600, false, "D", {}, { { id = 155, t = "The Defias Brotherhood" } })
+  p = last("LG").p
+  check(p.shared and #p.shared == 1 and p.shared[1] == 10809, "opted in, the group quests of my log go as ids, the picked ones not twice")
+  check(type(p.shared[1]) == "number", "ids only, never titles")
+  Board:SetPref("shareQuests", false)
+  Board._cd = {}
+  Board:Rebroadcast()
+  check(last("LG").p.shared[1] == 10809 and last("LG").p.quests[1].id == 155, "a rebroadcast says the same quests")
+
+  -- Hearing them: checked on the way in; an old listing has none.
+  Board:HandleEntry("Bea-Realm", { roles = "T", acts = { "elite-quests" }, ttl = 3600,
+    quests = { { id = 10809, t = "Their| title" }, { id = "x" } }, shared = { 155, -1, "z", 155 } }, "GUILD")
+  local bea = Board:ActiveList(GuildOS.db.lfgBoard, NOW)
+  for _, e in ipairs(bea) do if e.key == key("Bea") then bea = e end end
+  check(#bea.quests == 1 and bea.quests[1].t == "Their title" and #bea.shared == 1 and bea.shared[1] == 155,
+    "a listing's quests and shared ids are sanitised")
+  check(Q:InMyLog(bea) == 10809 and Q:Lists(bea, 155) and not Q:Lists(bea, 153), "and compared with my own log, here")
+  check(Board:Describe(bea) == "Wanted: Worg Master Kruush", "a listing is described by my log's title, Elite quests not said twice")
+  Board:HandleEntry("Cid-Realm", { roles = "H", acts = { "karazhan" }, ttl = 3600 }, "GUILD")
+  local cid = GuildOS.db.lfgBoard[key("Cid")]
+  check(#cid.quests == 0 and #cid.shared == 0, "a listing from before #450 has no quest")
+
+  -- A group for a quest: under Elite quests, its quest checked, matched by whoever names it.
+  fresh()
+  Q:Refresh()
+  local g = Groups:Create("karazhan", { T = 1, D = 2 }, "", 3600, false, 0, { id = 10809, t = "Wanted: Worg Master Kruush" })
+  check(g and g.act == "elite-quests" and g.quest.id == 10809, "a group for a quest is listed under Elite quests")
+  p = last("GF").p
+  check(p.act == "elite-quests" and p.quest.id == 10809 and p.quest.t == "Wanted: Worg Master Kruush", "its quest goes out with it")
+  check(Groups:Title(g) == "Wanted: Worg Master Kruush", "and names it")
+  Board:HandleEntry("Dan-Realm", { roles = "D", acts = { "deadmines" }, ttl = 3600, shared = { 10809 } }, "GUILD")
+  Board:HandleEntry("Eva-Realm", { roles = "D", acts = { "elite-quests" }, ttl = 3600 }, "GUILD")
+  local m = Groups:Matches(NOW)
+  check(#m == 2 and m[1].key == key("Dan") and m[1].quest and not m[2].quest,
+    "who has the group's quest fits it and comes first, marked; who wants elite quests fits too")
+  local counts = Groups:Counts(NOW)
+  check(counts[10809] and counts[10809].groups == 1 and counts[10809].seekers == 1, "a quest is counted by its id")
+  Groups:Disband()
+
+  local old = GuildOS.GroupQuests
+  GuildOS.GroupQuests = nil   -- a client before #450 reading the same listing
+  local og = Groups:_BuildGroup(p, NOW)
+  check(og and og.act == "elite-quests" and og.quest == nil, "an old client lists the group as Elite quests and ignores the quest")
+  local oe = Board:_BuildEntry({ roles = "D", acts = { "elite-quests" }, quests = { { id = 1, t = "x" } } }, NOW)
+  check(oe and #oe.acts == 1 and #oe.quests == 0, "and a listing as looking for elite quests")
+  GuildOS.GroupQuests = old
+  local bad = Groups:_BuildGroup({ act = "elite-quests", quest = { id = -5, t = "x" }, need = { D = 1 } }, NOW)
+  check(bad and bad.quest == nil, "a group's forged quest is dropped, the group kept")
+  Groups:HandleGroup("Bea-Realm", { act = "elite-quests", need = { D = 1 }, ttl = 3600, quest = { id = 155, t = "Theirs" } }, "GUILD")
+  check(GuildOS.db.lfgGroups[key("Bea")].quest.id == 155 and Groups:Title(GuildOS.db.lfgGroups[key("Bea")]) == "The Defias Brotherhood",
+    "a group heard is named by my log's title for its quest")
+  issecretvalue = nil
+end
 
 -- ── The catalogue of each client ────────────────────────────────────────
 local function catalogue(client)

@@ -2,9 +2,10 @@
 -- against the real Core/Core.lua, Core/Compat.lua, Core/Utils.lua, Core/Data.lua, Core/Style.lua,
 -- UI/Helpers.lua and Core/Commands.lua under a stubbed client.
 --
--- Two styles: "guildos", the flat look the addon was made with, painting exactly as it always did;
--- "forever", the WoW: Forever client's own -c60 art, offered only where the client has it. The
--- account's choice is read at load; a style the client cannot draw falls back to guildos, said once.
+-- One look since the Salão (#445), and since its phase 3 (#449) drawn from the addon's own art
+-- (Media/Salao) on every client: no atlas of the WoW: Forever client paints it any more. Nothing to
+-- choose, a saved style from before ignored; the palette, the fonts, every role and every control the
+-- same with the client's atlases or without them.
 --
 --   luajit -e 'ADDON="."' tools/style.lua
 --
@@ -143,6 +144,7 @@ local function load(opts)
   dofile(ADDON .. "/Core/Style.lua")
   GuildOS.RecordError = function(_, msg) errors[#errors + 1] = msg end
   GuildOS.db = { settings = {} }
+  dofile(ADDON .. "/UI/Spacing.lua")
   dofile(ADDON .. "/UI/Helpers.lua")
   function GuildOS:ShowDialog(which, text) popups[#popups + 1] = { which = which, text = text } end
   dofile(ADDON .. "/UI/StylePreview.lua")
@@ -152,283 +154,154 @@ local function said(fragment)
   for _, m in ipairs(printed) do if m:find(fragment, 1, true) then return true end end
 end
 
--- ── 1. The art the style names is the client's ─────────────────────────
+-- ── 1. The art is the addon's own, on every client (#449) ──────────────
 local S = load()
-local named = {}
-for role, art in pairs(S.FOREVER) do
-  for _, n in ipairs(S.AtlasNames(art)) do named[#named + 1] = role .. ": " .. n end
+local names = {}
+for name, path in pairs(S.ART) do
+  names[#names + 1] = name
+  check(path == "Interface\\AddOns\\GuildOS\\Media\\Salao\\" .. name .. ".tga", name .. " is a file of Media/Salao")
 end
-local unknown = {}
-for _, rn in ipairs(named) do
-  local n = rn:match(": (.+)$")
-  if not ATLAS[n:lower()] then unknown[#unknown + 1] = rn end
+check(#names >= 20, "the look names its textures (" .. #names .. ")")
+for _, k in ipairs({ "FOREVER", "KEY_ATLASES", "_PaintNine", "_PaintThree", "SkinButton", "SkinTab", "SkinClose" }) do
+  check(S[k] == nil, "the Forever atlas painter is gone: no " .. k)
 end
-local shared = {}
-for _, n in ipairs(S.KEY_ATLASES) do if not ONLY[n:lower()] then shared[#shared + 1] = n end end
-check(#S.KEY_ATLASES >= 2 and #shared == 0, "the key atlases are ones Anniversary does not have (" .. table.concat(shared, ", ") .. ")")
-check(#named > 40 and #unknown == 0, "every atlas the Forever style names is an element the Forever client draws (" ..
-  #named .. " named; unknown: " .. table.concat(unknown, ", ") .. ")")
 
--- ── 2. Which styles a client can draw ──────────────────────────────────
-S = load({ noArt = true })
-check(S:Has("guildos") and not S:Has("forever"), "a client without the art (Anniversary) draws only guildos")
-check(#S:Available() == 1 and S:Available()[1] == "guildos", "and offers only it")
-S = load()
-check(S:Has("forever") and #S:Available() == 2 and S:Available()[2] == "forever", "the Forever client offers both")
-S = load({ without = { ["common-internaltab"] = true } })
-check(not S:Has("forever"), "a client missing one of the key atlases does not offer forever")
-check(S:Name("guildos") == "GuildOS" and S:Name("forever") == "WoW: Forever" and S:Name("x") == "x",
-  "the styles' names are their brands")
+-- ── 2. One look, whatever the client has (#445, #449) ──────────────────
+for _, opts in ipairs({ { noArt = true }, {} }) do
+  S = load(opts)
+  local where = opts.noArt and " (Anniversary, no atlases)" or " (Forever, its atlases)"
+  check(S:Has("salao") and not S:Has("forever") and not S:Has("guildos"), "one look" .. where)
+  check(#S:Available() == 1 and S:Available()[1] == "salao", "and nothing to choose" .. where)
+end
 
--- ── 3. Choosing ────────────────────────────────────────────────────────
+-- ── 3. Nothing to choose ───────────────────────────────────────────────
 S = load()
 local ok, why = S:Choose("neon")
 check(not ok and why == "unknown" and GuildOSDB.style == nil, "an unknown style is refused, and nothing is saved")
-ok = S:Choose("forever")
-check(ok and GuildOSDB.style == "forever", "a style the client draws is saved for the account")
-S = load({ noArt = true })
-ok, why = S:Choose("forever")
-check(not ok and why == "unavailable", "forever is refused where the client has no art")
+ok, why = S:Choose("salao")
+check(not ok and why == "one" and GuildOSDB.style == nil, "the one look is refused too: there is nothing to pick")
+S:Apply("salao")
+check(said("one look"), "/gos style says so")
 
 -- ── 4. Resolving at load ───────────────────────────────────────────────
-S = load({ db = { style = "forever" }, noArt = true })
-check(S:Resolve() == "guildos" and S:Current() == "guildos", "a saved forever on a client without the art falls back")
-check(said("WoW: Forever") and said("GuildOS"), "and says so in chat")
-S = load({ db = {} })
-check(S:Resolve() == "guildos" and #printed == 0, "nothing saved: guildos, silently")
-S = load({ db = { style = "forever" } })
-check(S:Resolve() == "forever" and S:Current() == "forever", "a saved forever where the art exists is used")
+for _, saved in ipairs({ "guildos", "forever" }) do
+  S = load({ db = { style = saved } })
+  check(S:Resolve() == "salao" and S:Current() == "salao" and #printed == 0,
+    "a saved " .. saved .. " style from before is ignored, silently")
+end
 
--- ── 5. The palette and the font ────────────────────────────────────────
-S = load({ db = {} })
-local C = GuildOS.Colors
-local GOLD, ACCENT = C.gold, C.accent          -- as a module captures them at load
-local flatGold = C.gold.r
-S:Resolve()
-check(C.gold.r == flatGold and S.gameFont == nil, "guildos leaves the palette and the font as they are")
-S = load({ db = { style = "forever" } })
-C = GuildOS.Colors
-GOLD, ACCENT = C.gold, C.accent
-S:Resolve()
-check(GOLD.r == 1 and GOLD.g == 0.82 and C.gold == GOLD, "forever re-points gold in place: a captured table sees it")
-check(ACCENT.r == 1 and ACCENT.g == 0.82 and ACCENT ~= GOLD, "and the legacy keys follow their token, still their own copies")
-check(math.abs(C.accentSoft.a - 0.14) < 1e-9 and math.abs(C.accentDim.r - 0.54) < 1e-9 and C.row2.r == C.bg.r,
-  "dimmed and washed aliases are recomputed from the new gold")
-check(C.ok.r == 0.490, "status colours keep theirs")
-local fs = newRegion("FontString")
-GuildOS:ApplyFont(fs, 12)
-check(S.gameFont and fs.font == STANDARD_TEXT_FONT, "and every text takes the game's font")
+-- ── 5. The palette and the fonts, on every client ──────────────────────
+for _, opts in ipairs({ { db = {}, noArt = true }, { db = {} } }) do
+  S = load(opts)
+  local C = GuildOS.Colors
+  local GOLD = C.gold
+  S:Resolve()
+  local where = opts.noArt and " (no atlases)" or " (atlases)"
+  check(GOLD.r == 1 and math.abs(GOLD.g - 0xd1 / 255) < 1e-9 and C.gold == GOLD, "the game's yellow" .. where)
+  check(math.abs(C.paper.r - 0xf3 / 255) < 1e-9 and math.abs(C.lineHi.r - 0x6b / 255) < 1e-9, "the paper and the metal" .. where)
+  local fs = newRegion("FontString")
+  GuildOS:ApplyFont(fs, 12)
+  check(not S.gameFont and fs.font == GuildOS.Fonts.ui, "every text takes the addon's own font, not the game's" .. where)
+end
 
 -- ── 6. Painting by role ────────────────────────────────────────────────
-S = load({ db = {} }); S:Resolve()
-C = GuildOS.Colors
+local function pieces(box) local n = 0; for _ in pairs(box.pieces) do n = n + 1 end; return n end
+local function art(t) return t and tostring(t.texture or ""):match("Salao\\(.-)%.tga$") end
+for _, opts in ipairs({ { db = {}, noArt = true }, { db = { style = "forever" } } }) do
+  S = load(opts); S:Resolve()
+  local C = GuildOS.Colors
+  local where = opts.noArt and " (no atlases)" or " (atlases)"
+  local f = newRegion("Frame")
+  check(S:Paint(f, "window") == "art" and f.__look and f.__look.fill and art(f.__look.fill.pieces.TL) == "card"
+    and f.__look.fill.color[1] == C.bg.r and f.__look.line.color[1] == C.lineHi.r and f.__edge3 == 3,
+    "a window: the metal frame, 3px, around the window's colour" .. where)
+  for _, c in ipairs(f.children) do check(c.atlas == nil, "the window uses no atlas" .. where) end
+  f = newRegion("Frame")
+  S:Paint(f, "panel")
+  check(pieces(f.__look.fill) == 9 and math.abs(f.__look.fill.color[4] - 0.55) < 1e-9 and f.__look.line.color[1] == C.lineHi.r,
+    "a panel: the dark card in nine pieces, see-through, the metal's line" .. where)
+  f = newRegion("Frame")
+  S:Paint(f, "paper")
+  check(f.__paper and f.__look.fill.color[1] == C.paper.r and f.__grain and art(f.__grain) == "grain" and f.__grain.horizTile,
+    "parchment: the paper and its grain, tiled" .. where)
+  f = newRegion("Frame")
+  S:Paint(f, "well")
+  check(f.__look.fill.color[1] == C.well.r, "a well: the field's colour" .. where)
+  f = newRegion("Frame")
+  check(S:Paint(f, "popup") == "art" and f.border and f.border[1] == C.metal2.r, "a popup: the bright metal's border on its own colour" .. where)
+  f = newRegion("Frame")
+  S:Paint(f, "titlebar")
+  check(f.__styleBg and art(f.__styleBg) == "titlebar", "a title bar: its warm gradient" .. where)
+  f = newRegion("Frame")
+  local wood = S:PaintWood(f)
+  check(art(wood.wood) == "wood" and wood.wood.horizTile and wood.wood.vertTile and art(wood.glow) == "glow"
+    and not wood.snow.shown, "the wood: tiled boards and the fire's glow" .. where)
+  wood:SetWinter(true)
+  check(wood.snow.shown, "with snow in Winter Veil" .. where)
+end
+
+-- A nine-piece box: corners of its size, the middle stretched between them; the door's open at the bottom.
+S = load(); S:Resolve()
 local f = newRegion("Frame")
-check(S:Paint(f, "window") == "flat" and f.backdrop.bgFile == "Interface\\Buttons\\WHITE8x8"
-  and f.backdrop.edgeFile == "Interface\\Buttons\\WHITE8x8"
-  and f.backdrop.edgeSize == 1 and f.bg[1] == C.bg.r and f.border[1] == C.line.r,
-  "guildos: a window is today's backdrop, bg with a 1px line")
-f = newRegion("Frame")
-S:Paint(f, "well")
-check(f.bg[1] == C.well.r, "a well is today's inset colour")
-f = newRegion("Frame")
-check(S:Paint(f, "popup") == "flat" and f.backdrop == nil, "a popup's colours stay its caller's")
-f = newRegion("Frame")
-S:Paint(f, "titlebar")
-check(f.__styleBg and f.__styleBg.color[1] == C.panel.r, "a title bar is today's panel band")
-
-S = load({ db = { style = "forever" } }); S:Resolve()
-f = newRegion("Frame")
-check(S:Paint(f, "window") == "art" and f.__nine.TopLeftCorner.atlas == "UI-Frame-Metal-CornerTopLeft",
-  "forever: a window gets the metal frame")
-check(f.__nine.TopLeftCorner.w == 190 * 0.25 and f.__nine.RightEdge.atlas == "!UI-Frame-Metal-EdgeRight",
-  "its corners are the atlas size times the scale, and its edges tile")
-check(f.backdrop.bgFile and not f.backdrop.edgeFile and f.bg[1] == GuildOS.Colors.bg.r, "the middle stays the role's colour")
-check(f.__nine.TopEdge.horizTile == true and f.__nine.LeftEdge.vertTile == true and not f.__nine.TopLeftCorner.horizTile,
-  "edges repeat along their length, as the client's NineSlice does; corners do not")
-f = newRegion("Frame")
-S:Paint(f, "popup")
--- Forever's -c60 tooltip centre is not in its atlas set, so the client would not swap it in: the
--- popup's middle is its own colour, under the tooltip's -c60 border.
-check(f.__nine.TopLeftCorner.atlas == "Tooltip-NineSlice-CornerTopLeft" and not f.__nine.Center
-  and f.bg[1] == GuildOS.Colors.bg.r, "a popup gets the tooltip's border over its own colour")
-f = newRegion("Frame"); f.w, f.h = 200, 30
-check(S:Paint(f, "titlebar") == "none" and not f.__three and not f.__styleBg,
-  "a title bar paints nothing: the metal frame's top edge is the bar (#148)")
-f = newRegion("Frame"); f.w, f.h = 300, 200
-check(S:Paint(f, "panel") == "flat" and not f.__nine and f.backdrop.edgeSize == 1
-  and f.border[1] == GuildOS.Colors.line.r, "a panel is flat, with the palette's thin bronze line (#148)")
-f = newRegion("Frame"); f.w, f.h = 300, 200
-check(S:Paint(f, "well") == "flat" and not f.__nine and f.bg[1] == GuildOS.Colors.well.r, "and so is a well")
-
-S = load({ db = { style = "forever" }, without = { ["_ui-frame-metal-edgetop"] = true } }); S:Resolve()
-f = newRegion("Frame")
-local first = S:Paint(f, "window")
-S:Paint(newRegion("Frame"), "window")
-check(first == "flat" and f.backdrop.edgeSize == 1, "a missing atlas paints that piece flat, never a hole")
-check(#errors == 1 and errors[1]:find("_UI-Frame-Metal-EdgeTop", 1, true),
-  "and is recorded once, however often it is asked for")
-f = newRegion("Frame")
-check(S:Paint(f, "titlebar") == "flat" and f.__styleBg,
-  "without the metal frame there is no edge to be the bar: the title bar keeps its band (#148)")
+local box = S:Nine(f, "card", 6, "BACKGROUND", 1)
+check(box.pieces.TL.w == 6 and box.pieces.TL.h == 6 and box.pieces.BR.points[1][1] == "BOTTOMRIGHT"
+  and box.pieces.C.points[1][2] == box.pieces.TL, "a box: 6px corners, the middle between them")
+local door = S:Nine(f, "card", 6, "BACKGROUND", 1, nil, "bottom")
+check(not door.pieces.BL.shown and not door.pieces.B.shown and door.pieces.L.points[2][1] == "BOTTOMLEFT",
+  "a door's box is open at the bottom")
+door:SetShown(true)
+check(not door.pieces.BL.shown, "and stays open when shown again")
+local bar = newRegion("Frame"); bar.w, bar.h = 40, 24
+local three = S:Three(bar, "pill", "BACKGROUND", 1)
+check(three.pieces.L.w == 12 and three.pieces.R.w == 12, "a pill's caps are half its height")
+bar.w = 16; bar.scripts.OnSizeChanged(bar)
+check(three.pieces.L.w == 8, "squeezed when the pill is narrower than both caps")
 
 -- ── 7. The controls, through the real Helpers ──────────────────────────
-S = load({ db = {} }); S:Resolve()
-local UI = GuildOS.UI
-local b = UI:CreateButton(UIParent, "Go", 120, 26)
-check(not b.__forever and b.backdrop.edgeSize == 1, "guildos: a button is today's bordered backdrop")
-
-S = load({ db = { style = "forever" } }); S:Resolve()
-UI = GuildOS.UI
-local plain = UI:CreateButton(UIParent, "Go", 120, 26)
-check(not plain.__forever and not plain.__three and plain.backdrop.edgeSize == 1,
-  "forever: a button is the flat dark button with its bronze line (#148)")
-local ghost = UI:SetButtonVariant(UI:CreateButton(UIParent, "Search", 60, 18), "ghost")
-check(ghost.underline.shown and ghost.underline.color[1] == GuildOS.Colors.label.r,
-  "a ghost link's underline is the label's colour, not white")
-b = UI:SetButtonVariant(UI:CreateButton(UIParent, "Go", 120, 26), "primary")
-check(b.__forever and b.__three.Left.atlas == "128-RedButton-Left" and b.__three.Left.shown,
-  "the screen's primary button is the game's red button")
-UI:_ButtonState(b, "pressed")
-check(b.__three.Center.atlas == "_128-RedButton-Center-Pressed", "pressed swaps to the pressed art")
-UI:_ButtonState(b, "disabled")
-check(b.__three.Right.atlas == "128-RedButton-Right-Disabled" and b.label.color[1] == GuildOS.Colors.disabled.r,
-  "disabled swaps to the disabled art and dims the label")
-UI:_ButtonState(b, "hover")
-check(b.__three.Left.atlas == "128-RedButton-Left" and b.label.color[1] == GuildOS.Colors.text.r, "hover lights the label")
-UI:SetButtonVariant(b, "ghost")
-check(not b.__three.Left.shown and not b.__forever, "a primary switched to ghost leaves the art")
-UI:SetButtonVariant(b, "primary")
-check(b.__forever and b.__three.Left.shown, "and takes it back as primary")
--- A toggle (the recruitment channels, a chip) shows its state with SetBaseColor. On the game's art
--- that is a tint of the art itself: the old backdrop drew over the button, and hover cleared it.
-local tg = UI:SetButtonVariant(UI:CreateButton(UIParent, "Trade", 120, 26), "primary")
-check(tg.__three.Left.layer == "BORDER", "the button's art sits above the backdrop")
-tg:SetBaseColor(0.12, 0.12, 0.16, 0.85)
-check(tg.__three.Left.color and math.abs(tg.__three.Left.color[1] - 0.55) < 1e-9
-  and math.abs(tg.__three.Center.color[3] - 0.55) < 1e-9, "a grey (off) toggle dims the art")
-check(not tg.bg or tg.bg[4] == 0, "and paints no backdrop over it")
-tg:SetBaseColor(0.157, 0.271, 0.180, 0.85)
-local on = tg.__three.Right.color
-check(on[2] == 1 and on[1] < 1 and on[1] >= 0.6, "a coloured (on) toggle tints the art toward its colour")
-tg.scripts.OnEnter(tg); tg.scripts.OnLeave(tg)
-check(tg.__three.Right.color[2] == 1 and tg.__three.Right.color[1] == on[1] and (not tg.bg or tg.bg[4] == 0),
-  "hovering it changes nothing about its state")
-tg:SetBaseColor(0, 0, 0, 0)
-check(tg.__three.Left.color[1] == 1, "no colour, the art as it is")
-local narrow = UI:SetButtonVariant(UI:CreateButton(UIParent, "", 40, 26), "primary")
-narrow.scripts.OnSizeChanged()
-check(math.abs(narrow.__three.Left.w + narrow.__three.Right.w - 40) < 0.01, "a button narrower than both caps squeezes them to fit")
-
--- The Settings panel's top tabs: a three-slice made to stretch to any label (a single 96px tab
--- atlas stretched across a wide label smeared its corners).
-local tab = UI:CreateTab(UIParent, "Roster", 100)
-check(tab.__three and tab.__three.Left.atlas == "Options_Tab_Left" and tab.__three.Center.atlas == "Options_Tab_Middle",
-  "a tab is the game's top tab, in three pieces")
-tab:SetActive(true)
-check(tab.__three.Left.atlas == "Options_Tab_Active_Left" and tab.__three.Right.atlas == "Options_Tab_Active_Right"
-  and not tab.underline.shown, "the open one is the active tab, which marks itself: no gold rule")
-tab:SetActive(false); tab.scripts.OnEnter(tab)
-check(tab.__three.Left.atlas == "Options_Tab_Left" and tab.label.color[1] == GuildOS.Colors.text.r,
-  "hovered, the same tab with its label lit")
-
-local cbf = UI:CreateCheckbox(UIParent, "Sound", 16)
-local hasBox, hasMark = false, false
-for _, t in ipairs(cbf.checkbox.children) do
-  if t.atlas == "checkbox-minimal" then hasBox = true end
-  if t.atlas == "Talents-Checkmark-c60" then hasMark = true end
+for _, opts in ipairs({ { db = {}, noArt = true }, { db = { style = "forever" } } }) do
+  S = load(opts); S:Resolve()
+  local UI, C = GuildOS.UI, GuildOS.Colors
+  local where = opts.noArt and " (no atlases)" or " (atlases)"
+  local b = UI:SetButtonVariant(UI:CreateButton(UIParent, "Go", 120, 26), "primary")
+  check(b.__arts.button and b.__arts.button.shown and art(b.__arts.button.pieces.L) == "button"
+    and b.__arts.button.color[1] == C.crimson.r, "the primary button is the crimson one of the Salão's art" .. where)
+  UI:SetButtonVariant(b, "ghost")
+  check(not b.__arts.button.shown and b.underline.shown, "switched to ghost it leaves the art for an underline" .. where)
+  UI:SetButtonVariant(b, "primary")
+  check(b.__arts.button.shown, "and takes it back as primary" .. where)
+  local tab = UI:CreateTab(UIParent, "Roster", 100)
+  tab:SetActive(true)
+  check(tab.fill.shown and art(tab.fill.pieces.L) == "pill" and not tab.underline.shown, "an open tab is a pill" .. where)
+  local close = UI:CreateCloseButton(UIParent)
+  check(art(close.orb) == "orb" and close.x.shown, "the close button is the round crimson one" .. where)
+  for _, c in ipairs(close.children) do check(c.atlas == nil, "no atlas on it" .. where) end
 end
-check(hasBox and hasMark, "a checkbox is the game's box and mark")
-local box
-for _, t in ipairs(cbf.checkbox.children) do if t.atlas == "checkbox-minimal" then box = t end end
-cbf.checkbox.scripts.OnMouseDown(cbf.checkbox); cbf.checkbox.scripts.OnMouseUp(cbf.checkbox)
-check(box.color[1] == 1 and box.color[2] == 1 and box.color[3] == 1, "a click leaves the box's art its own colour")
 
-local close = UI:CreateCloseButton(UIParent)
-check(close.__art and close.__art.atlas == "128-RedButton-Exit" and not close.x.shown, "the close button is the game's exit button")
-S:SkinClose(close, "minimise")
-check(close.__art.atlas == "128-RedButton-Minus", "and the minimise button its minus")
-
-local sp = newRegion("Frame"); sp.ScrollBar = newRegion("Slider", sp)
-sp.ScrollBar.GetMinMaxValues = function() return 0, 0 end
-sp.ScrollBar.GetValue = function() return 0 end
--- The template's own children, which the skin hides.
-sp.ScrollBar.ScrollUpButton, sp.ScrollBar.ScrollDownButton = newRegion("Button"), newRegion("Button")
-sp.ScrollBar.ThumbTexture = newRegion("Texture")
-UI:SkinScrollBar(sp)
-local track, thumb
-for _, t in ipairs(sp.ScrollBar.children) do
-  if t.atlas == "!minimal-scrollbar-track-middle" then track = t end
-  if t.atlas == "minimal-scrollbar-thumb-middle" then thumb = t end
-end
-check(track and thumb, "a scroll bar is the game's minimal track and thumb")
-
-local panel = UI:CreatePanel(UIParent)
-check(panel.__nine and panel.__nine.TopLeftCorner.atlas == "UI-Frame-Metal-CornerTopLeft", "CreatePanel is the metal window")
-local inner = UI:CreatePanel(UI:CreatePanel(UIParent))
-check(not inner.__nine and inner.backdrop.edgeSize == 1, "a panel inside another frame is a flat panel, not a window")
-local small = UI:CreatePanel(UIParent)
-small.w, small.h = 320, 28
-small.scripts.OnSizeChanged(small)
-check(not small.__nine.TopLeftCorner.shown and small.backdrop.edgeSize == 1, "a frame too small for the corners paints flat")
-small.w, small.h = 600, 400
-small.scripts.OnSizeChanged(small)
-check(small.__nine.TopLeftCorner.shown and not small.backdrop.edgeFile, "and gets the art back when it grows")
-local dark = UI:CreateDarkPanel(UIParent)
-check(not dark.__nine and dark.backdrop.edgeSize == 1, "CreateDarkPanel is a flat well")
-local pop = UI:CreatePanel(UIParent)
-UI:StylePopup(pop, { noShadow = true, noFade = true })
-check(pop.__nine.TopLeftCorner.atlas == "Tooltip-NineSlice-CornerTopLeft", "a popup takes the tooltip art")
-
--- ── 7b. Initialize settles the style; the Settings picker ─────────────
-S = load({ db = { style = "forever" } })
+-- ── 7b. Initialize settles the look; no Settings picker (#445) ───────
+S = load({ db = { style = "guildos" } })
 GuildOS:Initialize()
-check(S:Current() == "forever" and GuildOS.Colors.gold.r == 1, "Initialize settles the saved style before anything is drawn")
+check(S:Current() == "salao" and GuildOS.Colors.gold.r == 1, "Initialize settles the one look before anything is drawn")
 local host = newRegion("Frame")
-local y = S:BuildPicker(host, 100)
-local applies, longDesc = {}, nil
-for _, c in ipairs(host.children) do
-  if c.label and (c.label.text == "Apply" or c.label.text == "In use") then applies[#applies + 1] = c end
-  if c.text == S:Description("forever") then longDesc = c end
-end
-check(#applies == 2 and y > 100, "the picker lists each style the client draws, with its button")
-check(applies[1].label.text == "Apply" and applies[2].label.text == "In use" and applies[2].enabled == false,
-  "the one in use says so and cannot be pressed")
-check(longDesc and longDesc.w > 0 and longDesc.w < 380 - 16, "a description wraps short of the button")
-applies[1].scripts.OnClick(applies[1])
-check(GuildOSDB.style == "guildos" and popups[1], "Apply saves the choice and offers the reload")
-S = load({ db = {}, noArt = true }); S:Resolve()
-host = newRegion("Frame")
-check(S:BuildPicker(host, 100) == 100 and #host.children == 0, "with one style there is nothing to choose: no section at all")
+check(S:BuildPicker(host, 100) == 100 and #(host.children or {}) == 0, "and Settings draws no style picker")
 
 -- ── 8. /gos style ──────────────────────────────────────────────────────
-S = load({ db = {} }); S:Resolve()
-dofile(ADDON .. "/Core/Commands.lua")
-SlashCmdList.GUILDOS("style")
-check(said("guildos - GuildOS (in use)") and said("forever - WoW: Forever"), "/gos style lists the styles and marks the one in use")
-SlashCmdList.GUILDOS("style forever")
-check(GuildOSDB.style == "forever" and popups[1] and popups[1].which == "GUILDOS_STYLE_RELOAD",
-  "/gos style forever saves it and offers the reload")
-SlashCmdList.GUILDOS("style neon")
-check(said("Unknown style: neon"), "an unknown style says which exist")
 S = load({ db = {}, noArt = true }); S:Resolve()
 dofile(ADDON .. "/Core/Commands.lua")
-SlashCmdList.GUILDOS("style forever")
-check(GuildOSDB.style == nil and said("not available on this client"), "forever is refused where the client has no art")
 SlashCmdList.GUILDOS("style")
-check(said("not available here"), "and the list says so")
+check(said("salao - Salão (in use)"), "/gos style lists the one look")
+SlashCmdList.GUILDOS("style forever")
+check(GuildOSDB.style == nil and not popups[1] and said("one look"), "/gos style forever saves nothing and says there is one look")
+SlashCmdList.GUILDOS("style neon")
+check(said("Unknown style: neon"), "an unknown style says which exists")
 
 -- ── 9. /gos style preview ──────────────────────────────────────────────
-S = load({ db = {}, without = { ["128-redbutton-exit"] = true } }); S:Resolve()
+S = load({ db = {}, noArt = true }); S:Resolve()
 local rows = S:PreviewRows()
-local seen, missingSeen = {}, false
-for _, r in ipairs(rows) do
-  seen[r.role] = true
-  if r.atlas == "128-RedButton-Exit" and r.has == false then missingSeen = true end
-end
-check(seen.window and seen.button and seen.tab and seen.scroll and seen.minimise, "the preview lists every role's pieces")
-check(missingSeen, "and marks the ones this client lacks")
+local seen = {}
+for _, r in ipairs(rows) do seen[r.role] = r.file end
+check(seen.wood and seen.card and seen.pill and seen.orb and #rows == #names, "the preview lists every texture of the look")
 S:ShowPreview()
-check(S.previewFrame and S.previewFrame.shown, "/gos style preview opens it, even in the GuildOS style")
+check(S.previewFrame and S.previewFrame.shown, "/gos style preview opens it")
 
 -- ── 10. A line is never under a screen pixel (issue #369) ──────────────
 -- The client's rounding, as SharedXML/PixelUtil.lua does it: whole pixels, never under `min`.
@@ -442,17 +315,14 @@ end }
 local function pixels(units, region) return units * region:GetEffectiveScale() * physH / 768 end
 local function near(a, b) return math.abs(a - b) < 1e-9 end
 
-S = load({ db = {} }); S:Resolve()
+S = load({ db = {}, noArt = true }); S:Resolve()
 local UI = GuildOS.UI
 UIParent.scale = 0.64                    -- 1080p at the smallest UI scale: 1 unit is 0.91 px
 local win = UI:CreatePanel(UIParent)
 win.scale = 0.9                          -- the window's own scale slider
 local box = UI:CreatePanel(win)
 local rule = UI:CreateSeparator(box)
-local btn = UI:CreateButton(box, "Apply", 80, 22)
-check(near(pixels(box.backdrop.edgeSize, box), 1), "a box's border is one screen pixel, not 0.82 of one")
-check(near(pixels(rule.h, box), 1), "a separator is one screen pixel")
-check(btn.backdrop and near(pixels(btn.backdrop.edgeSize, btn), 1), "and a button's border too")
+check(near(pixels(rule.h, box), 1), "a separator is one screen pixel, not 0.82 of one")
 -- A checkbox's border is a texture hung outside the box: one screen pixel out on every side.
 local cbBorder = UI:CreateCheckbox(box, "Don't name me").checkbox.children[1]
 local function outset(t)
@@ -465,16 +335,12 @@ end
 local l, r = outset(cbBorder)
 check(l and near(pixels(l, box), 1) and near(pixels(r, box), 1),
   "a checkbox's border sticks out one screen pixel on the right and bottom too, not 0.82")
-local bg = { unpack(box.bg) }
-check(bg[1] ~= 1, "(the box is painted, not the client's white)")
 
 physH, UIParent.scale = 2160, 1          -- moved to a 4K screen: 1 unit is now 2.5 px
 UI:RefreshHairlines()
-check(near(pixels(box.backdrop.edgeSize, box), 3) and near(pixels(rule.h, box), 3),
-  "after a scale change every line is resized to whole pixels")
+check(near(pixels(rule.h, box), 3), "after a scale change every line is resized to whole pixels")
 l, r = outset(cbBorder)
 check(near(pixels(l, box), 3) and near(pixels(r, box), 3), "and the checkbox's border moves with them")
-check(box.bg[1] == bg[1] and box.bg[4] == bg[4], "and the box keeps its colours")
 PixelUtil = nil
 check(UI:Px(box) == 1, "a client without PixelUtil keeps 1 unit")
 
@@ -495,20 +361,21 @@ check(#files > 100 and #literal == 0,
   "no border is a literal 1 unit (use GuildOS.UI:Edge): " .. table.concat(literal, ", "))
 
 -- ── 11. One of each screen part (issue #371) ───────────────────────────
-S = load({ db = {} }); S:Resolve()
+S = load({ db = {}, noArt = true }); S:Resolve()
 UI = GuildOS.UI
 local C = GuildOS.Colors
 local function same(col, c) return col and math.abs(col[1] - c.r) < 1e-6 and math.abs(col[2] - c.g) < 1e-6 end
 local host = UI:CreatePanel(UIParent)
 
--- A field: lineHi border, gold while typing, a hint while empty.
+-- A field: the metal's line, the soft gold while typing, a hint while empty.
+local function line(f) return f.__look and f.__look.line and f.__look.line.color end
 local field = UI:CreateInput(host, 120, 22, { placeholder = "Search" })
-check(field.kind == "EditBox" and same(field.border, C.lineHi), "a field is an edit box with the lineHi border")
+check(field.kind == "EditBox" and same(line(field), C.lineHi), "a field is an edit box with the metal's line")
 check(field.placeholder and field.placeholder.shown and field.placeholder.text == "Search", "an empty field shows its hint")
 field.scripts.OnEditFocusGained(field)
-check(same(field.border, C.gold), "it turns gold while typing")
+check(same(line(field), C.gold2), "it turns the soft gold while typing")
 field.scripts.OnEditFocusLost(field)
-check(same(field.border, C.lineHi), "and back when it lets go")
+check(same(line(field), C.lineHi), "and back when it lets go")
 field:SetText("ana"); field.scripts.OnTextChanged(field)
 check(not field.placeholder.shown, "the hint goes once there is text")
 
@@ -516,9 +383,9 @@ check(not field.placeholder.shown, "the hint goes once there is text")
 -- one line when empty, so the box is a frame of that size with the EditBox inside it.
 local area = UI:CreateTextArea(host, 300, 56, { placeholder = "Options" })
 check(area.h == 56 and area.edit and area.edit.kind == "EditBox" and area.edit.parent == area
-  and same(area.border, C.lineHi), "a text area is a 56px framed box with its EditBox inside")
+  and same(line(area), C.lineHi), "a text area is a 56px framed box with its EditBox inside")
 area.edit.scripts.OnEditFocusGained(area.edit)
-check(same(area.border, C.gold), "and its frame turns gold while typing")
+check(same(line(area), C.gold2), "and its frame turns the soft gold while typing")
 
 -- A dropdown's list has its own surface: popup fill under a lineHi border, not options over whatever is
 -- behind them (#371, seen in Loot > Rule).
@@ -527,30 +394,33 @@ dd:SetOptions({ { value = 1, text = "Rare" }, { value = 2, text = "Epic" } })
 dd:Open()
 local list
 for _, c in ipairs(UIParent.children) do if rawget(c, "catcher") then list = c end end
-check(list and list.backdrop and list.backdrop.bgFile and same(list.bg, C.popup) and same(list.border, C.lineHi),
-  "an open dropdown's list is a popup surface with a border")
+check(list and list.__menuPainted and list.__look and list.__look.fill and list.__look.line,
+  "an open dropdown's list is the mockup's menu: a rounded dark panel with the bright metal's line (#449)")
+check(dd.variant == "field", "the closed select is drawn as a field, like the text input beside it")
 
--- Selection: gold border and label, kept under the cursor, gone when unselected.
+-- Selection: the soft gold's line and ink, kept under the cursor, gone when unselected.
+local function edge(b) return b.__arts["button-line"].color end
 local opt = UI:CreateButton(host, "All", 60, 22)
 UI:SetSelected(opt, true)
-check(same(opt.border, C.gold) and same(opt.label.color, C.gold), "a selected button has a gold border and label")
+check(same(edge(opt), C.gold2) and same(opt.label.color, C.gold2), "a selected button has the soft gold's line and label")
 opt.scripts.OnEnter(opt)
-check(same(opt.border, C.gold), "and keeps it under the cursor")
+check(same(edge(opt), C.gold2), "and keeps it under the cursor")
 opt.scripts.OnLeave(opt)
 UI:SetSelected(opt, false)
-check(same(opt.border, C.lineHi) and same(opt.label.color, C.text), "unselected, it is a secondary button again")
+check(same(edge(opt), C.lineHi) and same(opt.label.color, C.darkInk), "unselected, it is the dark button again")
 UI:SetSelected(opt, true); opt:Disable(); opt.scripts.OnLeave(opt)
 UI:_ButtonState(opt, "disabled")
-check(same(opt.border, C.gold) and same(opt.label.color, C.disabled),
-  "a selected button that cannot be clicked keeps the gold border, so the choice still shows")
+check(same(edge(opt), C.gold2) and same(opt.label.color, GuildOS.UI.DISABLED_INK.wood),
+  "a selected button that cannot be clicked keeps the gold line, so the choice still shows")
 
 -- Section titles: a rule above every one but the first; table headers: a rule under, no fill.
 local t1 = UI:CreateSectionTitle(host, "Your raid roles", true)
 local t2 = UI:CreateSectionTitle(host, "Notices")
 check(t1.rule == nil and t2.rule ~= nil and t2.rule.h ~= nil, "a later section title has a rule above it, the first none")
-check(same(t2.color, C.text), "a section title is text, not gold")
+check(same(t2.color, C.gold2) and t2.font == GuildOS.Fonts.title, "a section title is Cinzel in the soft gold")
 local th = UI:CreateTableHeader(host)
-check(th.h == 22 and th.rule and th.backdrop == nil, "a table header is 22px with a rule and no fill")
+check(th.h == UI.SP.HIT and th.rule and th.backdrop == nil and same(th.rule.color, C.lineHi),
+  "a table header is UI.SP.HIT (24px) tall with the metal's rule and no fill")
 
 -- Scrolling: no empty track when nothing scrolls.
 local scroll = UI:CreateScrollFrame(host, "TestScroll")
@@ -565,116 +435,24 @@ bar.scripts.OnMinMaxChanged(bar)
 check(track.shown, "and shows it once there is something to scroll")
 check(UI.SCROLL_GUTTER == 12, "content keeps 12px clear of the scroll bar")
 
--- In WoW: Forever a field takes the game's search-box art, as the fields it replaced did (#122).
+-- On WoW: Forever a field is the same rounded field: no game art, a multi-line box too (#449).
 S = load({ db = { style = "forever" } }); S:Resolve()
 local fhost = GuildOS.UI:CreatePanel(UIParent)
 local ffield = GuildOS.UI:CreateInput(fhost, 120, 22)
 local atlases = 0
 for _, c in ipairs(ffield.children) do if c.atlas then atlases = atlases + 1 end end
-check(atlases > 0 and ffield.backdrop and ffield.backdrop.edgeFile == nil,
-  "a Forever field wears the game's art, with no flat edge under it")
+check(atlases == 0 and ffield.__look.fill and ffield.backdrop == nil, "a Forever field is the Salão's rounded field, no atlas")
 local fbox = GuildOS.UI:CreateInput(fhost, 460, 250, { multiline = true })
-local boxArt = 0
-for _, c in ipairs(fbox.children) do if c.atlas then boxArt = boxArt + 1 end end
-check(boxArt == 0 and fbox.backdrop and fbox.backdrop.edgeFile ~= nil,
-  "a multi-line box stays flat: the 22px search-bar art is not stretched over it")
+check(fbox.__look.fill and fbox.backdrop == nil, "a multi-line box too")
 
--- ── 12. The onboarding asks the style first (#375) ─────────────────────
--- Where the client draws both styles the wizard's first step is the style: two cards, the one on screen
--- chosen. A pick is saved at once; the reload it needs comes only when the wizard is finished, and only
--- when the style changed.
-local inCombat = false
-local function onboarding(opts)
-  S = load(opts); S:Resolve()
-  function InCombatLockdown() return inCombat end
-  function GuildOS:CreateRolePicker(parent)
-    local f = CreateFrame("Frame", nil, parent)
-    f.refresh = function() end
-    return f
-  end
-  function GuildOS:IsOfficer() return false end
-  GuildOS.onboardingFrame = nil
-  dofile(ADDON .. "/UI/Onboarding.lua")
-  GuildOS:ShowOnboarding()
-  return GuildOS.onboardingFrame
+-- ── 12. The onboarding has no style step (#445, specs/salao/onboarding.md) ──
+-- One look: the welcome and What's new (UI/Onboarding.lua) never ask for a style, and never reload.
+do
+  local fh = assert(io.open(ADDON .. "/UI/Onboarding.lua", "rb"))
+  local src = fh:read("*a")
+  fh:close()
+  check(not src:find("styleStep", 1, true) and not src:find("Style:Choose", 1, true) and not src:find("ReloadUI", 1, true),
+    "the welcome has no style step and no reload")
 end
-local Cn
-local function shownCards(f)
-  local out = {}
-  for _, c in ipairs(f.styleCards) do if c.shown then out[#out + 1] = c end end
-  return out
-end
-local function finish(f)
-  while f.step < #f.steps do f.nextBtn.scripts.OnClick(f.nextBtn) end
-  return f.nextBtn.label.text
-end
-
-local ob = onboarding({ db = {} })
-Cn = GuildOS.Colors
-check(ob.title.text == "Choose your style" and ob.stepLbl.text == "Step 1 of " .. #ob.steps,
-  "with both styles, the wizard's first step is the style")
-local cardsShown = shownCards(ob)
-check(#cardsShown == 2 and cardsShown[1].id == "guildos" and cardsShown[2].id == "forever",
-  "two cards, GuildOS then WoW: Forever")
-check(same(cardsShown[1].border, Cn.gold) and not same(cardsShown[2].border, Cn.gold), "the style on screen is the chosen one")
-check(cardsShown[2].sample.__three ~= nil and cardsShown[1].sample.backdrop ~= nil,
-  "each card shows a sample: the game's red button, a flat one")
-cardsShown[2].scripts.OnClick(cardsShown[2])
-check(GuildOSDB.style == "forever" and same(cardsShown[2].border, Cn.gold) and not same(cardsShown[1].border, Cn.gold),
-  "picking WoW: Forever saves it and marks its card")
-check(not popups.reloaded, "and reloads nothing yet")
-ob.nextBtn.scripts.OnClick(ob.nextBtn)
-check(ob.title.text == "Welcome to Guild OS" and not shownCards(ob)[1], "the next step is the welcome, without the cards")
-check(finish(ob) == "Finish and reload" and not popups.reloaded, "the last button says it will reload")
-ob.nextBtn.scripts.OnClick(ob.nextBtn)
-check(popups.reloaded and GuildOS.db.settings.onboarded == true,
-  "Finish marks the wizard done, then reloads")
--- On WoW: Forever the click could not reload once it had hidden the wizard (ADDON_ACTION_BLOCKED out of
--- combat, seen in game), while Publish's plain ReloadUI reloads: the reload comes first.
-check(popups.wizardUp, "the reload is called before the wizard is hidden")
-
-ob = onboarding({ db = {} })
-cardsShown = shownCards(ob)
-cardsShown[2].scripts.OnClick(cardsShown[2])
-cardsShown[1].scripts.OnClick(cardsShown[1])
-check(finish(ob) == "Finish", "picked back to the style on screen, the last button just finishes")
-ob.nextBtn.scripts.OnClick(ob.nextBtn)
-check(not popups.reloaded and GuildOS.db.settings.onboarded == true, "and nothing reloads")
-
--- A style applied in Settings with "Later" on its reload, then the welcome replayed: that style is the
--- chosen card, and finishing reloads to it.
-ob = onboarding({ db = {} })
-GuildOSDB.style = "forever"
-GuildOS:ShowOnboarding()
-cardsShown = shownCards(ob)
-check(same(cardsShown[2].border, Cn.gold) and not same(cardsShown[1].border, Cn.gold),
-  "a style saved but not reloaded yet is the chosen card")
-check(finish(ob) == "Finish and reload", "and finishing reloads to apply it")
-local sp = ob.settingsBtn.points[1]
-check(sp and sp[1] == "BOTTOMRIGHT" and sp[2] == ob.nextBtn and sp[3] == "BOTTOMLEFT",
-  "Open Settings sits beside the last button, so a longer Finish never covers it")
-
--- Finished in combat: the game refuses a reload then (ADDON_ACTION_BLOCKED, seen in game). The wizard
--- closes and says why, and the reload is offered, behind a click, the moment combat ends.
-ob = onboarding({ db = {} })
-inCombat = true
-cardsShown = shownCards(ob)
-cardsShown[2].scripts.OnClick(cardsShown[2])
-finish(ob)
-ob.nextBtn.scripts.OnClick(ob.nextBtn)
-check(not popups.reloaded and GuildOS.db.settings.onboarded == true and not ob.shown and said("Can't reload during combat."),
-  "finished in combat: the wizard closes, nothing reloads, and it says why")
-inCombat = false
-ob.afterCombat.scripts.OnEvent(ob.afterCombat, "PLAYER_REGEN_ENABLED")
-check(popups[#popups] and popups[#popups].which == "GUILDOS_STYLE_RELOAD" and popups[#popups].text:find("WoW: Forever", 1, true),
-  "when combat ends, the reload is offered for the style picked")
-local offered = #popups
-GuildOSDB.style = "guildos"   -- picked back to the style on screen before combat ended
-ob.afterCombat.scripts.OnEvent(ob.afterCombat, "PLAYER_REGEN_ENABLED")
-check(#popups == offered, "a saved style that is the one on screen by then offers no reload")
-
-ob = onboarding({ db = {}, noArt = true })
-check(ob.title.text == "Welcome to Guild OS" and not shownCards(ob)[1], "a client with one style has no style step")
-check(finish(ob) == "Finish", "and finishes without a reload")
 
 print(("style: %d checks passed"):format(checks))

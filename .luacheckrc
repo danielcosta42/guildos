@@ -44,6 +44,8 @@ globals = {
 
 -- Globals that the addon READS (WoW environment)
 read_globals = {
+    -- WoW API: the guild's event log, called only from Core/Compat.lua and read by Core/Probe.lua
+    "QueryGuildEventLog", "GetNumGuildEvents", "GetGuildEventInfo",
     -- WoW API: the guild bank (issue #380), called only from Core/Compat.lua
     "C_GuildBank", "GetNumGuildBankTabs", "GetGuildBankTabInfo", "GetGuildBankItemInfo", "GetGuildBankItemLink",
     "QueryGuildBankTab", "QueryGuildBankLog", "GetGuildBankMoney", "GetNumGuildBankTransactions",
@@ -65,6 +67,7 @@ read_globals = {
     "ChatFontNormal",
     "BackdropTemplateMixin",
     "STANDARD_TEXT_FONT",
+    "QuestTitleFont",
     "DEFAULT_CHAT_FRAME",
     "UIFrameFadeIn",
     "UIFrameFadeOut",
@@ -76,6 +79,10 @@ read_globals = {
     "C_GuildInfo",
     "C_AddOnProfiler",  -- the game's addon CPU meter, read by Compat.AddOnCPU (#324)
     "C_Map",
+    "C_AddOns",           -- whether another addon is loaded (Compat.IsAddOnLoaded, #449 OpenMap)
+    "C_SuperTrack",       -- the map pin the player follows (Compat.SetUserWaypoint, campfires)
+    "RegionalUniqueNamesEnabled", -- read by the synced ChehulNet v17 (a realm's ruleset; the campfire beacon)
+    "UiMapPoint",         -- a map point for C_Map.SetUserWaypoint (Compat.SetUserWaypoint)
     "C_QuestLog",
     "C_Item",        -- Compat wrappers, preferred over the old globals (issue #10)
     "C_Spell",
@@ -93,7 +100,7 @@ read_globals = {
     "UnitName",
     "UnitFullName",
     "UnitIsUnit",
-    "UnitClass",
+    "UnitClass", "UnitPosition",
     "UnitLevel",
     "UnitRace",
     "UnitSex",
@@ -124,7 +131,7 @@ read_globals = {
     "GetInventoryItemTexture",
     "GetInventoryItemQuality",
     "GetItemInfo",
-    "GetItemInfoInstant",
+    "GetItemInfoInstant", "GetItemIcon",
     "GetItemCount",
     "GetSpellInfo",
     "GetSpellTexture",
@@ -138,6 +145,7 @@ read_globals = {
     -- WoW API: Quest & Reputation
     "GetQuestLogTitle",
     "GetNumQuestLogEntries",
+    "GetQuestTagInfo",
     "GetQuestLogIndexByID",
     "IsQuestFlaggedCompleted",
     "GetFactionInfoByID",
@@ -147,16 +155,13 @@ read_globals = {
     "SendAddonMessage",
     "RegisterAddonMessagePrefix",
     "GetChannelName",
+    "GetChannelList",
     "JoinChannelByName",
     "LeaveChannelByName",
     "EnumerateServerChannels",
-    "GetChannelRosterInfo",
-    "ChannelKick",
-    "ChannelBan",
     "ChannelUnban",
-    "ChannelModerator",
-    "SetChannelOwner",
     "ChatFrame_AddMessageEventFilter",
+    "ChatFrame_RemoveMessageEventFilter",
     -- The allied guilds' /g drawn as a line of /g (issue #344).
     "ChatFrame_ContainsMessageGroup",
     "IsIgnored",
@@ -272,6 +277,9 @@ read_globals = {
     "FACTION_HORDE",                         -- the client's own words for the two factions
     "FACTION_ALLIANCE",
     "GetGuildLogoInfo",                      -- the guild tabard's colours and emblem (issue #213)
+    -- The officer action queue's binding and the crest's tabard (#449).
+    "GetBindingKey", "GetBindingText", "SetBindingClick", "SaveBindings", "GetCurrentBindingSet",
+    "SetLargeGuildTabardTextures", "SetSmallGuildTabardTextures", "GetGuildTabardFileNames",
     "GetGuildTabardFiles",                   -- and its six files, where the border's style is (issue #213)
     "C_XMLUtil",
     "GetRealmName",
@@ -286,6 +294,7 @@ read_globals = {
     "IsLoggedIn",
     "ReloadUI",
     "InCombatLockdown",
+    "UnitAffectingCombat",
     "PlaySound",
     "hooksecurefunc",
     "securecallfunction",
@@ -312,6 +321,8 @@ read_globals = {
     "GetRaidRosterInfo",
     "SetRaidSubgroup",     -- a raid member into a group (Compat only, issue #400)
     "SwapRaidSubgroup",    -- two raid members trade groups (Compat only, issue #400)
+    "InitiateRolePoll",    -- Raid Tools' role check (Compat only, #449)
+    "SetRaidTarget",       -- Raid Tools' marks (Compat only, #449)
     "CombatLogGetCurrentEventInfo",
 
     -- WoW API: Loot
@@ -384,7 +395,10 @@ read_globals = {
     "GuildFrame",
     "CommunitiesFrame",   -- modern (LoD) guild/communities UI; we attach a "Guild OS" button
     "FriendsFrame",
-    "WorldMapFrame",      -- live guild map: we parent our own pins to its canvas
+    "WorldMapFrame",      -- the live guild map (#449): our own pins on its canvas, through Compat
+    "CreateVector2D",     -- C_Map's world conversions take a vector (Compat.MapToWorld)
+    "GetPlayerFacing",    -- a rotating minimap's dots (Compat.PlayerFacing)
+    "IsIndoors",          -- the minimap's indoor scale (Compat.MinimapView)
     "ToggleWorldMap",     -- open the world map (loads Blizzard_WorldMap on demand)
     "ShowUIPanel",
     "HideUIPanel",
@@ -446,6 +460,9 @@ read_globals = {
     -- Tooltip frames
     "GameTooltipTemplate",
     "ItemRefTooltip",
+    -- The game's link handlers: Guild OS's own chat links (Compat.AddonLinks)
+    "LinkUtil",
+    "LinkTypes",
     "ShoppingTooltip1",
     "ShoppingTooltip2",
 
@@ -463,6 +480,7 @@ read_globals = {
 -- Third-party libraries — skip
 exclude_files = {
     "Libs/**",
+    ".claude/**",   -- agent worktrees, local only
     "Data/ProfCatalogForever.lua",  -- generated data (tools/prof_catalog.py)
     -- Host-side harnesses. They run under lua5.1 outside the game and their whole
     -- job is to define the WoW API themselves, so every stub reads to luacheck as

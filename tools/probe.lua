@@ -78,7 +78,7 @@ for _, name in ipairs(Probe.APIS) do
   check(not seen[name], "the inventory lists " .. name .. " once")
   seen[name] = true
 end
-check(#Probe.EVENTS == 66, "the probe checks the 66 events the addon registers")   -- +4: the game's calendar (#263); +2: the bank cleanup's vendor (#380); +1: the game's "too fast" (#422, #393)
+check(#Probe.EVENTS == 75, "the probe checks the 75 events the addon registers")   -- +1: the campfire beacon's kit cast (ChehulNet v16); +1: the guild event log (specs/salao/log-e-renomes.md); +3: the alliance channel's join, leave and notices (#449); +1: a click outside the minimap menu (#449); +1: a master-looted item leaving the corpse (#448 L2); +4: the game's calendar (#263); +2: the bank cleanup's vendor (#380); +1: the game's "too fast" (#422, #393); +1: an opened calendar event, for the companion export (CalendarSnapshot); +1: the quest log, for My quests (#450)
 
 -- Drift: the events the addon's own files register are exactly Probe.EVENTS.
 -- Static reading: an event name held in a variable is out of its reach.
@@ -137,6 +137,9 @@ for i, name in ipairs(Probe.APIS) do
 end
 for i, t in ipairs(Probe.TEMPLATES) do KNOWN_TEMPLATES[t[1]] = (i % 2 == 1) end
 for i, e in ipairs(Probe.EVENTS) do KNOWN_EVENTS[e] = (i % 2 == 1) end
+-- The combat log on a client that hides it is recorded restricted, never registered (#449): this stub is not
+-- Anniversary, so it reads as missing whatever the stub would answer.
+KNOWN_EVENTS.COMBAT_LOG_EVENT_UNFILTERED = false
 
 -- The stubs the checks below read. Every call that matters lands in one ordered log.
 local NOTES = { "a public note", "an officer note" }
@@ -271,11 +274,19 @@ check(said(("Missing: %d of %d APIs, %d of %d events."):format(#expectedApis,
 check(#expectedApis > 10 and said(list(expectedApis)), "the summary names the first ten missing APIs")
 check(#expectedEvents > 10 and said(list(expectedEvents)), "the summary names the first ten missing events")
 check(said("Saved in GuildOSDB.probe. Type /reload to write it to disk."), "the summary says where the result went")
+-- The guild event log: one line saying whether this client can ask for it and read it.
+-- (the stubbed client's "present" entries are tables, not functions: no log to call here)
+check(r.guildEventLog == false and said("guild event log: no"), "the summary says the guild event log is not there")
 
 -- ── 5. In a guild, run again ────────────────────────────────────────────
 inGuild, now, calls = true, now + 60, {}
 local first = r
+local savedLog = { QueryGuildEventLog, GetNumGuildEvents, GetGuildEventInfo }
+QueryGuildEventLog, GetNumGuildEvents, GetGuildEventInfo = function() end, function() return 0 end, function() end
+printed = {}
 r = Probe:Run()
+check(r.guildEventLog == true and said("guild event log: yes"), "with the three calls, the summary says the guild event log is there")
+QueryGuildEventLog, GetNumGuildEvents, GetGuildEventInfo = savedLog[1], savedLog[2], savedLog[3]
 check(GuildOSDB.probe == r and r ~= first and r.at == now, "a new run overwrites the last one with a new timestamp")
 check(r.roster.firstName == "Ana-Firemaw" and r.roster.realm == "LivingFlame" and r.roster.realmName == "Living Flame",
   "the first roster name, GetNormalizedRealmName() and GetRealmName() are each recorded from their own function")
@@ -376,4 +387,48 @@ CreateFrame, time, C_GameRules = realCreateFrame, realTime, nil
 check(ok4 and r4.at == 0 and r4.gameMode.missing and #r4.missingEvents == #Probe.EVENTS and r4.apis.BackdropTemplate == false,
   "no frame, no clock and a raising namespace still leave a record and never raise")
 
+-- A client that hides the combat log (WoW: Forever): registering it is ADDON_ACTION_FORBIDDEN, so the probe never tries.
+do
+  local triedCLEU = false
+  local saveCF, saveClient, saveCan = CreateFrame, GuildOS.Client, GuildOS.Compat.CanReadCombatLog
+  CreateFrame = function(...)
+    local f = saveCF(...)
+    if type(f) == "table" then
+      local reg = f.RegisterEvent
+      f.RegisterEvent = function(self, ev, ...)
+        if ev == "COMBAT_LOG_EVENT_UNFILTERED" then triedCLEU = true end
+        if reg then return reg(self, ev, ...) end
+      end
+    end
+    return f
+  end
+  GuildOS.Client = { isAnniversary = false, game = "FOREVER" }
+  GuildOS.Compat.CanReadCombatLog = function() return false end
+  local rf = Probe:Run()
+  check(not triedCLEU and rf and rf.events.COMBAT_LOG_EVENT_UNFILTERED == false,
+    "Forever: the probe records the combat log as restricted without registering it (#449)")
+  CreateFrame, GuildOS.Client, GuildOS.Compat.CanReadCombatLog = saveCF, saveClient, saveCan
+end
+-- The dungeon report (Einstorm, issue #210): what the dungeon log saw, one line to paste, and a box to copy it from.
+do
+  GuildOS.DungeonLog = { SeenReport = function()
+    return { instances = { { id = 2970, name = "The Drowned City", kind = "party", difficulty = 1, status = "unverified" },
+                           { id = 36, name = "Deadmines", kind = "party", status = "known" } },
+             encounters = { { id = 3479, name = "Min'loth the Serpent", instance = 2970, difficulty = 1, kills = 1, status = "unverified" } } }
+  end }
+  local shown, boxText = nil, nil
+  GuildOS.ShowDialog = function(_, which) shown = which; return { editBox = {
+    SetText = function(_, t) boxText = t end, HighlightText = function() end, SetFocus = function() end } } end
+  GuildOS.Compat.PopupEditBox = GuildOS.Compat.PopupEditBox or function(d) return d.editBox end
+  local rd = Probe:Run()
+  check(rd and type(rd.dungeonReport) == "string" and rd.dungeonReport:find("I2970 The Drowned City [party d1] unverified", 1, true)
+    and rd.dungeonReport:find("E3479 Min'loth the Serpent [i2970 d1 k1] unverified", 1, true)
+    and rd.dungeonReport:find("1 confirmed", 1, true), "the probe carries the dungeon report")
+  check(GuildOSDB.probe.dungeons and #GuildOSDB.probe.dungeons.instances == 2, "and keeps what was seen in GuildOSDB.probe")
+  check(shown == "GUILDOS_PROBE_DUNGEONS" and boxText == rd.dungeonReport, "and shows it in a box to copy")
+  GuildOS.DungeonLog = { SeenReport = function() error("boom") end }
+  local re = Probe:Run()
+  check(re and type(re.dungeons) == "string" and re.dungeons:find("boom", 1, true), "a failing dungeon log is recorded, never raised")
+  GuildOS.DungeonLog, GuildOS.ShowDialog = nil, nil
+end
 print(("probe: %d checks passed"):format(checks))

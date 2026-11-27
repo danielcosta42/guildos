@@ -4,6 +4,7 @@
 -- Left-click opens the roster; drag to reposition around the minimap.
 -- Position (angle) and visibility persist account-wide in GuildOSDB.minimap.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local C = GuildOS.Colors
 local L = GuildOS.L
 
@@ -61,14 +62,15 @@ local function OnDragUpdate(btn)
 end
 
 -- Right-click context menu for the minimap button (built lazily). Left-click
--- still opens the roster; the menu exposes the guild map and settings.
-local menuFrame
+-- still opens the roster; the menu exposes the tabs and settings.
+-- The mockup's .mmenu: GuildOS's own small popup (the dark of a popup, the bright metal's line, rows that
+-- light gold under the cursor, a dark rule between groups), not the game's dropdown.
+local menuFrame, menuCatcher
 
-local function MinimapMenu_Init(_, level)
-    local info = UIDropDownMenu_CreateInfo()
-    info.isTitle = true; info.notCheckable = true
-    info.text = "|cffFFD700Guild|r |cffD4AC0DOS|r"
-    UIDropDownMenu_AddButton(info, level)
+-- What the menu lists, in order: { text, func, title = true, rule = true (a rule above it) }.
+function GuildOS:MinimapMenuItems()
+    local items = { { text = "Guild OS", title = true } }
+    local function close() if menuFrame then menuFrame:Hide() end end
 
     -- An officer with people waiting: the list is one click away (the mock's tab 3).
     local requests = GuildOS.JoinRequests
@@ -78,10 +80,8 @@ local function MinimapMenu_Init(_, level)
         waiting = ok and n or 0
     end
     if waiting > 0 then
-        info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
-        info.text = string.format(L["Join requests (%d)"], waiting)
-        info.func = function() GuildOS:ShowJoinRequests(); CloseDropDownMenus() end
-        UIDropDownMenu_AddButton(info, level)
+        items[#items + 1] = { text = string.format(L["Join requests (%d)"], waiting),
+            func = function() close(); GuildOS:ShowJoinRequests() end }
     end
 
     -- Craft orders waiting for me (issue #389): the inbox, one click away.
@@ -92,51 +92,158 @@ local function MinimapMenu_Init(_, level)
         pending = ok and n or 0
     end
     if pending > 0 then
-        info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
-        info.text = string.format(L["Craft orders (%d)"], pending)
-        info.func = function() GuildOS.UI:OpenWindow("recipes", "forme"); CloseDropDownMenus() end
-        UIDropDownMenu_AddButton(info, level)
+        items[#items + 1] = { text = string.format(L["Craft orders (%d)"], pending),
+            func = function() close(); GuildOS.UI:OpenWindow("recipes", "forme") end }
     end
 
-    for _, def in ipairs(GuildOS.UI:VisibleFeatures("tab")) do
-        info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
-        info.text = def.label
-        info.func = function() GuildOS.UI:OpenWindow(def.id); CloseDropDownMenus() end
-        UIDropDownMenu_AddButton(info, level)
+    -- The window's rooms, as its top bar draws them (#449), then the gear's Settings (never in VisibleRooms).
+    local UI = GuildOS.UI
+    local function openRoom(id)
+        local f = UI:GetMainWindow()
+        if not f then return end
+        f:Show()
+        -- A room asked for by name has to be seen, so the bar opens back up.
+        local g = GuildOS:GetSetting("window")
+        if (type(g) == "table" and g.collapsed) or f.band == "bar" then f:ToggleCollapsed() end
+        f:OpenRoom(id, true)
+    end
+    local first = true
+    for _, room in ipairs(UI.VisibleRooms and UI:VisibleRooms() or {}) do
+        local id = room.id
+        items[#items + 1] = { text = room.label, rule = first and #items > 1,
+            func = function() close(); openRoom(id) end }
+        first = false
+    end
+    if UI.RoomAllowed and UI:RoomAllowed("settings") then
+        items[#items + 1] = { text = L["Settings"], rule = first and #items > 1,
+            func = function() close(); openRoom("settings") end }
     end
 
-    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
-    info.text = L["Guild Map"]
-    info.func = function()
+    items[#items + 1] = { text = L["Guild Map"], rule = true, func = function()
+        close()
         if GuildOS.ToggleGuildMap then GuildOS:ToggleGuildMap() end
-        CloseDropDownMenus()
-    end
-    UIDropDownMenu_AddButton(info, level)
-
-    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
-    info.text = L["Do I know this pug?"]
-    info.func = function()
+    end }
+    items[#items + 1] = { text = L["Do I know this pug?"], func = function()
+        close()
         if GuildOS.TogglePugInspector then GuildOS:TogglePugInspector() end
-        CloseDropDownMenus()
+    end }
+    items[#items + 1] = { text = L["Hide minimap button"], func = function() close(); GuildOS:SetMinimapShown(false) end }
+    items[#items + 1] = { text = CANCEL or L["Cancel"], rule = true, func = close }
+    return items
+end
+
+local MENU_W, MENU_ROW, MENU_PAD = 220, 22, 4
+
+local function menuRow(i)
+    local rows = menuFrame.rows
+    if rows[i] then return rows[i] end
+    local row = CreateFrame("Button", nil, menuFrame)
+    row:SetHeight(MENU_ROW)
+    -- The menu row's warm gold wash, 4px corners (UI:MenuRow's).
+    local wash = GuildOS.Style and GuildOS.Style.Nine and GuildOS.Style:Nine(row, "card", 4, "BACKGROUND", 1)
+    if wash then
+        wash:SetRGBA(1, 0.843, 0.478, 0.22)
+        wash.Show, wash.Hide = function(w) w:SetShown(true) end, function(w) w:SetShown(false) end
+    else
+        wash = row:CreateTexture(nil, "BACKGROUND")
+        wash:SetTexture("Interface\\Buttons\\WHITE8x8")
+        wash:SetAllPoints()
+        wash:SetVertexColor(1, 0.843, 0.471, 0.1)
     end
-    UIDropDownMenu_AddButton(info, level)
+    wash:Hide()
+    row.wash = wash
+    row.text = row:CreateFontString(nil, "OVERLAY")
+    row.text:SetPoint("LEFT", 10, 0)
+    row.text:SetPoint("RIGHT", -8, 0)
+    row.text:SetJustifyH("LEFT")
+    row.text:SetWordWrap(false)
+    row.rule = menuFrame:CreateTexture(nil, "ARTWORK")
+    row.rule:SetTexture("Interface\\Buttons\\WHITE8x8")
+    row.rule:SetVertexColor(0.227, 0.165, 0.09, 1)   -- the menus' separator, #3a2a17
+    row.rule:SetPoint("BOTTOMLEFT", row, "TOPLEFT", 4, 3)
+    row.rule:SetPoint("BOTTOMRIGHT", row, "TOPRIGHT", -4, 3)
+    GuildOS.UI:Hairline(row.rule)
+    row:SetScript("OnEnter", function(self) if self.func then self.wash:Show() end end)
+    row:SetScript("OnLeave", function(self) self.wash:Hide() end)
+    row:SetScript("OnClick", function(self) if self.func then self.func() end end)
+    rows[i] = row
+    return row
+end
 
-    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
-    info.text = L["Hide minimap button"]
-    info.func = function() GuildOS:SetMinimapShown(false); CloseDropDownMenus() end
-    UIDropDownMenu_AddButton(info, level)
-
-    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
-    info.text = CANCEL or L["Cancel"]
-    UIDropDownMenu_AddButton(info, level)
+local function buildMenu()
+    menuFrame = CreateFrame("Frame", "GuildOSMinimapMenu", UIParent, "BackdropTemplate")
+    menuFrame:SetWidth(MENU_W)
+    menuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+    menuFrame:SetFrameLevel(20)
+    menuFrame:SetClampedToScreen(true)
+    menuFrame:EnableMouse(true)
+    -- The addon's one menu look (UI:PaintMenu, the mockup's .mmenu; #449), as the dropdowns' lists.
+    if GuildOS.UI and GuildOS.UI.PaintMenu then
+        GuildOS.UI:PaintMenu(menuFrame)
+    elseif GuildOS.Style and GuildOS.Style.Paint then
+        GuildOS.Style:Paint(menuFrame, "panel")
+        menuFrame:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 0.98)
+        menuFrame:SetBackdropBorderColor(C.metal2.r, C.metal2.g, C.metal2.b, 1)
+    end
+    menuFrame.rows = {}
+    menuFrame:Hide()
+    table.insert(UISpecialFrames, "GuildOSMinimapMenu")   -- Escape closes it
+    -- A click anywhere else closes it. Where the client has GLOBAL_MOUSE_DOWN it is heard, and nothing
+    -- covers the screen; a press on the menu or on the button (whose own click toggles it) is not "else".
+    if GuildOS.Compat.RegisterEvent(menuFrame, "GLOBAL_MOUSE_DOWN", true) then
+        menuFrame:SetScript("OnEvent", function(self, event)
+            if event ~= "GLOBAL_MOUSE_DOWN" or not self:IsShown() or self:IsMouseOver() then return end
+            local btn = GuildOS.minimapButton
+            if btn and btn:IsMouseOver() then return end
+            self:Hide()
+        end)
+        return
+    end
+    -- Otherwise a see-through catcher, shown while it is: on DIALOG, under the menu's FULLSCREEN_DIALOG,
+    -- so the game's own full-screen dialogs stay above it.
+    menuCatcher = CreateFrame("Button", nil, UIParent)
+    menuCatcher:SetAllPoints(UIParent)
+    menuCatcher:SetFrameStrata("DIALOG")
+    menuCatcher:RegisterForClicks("AnyUp")
+    menuCatcher:SetScript("OnClick", function() menuFrame:Hide() end)
+    menuCatcher:Hide()
+    menuFrame:SetScript("OnShow", function() menuCatcher:Show() end)
+    menuFrame:SetScript("OnHide", function() menuCatcher:Hide() end)
 end
 
 local function ShowMinimapMenu()
-    if not menuFrame then
-        menuFrame = CreateFrame("Frame", "GuildOSMinimapMenu", UIParent, "UIDropDownMenuTemplate")
+    if menuFrame and menuFrame:IsShown() then menuFrame:Hide(); return end
+    if not menuFrame then buildMenu() end
+    local items = GuildOS:MinimapMenuItems()
+    local y = MENU_PAD
+    for i, item in ipairs(items) do
+        local row = menuRow(i)
+        if item.rule then y = y + 7 end
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", MENU_PAD, -y)
+        row:SetPoint("TOPRIGHT", -MENU_PAD, -y)
+        row.func = item.func
+        row.rule:SetShown(item.rule and true or false)
+        if item.title then
+            GuildOS:ApplyFont(row.text, 13, "sectionTitle")
+            row.text:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+        else
+            GuildOS:ApplyFont(row.text, 12)
+            row.text:SetTextColor(C.text.r, C.text.g, C.text.b)
+        end
+        row.text:SetText(item.text)
+        row:Show()
+        y = y + MENU_ROW
     end
-    UIDropDownMenu_Initialize(menuFrame, MinimapMenu_Init, "MENU")
-    ToggleDropDownMenu(1, nil, menuFrame, "cursor", 3, -3)
+    for i = #items + 1, #menuFrame.rows do menuFrame.rows[i]:Hide(); menuFrame.rows[i].rule:Hide() end
+    menuFrame:SetHeight(y + MENU_PAD)
+    -- At the cursor, as the game's menu opened.
+    local x, cy = 0, 0
+    if GetCursorPosition then x, cy = GetCursorPosition() end
+    local scale = UIParent:GetEffectiveScale() or 1
+    menuFrame:ClearAllPoints()
+    menuFrame:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", (x or 0) / scale - 3, (cy or 0) / scale - 3)
+    menuFrame:Show()
 end
 
 function GuildOS:CreateMinimapButton()
@@ -175,7 +282,7 @@ function GuildOS:CreateMinimapButton()
 
     btn:SetScript("OnClick", function(_, mouseButton)
         if mouseButton == "RightButton" then
-            -- Right-click opens the menu (roster / guild map / settings).
+            -- Right-click opens the menu (roster / tabs / settings).
             ShowMinimapMenu()
         else
             GuildOS:ToggleRoster()
@@ -217,9 +324,8 @@ function GuildOS:CreateMinimapButton()
 
     self.minimapButton = btn
 
-    -- Wire the live guild map presence layer (minimap zone dots + refresh hook)
-    -- now that the minimap definitely exists. Safe to call once.
-    if GuildOS.SetupGuildMapPresence then GuildOS:SetupGuildMapPresence() end
+    -- The live guild map's minimap dots and world map pins (issue #449), now that the minimap exists.
+    if GuildOS.SetupGuildMapPresence then GuildOS:SafeCall(GuildOS.SetupGuildMapPresence, GuildOS) end
 
     return btn
 end

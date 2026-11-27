@@ -8,6 +8,7 @@
 -- Time basis: the client's date()/time() used consistently (assumes the guild
 -- shares one timezone, which is the normal case).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
@@ -20,14 +21,34 @@ local SIZES    = GuildOS.Client.raidSizes   -- the game's: 10/25/40 on TBC, 10/2
 local DEFAULT_SIZE = GuildOS.Client.defaultRaidSize
 
 local COLS, ROWS = 7, 6
-local CELL_H  = 44
--- The Guild tab's grid (#371): flush with the sub-tab bar's left edge, the first line GAP under the
--- sub-panel's top, the grid ending GAP short of its right edge.
-local GAP     = UI.GAP
-local NAV_Y   = -GAP
-local WD_Y    = NAV_Y - 22 - GAP   -- under the 22px month buttons
-local GRID_Y  = WD_Y - 16
-local GRID_X  = 0
+-- The Raids room's calendar (specs/salao/fase3.md, the mockup's raides-calendario): the month on a
+-- parchment card on the left, the chosen day on another on the right, both GAP under the entry pills.
+local GAP      = UI.GAP
+local NAV_Y    = -GAP
+local GRID_X   = 0
+local PAD      = UI.SP.PAD
+local CARD_TOP = UI.SP.TOP
+local CELL_GAP = 3      -- between two days
+local MAX_BARS = 3      -- event bars a day shows; the rest are in its tooltip and the day's card
+local STACK_BELOW = 600 -- px: under this the day's card goes under the month's
+local AVATAR   = 24     -- who is going
+local ROLE_H   = 40     -- a role counter
+local WHITE    = "Interface\\Buttons\\WHITE8x8"
+
+-- The paper's own shades (the mockup's .cal and .roles): a day's line, the chosen day's warm paper and its
+-- gold line, a counter's box and the pink of a counter nobody fills yet.
+local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
+local CELL_LINE   = hex("d9c49a")
+local CHOSEN_FILL = hex("f5e2b3")
+local CHOSEN_LINE = hex("b37b12")
+local ROLE_FILL   = hex("efe0bd")
+local ROLE_MISS   = hex("f6d6c9")
+
+-- A class's colour as the paper prints it (the mockup's .card .c-*): the game's colours, darkened where
+-- they would not read on the parchment.
+local function paperClass(class)
+    return GuildOS.UI:InkFor("paper", "class", class)   -- the paper's class inks (UI/Helpers.lua, #449)
+end
 
 -- Secondary bits of a line drawn in one string (a size, "(repeats)", a guild): the token's colour,
 -- so a palette the style re-points carries them too (#371).
@@ -48,16 +69,17 @@ end
 -- Per-category accent colour for grid markers, header tags, and picker pills.
 -- Tokens mirror Calendar.KINDS; unknown/legacy kinds fall back to RAID.
 local KIND_COLOR = {
-    RAID    = { r = 0.86, g = 0.34, b = 0.34 },
-    DUNGEON = { r = 0.92, g = 0.66, b = 0.30 },
-    PVP     = { r = 0.74, g = 0.48, b = 0.92 },
-    FARM    = { r = 0.46, g = 0.78, b = 0.48 },
-    SOCIAL  = { r = 0.40, g = 0.68, b = 0.92 },
-    OTHER   = { r = 0.70, g = 0.72, b = 0.78 },
+    RAID    = hex("b0261b"),
+    DUNGEON = hex("1d4f99"),
+    PVP     = hex("6c2fb0"),
+    FARM    = hex("9a6a12"),
+    SOCIAL  = hex("3e8e41"),
+    OTHER   = hex("6f5a3c"),
     -- Not kinds of event: the calendar's drawn dates (#428).
-    BIRTHDAY = { r = 0.93, g = 0.80, b = 0.48 },
-    JOINDAY  = { r = 0.56, g = 0.80, b = 0.86 },
+    BIRTHDAY = hex("e08bb0"),
+    JOINDAY  = hex("16758d"),
 }
+local KIND_RANK = { RAID = 1, DUNGEON = 2, PVP = 3, FARM = 4, SOCIAL = 5, OTHER = 6, BIRTHDAY = 7, JOINDAY = 8 }
 local function kindColor(k) return KIND_COLOR[k] or KIND_COLOR.RAID end
 local VIRTUAL_LABEL = { BIRTHDAY = L["Birthday"], JOINDAY = L["Anniversary"] }
 local function kindLabel(k) return VIRTUAL_LABEL[k] or (CAL() and CAL().KindLabel and CAL():KindLabel(k)) or k end
@@ -266,19 +288,6 @@ local function buildEditor()
     dateBox:HookScript("OnTextChanged", refreshRep)
     local REP_ROW = 32   -- the room the repeat row takes
 
-    -- Alliance sharing. The whole block only exists while this guild is in a
-    -- pact: with no alliance there is nothing to share with, and an unexplained
-    -- checkbox is worse than no checkbox.
-    local shareCb = UI:CreateCheckbox(f, L["Share with the alliance"], 18)
-    shareCb:SetPoint("TOPLEFT", 14, -276 - REP_ROW)
-    local shareHint = UI:CreateText(f,
-        L["Allied guilds see this event and can request a slot. Unchecked, it stays in the guild."],
-        9, C.textDim.r, C.textDim.g, C.textDim.b)
-    shareHint:SetPoint("TOPLEFT", 34, -296 - REP_ROW)
-    shareHint:SetWidth(310)
-    shareHint:SetJustifyH("LEFT")
-    shareHint:SetWordWrap(true)
-
     local saveBtn = UI:CreateButton(f, L["Create"], 110, 24)
     saveBtn:SetPoint("BOTTOMLEFT", 14, 14)
     local cancelBtn = UI:CreateButton(f, L["Cancel"], 80, 24)
@@ -287,7 +296,7 @@ local function buildEditor()
     -- An event made here never becomes a raid on the site or a Discord post (spec 075 in guildos-web):
     -- said where it is made, since "the bot didn't post my dungeon" is the question it answers.
     local HINT_ROW = 28
-    local gameOnly = UI:CreateText(f, L["Events made here stay in the game. For signups on Discord, create the raid on guildos.me or with /raid create."], 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    local gameOnly = UI:CreateText(f, L["Events made here stay in the game. For signups on Discord, create the raid on guildos.me or with /raid create."], UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
     gameOnly:SetPoint("BOTTOMLEFT", saveBtn, "TOPLEFT", 0, 6)
     gameOnly:SetWidth(332)
     gameOnly:SetJustifyH("LEFT")
@@ -302,19 +311,15 @@ local function buildEditor()
         local title = strtrim(titleBox:GetText() or "")
         if title == "" then GuildOS:Print(L["An event needs a title and a date/time."]); return end
         local when = time({ year = y, month = m, day = d, hour = hh, min = mm })
-        local inAlliance = GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil
-        local share = inAlliance and shareCb.checkbox:GetChecked() or nil
+        -- Alliance raids come from guildos.me (specs/salao/alianca.md): nothing here is shared with one.
         if f.editId and f.inSeries and laterCb.checkbox:GetChecked() then
-            CAL():UpdateSeries(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind, share)
+            CAL():UpdateSeries(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind)
         elseif f.editId then
-            CAL():Update(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "",
-                f.kind, share)
+            CAL():Update(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind)
         elseif f.rep ~= "none" then
-            CAL():CreateSeries(title, when, sizeBtn.sizeVal, descBox:GetText() or "",
-                f.kind, share and true or false, f.rep)
+            CAL():CreateSeries(title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind, false, f.rep)
         else
-            CAL():Create(title, when, sizeBtn.sizeVal, descBox:GetText() or "",
-                f.kind, share and true or false)
+            CAL():Create(title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind, false)
         end
         f:Hide()
     end
@@ -341,10 +346,7 @@ local function buildEditor()
             y = math.floor(dk / 10000); m = math.floor((dk % 10000) / 100); d = dk % 100
             hh, mm, size, title, note = 20, 0, CAL().SizesFor(f.kind, { DEFAULT_SIZE })[1], "", ""
         end
-        local inAlliance = GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil
-        shareCb:SetShown(inAlliance)
-        shareHint:SetShown(inAlliance)
-        f:SetHeight((inAlliance and 392 or 336) + REP_ROW + HINT_ROW)
+        f:SetHeight(336 + REP_ROW + HINT_ROW)
         -- New: pick a repeat. An event of a series: change only it, or every later date too.
         f.inSeries = event and type(event.series) == "table" or false
         f.rep = "none"
@@ -352,7 +354,6 @@ local function buildEditor()
         repBtn:SetShown(not event)
         laterCb:SetShown(f.inSeries)
         laterCb.checkbox:SetChecked(false)
-        shareCb.checkbox:SetChecked((event and event.shareAlliance) and true or false)
 
         dateBox:SetText(string.format("%04d-%02d-%02d", y, m, d))
         refreshRep()
@@ -409,82 +410,181 @@ end
 ----------------------------------------------------------------------
 -- Build the calendar into a Guild-hub sub-panel; return its refresh fn.
 ----------------------------------------------------------------------
+-- Widgets reused across redraws (memory audit): a frame, texture or text the client makes is never freed,
+-- so a redraw takes the ones the last one made, by the part each plays (`key`), makes only what is missing
+-- and hides what is left over. Take returns the widget and whether it was reused. Kept local to the file:
+-- the tools load screens one at a time, under a stubbed UI.
+local function NewPool()
+    local made, used, pool = {}, {}, {}
+    function pool.Begin() for k in pairs(used) do used[k] = 0 end end
+    function pool.Take(key, make)
+        local n = (used[key] or 0) + 1
+        used[key] = n
+        local list = made[key]
+        if not list then list = {}; made[key] = list end
+        local w = list[n]
+        if w then
+            w:ClearAllPoints()
+            w:Show()
+            return w, true
+        end
+        w = make()
+        list[n] = w
+        return w, false
+    end
+    function pool.End()
+        for key, list in pairs(made) do
+            for i = (used[key] or 0) + 1, #list do list[i]:Hide() end
+        end
+    end
+    return pool
+end
+
+-- The pool of the screen part `owner` (a list's content frame), kept beside it rather than in a field of it.
+local poolsOf = setmetatable({}, { __mode = "k" })
+local function PoolOf(owner)
+    local p = poolsOf[owner]
+    if not p then p = NewPool(); poolsOf[owner] = p end
+    return p
+end
+
 function GuildOS:CreateCalendarSub(panel)
+    local Style = GuildOS.Style
     local f = CreateFrame("Frame", nil, panel)
     f:SetAllPoints(panel)
 
-    -- Month navigation. The month is the screen's first section title; it is as wide as its name, so
-    -- the ">" sits right after it rather than a fixed 170px away (#371).
-    local prevBtn = UI:CreateButton(f, "<", 26, 22)
-    prevBtn:SetPoint("TOPLEFT", GRID_X, NAV_Y)
-    local monthLabel = UI:CreateSectionTitle(f, "", true)
-    monthLabel:SetPoint("LEFT", prevBtn, "RIGHT", GAP, 0)
-    local nextBtn = UI:CreateButton(f, ">", 26, 22)
-    nextBtn:SetPoint("LEFT", monthLabel, "RIGHT", GAP, 0)
-    local todayBtn = UI:CreateButton(f, L["Today"], 60, 22)
-    todayBtn:SetPoint("LEFT", nextBtn, "RIGHT", 12, 0)
+    -- Two parchment cards on the wood (the mockup's raides-calendario): the month on the left, the chosen
+    -- day on the right; stacked when the window is narrow.
+    local monthCard = UI:CreateCard(f, "")
+    monthCard:SetPoint("TOPLEFT", GRID_X, NAV_Y)
+    f.monthCard = monthCard
+    local dayCard = UI:CreateCard(f, "")
+    f.dayCard = dayCard
+    -- The tour's "Sign up for raids" (UI/Tour.lua): the chosen day, where the sign-up is.
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("raids.signup", dayCard) end
 
-    -- Birthdays and join anniversaries (#428): dates drawn from the members, never events; each kind
-    -- has its filter. On WoW: Forever an officer puts this month's birthdays in the game's calendar.
-    local BD = GuildOS.Birthdays
-    local barEnd = todayBtn
-    if BD then
-        for _, kind in ipairs({ "birthday", "join" }) do
-            local cb = UI:CreateCheckbox(f, kind == "birthday" and L["Birthdays"] or L["Join anniversaries"], 18)
-            cb:SetWidth(kind == "birthday" and 100 or 140)
-            cb:SetPoint("LEFT", barEnd, "RIGHT", 16, 0)
-            cb.checkbox:SetChecked(BD:Shows(kind))
-            cb.checkbox.onChanged = function(_, checked) BD:SetShows(kind, checked) end
-            barEnd = cb
-        end
+    -- Month navigation: ‹ the month › as the card's title, Today beside it; New Event at the card's right.
+    local function arrow(text)
+        local b = UI:SetButtonVariant(UI:CreateButton(monthCard, text, UI.SP.HIT, UI.SP.HIT), "ghost")
+        if b.underline then b.underline:Hide() end
+        GuildOS:ApplyFont(b.label, 14, "button")
+        return b
     end
-    local gameBdayBtn = UI:CreateButton(f, L["Birthdays to the game's calendar"], 200, 22)
-    gameBdayBtn:SetPoint("LEFT", barEnd, "RIGHT", 12, 0)
-    gameBdayBtn:SetScript("OnClick", function() GuildOS.GameCalendar:PutNextBirthday() end)
+    local prevBtn = arrow("<")
+    prevBtn:SetPoint("TOPLEFT", PAD - 4, -(PAD - 4))
+    local monthLabel = monthCard.title
+    monthLabel:ClearAllPoints()
+    monthLabel:SetPoint("LEFT", prevBtn, "RIGHT", 2, 0)
+    local nextBtn = arrow(">")
+    nextBtn:SetPoint("LEFT", monthLabel, "RIGHT", 2, 0)
+    local todayBtn = UI:CreateButton(monthCard, L["Today"], 52, UI.SP.HIT)
+    todayBtn:SetPoint("LEFT", nextBtn, "RIGHT", 2 * UI.SP.UNIT, 0)
 
-    -- Weekday headers: the grid's column labels (repositioned in Render to match the grid width)
-    f.wdFS = {}
-    for i = 1, COLS do
-        f.wdFS[i] = UI:CreateHeaderText(f, WEEKDAYS[i])
-    end
-
-    -- Day cells
-    f.cells = {}
-    for idx = 1, COLS * ROWS do
-        local cell = CreateFrame("Button", nil, f, "BackdropTemplate")
-        cell:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(cell) })
-        cell.dayFS = cell:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(cell.dayFS, 11)
-        cell.dayFS:SetPoint("TOPLEFT", 4, -3)
-        cell.evtFS = cell:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(cell.evtFS, 9)
-        cell.evtFS:SetPoint("BOTTOMLEFT", 3, 3)
-        cell.evtFS:SetPoint("BOTTOMRIGHT", -3, 3)
-        cell.evtFS:SetJustifyH("LEFT"); cell.evtFS:SetWordWrap(false)
-        cell:SetScript("OnClick", function(self2)
-            if self2.dkey then f.selectedKey = self2.dkey; f.Render() end
-        end)
-        f.cells[idx] = cell
-    end
-
-    -- Detail area (below the grid): the selected day is a section of its own, its rule 12px over it,
-    -- with room for that rule under the grid (#371).
-    local DET_Y = GRID_Y - ROWS * CELL_H - 20
-    local detailLabel = UI:CreateSectionTitle(f, "")
-    detailLabel:SetPoint("TOPLEFT", GRID_X, DET_Y)
-
-    -- Officer "New Event" button, beside the day it adds to: opens the editor popup for the selected day.
-    local newBtn = UI:CreateButton(f, L["New Event"], 100, 20)
-    newBtn:SetPoint("LEFT", detailLabel, "RIGHT", 12, 0)
+    -- Officer "New Event": opens the editor popup for the selected day.
+    local newBtn = UI:SetButtonVariant(UI:CreateButton(monthCard, L["New Event"], 92, UI.SP.HIT), "primary")
+    newBtn:SetPoint("TOPRIGHT", -PAD, -(PAD - 4))
     newBtn:SetScript("OnClick", function()
         if f.selectedKey then openEditor(f.selectedKey, nil) end
     end)
     f.newBtn = newBtn
 
-    -- Event list holder (scrollable), fills the rest of the panel
-    local holder = CreateFrame("Frame", nil, f)
-    holder:SetPoint("TOPLEFT", detailLabel, "BOTTOMLEFT", 0, -12)
-    holder:SetPoint("BOTTOMRIGHT", 0, 0)
+    -- Birthdays and join anniversaries (#428): dates drawn from the members, never events; each kind
+    -- has its filter. On WoW: Forever an officer puts this month's birthdays in the game's calendar.
+    -- Laid in Render (#449): on their own line under the month's title, the second under the first when the
+    -- card is too narrow for both, and the weekday row under them, never over them.
+    local BD = GuildOS.Birthdays
+    f.filterBoxes = {}
+    if BD then
+        for _, kind in ipairs({ "birthday", "join" }) do
+            local cb = UI:CreateCheckbox(monthCard, kind == "birthday" and L["Birthdays"] or L["Join anniversaries"], 18)
+            cb.label:SetTextColor(C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+            cb:SetWidth(math.ceil(cb.label:GetStringWidth() or 80) + 28)
+            cb.checkbox:SetChecked(BD:Shows(kind))
+            cb.checkbox.onChanged = function(_, checked) BD:SetShows(kind, checked) end
+            f.filterBoxes[#f.filterBoxes + 1] = cb
+        end
+    end
+    local gameBdayBtn = UI:CreateButton(monthCard, L["Birthdays to the game's calendar"], 200, 20)
+    gameBdayBtn:SetScript("OnClick", function() GuildOS.GameCalendar:PutNextBirthday() end)
+
+    -- Weekday headers: the grid's column labels, centred over their column (placed in Render).
+    f.wdFS = {}
+    for i = 1, COLS do
+        local fs = UI:CreateText(monthCard, WEEKDAYS[i], UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+        GuildOS:ApplyFont(fs, UI.SP.META, "badge")
+        fs:SetJustifyH("CENTER")
+        f.wdFS[i] = fs
+    end
+
+    -- Day cells (the mockup's .cal button): the light paper with a tan line, today outlined in the title's
+    -- red, the chosen day on a warmer paper inside a gold line; under the number a coloured bar an event.
+    f.cells = {}
+    for idx = 1, COLS * ROWS do
+        local cell = CreateFrame("Button", nil, monthCard)
+        cell.fill = Style:Nine(cell, "card", 4, "BACKGROUND", -6)
+        cell.line = Style:Nine(cell, "card-line", 4, "BACKGROUND", -5)
+        cell.ring = Style:Nine(cell, "card-line", 4, "BACKGROUND", -4, { 1, 1, 1, 1 })
+        cell.dayFS = cell:CreateFontString(nil, "OVERLAY")
+        GuildOS:ApplyFont(cell.dayFS, 11)
+        cell.dayFS:SetPoint("TOPLEFT", 5, -3)
+        cell.bars = {}
+        for b = 1, MAX_BARS do
+            local bar = cell:CreateTexture(nil, "ARTWORK")
+            bar:SetTexture(WHITE)
+            bar:SetHeight(4)
+            bar:SetPoint("TOPLEFT", 4, -18 - (b - 1) * 6)
+            bar:SetPoint("TOPRIGHT", -4, -18 - (b - 1) * 6)
+            bar:Hide()
+            cell.bars[b] = bar
+        end
+        -- The first event's name, where the cell is wide enough to read it (the bars always say what kind).
+        cell.evtFS = cell:CreateFontString(nil, "OVERLAY")
+        GuildOS:ApplyFont(cell.evtFS, UI.SP.META)
+        cell.evtFS:SetPoint("BOTTOMLEFT", 4, 3)
+        cell.evtFS:SetPoint("BOTTOMRIGHT", -4, 3)
+        cell.evtFS:SetJustifyH("LEFT"); cell.evtFS:SetWordWrap(false)
+        cell.evtFS:SetTextColor(C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+        cell:SetScript("OnClick", function(self2)
+            if self2.dkey then f.selectedKey = self2.dkey; f.Render() end
+        end)
+        -- The day's events by name under the cursor: a narrow cell shows only their bars.
+        cell:SetScript("OnEnter", function(self2)
+            if not (self2.events and #self2.events > 0) then return end
+            GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+            for _, e in ipairs(self2.events) do
+                local kc = kindColor(e.kind)
+                GameTooltip:AddLine((e.virtual and "" or date("%H:%M ", e.when)) .. (e.title or ""),
+                    math.min(1, kc.r + 0.35), math.min(1, kc.g + 0.35), math.min(1, kc.b + 0.35))
+            end
+            GameTooltip:Show()
+        end)
+        cell:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        f.cells[idx] = cell
+    end
+
+    -- The legend under the grid: a short bar and the name of each kind on the month.
+    f.legend = {}
+    local function legendItem(i)
+        local it = f.legend[i]
+        if it then return it end
+        it = CreateFrame("Frame", nil, monthCard)
+        it:SetSize(60, 14)
+        it.bar = it:CreateTexture(nil, "ARTWORK")
+        it.bar:SetTexture(WHITE)
+        it.bar:SetSize(12, 4)
+        it.bar:SetPoint("LEFT", 0, 0)
+        it.fs = UI:CreateText(it, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+        it.fs:SetPoint("LEFT", it.bar, "RIGHT", 4, 0)
+        f.legend[i] = it
+        return it
+    end
+
+    -- The chosen day: the right card's title, its events in a scroll list under it.
+    local detailLabel = dayCard.title
+    f.detailLabel = detailLabel
+    local holder = CreateFrame("Frame", nil, dayCard)
+    holder:SetPoint("TOPLEFT", PAD, -CARD_TOP)
+    holder:SetPoint("BOTTOMRIGHT", -PAD + 4, 10)
     f.holder = holder
     local scrollFrame, scrollChild = UI:CreateScrollFrame(holder, "GuildOSCalendarScroll")
     scrollFrame:SetAllPoints()   -- fill the holder; without this the scroll viewport is 0x0 and clips all content
@@ -493,19 +593,18 @@ function GuildOS:CreateCalendarSub(panel)
     f.child = scrollChild
 
     ------------------------------------------------------------------
-    -- Render (grid sizes to the current panel width)
+    -- Render (the cards size to the current panel)
     ------------------------------------------------------------------
     function f.Render()
-        local W = f:GetWidth()
+        local W, H = f:GetWidth(), f:GetHeight()
         if not W or W < 120 then W = 1000 end
-        local cellW = math.floor((W - GRID_X - GAP) / COLS)
+        if not H or H < 200 then H = 520 end
+        local stacked = W < STACK_BELOW
+        local leftW = stacked and (W - GAP) or math.floor((W - GAP) * 0.54)
+        local innerW = leftW - 2 * PAD
+        local cellW = math.floor((innerW + CELL_GAP) / COLS)
 
         monthLabel:SetText(GuildOS:LocalDate(L["%b %Y"], noon(f.viewYear, f.viewMonth, 1)))
-
-        for i = 1, COLS do
-            f.wdFS[i]:ClearAllPoints()
-            f.wdFS[i]:SetPoint("TOPLEFT", GRID_X + (i - 1) * cellW + 4, WD_Y)
-        end
 
         -- Bucket events by day.
         local byDay = {}
@@ -517,6 +616,18 @@ function GuildOS:CreateCalendarSub(panel)
             end
         end
 
+        -- The raids the allied guilds opened to the alliance (guildos.me's GOSALLY1, Alliance:OpenRaids): shown,
+        -- never stored in the calendar, nothing to answer here (alianca.md §3.2). Its text is inert already
+        -- (CompanionImport.ReadAlliance).
+        local ALLY = GuildOS.Alliance
+        for _, r in ipairs(ALLY and ALLY:OpenRaids() or {}) do
+            local k = keyOfTs(r.when)
+            byDay[k] = byDay[k] or {}
+            byDay[k][#byDay[k] + 1] = { allied = true, kind = "RAID", when = r.when, guild = r.guild,
+                title = "[" .. tostring(r.guild or "?") .. "] " .. tostring(r.title or "?"),
+                where = r.where, leader = r.leader, going = r.going, size = r.size }
+        end
+
         local dim = daysInMonth(f.viewYear, f.viewMonth)
         -- The month's birthdays and join anniversaries, worked out now (#428).
         if BD then
@@ -526,46 +637,118 @@ function GuildOS:CreateCalendarSub(panel)
                 byDay[k][#byDay[k] + 1] = e
             end
         end
-        gameBdayBtn:SetShown(GuildOS.GameCalendar ~= nil and BD ~= nil and GuildOS.GameCalendar:CanAct())
+        local gameBday = GuildOS.GameCalendar ~= nil and BD ~= nil and GuildOS.GameCalendar:CanAct()
+        gameBdayBtn:SetShown(gameBday)
         local lead = firstWeekday(f.viewYear, f.viewMonth) - 1
         local todayKey = keyOfTs(GetServerTime())
+        local rows = math.ceil((lead + dim) / COLS)
 
+        -- The cells grow with the window, never under the mockup's 44px less what a short window lacks.
+        -- Under the title (36px), the filters' line(s), then the weekday row (16px) and the grid.
+        local filterTop, x, fline = 36, 0, 0
+        for _, cb in ipairs(f.filterBoxes) do
+            local cw = cb:GetWidth() or 100
+            if x > 0 and x + cw > innerW then x, fline = 0, fline + 1 end
+            cb:ClearAllPoints()
+            cb:SetPoint("TOPLEFT", monthCard, "TOPLEFT", PAD - 2 + x, -(filterTop + fline * 22))
+            x = x + cw + 10
+        end
+        local filtersH = #f.filterBoxes > 0 and ((fline + 1) * 22) or 0
+        local gridTop = filterTop + filtersH + 18
+        local room = H - gridTop - 34 - 2 * GAP
+        local cellH = math.max(30, math.min(56, math.floor(room / rows) - CELL_GAP))
+        if stacked then cellH = math.max(30, math.min(cellH, 40)) end
+
+        for i = 1, COLS do
+            f.wdFS[i]:ClearAllPoints()
+            f.wdFS[i]:SetPoint("TOP", monthCard, "TOPLEFT", PAD + (i - 1) * cellW + (cellW - CELL_GAP) / 2, -gridTop + 15)
+        end
+
+        local kindsShown, kindOrder = {}, {}
         for idx = 1, COLS * ROWS do
             local col = (idx - 1) % COLS
             local row = math.floor((idx - 1) / COLS)
             local cell = f.cells[idx]
             cell:ClearAllPoints()
-            cell:SetPoint("TOPLEFT", GRID_X + col * cellW, GRID_Y - row * CELL_H)
-            cell:SetSize(cellW - 2, CELL_H - 2)
+            cell:SetPoint("TOPLEFT", PAD + col * cellW, -gridTop - row * (cellH + CELL_GAP))
+            cell:SetSize(cellW - CELL_GAP, cellH)
+            cell:SetShown(row < rows)
 
             local dayNum = idx - lead
-            -- Flat cells with a 1px line; the selected day and today take a 1px gold border and no
-            -- gold fill, the selected one on the selected-row surface (#371).
+            cell.events = nil
+            for _, bar in ipairs(cell.bars) do bar:Hide() end
             if dayNum < 1 or dayNum > dim then
+                -- The days of the months either side: the paper, faded, no number.
                 cell.dayFS:SetText(""); cell.evtFS:SetText(""); cell.dkey = nil
-                cell:SetBackdropColor(C.well.r, C.well.g, C.well.b, 0)
-                cell:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 0.4)
+                cell.fill:SetColor(C.paperLight, 0.4)
+                cell.line:SetColor(C.paperLine, 0.4)
+                cell.ring:SetShown(false)
             else
                 local k = dayKey(f.viewYear, f.viewMonth, dayNum)
                 cell.dkey = k
-                cell.dayFS:SetText(dayNum); cell.dayFS:SetTextColor(C.text.r, C.text.g, C.text.b)
+                cell.dayFS:SetText(dayNum)
+                cell.dayFS:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b)
                 local evs = byDay[k]
                 if evs then
                     table.sort(evs, function(a, b) return a.when < b.when end)
+                    cell.events = evs
                     local line = (evs[1].virtual and "" or date("%H:%M ", evs[1].when)) .. (evs[1].title or "")
                     if #evs > 1 then line = "+" .. #evs .. " " .. line end
                     cell.evtFS:SetText(line)
-                    local kc = kindColor(evs[1].kind)
-                    cell.evtFS:SetTextColor(kc.r, kc.g, kc.b)
+                    local maxBars = math.max(1, math.min(MAX_BARS, math.floor((cellH - 20) / 6)))
+                    for b = 1, math.min(#evs, maxBars) do
+                        local kc = kindColor(evs[b].kind)
+                        cell.bars[b]:SetVertexColor(kc.r, kc.g, kc.b, 1)
+                        cell.bars[b]:Show()
+                    end
+                    for _, e in ipairs(evs) do
+                        local kk = KIND_COLOR[e.kind] and e.kind or "RAID"
+                        if not kindsShown[kk] then kindsShown[kk] = true; kindOrder[#kindOrder + 1] = kk end
+                    end
+                    -- The name too where the cell has the room for it under its bars.
+                    cell.evtFS:SetShown(cellW >= 84 and cellH >= 20 + math.min(#evs, maxBars) * 6 + 12)
                 else
                     cell.evtFS:SetText("")
                 end
-                local fill = (k == f.selectedKey) and C.popup or C.well
-                local edge = (k == f.selectedKey or k == todayKey) and C.gold or C.line
-                cell:SetBackdropColor(fill.r, fill.g, fill.b, 1)
-                cell:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1)
+                local chosen = k == f.selectedKey
+                cell.fill:SetColor(chosen and CHOSEN_FILL or C.paperLight)
+                cell.line:SetColor(k == todayKey and C.paperTitle or (chosen and CHOSEN_LINE or CELL_LINE))
+                -- A 2px line: today's red, or the chosen day's gold inside it.
+                cell.ring:SetShown(chosen or k == todayKey)
+                cell.ring:SetColor(chosen and CHOSEN_LINE or C.paperTitle)
             end
         end
+
+        -- The legend: the kinds on this month, in the order the calendar knows them.
+        table.sort(kindOrder, function(a, b) return (KIND_RANK[a] or 99) < (KIND_RANK[b] or 99) end)
+        local legendY = -gridTop - rows * (cellH + CELL_GAP) - 6
+        local lx = PAD
+        for i, k in ipairs(kindOrder) do
+            local it = legendItem(i)
+            local kc = kindColor(k)
+            it.bar:SetVertexColor(kc.r, kc.g, kc.b, 1)
+            it.fs:SetText(kindLabel(k):lower())
+            it:SetWidth(16 + math.ceil(it.fs:GetStringWidth() or 40) + 10)
+            it:ClearAllPoints()
+            it:SetPoint("TOPLEFT", lx, legendY)
+            it:Show()
+            lx = lx + it:GetWidth()
+        end
+        for i = #kindOrder + 1, #f.legend do f.legend[i]:Hide() end
+        gameBdayBtn:ClearAllPoints()
+        gameBdayBtn:SetPoint("TOPRIGHT", -PAD + 2, legendY + 4)
+        local cardH = gridTop + rows * (cellH + CELL_GAP) + 6 + ((#kindOrder > 0 or gameBday) and 22 or 4) + 8
+        monthCard:SetSize(leftW, cardH)
+
+        dayCard:ClearAllPoints()
+        if stacked then
+            dayCard:SetPoint("TOPLEFT", monthCard, "BOTTOMLEFT", 0, -GAP - 4)
+            dayCard:SetWidth(leftW)
+        else
+            dayCard:SetPoint("TOPLEFT", monthCard, "TOPRIGHT", GAP + 4, 0)
+            dayCard:SetWidth(W - GAP - leftW - GAP - 4)
+        end
+        f.dayRoom = stacked and math.max(120, H - cardH - 2 * GAP - 4) or (H - 2 * GAP)
 
         f.RenderDetail(byDay)
     end
@@ -574,7 +757,6 @@ function GuildOS:CreateCalendarSub(panel)
     -- Detail for the selected day
     ------------------------------------------------------------------
     function f.RenderDetail(byDay)
-        local isOfficer = GuildOS:IsOfficer()
         -- The guild's ranks (issue #283), and a kind left open to this one (#308).
         local canCreate = GuildOS:MayCreateEvents() and #CAL():CreatableKinds() > 0
         local sel = f.selectedKey
@@ -586,9 +768,19 @@ function GuildOS:CreateCalendarSub(panel)
         end
         f.newBtn:SetShown(canCreate and sel ~= nil)
 
+        -- The day's parts are the last drawing's, refilled (memory audit): every RSVP that syncs in redraws the
+        -- day, and each drawing made all of it again. Each part is taken by the role it plays (`key`).
         local child = f.child
-        for _, c in pairs({ child:GetChildren() }) do c:Hide() end
-        for _, r in pairs({ child:GetRegions() }) do r:Hide() end
+        local pool = PoolOf(child)
+        pool.Begin()
+        local function button(key, label, w, h)
+            local b, reused = pool.Take(key, function() return UI:CreateButton(child, label, w, h) end)
+            if reused then
+                b.label:SetText(label)
+                UI:SetButtonVariant(b, "secondary")
+            end
+            return b
+        end
 
         -- A line that wraps hangs from both of the list's top corners, never from a width read while
         -- the tab may be hidden (#371).
@@ -597,21 +789,63 @@ function GuildOS:CreateCalendarSub(panel)
             fs:SetPoint("TOPRIGHT", 0, -y)
             fs:SetJustifyH("LEFT")
         end
-        local soft = C.textSoft
+        local ink, soft = C.paperInk, C.paperSoft
+        local function text(s, size, col, role)
+            col = col or ink
+            local fs = pool.Take("text" .. (size or 12) .. (role or ""), function()
+                local t = UI:CreateText(child, "", size or 12, col.r, col.g, col.b)
+                if role then GuildOS:ApplyFont(t, size, role) end
+                return t
+            end)
+            fs:SetText(s)
+            fs:SetTextColor(col.r, col.g, col.b)
+            fs:SetJustifyH("LEFT")
+            fs:SetWordWrap(true)
+            return fs
+        end
+        -- A small section heading inside the day (the mockup's .sec b): Cinzel, the title's red.
+        local function heading(s, y)
+            local fs = text(s, 11, C.paperTitle, "sectionTitle")
+            fs:SetPoint("TOPLEFT", 0, -y)
+            return fs
+        end
+        local listW = UI:LaidWidth(child)
+        if not listW or listW < 60 then listW = 360 end
 
-        local evs, virtual = {}, {}
+        local evs, virtual, allied = {}, {}, {}
         for _, e in ipairs((sel and byDay and byDay[sel]) or {}) do
-            if e.virtual then virtual[#virtual + 1] = e else evs[#evs + 1] = e end
+            if e.virtual then virtual[#virtual + 1] = e
+            elseif e.allied then allied[#allied + 1] = e
+            else evs[#evs + 1] = e end
         end
         local yy = 0
         -- Birthdays and join anniversaries first, a line each: nothing to sign up to (#428).
         for _, e in ipairs(virtual) do
-            local fs = UI:CreateText(child, tint("[" .. kindLabel(e.kind) .. "]", kindColor(e.kind)) .. " " .. (e.title or ""),
-                12, C.text.r, C.text.g, C.text.b)
+            local fs = text(tint("[" .. kindLabel(e.kind) .. "]", kindColor(e.kind)) .. " " .. (e.title or ""), 12)
             across(fs, yy)
             yy = yy + 20
         end
         if #virtual > 0 then yy = yy + 8 end
+        -- The alliance's open raids: read-only, as the site sent them.
+        if #allied > 0 then
+            table.sort(allied, function(a, b) return a.when < b.when end)
+            local asOf = GuildOS.Alliance and GuildOS.Alliance:AsOf()
+            for _, e in ipairs(allied) do
+                local fs = text(date("%H:%M ", e.when) .. tint("[" .. L["Alliance"] .. "]", kindColor("RAID")) .. " "
+                    .. e.title .. "  " .. tint(string.format("%d/%d", e.going or 0, e.size or 0), soft), 12)
+                across(fs, yy)
+                yy = yy + 18
+                local bits = {}
+                if e.where then bits[#bits + 1] = e.where end
+                if e.leader then bits[#bits + 1] = string.format(L["led by %s"], e.leader) end
+                bits[#bits + 1] = L["Sign up in Discord or on the website."]
+                if asOf then bits[#bits + 1] = string.format(L["(as of %s)"], GuildOS:LocalDate("%a %H:%M", asOf)) end
+                local sub = text(table.concat(bits, " · "), 11, soft)
+                across(sub, yy)
+                yy = yy + math.max(16, (sub:GetStringHeight() or 12) + 4)
+            end
+            yy = yy + 8
+        end
         -- The game's own calendar (guildos-web specs/075, #263), read once for the day's raids from the
         -- site: its guild events over the inbox's window, and the inbox. WoW: Forever only.
         local GC = GuildOS.GameCalendar
@@ -623,59 +857,146 @@ function GuildOS:CreateCalendarSub(panel)
             gameEvents = GuildOS.Compat.CalendarGuildEvents(now - GC.GRACE - 86400, now + (GC.WINDOW_DAYS + 1) * 86400)
             inbox = GuildOS.CompanionImport and GuildOS.CompanionImport:InboxInfo()
         end
+
+        -- Who is going, as round class avatars in a row, and how many more there are past the row.
+        local function faces(list, y)
+            local n = #list
+            if n == 0 then return y end
+            local fit = math.max(1, math.floor((listW - 70) / (AVATAR + 4)))
+            local shownN = (n > fit) and fit or n
+            for i = 1, shownN do
+                local a = pool.Take("avatar", function() return UI:CreateAvatar(child, AVATAR, false) end)
+                a:SetPoint("TOPLEFT", (i - 1) * (AVATAR + 4), -y)
+                a:SetMember(list[i].name, list[i].class)
+                local nm = list[i].name
+                a:SetScript("OnEnter", function(self2)
+                    GameTooltip:SetOwner(self2, "ANCHOR_TOP")
+                    GameTooltip:AddLine(nm, 1, 1, 1)
+                    GameTooltip:Show()
+                end)
+                a:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            end
+            if n > shownN then
+                local more = text(string.format(L["and %d more"], n - shownN), 11, soft)
+                more:SetPoint("LEFT", child, "TOPLEFT", shownN * (AVATAR + 4) + 4, -y - AVATAR / 2)
+            end
+            return y + AVATAR + 8
+        end
+
+        -- The role counters (the mockup's .roles): a box each, pink where nobody is there yet.
+        local function roleBoxes(boxes, y)
+            local n = #boxes
+            local bw = math.floor((listW - (n - 1) * 6) / n)
+            for i, b in ipairs(boxes) do
+                local box = pool.Take("rolebox", function()
+                    local fr = CreateFrame("Frame", nil, child)
+                    fr.fill = Style:Nine(fr, "card", 5, "BACKGROUND", -6)
+                    fr.valueFS = UI:CreateText(fr, "", 14, ink.r, ink.g, ink.b)
+                    GuildOS:ApplyFont(fr.valueFS, 14, "button")
+                    fr.valueFS:SetPoint("TOP", 0, -5)
+                    fr.cap = UI:CreateText(fr, "", UI.SP.META, soft.r, soft.g, soft.b)
+                    fr.cap:SetPoint("TOP", fr.valueFS, "BOTTOM", 0, -1)
+                    return fr
+                end)
+                box:SetSize(bw, ROLE_H)
+                box:SetPoint("TOPLEFT", (i - 1) * (bw + 6), -y)
+                box.fill:SetColor(b.miss and ROLE_MISS or ROLE_FILL)
+                box.valueFS:SetText(b.value)
+                box.cap:SetText(b.label)
+            end
+            return y + ROLE_H + 8
+        end
+
         -- Per-day render is wrapped so a single malformed event can't blank the
         -- whole list; any failure is surfaced inline instead.
         local okAll, errAll = pcall(function()
-        for _, e in ipairs(evs) do
+        for n, e in ipairs(evs) do
             local comp = CAL():GetComposition(e)
             local mine = CAL():MyRsvp(e)
+            if n > 1 then
+                local rule = pool.Take("rule", function()
+                    local t = child:CreateTexture(nil, "ARTWORK")
+                    t:SetTexture(WHITE)
+                    t:SetHeight(1)
+                    t:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
+                    return t
+                end)
+                rule:SetPoint("TOPLEFT", 0, -yy + 6)
+                rule:SetPoint("TOPRIGHT", 0, -yy + 6)
+                yy = yy + 6
+            end
 
-            -- The kind keeps its colour: it is the same one the grid marks the day with.
-            local tag = tint("[" .. kindLabel(e.kind) .. "]", kindColor(e.kind)) .. " "
-            -- Shared events carry a mark so an officer can see what is exposed
-            -- without opening each one. Marking the SHARED ones (not the
-            -- private ones) because exposure is the state that wants attention.
-            -- An [A] rather than a globe glyph: the skin fonts have no symbol
-            -- coverage and unicode marks render as a box in these fonts. In the
-            -- text colour, not gold: gold is the selection's (#371).
-            local shareMark = e.shareAlliance and "  [A]" or ""
+            -- The event's name in the title's face; under it the hour in bold with its kind (in the colour the
+            -- grid marks the day with), the size and "(repeats)".
             local inSeries = type(e.series) == "table"
-            local repMark = inSeries and ("  " .. tint(L["(repeats)"], soft)) or ""
-            -- One of the site's events that is not a raid (#652) has no size: nobody is counted against one.
             local siteEvent = CAL().IsSiteEvent and CAL():IsSiteEvent(e)
-            local sizeMark = siteEvent and "" or ("  " .. tint("(" .. (e.size or DEFAULT_SIZE) .. ")", soft))
-            local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. (e.title or "")
-                .. sizeMark .. shareMark .. repMark,
-                12, C.text.r, C.text.g, C.text.b)
-            head:SetPoint("TOPLEFT", 0, -yy)
+            local name = text(e.title or "", 13, C.paperTitle, "sectionTitle")
+            name:SetPoint("TOPLEFT", 0, -yy)
+            name:SetPoint("RIGHT", child, "RIGHT", -150, 0)
+            name:SetJustifyH("LEFT")
+            name:SetWordWrap(false)
             if CAL():MayManage(e) then
                 local ev = e
-                local delBtn = UI:CreateButton(child, L["Delete"], 58, 18)
-                delBtn:SetPoint("TOPRIGHT", 0, -yy)
+                local delBtn = button("delete", L["Delete"], 58, 20)
+                delBtn:SetPoint("TOPRIGHT", 0, -yy + 2)
                 delBtn:SetScript("OnClick", function() confirmDelete(ev) end)
-                local editBtn = UI:CreateButton(child, L["Edit"], 48, 18)
+                local editBtn = button("edit", L["Edit"], 48, 20)
                 editBtn:SetPoint("RIGHT", delBtn, "LEFT", -6, 0)
                 editBtn:SetScript("OnClick", function() openEditor(nil, ev) end)
                 if inSeries then
                     -- This date and every later one of the series go (#267).
-                    local endBtn = UI:CreateButton(child, L["End series"], 80, 18)
-                    endBtn:SetPoint("RIGHT", editBtn, "LEFT", -6, 0)
+                    local endBtn = button("endSeries", L["End series"], 80, 20)
+                    endBtn:SetPoint("TOPRIGHT", delBtn, "BOTTOMRIGHT", 0, -4)
                     endBtn:SetScript("OnClick", function() confirmEndSeries(ev) end)
                 end
             end
             yy = yy + 20
-
-            local compText = siteEvent and string.format(L["%d going · %d maybe"], comp.yes, comp.tentative)
-                or string.format(L["Tanks %d, Heals %d, DPS %d  (%d going, %d tentative)"],
-                    comp.roles.TANK, comp.roles.HEALER, comp.roles.DPS, comp.yes, comp.tentative)
-            local compFS = UI:CreateText(child, compText, 11, soft.r, soft.g, soft.b)
-            compFS:SetPoint("TOPLEFT", 0, -yy)
+            local tag = tint(kindLabel(e.kind), kindColor(e.kind))
+            local sizeMark = siteEvent and "" or ("  " .. tint("(" .. (e.size or DEFAULT_SIZE) .. ")", soft))
+            local repMark = inSeries and ("  " .. tint(L["(repeats)"], soft)) or ""
+            local when = text(date("%H:%M", e.when) .. "  ·  " .. tag .. sizeMark .. repMark, 12, ink, "button")
+            when:SetPoint("TOPLEFT", 0, -yy)
             yy = yy + 18
+            local countLine = string.format(L["%d going · %d maybe"], comp.yes, comp.tentative)
+            local countFS = text(countLine, 11, soft)
+            countFS:SetPoint("TOPLEFT", 0, -yy)
+            yy = yy + 20
 
+            -- The counters: the site's going and maybe for an event that is not a raid; else the roles of
+            -- who is going and the seats taken.
+            if siteEvent then
+                yy = roleBoxes({ { value = tostring(comp.yes), label = L["Going"] },
+                                 { value = tostring(comp.tentative), label = L["Tentative"] } }, yy)
+            else
+                local size = e.size or DEFAULT_SIZE
+                yy = roleBoxes({
+                    { value = tostring(comp.roles.TANK), label = L["Tanks"], miss = comp.roles.TANK == 0 },
+                    { value = tostring(comp.roles.HEALER), label = L["Healers"], miss = comp.roles.HEALER == 0 },
+                    { value = tostring(comp.roles.DPS), label = L["DPS"], miss = comp.roles.DPS == 0 },
+                    { value = string.format("%d/%d", comp.yes, size), label = L["Going"], miss = comp.yes < size },
+                }, yy)
+            end
+
+            -- The note, on a darker paper in the reading face (the mockup's .msg).
             if e.note and e.note ~= "" then
-                local noteFS = UI:CreateText(child, e.note, 11, soft.r, soft.g, soft.b)
-                across(noteFS, yy)
-                yy = yy + math.max(14, (noteFS:GetStringHeight() or 12) + 6)
+                local box = pool.Take("note", function()
+                    local fr = CreateFrame("Frame", nil, child)
+                    local fill = Style:Nine(fr, "card", 5, "BACKGROUND", -6)
+                    fill:SetColor(ROLE_FILL)
+                    fr.noteFS = UI:CreateText(fr, "", 13, ink.r, ink.g, ink.b)
+                    GuildOS:ApplyFont(fr.noteFS, 13, "reading")
+                    fr.noteFS:SetPoint("TOPLEFT", 10, -7)
+                    fr.noteFS:SetPoint("TOPRIGHT", -10, -7)
+                    fr.noteFS:SetJustifyH("LEFT")
+                    return fr
+                end)
+                box:SetPoint("TOPLEFT", 0, -yy)
+                box:SetPoint("TOPRIGHT", 0, -yy)
+                local noteFS = box.noteFS
+                noteFS:SetText(e.note)
+                local h = math.max(16, noteFS:GetStringHeight() or 14) + 14
+                box:SetHeight(h)
+                yy = yy + h + 10
             end
 
             if CAL():IsWebEvent(e) then
@@ -688,23 +1009,24 @@ function GuildOS:CreateCalendarSub(panel)
                 if (tonumber(e.signupsAt) or 0) > 0 then
                     where = where .. " " .. string.format(L["(as of %s)"], GuildOS:LocalDate("%a %H:%M", e.signupsAt))
                 end
-                local whereFS = UI:CreateText(child, where, 11, soft.r, soft.g, soft.b)
-                whereFS:SetPoint("TOPLEFT", 0, -yy)
-                yy = yy + 16
+                local whereFS = text(where, 11, soft)
+                across(whereFS, yy)
+                yy = yy + math.max(16, (whereFS:GetStringHeight() or 12) + 4)
                 -- Whether it is in the game's own calendar, and for an officer the click that changes it. Not for
                 -- the site's events that are not raids (#652): the game's guild event is one to sign up and invite to.
                 if gameOn and not siteEvent then
                     local view = GC:ViewFor(e, gameEvents, inbox)
                     if view.text then
-                        local stateFS = UI:CreateText(child, view.text, 11, soft.r, soft.g, soft.b)
+                        local stateFS = text(view.text, 11, soft)
                         stateFS:SetPoint("TOPLEFT", 0, -yy)
+                        yy = yy + 18
                         if view.action then
                             local evId, action = e.id, view.action
-                            local gameBtn = UI:CreateButton(child, view.label, 200, 18)
-                            gameBtn:SetPoint("TOPRIGHT", 0, -yy)
+                            local gameBtn = button("game", view.label, 200, 22)
+                            gameBtn:SetPoint("TOPLEFT", 0, -yy)
                             gameBtn:SetScript("OnClick", function() GC:Act(evId, action) end)
+                            yy = yy + 28
                         end
-                        yy = yy + 20
                     end
                 end
                 -- An allied seat is approved in the game, and goes with the ones coming.
@@ -714,6 +1036,14 @@ function GuildOS:CreateCalendarSub(panel)
                         answers[#answers + 1] = { name = GuildOS:SanitizeUserText(r.name or "?", 48), class = r.class, status = "yes" }
                     end
                 end
+                local going = {}
+                for _, s in ipairs(answers) do
+                    if s.status == "yes" then going[#going + 1] = s end
+                end
+                if #going > 0 then
+                    heading(L["Who's going"], yy)
+                    yy = faces(going, yy + 18)
+                end
                 for _, line in ipairs({
                     { "yes", L["Going: "] }, { "pending", L["Awaiting approval: "] },
                     { "tentative", L["Tentative: "] }, { "wait", L["Standby: "] }, { "no", L["Absent: "] },
@@ -721,20 +1051,32 @@ function GuildOS:CreateCalendarSub(panel)
                     local names = {}
                     for _, s in ipairs(answers) do
                         if s.status == line[1] then
-                            local cr, cg, cb = GuildOS:GetClassColor(s.class)
+                            local cr, cg, cb = paperClass(s.class)
                             names[#names + 1] = string.format("|cff%02x%02x%02x%s|r", cr * 255, cg * 255, cb * 255, s.name)
                         end
                     end
                     if #names > 0 then
-                        local fs = UI:CreateText(child, line[2] .. table.concat(names, ", "), 11, soft.r, soft.g, soft.b)
+                        local fs = text(line[2] .. table.concat(names, ", "), 11, soft)
                         across(fs, yy)
                         yy = yy + math.max(14, (fs:GetStringHeight() or 12) + 4)
                     end
                 end
             else
+                -- My answer: the three choices, the chosen one the primary button, and the role I go as.
+                heading(L["Your answer"], yy)
+                yy = yy + 18
                 local id = e.id
-                local roleBtn = UI:CreateButton(child, roleLabel((mine and mine.role) or "DPS"), 66, 18)
-                roleBtn:SetPoint("TOPLEFT", 0, -yy)
+                local function rsvpBtn(label, status, anchor, xoff)
+                    local b = button("rsvp", label, 54, 22)
+                    if anchor then b:SetPoint("LEFT", anchor, "RIGHT", xoff, 0) else b:SetPoint("TOPLEFT", 0, -yy) end
+                    if mine and mine.status == status then UI:SetButtonVariant(b, "primary") end
+                    return b
+                end
+                local goingBtn = rsvpBtn(L["Going"],     "yes",       nil,      0)
+                local tentBtn  = rsvpBtn(L["Tentative"], "tentative", goingBtn, 6)
+                local noBtn    = rsvpBtn(L["Absent"],    "no",        tentBtn,  6)
+                local roleBtn = UI:SetButtonVariant(button("role", roleLabel((mine and mine.role) or "DPS"), 60, 22), "chip")
+                roleBtn:SetPoint("LEFT", noBtn, "RIGHT", 10, 0)
                 roleBtn.role = (mine and mine.role) or "DPS"
                 roleBtn:SetScript("OnClick", function()
                     local i = 1
@@ -742,82 +1084,34 @@ function GuildOS:CreateCalendarSub(panel)
                     roleBtn.role = ROLES[(i % #ROLES) + 1]
                     roleBtn.label:SetText(roleLabel(roleBtn.role))
                 end)
-                -- Chained, so a label that grew its button pushes the next one (issue #28). My answer
-                -- is the selected one of the three, marked as every selection is (#371).
-                local function rsvpBtn(text, status, anchor, xoff)
-                    local b = UI:CreateButton(child, text, 64, 18)
-                    b:SetPoint("LEFT", anchor, "RIGHT", xoff, 0)
-                    UI:SetSelected(b, mine and mine.status == status)
+                for b, status in pairs({ [goingBtn] = "yes", [tentBtn] = "tentative", [noBtn] = "no" }) do
                     b:SetScript("OnClick", function() CAL():Rsvp(id, status, roleBtn.role) end)
-                    return b
                 end
-                local goingBtn = rsvpBtn(L["Going"],     "yes",       roleBtn,  8)
-                local tentBtn  = rsvpBtn(L["Tentative"], "tentative", goingBtn, 4)
-                rsvpBtn(L["Absent"],    "no",        tentBtn,  4)
-                yy = yy + 24
+                yy = yy + 30
 
                 local going = {}
                 for _, r in pairs(e.rsvps or {}) do
-                    if r.status == "yes" then
-                        local cr, cg, cb = GuildOS:GetClassColor(r.class)
-                        going[#going + 1] = string.format("|cff%02x%02x%02x%s|r", cr * 255, cg * 255, cb * 255, r.name or "?")
-                    end
+                    if r.status == "yes" then going[#going + 1] = { name = r.name or "?", class = r.class } end
                 end
+                table.sort(going, function(a, b) return a.name < b.name end)
                 if #going > 0 then
-                    local goFS = UI:CreateText(child, L["Going: "] .. table.concat(going, ", "), 11, soft.r, soft.g, soft.b)
-                    across(goFS, yy)
-                    yy = yy + math.max(14, (goFS:GetStringHeight() or 12) + 4)
+                    heading(L["Who's going"], yy)
+                    yy = faces(going, yy + 18)
                 end
             end
 
-            -- Cross-guild signup queue. Officers only: the request already
-            -- reached only ambassadors, and seating is an officer action.
-            local pending = isOfficer and CAL().AlliancePending and CAL():AlliancePending(e) or {}
-            if #pending > 0 then
-                -- The queue's own column label, not gold (#371).
-                local hdr = UI:CreateHeaderText(child, string.format(L["ALLIANCE PENDING (%d)"], #pending))
-                hdr:SetPoint("TOPLEFT", 0, -yy)
-                yy = yy + 16
-                for _, p in ipairs(pending) do
-                    local cr, cg, cb = GuildOS:GetClassColor(p.class)
-                    local line = string.format("|cff%02x%02x%02x%s|r  %s  %s  %s",
-                        cr * 255, cg * 255, cb * 255, p.name or "?",
-                        p.level and tostring(p.level) or "", roleLabel(p.role), tint(p.guild or "?", soft))
-                    if p.note and p.note ~= "" then
-                        line = line .. "  " .. tint("\"" .. p.note .. "\"", C.label)
-                    end
-                    local evId, pKey = e.id, p.key
-                    local noBtn = UI:CreateButton(child, L["Decline"], 62, 18)
-                    noBtn:SetPoint("TOPRIGHT", 0, -yy + 2)
-                    noBtn:SetScript("OnClick", function() CAL():DeclineAlliance(evId, pKey) end)
-                    local yesBtn = UI:CreateButton(child, L["Approve"], 62, 18)
-                    yesBtn:SetPoint("RIGHT", noBtn, "LEFT", -6, 0)
-                    yesBtn:SetScript("OnClick", function() CAL():ApproveAlliance(evId, pKey) end)
-
-                    -- One line, stopping short of its two buttons.
-                    local fs = UI:CreateText(child, line, 11, C.text.r, C.text.g, C.text.b)
-                    fs:SetPoint("TOPLEFT", 0, -yy)
-                    fs:SetPoint("TOPRIGHT", yesBtn, "TOPLEFT", -GAP, -2)
-                    fs:SetJustifyH("LEFT")
-                    fs:SetWordWrap(false)
-
-                    yy = yy + 20
-                end
-            end
-
-            yy = yy + 12
+            yy = yy + 10
         end
         end)
         if not okAll then
-            local errFS = UI:CreateText(child, tostring(errAll), 11, C.danger.r, C.danger.g, C.danger.b)
+            local errFS = text(tostring(errAll), 11, C.paperTitle)
             across(errFS, yy)
             yy = yy + math.max(40, (errFS:GetStringHeight() or 20) + 10)
         end
 
-        if sel and #evs == 0 and #virtual == 0 then
-            local none = UI:CreateText(child, canCreate and L["No events. Use New Event to add one."] or L["No events this day."],
-                12, soft.r, soft.g, soft.b)
-            none:SetPoint("TOPLEFT", 0, 0)
+        if sel and #evs == 0 and #virtual == 0 and #allied == 0 then
+            local none = text(canCreate and L["No events. Use New Event to add one."] or L["No events this day."], 12, soft)
+            across(none, 0)
             yy = 20
         end
 
@@ -836,15 +1130,18 @@ function GuildOS:CreateCalendarSub(panel)
                 noon(math.floor(sel / 10000), math.floor((sel % 10000) / 100), sel % 100) + 12 * 3600,
                 GetServerTime(), inbox or (Imp and Imp:InboxInfo()))
             if why then
-                local text = why == "window"
+                local msg = why == "window"
                     and string.format(L["Raids planned on the website more than %d days ahead have not reached the game yet; they arrive as the date gets closer."], GuildOS.GameCalendar.WINDOW_DAYS)
                     or string.format(L["The website sends the game its next %d raids; later ones arrive as those pass."], GuildOS.GameCalendar.INBOX_CAP)
-                local fs = UI:CreateText(child, text, 11, soft.r, soft.g, soft.b)
-                across(fs, yy)
-                yy = yy + math.max(14, (fs:GetStringHeight() or 12) + 6)
+                local fs = text(msg, 11, soft)
+                across(fs, yy + 4)
+                yy = yy + 4 + math.max(14, (fs:GetStringHeight() or 12) + 6)
             end
         end
+        pool.End()
         child:SetHeight(math.max(1, yy))
+        -- The day's card is as tall as what it holds, up to the room there is; past that its list scrolls.
+        dayCard:SetHeight(math.max(90, math.min(f.dayRoom or 480, CARD_TOP + yy + 14)))
     end
 
     prevBtn:SetScript("OnClick", function()
@@ -876,7 +1173,13 @@ function GuildOS:CreateCalendarSub(panel)
 
     -- Live-refresh while visible as synced events/RSVPs arrive.
     if GuildOS.Calendar then
-        GuildOS.Calendar.uiRefresh = function() if panel:IsShown() then f.Render() end end
+        -- IsVisible, not IsShown: the tab is shown under a closed window too (memory audit). A change that
+        -- came while it was off screen is drawn when it shows.
+        local stale = false
+        GuildOS.Calendar.uiRefresh = function()
+            if panel:IsVisible() then f.Render() else stale = true end
+        end
+        panel:HookScript("OnShow", function() if stale then stale = false; f.Render() end end)
     end
 
     return f.Render

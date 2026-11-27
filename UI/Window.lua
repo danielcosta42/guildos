@@ -1,16 +1,27 @@
 ----------------------------------------------------------------------
 -- Guild OS - The window (issue #14, ADR-0016)
--- The only container. Every feature is a tab in one resizable window, and
+-- The only container. Every feature is a panel in one resizable window, and
 -- every entry point opens it: the slash commands, the minimap button, the
 -- guild-frame takeover and the key binding, all through
 -- UI:OpenWindow(id, sub) or UI:ToggleMain().
 --
--- It reorganises by width through the resize ladder (UI/Layout.lua). Tabs
--- that do not fit fold into "»n"; under 520px the tab rule becomes a
--- one-line selector and the content switches to the Now tab; under 420px
--- only the 28px title bar stays, with three numbers. Nothing animates.
+-- Since the Salão (specs/salao, #445; phase 3, #449) the title bar holds the
+-- guild's crest and name, the rooms (UI/Rooms.lua) as doors, and round tools
+-- (Search, Help, Settings, fold, close); a strip under it the open room's entries as
+-- pills, or for a side room (the Officers' Room) a side bar. The Search tool
+-- opens a strip under those (the mockup's .search): what it finds replaces the
+-- screen in the view while there is a query (UI/SearchView.lua). Each entry opens
+-- a feature's panel, on its sub-tab when it names one. Settings and Web are
+-- behind the gear. The screens sit on the wood; the footer says welcome and
+-- when the last sync ran.
+--
+-- It reorganises by width through the resize ladder (UI/Layout.lua). Doors
+-- and pills that do not fit fold into "»n"; under 520px the doors become a
+-- one-line selector and the content switches to Home; under 420px only the
+-- 28px bar stays, with three numbers. Nothing animates.
 -- Position, size and the active tab persist in settings.window.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
@@ -19,30 +30,39 @@ local NAME         = "GuildOSWindow"
 local DEFAULT_W    = 1000
 local DEFAULT_H    = 620
 local MIN_W        = 320
-local BAR_H        = 28      -- the title bar under 620px, and the whole window in the bar band
-local TITLE_H      = 30
-local NARROW       = 620     -- under this: the 28px title bar and 8px padding
+-- The narrowest a drag of the grip leaves an open window: its content still in the watch band. Only the
+-- minimise button folds it to the bar; a window made small by hand used to fold and read as closed.
+local DRAG_MIN_W   = 420 + 16 + 2 * 8   -- past the watch band by the ladder's hysteresis
+local BAR_H        = 28      -- the whole window in the bar band
+local TITLE_H      = 50      -- the title bar: crest, guild, rooms and tools (the mockup's .bar)
+local EDGE         = 3       -- the metal frame's width, inside the window's edge
+local NARROW       = 620     -- under this: 8px padding
 local PAD          = 12
 local PAD_NARROW   = 8
-local RULE_H       = 28
-local RULE_PAD     = 6
-local TAB_GAP      = 2
-local TAB_MIN_W    = 48
-local TAB_TEXT_PAD = 18      -- 20 until the Groups tab (#341): an officer's sixteen tabs still fit at 1000px
+local CREST        = 34
+local NAME_MAX     = 220     -- the guild's name and its line under it never take more than this
+local NAME_MIN     = 70
+local DOOR_H       = 32      -- a room's door, standing on the title bar's bottom line
+local DOOR_PAD     = 20
+local DOOR_GAP     = 1
+local SP           = UI.SP   -- the spacing standard (#449)
+local ENTRY_H      = 40      -- the open room's entries, as pills on the strip under the bar (#445, #449)
+local PILL_H       = SP.HIT
+local PILL_PAD     = 24
+local PILL_GAP     = 6
+local SEARCH_H     = 44      -- the search strip under the pills (the mockup's .search): 8 above and below its field
+local SEARCH_FIELD = 28      -- its field, rounded to a pill
+local SIDE_W       = 190     -- a side room's bar of entries (the Officers' Room, #447): the mockup's .side-nav
+local SIDE_ROW     = 21      -- the side bar fits the default 620px window with every entry (nineteen, with Former members)
+local SIDE_HEAD    = 20
+local TAB_MIN_W    = 40
 local MORE_W       = 36
-local FOOT_H       = 22
-local FOOT_PAD     = 10
-local LINK_PAD     = 4       -- a footer link's button past its label, each side (#377)
-local FOOT_GAP     = 4       -- so 12px parts one link's text from the next, as the sketch has it
-local CLOSE_X      = 6       -- the close button in from the title bar's right edge
-local TITLE_GAP    = 8       -- between the title bar's items (#377)
-local META_MIN     = 80      -- the meta line keeps at least this much, so the guild's name stays readable
-local BAR_BTN_H    = 20      -- Search and Sync, as tall as the minimise and close buttons
+local FOOT_H       = 24
+local FOOT_PAD     = 12
+local TOOL         = 28
+local CLOSE_SIZE   = 24
+local TOOL_GAP     = 6
 local GRIP         = 16
--- The room the game's metal frame (the Forever style) takes above the title and below the footer, set
--- by eye in the beta: its atlas pieces are far taller than what they show, and lifted by the bottom
--- piece's height the footer floated with an empty band under it; 4 was too tight (#148).
-local METAL_EDGE   = 7
 local HOME         = "home"  -- the Now tab
 local DASH         = "\226\128\148"
 local DOT          = " \194\183 "
@@ -52,6 +72,118 @@ BINDING_HEADER_GUILDOS = "Guild OS"
 BINDING_NAME_GUILDOS_TOGGLE = L["Open or close Guild OS"]
 
 local function round(n) return math.floor(n + 0.5) end
+
+----------------------------------------------------------------------
+-- The guild's tabard in a round crest (#449): background, emblem and border, inside the crest's ring. The layers
+-- sit between the crest's sphere (ARTWORK 0) and its ring (ARTWORK 4). The data is Compat's (GuildTabardInfo:
+-- the colours and the emblem's file), else the game draws its own (SetLargeGuildTabardTextures). Round by a mask
+-- where the client has them (the art's own disc), else the background is the disc itself and the game's square
+-- background is drawn inside the circle. Nothing to draw: the layers hide and the guild's initial stays.
+--
+-- How Blizzard draws the emblem (wow-ui-source, the same on live, classic and classic_era):
+--  * The emblem's file (C_GuildInfo.GetGuildTabardInfo().emblemFileID, GetGuildLogoInfo()'s 10th value; it is
+--    Textures\GuildEmblems\Emblem_NN, 512x1024 on retail) holds HALF the emblem: its right half, the emblem's
+--    middle on the file's left edge. Blizzard draws it twice, side by side, the left one mirrored, cropped to
+--    u 0..0.7, v 0.15..0.85, each half twice as tall as wide (94x188), so the whole emblem is a square:
+--    https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_AchievementUI/Mainline/Blizzard_AchievementUI.xml
+--    ($parentGuildEmblemLeft TexCoords 0.7,0,0.15,0.85 / Right 0,0.7,0.15,0.85; SetTexture(emblemFilename) in
+--    Blizzard_AchievementUI.lua), and InspectGuildFrame.xml (TabardLeftIcon mirrored, TabardRightIcon plain,
+--    SetDoubleGuildTabardTextures). Drawn whole in a square, as before, it showed half an emblem, small and
+--    off-centre (WoW: Forever, #449). The crop does not change between clients, so no Compat branch.
+--  * SetLargeGuildTabardTextures draws instead from a sheet of whole emblems, Interface\GuildFrame\GuildEmblemsLG_01
+--    (1024x1024, 16 columns of 64x64 cells), the cell picked by SetTexCoord from the emblem's style, and squeezes
+--    the texture to 7/8 of its height in width:
+--    https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_FrameXML/GuildUtil.lua
+--    (classic_era: Blizzard_UIParent/TBC/UIParent.lua, the style read from the emblem file's number). On a
+--    banner its emblem is 42 high on a 51 high background (Blizzard_Communities/CommunitiesList.xml, 36x42 on 52x51).
+----------------------------------------------------------------------
+local TABARD_INSET = 3     -- inside the metal ring
+local SQUARE_INSET = 8     -- a square inside the circle, where there are no masks
+local EMBLEM_HALF = { 0, 0.7, 0.15, 0.85 }   -- Blizzard's crop of the emblem file's half (u0, u1, v0, v1)
+local SHEET_HEIGHT = 42 / 51                  -- the sheet's emblem on its background (CommunitiesList.xml)
+local SHEET_WIDTH = 7 / 8                     -- SetLargeGuildTabardTextures' width for that height
+
+function UI:TabardLayers(crest)
+    local function layer(sub, inset)
+        local t = crest:CreateTexture(nil, "ARTWORK", nil, sub)
+        t:SetPoint("TOPLEFT", inset, -inset)
+        t:SetPoint("BOTTOMRIGHT", -inset, inset)
+        t:Hide()
+        return t
+    end
+    crest.tabBg = layer(1, TABARD_INSET)
+    crest.tabEmblem = layer(2, TABARD_INSET)    -- the emblem's left half (mirrored), or the sheet's whole emblem
+    crest.tabEmblemR = layer(2, TABARD_INSET)   -- its right half
+    crest.tabBorder = layer(3, TABARD_INSET)
+    -- One round mask over the disc for both halves (a mask set on a half would be stretched to the half).
+    crest.tabMask = GuildOS.Compat.NewMask(crest, GuildOS.Style.ART.circle, TABARD_INSET)
+    return crest
+end
+
+-- Draws the tabard on a crest made with UI:TabardLayers. Returns how ("info", "game") or nil (the initial stays).
+function UI:DrawTabard(crest)
+    if not (crest and crest.tabBg) then return nil end
+    local Compat, Style = GuildOS.Compat, GuildOS.Style
+    local bg, em, emR, bd = crest.tabBg, crest.tabEmblem, crest.tabEmblemR, crest.tabBorder
+    local disc = Style.ART.circle
+    local size = crest.GetWidth and crest:GetWidth()
+    if type(size) ~= "number" or size <= 0 then size = CREST end
+    local d = size - 2 * TABARD_INSET          -- the disc's diameter
+    local how
+    -- The guild's colours and emblem first (C_GuildInfo.GetGuildTabardInfo / GetGuildLogoInfo): a disc in the
+    -- background colour, the emblem's two halves (Blizzard's crop, above) filling it in the emblem's colour, the
+    -- ring in the border colour.
+    local info = Compat.GuildTabardInfo()
+    if info then
+        bg:ClearAllPoints()
+        bg:SetPoint("TOPLEFT", TABARD_INSET, -TABARD_INSET)
+        bg:SetPoint("BOTTOMRIGHT", -TABARD_INSET, TABARD_INSET)
+        bg:SetTexture(disc)
+        bg:SetTexCoord(0, 1, 0, 1)
+        bg:SetVertexColor(info.background.r, info.background.g, info.background.b, 1)
+        local u0, u1, v0, v1 = EMBLEM_HALF[1], EMBLEM_HALF[2], EMBLEM_HALF[3], EMBLEM_HALF[4]
+        for _, half in ipairs({ { em, "RIGHT", u1, u0 }, { emR, "LEFT", u0, u1 } }) do
+            local t = half[1]
+            t:ClearAllPoints()
+            t:SetPoint(half[2], crest, "CENTER", 0, 0)
+            t:SetSize(d / 2, d)
+            t:SetTexture(info.emblemFile)
+            t:SetTexCoord(half[3], half[4], v0, v1)
+            t:SetVertexColor(info.emblem.r, info.emblem.g, info.emblem.b, 1)
+            Compat.AddMask(t, crest.tabMask)
+        end
+        bd:SetTexture(Style.ART.ring)
+        bd:SetTexCoord(0, 1, 0, 1)
+        bd:SetVertexColor(info.border.r, info.border.g, info.border.b, 1)
+        bd:Show()
+        how = "info"
+    elseif Compat.SetGuildTabardTextures(em, bg, bd) then
+        -- The sheet's cell, centred at Blizzard's banner proportion (above); its coordinates are the game's.
+        em:ClearAllPoints()
+        em:SetPoint("CENTER", crest, "CENTER", 0, 0)
+        em:SetSize(d * SHEET_HEIGHT * SHEET_WIDTH, d * SHEET_HEIGHT)
+        if bg.SetMask ~= nil then
+            Compat.SetMask(bg, disc)
+            bg:ClearAllPoints()
+            bg:SetPoint("TOPLEFT", TABARD_INSET, -TABARD_INSET)
+            bg:SetPoint("BOTTOMRIGHT", -TABARD_INSET, TABARD_INSET)
+        else
+            -- No masks: the game's square background inside the circle.
+            bg:ClearAllPoints()
+            bg:SetPoint("TOPLEFT", SQUARE_INSET, -SQUARE_INSET)
+            bg:SetPoint("BOTTOMRIGHT", -SQUARE_INSET, SQUARE_INSET)
+        end
+        bd:Hide()   -- its square frame: the crest's own ring is the border
+        how = "game"
+    end
+    bg:SetShown(how ~= nil)
+    em:SetShown(how ~= nil)
+    emR:SetShown(how == "info")
+    if not how then bd:Hide() end
+    if crest.letter then crest.letter:SetShown(how == nil) end
+    crest.tabard = how
+    return how
+end
 
 local function store()
     local g = GuildOS:GetSetting("window")
@@ -140,39 +272,90 @@ end
 ----------------------------------------------------------------------
 -- The tab menu: the "»n" overflow, and the one-line selector under 520px.
 ----------------------------------------------------------------------
+-- Drawn as every menu of the addon (UI:PaintMenu, UI:MenuRow; #449): the dark rounded panel under the
+-- button, a row per item, the current one marked, a click elsewhere or Escape closes it. The game's
+-- UIDropDownMenu drew a square grey list over the window, its highlight off the rows.
+local MENU_ROW, MENU_PAD, MENU_MIN = 24, 4, 140
 local menu
-local function showTabMenu(f, anchor, keys)
-    if #keys == 0 then return end
-    menu = menu or CreateFrame("Frame", "GuildOSTabMenu", UIParent, "UIDropDownMenuTemplate")
-    UIDropDownMenu_Initialize(menu, function(_, level)
-        for _, key in ipairs(keys) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = UI:GetFeature(key).label
-            info.checked = (key == f.activeTab)
-            info.func = function()
-                f:SetActiveTab(key, true)
-                CloseDropDownMenus()
-            end
-            UIDropDownMenu_AddButton(info, level)
+local function closeMenu()
+    if menu then menu:Hide(); menu.catcher:Hide() end
+end
+local function buildMenu()
+    menu = CreateFrame("Frame", "GuildOSTabMenu", UIParent, "BackdropTemplate")
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")
+    menu:SetFrameLevel(20)
+    menu:EnableMouse(true)
+    menu:SetClampedToScreen(true)
+    UI:PaintMenu(menu)
+    menu:Hide()
+    if UISpecialFrames then table.insert(UISpecialFrames, "GuildOSTabMenu") end
+    local catcher = CreateFrame("Button", nil, UIParent)
+    catcher:SetAllPoints(UIParent)
+    catcher:SetFrameStrata("FULLSCREEN_DIALOG")
+    catcher:SetFrameLevel(10)
+    catcher:EnableMouse(true)
+    if catcher.RegisterForClicks then catcher:RegisterForClicks("AnyUp") end
+    catcher:SetScript("OnClick", closeMenu)
+    catcher:Hide()
+    menu.catcher = catcher
+    menu:SetScript("OnHide", function() catcher:Hide() end)
+    menu.rows = {}
+    return menu
+end
+-- items: { text, checked, func }. The list is kept on UI.lastMenuItems (what the tests read).
+local function showListMenu(anchor, items)
+    if #items == 0 then return end
+    local m = menu or buildMenu()
+    if m:IsShown() and m.anchor == anchor then closeMenu(); return end
+    m.anchor = anchor
+    UI.lastMenuItems = items
+    local w = MENU_MIN
+    for i, item in ipairs(items) do
+        local row = m.rows[i]
+        if not row then
+            row = UI:MenuRow(m, MENU_ROW)
+            m.rows[i] = row
         end
-    end, "MENU")
-    ToggleDropDownMenu(1, nil, menu, anchor, 0, 0)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", m, "TOPLEFT", MENU_PAD, -(MENU_PAD + (i - 1) * MENU_ROW))
+        row:SetPoint("TOPRIGHT", m, "TOPRIGHT", -MENU_PAD, -(MENU_PAD + (i - 1) * MENU_ROW))
+        row.label:SetText(item.text or "")
+        row:SetChosen(item.checked)
+        row:SetScript("OnClick", function()
+            closeMenu()
+            if item.func then item.func() end
+        end)
+        row:Show()
+        w = math.max(w, math.ceil(tonumber(row.label:GetStringWidth()) or 0) + 30)
+    end
+    for i = #items + 1, #m.rows do m.rows[i]:Hide() end
+    m:SetSize(w + 2 * MENU_PAD, #items * MENU_ROW + 2 * MENU_PAD)
+    m:ClearAllPoints()
+    m:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)
+    m.catcher:Show()
+    m:Show()
 end
 
-----------------------------------------------------------------------
--- Footer (#377): links and the version, nothing else. The actions it held
--- went where they are used: Search and Sync to the title bar, the invite
--- field to the Members bar, Core Sign-up to the Raids screen. The links drop
--- lowest priority first as the window narrows; the version stays.
-----------------------------------------------------------------------
-local SITE = "https://guildos.me"
-local FOOTER = {
-    { key = "site",     label = "guildos.me", priority = 100 },   -- its click is the copy box, below
-    { key = "help",     label = "/gos help",  priority = 80,
-      run = function() if SlashCmdList.GUILDOS then SlashCmdList.GUILDOS("help") end end },
-    { key = "blizzard", label = L["Blizzard"], priority = 50,
-      run = function() if GuildOS.OpenBlizzardGuildUI then GuildOS:OpenBlizzardGuildUI() end end },
-}
+-- The rooms: the "»n" overflow, and the one-line selector under 520px.
+local function showTabMenu(f, anchor, keys)
+    local items = {}
+    for _, key in ipairs(keys) do
+        local room = UI:RoomById(key)
+        items[#items + 1] = { text = room and room.label or key, checked = (key == f.activeRoom),
+            func = function() f:OpenRoom(key, true) end }
+    end
+    showListMenu(anchor, items)
+end
+
+-- The entries that did not fit on the row, under its "»n".
+local function showEntryMenu(f, anchor, entries)
+    local items = {}
+    for _, e in ipairs(entries) do
+        items[#items + 1] = { text = e.label, checked = (f.activeEntry and f.activeEntry.id == e.id) or false,
+            func = function() f:SelectEntry(f.activeRoom, e, true) end }
+    end
+    showListMenu(anchor, items)
+end
 
 ----------------------------------------------------------------------
 -- Build the window. Tab content is NOT built here: each panel builds the
@@ -193,27 +376,19 @@ local function createWindow()
     end
     f:Hide()
     f:SetScale(GuildOS:GetSetting("uiScale") or 1)
-    UI:RefreshHairlines()   -- its border was sized before the scale (#369)
+    UI:RefreshHairlines()   -- its lines were sized before the scale (#369)
     UI:RestoreWindowGeometry(f)
-    f.tabs, f.tabPanels, f.overflow, f.footItems = {}, {}, {}, {}
-
-    -- The game's metal frame (the Forever style) draws its edges inside the window: the lines across
-    -- it stop at its sides, the footer stands on its bottom edge so the links' underline is not drawn
-    -- over it, and the title bar starts under its top edge, the title centred between the metal and
-    -- the tabs (#148). All zero on a flat frame.
-    local nine = f.__nine
-    local sideL = nine and math.floor((nine.LeftEdge:GetWidth() or 0) + 0.5) or 0
-    local sideR = nine and math.floor((nine.RightEdge:GetWidth() or 0) + 0.5) or 0
-    local footLift = nine and METAL_EDGE or 0
-    local topInset = nine and METAL_EDGE or 0
+    f.tabs, f.tabPanels, f.overflow = {}, {}, {}
 
     ------------------------------------------------------------------
-    -- Title bar: the drag handle
+    -- Title bar (the mockup's .bar): the drag handle. The crest and the guild's name on the left, the rooms
+    -- as doors standing on its bottom line, round tools on the right: Search, Settings, fold, close.
     ------------------------------------------------------------------
     local bar = CreateFrame("Frame", nil, f)
-    bar:SetPoint("TOPLEFT", 0, 0)
-    bar:SetPoint("TOPRIGHT", 0, 0)
+    bar:SetPoint("TOPLEFT", EDGE, -EDGE)
+    bar:SetPoint("TOPRIGHT", -EDGE, -EDGE)
     bar:SetHeight(TITLE_H)
+    bar:SetFrameLevel(f:GetFrameLevel() + 4)
     bar:EnableMouse(true)
     bar:RegisterForDrag("LeftButton")
     bar:SetScript("OnDragStart", function() f:StartMoving() end)
@@ -222,107 +397,297 @@ local function createWindow()
         pinTopLeft(f)
         UI:SaveWindowGeometry(f)
     end)
-    local barLook = GuildOS.Style:Paint(bar, "titlebar")
-    local barLine = UI:CreateSeparator(bar)
+    GuildOS.Style:Paint(bar, "titlebar")
+    -- Its 2px metal line along the bottom; the open door stands over it.
+    local barLine = bar:CreateTexture(nil, "BORDER")
+    barLine:SetTexture("Interface\\Buttons\\WHITE8x8")
+    barLine:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    barLine:SetHeight(2)
     barLine:SetPoint("BOTTOMLEFT", 0, 0)
     barLine:SetPoint("BOTTOMRIGHT", 0, 0)
-    -- On the game's metal frame the bar is the frame's own top edge; a line across it crossed the metal
-    -- sides (#148).
-    barLine:SetShown(barLook ~= "none")
-    f.titleBar = bar
+    f.titleBar, f.barLine = bar, barLine
+    -- Winter Veil's garland hangs under the bar (the mockup's .winter .bar::after), over the strip.
+    local garland = GuildOS.Style:Texture(bar, "garland", "OVERLAY", 0, true)
+    garland:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, 3)
+    garland:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", 0, 3)
+    garland:SetHeight(12)
+    garland:Hide()
+    f.garland = garland
 
-    local function text(size, role, color)
-        local fs = bar:CreateFontString(nil, "OVERLAY")
+    local function text(parent, size, role, color)
+        local fs = parent:CreateFontString(nil, "OVERLAY")
         GuildOS:ApplyFont(fs, size, role)
         fs:SetShadowOffset(0, 0)
         fs:SetTextColor(color.r, color.g, color.b)
         fs:SetWordWrap(false)
+        fs:SetJustifyH("LEFT")
         return fs
     end
 
-    local wordmark = text(18, "wordmark", C.gold)
-    wordmark:SetPoint("LEFT", 10, 0)
-    wordmark:SetText("GuildOS")
+    -- The crest: the guild's tabard (UI:DrawTabard) or, where the client gives none, its initial, on a dark red
+    -- sphere in the bright metal's ring.
+    local crest = CreateFrame("Frame", nil, bar)
+    crest:SetSize(CREST, CREST)
+    crest:SetPoint("LEFT", 10, 0)
+    crest.orb = GuildOS.Style:Texture(crest, "orb", "ARTWORK", 0)
+    crest.orb:SetAllPoints()
+    crest.orb:SetVertexColor(0.42, 0.11, 0.07, 1)
+    UI:TabardLayers(crest)
+    crest.ring = GuildOS.Style:Texture(crest, "ring", "ARTWORK", 4)
+    crest.ring:SetAllPoints()
+    crest.ring:SetVertexColor(C.metal2.r, C.metal2.g, C.metal2.b, 1)
+    crest.letter = text(crest, nil, "windowTitle", { r = 1, g = 0.824, b = 0.29 })
+    crest.letter:SetJustifyH("CENTER")
+    crest.letter:SetPoint("CENTER", 0, 0)
+    f.crest = crest
+
+    -- The guild's name in the title serif and gold, "N online · realm" under it.
+    local guildName = text(bar, nil, "windowTitle", C.gold)
+    guildName:SetPoint("TOPLEFT", crest, "TOPRIGHT", 8, -1)
+    f.nameText = guildName
+    local meta = text(bar, 11, nil, C.textSoft)
+    meta:SetPoint("TOPLEFT", guildName, "BOTTOMLEFT", 0, -2)
+    f.metaText = meta
 
     local close = UI:TitleBarButton(bar, "close")
+    close:SetSize(CLOSE_SIZE, CLOSE_SIZE)
     close:SetScript("OnClick", function() f:Hide() end)
     f.closeButton = close
 
-    -- The close button with its glyph swapped: same size, same hover.
-    local minimise = UI:TitleBarButton(bar, "close")
-    minimise.x:SetText(DASH)
-    GuildOS.Style:SkinClose(minimise, "minimise")
-    minimise:SetPoint("RIGHT", close, "LEFT", -2, 0)
+    -- Fold to the bar and back: a round tool with a dash (a plus while folded).
+    local minimise = UI:TitleBarButton(bar, "tool", DASH, TOOL)
+    minimise.x = minimise.glyph
     minimise:SetScript("OnClick", function() f:ToggleCollapsed() end)
     f.minimise = minimise
 
-    -- Search and Sync left the footer for the title bar (#377). Children of the bar through
-    -- UI:TitleBarButton: as siblings its drag would take every click. Placed by f:LayoutTitle.
-    local function barButton(label, run)
-        local b = UI:SetButtonVariant(UI:TitleBarButton(bar, "text", label, 40, BAR_BTN_H), "ghost")
-        b:SetWidth(math.max(40, math.ceil(b.label:GetStringWidth()) + 12))
+    -- Search and Settings, round tools left of the fold. Children of the bar through UI:TitleBarButton: as
+    -- siblings its drag would take every click. Settings and Web live behind the gear since the rooms (#445);
+    -- the site and /gos help are in its tooltip and on Settings' Data page (the footer's links went, #449).
+    local function tool(icon, tip, lines, run)
+        local b = UI:TitleBarButton(bar, "tool", icon, TOOL)
         b:SetScript("OnClick", run)
+        b:HookScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+            GameTooltip:AddLine(tip, C.text.r, C.text.g, C.text.b)
+            for _, line in ipairs(lines or {}) do GameTooltip:AddLine(line, C.textSoft.r, C.textSoft.g, C.textSoft.b) end
+            GameTooltip:Show()
+        end)
+        b:HookScript("OnLeave", function() GameTooltip:Hide() end)
         return b
     end
-    local searchBtn = barButton(L["Search"], function() if GuildOS.Search then GuildOS.Search:Show() end end)
-    local syncBtn = barButton(L["Sync"], function() if GuildOS.CommSystem then GuildOS.CommSystem:FullSync() end end)
-    f.searchButton, f.syncButton = searchBtn, syncBtn
+    -- Search opens and closes the strip under the pills (#449): no window of its own.
+    local searchBtn = tool("icon-search", L["Search"], nil, function() f:ToggleSearch() end)
+    local gearBtn = tool("icon-gear", L["Settings"],
+        { "Guild OS v" .. tostring(GuildOS.VERSION or ""), "guildos.me", "/gos help" },
+        function() f:OpenRoom("settings", true) end)
+    -- Help (specs/salao/onboarding.md): Settings › Help, the tours and the guides; Shift-click, the help for the
+    -- screen on show. A red dot while What's new waits unread after its last "Later".
+    local helpBtn = tool("?", L["Help"], { L["Tours, guides and getting started"], L["Shift-click: help for this screen"] },
+        function() f:OpenHelp(IsShiftKeyDown and IsShiftKeyDown()) end)
+    helpBtn.dot = GuildOS.Style:Texture(helpBtn, "disc", "OVERLAY", 2)
+    helpBtn.dot:SetSize(9, 9)
+    helpBtn.dot:SetPoint("TOPRIGHT", helpBtn, "TOPRIGHT", 1, 1)
+    helpBtn.dot:SetVertexColor(C.count.r, C.count.g, C.count.b, 1)
+    helpBtn.dot:Hide()
+    f.searchButton, f.settingsButton, f.helpButton = searchBtn, gearBtn, helpBtn
 
-    local sync = text(10, "caption", C.label)
-    sync:SetJustifyH("RIGHT")
-    f.syncText = sync
+    -- The help hub, or with `here` the tour chapter or guide for the screen on show.
+    function f:OpenHelp(here)
+        local O = GuildOS.Onboarding
+        if here and O then
+            local hit = O:HelpFor(self.activeRoom, self.activeEntry and self.activeEntry.id)
+            if hit.guide and UI.HelpPanel then return UI.HelpPanel:OpenGuide(hit.guide) end
+            if hit.track and UI.Tour then return UI.Tour:Start(hit.track, hit.ch) end
+        end
+        for _, e in ipairs(UI:RoomEntries("settings")) do
+            if e.id == "help" then return self:SelectEntry("settings", e, true) end
+        end
+    end
+    function f:RefreshHelpDot()
+        local O = GuildOS.Onboarding
+        helpBtn.dot:SetShown(O ~= nil and O:Dot() and true or false)
+    end
 
-    local meta = text(10, "caption", C.label)
-    meta:SetJustifyH("LEFT")
-    f.metaText = meta
-
-    local summary = text(11, nil, C.text)
-    summary:SetPoint("LEFT", wordmark, "RIGHT", 10, 0)
+    local summary = text(bar, 11, nil, C.text)
+    summary:SetPoint("LEFT", 10, 0)
     summary:SetPoint("RIGHT", minimise, "LEFT", -6, 0)
-    summary:SetJustifyH("LEFT")
     summary:Hide()
     f.summaryText = summary
+    -- The folded bar's three numbers, unlabelled to fit: the pointer on them says what they are, and a
+    -- click opens the window back up.
+    local summaryHit = CreateFrame("Button", nil, bar)
+    summaryHit:SetPoint("TOPLEFT", summary, "TOPLEFT", 0, 4)
+    summaryHit:SetPoint("BOTTOMRIGHT", summary, "BOTTOMRIGHT", 0, -4)
+    summaryHit:Hide()
+    summaryHit:SetScript("OnClick", function() f:ToggleCollapsed() end)
+    summaryHit:SetScript("OnEnter", function(self)
+        local A = GuildOS.Agora
+        if not (A and GameTooltip) then return end
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Guild OS")
+        GameTooltip:AddLine(string.format(L["%d online"], tonumber(A:OnlineCount()) or 0), 1, 1, 1)
+        local raid = A:NextRaid()
+        GameTooltip:AddLine(L["Next raid"] .. ": " .. (raid and A.Short(raid.when - GetServerTime()) or "\226\128\148"), 1, 1, 1)
+        GameTooltip:AddLine(string.format(L["Waiting on you: %d"], #A:NeedsMe()), 1, 1, 1)
+        GameTooltip:AddLine(L["Click to open the window."], C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        GameTooltip:Show()
+    end)
+    summaryHit:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    f.summaryHit = summaryHit
 
     ------------------------------------------------------------------
-    -- Tab rule, "»n" and the selector
+    -- The rooms: doors in the title bar (the mockup's .door), "»n" and the one-line selector
     ------------------------------------------------------------------
-    local rule = CreateFrame("Frame", nil, f)
-    rule:SetHeight(RULE_H)
-    local ruleLine = UI:CreateSeparator(rule)
-    ruleLine:SetPoint("BOTTOMLEFT", sideL, 0)
-    ruleLine:SetPoint("BOTTOMRIGHT", -sideR, 0)
+    local rule = CreateFrame("Frame", nil, bar)
+    rule:SetHeight(DOOR_H)
     f.rule = rule
 
-    for _, def in ipairs(tabFeatures()) do
-        local tab = UI:CreateTab(rule, def.label, TAB_MIN_W)
-        tab.key = def.id
-        tab:SetScript("OnClick", function() f:SetActiveTab(def.id, true) end)
-        tab:Hide()
-        f.tabs[#f.tabs + 1] = tab
+    -- A door: the room's name; the open one raised in the wood with the metal's line round its top, its name gold
+    -- and bold, standing on the bar's bottom line (the mockup's .door[aria-current]). The Officers' Room's name is the soft gold, with its count.
+    local function door(room)
+        local d = CreateFrame("Button", nil, rule)
+        d:SetHeight(DOOR_H)
+        d.key = room.id
+        d.fill = GuildOS.Style:Nine(d, "card", 6, "BACKGROUND", 1, nil, "bottom")
+        d.fill:SetColor(C.wood)
+        d.edge = GuildOS.Style:Nine(d, "card-line", 6, "BACKGROUND", 2, nil, "bottom")
+        d.edge:SetColor(C.lineHi)
+        d.label = text(d, 13, nil, C.door)
+        d.label:SetPoint("CENTER", 0, -1)
+        d.label:SetText(room.label)
+        if room.officer then
+            d.count = UI:CreateCount(d)
+            d.count:SetPoint("LEFT", d.label, "RIGHT", 5, 0)
+        end
+        -- The name moves left by half the count, so the two sit centred in the door together.
+        local function centre(self)
+            local shift = (self.count and self.count:IsShown()) and (self.count:GetWidth() + 5) / 2 or 0
+            self.label:ClearAllPoints()
+            self.label:SetPoint("CENTER", -shift, -1)
+        end
+        local function paint(self, hovered)
+            local active = self.isActive and true or false
+            self.fill:SetShown(active)
+            self.edge:SetShown(active)
+            if active ~= self.__bold then
+                self.__bold = active
+                GuildOS:ApplyFont(self.label, 13, active and "button" or nil)
+            end
+            local ink = (active and C.gold) or (hovered and C.text) or (room.officer and C.gold2) or C.door
+            self.label:SetTextColor(ink.r, ink.g, ink.b)
+        end
+        function d:SetActive(v) self.isActive = v; paint(self, false) end
+        function d:Width()
+            centre(self)
+            local w = math.ceil(self.label:GetStringWidth()) + DOOR_PAD
+            if self.count and self.count:IsShown() then w = w + self.count:GetWidth() + 5 end
+            return math.max(TAB_MIN_W, w)
+        end
+        d:SetScript("OnEnter", function(self) paint(self, true) end)
+        d:SetScript("OnLeave", function(self) paint(self, false) end)
+        d:SetScript("OnClick", function() f:OpenRoom(room.id, true) end)
+        d:SetActive(false)
+        d:Hide()
+        return d
+    end
+    for _, room in ipairs(UI.ROOMS) do
+        if not room.gear then f.tabs[#f.tabs + 1] = door(room) end
     end
 
     local more = UI:SetButtonVariant(UI:CreateButton(rule, "", MORE_W, 22), "ghost")
-    more:SetPoint("RIGHT", rule, "RIGHT", -RULE_PAD, 0)
     more:SetScript("OnClick", function(self) showTabMenu(f, self, f.overflow) end)
     more:Hide()
     f.more = more
 
     local selector = UI:SetButtonVariant(UI:CreateButton(rule, "", 120, 22), "ghost")
-    selector:SetPoint("LEFT", rule, "LEFT", RULE_PAD, 0)
+    selector:SetPoint("BOTTOMLEFT", rule, "BOTTOMLEFT", 4, 6)
     selector:SetScript("OnClick", function(self)
         local keys = {}
-        for _, tab in ipairs(f.tabs) do
-            if allowed(tab.key) then keys[#keys + 1] = tab.key end
-        end
+        for _, room in ipairs(UI:VisibleRooms()) do keys[#keys + 1] = room.id end
         showTabMenu(f, self, keys)
     end)
     selector:Hide()
     f.selector = selector
 
     ------------------------------------------------------------------
+    -- The open room's entries, as pills on a strip under the bar (the mockup's .subs); drawn only when the
+    -- room has more than one.
+    ------------------------------------------------------------------
+    local entryRow = CreateFrame("Frame", nil, f)
+    entryRow:SetHeight(ENTRY_H)
+    entryRow:SetFrameLevel(f:GetFrameLevel() + 3)
+    local stripBg = entryRow:CreateTexture(nil, "BACKGROUND")
+    stripBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    stripBg:SetAllPoints()
+    stripBg:SetVertexColor(C.panel.r, C.panel.g, C.panel.b, 1)
+    local entryLine = UI:CreateSeparator(entryRow)
+    entryLine:SetVertexColor(0.29, 0.208, 0.098, 1)   -- #4a3519, the strip's own line
+    entryLine:SetPoint("BOTTOMLEFT", 0, 0)
+    entryLine:SetPoint("BOTTOMRIGHT", 0, 0)
+    entryRow:Hide()
+    f.entryRow, f.entryTabs, f.entryOverflow = entryRow, {}, {}
+    local entryMore = UI:SetButtonVariant(UI:CreateButton(entryRow, "", MORE_W, 20), "ghost")
+    entryMore:SetPoint("RIGHT", entryRow, "RIGHT", -10, 0)
+    entryMore:SetScript("OnClick", function(self) showEntryMenu(f, self, f.entryOverflow) end)
+    entryMore:Hide()
+    f.entryMore = entryMore
+
+    -- A side room's entries (#447): the mockup's .side-nav, a dark card left of the content, its groups headed
+    -- in the title serif and the soft gold, the open entry a gold pill, a red count where work waits.
+    local sideNav = UI:CreatePanel(f)
+    sideNav:SetFrameLevel(f:GetFrameLevel() + 3)
+    sideNav:SetWidth(SIDE_W)
+    sideNav:Hide()
+    f.sideNav, f.sideBtns, f.sideHeads = sideNav, {}, {}
+
+    ------------------------------------------------------------------
+    -- The search (#449, the mockup's .search): a strip under the pills with one rounded dark field across the
+    -- window, opened and closed by the Search tool, focused at once; Escape closes it too. While it holds a
+    -- query (Search.MIN characters) what it finds is drawn in the content's place (UI/SearchView.lua): Up and
+    -- Down choose a result, Enter opens it. Closing it shows the screen that was open again.
+    ------------------------------------------------------------------
+    local searchRow = CreateFrame("Frame", nil, f)
+    searchRow:SetHeight(SEARCH_H)
+    searchRow:SetFrameLevel(f:GetFrameLevel() + 3)
+    local searchBg = searchRow:CreateTexture(nil, "BACKGROUND")
+    searchBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    searchBg:SetAllPoints()
+    searchBg:SetVertexColor(C.popup.r, C.popup.g, C.popup.b, 1)
+    local searchLine = UI:CreateSeparator(searchRow)
+    searchLine:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    searchLine:SetPoint("BOTTOMLEFT", 0, 0)
+    searchLine:SetPoint("BOTTOMRIGHT", 0, 0)
+    searchRow:Hide()
+    local searchBox = UI:CreateInput(searchRow, 200, SEARCH_FIELD,
+        { max = 60, placeholder = L["Search member, item, recipe or screen…"], corner = SEARCH_FIELD / 2 })
+    searchBox:SetTextInsets(14, 14, 0, 0)
+    if searchBox.placeholder then
+        searchBox.placeholder:ClearAllPoints()
+        searchBox.placeholder:SetPoint("LEFT", 14, 0)
+    end
+    searchBox:SetPoint("LEFT", searchRow, "LEFT", PAD, 0)
+    searchBox:SetPoint("RIGHT", searchRow, "RIGHT", -PAD, 0)
+    f.searchRow, f.searchBox = searchRow, searchBox
+
+    -- The results: in the content's rectangle, shown in its place.
+    local results = CreateFrame("Frame", nil, f)
+    results:SetFrameLevel(f:GetFrameLevel() + 2)
+    results:Hide()
+    f.searchResults = results
+
+    ------------------------------------------------------------------
+    -- The view: the wood behind the screens (the mockup's .view), painted on the window itself so every
+    -- panel that drew over the window's background still draws over it. `view` only holds the rectangle.
+    ------------------------------------------------------------------
+    local view = CreateFrame("Frame", nil, f)
+    f.view = view
+    f.wood = UI:PaintWood(f, view)
+
+    ------------------------------------------------------------------
     -- Content: one empty panel per tab
     ------------------------------------------------------------------
     local content = CreateFrame("Frame", nil, f)
+    content:SetFrameLevel(f:GetFrameLevel() + 2)
     -- Clipping is the net under the ladder: a panel that has not learnt the
     -- narrow bands yet is cut at the window's edge instead of painting past it.
     if content.SetClipsChildren then content:SetClipsChildren(true) end
@@ -336,70 +701,93 @@ local function createWindow()
     end
 
     ------------------------------------------------------------------
-    -- Footer and grip
+    -- Footer (the mockup's .foot): "Welcome back, <name>." on the left, "● Updated: <when>" on the right, a
+    -- click on which syncs. Its links (#377) went: the site and /gos help are in the gear's tooltip and on
+    -- Settings' Data page, the Blizzard guild window a button there.
     ------------------------------------------------------------------
     local foot = CreateFrame("Frame", nil, f)
-    foot:SetPoint("BOTTOMLEFT", 0, footLift)
-    foot:SetPoint("BOTTOMRIGHT", 0, footLift)
+    foot:SetPoint("BOTTOMLEFT", EDGE, EDGE)
+    foot:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
     foot:SetHeight(FOOT_H)
+    foot:SetFrameLevel(f:GetFrameLevel() + 3)
+    local footBg = foot:CreateTexture(nil, "BACKGROUND")
+    footBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    footBg:SetAllPoints()
+    footBg:SetVertexColor(C.popup.r, C.popup.g, C.popup.b, 1)
     local footLine = UI:CreateSeparator(foot)
-    footLine:SetPoint("TOPLEFT", sideL, 0)
-    footLine:SetPoint("TOPRIGHT", -sideR, 0)
+    footLine:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    footLine:SetPoint("TOPLEFT", 0, 0)
+    footLine:SetPoint("TOPRIGHT", 0, 0)
     f.footer = foot
 
-    -- WoW opens no browser: guildos.me puts the address in a read-only box over the links, selected
-    -- for Ctrl+C, until it lets go (the Web tab's idiom).
-    local siteBox = UI:CreateInput(foot, 150, 18)
-    siteBox:SetFrameLevel(foot:GetFrameLevel() + 5)
-    siteBox:SetPoint("LEFT", foot, "LEFT", FOOT_PAD - LINK_PAD, 0)
-    siteBox:SetScript("OnEnterPressed", function(s) s:ClearFocus() end)
-    siteBox:HookScript("OnTextChanged", function(s)
-        if s:GetText() ~= SITE then
-            s:SetText(SITE)
-            s:HighlightText()
-        end
+    local welcome = text(foot, 11, nil, C.label)
+    welcome:SetPoint("LEFT", foot, "LEFT", FOOT_PAD, 0)
+    f.welcomeText = welcome
+
+    local sync = text(foot, 11, nil, C.label)
+    sync:SetJustifyH("RIGHT")
+    sync:SetPoint("RIGHT", foot, "RIGHT", -(FOOT_PAD + GRIP), 0)
+    f.syncText, f.footRight = sync, sync
+    local dot = GuildOS.Style:Texture(foot, "circle", "ARTWORK", 0)
+    dot:SetSize(7, 7)
+    dot:SetPoint("RIGHT", sync, "LEFT", -6, 0)
+    f.syncDot = dot
+    -- The sync, from the line that says when it last ran.
+    local syncBtn = CreateFrame("Button", nil, foot)
+    syncBtn:SetPoint("TOPLEFT", dot, "TOPLEFT", -2, 6)
+    syncBtn:SetPoint("BOTTOMRIGHT", sync, "BOTTOMRIGHT", 2, -6)
+    syncBtn:SetScript("OnClick", function() if GuildOS.CommSystem then GuildOS.CommSystem:FullSync() end end)
+    syncBtn:SetScript("OnEnter", function(self)
+        sync:SetTextColor(C.text.r, C.text.g, C.text.b)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine(L["Sync"], C.text.r, C.text.g, C.text.b)
+        GameTooltip:Show()
     end)
-    siteBox:HookScript("OnEditFocusLost", function(s) s:Hide() end)
-    siteBox:Hide()
-    f.siteBox = siteBox
-    local function showSite()
-        siteBox:Show()
-        siteBox:SetText(SITE)
-        siteBox:HighlightText()
-        siteBox:SetFocus()
-        GuildOS:Print(L["Press Ctrl+A to select all, then Ctrl+C to copy"])
-    end
+    syncBtn:SetScript("OnLeave", function()
+        sync:SetTextColor(C.label.r, C.label.g, C.label.b)
+        GameTooltip:Hide()
+    end)
+    f.syncButton = syncBtn
 
-    for _, item in ipairs(FOOTER) do
-        local link = UI:SetButtonVariant(UI:CreateButton(foot, item.label, 40, 18), "ghost")
-        link:SetWidth(math.ceil(link.label:GetStringWidth()) + 2 * LINK_PAD)
-        link:SetScript("OnClick", item.run or showSite)
-        link:Hide()
-        f.footItems[item.key] = link
+    -- The tour's offer in the footer (the mockup's ▶ pill): resume a tour the closed window paused, or take the
+    -- tour What's new was put off with.
+    local offer = UI:SetButtonVariant(UI:CreateButton(foot, "", 90, 18), "chip")
+    offer:SetPoint("LEFT", welcome, "RIGHT", 10, 0)
+    offer:Hide()
+    f.tourOffer = offer
+    function f:RefreshTourOffer()
+        local o = UI.Tour and UI.Tour:FooterOffer()
+        if o then
+            offer.label:SetText("\226\150\182 " .. o.text)
+            offer:SetWidth(math.ceil(tonumber(offer.label:GetStringWidth()) or 60) + 20)
+            offer:SetScript("OnClick", function() o.run() end)
+        end
+        offer:SetShown(o ~= nil)
+        self:LayoutFooter()
     end
-
-    local version = foot:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(version, 10, "caption")
-    version:SetShadowOffset(0, 0)
-    version:SetTextColor(C.label.r, C.label.g, C.label.b)
-    version:SetText("v" .. tostring(GuildOS.VERSION or ""))
-    version:SetPoint("RIGHT", foot, "RIGHT", -(FOOT_PAD + GRIP), 0)   -- the grip keeps the corner
-    f.versionText = version
 
     local grip = CreateFrame("Button", nil, f)
     grip:SetSize(GRIP, GRIP)
-    grip:SetPoint("BOTTOMRIGHT", -1, 1)
+    grip:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
     grip:SetFrameLevel(f:GetFrameLevel() + 20)
     grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
     grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    local function bounds(w, h)
+        if f.SetResizeBounds then f:SetResizeBounds(w, h)
+        elseif f.SetMinResize then f:SetMinResize(w, h) end
+    end
     grip:SetScript("OnMouseDown", function()
         pinTopLeft(f)
         f.sizingFrom = { f:GetWidth(), f:GetHeight() }
+        f.sizingFolded = store().collapsed and true or false
+        -- Open, it stops at the watch band; folded, it stays the bar it is.
+        if not f.sizingFolded then bounds(DRAG_MIN_W, 240) end
         f:StartSizing("BOTTOMRIGHT")
     end)
     grip:SetScript("OnMouseUp", function()
         f:StopMovingOrSizing()
+        bounds(MIN_W, BAR_H)
         f:Settle()
     end)
     f.grip = grip
@@ -419,6 +807,7 @@ local function createWindow()
         if not panel.built then
             panel.built = true
             panel.buildFailed = not GuildOS:RunStartup("Tab:" .. key, nil, def.build, panel, self)
+            panel.OnSubChanged = function(sub) self:FollowSub(key, sub) end
         end
         if panel.buildFailed then
             GuildOS:Print(string.format(L["%s could not start on this client. Type /guildos errors for details."], def.label))
@@ -429,17 +818,160 @@ local function createWindow()
             store().tab = key
             self.beforeWatch = nil
         end
-        for _, tab in ipairs(self.tabs) do tab:SetActive(tab.key == key) end
+        -- Opened by its feature (the narrow band's switch to Home, a saved tab): the room that holds it.
+        if not (self.activeEntry and self.activeEntry.feature == key) then
+            local room, entry = UI:RoomOf(key)
+            self.activeRoom, self.activeEntry = room and room.id, entry
+        end
+        -- Showing a hub fires OnShow on the sub-tab it was left on, not the entry's: that is no choice of the
+        -- player, so FollowSub ignores it while the panels switch.
+        self.switching = true
         for k, p in pairs(self.tabPanels) do p:SetShown(k == key) end
+        self.switching = nil
+        if panel.SetSubBarShown then panel.SetSubBarShown(not (self.activeEntry and self.activeEntry.sub)) end
         self:LayoutTabs()
         return true
     end
+
+    -- Open a room's entry: its feature's panel, on the entry's sub-tab (or `sub`, a deep link's), with
+    -- `filter` for the sub-tab that takes one. Remembered per room, so a room opens where it was left.
+    function f:SelectEntry(roomId, entry, byUser, sub, filter)
+        if not (entry and UI:EntryAllowed(entry)) then return false end
+        -- An action, not a screen (Core Sign-up): it runs, and the screen on show stays.
+        if entry.run then
+            GuildOS:SafeCall(entry.run)
+            return true
+        end
+        -- A screen asked for by the player (a door, a pill, a command) leaves the search's results.
+        if byUser and self.searching then self:CloseSearch() end
+        local prevRoom, prevEntry = self.activeRoom, self.activeEntry
+        self.activeRoom, self.activeEntry = roomId, entry
+        if not self:SetActiveTab(entry.feature, byUser) then
+            self.activeRoom, self.activeEntry = prevRoom, prevEntry
+            self:LayoutTabs()
+            return false
+        end
+        if byUser then
+            local g = store()
+            g.room = roomId
+            g.entries = type(g.entries) == "table" and g.entries or {}
+            g.entries[roomId] = entry.id
+        end
+        local panel = self.tabPanels[entry.feature]
+        local want = sub or entry.sub
+        if want and panel and panel.SelectSub then panel.SelectSub(want, filter) end
+        -- The panel may land elsewhere (a sub-tab that failed to build falls back to the calendar): the
+        -- marked entry follows the screen actually drawn.
+        if entry.sub and panel and panel.activeSub and panel.activeSub ~= entry.sub then
+            local r2, e2 = UI:RoomOf(entry.feature, panel.activeSub)
+            if e2 and e2.sub == panel.activeSub then
+                self.activeRoom, self.activeEntry = r2.id, e2
+                self:LayoutTabs()
+            end
+        end
+        return true
+    end
+
+    -- The panel showed sub-tab `sub` itself (a button inside it, the hub's own fallback): the room marks and
+    -- remembers the entry that names it, when there is one. Nothing changes while another screen is open.
+    function f:FollowSub(feature, sub)
+        local e = self.activeEntry
+        if self.switching then return end
+        if self.activeTab ~= feature or not (e and e.feature == feature and e.sub) or e.sub == sub then return end
+        local r2, e2 = UI:RoomOf(feature, sub)
+        if not (e2 and e2.sub == sub) then return end
+        self.activeRoom, self.activeEntry = r2.id, e2
+        local g = store()
+        g.room = r2.id
+        g.entries = type(g.entries) == "table" and g.entries or {}
+        g.entries[r2.id] = e2.id
+        self:LayoutTabs()
+    end
+
+    -- A room from its tab: the entry it was left on, else its first.
+    function f:OpenRoom(roomId, byUser)
+        if not UI:RoomAllowed(roomId) then return false end
+        local saved = type(store().entries) == "table" and store().entries[roomId] or nil
+        return self:SelectEntry(roomId, UI:RoomDefault(roomId, saved), byUser)
+    end
+
+    ------------------------------------------------------------------
+    -- The search strip (#449)
+    ------------------------------------------------------------------
+    local function queryOf() return strtrim(searchBox:GetText() or "") end
+
+    -- Whether the results stand in the content's place: the strip open, not folded to the bar, with a query of
+    -- Search.MIN characters or more.
+    function f:SearchShowing()
+        local S = GuildOS.Search
+        if not (self.searchOpen and self.band ~= "bar" and S and S.Chars) then return false end
+        return S.Chars(queryOf()) >= (S.MIN or 2)
+    end
+
+    -- The results again, at the size the layout gave their frame.
+    function f:RenderSearch()
+        if self.searching and UI.SearchView then
+            GuildOS:SafeCall(UI.SearchView.Render, UI.SearchView, results, queryOf(), self.searchW or 1, self.searchH or 1)
+        end
+    end
+
+    -- The query changed: the content and the results swap when it crosses Search.MIN (a layout, which draws
+    -- the results), else the results follow it.
+    function f:RunSearch()
+        if self:SearchShowing() ~= (self.searching or false) then self:LayoutTabs() else self:RenderSearch() end
+    end
+
+    -- Open the strip, with `text` in it (/gos find), the field focused.
+    function f:OpenSearch(initial)
+        searchBox:SetText(initial or "")
+        self.searchOpen = true
+        searchBtn:SetPressed(true)
+        searchBox:SetFocus()
+        self:LayoutTabs()
+    end
+
+    -- Close it: the field emptied, the screen it covered shown again.
+    function f:CloseSearch()
+        if not self.searchOpen then return end
+        self.searchOpen = nil
+        searchBtn:SetPressed(false)
+        searchBox:SetText("")
+        searchBox:ClearFocus()
+        self:LayoutTabs()
+    end
+
+    function f:ToggleSearch()
+        if self.searchOpen then self:CloseSearch() else self:OpenSearch() end
+    end
+
+    -- The hint stays while the field is empty, focused or not (the mockup's placeholder): the strip opens
+    -- focused, and an empty strip has to say what it finds.
+    local function hint()
+        if searchBox.placeholder then searchBox.placeholder:SetShown((searchBox:GetText() or "") == "") end
+    end
+    searchBox:HookScript("OnEditFocusGained", hint)
+    searchBox:HookScript("OnTextChanged", hint)
+    searchBox:HookScript("OnTextChanged", function() if f.searchOpen then f:RunSearch() end end)
+    searchBox:HookScript("OnEscapePressed", function() f:CloseSearch() end)
+    searchBox:SetScript("OnEnterPressed", function()
+        if f.searching and UI.SearchView then UI.SearchView:Activate(results) end
+    end)
+    searchBox:SetScript("OnArrowPressed", function(_, key)
+        if not (f.searching and UI.SearchView) then return end
+        if key == "UP" then UI.SearchView:Move(results, -1) elseif key == "DOWN" then UI.SearchView:Move(results, 1) end
+    end)
+    if searchBox.SetAltArrowKeyMode then searchBox:SetAltArrowKeyMode(false) end
 
     -- Re-check which tabs may show (rank, loot system, alliance, Settings
     -- toggles and start-up failures all change it without a reload) and fall
     -- back to Now when the open tab is no longer allowed.
     function f:UpdateTabVisibility()
-        if not (self.activeTab and allowed(self.activeTab)) then
+        self:InvalidateOfficerCounts()
+        -- An entry that may no longer open (a rank change, the Winter Veil event over) counts as closed.
+        if self.activeEntry and not UI:EntryAllowed(self.activeEntry) then self.activeEntry = nil end
+        -- A room that may no longer show (an officer demoted with the Officers' Room open) closes too.
+        if self.activeRoom and not UI:RoomAllowed(self.activeRoom) then self.activeEntry = nil end
+        if not (self.activeTab and allowed(self.activeTab) and self.activeEntry) then
             local panel = self.activeTab and self.tabPanels[self.activeTab]
             if panel then panel:Hide() end
             self.activeTab = nil
@@ -451,19 +983,56 @@ local function createWindow()
         self:LayoutTabs()
     end
 
+    -- The officers' work waiting (UI.Agora:OfficerCounts): the door's total and each entry's own. That walks
+    -- the whole roster (Agora:NeedsMe), so it is kept on the window and counted again only after the 10s tick, a
+    -- roster update or a re-check of the tabs drops it (UpdateTabVisibility); a layout or a resize reads it.
+    function f:RefreshOfficerCounts()
+        local A = UI.Agora
+        local total, by = 0, {}
+        if A and A.OfficerCounts then
+            GuildOS:SafeCall(function() total, by = A:OfficerCounts() end)
+        end
+        self.officerTotal, self.officerBy = total or 0, by or {}
+        return self.officerTotal, self.officerBy
+    end
+    -- Counted again at the next layout (a change the tick has not seen yet: a trial added, a rank changed).
+    function f:InvalidateOfficerCounts() self.officerTotal, self.officerBy = nil, nil end
+    local function officerCounts()
+        if f.officerTotal == nil then return f:RefreshOfficerCounts() end
+        return f.officerTotal, f.officerBy
+    end
+
+    -- Where the doors go: from past the guild's name to short of the tools.
+    function f:DoorSpan(w)
+        w = w or self:GetWidth() or 0
+        local x0 = self.doorsX or (10 + CREST + 8 + NAME_MIN + 10)
+        local tools = 10 + CLOSE_SIZE + 4 * (TOOL + TOOL_GAP) + 8
+        return x0, math.max(0, (w - 2 * EDGE) - tools - x0)
+    end
+
     function f:LayoutTabs(w)
         w = w or self:GetWidth() or 0
+        local visible = {}
+        for _, room in ipairs(UI:VisibleRooms()) do visible[room.id] = true end
+        local total = officerCounts()
         local shown = {}
         for _, tab in ipairs(self.tabs) do
             tab:Hide()
-            if allowed(tab.key) then shown[#shown + 1] = tab end
+            tab:SetActive(tab.key == self.activeRoom)
+            if tab.count then tab.count:SetCount(total) end
+            if visible[tab.key] then shown[#shown + 1] = tab end
         end
         self.overflow = {}
         more:Hide()
         selector:SetShown(self.band == "watch")
+        local x0, span = self:DoorSpan(w)
+        rule:ClearAllPoints()
+        rule:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", x0, 0)
+        rule:SetWidth(math.max(1, span))
+        self:LayoutEntries(w)
         if self.band == "watch" then
-            local def = UI:GetFeature(self.activeTab)
-            selector.label:SetText((def and def.label or "") .. " " .. RAQUO)
+            local room = UI:RoomById(self.activeRoom)
+            selector.label:SetText((room and room.label or "") .. " " .. RAQUO)
             selector:SetWidth(math.ceil(selector.label:GetStringWidth()) + 16)
             return
         end
@@ -471,18 +1040,19 @@ local function createWindow()
 
         local widths, active = {}, nil
         for i, tab in ipairs(shown) do
-            widths[i] = math.max(TAB_MIN_W, math.ceil(tab.label:GetStringWidth()) + TAB_TEXT_PAD)
-            if tab.key == self.activeTab then active = i end
+            widths[i] = tab:Width()
+            if tab.key == self.activeRoom then active = i end
         end
-        local visible, hidden = UI:FitTabs(widths, w - 2 * RULE_PAD, TAB_GAP, MORE_W, active)
-        local x, placed = RULE_PAD, {}
-        for _, i in ipairs(visible) do
+        local fit, hidden = UI:FitTabs(widths, span, DOOR_GAP, MORE_W, active)
+        local x, placed = 0, {}
+        for _, i in ipairs(fit) do
             local tab = shown[i]
             tab:ClearAllPoints()
-            tab:SetPoint("LEFT", rule, "LEFT", x, 0)
+            -- On the bar's 2px line.
+            tab:SetPoint("BOTTOMLEFT", rule, "BOTTOMLEFT", x, 2)
             tab:SetWidth(widths[i])
             tab:Show()
-            x = x + widths[i] + TAB_GAP
+            x = x + widths[i] + DOOR_GAP
             placed[i] = true
         end
         for i, tab in ipairs(shown) do
@@ -490,69 +1060,227 @@ local function createWindow()
         end
         if hidden > 0 then
             more.label:SetText(RAQUO .. hidden)
+            more:ClearAllPoints()
+            more:SetPoint("BOTTOMLEFT", rule, "BOTTOMLEFT", x + 2, 8)
             more:Show()
         end
     end
 
-    -- The links from the left, their text FOOT_PAD in; the version and the grip keep the right.
-    function f:LayoutFooter(w)
+    -- The open room's entries on the strip under the bar, and the content below whatever is drawn. A room with
+    -- a single entry draws no strip: its one screen starts right under the bar.
+    function f:LayoutEntries(w)
         w = w or self:GetWidth() or 0
-        local spec = {}
-        for _, item in ipairs(FOOTER) do
-            local link = self.footItems[item.key]
-            link:Hide()
-            spec[#spec + 1] = { key = item.key, min = link:GetWidth(), weight = 0, priority = item.priority }
+        -- Only entries whose feature has a panel: a tab another addon registers after the window was built
+        -- has none, and would be a button that does nothing.
+        local list = {}
+        for _, e in ipairs(self.activeRoom and UI:RoomEntries(self.activeRoom) or {}) do
+            if self.tabPanels[e.feature] then list[#list + 1] = e end
         end
-        -- `footReserve`: room left of the version another part keeps (the snow's parcel, UI/Snow.lua).
-        local room = w - 2 * FOOT_PAD + LINK_PAD - GRIP - math.ceil(version:GetStringWidth()) - FOOT_GAP - (self.footReserve or 0)
-        for _, col in ipairs(UI:ResolveColumns(spec, room, FOOT_GAP)) do
-            if col.shown then
-                local link = self.footItems[col.key]
-                link:ClearAllPoints()
-                link:SetPoint("LEFT", foot, "LEFT", FOOT_PAD - LINK_PAD + col.x, 0)
-                link:Show()
+        local room = self.activeRoom and UI:RoomById(self.activeRoom)
+        local top, pad = self.layoutTop or 0, self.layoutPad or PAD
+        local _, counts = officerCounts()
+        local function countOf(e)
+            return (e.sub and counts[e.feature .. ":" .. e.sub]) or (not e.sub and counts[e.feature])
+                or (e.needs and counts[e.needs]) or 0
+        end
+        -- The side bar only while it fits: the content keeps a table's width beside it (medium and up), and the
+        -- window is tall enough for every row; otherwise the room folds into the strip like any other.
+        local side = false
+        if room and room.side and #list > 0 and (self.band == "full" or self.band == "wide" or self.band == "medium") then
+            local need, groups, seen = 16, 0, {}
+            for _, e in ipairs(list) do
+                if e.group and not seen[e.group] then seen[e.group] = true; groups = groups + 1 end
+                need = need + SIDE_ROW
+            end
+            need = need + groups * SIDE_HEAD + math.max(0, groups - 1) * 6
+            local room_h = (self:GetHeight() or 0) - (top + 2 * pad + EDGE + FOOT_H)
+            side = need <= room_h
+        end
+        -- The search's results take the whole view: the side bar steps aside while they show.
+        local searching = self:SearchShowing()
+        self.searching = searching
+        sideNav:SetShown(side and not searching)
+        for _, b in ipairs(self.sideBtns) do b:Hide() end
+        for _, h in ipairs(self.sideHeads) do h:Hide() end
+        local rowShown = not side and #list > 1 and self.band ~= "bar"
+        entryRow:SetShown(rowShown)
+        for _, btn in ipairs(self.entryTabs) do btn:Hide() end
+        entryMore:Hide()
+        self.entryOverflow = {}
+        if rowShown then
+            entryRow:ClearAllPoints()
+            entryRow:SetPoint("TOPLEFT", EDGE, -top)
+            entryRow:SetPoint("TOPRIGHT", -EDGE, -top)
+            local widths, active = {}, nil
+            for i, entry in ipairs(list) do
+                local btn = self.entryTabs[i]
+                if not btn then
+                    btn = UI:CreateTab(entryRow, "", TAB_MIN_W, true)
+                    btn:SetHeight(PILL_H)
+                    btn.count = UI:CreateCount(btn)
+                    btn.count:SetPoint("LEFT", btn.label, "RIGHT", 4, 0)
+                    btn:SetScript("OnClick", function(b) f:SelectEntry(f.activeRoom, b.entry, true) end)
+                    self.entryTabs[i] = btn
+                end
+                btn.entry = entry
+                btn.label:SetText(entry.label)
+                btn.count:SetCount(countOf(entry))
+                widths[i] = math.max(TAB_MIN_W, math.ceil(btn.label:GetStringWidth()) + PILL_PAD
+                    + (btn.count:IsShown() and (btn.count:GetWidth() + 4) or 0))
+                if self.activeEntry and self.activeEntry.id == entry.id then active = i end
+            end
+            -- Entries that do not fit fold into "»n", as the rooms do.
+            local fit, hidden = UI:FitTabs(widths, w - 2 * EDGE - 2 * PAD, PILL_GAP, MORE_W, active)
+            local x, placed = PAD, {}
+            for _, i in ipairs(fit) do
+                local btn = self.entryTabs[i]
+                btn:SetWidth(widths[i])
+                btn:ClearAllPoints()
+                btn:SetPoint("LEFT", entryRow, "LEFT", x, 0)
+                btn:SetActive(i == active)
+                -- The label sits left of the count when there is one.
+                btn.label:ClearAllPoints()
+                btn.label:SetPoint("CENTER", btn, "CENTER", btn.count:IsShown() and -(btn.count:GetWidth() + 4) / 2 or 0, 0)
+                btn:Show()
+                x = x + widths[i] + PILL_GAP
+                placed[i] = true
+            end
+            for i, entry in ipairs(list) do
+                if not placed[i] then self.entryOverflow[#self.entryOverflow + 1] = entry end
+            end
+            if hidden > 0 then
+                entryMore.label:SetText(RAQUO .. hidden)
+                entryMore:Show()
             end
         end
+        local below = top + (rowShown and ENTRY_H or 0)
+        -- The search strip, under the pills (or the bar when there are none).
+        local stripShown = self.searchOpen and self.band ~= "bar" or false
+        searchRow:SetShown(stripShown)
+        if stripShown then
+            searchRow:ClearAllPoints()
+            searchRow:SetPoint("TOPLEFT", EDGE, -below)
+            searchRow:SetPoint("TOPRIGHT", -EDGE, -below)
+            below = below + SEARCH_H
+        end
+        view:ClearAllPoints()
+        view:SetPoint("TOPLEFT", EDGE, -below)
+        view:SetPoint("BOTTOMRIGHT", -EDGE, EDGE + FOOT_H)
+        local left = pad
+        if side and not searching then
+            local y0 = below + pad
+            sideNav:ClearAllPoints()
+            sideNav:SetPoint("TOPLEFT", EDGE + pad, -y0)
+            sideNav:SetHeight(1)
+            local y, group, nb, nh = 8, nil, 0, 0
+            for _, entry in ipairs(list) do
+                if entry.group and entry.group ~= group then
+                    group = entry.group
+                    nh = nh + 1
+                    local h = self.sideHeads[nh]
+                    if not h then
+                        h = sideNav:CreateFontString(nil, "OVERLAY")
+                        GuildOS:ApplyFont(h, 11, "sectionTitle")
+                        h:SetShadowOffset(0, 0)
+                        h:SetJustifyH("LEFT")
+                        self.sideHeads[nh] = h
+                    end
+                    h:SetTextColor(C.gold2.r, C.gold2.g, C.gold2.b)
+                    h:SetText(group)
+                    h:ClearAllPoints()
+                    h:SetPoint("TOPLEFT", 14, -(y + (nh > 1 and 6 or 0) + 4))
+                    h:Show()
+                    y = y + SIDE_HEAD + (nh > 1 and 6 or 0)
+                end
+                nb = nb + 1
+                local b = self.sideBtns[nb]
+                if not b then
+                    b = UI:CreateTab(sideNav, "", SIDE_W - 16, true)
+                    b:SetHeight(SIDE_ROW - 2)
+                    b.label:ClearAllPoints()
+                    b.label:SetPoint("LEFT", 10, 0)
+                    b.label:SetJustifyH("LEFT")
+                    b.count = UI:CreateCount(b)
+                    b.count:SetPoint("RIGHT", -8, 0)
+                    b:SetScript("OnClick", function(btn) f:SelectEntry(f.activeRoom, btn.entry, true) end)
+                    self.sideBtns[nb] = b
+                end
+                b.entry = entry
+                b.label:SetText(entry.label)
+                b.count:SetCount(countOf(entry))
+                b:SetWidth(SIDE_W - 16)
+                b:ClearAllPoints()
+                b:SetPoint("TOPLEFT", 8, -y)
+                b:SetActive(self.activeEntry and self.activeEntry.id == entry.id or false)
+                b:Show()
+                y = y + SIDE_ROW
+            end
+            sideNav:SetHeight(y + 8)
+            left = pad + SIDE_W + UI.GAP
+        end
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", EDGE + left, -(below + pad))
+        content:SetPoint("BOTTOMRIGHT", -(EDGE + pad), EDGE + FOOT_H + pad)
+        -- The results in the content's place, at the size worked out here (never read back from a frame).
+        results:ClearAllPoints()
+        results:SetPoint("TOPLEFT", EDGE + pad, -(below + pad))
+        results:SetPoint("BOTTOMRIGHT", -(EDGE + pad), EDGE + FOOT_H + pad)
+        self.searchW = math.max(1, w - 2 * EDGE - 2 * pad)
+        self.searchH = math.max(1, (self:GetHeight() or 0) - (below + pad) - (EDGE + FOOT_H + pad))
+        if self.band ~= "bar" then content:SetShown(not searching) end
+        results:SetShown(searching)
+        if searching then self:RenderSearch() end
     end
 
-    -- Between the wordmark and the minimise button (#377). The meta line never goes; as the window
-    -- narrows the sync time goes first, then Search, then Sync, so nothing runs under the minimise
-    -- button at any width. Folded to the bar only the three numbers stay, as before: buttons that
-    -- came and went with the countdown's width would jump on every tick.
-    local TITLE_ITEMS = {
-        { key = "meta",   frame = meta,      priority = 100, required = true, weight = 1 },
-        { key = "time",   frame = sync,      priority = 40,  text = true },
-        { key = "search", frame = searchBtn, priority = 60 },
-        { key = "sync",   frame = syncBtn,   priority = 80 },
-    }
+    -- "Welcome back" keeps the left, shortened to what is left beside the sync line (and the snow's parcel,
+    -- `footReserve`, UI/Snow.lua).
+    function f:LayoutFooter(w)
+        w = w or self:GetWidth() or 0
+        local offerW = offer:IsShown() and (offer:GetWidth() + 10) or 0
+        local room = w - 2 * EDGE - 2 * FOOT_PAD - GRIP - math.ceil(sync:GetStringWidth()) - 13 - 12 - (self.footReserve or 0) - offerW
+        welcome:SetWidth(math.max(0, room))
+        welcome:SetShown(room > 40)
+        offer:ClearAllPoints()
+        if welcome:IsShown() then offer:SetPoint("LEFT", welcome, "RIGHT", 10, 0)
+        else offer:SetPoint("LEFT", foot, "LEFT", FOOT_PAD, 0) end
+    end
+
+    -- The crest, the guild's name and its line, the doors and the tools. The name block keeps what it needs up
+    -- to NAME_MAX, never under NAME_MIN; the doors take the rest up to the tools, folding into "»n". Folded to
+    -- the bar only the three numbers stay, as before.
     function f:LayoutTitle(w)
         w = w or self:GetWidth() or 0
         local isBar = self.band == "bar"
         summary:SetShown(isBar)
+        summaryHit:SetShown(isBar)
+        crest:SetShown(not isBar)
+        guildName:SetShown(not isBar)
+        meta:SetShown(not isBar)
+        searchBtn:SetShown(not isBar)
+        helpBtn:SetShown(not isBar)
+        gearBtn:SetShown(not isBar)
+        rule:SetShown(not isBar)
+        close:ClearAllPoints()
+        close:SetPoint("RIGHT", bar, "RIGHT", isBar and -(GRIP + 2) or -10, 0)
+        minimise:ClearAllPoints()
+        minimise:SetPoint("RIGHT", close, "LEFT", -TOOL_GAP, 0)
+        gearBtn:ClearAllPoints()
+        gearBtn:SetPoint("RIGHT", minimise, "LEFT", -TOOL_GAP, 0)
+        helpBtn:ClearAllPoints()
+        helpBtn:SetPoint("RIGHT", gearBtn, "LEFT", -TOOL_GAP, 0)
+        searchBtn:ClearAllPoints()
+        searchBtn:SetPoint("RIGHT", helpBtn, "LEFT", -TOOL_GAP, 0)
         if isBar then
-            for _, item in ipairs(TITLE_ITEMS) do item.frame:Hide() end
+            minimise:SetSize(20, 20)
             return
         end
-        local left = 10 + math.ceil(wordmark:GetStringWidth()) + 10
-        local right = CLOSE_X + close:GetWidth() + 2 + minimise:GetWidth() + TITLE_GAP
-        local spec = {}
-        for i, item in ipairs(TITLE_ITEMS) do
-            local min = (item.key == "meta" and META_MIN)
-                or (item.text and math.ceil(item.frame:GetStringWidth())) or item.frame:GetWidth()
-            spec[i] = { key = item.key, min = min, weight = item.weight or 0, priority = item.priority,
-                        required = item.required }
-        end
-        -- Shown or not, never hidden and shown again: this runs on the 10s tick and every roster update,
-        -- and a button hidden mid-press loses its click (#377).
-        for i, col in ipairs(UI:ResolveColumns(spec, w - left - right, TITLE_GAP)) do
-            local item = TITLE_ITEMS[i]
-            item.frame:SetShown(col.shown)
-            if col.shown then
-                item.frame:ClearAllPoints()
-                item.frame:SetPoint("LEFT", bar, "LEFT", left + col.x, 0)
-                if item.key == "meta" or item.text then item.frame:SetWidth(col.w) end
-            end
-        end
+        minimise:SetSize(TOOL, TOOL)
+        local want = math.max(math.ceil(guildName:GetStringWidth() or 0), math.ceil(meta:GetStringWidth() or 0))
+        local cap = math.max(NAME_MIN, math.min(NAME_MAX, math.floor((w - 2 * EDGE) * 0.3)))
+        local nameW = math.max(NAME_MIN, math.min(want, cap))
+        guildName:SetWidth(nameW)
+        meta:SetWidth(nameW)
+        self.doorsX = 10 + CREST + 8 + nameW + 10
     end
 
     -- Guarded: it runs on every show and roster update, and reads modules
@@ -563,14 +1291,42 @@ local function createWindow()
             local online = A:RosterLoading() and DASH or string.format(L["%d online"], A:OnlineCount())
             local level = GuildOS.Achievements and GuildOS.Achievements:Renown()
             local badge = level and GuildOS.Achievements:Insignia()
-            local renown = level and (DOT .. (badge and ("|T" .. badge .. ":14:14|t ") or "")
+            -- The insignia at the line's own height (0: the font's), not a 14px icon on an 11px line (#449).
+            local renown = level and (DOT .. (badge and ("|T" .. badge .. ":0:0:0:-1|t ") or "")
                 .. string.format(L["renown %d"], level)) or ""
-            meta:SetText((GetGuildInfo("player") or "Guild OS") .. DOT .. online .. renown)
+            local guild = GetGuildInfo("player") or "Guild OS"
+            GuildOS:SetTitleText(guildName, guild)
+            GuildOS:SetTitleText(crest.letter, UI.Initial(guild))
+            UI:DrawTabard(crest)
+            local realm = GetRealmName and GetRealmName() or nil
+            meta:SetText(online .. ((realm and realm ~= "") and (DOT .. realm) or "") .. renown)
             local last = A:LastSync()
-            sync:SetText(last and string.format(L["sync %s"], GuildOS:TimeAgo(last)) or L["not synced yet"])
+            sync:SetText(last and string.format(L["Updated: %s"], GuildOS:TimeAgo(last)) or L["not synced yet"])
+            local fresh = last and (time() - last) < 3600
+            local dc = fresh and C.ok or (last and C.warn) or C.disabled
+            dot:SetVertexColor(dc.r, dc.g, dc.b, 1)
+            local me = GuildOS.Compat.PlayerName()
+            welcome:SetText(string.format(L["Welcome back, %s."], me or "?"))
+            -- Winter Veil: snow on the wood and the garland under the bar, while the event's snow falls.
+            local winter = UI.Snow and UI.Snow.Mode and UI.Snow:Mode() == "season" or false
+            garland:SetShown(winter)
+            if f.wood then f.wood:SetWinter(winter) end
             -- The three numbers walk the officer work, so only while they show.
             if self.band == "bar" then summary:SetText(A:BarText()) end
-            self:LayoutTitle()   -- the sync time's width changes with its text (#377)
+            self:LayoutTitle()
+            -- The officers' counts and the name's width move the doors and the pills: laid out again only when
+            -- one changed, as this runs on the 10s tick and a door hidden mid-press loses its click (#377).
+            local total, by = officerCounts()
+            local parts = { tostring(total), tostring(self.doorsX) }
+            for k, n in pairs(by) do parts[#parts + 1] = k .. "=" .. n end
+            table.sort(parts)
+            local key = table.concat(parts, ",")
+            if key ~= self.__tabsKey then
+                self.__tabsKey = key
+                self:LayoutTabs()
+            end
+            self:RefreshHelpDot()
+            self:LayoutFooter()
         end)
     end
 
@@ -607,6 +1363,16 @@ local function createWindow()
         local g = store()
         pinTopLeft(self)
         local band = UI:ResolveBand(contentWidth(self:GetWidth()), self.band)
+        -- An open window dragged narrow (a client that let the grip past its bounds) stays open, at the
+        -- narrowest open width: folding is the minimise button's.
+        if band == "bar" and not g.collapsed and self.sizingFrom and not self.sizingFolded then
+            self:SetWidth(DRAG_MIN_W)
+            if (tonumber(self:GetHeight()) or 0) < 240 then self:SetHeight(240) end
+            self.sizingFrom, self.sizingFolded = nil, nil
+            UI:SaveWindowGeometry(self)
+            self:Layout(self:GetWidth())
+            return
+        end
         if band == "bar" then
             if not g.collapsed then
                 local from = self.sizingFrom
@@ -619,7 +1385,7 @@ local function createWindow()
             g.collapsed = nil
             self:SetHeight(g.restoreH or DEFAULT_H)
         end
-        self.sizingFrom = nil
+        self.sizingFrom, self.sizingFolded = nil, nil
         UI:SaveWindowGeometry(self)
     end
 
@@ -629,39 +1395,37 @@ local function createWindow()
         self.band = band
         local isBar, isWatch = band == "bar", band == "watch"
         local narrow = w < NARROW
-        local titleH = (narrow or isBar) and BAR_H or TITLE_H
+        local titleH = isBar and BAR_H or TITLE_H
         local pad = narrow and PAD_NARROW or PAD
 
         bar:SetHeight(titleH)
-        -- Collapsed to the bar, the window is too short for the metal: it paints flat, edge to edge.
-        local top = isBar and 0 or topInset
+        -- Folded to the bar, the window is the bar: edge to edge, no frame around it.
+        local inset = isBar and 0 or EDGE
         bar:ClearAllPoints()
-        bar:SetPoint("TOPLEFT", 0, -top)
-        bar:SetPoint("TOPRIGHT", 0, -top)
+        bar:SetPoint("TOPLEFT", inset, -inset)
+        bar:SetPoint("TOPRIGHT", -inset, -inset)
+        barLine:SetShown(not isBar)
         minimise.x:SetText(isBar and "+" or DASH)
-        close:ClearAllPoints()
-        close:SetPoint("RIGHT", bar, "RIGHT", isBar and -(GRIP + 4) or -CLOSE_X, 0)
         self:LayoutTitle(w)
 
-        rule:SetShown(not isBar)
-        content:SetShown(not isBar)
+        content:SetShown(not isBar and not self:SearchShowing())
+        if isBar then entryRow:Hide(); sideNav:Hide(); searchRow:Hide(); results:Hide() end
         foot:SetShown(not isBar)
-        rule:ClearAllPoints()
-        rule:SetPoint("TOPLEFT", 0, -(top + titleH))
-        rule:SetPoint("TOPRIGHT", 0, -(top + titleH))
-        content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", pad, -(top + titleH + RULE_H + pad))
-        content:SetPoint("BOTTOMRIGHT", -pad, footLift + FOOT_H + pad)
+        for _, t in pairs(f.wood) do if type(t) == "table" and t.SetShown then t:SetShown(not isBar) end end
+        if not isBar and f.wood.SetWinter then f.wood:SetWinter(garland:IsShown()) end
+        self.layoutTop, self.layoutPad = EDGE + titleH, pad
 
         local home = self.tabPanels[HOME]
         if changed and isWatch and self.activeTab ~= HOME and not (home and home.buildFailed) then
-            -- The tab that was open comes back once the window is wide again.
-            self.beforeWatch = self.activeTab
+            -- The room and entry that were open come back once the window is wide again.
+            self.beforeWatch = { room = self.activeRoom, entry = self.activeEntry, tab = self.activeTab }
             self:SetActiveTab(HOME)
         elseif changed and not isWatch and not isBar and self.beforeWatch then
             local back = self.beforeWatch
             self.beforeWatch = nil
-            if self.activeTab == HOME then self:SetActiveTab(back) end
+            if self.activeTab == HOME then
+                if not (back.entry and self:SelectEntry(back.room, back.entry)) then self:SetActiveTab(back.tab) end
+            end
         end
 
         self:LayoutTabs(w)
@@ -675,11 +1439,14 @@ local function createWindow()
     f:SetScript("OnShow", function(self)
         self:UpdateTabVisibility()
         self:RefreshTitle()
+        self:RefreshTourOffer()
         if not self.ticker then
-            self.ticker = C_Timer.NewTicker(10, function() self:RefreshTitle() end)
+            self.ticker = C_Timer.NewTicker(10, function() self:InvalidateOfficerCounts(); self:RefreshTitle() end)
         end
     end)
     f:SetScript("OnHide", function(self)
+        -- Opened again, the window shows its screen, not an old search.
+        self:CloseSearch()
         if self.ticker then
             self.ticker:Cancel()
             self.ticker = nil
@@ -694,22 +1461,73 @@ local function createWindow()
     GuildOS.Compat.RegisterEvent(f, "RAID_ROSTER_UPDATE")
     GuildOS.Compat.RegisterEvent(f, "PARTY_LOOT_METHOD_CHANGED")
     GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
+    -- The crest's tabard: the guild changed, or its data arrived (#449).
+    GuildOS.Compat.RegisterEvent(f, "PLAYER_GUILD_UPDATE")
     -- The title counts who is online over the whole roster: at most once every ROSTER_GAP (issue #324).
     local function shownTitle()
-        if f:IsShown() then f:RefreshTitle() end
+        if f:IsShown() then f:InvalidateOfficerCounts(); f:RefreshTitle() end
     end
+    -- A raid's group events come in bursts many times a minute: the tabs are checked again at most every
+    -- TABS_GAP seconds, the last one never lost (memory audit, memoria.md).
+    local TABS_GAP = 2
+    local function recheckTabs() f:UpdateTabVisibility() end
     f:SetScript("OnEvent", function(self, event)
         if event == "GUILD_ROSTER_UPDATE" then
             GuildOS:Coalesce("windowTitle", GuildOS.ROSTER_GAP, shownTitle)
+        elseif event == "PLAYER_GUILD_UPDATE" then
+            if self:IsShown() then GuildOS:SafeCall(UI.DrawTabard, UI, crest) end
         else
-            self:UpdateTabVisibility()
+            GuildOS:Coalesce("windowTabs", TABS_GAP, recheckTabs)
         end
     end)
 
     table.insert(UISpecialFrames, NAME)   -- ESC closes it
 
-    local saved = store().tab
-    if not (saved and f:SetActiveTab(saved)) then f:UpdateTabVisibility() end
+    ------------------------------------------------------------------
+    -- The tour's anchors (UI/Tour.lua): the tools, the doors, the entries' pills and the side bar. At the watch
+    -- band the doors stand behind the one-line selector and the side bar's entries are pills; a pill folded into
+    -- "»n" is found as that button.
+    ------------------------------------------------------------------
+    if UI.RegisterTourAnchor then
+        UI:RegisterTourAnchor("tool.search", searchBtn)
+        UI:RegisterTourAnchor("tool.help", helpBtn)
+        UI:RegisterTourAnchor("tool.gear", gearBtn)
+        UI:RegisterTourAnchor("tool.fold", minimise)
+        UI:RegisterTourAnchor("window.content", content)
+        UI:RegisterTourAnchor("door", function(id)
+            for _, d in ipairs(f.tabs) do
+                if d.key == id and d:IsShown() then return d end
+            end
+            if selector:IsShown() then return selector end
+            for _, k in ipairs(f.overflow or {}) do if k == id then return more end end
+            -- The gear's room is behind the gear.
+            local r = UI:RoomById(id)
+            if r and r.gear then return gearBtn end
+            return nil
+        end)
+        local function pill(roomId, id)
+            if f.activeRoom ~= roomId then return nil end
+            for _, b in ipairs(f.entryTabs) do
+                if b:IsShown() and b.entry and b.entry.id == id then return b end
+            end
+            for _, b in ipairs(f.sideBtns) do
+                if b:IsShown() and b.entry and b.entry.id == id then return b end
+            end
+            for _, e in ipairs(f.entryOverflow or {}) do if e.id == id and entryMore:IsShown() then return entryMore end end
+            return nil
+        end
+        UI:RegisterTourAnchor("entry", function(rest)
+            local roomId, id = tostring(rest):match("^([^.]+)%.(.+)$")
+            return roomId and pill(roomId, id) or nil
+        end)
+        UI:RegisterTourAnchor("side", function(id) return pill("officers", id) end)
+    end
+
+    -- Where it was left: the saved room's entry, else the saved feature (before the rooms), else Home.
+    local g = store()
+    if not (g.room and f:OpenRoom(g.room)) and not (g.tab and f:SetActiveTab(g.tab)) then
+        f:UpdateTabVisibility()
+    end
     if UI.Snow then UI.Snow:Attach(f) end   -- Winter Veil's snow (guildos-web#662)
     return f
 end
@@ -717,6 +1535,13 @@ end
 ----------------------------------------------------------------------
 -- The ways in
 ----------------------------------------------------------------------
+
+-- Whether the window can open feature `id`: true before it is built (every tab feature will get a panel then),
+-- and afterwards only for the features it built a panel for (UI/Rooms.lua asks, #445).
+function UI:HasPanel(id)
+    local f = GuildOS.RosterFrame
+    return not f or (f.tabPanels and f.tabPanels[id] ~= nil) or false
+end
 
 -- The window, created on first use. Nil until the saved data is loaded.
 function UI:GetMainWindow()
@@ -776,9 +1601,22 @@ function UI:OpenWindow(id, sub, filter)
     f:Show()
     -- A tab asked for by name has to be seen, so the bar opens back up.
     if store().collapsed or f.band == "bar" then f:ToggleCollapsed() end
+    -- Through the room that holds it (#445): its entry, on the sub-tab asked for.
+    local room, entry = self:RoomOf(id, sub)
+    if room then return f:SelectEntry(room.id, entry, true, sub, filter) end
     if not f:SetActiveTab(id, true) then return false end
     local panel = f.tabPanels[id]
     if sub and panel.SelectSub then panel.SelectSub(sub, filter) end
+    return true
+end
+
+-- The window with its search strip open, `text` in it (/gos find, /gos search; Search:Show).
+function UI:OpenSearch(text)
+    local f = self:GetMainWindow()
+    if not f then return false end
+    f:Show()
+    if store().collapsed or f.band == "bar" then f:ToggleCollapsed() end
+    f:OpenSearch(text)
     return true
 end
 

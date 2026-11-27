@@ -831,6 +831,7 @@ GuildOS.UI = setmetatable({
     return box.saveButton
   end,
 }, { __index = function() return function() return widget() end end })
+dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/Layout.lua")
 -- The newest dropdown that offers `text`, and whether one does; `choose` picks it there.
 local function offered(text)
@@ -845,9 +846,12 @@ local function choose(text)
   check(dd ~= nil, "a dropdown offers " .. text)
   dd:Select(value)
 end
+-- A button reads what its label says now: the council's rows are reused, their label rewritten.
 local function button(text)
   for i = #buttons, 1, -1 do
-    if buttons[i].text == text then return buttons[i] end
+    local b = buttons[i]
+    local now = (b.label and rawget(b.label, "text")) or b.text
+    if now == text then return b end
   end
 end
 local function click(text)
@@ -926,7 +930,7 @@ check(not session.open and button("End vote").hidden, "ending the vote is a clic
 LM:CancelRolling()
 asRaider("Ana", 1, function()
   GuildOS.State.lootCouncil = nil
-  widgets, buttons = {}, {}
+  widgets = {}   -- the buttons stay: the window and its rows are the same ones, refilled
   local ok, err = pcall(hear, opened)
   check(ok, "a member's window draws from the master looter's messages (" .. tostring(err) .. ")")
   check(button("Vote") and (not button("End vote") or button("End vote").hidden), "with a Vote button, and no way to end the vote")

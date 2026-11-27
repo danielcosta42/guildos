@@ -37,6 +37,11 @@ end
 check(select(2, g:Cell(13)) == 4 and select(2, g:Cell(1)) == 0, "the first chip is on the top row, the last on the bottom")
 
 local roster = io.open(ADDON .. "/UI/RosterFrame.lua", "rb"):read("*a")
-check(roster:find("UI:ChipGrid(#CLASS_ORDER", 1, true) ~= nil, "the roster rail lays its chips out with the grid")
+-- Since the Members mockup (#449) the roster's classes are lines of the filter rail again, two to a line on the side
+-- and as pills wrapping when the rail sits above the list: every one of retail's thirteen has its own.
+check(roster:find("for _, classFile in ipairs(CLASS_ORDER) do", 1, true) ~= nil
+  and roster:find("classes[#classes + 1] = self.classChips[classFile]", 1, true) ~= nil
+  and roster:find("local col, row = (i - 1) % 2, math.floor((i - 1) / 2)", 1, true) ~= nil,
+  "the roster lays every class out in the rail, two to a line")
 
 print(("retail-rail: %d checks passed"):format(checks))

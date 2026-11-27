@@ -11,6 +11,7 @@
 -- Rule 10 (no business logic in UI): the classification lives here; UI just
 -- renders Scan() and flips the auto-open pref through our getters/setters.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local PugInspector = {}
 GuildOS.PugInspector = PugInspector
 local L = GuildOS.L
@@ -316,6 +317,19 @@ local function groupSig(scan)
     return table.concat(names, ",")
 end
 
+-- Who is in the group, as one string, from the group API alone (no classification): the scan's trigger.
+local sigNames = {}
+function PugInspector:_MemberSig()
+    local n = 0
+    for _, m in ipairs(self:_GroupMembers()) do
+        n = n + 1
+        sigNames[n] = m.full or m.name or ""
+    end
+    for i = #sigNames, n + 1, -1 do sigNames[i] = nil end
+    table.sort(sigNames)
+    return table.concat(sigNames, ",")
+end
+
 function PugInspector:_SetupEvents()
     if self._eventFrame then return end
     local f = CreateFrame("Frame")
@@ -335,11 +349,23 @@ end
 
 function PugInspector:_Evaluate()
     if not (IsInGroup and IsInGroup()) then
-        self._groupSig = nil
+        self._groupSig, self._memberSig = nil, nil
         self._autoShown = false
         if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
         return
     end
+
+    -- The open window classifies the group itself (its Refresh). Without the auto-open nothing else reads a
+    -- scan, and a raid's GROUP_ROSTER_UPDATE comes many times a minute: no scan then (memory audit, memoria.md).
+    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
+    if not self:IsAutoOpen() then
+        self._groupSig, self._memberSig = nil, nil
+        return
+    end
+    -- The same members as the last scan: their verdicts were already looked at.
+    local cheap = self:_MemberSig()
+    if cheap == self._memberSig and self._autoShown ~= nil then return end
+    self._memberSig = cheap
 
     local scan = self:Scan()
     local sig = groupSig(scan)
@@ -348,9 +374,7 @@ function PugInspector:_Evaluate()
         self._autoShown = false
     end
 
-    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
-
-    if self:IsAutoOpen() and not self._autoShown then
+    if not self._autoShown then
         for _, e in ipairs(scan) do
             if e.severity == "high" then
                 self._autoShown = true

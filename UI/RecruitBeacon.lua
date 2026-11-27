@@ -3,6 +3,7 @@
 -- Officer composer (create the guild's ad) + recruit inbox (browse/filter
 -- ads heard over the Chehul mesh). Engine: GuildOS.RecruitBeacon.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
@@ -70,7 +71,7 @@ end
 -- A labelled field row; returns the field. The label is a form label in the text colour and the
 -- field the shared one (#371).
 local function MakeInput(parent, y, labelText, width)
-    local lbl = UI:CreateText(parent, labelText, 10, C.text.r, C.text.g, C.text.b)
+    local lbl = UI:CreateText(parent, labelText, UI.SP.META, C.text.r, C.text.g, C.text.b)
     lbl:SetPoint("TOPLEFT", 12, y)
     local box = UI:CreateInput(parent, width, 22)
     box:SetPoint("TOPLEFT", 12, y - 14)
@@ -112,7 +113,7 @@ local function BuildComposer()
     -- selected button (UI:SetSelected, #371), not a fill in its class colour.
     local function Grid(labelText, tokens, field, startY)
         if labelText ~= "" then
-            local lbl = UI:CreateText(f, labelText, 10, C.text.r, C.text.g, C.text.b)
+            local lbl = UI:CreateText(f, labelText, UI.SP.META, C.text.r, C.text.g, C.text.b)
             lbl:SetPoint("TOPLEFT", 12, startY)
         end
         local btns, refresh = {}, nil
@@ -147,7 +148,7 @@ local function BuildComposer()
     y = Grid(L["Languages:"], LANGS, "langs", y - 10)
 
     -- Live-for (TTL) cycle button — how long the ad keeps relaying after we log off.
-    local ttlLbl = UI:CreateText(f, L["Live for (days):"], 10, C.text.r, C.text.g, C.text.b)
+    local ttlLbl = UI:CreateText(f, L["Live for (days):"], UI.SP.META, C.text.r, C.text.g, C.text.b)
     ttlLbl:SetPoint("TOPLEFT", 12, y - 10)
     local ttlBtn = UI:CreateButton(f, "7", 50, 20)
     ttlBtn:SetPoint("LEFT", ttlLbl, "RIGHT", 8, -1)
@@ -171,7 +172,7 @@ local function BuildComposer()
     noteBox:HookScript("OnTextChanged", function(self) RB():SetAdField("note", self:GetText() or "") end)
 
     -- Reach hint + broadcast: the hint over the button it explains, a note in textSoft, not gold (#371)
-    local hint = UI:CreateText(f, L["Yelled zone-wide (cities) + your guild while enabled."], 9, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    local hint = UI:CreateText(f, L["Sent to your guild and to the Guild OS players around while enabled; one officer online sends it."], UI.SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     hint:SetPoint("BOTTOMLEFT", 12, 40)
 
     local castBtn = UI:CreateButton(f, L["Broadcast now"], 120, 24)
@@ -179,7 +180,7 @@ local function BuildComposer()
     castBtn:SetScript("OnClick", function()
         RB():SetAdField("enabled", true)
         enable.checkbox:SetChecked(true)
-        RB():Broadcast()
+        RB():Broadcast(true)
         GuildOS:Print(L["Recruitment beacon sent."])
     end)
 
@@ -230,7 +231,7 @@ local function BuildInbox()
         f.Refresh()
     end
 
-    local status = UI:CreateText(f, "", 9, C.silver.r, C.silver.g, C.silver.b)
+    local status = UI:CreateText(f, "", UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
     status:SetPoint("TOPLEFT", 12, -56)
 
     local LIST_TOP = -72
@@ -251,16 +252,16 @@ local function BuildInbox()
         row.guildFS:SetPoint("TOPLEFT", 8, -5)
 
         row.matchFS = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(row.matchFS, 9)
+        GuildOS:ApplyFont(row.matchFS, UI.SP.META)
         row.matchFS:SetPoint("LEFT", row.guildFS, "RIGHT", 8, 0)
 
         row.needsFS = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(row.needsFS, 10)
+        GuildOS:ApplyFont(row.needsFS, UI.SP.META)
         row.needsFS:SetPoint("TOPLEFT", 8, -22)
         row.needsFS:SetWidth(300); row.needsFS:SetJustifyH("LEFT"); row.needsFS:SetWordWrap(false)
 
         row.noteFS = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(row.noteFS, 9)
+        GuildOS:ApplyFont(row.noteFS, UI.SP.META)
         row.noteFS:SetPoint("TOPLEFT", 8, -34)
         row.noteFS:SetWidth(300); row.noteFS:SetJustifyH("LEFT"); row.noteFS:SetWordWrap(false)
         row.noteFS:SetTextColor(0.6, 0.6, 0.65)

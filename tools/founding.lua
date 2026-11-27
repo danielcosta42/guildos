@@ -208,7 +208,14 @@ check(not digest(month + 3600, month + 7200):find("turned", 1, true), "said once
 local year = F.AddMonths(LAUNCH, 12)
 check(digest(year - DAY, year + 3600):find("Ashen Vow turned 1 year(s) old", 1, true), "a year is a year, not 12 months")
 
-check(F.BADGE:find("|T", 1, true) == 1, "the badge is a texture")
+check(F.BADGE == nil, "the old scroll badge is gone (#449)")
+do
+  local function read(path) local fh = assert(io.open(ADDON .. "/" .. path, "rb")); local t = fh:read("*a"); fh:close(); return t end
+  local md, rf = read("UI/MemberDetail.lua"), read("UI/RosterFrame.lua")
+  check(not md:find("INV_Scroll", 1, true) and not md:find("Founding.BADGE", 1, true) and md:find("Marks.Create(frame.header)", 1, true),
+    "the member card marks a founder with the Members list's banner mark, not the old scroll")
+  check(rf:find('founder = "mark-banner"', 1, true), "the founder's mark is the banner")
+end
 
 -- A founder who leaves loses the badge, and coming back does not bring it back (issue #209).
 local present = {}

@@ -5,9 +5,11 @@
 -- own come from GetProfessionInfo and, recipe by recipe, IsPlayerSpell over the static catalog
 -- (Data/ProfCatalogForever.lua): nobody has to open a window. Members without the addon come
 -- from the Communities roster (the profession, no rank). ProfSync carries the addon records
--- between guildmates; Project() keeps the legacy shapes (members[].professions, db.recipes)
--- that the roster, member detail, recipes panel, tooltips, CraftNet and the export read.
+-- between guildmates. LegacyList() gives the roster and member detail DataCollector's shape; the
+-- recipes panel, tooltips, CraftNet and the alliance directory read these lists through
+-- RecipeTracker:RecipesOf / EachList and the lazy CraftersOf index: no per-member copy (memoria.md).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 if GuildOS.Client.isAnniversary then return end
 
 local Professions = {}
@@ -34,7 +36,7 @@ end
 -- under the key the roster, the fallback and the prune look up.
 function Professions.KeyFor(name)
     if type(name) ~= "string" or name == "" then return nil end
-    return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("-(.+)$"))
+    return GuildOS:KeyOfRosterName(name)
 end
 
 -- Sorted copy of a list of positive integer IDs, duplicates dropped; nil when it is not a
@@ -71,12 +73,16 @@ function Professions:Initialize()
                              "TRADE_SKILL_LIST_UPDATE", "GUILD_ROSTER_UPDATE" }) do
         Compat.RegisterEvent(f, event)
     end
+    Compat.RegisterEvent(f, "PLAYER_LOGOUT")
     f:SetScript("OnEvent", function(_, event, ...) Professions:OnEvent(event, ...) end)
+    GuildOS.db.recipes = nil   -- the view an older version built (audit D4); nothing reads it now
     Compat.After(4, function() Professions:Scan() end)
 end
 
 function Professions:OnEvent(event, arg1)
-    if event == "TRADE_SKILL_LIST_UPDATE" then
+    if event == "PLAYER_LOGOUT" then
+        GuildOS.db.recipes = nil   -- never saved (audit D4): db.professions is what is saved
+    elseif event == "TRADE_SKILL_LIST_UPDATE" then
         self:ScheduleWindow()
     elseif event == "GUILD_ROSTER_UPDATE" then
         self:ReadNative()
@@ -398,9 +404,11 @@ end
 ----------------------------------------------------------------------
 -- Legacy adapter
 ----------------------------------------------------------------------
-function Professions:Changed(key)
+-- A member's record changed: the crafter indexes are rebuilt on their next read (CraftersOf here,
+-- RecipeTracker's item and spell indexes).
+function Professions:Changed(_key)
     self.index = nil
-    self:Project(key)
+    if GuildOS.RecipeTracker and GuildOS.RecipeTracker.Changed then GuildOS.RecipeTracker:Changed() end
 end
 
 -- A member's professions in DataCollector's shape ({ name, rank, maxRank, isPrimary }, canonical
@@ -420,35 +428,6 @@ function Professions:LegacyList(key)
     end
     table.sort(list, function(a, b) return a.name < b.name end)
     return list
-end
-
--- Write db.recipes[key][name] in RecipeTracker's shape ({ name, itemId, spellId }), which the
--- recipes panel, tooltips, CraftFinder, CraftNet and the alliance directory read. It never
--- creates a db.members row: a row there means the member's own client has spoken.
-function Professions:Project(key)
-    local cat = catalog()
-    local rec = GuildOS.db.professions[key]
-    GuildOS.db.recipes = GuildOS.db.recipes or {}
-    local byProf = {}
-    for line, e in pairs((rec and rec.profs) or {}) do
-        local meta = cat.professions[line]
-        local recipes, extra = lists(e)
-        if meta and (#recipes > 0 or #extra > 0) then
-            -- Both lists through this client's catalog: an ID the crafter holds as extra may be one
-            -- this (newer) catalog knows, and the tooltips and CraftFinder look crafters up by item.
-            local out = {}
-            for _, list in ipairs({ recipes, extra }) do
-                for _, id in ipairs(list) do
-                    local r = cat.recipes[id]
-                    local item = r and r[cat.F.out]
-                    out[#out + 1] = { name = Compat.GetSpellInfo(id) or ("#" .. id),
-                                      itemId = (item and item > 0) and item or nil, spellId = id }
-                end
-            end
-            byProf[meta.en] = out
-        end
-    end
-    GuildOS.db.recipes[key] = next(byProf) and byProf or nil
 end
 
 -- The player's own professions in DataCollector's shape, for the member broadcast. Scans first

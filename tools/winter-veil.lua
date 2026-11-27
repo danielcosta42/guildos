@@ -446,6 +446,7 @@ do
   UI.CreateTextArea = function() local f = new(); f.edit = new(); areas[#areas + 1] = f; return f end
   UI.CreateTab = function(_, _, text) local f = new(); f.tabName = text; function f:SetActive() end; tabs[text] = f; return f end
   GuildOS.UI = UI
+  dofile(ADDON .. "/UI/Spacing.lua"); UI.SP = GuildOS.Spacing   -- the spacing standard (#449)
   GuildOS.Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1 } end })
   GuildOS.QualityColors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1 } end })
   GuildOS.L = setmetatable({}, { __index = function(_, k) return k end })
@@ -497,7 +498,7 @@ do
   tab("The guild's chain"); draw()
   check(say("THE GUILD'S CHAIN"), "the chain tab draws")
   officer = true; tab("Organize"); draw()
-  check(say("PARTICIPANTS"), "the officers' table draws")
+  check(say("Participants"), "the officers' table draws")
   tab("My secret friend"); draw()
 
   -- The link to the page says the guild's key, encoded; without a key it is the public page.

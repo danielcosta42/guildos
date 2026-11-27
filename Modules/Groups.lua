@@ -7,6 +7,7 @@
 -- Who is looking stays Modules/LFGBoard.lua; the tab that draws both is UI/GroupsPanel.lua.
 -- Listings are saved (a /reload keeps the board); requests live for the session only.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Groups = {}
 GuildOS.Groups = Groups
 local L = GuildOS.L
@@ -37,6 +38,7 @@ Groups.STARTS = { 0, 900, 1800, 3600 }
 Groups.EXTEND_BY = EXTEND_BY
 
 local function board() return GuildOS.LFGBoard end
+local function quests() return GuildOS.GroupQuests end
 local function myKey() return board():MyKey() end
 
 -- Session only: who asked me, whom I asked, and the cooldowns.
@@ -54,13 +56,18 @@ function Groups:Initialize()
     GuildOS.db.lfgGroups = GuildOS.db.lfgGroups or {}
     state()
     self:Prune()
+    -- My quest log, for "My quests" (#450): started here, with the groups it serves.
+    if quests() then quests():Initialize() end
     if not self.frame then
         self.frame = CreateFrame("Frame")
         GuildOS.Compat.RegisterEvent(self.frame, "GROUP_ROSTER_UPDATE")
         GuildOS.Compat.RegisterEvent(self.frame, "CHAT_MSG_WHISPER")
+        GuildOS.Compat.RegisterEvent(self.frame, "GUILD_ROSTER_UPDATE")
         self.frame:SetScript("OnEvent", function(_, event, text, sender)
             if event == "CHAT_MSG_WHISPER" then
                 GuildOS:SafeCall(Groups.OnWhisper, Groups, text, sender)
+            elseif event == "GUILD_ROSTER_UPDATE" then
+                GuildOS:SafeCall(Groups.OnGuildRoster, Groups)
             else
                 GuildOS:SafeCall(Groups.OnGroupRoster, Groups)
             end
@@ -157,9 +164,12 @@ function Groups:_BuildGroup(p, now)
     local max = clampInt(p.max, 2, SIZE_MAX, self:SizeOf(act))
     -- A start, as seconds from when the listing was said (#378): never before it, never after it ends.
     local startIn = clampInt(p.startIn, 0, ttl - age, 0)
+    local Q = quests()
     return {
         start = startIn > 0 and (now + startIn) or nil,
         act = act,
+        -- The quest it is for (#450): id and title, checked; a client before #450 reads only `act`.
+        quest = Q and Q:_SanitizeQuest(p.quest) or nil,
         note = GuildOS:SanitizeUserText(p.note, NOTE_MAX),
         need = self:_SanitizeNeed(p.need, max - 1),
         n = clampInt(p.n, 1, max, 1),
@@ -191,16 +201,51 @@ function Groups:Prune(now, store)
     return removed
 end
 
+-- Whoever is not online any more (logged off, or left the guild) leaves the board, on every client
+-- (#449): a leader offline invites nobody, a player offline joins nothing, and what I asked of a
+-- leader who left, or who asked me, goes with them. Nothing is said on the wire: when they come back
+-- their own client answers the login's request with what is still up (CommSystem:HandleRequest), at
+-- its real age. Only with a roster that has me online in it: an empty one at login says nothing. An entry
+-- heard after the roster was last read (entry.rx, stamped on arrival, against rosterAt: the last
+-- GUILD_ROSTER_UPDATE) stays: somebody who logged in and listed since is simply not in that roster yet.
+-- onlineSet and rosterAt are injectable for the tests. Returns how many entries it dropped.
+function Groups:SweepOffline(onlineSet, rosterAt)
+    onlineSet = onlineSet or board():_BuildOnlineRoster()
+    rosterAt = rosterAt or self.rosterAt
+    local me = myKey()
+    if not onlineSet or not onlineSet[me] then return 0 end
+    local dropped, s = 0, state()
+    local function fresh(entry) return type(entry) == "table" and entry.rx and (not rosterAt or entry.rx >= rosterAt) end
+    local kept = {}
+    for _, store in ipairs({ GuildOS.db.lfgGroups or {}, GuildOS.db.lfgBoard or {} }) do
+        for key, entry in pairs(store) do
+            if fresh(entry) then kept[key] = true end
+            if key ~= me and not onlineSet[key] and not fresh(entry) then
+                store[key] = nil
+                dropped = dropped + 1
+            end
+        end
+    end
+    for key in pairs(s.asked) do
+        if not onlineSet[key] and not kept[key] then s.asked[key] = nil; dropped = dropped + 1 end
+    end
+    for key in pairs(s.requests) do
+        if not onlineSet[key] and not kept[key] then s.requests[key] = nil; dropped = dropped + 1 end
+    end
+    return dropped
+end
+
 -- The groups being formed, newest first. onlineSet (optional): { [key] = true } of members online;
 -- a leader who logged off cannot invite anybody.
 function Groups:ActiveList(store, now, onlineSet)
     local out = {}
     for key, g in pairs(store or {}) do
-        if board():_IsActive(g, now) and (not onlineSet or onlineSet[key]) then
+        -- A group with no spot left is formed, not being formed: it is not listed (#449).
+        if board():_IsActive(g, now) and (not onlineSet or onlineSet[key]) and self:OpenSpots(g.need) > 0 then
             out[#out + 1] = {
                 key = key, name = key:match("^([^-]+)") or key, from = g.from,
                 act = g.act, note = g.note or "", need = g.need or {}, n = g.n or 1, max = g.max or SIZE_DEFAULT,
-                ts = g.ts, ttl = g.ttl, start = g.start,
+                ts = g.ts, ttl = g.ttl, start = g.start, quest = g.quest,
             }
         end
     end
@@ -218,11 +263,15 @@ function Groups:Counts(now, onlineSet, groupStore, seekerStore)
         out[act] = out[act] or { groups = 0, seekers = 0 }
         return out[act]
     end
+    -- A quest (#450) counts under its id, a number: no activity id is one.
     for _, g in ipairs(self:ActiveList(groupStore or GuildOS.db.lfgGroups, now, onlineSet)) do
         at(g.act).groups = at(g.act).groups + 1
+        if g.quest then at(g.quest.id).groups = at(g.quest.id).groups + 1 end
     end
     for _, e in ipairs(board():ActiveList(seekerStore or GuildOS.db.lfgBoard, now, onlineSet)) do
         for _, act in ipairs(e.acts) do at(act).seekers = at(act).seekers + 1 end
+        for _, q in ipairs(e.quests) do at(q.id).seekers = at(q.id).seekers + 1 end
+        for _, id in ipairs(e.shared) do at(id).seekers = at(id).seekers + 1 end
     end
     return out
 end
@@ -276,7 +325,7 @@ local function payloadOf(g, now)
     if age < 0 then age = 0 end
     local startIn = g.start and (g.start - now) or 0
     return { act = g.act, note = g.note, need = g.need, n = g.n, max = g.max, ttl = g.ttl, age = age,
-             startIn = startIn > 0 and startIn or nil }
+             startIn = startIn > 0 and startIn or nil, quest = g.quest }
 end
 
 -- Seconds until a group starts, or nil for one that already has (or never named a start) (#378).
@@ -311,8 +360,11 @@ end
 
 -- List my group, or change the one I have. Returns the stored listing, or nil and why not.
 -- `toGuild` is the composer's box, as on the board: one line in guild chat, five minutes apart.
-function Groups:Create(act, need, note, ttl, toGuild, startIn)
+-- `quest` ({ id, t }, #450): the quest of my log the group is for; its activity is then Elite quests.
+function Groups:Create(act, need, note, ttl, toGuild, startIn, quest)
     local B = board()
+    quest = quest and quests() and quests():_SanitizeQuest(quest) or nil
+    if quest then act = B.QUEST_ACT end
     act = B:_SanitizeAct(act)
     if not act then return nil, L["Pick what the group is for."] end
     if not GuildOS.Compat.CanInvite() then return nil, L["Only the group's leader can list it."] end
@@ -325,11 +377,11 @@ function Groups:Create(act, need, note, ttl, toGuild, startIn)
     startIn = clampInt(startIn, 0, ttl - 60, 0)
     local g = {
         act = act, note = GuildOS:SanitizeUserText(note, NOTE_MAX), need = need,
-        n = count, max = max, ts = now, ttl = ttl, start = startIn > 0 and (now + startIn) or nil,
+        n = count, max = max, ts = now, ttl = ttl, start = startIn > 0 and (now + startIn) or nil, quest = quest,
     }
     -- Whoever asked for a spot asked for the group that was listed: another activity is another group.
     local was = self:Mine()
-    if not was or was.act ~= act then self:_CloseQueue() end
+    if not was or was.act ~= act or self:_QuestId(was) ~= self:_QuestId(g) then self:_CloseQueue() end
     GuildOS.db.lfgGroups[myKey()] = g
     GuildOS.db.lfgPrefs.lastTtl = ttl
     -- Whoever forms a group is not looking for one, nor waiting on somebody else's.
@@ -349,10 +401,19 @@ function Groups:Create(act, need, note, ttl, toGuild, startIn)
     return g
 end
 
+function Groups:_QuestId(g) return g and g.quest and g.quest.id end
+
+-- What a group is for, as its card and its line name it: its quest's title (#450, my log's where I have
+-- it), else its activity.
+function Groups:Title(g)
+    if g and g.quest and quests() then return quests():Title(g.quest.id, g.quest.t) end
+    return board():ActivityName(g and g.act)
+end
+
 -- The line in guild chat for a group: what for, how full, the spots, the note, and, when I invite
 -- whoever asks, the word that gets a guildmate with no addon an invite (#378).
 function Groups:_GuildLine(g)
-    local name = string.format("%s (%d/%d)", board():ActivityName(g.act), g.n or 1, g.max or SIZE_DEFAULT)
+    local name = string.format("%s (%d/%d)", self:Title(g), g.n or 1, g.max or SIZE_DEFAULT)
     local line = string.format(L["[Guild OS] Group for %s, looking for %s"], name, self:NeedText(g.need))
     if g.note and g.note ~= "" then line = line .. ": " .. g.note end
     local startIn = self:StartsIn(g)
@@ -365,6 +426,13 @@ end
 -- with the spots it has by then. A line the cooldown or the game held back is tried next minute.
 function Groups:Tick(now)
     now = now or GetServerTime()
+    -- Stale listings leave the board on their own, with the tab closed too (#449): what expired, and
+    -- whoever is no longer online to form or join anything.
+    local dropped = self:Prune(now) + board():Prune(now)
+    if dropped > 0 then board():Refresh() end
+    -- Who went offline is read from a fresh roster: asked for here, swept when it lands (OnGuildRoster).
+    self.sweepPending = true
+    GuildOS.Compat.GuildRoster()
     self:_WarnExpiring(now)
     local g = self:Mine()
     if not g or not g.announce or self:OpenSpots(g.need) == 0 then return false end
@@ -372,6 +440,17 @@ function Groups:Tick(now)
     if not board():_SayInGuild(nil, nil, nil, self:_GuildLine(g)) then return false end
     g.announcedAt = now
     return true
+end
+
+-- The guild's roster landed (GUILD_ROSTER_UPDATE): its time is when it was read, and the sweep a Tick asked
+-- for runs against it.
+function Groups:OnGuildRoster(now)
+    self.rosterAt = now or GetServerTime()
+    if not self.sweepPending then return 0 end
+    self.sweepPending = false
+    local dropped = self:SweepOffline()
+    if dropped > 0 then board():Refresh() end
+    return dropped
 end
 
 -- My group or my own listing ends in WARN_BEFORE: say so once, with "+30 min" one click away
@@ -441,15 +520,28 @@ end
 
 -- The players looking who fit my group: they want its activity (or anything) and play a role it has
 -- a spot for, with that role (#378). Newest first, as the board. Nobody already asked or invited.
+-- For a group for a quest (#450), whoever names that quest (picked, or shared from their log) fits too,
+-- marked `quest`, and comes first.
 function Groups:Matches(now, onlineSet)
     local g = self:Mine()
     if not g then return {} end
     local out, s = {}, state()
+    local qid, Q = self:_QuestId(g), quests()
+    local nQuest = 0
     for _, e in ipairs(board():ActiveList(GuildOS.db.lfgBoard, now, onlineSet)) do
-        local wants = #(e.acts or {}) == 0
+        local onQuest = qid ~= nil and Q ~= nil and Q:Lists(e, qid)
+        local wants = onQuest or #(e.acts or {}) == 0
         for _, id in ipairs(e.acts or {}) do wants = wants or id == g.act end
         local role = wants and e.key ~= myKey() and not s.requests[e.key] and self:BestRole(g.need, e.roles or "")
-        if role then out[#out + 1] = { key = e.key, name = e.name, role = role, entry = e } end
+        if role then
+            local m = { key = e.key, name = e.name, role = role, entry = e, quest = onQuest or nil }
+            if onQuest then
+                nQuest = nQuest + 1
+                table.insert(out, nQuest, m)
+            else
+                out[#out + 1] = m
+            end
+        end
     end
     return out
 end
@@ -517,19 +609,29 @@ function Groups:HandleGroup(sender, data, channel)
         local wasActive = board():_IsActive(was, now)
         local g, age = self:_BuildGroup(p, now)
         if not g then return end
+        -- A listing with no spot left is a group that filled (#449): it closes, as a take-down does.
+        if self:OpenSpots(g.need) == 0 then
+            store[key] = nil
+            state().asked[key] = nil
+            board():Refresh()
+            return
+        end
         g.from = sender
+        g.rx = now   -- heard now: a roster read before this has not seen them online yet (SweepOffline)
         store[key] = g
         -- What I asked, I asked of the group that was listed.
-        if not wasActive or was.act ~= g.act then state().asked[key] = nil end
+        if not wasActive or was.act ~= g.act or self:_QuestId(was) ~= self:_QuestId(g) then state().asked[key] = nil end
         if age == 0 and not wasActive and key ~= myKey() then self:_Announce(key, short, g) end
     end
     board():Refresh()
 end
 
 -- Whether a new group is worth a notice on screen (#378): one this client knows, for my level, and
--- me free to take it: out of combat, in no group, leading none. The rest still reach the board.
-function Groups:_ShouldToast(g, level, inCombat, inGroup)
-    if pref("toast") == false or inCombat or inGroup or self:Mine() then return false end
+-- me free to take it: in no group, leading none. The rest still reach the board. Combat does not drop
+-- it any more (#449): the notice goes through GuildOS:ShowWhenClear, which holds it until combat ends,
+-- and it checks the group still has my spot when it shows.
+function Groups:_ShouldToast(g, level, inGroup)
+    if pref("toast") == false or inGroup or self:Mine() then return false end
     return self:FitsLevel(g.act, level) and self:BestRole(g.need, board():Pref("roles") or "") ~= nil
 end
 
@@ -537,17 +639,35 @@ end
 -- chat line of #341 otherwise (when notices in chat are on).
 function Groups:_Announce(key, short, g)
     local inGroup = (GetNumGroupMembers and (GetNumGroupMembers() or 0) > 1) or false
-    local inCombat = (InCombatLockdown and InCombatLockdown()) and true or false
-    if GuildOS.GroupsToast and self:_ShouldToast(g, UnitLevel and UnitLevel("player"), inCombat, inGroup) then
+    if GuildOS.GroupsToast and self:_ShouldToast(g, UnitLevel and UnitLevel("player"), inGroup) then
         GuildOS:SafeCall(GuildOS.GroupsToast, GuildOS, { kind = "group", key = key, name = short, act = g.act,
-            need = g.need, note = g.note })
+            need = g.need, note = g.note, quest = g.quest })
         return "toast"
     end
     if pref("notify") then
-        GuildOS:Print(string.format(L["%s is forming a group for %s."], short, board():ActivityName(g.act)))
+        GuildOS:Print(string.format(L["%s is forming a group for %s."], short, self:Title(g)))
         return "chat"
     end
     return nil
+end
+
+-- Whether a notice queued behind combat or another window still says something true when it shows
+-- (#449): the group is still up with a spot in a role of mine, the request is still waiting, my
+-- listing is still mine. n is the notice GroupsToast was given.
+function Groups:StillTrue(n, now)
+    if type(n) ~= "table" then return false end
+    now = now or GetServerTime()
+    if n.kind == "group" then
+        local g = GuildOS.db.lfgGroups and GuildOS.db.lfgGroups[n.key]
+        if not board():_IsActive(g, now) or self:Mine() or self:Asked(n.key) then return false end
+        return self:BestRole(g.need, board():Pref("roles") or "") ~= nil
+    elseif n.kind == "request" then
+        local r = state().requests[n.key]
+        return r ~= nil and r.state == "pending" and self:Mine() ~= nil
+    elseif n.kind == "expiring" then
+        return (n.what == "group" and self:Mine() or board():Mine()) ~= nil
+    end
+    return false
 end
 
 ----------------------------------------------------------------------
@@ -648,10 +768,26 @@ function Groups:OnWhisper(text, sender, schedule)
     local members = GuildOS.Compat.GroupRoster()
     if GuildOS.Compat.InGroup(members, key) then return false end
     if rateLimited(state().whisperCd, key, WHISPER_COOLDOWN, schedule) then return false end
-    self:_RaidUp(g)
-    GuildOS.Compat.InviteUnit(sender)
-    GuildOS:Print(string.format(L["Inviting %s, who whispered for a spot."], short))
-    return true
+    local function invite()
+        self:_RaidUp(g)
+        GuildOS.Compat.InviteUnit(sender)
+        GuildOS:Print(string.format(L["Inviting %s, who whispered for a spot."], short))
+        return true
+    end
+    -- From the whisper's event: where the game drops an invite an addon sends from one (WoW: Forever, Compat
+    -- .NeedsHardware, /gos probe invite), it waits for the officer action queue's key press or click (#449).
+    local AQ = GuildOS.ActionQueue
+    if AQ and GuildOS.Compat.NeedsHardware("groupInvite") then
+        AQ:Add({ kind = "groupInvite", key = "group:" .. key, name = short,
+                 valid = function()
+                     local mine = self:Mine()
+                     return mine ~= nil and self:OpenSpots(mine.need) > 0
+                         and not GuildOS.Compat.InGroup(GuildOS.Compat.GroupRoster(), key)
+                 end,
+                 run = invite })
+        return true
+    end
+    return invite()
 end
 
 function Groups:Decline(key)
@@ -766,6 +902,13 @@ function Groups:OnGroupRoster(members, count)
     local joined = false
     for key in pairs(s.asked) do
         if here(key) then joined = true end
+    end
+    -- In the party of a guildmate's listed group, asked or invited, I am no longer looking (#449): an
+    -- invite from the leader's "Invite" left my own listing up for as long as it had.
+    if not joined and not g and board():AmAvailable() then
+        for key in pairs(GuildOS.db.lfgGroups or {}) do
+            if key ~= myKey() and here(key) then joined = true end
+        end
     end
     if joined then
         local others = {}

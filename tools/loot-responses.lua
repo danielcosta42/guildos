@@ -88,6 +88,7 @@ function UnitName(unit)
   return i and raid[i] or nil
 end
 function UnitExists(unit) return UnitName(unit) ~= nil end
+function UnitFullName(unit) return UnitName(unit) end
 C_Timer = { After = function() end, NewTicker = function() return { Cancel = function() end } end,
   NewTimer = function() return { Cancel = function() end } end }
 Enum = { SendAddonMessageResult = {} }
@@ -374,6 +375,15 @@ check(LM:IsFromMasterLooter("Ana") == false, "two raiders called Ana: the first 
 check(LM:IsFromMasterLooter("Ana Lima") == true and LM:IsFromMasterLooter("Ana Costa") == false, "the whole name still is")
 apart.raid2 = { "Bo", "Reis" }
 check(LM:IsFromMasterLooter("Ana") == true and LM:SenderRaidIndex("Bo") == 2, "and a first name only one raider has is theirs, with the surname handed apart")
+-- Audit R4: a /roll or an answer follows the same rule, never the first raider who shares the first name.
+apart.raid2 = { "Ana", "Costa" }
+check(LM:RaidRollerName("Ana") == nil, "a /roll by a first name two raiders share is nobody's")
+check(LM:RaidRollerName("Ana Costa") == "Ana Costa" and LM:RaidRollerName("Ana-Costa") == "Ana Costa",
+  "the whole name, or Forever's hyphenated sender, is the one raider's")
+apart.raid2 = { "Bo", "Reis" }
+check(LM:RaidRollerName("Ana") == "Ana Lima" and LM:RaidRollerName("Bo") == "Bo Reis",
+  "a first name only one raider has is theirs, whole")
+check(LM:RaidRollerName("Zed") == nil, "and somebody outside the raid is nobody")
 GuildOS.Compat.UnitIdentity = realIdentity
 raid[1], raid[2] = "Lead", "Ana"
 GuildOS.Client.has.surnames = false
@@ -752,10 +762,26 @@ GuildOS.IsOfficer = function() return false end
 published = {}
 res = rollOff({ { "Cy", "MS", 90 }, { "Dee", "MS", 10 } })
 sid = LM.activeLoot.sid
+local mlRule = LM:Rule()
 quiet()
 LM:AwardLoot("Cy")
 check(P:Counter("plus1", K("Cy")) == 1 and #published == 0, "a master looter who is no officer keeps the +1 and publishes nothing")
-local won = ("WON|%s|28770|MS|Cy"):format(sid)
+-- With the fingerprint of the rule the item was given by (audit L9).
+local fp = LR:Fingerprint(mlRule)
+check(type(fp) == "string" and fp:find("^%x%x%x%x%x%x%x%x$") and LR:Fingerprint(copyOf(mlRule)) == fp,
+  "a rule's fingerprint is eight hex digits, the same for the same rule")
+-- L9: only what the counters depend on: two officers' copies of a legacy rule that differ elsewhere match.
+do
+  local a = LR:FromLegacy("wishlist", { minAttendancePct = 40 })
+  local b = LR:FromLegacy("wishlist", {})
+  b.model, b.v = "tmb", (b.v or 1) + 1
+  check(LR:Fingerprint(a) == LR:Fingerprint(b), "L9: minAttendancePct, v and tmb/wishlist do not move the fingerprint")
+  local c = copyOf(a); c.responses[1].plus = false
+  check(LR:Fingerprint(c) ~= LR:Fingerprint(a), "L9: an answer's +1 does")
+  check(LR:Fingerprint(LR:FromLegacy("plus1")) ~= LR:Fingerprint(a), "L9: and so do accounts and effects")
+  check(LM:RuleByFingerprint(LR:FingerprintWhole(LR:Active())) ~= nil, "L9: an old master looter's whole-rule fingerprint is still read")
+end
+local won = ("WON|%s|28770|MS|Cy|%s"):format(sid, fp)
 local toldWon = false
 for _, payload in ipairs(sent) do toldWon = toldWon or payload == won end
 check(toldWon, "and tells the raid who won with which answer: " .. all(sent))
@@ -803,6 +829,25 @@ check(P:Counter("plus1", K("Cy")) == 1, "two officers in the raid add up to one 
 GuildOS.db.points = scratch
 P:OnSync({ act = "cdelta", data = { entries = { copyOf(wonEntry) } } })
 check(P:Counter("plus1", K("Cy")) == 1, "and the master looter's own client, hearing the officers, counts it once")
+-- Audit L9: an officer whose own rule is not the master looter's applies none, and says so; a WON from a
+-- version before the fingerprint is still read, by the officer's own rule.
+local third = copyOf(mine)
+third.config = mine.config
+GuildOS.db.points = third
+GuildOS.IsOfficer = function() return true end
+LM.heard = { sender = "Lead-Realm", sid = sid }
+quiet()
+LM:OnAddonMessage(LM.PREFIX, ("WON|%s|28770|MS|Cy|DEADBEEF"):format(sid), "RAID", "Lead-Realm")
+check(P:Counter("plus1", K("Cy")) == 0 and #printed == 1 and printed[1]:find("does not have", 1, true),
+  "a rule this client does not hold moves no counter, and the officer is told: " .. all(printed))
+LM.heard = { sender = "Lead-Realm", sid = sid }
+LM:OnAddonMessage(LM.PREFIX, ("WON|%s|28770|MS|Cy"):format(sid), "RAID", "Lead-Realm")
+check(P:Counter("plus1", K("Cy")) == 1, "the old WON, with no fingerprint, is read as before")
+LM.heard = { sender = "Lead-Realm", sid = sid }
+GuildOS.db.points = copyOf(mine)
+GuildOS.db.points.config = mine.config
+LM:OnAddonMessage(LM.PREFIX, won, "RAID", "Lead-Realm")
+check(P:Counter("plus1", K("Cy")) == 1, "and the fingerprint of a rule this client holds is applied by that rule")
 GuildOS.IsOfficer, GuildOS.IsOfficerByName = isOfficer, isOfficerByName
 isML = true
 published = {}
@@ -1074,6 +1119,7 @@ GuildOS.UI = setmetatable({
     return box.saveButton
   end,
 }, { __index = function() return function() return widget() end end })
+dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/Layout.lua")
 -- The newest dropdown that offers `text`, and whether one does; `choose` picks it there.
 local function offered(text)
@@ -1260,4 +1306,22 @@ check(drewAccounts, "the Accounts tab draws: " .. tostring(whyNot))
 local settingsBtn = button("Account settings")
 check(settingsBtn, "with its settings behind one button")
 math.random = realRandom
+
+-- Audit R20: Settings' loot tests never overwrite a real roll in progress.
+do
+  local heldLoot, heldTest, heldPopup = LM.activeLoot, LM.testMode, LM.rollPopup
+  LM.testMode, LM.rollPopup = false, nil
+  LM.activeLoot = { link = "real", itemId = 1 }
+  check(LM:RollOpen(), "an item in hand is a roll open")
+  LM.activeLoot = nil
+  check(not LM:RollOpen(), "no item, no popup: none")
+  LM.rollPopup = { IsShown = function() return true end }
+  check(LM:RollOpen(), "a raider's popup on screen is one too")
+  LM.testMode = true
+  check(not LM:RollOpen(), "a test's own leftovers are not")
+  LM.activeLoot, LM.testMode, LM.rollPopup = heldLoot, heldTest, heldPopup
+  local sp = assert(io.open(ADDON .. "/UI/SettingsPanel.lua", "rb")):read("*a")
+  local _, guards = sp:gsub("if rollOpen%(%) then return end\n%s*LM%.testMode = true", "")
+  check(guards == 4, "each of Settings' four loot tests refuses while a roll is open")
+end
 print(("loot-responses: %d checks passed"):format(checks))

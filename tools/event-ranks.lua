@@ -115,7 +115,6 @@ check(not SS:Validate(forged, "Mem", "GUILD"), "a member's own guildcfg is dropp
 local function env(act) return { v = 2, id = act .. "1", dom = "event", act = act, data = {} } end
 check(SS:Validate(env("create"), "Mem", "GUILD") and SS:Validate(env("cancel"), "Mem", "GUILD"), "a creator's create and cancel go through")
 check(not SS:Validate(env("create"), "Mem", "WHISPER"), "only over GUILD")
-check(not SS:Validate(env("allyRsvp"), "Mem", "GUILD"), "seating an allied player stays an officer's")
 GuildOS.db.settings.eventMaxRank = nil
 check(not SS:Validate(env("create"), "Mem", "GUILD"), "with the officers alone, a member's event is dropped again")
 

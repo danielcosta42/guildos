@@ -156,7 +156,7 @@ end
 
 -- A size this game lacks (a 25 saved by a version that only knew TBC) reads as the default.
 function CoreManager:GetRaidSize(coreName)
-    local core = self:GetCore(coreName)
+    local core = self:FindCore(coreName)
     local size = core and core.raidSize
     if isSizeOfThisGame(size) then return size end
     local _, default = sizesOfThisGame()
@@ -593,6 +593,16 @@ function CoreManager:GetCore(name)
     return GuildOS.db.cores[name]
 end
 
+-- The core table for `name` (the active core when nil), or nil when there is none: never made here.
+-- What only reads a core's settings asks this, so a look at a name no core has creates none (audit
+-- R19); GetCore, which makes one on demand, is for what writes.
+function CoreManager:FindCore(name)
+    if name == nil then name = self:GetActiveName() end
+    if type(name) ~= "string" or name == "" then return nil end
+    local core = GuildOS.db.cores and GuildOS.db.cores[name]
+    return type(core) == "table" and core or nil
+end
+
 -- Alphabetically sorted list of named core names.
 function CoreManager:GetSortedNames()
     local names = {}
@@ -620,7 +630,7 @@ local function lmField(core, key)
 end
 
 function CoreManager:GetLootConfig(coreName)
-    local core = self:GetCore(coreName)
+    local core = self:FindCore(coreName)
     return {
         rollDuration     = lmField(core, "rollDuration"),
         autoAnnounce     = lmField(core, "autoAnnounce"),
@@ -634,7 +644,7 @@ function CoreManager:GetLootConfig(coreName)
         dkpMinBid        = lmField(core, "dkpMinBid"),
         dkpBidTime       = lmField(core, "dkpBidTime"),
         -- The core's own choice (issue #338), never the guild's: nil follows the guild.
-        lootSystem       = core and core.lootMaster and core.lootMaster.lootSystem or nil,
+        lootSystem       = core and core.lootMaster and GuildOS.LootSystemKey(core.lootMaster.lootSystem) or nil,
         rule             = core and core.lootMaster and core.lootMaster.rule or nil,
     }
 end
@@ -663,7 +673,8 @@ end
 function CoreManager:GetLootSystem(coreName)
     local core = coreNamed(self, coreName)
     local sys = core and core.lootMaster and core.lootMaster.lootSystem
-    return type(sys) == "string" and sys or nil
+    -- A core saved with "tmb" reads as the wishlist it was (audit R8, B16).
+    return type(sys) == "string" and GuildOS.LootSystemKey(sys) or nil
 end
 
 function CoreManager:GetLootRule(coreName)
@@ -731,6 +742,7 @@ function CoreManager:OnLootSync(env)
     local sys, rule = d.sys, d.rule
     if sys == false then sys = nil end
     if rule == false then rule = nil end
+    if type(sys) == "string" then sys = GuildOS.LootSystemKey(sys) end   -- "tmb" from before (audit R8, B16)
     if sys ~= nil and (type(sys) ~= "string" or not GuildOS:IsLootSystemHere(sys)) then return false end
     if rule ~= nil and not (GuildOS.LootRule and GuildOS.LootRule:Validate(rule)) then return false end
     at = math.min(at, GetServerTime() + LOOT_FUTURE_SLACK)
@@ -754,44 +766,8 @@ function CoreManager:SetLootConfigKey(key, value, coreName)
     end
 end
 
-----------------------------------------------------------------------
--- TMB (That's My BiS) priority list — stored per core
-----------------------------------------------------------------------
-function CoreManager:GetTMBList(coreName)
-    local core = self:GetCore(coreName)
-    if not core then return {} end
-    if not core.lootMaster then core.lootMaster = {} end
-    if not core.lootMaster.tmbList then core.lootMaster.tmbList = {} end
-    return core.lootMaster.tmbList
-end
-
-function CoreManager:SetTMBList(list, coreName)
-    local core = self:GetCore(coreName)
-    if not core then return end
-    if not core.lootMaster then core.lootMaster = {} end
-    core.lootMaster.tmbList = list or {}
-end
-
--- Parses a CSV paste from TMB export: one entry per line, "player,item,priority"
--- Lines starting with # are treated as comments and skipped.
-function CoreManager:ParseTMBImport(text)
-    local list = {}
-    for line in (text or ""):gmatch("[^\r\n]+") do
-        line = strtrim(line)
-        if line ~= "" and not line:match("^#") and not line:match("^[Cc]haracter") then
-            local player, item, prio = line:match("^([^,\t]+)[,\t]([^,\t]+)[,\t]?(%d*)")
-            if player and item then
-                list[#list + 1] = {
-                    player   = strtrim(player),
-                    item     = strtrim(item),
-                    priority = tonumber(prio) or 1,
-                }
-            end
-        end
-    end
-    return list
-end
-
+-- The TMB (That's My BiS) import is gone (audit R8, B16): nothing called it, and the "tmb" system is the
+-- wishlist. A list saved by it before (core.lootMaster.tmbList) is still sent to the site (CompanionExport).
 ----------------------------------------------------------------------
 -- Returns the awardHistory table for the active (or named) core.
 function CoreManager:GetAwardHistory(coreName)
@@ -818,7 +794,7 @@ end
 -- change a thing.
 ----------------------------------------------------------------------
 function CoreManager:GetPenalties(coreName)
-    local core = self:GetCore(coreName)
+    local core = self:FindCore(coreName)
     local own = core and core.attendance and core.attendance.penalties or {}
     local guild = GuildOS.db.attendancePenalties or {}
     local out = {}
@@ -929,7 +905,7 @@ end
 -- Core roster — rich member records { name, class, role, note }
 ----------------------------------------------------------------------
 function CoreManager:GetMembers(coreName)
-    local core = self:GetCore(coreName)
+    local core = self:FindCore(coreName)
     if not core then return {} end
     if not core.members then core.members = {} end
     return core.members
@@ -1275,7 +1251,7 @@ end
 -- Sign-up queue — player applications to join a core
 ----------------------------------------------------------------------
 function CoreManager:GetSignups(coreName)
-    local core = self:GetCore(coreName)
+    local core = self:FindCore(coreName)
     if not core then return {} end
     if not core.signups then core.signups = {} end
     return core.signups
@@ -2236,7 +2212,16 @@ end
 function CoreManager:LootRuleFromSite(coreName)
     if not (self:IsLinked() and self:IsFromDiscord(coreName)) then return false end
     local roster = GuildOS.db and GuildOS.db.companionRoster
-    return type(roster) == "table" and type(roster.lootRule) == "table"
+    if not (type(roster) == "table" and type(roster.lootRule) == "table") then return false end
+    -- Only a rule that will really play (audit L6): one the addon refused, or a night already over, leaves
+    -- the core's own rule in force and its editor open.
+    local LR = GuildOS.LootRule
+    if not (LR and LR.NightStatus) then return true end
+    local status = LR:NightStatus()
+    if status == "active" then return true end
+    if status ~= "waiting" then return false end
+    local startsAt = tonumber(roster.startsAt) or 0
+    return startsAt > 0 and GetServerTime() <= startsAt + 8 * 3600
 end
 
 function CoreManager:BroadcastRoster(coreName)

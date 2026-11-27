@@ -46,7 +46,7 @@ local function build()
     prev:SetScript("OnClick", function() move(-1) end)
     nextB:SetScript("OnClick", function() move(1) end)
 
-    local note = UI:CreateText(f, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    local note = UI:CreateText(f, "", UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
     note:SetPoint("TOP", dateFS, "BOTTOM", 0, -6)
     f.note = note
 
@@ -99,6 +99,10 @@ end
 -- At login, to the GM of a guild with no founding yet (Core.lua after the onboarding).
 function GuildOS:MaybeShowFoundingLetter()
     if self.Founding and self:IsFeatureEnabled("founding") and self.Founding:ShouldPrompt(GetServerTime()) then
-        self:ShowFoundingLetter(true)
+        -- Never in combat, and one login popup at a time (audit B21).
+        self:ShowWhenClear("founding", function()
+            self:ShowFoundingLetter(true)
+            return self.foundingFrame
+        end)
     end
 end

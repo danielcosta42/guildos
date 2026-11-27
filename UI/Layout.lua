@@ -4,6 +4,7 @@
 -- how a button bar wraps. The three resolvers are pure functions of
 -- their arguments so /gos selftest can exercise them with no frames.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 
 ----------------------------------------------------------------------
@@ -212,8 +213,10 @@ function UI:BindScrollChildWidth(scrollFrame, child, inset)
     local gutter = UI.SCROLL_GUTTER
     inset = math.max(inset or 0, type(gutter) == "number" and gutter or 12)
     local function apply()
-        local w = scrollFrame:GetWidth()
-        if w and w > 1 then child:SetWidth(math.max(1, w - inset)) end
+        -- LaidWidth: a scroll frame placed by its anchors reads 0 until the game lays it out (#449).
+        local w = UI.LaidWidth and UI:LaidWidth(scrollFrame)
+        if type(w) ~= "number" or w <= 1 then w = scrollFrame:GetWidth() end
+        if type(w) == "number" and w > 1 then child:SetWidth(math.max(1, w - inset)) end
     end
     scrollFrame:SetScript("OnSizeChanged", apply)
     scrollFrame:HookScript("OnShow", apply)

@@ -9,6 +9,7 @@
 -- (OFFICER_DOMAINS); the answer, "going", is a member action. The call is a live alert, not
 -- a record: nothing is saved but an officer's own templates and each player's settings.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local CTA = {}
 GuildOS.CallToArms = CTA
 local L = GuildOS.L
@@ -365,12 +366,17 @@ function CTA:PaintCount(e)
     if e.answered then f.go:Disable() else f.go:Enable() end
 end
 
+-- Never in combat, one popup at a time (audit B21): a call heard mid-fight shows once it ends.
 function CTA:ShowPopup(e)
+    GuildOS:ShowWhenClear("cta", function() return CTA:_ShowPopupNow(e) end)
+end
+
+function CTA:_ShowPopupNow(e)
     local f = self.popup or self:BuildPopup()
     local k = self:Kind(e.kind)
     f.callId = e.id
     f.icon:SetTexture(k.icon)
-    f.title:SetText(e.title)
+    GuildOS:SetTitleText(f.title, e.title)
     f.text:SetText(e.text)
     local where = e.zone or ""
     if e.x and e.y then where = string.format("%s (%.1f, %.1f)", where, e.x, e.y) end
@@ -382,4 +388,5 @@ function CTA:ShowPopup(e)
     self.hideTimer = C_Timer.NewTimer(self.SHOW_FOR, function()
         if f.callId == e.id then f:Hide() end
     end)
+    return f
 end

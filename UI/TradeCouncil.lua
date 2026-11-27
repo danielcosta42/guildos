@@ -4,6 +4,7 @@
 -- picked: who wants it, what they wear in that slot, their roll, wishlist place, points and
 -- attendance. Visual layer only: every action is a TradeCouncil method (Rule 10).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
@@ -81,7 +82,7 @@ local function build()
 
     local title = UI:CreateTitle(f, L["Loot Council"], 16)
     title:SetPoint("TOPLEFT", PAD, -12)
-    local sub = UI:CreateText(f, L["Offer an item you can still trade: the raid answers, and it is awarded."], 9,
+    local sub = UI:CreateText(f, L["Offer an item you can still trade: the raid answers, and it is awarded."], UI.SP.META,
         C.silver.r, C.silver.g, C.silver.b)
     sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
     local close = UI:CreateCloseButton(f)
@@ -90,16 +91,16 @@ local function build()
 
     -- Left: the offers in the raid, then my tradeable items.
     local y = -56
-    local oh = UI:CreateHeaderText(f, L["OFFERS IN THE RAID"], 10)
+    local oh = UI:CreateHeaderText(f, L["Offers in the raid"], UI.SP.META)
     oh:SetPoint("TOPLEFT", PAD, y)
     y = y - 16
     f.offerRows = {}
     for i = 1, OFFER_ROWS do
         local r = row(f, LEFT_W)
         r:SetPoint("TOPLEFT", PAD, y - (i - 1) * (ROW_H + 2))
-        r.label = text(r, 10, LEFT_W - 46)
+        r.label = text(r, UI.SP.META, LEFT_W - 46)
         r.label:SetPoint("LEFT", 4, 0)
-        r.time = text(r, 9, 40)
+        r.time = text(r, UI.SP.META, 40)
         r.time:SetPoint("RIGHT", -4, 0)
         r.time:SetJustifyH("RIGHT")
         r:SetScript("OnClick", function(self) selected = self.id; GuildOS:RefreshTradeCouncil() end)
@@ -107,20 +108,20 @@ local function build()
         r:SetScript("OnLeave", hideTip)
         f.offerRows[i] = r
     end
-    f.noOffers = UI:CreateText(f, L["Nobody is offering anything."], 10, C.silver.r, C.silver.g, C.silver.b)
+    f.noOffers = UI:CreateText(f, L["Nobody is offering anything."], UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
     f.noOffers:SetPoint("TOPLEFT", PAD + 4, y - 4)
 
     y = y - OFFER_ROWS * (ROW_H + 2) - 14
-    local ih = UI:CreateHeaderText(f, L["YOUR TRADEABLE ITEMS"], 10)
+    local ih = UI:CreateHeaderText(f, L["Your tradeable items"], UI.SP.META)
     ih:SetPoint("TOPLEFT", PAD, y)
     y = y - 16
     f.itemRows = {}
     for i = 1, ITEM_ROWS do
         local r = row(f, LEFT_W)
         r:SetPoint("TOPLEFT", PAD, y - (i - 1) * (ROW_H + 2))
-        r.label = text(r, 10, LEFT_W - 104)
+        r.label = text(r, UI.SP.META, LEFT_W - 104)
         r.label:SetPoint("LEFT", 4, 0)
-        r.time = text(r, 9, 36)
+        r.time = text(r, UI.SP.META, 36)
         r.time:SetPoint("LEFT", LEFT_W - 98, 0)
         r.offer = UI:CreateButton(r, L["Offer"], 56, 18)
         r.offer:SetPoint("RIGHT", -1, 0)
@@ -129,7 +130,7 @@ local function build()
         r:SetScript("OnLeave", hideTip)
         f.itemRows[i] = r
     end
-    f.noItems = UI:CreateText(f, L["Nothing in your bags can still be traded."], 10, C.silver.r, C.silver.g, C.silver.b)
+    f.noItems = UI:CreateText(f, L["Nothing in your bags can still be traded."], UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
     f.noItems:SetPoint("TOPLEFT", PAD + 4, y - 4)
 
     -- Right: the offer picked.
@@ -148,11 +149,11 @@ local function build()
     item:SetScript("OnEnter", function(self) showLink(self, self.link) end)
     item:SetScript("OnLeave", hideTip)
     d.item = item
-    d.info = text(d, 10, rw)
+    d.info = text(d, UI.SP.META, rw)
     d.info:SetPoint("TOPLEFT", 0, -24)
-    d.status = text(d, 10, rw)
+    d.status = text(d, UI.SP.META, rw)
     d.status:SetPoint("TOPLEFT", 0, -40)
-    d.wish = text(d, 10, rw)
+    d.wish = text(d, UI.SP.META, rw)
     d.wish:SetPoint("TOPLEFT", 0, -56)
 
     d.choiceButtons = {}
@@ -169,38 +170,38 @@ local function build()
     local COLS = { { L["PLAYER"], 0 }, { L["ANSWER"], 130 }, { L["ROLL"], 180 }, { L["EQUIPPED"], 212 },
                    { L["WISH"], 334 }, { L["PTS"], 364 }, { L["ATT%"], 402 } }
     for _, col in ipairs(COLS) do
-        local h = UI:CreateHeaderText(d, col[1], 9)
+        local h = UI:CreateHeaderText(d, col[1], UI.SP.META)
         h:SetPoint("TOPLEFT", col[2], -108)
     end
     d.rows = {}
     for i = 1, ANSWER_ROWS do
         local r = row(d, rw)
         r:SetPoint("TOPLEFT", 0, -122 - (i - 1) * (ROW_H + 2))
-        r.name = text(r, 10, 126)
+        r.name = text(r, UI.SP.META, 126)
         r.name:SetPoint("LEFT", 2, 0)
-        r.answer = text(r, 10, 48)
+        r.answer = text(r, UI.SP.META, 48)
         r.answer:SetPoint("LEFT", 130, 0)
-        r.roll = text(r, 10, 30)
+        r.roll = text(r, UI.SP.META, 30)
         r.roll:SetPoint("LEFT", 180, 0)
         r.worn = CreateFrame("Button", nil, r)
         r.worn:SetSize(118, ROW_H)
         r.worn:SetPoint("LEFT", 212, 0)
-        r.worn.label = text(r.worn, 9, 118)
+        r.worn.label = text(r.worn, UI.SP.META, 118)
         r.worn.label:SetPoint("LEFT", 0, 0)
         r.worn:SetScript("OnEnter", function(self) showLink(self, self.link) end)
         r.worn:SetScript("OnLeave", hideTip)
-        r.wish = text(r, 10, 28)
+        r.wish = text(r, UI.SP.META, 28)
         r.wish:SetPoint("LEFT", 334, 0)
-        r.pts = text(r, 10, 36)
+        r.pts = text(r, UI.SP.META, 36)
         r.pts:SetPoint("LEFT", 364, 0)
-        r.att = text(r, 10, 30)
+        r.att = text(r, UI.SP.META, 30)
         r.att:SetPoint("LEFT", 402, 0)
         r.award = UI:CreateButton(r, L["Award"], 50, 18)
         r.award:SetPoint("RIGHT", -1, 0)
         r.award:SetScript("OnClick", function(self) GuildOS.TradeCouncil:Award(selected, self:GetParent().key) end)
         d.rows[i] = r
     end
-    d.noAnswers = UI:CreateText(d, L["No answers yet."], 10, C.silver.r, C.silver.g, C.silver.b)
+    d.noAnswers = UI:CreateText(d, L["No answers yet."], UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
     d.noAnswers:SetPoint("TOPLEFT", 2, -126)
 
     d.withdraw = UI:CreateButton(d, L["Withdraw offer"], 120, 22)
@@ -286,6 +287,9 @@ local function fillDetail(o)
         status = "|cffffd100" .. string.format(L["Awarded to %s: waiting for the trade."], o.award.winner) .. "|r"
     else
         status = o.free and L["Free roll: the holder or an officer awards it."] or L["An officer awards it."]
+        -- A rule Trade Council cannot fill is refused, and the window says which applies instead (audit L8).
+        local refused = GuildOS.LootRule and GuildOS.LootRule.TradeCouncilLine and GuildOS.LootRule:TradeCouncilLine()
+        if refused then status = status .. " |cffff6060" .. refused .. "|r" end
     end
     d.status:SetText(status)
     local wishers = {}
@@ -313,10 +317,10 @@ local function fillDetail(o)
             paint(r, i, o.award and o.award.winner == a.key)
             local cr, cg, cb = GuildOS:GetClassColor(GuildOS.db.members[a.key] and GuildOS.db.members[a.key].class or "")
             r.name:SetText(who(a.key))
-            r.name:SetTextColor(cr, cg, cb)
+            UI:SetInk(r.name, cr, cg, cb)
             local col = a.choice == "N" and C.green or (a.choice == "G" and C.gold or C.silver)
             r.answer:SetText(T.CHOICE_LABEL[a.choice] or "?")
-            r.answer:SetTextColor(col.r, col.g, col.b)
+            UI:SetInk(r.answer, col)
             r.roll:SetText(a.roll and tostring(a.roll) or "-")   -- the server's /roll, once seen
             r.worn.link = a.equipped
             r.worn.label:SetText(a.equipped or "-")

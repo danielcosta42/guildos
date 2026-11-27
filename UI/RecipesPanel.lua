@@ -1,7 +1,10 @@
 ----------------------------------------------------------------------
 -- Guild OS - Recipes Panel
 -- Searchable guild recipe browser, grouped by profession
+-- Drawn as the Workshop's catalog (#449 phase 3): one parchment card, the profession filters as quiet buttons,
+-- the table in the paper's ink, the crafters in their class's colour deepened to read on the paper.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
@@ -26,6 +29,14 @@ local TOP_PAD    = 8    -- panel top to the top bar
 local TITLE_H    = 26   -- title + search row, above the profession filters
 local HEADER_H   = 24   -- column header strip
 local LIST_BOTTOM = 40  -- footer strip under the list
+local CARD_PAD   = UI.SP.PAD   -- the parchment card's padding
+local CARD_TOP   = UI.SP.TOP   -- under the card's title
+
+-- A colour deepened to read on the paper: the bright ones (a priest's white, a rogue's yellow) vanish on it.
+local function deep(c)
+    return GuildOS.UI:Ink("paper", c)   -- the one mapping of the paper's inks (UI/Helpers.lua, #449)
+end
+local function hexOf(c) return string.format("%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255) end
 
 ----------------------------------------------------------------------
 -- Profession icons (TBC tradeskill textures)
@@ -73,7 +84,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         profFilter = "All",
         results = {},
         scrollOffset = 0,
-        open = nil,      -- the recipe opened in place (issue #389), by its key
+        open = nil,      -- the recipe whose card is open (issue #389, #449), by its key
     }
 
     -- A recipe's identity in the list: its item, else its name and profession.
@@ -82,27 +93,24 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     ----------------------------------------------------------------
     -- Top bar: search + profession filters
     ----------------------------------------------------------------
-    local topBar = CreateFrame("Frame", nil, panel)
-    topBar:SetPoint("TOPLEFT", 10, -8)
-    topBar:SetPoint("TOPRIGHT", -10, -8)
+    -- The catalog's parchment card; its title says what it lists.
+    local sheet = UI:CreateCard(panel, L["Guild Recipes"])
+    sheet:SetPoint("TOPLEFT", SIDE_MARGIN, -TOP_PAD)
+    sheet:SetPoint("BOTTOMRIGHT", -SIDE_MARGIN, SIDE_MARGIN)
+    local title = sheet.title
+
+    local topBar = CreateFrame("Frame", nil, sheet)
+    topBar:SetPoint("TOPLEFT", CARD_PAD, -CARD_TOP)
+    topBar:SetPoint("TOPRIGHT", -CARD_PAD, -CARD_TOP)
     topBar:SetHeight(60)
-
-    -- Title
-    local title = UI:CreateTitle(topBar, L["Guild Recipes"], 14)
-    title:SetPoint("TOPLEFT", 0, 0)
-
-    -- Result count
-    local countText = UI:CreateText(topBar, "", 10, C.silver.r, C.silver.g, C.silver.b)
-    countText:SetPoint("LEFT", title, "RIGHT", 12, 0)
 
     -- Search box: the shared field, with its own hint while empty (#371).
     local searchBox = UI:CreateInput(topBar, 220, 24, { max = 50, placeholder = L["Search recipes..."] })
-    searchBox:SetPoint("TOPRIGHT", 0, 0)
+    searchBox:SetPoint("TOPLEFT", 0, 0)
 
-    -- Realm-wide crafter finder (guild + mesh) — opens the CraftFinder popup.
-    local realmBtn = UI:CreateButton(topBar, L["Find a Crafter"], 120, 24)
-    realmBtn:SetPoint("RIGHT", searchBox, "LEFT", -8, 0)
-    realmBtn:SetScript("OnClick", function() GuildOS:ShowCraftFinder() end)
+    -- Result count
+    local countText = UI:CreateText(topBar, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+    countText:SetPoint("LEFT", searchBox, "RIGHT", 12, 0)
 
     -- Profession filter buttons row
     -- Anchored on the left only: UI:FlowBar reads GetWidth to decide where
@@ -124,24 +132,18 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         -- Opened on an item (Alt-click, an order's card): only the recipes that make it, and the
         -- title says so until a filter or the search lets go of it.
         local itemName = state.item and (GuildOS.Compat.GetItemInfo(state.item) or ("item:" .. state.item))
-        title:SetText(itemName and string.format(L["Recipes for %s"], itemName) or L["Guild Recipes"])
+        GuildOS:SetTitleText(title, itemName and string.format(L["Recipes for %s"], itemName) or L["Guild Recipes"])
         if state.item then
             local only = {}
             for _, e in ipairs(state.results) do if e.itemId == state.item then only[#only + 1] = e end end
             state.results = only
         end
         state.scrollOffset = 0
-        countText:SetText(string.format(L["|cff888888%d results|r"], #state.results))
+        countText:SetText((string.format(L["|cff888888%d results|r"], #state.results):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")))
         -- The marks after a name: the recipes I make, and how many orders ask for each item.
         local O = GuildOS.CraftOrders
         state.byItem = O and O:OrdersByItem() or {}
         state.me = O and O:MyKey()
-        local at, n
-        if UI.WithDetail then
-            state.results, at, n = UI.WithDetail(state.results, function(e) return keyOf(e) == state.open end, ROW_HEIGHT, detail)
-        end
-        state.detailAt, state.detailRows = at, n
-        if not at then state.open = nil end
     end
 
     -- The chosen filter carries the shared selection mark (#371), not a tinted fill.
@@ -165,7 +167,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
             icon:SetPoint("CENTER")
             icon:SetTexture(iconTex)
         elseif not isAll then
-            local pc = PROF_COLORS[profName] or C.silver
+            local pc = deep(PROF_COLORS[profName] or C.silver)
             btn.baseLabelColor = { pc.r, pc.g, pc.b }
         end
         btn.icon = icon
@@ -228,16 +230,16 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     -- Column headers
     ----------------------------------------------------------------
     -- The shared table header (#371): no fill, a 1px rule under the column labels.
-    local headerFrame = UI:CreateTableHeader(panel, HEADER_H)
+    local headerFrame = UI:CreateTableHeader(sheet, HEADER_H)
     headerFrame:SetPoint("TOPLEFT", topBar, "BOTTOMLEFT", 0, -4)
     headerFrame:SetPoint("TOPRIGHT", topBar, "BOTTOMRIGHT", 0, -4)
 
     -- Header cells are positioned by the layout pass, keyed the same way
     -- the row cells are so the two can never drift apart.
     local headerByKey = {
-        recipe     = UI:CreateHeaderText(headerFrame, L["RECIPE"], 10),
-        profession = UI:CreateHeaderText(headerFrame, L["PROFESSION"], 10),
-        crafters   = UI:CreateHeaderText(headerFrame, L["CRAFTERS"], 10),
+        recipe     = UI:CreateHeaderText(headerFrame, L["Recipe"], UI.SP.META),
+        profession = UI:CreateHeaderText(headerFrame, L["Profession"], UI.SP.META),
+        crafters   = UI:CreateHeaderText(headerFrame, L["Crafters"], UI.SP.META),
     }
     for _, fs in pairs(headerByKey) do
         fs:SetJustifyH("LEFT")
@@ -247,20 +249,21 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     ----------------------------------------------------------------
     -- Scroll frame with rows
     ----------------------------------------------------------------
-    local listFrame = CreateFrame("Frame", nil, panel)
+    local listFrame = CreateFrame("Frame", nil, sheet)
     listFrame:SetPoint("TOPLEFT", headerFrame, "BOTTOMLEFT", 0, 0)
-    listFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -SIDE_MARGIN, LIST_BOTTOM)
+    listFrame:SetPoint("BOTTOMRIGHT", sheet, "BOTTOMRIGHT", -CARD_PAD, LIST_BOTTOM - SIDE_MARGIN)
 
     local scrollFrame = CreateFrame("ScrollFrame", "GuildOSRecipeScroll", listFrame, "FauxScrollFrameTemplate")
     scrollFrame:SetAllPoints()
     UI:SkinScrollBar(scrollFrame, "GuildOSRecipeScroll")
-    -- The opened recipe sits over the rows it takes; what scrolls past the list's edge is cut.
-    if listFrame.SetClipsChildren then listFrame:SetClipsChildren(true) end
-    detail = GuildOS.CreateCraftDetail and GuildOS:CreateCraftDetail(listFrame)
+    -- The chosen recipe's card (#449): the Crafts tab puts it in its right column; on its own it lies over the
+    -- panel's right part. Closed (its "‹ Orders", Escape), the list lets go of the recipe.
+    detail = GuildOS.CreateRecipeCard and GuildOS:CreateRecipeCard(panel)
     if detail then
-        detail:SetFrameLevel(listFrame:GetFrameLevel() + 5)
-        -- Resized past where the order fits beside the columns: it takes other rows (#415).
-        detail.onReflow = function() panel:Reload() end
+        detail.onClose = function()
+            state.open, state.openTo = nil, nil
+            panel:UpdateRows()
+        end
     end
 
     -- Create row frames
@@ -274,6 +277,15 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
 
         -- Online dot: rides inside the recipe cell
+        -- The chosen recipe's mark on its left, in the paper's title red.
+        row.mark = row:CreateTexture(nil, "ARTWORK")
+        row.mark:SetTexture("Interface\\Buttons\\WHITE8x8")
+        row.mark:SetVertexColor(C.paperTitle.r, C.paperTitle.g, C.paperTitle.b, 1)
+        row.mark:SetPoint("TOPLEFT", 0, 0)
+        row.mark:SetPoint("BOTTOMLEFT", 0, 0)
+        row.mark:SetWidth(2)
+        row.mark:Hide()
+
         local statusDot = row:CreateTexture(nil, "OVERLAY")
         statusDot:SetSize(8, 8)
         statusDot:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -292,7 +304,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         row.profIcon = profIcon
 
         local profName = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(profName, 10)
+        GuildOS:ApplyFont(profName, UI.SP.META)
         profName:SetPoint("LEFT", profIcon, "RIGHT", 4, 0)
         profName:SetJustifyH("LEFT")
         profName:SetWordWrap(false)
@@ -344,7 +356,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
 
         -- Hover helpers (prevent flicker when mouse moves to whisper button)
         local function RowEnter(self)
-            self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
+            self:SetBackdropColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 0.6)
             if self.data then
                 if self.data.itemId then
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -363,15 +375,14 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         local function RowLeave(self)
             -- Don't hide if mouse moved onto the whisper button
             if self.whisperBtn:IsMouseOver() then return end
-            local bg = (index % 2 == 0) and C.row2 or C.row1
-            self:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
+            self:SetBackdropColor(0, 0, 0, 0)
             GameTooltip:Hide()
             self.whisperBtn:Hide()
         end
 
         row:SetScript("OnEnter", RowEnter)
         row:SetScript("OnLeave", RowLeave)
-        -- A click opens the recipe in place (issue #389); Shift-click links its item.
+        -- A click opens the recipe's card (issue #389, #449), a second one closes it; Shift-click links its item.
         row:SetScript("OnClick", function(self)
             local e = self.data
             if not e then return end
@@ -382,9 +393,14 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
             end
             if not detail then return end
             local k = keyOf(e)
-            if state.open == k then state.open = nil else state.open = k end
             state.openTo = nil
-            panel:Reload()
+            if state.open == k then
+                detail:Close()
+            else
+                state.open = k
+                panel:UpdateRows()
+                panel:PaintDetail(true)
+            end
         end)
 
         -- When mouse leaves the whisper button, check if still on the row
@@ -428,36 +444,36 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
             local row = rows[i]
             local dataIdx = offset + i
             local entry = state.results[dataIdx]
-            if entry and not entry.__detail then
+            if entry then
                 row.data = entry
                 row:Show()
 
-                -- Alternate row colors
-                local bg = (i % 2 == 0) and C.row2 or C.row1
-                row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
+                -- On the paper: no stripes, the opened recipe washed below.
+                row:SetBackdropColor(0, 0, 0, 0)
 
                 -- Online status dot
                 if entry.hasOnline then
-                    row.statusDot:SetVertexColor(C.online.r, C.online.g, C.online.b, 1.0)
+                    row.statusDot:SetVertexColor(0.184, 0.431, 0.2, 1.0)
                 else
-                    row.statusDot:SetVertexColor(C.offline.r, C.offline.g, C.offline.b, 0.5)
+                    row.statusDot:SetVertexColor(C.paperRule.r, C.paperRule.g, C.paperRule.b, 1)
                 end
 
                 -- Recipe name, and its marks
                 local marks = ""
                 for _, c in ipairs(entry.crafters or {}) do
                     if state.me and c.playerKey == state.me then
-                        marks = string.format("  |cff%02x%02x%02x%s|r", C.ok.r * 255, C.ok.g * 255, C.ok.b * 255, L["you craft"])
+                        marks = string.format("  |cff2f6e33%s|r", L["you craft"])
                     end
                 end
                 local orders = entry.itemId and state.byItem and state.byItem[entry.itemId]
                 if orders and orders > 0 then
-                    marks = marks .. string.format("  |cff%02x%02x%02x%s|r", C.gold.r * 255, C.gold.g * 255, C.gold.b * 255,
-                        string.format(L["%d orders"], orders))
+                    marks = marks .. string.format("  |cff%s%s|r", hexOf(C.paperTitle), string.format(L["%d orders"], orders))
                 end
                 row.recipeName:SetText((entry.name or "?") .. marks)
-                row.recipeName:SetTextColor(C.text.r, C.text.g, C.text.b)
-                if keyOf(entry) == state.open then row:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1) end
+                row.recipeName:SetTextColor(C.paperInk.r, C.paperInk.g, C.paperInk.b)
+                local chosen = keyOf(entry) == state.open
+                if chosen then row:SetBackdropColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 0.8) end
+                row.mark:SetShown(chosen)
 
                 -- Profession
                 local iconPath = PROF_ICONS[entry.profName]
@@ -467,7 +483,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
                 else
                     row.profIcon:Hide()
                 end
-                local pc = PROF_COLORS[entry.profName] or C.silver
+                local pc = deep(PROF_COLORS[entry.profName] or C.silver)
                 row.profName:SetText(entry.profName and L[entry.profName] or "")
                 row.profName:SetTextColor(pc.r, pc.g, pc.b)
 
@@ -477,16 +493,22 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
                 for _, crafter in ipairs(entry.crafters or {}) do
                     local memberData = GuildOS.db.members[crafter.playerKey]
                     local pClass = memberData and memberData.class
-                    local cc = pClass and GuildOS.ClassColors[pClass] or C.text
-                    local hex = string.format("%02x%02x%02x", cc.r * 255, cc.g * 255, cc.b * 255)
-                    local alpha = crafter.isOnline and "" or "|cff666666"
-                    local resetAlpha = crafter.isOnline and "" or "|r"
-                    table.insert(crafterParts, alpha .. "|cff" .. hex .. crafter.playerName .. "|r" .. resetAlpha)
+                    local cc = pClass and GuildOS.ClassColors[pClass] and deep(GuildOS.ClassColors[pClass]) or C.paperInk
+                    -- The shared paper inks (UI/Kit.lua's mockup class colours) where they are loaded.
+                    local Kit = rawget(GuildOS, "Kit")
+                    if Kit and Kit.ClassInk and pClass then
+                        local r, g, b = Kit:ClassInk(pClass)
+                        cc = { r = r, g = g, b = b }
+                    end
+                    -- Offline, the paper's softer ink: who can make it now reads first.
+                    local hex = crafter.isOnline and hexOf(cc) or hexOf(C.paperSoft)
+                    table.insert(crafterParts, "|cff" .. hex .. crafter.playerName .. "|r")
                     if crafter.isOnline and not firstOnlineCrafter then
                         firstOnlineCrafter = crafter.playerName
                     end
                 end
                 row.playerName:SetText(table.concat(crafterParts, ", "))
+                row.playerName:SetTextColor(C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
                 row.playerName:SetAlpha(1.0)
 
                 -- Whisper button — whisper first online crafter with item link
@@ -510,9 +532,6 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
                 row.data = nil
             end
         end
-        if detail then
-            UI.PlaceDetail(detail, listFrame, state.detailAt, state.detailRows or 0, offset, visible, ROW_HEIGHT, ROW_GUTTER)
-        end
     end
 
     scrollFrame:SetScript("OnVerticalScroll", function(self, offset)
@@ -521,13 +540,17 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         end)
     end)
 
-    -- The opened recipe's block: its item, its crafters online first, and what it takes.
+    -- The chosen recipe's card: its item, what it takes, its crafters online first, the order.
     function panel:PaintDetail(fresh)
         if not detail then return end
-        if not state.open then detail:Hide(); return end
-        local e
-        for _, x in ipairs(state.results) do if not x.__detail and keyOf(x) == state.open then e = x end end
-        if not e then detail:Hide(); return end
+        if not state.open then
+            if detail:IsShown() then detail:Close() end
+            return
+        end
+        local e = state.openRow
+        for _, x in ipairs(state.results) do if keyOf(x) == state.open then e = x end end
+        if not e or keyOf(e) ~= state.open then detail:Close(); return end
+        state.openRow = e
         local crafters = {}
         for _, c in ipairs(e.crafters or {}) do
             local m = GuildOS.db.members and GuildOS.db.members[c.playerKey]
@@ -537,8 +560,12 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
             if a.online ~= b.online then return a.online end
             return (a.name or "") < (b.name or "")
         end)
-        detail:SetRecipe({ id = keyOf(e), item = e.itemId, crafters = crafters, meta = e.profName and L[e.profName] or nil },
+        local name, quality, tex, _
+        if e.itemId then name, _, quality, _, _, _, _, _, _, tex = GuildOS.Compat.GetItemInfo(e.itemId) end
+        detail:SetRecipe({ id = keyOf(e), item = e.itemId, spell = e.spellId, name = name or e.name, quality = quality,
+            icon = tex or PROF_ICONS[e.profName], prof = e.profName and L[e.profName] or nil, crafters = crafters },
             state.openTo, fresh)
+        UI.PlaceRecipeCard(detail, panel)
     end
 
     -- Search again, keeping the scroll, and paint the rows and the opened recipe.
@@ -557,9 +584,34 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         searchBox:SetText("")
         state.item, state.open = itemId, "i" .. itemId     -- after SetText: its handler clears the item
         RefreshResults()
-        if not state.detailAt then state.item = nil; RefreshResults(); return false end
+        local found = false
+        for _, x in ipairs(state.results) do if keyOf(x) == state.open then found = true end end
+        if not found then state.item, state.open = nil, nil; RefreshResults(); return false end
         PaintFilters()
         state.openTo = toKey
+        if FauxScrollFrame_SetOffset then FauxScrollFrame_SetOffset(scrollFrame, 0) end
+        self:UpdateRows()
+        self:PaintDetail(true)
+        return true
+    end
+
+    -- Open a recipe from the window's search (#449), by its name (and profession): this list has no ids of the
+    -- Workshop's catalog, so `_id` is not read. The list is searched for the name, and the recipe of that name (else
+    -- the first found) opened.
+    function panel:FocusRecipe(_id, name, profName)
+        if type(name) ~= "string" or name == "" then return false end
+        state.profFilter = "All"
+        searchBox:SetText(name)
+        state.query, state.item = name, nil   -- after SetText: its handler runs the search where the game fires it
+        RefreshResults()
+        local hit
+        for _, x in ipairs(state.results) do
+            if x.name == name and (not profName or x.profName == profName) then hit = x; break end
+        end
+        hit = hit or state.results[1]
+        if not hit then return false end
+        state.open = keyOf(hit)
+        PaintFilters()
         if FauxScrollFrame_SetOffset then FauxScrollFrame_SetOffset(scrollFrame, 0) end
         self:UpdateRows()
         self:PaintDetail(true)
@@ -569,17 +621,18 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     ----------------------------------------------------------------
     -- Info bar at bottom
     ----------------------------------------------------------------
-    local infoBar = CreateFrame("Frame", nil, panel)
-    infoBar:SetPoint("BOTTOMLEFT", 10, 8)
-    infoBar:SetPoint("BOTTOMRIGHT", -10, 8)
+    local infoBar = CreateFrame("Frame", nil, sheet)
+    infoBar:SetPoint("BOTTOMLEFT", CARD_PAD, 6)
+    infoBar:SetPoint("BOTTOMRIGHT", -CARD_PAD, 6)
     infoBar:SetHeight(24)
 
-    local infoText = UI:CreateText(infoBar, "", 10, C.label.r, C.label.g, C.label.b)
+    local infoText = UI:CreateText(infoBar, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     infoText:SetPoint("LEFT", 0, 0)
 
-    -- A hint, in `textSoft`: not the dimmed gold it used to be (#371).
-    local scanHint = UI:CreateText(infoBar, L["Open your tradeskill window to share your recipes"], 10,
-        C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    -- A hint, in `textSoft`: not the dimmed gold it used to be (#371). Anniversary has no other way to
+    -- read a profession than its open window (audit B28).
+    local scanHint = UI:CreateText(infoBar, L["Open each profession once to share it."], 11,
+        C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     scanHint:SetPoint("RIGHT", 0, 0)
 
     ----------------------------------------------------------------
@@ -593,13 +646,18 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         -- Update info bar
         local totalPlayers = 0
         local totalRecipes = 0
-        for _, professions in pairs((GuildOS.db and GuildOS.db.recipes) or {}) do
-            totalPlayers = totalPlayers + 1
-            for _, recipes in pairs(professions) do
-                totalRecipes = totalRecipes + #recipes
+        local RT, seen = GuildOS.RecipeTracker, {}
+        if RT and GuildOS.db then
+            for key, prof in RT:EachList() do
+                if not seen[key] then
+                    seen[key] = true
+                    totalPlayers = totalPlayers + 1
+                end
+                totalRecipes = totalRecipes + RT:CountOf(key, prof)
             end
         end
-        infoText:SetText(string.format(L["|cff888888%d crafters  |  %d total recipes indexed|r"], totalPlayers, totalRecipes))
+        infoText:SetText((string.format(L["|cff888888%d crafters  |  %d total recipes indexed|r"], totalPlayers, totalRecipes)
+            :gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")))
     end)
 
     ----------------------------------------------------------------
@@ -610,7 +668,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         h = h or parent:GetHeight()
         if not w or not h or w < 1 or h < 1 then return end
 
-        local inner = w - SIDE_MARGIN * 2
+        local inner = w - SIDE_MARGIN * 2 - CARD_PAD * 2
         filterRow:SetWidth(inner)
         local filterH = UI:FlowBar(filterRow, filterButtons, { gap = 2, rowGap = 2, rowH = 22 })
         topBar:SetHeight(TITLE_H + filterH)
@@ -629,10 +687,11 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
             end
         end
 
-        local listTop = TOP_PAD + TITLE_H + filterH + 4 + HEADER_H
+        local listTop = TOP_PAD + CARD_TOP + TITLE_H + filterH + 4 + HEADER_H
         AcquireRows(UI:ResolveRows(h - listTop - LIST_BOTTOM, ROW_HEIGHT, 0))
         for i = 1, self.visibleRows do rows[i]:ApplyColumns(layout) end
         self:UpdateRows()
+        if detail and detail:IsShown() then UI.PlaceRecipeCard(detail, panel, w) end
     end
 
     UI:MakeResponsive(parent, function(_, w, h) panel:Relayout(w, h) end)

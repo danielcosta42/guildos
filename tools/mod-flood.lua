@@ -101,19 +101,26 @@ check(F.InWindow({ { t = 1 }, { t = 5 }, { t = 9 } }, 10, 6) == 2 and F.InWindow
 check(F.ValidLimit("n", "5") == 5 and not F.ValidLimit("n", 1) and not F.ValidLimit("secs", 601) and not F.ValidLimit("pct", 49.5),
       "limits in range only")
 local cfg = F.ValidConfig({ burst = { on = false, n = 999 }, caps = { pct = 80 } })
-check(cfg.burst.on == false and cfg.burst.n == 5 and cfg.caps.pct == 80 and cfg["repeat"].n == 3 and cfg.links.on,
+check(cfg.burst.on == false and cfg.burst.n == 6 and cfg.caps.pct == 80 and cfg["repeat"].n == 4 and cfg.links.on,
       "a bad limit goes back to its default, a missing signal comes in on")
+-- The audit's calibration (B1, B3).
+local D = F.DEFAULTS
+check(D.burst.n == 6 and D.burst.secs == 10 and D["repeat"].n == 4 and D["repeat"].secs == 60 and D.caps.min == 20
+      and D.caps.pct == 85 and D.links.n == 3 and D.links.secs == 120, "the defaults: 6/10 s, 4/60 s, 20 letters at 85%, 3 links/120 s")
+check(F.CountLinks("vem.me agora, ok.co e sai.de la") == 0, "me, co and de are not domains")
+check(F.CountLinks("loja.com.br") == 1 and F.CountLinks("site.de") == 0, "com still is, de no longer")
+check(F.DistinctLetters("gz gz gz") == 2 and F.DistinctLetters("well played all") == 13, "letters with each word once")
 
 -- ── Too many lines ──────────────────────────────────────────────────────
-for i = 1, 4 do say("Thrall", "line " .. i) end
-check(#floods() == 0, "four lines in ten seconds are fine")
-say("Thrall", "line 5")
+for i = 1, 5 do say("Thrall", "line " .. i) end
+check(#floods() == 0, "five lines in ten seconds are fine")
+say("Thrall", "line 6")
 local a = floods()[1]
-check(a and a.signal == "burst" and a.count == 5 and #a.lines == 5 and a.lines[5] == "line 5", "the fifth is a surge, with its lines")
+check(a and a.signal == "burst" and a.count == 6 and #a.lines == 6 and a.lines[6] == "line 6", "the sixth is a surge, with its lines")
 runTimers()
 check(shown[#shown] == a and sent[#sent].dom == "modalert", "it shows once, claimed like a chat alert")
-for i = 6, 14 do NOW = NOW + 1; say("Thrall", "line " .. i) end
-check(#floods() == 1 and a.count == 14 and #a.lines == F.SURGE_LINES and a.lines[#a.lines] == "line 14",
+for i = 7, 15 do NOW = NOW + 1; say("Thrall", "line " .. i) end
+check(#floods() == 1 and a.count == 15 and #a.lines == F.SURGE_LINES and a.lines[#a.lines] == "line 15",
       "the surge stays one alert, its count growing, its lines capped")
 check(touched > 0, "the window showing it redraws")
 runTimers()
@@ -121,7 +128,7 @@ check(#shown == 1, "never a second window for the same surge")
 NOW = NOW + 30
 say("Thrall", "back to normal")
 check(#floods() == 1, "after the window, a calm line flags nothing")
-for i = 1, 5 do say("Thrall", "again " .. i) end
+for i = 1, 6 do say("Thrall", "again " .. i) end
 check(#floods() == 2, "a new surge after the end is a new alert")
 runTimers()
 
@@ -130,19 +137,24 @@ NOW = NOW + 700
 F.speakers, F.speakerCount, F.surges = {}, 0, {}
 say("Garrosh", "WTB carry")
 NOW = NOW + 20; say("Garrosh", "wtb carry")
-NOW = NOW + 20; say("Garrosh", "something else")
-check(#floods() == 2, "twice is fine")
+NOW = NOW + 10; say("Garrosh", "something else")
+NOW = NOW + 5; say("Garrosh", "Wtb Carry")
+check(#floods() == 2, "three times is fine")
 NOW = NOW + 15; say("Garrosh", "WTB CARRY")
 a = floods()[1]
-check(a.who == "Garrosh" and a.signal == "repeat" and a.count == 3 and a.lines[1] == "WTB carry", "three times in a minute, with its lines")
+check(a.who == "Garrosh" and a.signal == "repeat" and a.count == 4 and a.lines[1] == "WTB carry", "four times in a minute, with its lines")
 runTimers()
+NOW = NOW + 700
+for _ = 1, 5 do NOW = NOW + 3; say("Garrosh", "gz gz gz") end
+check(#floods() == 3, "banter under four letters is never a repeat (\"gz gz gz\")")
 
 -- ── Capitals ────────────────────────────────────────────────────────────
 NOW = NOW + 700
 say("Jaina", "LOL OK")
 say("Jaina", "look at my " .. LINK .. " !!")
-check(#floods() == 3, "a short line in capitals and a game link in capitals are fine")
 say("Jaina", "COME TO KARA NOW PLEASE")
+check(#floods() == 3, "a short line in capitals, 19 letters, and a game link in capitals are fine")
+say("Jaina", "COME TO KARA NOW PLEASE EVERYONE")
 a = floods()[1]
 check(a.who == "Jaina" and a.signal == "caps" and a.count == 1, "a long line in capitals")
 runTimers()
@@ -153,20 +165,22 @@ say("Sylvanas", "my shop: " .. LINK)
 say("Sylvanas", "check " .. LINK)
 check(#floods() == 4, "the game's links never count")
 say("Sylvanas", "cheap gold at goldshop.com")
-check(#floods() == 4, "one link is fine")
 NOW = NOW + 30
 say("Sylvanas", "or https://gold.example/x")
+check(#floods() == 4, "two links are fine")
+NOW = NOW + 80
+say("Sylvanas", "www.gold.example")
 a = floods()[1]
-check(a.signal == "links" and a.count == 2 and a.lines[1] == "cheap gold at goldshop.com", "two links in a minute")
+check(a.signal == "links" and a.count == 3 and a.lines[1] == "cheap gold at goldshop.com", "three links in two minutes")
 runTimers()
 
 -- ── Another officer claimed the surge first ─────────────────────────────
 NOW = NOW + 700
 local nShown = #shown
-for i = 1, 4 do say("Garrosh", "spam " .. i) end
-local key = M.ClaimKey("Garrosh", "flood:burst\nspam 5")
+for i = 1, 5 do say("Garrosh", "spam " .. i) end
+local key = M.ClaimKey("Garrosh", "flood:burst\nspam 6")
 onClaim({ act = "claim", data = { k = key } }, "Uther")
-say("Garrosh", "spam 5")
+say("Garrosh", "spam 6")
 runTimers()
 check(floods()[1].by == "Uther" and #shown == nShown, "listed as alerted on the other officer's screen, not shown here")
 

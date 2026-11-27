@@ -126,6 +126,7 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Core/Style.lua")
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 
 -- The module, a stand-in holding three requests: a long note, none, a short one.

@@ -55,6 +55,11 @@ local function load(o)
   function IsInGuild() return true end
   function GetRealmName() return "Realm" end
   function ChatFrame_AddMessageEventFilter(event, fn) filters[#filters + 1] = { event = event, fn = fn } end
+  function ChatFrame_RemoveMessageEventFilter(event, fn)
+    for i = #filters, 1, -1 do
+      if filters[i].event == event and filters[i].fn == fn then table.remove(filters, i) end
+    end
+  end
   Enum = { SendAddonMessageResult = { Success = 0, AddonMessageThrottle = 3 } }
   local number = 0
   function JoinChannelByName(name)
@@ -264,6 +269,31 @@ advance(clock + 30)
 check(not joined["GOSProbe5555"] and GuildOSDB.probeChannelOpen == nil and left[1] == "GOSProbe5555", "a moment later the real start has left it")
 check(#left == 1, "once")
 
+-- The leftover's "Left Channel" notice is hidden too: the filter goes on before the leave, at login as in a run,
+-- and comes off once the leave is over.
+do
+  local P = logIn("GOSProbe7777")
+  check(#filters == 0, "no filter before anything is left")
+  local filterAtLeave
+  local realLeave = LeaveChannelByName
+  LeaveChannelByName = function(name) filterAtLeave = #filters; realLeave(name) end
+  advance(clock + 16)
+  LeaveChannelByName = realLeave
+  check(left[1] == "GOSProbe7777" and filterAtLeave == 1 and filters[1].event == "CHAT_MSG_CHANNEL_NOTICE",
+    "the notice filter is on when the leftover is left")
+  local hideIt = filters[1].fn
+  check(hideIt(nil, nil, "YOU_LEFT", "", "", "9. GOSProbe7777", "", 0, 0, 9, "GOSProbe7777") == true,
+    "and hides its Left Channel notice")
+  check(not hideIt(nil, nil, "YOU_LEFT", "", "", "1. General", "", 0, 0, 1, "General"), "and no other channel's")
+  check(P._channelName == "GOSProbe7777", "the leftover's name is the one the filter reads")
+  advance(clock + 60)
+  check(GuildOSDB.probeChannelOpen == nil and #filters == 0, "once it is gone the filter comes off")
+  run = fromCommand(P)
+  check(#filters == 1, "and a run puts it on again")
+  advance(clock + 60)
+  check(#filters == 0 and not stillJoined(), "and takes it off after its verdict")
+end
+
 -- A run that starts first has to take the old name out before it writes its own over it, and the start's
 -- wait coming due in the middle of that run must not end the run.
 Probe = logIn("GOSProbe5555")
@@ -315,7 +345,7 @@ check(not stillJoined(), "and ends again")
 local f = io.open(ADDON .. "/Core/Commands.lua", "rb")
 local src = f:read("*a")
 f:close()
-check(src:find('msg == "probe channel"', 1, true) and src:find("Probe:RunChannel()", 1, true), "/gos probe channel runs it")
+check(src:find('msg == "debug probe channel"', 1, true) and src:find("Probe:RunChannel()", 1, true), "/gos debug probe channel runs it")
 
 -- The Audit panel's button reads the result: not before the verdict is out.
 check(Probe.CHANNEL_WAIT == 15, "the wait until the verdict is the module's to say")

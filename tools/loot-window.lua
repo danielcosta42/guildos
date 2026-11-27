@@ -211,11 +211,12 @@ local function load(style)
   dofile(ADDON .. "/Core/Style.lua")
   dofile(ADDON .. "/Core/Utils.lua")
   GuildOS.Style:Resolve()
+  dofile(ADDON .. "/UI/Spacing.lua")
   dofile(ADDON .. "/UI/Helpers.lua")
   dofile(ADDON .. "/UI/Layout.lua")
   GuildOS.Print = function() end
   GuildOS.SafeCall = function(_, fn, ...) return fn(...) end   -- an error in a paint fails the test, loudly
-  check(GuildOS.Style.current == style, "the " .. style .. " style is the one in force")
+  check(GuildOS.Style.current == "salao", "the Salão's one look on the " .. style .. " client")
   return GuildOS.UI
 end
 
@@ -245,7 +246,7 @@ local function dropdown(UI)
   check(#rows == 3 and rows[1].label.text == "Nearest" and rows[2].label.text == "Up" and rows[3].label.text == "Down",
     "one row an option, in their order")
   check(rows[2].mark:IsShown() and not rows[1].mark:IsShown(), "the value chosen is marked")
-  check(list.h == 3 * 20 + 4, "the list is as tall as its rows")
+  check(list.h == 3 * 22 + 8, "the list is as tall as its rows, 4px in (#449)")
   rows[3].scripts.OnClick(rows[3])
   check(dd:GetValue() == "down" and dd.label.text == "Down" and picked[1] == "down", "a click on a row chooses it and says so")
   check(not list:IsShown() and not list.catcher:IsShown() and UI:DropdownOpenFor() == nil, "and closes the list")
@@ -273,8 +274,8 @@ local function dropdown(UI)
   many:SetOptions(opts)
   many:SetValue(7)
   many.scripts.OnClick(many)
-  check(UI:DropdownOpenFor() == many and list.h == 10 * 20 + 4, "past ten rows the list keeps ten rows tall")
-  check(list.scroll.scrollChild == list.child and list.child.h == 25 * 20, "and scrolls the rest")
+  check(UI:DropdownOpenFor() == many and list.h == 10 * 22 + 8, "past ten rows the list keeps ten rows tall")
+  check(list.scroll.scrollChild == list.child and list.child.h == 25 * 22, "and scrolls the rest")
   local shown = 0
   for _, r in ipairs(list.rows) do if r:IsShown() then shown = shown + 1 end end
   check(shown == 25, "every option has its row")
@@ -380,6 +381,9 @@ local function lootTab(UI)
   check(#buttons(rule, "MS > OS +1") == 1 and #buttons(rule, "DKP / Points") == 1 and #buttons(rule, "Add answer") == 1,
     "an officer sees the models as a list and the answers' editor")
   check(#tagged(rule, "isScope") == 1, "and a selector: the guild or a core")
+  -- Audit R8, B16: no TMB among them (it was the wishlist), and the choice says it plays without the site's rule.
+  check(#buttons(rule, "TMB") == 0 and #buttons(rule, "Wishlist") == 1 and shows(rule, "Without a rule from the site, use:"),
+    "no TMB model, and the models are what plays without a rule from the site")
   check(shows(rule, "Who may ask.") and shows(rule, "Who takes it.") and shows(rule, "The higher roll"),
     "and the rule as players will read it, in the rule's order")
 
@@ -488,10 +492,29 @@ local function lootTab(UI)
   check(boss and #buttons(acc, "Back to the standings") == 1, "the points' settings are behind one button")
   typeAndSave(boss, "15")
   check(P:GetDBForCore("Alpha").config.bossAward == 15 and P:GetDBForCore("").config.bossAward ~= 15, "and save on the core's pool")
+  -- The refund to the losers (Discord 1569080957267353680): right under the entry cost, greyed out with its reason
+  -- while entering costs nothing, live as soon as an entry cost is saved.
+  local entry = tagged(acc, "pointsKey", "entryCost")[1]
+  local refund = tagged(acc, "pointsKey", "refundPct")[1]
+  check(entry and refund and refund.points[1][3] < entry.points[1][3] and entry.points[1][3] - refund.points[1][3] <= 30,
+    "the losers' refund sits right under the cost to enter a roll")
+  typeAndSave(entry, "0")
+  check(refund.pointsOff and refund.pointsHint.text:find("Only works with a cost to enter a roll", 1, true),
+    "no entry cost: the refund is off and says why")
+  typeAndSave(entry, "5")
+  check(not refund.pointsOff and refund.pointsHint.text:find("given back", 1, true),
+    "an entry cost saved: the refund can be set, the hint says what it does")
+  typeAndSave(refund, "40")
+  check(P:GetDBForCore("Alpha").config.refundPct == 40, "and it saves")
+  typeAndSave(entry, "0")
   local mode = tagged(acc, "isMode")[1]
-  check(mode and #mode.options == 2, "the mode is a dropdown: DKP or a council")
-  mode:Select("council")
-  check(P:GetMode("Alpha") == "council", "and a choice changes it")
+  -- Audit R9, B16: the "Loot Council" mode did nothing; DKP is the one left, and a pool saved with it reads DKP.
+  check(mode and #mode.options == 1 and mode.options[1].value == "dkp", "the mode offers DKP alone, no council")
+  P:GetDBForCore("Alpha").mode = "council"
+  check(P:GetMode("Alpha") == "dkp", "a pool saved in the council mode reads as DKP")
+  P:InCore("Alpha", P.SetMode, P, "council")
+  check(P:GetDBForCore("Alpha").mode == "council" and P:GetMode("Alpha") == "dkp", "and the council mode cannot be chosen")
+  P:GetDBForCore("Alpha").mode = "dkp"
   click(acc, "Back to the standings")
 
   -- The core picked is renamed while the tab is open (another officer, or the Discord's rename by
@@ -510,6 +533,26 @@ local function lootTab(UI)
     check(CM:Rename("Alpha2", "Alpha"), "and back")
     acc.SetScope("Alpha")
   end
+
+  -- Points for bank donations (Snuchyboochy): on the guild's own pool only, turned on with a rate and a reason.
+  GuildOS.GuildBank = { Store = function() return { ledger = {} } end }
+  click(acc, "Account settings")
+  check(not shows(acc, "Points for bank donations"), "a core's pool has no bank donations' points")
+  click(acc, "Back to the standings")
+  acc.SetScope("")
+  P:InCore("", P.SetReason, P, "gift", "Gift", 5, 50)
+  click(acc, "Account settings")
+  check(shows(acc, "Points for bank donations") and shows(acc, "Off. Deposits to the guild bank earn nothing."),
+    "the guild's pool offers them, off by default")
+  P:SetBankEp(true, 3, "gift")
+  acc.Refresh()
+  check(shows(acc, "On: each deposit to the guild bank earns these points") and #buttons(acc, "Turn off") == 1,
+    "on, it says what it does and offers to turn it off")
+  click(acc, "Turn off")
+  check(not P:BankEpConfig().on, "and the button turns it off")
+  click(acc, "Back to the standings")
+  GuildOS.GuildBank = nil
+  acc.SetScope("Alpha")
 
   -- The loot settings live here alone: no page of Settings has one, nor a pointer, since #367.
   -- (Modules holds only the features' on/off switches, and needs the registry this file does not load.)
@@ -648,7 +691,7 @@ local function lootTable()
   local f = _G.GuildOSLootTable
   check(f and f:IsShown() and LM.lootFrame == f and LM.rollFrame == f, "the loot window and the roll tracker are one table")
   -- A surface of its own (#413): with only StylePopup's border it opened see-through, the world behind it.
-  check(f.backdrop and f.backdrop.bgFile and f.bg and f.bg[4] == 1, "the table has an opaque background")
+  check(f.__look and f.__look.fill.color and f.__look.fill.color[4] == 1, "the table has an opaque background")
   -- The loot master's answer is on the item's line, not on the strip where it ran over "Enter answer" (#413).
   check(f.mine[2].points[1][2] == f.right and f.mineLabel.points[1][2] == f.mine[1]
     and f.itemText.points[2][1] == "RIGHT" and f.itemText.points[2][2] == f.mineLabel,
@@ -694,6 +737,46 @@ local function lootTable()
   check(LM.activeLoot.ended and f.decision.text:find("^Chehul wins: both reserved the item"), "End now closes it: " .. f.decision.text)
   check(f.awardBtn:IsEnabled() and f.awardBtn.label.text == "Award to Chehul",
     "and the Award button says who, on the label the player sees: " .. tostring(f.awardBtn.label.text))
+  -- Closed by mistake with the item still to give (Discord 1575506871723364392): a line says how to get it back,
+  -- /gos lm and the line's link reopen it as it was; nothing left to give, it stays closed.
+  do
+    local printed = {}
+    local keepPrint = GuildOS.Print
+    GuildOS.Print = function(_, m) printed[#printed + 1] = tostring(m) end
+    check(LM:HasUndelivered(), "an ended roll not delivered is still to give")
+    f:Hide()
+    check(printed[#printed] and printed[#printed]:find("still to give", 1, true)
+      and printed[#printed]:find("/gos lm reopens the loot table.", 1, true),
+      "closing the table says how to reopen it (no chat links on this client: the command): " .. tostring(printed[#printed]))
+    check(LM:Reopen() and f:IsShown() and f.selected and f.selected.link == LINK1, "Reopen brings it back, the item still picked")
+    local cmd = assert(io.open(ADDON .. "/Core/Commands.lua", "rb")):read("*a")
+    check(cmd:find('msg == "lm" or msg == "lootmaster"', 1, true) and cmd:find("GuildOS.LootMaster:Reopen()", 1, true),
+      "/gos lm reopens it")
+    -- A client with the game's addon links: the line carries a link, and a click on it reopens the table.
+    local hooked = {}
+    local keepHook, keepLU, keepLT = hooksecurefunc, LinkUtil, LinkTypes
+    hooksecurefunc = function(name, fn) hooked[name] = fn end
+    LinkUtil, LinkTypes = { RegisterLinkHandler = function() end }, { AddOn = "addon" }
+    LM:RegisterChatLink()
+    LM.lootWindowOpen = true
+    LM:OnLootClosed()
+    check(printed[#printed]:find("|Haddon:GuildOS:lm|h[Reopen the loot table]|h", 1, true),
+      "the game's loot window closing: the line has the link: " .. printed[#printed])
+    f:Hide()
+    check(type(hooked.SetItemRef) == "function", "one hook after the game's SetItemRef, nothing replaced")
+    hooked.SetItemRef("addon:GuildOS:lm", "[Reopen the loot table]", "LeftButton")
+    check(f:IsShown(), "a click on the link reopens the table")
+    hooked.SetItemRef("item:28770", "[x]", "LeftButton")
+    check(f:IsShown(), "another link does nothing of ours")
+    local delivered = LM.activeLoot.delivered
+    LM.activeLoot.delivered = true
+    local keepItems = LM.lootItems
+    LM.lootItems = {}
+    check(not LM:HasUndelivered() and not LM:Reopen(), "nothing left to give: nothing to reopen")
+    LM.lootItems, LM.activeLoot.delivered = keepItems, delivered
+    hooksecurefunc, LinkUtil, LinkTypes = keepHook, keepLU, keepLT
+    GuildOS.Print = keepPrint
+  end
   -- The rule's order changes, and so do the sentence and the button.
   check(LR:Set({ v = 1, model = "custom", order = { { k = "response" }, { k = "roll" } } }) == true, "a rule that reads only the roll")
   LM.activeLoot.rule = LR:Active()
@@ -767,9 +850,9 @@ local function popup()
   LM:ShowRollPopup(LINK1, 30, 28770, ask)
   local f = LM.rollPopup
   check(f and f:IsShown() and f.w == 380, "the popup opens")
-  check(f.backdrop and f.backdrop.bgFile and f.bg and f.bg[4] == 1, "on a background of its own (#413)")
+  check(f.__look and f.__look.fill.color and f.__look.fill.color[4] == 1, "on a background of its own (#413)")
   check(shows(f, "Crown of the Abyssal Wind") and shows(f, "Head \194\183 Cloth \194\183 item level 76"), "with the item and what it is")
-  check(shows(f, "YOU WEAR") and shows(f, "Arcanist Cowl") and f.diffText.text == "+10 item level", "what the player wears there, and the gain")
+  check(shows(f, "You wear") and shows(f, "Arcanist Cowl") and f.diffText.text == "+10 item level", "what the player wears there, and the gain")
   check(f.standing[1] == "Reserved the item" and f.standing[2] == "Wishlist #2" and f.standing[3] == "+1 tonight: 0",
     "where they stand: the reserve, the wishlist place, the counter: " .. table.concat(f.standing, ", "))
   check(#buttons(f, "Main spec") == 1 and #buttons(f, "Off spec") == 1 and #buttons(f, "Transmog") == 1 and #buttons(f, "Pass") == 1,
@@ -791,7 +874,7 @@ local function popup()
   f = LM.rollPopup
   check(f.pointsText and f.pointsText.text == "Points: 18. Entering this roll costs 4; whoever loses gets 2 back.",
     "the balance and the price of entering: " .. tostring(f.pointsText and f.pointsText.text))
-  check(f.standing[1] == "Not on your lists" and not shows(f, "YOU WEAR"), "nothing worn or listed: it says so, and no empty block")
+  check(f.standing[1] == "Not on your lists" and not shows(f, "You wear"), "nothing worn or listed: it says so, and no empty block")
   -- A loot master from before: MS, OS and Pass by /roll.
   local rolled
   function RandomRoll(a, b) rolled = a .. "-" .. b end
@@ -801,6 +884,25 @@ local function popup()
   check(f.ruleText.text:find("/roll", 1, true), "and the line says they are /roll")
   click(f, "OS")
   check(rolled == "1-99", "OS is /roll 1-99")
+
+  -- One popup frame, filled again on every roll (#449): no new frame for the same rule, and painted once.
+  local Style = GuildOS.Style
+  local paints, realPaint = 0, Style.Paint
+  Style.Paint = function(st, frame, ...) if frame == f then paints = paints + 1 end; return realPaint(st, frame, ...) end
+  LM:ShowRollPopup(LINK1, 30, 28770, ask)
+  local framesBefore = #allFrames
+  LM:ShowRollPopup(LINK1, 20, 28770, ask)
+  LM:ShowRollPopup(LINK1, 30, 28770, nil)
+  LM:ShowRollPopup(LINK1, 30, 28770, ask)
+  check(LM.rollPopup == f, "the same popup frame every roll")
+  check(#allFrames == framesBefore, "a roll again makes no new frame (" .. (#allFrames - framesBefore) .. " made)")
+  check(paints == 0, "and its surface is not painted again (" .. paints .. ")")
+  Style.Paint = realPaint
+  check(#buttons(f, "Main spec") == 1 and #buttons(f, "MS") == 0 and #buttons(f, "Pass") == 1,
+    "only this rule's buttons show, the other rule's set hidden")
+  check(f.clock.text == "0:30" and f.ruleText.text:find("Rule of", 1, true), "the clock and the rule's line are this roll's")
+  click(f, "Main spec")
+  check(sent[#sent].key == "MS" and not f:IsShown(), "and its answer still goes and closes it")
 end
 
 -- ── 5. Raids › Cores ───────────────────────────────────────────────────
@@ -842,13 +944,77 @@ local function cores()
     "the header says the origin, and a Discord core is not renamed here")
   check(#buttons(panel, "Roster") == 1 and #buttons(panel, "Requests") == 1 and #buttons(panel, "Rule") == 1 and #buttons(panel, "Config") == 1,
     "sub-tabs Roster, Requests, Rule, Config")
-  check(shows(panel, "Tanks") and shows(panel, "Healers") and shows(panel, "1 of "), "the role meters")
+  check(shows(panel, "Tanks") and shows(panel, "Healers") and shows(panel, "1 / "), "a card a role, who it has of what the format asks")
+  local roleCards = 0
+  walk(panel, function(f) if f.isCard and f.role and f:IsVisible() then roleCards = roleCards + 1 end end)
+  check(roleCards == 4, "four role cards (" .. roleCards .. ")")
+  -- Every visible text and frame drawn on a card lies inside the card (#449).
+  local function rectOf(f, memo)
+    if memo[f] then return memo[f] end
+    memo[f] = { l = 0, t = 0, r = 0, b = 0 }
+    local w = (f.w or 0) > 0 and f.w or (f.kind == "FontString" and f:GetStringWidth() or 0)
+    local h = (f.h or 0) > 0 and f.h or (f.kind == "FontString" and f:GetStringHeight() or 0)
+    local pts, r = f.points or {}, nil
+    if #pts == 0 then
+      local base = f.scrollOwner and rectOf(f.scrollOwner, memo) or (f.parent and rectOf(f.parent, memo)) or { l = 0, t = 0 }
+      r = { l = base.l, t = base.t, r = base.l + w, b = base.t + h }
+    else
+      local L, R, T, B, CX, CY
+      for _, p in ipairs(pts) do
+        local point, rel, relPoint, x, y = p[1], nil, nil, 0, 0
+        if type(p[2]) == "table" then
+          rel = p[2]
+          if type(p[3]) == "string" then relPoint, x, y = p[3], p[4] or 0, p[5] or 0 else x, y = p[3] or 0, p[4] or 0 end
+        else
+          x, y = p[2] or 0, p[3] or 0
+        end
+        rel = rel or f.parent
+        relPoint = relPoint or point
+        local o = rel and rectOf(rel, memo) or { l = 0, t = 0, r = 0, b = 0 }
+        local ax = (relPoint:find("LEFT") and o.l) or (relPoint:find("RIGHT") and o.r) or (o.l + o.r) / 2
+        local ay = (relPoint:find("TOP") and o.t) or (relPoint:find("BOTTOM") and o.b) or (o.t + o.b) / 2
+        ax, ay = ax + x, ay - y
+        if point:find("LEFT") then L = ax elseif point:find("RIGHT") then R = ax else CX = ax end
+        if point:find("TOP") then T = ay elseif point:find("BOTTOM") then B = ay else CY = ay end
+      end
+      if not L and not R then L = (CX or 0) - w / 2; R = L + w elseif not L then L = R - w elseif not R then R = L + w end
+      if not T and not B then T = (CY or 0) - h / 2; B = T + h elseif not T then T = B - h elseif not B then B = T + h end
+      r = { l = L, t = T, r = R, b = B }
+    end
+    memo[f] = r
+    return r
+  end
+  local function insideCards(root, what)
+    walk(root, function(f) if f.scrollChild then f.scrollChild.scrollOwner = f end end)
+    local memo, n = {}, 0
+    walk(root, function(card)
+      if not (card.isCard and card:IsVisible()) then return end
+      local box = rectOf(card, memo)
+      local function visit(d)
+        if d ~= card then
+          if d.kind == "ScrollFrame" or d.kind == "Texture" or not d:IsVisible() then return end   -- a list scrolls, clipped
+          if not (d.kind == "FontString" and (d.text or "") == "") then
+            local r = rectOf(d, memo)
+            n = n + 1
+            check(r.l >= box.l - 0.5 and r.r <= box.r + 0.5 and r.t >= box.t - 0.5 and r.b <= box.b + 0.5,
+              what .. ": " .. tostring(d.kind) .. " \"" .. tostring(d.text or (d.label and d.label.text) or "") .. "\" lies inside its card "
+              .. string.format("(%d,%d,%d,%d in %d,%d,%d,%d)", r.l, r.t, r.r, r.b, box.l, box.t, box.r, box.b))
+          end
+        end
+        for _, c in ipairs(d.children) do visit(c) end
+      end
+      visit(card)
+    end)
+    return n
+  end
+  check(insideCards(panel, "the core's roster") > 30, "every text and control of the core's screen lies inside its card")
   local roleDD
   walk(panel, function(f) if f:IsVisible() and f.memberKey == K("Kawa") then roleDD = f end end)
   check(roleDD and #roleDD.options == 4 and roleDD:GetValue() == "tank", "each member's role is a dropdown of the four")
   roleDD:Select("mdps")
   check(GuildOS.db.cores.Alfa.members[K("Kawa")].role == "mdps", "and a choice changes it, through CoreManager")
   check(shows(panel, "Guests of the night (1)") and shows(panel, "Xablau"), "the guests of the night")
+  check(#buttons(panel, "Add guest") == 1, "with a pug from outside the guild added by name")
   check(shows(panel, "Dean_Ales") and shows(panel, "waiting for a character"), "who the Discord has with no character")
   check(shows(panel, "Who joins and leaves the core is decided on Discord"), "and what is the Discord's to decide")
   check(#buttons(panel, "Remove") == 1, "a Discord member is not removed here; a guest is")
@@ -874,6 +1040,7 @@ local function cores()
   check(#buttons(panel, "10-man") == 1 and #buttons(panel, "25-man") == 1, "TBC's two formats are two buttons")
   click(panel, "10-man")
   check(CM:GetRaidSize("Bravo") == 10, "and a click is the format")
+  check(insideCards(panel, "the core's config") > 10, "the Config form lies inside its card")
   local late
   walk(panel, function(f) if f:IsVisible() and f.penaltyKey == "LATE" then late = f end end)
   check(late and late.saveButton.label.text == "Saved", "a penalty's box says it is saved")
@@ -930,6 +1097,31 @@ for _, style in ipairs({ "guildos", "forever" }) do
   popup()
   cores()
   signup()
+end
+
+-- A room that opens one of these sub-tabs hides the window's own bar (#447): the panels start where it was.
+do
+  local box = lootWindow()
+  local bar, panel
+  for _, c in ipairs(box.children) do
+    if c.kind == "Frame" and c.h == 28 and c.points[1] and c.points[1][1] == "TOPLEFT" and not bar then bar = c end
+  end
+  box.SelectSub("history")
+  for _, c in ipairs(box.children) do if c.shown and c ~= bar and c.kind == "Frame" then panel = c end end
+  check(type(box.SetSubBarShown) == "function", "the Loot window lets a room hide its sub-tab bar")
+  -- The client replaces an anchor of the same name; the stub keeps them all, so read the newest TOPLEFT.
+  local function topLeft(fr)
+    local last
+    for _, pt in ipairs(fr and fr.points or {}) do if pt[1] == "TOPLEFT" then last = pt end end
+    return last
+  end
+  box.SetSubBarShown(false)
+  local p = topLeft(panel)
+  check(bar and not bar.shown and p and p[1] == "TOPLEFT" and p[2] == bar and p[3] == "TOPLEFT",
+    "hidden, the bar is gone and the open panel starts at its top")
+  box.SetSubBarShown(true)
+  p = topLeft(panel)
+  check(bar.shown and p and p[2] == bar and p[3] == "BOTTOMLEFT", "shown again, the panel is back under it")
 end
 
 print(("loot-window: %d checks passed"):format(checks))

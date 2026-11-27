@@ -106,6 +106,14 @@ local panel = read("UI/CorePanel.lua")
 check(panel:find("CM:RaidSizes()", 1, true) and panel:find("CM:SetRaidSize(coreName, size)", 1, true)
   and not panel:find("(curSize == 25) and 10 or 25", 1, true) and not panel:find('"25-man"', 1, true),
   "the core's format is picked among CoreManager's sizes")
+-- Audit R19: reading a core's settings makes no core; writing still does.
+check(GuildOS.db.cores.Nowhere == nil, "the stub has no core Nowhere")
+CM:GetRaidSize("Nowhere"); CM:GetLootConfig("Nowhere"); CM:GetPenalties("Nowhere")
+CM:GetMembers("Nowhere"); CM:GetSignups("Nowhere")
+check(GuildOS.db.cores.Nowhere == nil, "reading a core's size, loot, penalties, roster or sign-ups creates none")
+check(CM:GetLootConfig("Nowhere").rollDuration ~= nil, "and still reads the guild's defaults")
+CM:SetRaidSize("Nowhere", 10)
+check(GuildOS.db.cores.Nowhere ~= nil, "a write makes the core on purpose, as before")
 for _, path in ipairs({ "UI/CorePanel.lua", "UI/FeaturePanels.lua" }) do
   check(not read(path):find("RAID_TARGETS%s*%["), path .. " asks RaidTargets, never indexes RAID_TARGETS itself")
 end

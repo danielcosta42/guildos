@@ -300,4 +300,32 @@ check(NoteCommand:Current("Ana", "Firemaw") == "old", "the box opens with the no
 client({ roster = TWO_BOBS, setNote = true })
 check(NoteCommand:Current("Bob") == "", "a name the roster cannot pin down opens an empty box")
 
+-- ── Audit B11: !note is TBC Anniversary's alone ──────────────────────────
+do
+  local wasAnni = GuildOS.Client.isAnniversary
+  GuildOS.db = { noteCommand = {} }
+  GuildOS.SelfTest = nil
+  GuildOS.Client.isAnniversary = false
+  local before = #handlers
+  NoteCommand:Initialize()
+  check(#handlers == before, "elsewhere no client listens for !note")
+  GuildOS.Client.isAnniversary = true
+  NoteCommand:Initialize()
+  check(#handlers == before + 1, "on Anniversary it does")
+  GuildOS.Client.isAnniversary = wasAnni
+  local settings = io.open(ADDON .. "/UI/SettingsPanel.lua"):read("*a")
+  check(settings:find("if isOfficer and GuildOS.Client.isAnniversary then\n        F:Section(L[\"The !note command\"])", 1, true),
+    "and its setting shows on Anniversary only")
+  -- Where officers write about a member, a client with no OFFICER channel says it keeps it here.
+  local realChan = GuildOS.Compat.OfficerAddonChannel
+  GuildOS.Compat.OfficerAddonChannel = function() return nil, "no-channel" end
+  check(GuildOS:LocalOnlyText():find("Kept on this client only", 1, true), "no officer channel: kept on this client only")
+  GuildOS.Compat.OfficerAddonChannel = function() return "OFFICER" end
+  check(GuildOS:LocalOnlyText() == nil, "with one, nothing to say")
+  GuildOS.Compat.OfficerAddonChannel = realChan
+  for _, f in ipairs({ "UI/OfficerSheet.lua", "UI/MarksPanel.lua", "UI/MemberDetail.lua" }) do
+    check(io.open(ADDON .. "/" .. f):read("*a"):find("LocalOnlyText()", 1, true), f .. " says it where it is edited")
+  end
+end
+
 print(("public-note: %d checks passed"):format(checks))

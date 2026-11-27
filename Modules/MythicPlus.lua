@@ -6,6 +6,7 @@
 -- Guild OS has neither. Compat reads; this module turns the reading into what is stored, and a stored
 -- record (a guildmate's, so untrusted) into what the member sheet and the roster show.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 if not GuildOS.Client.isRetail then return end
 
 local MythicPlus = {}

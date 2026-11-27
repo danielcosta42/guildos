@@ -2,6 +2,7 @@
 -- Guild OS - Communication System
 -- Handles addon-to-addon communication for syncing member data
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local CommSystem = {}
 GuildOS.CommSystem = CommSystem
 local L = GuildOS.L
@@ -32,7 +33,8 @@ CommSystem.MSG_TYPES = {
     LFG_JOIN  = "GJ",    -- a request for a spot and its answer (WHISPER only; issue #341)
     RECRUIT_STATS = "RE",-- self-reported recruitment engagement (sender bound; officers aggregate).
                          -- NOT "RS": that code is already RESPONSE above; "RE" is the free code.
-    MAP_POS   = "MP",    -- live guild-map position (sender bound; GUILD-only; clamped)
+    MAP_POS   = "MP",    -- live guild-map position (sender bound; GUILD only; specs/salao/mapa.md)
+    MAP_WATCH = "MW",    -- "I have the guild map open on this map" (sender bound; GUILD only)
 }
 
 -- Throttle settings
@@ -52,7 +54,7 @@ function CommSystem:Initialize()
     local frame = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(frame, "CHAT_MSG_ADDON")
     frame:SetScript("OnEvent", function(_, _, prefix, msg, channel, sender)
-        if prefix == GuildOS.PREFIX then
+        if prefix == GuildOS.PREFIX and CommSystem:IsOn() then
             -- Timed by the type it carried (issue #324); a chunk still waiting for the rest says "chunk".
             local st, t = GuildOS.State.comm, GuildOS.Perf:Start()
             st.recvKind = nil
@@ -64,7 +66,7 @@ function CommSystem:Initialize()
     -- Periodic sync timer (every 5 minutes): PUSH our own data.
     C_Timer.NewTicker(300, function()
         if IsInGuild() then
-            CommSystem:BroadcastMyData()
+            CommSystem:BroadcastMyData(false, true)   -- only when it changed (audit D1)
             if GuildOS:IsOfficer() then
                 if GuildOS.TrialTracker then
                     C_Timer.After(5, function()
@@ -84,50 +86,23 @@ function CommSystem:Initialize()
                 end
                 -- And the guild's officer threshold, for a client that missed the change (issue #81),
                 -- and on retail its loot system (issue #185).
-                C_Timer.After(15, function()
-                    GuildOS:PublishOfficerMaxRank()
-                    GuildOS:PublishEventMaxRank()   -- who creates events (issue #283)
-                    if GuildOS.Calendar then GuildOS.Calendar:PublishMemberKinds() end   -- and which kinds (issue #308)
-                    GuildOS:PublishLootSystem()
-                    if GuildOS.CoreManager then GuildOS.CoreManager:PublishAllLoot() end   -- each core's own (issue #338)
-                    if GuildOS.Readiness then GuildOS.Readiness:PublishMinIlvl() end  -- Forever (issue #206)
-                    if GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") then GuildOS.Founding:Publish() end  -- Forever (issue #208)
-                    if GuildOS.TrialTracker then GuildOS.TrialTracker:PublishConfig() end  -- the trials' length and switch (#249)
-                    if GuildOS.Discipline then GuildOS.Discipline:PublishConfig() end  -- the record's term and ladder (#402)
-                    if GuildOS.ModAlerts then GuildOS.ModAlerts:PublishConfig() end  -- the chat alerts' list (#404)
-                    if GuildOS.GuildRules then GuildOS.GuildRules:PublishConfig() end  -- the guild's rules (#407)
-                end)
+                C_Timer.After(15, function() CommSystem:PublishOfficerConfig(true) end)   -- what changed (D1)
             end
         end
     end)
 
-    -- Periodic re-REQUEST (self-healing PULL) on a slower, jittered cadence.
-    -- The 300s ticker above only broadcasts our own data; without this a client
-    -- that missed a peer's one broadcast would never re-pull it within the
-    -- session. Kept on a separate 10-min timer; the 0-15s jitter spreads the
-    -- guild-wide REQUEST fan-out across clients. Only a peer's own data was throttled
-    -- (THROTTLE_INTERVAL), and an officer's backfills went out on every request until
-    -- each peer answered once per ANSWER_GAP (issue #324).
-    C_Timer.NewTicker(600, function()
-        if IsInGuild() then
-            C_Timer.After(math.random() * 15, function()
-                if IsInGuild() then CommSystem:RequestAllData() end
-            end)
-        end
-    end)
+    -- No periodic REQUEST (audit D1, #285): with a few clients online it made everybody re-send everything
+    -- every ~2 minutes. A member logging in asks (below) and everybody answers; /gos sync asks again.
 
     -- Reliable startup sync (first-open PUSH). Initialize() only runs AFTER the
     -- guild DB is resolved (via InitModules), so this fires even on a COLD login
     -- where OnEnterWorld bailed out before self.db existed. This is what makes a
     -- freshly-installed member's data reach the guild promptly instead of waiting
     -- up to 5 minutes for the first periodic tick.
-    C_Timer.After(3, function()
-        if not IsInGuild() then return end
-        if GuildOS.DataCollector then GuildOS.DataCollector:CollectMyData() end
-        if GuildOS.AttunementTracker then GuildOS.AttunementTracker:ScanAttunements() end
-        C_Timer.After(2, function()
-            if IsInGuild() then CommSystem:BroadcastMyData() end
-        end)
+    -- The login's one collection is GuildOS:OnEnterWorld's at 3 s (audit D9): the broadcast collects again
+    -- only when nothing was collected within DataCollector.FRESH.
+    C_Timer.After(5, function()
+        if IsInGuild() then CommSystem:BroadcastMyData() end
     end)
 
     -- First-open PULL: a small staggered burst (not a single shot) so a newly
@@ -138,6 +113,12 @@ function CommSystem:Initialize()
             if IsInGuild() then CommSystem:RequestAllData() end
         end)
     end
+end
+
+-- Whether the guild sync runs: the Settings' "Comm System" switch (audit D5). Off, this client neither
+-- sends nor receives on the sync prefix, and says "sync off" when asked to sync.
+function CommSystem:IsOn()
+    return GuildOS:IsFeatureEnabled("commSystem")
 end
 
 -- Chunking settings
@@ -208,6 +189,8 @@ CommSystem.DROP_REASON_TEXT = {
 -- `kind`, optional, names it in /gos perf (SyncService passes its domain); else the type does.
 -- `channel`, optional: "OFFICER" for what only officers may receive (SendToOfficers); GUILD otherwise.
 function CommSystem:SendMessage(msgType, data, target, priority, kind, channel)
+    -- Comm System off: nothing goes out either, as nothing comes in (audit D5).
+    if not self:IsOn() then return end
     -- The officers' notes never leave by GUILD or a whisper, whoever calls (#430): SendToOfficers sends them.
     if self.OFFICER_TYPES[msgType] and (target or channel ~= "OFFICER") then return end
     local payload = msgType .. ":" .. (data or "")
@@ -322,8 +305,10 @@ end
 -- chunk; every chunk of one message travels over the same distribution.
 function CommSystem:OnMessageReceived(msg, channel, sender)
     -- Don't process our own messages
+    -- WoW: Forever writes a surname with a hyphen ("Ana-Costa") where PlayerName says "Ana Costa" (#448).
     local myName = GuildOS.Compat.PlayerName()
-    if sender == myName or sender == GuildOS:GetPlayerKey(myName) then
+    if sender == myName or sender == GuildOS:GetPlayerKey(myName)
+        or (GuildOS.SenderName and GuildOS:SenderName(sender) == myName) then
         return
     end
 
@@ -425,6 +410,11 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         if GuildOS.RecipeTracker then
             GuildOS.RecipeTracker:HandleIncoming(sender, data)
         end
+    elseif msgType == "RA" then
+        -- A guildmate asks for one of my recipe lists, whose hash they hold differently (audit D3).
+        if GuildOS.RecipeTracker then
+            GuildOS.RecipeTracker:OnAsk(sender, data)
+        end
     elseif msgType == "TR" then
         if GuildOS.TrialTracker and GuildOS:IsOfficer() and channel == "GUILD" and GuildOS:IsOfficerByName(sender) then
             GuildOS.TrialTracker:HandleIncoming(data)
@@ -513,14 +503,12 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             GuildOS.RecruitEngagement:HandleStats(sender, data, channel)
         end
     elseif msgType == CommSystem.MSG_TYPES.MAP_POS then
-        -- Live guild-map position. Identity is the envelope sender and it must
-        -- arrive over GUILD; HandlePosition keys the entry by that sender and
-        -- clamps every number, so a peer can only ever place its OWN pin and a
-        -- hostile packet cannot break the map UI. channel is threaded exactly
-        -- like RECRUIT_STATS so the GUILD-only rule can be enforced.
-        if GuildOS.GuildMap then
-            GuildOS.GuildMap:HandlePosition(sender, data, channel)
-        end
+        -- A guildmate's own position (issue #449). Keyed by the envelope sender, GUILD only, every number
+        -- clamped (GuildMap:HandlePosition): a peer can place only its own pin.
+        if GuildOS.GuildMap then GuildOS.GuildMap:HandlePosition(sender, data, channel) end
+    elseif msgType == CommSystem.MSG_TYPES.MAP_WATCH then
+        -- A guildmate opened the guild map: who is on it owes them positions for WATCH_TTL seconds.
+        if GuildOS.GuildMap then GuildOS.GuildMap:HandleWatch(sender, data, channel) end
     end
 end
 
@@ -530,26 +518,68 @@ end
 -- force=true bypasses the throttle (used for corrective re-broadcasts once a
 -- cold-cache snapshot finally resolves, which would otherwise be swallowed by
 -- the 5s window right after the startup broadcast).
-function CommSystem:BroadcastMyData(force)
+-- ifChanged=true (the 5-minute push, audit D1): nothing goes when the data is what this client last sent,
+-- its timestamp aside. An answer to a request and the login push always go: the asker may have nothing.
+function CommSystem:BroadcastMyData(force, ifChanged)
     if not IsInGuild() then return end
 
     -- Throttle
     local now = GetTime()
     if not force and now - self.lastBroadcast < self.THROTTLE_INTERVAL then return end
-    self.lastBroadcast = now
 
-    -- Collect fresh data
-    if GuildOS.DataCollector then
-        GuildOS.DataCollector:CollectMyData()
+    -- Collect fresh data, unless it was collected a moment ago (audit D9)
+    local DC = GuildOS.DataCollector
+    if DC and not (DC.Fresh and DC:Fresh()) then
+        DC:CollectMyData()
     end
     if GuildOS.AttunementTracker then
         GuildOS.AttunementTracker:ScanAttunements()
     end
 
-    local data = GuildOS.DataCollector:GetBroadcastData()
+    local data = DC:GetBroadcastData()
+    local stamp = data.lastUpdate
+    data.lastUpdate = nil
+    local same = LibSerialize:Serialize(data)
+    data.lastUpdate = stamp
+    if ifChanged and same == self._lastSent then
+        GuildOS.Perf:Count("guild sync broadcast unchanged")
+        return
+    end
+    self.lastBroadcast, self._lastSent = now, same
     local serialized = LibSerialize:Serialize(data)
 
     self:SendMessage(self.MSG_TYPES.BROADCAST, serialized)
+end
+
+-- The guild's officer settings, published by an officer: on the 5-minute push and in the answer to a
+-- request (audit D8: one list, not two copies). `ifChanged` (the 5-minute push, audit D1): a payload this
+-- session already sent unchanged stays home; the answer to a request and a manual Sync send everything.
+function CommSystem:PublishOfficerConfig(ifChanged)
+    if not GuildOS:IsOfficer() then return end
+    local SS = GuildOS.SyncService
+    if not SS then return self:_PublishOfficerConfig() end
+    self._configSent = self._configSent or {}
+    SS._configScope = { sent = self._configSent, skip = ifChanged and true or false }
+    local ok, err = pcall(self._PublishOfficerConfig, self)
+    SS._configScope = nil
+    if not ok then error(err, 0) end
+end
+
+function CommSystem:_PublishOfficerConfig()
+    GuildOS:PublishOfficerMaxRank()
+    GuildOS:PublishEventMaxRank()   -- who creates events (issue #283)
+    if GuildOS.Calendar then GuildOS.Calendar:PublishMemberKinds() end   -- and which kinds (issue #308)
+    GuildOS:PublishLootSystem()
+    if GuildOS.LootRule then GuildOS.LootRule:Publish() end   -- and the guild's own rule, on every client (audit L7)
+    if GuildOS.CoreManager then GuildOS.CoreManager:PublishAllLoot() end   -- each core's own (issue #338)
+    if GuildOS.Readiness then GuildOS.Readiness:PublishMinIlvl() end  -- Forever (issue #206)
+    if GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") then GuildOS.Founding:Publish() end  -- Forever (issue #208)
+    if GuildOS.TrialTracker then GuildOS.TrialTracker:PublishConfig() end  -- the trials' length and switch (#249)
+    if GuildOS.Discipline then GuildOS.Discipline:PublishConfig() end  -- the record's term and ladder (#402)
+    if GuildOS.ModAlerts then GuildOS.ModAlerts:PublishConfig() end  -- the chat alerts' list (#404)
+    if GuildOS.GuildRules then GuildOS.GuildRules:PublishConfig() end  -- the guild's rules (#407)
+    if GuildOS.GuildBank and GuildOS.GuildBank.PublishTax then GuildOS.GuildBank:PublishTax() end  -- the bank tax (Ley)
+    if GuildOS.Recruitment and GuildOS.Recruitment.PublishWelcome then GuildOS.Recruitment:PublishWelcome() end  -- the welcome (#449)
 end
 
 ----------------------------------------------------------------------
@@ -573,6 +603,10 @@ function CommSystem:HandleBroadcast(sender, data, channel)
     -- Store the data, and count what became of it (issue #312).
     local stored, why = GuildOS.DataCollector:StoreReceivedData(key, playerData)
     self:_CountPayload(sender, stored and "stored" or "dropped", why)
+    -- Anniversary's recipes travel by hash (audit D3): a list this client lacks, or holds older, is asked for.
+    if stored and GuildOS.RecipeTracker and type(playerData.rh) == "table" then
+        GuildOS.RecipeTracker:OnHashes(key, sender, playerData.rh)
+    end
     -- A guildmate's own version, over GUILD only: a whisper can come from anyone (#377).
     if channel == "GUILD" then self:HandleVersionCheck(sender, playerData.addonVersion) end
 end
@@ -654,19 +688,7 @@ function CommSystem:_Answer()
 
         -- And the guild's officer threshold (issue #81), and on retail its loot system (issue #185)
         if GuildOS:IsOfficer() then
-            C_Timer.After(3, function()
-                GuildOS:PublishOfficerMaxRank()
-                GuildOS:PublishEventMaxRank()   -- who creates events (issue #283)
-                if GuildOS.Calendar then GuildOS.Calendar:PublishMemberKinds() end   -- and which kinds (issue #308)
-                GuildOS:PublishLootSystem()
-                if GuildOS.CoreManager then GuildOS.CoreManager:PublishAllLoot() end   -- each core's own (issue #338)
-                if GuildOS.Readiness then GuildOS.Readiness:PublishMinIlvl() end  -- Forever (issue #206)
-                if GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") then GuildOS.Founding:Publish() end  -- Forever (issue #208)
-                if GuildOS.TrialTracker then GuildOS.TrialTracker:PublishConfig() end  -- the trials' length and switch (#249)
-                if GuildOS.Discipline then GuildOS.Discipline:PublishConfig() end  -- the record's term and ladder (#402)
-                if GuildOS.ModAlerts then GuildOS.ModAlerts:PublishConfig() end  -- the chat alerts' list (#404)
-                if GuildOS.GuildRules then GuildOS.GuildRules:PublishConfig() end  -- the guild's rules (#407)
-            end)
+            C_Timer.After(3, function() self:PublishOfficerConfig() end)
         end
 
         -- Share the guild recruitment config so alts/late-loggers reliably get
@@ -709,14 +731,6 @@ function CommSystem:_Answer()
             end)
         end
 
-        -- Every member answers with its own current map position (forced past
-        -- the throttle), so a guildmate logging in converges on where everyone
-        -- is instead of waiting for each peer's next zone change.
-        if GuildOS.GuildMap then
-            C_Timer.After(4.5, function()
-                GuildOS.GuildMap:Broadcast(true)
-            end)
-        end
 
         -- Officers re-broadcast their authoritative shared state (blacklist,
         -- audit trail, bulletin board) so a peer who was offline when it last
@@ -889,12 +903,20 @@ function CommSystem:FullSync()
         GuildOS:Print(L["Not in a guild."])
         return
     end
+    if not self:IsOn() then
+        GuildOS:Print(L["Guild sync is off: turn Comm System on in Settings, Modules."])
+        return
+    end
 
     -- Broadcast own member data (gear, professions, attunements, recipes)
     self:BroadcastMyData()
 
     -- Request fresh data from all online guild members, answered within NOW_GAP (issue #324)
     self:RequestAllData(true)
+
+    -- "Sync" is one thing (audit B26): the professions and the bank are asked for again too.
+    if GuildOS.ProfSync then GuildOS.ProfSync:Refresh() end
+    if GuildOS.GuildBank then GuildOS.GuildBank:Ask() end
 
     if not GuildOS:IsOfficer() then
         GuildOS:Print(L["Syncing data with guild..."])
@@ -920,6 +942,7 @@ function CommSystem:FullSync()
         if GuildOS.TrialTracker then
             GuildOS.TrialTracker:BroadcastTrials()
         end
+        self:PublishOfficerConfig()   -- a manual Sync sends the officer settings whole (D1)
     end)
 
     C_Timer.After(3, function()

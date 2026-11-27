@@ -18,7 +18,10 @@ jobs:
 
       - name: Install Luacheck
         run: |
-          sudo apt-get update -qq
+          # A third-party source of the runner image (packages.microsoft.com) can answer 403 and fail the
+          # whole update; Ubuntu's own sources are all this job needs.
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/microsoft-prod.sources
+          sudo apt-get update -qq || true
           sudo apt-get install -y -qq lua5.1 luarocks > /dev/null
           sudo luarocks install luacheck > /dev/null
 
@@ -54,7 +57,7 @@ jobs:
         # since ae991c2 and no one found out for a month.
         run: |
           sudo apt-get install -y -qq luajit > /dev/null
-          python3 -m pip install --quiet pyyaml
+          python3 -m pip install --quiet pyyaml pillow
           for f in tools/*.lua; do
             luajit -e 'ADDON="."' "$f" > /dev/null || { echo "$f failed" >&2; exit 1; }
             echo "ok $f"
@@ -129,6 +132,9 @@ jobs:
           # What CurseForge and Wago show (.pkgmeta's manual-changelog): this release alone.
           printf "%s\n" "$ENTRY" > RELEASE_NOTES.md
 
+          # What the game's What's new opens with at the first login with this release.
+          printf "%s\n" "$ENTRY" | python3 tools/release_notes_lua.py "$VERSION"
+
           # Prepend to CHANGELOG.md (after the header line)
           if [ -f CHANGELOG.md ]; then
             # Insert after the first two lines (title + blank line)
@@ -146,7 +152,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add GuildOS.toc Core/Config.lua CHANGELOG.md RELEASE_NOTES.md
+          git add GuildOS.toc Core/Config.lua CHANGELOG.md RELEASE_NOTES.md Data/ReleaseNotes.lua
           git diff --cached --quiet && echo "No changes" && exit 0
           git commit -m "chore: bump version to ${{ steps.version.outputs.next }} [skip ci]"
           git push origin main

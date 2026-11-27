@@ -41,6 +41,16 @@ local GLOBALS = {
   "QueryGuildBankTab", "QueryGuildBankLog", "GetGuildBankTransaction", "GetGuildBankMoneyTransaction",
   "PickupGuildBankItem", "SplitGuildBankItem", "SetCurrentGuildBankTab", "GetCurrentGuildBankTab",
   "AutoStoreGuildBankItem", "DepositGuildBankMoney",
+  -- The officer action queue's binding and the crest's tabard (#449): refused in combat, missing on some clients.
+  "SetBindingClick", "SetLargeGuildTabardTextures", "SetSmallGuildTabardTextures",
+  -- Whether another addon is loaded (#449, OpenMap): C_AddOns or the old global, by client.
+  "IsAddOnLoaded",
+  -- The guild's event log: Compat probes it and answers nil where a client has none.
+  "QueryGuildEventLog", "GetNumGuildEvents", "GetGuildEventInfo",
+  -- The addon's memory (/gos debug mem, memory audit): C_AddOns or the old globals, by client.
+  "UpdateAddOnMemoryUsage", "GetAddOnMemoryUsage",
+  -- The quest log (#450): C_QuestLog or the Classic-era globals, secret values guarded, by client.
+  "GetNumQuestLogEntries", "GetQuestLogTitle", "GetQuestTagInfo", "GetQuestLogIndexByID",
 }
 -- Names only these APIs have: as a field or method of anything but Compat they are flagged too.
 local API_ONLY = { GuildRoster = true, RegisterAddonMessagePrefix = true, SendAddonMessage = true,
@@ -56,7 +66,13 @@ local NAMESPACES = { "C_Item", "C_Spell", "C_UnitAuras", "C_Container", "C_Trade
                      -- The game's addon CPU meter, retail 11.0.2 on (issue #324).
                      "C_AddOnProfiler",
                      -- Whether the server opens a guild bank (issue #380).
-                     "C_GuildBank" }
+                     "C_GuildBank",
+                     -- The guild map's reads (#449): secret and missing answers are Compat's to handle.
+                     "C_Map",
+                     -- Another addon's state (#449): C_AddOns or the old global, by client.
+                     "C_AddOns",
+                     -- The quest log (#450).
+                     "C_QuestLog" }
 
 -- Blank comments and strings, keeping every newline so line numbers stay true.
 local function blank(src)

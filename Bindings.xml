@@ -1,9 +1,14 @@
 <Bindings>
     <!--
-        One binding, unbound by default: open or close the Guild OS window.
-        Assign a key under Key Bindings, AddOns, in the Guild OS section.
+        Unbound by default; assign the keys under Key Bindings, AddOns, in the Guild OS section.
+        GUILDOS_TOGGLE: open or close the Guild OS window.
+        CLICK GuildOSQueueNext:LeftButton: the officer action queue's next action (#449, Modules/ActionQueue.lua):
+        a guild invite, a /who, a whisper, or the bulk actions' next step, one per key press. A key press is the
+        hardware event the game asks for. Its name is BINDING_NAME_CLICK GuildOSQueueNext:LeftButton
+        (UI/ActionQueue.lua).
     -->
     <Binding name="GUILDOS_TOGGLE" header="GUILDOS" category="ADDONS">
         GuildOS:ToggleRoster()
     </Binding>
+    <Binding name="CLICK GuildOSQueueNext:LeftButton" category="ADDONS"/>
 </Bindings>

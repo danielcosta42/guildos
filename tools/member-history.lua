@@ -179,7 +179,7 @@ for i = 1, 5 do MH.ApplyJoin(big, "P" .. i, 1, false) end
 check(MH.Cap(big, 20) == 15 and big.F1 == nil and big.F16 ~= nil and big.F30 ~= nil and big.P1 ~= nil,
   "over the cap: the former members who left longest ago go, the present stay")
 check(MH.Cap({ X = { stints = { { joinAt = 1 } } } }, 0) == 0, "a present member is never dropped")
-check(MH.MAX_KEYS * (MH.MAX_STINTS * 80 + MH.MAX_RANKS * 70) < 8 * 1024 * 1024, "the documented bound: under 8 MB")
+check(MH.MAX_KEYS * (MH.MAX_STINTS * 80 + MH.MAX_RANKS * 70) < 3 * 1024 * 1024, "the documented bound: under 3 MB")
 
 -- ── 3. The diff ───────────────────────────────────────────────────────────
 local base = {
@@ -391,5 +391,27 @@ local mate = GuildOS.PugInspector:Classify("Mem", GuildOS.PugInspector:_LiveSour
 check(mate.tag == "Guildmate", "a present member is a guildmate, whatever the history")
 check(type(MH:Stints("Nobody")) == "table" and #MH:Stints("Nobody") == 0 and MH:JoinedAt("Nobody") == nil
   and MH:TenureDays("Nobody") == nil and MH:Describe("Nobody") == nil, "the API answers for nobody")
+
+-- ── 8. Who invited (the game's guild event log, specs/salao/log-e-renomes.md) ──
+local inv = {}
+MH.ApplyJoin(inv, "Ivy", 10000, true)
+check(MH.SetInviter(inv, "Ivy", 9000, "Off2", 7200) and inv.Ivy.stints[1].inv == "Off2",
+  "a join the diff saw later: its inviter from the log, earlier than the diff's time")
+check(not MH.SetInviter(inv, "Ivy", 9000, "Other", 7200), "one already known stays")
+check(not MH.SetInviter(inv, "Nobody", 1, "X"), "nobody: nothing")
+MH:FromAudit({ action = "join", target = "Ula", author = "Off2", timestamp = now - 60, approx = true, tol = 7200 })
+check(MH:InvitedBy(K("Ula")) == "Off2", "an approximate join from the log, with its inviter")
+check(MH:InvitedBy(K("Old")) == nil, "a former member: none for the current passage")
+-- The Roster Log's approximate events: two copies of the game's line an hour apart are one, the officer filled in.
+local apx = {}
+check(RL:_Insert({ action = "kick", target = "Pip", timestamp = 50000, approx = true, tol = 7200 }, apx), "an approximate removal")
+check(not RL:_Insert({ action = "kick", target = "Pip", author = "Off2", timestamp = 53000, approx = true, tol = 7200 }, apx)
+  and #apx == 1 and apx[1].author == "Off2", "its copy fifty minutes on is the same line, and fills the officer")
+check(RL:_Insert({ action = "kick", target = "Pip", timestamp = 50000 + 3 * 3600, approx = true, tol = 7200 }, apx),
+  "three hours apart: another one")
+-- Deleting a line: on this client only, never back from a backfill.
+RL:_Insert({ action = "warn", target = "Pip", author = "Off", timestamp = now - 5, id = "w-pip" })
+check(RL:Hide("w-pip") and not RL:_Insert({ action = "warn", target = "Pip", author = "Off", timestamp = now - 5, id = "w-pip" }),
+  "a deleted line is refused when it comes back")
 
 print(string.format("member-history: %d checks passed", checks))

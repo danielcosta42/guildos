@@ -4,6 +4,7 @@
 -- card with arrows, filters on top, the times on the player's own clock. Every rule lives in
 -- Modules/GuildFinder.lua; this file only draws it and calls it (Rule 10).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
@@ -205,9 +206,9 @@ local function BuildFinder()
 
     local gname = UI:CreateTitle(card, "", 15)
     gname:SetPoint("TOPLEFT", shield, "TOPRIGHT", 12, -2)
-    local gworld = UI:CreateText(card, "", 10, C.label.r, C.label.g, C.label.b)
+    local gworld = UI:CreateText(card, "", UI.SP.META, C.label.r, C.label.g, C.label.b)
     gworld:SetPoint("TOPLEFT", gname, "BOTTOMLEFT", 0, -4)
-    local seal = UI:CreateText(card, "", 10, C.ok.r, C.ok.g, C.ok.b)
+    local seal = UI:CreateText(card, "", UI.SP.META, C.ok.r, C.ok.g, C.ok.b)
     seal:SetPoint("TOPLEFT", gworld, "BOTTOMLEFT", 0, -4)
 
     local pitch = UI:CreateText(card, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
@@ -218,7 +219,7 @@ local function BuildFinder()
 
     local rows = {}
     for i = 1, 5 do
-        local label = UI:CreateHeaderText(card, "", 10)
+        local label = UI:CreateHeaderText(card, "", UI.SP.META)
         label:SetWidth(LABEL_W); label:SetJustifyH("LEFT")
         local value = UI:CreateText(card, "", 11)
         value:SetWidth(VALUE_W); value:SetJustifyH("LEFT"); value:SetWordWrap(false)
@@ -231,7 +232,7 @@ local function BuildFinder()
         local number = UI:CreateTitle(card, "", 16)
         number:SetPoint("BOTTOMLEFT", 14 + (i - 1) * 130, 66)
         number:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-        local caption = UI:CreateText(card, "", 10, C.label.r, C.label.g, C.label.b)
+        local caption = UI:CreateText(card, "", UI.SP.META, C.label.r, C.label.g, C.label.b)
         caption:SetPoint("TOPLEFT", number, "BOTTOMLEFT", 0, -2)
         proof[i] = { number = number, caption = caption }
     end
@@ -245,7 +246,7 @@ local function BuildFinder()
     end)
     local whisper = UI:CreateButton(card, L["Whisper"], 90, 26)
     whisper:SetPoint("LEFT", join, "RIGHT", 8, 0)
-    local count = UI:CreateText(card, "", 10, C.label.r, C.label.g, C.label.b)
+    local count = UI:CreateText(card, "", UI.SP.META, C.label.r, C.label.g, C.label.b)
     count:SetPoint("BOTTOMRIGHT", -14, 18)
 
     -- One dot per guild, the one being read in gold (the mock's pager).
@@ -259,7 +260,7 @@ local function BuildFinder()
         dots[i] = dot
     end
 
-    local clock = UI:CreateText(f, L["Times are on your clock."], 10, C.label.r, C.label.g, C.label.b)
+    local clock = UI:CreateText(f, L["Times are on your clock."], UI.SP.META, C.label.r, C.label.g, C.label.b)
     clock:SetPoint("BOTTOMLEFT", 14, 12)
 
     ------------------------------------------------------------------
@@ -280,7 +281,7 @@ local function BuildFinder()
     local eText = UI:CreateText(empty, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     eText:SetPoint("TOP", eTitle, "BOTTOM", 0, -10)
     eText:SetWidth(WIDTH - 150); eText:SetWordWrap(true)
-    local eCompanion = UI:CreateText(empty, L["With the companion, the whole list at guildos.me arrives at once."], 10, C.label.r, C.label.g, C.label.b)
+    local eCompanion = UI:CreateText(empty, L["With the companion, the whole list at guildos.me arrives at once."], UI.SP.META, C.label.r, C.label.g, C.label.b)
     eCompanion:SetPoint("TOP", eText, "BOTTOM", 0, -12)
     eCompanion:SetWidth(WIDTH - 150); eCompanion:SetWordWrap(true)
     local site = UI:CreateButton(empty, L["Show the list at guildos.me"], 220, 26)
@@ -344,8 +345,8 @@ local function BuildFinder()
     local function DrawCard(ad)
         local tint = FACTION_TINT[ad.f] or { 0.25, 0.25, 0.28 }
         shield:SetBackdropColor(tint[1], tint[2], tint[3], 1)
-        shieldText:SetText(initial(ad.n))
-        gname:SetText(ad.n)
+        GuildOS:SetTitleText(shieldText, initial(ad.n))
+        GuildOS:SetTitleText(gname, ad.n)
         local world = {}
         if factionName(ad.f) then world[#world + 1] = factionName(ad.f) end
         if ad.w then world[#world + 1] = worldName(ad.w) end
@@ -541,14 +542,14 @@ local function BuildJoinForm()
     shieldText:SetPoint("CENTER")
     local gname = UI:CreateTitle(f, "", 14)
     gname:SetPoint("TOPLEFT", shield, "TOPRIGHT", 10, -2)
-    local gworld = UI:CreateText(f, "", 10, C.label.r, C.label.g, C.label.b)
+    local gworld = UI:CreateText(f, "", UI.SP.META, C.label.r, C.label.g, C.label.b)
     gworld:SetPoint("TOPLEFT", gname, "BOTTOMLEFT", 0, -4)
 
     -- The form: who it goes to, the note, the buttons.
     local who = UI:CreateText(f, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     who:SetPoint("TOPLEFT", 14, -94)
     who:SetWidth(FORM_W - 28); who:SetJustifyH("LEFT"); who:SetWordWrap(true)
-    local noteLabel = UI:CreateHeaderText(f, L["Message (optional)"], 10)
+    local noteLabel = UI:CreateHeaderText(f, L["Message (optional)"], UI.SP.META)
     noteLabel:SetPoint("TOPLEFT", 14, -134)
     local box = CreateFrame("EditBox", nil, f, "BackdropTemplate")
     box:SetSize(FORM_W - 28, 24)
@@ -562,7 +563,7 @@ local function BuildJoinForm()
     box:SetMaxLetters(120)
     box:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
     box:SetScript("OnEnterPressed", function(s) s:ClearFocus() end)
-    local problem = UI:CreateText(f, "", 10, C.danger.r, C.danger.g, C.danger.b)
+    local problem = UI:CreateText(f, "", UI.SP.META, C.danger.r, C.danger.g, C.danger.b)
     problem:SetPoint("TOPLEFT", 14, -182)
     problem:SetWidth(FORM_W - 28); problem:SetJustifyH("LEFT")
     local send = UI:CreateButton(f, L["Send request"], 130, 26)
@@ -590,8 +591,8 @@ local function BuildJoinForm()
         if not ad then return end
         local tint = FACTION_TINT[ad.f] or { 0.25, 0.25, 0.28 }
         shield:SetBackdropColor(tint[1], tint[2], tint[3], 1)
-        shieldText:SetText(initial(ad.n))
-        gname:SetText(ad.n)
+        GuildOS:SetTitleText(shieldText, initial(ad.n))
+        GuildOS:SetTitleText(gname, ad.n)
         gworld:SetText(ad.w and worldName(ad.w) or "")
 
         local e = JR():Latest(ad)
@@ -602,7 +603,7 @@ local function BuildJoinForm()
         if sent then
             local tone, head, line = StateOf(e)
             dot:SetVertexColor(TONE[tone][1], TONE[tone][2], TONE[tone][3], 1)
-            stateTitle:SetText(head)
+            GuildOS:SetTitleText(stateTitle, head)
             stateText:SetText(line)
         else
             local me = JR():Me()

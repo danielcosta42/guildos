@@ -365,4 +365,57 @@ RB:Broadcast()
 check(#sent >= 1 and sent[1].payload:find("^CR2|Ashen Vow|") and sent[1].payload:find("LEGACY NOTE", 1, true), "and the /gos beacon one is what goes")
 for _, m in ipairs(sent) do check(not m.payload:find("^CR3|"), "no CR3 from an ad that expired") end
 
+-- ── Audit N11: the switch, one sender, one version per edit ─────────────
+reset()
+GUILD, officer = "Ashen Vow", true
+GuildOSInbox = { GUILD_AD }
+RB:Initialize()
+RB:GetAd().enabled = false
+sent = {}
+RB:Broadcast()
+check(#sent == 0, "switch off: the site's ad does not go either")
+do
+  local CS = GuildOS.CommSystem
+  local realB = CS and CS.BroadcastMyData
+  local forced
+  if CS then CS.BroadcastMyData = function(_, force) forced = force end end
+  RB:SetAdField("enabled", true)
+  check(not CS or forced == true, "the switch goes out at once, past the member broadcast's throttle")
+  if CS then CS.BroadcastMyData = realB end
+end
+check(not RB:GetAd().edited, "the switch is no edit of the ad")
+-- Another officer online with Guild OS, whose name comes first: they send, not me.
+local me = GuildOS.Compat.PlayerName()
+local first = "A" .. me
+local realNum, realInfo = GetNumGuildMembers, GetGuildRosterInfo
+GetNumGuildMembers = function() return 1 end
+GetGuildRosterInfo = function() return first .. "-Realm", "Officer", 1, 70, "Warrior", "", "", "", true end
+GuildOS.db.members = GuildOS.db.members or {}
+GuildOS.db.members[GuildOS:KeyOfRosterName(first .. "-Realm")] = { lastUpdate = NOW }
+check(RB:IsSender(), "N11: an officer on an old client (no beacon flag) is no candidate")
+GuildOS.db.members[GuildOS:KeyOfRosterName(first .. "-Realm")] = { lastUpdate = NOW, beacon = false }
+check(RB:IsSender(), "N11: an officer with the switch off is no candidate: Alice off, Bob on, Bob sends")
+GuildOS.db.members[GuildOS:KeyOfRosterName(first .. "-Realm")] = { lastUpdate = NOW, beacon = true }
+check(not RB:IsSender(), "the lowest name among the officers online with the switch on sends")
+sent = {}
+RB:Broadcast()
+check(#sent == 0, "so this officer's minute ticks send nothing")
+RB:Broadcast(true)
+check(#sent >= 1, "but Broadcast now still sends")
+GuildOS.db.members[GuildOS:KeyOfRosterName(first .. "-Realm")] = nil
+check(RB:IsSender(), "an officer without Guild OS is not counted")
+check(RB:Advertises() == true, "N11: this officer advertises the switch on")
+RB:SetAdField("enabled", false)
+check(RB:Advertises() == false, "N11: and off once it is off")
+RB:SetAdField("enabled", true)
+GetNumGuildMembers, GetGuildRosterInfo = realNum, realInfo
+check(RB.PickSender({ "Zed", "Ann", "Bob" }) == "Ann" and RB.PickSender({}) == nil, "the lowest name, the same on every client")
+-- Typing in the note: one version at the broadcast, not one per key.
+local v0 = RB:GetAd().version
+for i = 1, 10 do RB:SetAdField("note", ("x"):rep(i)) end
+check(RB:GetAd().version == v0 and RB:GetAd().edited, "ten keystrokes move no version")
+check(RB:CommitEdits() > v0 and not RB:GetAd().edited, "the next broadcast moves it once")
+local src = io.open(ADDON .. "/UI/RecruitBeacon.lua"):read("*a")
+check(not src:find("Yelled", 1, true), "the panel no longer says the ad is yelled")
+
 print(("recruit-beacon: %d checks passed"):format(checks))

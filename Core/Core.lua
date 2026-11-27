@@ -11,6 +11,19 @@ _G.GuildOS = _G.GuildOS or {}
 -- Attach the file-local namespace table (only accessible from this file)
 GuildOS.ns = ns
 
+-- The frames Guild OS made this session (/gos debug mem, memory audit). The client never frees a frame, so
+-- the number only grows: a screen that redraws while it stays put reuses what it made. Every GuildOS file
+-- that makes frames takes CreateFrame through this counter, by a local at its top
+--   local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end
+-- The global is never replaced: a hook on it would run for every addon and the game itself. Not counted: the
+-- libraries, the shared ChehulNet files, and the children a template makes for a frame.
+GuildOS.framesMade = 0
+function GuildOS.CountedCreateFrame(...)
+    GuildOS.framesMade = GuildOS.framesMade + 1
+    return _G.CreateFrame(...)
+end
+local CreateFrame = GuildOS.CountedCreateFrame
+
 local L = GuildOS.L
 
 ----------------------------------------------------------------------
@@ -26,7 +39,7 @@ GuildOS.State = {
     errors      = {},  -- session error ring (see GuildOS:RecordError / /guildos errors)
     -- What failed to start (GuildOS:RunStartup) and what this client lacks
     -- (GuildOS:RecordMissing). Feeds /guildos errors and the login line.
-    startup     = { failed = {}, failedFeatures = {}, stacks = {} },
+    startup     = { failed = {}, failedFeatures = {}, stacks = {}, dropped = {} },
     missing     = {},
     perf        = { rows = {} },              -- GuildOS.Perf: calls and ms per label (issue #324)
     coalesce    = { at = {}, waiting = {} },  -- GuildOS:Coalesce: last run and the call held, per name
@@ -67,7 +80,6 @@ local DB_DEFAULTS = {
         },
     },
     myData = {},
-    lastSync = 0,
     guildWishlists = {},  -- [lowerName] = { name, class, wishlist = {} }
     lootPrios = {},       -- [itemId(num)] = { {name, class, order}, ... } officer-set priorities
     raidTracker = {
@@ -219,10 +231,32 @@ function GuildOS:ResolveGuildDB()
     -- that reached it (a character who joined mid-session stays on it until the next login) made the
     -- next character with no guild at all be asked to post it (#150): it never stays here.
     if not guilded then guildDB.guildRecruitment = nil end
+    -- Audit #448 (alianca.md §3.4): the ambassador pact and its whisper sync are gone, and what they kept goes
+    -- too. The old pact's public channel (GOS<TAG>) is the client's saved channel: its name is kept until
+    -- each of the account's characters has left it once (AllianceChat, per character).
+    -- The guilds blocked here stay blocked (db.allianceLinkBlocked), the old pact's own list joining them.
+    local pact = guildDB.alliance
+    if type(pact) == "table" and type(pact.tag) == "string" and not guildDB.allianceLeaveChannel then
+        local tag = pact.tag:upper():gsub("[^A-Z0-9]", "")
+        if tag ~= "" then guildDB.allianceLeaveChannel = "GOS" .. tag:sub(1, 12) end
+    end
+    if type(pact) == "table" and type(pact.blocked) == "table" then
+        guildDB.allianceLinkBlocked = type(guildDB.allianceLinkBlocked) == "table" and guildDB.allianceLinkBlocked or {}
+        for name, on in pairs(pact.blocked) do
+            if type(name) == "string" and on == true then guildDB.allianceLinkBlocked[name] = true end
+        end
+    end
+    guildDB.alliance, guildDB.allianceData, guildDB.allianceBoard = nil, nil, nil
+
+    -- Before any module converts it to the compact format (release safety S2): what the conversion replaces is
+    -- kept as the previous version had it, for a few days (Modules/Backup.lua).
+    if self.Backup and self.Backup.KeepBeforeUpgrade then self:SafeCall(self.Backup.KeepBeforeUpgrade, self.Backup, guildDB, dbKey) end
 
     self.db = guildDB
     self.guildKey = dbKey
     self.isGuilded = guilded
+    -- When each of the account's databases was last opened (Settings › Data and support, memoria.md).
+    if self.StampGuildDBs then self:SafeCall(self.StampGuildDBs, self) end
     return true
 end
 
@@ -269,20 +303,28 @@ end
 --            window refuses to open instead of erroring while it builds
 --   method   start function, when it is not Initialize
 --   after    second function, run only when the first one succeeded
+--   drop     switched off, the module goes from GuildOS for the session, as on a client without it:
+--            every caller already reads its absence, so nothing it syncs is sent or taken (audit B25)
 ----------------------------------------------------------------------
 local MODULE_START = {
     { "DataCollector" },
     { "AttunementTracker" },
     { "SyncService" },
+    -- The alliance (specs/salao/alianca.md): the code, its hidden channel and the shared /g (issues #344,
+    -- #348), the room, and what guildos.me sends of it.
     { "Alliance", ui = "alliance" },
-    { "AllianceSync" },
     { "AllianceChat" },
-    -- The alliance set in the guild info, its hidden channel and the allied /g (issues #344, #348).
     { "AllianceLink" },
     { "GuildChat" },
     { "RosterLog" },
     -- Each member's passages and rank changes, kept past the log's 90 days (issue #425).
     { "MemberHistory" },
+    -- A member's rename, the same GUID or a likely one asked about (specs/salao/log-e-renomes.md).
+    { "MemberRename" },
+    -- The game's guild event log, read once a login: who did what while this officer was away.
+    { "GuildEventLog" },
+    -- Who left or was removed, asked about on every officer's client, and who comes back (#449, specs/salao/saidas.md).
+    { "Departure" },
     -- The officers' safe list and nicknames (issue #429), synced among them; dates in the notes.
     { "MemberMarks" },
     { "NoteDates" },
@@ -304,11 +346,13 @@ local MODULE_START = {
     { "SoftRes" },
     { "CoreManager" },
     { "RaidTracker", feature = "raidTracker", ui = "raids" },
-    { "LootTracker", feature = "lootTracker" },
+    -- Always started (audit B17): every award is recorded; the "lootTracker" switch only hides its screens.
+    { "LootTracker" },
     { "LootMaster", feature = "lootMaster", ui = "loot" },
     -- The night's plan from the site, shown out of combat (issue #296).
     { "RaidPlan" },
-    { "Points", feature = "points", ui = "dkp" },
+    -- The DKP switch (Settings' "DKP", the export's "dkp") is the points' switch too (audit B25).
+    { "Points", feature = "dkp", ui = "dkp", drop = true },
     -- Retail only (issue #185): the loot council by trade; the module does not exist elsewhere.
     { "TradeCouncil" },
     { "Digest" },
@@ -319,6 +363,8 @@ local MODULE_START = {
     { "CallToArms" },
     { "Polls" },
     { "Calendar" },
+    -- The game's own calendar, its guild events and their answers, kept for the companion export (WoW: Forever).
+    { "CalendarSnapshot" },
     -- Each member's birthday and join anniversary (issue #428): drawn on the calendar, never stored as events.
     { "Birthdays" },
     { "Milestones" },
@@ -341,17 +387,19 @@ local MODULE_START = {
     { "LFGBoard" },
     -- The groups being formed (issue #341). After the board, whose listings and cooldown line it shares.
     { "Groups" },
+    -- The live guild map (issue #449, specs/salao/mapa.md): positions only while somebody looks.
     { "GuildMap" },
     { "PugInspector" },
-    { "RecipeTracker", ui = "recipes" },
-    { "CraftNet" },
+    -- The Crafts switch stops every crafts module and its sync, not only the tab (audit B25).
+    { "RecipeTracker", feature = "recipes", ui = "recipes", drop = true },
+    { "CraftNet", feature = "recipes", drop = true },
     -- Craft orders (issue #389): ask the guild's crafters to make an item, deliver by trade or mail.
-    { "CraftOrders", ui = "recipes" },
+    { "CraftOrders", feature = "recipes", ui = "recipes", drop = true },
     -- Winter Veil's Secret Santa (issue #437): shown while the site sends this year's event.
     { "WinterVeil", ui = "winterveil" },
     -- WoW: Forever only (issue #31); on Anniversary the module does not exist and is skipped.
-    { "Professions" },
-    { "ProfSync" },
+    { "Professions", feature = "recipes", drop = true },
+    { "ProfSync", feature = "recipes", drop = true },
     -- WoW: Forever only (issue #37): the look, read in the barber's chair.
     { "Look" },
     { "RecruitBeacon" },
@@ -537,7 +585,13 @@ function GuildOS:StartModule(entry)
     local name = entry[1]
     local mod = self[name]
     if not mod then return false end
-    if entry.feature and not self:IsFeatureEnabled(entry.feature) then return false end
+    if entry.feature and not self:IsFeatureEnabled(entry.feature) then
+        if entry.drop then
+            self[name] = nil
+            self.State.startup.dropped[entry.feature] = true
+        end
+        return false
+    end
     local method = entry.method or "Initialize"
     -- "Module:Method" for anything but Initialize, so two stages of one
     -- module (Recruitment, TrialTracker) never overwrite each other's record.
@@ -627,12 +681,20 @@ end
 
 -- The passes over the whole roster, each a loop over every member (issue #324: on a 700-member guild the
 -- event comes in bursts, and four passes ran on every one of them).
+local function dropDeparted() GuildOS:DropDeparted() end
+GuildOS.DEPARTED_GAP = 60   -- seconds between two passes that drop who left the guild
+
 local function rosterPass()
     local t = GuildOS.Perf:Start()
     if GuildOS.RecordFirstSeen then GuildOS:RecordFirstSeen() end
-    if GuildOS.DropDeparted then GuildOS:DropDeparted() end
+    -- At most once a minute (audit D2): the first pass at once, a burst's last at the minute's end.
+    if GuildOS.DropDeparted then GuildOS:Coalesce("departed", GuildOS.DEPARTED_GAP, dropDeparted) end
     -- Who joined since this client last saw the whole roster: a trial each, with the guild's switch on (#249).
-    if GuildOS.TrialTracker then GuildOS:SafeCall(GuildOS.TrialTracker.ScanRoster, GuildOS.TrialTracker) end
+    -- At most a pass a minute too (memory audit: a table a member every 5 s): the first at once, a burst's last later.
+    local TT = GuildOS.TrialTracker
+    if TT then
+        GuildOS:Coalesce("trials", TT.SCAN_GAP or 60, function() GuildOS:SafeCall(TT.ScanRoster, TT) end)
+    end
     -- What changed since the roster last seen (#425): at most a pass a minute, whatever the bursts.
     if GuildOS.MemberHistory then GuildOS.MemberHistory:Schedule() end
     GuildOS.Perf:Stop("roster pass", t)
@@ -1170,13 +1232,14 @@ function GuildOS:HasRankUpToByName(fullName, maxRank)
         end
         return false
     end
-    -- Normalise: strip realm if present
-    local shortName = fullName:match("^([^-]+)") or fullName
+    -- Normalise: strip realm if present. On WoW: Forever a sender's "Chehul-Costa" is the roster's "Chehul Costa",
+    -- never every officer named Chehul (audit N1).
+    local shortName = self:ShortName(fullName)
     local numMembers = GetNumGuildMembers() or 0
     for i = 1, numMembers do
         local name, _, rankIndex = GetGuildRosterInfo(i)
         if name then
-            local memberShort = name:match("^([^-]+)") or name
+            local memberShort = self:ShortName(name)
             if memberShort == shortName and rankIndex and rankIndex <= maxRank then
                 return true
             end
@@ -1231,15 +1294,22 @@ local function namesOfDates()
     return dateNames
 end
 
+-- One replacement function for every call (no closure each time: a chat card dates 40 lines a redraw), reading
+-- the date being written from `dateNow`.
+local dateNow
+local function localName(c)
+    local list = dateNames[c]
+    if not list then return "%" .. c end   -- date()'s own, %% included
+    local name = list[(c == "a" or c == "A") and dateNow.wday or dateNow.month] or ""
+    return (name:gsub("%%", "%%%%"))       -- a name is text to date(), never a format
+end
 function GuildOS:LocalDate(fmt, timestamp)
-    local t = date("*t", timestamp)
-    local names = namesOfDates()
-    local localized = tostring(fmt or ""):gsub("%%(.)", function(c)
-        local list = names[c]
-        if not list then return "%" .. c end   -- date()'s own, %% included
-        local name = list[(c == "a" or c == "A") and t.wday or t.month] or ""
-        return (name:gsub("%%", "%%%%"))       -- a name is text to date(), never a format
-    end)
+    fmt = tostring(fmt or "")
+    -- Nothing to name ("%H:%M", "%d/%m"): date()'s own, without the table of the date.
+    if not fmt:find("%%[aAbB]") then return date(fmt, timestamp) end
+    namesOfDates()
+    dateNow = date("*t", timestamp)
+    local localized = fmt:gsub("%%(.)", localName)
     return date(localized, timestamp)
 end
 
@@ -1250,21 +1320,12 @@ end
 -- never be turned off — that is how a user would lock themselves out of
 -- the Settings window that would turn them back on.
 ----------------------------------------------------------------------
--- Off for whoever has not chosen, until a release takes the name off this list (issue #232): these
--- publish on the guild's channel or open a window, and they shipped with no client to try them on.
--- A list and not a default in db.settings.modules: a default is saved into every player's file, and a
--- later release could not turn it on for them. Somebody who chose keeps their choice either way.
--- Empty since the journal and the founding were tried on the live game (issue #289): left off, no
--- founding reached guildos.me and the site's founding achievements were never earned.
-local OFF_UNTIL_TESTED = {}
-
 function GuildOS:IsFeatureEnabled(id)
     if type(id) ~= "string" then return false end
     -- UI loads after Core, so the registry is resolved per call, not per load.
     local def = self.UI and self.UI.GetFeature and self.UI:GetFeature(id)
     if def and def.core then return true end
     local mods = self.db and self.db.settings and self.db.settings.modules
-    if OFF_UNTIL_TESTED[id] and (not mods or mods[id] == nil) then return false end
     if not mods then return true end
     return mods[id] ~= false
 end
@@ -1285,10 +1346,13 @@ end
 ----------------------------------------------------------------------
 -- Loot distribution system chosen by the guild (Settings, officer).
 -- Drives the default Loot Master flow; read by features that present
--- loot UI. "rolls" = /roll MS/OS (default), "tmb"/"wishlist" = interest
+-- loot UI. "rolls" = /roll MS/OS (default), "wishlist" = interest
 -- lists, "dkp" = the Points economy.
+--
+-- "tmb" is no longer one (audit R8, B16): it was the wishlist under another name. A guild or a core saved
+-- with it, or an officer's client from before that sends it, reads as "wishlist" (LootSystemKey).
 ----------------------------------------------------------------------
--- `retail = false`: not offered on retail. That's My BiS is Classic only (issue #185).
+-- `retail = false`: not offered on retail.
 -- "plus1", "dkpbid" and "dkpsealed" (issue #334) are ready-made loot rules of the loot master
 -- (LootRule:FromLegacy), which retail does not have: the +1 counter, and DKP won by an open bid or by
 -- a sealed one that pays the second price. "sk" and "karma" (issue #337) are two more: Suicide Kings,
@@ -1298,7 +1362,6 @@ end
 GuildOS.LOOT_SYSTEMS = {
     { key = "rolls",    label = "/roll (MS/OS)" },
     { key = "plus1",    label = "MS > OS +1", retail = false },
-    { key = "tmb",      label = "TMB", retail = false },
     { key = "wishlist", label = "Wishlist" },
     { key = "dkp",      label = "DKP / Points" },
     { key = "dkpbid",   label = "DKP bidding", retail = false },
@@ -1319,6 +1382,12 @@ function GuildOS:LootSystemsHere()
     return out
 end
 
+-- A loot system's key as this version reads it: the old "tmb" is the wishlist (audit R8, B16).
+function GuildOS.LootSystemKey(sys)
+    if sys == "tmb" then return "wishlist" end
+    return sys
+end
+
 -- Whether `key` is a loot system this client offers.
 local function lootSystemHere(key)
     for _, sys in ipairs(GuildOS:LootSystemsHere()) do
@@ -1335,8 +1404,13 @@ function GuildOS:IsLootSystemHere(key) return lootSystemHere(key) end
 function GuildOS:GetLootSystem(coreName)
     if coreName == nil then
         local LR = self.LootRule
+        -- A night whose loot the site says is outside GuildOS (audit L5) is "external", whatever was chosen here.
+        if LR and LR.NightExternal and self.db and LR:NightExternal() then return "external" end
         local night = LR and LR.Night and self.db and LR:Night()
         if night then return LR:SystemOf(night) end
+        -- L5: the site named only a loot system for tonight: that one, the saved choice untouched.
+        local sys = LR and LR.NightSystem and self.db and LR:NightSystem()
+        if sys then return sys end
     end
     return self:BaseLootSystem(coreName)
 end
@@ -1348,7 +1422,7 @@ function GuildOS:BaseLootSystem(coreName)
         local own = CM:GetLootSystem(coreName)
         if own and lootSystemHere(own) then return own end
     end
-    return self:GetSetting("lootSystem") or "rolls"
+    return GuildOS.LootSystemKey(self:GetSetting("lootSystem")) or "rolls"
 end
 
 -- A loot system's name on its button. On retail nobody /rolls: "rolls" is the free roll, where whoever
@@ -1396,9 +1470,10 @@ function GuildOS:SetLootSystem(sys, coreName)
         and self:IsOfficer() then
         self.LootRule:Set(nil)
     end
-    -- On retail the system decides who may award an offered item, on every member's client: an
-    -- officer's choice is stamped and published, as the officer threshold is (issue #185).
-    if not ofCore and self.Client.isRetail and self:IsOfficer() then
+    -- The system decides who may award an offered item and whether the master looter's popups open,
+    -- on every member's client: an officer's choice is stamped and published, as the officer threshold
+    -- is (issue #185; on every client since audit R1).
+    if not ofCore and self:IsOfficer() then
         local s = self.db.settings
         s.lootSystemAt = math.max(GetServerTime(), (s.lootSystemAt or 0) + 1)
         self:PublishLootSystem()
@@ -1421,40 +1496,54 @@ function GuildOS:OnLootSystemChanged()
     if self.UpdateLootSystemUI then self:UpdateLootSystemUI() end
 end
 
--- An officer's loot system to the guild, on retail (issue #185): when it changes, and again on the
--- officers' regular sync, for a client that missed it. Forever keeps it each client's own, as before.
+-- R1: the stamp of a loot system chosen before stamps existed.
+local LOOTSYS_MIGRATED = 1
+
+-- An officer's loot system to the guild (issue #185, every client since audit R1): when it changes,
+-- and again on the officers' regular sync, for a client that missed it.
 function GuildOS:PublishLootSystem()
-    if not self.Client.isRetail then return end
     local s = self.db and self.db.settings
-    if not (s and s.lootSystemAt and self.SyncService and self:IsOfficer()) then return end
+    if not (s and self.SyncService and self:IsOfficer()) then return end
+    -- R1 migration, once: a system chosen before the stamp existed gets the lowest one, so any real
+    -- later choice beats it, and it publishes.
+    if not s.lootSystemAt and s.lootSystem ~= nil then s.lootSystemAt = LOOTSYS_MIGRATED end
+    if not s.lootSystemAt then return end
     self.SyncService:Publish("guildcfg", "lootsys", { sys = self:GetLootSystem("") }, { rev = s.lootSystemAt })
 end
 
 -- The guild's loot system from an officer (SyncService has checked the officer and GUILD): the newest
--- stamp wins, and two in the same second settle on the same one on every client. Retail only.
+-- stamp wins, and two in the same second settle on the same one on every client. Every client (audit
+-- R1): a raider whose guild runs "external" must not get the master looter's popups.
 function GuildOS:OnLootSystemSync(env)
-    if not self.Client.isRetail then return end
     local data = env and env.data
     local at = env and tonumber(env.rev)
     local sys = type(data) == "table" and data.sys
-    if self.Compat.IsSecret(sys) or type(sys) ~= "string" or not lootSystemHere(sys) then return end
+    if self.Compat.IsSecret(sys) or type(sys) ~= "string" then return end
+    sys = GuildOS.LootSystemKey(sys)   -- an officer's client from before sends "tmb" (audit R8, B16)
+    if not lootSystemHere(sys) then return end
     if not (at and at > 0 and at < math.huge) then return end
     at = math.min(at, GetServerTime() + RANK_FUTURE_SLACK)
     local s = self.db.settings
     local held = s.lootSystemAt
     if held and (at < held or (at == held and sys >= self:GetLootSystem(""))) then return end
     s.lootSystem, s.lootSystemAt = sys, at
-    if self.UpdateLootSystemUI then self:UpdateLootSystemUI() end
+    -- A guild rule older than the system just chosen gives way to it (audit L7): the officer who chose the
+    -- system dropped the rule (SetLootSystem), and a client that never heard that, or heard it from an
+    -- officer whose client did not send rules, must not keep master-looting by the old one. Its stamp moves
+    -- up with it, so the old rule re-sent later is turned away.
+    -- R1: a migrated stamp says nothing of when the system was chosen, so it drops no rule.
+    if at > LOOTSYS_MIGRATED and s.lootRule ~= nil and (tonumber(s.lootRuleAt) or 0) < at then s.lootRule, s.lootRuleAt = nil, at end
+    self:OnLootSystemChanged()   -- Loot Master follows it ("external" silences it), then the UI
 end
 
 -- Each loot system exposes only its own UI so players never see screens
--- that don't apply: wishlist/TMB -> wishlist access; DKP -> DKP access;
+-- that don't apply: wishlist -> wishlist access; DKP -> DKP access;
 -- plain /roll -> neither. A system whose module is absent (retail, ADR-0026) shows nothing.
 function GuildOS:LootSystemShowsWishlist()
     if not self.Wishlist then return false end
     local s = self:GetLootSystem()
     -- A loot council (issue #336) lists its candidates by the wishlist too.
-    return s == "wishlist" or s == "tmb" or s == "council"
+    return s == "wishlist" or s == "council"
 end
 
 -- Whether the loot system in force (or `sys`, the one an item was announced under) runs on the points

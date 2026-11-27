@@ -107,6 +107,8 @@ for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "SetBackdrop"
   "HasFocus" }) do   -- the shared field's placeholder asks whether it has the focus (#371)
   Frame[name] = function() end
 end
+-- Kept, so the selection wash's sampling can be read (#449).
+function Frame:SetTexCoord(a, b, c, d) self.texCoord = { a, b, c, d } end
 
 function CreateFrame(kind, name, parent)
   local f = newFrame(kind, parent)
@@ -189,10 +191,15 @@ dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Style.lua")
 GuildOS.Style:Resolve()
 dofile(ADDON .. "/Core/Utils.lua")
+dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
+dofile(ADDON .. "/UI/Forms.lua")
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/Modules/RosterColumns.lua")
 dofile(ADDON .. "/Modules/GearAudit.lua")
+-- The roster maintenance (specs/salao/manutencao-roster.md): days in rank, the note search.
+dofile(ADDON .. "/Modules/MemberHistory.lua")
+dofile(ADDON .. "/Modules/RosterMaint.lua")
 dofile(ADDON .. "/UI/RosterFrame.lua")
 
 local function key(n) return GuildOS:GetPlayerKey(n, "Firemaw") end
@@ -271,8 +278,18 @@ local function tick(k, on)
 end
 
 -- ── The default is the table there always was ───────────────────────────
-local DEFAULT = "name,level,class,avgIlvl,race,lastSeen,professions,zone"
-check(headers() == DEFAULT, "the default header is the old eight: " .. headers())
+-- An officer's default also shows Guild OS, after the race (#449); a member's is the old eight.
+local DEFAULT = "name,level,class,avgIlvl,race,version,lastSeen,professions,zone"
+check(headers() == DEFAULT, "an officer's default header is the old eight and Guild OS: " .. headers())
+check(table.concat(GuildOS.RosterColumns:Visible(function() return true end), ",") == DEFAULT:gsub("^name,", ""),
+  "the officer's default is the stored choice's default")
+do
+  local isOfficer = GuildOS.IsOfficer
+  function GuildOS:IsOfficer() return false end
+  check(table.concat(GuildOS.RosterColumns:Visible(function() return true end), ",") == "level,class,avgIlvl,race,lastSeen,professions,zone",
+    "a member's default is the old eight, without Guild OS")
+  GuildOS.IsOfficer = isOfficer
+end
 check(not rowOf("Ana").textCells.note:IsShown(), "and no note cell is drawn")
 check(GuildOSDB.rosterColumns == nil, "and nothing is stored")
 
@@ -284,21 +301,26 @@ local function same(color, token)
 end
 do
   local rows = parent.rows
-  check(#rows == math.floor((600 - (82 + 28 + 36 + 1)) / 24), "rows are 24px tall: as many as fit under the header")
+  -- The Salão's list (#449, membros-mockup): the tiles (56 and the 14 under them), the card's title line (42),
+  -- the header (24 and its rule), the legend (18 and the 10 of its rule) and the card's bottom (16); no filter is on,
+  -- so no chips.
+  local reserved = 56 + 14 + 42 + 24 + 1 + 18 + 10 + 16
+  check(not parent.chipsShown and #rows == math.floor((600 - reserved) / 32), "rows are 32px tall (UI.SP.ROW_AV): as many as fit under the header (" .. #rows .. ")")
   local stacked, flat, ruled = true, true, true
   for i, row in ipairs(rows) do
     local p = row.points[1]
-    if row.h ~= 24 or p[1] ~= "TOPLEFT" or p[3] ~= -((i - 1) * 24) then stacked = false end
-    if i <= 4 and not same(row.bg, C.well) then flat = false end
+    if row.h ~= 32 or p[1] ~= "TOPLEFT" or p[3] ~= -((i - 1) * 32) then stacked = false end
+    if i <= 4 and not (row.bg and row.bg[4] == 0) then flat = false end
     local r = row.rule
     if not (r and r.h == 1 and same(r.color, C.line) and r.points[1][1] == "BOTTOMLEFT"
       and r.points[2][1] == "BOTTOMRIGHT") then ruled = false end
   end
-  check(stacked, "each one 24px under the one before")
-  check(flat, "no zebra: every row on the table's well")
+  check(stacked, "each one 32px under the one before")
+  check(flat, "no zebra: nothing behind a row at rest, the card shows through")
   check(ruled, "and a 1px line under each")
-  check(rowOf("Ana").classIcon.w == 16 and rowOf("Ana").nameText.font.file == GuildOS.Fonts.memberName.file,
-    "a 16px class icon in the 24px row, the name in Plex Sans Medium")
+  check(rowOf("Ana").avatar.w == 20 and rowOf("Ana").avatar.letter.text == "A"
+    and rowOf("Ana").nameText.font.file == GuildOS.Fonts.uiMedium,
+    "a 20px round class avatar with the initial, the name in Alegreya Sans Medium (#449)")
   local marked = false
   for _, row in ipairs(rows) do if row.selMark.shown then marked = true end end
   check(not marked, "before any click no row is selected")
@@ -315,10 +337,24 @@ do
   local m = ana.selMark
   check(sheets[1] == "Ana" and m.shown and m.w == 2 and same(m.color, C.gold) and m.points[1][1] == "TOPLEFT"
     and m.points[1][2] == 0 and m.points[2][1] == "BOTTOMLEFT", "the selected row: a 2px gold edge down its left side")
-  check(same(ana.bg, C.popup), "on popup")
+  check(ana.selFade and ana.selFade.shown, "and the gold wash that fades to the right")
+  -- The wash is the row's own box (#449: it sat above its row): its top and bottom are the row's, where the
+  -- lines between rows are drawn, each pinned to the row itself and never offset.
+  local function edge(region, row, which)
+    for _, p in ipairs(region.points) do
+      if p[1] == "ALL" then return (p[2] == nil or p[2] == row) and 0 or nil end
+      if p[1]:find(which) and p[2] == row and p[3] == p[1] then return p[5] or 0 end
+    end
+  end
+  local fade = ana.selFade
+  local top, bottom = edge(fade, ana, "TOP"), edge(fade, ana, "BOTTOM")
+  check(top == 0 and bottom == 0 and #fade.points == 2, "the wash's top and bottom are the row's top and bottom")
+  local tc = rawget(fade, "texCoord")
+  check(tc and (tc[3] > 0 and tc[4] < 1 and math.abs(tc[3] - (1 - tc[4])) < 1e-9),
+        "it reads the art's middle rows, as far from its top as from its bottom")
   local others = true
   for _, row in ipairs(parent.rows) do
-    if row ~= ana and row.shown and (row.selMark.shown or not same(row.bg, C.well)) then others = false end
+    if row ~= ana and row.shown and (row.selMark.shown or row.selFade.shown) then others = false end
   end
   check(others, "and only that one")
   -- The hover's tooltip reads half the addon; only the fill is under test here.
@@ -326,13 +362,13 @@ do
   local tooltip = ShowRowTooltip
   ShowRowTooltip = function() end
   fire(ana, "OnEnter")
-  check(same(ana.bg, C.popup), "a selected row stays popup under the cursor")
+  check(ana.selFade.shown and ana.bg[4] == 0, "a selected row keeps its gold wash under the cursor")
   fire(ana, "OnLeave")
   local beto = rowOf("Beto")
   fire(beto, "OnEnter")
-  check(same(beto.bg, C.panel) and not beto.selMark.shown, "another row turns panel under the cursor")
+  check(beto.bg and beto.bg[4] > 0 and beto.bg[4] < 0.1 and not beto.selMark.shown, "another row takes a faint gold under the cursor")
   fire(beto, "OnLeave")
-  check(same(beto.bg, C.well), "and back to well when it leaves")
+  check(beto.bg[4] == 0, "and nothing when it leaves")
   ShowRowTooltip = tooltip
 
   -- The list is virtual: the mark follows the member, not the row it was drawn on.
@@ -372,8 +408,9 @@ do
   GuildOS:RefreshRosterUI()
   check(field.shown, "on Anniversary, for a rank that invites, it shows")
   local function x(fr) return fr.points[1][4] end
-  check(x(field) > x(parent.offlineBtn) and x(parent.offlineBtn) > x(parent.searchBox) and x(parent.searchBox) > x(parent.resultText),
-    "at the bar's right end, past Show Offline")
+  check(x(parent.resultText) < x(parent.searchBox) and x(parent.searchBox) < x(parent.columnsBtn)
+    and x(parent.columnsBtn) < x(parent.analyticsBtn) and x(parent.analyticsBtn) < x(field),
+    "on the card's title line: N of M, the search, Columns, Analytics, then the invite field")
   check(field.button.variant == "primary" and field.button.label.text == "Invite" and field.box.h == 22
     and field.box.placeholder.text == "Player name...", "a 22px name box and the screen's one primary button, Invite")
   printed = {}
@@ -389,9 +426,9 @@ do
   check(not field.shown, "a rank that cannot invite does not see it, without a reload")
   canInvite = true
 
-  -- A narrow bar drops in a set order and nothing overlaps; Show Offline always stays.
-  local function relayout(room)
-    parent.w = room + 2 * 12 + 156
+  -- A narrow line drops in a set order and nothing overlaps.
+  local function relayout(w)
+    parent.w = w
     UI:Relayout(parent)
     flush()
   end
@@ -403,43 +440,46 @@ do
     table.sort(out, function(a, b) return x(a) < x(b) end)
     return out
   end
-  -- From the narrowest table the window draws: the watch band's 404px of content less the rail.
+  -- From the narrowest screen the window draws (the watch band's 404px of content) to a wide one.
   local misfit
-  for room = 404 - 156 - 24, 1300, 7 do
-    relayout(room)
-    local edge = 12
+  for w = 404, 1600, 7 do
+    relayout(w)
+    local edge, room = 0, bar.w
     for _, c in ipairs(parts()) do
-      if x(c) < edge or x(c) + c.w > 12 + room then misfit = misfit or room end
+      if x(c) < edge or x(c) + c.w > room + 0.5 then misfit = misfit or w end
       edge = x(c) + c.w
     end
-    if not parent.offlineBtn.shown then misfit = misfit or room end
+    -- The line itself is on the card, past its title.
+    local p = bar.points[1]
+    if p[2] ~= parent.listCard or p[4] < 16 or p[4] + bar.w > parent.listW - 16 + 0.5 then misfit = misfit or w end
   end
-  check(misfit == nil, "at every width the bar's parts stay inside it, apart, and Show Offline stays: " .. tostring(misfit))
-  relayout(738)
-  check(#parts() == 6 and field.shown, "738px holds all six")
+  check(misfit == nil, "at every width the tools stay inside their line, apart, on the card: " .. tostring(misfit))
+  relayout(1250)
+  check(#parts() == 5 and field.shown, "1250px holds all five: N of M, the search, Columns, Analytics, the invite field")
+  local right = 0
+  for _, c in ipairs(parts()) do right = math.max(right, x(c) + c.w) end
+  check(math.abs(right - bar.w) < 1, "the tools end at the card's right padding")
   -- Narrowing, what goes and in what order: the summary first, then Columns (a right click on the header
   -- opens it too), Analytics (the one way in to /gos analytics, #137), the invite field, and at the
-  -- narrowest the search box; Show Offline stays.
+  -- narrowest the search box.
   local named = { [parent.resultText] = "summary", [field] = "invite", [parent.searchBox] = "search",
-                  [parent.offlineBtn] = "offline" }
-  for _, c in ipairs(parts()) do
-    if not named[c] then named[c] = c.label and c.label.text == "Analytics" and "analytics" or "columns" end
-  end
+                  [parent.columnsBtn] = "columns", [parent.analyticsBtn] = "analytics" }
   local gone, order = {}, {}
-  for room = 738, 404 - 156 - 24, -2 do
-    relayout(room)
+  for w = 1600, 200, -2 do
+    relayout(w)
     for fr, name in pairs(named) do
-      if not fr.shown and not gone[name] then gone[name] = room; order[#order + 1] = name end
+      if not fr.shown and not gone[name] then gone[name] = w; order[#order + 1] = name end
     end
   end
   table.sort(order, function(p, q) return gone[p] > gone[q] end)
   check(table.concat(order, ",") == "summary,columns,analytics,invite,search",
     "narrowing drops the summary, Columns, Analytics, the invite field, then the search: " .. table.concat(order, ","))
-  check(not gone.offline and gone.invite >= 400, "Show Offline stays at every width, and at 400px the search still does")
+  relayout(1250)
+  check(parent.offlineBtn.parent == parent.rail, "Show Offline is the rail's now, in View")
 
   -- A field kept is never hidden and shown again: the search filters on every keystroke and the roster
   -- updates while someone types a name, and a hidden EditBox loses the keyboard (B would open the bags).
-  relayout(738)
+  relayout(1000)
   local hides = 0
   local hide = Frame.Hide
   local function watch(fr) fr.Hide = function(self) hides = hides + 1; return hide(self) end end
@@ -459,6 +499,229 @@ do
   flush()
   check(not field.shown, "back off Anniversary, gone again")
   GuildInvite, CanGuildInvite = nil, nil
+end
+
+-- ── The Members screen of the mockup (#449, membros-mockup "Chosen") ────────────────────────────
+-- The tiles across the top, the filters in a rail on the left (above the list on a narrow window), the marks
+-- beside a name with their tooltips, the legend under the table.
+do
+  local UI = GuildOS.UI
+  local SP = UI.SP
+  local function relayout(w)
+    parent.w = w
+    UI:Relayout(parent)
+    flush()
+  end
+  local function shownNames()
+    local out = {}
+    for i, m in ipairs(parent.sortedMembers) do out[i] = m.name end
+    table.sort(out)
+    return table.concat(out, ",")
+  end
+  -- Founders (WoW: Forever's Modules/Founding.lua): Ana and Dora.
+  GuildOS.Founding = { Founders = function() return { [ANA] = { joinedAt = NOW }, [DORA] = { joinedAt = NOW } } end }
+  relayout(1250)
+
+  -- The tiles: six across the whole width at 1250, two rows of three at 800; each as wide as its neighbours.
+  local function tiles()
+    local out = {}
+    for _, k in ipairs({ "members", "players", "online", "ilvl", "att", "addon" }) do
+      local c = parent.kpiCards[k]
+      out[#out + 1] = { x = c.points[1][4], y = c.points[1][5], w = c.w, shown = c.shown }
+    end
+    return out
+  end
+  for _, W in ipairs({ 1250, 800 }) do
+    relayout(W)
+    local t, cols = tiles(), W >= SP.TWO_COLS and 6 or 3
+    local spans = math.abs(t[1].x) < 1 and math.abs(t[cols].x + t[cols].w - W) <= 1
+    local even, rowsOk = true, true
+    for i, tile in ipairs(t) do
+      if not tile.shown or math.abs(tile.w - t[1].w) > 1 then even = false end
+      local row = math.floor((i - 1) / cols)
+      if tile.y ~= -row * (56 + 8) then rowsOk = false end
+    end
+    check(spans and even and rowsOk, string.format("at %d the six tiles span the width, %d to a row, all as wide", W, cols))
+  end
+  check(parent.kpiOnline.color and same(parent.kpiOnline.color, C.online), "the online number in green")
+  check(parent.kpiAddon.text == 2 and parent.kpiAddonSub.text == "· 1 out of date",
+    "with Guild OS: who runs it, and how many of them are out of date (" .. tostring(parent.kpiAddonSub.text) .. ")")
+
+  -- The rail on the left at 1250, the list beside it; above the list at 800.
+  relayout(1250)
+  local rc, lc = parent.railCard, parent.listCard
+  check(rc.isCard and rc.__dark and rc.w == 210 and rc.points[1][1] == "TOPLEFT" and rc.points[1][2] == 0,
+    "at 1250 the filters are a dark card, 210 wide, on the left")
+  check(lc.points[1][2] == 210 + SP.GAP and lc.points[1][3] == rc.points[1][3], "the list beside it, a card's gap away, as high")
+  check(parent.railMode == "side", "a column")
+  relayout(800)
+  check(parent.railMode == "top" and rc.w == 800 and lc.points[1][2] == 0 and lc.points[1][3] == rc.points[1][3] - rc.h - SP.GAP,
+    "at 800 the rail goes above the list, the whole width")
+  relayout(1250)
+
+  -- The groups: View (All, Online, Founders, Show offline), Guild OS, Ranks, Classes, each its title; counts.
+  local heads = parent.railHeads
+  check(heads.view.text == "View" and heads.addon.text == "Guild OS" and heads.ranks.text == "Ranks" and heads.classes.text == "Classes"
+    and heads.view.font.file == GuildOS.Fonts.title and same(heads.view.color, C.gold2), "the groups' titles in the serif, the soft gold")
+  check(parent.segBtns.all.count.text == "4" and parent.segBtns.online.count.text == "2" and parent.foundersBtn.count.text == "2"
+    and parent.foundersBtn.shown, "All, Online and Founders with their counts")
+  check(parent.addonBtns.cur.count.text == "1" and parent.addonBtns.old.count.text == "1" and parent.addonBtns.none.count.text == "2",
+    "Up to date, Out of date, Not installed with theirs")
+  local ranks = {}
+  for _, b in ipairs(parent.rankBtns) do if b.inUse then ranks[#ranks + 1] = b.label.text .. " " .. b.count.text end end
+  check(table.concat(ranks, ",") == "Officer 1,Member 2,Recruit 1", "a line per rank with its count: " .. table.concat(ranks, ","))
+  local mage = parent.classChips.MAGE
+  check(mage.icon and mage.count.text == "1" and mage.label.text ~= nil, "a class: its icon, its name and its count")
+  local function y(b) return -b.points[1][5] end
+  check(parent.classChips[GuildOS.Client.classes[2]].points[1][4] > 0
+    and y(parent.classChips[GuildOS.Client.classes[1]]) == y(parent.classChips[GuildOS.Client.classes[2]]),
+    "the classes two to a line")
+  check(parent.offlineBtn.shown and y(parent.offlineBtn) > y(parent.foundersBtn) and y(parent.addonBtns.cur) > y(parent.offlineBtn),
+    "Show offline is the View group's last line")
+  check(parent.clearBtn.shown and parent.clearBtn.variant == "ghost", "and Clear filters, a link, at the end")
+  check(parent.segBtns.all.__selected and not parent.segBtns.online.__selected, "All is the gold pill to start")
+
+  -- Each filter narrows the list; together they narrow it together; chosen again, each goes.
+  check(shownNames() == "Ana,Beto,Caio,Dora", "all four to start")
+  fire(parent.segBtns.online, "OnClick")
+  check(shownNames() == "Ana,Caio" and parent.segBtns.online.__selected and not parent.segBtns.all.__selected, "Online: who is on")
+  fire(parent.addonBtns.old, "OnClick")
+  check(shownNames() == "Caio" and parent.addonBtns.old.__selected, "and out of date: Caio")
+  fire(parent.addonBtns.old, "OnClick")
+  check(shownNames() == "Ana,Caio" and not parent.addonBtns.old.__selected, "chosen again, it goes")
+  fire(parent.segBtns.online, "OnClick")
+  check(parent.segment == "all" and shownNames() == "Ana,Beto,Caio,Dora", "Online chosen again: back to All")
+  fire(parent.foundersBtn, "OnClick")
+  check(shownNames() == "Ana,Dora" and parent.foundersBtn.__selected, "Founders: Ana and Dora")
+  fire(parent.addonBtns.none, "OnClick")
+  check(shownNames() == "Dora", "founders without Guild OS: Dora")
+  fire(parent.foundersBtn, "OnClick")
+  check(shownNames() == "Beto,Dora", "without Guild OS: Beto and Dora")
+  local member
+  for _, b in ipairs(parent.rankBtns) do if b.inUse and b.label.text == "Member" then member = b end end
+  fire(member, "OnClick")
+  check(shownNames() == "Beto" and member.__selected, "and of the Member rank: Beto")
+  fire(parent.classChips.ROGUE, "OnClick")
+  check(shownNames() == "" and parent.classChips.ROGUE.__selected, "and rogues: nobody")
+  fire(parent.classChips.ROGUE, "OnClick")
+  fire(parent.classChips.WARRIOR, "OnClick")
+  check(shownNames() == "Beto", "warriors instead: Beto")
+
+  -- The active filters as chips over the table; a click takes one off; the table moves under them.
+  check(parent.chipsShown and parent.activeBar.shown, "with filters on, the chips show over the table")
+  local labels = {}
+  for _, chip in ipairs(parent.activeChips) do if chip.shown then labels[#labels + 1] = chip.label.text end end
+  check(table.concat(labels, "|") == "Not installed  ×|Member  ×|WARRIOR  ×", "one per filter: " .. table.concat(labels, "|"))
+  check(parent.headerFrame.points[1][3] == -(22 + 8), "the header under them")
+  fire(parent.activeChips[2], "OnClick")
+  check(parent.rankFilter == nil and shownNames() == "Beto" and not member.__selected, "a chip's click takes its filter off")
+  fire(parent.clearBtn, "OnClick")
+  check(not parent.chipsShown and parent.headerFrame.points[1][3] == 0 and shownNames() == "Ana,Beto,Caio,Dora"
+    and parent.addonFilter == nil and parent.classFilter == nil and parent.segBtns.all.__selected,
+    "Clear filters takes every one off, the chips go and the header goes back up")
+  -- Show offline, a box in View: off, only who is on, and a chip for it.
+  local box = parent.offlineBtn.checkbox
+  box:SetChecked(false)
+  box:onChanged(false)
+  check(shownNames() == "Ana,Caio" and GuildOS.db.settings.showOffline == false, "Show offline off: who is on")
+  local onlyChip = parent.activeChips[1]
+  check(onlyChip.shown and onlyChip.label.text == "Online Only  ×", "and its chip")
+  fire(onlyChip, "OnClick")
+  check(GuildOS.db.settings.showOffline == true and box:GetChecked() and shownNames() == "Ana,Beto,Caio,Dora", "the chip turns it back on")
+  -- The search still filters with the rest, its syntax kept.
+  if not GuildOS.LevelQuery then dofile(ADDON .. "/Modules/LevelQuery.lua") end
+  parent.searchBox:SetText(">=60")
+  if parent.searchBox.scripts.OnTextChanged then fire(parent.searchBox, "OnTextChanged") end
+  check(shownNames() == "Ana,Caio,Dora", "a level query in the search")
+  fire(parent.addonBtns.cur, "OnClick")
+  check(shownNames() == "Ana", "and a filter with it")
+  fire(parent.clearBtn, "OnClick")
+  check(parent.searchBox:GetText() == "" and shownNames() == "Ana,Beto,Caio,Dora", "Clear filters empties the search too")
+  check(parent.resultText.text:find("4", 1, true) and parent.resultText.text:find("of 4", 1, true), "N of M: " .. tostring(parent.resultText.text))
+
+  -- The marks beside the name: the green crest up to date, the amber one out of date, none without Guild OS,
+  -- the gold banner for a founder; 18px round chips of the art, after the name.
+  local function kinds(name)
+    local row, out = rowOf(name), {}
+    for i, m in ipairs(row.marks) do if m.shown then out[#out + 1] = m.kind .. ":" .. tostring(row.markKinds[i]) end end
+    return table.concat(out, ",")
+  end
+  check(kinds("Ana") == "cur:cur,founder:founder", "Ana: up to date and a founder (" .. kinds("Ana") .. ")")
+  check(kinds("Caio") == "old:old", "Caio: out of date")
+  check(kinds("Beto") == "", "Beto: no Guild OS, no mark")
+  check(kinds("Dora") == "founder:founder", "Dora: a founder without Guild OS")
+  local ana = rowOf("Ana")
+  local m1, m2 = ana.marks[1], ana.marks[2]
+  check(m1.w == 18 and m1.h == 18 and m1.tex.__art == "mark-crest" and m1.points[1][2] == ana.nameText
+    and m2.points[1][2] == m1, "18px chips of Media/Salao's mark art, after the name, one after the other")
+  check(not rowOf("Ana").nameText.text:find("|T", 1, true), "the founder's scroll left the name")
+  -- The name gives the marks their room in its cell.
+  check(ana.nameText.w <= ana.nameMax - 2 * (18 + 4) and rowOf("Beto").nameText.w <= rowOf("Beto").nameMax,
+    "the name takes what the marks leave of its cell")
+
+  -- Each mark's tooltip: a title and what it means.
+  local tip = {}
+  local keep = GameTooltip
+  GameTooltip = {
+    SetOwner = function(_, owner) tip = { owner = owner, lines = {} } end,
+    SetText = function(_, t) tip.title = t end,
+    AddLine = function(_, t) tip.lines[#tip.lines + 1] = t end,
+    Show = function() tip.shown = true end,
+    Hide = function() tip.shown = false end,
+  }
+  fire(m1, "OnEnter")
+  check(tip.owner == m1 and tip.title == "Guild OS up to date"
+    and tip.lines[1] == "Version 0.83.0. Syncs everything: attendance, loot, professions, alerts.", "up to date: " .. tostring(tip.lines[1]))
+  fire(m1, "OnLeave")
+  check(tip.shown == false, "and it goes with the cursor")
+  fire(rowOf("Caio").marks[1], "OnEnter")
+  check(tip.title == "Guild OS out of date"
+    and tip.lines[1] == "Version 0.9.0; the latest seen in the guild is 0.83.0. Some things may not sync until they update."
+    and tip.lines[2] == "Officers can send a reminder from Officers' Room › Without GuildOS.",
+    "out of date: the version, the newest seen in the guild, and where officers remind: " .. tostring(tip.lines[1]) .. " / " .. tostring(tip.lines[2]))
+  fire(m2, "OnEnter")
+  check(tip.title == "Founder" and tip.lines[1] == "One of the people who founded the guild.", "a founder")
+  -- A newer version heard on the guild channel is the latest, so Ana's is out of date now.
+  GuildOS.CommSystem = { newestSeen = "0.84.0" }
+  GuildOS:RefreshRosterUI()
+  check(kinds("Ana") == "old:old,founder:founder" and parent.addonBtns.old.count.text == "2", "a newer version heard: Ana is out of date")
+  fire(rowOf("Ana").marks[1], "OnEnter")
+  check(tip.lines[1]:find("the latest seen in the guild is 0.84.0", 1, true), "and the tooltip names it")
+  GuildOS.CommSystem = nil
+  GuildOS:RefreshRosterUI()
+  -- A mark's click is the row's: the member's sheet.
+  local opened
+  local detail = GuildOS.ShowMemberDetail
+  function GuildOS:ShowMemberDetail(d) opened = d.name end
+  fire(rowOf("Caio").marks[1], "OnClick", "LeftButton")
+  check(opened == "Caio", "a click on a mark opens the member's sheet, as the row's")
+  GuildOS.ShowMemberDetail = detail
+  parent.selectedKey = nil
+
+  -- The legend under the table: "Marks", each mark and its meaning, and the hint; with a rule over it.
+  local lg = parent.legend
+  check(lg.parent == parent.tableArea and lg.points[1][1] == "BOTTOMLEFT" and parent.legendTitle.text == "Marks"
+    and parent.legendTitle.font.file == GuildOS.Fonts.title, "a legend at the table's foot, titled Marks in the serif")
+  local said, order = {}, {}
+  for _, it in ipairs(parent.legendItems) do
+    if it.text.shown then said[#said + 1] = it.text.text; order[#order + 1] = it.text.points[1][4] or it.mark.points[1][4] end
+  end
+  check(table.concat(said, "|") == "Guild OS up to date|Guild OS out of date|No mark: no Guild OS|Founder|Hover a mark for details",
+    "each mark and what it means, then the hint: " .. table.concat(said, "|"))
+  check(parent.legendItems[1].mark.kind == "cur" and parent.legendItems[2].mark.kind == "old" and parent.legendItems[4].mark.kind == "founder"
+    and parent.legendItems[3].mark.shown, "with the marks themselves, and an empty ring for no mark")
+  fire(parent.legendItems[2].mark, "OnEnter")
+  check(tip.title == "Guild OS out of date" and tip.lines[1]:find("Version 0.9.0", 1, true), "a legend mark has its tooltip too")
+  relayout(560)
+  check(not parent.legendItems[5].text.shown and parent.legendItems[1].text.shown, "narrow, the hint goes first")
+  relayout(1250)
+  -- Without founders (TBC Anniversary, retail): no Founders line, no banner, no Founder in the legend.
+  GuildOS.Founding = nil
+  GuildOS:RefreshRosterUI()
+  check(not parent.foundersBtn.shown and kinds("Ana") == "cur:cur" and not parent.legendItems[4].text.shown,
+    "no founding module: no Founders, no banner, no Founder in the legend")
+  GameTooltip = keep
+  relayout(1600)
 end
 
 -- ── The panel offers what this reader may see ───────────────────────────
@@ -508,7 +771,7 @@ check(GuildOS.db.settings.sortBy == "zone" and GuildOSColumnsPanel:IsShown(), "a
 -- ── Moving ──────────────────────────────────────────────────────────────
 fire(panelRow("note").up, "OnClick")
 flush()
-check(headers() == "name,level,class,avgIlvl,race,lastSeen,professions,note,zone", "up one: " .. headers())
+check(headers() == "name,level,class,avgIlvl,race,version,lastSeen,professions,note,zone", "up one: " .. headers())
 
 -- ── Every new column reads its value ────────────────────────────────────
 for _, k in ipairs({ "officerNote", "rank", "offline", "spec", "roles", "main", "version", "enchants",
@@ -538,7 +801,11 @@ GuildOS.db.members[ANA].spec = spec
 check(cell("Caio", "roles"):find("H", 1, true) and cell("Caio", "roles"):find("D", 1, true)
       and not cell("Caio", "roles"):find("T", 1, true), "the roles' letters")
 check(cell("Dora", "main") == "Beto" and cell("Beto", "main") == "Main", "an alt names its main, a main says so")
-check(cell("Caio", "version") == "0.9.0", "the addon version")
+check(cell("Caio", "version") == "0.9.0 · update" and cell("Ana", "version") == "0.83.0",
+  "Guild OS: the version, an older one with \"· update\" (0.9.0 is older than 0.83.0)")
+check(same(rowOf("Ana").textCells.version.color, C.ok) and rowOf("Caio").textCells.version.color[1] > 0.9,
+  "the current one in green, the older one in amber")
+check(cell("Beto", "version") == "not installed", "and a member without it: not installed (" .. tostring(cell("Beto", "version")) .. ")")
 check(cell("Ana", "enchants") == 1, "one worn item without an enchant")
 check(cell("Ana", "attendance") == "80%" and cell("Beto", "attendance"):find("-", 1, true), "attendance, none as a dash")
 check(cell("Ana", "core") == "Main / Ten" and cell("Caio", "core") == "Main", "every core someone is on")
@@ -555,6 +822,58 @@ fire(parent.headerButtons.avgIlvl, "OnClick", "LeftButton")
 fire(parent.headerButtons.avgIlvl, "OnClick", "LeftButton")
 check(GuildOS.db.settings.sortAsc, "the second click sorts lowest first")
 check(order() == "Ana,Caio,Beto,Dora", "a member with no item level goes last that way too: " .. order())
+
+-- ── Days in the current rank (specs/salao/manutencao-roster.md) ─────────────
+-- Ana: her last rank change 40 days ago; Beto: no change, joined 10 days ago, only as Guild OS saw it; Caio: nothing.
+GuildOS.db.memberHistory = {
+  [ANA] = { stints = { { joinAt = NOW - 400 * 86400 } }, ranks = { { at = NOW - 40 * 86400, to = "Officer" } } },
+  [BETO] = { stints = { { joinAt = NOW - 10 * 86400, joinEst = true } } },
+}
+tick("rankSince", true)
+check(parent.headerButtons.rankSince:IsShown(), "an officer may show the days in rank")
+check(cell("Ana", "rankSince") == "40d", "since her last rank change: " .. tostring(cell("Ana", "rankSince")))
+check(cell("Beto", "rankSince") == "~10d", "no change: since the join, ~ when only Guild OS saw it: " .. tostring(cell("Beto", "rankSince")))
+check(cell("Caio", "rankSince"):find("-", 1, true), "nothing known reads as a dash")
+fire(parent.headerButtons.rankSince, "OnClick", "LeftButton")
+check(GuildOS.db.settings.sortBy == "rankSince" and order():find("^Ana,") ~= nil, "it sorts, longest in rank first: " .. order())
+do -- the date is in the row's tooltip
+  local keep, lines = GameTooltip, {}
+  GameTooltip = setmetatable({ AddLine = function(_, t) lines[#lines + 1] = tostring(t) end }, { __index = function() return function() end end })
+  pcall(ShowRowTooltip, rowOf("Ana"))   -- the stubs stop it past the lines that matter here
+  GameTooltip = keep
+  local found = false
+  for _, l in ipairs(lines) do if l:find("In rank since " .. date("%Y-%m-%d", NOW - 40 * 86400), 1, true) then found = true end end
+  check(found, "the row's tooltip says since when")
+end
+tick("rankSince", false)
+GuildOS.db.memberHistory = nil
+
+-- ── The search reads the notes, the main and the nickname ────────────────
+local function search(text)
+  parent.searchFilter = text
+  GuildOS:RefreshRosterUI()
+  flush()
+end
+search("schmidt")
+check(order() == "Ana" and parent.sortedMembers[1].matchVia == "note", "the public note: " .. order())
+check(rowOf("Ana").nameText:GetText():find("note", 1, true), "and the row says it was the note")
+search("council")
+check(order() == "Ana" and parent.sortedMembers[1].matchVia == "onote", "the officer note, for a rank that reads it")
+viewOfficer = false
+search("council")
+check(order() == "", "never for a rank that cannot read officer notes")
+viewOfficer = true
+search("beto")
+check(order():find("Beto", 1, true) and order():find("Dora", 1, true), "the main's name finds its alts too: " .. order())
+for _, m in ipairs(parent.sortedMembers) do
+  if m.name == "Dora" then check(m.matchVia == "main" and rowOf("Dora").nameText:GetText():find("Alt of Beto", 1, true), "an alt by its main says so") end
+  if m.name == "Beto" then check(m.matchVia == nil and rowOf("Beto").nameText:GetText() == "Beto", "a name match has no tag") end
+end
+GuildOS.MemberMarks = { Nick = function(_, k) return k == CAIO and "Padre" or nil end }
+search("padre")
+check(order() == "Caio" and parent.sortedMembers[1].matchVia == "nick", "the officers' nickname")
+GuildOS.MemberMarks = nil
+search("")
 
 -- ── A column this reader may not see is not offered ─────────────────────
 viewOfficer, myRank, lootSystem = false, 5, "council"
@@ -582,7 +901,9 @@ GuildOS.db.settings.modules.trialTracker = nil
 -- ── A narrow window drops the rightmost first ───────────────────────────
 GuildOS.RosterColumns:Reset()
 tick("note", true)
-parent.w = 156 + 10 + 18 + 150 + 10 + 34 + 10 + 74 + 10 + 46 + 10 + 70 + 10 + 78 + 10 + 160 + 10 + 120
+-- The rail (210) and the gap (14) beside the list, its padding, the rows' inset and the scroll gutter, then the
+-- default's columns and their gaps: exactly room for them.
+parent.w = 210 + 14 + 2 * 16 + 10 + 18 + 170 + 10 + 34 + 10 + 74 + 10 + 46 + 10 + 70 + 10 + 84 + 10 + 78 + 10 + 160 + 10 + 120
 UI:Relayout(parent)
 flush()
 check(headers() == DEFAULT, "the note, last, is the first to go: " .. headers())
@@ -761,6 +1082,52 @@ do
     officer = false
   end
   GuildOS.IsOfficer, GuildOS.ShowCoreSignupFrame = isOfficer, show
+end
+
+-- ── Members › From the alliance (alianca.md §3.2): guildos.me's directory, read-only ──
+do
+  local keepAlly, keepTell, keepDetail, keepMenu = GuildOS.Alliance, ChatFrame_SendTell, GuildOS.ShowMemberDetail, GuildOS.ShowMemberContextMenu
+  local dir = {}
+  GuildOS.Alliance = {
+    Directory = function() return dir end,
+    OnlineNow = function() return { { name = "Zeca", guild = "Iron Pact" } } end,
+    AsOf = function() return 1790000000 end,
+  }
+  local wasShown = parent.shown
+  parent.shown = true
+  GuildOS:RefreshRosterUI()
+  check(not parent.segBtns.allied.shown, "no directory from the site: no From the alliance")
+  dir = { { guild = "Iron Pact", members = {
+    { key = "Zeca-Other", name = "Zeca", class = "MAGE", level = 70, role = "DPS", profs = { "Tailoring" }, recipes = {} },
+    { key = "Yuri-Other", name = "Yuri", class = "PRIEST", level = 68, main = "Zeca-Other", recipes = {} } } },
+          { guild = "Silver Hand", members = { { key = "Xan", name = "Xan", class = "MAGE", level = 60, recipes = {} } } } }
+  GuildOS:RefreshRosterUI()
+  check(parent.segBtns.allied.shown and parent.segBtns.allied.label.text == "From the alliance"
+    and parent.segBtns.allied.count.text == "3", "with one, the rail offers From the alliance, with how many it lists")
+  fire(parent.segBtns.allied, "OnClick")
+  check(order():find("Zeca", 1, true) and order():find("Xan", 1, true) and not order():find("Ana", 1, true),
+    "the table lists the allied members, none of the guild's")
+  local zeca = rowOf("Zeca")
+  check(zeca.memberData.allied and zeca.memberData.rank == "Iron Pact" and zeca.memberData.isOnline,
+    "each with their guild in the rank's place, and on now as the channel tells")
+  local opened, told = 0, nil
+  function GuildOS:ShowMemberDetail() opened = opened + 1 end
+  GuildOS.ShowMemberContextMenu = function() opened = opened + 1 end
+  ChatFrame_SendTell = function(n) told = n end
+  fire(zeca, "OnClick", "RightButton")
+  fire(zeca, "OnClick", "LeftButton")
+  check(opened == 0 and told == "Zeca-Other", "read-only: no sheet, no menu, no rank action; a click whispers them")
+  parent.classFilter = "PRIEST"
+  GuildOS:RefreshRosterUI()
+  check(order() == "Yuri", "the class chips filter them as the guild's")
+  parent.classFilter = nil
+  dir = {}
+  GuildOS:RefreshRosterUI()
+  GuildOS:RefreshRosterUI()
+  check(parent.segment == "all" and not parent.segBtns.allied.shown, "the directory gone, the view goes back to All")
+  GuildOS.Alliance, ChatFrame_SendTell, GuildOS.ShowMemberDetail, GuildOS.ShowMemberContextMenu = keepAlly, keepTell, keepDetail, keepMenu
+  GuildOS:RefreshRosterUI()
+  parent.shown = wasShown
 end
 
 print(("roster-table: %d checks passed"):format(checks))

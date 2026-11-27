@@ -6,6 +6,7 @@
 -- rocks it once. Two rows show at a time; the mouse wheel moves by a row.
 -- Layout only: the list is GuildOS.WinterVeil:Collection(), newest first, as the site sent it.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
@@ -100,15 +101,15 @@ function Shelf.Create(parent, scope, T)
     from:SetPoint("TOPLEFT", sub, "BOTTOMLEFT", 0, -6)
     from:SetPoint("RIGHT", det, "RIGHT", 0, 0)
     from:SetJustifyH("LEFT")
-    local badges = UI:CreateText(det, "", 10, C.gold.r, C.gold.g, C.gold.b)
-    if GuildOS.ApplyFont then GuildOS:ApplyFont(badges, 10, "caption") end
+    local badges = UI:CreateText(det, "", UI.SP.META, C.gold.r, C.gold.g, C.gold.b)
+    if GuildOS.ApplyFont then GuildOS:ApplyFont(badges, UI.SP.META, "caption") end
     badges:SetPoint("TOPLEFT", from, "BOTTOMLEFT", 0, -4)
     sh.badges = badges
     local card = Fx.Card(det, 220)
     card:SetPoint("TOPLEFT", from, "BOTTOMLEFT", 0, -14)
-    local noNote = UI:CreateText(det, L["No note."], 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+    local noNote = UI:CreateText(det, L["No note."], UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b)
     noNote:SetPoint("TOPLEFT", from, "BOTTOMLEFT", 0, -10)
-    local hint = UI:CreateText(det, L["The globe and the year are public on your character's page; the note and who gave it are for your guild only."], 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+    local hint = UI:CreateText(det, L["The globe and the year are public on your character's page; the note and who gave it are for your guild only."], UI.SP.META, C.labelDim.r, C.labelDim.g, C.labelDim.b)
     hint:SetPoint("BOTTOMLEFT", 14, 0)
     hint:SetPoint("RIGHT", det, "RIGHT", 0, 0)
     hint:SetJustifyH("LEFT")
@@ -165,7 +166,7 @@ function Shelf:NewSlot(i)
     s.shine:SetPoint("TOPLEFT", -40, 0)
     s.shineG = scope:Group(s.shine, { { "move", 190, 0, 1.6, 2.0 } }, { loop = "REPEAT", smooth = "IN_OUT", tag = "shelf" })
     s.wobG = scope:Group(s.globe, { { "turn", 4, 0.15 }, { "turn", -7, 0.175, 0, 2 }, { "turn", 3, 0.175, 0, 3 } }, { smooth = "OUT", tag = "shelf" })
-    s.empty = UI:CreateText(s, "", 10, C.disabled.r, C.disabled.g, C.disabled.b)
+    s.empty = UI:CreateText(s, "", UI.SP.META, C.disabled.r, C.disabled.g, C.disabled.b)
     s.empty:SetPoint("CENTER")
 
     s:SetScript("OnEnter", function(btn)

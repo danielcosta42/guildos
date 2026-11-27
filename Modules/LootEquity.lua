@@ -23,9 +23,10 @@ function LootEquity:GetReport()
             rec = { name = p, total = 0, epics = 0, last = 0 }
             byPlayer[p] = rec
         end
-        local qty = e.quantity or 1
-        rec.total = rec.total + qty
-        grand = grand + qty
+        -- One award is one item, a stack included, as LootTracker:GetLootCount and the Loot Equity
+        -- screen count them (audit R10): this read a `quantity` no entry has ever carried.
+        rec.total = rec.total + 1
+        grand = grand + 1
 
         local q = e.quality
         if not q and e.itemLink then q = select(3, GuildOS.Compat.GetItemInfo(e.itemLink)) end
