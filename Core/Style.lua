@@ -78,6 +78,9 @@ function Style:SetGameFont(on)
     GuildOSDB.gameFont = on and true or nil
 end
 
+-- The reload a style change asks for (the welcome's look card, Settings): the one place that calls ReloadUI.
+function Style:Reload() ReloadUI() end
+
 -- Dark mode as it will be after the next reload (Settings shows this, not the paper in use).
 function Style:WantsDarkMode()
     return type(GuildOSDB) == "table" and GuildOSDB.darkMode == true

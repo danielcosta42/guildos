@@ -174,6 +174,19 @@ local function BuildFrame()
     gb.checkbox.onChanged = function(_, checked) GuildOS:SetSetting("hijackGuildButton", checked and true or false) end
     gb:Hide()
     f.gbToggle = gb
+    -- The look card's switch: dark mode, applied by a reload (the button beside it).
+    local dm = UI:CreateCheckbox(f, L["Dark mode"], 18)
+    dm.checkbox.onChanged = function(_, checked)
+        if GuildOS.Style and GuildOS.Style.SetDarkMode then GuildOS.Style:SetDarkMode(checked) end
+        if O() then O():LookSeen() end
+        if f.dmReload then f.dmReload:SetShown((checked and true or false) ~= (GuildOS.Style.darkMode == true)) end
+    end
+    dm:Hide()
+    f.darkToggle = dm
+    local dmReload = UI:CreateButton(f, L["Reload now"], 110, UI.SP.FIELD)
+    dmReload:SetScript("OnClick", function() GuildOS.Style:Reload() end)
+    dmReload:Hide()
+    f.dmReload = dmReload
     local roles = GuildOS.CreateRolePicker and GuildOS:CreateRolePicker(f) or CreateFrame("Frame", nil, f)
     roles:Hide()
     f.rolePick = roles
@@ -277,6 +290,20 @@ local function BuildFrame()
             self.gbToggle:ClearAllPoints()
             self.gbToggle:SetPoint("TOPLEFT", self, "TOPLEFT", PAD, -y)
             y = y + 24
+        end
+        self.darkToggle:SetShown(card.extra == "darkmode")
+        if card.extra == "darkmode" then
+            if O() then O():LookSeen() end
+            local want = GuildOS.Style.WantsDarkMode and GuildOS.Style:WantsDarkMode() or false
+            self.darkToggle.checkbox:SetChecked(want)
+            self.darkToggle:ClearAllPoints()
+            self.darkToggle:SetPoint("TOPLEFT", self, "TOPLEFT", PAD, -y)
+            self.dmReload:ClearAllPoints()
+            self.dmReload:SetPoint("LEFT", self.darkToggle, "RIGHT", 160, 0)
+            self.dmReload:SetShown(want ~= (GuildOS.Style.darkMode == true))
+            y = y + 28
+        else
+            self.dmReload:Hide()
         end
         self.rolePick:SetShown(card.extra == "roles")
         if card.extra == "roles" then

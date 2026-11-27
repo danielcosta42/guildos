@@ -5336,3 +5336,6 @@ L["Opens Blizzard's own guild panel."] = "Abre o painel de guilda da própria Bl
 L["Show guildmates on my map"] = "Mostrar colegas da guilda no meu mapa"
 L["Off: no guildmate on your world map or minimap, and Guild OS asks nobody for positions. Campfires stay."] = "Desligado: nenhum colega no seu mapa-múndi ou minimapa, e o Guild OS não pede a posição de ninguém. As fogueiras continuam."
 L["Ebony wood and darker parchment cards, with the same gold."] = "Madeira de ébano e cartões de pergaminho mais escuros, com o mesmo dourado."
+L["Light or dark?"] = "Claro ou escuro?"
+L["Guild OS comes in wood and parchment, or in dark mode: ebony wood and dark parchment, easier on the eyes at night. Change it any time in Settings › Interface."] = "O Guild OS vem em madeira e pergaminho, ou no modo escuro: madeira de ébano e pergaminho escuro, mais confortável à noite. Mude quando quiser em Configurações › Interface."
+L["Reload now"] = "Recarregar agora"

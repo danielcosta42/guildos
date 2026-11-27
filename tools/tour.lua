@@ -214,7 +214,7 @@ check(not Tour:Running(), "Got it closes it")
 GuildOSDB._onboard = nil
 GuildOS.db.settings.onboarded = true
 local w = GuildOS:ShowWhatsNew(false)
-check(w and w.shown and w.kind == "whatsnew" and #w.cards == 6, "What's new: six cards for an existing user")
+check(w and w.shown and w.kind == "whatsnew" and #w.cards >= 7 and w.cards[1].id == "look", "What's new: the look first, then the big cards (and this release's notes) for an existing user")
 check(w.subText and tostring(w.subText.text):find("2.0", 1, true), "named 2.0 · the Salão")
 check(w.w <= 560 and w.h >= 452, "560 wide; it only grows in height")
 w.scripts.OnKeyDown(w, "RIGHT")
@@ -231,9 +231,10 @@ GuildOSDB._onboard = nil
 GuildOS.db.settings.onboarded = nil
 for k, v in pairs(GuildOSDB) do if GuildOS.IsGuildDBKey(k, v) and v.settings then v.settings.onboarded = nil end end
 w = GuildOS:ShowWhatsNew(false)
-check(w.kind == "welcome" and #w.cards == 4 and not w.neverBtn.shown, "a new player: the welcome, no Got it")
+check(w.kind == "welcome" and #w.cards == 5 and not w.neverBtn.shown, "a new player: the welcome, no Got it")
 for _ = 1, 3 do w.nextBtn.scripts.OnClick(w.nextBtn) end
 check(w.rolePick.shown or w.i == 4, "the roles card has its picker")
+w.nextBtn.scripts.OnClick(w.nextBtn)
 w.nextBtn.scripts.OnClick(w.nextBtn)
 pcall(FLUSH)
 check(not w.shown and not O:Pending() and GuildOS.db.settings.onboarded, "Take the tour: seen, onboarded")

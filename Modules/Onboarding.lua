@@ -240,6 +240,7 @@ function O:Cards(kind, role, client)
         return {
             { id = "welcome", ill = "salao", title = L["Welcome to Guild OS"],
               body = L["Your guild in one window: who is online, the raids and their sign-ups, loot, crafts and the guild's story, synced between everyone who runs it."] },
+            O.LookCard(),
             { id = "open", ill = "compact", title = L["Open it anytime"], extra = "guildbutton",
               body = L["/guildos, the minimap button, or the guild button (J). The guild button can stay Blizzard's: untick below."] },
             { id = "roles", ill = "raids", title = L["Your raid roles"], extra = "roles",
@@ -250,6 +251,7 @@ function O:Cards(kind, role, client)
         }
     end
     local c = {
+        O.LookCard(),
         { id = "salao", ill = "salao", title = L["Welcome to the Salão"],
           body = L["Guild OS was redrawn from top to bottom: wood, parchment and rooms instead of tabs. The Hall is your home: notices, who is by the fire, the guild wall."] },
         { id = "search", ill = "search", title = L["Rooms, a search and a bar"],
@@ -270,19 +272,35 @@ function O:Cards(kind, role, client)
           body = L["Less memory, no stutter, compact saved data. Your old data is kept for 7 days: /gos backup."] },
     }
     if gm then
-        table.insert(c, 6, { id = "gm", ill = "gm", title = L["For the Guild Master"], tag = L["Guild Master"],
+        table.insert(c, 7, { id = "gm", ill = "gm", title = L["For the Guild Master"], tag = L["Guild Master"],
             body = L["Guild-wide settings in one place: the shared welcome, the bank tax and points for donations, and linking the guild to guildos.me."] })
     end
     -- Six at most: the Guild Master's card takes the place of the last one.
-    for i = #c, 7, -1 do c[i] = nil end
+    -- The look card first, then six at most.
+    for i = #c, 8, -1 do c[i] = nil end
     -- After the big cards were seen: this release's notes alone (the big cards again when there are none,
     -- as in a build from the source); with them: the notes of a release after 2.0.0 follow.
     if not self:FeaturePending() then
         local notes = self:NoteCards({})
-        return #notes > 0 and notes or c
+        if #notes == 0 then return c end
+        -- Whoever has not chosen a look yet (dark mode came in 2.1) is asked first.
+        local s = GuildOSDB and GuildOSDB._onboard
+        if not (s and s.lookSeen) then table.insert(notes, 1, O.LookCard()) end
+        return notes
     end
     if self:NotesPending() then self:NoteCards(c) end
     return c
+end
+
+-- "Light or dark?": the dark mode switch, among the first cards of the welcome and of What's new (2.1).
+function O.LookCard()
+    return { id = "look", ill = "light", title = L["Light or dark?"], extra = "darkmode",
+        body = L["Guild OS comes in wood and parchment, or in dark mode: ebony wood and dark parchment, easier on the eyes at night. Change it any time in Settings › Interface."] }
+end
+
+-- The look was chosen (the card's switch touched, or read past): the notes stop asking.
+function O:LookSeen()
+    self:Store().lookSeen = true
 end
 
 -- This release's notes as cards, NOTES_PER_CARD lines each, appended to `c`. The lines are the release's

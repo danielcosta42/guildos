@@ -5151,3 +5151,6 @@ L["Opens Blizzard's own guild panel."] = "블리자드 기본 길드 창을 엽�
 L["Show guildmates on my map"] = "내 지도에 길드원 표시"
 L["Off: no guildmate on your world map or minimap, and Guild OS asks nobody for positions. Campfires stay."] = "끄면: 세계 지도와 미니맵에 길드원이 표시되지 않고, Guild OS는 누구에게도 위치를 묻지 않습니다. 모닥불은 남습니다."
 L["Ebony wood and darker parchment cards, with the same gold."] = "흑단 나무와 더 어두운 양피지 카드, 금색은 그대로입니다."
+L["Light or dark?"] = "밝게 또는 어둡게?"
+L["Guild OS comes in wood and parchment, or in dark mode: ebony wood and dark parchment, easier on the eyes at night. Change it any time in Settings › Interface."] = "Guild OS는 나무와 양피지, 또는 다크 모드(흑단 나무와 어두운 양피지)로 쓸 수 있어 밤에 눈이 편합니다. 설정 › 인터페이스에서 언제든 바꿀 수 있습니다."
+L["Reload now"] = "지금 다시 불러오기"
