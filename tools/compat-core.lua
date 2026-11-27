@@ -440,7 +440,7 @@ end
 
 talents(true); skills(true)
 local d = DC:CollectMyData()
-check(d.spec and d.spec.treeIndex == 2 and d.professions and #d.professions == 1 and d.gear[1].name == "Hood",
+check(d.spec and d.spec.treeIndex == 2 and d.professions and #d.professions == 1 and GuildOS:MemberGear(d)[1].name == "Hood",
       "with every API: spec, professions and gear are collected")
 check(#bagReads == 10 and bagReads[10] == "4:2", "the resistance scan reads every slot of the five bags through Compat")
 local b = DC:GetBroadcastData()
@@ -449,14 +449,14 @@ check(type(b.professions) == "table" and #b.professions == 1 and b.absent == nil
 
 skills(false)
 d = DC:CollectMyData()
-check(d.professions == nil and d.spec and d.gear[1].name == "Hood", "no skill-line API: professions absent, the rest collected")
+check(d.professions == nil and d.spec and GuildOS:MemberGear(d)[1].name == "Hood", "no skill-line API: professions absent, the rest collected")
 b = DC:GetBroadcastData()
 check(b.professions == nil and b.gear ~= nil and b.absent and b.absent.professions and not b.absent.spec,
       "the broadcast leaves the professions field out and names it as absent")
 
 talents(false)
 d = DC:CollectMyData()
-check(d.spec == nil and not DC._snapshotIncomplete and d.gear[1].name == "Hood" and d.absent.spec and d.absent.professions,
+check(d.spec == nil and not DC._snapshotIncomplete and GuildOS:MemberGear(d)[1].name == "Hood" and d.absent.spec and d.absent.professions,
       "no talent API: the saved spec is removed, no re-collect is waited for, gear still collected, both named absent")
 
 GetNumTalentTabs = function() return 0 end   -- the API is there; the talents have not loaded yet

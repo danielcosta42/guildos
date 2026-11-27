@@ -68,6 +68,7 @@ local function shortOf(key) return tostring(key):match("^([^-]+)") or tostring(k
 -- opts.login: the login's digest, where the bulletin tells only the notices not told yet (#418); elsewhere (the
 -- Activity sub-tab, /gos digest) it lists the notices posted since `since`, as it always did.
 ----------------------------------------------------------------------
+local LINK_EARLY = "|cff4CB8FF"   -- a line the digest opens a screen from (LINK, below)
 function Digest:Collect(since, opts)
     since = since or GuildOS.db.digest.lastSeen or 0
     local m = {}
@@ -245,6 +246,17 @@ function Digest:Collect(since, opts)
     end
     local setup = GuildOS.Activation and GuildOS.Activation:GetDigestLine(GetServerTime())
     if setup then add("guild", setup) end
+    -- The account's other guild databases not opened in 90 days (memoria.md): said once per database, at login,
+    -- beside other news; ShowOnLogin marks them told. Deleting is the player's, in Settings › Data and support.
+    if opts and opts.login and GuildOS.StaleGuildDBLine then
+        local line, stale = GuildOS:StaleGuildDBLine(GetServerTime())
+        if line then
+            add("guild", LINK_EARLY .. line .. "|r")
+            m.guild.actions = m.guild.actions or {}
+            m.guild.actions[#m.guild.lines] = { "settings", "data" }
+            m.staleDBs = stale
+        end
+    end
     -- Beside other news, never a reason to open the digest on its own at every login.
     local nearest = GuildOS.Achievements and GuildOS.Achievements:NextLine()
     if nearest then
@@ -333,7 +345,9 @@ function Digest:Build(since, opts)
     local lines = {}
     local o = { recommend = true }
     for k, v in pairs(opts or {}) do o[k] = v end
-    lines.groups = self:Groups(self:Collect(since, o))
+    local model = self:Collect(since, o)
+    lines.groups = self:Groups(model)
+    lines.staleDBs = model.staleDBs
     for _, g in ipairs(lines.groups) do
         if g.id == "site" then lines[#lines + 1] = "|cffEDCC7B" .. L["From guildos.me"] .. "|r" end
         for _, line in ipairs(g.lines) do lines[#lines + 1] = line end
@@ -552,6 +566,7 @@ function Digest:ShowOnLogin()
     end
 
     local lines = self:Build(since, { login = true })
+    if lines.staleDBs then GuildOS:MarkStaleGuildDBsTold(lines.staleDBs) end
     self:MarkFeedSeen(GetServerTime())
     if B then B:MarkSeen(GetServerTime()) end
     if GuildOS.Achievements then GuildOS.Achievements:MarkSeen() end

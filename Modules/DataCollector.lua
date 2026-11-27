@@ -11,6 +11,9 @@ function DataCollector:Initialize()
     GuildOS:RekeyMembersToThisRealm()   -- Forever: one key per member (issue #95)
     -- and in every table synced from another client (#97); bad stored data must not stop start-up
     GuildOS:SafeCall(GuildOS.LocalizeStoredMemberTables, GuildOS)
+    -- Every member row's gear kept compact (db.schema.gear, memoria.md); idempotent, so also what an older
+    -- version wrote since the last load.
+    GuildOS:SafeCall(GuildOS.Gear.MigrateDB, GuildOS.db)
     -- Register inventory change events
     local frame = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(frame, "PLAYER_EQUIPMENT_CHANGED")
@@ -120,10 +123,11 @@ function DataCollector:CollectMyData()
     data.sex = sex
     data.lastUpdate = time()
 
-    -- Collect gear
+    -- Collect gear: kept compact (row.gc, one string per slot; GuildOS:MemberGear reads it, memoria.md)
     local gear, gearIncomplete = self:CollectGear()
-    data.gear = gear
-    data.avgIlvl = GuildOS.Compat.AverageItemLevel() or self:CalculateAvgIlvl(data.gear)
+    data.gc = GuildOS.Gear.PackSet(gear)
+    data.gear = nil
+    data.avgIlvl = GuildOS.Compat.AverageItemLevel() or self:CalculateAvgIlvl(gear)
 
     -- Collect professions
     data.professions = self:CollectProfessions()
@@ -684,7 +688,13 @@ function DataCollector:StoreReceivedData(playerKey, data)
             for sk, sv in pairs(existing.stats) do merged[sk] = sv end
             for sk, sv in pairs(v) do merged[sk] = sv end
             existing.stats = merged
-        elseif k ~= "recipes" and k ~= "rh" then
+        elseif k == "gear" then
+            -- Kept compact (memoria.md): the old shape any version sends becomes row.gc.
+            if type(v) == "table" then
+                existing.gc = GuildOS.Gear.PackSet(v)
+                existing.gear = nil
+            end
+        elseif k ~= "recipes" and k ~= "rh" and k ~= "gc" then
             existing[k] = v
         end
     end
@@ -704,24 +714,15 @@ function DataCollector:StoreReceivedData(playerKey, data)
     end
 
     -- Store recipes if included in broadcast (a client before audit D3; none with Crafts off, B25)
-    if data.recipes and GuildOS.RecipeTracker then
-        if not GuildOS.db.recipes then GuildOS.db.recipes = {} end
-        if not GuildOS.db.recipes[playerKey] then GuildOS.db.recipes[playerKey] = {} end
+    -- In the old shape, converted into the compact store (RecipeTracker:Put keeps the spell IDs it had).
+    if type(data.recipes) == "table" and GuildOS.RecipeTracker then
         local DC = GuildOS.DataCollector
+        local own = GuildOS.RecipeTracker:OwnKeys()[playerKey]
         for profName, recipes in pairs(data.recipes) do
-            local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
-            -- Remove old localized keys that map to the same canonical profession
-            for oldKey, _ in pairs(GuildOS.db.recipes[playerKey]) do
-                if oldKey ~= canonical and DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(oldKey) == canonical then
-                    GuildOS.db.recipes[playerKey][oldKey] = nil
-                end
+            if type(profName) == "string" and type(recipes) == "table" then
+                local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
+                GuildOS.RecipeTracker:Put(playerKey, canonical, recipes, own)
             end
-            -- Preserve spellIds: merge from existing data into incoming
-            -- (same player = same locale, names match)
-            if GuildOS.RecipeTracker then
-                GuildOS.RecipeTracker:MergeSpellIds(GuildOS.db.recipes[playerKey][canonical], recipes)
-            end
-            GuildOS.db.recipes[playerKey][canonical] = recipes
         end
     end
 
@@ -768,11 +769,14 @@ function DataCollector:GetBroadcastData()
         addonVersion = GuildOS.VERSION,
     }
 
-    -- Serialize gear with just essential info
-    if myData.gear then
+    -- Serialize gear with just essential info, in the old shape every version reads (memoria.md)
+    local myGear = GuildOS:MemberGear(myData)
+    if myGear then
         clean.gear = {}
-        for slotId, item in pairs(myData.gear) do
-            local gearEntry = {
+        for _, slotId in ipairs(GuildOS.Gear.Slots(myGear)) do
+            local item = myGear[slotId]
+            if type(item) ~= "table" then item = nil end
+            local gearEntry = item and {
                 id = item.id,
                 name = item.name,
                 quality = item.quality,
@@ -780,7 +784,7 @@ function DataCollector:GetBroadcastData()
                 enchantId = item.enchantId,
                 suffix = item.suffix,   -- issue #399; absent without one
             }
-            if item.gems and #item.gems > 0 then
+            if item and item.gems and #item.gems > 0 then
                 gearEntry.gems = {}
                 for _, gem in ipairs(item.gems) do
                     tinsert(gearEntry.gems, { id = gem.id })

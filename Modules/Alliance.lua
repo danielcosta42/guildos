@@ -223,7 +223,7 @@ end
 -- A recipe spell id → (the item it makes, the profession's English name). The site sends recipe SPELL ids
 -- (gosally1.md, Crafter.recipes) and "who crafts this?" asks by ITEM. WoW: Forever and retail read the static
 -- catalog (Data/ProfCatalog*.lua, recipes[id][F.out] and F.line); TBC Anniversary has none, and maps what the
--- guild's own scans recorded (db.recipes: spellId with itemId), rebuilt at most every MAP_TTL seconds. A recipe
+-- guild's own scans recorded (RecipeTracker:EachList / RecipesOf: spellId with itemId), rebuilt at most every MAP_TTL seconds. A recipe
 -- that makes no item (an enchant) or one nobody here has scanned maps to nothing and is not searchable by item.
 function Alliance:_RecipeMap()
     local cat = GuildOS.ProfCatalog
@@ -247,13 +247,23 @@ function Alliance:_RecipeMap()
     end
     local byId = {}
     local DC = GuildOS.DataCollector
-    for _, profs in pairs(GuildOS.db and GuildOS.db.recipes or {}) do
-        for profName, list in pairs(type(profs) == "table" and profs or {}) do
+    local RT = GuildOS.RecipeTracker
+    local function put(sid, iid, canonical)
+        if type(sid) == "number" and sid > 0 and not byId[sid] then
+            byId[sid] = { item = (type(iid) == "number" and iid > 0) and iid or nil, prof = canonical }
+        end
+    end
+    if RT and RT.EachList and GuildOS.db then
+        for key, profName in RT:EachList() do
             local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
-            for _, r in ipairs(type(list) == "table" and list or {}) do
-                if type(r) == "table" and type(r.spellId) == "number" and not byId[r.spellId] then
-                    byId[r.spellId] = { item = type(r.itemId) == "number" and r.itemId or nil, prof = canonical }
-                end
+            for _, sid, iid in RT:RecipesOf(key, profName) do put(sid, iid, canonical) end
+        end
+    else
+        -- Crafts switched off (the tracker not loaded): its compact store as saved (memoria.md), two numbers a recipe.
+        for _, profs in pairs(GuildOS.db and GuildOS.db.recipeIds or {}) do
+            for profName, list in pairs(type(profs) == "table" and profs or {}) do
+                local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
+                for i = 1, (type(list) == "table" and math.floor(#list / 2) or 0) do put(list[2 * i - 1], list[2 * i], canonical) end
             end
         end
     end

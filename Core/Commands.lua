@@ -45,15 +45,59 @@ function GuildOS:PrintMemoryReport()
     local raids = db.raidTracker and db.raidTracker.sessions
     local log = db.rosterLog and db.rosterLog.events
     GuildOS:Print(string.format(L["Saved data of this guild: %d members, %d recipe lists, %d professions, %d in the member history, %d roster log lines, %d raid sessions, %d loot records."],
-        countOf(db.members), countOf(db.recipes), countOf(db.professions), countOf(db.memberHistory),
+        countOf(db.members), countOf(db.recipeIds) + countOf(db.recipes), countOf(db.professions), countOf(db.memberHistory),
         type(log) == "table" and #log or 0, countOf(raids), type(db.lootHistory) == "table" and #db.lootHistory or 0))
-    local dbs = 0
-    -- A guild's database is keyed "Guild-Realm" (a character with no guild, "_noguild-Realm"); the account's
-    -- own tables (accountChars, minimap...) have no dash.
+    GuildOS:PrintCompactSizes(db)
+    local dbs, total = 0, 0
     for k, v in pairs(GuildOSDB or {}) do
-        if type(v) == "table" and type(k) == "string" and k:find("-", 1, true) then dbs = dbs + 1 end
+        if GuildOS.IsGuildDBKey(k, v) then
+            dbs = dbs + 1
+            total = total + GuildOS.EstimateBytes(v)
+        end
     end
     GuildOS:Print(string.format(L["Guild databases in the saved variables: %d."], dbs))
+    GuildOS:Print(string.format(L["All of them: about %.1f MB in the saved variables (Settings › Data and support lists them)."],
+        total / (1024 * 1024)))
+end
+
+-- /gos debug mem, the compact stores (memoria.md): what each holds, about how many bytes the saved variables
+-- spend on it, and per row, and how many rows an older version left in the old shape (converted at the next load).
+function GuildOS:PrintCompactSizes(db)
+    db = db or GuildOS.db or {}
+    local KB = 1024
+    -- Recipes: TBC Anniversary's lists; WoW: Forever and retail keep none (db.professions is the record).
+    local lists, recipes = 0, 0
+    for _, profs in pairs(type(db.recipeIds) == "table" and db.recipeIds or {}) do
+        for _, list in pairs(type(profs) == "table" and profs or {}) do
+            if type(list) == "table" then
+                lists = lists + 1
+                recipes = recipes + math.floor(#list / 2)
+            end
+        end
+    end
+    local rBytes = GuildOS.EstimateBytes(db.recipeIds)
+    GuildOS:Print(string.format(L["Recipes (compact): %d lists, %d recipes, about %.1f KB (%.0f bytes a recipe); %d lists in the old shape."],
+        lists, recipes, rBytes / KB, recipes > 0 and rBytes / recipes or 0, countOf(db.recipes)))
+    -- Gear: one string per slot.
+    local rows, old, gBytes = 0, 0, 0
+    for _, row in pairs(type(db.members) == "table" and db.members or {}) do
+        if type(row) == "table" then
+            if type(row.gc) == "table" then
+                rows = rows + 1
+                gBytes = gBytes + GuildOS.EstimateBytes(row.gc)
+            end
+            if type(row.gear) == "table" then old = old + 1 end
+        end
+    end
+    local mBytes = GuildOS.EstimateBytes(db.members)
+    GuildOS:Print(string.format(L["Members: about %.1f KB (%.0f bytes a row); gear compact on %d rows (%.0f bytes a row), %d rows in the old shape."],
+        mBytes / KB, countOf(db.members) > 0 and mBytes / countOf(db.members) or 0, rows, rows > 0 and gBytes / rows or 0, old))
+    -- The member history: keys against its ceiling.
+    local MH = GuildOS.MemberHistory
+    local hBytes = GuildOS.EstimateBytes(db.memberHistory)
+    local hKeys = countOf(db.memberHistory)
+    GuildOS:Print(string.format(L["Member history: %d of %d keys, about %.1f KB (%.0f bytes a key)."],
+        hKeys, MH and MH.MAX_KEYS or 0, hBytes / KB, hKeys > 0 and hBytes / hKeys or 0))
 end
 
 local function helpHeader(text)

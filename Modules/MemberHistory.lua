@@ -25,10 +25,11 @@
 --
 -- Ceiling (the criterion "teto documentado"): MAX_STINTS passages and MAX_RANKS rank changes per
 -- member, the oldest dropped first, and MAX_KEYS members in all, the former members who left longest
--- ago dropped first; a present member is never dropped. A stint is ~80 bytes in the SavedVariables
--- and a rank change ~70: the hard bound is MAX_KEYS x (MAX_STINTS x 80 + MAX_RANKS x 70) ~ 7.6 MB,
--- and a 1000-member guild over three years (a few thousand keys, one or two stints and a couple of
--- rank changes each) stays near 1 MB.
+-- ago dropped first; a present member, and a former one with a permanent note, is never dropped. A
+-- stint is ~80 bytes in the SavedVariables and a rank change ~70: the hard bound is MAX_KEYS x
+-- (MAX_STINTS x 80 + MAX_RANKS x 70) ~ 2.9 MB (in memory, ~6.4 KB a key at the cap, ~9.6 MB), and a
+-- 1000-member guild keeps its present members and the 500 or so who left most recently (memoria.md:
+-- MAX_KEYS was 4000, ~25 MB in memory at the cap; db.schema.history 1 trims an older history once).
 --
 -- Sync: append-only records with an id over the officers' existing `audit` domain, action "hist"
 -- (a client before #425 reads only "add" there and ignores it). Applying a record twice, or two
@@ -40,7 +41,8 @@ local L = GuildOS.L
 
 MemberHistory.MAX_STINTS = 10
 MemberHistory.MAX_RANKS = 15
-MemberHistory.MAX_KEYS = 4000
+MemberHistory.MAX_KEYS = 1500
+MemberHistory.SCHEMA = 1           -- db.schema.history: 1 = MAX_KEYS 1500 applied
 MemberHistory.OUTBOX = 25          -- records re-sent at login (like the Roster Log's backfill)
 MemberHistory.SCAN_GAP = 60        -- seconds between two roster diffs (issue #324: a big guild's bursts)
 MemberHistory.SETTLE_SECONDS = 45  -- after login: the other officers' audit backfill arrives first
@@ -62,6 +64,7 @@ function MemberHistory:Initialize()
     local db = GuildOS.db
     db.memberHistory = type(db.memberHistory) == "table" and db.memberHistory or {}
     db.memberHistoryOut = type(db.memberHistoryOut) == "table" and db.memberHistoryOut or {}
+    MemberHistory.MigrateDB(db)
     if GuildOS.SyncService then
         GuildOS.SyncService:On(self.NOTE_DOMAIN, function(env, sender) MemberHistory:OnNoteSync(env, sender) end)
     end
@@ -71,6 +74,17 @@ function MemberHistory:Initialize()
         st.settled = true
         GuildOS:SafeCall(self.Scan, self)
     end)
+end
+
+-- The ceiling of 1500 keys, applied once to a history an older version let grow to 4000 (db.schema.history).
+-- Cap's rule: the present members and those with a permanent note stay. How many keys went.
+function MemberHistory.MigrateDB(db)
+    if type(db) ~= "table" or type(db.memberHistory) ~= "table" then return 0 end
+    db.schema = type(db.schema) == "table" and db.schema or {}
+    if (tonumber(db.schema.history) or 0) >= MemberHistory.SCHEMA then return 0 end
+    local n = MemberHistory.Cap(db.memberHistory, MemberHistory.MAX_KEYS)
+    db.schema.history = MemberHistory.SCHEMA
+    return n
 end
 
 ----------------------------------------------------------------------

@@ -178,11 +178,12 @@ end
 -- somebody else's script has loaded is not readable. Item names repeat across a guild,
 -- so deflate charges very little for them.
 local function gearFor(data)
-    if not data or not data.gear then return nil end
+    local gear = GuildOS:MemberGear(data)
+    if not gear then return nil end
 
     local out = {}
     for _, slotInfo in ipairs(GuildOS.SlotIDs) do
-        local item = data.gear[slotInfo.id]
+        local item = gear[slotInfo.id]
         if item and item.id then
             local entry = {
                 slot = slotInfo.id,
@@ -567,7 +568,7 @@ local function memberLine(key, short, classFile, level, rankName, rankIndex)
         professions = professions,
         attunements = attunementsFor(key),
         att25 = tonumber(att) or 0,
-        enchants = enchantSummary(data.gear),
+        enchants = enchantSummary(GuildOS:MemberGear(data)),
         -- v5. Absent for anybody whose client has never published, which is
         -- most of a guild's roster and is the honest answer for them.
         gear = gearFor(data),

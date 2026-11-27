@@ -1031,6 +1031,53 @@ PAGES.data = function(F, isOfficer)
     })
     F:Note(L["Export/import all Guild OS data for this guild"], { gap = 6 })
 
+    -- Every guild database this account keeps (memoria.md): all of them load at every login. One the player
+    -- no longer needs is deleted here, behind a confirmation, never the one in use, never on its own. A fixed
+    -- set of rows filled on each refresh, so the page keeps its shape (the memory audit's rule).
+    local GUILD_DB_ROWS = 8
+    F:Section(L["Guild data on this account"])
+    F:Note(L["Each guild a character of this account was in keeps its own Guild OS data, and all of it loads at every login."], { gap = 2 })
+    local dbList = {}
+    F:Sync(function() dbList = GuildOS.GuildDatabases and GuildOS:GuildDatabases() or {} end)
+    local function sizeText(bytes)
+        if bytes >= 1024 * 1024 then return string.format(L["%.1f MB"], bytes / (1024 * 1024)) end
+        return string.format(L["%d KB"], math.max(1, math.floor(bytes / 1024 + 0.5)))
+    end
+    for i = 1, GUILD_DB_ROWS do
+        local holder = CreateFrame("Frame", nil, F.content)
+        holder:SetSize(1, 26)
+        local label = UI:CreateText(holder, "", 12, C.text.r, C.text.g, C.text.b)
+        label:SetPoint("LEFT", 0, 0)
+        label:SetJustifyH("LEFT")
+        label:SetWordWrap(false)
+        local del = UI:CreateButton(holder, L["Delete"], 90, 24)
+        UI:SetButtonVariant(del, "danger")
+        del:SetPoint("RIGHT", holder, "RIGHT", 0, 0)
+        local inUse = UI:CreateText(holder, L["In use"], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        inUse:SetPoint("RIGHT", holder, "RIGHT", 0, 0)
+        label:SetPoint("RIGHT", del, "LEFT", -8, 0)
+        del:SetScript("OnClick", function()
+            local e = dbList[i]
+            if e and not e.current then
+                GuildOS:AskDeleteGuildDB(e.key, function() F:Refresh() end)
+            end
+        end)
+        F:Sync(function()
+            local e = dbList[i]
+            if not e then return end
+            local when
+            if not e.opened then when = L["never"]
+            elseif e.est then when = string.format(L["before %s"], GuildOS:DateText(e.opened, "/%Y"))
+            else when = GuildOS:DateText(e.opened, "/%Y") end
+            label:SetText(string.format(L["%s · %s · last opened %s"], GuildOS:GuildDBLabel(e), sizeText(e.bytes), when))
+            del:SetShown(not e.current)
+            inUse:SetShown(e.current and true or false)
+        end)
+        F:Row(holder, { h = 26, wide = true, gap = 4, shown = function() return dbList[i] ~= nil end })
+    end
+    F:Note(L["More guilds than shown: delete some and the rest appear here."], { gap = 4,
+        shown = function() return #dbList > GUILD_DB_ROWS end })
+
     -- What /gos scan, errors, selftest, probe, probe chat and style preview do (#142).
     F:Section(L["Diagnostics"])
     F:Buttons({

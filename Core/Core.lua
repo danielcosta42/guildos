@@ -251,6 +251,8 @@ function GuildOS:ResolveGuildDB()
     self.db = guildDB
     self.guildKey = dbKey
     self.isGuilded = guilded
+    -- When each of the account's databases was last opened (Settings › Data and support, memoria.md).
+    if self.StampGuildDBs then self:SafeCall(self.StampGuildDBs, self) end
     return true
 end
 

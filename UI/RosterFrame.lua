@@ -1690,7 +1690,7 @@ function GuildOS:CreateRosterPanel(parent, host)
                         status = status or "",
                         -- Addon data
                         avgIlvl = addonData.avgIlvl or 0,
-                        gear = addonData.gear,
+                        gear = GuildOS:MemberGear(addonData),
                         -- On WoW: Forever a member without the addon (or on a version that sends none)
                         -- still has the professions the guild roster names (issue #31).
                         professions = addonData.professions

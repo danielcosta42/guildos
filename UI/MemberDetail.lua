@@ -818,10 +818,11 @@ function PopulateDetail(frame, data)
         local avgMeta = (data.avgIlvl and data.avgIlvl > 0) and string.format(L["Average item level %d"], data.avgIlvl) or nil
         yOff = CreateSectionHeader(child, L["Equipment"], yOff, contentWidth, avgMeta)
 
-        if data.gear then
+        local gear = GuildOS:MemberGear(data)   -- a record's, or a db.members row's (decoded, memoria.md)
+        if gear then
             -- Fixed rows, a rule only between two of them.
             for i, slotInfo in ipairs(GuildOS.SlotIDs) do
-                local item = data.gear[slotInfo.id]
+                local item = gear[slotInfo.id]
                 if CreateGearRow(child, slotInfo.id, item, yOff, contentWidth, i > 1) then frame._itemsPending = true end
                 yOff = yOff - GEAR_ROW
             end

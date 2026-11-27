@@ -540,14 +540,19 @@ GuildOS.db.lootHistory = {
   { itemLink = select(2, itemInfo(28434)), player = "Garruk", timestamp = now - 9 * 86400 },
   { itemLink = select(2, itemInfo(28830)), player = "Kaelis", timestamp = now - 2 * 86400 },
 }
-GuildOS.db.recipes = {
-  ["Velyra-MundodeForever"] = { Alchemy = { { itemId = 32067, name = "Elixir of Draenic Wisdom" },
-                                            { spellId = 28568, name = "Transmute: Primal Might" } } },
-  ["Sombra-MundodeForever"] = { Leatherworking = { { itemId = 29096, name = "Cobrahide Leg Armor" } } },
+-- Lists in the recipe tracker's store (memoria.md: compact, a name only where no spell ID gives it).
+GuildOS.db.recipeIds = {
+  ["Velyra-MundodeForever"] = { Alchemy = GuildOS.RecipeTracker.Pack({ { itemId = 32067, name = "Elixir of Draenic Wisdom" },
+                                            { spellId = 28568, name = "Transmute: Primal Might" } }) },
+  ["Sombra-MundodeForever"] = { Leatherworking = GuildOS.RecipeTracker.Pack({ { itemId = 29096, name = "Cobrahide Leg Armor" } }) },
 }
 if GuildOS.RecipeTracker then GuildOS.RecipeTracker.cachedIndex = nil end
 -- The Workshop's catalog (Modules/ProfDirectory.lua): Velyra knows recipe 9950, named by the spell.
-rawset(_G, "C_Spell", { GetSpellInfo = function(id) if id == 9950 then return { name = "Ornate Mithril Gloves" } end end })
+-- The client names a spell by its ID (a stored list keeps no name a spell ID gives back, memoria.md).
+rawset(_G, "C_Spell", { GetSpellInfo = function(id)
+  if id == 9950 then return { name = "Ornate Mithril Gloves" } end
+  if id == 28568 then return { name = "Transmute: Primal Might" } end
+end })
 GuildOS.db.professions[GuildOS:GetPlayerKey("Velyra")] = { src = "addon", ts = now, profs = { [164] = { recipes = { 9950 } } } }
 GuildOS.Professions.index = nil
 

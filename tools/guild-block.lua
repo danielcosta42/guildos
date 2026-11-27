@@ -482,11 +482,15 @@ check(GuildOS.db.allianceLinkSite and GuildOS.db.allianceLinkSite.line == "GOS=P
 -- TBC Anniversary has no catalog: the guild's own scans map a recipe to its item.
 local cat = GuildOS.ProfCatalog
 GuildOS.ProfCatalog = nil
+-- Read through the recipe tracker (memoria.md), the list as an older version saved it: converted on first read.
+strlower = strlower or string.lower
+if not GuildOS.RecipeTracker then dofile(ADDON .. "/Modules/RecipeTracker.lua") end
 GuildOS.db.recipes = { ["Ana"] = { Leatherworking = { { spellId = 2149, itemId = 2302 }, { spellId = 7418 } } } }
 local fc2 = A:FindCrafters(2302)
 check(#fc2 == 1 and fc2[1].prof == "Leatherworking" and #A:FindCrafters(2303) == 0,
   "without a catalog, what the guild scanned maps the recipe; one nobody scanned finds nobody")
-GuildOS.ProfCatalog, GuildOS.db.recipes = cat, nil
+check(GuildOS.db.recipes == nil and GuildOS.db.recipeIds.Ana.Leatherworking[1] == 2149, "and kept compact")
+GuildOS.ProfCatalog, GuildOS.db.recipes, GuildOS.db.recipeIds = cat, nil, nil
 -- Another key version (the block is older than the code): not this alliance's.
 GuildOS.db.allianceLinkSite.version = 4
 check(#A:Directory() == 0 and #A:OpenRaids() == 0, "a GOSALLY1 of another key version is not read")

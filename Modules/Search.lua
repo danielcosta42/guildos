@@ -175,15 +175,27 @@ local function recipes(text)
     end
     -- No index (the module is off): who scanned a recipe of that name.
     local hits = {}
-    for key, profs in pairs(GuildOS.db.recipes or {}) do
-        local crafter = key:match("^([^-]+)") or key
-        for _, rs in pairs(profs) do
-            if type(rs) == "table" then
-                for _, r in pairs(rs) do
-                    local rname = (type(r) == "table" and (r.name or r.itemName)) or (type(r) == "string" and r) or nil
-                    if rname and has(rname, text) then
-                        hits[rname] = hits[rname] or {}
-                        hits[rname][crafter] = true
+    -- The lists as stored: RecipeTracker's compact shape (db.recipeIds: a name kept, else the game's), or the
+    -- old one (db.recipes) a version before memoria.md left while the module stayed off.
+    local function hit(rname, crafter)
+        if rname and has(rname, text) then
+            hits[rname] = hits[rname] or {}
+            hits[rname][crafter] = true
+        end
+    end
+    for _, store in ipairs({ GuildOS.db.recipeIds or {}, GuildOS.db.recipes or {} }) do
+        for key, profs in pairs(store) do
+            local crafter = key:match("^([^-]+)") or key
+            for _, rs in pairs(type(profs) == "table" and profs or {}) do
+                if type(rs) == "table" and type(rs[1]) == "table" then
+                    for _, r in pairs(rs) do
+                        hit((type(r) == "table" and (r.name or r.itemName)) or (type(r) == "string" and r) or nil, crafter)
+                    end
+                elseif type(rs) == "table" then
+                    local nm = type(rs.nm) == "table" and rs.nm or {}
+                    for i = 1, math.floor(#rs / 2) do
+                        local sid = rs[2 * i - 1]
+                        hit(nm[i] or (type(sid) == "number" and sid > 0 and GuildOS.Compat.GetSpellInfo(sid)) or nil, crafter)
                     end
                 end
             end

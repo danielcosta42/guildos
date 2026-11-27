@@ -179,7 +179,7 @@ for i = 1, 5 do MH.ApplyJoin(big, "P" .. i, 1, false) end
 check(MH.Cap(big, 20) == 15 and big.F1 == nil and big.F16 ~= nil and big.F30 ~= nil and big.P1 ~= nil,
   "over the cap: the former members who left longest ago go, the present stay")
 check(MH.Cap({ X = { stints = { { joinAt = 1 } } } }, 0) == 0, "a present member is never dropped")
-check(MH.MAX_KEYS * (MH.MAX_STINTS * 80 + MH.MAX_RANKS * 70) < 8 * 1024 * 1024, "the documented bound: under 8 MB")
+check(MH.MAX_KEYS * (MH.MAX_STINTS * 80 + MH.MAX_RANKS * 70) < 3 * 1024 * 1024, "the documented bound: under 3 MB")
 
 -- ── 3. The diff ───────────────────────────────────────────────────────────
 local base = {

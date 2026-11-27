@@ -775,7 +775,7 @@ function GuildOS:GetMemberRecord(name, realm)
         isOnline     = isOnline,
         status       = status or "",
         avgIlvl      = data.avgIlvl or 0,
-        gear         = data.gear,
+        gear         = self:MemberGear(data),   -- decoded on read (memoria.md)
         -- WoW: Forever: the guild roster's professions for a member whose client sent none (issue #31).
         professions  = data.professions or (self.Professions and self.Professions:LegacyList(key)),
         attunements  = data.attunements,
@@ -1444,11 +1444,12 @@ function GuildOS:DropDeparted()
     if self.Founding then self.Founding:Departed(present) end
     -- A birthday is personal data: it goes with its member (issue #428).
     if self.Birthdays then self.Birthdays:Departed(present) end
-    for _, store in ipairs({ "firstSeen", "recipes" }) do
+    for _, store in ipairs({ "firstSeen", "recipes", "recipeIds" }) do
         for key in pairs(self.db[store] or {}) do
             if not present[key] then self.db[store][key] = nil end
         end
     end
+    if self.RecipeTracker and self.RecipeTracker.Changed then self.RecipeTracker:Changed() end
     for key in pairs(self.db.professions or {}) do
         if not present[key] then
             self.db.professions[key] = nil
@@ -1562,4 +1563,286 @@ end
 function GuildOS:LocalOnlyText()
     if self.Compat.OfficerAddonChannel and self.Compat.OfficerAddonChannel() then return nil end
     return self.L["Kept on this client only: this game has no officer channel to share it with the other officers."]
+end
+
+----------------------------------------------------------------------
+-- Gear, compact (specs/salao/memoria.md). A member row keeps its equipment as one string per slot,
+--   row.gc[slotId] = "id:enchant:gem1.gem2.gem3.gem4:suffix:ilvl:quality\tname[\tlink]"
+-- (the link only on rows this account's own client collected), instead of a table per item with a
+-- gems table inside. The same item, enchant and gems is one string for the whole guild (Lua interns
+-- them). Readers never see the string: GuildOS:MemberGear(row) gives the slots in the old shape
+-- ({ link, id, name, quality, ilvl, enchantId, gems = { { id } }, suffix }), decoded on first read of a
+-- slot and not kept. A row an older version wrote (row.gear, a table per item) is read as it is and
+-- converted on the next write or load (Gear.Normalize); the wire keeps the old shape.
+----------------------------------------------------------------------
+local Gear = {}
+GuildOS.Gear = Gear
+Gear.SCHEMA = 1   -- db.schema.gear: 1 = row.gc
+
+local function gnum(v)
+    v = tonumber(v)
+    if v and v ~= 0 then return tostring(v) end
+    return ""
+end
+local function gtext(v)
+    if type(v) ~= "string" then return "" end
+    return (v:gsub("[\t]", " "))
+end
+
+-- One item (the old shape) as its string; a string is already one. nil for anything else.
+function Gear.Pack(item)
+    if type(item) == "string" then return item end
+    if type(item) ~= "table" then return nil end
+    local gems = {}
+    for _, g in ipairs(type(item.gems) == "table" and item.gems or {}) do
+        local id = tonumber(type(g) == "table" and g.id or g)
+        if id and id > 0 and id == math.floor(id) then gems[#gems + 1] = tostring(id) end
+    end
+    local s = table.concat({ gnum(item.id), gnum(item.enchantId), table.concat(gems, "."), gnum(item.suffix),
+        gnum(item.ilvl), gnum(item.quality) }, ":") .. "\t" .. gtext(item.name)
+    if type(item.link) == "string" and item.link ~= "" then s = s .. "\t" .. gtext(item.link) end
+    return s
+end
+
+-- The item a string holds, in the old shape (a fresh table: the caller may keep it); nil when malformed.
+-- `quality` and `ilvl` read 0 when absent, and `name` "", as DataCollector always wrote them; `enchantId`
+-- and `suffix` nil without one, `gems` an empty list without any.
+function Gear.Unpack(s)
+    if type(s) ~= "string" then return nil end
+    local id, ench, gems, suffix, ilvl, q, rest = s:match("^([^:]*):([^:]*):([^:]*):([^:]*):([^:]*):([^\t]*)\t?(.*)$")
+    if not id then return nil end
+    local name, link = rest:match("^([^\t]*)\t(.*)$")
+    name = name or rest
+    local item = { id = tonumber(id), enchantId = tonumber(ench), suffix = tonumber(suffix),
+                   ilvl = tonumber(ilvl) or 0, quality = tonumber(q) or 0, name = name, gems = {} }
+    if link and link ~= "" then item.link = link end
+    for g in gems:gmatch("%d+") do item.gems[#item.gems + 1] = { id = tonumber(g) } end
+    return item
+end
+
+-- A whole gear table (slot -> item, the old shape) as slot -> string.
+function Gear.PackSet(gear)
+    if type(gear) ~= "table" then return nil end
+    local out = {}
+    for slot, item in pairs(gear) do
+        local s = (type(slot) == "number") and Gear.Pack(item) or nil
+        if s then out[slot] = s end
+    end
+    return out
+end
+
+-- A row's slots, decoded on read. Indexing works as on the old table (view[slotId]); pairs() does not: walk
+-- GuildOS.SlotIDs, or Gear.Slots for the slot numbers held.
+local viewMeta = {
+    __index = function(view, slot)
+        local s = rawget(view, "__gc")[slot]
+        if s == nil then return nil end
+        local item = Gear.Unpack(s)
+        rawset(view, slot, item)
+        return item
+    end,
+}
+local viewOf = setmetatable({}, { __mode = "kv" })   -- [row.gc] = its view, while somebody holds the view
+
+-- The slot numbers a gear table (a view or the old shape) holds, sorted.
+function Gear.Slots(gear)
+    local src = type(gear) == "table" and (rawget(gear, "__gc") or gear) or {}
+    local out = {}
+    for slot in pairs(src) do
+        if type(slot) == "number" then out[#out + 1] = slot end
+    end
+    table.sort(out)
+    return out
+end
+
+-- A row's equipment in the old shape, or nil when the row has none. A row an older version wrote keeps its
+-- table, which is read as it is.
+function GuildOS:MemberGear(row)
+    if type(row) ~= "table" then return nil end
+    if type(row.gear) == "table" then return row.gear end
+    local gc = row.gc
+    if type(gc) ~= "table" then return nil end
+    local view = viewOf[gc]
+    if not view then
+        view = setmetatable({ __gc = gc }, viewMeta)
+        viewOf[gc] = view
+    end
+    return view
+end
+
+-- The row's old-shape gear, if any, moved into row.gc. True when the row changed.
+function Gear.Normalize(row)
+    if type(row) ~= "table" or type(row.gear) ~= "table" then return false end
+    row.gc = Gear.PackSet(row.gear)
+    row.gear = nil
+    return true
+end
+
+-- Every row of `members` in the compact shape (db.schema.gear). Idempotent: a row already compact is left
+-- alone, so it runs at every load and also takes what an older version wrote since. How many rows changed.
+function Gear.MigrateDB(db)
+    if type(db) ~= "table" then return 0 end
+    db.schema = type(db.schema) == "table" and db.schema or {}
+    local n = 0
+    for _, row in pairs(type(db.members) == "table" and db.members or {}) do
+        if Gear.Normalize(row) then n = n + 1 end
+    end
+    db.schema.gear = Gear.SCHEMA
+    return n
+end
+
+----------------------------------------------------------------------
+-- The account's other guild databases (memoria.md): GuildOSDB keeps one per guild key a character of the
+-- account ever opened, every one loaded at every login. Settings › Data and support lists them (name, size,
+-- last opened) and deletes one on request, never the one in use; the digest says once when one has not been
+-- opened in GUILD_DB_STALE_DAYS. Nothing is ever deleted on its own.
+----------------------------------------------------------------------
+GuildOS.GUILD_DB_STALE_DAYS = 90
+GuildOS.GUILD_DB_SIZE_TTL = 60   -- seconds the size of the database in use is kept before it is measured again
+
+-- A guild's database is keyed "Guild-Realm" (a character with no guild, "_noguild-Realm"); the account's own
+-- tables (accountChars, minimap...) have no dash.
+function GuildOS.IsGuildDBKey(k, v)
+    return type(k) == "string" and type(v) == "table" and k:find("-", 1, true) ~= nil
+end
+
+-- About how many bytes `t` takes in the SavedVariables file (keys, values and their punctuation), walked
+-- without recursion; a table deeper than 64 levels is not followed.
+function GuildOS.EstimateBytes(root)
+    if type(root) ~= "table" then return 0 end
+    local total, stack, depths = 0, { root }, { 0 }
+    while #stack > 0 do
+        local n = #stack
+        local t, d = stack[n], depths[n]
+        stack[n], depths[n] = nil, nil
+        total = total + 4
+        for k, v in pairs(t) do
+            total = total + ((type(k) == "string") and (#k + 7) or 10)
+            local tv = type(v)
+            if tv == "string" then total = total + #v + 4
+            elseif tv == "number" then total = total + 10
+            elseif tv == "boolean" then total = total + 6
+            elseif tv == "table" and d < 64 then
+                stack[#stack + 1], depths[#depths + 1] = v, d + 1
+            end
+        end
+    end
+    return total
+end
+
+local sizeOf = {}   -- [key] = { t = the table measured, bytes, at }: another guild's does not change this session
+local function measured(key, db, current)
+    local c = sizeOf[key]
+    local now = GetTime and GetTime() or 0
+    if not c or c.t ~= db or (current and now - c.at > GuildOS.GUILD_DB_SIZE_TTL) then
+        c = { t = db, bytes = GuildOS.EstimateBytes(db), at = now }
+        sizeOf[key] = c
+    end
+    return c.bytes
+end
+
+-- When a guild's database was last opened: db._opened, stamped at each login (ResolveGuildDB). One this
+-- version never opened gets the time it was first seen here, marked as such (`_openedEst`): opened then or
+-- before. Called once per login, over every database of the account.
+function GuildOS:StampGuildDBs(now)
+    now = now or time()
+    for k, v in pairs(GuildOSDB or {}) do
+        if GuildOS.IsGuildDBKey(k, v) and k ~= self.guildKey and tonumber(v._opened) == nil then
+            v._opened, v._openedEst = now, true
+        end
+    end
+    if self.db then self.db._opened, self.db._openedEst = now, nil end
+end
+
+-- The account's guild databases: { { key, name (nil for the guildless one), realm, noGuild, opened, est,
+-- current, bytes } }, the one in use first, then the most recently opened.
+function GuildOS:GuildDatabases()
+    local out = {}
+    for k, v in pairs(GuildOSDB or {}) do
+        if GuildOS.IsGuildDBKey(k, v) then
+            local name, realm = k:match("^(.-)%-(.+)$")
+            local current = k == self.guildKey
+            out[#out + 1] = { key = k, name = (name ~= "_noguild") and name or nil, realm = realm,
+                noGuild = name == "_noguild", opened = tonumber(v._opened), est = v._openedEst and true or nil,
+                current = current, bytes = measured(k, v, current) }
+        end
+    end
+    table.sort(out, function(a, b)
+        if a.current ~= b.current then return a.current end
+        if (a.opened or 0) ~= (b.opened or 0) then return (a.opened or 0) > (b.opened or 0) end
+        return a.key < b.key
+    end)
+    return out
+end
+
+-- The other databases not opened in `days` (GUILD_DB_STALE_DAYS) at `now`.
+function GuildOS:StaleGuildDBs(now, days)
+    now = now or time()
+    local limit = (days or self.GUILD_DB_STALE_DAYS) * 86400
+    local out = {}
+    for k, v in pairs(GuildOSDB or {}) do
+        if GuildOS.IsGuildDBKey(k, v) and k ~= self.guildKey then
+            local at = tonumber(v._opened)
+            if at and now - at >= limit then out[#out + 1] = k end
+        end
+    end
+    table.sort(out)
+    return out
+end
+
+-- How a database is named on screen: "Guild (Realm)", or "No guild (Realm)".
+function GuildOS:GuildDBLabel(e)
+    if e.noGuild then return string.format(L["No guild (%s)"], e.realm or "?") end
+    return string.format("%s (%s)", e.name or "?", e.realm or "?")
+end
+
+-- Deletes another guild's database from this account. Never the one in use. True when one went.
+function GuildOS:DeleteGuildDB(key)
+    if type(GuildOSDB) ~= "table" or key == self.guildKey or not GuildOS.IsGuildDBKey(key, GuildOSDB[key]) then
+        return false
+    end
+    GuildOSDB[key] = nil
+    sizeOf[key] = nil
+    if type(GuildOSDB._staleDbTold) == "table" then GuildOSDB._staleDbTold[key] = nil end
+    return true
+end
+
+-- Settings' Delete beside one of them: asked first, since it cannot be undone. `after` runs once it went.
+function GuildOS:AskDeleteGuildDB(key, after)
+    if key == self.guildKey or not GuildOS.IsGuildDBKey(key, GuildOSDB and GuildOSDB[key]) then return false end
+    GuildOS.Dialogs["GUILDOS_DELETE_GUILD_DB"] = GuildOS.Dialogs["GUILDOS_DELETE_GUILD_DB"] or {
+        text = L["Delete every Guild OS record of %s on this account? This cannot be undone."],
+        button1 = L["Delete"], button2 = L["Cancel"],
+        OnAccept = function(dialog)
+            local d = dialog and dialog.data
+            if d and GuildOS:DeleteGuildDB(d.key) then
+                GuildOS:Print(string.format(L["Deleted the Guild OS data of %s."], d.label))
+                if d.after then d.after() end
+            end
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
+    local name, realm = key:match("^(.-)%-(.+)$")
+    local label = self:GuildDBLabel({ key = key, name = name, realm = realm, noGuild = name == "_noguild" })
+    GuildOS:ShowDialog("GUILDOS_DELETE_GUILD_DB", label, nil, { key = key, label = label, after = after })
+    return true
+end
+
+-- The digest's line, once per database (GuildOSDB._staleDbTold): how many of the account's other guild
+-- databases were not opened in 90 days, and where to delete them. nil when there is none not told yet.
+function GuildOS:StaleGuildDBLine(now)
+    local told = type(GuildOSDB) == "table" and type(GuildOSDB._staleDbTold) == "table" and GuildOSDB._staleDbTold or {}
+    local stale, fresh = self:StaleGuildDBs(now), false
+    for _, k in ipairs(stale) do
+        if not told[k] then fresh = true end
+    end
+    if not fresh then return nil, stale end
+    return string.format(L["%d guild database(s) on this account not opened in %d days: Settings › Data and support"],
+        #stale, self.GUILD_DB_STALE_DAYS), stale
+end
+
+function GuildOS:MarkStaleGuildDBsTold(keys)
+    if type(GuildOSDB) ~= "table" then return end
+    GuildOSDB._staleDbTold = type(GuildOSDB._staleDbTold) == "table" and GuildOSDB._staleDbTold or {}
+    for _, k in ipairs(keys or {}) do GuildOSDB._staleDbTold[k] = true end
 end

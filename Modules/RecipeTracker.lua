@@ -1,11 +1,24 @@
 ----------------------------------------------------------------------
 -- Guild OS - Recipe Tracker
 -- Scans and shares tradeskill recipes across the guild
+--
+-- TBC Anniversary keeps every member's lists in db.recipeIds (specs/salao/memoria.md):
+--   db.recipeIds[key][prof] = { h = hash, spellId1, itemId1, spellId2, itemId2, ..., nm = { [i] = name } }
+-- two numbers per recipe (0 where the scan had none), `h` the list's hash as the wire computes it (the
+-- sorted names, RecipeTracker.Hash), and `nm` only the names the game cannot give back: every name of
+-- this account's own characters (their lists go out again by name) and, for the others, a recipe
+-- with no spell ID. The old shape (db.recipes[key][prof] = { { name, itemId, spellId }, ... }) is
+-- what the network still carries; it is converted on arrival and on load (MigrateDB).
+--
+-- WoW: Forever and retail keep no copy at all: the same readers (RecipesOf, EachList, the crafter
+-- indexes) read db.professions through the catalog (Modules/Professions.lua).
 ----------------------------------------------------------------------
 local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local RecipeTracker = {}
 GuildOS.RecipeTracker = RecipeTracker
 local L = GuildOS.L
+
+RecipeTracker.SCHEMA = 2   -- db.schema.recipes: 2 = compact lists in db.recipeIds
 
 ----------------------------------------------------------------------
 -- Initialize
@@ -27,13 +40,11 @@ function RecipeTracker:Initialize()
         end
     end)
 
-    -- Ensure DB table exists
-    if not GuildOS.db.recipes then
-        GuildOS.db.recipes = {}
-    end
+    -- The lists in their compact shape, once (and again whenever an older version wrote the old one).
+    RecipeTracker.MigrateDB(GuildOS.db, self:OwnKeys())
 
-    -- Enrich stored recipes: propagate spellIds from players who have them
-    -- to same-locale players who don't (same name = same locale)
+    -- Enrich stored recipes: a recipe that came with a name and no ID gets the spell ID of a recipe of
+    -- that name; the rest of them are purged.
     self:EnrichStoredRecipes()
 
     -- Hook tooltips to show crafters
@@ -41,58 +52,371 @@ function RecipeTracker:Initialize()
 end
 
 ----------------------------------------------------------------------
+-- The compact list (pure: unit-tested in tools/memory-compact.lua)
+----------------------------------------------------------------------
+local function nextCompact(c, i)
+    i = i + 1
+    local s = c[2 * i - 1]
+    if s == nil then return nil end
+    local it, nm = c[2 * i], c.nm
+    return i, (s ~= 0) and s or nil, (it and it ~= 0) and it or nil, nm and nm[i] or nil
+end
+local function nextLegacy(c, i)
+    i = i + 1
+    local r = c[i]
+    while r ~= nil and type(r) ~= "table" do
+        i = i + 1
+        r = c[i]
+    end
+    if r == nil then return nil end
+    return i, tonumber(r.spellId), tonumber(r.itemId), type(r.name) == "string" and r.name or nil
+end
+local function noop() return nil end
+
+-- for i, spellId, itemId, name in RecipeTracker.Each(list) do ... end, over a compact list or one in the old
+-- shape (a received payload, a fixture). spellId and itemId are nil where the scan had none; name is nil
+-- where the list keeps none (the game's own name, GetSpellInfo, is the one to show).
+function RecipeTracker.Each(list)
+    if type(list) ~= "table" then return noop, nil, 0 end
+    if type(list[1]) == "table" then return nextLegacy, list, 0 end
+    return nextCompact, list, 0
+end
+
+function RecipeTracker.IsLegacy(list) return type(list) == "table" and type(list[1]) == "table" end
+
+-- How many recipes a list holds.
+function RecipeTracker.Count(list)
+    if type(list) ~= "table" then return 0 end
+    if type(list[1]) == "table" then return #list end
+    return math.floor(#list / 2)
+end
+
+-- A list in the compact shape, from either shape. `keepNames`: every name is kept (the account's own
+-- characters); else only the names of recipes with no spell ID. `h`: the hash to keep (else the list's
+-- own, computed from its names as the wire does). An entry with no ID and no name is dropped.
+function RecipeTracker.Pack(list, keepNames, h)
+    local legacy = RecipeTracker.IsLegacy(list)
+    local flat = {}
+    local n, nm = 0, nil
+    for _, s, it, name in RecipeTracker.Each(list) do
+        if s or it or name then
+            n = n + 1
+            flat[2 * n - 1], flat[2 * n] = s or 0, it or 0
+            if name and (keepNames or not s) then
+                nm = nm or {}
+                nm[n] = name
+            end
+        end
+    end
+    -- Built by a constructor, the array is exactly as long as the list (grown one by one it would round up to a
+    -- power of two), as the SavedVariables loader makes it.
+    -- `h` and `nm` in the same constructor, so adding them later does not round the array up again.
+    h = h or (legacy and RecipeTracker.Hash(list)) or (type(list) == "table" and list.h) or nil
+    local out
+    if #flat <= 4000 then
+        out = { h = h, nm = nm, unpack(flat) }
+    else
+        out, flat.h, flat.nm = flat, h, nm
+    end
+    if out.h == nil then out.h = RecipeTracker.Hash(RecipeTracker.Wire(out)) end
+    return out
+end
+
+-- The old shape of a list, { { name, itemId, spellId }, ... }, what the network carries. A name the list
+-- does not keep is the client's spell name (the sender's own lists keep theirs).
+function RecipeTracker.Wire(list)
+    local out = {}
+    for _, s, it, name in RecipeTracker.Each(list) do
+        if not name and s then name = GuildOS.Compat.GetSpellInfo(s) end
+        out[#out + 1] = { name = name, itemId = it, spellId = s }
+    end
+    return out
+end
+
+-- A list's hash: the one it was stored with (the sender's), or for the old shape the names'.
+function RecipeTracker.ListHash(list)
+    if type(list) ~= "table" then return nil end
+    if RecipeTracker.IsLegacy(list) then return RecipeTracker.Hash(list) end
+    return list.h or RecipeTracker.Hash(RecipeTracker.Wire(list))
+end
+
+----------------------------------------------------------------------
+-- Migration (db.schema.recipes). Idempotent: run at every load, it converts only what is in the old
+-- shape (db.recipes, which only a version before this one writes) and leaves the compact lists as they
+-- are. Nothing a reader uses is lost: the IDs, the hash, the own names and every name with no spell ID
+-- stay; a name with a spell ID is the game's (GetSpellInfo). WoW: Forever and retail's db.recipes was a
+-- view never saved: it just goes. Returns the lists converted.
+----------------------------------------------------------------------
+function RecipeTracker.MigrateDB(db, ownKeys)
+    if type(db) ~= "table" then return 0 end
+    db.schema = type(db.schema) == "table" and db.schema or {}
+    local legacy = db.recipes
+    db.recipes = nil
+    local store = type(db.recipeIds) == "table" and db.recipeIds or {}
+    db.recipeIds = store
+    if GuildOS.Professions then
+        db.schema.recipes = RecipeTracker.SCHEMA
+        return 0
+    end
+    local n = 0
+    if type(legacy) == "table" then
+        for key, profs in pairs(legacy) do
+            if type(key) == "string" and type(profs) == "table" then
+                local dest = type(store[key]) == "table" and store[key] or {}
+                for prof, list in pairs(profs) do
+                    if type(prof) == "string" and type(list) == "table" then
+                        dest[prof] = RecipeTracker.Pack(list, ownKeys and ownKeys[key])
+                        n = n + 1
+                    end
+                end
+                if next(dest) then store[key] = dest end
+            end
+        end
+    end
+    db.recipeIds = store
+    db.schema.recipes = RecipeTracker.SCHEMA
+    return n
+end
+
+-- This character's key and the account's other characters' (GuildOSDB.accountChars): the lists whose
+-- names are kept.
+function RecipeTracker:OwnKeys()
+    local out = {}
+    local me = GuildOS.Compat and GuildOS.Compat.PlayerName and GuildOS.Compat.PlayerName()
+    if me then out[GuildOS:GetPlayerKey(me, GetRealmName())] = true end
+    for key in pairs(type(GuildOSDB) == "table" and type(GuildOSDB.accountChars) == "table" and GuildOSDB.accountChars or {}) do
+        if type(key) == "string" then out[key] = true end
+    end
+    return out
+end
+
+function RecipeTracker:MyKey()
+    return GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
+end
+
+----------------------------------------------------------------------
+-- Reading (every reader goes through these; WoW: Forever and retail read the professions model)
+----------------------------------------------------------------------
+-- The Anniversary store, created when missing; a list an older version (or a test) left in db.recipes is
+-- converted first.
+function RecipeTracker:Store()
+    local db = GuildOS.db
+    if not db then return {} end
+    if db.recipes ~= nil or type(db.recipeIds) ~= "table" then RecipeTracker.MigrateDB(db, self:OwnKeys()) end
+    return db.recipeIds
+end
+
+local function model() return GuildOS.Professions end
+
+-- WoW: Forever and retail: a member's lines of English name `prof`, as iterator state.
+local function foreverIter(key, prof)
+    local P, cat = model(), GuildOS.ProfCatalog
+    local rec = cat and GuildOS.db and GuildOS.db.professions and GuildOS.db.professions[key]
+    if not rec then return noop end
+    local lists = {}
+    for line, e in pairs(rec.profs or {}) do
+        local meta = cat.professions[line]
+        if meta and meta.en == prof then
+            local a, b = P.Lists(e)
+            lists[#lists + 1] = a
+            lists[#lists + 1] = b
+        end
+    end
+    local li, i, n, F = 1, 0, 0, cat.F
+    return function()
+        while true do
+            local l = lists[li]
+            if not l then return nil end
+            i = i + 1
+            local id = l[i]
+            if id then
+                n = n + 1
+                local r = cat.recipes[id]
+                local out = r and r[F.out]
+                return n, id, (out and out > 0) and out or nil, nil
+            end
+            li, i = li + 1, 0
+        end
+    end
+end
+
+-- WoW: Forever and retail: the English names of `key`'s lines that hold a recipe, as a set.
+local function modelProfs(key)
+    local cat, out = GuildOS.ProfCatalog, {}
+    local rec = cat and GuildOS.db and GuildOS.db.professions and GuildOS.db.professions[key]
+    for line, e in pairs((rec and rec.profs) or {}) do
+        local meta = cat.professions[line]
+        if meta then
+            local a, b = model().Lists(e)
+            if #a > 0 or #b > 0 then out[meta.en] = true end
+        end
+    end
+    return out
+end
+
+-- for i, spellId, itemId, name in RecipeTracker:RecipesOf(key, prof) do ... end. `prof` is the English
+-- profession name. name: see Each. WoW: Forever and retail read the professions model first, and a list
+-- in the store only for a profession the model has none of.
+function RecipeTracker:RecipesOf(key, prof)
+    if model() and modelProfs(key)[prof] then return foreverIter(key, prof) end
+    local profs = self:Store()[key]
+    return RecipeTracker.Each(type(profs) == "table" and profs[prof] or nil)
+end
+
+-- The professions of `key` that hold a list, as a sorted array of names.
+function RecipeTracker:ProfsOf(key)
+    local set = model() and modelProfs(key) or {}
+    for prof, list in pairs(self:Store()[key] or {}) do
+        if type(list) == "table" then set[prof] = true end
+    end
+    local out = {}
+    for prof in pairs(set) do out[#out + 1] = prof end
+    table.sort(out)
+    return out
+end
+
+-- for key, prof in RecipeTracker:EachList() do ... end: every (member, profession) holding a list.
+function RecipeTracker:EachList()
+    local flat, keys = {}, {}
+    if model() then
+        for key in pairs((GuildOS.db and GuildOS.db.professions) or {}) do keys[key] = true end
+    end
+    for key, profs in pairs(self:Store()) do
+        if type(profs) == "table" then keys[key] = true end
+    end
+    for key in pairs(keys) do
+        for _, prof in ipairs(self:ProfsOf(key)) do
+            local n = #flat
+            flat[n + 1], flat[n + 2] = key, prof
+        end
+    end
+    local i = -1
+    return function()
+        i = i + 2
+        return flat[i], flat[i + 1]
+    end
+end
+
+-- How many recipes `key` knows in `prof`.
+function RecipeTracker:CountOf(key, prof)
+    if model() and modelProfs(key)[prof] then
+        local n = 0
+        for _ in foreverIter(key, prof) do n = n + 1 end
+        return n
+    end
+    local profs = self:Store()[key]
+    return RecipeTracker.Count(type(profs) == "table" and profs[prof] or nil)
+end
+
+-- The lists changed: the crafter indexes are rebuilt on their next read.
+function RecipeTracker:Changed()
+    self._itemCrafterIndex, self._spellCrafterIndex, self._itemCrafterIndexTime = nil, nil, nil
+end
+
+----------------------------------------------------------------------
+-- Writing (Anniversary)
+----------------------------------------------------------------------
+-- Store `recipes` (either shape) as `key`'s list of `prof` (canonical English). A recipe that came with a
+-- name and no spell ID gets the ID of the recipe of that name the member already had (MergeSpellIds' rule:
+-- same member, same locale). The hash is the list's as it arrived, so it matches what the sender announces.
+function RecipeTracker:Put(key, prof, recipes, keepNames)
+    if model() or type(key) ~= "string" or type(prof) ~= "string" or type(recipes) ~= "table" then return nil end
+    local store = self:Store()
+    local profs = type(store[key]) == "table" and store[key] or {}
+    store[key] = profs
+    -- Remove old localized keys that map to the same canonical profession
+    local DC = GuildOS.DataCollector
+    if DC and DC.GetCanonicalProfName then
+        for oldKey in pairs(profs) do
+            if oldKey ~= prof and DC:GetCanonicalProfName(oldKey) == prof then profs[oldKey] = nil end
+        end
+    end
+    local h = RecipeTracker.ListHash(recipes)
+    local old = profs[prof]
+    local nameOnly = false
+    for _, s, it, name in RecipeTracker.Each(recipes) do
+        if name and not s and not it then nameOnly = true break end
+    end
+    if nameOnly and old then
+        local lookup = {}
+        for _, s, _, name in RecipeTracker.Each(old) do
+            name = name or (s and GuildOS.Compat.GetSpellInfo(s))
+            if s and name then lookup[strlower(name)] = s end
+        end
+        local wire = RecipeTracker.IsLegacy(recipes) and recipes or RecipeTracker.Wire(recipes)
+        for _, r in ipairs(wire) do
+            if type(r) == "table" and not r.spellId and type(r.name) == "string" then r.spellId = lookup[strlower(r.name)] end
+        end
+        recipes = wire
+    end
+    local list = RecipeTracker.Pack(recipes, keepNames, h)
+    profs[prof] = list
+    self:Changed()
+    return list, old
+end
+
+----------------------------------------------------------------------
 -- Clean stored recipe data: enrich where possible, purge the rest.
 -- Recipes without spellId AND without itemId are old locale-dependent
 -- data that cause cross-locale duplication. After enrichment attempts,
 -- any remaining ID-less entries are removed. The data will be
--- repopulated with proper IDs on the next scan or sync.
+-- repopulated with proper IDs on the next scan or sync. Only a list that
+-- holds such a recipe is touched (most hold none): its hash stays.
 ----------------------------------------------------------------------
 function RecipeTracker:EnrichStoredRecipes()
-    -- Phase 1: Build name→spellId per profession from ALL recipes that have spellId
-    local profLookup = {} -- profName → { lowerName → spellId }
+    if model() then return end
+    local store = self:Store()
+    local dirty = {}
+    for key, professions in pairs(store) do
+        for profName, list in pairs(type(professions) == "table" and professions or {}) do
+            for _, s, it in RecipeTracker.Each(list) do
+                if not s and not it then
+                    dirty[#dirty + 1] = { key, profName }
+                    break
+                end
+            end
+        end
+    end
+    if #dirty == 0 then return end
 
-    for _, professions in pairs(GuildOS.db.recipes or {}) do
-        for profName, recipes in pairs(professions) do
-            if not profLookup[profName] then profLookup[profName] = {} end
-            for _, r in ipairs(recipes) do
-                if r.spellId then
-                    if r.name then
-                        profLookup[profName][strlower(r.name)] = r.spellId
-                    end
-                    local localName = GuildOS.Compat.GetSpellInfo(r.spellId)
-                    if localName and localName ~= "" then
-                        profLookup[profName][strlower(localName)] = r.spellId
-                    end
+    -- Phase 1: name→spellId per profession, from every recipe with a spell ID
+    local profLookup = {}
+    for _, professions in pairs(store) do
+        for profName, list in pairs(type(professions) == "table" and professions or {}) do
+            local lookup = profLookup[profName] or {}
+            profLookup[profName] = lookup
+            for _, s, _, name in RecipeTracker.Each(list) do
+                if s then
+                    if name then lookup[strlower(name)] = s end
+                    local localName = GuildOS.Compat.GetSpellInfo(s)
+                    if localName and localName ~= "" then lookup[strlower(localName)] = s end
                 end
             end
         end
     end
 
-    -- Phase 2: Enrich where possible, then purge remaining ID-less entries
-    local enriched = 0
-    local purged = 0
-    for _, professions in pairs(GuildOS.db.recipes or {}) do
-        for profName, recipes in pairs(professions) do
-            local lookup = profLookup[profName]
-            -- Reverse iterate so we can remove in-place
-            for i = #recipes, 1, -1 do
-                local r = recipes[i]
-                -- Try to enrich first
-                if not r.spellId and r.name and lookup then
-                    local sid = lookup[strlower(r.name)]
-                    if sid then
-                        r.spellId = sid
-                        enriched = enriched + 1
-                    end
-                end
-                -- Purge if still no ID
-                if not r.spellId and not r.itemId then
-                    table.remove(recipes, i)
-                    purged = purged + 1
-                end
+    -- Phase 2: enrich where possible, then purge remaining ID-less entries
+    local enriched, purged = 0, 0
+    local own = self:OwnKeys()
+    for _, d in ipairs(dirty) do
+        local key, profName = d[1], d[2]
+        local list = store[key][profName]
+        local lookup = profLookup[profName] or {}
+        local kept = {}
+        for _, s, it, name in RecipeTracker.Each(list) do
+            if not s and not it and name then
+                s = lookup[strlower(name)]
+                if s then enriched = enriched + 1 end
+            end
+            if s or it then
+                kept[#kept + 1] = { name = name, spellId = s, itemId = it }
+            else
+                purged = purged + 1
             end
         end
+        store[key][profName] = RecipeTracker.Pack(kept, own[key], RecipeTracker.ListHash(list))
     end
+    self:Changed()
 
     if enriched > 0 then
         GuildOS:Print(format(L["|cff00ff00Recipes:|r enriched %d entries with IDs."], enriched))
@@ -103,30 +427,19 @@ function RecipeTracker:EnrichStoredRecipes()
 end
 
 ----------------------------------------------------------------------
--- Helper: merge spellIds from existing recipes into incoming recipes.
--- Same player = same locale, so names match.
--- Also uses cross-player lookup as fallback.
+-- Helper: merge spellIds from existing recipes into incoming recipes (both in the old shape).
+-- Same player = same locale, so names match. Kept for callers of the old shape; Put does the same.
 ----------------------------------------------------------------------
 function RecipeTracker:MergeSpellIds(existing, incoming)
     if not existing or not incoming then return end
-
-    -- Build name→spellId from existing data
     local lookup = {}
-    for _, r in ipairs(existing) do
-        if r.name then
-            if r.spellId then
-                lookup[strlower(r.name)] = r.spellId
-            end
-        end
+    for _, s, _, name in RecipeTracker.Each(existing) do
+        if name and s then lookup[strlower(name)] = s end
     end
-
-    -- Enrich incoming
     for _, r in ipairs(incoming) do
-        if not r.spellId and r.name then
+        if type(r) == "table" and not r.spellId and r.name then
             local sid = lookup[strlower(r.name)]
-            if sid then
-                r.spellId = sid
-            end
+            if sid then r.spellId = sid end
         end
     end
 end
@@ -267,26 +580,13 @@ end
 -- Store scanned recipes for local player
 ----------------------------------------------------------------------
 function RecipeTracker:StoreMyRecipes(profName, recipes)
-    local name = GuildOS.Compat.PlayerName()
-    local realm = GetRealmName()
-    local key = GuildOS:GetPlayerKey(name, realm)
-
-    if not GuildOS.db.recipes[key] then
-        GuildOS.db.recipes[key] = {}
-    end
-
-    -- Remove old localized keys that map to the same canonical profession
-    local DC = GuildOS.DataCollector
-    if DC and DC.GetCanonicalProfName then
-        for oldKey, _ in pairs(GuildOS.db.recipes[key]) do
-            if oldKey ~= profName and DC:GetCanonicalProfName(oldKey) == profName then
-                GuildOS.db.recipes[key][oldKey] = nil
-            end
-        end
-    end
-
-    local old = GuildOS.db.recipes[key][profName]
-    GuildOS.db.recipes[key][profName] = recipes
+    if model() then return end   -- WoW: Forever and retail read the professions model (Modules/Professions.lua)
+    local key = self:MyKey()
+    local store = self:Store()
+    local had = store[key] and store[key][profName]
+    local oldCount, oldHash = had and RecipeTracker.Count(had), had and RecipeTracker.ListHash(had)
+    -- Every name kept: this list goes out again by name, and its hash is the names'.
+    local list = self:Put(key, profName, recipes, true)
 
     -- Track scan timestamps per profession
     if not GuildOS.db.recipeScanTimes then
@@ -296,10 +596,10 @@ function RecipeTracker:StoreMyRecipes(profName, recipes)
 
     -- Every opening of the window used to print and send the whole list (audit D3): a line only when the
     -- count moved, and the list to the guild only when it changed.
-    if not old or #old ~= #recipes then
+    if not had or oldCount ~= #recipes then
         GuildOS:Print(string.format(L["|cff00ff00Recipes scanned:|r %d %s recipes indexed."], #recipes, L[profName]))
     end
-    local changed = not old or RecipeTracker.Hash(old) ~= RecipeTracker.Hash(recipes)
+    local changed = not had or oldHash ~= (list and list.h)
 
     -- Dismiss the profession reminder if all professions are now scanned
     if GuildOS.profReminderFrame then
@@ -322,8 +622,21 @@ RecipeTracker.REASK_AFTER = 120   -- seconds before a list that never came is as
 RecipeTracker.MAX_PROFS = 16      -- professions read from one broadcast's hashes
 local hashOf = setmetatable({}, { __mode = "k" })   -- [recipe list] = { h = its hash, n = its length }
 
+-- LibDeflate's Adler-32; the same sum in plain Lua where the library is not there (a test's stub).
+local function adler32(str)
+    local LD = LibStub and LibStub("LibDeflate", true)
+    if LD and LD.Adler32 then return LD:Adler32(str) end
+    local a, b = 1, 0
+    for i = 1, #str do
+        a = (a + str:byte(i)) % 65521
+        b = (b + a) % 65521
+    end
+    return b * 65536 + a
+end
+
 -- Adler-32 of the recipes' names, sorted: the same list hashes the same on every client of one locale,
--- whatever spell IDs a receiver merged in (MergeSpellIds keeps the names).
+-- whatever spell IDs a receiver merged in (MergeSpellIds keeps the names). Over a list in the old shape
+-- (the wire's); a compact list keeps the hash it arrived with (ListHash).
 function RecipeTracker.Hash(recipes)
     if type(recipes) ~= "table" then return nil end
     local held = hashOf[recipes]
@@ -333,19 +646,19 @@ function RecipeTracker.Hash(recipes)
         if type(r) == "table" then names[#names + 1] = tostring(r.name or r.spellId or r.itemId or "") end
     end
     table.sort(names)
-    local h = LibStub("LibDeflate"):Adler32(table.concat(names, "\n"))
+    local h = adler32(table.concat(names, "\n"))
     hashOf[recipes] = { h = h, n = #recipes }
     return h
 end
 
 -- { [profession] = hash } of my own lists, or nil when I have none.
 function RecipeTracker:OwnHashes()
-    local key = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
-    local mine = GuildOS.db.recipes and GuildOS.db.recipes[key]
+    if model() then return nil end
+    local mine = self:Store()[self:MyKey()]
     if type(mine) ~= "table" then return nil end
     local out
     for prof, list in pairs(mine) do
-        local h = self.Hash(list)
+        local h = RecipeTracker.ListHash(list)
         if h then
             out = out or {}
             out[prof] = h
@@ -356,8 +669,9 @@ end
 
 -- A guildmate's hashes, from their broadcast: each list held differently (or not at all) is asked for.
 function RecipeTracker:OnHashes(key, sender, rh)
+    if model() then return end
     self._asked = self._asked or {}
-    local held = GuildOS.db.recipes and GuildOS.db.recipes[key]
+    local held = self:Store()[key]
     local DC, n, now = GuildOS.DataCollector, 0, GetTime()
     for prof, h in pairs(rh) do
         n = n + 1
@@ -367,7 +681,7 @@ function RecipeTracker:OnHashes(key, sender, rh)
             local list = held and held[canonical]
             local id = key .. "\0" .. canonical
             local last = self._asked[id]
-            if (not list or self.Hash(list) ~= h) and not (last and last.h == h and now - last.at < self.REASK_AFTER) then
+            if (not list or RecipeTracker.ListHash(list) ~= h) and not (last and last.h == h and now - last.at < self.REASK_AFTER) then
                 self._asked[id] = { h = h, at = now }
                 GuildOS.CommSystem:SendMessage("RA", prof, sender)
             end
@@ -377,10 +691,13 @@ end
 
 -- A guildmate asked for my list of `prof`: it goes on GUILD once the asks of the next seconds are in.
 function RecipeTracker:OnAsk(_sender, prof)
-    if type(prof) ~= "string" or not IsInGuild() then return end
-    local key = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
-    local list = GuildOS.db.recipes and GuildOS.db.recipes[key] and GuildOS.db.recipes[key][prof]
-    if type(list) ~= "table" then return end
+    if type(prof) ~= "string" or not IsInGuild() or model() then return end
+    local key = self:MyKey()
+    local function mine()
+        local profs = self:Store()[key]
+        return type(profs) == "table" and profs[prof] or nil
+    end
+    if type(mine()) ~= "table" then return end
     self._answerDue = self._answerDue or {}
     self._answeredAt = self._answeredAt or {}
     if self._answerDue[prof] then return end
@@ -390,13 +707,13 @@ function RecipeTracker:OnAsk(_sender, prof)
     self._answerDue[prof] = true
     GuildOS.Compat.After(wait, function()
         self._answerDue[prof], self._answeredAt[prof] = nil, GetTime()
-        local now = GuildOS.db.recipes and GuildOS.db.recipes[key] and GuildOS.db.recipes[key][prof]
-        if type(now) == "table" then self:BroadcastRecipes(prof, now) end
+        local now = mine()
+        if type(now) == "table" then self:BroadcastRecipes(prof, RecipeTracker.Wire(now)) end
     end)
 end
 
 ----------------------------------------------------------------------
--- Broadcast recipes via CommSystem
+-- Broadcast recipes via CommSystem, in the old shape ({ { name, itemId, spellId } }): every version reads it.
 ----------------------------------------------------------------------
 function RecipeTracker:BroadcastRecipes(profName, recipes)
     if not GuildOS.CommSystem then return end
@@ -405,23 +722,24 @@ function RecipeTracker:BroadcastRecipes(profName, recipes)
     local LibSerialize = LibStub("GuildOS-LibSerialize")
     local data = {
         prof = profName,
-        recipes = recipes,
+        recipes = RecipeTracker.IsLegacy(recipes) and recipes or RecipeTracker.Wire(recipes),
     }
     local serialized = LibSerialize:Serialize(data)
     GuildOS.CommSystem:SendMessage("RC", serialized)
 end
 
 ----------------------------------------------------------------------
--- Handle incoming recipe data from another guild member
+-- Handle incoming recipe data from another guild member (the old shape, converted here)
 ----------------------------------------------------------------------
 function RecipeTracker:HandleIncoming(sender, data)
+    if model() then return end   -- WoW: Forever and retail: ProfSync carries the lists
     local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, recipeData = LibSerialize:Deserialize(data)
     if not ok or type(recipeData) ~= "table" then return end
 
     local profName = recipeData.prof
     local recipes = recipeData.recipes
-    if not profName or not recipes then return end
+    if type(profName) ~= "string" or type(recipes) ~= "table" then return end
 
     -- Normalize profession name to canonical English
     local DC = GuildOS.DataCollector
@@ -434,21 +752,7 @@ function RecipeTracker:HandleIncoming(sender, data)
     local realm = sender:match("-(.+)$") or GetRealmName()
     local key = GuildOS:GetPlayerKey(senderName, realm)
 
-    if not GuildOS.db.recipes[key] then
-        GuildOS.db.recipes[key] = {}
-    end
-
-    -- Remove old localized keys that map to the same canonical profession
-    for oldKey, _ in pairs(GuildOS.db.recipes[key]) do
-        if oldKey ~= profName and DC and DC:GetCanonicalProfName(oldKey) == profName then
-            GuildOS.db.recipes[key][oldKey] = nil
-        end
-    end
-
-    -- Preserve spellIds: merge from existing data into incoming
-    self:MergeSpellIds(GuildOS.db.recipes[key][profName], recipes)
-
-    GuildOS.db.recipes[key][profName] = recipes
+    self:Put(key, profName, recipes, self:OwnKeys()[key])
 end
 
 ----------------------------------------------------------------------
@@ -458,15 +762,13 @@ function RecipeTracker:GetAllProfessions()
     local profs = {}
     local seen = {}
     local DC = GuildOS.DataCollector
-    for _, playerRecipes in pairs(GuildOS.db.recipes or {}) do
-        for profName, _ in pairs(playerRecipes) do
-            local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
-            local isGathering = DC and DC.IsGatheringProfession and DC:IsGatheringProfession(canonical)
-            local isKnown = not DC or not DC.IsKnownProfession or DC:IsKnownProfession(canonical)
-            if not seen[canonical] and not isGathering and isKnown then
-                seen[canonical] = true
-                table.insert(profs, canonical)
-            end
+    for _, profName in self:EachList() do
+        local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
+        local isGathering = DC and DC.IsGatheringProfession and DC:IsGatheringProfession(canonical)
+        local isKnown = not DC or not DC.IsKnownProfession or DC:IsKnownProfession(canonical)
+        if not seen[canonical] and not isGathering and isKnown then
+            seen[canonical] = true
+            table.insert(profs, canonical)
         end
     end
     table.sort(profs)
@@ -499,66 +801,68 @@ function RecipeTracker:BuildRecipeIndex()
 
     -- First pass: group all recipes; build name→key lookup from ID-based entries
     local nameOnlyQueue = {}
-    for playerKey, professions in pairs(GuildOS.db.recipes or {}) do
+    for playerKey, profName in self:EachList() do
         local playerName = playerKey:match("^([^-]+)") or playerKey
-        for profName, recipes in pairs(professions) do
+        do
             local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
             -- Skip gathering profs and unknown profs (e.g. Poisons, old stale data)
             local isGathering = DC and DC.IsGatheringProfession and DC:IsGatheringProfession(canonical)
             local isKnown = not DC or not DC.IsKnownProfession or DC:IsKnownProfession(canonical)
             if not isGathering and isKnown then
-            for _, recipe in ipairs(recipes) do
+            for _, sid, iid, rname in self:RecipesOf(playerKey, profName) do
                 local recipeKey
-                if recipe.spellId then
-                    recipeKey = "s" .. recipe.spellId .. "|" .. canonical
-                elseif recipe.itemId then
-                    recipeKey = "i" .. recipe.itemId .. "|" .. canonical
+                if sid then
+                    recipeKey = "s" .. sid .. "|" .. canonical
+                elseif iid then
+                    recipeKey = "i" .. iid .. "|" .. canonical
                 end
 
                 if recipeKey then
                     -- ID-based recipe
                     if not grouped[recipeKey] then
-                        local displayName = recipe.name
-                        if recipe.spellId then
-                            local spellName = GuildOS.Compat.GetSpellInfo(recipe.spellId)
+                        local displayName = rname
+                        if sid then
+                            local spellName = GuildOS.Compat.GetSpellInfo(sid)
                             if spellName and spellName ~= "" then
                                 displayName = spellName
                             end
                         end
-                        if recipe.itemId and (not displayName or displayName == recipe.name) then
-                            local itemName = GuildOS.Compat.GetItemInfo(recipe.itemId)
+                        if iid and (not displayName or displayName == rname) then
+                            local itemName = GuildOS.Compat.GetItemInfo(iid)
                             if itemName and itemName ~= "" then
                                 displayName = itemName
                             end
                         end
 
                         grouped[recipeKey] = {
-                            name = displayName or recipe.name or "?",
-                            itemId = recipe.itemId,
-                            spellId = recipe.spellId,
+                            name = displayName or rname or (sid and ("#" .. sid)) or "?",
+                            itemId = iid,
+                            spellId = sid,
                             profName = canonical,
                             crafters = {},
                             _crafterSeen = {},
                         }
 
                         -- Map both the original name and the resolved name to this key
-                        if recipe.name then
-                            nameToKey[strlower(recipe.name) .. "|" .. canonical] = recipeKey
+                        if rname then
+                            nameToKey[strlower(rname) .. "|" .. canonical] = recipeKey
                         end
-                        if displayName and displayName ~= recipe.name then
+                        if displayName and displayName ~= rname then
                             nameToKey[strlower(displayName) .. "|" .. canonical] = recipeKey
                         end
                     else
-                        -- Entry exists; register additional name variants
-                        if recipe.name then
-                            nameToKey[strlower(recipe.name) .. "|" .. canonical] = recipeKey
+                        -- Entry exists; register additional name variants. An item another crafter's scan
+                        -- had fills one this entry lacks, whichever list came first (pairs order).
+                        if iid and not grouped[recipeKey].itemId then grouped[recipeKey].itemId = iid end
+                        if rname then
+                            nameToKey[strlower(rname) .. "|" .. canonical] = recipeKey
                         end
                     end
                     addCrafter(recipeKey, playerKey, playerName)
                 else
                     -- No ID — queue for second pass
                     table.insert(nameOnlyQueue, {
-                        recipe = recipe,
+                        recipe = { name = rname },
                         playerKey = playerKey,
                         playerName = playerName,
                         canonical = canonical,
@@ -688,43 +992,31 @@ function RecipeTracker:BuildItemCrafterIndex()
     local itemIndex = {}
     local spellIndex = {}
     local DC = GuildOS.DataCollector
-    for playerKey, professions in pairs(GuildOS.db.recipes or {}) do
+    -- A member's crafter entry is shared by every recipe of one profession; one per member per ID.
+    local function add(index, id, crafterInfo)
+        local list = index[id]
+        if not list then
+            list = {}
+            index[id] = list
+        end
+        for _, c in ipairs(list) do
+            if c.playerKey == crafterInfo.playerKey then return end
+        end
+        list[#list + 1] = crafterInfo
+    end
+    for playerKey, profName in self:EachList() do
         local playerName = playerKey:match("^([^-]+)") or playerKey
-        for profName, recipes in pairs(professions) do
-            local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
-            local memberData = GuildOS.db and GuildOS.db.members and GuildOS.db.members[playerKey]
-            local crafterInfo = {
-                playerKey = playerKey,
-                playerName = playerName,
-                class = memberData and memberData.class,
-                profName = canonical,
-            }
-            for _, recipe in ipairs(recipes) do
-                if recipe.itemId then
-                    if not itemIndex[recipe.itemId] then
-                        itemIndex[recipe.itemId] = {}
-                    end
-                    local found = false
-                    for _, c in ipairs(itemIndex[recipe.itemId]) do
-                        if c.playerKey == playerKey then found = true break end
-                    end
-                    if not found then
-                        table.insert(itemIndex[recipe.itemId], crafterInfo)
-                    end
-                end
-                if recipe.spellId then
-                    if not spellIndex[recipe.spellId] then
-                        spellIndex[recipe.spellId] = {}
-                    end
-                    local found = false
-                    for _, c in ipairs(spellIndex[recipe.spellId]) do
-                        if c.playerKey == playerKey then found = true break end
-                    end
-                    if not found then
-                        table.insert(spellIndex[recipe.spellId], crafterInfo)
-                    end
-                end
-            end
+        local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
+        local memberData = GuildOS.db and GuildOS.db.members and GuildOS.db.members[playerKey]
+        local crafterInfo = {
+            playerKey = playerKey,
+            playerName = playerName,
+            class = memberData and memberData.class,
+            profName = canonical,
+        }
+        for _, sid, iid in self:RecipesOf(playerKey, profName) do
+            if iid then add(itemIndex, iid, crafterInfo) end
+            if sid then add(spellIndex, sid, crafterInfo) end
         end
     end
     self._itemCrafterIndex = itemIndex
@@ -762,20 +1054,16 @@ end
 
 ----------------------------------------------------------------------
 -- Can the LOCAL player craft this item? Returns the profession name if so,
--- else nil. Reads only our own scanned recipes (db.recipes[myKey]) — used to
+-- else nil. Reads only our own scanned recipes (RecipesOf(myKey)) — used to
 -- answer realm-wide CraftNet queries authoritatively for ourselves.
 ----------------------------------------------------------------------
 function RecipeTracker:LocalCrafts(itemId)
     itemId = tonumber(itemId)
-    if not itemId then return nil end
-    local key = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
-    local professions = GuildOS.db and GuildOS.db.recipes and GuildOS.db.recipes[key]
-    if not professions then return nil end
-    for profName, recipes in pairs(professions) do
-        for _, r in ipairs(recipes) do
-            if r.itemId == itemId then
-                return profName
-            end
+    if not itemId or not GuildOS.db then return nil end
+    local key = self:MyKey()
+    for _, profName in ipairs(self:ProfsOf(key)) do
+        for _, _, iid in self:RecipesOf(key, profName) do
+            if iid == itemId then return profName end
         end
     end
     return nil
@@ -890,7 +1178,7 @@ function RecipeTracker:HookTooltips()
 
     -- Item tooltip handler
     local function OnTooltipSetItem(tooltip)
-        if not GuildOS.db or not GuildOS.db.recipes then return end
+        if not GuildOS.db then return end
         if not GuildOS:ShowsItemTooltipInfo(tooltip) then return end
 
         local _, link = GuildOS.Compat.TooltipItem(tooltip)
@@ -911,7 +1199,7 @@ function RecipeTracker:HookTooltips()
 
     -- Spell tooltip handler (tradeskill window, spellbook, action bars)
     local function OnTooltipSetSpell(tooltip)
-        if not GuildOS.db or not GuildOS.db.recipes then return end
+        if not GuildOS.db then return end
 
         local _, spellId = GuildOS.Compat.TooltipSpell(tooltip)
         if not spellId then return end

@@ -646,10 +646,14 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         -- Update info bar
         local totalPlayers = 0
         local totalRecipes = 0
-        for _, professions in pairs((GuildOS.db and GuildOS.db.recipes) or {}) do
-            totalPlayers = totalPlayers + 1
-            for _, recipes in pairs(professions) do
-                totalRecipes = totalRecipes + #recipes
+        local RT, seen = GuildOS.RecipeTracker, {}
+        if RT and GuildOS.db then
+            for key, prof in RT:EachList() do
+                if not seen[key] then
+                    seen[key] = true
+                    totalPlayers = totalPlayers + 1
+                end
+                totalRecipes = totalRecipes + RT:CountOf(key, prof)
             end
         end
         infoText:SetText((string.format(L["|cff888888%d crafters  |  %d total recipes indexed|r"], totalPlayers, totalRecipes)

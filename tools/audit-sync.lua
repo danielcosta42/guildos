@@ -273,7 +273,10 @@ bob.rh.Tailoring, bob.lastUpdate = RT.Hash(list), time() + 2
 advance(RT.REASK_AFTER + 1)
 sent = {}
 from("Bob-Realm", "BC", LibSerialize:Serialize(bob))
-check(GuildOS.db.recipes["Bob-Realm"].Tailoring and count("RA") == 0, "D3: a list held as announced is never asked for")
+check(GuildOS.db.recipeIds["Bob-Realm"].Tailoring and count("RA") == 0, "D3: a list held as announced is never asked for")
+check(GuildOS.db.recipes == nil and GuildOS.db.recipeIds["Bob-Realm"].Tailoring[2] == 4305
+  and GuildOS.db.recipeIds["Bob-Realm"].Tailoring.nm[1] == "Bolt of Silk Cloth",
+  "memoria: the list is kept compact (a recipe with no spell ID keeps its name)")
 
 -- Asked for mine: one answer on GUILD for everybody who asked within ASK_GATHER, then not before ANSWER_GAP.
 sent = {}
@@ -283,6 +286,12 @@ advance(RT.ASK_GATHER + 0.5)
 local answers = {}
 for _, m in ipairs(out()) do if m.t == "RC" then answers[#answers + 1] = m end end
 check(#answers == 1 and answers[1].chan == "GUILD", "D3: two asks, one list, on GUILD")
+do   -- memoria: the answer is in the old shape, names and all, and hashes to what my broadcast announced
+  local okA, sentList = LibSerialize:Deserialize(answers[1].data)
+  check(okA and sentList.prof == "Alchemy" and #sentList.recipes == 3 and sentList.recipes[1].name == "Flask of Fortification"
+    and sentList.recipes[1].itemId == 22861 and RT.Hash(sentList.recipes) == RT:OwnHashes().Alchemy,
+    "memoria: the list goes out in the old shape, with the names its hash covers")
+end
 sent = {}
 from("Dee-Realm", "RA", "Alchemy", "WHISPER")
 advance(RT.ASK_GATHER + 0.5)
@@ -374,11 +383,11 @@ check(reloaded == 1 and GuildOSDB[GuildOS.guildKey].members, "confirmed, it rest
 check(read("UI/SettingsPanel.lua"):find('F:Section(L["Whole guild database"])', 1, true),
   "D11: Settings files Backup and Restore under Whole guild database, not Your data")
 
--- ── D4: on WoW: Forever and retail db.recipes is a view ─────────────────
+-- ── D4: on WoW: Forever and retail db.recipes is no copy at all (memoria.md) ──
 local prof = read("Modules/Professions.lua")
-check(prof:find("function Professions:ProjectAll()", 1, true) and prof:find("self:ProjectAll()", 1, true),
-  "D4: the view is built at login from db.professions")
-check(prof:find('if event == "PLAYER_LOGOUT" then\n        GuildOS.db.recipes = nil', 1, true), "D4: and never saved")
+check(not prof:find("function Professions:ProjectAll()", 1, true) and not prof:find("function Professions:Project(", 1, true),
+  "D4: no per-member copy is built from db.professions")
+check(prof:find('if event == "PLAYER_LOGOUT" then\n        GuildOS.db.recipes = nil', 1, true), "D4: and an older view is never saved")
 
 -- ── N14: the roster key is GuildOS:KeyOfRosterName's ────────────────────
 for _, f in ipairs({ "Modules/GuildBank.lua", "Modules/CraftOrders.lua", "Modules/Professions.lua", "Modules/Founding.lua" }) do
