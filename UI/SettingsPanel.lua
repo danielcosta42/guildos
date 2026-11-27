@@ -558,9 +558,9 @@ PAGES.interface = function(F)
         { enabled = function() return not GuildOS.GameFontOnly end })
     if UI.RegisterTourAnchor then UI:RegisterTourAnchor("settings.font", fontCheck) end
 
-    -- Dark mode: the same wood and gold around a darker parchment, with a light ink. Read once at load
+    -- Dark mode: ebony wood and a darker parchment with a light ink, the gold unchanged. Read once at load
     -- (Style:Resolve, before anything is drawn), so it applies after a reload, as the font does.
-    F:Check(L["Dark mode"], L["Darker parchment cards, same wood and gold."],
+    F:Check(L["Dark mode"], L["Ebony wood and darker parchment cards, with the same gold."],
         function() return GuildOS.Style:WantsDarkMode() end,
         function(checked)
             GuildOS.Style:SetDarkMode(checked)

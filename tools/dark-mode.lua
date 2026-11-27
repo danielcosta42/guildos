@@ -286,7 +286,7 @@ end
 
 -- ── The setting: Settings > Interface, found by the search ───────────────
 local settings = read("UI/SettingsPanel.lua")
-check(settings:find('F:Check(L["Dark mode"], L["Darker parchment cards, same wood and gold."]', 1, true), "Settings > Interface has Dark mode")
+check(settings:find('F:Check(L["Dark mode"], L["Ebony wood and darker parchment cards, with the same gold."]', 1, true), "Settings > Interface has Dark mode")
 check(settings:find('markReload("dark"', 1, true), "switching dark mode asks for a reload")
 local sp = settings:find('L["Dark mode"]', 1, true)
 local ip = settings:find("PAGES.interface", 1, true) or settings:find("interface", 1, true)
