@@ -132,6 +132,9 @@ jobs:
           # What CurseForge and Wago show (.pkgmeta's manual-changelog): this release alone.
           printf "%s\n" "$ENTRY" > RELEASE_NOTES.md
 
+          # What the game's What's new opens with at the first login with this release.
+          printf "%s\n" "$ENTRY" | python3 tools/release_notes_lua.py "$VERSION"
+
           # Prepend to CHANGELOG.md (after the header line)
           if [ -f CHANGELOG.md ]; then
             # Insert after the first two lines (title + blank line)
@@ -149,7 +152,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add GuildOS.toc Core/Config.lua CHANGELOG.md RELEASE_NOTES.md
+          git add GuildOS.toc Core/Config.lua CHANGELOG.md RELEASE_NOTES.md Data/ReleaseNotes.lua
           git diff --cached --quiet && echo "No changes" && exit 0
           git commit -m "chore: bump version to ${{ steps.version.outputs.next }} [skip ci]"
           git push origin main

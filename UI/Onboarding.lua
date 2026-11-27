@@ -7,7 +7,7 @@
 -- (the mockup's .fw), its cards one at a time: a picture drawn with the Salão's own textures (no screenshot,
 -- nothing to translate but the room names), the card's dots, its title and its text. "Take the tour" on the
 -- last card starts the member tour; "Later" (the close, Escape) shows it again at the next login, three times
--- at most, then only a red dot on the title bar's "?"; "Don't show again" closes it for good.
+-- at most, then only a red dot on the title bar's "?"; "Got it" closes it until the next release, which opens it again.
 --
 -- Through GuildOS:ShowWhenClear (never in combat, one popup at a time) and Onboarding:Clear (never inside an
 -- instance or in a raid group), at most one onboarding popup each login.
@@ -344,7 +344,7 @@ local function BuildFrame()
     f.rolePick = roles
 
     local foot = f.foot
-    f.neverBtn = UI:SetButtonVariant(UI:CreateButton(foot, L["Don't show again"], 120, UI.SP.FIELD), "ghost")
+    f.neverBtn = UI:SetButtonVariant(UI:CreateButton(foot, L["Got it"], 120, UI.SP.FIELD), "ghost")
     f.backBtn = UI:CreateButton(foot, L["Back"], 80, UI.SP.FIELD)
     f.laterBtn = UI:CreateButton(foot, L["Later"], 80, UI.SP.FIELD)
     f.nextBtn = UI:SetButtonVariant(UI:CreateButton(foot, L["Next"], 110, UI.SP.FIELD), "primary")
@@ -383,8 +383,10 @@ local function BuildFrame()
         local card = self.cards[self.i]
         local last = self.i == #self.cards
         local welcome = self.kind == "welcome"
-        self:SetTitle(welcome and L["Welcome"] or L["What's new"],
-            welcome and "Guild OS" or string.format(L["Guild OS %s"], L["2.0 \194\183 the Salão"]))
+        -- The big 2.0 cards carry the release's name; a later release's notes, its number.
+        local sub = self.notesOnly and string.format(L["Guild OS %s"], O():Version())
+            or string.format(L["Guild OS %s"], L["2.0 \194\183 the Salão"])
+        self:SetTitle(welcome and L["Welcome"] or L["What's new"], welcome and "Guild OS" or sub)
         local y = Kit.HEADER_H + 14
         self.pic:ClearAllPoints()
         self.pic:SetPoint("TOPLEFT", self, "TOPLEFT", PAD, -y)
@@ -453,7 +455,7 @@ local function BuildFrame()
         if need > H then self:SetHeight(need) end
         self.neverBtn:SetShown(not welcome and not self.forced)
         self.backBtn:SetShown(self.i > 1)
-        self.nextBtn.label:SetText(last and L["Take the tour"] or L["Next"])
+        self.nextBtn.label:SetText(last and (self.notesOnly and L["Done"] or L["Take the tour"]) or L["Next"])
         fit(self.nextBtn, 90); fit(self.laterBtn); fit(self.backBtn); fit(self.neverBtn, 40)
         self.neverBtn:ClearAllPoints()
         self.neverBtn:SetPoint("LEFT", self.foot, "LEFT", Kit.PAD - 3, -1)
@@ -482,7 +484,7 @@ local function BuildFrame()
             if UI.Tour then UI.Tour:OfferStart() end
         end
         if not hiding then self:Hide() end
-        if what == "tour" and UI.Tour then
+        if what == "tour" and UI.Tour and not self.notesOnly then
             GuildOS.Compat.After(0.1, function() UI.Tour:Start("member", "way") end)
         end
         if UI.Tour then UI.Tour:RefreshFooter() end
@@ -499,6 +501,8 @@ function GuildOS:ShowWhatsNew(forced, kind)
     local f = self.onboardingFrame
     f.kind = kind or Ob:Arrival()
     f.cards = Ob:Cards(f.kind)
+    -- Only a release's notes: "Done" closes them, no tour after.
+    f.notesOnly = f.cards[1] ~= nil and f.cards[1].notes == true
     f.i, f.forced, f.answered = 1, forced and true or false, false
     f.narrow = narrowNow()
     f:Render()

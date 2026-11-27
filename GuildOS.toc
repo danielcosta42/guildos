@@ -152,6 +152,7 @@ Modules\Journal.lua
 Modules\Founding.lua
 Modules\Activation.lua
 # What's new, the tours and getting started (specs/salao/onboarding.md): frame-free
+Data\ReleaseNotes.lua
 Modules\Onboarding.lua
 Modules\Achievements.lua
 Data\ForeverDungeons.lua

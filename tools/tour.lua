@@ -226,12 +226,12 @@ check(not w.shown and GuildOSDB._onboard.later == 1, "Escape is Later, counted")
 check(Tour:FooterOffer() ~= nil, "and the footer offers the tour this session")
 w = GuildOS:ShowWhatsNew(false)
 w.neverBtn.scripts.OnClick(w.neverBtn)
-check(GuildOSDB._onboard.never and not w.shown, "Don't show again")
+check(GuildOSDB._onboard.feature == "2.0" and not w.shown, "Got it: closed until the next release")
 GuildOSDB._onboard = nil
 GuildOS.db.settings.onboarded = nil
 for k, v in pairs(GuildOSDB) do if GuildOS.IsGuildDBKey(k, v) and v.settings then v.settings.onboarded = nil end end
 w = GuildOS:ShowWhatsNew(false)
-check(w.kind == "welcome" and #w.cards == 4 and not w.neverBtn.shown, "a new player: the welcome, no Don't show again")
+check(w.kind == "welcome" and #w.cards == 4 and not w.neverBtn.shown, "a new player: the welcome, no Got it")
 for _ = 1, 3 do w.nextBtn.scripts.OnClick(w.nextBtn) end
 check(w.rolePick.shown or w.i == 4, "the roles card has its picker")
 w.nextBtn.scripts.OnClick(w.nextBtn)

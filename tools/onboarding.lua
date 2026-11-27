@@ -176,10 +176,45 @@ O:Seen()
 check(not O:Pending() and O:LoginKind() == nil, "read to the end: closed for this version")
 GuildOSDB = {}
 O:Never()
-check(O:LoginKind() == nil and not O:Dot() and GuildOSDB._onboard.never, "Don't show again: never at login, no dot")
+check(O:LoginKind() == nil and not O:Dot() and GuildOSDB._onboard.feature == "2.0", "Got it: not at login, no dot")
 O:Reset()
 check(GuildOSDB._onboard == nil and O:LoginKind() == "whatsnew", "Show tips again forgets the account's record")
 check(O.WHATS_NEW_ID == "2.0", "What's new is 2.0's")
+
+-- ── 5b. Every release opens What's new with its own notes ───────────────
+GuildOSDB = { _onboard = { seen = "2.0", never = true } }
+check(O:Store().feature == "2.0" and not O:Pending(), "a 2.0 test build's record: the big cards count as seen")
+local oldVersion = GuildOS.VERSION
+GuildOS.VERSION = "2.0.0"
+GuildOS.RELEASE_NOTES = { version = "2.0.0", lines = { "a", "b" } }
+GuildOSDB = {}
+check(O:Pending() and not O:NotesPending(), "2.0.0 itself: the big cards tell its notes")
+O:Seen()
+GuildOS.VERSION = "2.0.1"
+GuildOS.RELEASE_NOTES = { version = "2.0.0", lines = { "a" } }
+check(not O:Pending(), "notes of another version than this build's: nothing")
+local lines = {}
+for i = 1, 14 do lines[i] = "line " .. i end
+GuildOS.RELEASE_NOTES = { version = "2.0.1", lines = lines }
+check(O:Pending() and O:LoginKind() == "whatsnew", "a new release opens What's new at login")
+local nc = O:Cards("whatsnew", "member", "forever")
+check(#nc == 4 and nc[1].notes and nc[1].title:find("2.0.1", 1, true), "its notes alone, four cards at most")
+check(nc[4].body:find("2 more", 1, true) ~= nil, "the lines left over are counted on the last card")
+for _ = 1, 3 do O:Later() end
+check(O:LoginKind() == nil and O:Dot(), "Later x3 on a release: the dot")
+O:Never()
+check(not O:Pending() and not O:Dot(), "Got it: closed for this release")
+GuildOS.VERSION = "2.1.0"
+GuildOS.RELEASE_NOTES = { version = "2.1.0", lines = { "new" } }
+check(O:Pending() and O:LoginKind() == "whatsnew" and not O:Dot(), "the next release opens it again, Later starts over")
+GuildOSDB = { _onboard = { feature = "2.0" } }
+GuildOS.RELEASE_NOTES = nil
+check(#O:Cards("whatsnew", "member", "forever") == 6, "no notes in this build: the help still shows the big cards")
+GuildOSDB = {}
+GuildOS.RELEASE_NOTES = { version = "2.1.0", lines = { "new" } }
+check(#O:Cards("whatsnew", "member", "forever") == 7, "from 1.x straight to 2.1.0: the big cards, then the notes")
+GuildOS.VERSION, GuildOS.RELEASE_NOTES = oldVersion, nil
+GuildOSDB = {}
 
 -- ── 6. The cards, by rank and client ────────────────────────────────────
 local function cardIds(kind, r, c) return ids(O:Cards(kind, r, c)) end

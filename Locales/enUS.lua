@@ -17,6 +17,8 @@ local _ = L
 L["Guild OS has one look now: the Salão."] = "Guild OS has one look now: the Hall."
 L["Salão"] = "Hall"
 L["The officers post notices for the whole guild. The newest also show in the Salão."] = "The officers post notices for the whole guild. The newest also show in the Hall."
+L["Welcome to the Salão"] = "Welcome to the new Guild OS"
+L["2.0 \194\183 the Salão"] = "2.0 \194\183 the Hall"
 if not rawget(GuildOS, "LOCALE_MASTER") then return end
 
 -- Core/Commands.lua
@@ -2835,7 +2837,6 @@ L["/guildos, the minimap button, or the guild button (J). The guild button can s
 L["Which roles can you play? Raiders and Groups pick this up, so officers don't have to set it."] = "Which roles can you play? Raiders and Groups pick this up, so officers don't have to set it."
 L["Guild OS shares your gear, professions, spec and wishlist with guildmates who run it. Officer notes and trials stay officer-only."] = "Guild OS shares your gear, professions, spec and wishlist with guildmates who run it. Officer notes and trials stay officer-only."
 L["Guild OS shares your gear, professions, spec, attunements and wishlist with guildmates who run it. Officer notes and trials stay officer-only."] = "Guild OS shares your gear, professions, spec, attunements and wishlist with guildmates who run it. Officer notes and trials stay officer-only."
-L["Welcome to the Salão"] = "Welcome to the Salão"
 L["Guild OS was redrawn from top to bottom: wood, parchment and rooms instead of tabs. The Hall is your home: notices, who is by the fire, the guild wall."] = "Guild OS was redrawn from top to bottom: wood, parchment and rooms instead of tabs. The Hall is your home: notices, who is by the fire, the guild wall."
 L["Rooms, a search and a bar"] = "Rooms, a search and a bar"
 L["Rooms across the top. The search finds people, items, recipes and even settings by what they do (\"flood\", \"font\"). Fold the window to the compact bar when you play."] = "Rooms across the top. The search finds people, items, recipes and even settings by what they do (\"flood\", \"font\"). Fold the window to the compact bar when you play."
@@ -3024,7 +3025,6 @@ L["There is an Officers' Room tour too."] = "There is an Officers' Room tour too
 L["Tour complete"] = "Tour complete"
 L["What's new"] = "What's new"
 L["Guild OS %s"] = "Guild OS %s"
-L["2.0 \194\183 the Salão"] = "2.0 \194\183 the Salão"
 L["Take the tour"] = "Take the tour"
 L["Show tips again"] = "Show tips again"
 L["The address is selected: Ctrl+C copies it."] = "The address is selected: Ctrl+C copies it."
@@ -3066,3 +3066,5 @@ L["also on this quest"] = "also on this quest"
 L["Share the group quests in my log with the guild LFG"] = "Share the group quests in my log with the guild LFG"
 L["Your quest log has no quest."] = "Your quest log has no quest."
 L["Elite"] = "Elite"
+L["Done"] = "Done"
+L["And %d more in the full changelog."] = "And %d more in the full changelog."

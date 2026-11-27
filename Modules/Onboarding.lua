@@ -8,8 +8,9 @@
 -- tools/onboarding.lua.
 --
 -- Storage (nothing synced: tutorials are local):
---   GuildOSDB._onboard      the account's, every guild and character: seen (the What's new id this account
---                           closed for good), later (how many times "Later" was pressed for it), never,
+--   GuildOSDB._onboard      the account's, every guild and character: feature (the big cards' id, 2.0, once
+--                           closed), seen (the last release whose notes were closed), later (how many times
+--                           "Later" was pressed for what is pending now, laterFor), dotSeen,
 --                           tours = { [track] = { step, done, chapters = { [chapter] = true } } },
 --                           chars = { ["Name-Realm"] = { gs = { hidden = ts } } } (the members' list, per character)
 --   db.settings.gettingStarted   the officers' card, per guild: { hidden = ts, byHand = true, doneAt = ts, celebrated = true }
@@ -21,7 +22,10 @@ GuildOS.Onboarding = O
 local L = GuildOS.L
 
 local DAY = 86400
-O.WHATS_NEW_ID = "2.0"          -- the release whose cards these are (2.0.0, the Salão)
+O.WHATS_NEW_ID = "2.0"          -- the release whose big cards these are (2.0.0, the Salão)
+O.FEATURE_VERSION = "2.0.0"     -- its own notes are what the big cards tell: no notes cards after them
+O.NOTES_PER_CARD = 3            -- every release opens What's new with its notes (Data/ReleaseNotes.lua),
+O.MAX_NOTE_CARDS = 4            -- this many lines a card, this many cards at most
 O.MAX_LATER = 3                 -- "Later" shows it again at the next login, this many times; then only the dot
 O.HIDE_S = 30 * DAY             -- "Hide for 30 days" (Activation's HIDE_S)
 O.STAY_S = DAY                  -- an all-done card stays in the Hall this long after it was done
@@ -85,7 +89,48 @@ function O:Store()
     s.tours = type(s.tours) == "table" and s.tours or {}
     s.chars = type(s.chars) == "table" and s.chars or {}
     s.later = tonumber(s.later) or 0
+    -- The 2.0 test builds kept the big cards' id in seen, and "Don't show again" in never.
+    if s.seen == O.WHATS_NEW_ID or s.never then s.feature, s.never = O.WHATS_NEW_ID, nil end
+    if s.seen == O.WHATS_NEW_ID then s.seen = nil end
+    -- "Later" counts for what is pending now: a new release starts again from nothing.
+    local key = O:PendingKey(s)
+    if s.laterFor ~= key then s.later, s.laterFor = 0, key end
     return s
+end
+
+-- This build's release notes, when they are this version's: { version, lines }. The release workflow writes
+-- Data/ReleaseNotes.lua with the version; a build from the source has none.
+function O:Notes()
+    local n = GuildOS.RELEASE_NOTES
+    if type(n) ~= "table" or type(n.lines) ~= "table" or #n.lines == 0 then return nil end
+    if n.version ~= GuildOS.VERSION then return nil end
+    return n
+end
+
+-- Whether the big 2.0 cards are still to see.
+function O:FeaturePending(s)
+    s = s or GuildOSDB and GuildOSDB._onboard or {}
+    return s.feature ~= self.WHATS_NEW_ID
+end
+
+-- Whether this release's notes are still to see (none when the big cards tell them).
+function O:NotesPending(s)
+    s = s or GuildOSDB and GuildOSDB._onboard or {}
+    local n = self:Notes()
+    if not n or n.version == self.FEATURE_VERSION then return false end
+    return s.seen ~= n.version
+end
+
+-- What is pending, as one key: "Later" and the dot count for it.
+function O:PendingKey(s)
+    local n = self:Notes()
+    return (self:FeaturePending(s) and self.WHATS_NEW_ID or "-") .. "/" .. (n and n.version or "-")
+end
+
+-- The version the window names: this release's, else the big cards'.
+function O:Version()
+    local n = self:Notes()
+    return n and n.version or self.WHATS_NEW_ID
 end
 
 -- This login's own memory: at most one onboarding popup each login.
@@ -94,7 +139,7 @@ O.session = { shown = false }
 -- "welcome" for an account that never used Guild OS, "whatsnew" for one that did.
 function O:Arrival()
     local s = self:Store()
-    if s.seen or s.welcomed or GuildOS:GetSetting("onboarded") then return "whatsnew" end
+    if s.seen or s.feature or s.welcomed or GuildOS:GetSetting("onboarded") then return "whatsnew" end
     -- A record of an older version's use on any of the account's guilds counts too.
     for k, v in pairs(GuildOSDB or {}) do
         if GuildOS.IsGuildDBKey and GuildOS.IsGuildDBKey(k, v) and type(v.settings) == "table" and v.settings.onboarded then
@@ -104,11 +149,10 @@ function O:Arrival()
     return "welcome"
 end
 
--- Whether this version's cards are still to see (not closed for good, not "Don't show again").
+-- Whether something is still to see: the big cards, or a new release's notes. Every release opens it again.
 function O:Pending()
     local s = self:Store()
-    if s.never then return false end
-    return s.seen ~= self.WHATS_NEW_ID
+    return self:FeaturePending(s) or self:NotesPending(s)
 end
 
 -- What the login shows, if anything: "whatsnew", "welcome" or nil. After MAX_LATER "Later"s only the dot.
@@ -123,12 +167,12 @@ function O:Dot()
     local s = self:Store()
     if not self:Pending() then return false end
     if s.later < self.MAX_LATER then return false end
-    return s.dotSeen ~= self.WHATS_NEW_ID
+    return s.dotSeen ~= s.laterFor
 end
 
 function O:HelpOpened()
     local s = self:Store()
-    if s.later >= self.MAX_LATER and self:Pending() then s.dotSeen = self.WHATS_NEW_ID end
+    if s.later >= self.MAX_LATER and self:Pending() then s.dotSeen = s.laterFor end
 end
 
 -- "Later", the close and Escape: shown again at the next login, MAX_LATER times.
@@ -138,16 +182,24 @@ function O:Later()
     return s.later
 end
 
--- "Don't show again": this version's cards and every later version's stay closed.
-function O:Never()
-    local s = self:Store()
-    s.seen, s.never = self.WHATS_NEW_ID, true
+-- Closed until the next release: what is pending now is done ("Got it", or read to the end).
+local function closeNow(self, s)
+    s.feature = self.WHATS_NEW_ID
+    local n = self:Notes()
+    if n then s.seen = n.version end
+    s.later = 0
+    s.laterFor = self:PendingKey(s)
 end
 
--- Read to the end ("Take the tour", or Finish on the welcome): closed for this version.
+-- "Got it": closed until the next release opens it again.
+function O:Never()
+    closeNow(self, self:Store())
+end
+
+-- Read to the end ("Take the tour", "Done", or Finish on the welcome): closed until the next release.
 function O:Seen()
     local s = self:Store()
-    s.seen, s.later = self.WHATS_NEW_ID, 0
+    closeNow(self, s)
     if self:Arrival() == "welcome" or not GuildOS:GetSetting("onboarded") then s.welcomed = true end
     GuildOS:SetSetting("onboarded", true)
 end
@@ -223,6 +275,31 @@ function O:Cards(kind, role, client)
     end
     -- Six at most: the Guild Master's card takes the place of the last one.
     for i = #c, 7, -1 do c[i] = nil end
+    -- After the big cards were seen: this release's notes alone (the big cards again when there are none,
+    -- as in a build from the source); with them: the notes of a release after 2.0.0 follow.
+    if not self:FeaturePending() then
+        local notes = self:NoteCards({})
+        return #notes > 0 and notes or c
+    end
+    if self:NotesPending() then self:NoteCards(c) end
+    return c
+end
+
+-- This release's notes as cards, NOTES_PER_CARD lines each, appended to `c`. The lines are the release's
+-- changelog, in English (the stores show the same).
+function O:NoteCards(c)
+    local n = self:Notes()
+    if not n then return c end
+    local lines, per, max = n.lines, self.NOTES_PER_CARD, self.MAX_NOTE_CARDS
+    local cards = math.min(max, math.ceil(#lines / per))
+    for k = 1, cards do
+        local body = {}
+        for i = (k - 1) * per + 1, math.min(#lines, k * per) do body[#body + 1] = "\194\183 " .. lines[i] end
+        local rest = #lines - cards * per
+        if k == cards and rest > 0 then body[#body + 1] = string.format(L["And %d more in the full changelog."], rest) end
+        c[#c + 1] = { id = "notes" .. k, ill = "notes", notes = true,
+            title = string.format(L["What's new in %s"], n.version), body = table.concat(body, "\n") }
+    end
     return c
 end
 
@@ -876,7 +953,7 @@ function O:SearchEntries(role)
     for _, id in ipairs(self:TracksFor(role)) do
         out[#out + 1] = { name = self.TRACKS[id].label, words = words, track = id }
     end
-    out[#out + 1] = { name = string.format(L["What's new in %s"], self.WHATS_NEW_ID), words = L["what's new, news, changes, version, update"], whatsnew = true }
+    out[#out + 1] = { name = string.format(L["What's new in %s"], self:Version()), words = L["what's new, news, changes, version, update"], whatsnew = true }
     for _, g in ipairs(self:Guides(role)) do
         out[#out + 1] = { name = g.title, words = L["guide, help"], guide = g.id }
     end
