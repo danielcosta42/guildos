@@ -5149,3 +5149,5 @@ L["Darker parchment cards, same wood and gold."] = "더 어두운 양피지 카�
 L["dark, dark mode, theme, night, night mode, colours"] = "다크, 다크 모드, 어두운, 테마, 밤, 야간 모드, 색상, dark, theme, night"
 L["The game's guild window"] = "게임의 길드 창"
 L["Opens Blizzard's own guild panel."] = "블리자드 기본 길드 창을 엽니다."
+L["Show guildmates on my map"] = "내 지도에 길드원 표시"
+L["Off: no guildmate on your world map or minimap, and Guild OS asks nobody for positions. Campfires stay."] = "끄면: 세계 지도와 미니맵에 길드원이 표시되지 않고, Guild OS는 누구에게도 위치를 묻지 않습니다. 모닥불은 남습니다."

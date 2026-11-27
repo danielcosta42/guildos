@@ -371,6 +371,19 @@ function GuildMap:SetMinimapDots(on)
     if self.uiRefresh then self.uiRefresh() end
 end
 
+-- "Show guildmates on my map": on unless turned off. Off, no pin, no list and no minimap dot, and this client
+-- never asks for positions (no watch goes out), so nobody sends theirs for it. The campfires stay: they are places.
+function GuildMap:IsShowingOthers() return prefs().show ~= false end
+
+function GuildMap:SetShowingOthers(on)
+    prefs().show = on and true or false
+    if not on then
+        self:SetWatch("worldmap", nil)
+        self:SetWatch("minimap", nil)
+    end
+    if self.uiRefresh then self.uiRefresh() end
+end
+
 -- The list on the world map: shown unless closed (its X); /gos map brings it back.
 function GuildMap:IsListShown() return prefs().list ~= false end
 function GuildMap:SetListShown(on) prefs().list = on and true or false end
@@ -1049,7 +1062,7 @@ end
 function GuildMap:_UpdateMinimapWatch()
     local Compat = GuildOS.Compat
     local scope
-    if self:IsMinimapDots() and not Compat.InstanceState() then
+    if self:IsMinimapDots() and self:IsShowingOthers() and not Compat.InstanceState() then
         local map = Compat.GetBestMapForUnit("player")
         local zone = map and self:_ZoneOf(map)
         if zone and self:_ZoneHasGuildmates(zone) then scope = zone end

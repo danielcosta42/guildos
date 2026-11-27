@@ -392,6 +392,17 @@ check(count("MP") == 0, "nor on a zone change")
 GM:SetSharing(true)
 check(count("MP") == 0, "turning it back on sends nothing by itself")
 
+-- ── 7b. Not showing guildmates ─────────────────────────────────────────
+reset()
+check(GM:IsShowingOthers(), "showing guildmates on my map is on by default")
+GM:SetWatch("worldmap", 1955)
+check(GM.watch.worldmap == 1955, "a watch is held while the world map is open")
+GM:SetShowingOthers(false)
+check(GuildOS.db.guildMapPrefs.show == false, "off is kept")
+check(GM.watch.worldmap == nil and GM.watch.minimap == nil, "off drops this client's watches: nobody is asked for a position")
+GM:SetShowingOthers(true)
+check(GM:IsShowingOthers(), "and it comes back on")
+
 -- ── 8. What arrives ─────────────────────────────────────────────────────
 reset()
 GM:HandlePosition("Ann", "1955,2000,3000,,0", "WHISPER")

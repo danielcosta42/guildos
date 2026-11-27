@@ -5149,3 +5149,5 @@ L["Darker parchment cards, same wood and gold."] = "更深的羊皮紙卡片，�
 L["dark, dark mode, theme, night, night mode, colours"] = "深色, 深色模式, 暗色, 主題, 夜間, 夜間模式, 顏色, dark, theme, night"
 L["The game's guild window"] = "遊戲的公會視窗"
 L["Opens Blizzard's own guild panel."] = "開啟暴雪內建的公會面板。"
+L["Show guildmates on my map"] = "在我的地圖上顯示公會成員"
+L["Off: no guildmate on your world map or minimap, and Guild OS asks nobody for positions. Campfires stay."] = "關閉：世界地圖和小地圖上不顯示公會成員，Guild OS 也不向任何人請求位置。營火仍會顯示。"

@@ -5269,3 +5269,5 @@ L["Darker parchment cards, same wood and gold."] = "Cartes de parchemin plus som
 L["dark, dark mode, theme, night, night mode, colours"] = "sombre, mode sombre, thème, nuit, mode nuit, couleurs, dark, theme, night"
 L["The game's guild window"] = "Fenêtre de guilde du jeu"
 L["Opens Blizzard's own guild panel."] = "Ouvre le panneau de guilde de Blizzard."
+L["Show guildmates on my map"] = "Afficher les membres de la guilde sur ma carte"
+L["Off: no guildmate on your world map or minimap, and Guild OS asks nobody for positions. Campfires stay."] = "Désactivé : aucun membre sur votre carte du monde ni sur la minicarte, et Guild OS ne demande la position de personne. Les feux de camp restent."

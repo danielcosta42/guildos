@@ -211,7 +211,7 @@ end
 local function LayoutPins()
     if not layer then return end
     local shown = Compat.GetShownMapID()
-    peers = GM():GetPeers()
+    peers = GM():IsShowingOthers() and GM():GetPeers() or {}
     byKey, pinOf = {}, {}
     local used = 0
     for _, p in ipairs(peers) do
@@ -362,7 +362,7 @@ end
 ----------------------------------------------------------------------
 local function WatchShownMap()
     local wmf = Compat.GetWorldMapFrame()
-    if wmf and wmf:IsShown() then
+    if wmf and wmf:IsShown() and GM():IsShowingOthers() then
         GM():SetWatch("worldmap", Compat.GetShownMapID())
     else
         GM():SetWatch("worldmap", nil)
@@ -384,7 +384,7 @@ local function InstallMapHooks()
         hooksecurefunc(wmf, "OnMapChanged", function() GuildOS:SafeCall(OnMapChanged) end)
     end
     wmf:HookScript("OnShow", function()
-        if list and GM():IsListShown() then list:Show() end
+        if list and GM():IsListShown() and GM():IsShowingOthers() then list:Show() end
         GuildOS:SafeCall(OnMapChanged)
     end)
     wmf:HookScript("OnHide", function()
@@ -467,7 +467,7 @@ local function RefreshDots()
     dotsUsed = 0
     local G = GM()
     -- Nobody to draw (no guildmate heard, no group member read): no map reads at all, ten times a second.
-    local show = G:IsMinimapDots() and (next(G.peers) ~= nil or (IsInGroup and IsInGroup()) or next(G.group) ~= nil)
+    local show = G:IsMinimapDots() and G:IsShowingOthers() and (next(G.peers) ~= nil or (IsInGroup and IsInGroup()) or next(G.group) ~= nil)
         and not Compat.InstanceState()
     local myMap = show and Compat.GetBestMapForUnit("player")
     local mx, my
@@ -517,7 +517,11 @@ end
 function GuildOS:SetupGuildMapPresence()
     if GuildOS._guildMapPresence or not GM() then return end
     GuildOS._guildMapPresence = true
-    GM().uiRefresh = function() dirty = true end
+    GM().uiRefresh = function()
+        dirty = true
+        if list and not GM():IsShowingOthers() then list:Hide() end
+        WatchShownMap()
+    end
     if Minimap then
         dotsDriver = CreateFrame("Frame", nil, Minimap)
         local acc = 0

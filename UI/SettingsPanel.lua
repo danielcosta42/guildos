@@ -454,6 +454,10 @@ PAGES.profile = function(F)
             L["Only while a guildmate has the guild map open; never coordinates in an instance, nothing in combat there."],
             function() return GuildOS.GuildMap:IsSharing() end,
             function(checked) GuildOS.GuildMap:SetSharing(checked) end)
+        F:Check(L["Show guildmates on my map"],
+            L["Off: no guildmate on your world map or minimap, and Guild OS asks nobody for positions. Campfires stay."],
+            function() return GuildOS.GuildMap:IsShowingOthers() end,
+            function(checked) GuildOS.GuildMap:SetShowingOthers(checked) end)
     end
     -- The campfire beacon (ChehulNet v17, Modules/ChehulNetWire.lua): WoW: Forever only, where the camp kits are. On
     -- unless turned off ("default" counts as on); the realm bus carries an ownerless sighting, off by default on PvP.

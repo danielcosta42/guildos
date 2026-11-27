@@ -5270,3 +5270,5 @@ L["Darker parchment cards, same wood and gold."] = "Tarjetas de pergamino más o
 L["dark, dark mode, theme, night, night mode, colours"] = "oscuro, modo oscuro, tema, noche, modo nocturno, colores, dark, theme, night"
 L["The game's guild window"] = "Ventana de hermandad del juego"
 L["Opens Blizzard's own guild panel."] = "Abre el panel de hermandad de Blizzard."
+L["Show guildmates on my map"] = "Mostrar compañeros de hermandad en mi mapa"
+L["Off: no guildmate on your world map or minimap, and Guild OS asks nobody for positions. Campfires stay."] = "Desactivado: ningún compañero en tu mapa del mundo ni en el minimapa, y Guild OS no pide la posición a nadie. Las hogueras siguen."

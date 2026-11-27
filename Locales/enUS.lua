@@ -3076,3 +3076,5 @@ L["Darker parchment cards, same wood and gold."] = "Darker parchment cards, same
 L["dark, dark mode, theme, night, night mode, colours"] = "dark, dark mode, theme, night, night mode, colours"
 L["The game's guild window"] = "The game's guild window"
 L["Opens Blizzard's own guild panel."] = "Opens Blizzard's own guild panel."
+L["Show guildmates on my map"] = "Show guildmates on my map"
+L["Off: no guildmate on your world map or minimap, and Guild OS asks nobody for positions. Campfires stay."] = "Off: no guildmate on your world map or minimap, and Guild OS asks nobody for positions. Campfires stay."
