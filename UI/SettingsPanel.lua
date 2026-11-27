@@ -1193,12 +1193,12 @@ local LINKS = {
     { key = "curse",   glyph = "C", label = "CurseForge", url = "https://www.curseforge.com/projects/1549177",    note = "Downloads and updates" },
     { key = "wago",    glyph = "W", label = "Wago",       url = "https://addons.wago.io/addons/rNkyABKa",         note = "Downloads and updates" },
 }
--- The rest of the Chehul family (they share ChehulNet, the hidden network): each with what it is for and its page.
+-- The rest of the Chehul family on WoW: Forever (they share ChehulNet, the hidden network): what each is for and
+-- its CurseForge page. ProfessionHelper stays out until it runs on Forever.
 local FAMILY = {
-    { key = "lodestar", glyph = "L", label = "Lodestar",         url = "https://github.com/danielcosta42/lodestar",         note = "Leveling guides with an arrow to the next quest" },
-    { key = "party",    glyph = "P", label = "PartyLens",        url = "https://github.com/danielcosta42/PartyLens",        note = "Group radar: the LFG channel and listings in one panel" },
-    { key = "warmth",   glyph = "W", label = "Warmth",           url = "https://github.com/danielcosta42/Warmth",           note = "Campfires on your map and who is around them" },
-    { key = "prof",     glyph = "H", label = "ProfessionHelper", url = "https://github.com/danielcosta42/ProfessionHelper", note = "Profession guides, shopping lists and farming (Classic)" },
+    { key = "lodestar", glyph = "L", label = "Lodestar",  url = "https://www.curseforge.com/wow/addons/lodestar",                               note = "Leveling guides with an arrow to the next quest" },
+    { key = "party",    glyph = "P", label = "PartyLens", url = "https://www.curseforge.com/wow/addons/partylens-lfg-group-finder",             note = "Group radar: the LFG channel and listings in one panel" },
+    { key = "warmth",   glyph = "W", label = "Warmth",    url = "https://www.curseforge.com/wow/addons/warmth-campfires-camps-for-wow-forever",  note = "Campfires on your map and who is around them" },
 }
 local MIT = "MIT License\n\nCopyright (c) 2026 danielcosta42\n\n"
     .. "Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated "
@@ -1245,7 +1245,14 @@ local function pill(parent, text)
     fill:SetColor(WOOD.gold2)
     p.text = UI:CreateText(p, text, 11, WOOD.gold2.r, WOOD.gold2.g, WOOD.gold2.b)
     p.text:SetPoint("CENTER", 0, 0)
-    p:SetWidth(math.ceil(UI:TextWidth(p.text, 40)) + 28)
+    -- Measured again at each layout (a font not loaded yet measures short, #449 "WoW: Forever" spilled out);
+    -- never under the label's length at the caption size, so a short measure cannot cut it.
+    function p:Fit()
+        local measured = math.ceil(tonumber(UI:TextWidth(self.text, 40)) or 40)
+        local floor = math.ceil(#(self.text:GetText() or "") * 6.2)
+        self:SetWidth(math.max(measured, floor) + 30)
+    end
+    p:Fit()
     return p
 end
 
@@ -1309,12 +1316,18 @@ PAGES.credits = function(F)
     tag:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 1, -4)
     tag:SetJustifyH("LEFT")
     local pills = { pill(hero, "v" .. tostring(GuildOS.VERSION or "?")), pill(hero, gameName()), pill(hero, "MIT") }
-    local x = 0
-    for _, p in ipairs(pills) do
-        p:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", x, -8)
-        x = x + p:GetWidth() + 6
+    local function placePills()
+        local x = 0
+        for _, p in ipairs(pills) do
+            p:Fit()
+            p:ClearAllPoints()
+            p:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", x, -8)
+            x = x + p:GetWidth() + 6
+        end
     end
+    placePills()
     F:Row(hero, { gap = 4, wide = true, place = function(h, w)
+        placePills()
         h:SetWidth(math.max(1, w))
         tag:SetWidth(math.max(1, w - 72 - 26))
         return math.max(96, 2 + 32 + 4 + math.ceil(tag:GetStringHeight() or 14) + 8 + 20 + 6)

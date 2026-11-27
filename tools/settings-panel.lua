@@ -422,8 +422,10 @@ do
   end
   local copies = 0
   walk(credits, function(f) if f.kind == "Button" and f.label and f.label.text == "Copy" then copies = copies + 1 end end)
-  check(copies == 9, "each link, and each of the family's addons, has its Copy (" .. copies .. ")")
-  for _, t in ipairs({ "The Chehul family", "Lodestar", "PartyLens", "Warmth", "ProfessionHelper" }) do
+  check(copies == 8, "each link, and each of the family's addons, has its Copy (" .. copies .. ")")
+  check(not shows(credits, "ProfessionHelper"), "ProfessionHelper stays out until it runs on Forever")
+  check(shows(credits, "https://www.curseforge.com/wow/addons/lodestar"), "the family links go to CurseForge")
+  for _, t in ipairs({ "The Chehul family", "Lodestar", "PartyLens", "Warmth" }) do
     check(shows(credits, t), "Credits shows \"" .. t .. "\"")
   end
   for _, label in ipairs({ "Read the license", "Copy for a bug report", "Join the Discord" }) do
