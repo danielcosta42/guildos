@@ -2,7 +2,11 @@
 -- Guild OS - Roster Log (guild audit trail)
 -- Captures join/leave/kick/promote/demote (with actor) from system
 -- messages; synced officer-authoritative (domain "audit"); absorbs the
--- old GuildManager action log. Cold-login backfill is a tracked follow-up.
+-- old GuildManager action log. What happened while this officer was offline comes at login from the
+-- game's own guild event log (Modules/GuildEventLog.lua): the officer a diff's line lacked, and the
+-- changes nobody here saw, as approximate events (`approx`, `tol`: the game says "N hours ago").
+-- A rename (Modules/MemberRename.lua) is a "rename" line. An officer may delete a line on this client
+-- (`hidden`): the audit domain is append-only, with no tombstone, so the other officers keep theirs.
 ----------------------------------------------------------------------
 local RosterLog = {}
 GuildOS.RosterLog = RosterLog
@@ -13,11 +17,14 @@ local MAX_AGE = 90 * 86400
 local BACKFILL_N = 25   -- cold-sync re-broadcast is capped to the last N events
 local NEAR_DUP = 30     -- seconds within which the same change, seen twice, is one event
 local NEAR_DUP_SCAN = 20  -- how many of the latest events that check looks back over
+local APPROX_TOL = 2 * 3600   -- an approximate event (the game's log: "N hours ago") is the same one within this
+local HIDDEN_CAP = 500        -- lines deleted on this client remembered, so a backfill does not bring them back
 RosterLog.CAP, RosterLog.LOCAL_CAP, RosterLog.BACKFILL_N = CAP, LOCAL_CAP, BACKFILL_N
 
 function RosterLog:Initialize()
     GuildOS.db.rosterLog = GuildOS.db.rosterLog or { events = {} }
     GuildOS.db.rosterLog.events = GuildOS.db.rosterLog.events or {}
+    if type(GuildOS.db.rosterLog.hidden) ~= "table" then GuildOS.db.rosterLog.hidden = {} end
     if GuildOS.SyncService then
         GuildOS.SyncService:On("audit", function(env, sender) RosterLog:OnSync(env, sender) end)
     end
@@ -82,6 +89,22 @@ function RosterLog:_Insert(evt, store)
     evt.id = evt.id or self:_EventId(evt.action, evt.target, evt.author, evt.timestamp)
     for i = 1, #store do
         if store[i].id == evt.id then return false end   -- dedup
+    end
+    local dbStore = GuildOS.db and GuildOS.db.rosterLog and GuildOS.db.rosterLog.events
+    if store == dbStore and self:IsHidden(evt) then return false end
+    -- The game's log read on two officers' clients, or at two logins: the same line with times an hour or so
+    -- apart. One approximate event against any line of the same action and member within the tolerance; the
+    -- officer it lacked is filled in.
+    if evt.approx then
+        local tol = math.max(APPROX_TOL, tonumber(evt.tol) or 0)
+        for i = #store, 1, -1 do
+            local e = store[i]
+            if e.action == evt.action and e.target == evt.target and (e.detail == nil or evt.detail == nil or e.detail == evt.detail)
+                and math.abs((e.timestamp or 0) - evt.timestamp) <= tol then
+                if evt.author and not e.author then e.author = evt.author end
+                return false
+            end
+        end
     end
     -- The same change seen twice a few seconds apart, across a 5s bucket: a bulk action's line (issue #420) and
     -- the game's guild message about it. Same action, member, officer and rank, within NEAR_DUP seconds. Only an
@@ -185,6 +208,41 @@ function RosterLog:_MigrateManagementLog()
             })
         end
     end
+end
+
+-- Whether `evt` is a line an officer deleted on this client: its id, or for an approximate event the same action
+-- and member within its tolerance (the game's log hands it back at every login with a time a little apart).
+function RosterLog:IsHidden(evt)
+    local hidden = GuildOS.db and GuildOS.db.rosterLog and GuildOS.db.rosterLog.hidden
+    if type(hidden) ~= "table" or type(evt) ~= "table" then return false end
+    local tol = math.max(APPROX_TOL, tonumber(evt.tol) or 0)
+    for _, h in ipairs(hidden) do
+        if h.id == evt.id then return true end
+        if evt.approx and h.action == evt.action and h.target == evt.target
+            and math.abs((h.t or 0) - (evt.timestamp or 0)) <= tol then return true end
+    end
+    return false
+end
+
+-- An officer deletes one line on this client (the log's "Delete line"). The audit domain is append-only and keeps
+-- no tombstone, so the other officers keep theirs; this client remembers the line and refuses it when a backfill
+-- sends it again. True when a line went.
+function RosterLog:Hide(id)
+    if not GuildOS:IsOfficer() or type(id) ~= "string" then return false end
+    local rl = GuildOS.db.rosterLog
+    local store = rl.events
+    for i = 1, #store do
+        local e = store[i]
+        if e.id == id then
+            table.remove(store, i)
+            if type(rl.hidden) ~= "table" then rl.hidden = {} end
+            rl.hidden[#rl.hidden + 1] = { id = id, action = e.action, target = e.target, t = e.timestamp }
+            while #rl.hidden > HIDDEN_CAP do table.remove(rl.hidden, 1) end
+            self:Refresh()
+            return true
+        end
+    end
+    return false
 end
 
 function RosterLog:Clear()

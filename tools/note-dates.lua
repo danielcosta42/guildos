@@ -413,6 +413,45 @@ check(select(2, filter(nil, "CHAT_MSG_PARTY", "x", "Bob-Nightslayer")) == nil, "
 GuildOS.db.chatTweaks.whisper = true
 check(select(2, filter(nil, "CHAT_MSG_WHISPER", "x", "Bob-Nightslayer")) == nil, "nor in a whisper")
 GuildOS.db.chatTweaks.whisper = false
+-- Party and raid only when asked: off, a guild member's party line is left as it is.
+GuildOS.db.chatTweaks.group = false
+check(select(2, filter(nil, "CHAT_MSG_PARTY", "x", "Bob")) == nil and select(2, filter(nil, "CHAT_MSG_RAID", "x", "Bob")) == nil
+  and select(2, filter(nil, "CHAT_MSG_RAID_LEADER", "x", "Bob")) == nil, "party and raid off: no prefix")
+GuildOS.db.chatTweaks.group = true
+GuildOS.db.chatTweaks.whisper = true
+_, msg = filter(nil, "CHAT_MSG_WHISPER", "psst", "Bob")
+check(msg and msg:find("Bobby", 1, true) and msg:find("psst$"), "whispers when asked")
+GuildOS.db.chatTweaks.whisper = false
+-- A sender's prefix is built once a roster refresh, not per line; a nickname changed is seen at the next line.
+local builds, realBuild = 0, CT._BuildPrefix
+CT._BuildPrefix = function(...) builds = builds + 1; return realBuild(...) end
+CT:_RefreshCache()
+for _ = 1, 20 do filter(nil, "CHAT_MSG_GUILD", "hi", "Bob") end
+check(builds == 1, "twenty lines, one prefix built (" .. builds .. ")")
+MM:SetNick(K("Bob"), "Bobster")
+_, msg = filter(nil, "CHAT_MSG_GUILD", "hi", "Bob")
+check(builds == 2 and msg:find("Bobster", 1, true), "a new nickname: built again at the next line")
+GuildOS.db.chatTweaks.level = true
+filter(nil, "CHAT_MSG_GUILD", "hi", "Bob")
+check(builds == 3, "a setting changed: built again")
+GuildOS.db.chatTweaks.level = false
+CT._BuildPrefix = realBuild
+-- A guild member's linked character outside the guild is known too (the alt tag), a stranger still is not.
+GuildOS.db.chatTweaks.altTag = true
+GuildOS.db.altLinks = { [K("Bobalt")] = K("Bob") }
+local savedTag = GuildOS.GetAltTag
+GuildOS.GetAltTag = function(_, key) return key == K("Bobalt") and "alt of Bob" or nil end
+CT:_RefreshCache()
+_, msg = filter(nil, "CHAT_MSG_WHISPER", "x", "Bobalt")
+check(msg == nil, "an alt's whisper: whispers still off")
+GuildOS.db.chatTweaks.whisper = true
+_, msg = filter(nil, "CHAT_MSG_WHISPER", "hey", "Bobalt")
+check(msg and msg:find("alt of Bob", 1, true), "a linked alt outside the guild gets its tag in a whisper")
+check(select(2, filter(nil, "CHAT_MSG_WHISPER", "x", "Stranger")) == nil, "a stranger still gets none")
+GuildOS.db.chatTweaks.whisper, GuildOS.db.chatTweaks.altTag, GuildOS.db.altLinks = false, false, {}
+GuildOS.GetAltTag = savedTag
+CT:_RefreshCache()
+MM:SetNick(K("Bob"), "Bobby")
 local tips = {}
 MM:TooltipLines({ AddLine = function(_, l) tips[#tips + 1] = l end }, K("Bob"), "alt [safe]", "")
 check(tips[1] == "Nickname: Bobby" and tips[2] == "On the safe list (tag in the note)", "the tooltip's lines")

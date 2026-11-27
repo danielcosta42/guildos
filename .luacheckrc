@@ -44,6 +44,8 @@ globals = {
 
 -- Globals that the addon READS (WoW environment)
 read_globals = {
+    -- WoW API: the guild's event log, called only from Core/Compat.lua and read by Core/Probe.lua
+    "QueryGuildEventLog", "GetNumGuildEvents", "GetGuildEventInfo",
     -- WoW API: the guild bank (issue #380), called only from Core/Compat.lua
     "C_GuildBank", "GetNumGuildBankTabs", "GetGuildBankTabInfo", "GetGuildBankItemInfo", "GetGuildBankItemLink",
     "QueryGuildBankTab", "QueryGuildBankLog", "GetGuildBankMoney", "GetNumGuildBankTransactions",

@@ -45,6 +45,8 @@ local GLOBALS = {
   "SetBindingClick", "SetLargeGuildTabardTextures", "SetSmallGuildTabardTextures",
   -- Whether another addon is loaded (#449, OpenMap): C_AddOns or the old global, by client.
   "IsAddOnLoaded",
+  -- The guild's event log: Compat probes it and answers nil where a client has none.
+  "QueryGuildEventLog", "GetNumGuildEvents", "GetGuildEventInfo",
 }
 -- Names only these APIs have: as a field or method of anything but Compat they are flagged too.
 local API_ONLY = { GuildRoster = true, RegisterAddonMessagePrefix = true, SendAddonMessage = true,

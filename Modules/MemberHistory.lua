@@ -7,10 +7,10 @@
 -- changes and returns from inactivity to the log. Officers only: a member's client keeps nothing.
 --
 --   db.memberHistory[key] = {
---       stints = { { joinAt, joinEst, leftAt, leftEst, how = "leave"|"kick"|"gone", by }, ... },
+--       stints = { { joinAt, joinEst, leftAt, leftEst, how = "leave"|"kick"|"gone", by, inv }, ... },   -- inv: who invited
 --       ranks  = { { at, from, to, by, est }, ... },
 --   }
---   db.memberHistoryBase = { at, m = { [key] = { r, rn, lv, n, o, off } } }   -- the roster last seen
+--   db.memberHistoryBase = { at, m = { [key] = { r, rn, lv, n, o, off, c, g } } }   -- the roster last seen (c: class, g: GUID)
 --   db.memberHistoryOut  = { rec, ... }   -- the last records this client sent, for the login backfill
 --   db.memberHistory[key].note = { text, author, ts, rev }   -- the officers' permanent note (#449, saidas.md)
 --   db.memberHistory[key].cls  = "WARRIOR"                    -- the class last seen, for a character gone since
@@ -636,13 +636,49 @@ function MemberHistory:FromAudit(evt)
     local h, key, t = GuildOS.db.memberHistory, self:KeyOf(evt.target), tonumber(evt.timestamp)
     if not (key and t) then return nil end
     if evt.action == "join" then
-        return MemberHistory.ApplyJoin(h, key, t, false)
+        local res = MemberHistory.ApplyJoin(h, key, t, false)
+        -- A join's officer is who invited them (the game's guild event log, Modules/GuildEventLog.lua).
+        if evt.author then MemberHistory.SetInviter(h, key, t, evt.author, tonumber(evt.tol)) end
+        return res
     elseif evt.action == "leave" or evt.action == "kick" then
         return MemberHistory.ApplyLeave(h, key, t, evt.action, evt.action == "kick" and evt.author or nil, false)
     elseif evt.action == "promote" or evt.action == "demote" then
         return MemberHistory.ApplyRank(h, key, t, nil, evt.detail, evt.author, false)
     end
     return nil
+end
+
+-- Who invited the passage that started at `t` (within `tol` seconds, or the open one when it started later than
+-- `t`: a diff saw it after the fact). True when it was written; one already known stays.
+function MemberHistory.SetInviter(h, key, t, by, tol)
+    if type(by) ~= "string" or by == "" then return false end
+    local r = recOf(h, key, false)
+    local s = r and r.stints
+    if not s then return false end
+    tol = tol or 7200
+    for i = #s, 1, -1 do
+        local st = s[i]
+        local at = st.joinAt
+        if at and (math.abs(at - t) <= tol or (i == #s and st.joinEst and t <= at)) then
+            if st.inv then return false end
+            st.inv = by
+            return true
+        end
+    end
+    return false
+end
+
+-- Who invited the member's current passage, or nil.
+function MemberHistory:InvitedBy(key)
+    local s = self:Stints(key)
+    local last = s[#s]
+    return last and last.leftAt == nil and last.inv or nil
+end
+
+-- A line of the audit log the game's guild event log completed (GuildEventLog:Merge): the officer it lacked and
+-- its time, into the history. Officers only.
+function MemberHistory:FromLog(evt)
+    return self:FromAudit(evt)
 end
 
 local function recId(rec)
@@ -759,7 +795,8 @@ local function readRoster()
         end
         rows[i] = { key = GuildOS:KeyOfRosterName(full), r = rankIndex, rn = rankName,
             lv = level, n = note or "", o = onotes and (onote or "") or nil, off = off,
-            cls = type(classFile) == "string" and classFile ~= "" and classFile or nil }
+            cls = type(classFile) == "string" and classFile ~= "" and classFile or nil,
+            g = GuildOS.Compat.GuildRosterGUID(i) }
     end
     return rows
 end
@@ -771,7 +808,7 @@ local function snapshot(rows, into)
     for _, row in ipairs(rows) do
         local b = into[row.key]
         if not b then b = {}; into[row.key] = b end
-        b.r, b.rn, b.lv, b.n, b.o, b.off = row.r, row.rn, row.lv, row.n, row.o, row.off
+        b.r, b.rn, b.lv, b.n, b.o, b.off, b.c, b.g = row.r, row.rn, row.lv, row.n, row.o, row.off, row.cls, row.g
     end
     return into
 end
@@ -836,6 +873,33 @@ function MemberHistory:Scan()
     st.diffed = true
     local sinceLogin = first and L["since your last login"] or nil
     local joined, gone, ranked, back, added = {}, {}, {}, {}, false
+    -- A rename (Modules/MemberRename.lua): the same GUID under a new name moves at once; a likely one without a
+    -- GUID is asked about, its two keys left out of this diff (and of the snapshot) until the officer answers.
+    local MR, skip, held = GuildOS.MemberRename, nil, nil
+    if MR then
+        local pairs_ = MR.Pairs(changes, base.m, rows)
+        for _, p in ipairs(pairs_) do
+            if p.how == "guid" or MR:Accepted(p.old, p.new) then
+                skip = skip or {}
+                skip[p.old], skip[p.new] = true, true
+                GuildOS:SafeCall(MR.Apply, MR, p.old, p.new, p.how)
+                base.m[p.old] = nil
+            elseif not MR:Declined(p.old, p.new) then
+                skip = skip or {}
+                skip[p.old], skip[p.new] = true, true
+                held = held or {}
+                held[#held + 1] = p
+                MR:Propose(p.old, p.new)
+            end
+        end
+    end
+    if skip then
+        local kept = {}
+        for _, c in ipairs(changes) do
+            if not skip[c.key] then kept[#kept + 1] = c end
+        end
+        changes = kept
+    end
     for _, c in ipairs(changes) do
         local k = c.key
         if c.kind == "join" then
@@ -883,6 +947,7 @@ function MemberHistory:Scan()
         end
     end
     snapshot(rows, base.m)
+    for _, p in ipairs(held or {}) do base.m[p.new] = nil end   -- still asked about: the next diff sees it again
     base.at = now
     if added then MemberHistory.Cap(h, self.MAX_KEYS) end
     if #changes > 0 and GuildOS.RosterLog then GuildOS.RosterLog:Refresh() end

@@ -320,5 +320,6 @@ function MemberMarks:CommandNick(rest)
 end
 
 function MemberMarks:Refresh()
+    if GuildOS.ChatTweaks and GuildOS.ChatTweaks.Invalidate then GuildOS.ChatTweaks:Invalidate() end   -- the chat prefixes
     if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
 end

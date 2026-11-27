@@ -82,8 +82,12 @@ end
 -- A status badge (the mockup's .badge): kind "ok", "warn", "bad", "info", "mute" or "epic".
 local BADGE = { ok = "ok", warn = "warn", bad = "danger", info = "info", epic = "epic" }
 function Kit:Badge(parent, text, kind)
-    local col = BADGE[kind] and C[BADGE[kind]] or C.paperSoft
-    return UI:CreateBadge(parent, text, col)
+    return UI:CreateBadge(parent, text, self:BadgeColor(kind))
+end
+
+-- The colour a badge of `kind` takes: badge:SetText(text, Kit:BadgeColor(kind)) repaints one in place.
+function Kit:BadgeColor(kind)
+    return BADGE[kind] and C[BADGE[kind]] or C.paperSoft
 end
 
 -- A screen on a parchment card: the card (titled, never upper case) and the body inside it, where the

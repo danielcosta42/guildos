@@ -27,6 +27,8 @@ Mesh.ADDON_LABELS = {
     gos = "Guild OS",
     pl  = "PartyLens",
     ph  = "ProfessionHelper",
+    cf  = "Warmth",      -- the family's campfire addon: the member window says who runs it
+    ls  = "Lodestar",
 }
 
 ----------------------------------------------------------------------

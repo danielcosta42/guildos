@@ -581,6 +581,7 @@ local ACTION_LABELS = {
     note    = { txt = L["Note changed"], color = "info" },
     onote   = { txt = L["Officer note changed"], color = "info" },
     back    = { txt = L["Back from inactivity"], color = "online" },   -- not L["Back"], the navigation's (#429)
+    rename  = { txt = L["Renamed"], color = "info" },
 }
 
 -- The badge each action's status colour takes (Kit:Badge's kinds).
@@ -593,19 +594,59 @@ local LEVEL_MODE_TEXT = {
     off        = L["Levels: off"],
 }
 
--- Whether a log line holds `filter` (lower case): its member, officer, detail or the word for it.
+-- Whether a log line holds `filter` (lower case): its member, officer, detail or the word for it. No table a call:
+-- it runs for every line on each key press.
+local function hasText(v, filter)
+    return v ~= nil and tostring(v):lower():find(filter, 1, true) ~= nil
+end
 local function logMatches(e, meta, filter)
     if filter == "" then return true end
-    for _, v in ipairs({ e.target, e.author, e.detail ~= nil and tostring(e.detail) or nil, meta.txt }) do
-        if v and v:lower():find(filter, 1, true) then return true end
-    end
-    return false
+    return hasText(e.target, filter) or hasText(e.author, filter) or hasText(e.detail, filter) or hasText(meta.txt, filter)
 end
+
+-- The log's chips (the mockup's .chips): each kind of line, then All, with how many.
+local LOG_KIND = {
+    join = "join", rejoin = "join", leave = "leave", gone = "leave", kick = "kick", promote = "rank", demote = "rank",
+    level = "level", note = "note", onote = "note", back = "back", rename = "rename",
+}
+local LOG_CHIPS = {
+    { kind = "join",   label = L["Joins"] },
+    { kind = "leave",  label = L["Leaves"] },
+    { kind = "kick",   label = L["Kicks"] },
+    { kind = "rank",   label = L["Rank changes"] },
+    { kind = "level",  label = L["Levels"] },
+    { kind = "note",   label = L["Notes"] },
+    { kind = "back",   label = L["Returns"] },
+    { kind = "rename", label = L["Renames"] },
+    { kind = "all",    label = L["All"] },
+}
+local function logKind(e)
+    return LOG_KIND[(e.action == "join" and e.rejoin) and "rejoin" or e.action]
+end
+
+local LOG_STEP = ROW_H + 2
+local COL_WHEN, COL_ACT, COL_WHAT = 0, 92, 196
+local BY_W = 100
 
 local function BuildLogSub(panel)
     local Forms = GuildOS.Forms
     local board = UI:CreateBoard(panel, { name = "GuildOSMgmtLogBoard" })
     local card = board:Card(L["Action log"], { fill = true })
+    local state = { kind = "all", stale = false }
+    local refresh
+
+    -- The chips: one kind of line each and All, with how many (the search narrows them too).
+    local chips = {}
+    for _, c in ipairs(LOG_CHIPS) do
+        local b = Forms:Pill(card, c.label)
+        b.kind, b.base = c.kind, c.label
+        b:SetScript("OnClick", function()
+            state.kind = b.kind
+            if refresh then refresh() end
+        end)
+        chips[#chips + 1] = b
+    end
+    card:Flow(chips)
 
     -- Search (issue #425): the member, the officer, the detail or the action's word; which level ups the
     -- roster diff writes here (milestones: every 10 and the cap, all, none), a select; Clear at the right.
@@ -632,80 +673,131 @@ local function BuildLogSub(panel)
         tools:SetSize(math.max(1, w), 24)
         return 24
     end })
+    -- Deleting a line: the audit domain keeps no tombstone, so it goes on this client only.
+    card:Note(L["Delete line removes it on this client only: the other officers keep theirs."], {
+        shown = function() return GuildOS:IsOfficer() end })
 
-    local COL_WHEN, COL_ACT, COL_WHAT = 0, 92, 196
     local header = Forms:TableHeader(card, { { L["When"], COL_WHEN }, { L["Action"], COL_ACT }, { L["What"], COL_WHAT },
         { L["By"], -4 } })
     card:Add(header, { h = 20, wide = true, gap = 10 })
     local listHolder = card:Body(ROW_H * 4, { gap = 2 })
-    local _, content = MakeScrollList(listHolder, "GuildOSMgmtLogScroll")
+    local empty = UI:CreateText(listHolder, L["No actions logged yet."], 11, C.silver.r, C.silver.g, C.silver.b)
+    empty:SetPoint("TOPLEFT", 0, -4)
+    empty:Hide()
 
-    local refresh
+    -- One frame per visible line, made once and refilled (#371's virtual list): the log holds up to 1500 lines, and
+    -- a frame is never freed.
+    local officer = false
+    local function createRow(parent)
+        local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+        row:SetHeight(ROW_H)
+        row:SetBackdrop({ bgFile = WHITE })
+        rule(row)
+        row.whenFS = UI:CreateText(row, "", UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
+        GuildOS:ApplyFont(row.whenFS, UI.SP.META, "tableNum")
+        row.whenFS:SetPoint("LEFT", COL_WHEN + 2, 0)
+        -- The action as a badge in its status (the mockup's), not a coloured word.
+        row.badge = Kit and Kit:Badge(row, "", "mute") or UI:CreateBadge(row, "", C.silver)
+        row.badge:SetPoint("LEFT", COL_ACT, 0)
+        row.descFS = UI:CreateText(row, "", 11, C.silver.r, C.silver.g, C.silver.b)
+        row.descFS:SetPoint("LEFT", COL_WHAT, 0)
+        row.descFS:SetPoint("RIGHT", -(BY_W + 10), 0)
+        row.descFS:SetJustifyH("LEFT")
+        row.descFS:SetWordWrap(false)
+        -- A line of this client's roster diff has no officer: the roster only shows what changed.
+        row.byFS = UI:CreateText(row, "", UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
+        row.byFS:SetPoint("RIGHT", -4, 0)
+        row.byFS:SetWidth(BY_W)
+        row.byFS:SetJustifyH("RIGHT")
+        row.byFS:SetWordWrap(false)
+        -- An officer's Delete line, over the officer's column while the row is pointed at.
+        row.del = Forms:SmallButton(row, L["Delete line"])
+        row.del:SetPoint("RIGHT", -2, 0)
+        row.del:Hide()
+        UI:AddTooltip(row.del, L["Delete line"], { L["Delete line removes it on this client only: the other officers keep theirs."] })
+        row.del:SetScript("OnClick", function()
+            local e = row.entry
+            if e and e.id and GuildOS.RosterLog then GuildOS.RosterLog:Hide(e.id) end
+        end)
+        row:EnableMouse(true)
+        local function hover(on)
+            row.del:SetShown(on and officer and row.entry ~= nil)
+            row.byFS:SetShown(not (on and officer))
+        end
+        row:SetScript("OnEnter", function() hover(true) end)
+        row:SetScript("OnLeave", function() hover(row:IsMouseOver()) end)
+        row.del:HookScript("OnLeave", function() hover(row:IsMouseOver()) end)
+        return row
+    end
+
+    local function fillRow(row, item, idx)
+        local e, meta = item.e, item.meta
+        row.entry = e
+        local alt = (idx % 2 == 0) and C.row1 or C.row2
+        row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
+        row.whenFS:SetText((GuildOS:DateText(e.timestamp or 0, " %H:%M") or "") .. (e.approx and "~" or ""))
+        local kind = BADGE_OF[meta.color] or "mute"
+        row.badge:SetText(meta.txt, Kit and Kit.BadgeColor and Kit:BadgeColor(kind) or C[meta.color] or C.silver)
+        -- A long word ("Back from inactivity" in some languages) pushes the line right instead of under it.
+        local bw = tonumber(row.badge:GetWidth()) or 0
+        row.descFS:SetPoint("LEFT", math.max(COL_WHAT, COL_ACT + bw + 8), 0)
+        -- Who it was done to, in `text` against the detail's softer one: not gold (#371).
+        local tgt = e.target and ("|cff" .. hex(C.text) .. e.target .. "|r ") or ""
+        row.descFS:SetText(tgt .. (e.detail and tostring(e.detail) or ""))
+        row.byFS:SetText(e.author or "—")
+        row.byFS:Show()
+        row.del:Hide()
+    end
+
+    local list = MakeVirtualList(listHolder, "GuildOSMgmtLogScroll", LOG_STEP, createRow, fillRow)
+
     refresh = function()
-        ClearContent(content)
-
+        state.stale = false
         local MH = GuildOS.MemberHistory
-        levelDD:SetShown(MH ~= nil and GuildOS:IsOfficer())
+        officer = GuildOS:IsOfficer() and true or false
+        levelDD:SetShown(MH ~= nil and officer)
         if MH then levelDD:SetValue(MH:GetLevelMode()) end
         local filter = strtrim(searchBox:GetText() or ""):lower()
+        local counts = { all = 0 }
         local entries = {}
         for _, e in ipairs(GuildOS.GuildManager:GetLog()) do
             local meta = ACTION_LABELS[(e.action == "join" and e.rejoin) and "rejoin" or e.action]
                 or { txt = e.action or "?", color = "silver" }
-            if logMatches(e, meta, filter) then entries[#entries + 1] = { e = e, meta = meta } end
+            if logMatches(e, meta, filter) then
+                local k = logKind(e)
+                counts.all = counts.all + 1
+                if k then counts[k] = (counts[k] or 0) + 1 end
+                if state.kind == "all" or state.kind == k then entries[#entries + 1] = { e = e, meta = meta } end
+            end
         end
-        local yOff = 0
-        for idx, item in ipairs(entries) do
-            local e, meta = item.e, item.meta
-            local row = MakeRow(content, yOff, idx)
-
-            local whenFS = UI:CreateText(row, GuildOS:DateText(e.timestamp or 0, " %H:%M"), UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
-            GuildOS:ApplyFont(whenFS, UI.SP.META, "tableNum")
-            whenFS:SetPoint("LEFT", COL_WHEN + 2, 0)
-
-            -- The action as a badge in its status (the mockup's), not a coloured word.
-            local badge = Kit and Kit:Badge(row, meta.txt, BADGE_OF[meta.color] or "mute")
-                or UI:CreateBadge(row, meta.txt, C[meta.color] or C.silver)
-            badge:SetPoint("LEFT", COL_ACT, 0)
-
-            -- Who it was done to, in `text` against the detail's softer one: not gold (#371).
-            local tgt = e.target and ("|cff" .. hex(C.text) .. e.target .. "|r ") or ""
-            local detail = e.detail and tostring(e.detail) or ""
-            local descFS = UI:CreateText(row, tgt .. detail, 11, C.silver.r, C.silver.g, C.silver.b)
-            descFS:SetPoint("LEFT", COL_WHAT, 0)
-            descFS:SetPoint("RIGHT", -110, 0)
-            descFS:SetJustifyH("LEFT")
-            descFS:SetWordWrap(false)
-
-            -- A line of this client's roster diff has no officer: the roster only shows what changed.
-            local byFS = UI:CreateText(row, e.author or "—", UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
-            byFS:SetPoint("RIGHT", -4, 0)
-            byFS:SetWidth(100)
-            byFS:SetJustifyH("RIGHT")
-            byFS:SetWordWrap(false)
-
-            yOff = yOff + ROW_H + 2
+        for _, b in ipairs(chips) do
+            b.label:SetText(string.format("%s (%d)", b.base, counts[b.kind] or 0))
+            Forms:FitPill(b)
+            Forms:SetOn(b, b.kind == state.kind)
         end
-
-        if #entries == 0 then
-            local empty = UI:CreateText(content, L["No actions logged yet."], 11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 0, -4)
-        end
-        content:SetHeight(math.max(1, yOff))
+        board:Layout()
+        empty:SetShown(#entries == 0)
+        list:SetData(entries)
     end
+
+    -- Only the screen on show redraws: a line arriving while it is hidden marks it stale, drawn when it shows.
+    local function onChange()
+        if panel:IsVisible() then refresh() else state.stale = true end
+    end
+    panel:HookScript("OnShow", function() if state.stale then refresh() end end)
 
     clearBtn:SetScript("OnClick", function()
         GuildOS.GuildManager:ClearLog()
         refresh()
     end)
-    searchBox:HookScript("OnTextChanged", function() refresh() end)
+    searchBox:HookScript("OnTextChanged", function() onChange() end)
     levelDD.onSelect = function(_, mode)
         local MH = GuildOS.MemberHistory
         if MH then MH:SetLevelMode(mode) end
         refresh()
     end
 
-    if GuildOS.RosterLog then GuildOS.RosterLog.uiRefresh = refresh end
+    if GuildOS.RosterLog then GuildOS.RosterLog.uiRefresh = onChange end
     return refresh
 end
 

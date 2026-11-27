@@ -975,6 +975,70 @@ function Compat.GuildBankItemLog(tab)
     return out
 end
 
+----------------------------------------------------------------------
+-- The guild's event log (the game's "Guild Log": who invited, removed, promoted, demoted). The globals
+-- QueryGuildEventLog(), GetNumGuildEvents() and GetGuildEventInfo(i), the answer coming with
+-- GUILD_EVENT_LOG_UPDATE; GetGuildEventInfo(i) is
+--   type, player1, player2, rank, years, months, days, hours = GetGuildEventInfo(i)
+-- with type "invite" (player1 invited player2), "join" (player1), "promote"/"demote" (player1 moved player2 to
+-- the rank named `rank`), "remove" (player1 removed player2), "quit" (player1), and the time as how long AGO.
+-- Retail kept the globals (C_GuildInfo has no copy; one is asked for first should a client move them there),
+-- the 2.5.x and 1.15.x clients have them, and WoW: Forever 1.60.1 lists the event; any of them missing reads
+-- as no log: nil, never an error.
+----------------------------------------------------------------------
+local function guildEventFn(name)
+    local ns = C_GuildInfo and C_GuildInfo[name]
+    if type(ns) == "function" then return ns end
+    local g = _G[name]
+    return type(g) == "function" and g or nil
+end
+
+-- Whether this client has a guild event log to ask for and read.
+function Compat.HasGuildEventLog()
+    return guildEventFn("QueryGuildEventLog") ~= nil and guildEventFn("GetNumGuildEvents") ~= nil
+        and guildEventFn("GetGuildEventInfo") ~= nil
+end
+
+-- Asks the server for the log (the answer is GUILD_EVENT_LOG_UPDATE). True when asked.
+function Compat.QueryGuildEventLog()
+    if not Compat.HasGuildEventLog() then return false end
+    return pcall(guildEventFn("QueryGuildEventLog")) and true or false
+end
+
+-- The log as the client holds it: { type, p1, p2, rank, ago (seconds), tol (seconds: how far `ago` may be
+-- off) }, in the client's order. Nil when the client has none; an entry with a secret or missing part is left out.
+function Compat.GuildEventLog()
+    if not Compat.HasGuildEventLog() then return nil end
+    local numFn, infoFn = guildEventFn("GetNumGuildEvents"), guildEventFn("GetGuildEventInfo")
+    local okN, n = pcall(numFn)
+    if not okN or Compat.IsSecret(n) then return nil end
+    local out = {}
+    for i = 1, tonumber(n) or 0 do
+        local ok, kind, p1, p2, rank, y, mo, d, h = pcall(infoFn, i)
+        if ok and type(kind) == "string" and type(p1) == "string" and p1 ~= ""
+            and not Compat.IsSecret(kind, p1, p2, rank, y, mo, d, h) then
+            y, mo, d, h = tonumber(y) or 0, tonumber(mo) or 0, tonumber(d) or 0, tonumber(h) or 0
+            out[#out + 1] = {
+                type = kind, p1 = p1, p2 = (type(p2) == "string" and p2 ~= "") and p2 or nil,
+                rank = (type(rank) == "string" and rank ~= "") and rank or nil,
+                ago = (((y * 365 + mo * 30 + d) * 24) + h) * 3600,
+                -- A month read as 30 days: a log that says months ago is days off, one that says hours an hour.
+                tol = (y > 0 or mo > 0) and 3 * 86400 or 2 * 3600,
+            }
+        end
+    end
+    return out
+end
+
+-- A guild roster line's GUID (the 17th return of GetGuildRosterInfo), or nil where the client gives none
+-- or keeps it secret. Outlives a rename; a realm transfer changes it.
+function Compat.GuildRosterGUID(index)
+    if not GetGuildRosterInfo then return nil end
+    local guid = select(17, GetGuildRosterInfo(index))
+    if type(guid) ~= "string" or guid == "" or Compat.IsSecret(guid) then return nil end
+    return guid
+end
+
 -- The money log, oldest first: { type, name, amount, ago } with `amount` in copper and `ago` in hours.
 function Compat.GuildBankMoneyLog()
     local out = {}

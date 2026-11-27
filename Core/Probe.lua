@@ -120,6 +120,8 @@ Probe.APIS = {
     "GetPlayerFacing", "IsIndoors", "Minimap.GetZoom", "WorldMapFrame.ScrollContainer", "WorldMapFrame.GetCanvasZoomPercent",
     -- Whether OpenMap is loaded (#449: its guild dots beside Guild OS's).
     "C_AddOns.IsAddOnLoaded", "IsAddOnLoaded",
+    -- The guild's event log (who invited, removed, promoted or demoted while this officer was away).
+    "QueryGuildEventLog", "GetNumGuildEvents", "GetGuildEventInfo",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.
@@ -148,7 +150,7 @@ Probe.EVENTS = {
     "CLUB_MESSAGE_HISTORY_RECEIVED", "CLUB_STREAM_ADDED", "CLUB_STREAM_REMOVED", "CLUB_STREAMS_LOADED",
     "COMBAT_LOG_EVENT_UNFILTERED", "CRAFT_SHOW", "EJ_LOOT_DATA_RECIEVED", "ENCOUNTER_END", "ENCOUNTER_LOOT_RECEIVED", "ENCOUNTER_START", "GET_ITEM_INFO_RECEIVED",
     "GLOBAL_MOUSE_DOWN",   -- a click outside the minimap menu closes it (#449)
-    "GROUP_ROSTER_UPDATE", "GUILD_ROSTER_UPDATE", "INSPECT_READY", "LOOT_CLOSED", "LOOT_OPENED", "LOOT_SLOT_CLEARED",
+    "GROUP_ROSTER_UPDATE", "GUILD_EVENT_LOG_UPDATE", "GUILD_ROSTER_UPDATE", "INSPECT_READY", "LOOT_CLOSED", "LOOT_OPENED", "LOOT_SLOT_CLEARED",
     "MACRO_ACTION_BLOCKED", "MACRO_ACTION_FORBIDDEN", "PARTY_LOOT_METHOD_CHANGED", "PLAYER_ENTERING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_GUILD_UPDATE", "PLAYER_LEVEL_UP",
     "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_TALENT_UPDATE",
     "PLAYER_TARGET_CHANGED", "QUEST_TURNED_IN", "RAID_ROSTER_UPDATE", "READY_CHECK", "READY_CHECK_FINISHED",
@@ -297,6 +299,9 @@ function Probe:Run()
     -- The crest's tabard (#449): which API draws it here, or why none does.
     local tOk, used, apis = pcall(GuildOS.Compat.TabardReport)
     r.tabard = tOk and { used = used, apis = apis } or { used = "error: " .. tostring(used) }
+    -- The guild's event log: whether this client can ask for it and read it (Compat.HasGuildEventLog).
+    local gOk, has = pcall(GuildOS.Compat.HasGuildEventLog)
+    if gOk then r.guildEventLog = has and true or false else r.guildEventLog = "error: " .. tostring(has) end
 
     if not GuildOSDB then GuildOSDB = {} end
     GuildOSDB.probe = r
@@ -339,6 +344,7 @@ function Probe:PrintSummary(r)
     if #r.missingEvents > 0 then GuildOS:Print(names(r.missingEvents)) end
     -- API names, not prose: the line is read back from a screenshot.
     if r.tabard then GuildOS:Print("tabard: " .. tostring(r.tabard.used)) end
+    if r.guildEventLog ~= nil then GuildOS:Print("guild event log: " .. answer(r.guildEventLog)) end
     GuildOS:Print(L["Saved in GuildOSDB.probe. Type /reload to write it to disk."])
 end
 

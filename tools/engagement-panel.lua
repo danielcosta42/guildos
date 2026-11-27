@@ -252,4 +252,94 @@ local ui = assert(io.open(ADDON .. "/UI/ManagementPanel.lua", "rb")):read("*a")
 check(ui:find("GuildOS.BanList:ConfirmRemoveKey(key, who)", 1, true) and not ui:find("BanList:RemoveKey(key) end end)", 1, true),
   "the x asks before it lifts")
 
+-- Officers' Room > Audit Log (the ~150 MB in game): every refresh made a row of frames per log line (up to 1500)
+-- and only hid the old ones, and RosterLog fired it on every event, synced or not, with the tab hidden, on every
+-- key press in the search and every resize step. Now a virtual list: the rows that fit, refilled; a line arriving
+-- while the tab is hidden marks it stale, drawn when it shows. The chips count each kind of line.
+do
+  local hooks = {}
+  function Frame:HookScript(name, fn) hooks[self] = hooks[self] or {}; hooks[self][name] = fn; return self end
+  local function fireHook(f, name) local h = hooks[f] and hooks[f][name]; if h then h(f) end end
+  function Frame:SetScript(name, fn) rawset(self, "scripts", rawget(self, "scripts") or {}); self.scripts[name] = fn; return self end
+  local logLines = {}
+  local LOGKIND = { "join", "leave", "kick", "promote", "level", "note", "back", "rename", "gone", "demote" }
+  for i = 1, 1500 do
+    logLines[i] = { action = LOGKIND[(i % #LOGKIND) + 1], target = "M" .. i, timestamp = 1794000000 - i, id = "l" .. i,
+      detail = (i % 3 == 0) and "Raider" or nil }
+  end
+  GuildOS.GuildManager.GetLog = function() return logLines end
+  GuildOS.RosterLog = { Refresh = function(self) if self.uiRefresh then self.uiRefresh() end end }
+  function GuildOS.RosterLog:Add(evt) table.insert(logLines, 1, evt); self:Refresh(); return true end
+  GuildOS.MemberHistory = { GetLevelMode = function() return "milestones" end, LEVEL_MODES = { "milestones", "all", "off" } }
+  -- The real ones make no frame (the stub's every UI call does): a chip's on/off look, a button's variant.
+  rawset(GuildOS.UI, "SetSelected", function() end)
+  rawset(GuildOS.UI, "SetButtonVariant", function() end)
+  local p2 = Frame.new(nil)
+  GuildOS:CreateManagementPanel(p2, nil)
+  local logPanel, logRefresh = p2.subPanels.log.panel, p2.subPanels.log.refresh
+  check(type(GuildOS.RosterLog.uiRefresh) == "function", "the log registers its repaint with RosterLog")
+  local function logRows()
+    local out = {}
+    local function walk(f)
+      for _, c in ipairs(f.children) do
+        if rawget(c, "whenFS") and rawget(c, "shown") then out[#out + 1] = c end
+        walk(c)
+      end
+    end
+    walk(logPanel)
+    return out
+  end
+  visible = true
+  logRefresh()
+  local afterLog = created
+  check(#logRows() <= 20 and #logRows() > 0, "1500 lines get the rows that fit, not one each (" .. #logRows() .. ")")
+  for _ = 1, 5 do logRefresh() end
+  check(created == afterLog, "refreshes after the first make no new frames (" .. (created - afterLog) .. ")")
+  visible = false
+  for i = 1, 50 do GuildOS.RosterLog:Add({ action = "join", target = "H" .. i, timestamp = 1794000000 + i, id = "h" .. i }) end
+  check(created == afterLog, "50 lines with the tab hidden make 0 frames (" .. (created - afterLog) .. ")")
+  local firstText = logRows()[1] and logRows()[1].descFS.text or ""
+  check(not firstText:find("H50", 1, true), "and nothing is drawn while it is hidden")
+  visible = true
+  fireHook(logPanel, "OnShow")
+  check(logRows()[1].descFS.text:find("H50", 1, true) and created == afterLog, "showing it draws what came in meanwhile, with the same rows")
+  -- The search: every key press refilters, with the same rows.
+  local search
+  local function findSearch(f)
+    for _, c in ipairs(f.children) do
+      if hooks[c] and hooks[c].OnTextChanged then search = search or c end
+      findSearch(c)
+    end
+  end
+  findSearch(logPanel)
+  check(search ~= nil, "the search box hooks its typing")
+  for _, t in ipairs({ "M", "M1", "M12", "M123", "" }) do
+    search.text = t
+    fireHook(search, "OnTextChanged")
+  end
+  check(created == afterLog, "typing in the search makes no new frames (" .. (created - afterLog) .. ")")
+  -- The chips: counts, and a click filters.
+  local chipList = {}
+  local function walkChips(f)
+    for _, c in ipairs(f.children) do
+      if rawget(c, "kind") and rawget(c, "base") then chipList[#chipList + 1] = c end
+      walkChips(c)
+    end
+  end
+  walkChips(logPanel)
+  check(#chipList == 9, "nine chips: Joins, Leaves, Kicks, Rank changes, Levels, Notes, Returns, Renames, All")
+  local byKind = {}
+  for _, c in ipairs(chipList) do byKind[c.kind] = c end
+  check(byKind.all.label.text == "All (1550)" and byKind.rename.label.text == "Renames (150)"
+    and byKind.rank.label.text == "Rank changes (300)" and byKind.join.label.text == "Joins (200)"
+    and byKind.leave.label.text == "Leaves (300)", "each chip counts its lines: " .. tostring(byKind.join.label.text))
+  byKind.rename.scripts.OnClick(byKind.rename)
+  local shownR = logRows()
+  local onlyRenames = #shownR > 0
+  for _, r in ipairs(shownR) do if r.entry.action ~= "rename" then onlyRenames = false end end
+  check(onlyRenames and created == afterLog, "Renames: only the renames, with the same rows")
+  byKind.all.scripts.OnClick(byKind.all)
+  check(logRows()[1].entry.action ~= nil and #logRows() > 0, "All again")
+end
+
 print("engagement-panel: " .. checks .. " checks passed")

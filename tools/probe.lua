@@ -78,7 +78,7 @@ for _, name in ipairs(Probe.APIS) do
   check(not seen[name], "the inventory lists " .. name .. " once")
   seen[name] = true
 end
-check(#Probe.EVENTS == 71, "the probe checks the 71 events the addon registers")   -- +3: the alliance channel's join, leave and notices (#449); +1: a click outside the minimap menu (#449); +1: a master-looted item leaving the corpse (#448 L2); +4: the game's calendar (#263); +2: the bank cleanup's vendor (#380); +1: the game's "too fast" (#422, #393)
+check(#Probe.EVENTS == 72, "the probe checks the 72 events the addon registers")   -- +1: the guild event log (specs/salao/log-e-renomes.md); +3: the alliance channel's join, leave and notices (#449); +1: a click outside the minimap menu (#449); +1: a master-looted item leaving the corpse (#448 L2); +4: the game's calendar (#263); +2: the bank cleanup's vendor (#380); +1: the game's "too fast" (#422, #393)
 
 -- Drift: the events the addon's own files register are exactly Probe.EVENTS.
 -- Static reading: an event name held in a variable is out of its reach.
@@ -274,11 +274,19 @@ check(said(("Missing: %d of %d APIs, %d of %d events."):format(#expectedApis,
 check(#expectedApis > 10 and said(list(expectedApis)), "the summary names the first ten missing APIs")
 check(#expectedEvents > 10 and said(list(expectedEvents)), "the summary names the first ten missing events")
 check(said("Saved in GuildOSDB.probe. Type /reload to write it to disk."), "the summary says where the result went")
+-- The guild event log: one line saying whether this client can ask for it and read it.
+-- (the stubbed client's "present" entries are tables, not functions: no log to call here)
+check(r.guildEventLog == false and said("guild event log: no"), "the summary says the guild event log is not there")
 
 -- ── 5. In a guild, run again ────────────────────────────────────────────
 inGuild, now, calls = true, now + 60, {}
 local first = r
+local savedLog = { QueryGuildEventLog, GetNumGuildEvents, GetGuildEventInfo }
+QueryGuildEventLog, GetNumGuildEvents, GetGuildEventInfo = function() end, function() return 0 end, function() end
+printed = {}
 r = Probe:Run()
+check(r.guildEventLog == true and said("guild event log: yes"), "with the three calls, the summary says the guild event log is there")
+QueryGuildEventLog, GetNumGuildEvents, GetGuildEventInfo = savedLog[1], savedLog[2], savedLog[3]
 check(GuildOSDB.probe == r and r ~= first and r.at == now, "a new run overwrites the last one with a new timestamp")
 check(r.roster.firstName == "Ana-Firemaw" and r.roster.realm == "LivingFlame" and r.roster.realmName == "Living Flame",
   "the first roster name, GetNormalizedRealmName() and GetRealmName() are each recorded from their own function")

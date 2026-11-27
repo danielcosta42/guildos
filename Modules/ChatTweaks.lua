@@ -3,8 +3,10 @@
 -- Optional guild/officer chat annotations (class icon + level + alt tag, and
 -- the officers' nickname for the member, #429), added as a safe MESSAGE PREFIX
 -- (never modifies the author/name link). Off by default; whispers, party and
--- raid lines from guild members too when asked (#429). Cache refreshed on
--- GUILD_ROSTER_UPDATE, never per line.
+-- raid lines from guild members and their linked alts too when asked (#429; Settings > Chat and alerts:
+-- "Also in whispers", "Also in party and raid", both off by default). Cache refreshed on
+-- GUILD_ROSTER_UPDATE, never per line: a sender's key and prefix are worked out once a refresh, so a
+-- line costs a lookup and a string join, no table.
 ----------------------------------------------------------------------
 local ChatTweaks = {}
 GuildOS.ChatTweaks = ChatTweaks
@@ -73,7 +75,42 @@ function ChatTweaks:_RefreshCache()
             if key then cache[key] = { classFile = classFile, level = level, fullKey = key } end
         end
     end
+    -- A guild member's linked character outside the guild (an alt on the bank's account, a main who left): known
+    -- to the officers' links, so its lines get the alt tag too, without a class or a level.
+    for alt, main in pairs((GuildOS.db and GuildOS.db.altLinks) or {}) do
+        if type(alt) == "string" and not cache[alt] then cache[alt] = { fullKey = alt } end
+        if type(main) == "string" and not cache[main] then cache[main] = { fullKey = main } end
+    end
     self._cache = cache
+    self._authors = {}   -- a chat author's key, worked out once a refresh
+end
+
+-- The settings that shape a prefix, as one number, and the marks and links it read (`epoch`, bumped when the
+-- officers' nicknames or the alt links change): a sender's prefix is kept until one of them changes.
+ChatTweaks.epoch = 0
+local function cfgSig(cfg)
+    return (cfg.classIcon and 1 or 0) + (cfg.level and 2 or 0) + (cfg.altTag and 4 or 0) + (cfg.altShort and 8 or 0)
+        + (cfg.nick ~= false and 16 or 0) + 32 * ChatTweaks.epoch
+end
+
+-- A nickname or an alt link changed: every sender's prefix is built again at its next line.
+function ChatTweaks:Invalidate()
+    self.epoch = (self.epoch or 0) + 1
+end
+ChatTweaks._CfgSig = cfgSig
+
+-- The prefix of a sender in the cache, built once a roster refresh and settings (`sig`), never per line.
+function ChatTweaks:_PrefixFor(cached, cfg, sig)
+    if cached.sig == sig and cached.prefix then return cached.prefix end
+    local info = self._info or {}
+    self._info = info
+    info.classFile, info.level = cached.classFile, cached.level
+    info.altTag = (GuildOS.GetAltTag and cached.fullKey) and GuildOS:GetAltTag(cached.fullKey) or nil
+    info.shortTag = (cfg.altShort and GuildOS.AltRoster and cached.fullKey) and GuildOS.AltRoster:ShortTag(cached.fullKey) or nil
+    info.nick = (cfg.nick ~= false and GuildOS.MemberMarks and cached.fullKey) and GuildOS.MemberMarks:Nick(cached.fullKey) or nil
+    local prefix = self:_BuildPrefix(info, cfg)
+    cached.prefix, cached.sig = prefix, sig
+    return prefix
 end
 
 ----------------------------------------------------------------------
@@ -117,17 +154,17 @@ function ChatTweaks:_MakeFilter()
         local only = EVENT_SETTING[event]
         if only and not cfg[only] then return false end
         if GuildOS.Compat.IsSecret and GuildOS.Compat.IsSecret(msg, author) then return false end   -- chat in lockdown
-        local key = ChatTweaks.KeyOf(author)
+        -- No table a line (the chat filter runs for every one): the author's key and the sender's prefix are cached.
+        local authors = ChatTweaks._authors
+        if not authors then authors = {}; ChatTweaks._authors = authors end
+        local key = author and authors[author]
+        if key == nil and type(author) == "string" then
+            key = ChatTweaks.KeyOf(author) or false
+            authors[author] = key
+        end
         local cached = key and ChatTweaks._cache[key]
         if not cached then return false end
-        local info = {
-            classFile = cached.classFile,
-            level     = cached.level,
-            altTag    = (GuildOS.GetAltTag and cached.fullKey) and GuildOS:GetAltTag(cached.fullKey) or nil,
-            shortTag  = (cfg.altShort and GuildOS.AltRoster and cached.fullKey) and GuildOS.AltRoster:ShortTag(cached.fullKey) or nil,
-            nick      = (cfg.nick ~= false and GuildOS.MemberMarks and cached.fullKey) and GuildOS.MemberMarks:Nick(cached.fullKey) or nil,
-        }
-        local prefix = ChatTweaks:_BuildPrefix(info, cfg)
+        local prefix = ChatTweaks:_PrefixFor(cached, cfg, cfgSig(cfg))
         if prefix == "" then return false end
         return false, prefix .. " " .. msg, author, ...
     end

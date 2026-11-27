@@ -1013,7 +1013,13 @@ function PopulateDetail(frame, data)
                 lines[#lines + 1] = "|cffFFD100" .. string.format(L["Permanent note (%s): %s"], GuildOS:SanitizeUserText(pnote.author or "?", 40),
                     GuildOS:SanitizeUserText(pnote.text, 300)) .. "|r"
             end
-            for i = #stints, 1, -1 do lines[#lines + 1] = MH:StintLine(stints[i]) end
+            for i = #stints, 1, -1 do
+                local st = stints[i]
+                -- Who invited them, when the game's guild event log said so (Modules/GuildEventLog.lua).
+                local inv = type(st.inv) == "string" and st.inv ~= ""
+                    and (" · " .. string.format(L["Invited by %s"], GuildOS:SanitizeUserText(st.inv, 48))) or ""
+                lines[#lines + 1] = MH:StintLine(st) .. inv
+            end
             for i = #ranks, math.max(1, #ranks - 4), -1 do
                 local rk = ranks[i]
                 local line = string.format(L["%s: rank %s"], GuildOS:DateText(rk.at, "/%Y"), rk.to)
