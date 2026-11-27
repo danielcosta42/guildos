@@ -673,6 +673,7 @@ function GuildOS:BuildLootAccounts(panel)
             y = y + HEAD_ABOVE
             local bkTitle = UI:CreateSectionTitle(content, L["Points for bank donations"])
             bkTitle:SetPoint("TOPLEFT", 0, -y)
+            if GuildOS.UI.RegisterTourAnchor then GuildOS.UI:RegisterTourAnchor("points.bank", bkTitle) end   -- the tour (UI/Tour.lua)
             y = y + 26 + HINT_H + 2
             local bkRate = reasonBox(50, true, 0, L["Per gold"])
             bkRate:SetText(bank.rate > 0 and tostring(bank.rate) or "")

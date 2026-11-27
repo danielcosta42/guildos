@@ -1025,7 +1025,7 @@ PAGES.rules = function(F, isOfficer)
         local B = GuildOS.GuildBank
         F:Section(L["Guild bank tax"])
         if GuildOS.Compat.IsGuildLeader() then
-            F:Field(L["Tax on each withdrawal (%):"], { w = 50, max = 2, numeric = true,
+            local taxBox = F:Field(L["Tax on each withdrawal (%):"], { w = 50, max = 2, numeric = true,
                 get = function() return B:TaxRate() > 0 and B:TaxRate() or "" end,
                 save = function(box)
                     if not B:SetTax(tonumber(box:GetText()) or 0) then
@@ -1033,6 +1033,7 @@ PAGES.rules = function(F, isOfficer)
                     end
                     box:SetText(B:TaxRate() > 0 and tostring(B:TaxRate()) or "")
                 end })
+            if UI.RegisterTourAnchor then UI:RegisterTourAnchor("settings.bankTax", taxBox) end   -- the tour (UI/Tour.lua)
         else
             F:Value(L["Tax on each withdrawal (%):"], function()
                 return B:TaxRate() > 0 and B:TaxRate() or L["Off"]

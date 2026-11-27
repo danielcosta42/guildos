@@ -463,7 +463,7 @@ O.TRACKS = {
             step{ id = "cleanup", ch = "rlb", room = "workshop", entry = "cleanup", anchor = { "bank.cleanup", "entry.workshop.cleanup" },
                 title = L["Bank cleanup"],
                 body = L["Items nobody asked for, by tab; the vendor window sells only what came out of the bank."] },
-            step{ id = "points", ch = "rlb", room = "workshop", entry = "ledger", anchor = { "bank.points", "entry.workshop.ledger" },
+            step{ id = "points", ch = "rlb", room = "loot", entry = "accounts", anchor = { "points.bank", "entry.loot.accounts" },
                 cond = function() return GuildOS.Points ~= nil end,
                 title = L["Points for donations"],
                 body = L["Deposits can earn points under a named reason and a weekly cap, granted once by one officer."] },
@@ -480,7 +480,7 @@ O.TRACKS = {
             step{ id = "welcome", ch = "gm", room = "officers", entry = "recruiting", anchor = { "recruit.welcome", "side.recruiting" },
                 title = L["The shared welcome"],
                 body = L["Set the guild's own welcome messages: every officer's client uses them, one at random."] },
-            step{ id = "tax", ch = "gm", room = "workshop", entry = "ledger", anchor = { "bank.tax", "entry.workshop.ledger" },
+            step{ id = "tax", ch = "gm", room = "settings", entry = "rules", anchor = { "settings.bankTax", "entry.settings.rules" },
                 title = L["Bank tax"],
                 body = L["A share of each withdrawal the member owes until they deposit gold. Off by default; the member is told gently."] },
             step{ id = "site", ch = "gm", room = "settings", entry = "web", anchor = { "web.link", "entry.settings.web" },
@@ -841,7 +841,7 @@ function O:Checklist(kind, role)
             { room = "settings", entry = "rules", anchor = { "settings.officerRanks", "entry.settings.rules" } })
         if GuildOS.GuildBank and GuildOS.GuildBank.SetTax then
             out[#out + 1] = item("tax", L["Decide on the bank tax"], L["Guild Master: on, or deliberately off"],
-                { room = "workshop", entry = "ledger", anchor = { "bank.tax", "entry.workshop.ledger" } })
+                { room = "settings", entry = "rules", anchor = { "settings.bankTax", "entry.settings.rules" } })
         end
     end
     out[#out + 1] = item("ad", L["Write the recruitment ad"], L["Done when the ad has text"],
