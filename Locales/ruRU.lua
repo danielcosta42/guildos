@@ -5151,3 +5151,6 @@ L["Opens Blizzard's own guild panel."] = "Открывает собственн�
 L["Show guildmates on my map"] = "Показывать согильдийцев на моей карте"
 L["Off: no guildmate on your world map or minimap, and Guild OS asks nobody for positions. Campfires stay."] = "Выкл.: никаких согильдийцев на карте мира и миникарте, и Guild OS ни у кого не запрашивает позицию. Костры остаются."
 L["Ebony wood and darker parchment cards, with the same gold."] = "Эбеновое дерево и более тёмные карточки пергамента, с тем же золотом."
+L["Light or dark?"] = "Светлый или тёмный?"
+L["Guild OS comes in wood and parchment, or in dark mode: ebony wood and dark parchment, easier on the eyes at night. Change it any time in Settings › Interface."] = "Guild OS бывает в дереве и пергаменте или в тёмном режиме: эбеновое дерево и тёмный пергамент, бережнее для глаз ночью. Меняется в любой момент в Настройки › Интерфейс."
+L["Reload now"] = "Перезагрузить сейчас"

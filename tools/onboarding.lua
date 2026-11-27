@@ -198,8 +198,13 @@ for i = 1, 14 do lines[i] = "line " .. i end
 GuildOS.RELEASE_NOTES = { version = "2.0.1", lines = lines }
 check(O:Pending() and O:LoginKind() == "whatsnew", "a new release opens What's new at login")
 local nc = O:Cards("whatsnew", "member", "forever")
-check(#nc == 4 and nc[1].notes and nc[1].title:find("2.0.1", 1, true), "its notes alone, four cards at most")
-check(nc[4].body:find("2 more", 1, true) ~= nil, "the lines left over are counted on the last card")
+check(#nc == 5 and nc[1].id == "look" and nc[2].notes and nc[2].title:find("2.0.1", 1, true),
+  "the look card first (no look chosen yet), then its notes, four cards at most")
+check(nc[5].body:find("2 more", 1, true) ~= nil, "the lines left over are counted on the last card")
+check(O:IsNotesOnly(nc), "the look card leading the notes: still a release's notes (Done, no tour)")
+check(not O:IsNotesOnly({ O.LookCard(), { id = "salao" } }), "the look card leading the big cards: not notes")
+O:LookSeen()
+check(#O:Cards("whatsnew", "member", "forever") == 4, "the look chosen: the notes alone")
 for _ = 1, 3 do O:Later() end
 check(O:LoginKind() == nil and O:Dot(), "Later x3 on a release: the dot")
 O:Never()
@@ -209,20 +214,21 @@ GuildOS.RELEASE_NOTES = { version = "2.1.0", lines = { "new" } }
 check(O:Pending() and O:LoginKind() == "whatsnew" and not O:Dot(), "the next release opens it again, Later starts over")
 GuildOSDB = { _onboard = { feature = "2.0" } }
 GuildOS.RELEASE_NOTES = nil
-check(#O:Cards("whatsnew", "member", "forever") == 6, "no notes in this build: the help still shows the big cards")
+check(#O:Cards("whatsnew", "member", "forever") == 7, "no notes in this build: the help still shows the big cards")
 GuildOSDB = {}
 GuildOS.RELEASE_NOTES = { version = "2.1.0", lines = { "new" } }
-check(#O:Cards("whatsnew", "member", "forever") == 7, "from 1.x straight to 2.1.0: the big cards, then the notes")
+check(#O:Cards("whatsnew", "member", "forever") == 8, "from 1.x straight to 2.1.0: the big cards, then the notes")
 GuildOS.VERSION, GuildOS.RELEASE_NOTES = oldVersion, nil
 GuildOSDB = {}
 
 -- ── 6. The cards, by rank and client ────────────────────────────────────
 local function cardIds(kind, r, c) return ids(O:Cards(kind, r, c)) end
-check(cardIds("whatsnew", "member", "forever") == "salao,search,members,raids,map,light", "a member on Forever: six cards, the map")
-check(cardIds("whatsnew", "officer", "retail") == "salao,search,officers,raids,bank,light", "an officer on Retail: the Officers' Room, the bank")
-check(cardIds("whatsnew", "gm", "anniversary") == "salao,search,officers,raids,bank,gm", "the Guild Master's card, six at most")
-check(cardIds("welcome") == "welcome,open,roles,privacy", "the welcome: the old wizard's four useful steps, no style step")
-check(O:Cards("welcome", "member", "retail")[4].body:find("attunements", 1, true) == nil, "Retail's privacy card names no attunements")
+check(cardIds("whatsnew", "member", "forever") == "look,salao,search,members,raids,map,light", "a member on Forever: the look first, six cards, the map")
+check(cardIds("whatsnew", "officer", "retail") == "look,salao,search,officers,raids,bank,light", "an officer on Retail: the Officers' Room, the bank")
+check(cardIds("whatsnew", "gm", "anniversary") == "look,salao,search,officers,raids,bank,gm", "the Guild Master's card, six at most after the look")
+check(cardIds("welcome") == "welcome,look,open,roles,privacy", "the welcome: light or dark second, then the old wizard's steps")
+check(O:Cards("welcome", "member", "retail")[2].extra == "darkmode", "the look card carries the dark mode switch")
+check(O:Cards("welcome", "member", "retail")[5].body:find("attunements", 1, true) == nil, "Retail's privacy card names no attunements")
 
 -- ── 7. The login guards ────────────────────────────────────────────────
 check(O:Clear(), "out in the world: clear")

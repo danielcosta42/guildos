@@ -362,8 +362,9 @@ function GuildMap:SetSharing(on)
     if self.uiRefresh then self.uiRefresh() end
 end
 
--- The guildmates-in-your-zone dots on the minimap (#271): on unless turned off.
-function GuildMap:IsMinimapDots() return prefs().minimapDots ~= false end
+-- The guildmates-in-your-zone dots on the minimap (#271): off unless turned on (2.1.1: guildmates belong on the
+-- world map; the minimap stays the game's). Settings › Interface turns them on.
+function GuildMap:IsMinimapDots() return prefs().minimapDots == true end
 
 function GuildMap:SetMinimapDots(on)
     prefs().minimapDots = on and true or false

@@ -185,7 +185,9 @@ dofile(ADDON .. "/UI/GuildMap.lua")
 GuildOS.db = {}
 
 -- ── 1. The switch ───────────────────────────────────────────────────────
-check(GM:IsMinimapDots() == true, "the dots are on by default, as they always were")
+check(GM:IsMinimapDots() == false, "the dots are off by default: guildmates belong on the world map (2.1.1)")
+GM:SetMinimapDots(true)
+check(GM:IsMinimapDots() == true and GuildOS.db.guildMapPrefs.minimapDots == true, "Settings turns them on, and it is kept")
 local redrawn = 0
 GM.uiRefresh = function() redrawn = redrawn + 1 end
 GM:SetMinimapDots(false)
@@ -194,7 +196,8 @@ check(redrawn == 1, "and the minimap redraws at once, no /reload")
 GM:SetMinimapDots(true)
 check(GM:IsMinimapDots() == true and redrawn == 2, "and back on")
 GuildOS.db = {}
-check(GM:IsMinimapDots() == true, "a character that never chose sees them")
+check(GM:IsMinimapDots() == false, "a character that never chose does not see them (2.1.1)")
+GM:SetMinimapDots(true)   -- the rest of this file draws dots: turned on, as Settings does
 
 -- ── 2. The minimap dot at the real bearing ──────────────────────────────
 local driver
