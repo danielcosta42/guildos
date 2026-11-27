@@ -93,6 +93,26 @@ function GuildOS:GetTrueRoster()
     return AltRoster:BuildTrueRoster(roster)
 end
 
+-- GetTrueRoster's two counts alone (unique players, characters), with no table a member: the roster's tiles
+-- read them at every refresh (memory audit, memoria.md).
+local countSeen = {}
+function GuildOS:TrueRosterCounts()
+    local links = (GuildOS.db and GuildOS.db.altLinks) or {}
+    for k in pairs(countSeen) do countSeen[k] = nil end
+    local unique, total = 0, 0
+    for i = 1, GetNumGuildMembers() or 0 do
+        local full = GetGuildRosterInfo(i)
+        if full then
+            local short = full:match("^([^-]+)") or full
+            local key = GuildOS:GetPlayerKey(short, full:match("-(.+)$") or GetRealmName())
+            local main = links[key] or key
+            total = total + 1
+            if not countSeen[main] then countSeen[main], unique = true, unique + 1 end
+        end
+    end
+    return unique, total
+end
+
 ----------------------------------------------------------------------
 -- Self-tests
 ----------------------------------------------------------------------

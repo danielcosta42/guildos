@@ -40,6 +40,7 @@ local GLYPH        = 26
 local WALL_H       = 30
 local REFRESH_S    = 15
 local CHAT_LINES   = 40         -- the Guild chat card's lines at most (pooled)
+local OFFICER_GREEN = { r = 0.25, g = 0.75, b = 0.25 }   -- an Officers channel line's body
 local CHAT_MIN     = 180        -- its least height beside the right column
 local CHAT_STACKED = 260        -- its height in one column
 local CHAT_AV      = 18
@@ -173,7 +174,12 @@ end
 -- addon's log), and for an officer the Officers channel where the server keeps it, each of those marked; oldest
 -- first, so the newest is at the bottom. { name, class, ts, text, guild (an ally's line), officer }. Nil in a chat
 -- lockdown, when nothing of the server's can be read (the card keeps what it shows).
-function Salao:ChatLines(max)
+local function byChatTime(a, b)
+    if a.ts ~= b.ts then return a.ts < b.ts end
+    return a.at < b.at
+end
+-- `pool`: the caller's tables, filled again (the card draws at every line of /g; memoria.md).
+function Salao:ChatLines(max, pool)
     local GC = GuildOS.GuildChat
     if not GC then return {} end
     if GC.Locked and GC:Locked() then return nil end
@@ -181,22 +187,24 @@ function Salao:ChatLines(max)
     local function add(list, officer)
         for _, e in ipairs(list or {}) do
             if type(e) == "table" and e.m then
-                lines[#lines + 1] = { name = e.n, class = e.c, ts = tonumber(e.t) or 0, text = tostring(e.m), guild = e.g,
-                                      officer = officer or nil, at = #lines }
+                local n = #lines
+                local l = pool and pool[n + 1] or {}
+                if pool then pool[n + 1] = l end
+                l.name, l.class, l.ts, l.text, l.guild = e.n, e.c, tonumber(e.t) or 0, tostring(e.m), e.g
+                l.officer, l.at = officer or nil, n
+                lines[n + 1] = l
             end
         end
     end
-    add((GC:Entries(nil)))
+    max = max or CHAT_LINES
+    -- The newest `max` of each: nothing older can be drawn (the server's history holds 200).
+    add((GC:Entries(nil, max)))
     if GuildOS:IsOfficer() and GC.Streams then
         for _, st in ipairs(GC:Streams() or {}) do
-            if type(st) == "table" and st.kind == "officer" then add((GC:Entries(st)), true) end
+            if type(st) == "table" and st.kind == "officer" then add((GC:Entries(st, max)), true) end
         end
     end
-    table.sort(lines, function(a, b)
-        if a.ts ~= b.ts then return a.ts < b.ts end
-        return a.at < b.at
-    end)
-    max = max or CHAT_LINES
+    table.sort(lines, byChatTime)
     if #lines > max then
         local cut = {}
         for i = #lines - max + 1, #lines do cut[#cut + 1] = lines[i] end
@@ -214,10 +222,14 @@ function Salao:Countdown()
     local client = GuildOS.Client or {}
     if client.isRetail or client.isAnniversary then return nil end
     local R = GuildOS.Readiness
-    if not (R and R.Countdown and R.GetReport) then return nil end
+    if not (R and R.Countdown and (R.LevelRows or R.GetReport)) then return nil end
     local t = now()
     if self._cdAt and t - self._cdAt < COUNTDOWN_S then return self._cd end
-    local ok, cd = GuildOS:SafeCall(function() return R:Countdown(R:GetReport(), t) end)
+    -- The levels alone (Readiness:LevelRows): the countdown reads nothing else of the report.
+    self._cdRows = self._cdRows or {}
+    local ok, cd = GuildOS:SafeCall(function()
+        return R:Countdown(R.LevelRows and R:LevelRows(self._cdRows) or R:GetReport(), t)
+    end)
     self._cd, self._cdAt = ok and cd or nil, t
     return self._cd
 end
@@ -661,8 +673,18 @@ function GuildOS:CreateSalaoPanel(panel)
         end
     end)
 
+    -- Drawn again only when something changed: a line (GuildChat's version), the card's size or the day (the
+    -- times say "Mon 21:04" past midnight). The 15 s refresh redrew 40 lines and read the server's history.
+    local chatSig, chatPool = {}, {}
     local function fillChat(width, height)
-        local lines = Salao:ChatLines(CHAT_LINES)
+        local GC = GuildOS.GuildChat
+        local day = date and date("%Y%m%d", now()) or ""
+        local version = GC and GC.version
+        if version and chatSig.version == version and chatSig.w == width and chatSig.h == height
+            and chatSig.day == day and not chat.follow then
+            return
+        end
+        local lines = Salao:ChatLines(CHAT_LINES, chatPool)
         if not lines then return end       -- a chat lockdown: what is drawn stays
         local w = math.max(120, width - 2 * CARD_PAD - 14)
         ccontent:SetWidth(w)
@@ -687,7 +709,7 @@ function GuildOS:CreateSalaoPanel(panel)
             r.time:SetText(l.ts > 0 and GuildOS:LocalDate((date and date("%Y%m%d", l.ts) == today) and "%H:%M" or "%a %H:%M", l.ts) or "")
             r.body:SetWidth(w - CHAT_AV - 8)
             r.body:SetText(l.text)
-            local c = l.officer and { r = 0.25, g = 0.75, b = 0.25 } or C.text
+            local c = l.officer and OFFICER_GREEN or C.text
             r.body:SetTextColor(c.r, c.g, c.b)
             local h = math.max(CHAT_AV + 2, 15 + math.ceil(r.body:GetStringHeight() or 12))
             r:SetHeight(h)
@@ -703,6 +725,7 @@ function GuildOS:CreateSalaoPanel(panel)
         end
         ccontent:SetHeight(math.max(1, y))
         chat.shownLines = lines
+        chatSig.version, chatSig.w, chatSig.h, chatSig.day = version, width, height, day
         -- A frame later: the scroll range follows the new height only after it lands.
         if follow then
             local view = math.max(1, (height or 0) - (CARD_PAD + TITLE_H) - (CARD_PAD + CHAT_FIELD + 8))
@@ -714,11 +737,21 @@ function GuildOS:CreateSalaoPanel(panel)
     end
     -- Live: a line of /g (GuildChat's own CHAT_MSG_GUILD) repaints the card, coalesced, while it shows.
     if GuildOS.GuildChat and GuildOS.GuildChat.OnRefresh then
+        -- At the size the last layout gave the card (the refresh's), so a line and the refresh agree on it; one
+        -- function for every line, not a closure each.
+        -- 0.3 s after the first of a burst: one line of /g notifies twice (CHAT_MSG_GUILD, then the server's
+        -- CLUB_MESSAGE_ADDED), and each drawing reads the server's history again.
+        local pending = false
+        local function repaintChat()
+            pending = false
+            if chat:IsVisible() then
+                GuildOS:SafeCall(fillChat, chatSig.w or UI:LaidWidth(chat), chatSig.h or chat:GetHeight())
+            end
+        end
         GuildOS.GuildChat:OnRefresh(function()
-            if not chat:IsVisible() then return end
-            GuildOS:Coalesce("salaoChat", 0.3, function()
-                if chat:IsVisible() then GuildOS:SafeCall(fillChat, UI:LaidWidth(chat), chat:GetHeight()) end
-            end)
+            if pending or not chat:IsVisible() then return end
+            pending = true
+            GuildOS.Compat.After(0.3, repaintChat)
         end)
     end
 

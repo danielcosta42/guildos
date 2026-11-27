@@ -249,7 +249,7 @@ end
 local roster = src("UI/RosterFrame.lua")
 check(roster:find('{ key = "mplus",', 1, true) and roster:find('offered = function() return GuildOS.MythicPlus ~= nil end', 1, true),
   "the roster's M+ column is offered only where the module is (retail)")
-check(roster:find("mplus = addonData.mplus,", 1, true) and roster:find("vault = addonData.vault,", 1, true),
+check(roster:find("entry.mplus = addonData.mplus", 1, true) and roster:find("entry.vault = addonData.vault", 1, true),
   "and a roster row carries them to the member sheet")
 GuildOS = {}
 dofile(ADDON .. "/Modules/RosterColumns.lua")

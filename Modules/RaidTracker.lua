@@ -240,6 +240,12 @@ function RaidTracker:LockoutKey(session)
     return difficulty and (key .. "_d" .. difficulty) or key
 end
 
+-- A roster change's snapshot (the group events, coalesced): only while a session is tracked.
+RaidTracker.ROSTER_SNAP_GAP = 30
+local function rosterSnapshot()
+    if RaidTracker.trackingActive then RaidTracker:TakeSnapshot("roster_change") end
+end
+
 function RaidTracker:Initialize()
     if not GuildOS.db.raidTracker then
         GuildOS.db.raidTracker = { sessions = {}, attendance = {}, currentGroupTag = "" }
@@ -269,8 +275,11 @@ function RaidTracker:Initialize()
         if event == "ZONE_CHANGED_NEW_AREA" then
             RaidTracker:CheckZone()
         elseif event == "RAID_ROSTER_UPDATE" or event == "GROUP_ROSTER_UPDATE" then
+            -- A raid's group fires these many times a minute (a role, an online flag, a subgroup); each snapshot
+            -- is a table per raider kept in the session until it ends. At most one every ROSTER_SNAP_GAP
+            -- seconds, the last change never lost (Coalesce; memory audit, memoria.md).
             if RaidTracker.trackingActive then
-                RaidTracker:TakeSnapshot("roster_change")
+                GuildOS:Coalesce("raidRosterSnapshot", RaidTracker.ROSTER_SNAP_GAP, rosterSnapshot)
             end
         elseif event == "ENCOUNTER_START" then
             local encounterID, encounterName = ...

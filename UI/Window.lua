@@ -1415,13 +1415,17 @@ local function createWindow()
     local function shownTitle()
         if f:IsShown() then f:InvalidateOfficerCounts(); f:RefreshTitle() end
     end
+    -- A raid's group events come in bursts many times a minute: the tabs are checked again at most every
+    -- TABS_GAP seconds, the last one never lost (memory audit, memoria.md).
+    local TABS_GAP = 2
+    local function recheckTabs() f:UpdateTabVisibility() end
     f:SetScript("OnEvent", function(self, event)
         if event == "GUILD_ROSTER_UPDATE" then
             GuildOS:Coalesce("windowTitle", GuildOS.ROSTER_GAP, shownTitle)
         elseif event == "PLAYER_GUILD_UPDATE" then
             if self:IsShown() then GuildOS:SafeCall(UI.DrawTabard, UI, crest) end
         else
-            self:UpdateTabVisibility()
+            GuildOS:Coalesce("windowTabs", TABS_GAP, recheckTabs)
         end
     end)
 

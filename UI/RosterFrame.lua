@@ -118,11 +118,12 @@ local function ShowPublicNote(data)
 end
 
 -- Returns -1 if a < b, 0 if equal, 1 if a > b (semver major.minor.patch)
+local function versionParts(v)
+    local maj, min, pat = strsplit(".", v or "0")
+    return tonumber(maj) or 0, tonumber(min) or 0, tonumber(pat) or 0
+end
 local function CompareVersions(a, b)
-    local function parts(v)
-        local maj, min, pat = strsplit(".", v or "0")
-        return tonumber(maj) or 0, tonumber(min) or 0, tonumber(pat) or 0
-    end
+    local parts = versionParts   -- made once: the roster compares every member's version each refresh
     local a1, a2, a3 = parts(a)
     local b1, b2, b3 = parts(b)
     if a1 ~= b1 then return a1 < b1 and -1 or 1 end
@@ -177,9 +178,13 @@ end
 
 -- The guild roster once: byKey[key] = { status, version }, count.cur/old/none, latest, and `oldest` (the oldest
 -- version anyone runs, for the legend's tooltip).
+-- One scan's tables, kept and filled again (memory audit, memoria.md: two tables a member each roster refresh).
+-- Its readers hold it only until the next refresh.
+local scanRows, scanStamp = {}, 0
+local theScan = { byKey = {}, count = { cur = 0, old = 0, none = 0 } }
 function Marks.Scan()
     local members = GuildOS.db.members or {}
-    local rows = {}
+    scanStamp = scanStamp + 1
     local latest = Marks.Newer(GuildOS.VERSION, GuildOS.CommSystem and GuildOS.CommSystem.newestSeen)
     for i = 1, GetNumGuildMembers() or 0 do
         local name = GetGuildRosterInfo(i)
@@ -187,17 +192,27 @@ function Marks.Scan()
             local short = name:match("^([^-]+)") or name
             local key = GuildOS:GetPlayerKey(short, name:match("-(.+)$") or GetRealmName())
             local d = members[key]
-            local r = { installed = (d and d.lastUpdate and d.lastUpdate > 0) and true or false, version = Marks.VersionOf(short, d) }
-            rows[key] = r
+            local r = scanRows[key]
+            if not r then r = {}; scanRows[key] = r end
+            r.installed = (d and d.lastUpdate and d.lastUpdate > 0) and true or false
+            r.version, r.stamp = Marks.VersionOf(short, d), scanStamp
             if r.installed then latest = Marks.Newer(latest, r.version) end
         end
     end
-    local scan = { byKey = {}, latest = latest, count = { cur = 0, old = 0, none = 0 } }
-    for key, r in pairs(rows) do
-        local s = Marks.Status(r.installed, r.version, latest)
-        scan.byKey[key] = { status = s, version = r.version }
-        scan.count[s] = scan.count[s] + 1
-        if s == "old" and (not scan.oldest or CompareVersions(r.version, scan.oldest) < 0) then scan.oldest = r.version end
+    local scan, byKey = theScan, theScan.byKey
+    scan.latest, scan.oldest = latest, nil
+    scan.count.cur, scan.count.old, scan.count.none = 0, 0, 0
+    for key, r in pairs(scanRows) do
+        if r.stamp ~= scanStamp then
+            scanRows[key], byKey[key] = nil, nil
+        else
+            local s = Marks.Status(r.installed, r.version, latest)
+            local b = byKey[key]
+            if not b then b = {}; byKey[key] = b end
+            b.status, b.version = s, r.version
+            scan.count[s] = scan.count[s] + 1
+            if s == "old" and (not scan.oldest or CompareVersions(r.version, scan.oldest) < 0) then scan.oldest = r.version end
+        end
     end
     return scan
 end
@@ -1554,6 +1569,13 @@ function GuildOS:CreateRosterPanel(parent, host)
     host.searchFilter = ""
 
     function host:RefreshRoster()
+        -- Another tab on screen, or the window closed: nothing drawn now (a whole-roster pass and a table a member,
+        -- on every roster update while any tab of the window was open; memoria.md). The panel draws it when shown.
+        if parent.IsVisible and not parent:IsVisible() then
+            self.rosterDirty = true
+            return
+        end
+        self.rosterDirty = nil
         -- What this reader may see changes under an open window (the loot system, a feature, the
         -- officer rank): the table is laid out again when it would choose other columns now (#178).
         if self.colSig and select(2, ChosenColumns()) ~= self.colSig then
@@ -1568,6 +1590,8 @@ function GuildOS:CreateRosterPanel(parent, host)
         self:UpdateStats()
         self:LayoutLegend()
     end
+    -- What arrived while the panel was not on screen, drawn when it is.
+    parent:HookScript("OnShow", function() if host.rosterDirty then host:RefreshRoster() end end)
 
     -- The selected row is the member whose sheet a click opened (#377), and the mark goes when the
     -- sheet closes. Hooked once, on the sheet UI/MemberDetail.lua builds on its first show.
@@ -1581,10 +1605,15 @@ function GuildOS:CreateRosterPanel(parent, host)
         self:UpdateRows()
     end
 
+    -- One entry a member, kept between refreshes and filled again (memory audit, memoria.md): about 2.7 KB a
+    -- member each refresh before. By key, so an entry something still holds (the sheet) stays that member's.
+    local entryPool, entrySeen, entryStamp = {}, {}, 0
+    local NO_DATA, NO_STATUS = {}, { status = "none" }
     function host:BuildMemberList()
         -- Reuse the existing table to avoid allocating a new one on every refresh.
         wipe(self.sortedMembers)
         local members = self.sortedMembers
+        entryStamp = entryStamp + 1
         local showOffline = GuildOS.db.settings.showOffline ~= false
         local filter = self.searchFilter and strlower(strtrim(self.searchFilter)) or ""
         local levelMatch = (filter ~= "" and GuildOS.LevelQuery) and GuildOS.LevelQuery:Parse(filter) or nil
@@ -1607,7 +1636,7 @@ function GuildOS:CreateRosterPanel(parent, host)
 
         -- The hover card's index (issue #427): every member, shown or not, so the card names an alt
         -- in its class colour without walking the roster on each hover.
-        local tipIndex = GuildOS.RosterCard and GuildOS.RosterCard.NewIndex(GuildOS.db.altLinks)
+        local tipIndex = GuildOS.RosterCard and GuildOS.RosterCard.NewIndex(GuildOS.db.altLinks, self.tipIndex)
         self.tipIndex = tipIndex
 
         -- From the alliance: the directory's rows instead of the guild's, read-only (AlliedEntries). Only the
@@ -1636,8 +1665,9 @@ function GuildOS:CreateRosterPanel(parent, host)
                 local displayName = name:match("^([^-]+)") or name
                 local realm = name:match("-(.+)$") or GetRealmName()
                 local key = GuildOS:GetPlayerKey(displayName, realm)
+                if key then entrySeen[key] = entryStamp end
                 if tipIndex then GuildOS.RosterCard.IndexRow(tipIndex, key, displayName, classFile, isOnline) end
-                local gos = scan.byKey[key] or { status = "none" }
+                local gos = scan.byKey[key] or NO_STATUS
 
                 -- Apply filters: all of them together.
                 local passFilter = true
@@ -1670,56 +1700,49 @@ function GuildOS:CreateRosterPanel(parent, host)
 
                 if passFilter then
                     -- Merge with stored addon data
-                    local addonData = GuildOS.db.members[key] or {}
+                    local addonData = GuildOS.db.members[key] or NO_DATA
 
-                    local entry = {
-                        index = i,
-                        key = key,
-                        name = displayName,
-                        fullName = name,
-                        realm = realm,
-                        rank = rankName,
-                        rankIndex = rankIndex,
-                        level = level or 0,
-                        class = classFile or "",
-                        classDisplay = classLoc or "",
-                        zone = zone or "",
-                        note = note or "",
-                        officerNote = officerNote or "",
-                        isOnline = isOnline,
-                        status = status or "",
-                        -- Addon data
-                        avgIlvl = addonData.avgIlvl or 0,
-                        gear = GuildOS:MemberGear(addonData),
-                        -- On WoW: Forever a member without the addon (or on a version that sends none)
-                        -- still has the professions the guild roster names (issue #31).
-                        professions = addonData.professions
-                            or (GuildOS.Professions and GuildOS.Professions:LegacyList(key)),
-                        attunements = addonData.attunements,
-                        stats = addonData.stats,
-                        mplus = addonData.mplus,   -- retail (issue #187)
-                        vault = addonData.vault,
-                        race = addonData.race or "",
-                        lastUpdate = addonData.lastUpdate or 0,
-                        lastSync = addonData.lastSync or 0,
-                        -- Prefer the live version a member is broadcasting on the mesh
-                        -- (realm-wide, fresher than the last guild sync) over the stored
-                        -- one, so an update shows up before CommSystem re-syncs.
-                        addonVersion = gos.version,
-                        hasAddonData = (addonData.lastUpdate ~= nil and addonData.lastUpdate ~= 0),
-                        -- Guild OS on them and the newest seen in the guild (the marks, the column), and
-                        -- whether they founded the guild (#449).
-                        addonStatus = gos.status,
-                        latest = scan.latest,
-                        founder = founders[key] ~= nil,
-                        matchVia = matchVia,
-                        matchMain = matchVia == "main" and searchLinks[key] and (searchLinks[key]:match("^([^-]+)") or searchLinks[key]) or nil,
-                        cols = {},
-                    }
+                    local entry = key and entryPool[key]
+                    if not entry then
+                        entry = { cols = {} }
+                        if key then entryPool[key] = entry end
+                    end
+                    wipe(entry.cols)
+                    entry.index, entry.key, entry.name, entry.fullName, entry.realm = i, key, displayName, name, realm
+                    entry.rank, entry.rankIndex, entry.level = rankName, rankIndex, level or 0
+                    entry.class, entry.classDisplay, entry.zone = classFile or "", classLoc or "", zone or ""
+                    entry.note, entry.officerNote, entry.isOnline, entry.status = note or "", officerNote or "", isOnline, status or ""
+                    -- Addon data
+                    entry.avgIlvl = addonData.avgIlvl or 0
+                    entry.gear = GuildOS:MemberGear(addonData)
+                    -- On WoW: Forever a member without the addon (or on a version that sends none)
+                    -- still has the professions the guild roster names (issue #31).
+                    entry.professions = addonData.professions
+                        or (GuildOS.Professions and GuildOS.Professions:LegacyList(key))
+                    entry.attunements, entry.stats = addonData.attunements, addonData.stats
+                    entry.mplus = addonData.mplus   -- retail (issue #187)
+                    entry.vault = addonData.vault
+                    entry.race = addonData.race or ""
+                    entry.lastUpdate, entry.lastSync = addonData.lastUpdate or 0, addonData.lastSync or 0
+                    -- Prefer the live version a member is broadcasting on the mesh
+                    -- (realm-wide, fresher than the last guild sync) over the stored
+                    -- one, so an update shows up before CommSystem re-syncs.
+                    entry.addonVersion = gos.version
+                    entry.hasAddonData = (addonData.lastUpdate ~= nil and addonData.lastUpdate ~= 0)
+                    -- Guild OS on them and the newest seen in the guild (the marks, the column), and
+                    -- whether they founded the guild (#449).
+                    entry.addonStatus, entry.latest, entry.founder = gos.status, scan.latest, founders[key] ~= nil
+                    entry.matchVia = matchVia
+                    entry.matchMain = matchVia == "main" and searchLinks[key] and (searchLinks[key]:match("^([^-]+)") or searchLinks[key]) or nil
+                    entry.sortKey = nil
                     for _, col in ipairs(wanted) do entry.cols[col.key] = col.value(entry, ctx) end
                     members[#members + 1] = entry
                 end
             end
+        end
+        -- Who left the roster since: their entries go.
+        for key in pairs(entryPool) do
+            if entrySeen[key] ~= entryStamp then entryPool[key], entrySeen[key] = nil, nil end
         end
 
         -- Sort
@@ -1848,11 +1871,11 @@ function GuildOS:CreateRosterPanel(parent, host)
         local avgAtt = attCount > 0 and math.floor(attSum / attCount + 0.5) or 0
 
         -- True Roster: unique players behind the guild's alt/main links.
-        if self.kpiPlayers and GuildOS.GetTrueRoster then
-            local tr = GuildOS:GetTrueRoster()
-            self.kpiPlayers:SetText(tr.uniqueCount)
+        if self.kpiPlayers and GuildOS.TrueRosterCounts then
+            local unique, chars = GuildOS:TrueRosterCounts()
+            self.kpiPlayers:SetText(unique)
             if self.kpiPlayersSub then
-                self.kpiPlayersSub:SetText(string.format(L["of %d chars"], tr.totalChars))
+                self.kpiPlayersSub:SetText(string.format(L["of %d chars"], chars))
             end
         end
 

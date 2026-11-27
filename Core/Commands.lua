@@ -20,7 +20,7 @@ local L = GuildOS.L
 local HELP_HEADER_COLOR = "|cff00CCFF"   -- section headers
 local HELP_CMD_COLOR    = "|cffFFD700"   -- command verbs (addon gold)
 -- The diagnostics under /gos debug, as the help lists them (audit B22).
-local DEBUG_VERBS = { "selftest", "errors", "perf [reset]", "mem", "probe [chat | channel | invite]", "scan", "mergeraids" }
+local DEBUG_VERBS = { "selftest", "errors", "perf [reset]", "mem [rate]", "probe [chat | channel | invite]", "scan", "mergeraids" }
 
 -- /gos debug mem (memory audit): Guild OS's memory as the client counts it, before and after a full garbage
 -- collection, the frames it made this session (GuildOS.framesMade, Core/Core.lua: the client never frees one, so a
@@ -58,6 +58,41 @@ function GuildOS:PrintMemoryReport()
     GuildOS:Print(string.format(L["Guild databases in the saved variables: %d."], dbs))
     GuildOS:Print(string.format(L["All of them: about %.1f MB in the saved variables (Settings › Data and support lists them)."],
         total / (1024 * 1024)))
+end
+
+-- /gos debug mem rate (memory audit, third pass: memoria.md): how fast Guild OS allocates, as the client counts it,
+-- over RATE_SECONDS without forcing a collection. Read once a second; a reading lower than the last is the
+-- collector's work, so only the rises add up: the rate is a floor (what a collection freed inside a second is
+-- not seen). /gos debug mem forces a collection, which is not what the incremental collector does in play.
+local RATE_SECONDS = 10
+function GuildOS:PrintMemoryRate(seconds)
+    seconds = seconds or RATE_SECONDS
+    local Compat = GuildOS.Compat
+    local first = Compat.AddonMemoryKB("GuildOS")
+    if not first then
+        GuildOS:Print(L["The game does not report addon memory on this client."])
+        return
+    end
+    if self._memRate then
+        GuildOS:Print(L["Already measuring; the result comes in a few seconds."])
+        return
+    end
+    local st = { last = first, grown = 0, n = 0, t0 = GetTime() }
+    self._memRate = st
+    GuildOS:Print(string.format(L["Measuring Guild OS's allocation for %d seconds, without a garbage collection..."], seconds))
+    Compat.NewTicker(1, function()
+        local kb = Compat.AddonMemoryKB("GuildOS")
+        if kb then
+            if kb > st.last then st.grown = st.grown + (kb - st.last) end
+            st.last = kb
+        end
+        st.n = st.n + 1
+        if st.n < seconds then return end
+        self._memRate = nil
+        local rate = st.grown / math.max(1, GetTime() - st.t0)
+        GuildOS:Print(string.format(L["Guild OS allocated about %.1f KB/s (%.1f MB a minute) over %d s; it holds %.1f MB now."],
+            rate, rate * 60 / 1024, seconds, st.last / 1024))
+    end, seconds)
 end
 
 -- /gos debug mem, the compact stores (memoria.md): what each holds, about how many bytes the saved variables
@@ -357,6 +392,8 @@ local function handleCommand(msg)
         GuildOS.Perf:Print()
     elseif msg == "debug mem" then
         GuildOS:PrintMemoryReport()
+    elseif msg == "debug mem rate" then
+        GuildOS:PrintMemoryRate()
     elseif msg == "debug perf reset" then
         GuildOS.Perf:Reset()
         GuildOS:Print(L["Performance counters zeroed."])

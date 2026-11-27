@@ -443,37 +443,47 @@ local function AcquireDot(i)
 end
 
 -- Every guildmate on the player's map, at their bearing and distance.
+-- One dot, for ForEachLive: a function made once, reading the frame's view from these upvalues (memory audit,
+-- memoria.md: a closure ten times a second was garbage of its own).
+local dotsUsed, dotsG, dotsMap, dotsMX, dotsMY, dotsYW, dotsYH, dotsRYd, dotsRPx, dotsFacing = 0
+local function placeDot(p, x, y, alpha)
+    local px, py
+    if x then px, py = dotsG:_PlaceOn(dotsMap, p.mapID, x, y) end
+    if not px then return end
+    local ox, oy, edge, yards = dotsG:_MinimapOffset((px - dotsMX) * dotsYW, (py - dotsMY) * dotsYH, dotsRYd, dotsRPx,
+        dotsFacing)
+    dotsUsed = dotsUsed + 1
+    local d = AcquireDot(dotsUsed)
+    local cc = GuildOS.ClassColors[p.class or ""] or C.textSoft
+    d.disc:SetVertexColor(cc.r, cc.g, cc.b, 1)
+    d.key, d.yards, d.peer = p.key, yards, nil
+    d:ClearAllPoints()
+    d:SetPoint("CENTER", Minimap, "CENTER", ox, oy)
+    d:SetAlpha(alpha * (edge and 0.6 or 1))
+    d:Show()
+end
+
 local function RefreshDots()
-    local used = 0
+    dotsUsed = 0
     local G = GM()
-    local show = G:IsMinimapDots() and not Compat.InstanceState()
+    -- Nobody to draw (no guildmate heard, no group member read): no map reads at all, ten times a second.
+    local show = G:IsMinimapDots() and (next(G.peers) ~= nil or (IsInGroup and IsInGroup()) or next(G.group) ~= nil)
+        and not Compat.InstanceState()
     local myMap = show and Compat.GetBestMapForUnit("player")
     local mx, my
     if myMap then mx, my = Compat.GetPlayerMapPosition(myMap, "player") end
     local yw, yh
     if mx then yw, yh = G:_MapYards(myMap, Compat) end
-    local zoom, indoors, rotate = Compat.MinimapView()
+    local zoom, indoors, rotate
+    if yw then zoom, indoors, rotate = Compat.MinimapView() end
     if yw and zoom then
-        local rYd = G:_MinimapRadius(zoom, indoors)
-        local rPx = (Minimap:GetWidth() or 140) / 2 - DOT_SIZE / 2
-        local facing = rotate and Compat.PlayerFacing() or nil
-        local t = GetTime()
-        G:ForEachLive(t, function(p, x, y, alpha)
-            local px, py
-            if x then px, py = G:_PlaceOn(myMap, p.mapID, x, y) end
-            if not px then return end
-            local ox, oy, edge, yards = G:_MinimapOffset((px - mx) * yw, (py - my) * yh, rYd, rPx, facing)
-            used = used + 1
-            local d = AcquireDot(used)
-            local cc = GuildOS.ClassColors[p.class or ""] or C.textSoft
-            d.disc:SetVertexColor(cc.r, cc.g, cc.b, 1)
-            d.key, d.yards, d.peer = p.key, yards, nil
-            d:ClearAllPoints()
-            d:SetPoint("CENTER", Minimap, "CENTER", ox, oy)
-            d:SetAlpha(alpha * (edge and 0.6 or 1))
-            d:Show()
-        end)
+        dotsG, dotsMap, dotsMX, dotsMY, dotsYW, dotsYH = G, myMap, mx, my, yw, yh
+        dotsRYd = G:_MinimapRadius(zoom, indoors)
+        dotsRPx = (Minimap:GetWidth() or 140) / 2 - DOT_SIZE / 2
+        dotsFacing = rotate and Compat.PlayerFacing() or nil
+        G:ForEachLive(GetTime(), placeDot)
     end
+    local used = dotsUsed
     for i = used + 1, #dots do dots[i]:Hide() end
 end
 

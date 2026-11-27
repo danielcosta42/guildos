@@ -4836,3 +4836,6 @@ L["Members: about %.1f KB (%.0f bytes a row); gear compact on %d rows (%.0f byte
 L["Member history: %d of %d keys, about %.1f KB (%.0f bytes a key)."] = "История участников: ключей %d из %d, около %.1f КБ (%.0f байт на ключ)."
 L["Not shown in: %s"] = "Не показано в: %s"
 L["Skipped, the server is limiting chat: %s"] = "Пропущено, сервер ограничивает чат: %s"
+L["Already measuring; the result comes in a few seconds."] = "Измерение уже идёт; результат будет через несколько секунд."
+L["Measuring Guild OS's allocation for %d seconds, without a garbage collection..."] = "Измеряю выделение памяти Guild OS в течение %d с без сборки мусора..."
+L["Guild OS allocated about %.1f KB/s (%.1f MB a minute) over %d s; it holds %.1f MB now."] = "Guild OS выделял около %.1f КБ/с (%.1f МБ в минуту) за %d с; сейчас занимает %.1f МБ."

@@ -492,10 +492,15 @@ end
 
 -- The player's group, unit by unit: { { unit = "party1", key = "Bob-Realm", class = "MAGE" }, ... }, the player
 -- left out and every unit whose identity is secret skipped. Keys as Compat.GroupRoster builds them.
-function Compat.GroupUnits()
-    local out = {}
+function Compat.GroupUnits(into)
+    -- `into`: a list kept by the caller, filled again with its own entry tables (the guild map reads the group
+    -- twice a second; memoria.md). Without it, a new list.
+    local out, count = into or {}, 0
     local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0
-    if n <= 1 then return out end
+    if n <= 1 then
+        for i = #out, 1, -1 do out[i] = nil end
+        return out
+    end
     local raid = IsInRaid and IsInRaid()
     local surnames = GuildOS.Client.has.surnames
     local me = Compat.PlayerName()
@@ -510,10 +515,16 @@ function Compat.GroupUnits()
             end
             if whole ~= me then
                 local key = GuildOS:GetPlayerKey(whole, realm or GetRealmName())
-                if key then out[#out + 1] = { unit = unit, key = key, class = classFile, name = whole } end
+                if key then
+                    count = count + 1
+                    local e = out[count]
+                    if not e then e = {}; out[count] = e end
+                    e.unit, e.key, e.class, e.name = unit, key, classFile, whole
+                end
             end
         end
     end
+    for i = #out, count + 1, -1 do out[i] = nil end
     return out
 end
 

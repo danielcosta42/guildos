@@ -382,10 +382,10 @@ GuildOS.Birthdays = { TooltipLine = function(_, key) return key == MAIN and "Bir
 check((card("Mem", data)):find("Birthday: 12/03", 1, true), "the birthday line shows when its module gives one")
 GuildOS.Birthdays = nil
 
--- The source: the roster builds the index once per refresh, and the card reads it.
+-- The source: the roster builds the index once per refresh (into the last one, memoria.md), and the card reads it.
 local function src(p) local f = assert(io.open(ADDON .. "/" .. p, "rb")); local s = f:read("*a"); f:close(); return s end
 local roster = src("UI/RosterFrame.lua")
-check(roster:find("GuildOS.RosterCard.NewIndex(GuildOS.db.altLinks)", 1, true)
+check(roster:find("GuildOS.RosterCard.NewIndex(GuildOS.db.altLinks, self.tipIndex)", 1, true)
   and roster:find("RosterCard:AddLines(tip, data, row.host and row.host.tipIndex)", 1, true), "the roster indexes once and the card reads it")
 check(roster:find('key = "joined"', 1, true), "the roster has a Joined column")
 local export = src("Modules/CompanionExport.lua")

@@ -123,3 +123,99 @@ anterior respondia (registrado rodando o `RecipeTracker.lua` anterior sobre o me
 não muda nada; lista no formato antigo vinda da rede é guardada compacta e não é pedida de novo; o broadcast do
 equipamento sai igual; o teto do histórico; a lista de guildas e o aviso do Resumo. `/gos debug mem` mostra o
 tamanho de cada armazenamento compacto, por linha, e quantas linhas ainda estão no formato antigo.
+
+## Lixo por minuto (terceira passagem)
+
+O mantenedor mediu em jogo (WoW: Forever, guilda de 180): 166,7 MB de memória do Guild OS, 36 MB depois de uma
+coleta completa. Uns 130 MB eram lixo: o addon alocava mais depressa do que o coletor incremental do cliente
+limpava, e o contador do cliente inclui o que ainda não foi coletado. A regra desta passagem:
+
+- Um caminho quente (evento frequente, ticker, `OnUpdate`, filtro de chat, gancho de tooltip) não cria tabela nem
+  closure por chamada: reaproveita a sua (`into`/pool por chave), usa uma função feita uma vez e sai cedo quando
+  não há nada a fazer (recurso desligado, tela escondida, ninguém para desenhar).
+- Um evento que vem em rajada (o `GROUP_ROSTER_UPDATE` de uma raide, o `GUILD_ROSTER_UPDATE`) passa pelo
+  `GuildOS:Coalesce`; uma contagem que percorre o roster inteiro tem validade (60 s) em vez de ser refeita a cada
+  evento.
+- Uma lista que só mostra N itens só lê N (o histórico do servidor, o log de 1.100 linhas).
+
+### Medido
+
+`tools/alloc-budget.lua` com `ALLOC_PROFILE=1` sob `lua5.1` (o Lua do jogo), guilda sintética de 180 (35 online),
+1.100 linhas de log em meio ano, 120 membros com equipamento; KB alocados por minuto simulado, antes → depois:
+
+| Cenário | Antes | Depois |
+|---|---|---|
+| Parado na cidade, janela fechada | 597 | 44 |
+| Janela aberta na aba Membros | 5.946 | 344 |
+| Raide de 20, Salão aberto, chat movimentado | 27.122 | 1.449 |
+
+Os maiores, por gatilho (MB/min, antes → depois):
+
+1. **Card do chat do Salão** (`UI/Salao.lua` `fillChat`, a cada linha de /g pelo `CHAT_MSG_GUILD` e de novo pelo
+   `CLUB_MESSAGE_ADDED`): lia 200 linhas do histórico do servidor e copiava tudo duas vezes por linha. 12,1 → 0,54.
+   Agora: só as 40 que o card mostra (`GuildChat:Entries(stream, max)`, `Merge` corta antes), um desenho por rajada
+   (0,3 s depois da primeira), nada se a versão do chat (`GuildChat.version`), o tamanho e o dia não mudaram, e as
+   linhas em tabelas reaproveitadas.
+2. **Contagens do oficial no título da janela** (`UI/Window.lua`, `Agora:OfficerCounts` → `GuildManager:GetInactiveMembers`,
+   `RosterMaint.GroupSeen`): ~250 KB a cada `GROUP_ROSTER_UPDATE`, `GUILD_ROSTER_UPDATE` e a cada 10 s. 6,0 → 0,19.
+   Agora `Agora:RosterCounts` guarda as duas contagens por 60 s (uma linha do log de roster as zera), as linhas de
+   `GetInactiveMembers` são reaproveitadas e as abas só são revistas a cada 2 s numa rajada de grupo.
+3. **A lista de Membros redesenhada sob qualquer aba** (`GuildOS:RefreshRosterUI` → `RosterFrame:BuildMemberList`):
+   ~700 KB por atualização do roster com a janela aberta em qualquer aba. 4,2 → 0 sob outra aba, 0,13 na própria.
+   Agora a lista escondida só marca `rosterDirty` e desenha no `OnShow`; as entradas são uma por membro, por chave,
+   reaproveitadas; `Marks.Scan`, o índice do card (`RosterCard.NewIndex(links, into)`) e os números dos cartões
+   (`GuildOS:TrueRosterCounts`) também.
+4. **Refresh de 15 s do Salão**: a contagem regressiva montava o relatório inteiro de prontidão (decodificando o
+   equipamento de todos) e a Atividade formatava as 1.100 linhas do log. 3,4 → 0,34. Agora `Readiness:LevelRows` (só
+   chave e nível) e a Atividade pula o que é mais velho que a janela antes de formatar.
+5. **PugInspector** (`GROUP_ROSTER_UPDATE`): classificava o grupo inteiro a cada evento mesmo com a janela fechada e
+   a abertura automática desligada. 0,80 → 0. Agora só com a abertura automática, e só quando os membros mudam.
+6. **Mapa da guilda, tick de 1 s** (`Modules/GuildMap.lua`): refazia uma tabela por membro do roster a cada
+   atualização e lia `C_Map.GetMapInfo` (uma tabela nova por chamada) toda vez. 0,35 → 0,01. Agora o roster é
+   preenchido no lugar, e `MapInfo`, a zona de cada mapa e o tamanho em jardas ficam guardados até a próxima troca de
+   zona; o grupo é lido em tabelas reaproveitadas (`Compat.GroupUnits(into)`).
+7. **Pontos no minimapa, 10 vezes por segundo** (`UI/GuildMap.lua` `RefreshDots`): uma closure e quatro vetores por
+   chamada, mesmo sem ninguém para desenhar. 0,22 → 0. Agora sai antes de qualquer leitura de mapa sem ninguém vivo, e
+   a função por ponto é feita uma vez.
+
+Também: `GuildOS:LocalDate` sem closure por chamada (e sem `date("*t")` num formato sem nomes), `GuildChat` sem
+closure por linha, `CompareVersions` sem closure por comparação.
+
+### Memória retida
+
+- **Fotos da raide** (`RaidTracker`): cada `GROUP_ROSTER_UPDATE` de uma raide gravava uma foto com uma tabela por
+  raider na sessão aberta (que fica nas variáveis salvas até a noite acabar). Agora no máximo uma a cada
+  `ROSTER_SNAP_GAP` (30 s), a última mudança nunca perdida; as de 5 em 5 minutos seguem iguais.
+- Sem crescimento sem limite: 40 minutos simulados com 3.000 desconhecidos diferentes (canal de troca, sussurros,
+  linhas do mesh e da guilda tocadas de volta) estabilizam (+10 KB a cada 10 min depois do aquecimento); os caches
+  por remetente (`ChatTweaks._authors`, `SyncService.seenIds`, `CommSystem.syncStats.senders`) têm limite.
+- Os dados salvos ocupam em Lua cerca de 1,9× o que `EstimateBytes` diz (972 KB contra 520 KB no harness): os
+  ~3,6 MB que `/gos debug mem` estima para os 4 bancos são uns 7 MB carregados, mais ~11 MB de código e estrutura.
+  Bancos de guildas que não se usa mais saem em Configurações › Dados e suporte.
+- `db.bulletin.seen` cresce um id por aviso (pequeno; fica anotado).
+
+### Bibliotecas
+
+O mesh compartilhado (`Libs/LibChehulMesh.lua`, `Modules/ChehulNet.lua`) não é um alocador grande: 0,02–0,05 KB por
+linha recebida e ~1,5 KB por beacon de 180 s. O caro por mensagem é a sincronização da guilda: um envelope `SV`
+custa ~12 KB para decodificar (LibDeflate `DecompressDeflate` ~6 KB, LibSerialize ~5 KB) e um `BC` ~30 KB. Mandar sem
+compressão o que é curto cortaria isso, mas muda o protocolo (um cliente antigo não lê); fica para quando todos
+tiverem a versão.
+
+### Como ver
+
+`/gos debug mem rate`: lê a memória do Guild OS uma vez por segundo durante 10 s, sem forçar coleta, e diz quantos
+KB/s (e MB por minuto) ele alocou. Uma leitura menor que a anterior é o coletor trabalhando: só as subidas contam,
+então o número é um piso.
+
+### O teste
+
+`tools/alloc-budget.lua` carrega o addon inteiro (o TOC) num cliente WoW: Forever falso com relógio de verdade:
+`OnUpdate` a 60 quadros por segundo, timers e tickers, os eventos de uma guilda de 180, os filtros de chat em dois
+quadros de chat por linha, os ganchos de tooltip ao passar o mouse, o histórico do servidor (`C_Club`) e cada
+mensagem de addon que este cliente manda tocada de volta como se viesse dos outros usuários. Orçamentos (KB por minuto
+simulado; o teste mede ~40–120 parado, ~350–600 na aba Membros e ~1.450–1.850 na raide, conforme o interpretador):
+parado 600, aba Membros 1.500, raide com o Salão aberto 4.000; a memória retida entre dois trechos parados não sobe
+mais que 256 KB. Também confere que o que agora é reaproveitado responde igual ao que era novo (roster, marcas,
+índice do card, contagens, inativos, níveis, roster do mapa) e que uma tempestade de 20 eventos de grupo num minuto
+grava no máximo 3 fotos da raide.

@@ -1288,15 +1288,22 @@ local function namesOfDates()
     return dateNames
 end
 
+-- One replacement function for every call (no closure each time: a chat card dates 40 lines a redraw), reading
+-- the date being written from `dateNow`.
+local dateNow
+local function localName(c)
+    local list = dateNames[c]
+    if not list then return "%" .. c end   -- date()'s own, %% included
+    local name = list[(c == "a" or c == "A") and dateNow.wday or dateNow.month] or ""
+    return (name:gsub("%%", "%%%%"))       -- a name is text to date(), never a format
+end
 function GuildOS:LocalDate(fmt, timestamp)
-    local t = date("*t", timestamp)
-    local names = namesOfDates()
-    local localized = tostring(fmt or ""):gsub("%%(.)", function(c)
-        local list = names[c]
-        if not list then return "%" .. c end   -- date()'s own, %% included
-        local name = list[(c == "a" or c == "A") and t.wday or t.month] or ""
-        return (name:gsub("%%", "%%%%"))       -- a name is text to date(), never a format
-    end)
+    fmt = tostring(fmt or "")
+    -- Nothing to name ("%H:%M", "%d/%m"): date()'s own, without the table of the date.
+    if not fmt:find("%%[aAbB]") then return date(fmt, timestamp) end
+    namesOfDates()
+    dateNow = date("*t", timestamp)
+    local localized = fmt:gsub("%%(.)", localName)
     return date(localized, timestamp)
 end
 

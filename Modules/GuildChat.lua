@@ -39,7 +39,11 @@ function GuildChat:OnRefresh(fn)
     end
 end
 
+-- Counts every change (a line, a channel's history arriving): a screen that drew the chat at this version has
+-- nothing new to draw (the Hall's chat card).
+GuildChat.version = 0
 function GuildChat:_Notify()
+    self.version = (self.version or 0) + 1
     for _, fn in ipairs(self.listeners) do
         pcall(fn)
     end
@@ -64,16 +68,18 @@ end
 -- server's history where it has one, and the addon's log elsewhere or while the
 -- server has nothing loaded yet: never both, so no line shows twice. Any other
 -- channel only ever has the server's.
-function GuildChat:Entries(stream)
-    local server, locked = GuildOS.Compat.GuildChatHistory(self.MAX_LOG, stream and stream.id)
+-- `max` (default MAX_LOG): only the newest that many are asked of the server and kept.
+function GuildChat:Entries(stream, max)
+    max = math.min(tonumber(max) or self.MAX_LOG, self.MAX_LOG)
+    local server, locked = GuildOS.Compat.GuildChatHistory(max, stream and stream.id)
     if locked then return nil end
     if not isGuild(stream) then
         return server or {}, true
     end
     if server and #server > 0 then
-        return GuildChat.Merge(server, self:AlliedLog(), self.MAX_LOG), true
+        return GuildChat.Merge(server, self:AlliedLog(), max), true
     end
-    return GuildChat.Merge(self:Log(), self:AlliedLog(), self.MAX_LOG), false
+    return GuildChat.Merge(self:Log(), self:AlliedLog(), max), false
 end
 
 ----------------------------------------------------------------------
@@ -108,7 +114,10 @@ end
 -- alliance.
 function GuildChat.Merge(own, allied, cap)
     if type(allied) ~= "table" or #allied == 0 then
-        return own
+        if not cap or #own <= cap then return own end
+        local newest = {}
+        for k = #own - cap + 1, #own do newest[#newest + 1] = own[k] end
+        return newest
     end
     local out, i, j = {}, 1, 1
     while i <= #own or j <= #allied do
@@ -208,6 +217,10 @@ function GuildChat:Send(text, stream)
     return true
 end
 
+function GuildChat:_OnClubEvent(clubId)
+    if GuildOS.Compat.IsGuildClub(clubId) then self:_Notify() end
+end
+
 function GuildChat:Initialize()
     local f = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_GUILD")
@@ -222,12 +235,10 @@ function GuildChat:Initialize()
         if event == "CHAT_MSG_GUILD" then
             local msg, author = ...
             local guid = select(12, ...)
-            GuildOS:SafeCall(function() GuildChat:_OnMessage(msg, author, guid) end)
+            GuildOS:SafeCall(GuildChat._OnMessage, GuildChat, msg, author, guid)
             return
         end
         local clubId = ...
-        GuildOS:SafeCall(function()
-            if GuildOS.Compat.IsGuildClub(clubId) then GuildChat:_Notify() end
-        end)
+        GuildOS:SafeCall(GuildChat._OnClubEvent, GuildChat, clubId)
     end)
 end

@@ -4956,3 +4956,6 @@ L["Members: about %.1f KB (%.0f bytes a row); gear compact on %d rows (%.0f byte
 L["Member history: %d of %d keys, about %.1f KB (%.0f bytes a key)."] = "Historique des membres : %d clés sur %d, environ %.1f Ko (%.0f octets par clé)."
 L["Not shown in: %s"] = "Non affiché dans : %s"
 L["Skipped, the server is limiting chat: %s"] = "Ignoré, le serveur limite le chat : %s"
+L["Already measuring; the result comes in a few seconds."] = "Mesure déjà en cours ; le résultat arrive dans quelques secondes."
+L["Measuring Guild OS's allocation for %d seconds, without a garbage collection..."] = "Mesure des allocations de Guild OS pendant %d secondes, sans ramasse-miettes..."
+L["Guild OS allocated about %.1f KB/s (%.1f MB a minute) over %d s; it holds %.1f MB now."] = "Guild OS a alloué environ %.1f Ko/s (%.1f Mo par minute) en %d s ; il occupe maintenant %.1f Mo."

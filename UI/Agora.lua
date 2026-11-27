@@ -98,6 +98,30 @@ function Agora.Short(dt)
     return string.format("%dm", math.max(1, m))
 end
 
+-- The two counts that walk the whole roster (the inactive members, the promotions to review): counted again at
+-- most every ROSTER_COUNTS_TTL seconds (memory audit, memoria.md). The window's title asked for them on every
+-- group and roster event and every 10 s, ~200 KB of tables each time on a guild of 180; days offline and
+-- attendance do not move in a minute. ResetRosterCounts drops them (a line of the roster log: a join, a leave, a
+-- rank change).
+local ROSTER_COUNTS_TTL = 60
+local counts = { at = nil, inactive = 0, promote = 0 }
+function Agora:RosterCounts(gm, days)
+    local t = now()
+    if counts.at and t - counts.at < ROSTER_COUNTS_TTL and t >= counts.at and counts.days == days
+        and counts.gm == gm then
+        return counts.inactive, counts.promote
+    end
+    local inactive, promote = 0, 0
+    if gm and gm.GetInactiveMembers then inactive = #gm:GetInactiveMembers(days) end
+    if gm and gm.GetSuggestions then
+        local s = gm:GetSuggestions()
+        promote = #(s.promoteCandidates or {})
+    end
+    counts.at, counts.days, counts.gm, counts.inactive, counts.promote = t, days, gm, inactive, promote
+    return inactive, promote
+end
+function Agora:ResetRosterCounts() counts.at = nil end
+
 -- What needs this player, urgent first: { text, urgent, id, sub, filter } each. Only
 -- items whose screen this player can open, so every row is a way in.
 function Agora:NeedsMe()
@@ -128,16 +152,14 @@ function Agora:NeedsMe()
         end
 
         local gm = GuildOS.GuildManager
-        if gm and gm.GetInactiveMembers then
-            local days = gm.DEFAULT_INACTIVE_DAYS or 30
-            local n = #gm:GetInactiveMembers(days)
-            if n > 0 then add(normal, string.format(L["%d inactive over %dd"], n, days), "management", "inactive", nil, n) end
+        local days = gm and gm.DEFAULT_INACTIVE_DAYS or 30
+        local inactive, promote = Agora:RosterCounts(gm, days)
+        if inactive > 0 then
+            add(normal, string.format(L["%d inactive over %dd"], inactive, days), "management", "inactive", nil, inactive)
         end
-        if gm and gm.GetSuggestions then
-            local s = gm:GetSuggestions()
-            -- Promotions only: its ready trials are the ones the trials row counts.
-            local n = #(s.promoteCandidates or {})
-            if n > 0 then add(normal, string.format(L["%d promotions to review"], n), "management", "suggest", nil, n) end
+        -- Promotions only: its ready trials are the ones the trials row counts.
+        if promote > 0 then
+            add(normal, string.format(L["%d promotions to review"], promote), "management", "suggest", nil, promote)
         end
 
         local rs = GuildOS.RecruitScanner
@@ -229,8 +251,11 @@ function Agora:Activity(limit)
             and math.abs((a.timestamp or 0) - (b.timestamp or 0)) <= ROSTER_SAME
     end
     local shown = {}
+    -- A line older than the window less ROSTER_SAME is neither drawn nor anyone's copy: skipped before any work
+    -- (the log holds a thousand lines, and the Hall reads this every 15 s; memoria.md).
+    local oldest = since - ROSTER_SAME
     for _, e in ipairs(events) do
-        local fmt = ROSTER_ACTION[e.action]
+        local fmt = (tonumber(e.timestamp) or 0) > oldest and ROSTER_ACTION[e.action] or nil
         local dup = false
         if fmt then
             for _, o in ipairs(shown) do
@@ -244,13 +269,17 @@ function Agora:Activity(limit)
         end
         if fmt and not dup then
             shown[#shown + 1] = e
-            add(e.timestamp, string.format(fmt, e.target or "?", e.detail or ""), "management", "log", nil, e.target)
+            if (e.timestamp or 0) > since then
+                add(e.timestamp, string.format(fmt, e.target or "?", e.detail or ""), "management", "log", nil, e.target)
+            end
         end
     end
     -- The Loot Tracker switch hides the loot history here too (audit B17).
     for _, e in ipairs(GuildOS:IsFeatureEnabled("lootTracker") and db.lootHistory or {}) do
-        add(e.timestamp, string.format(L["%s received %s"], e.player or "?", e.itemLink or e.itemName or "?"), "loot",
-            "history", e.playerKey)
+        if (e.timestamp or 0) > since then
+            add(e.timestamp, string.format(L["%s received %s"], e.player or "?", e.itemLink or e.itemName or "?"), "loot",
+                "history", e.playerKey)
+        end
     end
     for _, e in ipairs((db.milestones and db.milestones.events) or {}) do
         if e.type == "ding" then

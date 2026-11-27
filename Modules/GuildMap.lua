@@ -255,6 +255,7 @@ end
 
 -- The game's maps do not move: a transform, once found, is kept (only for the game's own api).
 local transforms = {}
+local yards = {}   -- [mapID] = { width, height } in yards, or false (_MapYards)
 function GuildMap:_TransformCached(shown, from, api)
     if api ~= GuildOS.Compat then return self:_Transform(shown, from, api) end
     local k = from .. ">" .. shown
@@ -279,7 +280,21 @@ function GuildMap:_PlaceOn(shown, mapID, x, y, api)
 end
 
 -- A map's width and height in yards (east-west, north-south), or nil.
+-- Kept per map for the game's own api (the minimap dots ask ten times a second; each read made four vectors).
 function GuildMap:_MapYards(mapID, api)
+    if api == GuildOS.Compat and mapID then
+        local y = yards[mapID]
+        if y == nil then
+            local w, h = self:_MapYardsOf(mapID, api)
+            y = w and { w, h } or false
+            yards[mapID] = y
+        end
+        if y then return y[1], y[2] end
+        return nil
+    end
+    return self:_MapYardsOf(mapID, api)
+end
+function GuildMap:_MapYardsOf(mapID, api)
     local c0, ax, ay = api.MapToWorld(mapID, 0, 0)
     local c1, bx, by = api.MapToWorld(mapID, 1, 1)
     if not c0 or c0 ~= c1 then return nil end
@@ -363,23 +378,31 @@ function GuildMap:SetListShown(on) prefs().list = on and true or false end
 ----------------------------------------------------------------------
 -- Roster (class, level, zone come from here, never from a payload)
 ----------------------------------------------------------------------
+-- Read again at most every ROSTER_TTL seconds, or after a roster update (_rosterStale), into the same table and
+-- the same entry per member (memory audit, memoria.md: a new table per member each time was the map's garbage).
 local ROSTER_TTL = 30
+local rosterStamp = 0
 function GuildMap:_Roster()
     local t = now()
-    if self._roster and t - self._rosterAt < ROSTER_TTL then return self._roster end
-    local r = {}
+    local r = self._roster
+    if r and not self._rosterStale and t - self._rosterAt < ROSTER_TTL then return r end
+    if not r then r = {}; self._roster = r end
+    rosterStamp = rosterStamp + 1
     local n = (GetNumGuildMembers and GetNumGuildMembers()) or 0
     for i = 1, n do
         local full, _, _, level, _, zone, _, _, online, _, classFile = GetGuildRosterInfo(i)
         if type(full) == "string" then
             local key = GuildOS:KeyOfRosterName(full)
             if key then
-                r[key] = { level = level, zone = zone, online = online and true or false, class = classFile,
-                    name = full:match("^([^-]+)") or full }
+                local m = r[key]
+                if not m then m = {}; r[key] = m end
+                m.level, m.zone, m.online, m.class = level, zone, online and true or false, classFile
+                m.name, m.stamp = full:match("^([^-]+)") or full, rosterStamp
             end
         end
     end
-    self._roster, self._rosterAt = r, t
+    for key, m in pairs(r) do if m.stamp ~= rosterStamp then r[key] = nil end end
+    self._rosterAt, self._rosterStale = t, nil
     return r
 end
 
@@ -395,13 +418,26 @@ end
 -- Maps (cached chains)
 ----------------------------------------------------------------------
 local chains = {}
+-- The client's maps do not change in a session; C_Map.GetMapInfo answers a new table each call, and the minimap
+-- watch asks once a second. Kept per map (false: no map), with the chains, until the next zone change.
+local infos, zones = {}, {}
+local function mapInfo(id)
+    if not id then return nil end
+    local info = infos[id]
+    if info == nil then
+        info = GuildOS.Compat.MapInfo(id) or false
+        infos[id] = info
+    end
+    return info or nil
+end
+GuildMap._MapInfo = function(_, id) return mapInfo(id) end
 -- { [mapID] = mapType } for a map and everything above it (mapType -1 where unknown).
 function GuildMap:_Chain(mapID)
     if not mapID then return nil end
     if chains[mapID] then return chains[mapID] end
     local c, cur = {}, mapID
     for _ = 1, 10 do
-        local info = GuildOS.Compat.MapInfo(cur)
+        local info = mapInfo(cur)
         c[cur] = (info and info.mapType) or -1
         local parent = info and info.parent
         if not parent or parent == 0 or c[parent] then break end
@@ -412,16 +448,25 @@ function GuildMap:_Chain(mapID)
 end
 
 -- The zone a map belongs to: the first of its chain that is a zone (mapType 3), else the map itself.
-function GuildMap:_ZoneOf(mapID)
+local function zoneOf(mapID)
     local cur = mapID
     for _ = 1, 10 do
-        local info = cur and GuildOS.Compat.MapInfo(cur)
+        local info = cur and mapInfo(cur)
         if not info then return mapID end
         if info.mapType == 3 then return cur end
         if not info.parent or info.parent == 0 then return mapID end
         cur = info.parent
     end
     return mapID
+end
+function GuildMap:_ZoneOf(mapID)
+    if not mapID then return nil end
+    local z = zones[mapID]
+    if z == nil then
+        z = zoneOf(mapID)
+        zones[mapID] = z
+    end
+    return z
 end
 
 ----------------------------------------------------------------------
@@ -613,7 +658,7 @@ function GuildMap:HandleOpenMap(sender, text, channel)
     end
     local seen = self.openMapSeen[key]
     if seen and t - seen < self.OPENMAP_GAP then return end
-    if not self:_Roster()[key] or not GuildOS.Compat.MapInfo(p.mapID) then return end
+    if not self:_Roster()[key] or not mapInfo(p.mapID) then return end
     self.openMapSeen[key] = t
     self.stats.openmap = (self.stats.openmap or 0) + 1
     if old and old.via ~= "openmap" and t - old.t <= self.STALE_GONE then return end
@@ -747,7 +792,7 @@ function GuildMap:HandleCamp(sender, text, channel)
         for _ in pairs(self.camps) do n = n + 1 end
         if n >= self.CAMP_MAX then return end
     end
-    if not GuildOS.Compat.MapInfo(c.mapID) then return end
+    if not mapInfo(c.mapID) then return end
     self.camps[key] = { key = key, name = m.name or key:match("^([^-]+)") or key, class = m.class,
         mapID = c.mapID, x = c.x, y = c.y, tier = c.tier, lit = t - c.age, heard = t,
         life = c.family and self.CAMP_LIFE or self.CAMP_AGE_MAX * 60 }
@@ -810,25 +855,31 @@ end
 ----------------------------------------------------------------------
 -- The group, read here
 ----------------------------------------------------------------------
+-- The group's units and which of them were read, kept between reads (twice a second): each member's entry is
+-- filled again in place (memoria.md).
+local groupUnits, groupSeen = {}, {}
 function GuildMap:_ReadGroup(t)
     local Compat = GuildOS.Compat
-    local seen = {}
+    local seen = groupSeen
+    for k in pairs(seen) do seen[k] = nil end
     if not Compat.InstanceState() then
-        for _, u in ipairs(Compat.GroupUnits()) do
+        for _, u in ipairs(Compat.GroupUnits(groupUnits)) do
             local m = self:_Roster()[u.key]
             if m then
                 local map = Compat.GetBestMapForUnit(u.unit)
                 local x, y
                 if map then x, y = Compat.GetPlayerMapPosition(map, u.unit) end
                 if map and x then
-                    local old = self.group[u.key]
-                    local e = { key = u.key, name = m.name or u.name, class = m.class or u.class, level = m.level,
-                        mapID = map, x = x, y = y, flags = 0, t = t, isGroup = true }
-                    if old and old.mapID == map and old.x then
-                        e.fromX, e.fromY = self:_Lerp(old, t)
-                        e.lerpT, e.lerpDur = t, max(0.1, t - old.t)
+                    local e = self.group[u.key]
+                    local fromX, fromY, lerpT, lerpDur
+                    if e and e.mapID == map and e.x then
+                        fromX, fromY = self:_Lerp(e, t)
+                        lerpT, lerpDur = t, max(0.1, t - e.t)
                     end
-                    self.group[u.key] = e
+                    if not e then e = {}; self.group[u.key] = e end
+                    e.key, e.name, e.class, e.level = u.key, m.name or u.name, m.class or u.class, m.level
+                    e.mapID, e.x, e.y, e.flags, e.t, e.isGroup = map, x, y, 0, t, true
+                    e.fromX, e.fromY, e.lerpT, e.lerpDur = fromX, fromY, lerpT, lerpDur
                     seen[u.key] = true
                 end
             end
@@ -926,7 +977,7 @@ end
 function GuildMap:RosterOnlyHere(shownMap, known)
     local out = {}
     local zone = shownMap and self:_ZoneOf(shownMap)
-    local info = zone and GuildOS.Compat.MapInfo(zone)
+    local info = zone and mapInfo(zone)
     if not info or info.mapType ~= 3 then return out end
     local name = GuildOS.Compat.GetMapName(zone)
     if not name then return out end
@@ -984,7 +1035,8 @@ end
 
 -- Whether some online guildmate's roster line names the zone `mapID` is in (the minimap watch's reason).
 function GuildMap:_ZoneHasGuildmates(zoneMap)
-    local name = GuildOS.Compat.GetMapName(zoneMap)
+    local info = mapInfo(zoneMap)   -- kept per map (once a second, the client's GetMapInfo made a table)
+    local name = info and info.name
     if not name then return false end
     local me = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName())
     for key, m in pairs(self:_Roster()) do
@@ -1016,7 +1068,7 @@ end
 
 -- A zone change: the one line that goes unwatched (at most every WHERE_GAP seconds).
 function GuildMap:OnZoneEvent()
-    chains = {}
+    chains, infos, zones, yards = {}, {}, {}, {}
     GuildOS.Compat.After(2, function() GuildMap:_MaybeSend(now(), true) end)
     if self.uiRefresh then self.uiRefresh() end
 end
@@ -1034,7 +1086,7 @@ function GuildMap:Initialize()
     GuildOS.Compat.RegisterEvent(f, "PLAYER_ENTERING_WORLD")
     GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
     f:SetScript("OnEvent", function(_, event)
-        if event == "GUILD_ROSTER_UPDATE" then GuildMap._roster = nil; return end
+        if event == "GUILD_ROSTER_UPDATE" then GuildMap._rosterStale = true; return end
         GuildMap:OnZoneEvent()
     end)
     self._frame = f

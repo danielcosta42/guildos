@@ -222,6 +222,7 @@ function GuildManager:GetDaysOffline(rosterIndex)
     return (years or 0) * 365 + (months or 0) * 30 + (days or 0) + (hours or 0) / 24
 end
 
+local scratchLines, scratchRows = {}, {}   -- GetInactiveMembers' own, filled again each call
 -- Roster members offline for at least `days`, sorted most-inactive first. `countAlts` (nil: the Inactivity screen's
 -- setting, on by default; specs/salao/manutencao-roster.md): a character whose main or another alt of the same
 -- player was seen within `days` is not inactive. Each entry carries `seen`, the group's most recently seen other
@@ -235,23 +236,34 @@ function GuildManager:GetInactiveMembers(days, countAlts, skipSafe)
     local noteOf = RM and RM.NoteText or function(v) return type(v) == "string" and v or "" end
     local onotes = MM and GuildOS.Compat.CanViewOfficerNote()
     if countAlts == nil then countAlts = not RM or RM:CountAlts() end
-    local lines = {}
+    -- One line a member, in tables kept between calls and filled again (memory audit, memoria.md): only the
+    -- result and the groups' "seen" leave this function.
+    local lines, rows = scratchLines, scratchRows
+    local count = 0
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
         local name, rankName, rankIndex, level, _, _, note, onote, isOnline, _, classFile = GetGuildRosterInfo(i)
         if name then
             local off = (not isOnline) and self:GetDaysOffline(i) or nil
-            lines[#lines + 1] = { i = i, name = name, rankName = rankName, rankIndex = rankIndex, level = level,
-                class = classFile, online = isOnline, off = off, note = note, onote = onote,
-                key = GuildOS:KeyOfRosterName(name), short = name:match("^([^-]+)") or name,
-                days = isOnline and 0 or (off and math.floor(off)) or nil }
+            count = count + 1
+            local l = lines[count]
+            if not l then l = {}; lines[count] = l end
+            l.i, l.name, l.rankName, l.rankIndex, l.level = i, name, rankName, rankIndex, level
+            l.class, l.online, l.off, l.note, l.onote = classFile, isOnline, off, note, onote
+            l.key, l.short = GuildOS:KeyOfRosterName(name), name:match("^([^-]+)") or name
+            l.days = isOnline and 0 or (off and math.floor(off)) or nil
         end
     end
+    for k = #lines, count + 1, -1 do lines[k] = nil end
     -- The groups in one pass over the lines (never GetLinkedChars per member: it walks every link).
     local seen = {}
     if RM then
-        local rows = {}
-        for k, l in ipairs(lines) do rows[k] = { key = l.key, name = l.short, days = l.days } end
+        for k = 1, count do
+            local l, r = lines[k], rows[k]
+            if not r then r = {}; rows[k] = r end
+            r.key, r.name, r.days = l.key, l.short, l.days
+        end
+        for k = #rows, count + 1, -1 do rows[k] = nil end
         seen = RM.GroupSeen(rows, GuildOS.db and GuildOS.db.altLinks)
     end
     local result = {}

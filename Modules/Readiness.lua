@@ -367,6 +367,29 @@ function Readiness:GetReport(targetShort)
 end
 
 ----------------------------------------------------------------------
+-- The roster's keys and levels alone, { name, key, level } a member, all the countdown reads (Countdown). The
+-- Hall asks for it every minute: the full report decodes every member's gear (memory audit, memoria.md).
+-- `into`: the caller's list, filled again with its own entry tables.
+----------------------------------------------------------------------
+function Readiness:LevelRows(into)
+    local rows, count = into or {}, 0
+    local n = GetNumGuildMembers() or 0
+    for i = 1, n do
+        local name, _, _, level = GetGuildRosterInfo(i)
+        if name then
+            local short = name:match("^([^-]+)") or name
+            local realm = name:match("-(.+)$") or GetRealmName()
+            count = count + 1
+            local r = rows[count]
+            if not r then r = {}; rows[count] = r end
+            r.name, r.key, r.level = short, GuildOS:GetPlayerKey(short, realm), level or 0
+        end
+    end
+    for i = #rows, count + 1, -1 do rows[i] = nil end
+    return rows
+end
+
+----------------------------------------------------------------------
 -- Aggregate counts for a report (or a freshly built one).
 -- Returns counts table: { ready, warn, notready, nodata, total }.
 ----------------------------------------------------------------------

@@ -4836,3 +4836,6 @@ L["Members: about %.1f KB (%.0f bytes a row); gear compact on %d rows (%.0f byte
 L["Member history: %d of %d keys, about %.1f KB (%.0f bytes a key)."] = "구성원 기록: 키 %d/%d개, 약 %.1f KB(키당 %.0f바이트)."
 L["Not shown in: %s"] = "표시되지 않음: %s"
 L["Skipped, the server is limiting chat: %s"] = "건너뜀, 서버가 채팅을 제한하는 중: %s"
+L["Already measuring; the result comes in a few seconds."] = "이미 측정 중입니다. 몇 초 후에 결과가 나옵니다."
+L["Measuring Guild OS's allocation for %d seconds, without a garbage collection..."] = "가비지 수집 없이 %d초 동안 Guild OS의 메모리 할당을 측정합니다..."
+L["Guild OS allocated about %.1f KB/s (%.1f MB a minute) over %d s; it holds %.1f MB now."] = "Guild OS는 약 %.1f KB/s(분당 %.1f MB)를 %d초 동안 할당했습니다. 현재 %.1f MB를 사용 중입니다."

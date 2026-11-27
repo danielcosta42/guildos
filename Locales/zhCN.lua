@@ -4836,3 +4836,6 @@ L["Members: about %.1f KB (%.0f bytes a row); gear compact on %d rows (%.0f byte
 L["Member history: %d of %d keys, about %.1f KB (%.0f bytes a key)."] = "成员历史：%d/%d 个键，约 %.1f KB（每个键 %.0f 字节）。"
 L["Not shown in: %s"] = "未显示于：%s"
 L["Skipped, the server is limiting chat: %s"] = "已跳过，服务器正在限制聊天：%s"
+L["Already measuring; the result comes in a few seconds."] = "正在测量中；几秒后给出结果。"
+L["Measuring Guild OS's allocation for %d seconds, without a garbage collection..."] = "正在测量 Guild OS 在 %d 秒内的内存分配，不强制垃圾回收……"
+L["Guild OS allocated about %.1f KB/s (%.1f MB a minute) over %d s; it holds %.1f MB now."] = "Guild OS 约分配 %.1f KB/秒（每分钟 %.1f MB），共 %d 秒；当前占用 %.1f MB。"

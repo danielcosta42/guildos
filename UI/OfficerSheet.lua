@@ -30,12 +30,31 @@ local GREY = { r = 0.5, g = 0.5, b = 0.5 }
 ----------------------------------------------------------------------
 -- The index (one per roster refresh)
 ----------------------------------------------------------------------
---- A new index on `links` ([altKey] = mainKey, flat): who is whose alt, both ways, alts sorted by key.
-function RosterCard.NewIndex(links)
-    local idx = { links = type(links) == "table" and links or {}, altsOf = {}, byKey = {} }
+--- A new index on `links` ([altKey] = mainKey, flat): who is whose alt, both ways, alts sorted by key. `into`: the
+--- last refresh's index, emptied and filled again with its own tables (memory audit, memoria.md: a table a member
+--- and one a main each refresh); without it, a new one.
+function RosterCard.NewIndex(links, into)
+    local idx = into
+    if idx then
+        idx.links = type(links) == "table" and links or {}
+        idx.pool, idx.lists = idx.pool or {}, idx.lists or {}
+        for k in pairs(idx.pool) do idx.pool[k] = nil end   -- only the last refresh's rows wait for reuse
+        for k, row in pairs(idx.byKey) do idx.pool[k], idx.byKey[k] = row, nil end
+        for main, list in pairs(idx.altsOf) do
+            for i = #list, 1, -1 do list[i] = nil end
+            idx.lists[#idx.lists + 1], idx.altsOf[main] = list, nil
+        end
+    else
+        idx = { links = type(links) == "table" and links or {}, altsOf = {}, byKey = {} }
+    end
     for alt, main in pairs(idx.links) do
         local list = idx.altsOf[main]
-        if not list then list = {}; idx.altsOf[main] = list end
+        if not list then
+            local spare = idx.lists
+            list = spare and spare[#spare] or {}
+            if spare then spare[#spare] = nil end
+            idx.altsOf[main] = list
+        end
         list[#list + 1] = alt
     end
     for _, list in pairs(idx.altsOf) do table.sort(list) end
@@ -44,7 +63,11 @@ end
 
 --- One roster line into the index: its name, class file and whether it is online.
 function RosterCard.IndexRow(idx, key, name, class, online)
-    if idx and key then idx.byKey[key] = { name = name, class = class, online = online and true or false } end
+    if not (idx and key) then return end
+    local row = idx.pool and idx.pool[key]
+    if row then idx.pool[key] = nil else row = {} end
+    row.name, row.class, row.online = name, class, online and true or false
+    idx.byKey[key] = row
 end
 
 local function short(key) return (key:match("^([^-]+)") or key) end

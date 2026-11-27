@@ -281,6 +281,9 @@ function RosterLog:Add(evt)
     if inserted then
         self:_ToHistory(evt)
         self:_Publish(evt)     -- broadcasts to officers if we are one; no-op for members
+        -- A join, a leave or a rank change moves the officers' counts: not a minute late (UI/Agora.lua).
+        local A = GuildOS.UI and GuildOS.UI.Agora
+        if A and A.ResetRosterCounts then A:ResetRosterCounts() end
         self:Refresh()
     end
     return inserted
