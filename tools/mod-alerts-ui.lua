@@ -70,6 +70,7 @@ GuildOS = {
   L = setmetatable({}, { __index = function(_, k) return k end }),
   Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1, a = 1 } end }),
   UI = setmetatable({}, { __index = function() return mkWidget end }),
+  PaperInk = function() return { r = 1, g = 1, b = 1, a = 1 } end,   -- the paper's shades (Core/Data.lua, dark mode)
   Compat = {
     IsSecret = function() return false end,
     InChatLockdown = function() return false end,

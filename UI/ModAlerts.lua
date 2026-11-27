@@ -12,6 +12,7 @@ local UI = GuildOS.UI
 local Kit = rawget(GuildOS, "Kit")
 local C = Kit and Kit.PAPER or GuildOS.Colors
 local WOOD = GuildOS.Colors
+local CATCH_INK = GuildOS:PaperInk("2e7d32", WOOD.ok)   -- "the rule catches this line", on the paper
 local function rule(row) if Kit then Kit:Rule(row) end end
 local function checkbox(parent, text, size)
     if Kit then return Kit:Checkbox(parent, text, size) end
@@ -482,7 +483,9 @@ function GuildOS:BuildModRulesSub(panel)
         local folded, words = M.Prepare(line)
         local d = draft()
         if d and M.Match(M.Compile({ d }), folded, words) then
-            testResult:SetText("|cff2E7D32" .. L["The rule you are writing catches this line."] .. "|r")
+            local ok = CATCH_INK
+            testResult:SetText(string.format("|cff%02x%02x%02x", ok.r * 255 + 0.5, ok.g * 255 + 0.5, ok.b * 255 + 0.5)
+                .. L["The rule you are writing catches this line."] .. "|r")
         else
             local hit = M.Match(M.Compile(M:GetRules()), folded, words)
             if hit then

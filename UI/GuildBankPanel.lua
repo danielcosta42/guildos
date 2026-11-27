@@ -44,9 +44,9 @@ local function Bank() return GuildOS.GuildBank end
 
 -- The Workshop's bank is drawn on parchment cards (#449 phase 3): a state's colour deepened to read on the
 -- paper, as the mockup's.
-local INK_OK     = { r = 0.184, g = 0.431, b = 0.2 }
-local INK_DANGER = { r = 0.561, g = 0.106, b = 0.043 }
-local INK_WARN   = { r = 0.541, g = 0.353, b = 0 }
+local INK_OK     = GuildOS:PaperInk("2f6e33", C.ok)
+local INK_DANGER = GuildOS:PaperInk("8f1b0b", C.danger)
+local INK_WARN   = GuildOS:PaperInk("8a5a00", C.warn)
 
 ----------------------------------------------------------------------
 -- Small pieces

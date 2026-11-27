@@ -554,6 +554,15 @@ PAGES.interface = function(F)
         { enabled = function() return not GuildOS.GameFontOnly end })
     if UI.RegisterTourAnchor then UI:RegisterTourAnchor("settings.font", fontCheck) end
 
+    -- Dark mode: the same wood and gold around a darker parchment, with a light ink. Read once at load
+    -- (Style:Resolve, before anything is drawn), so it applies after a reload, as the font does.
+    F:Check(L["Dark mode"], L["Darker parchment cards, same wood and gold."],
+        function() return GuildOS.Style:WantsDarkMode() end,
+        function(checked)
+            GuildOS.Style:SetDarkMode(checked)
+            markReload("dark", (checked and true or false) ~= boot.dark)
+        end)
+
     F:Section(L["In the game"])
     local minimapCheck = F:Check(L["Show minimap button"], nil,
         function() return GuildOS.IsMinimapShown and GuildOS:IsMinimapShown() end,
@@ -1507,7 +1516,8 @@ end
 function GuildOS:RefreshSettingsPanel(content, key)
     key = OLD_KEYS[key] or key
     if not PAGES[key] then key = "profile" end
-    boot = boot or { font = (GuildOS.Style and GuildOS.Style.gameFont) == true, modules = {} }
+    boot = boot or { font = (GuildOS.Style and GuildOS.Style.gameFont) == true,
+                     dark = (GuildOS.Style and GuildOS.Style.darkMode) == true, modules = {} }
     local isOfficer = GuildOS:IsOfficer()
     local shape = shapeOf(key, isOfficer)
     local F = content.__settingsForm

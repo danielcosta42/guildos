@@ -64,6 +64,7 @@ GuildOS.IsOfficer = function() return officer end
 GuildOS.CommSystem.SendMessage = function(_, t, data) sent[#sent + 1] = { t = t, data = data } end
 GuildOS.UI = { IsFeatureAllowed = function() return true end, GetFeature = function(_, id) return id end }
 GuildOS.Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1 } end })
+GuildOS.PaperInk = function() return { r = 1, g = 1, b = 1 } end; GuildOS.PaperShade = GuildOS.PaperInk   -- the paper's shades (Core/Data.lua, dark mode)
 dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/Agora.lua")
 dofile(ADDON .. "/UI/Salao.lua")

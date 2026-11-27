@@ -76,6 +76,7 @@ local HEADERS = {
 }
 
 local function hex(c) return string.format("%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255) end
+local MINE_INK = GuildOS:PaperInk("2f6e33", C.ok)   -- "you craft" on the paper
 -- A class's colour deepened to read on the paper (the mockup's names on its cards): the bright ones (the
 -- priest's white, the rogue's yellow) would vanish on it.
 local function onPaper(r, g, b)
@@ -553,7 +554,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
         local O = GuildOS.CraftOrders
         if not O then return "" end
         local out = ""
-        if state.mine and state.mine[e.id] then out = out .. "  " .. "|cff" .. hex({ r = 0.184, g = 0.431, b = 0.2 }) .. L["you craft"] .. "|r" end
+        if state.mine and state.mine[e.id] then out = out .. "  " .. "|cff" .. hex(MINE_INK) .. L["you craft"] .. "|r" end
         local n = e.out and state.byItem and state.byItem[e.out]
         if n and n > 0 then out = out .. "  " .. "|cff" .. hex(C.paperTitle) .. string.format(L["%d orders"], n) .. "|r" end
         return out

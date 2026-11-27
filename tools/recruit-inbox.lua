@@ -61,6 +61,7 @@ function GuildOS:IsOfficer() return true end
 -- The Now tab's data half needs only these of the UI.
 local realUI = { IsFeatureAllowed = function() return true end, GetFeature = function(_, id) return id end }
 GuildOS.UI, GuildOS.Colors = realUI, setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1 } end })
+GuildOS.PaperInk = function() return { r = 1, g = 1, b = 1 } end; GuildOS.PaperShade = GuildOS.PaperInk   -- the paper's shades (Core/Data.lua, dark mode)
 dofile(ADDON .. "/UI/Spacing.lua"); if GuildOS.UI then rawset(GuildOS.UI, "SP", GuildOS.Spacing) end   -- the spacing standard (#449)
 dofile(ADDON .. "/UI/Agora.lua")
 dofile(ADDON .. "/UI/Salao.lua")

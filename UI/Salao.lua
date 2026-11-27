@@ -299,9 +299,12 @@ local WALL_COLOR = {
 local ANSWER = {
     yes = hex("3e8e41"), tentative = hex("b37b12"), wait = hex("b37b12"), no = hex("8f1b0b"),
 }
+-- The answer as the note's line prints it: the paper's deep shades, the wood's own on the dark paper.
 local ANSWER_INK = {
-    yes = hex("2f6e33"), tentative = hex("8a5a00"), wait = hex("8a5a00"), no = hex("8f1b0b"),
+    yes = GuildOS:PaperInk("2f6e33", C.ok), tentative = GuildOS:PaperInk("8a5a00", C.warn),
+    wait = GuildOS:PaperInk("8a5a00", C.warn), no = GuildOS:PaperInk("8f1b0b", C.danger),
 }
+local WALL_SIDE = GuildOS:PaperInk("8a6a3a", C.label)   -- a wall line's "when"
 
 local function open(item)
     return function() UI:OpenWindow(item.id, item.sub, item.filter) end
@@ -509,7 +512,7 @@ local function wallLine(wall, i)
     r.glyph:SetPoint("LEFT", 0, 0)
     r.main = text(r, 12, wall.ink)
     r.main:SetPoint("LEFT", GLYPH + 9, 0)
-    r.side = text(r, 11, { r = 0.541, g = 0.416, b = 0.227 })
+    r.side = text(r, 11, WALL_SIDE)
     r.side:SetJustifyH("RIGHT")
     r.side:SetPoint("RIGHT", 0, 0)
     r:SetScript("OnClick", function() if r.run then r.run() end end)
@@ -654,7 +657,7 @@ function GuildOS:CreateSalaoPanel(panel)
     for i = 1, MAX_NOTICES do
         local notice = CreateFrame("Button", nil, board)
         local noticeBg = GuildOS.Style:Nine(notice, "card", 5, "BACKGROUND", 1)
-        noticeBg:SetRGBA(0.937, 0.878, 0.741, 1)
+        noticeBg:SetColor(C.paperBox)
         notice.text = text(notice, 12, C.paperInk, "reading")
         notice.text:SetPoint("TOPLEFT", 10, -7)
         notice.text:SetPoint("TOPRIGHT", -10, -7)
@@ -906,7 +909,7 @@ function GuildOS:CreateSalaoPanel(panel)
                         p.fill:SetRGBA(0.184, 0.431, 0.2, 1)
                         p.label:SetTextColor(1, 1, 1)
                     else
-                        p.fill:SetRGBA(0.878, 0.8, 0.624, 1)
+                        p.fill:SetRGBA(C.paperShade.r, C.paperShade.g, C.paperShade.b, 1)
                         p.label:SetTextColor(C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
                     end
                     p:ClearAllPoints()

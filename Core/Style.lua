@@ -61,6 +61,10 @@ end
 function Style:Resolve()
     self.current = "salao"
     self.gameFont = type(GuildOSDB) == "table" and GuildOSDB.gameFont == true
+    -- Dark mode (GuildOSDB.darkMode, Settings > Interface): the parchment's tokens switch here, in place, so the
+    -- whole interface draws on one paper until the next reload.
+    self.darkMode = type(GuildOSDB) == "table" and GuildOSDB.darkMode == true
+    if GuildOS.SetDarkPaper then GuildOS:SetDarkPaper(self.darkMode) end
     return self.current
 end
 
@@ -72,6 +76,16 @@ end
 function Style:SetGameFont(on)
     if type(GuildOSDB) ~= "table" then return end
     GuildOSDB.gameFont = on and true or nil
+end
+
+-- Dark mode as it will be after the next reload (Settings shows this, not the paper in use).
+function Style:WantsDarkMode()
+    return type(GuildOSDB) == "table" and GuildOSDB.darkMode == true
+end
+
+function Style:SetDarkMode(on)
+    if type(GuildOSDB) ~= "table" then return end
+    GuildOSDB.darkMode = on and true or nil
 end
 
 GuildOS.Dialogs["GUILDOS_STYLE_RELOAD"] = {
