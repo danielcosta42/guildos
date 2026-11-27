@@ -4,6 +4,7 @@
 -- "back after N days offline" line. Visual layout only: the plans, the writes, the marks and the
 -- settings are GuildOS.NoteDates', GuildOS.MemberMarks' and GuildOS.MemberHistory's (Rule 10).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 -- Drawn on a parchment card in the Officers' Room and Settings (specs/salao/fase3.md): the text takes the
 -- paper's inks and a class its colour on the paper (UI/Kit.lua); a floating window, the wood's (WOOD).
@@ -344,6 +345,8 @@ function GuildOS:BuildMarksSub(panel)
         fill()
         board:Layout()
     end
-    ND.uiRefresh, MM.uiRefresh = refresh, refresh
+    -- Only while it is on screen (memory audit): showing it refreshes it anyway.
+    local function onChange() if panel:IsVisible() then refresh() end end
+    ND.uiRefresh, MM.uiRefresh = onChange, onChange
     return refresh
 end

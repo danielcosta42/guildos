@@ -5,6 +5,7 @@
 -- boss's tasks with mine marked, and its note), and the small window with my own task when I target
 -- a boss out of combat. Built once, filled on Show: nothing here redraws on a ticker.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L

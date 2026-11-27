@@ -2,12 +2,44 @@
 -- Guild OS - Roster Frame
 -- Premium guild roster UI with modern visual design
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
 
 -- An officer note from the roster's right-click menu (issue #49). data = { key, name }: the
 -- key is the roster's own, the one the member sheet reads notes by.
+-- Widgets reused across redraws (memory audit): a frame, texture or text the client makes is never freed,
+-- so a redraw takes the ones the last one made, by the part each plays (`key`), makes only what is missing
+-- and hides what is left over. Take returns the widget and whether it was reused. Kept local to the file:
+-- the tools load screens one at a time, under a stubbed UI.
+local function NewListPool()
+    local made, used, pool = {}, {}, {}
+    function pool.Begin() for k in pairs(used) do used[k] = 0 end end
+    function pool.Take(key, make)
+        local n = (used[key] or 0) + 1
+        used[key] = n
+        local list = made[key]
+        if not list then list = {}; made[key] = list end
+        local w = list[n]
+        if w then
+            w:ClearAllPoints()
+            w:Show()
+            return w, true
+        end
+        w = make()
+        list[n] = w
+        return w, false
+    end
+    function pool.End()
+        for key, list in pairs(made) do
+            for i = (used[key] or 0) + 1, #list do list[i]:Hide() end
+        end
+    end
+    return pool
+end
+
+
 local function SaveOfficerNote(data, text)
     text = text and strtrim(text) or ""
     if not data or text == "" or not GuildOS.OfficerNotes then return end
@@ -2839,19 +2871,43 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
         frame:SetPoint("TOPLEFT", left, y)
         frame:SetPoint("TOPRIGHT", 0, y)
         frame:SetHeight(h)
-        frame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
         frame:Show()
+    end
+    -- The list's rows and texts are the last fill's, refilled (memory audit): every keystroke in the search and
+    -- every item the client finishes loading fill it again, and each fill made all of it anew. `key` is the part.
+    local pool = NewListPool()
+    local function rowFrame(key, template)
+        return pool.Take(key, function()
+            local f = CreateFrame(template and "Button" or "Frame", nil, listChild, "BackdropTemplate")
+            f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+            return f
+        end)
+    end
+    -- A text of `owner` (a pooled row, which keeps its own), or of the list itself when `owner` is nil.
+    local function rowText(owner, key, size, role)
+        if owner then
+            owner.__texts = owner.__texts or {}
+            local fs = owner.__texts[key]
+            if not fs then
+                fs = owner:CreateFontString(nil, "OVERLAY")
+                GuildOS:ApplyFont(fs, size, role)
+                owner.__texts[key] = fs
+            end
+            fs:Show()
+            return fs
+        end
+        return pool.Take(key, function()
+            local fs = listChild:CreateFontString(nil, "OVERLAY")
+            GuildOS:ApplyFont(fs, size, role)
+            return fs
+        end)
     end
 
     ----------------------------------------------------------------
     -- Populate character list
     ----------------------------------------------------------------
     local function PopulateWishlistPanel(filter)
-        -- Clear previous
-        local children = { listChild:GetChildren() }
-        for _, ch in ipairs(children) do ch:Hide() end
-        local regions = { listChild:GetRegions() }
-        for _, rg in ipairs(regions) do rg:Hide() end
+        pool.Begin()
 
         local guildWl = GuildOS.Wishlist and GuildOS.Wishlist:AllLists() or GuildOS.db.guildWishlists
         -- Once per refresh. Retail has no LootMaster (personal loot, ADR-0026): the game's own table, as before.
@@ -2883,36 +2939,32 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
             local rowBg = (count % 2 == 0) and C.row2 or C.row1
 
             -- Character row (clickable)
-            local charRow = CreateFrame("Button", nil, listChild, "BackdropTemplate")
+            local charRow = rowFrame("char", true)
             hang(charRow, 0, ly, 24)
             charRow:SetBackdropColor(rowBg.r, rowBg.g, rowBg.b, rowBg.a)
 
             -- Expand indicator
-            local arrow = charRow:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(arrow, UI.SP.META)
+            local arrow = rowText(charRow, "arrow", UI.SP.META)
             arrow:SetPoint("LEFT", 8, 0)
             arrow:SetTextColor(C.label.r, C.label.g, C.label.b)
             arrow:SetText(isExpanded and "v" or ">")
 
             -- Character name
             local cc = GuildOS.ClassColors and GuildOS.ClassColors[(charData.class or ""):upper()] or C.text
-            local nameStr = charRow:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(nameStr, 11)
+            local nameStr = rowText(charRow, "name", 11)
             nameStr:SetPoint("LEFT", 24, 0)
             nameStr:SetTextColor(cc.r, cc.g, cc.b)
             nameStr:SetText(charData.name or charKey)
 
             -- Class
-            local classStr = charRow:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(classStr, UI.SP.META)
+            local classStr = rowText(charRow, "class", UI.SP.META)
             classStr:SetPoint("LEFT", 180, 0)
             classStr:SetTextColor(cc.r, cc.g, cc.b, 0.7)
             classStr:SetText(charData.class or "")
 
             -- Wishlist count, in the text colours: no blue of its own (#371)
             local wishItems = charData.wishlist or {}
-            local wishCount = charRow:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(wishCount, UI.SP.META)
+            local wishCount = rowText(charRow, "wish", UI.SP.META)
             wishCount:SetPoint("LEFT", 310, 0)
             wishCount:SetWidth(60)
             if #wishItems > 0 then
@@ -2936,8 +2988,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                     attInk = (attVal >= 60 and C.ok) or (attVal >= 40 and C.warn) or C.danger
                 end
             end
-            local attPct = charRow:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(attPct, nil, "tableNum")
+            local attPct = rowText(charRow, "att", nil, "tableNum")
             attPct:SetPoint("LEFT", 400, 0)
             attPct:SetWidth(50)
             attPct:SetTextColor(attInk.r, attInk.g, attInk.b)
@@ -2954,9 +3005,9 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                 end
                 if hasPrio then break end
             end
+            local prioStar = rowText(charRow, "star", 12)
+            prioStar:SetShown(hasPrio)
             if hasPrio then
-                local prioStar = charRow:CreateFontString(nil, "OVERLAY")
-                GuildOS:ApplyFont(prioStar, 12)
                 prioStar:SetPoint("LEFT", 460, 0)
                 prioStar:SetTextColor(C.text.r, C.text.g, C.text.b)
                 prioStar:SetText("*")
@@ -2987,15 +3038,14 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
             -- wash, its captions the column headers' (#371)
             ----------------------------------------------------
             if isExpanded and (#wishItems > 0 or hasPrio) then
-                local detailBg = CreateFrame("Frame", nil, listChild, "BackdropTemplate")
+                local detailBg = rowFrame("detail")
                 hang(detailBg, 0, ly, 1)
                 detailBg:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
 
                 local detailLy = -4
 
                 -- Section label
-                local secLabel = listChild:CreateFontString(nil, "OVERLAY")
-                GuildOS:ApplyFont(secLabel, nil, "colHeader")
+                local secLabel = rowText(nil, "section", nil, "colHeader")
                 secLabel:SetPoint("TOPLEFT", 10, ly + detailLy)
                 secLabel:SetTextColor(C.label.r, C.label.g, C.label.b)
                 secLabel:SetText(string.format(L["WISHLIST  (%d)"], #wishItems))
@@ -3003,13 +3053,12 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                 detailLy = detailLy - 16
 
                 for _, item in ipairs(wishItems) do
-                    local iRow = CreateFrame("Frame", nil, listChild, "BackdropTemplate")
+                    local iRow = rowFrame("item")
                     hang(iRow, 20, ly + detailLy, 18)
                     iRow:SetBackdropColor(C.row1.r, C.row1.g, C.row1.b, C.row1.a)
 
                     -- Order
-                    local orderStr = iRow:CreateFontString(nil, "OVERLAY")
-                    GuildOS:ApplyFont(orderStr, nil, "tableNum")
+                    local orderStr = rowText(iRow, "order", nil, "tableNum")
                     orderStr:SetPoint("LEFT", 8, 0)
                     orderStr:SetWidth(22)
                     orderStr:SetJustifyH("RIGHT")
@@ -3023,8 +3072,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                         qColor = GuildOS.QualityColors[q] or C.text
                     end
                     local itemName = GuildOS.Wishlist and GuildOS.Wishlist:GetItemName(item.itemId) or string.format(L["Item #%s"], item.itemId or "?")
-                    local itemStr = iRow:CreateFontString(nil, "OVERLAY")
-                    GuildOS:ApplyFont(itemStr, UI.SP.META)
+                    local itemStr = rowText(iRow, "item", UI.SP.META)
                     itemStr:SetPoint("LEFT", 34, 0)
                     itemStr:SetPoint("RIGHT", -76, 0)
                     itemStr:SetJustifyH("LEFT")
@@ -3033,9 +3081,9 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                     itemStr:SetText(itemName)
 
                     -- OS badge
+                    local osBadge = rowText(iRow, "os", 8)
+                    osBadge:SetShown(item.isOffspec and true or false)
                     if item.isOffspec then
-                        local osBadge = iRow:CreateFontString(nil, "OVERLAY")
-                        GuildOS:ApplyFont(osBadge, 8)
                         osBadge:SetPoint("RIGHT", -8, 0)
                         osBadge:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
                         osBadge:SetText(L["OS"])
@@ -3043,11 +3091,13 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
 
                     -- Officer prio badge for this item + this character
                     local itemPrios = allPrios[item.itemId]
+                    local prioBadge = rowText(iRow, "prio", nil, "tableNum")
+                    prioBadge:Hide()
                     if itemPrios then
                         for prioIdx, prioEntry in ipairs(itemPrios) do
                             if strlower(prioEntry.name or "") == charKey then
-                                local prioBadge = iRow:CreateFontString(nil, "OVERLAY")
-                                GuildOS:ApplyFont(prioBadge, nil, "tableNum")
+                                prioBadge:Show()
+                                prioBadge:ClearAllPoints()
                                 local rightOff = item.isOffspec and -28 or -8
                                 prioBadge:SetPoint("RIGHT", rightOff, 0)
                                 prioBadge:SetTextColor(C.text.r, C.text.g, C.text.b)
@@ -3088,14 +3138,13 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
 
                     -- Section separator: a 1px line, not gold (#371)
                     detailLy = detailLy - 4
-                    local prioSep = UI:CreateSeparator(listChild)
+                    local prioSep = pool.Take("prioSep", function() return UI:CreateSeparator(listChild) end)
                     prioSep:SetPoint("TOPLEFT", 20, ly + detailLy)
                     prioSep:SetPoint("TOPRIGHT", -20, ly + detailLy)
                     prioSep:Show()
                     detailLy = detailLy - 5
 
-                    local prioLabel = listChild:CreateFontString(nil, "OVERLAY")
-                    GuildOS:ApplyFont(prioLabel, nil, "colHeader")
+                    local prioLabel = rowText(nil, "prioLabel", nil, "colHeader")
                     prioLabel:SetPoint("TOPLEFT", 10, ly + detailLy)
                     prioLabel:SetTextColor(C.label.r, C.label.g, C.label.b)
                     prioLabel:SetText(string.format(L["OFFICIAL PRIORITY  (%d)"], #prioBadges))
@@ -3103,12 +3152,11 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                     detailLy = detailLy - 16
 
                     for _, badge in ipairs(prioBadges) do
-                        local pRow = CreateFrame("Frame", nil, listChild, "BackdropTemplate")
+                        local pRow = rowFrame("prioRow")
                         hang(pRow, 20, ly + detailLy, 18)
                         pRow:SetBackdropColor(C.row1.r, C.row1.g, C.row1.b, C.row1.a)
 
-                        local starStr = pRow:CreateFontString(nil, "OVERLAY")
-                        GuildOS:ApplyFont(starStr, UI.SP.META, "tableNum")
+                        local starStr = rowText(pRow, "star", UI.SP.META, "tableNum")
                         starStr:SetPoint("LEFT", 8, 0)
                         starStr:SetWidth(32)  -- "* #12" at 10px mono needs 30px
                         starStr:SetJustifyH("RIGHT")
@@ -3121,8 +3169,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                             local q = GuildOS.Wishlist:GetItemQuality(badge.itemId)
                             pqColor = GuildOS.QualityColors[q] or C.text
                         end
-                        local pItemStr = pRow:CreateFontString(nil, "OVERLAY")
-                        GuildOS:ApplyFont(pItemStr, UI.SP.META)
+                        local pItemStr = rowText(pRow, "item", UI.SP.META)
                         pItemStr:SetPoint("LEFT", 40, 0)
                         pItemStr:SetPoint("RIGHT", -80, 0)
                         pItemStr:SetJustifyH("LEFT")
@@ -3154,8 +3201,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
 
         -- An empty list says so, left-aligned under the header (#371): it was centred.
         if count == 0 and totalCount == 0 then
-            local noData = listChild:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(noData, 11)
+            local noData = rowText(nil, "noData", 11)
             noData:SetPoint("TOPLEFT", listChild, "TOPLEFT", 6, ly - 6)
             noData:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
             noData:SetText(L["No member has synced their wishlist yet.\nUse the Sync button in the My Wishlist window to send your data."])
@@ -3163,8 +3209,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
             noData:Show()
             ly = ly - 40
         elseif count == 0 then
-            local noMatch = listChild:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(noMatch, 11)
+            local noMatch = rowText(nil, "noMatch", 11)
             noMatch:SetPoint("TOPLEFT", listChild, "TOPLEFT", 6, ly - 6)
             noMatch:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
             noMatch:SetText(L["No character found."])
@@ -3173,6 +3218,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
             ly = ly - 26
         end
 
+        pool.End()
         local total = 0
         for _ in pairs(guildWl or {}) do total = total + 1 end
         charCountText:SetText(string.format(L["%d / %d members"], count, total))

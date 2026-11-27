@@ -14,6 +14,7 @@
 --     same chrome put on a frame that already exists (Kit:Dress).
 -- Frame-free until called, so a file can read Kit lazily and still load where it is absent (a test).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local Style = GuildOS.Style

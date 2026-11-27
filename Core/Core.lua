@@ -11,6 +11,19 @@ _G.GuildOS = _G.GuildOS or {}
 -- Attach the file-local namespace table (only accessible from this file)
 GuildOS.ns = ns
 
+-- The frames Guild OS made this session (/gos debug mem, memory audit). The client never frees a frame, so
+-- the number only grows: a screen that redraws while it stays put reuses what it made. Every GuildOS file
+-- that makes frames takes CreateFrame through this counter, by a local at its top
+--   local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end
+-- The global is never replaced: a hook on it would run for every addon and the game itself. Not counted: the
+-- libraries, the shared ChehulNet files, and the children a template makes for a frame.
+GuildOS.framesMade = 0
+function GuildOS.CountedCreateFrame(...)
+    GuildOS.framesMade = GuildOS.framesMade + 1
+    return _G.CreateFrame(...)
+end
+local CreateFrame = GuildOS.CountedCreateFrame
+
 local L = GuildOS.L
 
 ----------------------------------------------------------------------
@@ -669,7 +682,11 @@ local function rosterPass()
     -- At most once a minute (audit D2): the first pass at once, a burst's last at the minute's end.
     if GuildOS.DropDeparted then GuildOS:Coalesce("departed", GuildOS.DEPARTED_GAP, dropDeparted) end
     -- Who joined since this client last saw the whole roster: a trial each, with the guild's switch on (#249).
-    if GuildOS.TrialTracker then GuildOS:SafeCall(GuildOS.TrialTracker.ScanRoster, GuildOS.TrialTracker) end
+    -- At most a pass a minute too (memory audit: a table a member every 5 s): the first at once, a burst's last later.
+    local TT = GuildOS.TrialTracker
+    if TT then
+        GuildOS:Coalesce("trials", TT.SCAN_GAP or 60, function() GuildOS:SafeCall(TT.ScanRoster, TT) end)
+    end
     -- What changed since the roster last seen (#425): at most a pass a minute, whatever the bursts.
     if GuildOS.MemberHistory then GuildOS.MemberHistory:Schedule() end
     GuildOS.Perf:Stop("roster pass", t)

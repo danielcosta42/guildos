@@ -2,6 +2,7 @@
 -- Guild OS - Communication System
 -- Handles addon-to-addon communication for syncing member data
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local CommSystem = {}
 GuildOS.CommSystem = CommSystem
 local L = GuildOS.L

@@ -19,6 +19,7 @@
 ----------------------------------------------------------------------
 -- TBC content: outside TBC Anniversary this module does not exist, and every
 -- reader already treats a missing module as absent (ADR-0014).
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 if not GuildOS.Client.isAnniversary then return end
 
 local AttunementTracker = {}

@@ -16,6 +16,7 @@
 -- combat or during a boss, in a chat lockdown, or when the client keeps the position secret; in an
 -- instance only its name goes, never coordinates.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local GuildMap = {}
 GuildOS.GuildMap = GuildMap
 
@@ -621,6 +622,165 @@ function GuildMap:HandleOpenMap(sender, text, channel)
 end
 
 ----------------------------------------------------------------------
+-- Guildmates' campfires (WoW: Forever; chehulnet AGENTS.md "ChehulCamp", specs/salao/mapa.md "Fogueiras")
+--
+-- Warmth (the family's campfire addon) and the ChehulNet beacon (v16, for a player who said yes) announce a fire
+-- the player lit on the ChehulCamp prefix: "C2|A|map|x|y|zuid|tier(+flags)|n|age|objects|people|note", again
+-- every four minutes while near it, and "C2|X" when it ends. This client READS the ones that come over GUILD from
+-- a guildmate on the roster, never sends one (the beacon, Modules/ChehulNet.lua, does that) and never relays one
+-- (the mesh does). Its own AceComm route on the prefix, not Mesh:Register: that would take the prefix's handler
+-- from the mesh, which relays Warmth's camps. Off WoW: Forever there are no camp kits; with Warmth loaded, Warmth
+-- draws the camps itself (with their circle), so this layer is off.
+----------------------------------------------------------------------
+GuildMap.CAMP_PREFIX = "ChehulCamp"
+GuildMap.CAMP_ADDON  = "Warmth"
+GuildMap.CAMP_LIFE   = 3600   -- a fire burns at most this long (the beacon's CAMP_LIFE)
+GuildMap.CAMP_QUIET  = 600    -- a camp not heard again this long is gone (the beat comes every 240 s)
+GuildMap.CAMP_GAP    = 2      -- one guildmate's camp lines, at most this often (more are dropped)
+GuildMap.CAMP_MAX    = 60     -- camps kept at most (one a guildmate)
+GuildMap.CAMP_BYTES  = 255    -- a line longer than one addon message is not a camp
+
+GuildMap.camps = {}      -- [key] = { key, name, class, mapID, x, y, tier, lit, heard }
+
+-- The kit's tier (1..3, ChehulNet.CAMP_KITS) as its name.
+local function tierName(tier)
+    local L = GuildOS.L
+    if tier == 3 then return L["Expert"] end
+    if tier == 2 then return L["Journeyman"] end
+    return L["Basic"]
+end
+
+-- A line split at "|", empty fields kept; nil past `cap` fields.
+local function splitBars(s, cap)
+    local out, pos = {}, 1
+    while true do
+        local i = s:find("|", pos, true)
+        out[#out + 1] = s:sub(pos, (i or 0) - 1)
+        if #out > cap then return nil end
+        if not i then return out end
+        pos = i + 1
+    end
+end
+
+-- A map fraction off the wire ("0.4523"), or nil.
+local function campCoord(s)
+    if type(s) ~= "string" or #s > 12 or not s:match("^%d*%.?%d+$") then return nil end
+    local v = GuildOS.Finite(s)
+    if not v or v < 0 or v > 1 then return nil end
+    return v
+end
+
+-- A camp's line (untrusted) as { mapID, x, y, tier, age } for an announce, { ended = true } for "C2|X", nil for
+-- anything else (a join, an info line, a malformed one). The tier's letters after the digit are flags, and the
+-- ones this client does not know are skipped. Who lit it is the envelope's sender, never the people field.
+function GuildMap:DecodeCamp(s)
+    if type(s) ~= "string" or #s > self.CAMP_BYTES or s:find("[%c]") then return nil end
+    if s == "C2|X" or s:sub(1, 5) == "C2|X|" then return { ended = true } end
+    if s:sub(1, 5) ~= "C2|A|" then return nil end
+    local f = splitBars(s, 16)
+    if not f or #f < 9 then return nil end
+    local mapID = f[3]:match("^%d+$") and #f[3] <= 7 and tonumber(f[3])
+    if not mapID or mapID <= 0 or mapID > 1000000 then return nil end
+    local x, y = campCoord(f[4]), campCoord(f[5])
+    if not x or not y or (x == 0 and y == 0) then return nil end
+    if not (f[6] == "" or (#f[6] <= 20 and f[6]:match("^%d+$"))) then return nil end
+    local tier, flags = f[7]:match("^([123])(%a*)$")
+    if not tier or #flags > 8 then return nil end
+    if not (f[8] == "" or (#f[8] <= 3 and f[8]:match("^%d+$"))) then return nil end
+    local age = #f[9] <= 6 and f[9]:match("^%d+$") and tonumber(f[9])
+    if not age or age >= self.CAMP_LIFE then return nil end
+    return { mapID = mapID, x = x, y = y, tier = tonumber(tier), age = age }
+end
+
+-- Whether the campfire layer is on here: WoW: Forever, and Warmth not loaded (it draws them itself).
+function GuildMap:CampsOn()
+    local c = GuildOS.Client
+    if not c or c.isAnniversary or c.isRetail then return false end
+    return not GuildOS.Compat.IsAddOnLoaded(self.CAMP_ADDON)
+end
+
+-- A camp line (GUILD only, from a guildmate on the roster, never this client's own): the camp kept or ended.
+function GuildMap:HandleCamp(sender, text, channel)
+    if channel ~= "GUILD" or type(sender) ~= "string" or not self:CampsOn() then return end
+    local c = self:DecodeCamp(text)
+    if not c then return end
+    local key = GuildOS:SenderKey(sender)
+    if not key or key == GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()) then return end
+    local m = self:_Roster()[key]
+    if not m then return end
+    local t, old = now(), self.camps[key]
+    if c.ended then
+        if old then
+            self.camps[key] = nil
+            if self.uiRefresh then self.uiRefresh() end
+        end
+        return
+    end
+    if old and t - old.heard < self.CAMP_GAP then return end
+    if not old then
+        local n = 0
+        for _ in pairs(self.camps) do n = n + 1 end
+        if n >= self.CAMP_MAX then return end
+    end
+    if not GuildOS.Compat.MapInfo(c.mapID) then return end
+    self.camps[key] = { key = key, name = m.name or key:match("^([^-]+)") or key, class = m.class,
+        mapID = c.mapID, x = c.x, y = c.y, tier = c.tier, lit = t - c.age, heard = t }
+    self.stats.camps = (self.stats.camps or 0) + 1
+    if self.uiRefresh then self.uiRefresh() end
+end
+
+-- Drop the camps that burnt out (CAMP_LIFE since lit) or went quiet (CAMP_QUIET since heard).
+function GuildMap:_PruneCamps(t)
+    for k, c in pairs(self.camps) do
+        if t - c.lit >= self.CAMP_LIFE or t - c.heard > self.CAMP_QUIET then self.camps[k] = nil end
+    end
+end
+
+-- The guildmates' camps to draw, sorted by name: { key, name, class, mapID, x, y, tier, tierName, zone, age };
+-- none while the layer is off.
+function GuildMap:GetCamps(t)
+    t = t or now()
+    local out = {}
+    if not self:CampsOn() then return out end
+    self:_PruneCamps(t)
+    for _, c in pairs(self.camps) do
+        out[#out + 1] = { key = c.key, name = c.name, class = c.class, mapID = c.mapID, x = c.x, y = c.y,
+            tier = c.tier, tierName = tierName(c.tier), zone = self:_MapName(c.mapID),
+            age = t - c.lit }
+    end
+    table.sort(out, function(a, b) return (a.name or ""):lower() < (b.name or ""):lower() end)
+    return out
+end
+
+-- The tooltip's line: "<Name> lit a campfire in <Zone> · <tier> level".
+function GuildMap:CampText(c)
+    return string.format(GuildOS.L["%s lit a campfire in %s · %s level"], c.name or "?",
+        c.zone or GuildOS.L["Unknown zone"], c.tierName or GuildOS.L["Basic"])
+end
+
+-- Listens on ChehulCamp through Guild OS's own AceComm route (the raw event where AceComm is missing). WoW:
+-- Forever only; registering the prefix sends nothing.
+function GuildMap:_ListenCamps()
+    local c = GuildOS.Client
+    if self._campComm or not c or c.isAnniversary or c.isRetail then return end
+    local function onCamp(prefix, text, channel, sender)
+        if prefix ~= GuildMap.CAMP_PREFIX or GuildOS.Compat.IsSecret(text, channel, sender) then return end
+        GuildOS:SafeCall(GuildMap.HandleCamp, GuildMap, sender, text, channel)
+    end
+    local ace = LibStub and LibStub("AceComm-3.0", true)
+    self._campComm = {}
+    if ace and ace.RegisterComm then
+        ace.RegisterComm(self._campComm, self.CAMP_PREFIX, onCamp)
+        return
+    end
+    pcall(GuildOS.Compat.RegisterAddonPrefix, self.CAMP_PREFIX)
+    local f = CreateFrame("Frame")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_ADDON")
+    f:SetScript("OnEvent", function(_, _, ...) onCamp(...) end)
+    self._campComm.frame = f
+end
+
+----------------------------------------------------------------------
 -- The group, read here
 ----------------------------------------------------------------------
 function GuildMap:_ReadGroup(t)
@@ -730,6 +890,7 @@ function GuildMap:_Prune(t)
     end
     for k, w in pairs(self.watchers) do if w.untilT < t then self.watchers[k] = nil end end
     for k, seen in pairs(self.openMapSeen) do if t - seen > self.OPENMAP_GONE then self.openMapSeen[k] = nil end end
+    self:_PruneCamps(t)
 end
 
 -- The online guildmates the roster puts in the shown zone that have no place known here (no Guild OS, no OpenMap
@@ -859,5 +1020,6 @@ function GuildMap:Initialize()
         GuildOS:SafeCall(GuildMap.HandleOpenMap, GuildMap, sender, text, channel)
     end)
     self._openMapFrame = om
+    self:_ListenCamps()   -- guildmates' campfires (WoW: Forever)
     self._ticker = GuildOS.Compat.NewTicker(1, function() GuildOS:SafeCall(GuildMap.Tick, GuildMap) end)
 end

@@ -9,6 +9,7 @@
 -- The queue is the Workshop's "Pedidos de craft" (#449 phase 3): a parchment card, its views as pills, each
 -- order a paper line with its item framed in its quality, the steps under it and its buttons.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L

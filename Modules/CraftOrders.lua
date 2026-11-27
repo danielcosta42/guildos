@@ -14,6 +14,7 @@
 --   mats { id }           done { id }          can { id }
 --   ask  {}               have { l = { orders } }
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local CraftOrders = {}
 GuildOS.CraftOrders = CraftOrders
 

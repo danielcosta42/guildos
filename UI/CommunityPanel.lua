@@ -11,6 +11,7 @@
 -- below; the notices as pinned notes, the polls as bars, the rules as a parchment list, the calls as lines
 -- with a coloured square, the forms in a card of their own on the right.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
@@ -791,8 +792,10 @@ local function BuildBulletinSub(panel)
         for i = open + 1, #pollCards do pollCards[i].poll = nil end
         screen.layout()
     end
-    if GuildOS.Bulletin then GuildOS.Bulletin.uiRefresh = refresh end
-    if GuildOS.Polls then GuildOS.Polls.uiRefresh = refresh end
+    -- Only while it is on screen (memory audit): showing it refreshes it anyway.
+    local function onChange() if panel:IsVisible() then refresh() end end
+    if GuildOS.Bulletin then GuildOS.Bulletin.uiRefresh = onChange end
+    if GuildOS.Polls then GuildOS.Polls.uiRefresh = onChange end
     return refresh
 end
 
@@ -951,7 +954,8 @@ local function BuildGuildRulesSub(panel)
         rules = GR and GR:Get() or {}
         screen.layout()
     end
-    if GR then GR.uiRefresh = refresh end
+    -- Only while it is on screen (memory audit): showing it refreshes it anyway.
+    if GR then GR.uiRefresh = function() if panel:IsVisible() then refresh() end end end
     return refresh
 end
 

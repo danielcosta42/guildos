@@ -2,6 +2,7 @@
 -- Guild OS - Member Detail Panel
 -- Shows full gear inspection, professions, and attunement details
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
@@ -133,6 +134,23 @@ local function _pBG(parent)
         p.bg[p.bgCur] = tx
     end
     return tx
+end
+
+-- The frames a fill lays (the talent bar, the stats grid, an item's icon and its gems, a tooltip's zone, a
+-- progress bar), pooled by `kind` as the texts are (memory audit): a fill used to make them anew, for every
+-- member opened and every redraw of the card. Each pooled frame comes back unanchored and shown; the fill hides
+-- every child of the content first, so the ones it does not take stay hidden.
+local function _pF(parent, kind, make)
+    local p = parent._p
+    local n = (p.frCur[kind] or 0) + 1
+    p.frCur[kind] = n
+    local list = p.fr[kind]
+    if not list then list = {}; p.fr[kind] = list end
+    local f = list[n]
+    local reused = f ~= nil
+    if f then f:ClearAllPoints() else f = make(); list[n] = f end
+    f:Show()
+    return f, reused
 end
 
 ----------------------------------------------------------------------
@@ -282,26 +300,33 @@ local function paperInk(c) return UI:Ink("paper", c) end
 -- link: itemLink string OR itemId number
 -- w, h: optional size override (defaults to anchor size)
 ----------------------------------------------------------------------
+local function zoneEnter(self)
+    local link = self.link
+    if not link then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    if type(link) == "number" then
+        GameTooltip:SetHyperlink("item:" .. link)
+    else
+        GameTooltip:SetHyperlink(link)
+    end
+    GameTooltip:Show()
+end
 local function CreateItemTooltipZone(parent, anchor, link, w, h)
     if not link then return end
-    local zone = CreateFrame("Frame", nil, parent)
+    local function make()
+        local z = CreateFrame("Frame", nil, parent)
+        z:EnableMouse(true)
+        z:SetScript("OnEnter", zoneEnter)
+        z:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        return z
+    end
+    -- Pooled with the card's other frames when the card has its pool (PopulateDetail), else made.
+    local zone = parent._p and parent._p.fr and _pF(parent, "tipZone", make) or make()
     zone:SetAllPoints(anchor)
     if w and h then
         zone:SetSize(w, h)
     end
-    zone:EnableMouse(true)
-    zone:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if type(link) == "number" then
-            GameTooltip:SetHyperlink("item:" .. link)
-        else
-            GameTooltip:SetHyperlink(link)
-        end
-        GameTooltip:Show()
-    end)
-    zone:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
+    zone.link = link
     zone:Show()
     return zone
 end
@@ -416,9 +441,10 @@ function PopulateDetail(frame, data)
     -- hidden and their cursors reset so the current populate reuses them
     -- in order rather than accumulating fresh C-level objects each call.
     if not child._p then
-        child._p = { fs = {}, bg = {}, fsCur = 0, bgCur = 0 }
+        child._p = { fs = {}, bg = {}, fsCur = 0, bgCur = 0, fr = {}, frCur = {} }
     end
     local p = child._p
+    p.fr, p.frCur = p.fr or {}, {}
     for _, fs in ipairs(p.fs) do
         fs:Hide(); fs:ClearAllPoints(); fs:SetText(""); fs:SetWidth(0); fs:SetWordWrap(false); fs:SetJustifyH("LEFT"); fs.__ownInk = nil
     end
@@ -494,10 +520,25 @@ function PopulateDetail(frame, data)
     if scanned then
         -- Talent distribution bar (one segment per tree; clickable to view tree)
         if spec and spec.points and spec.names then
-            local barFrame = CreateFrame("Button", nil, child)
+            local barFrame = _pF(child, "talentBar", function()
+                local b = CreateFrame("Button", nil, child)
+                b:RegisterForClicks("LeftButtonUp")
+                -- The light track under the trees (#449): the paper's field.
+                b.track = b:CreateTexture(nil, "ARTWORK")
+                b.track:SetTexture("Interface\\Buttons\\WHITE8x8")
+                b.track:SetPoint("TOPLEFT", 0, 0)
+                b.track:SetVertexColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
+                b.segs, b.labels, b.divs = {}, {}, {}
+                return b
+            end)
             barFrame:SetPoint("TOPLEFT", PADX, yOff)
             barFrame:SetSize(barW, 20)
-            barFrame:RegisterForClicks("LeftButtonUp")
+            for _, list in ipairs({ barFrame.segs, barFrame.labels, barFrame.divs }) do
+                for _, part in ipairs(list) do part:Hide() end
+            end
+            barFrame:SetScript("OnClick", nil)
+            barFrame:SetScript("OnEnter", nil)
+            barFrame:SetScript("OnLeave", nil)
             if spec.talents then
                 barFrame:SetScript("OnClick", function()
                     local freshSpec = GuildOS.db.members[playerKey]
@@ -513,12 +554,7 @@ function PopulateDetail(frame, data)
             end
             barFrame:Show()
 
-            -- The light track under the trees (#449): the paper's field.
-            local track = barFrame:CreateTexture(nil, "ARTWORK")
-            track:SetTexture("Interface\\Buttons\\WHITE8x8")
-            track:SetPoint("TOPLEFT", 0, 0)
-            track:SetSize(barW, 18)
-            track:SetVertexColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
+            barFrame.track:SetSize(barW, 18)
 
             local total = 0
             for _, pts in ipairs(spec.points) do total = total + pts end
@@ -537,7 +573,7 @@ function PopulateDetail(frame, data)
             local nonZero = 0
             for _, pts in ipairs(spec.points) do if pts > 0 then nonZero = nonZero + 1 end end
 
-            local drawn = 0
+            local drawn, nDivs = 0, 0
             for i, pts in ipairs(spec.points) do
                 if pts > 0 then
                     drawn = drawn + 1
@@ -550,8 +586,13 @@ function PopulateDetail(frame, data)
                     end
 
                     -- Segment fill
-                    local seg = barFrame:CreateTexture(nil, "OVERLAY")
-                    seg:SetTexture("Interface\\Buttons\\WHITE8x8")
+                    local seg = barFrame.segs[drawn]
+                    if not seg then
+                        seg = barFrame:CreateTexture(nil, "OVERLAY")
+                        seg:SetTexture("Interface\\Buttons\\WHITE8x8")
+                        barFrame.segs[drawn] = seg
+                    end
+                    seg:ClearAllPoints()
                     seg:SetPoint("TOPLEFT", xPos, 0)
                     seg:SetSize(segW, 18)
                     local tc = treeColors[i] or treeColors[1]
@@ -559,8 +600,13 @@ function PopulateDetail(frame, data)
                     seg:Show()
 
                     -- Label clipped to segment width; text adapts to available space
-                    local segLabel = barFrame:CreateFontString(nil, "OVERLAY")
-                    GuildOS:ApplyFont(segLabel, UI.SP.META)
+                    local segLabel = barFrame.labels[drawn]
+                    if not segLabel then
+                        segLabel = barFrame:CreateFontString(nil, "OVERLAY")
+                        GuildOS:ApplyFont(segLabel, UI.SP.META)
+                        barFrame.labels[drawn] = segLabel
+                    end
+                    segLabel:ClearAllPoints()
                     segLabel:SetPoint("TOPLEFT", xPos + 4, -1)
                     segLabel:SetSize(math.max(1, segW - 8), 18)
                     segLabel:SetJustifyH("CENTER")
@@ -578,12 +624,18 @@ function PopulateDetail(frame, data)
 
                     -- 1-px divider before each segment except the first
                     if xPos > 0 then
-                        local div = barFrame:CreateTexture(nil, "OVERLAY")
-                        div:SetTexture("Interface\\Buttons\\WHITE8x8")
+                        nDivs = nDivs + 1
+                        local div = barFrame.divs[nDivs]
+                        if not div then
+                            div = barFrame:CreateTexture(nil, "OVERLAY")
+                            div:SetTexture("Interface\\Buttons\\WHITE8x8")
+                            div:SetHeight(18)
+                            GuildOS.UI:Hairline(div, "Width")
+                            div:SetVertexColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
+                            barFrame.divs[nDivs] = div
+                        end
+                        div:ClearAllPoints()
                         div:SetPoint("TOPLEFT", xPos, 0)
-                        div:SetHeight(18)
-                        GuildOS.UI:Hairline(div, "Width")
-                        div:SetVertexColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
                         div:Show()
                     end
 
@@ -645,7 +697,7 @@ function PopulateDetail(frame, data)
     if data.stats then
         yOff = CreateSectionHeader(child, L["Character stats"], yOff, contentWidth)
 
-        local statsGrid = CreateFrame("Frame", nil, child)
+        local statsGrid = _pF(child, "statsGrid", function() return CreateFrame("Frame", nil, child) end)
         statsGrid:SetPoint("TOPLEFT", PADX, yOff)
         statsGrid:SetSize(contentWidth - 2 * PADX, 40)
         statsGrid:Show()
@@ -1546,7 +1598,8 @@ function CreateGearRow(parent, slotId, item, yOff, width, rule)
         end
 
         -- Item icon, always in its quality's frame
-        local iconFrame = UI:CreateIcon(parent, GEAR_ICON, icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        local iconFrame = _pF(parent, "gearIcon", function() return UI:CreateIcon(parent, GEAR_ICON) end)
+        iconFrame.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
         iconFrame:SetPoint("LEFT", parent, "TOPLEFT", iconX, mid)
         iconFrame:SetBackdropColor(C.paperLight.r, C.paperLight.g, C.paperLight.b, 1)
         iconFrame:Show()
@@ -1574,7 +1627,11 @@ function CreateGearRow(parent, slotId, item, yOff, width, rule)
                 local _, _, _, _, _, _, _, _, _, gemIcon = GuildOS.Compat.GetItemInfo(gem.id or 0)
                 if not gemIcon and gem.id then local _, gi = GuildOS.Compat.ItemInstant(gem.id); gemIcon = gi end
                 if gemIcon and gemIcon ~= "" then
-                    local gemFrame = UI:CreateIcon(parent, 12, gemIcon)
+                    local gemFrame = _pF(parent, "gemIcon", function() return UI:CreateIcon(parent, 12) end)
+                    gemFrame.icon:SetTexture(gemIcon)
+                    gemFrame:SetScript("OnEnter", nil)
+                    gemFrame:SetScript("OnLeave", nil)
+                    gemFrame:EnableMouse(false)
                     gemFrame:SetPoint("LEFT", gemAnchor, "RIGHT", 4, 0)
                     gemFrame:Show()
                     gemAnchor = gemFrame
@@ -1669,7 +1726,8 @@ function CreateProfessionRow(parent, prof, yOff, width)
     skillText:Show()
 
     -- Progress bar
-    local progressBar = UI:CreateProgressBar(parent, width - 2 * PADX, 6)
+    local progressBar = _pF(parent, "profBar", function() return UI:CreateProgressBar(parent, width - 2 * PADX, 6) end)
+    progressBar:SetSize(width - 2 * PADX, 6)
     progressBar:SetPoint("TOPLEFT", PADX, yOff - 18)
     progressBar:SetProgress((prof.rank and (prof.maxRank or 0) > 0) and (prof.rank / prof.maxRank) or 0)
     progressBar:Show()
@@ -1739,7 +1797,8 @@ function CreateAttunementRow(parent, att, yOff, width)
 
     -- Progress bar (only for in-progress attunements, not completed ones)
     if not att.complete and att.questsTotal and att.questsTotal > 0 then
-        local progressBar = UI:CreateProgressBar(parent, width - 2 * PADX - 8, 5)
+        local progressBar = _pF(parent, "attBar", function() return UI:CreateProgressBar(parent, width - 2 * PADX - 8, 5) end)
+        progressBar:SetSize(width - 2 * PADX - 8, 5)
         progressBar:SetPoint("TOPLEFT", PADX, yOff - 20)
         progressBar:SetProgress(att.progress or 0)
         progressBar:Show()

@@ -10,6 +10,7 @@
 -- the bags one at a time; at a vendor only what came out of the bank is sold; the next time the bank
 -- opens, the gold it made goes back in.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Cleanup = {}
 GuildOS.GuildBankCleanup = Cleanup
 local L = GuildOS.L

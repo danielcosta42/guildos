@@ -11,6 +11,7 @@
 -- ever ALERT an officer — on a join, a whisper, a tooltip and before a manual invite — and never
 -- enter IsBanned(): another guild's ban never blocks the auto-invite; the officer decides.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local BanList = {}
 GuildOS.BanList = BanList
 local L = GuildOS.L

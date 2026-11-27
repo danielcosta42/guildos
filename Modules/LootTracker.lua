@@ -7,6 +7,7 @@
 -- inside a tracked raid session, via OnEncounterLoot (issue #183), and
 -- the awards of the loot council by trade, via RecordTradeAward (#185).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local LootTracker = {}
 GuildOS.LootTracker = LootTracker
 

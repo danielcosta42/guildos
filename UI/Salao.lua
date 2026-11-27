@@ -13,6 +13,7 @@
 -- The data half is frame-free (tools/salao.lua tests it); it reads what UI/Agora.lua, Calendar and
 -- WinterVeil already know and decides nothing of its own.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L

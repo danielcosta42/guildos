@@ -5,6 +5,7 @@
 -- window changes size. Members read the guild's rules; officers change them.
 -- A change that needs a reload lights one strip at the bottom of the panel.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 -- Drawn on a parchment card in the Officers' Room and Settings (specs/salao/fase3.md): the text takes the
 -- paper's inks and a class its colour on the paper (UI/Kit.lua); a floating window, the wood's (WOOD).
@@ -451,6 +452,13 @@ PAGES.profile = function(F)
             L["Only while a guildmate has the guild map open; never coordinates in an instance, nothing in combat there."],
             function() return GuildOS.GuildMap:IsSharing() end,
             function(checked) GuildOS.GuildMap:SetSharing(checked) end)
+    end
+    -- The campfire beacon (ChehulNet v16, Modules/ChehulNetWire.lua): WoW: Forever only, where the camp kits are.
+    local CN = _G.ChehulNet
+    if CN and CN.SetCampConsent and CN.CampState and not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail then
+        F:Check(L["Announce my campfires to the network"], nil,
+            function() return CN:CampState() == "on" end,
+            function(checked) CN:SetCampConsent(checked) end)
     end
 
     -- The member's own birthday (issue #428): the day and the month, for the guild's calendar.
@@ -1178,6 +1186,13 @@ local LINKS = {
     { key = "curse",   glyph = "C", label = "CurseForge", url = "https://www.curseforge.com/projects/1549177",    note = "Downloads and updates" },
     { key = "wago",    glyph = "W", label = "Wago",       url = "https://addons.wago.io/addons/rNkyABKa",         note = "Downloads and updates" },
 }
+-- The rest of the Chehul family (they share ChehulNet, the hidden network): each with what it is for and its page.
+local FAMILY = {
+    { key = "lodestar", glyph = "L", label = "Lodestar",         url = "https://github.com/danielcosta42/lodestar",         note = "Leveling guides with an arrow to the next quest" },
+    { key = "party",    glyph = "P", label = "PartyLens",        url = "https://github.com/danielcosta42/PartyLens",        note = "Group radar: the LFG channel and listings in one panel" },
+    { key = "warmth",   glyph = "W", label = "Warmth",           url = "https://github.com/danielcosta42/Warmth",           note = "Campfires on your map and who is around them" },
+    { key = "prof",     glyph = "H", label = "ProfessionHelper", url = "https://github.com/danielcosta42/ProfessionHelper", note = "Profession guides, shopping lists and farming (Classic)" },
+}
 local MIT = "MIT License\n\nCopyright (c) 2026 danielcosta42\n\n"
     .. "Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated "
     .. "documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation "
@@ -1320,6 +1335,11 @@ PAGES.credits = function(F)
     F:Section(L["Community and links"])
     for _, link in ipairs(LINKS) do linkRow(F, link) end
 
+    -- The rest of the family.
+    F:Section(L["The Chehul family"])
+    F:Note(L["Guild OS has siblings, made by the same hands and talking over the same hidden network."], { gap = 2 })
+    for _, link in ipairs(FAMILY) do linkRow(F, link) end
+
     -- The thanks.
     F:Section(L["Thanks"])
     F:Note(L["To the supporters on Discord, whose ideas and screenshots shaped this redesign, and to every guild that tested Guild OS in its raids and its chat."])
@@ -1354,6 +1374,7 @@ end
 -- changed shape (rank, the guild's ranks, a module's data appearing); the
 -- values are re-read on every refresh.
 ----------------------------------------------------------------------
+local builtPages = setmetatable({}, { __mode = "k" })   -- content -> { [shape] = { form, parts } }
 local function shapeOf(key, isOfficer)
     local parts = { key, isOfficer and "officer" or "member" }
     if key == "rules" and GuildControlGetNumRanks then
@@ -1376,12 +1397,33 @@ function GuildOS:RefreshSettingsPanel(content, key)
     local shape = shapeOf(key, isOfficer)
     local F = content.__settingsForm
     if not F or content.__settingsShape ~= shape then
-        if F then
+        -- Each shape's page is built once and kept (memory audit): what a build made is set aside when the
+        -- shape changes and shown again when it comes back, so an officer flag that flips at login, or two
+        -- shapes taken in turn, no longer leave a whole page of frames behind on every change.
+        local cache = builtPages[content]
+        if not cache then cache = {}; builtPages[content] = cache end
+        local old = content.__settingsShape and cache[content.__settingsShape]
+        if old then
+            for _, part in ipairs(old.parts) do part:Hide() end
+        elseif F then
             for _, child in pairs({ content:GetChildren() }) do child:Hide() end
             for _, region in pairs({ content:GetRegions() }) do region:Hide() end
         end
-        F = newForm(content)
-        PAGES[key](F, isOfficer)
+        local kept = cache[shape]
+        if kept then
+            for _, part in ipairs(kept.parts) do part:Show() end
+            F = kept.form
+        else
+            local before = {}
+            for _, child in ipairs({ content:GetChildren() }) do before[child] = true end
+            for _, region in ipairs({ content:GetRegions() }) do before[region] = true end
+            F = newForm(content)
+            PAGES[key](F, isOfficer)
+            local parts = {}
+            for _, child in ipairs({ content:GetChildren() }) do if not before[child] then parts[#parts + 1] = child end end
+            for _, region in ipairs({ content:GetRegions() }) do if not before[region] then parts[#parts + 1] = region end end
+            cache[shape] = { form = F, parts = parts }
+        end
         content.__settingsForm, content.__settingsShape = F, shape
     end
     F:Refresh()

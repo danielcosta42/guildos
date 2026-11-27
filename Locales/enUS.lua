@@ -9,6 +9,16 @@ local L = GuildOS.L
 -- Populated during i18n conversion.
 local _ = L
 
+-- At runtime the client keeps only the entries whose English is not the key itself (memory audit): every other
+-- key already reads as its own English through Locale.lua's fallback, and the ~2,450 identity entries below
+-- held some 300 KB for the whole session. The file stays the master list the translators and the tools read
+-- (tools/locales.lua reads its text; a tool that wants the table sets GuildOS.LOCALE_MASTER before loading it).
+-- Any entry added below whose value differs from its key goes here too.
+L["Guild OS has one look now: the Salão."] = "Guild OS has one look now: the Hall."
+L["Salão"] = "Hall"
+L["The officers post notices for the whole guild. The newest also show in the Salão."] = "The officers post notices for the whole guild. The newest also show in the Hall."
+if not rawget(GuildOS, "LOCALE_MASTER") then return end
+
 -- Core/Commands.lua
 L["Banned "] = "Banned "
 L["Unbanned "] = "Unbanned "
@@ -1806,7 +1816,6 @@ L["All caught up."] = "All caught up."
 L["By the fire"] = "By the fire"
 L["Chronicle"] = "Chronicle"
 L["For you"] = "For you"
-L["Guild OS has one look now: the Salão."] = "Guild OS has one look now: the Hall."
 L["Guild wall"] = "Guild wall"
 L["Home"] = "Home"
 L["Join this year's Secret Santa"] = "Join this year's Secret Santa"
@@ -1818,7 +1827,6 @@ L["Nothing new in the guild yet."] = "Nothing new in the guild yet."
 L["Nothing on the calendar yet."] = "Nothing on the calendar yet."
 L["Notice board"] = "Notice board"
 L["Officers' Room"] = "Officers' Room"
-L["Salão"] = "Hall"
 L["Secret Santa"] = "Secret Santa"
 L["Set up Guild OS for your guild: %d of %d steps"] = "Set up Guild OS for your guild: %d of %d steps"
 L["Standby"] = "Standby"
@@ -2088,7 +2096,6 @@ L["Shown until"] = "Shown until"
 L["State"] = "State"
 L["Tab"] = "Tab"
 L["Text"] = "Text"
-L["The officers post notices for the whole guild. The newest also show in the Salão."] = "The officers post notices for the whole guild. The newest also show in the Hall."
 L["The rules also go to the guild's page on the site, for whoever joins to read."] = "The rules also go to the guild's page on the site, for whoever joins to read."
 L["This week"] = "This week"
 L["Total"] = "Total"
@@ -2657,3 +2664,22 @@ L["Delete line removes it on this client only: the other officers keep theirs."]
 L["Move"] = "Move"
 L["Not the same"] = "Not the same"
 L["%s looks like %s renamed. Move %s's history, alt links, ban and marks to the new name?"] = "%s looks like %s renamed. Move %s's history, alt links, ban and marks to the new name?"
+L["The Chehul family"] = "The Chehul family"
+L["Guild OS has siblings, made by the same hands and talking over the same hidden network."] = "Guild OS has siblings, made by the same hands and talking over the same hidden network."
+L["Leveling guides with an arrow to the next quest"] = "Leveling guides with an arrow to the next quest"
+L["Group radar: the LFG channel and listings in one panel"] = "Group radar: the LFG channel and listings in one panel"
+L["Campfires on your map and who is around them"] = "Campfires on your map and who is around them"
+L["Profession guides, shopping lists and farming (Classic)"] = "Profession guides, shopping lists and farming (Classic)"
+L["%s lit a campfire in %s · %s level"] = "%s lit a campfire in %s · %s level"
+L["Basic"] = "Basic"
+L["Journeyman"] = "Journeyman"
+L["Expert"] = "Expert"
+L["Click to set a waypoint"] = "Click to set a waypoint"
+L["Install Warmth to see the circle and build your own"] = "Install Warmth to see the circle and build your own"
+L["Let the network know when you light a campfire? Other players see the campfire on the map (with Warmth). Only the campfire and your name; you can change it in the settings."] = "Let the network know when you light a campfire? Other players see the campfire on the map (with Warmth). Only the campfire and your name; you can change it in the settings."
+L["Announce my campfires to the network"] = "Announce my campfires to the network"
+L["Guild OS memory: %.1f MB, %.1f MB after a full garbage collection."] = "Guild OS memory: %.1f MB, %.1f MB after a full garbage collection."
+L["The game does not report addon memory on this client."] = "The game does not report addon memory on this client."
+L["Frames Guild OS made this session: %d (the game never frees a frame)."] = "Frames Guild OS made this session: %d (the game never frees a frame)."
+L["Saved data of this guild: %d members, %d recipe lists, %d professions, %d in the member history, %d roster log lines, %d raid sessions, %d loot records."] = "Saved data of this guild: %d members, %d recipe lists, %d professions, %d in the member history, %d roster log lines, %d raid sessions, %d loot records."
+L["Guild databases in the saved variables: %d."] = "Guild databases in the saved variables: %d."

@@ -34,6 +34,7 @@
 -- CMEM, CCAND, CVOTE, CTALLY, CWHO, CNO, CCLOSE) and its rules are in Modules/LootCouncil.lua.
 ----------------------------------------------------------------------
 -- Not on retail, which is personal loot only (ADR-0026): absent there, as TBC content is elsewhere.
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 if GuildOS.Client.isRetail then return end
 
 local LootMaster = {}

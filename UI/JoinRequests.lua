@@ -4,6 +4,7 @@
 -- opens from it: Invite, Whisper, Decline. Every rule lives in Modules/JoinRequests.lua; this file draws
 -- the rows and calls it (Rule 10). Nothing here opens by itself: the notice is a button, not the list.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L

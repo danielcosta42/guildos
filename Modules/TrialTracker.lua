@@ -473,6 +473,9 @@ function TrialTracker:OnJoin(name)
     if type(name) ~= "string" or name == "" then return false end
     if not (self:IsAutoOn() and GuildOS:IsOfficer() and GuildOS:IsFeatureEnabled("trialTracker")) then return false end
     GuildOS.Compat.GuildRoster()   -- the game throttles it; a later GUILD_ROSTER_UPDATE is as good
+    -- The roster that answers is compared at once, whatever the minute between passes (SCAN_GAP).
+    local co = GuildOS.State and GuildOS.State.coalesce
+    if co and co.at then co.at.trials = nil end
     return true
 end
 
@@ -542,6 +545,11 @@ end
 -- new. Nothing moves in a login's settle window (Arm), while the roster is not whole (a row missing
 -- would read as gone) or while the client does not know its own rank yet. ponytail: a full pass on
 -- every GUILD_ROSTER_UPDATE, like DropDeparted's.
+-- The roster pass's scratch tables (ScanRoster), and how often it runs: at most once a SCAN_GAP, as
+-- MemberHistory's (Core's roster pass coalesces it; a newcomer's trial waits a minute at most).
+local wipe = wipe or function(t) for k in pairs(t) do t[k] = nil end return t end   -- the game's; a stub may lack it
+local scratch = { keys = {}, officers = {}, present = {}, newcomers = {} }
+TrialTracker.SCAN_GAP = 60
 function TrialTracker:ScanRoster()
     local db = GuildOS.db
     if not session().settled then return end
@@ -558,17 +566,23 @@ function TrialTracker:ScanRoster()
     local n = GetNumGuildMembers() or 0
     if n == 0 then return end
     local maxRank = GuildOS:GetSetting("officerMaxRank") or 1
-    local rows = {}
+    -- The pass's own tables are the last pass's, emptied (memory audit: a table a member every pass was
+    -- garbage at every roster update of a big guild). `present` is copied where it is kept.
+    local keys, officers, present, newcomers = scratch.keys, scratch.officers, wipe(scratch.present), scratch.newcomers
+    local nNew = 0
     for i = 1, n do
         local full, _, rankIndex = GetGuildRosterInfo(i)
         if not full then return end
-        rows[i] = { key = GuildOS:KeyOfRosterName(full), officer = rankIndex ~= nil and rankIndex <= maxRank }
+        keys[i], officers[i] = GuildOS:KeyOfRosterName(full), rankIndex ~= nil and rankIndex <= maxRank
     end
-    local base, present, newcomers, shared = db.trialBaseline, {}, {}, false
-    for _, r in ipairs(rows) do
-        present[r.key] = true
+    for i = #keys, n + 1, -1 do keys[i], officers[i] = nil, nil end
+    for i = #newcomers, 1, -1 do newcomers[i] = nil end
+    local base, shared = db.trialBaseline, false
+    for i = 1, n do
+        local key = keys[i]
+        present[key] = true
         if type(base) == "table" then
-            if base[r.key] then shared = true else newcomers[#newcomers + 1] = r end
+            if base[key] then shared = true else nNew = nNew + 1; newcomers[nNew] = i end
         end
     end
     asOfficer[me] = true
@@ -577,20 +591,22 @@ function TrialTracker:ScanRoster()
     if type(base) ~= "table" or not wasOfficer or db.trialBaselinePending then
         db.trialBaselinePending = nil
         if type(base) == "table" then
-            for _, r in ipairs(newcomers) do base[r.key] = true end
+            for _, i in ipairs(newcomers) do base[keys[i]] = true end
         else
-            db.trialBaseline = present
+            local kept = {}
+            for key in pairs(present) do kept[key] = true end
+            db.trialBaseline = kept
         end
         if markLeft(self, present, GetServerTime()) then self:BroadcastTrials() end
         return
     end
-    for _, r in ipairs(newcomers) do base[r.key] = true end
+    for _, i in ipairs(newcomers) do base[keys[i]] = true end
     -- A roster that shares nobody with the one seen is no guild of newcomers: the keys changed under it.
     if not shared then return end
     local changed = markLeft(self, present, GetServerTime())
-    for _, nc in ipairs(newcomers) do
-        if self:MayAutoTrial(nc.key, nc.officer) then
-            newTrial(self, nc.key, self.AUTO_SPONSOR)
+    for _, i in ipairs(newcomers) do
+        if self:MayAutoTrial(keys[i], officers[i]) then
+            newTrial(self, keys[i], self.AUTO_SPONSOR)
             changed = true
         end
     end

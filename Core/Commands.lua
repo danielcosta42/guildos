@@ -20,7 +20,41 @@ local L = GuildOS.L
 local HELP_HEADER_COLOR = "|cff00CCFF"   -- section headers
 local HELP_CMD_COLOR    = "|cffFFD700"   -- command verbs (addon gold)
 -- The diagnostics under /gos debug, as the help lists them (audit B22).
-local DEBUG_VERBS = { "selftest", "errors", "perf [reset]", "probe [chat | channel | invite]", "scan", "mergeraids" }
+local DEBUG_VERBS = { "selftest", "errors", "perf [reset]", "mem", "probe [chat | channel | invite]", "scan", "mergeraids" }
+
+-- /gos debug mem (memory audit): Guild OS's memory as the client counts it, before and after a full garbage
+-- collection, the frames it made this session (GuildOS.framesMade, Core/Core.lua: the client never frees one, so a
+-- number that grows while nothing new is on screen is a leak), and how much the largest saved tables hold.
+local function countOf(t)
+    if type(t) ~= "table" then return 0 end
+    local n = 0
+    for _ in pairs(t) do n = n + 1 end
+    return n
+end
+function GuildOS:PrintMemoryReport()
+    local before = GuildOS.Compat.AddonMemoryKB("GuildOS")
+    collectgarbage("collect")
+    local after = GuildOS.Compat.AddonMemoryKB("GuildOS")
+    if before and after then
+        GuildOS:Print(string.format(L["Guild OS memory: %.1f MB, %.1f MB after a full garbage collection."], before / 1024, after / 1024))
+    else
+        GuildOS:Print(L["The game does not report addon memory on this client."])
+    end
+    GuildOS:Print(string.format(L["Frames Guild OS made this session: %d (the game never frees a frame)."], GuildOS.framesMade or 0))
+    local db = GuildOS.db or {}
+    local raids = db.raidTracker and db.raidTracker.sessions
+    local log = db.rosterLog and db.rosterLog.events
+    GuildOS:Print(string.format(L["Saved data of this guild: %d members, %d recipe lists, %d professions, %d in the member history, %d roster log lines, %d raid sessions, %d loot records."],
+        countOf(db.members), countOf(db.recipes), countOf(db.professions), countOf(db.memberHistory),
+        type(log) == "table" and #log or 0, countOf(raids), type(db.lootHistory) == "table" and #db.lootHistory or 0))
+    local dbs = 0
+    -- A guild's database is keyed "Guild-Realm" (a character with no guild, "_noguild-Realm"); the account's
+    -- own tables (accountChars, minimap...) have no dash.
+    for k, v in pairs(GuildOSDB or {}) do
+        if type(v) == "table" and type(k) == "string" and k:find("-", 1, true) then dbs = dbs + 1 end
+    end
+    GuildOS:Print(string.format(L["Guild databases in the saved variables: %d."], dbs))
+end
 
 local function helpHeader(text)
     GuildOS:Print(HELP_HEADER_COLOR .. text .. "|r")
@@ -237,6 +271,8 @@ local function handleCommand(msg)
         end
     elseif msg == "debug perf" then
         GuildOS.Perf:Print()
+    elseif msg == "debug mem" then
+        GuildOS:PrintMemoryReport()
     elseif msg == "debug perf reset" then
         GuildOS.Perf:Reset()
         GuildOS:Print(L["Performance counters zeroed."])

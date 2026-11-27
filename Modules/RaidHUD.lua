@@ -14,6 +14,7 @@
 -- The log is listened to only while the HUD shows, the raid's members are read on a roster change (never on
 -- the half-second tick), and the tick redraws into the same tables (#449 review).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local RaidHUD = {}
 GuildOS.RaidHUD = RaidHUD
 local L = GuildOS.L

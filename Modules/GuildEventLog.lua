@@ -19,6 +19,7 @@
 -- addon or the game's own window asking for the log is not this one's answer: only the answer to its
 -- own question is read.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local GuildEventLog = {}
 GuildOS.GuildEventLog = GuildEventLog
 

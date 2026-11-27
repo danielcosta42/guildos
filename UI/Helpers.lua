@@ -9,6 +9,7 @@
 -- are kept; a frame's backdrop colour calls land on its rounded art.
 -- The art and its layout live in Core/Style.lua.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Helpers = {}
 GuildOS.UI = Helpers
 

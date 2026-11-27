@@ -7,6 +7,7 @@
 -- Who is looking stays Modules/LFGBoard.lua; the tab that draws both is UI/GroupsPanel.lua.
 -- Listings are saved (a /reload keeps the board); requests live for the session only.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Groups = {}
 GuildOS.Groups = Groups
 local L = GuildOS.L

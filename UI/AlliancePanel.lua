@@ -13,6 +13,7 @@
 -- Rule 10: no business logic here. Everything is read from Alliance, AllianceLink, AllianceChat and
 -- BanList; actions call their methods.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L

@@ -47,6 +47,8 @@ local GLOBALS = {
   "IsAddOnLoaded",
   -- The guild's event log: Compat probes it and answers nil where a client has none.
   "QueryGuildEventLog", "GetNumGuildEvents", "GetGuildEventInfo",
+  -- The addon's memory (/gos debug mem, memory audit): C_AddOns or the old globals, by client.
+  "UpdateAddOnMemoryUsage", "GetAddOnMemoryUsage",
 }
 -- Names only these APIs have: as a field or method of anything but Compat they are flagged too.
 local API_ONLY = { GuildRoster = true, RegisterAddonMessagePrefix = true, SendAddonMessage = true,

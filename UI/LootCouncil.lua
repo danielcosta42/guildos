@@ -7,6 +7,7 @@
 -- LootCouncil method (Rule 10).
 ----------------------------------------------------------------------
 -- Not on retail, which has no master looter and no such vote (the module is absent there).
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 if not GuildOS.LootCouncil then return end
 
 local UI = GuildOS.UI
@@ -104,60 +105,77 @@ local function build()
     return f
 end
 
--- One candidate's row.
-local function drawRow(content, y, c, view)
-    -- Hung by both top corners; the one the council proposes on the selected-row surface, not a gold
-    -- tint (#371).
+-- One candidate's row, made once and refilled on every refresh: the window repaints each second while a
+-- vote is open, and a frame the client makes is never freed, so a new row per tick only grew (memory audit).
+local function tipOnEnter(self)
+    local lines = self.tipLines
+    if not lines or #lines == 0 then return end
+    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+    GameTooltip:SetText(lines[1], 1, 1, 1)
+    for i = 2, #lines do GameTooltip:AddLine(lines[i], 0.8, 0.8, 0.8) end
+    GameTooltip:Show()
+end
+
+local function makeRow(content)
+    -- Hung by both top corners (#371).
     local row = CreateFrame("Button", nil, content, "BackdropTemplate")
     row:SetHeight(ROW_H - 2)
+    row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+    local function text(x, size, col)
+        local fs = UI:CreateText(row, "", size, col.r, col.g, col.b)
+        fs:SetPoint("LEFT", x, 0)
+        return fs
+    end
+    row.place = text(4, 11, C.label)
+    row.name = text(20, 11, C.text)
+    row.answer = text(162, 11, C.text)
+    row.roll = text(212, 11, C.textSoft)
+    row.att = text(282, 11, C.textSoft)
+    row.recv = text(336, 11, C.textSoft)
+    row.pointsFS = text(382, 11, C.textSoft)
+    row.votes = text(442, 12, C.text)
+    row:SetScript("OnEnter", tipOnEnter)
+    row:SetScript("OnLeave", hideTip)
+    row.voteBtn = UI:CreateButton(row, L["Vote"], 70, 18)
+    row.voteBtn:SetPoint("RIGHT", -2, 0)
+    row.voteBtn:SetScript("OnClick", function(self) if self.to then LC():Vote(self.to) end end)
+    return row
+end
+
+local function fillRow(row, y, c, view)
+    row:ClearAllPoints()
     row:SetPoint("TOPLEFT", 0, -y)
     row:SetPoint("TOPRIGHT", 0, -y)
-    row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+    -- The one the council proposes on the selected-row surface, not a gold tint (#371).
     local proposed = view.proposed ~= nil and view.proposed == c.name
     if proposed then
         row:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
     else
         row:SetBackdropColor(C.well.r, C.well.g, C.well.b, 0.6)
     end
-
-    local place = UI:CreateText(row, c.place .. ".", 11, C.label.r, C.label.g, C.label.b)
-    place:SetPoint("LEFT", 4, 0)
-    local name = UI:CreateText(row, c.name, 11, C.text.r, C.text.g, C.text.b)
-    name:SetPoint("LEFT", 20, 0)
-    local answer = UI:CreateText(row, c.answer, 11, C.text.r, C.text.g, C.text.b)
-    answer:SetPoint("LEFT", 162, 0)
+    row.place:SetText(c.place .. ".")
+    row.name:SetText(c.name)
+    row.answer:SetText(c.answer)
     local figure = "-"
     if c.bid > 0 then figure = string.format(L["bid %d"], c.bid) elseif c.roll > 0 then figure = tostring(c.roll) end
-    local roll = UI:CreateText(row, figure, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    roll:SetPoint("LEFT", 212, 0)
-    local att = UI:CreateText(row, c.att .. "%", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    att:SetPoint("LEFT", 282, 0)
-    local recv = UI:CreateText(row, tostring(c.recv), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    recv:SetPoint("LEFT", 336, 0)
-    local points = UI:CreateText(row, tostring(c.points), 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-    points:SetPoint("LEFT", 382, 0)
-    local votes = UI:CreateText(row, tostring(c.votes), 12, C.text.r, C.text.g, C.text.b)
-    votes:SetPoint("LEFT", 442, 0)
-
-    local lines = tipLines(c, view.anon)
-    if #lines > 0 then
-        row:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText(lines[1], 1, 1, 1)
-            for i = 2, #lines do GameTooltip:AddLine(lines[i], 0.8, 0.8, 0.8) end
-            GameTooltip:Show()
-        end)
-        row:SetScript("OnLeave", hideTip)
-    end
-
+    row.roll:SetText(figure)
+    row.att:SetText(c.att .. "%")
+    row.recv:SetText(tostring(c.recv))
+    row.pointsFS:SetText(tostring(c.points))
+    row.votes:SetText(tostring(c.votes))
+    row.tipLines = tipLines(c, view.anon)
+    local btn = row.voteBtn
     if view.canVote then
         local mine = view.mine == c.place
-        local voteBtn = UI:CreateButton(row, mine and L["Voted"] or L["Vote"], 70, 18)
-        voteBtn:SetPoint("RIGHT", -2, 0)
-        UI:SetSelected(voteBtn, mine)   -- my vote: the shared selection mark (#371)
-        local to = c.place
-        voteBtn:SetScript("OnClick", function() LC():Vote(to) end)
+        btn.label:SetText(mine and L["Voted"] or L["Vote"])
+        UI:SetSelected(btn, mine)   -- my vote: the shared selection mark (#371)
+        btn.to = c.place
+        btn:Show()
+    else
+        btn.to = nil
+        btn:Hide()
     end
+    row:Show()
 end
 
 local function refresh()
@@ -169,12 +187,16 @@ local function refresh()
     end
     frame.itemText:SetText(view.link or "")
     frame.statusText:SetText(LC():StatusText(view))
-    for _, child in pairs({ frame.content:GetChildren() }) do child:Hide() end
+    local rows = frame.rows
+    if not rows then rows = {}; frame.rows = rows end
     local y = 0
-    for _, c in ipairs(view.candidates) do
-        drawRow(frame.content, y, c, view)
+    for i, c in ipairs(view.candidates) do
+        local row = rows[i]
+        if not row then row = makeRow(frame.content); rows[i] = row end
+        fillRow(row, y, c, view)
         y = y + ROW_H
     end
+    for i = #view.candidates + 1, #rows do rows[i]:Hide() end
     frame.content:SetHeight(math.max(1, y))
     -- Why this player has no vote, when they have none.
     if view.canVote or not view.open then

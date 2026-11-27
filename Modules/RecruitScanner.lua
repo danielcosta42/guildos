@@ -3,6 +3,7 @@
 -- Active recruiting: /who-scan unguilded candidates, mass-whisper a
 -- template, capture replies. Officer-gated, OFF by default, fail-safe.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local RecruitScanner = {}
 GuildOS.RecruitScanner = RecruitScanner
 local L = GuildOS.L
@@ -316,6 +317,37 @@ end
 ----------------------------------------------------------------------
 local ROW_HEIGHT = 20
 
+-- Widgets reused across redraws (memory audit): a frame, texture or text the client makes is never freed,
+-- so a redraw takes the ones the last one made, by the part each plays (`key`), makes only what is missing
+-- and hides what is left over. Take returns the widget and whether it was reused. Kept local to the file:
+-- the tools load screens one at a time, under a stubbed UI.
+local function NewPool()
+    local made, used, pool = {}, {}, {}
+    function pool.Begin() for k in pairs(used) do used[k] = 0 end end
+    function pool.Take(key, make)
+        local n = (used[key] or 0) + 1
+        used[key] = n
+        local list = made[key]
+        if not list then list = {}; made[key] = list end
+        local w = list[n]
+        if w then
+            w:ClearAllPoints()
+            w:Show()
+            return w, true
+        end
+        w = make()
+        list[n] = w
+        return w, false
+    end
+    function pool.End()
+        for key, list in pairs(made) do
+            for i = (used[key] or 0) + 1, #list do list[i]:Hide() end
+        end
+    end
+    return pool
+end
+
+
 ----------------------------------------------------------------------
 -- Build all scanner controls (filters, Scan button, Results/Inbox tabs,
 -- results list, template box, Whisper button) as children of `container`.
@@ -327,6 +359,7 @@ function RecruitScanner:BuildInto(container)
     if not container then return end
     if container._scannerBuilt then return container._scannerRefresh end
     container._scannerBuilt = true
+    local pool = NewPool()   -- this container's list rows (memory audit)
 
     local UI = GuildOS.UI
     -- Embedded in the Officers' Room it sits on a parchment card: the paper's inks and parts (UI/Kit.lua).
@@ -528,7 +561,8 @@ function RecruitScanner:BuildInto(container)
     end
 
     refresh = function()
-        if not f:IsShown() or not f.isOfficer then return end
+        -- Off screen nothing is drawn: OnShow draws it (memory audit; IsShown is true under a hidden window).
+        if not f:IsVisible() or not f.isOfficer then return end
 
         if RecruitScanner._scanBusy then
             f.scanBtn:Disable()
@@ -570,15 +604,18 @@ function RecruitScanner:BuildInto(container)
             f.selectAllCb.checkbox:Disable()
         end
 
-        -- Reset ALL row state before repaint (regions and any child frames).
+        -- The rows are the last repaint's, refilled (memory audit): every tick of a box repaints the list, and
+        -- each repaint made all its rows again.
         local child = f.child
-        for _, c in pairs({ child:GetChildren() }) do c:Hide() end
-        for _, r in pairs({ child:GetRegions() }) do r:Hide() end
+        pool.Begin()
+        local function text(key, size, col)
+            return pool.Take(key, function() return UI:CreateText(child, "", size, col.r, col.g, col.b) end)
+        end
 
         local y = 0
         if isResults then
             for _, cand in ipairs(results) do
-                local sel = checkbox(child, "", 16)
+                local sel = pool.Take("select", function() return checkbox(child, "", 16) end)
                 sel:SetPoint("TOPLEFT", 4, -y)
                 local who = RecruitScanner:Addr(cand)   -- realm and all on retail (#184)
                 sel.checkbox:SetChecked(self._selected[who] and true or false)
@@ -595,14 +632,16 @@ function RecruitScanner:BuildInto(container)
                 -- (e.g. a row element vs. the whole scroll child) — explicit
                 -- -y on every column sidesteps that entirely. Offsets mirror
                 -- the column header row above (HDR + this offset).
-                local nameFS = UI:CreateText(child, who or "?", 11, C.text.r, C.text.g, C.text.b)
+                local nameFS, reused = text("name", 11, C.text)
+                if not reused then nameFS:SetWidth(200); nameFS:SetJustifyH("LEFT") end
+                nameFS:SetText(who or "?")
                 nameFS:SetPoint("TOPLEFT", 30, -y)
-                nameFS:SetWidth(200)
-                nameFS:SetJustifyH("LEFT")
 
-                local lvlFS = UI:CreateText(child, tostring(cand.level or "?"), 11, C.textDim.r, C.textDim.g, C.textDim.b)
+                local lvlFS
+                lvlFS, reused = text("level", 11, C.textDim)
+                if not reused then lvlFS:SetWidth(40) end
+                lvlFS:SetText(tostring(cand.level or "?"))
                 lvlFS:SetPoint("TOPLEFT", 240, -y)
-                lvlFS:SetWidth(40)
 
                 local classLabel = LOCALIZED_CLASS_NAMES_MALE[cand.class] or cand.class or "?"
                 local cc = RAID_CLASS_COLORS[cand.class]
@@ -610,16 +649,18 @@ function RecruitScanner:BuildInto(container)
                     local r, g, b = Kit:ClassInk(cand.class)
                     cc = { r = r, g = g, b = b }
                 end
-                local classFS = UI:CreateText(child, classLabel, 11,
-                    cc and cc.r or C.textDim.r, cc and cc.g or C.textDim.g, cc and cc.b or C.textDim.b)
+                local classFS
+                classFS, reused = text("class", 11, C.textDim)
+                if not reused then classFS:SetWidth(110); classFS:SetJustifyH("LEFT") end
+                classFS:SetText(classLabel)
+                classFS:SetTextColor(cc and cc.r or C.textDim.r, cc and cc.g or C.textDim.g, cc and cc.b or C.textDim.b)
                 classFS:SetPoint("TOPLEFT", 290, -y)
-                classFS:SetWidth(110)
-                classFS:SetJustifyH("LEFT")
 
-                local zoneFS = UI:CreateText(child, cand.zone or "", 10, C.silver.r, C.silver.g, C.silver.b)
+                local zoneFS
+                zoneFS, reused = text("zone", 10, C.silver)
+                if not reused then zoneFS:SetWidth(300); zoneFS:SetJustifyH("LEFT") end
+                zoneFS:SetText(cand.zone or "")
                 zoneFS:SetPoint("TOPLEFT", 410, -y)
-                zoneFS:SetWidth(300)
-                zoneFS:SetJustifyH("LEFT")
 
                 y = y + ROW_HEIGHT
             end
@@ -627,39 +668,44 @@ function RecruitScanner:BuildInto(container)
                 local none = RecruitScanner:WhoMaybeBlocked()
                     and L["No candidates. The /who came back empty: on WoW: Forever it may be blocked on this client."]
                     or L["No candidates."]
-                local empty = UI:CreateText(child, none, 11, C.silver.r, C.silver.g, C.silver.b)
+                local empty, reused = text("noneFound", 11, C.silver)
+                if not reused then empty:SetJustifyH("LEFT"); empty:SetWordWrap(true) end
+                empty:SetText(none)
                 empty:SetPoint("TOPLEFT", 4, -4)
                 empty:SetPoint("RIGHT", child, "RIGHT", -4, 0)
-                empty:SetJustifyH("LEFT"); empty:SetWordWrap(true)
                 y = math.max(20, math.ceil(empty:GetStringHeight() or 0) + 8)
             end
         else -- inbox
             local inbox = RecruitScanner:GetInbox()
             for _, entry in ipairs(inbox) do
                 -- A name in the text colour: gold is the selection's (#371).
-                local nameFS = UI:CreateText(child, entry.name or "?", 11, C.text.r, C.text.g, C.text.b)
+                local nameFS, reused = text("replyName", 11, C.text)
+                if not reused then nameFS:SetWidth(88); nameFS:SetJustifyH("LEFT") end
+                nameFS:SetText(entry.name or "?")
                 nameFS:SetPoint("TOPLEFT", 4, -y)
-                nameFS:SetWidth(88)
-                nameFS:SetJustifyH("LEFT")
 
-                local msgFS = UI:CreateText(child, entry.msg or "", 10, C.text.r, C.text.g, C.text.b)
+                local msgFS
+                msgFS, reused = text("replyMsg", 10, C.text)
+                if not reused then msgFS:SetJustifyH("LEFT"); msgFS:SetWordWrap(false) end
+                msgFS:SetText(entry.msg or "")
                 msgFS:SetPoint("TOPLEFT", 98, -y)
                 msgFS:SetPoint("TOPRIGHT", child, "TOPRIGHT", -54, -y)
-                msgFS:SetJustifyH("LEFT")
-                msgFS:SetWordWrap(false)
 
-                local tsFS = UI:CreateText(child, date("%H:%M", entry.ts or 0), 9, C.silver.r, C.silver.g, C.silver.b)
+                local tsFS = text("replyTime", 9, C.silver)
+                tsFS:SetText(date("%H:%M", entry.ts or 0))
                 tsFS:SetPoint("TOPRIGHT", child, "TOPRIGHT", -4, -y)
 
                 local rowH = math.max(nameFS:GetStringHeight() or 14, msgFS:GetStringHeight() or 14)
                 y = y + rowH + 6
             end
             if #inbox == 0 then
-                local empty = UI:CreateText(child, L["No replies yet."], 11, C.silver.r, C.silver.g, C.silver.b)
+                local empty = text("noReplies", 11, C.silver)
+                empty:SetText(L["No replies yet."])
                 empty:SetPoint("TOPLEFT", 4, -4)
                 y = 20
             end
         end
+        pool.End()
         child:SetHeight(math.max(1, y))
     end
 

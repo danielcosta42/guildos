@@ -8,6 +8,7 @@
 -- GUILD_ROSTER_UPDATE, never per line: a sender's key and prefix are worked out once a refresh, so a
 -- line costs a lookup and a string join, no table.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local ChatTweaks = {}
 GuildOS.ChatTweaks = ChatTweaks
 
@@ -65,24 +66,48 @@ function ChatTweaks.KeyOf(name)
     return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("-(.+)$") or GetRealmName())
 end
 
+-- One pass over the roster (memory audit): nothing at all while Chat Tweaks is off (the filters do not read the
+-- cache then; the first line after turning it on builds it), and no table a member: a sender's entry is the last
+-- pass's, refilled, and the members gone since are dropped. Each pass builds a sender's prefix again at their
+-- next line, as before.
+local wipe = wipe or function(t) for k in pairs(t) do t[k] = nil end return t end   -- the game's; a stub may lack it
+local passGen = 0
 function ChatTweaks:_RefreshCache()
-    local cache = {}
+    local cfg = GuildOS.db and GuildOS.db.chatTweaks
+    if not (cfg and cfg.enabled) then
+        self._stale = true
+        return
+    end
+    self._stale = nil
+    passGen = passGen + 1
+    local gen = passGen
+    local cache = self._cache
+    if not cache then cache = {}; self._cache = cache end
+    local function put(key, classFile, level)
+        local e = cache[key]
+        if not e then e = {}; cache[key] = e end
+        e.classFile, e.level, e.fullKey, e.gen = classFile, level, key, gen
+        e.prefix, e.sig = nil, nil
+    end
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
         local name, _, _, level, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
         if name then
             local key = ChatTweaks.KeyOf(name)
-            if key then cache[key] = { classFile = classFile, level = level, fullKey = key } end
+            if key then put(key, classFile, level) end
         end
     end
     -- A guild member's linked character outside the guild (an alt on the bank's account, a main who left): known
     -- to the officers' links, so its lines get the alt tag too, without a class or a level.
     for alt, main in pairs((GuildOS.db and GuildOS.db.altLinks) or {}) do
-        if type(alt) == "string" and not cache[alt] then cache[alt] = { fullKey = alt } end
-        if type(main) == "string" and not cache[main] then cache[main] = { fullKey = main } end
+        if type(alt) == "string" and not (cache[alt] and cache[alt].gen == gen) then put(alt, nil, nil) end
+        if type(main) == "string" and not (cache[main] and cache[main].gen == gen) then put(main, nil, nil) end
     end
-    self._cache = cache
-    self._authors = {}   -- a chat author's key, worked out once a refresh
+    for key, e in pairs(cache) do
+        if e.gen ~= gen then cache[key] = nil end
+    end
+    -- A chat author's key, worked out once a pass.
+    if self._authors then wipe(self._authors) else self._authors = {} end
 end
 
 -- The settings that shape a prefix, as one number, and the marks and links it read (`epoch`, bumped when the
@@ -151,6 +176,7 @@ function ChatTweaks:_MakeFilter()
     return function(_, event, msg, author, ...)
         local cfg = GuildOS.db.chatTweaks
         if not cfg or not cfg.enabled then return false end
+        if ChatTweaks._stale then ChatTweaks:_RefreshCache() end   -- turned on since the last roster pass
         local only = EVENT_SETTING[event]
         if only and not cfg[only] then return false end
         if GuildOS.Compat.IsSecret and GuildOS.Compat.IsSecret(msg, author) then return false end   -- chat in lockdown

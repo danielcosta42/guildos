@@ -7,6 +7,7 @@
 -- removes, bans or writes anything by itself.
 -- Also the Recruiting › Welcome card's second list ("For members who return"), built here for UI/RosterFrame.lua.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

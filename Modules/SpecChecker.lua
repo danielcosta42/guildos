@@ -3,6 +3,7 @@
 -- Collects talent spec data for the local player and, for group
 -- members, via the Inspect API (NotifyInspect + INSPECT_READY).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local SpecChecker = {}  -- luacheck: ignore 111
 GuildOS.SpecChecker = SpecChecker
 local L = GuildOS.L

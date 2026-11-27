@@ -13,6 +13,7 @@
 -- site's, drawn when the receiver opens: this panel only asks and shows. Every effect is GuildOS.VeilFx's, counted,
 -- clipped to the window and stopped when the tab hides or the "Winter Veil animations" option is off.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

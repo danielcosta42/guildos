@@ -4,6 +4,7 @@
 -- guild-wide enchant audit. Visual layout only — data comes from
 -- GuildOS.AttunementTracker and GuildOS.GearAudit (Rule 3 / Rule 10).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local C = GuildOS.Colors
 local L = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
@@ -819,7 +820,7 @@ local function BuildSyncSub(panel)
     -- but only while this sub-panel is actually visible.
     if GuildOS.Mesh then
         GuildOS.Mesh:OnRefresh(function()
-            if panel:IsShown() then refresh() end
+            if panel:IsVisible() then refresh() end
         end)
     end
 

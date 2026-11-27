@@ -2,6 +2,7 @@
 -- Guild OS - Recipe Tracker
 -- Scans and shares tradeskill recipes across the guild
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local RecipeTracker = {}
 GuildOS.RecipeTracker = RecipeTracker
 local L = GuildOS.L

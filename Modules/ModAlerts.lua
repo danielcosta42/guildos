@@ -24,6 +24,7 @@
 -- Chat lockdown (WoW: Forever, retail): the lines arrive secret and are not read at all. The panel
 -- says the alerts are paused while it lasts.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local ModAlerts = {}
 GuildOS.ModAlerts = ModAlerts
 local L = GuildOS.L

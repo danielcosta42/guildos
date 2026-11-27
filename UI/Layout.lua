@@ -4,6 +4,7 @@
 -- how a button bar wraps. The three resolvers are pure functions of
 -- their arguments so /gos selftest can exercise them with no frames.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 
 ----------------------------------------------------------------------

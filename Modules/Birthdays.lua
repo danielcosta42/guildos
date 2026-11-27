@@ -29,6 +29,7 @@
 -- request). The limit left: an officer who logs in when no officer who heard the "said" is online says
 -- it again (a member's word is not taken: anybody could silence the line with it).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Birthdays = {}
 GuildOS.Birthdays = Birthdays
 

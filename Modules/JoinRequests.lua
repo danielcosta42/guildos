@@ -17,6 +17,7 @@
 -- Nothing here is ever said in a public channel, and nothing off the network is believed: names and
 -- notes are inert, one line and cut by character; class, level and role are closed sets.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local JR = {}
 GuildOS.JoinRequests = JR
 

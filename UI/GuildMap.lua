@@ -7,6 +7,9 @@
 --     updates, fades after GuildMap.STALE_FADE and goes after STALE_GONE, and grows a little with the zoom.
 --     Hover: name, level, class, zone, how long ago. A small list on the map ("Guildmates on this map"); a
 --     click flashes the pin, or opens the guildmate's map.
+--   * WoW: Forever, without Warmth: a flame per guildmate's campfire heard over GUILD (GuildMap:GetCamps); hover
+--     says who lit it, where and the kit's tier, a click sets the game's waypoint there. The list's foot points to
+--     Warmth, which draws the circle and builds camps. GuildOS:ShowCampPrompt asks the beacon's one question.
 --   * On the minimap: a dot per guildmate in the zone, at their bearing and distance (held at the edge when
 --     out of range), turning with a rotating minimap; none in an instance.
 -- While the world map is open this client watches the shown map (GuildMap:SetWatch), and that is what makes
@@ -16,6 +19,7 @@
 -- the map is followed with hooksecurefunc and HookScript only. Every map read goes through GuildOS.Compat.
 -- The UI holds no protocol: it draws GuildMap:GetPeers() and tells GuildMap what it shows.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
@@ -31,6 +35,8 @@ local LIST_W        = 240
 local LIST_ROWS     = 10
 local ROW_H         = SP.HIT
 local FLASH_TIME    = 3
+local CAMP_SIZE     = 18     -- a campfire's flame at the map's widest
+local CAMP_ICON     = "Interface\\Icons\\Spell_Fire_Fire"   -- a game icon every client ships
 
 local function GM() return GuildOS.GuildMap end
 
@@ -81,6 +87,8 @@ local dots, dotsDriver = {}, nil
 local hooked = false
 local dirty = true
 local flashKey, flashUntil
+local camps = {}           -- the last GuildMap:GetCamps() drawn on the shown map
+local campPins, nCampPins = {}, 0
 
 ----------------------------------------------------------------------
 -- World map pins
@@ -102,15 +110,81 @@ local function AcquirePin(i)
     return pin
 end
 
+----------------------------------------------------------------------
+-- Guildmates' campfires (WoW: Forever, without Warmth)
+----------------------------------------------------------------------
+local function ShowCampTooltip(owner, c)
+    if not c then return end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(GM():CampText(c), C.gold2.r, C.gold2.g, C.gold2.b)
+    GameTooltip:AddLine(L["Click to set a waypoint"], C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    GameTooltip:Show()
+end
+
+local function AcquireCampPin(i)
+    local pin = campPins[i]
+    if pin then return pin end
+    pin = CreateFrame("Button", nil, layer)
+    pin:SetSize(CAMP_SIZE, CAMP_SIZE)
+    pin:SetFrameLevel((layer:GetFrameLevel() or 1) + 1)
+    pin.icon = pin:CreateTexture(nil, "ARTWORK")
+    pin.icon:SetAllPoints()
+    pin.icon:SetTexture(CAMP_ICON)
+    pin.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    pin:EnableMouse(true)
+    pin:SetScript("OnEnter", function(self) ShowCampTooltip(self, self.camp) end)
+    pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    pin:SetScript("OnClick", function(self)
+        local c = self.camp
+        if c then Compat.SetUserWaypoint(c.mapID, c.x, c.y) end
+    end)
+    campPins[i] = pin
+    return pin
+end
+
+-- The flames at their spots, at the zoom's size (the shown map's own frame: they do not move).
+local function MoveCampPins(shown, w, h, scale)
+    for i = 1, nCampPins do
+        local pin = campPins[i]
+        local c = pin.camp
+        local sx, sy
+        if c then sx, sy = GM():_PlaceOn(shown, c.mapID, c.x, c.y) end
+        if sx then
+            pin:SetScale(scale)
+            pin:ClearAllPoints()
+            pin:SetPoint("CENTER", layer, "TOPLEFT", sx * w / scale, -sy * h / scale)
+            pin:Show()
+        else
+            pin:Hide()
+        end
+    end
+end
+
+-- Which camps land on the shown map; none while the layer is off (off WoW: Forever, or Warmth loaded).
+local function LayoutCampPins(shown)
+    camps = GM().GetCamps and GM():GetCamps() or {}
+    local used = 0
+    for _, c in ipairs(camps) do
+        if shown and GM():_PlaceOn(shown, c.mapID, c.x, c.y) then
+            used = used + 1
+            AcquireCampPin(used).camp = c
+        end
+    end
+    for i = used + 1, #campPins do campPins[i]:Hide(); campPins[i].camp = nil end
+    nCampPins = used
+end
+
 -- Moves every drawn pin to where its guildmate is now (the glide), at the zoom's size. Cheap: affine maths on
 -- cached transforms, our own frames only.
 local function MovePins()
-    if not layer or nPins == 0 then return end
+    if not layer or (nPins == 0 and nCampPins == 0) then return end
     local w, h = layer:GetWidth(), layer:GetHeight()
     if not w or w <= 0 or not h or h <= 0 then return end
     local shown = Compat.GetShownMapID()
     local canvasScale, pct = Compat.WorldMapZoom()
     local scale = (1 + (PIN_ZOOM - 1) * pct) / canvasScale
+    MoveCampPins(shown, w, h, scale)
+    if nPins == 0 then return end
     local t = GetTime()
     local G = GM()
     for i = 1, nPins do pins[i].seen = false end
@@ -152,6 +226,7 @@ local function LayoutPins()
     end
     for i = used + 1, #pins do pins[i]:Hide(); pins[i].key = nil end
     nPins = used
+    LayoutCampPins(shown)
     MovePins()
 end
 
@@ -270,6 +345,10 @@ RefreshList = function()
     end
     if not GM():IsSharing() then notes[#notes + 1] = L["You are not sharing your position (Settings > Privacy)."] end
     notes[#notes + 1] = L["Only guildmates who share their position (with Guild OS, or OpenMap's sharing), and your group, show here."]
+    -- WoW: Forever without Warmth: guildmates' campfires are drawn here; Warmth draws them with their circle.
+    if GM().CampsOn and GM():CampsOn() then
+        notes[#notes + 1] = L["Install Warmth to see the circle and build your own"]
+    end
     list.foot:SetText(table.concat(notes, "\n"))
     local rowsH = n * ROW_H
     list.foot:ClearAllPoints()
@@ -447,4 +526,42 @@ function GuildOS:SetupGuildMapPresence()
             if EnsureLayer() then self:UnregisterAllEvents() end
         end)
     end
+end
+
+----------------------------------------------------------------------
+-- The campfire beacon's one question (ChehulNet v16, Modules/ChehulNetWire.lua): asked by the lib at the first fire
+-- the player lights, shown through the popup queue (never in combat, one at a time). Yes or No answers
+-- callback(true/false) once; the close leaves it unanswered (the lib asks again next session).
+----------------------------------------------------------------------
+local campPrompt
+local CAMP_PROMPT_W = 400
+
+function GuildOS:ShowCampPrompt(callback)
+    if type(callback) ~= "function" then return end
+    GuildOS:ShowWhenClear("campconsent", function()
+        local Kit = GuildOS.Kit
+        local f = campPrompt
+        if not f then
+            f = Kit:Float(L["Campfire"], {
+                name = "GuildOSCampPrompt", width = CAMP_PROMPT_W, height = 160, foot = true,
+                onClose = function(fr) fr:Hide() end,
+            })
+            f.text = UI:CreateText(f.body, "", SP.BODY, C.text.r, C.text.g, C.text.b)
+            f.text:SetPoint("TOPLEFT", 0, -2)
+            f.text:SetWidth(CAMP_PROMPT_W - 2 * Kit.PAD)
+            f.text:SetJustifyH("LEFT")
+            f.text:SetWordWrap(true)
+            f.yesBtn = UI:SetButtonVariant(UI:CreateButton(f.foot, L["Yes"], 90, SP.FIELD), "primary")
+            f.noBtn = UI:CreateButton(f.foot, L["No"], 90, SP.FIELD)
+            f.yesBtn:SetScript("OnClick", function() local cb = f.callback; f.callback = nil; f:Hide(); if cb then cb(true) end end)
+            f.noBtn:SetScript("OnClick", function() local cb = f.callback; f.callback = nil; f:Hide(); if cb then cb(false) end end)
+            f.foot:Lay(f.yesBtn, f.noBtn)
+            campPrompt = f
+        end
+        f.callback = callback
+        f.text:SetText(L["Let the network know when you light a campfire? Other players see the campfire on the map (with Warmth). Only the campfire and your name; you can change it in the settings."])
+        f:SetHeight(Kit.HEADER_H + 8 + math.ceil(f.text:GetStringHeight() or 28) + 14 + Kit.FOOT_H + 4)
+        f:Show()
+        return f
+    end)
 end

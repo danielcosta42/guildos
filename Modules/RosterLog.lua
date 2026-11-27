@@ -8,6 +8,7 @@
 -- A rename (Modules/MemberRename.lua) is a "rename" line. An officer may delete a line on this client
 -- (`hidden`): the audit domain is append-only, with no tombstone, so the other officers keep theirs.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local RosterLog = {}
 GuildOS.RosterLog = RosterLog
 

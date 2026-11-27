@@ -9,6 +9,7 @@
 -- GuildOS:ShowCraftFinder(itemId) and /gos craft open the Workshop on it, the item filled in. The data half
 -- (ResolveItemId, Suggest) is frame-free: tools/crafts-tab.lua tests it and drives the screen.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L

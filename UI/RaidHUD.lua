@@ -4,6 +4,7 @@
 -- HUD itself is Modules/RaidHUD.lua (#449), which reads Raid Tools' one list of cooldowns
 -- (RT_TOOLS:TrackedCooldowns(), audit B19).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local GuildOS = GuildOS
 local UI     = GuildOS.UI
 local C      = GuildOS.Colors

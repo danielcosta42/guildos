@@ -88,6 +88,7 @@
 -- see the other guilds; the key is readable by every member of every guild in
 -- it; a line sent by a macro does not cross, since no key was pressed.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Link = {}
 GuildOS.AllianceLink = Link
 local L = GuildOS.L

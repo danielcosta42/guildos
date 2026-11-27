@@ -14,6 +14,7 @@
 -- the read-only face the rest of the addon asks: which alliance, which guilds, who is on now, which
 -- guild a character is from, who crafts an item. It decides nothing and sends nothing.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Alliance = {}
 GuildOS.Alliance = Alliance
 local L = GuildOS.L

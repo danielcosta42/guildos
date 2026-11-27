@@ -4,6 +4,7 @@
 -- Drawn as the Workshop's catalog (#449 phase 3): one parchment card, the profession filters as quiet buttons,
 -- the table in the paper's ink, the crafters in their class's colour deepened to read on the paper.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

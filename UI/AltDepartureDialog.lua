@@ -7,6 +7,7 @@
 -- this file only lays it out and never removes, bans or relinks by itself. Also the one question about the
 -- player's own characters (#449, AltAutoDetect's), at the end.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

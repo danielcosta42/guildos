@@ -15,6 +15,7 @@
 -- Cards in two columns on the wood under the header (one under the other when narrow). Data and actions are
 -- GuildOS.RaidTools (Rule 3 / Rule 10); the HUD is Modules/RaidHUD.lua.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

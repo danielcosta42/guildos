@@ -5,6 +5,7 @@
 -- Mute this pattern for 1h) and the Leadership screen's two sub-tabs: the alerts heard this session and
 -- the guild's rules. The logic is ModAlerts' (and ModFlood's); this file only lays it out.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 -- Drawn on a parchment card in the Officers' Room and Settings (specs/salao/fase3.md): the text takes the
 -- paper's inks and a class its colour on the paper (UI/Kit.lua); a floating window, the wood's (WOOD).
@@ -392,7 +393,8 @@ function GuildOS:BuildModAlertsSub(panel)
         if now ~= wasPaused then wasPaused = now; board:Layout() end
     end)
     local _ = paused
-    if M then M.uiRefresh = refresh end
+    -- Only while it is on screen (memory audit): showing it refreshes it anyway.
+    if M then M.uiRefresh = function() if panel:IsVisible() then refresh() end end end
     return refresh
 end
 
@@ -617,7 +619,8 @@ function GuildOS:BuildModRulesSub(panel)
         content:SetHeight(#rules == 0 and 2 * UI.SP.FIELD_GAP + math.ceil(empty:GetStringHeight() or 14) or #rules * RULE_ROW)
         board:Layout()
     end
-    if M then M.rulesRefresh = refresh end
+    -- Only while it is on screen (memory audit): showing it refreshes it anyway.
+    if M then M.rulesRefresh = function() if panel:IsVisible() then refresh() end end end
     return refresh
 end
 

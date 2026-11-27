@@ -20,6 +20,7 @@
 -- only when it is one item link, and a holder's D only for an award this client saw given. Midnight
 -- holds addon messages during an encounter, so offers go out after the boss (Compat).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 if not GuildOS.Client.isRetail then return end
 
 local TradeCouncil = {}

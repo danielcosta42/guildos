@@ -8,6 +8,7 @@
 -- The numbers are the site's (lib/veil-rules.ts rarityOf: cuts 60/85/97, full 20/70/94): the game only shows them.
 -- Layout only: the state is GuildOS.WinterVeil.ChimneyState's.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

@@ -6,6 +6,7 @@
 -- hardware event). When the new step's rung asks for something, a second step SUGGESTS it and does it only
 -- on Confirm. The logic is Discipline's; this file only lays it out.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

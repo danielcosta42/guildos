@@ -24,6 +24,7 @@
 -- disciplinary record (#402) as a warning of reason "other": the record holds
 -- warnings only, so it counts toward the ladder's step, and the box says so.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Reminder = {}
 GuildOS.AddonReminder = Reminder
 local L = GuildOS.L

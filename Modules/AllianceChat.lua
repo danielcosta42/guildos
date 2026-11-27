@@ -13,6 +13,7 @@
 -- HONEST LIMIT, surfaced in the UI: the key is readable by every member of
 -- every guild in the alliance. Nothing sensitive belongs here.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local AllianceChat = {}
 GuildOS.AllianceChat = AllianceChat
 local L = GuildOS.L

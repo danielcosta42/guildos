@@ -18,6 +18,7 @@
 -- Everything is repainted from pools: a repaint that created its rows would leak them, because the
 -- client never frees a frame.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

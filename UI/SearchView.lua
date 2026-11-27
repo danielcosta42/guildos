@@ -11,6 +11,7 @@
 -- `w` and `h` the size the window lays the host out at (never read back from the frame); Move and Activate
 -- are the strip's keys. Search (Modules/Search.lua) finds and opens.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L

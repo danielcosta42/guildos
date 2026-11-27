@@ -11,6 +11,7 @@
 -- the right my journal as a timeline, a gold dot on a rail per entry, what happened in bold and its day under it.
 -- tools/journal-layout.lua checks the structure against fixture data.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

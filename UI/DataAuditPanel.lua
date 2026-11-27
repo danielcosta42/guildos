@@ -6,6 +6,7 @@
 -- that fixes it (Notes and marks' Write date, the member window's Add alt, NoteDates' write). A click on a
 -- row opens the member window. Visual layout only: the audit and the actions are GuildOS.RosterMaint's.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 -- Drawn on a parchment card in the Officers' Room (specs/salao/fase3.md): the text takes the paper's inks and a
 -- class its colour on the paper (UI/Kit.lua).

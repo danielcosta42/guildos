@@ -780,11 +780,14 @@ function MemberHistory:Migrate(rows, now)
 end
 
 -- The whole roster as rows, or nil while it is not whole (a row missing would read as gone).
+-- The rows are the last read's, refilled (memory audit): a table a member every pass was the scan's garbage.
+-- Nothing keeps a row past the scan that reads it (Diff, Migrate, Pairs and snapshot copy what they keep).
+local scratchRows = {}
 local function readRoster()
     local n = GetNumGuildMembers() or 0
     if n == 0 then return nil end
     local onotes = GuildOS.Compat.CanViewOfficerNote and GuildOS.Compat.CanViewOfficerNote()
-    local rows = {}
+    local rows = scratchRows
     for i = 1, n do
         local full, rankName, rankIndex, level, _, _, note, onote, online, _, classFile = GetGuildRosterInfo(i)
         if not full then return nil end
@@ -793,11 +796,14 @@ local function readRoster()
             local y, mo, d = GetGuildRosterLastOnline(i)
             off = (y or 0) * 365 + (mo or 0) * 30 + (d or 0)
         end
-        rows[i] = { key = GuildOS:KeyOfRosterName(full), r = rankIndex, rn = rankName,
-            lv = level, n = note or "", o = onotes and (onote or "") or nil, off = off,
-            cls = type(classFile) == "string" and classFile ~= "" and classFile or nil,
-            g = GuildOS.Compat.GuildRosterGUID(i) }
+        local row = rows[i]
+        if not row then row = {}; rows[i] = row end
+        row.key, row.r, row.rn = GuildOS:KeyOfRosterName(full), rankIndex, rankName
+        row.lv, row.n, row.o, row.off = level, note or "", onotes and (onote or "") or nil, off
+        row.cls = type(classFile) == "string" and classFile ~= "" and classFile or nil
+        row.g = GuildOS.Compat.GuildRosterGUID(i)
     end
+    for i = #rows, n + 1, -1 do rows[i] = nil end
     return rows
 end
 

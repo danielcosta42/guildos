@@ -4,6 +4,7 @@
 -- picked: who wants it, what they wear in that slot, their roll, wishlist place, points and
 -- attendance. Visual layer only: every action is a TradeCouncil method (Rule 10).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

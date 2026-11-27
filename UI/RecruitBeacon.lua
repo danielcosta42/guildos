@@ -3,6 +3,7 @@
 -- Officer composer (create the guild's ad) + recruit inbox (browse/filter
 -- ads heard over the Chehul mesh). Engine: GuildOS.RecruitBeacon.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L

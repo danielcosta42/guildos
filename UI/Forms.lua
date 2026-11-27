@@ -15,6 +15,7 @@
 -- Forms:Pill(parent, text)      a toggle pill (on: the selection's fill; off: the outline), Forms:SetOn(pill, on)
 -- Frame-free until called, so a file can read it lazily and still load where it is absent (a test).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 
 local Forms = {}

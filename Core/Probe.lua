@@ -6,6 +6,7 @@
 -- instead of typing /dump for an hour. Every read is guarded: a missing or
 -- raising API is recorded and the probe carries on (Rule 4).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Probe = {}
 GuildOS.Probe = Probe
 local L = GuildOS.L
@@ -157,6 +158,7 @@ Probe.EVENTS = {
     "SKILL_LINES_CHANGED",
     "TRADE_ACCEPT_UPDATE", "TRADE_PLAYER_ITEM_CHANGED", "TRADE_SHOW", "TRADE_SKILL_SHOW", "UI_INFO_MESSAGE",
     "UI_ERROR_MESSAGE",   -- the game's "too fast": holds the officers' reminders (#422) and backs the WhisperQueue off (#393)
+    "UNIT_SPELLCAST_SUCCEEDED",   -- ChehulNet v16's campfire beacon: the player's camp kit (WoW: Forever)
     "UPDATE_MOUSEOVER_UNIT", "WEEKLY_REWARDS_UPDATE", "WHO_LIST_UPDATE",
     "ZONE_CHANGED_NEW_AREA",
 }

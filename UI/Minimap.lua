@@ -4,6 +4,7 @@
 -- Left-click opens the roster; drag to reposition around the minimap.
 -- Position (angle) and visibility persist account-wide in GuildOSDB.minimap.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local C = GuildOS.Colors
 local L = GuildOS.L
 

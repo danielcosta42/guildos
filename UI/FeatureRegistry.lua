@@ -5,6 +5,7 @@
 -- menu, the slash commands and the Settings toggles. Frame-free on purpose: this file only holds data and
 -- predicates, so it is testable without a live UI.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 
 UI.features     = {}   -- id -> def

@@ -6,6 +6,7 @@
 -- a persisted pref via the module getters/setters, and a friendly solo
 -- state. The UI holds no classification logic (Rule 10).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L

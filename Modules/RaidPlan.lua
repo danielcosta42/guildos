@@ -13,6 +13,7 @@
 --
 -- Business logic only; the frames are UI/RaidPlanPanel.lua.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Plan = {}
 GuildOS.RaidPlan = Plan
 local L = GuildOS.L

@@ -6,6 +6,7 @@
 -- the standings and the movements. Visual layer only — all logic lives in GuildOS.Points, run on the
 -- pool of the core picked (Points:InCore).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local C = GuildOS.Colors
 local L = GuildOS.L
 
@@ -498,13 +499,27 @@ function GuildOS:BuildLootAccounts(panel)
     end
 
     -- The points' settings of the core picked, for its officers: one place for each (issue #346).
+    -- Built again only when what it shows changes shape (the core, the mode, the reasons); else its fields
+    -- take the values again (memory audit: every points sync redrew the whole form, new frames each time).
+    local setShape, setSyncs = nil, {}
     drawSettings = function()
         local content = setChild
-        for _, child in pairs({ content:GetChildren() }) do child:Hide() end
-        for _, region in pairs({ content:GetRegions() }) do region:Hide() end
         local mode = inScope(P.GetMode, P)
         local cfg = inScope(function() return P:Pool().config end) or {}
         local epgp = GuildOS:GetLootSystem(scope) == "epgp" or mode == "epgp"
+        local reasons = inScope(P.GetReasons, P) or {}
+        local shapeParts = { tostring(scope), tostring(mode), tostring(epgp), tostring(GuildOS:GetLootSystem(scope)) }
+        for _, r in ipairs(reasons) do
+            shapeParts[#shapeParts + 1] = table.concat({ tostring(r.key), tostring(r.name), tostring(r.value), tostring(r.weekly) }, "/")
+        end
+        local shape = table.concat(shapeParts, "|")
+        if shape == setShape then
+            for _, sync in ipairs(setSyncs) do GuildOS:SafeCall(sync, cfg) end
+            return
+        end
+        setShape, setSyncs = shape, {}
+        for _, child in pairs({ content:GetChildren() }) do child:Hide() end
+        for _, region in pairs({ content:GetRegions() }) do region:Hide() end
         local y = 0
         -- A form's label: the left column, in the text colour (#371).
         local function lbl(text, yy)
@@ -548,6 +563,9 @@ function GuildOS:BuildLootAccounts(panel)
                 box:SetText(tostring(cfg[f.key] or 0))
                 box.pointsKey = f.key
                 local key = f.key
+                setSyncs[#setSyncs + 1] = function(c)
+                    if not box:HasFocus() then box:SetText(tostring(c[key] or 0)) end
+                end
                 UI:AttachSaveButton(box, function(b2)
                     local kept = P:SetConfigKey(key, b2:GetText(), scope)
                     if kept ~= nil then b2:SetText(tostring(kept)) end
@@ -568,6 +586,7 @@ function GuildOS:BuildLootAccounts(panel)
         roundDD:SetOptions({ { value = "near", text = L["Nearest"] }, { value = "up", text = L["Up"] }, { value = "down", text = L["Down"] } })
         roundDD:SetValue(cfg.decayRound or "near")
         roundDD.onSelect = function(_, v) P:SetConfigKey("decayRound", v, scope) end
+        setSyncs[#setSyncs + 1] = function(c) roundDD:SetValue(c.decayRound or "near") end
         y = y + 30
         -- A switch at the content's edge, its box flush with the labels above it (#371).
         local function switch(key, text)
@@ -576,6 +595,7 @@ function GuildOS:BuildLootAccounts(panel)
             cb.checkbox:SetChecked(cfg[key] == true)
             cb.checkbox.pointsKey = key
             cb.checkbox.onChanged = function(_, checked) P:SetConfigKey(key, checked, scope) end
+            setSyncs[#setSyncs + 1] = function(c) cb.checkbox:SetChecked(c[key] == true) end
             y = y + 26
         end
         switch("raidEndAwards", L["Pay the raid-end awards (the raid leader's client pays)"])
@@ -587,7 +607,7 @@ function GuildOS:BuildLootAccounts(panel)
         local rsTitle = UI:CreateSectionTitle(content, L["Other reasons to earn points"])
         rsTitle:SetPoint("TOPLEFT", 0, -y)
         y = y + 26
-        for _, r in ipairs(inScope(P.GetReasons, P)) do
+        for _, r in ipairs(reasons) do
             local line = UI:CreateText(content, string.format(
                 (r.weekly or 0) > 0 and L["%s: %d points, up to %d a week"] or L["%s: %d points"],
                 r.name, r.value, r.weekly), 12, C.text.r, C.text.g, C.text.b)
@@ -638,7 +658,10 @@ function GuildOS:BuildLootAccounts(panel)
     end
     panel.Refresh = refresh
     panel.Scope = function() return scope end
-    P.uiRefresh = refresh
+    -- Off screen a change draws nothing: showing the panel draws it (memory audit).
+    P.uiRefresh = function()
+        if panel:IsVisible() then refresh() end
+    end
     panel:SetScript("OnShow", refresh)
     UI:MakeResponsive(body, function() refresh() end)
 end

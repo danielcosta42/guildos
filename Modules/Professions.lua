@@ -8,6 +8,7 @@
 -- between guildmates; Project() keeps the legacy shapes (members[].professions, db.recipes)
 -- that the roster, member detail, recipes panel, tooltips, CraftNet and the export read.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 if GuildOS.Client.isAnniversary then return end
 
 local Professions = {}

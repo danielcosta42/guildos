@@ -190,7 +190,8 @@ local function kicked(name, by) fire("CHAT_MSG_SYSTEM", name .. " has been kicke
 -- Each roster here is its own burst: the clock stands still, and GuildOS:Coalesce would hold every
 -- update after the first (issue #324; tools/coalesce.lua tests the holding).
 local function rosterUpdate()
-  GuildOS.State.coalesce.at.roster = nil
+  -- A while after the last one: the roster pass and its trials' scan (a minute apart at most) run again.
+  GuildOS.State.coalesce.at.roster, GuildOS.State.coalesce.at.trials = nil, nil
   fire("GUILD_ROSTER_UPDATE")
 end
 local function trials(db)

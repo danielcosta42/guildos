@@ -7,6 +7,7 @@
 -- Midnight's raids, and every list is kept by the whole Name-Realm of who sent it.
 ----------------------------------------------------------------------
 
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Wishlist = {}
 GuildOS.Wishlist = Wishlist
 local L = GuildOS.L

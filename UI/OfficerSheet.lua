@@ -11,6 +11,7 @@
 --     until Escape, another Shift+click on the same member, or a Shift+click on another one.
 -- And the editor of the member's sheet (GuildOS:ShowOfficerSheetEditor). The data is OfficerNotes'.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

@@ -8,6 +8,7 @@
 -- Time basis: the client's date()/time() used consistently (assumes the guild
 -- shares one timezone, which is the normal case).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
@@ -409,6 +410,44 @@ end
 ----------------------------------------------------------------------
 -- Build the calendar into a Guild-hub sub-panel; return its refresh fn.
 ----------------------------------------------------------------------
+-- Widgets reused across redraws (memory audit): a frame, texture or text the client makes is never freed,
+-- so a redraw takes the ones the last one made, by the part each plays (`key`), makes only what is missing
+-- and hides what is left over. Take returns the widget and whether it was reused. Kept local to the file:
+-- the tools load screens one at a time, under a stubbed UI.
+local function NewPool()
+    local made, used, pool = {}, {}, {}
+    function pool.Begin() for k in pairs(used) do used[k] = 0 end end
+    function pool.Take(key, make)
+        local n = (used[key] or 0) + 1
+        used[key] = n
+        local list = made[key]
+        if not list then list = {}; made[key] = list end
+        local w = list[n]
+        if w then
+            w:ClearAllPoints()
+            w:Show()
+            return w, true
+        end
+        w = make()
+        list[n] = w
+        return w, false
+    end
+    function pool.End()
+        for key, list in pairs(made) do
+            for i = (used[key] or 0) + 1, #list do list[i]:Hide() end
+        end
+    end
+    return pool
+end
+
+-- The pool of the screen part `owner` (a list's content frame), kept beside it rather than in a field of it.
+local poolsOf = setmetatable({}, { __mode = "k" })
+local function PoolOf(owner)
+    local p = poolsOf[owner]
+    if not p then p = NewPool(); poolsOf[owner] = p end
+    return p
+end
+
 function GuildOS:CreateCalendarSub(panel)
     local Style = GuildOS.Style
     local f = CreateFrame("Frame", nil, panel)
@@ -727,9 +766,19 @@ function GuildOS:CreateCalendarSub(panel)
         end
         f.newBtn:SetShown(canCreate and sel ~= nil)
 
+        -- The day's parts are the last drawing's, refilled (memory audit): every RSVP that syncs in redraws the
+        -- day, and each drawing made all of it again. Each part is taken by the role it plays (`key`).
         local child = f.child
-        for _, c in pairs({ child:GetChildren() }) do c:Hide() end
-        for _, r in pairs({ child:GetRegions() }) do r:Hide() end
+        local pool = PoolOf(child)
+        pool.Begin()
+        local function button(key, label, w, h)
+            local b, reused = pool.Take(key, function() return UI:CreateButton(child, label, w, h) end)
+            if reused then
+                b.label:SetText(label)
+                UI:SetButtonVariant(b, "secondary")
+            end
+            return b
+        end
 
         -- A line that wraps hangs from both of the list's top corners, never from a width read while
         -- the tab may be hidden (#371).
@@ -741,9 +790,15 @@ function GuildOS:CreateCalendarSub(panel)
         local ink, soft = C.paperInk, C.paperSoft
         local function text(s, size, col, role)
             col = col or ink
-            local fs = UI:CreateText(child, s, size or 12, col.r, col.g, col.b)
-            if role then GuildOS:ApplyFont(fs, size, role) end
+            local fs = pool.Take("text" .. (size or 12) .. (role or ""), function()
+                local t = UI:CreateText(child, "", size or 12, col.r, col.g, col.b)
+                if role then GuildOS:ApplyFont(t, size, role) end
+                return t
+            end)
+            fs:SetText(s)
+            fs:SetTextColor(col.r, col.g, col.b)
             fs:SetJustifyH("LEFT")
+            fs:SetWordWrap(true)
             return fs
         end
         -- A small section heading inside the day (the mockup's .sec b): Cinzel, the title's red.
@@ -808,7 +863,7 @@ function GuildOS:CreateCalendarSub(panel)
             local fit = math.max(1, math.floor((listW - 70) / (AVATAR + 4)))
             local shownN = (n > fit) and fit or n
             for i = 1, shownN do
-                local a = UI:CreateAvatar(child, AVATAR, false)
+                local a = pool.Take("avatar", function() return UI:CreateAvatar(child, AVATAR, false) end)
                 a:SetPoint("TOPLEFT", (i - 1) * (AVATAR + 4), -y)
                 a:SetMember(list[i].name, list[i].class)
                 local nm = list[i].name
@@ -831,16 +886,21 @@ function GuildOS:CreateCalendarSub(panel)
             local n = #boxes
             local bw = math.floor((listW - (n - 1) * 6) / n)
             for i, b in ipairs(boxes) do
-                local box = CreateFrame("Frame", nil, child)
+                local box = pool.Take("rolebox", function()
+                    local fr = CreateFrame("Frame", nil, child)
+                    fr.fill = Style:Nine(fr, "card", 5, "BACKGROUND", -6)
+                    fr.valueFS = UI:CreateText(fr, "", 14, ink.r, ink.g, ink.b)
+                    GuildOS:ApplyFont(fr.valueFS, 14, "button")
+                    fr.valueFS:SetPoint("TOP", 0, -5)
+                    fr.cap = UI:CreateText(fr, "", UI.SP.META, soft.r, soft.g, soft.b)
+                    fr.cap:SetPoint("TOP", fr.valueFS, "BOTTOM", 0, -1)
+                    return fr
+                end)
                 box:SetSize(bw, ROLE_H)
                 box:SetPoint("TOPLEFT", (i - 1) * (bw + 6), -y)
-                local fill = Style:Nine(box, "card", 5, "BACKGROUND", -6)
-                fill:SetColor(b.miss and ROLE_MISS or ROLE_FILL)
-                local v = UI:CreateText(box, b.value, 14, ink.r, ink.g, ink.b)
-                GuildOS:ApplyFont(v, 14, "button")
-                v:SetPoint("TOP", 0, -5)
-                local cap = UI:CreateText(box, b.label, UI.SP.META, soft.r, soft.g, soft.b)
-                cap:SetPoint("TOP", v, "BOTTOM", 0, -1)
+                box.fill:SetColor(b.miss and ROLE_MISS or ROLE_FILL)
+                box.valueFS:SetText(b.value)
+                box.cap:SetText(b.label)
             end
             return y + ROLE_H + 8
         end
@@ -852,10 +912,13 @@ function GuildOS:CreateCalendarSub(panel)
             local comp = CAL():GetComposition(e)
             local mine = CAL():MyRsvp(e)
             if n > 1 then
-                local rule = child:CreateTexture(nil, "ARTWORK")
-                rule:SetTexture(WHITE)
-                rule:SetHeight(1)
-                rule:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
+                local rule = pool.Take("rule", function()
+                    local t = child:CreateTexture(nil, "ARTWORK")
+                    t:SetTexture(WHITE)
+                    t:SetHeight(1)
+                    t:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
+                    return t
+                end)
                 rule:SetPoint("TOPLEFT", 0, -yy + 6)
                 rule:SetPoint("TOPRIGHT", 0, -yy + 6)
                 yy = yy + 6
@@ -872,15 +935,15 @@ function GuildOS:CreateCalendarSub(panel)
             name:SetWordWrap(false)
             if CAL():MayManage(e) then
                 local ev = e
-                local delBtn = UI:CreateButton(child, L["Delete"], 58, 20)
+                local delBtn = button("delete", L["Delete"], 58, 20)
                 delBtn:SetPoint("TOPRIGHT", 0, -yy + 2)
                 delBtn:SetScript("OnClick", function() confirmDelete(ev) end)
-                local editBtn = UI:CreateButton(child, L["Edit"], 48, 20)
+                local editBtn = button("edit", L["Edit"], 48, 20)
                 editBtn:SetPoint("RIGHT", delBtn, "LEFT", -6, 0)
                 editBtn:SetScript("OnClick", function() openEditor(nil, ev) end)
                 if inSeries then
                     -- This date and every later one of the series go (#267).
-                    local endBtn = UI:CreateButton(child, L["End series"], 80, 20)
+                    local endBtn = button("endSeries", L["End series"], 80, 20)
                     endBtn:SetPoint("TOPRIGHT", delBtn, "BOTTOMRIGHT", 0, -4)
                     endBtn:SetScript("OnClick", function() confirmEndSeries(ev) end)
                 end
@@ -914,16 +977,21 @@ function GuildOS:CreateCalendarSub(panel)
 
             -- The note, on a darker paper in the reading face (the mockup's .msg).
             if e.note and e.note ~= "" then
-                local box = CreateFrame("Frame", nil, child)
+                local box = pool.Take("note", function()
+                    local fr = CreateFrame("Frame", nil, child)
+                    local fill = Style:Nine(fr, "card", 5, "BACKGROUND", -6)
+                    fill:SetColor(ROLE_FILL)
+                    fr.noteFS = UI:CreateText(fr, "", 13, ink.r, ink.g, ink.b)
+                    GuildOS:ApplyFont(fr.noteFS, 13, "reading")
+                    fr.noteFS:SetPoint("TOPLEFT", 10, -7)
+                    fr.noteFS:SetPoint("TOPRIGHT", -10, -7)
+                    fr.noteFS:SetJustifyH("LEFT")
+                    return fr
+                end)
                 box:SetPoint("TOPLEFT", 0, -yy)
                 box:SetPoint("TOPRIGHT", 0, -yy)
-                local fill = Style:Nine(box, "card", 5, "BACKGROUND", -6)
-                fill:SetColor(ROLE_FILL)
-                local noteFS = UI:CreateText(box, e.note, 13, ink.r, ink.g, ink.b)
-                GuildOS:ApplyFont(noteFS, 13, "reading")
-                noteFS:SetPoint("TOPLEFT", 10, -7)
-                noteFS:SetPoint("TOPRIGHT", -10, -7)
-                noteFS:SetJustifyH("LEFT")
+                local noteFS = box.noteFS
+                noteFS:SetText(e.note)
                 local h = math.max(16, noteFS:GetStringHeight() or 14) + 14
                 box:SetHeight(h)
                 yy = yy + h + 10
@@ -952,7 +1020,7 @@ function GuildOS:CreateCalendarSub(panel)
                         yy = yy + 18
                         if view.action then
                             local evId, action = e.id, view.action
-                            local gameBtn = UI:CreateButton(child, view.label, 200, 22)
+                            local gameBtn = button("game", view.label, 200, 22)
                             gameBtn:SetPoint("TOPLEFT", 0, -yy)
                             gameBtn:SetScript("OnClick", function() GC:Act(evId, action) end)
                             yy = yy + 28
@@ -997,7 +1065,7 @@ function GuildOS:CreateCalendarSub(panel)
                 yy = yy + 18
                 local id = e.id
                 local function rsvpBtn(label, status, anchor, xoff)
-                    local b = UI:CreateButton(child, label, 54, 22)
+                    local b = button("rsvp", label, 54, 22)
                     if anchor then b:SetPoint("LEFT", anchor, "RIGHT", xoff, 0) else b:SetPoint("TOPLEFT", 0, -yy) end
                     if mine and mine.status == status then UI:SetButtonVariant(b, "primary") end
                     return b
@@ -1005,7 +1073,7 @@ function GuildOS:CreateCalendarSub(panel)
                 local goingBtn = rsvpBtn(L["Going"],     "yes",       nil,      0)
                 local tentBtn  = rsvpBtn(L["Tentative"], "tentative", goingBtn, 6)
                 local noBtn    = rsvpBtn(L["Absent"],    "no",        tentBtn,  6)
-                local roleBtn = UI:SetButtonVariant(UI:CreateButton(child, roleLabel((mine and mine.role) or "DPS"), 60, 22), "chip")
+                local roleBtn = UI:SetButtonVariant(button("role", roleLabel((mine and mine.role) or "DPS"), 60, 22), "chip")
                 roleBtn:SetPoint("LEFT", noBtn, "RIGHT", 10, 0)
                 roleBtn.role = (mine and mine.role) or "DPS"
                 roleBtn:SetScript("OnClick", function()
@@ -1068,6 +1136,7 @@ function GuildOS:CreateCalendarSub(panel)
                 yy = yy + 4 + math.max(14, (fs:GetStringHeight() or 12) + 6)
             end
         end
+        pool.End()
         child:SetHeight(math.max(1, yy))
         -- The day's card is as tall as what it holds, up to the room there is; past that its list scrolls.
         dayCard:SetHeight(math.max(90, math.min(f.dayRoom or 480, CARD_TOP + yy + 14)))
@@ -1102,7 +1171,13 @@ function GuildOS:CreateCalendarSub(panel)
 
     -- Live-refresh while visible as synced events/RSVPs arrive.
     if GuildOS.Calendar then
-        GuildOS.Calendar.uiRefresh = function() if panel:IsShown() then f.Render() end end
+        -- IsVisible, not IsShown: the tab is shown under a closed window too (memory audit). A change that
+        -- came while it was off screen is drawn when it shows.
+        local stale = false
+        GuildOS.Calendar.uiRefresh = function()
+            if panel:IsVisible() then f.Render() else stale = true end
+        end
+        panel:HookScript("OnShow", function() if stale then stale = false; f.Render() end end)
     end
 
     return f.Render

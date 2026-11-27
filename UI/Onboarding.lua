@@ -3,6 +3,7 @@
 -- A small welcome flow shown once (settings.onboarded) so new users
 -- understand what the addon does, how to open it, and what is shared.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

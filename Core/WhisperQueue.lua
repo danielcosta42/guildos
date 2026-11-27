@@ -33,6 +33,7 @@
 --   WhisperQueue:Realm(prefix, payload, key)         an item for the mesh's realm bus; whether it went in
 --   WhisperQueue:Release()                           from a click: what waits for one goes now
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Q = {}
 GuildOS.WhisperQueue = Q
 

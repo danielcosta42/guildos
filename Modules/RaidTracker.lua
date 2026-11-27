@@ -2,6 +2,7 @@
 -- Guild OS - Raid Attendance Tracker
 -- Tracks raid attendance, logs raid sessions, computes attendance %
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local RaidTracker = {}
 GuildOS.RaidTracker = RaidTracker
 local L = GuildOS.L

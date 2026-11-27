@@ -6,6 +6,7 @@
 -- augment rune and weapon enhancement (issue #187; the buffs are Data/ConsumablesRetail.lua's).
 -- WoW: Forever has no table: there this module does not exist, and every reader already treats a
 -- missing module as absent (ADR-0014, ADR-0026).
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local client = GuildOS.Client
 if not (client.isAnniversary or client.isRetail) then return end
 local isRetail = client.isRetail

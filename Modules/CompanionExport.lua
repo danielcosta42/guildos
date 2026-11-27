@@ -15,6 +15,7 @@
 --
 -- Business logic only — UI calls Build() and shows the result.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Companion = {}
 GuildOS.Companion = Companion
 local L = GuildOS.L

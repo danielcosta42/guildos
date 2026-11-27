@@ -6,6 +6,7 @@
 -- iLvl + spec read-only when that player DOES run the addon.
 -- Backed by GuildOS.RaiderRoster (officer-synced).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L
@@ -367,7 +368,8 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
     end
 
     -- Live refresh on synced edits + when the tab is shown.
-    if RR() then RR().uiRefresh = function() if panel:IsShown() then f.Refresh() end end end
+    -- IsVisible: the tab stays shown under a closed window (memory audit); OnShow refreshes it.
+    if RR() then RR().uiRefresh = function() if panel:IsVisible() then f.Refresh() end end end
     panel:HookScript("OnShow", function() GuildOS:SafeCall(f.Refresh) end)
 
     return f.Refresh

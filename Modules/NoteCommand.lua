@@ -6,6 +6,7 @@
 -- client sees the same line, so the write is jittered and skipped when the
 -- note already matches (see _SetupHook) instead of N clients writing at once.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local NoteCommand = {}
 GuildOS.NoteCommand = NoteCommand
 local L = GuildOS.L

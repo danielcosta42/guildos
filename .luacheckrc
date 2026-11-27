@@ -80,6 +80,8 @@ read_globals = {
     "C_AddOnProfiler",  -- the game's addon CPU meter, read by Compat.AddOnCPU (#324)
     "C_Map",
     "C_AddOns",           -- whether another addon is loaded (Compat.IsAddOnLoaded, #449 OpenMap)
+    "C_SuperTrack",       -- the map pin the player follows (Compat.SetUserWaypoint, campfires)
+    "UiMapPoint",         -- a map point for C_Map.SetUserWaypoint (Compat.SetUserWaypoint)
     "C_QuestLog",
     "C_Item",        -- Compat wrappers, preferred over the old globals (issue #10)
     "C_Spell",
@@ -97,7 +99,7 @@ read_globals = {
     "UnitName",
     "UnitFullName",
     "UnitIsUnit",
-    "UnitClass",
+    "UnitClass", "UnitPosition",
     "UnitLevel",
     "UnitRace",
     "UnitSex",

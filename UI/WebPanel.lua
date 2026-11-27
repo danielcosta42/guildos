@@ -12,6 +12,7 @@
 -- its own half — but the companion now leaves what the site answered in
 -- the inbox, and that line is allowed to say "the site has it".
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L

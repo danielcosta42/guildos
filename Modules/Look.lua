@@ -8,6 +8,7 @@
 -- goes out in the companion export (payload v8, the site's specs/038).
 -- Nor on retail: the site draws a retail character from the Armory, and the look only feeds the
 -- site (ADR-0026; guildos-web specs/056, issue #182).
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 if GuildOS.Client.isAnniversary or GuildOS.Client.isRetail then return end
 
 local Look = {}

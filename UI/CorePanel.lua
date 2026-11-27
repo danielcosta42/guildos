@@ -11,6 +11,7 @@
 -- The spacing standard (#449, specs/salao/fase3.md, "Espaçamento"): cards 16 in and 14 apart, sections
 -- 18 apart, fields 26 high and 12 apart, rows 32 with an avatar, body text 13, meta 11, titles 15.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
@@ -1263,9 +1264,51 @@ function GuildOS:CreateCoresPanel(panel)
     ----------------------------------------------------------------
     -- Refresh hook — called when the panel becomes visible or from sync
     ----------------------------------------------------------------
+    -- What the core's settings show, as one string (memory audit): a build makes its widgets anew (the client
+    -- never frees a frame), so a sync, a show or a resize builds again only when this changed. A click on the
+    -- panel itself builds at once. The online count and a five-minute step stand for what the roster adds.
+    local builtSig
+    local function ser(v, out, depth)
+        if type(v) == "table" then
+            if depth > 5 then return end
+            local keys = {}
+            for k in pairs(v) do keys[#keys + 1] = k end
+            table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+            for _, k in ipairs(keys) do
+                if type(v[k]) ~= "function" then out[#out + 1] = tostring(k); ser(v[k], out, depth + 1) end
+            end
+        elseif type(v) ~= "function" then
+            out[#out + 1] = tostring(v)
+        end
+    end
+    local function settingsSig(coreName)
+        local CM = GuildOS.CoreManager
+        local out = { tostring(coreName), tostring(math.floor((tonumber(UI:LaidWidth(rightScroll)) or 0) + 0.5)),
+            tostring(GuildOS:IsOfficer()), tostring(GetActiveName()), tostring((select(2, GetNumGuildMembers()))),
+            tostring(math.floor((GetServerTime() or 0) / 300)) }
+        ser(GuildOS.db.cores and GuildOS.db.cores[coreName], out, 0)
+        if CM and CM.GetSignups then ser(CM:GetSignups(coreName), out, 0) end
+        if CM and CM.IsRaidLeader then out[#out + 1] = tostring(CM:IsRaidLeader(coreName)) end
+        return table.concat(out, "\1")
+    end
+    local function buildIfChanged(coreName)
+        local sig = settingsSig(coreName)
+        if sig == builtSig then return end
+        BuildSettings(coreName)
+        builtSig = sig
+    end
+    -- Built again by a click (BuildSettings called straight): the next sync compares with that build.
+    local buildDirect = BuildSettings
+    BuildSettings = function(coreName)
+        buildDirect(coreName)
+        builtSig = settingsSig(coreName)
+    end
+
     GuildOS.coresPanelRefresh = function()
+        -- Off screen nothing is built: OnShow builds what changed meanwhile.
+        if not panel:IsVisible() then return end
         RebuildList()
-        if selectedCore then BuildSettings(selectedCore) end
+        if selectedCore then buildIfChanged(selectedCore) end
     end
 
     panel:SetScript("OnShow", function()
@@ -1276,12 +1319,13 @@ function GuildOS:CreateCoresPanel(panel)
         end
         RebuildList()
         if selectedCore then
-            BuildSettings(selectedCore)
+            buildIfChanged(selectedCore)
         else
             noCoreLbl:Show()
         end
     end)
 
+    local sizeTicket = 0
     -- After OnShow is set, which would replace the hook MakeResponsive puts on it.
     -- The list takes a share of the window, between its least and its most.
     UI:MakeResponsive(panel, function(_, w)
@@ -1293,7 +1337,12 @@ function GuildOS:CreateCoresPanel(panel)
             againBtn:SetWidth(listW - 2 * SP.PAD)
             RebuildList()
         end
-        if selectedCore then BuildSettings(selectedCore) end
+        -- Once the size holds a moment, not on every step of a drag.
+        sizeTicket = sizeTicket + 1
+        local mine = sizeTicket
+        GuildOS.Compat.After(0.25, function()
+            if mine == sizeTicket and selectedCore and panel:IsVisible() then buildIfChanged(selectedCore) end
+        end)
     end)
 
     -- Initial build

@@ -15,6 +15,7 @@
 -- of Next; one it forbids (ADDON_ACTION_FORBIDDEN, as WoW: Forever and retail do) turns it into "copy
 -- the text": each click shows the note to paste into the game's roster. Session state only.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local NoteDates = {}
 GuildOS.NoteDates = NoteDates
 local L = GuildOS.L

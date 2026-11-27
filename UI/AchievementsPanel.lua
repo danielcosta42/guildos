@@ -10,6 +10,7 @@
 -- "Prefix: part" titles under their prefix, the rest a row each. Drawn in cards as the Chronicle's
 -- mockup (#449 phase 3).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

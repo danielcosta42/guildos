@@ -8,6 +8,7 @@
 -- visible, while the `snow` option ("Winter Veil animations") is off, or past the ceiling.
 -- Everything is a child of the Guild OS window and clipped by it: no effect ever reaches the game's own interface.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Fx = {}
 GuildOS.VeilFx = Fx
 

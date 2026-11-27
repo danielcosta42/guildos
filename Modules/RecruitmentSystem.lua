@@ -3,6 +3,7 @@
 -- Automatic recruitment messages + right-click guild invite
 -- Only officers (rank index <= 1) or configurable rank can use this
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Recruitment = {}
 GuildOS.Recruitment = Recruitment
 local L = GuildOS.L

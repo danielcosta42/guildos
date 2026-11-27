@@ -56,8 +56,22 @@
 -- v15 (chehulnet#5): LibChehulMesh v9 brakes when its whispers keep finding nobody and keeps one directory per
 -- ruleset. The DIAG says how many "No player named" the mesh got within its window (nf), whether the brake is on
 -- (trip), which channel the directory uses (dirch) and how old its list is in seconds (dirage, empty before a read).
+-- v16 (chehulnet#13): the campfire beacon. Warmth sees only the fires of players who run Warmth; GuildOS, Lodestar and
+-- PartyLens pass its ChehulCamp announces on (LibChehulMesh v10) but never made one, so their much larger installed
+-- base left the map cold. With the logic here, every family addon becomes a source with one line in its wire, and the
+-- message format keeps one owner. CN:EnableCamps{ store, ask } turns it on; nothing goes out until a host turned it on
+-- AND the player said yes, asked once, at the first fire they light (not at login). Only real fire lit by the player
+-- counts: UNIT_SPELLCAST_SUCCEEDED for "player" with a camp kit's spell (C_Item.GetItemSpell of the Basic, Journeyman
+-- and Expert kits). The "Campfire Nearby" aura is no proof (it lights up near any fire of the world); only its drop
+-- is believed. 1.5 s after the cast it announces "C2|A|map|x|y|zuid|<tier>l|1|age||Name~c|" on guild, group and the
+-- realm bus (relayed), Warmth's format; the letter l says "lit by a family client without Warmth" and older readers
+-- skip letters they do not know. A beat every CAMP_BEAT while within CAMP_NEAR yards; "C2|X" when the player goes
+-- further than CAMP_FAR, after CAMP_LIFE, or when the aura drops at the spot. With Warmth loaded it does nothing
+-- (Warmth announces with more data), and off WoW: Forever it does nothing (the kits exist nowhere else). The state
+-- lives on the shared table, so with several hosts it runs once, in the newest copy: one question, one announce.
+-- DIAG camp=on/off/nil (the player's answer) and campsent (announces sent this session).
 
-local VERSION = 15
+local VERSION = 16
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -367,6 +381,7 @@ function CN:BuildDiag()
             for i, t in ipairs(CN.traces) do out[i] = table.concat({ t.id, t.secs, t.hops }, ":") end
             return table.concat(out, ",")
         end)(),
+        "camp=" .. CN:CampState(), "campsent=" .. ((CN.camp and CN.camp.sent) or 0),
     }
     local dead = {}
     for dist in pairs((Mesh and Mesh.dead) or {}) do
@@ -591,6 +606,289 @@ local function OnTrace(payload, sender, dist, _, hops)
     end
     table.insert(CN.traces, 1, { id = id, secs = math.max(0, Now() - tonumber(sent)), hops = tonumber(hops) or "-" })
     CN.traces[CN.TRACE_KEEP + 1] = nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Campfire beacon (v16, chehulnet#13): the fire the player lights, announced in Warmth's format, with their yes.
+--   CN:EnableCamps{ store = fn, ask = fn }
+--     store() -> the host's saved table holding the player's answer in `consent` (true, false or nil = not asked)
+--     ask(callback) -> shows the question in the host's style; callback(yes) once the player answers
+--   CN:SetCampConsent(yes) -> a host's settings toggle: writes the answer into every host's store
+-- All state lives in CN.camp, shared by every copy: the newest copy loaded runs it, so one client asks once and
+-- announces once whatever the number of hosts. One "no" in any host's store is a no.
+-- ---------------------------------------------------------------------------
+CN.CAMP_PREFIX = "ChehulCamp"
+CN.CAMP_KITS   = { [279981] = 1, [279961] = 2, [279974] = 3 } -- camp kit item -> tier: Basic, Journeyman, Expert
+CN.CAMP_AURA   = 1283391 -- "Campfire Nearby": on near ANY fire, so never proof of ours; its drop is believed
+CN.CAMP_DELAY  = 1.5     -- seconds from the cast to the first announce
+CN.CAMP_BEAT   = 240     -- seconds between announces while near the fire
+CN.CAMP_NEAR   = 60      -- yards: a beat goes only this close to the fire, and the aura's drop counts only here
+CN.CAMP_FAR    = 100     -- yards: further than this, the camp ends
+CN.CAMP_LIFE   = 3600    -- seconds: a camp ends after this
+CN.CAMP_CHECK  = 5       -- seconds between checks of distance, aura and age
+CN.CAMP_FLAG   = "l"     -- after the tier: lit by a family client without Warmth
+
+CN.camp = CN.camp or { hosts = {}, sent = 0 }
+CN.camp.gen = (CN.camp.gen or 0) + 1 -- this copy's turn: tickers and timers of an older copy stop on seeing it
+local campGen = CN.camp.gen
+if CN.camp.ticker and CN.camp.ticker.Cancel then pcall(CN.camp.ticker.Cancel, CN.camp.ticker) end
+CN.camp.ticker = nil
+
+-- WoW: Forever, the 1.60 client line (interface 16xxx): the camp kits exist nowhere else.
+local function IsForever()
+    local interface = GetBuildInfo and tonumber((select(4, GetBuildInfo()))) or 0
+    return not IsRetail() and interface >= 16000 and interface < 20000
+end
+
+local function WarmthLoaded()
+    local fn = (C_AddOns and C_AddOns.IsAddOnLoaded) or _G.IsAddOnLoaded
+    if type(fn) ~= "function" then return false end
+    local ok, loaded = pcall(fn, "Warmth")
+    if not ok or (issecretvalue and issecretvalue(loaded)) then return false end
+    return loaded and true or false
+end
+
+-- The beacon may run: a host turned it on, the client is Forever, Warmth is not here and the mesh is.
+local function CampsOn()
+    return #CN.camp.hosts > 0 and Mesh ~= nil and IsForever() and not WarmthLoaded()
+end
+
+-- The player's answer across every host's store: false wins, then true, else nil. A decided answer is copied into
+-- the stores that have none, so the next session asks nothing whichever host loads.
+local function Consent()
+    local stores, yes = {}, nil
+    for _, h in ipairs(CN.camp.hosts) do
+        local ok, t = pcall(h.store)
+        if ok and type(t) == "table" then
+            stores[#stores + 1] = t
+            if t.consent == false then yes = false elseif t.consent == true and yes == nil then yes = true end
+        end
+    end
+    if yes ~= nil then
+        for _, t in ipairs(stores) do
+            if t.consent == nil then t.consent = yes end
+        end
+    end
+    return yes
+end
+
+function CN:CampState()
+    if not (CN.camp and #CN.camp.hosts > 0) then return "nil" end
+    local yes = Consent()
+    return (yes == true and "on") or (yes == false and "off") or "nil"
+end
+
+-- The tier of a camp kit whose spell this is, or nil. Kit spells come from the items (cached once found).
+local function KitTier(spellID)
+    if type(spellID) ~= "number" then return nil end
+    CN.camp.spells = CN.camp.spells or {}
+    if CN.camp.spells[spellID] then return CN.camp.spells[spellID] end
+    local get = C_Item and C_Item.GetItemSpell
+    if type(get) ~= "function" then return nil end
+    for item, tier in pairs(CN.CAMP_KITS) do
+        local ok, _, sid = pcall(get, item)
+        if ok and type(sid) == "number" and not (issecretvalue and issecretvalue(sid)) then
+            CN.camp.spells[sid] = tier
+        end
+    end
+    return CN.camp.spells[spellID]
+end
+
+local function Secret(...)
+    if not issecretvalue then return false end
+    for i = 1, select("#", ...) do
+        if issecretvalue((select(i, ...))) then return true end
+    end
+    return false
+end
+
+-- Where the player stands: map and map fraction (for the announce), world yards and instance (for distances).
+local function Here()
+    local map = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    if type(map) ~= "number" or map <= 0 or not C_Map.GetPlayerMapPosition then return nil end
+    local pos = C_Map.GetPlayerMapPosition(map, "player")
+    if not pos or not pos.GetXY then return nil end
+    local x, y = pos:GetXY()
+    if Secret(x, y) or type(x) ~= "number" or type(y) ~= "number" then return nil end
+    local spot = { map = map, x = x, y = y }
+    if UnitPosition then
+        local wy, wx, _, inst = UnitPosition("player")
+        if not Secret(wy, wx, inst) and type(wx) == "number" and type(wy) == "number" then
+            spot.wx, spot.wy, spot.inst = wx, wy, inst
+        end
+    end
+    return spot
+end
+
+-- Yards from the fire, or nil when the position cannot be read now (a check then decides nothing by distance).
+local function Distance(c)
+    local now = Here()
+    if not now or not c.wx or not now.wx then return nil end
+    if now.inst ~= c.inst then return math.huge end
+    return math.sqrt((now.wx - c.wx) ^ 2 + (now.wy - c.wy) ^ 2)
+end
+
+-- true/false when the client can say whether the "Campfire Nearby" aura is on the player, nil when it cannot.
+local function AuraUp()
+    local get = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
+    if type(get) ~= "function" then return nil end
+    local ok, aura = pcall(get, CN.CAMP_AURA)
+    if not ok or Secret(aura) then return nil end
+    return aura ~= nil
+end
+
+local function CampCoord(v)
+    return string.format("%.4f", v)
+end
+
+-- C2|A|map|x|y|zuid|tier+flags|n|age|objects|people|note: Warmth's announce, with only the lighter as people.
+local function CampPayload(c)
+    local _, zuid = CN:MyLayer()
+    local name = (MyShortName():gsub("[|~,;]", ""))
+    return table.concat({ "C2", "A", tostring(c.map), CampCoord(c.x), CampCoord(c.y), tostring(zuid or 0),
+        c.tier .. CN.CAMP_FLAG, "1", tostring(math.max(0, time() - c.lit)), "", name .. "~c", "" }, "|")
+end
+
+local function Announce(c)
+    if CN.camp.active ~= c or not CampsOn() or Consent() ~= true then return end
+    local payload = CampPayload(c)
+    Mesh:Guild(CN.CAMP_PREFIX, payload)
+    Mesh:Group(CN.CAMP_PREFIX, payload)
+    Mesh:Realm(CN.CAMP_PREFIX, payload, "A", true)
+    c.announced, c.last = true, time()
+    CN.camp.sent = (CN.camp.sent or 0) + 1
+end
+
+-- The camp is over. `quiet`: nothing is said (Warmth took over, and its own camp has the same sender).
+local function EndCamp(quiet)
+    local c = CN.camp.active
+    CN.camp.active = nil
+    if CN.camp.ticker and CN.camp.ticker.Cancel then pcall(CN.camp.ticker.Cancel, CN.camp.ticker) end
+    CN.camp.ticker = nil
+    if c and c.announced and not quiet and Mesh then
+        Mesh:Guild(CN.CAMP_PREFIX, "C2|X")
+        Mesh:Group(CN.CAMP_PREFIX, "C2|X")
+    end
+end
+
+local function CheckCamp()
+    local c = CN.camp.active
+    if not c then return EndCamp(true) end
+    if not CampsOn() then return EndCamp(WarmthLoaded()) end
+    if Consent() ~= true then return EndCamp() end
+    local now = time()
+    if now - c.lit >= CN.CAMP_LIFE then return EndCamp() end
+    local d = Distance(c)
+    if d and d > CN.CAMP_FAR then return EndCamp() end
+    local aura = AuraUp()
+    if aura then
+        c.aura = true
+    elseif aura == false and c.aura and d and d <= CN.CAMP_NEAR then
+        return EndCamp() -- the aura was on and dropped at the spot: the fire is out
+    end
+    if c.announced and d and d <= CN.CAMP_NEAR and now - (c.last or 0) >= CN.CAMP_BEAT then
+        Announce(c)
+    end
+end
+
+local function StartTicker()
+    if CN.camp.ticker or not (C_Timer and C_Timer.NewTicker) then return end
+    local ticker
+    ticker = C_Timer.NewTicker(CN.CAMP_CHECK, function()
+        if CN.camp.gen ~= campGen then
+            if ticker and ticker.Cancel then ticker:Cancel() end
+            return
+        end
+        CheckCamp()
+    end)
+    CN.camp.ticker = ticker
+end
+
+local function ScheduleAnnounce(c)
+    local function go()
+        if CN.camp.gen ~= campGen then return end
+        Announce(c)
+    end
+    if C_Timer and C_Timer.After then C_Timer.After(CN.CAMP_DELAY, go) else go() end
+end
+
+-- A fire lit at `spot`: it replaces any camp still running (the player moved on to a new fire).
+local function StartCamp(spot, tier, lit)
+    if CN.camp.active then EndCamp(true) end
+    spot.tier, spot.lit = tier, lit or time()
+    CN.camp.active = spot
+    StartTicker()
+    ScheduleAnnounce(spot)
+end
+
+local function OnCampCast(unit, _, spellID)
+    if unit ~= "player" or Secret(unit, spellID) then return end
+    local tier = KitTier(spellID)
+    if not tier or not CampsOn() then return end
+    local spot = Here()
+    if not spot then return end
+    local yes = Consent()
+    if yes == true then return StartCamp(spot, tier) end
+    if yes == false or CN.camp.asked then return end
+    -- First fire, no answer yet: asked once per session, by the first host that can ask.
+    local host
+    for _, h in ipairs(CN.camp.hosts) do
+        if type(h.ask) == "function" then host = h; break end
+    end
+    if not host then return end
+    CN.camp.asked = true
+    local lit, answered = time(), false
+    pcall(host.ask, function(answer)
+        if answered then return end
+        answered = true
+        CN:SetCampConsent(answer and true or false)
+        if answer and CampsOn() and time() - lit < CN.CAMP_LIFE then
+            local d = Distance(spot)
+            if not d or d <= CN.CAMP_FAR then StartCamp(spot, tier, lit) end
+        end
+    end)
+end
+
+-- The player's answer, from the question or from a host's settings: written into every host's store. A no ends a
+-- camp that is running.
+function CN:SetCampConsent(yes)
+    yes = yes and true or false
+    for _, h in ipairs(CN.camp.hosts) do
+        local ok, t = pcall(h.store)
+        if ok and type(t) == "table" then t.consent = yes end
+    end
+    if not yes and CN.camp.active then EndCamp() end
+end
+
+local function EnsureCampFrame()
+    CN.campFrame = CN.campFrame or CreateFrame("Frame")
+    local f = CN.campFrame
+    if f.RegisterUnitEvent then
+        f:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+    else
+        f:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+    end
+    f:SetScript("OnEvent", function(_, _, ...) OnCampCast(...) end)
+end
+
+function CN:EnableCamps(opts)
+    if type(opts) ~= "table" or type(opts.store) ~= "function" then return end
+    for _, h in ipairs(CN.camp.hosts) do
+        if h.store == opts.store then return end -- the same host twice
+    end
+    CN.camp.hosts[#CN.camp.hosts + 1] = { store = opts.store, ask = opts.ask }
+    if not IsForever() then return end -- no kits, no fire to see
+    EnsureCampFrame()
+    if C_Item and C_Item.RequestLoadItemDataByID then
+        for item in pairs(CN.CAMP_KITS) do pcall(C_Item.RequestLoadItemDataByID, item) end
+    end
+end
+
+-- A newer copy taking over: it handles the cast from now on, and a camp an older copy started keeps going here.
+if CN.campFrame then CN.campFrame:SetScript("OnEvent", function(_, _, ...) OnCampCast(...) end) end
+if CN.camp.active then
+    StartTicker()
+    if not CN.camp.active.announced then ScheduleAnnounce(CN.camp.active) end
 end
 
 -- ---------------------------------------------------------------------------

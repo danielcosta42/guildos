@@ -4,6 +4,7 @@
 -- catch-up shown once on login (and on demand via /guildos digest).
 -- Build() is pure data; the popup uses the UI factories at runtime.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Digest = {}
 GuildOS.Digest = Digest
 local L = GuildOS.L
@@ -285,6 +286,37 @@ function Digest:MarkFeedSeen(now)
     end
 end
 
+-- Widgets reused across redraws (memory audit): a frame, texture or text the client makes is never freed,
+-- so a redraw takes the ones the last one made, by the part each plays (`key`), makes only what is missing
+-- and hides what is left over. Take returns the widget and whether it was reused. Kept local to the file:
+-- the tools load screens one at a time, under a stubbed UI.
+local function NewPool()
+    local made, used, pool = {}, {}, {}
+    function pool.Begin() for k in pairs(used) do used[k] = 0 end end
+    function pool.Take(key, make)
+        local n = (used[key] or 0) + 1
+        used[key] = n
+        local list = made[key]
+        if not list then list = {}; made[key] = list end
+        local w = list[n]
+        if w then
+            w:ClearAllPoints()
+            w:Show()
+            return w, true
+        end
+        w = make()
+        list[n] = w
+        return w, false
+    end
+    function pool.End()
+        for key, list in pairs(made) do
+            for i = (used[key] or 0) + 1, #list do list[i]:Hide() end
+        end
+    end
+    return pool
+end
+
+
 ----------------------------------------------------------------------
 -- The popup window.
 ----------------------------------------------------------------------
@@ -339,13 +371,22 @@ function Digest:Show(lines)
         self.frame = f
     end
 
-    -- (Re)populate the body
-    for _, c in pairs({ f.body:GetChildren() }) do c:Hide() end
-    for _, r in pairs({ f.body:GetRegions() }) do r:Hide() end
+    -- (Re)populate the body, on the parts the last showing made (memory audit): /gos digest shows it again.
+    self._bodyPool = self._bodyPool or NewPool()
+    local pool = self._bodyPool
+    pool.Begin()
+    local function text(key, size, col)
+        return pool.Take(key, function()
+            local t = UI:CreateText(f.body, "", size, col.r, col.g, col.b)
+            t:SetJustifyH("LEFT")
+            return t
+        end)
+    end
 
     local y = 0
     if #lines == 0 then
-        local empty = UI:CreateText(f.body, L["Nothing new since your last login."], 11, C.silver.r, C.silver.g, C.silver.b)
+        local empty = text("empty", 11, C.silver)
+        empty:SetText(L["Nothing new since your last login."])
         empty:SetPoint("TOPLEFT", 2, -y)
         empty:SetWidth(UI:TextWidth(f.body, 4))
     else
@@ -361,32 +402,34 @@ function Digest:Show(lines)
             if grp.title and #groups > 1 then
                 if gi > 1 then y = y + 4 end
                 local hc = C.gold2 or C.gold
-                local hd = UI:CreateText(f.body, grp.title, 11, hc.r, hc.g, hc.b)
+                local hd = text("heading", 11, hc)
+                hd:SetText(grp.title)
                 hd:SetPoint("TOPLEFT", 0, -y)
                 hd:SetWidth(UI:TextWidth(f.body, 4))
-                hd:SetJustifyH("LEFT")
                 y = y + 18
             end
             for _, line in ipairs(grp.lines) do
                 if glyphs then
-                    local g = UI:CreateGlyph(f.body, 22)
+                    local g = pool.Take("glyph", function() return UI:CreateGlyph(f.body, 22) end)
                     g:SetPoint("TOPLEFT", 0, -y + 3)
                     local plain = tostring(line):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
                     g:Set(grp.glyph or (plain:match("^[%z\1-\127\194-\244][\128-\191]*") or ""):upper(), color)
                 else
-                    local dot = UI:CreateText(f.body, "*", 12, C.label.r, C.label.g, C.label.b)
+                    local dot = text("dot", 12, C.label)
+                    dot:SetText("*")
                     dot:SetPoint("TOPLEFT", 2, -y)
                 end
-                local fs = UI:CreateText(f.body, line, 11, C.text.r, C.text.g, C.text.b)
+                local fs = text("line", 11, C.text)
+                fs:SetText(line)
                 fs:SetPoint("TOPLEFT", x, -y)
                 -- Not f.body:GetWidth(): the body is placed by its anchors and reads 0 until the game lays it out, and
                 -- a text 34px less than that drew nothing (#449). TextWidth reads the anchors.
                 fs:SetWidth(UI:TextWidth(f.body, x + 4))
-                fs:SetJustifyH("LEFT")
                 y = y + math.max(26, (fs:GetStringHeight() or 14) + 10)
             end
         end
     end
+    pool.End()
     -- The title above and the button below: a long digest grows, never runs under the button.
     f:SetHeight(math.max(240, f.top + y + f.bottom))
 

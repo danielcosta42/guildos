@@ -12,6 +12,7 @@
 -- leaves the window when combat starts: the game would refuse to hide a
 -- window holding a protected button in combat.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 -- Drawn on a parchment card in the Officers' Room and Settings (specs/salao/fase3.md): the text takes the
 -- paper's inks and a class its colour on the paper (UI/Kit.lua); a floating window, the wood's (WOOD).
@@ -375,6 +376,7 @@ function GuildOS:BuildBulkSub(panel)
         board:Layout()
     end
 
-    if BA then BA.uiRefresh = refresh end
+    -- Only while it is on screen (memory audit): showing it refreshes it anyway.
+    if BA then BA.uiRefresh = function() if panel:IsVisible() then refresh() end end end
     return refresh
 end

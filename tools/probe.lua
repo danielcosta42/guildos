@@ -78,7 +78,7 @@ for _, name in ipairs(Probe.APIS) do
   check(not seen[name], "the inventory lists " .. name .. " once")
   seen[name] = true
 end
-check(#Probe.EVENTS == 72, "the probe checks the 72 events the addon registers")   -- +1: the guild event log (specs/salao/log-e-renomes.md); +3: the alliance channel's join, leave and notices (#449); +1: a click outside the minimap menu (#449); +1: a master-looted item leaving the corpse (#448 L2); +4: the game's calendar (#263); +2: the bank cleanup's vendor (#380); +1: the game's "too fast" (#422, #393)
+check(#Probe.EVENTS == 73, "the probe checks the 73 events the addon registers")   -- +1: the campfire beacon's kit cast (ChehulNet v16); +1: the guild event log (specs/salao/log-e-renomes.md); +3: the alliance channel's join, leave and notices (#449); +1: a click outside the minimap menu (#449); +1: a master-looted item leaving the corpse (#448 L2); +4: the game's calendar (#263); +2: the bank cleanup's vendor (#380); +1: the game's "too fast" (#422, #393)
 
 -- Drift: the events the addon's own files register are exactly Probe.EVENTS.
 -- Static reading: an event name held in a variable is out of its reach.

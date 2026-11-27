@@ -15,6 +15,7 @@
 --   * Needs: officers set how many of an item the bank should hold (domain "gbankneed").
 --   * Requests: a member asks for an item; an officer fills or declines it (domain "gbankreq").
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local GuildBank = {}
 GuildOS.GuildBank = GuildBank
 local L = GuildOS.L

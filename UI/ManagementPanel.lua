@@ -5,6 +5,7 @@
 -- Visual layout only — all data and actions go through GuildOS.GuildManager
 -- (Rule 3 / Rule 10).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 -- The Officers' Room draws each screen on a parchment card (specs/salao/fase3.md): its text takes the paper's
 -- inks (UI/Kit.lua), and a floating window over it the wood's (WOOD).
@@ -132,9 +133,34 @@ local function MakeTableHeader(parent, cols, y)
     return header
 end
 
--- Clear all (frame) children of a content holder before a rebuild.
-local function ClearContent(content)
-    for _, child in pairs({ content:GetChildren() }) do child:Hide() end
+-- Widgets reused across redraws (memory audit): a frame, texture or text the client makes is never freed,
+-- so a redraw takes the ones the last one made, by the part each plays (`key`), makes only what is missing
+-- and hides what is left over. Take returns the widget and whether it was reused. Kept local to the file:
+-- the tools load screens one at a time, under a stubbed UI.
+local function NewPool()
+    local made, used, pool = {}, {}, {}
+    function pool.Begin() for k in pairs(used) do used[k] = 0 end end
+    function pool.Take(key, make)
+        local n = (used[key] or 0) + 1
+        used[key] = n
+        local list = made[key]
+        if not list then list = {}; made[key] = list end
+        local w = list[n]
+        if w then
+            w:ClearAllPoints()
+            w:Show()
+            return w, true
+        end
+        w = make()
+        list[n] = w
+        return w, false
+    end
+    function pool.End()
+        for key, list in pairs(made) do
+            for i = (used[key] or 0) + 1, #list do list[i]:Hide() end
+        end
+    end
+    return pool
 end
 
 ----------------------------------------------------------------------
@@ -1114,8 +1140,14 @@ local function BuildBanSub(panel)
 
     -- Hooked: the field keeps its own text handlers (#371).
     searchBox:HookScript("OnTextChanged", function() refresh() end)
-    -- let sync / mutations repaint this tab
-    if GuildOS.BanList then GuildOS.BanList.uiRefresh = refresh end
+    -- let sync / mutations repaint this tab: only while it is on screen, else when it shows (memory audit)
+    local stale = false
+    if GuildOS.BanList then
+        GuildOS.BanList.uiRefresh = function()
+            if panel:IsVisible() then refresh() else stale = true end
+        end
+    end
+    panel:HookScript("OnShow", function() if stale then stale = false; refresh() end end)
     return refresh
 end
 
@@ -1352,10 +1384,23 @@ local function BuildPresetsSub(panel)
         return box
     end
 
+    -- The blocks are the last redraw's, refilled (memory audit): a roster update repaints the panel, and each
+    -- repaint made every block, field and button again. A block's parts come from its own pool.
+    local pool = NewPool()
+    local function block(key, parentF, template)
+        return pool.Take(key, function()
+            local f = CreateFrame("Frame", nil, parentF, template)
+            f.parts = NewPool()
+            return f
+        end)
+    end
     local refresh
+    local stale = false
     refresh = function()
-        ClearContent(content)
-        for _, r in pairs({ content:GetRegions() }) do r:Hide() end
+        -- Off screen it only notes the change: OnShow draws it (memory audit).
+        if not panel:IsVisible() then stale = true; return end
+        stale = false
+        pool.Begin()
 
         local MP = GuildOS.ModPresets
         local presets = (MP and MP:GetPresets()) or {}
@@ -1363,11 +1408,15 @@ local function BuildPresetsSub(panel)
 
         -- "+ New" chooser: a labelled row of the built-in type buttons.
         if panel.showChooser and MP then
-            local chooser = CreateFrame("Frame", nil, content)
+            local chooser = block("chooser", content)
+            local parts = chooser.parts
+            parts.Begin()
             chooser:SetHeight(ROW_H)
             chooser:SetPoint("TOPLEFT", 0, -yOff)
             chooser:SetPoint("TOPRIGHT", 0, -yOff)
-            local lbl = UI:CreateText(chooser, L["Add preset:"], 11, C.text.r, C.text.g, C.text.b)   -- a form label (#371)
+            local lbl = parts.Take("label", function()
+                return UI:CreateText(chooser, L["Add preset:"], 11, C.text.r, C.text.g, C.text.b)   -- a form label (#371)
+            end)
             lbl:SetPoint("TOPLEFT", 8, -4)
             -- The types wrap onto a second line where the card is narrow (four of them pass 800px).
             local availW = UI:LaidWidth(content)
@@ -1375,7 +1424,8 @@ local function BuildPresetsSub(panel)
             local bx, by = 96, 0
             for _, key in ipairs(MP.TYPE_ORDER) do
                 local info = MP.TYPES[key]
-                local b = UI:CreateButton(chooser, info.name, 130, 20)
+                local b = parts.Take("type", function() return UI:CreateButton(chooser, "", 130, 20) end)
+                b.label:SetText(info.name)
                 local bw = math.max(130, math.ceil(b.label:GetStringWidth() or 0) + 16)
                 b:SetWidth(bw)
                 if bx > 96 and bx + bw > availW then bx, by = 96, by + 24 end
@@ -1388,15 +1438,19 @@ local function BuildPresetsSub(panel)
                 end)
                 bx = bx + b:GetWidth() + 6  -- a button its label grew pushes the next one (issue #28)
             end
+            parts.End()
             chooser:SetHeight(ROW_H + by)
             yOff = yOff + ROW_H + by + 4
         end
 
         if #presets == 0 and not panel.showChooser then
-            local empty = UI:CreateText(content, L["No presets yet. Use [+ New] to add one."],
-                11, C.silver.r, C.silver.g, C.silver.b)
+            local empty = pool.Take("empty", function()
+                return UI:CreateText(content, L["No presets yet. Use [+ New] to add one."],
+                    11, C.silver.r, C.silver.g, C.silver.b)
+            end)
             empty:SetPoint("TOPLEFT", 0, -(yOff + 4))
             content:SetHeight(math.max(1, yOff + ROW_H))
+            pool.End()
             return
         end
 
@@ -1407,23 +1461,35 @@ local function BuildPresetsSub(panel)
             -- Height: header line + controls line (+ preview rows when open).
             local blockH = ROW_H + 24
             if expanded then blockH = blockH + math.max(1, #matches) * 18 + 4 end
-            local block = CreateFrame("Frame", nil, content, "BackdropTemplate")
-            block:SetHeight(blockH)
-            block:SetPoint("TOPLEFT", 0, -yOff)
-            block:SetPoint("TOPRIGHT", 0, -yOff)
-            block:SetBackdrop({ bgFile = WHITE })
+            local blk, reused = block("preset", content, "BackdropTemplate")
+            if not reused then
+                blk:SetBackdrop({ bgFile = WHITE })
+                rule(blk)
+            end
+            local parts = blk.parts
+            parts.Begin()
+            blk:SetHeight(blockH)
+            blk:SetPoint("TOPLEFT", 0, -yOff)
+            blk:SetPoint("TOPRIGHT", 0, -yOff)
             local alt = (idx % 2 == 0) and C.row1 or C.row2
-            block:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
-            rule(block)
+            blk:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
+            local function text(key, size, col)
+                return parts.Take(key, function() return UI:CreateText(blk, "", size, col.r, col.g, col.b) end)
+            end
+            local function button(key, label, w, h)
+                return parts.Take(key, function() return UI:CreateButton(blk, label, w, h) end)
+            end
 
             -- Header line: name + criteria summary + remove. The name in `text`, not gold (#371).
-            local nameFS = UI:CreateText(block, MP:Name(preset), 13, C.paperTitle.r, C.paperTitle.g, C.paperTitle.b)
+            local nameFS = text("name", 13, C.paperTitle)
+            nameFS:SetText(MP:Name(preset))
             nameFS:SetPoint("TOPLEFT", 8, -5)
-            local sumFS = UI:CreateText(block, MP:Summarize(preset), UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
+            local sumFS = text("summary", UI.SP.META, C.silver)
+            sumFS:SetText(MP:Summarize(preset))
             -- After the name when the name runs past the column: French ones do (#114).
             sumFS:SetPoint("TOPLEFT", math.max(168, 8 + math.ceil(nameFS:GetStringWidth() or 0) + 16), -6)
 
-            local delBtn = UI:CreateButton(block, "\195\151", 22, 18)  -- ×
+            local delBtn = button("remove", "\195\151", 22, 18)  -- ×
             delBtn:SetPoint("TOPRIGHT", -8, -4)
             delBtn:SetScript("OnClick", function()
                 if MP:RemovePreset(idx) then
@@ -1440,13 +1506,21 @@ local function BuildPresetsSub(panel)
             fieldsW = (fieldsW > 0 and fieldsW or 600) - 170
             local wrapped = 0
             for _, field in ipairs(PRESET_FIELDS[preset.type] or {}) do
-                local flbl = UI:CreateText(block, field.label, UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
+                local flbl = text("fieldLabel", UI.SP.META, C.textDim)
+                flbl:SetText(field.label)
                 local fw = (flbl:GetStringWidth() or 0) + 6 + 46 + (field.rank and 70 or 0)
                 if x > 8 and x + fw > fieldsW then x, cy, wrapped = 8, cy - 24, wrapped + 24 end
                 flbl:SetPoint("TOPLEFT", x, cy - 2)
                 x = x + flbl:GetStringWidth() + 6
                 local fieldKey = field.key
-                local box = makeNumBox(block, preset.thresholds and preset.thresholds[fieldKey], function(v)
+                local box = parts.Take("field", function() return makeNumBox(blk, 0, function() end) end)
+                -- A value being typed is kept: a repaint from elsewhere does not overwrite it.
+                if not box:HasFocus() then
+                    box:SetText(tostring(preset.thresholds and preset.thresholds[fieldKey] or 0))
+                end
+                box:SetScript("OnEnterPressed", function(sb)
+                    local v = tonumber(sb:GetText())
+                    sb:ClearFocus()
                     if MP:SetThreshold(idx, fieldKey, v) then refresh() end
                 end)
                 box:SetPoint("TOPLEFT", x, cy)
@@ -1454,24 +1528,34 @@ local function BuildPresetsSub(panel)
                 if field.rank then
                     local rn = (GuildOS.GuildManager and GuildOS.GuildManager:GetRankName(
                         preset.thresholds and preset.thresholds[fieldKey] or 0)) or "?"
-                    local rnFS = UI:CreateText(block, "(" .. rn .. ")", UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
+                    local rnFS = text("rankName", UI.SP.META, C.silver)
+                    rnFS:SetText("(" .. rn .. ")")
                     rnFS:SetPoint("TOPLEFT", x, cy - 2)
                     x = x + rnFS:GetStringWidth() + 10
                 end
             end
 
-            local countFS = Kit and Kit:Badge(block, format(L["%d match"], #matches), #matches > 0 and "warn" or "mute")
-                or UI:CreateText(block, format(L["%d match"], #matches), 11, C.text.r, C.text.g, C.text.b)
+            local countText = format(L["%d match"], #matches)
+            local countFS, countReused = parts.Take("count", function()
+                return Kit and Kit:Badge(blk, countText, #matches > 0 and "warn" or "mute")
+                    or UI:CreateText(blk, countText, 11, C.text.r, C.text.g, C.text.b)
+            end)
+            if countReused then
+                if Kit then countFS:SetText(countText, Kit:BadgeColor(#matches > 0 and "warn" or "mute"))
+                else countFS:SetText(countText) end
+            end
             countFS:SetPoint("TOPLEFT", math.max(x + 8, wrapped > 0 and 8 or 300), cy - 2)
             if wrapped > 0 then
                 blockH = blockH + wrapped
-                block:SetHeight(blockH)
+                blk:SetHeight(blockH)
                 cy = -(ROW_H + 2)
             end
 
-            local applyBtn = UI:CreateButton(block, L["Apply"], 70, 20)
-            applyBtn:SetWidth(math.ceil(applyBtn.label:GetStringWidth() or 40) + 16)
-            UI:SetButtonVariant(applyBtn, "primary")
+            local applyBtn, applyReused = button("apply", L["Apply"], 70, 20)
+            if not applyReused then
+                applyBtn:SetWidth(math.ceil(applyBtn.label:GetStringWidth() or 40) + 16)
+                UI:SetButtonVariant(applyBtn, "primary")
+            end
             applyBtn:SetPoint("TOPRIGHT", -8, cy)
             applyBtn:SetScript("OnClick", function()
                 if not GuildOS:IsOfficer() then GuildOS:Print(L["Officers only."]) return end
@@ -1481,8 +1565,8 @@ local function BuildPresetsSub(panel)
                     { preset = preset, matches = live })
             end)
 
-            local prevBtn = UI:CreateButton(block, L["Preview"], 70, 20)
-            prevBtn:SetWidth(math.ceil(prevBtn.label:GetStringWidth() or 40) + 16)
+            local prevBtn, prevReused = button("preview", L["Preview"], 70, 20)
+            if not prevReused then prevBtn:SetWidth(math.ceil(prevBtn.label:GetStringWidth() or 40) + 16) end
             prevBtn:SetPoint("TOPRIGHT", applyBtn, "TOPLEFT", -6, 0)
             prevBtn:SetScript("OnClick", function()
                 panel.expanded[idx] = not panel.expanded[idx]
@@ -1493,26 +1577,28 @@ local function BuildPresetsSub(panel)
             if expanded then
                 local py = ROW_H + 24 + wrapped
                 if #matches == 0 then
-                    local none = UI:CreateText(block, L["No members match this preset."],
-                        UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
+                    local none = text("none", UI.SP.META, C.silver)
+                    none:SetText(L["No members match this preset."])
                     none:SetPoint("TOPLEFT", 16, -py)
                 else
                     -- No bullet in front (#371); the detail in `label`.
                     for _, m in ipairs(matches) do
-                        local mFS = UI:CreateText(block,
-                            m.name .. "  |cff" .. hex(C.label) .. (m.detail or "") .. "|r",
-                            11, C.text.r, C.text.g, C.text.b)
+                        local mFS = text("match", 11, C.text)
+                        mFS:SetText(m.name .. "  |cff" .. hex(C.label) .. (m.detail or "") .. "|r")
                         mFS:SetPoint("TOPLEFT", 16, -py)
                         py = py + 18
                     end
                 end
             end
+            parts.End()
 
             yOff = yOff + blockH + 4
         end
 
+        pool.End()
         content:SetHeight(math.max(1, yOff))
     end
+    panel:HookScript("OnShow", function() if stale then refresh() end end)
 
     newBtn:SetScript("OnClick", function()
         panel.showChooser = not panel.showChooser

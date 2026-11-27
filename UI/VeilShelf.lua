@@ -6,6 +6,7 @@
 -- rocks it once. Two rows show at a time; the mouse wheel moves by a row.
 -- Layout only: the list is GuildOS.WinterVeil:Collection(), newest first, as the site sent it.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L

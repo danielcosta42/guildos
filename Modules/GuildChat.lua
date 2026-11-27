@@ -18,6 +18,7 @@
 -- for the same line, and only the guild can say it. Line breaks go: one
 -- line of chat is one line of the feed.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local GuildChat = {}
 GuildOS.GuildChat = GuildChat
 

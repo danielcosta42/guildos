@@ -16,6 +16,7 @@
 -- whose rank changed since the list was made is skipped. A change the roster
 -- then shows goes to the Roster Log. Session state only (GuildOS.State).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local BulkActions = {}
 GuildOS.BulkActions = BulkActions
 local L = GuildOS.L

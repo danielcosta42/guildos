@@ -21,6 +21,7 @@
 -- 28px bar stays, with three numbers. Nothing animates.
 -- Position, size and the active tab persist in settings.window.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L

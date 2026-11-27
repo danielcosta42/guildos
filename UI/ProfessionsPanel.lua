@@ -11,6 +11,7 @@
 -- parchment card titled with the profession, its views and filters as pills, the table in the paper's ink, an
 -- item's icon framed in its quality, the crafters in their class's colour (deepened to read on the paper).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 if GuildOS.Client.isAnniversary then return end
 
 local UI = GuildOS.UI

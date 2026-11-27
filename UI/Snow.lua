@@ -10,6 +10,7 @@
 -- The `snow` option is shown as "Winter Veil animations": it also stops the embers and rays of the Winter Veil tab
 -- (UI/VeilFx.lua). The saved key stays `snow`.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local L = GuildOS.L
 

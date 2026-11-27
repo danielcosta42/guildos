@@ -13,6 +13,7 @@
 -- Everything here goes through Companion:IsEnabled(). The gate lives in
 -- the export module so a new entry point cannot forget to ask.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Import = {}
 GuildOS.CompanionImport = Import
 

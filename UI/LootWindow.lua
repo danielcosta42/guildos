@@ -6,6 +6,7 @@
 -- point here). Visual layer only: every change goes through LootRule, LootMaster, Points and
 -- CoreManager, which keep the same keys as always.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local C  = GuildOS.Colors
 local L  = GuildOS.L
 
@@ -728,6 +729,55 @@ local function drawLootSettings(content, y, scope, inForce, col)
     return y
 end
 
+-- What the Rule tab shows, as one string (memory audit): opening the tab, or the window settling at a new
+-- size, draws it again only when this changed. Each drawing makes the tab's frames anew, and the client never
+-- frees a frame: the tab used to grow by a whole form on every visit and every resize step. A change made on the
+-- tab itself (a click, a save) draws it at once, whatever this says.
+local drawnSig = setmetatable({}, { __mode = "k" })
+local function ser(v, out, depth)
+    local t = type(v)
+    if t == "table" then
+        if depth > 6 then out[#out + 1] = "{...}"; return end
+        local keys = {}
+        for k in pairs(v) do keys[#keys + 1] = k end
+        table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+        out[#out + 1] = "{"
+        for _, k in ipairs(keys) do
+            if type(v[k]) ~= "function" then
+                out[#out + 1] = tostring(k) .. "="
+                ser(v[k], out, depth + 1)
+                out[#out + 1] = ","
+            end
+        end
+        out[#out + 1] = "}"
+    elseif t ~= "function" then
+        out[#out + 1] = tostring(v)
+    end
+end
+local function ruleTabSig(content, scope)
+    local self = GuildOS
+    local CM, LR, LM = self.CoreManager, self.LootRule, self.LootMaster
+    if not LR then return nil end
+    if scope == nil then scope = content.__lootScope or self:DefaultLootScope() end
+    if scope ~= "" and not (self.db.cores and self.db.cores[scope]) then scope = "" end
+    local out = { scope, "|", tostring(math.floor(laidW(content) + 0.5)), "|", tostring(self:IsOfficer()), "|" }
+    local function add(v) ser(v, out, 0); out[#out + 1] = "|" end
+    add(LR:For(scope ~= "" and scope or nil)); add(LR:For(nil)); add(LR.Night and LR:Night())
+    add(self.db and self.db.companionRoster and self.db.companionRoster.lootRule)
+    add(self:GetLootSystem("")); add(scope ~= "" and CM and CM:GetLootSystem(scope))
+    add(LR.SavedAt and LR:SavedAt(scope)); add(LR.IsCustom and LR:IsCustom(scope ~= "" and scope or nil))
+    add(LM and LM.LootSettings and LM:LootSettings(scope)); add(CM and CM.GetLootConfig and CM:GetLootConfig(scope))
+    add(self.LootSystemActive and self:LootSystemActive())
+    for _, name in ipairs(CM and CM:GetSortedNames() or {}) do
+        add(name); add(CM:GetLootSystem(name)); add(LR.IsCustom and LR:IsCustom(name))
+        add(CM.LootRuleFromSite and CM:LootRuleFromSite(name))
+    end
+    for i = 1, (GuildControlGetNumRanks and GuildControlGetNumRanks() or 0) do add(GuildControlGetRankName(i)) end
+    add(content.__lootException)
+    return table.concat(out)
+end
+GuildOS.LootRuleTabSig = ruleTabSig   -- tools/frame-leaks.lua
+
 function GuildOS:RefreshLootRuleTab(content, scope)
     clear(content)
     local CM, LR, LM = self.CoreManager, self.LootRule, self.LootMaster
@@ -902,6 +952,7 @@ function GuildOS:RefreshLootRuleTab(content, scope)
 
     y = math.max(below, readBottom)
     content:SetHeight(math.max(1, y + 12))
+    drawnSig[content] = ruleTabSig(content, scope)
     return y
 end
 
@@ -1406,8 +1457,21 @@ function GuildOS:CreateLootWindow(container, _mainFrame)
             content.openSub = function(sub, scope) select(sub, scope) end
             p.content = content
             p.Draw = function(scope) GuildOS:RefreshLootRuleTab(content, scope) end
-            p:SetScript("OnShow", function() p.Draw(content.__lootScope) end)
-            UI:MakeResponsive(scroll, function() if p:IsVisible() then p.Draw(content.__lootScope) end end)
+            -- Shown again, or settled at a new size, it draws only what changed (ruleTabSig): a resize is
+            -- drawn once the size holds a moment, not on every step of the drag.
+            local function drawIfChanged()
+                local now = ruleTabSig(content, content.__lootScope)
+                if now == nil or now ~= drawnSig[content] then p.Draw(content.__lootScope) end
+            end
+            p:SetScript("OnShow", drawIfChanged)
+            local sizeTicket = 0
+            UI:MakeResponsive(scroll, function()
+                sizeTicket = sizeTicket + 1
+                local mine = sizeTicket
+                GuildOS.Compat.After(0.25, function()
+                    if mine == sizeTicket and p:IsVisible() then drawIfChanged() end
+                end)
+            end)
         end,
         accounts = function(p)
             GuildOS:BuildLootAccounts(p)

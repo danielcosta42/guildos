@@ -4,6 +4,7 @@
 -- Never scatter C_* guards across feature modules.
 ----------------------------------------------------------------------
 
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 GuildOS.Compat = {}
 local Compat = GuildOS.Compat
 
@@ -192,6 +193,19 @@ function Compat.IsAddOnLoaded(name)
     return loaded and true or false
 end
 
+-- Guild OS's own memory in KB, as the client counts it (/gos debug mem): UpdateAddOnMemoryUsage then
+-- GetAddOnMemoryUsage, in C_AddOns where the client keeps them (retail, WoW: Forever, the 2.5.5 client), the old
+-- globals elsewhere. nil when the client cannot say.
+function Compat.AddonMemoryKB(name)
+    local update = (C_AddOns and C_AddOns.UpdateAddOnMemoryUsage) or _G.UpdateAddOnMemoryUsage
+    local get = (C_AddOns and C_AddOns.GetAddOnMemoryUsage) or _G.GetAddOnMemoryUsage
+    if type(get) ~= "function" then return nil end
+    if type(update) == "function" then pcall(update) end
+    local ok, kb = pcall(get, name or "GuildOS")
+    if not ok or Compat.IsSecret(kb) or type(kb) ~= "number" then return nil end
+    return kb
+end
+
 -- Request a guild roster update
 function Compat.GuildRoster()
     if C_GuildInfo and C_GuildInfo.GuildRoster then
@@ -376,6 +390,25 @@ function Compat.WorldToMap(cont, wx, wy, mapID)
     if pos.GetXY then x, y = pos:GetXY() else x, y = pos.x, pos.y end
     if Compat.IsSecret(x, y) or not tonumber(x) then return nil end
     return x, y
+end
+
+-- The game's own map pin (the one the world map's Ctrl-click sets) at (x, y) of `mapID`, followed on screen: true
+-- when it was set, false where the client has no user waypoint or refuses one on that map.
+function Compat.SetUserWaypoint(mapID, x, y)
+    mapID, x, y = tonumber(mapID), tonumber(x), tonumber(y)
+    if not (mapID and x and y and C_Map and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates) then
+        return false
+    end
+    if C_Map.CanSetUserWaypointOnMap then
+        local ok, can = pcall(C_Map.CanSetUserWaypointOnMap, mapID)
+        if not ok or Compat.IsSecret(can) or not can then return false end
+    end
+    local ok, point = pcall(UiMapPoint.CreateFromCoordinates, mapID, x, y)
+    if not ok or not point or not pcall(C_Map.SetUserWaypoint, point) then return false end
+    if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
+        pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, true)
+    end
+    return true
 end
 
 -- Where `child` sits on `parent`: minX, maxX, minY, maxY (0..1 of the parent), or nil.

@@ -11,6 +11,7 @@
 -- Rule 10 (no business logic in UI): the classification lives here; UI just
 -- renders Scan() and flips the auto-open pref through our getters/setters.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local PugInspector = {}
 GuildOS.PugInspector = PugInspector
 local L = GuildOS.L

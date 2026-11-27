@@ -10,6 +10,7 @@
 --   * WoW: Forever: the "/ginvite Name" line, selected in an edit box to copy (Ctrl+C, Enter, Ctrl+V, Enter).
 --     Never written into the chat box: that taints it (#256).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local L = GuildOS.L
 local AQ = GuildOS.ActionQueue

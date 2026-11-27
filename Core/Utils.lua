@@ -2,6 +2,7 @@
 -- Guild OS - Utilities
 -- Pure helper functions. No business logic, no persistent state writes.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local L = GuildOS.L
 
 ----------------------------------------------------------------------
@@ -1391,15 +1392,17 @@ end
 -- GetNumGuildMembers counts the whole guild either way, and with it off retail 12.1.5 still
 -- answered all 943 rows of a guild with 10 online; a client that hid them would leave rows empty.
 ----------------------------------------------------------------------
-function GuildOS:WholeRoster()
+-- `into`, optional: a list to fill instead of a new one (a pass that keeps nothing of it, DropDeparted).
+function GuildOS:WholeRoster(into)
     local n = GetNumGuildMembers() or 0
     if n == 0 then return nil end
-    local names = {}
+    local names = into or {}
     for i = 1, n do
         local full = GetGuildRosterInfo(i)
         if not full then return nil end
         names[i] = full
     end
+    for i = #names, n + 1, -1 do names[i] = nil end
     return names
 end
 
@@ -1414,13 +1417,19 @@ end
 -- did not give), dropping them would wipe what this client publishes.
 -- A full pass, at most once a minute (GuildOS.DEPARTED_GAP, audit D2).
 ----------------------------------------------------------------------
+-- The pass's tables are the last pass's, emptied (memory audit: three tables of the whole guild a minute).
+-- Founding and Birthdays read `present` during the call and keep nothing of it.
+local wipe = wipe or function(t) for k in pairs(t) do t[k] = nil end return t end   -- the game's; a stub may lack it
+local departedScratch = { roster = {}, present = {}, names = {} }
 function GuildOS:DropDeparted()
-    local roster = self.db and self:IsOnGuildDB() and self:WholeRoster()
+    local roster = self.db and self:IsOnGuildDB() and self:WholeRoster(departedScratch.roster)
     if not roster then return end
     local me = self:GetPlayerKey(self.Compat.PlayerName())
-    local present = { [me] = true }
+    local present = wipe(departedScratch.present)
+    present[me] = true
     -- guildWishlists is keyed by the name lowercased, with its realm on retail only.
-    local names = { [me:lower()] = true, [(self.Compat.PlayerName() or ""):lower()] = true }
+    local names = wipe(departedScratch.names)
+    names[me:lower()], names[(self.Compat.PlayerName() or ""):lower()] = true, true
     for _, full in ipairs(roster) do
         local key = self:KeyOfRosterName(full)
         present[key] = true

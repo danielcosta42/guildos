@@ -6,6 +6,7 @@
 -- Each sub-screen is a parchment card as the Workshop's mockup (#449 phase 3): its table in the paper's ink,
 -- an item framed in its quality, its name in that quality deepened to read on the paper.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local UI = GuildOS.UI
 local C  = GuildOS.Colors
 local L  = GuildOS.L

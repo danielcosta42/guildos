@@ -4,6 +4,7 @@
 -- restore it back (replaces the guild DB and reloads). Useful before a
 -- risky change or to move a config between accounts.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local Backup = {}
 GuildOS.Backup = Backup
 local L = GuildOS.L

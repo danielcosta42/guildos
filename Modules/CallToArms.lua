@@ -9,6 +9,7 @@
 -- (OFFICER_DOMAINS); the answer, "going", is a member action. The call is a live alert, not
 -- a record: nothing is saved but an officer's own templates and each player's settings.
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local CTA = {}
 GuildOS.CallToArms = CTA
 local L = GuildOS.L

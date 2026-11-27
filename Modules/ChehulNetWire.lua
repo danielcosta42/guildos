@@ -23,6 +23,24 @@ if CN.EnableAlerts then
     })
 end
 
+-- ChehulNet v16: the campfire beacon (chehulnet#13), WoW: Forever only (the camp kits exist nowhere else). The lib
+-- decides everything: nothing goes out before the player's yes, the question comes at the first fire they light
+-- (never at login), and nothing at all with Warmth loaded. Guild OS keeps the answer (GuildOSDB.camps.consent) and
+-- asks in its own window (GuildOS:ShowCampPrompt, UI/GuildMap.lua) through the popup queue; Settings › Profile ›
+-- Privacy changes it later (CN:SetCampConsent).
+if CN.EnableCamps and GuildOS and GuildOS.Client and not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail then
+    CN:EnableCamps({
+        store = function()
+            GuildOSDB = GuildOSDB or {}
+            GuildOSDB.camps = GuildOSDB.camps or {}
+            return GuildOSDB.camps
+        end,
+        ask = function(callback)
+            if GuildOS.ShowCampPrompt then GuildOS:ShowCampPrompt(callback) end
+        end,
+    })
+end
+
 -- LibChehulMesh v7: the Chehul clients the mesh heard outlive a /reload and start the next login's peer exchange
 -- (GuildOSDB.meshPeers, name -> time()).
 local Mesh = _G.ChehulMesh

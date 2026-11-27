@@ -12,6 +12,7 @@
 --
 -- WoW: Forever only: the feed is a Forever feature (guildos.me #238).
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 if GuildOS.Client.isAnniversary or GuildOS.Client.isRetail then return end
 
 local Journal = {}

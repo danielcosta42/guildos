@@ -3,6 +3,7 @@
 -- Collects gear, professions, and stats from the local player
 -- and stores data received from other guild members
 ----------------------------------------------------------------------
+local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
 local DataCollector = {}
 GuildOS.DataCollector = DataCollector
 
