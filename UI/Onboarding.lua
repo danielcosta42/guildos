@@ -179,7 +179,7 @@ local function BuildFrame()
     dm.checkbox.onChanged = function(_, checked)
         if GuildOS.Style and GuildOS.Style.SetDarkMode then GuildOS.Style:SetDarkMode(checked) end
         if O() then O():LookSeen() end
-        if f.dmReload then f.dmReload:SetShown((checked and true or false) ~= (GuildOS.Style.darkMode == true)) end
+        if f.Render and f:IsShown() then f:Render() end   -- the Reload now row comes or goes
     end
     dm:Hide()
     f.darkToggle = dm
@@ -298,10 +298,12 @@ local function BuildFrame()
             self.darkToggle.checkbox:SetChecked(want)
             self.darkToggle:ClearAllPoints()
             self.darkToggle:SetPoint("TOPLEFT", self, "TOPLEFT", PAD, -y)
+            -- "Reload now" on its own row under the switch: it never runs past a narrow window or a long label.
+            local again = want ~= (GuildOS.Style.darkMode == true)
             self.dmReload:ClearAllPoints()
-            self.dmReload:SetPoint("LEFT", self.darkToggle, "RIGHT", 160, 0)
-            self.dmReload:SetShown(want ~= (GuildOS.Style.darkMode == true))
-            y = y + 28
+            self.dmReload:SetPoint("TOPLEFT", self, "TOPLEFT", PAD, -(y + 28))
+            self.dmReload:SetShown(again)
+            y = y + 28 + (again and (UI.SP.FIELD + 6) or 0)
         else
             self.dmReload:Hide()
         end
@@ -364,7 +366,8 @@ function GuildOS:ShowWhatsNew(forced, kind)
     f.kind = kind or Ob:Arrival()
     f.cards = Ob:Cards(f.kind)
     -- Only a release's notes: "Done" closes them, no tour after.
-    f.notesOnly = f.cards[1] ~= nil and f.cards[1].notes == true
+    -- (the look card may come first, asked of whoever never chose: the rest is still a release's notes)
+    f.notesOnly = Ob:IsNotesOnly(f.cards)
     f.i, f.forced, f.answered = 1, forced and true or false, false
     f.narrow = narrowNow()
     f:Render()

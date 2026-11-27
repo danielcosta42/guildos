@@ -201,6 +201,8 @@ local nc = O:Cards("whatsnew", "member", "forever")
 check(#nc == 5 and nc[1].id == "look" and nc[2].notes and nc[2].title:find("2.0.1", 1, true),
   "the look card first (no look chosen yet), then its notes, four cards at most")
 check(nc[5].body:find("2 more", 1, true) ~= nil, "the lines left over are counted on the last card")
+check(O:IsNotesOnly(nc), "the look card leading the notes: still a release's notes (Done, no tour)")
+check(not O:IsNotesOnly({ O.LookCard(), { id = "salao" } }), "the look card leading the big cards: not notes")
 O:LookSeen()
 check(#O:Cards("whatsnew", "member", "forever") == 4, "the look chosen: the notes alone")
 for _ = 1, 3 do O:Later() end

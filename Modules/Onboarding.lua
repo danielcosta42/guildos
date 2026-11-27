@@ -298,6 +298,14 @@ function O.LookCard()
         body = L["Guild OS comes in wood and parchment, or in dark mode: ebony wood and dark parchment, easier on the eyes at night. Change it any time in Settings › Interface."] }
 end
 
+-- Whether a card list is a release's notes (the look card may lead it): "Done" ends it, no tour after.
+function O:IsNotesOnly(cards)
+    if type(cards) ~= "table" or cards[1] == nil then return false end
+    local first = cards[1]
+    if first.id == "look" then first = cards[2] end
+    return first ~= nil and first.notes == true
+end
+
 -- The look was chosen (the card's switch touched, or read past): the notes stop asking.
 function O:LookSeen()
     self:Store().lookSeen = true
