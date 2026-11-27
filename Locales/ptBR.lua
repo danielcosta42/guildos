@@ -5327,3 +5327,5 @@ L["Your quest log has no quest."] = "Seu registro de missões não tem nenhuma m
 L["Elite"] = "Elite"
 L["And %d more in the full changelog."] = "E mais %d no changelog completo."
 L["1 chapter \194\183 %d steps"] = "1 capítulo \194\183 %d passos"
+L["%s whispered the keyword. The game lets no addon invite here: copy the line and send it (Ctrl+C, Enter, Ctrl+V, Enter)."] = "%s sussurrou a palavra-chave. O jogo não deixa nenhum addon convidar aqui: copie a linha e envie (Ctrl+C, Enter, Ctrl+V, Enter)."
+L["The game does not let addons invite here. Requests wait in the queue: copy the /ginvite line and send it."] = "O jogo não deixa addons convidarem aqui. Os pedidos esperam na fila: copie a linha /ginvite e envie."

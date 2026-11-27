@@ -407,7 +407,7 @@ O.TRACKS = {
                 body = L["Several messages, one drawn at random for each newcomer, shared with every officer so only one of you greets."] },
             step{ id = "invite", ch = "recruit", room = "officers", entry = "recruiting", anchor = { "recruit.invite", "side.recruiting" },
                 title = { forever = L["Invites on WoW: Forever"], default = L["Auto-invite & the queue"] },
-                body = { forever = L["The game does not let addons invite here. Requests wait in the queue: right-click the name, or copy the /ginvite line."],
+                body = { forever = L["The game does not let addons invite here. Requests wait in the queue: copy the /ginvite line and send it."],
                          default = L["Whispers \"inv\" join the queue. The game asks one key press or click per invite: the queue shows whose turn it is."] },
                 note = { forever = L["WoW: Forever lets no addon invite."], default = L["One key press per invite."] } },
             step{ id = "scanner", ch = "recruit", room = "officers", entry = "scanner", anchor = { "side.scanner" },
