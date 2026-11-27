@@ -294,6 +294,7 @@ read_globals = {
     "IsLoggedIn",
     "ReloadUI",
     "InCombatLockdown",
+    "GetMacroIndexByName", "CreateMacro", "EditMacro",
     "UnitAffectingCombat",
     "PlaySound",
     "hooksecurefunc",

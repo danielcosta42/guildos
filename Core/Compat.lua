@@ -2757,6 +2757,22 @@ function Compat.AddonMayInvite()
     return (CanGuildInvite and CanGuildInvite()) == true
 end
 
+-- A saved macro of this character, made or rewritten: true, or false and why ("combat", "api", "full").
+-- Out of combat only (the game refuses macro edits in it). Used by `/gos debug invitemacro` (WoW: Forever).
+function Compat.WriteMacro(name, body)
+    if InCombatLockdown and InCombatLockdown() then return false, "combat" end
+    if not (GetMacroIndexByName and CreateMacro and EditMacro) then return false, "api" end
+    local icon = "INV_Misc_QuestionMark"
+    local i = GetMacroIndexByName(name)
+    if i and i > 0 then
+        local ok = pcall(EditMacro, i, name, icon, body)
+        return ok, ok and nil or "edit"
+    end
+    local ok, idx = pcall(CreateMacro, name, icon, body, true)
+    if not ok or not idx or idx == 0 then return false, "full" end
+    return true
+end
+
 -- The guild invite itself: C_GuildInfo.Invite where the client has it (the global GuildInvite went in 2.5.5,
 -- 1.15.2 and 10.2.6), else the global. True when the call was made (the game's own line says whether it went).
 function Compat.GuildInvite(name)
