@@ -18,7 +18,10 @@ jobs:
 
       - name: Install Luacheck
         run: |
-          sudo apt-get update -qq
+          # A third-party source of the runner image (packages.microsoft.com) can answer 403 and fail the
+          # whole update; Ubuntu's own sources are all this job needs.
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/microsoft-prod.sources
+          sudo apt-get update -qq || true
           sudo apt-get install -y -qq lua5.1 luarocks > /dev/null
           sudo luarocks install luacheck > /dev/null
 
