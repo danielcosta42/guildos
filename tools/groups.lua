@@ -856,6 +856,166 @@ Board:HandleEntry("Bea-Realm", { roles = "H", ttl = 3600 }, "GUILD")
 check(GuildOS.db.lfgBoard[key("Bea")] == nil, "while a new listing still waits out the cooldown")
 Board.uiRefresh = nil
 
+-- ── My quests in the guild LFG (#450) ───────────────────────────────────
+do
+  dofile(ADDON .. "/Modules/GroupQuests.lua")
+  local Q = GuildOS.GroupQuests
+  local Compat = GuildOS.Compat
+  local SECRET = {}
+  issecretvalue = function(v) return v == SECRET end
+
+  -- The modern shape: C_QuestLog's GetInfo tables, tags as tables, the suggested size asked apart.
+  local LOG = {
+    { title = "Westfall", isHeader = true },
+    { title = "The Defias Brotherhood", questID = 155, level = 22, suggestedGroup = 5 },
+    { title = "Red Leather Bandanas", questID = 153, level = 15 },
+    { title = "Hidden thing", questID = 999, level = 20, isHidden = true },
+    { title = "Hellfire Peninsula", isHeader = true },
+    { title = "Wanted: Worg Master Kruush", questID = 10809, level = 62 },
+    { title = SECRET, questID = 4242, level = 62 },
+    { title = "Bad id", questID = 1.5, level = 1 },
+  }
+  local TAGS = { [10809] = { tagID = 1, tagName = "Group", isElite = true } }
+  local SIZES = { [10809] = 3 }
+  C_QuestLog = {
+    GetNumQuestLogEntries = function() return #LOG end,
+    GetInfo = function(i) return LOG[i] end,
+    GetQuestTagInfo = function(id) return TAGS[id] end,
+    GetSuggestedGroupSize = function(id) return SIZES[id] or 0 end,
+  }
+  local out, n = Compat.QuestLog({})
+  check(n == 3 and #out == 3, "modern log: three quests read, the header, the hidden, the secret and the bad id left out (" .. n .. ")")
+  check(out[1].id == 155 and out[1].zone == "Westfall" and out[1].level == 22 and out[1].size == 5 and out[1].group,
+    "a quest has its zone (its header), level and suggested players, and a size over one is a group quest")
+  check(out[2].id == 153 and not out[2].group and out[2].size == 0, "a solo quest is no group quest")
+  check(out[3].zone == "Hellfire Peninsula" and out[3].tag == "Group" and out[3].elite and out[3].size == 3 and out[3].group,
+    "the client's tag, elite and GetSuggestedGroupSize are read")
+  local kept = out[1]
+  Compat.QuestLog(out)
+  check(out[1] == kept, "a second read refills the same tables")
+
+  -- The Classic-era shape: the globals, the tag by quest id.
+  C_QuestLog = nil
+  local CLASSIC = {
+    { "Elwynn Forest", 0, 0, true },
+    { "Kobold Camp Cleanup", 7, 0, false, false, false, 0, 7 },
+    { "The Stockade Riots", 26, 0, false, false, false, 0, 391 },
+    { SECRET, 5, 0, false, false, false, 0, 11 },
+  }
+  GetNumQuestLogEntries = function() return #CLASSIC, 3 end
+  GetQuestLogTitle = function(i) return unpack(CLASSIC[i]) end
+  GetQuestTagInfo = function(id) if id == 391 then return 81, "Dungeon" end end
+  out, n = Compat.QuestLog({})
+  check(n == 2 and out[1].id == 7 and out[1].zone == "Elwynn Forest" and not out[1].group,
+    "Classic log: the quests under their zone header, the secret one left out")
+  check(out[2].id == 391 and out[2].tag == "Dungeon" and out[2].tagID == 81 and out[2].group, "a dungeon tag is a group quest")
+  GetNumQuestLogEntries, GetQuestLogTitle, GetQuestTagInfo = nil, nil, nil
+  C_QuestLog = { GetNumQuestLogEntries = function() return #LOG end, GetInfo = function(i) return LOG[i] end,
+    GetQuestTagInfo = function(id) return TAGS[id] end, GetSuggestedGroupSize = function(id) return SIZES[id] or 0 end }
+
+  -- The cache: group quests first, one read for a burst of events, a repaint only when it changed.
+  fresh()
+  local repaints = 0
+  Board.uiRefresh = function() repaints = repaints + 1 end
+  Q:Refresh()
+  local list = Q:List()
+  check(list[1].id == 155 and list[2].id == 10809 and list[3].id == 153, "group quests come first, the log's order kept")
+  check(Q:Has(10809) and not Q:Has(999) and Q:Title(153) == "Red Leather Bandanas", "what is in my log, by id")
+  check(Q:Title(424242, "Their title") == "Their title", "a quest not in my log keeps the listing's title")
+  for _ = 1, 10 do Q._OnEvent() end
+  check(#timers == 1, "ten QUEST_LOG_UPDATEs make one read (" .. #timers .. " timers)")
+  runTimers()
+  check(repaints == 0, "a read that changed nothing repaints nothing")
+  LOG[#LOG + 1] = { title = "Fel Orc Scavengers", questID = 10482, level = 61 }
+  Q._OnEvent()
+  runTimers()
+  check(repaints == 1 and Q:Has(10482), "a quest picked up repaints once")
+  Board.uiRefresh = nil
+
+  -- Off the wire: whole ids, plain capped titles, each once, never more than the cap.
+  check(Q:_SanitizeId(12) == 12 and not Q:_SanitizeId(0) and not Q:_SanitizeId(-3) and not Q:_SanitizeId(1.5)
+    and not Q:_SanitizeId(2 ^ 30) and not Q:_SanitizeId("12") and not Q:_SanitizeId(0 / 0), "an id is a whole number in range")
+  local q = Q:_SanitizeQuest({ id = 5, t = "|cffff0000Evil|r |TInterface\\X:64|t" .. string.rep("x", 200) })
+  check(q and not q.t:find("|", 1, true) and #q.t <= Q.TITLE_MAX, "a title loses its escapes and is capped: " .. tostring(q and #q.t))
+  check(Q:_SanitizeQuest({ id = 5, t = {} }).t == "" and Q:_SanitizeQuest("x") == nil, "a title that is no string is none")
+  local qs = Q:_SanitizeQuests({ { id = 1, t = "a" }, { id = 1, t = "dup" }, "junk", { id = 2 }, { id = 3 }, { id = 4 }, { id = 5 } })
+  check(#qs == Q.PICK_MAX and qs[1].t == "a" and qs[2].id == 2, "quests: each once, at most PICK_MAX (" .. #qs .. ")")
+  check(#Q:_SanitizeQuests("nope") == 0 and #Q:_SanitizeIds(7) == 0, "a list that is no table is empty")
+  local many = {}
+  for i = 1, 40 do many[i] = i end
+  check(#Q:_SanitizeIds(many) == Q.SHARE_MAX, "shared ids are capped at SHARE_MAX")
+
+  -- Looking: only the quests picked go out, with Elite quests for a client before #450; nothing shared by default.
+  check(GuildOS.db.lfgPrefs.shareQuests == false and Board:Pref("shareQuests") == false, "sharing my log is off by default")
+  Board:SetAvailable(nil, "", 3600, false, "D", { "karazhan" }, { { id = 155, t = "The Defias Brotherhood" } })
+  local p = last("LG").p
+  check(p.quests and #p.quests == 1 and p.quests[1].id == 155 and p.quests[1].t == "The Defias Brotherhood",
+    "the listing carries the quest picked, id and title")
+  check(p.shared == nil, "and none of the rest of my log")
+  check(tContains(p.acts, "karazhan") and tContains(p.acts, "elite-quests") and #p.acts == 2,
+    "Elite quests goes out with them, which an old client knows")
+  check(Board:Mine().questAct == true, "remembered as added for the quests, not picked")
+  local keys = 0
+  for _ in pairs(p) do keys = keys + 1 end
+  check(keys == 6, "the payload is the old one plus quests (" .. keys .. " fields)")
+  Board:SetAvailable(nil, "", 3600, false, "D", { "karazhan" })
+  p = last("LG").p
+  check(p.quests == nil and p.shared == nil and #p.acts == 1, "with no quest picked the payload is the one before #450")
+  Board:SetPref("shareQuests", true)
+  Board:SetAvailable(nil, "", 3600, false, "D", {}, { { id = 155, t = "The Defias Brotherhood" } })
+  p = last("LG").p
+  check(p.shared and #p.shared == 1 and p.shared[1] == 10809, "opted in, the group quests of my log go as ids, the picked ones not twice")
+  check(type(p.shared[1]) == "number", "ids only, never titles")
+  Board:SetPref("shareQuests", false)
+  Board._cd = {}
+  Board:Rebroadcast()
+  check(last("LG").p.shared[1] == 10809 and last("LG").p.quests[1].id == 155, "a rebroadcast says the same quests")
+
+  -- Hearing them: checked on the way in; an old listing has none.
+  Board:HandleEntry("Bea-Realm", { roles = "T", acts = { "elite-quests" }, ttl = 3600,
+    quests = { { id = 10809, t = "Their| title" }, { id = "x" } }, shared = { 155, -1, "z", 155 } }, "GUILD")
+  local bea = Board:ActiveList(GuildOS.db.lfgBoard, NOW)
+  for _, e in ipairs(bea) do if e.key == key("Bea") then bea = e end end
+  check(#bea.quests == 1 and bea.quests[1].t == "Their title" and #bea.shared == 1 and bea.shared[1] == 155,
+    "a listing's quests and shared ids are sanitised")
+  check(Q:InMyLog(bea) == 10809 and Q:Lists(bea, 155) and not Q:Lists(bea, 153), "and compared with my own log, here")
+  check(Board:Describe(bea) == "Wanted: Worg Master Kruush", "a listing is described by my log's title, Elite quests not said twice")
+  Board:HandleEntry("Cid-Realm", { roles = "H", acts = { "karazhan" }, ttl = 3600 }, "GUILD")
+  local cid = GuildOS.db.lfgBoard[key("Cid")]
+  check(#cid.quests == 0 and #cid.shared == 0, "a listing from before #450 has no quest")
+
+  -- A group for a quest: under Elite quests, its quest checked, matched by whoever names it.
+  fresh()
+  Q:Refresh()
+  local g = Groups:Create("karazhan", { T = 1, D = 2 }, "", 3600, false, 0, { id = 10809, t = "Wanted: Worg Master Kruush" })
+  check(g and g.act == "elite-quests" and g.quest.id == 10809, "a group for a quest is listed under Elite quests")
+  p = last("GF").p
+  check(p.act == "elite-quests" and p.quest.id == 10809 and p.quest.t == "Wanted: Worg Master Kruush", "its quest goes out with it")
+  check(Groups:Title(g) == "Wanted: Worg Master Kruush", "and names it")
+  Board:HandleEntry("Dan-Realm", { roles = "D", acts = { "deadmines" }, ttl = 3600, shared = { 10809 } }, "GUILD")
+  Board:HandleEntry("Eva-Realm", { roles = "D", acts = { "elite-quests" }, ttl = 3600 }, "GUILD")
+  local m = Groups:Matches(NOW)
+  check(#m == 2 and m[1].key == key("Dan") and m[1].quest and not m[2].quest,
+    "who has the group's quest fits it and comes first, marked; who wants elite quests fits too")
+  local counts = Groups:Counts(NOW)
+  check(counts[10809] and counts[10809].groups == 1 and counts[10809].seekers == 1, "a quest is counted by its id")
+  Groups:Disband()
+
+  local old = GuildOS.GroupQuests
+  GuildOS.GroupQuests = nil   -- a client before #450 reading the same listing
+  local og = Groups:_BuildGroup(p, NOW)
+  check(og and og.act == "elite-quests" and og.quest == nil, "an old client lists the group as Elite quests and ignores the quest")
+  local oe = Board:_BuildEntry({ roles = "D", acts = { "elite-quests" }, quests = { { id = 1, t = "x" } } }, NOW)
+  check(oe and #oe.acts == 1 and #oe.quests == 0, "and a listing as looking for elite quests")
+  GuildOS.GroupQuests = old
+  local bad = Groups:_BuildGroup({ act = "elite-quests", quest = { id = -5, t = "x" }, need = { D = 1 } }, NOW)
+  check(bad and bad.quest == nil, "a group's forged quest is dropped, the group kept")
+  Groups:HandleGroup("Bea-Realm", { act = "elite-quests", need = { D = 1 }, ttl = 3600, quest = { id = 155, t = "Theirs" } }, "GUILD")
+  check(GuildOS.db.lfgGroups[key("Bea")].quest.id == 155 and Groups:Title(GuildOS.db.lfgGroups[key("Bea")]) == "The Defias Brotherhood",
+    "a group heard is named by my log's title for its quest")
+  issecretvalue = nil
+end
+
 -- ── The catalogue of each client ────────────────────────────────────────
 local function catalogue(client)
   local real = GuildOS

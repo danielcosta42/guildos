@@ -157,6 +157,23 @@ dofile(ADDON .. "/Data/GroupActivities.lua")
 local passThrough = { Serialize = function(_, t) return t end, Deserialize = function(_, d) return true, d end }
 LibStub = function() return passThrough end
 dofile(ADDON .. "/Modules/LFGBoard.lua")
+-- My quest log (#450), in the modern shape: a solo quest first in the log, two group ones after it.
+local QUEST_LOG = {
+  { title = "Hellfire Peninsula", isHeader = true },
+  { title = "Fel Orc Scavengers", questID = 10482, level = 61 },
+  { title = "Wanted: Worg Master Kruush", questID = 10809, level = 62 },
+  { title = "Zangarmarsh", isHeader = true },
+  { title = "Lost in Action", questID = 9738, level = 64 },
+  { title = "The Dying Balance", questID = 9895, level = 63 },
+}
+local QUEST_TAGS = { [10809] = { tagID = 1, tagName = "Group", isElite = true }, [9738] = { tagID = 81, tagName = "Dungeon" } }
+C_QuestLog = {
+  GetNumQuestLogEntries = function() return #QUEST_LOG end,
+  GetInfo = function(i) return QUEST_LOG[i] end,
+  GetQuestTagInfo = function(id) return QUEST_TAGS[id] end,
+  GetSuggestedGroupSize = function(id) return id == 10809 and 3 or 0 end,
+}
+dofile(ADDON .. "/Modules/GroupQuests.lua")
 dofile(ADDON .. "/Modules/Groups.lua")
 dofile(ADDON .. "/UI/GroupsPanel.lua")
 
@@ -500,6 +517,147 @@ check(Board:Mine() == nil, "Stop looking takes me down")
 check(#UIParent.children == windows, "and no form ever made a window")
 GuildOS.db.lfgGroups[key("Bea")], GuildOS.db.lfgBoard[key("Eve")], GuildOS.db.lfgBoard[key("Fay")] = nil, nil, nil
 Board:Refresh()
+
+-- ── My quests (#450) ────────────────────────────────────────────────────
+do
+  local Q = GuildOS.GroupQuests
+  Q:Refresh()
+  local function questTile(root, id) for _, t in ipairs(tilesOf(root)) do if t.act == "q:" .. id then return t end end end
+  -- Form a group: My quests is a pill beside the catalogue's, its cards my log's, group quests first.
+  click(panel, "+ Form a group")
+  check(#buttons(fg, "My quests") == 1 and #buttons(fg, "Quests and more") == 1, "My quests is a category beside Quests and more")
+  click(fg, "My quests")
+  local ts = tilesOf(fg)
+  check(#ts == 4 and ts[1].act == "q:10809" and ts[2].act == "q:9738", "a card per quest of my log, the group ones first")
+  local kt = questTile(fg, 10809)
+  check(kt.name.text == "Wanted: Worg Master Kruush" and kt.meta.text:find("Level 62", 1, true)
+    and kt.meta.text:find("Group", 1, true) and kt.meta.text:find("group of 3", 1, true),
+    "a quest's card says its level, its tag and its suggested players: " .. tostring(kt.meta.text))
+  check(kt.live.text == "Hellfire Peninsula", "and its zone while nobody is on it")
+  check(questTile(fg, 9738).meta.text:find("Dungeon", 1, true), "a dungeon quest says so")
+  check(not shows(fg, "My level only"), "the quests of my log need no level filter")
+  check(insideCards(panel, "the quest cards") > 20, "the quest cards stay inside the form")
+  -- Single pick: a card moves to the second step; another replaces it.
+  questTile(fg, 9738).scripts.OnClick(questTile(fg, 9738))
+  check(shows(fg.picked, "Lost in Action") and shows(fg, "2 · Who and when"), "picking a quest moves to the second step, its title on top")
+  click(fg.picked, "Change")
+  check(questTile(fg, 9738).on and not questTile(fg, 10809).on, "the quest picked is the one chosen")
+  questTile(fg, 10809).scripts.OnClick(questTile(fg, 10809))
+  check(not shows(fg.picked, "Lost in Action") and shows(fg.picked, "Wanted: Worg Master Kruush"), "another pick replaces it: one quest a group")
+  -- A guildmate who shares this quest lights up while the group is formed.
+  GuildOS.db.lfgBoard[key("Eve")] = (Board:_BuildEntry({ roles = "D", acts = { "deadmines" }, shared = { 10809 }, ttl = 3600 }, T0))
+  GuildOS.db.lfgBoard[key("Fay")] = (Board:_BuildEntry({ roles = "H", acts = { "karazhan" }, ttl = 3600,
+    quests = { { id = 9738, t = "Lost in Action" } } }, T0))
+  Board:Refresh()
+  check(rowNamed("Eve").fits and rowNamed("Eve").questMark.text == "also on this quest" and rowNamed("Eve").questMark.shown,
+    "who has the quest fits, marked \"also on this quest\"")
+  check(not rowNamed("Fay").fits and rowNamed("Fay").questMark.text == "you have this quest",
+    "who is on another quest of my log is marked \"you have this quest\"")
+  check(shows(cardTitled(panel, "Looking for a group"), "1 would fit Wanted: Worg Master Kruush"), "the chip names the quest")
+  local sentQ
+  local realCreate = Groups.Create
+  Groups.Create = function(self, ...) sentQ = { ... }; return realCreate(self, ...) end
+  GuildOS.State.groups.lastPublish = -100   -- past the publish window: the stub clock stands still
+  click(fg, "Publish group")
+  Groups.Create = realCreate
+  check(sentQ and sentQ[7] and sentQ[7].id == 10809 and sentQ[7].t == "Wanted: Worg Master Kruush", "Publish hands the module the quest")
+  local mine = Groups:Mine()
+  check(mine.act == "elite-quests" and mine.quest.id == 10809 and wire[#wire].p.quest.id == 10809, "listed under Elite quests, with its quest")
+  check(shows(panel, "Your group: Wanted: Worg Master Kruush"), "my group is named by its quest")
+  check(shows(panel, "Fits your group") and shows(panel, "also on this quest"), "the leader's matches mark who has the quest")
+  check(insideCards(panel, "my quest group") > 20, "and stay inside their cards")
+  click(cardTitled(panel, "Your group"), "Change")
+  check(shows(fg.picked, "Wanted: Worg Master Kruush"), "Change opens the form on the group's quest")
+  panel.scripts.OnKeyDown(panel, "ESCAPE")
+  click(panel, "Take down")
+
+  -- Somebody else's group for a quest of my log: "you have this quest" on its card.
+  Groups:HandleGroup("Bea-Realm", { act = "elite-quests", need = { D = 2 }, ttl = 3600, quest = { id = 9738, t = "Lost in Action" } }, "GUILD")
+  Groups:HandleGroup("Cid-Realm", { act = "elite-quests", need = { D = 2 }, ttl = 3600, quest = { id = 777, t = "Not mine" } }, "GUILD")
+  local bc, cc
+  walk(panel, function(f) if f.lead and f:IsVisible() and f.title.text == "Lost in Action" then bc = f end end)
+  walk(panel, function(f) if f.lead and f:IsVisible() and f.title.text == "Not mine" then cc = f end end)
+  check(bc and bc.questBadge.shown and bc.questBadge.label.text == "you have this quest", "a group for a quest I have says so")
+  check(bc.range.text == "Level 64", "with the quest's level from my log")
+  check(cc and not cc.questBadge.shown, "a group for a quest I do not have says nothing")
+  check(insideCards(panel, "quest groups") > 20, "the quest groups stay inside their cards")
+
+  -- I am looking: several quests, capped; the opt-in off by default; only the picks go out.
+  click(panel, "I am looking")
+  local sf2 = formOf("isSeekForm")
+  click(sf2, "My quests")
+  for _, id in ipairs({ 10809, 9738, 10482, 9895 }) do questTile(sf2, id).scripts.OnClick(questTile(sf2, id)) end
+  check(shows(sf2, "3 picked") and questTile(sf2, 10809).on and not questTile(sf2, 9895).on, "several quests, at most three")
+  questTile(sf2, 10482).scripts.OnClick(questTile(sf2, 10482))
+  check(shows(sf2, "2 picked"), "a second click takes one back")
+  local share
+  walk(sf2, function(f) if f.checkbox and f.label and f.label.text == "Share the group quests in my log with the guild LFG" then share = f end end)
+  check(share and share:IsVisible() and not share.checkbox:GetChecked(), "the opt-in is there, off by default")
+  check(insideCards(panel, "the looking form on my quests") > 20, "the looking form stays inside its card")
+  click(sf2, "Start looking")
+  local p = wire[#wire].p
+  check(wire[#wire].kind == "LG" and #p.quests == 2 and p.quests[1].id == 10809 and p.quests[2].id == 9738 and p.shared == nil,
+    "the listing carries the two quests picked and nothing else of my log")
+  check(Board:Pref("shareQuests") == false, "the opt-in stays off")
+  click(cardTitled(panel, "Guild groups"), "Change")
+  check(shows(sf2, "2 picked"), "Change opens on the quests, Elite quests not counted as a pick")
+  questTile(sf2, 9738).scripts.OnClick(questTile(sf2, 9738))
+  tick(sf2, "Share the group quests in my log with the guild LFG", true)
+  Board._cd = {}
+  click(sf2, "Update")
+  p = wire[#wire].p
+  check(Board:Pref("shareQuests") == true and #p.quests == 1 and p.shared and #p.shared == 1 and p.shared[1] == 9738,
+    "opted in, the group quests of my log not picked go too, as ids only")
+  Board:SetPref("shareQuests", false)
+
+  -- Classic's shape draws the same cards.
+  local modern = C_QuestLog
+  C_QuestLog = nil
+  GetNumQuestLogEntries = function() return 2 end
+  GetQuestLogTitle = function(i)
+    if i == 1 then return "Hellfire Peninsula", 0, 0, true end
+    return "Wanted: Worg Master Kruush", 62, 3, false, false, false, 0, 10809
+  end
+  GetQuestTagInfo = function() return 1, "Group" end
+  Q:Refresh()
+  click(panel, "+ Form a group")
+  click(fg, "My quests")
+  check(#tilesOf(fg) == 1 and questTile(fg, 10809).meta.text:find("group of 3", 1, true), "the Classic log draws the same card")
+  -- An empty log says so.
+  GetNumQuestLogEntries = function() return 0 end
+  Q:Refresh()
+  Board:Refresh()
+  check(#tilesOf(fg) == 0 and shows(fg, "Your quest log has no quest."), "an empty log says so")
+  click(fg, "Cancel")
+  GetNumQuestLogEntries, GetQuestLogTitle, GetQuestTagInfo = nil, nil, nil
+  C_QuestLog = modern
+  Q:Refresh()
+
+  -- Both widths: the quest cards stay inside their forms, a repaint makes no frame.
+  for _, size in ipairs({ { 560, 580 }, { 1180, 1200 } }) do
+    walk(panel, function(f) if f.kind == "ScrollFrame" then f:SetSize(size[1], 500) end end)
+    panel:SetSize(size[2], 600)
+    click(panel, "+ Form a group")
+    click(fg, "My quests")
+    check(#tilesOf(fg) == 4 and insideCards(panel, size[2] .. "px, quest cards") > 20, size[2] .. "px: the quest cards stay inside the form")
+    local before = created
+    for _ = 1, 3 do click(fg, "Raids"); click(fg, "My quests") end
+    check(created == before, size[2] .. "px: repainting the quest cards makes no frame (" .. (created - before) .. " new)")
+    click(fg, "Cancel")
+    click(panel, "I am looking")
+    click(formOf("isSeekForm"), "My quests")
+    check(insideCards(panel, size[2] .. "px, looking on quests") > 20, size[2] .. "px: the looking form on quests stays inside")
+    click(formOf("isSeekForm"), "Cancel")
+  end
+  walk(panel, function(f) if f.kind == "ScrollFrame" then f:SetSize(860, 500) end end)
+  panel:SetSize(900, 600)
+
+  click(panel, "Stop looking")
+  GuildOS.db.lfgGroups[key("Bea")], GuildOS.db.lfgGroups[key("Cid")] = nil, nil
+  GuildOS.db.lfgBoard[key("Eve")], GuildOS.db.lfgBoard[key("Fay")] = nil, nil
+  Board._cd, GuildOS.State.groups.groupCd = {}, {}
+  Board:Refresh()
+end
 
 -- Forming a group, as before the queue below needs it
 click(panel, "+ Form a group")

@@ -357,7 +357,7 @@ local function groupsToastNow(n)
         local need = (type(live) == "table" and live.need) or n.need
         local role = G:BestRole(need, B:Pref("roles") or "")
         toast.title:SetText(L["Groups being formed"])
-        local body = string.format("%s: %s", n.name, B:ActivityName(n.act)) .. DOT ..
+        local body = string.format("%s: %s", n.name, G:Title(n)) .. DOT ..
             string.format(L["open: %s"], G:NeedText(need))
         toast.body:SetText(body)
         fitButton(toast.primary, string.format(L["Ask as %s"], B:RoleName(ROLE_OF[role] or "ANY")))
@@ -499,9 +499,9 @@ local function activityIcon(parent, size, round)
     else
         f.art:SetAllPoints()
     end
-    function f:SetActivity(act)
+    function f:SetActivity(act, named)
         local it = GuildOS.GroupActivities.byId[act]
-        local drawn = it ~= nil and hasArt(it)
+        local drawn = not named and it ~= nil and hasArt(it)
         if drawn then
             self.art:SetTexture(it.art)
             self.art:SetTexCoord(ART_TC[1], ART_TC[2], ART_TC[3], ART_TC[4])
@@ -510,7 +510,7 @@ local function activityIcon(parent, size, round)
         else
             self.art:Hide()
             self.glyph:Show()
-            local name = GuildOS.LFGBoard:ActivityName(act)
+            local name = named or GuildOS.LFGBoard:ActivityName(act)
             self.glyph:Set(UI.Initial and UI.Initial(name) or name:sub(1, 1), (it and CAT_TINT[it.cat]) or C.paperSoft)
         end
         if self.ring then self.ring:SetShown(drawn) end
@@ -544,14 +544,28 @@ local function checkMark(parent)
     return f
 end
 
+-- "My quests" (#450): the category of the forms' cards read from my quest log. A quest's card has the
+-- id "q:<quest id>", which never crosses the wire.
+local QUEST_CAT = "quests"
+local function questOf(id)
+    local n = type(id) == "string" and id:match("^q:(%d+)$")
+    return n and tonumber(n) or nil
+end
+local function questItems()
+    local out, Q = {}, GuildOS.GroupQuests
+    for _, q in ipairs(Q and Q:List() or {}) do out[#out + 1] = { id = "q:" .. q.id, quest = q } end
+    return out
+end
+
 function GuildOS:CreateGroupsPanel(parent)
-    local B, G, Cat = GuildOS.LFGBoard, GuildOS.Groups, GuildOS.GroupActivities
+    local B, G, Cat, Q = GuildOS.LFGBoard, GuildOS.Groups, GuildOS.GroupActivities, GuildOS.GroupQuests
     parent.activeSub = "active"
     local P = newPools()
     -- The forms' state (#449, option E): `form` is nil (the lists), "group" (forming one, in the left column)
     -- or "seek" (I am looking, in the right one). The rest is what the open form holds.
     local V = { form = nil, step = 1, cat = "dungeon", levelOnly = true, act = nil, need = { T = 0, H = 0, D = 0 },
-                start = 0, ttl = 3600, acts = {}, roles = "", chat = false, auto = false, hint = "" }
+                start = 0, ttl = 3600, acts = {}, roles = "", chat = false, auto = false, hint = "",
+                quest = nil, quests = {}, share = false }
     local paint   -- forward: the handlers below repaint
     local openGroupForm, openSeekForm, closeForm   -- forward: the forms below
 
@@ -861,6 +875,7 @@ function GuildOS:CreateGroupsPanel(parent)
             f.icon:SetPoint("TOPLEFT", 12, -12)
             f.title = text(f, SP.BODY, nil, "button")
             f.badge = UI:CreateBadge(f, "", C.ok)
+            f.questBadge = UI:CreateBadge(f, "", C.ok)
             f.ago = text(f, SP.META, C.labelDim)
             f.avatar = UI:CreateAvatar(f, 18, false)
             f.lead = text(f, SP.BODY)
@@ -888,18 +903,20 @@ function GuildOS:CreateGroupsPanel(parent)
         local key, name = g.key, g.name
         local inner = w - 24
         local X = 12 + ACT_ICON + 12
-        e.icon:SetActivity(g.act)
+        local quest = g.quest and Q and Q:Get(g.quest.id)
+        e.icon:SetActivity(g.act, g.quest and G:Title(g) or nil)
 
         -- Line 1: the activity, "for you" on a group of my level with a spot in a role I play (#378),
-        -- and how long ago it was listed.
+        -- "you have this quest" on a group for a quest in my log (#450), and how long ago it was listed.
         e.title:ClearAllPoints()
         e.title:SetPoint("TOPLEFT", X, -12)
-        e.title:SetText(B:ActivityName(g.act))
+        e.title:SetText(G:Title(g))
         e.ago:ClearAllPoints()
         e.ago:SetPoint("TOPRIGHT", -12, -14)
         e.ago:SetText(GuildOS:TimeAgo(g.ts))
         local agoW = math.ceil(e.ago:GetStringWidth() or 40)
-        local badgeW = forMe and 80 or 0
+        if quest then e.questBadge:SetText(L["you have this quest"], C.ok) end
+        local badgeW = (forMe and 80 or 0) + (quest and (e.questBadge:GetWidth() or 100) + 8 or 0)
         oneLine(e.title, math.min(math.ceil(e.title:GetStringWidth() or 100) + 4, inner - X - agoW - badgeW - 12))
         if forMe then
             e.badge:SetText(L["for you"], C.ok)
@@ -908,6 +925,11 @@ function GuildOS:CreateGroupsPanel(parent)
             e.badge:Show()
         else
             e.badge:Hide()
+        end
+        e.questBadge:SetShown(quest ~= nil)
+        if quest then
+            e.questBadge:ClearAllPoints()
+            e.questBadge:SetPoint("LEFT", forMe and e.badge or e.title, "RIGHT", 8, 0)
         end
 
         -- Line 2: who leads, in their class's ink, the level range; how full and for how long.
@@ -919,7 +941,7 @@ function GuildOS:CreateGroupsPanel(parent)
         e.lead:SetPoint("TOPLEFT", X + 18 + 6, -35)
         e.lead:SetText(string.format(L["led by %s"], coloured(name, classFile, true)))
         local it = Cat.byId[g.act]
-        local range = rangeOf(it)
+        local range = (quest and quest.level) and tostring(quest.level) or (not g.quest and rangeOf(it) or "")
         e.range:SetText(range ~= "" and string.format(L["Level %s"], range) or "")
         e.when:SetText(whenText(g, now))
         e.when:ClearAllPoints()
@@ -1019,7 +1041,7 @@ function GuildOS:CreateGroupsPanel(parent)
         return y + 24
     end
 
-    local function seekerRow(card, e, now, classByKey, levelByKey, mine, y, w, cols, fits)
+    local function seekerRow(card, e, now, classByKey, levelByKey, mine, y, w, cols, fits, questMark)
         local row = P.acquire("seeker" .. card.pk, function()
             local f = CreateFrame("Frame", nil, card)
             -- A player who fits the group being formed (#449): a green wash and a bar at the row's left.
@@ -1054,6 +1076,7 @@ function GuildOS:CreateGroupsPanel(parent)
             f.roles = text(f, SP.META, C.textSoft)
             f.what = text(f, SP.BODY, C.textSoft)
             f.time = text(f, SP.META, C.labelDim)
+            f.questMark = text(f, SP.META, C.ok)
             f.invite = fit(UI:CreateButton(f, "", 60, SP.HIT), L["Invite"])
             f.whisper = fit(UI:SetButtonVariant(UI:CreateButton(f, "", 60, SP.HIT), "ghost"), L["Whisper"])
             f.you = text(f, SP.META, C.textSoft)
@@ -1135,6 +1158,14 @@ function GuildOS:CreateGroupsPanel(parent)
         row.time:SetPoint("RIGHT", row, "RIGHT", -(taken + 8), 0)
         row.time:SetText(string.format(L["%dm"], B:_Remaining(e, now)))
         local timeW = math.ceil(row.time:GetStringWidth() or 24) + 8
+        -- On a quest of mine, or of the group being formed (#450): said in the green ink, before the time.
+        row.questMark:SetText(questMark or "")
+        row.questMark:SetShown(questMark ~= nil)
+        if questMark then
+            row.questMark:ClearAllPoints()
+            row.questMark:SetPoint("RIGHT", row, "RIGHT", -(taken + timeW), 0)
+            timeW = timeW + math.ceil(row.questMark:GetStringWidth() or 60) + 8
+        end
         local what = e.guild and e.note or B:Describe(e)
         row.what:ClearAllPoints()
         row.what:SetPoint("LEFT", cols.what, 0)
@@ -1234,6 +1265,10 @@ function GuildOS:CreateGroupsPanel(parent)
         fit(row.invite, string.format(L["Invite as %s"], B:RoleName(ROLE_OF[m.role])))
         local taken = rightAlign(row, { row.invite }, -((SP.ROW_AV - SP.HIT) / 2), 0)
         local what = B:Describe(m.entry)
+        if m.quest then
+            local k = ink(card, C.ok)
+            what = GuildOS:ColorText(L["also on this quest"], k.r, k.g, k.b) .. (what ~= "" and (DOT .. what) or "")
+        end
         row.what:ClearAllPoints()
         row.what:SetPoint("LEFT", AVATAR + 8 + NAME_W + LEVEL_W + SP.CELL, 0)
         row.what:SetText(what ~= "" and what or L["Anything"])
@@ -1247,12 +1282,12 @@ function GuildOS:CreateGroupsPanel(parent)
         local f = mine.card
         f:SetWidth(w)
         local inner = w - 2 * SP.PAD
-        f.title:SetText(string.format(L["Your group: %s"], B:ActivityName(g.act)))
+        f.title:SetText(string.format(L["Your group: %s"], G:Title(g)))
         f:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
         local y = SP.TOP
         f.icon:ClearAllPoints()
         f.icon:SetPoint("TOPLEFT", SP.PAD, -y)
-        f.icon:SetActivity(g.act)
+        f.icon:SetActivity(g.act, g.quest and G:Title(g) or nil)
         local X = SP.PAD + ACT_ICON + 12
 
         -- Right of the line: when it starts, how long it stays up.
@@ -1460,7 +1495,7 @@ function GuildOS:CreateGroupsPanel(parent)
     end
 
     local function liveText(act)
-        local c = V.counts and V.counts[act]
+        local c = V.counts and V.counts[questOf(act) or act]
         local parts = {}
         if c and c.groups > 0 then parts[#parts + 1] = string.format(L["%d forming"], c.groups) end
         if c and c.seekers > 0 then parts[#parts + 1] = string.format(L["%d looking"], c.seekers) end
@@ -1475,9 +1510,44 @@ function GuildOS:CreateGroupsPanel(parent)
         return table.concat(parts, DOT)
     end
 
+    -- A quest of my log as a card (#450): "Level 62 · Elite · group of 3", then who is on it, or its zone.
+    local function questMeta(q)
+        local parts = {}
+        if q.level then parts[#parts + 1] = string.format(L["Level %s"], tostring(q.level)) end
+        local tag = q.tag or (q.elite and L["Elite"]) or nil
+        if tag then parts[#parts + 1] = tag end
+        if (q.size or 0) > 1 then parts[#parts + 1] = string.format(L["group of %d"], q.size) end
+        return table.concat(parts, DOT)
+    end
+
     local function paintTile(t, it, on, w)
         t:SetSize(w, TILE_H)
         t.act, t.on = it.id, on and true or false
+        if it.quest then
+            local q = it.quest
+            t.quest = q.id
+            t.icon:SetActivity(B.QUEST_ACT, q.title)
+            local X = 12 + ACT_ICON + 10
+            t.name:ClearAllPoints()
+            t.name:SetPoint("TOPLEFT", X, -10)
+            t.name:SetText(q.title)
+            oneLine(t.name, w - X - 12 - (t.on and 20 or 0))
+            t.meta:ClearAllPoints()
+            t.meta:SetPoint("TOPLEFT", X, -28)
+            t.meta:SetText(questMeta(q))
+            oneLine(t.meta, w - X - 12)
+            local live = liveText(it.id)
+            local k = ink(t, live ~= "" and C.ok or C.textSoft)
+            t.live:SetTextColor(k.r, k.g, k.b)
+            t.live:ClearAllPoints()
+            t.live:SetPoint("TOPLEFT", X, -43)
+            t.live:SetText(live ~= "" and live or (q.zone or L["quiet"]))
+            oneLine(t.live, w - X - 12)
+            t.check:SetShown(t.on)
+            t:SetChosen(t.on)
+            return
+        end
+        t.quest = nil
         t.icon:SetActivity(it.id)
         local X = 12 + ACT_ICON + 10
         t.name:ClearAllPoints()
@@ -1552,6 +1622,13 @@ function GuildOS:CreateGroupsPanel(parent)
                 holder.pills[#holder.pills + 1] = p
             end
         end
+        local mq = Forms:Pill(holder, L["My quests"])
+        mq.catKey = QUEST_CAT
+        mq:SetScript("OnClick", function()
+            V.cat = QUEST_CAT
+            paint()
+        end)
+        holder.pills[#holder.pills + 1] = mq
         local lv = smallCheck(holder, L["My level only"])
         lv.isLevelOnly = true
         lv.checkbox.onChanged = function(_, checked)
@@ -1559,22 +1636,24 @@ function GuildOS:CreateGroupsPanel(parent)
             paint()
         end
         c:Add(holder, { shown = shown, place = function(_, w)
-            local x = 0
+            local x, py = 0, 0
             for _, p in ipairs(holder.pills) do
                 Forms:SetOn(p, p.catKey == V.cat)
+                if x > 0 and x + p:GetWidth() > w then x, py = 0, py + SP.HIT + 6 end
                 p:ClearAllPoints()
-                p:SetPoint("TOPLEFT", holder, "TOPLEFT", x, 0)
+                p:SetPoint("TOPLEFT", holder, "TOPLEFT", x, -py)
                 x = x + p:GetWidth() + 6
             end
             lv.checkbox:SetChecked(V.levelOnly)
+            lv:SetShown(V.cat ~= QUEST_CAT)   -- the quests of my log are mine whatever my level
             lv:Place(w)
-            local h = SP.HIT
+            local h = py + SP.HIT
             lv:ClearAllPoints()
             if x + SP.CELL + lv:GetWidth() <= w then
-                lv:SetPoint("TOPRIGHT", holder, "TOPRIGHT", 0, -3)
+                lv:SetPoint("TOPRIGHT", holder, "TOPRIGHT", 0, -(py + 3))
             else
-                lv:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, -(SP.HIT + 8))
-                h = SP.HIT + 8 + 18
+                lv:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, -(py + SP.HIT + 8))
+                h = py + SP.HIT + 8 + 18
             end
             holder:SetSize(math.max(1, w), h)
             return h
@@ -1596,7 +1675,8 @@ function GuildOS:CreateGroupsPanel(parent)
         holder.scroll, holder.child, holder.tiles = sc, child, {}
         local lastCat
         c:Add(holder, { shown = shown, fill = true, place = function(_, w, extra)
-            local items = activitiesOf(V.cat, V.levelOnly, UnitLevel("player") or 1)
+            local items = V.cat == QUEST_CAT and questItems() or activitiesOf(V.cat, V.levelOnly, UnitLevel("player") or 1)
+            empty:SetText(V.cat == QUEST_CAT and L["Your quest log has no quest."] or L["No activity of this kind for your level."])
             -- What is busy tonight first (somebody forming or looking for it), the catalogue's order kept.
             local rank = {}
             for i, it in ipairs(items) do rank[it] = (liveText(it.id) ~= "" and 0 or 10000) + i end
@@ -1681,11 +1761,16 @@ function GuildOS:CreateGroupsPanel(parent)
     local function onStep(n) return function() return V.step == n end end
 
     local function pickAct(id)
-        if id ~= V.act or not V.need then
+        -- A quest's card (#450): the group is for it, under the catalogue's Elite quests.
+        local qid = questOf(id)
+        local q = qid and Q and Q:Get(qid)
+        local quest = q and { id = q.id, t = q.title } or nil
+        local act = quest and B.QUEST_ACT or id
+        if act ~= V.act or not V.need then
             local group = G:Mine()
-            V.need = (group and group.act == id) and G:_SanitizeNeed(group.need) or defaultNeed(id)
+            V.need = (group and group.act == act) and G:_SanitizeNeed(group.need) or defaultNeed(act)
         end
-        V.act, V.step, V.hint = id, 2, ""
+        V.act, V.quest, V.step, V.hint = act, quest, 2, ""
         paint()
     end
     -- One spot more or less, never past the room a group of this size has besides its leader.
@@ -1700,7 +1785,11 @@ function GuildOS:CreateGroupsPanel(parent)
 
     -- Step 1: what it is for.
     formG.cats = addCategoryRow(formG, onStep(1))
-    formG.grid = addGrid(formG, function(id) return V.act == id end, pickAct, onStep(1))
+    formG.grid = addGrid(formG, function(id)
+        local qid = questOf(id)
+        if qid then return V.quest ~= nil and V.quest.id == qid end
+        return V.quest == nil and V.act == id
+    end, pickAct, onStep(1))
     formG:Note(L["Each card shows who is already forming or looking for it. Pick one to set the spots and the time."],
         { shown = onStep(1) })
 
@@ -1721,16 +1810,18 @@ function GuildOS:CreateGroupsPanel(parent)
     formG:Add(picked, { shown = onStep(2), place = function(_, w)
         picked:SetSize(w, 56)
         local it = Cat.byId[V.act]
-        picked.icon:SetActivity(V.act)
+        local q = V.quest and Q and Q:Get(V.quest.id)
+        local title = V.quest and G:Title(V) or (V.act and B:ActivityName(V.act) or "")
+        picked.icon:SetActivity(V.act, V.quest and title or nil)
         local X = 12 + ACT_ICON + 12
         local room = w - X - picked.change:GetWidth() - 24
         picked.name:ClearAllPoints()
         picked.name:SetPoint("TOPLEFT", X, -12)
-        picked.name:SetText(V.act and B:ActivityName(V.act) or "")
+        picked.name:SetText(title)
         oneLine(picked.name, room)
         picked.meta:ClearAllPoints()
         picked.meta:SetPoint("TOPLEFT", X, -31)
-        picked.meta:SetText(it and metaText(it) or "")
+        picked.meta:SetText((q and questMeta(q)) or (not V.quest and it and metaText(it)) or "")
         oneLine(picked.meta, room)
         return 56
     end })
@@ -1813,7 +1904,7 @@ function GuildOS:CreateGroupsPanel(parent)
     local function previewLine()
         local _, count = GuildOS.Compat.GroupRoster()
         count = math.max(1, count or 1)
-        local g = { act = V.act, need = V.need, note = GuildOS:SanitizeUserText(noteG:GetText(), NOTE_MAX), n = count,
+        local g = { act = V.act, quest = V.quest, need = V.need, note = GuildOS:SanitizeUserText(noteG:GetText(), NOTE_MAX), n = count,
                     max = math.max(G:SizeOf(V.act), count),
                     start = (V.start or 0) > 0 and (GetServerTime() + V.start) or nil }
         -- The line says "whisper inv" by the saved choice: the form's, until it is published.
@@ -1869,7 +1960,7 @@ function GuildOS:CreateGroupsPanel(parent)
         -- The two boxes are remembered choices (as the board's): saved when the group goes up.
         B:SetPref("postToGuild", V.chat)
         B:SetPref("autoInvite", V.auto)
-        local ok, why = G:Create(V.act, V.need, noteG:GetText(), V.ttl, V.chat, V.start)
+        local ok, why = G:Create(V.act, V.need, noteG:GetText(), V.ttl, V.chat, V.start, V.quest)
         if not ok then
             V.hint = why or ""
             paint()
@@ -1884,6 +1975,19 @@ function GuildOS:CreateGroupsPanel(parent)
     local formS = formCard(L["I am looking"])
     formS.isSeekForm = true
     local function toggleAct(id)
+        local qid = questOf(id)
+        if qid then
+            -- A quest of my log (#450): picked or taken back, never more than the listing carries.
+            local out, had = {}, false
+            for _, q in ipairs(V.quests) do
+                if q.id == qid then had = true else out[#out + 1] = q end
+            end
+            local q = Q and Q:Get(qid)
+            if not had and q and #out < Q.PICK_MAX then out[#out + 1] = { id = q.id, t = q.title } end
+            V.quests = out
+            paint()
+            return
+        end
         local out = {}
         for _, x in ipairs(V.acts) do if x ~= id then out[#out + 1] = x end end
         if #out == #V.acts then out[#out + 1] = id end
@@ -1891,7 +1995,12 @@ function GuildOS:CreateGroupsPanel(parent)
         paint()
     end
     formS.cats = addCategoryRow(formS)
-    formS.grid = addGrid(formS, function(id) return has(V.acts, id) end, toggleAct)
+    formS.grid = addGrid(formS, function(id)
+        local qid = questOf(id)
+        if not qid then return has(V.acts, id) end
+        for _, q in ipairs(V.quests) do if q.id == qid then return true end end
+        return false
+    end, toggleAct)
 
     local sep = CreateFrame("Frame", nil, formS)
     sep:SetSize(1, 1)
@@ -1946,10 +2055,16 @@ function GuildOS:CreateGroupsPanel(parent)
     local chatS = smallCheck(formS, L["Also post in guild chat"])
     formS:Add(chatS, { place = function(_, w) return chatS:Place(w) end })
     chatS.checkbox.onChanged = function(_, checked) V.chat = checked and true or false end
+    -- The opt-in (#450), off by default: the ids of the group quests in my log go out with my listing.
+    local shareS = smallCheck(formS, L["Share the group quests in my log with the guild LFG"])
+    formS:Add(shareS, { place = function(_, w) return shareS:Place(w) end })
+    shareS.checkbox.onChanged = function(_, checked) V.share = checked and true or false end
+    formS.share = shareS
     formS.action:SetScript("OnClick", function()
         B:SetPref("roles", V.roles)
         B:SetPref("postToGuild", V.chat)
-        B:SetAvailable(nil, noteS:GetText(), V.ttl, V.chat, V.roles, V.acts)
+        B:SetPref("shareQuests", V.share)
+        B:SetAvailable(nil, noteS:GetText(), V.ttl, V.chat, V.roles, V.acts, V.quests)
         closeForm()
     end)
 
@@ -1997,6 +2112,7 @@ function GuildOS:CreateGroupsPanel(parent)
         V.ttl = B:_ClampTtl(GuildOS.db.lfgPrefs.lastTtl)
         V.chat = B:Pref("postToGuild") and true or false
         V.auto = B:Pref("autoInvite") and true or false
+        V.quest = group and group.quest and { id = group.quest.id, t = group.quest.t } or nil
         if group then
             V.act, V.step = group.act, 2
             V.need = G:_SanitizeNeed(group.need)
@@ -2008,7 +2124,7 @@ function GuildOS:CreateGroupsPanel(parent)
             V.need = { T = 0, H = 0, D = 0 }
             noteG:SetText("")
         end
-        V.cat = catOf(V.act)
+        V.cat = V.quest and QUEST_CAT or catOf(V.act)
         chatG.checkbox:SetChecked(V.chat)
         autoG.checkbox:SetChecked(V.auto)
         takeKeys(true)
@@ -2021,12 +2137,18 @@ function GuildOS:CreateGroupsPanel(parent)
         if GuildOS:InCombat() then GuildOS:Print(L["Not during combat."]); return end
         local listing = B:Mine()
         V.form = "seek"
-        V.acts = {}
-        for _, id in ipairs(listing and listing.acts or {}) do V.acts[#V.acts + 1] = id end
+        V.acts, V.quests = {}, {}
+        -- Elite quests that went out for the quests picked (#450) is not a card I picked.
+        for _, id in ipairs(listing and listing.acts or {}) do
+            if not (listing.questAct and id == B.QUEST_ACT) then V.acts[#V.acts + 1] = id end
+        end
+        for _, q in ipairs(listing and listing.quests or {}) do V.quests[#V.quests + 1] = { id = q.id, t = q.t } end
+        V.share = B:Pref("shareQuests") and true or false
+        shareS.checkbox:SetChecked(V.share)
         V.roles = (listing and listing.roles) or B:Pref("roles") or ""
         V.ttl = B:_ClampTtl(GuildOS.db.lfgPrefs.lastTtl)
         V.chat = B:Pref("postToGuild") and true or false
-        V.cat = catOf(V.acts[1])
+        V.cat = (#V.acts == 0 and #V.quests > 0) and QUEST_CAT or catOf(V.acts[1])
         noteS:SetText(listing and listing.note or "")
         chatS.checkbox:SetChecked(V.chat)
         takeKeys(true)
@@ -2044,7 +2166,8 @@ function GuildOS:CreateGroupsPanel(parent)
             if G:OpenSpots(V.need) > 0 then formG.action:Enable() else formG.action:Disable() end
             hintG:SetText(V.hint or "")
         elseif V.form == "seek" then
-            formS.stepText:SetText(#V.acts > 0 and string.format(L["%d picked"], #V.acts) or L["none picked: anything"])
+            local n = #V.acts + #V.quests
+            formS.stepText:SetText(n > 0 and string.format(L["%d picked"], n) or L["none picked: anything"])
             formS.action.label:SetText(B:Mine() and L["Update"] or L["Start looking"])
             Forms:FitPill(formS.action)
         end
@@ -2053,9 +2176,10 @@ function GuildOS:CreateGroupsPanel(parent)
     -- Whether a player looking would fit a group for `act` with spots `need`: they want it (or anything),
     -- play a role it has a spot for, are of its level where the roster says theirs, and are a guildmate (an
     -- allied listing is read, not invited).
-    local function fitsAct(e, act, need, me, levelByKey)
+    local function fitsAct(e, act, need, me, levelByKey, qid)
         if not act or not e.key or e.key == me then return false end
-        if #(e.acts or {}) > 0 and not has(e.acts, act) then return false end
+        local onQuest = qid ~= nil and Q ~= nil and Q:Lists(e, qid)
+        if #(e.acts or {}) > 0 and not has(e.acts, act) and not onQuest then return false end
         if not G:BestRole(need, e.roles or "") then return false end
         local level = levelByKey[e.key]
         return not level or G:FitsLevel(act, level)
@@ -2087,6 +2211,9 @@ function GuildOS:CreateGroupsPanel(parent)
         local myGroup = G:Mine()
         -- What the players' list measures against: the group being formed, else the one I lead.
         local fitAct = (V.form == "group" and V.step == 2 and V.act) or (V.form == nil and myGroup and myGroup.act) or nil
+        -- And its quest (#450): whoever names it is "also on this quest".
+        local fitQuest = fitAct and ((V.form == "group" and V.quest) or (V.form == nil and myGroup and myGroup.quest)) or nil
+        local fitQid = fitQuest and fitQuest.id or nil
 
         -- The top card: my roles, my listing's status, the figures, the filters.
         for _, letter in ipairs(LETTERS) do myChips[letter]:SetOn(myRoles:find(letter, 1, true) ~= nil) end
@@ -2113,16 +2240,21 @@ function GuildOS:CreateGroupsPanel(parent)
             matched = {}
             for _, m in ipairs(G:Matches(now, onlineSet)) do matched[m.key] = true end
         end
-        local seekers, fits, nFit = {}, {}, 0
+        local seekers, fits, nFit, questMarks = {}, {}, 0, {}
         for _, e in ipairs(B:ActiveList(GuildOS.db.lfgBoard, now, onlineSet)) do
             if keepsSeeker(e, cat, levelOnly, myLevel) then
                 seekers[#seekers + 1] = e
                 local fitting
                 if matched then fitting = e.key ~= nil and matched[e.key] == true
-                else fitting = fitsAct(e, fitAct, V.need, me, levelByKey) end
+                else fitting = fitsAct(e, fitAct, V.need, me, levelByKey, fitQid) end
                 if fitting then
                     fits[e] = true
                     nFit = nFit + 1
+                end
+                -- The green word on the row (#450): on the group's quest, else on a quest of my log.
+                if Q and e.key ~= me then
+                    if fitQid and Q:Lists(e, fitQid) then questMarks[e] = L["also on this quest"]
+                    elseif Q:InMyLog(e) then questMarks[e] = L["you have this quest"] end
                 end
             end
         end
@@ -2199,7 +2331,8 @@ function GuildOS:CreateGroupsPanel(parent)
             -- The chip after the title, while a group is being formed and there is room for it.
             fitChip:Hide()
             if fitAct and nFit > 0 then
-                fitChip:SetText(string.format(L["%d would fit %s"], nFit, B:ActivityName(fitAct)), C.ok)
+                fitChip:SetText(string.format(L["%d would fit %s"], nFit,
+                    fitQuest and G:Title({ quest = fitQuest }) or B:ActivityName(fitAct)), C.ok)
                 local titleW = math.ceil(seekersCard.title:GetStringWidth() or 120)
                 local x = SP.PAD + titleW + SP.CELL
                 if x + fitChip:GetWidth() <= swd - SP.PAD then
@@ -2220,7 +2353,8 @@ function GuildOS:CreateGroupsPanel(parent)
                 local cols = seekerCols(sInner)
                 sy = seekerHeader(seekersCard, sy, sInner, cols)
                 for i = 1, math.min(#seekers, SEEKERS_MAX) do
-                    sy = seekerRow(seekersCard, seekers[i], now, classByKey, levelByKey, me, sy, sInner, cols, fits[seekers[i]])
+                    sy = seekerRow(seekersCard, seekers[i], now, classByKey, levelByKey, me, sy, sInner, cols, fits[seekers[i]],
+                        questMarks[seekers[i]])
                 end
                 if #seekers > SEEKERS_MAX then sy = line(seekersCard, string.format(L["... and %d more."], #seekers - SEEKERS_MAX), sy, sInner) end
                 sy = sy + 6

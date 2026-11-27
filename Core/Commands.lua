@@ -841,10 +841,7 @@ local function handleCommand(msg)
             -- Compat, not the tracker: the tracker does not exist outside TBC Anniversary.
             if GuildOS.Compat.IsQuestComplete(qid) then
                 -- Try to get the quest title (may be nil for hidden server-side quests)
-                local title = nil
-                if C_QuestLog and C_QuestLog.GetTitleForQuestID then
-                    title = C_QuestLog.GetTitleForQuestID(qid)
-                end
+                local title = GuildOS.Compat.QuestTitle(qid)
                 if title and title ~= "" then
                     GuildOS:Print(format("  |cff00FF00[%d]|r %s", qid, title))
                 else

@@ -226,6 +226,117 @@ function Compat.IsQuestComplete(questId)
     return false
 end
 
+-- A quest's title by its id, where the client can name it (nil for one it has not seen).
+function Compat.QuestTitle(questId)
+    if not (C_QuestLog and C_QuestLog.GetTitleForQuestID) then return nil end
+    local ok, title = pcall(C_QuestLog.GetTitleForQuestID, questId)
+    if not ok or Compat.IsSecret(title) or type(title) ~= "string" or title == "" then return nil end
+    return title
+end
+
+----------------------------------------------------------------------
+-- The player's quest log (the guild LFG's "My quests", issue #450). Modern clients read C_QuestLog:
+-- GetNumQuestLogEntries, GetInfo, GetQuestTagInfo and GetSuggestedGroupSize; the Classic-era client the
+-- globals GetNumQuestLogEntries, GetQuestLogTitle (title, level, suggestedGroup, isHeader, isCollapsed,
+-- isComplete, frequency, questID) and GetQuestTagInfo(questID) (tagID, tagName). A header is the zone of
+-- the quests under it. Anything secret (Forever's Secret Values) or of the wrong type is left out.
+----------------------------------------------------------------------
+local QUEST_LOG_MAX = 120        -- log lines read at most: a full log and its headers is about 60
+-- The game's quest tags that are content for a group: Group, Raid, Dungeon, Heroic, Raid (10), Raid (25).
+local GROUP_QUEST_TAGS = { [1] = true, [62] = true, [81] = true, [85] = true, [88] = true, [89] = true }
+
+local function questTag(id)
+    local Q = C_QuestLog
+    if Q and Q.GetQuestTagInfo then
+        local ok, info = pcall(Q.GetQuestTagInfo, id)
+        if not ok or Compat.IsSecret(info) or type(info) ~= "table" then return nil end
+        local tagID, tagName, elite = info.tagID, info.tagName, info.isElite
+        if Compat.IsSecret(tagID, tagName, elite) then return nil end
+        return type(tagID) == "number" and tagID or nil, type(tagName) == "string" and tagName or nil, elite == true
+    end
+    if GetQuestTagInfo then
+        local ok, tagID, tagName = pcall(GetQuestTagInfo, id)
+        if not ok or Compat.IsSecret(tagID, tagName) then return nil end
+        return type(tagID) == "number" and tagID or nil, type(tagName) == "string" and tagName or nil, false
+    end
+    return nil
+end
+
+local function suggestedSize(id, given)
+    local Q = C_QuestLog
+    if Q and Q.GetSuggestedGroupSize then
+        local ok, n = pcall(Q.GetSuggestedGroupSize, id)
+        -- The larger of the two: either can answer 0 where the other knows.
+        if ok and not Compat.IsSecret(n) and type(n) == "number" and (type(given) ~= "number" or n > given) then given = n end
+    end
+    if type(given) ~= "number" or given ~= given or given < 0 then return 0 end
+    return math.min(40, math.floor(given))
+end
+
+-- One quest into `out[n]`, its table kept from the last read: a read makes no table it had before.
+local function fillQuest(out, n, id, title, level, zone, size)
+    local q = out[n]
+    if not q then
+        q = {}
+        out[n] = q
+    end
+    local tagID, tagName, elite = questTag(id)
+    q.id, q.title, q.zone, q.order = id, title, zone, n
+    q.level = (type(level) == "number" and level > 0) and level or nil
+    q.size = suggestedSize(id, size)
+    q.tagID, q.tag, q.elite = tagID, tagName, elite or false
+    q.group = q.size > 1 or q.elite or (tagID ~= nil and GROUP_QUEST_TAGS[tagID] == true)
+end
+
+local function okQuest(id, title)
+    return type(id) == "number" and id > 0 and id == math.floor(id) and type(title) == "string" and title ~= ""
+end
+
+--- The quests in the player's log, into `out` (an array refilled in place; entries past the count are
+--- cleared). Each is { id, title, level, zone, size (suggested players, 0 for none), tagID, tag (the
+--- client's own name for it), elite, group (a size over one, elite, or a group tag), order }.
+--- Returns `out` and the count.
+function Compat.QuestLog(out)
+    out = out or {}
+    local n, zone = 0, nil
+    local Q = C_QuestLog
+    if Q and Q.GetNumQuestLogEntries and Q.GetInfo then
+        local ok, total = pcall(Q.GetNumQuestLogEntries)
+        if not ok or Compat.IsSecret(total) or type(total) ~= "number" then total = 0 end
+        for i = 1, math.min(total, QUEST_LOG_MAX) do
+            local okI, info = pcall(Q.GetInfo, i)
+            if okI and not Compat.IsSecret(info) and type(info) == "table" then
+                local title, id, header, hidden = info.title, info.questID, info.isHeader, info.isHidden
+                local level, size = info.level, info.suggestedGroup
+                if not Compat.IsSecret(title, id, header, hidden, level, size) then
+                    if header then
+                        zone = type(title) == "string" and title or nil
+                    elseif not hidden and okQuest(id, title) then
+                        n = n + 1
+                        fillQuest(out, n, id, title, level, zone, size)
+                    end
+                end
+            end
+        end
+    elseif GetNumQuestLogEntries and GetQuestLogTitle then
+        local ok, total = pcall(GetNumQuestLogEntries)
+        if not ok or Compat.IsSecret(total) or type(total) ~= "number" then total = 0 end
+        for i = 1, math.min(total, QUEST_LOG_MAX) do
+            local okI, title, level, size, header, _, _, _, id = pcall(GetQuestLogTitle, i)
+            if okI and not Compat.IsSecret(title, level, size, header, id) then
+                if header then
+                    zone = type(title) == "string" and title or nil
+                elseif okQuest(id, title) then
+                    n = n + 1
+                    fillQuest(out, n, id, title, level, zone, size)
+                end
+            end
+        end
+    end
+    for i = n + 1, #out do out[i] = nil end
+    return out, n
+end
+
 -- Schedule a one-shot callback after `delay` seconds
 function Compat.After(delay, fn)
     if C_Timer and C_Timer.After then

@@ -145,6 +145,7 @@ read_globals = {
     -- WoW API: Quest & Reputation
     "GetQuestLogTitle",
     "GetNumQuestLogEntries",
+    "GetQuestTagInfo",
     "GetQuestLogIndexByID",
     "IsQuestFlaggedCompleted",
     "GetFactionInfoByID",
