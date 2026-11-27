@@ -1594,6 +1594,14 @@ function Helpers:CreateToolButton(parent, icon, size)
         t:SetSize(math.floor(size * 0.5), math.floor(size * 0.5))
         t:SetPoint("CENTER", 0, 0)
         btn.icon = t
+    elseif type(icon) == "string" and icon:find("\\", 1, true) then
+        -- A game icon (a path): drawn in its own colours, the edges trimmed, a little dim until hovered.
+        local t = btn:CreateTexture(nil, "ARTWORK", nil, 0)
+        t:SetTexture(icon)
+        t:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        t:SetSize(math.floor(size * 0.58), math.floor(size * 0.58))
+        t:SetPoint("CENTER", 0, 0)
+        btn.icon, btn.gameIcon = t, true
     else
         local fs = newText(btn, 13, "button")
         fs:SetPoint("CENTER", 0, 0)
@@ -1604,7 +1612,9 @@ function Helpers:CreateToolButton(parent, icon, size)
         local on = self.__pressed or self.__hovered
         local ringC, ink = on and C.gold2 or C.lineHi, on and C.gold2 or C.door
         self.ring:SetVertexColor(ringC.r, ringC.g, ringC.b, 1)
-        if self.glyph then self.glyph:SetTextColor(ink.r, ink.g, ink.b) else self.icon:SetVertexColor(ink.r, ink.g, ink.b, 1) end
+        if self.glyph then self.glyph:SetTextColor(ink.r, ink.g, ink.b)
+        elseif self.gameIcon then self.icon:SetAlpha(on and 1 or 0.8)
+        else self.icon:SetVertexColor(ink.r, ink.g, ink.b, 1) end
     end
     function btn:SetPressed(on) self.__pressed = on and true or nil; paint(self) end
     btn:SetScript("OnEnter", function(self) self.__hovered = true; paint(self) end)

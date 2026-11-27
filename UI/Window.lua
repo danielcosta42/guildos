@@ -489,7 +489,12 @@ local function createWindow()
     helpBtn.dot:SetPoint("TOPRIGHT", helpBtn, "TOPRIGHT", 1, 1)
     helpBtn.dot:SetVertexColor(C.count.r, C.count.g, C.count.b, 1)
     helpBtn.dot:Hide()
-    f.searchButton, f.settingsButton, f.helpButton = searchBtn, gearBtn, helpBtn
+    -- The game's own guild window (#449): it was a footer link before the Salão, then only a button deep in
+    -- Settings › Data and support. A round tool again, with the guild tabard's icon.
+    local blizzBtn = tool("Interface\\Icons\\INV_Shirt_GuildTabard_01", L["The game's guild window"],
+        { L["Opens Blizzard's own guild panel."] },
+        function() if GuildOS.OpenBlizzardGuildUI then GuildOS:OpenBlizzardGuildUI() end end)
+    f.searchButton, f.settingsButton, f.helpButton, f.blizzardButton = searchBtn, gearBtn, helpBtn, blizzBtn
 
     -- The help hub, or with `here` the tour chapter or guide for the screen on show.
     function f:OpenHelp(here)
@@ -1259,6 +1264,7 @@ local function createWindow()
         searchBtn:SetShown(not isBar)
         helpBtn:SetShown(not isBar)
         gearBtn:SetShown(not isBar)
+        blizzBtn:SetShown(not isBar)
         rule:SetShown(not isBar)
         close:ClearAllPoints()
         close:SetPoint("RIGHT", bar, "RIGHT", isBar and -(GRIP + 2) or -10, 0)
@@ -1270,6 +1276,8 @@ local function createWindow()
         helpBtn:SetPoint("RIGHT", gearBtn, "LEFT", -TOOL_GAP, 0)
         searchBtn:ClearAllPoints()
         searchBtn:SetPoint("RIGHT", helpBtn, "LEFT", -TOOL_GAP, 0)
+        blizzBtn:ClearAllPoints()
+        blizzBtn:SetPoint("RIGHT", searchBtn, "LEFT", -TOOL_GAP, 0)
         if isBar then
             minimise:SetSize(20, 20)
             return

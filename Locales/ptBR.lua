@@ -5332,3 +5332,5 @@ L["The game does not let addons invite here. Requests wait in the queue: copy th
 L["Dark mode"] = "Modo escuro"
 L["Darker parchment cards, same wood and gold."] = "Cartões de pergaminho mais escuros, a mesma madeira e o mesmo dourado."
 L["dark, dark mode, theme, night, night mode, colours"] = "escuro, modo escuro, tema, noite, modo noturno, cores, dark, theme, night"
+L["The game's guild window"] = "Janela de guilda do jogo"
+L["Opens Blizzard's own guild panel."] = "Abre o painel de guilda da própria Blizzard."

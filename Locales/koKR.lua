@@ -5147,3 +5147,5 @@ L["The game does not let addons invite here. Requests wait in the queue: copy th
 L["Dark mode"] = "다크 모드"
 L["Darker parchment cards, same wood and gold."] = "더 어두운 양피지 카드, 같은 나무와 금색."
 L["dark, dark mode, theme, night, night mode, colours"] = "다크, 다크 모드, 어두운, 테마, 밤, 야간 모드, 색상, dark, theme, night"
+L["The game's guild window"] = "게임의 길드 창"
+L["Opens Blizzard's own guild panel."] = "블리자드 기본 길드 창을 엽니다."

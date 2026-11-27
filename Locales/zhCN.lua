@@ -5147,3 +5147,5 @@ L["The game does not let addons invite here. Requests wait in the queue: copy th
 L["Dark mode"] = "深色模式"
 L["Darker parchment cards, same wood and gold."] = "更深的羊皮纸卡片，木纹与金色不变。"
 L["dark, dark mode, theme, night, night mode, colours"] = "深色, 深色模式, 暗色, 主题, 夜间, 夜间模式, 颜色, dark, theme, night"
+L["The game's guild window"] = "游戏的公会窗口"
+L["Opens Blizzard's own guild panel."] = "打开暴雪自带的公会面板。"
