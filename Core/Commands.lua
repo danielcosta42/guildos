@@ -75,6 +75,9 @@ local function printHelp()
     helpLine("/gos find <text>", L["Search members by name, class, level or note"])
     helpLine("/gos sync",        L["Force a full data sync"])
     if GuildOS.GuildMap then helpLine("/gos map", L["Open the live guild map"]) end
+    if GuildOS:CampfireCommandHere() then
+        helpLine("/gos campfire [on | off | realm on | realm off | status]", L["Announce the campfires you light, or not"])
+    end
     helpLine("/gos craft <item>",  L["Who can craft an item"])
     helpLine("/gos order <item>",  L["Ask the guild's crafters to make an item"])
     if GuildOS.Companion then helpLine("/gos web [on|off]", L["Copy your guild into the web companion"]) end
@@ -200,6 +203,43 @@ function GuildOS:AskEraseGuildData()
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
     GuildOS:ShowDialog("GUILDOS_ERASE_GUILD")
+end
+
+-- /gos campfire (WoW: Forever, ChehulNet v17's campfire beacon, Modules/ChehulNetWire.lua): what Settings › Profile ›
+-- Privacy's "Announce my campfires" and "Also to the whole realm, without my name" change, from the chat.
+function GuildOS:CampfireCommandHere()
+    local CN = _G.ChehulNet
+    return CN ~= nil and CN.SetCampConsent ~= nil and CN.SetCampRealm ~= nil and CN.CampState ~= nil
+        and CN.CampRealmOn ~= nil and not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail
+end
+
+function GuildOS:CampfireStatus()
+    local CN = _G.ChehulNet
+    local st = CN:CampState()
+    GuildOS:Print((st == "on" or st == "default") and L["Campfire announce: on (guild and group)."]
+        or L["Campfire announce: off."])
+    GuildOS:Print(CN:CampRealmOn() and L["Whole realm, without your name: on."] or L["Whole realm, without your name: off."])
+    if GuildOS.Compat.IsAddOnLoaded("Warmth") then
+        GuildOS:Print(L["Warmth is loaded: it announces your campfires itself."])
+    end
+end
+
+function GuildOS:CampfireCommand(arg)
+    if not GuildOS:CampfireCommandHere() then
+        GuildOS:Print(L["Not available on this client."])
+        return
+    end
+    local CN = _G.ChehulNet
+    arg = strtrim((arg or ""):lower())
+    if arg == "on" or arg == "off" then
+        CN:SetCampConsent(arg == "on")
+    elseif arg == "realm on" or arg == "realm off" then
+        CN:SetCampRealm(arg == "realm on")
+    elseif arg ~= "" and arg ~= "status" then
+        GuildOS:Print(L["Usage: /gos campfire [on | off | realm on | realm off | status]"])
+        return
+    end
+    GuildOS:CampfireStatus()
 end
 
 -- The verbs of what retail does not have (ADR-0026): no Master Loot, and no soft reserves (softres.it
@@ -404,6 +444,9 @@ local function handleCommand(msg)
         else
             GuildOS:OpenGuildFinder()
         end
+    elseif msg == "campfire" or msg:match("^campfire%s") then
+        -- Anyone on WoW: Forever: the campfire beacon's switches (ChehulNet v17).
+        GuildOS:CampfireCommand(msg:match("^campfire%s+(.+)$"))
     elseif msg == "map" or msg == "guildmap" then
         -- Anyone: the live guild map (world map pins and the list on it; issue #449).
         if GuildOS.ToggleGuildMap then GuildOS:ToggleGuildMap() end

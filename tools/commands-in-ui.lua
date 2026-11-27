@@ -122,6 +122,8 @@ local IN_UI = {
   bank        = { { "UI/Features.lua", 'id = "bank"' }, { "UI/GuildBankPanel.lua", "B:StartSort(B:OrganizableTabs())" } },
   -- The alliance (specs/salao/alianca.md): its guilds in the Salão's Alliance, and the shared /g's switch there.
   ally        = { { "UI/AlliancePanel.lua", "ally:Guilds()" }, { "UI/AlliancePanel.lua", "p.guildBridge = not p.guildBridge" } },
+  -- The campfire beacon (WoW: Forever, ChehulNet v17): Settings > Profile > Privacy's two checks.
+  campfire    = { { "UI/SettingsPanel.lua", "CN:SetCampConsent(checked)" }, { "UI/SettingsPanel.lua", "CN:SetCampRealm(checked)" } },
 }
 local ALIAS = {
   points = { "dkp" }, equity = { "lootequity" }, bulletin = { "board" }, polls = { "poll" },

@@ -624,23 +624,34 @@ end
 ----------------------------------------------------------------------
 -- Guildmates' campfires (WoW: Forever; chehulnet AGENTS.md "ChehulCamp", specs/salao/mapa.md "Fogueiras")
 --
--- Warmth (the family's campfire addon) and the ChehulNet beacon (v16, for a player who said yes) announce a fire
--- the player lit on the ChehulCamp prefix: "C2|A|map|x|y|zuid|tier(+flags)|n|age|objects|people|note", again
--- every four minutes while near it, and "C2|X" when it ends. This client READS the ones that come over GUILD from
--- a guildmate on the roster, never sends one (the beacon, Modules/ChehulNet.lua, does that) and never relays one
--- (the mesh does). Its own AceComm route on the prefix, not Mesh:Register: that would take the prefix's handler
--- from the mesh, which relays Warmth's camps. Off WoW: Forever there are no camp kits; with Warmth loaded, Warmth
--- draws the camps itself (with their circle), so this layer is off.
+-- Warmth (the family's campfire addon) and the ChehulNet beacon (v17: on unless the player turned it off) announce
+-- a fire the player lit on the ChehulCamp prefix, in Warmth's wire (Warmth's Core/Wire.lua, version C2):
+--   C2|A|map|x|y|zuid|tier(+flags)|n|age|objects|people|note   a named announce (guild and group)
+--   C2|X                                                      the camp ended
+--   C2|S|map|x|y|zuid|tier(+flags)                            an ownerless sighting (the realm bus; not drawn here)
+-- x, y in 1/10000 of the map, age in minutes, people "Name~c" separated by ";" (c: the class as one letter), objects
+-- the camp's object indexes. The beacon sends "C2|A|map|x|y|zuid|<tier>l|1|age||Name~c|", again every four minutes
+-- while near it. This client READS the A and X that come over GUILD from a guildmate on the roster, never sends one
+-- (the beacon, Modules/ChehulNet.lua, does) and never relays one (the mesh does). Its own AceComm route on the
+-- prefix, not Mesh:Register: that would take the prefix's handler from the mesh, which relays Warmth's camps. Off
+-- WoW: Forever there are no camp kits; with Warmth loaded, Warmth draws the camps itself (with their circle), so this
+-- layer is off.
 ----------------------------------------------------------------------
 GuildMap.CAMP_PREFIX = "ChehulCamp"
 GuildMap.CAMP_ADDON  = "Warmth"
-GuildMap.CAMP_LIFE   = 3600   -- a fire burns at most this long (the beacon's CAMP_LIFE)
+GuildMap.CAMP_LIFE   = 3600   -- a beacon's camp ("l") burns at most this long (the beacon's CAMP_LIFE)
 GuildMap.CAMP_QUIET  = 600    -- a camp not heard again this long is gone (the beat comes every 240 s)
 GuildMap.CAMP_GAP    = 2      -- one guildmate's camp lines, at most this often (more are dropped)
 GuildMap.CAMP_MAX    = 60     -- camps kept at most (one a guildmate)
 GuildMap.CAMP_BYTES  = 255    -- a line longer than one addon message is not a camp
+-- Warmth's limits (Core/Wire.lua): a line these break is one Warmth refuses too.
+GuildMap.CAMP_AGE_MAX  = 1440 -- minutes
+GuildMap.CAMP_COUNT    = 40   -- people in the circle
+GuildMap.CAMP_PEOPLE   = 9    -- people an announce names
+GuildMap.CAMP_OBJECTS  = { 3, 5, 10 }  -- objects a camp of each tier holds (Warmth's W.SLOTS)
+GuildMap.CAMP_NAME_MAX = 40
 
-GuildMap.camps = {}      -- [key] = { key, name, class, mapID, x, y, tier, lit, heard }
+GuildMap.camps = {}      -- [key] = { key, name, class, mapID, x, y, tier, lit, heard, life }
 
 -- The kit's tier (1..3, ChehulNet.CAMP_KITS) as its name.
 local function tierName(tier)
@@ -650,46 +661,60 @@ local function tierName(tier)
     return L["Basic"]
 end
 
--- A line split at "|", empty fields kept; nil past `cap` fields.
-local function splitBars(s, cap)
+-- A line split at "|" into at most `limit` fields, the last keeping the rest (as strsplit with a limit).
+local function splitBars(s, limit)
     local out, pos = {}, 1
-    while true do
+    while #out < limit - 1 do
         local i = s:find("|", pos, true)
-        out[#out + 1] = s:sub(pos, (i or 0) - 1)
-        if #out > cap then return nil end
-        if not i then return out end
+        if not i then break end
+        out[#out + 1] = s:sub(pos, i - 1)
         pos = i + 1
     end
+    out[#out + 1] = s:sub(pos)
+    return out
 end
 
--- A map fraction off the wire ("0.4523"), or nil.
-local function campCoord(s)
-    if type(s) ~= "string" or #s > 12 or not s:match("^%d*%.?%d+$") then return nil end
-    local v = GuildOS.Finite(s)
-    if not v or v < 0 or v > 1 then return nil end
-    return v
+-- A whole number off the wire in lo..hi, or nil.
+local function wireInt(s, lo, hi)
+    if type(s) ~= "string" or #s > 10 or not s:match("^%d+$") then return nil end
+    local n = tonumber(s)
+    return (n and n >= lo and n <= hi) and n or nil
 end
 
--- A camp's line (untrusted) as { mapID, x, y, tier, age } for an announce, { ended = true } for "C2|X", nil for
--- anything else (a join, an info line, a malformed one). The tier's letters after the digit are flags, and the
--- ones this client does not know are skipped. Who lit it is the envelope's sender, never the people field.
+-- A name as Warmth lets it travel.
+local function goodName(name, most)
+    return type(name) == "string" and #name >= 1 and #name <= most and not name:find("[|;~%c]")
+end
+
+-- A camp's line (untrusted) as { mapID, x, y, tier, age (seconds), family } for a named announce, { ended = true }
+-- for "C2|X", nil for anything else (a sighting, a join, an invite, a malformed line). The same checks as Warmth's
+-- Wire.Decode: the tier's flag letters (up to four, lowercase) are skipped but "l" (the beacon's); objects, people
+-- and the note are checked and not kept. Who lit it is the envelope's sender, never the people field.
 function GuildMap:DecodeCamp(s)
-    if type(s) ~= "string" or #s > self.CAMP_BYTES or s:find("[%c]") then return nil end
-    if s == "C2|X" or s:sub(1, 5) == "C2|X|" then return { ended = true } end
+    if type(s) ~= "string" or #s > self.CAMP_BYTES then return nil end   -- (a note may hold anything; it is not read)
+    if s == "C2|X" then return { ended = true } end
     if s:sub(1, 5) ~= "C2|A|" then return nil end
-    local f = splitBars(s, 16)
-    if not f or #f < 9 then return nil end
-    local mapID = f[3]:match("^%d+$") and #f[3] <= 7 and tonumber(f[3])
-    if not mapID or mapID <= 0 or mapID > 1000000 then return nil end
-    local x, y = campCoord(f[4]), campCoord(f[5])
-    if not x or not y or (x == 0 and y == 0) then return nil end
-    if not (f[6] == "" or (#f[6] <= 20 and f[6]:match("^%d+$"))) then return nil end
-    local tier, flags = f[7]:match("^([123])(%a*)$")
-    if not tier or #flags > 8 then return nil end
-    if not (f[8] == "" or (#f[8] <= 3 and f[8]:match("^%d+$"))) then return nil end
-    local age = #f[9] <= 6 and f[9]:match("^%d+$") and tonumber(f[9])
-    if not age or age >= self.CAMP_LIFE then return nil end
-    return { mapID = mapID, x = x, y = y, tier = tonumber(tier), age = age }
+    local f = splitBars(s, 12)
+    if #f < 12 then return nil end
+    local mapID = wireInt(f[3], 1, 99999)
+    local x, y = wireInt(f[4], 0, 10000), wireInt(f[5], 0, 10000)
+    local zuid = wireInt(f[6], 0, 2147483647)
+    local digit, flags = f[7]:match("^(%d)(%l?%l?%l?%l?)$")
+    local tier = wireInt(digit, 1, #self.CAMP_OBJECTS)
+    local n, age = wireInt(f[8], 0, self.CAMP_COUNT), wireInt(f[9], 0, self.CAMP_AGE_MAX)
+    if not (mapID and x and y and zuid and tier and n and age) or (x == 0 and y == 0) then return nil end
+    local objs = 0
+    for item in f[10]:gmatch("[^,]+") do
+        objs = objs + 1
+        if not wireInt(item, 1, 999) or objs > self.CAMP_OBJECTS[tier] then return nil end
+    end
+    local people = 0
+    for item in f[11]:gmatch("[^;]+") do
+        people = people + 1
+        if people > self.CAMP_PEOPLE or not goodName(item:match("^(.-)~%l$"), self.CAMP_NAME_MAX) then return nil end
+    end
+    return { mapID = mapID, x = x / 10000, y = y / 10000, tier = tier, age = age * 60,
+        family = flags:find("l", 1, true) ~= nil }
 end
 
 -- Whether the campfire layer is on here: WoW: Forever, and Warmth not loaded (it draws them itself).
@@ -724,15 +749,17 @@ function GuildMap:HandleCamp(sender, text, channel)
     end
     if not GuildOS.Compat.MapInfo(c.mapID) then return end
     self.camps[key] = { key = key, name = m.name or key:match("^([^-]+)") or key, class = m.class,
-        mapID = c.mapID, x = c.x, y = c.y, tier = c.tier, lit = t - c.age, heard = t }
+        mapID = c.mapID, x = c.x, y = c.y, tier = c.tier, lit = t - c.age, heard = t,
+        life = c.family and self.CAMP_LIFE or self.CAMP_AGE_MAX * 60 }
     self.stats.camps = (self.stats.camps or 0) + 1
     if self.uiRefresh then self.uiRefresh() end
 end
 
--- Drop the camps that burnt out (CAMP_LIFE since lit) or went quiet (CAMP_QUIET since heard).
+-- Drop the camps that burnt out (a beacon's CAMP_LIFE since lit, Warmth's own CAMP_AGE_MAX) or went quiet
+-- (CAMP_QUIET since heard).
 function GuildMap:_PruneCamps(t)
     for k, c in pairs(self.camps) do
-        if t - c.lit >= self.CAMP_LIFE or t - c.heard > self.CAMP_QUIET then self.camps[k] = nil end
+        if t - c.lit >= (c.life or self.CAMP_LIFE) or t - c.heard > self.CAMP_QUIET then self.camps[k] = nil end
     end
 end
 

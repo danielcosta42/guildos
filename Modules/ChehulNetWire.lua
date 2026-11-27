@@ -23,11 +23,12 @@ if CN.EnableAlerts then
     })
 end
 
--- ChehulNet v16: the campfire beacon (chehulnet#13), WoW: Forever only (the camp kits exist nowhere else). The lib
--- decides everything: nothing goes out before the player's yes, the question comes at the first fire they light
--- (never at login), and nothing at all with Warmth loaded. Guild OS keeps the answer (GuildOSDB.camps.consent) and
--- asks in its own window (GuildOS:ShowCampPrompt, UI/GuildMap.lua) through the popup queue; Settings › Profile ›
--- Privacy changes it later (CN:SetCampConsent).
+-- ChehulNet v17: the campfire beacon (chehulnet#13), WoW: Forever only (the camp kits exist nowhere else), on unless
+-- the player turned it off (default = true). The lib decides everything: the named announce goes to guild and group
+-- only, the realm bus gets an ownerless sighting (off by default on PvP rulesets), and nothing at all goes with
+-- Warmth loaded. At the first kit the player lights, once ever, one chat line says so and how to turn it off. Guild OS
+-- keeps the answers (GuildOSDB.camps: consent, realm, noticed); Settings › Profile › Privacy and /gos campfire change
+-- them (CN:SetCampConsent, CN:SetCampRealm).
 if CN.EnableCamps and GuildOS and GuildOS.Client and not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail then
     CN:EnableCamps({
         store = function()
@@ -35,8 +36,11 @@ if CN.EnableCamps and GuildOS and GuildOS.Client and not GuildOS.Client.isAnnive
             GuildOSDB.camps = GuildOSDB.camps or {}
             return GuildOSDB.camps
         end,
-        ask = function(callback)
-            if GuildOS.ShowCampPrompt then GuildOS:ShowCampPrompt(callback) end
+        default = true,
+        notice = function()
+            if GuildOS.Print then
+                GuildOS:Print(GuildOS.L["Your campfire shows on the map for guildmates and players with Warmth (anonymous outside your guild and group). To turn it off: /gos campfire off"])
+            end
         end,
     })
 end

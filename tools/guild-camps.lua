@@ -1,14 +1,17 @@
--- Guildmates' campfires (chehulnet AGENTS.md "ChehulCamp", ChehulNet v16; specs/salao/mapa.md "Fogueiras"), run
--- against the real Core/Core.lua, Core/Compat.lua, Core/Utils.lua, Modules/ChehulNet.lua (over a mesh that
--- records what it sends), Modules/ChehulNetWire.lua, Modules/Mesh.lua, Modules/GuildMap.lua and UI/GuildMap.lua,
--- with the real AceComm-3.0, under a stubbed WoW: Forever client; then the real UI/SettingsPanel.lua under the
--- Settings harness (tools/settings-panel.lua's frames), on Forever.
+-- Guildmates' campfires (chehulnet AGENTS.md "ChehulCamp", ChehulNet v17; specs/salao/mapa.md "Fogueiras"), run
+-- against the real Core/Core.lua, Core/Compat.lua, Core/Utils.lua, Core/Commands.lua, Modules/ChehulNet.lua (over a
+-- mesh that records what it sends), Modules/ChehulNetWire.lua, Modules/Mesh.lua, Modules/GuildMap.lua and
+-- UI/GuildMap.lua, with the real AceComm-3.0, under a stubbed WoW: Forever client; then the real UI/SettingsPanel.lua
+-- under the Settings harness (tools/settings-panel.lua's frames), on Forever and on Anniversary. With a Warmth
+-- checkout next to this one (../warmth, or WARMTH=<path>), every camp line also goes through Warmth's own
+-- Wire.Decode, and both must agree.
 --
--- What it holds: the wire turns the beacon on with a store and a question on Forever only; the question comes once,
--- at the first kit lit, through the popup queue, and its answer reaches the lib (nothing sent before a yes, the
--- announce after one; with Warmth loaded nothing asked, nothing sent); the settings toggle; a camp line's decoding,
--- valid and not; only GUILD, only a guildmate on the roster; the end, the burn-out and the quiet; the flame on the
--- map, its tooltip and its waypoint; the layer off with Warmth and off Forever; the member window's addon labels.
+-- What it holds: the wire turns the beacon on, opt-out, with a store and a one-line notice, on Forever only; the
+-- notice comes once, at the first kit lit, and the announce goes out (named on guild, ownerless on the realm); a no
+-- stops it; with Warmth loaded nothing is sent; /gos campfire; the settings toggles; a camp line's decoding in
+-- Warmth's real format, valid and not; only GUILD, only a guildmate on the roster, never a sighting; the end, the
+-- burn-out and the quiet; the flame on the map, its tooltip and its waypoint; the layer off with Warmth and off
+-- Forever; the member window's addon labels.
 --
 --   luajit -e 'ADDON="."' tools/guild-camps.lua
 --
@@ -231,9 +234,16 @@ dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 check(GuildOS.Client.game == "FOREVER", "the stub is WoW: Forever")
+local printed = {}
+function GuildOS:Print(msg) printed[#printed + 1] = tostring(msg) end
+local function saidSince(from, text)
+  for k = from + 1, #printed do if printed[k]:find(text, 1, true) then return true end end
+  return false
+end
 dofile(ADDON .. "/Modules/ChehulNet.lua")
 local CN = _G.ChehulNet
-check(CN and CN.EnableCamps and CN.SetCampConsent and CN.CampState, "ChehulNet v16's beacon is there")
+check(CN and CN.version >= 17 and CN.EnableCamps and CN.SetCampConsent and CN.SetCampRealm and CN.CampRealmOn,
+  "ChehulNet v17's beacon is there")
 
 -- The wire, watched: what it hands EnableCamps.
 local realEnable, enabled = CN.EnableCamps, {}
@@ -308,14 +318,20 @@ function Minimap:GetZoom() return 2 end
 function IsIndoors() return false end
 function GetCVar() return "0" end
 dofile(ADDON .. "/UI/GuildMap.lua")
+function strtrim(t) return (tostring(t):gsub("^%s+", ""):gsub("%s+$", "")) end
+SlashCmdList = {}
+dofile(ADDON .. "/Core/Commands.lua")
+local function slash(text) SlashCmdList.GUILDOS(text) end
 
--- ── 1. The wire: EnableCamps with a store and a question, on Forever only ─
+-- ── 1. The wire: EnableCamps, opt-out, with a store and a notice, on Forever only ─
 check(#enabled == 1, "the wire turns the beacon on once on Forever")
-check(type(enabled[1].store) == "function" and type(enabled[1].ask) == "function", "with a store and a question")
+check(type(enabled[1].store) == "function" and enabled[1].default == true and type(enabled[1].notice) == "function",
+  "with a store, default = true and a notice")
+check(enabled[1].ask == nil, "and no question")
 local store = enabled[1].store()
 check(type(store) == "table" and store == GuildOSDB.camps, "the store is GuildOSDB.camps")
 check(enabled[1].store() == store, "the same table each time")
-check(CN:CampState() == "nil", "nobody asked yet: no answer")
+check(CN:CampState() == "default", "nobody chose: on by default")
 
 -- Elsewhere the wire never calls it (a spy that does not reach the lib).
 for _, which in ipairs({ "isAnniversary", "isRetail" }) do
@@ -329,84 +345,144 @@ for _, which in ipairs({ "isAnniversary", "isRetail" }) do
   check(calls == 0, "no beacon when " .. which)
 end
 
--- ── 2. The question: once, at the first kit, through the popup queue ────
+-- ── 2. The first kit: one chat line, once ever, and the announce ───────
+local NOTICE = "Your campfire shows on the map for guildmates and players with Warmth (anonymous outside your guild and group). To turn it off: /gos campfire off"
 local castFrame = CN.campFrame
 check(castFrame and castFrame.events.UNIT_SPELLCAST_SUCCEEDED, "the lib listens for the kit's cast")
 local function cast(spell) castFrame.scripts.OnEvent(castFrame, "UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-1", spell) end
 advance(120)
-check(#floats == 0 and campsSent() == 0, "nothing asked at login, nothing sent")
+check(campsSent() == 0 and not saidSince(0, NOTICE), "nothing said at login, nothing sent")
+local p0 = #printed
 cast(1279961)   -- a Journeyman kit
-local prompt = _G.GuildOSCampPrompt
-check(prompt and prompt:IsShown(), "the first fire asks, in Guild OS's own window")
-check(GuildOS._popupQueue.currentKey == "campconsent", "through GuildOS:ShowWhenClear")
-check(prompt.text.text:find("Let the network know when you light a campfire?", 1, true)
-  and prompt.text.text:find("Only the campfire and your name", 1, true), "with the question's text")
-check(prompt.yesBtn.label.text == "Yes" and prompt.noBtn.label.text == "No", "a yes and a no")
-advance(10)
-check(campsSent() == 0, "nothing goes out before the answer")
-cast(1279961)
-check(#floats == 1, "asked once: one window")
-prompt.yesBtn.scripts.OnClick(prompt.yesBtn)
-check(not prompt:IsShown() and store.consent == true, "a yes is kept")
-check(CN:CampState() == "on", "and the lib reads it")
+check(saidSince(p0, NOTICE), "the first fire says so in one chat line")
+check(store.noticed == true, "once ever (kept in the store)")
+check(_G.GuildOSCampPrompt == nil, "and no window asks anything")
 advance(2)
-check(campsSent("A") == 1, "and the fire lit is announced")
+check(campsSent("A") == 1, "the fire lit is announced on GUILD")
 local announce
-for _, s in ipairs(meshSent) do if s.bus == "GUILD" and s.prefix == "ChehulCamp" then announce = s.msg end end
-check(announce and announce:find("^C2|A|1429|0%.4000|0%.6000|%d+|2l|1|%d+||Me~c|$"), "in Warmth's format: " .. tostring(announce))
+for _, m in ipairs(meshSent) do if m.bus == "GUILD" and m.prefix == "ChehulCamp" then announce = m.msg end end
+check(announce and announce:find("^C2|A|1429|4000|6000|%d+|2l|1|0||Me~h|$"), "in Warmth's format: " .. tostring(announce))
 local decoded = GM:DecodeCamp(announce)
-check(decoded and decoded.mapID == 1429 and decoded.tier == 2 and near(decoded.x, 0.4), "which this client reads back")
+check(decoded and decoded.mapID == 1429 and decoded.tier == 2 and near(decoded.x, 0.4) and near(decoded.y, 0.6),
+  "which this client reads back")
+local realmLine
+for _, m in ipairs(meshSent) do if m.bus == "REALM" then realmLine = m.msg end end
+check(realmLine and realmLine:find("^C2|S|1429|4000|6000|%d+|2l$") and not realmLine:find("Me", 1, true),
+  "the realm gets an ownerless sighting: " .. tostring(realmLine))
+check(GM:DecodeCamp(realmLine) == nil, "which the guild map does not draw")
+p0 = #printed
+cast(1279961)
+advance(2)
+check(not saidSince(p0, NOTICE), "the notice never comes twice")
 
--- ── 3. The settings' answer (also tested on the panel in part 9) and Warmth ─
-CN:SetCampConsent(false)
-check(store.consent == false and CN:CampState() == "off", "a no from the settings is kept")
-check(campsSent("X") == 1, "and ends the camp running")
-CN:SetCampConsent(true)
+-- ── 3. /gos campfire, and Warmth ────────────────────────────────────────
+local x0 = campsSent("X")
+p0 = #printed
+slash("campfire off")
+check(store.consent == false and CN:CampState() == "off", "/gos campfire off keeps a no")
+check(campsSent("X") == x0 + 1, "and ends the camp running")
+check(saidSince(p0, "Campfire announce: off."), "and says so")
+local s0 = campsSent()
+cast(1279981); advance(30)
+check(campsSent() == s0, "off: a fire lit sends nothing")
+slash("campfire on")
+check(store.consent == true and CN:CampState() == "on", "/gos campfire on")
+slash("campfire realm off")
+check(store.realm == false and not CN:CampRealmOn(), "/gos campfire realm off")
+local r0 = 0
+for _, m in ipairs(meshSent) do if m.bus == "REALM" then r0 = r0 + 1 end end
+cast(1279974); advance(2)
+local r1 = 0
+for _, m in ipairs(meshSent) do if m.bus == "REALM" then r1 = r1 + 1 end end
+check(r1 == r0 and campsSent("A") > 1, "realm off: guild still hears it, the realm does not")
+p0 = #printed
+slash("Campfire Realm On")
+check(store.realm == true and CN:CampRealmOn(), "/gos campfire realm on, in any case")
+check(saidSince(p0, "Whole realm, without your name: on."), "and says so")
+p0 = #printed
+slash("campfire status")
+check(saidSince(p0, "Campfire announce: on (guild and group).") and saidSince(p0, "Whole realm, without your name: on."),
+  "/gos campfire status")
+p0 = #printed
+slash("campfire maybe")
+check(saidSince(p0, "Usage: /gos campfire"), "an unknown word prints the usage")
+GuildOS.Client.isAnniversary = true
+p0 = #printed
+slash("campfire off")
+check(saidSince(p0, "Not available on this client.") and store.consent == true, "off Forever the command does nothing")
+GuildOS.Client.isAnniversary = false
 local before = campsSent()
 warmth = true
 cast(1279974)
 advance(10)
 check(campsSent() == before, "with Warmth loaded nothing is announced")
-store.consent = nil
-CN.camp.asked = nil
-local nFloats = #floats
-local promptWasShown = prompt:IsShown()
-cast(1279974)
-advance(10)
-check(#floats == nFloats and prompt:IsShown() == promptWasShown and not prompt:IsShown(), "nor asked")
+slash("campfire status")
+check(printed[#printed]:find("Warmth is loaded", 1, true), "and the status says Warmth announces itself")
 warmth = false
--- A no in the window: the callback gets false.
-store.consent = nil
-CN.camp.asked = nil
-cast(1279981)
-check(prompt:IsShown(), "asked again in a new session with no answer")
-prompt.noBtn.scripts.OnClick(prompt.noBtn)
-check(store.consent == false, "a no is passed on and kept")
-local s0 = campsSent()
-advance(30)
-check(campsSent() == s0, "and nothing goes out")
 
--- ── 4. A camp line, decoded ─────────────────────────────────────────────
-local good = "C2|A|1429|0.4523|0.7001|9001|3l|1|42||Ann~c|"
-local c = GM:DecodeCamp(good)
-check(c and c.mapID == 1429 and near(c.x, 0.4523) and near(c.y, 0.7001) and c.tier == 3 and c.age == 42,
+-- ── 4. A camp line, decoded (Warmth's real format) ──────────────────────
+local BEACON = "C2|A|1429|4000|6000|0|1l|1|0||Chehul Costa~h|"
+local WARMTH = "C2|A|1429|4523|7001|90017|3v|4|75|1,2,5|Ann~f;Bob Rocha~b;Cid~j|bring wood, all welcome"
+local c = GM:DecodeCamp(BEACON)
+check(c and c.mapID == 1429 and near(c.x, 0.4) and near(c.y, 0.6) and c.tier == 1 and c.age == 0 and c.family,
   "the beacon's announce")
-c = GM:DecodeCamp("C2|A|1429|0.5|0.5|0|1|3|600|bench,tent|Ann~c,Bob|warm here")
-check(c and c.tier == 1, "Warmth's own, with objects, people and a note")
-check(GM:DecodeCamp("C2|A|1429|0.5|0.5|0|2lqz|1|5||A~c|").tier == 2, "unknown letters after the tier are skipped")
+c = GM:DecodeCamp(WARMTH)
+check(c and c.tier == 3 and near(c.x, 0.4523) and c.age == 75 * 60 and not c.family,
+  "Warmth's own, with objects, several people and a note (age in minutes)")
+check(GM:DecodeCamp("C2|A|1429|5000|5000|0|2lqz|1|5||A~c|").tier == 2, "unknown flag letters are skipped")
 check(GM:DecodeCamp("C2|X").ended, "the end")
+local good = "C2|A|1429|4523|7001|9001|3l|1|1||Ann~f|"
 local bad = {
-  "", "C2", "C2|A", "C2|J|x", "C2|I|1", "C1|A|1429|0.5|0.5|0|1|1|5||A~c|",
-  "C2|A|0|0.5|0.5|0|1|1|5||A~c|", "C2|A|-5|0.5|0.5|0|1|1|5||A~c|", "C2|A|99999999|0.5|0.5|0|1|1|5||A~c|",
-  "C2|A|1429|1.5|0.5|0|1|1|5||A~c|", "C2|A|1429|nan|0.5|0|1|1|5||A~c|", "C2|A|1429|inf|0.5|0|1|1|5||A~c|",
-  "C2|A|1429|0|0|0|1|1|5||A~c|", "C2|A|1429|0.5|0.5|x|1|1|5||A~c|", "C2|A|1429|0.5|0.5|0|4|1|5||A~c|",
-  "C2|A|1429|0.5|0.5|0|0|1|5||A~c|", "C2|A|1429|0.5|0.5|0|l|1|5||A~c|", "C2|A|1429|0.5|0.5|0|1|1|-5||A~c|",
-  "C2|A|1429|0.5|0.5|0|1|1|3600||A~c|", "C2|A|1429|0.5|0.5|0|1|1|5||A~c|" .. string.rep("x", 260),
-  "C2|A|1429|0.5|0.5|0|1|1|5||A~c|\n", "C2|A|1429|0.5|0.5|0|1|1|5" .. string.rep("|", 20),
-  "C2|A|1429|1e-1|0.5|0|1|1|5||A~c|", "C2|A|1429|0.5|0.5|0|1|1|",
+  "", "C2", "C2|A", "C2|X|1", "C2|J|Ann|f|0", "C2|I|Ann", "C2|T|Ann", "C2|E|1,2|3",
+  "C2|S|1429|5000|5000|0|1l", "C2|V|123|1429|5000|5000|4,5|Bob",
+  "C1|A|1429|5000|5000|0|1|1|5||A~c|",
+  "C2|A|0|5000|5000|0|1|1|5||A~c|", "C2|A|-5|5000|5000|0|1|1|5||A~c|", "C2|A|100000|5000|5000|0|1|1|5||A~c|",
+  "C2|A|1429|10001|5000|0|1|1|5||A~c|", "C2|A|1429|0.5|0.5|0|1|1|5||A~c|", "C2|A|1429|nan|5000|0|1|1|5||A~c|",
+  "C2|A|1429|0|0|0|1|1|5||A~c|", "C2|A|1429|5000|5000|x|1|1|5||A~c|", "C2|A|1429|5000|5000|0|4|1|5||A~c|",
+  "C2|A|1429|5000|5000|0|0|1|5||A~c|", "C2|A|1429|5000|5000|0|l|1|5||A~c|", "C2|A|1429|5000|5000|0|1L|1|5||A~c|",
+  "C2|A|1429|5000|5000|0|1abcde|1|5||A~c|", "C2|A|1429|5000|5000|0|1|41|5||A~c|",
+  "C2|A|1429|5000|5000|0|1|1|-5||A~c|", "C2|A|1429|5000|5000|0|1|1|1441||A~c|",
+  "C2|A|1429|5000|5000|0|1|1|5|1,2,3,4|A~c|", "C2|A|1429|5000|5000|0|1|1|5|x|A~c|",
+  "C2|A|1429|5000|5000|0|1|1|5||A|", "C2|A|1429|5000|5000|0|1|1|5||A~C|", "C2|A|1429|5000|5000|0|1|1|5||~c|",
+  "C2|A|1429|5000|5000|0|1|1|5||" .. string.rep("a", 41) .. "~c|",
+  "C2|A|1429|5000|5000|0|1|1|5||a~b;b~b;c~b;d~b;e~b;f~b;g~b;h~b;i~b;j~b|",
+  "C2|A|1429|5000|5000|0|1|1|5||A~c|" .. string.rep("x", 260),
+  "C2|A|1429|5000|5000|0|1|1|5||A\n~c|", "C2|A|1429\n|5000|5000|0|1|1|5||A~c|", "C2|A|1429|5000|5000|0|1|1|5||A~c", "C2|A|1429|5000|5000|0|1|1|5",
 }
 for _, b in ipairs(bad) do check(GM:DecodeCamp(b) == nil, "refused: " .. b:sub(1, 60)) end
 check(GM:DecodeCamp(nil) == nil and GM:DecodeCamp(42) == nil, "not a string")
+
+-- Warmth's own decoder agrees, when a checkout of it is at hand.
+local WARMTH_DIR = os.getenv("WARMTH") or (ADDON .. "/../warmth")
+local wf = io.open(WARMTH_DIR .. "/Core/Wire.lua")
+if wf then
+  wf:close()
+  local W = {}
+  assert(loadfile(WARMTH_DIR .. "/Core/Data.lua"))("Warmth", W)
+  assert(loadfile(WARMTH_DIR .. "/Core/Wire.lua"))("Warmth", W)
+  local function agree(line)
+    local mine, theirs = GM:DecodeCamp(line), W.Wire.Decode(line)
+    if theirs and theirs.kind == "X" then return mine ~= nil and mine.ended == true end
+    if not theirs or theirs.kind ~= "A" then return mine == nil end
+    return mine ~= nil and mine.mapID == theirs.map and near(mine.x, theirs.x) and near(mine.y, theirs.y)
+      and mine.tier == theirs.tier and mine.age == theirs.age * 60 and (mine.family == (theirs.family == true))
+  end
+  for _, line in ipairs({ BEACON, WARMTH, good, announce, "C2|X", "C2|A|1429|5000|5000|0|2lqz|1|5||A~c|",
+                         "C2|A|1429|5000|5000|0|1|1|5||A~c|a note\nwith a break" }) do
+    check(W.Wire.Decode(line), "Warmth reads it too: " .. line:sub(1, 50))
+    check(agree(line), "and both read the same: " .. line:sub(1, 50))
+  end
+  for _, b in ipairs(bad) do
+    if not b:find("^C2|A|1429|0|0|") then check(agree(b), "both refuse, or Warmth's is not an announce: " .. string.format("%q", b:sub(1, 70))) end
+  end
+  check(W.Wire.Decode(W.Wire.Announce({ map = 1436, x = 0.35, y = 0.8, zuid = 0, tier = 2, n = 2, age = 3,
+    objs = { 1 }, people = { { name = "Bob", class = 1 } }, note = "hi" })), "(Warmth's own builder)")
+  local built = W.Wire.Announce({ map = 1436, x = 0.35, y = 0.8, zuid = 0, tier = 2, n = 2, age = 3,
+    objs = { 1 }, people = { { name = "Bob", class = 1 } }, note = "hi" })
+  check(agree(built), "a line Warmth builds is read here as Warmth reads it: " .. tostring(built))
+else
+  print("guild-camps: no Warmth checkout at " .. WARMTH_DIR .. "; Wire.Decode cross-checks skipped")
+end
 
 -- ── 5. What arrives: GUILD only, a guildmate on the roster only ─────────
 check(registeredPrefixes.ChehulCamp, "the prefix is registered")
@@ -420,22 +496,24 @@ GM.uiRefresh = function() refreshed = refreshed + 1 end
 hear(good, "GUILD", "Ann-Realm")
 check(GM.camps["Ann-Realm"] and GM.camps["Ann-Realm"].tier == 3, "a guildmate's camp over GUILD, through AceComm")
 check(refreshed > 0, "and the map redraws")
-check(near(GM.camps["Ann-Realm"].lit, clock - 42), "lit when its age says")
+check(near(GM.camps["Ann-Realm"].lit, clock - 60), "lit when its age (in minutes) says")
 for _, ch in ipairs({ "PARTY", "RAID", "WHISPER", "CHANNEL", "YELL", "SAY" }) do
-  hear("C2|A|1436|0.5|0.5|0|1|1|5||Bob~c|", ch, "Bob-Realm")
+  hear("C2|A|1436|5000|5000|0|1|1|5||Bob~c|", ch, "Bob-Realm")
 end
 check(GM.camps["Bob-Realm"] == nil, "nothing that did not come over GUILD")
-hear("C2|A|1436|0.5|0.5|0|1|1|5||Zed~c|", "GUILD", "Zed-Realm")
+hear("C2|A|1436|5000|5000|0|1|1|5||Zed~c|", "GUILD", "Zed-Realm")
 check(GM.camps["Zed-Realm"] == nil, "nobody off the guild's roster")
-hear("C2|A|1436|0.5|0.5|0|1|1|5||Me~c|", "GUILD", "Me-Realm")
+hear("C2|A|1436|5000|5000|0|1|1|5||Me~c|", "GUILD", "Me-Realm")
 check(GM.camps["Me-Realm"] == nil, "not this client's own fire")
-hear("C2|A|7777|0.5|0.5|0|1|1|5||Bob~c|", "GUILD", "Bob-Realm")
+hear("C2|A|7777|5000|5000|0|1|1|5||Bob~c|", "GUILD", "Bob-Realm")
 check(GM.camps["Bob-Realm"] == nil, "not on a map this client does not know")
 hear("garbage", "GUILD", "Bob-Realm")
 check(GM.camps["Bob-Realm"] == nil, "nor a malformed line")
-hear("C2|A|1436|0.35|0.80|0|1|1|5||Bob~c|", "GUILD", "Bob-Realm")
+hear("C2|S|1436|3500|8000|0|1l", "GUILD", "Bob-Realm")
+check(GM.camps["Bob-Realm"] == nil, "nor a sighting (S): the guild map draws named camps only")
+hear("C2|A|1436|3500|8000|0|1|1|5||Bob~c|", "GUILD", "Bob-Realm")
 check(GM.camps["Bob-Realm"] and GM.camps["Bob-Realm"].mapID == 1436, "Bob's camp in Westfall")
-hear("C2|A|1436|0.36|0.80|0|1|1|5||Bob~c|", "GUILD", "Bob-Realm")
+hear("C2|A|1436|3600|8000|0|1|1|5||Bob~c|", "GUILD", "Bob-Realm")
 check(near(GM.camps["Bob-Realm"].x, 0.35), "a second line within CAMP_GAP is dropped")
 
 -- ── 6. The end, the quiet, the burn-out ─────────────────────────────────
@@ -448,20 +526,23 @@ advance(GM.CAMP_QUIET - 1); GM:Tick()
 check(GM.camps["Ann-Realm"], "a camp stays CAMP_QUIET without a beat")
 advance(2); GM:Tick()
 check(GM.camps["Ann-Realm"] == nil, "and goes after it")
-hear("C2|A|1429|0.45|0.75|0|1l|1|3000||Ann~c|", "GUILD", "Ann-Realm")
+hear("C2|A|1429|4500|7500|0|1l|1|50||Ann~c|", "GUILD", "Ann-Realm")
 for i = 1, 4 do
   advance(240)
   if 3000 + 240 * i < GM.CAMP_LIFE then
-    hear("C2|A|1429|0.45|0.75|0|1l|1|" .. (3000 + 240 * i) .. "||Ann~c|", "GUILD", "Ann-Realm")
+    hear("C2|A|1429|4500|7500|0|1l|1|" .. math.floor((3000 + 240 * i) / 60) .. "||Ann~c|", "GUILD", "Ann-Realm")
     check(GM.camps["Ann-Realm"], "a beat keeps it (" .. i .. ")")
   end
   GM:Tick()
 end
-check(GM.camps["Ann-Realm"] == nil, "a camp burns out CAMP_LIFE after it was lit, beats or not")
-hear("C2|A|1429|0.45|0.75|0|1l|1|10||Ann~c|", "GUILD", "Ann-Realm")
+check(GM.camps["Ann-Realm"] == nil, "a beacon's camp burns out CAMP_LIFE after it was lit, beats or not")
+hear("C2|A|1429|4500|7500|0|1|1|70||Ann~c|", "GUILD", "Ann-Realm")
+check(GM.camps["Ann-Realm"], "Warmth's own camp may be older (it lasts while it beats)")
+advance(GM.CAMP_GAP); hear("C2|X", "GUILD", "Ann-Realm")
+hear("C2|A|1429|4500|7500|0|1l|1|0||Ann~c|", "GUILD", "Ann-Realm")
 check(GM.camps["Ann-Realm"], "a new fire")
 GM.CAMP_MAX = 1
-hear("C2|A|1436|0.35|0.80|0|1|1|5||Bob~c|", "GUILD", "Bob-Realm")
+hear("C2|A|1436|3500|8000|0|1|1|5||Bob~c|", "GUILD", "Bob-Realm")
 check(GM.camps["Bob-Realm"] == nil, "no more than CAMP_MAX camps kept")
 GM.CAMP_MAX = 60
 
@@ -492,7 +573,7 @@ for _, f in ipairs(frames) do if f.foot and f.head and f.rows then list = f end 
 check(list and list.foot.text:find("Install Warmth to see the circle and build your own", 1, true),
   "the list's foot points to Warmth")
 -- Journeyman and Expert read in the tooltip too.
-hear("C2|A|1429|0.42|0.72|0|3|1|10||x~c|", "GUILD", "Bob-Realm")
+hear("C2|A|1429|4200|7200|0|3|1|10||x~c|", "GUILD", "Bob-Realm")
 local cs = GM:GetCamps()
 check(#cs == 2 and GM:CampText(cs[2]) == "Bob lit a campfire in Elwynn Forest · Expert level",
   "an Expert kit; the name from the roster, never the payload")
@@ -502,7 +583,7 @@ warmth = true
 layer.scripts.OnUpdate(layer, 1)
 check(not flame:IsShown(), "with Warmth loaded the flames go (Warmth draws them)")
 check(not list.foot.text:find("Install Warmth", 1, true), "and the foot says nothing of it")
-hear("C2|A|1436|0.35|0.80|0|1|1|5||Bob~c|", "GUILD", "Bob-Realm")
+hear("C2|A|1436|3500|8000|0|1|1|5||Bob~c|", "GUILD", "Bob-Realm")
 check(#GM:GetCamps() == 0, "nothing is listed for the layer")
 warmth = false
 layer.scripts.OnUpdate(layer, 1)
@@ -542,10 +623,15 @@ local n
 src, n = src:gsub('function GetBuildInfo%(%) return "2%.5%.6", "60000", "", 20506 end\nWOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 5',
   'function GetBuildInfo() return "1.60.1", "70888", "", 16001 end\nWOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = nil, 1')
 check(n == 1, "the harness's client line is found (Forever swapped in)")
-local consentCalls = {}
-local state = "nil"
-_G.ChehulNet = { SetCampConsent = function(_, yes) consentCalls[#consentCalls + 1] = yes; state = yes and "on" or "off" end,
-                 CampState = function() return state end }
+local consentCalls, realmCalls = {}, {}
+local state, realmOn, pvp = "default", true, false
+_G.ChehulNet = {
+  SetCampConsent = function(_, yes) consentCalls[#consentCalls + 1] = yes; state = yes and "on" or "off" end,
+  CampState = function() return state end,
+  SetCampRealm = function(_, yes) realmCalls[#realmCalls + 1] = yes; realmOn = yes end,
+  CampRealmOn = function() return realmOn end,
+  IsPvPRealm = function() return pvp end,
+}
 local harness = assert(loadstring(src, "settings-panel harness"))
 -- The harness's own locals (check, walk, find) are out of reach: the page is walked here.
 harness()
@@ -557,18 +643,42 @@ local function findCheck(root, label)
   end)
   return hit
 end
+local function shows(root, text)
+  local seen = false
+  walk(root, function(f) if f.kind == "FontString" and f:IsVisible() and f.text == text then seen = true end end)
+  return seen
+end
 check(GuildOS.Client.game == "FOREVER", "the Settings harness runs as WoW: Forever")
 local parent = CreateFrame("Frame", nil, UIParent)
 parent:SetSize(960, 560)
 GuildOS:CreateSettingsPanel(parent)
 parent.SelectSub("profile")
-local box = findCheck(parent, "Announce my campfires to the network")
+local box = findCheck(parent, "Announce my campfires")
 check(box, "Settings › Profile › Privacy has the campfire toggle on Forever")
-check(not box.checkbox:GetChecked(), "unticked while nobody said yes")
-box.checkbox.onChanged(box.checkbox, true)
-check(consentCalls[1] == true and box.checkbox:GetChecked(), "ticking it calls SetCampConsent(true), and it reads on")
+check(box.checkbox:GetChecked(), "ticked while nobody chose (on by default)")
+local realmBox = findCheck(parent, "Also to the whole realm, without my name")
+check(realmBox and realmBox.checkbox:GetChecked(), "and the realm toggle under it, ticked where the realm allows it")
+check(shows(parent, "Off by default on PvP realms."), "its hint: off by default on PvP realms")
 box.checkbox.onChanged(box.checkbox, false)
-check(consentCalls[2] == false and not box.checkbox:GetChecked(), "unticking it calls SetCampConsent(false)")
+check(consentCalls[1] == false and not box.checkbox:GetChecked(), "unticking it calls SetCampConsent(false)")
+check(not realmBox.checkbox:IsEnabled(), "and greys the realm toggle out")
+box.checkbox.onChanged(box.checkbox, true)
+check(consentCalls[2] == true and box.checkbox:GetChecked() and realmBox.checkbox:IsEnabled(),
+  "ticking it calls SetCampConsent(true)")
+realmBox.checkbox.onChanged(realmBox.checkbox, false)
+check(realmCalls[1] == false and not realmBox.checkbox:GetChecked(), "the realm toggle calls SetCampRealm(false)")
+realmBox.checkbox.onChanged(realmBox.checkbox, true)
+check(realmCalls[2] == true and realmBox.checkbox:GetChecked(), "and SetCampRealm(true)")
+-- On a PvP realm the hint says this realm is one.
+pvp, realmOn = true, false
+assert(loadstring(src, "settings-panel harness (PvP)"))()
+parent = CreateFrame("Frame", nil, UIParent)
+parent:SetSize(960, 560)
+GuildOS:CreateSettingsPanel(parent)
+parent.SelectSub("profile")
+realmBox = findCheck(parent, "Also to the whole realm, without my name")
+check(realmBox and not realmBox.checkbox:GetChecked(), "a PvP realm: the realm toggle unticked by default")
+check(shows(parent, "Off by default on PvP realms, like this one."), "and its hint says this realm is one")
 
 -- The harness's own client (TBC Anniversary): no toggle.
 assert(loadstring(anniversarySrc, "settings-panel harness (Anniversary)"))()
@@ -578,6 +688,7 @@ parent:SetSize(960, 560)
 GuildOS:CreateSettingsPanel(parent)
 parent.SelectSub("profile")
 check(findCheck(parent, "Show login digest"), "(the Profile page is built)")
-check(findCheck(parent, "Announce my campfires to the network") == nil, "and no campfire toggle off Forever")
+check(findCheck(parent, "Announce my campfires") == nil and findCheck(parent, "Also to the whole realm, without my name") == nil,
+  "and no campfire toggles off Forever")
 
 print(string.format("guild-camps: %d checks passed (%d map and beacon, %d settings)", checks, mapChecks, checks - mapChecks))

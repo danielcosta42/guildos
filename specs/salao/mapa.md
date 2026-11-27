@@ -112,30 +112,40 @@ zona, pelo roster.
   aviso das versões de teste (janela única por personagem, linha na lista e `GuildOSDB.openMapNotice`) saiu; o
   `GuildOSDB.openMapNotice` antigo é apagado ao carregar.
 
-## Fogueiras da guilda (WoW: Forever; ChehulNet v16)
+## Fogueiras da guilda (WoW: Forever; ChehulNet v17)
 
-O Warmth (o addon de fogueiras da família) e o **farol** do ChehulNet v16 (`CN:EnableCamps`, chehulnet#13)
-anunciam no prefixo `ChehulCamp` a fogueira que o jogador acende: `C2|A|mapa|x|y|zuid|tier(+letras)|n|idade|
-objetos|pessoas|nota` (o farol manda `C2|A|mapa|x|y|zuid|<tier>l|1|idade||Nome~c|`), de novo a cada 240 s
-enquanto perto, e `C2|X` quando acaba. Contrato completo em `chehulnet/AGENTS.md` (seção 2 e a tabela de prefixos).
+O Warmth (o addon de fogueiras da família) e o **farol** do ChehulNet v17 (`CN:EnableCamps`, chehulnet#13)
+anunciam no prefixo `ChehulCamp`, no formato do Warmth (`Core/Wire.lua`, versão C2), a fogueira que o jogador acende.
+Contrato completo em `chehulnet/AGENTS.md` (seção 2 e a tabela de prefixos).
 
-- **Farol (gerar):** `Modules/ChehulNetWire.lua` chama `ChehulNet:EnableCamps{ store, ask }` só no WoW: Forever
-  (nem Anniversary nem retail: os kits de acampamento não existem lá). `store` é `GuildOSDB.camps` (`consent` =
-  true/false/nil). A lib decide tudo: nada sai sem o sim; a pergunta vem na **primeira fogueira acesa** (nunca no
-  login), no máximo uma vez por sessão; com o Warmth carregado, nem pergunta nem anuncia. `ask` abre a janela do
-  kit `GuildOS:ShowCampPrompt` (UI/GuildMap.lua) pela fila de popups (`ShowWhenClear`, chave `campconsent`): "Avisar
-  a rede quando você acender uma fogueira? Outros jogadores veem a fogueira no mapa (com o Warmth). Só a fogueira e
-  o seu nome; dá para mudar nas configurações." Sim/Não chamam `callback(true/false)`; fechar no X não responde (a
-  lib pergunta na próxima sessão). Configurações › Perfil › Privacidade: **"Anunciar minhas fogueiras na rede"**
-  (só no Forever), lida de `CN:CampState()` e gravada por `CN:SetCampConsent(sim)`.
+- **Farol (gerar), opt-out:** `Modules/ChehulNetWire.lua` chama `ChehulNet:EnableCamps{ store, default = true,
+  notice }` só no WoW: Forever (nem Anniversary nem retail: os kits de acampamento não existem lá). `store` é
+  `GuildOSDB.camps` (`consent`, `realm`, `noticed`). Sem escolha conta como sim; não há janela de pergunta. Na
+  primeira fogueira acesa (nunca no login), uma vez na vida, `notice` põe uma linha no chat: "Sua fogueira aparece no
+  mapa para os colegas de guilda e para quem usa o Warmth (anônima fora da sua guilda e do seu grupo). Para
+  desligar: /gos campfire off". A lib decide o resto: o anúncio **com nome** (`C2|A|mapa|x|y|zuid|<tier>l|1|idade||
+  Nome~<classe>|`, e `C2|X` no fim) vai só para guilda e grupo; o realm recebe o avistamento **sem dono**
+  (`C2|S|mapa|x|y|zuid|<tier>l`), que em reino PvP/RPPvP só vai com `realm = true`; um `consent = false` em qualquer
+  store vence; com o Warmth carregado nada sai.
+- **Configurações › Perfil › Privacidade** (só no Forever): **"Anunciar minhas fogueiras"** (marcado com
+  `CN:CampState()` "on" ou "default"; grava `CN:SetCampConsent`) e, abaixo, **"Também para todo o reino, sem o meu
+  nome"** (marcado com `CN:CampRealmOn()`; grava `CN:SetCampRealm`; cinza com a primeira desmarcada), com a dica
+  "Desligado por padrão em reinos JxJ." (", como este." quando `CN:IsPvPRealm()`).
+- **Comando:** `/gos campfire [on | off | realm on | realm off | status]` (Core/Commands.lua), o mesmo que as duas
+  caixas; responde com o estado ("Anúncio de fogueira: ligado (guilda e grupo)." / "Todo o reino, sem o seu nome:
+  …", e avisa quando o Warmth está carregado). Fora do Forever: "Não disponível neste cliente."
 - **Mapa (mostrar):** `GuildMap` escuta `ChehulCamp` com a **sua própria rota AceComm** (`RegisterComm` num objeto
   próprio; o evento cru se faltar AceComm). Nunca `Mesh:Register`: isso tiraria do mesh o handler do prefixo, que
   repassa as fogueiras do Warmth. Só no Forever, só **GUILD**, só de quem está no roster (nunca a própria), quem
-  acendeu é o remetente do envelope (o campo de pessoas não é lido). Cada campo é validado (`DecodeCamp`): mapa
-  1..1000000 e conhecido, x/y em 0..1, zuid só dígitos, tier 1/2/3 = Básico/Artesão/Especialista com letras
-  desconhecidas ignoradas, idade < 60 min, linha até 255 bytes e 16 campos. No máximo uma linha por membro a cada
-  2 s (`CAMP_GAP`) e 60 fogueiras (`CAMP_MAX`). Some no `C2|X` (por GUILD), 60 min depois de acesa
-  (`CAMP_LIFE`, pela idade anunciada) ou 10 min sem batida (`CAMP_QUIET`).
+  acendeu é o remetente do envelope (o campo de pessoas é validado, não lido). Lê `A` e `X`; ignora `S` (avistamento
+  do realm), `J`, `I`, `T`, `E`, `V`. `DecodeCamp` faz as mesmas checagens do `Wire.Decode` do Warmth: mapa
+  1..99999 e conhecido aqui, x/y inteiros 0..10000, zuid 0..2147483647, tier 1/2/3 = Básico/Artesão/Especialista com
+  até quatro letras minúsculas (ignoradas, menos `l` = o farol), n 0..40, idade em **minutos** 0..1440, objetos
+  (inteiros, no máximo 3/5/10 pelo tier), até 9 pessoas `Nome~c` (nome de 1 a 40 bytes sem `|;~` nem controle, classe
+  uma letra minúscula na ordem do Warmth, `CN.CAMP_CLASSES`), nota presente (qualquer texto), linha até 255 bytes;
+  `C2|X` exato. No máximo uma linha por membro a cada 2 s (`CAMP_GAP`) e 60 fogueiras (`CAMP_MAX`). Some no `C2|X`
+  (por GUILD), 10 min sem batida (`CAMP_QUIET`), 60 min depois de acesa a do farol (`CAMP_LIFE`, pela idade
+  anunciada) ou 1440 min a do Warmth (que dura enquanto bate).
 - **Desenho:** uma chama (`Interface\Icons\Spell_Fire_Fire`, ícone do jogo em todos os clientes) no ponto, no mapa
   mostrado e nos de cima (mesma conversão dos pinos); dica "<Nome> acendeu uma fogueira em <Zona> · nível
   <tier>" e "Clique para marcar um ponto de destino"; o clique põe o waypoint do jogo (`Compat.SetUserWaypoint`:
@@ -143,4 +153,5 @@ enquanto perto, e `C2|X` quando acaba. Contrato completo em `chehulnet/AGENTS.md
 - **Com o Warmth carregado** (`Compat.IsAddOnLoaded("Warmth")`) a camada some (o Warmth já as desenha, com o
   círculo); fora do Forever também. O lembrete dos oficiais (AddonReminder) não empurra o Warmth.
 - **Janela do membro:** a lista de addons (`Mesh.ADDON_LABELS`) nomeia `cf` = Warmth e `ls` = Lodestar.
-- Testes: `tools/guild-camps.lua`.
+- Testes: `tools/guild-camps.lua` (passa cada linha também pelo `Wire.Decode` real do Warmth quando há um checkout em
+  `../warmth` ou `WARMTH=<caminho>`).

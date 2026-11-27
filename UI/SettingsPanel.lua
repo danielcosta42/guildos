@@ -453,12 +453,19 @@ PAGES.profile = function(F)
             function() return GuildOS.GuildMap:IsSharing() end,
             function(checked) GuildOS.GuildMap:SetSharing(checked) end)
     end
-    -- The campfire beacon (ChehulNet v16, Modules/ChehulNetWire.lua): WoW: Forever only, where the camp kits are.
+    -- The campfire beacon (ChehulNet v17, Modules/ChehulNetWire.lua): WoW: Forever only, where the camp kits are. On
+    -- unless turned off ("default" counts as on); the realm bus carries an ownerless sighting, off by default on PvP.
     local CN = _G.ChehulNet
-    if CN and CN.SetCampConsent and CN.CampState and not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail then
-        F:Check(L["Announce my campfires to the network"], nil,
-            function() return CN:CampState() == "on" end,
-            function(checked) CN:SetCampConsent(checked) end)
+    if CN and CN.SetCampConsent and CN.CampState and CN.SetCampRealm and CN.CampRealmOn
+        and not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail then
+        local function camping() local st = CN:CampState(); return st == "on" or st == "default" end
+        F:Check(L["Announce my campfires"], nil, camping, function(checked) CN:SetCampConsent(checked) end)
+        F:Check(L["Also to the whole realm, without my name"],
+            CN.IsPvPRealm and CN:IsPvPRealm() and L["Off by default on PvP realms, like this one."]
+                or L["Off by default on PvP realms."],
+            function() return CN:CampRealmOn() end,
+            function(checked) CN:SetCampRealm(checked) end,
+            { indent = SUB_INDENT, enabled = camping })
     end
 
     -- The member's own birthday (issue #428): the day and the month, for the guild's calendar.

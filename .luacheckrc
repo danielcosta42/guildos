@@ -81,6 +81,7 @@ read_globals = {
     "C_Map",
     "C_AddOns",           -- whether another addon is loaded (Compat.IsAddOnLoaded, #449 OpenMap)
     "C_SuperTrack",       -- the map pin the player follows (Compat.SetUserWaypoint, campfires)
+    "RegionalUniqueNamesEnabled", -- read by the synced ChehulNet v17 (a realm's ruleset; the campfire beacon)
     "UiMapPoint",         -- a map point for C_Map.SetUserWaypoint (Compat.SetUserWaypoint)
     "C_QuestLog",
     "C_Item",        -- Compat wrappers, preferred over the old globals (issue #10)

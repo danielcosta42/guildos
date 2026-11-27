@@ -9,7 +9,7 @@
 --     click flashes the pin, or opens the guildmate's map.
 --   * WoW: Forever, without Warmth: a flame per guildmate's campfire heard over GUILD (GuildMap:GetCamps); hover
 --     says who lit it, where and the kit's tier, a click sets the game's waypoint there. The list's foot points to
---     Warmth, which draws the circle and builds camps. GuildOS:ShowCampPrompt asks the beacon's one question.
+--     Warmth, which draws the circle and builds camps.
 --   * On the minimap: a dot per guildmate in the zone, at their bearing and distance (held at the edge when
 --     out of range), turning with a rotating minimap; none in an instance.
 -- While the world map is open this client watches the shown map (GuildMap:SetWatch), and that is what makes
@@ -526,42 +526,4 @@ function GuildOS:SetupGuildMapPresence()
             if EnsureLayer() then self:UnregisterAllEvents() end
         end)
     end
-end
-
-----------------------------------------------------------------------
--- The campfire beacon's one question (ChehulNet v16, Modules/ChehulNetWire.lua): asked by the lib at the first fire
--- the player lights, shown through the popup queue (never in combat, one at a time). Yes or No answers
--- callback(true/false) once; the close leaves it unanswered (the lib asks again next session).
-----------------------------------------------------------------------
-local campPrompt
-local CAMP_PROMPT_W = 400
-
-function GuildOS:ShowCampPrompt(callback)
-    if type(callback) ~= "function" then return end
-    GuildOS:ShowWhenClear("campconsent", function()
-        local Kit = GuildOS.Kit
-        local f = campPrompt
-        if not f then
-            f = Kit:Float(L["Campfire"], {
-                name = "GuildOSCampPrompt", width = CAMP_PROMPT_W, height = 160, foot = true,
-                onClose = function(fr) fr:Hide() end,
-            })
-            f.text = UI:CreateText(f.body, "", SP.BODY, C.text.r, C.text.g, C.text.b)
-            f.text:SetPoint("TOPLEFT", 0, -2)
-            f.text:SetWidth(CAMP_PROMPT_W - 2 * Kit.PAD)
-            f.text:SetJustifyH("LEFT")
-            f.text:SetWordWrap(true)
-            f.yesBtn = UI:SetButtonVariant(UI:CreateButton(f.foot, L["Yes"], 90, SP.FIELD), "primary")
-            f.noBtn = UI:CreateButton(f.foot, L["No"], 90, SP.FIELD)
-            f.yesBtn:SetScript("OnClick", function() local cb = f.callback; f.callback = nil; f:Hide(); if cb then cb(true) end end)
-            f.noBtn:SetScript("OnClick", function() local cb = f.callback; f.callback = nil; f:Hide(); if cb then cb(false) end end)
-            f.foot:Lay(f.yesBtn, f.noBtn)
-            campPrompt = f
-        end
-        f.callback = callback
-        f.text:SetText(L["Let the network know when you light a campfire? Other players see the campfire on the map (with Warmth). Only the campfire and your name; you can change it in the settings."])
-        f:SetHeight(Kit.HEADER_H + 8 + math.ceil(f.text:GetStringHeight() or 28) + 14 + Kit.FOOT_H + 4)
-        f:Show()
-        return f
-    end)
 end

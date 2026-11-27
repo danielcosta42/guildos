@@ -70,8 +70,26 @@
 -- (Warmth announces with more data), and off WoW: Forever it does nothing (the kits exist nowhere else). The state
 -- lives on the shared table, so with several hosts it runs once, in the newest copy: one question, one announce.
 -- DIAG camp=on/off/nil (the player's answer) and campsent (announces sent this session).
+-- v17: the beacon becomes opt-out, with guards for the player's privacy. A question at the first fire is one more
+-- dialog in the middle of play and most players never answer it, so a camp seldom reached the map. Now:
+--   * CN:EnableCamps{ store, default = true, notice } counts a player with no answer as a yes; an explicit no from any
+--     host's store still wins. notice() is called once ever (noticed = true in every host's store) at the first kit
+--     cast, so the host can print a one-line heads-up; it asks nothing and holds nothing back. A host that passes
+--     only ask keeps the opt-in path of v16; with both, default and notice win.
+--   * named only to people who already see the player: guild and group get the announce with "Name~<class>"; the
+--     realm bus gets Warmth's own ownerless message instead, the sighting "C2|S|map|x|y|zuid|<tier>l" (key "S"),
+--     which Warmth draws as a fire that is nobody's camp and drops after Camps.TTL (720 s) without news; it is sent
+--     again on every beat (CAMP_BEAT, 240 s, well inside that), and needs no end. The relay's envelope still carries
+--     its origin, as for every relayed item, so this keeps the name out of the camp, not out of the transport.
+--   * the payloads now decode in Warmth's Wire.Decode (v16's did not): x and y are integers 0..10000, age is in
+--     minutes, and the class letter follows Warmth's W.CLASSES ('a' = unknown, 'b' = WARRIOR...), not a fixed 'c'.
+--   * on a PvP ruleset (PvP, RPPvP; the ruleset as LibChehulMesh v9 reads it) a camp on the realm bus tells strangers
+--     where a player sits still, so it goes there only when the player opted in (realm = true, CN:SetCampRealm). On
+--     other rulesets it goes by default, and realm = false turns it off. CN:CampRealmState() and CN:IsPvPRealm() let a
+--     host show its realm toggle only where it matters.
+--   * DIAG campanon (realm sightings this session) and camprealm (on/off/default); camp also says "default".
 
-local VERSION = 16
+local VERSION = 17
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -382,6 +400,7 @@ function CN:BuildDiag()
             return table.concat(out, ",")
         end)(),
         "camp=" .. CN:CampState(), "campsent=" .. ((CN.camp and CN.camp.sent) or 0),
+        "campanon=" .. ((CN.camp and CN.camp.anon) or 0), "camprealm=" .. CN:CampRealmState(),
     }
     local dead = {}
     for dist in pairs((Mesh and Mesh.dead) or {}) do
@@ -610,10 +629,14 @@ end
 
 -- ---------------------------------------------------------------------------
 -- Campfire beacon (v16, chehulnet#13): the fire the player lights, announced in Warmth's format, with their yes.
---   CN:EnableCamps{ store = fn, ask = fn }
---     store() -> the host's saved table holding the player's answer in `consent` (true, false or nil = not asked)
+--   CN:EnableCamps{ store = fn, default = true, notice = fn }   (v17, opt-out)
+--   CN:EnableCamps{ store = fn, ask = fn }                      (v16, opt-in)
+--     store() -> the host's saved table: `consent` (true, false or nil = no answer), `realm` (true, false or nil),
+--                `noticed` (true once the heads-up was given)
+--     default = true -> no answer counts as a yes; notice() -> a one-line heads-up, called once ever, asks nothing
 --     ask(callback) -> shows the question in the host's style; callback(yes) once the player answers
 --   CN:SetCampConsent(yes) -> a host's settings toggle: writes the answer into every host's store
+--   CN:SetCampRealm(yes), CN:CampRealmState(), CN:IsPvPRealm() -> the realm bus toggle (v17)
 -- All state lives in CN.camp, shared by every copy: the newest copy loaded runs it, so one client asks once and
 -- announces once whatever the number of hosts. One "no" in any host's store is a no.
 -- ---------------------------------------------------------------------------
@@ -627,6 +650,9 @@ CN.CAMP_FAR    = 100     -- yards: further than this, the camp ends
 CN.CAMP_LIFE   = 3600    -- seconds: a camp ends after this
 CN.CAMP_CHECK  = 5       -- seconds between checks of distance, aura and age
 CN.CAMP_FLAG   = "l"     -- after the tier: lit by a family client without Warmth
+-- Warmth's W.CLASSES (Core/Data.lua), part of its wire: a class travels as one letter, 'a' unknown, 'b' the first.
+CN.CAMP_CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID",
+    "DEATHKNIGHT", "MONK", "DEMONHUNTER", "EVOKER" }
 
 CN.camp = CN.camp or { hosts = {}, sent = 0 }
 CN.camp.gen = (CN.camp.gen or 0) + 1 -- this copy's turn: tickers and timers of an older copy stop on seeing it
@@ -672,10 +698,106 @@ local function Consent()
     return yes
 end
 
+-- v17: a host passed default = true, so a player with no answer counts as a yes (opt-out).
+local function OptOut()
+    for _, h in ipairs(CN.camp.hosts) do
+        if h.default == true then return true end
+    end
+    return false
+end
+
+-- The answer that decides: the saved one, or the host's default when there is none.
+local function Allowed()
+    local yes = Consent()
+    if yes == nil and OptOut() then return true end
+    return yes
+end
+
+-- A boolean `key` across every host's store: false wins, then true, else nil; a decided value is copied into the
+-- stores that have none (as Consent does for the answer).
+local function Shared(key)
+    local stores, v = {}, nil
+    for _, h in ipairs(CN.camp.hosts) do
+        local ok, t = pcall(h.store)
+        if ok and type(t) == "table" then
+            stores[#stores + 1] = t
+            if t[key] == false then v = false elseif t[key] == true and v == nil then v = true end
+        end
+    end
+    if v ~= nil then
+        for _, t in ipairs(stores) do
+            if t[key] == nil then t[key] = v end
+        end
+    end
+    return v, stores
+end
+
+local function WriteAll(key, v)
+    for _, h in ipairs(CN.camp.hosts) do
+        local ok, t = pcall(h.store)
+        if ok and type(t) == "table" then t[key] = v end
+    end
+end
+
+-- The ruleset as LibChehulMesh v9 reads it (its own Ruleset when the mesh exposes one): HC, RPPvP, RP, PvP or PvE
+-- where the game has regional unique names (Forever), nil elsewhere or when the rule names are missing.
+local function Ruleset()
+    if Mesh and type(Mesh.Ruleset) == "function" then
+        local ok, r = pcall(Mesh.Ruleset, Mesh)
+        if ok then return r end
+    end
+    local unique = RegionalUniqueNamesEnabled
+    if type(unique) ~= "function" then return nil end
+    local ok, on = pcall(unique)
+    local rules, active = Enum and Enum.GameRule, C_GameRules and C_GameRules.IsGameRuleActive
+    if not ok or on ~= true or type(rules) ~= "table" or type(active) ~= "function" then return nil end
+    if rules.HardcoreRuleset == nil or rules.RPRuleset == nil or rules.PvPRuleset == nil then return nil end
+    local function is(rule)
+        local done, yes = pcall(active, rules[rule])
+        return done and yes == true
+    end
+    if is("HardcoreRuleset") then return "HC" end
+    local rp, pvp = is("RPRuleset"), is("PvPRuleset")
+    return (rp and pvp and "RPPvP") or (rp and "RP") or (pvp and "PvP") or "PvE"
+end
+
+function CN:Ruleset()
+    return Ruleset()
+end
+
+function CN:IsPvPRealm()
+    local r = Ruleset()
+    return r == "PvP" or r == "RPPvP"
+end
+
+-- The realm bus for camps: on a PvP ruleset only with the player's realm = true; elsewhere unless realm = false.
+local function RealmAllowed()
+    local v = Shared("realm")
+    if CN:IsPvPRealm() then return v == true end
+    return v ~= false
+end
+
 function CN:CampState()
     if not (CN.camp and #CN.camp.hosts > 0) then return "nil" end
     local yes = Consent()
+    if yes == nil and OptOut() then return "default" end
     return (yes == true and "on") or (yes == false and "off") or "nil"
+end
+
+-- The player's own choice for the realm bus: "on", "off", or "default" (none: per ruleset, see RealmAllowed).
+function CN:CampRealmState()
+    if not (CN.camp and #CN.camp.hosts > 0) then return "default" end
+    local v = Shared("realm")
+    return (v == true and "on") or (v == false and "off") or "default"
+end
+
+-- Whether a camp would go on the realm bus now, with the choice and the ruleset together.
+function CN:CampRealmOn()
+    return CN.camp ~= nil and #CN.camp.hosts > 0 and RealmAllowed()
+end
+
+function CN:SetCampRealm(yes)
+    WriteAll("realm", yes and true or false)
 end
 
 -- The tier of a camp kit whose spell this is, or nil. Kit spells come from the items (cached once found).
@@ -737,24 +859,56 @@ local function AuraUp()
     return aura ~= nil
 end
 
+-- Warmth's wire (Core/Wire.lua): a map fraction travels as an integer 0..10000.
 local function CampCoord(v)
-    return string.format("%.4f", v)
+    return tostring(math.max(0, math.min(10000, math.floor(v * 10000 + 0.5))))
 end
 
--- C2|A|map|x|y|zuid|tier+flags|n|age|objects|people|note: Warmth's announce, with only the lighter as people.
-local function CampPayload(c)
+-- The player's class as Warmth's one letter: 'a' = unknown, then 'b' + its index in CN.CAMP_CLASSES.
+local function CampClass()
+    if not UnitClass then return "a" end
+    local _, token = UnitClass("player")
+    for i, t in ipairs(CN.CAMP_CLASSES) do
+        if t == token then return string.char(97 + i) end
+    end
+    return "a"
+end
+
+-- The player as Warmth's people item ("Name~c"), or "" when the name could not travel (Wire.GoodName: 1..40 bytes,
+-- no separators, no control characters).
+local function CampPerson()
+    local name = MyShortName()
+    if type(name) ~= "string" or Secret(name) or #name < 1 or #name > 40 or name:find("[|;~%c]") then return "" end
+    return name .. "~" .. CampClass()
+end
+
+local function CampHead(c)
     local _, zuid = CN:MyLayer()
-    local name = (MyShortName():gsub("[|~,;]", ""))
-    return table.concat({ "C2", "A", tostring(c.map), CampCoord(c.x), CampCoord(c.y), tostring(zuid or 0),
-        c.tier .. CN.CAMP_FLAG, "1", tostring(math.max(0, time() - c.lit)), "", name .. "~c", "" }, "|")
+    return tostring(c.map), CampCoord(c.x), CampCoord(c.y), tostring(zuid or 0), c.tier .. CN.CAMP_FLAG
+end
+
+-- C2|A|map|x|y|zuid|tier+flags|n|age|objects|people|note: Warmth's announce, the lighter as the one person.
+local function CampAnnounce(c)
+    local map, x, y, zuid, tier = CampHead(c)
+    local age = math.min(1440, math.floor(math.max(0, time() - c.lit) / 60))
+    return table.concat({ "C2", "A", map, x, y, zuid, tier, "1", tostring(age), "", CampPerson(), "" }, "|")
+end
+
+-- C2|S|map|x|y|zuid|tier+flags: Warmth's sighting, a fire that is nobody's camp (v17: the realm bus).
+local function CampSighting(c)
+    local map, x, y, zuid, tier = CampHead(c)
+    return table.concat({ "C2", "S", map, x, y, zuid, tier }, "|")
 end
 
 local function Announce(c)
-    if CN.camp.active ~= c or not CampsOn() or Consent() ~= true then return end
-    local payload = CampPayload(c)
-    Mesh:Guild(CN.CAMP_PREFIX, payload)
-    Mesh:Group(CN.CAMP_PREFIX, payload)
-    Mesh:Realm(CN.CAMP_PREFIX, payload, "A", true)
+    if CN.camp.active ~= c or not CampsOn() or Allowed() ~= true then return end
+    local named = CampAnnounce(c)
+    Mesh:Guild(CN.CAMP_PREFIX, named)
+    Mesh:Group(CN.CAMP_PREFIX, named)
+    if RealmAllowed() then
+        Mesh:Realm(CN.CAMP_PREFIX, CampSighting(c), "S", true)
+        CN.camp.anon = (CN.camp.anon or 0) + 1
+    end
     c.announced, c.last = true, time()
     CN.camp.sent = (CN.camp.sent or 0) + 1
 end
@@ -775,7 +929,7 @@ local function CheckCamp()
     local c = CN.camp.active
     if not c then return EndCamp(true) end
     if not CampsOn() then return EndCamp(WarmthLoaded()) end
-    if Consent() ~= true then return EndCamp() end
+    if Allowed() ~= true then return EndCamp() end
     local now = time()
     if now - c.lit >= CN.CAMP_LIFE then return EndCamp() end
     local d = Distance(c)
@@ -828,6 +982,19 @@ local function OnCampCast(unit, _, spellID)
     local spot = Here()
     if not spot then return end
     local yes = Consent()
+    if yes == nil and OptOut() then
+        -- v17, opt-out: a heads-up once ever, from the first host that gives one; nothing waits for it.
+        if Shared("noticed") ~= true then
+            for _, h in ipairs(CN.camp.hosts) do
+                if h.default == true and type(h.notice) == "function" then
+                    WriteAll("noticed", true)
+                    pcall(h.notice)
+                    break
+                end
+            end
+        end
+        return StartCamp(spot, tier)
+    end
     if yes == true then return StartCamp(spot, tier) end
     if yes == false or CN.camp.asked then return end
     -- First fire, no answer yet: asked once per session, by the first host that can ask.
@@ -876,7 +1043,8 @@ function CN:EnableCamps(opts)
     for _, h in ipairs(CN.camp.hosts) do
         if h.store == opts.store then return end -- the same host twice
     end
-    CN.camp.hosts[#CN.camp.hosts + 1] = { store = opts.store, ask = opts.ask }
+    CN.camp.hosts[#CN.camp.hosts + 1] = { store = opts.store, ask = opts.ask, default = opts.default == true or nil,
+        notice = opts.notice }
     if not IsForever() then return end -- no kits, no fire to see
     EnsureCampFrame()
     if C_Item and C_Item.RequestLoadItemDataByID then
