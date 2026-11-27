@@ -33,7 +33,7 @@ end
 local function luaFiles()
   local list = {}
   local p = io.popen(package.config:sub(1, 1) == "\\" and ('dir /s /b "' .. ADDON .. '\\*.lua" 2>nul')
-                     or ('find "' .. ADDON .. '" -name "*.lua"'))
+                     or ('find "' .. ADDON .. '" -name "*.lua" -not -path "*/.claude/*"'))
   for line in p:lines() do
     local rel = line:gsub("\\", "/"):gsub("^.-/GuildOS/", ""):gsub("^%./", "")
     if not (rel:find("^Locales/") or rel:find("^tools/") or rel:find("^Libs/") or rel:find("/Locales/")

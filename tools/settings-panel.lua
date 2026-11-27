@@ -183,6 +183,11 @@ dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/UI/FeatureRegistry.lua")
 dofile(ADDON .. "/UI/Features.lua")
 dofile(ADDON .. "/UI/SettingsPanel.lua")
+-- The help hub's page (specs/salao/onboarding.md) and what it reads.
+dofile(ADDON .. "/Modules/Onboarding.lua")
+dofile(ADDON .. "/UI/Tour.lua")
+dofile(ADDON .. "/UI/Onboarding.lua")
+dofile(ADDON .. "/UI/HelpPanel.lua")
 local UI = GuildOS.UI
 check(GuildOS.Style.current == "salao", "the Salão's one look on the " .. STYLE .. " client")
 
@@ -211,8 +216,8 @@ local labels = {}
 walk(parent, function(f)
   if f.kind == "Button" and f.underline and f.label then labels[#labels + 1] = f.label.text end
 end)
-check(table.concat(labels, "|") == "Profile|Interface|Chat and alerts|Modules|Guild rules|Data and support|Credits",
-  "seven sub-tabs, in order (" .. table.concat(labels, "|") .. ")")
+check(table.concat(labels, "|") == "Profile|Interface|Chat and alerts|Modules|Guild rules|Data and support|Credits|Help",
+  "eight sub-tabs, in order (" .. table.concat(labels, "|") .. ")")
 parent.SelectSub("profile")
 local profileTab
 walk(parent, function(f) if f.kind == "Button" and f.underline and f.label and f.label.text == "Profile" then profileTab = f end end)
@@ -227,7 +232,7 @@ end
 check(UI:GetFeature("settings") and UI:GetFeature("settings").core, "Settings itself has no switch")
 
 -- ── 2. Built once: switching and resizing create nothing ────────────────
-local PAGES = { "profile", "interface", "chat", "modules", "rules", "data", "credits" }
+local PAGES = { "profile", "interface", "chat", "modules", "rules", "data", "help", "credits" }
 for _, p in ipairs(PAGES) do parent.SelectSub(p) end   -- every page built
 local frames = #allFrames
 for _ = 1, 3 do
@@ -414,7 +419,7 @@ for _, label in ipairs({ "Show minimap button", "Guild button opens Guild OS", "
   "Apply !note requests from guild chat on this client" }) do
   check(find(everything, "check", label), "Settings still has \"" .. label .. "\"")
 end
-for _, label in ipairs({ "Show welcome again", "Show the digest now", "Recent mentions", "Clear watch-words",
+for _, label in ipairs({ "Show tips again", "Show the digest now", "Recent mentions", "Clear watch-words",
   "Backup", "Restore", "Export Data", "Collect my data", "View Errors", "Self-test", "Probe the client", "Probe chat",
   "Style preview", "Links", "Erase guild data", "Test Raid Status", "Test Attendance Export" }) do
   check(find(everything, "button", label), "Settings still has the \"" .. label .. "\" button")

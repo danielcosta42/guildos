@@ -151,6 +151,8 @@ Modules\Milestones.lua
 Modules\Journal.lua
 Modules\Founding.lua
 Modules\Activation.lua
+# What's new, the tours and getting started (specs/salao/onboarding.md): frame-free
+Modules\Onboarding.lua
 Modules\Achievements.lua
 Data\ForeverDungeons.lua
 Modules\DungeonLog.lua
@@ -177,6 +179,8 @@ UI\Spacing.lua
 UI\Helpers.lua
 UI\Kit.lua
 UI\Forms.lua
+# The guided tour's engine and its anchors (UI:RegisterTourAnchor), before the screens that register them
+UI\Tour.lua
 UI\StylePreview.lua
 UI\Layout.lua
 UI\WebPanel.lua
@@ -203,6 +207,7 @@ UI\JoinRequests.lua
 UI\CalendarPanel.lua
 UI\FeaturePanels.lua
 UI\SettingsPanel.lua
+UI\HelpPanel.lua
 UI\LootWindow.lua
 UI\GuildBankPanel.lua
 UI\OfficerSheet.lua

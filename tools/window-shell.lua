@@ -517,7 +517,7 @@ local bindings = read("Bindings.xml")
 check(bindings:find('name="GUILDOS_TOGGLE"', 1, true) and bindings:find('category="ADDONS"', 1, true)
   and bindings:find("GuildOS:ToggleRoster()", 1, true), "the key binding, in the AddOns category, opens the window")
 check(read("Modules/Digest.lua"):find("GuildOS:ToggleRoster()", 1, true)
-  and read("UI/Onboarding.lua"):find('OpenWindow("settings")', 1, true),
+  and read("UI/Onboarding.lua"):find('OpenWindow("settings", "help")', 1, true),
   "the digest and onboarding open the window through the same calls")
 
 do
@@ -842,7 +842,10 @@ do
     and gear.level > f.titleBar.level, "Search and Settings are the title bar's children, above it, so a click is theirs")
   check(search.w == 28 and gear.w == 28 and search.icon.texture:find("icon-search", 1, true)
     and gear.icon.texture:find("icon-gear", 1, true), "as round 28px tools with their icons")
-  check(point(search) == "RIGHT,-6,0" and search.points[1][2] == gear, "Search left of Settings")
+  local help = f.helpButton
+  check(help and point(help) == "RIGHT,-6,0" and help.points[1][2] == gear, "Help (\"?\") left of Settings")
+  check(point(search) == "RIGHT,-6,0" and search.points[1][2] == help, "Search left of Help")
+  check(help.parent == f.titleBar and help.w == 28 and help.glyph and help.glyph.text == "?", "Help is a round ? tool on the bar")
   fire(gear, "OnEnter")
   local said2 = table.concat(tip, "|")
   check(said2:find("Settings", 1, true) and said2:find("guildos.me", 1, true) and said2:find("/gos help", 1, true),
@@ -875,11 +878,13 @@ end
 do
   local buttons, boxes = 0, 0
   for _, c in ipairs(f.footer.children) do
-    if c.kind == "Button" then buttons = buttons + 1 end
+    -- The tour's offer (specs/salao/onboarding.md) is a button of its own, hidden unless a tour waits.
+    if c.kind == "Button" and c ~= f.tourOffer then buttons = buttons + 1 end
     if c.kind == "EditBox" then boxes = boxes + 1 end
   end
   check(buttons == 1 and boxes == 0 and f.footItems == nil and f.versionText == nil,
     "no links, no copy box, no version: only the sync line is a button")
+  check(f.tourOffer and not f.tourOffer.shown, "the tour's offer waits hidden in the footer")
   check(point(f.welcomeText) == "LEFT,12,0" and point(f.syncText) == "RIGHT,-28,0", "welcome on the left, the sync line on the right")
   f:LayoutFooter(1000)
   local wide = f.welcomeText.w
@@ -1980,14 +1985,14 @@ do
     resize(win, w, 620)
     if win.band ~= "bar" and win.band ~= "watch" then
       local x0, span = win:DoorSpan(w)
-      local toolsLeft = (w - 6) - (10 + 24 + 3 * 34)
+      local toolsLeft = (w - 6) - (10 + 24 + 4 * 34)
       if x0 + span > toolsLeft then misfit = misfit or (w .. "px: the doors reach the tools") end
       if x0 < 10 + 34 + 8 + win.nameText.w then misfit = misfit or (w .. "px: the doors over the name") end
       for _, d in ipairs(win.tabs) do
         if d.shown and d.points[1][4] + d.w > span then misfit = misfit or (w .. "px: " .. d.key .. " past the span") end
       end
       if win.more.shown and win.more.points[1][4] + win.more.w > span + 40 then misfit = misfit or (w .. "px: »n") end
-      if not (win.searchButton.shown and win.settingsButton.shown and win.minimise.shown) then
+      if not (win.searchButton.shown and win.helpButton.shown and win.settingsButton.shown and win.minimise.shown) then
         misfit = misfit or (w .. "px: a tool went")
       end
     end
@@ -1997,7 +2002,7 @@ do
   check(win.nameText.w <= 220 and win.nameText.w >= 70, "a long name keeps at most 220px (" .. win.nameText.w .. ")")
   resize(win, 320, 620)
   check(win.band == "bar" and win.summaryText.shown and point(win.summaryText, 2) == "RIGHT,-6,0"
-    and not (win.metaText.shown or win.nameText.shown or win.crest.shown or win.searchButton.shown or win.settingsButton.shown),
+    and not (win.metaText.shown or win.nameText.shown or win.crest.shown or win.searchButton.shown or win.helpButton.shown or win.settingsButton.shown),
     "at MIN_W, folded to the bar, the three numbers end short of the fold and the tools wait")
   win:Hide()
   GetGuildInfo = realInfo

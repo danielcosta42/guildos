@@ -711,6 +711,7 @@ function GuildOS:CreateGroupsPanel(parent)
     local seekersCard = newCard(content, L["Looking for a group"])
     local mineCard = newCard(content, "")
     groupsCard.pk, seekersCard.pk, mineCard.pk = "g", "s", "m"   -- each card's own pools
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("groups.cards", groupsCard) end   -- the tour (UI/Tour.lua)
 
     -- A card's title with its count after it, in the soft ink.
     local function titled(card, str, n)

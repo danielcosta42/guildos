@@ -28,6 +28,8 @@ local SUBS = {
     { key = "rules",     label = L["Guild rules"] },
     { key = "data",      label = L["Data and support"] },
     { key = "credits",   label = L["Credits"] },
+    -- The help hub (specs/salao/onboarding.md): UI/HelpPanel.lua builds it on this page's form.
+    { key = "help",      label = L["Help"] },
 }
 -- The categories before #367, so an old deep link or command still lands on the right page.
 local OLD_KEYS = { general = "profile", raid = "rules", officer = "rules", about = "data" }
@@ -488,9 +490,9 @@ PAGES.profile = function(F)
             { shown = function() return GuildOS:IsOfficer() end })
     end
 
-    F:Section(L["Getting started"])
-    F:Buttons({ { L["Show welcome again"], function() if GuildOS.ShowOnboarding then GuildOS:ShowOnboarding() end end, w = 170 } })
-    F:Note(L["Replay the first-run intro"], { gap = 6 })
+    -- Where the welcome's replay was: the help hub (Settings › Help, the title bar's "?") holds the tours,
+    -- What's new and "Show tips again" now.
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("settings.roles", picker) end
 end
 
 PAGES.interface = function(F)
@@ -541,7 +543,7 @@ PAGES.interface = function(F)
 
     -- The game's font, back as a choice (Discord 1556991354478010459): the addon's fonts stay the default; ticked,
     -- every text draws in the game's after a reload. Korean and Chinese clients always use the game's (#103).
-    F:Check(L["Use the game's font"],
+    local fontCheck = F:Check(L["Use the game's font"],
         GuildOS.GameFontOnly and L["Your game's language needs its own font, so Guild OS always uses it."]
             or L["Draws Guild OS in the same font as the rest of the game. Applies after you reload the interface."],
         function() return GuildOS.Style:WantsGameFont() end,
@@ -550,11 +552,13 @@ PAGES.interface = function(F)
             markReload("font", (checked and true or false) ~= boot.font)
         end,
         { enabled = function() return not GuildOS.GameFontOnly end })
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("settings.font", fontCheck) end
 
     F:Section(L["In the game"])
-    F:Check(L["Show minimap button"], nil,
+    local minimapCheck = F:Check(L["Show minimap button"], nil,
         function() return GuildOS.IsMinimapShown and GuildOS:IsMinimapShown() end,
         function(checked) if GuildOS.SetMinimapShown then GuildOS:SetMinimapShown(checked) end end)
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("settings.minimap", minimapCheck) end
     -- The guildmates-in-your-zone dots on the minimap (#271, #449): where they really are.
     if GuildOS.GuildMap then
         F:Check(L["Show guildmates in your zone on the minimap"], nil,
@@ -820,7 +824,8 @@ PAGES.rules = function(F, isOfficer)
     end
 
     -- Who is an officer (issue #81): the guild's threshold, rank 0 (the guild master) always in.
-    F:Section(L["Who is an officer in Guild OS"])
+    local officerCard = F:Section(L["Who is an officer in Guild OS"])
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("settings.officerRanks", officerCard) end
     if numRanks == 0 then
         F:Note(L["Guild rank info not available. Open the Guild panel first."])
     elseif isOfficer then
@@ -1302,6 +1307,11 @@ local BUILT_WITH = {
     { "Cinzel, Alegreya, Alegreya Sans", "SIL Open Font License" },
 }
 
+-- The help hub (UI/HelpPanel.lua), on this page's form.
+PAGES.help = function(F, isOfficer)
+    if UI.HelpPanel then UI.HelpPanel:Build(F, isOfficer) end
+end
+
 local function gameName()
     local c = GuildOS.Client or {}
     if c.isAnniversary then return L["TBC Anniversary"] end
@@ -1486,6 +1496,9 @@ local function shapeOf(key, isOfficer)
         for _, def in ipairs(UI:AllFeatures(nil)) do parts[#parts + 1] = def.id end
     elseif key == "chat" then
         parts[#parts + 1] = (GuildOS.db.mentions and "mentions" or "") .. (GuildOS.db.lfgPrefs and "lfg" or "")
+    elseif key == "help" then
+        -- The tours and the guides differ for the Guild Master.
+        parts[#parts + 1] = GuildOS.Onboarding and GuildOS.Onboarding.Role() or ""
     end
     return table.concat(parts, ":")
 end
@@ -1582,6 +1595,7 @@ function GuildOS:CreateSettingsPanel(parent, _mainFrame)
         GuildOS:SafeCall(function()
             info.form = GuildOS:RefreshSettingsPanel(info.content, key)
         end)
+        if key == "help" and UI.HelpPanel then UI.HelpPanel:Opened() end
     end
     parent.SelectSub = selectSub   -- deep links: /gos open settings <page>
     -- The Settings button's entries open these pages themselves (#445).

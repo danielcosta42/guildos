@@ -7,7 +7,7 @@
 --
 -- Since the Salão (specs/salao, #445; phase 3, #449) the title bar holds the
 -- guild's crest and name, the rooms (UI/Rooms.lua) as doors, and round tools
--- (Search, Settings, fold, close); a strip under it the open room's entries as
+-- (Search, Help, Settings, fold, close); a strip under it the open room's entries as
 -- pills, or for a side room (the Officers' Room) a side bar. The Search tool
 -- opens a strip under those (the mockup's .search): what it finds replaces the
 -- screen in the view while there is a query (UI/SearchView.lua). Each entry opens
@@ -480,7 +480,33 @@ local function createWindow()
     local gearBtn = tool("icon-gear", L["Settings"],
         { "Guild OS v" .. tostring(GuildOS.VERSION or ""), "guildos.me", "/gos help" },
         function() f:OpenRoom("settings", true) end)
-    f.searchButton, f.settingsButton = searchBtn, gearBtn
+    -- Help (specs/salao/onboarding.md): Settings › Help, the tours and the guides; Shift-click, the help for the
+    -- screen on show. A red dot while What's new waits unread after its last "Later".
+    local helpBtn = tool("?", L["Help"], { L["Tours, guides and getting started"], L["Shift-click: help for this screen"] },
+        function() f:OpenHelp(IsShiftKeyDown and IsShiftKeyDown()) end)
+    helpBtn.dot = GuildOS.Style:Texture(helpBtn, "disc", "OVERLAY", 2)
+    helpBtn.dot:SetSize(9, 9)
+    helpBtn.dot:SetPoint("TOPRIGHT", helpBtn, "TOPRIGHT", 1, 1)
+    helpBtn.dot:SetVertexColor(C.count.r, C.count.g, C.count.b, 1)
+    helpBtn.dot:Hide()
+    f.searchButton, f.settingsButton, f.helpButton = searchBtn, gearBtn, helpBtn
+
+    -- The help hub, or with `here` the tour chapter or guide for the screen on show.
+    function f:OpenHelp(here)
+        local O = GuildOS.Onboarding
+        if here and O then
+            local hit = O:HelpFor(self.activeRoom, self.activeEntry and self.activeEntry.id)
+            if hit.guide and UI.HelpPanel then return UI.HelpPanel:OpenGuide(hit.guide) end
+            if hit.track and UI.Tour then return UI.Tour:Start(hit.track, hit.ch) end
+        end
+        for _, e in ipairs(UI:RoomEntries("settings")) do
+            if e.id == "help" then return self:SelectEntry("settings", e, true) end
+        end
+    end
+    function f:RefreshHelpDot()
+        local O = GuildOS.Onboarding
+        helpBtn.dot:SetShown(O ~= nil and O:Dot() and true or false)
+    end
 
     local summary = text(bar, 11, nil, C.text)
     summary:SetPoint("LEFT", 10, 0)
@@ -723,6 +749,23 @@ local function createWindow()
     end)
     f.syncButton = syncBtn
 
+    -- The tour's offer in the footer (the mockup's ▶ pill): resume a tour the closed window paused, or take the
+    -- tour What's new was put off with.
+    local offer = UI:SetButtonVariant(UI:CreateButton(foot, "", 90, 18), "chip")
+    offer:SetPoint("LEFT", welcome, "RIGHT", 10, 0)
+    offer:Hide()
+    f.tourOffer = offer
+    function f:RefreshTourOffer()
+        local o = UI.Tour and UI.Tour:FooterOffer()
+        if o then
+            offer.label:SetText("\226\150\182 " .. o.text)
+            offer:SetWidth(math.ceil(tonumber(offer.label:GetStringWidth()) or 60) + 20)
+            offer:SetScript("OnClick", function() o.run() end)
+        end
+        offer:SetShown(o ~= nil)
+        self:LayoutFooter()
+    end
+
     local grip = CreateFrame("Button", nil, f)
     grip:SetSize(GRIP, GRIP)
     grip:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
@@ -963,7 +1006,7 @@ local function createWindow()
     function f:DoorSpan(w)
         w = w or self:GetWidth() or 0
         local x0 = self.doorsX or (10 + CREST + 8 + NAME_MIN + 10)
-        local tools = 10 + CLOSE_SIZE + 3 * (TOOL + TOOL_GAP) + 8
+        local tools = 10 + CLOSE_SIZE + 4 * (TOOL + TOOL_GAP) + 8
         return x0, math.max(0, (w - 2 * EDGE) - tools - x0)
     end
 
@@ -1193,9 +1236,13 @@ local function createWindow()
     -- `footReserve`, UI/Snow.lua).
     function f:LayoutFooter(w)
         w = w or self:GetWidth() or 0
-        local room = w - 2 * EDGE - 2 * FOOT_PAD - GRIP - math.ceil(sync:GetStringWidth()) - 13 - 12 - (self.footReserve or 0)
+        local offerW = offer:IsShown() and (offer:GetWidth() + 10) or 0
+        local room = w - 2 * EDGE - 2 * FOOT_PAD - GRIP - math.ceil(sync:GetStringWidth()) - 13 - 12 - (self.footReserve or 0) - offerW
         welcome:SetWidth(math.max(0, room))
         welcome:SetShown(room > 40)
+        offer:ClearAllPoints()
+        if welcome:IsShown() then offer:SetPoint("LEFT", welcome, "RIGHT", 10, 0)
+        else offer:SetPoint("LEFT", foot, "LEFT", FOOT_PAD, 0) end
     end
 
     -- The crest, the guild's name and its line, the doors and the tools. The name block keeps what it needs up
@@ -1210,6 +1257,7 @@ local function createWindow()
         guildName:SetShown(not isBar)
         meta:SetShown(not isBar)
         searchBtn:SetShown(not isBar)
+        helpBtn:SetShown(not isBar)
         gearBtn:SetShown(not isBar)
         rule:SetShown(not isBar)
         close:ClearAllPoints()
@@ -1218,8 +1266,10 @@ local function createWindow()
         minimise:SetPoint("RIGHT", close, "LEFT", -TOOL_GAP, 0)
         gearBtn:ClearAllPoints()
         gearBtn:SetPoint("RIGHT", minimise, "LEFT", -TOOL_GAP, 0)
+        helpBtn:ClearAllPoints()
+        helpBtn:SetPoint("RIGHT", gearBtn, "LEFT", -TOOL_GAP, 0)
         searchBtn:ClearAllPoints()
-        searchBtn:SetPoint("RIGHT", gearBtn, "LEFT", -TOOL_GAP, 0)
+        searchBtn:SetPoint("RIGHT", helpBtn, "LEFT", -TOOL_GAP, 0)
         if isBar then
             minimise:SetSize(20, 20)
             return
@@ -1275,6 +1325,7 @@ local function createWindow()
                 self.__tabsKey = key
                 self:LayoutTabs()
             end
+            self:RefreshHelpDot()
             self:LayoutFooter()
         end)
     end
@@ -1388,6 +1439,7 @@ local function createWindow()
     f:SetScript("OnShow", function(self)
         self:UpdateTabVisibility()
         self:RefreshTitle()
+        self:RefreshTourOffer()
         if not self.ticker then
             self.ticker = C_Timer.NewTicker(10, function() self:InvalidateOfficerCounts(); self:RefreshTitle() end)
         end
@@ -1430,6 +1482,46 @@ local function createWindow()
     end)
 
     table.insert(UISpecialFrames, NAME)   -- ESC closes it
+
+    ------------------------------------------------------------------
+    -- The tour's anchors (UI/Tour.lua): the tools, the doors, the entries' pills and the side bar. At the watch
+    -- band the doors stand behind the one-line selector and the side bar's entries are pills; a pill folded into
+    -- "»n" is found as that button.
+    ------------------------------------------------------------------
+    if UI.RegisterTourAnchor then
+        UI:RegisterTourAnchor("tool.search", searchBtn)
+        UI:RegisterTourAnchor("tool.help", helpBtn)
+        UI:RegisterTourAnchor("tool.gear", gearBtn)
+        UI:RegisterTourAnchor("tool.fold", minimise)
+        UI:RegisterTourAnchor("window.content", content)
+        UI:RegisterTourAnchor("door", function(id)
+            for _, d in ipairs(f.tabs) do
+                if d.key == id and d:IsShown() then return d end
+            end
+            if selector:IsShown() then return selector end
+            for _, k in ipairs(f.overflow or {}) do if k == id then return more end end
+            -- The gear's room is behind the gear.
+            local r = UI:RoomById(id)
+            if r and r.gear then return gearBtn end
+            return nil
+        end)
+        local function pill(roomId, id)
+            if f.activeRoom ~= roomId then return nil end
+            for _, b in ipairs(f.entryTabs) do
+                if b:IsShown() and b.entry and b.entry.id == id then return b end
+            end
+            for _, b in ipairs(f.sideBtns) do
+                if b:IsShown() and b.entry and b.entry.id == id then return b end
+            end
+            for _, e in ipairs(f.entryOverflow or {}) do if e.id == id and entryMore:IsShown() then return entryMore end end
+            return nil
+        end
+        UI:RegisterTourAnchor("entry", function(rest)
+            local roomId, id = tostring(rest):match("^([^.]+)%.(.+)$")
+            return roomId and pill(roomId, id) or nil
+        end)
+        UI:RegisterTourAnchor("side", function(id) return pill("officers", id) end)
+    end
 
     -- Where it was left: the saved room's entry, else the saved feature (before the rooms), else Home.
     local g = store()

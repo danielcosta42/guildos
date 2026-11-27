@@ -1077,6 +1077,7 @@ function GuildOS:CreateRosterPanel(parent, host)
     end)
     searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     host.searchBox = searchBox
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("roster.search", searchBox) end   -- the tour (UI/Tour.lua)
 
     -- The guild's make-up by class, level, rank and zone (`/gos analytics`): every command has a
     -- way in here too (#137).
@@ -3605,6 +3606,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- the module's ticker (C_Timer.NewTicker) keeps no time of its next popup, and the tab keeps no clock.
     ----------------------------------------------------------------
     local postCard = board:Card(L["Post in the channels"], { col = 1 })
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("recruit.post", postCard) end   -- the tour (UI/Tour.lua)
     local stateLine = StatusLine(postCard, true)
     local statusText, dot = stateLine.word, stateLine.dot
     local intervalBox = UI:CreateInput(postCard, 100, Forms.FIELD_H, { numeric = true, max = 5 })
@@ -3656,6 +3658,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     ----------------------------------------------------------------
     local AREA_H, BESIDE_W, COUNT_WARN = 72, 420, 230
     local msgCard = board:Card(L["Recruitment message"], { col = 1 })
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("recruit.ad", msgCard) end   -- the tour (UI/Tour.lua)
     local adBlock = CreateFrame("Frame", nil, msgCard)
     adBlock:SetSize(1, AREA_H)
     local msgArea = UI:CreateTextArea(adBlock, 200, AREA_H, { max = 255 })
@@ -3899,6 +3902,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- save at once; the Discord and the messages with the card's Save.
     ----------------------------------------------------------------
     local welcomeCard = board:Card(L["Welcome Message (New Members)"], { col = 2 })
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("recruit.welcome", welcomeCard) end   -- the tour (UI/Tour.lua)
     local welcomeChk = welcomeCard:Check(noColon(L["Auto-Welcome:"]))
     local function UpdateWelcomeStatus()
         welcomeChk.checkbox:SetChecked(GuildOS.db.recruitment.welcomeEnabled and true or false)
@@ -4050,6 +4054,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- with the card's Save.
     ----------------------------------------------------------------
     local aiCard = board:Card(L["Auto-Invite (whisper keyword)"], { col = 2 })
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("recruit.invite", aiCard) end   -- the tour (UI/Tour.lua)
     local function aiCfg() return GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite end
     -- A game that lets no addon invite (WoW: Forever, #256) says so first: there the keyword brings up the
     -- /ginvite line to copy, and the filters, which need the invite's /who, are greyed out below (#371, #373, #449).

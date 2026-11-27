@@ -1103,6 +1103,7 @@ local function buildLedger(p)
     -- The ledger and, beside it (under it on a narrow window), the bank's gold and who gave most.
     local board = newBoard(p, "Ledger", { left = LEDGER_LEFT })
     local card = board:Card(L["Ledger"], { col = 1, fill = true })
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("bank.points", card) end   -- the tour (UI/Tour.lua)
 
     -- What to show: a pill per kind of line, and a member's name.
     local pills = {}
@@ -1276,6 +1277,7 @@ local function buildLedger(p)
     -- Who owes the bank tax, most first (Ley): under the contributors, only while there is one.
     local taxTitle = UI:CreateSectionTitle(side, L["Bank tax owed"], true)
     side:Add(taxTitle, { gap = SP.SECTION, shown = function() return st.taxOn end })
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("bank.tax", taxTitle) end
     local taxRows = {}
     local taxHolder
     taxHolder = cardRow(side, function(h, w)
@@ -1697,6 +1699,7 @@ local function buildCleanup(p)
     local st = { show = "sell" }
     local board = newBoard(p, "Cleanup")
     local card = board:Card(L["Cleanup"], { fill = true })
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("bank.cleanup", card) end
     local function officer() return st.officer == true end
 
     blurb(card, L["What the bank holds that nobody takes. Mark what goes; at the bank the bar takes it out, at a vendor it sells only that, and the gold goes back in."],

@@ -105,6 +105,8 @@ UI.ROOMS = {
         { id = "rules",     label = L["Guild rules"],      feature = "settings", sub = "rules" },
         { id = "data",      label = L["Data and support"], feature = "settings", sub = "data" },
         { id = "credits",   label = L["Credits"],          feature = "settings", sub = "credits" },
+        -- The help hub (specs/salao/onboarding.md): the tours, getting started, the guides; the title bar's "?".
+        { id = "help",      label = L["Help"],             feature = "settings", sub = "help" },
         { id = "web",       label = L["Web"],              feature = "web" },
     } },
 }

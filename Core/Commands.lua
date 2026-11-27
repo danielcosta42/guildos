@@ -153,6 +153,8 @@ local function printHelp()
     helpLine("/gos open <feature>", L["Open a tab (roster, raids, loot, guild...)"])
     helpLine("/gos find <text>", L["Search members by name, class, level or note"])
     helpLine("/gos sync",        L["Force a full data sync"])
+    helpLine("/gos tour [member | officer | gm]", L["Take a guided tour of the window"])
+    helpLine("/gos whatsnew",    L["What's new in this version"])
     if GuildOS.GuildMap then helpLine("/gos map", L["Open the live guild map"]) end
     if GuildOS:CampfireCommandHere() then
         helpLine("/gos campfire [on | off | realm on | realm off | status]", L["Announce the campfires you light, or not"])
@@ -375,6 +377,11 @@ local function handleCommand(msg)
     -- means no present or future prefix pattern below can ever swallow them.
     if msg == "help" or msg == "?" or msg == "commands" then
         printHelp()
+    elseif msg == "tour" or msg:match("^tour%s") then
+        -- The guided tours (specs/salao/onboarding.md): /gos tour [member | officer | gm].
+        if GuildOS.Onboarding then GuildOS.Onboarding:Command("tour", msg:match("^tour%s+(%S+)")) end
+    elseif msg == "whatsnew" or msg == "news" then
+        if GuildOS.Onboarding then GuildOS.Onboarding:Command("whatsnew") end
     elseif msg == "debug scan" then
         GuildOS:CollectMyDataNow()
     elseif msg == "debug selftest" then

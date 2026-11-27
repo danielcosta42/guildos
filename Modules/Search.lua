@@ -32,7 +32,7 @@ Search.SETTINGS_SECTIONS = {
     { sub = "profile",   label = L["Privacy"], cond = function() return GuildOS.Journal ~= nil or GuildOS.GuildMap ~= nil end,
       words = L["share, location, map, journal, hide"] },
     { sub = "profile",   label = L["Birthday"], cond = function() return GuildOS.Birthdays ~= nil end },
-    { sub = "profile",   label = L["Getting started"], words = L["intro, tutorial, onboarding, help"] },
+    { sub = "help",      label = L["Tours"], words = L["intro, tutorial, onboarding, help, tour, guide"] },
     { sub = "interface", label = L["Appearance"], words = L["font, game font, scale, size, look"] },
     { sub = "interface", label = L["In the game"], words = L["minimap, button, tooltip, alt-click, snow"] },
     { sub = "chat",      label = L["Guild chat"], words = L["whisper, timestamp, class colours, alt tag, chat tweaks"] },
@@ -282,6 +282,16 @@ local function screens(text)
             end
         end
     end
+    -- The tours and the guides (specs/salao/onboarding.md): by their names, and by "tour", "tutorial", "help".
+    local O = GuildOS.Onboarding
+    if O and O.SearchEntries then
+        for _, h in ipairs(O:SearchEntries()) do
+            if has(h.name, text) or has(h.words, text) then
+                out[#out + 1] = { kind = "screen", name = h.name, roomId = "settings", entry = settingsEntry.help,
+                    sub = L["Help"], help = h }
+            end
+        end
+    end
     -- Whose name starts with the query first, the room's order kept otherwise.
     for i, r in ipairs(out) do r.order = i end
     table.sort(out, function(a, b)
@@ -342,6 +352,13 @@ function Search:Open(r)
         if panel and panel.FocusRecipe and panel:FocusRecipe(r.recipeId, r.name, r.profName) then return true end
         if r.itemId and GuildOS.ShowCraftFor then return GuildOS:ShowCraftFor(r.itemId) end
         return true
+    elseif r.kind == "screen" and r.help then
+        -- A tour starts, a guide opens, What's new shows.
+        local h = r.help
+        if h.track and UI.Tour then return UI.Tour:Start(h.track) end
+        if h.guide and UI.HelpPanel then return UI.HelpPanel:OpenGuide(h.guide) ~= nil end
+        if h.whatsnew then return GuildOS:ShowWhatsNew(true) ~= nil end
+        return false
     elseif r.kind == "screen" then
         f = f or UI:GetMainWindow()
         if not f then return false end

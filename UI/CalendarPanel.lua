@@ -460,6 +460,8 @@ function GuildOS:CreateCalendarSub(panel)
     f.monthCard = monthCard
     local dayCard = UI:CreateCard(f, "")
     f.dayCard = dayCard
+    -- The tour's "Sign up for raids" (UI/Tour.lua): the chosen day, where the sign-up is.
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("raids.signup", dayCard) end
 
     -- Month navigation: ‹ the month › as the card's title, Today beside it; New Event at the card's right.
     local function arrow(text)

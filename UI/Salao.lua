@@ -2,8 +2,8 @@
 -- Guild OS - The Salão (specs/salao, #445)
 -- The first screen, in place of the Now tab: a place that answers in three seconds what is on tonight,
 -- who is home and what this player still has to do. Drawn as the approved mockup's Início (phase 3, #449),
--- in two columns, stacked when the window is narrow. On the left, parchment cards: Set up (an officer's,
--- while the guild's activation is not done), For you (three lines at most, each a coloured square, a line
+-- in two columns, stacked when the window is narrow. On the left, parchment cards: Get started (an officer's,
+-- while the guild is not set up: specs/salao/onboarding.md, WoW: Forever's activation folded in), For you (three lines at most, each a coloured square, a line
 -- under it and one button), the Notice board (the next events as pinned notes, this player's answer
 -- outlining each, and the newest notice under them) and, filling the column's height under it, the Guild chat
 -- (a dark card: the last lines of /g, an officer's channel too for an officer, and a box to answer). On the right: the countdown to the raids (Forever),
@@ -87,6 +87,14 @@ end
 -- { text, action, id, sub, filter, count, urgent } each. The guild's setup has its own card (Salao:Setup).
 function Salao:ForYou()
     local out = {}
+    -- A member's getting started (specs/salao/onboarding.md): one line, the whole list in Settings › Help.
+    local Ob = GuildOS.Onboarding
+    local gs = Ob and Ob.MemberLine and Ob:MemberLine(now())
+    if gs then
+        out[#out + 1] = { text = L["Getting started"], action = L["Open"], id = "settings", sub = "help",
+                          mark = string.format("%d/%d", gs.done, gs.total), gettingStarted = true,
+                          small = L["Settings \226\128\186 Help \194\183 a few small things to set up"] }
+    end
     local veil = self:VeilLine()
     if veil then out[#out + 1] = veil end
     local A = UI.Agora
@@ -98,15 +106,17 @@ function Salao:ForYou()
     return out
 end
 
--- The guild's setup for an officer while it is not done (WoW: Forever's activation, Modules/Activation.lua):
--- { done, total, steps = { { id, done } ... }, staleDays }, or nil.
+-- Get started, the officers' card (specs/salao/onboarding.md; Modules/Onboarding.lua): { items, done, total, all,
+-- staleDays }, or nil while it does not show. On WoW: Forever the site's item carries the activation's five
+-- steps (Modules/Activation.lua), so there is one card, not two.
 function Salao:Setup()
+    local Ob = GuildOS.Onboarding
+    local card = Ob and Ob.OfficerCard and Ob:OfficerCard(now())
+    if not card then return nil end
     local act = GuildOS.Activation
-    if not (act and act.ShouldShow and act:ShouldShow(now())) then return nil end
-    local r = act:Read(now())
-    local steps = {}
-    for _, id in ipairs(act.STEPS or {}) do steps[#steps + 1] = { id = id, done = r.steps and r.steps[id] or false } end
-    return { done = r.done or 0, total = #steps, steps = steps, staleDays = r.staleDays }
+    if act and act.Read then card.staleDays = act:Read(now()).staleDays end
+    if card.celebrate then GuildOS:Print(L["The guild is set up. Well done!"]) end
+    return card
 end
 
 -- The notice board: the next events still to start, { title, when, rsvp }, and the newest notice. The raids
@@ -567,13 +577,7 @@ local function stocking(chimney, i)
     return sk
 end
 
-local STEP_LABEL = {
-    publish = function() return L["Publish"] end,
-    bot = function() return L["Discord bot"] end,
-    account = function() return L["Site account"] end,
-    members = function() return string.format(L["%d members with the addon"], 5) end,
-    run = function() return L["A run in a group"] end,
-}
+local GS_ROW, GS_SUB = 40, 22
 
 function GuildOS:CreateSalaoPanel(panel)
     local scroll, content = UI:CreateScrollFrame(panel, "GuildOSSalaoScroll")
@@ -581,7 +585,7 @@ function GuildOS:CreateSalaoPanel(panel)
     UI:BindScrollChildWidth(scroll, content)
     panel.scroll, panel.content = scroll, content
 
-    local setup    = UI:CreateCard(content, L["Set up Guild OS"], { link = L["Hide"] })
+    local setup    = UI:CreateCard(content, L["Get started"], { link = L["Hide for 30 days"] })
     local forYou   = UI:CreateCard(content, L["For you"])
     local board    = UI:CreateCard(content, L["Notice board"], { link = L["Calendar"] })
     local chimney  = UI:CreateCard(content, L["The Chimney"], { dark = true })
@@ -601,14 +605,33 @@ function GuildOS:CreateSalaoPanel(panel)
     chimney.__look.fill:SetRGBA(0.357, 0.102, 0.071, 1)
     chimney.__look.line:SetColor(C.metal2)
 
-    -- Set up: the five steps as pills, green when done, and how far the guild got.
-    setup.steps = {}
-    setup.line = text(setup, 12, C.paperSoft)
+    -- Get started: how far the guild got (a line and a bar), then each item with its tick, what counts, and
+    -- Show me (a one-step tour) or Done; the site's item on WoW: Forever carries the activation's steps as pills.
+    setup.items, setup.pills = {}, {}
+    setup.meta = text(setup, UI.SP.META, C.paperSoft)
+    setup.track = setup:CreateTexture(nil, "ARTWORK")
+    setup.track:SetTexture("Interface\\Buttons\\WHITE8x8")
+    setup.track:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
+    setup.track:SetHeight(5)
+    setup.bar = setup:CreateTexture(nil, "ARTWORK", nil, 1)
+    setup.bar:SetTexture("Interface\\Buttons\\WHITE8x8")
+    setup.bar:SetVertexColor(0.608, 0.133, 0.086, 1)
+    setup.bar:SetHeight(5)
+    setup.line = text(setup, UI.SP.META, C.paperSoft)
+    setup.line:SetWordWrap(true)
     local refresh
     setup.link:SetScript("OnClick", function()
-        if GuildOS.Activation then GuildOS.Activation:Hide(now()) end
+        if GuildOS.Onboarding then GuildOS.Onboarding:HideOfficerCard(now()) end
         if refresh then GuildOS:SafeCall(refresh) end
     end)
+    if UI.RegisterTourAnchor then
+        UI:RegisterTourAnchor("salao.setup", setup)
+        UI:RegisterTourAnchor("salao.foryou", forYou)
+        UI:RegisterTourAnchor("salao.board", board)
+        UI:RegisterTourAnchor("salao.fire", fire)
+        UI:RegisterTourAnchor("salao.wall", wall)
+        UI:RegisterTourAnchor("salao.chat", chat)
+    end
 
     -- Start raid (#400), under the notes, while this player may lead the invites of the site's raid in its window:
     -- the same stepper the Web screen has. The raid's name over it when it is not the board's first event.
@@ -772,44 +795,143 @@ function GuildOS:CreateSalaoPanel(panel)
         end)
     end
 
+    -- One item's row, made once and kept.
+    local function gsRow(i)
+        local r = setup.items[i]
+        if r then return r end
+        r = CreateFrame("Frame", nil, setup)
+        r:SetHeight(GS_ROW)
+        r.rule = r:CreateTexture(nil, "ARTWORK")
+        r.rule:SetTexture("Interface\\Buttons\\WHITE8x8")
+        UI:Hairline(r.rule)
+        r.rule:SetVertexColor(C.paperLine.r, C.paperLine.g, C.paperLine.b, 1)
+        r.rule:SetPoint("TOPLEFT", 0, 0)
+        r.rule:SetPoint("TOPRIGHT", 0, 0)
+        r.tick = GuildOS.Style:Texture(r, "circle", "ARTWORK", 0)
+        r.tick:SetSize(16, 16)
+        r.tick:SetPoint("TOPLEFT", 0, -9)
+        r.ring = GuildOS.Style:Texture(r, "ring", "ARTWORK", 1)
+        r.ring:SetSize(18, 18)
+        r.ring:SetPoint("CENTER", r.tick, "CENTER", 0, 0)
+        r.main = text(r, 13, C.paperInk, "button")
+        r.main:SetPoint("TOPLEFT", 26, -6)
+        r.side = text(r, 11, C.paperSoft)
+        r.side:SetPoint("TOPLEFT", r.main, "BOTTOMLEFT", 0, -2)
+        r.btn = UI:CreateButton(r, L["Show me"], 70, 22)
+        r.btn:SetPoint("TOPRIGHT", 0, -8)
+        r.btn:SetScript("OnClick", function()
+            local it = r.item
+            if it and UI.Tour then UI.Tour:ShowMe(it.go, it.title, it.desc) end
+        end)
+        r.hand = UI:SetButtonVariant(UI:CreateButton(r, L["We promote by hand"], 90, 18), "ghost")
+        r.hand:SetScript("OnClick", function()
+            if GuildOS.Onboarding then GuildOS.Onboarding:PromoteByHand() end
+            if refresh then GuildOS:SafeCall(refresh) end
+        end)
+        r.done = UI:CreateBadge(r, L["Done"], C.ok)
+        r.done:SetPoint("TOPRIGHT", 0, -11)
+        setup.items[i] = r
+        return r
+    end
+
     local function fillSetup(width)
         local st = Salao:Setup()
-        for _, p in ipairs(setup.steps) do p:Hide() end
+        for _, r in ipairs(setup.items) do r:Hide() end
+        for _, p in ipairs(setup.pills) do p:Hide() end
+        setup.meta:SetShown(st ~= nil)
         if not st then return 0 end
-        local x, y, rowH = CARD_PAD, CARD_PAD + TITLE_H, 22
-        for i, step in ipairs(st.steps) do
-            local p = setup.steps[i]
-            if not p then
-                p = CreateFrame("Frame", nil, setup)
-                p:SetHeight(18)
-                p.fill = GuildOS.Style:Three(p, "pill", "BACKGROUND", 1)
-                p.label = text(p, 11, C.paperSoft)
-                p.label:SetPoint("CENTER", 0, 0)
-                setup.steps[i] = p
+        local inner = width - 2 * CARD_PAD
+        local y = CARD_PAD + TITLE_H
+        setup.meta:SetText(string.format(L["%d of %d \194\183 for officers"], st.done, st.total))
+        setup.meta:ClearAllPoints()
+        setup.meta:SetPoint("TOPLEFT", CARD_PAD, -y)
+        local mw = math.ceil(setup.meta:GetStringWidth() or 60)
+        local barW = math.max(30, inner - mw - 12)
+        setup.track:ClearAllPoints()
+        setup.track:SetPoint("TOPLEFT", CARD_PAD + mw + 12, -(y + 5))
+        setup.track:SetWidth(barW)
+        setup.bar:ClearAllPoints()
+        setup.bar:SetPoint("TOPLEFT", setup.track, "TOPLEFT", 0, 0)
+        setup.bar:SetWidth(math.max(1, math.floor(barW * st.done / math.max(1, st.total))))
+        setup.bar:SetShown(st.done > 0)
+        y = y + 18
+        local np = 0
+        for i, it in ipairs(st.items) do
+            local r = gsRow(i)
+            r.item = it
+            r:ClearAllPoints()
+            r:SetPoint("TOPLEFT", CARD_PAD, -y)
+            r:SetWidth(inner)
+            r.rule:SetShown(i > 1)
+            local c = it.done and C.ok or C.paperLine
+            r.tick:SetVertexColor(c.r, c.g, c.b, it.done and 1 or 0.3)
+            r.ring:SetVertexColor(c.r, c.g, c.b, 1)
+            r.main:SetText(it.title)
+            r.side:SetText(it.desc)
+            r.btn:SetShown(not it.done)
+            r.done:SetShown(it.done)
+            r.btn:SetWidth(math.max(60, math.ceil(r.btn.label:GetStringWidth() or 50) + 20))
+            local right = it.done and (r.done:GetWidth() + 8) or (r.btn:GetWidth() + 8)
+            r.main:SetWidth(math.max(40, inner - 26 - right))
+            r.side:SetWidth(math.max(40, inner - 26 - right))
+            local h = GS_ROW
+            -- The ranks' second way to be done.
+            r.hand:SetShown(it.byHand and not it.done or false)
+            if r.hand:IsShown() then
+                r.hand:SetWidth(math.ceil(r.hand.label:GetStringWidth() or 80) + 4)
+                r.hand:ClearAllPoints()
+                r.hand:SetPoint("TOPLEFT", r, "TOPLEFT", 26, -(GS_ROW - 2))
+                h = h + 16
             end
-            p.label:SetText((STEP_LABEL[step.id] or function() return step.id end)())
-            local pw = math.ceil(p.label:GetStringWidth()) + 14
-            if x + pw > width - CARD_PAD and x > CARD_PAD then x, y = CARD_PAD, y + rowH end
-            p:SetWidth(pw)
-            if step.done then
-                p.fill:SetRGBA(0.184, 0.431, 0.2, 1)
-                p.label:SetTextColor(1, 1, 1)
-            else
-                p.fill:SetRGBA(0.878, 0.8, 0.624, 1)
-                p.label:SetTextColor(C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+            -- The activation's steps (WoW: Forever) as pills, green when done.
+            if it.sub then
+                local x, py = 26, h - 4
+                for _, stp in ipairs(it.sub) do
+                    np = np + 1
+                    local p = setup.pills[np]
+                    if not p then
+                        p = CreateFrame("Frame", nil, setup)
+                        p:SetHeight(18)
+                        p.fill = GuildOS.Style:Three(p, "pill", "BACKGROUND", 1)
+                        p.label = text(p, 11, C.paperSoft)
+                        p.label:SetPoint("CENTER", 0, 0)
+                        setup.pills[np] = p
+                    end
+                    p:SetParent(r)
+                    p.label:SetText((stp.done and "\226\156\147 " or "") .. stp.label)
+                    local pw = math.ceil(p.label:GetStringWidth() or 40) + 14
+                    if x + pw > inner and x > 26 then x, py = 26, py + GS_SUB end
+                    p:SetWidth(pw)
+                    if stp.done then
+                        p.fill:SetRGBA(0.184, 0.431, 0.2, 1)
+                        p.label:SetTextColor(1, 1, 1)
+                    else
+                        p.fill:SetRGBA(0.878, 0.8, 0.624, 1)
+                        p.label:SetTextColor(C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
+                    end
+                    p:ClearAllPoints()
+                    p:SetPoint("TOPLEFT", r, "TOPLEFT", x, -py)
+                    p:Show()
+                    x = x + pw + 4
+                end
+                h = py + GS_SUB + 2
             end
-            p:ClearAllPoints()
-            p:SetPoint("TOPLEFT", x, -y)
-            p:Show()
-            x = x + pw + 4
+            r:SetHeight(h)
+            r:Show()
+            y = y + h
         end
-        y = y + rowH + 4
-        setup.line:SetText(string.format(L["%d of %d steps done."], st.done, st.total)
-            .. (st.staleDays and (" " .. string.format(L["Checked %d days ago."], st.staleDays)) or ""))
-        setup.line:ClearAllPoints()
-        setup.line:SetPoint("TOPLEFT", CARD_PAD, -y)
-        setup.line:SetWidth(width - 2 * CARD_PAD)
-        return y + 18 + CARD_PAD - 4
+        local msg
+        if st.all then msg = L["All done. This card leaves the Hall tomorrow; it stays in Settings \226\128\186 Help."]
+        elseif st.staleDays then msg = string.format(L["Checked %d days ago."], st.staleDays) end
+        setup.line:SetShown(msg ~= nil)
+        if msg then
+            setup.line:SetText(msg)
+            setup.line:ClearAllPoints()
+            setup.line:SetPoint("TOPLEFT", CARD_PAD, -(y + 6))
+            setup.line:SetWidth(inner)
+            y = y + 6 + math.ceil(setup.line:GetStringHeight() or 14)
+        end
+        return y + CARD_PAD
     end
 
     local function fillBoard(width, events, bulletins)
@@ -995,9 +1117,10 @@ function GuildOS:CreateSalaoPanel(panel)
         -- For you
         local items = {}
         for i, it in ipairs(Salao:ForYou()) do
-            local mark = it.count and tostring(it.count) or (it.id == "guild" and "?") or UI.Initial(it.text)
-            items[#items + 1] = { text = it.text, small = whereOf(it), action = it.action, run = open(it), mark = mark,
-                                  color = it.urgent and URGENT or TODO_COLOR[it.id] or C.paperSoft, primary = i == 1 }
+            local mark = it.mark or (it.count and tostring(it.count)) or (it.id == "guild" and "?") or UI.Initial(it.text)
+            items[#items + 1] = { text = it.text, small = it.small or whereOf(it), action = it.action, run = open(it), mark = mark,
+                                  color = it.gettingStarted and URGENT or it.urgent and URGENT or TODO_COLOR[it.id] or C.paperSoft,
+                                  primary = i == 1 }
         end
         if #items == 0 then items[1] = { text = L["All caught up."] } end
         local hYou = fillTodos(forYou, items, leftW)
