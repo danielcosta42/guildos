@@ -2746,7 +2746,9 @@ end
 -- A guild invite (#256, #449). WoW: Forever 1.60.1.70790 refused all three ways one has, in game on 2026-11-04:
 -- GuildInvite itself, which is only C_GuildInfo.Invite there (ADDON_ACTION_FORBIDDEN, from a click too); a secure
 -- button running a /ginvite the addon wrote (MACRO_ACTION_BLOCKED); and that line left in the chat box for the
--- player's Enter (blocked, and the box stayed tainted until a /reload). So on Forever nothing offers an invite,
+-- player's Enter (blocked, and the box stayed tainted until a /reload). A fourth, on 2026-11-27: a saved character
+-- macro the addon wrote with EditMacro, clicked by the player on an action bar, was blocked too ("A macro script has
+-- been blocked from an action only available to the Blizzard UI"). The game's player menu has no guild invite. So on Forever nothing offers an invite,
 -- and what still asks for one is shown the /ginvite line to copy (UI/ActionQueue.lua). TBC Anniversary and retail
 -- let an addon invite: C_GuildInfo.Invite is restricted #hwevent there (https://warcraft.wiki.gg/wiki/
 -- API_C_GuildInfo.Invite), so one key press or click per invite (Compat.NeedsHardware("guildInvite"); the
@@ -2755,22 +2757,6 @@ function Compat.AddonMayInvite()
     local c = GuildOS.Client
     if not (c.isAnniversary or c.isRetail) then return false end
     return (CanGuildInvite and CanGuildInvite()) == true
-end
-
--- A saved macro of this character, made or rewritten: true, or false and why ("combat", "api", "full").
--- Out of combat only (the game refuses macro edits in it). Used by `/gos debug invitemacro` (WoW: Forever).
-function Compat.WriteMacro(name, body)
-    if InCombatLockdown and InCombatLockdown() then return false, "combat" end
-    if not (GetMacroIndexByName and CreateMacro and EditMacro) then return false, "api" end
-    local icon = "INV_Misc_QuestionMark"
-    local i = GetMacroIndexByName(name)
-    if i and i > 0 then
-        local ok = pcall(EditMacro, i, name, icon, body)
-        return ok, ok and nil or "edit"
-    end
-    local ok, idx = pcall(CreateMacro, name, icon, body, true)
-    if not ok or not idx or idx == 0 then return false, "full" end
-    return true
 end
 
 -- The guild invite itself: C_GuildInfo.Invite where the client has it (the global GuildInvite went in 2.5.5,

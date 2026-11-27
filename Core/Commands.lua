@@ -588,16 +588,6 @@ local function handleCommand(msg)
     elseif msg == "debug probe chat" then
         -- Whether chat from a timer gets through, measured (issue #75).
         if GuildOS.Probe then GuildOS.Probe:RunChat() end
-    elseif msg:match("^debug invitemacro%s+%S+$") then
-        -- An experiment for WoW: Forever, where the game refuses every invite an addon makes (Compat.GuildInvite):
-        -- whether a real saved macro, rewritten by the addon and clicked by the officer on an action bar, may.
-        local name = msg:match("^debug invitemacro%s+(%S+)$")
-        local ok, why = GuildOS.Compat.WriteMacro("GOSInvite", "/ginvite " .. name)
-        if ok then
-            GuildOS:Print("Macro GOSInvite now says /ginvite " .. name .. ". Open /macro, drag GOSInvite to an action bar and click it, then tell us whether the invite went or the game said it was blocked.")
-        else
-            GuildOS:Print("Could not write the macro GOSInvite (" .. tostring(why) .. ").")
-        end
     elseif msg == "debug probe invite" then
         -- What needs a key press here, measured without inviting anybody (#449, specs/salao/convites.md).
         if GuildOS.Probe then GuildOS.Probe:RunInvite() end
