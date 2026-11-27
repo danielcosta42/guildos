@@ -963,6 +963,7 @@ end
 local function buildLists(panel)
     -- One dark card on the wood (the mockup's saque-listas): "Lists", the two views as pills under its title.
     local card = UI:CreateCard(panel, L["Lists"], { dark = true })
+    if UI.RegisterTourAnchor then UI:RegisterTourAnchor("loot.wishlist", card) end   -- the tour (UI/Tour.lua)
     card:SetPoint("TOPLEFT", 0, -GAP)
     card:SetPoint("BOTTOMRIGHT", -GAP, GAP)
     local bar = CreateFrame("Frame", nil, card)

@@ -124,6 +124,9 @@ local IN_UI = {
   ally        = { { "UI/AlliancePanel.lua", "ally:Guilds()" }, { "UI/AlliancePanel.lua", "p.guildBridge = not p.guildBridge" } },
   -- The campfire beacon (WoW: Forever, ChehulNet v17): Settings > Profile > Privacy's two checks.
   campfire    = { { "UI/SettingsPanel.lua", "CN:SetCampConsent(checked)" }, { "UI/SettingsPanel.lua", "CN:SetCampRealm(checked)" } },
+  -- The tours and What's new (specs/salao/onboarding.md): Settings › Help's rows, behind the title bar's "?".
+  tour        = { { "UI/HelpPanel.lua", "UI.Tour:Start(id)" }, { "UI/Window.lua", "f:OpenHelp(" } },
+  whatsnew    = { { "UI/HelpPanel.lua", "GuildOS:ShowWhatsNew(true)" } },
 }
 local ALIAS = {
   points = { "dkp" }, equity = { "lootequity" }, bulletin = { "board" }, polls = { "poll" },
@@ -131,7 +134,7 @@ local ALIAS = {
   beacon = { "recruitbeacon" }, map = { "guildmap" }, recruit = { "recruiting" }, autoinvite = { "ai" },
   cons = { "consumables" }, lm = { "lootmaster" }, web = { "companion" }, exportatt = { "exportattendance" },
   attune = { "attunements" }, signup = { "unsignup" }, ban = { "tempban", "unban", "banlist" },
-  ally = { "alliance" }, birthday = { "aniversario" },
+  ally = { "alliance" }, birthday = { "aniversario" }, whatsnew = { "news" },
 }
 -- Chat-only, and why.
 local CHAT_ONLY = {

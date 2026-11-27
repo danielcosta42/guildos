@@ -445,41 +445,14 @@ check(atlases == 0 and ffield.__look.fill and ffield.backdrop == nil, "a Forever
 local fbox = GuildOS.UI:CreateInput(fhost, 460, 250, { multiline = true })
 check(fbox.__look.fill and fbox.backdrop == nil, "a multi-line box too")
 
--- ── 12. The onboarding asks the style first (#375) ─────────────────────
--- Where the client draws both styles the wizard's first step is the style: two cards, the one on screen
--- chosen. A pick is saved at once; the reload it needs comes only when the wizard is finished, and only
--- when the style changed.
-local inCombat = false
-local function onboarding(opts)
-  S = load(opts); S:Resolve()
-  function InCombatLockdown() return inCombat end
-  function GuildOS:CreateRolePicker(parent)
-    local f = CreateFrame("Frame", nil, parent)
-    f.refresh = function() end
-    return f
-  end
-  function GuildOS:IsOfficer() return false end
-  GuildOS.onboardingFrame = nil
-  dofile(ADDON .. "/UI/Onboarding.lua")
-  GuildOS:ShowOnboarding()
-  return GuildOS.onboardingFrame
+-- ── 12. The onboarding has no style step (#445, specs/salao/onboarding.md) ──
+-- One look: the welcome and What's new (UI/Onboarding.lua) never ask for a style, and never reload.
+do
+  local fh = assert(io.open(ADDON .. "/UI/Onboarding.lua", "rb"))
+  local src = fh:read("*a")
+  fh:close()
+  check(not src:find("styleStep", 1, true) and not src:find("Style:Choose", 1, true) and not src:find("ReloadUI", 1, true),
+    "the welcome has no style step and no reload")
 end
-local Cn
-local function shownCards(f)
-  local out = {}
-  for _, c in ipairs(f.styleCards) do if c.shown then out[#out + 1] = c end end
-  return out
-end
-local function finish(f)
-  while f.step < #f.steps do f.nextBtn.scripts.OnClick(f.nextBtn) end
-  return f.nextBtn.label.text
-end
-
-local ob = onboarding({ db = {} })
-check(ob.title.text == "Welcome to Guild OS" and not shownCards(ob)[1], "the Forever client has no style step either (#445)")
-check(finish(ob) == "Finish", "and finishes without a reload")
-ob = onboarding({ db = {}, noArt = true })
-check(ob.title.text == "Welcome to Guild OS" and not shownCards(ob)[1], "a client with one style has no style step")
-check(finish(ob) == "Finish", "and finishes without a reload")
 
 print(("style: %d checks passed"):format(checks))

@@ -376,6 +376,11 @@ function GuildOS:CreateWebPanel(parent, _win)
     local raidCard  = UI:CreateCard(content, L["Planned raid"])
     local firstCard = UI:CreateCard(content, L["First time?"])
     panel.cards = { publishing = pubCard, raid = raidCard, first = firstCard }
+    -- The tour (UI/Tour.lua): the site and the companion, and where the guild is linked.
+    if UI.RegisterTourAnchor then
+        UI:RegisterTourAnchor("web.site", firstCard)
+        UI:RegisterTourAnchor("web.link", pubCard)
+    end
 
     local INK, SOFT = C.paperInk, C.paperSoft
     local S = UI.STATUS_INK or {}

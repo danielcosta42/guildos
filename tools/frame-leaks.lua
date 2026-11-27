@@ -914,6 +914,50 @@ do
   end
 end
 
+-- Onboarding (specs/salao/onboarding.md): What's new paged through and shown again, a whole tour run (every
+-- step, its callout and pictures), Show me, the help hub refreshed and a guide opened again, and the Hall's
+-- Get started card redrawn: all made once.
+do
+  local O, Tour = GuildOS.Onboarding, UI.Tour
+  if O and Tour then
+    steady("What's new (paged, shown again)", function()
+      GuildOSDB._onboard = nil
+      local w = GuildOS:ShowWhatsNew(true)
+      for _ = 1, #w.cards - 1 do w:Go(1) end
+      w:Go(-1)
+      w:Hide()
+      GuildOS:ShowWhatsNew(true, "welcome"):Hide()
+    end)
+    open("salao", "home")
+    steady("a whole member tour", function()
+      O:Progress("member").done, O:Progress("member").step = nil, 1
+      Tour:Start("member")
+      for _ = 1, 25 do if Tour.state.mode == "tour" then Tour:Next() end end
+      Tour:Stop()
+    end)
+    steady("the officers' tour at 452 px", function()
+      GuildOS.RosterFrame:SetSize(452, 620)
+      Tour:Start("officer", "recruit")
+      for _ = 1, 25 do if Tour.state.mode == "tour" then Tour:Next() end end
+      Tour:Stop()
+      GuildOS.RosterFrame:SetSize(1250, 720)
+    end)
+    steady("Show me", function()
+      local it = O:Checklist("officer")[1]
+      Tour:ShowMe(it.go, it.title, it.desc)
+      Tour:Stop()
+    end)
+    local _, help = open("settings", "help")
+    steady("Settings › Help (refreshed, a guide opened)", function()
+      if help and help.SelectSub then help.SelectSub("help") end
+      UI.HelpPanel:OpenGuide("map"):Hide()
+      UI.HelpPanel:OpenGuide("moderate"):Hide()
+    end)
+    local _, home = open("salao", "home")
+    steady("the Hall's Get started card", function() if home and home.Refresh then home.Refresh() end end)
+  end
+end
+
 -- Every other module hook, fired while the window is closed, makes nothing.
 do
   closeWindow()
