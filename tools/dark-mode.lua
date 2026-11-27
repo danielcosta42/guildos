@@ -167,6 +167,8 @@ for k, c in pairs(C) do
     if PAPER[k] then
       check(not same(c, before[k]), "dark mode changes C." .. k)
       check(hx(c) == hx(DARK[k]), ("dark C.%s is #%s"):format(k, hx(DARK[k])))
+    elseif GuildOS.WoodPalettes.dark[k] then
+      check(hx(c) == hx(GuildOS.WoodPalettes.dark[k]), ("dark C.%s is the ebony #%s"):format(k, hx(GuildOS.WoodPalettes.dark[k])))
     else
       check(same(c, before[k]), "dark mode leaves C." .. k .. " (the wood's, the gold's, a legacy key) alone")
     end
@@ -298,6 +300,29 @@ end
 check(found and found.sub == "interface", "the search finds Dark mode in Settings > Interface")
 for _, w in ipairs({ "dark", "theme", "night" }) do
   check(found.words:find(w, 1, true), "the search finds dark mode by \"" .. w .. "\"")
+end
+
+-- Ebony: the boards and the title bar take GuildOS.EBONY in dark mode; other art keeps its colours.
+do
+  local f = { CreateTexture = function()
+    local t = { vc = nil }
+    function t:SetTexture() end
+    function t:SetHorizTile() end
+    function t:SetVertTile() end
+    function t:SetVertexColor(r, g, b, a) self.vc = { r, g, b, a } end
+    return t
+  end }
+  GuildOS:SetDarkPaper(true)
+  local w = GuildOS.Style:Texture(f, "wood", "BACKGROUND", 0, true)
+  local tb = GuildOS.Style:Texture(f, "titlebar", "BACKGROUND")
+  local ring = GuildOS.Style:Texture(f, "ring", "ARTWORK")
+  check(w.vc and math.abs(w.vc[1] - GuildOS.EBONY.r) < 1e-6, "dark mode: the wood is ebony")
+  check(tb.vc ~= nil, "dark mode: the title bar is ebony")
+  check(ring.vc == nil, "dark mode: other art keeps its colours")
+  GuildOS:SetDarkPaper(false)
+  local w2 = GuildOS.Style:Texture(f, "wood", "BACKGROUND", 0, true)
+  check(w2.vc == nil, "light mode: the wood keeps its own colour")
+  check(hx(C.bg) == hx(GuildOS.WoodPalettes.light.bg), "light mode: the wood's tokens come back")
 end
 
 print(("dark-mode: %d checks passed"):format(checks))

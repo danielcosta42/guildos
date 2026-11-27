@@ -125,6 +125,11 @@ function Style:Texture(frame, name, layer, sub, tile)
         t:SetTexture(self.ART[name])
     end
     t.__art = name
+    -- Dark mode: the boards and the title bar in ebony (GuildOS.EBONY); the rest of the art keeps its colours.
+    if GuildOS.darkPaper and (name == "wood" or name == "titlebar") and GuildOS.EBONY then
+        local e = GuildOS.EBONY
+        t:SetVertexColor(e.r, e.g, e.b, 1)
+    end
     return t
 end
 

@@ -173,6 +173,21 @@ local DARK_PAPER = {
 }
 GuildOS.PaperPalettes = { light = LIGHT_PAPER, dark = DARK_PAPER }
 
+-- The wood in dark mode: ebony. The boards' texture takes EBONY as its tint (Style:Texture) and the wood's flat
+-- tokens a near-black brown; the ink on the wood (text, textSoft, the gold) does not move, and reads better on it.
+GuildOS.WOOD_KEYS = { "bg", "panel", "popup", "well", "line" }
+local LIGHT_WOOD = {}
+for _, k in ipairs(GuildOS.WOOD_KEYS) do LIGHT_WOOD[k] = rgb(T[k].r, T[k].g, T[k].b, T[k].a) end
+local DARK_WOOD = {
+    bg    = hex("120c08"),
+    panel = hex("17100b"),
+    popup = hex("0e0906"),
+    well  = hex("090604"),
+    line  = hex("2b2017"),
+}
+GuildOS.WoodPalettes = { light = LIGHT_WOOD, dark = DARK_WOOD }
+GuildOS.EBONY = rgb(0.36, 0.31, 0.29)   -- the boards' tint: dark, a little cold, the grain still showing
+
 local function lin(v) return v <= 0.03928 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4 end
 local function lum(c) return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b) end
 local function contrast(a, b)
@@ -246,6 +261,11 @@ function GuildOS:SetDarkPaper(on)
     for _, k in ipairs(GuildOS.PAPER_KEYS) do
         local t, v = C[k], from[k]
         t.r, t.g, t.b, t.a = v.r, v.g, v.b, v.a or 1
+    end
+    local wood = on and DARK_WOOD or LIGHT_WOOD
+    for _, k in ipairs(GuildOS.WOOD_KEYS) do
+        local t, v = C[k], wood[k]
+        if t then t.r, t.g, t.b = v.r, v.g, v.b end
     end
     for _, s in ipairs(GuildOS.PaperShades) do follow(s) end
     for _, fn in ipairs(GuildOS.PaperListeners) do fn(GuildOS.darkPaper) end
