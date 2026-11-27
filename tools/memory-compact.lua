@@ -409,6 +409,45 @@ GuildOS.Dialogs.GUILDOS_DELETE_GUILD_DB.OnAccept({ data = shown.data })
 check(GuildOSDB["Old Guild-Realm"] == nil and refreshed and GuildOSDB._staleDbTold["Old Guild-Realm"] == nil,
   "confirmed, it goes, and the page is refreshed")
 check(GuildOSDB["Recent-Other-Realm"] and GuildOSDB["_noguild-Realm"], "nothing else goes")
+-- Release safety S1: never this guild's data under another key. WoW: Forever's client answered no realm for a day
+-- (#394): the guild's "Guild-" database was made then, and the 1.34.1 recovery went back to "Guild-Realm"; either may
+-- hold the guild's data. Neither is offered for deletion, nor named by the digest, nor deleted when asked; and while
+-- the database in use is not settled (the guild's name not arrived) nothing is.
+GuildOSDB["Guild-"] = { members = { b = { name = "B" } }, _opened = NOW - 200 * 86400 }
+GuildOSDB["Guild-Unknown"] = { members = {}, _opened = NOW - 200 * 86400 }
+GuildOSDB["Gone-Realm"] = { members = {}, _opened = NOW - 200 * 86400 }
+GuildOSDB._staleDbTold = nil
+byKey = {}
+for _, e in ipairs(GuildOS:GuildDatabases()) do byKey[e.key] = e end
+check(byKey["Guild-"] and byKey["Guild-"].protected and byKey["Guild-Unknown"].protected and not byKey["Gone-Realm"].protected
+  and not byKey["Guild-Realm"].protected and byKey["Guild-Realm"].current, "this guild under another realm's key is marked kept")
+check(GuildOS:GuildDBLabel(byKey["Guild-"]) == "Guild (?)", "an empty realm reads as unknown, not as nothing")
+check(not GuildOS:DeleteGuildDB("Guild-") and GuildOSDB["Guild-"] and not GuildOS:AskDeleteGuildDB("Guild-Unknown"),
+  "and is never deleted, nor asked about")
+stale = GuildOS:StaleGuildDBs(NOW)
+check(#stale == 1 and stale[1] == "Gone-Realm", "the digest names only another guild's: " .. table.concat(stale, ","))
+line = GuildOS:StaleGuildDBLine(NOW)
+check(line and line:find("1 guild database", 1, true), "its hint counts only that one")
+local keepKey, keepDb = GuildOS.guildKey, GuildOS.db
+GuildOS.guildKey, GuildOS.db = nil, nil
+check(GuildOS:IsProtectedGuildDB("Gone-Realm") and not GuildOS:DeleteGuildDB("Gone-Realm") and #GuildOS:StaleGuildDBs(NOW) == 0,
+  "the database in use not settled yet: nothing is deleted, nothing named")
+GuildOS.guildKey, GuildOS.db = keepKey, keepDb
+-- A guildless character: its own realm's guildless database under another spelling is kept too, another realm's not.
+GuildOSDB["_noguild-"] = { settings = {} }
+GuildOSDB["_noguild-Far"] = { settings = {} }
+GuildOS.guildKey = "_noguild-Realm"
+GuildOSDB["_noguild-Realm"] = GuildOSDB["_noguild-Realm"] or { settings = {} }
+GuildOS.db = GuildOSDB["_noguild-Realm"]
+local keepIn = IsInGuild
+IsInGuild = function() return false end
+check(GuildOS:IsProtectedGuildDB("_noguild-") and not GuildOS:IsProtectedGuildDB("_noguild-Far")
+  and not GuildOS:IsProtectedGuildDB("Guild-"), "guildless: this realm's under any spelling kept, the rest deletable")
+IsInGuild = keepIn
+GuildOS.guildKey, GuildOS.db = keepKey, keepDb
+for _, k in ipairs({ "Guild-", "Guild-Unknown", "Gone-Realm", "_noguild-", "_noguild-Far" }) do GuildOSDB[k] = nil end
+GuildOSDB._staleDbTold = nil
+
 check(GuildOS.EstimateBytes({ a = "xy", [1] = 5, t = { b = true } }) == 4 + (1 + 7 + 2 + 4) + (10 + 10) + (1 + 7) + 4 + (1 + 7 + 6),
   "the size estimate counts keys, values and their punctuation")
 
@@ -418,5 +457,74 @@ GuildOS:PrintCompactSizes(db)
 local out = table.concat(printed, "\n")
 check(out:find("Recipes (compact):", 1, true) and out:find("gear compact on", 1, true) and out:find("Member history:", 1, true),
   "/gos debug mem prints the compact stores")
+
+-- ── 6. The previous version's data, kept at the upgrade (release safety S2) ──
+-- A database an older version saved (the recipes in db.recipes, gear tables, a history over the ceiling): right
+-- before the first conversion what it replaces is kept, by reference, in one slot per guild at the account's root;
+-- one line says so; the conversion then runs as before and the slot keeps the old shapes; a database already
+-- compact keeps nothing; the slot goes after 7 days, or at /gos backup forget; /gos backup previous hands it over as
+-- a backup string an older version restores, in the old shape.
+dofile(ADDON .. "/Modules/Backup.lua")
+local BK = GuildOS.Backup
+date = date or os.date
+local oldGear = { [1] = { id = 28770, name = "Crown", quality = 4, ilvl = 120, gems = {} } }
+local hist = {}
+for i = 1, MH.MAX_KEYS + 20 do hist["P" .. i .. "-Realm"] = { left = { { at = 1 } } } end
+local old = { members = { [ME] = { gear = oldGear, lastUpdate = 1 }, [BOB] = { gc = { [1] = "1:::::4\tRing" } } },
+  recipes = copy(LEGACY), memberHistory = hist, settings = {} }
+GuildOSDB["Old-Realm"] = old
+local said = {}
+local keepPrint = GuildOS.Print
+GuildOS.Print = function(_, m) said[#said + 1] = tostring(m) end
+local T0 = 1800000000
+check(BK:KeepBeforeUpgrade(old, "Old-Realm", T0), "an older version's database: its old shapes are kept before converting")
+check(said[1] == "Guild OS updated its saved data format. A backup was kept: /gos backup to manage it.", "and one line says so")
+local slot = GuildOSDB._prevVersion["Old-Realm"]
+check(slot.recipes == old.recipes and slot.gear[ME] == oldGear and slot.gear[BOB] == nil and slot.at == T0,
+  "by reference: the old recipe lists and each old gear table, nothing copied")
+local n = 0
+for _ in pairs(slot.history) do n = n + 1 end
+check(n == MH.MAX_KEYS + 20 and slot.history ~= old.memberHistory, "the whole history the conversion trims")
+-- The conversions, as the modules run them at load.
+RT.MigrateDB(old, {})
+GuildOS.Gear.MigrateDB(old)
+MH.MigrateDB(old)
+check(old.recipes == nil and old.members[ME].gear == nil and type(old.members[ME].gc) == "table",
+  "the conversion runs as before")
+check(slot.recipes[ME] and slot.recipes[ME].Leatherworking and slot.gear[ME][1].id == 28770, "and the slot keeps the old shapes")
+said = {}
+check(not BK:KeepBeforeUpgrade(old, "Old-Realm", T0 + 60) and #said == 0 and GuildOSDB._prevVersion["Old-Realm"] == slot,
+  "converted already: nothing kept again, nothing said, the slot as it was")
+check(not BK:KeepBeforeUpgrade({ members = {}, settings = {} }, "New-Realm", T0) and GuildOSDB._prevVersion["New-Realm"] == nil,
+  "a new, empty database keeps nothing")
+-- The string an older version's /gos restore takes: today's data with the old shapes back, the live rows untouched.
+local keepKey2 = GuildOS.guildKey
+GuildOS.guildKey = "Old-Realm"
+local back = BK:PreviousDB()
+check(back.recipes == slot.recipes and back.members[ME].gear == oldGear and back.members[ME].gc == nil
+  and old.members[ME].gc ~= nil and old.members[ME].gear == nil, "the previous version's database, the live one unchanged")
+local str = BK:PreviousString()
+local decoded = str and BK:Decode(str)
+check(decoded and decoded.recipes and decoded.members[ME].gear and decoded.members[ME].gear[1].id == 28770,
+  "/gos backup previous: a backup string with the old shapes")
+-- /gos backup says where it is and until when; forget deletes it.
+said = {}
+local exported
+local keepExport = GuildOS.ShowExportPopup
+GuildOS.ShowExportPopup = function(_, title, text) exported = { title, text } end
+BK:Command("")
+check(exported and said[#said] and said[#said]:find("/gos backup previous", 1, true), "/gos backup: the backup, and the kept one said")
+BK:Command("previous")
+check(exported[1] == "Guild OS Backup (previous version)" and exported[2] == str, "/gos backup previous shows its string")
+-- Seven days on, it goes by itself; never cumulative: one slot per guild.
+check(BK:PrunePrevious(T0 + 6 * 86400) == 0 and BK:Previous(), "six days on: still kept")
+check(BK:PrunePrevious(T0 + 7 * 86400) == 1 and BK:Previous() == nil and GuildOSDB._prevVersion == nil, "seven days on: gone")
+check(BK:KeepBeforeUpgrade({ recipes = { x = {} }, members = {} }, "Old-Realm", T0) and BK:ForgetPrevious()
+  and GuildOSDB._prevVersion == nil, "/gos backup forget deletes it")
+local cmd = assert(io.open(ADDON .. "/Core/Core.lua", "rb")):read("*a")
+local at1, at2 = cmd:find("Backup.KeepBeforeUpgrade", 1, true), cmd:find("self.db = guildDB", 1, true)
+check(at1 and at2 and at1 < at2, "ResolveGuildDB keeps it before the database is handed to the modules")
+GuildOS.guildKey, GuildOS.Print, GuildOS.ShowExportPopup = keepKey2, keepPrint, keepExport
+GuildOSDB["Old-Realm"] = nil
 
 print("memory-compact: " .. checks .. " checks passed")

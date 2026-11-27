@@ -492,6 +492,21 @@ local function lootTab(UI)
   check(boss and #buttons(acc, "Back to the standings") == 1, "the points' settings are behind one button")
   typeAndSave(boss, "15")
   check(P:GetDBForCore("Alpha").config.bossAward == 15 and P:GetDBForCore("").config.bossAward ~= 15, "and save on the core's pool")
+  -- The refund to the losers (Discord 1569080957267353680): right under the entry cost, greyed out with its reason
+  -- while entering costs nothing, live as soon as an entry cost is saved.
+  local entry = tagged(acc, "pointsKey", "entryCost")[1]
+  local refund = tagged(acc, "pointsKey", "refundPct")[1]
+  check(entry and refund and refund.points[1][3] < entry.points[1][3] and entry.points[1][3] - refund.points[1][3] <= 30,
+    "the losers' refund sits right under the cost to enter a roll")
+  typeAndSave(entry, "0")
+  check(refund.pointsOff and refund.pointsHint.text:find("Only works with a cost to enter a roll", 1, true),
+    "no entry cost: the refund is off and says why")
+  typeAndSave(entry, "5")
+  check(not refund.pointsOff and refund.pointsHint.text:find("given back", 1, true),
+    "an entry cost saved: the refund can be set, the hint says what it does")
+  typeAndSave(refund, "40")
+  check(P:GetDBForCore("Alpha").config.refundPct == 40, "and it saves")
+  typeAndSave(entry, "0")
   local mode = tagged(acc, "isMode")[1]
   -- Audit R9, B16: the "Loot Council" mode did nothing; DKP is the one left, and a pool saved with it reads DKP.
   check(mode and #mode.options == 1 and mode.options[1].value == "dkp", "the mode offers DKP alone, no council")
@@ -702,6 +717,46 @@ local function lootTable()
   check(LM.activeLoot.ended and f.decision.text:find("^Chehul wins: both reserved the item"), "End now closes it: " .. f.decision.text)
   check(f.awardBtn:IsEnabled() and f.awardBtn.label.text == "Award to Chehul",
     "and the Award button says who, on the label the player sees: " .. tostring(f.awardBtn.label.text))
+  -- Closed by mistake with the item still to give (Discord 1575506871723364392): a line says how to get it back,
+  -- /gos lm and the line's link reopen it as it was; nothing left to give, it stays closed.
+  do
+    local printed = {}
+    local keepPrint = GuildOS.Print
+    GuildOS.Print = function(_, m) printed[#printed + 1] = tostring(m) end
+    check(LM:HasUndelivered(), "an ended roll not delivered is still to give")
+    f:Hide()
+    check(printed[#printed] and printed[#printed]:find("still to give", 1, true)
+      and printed[#printed]:find("/gos lm reopens the loot table.", 1, true),
+      "closing the table says how to reopen it (no chat links on this client: the command): " .. tostring(printed[#printed]))
+    check(LM:Reopen() and f:IsShown() and f.selected and f.selected.link == LINK1, "Reopen brings it back, the item still picked")
+    local cmd = assert(io.open(ADDON .. "/Core/Commands.lua", "rb")):read("*a")
+    check(cmd:find('msg == "lm" or msg == "lootmaster"', 1, true) and cmd:find("GuildOS.LootMaster:Reopen()", 1, true),
+      "/gos lm reopens it")
+    -- A client with the game's addon links: the line carries a link, and a click on it reopens the table.
+    local hooked = {}
+    local keepHook, keepLU, keepLT = hooksecurefunc, LinkUtil, LinkTypes
+    hooksecurefunc = function(name, fn) hooked[name] = fn end
+    LinkUtil, LinkTypes = { RegisterLinkHandler = function() end }, { AddOn = "addon" }
+    LM:RegisterChatLink()
+    LM.lootWindowOpen = true
+    LM:OnLootClosed()
+    check(printed[#printed]:find("|Haddon:GuildOS:lm|h[Reopen the loot table]|h", 1, true),
+      "the game's loot window closing: the line has the link: " .. printed[#printed])
+    f:Hide()
+    check(type(hooked.SetItemRef) == "function", "one hook after the game's SetItemRef, nothing replaced")
+    hooked.SetItemRef("addon:GuildOS:lm", "[Reopen the loot table]", "LeftButton")
+    check(f:IsShown(), "a click on the link reopens the table")
+    hooked.SetItemRef("item:28770", "[x]", "LeftButton")
+    check(f:IsShown(), "another link does nothing of ours")
+    local delivered = LM.activeLoot.delivered
+    LM.activeLoot.delivered = true
+    local keepItems = LM.lootItems
+    LM.lootItems = {}
+    check(not LM:HasUndelivered() and not LM:Reopen(), "nothing left to give: nothing to reopen")
+    LM.lootItems, LM.activeLoot.delivered = keepItems, delivered
+    hooksecurefunc, LinkUtil, LinkTypes = keepHook, keepLU, keepLT
+    GuildOS.Print = keepPrint
+  end
   -- The rule's order changes, and so do the sentence and the button.
   check(LR:Set({ v = 1, model = "custom", order = { { k = "response" }, { k = "roll" } } }) == true, "a rule that reads only the roll")
   LM.activeLoot.rule = LR:Active()

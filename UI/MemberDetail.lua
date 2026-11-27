@@ -269,19 +269,28 @@ local function DetailKey(data)
     return GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
 end
 
--- The first character of the roster whose name starts with `typed` (any case), not one of `taken` (keys):
--- the Add alt field's suggestion. Nil under two letters or with none.
-local function SuggestCharacter(roster, typed, taken)
+-- The characters of the roster whose name starts with `typed` (any case), not one of `taken` (keys), in
+-- alphabetical order, `max` at most: the Add alt field's suggestions (Discord 1575077307075399731: one name was
+-- too few with a dozen alts starting alike). { name, key, class (its file) }. Empty under two letters.
+local SUGGEST_MAX = 6
+local function SuggestCharacters(roster, typed, taken, max)
     typed = (typed or ""):lower()
-    if #typed < 2 then return nil end
-    local best
+    local out = {}
+    if #typed < 2 then return out end
     for _, n in ipairs(roster.names) do
         if not taken[n.key] and n.name:lower():sub(1, #typed) == typed then
-            if not best or n.name < best then best = n.name end
+            local info = roster.byKey[n.key]
+            out[#out + 1] = { name = n.name, key = n.key, class = info and info.class }
         end
     end
-    return best
+    table.sort(out, function(a, b)
+        if a.name ~= b.name then return a.name < b.name end
+        return a.key < b.key
+    end)
+    for i = #out, (max or SUGGEST_MAX) + 1, -1 do out[i] = nil end
+    return out
 end
+GuildOS._SuggestCharacters = SuggestCharacters   -- tools/room-cards.lua
 
 -- A link on a row (the mockup's underlined word): the paper's link ink, sized to its label.
 local function rowLink(parent, text)
@@ -510,6 +519,11 @@ function PopulateDetail(frame, data)
     end
     local altTag = GuildOS.GetAltTag and GuildOS:GetAltTag(memberKey)
     if altTag and altTag ~= "" then extra[#extra + 1] = altTag end
+    -- No GuildOS heard from this character, but from another of the group's (Discord #general): it is on the account.
+    local carrier = not data.former and GuildOS.AltRoster and GuildOS.AltRoster:AddonCarrier(memberKey)
+    if carrier and carrier ~= memberKey then
+        extra[#extra + 1] = string.format(L["GuildOS on %s"], carrier:match("^([^-]+)") or carrier)
+    end
     -- A former member's ban or suspension, from the ban list (they may be back to ask for an invite).
     local banLine = data.former and GuildOS.FormerMembers and GuildOS.FormerMembers:BanLine(memberKey)
     if banLine then extra[#extra + 1] = banLine end
@@ -1432,20 +1446,73 @@ function PopulateDetail(frame, data)
             end
         end
 
-        -- Add an alt: the field with its label above it, a character of the guild suggested as one types (Tab or a
-        -- click on it takes it), and the block's Link at its bottom right with the group's other actions.
+        -- Add an alt: the field with its label above it, the guild's characters that start with what is typed listed
+        -- under it in their class colours (six at most; Up and Down choose, Tab or Enter or a click takes one), and
+        -- the block's Link at its bottom right with the group's other actions. The list hangs from the window, over
+        -- the sheet, so the scroll area never cuts it.
         local addLinkBox = kept(child, "alt.add", function()
             local box = UI:CreateInput(child, 200, SP.FIELD, { max = 60, placeholder = L["Character name"] })
-            local hint = rowLink(box, "")
-            hint:SetPoint("RIGHT", box, "RIGHT", -SP.UNIT, 0)
-            hint:Hide()
-            box.hint = hint
-            hint:SetScript("OnClick", function()
-                if hint.name then box:SetText(hint.name); box:SetCursorPosition(#hint.name); hint:Hide() end
-            end)
+            local list = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+            UI:PaintMenu(list)
+            list:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 0, -2)
+            list:SetPoint("TOPRIGHT", box, "BOTTOMRIGHT", 0, -2)
+            list:SetFrameLevel((frame:GetFrameLevel() or 1) + 60)
+            list:Hide()
+            list.rows, list.hits, list.sel = {}, {}, 0
+            box.list = list
+            function list:Choose(i)
+                if #self.hits == 0 then self.sel = 0; return end
+                self.sel = math.max(1, math.min(#self.hits, i))
+                for j, r in ipairs(self.rows) do r:SetChosen(j == self.sel) end
+            end
+            function list:Take(i)
+                local h = self.hits[i or self.sel]
+                if not h then return false end
+                box:SetText(h.name)
+                box:SetCursorPosition(#h.name)
+                self:Hide()
+                return true
+            end
+            function list:Fill(hits)
+                self.hits = hits
+                for _, r in ipairs(self.rows) do r:Hide() end
+                if #hits == 0 then self.sel = 0; self:Hide(); return end
+                for i, h in ipairs(hits) do
+                    local r = self.rows[i]
+                    if not r then
+                        r = UI:MenuRow(self, 20)
+                        r:SetPoint("TOPLEFT", 4, -4 - (i - 1) * 20)
+                        r:SetPoint("RIGHT", self, "RIGHT", -4, 0)
+                        local idx = i
+                        r:SetScript("OnClick", function() self:Take(idx) end)
+                        self.rows[i] = r
+                    end
+                    r.label:SetText(h.name)
+                    r:SetInk((h.class and GuildOS.ClassColors[tostring(h.class):upper()]) or C.text)
+                    r:Show()
+                end
+                self:SetHeight(#hits * 20 + 8)
+                self:Show()
+                self:Choose(1)
+            end
             box:HookScript("OnTextChanged", function(self) if self.onChange then self.onChange(self) end end)
-            box:HookScript("OnEnterPressed", function(self) if self.onEnter then self.onEnter() end end)
-            box:HookScript("OnTabPressed", function(self) if self.hint.name and self.hint:IsShown() then self.hint:Click() end end)
+            box:HookScript("OnEnterPressed", function(self)
+                if self.list:IsShown() and self.list:Take() then return end
+                if self.onEnter then self.onEnter() end
+            end)
+            box:HookScript("OnTabPressed", function(self) if self.list:IsShown() then self.list:Take() end end)
+            box:HookScript("OnArrowPressed", function(self, key)
+                if not self.list:IsShown() then return end
+                if key == "UP" then self.list:Choose(self.list.sel - 1)
+                elseif key == "DOWN" then self.list:Choose(self.list.sel + 1) end
+            end)
+            box:HookScript("OnEscapePressed", function(self) self.list:Hide() end)
+            box:HookScript("OnEditFocusLost", function(self)
+                -- A click on a row lands after the focus left: the list waits for it.
+                GuildOS.Compat.After(0.2, function() if not self:HasFocus() then self.list:Hide() end end)
+            end)
+            box:HookScript("OnHide", function(self) self.list:Hide() end)
+            if box.SetAltArrowKeyMode then box:SetAltArrowKeyMode(false) end
             return box
         end)
         local taken = {}
@@ -1453,18 +1520,12 @@ function PopulateDetail(frame, data)
         taken[playerKey] = true
         addLinkBox.onChange = function(self)
             local typed = strtrim(self:GetText() or "")
-            local pick = SuggestCharacter(roster, typed, taken)
-            local hint = self.hint
-            hint.name = pick
-            if pick and pick:lower() ~= typed:lower() then
-                hint.label:SetText(pick)
-                hint:SetWidth(math.ceil(hint.label:GetStringWidth() or 30) + 6)
-                hint:Show()
-            else
-                hint:Hide()
-            end
+            local hits = SuggestCharacters(roster, typed, taken)
+            -- What is typed is already the one name it could be: nothing to suggest.
+            if #hits == 1 and hits[1].name:lower() == typed:lower() then hits = {} end
+            self.list:Fill(hits)
         end
-        addLinkBox.hint:Hide()
+        addLinkBox.list:Hide()
         yOff = yOff - SP.FIELD_GAP
         yOff = yOff - placeField(child, "alt.add", L["Add alt"], addLinkBox, PADX, yOff, contentWidth - 2 * PADX)
 

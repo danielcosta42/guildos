@@ -190,9 +190,17 @@ local function gameTitleFont()
     return f or STANDARD_TEXT_FONT
 end
 
--- The file `file` draws with on this client: itself, or the game's font where it lacks the language.
+-- The player's own choice of the game's font (Settings > Interface, "Use the game's font"): saved at the account's
+-- root as GuildOSDB.gameFont, read once at load by Style:Resolve, so a change waits for /reload. The key is new on
+-- purpose: GuildOSDB.font = "game" from before the Salão (#445) stays ignored, nobody is switched back unasked.
+function GuildOS:UsesGameFont()
+    return GuildOS.GameFontOnly or (GuildOS.Style ~= nil and GuildOS.Style.gameFont == true)
+end
+
+-- The file `file` draws with on this client: itself, or the game's font where it lacks the language or the
+-- player chose the game's.
 function GuildOS:FontFace(file)
-    if GuildOS.GameFontOnly or (LATIN_ONLY[file] and GuildOS.Locale == "ruRU") then
+    if GuildOS:UsesGameFont() or (LATIN_ONLY[file] and GuildOS.Locale == "ruRU") then
         return file == TITLE and gameTitleFont() or STANDARD_TEXT_FONT
     end
     return file

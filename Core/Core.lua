@@ -248,6 +248,10 @@ function GuildOS:ResolveGuildDB()
     end
     guildDB.alliance, guildDB.allianceData, guildDB.allianceBoard = nil, nil, nil
 
+    -- Before any module converts it to the compact format (release safety S2): what the conversion replaces is
+    -- kept as the previous version had it, for a few days (Modules/Backup.lua).
+    if self.Backup and self.Backup.KeepBeforeUpgrade then self:SafeCall(self.Backup.KeepBeforeUpgrade, self.Backup, guildDB, dbKey) end
+
     self.db = guildDB
     self.guildKey = dbKey
     self.isGuilded = guilded

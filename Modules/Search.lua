@@ -23,28 +23,51 @@ Search.GROUPS = { "members", "loot", "recipes", "screens" }
 -- Settings' sections by name (UI/SettingsPanel.lua's F:Section titles), each with the page that holds it and,
 -- where the page draws it only sometimes, the same test.
 local function officer() return GuildOS:IsOfficer() and true or false end
+-- `words`: what a player may type for it that its title does not say (Discord 1574577794908954674: "flood" found
+-- nothing), one translated, comma-separated list; a translator puts their language's words (and the English ones
+-- players use anyway) in it.
 Search.SETTINGS_SECTIONS = {
-    { sub = "profile",   label = L["Your raid roles"] },
-    { sub = "profile",   label = L["Notices"] },
-    { sub = "profile",   label = L["Privacy"], cond = function() return GuildOS.Journal ~= nil or GuildOS.GuildMap ~= nil end },
+    { sub = "profile",   label = L["Your raid roles"], words = L["role, tank, healer, dps, spec"] },
+    { sub = "profile",   label = L["Notices"], words = L["login, digest, popup, notification, version"] },
+    { sub = "profile",   label = L["Privacy"], cond = function() return GuildOS.Journal ~= nil or GuildOS.GuildMap ~= nil end,
+      words = L["share, location, map, journal, hide"] },
     { sub = "profile",   label = L["Birthday"], cond = function() return GuildOS.Birthdays ~= nil end },
-    { sub = "profile",   label = L["Getting started"] },
-    { sub = "interface", label = L["Appearance"] },
-    { sub = "interface", label = L["In the game"] },
-    { sub = "chat",      label = L["Guild chat"] },
-    { sub = "chat",      label = L["Mentions"], cond = function() return GuildOS.db and GuildOS.db.mentions ~= nil end },
-    { sub = "chat",      label = L["Groups"], cond = function() return GuildOS.db and GuildOS.db.lfgPrefs ~= nil end },
-    { sub = "modules",   label = L["Window tabs"] },
-    { sub = "rules",     label = L["Who is an officer in Guild OS"] },
-    { sub = "rules",     label = L["Calendar events"] },
-    { sub = "rules",     label = L["Attendance"], cond = function() return GuildOS.RaidTracker ~= nil end },
+    { sub = "profile",   label = L["Getting started"], words = L["intro, tutorial, onboarding, help"] },
+    { sub = "interface", label = L["Appearance"], words = L["font, game font, scale, size, look"] },
+    { sub = "interface", label = L["In the game"], words = L["minimap, button, tooltip, alt-click, snow"] },
+    { sub = "chat",      label = L["Guild chat"], words = L["whisper, timestamp, class colours, alt tag, chat tweaks"] },
+    { sub = "chat",      label = L["Mentions"], cond = function() return GuildOS.db and GuildOS.db.mentions ~= nil end,
+      words = L["mention, my name, ping, sound, watch word"] },
+    { sub = "chat",      label = L["Groups"], cond = function() return GuildOS.db and GuildOS.db.lfgPrefs ~= nil end,
+      words = L["lfg, looking for group, dungeon"] },
+    { sub = "modules",   label = L["Window tabs"], words = L["module, tab, turn off, disable, enable"] },
+    { sub = "rules",     label = L["Who is an officer in Guild OS"], words = L["rank, officer, permission"] },
+    { sub = "rules",     label = L["Calendar events"], words = L["event, raid, signup, invite"] },
+    { sub = "rules",     label = L["Attendance"], cond = function() return GuildOS.RaidTracker ~= nil end,
+      words = L["late, left early, penalty"] },
     { sub = "rules",     label = L["The !note command"], cond = function() return officer() and GuildOS.Client.isAnniversary end },
-    { sub = "data",      label = L["Your data"] },
-    { sub = "data",      label = L["Whole guild database"] },
-    { sub = "data",      label = L["Diagnostics"] },
+    { sub = "data",      label = L["Your data"], words = L["backup, export, import, saved variables"] },
+    { sub = "data",      label = L["Whole guild database"], words = L["delete, old guild, clean, size"] },
+    { sub = "data",      label = L["Diagnostics"], words = L["debug, error, bug, report"] },
     { sub = "data",      label = L["Test functions"], cond = officer },
-    { sub = "data",      label = L["About"] },
-    { sub = "data",      label = L["Danger zone"] },
+    { sub = "data",      label = L["About"], words = L["version, discord, support"] },
+    { sub = "data",      label = L["Danger zone"], words = L["erase, wipe, reset"] },
+}
+
+-- The cards inside a room's screen that players look for by what they do, not by the screen's name: each found
+-- under its own name, its room and screen as the context. `room`/`entry`: UI/Rooms.lua's ids.
+Search.SCREEN_WORDS = {
+    { room = "officers", entry = "alertrules", name = L["Anti-flood"],
+      words = L["flood, anti-flood, spam, repeated messages, too many messages, mute"] },
+    { room = "officers", entry = "alertrules", words = L["alert, rule, swear, insult, gold seller, link, keyword"] },
+    { room = "officers", entry = "recruiting", name = L["Welcome Message (New Members)"],
+      words = L["welcome, greeting, greet, new member, newcomer"] },
+    { room = "officers", entry = "recruiting", name = L["Auto-Invite (whisper keyword)"],
+      words = L["invite, auto-invite, inv, whisper, keyword"] },
+    { room = "officers", entry = "remind", words = L["reminder, install, no addon, without addon"] },
+    { room = "officers", entry = "ban", words = L["ban, blacklist, block"] },
+    { room = "officers", entry = "former", words = L["left, kicked, departure, ex-member, rejoin"] },
+    { room = "officers", entry = "motd", words = L["message of the day, guild info"] },
 }
 
 -- How many characters `s` holds (UTF-8).
@@ -214,7 +237,7 @@ end
 
 ----------------------------------------------------------------------
 -- The window's screens: every entry of a room this player may open (Settings' included), by its name or its
--- room's, and Settings' sections by their titles.
+-- room's, Settings' sections by their titles or their words, and the cards of SCREEN_WORDS by what they do.
 ----------------------------------------------------------------------
 local function screens(text)
     local out, UI = {}, GuildOS.UI
@@ -235,9 +258,28 @@ local function screens(text)
     for _, e in ipairs(UI:RoomEntries("settings")) do if e.sub then pages[e.sub] = e.label end end
     for _, s in ipairs(Search.SETTINGS_SECTIONS) do
         local e = settingsEntry[s.sub]
-        if e and has(s.label, text) and not (s.cond and not s.cond()) then
+        if e and (has(s.label, text) or has(s.words, text)) and not (s.cond and not s.cond()) then
             out[#out + 1] = { kind = "screen", name = s.label, roomId = "settings", entry = e,
                 sub = L["Settings"] .. DOT .. (pages[s.sub] or s.sub) }
+        end
+    end
+    -- A card found by what it does: once, under its own name (or its screen's), unless its screen already is.
+    local listed = {}
+    for _, r in ipairs(out) do listed[tostring(r.roomId) .. "/" .. tostring(r.entry and r.entry.id) .. "/" .. tostring(r.name)] = true end
+    for _, w in ipairs(Search.SCREEN_WORDS) do
+        if has(w.words, text) or (w.name and has(w.name, text)) then
+            local room = UI.RoomEntries and UI:RoomAllowed(w.room) and UI:RoomEntries(w.room) or {}
+            for _, e in ipairs(room) do
+                local name = w.name or e.label
+                local key = w.room .. "/" .. e.id .. "/" .. tostring(name)
+                if e.id == w.entry and not listed[key] then
+                    listed[key] = true
+                    local roomLabel
+                    for _, r in ipairs(UI.ROOMS) do if r.id == w.room then roomLabel = r.label end end
+                    out[#out + 1] = { kind = "screen", name = name, roomId = w.room, entry = e,
+                        sub = w.name and ((roomLabel or w.room) .. DOT .. e.label) or roomLabel }
+                end
+            end
         end
     end
     -- Whose name starts with the query first, the room's order kept otherwise.

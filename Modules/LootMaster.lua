@@ -276,6 +276,9 @@ end
 ----------------------------------------------------------------------
 -- Initialize
 ----------------------------------------------------------------------
+-- The loot table shown (below, by LootTable); declared here for the reopen above it.
+local showTable
+
 function LootMaster:Initialize()
     if not GuildOS.db.lootMaster then
         GuildOS.db.lootMaster = {
@@ -297,6 +300,7 @@ function LootMaster:Initialize()
 
     self:LoadCfg()
     self.pendingTrades      = {}
+    self:RegisterChatLink()
 
     -- /roll lines are read through the localized RANDOM_ROLL_RESULT ("%s rolls %d (%d-%d)." in
     -- English), by GuildOS:MatchFormat: a language that numbers its arguments ("%1$s ... %2$d")
@@ -769,8 +773,43 @@ function LootMaster:OnLootClosed()
         return
     end
     if self.activeLoot and not self.activeLoot.delivered then
-        GuildOS:Print("|cffFF9900[LootMaster]|r " .. L["Loot window closed before delivery - use the roll frame to deliver the item via trade."])
+        GuildOS:Print("|cffFF9900[LootMaster]|r " .. L["Loot window closed before delivery - use the roll frame to deliver the item via trade."]
+            .. " " .. self:ReopenHint())
     end
+end
+
+----------------------------------------------------------------------
+-- Reopening the loot table (Discord 1575506871723364392): closed by mistake while an item was still to give,
+-- /gos lm or a click on the chat line's link brings it back as it was, the item picked kept.
+----------------------------------------------------------------------
+-- Whether the boss's items still hold one not given: a roll on, or ended and not delivered, or an item queued.
+function LootMaster:HasUndelivered()
+    if not self:IsModuleEnabled() then return false end
+    if self.activeLoot and not self.activeLoot.delivered then return true end
+    for _, item in ipairs(self.lootItems or {}) do
+        local state = self:ItemState(item)
+        if state == "queued" or state == "rolling" or state == "ended" then return true end
+    end
+    return false
+end
+
+-- Shows the table again when there is something left to give. True when it did.
+function LootMaster:Reopen()
+    if not self:HasUndelivered() then return false end
+    showTable(self)
+    return true
+end
+
+-- The chat line's link: a click reopens the table, or says there is nothing left to give.
+function LootMaster:RegisterChatLink()
+    GuildOS:OnChatLink("lm", function()
+        if not LootMaster:Reopen() then GuildOS:Print("|cffFF9900[LootMaster]|r " .. L["Nothing left to give: the loot table stays closed."]) end
+    end)
+end
+
+-- What to click or type to reopen it: the link where the client has Guild OS's chat links, else the command.
+function LootMaster:ReopenHint()
+    return GuildOS:ChatLink("lm", L["Reopen the loot table"]) or L["/gos lm reopens the loot table."]
 end
 
 ----------------------------------------------------------------------
@@ -3710,7 +3749,14 @@ function LootMaster:BuildLootTable()
 
     f:SetScript("OnHide", function()
         if f.ticker then f.ticker:Cancel(); f.ticker = nil end
+        local wasTest = LootMaster.testMode
         LootMaster.testMode = false
+        -- Closed with an item still to give (by mistake, often): one line saying how to get it back. Not when the
+        -- whole interface hid (a cinematic), nor for the settings' test table.
+        if not wasTest and UIParent:IsShown() and LootMaster:HasUndelivered() then
+            GuildOS:Print("|cffFF9900[LootMaster]|r " .. L["The loot table closed with items still to give."] .. " "
+                .. LootMaster:ReopenHint())
+        end
     end)
     UI:MakeResponsive(f, function() LootMaster:RefreshRollFrame() end)
     return f
@@ -3725,7 +3771,7 @@ function LootMaster:LootTable()
     return self.lootTable
 end
 
-local function showTable(self)
+showTable = function(self)
     local f = self:LootTable()
     f:Show()
     if not f.ticker then

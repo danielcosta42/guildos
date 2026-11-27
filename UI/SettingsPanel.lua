@@ -539,7 +539,17 @@ PAGES.interface = function(F)
         styleRow:Hide()
     end
 
-    -- The game's font is the only font since the Salão (#445): no switch for it any more.
+    -- The game's font, back as a choice (Discord 1556991354478010459): the addon's fonts stay the default; ticked,
+    -- every text draws in the game's after a reload. Korean and Chinese clients always use the game's (#103).
+    F:Check(L["Use the game's font"],
+        GuildOS.GameFontOnly and L["Your game's language needs its own font, so Guild OS always uses it."]
+            or L["Draws Guild OS in the same font as the rest of the game. Applies after you reload the interface."],
+        function() return GuildOS.Style:WantsGameFont() end,
+        function(checked)
+            GuildOS.Style:SetGameFont(checked)
+            markReload("font", (checked and true or false) ~= boot.font)
+        end,
+        { enabled = function() return not GuildOS.GameFontOnly end })
 
     F:Section(L["In the game"])
     F:Check(L["Show minimap button"], nil,
@@ -1058,7 +1068,7 @@ PAGES.data = function(F, isOfficer)
         label:SetPoint("RIGHT", del, "LEFT", -8, 0)
         del:SetScript("OnClick", function()
             local e = dbList[i]
-            if e and not e.current then
+            if e and not e.current and not e.protected then
                 GuildOS:AskDeleteGuildDB(e.key, function() F:Refresh() end)
             end
         end)
@@ -1070,8 +1080,11 @@ PAGES.data = function(F, isOfficer)
             elseif e.est then when = string.format(L["before %s"], GuildOS:DateText(e.opened, "/%Y"))
             else when = GuildOS:DateText(e.opened, "/%Y") end
             label:SetText(string.format(L["%s · %s · last opened %s"], GuildOS:GuildDBLabel(e), sizeText(e.bytes), when))
-            del:SetShown(not e.current)
-            inUse:SetShown(e.current and true or false)
+            -- The one in use, and this guild's under another realm's key (#394), are never offered for deletion.
+            local kept = e.current or e.protected
+            del:SetShown(not kept)
+            inUse:SetText(e.current and L["In use"] or L["This guild"])
+            inUse:SetShown(kept and true or false)
         end)
         F:Row(holder, { h = 26, wide = true, gap = 4, shown = function() return dbList[i] ~= nil end })
     end
@@ -1459,7 +1472,7 @@ end
 function GuildOS:RefreshSettingsPanel(content, key)
     key = OLD_KEYS[key] or key
     if not PAGES[key] then key = "profile" end
-    boot = boot or { font = GuildOSDB and GuildOSDB.font == "game", modules = {} }
+    boot = boot or { font = (GuildOS.Style and GuildOS.Style.gameFont) == true, modules = {} }
     local isOfficer = GuildOS:IsOfficer()
     local shape = shapeOf(key, isOfficer)
     local F = content.__settingsForm

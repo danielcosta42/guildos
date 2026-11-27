@@ -417,5 +417,26 @@ as("OffA", function() return DP:OnRosterEvent({ action = "kick", target = "Drift
 check(#pendingOf("OffA") == before + 1 and hd.how == "kick" and hd.by == "OffB", "and the game's line after it is the same one")
 check(as("OffA", function() return DP.Header(hd) end) == "Drift was removed by OffB", "removed by OffB")
 
+-- Gamepad taint (release safety S3): the windows that open by themselves (the departure popup, the welcome back,
+-- the alt prompt and the main-left / alt-removed questions) are Guild OS's own frames, shown through ShowWhenClear
+-- (never in combat), and none of their code calls a protected API, a StaticPopup or the keyboard's propagation:
+-- removals queue for a click of Next in Bulk actions, or are lines to copy on WoW: Forever.
+for _, path in ipairs({ "UI/DeparturePopup.lua", "UI/AltDepartureDialog.lua", "Modules/Departure.lua",
+                        "Modules/AltDeparture.lua", "Modules/AltAutoDetect.lua" }) do
+  local fh = assert(io.open(ADDON .. "/" .. path, "rb"))
+  local src = fh:read("*a"):gsub("%-%-[^\n]*", "")   -- comments aside
+  fh:close()
+  for _, bad in ipairs({ "StaticPopup", "GuildUninvite", "C_GuildInfo", "GuildPromote", "GuildDemote",
+                         "SetGuildMemberRank", "GuildRosterSetPublicNote", "GuildRosterSetOfficerNote", "RunMacroText",
+                         "SendChatMessage", "SetPropagateKeyboardInput", "EnableGamePad" }) do
+    check(not src:find(bad, 1, true), path .. " calls no protected API nor a StaticPopup: " .. bad)
+  end
+end
+for _, show in ipairs({ 'ShowWhenClear("departure"', 'ShowWhenClear("welcomeback:"' }) do
+  check(io.open(ADDON .. "/Modules/Departure.lua", "rb"):read("*a"):find(show, 1, true), "shown when clear: " .. show)
+end
+check(io.open(ADDON .. "/Modules/AltAutoDetect.lua", "rb"):read("*a"):find('ShowWhenClear("altdetect"', 1, true),
+  "the alt prompt is shown when clear")
+
 check(#errors == 0, "no error: " .. table.concat(errors, " | "))
 print(string.format("departure: %d checks passed", checks))

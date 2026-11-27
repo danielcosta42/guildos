@@ -223,6 +223,7 @@ GuildOS.LootTracker = {
 }
 
 dofile(ADDON .. "/Libs/LibDeflate.lua")
+dofile(ADDON .. "/Modules/AltRoster.lua")   -- which alt group runs GuildOS (addonOnAccount)
 dofile(ADDON .. "/Modules/CompanionExport.lua")
 
 -- The payload says which game the client is, so the site can build a Forever guild's
@@ -455,6 +456,32 @@ do
   by, json = lines()
   for key in pairs(by) do assert(noMain(by, json, key), "a link that links nobody sends no main for " .. key) end
   GuildOS.db.altLinks = nil
+
+  -- The addon on the account (Discord #general: alts read as "no addon"): `addonOnAccount` true on every character
+  -- of a group where one runs GuildOS; `lastUpdate` stays each character's own; absent for the rest.
+  local mem = GuildOS.db.members
+  local keepF, keepC = mem["Fulano-Firemaw"], mem["Chehul-Firemaw"]
+  mem["Fulano-Firemaw"] = nil
+  mem["Chehul-Firemaw"] = mem["Chehul-Firemaw"] or {}
+  local keepAt = mem["Chehul-Firemaw"].lastUpdate
+  mem["Chehul-Firemaw"].lastUpdate = 1700000000
+  GuildOS.db.altLinks = { ["Fulano-Firemaw"] = "Chehul-Firemaw" }
+  by, json = lines()
+  assert(by["Fulano-Firemaw"].addonOnAccount == true and by["Fulano-Firemaw"].lastUpdate == 0,
+    "an alt whose main runs GuildOS: the account has it, its own lastUpdate still 0")
+  assert(json["Fulano-Firemaw"]:find('"addonOnAccount":true', 1, true), "as a plain true on the wire")
+  assert(by["Chehul-Firemaw"].addonOnAccount == true, "the main itself too")
+  assert(by["Semdados-Firemaw"].addonOnAccount == nil and not json["Semdados-Firemaw"]:find("addonOnAccount", 1, true),
+    "nobody in a group with it: absent, never false")
+  mem["Chehul-Firemaw"].lastUpdate = nil
+  mem["Fulano-Firemaw"] = { lastUpdate = 1700000000 }
+  by = lines()
+  assert(by["Chehul-Firemaw"].addonOnAccount == true, "a main whose alt runs GuildOS: the account has it")
+  GuildOS.db.altLinks = nil
+  by = lines()
+  assert(by["Chehul-Firemaw"].addonOnAccount == nil, "unlinked: only the character that runs it")
+  mem["Fulano-Firemaw"], mem["Chehul-Firemaw"] = keepF, keepC
+  if keepC then keepC.lastUpdate = keepAt end
 end
 -- v12 (issue #205) starts the WoW: Forever guild feed: no journal outside Forever (tools/journal.lua).
 assert(anniversary.journal == nil, "no journal on TBC Anniversary")

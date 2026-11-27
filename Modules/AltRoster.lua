@@ -72,6 +72,38 @@ function AltRoster:BuildTrueRoster(roster, links)
     return { groups = groups, uniqueCount = #order, totalChars = #roster }
 end
 
+-- Which character of each alt group runs GuildOS (#general on Discord: alts showed as "no addon" though the
+-- player's main runs it): carriers[main] = the key in that group whose GuildOS this client heard most recently
+-- (a `lastUpdate` in db.members), for every group that has one; a character linked to nobody is its own group.
+-- One pass over the links and the members, so a whole roster reads it once.
+function AltRoster:AddonCarriers(links, members)
+    links = links or (GuildOS.db and GuildOS.db.altLinks) or {}
+    members = members or (GuildOS.db and GuildOS.db.members) or {}
+    local out, at = {}, {}
+    for key, d in pairs(members) do
+        local heard = type(d) == "table" and tonumber(d.lastUpdate) or 0
+        if heard > 0 then
+            local main = links[key]
+            if type(main) ~= "string" or main == "" then main = key end
+            if not at[main] or heard > at[main] then out[main], at[main] = key, heard end
+        end
+    end
+    return out
+end
+
+-- The character of `key`'s group that runs GuildOS (AddonCarriers, or a map from it), or nil: `key` itself
+-- when its own GuildOS was heard.
+function AltRoster:AddonCarrier(key, carriers, links, members)
+    links = links or (GuildOS.db and GuildOS.db.altLinks) or {}
+    members = members or (GuildOS.db and GuildOS.db.members) or {}
+    local own = members[key]
+    if type(own) == "table" and (tonumber(own.lastUpdate) or 0) > 0 then return key end
+    carriers = carriers or self:AddonCarriers(links, members)
+    local main = links[key]
+    if type(main) ~= "string" or main == "" then main = key end
+    return carriers[main]
+end
+
 ----------------------------------------------------------------------
 -- Live wrappers
 ----------------------------------------------------------------------

@@ -636,6 +636,45 @@ type_(f, "appearance")
 check(host.result.screens[1] and host.result.screens[1].roomId == "settings" and host.result.screens[1].entry.sub == "interface"
   and host.result.screens[1].sub:find("Settings", 1, true), "a Settings section is found, on its page")
 
+-- By what a card does, not its title (Discord 1574577794908954674): "flood" and "spam" find the anti-flood card of
+-- Alert rules, "welcome" the welcome message, "font" the Interface page; nothing listed twice.
+for _, q in ipairs({ "flood", "spam", "anti-flood" }) do
+  type_(f, q)
+  local hit
+  for _, r in ipairs(host.result.screens) do
+    if r.name == "Anti-flood" and r.roomId == "officers" and r.entry.id == "alertrules" then hit = r end
+  end
+  check(hit and hit.sub:find("Alert rules", 1, true), "\"" .. q .. "\" finds the anti-flood card, under Alert rules")
+end
+type_(f, "spam")
+local seenKeys = {}
+for _, r in ipairs(host.result.screens) do
+  local k = r.roomId .. "/" .. r.entry.id .. "/" .. r.name
+  check(not seenKeys[k], "a card is listed once: " .. k)
+  seenKeys[k] = true
+end
+type_(f, "welcome")
+local welcome
+for _, r in ipairs(host.result.screens) do if r.entry.id == "recruiting" and r.name:find("Welcome", 1, true) then welcome = r end end
+check(welcome, "\"welcome\" finds the welcome message card")
+type_(f, "whisper")
+local inv, chatSec
+for _, r in ipairs(host.result.screens) do
+  if r.name == "Auto-Invite (whisper keyword)" then inv = r end
+  if r.roomId == "settings" and r.entry.sub == "chat" then chatSec = r end
+end
+check(inv and chatSec, "\"whisper\" finds the auto-invite card and the guild chat settings")
+type_(f, "font")
+check(host.result.screens[1] and host.result.screens[1].roomId == "settings" and host.result.screens[1].entry.sub == "interface",
+  "\"font\" finds Settings > Interface")
+local realIsOfficer = GuildOS.IsOfficer
+GuildOS.IsOfficer = function() return false end
+type_(f, "flood")
+local leaked = false
+for _, r in ipairs(host.result.screens) do leaked = leaked or r.roomId == "officers" end
+check(not leaked, "a member never finds the officers' cards")
+GuildOS.IsOfficer = realIsOfficer
+
 -- ── Keyboard: Up and Down move, Enter opens ───────────────────────────────
 type_(f, "ra")
 fire(f.searchBox, "OnArrowPressed", "DOWN")

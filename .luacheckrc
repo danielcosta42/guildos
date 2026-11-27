@@ -459,6 +459,9 @@ read_globals = {
     -- Tooltip frames
     "GameTooltipTemplate",
     "ItemRefTooltip",
+    -- The game's link handlers: Guild OS's own chat links (Compat.AddonLinks)
+    "LinkUtil",
+    "LinkTypes",
     "ShoppingTooltip1",
     "ShoppingTooltip2",
 

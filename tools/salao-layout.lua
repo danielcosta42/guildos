@@ -154,11 +154,14 @@ function M:GetVerticalScrollRange() return 0 end
 -- Text is 6px a character, colour codes left out; a wrapped line breaks at its width, 12px a line.
 local function plain(s) return (tostring(s or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
 local function chars(s) local _, n = plain(s):gsub("[^\128-\191]", ""); return n end
-function M:GetStringWidth() return chars(self.text) * 6 end
+-- The game's font (Friz Quadrata) is wider than Alegreya Sans: 7px a character in it, so a layout that measures
+-- its text is tried with the wider face too ("Use the game's font", Settings > Interface).
+local function charW(fs) return fs.font == STANDARD_TEXT_FONT and 7 or 6 end
+function M:GetStringWidth() return chars(self.text) * charW(self) end
 function M:GetStringHeight()
   if (self.text or "") == "" then return 0 end
   if self.wordWrap == false or (self.w or 0) <= 0 then return 12 end
-  return math.ceil(chars(self.text) * 6 / self.w) * 12
+  return math.ceil(chars(self.text) * charW(self) / self.w) * 12
 end
 
 -- ── A client ─────────────────────────────────────────────────────────────
@@ -215,7 +218,7 @@ function kit.client(opts)
   Enum = { SendAddonMessageResult = {} }
   STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
   function GetFileIDFromPath() return nil end
-  GuildOSDB = {}
+  GuildOSDB = { gameFont = opts.gameFont or nil }
   C_Texture = nil
   if forever then
     local atlases = {}
@@ -334,8 +337,8 @@ local function shownRows(card)
   return out
 end
 
-local function run(style)
-  kit.client({ style = style, officer = true })
+local function run(style, gameFont)
+  kit.client({ style = style, officer = true, gameFont = gameFont })
   local C = GuildOS.Colors
   GuildOS.SafeCall = function(_, fn, ...) return true, fn(...) end
   check(GuildOS.Style:Current() == "salao", style .. ": the Salão's one look on this client")
@@ -347,7 +350,7 @@ local function run(style)
   for _, key in ipairs({ "forYou", "board", "wall" }) do
     local c = cards[key]
     check(c.__paper and same(c.__look.fill.color, C.paper) and same(c.title.color, C.paperTitle)
-      and c.title.font == GuildOS.Fonts.title,
+      and c.title.font == GuildOS:FontFace(GuildOS.Fonts.title),
       style .. ": " .. key .. " is parchment, its title Cinzel in the dark red")
   end
   check(not cards.fire.__paper and same(cards.fire.title.color, C.gold2),
@@ -406,6 +409,10 @@ local function run(style)
   check(#faces == 2 and faces[1].avatar.letter.text == "M" and faces[2].name.text == "M3" and cards.fire.away.shown
     and cards.fire.away.avatar.letter.text == "+1" and cards.fire.away.name.text == "away",
     style .. ": by the fire, a round avatar per guildmate online and the dashed disc of who is away")
+  check(cards.fire.count.shown and cards.fire.count.text == "online now \194\183 2",
+    style .. ": by the fire says how many are online now at its title")
+  check(cards.fire.hint.mouse and type(cards.fire.hint.scripts.OnEnter) == "function",
+    style .. ": and its title has a tooltip saying what the card is")
   check(not cards.chimney.shown, style .. ": no Winter Veil event, no Chimney")
   check(cards.board.points[1][2] == 0 and cards.fire.points[1][2] > 0, style .. ": wide, two columns")
 
@@ -416,6 +423,39 @@ local function run(style)
     style .. ": narrow, one column, the fire under the board")
   P:SetSize(976, 516)
   flush()
+
+  -- The bulletin's newest notices (1.39.0, #418): three boxes under the notes, newest first, never a fourth;
+  -- the card is as tall as all three at both widths, each box under the one before.
+  local keepB, keepDbB = GuildOS.Bulletin, GuildOS.db.bulletin
+  GuildOS.db.bulletin = {}
+  GuildOS.Bulletin = { Active = function(_, _, limit)
+    local all = {}
+    for i = 1, 4 do all[i] = { ts = NOW - i, text = "Notice " .. i .. string.rep(" a long line of text", i) } end
+    local out = {}
+    for i = 1, math.min(limit or 4, 4) do out[i] = all[i] end
+    return out
+  end }
+  for _, w in ipairs({ 976, 600 }) do
+    P:SetSize(w, 516)
+    flush()
+    P.Refresh()
+    local nb = cards.board.notices
+    check(#nb == 3 and nb[1].shown and nb[2].shown and nb[3].shown and nb[1].text.text:find("^Notice 1")
+      and nb[3].text.text:find("^Notice 3"), style .. " @" .. w .. ": the board shows the three newest notices")
+    check(nb[2].points[1][3] < nb[1].points[1][3] - nb[1].h + 1 and nb[3].points[1][3] < nb[2].points[1][3] - nb[2].h + 1,
+      style .. " @" .. w .. ": each notice under the one before, never over it")
+    check(-nb[3].points[1][3] + nb[3].h <= cards.board.h, style .. " @" .. w .. ": the card is tall enough for all three")
+    nb[2].scripts.OnClick(nb[2])
+    check(kit.opened[1] == "guild" and kit.opened[2] == "bulletin", style .. ": a notice opens the bulletin")
+  end
+  GuildOS.Bulletin = { Active = function() return { { ts = NOW, text = "Only one" } } end }
+  P.Refresh()
+  check(cards.board.notices[1].shown and not cards.board.notices[2].shown and not cards.board.notices[3].shown,
+    style .. ": one notice, one box")
+  GuildOS.Bulletin, GuildOS.db.bulletin = keepB, keepDbB
+  P:SetSize(976, 516)
+  flush()
+  P.Refresh()
 
   -- Winter Veil: the line leads For you, the Chimney counts, and no name is drawn.
   local phase = "wrapping"
@@ -541,6 +581,25 @@ end
 
 run("guildos")
 run("forever")
+-- The same Home with the game's font ticked (Discord 1556991354478010459): every text in the game's face, and
+-- every check above still holds with its wider letters.
+do
+  local seen = 0
+  run("guildos", true)
+  check(GuildOS.Style.gameFont == true and GuildOS:UsesGameFont(), "game font: read once at load from GuildOSDB.gameFont")
+  local panel = kit.newFrame("Frame", UIParent)
+  GuildOS:CreateSalaoPanel(panel)
+  panel:SetSize(976, 516)
+  kit.flush()
+  panel.Refresh()
+  kit.walk(panel, function(f)
+    if f.kind == "FontString" and f.font then
+      seen = seen + 1
+      check(f.font == STANDARD_TEXT_FONT, "game font: every text of the Home draws in the game's font (" .. tostring(f.font) .. ")")
+    end
+  end)
+  check(seen > 20, "game font: the Home's texts were checked (" .. seen .. ")")
+end
 
 -- One happening, one line on the wall (#449): the game's "left the guild" and this client's roster diff file the
 -- same leave twice, minutes apart; two officers' copies too. One line each.

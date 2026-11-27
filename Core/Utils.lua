@@ -1100,6 +1100,24 @@ function GuildOS:TimeAgo(timestamp)
 end
 
 ----------------------------------------------------------------------
+-- Guild OS's own chat links (Compat.AddonLink): GuildOS:ChatLink(action, text) is the link to put in a line
+-- (nil on a client without them), GuildOS:OnChatLink(action, fn) what a click on it does.
+----------------------------------------------------------------------
+local chatLinks = {}
+function GuildOS:OnChatLink(action, fn)
+    chatLinks[action] = fn
+    GuildOS.Compat.HookAddonLinks(function(a, button)
+        local run = chatLinks[a]
+        if run then GuildOS:SafeCall(run, button) end
+    end)
+end
+
+function GuildOS:ChatLink(action, text)
+    if not chatLinks[action] then return nil end
+    return GuildOS.Compat.AddonLink(action, text)
+end
+
+----------------------------------------------------------------------
 -- Chat Player Link: Guild Invite
 -- Alt+Click a player name in chat to send a guild invite
 ----------------------------------------------------------------------
@@ -1754,17 +1772,52 @@ function GuildOS:StampGuildDBs(now)
     if self.db then self.db._opened, self.db._openedEst = now, nil end
 end
 
+-- The guild's name and realm in a database key ("Guild-Azjol-Nerub": "Guild", "Azjol-Nerub"; "Guild-": the realm
+-- empty, as WoW: Forever's client gave it for a day, #394).
+local function splitDBKey(k)
+    return k:match("^(.-)%-(.*)$")
+end
+
+-- Whether `key` must never be offered for deletion (release safety S1): the database in use; any other database of
+-- the guild this character is in, whatever realm its key carries (WoW: Forever's empty realm of 2026-11-21 made a
+-- "Guild-" one, and the 1.34.1 recovery went back to "Guild-<the realm remembered>": either may hold that guild's
+-- data); the guildless one of this realm under another spelling of it; and everything while the database in use
+-- is not settled yet (the guild's name not arrived), when nothing can tell which is whose.
+function GuildOS:IsProtectedGuildDB(key)
+    if type(key) ~= "string" then return true end
+    if not (self.guildKey and self.db) then return true end
+    if key == self.guildKey then return true end
+    local name, realm = splitDBKey(key)
+    if not name then return true end
+    local curName, curRealm = splitDBKey(self.guildKey)
+    if name ~= "_noguild" and name == curName then return true end
+    local guild = IsInGuild and IsInGuild() and GetGuildInfo and GetGuildInfo("player") or nil
+    if guild and guild == name then return true end
+    if name == curName then
+        -- The guildless one: this realm by any of the names it was saved under.
+        local aliases = { [curRealm or ""] = true, [""] = true, Unknown = true }
+        local raw = GetRealmName and GetRealmName()
+        if raw then aliases[raw] = true end
+        local remembered = self.RealmName and self:RealmName()
+        if remembered then aliases[remembered] = true end
+        if aliases[realm or ""] then return true end
+    end
+    return false
+end
+
 -- The account's guild databases: { { key, name (nil for the guildless one), realm, noGuild, opened, est,
--- current, bytes } }, the one in use first, then the most recently opened.
+-- current, protected (this guild's under another key: never deleted), bytes } }, the one in use first, then the
+-- most recently opened.
 function GuildOS:GuildDatabases()
     local out = {}
     for k, v in pairs(GuildOSDB or {}) do
         if GuildOS.IsGuildDBKey(k, v) then
-            local name, realm = k:match("^(.-)%-(.+)$")
+            local name, realm = splitDBKey(k)
             local current = k == self.guildKey
             out[#out + 1] = { key = k, name = (name ~= "_noguild") and name or nil, realm = realm,
                 noGuild = name == "_noguild", opened = tonumber(v._opened), est = v._openedEst and true or nil,
-                current = current, bytes = measured(k, v, current) }
+                current = current, protected = (not current and self:IsProtectedGuildDB(k)) or nil,
+                bytes = measured(k, v, current) }
         end
     end
     table.sort(out, function(a, b)
@@ -1781,7 +1834,7 @@ function GuildOS:StaleGuildDBs(now, days)
     local limit = (days or self.GUILD_DB_STALE_DAYS) * 86400
     local out = {}
     for k, v in pairs(GuildOSDB or {}) do
-        if GuildOS.IsGuildDBKey(k, v) and k ~= self.guildKey then
+        if GuildOS.IsGuildDBKey(k, v) and not self:IsProtectedGuildDB(k) then
             local at = tonumber(v._opened)
             if at and now - at >= limit then out[#out + 1] = k end
         end
@@ -1792,13 +1845,14 @@ end
 
 -- How a database is named on screen: "Guild (Realm)", or "No guild (Realm)".
 function GuildOS:GuildDBLabel(e)
-    if e.noGuild then return string.format(L["No guild (%s)"], e.realm or "?") end
-    return string.format("%s (%s)", e.name or "?", e.realm or "?")
+    local realm = (e.realm and e.realm ~= "") and e.realm or "?"
+    if e.noGuild then return string.format(L["No guild (%s)"], realm) end
+    return string.format("%s (%s)", e.name or "?", realm)
 end
 
 -- Deletes another guild's database from this account. Never the one in use. True when one went.
 function GuildOS:DeleteGuildDB(key)
-    if type(GuildOSDB) ~= "table" or key == self.guildKey or not GuildOS.IsGuildDBKey(key, GuildOSDB[key]) then
+    if type(GuildOSDB) ~= "table" or self:IsProtectedGuildDB(key) or not GuildOS.IsGuildDBKey(key, GuildOSDB[key]) then
         return false
     end
     GuildOSDB[key] = nil
@@ -1809,7 +1863,7 @@ end
 
 -- Settings' Delete beside one of them: asked first, since it cannot be undone. `after` runs once it went.
 function GuildOS:AskDeleteGuildDB(key, after)
-    if key == self.guildKey or not GuildOS.IsGuildDBKey(key, GuildOSDB and GuildOSDB[key]) then return false end
+    if self:IsProtectedGuildDB(key) or not GuildOS.IsGuildDBKey(key, GuildOSDB and GuildOSDB[key]) then return false end
     GuildOS.Dialogs["GUILDOS_DELETE_GUILD_DB"] = GuildOS.Dialogs["GUILDOS_DELETE_GUILD_DB"] or {
         text = L["Delete every Guild OS record of %s on this account? This cannot be undone."],
         button1 = L["Delete"], button2 = L["Cancel"],
@@ -1822,7 +1876,7 @@ function GuildOS:AskDeleteGuildDB(key, after)
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
-    local name, realm = key:match("^(.-)%-(.+)$")
+    local name, realm = splitDBKey(key)
     local label = self:GuildDBLabel({ key = key, name = name, realm = realm, noGuild = name == "_noguild" })
     GuildOS:ShowDialog("GUILDOS_DELETE_GUILD_DB", label, nil, { key = key, label = label, after = after })
     return true

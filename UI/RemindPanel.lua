@@ -27,6 +27,7 @@ local function detailOf(m, now)
     if not m.hasAddon then
         parts[#parts + 1] = m.sinceDays and string.format(L["no GuildOS for %d day(s)"], m.sinceDays) or L["no GuildOS"]
     end
+    if m.addonOn then parts[#parts + 1] = string.format(L["GuildOS on %s"], (m.addonOn:match("^([^-]+)") or m.addonOn)) end
     if m.noDiscord then parts[#parts + 1] = L["no Discord"] end
     parts[#parts + 1] = m.online and L["online"] or (m.daysOffline and (m.daysOffline .. L["d offline"]) or L["offline"])
     local d = m.remindedAt and R.DaysSince(m.remindedAt, now)
@@ -91,6 +92,10 @@ function GuildOS:BuildRemindSub(panel)
     daysBox:HookScript("OnEditFocusLost", function(box) saveDays(box); refresh() end)
     local logCB = settings:Check(L["Also file it on the disciplinary record (counts as a warning)"])
     logCB.checkbox.onChanged = function(_, on) R:SetLogDiscipline(on) end
+    -- An alt of somebody who runs GuildOS on another character is not "without GuildOS" (Discord #general).
+    local altsCB = settings:Check(L["Count GuildOS on any of a member's linked characters"],
+        L["Off: each character is listed until it runs GuildOS itself."], { gap = 4 })
+    altsCB.checkbox.onChanged = function(_, on) R:SetCountsAlts(on); refresh() end
 
     -- The texts: GuildOS's, and (for who has GuildOS but no Discord) Discord's, each with its Default at its
     -- right; the card's Save keeps both.
@@ -171,6 +176,7 @@ function GuildOS:BuildRemindSub(panel)
         if not textBox:HasFocus() and (textBox:GetText() or "") == "" then textBox:SetText(R:GetTemplate()) end
         if not discordBox:HasFocus() and (discordBox:GetText() or "") == "" then discordBox:SetText(R:GetTemplate("discord")) end
         logCB.checkbox:SetChecked(R:GetLogDiscipline())
+        altsCB.checkbox:SetChecked(R:CountsAlts())
 
         -- The site's list or not: the hint, the "which lack" choice and the Discord text follow it.
         local site = R:Linked() ~= nil

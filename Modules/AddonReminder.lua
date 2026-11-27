@@ -239,11 +239,15 @@ end
 ----------------------------------------------------------------------
 -- Roster line `i` as the list reads it, or nil. `linked`: the site's set of keys with Discord (lower case), or
 -- nil when the site does not say, and then `noDiscord` is nil for everyone.
-local function memberAt(i, now, linked)
+-- `carriers`: AltRoster:AddonCarriers, or nil when an alt's GuildOS does not count (the officer's setting): a
+-- member one of whose characters runs GuildOS has it on the account, and is not listed for it (Discord #general).
+local function memberAt(i, now, linked, carriers)
     local name, rankName, rankIndex, level, _, _, _, _, online, _, classFile = GetGuildRosterInfo(i)
     if not name then return nil end
     local key = GuildOS:KeyOfRosterName(name)
     local d = (GuildOS.db.members or {})[key]
+    local own = (d and (tonumber(d.lastUpdate) or 0) > 0) and true or false
+    local carrier = (not own and carriers and GuildOS.AltRoster) and GuildOS.AltRoster:AddonCarrier(key, carriers) or nil
     local GM = GuildOS.GuildManager
     local off = (not online and GM) and GM:GetDaysOffline(i) or nil
     local since = GuildOS:GetFirstSeen(key)
@@ -252,7 +256,8 @@ local function memberAt(i, now, linked)
         rankIndex = rankIndex, rankName = rankName or "?", level = level or 0,
         class = classFile or "", online = online and true or false,
         daysOffline = off and math.floor(off) or nil,
-        hasAddon = (d and (tonumber(d.lastUpdate) or 0) > 0) and true or false,
+        hasAddon = own or carrier ~= nil,
+        addonOn = carrier,   -- the alt (or main) whose GuildOS counts for this one, when not their own
         since = since, sinceDays = daysSince(since, now),
         remindedAt = GuildOS.Finite(store()[key]),
         noDiscord = linked and not linked[GuildOS:LocalMemberKey(key):lower()] or nil,
@@ -265,14 +270,31 @@ function Reminder:Linked()
     return I and I.DiscordLinked and I:DiscordLinked() or nil
 end
 
---- Everyone on the roster this client never heard GuildOS from, or (when the site says) without Discord, oneself aside.
+--- Whether a member counts as having GuildOS when another character of their alt group runs it (on unless the
+--- officer turned it off: setting `reminderOwnChar`).
+function Reminder:CountsAlts()
+    return GuildOS:GetSetting("reminderOwnChar") ~= true
+end
+
+function Reminder:SetCountsAlts(on)
+    GuildOS:SetSetting("reminderOwnChar", (not on) and true or nil)
+end
+
+local function carriersNow()
+    if not (Reminder:CountsAlts() and GuildOS.AltRoster) then return nil end
+    return GuildOS.AltRoster:AddonCarriers()
+end
+
+--- Everyone on the roster this client never heard GuildOS from (on any character of their alt group, unless the
+--- officer counts each character alone), or (when the site says) without Discord, oneself aside.
 function Reminder:Collect(now)
     now = now or GetServerTime()
     local me = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName())
     local linked = self:Linked()
+    local carriers = carriersNow()
     local out = {}
     for i = 1, GetNumGuildMembers() or 0 do
-        local m = memberAt(i, now, linked)
+        local m = memberAt(i, now, linked, carriers)
         if m and self.KindOf(m) and m.key ~= me then out[#out + 1] = m end
     end
     return out
@@ -283,7 +305,7 @@ function Reminder:Member(key, now)
     now = now or GetServerTime()
     for i = 1, GetNumGuildMembers() or 0 do
         local name = GetGuildRosterInfo(i)
-        if name and GuildOS:KeyOfRosterName(name) == key then return memberAt(i, now, self:Linked()) end
+        if name and GuildOS:KeyOfRosterName(name) == key then return memberAt(i, now, self:Linked(), carriersNow()) end
     end
     return nil
 end

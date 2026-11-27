@@ -2,8 +2,8 @@
 -- Core/Data.lua.
 --
 -- GuildOS draws its text in the mockup's three fonts: Cinzel for titles, Alegreya Sans for the interface,
--- Alegreya for reading. The old "game font" switch is gone: one look. A title in another script than Latin
--- takes a face that has it.
+-- Alegreya for reading, unless the player ticks "Use the game's font" (Settings > Interface, saved as
+-- GuildOSDB.gameFont). A title in another script than Latin takes a face that has it.
 --
 --   luajit -e 'ADDON="."' tools/game-font.lua
 --
@@ -103,5 +103,19 @@ for _, bad in ipairs({
 }) do
   check(not read(bad[1]):find(bad[2], 1, true), bad[1] .. " no longer sets a title with SetText: " .. bad[2])
 end
+
+-- "Use the game's font" again (Settings > Interface, Discord 1556991354478010459): GuildOSDB.gameFont = true,
+-- read once by Style:Resolve, draws every text in the game's face (titles in its quest-title font). The old
+-- GuildOSDB.font = "game" stays ignored (above), so nobody is switched back to it unasked.
+GuildOS.Style = { gameFont = true }
+check(GuildOS:UsesGameFont(), "the choice read at load turns the game's font on")
+check(apply(18).file == STANDARD_TEXT_FONT, "chosen: the interface's text is the game's font")
+check(apply(nil, "reading").file == STANDARD_TEXT_FONT, "chosen: a text to read too")
+QuestTitleFont = { GetFont = function() return "Fonts\\MORPHEUS.TTF", 14 end }
+check(apply(nil, "windowTitle").file == "Fonts\\MORPHEUS.TTF", "chosen: a title takes the game's title face")
+QuestTitleFont = nil
+GuildOS.Style = { gameFont = false }
+check(not GuildOS:UsesGameFont() and apply(18).file == F.ui, "not chosen: the addon's fonts")
+GuildOS.Style = nil
 
 print(("game-font: %d checks passed"):format(checks))

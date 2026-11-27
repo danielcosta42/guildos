@@ -984,6 +984,64 @@ do
   local md = io.open(ADDON .. "/UI/MemberDetail.lua", "rb"):read("*a")
   check(not md:find('CreateFrame("EditBox", nil, child', 1, true), "no hand-made dark field left on the member window's paper")
   check(md:find('L["No talent scan yet"]', 1, true), "a scan that counted no talent says so, not \"0\"")
+
+  -- Add alt suggests a list (Discord 1575077307075399731): up to six characters of the guild that start with what
+  -- is typed, alphabetical, in their class colours; Down and Up choose, Tab and Enter take, a click takes; the group's
+  -- own characters are never offered.
+  local function fireS(fr, sc, ...) local fn = fr.scripts[sc]; if fn then return fn(fr, ...) end end
+  local Sug = GuildOS._SuggestCharacters
+  local fake = { byKey = {}, names = {} }
+  for i, n in ipairs({ "Tib", "Tia", "Tic", "Tid", "Tie", "Tif", "Tig", "Toa" }) do
+    fake.names[i] = { name = n, key = n .. "-R" }
+    fake.byKey[n .. "-R"] = { name = n, class = "MAGE" }
+  end
+  local hits = Sug(fake, "ti", { ["Tia-R"] = true })
+  check(#hits == 6 and hits[1].name == "Tib" and hits[6].name == "Tig" and hits[1].class == "MAGE",
+    "six suggestions at most, alphabetical, the taken one left out")
+  check(#Sug(fake, "t", {}) == 0, "nothing under two letters")
+  local added = { { "Tessaria", "MAGE", "", true }, { "Tessandra", "WARLOCK", "", true } }
+  for _, p in ipairs(added) do PEOPLE[#PEOPLE + 1] = p end
+  -- GuildOS heard from her alt, not from her (Discord #general): the window says the account has it.
+  GuildOS.db.members[alt] = GuildOS.db.members[alt] or {}
+  local keepAt = GuildOS.db.members[alt].lastUpdate
+  local keepOwn = GuildOS.db.members[key].lastUpdate
+  GuildOS.db.members[alt].lastUpdate, GuildOS.db.members[key].lastUpdate = GetServerTime(), nil
+  pcall(GuildOS.ShowMemberDetail, GuildOS, data)
+  pcall(FLUSH)
+  check(plain(f.altTagText.text or ""):find(string.format(GuildOS.L["GuildOS on %s"], "Velyra"), 1, true), "the member window says GuildOS runs on her alt: "
+    .. tostring(f.altTagText.text))
+  GuildOS.db.members[alt].lastUpdate, GuildOS.db.members[key].lastUpdate = keepAt, keepOwn
+  local box = child._kept and child._kept["alt.add"]
+  check(box and box.list and not box.list.shown, "the Add alt field, its list hidden until one types")
+  box:SetText("Tes")
+  box.onChange(box)
+  local list = box.list
+  check(list.shown and #list.hits == 3 and list.rows[1].label.text == "Tessa" and list.rows[2].label.text == "Tessandra"
+    and list.rows[3].label.text == "Tessaria", "typing lists every match under the field, alphabetical")
+  check(list.rows[1].chosen and list.rows[2].ink == GuildOS.ClassColors.WARLOCK, "the first chosen, each name in its class colour")
+  fireS(box, "OnArrowPressed", "DOWN")
+  fireS(box, "OnArrowPressed", "DOWN")
+  fireS(box, "OnArrowPressed", "DOWN")
+  check(list.sel == 3 and list.rows[3].chosen and not list.rows[1].chosen, "Down moves the choice, and stops at the last")
+  fireS(box, "OnArrowPressed", "UP")
+  fireS(box, "OnTabPressed")
+  check(box.text == "Tessandra" and not list.shown, "Tab takes the chosen one")
+  box:SetText("Tes")
+  box.onChange(box)
+  local linked
+  box.onEnter = function() linked = true end
+  fireS(box, "OnEnterPressed")
+  check(box.text == "Tessa" and not linked and not list.shown, "Enter takes the chosen one first, without linking")
+  fireS(box, "OnEnterPressed")
+  check(linked, "and Enter again links it")
+  box:SetText("Tes")
+  box.onChange(box)
+  fireS(list.rows[3], "OnClick")
+  check(box.text == "Tessaria" and not list.shown, "a click takes that one")
+  box:SetText("Vel")
+  box.onChange(box)
+  check(not list.shown, "the group's own alt is never suggested")
+  for _ = 1, #added do PEOPLE[#PEOPLE] = nil end
 end
 
 -- The one question about one's own characters (#449): one window, every character listed, its four answers inside it.

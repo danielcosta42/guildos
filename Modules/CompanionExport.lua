@@ -69,7 +69,8 @@ local FMT = "GOSCOMP1"
 -- gear slot's `suffix`, the item's random suffix id from its link ("of the Eagle"), absent on an
 -- item without one; and each member's `talents` on WoW: Forever, [[definitionID, rank], ...] from
 -- the game's trait tree, only the talents with a rank, sorted by id (see talentsFor() below). Both
--- absent when unknown: a reader from before never looks at them.
+-- absent when unknown: a reader from before never looks at them. Also within 17, each member's
+-- `addonOnAccount`: true when a character of their alt group runs GuildOS (absent otherwise).
 local PAYLOAD_VERSION = 17
 
 ----------------------------------------------------------------------
@@ -297,6 +298,18 @@ local function mainOf(key)
     local main = type(links) == "table" and links[key] or nil
     if type(main) ~= "string" or main == "" or main == key then return nil end
     return main
+end
+
+-- The groups with a character running GuildOS, by the export's links (AltRoster:AddonCarriers), read once per
+-- payload; nil outside one.
+local exportCarriers
+local function accountCarrier(key)
+    local AR = GuildOS.AltRoster
+    if not AR then return nil end
+    local links = exportLinks or GuildOS.db.altLinks
+    if type(links) ~= "table" then links = {} end
+    if not exportCarriers then return AR:AddonCarrier(key, nil, links, GuildOS.db.members or {}) end
+    return AR:AddonCarrier(key, exportCarriers, links, GuildOS.db.members or {})
 end
 
 local function professionsFor(data)
@@ -585,6 +598,10 @@ local function memberLine(key, short, classFile, level, rankName, rankIndex)
         joinedAt = GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") and GuildOS.Founding:JoinedAtOf(key) or nil,
         -- v14 (issue #251): whose alt this is, the main's key; absent for everybody else.
         main = mainOf(key),
+        -- Within 17: true when a character of this member's alt group runs GuildOS, this one or another
+        -- (`lastUpdate` above stays this character's own): the site counts the account as having the addon.
+        -- Only ever true; absent otherwise, so a reader from before never sees it.
+        addonOnAccount = accountCarrier(key) and true or nil,
     }
 end
 
@@ -1015,6 +1032,8 @@ function Companion:BuildPayload()
 
     local members, count = {}, 0
     exportLinks = officersLinks()
+    exportCarriers = GuildOS.AltRoster and GuildOS.AltRoster:AddonCarriers(
+        type(exportLinks) == "table" and exportLinks or {}, GuildOS.db.members or {}) or nil
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
         local fullName, rankName, rankIndex, level, _, _, _, _, _, _, classFile =
@@ -1027,7 +1046,7 @@ function Companion:BuildPayload()
             members[count] = memberLine(key, short, classFile, level, rankName, rankIndex)
         end
     end
-    exportLinks = nil
+    exportLinks, exportCarriers = nil, nil
 
     local loot, whys = {}, 0
     if GuildOS.LootTracker then

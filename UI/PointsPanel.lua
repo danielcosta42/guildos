@@ -84,7 +84,11 @@ local NUMBER_FIELDS = {
         and L["Charged to the winner when the trade of an award is recorded (0 = off)"]
         or L["Charged to the winner when the ML awards (0 = off)"], dkp = true },
     { key = "entryCost",      label = L["Cost to enter a roll:"],  hint = L["Paid by everyone who rolls for the item (0 = off)"] },
-    { key = "refundPct",      label = L["Back to whoever loses (%):"], hint = L["Share of the entry cost given back"] },
+    -- Right under the entry cost and indented as its sub-option (Discord 1569080957267353680: officers could not
+    -- find the refund): it only means something while entering costs points, and says so while it does not.
+    { key = "refundPct",      label = L["Back to whoever loses (%):"], needs = "entryCost", indent = 14,
+      hint = L["Share of the entry cost given back to everyone who entered and lost"],
+      offHint = L["Only works with a cost to enter a roll: set one above first"] },
 }
 
 function GuildOS:BuildLootAccounts(panel)
@@ -531,7 +535,7 @@ function GuildOS:BuildLootAccounts(panel)
         local widths = {}
         for i, f in ipairs(NUMBER_FIELDS) do
             local probe = UI:CreateText(content, f.label, 12)
-            widths[i] = probe:GetStringWidth() or 0
+            widths[i] = (probe:GetStringWidth() or 0) + (f.indent or 0)
             probe:Hide()
         end
         for _, text in ipairs({ L["Mode:"], L["Decay rounding:"] }) do
@@ -557,7 +561,8 @@ function GuildOS:BuildLootAccounts(panel)
         end
         for _, f in ipairs(NUMBER_FIELDS) do
             if not ((f.epgp and not epgp) or (f.dkp and epgp)) then
-                lbl(f.label, y)
+                local label = lbl(f.label, y)
+                if f.indent then label:SetPoint("TOPLEFT", f.indent, -(y + 4)) end
                 local box = input(content, 60, true, 6)
                 box:SetPoint("TOPLEFT", x, -y)
                 box:SetText(tostring(cfg[f.key] or 0))
@@ -569,13 +574,35 @@ function GuildOS:BuildLootAccounts(panel)
                 UI:AttachSaveButton(box, function(b2)
                     local kept = P:SetConfigKey(key, b2:GetText(), scope)
                     if kept ~= nil then b2:SetText(tostring(kept)) end
+                    -- A field another one needs (the entry cost): the one that needs it greys out or back at once.
+                    for _, sync in ipairs(setSyncs) do GuildOS:SafeCall(sync, inScope(function() return P:Pool().config end) or {}) end
                 end, { state = true })
+                local h
                 if f.hint then
-                    local h = UI:CreateText(content, f.hint, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+                    h = UI:CreateText(content, f.hint, 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
                     h:SetPoint("LEFT", box.saveButton, "RIGHT", 8, 0)
                     h:SetPoint("RIGHT", content, "RIGHT", -4, 0)
                     h:SetJustifyH("LEFT")
                     if h.SetWordWrap then h:SetWordWrap(false) end
+                    box.pointsHint = h
+                end
+                if f.needs then
+                    -- Off while the field it needs is 0: the box greyed out, the hint saying why.
+                    local needs, onHint, offHint = f.needs, f.hint, f.offHint
+                    local function gate(c)
+                        local on = (tonumber(c[needs]) or 0) > 0
+                        if on then box:Enable() else box:ClearFocus(); box:Disable() end
+                        box.pointsOff = not on or nil
+                        if h then
+                            h:SetText(on and onHint or offHint)
+                            local hc = on and C.textSoft or C.disabled
+                            h:SetTextColor(hc.r, hc.g, hc.b)
+                        end
+                        label:SetTextColor(on and C.text.r or C.disabled.r, on and C.text.g or C.disabled.g,
+                            on and C.text.b or C.disabled.b)
+                    end
+                    gate(cfg)
+                    setSyncs[#setSyncs + 1] = gate
                 end
                 y = y + 28
             end

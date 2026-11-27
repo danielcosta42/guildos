@@ -23,6 +23,7 @@ UI.Salao = Salao
 
 local MAX_FOR_YOU  = 3
 local MAX_BOARD    = 3
+local MAX_NOTICES  = 3          -- the bulletin's newest notices under the notes, as 1.39.0 promised
 local MAX_FIRE     = 7          -- seven faces and the "+n" disc fill two rows of four
 local MAX_WALL     = 5
 local TWO_COLUMNS  = 700        -- from this content width the cards sit in two columns
@@ -136,8 +137,7 @@ function Salao:Board()
     end)
     for i = #events, MAX_BOARD + 1, -1 do events[i] = nil end
     local A = UI.Agora
-    local notice = A and A:Notices(1)[1] or nil
-    return events, notice
+    return events, (A and A:Notices(MAX_NOTICES) or {})
 end
 
 -- By the fire: who is online now, this player left out, { name, full, class, classFile, zone, level, rank }; how
@@ -623,22 +623,39 @@ function GuildOS:CreateSalaoPanel(panel)
     startFor:Hide()
     panel.startRaid, panel.startFor = start, startFor
 
-    -- The notice board: pinned notes, then the newest notice in a box of the paper's darker shade.
+    -- The notice board: pinned notes, then the newest notices (MAX_NOTICES at most, newest first), each in a box
+    -- of the paper's darker shade. The boxes are made once and kept, so a refresh never makes frames.
     board.notes = {}
     board.empty = text(board, 12, C.paperSoft)
-    local notice = CreateFrame("Button", nil, board)
-    local noticeBg = GuildOS.Style:Nine(notice, "card", 5, "BACKGROUND", 1)
-    noticeBg:SetRGBA(0.937, 0.878, 0.741, 1)
-    notice.text = text(notice, 12, C.paperInk, "reading")
-    notice.text:SetPoint("TOPLEFT", 10, -7)
-    notice.text:SetPoint("TOPRIGHT", -10, -7)
-    notice.text:SetWordWrap(true)
-    notice:SetScript("OnClick", function() if notice.run then notice.run() end end)
-    board.notice = notice
+    board.notices = {}
+    for i = 1, MAX_NOTICES do
+        local notice = CreateFrame("Button", nil, board)
+        local noticeBg = GuildOS.Style:Nine(notice, "card", 5, "BACKGROUND", 1)
+        noticeBg:SetRGBA(0.937, 0.878, 0.741, 1)
+        notice.text = text(notice, 12, C.paperInk, "reading")
+        notice.text:SetPoint("TOPLEFT", 10, -7)
+        notice.text:SetPoint("TOPRIGHT", -10, -7)
+        notice.text:SetWordWrap(true)
+        notice:SetScript("OnClick", function() if notice.run then notice.run() end end)
+        notice:Hide()
+        board.notices[i] = notice
+    end
+    board.notice = board.notices[1]
 
     fire.faces = {}
     fire.more = text(fire, 12, C.textSoft)
     fire.away = face(fire, 0)
+    -- "By the fire" read as a riddle to some (supporters' feedback): how many are online now at the title's right,
+    -- and a tooltip on the title saying what the card is.
+    fire.count = text(fire, UI.SP.META, C.textSoft)
+    fire.count:SetPoint("RIGHT", fire.link, "LEFT", -8, 0)
+    fire.title:SetPoint("RIGHT", fire.count, "LEFT", -6, 0)
+    fire.hint = CreateFrame("Frame", nil, fire)
+    fire.hint:SetPoint("TOPLEFT", fire.title, "TOPLEFT", 0, 2)
+    fire.hint:SetPoint("BOTTOMRIGHT", fire.count, "BOTTOMRIGHT", 0, -2)
+    UI:AddTooltip(fire.hint, L["By the fire"], {
+        L["The guildmates online right now and the zone each one is in."],
+        L["Click a face for that member's menu; Members opens the whole roster."] })
 
     -- The Chimney: one stocking per entrant, filled for each who wrapped.
     chimney.stockings = {}
@@ -795,7 +812,7 @@ function GuildOS:CreateSalaoPanel(panel)
         return y + 18 + CARD_PAD - 4
     end
 
-    local function fillBoard(width, events, bulletin)
+    local function fillBoard(width, events, bulletins)
         for _, n in ipairs(board.notes) do n:Hide() end
         local y = CARD_PAD + TITLE_H + 6
         local inner = width - 2 * CARD_PAD
@@ -831,23 +848,28 @@ function GuildOS:CreateSalaoPanel(panel)
             board.empty:Hide()
             y = y + rows * (NOTE_H + NOTE_GAP)
         end
-        if bulletin then
-            notice:ClearAllPoints()
-            notice:SetPoint("TOPLEFT", CARD_PAD, -y)
-            notice:SetWidth(inner)
-            notice.text:SetText(bulletin.text or "")
-            notice:SetHeight(math.max(28, (notice.text:GetStringHeight() or 14) + 14))
-            notice.run = open(bulletin)
-            notice:Show()
-            y = y + notice:GetHeight() + 8
-        else
-            notice:Hide()
+        for i, notice in ipairs(board.notices) do
+            local bulletin = bulletins and bulletins[i]
+            if bulletin then
+                notice:ClearAllPoints()
+                notice:SetPoint("TOPLEFT", CARD_PAD, -y)
+                notice:SetWidth(inner)
+                notice.text:SetText(bulletin.text or "")
+                notice:SetHeight(math.max(28, (notice.text:GetStringHeight() or 14) + 14))
+                notice.run = open(bulletin)
+                notice:Show()
+                y = y + notice:GetHeight() + 8
+            else
+                notice.run = nil
+                notice:Hide()
+            end
         end
         return y + CARD_PAD - 8
     end
 
     local function fillFire(width)
         local list, total, awayN = Salao:Fireside()
+        fire.count:SetText(string.format(L["online now \194\183 %d"], total))
         for _, b in ipairs(fire.faces) do b:Hide() end
         local perRow = 4
         local cellW = math.floor((width - 2 * CARD_PAD) / perRow)
@@ -981,7 +1003,7 @@ function GuildOS:CreateSalaoPanel(panel)
         local hYou = fillTodos(forYou, items, leftW)
 
         -- Notice board
-        local events, bulletin = Salao:Board()
+        local events, bulletins = Salao:Board()
         local notes = {}
         for _, e in ipairs(events) do
             local when = GuildOS:LocalDate(L["%a %d %b, %H:%M"], e.when)
@@ -998,7 +1020,7 @@ function GuildOS:CreateSalaoPanel(panel)
             end
         end
         board.items = notes
-        local hBoard = fillBoard(leftW, notes, bulletin)
+        local hBoard = fillBoard(leftW, notes, bulletins)
         local A0 = UI.Agora
         stepRoster, stepFor = nil, nil
         if A0 and start then stepRoster, stepFor = A0:StartRaid(A0:NextRaid()) end

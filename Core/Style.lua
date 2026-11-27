@@ -56,10 +56,22 @@ function Style:Choose(id)
 end
 
 -- At load, before any window is built. The palette is Core/Data.lua's and the fonts are the addon's own
--- (phase 3 reverses phase 1's game font: `gameFont` stays false). A saved GuildOSDB.style is ignored.
+-- unless the player ticked "Use the game's font" (GuildOSDB.gameFont, Settings > Interface): read here once, so
+-- the whole interface draws in one font until the next reload. A saved GuildOSDB.style is ignored.
 function Style:Resolve()
-    self.current, self.gameFont = "salao", false
+    self.current = "salao"
+    self.gameFont = type(GuildOSDB) == "table" and GuildOSDB.gameFont == true
     return self.current
+end
+
+-- The saved choice, as it will be after the next reload (Settings shows this, not the font in use).
+function Style:WantsGameFont()
+    return GuildOS.GameFontOnly or (type(GuildOSDB) == "table" and GuildOSDB.gameFont == true)
+end
+
+function Style:SetGameFont(on)
+    if type(GuildOSDB) ~= "table" then return end
+    GuildOSDB.gameFont = on and true or nil
 end
 
 GuildOS.Dialogs["GUILDOS_STYLE_RELOAD"] = {

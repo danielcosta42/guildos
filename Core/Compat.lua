@@ -586,6 +586,36 @@ function Compat.OpenWorldMap()
 end
 
 -- Whether this client may edit guild public notes
+-- Clickable chat lines of Guild OS's own (Discord 1575506871723364392: reopen the loot table from the chat).
+-- The game's "addon" link type (|Haddon:GuildOS:<action>|h[text]|h): local only, SetItemRef hands it to
+-- LinkUtil's AddOn handler, which only fires the "SetItemRef" event and opens no tooltip, so nothing is
+-- replaced or tainted. A client without that handler would route it to the item tooltip: there the line
+-- carries no link, and says the command instead.
+function Compat.AddonLinks()
+    return type(LinkUtil) == "table" and type(LinkUtil.RegisterLinkHandler) == "function"
+        and type(LinkTypes) == "table" and LinkTypes.AddOn == "addon" and type(hooksecurefunc) == "function"
+end
+
+-- The link text for `action`, coloured as the game's links, or nil where the client has no addon links.
+function Compat.AddonLink(action, text)
+    if not Compat.AddonLinks() then return nil end
+    return "|cff71d5ff|Haddon:GuildOS:" .. tostring(action) .. "|h[" .. tostring(text) .. "]|h|r"
+end
+
+-- Runs `onClick(action, button)` for a click on one of Guild OS's links; installed once, after the game's own
+-- SetItemRef (hooksecurefunc). False where the client has no addon links.
+local linkHooked
+function Compat.HookAddonLinks(onClick)
+    if linkHooked then return true end
+    if not Compat.AddonLinks() then return false end
+    linkHooked = true
+    hooksecurefunc("SetItemRef", function(link, _, button)
+        local action = type(link) == "string" and link:match("^addon:GuildOS:(.+)$")
+        if action then onClick(action, button) end
+    end)
+    return true
+end
+
 -- Whether Guild OS may write a member's public note. Only TBC Anniversary lets an addon: WoW: Forever
 -- 1.60.1.70790 forbids C_GuildInfo.SetNote to addons (ADDON_ACTION_FORBIDDEN on the roster's Add note,
 -- 2026-11-05), as it forbids GuildInvite (#256), and retail runs the same API (#259).

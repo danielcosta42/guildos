@@ -333,9 +333,18 @@ check(not strip:IsShown() and not GuildOS:IsFeatureEnabled("groups"), "a tab swi
 groups.checkbox.onChanged(groups.checkbox, true)
 parent.SelectSub("interface")
 local interface = parent.subPanels.interface.content
--- One look and one font since the Salão (#445): neither a font switch nor a style picker.
-check(not find(interface, "check", "Use the game's font") and not find(interface, "button", "Apply"),
-  "no font switch and no style picker, on any client")
+-- One look since the Salão (#445): no style picker. The game's font is a choice again (Discord 1556991354478010459):
+-- saved at the account root as GuildOSDB.gameFont, applied after a reload (the strip lights), undone by unticking.
+check(not find(interface, "button", "Apply"), "no style picker, on any client")
+local gameFont = find(interface, "check", "Use the game's font")
+check(gameFont and not gameFont.checkbox.checked and shows(interface, "Applies after you reload the interface"),
+  "Interface has \"Use the game's font\", off by default, saying it needs a reload")
+GuildOSDB = GuildOSDB or {}
+gameFont.checkbox.onChanged(gameFont.checkbox, true)
+check(GuildOSDB.gameFont == true and strip:IsShown(), "ticked: saved for the account and the reload strip lit")
+check(GuildOS:FontFace(GuildOS.Fonts.ui) == GuildOS.Fonts.ui, "the font in use changes only after the reload")
+gameFont.checkbox.onChanged(gameFont.checkbox, false)
+check(GuildOSDB.gameFont == nil and not strip:IsShown(), "unticked: nothing saved, nothing waits for a reload")
 
 -- ── 5. A sub-option greys out with its parent ───────────────────────────
 parent.SelectSub("chat")

@@ -162,7 +162,7 @@ local function printHelp()
     if GuildOS.Companion then helpLine("/gos web [on|off]", L["Copy your guild into the web companion"]) end
 
     helpHeader(L["Raid and loot"])
-    if GuildOS.LootMaster then helpLine("/gos lm", L["Master Loot helper status"]) end  -- not on retail (ADR-0026)
+    if GuildOS.LootMaster then helpLine("/gos lm", L["Reopen the loot table, or the Master Loot status"]) end  -- not on retail (ADR-0026)
     if GuildOS.Points then helpLine("/gos points", L["Points and DKP window"]) end
     if GuildOS.TradeCouncil then   -- retail's loot council by trade (issue #185)
         helpLine("/gos offer [item]", L["Offer a tradeable item to the raid, or open the loot council"])
@@ -409,8 +409,9 @@ local function handleCommand(msg)
         if GuildOS.Digest then
             GuildOS.Digest:Show()
         end
-    elseif msg == "backup" then
-        if GuildOS.Backup then GuildOS.Backup:ShowExport() end
+    elseif msg == "backup" or msg:match("^backup%s") then
+        -- /gos backup [previous | forget]: the backup string, and the previous version's data kept at an upgrade.
+        if GuildOS.Backup then GuildOS.Backup:Command(msg:match("^backup%s+(.-)%s*$")) end
     elseif msg == "restore" then
         if GuildOS.Backup then GuildOS.Backup:ShowRestore() end
     elseif msg == "bank" or msg:match("^bank%s") then
@@ -663,7 +664,9 @@ local function handleCommand(msg)
             GuildOS:Print(award and string.format(L["|cffFFD700Undone:|r %s"], award.link) or why)
         end
     elseif msg == "lm" or msg == "lootmaster" then
-        local status = GuildOS:LootMasterStatus()
+        -- The loot table closed with an item still to give comes back (Discord 1575506871723364392); else the status.
+        local reopened = GuildOS.LootMaster and GuildOS.LootMaster.Reopen and GuildOS.LootMaster:Reopen()
+        local status = not reopened and GuildOS:LootMasterStatus()
         if status then GuildOS:Print(status) end
     elseif msg:match("^lm announce") then
         -- /guildos lm announce - manually announce item from target tooltip
