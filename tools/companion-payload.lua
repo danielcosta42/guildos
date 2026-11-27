@@ -471,15 +471,15 @@ do
     "an alt whose main runs GuildOS: the account has it, its own lastUpdate still 0")
   assert(json["Fulano-Firemaw"]:find('"addonOnAccount":true', 1, true), "as a plain true on the wire")
   assert(by["Chehul-Firemaw"].addonOnAccount == true, "the main itself too")
-  assert(by["Semdados-Firemaw"].addonOnAccount == nil and not json["Semdados-Firemaw"]:find("addonOnAccount", 1, true),
-    "nobody in a group with it: absent, never false")
+  assert(by["Semdados-Firemaw"].addonOnAccount == false and json["Semdados-Firemaw"]:find('"addonOnAccount":false', 1, true),
+    "nobody in the group runs it: an explicit false, so the site can clear it")
   mem["Chehul-Firemaw"].lastUpdate = nil
   mem["Fulano-Firemaw"] = { lastUpdate = 1700000000 }
   by = lines()
   assert(by["Chehul-Firemaw"].addonOnAccount == true, "a main whose alt runs GuildOS: the account has it")
   GuildOS.db.altLinks = nil
   by = lines()
-  assert(by["Chehul-Firemaw"].addonOnAccount == nil, "unlinked: only the character that runs it")
+  assert(by["Chehul-Firemaw"].addonOnAccount == false, "unlinked and not running it: false")
   mem["Fulano-Firemaw"], mem["Chehul-Firemaw"] = keepF, keepC
   if keepC then keepC.lastUpdate = keepAt end
 end

@@ -70,7 +70,8 @@ local FMT = "GOSCOMP1"
 -- item without one; and each member's `talents` on WoW: Forever, [[definitionID, rank], ...] from
 -- the game's trait tree, only the talents with a rank, sorted by id (see talentsFor() below). Both
 -- absent when unknown: a reader from before never looks at them. Also within 17, each member's
--- `addonOnAccount`: true when a character of their alt group runs GuildOS (absent otherwise). Also within 17,
+-- `addonOnAccount`: true when a character of their alt group runs GuildOS, false when none does as far as this
+-- client knows (a reader from before treats false as saying nothing; guildos-web PR #690 clears it). Also within 17,
 -- `gameCalendar` on WoW: Forever: the guild's events in the game's own calendar as the exporting player sees them,
 -- and who answered each (specs/game-calendar-export/spec.md; Modules/CalendarSnapshot.lua). Absent until the game's
 -- calendar was read on this client; a reader from before never looks at it.
@@ -606,8 +607,9 @@ local function memberLine(key, short, classFile, level, rankName, rankIndex)
         main = mainOf(key),
         -- Within 17: true when a character of this member's alt group runs GuildOS, this one or another
         -- (`lastUpdate` above stays this character's own): the site counts the account as having the addon.
-        -- Only ever true; absent otherwise, so a reader from before never sees it.
-        addonOnAccount = accountCarrier(key) and true or nil,
+        -- False when no character of the group runs it as far as this client knows, so the site can clear a member
+        -- who uninstalled it everywhere (guildos-web #690; a reader from before treats false as saying nothing).
+        addonOnAccount = accountCarrier(key) and true or false,
     }
 end
 
