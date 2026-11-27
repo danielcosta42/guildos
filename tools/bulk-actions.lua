@@ -387,4 +387,16 @@ check(not menuSrc:find("SETRANK", 1, true) and not menuSrc:find("ConfirmSetRank"
 local gmSrc = assert(io.open(ADDON .. "/Modules/GuildManager.lua", "rb")):read("*a")
 check(not gmSrc:find("function GuildManager:SetRank", 1, true), "and so is SetRank, whose rank choice was thrown away")
 
+-- ── Time in rank and in the guild, the player's alts (specs/salao/manutencao-roster.md) ──
+local rr = BA.Rules({ rankDaysMin = "60", tenureDaysMin = "365", countAlts = true })
+check(rr.rankDaysMin == 60 and rr.tenureDaysMin == 365 and rr.countAlts and BA.HasRule(rr), "days in rank and in the guild are rules")
+check(BA.Rules({ rankDaysMin = "0", tenureDaysMin = "abc" }).rankDaysMin == nil and not BA.HasRule(BA.Rules({ countAlts = true })),
+  "nothing set is none; counting alts alone picks nobody")
+check(BA.Meets({ rankDays = 60, tenureDays = 400 }, rr) and not BA.Meets({ rankDays = 59, tenureDays = 400 }, rr)
+  and not BA.Meets({ rankDays = 60 }, rr), "both must hold; an unknown time meets neither")
+local byDays = BA.Rules({ days = 30, countAlts = true })
+check(not BA.Meets({ daysOffline = 45, playerDays = 3 }, byDays) and BA.Meets({ daysOffline = 45, playerDays = 31 }, byDays)
+  and BA.Meets({ daysOffline = 45 }, byDays) and BA.Meets({ daysOffline = 45, playerDays = 3 }, BA.Rules({ days = 30 })),
+  "counting the alts, a character whose alt was seen within the days is kept; without, it is not")
+
 print("bulk-actions: " .. checks .. " checks passed")

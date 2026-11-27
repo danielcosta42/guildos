@@ -281,6 +281,9 @@ function GuildOS:BuildMarksSub(panel)
         if departCB then departCB.checkbox:SetChecked(DP:Enabled()) end
 
         local open = ND:TakeOpen()
+        -- From the data audit's "Write date": its member in the box, ready for Write date.
+        local pre = ND.TakePrefill and ND:TakePrefill()
+        if pre then nameBox:SetText(pre); nameBox:SetFocus() end
         if open == "plan" then plan, planLeft = ND:Plan(); mode = "plan"
         elseif open == "import" then imports = ND:ImportPlan(); mode = "import" end
 

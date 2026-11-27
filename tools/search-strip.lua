@@ -392,7 +392,7 @@ GetGuildRosterMOTD = function() return "Kael amanhã às 20h. Frasco obrigatóri
 GetGuildInfoText = function() return "Raides seg e qua, 20h. Discord: discord.gg/curva" end
 GetNumGuildMembers = function() return #(PEOPLE or {}) end
 GetGuildRosterInfo = function(i) local p = PEOPLE[i]; if not p then return end
-  return p[1] .. "-MundodeForever", p[5] or "Raider", p[6] or 2, p[7] or 70, p[2], p[3], "", "", p[4], nil, p[2], 0, 0, false, false, 0, "Player-1-" .. i end
+  return p[1] .. "-MundodeForever", p[5] or "Raider", p[6] or 2, p[7] or 70, p[2], p[3], p[9] or "", p[10] or "", p[4], nil, p[2], 0, 0, false, false, 0, "Player-1-" .. i end
 GetGuildRosterLastOnline = function(i) local p = PEOPLE[i]; return 0, 0, (p and p[8]) or 0, 0 end
 GuildControlGetNumRanks = function() return 5 end
 GuildControlGetRankName = function(i) return ({ "Mestre", "Oficial", "Raider", "Trial", "Social" })[i] end
@@ -780,6 +780,23 @@ type_(f, "ra")
 check(not f.sideNav.shown and f.searchResults.points[1][2] == 3 + 12, "the results take the whole view")
 fire(f.searchBox, "OnEscapePressed")
 check(f.sideNav.shown, "and the side bar is back after")
+
+-- ── By the notes (specs/salao/manutencao-roster.md) ───────────────────────
+PEOPLE[4][9] = "healer principal"      -- Kaelis's public note
+PEOPLE[6][10] = "atrasa no pagamento"   -- Oruk's officer note
+fire(f.searchButton, "OnClick")
+type_(f, "healer")
+check(#host.result.members == 1 and host.result.members[1].name == "Kaelis" and host.result.members[1].via == "note",
+  "a member found by the public note")
+check(host.flat[1].sub.text:find("note", 1, true), "its line says why: " .. tostring(host.flat[1].sub.text))
+type_(f, "pagamento")
+check(#host.result.members == 1 and host.result.members[1].via == "onote", "and by the officer note, for a rank that reads it")
+CanViewOfficerNote = function() return false end
+type_(f, "pagament")
+check(#host.result.members == 0, "never for one that cannot")
+CanViewOfficerNote = function() return true end
+PEOPLE[4][9], PEOPLE[6][10] = nil, nil
+f:CloseSearch()
 
 -- ── Nothing found ─────────────────────────────────────────────────────────
 fire(f.searchButton, "OnClick")

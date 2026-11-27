@@ -222,26 +222,49 @@ function GuildManager:GetDaysOffline(rosterIndex)
     return (years or 0) * 365 + (months or 0) * 30 + (days or 0) + (hours or 0) / 24
 end
 
--- Roster members offline for at least `days`, sorted most-inactive first.
-function GuildManager:GetInactiveMembers(days)
+-- Roster members offline for at least `days`, sorted most-inactive first. `countAlts` (nil: the Inactivity screen's
+-- setting, on by default; specs/salao/manutencao-roster.md): a character whose main or another alt of the same
+-- player was seen within `days` is not inactive. Each entry carries `seen`, the group's most recently seen other
+-- character ({ name, days, main }, RosterMaint.GroupSeen), when it has one.
+function GuildManager:GetInactiveMembers(days, countAlts)
     days = days or DEFAULT_INACTIVE_DAYS
-    local result = {}
+    local RM = GuildOS.RosterMaint
+    if countAlts == nil then countAlts = not RM or RM:CountAlts() end
+    local lines = {}
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
         local name, rankName, rankIndex, level, _, _, _, _, isOnline, _, classFile = GetGuildRosterInfo(i)
-        if name and not isOnline then
-            local off = self:GetDaysOffline(i)
-            if off and off >= days then
-                local short = name:match("^([^-]+)") or name
+        if name then
+            local off = (not isOnline) and self:GetDaysOffline(i) or nil
+            lines[#lines + 1] = { i = i, name = name, rankName = rankName, rankIndex = rankIndex, level = level,
+                class = classFile, online = isOnline, off = off,
+                key = GuildOS:KeyOfRosterName(name), short = name:match("^([^-]+)") or name,
+                days = isOnline and 0 or (off and math.floor(off)) or nil }
+        end
+    end
+    -- The groups in one pass over the lines (never GetLinkedChars per member: it walks every link).
+    local seen = {}
+    if RM then
+        local rows = {}
+        for k, l in ipairs(lines) do rows[k] = { key = l.key, name = l.short, days = l.days } end
+        seen = RM.GroupSeen(rows, GuildOS.db and GuildOS.db.altLinks)
+    end
+    local result = {}
+    for _, l in ipairs(lines) do
+        if not l.online and l.off and l.off >= days then
+            local other = seen[l.key]
+            if not (countAlts and other and other.days < days) then
                 table.insert(result, {
-                    index       = i,
-                    name        = short,
-                    fullName    = name,
-                    rankName    = rankName,
-                    rankIndex   = rankIndex,
-                    level       = level or 0,
-                    class       = classFile or "",
-                    daysOffline = math.floor(off),
+                    index       = l.i,
+                    key         = l.key,
+                    name        = l.short,
+                    fullName    = l.name,
+                    rankName    = l.rankName,
+                    rankIndex   = l.rankIndex,
+                    level       = l.level or 0,
+                    class       = l.class or "",
+                    daysOffline = math.floor(l.off),
+                    seen        = other,
                 })
             end
         end
@@ -255,7 +278,7 @@ end
 -- Combines GuildOS-only data (trial progress, raid attendance) into
 -- actionable leadership prompts.
 ----------------------------------------------------------------------
--- Returns { trialsReady = { ... }, promoteCandidates = { ... } }.
+-- Returns { trialsReady = { ... }, promoteCandidates = { ... }, stuckInRank = { ... } }.
 function GuildManager:GetSuggestions()
     local trialsReady, promoteCandidates = {}, {}
 
@@ -309,7 +332,11 @@ function GuildManager:GetSuggestions()
         table.sort(promoteCandidates, function(a, b) return a.attendance > b.attendance end)
     end
 
-    return { trialsReady = trialsReady, promoteCandidates = promoteCandidates }
+    -- Long in their rank (specs/salao/manutencao-roster.md): only where this rank may promote.
+    local RM = GuildOS.RosterMaint
+    local stuckInRank = RM and RM:StuckInRank() or {}
+
+    return { trialsReady = trialsReady, promoteCandidates = promoteCandidates, stuckInRank = stuckInRank }
 end
 
 ----------------------------------------------------------------------

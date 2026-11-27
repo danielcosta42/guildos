@@ -436,6 +436,17 @@ local COLUMNS = {
           local _, est = GuildOS.MemberHistory:JoinedAt(d.key)
           return (est and "~" or "") .. GuildOS:DateText(v, "/%y"), C.silver
       end },
+    -- Days in the current rank (specs/salao/manutencao-roster.md): since the last rank change the member history
+    -- saw, else since the join; "~" when that is only when Guild OS saw it. The date is in the row's tooltip.
+    { key = "rankSince",   label = L["IN RANK"],      name = L["Days in rank"], min = 64, weight = 0, align = "RIGHT", num = true,
+      offered = function() return GuildOS.RosterMaint ~= nil and GuildOS.MemberHistory ~= nil and officer() end,
+      prepare = function(ctx) ctx.now = GetServerTime() end,
+      value = function(d, ctx)
+          local days, est, t = GuildOS.RosterMaint:RankDays(d.key, ctx.now)
+          d.rankSince, d.rankEst = t, est
+          return days
+      end,
+      text = function(v, d) return (d.rankEst and "~" or "") .. string.format(L["%dd"], v), C.silver end },
     { key = "gosNote",     label = L["GOS NOTE"],     name = L["Guild OS officer note"], min = 140, weight = 2, align = "LEFT", asc = true,
       offered = function() return GuildOS.OfficerNotes ~= nil and enabled("officerNotes") and officer() end,
       value = function(d)
@@ -1576,6 +1587,11 @@ function GuildOS:CreateRosterPanel(parent, host)
             end
         end
 
+        -- What the search reads besides the line itself: once per refresh, not per member.
+        local RM, MM = GuildOS.RosterMaint, GuildOS.MemberMarks
+        local canOfficer = GuildOS.Compat.CanViewOfficerNote()
+        local searchLinks = (GuildOS.db and GuildOS.db.altLinks) or {}
+
         -- Get guild roster info
         local numMembers = allied and 0 or GetNumGuildMembers()
         for i = 1, numMembers do
@@ -1583,6 +1599,7 @@ function GuildOS:CreateRosterPanel(parent, host)
                   officerNote, isOnline, status, classFile = GetGuildRosterInfo(i)
 
             if name then
+                local matchVia
                 -- Strip realm from name for display
                 local displayName = name:match("^([^-]+)") or name
                 local realm = name:match("-(.+)$") or GetRealmName()
@@ -1601,7 +1618,15 @@ function GuildOS:CreateRosterPanel(parent, host)
                     else
                         local searchTarget = strlower(displayName .. " " .. (classLoc or "") .. " " .. (zone or "") .. " " .. (rankName or ""))
                         if not searchTarget:find(filter, 1, true) then
-                            passFilter = false
+                            -- The notes (the officer one only where this rank reads it), the main's name and the
+                            -- nickname (specs/salao/manutencao-roster.md); the row says which matched.
+                            matchVia = RM and RM.MatchVia({
+                                note = RM.NoteText(note),
+                                officerNote = canOfficer and RM.NoteText(officerNote) or nil,
+                                main = searchLinks[key] and (searchLinks[key]:match("^([^-]+)") or searchLinks[key]) or nil,
+                                nick = MM and MM:Nick(key) or nil,
+                            }, filter)
+                            if not matchVia then passFilter = false end
                         end
                     end
                 end
@@ -1655,6 +1680,8 @@ function GuildOS:CreateRosterPanel(parent, host)
                         addonStatus = gos.status,
                         latest = scan.latest,
                         founder = founders[key] ~= nil,
+                        matchVia = matchVia,
+                        matchMain = matchVia == "main" and searchLinks[key] and (searchLinks[key]:match("^([^-]+)") or searchLinks[key]) or nil,
                         cols = {},
                     }
                     for _, col in ipairs(wanted) do entry.cols[col.key] = col.value(entry, ctx) end
@@ -2153,7 +2180,9 @@ function UpdateRosterRow(row, data)
     -- Name (class-colored, grayscale if offline)
     local cr, cg, cb = GuildOS:GetClassColor(data.class)
     local nr, ng, nb = textColor(cr, cg, cb)
-    row.nameText:SetText(data.name)
+    -- Found by a note, the main or the nickname: a small tag after the name says which.
+    local via = data.matchVia and GuildOS.RosterMaint and GuildOS.RosterMaint.ViaText(data.matchVia, data.matchMain)
+    row.nameText:SetText(via and (data.name .. "  |cff8a7a5a\194\183 " .. via .. "|r") or data.name)
     row.nameText:SetTextColor(nr, ng, nb)
 
     -- The marks (#449): Guild OS up to date or out of date (none when it is not installed), then a founder's
@@ -2580,6 +2609,16 @@ function ShowRowTooltip(row, tip, locked)
 
     -- Alts and main, the rating and, to officers, the join, the sheet and the notes (issue #427).
     if GuildOS.RosterCard then GuildOS.RosterCard:AddLines(tip, data, row.host and row.host.tipIndex) end
+
+    -- Since when in the rank (specs/salao/manutencao-roster.md), to officers.
+    local RMt = GuildOS.RosterMaint
+    if RMt and GuildOS:IsOfficer() then
+        local days, est, since = RMt:RankDays(data.key)
+        if since then
+            tip:AddLine((est and "~" or "") .. string.format(L["In rank since %s (%d days)"], date("%Y-%m-%d", since), days or 0),
+                C.silver.r, C.silver.g, C.silver.b)
+        end
+    end
 
     -- First seen by Guild OS (approximate "member since")
     local firstSeen = GuildOS.GetFirstSeen and GuildOS:GetFirstSeen(data.key)

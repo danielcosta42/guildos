@@ -30,6 +30,8 @@ local SUBTABS = {
     { key = "remind",   label = L["Without GuildOS"] },
     -- Join dates in the notes, the safe list, nicknames (issue #429): UI/MarksPanel.lua builds it.
     { key = "marks",    label = L["Notes and marks"] },
+    -- Who lacks a join date or an alt link, or whose note's date is not the history's (UI/DataAuditPanel.lua).
+    { key = "audit",    label = L["Data audit"] },
     -- The officers' chat alerts and their rules (issues #404, #405): UI/ModAlerts.lua builds both.
     { key = "alerts",   label = L["Chat alerts"] },
     { key = "alertrules", label = L["Alert rules"] },
@@ -310,6 +312,10 @@ local function BuildInactiveSub(panel)
     daysBox:SetText(tostring(panel.threshold))
     local applyBtn = UI:CreateButton(card, L["Apply"], 70, 24)
     card:Field(L["Inactive for more than"] .. " (" .. L["days"] .. ")", daysBox, { w = 80, button = applyBtn })
+    -- The player, not the character (specs/salao/manutencao-roster.md): on by default.
+    local RM = GuildOS.RosterMaint
+    local altsCB = RM and card:Check(L["Count the player's alts"],
+        L["A character is not inactive while its main or another alt of the same player was seen within the days."])
     -- How many matched: secondary text, not gold (#371).
     local summary = card:Note("")
 
@@ -322,9 +328,11 @@ local function BuildInactiveSub(panel)
     empty:Hide()
 
     local canKick = false
+    -- Two lines: the member, and under the name which other character of the player was seen last.
+    local INACTIVE_ROW_H = 36
     local function createRow(parent)
         local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-        row:SetHeight(ROW_H)
+        row:SetHeight(INACTIVE_ROW_H)
         row:SetBackdrop({ bgFile = WHITE })
         rule(row)
         MemberCells(row)
@@ -333,6 +341,12 @@ local function BuildInactiveSub(panel)
         row.kickBtn = UI:CreateButton(row, L["Remove"], 70, 20)
         row.kickBtn:SetWidth(math.ceil(row.kickBtn.label:GetStringWidth() or 40) + 16)
         row.kickBtn:SetPoint("RIGHT", -2, 0)
+        -- Which other character of the player was seen last ("main Xyz seen 2d ago").
+        row.seenFS = UI:CreateText(row, "", UI.SP.META, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        row.seenFS:SetPoint("LEFT", COL_NAME, -8)
+        row.seenFS:SetWidth(COL_DAYS - COL_NAME - 8)
+        row.seenFS:SetJustifyH("LEFT")
+        row.seenFS:SetWordWrap(false)
         row.kickBtn:SetScript("OnClick", function()
             GuildOS.GuildManager:ConfirmKick(row.member.fullName)
         end)
@@ -349,13 +363,18 @@ local function BuildInactiveSub(panel)
         row.daysFS:SetText(m.daysOffline .. L["d offline"])
         row.daysFS:SetTextColor(daysColor.r, daysColor.g, daysColor.b)
         row.kickBtn:SetShown(canKick)
+        local seen = RM and m.seen and RM.SeenText(m.seen) or ""
+        row.seenFS:SetText(seen)
+        row.nameFS:ClearAllPoints()
+        row.nameFS:SetPoint("LEFT", COL_NAME, seen ~= "" and 7 or 0)
     end
-    local rows = MakeVirtualList(listHolder, "GuildOSMgmtInactiveScroll", ROW_H + 2, createRow, fillRow)
+    local rows = MakeVirtualList(listHolder, "GuildOSMgmtInactiveScroll", INACTIVE_ROW_H + 2, createRow, fillRow)
 
     local refresh
     refresh = function()
         local GM = GuildOS.GuildManager
         canKick = GM:CanKick() and true or false
+        if altsCB then altsCB.checkbox:SetChecked(RM:CountAlts()) end
         local list = GM:GetInactiveMembers(panel.threshold)
         summary:SetText(format(L["%d member(s)"], #list))
         empty:SetShown(#list == 0)
@@ -371,6 +390,7 @@ local function BuildInactiveSub(panel)
     end
     daysBox:SetScript("OnEnterPressed", apply)   -- Escape is the field's own (UI:CreateInput)
     applyBtn:SetScript("OnClick", apply)
+    if altsCB then altsCB.checkbox.onChanged = function(_, on) RM:SetCountAlts(on); refresh() end end
 
     return refresh
 end
@@ -431,6 +451,28 @@ local function BuildSuggestSub(panel)
         row:Right()
     end, { empty = L["No candidates (high attendance) right now."] })
 
+    -- Long in their rank (specs/salao/manutencao-roster.md): only for a rank that may promote.
+    local stuckOn = false
+    local stuckCard = board:Card("", { span = true, shown = function() return stuckOn end })
+    local stuck = stuckCard:Rows(function(holder)
+        local row = Forms:TodoRow(holder)
+        row.promo = Forms:SmallButton(row.right, L["Promote"], "primary")
+        row:Right({ row.promo })
+        return row
+    end, function(row, m)
+        row.av:SetMember(m.name, m.class)
+        local cr, cg, cb = classInk(m.class)
+        row.title:SetText(m.name)
+        row.title:SetTextColor(cr, cg, cb)
+        row.sub:SetText((m.rankName or "?") .. "  ·  " .. (m.est and "~" or "") .. format(L["%d days in rank"], m.rankDays))
+        local fullName = m.fullName
+        row.promo:SetScript("OnClick", function()
+            GuildOS.GuildManager:Promote(fullName)
+            GuildOS.GuildManager:RefreshUI()
+        end)
+        row:Right()
+    end, { empty = L["Nobody has been in their rank that long."] })
+
     refresh = function()
         local data = GuildOS.GuildManager:GetSuggestions()
         canPromote = GuildOS.GuildManager:CanPromote() and true or false
@@ -438,6 +480,13 @@ local function BuildSuggestSub(panel)
         GuildOS:SetTitleText(promoCard.title, format(L["Promotion candidates (%d)"], #data.promoteCandidates))
         trials:SetData(data.trialsReady)
         promos:SetData(data.promoteCandidates)
+        local RM = GuildOS.RosterMaint
+        stuckOn = canPromote and RM ~= nil
+        if RM then
+            GuildOS:SetTitleText(stuckCard.title, format(L["In their rank for %d+ days (%d)"], RM:StuckDays(),
+                #(data.stuckInRank or {})))
+        end
+        stuck:SetData(data.stuckInRank or {})
         board:Layout()
     end
 
@@ -1157,6 +1206,10 @@ local PRESET_FIELDS = {
     promote_regulars = { { key = "minAttendance", label = L["min attendance %"] } },
     trial_cleanup    = { { key = "minDays",       label = L["trial days"] },
                          { key = "maxAttendance", label = L["max attendance %"] } },
+    -- specs/salao/manutencao-roster.md: the days in the rank, the rank, the days in the guild (0: no rule).
+    promote_rank_time = { { key = "days",         label = L["days in rank"] },
+                          { key = "rankIndex",    label = L["Rank"], rank = true },
+                          { key = "tenureDays",   label = L["days in the guild"] } },
 }
 
 -- Apply confirmation text: heading + affected members (capped) + the
@@ -1223,12 +1276,18 @@ local function BuildPresetsSub(panel)
             chooser:SetPoint("TOPLEFT", 0, -yOff)
             chooser:SetPoint("TOPRIGHT", 0, -yOff)
             local lbl = UI:CreateText(chooser, L["Add preset:"], 11, C.text.r, C.text.g, C.text.b)   -- a form label (#371)
-            lbl:SetPoint("LEFT", 8, 0)
-            local bx = 96
+            lbl:SetPoint("TOPLEFT", 8, -4)
+            -- The types wrap onto a second line where the card is narrow (four of them pass 800px).
+            local availW = UI:LaidWidth(content)
+            if availW < 1 then availW = 600 end
+            local bx, by = 96, 0
             for _, key in ipairs(MP.TYPE_ORDER) do
                 local info = MP.TYPES[key]
                 local b = UI:CreateButton(chooser, info.name, 130, 20)
-                b:SetPoint("LEFT", bx, 0)
+                local bw = math.max(130, math.ceil(b.label:GetStringWidth() or 0) + 16)
+                b:SetWidth(bw)
+                if bx > 96 and bx + bw > availW then bx, by = 96, by + 24 end
+                b:SetPoint("TOPLEFT", bx, -by)
                 b:SetScript("OnClick", function()
                     if MP:AddPreset(key) then
                         panel.showChooser = false
@@ -1237,7 +1296,8 @@ local function BuildPresetsSub(panel)
                 end)
                 bx = bx + b:GetWidth() + 6  -- a button its label grew pushes the next one (issue #28)
             end
-            yOff = yOff + ROW_H + 4
+            chooser:SetHeight(ROW_H + by)
+            yOff = yOff + ROW_H + by + 4
         end
 
         if #presets == 0 and not panel.showChooser then
@@ -1283,8 +1343,14 @@ local function BuildPresetsSub(panel)
             -- Controls line: threshold editors, match count, Preview, Apply.
             local cy = -(ROW_H + 2)
             local x = 8
+            -- The editors wrap under each other where they would reach Preview and Apply (a narrow window).
+            local fieldsW = UI:LaidWidth(content)
+            fieldsW = (fieldsW > 0 and fieldsW or 600) - 170
+            local wrapped = 0
             for _, field in ipairs(PRESET_FIELDS[preset.type] or {}) do
                 local flbl = UI:CreateText(block, field.label, UI.SP.META, C.textDim.r, C.textDim.g, C.textDim.b)
+                local fw = (flbl:GetStringWidth() or 0) + 6 + 46 + (field.rank and 70 or 0)
+                if x > 8 and x + fw > fieldsW then x, cy, wrapped = 8, cy - 24, wrapped + 24 end
                 flbl:SetPoint("TOPLEFT", x, cy - 2)
                 x = x + flbl:GetStringWidth() + 6
                 local fieldKey = field.key
@@ -1304,7 +1370,12 @@ local function BuildPresetsSub(panel)
 
             local countFS = Kit and Kit:Badge(block, format(L["%d match"], #matches), #matches > 0 and "warn" or "mute")
                 or UI:CreateText(block, format(L["%d match"], #matches), 11, C.text.r, C.text.g, C.text.b)
-            countFS:SetPoint("TOPLEFT", math.max(x + 8, 300), cy - 2)
+            countFS:SetPoint("TOPLEFT", math.max(x + 8, wrapped > 0 and 8 or 300), cy - 2)
+            if wrapped > 0 then
+                blockH = blockH + wrapped
+                block:SetHeight(blockH)
+                cy = -(ROW_H + 2)
+            end
 
             local applyBtn = UI:CreateButton(block, L["Apply"], 70, 20)
             applyBtn:SetWidth(math.ceil(applyBtn.label:GetStringWidth() or 40) + 16)
@@ -1328,7 +1399,7 @@ local function BuildPresetsSub(panel)
 
             -- Inline preview list.
             if expanded then
-                local py = ROW_H + 24
+                local py = ROW_H + 24 + wrapped
                 if #matches == 0 then
                     local none = UI:CreateText(block, L["No members match this preset."],
                         UI.SP.META, C.silver.r, C.silver.g, C.silver.b)
@@ -1437,6 +1508,7 @@ function GuildOS:CreateManagementPanel(parent, _mainFrame)
         bulk     = function(p) return GuildOS.BuildBulkSub and GuildOS:BuildBulkSub(p) end,
         remind   = function(p) return GuildOS.BuildRemindSub and GuildOS:BuildRemindSub(p) end,
         marks    = function(p) return GuildOS.BuildMarksSub and GuildOS:BuildMarksSub(p) end,
+        audit    = function(p) return GuildOS.BuildDataAuditSub and GuildOS:BuildDataAuditSub(p) end,
         alerts   = function(p) return GuildOS.BuildModAlertsSub and GuildOS:BuildModAlertsSub(p) end,
         alertrules = function(p) return GuildOS.BuildModRulesSub and GuildOS:BuildModRulesSub(p) end,
     }

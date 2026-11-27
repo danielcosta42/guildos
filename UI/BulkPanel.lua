@@ -105,6 +105,12 @@ local function detailOf(m)
     if m.daysOffline then parts[#parts + 1] = m.daysOffline .. L["d offline"] end
     if m.attendance then parts[#parts + 1] = string.format(L["%d%% attendance"], m.attendance) end
     if m.hasAddon == false then parts[#parts + 1] = L["no GuildOS"] end
+    if m.rankDays then parts[#parts + 1] = string.format(L["%d days in rank"], m.rankDays) end
+    -- The group's most recently seen other character (specs/salao/manutencao-roster.md).
+    local RM = GuildOS.RosterMaint
+    local seen = RM and m.seen and RM.SeenText(m.seen)
+    if seen then parts[#parts + 1] = seen end
+    if m.viaGroup then parts[#parts + 1] = L["with its group"] end
     return table.concat(parts, "  ")
 end
 
@@ -176,8 +182,21 @@ function GuildOS:BuildBulkSub(panel)
     local attField = Forms:MakeField(card, L["Raid attendance"] .. " (%)", att, { w = 200 })
     card:Pair(Forms:MakeField(card, L["Level"], lvl, { w = 200 }), attField)
     local attParts = { attField }
+    -- Time in the rank and in the guild (the member history's; specs/salao/manutencao-roster.md).
+    local rankDaysBox, tenureBox = field(card), field(card)
+    card:Pair(Forms:MakeField(card, L["In the rank at least"] .. " (" .. L["days"] .. ")", rankDaysBox, { w = 100 }),
+              Forms:MakeField(card, L["In the guild at least"] .. " (" .. L["days"] .. ")", tenureBox, { w = 100 }))
     local noAddon = card:Check(L["Without GuildOS only"])
     noAddon.checkbox.onChanged = function() preview = nil; refresh() end
+    -- A removal by days: the player's alts (the Inactivity screen's setting decides whether they count), and the
+    -- whole group only once every character of it is inactive.
+    local RM = GuildOS.RosterMaint
+    local wholeCB = RM and card:Check(L["Remove the whole group only when every character is inactive"],
+        L["Each alt group goes out together, and not while any of its characters was seen within the days."],
+        { gap = 4, shown = function() return action == "remove" end })
+    if wholeCB then
+        wholeCB.checkbox.onChanged = function(_, on) RM:SetWholeGroup(on); preview = nil; refresh() end
+    end
     local summary = card:Note("")
 
     local function rules()
@@ -186,6 +205,9 @@ function GuildOS:BuildBulkSub(panel)
             levelMin = lvlMin:GetText(), levelMax = lvlMax:GetText(),
             attMin = attMin:GetText(), attMax = attMax:GetText(),
             noAddon = noAddon.checkbox:GetChecked() and true or false,
+            rankDaysMin = rankDaysBox:GetText(), tenureDaysMin = tenureBox:GetText(),
+            countAlts = RM and RM:CountAlts() or nil,
+            wholeGroup = (RM and action == "remove" and RM:WholeGroup()) or nil,
         }
     end
 
@@ -299,6 +321,7 @@ function GuildOS:BuildBulkSub(panel)
         end
         rankDD:SetOptions(opts)
         if rankDD:GetValue() == nil then rankDD:SetValue(-1) end
+        if wholeCB then wholeCB.checkbox:SetChecked(RM:WholeGroup()) end
         local hasAtt = BA:HasAttendance()
         for _, part in ipairs(attParts) do part:SetShown(hasAtt) end
         if not hasAtt then attMin:SetText(""); attMax:SetText("") end

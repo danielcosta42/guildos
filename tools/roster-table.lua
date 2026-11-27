@@ -197,6 +197,9 @@ dofile(ADDON .. "/UI/Forms.lua")
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/Modules/RosterColumns.lua")
 dofile(ADDON .. "/Modules/GearAudit.lua")
+-- The roster maintenance (specs/salao/manutencao-roster.md): days in rank, the note search.
+dofile(ADDON .. "/Modules/MemberHistory.lua")
+dofile(ADDON .. "/Modules/RosterMaint.lua")
 dofile(ADDON .. "/UI/RosterFrame.lua")
 
 local function key(n) return GuildOS:GetPlayerKey(n, "Firemaw") end
@@ -819,6 +822,58 @@ fire(parent.headerButtons.avgIlvl, "OnClick", "LeftButton")
 fire(parent.headerButtons.avgIlvl, "OnClick", "LeftButton")
 check(GuildOS.db.settings.sortAsc, "the second click sorts lowest first")
 check(order() == "Ana,Caio,Beto,Dora", "a member with no item level goes last that way too: " .. order())
+
+-- ── Days in the current rank (specs/salao/manutencao-roster.md) ─────────────
+-- Ana: her last rank change 40 days ago; Beto: no change, joined 10 days ago, only as Guild OS saw it; Caio: nothing.
+GuildOS.db.memberHistory = {
+  [ANA] = { stints = { { joinAt = NOW - 400 * 86400 } }, ranks = { { at = NOW - 40 * 86400, to = "Officer" } } },
+  [BETO] = { stints = { { joinAt = NOW - 10 * 86400, joinEst = true } } },
+}
+tick("rankSince", true)
+check(parent.headerButtons.rankSince:IsShown(), "an officer may show the days in rank")
+check(cell("Ana", "rankSince") == "40d", "since her last rank change: " .. tostring(cell("Ana", "rankSince")))
+check(cell("Beto", "rankSince") == "~10d", "no change: since the join, ~ when only Guild OS saw it: " .. tostring(cell("Beto", "rankSince")))
+check(cell("Caio", "rankSince"):find("-", 1, true), "nothing known reads as a dash")
+fire(parent.headerButtons.rankSince, "OnClick", "LeftButton")
+check(GuildOS.db.settings.sortBy == "rankSince" and order():find("^Ana,") ~= nil, "it sorts, longest in rank first: " .. order())
+do -- the date is in the row's tooltip
+  local keep, lines = GameTooltip, {}
+  GameTooltip = setmetatable({ AddLine = function(_, t) lines[#lines + 1] = tostring(t) end }, { __index = function() return function() end end })
+  pcall(ShowRowTooltip, rowOf("Ana"))   -- the stubs stop it past the lines that matter here
+  GameTooltip = keep
+  local found = false
+  for _, l in ipairs(lines) do if l:find("In rank since " .. date("%Y-%m-%d", NOW - 40 * 86400), 1, true) then found = true end end
+  check(found, "the row's tooltip says since when")
+end
+tick("rankSince", false)
+GuildOS.db.memberHistory = nil
+
+-- ── The search reads the notes, the main and the nickname ────────────────
+local function search(text)
+  parent.searchFilter = text
+  GuildOS:RefreshRosterUI()
+  flush()
+end
+search("schmidt")
+check(order() == "Ana" and parent.sortedMembers[1].matchVia == "note", "the public note: " .. order())
+check(rowOf("Ana").nameText:GetText():find("note", 1, true), "and the row says it was the note")
+search("council")
+check(order() == "Ana" and parent.sortedMembers[1].matchVia == "onote", "the officer note, for a rank that reads it")
+viewOfficer = false
+search("council")
+check(order() == "", "never for a rank that cannot read officer notes")
+viewOfficer = true
+search("beto")
+check(order():find("Beto", 1, true) and order():find("Dora", 1, true), "the main's name finds its alts too: " .. order())
+for _, m in ipairs(parent.sortedMembers) do
+  if m.name == "Dora" then check(m.matchVia == "main" and rowOf("Dora").nameText:GetText():find("Alt of Beto", 1, true), "an alt by its main says so") end
+  if m.name == "Beto" then check(m.matchVia == nil and rowOf("Beto").nameText:GetText() == "Beto", "a name match has no tag") end
+end
+GuildOS.MemberMarks = { Nick = function(_, k) return k == CAIO and "Padre" or nil end }
+search("padre")
+check(order() == "Caio" and parent.sortedMembers[1].matchVia == "nick", "the officers' nickname")
+GuildOS.MemberMarks = nil
+search("")
 
 -- ── A column this reader may not see is not offered ─────────────────────
 viewOfficer, myRank, lootSystem = false, 5, "council"

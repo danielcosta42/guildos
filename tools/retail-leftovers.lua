@@ -110,7 +110,9 @@ check(ok and said(NOT_HERE) and not said("Completed quests"), "/gos attune dumpq
 
 -- ── 2. Retail: the exports carry no attunement column ─────────────────
 local headers = GuildOS.Exporter:RosterData()
-check(not has(headers, "Attunements") and has(headers, "LastSeen") and #headers == 7, "the roster export has no attunements")
+-- LastSeen, then the roster maintenance's Main, JoinDate, DaysInRank, PublicNote (no OfficerNote: this rank reads none).
+check(not has(headers, "Attunements") and has(headers, "LastSeen") and #headers == 11 and headers[7] == "LastSeen"
+  and table.concat(headers, ",", 8) == "Main,JoinDate,DaysInRank,PublicNote", "the roster export has no attunements")
 local _, rows = GuildOS.Exporter:RosterData()
 check(#rows == 1 and #rows[1] == #headers and rows[1][7]:match("^%d+%-%d+%-%d+$"), "and each row matches its header, last seen last")
 GuildOS.Readiness = { GetReport = function()
@@ -155,7 +157,7 @@ GuildOS.AttunementTracker = {
 }
 GuildOS.ConsumableChecker = {}
 headers, rows = GuildOS.Exporter:RosterData()
-check(#headers == 8 and headers[7] == "Attunements" and rows[1][7] == "1/2" and rows[1][8] == "",
+check(#headers == 12 and headers[7] == "Attunements" and rows[1][7] == "1/2" and rows[1][8] == "",
   "Anniversary's roster export keeps its attunements")
 head, cols = tsv()
 check(head:find("\tAttunements\tLastSeen$") and #cols == 8 and cols[7] == "1/2", "and so does the sync tab's")

@@ -309,7 +309,8 @@ end
 ----------------------------------------------------------------------
 -- Show member detail panel
 ----------------------------------------------------------------------
-function GuildOS:ShowMemberDetail(memberData)
+-- `focus` "alt": the cursor in the Add alt box (the data audit's "Link alt…"), when the card draws it.
+function GuildOS:ShowMemberDetail(memberData, focus)
     if not memberData then return end
 
     local frame = self.DetailFrame
@@ -320,6 +321,11 @@ function GuildOS:ShowMemberDetail(memberData)
 
     PopulateDetail(frame, memberData)
     frame:Show()
+    if focus == "alt" then
+        local held = frame.content and rawget(frame.content, "_kept")
+        local box = held and held["alt.add"]
+        if box and box:IsShown() and box.SetFocus then box:SetFocus() end
+    end
 end
 
 ----------------------------------------------------------------------

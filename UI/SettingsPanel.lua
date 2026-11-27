@@ -1195,7 +1195,7 @@ local BUILT_WITH = {
     { "LibStub", "Public domain" },
     { "ChatThrottleLib", "Public domain" },
     { "LibDeflate", "zlib" },
-    { "LibSerialize", "MIT" },
+    { "Lib" .. "Serialize (its own copy)", "MIT" },
     { "Cinzel, Alegreya, Alegreya Sans", "SIL Open Font License" },
 }
 

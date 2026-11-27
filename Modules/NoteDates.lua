@@ -347,12 +347,12 @@ function NoteDates:_WriteNow(item, confirmed)
     return "done"
 end
 
---- `/gos joindate <name>` and the panel's one-member write: the member's date into the chosen note. A note that
---- would lose text asks first (the confirmation calls back with `confirmed`). True when it reads as asked, or the
---- copy box is open.
-function NoteDates:WriteOne(name, confirmed)
+--- `/gos joindate <name>` and the panel's one-member write: the member's date into the chosen note (`which`, the
+--- data audit's "Fix note": the note that differs; else the setting's). A note that would lose text asks first (the
+--- confirmation calls back with `confirmed`). True when it reads as asked, or the copy box is open.
+function NoteDates:WriteOne(name, confirmed, which)
     if not GuildOS:IsOfficer() then GuildOS:Print(L["Only officers can do that."]) return false end
-    local which = self:Target()
+    which = (which == "public" or which == "officer") and which or self:Target()
     if not self:Mode(which) then GuildOS:Print(L["Your guild rank may not edit that note."]) return false end
     local full, key, note, onote = lineOf(name or "")
     if not full then GuildOS:Print(string.format(L["%s is not in the guild roster."], name or "?")) return false end
@@ -689,6 +689,18 @@ function NoteDates:Command(rest)
         return
     end
     self:WriteOne(rest)
+end
+
+--- The member the panel's box should hold when it opens next (the data audit's "Write date"), and that name once.
+function NoteDates:Prefill(name)
+    state().prefill = type(name) == "string" and name or nil
+end
+
+function NoteDates:TakePrefill()
+    local s = state()
+    local v = s.prefill
+    s.prefill = nil
+    return v
 end
 
 --- What the panel should open on ("plan" or "import"), once.

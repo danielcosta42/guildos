@@ -55,15 +55,31 @@ end
 ----------------------------------------------------------------------
 -- Dataset builders → (headers, rows)
 ----------------------------------------------------------------------
--- The roster: attunements only where the game has them (TBC, ADR-0014; issue #184).
+-- The roster: attunements only where the game has them (TBC, ADR-0014; issue #184). Then the roster maintenance's
+-- columns (specs/salao/manutencao-roster.md): the main (for an alt), the join date and the days in the current rank
+-- (the member history's, an officer's client; "~" before a date Guild OS only saw), the public note and, only for a
+-- rank that reads officer notes, the officer note.
+-- A note as one cell: no tabs or line breaks (the TSV and Discord formats split on them), a Secret Value as "".
+local function noteCell(v)
+    local RM = GuildOS.RosterMaint
+    v = RM and RM.NoteText(v) or ((type(v) == "string") and v or "")
+    return (v:gsub("[\t\r\n]+", " "))
+end
+
 function Exporter:RosterData()
     local AT = GuildOS.AttunementTracker
+    local onotes = GuildOS.Compat.CanViewOfficerNote()
     local headers = AT and { "Name", "Class", "Level", "Rank", "iLvl", "Attendance%", "Attunements", "LastSeen" }
         or { "Name", "Class", "Level", "Rank", "iLvl", "Attendance%", "LastSeen" }
+    for _, h in ipairs({ "Main", "JoinDate", "DaysInRank", "PublicNote" }) do headers[#headers + 1] = h end
+    if onotes then headers[#headers + 1] = "OfficerNote" end
+    local MH, RM = GuildOS.MemberHistory, GuildOS.RosterMaint
+    local links = GuildOS.db.altLinks or {}
+    local now = GetServerTime()
     local rows = {}
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
-        local name, rankName, _, level, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
+        local name, rankName, _, level, _, _, note, onote, _, _, classFile = GetGuildRosterInfo(i)
         if name then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
@@ -80,6 +96,15 @@ function Exporter:RosterData()
                 row[#row + 1] = attDone .. "/" .. attTotal
             end
             row[#row + 1] = lastSeen
+            local main = links[key]
+            row[#row + 1] = main and (main:match("^([^-]+)") or main) or ""
+            local joinAt, est
+            if MH then joinAt, est = MH:JoinedAt(key) end
+            row[#row + 1] = joinAt and ((est and "~" or "") .. date("%Y-%m-%d", joinAt)) or ""
+            local inRank = RM and RM:RankDays(key, now)
+            row[#row + 1] = inRank or ""
+            row[#row + 1] = noteCell(note)
+            if onotes then row[#row + 1] = noteCell(onote) end
             rows[#rows + 1] = row
         end
     end

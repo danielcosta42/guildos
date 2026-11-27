@@ -4,6 +4,7 @@
 --   * purge_inactive   -- inactive too long AND at/below a rank
 --   * promote_regulars -- strong raid attendance
 --   * trial_cleanup    -- long-running trials with weak attendance
+--   * promote_rank_time -- N days or more in a rank (and, optionally, in the guild): specs/salao/manutencao-roster.md
 -- Business logic only, no UI frames (Rule 2 / Rule 10). Each preset is a saved
 -- Bulk actions rule set (audit B8): it matches through BulkActions.Match (the
 -- safe list, the rank limits, an unknown attendance meeting no attendance
@@ -36,10 +37,17 @@ ModPresets.TYPES = {
         defaults = { minDays = 14, maxAttendance = 50 },
         action   = "remove",
     },
+    -- "Promote who has been N days in <rank>": the rank's index (the guild's lowest but one by default, set when
+    -- the officer picks it), the days in it and, 0 for none, the days in the guild.
+    promote_rank_time = {
+        name     = L["Promote after days in rank"],
+        defaults = { days = 30, rankIndex = 4, tenureDays = 0 },
+        action   = "promote",
+    },
 }
 
 -- Stable order for seeding + the "+ New" chooser.
-ModPresets.TYPE_ORDER = { "purge_inactive", "promote_regulars", "trial_cleanup" }
+ModPresets.TYPE_ORDER = { "purge_inactive", "promote_regulars", "trial_cleanup", "promote_rank_time" }
 
 ----------------------------------------------------------------------
 -- Init + model (db.modPresets = list of { type, name, thresholds = {...} })
@@ -59,6 +67,13 @@ function ModPresets:Initialize()
                 p.thresholds.minAttendance = self.PROMOTE_ATTENDANCE
             end
         end
+    end
+    -- The "promote after days in rank" preset (specs/salao/manutencao-roster.md), once, for a guild seeded before it.
+    if not GuildOS.db.modPresetsRankTime then
+        GuildOS.db.modPresetsRankTime = true
+        local has = false
+        for _, p in ipairs(GuildOS.db.modPresets) do if p.type == "promote_rank_time" then has = true end end
+        if not has then self:_AppendDefault("promote_rank_time") end
     end
     self:_RegisterTests()
 end
@@ -129,6 +144,11 @@ function ModPresets:Summarize(preset)
         return format(L["attendance >= %d%%"], th.minAttendance or 0)
     elseif preset.type == "trial_cleanup" then
         return format(L["trial, joined >= %dd, attendance < %d%%"], th.minDays or 0, th.maxAttendance or 0)
+    elseif preset.type == "promote_rank_time" then
+        local rn = (GuildOS.GuildManager and GuildOS.GuildManager:GetRankName(th.rankIndex or 0)) or "?"
+        local line = format(L["%s for %d+ days"], rn, th.days or 0)
+        if (th.tenureDays or 0) > 0 then line = line .. ", " .. format(L["in the guild %d+ days"], th.tenureDays) end
+        return line
     end
     return ""
 end
@@ -143,11 +163,16 @@ end
 function ModPresets.BulkRules(preset)
     local th = (preset and preset.thresholds) or {}
     if preset.type == "purge_inactive" then
-        return { days = math.max(1, th.days or 0) }
+        -- The player's alts count as the Inactivity screen says (specs/salao/manutencao-roster.md).
+        local RM = GuildOS.RosterMaint
+        return { days = math.max(1, th.days or 0), countAlts = (RM and RM:CountAlts()) or nil }
     elseif preset.type == "promote_regulars" then
         return { attMin = th.minAttendance or ModPresets.PROMOTE_ATTENDANCE }
     elseif preset.type == "trial_cleanup" then
         return { attMax = math.max(0, (th.maxAttendance or 0) - 1) }   -- strictly below the threshold
+    elseif preset.type == "promote_rank_time" then
+        return { rank = th.rankIndex, rankDaysMin = math.max(1, th.days or 0),
+                 tenureDaysMin = (th.tenureDays or 0) > 0 and th.tenureDays or nil }
     end
     return {}
 end
@@ -159,7 +184,7 @@ function ModPresets.Extra(preset, m, officerMaxRank)
     local th = (preset and preset.thresholds) or {}
     if preset.type == "purge_inactive" then
         return (m.rankIndex or 0) >= (th.minRankIndex or 0)
-    elseif preset.type == "promote_regulars" then
+    elseif preset.type == "promote_regulars" or preset.type == "promote_rank_time" then
         return not m.trial and m.rankIndex ~= nil and m.rankIndex > (officerMaxRank or 1)
     elseif preset.type == "trial_cleanup" then
         return m.trial == true and (m.trialDays or 0) >= (th.minDays or 0)
@@ -209,6 +234,8 @@ function ModPresets:GetMatches(preset)
             detail = (m.daysOffline or 0) .. L["d offline"] .. "  " .. (m.rankName or "?")
         elseif preset.type == "promote_regulars" then
             detail = format(L["%d%% attendance"], m.attendance or 0)
+        elseif preset.type == "promote_rank_time" then
+            detail = format(L["%d days in rank"], m.rankDays or 0) .. "  " .. (m.rankName or "?")
         else
             detail = format(L["day %d, %d%% att"], m.trialDays or 0, m.attendance or 0)
         end

@@ -611,7 +611,7 @@ local function boards(home)
 end
 
 local ENTRIES = { "recruiting", "scanner", "trials", "engage", "suggest", "ranks", "inactive", "bulk", "presets", "remind",
-  "marks", "alerts", "alertrules", "ban", "log", "motd", "alliance" }
+  "marks", "audit", "alerts", "alertrules", "ban", "log", "motd", "alliance" }
 local SLACK = 2
 for _, W in ipairs({ 1250, 800 }) do
   for _, id in ipairs(ENTRIES) do

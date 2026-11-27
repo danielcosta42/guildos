@@ -51,6 +51,26 @@ local got = {}
 for _, m in ipairs(out) do got[m.key] = true end
 check(got.A and got.S and not got.B and not got.T and not got.U and not got.X,
   "promotion at 80%: not a trial, not unknown, not up to my rank; the safe list may still be promoted")
+-- "Promote after days in rank" (specs/salao/manutencao-roster.md): the rank, the days in it, the days in the guild.
+local rankTime = { type = "promote_rank_time", thresholds = { days = 30, rankIndex = 5, tenureDays = 0 } }
+check(MP:GetAction(rankTime) == "promote", "the ready preset promotes")
+out = MP.Match(rankTime, {
+  { key = "A", rankIndex = 5, rankDays = 30 }, { key = "B", rankIndex = 5, rankDays = 29 },
+  { key = "C", rankIndex = 5 }, { key = "D", rankIndex = 6, rankDays = 99 },
+  { key = "T", rankIndex = 5, rankDays = 99, trial = true },
+}, ctx, 1)
+check(#out == 1 and out[1].key == "A", "who has been 30 days in that rank: not fewer, not unknown, not another rank, not a trial")
+rankTime.thresholds.tenureDays = 100
+out = MP.Match(rankTime, { { key = "A", rankIndex = 5, rankDays = 30, tenureDays = 99 },
+  { key = "B", rankIndex = 5, rankDays = 30, tenureDays = 100 } }, ctx, 1)
+check(#out == 1 and out[1].key == "B", "and the days in the guild when set")
+local seededTypes = {}
+for _, p in ipairs(GuildOS.db.modPresets) do seededTypes[p.type] = (seededTypes[p.type] or 0) + 1 end
+check(seededTypes.promote_rank_time == 1, "an older guild gets the ready preset once")
+-- The purge reads the player's alts as the Inactivity screen says (RosterMaint:CountAlts), when that module is here.
+GuildOS.RosterMaint = { CountAlts = function() return true end }
+check(MP.BulkRules(purge).countAlts == true, "the purge counts the player's alts with the setting on")
+GuildOS.RosterMaint = nil
 -- Apply: into Bulk actions' queue.
 local started
 BA.StartListAndSay = function(_, action, list) started = { action, list }; return true end

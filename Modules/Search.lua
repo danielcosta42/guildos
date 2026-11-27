@@ -62,24 +62,40 @@ local function starts(hay, text) return strlower(tostring(hay or "")):sub(1, #te
 ----------------------------------------------------------------------
 -- Members on the guild roster whose name holds the query; online first.
 ----------------------------------------------------------------------
+-- Also by the public note, the officer note (only where this rank reads them), the main's name and the nickname
+-- (specs/salao/manutencao-roster.md): such a result says which matched (`via`, and a tag on its line).
 local function members(text)
     local out = {}
     local n = GetNumGuildMembers() or 0
+    local RM, MM = GuildOS.RosterMaint, GuildOS.MemberMarks
+    local canOfficer = GuildOS.Compat.CanViewOfficerNote()
+    local links = (GuildOS.db and GuildOS.db.altLinks) or {}
     for i = 1, n do
-        local name, rank, _, level, _, zone, _, _, online, _, classFile = GetGuildRosterInfo(i)
+        local name, rank, _, level, _, zone, note, onote, online, _, classFile = GetGuildRosterInfo(i)
         if name then
             local short = name:match("^([^-]+)") or name
-            if has(short, text) then
+            local via, mainName
+            if not has(short, text) and RM then
+                local key = GuildOS:KeyOfRosterName(name)
+                local main = links[key]
+                mainName = main and (main:match("^([^-]+)") or main) or nil
+                via = RM.MatchVia({ note = RM.NoteText(note), officerNote = canOfficer and RM.NoteText(onote) or nil,
+                    main = mainName, nick = MM and MM:Nick(key) or nil }, text)
+            end
+            if has(short, text) or via then
                 local parts = { string.format(L["Level %d"], level or 0) }
                 if rank and rank ~= "" then parts[#parts + 1] = rank end
                 parts[#parts + 1] = online and (zone ~= "" and zone or nil) or L["offline"]
+                if via then parts[#parts + 1] = RM.ViaText(via, mainName) end
                 out[#out + 1] = { kind = "member", name = short, class = classFile or "", level = level or 0,
-                    online = online and true or false, sub = table.concat(parts, DOT) }
+                    online = online and true or false, sub = table.concat(parts, DOT), via = via }
             end
         end
     end
     table.sort(out, function(a, b)
         if a.online ~= b.online then return a.online end
+        -- A name that holds the query before a note that does.
+        if (a.via == nil) ~= (b.via == nil) then return a.via == nil end
         local sa, sb = starts(a.name, text), starts(b.name, text)
         if sa ~= sb then return sa end
         return a.name:lower() < b.name:lower()
