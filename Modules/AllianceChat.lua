@@ -91,11 +91,15 @@ end
 -- Seconds between watchdog checks. GetChannelName is a trivial call, so this
 -- is cheap enough to run forever.
 AllianceChat.JOIN_RETRY = 20
+AllianceChat.UI_GAP = 5   -- seconds between two looks from CHANNEL_UI_UPDATE
 
 -- Idempotent, and the ONLY thing that joins. Being out of the alliance channel
 -- is never an acceptable resting state: the chat system is not ready for a
 -- while after a reload, so this keeps running instead of giving up. It stops
--- for exactly one reason: the player turned the room off.
+-- joining when the player turned the room off, and while the server refuses
+-- the channel (AllianceLink:Refused: a wrong key, a ban, a bad name, too many
+-- channels) until the code changes or the player types /gos ally join. A try
+-- is at most one every AllianceLink.JOIN_GAP.
 function AllianceChat:EnsureJoined()
     if not GuildOS.db or not GuildOS.db.alliancePrefs then
         return false
@@ -157,6 +161,9 @@ end
 function AllianceChat:SetEnabled(on)
     self:Prefs().chat = on and true or false
     if on then
+        -- The player's own switch is a fresh ask: past a refusal and the wait between two joins.
+        local link = GuildOS.AllianceLink
+        if link and link.Rejoin then link:Rejoin() end
         self:Join()
     else
         self:Leave()
@@ -422,7 +429,14 @@ function AllianceChat:Initialize()
     GuildOS.Compat.RegisterEvent(f, "CHANNEL_UI_UPDATE")
     f:SetScript("OnEvent", function(_, event)
         if event == "CHANNEL_UI_UPDATE" then
-            AllianceChat:EnsureJoined()
+            -- It fires in bursts (every join, leave and number change): one look every UI_GAP.
+            if GuildOS.Coalesce then
+                GuildOS:Coalesce("allychat.join", AllianceChat.UI_GAP, function()
+                    GuildOS:SafeCall(AllianceChat.EnsureJoined, AllianceChat)
+                end)
+            else
+                AllianceChat:EnsureJoined()
+            end
             return
         end
         for _, delay in ipairs({ 3, 8, 15, 30 }) do

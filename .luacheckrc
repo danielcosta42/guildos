@@ -160,6 +160,7 @@ read_globals = {
     "EnumerateServerChannels",
     "ChannelUnban",
     "ChatFrame_AddMessageEventFilter",
+    "ChatFrame_RemoveMessageEventFilter",
     -- The allied guilds' /g drawn as a line of /g (issue #344).
     "ChatFrame_ContainsMessageGroup",
     "IsIgnored",

@@ -104,8 +104,38 @@
 --     the other finds the name already changed).
 --   * any other family channel (the faction-wide one of v5–v8, one this session moved away from) is left, so the
 --     game stops saving it and the next login asks nothing. Its notices stay out of the chat.
+-- v12 (guildos#393): GuildOS players on WoW: Forever saw a red "You are doing that too fast" (ERR_GENERIC_THROTTLE)
+-- while idle, and "No player named" lines in chat. The Forever server answers about 30 whispers a minute from one
+-- character with that error (measured in guildos#393), and refuses what came too fast; AGENTS.md said whispers outside
+-- instances had no throttle, which was wrong. v11 whispered unpaced: the realm flush (up to YELL_PER_FLUSH items x
+-- REALM_FANOUT names every REALM_INTERVAL), the relay (30 whispers a minute x RELAY_FANOUT, counted per message while
+-- an envelope of 2000 bytes is 8 parts on the wire), the peer exchange and ChehulNet's replies: 70 and more a minute
+-- at worst. ChatThrottleLib paces bytes a second, not whispers. Now:
+--   * ONE BUDGET for every whisper the mesh sends (realm flush, relay, peer exchange, :Whisper): WHISPER_BUDGET parts
+--     a minute (12; a host may set ChehulMesh.WHISPER_BUDGET), a part being one message on the wire (AceComm cuts a
+--     payload over 255 bytes into parts of 254). A token bucket of WHISPER_BURST parts refilled at the budget's pace,
+--     plus a log of the last 60 s that never lets a minute hold more than the budget (a message bigger than the whole
+--     budget goes only into an empty minute). Over budget a realm item waits in the queue (the newest per key still
+--     replaces it), a relay is dropped (stats.rlDrop), an exchange is skipped (stats.pexSkip), a budgeted :Whisper
+--     returns false (stats.wRefused).
+--   * THE ERROR ITSELF: UI_ERROR_MESSAGE with ERR_GENERIC_THROTTLE (the global string, or the message id through
+--     GetGameMessageInfo / LE_GAME_ERR_GENERIC_THROTTLE) pauses every mesh whisper for THROTTLE_PAUSE (60 s) and halves
+--     the budget (not below WHISPER_MIN); from the pause's end it wins one part a minute back every THROTTLE_RECOVER.
+--   * lower defaults: RELAY_BUDGET 30 -> 6, now in parts; REALM_FANOUT 3 -> 2.
+--   * M.whisperGate = function(target, parts, prefix) ... end: a host (GuildOS's WhisperQueue) may veto (false) or
+--     account each mesh whisper the budget lets through. A host's own :Whisper(prefix, payload, target) is charged to
+--     the budget (the mesh's own whispers wait while hosts fill it) but never refused nor gated: a host paces its own,
+--     and a host copy older than v12 cannot know a whisper might not go. :Whisper(prefix, payload, target, true) is
+--     one the family sends on its own account (ChehulNet v18's PONG, DIAGR, HELLO answers): budgeted, paused, gated.
+--   * "No player named": every mesh whisper, :Whisper too, marks its name tried for TRIED_SECONDS (60), refreshed when
+--     AceComm actually sends each part (a long ChatThrottleLib backlog sent parts after v11's 30 s), and the line
+--     matches whatever the server spells: hyphen or space, any case, with or without the realm. M:MarkTried(name)
+--     lets a host mark its own. The new filter goes through the shared table; v6–v11's stay installed but find their
+--     old table empty, so they hide nothing and act on nothing.
+--   * Stats(): wBudget, wUsed, wTokens, wPaused (seconds left), wSent (parts), wRefused, wGate, wThrottle, rlDrop,
+--     pexSkip, realmWait. M:WhisperBudget() returns the same live numbers.
 
-local VERSION = 11
+local VERSION = 12
 if _G.ChehulMesh and (_G.ChehulMesh.version or 0) >= VERSION then
     return
 end
@@ -146,6 +176,8 @@ do
     s.refused = s.refused or 0; s.dirSent = s.dirSent or 0
     s.nf = s.nf or 0
     s.rlIn = s.rlIn or 0; s.rlOut = s.rlOut or 0; s.rlFwd = s.rlFwd or 0; s.rlGuild = s.rlGuild or 0; s.rlDup = s.rlDup or 0
+    s.wSent = s.wSent or 0; s.wRefused = s.wRefused or 0; s.wGate = s.wGate or 0; s.wThrottle = s.wThrottle or 0
+    s.rlDrop = s.rlDrop or 0; s.pexSkip = s.pexSkip or 0; s.realmWait = s.realmWait or 0
 end
 M.dead   = M.dead or {}   -- [dist] = "InvalidChatType": a bus the game refused this session (v5)
 M.probed = M.probed or {} -- [dist] = true: the game took a raw send on it once, so it lives
@@ -158,7 +190,7 @@ M.YELL_GAP        = 2   -- seconds between individual YELLs within a flush. Publ
                         -- does NOT pace — so we space them ourselves.
 M.YELL_PER_FLUSH  = 4   -- max YELLs emitted per flush cycle; the remainder stays queued (coalesced)
 M.REALM_QUEUE_MAX = 40  -- hard cap on distinct queued realm items; new keys past this are dropped
-M.REALM_FANOUT    = 3   -- directory members a realm item goes to, by whisper, once YELL is dead
+M.REALM_FANOUT    = 2   -- names a realm item goes to, by whisper, once YELL is dead (v12: was 3)
 M.DIR_PREFIX      = "ChehulNet" -- the directory channel: this plus the faction's initial (A/H)
 -- ponytail: the password ships in every copy, so it keeps chat clients out, not a griefer who reads it.
 M.DIR_PASSWORD    = "chehulmesh"
@@ -172,9 +204,13 @@ M.DIR_FIRST_TRIES = 3   -- v9: list reads asked before the first one arrives, th
 M.DIR_MAX_NUM     = 5   -- v9: …2..…5 after a WRONG_PASSWORD or BANNED
 M.NF_WINDOW       = 600 -- v9: the brake's window, in seconds
 M.NF_LIMIT        = 20  -- v9: "No player named" in the window that put the brake on
-M.TRIED_SECONDS   = 30  -- seconds a "No player named" line for a name the directory whispered stays hidden
+M.TRIED_SECONDS   = 60  -- seconds a "No player named" line for a name the mesh whispered stays hidden (v12: from
+                        -- each part AceComm actually sends)
 M.BAD_SECONDS     = 600 -- seconds a name that answered "No player named" stays off the directory
-M.dir.tried = M.dir.tried or {} -- [whisper target] = GetTime() until which its not-found line is ours
+-- v12: [lowercase, hyphen as space, with and without the realm] = { till = clock, name = the spelling whispered }.
+-- v6–v11 kept [exact name] = GetTime() in M.dir.tried and their filters read it: emptied, so those hide nothing.
+M.dir.tries = M.dir.tries or {}
+M.dir.tried = {}
 M.dir.bad   = M.dir.bad or {}   -- [whisper target] = time() until which it is not picked
 M.dir.raw   = M.dir.raw or {}   -- [spelling we whisper] = the roster's own spelling, when they differ
 M.dir.past  = M.dir.past or {}  -- v9: channel names this session moved away from (their notices stay out of chat)
@@ -206,7 +242,7 @@ M.pex.eager = M.pex.eager or { window = 0, used = 0 }
 M.RELAY_PREFIX       = "ChehulRelay"
 M.RELAY_HOPS         = 3    -- hops an item may still make after the first whisper
 M.RELAY_FANOUT       = 2    -- peers each relay passes an item on to
-M.RELAY_BUDGET       = 30   -- relay whispers a minute at most
+M.RELAY_BUDGET       = 6    -- relay parts a minute at most (v12: was 30 whispers of any size)
 M.GUILD_RELAY_BUDGET = 6    -- guild relays a minute at most
 M.GUILD_RELAY_DELAY  = 3    -- a guild relay waits 0.5..this seconds, and drops when the guild already said it
 M.SEEN_TTL           = 900
@@ -221,6 +257,18 @@ M.FAMILY = { ChehulCraft = true, ChehulRecruit = true, ChehulQuest = true, LSRac
     ChehulTrace = true, ChehulCamp = true }
 -- Never relayed nor handed over relayed: what these carry rests on who sent it.
 M.CONTROL = { ChehulAlert = true, ChehulPing = true, ChehulPeers = true, ChehulProbe = true, ChehulRelay = true }
+
+-- v12: the whisper budget every mesh whisper shares (guildos#393: the Forever server throttles ~30 a minute).
+M.WHISPER_BUDGET   = 12  -- parts a minute; a host may lower or raise it (ChehulMesh.WHISPER_BUDGET = n)
+M.WHISPER_BURST    = 3   -- parts that may leave back to back after a quiet spell
+M.WHISPER_MIN      = 2   -- the halving after a throttle error stops here
+M.THROTTLE_PAUSE   = 60  -- seconds every mesh whisper waits after ERR_GENERIC_THROTTLE
+M.THROTTLE_RECOVER = 60  -- seconds for each part a minute the budget wins back after a halving
+M.PART_BYTES       = 254 -- AceComm: a payload over 255 bytes goes in parts of 254
+M.wb = M.wb or {}        -- tokens, at (clock), log { {clock, parts} } of the last 60 s, cut, pausedUntil, stepAt
+M.wb.log = M.wb.log or {}
+M.wb.cut = M.wb.cut or 0
+-- M.whisperGate = function(target, parts, prefix) return false end  -- a host's veto; nil by default
 
 -- ---------------------------------------------------------------------------
 -- Peers (v7)
@@ -419,7 +467,7 @@ local INVALID = RESULT and RESULT.InvalidChatType
 local PROBE = { SAY = true, YELL = true }
 local StartDirectory -- defined with the directory below
 
-local function Send(prefix, payload, dist, target)
+local function Send(prefix, payload, dist, target, onPart)
     if M.dead[dist] then M.stats.refused = M.stats.refused + 1; return false end
     if not AceComm then M.stats.fail = M.stats.fail + 1; return false end
     Ensure(prefix)
@@ -441,11 +489,191 @@ local function Send(prefix, payload, dist, target)
         end
         -- a throttle, a lockdown, anything else is no verdict: AceComm queues it as before
     end
-    local ok = pcall(AceComm.SendCommMessage, COMM, prefix, payload, dist, target, "NORMAL")
+    local ok = pcall(AceComm.SendCommMessage, COMM, prefix, payload, dist, target, "NORMAL", onPart)
     if ok then M.stats.ok = M.stats.ok + 1 else M.stats.fail = M.stats.fail + 1 end
     return ok
 end
 M.SendAddon = Send -- back-compat alias
+
+-- ---------------------------------------------------------------------------
+-- v12: "No player named" for names the mesh whispered, whatever spelling the server answers with
+-- ---------------------------------------------------------------------------
+local function Clock()
+    return (GetTime and GetTime()) or time()
+end
+
+-- The keys a name is known by: lowercase with hyphens as spaces ("First-Surname" and "First Surname" alike), and the
+-- same without a trailing "-Realm" when it has one.
+local function NameKeys(name)
+    local full = (name:lower():gsub("%-", " "))
+    local bare = name:match("^(.-)%-[^%-]+$")
+    if bare and bare ~= "" then return full, (bare:lower():gsub("%-", " ")) end
+    return full, nil
+end
+
+local function InstallNotFound()
+    if M.dir.nfRoute then return end
+    local add = (ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter) or ChatFrame_AddMessageEventFilter
+    if not add then return end
+    M.dir.nfRoute = true
+    -- through the shared table, so a newer copy's matching takes over this filter
+    pcall(add, "CHAT_MSG_SYSTEM", function(...) return M._hideNotFound(...) end)
+end
+
+-- A name whispered (or about to be): its not-found line, within TRIED_SECONDS, is the mesh's.
+local function MarkTried(name)
+    if type(name) ~= "string" or Secret(name) or name == "" then return end
+    InstallNotFound()
+    local e = { till = Clock() + M.TRIED_SECONDS, name = name }
+    local full, bare = NameKeys(name)
+    M.dir.tries[full] = e
+    if bare then M.dir.tries[bare] = e end
+end
+
+-- The entry for the name of a not-found line, while it lasts.
+local function TriedEntry(name)
+    local full, bare = NameKeys(name)
+    local e = M.dir.tries[full] or (bare and M.dir.tries[bare]) or nil
+    if e and Clock() <= e.till then return e end
+    return nil
+end
+
+function M:MarkTried(name) MarkTried(name) end
+function M:Tried(name) return type(name) == "string" and not Secret(name) and TriedEntry(name) ~= nil end
+
+-- ---------------------------------------------------------------------------
+-- v12: the whisper budget
+-- ---------------------------------------------------------------------------
+local function Parts(payload)
+    local n = type(payload) == "number" and payload or #payload
+    if n <= 255 then return 1 end
+    return math.ceil(n / M.PART_BYTES)
+end
+M.Parts = Parts
+
+-- Parts a minute allowed now: the host's budget less what a throttle error cut, never below WHISPER_MIN.
+local function Budget()
+    local full = tonumber(M.WHISPER_BUDGET) or 12
+    return math.max(math.min(M.WHISPER_MIN, full), full - (M.wb.cut or 0))
+end
+
+local function Refill(t)
+    local b = M.wb
+    if (b.cut or 0) > 0 then
+        b.stepAt = b.stepAt or t
+        while b.cut > 0 and t - b.stepAt >= M.THROTTLE_RECOVER do
+            b.cut, b.stepAt = b.cut - 1, b.stepAt + M.THROTTLE_RECOVER
+        end
+    end
+    local budget = Budget()
+    local burst = math.min(M.WHISPER_BURST, budget)
+    if not b.tokens then b.tokens, b.at = burst, t end
+    local dt = t - (b.at or t)
+    if dt > 0 then b.tokens = math.min(burst, b.tokens + dt * budget / 60) end
+    b.at = t
+    local kept = {}
+    for _, e in ipairs(b.log) do
+        if t - e[1] < 60 then kept[#kept + 1] = e end
+    end
+    b.log = kept
+end
+
+local function UsedParts()
+    local n = 0
+    for _, e in ipairs(M.wb.log) do n = n + e[2] end
+    return n
+end
+
+local function Paused(t)
+    local till = M.wb.pausedUntil
+    return till ~= nil and t < till
+end
+
+-- Whether the budget lets `parts` go now: not paused, a whole token in the bucket (a bigger message goes into debt),
+-- and room in the last 60 s.
+local function Room(parts, t)
+    t = t or Clock()
+    if Paused(t) then return false end
+    Refill(t)
+    if M.wb.tokens < 1 then return false end
+    local used = UsedParts()
+    return used == 0 or used + parts <= Budget()
+end
+
+local function Charge(parts, t)
+    local b = M.wb
+    b.tokens = (b.tokens or 0) - parts
+    b.log[#b.log + 1] = { t, parts }
+    M.stats.wSent = M.stats.wSent + parts
+end
+
+-- Every whisper of the mesh. `paced`: a host's own (it paces it), so it is charged and never refused nor gated.
+-- Returns whether it went, and why not ("budget", "gate", or nil for a transport failure).
+local function Whisper(prefix, payload, target, paced)
+    local parts, t = Parts(payload), Clock()
+    if paced then
+        Refill(t)
+    else
+        if not Room(parts, t) then
+            M.stats.wRefused = M.stats.wRefused + 1
+            return false, "budget"
+        end
+        local gate = M.whisperGate
+        if type(gate) == "function" then
+            local ok, yes = pcall(gate, target, parts, prefix)
+            if ok and yes == false then
+                M.stats.wGate = M.stats.wGate + 1
+                return false, "gate"
+            end
+        end
+    end
+    Charge(parts, t)
+    MarkTried(target)
+    -- each part AceComm hands the server starts the not-found window again: a backlog may send it late
+    return Send(prefix, payload, "WHISPER", target, function() MarkTried(target) end)
+end
+
+-- v12: ERR_GENERIC_THROTTLE, from the global string or the message id; secrets are no answer.
+local function IsThrottle(id, msg)
+    local text = ERR_GENERIC_THROTTLE
+    for _, v in ipairs({ msg or false, id or false }) do
+        if type(v) == "string" and not Secret(v) and type(text) == "string" and v == text then return true end
+    end
+    if type(id) == "number" and not Secret(id) then
+        if type(LE_GAME_ERR_GENERIC_THROTTLE) == "number" and id == LE_GAME_ERR_GENERIC_THROTTLE then return true end
+        if GetGameMessageInfo then
+            local ok, name = pcall(GetGameMessageInfo, id)
+            if ok and type(name) == "string" and not Secret(name) and name == "ERR_GENERIC_THROTTLE" then return true end
+        end
+    end
+    return false
+end
+
+-- The server said too fast: every mesh whisper waits THROTTLE_PAUSE, and the budget halves (once per pause; another
+-- error while paused only makes the pause longer). It wins one part a minute back from the pause's end.
+local function OnThrottle()
+    local b, t = M.wb, Clock()
+    M.stats.wThrottle = M.stats.wThrottle + 1
+    Refill(t)
+    if not Paused(t) then
+        local full = tonumber(M.WHISPER_BUDGET) or 12
+        b.cut = math.max(0, full - math.max(M.WHISPER_MIN, math.floor(Budget() / 2)))
+    end
+    b.pausedUntil = t + M.THROTTLE_PAUSE
+    b.stepAt = b.pausedUntil
+    b.tokens = 0
+end
+M._onThrottle = OnThrottle
+
+function M:WhisperBudget()
+    local t = Clock()
+    Refill(t)
+    local till = M.wb.pausedUntil
+    return {
+        budget = Budget(), used = UsedParts(), tokens = M.wb.tokens,
+        paused = (till and t < till) and math.ceil(till - t) or 0,
+    }
+end
 
 -- Re-register (with AceComm) any handlers carried over from an upgraded older instance,
 -- so receive keeps working even if the addon that registered them isn't reloaded.
@@ -494,9 +722,14 @@ function M:Yell(prefix, payload)
     return Send(prefix, payload, "YELL")
 end
 
-function M:Whisper(prefix, payload, target)
-    if not target or target == "" then return false end
-    return Send(prefix, payload, "WHISPER", target)
+-- v12: its name is marked tried, and its parts are charged to the shared budget, so the mesh's own whispers wait
+-- while a host's fill it. A host's whisper is never refused: GuildOS paces its own (WhisperQueue) and counts on what
+-- it hands over going, and a copy of a host older than v12 cannot know it might not. `budgeted` (true): a whisper the
+-- mesh family sends on its own account (ChehulNet's PONG, DIAGR and HELLO answers), under the budget, the throttle
+-- pause and the host's gate like the mesh's own; false when it did not go.
+function M:Whisper(prefix, payload, target, budgeted)
+    if type(target) ~= "string" or target == "" or type(payload) ~= "string" then return false end
+    return (Whisper(prefix, payload, target, not budgeted))
 end
 
 -- Realm-wide (zone-wide via YELL): queue coalesced by key; flushed paced + capped.
@@ -566,9 +799,9 @@ local function Pick(k, want, except)
 end
 
 -- A whisper to a name that may have logged off: its "No player named" line, if one comes, is hidden and acted on.
+-- v12: every mesh whisper does so now, under the budget (Whisper above).
 local function WhisperTried(prefix, payload, name)
-    M.dir.tried[name] = (GetTime and GetTime() or 0) + M.TRIED_SECONDS
-    return Send(prefix, payload, "WHISPER", name)
+    return Whisper(prefix, payload, name)
 end
 
 -- ---------------------------------------------------------------------------
@@ -584,11 +817,14 @@ local function MyName()
     return first
 end
 
-local function Spend(b, limit)
+-- `cost` (v12: parts for the relay; 1 by default) out of `limit` a minute. A cost bigger than the limit goes only
+-- into an empty minute.
+local function Spend(b, limit, cost)
+    cost = cost or 1
     local now = time()
     if now - b.window >= 60 then b.window, b.used = now, 0 end
-    if b.used >= limit then return false end
-    b.used = b.used + 1
+    if b.used >= limit or (b.used > 0 and b.used + cost > limit) then return false end
+    b.used = b.used + cost
     return true
 end
 
@@ -695,10 +931,20 @@ local function OnRelay(payload, sender, dist)
         end)
     end
     if hops < 1 then return end
+    -- v12: a relay the budgets cannot pay for now is dropped, not queued: the item already reached me and my guild
+    local envelope = Envelope(id, hops - 1, origin, prefix, inner)
+    local parts = Parts(envelope)
     for _, name in ipairs(Pick(M.RELAY_FANOUT, IsV8, { via, origin })) do
-        if not Spend(M.relay.budget, M.RELAY_BUDGET) then break end
-        if WhisperTried(M.RELAY_PREFIX, Envelope(id, hops - 1, origin, prefix, inner), name) then
-            M.stats.rlFwd = M.stats.rlFwd + 1
+        if not Spend(M.relay.budget, M.RELAY_BUDGET, parts) then
+            M.stats.rlDrop = M.stats.rlDrop + 1
+        else
+            local ok, why = WhisperTried(M.RELAY_PREFIX, envelope, name)
+            if ok then
+                M.stats.rlFwd = M.stats.rlFwd + 1
+            elseif why then
+                M.relay.budget.used = math.max(0, M.relay.budget.used - parts) -- nothing went: nothing paid
+                M.stats.rlDrop = M.stats.rlDrop + 1
+            end
         end
     end
 end
@@ -719,20 +965,45 @@ local function EmitNextYell(sent)
         return
     end
     local item = M._realmQueue[key]
+    -- v12: where it would go by whisper, an item the budget cannot pay one whisper of waits in the queue (a newer
+    -- one of its key still replaces it) and the flush stops until the next cycle
+    local function wait()
+        if not M._realmQueue[key] then
+            M._realmQueue[key] = item
+            M._realmQueueCount = M._realmQueueCount + 1
+        end
+        M.stats.realmWait = M.stats.realmWait + 1
+        M._draining = false
+    end
+    if not CanYell() and not Room(Parts(#item.payload + (item.relay and 100 or 0))) then
+        M.stats.realmWait = M.stats.realmWait + 1
+        M._draining = false
+        return
+    end
     M._realmQueue[key] = nil
     M._realmQueueCount = M._realmQueueCount - 1
     if CanYell() and Send(item.prefix, item.payload, "YELL") then
         M.stats.yell = M.stats.yell + 1
         M.stats.realmSent = M.stats.realmSent + 1
     elseif CanWhisperWide() then -- the yell just found the bus dead, or it was already
+        if not Room(Parts(#item.payload + (item.relay and 100 or 0))) then return wait() end
         local envelope = item.relay and NewEnvelope(item)
+        local went, held = 0, false
         for _, name in ipairs(Pick(M.REALM_FANOUT)) do
             local wrapped = envelope and IsV8(name)
-            if WhisperTried(wrapped and M.RELAY_PREFIX or item.prefix, wrapped and envelope or item.payload, name) then
+            local ok, why = WhisperTried(wrapped and M.RELAY_PREFIX or item.prefix, wrapped and envelope or item.payload, name)
+            if ok then
+                went = went + 1
                 M.stats.dirSent = M.stats.dirSent + 1
                 if wrapped then M.stats.rlOut = M.stats.rlOut + 1 end
+            elseif why == "budget" then
+                held = true
+                break -- the rest of the fan-out is not paid for: the next names get it from the relay or the next round
+            elseif why == "gate" then
+                held = true
             end
         end
+        if went == 0 and held then return wait() end
         M.stats.realmSent = M.stats.realmSent + 1
     end
     if next(M._realmQueue) and C_Timer and C_Timer.After then
@@ -945,14 +1216,16 @@ end
 
 -- The client's "No player named X" line, for X the directory whispered a moment ago: nobody's business in a
 -- chat window. Anyone else's line passes untouched.
+-- v12: any spelling of a name any mesh whisper went to (TriedEntry); the spelling whispered is the one acted on.
 local function HideNotFound(_, _, msg)
-    if Secret(msg) or type(msg) ~= "string" or not next(M.dir.tried) then return false end
+    if Secret(msg) or type(msg) ~= "string" or not next(M.dir.tries) then return false end
     local name = NotFoundName(msg)
-    local till = name and M.dir.tried[name]
-    if not till or (GetTime and GetTime() or 0) > till then return false end
-    Unreachable(name)
+    local e = name and TriedEntry(name)
+    if not e then return false end
+    Unreachable(e.name)
     return true
 end
+M._hideNotFound = HideNotFound
 
 -- The join and leave lines of the directory are nobody's business in a chat window.
 local function HideNotice(_, _, _, _, _, channel, _, _, _, _, base)
@@ -976,11 +1249,8 @@ local function InstallFilters()
             pcall(add, event, HideNotice)
         end
     end
-    -- its own flag (v7): a v6 filter already in place just means two that act once; a v5 left none
-    if not M.dir.notFoundFilter then
-        M.dir.notFoundFilter = true
-        pcall(add, "CHAT_MSG_SYSTEM", HideNotFound)
-    end
+    -- v12: its own route (InstallNotFound); the v6–v11 filters stay in, reading a table nothing fills any more
+    InstallNotFound()
 end
 
 StartDirectory = function()
@@ -1032,12 +1302,15 @@ if M.dirFrame then
     pcall(M.dirFrame.RegisterEvent, M.dirFrame, "CHAT_MSG_CHANNEL_NOTICE")
     pcall(M.dirFrame.RegisterEvent, M.dirFrame, "CHAT_MSG_CHANNEL_NOTICE_USER")
     pcall(M.dirFrame.RegisterEvent, M.dirFrame, "CHANNEL_PASSWORD_REQUEST") -- v11
+    pcall(M.dirFrame.RegisterEvent, M.dirFrame, "UI_ERROR_MESSAGE") -- v12: (messageType, message); older: (message)
     -- a channel notice: (kind, player, language, "N. Channel", player2, flags, zoneChannelID, index, baseName)
     M.dirFrame:SetScript("OnEvent", function(_, event, a, b, _, d, _, _, _, _, i)
         if event == "CHANNEL_ROSTER_UPDATE" then
             OnRoster(a, b)
         elseif event == "CHANNEL_PASSWORD_REQUEST" then
             OnPasswordRequest(a)
+        elseif event == "UI_ERROR_MESSAGE" then
+            if IsThrottle(a, b) then OnThrottle() end
         elseif event == "CHAT_MSG_CHANNEL_NOTICE" or event == "CHAT_MSG_CHANNEL_NOTICE_USER" then
             OnNotice(a, d, i)
         elseif C_Timer and C_Timer.After then -- the game joins its own channels first; a join before them is lost
@@ -1049,9 +1322,9 @@ if M._dirTicker and M._dirTicker.Cancel then pcall(function() M._dirTicker:Cance
 if C_Timer and C_Timer.NewTicker then
     M._dirTicker = C_Timer.NewTicker(M.DIR_REFRESH, function()
         if not M.dir.on then return end
-        local now = GetTime and GetTime() or 0
-        for name, till in pairs(M.dir.tried) do
-            if now > till then M.dir.tried[name] = nil end
+        local now = Clock()
+        for key, e in pairs(M.dir.tries) do
+            if now > e.till then M.dir.tries[key] = nil end
         end
         JoinDirectory()
         -- v9: the whole list, from the server, only when it is old and links are few
@@ -1140,8 +1413,12 @@ local function PexTick()
     end
     local target = PexTarget()
     if not target then return end
+    -- v12: over the budget the exchange is skipped; the same peer is asked first next time
+    if not WhisperTried(M.PEX_PREFIX, "PX1|q|" .. Sample(target), target) then
+        M.stats.pexSkip = M.stats.pexSkip + 1
+        return
+    end
     M.view[target].asked = now
-    WhisperTried(M.PEX_PREFIX, "PX1|q|" .. Sample(target), target)
 end
 
 local function OnPex(payload, sender, dist)
@@ -1162,8 +1439,12 @@ local function OnPex(payload, sender, dist)
     if now - (pex.replied[asker] or 0) < M.PEX_REPLY_GAP then return end
     if now - pex.window >= 60 then pex.window, pex.answers = now, 0 end
     if pex.answers >= M.PEX_BUDGET then return end
+    -- it may log off before the answer leaves (tried); v12: over the budget no answer, and none counted
+    if not WhisperTried(M.PEX_PREFIX, "PX1|a|" .. Sample(asker), asker) then
+        M.stats.pexSkip = M.stats.pexSkip + 1
+        return
+    end
     pex.replied[asker], pex.answers = now, pex.answers + 1
-    WhisperTried(M.PEX_PREFIX, "PX1|a|" .. Sample(asker), asker) -- it may log off before the answer leaves
 end
 M:Register(M.PEX_PREFIX, OnPex)
 M:Register(M.RELAY_PREFIX, OnRelay)
@@ -1175,10 +1456,13 @@ M._eagerPex = function(name)
         local v = M.view[name]
         local now = time()
         if not v or v.guild or Quiet() or (v.asked and now - v.asked < M.PEX_INTERVAL) then return end
+        if not Room(1) then -- v12: the budget first, so a skipped exchange spends no eager one
+            M.stats.pexSkip = M.stats.pexSkip + 1
+            return
+        end
         if not Spend(M.pex.eager, M.PEX_EAGER) then return end
         LoadStores()
-        v.asked = now
-        WhisperTried(M.PEX_PREFIX, "PX1|q|" .. Sample(name), name)
+        if WhisperTried(M.PEX_PREFIX, "PX1|q|" .. Sample(name), name) then v.asked = now else M.stats.pexSkip = M.stats.pexSkip + 1 end
     end)
 end
 
@@ -1201,7 +1485,9 @@ end
 -- Diagnostics
 -- ---------------------------------------------------------------------------
 function M:Stats()
-    return M.stats
+    local s, b = M.stats, M:WhisperBudget() -- v12: the budget's live numbers next to the counters
+    s.wBudget, s.wUsed, s.wTokens, s.wPaused = b.budget, b.used, math.floor(b.tokens * 10 + 0.5) / 10, b.paused
+    return s
 end
 
 function M:HealthLine()

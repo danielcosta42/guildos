@@ -1819,6 +1819,14 @@ function Compat.AddChatFilter(event, fn)
     return true
 end
 
+-- Takes off a filter Compat.AddChatFilter put on. Whether the client had a way to.
+function Compat.RemoveChatFilter(event, fn)
+    local remove = (ChatFrameUtil and ChatFrameUtil.RemoveMessageEventFilter) or ChatFrame_RemoveMessageEventFilter
+    if not remove then return false end
+    remove(event, fn)
+    return true
+end
+
 -- Does a chat frame show a message group ("GUILD")? Retail moved the check to ChatFrameUtil; a client with
 -- neither is read from the frame's own list (issue #344).
 function Compat.ChatFrameShows(frame, group)

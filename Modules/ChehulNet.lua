@@ -88,8 +88,15 @@
 --     other rulesets it goes by default, and realm = false turns it off. CN:CampRealmState() and CN:IsPvPRealm() let a
 --     host show its realm toggle only where it matters.
 --   * DIAG campanon (realm sightings this session) and camprealm (on/off/default); camp also says "default".
+-- v18 (guildos#393): LibChehulMesh v12 puts every mesh whisper under one budget of parts a minute and pauses them after
+-- the server's ERR_GENERIC_THROTTLE. The DIAG says the budget now, the parts used in the last minute and the pause's
+-- seconds left (wb=budget/used/paused), and what the budget held back (wd=refused/gate/throttle/rlDrop/pexSkip/
+-- realmWait: whispers refused, vetoed by the host's gate, throttle errors seen, relays dropped, exchanges skipped,
+-- realm items that waited). An older mesh gives wb= and wd= empty. The PONG, DIAGR and HELLO answers are whispers
+-- the family sends on its own account, so they ask for the budget (Mesh:Whisper's fourth argument, true): over it,
+-- paused or vetoed by the host's gate, they are not sent (an older mesh ignores the argument).
 
-local VERSION = 17
+local VERSION = 18
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -281,7 +288,7 @@ local function OnHello(payload, sender, dist)
     -- Reply once to a newcomer heard in the group, so discovery there is two-way at once. Wider
     -- buses wait for the heartbeat; a whispered reply arrives as "WHISPER" -> no ping-pong.
     if isNew and CN.REPLY_ON[dist] and Mesh then
-        Mesh:Whisper(CN.PREFIX, CN:BuildHello(), sender)
+        Mesh:Whisper(CN.PREFIX, CN:BuildHello(), sender, true) -- v18: under the mesh's whisper budget
     end
     for _, p in pairs(CN.providers) do
         if p.onPeer then
@@ -401,6 +408,13 @@ function CN:BuildDiag()
         end)(),
         "camp=" .. CN:CampState(), "campsent=" .. ((CN.camp and CN.camp.sent) or 0),
         "campanon=" .. ((CN.camp and CN.camp.anon) or 0), "camprealm=" .. CN:CampRealmState(),
+        "wb=" .. (function() -- v18: the mesh's whisper budget (v12)
+            local ok, b = pcall(function() return Mesh and Mesh.WhisperBudget and Mesh:WhisperBudget() end)
+            if not ok or type(b) ~= "table" then return "" end
+            return table.concat({ tonumber(b.budget) or 0, tonumber(b.used) or 0, tonumber(b.paused) or 0 }, "/")
+        end)(),
+        "wd=" .. ((Mesh and Mesh.WhisperBudget and s.wRefused) and table.concat({ s.wRefused or 0, s.wGate or 0,
+            s.wThrottle or 0, s.rlDrop or 0, s.pexSkip or 0, s.realmWait or 0 }, "/") or ""),
     }
     local dead = {}
     for dist in pairs((Mesh and Mesh.dead) or {}) do
@@ -444,7 +458,7 @@ local function OnPing(payload, sender, dist)
     local kind, id, sent = strsplit("|", payload)
     if kind == "PING" then
         Mesh:Whisper(CN.PING_PREFIX,
-            table.concat({ "PONG", id or "?", sent or "0", dist or "?" }, "|"), sender)
+            table.concat({ "PONG", id or "?", sent or "0", dist or "?" }, "|"), sender, true)
     elseif kind == "DIAG" and id and id ~= "" and not CN.diagSeen[id] then
         local short = (Ambiguate and Ambiguate(sender, "short")) or sender
         if not CN.ALERT_SENDERS[short:lower()] then
@@ -452,7 +466,7 @@ local function OnPing(payload, sender, dist)
         end
         CN.diagSeen[id] = true
         local function answer()
-            Mesh:Whisper(CN.PING_PREFIX, table.concat({ "DIAGR", id, dist or "?", CN:BuildDiag() }, "|"), sender)
+            Mesh:Whisper(CN.PING_PREFIX, table.concat({ "DIAGR", id, dist or "?", CN:BuildDiag() }, "|"), sender, true)
         end
         if dist == "WHISPER" or not (C_Timer and C_Timer.After) then
             answer()

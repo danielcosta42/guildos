@@ -694,11 +694,20 @@ function Link:EnsureJoined()
         return false
     end
     if not self:ChannelIndex() then
+        -- A refusal (a wrong key, a ban, a bad name, too many channels) stands until the code, its key or the
+        -- channel's name changes, or the player asks again (/gos ally join): joining again gets the same answer,
+        -- and each try is one more line the server counts against the player.
+        if self:Refused() then return false end
+        -- At most one join every JOIN_GAP: the watchdog, the channel list's events and a login all come here.
+        local now = (GetTime and GetTime()) or 0
+        if self._joinFor == name and self._joinAt and now - self._joinAt < Link.JOIN_GAP then return false end
+        self._joinFor, self._joinAt = name, now
         GuildOS.Compat.JoinPrivateChannel(name, self:Config().key)
     end
     local ok = self:ChannelIndex() ~= nil
     self:_JoinTried(name, ok)
     if ok then
+        self._joinAt = nil
         GuildOS.Compat.RemoveChannelFromFrames(name)
         local j = self:_Joined()
         if not (j and j.name == name and j.key == self:Config().key) then
@@ -713,13 +722,29 @@ end
 -- a row went unanswered. Cleared the moment the channel is joined, or when the code in force names another one.
 Link.JOIN_TRIES = 3
 Link.JOIN_GAP = 15   -- seconds between two counted tries
+-- The notices that refuse the join itself: asking again gets the same answer, so nothing asks again on its own.
+Link.JOIN_REFUSED = { WRONG_PASSWORD = true, BANNED = true, INVALID_NAME = true, TOO_MANY_CHANNELS = true }
 function Link:JoinError()
     local e = self._joinError
-    if e and e.name ~= self:ChannelName() then
+    local cfg = e and self:Config()
+    if e and (e.name ~= self:ChannelName() or (e.key and cfg and e.key ~= cfg.key)) then
         self._joinError, self._tries = nil, 0
         return nil
     end
     return e
+end
+
+-- The refusal in force for the channel of the code in force, or nil (then the watchdog may join).
+function Link:Refused()
+    local e = self:JoinError()
+    return (e and Link.JOIN_REFUSED[e.reason]) and e or nil
+end
+
+-- /gos ally join: the player asks for the channel again, past a refusal and the wait between two joins.
+function Link:Rejoin()
+    self._joinError, self._tries, self._triedAt, self._joinAt = nil, 0, nil, nil
+    self._refusalSaid = nil   -- a refusal of this new ask is said again, once
+    if GuildOS.AllianceChat then GuildOS.AllianceChat:_Notify() end
 end
 
 function Link:_JoinTried(name, ok)
@@ -753,6 +778,7 @@ function Link:_OnNotice(notice, channel)
     if not name or type(notice) ~= "string" or type(channel) ~= "string" then return end
     local base = channel:match("^%d+%.%s*(.+)$") or channel
     if base:lower() ~= name:lower() then return end
+    if notice == "THROTTLED" then self:_MarkThrottled() end
     if Link.NOTICE_OK[notice] then
         if notice ~= "YOU_LEFT" and self._joinError then
             self._joinError = nil
@@ -760,8 +786,37 @@ function Link:_OnNotice(notice, channel)
         end
         return
     end
-    self._joinError = { name = name, reason = notice, t = GetServerTime() }
-    if GuildOS.AllianceChat then GuildOS.AllianceChat:_Notify() end
+    self:_Refuse(name, notice)
+end
+
+-- A refusal heard: kept for the screens and /gos ally status, said once in the chat frame (per channel and reason
+-- a session), never again on each try.
+function Link:_Refuse(name, reason)
+    local cfg = self:Config()
+    local was = self._joinError
+    self._joinError = { name = name, reason = reason, t = GetServerTime(), key = cfg and cfg.key }
+    self._refusalSaid = self._refusalSaid or {}
+    local said = name:lower() .. "\t" .. tostring(reason)
+    if Link.JOIN_REFUSED[reason] and not self._refusalSaid[said] then
+        self._refusalSaid[said] = true
+        GuildOS:Print("|cffFF9900" .. tostring(Link.JoinErrorText(self._joinError)) .. "|r "
+            .. L["Type /gos ally join to try again."])
+    end
+    if not (was and was.name == name and was.reason == reason) and GuildOS.AllianceChat then
+        GuildOS.AllianceChat:_Notify()
+    end
+end
+
+-- "You have joined too many channels" comes as a system line, not a channel notice: it refuses the join in progress.
+function Link:_OnSystem(msg)
+    if type(_G.ERR_CHAT_THROTTLED) == "string" and msg == _G.ERR_CHAT_THROTTLED then
+        if self:ChannelIndex() then self:_MarkThrottled() end
+        return
+    end
+    local text = _G.ERR_TOO_MANY_CHAT_CHANNELS
+    if type(text) ~= "string" or msg ~= text then return end
+    local name = self:ChannelName()
+    if name and not self:ChannelIndex() and self._joinFor == name then self:_Refuse(name, "TOO_MANY_CHANNELS") end
 end
 
 -- What a join error means to the player, and what fixes it: one localized line.
@@ -773,6 +828,8 @@ function Link.JoinErrorText(e)
         return L["The server refused the alliance channel's name. Use a shorter tag, letters and digits only, and save the code again."]
     elseif e.reason == "BANNED" then
         return L["This character was banned from the alliance channel."]
+    elseif e.reason == "TOO_MANY_CHANNELS" then
+        return L["The alliance channel could not be joined: this character is in too many channels. Leave one and type /gos ally join."]
     end
     return L["The alliance channel did not answer. Try /reload; if it stays, send /gos ally status to the maintainer."]
 end
@@ -780,6 +837,27 @@ end
 ----------------------------------------------------------------------
 -- Out: only ever inside the player's key press
 ----------------------------------------------------------------------
+Link.THROTTLE_HOLD = 5   -- seconds after the server's "throttled" notice in which a line goes in one part
+
+-- Channel lines one key press may carry (Link.Split's parts): MAX_PARTS, or one where /gos debug probe invite heard
+-- the second channel line of a key press refused (Compat.ProbedHardware("channelTwice")).
+function Link.PartsPerPress()
+    local probed = GuildOS.Compat.ProbedHardware and GuildOS.Compat.ProbedHardware("channelTwice")
+    if probed and probed.click == false then return 1 end
+    return Link.MAX_PARTS
+end
+
+-- Whether the server said "throttled" (the channel notice, or the chat error) less than THROTTLE_HOLD ago.
+function Link:Throttled()
+    local now = (GetTime and GetTime()) or 0
+    return self._throttledAt ~= nil and now - self._throttledAt < Link.THROTTLE_HOLD
+end
+
+function Link:_MarkThrottled()
+    self._throttledAt = (GetTime and GetTime()) or 0
+    self.stats.throttled = (self.stats.throttled or 0) + 1
+end
+
 function Link:Say(kind, text)
     local pact = self:Pact()
     local index = self:ChannelIndex()
@@ -788,8 +866,15 @@ function Link:Say(kind, text)
         return false
     end
     local ok = false
-    for _, part in ipairs(Link.Split(kind, Link.Code(mine), text, mine)) do
-        if GuildOS.Compat.SendChannelMessage(part, index) then
+    -- What one key press may carry: the parts of the line, one where the probe heard a second channel line from the
+    -- same key press refused, and one while the server's "throttled" notice is fresh (the rest would be dropped,
+    -- and each counts against the player).
+    local most = Link.PartsPerPress()
+    if self:Throttled() then most = 1 end
+    for i, part in ipairs(Link.Split(kind, Link.Code(mine), text, mine)) do
+        if i > most then
+            self.stats.unsent = (self.stats.unsent or 0) + 1
+        elseif GuildOS.Compat.SendChannelMessage(part, index) then
             ok = true
             self.stats.sent = self.stats.sent + 1
         else
@@ -1266,7 +1351,8 @@ function Link:StatusReport(at)
     out[#out + 1] = string.format("alliance: %s [%s] · source: %s · key version: %s · protocol %d",
         tostring(cfg.name or cfg.tag), cfg.tag, tostring(self:Source()), tostring(cfg.version or "-"), Link.PROTO)
     out[#out + 1] = string.format("channel: %s · joined: %s%s", tostring(self:ChannelName() or "-"),
-        index and ("yes (#" .. index .. ")") or "no", err and (" · refused: " .. err.reason) or "")
+        index and ("yes (#" .. index .. ")") or "no", err and (" · refused: " .. err.reason
+        .. (Link.JOIN_REFUSED[err.reason] and " (not retried: /gos ally join)" or "")) or "")
     local chat = GuildOS.AllianceChat
     local prefs = chat and chat:Prefs() or {}
     local st = self.stats
@@ -1328,8 +1414,13 @@ function Link:Initialize()
     GuildOS.Compat.RegisterEvent(f, "PLAYER_ENTERING_WORLD")
     GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
     GuildOS.Compat.RegisterEvent(f, "PLAYER_GUILD_UPDATE")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_SYSTEM")
     f:SetScript("OnEvent", function(_, event, ...)
-        if event == "CHAT_MSG_CHANNEL" then
+        if event == "CHAT_MSG_SYSTEM" then
+            local msg = ...
+            if GuildOS.Compat.IsSecret(msg) then return end
+            GuildOS:SafeCall(function() Link:_OnSystem(msg) end)
+        elseif event == "CHAT_MSG_CHANNEL" then
             -- Every General and Trade line comes here: only the hidden channel's costs a table (audit D2).
             if not Link:_Filter((select(9, ...))) then return end
             local args = { ... }

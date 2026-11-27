@@ -752,6 +752,26 @@ check(G(fail).AllianceLink.JoinErrorText(err):find("same code", 1, true), "said 
 check(#fail.raw == 0, "the server's notice for our channel is hidden from the chat frames")
 G(fail).Alliance:HandleCommand("status")
 check(table.concat(fail.printed, "\n"):find("refused: WRONG_PASSWORD", 1, true), "/gos ally status says the refusal")
+-- A refusal is not asked again on its own (the join loop): no join from the watchdog, the channel list's events or a
+-- login while it stands, and it is said once in the chat frame.
+local function saidJoinHint(c)
+  local n = 0
+  for _, line in ipairs(c.printed) do if line:find("/gos ally join to try again", 1, true) then n = n + 1 end end
+  return n
+end
+check(saidJoinHint(fail) == 1, "the refusal is said once, with how to ask again")
+local j0 = fail.joins
+for _ = 1, 5 do fire(fail, "CHANNEL_UI_UPDATE") end
+run(300)
+check(fail.joins == j0, "five minutes of watchdog and channel events ask the refused channel nothing: " .. (fail.joins - j0))
+check(saidJoinHint(fail) == 1, "and the chat frame hears it once")
+check(G(fail).AllianceChat:State() == "failed", "the screens still say it failed")
+G(fail).Alliance:HandleCommand("join")
+run(5)
+check(fail.joins == j0 + 1, "/gos ally join asks once more")
+check(saidJoinHint(fail) == 2 and G(fail).AllianceLink:Refused(), "and the server's answer to it is said once more")
+run(300)
+check(fail.joins == j0 + 1, "then nothing again on its own")
 W.policy.maxLen = 12
 G(fail).AllianceLink._joinError = nil
 G(fail).AllianceLink:SetCode("GOS=ZZY:Qq1Ww2Ee3R")
@@ -762,9 +782,16 @@ check(st == "failed" and err.reason == "INVALID_NAME" and G(fail).AllianceLink.J
 W.policy.maxLen, W.policy.drop = 31, true
 G(fail).AllianceLink:SetCode("GOS=ZZW:Qq1Ww2Ee3R")
 G(fail).AllianceLink._joinError = nil
+j0 = fail.joins
+local hints = saidJoinHint(fail)
+check(hints == 3, "the bad name was a refusal too, said once: " .. hints)
+for _ = 1, 20 do fire(fail, "CHANNEL_UI_UPDATE"); G(fail).AllianceChat:EnsureJoined() end
+check(fail.joins - j0 <= 1, "a burst of channel events and watchdog calls is one join: " .. (fail.joins - j0))
 run(90)
 st, err = G(fail).AllianceChat:State()
 check(st == "failed" and err.reason == "NO_ANSWER", "joins that go unanswered are said after a few tries")
+check(fail.joins - j0 <= 90 / G(fail).AllianceLink.JOIN_GAP + 1, "at most one join every JOIN_GAP: " .. (fail.joins - j0))
+check(saidJoinHint(fail) == hints, "a channel that does not answer is not a refusal said in the chat frame")
 W.policy.drop = false
 run(25)
 check(G(fail).AllianceChat:State() == "joined" and G(fail).AllianceLink:JoinError() == nil, "and the error clears once it joins")

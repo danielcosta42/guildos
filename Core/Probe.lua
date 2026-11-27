@@ -546,11 +546,27 @@ local STALE_TRIES = 5          -- leaves at most, per login or run
 
 -- The join and leave lines of the probe's channel are the player's own business, and none needs reading.
 -- The client hands the channel as "5. GOSProbe1234" and its base name ninth, so either one names it.
-local function hideChannelNotice(_, _, _, _, _, channel, _, _, _, _, base)
-    local name = Probe._channelName
-    if not name or GuildOS.Compat.IsSecret(channel, base) then return false end
+local function hidesName(name, channel, base)
+    if not name then return false end
     if type(base) == "string" and base == name then return true end
     return type(channel) == "string" and channel:find(name, 1, true) ~= nil
+end
+local function hideChannelNotice(_, _, _, _, _, channel, _, _, _, _, base)
+    if GuildOS.Compat.IsSecret(channel, base) then return false end
+    return hidesName(Probe._channelName, channel, base) or hidesName(Probe._staleName, channel, base)
+end
+
+-- The filter is on while a run or a leftover's leave can still bring a notice; off again once both are over.
+function Probe:_HideNotices()
+    if not self._noticeFilter then
+        self._noticeFilter = GuildOS.Compat.AddChatFilter("CHAT_MSG_CHANNEL_NOTICE", hideChannelNotice)
+    end
+end
+
+function Probe:_ShowNotices()
+    if not self._noticeFilter or self._channel or self._invite or self._staleName then return end
+    GuildOS.Compat.RemoveChatFilter("CHAT_MSG_CHANNEL_NOTICE", hideChannelNotice)
+    self._noticeFilter = nil
 end
 
 -- A run that a /reload cut short leaves its channel joined: the name was kept in GuildOSDB, and it goes now.
@@ -565,11 +581,23 @@ function Probe:LeaveStaleChannel(stale, try)
     local Compat = GuildOS.Compat
     if try > 1 and Compat.ChannelId(stale) <= 0 then
         if GuildOSDB and GuildOSDB.probeChannelOpen == stale then GuildOSDB.probeChannelOpen = nil end
+        self:_StaleDone(stale)
         return
     end
-    if try > STALE_TRIES then return end
+    if try > STALE_TRIES then self:_StaleDone(stale) return end
+    -- Its "Left Channel" notice is the player's own business too: hidden before the leave, at login as in a run.
+    self._staleName = stale
+    if not self._channel and not self._invite then self._channelName = stale end
+    self:_HideNotices()
     Compat.LeaveChannel(stale)
     Compat.After(STALE_AGAIN, function() GuildOS:SafeCall(Probe.LeaveStaleChannel, Probe, stale, try + 1) end)
+end
+
+-- A leftover's leave is over (seen gone, or out of tries): its notices are no longer hidden, and the filter comes
+-- off a moment later, once the game's own notice of the leave has come.
+function Probe:_StaleDone(stale)
+    if self._staleName == stale then self._staleName = nil end
+    GuildOS.Compat.After(STALE_AGAIN, function() GuildOS:SafeCall(Probe._ShowNotices, Probe) end)
 end
 
 -- Started with the modules. At PLAYER_LOGIN the game has not joined the character's channels yet, and
@@ -623,7 +651,7 @@ function Probe:RunChannel()
     Compat.After(CHANNEL_WAIT, function() Probe:FinishChannel(run) end)
 
     pcall(function()
-        if not self._noticeFilter then self._noticeFilter = Compat.AddChatFilter("CHAT_MSG_CHANNEL_NOTICE", hideChannelNotice) end
+        self:_HideNotices()
         self._channelFrame = self._channelFrame or CreateFrame("Frame")
         self._channelFrame:SetScript("OnEvent", function(_, _, prefix, text, dist)
             if Compat.IsSecret(prefix, text, dist) then return end
@@ -850,7 +878,7 @@ function Probe:RunInvite()
     Compat.RegisterEvent(f, "WHO_LIST_UPDATE")
     Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL")
     pcall(function()
-        if not self._noticeFilter then self._noticeFilter = Compat.AddChatFilter("CHAT_MSG_CHANNEL_NOTICE", hideChannelNotice) end
+        self:_HideNotices()
         self._channelName = run.channelName
         self:LeaveStaleChannel()
         if type(GuildOSDB) == "table" then GuildOSDB.probeChannelOpen = run.channelName end

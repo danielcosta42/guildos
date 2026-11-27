@@ -400,6 +400,41 @@ end
 check(table.concat(joined, " ") == long, "the parts carry the whole line, cut on a space")
 check(#Link.Split("G", "abc", "curta") == 1, "a short line is one part")
 check(#Link.Split("G", "abc", "   ") == 0, "a blank line is nothing")
+-- One key press carries the line's parts, never more than MAX_PARTS; one where the probe heard a second channel
+-- line from a key press refused; one for THROTTLE_HOLD seconds after the server said "throttled".
+do
+  local huge = string.rep("palavra ", 200)
+  check(#Link.Split("G", "abc", huge) == Link.MAX_PARTS, "a huge line is cut at MAX_PARTS parts")
+  sent = {}
+  Link:Say("G", long)
+  check(#sent == 2, "a long /g goes in its two parts in the key press")
+  sent = {}
+  Link:Say("G", huge)
+  check(#sent == Link.MAX_PARTS, "never more than MAX_PARTS")
+  local keepDB = GuildOSDB
+  GuildOSDB = { probeInvite = { build = GuildOS.Client.build, results = { channelTwice = { click = false } } } }
+  sent = {}
+  local unsent = Link.stats.unsent or 0
+  Link:Say("G", long)
+  check(#sent == 1 and Link.stats.unsent == unsent + 1, "one part where a key press carries one channel line, the rest counted unsent")
+  GuildOSDB = keepDB
+  local notice = filters.CHAT_MSG_CHANNEL_NOTICE and recv
+  check(notice ~= nil, "the notices are listened to")
+  recv.fn(recv, "CHAT_MSG_CHANNEL_NOTICE", "THROTTLED", "", "", "5. " .. CH, "", "", 0, 5, CH)
+  check(Link:Throttled(), "the server's throttled notice is heard")
+  sent = {}
+  Link:Say("G", long)
+  check(#sent == 1, "and the next line goes in one part, no more splits")
+  NOW = NOW + Link.THROTTLE_HOLD + 1
+  sent = {}
+  Link:Say("G", long)
+  check(#sent == 2 and not Link:Throttled(), "a few seconds later the parts go again")
+  ERR_CHAT_THROTTLED = "The number of messages that can be sent to this channel is limited."
+  recv.fn(recv, "CHAT_MSG_SYSTEM", ERR_CHAT_THROTTLED)
+  check(Link:Throttled(), "the chat's throttle error holds the splits too")
+  NOW = NOW + Link.THROTTLE_HOLD + 1
+  ERR_CHAT_THROTTLED = nil
+end
 
 -- A frame without a handler to replay through gets the line as /g reads.
 local plain = Link.FormatPlain("Guilda B", "Bob-Realm", "oi")

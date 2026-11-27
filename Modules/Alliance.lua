@@ -565,6 +565,18 @@ function Alliance:HandleCommand(args)
         for _, line in ipairs(link:StatusReport()) do GuildOS:Print(line) end
         return
     end
+    if (verb == "join" and rest == "") or verb == "rejoin" then
+        -- The hidden channel again, past a refusal the watchdog no longer retries on its own. With an argument
+        -- it is the old pact's verb (join X-1), which says where alliances live now.
+        local link, chat = GuildOS.AllianceLink, GuildOS.AllianceChat
+        if not (link and chat) then return end
+        if not link:Active() then return self:PrintStatus() end
+        link:Rejoin()
+        chat:Prefs().chat = true
+        chat:EnsureJoined()
+        GuildOS:Print(L["Joining the alliance channel..."])
+        return
+    end
     if verb == "block" or verb == "unblock" then
         -- An allied guild's lines hidden on this account (officers): nobody is told.
         local ok, err = self[verb == "block" and "Block" or "Unblock"](self, rest)
@@ -576,7 +588,7 @@ function Alliance:HandleCommand(args)
         end
         return
     end
-    -- create, invite, leave, join, code, amb... : the pact's verbs, gone with it (alianca.md §3.4).
+    -- create, invite, leave, join X, code, amb... : the pact's verbs, gone with it (alianca.md §3.4).
     GuildOS:Print(Alliance.MOVED)
 end
 

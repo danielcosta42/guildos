@@ -419,4 +419,98 @@ CS:OnMessageReceived("M:BCDE:1:3:half", "GUILD", "Bruno Melo")
 run(CS.CHUNK_SECONDS + 1)
 check(CS.pendingMessages["Bruno Melo:BCDE"] == nil, "over GUILD the window stays CHUNK_SECONDS")
 
+-- ── 10. The shared mesh, until its own budget lands (LibChehulMesh v12) ──
+-- The error quiets the mesh's relay and realm flush for MESH_QUIET seconds where it has those knobs, and puts them
+-- back as they were; where it has none nothing happens. Where the mesh asks a host before each whisper (whisperGate),
+-- its whispers are paid from this queue's bucket.
+reset()
+check(pcall(Q.OnThrottle, Q) and Q:QuietMesh(10) == false, "with no mesh at all the guard does nothing")
+reset()
+ChehulMesh = { version = 11, dead = {} }
+onError({}, "UI_ERROR_MESSAGE", 51, THROTTLE)
+check(ChehulMesh.RELAY_BUDGET == nil and ChehulMesh.YELL_PER_FLUSH == nil and ChehulMesh.whisperGate == nil,
+  "a mesh without the knobs is not touched, and an old one gets no gate")
+reset()
+ChehulMesh = { version = 11, dead = {}, RELAY_BUDGET = 30, YELL_PER_FLUSH = 4 }
+onError({}, "UI_ERROR_MESSAGE", 51, THROTTLE)
+check(ChehulMesh.RELAY_BUDGET == 0 and ChehulMesh.YELL_PER_FLUSH == 0, "the error quiets the mesh's relay and realm flush")
+run(Q.MESH_QUIET / 2)
+onError({}, "UI_ERROR_MESSAGE", 51, THROTTLE)   -- again, halfway
+run(Q.MESH_QUIET / 2 + 1)
+check(ChehulMesh.RELAY_BUDGET == 0 and ChehulMesh.YELL_PER_FLUSH == 0, "a second error keeps it quiet past the first one's minute")
+run(Q.MESH_QUIET / 2)
+check(ChehulMesh.RELAY_BUDGET == 30 and ChehulMesh.YELL_PER_FLUSH == 4, "then the knobs come back as they were")
+onError({}, "UI_ERROR_MESSAGE", 51, THROTTLE)
+ChehulMesh.RELAY_BUDGET = 6   -- the host or a newer lib changed it meanwhile
+run(Q.MESH_QUIET + 1)
+check(ChehulMesh.RELAY_BUDGET == 6 and ChehulMesh.YELL_PER_FLUSH == 4, "a value somebody else set meanwhile stands")
+reset()
+Q.enabled = false
+ChehulMesh = { version = 11, dead = {}, RELAY_BUDGET = 30, YELL_PER_FLUSH = 4 }
+onError({}, "UI_ERROR_MESSAGE", 51, THROTTLE)
+check(ChehulMesh.RELAY_BUDGET == 30, "off WoW: Forever the mesh is left alone")
+
+-- v12's gate.
+reset()
+local meshSent = 0
+ChehulMesh = { version = 12, dead = { YELL = "InvalidChatType" }, REALM_FANOUT = 2, RELAY_BUDGET = 6, YELL_PER_FLUSH = 4,
+  Realm = function() end }
+-- What the v12 mesh does before each whisper: asks the gate, sends only when it does not say false.
+local function meshWhisper(parts_)
+  local gate = ChehulMesh.whisperGate
+  if gate and gate("Peer A", parts_ or 1, "ChehulRecruit") == false then return false end
+  meshSent = meshSent + 1
+  wire(parts_ or 1)
+  return true
+end
+check(Q:HookMesh() and ChehulMesh.whisperGate == Q.MeshGate, "the gate is registered on a v12 mesh")
+local other = function() return true end
+ChehulMesh.whisperGate = other
+check(not Q:HookMesh() and ChehulMesh.whisperGate == other, "never over another host's gate")
+ChehulMesh.whisperGate = nil
+Q:HookMesh()
+local tokens0 = Q._state.tokens
+check(meshWhisper(1) and Q._state.tokens == tokens0 - 1, "a mesh whisper is paid from the queue's bucket")
+check(meshWhisper(2) and Q._state.tokens == tokens0 - 3, "by its parts")
+check(meshWhisper(1) and Q._state.tokens < 1, "the last token goes")
+check(not meshWhisper(1) and Q:Stats().meshVeto == 1, "an empty bucket vetoes the next")
+run(60)
+for i = 1, 10 do addon("ours" .. i, "normal") end
+check(Q:Pending() > 0 and not meshWhisper(1), "while our own whispers wait, the mesh's wait behind them")
+run(600)
+check(Q:Pending() == 0 and meshWhisper(1), "and go once ours have")
+-- A realm item :Realm paid for: its flush whispers draw on what it paid, not on the bucket again.
+reset()
+ChehulMesh = { version = 12, dead = { YELL = "InvalidChatType" }, REALM_FANOUT = 2, Realm = function() end }
+Q:HookMesh()
+check(Q:Realm("ChehulRecruit", "CR2|a", "k1"), "a realm item goes in, paid")
+local afterRealm = Q._state.tokens
+check(meshWhisper(1) and meshWhisper(1) and Q._state.tokens == afterRealm, "its two flush whispers pass on what it paid")
+-- One of our own items whose send goes through the mesh is not paid twice.
+reset()
+ChehulMesh = { version = 12, dead = {}, Realm = function() end }
+Q:HookMesh()
+local before10 = Q._state.tokens
+Q:PushAddon("ChehulRecruit", "x", "Peer A", "normal", function() return meshWhisper(1) end)
+check(meshSent > 0 and Q._state.tokens == before10 - 1, "our own item sent through the mesh is paid once")
+-- After the error, nothing through the gate for MESH_QUIET seconds.
+onError({}, "UI_ERROR_MESSAGE", 51, THROTTLE)
+run(Q.MESH_QUIET - 1)
+Q._state.tokens = Q.BURST
+check(not meshWhisper(1), "the gate holds the mesh for MESH_QUIET after the error")
+run(2)
+check(meshWhisper(1), "and lets it go after")
+-- An evening of the mesh whispering on its own beside ours: with the gate, the server never draws the error.
+reset()
+server.limit = 30
+ChehulMesh = { version = 12, dead = { YELL = "InvalidChatType" }, Realm = function() end }
+Q:HookMesh()
+for t = 0, 3600, 2 do at(t, function() meshWhisper(1) end) end
+for t = 0, 3600, 20 do at(t + 1, function() addon("sync" .. t, "normal") end) end
+run(3700)
+check(server.errors == 0 and worstMinute() <= 30, ("mesh and queue together stay under the server's limit: %d errors, worst minute %d")
+  :format(server.errors, worstMinute()))
+check(Q:Pending() == 0, "and ours all went")
+ChehulMesh = nil
+
 print(("whisper-queue: %d checks passed"):format(checks))
