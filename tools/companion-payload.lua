@@ -929,6 +929,34 @@ do
   GuildOS.IsFeatureEnabled = enabled   -- the loot book stays on for the string below
 end
 
+-- Within 17 (specs/game-calendar-export): the game's calendar's guild events and their answers, from what
+-- CalendarSnapshot kept; absent before the calendar was ever read, and never in the pack.
+do
+  dofile(ADDON .. "/Modules/CalendarSnapshot.lua")
+  assert(GuildOS.Companion:BuildPayload().gameCalendar == nil, "no calendar read: no gameCalendar")
+  GuildOS.db.gameCalendar = { at = 1754399000, events = {
+    ["e77"] = { key = "e77", eventId = "77", title = "Onyxia \"40\"", startsAt = 1754500000, calendarType = "GUILD_EVENT",
+      guildEvent = true, eventType = 0, description = "Bring fire resist\nguildos:abc123", creator = "Chehul",
+      invitedBy = "Chehul", detailsAt = 1754399500,
+      rsvps = { { name = "Chehul", status = "signedup", role = "TANK" }, { name = "Fulano", status = "declined" } },
+      where = { offset = 0, day = 3, index = 1 } },
+    ["t1754400000:Social"] = { key = "t1754400000:Social", title = "Social", startsAt = 1754400000,
+      calendarType = "GUILD_ANNOUNCEMENT", guildEvent = false },
+  } }
+  local gc = GuildOS.Companion:BuildPayload().gameCalendar
+  assert(gc and gc.at == 1754399000 and #gc.events == 2, "the calendar goes up with its events")
+  assert(gc.events[1].key == "t1754400000:Social" and gc.events[1].guildEvent == false and gc.events[1].rsvps == nil,
+    "soonest first; an announcement, its details not read yet, carries no rsvps")
+  local ony = gc.events[2]
+  assert(ony.eventId == "77" and ony.creator == "Chehul" and ony.guildEvent == true and #ony.rsvps == 2
+    and ony.rsvps[1].role == "TANK" and ony.rsvps[2].role == nil and ony.where == nil, "an event with its answers, and never where the game keeps it")
+  local json = GuildOS.Companion.EncodeJson(gc)
+  assert(json:find('"title":"Onyxia \\"40\\""', 1, true) and json:find('"description":"Bring fire resist\\nguildos:abc123"', 1, true)
+    and json:find('"status":"declined"', 1, true), "and it encodes as JSON the site reads: " .. json)
+  GuildOS.db.gameCalendar = nil
+  GuildOS.CalendarSnapshot = nil
+end
+
 -- The string printed below carries one alt (v14), so the site's fixture decodes a real `main`.
 GuildOS.db.altLinks = { ["Fulano-Firemaw"] = "Chehul-Firemaw" }
 local text, countOrErr = GuildOS.Companion:Build()

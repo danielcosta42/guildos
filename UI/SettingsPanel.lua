@@ -1015,6 +1015,27 @@ PAGES.rules = function(F, isOfficer)
         end
     end
 
+    -- The guild bank's tax (Ley): the Guild Master sets it, everybody reads it. Off (0) by default.
+    if GuildOS.GuildBank and GuildOS.GuildBank.TaxRate and GuildOS:IsFeatureEnabled("bank") then
+        local B = GuildOS.GuildBank
+        F:Section(L["Guild bank tax"])
+        if GuildOS.Compat.IsGuildLeader() then
+            F:Field(L["Tax on each withdrawal (%):"], { w = 50, max = 2, numeric = true,
+                get = function() return B:TaxRate() > 0 and B:TaxRate() or "" end,
+                save = function(box)
+                    if not B:SetTax(tonumber(box:GetText()) or 0) then
+                        GuildOS:Print(string.format(L["The bank tax is a whole number from 0 to %d."], B.TAX_MAX))
+                    end
+                    box:SetText(B:TaxRate() > 0 and tostring(B:TaxRate()) or "")
+                end })
+        else
+            F:Value(L["Tax on each withdrawal (%):"], function()
+                return B:TaxRate() > 0 and B:TaxRate() or L["Off"]
+            end, { numeric = true })
+        end
+        F:Note(L["Each item taken out owes the guild this share of its auction price (or vendor price). A gold deposit pays it back. Empty or 0: off."])
+    end
+
     -- !note (issue #59): members set their public note by typing !note in guild chat, and a client that
     -- can edit notes applies it. TBC Anniversary only (audit B11).
     if isOfficer and GuildOS.Client.isAnniversary then

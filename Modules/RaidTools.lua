@@ -231,7 +231,8 @@ RaidTools.TBC_INSTANCES = {
 -- WoW: Forever: the raids Modules/RaidTracker.lua has a map for (FOREVER_RAID_KEYS). The others come by
 -- the site's roster and take the targets of their size.
 RaidTools.FOREVER_INSTANCES = {
-    { key = "forever-onyxia", name = "Onyxia's Lair", map = 249, size = 40, tank = 3, healer = 9, bosses = { "Onyxia" } },
+    { key = "forever-onyxia", name = "Onyxia's Lair", map = 249, size = 40, tank = 3, healer = 9, attune = "Ony",
+      bosses = { "Onyxia" } },
 }
 -- The targets of a raid nobody listed, by its size.
 local SIZE_TARGETS = { [5] = { 1, 1 }, [10] = { 2, 3 }, [20] = { 2, 5 }, [25] = { 3, 7 }, [30] = { 3, 7 }, [40] = { 4, 10 } }

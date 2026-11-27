@@ -534,6 +534,26 @@ local function lootTab(UI)
     acc.SetScope("Alpha")
   end
 
+  -- Points for bank donations (Snuchyboochy): on the guild's own pool only, turned on with a rate and a reason.
+  GuildOS.GuildBank = { Store = function() return { ledger = {} } end }
+  click(acc, "Account settings")
+  check(not shows(acc, "Points for bank donations"), "a core's pool has no bank donations' points")
+  click(acc, "Back to the standings")
+  acc.SetScope("")
+  P:InCore("", P.SetReason, P, "gift", "Gift", 5, 50)
+  click(acc, "Account settings")
+  check(shows(acc, "Points for bank donations") and shows(acc, "Off. Deposits to the guild bank earn nothing."),
+    "the guild's pool offers them, off by default")
+  P:SetBankEp(true, 3, "gift")
+  acc.Refresh()
+  check(shows(acc, "On: each deposit to the guild bank earns these points") and #buttons(acc, "Turn off") == 1,
+    "on, it says what it does and offers to turn it off")
+  click(acc, "Turn off")
+  check(not P:BankEpConfig().on, "and the button turns it off")
+  click(acc, "Back to the standings")
+  GuildOS.GuildBank = nil
+  acc.SetScope("Alpha")
+
   -- The loot settings live here alone: no page of Settings has one, nor a pointer, since #367.
   -- (Modules holds only the features' on/off switches, and needs the registry this file does not load.)
   local LOOT_CONTROLS = { "Wishlist Auto-Council", "Roll Duration", "Rarity threshold", "Disenchanter", "Bank character",

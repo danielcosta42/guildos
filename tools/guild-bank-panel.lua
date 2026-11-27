@@ -283,6 +283,18 @@ lay(panel)
 local led = texts(panel)
 check(led:find("deposited", 1, true) and led:find("withdrew", 1, true) and led:find("Bea", 1, true), "the ledger lists its lines")
 check(led:find("Top contributors", 1, true) and led:find("Dan", 1, true), "and who gave most")
+check(not led:find("Bank tax owed", 1, true) and not led:find("\nTax\n", 1, true), "no bank tax: no Tax column and nobody owes")
+-- The bank tax (Ley): 10% from before Cid's withdrawal; the flask is worth 50s at the auction house.
+GuildOS.db.settings.bankTaxPct, GuildOS.db.settings.bankTaxSince, GuildOS.db.settings.bankTaxAt = 10, NOW - 7000, NOW - 7000
+GuildOS.Compat.AuctionPrice = function(id) return id == 22854 and 5000 or nil end
+panel.SelectSub("needs")
+panel.SelectSub("ledger")
+lay(panel)
+led = texts(panel)
+check(led:find("Tax", 1, true) and led:find("Bank tax owed", 1, true) and led:find("Cid", 1, true),
+  "with the tax on: the Tax column and who owes it")
+GuildOS.db.settings.bankTaxPct, GuildOS.db.settings.bankTaxSince, GuildOS.db.settings.bankTaxAt = nil, nil, nil
+GuildOS.Compat.AuctionPrice = function() return nil end
 
 panel.SelectSub("needs")
 lay(panel)

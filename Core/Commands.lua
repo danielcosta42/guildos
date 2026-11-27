@@ -799,10 +799,13 @@ local function handleCommand(msg)
         -- Debug mode: prints per-quest IsQuestFlaggedCompleted results.
         if GuildOS.AttunementTracker then
             GuildOS:Print("|cffFFD700Attunement debug (per quest):|r")
-            for _, attDef in ipairs(GuildOS.AttunementTracker.ATTUNEMENTS) do
-                if not attDef.alwaysComplete and attDef.finalQuestId then
-                    GuildOS:Print(format("|cffAAAAAA--- %s (final=%d) ---|r", attDef.name, attDef.finalQuestId))
-                    for _, q in ipairs(attDef.quests) do
+            local AT = GuildOS.AttunementTracker
+            for _, attDef in ipairs(AT.ATTUNEMENTS) do
+                -- A chain per faction (Forever's Onyxia): the one this character walks.
+                local chain = AT.ChainOf and AT.ChainOf(attDef, UnitFactionGroup and UnitFactionGroup("player")) or attDef
+                if not attDef.alwaysComplete and chain.finalQuestId then
+                    GuildOS:Print(format("|cffAAAAAA--- %s (final=%d) ---|r", attDef.name, chain.finalQuestId))
+                    for _, q in ipairs(chain.quests) do
                         if q.ids then
                             local anyDone = false
                             for _, qid in ipairs(q.ids) do

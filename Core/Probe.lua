@@ -144,6 +144,7 @@ Probe.SCRIPTS = { "OnTooltipSetItem", "OnTooltipSetSpell", "OnTooltipSetUnit", "
 Probe.EVENTS = {
     "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "ADDON_LOADED",
     "CALENDAR_CLOSE_EVENT", "CALENDAR_NEW_EVENT", "CALENDAR_UPDATE_ERROR", "CALENDAR_UPDATE_EVENT_LIST",   -- the game's calendar (#263)
+    "CALENDAR_OPEN_EVENT",   -- an event's details and invites, for the companion export (CalendarSnapshot)
     "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_MAPS_UPDATE",
     "MERCHANT_CLOSED", "MERCHANT_SHOW",   -- the guild bank cleanup sells at a vendor (#380)
     "CHANNEL_UI_UPDATE", "CHARACTER_POINTS_CHANGED", "CHAT_MSG_ADDON", "CHAT_MSG_CHANNEL", "CHAT_MSG_CHANNEL_JOIN", "CHAT_MSG_CHANNEL_LEAVE", "CHAT_MSG_CHANNEL_NOTICE",
@@ -305,10 +306,72 @@ function Probe:Run()
     local gOk, has = pcall(GuildOS.Compat.HasGuildEventLog)
     if gOk then r.guildEventLog = has and true or false else r.guildEventLog = "error: " .. tostring(has) end
 
+    -- The dungeons and encounters the game sent (Modules/DungeonLog.lua, WoW: Forever): the registry's unverified
+    -- entries confirmed from a paste (Data/ForeverDungeons.lua).
+    if GuildOS.DungeonLog and GuildOS.DungeonLog.SeenReport then
+        local dOk, seen = pcall(GuildOS.DungeonLog.SeenReport, GuildOS.DungeonLog)
+        if dOk then
+            r.dungeons = seen
+            r.dungeonReport = Probe.DungeonReportText(seen, r.addonVersion, first(r.build) and table.concat({
+                tostring(first(r.build)), tostring(r.build[2]) }, ".") or "?")
+        else
+            r.dungeons = "error: " .. tostring(seen)
+        end
+    end
+
     if not GuildOSDB then GuildOSDB = {} end
     GuildOSDB.probe = r
     self:PrintSummary(r)
+    if r.dungeonReport then self:ShowDungeonReport(r.dungeonReport) end
     return r
+end
+
+local REPORT_MAX = 1800   -- bytes of the dungeon report: one Discord message with room to spare
+
+-- The dungeon report as one line to paste in Discord: the version and the build, then every instance and
+-- encounter seen that the registry does not hold as confirmed ("new" or "unverified"), by id, with what the
+-- game called it, and how many confirmed ones were seen. Pure.
+function Probe.DungeonReportText(seen, version, build)
+    local parts, known = {}, 0
+    for _, i in ipairs(seen and seen.instances or {}) do
+        if i.status == "known" then
+            known = known + 1
+        else
+            parts[#parts + 1] = string.format("I%d %s [%s%s] %s", i.id, i.name or "?", tostring(i.kind or "?"),
+                i.difficulty and (" d" .. i.difficulty) or "", i.status)
+        end
+    end
+    for _, e in ipairs(seen and seen.encounters or {}) do
+        if e.status == "known" then
+            known = known + 1
+        else
+            parts[#parts + 1] = string.format("E%d %s [i%s%s k%d] %s", e.id, e.name or "?", tostring(e.instance or "?"),
+                e.difficulty and (" d" .. e.difficulty) or "", e.kills or 0, e.status)
+        end
+    end
+    local head = string.format("GuildOS %s dungeons, build %s, %d confirmed: ", tostring(version), tostring(build), known)
+    local text = head .. (#parts > 0 and table.concat(parts, "; ") or "nothing new")
+    if #text > REPORT_MAX then text = text:sub(1, REPORT_MAX - 4) .. " ..." end
+    return text
+end
+
+GuildOS.Dialogs["GUILDOS_PROBE_DUNGEONS"] = {
+    text = L["The dungeons and bosses this client saw. Copy it (Ctrl+C) and paste it in Guild OS's Discord."],
+    button1 = L["Close"], hasEditBox = true, maxLetters = 0,
+    timeout = 0, whileDead = true, hideOnEscape = true,
+}
+
+-- The report in a box to copy from, and its first words in chat.
+function Probe:ShowDungeonReport(text)
+    GuildOS:Print(L["Dungeon report:"] .. " " .. text:sub(1, 200))
+    if not GuildOS.ShowDialog then return end
+    local dialog = GuildOS:ShowDialog("GUILDOS_PROBE_DUNGEONS")
+    local box = dialog and GuildOS.Compat.PopupEditBox and GuildOS.Compat.PopupEditBox(dialog)
+    if box then
+        box:SetText(text)
+        box:HighlightText()
+        box:SetFocus()
+    end
 end
 
 -- true/false as yes/no; "missing" and errors as they are.

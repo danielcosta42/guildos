@@ -836,7 +836,10 @@ function GuildOS:CreateAuditPanel(parent, _mainFrame)
 
     local subtabs = {}
     for _, t in ipairs(SUBTABS) do
-        if not t.tbc or GuildOS.Client.isAnniversary then subtabs[#subtabs + 1] = t end
+        -- Attunements wherever the tracker is (TBC; Forever's Onyxia, Ricki); resistances are TBC fights only.
+        if not t.tbc or GuildOS.Client.isAnniversary or (t.key == "attune" and GuildOS.AttunementTracker) then
+            subtabs[#subtabs + 1] = t
+        end
     end
 
     -- One parchment card, GAP under the room's entries (the mockup's "Prontidão da guilda"); its sub-tabs

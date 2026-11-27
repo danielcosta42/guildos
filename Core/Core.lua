@@ -363,6 +363,8 @@ local MODULE_START = {
     { "CallToArms" },
     { "Polls" },
     { "Calendar" },
+    -- The game's own calendar, its guild events and their answers, kept for the companion export (WoW: Forever).
+    { "CalendarSnapshot" },
     -- Each member's birthday and join anniversary (issue #428): drawn on the calendar, never stored as events.
     { "Birthdays" },
     { "Milestones" },

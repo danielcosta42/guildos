@@ -5,7 +5,7 @@
 -- where the client knows the instance), its level range, its size and the game's own LFG background.
 -- Names are English here and never matched against anything: an id is what two clients compare.
 --
--- WoW: Forever's own are the nine of Data/ForeverDungeons.lua (four with a map, issue #214) and the
+-- WoW: Forever's own are the nine of Data/ForeverDungeons.lua (all with a map since 1.60.1.71139) and the
 -- raids of Modules/RaidTracker.lua (issue #291); retail's raids are Midnight's four (issue #182).
 -- Retail's dungeons rotate by season, so they are named by how they are run, not one by one.
 ----------------------------------------------------------------------
@@ -113,18 +113,17 @@ elseif client.isAnniversary then
         item("sunwell-plateau", "Sunwell Plateau", 580, 70, 70, "SunwellPlateau", 25),
     })
 else
-    -- WoW: Forever. Five of the nine have no map in the client yet (issue #214): their name is English
-    -- until the launch scan fills it in.
+    -- WoW: Forever. All nine have a map since build 1.60.1.71139 (issue #214, Data/ForeverDungeons.lua).
     section("dungeon", L["New in WoW: Forever"], {
         item("hall-of-thanes", "The Hall of Thanes", 3065),
         item("ruins-of-lordaeron", "Ruins of Lordaeron", 2999),
         item("excavation-site-wetlands", "Excavation Site: Wetlands", 2998),
         item("city-of-dalaran", "City of Dalaran", 2959),
-        item("drowned-city", "The Drowned City"),
-        item("kroldok-stronghold", "Krol'dok Stronghold"),
-        item("alcaz-prison", "Alcaz Prison"),
-        item("blackmaw-hold", "Blackmaw Hold"),
-        item("shapers-terrace", "Shaper's Terrace"),
+        item("drowned-city", "The Drowned City", 2970),
+        item("kroldok-stronghold", "Krol'dok Stronghold", 3039),
+        item("alcaz-prison", "Alcaz Prison", 2994),
+        item("blackmaw-hold", "Blackmaw Hold", 2974),
+        item("shapers-terrace", "Shaper's Terrace", 3001),
     }, true)
     section("dungeon", levels(L["Classic dungeons, level %d to %d"], CLASSIC_LOW), CLASSIC_LOW)
     section("dungeon", levels(L["Classic dungeons, level %d to %d"], CLASSIC_HIGH), CLASSIC_HIGH)

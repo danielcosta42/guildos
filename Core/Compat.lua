@@ -3106,6 +3106,12 @@ function Compat.OnCalendarUpdate(fn)
     Compat._calendarListeners[#Compat._calendarListeners + 1] = fn
 end
 
+--- `v` unless the client keeps it secret (then nil).
+function Compat.PlainValue(v)
+    if v ~= nil and not Compat.IsSecret(v) then return v end
+    return nil
+end
+
 --- The guild's events between two UTC instants, holidays and personal events left out:
 --- { offset, day, index, title, calendarType, startsAt }; nil while the game has not read its calendar
 --- yet (Compat.CalendarRequest asks). The calendar reads months relative to the one its window shows, so
@@ -3130,8 +3136,13 @@ function Compat.CalendarGuildEvents(fromEpoch, toEpoch)
                     local s = e.startTime
                     local startsAt = Compat.EpochOfRealm({ year = s.year, month = s.month, day = s.monthDay, hour = s.hour, minute = s.minute })
                     if startsAt >= fromEpoch and startsAt <= toEpoch then
+                        -- What else the day's list says (the companion export, CalendarSnapshot): the event's
+                        -- own id, its kind of event and who made or invited, when the client tells.
+                        local plain = Compat.PlainValue
                         out[#out + 1] = { offset = offset, day = day, index = index, title = tostring(e.title),
-                                          calendarType = e.calendarType, startsAt = startsAt }
+                                          calendarType = e.calendarType, startsAt = startsAt,
+                                          eventID = plain(e.eventID), eventType = plain(e.eventType),
+                                          invitedBy = plain(e.invitedBy) }
                     end
                 end
             end
@@ -3200,6 +3211,51 @@ function Compat.CalendarOpenedEvent()
     if type(t) ~= "table" then return nil end
     return { title = info.title,
              startsAt = Compat.EpochOfRealm({ year = t.year, month = t.month, day = t.monthDay, hour = t.hour, minute = t.minute }) }
+end
+
+-- The answers an invite can carry (Enum.CalendarStatus), by the names the companion export uses.
+local INVITE_STATUS = { [0] = "invited", [1] = "accepted", [2] = "declined", [3] = "confirmed", [4] = "out",
+                        [5] = "standby", [6] = "signedup", [7] = "notsignedup", [8] = "tentative" }
+Compat.CALENDAR_INVITE_STATUS = INVITE_STATUS
+
+--- What the game holds of the event it has open (after CalendarOpenEvent and its CALENDAR_OPEN_EVENT), as
+--- { title, description, creator, eventType, calendarType, startsAt, invites = { { name, status, classFile } } },
+--- or nil. A value the client keeps secret is left out; an invite with a secret name is not listed.
+function Compat.CalendarEventDetails()
+    if not Compat.CalendarAvailable() or not C_Calendar.GetEventInfo then return nil end
+    local ok, info = pcall(C_Calendar.GetEventInfo)
+    if not ok or type(info) ~= "table" then return nil end
+    local plain = Compat.PlainValue
+    local t = info.time
+    local out = {
+        title = plain(info.title), description = plain(info.description), creator = plain(info.creator),
+        eventType = plain(info.eventType), calendarType = plain(info.calendarType), invites = {},
+        startsAt = type(t) == "table" and Compat.EpochOfRealm({ year = t.year, month = t.month, day = t.monthDay,
+            hour = t.hour, minute = t.minute }) or nil,
+    }
+    local okN, n = pcall(C_Calendar.GetNumInvites)
+    for i = 1, (okN and tonumber(n) or 0) do
+        local okI, inv = pcall(C_Calendar.EventGetInvite, i)
+        if okI and type(inv) == "table" then
+            local name = plain(inv.name)
+            if type(name) == "string" and name ~= "" then
+                out.invites[#out.invites + 1] = { name = name, status = INVITE_STATUS[tonumber(plain(inv.inviteStatus)) or -1],
+                    classFile = plain(inv.classFilename), role = plain(inv.role) }
+            end
+        end
+    end
+    return out
+end
+
+--- Whether the game's own calendar window is open (the player is looking at it, or editing an event there).
+function Compat.CalendarWindowShown()
+    local frame = rawget(_G, "CalendarFrame")
+    return type(frame) == "table" and type(frame.IsShown) == "function" and frame:IsShown() and true or false
+end
+
+--- Closes the event the game has open, if any.
+function Compat.CalendarCloseEvent()
+    if Compat.CalendarAvailable() and C_Calendar.CloseEvent then pcall(C_Calendar.CloseEvent) end
 end
 
 --- Saves { title, startsAt, description } onto the open event, from a click, and closes it. With no

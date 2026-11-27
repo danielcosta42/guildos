@@ -180,7 +180,8 @@ function Calendar:DungeonChoices()
     if not cat then return {} end
     local out = {}
     for _, d in pairs(cat.byInstance or {}) do
-        if type(d.name) == "string" and type(d.bosses) == "table" and #d.bosses > 0 then out[#out + 1] = d.name end
+        -- The classic ones are offered by `classic`, in the order guilds book them.
+        if not d.classic and type(d.name) == "string" and type(d.bosses) == "table" and #d.bosses > 0 then out[#out + 1] = d.name end
     end
     table.sort(out)
     for _, name in ipairs(cat.classic or {}) do out[#out + 1] = name end

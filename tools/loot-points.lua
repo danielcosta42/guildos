@@ -414,4 +414,70 @@ check(list[1].pr and list[1].pr >= list[2].pr and list[2].pr >= list[3].pr, "the
 GuildOS:SetLootSystem("dkp")
 check(P:GetMode() == "dkp" and P:EP(K("Bo")) == 270, "back to DKP, the same rows are still there")
 
+-- ── EP for bank donations (Snuchyboochy) ────────────────────────────
+do
+  GuildOS:SetLootSystem("dkp")
+  local ledger = {}
+  local values = { [22854] = 30000 }   -- a flask: 3 gold at the auction house
+  GuildOS.GuildBank = {
+    Store = function() return { ledger = ledger } end,
+    LineValue = function(_, e) local v = values[e.id] return v and v * (e.c or 0) or nil end,
+    Coins = function(c) return tostring(c) .. "c" end,
+  }
+  local roster = { { "Lead-Er", 1, true }, { "Ana-Er", 1, true }, { "Zed-Er", 1, true }, { "Mo-Er", 5, true } }
+  GetNumGuildMembers = function() return #roster end
+  GetGuildRosterInfo = function(i) local r = roster[i] if r then return r[1], "R", r[2], 60, "", "", "", "", r[3] end end
+  GuildOS.db.settings.officerMaxRank = 1
+  local function addonOn(name) GuildOS.db.members[GuildOS:GetPlayerKey(name)] = { lastUpdate = 1 } end
+  addonOn("Lead"); addonOn("Zed")
+  local function bankLine(lid, t, n, k, ty, id, c, g) return { lid = lid, t = t, n = n, k = k, ty = ty, id = id, c = c, g = g } end
+  ledger[1] = bankLine("1:d:22854:2:0:0:" .. (NOW - 100), NOW - 100, "Bea", 1, "d", 22854, 2)   -- before the switch
+  check(#P:ApplyBankDonations() == 0, "off by default: nothing is granted")
+  check(not P:SetBankEp(true, 2, "nope") and not P:SetBankEp(true, 0, "donate"), "a rate of nothing, or a reason the guild has not named, is refused")
+  P:SetReason("donate", "Donation", 5, 20)   -- the guild's named reason: its weekly cap is 20
+  check(P:SetBankEp(true, 2, "donate") and P:BankEpConfig().on and P:BankEpConfig().since == NOW, "an officer turns it on: 2 EP for each gold")
+  NOW = NOW + 60
+  ledger[2] = bankLine("1:d:22854:2:0:0:" .. NOW, NOW, "Bea", 1, "d", 22854, 2)       -- 6 gold of flasks: 12 EP
+  ledger[3] = bankLine("0:d:0:0:50000:0:" .. NOW, NOW, "Cid", 0, "d", nil, nil, 50000) -- 5 gold: 10 EP
+  ledger[4] = bankLine("1:w:22854:1:0:0:" .. NOW, NOW, "Bea", 1, "w", 22854, 1)        -- a withdrawal earns nothing
+  ledger[5] = bankLine("1:d:99999:1:0:0:" .. NOW, NOW, "Dan", 1, "d", 99999, 1)        -- no price known yet
+  -- Ana, an officer online with Guild OS whose name sorts first, grants; this client (Lead) does not.
+  addonOn("Ana")
+  check(not P:IsBankEpApplier() and #P:ApplyBankDonations() == 0, "only one officer's client grants: the first by name online with Guild OS")
+  roster[2][3] = false
+  check(P:IsBankEpApplier(), "with Ana offline it is this one (Zed sorts after, Mo is no officer)")
+  local made = P:ApplyBankDonations()
+  check(#made == 2 and P:Get(K("Bea")) == 12 and P:Get(K("Cid")) == 10, "deposits since the switch earn their worth: Bea 12, Cid 10")
+  check(made[1].lid == ledger[2].lid and made[1].reason:find("line " .. ledger[2].lid, 1, true) and top().lid ~= nil,
+    "each grant names its ledger line, in the points log too")
+  check(#P:ApplyBankDonations() == 0, "a line is granted once")
+  values[99999] = 200000   -- Dan's item has a price now: 20 gold, 40 EP, held to the weekly 20
+  made = P:ApplyBankDonations()
+  check(#made == 1 and P:Get(K("Dan")) == 20 and made[1].reason:find("weekly cap reached: 20 of 40", 1, true),
+    "a line whose worth was unknown is granted once it is known, held to the reason's weekly cap")
+  -- Another officer's client learns every grant from the entries, and never grants them again.
+  local home = GuildOS.db.points
+  local other = { mode = "dkp", config = home.config, standings = {}, log = {}, appliedOps = {}, appliedCount = 0 }
+  GuildOS.db.points = other
+  P:OnSync({ act = "delta", data = { entries = { made[1] } } })
+  check(other.bankDone and other.bankDone[ledger[5].lid], "a grant received marks its line granted there")
+  -- The same deposit read under another id on that client (its own read, an hour off): counted as granted.
+  local saved = ledger[5]
+  ledger[5] = bankLine("1:d:99999:1:0:0:" .. (NOW + 1800), NOW + 1800, "Dan", 1, "d", 99999, 1)
+  other.bankDone[ledger[2].lid], other.bankDone[ledger[3].lid] = { t = ledger[2].t }, { t = ledger[3].t }
+  check(#P:ApplyBankDonations() == 0 and P:Get(K("Dan")) == 20,
+    "the same deposit under another line id is not granted twice")
+  ledger[5] = saved
+  GuildOS.db.points = home
+  -- The snapshot carries what was granted.
+  local sent
+  GuildOS.SyncService = { Publish = function(_, _, act, data) if act == "snapshot" then sent = data end end,
+    NextRevision = function() return 99 end, ShouldApply = function() return true end, SetRevision = function() end }
+  P:InPool("", P.BroadcastSnapshot, P)
+  check(sent and sent.bankDone and sent.bankDone[ledger[2].lid], "the guild pool's snapshot carries the granted lines")
+  GuildOS.SyncService = nil
+  check(P:SetBankEp(false) and not P:BankEpConfig().on and #P:ApplyBankDonations() == 0, "turned off, nothing more is granted")
+  GuildOS.GuildBank = nil
+end
+
 print(("loot-points: %d checks passed"):format(checks))

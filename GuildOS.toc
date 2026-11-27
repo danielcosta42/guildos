@@ -145,6 +145,7 @@ Modules\CallToArms.lua
 Modules\Polls.lua
 Modules\Calendar.lua
 Modules\GameCalendar.lua
+Modules\CalendarSnapshot.lua
 Modules\Birthdays.lua
 Modules\Milestones.lua
 Modules\Journal.lua

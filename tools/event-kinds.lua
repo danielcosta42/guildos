@@ -283,12 +283,12 @@ check(GuildOS.ForeverDungeons == nil and #Cal:DungeonChoices() == 0, "on TBC Ann
 GuildOS.Client.isAnniversary, GuildOS.Client.isRetail = false, false
 dofile(ADDON .. "/Data/ForeverDungeons.lua")
 local list = Cal:DungeonChoices()
-check(same({ list[1], list[2], list[3], list[4] },
-  { "City of Dalaran", "Excavation Site: Wetlands", "Ruins of Lordaeron", "The Hall of Thanes" }),
-  "on WoW: Forever the game's own dungeons come first, by name")
+local NEW = { "Alcaz Prison", "Blackmaw Hold", "City of Dalaran", "Excavation Site: Wetlands", "Krol'dok Stronghold",
+  "Ruins of Lordaeron", "The Drowned City", "The Hall of Thanes", "The Shaper's Terrace" }
+check(same({ unpack(list, 1, #NEW) }, NEW), "on WoW: Forever the game's nine own dungeons come first, by name")
 for _, name in ipairs(list) do check(name ~= "Manor Mistmantle", "a map with no boss to clear is no night to book") end
-check(#list == 16 and list[5] == "Scholomance" and list[16] == "The Deadmines",
-  "then the classic ones, as guildos.me offers them (#491)")
+check(#list == #NEW + 12 and list[#NEW + 1] == "Scholomance" and list[#list] == "The Deadmines",
+  "then the classic ones, as guildos.me offers them (#491), never twice from the registry's classic entries")
 local panel = read("UI/CalendarPanel.lua")
 check(panel:find("CAL():DungeonChoices()", 1, true) and panel:find('L["Other (type a name)"]', 1, true),
   "the editor's picker is that list and Other, typed")

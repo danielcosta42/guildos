@@ -31,6 +31,7 @@ local WHERE_MIN = 640   -- under this width the inventory's "where" column goes
 local CHART_H   = 60
 local CHART_DAYS = 30
 local TOP_N     = 8     -- contributors shown
+local TAX_N     = 4     -- members who owe the bank tax, shown (Ley)
 local ANNOUNCE_MAX = 240  -- characters of one guild chat line
 
 local function Bank() return GuildOS.GuildBank end
@@ -718,6 +719,9 @@ local function buildLedger(p)
     hQty:SetPoint("RIGHT", -(GUTTER + 52), 0)
     local hTab = UI:CreateHeaderText(head, L["Tab"], UI.SP.META)
     hTab:SetPoint("RIGHT", -(GUTTER + 6), 0)
+    -- The bank tax a withdrawal owes (Ley): only while the guild has one.
+    local hTax = UI:CreateHeaderText(head, L["Tax"], UI.SP.META)
+    hTax:SetPoint("RIGHT", -(GUTTER + 100), 0)
 
     local list = makeList(p, ROW_H, function(row)
         row.when = UI:CreateText(row, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
@@ -739,6 +743,9 @@ local function buildLedger(p)
         row.tab = UI:CreateText(row, "", 11, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
         GuildOS:ApplyFont(row.tab, 11, "tableNum")
         row.tab:SetPoint("RIGHT", -6, 0)
+        row.tax = UI:CreateText(row, "", 11)
+        GuildOS:ApplyFont(row.tax, 11, "tableNum")
+        row.tax:SetPoint("RIGHT", -100, 0)
         row:SetScript("OnEnter", function(self)
             self.hl:Show()
             if self.data and self.data.id then showItemTooltip(self, self.data.id) end
@@ -768,6 +775,9 @@ local function buildLedger(p)
             row.qty:SetText(tostring(e.c or ""))
             row.tab:SetText(e.ty == "m" and e.t2 and string.format("%d→%d", e.k, e.t2) or tostring(e.k))
         end
+        local tax = st.taxOn and B:LineTax(e) or nil
+        row.tax:SetText(tax and (tax > 0 and paperMoney(tax) or "—") or "")
+        row.itemText:SetPoint("RIGHT", st.taxOn and -170 or -96, 0)
     end)
     list:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, 0)
     list:SetPoint("BOTTOMRIGHT", side, "BOTTOMLEFT", -16, 0)
@@ -817,12 +827,29 @@ local function buildLedger(p)
         r.bar:SetPoint("BOTTOMRIGHT", 0, 4)
         tops[i] = r
     end
+    -- Who owes the bank tax, most first (Ley): under the contributors, only while there is one.
+    local taxTitle = UI:CreateSectionTitle(side, L["Bank tax owed"])
+    taxTitle:SetPoint("TOPLEFT", tops[TOP_N], "BOTTOMLEFT", 0, -20)
+    local taxRows = {}
+    for i = 1, TAX_N do
+        local r = CreateFrame("Frame", nil, side)
+        r:SetSize(SIDE_W, 18)
+        r:SetPoint("TOPLEFT", taxTitle, "BOTTOMLEFT", 0, -6 - (i - 1) * 18)
+        r.name = UI:CreateText(r, "", 12)
+        r.name:SetPoint("LEFT", 0, 0)
+        r.what = UI:CreateText(r, "", UI.SP.META)
+        GuildOS:ApplyFont(r.what, UI.SP.META, "tableNum")
+        r.what:SetPoint("RIGHT", 0, 0)
+        taxRows[i] = r
+    end
     local topNote = UI:CreateText(side, "", UI.SP.META, C.paperSoft.r, C.paperSoft.g, C.paperSoft.b)
     topNote:SetPoint("BOTTOMLEFT", 0, 0)
     topNote:SetPoint("RIGHT", side, "RIGHT", 0, 0)
     topNote:SetJustifyH("LEFT")
 
     p.Draw = function()
+        st.taxOn = B.TaxOn and B:TaxOn() or false
+        hTax:SetShown(st.taxOn)
         local rows = {}
         local ledger = B:Store().ledger
         for i = #ledger, 1, -1 do
@@ -893,6 +920,28 @@ local function buildLedger(p)
         end
         topNote:SetText(officer and L["Items and gold deposited; withdrawals shown to officers only."]
             or L["Items and gold deposited."])
+
+        -- The bank tax: who owes what, to officers; to a member, their own figure only.
+        local owing = {}
+        if st.taxOn then
+            local _, taxList = B:TaxBalances()
+            for _, r in ipairs(taxList) do
+                if r.owed > 0 and (officer or B:IsMe(r.name)) then owing[#owing + 1] = r end
+            end
+        end
+        taxTitle:SetShown(st.taxOn)
+        if taxTitle.rule then taxTitle.rule:SetShown(st.taxOn) end
+        if st.taxOn then GuildOS:SetTitleText(taxTitle, string.format(L["Bank tax owed · %d%%"], B:TaxRate())) end
+        for i, row in ipairs(taxRows) do
+            local x = owing[i]
+            row:SetShown(x ~= nil)
+            if x then
+                local cc = classColor(x.name, row)
+                row.name:SetText(shortName(x.name))
+                row.name:SetTextColor(cc.r, cc.g, cc.b)
+                row.what:SetText(paperMoney(x.owed))
+            end
+        end
     end
 
     UI:MakeResponsive(p, function(_, w)

@@ -213,10 +213,18 @@ for _, case in ipairs(CLIENTS) do
   local on = case.tbc and " exists on " or " does not exist on "
   -- Consumables: TBC's table on Anniversary, Midnight's on retail (issue #187); none on Forever.
   local cons = case.tbc or case.retail == true
-  check((GuildOS.AttunementTracker ~= nil) == case.tbc, "the attunement tracker" .. on .. case.label)
+  -- Attunements: TBC's table on Anniversary, Onyxia's alone on Forever (Ricki); none on retail.
+  local att = not case.retail
+  check((GuildOS.AttunementTracker ~= nil) == att, "the attunement tracker" .. (att and " exists on " or " does not exist on ") .. case.label)
+  if GuildOS.AttunementTracker then
+    local shorts = {}
+    for _, a in ipairs(GuildOS.AttunementTracker.ATTUNEMENTS) do shorts[#shorts + 1] = a.short end
+    check(case.tbc and #shorts > 1 and shorts[1] == "Kara" or (not case.tbc and #shorts == 1 and shorts[1] == "Ony"),
+      "the attunement table of " .. case.label .. ": " .. table.concat(shorts, ","))
+  end
   check((GuildOS.ConsumableChecker ~= nil) == cons,
     "the consumable checker" .. (cons and " exists on " or " does not exist on ") .. case.label)
-  check(GuildOS:StartModule({ "AttunementTracker" }) == case.tbc
+  check(GuildOS:StartModule({ "AttunementTracker" }) == att
     and GuildOS:StartModule({ "ConsumableChecker", feature = "consumableChecker" }) == cons,
     "the attunement and consumable modules start only where they exist (" .. case.label .. ")")
   check(next(GuildOS.State.startup.failed) == nil, "nothing is recorded as failed to start on " .. case.label)

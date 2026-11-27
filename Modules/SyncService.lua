@@ -160,6 +160,11 @@ function SyncService:Initialize()
             if GuildOS.GuildRules then GuildOS.GuildRules:OnConfigSync(env) end
             return
         end
+        -- The guild bank's tax (Ley), set by the Guild Master; it carries no `max`.
+        if env.act == "banktax" then
+            if GuildOS.GuildBank and GuildOS.GuildBank.OnTaxSync then GuildOS.GuildBank:OnTaxSync(env) end
+            return
+        end
         -- Who creates calendar events (issue #283).
         if env.act == "events" then
             GuildOS:OnEventMaxRankSync(env)

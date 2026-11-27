@@ -78,7 +78,7 @@ for _, name in ipairs(Probe.APIS) do
   check(not seen[name], "the inventory lists " .. name .. " once")
   seen[name] = true
 end
-check(#Probe.EVENTS == 73, "the probe checks the 73 events the addon registers")   -- +1: the campfire beacon's kit cast (ChehulNet v16); +1: the guild event log (specs/salao/log-e-renomes.md); +3: the alliance channel's join, leave and notices (#449); +1: a click outside the minimap menu (#449); +1: a master-looted item leaving the corpse (#448 L2); +4: the game's calendar (#263); +2: the bank cleanup's vendor (#380); +1: the game's "too fast" (#422, #393)
+check(#Probe.EVENTS == 74, "the probe checks the 74 events the addon registers")   -- +1: the campfire beacon's kit cast (ChehulNet v16); +1: the guild event log (specs/salao/log-e-renomes.md); +3: the alliance channel's join, leave and notices (#449); +1: a click outside the minimap menu (#449); +1: a master-looted item leaving the corpse (#448 L2); +4: the game's calendar (#263); +2: the bank cleanup's vendor (#380); +1: the game's "too fast" (#422, #393); +1: an opened calendar event, for the companion export (CalendarSnapshot)
 
 -- Drift: the events the addon's own files register are exactly Probe.EVENTS.
 -- Static reading: an event name held in a variable is out of its reach.
@@ -408,5 +408,27 @@ do
   check(not triedCLEU and rf and rf.events.COMBAT_LOG_EVENT_UNFILTERED == false,
     "Forever: the probe records the combat log as restricted without registering it (#449)")
   CreateFrame, GuildOS.Client, GuildOS.Compat.CanReadCombatLog = saveCF, saveClient, saveCan
+end
+-- The dungeon report (Einstorm, issue #210): what the dungeon log saw, one line to paste, and a box to copy it from.
+do
+  GuildOS.DungeonLog = { SeenReport = function()
+    return { instances = { { id = 2970, name = "The Drowned City", kind = "party", difficulty = 1, status = "unverified" },
+                           { id = 36, name = "Deadmines", kind = "party", status = "known" } },
+             encounters = { { id = 3479, name = "Min'loth the Serpent", instance = 2970, difficulty = 1, kills = 1, status = "unverified" } } }
+  end }
+  local shown, boxText = nil, nil
+  GuildOS.ShowDialog = function(_, which) shown = which; return { editBox = {
+    SetText = function(_, t) boxText = t end, HighlightText = function() end, SetFocus = function() end } } end
+  GuildOS.Compat.PopupEditBox = GuildOS.Compat.PopupEditBox or function(d) return d.editBox end
+  local rd = Probe:Run()
+  check(rd and type(rd.dungeonReport) == "string" and rd.dungeonReport:find("I2970 The Drowned City [party d1] unverified", 1, true)
+    and rd.dungeonReport:find("E3479 Min'loth the Serpent [i2970 d1 k1] unverified", 1, true)
+    and rd.dungeonReport:find("1 confirmed", 1, true), "the probe carries the dungeon report")
+  check(GuildOSDB.probe.dungeons and #GuildOSDB.probe.dungeons.instances == 2, "and keeps what was seen in GuildOSDB.probe")
+  check(shown == "GUILDOS_PROBE_DUNGEONS" and boxText == rd.dungeonReport, "and shows it in a box to copy")
+  GuildOS.DungeonLog = { SeenReport = function() error("boom") end }
+  local re = Probe:Run()
+  check(re and type(re.dungeons) == "string" and re.dungeons:find("boom", 1, true), "a failing dungeon log is recorded, never raised")
+  GuildOS.DungeonLog, GuildOS.ShowDialog = nil, nil
 end
 print(("probe: %d checks passed"):format(checks))

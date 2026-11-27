@@ -192,4 +192,83 @@ D:OnEncounterEnd(3412, 1, F + 40006)
 go("none", 0, F + 40100)
 check(#clears() == before + 1 and clears()[#clears()].data.fullClear == true and clears()[#clears()].data.bosses == 5, "the last of the way after the end: the same clear, now a full one")
 
+-- ── The whole registry (issue #210, Einstorm): the nine new, the classic ones, wings and alternative ids ──
+local cat = G.ForeverDungeons
+local newOnes, classics = 0, 0
+for id, d in pairs(cat.byInstance) do
+  if d.classic then classics = classics + 1 elseif #d.bosses > 0 then newOnes = newOnes + 1 end
+  for _, w in ipairs(d.wings or {}) do
+    local found = false
+    for _, b in ipairs(w.bosses) do if b == w.final then found = true end end
+    check(found and type(w.id) == "string" and w.id ~= d.id, d.name .. ": the wing " .. w.name .. " ends with one of its bosses, under its own id")
+  end
+  for from, to in pairs(d.alt or {}) do
+    local found = false
+    for _, b in ipairs(d.bosses) do if b == to then found = true end end
+    check(found and from ~= to, d.name .. ": an alternative id stands for one of its bosses")
+  end
+  check(type(id) == "number" and id > 0, d.name .. ": an instance id")
+end
+check(newOnes == 9, "the nine new dungeons have bosses (" .. newOnes .. ")")
+check(classics == 19, "and the nineteen classic instances (" .. classics .. ")")
+for _, id in ipairs({ 2970, 2974, 2994, 3001, 3039 }) do
+  check(cat.byInstance[id] and cat.byInstance[id].final, "the five the launch scan missed are there: " .. id)
+end
+
+GuildOSDB = {}
+local G2 = NOW + 200000
+ended = runOf(2974, { 3315, 3336, 3334 }, G2)
+check(ended.data.dungeonId == "blackmaw-hold" and ended.data.bosses == 3 and ended.data.fullClear == false,
+  "Varrox Bleakhoof, the guides' last, ends Blackmaw Hold; Unbound Spirit, last by the table's order, does not")
+local toastsBefore = 0
+for _, m in ipairs(printed) do if m:find("First clear of", 1, true) then toastsBefore = toastsBefore + 1 end end
+ended = runOf(36, { 2741, 2742, 2743, 2744, 2745, 2746, 2747 }, G2 + 10000)
+check(ended.data.dungeonId == "deadmines" and ended.data.fullClear == true, "a classic dungeon is a clear too: The Deadmines")
+local toastsAfter = 0
+for _, m in ipairs(printed) do if m:find("First clear of", 1, true) then toastsAfter = toastsAfter + 1 end end
+check(toastsAfter == toastsBefore and G.db.journal.firsts.deadmines == nil, "but no guild's first: that is for the new ones")
+ended = runOf(189, { 446, 447 }, G2 + 20000)
+check(ended.data.dungeonId == "scarlet-monastery-library" and ended.data.fullClear == true,
+  "a wing of Scarlet Monastery is its own clear, found by its boss")
+before = #clears()
+ended = runOf(189, { 446, 450 }, G2 + 30000)
+check(#clears() == before, "once in the Library, the Cathedral's boss ends nothing")
+ended = runOf(48, { 2761, 2767 }, G2 + 40000)
+check(ended.data.dungeonId == "blackfathom-deeps" and ended.data.bosses == 2,
+  "Blackfathom Deeps' other set of ids counts as the same bosses")
+
+-- ── What the game sent, for the probe (Core/Probe.lua) ───────────────────
+local seen = GuildOSDB.probeSeen
+check(seen and seen.instances[2974] and seen.instances[189] and seen.instances[2974].n >= 1, "every instance entered is kept")
+where.type, where.id = "party", 2974
+G.DungeonLog:SeeEncounter(3334, "Varrox Bleakhoof", 1, 1, NOW)
+where.type, where.id = "party", 36
+G.DungeonLog:SeeEncounter(2747, "Edwin VanCleef", 1, 1, NOW)
+where.type, where.id = "party", 48
+G.DungeonLog:SeeEncounter(2767, "Aku'mai", 1, 0, NOW)
+check(seen.encounters[3334] and seen.encounters[3334].kills == 1 and seen.encounters[3334].instance == 2974
+  and seen.encounters[2767].wipes == 1, "and every encounter that ended, with its instance, killed or not")
+G.DungeonLog:SeeEncounter(secret, "x", 1, 1, NOW)
+G.DungeonLog:SeeInstance(secret, "x", "party", 1, NOW)
+where.type, where.id = "party", 4242
+G.DungeonLog:SeeEncounter(4243, "Somebody New", 1, 0, NOW)
+G.DungeonLog:SeeInstance(4242, "A New Dungeon", "party", 1, NOW)
+local rep = G.DungeonLog:SeenReport()
+local st = {}
+for _, i in ipairs(rep.instances) do st["I" .. i.id] = i.status end
+for _, e in ipairs(rep.encounters) do st["E" .. e.id] = e.status end
+check(st.I2974 == "unverified" and st.I36 == "known" and st.I48 == "unverified" and st.I4242 == "new", "instances: known, unverified, new")
+check(st.E3334 == "unverified" and st.E2747 == "known" and st.E2767 == "unverified" and st.E4243 == "new",
+  "encounters: a statistic's boss is known, a guide's or an alternative id unverified, the rest new")
+for k in pairs(st) do check(type(k) == "string", "no secret id is kept") end
+dofile(ADDON .. "/Core/Probe.lua")
+local text = G.Probe.DungeonReportText(rep, "1.0", "1.60.1.71139")
+check(text:find("I4242 A New Dungeon [party d1] new", 1, true) and text:find("E3334 Varrox Bleakhoof [i2974 d1 k1] unverified", 1, true)
+  and text:find("E4243 Somebody New [i4242 d1 k0] new", 1, true) and text:find("E2767", 1, true),
+  "the report names what is new or unverified, by id")
+check(not text:find("E2747", 1, true) and text:find("confirmed", 1, true), "and only counts the confirmed")
+check(#G.Probe.DungeonReportText({ instances = {}, encounters = (function()
+  local l = {} for i = 1, 400 do l[i] = { id = i, name = string.rep("x", 30), status = "new", kills = 0 } end return l end)() }, "1", "b") <= 1800,
+  "a long report stays one paste")
+
 print(("dungeon-log: %d checks passed"):format(checks))

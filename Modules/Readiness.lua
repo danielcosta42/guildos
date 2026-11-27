@@ -12,7 +12,8 @@ GuildOS.Readiness = Readiness
 local STATUS_RANK = { notready = 0, warn = 1, ready = 2, nodata = 3 }
 
 -- WoW: Forever's door to a raid is level 60 (issue #206, guildos.me #238). Onyxia's also asks for the
--- Drakefire Amulet, which nothing here reads: a 40 counts who is at the cap, not who holds it.
+-- Drakefire Amulet: the attunement tracker reads it (Ricki), and a report aimed at Onyxia ("Ony") holds a
+-- 60 whose own client says they are not attuned as not ready. The count of who is at the cap stays the cap's.
 local FOREVER = not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail
 local MIN_ILVL_MAX = 1000
 local CONSUMES_MAX_AGE = 12 * 3600   -- seconds a consumables check counts for readiness (audit B15)
@@ -336,6 +337,11 @@ function Readiness:GetReport(targetShort)
             if FOREVER then
                 status, reason, levelOnly = Readiness.ForeverStatus(
                     { level = level, hasGear = hasGear, ilvl = ilvl, missEnch = missEnch }, minIlvl, cap)
+                -- Aimed at an attunement raid: a 60 whose own client read no attunement is not ready. Who never
+                -- published has no answer (targetOk nil) and keeps the rule above, as guildos.me has it.
+                if targetShort and targetOk == false and status ~= "notready" then
+                    status, reason, levelOnly = "notready", "attune", false
+                end
             elseif targetShort and targetOk == false then
                 status = "notready"
             elseif (missEnch > 0) or (missCons and missCons > 0) then

@@ -665,6 +665,43 @@ function GuildOS:BuildLootAccounts(panel)
             refresh()
         end)
         y = y + 34
+
+        -- EP for what members give the guild bank (Snuchyboochy): the guild's own pool only, one of the reasons
+        -- above holding it to its weekly cap. Granted by one officer's client (Points:ApplyBankDonations).
+        if scope == "" and GuildOS.GuildBank and P.SetBankEp then
+            local bank = P:BankEpConfig()
+            y = y + HEAD_ABOVE
+            local bkTitle = UI:CreateSectionTitle(content, L["Points for bank donations"])
+            bkTitle:SetPoint("TOPLEFT", 0, -y)
+            y = y + 26 + HINT_H + 2
+            local bkRate = reasonBox(50, true, 0, L["Per gold"])
+            bkRate:SetText(bank.rate > 0 and tostring(bank.rate) or "")
+            local bkReason = reasonBox(120, false, 56, L["Reason"])
+            bkReason:SetText(bank.reason or (reasons[1] and reasons[1].key) or "")
+            local bkOn = UI:CreateButton(content, bank.on and L["Turn off"] or L["Turn on"], 100, 22)
+            bkOn:SetPoint("TOPLEFT", 182, -y)
+            bkOn:SetScript("OnClick", function()
+                local ok, why = P:SetBankEp(not P:BankEpConfig().on, bkRate:GetText(), strtrim(bkReason:GetText() or ""):lower())
+                if not ok and why == "reason" then GuildOS:Print(L["Name one of the reasons above: its weekly cap holds the bank's points."])
+                elseif not ok and why == "rate" then GuildOS:Print(L["Points for each gold given: a number above 0."]) end
+                refresh()
+            end)
+            y = y + 30
+            local bkHint = UI:CreateText(content, bank.on and L["On: each deposit to the guild bank earns these points for each gold it is worth, once."]
+                or L["Off. Deposits to the guild bank earn nothing."], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            bkHint:SetPoint("TOPLEFT", 0, -y)
+            bkHint:SetPoint("RIGHT", content, "RIGHT", -4, 0)
+            bkHint:SetJustifyH("LEFT")
+            -- Taken again on every redraw: the switch changes no shape, so the form is not built anew for it.
+            setSyncs[#setSyncs + 1] = function()
+                local now = P:BankEpConfig()
+                bkOn.label:SetText(now.on and L["Turn off"] or L["Turn on"])
+                bkHint:SetText(now.on and L["On: each deposit to the guild bank earns these points for each gold it is worth, once."]
+                    or L["Off. Deposits to the guild bank earn nothing."])
+                if not bkRate:HasFocus() and now.rate > 0 then bkRate:SetText(tostring(now.rate)) end
+            end
+            y = y + 22
+        end
         content:SetHeight(math.max(1, y))
     end
 

@@ -873,9 +873,9 @@ function PopulateDetail(frame, data)
 
         ----------------------------------------------------------------
         -- Section: Attunements (account-wide propagation from linked chars).
-        -- TBC content: only on TBC Anniversary (ADR-0014).
+        -- TBC content on TBC Anniversary (ADR-0014); Onyxia's on WoW: Forever (Ricki).
         ----------------------------------------------------------------
-        if GuildOS.Client.isAnniversary then
+        if GuildOS.Client.isAnniversary or GuildOS.AttunementTracker then
             yOff = yOff - 10
             yOff = CreateSectionHeader(child, L["Raid attunements"], yOff, contentWidth)
             yOff = yOff - 5
@@ -1368,7 +1368,7 @@ function PopulateDetail(frame, data)
         -- The officer's note is about attunements: none where the game has none (issue #184).
         local noteText = not GuildOS:IsOfficer()
             and L["Add your own alts (any account). An officer's client applies them guild-wide."]
-            or (GuildOS.AttunementTracker and L["Linked chars share attunements account-wide."])
+            or (GuildOS.Client.isAnniversary and (GuildOS.AttunementTracker and L["Linked chars share attunements account-wide."]))
         if noteText then
             local noteLabel = _pFS(child)
             GuildOS:ApplyFont(noteLabel, UI.SP.META)

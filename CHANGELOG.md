@@ -17,6 +17,11 @@ All notable changes to this project will be documented in this file.
 - A popup when a member leaves or is removed, with the note, the ban and their alts in one place, and a "welcome back" note when a former member returns (thanks DamnDude).
 - Several welcome messages, one drawn at random for each newcomer (thanks Ley).
 - A legend and filters for the Members screen (thanks Ley).
+- WoW: Forever: every dungeon is known by its instance and its bosses, the five new ones added since launch and the classic ones, so their clears reach the guild's journal; `/gos debug probe` shows a report of the dungeons and bosses the game sent, to paste in Discord, so the ones still unconfirmed get confirmed (thanks Einstorm).
+- WoW: Forever: Onyxia's attunement, from the Horde and Alliance quest chains or the Drakefire Amulet in bags or bank, in Readiness, the Members screen, the member window, Raid Tools and the companion export (thanks Ricki).
+- Guild bank tax: the Guild Master can set a share of each item withdrawn that the member owes the guild until they deposit gold; the ledger shows each withdrawal's tax and who owes what, and the member is told gently what they owe. Off by default (thanks Ley).
+- Points for bank donations: an officer can have deposits to the guild bank earn points under one of the guild's named reasons and its weekly cap, granted once by a single officer's client, each grant naming its ledger line (thanks Snuchyboochy).
+- WoW: Forever: the guild's events in the game's calendar, and who answered each, go to guildos.me with the companion export (thanks Excsuze, Volo, Paisley).
 
 ### Fixed
 - The alt link prompt no longer asks again and again about the same characters (thanks Volo, Nachoman).

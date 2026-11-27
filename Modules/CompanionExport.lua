@@ -70,7 +70,10 @@ local FMT = "GOSCOMP1"
 -- item without one; and each member's `talents` on WoW: Forever, [[definitionID, rank], ...] from
 -- the game's trait tree, only the talents with a rank, sorted by id (see talentsFor() below). Both
 -- absent when unknown: a reader from before never looks at them. Also within 17, each member's
--- `addonOnAccount`: true when a character of their alt group runs GuildOS (absent otherwise).
+-- `addonOnAccount`: true when a character of their alt group runs GuildOS (absent otherwise). Also within 17,
+-- `gameCalendar` on WoW: Forever: the guild's events in the game's own calendar as the exporting player sees them,
+-- and who answered each (specs/game-calendar-export/spec.md; Modules/CalendarSnapshot.lua). Absent until the game's
+-- calendar was read on this client; a reader from before never looks at it.
 local PAYLOAD_VERSION = 17
 
 ----------------------------------------------------------------------
@@ -252,6 +255,9 @@ local function attunementsFor(key)
     end
     return out
 end
+-- Every attunement the tracker holds for a member, as it goes up: TBC's on Anniversary, Onyxia's on WoW: Forever
+-- (`short = "Ony"`, Ricki): the same field and shape, so a reader from before takes it as it is.
+Companion.AttunementsFor = attunementsFor
 
 -- v7, WoW: Forever only: every profession line of a member by skill-line ID. For one whose
 -- own addon reported it, the rank, max, specialization and every recipe they know (catalog
@@ -1123,6 +1129,10 @@ function Companion:BuildPayload()
     -- shared any. Never in the pack.
     payload.banShares = GuildOS.BanList and GuildOS.BanList.ForExport
         and optional("banShares", GuildOS.BanList.ForExport, GuildOS.BanList) or nil
+    -- Within 17 (specs/game-calendar-export): the game's calendar's guild events and their answers, WoW: Forever
+    -- only, from what CalendarSnapshot read while the game could be asked. Never in the pack.
+    payload.gameCalendar = GuildOS.CalendarSnapshot
+        and optional("gameCalendar", GuildOS.CalendarSnapshot.ForExport, GuildOS.CalendarSnapshot) or nil
     return payload
 end
 

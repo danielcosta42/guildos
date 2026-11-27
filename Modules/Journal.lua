@@ -76,8 +76,9 @@ end
 local GROUP_S = 120   -- clears of one dungeon this close are one group's (each client logs itself)
 
 local function catalogued(dungeonId)
+    -- The game's new dungeons only: a classic one, or one of its wings, is no guild's first (issue #211).
     for _, d in pairs(GuildOS.ForeverDungeons and GuildOS.ForeverDungeons.byInstance or {}) do
-        if d.id == dungeonId then return d end
+        if d.id == dungeonId and not d.classic then return d end
     end
     return nil
 end
