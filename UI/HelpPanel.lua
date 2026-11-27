@@ -114,7 +114,7 @@ function Help:OpenGuide(id)
     g.item = item
     g:SetTitle(item.title, L["guide"])
     local w = (g:GetWidth() or 460) - 2 * GuildOS.Kit.PAD
-    UI.Picture:Draw(g.pic, item.ill, w, 130)
+    UI.Picture:Draw(g.pic, UI.Picture:GuideKey(item), w, 130)
     g.text:SetWidth(w)
     g.text:SetText(item.body)
     fitButton(g.close, 70); fitButton(g.show, 80)
@@ -279,7 +279,7 @@ local function tile(holder, g)
     function b:Relayout(w)
         self:SetWidth(w)
         self.pic:SetWidth(w)
-        UI.Picture:Draw(self.pic, g.ill, w, TILE_PIC)
+        UI.Picture:Draw(self.pic, UI.Picture:GuideKey(g), w, TILE_PIC)
     end
     b:Relayout(TILE_W)
     return b

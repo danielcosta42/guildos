@@ -466,4 +466,35 @@ end
 local danger = find(everything, "button", "Erase guild data")
 check(danger.variant == "danger", "erasing is the danger button")
 
+-- ── The help page stays light (#449): its guide tiles are paintings, two regions each ─────────
+do
+  local n0 = #allFrames
+  local help = newFrame("Frame", UIParent)
+  help:SetSize(900, 1)
+  GuildOS:RefreshSettingsPanel(help, "help")
+  local made = #allFrames - n0
+  check(made < 500, "Settings › Help makes " .. made .. " frames and regions, under 500")
+  local n1 = #allFrames
+  GuildOS:RefreshSettingsPanel(help, "help")
+  check(#allFrames == n1, "and drawing it again makes nothing new")
+
+  local P = UI.Picture
+  local h = newFrame("Frame", UIParent)
+  local m0 = #allFrames
+  P:Draw(h, "raids", 520, 180)
+  check(#allFrames - m0 == 2 and h.__pic.art.shown and h.__pic.path:find("onboarding\\raids%.tga$"),
+    "a picture is its painting and its line: two regions")
+  P:Draw(h, "officers", 396, 128)
+  P:Draw(h, "officers", 396, 128)
+  check(#allFrames - m0 == 2 and h.__pic.key == "officers", "another picture, another size: the same two regions")
+  local u0, u1, v0, v1 = P:Crop(300, 100)
+  check(u0 == 0 and u1 == 1 and math.abs((v1 - v0) * 256 * 3 - 512) < 1e-6, "a wide holder shows the painting's middle band, not stretched")
+  u0, u1, v0, v1 = P:Crop(100, 100)
+  check(v0 == 0 and v1 == 1 and math.abs((u1 - u0) * 512 - 256) < 1e-6, "a square one its middle, full height")
+  P:Draw(h, "no-such-picture", 200, 80)
+  check(not h.__pic.art.shown and h.__pic.crest and h.__pic.crest.shown, "a key with no painting: the crest on the wood")
+  check(P:GuideKey({ id = "loot", ill = "bank" }) == "wishlist" and P:GuideKey({ id = "rooms", ill = "salao" }) == "salao",
+    "a guide shows its own painting")
+end
+
 io.write(string.format("settings-panel: %d checks passed\n", checks))

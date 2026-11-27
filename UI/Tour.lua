@@ -673,7 +673,7 @@ function Tour:Finish()
     if nextTrack == "officer" then body = body .. " " .. L["There is an Officers' Room tour too."] end
     s.view = {
         head = label, count = L["Done"], title = L["Tour complete"], body = body,
-        ill = s.track == "member" and "salao" or (s.track == "gm" and "gm" or "officers"),
+        ill = "done",
         back = L["Done"],
         next = nextTrack == "officer" and O_.TRACKS.officer.label or (nextTrack == "gm" and O_.TRACKS.gm.label or L["Getting started"]),
     }

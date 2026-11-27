@@ -100,6 +100,62 @@ for _, rel in ipairs(files) do
 end
 check(asked > 20, "the source asks for the art by name (" .. asked .. " times)")
 
+-- The onboarding's paintings (UI.Picture, #449): every key UI/Onboarding.lua lists is a 512x256 TGA in
+-- Media/Salao/onboarding, every picture the source asks for is one of them, and the help's guides each
+-- have their own.
+do
+  local fh = io.open(ADDON .. "/UI/Onboarding.lua", "rb")
+  local ui = fh:read("*a")
+  fh:close()
+  local list = ui:match("Picture%.KEYS = {}%s*for _, key in ipairs%(({.-})%) do")
+  check(list ~= nil, "UI/Onboarding.lua lists the paintings' keys")
+  local keys, nk, bytes = {}, 0, 0
+  for key in list:gmatch('"([%w%-]+)"') do
+    keys[key] = true
+    nk = nk + 1
+    local name = "onboarding/" .. key
+    bytes = bytes + tga(name, onDisk(S.ART_DIR .. "onboarding\\" .. key .. ".tga"))
+    local data = onDisk(S.ART_DIR .. "onboarding\\" .. key .. ".tga")
+    check(data:byte(13) + data:byte(14) * 256 == 512 and data:byte(15) + data:byte(16) * 256 == 256,
+      name .. " is 512x256, the shape UI.Picture crops from")
+  end
+  check(nk >= 20, "the pictures are paintings (" .. nk .. ")")
+  local guide = {}
+  for id, key in ui:match("Picture%.GUIDE = (%b{})"):gmatch('([%w_]+)%s*=%s*"([%w%-]+)"') do
+    check(keys[key], "the guide " .. id .. "'s painting " .. key .. " is listed")
+    guide[id] = key
+  end
+  -- Every `ill` the source names.
+  local q = io.popen('git -C "' .. ADDON .. '" ls-files "Modules/*.lua" "UI/*.lua"')
+  local asked = 0
+  for rel in q:lines() do
+    local f2 = io.open(ADDON .. "/" .. rel, "rb")
+    local src = f2:read("*a")
+    f2:close()
+    for key in src:gmatch('ill%s*=%s*"([%w%-]+)"') do
+      asked = asked + 1
+      check(keys[key], rel .. " asks for the picture \"" .. key .. "\", which has a painting")
+    end
+  end
+  q:close()
+  check(asked >= 25, "the cards, the tour and the guides ask for pictures (" .. asked .. ")")
+  -- The guides: no two show the same painting.
+  local mf = io.open(ADDON .. "/Modules/Onboarding.lua", "rb")
+  local mod = mf:read("*a")
+  mf:close()
+  local guides = mod:match("O%.GUIDES = (%b{})")
+  local seen, ng = {}, 0
+  for id, ill in guides:gmatch('id%s*=%s*"([%w_]+)",%s*ill%s*=%s*"([%w%-]+)"') do
+    local key = guide[id] or ill
+    check(not seen[key], "the guide " .. id .. " has its own painting (" .. key .. " is also " .. tostring(seen[key]) .. "'s)")
+    seen[key] = id
+    ng = ng + 1
+  end
+  check(ng >= 12, "every guide is checked (" .. ng .. ")")
+  check(io.open(ADDON .. "/tools/onboarding_art.py", "rb") ~= nil, "the script that paints them is in tools/")
+  print(("salao-art: %d onboarding paintings, %d KB"):format(nk, math.floor(bytes / 1024)))
+end
+
 -- The fonts' licences and the art's script ship beside them.
 check(io.open(ADDON .. "/tools/salao_art.py", "rb") ~= nil, "the script that draws the art is in tools/")
 for _, lic in ipairs({ "OFL-Cinzel.txt", "OFL-Alegreya.txt", "OFL-AlegreyaSans.txt" }) do
