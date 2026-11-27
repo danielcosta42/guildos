@@ -898,7 +898,7 @@ function GuildOS:CreateSalaoPanel(panel)
                         setup.pills[np] = p
                     end
                     p:SetParent(r)
-                    p.label:SetText((stp.done and "\226\156\147 " or "") .. stp.label)
+                    p.label:SetText((stp.done and "|TInterface\\RAIDFRAME\\ReadyCheck-Ready:12:12|t " or "") .. stp.label)
                     local pw = math.ceil(p.label:GetStringWidth() or 40) + 14
                     if x + pw > inner and x > 26 then x, py = 26, py + GS_SUB end
                     p:SetWidth(pw)

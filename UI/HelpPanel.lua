@@ -200,13 +200,13 @@ local function trackRow(F, id)
                 b:SetShown(present[b.ch] == true)
                 local lab
                 for _, c in ipairs(Ob.TRACKS[self.id].chapters) do if c.id == b.ch then lab = c.label end end
-                b.label:SetText((done[b.ch] and "\226\156\147 " or "") .. (lab or b.ch))
+                b.label:SetText((done[b.ch] and "|TInterface\\RAIDFRAME\\ReadyCheck-Ready:12:12|t " or "") .. (lab or b.ch))
                 fitButton(b, 40)
                 UI:SetSelected(b, done[b.ch] == true)
             end
         end
         self.sub:SetText(sub)
-        self.pct:SetText(pct >= 100 and "\226\156\147" or (pct .. "%"))
+        self.pct:SetText(pct >= 100 and "|TInterface\\RAIDFRAME\\ReadyCheck-Ready:14:14|t" or (pct .. "%"))
         local ring = pct >= 100 and CC.ok or (pct > 0 and (CC.paperTitle or CC.gold) or CC.paperLine or CC.line)
         self.ring:SetVertexColor(ring.r, ring.g, ring.b, 1)
         local disc = CC.paperLight or CC.paper or CC.popup
