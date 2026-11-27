@@ -38,11 +38,12 @@ local WHITE    = "Interface\\Buttons\\WHITE8x8"
 -- The paper's own shades (the mockup's .cal and .roles): a day's line, the chosen day's warm paper and its
 -- gold line, a counter's box and the pink of a counter nobody fills yet.
 local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
-local CELL_LINE   = hex("d9c49a")
-local CHOSEN_FILL = hex("f5e2b3")
+-- Each a paper shade (Core/Data.lua): a darker one of its own in dark mode.
+local CELL_LINE   = GuildOS:PaperShade("d9c49a", "604c37")
+local CHOSEN_FILL = GuildOS:PaperShade("f5e2b3", "5a4428")
 local CHOSEN_LINE = hex("b37b12")
-local ROLE_FILL   = hex("efe0bd")
-local ROLE_MISS   = hex("f6d6c9")
+local ROLE_FILL   = C.paperBox
+local ROLE_MISS   = GuildOS:PaperShade("f6d6c9", "4d2c24")
 
 -- A class's colour as the paper prints it (the mockup's .card .c-*): the game's colours, darkened where
 -- they would not read on the parchment.

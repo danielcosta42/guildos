@@ -251,48 +251,62 @@ function Helpers.Contrast(a, b)
 end
 Helpers.PAPER_CONTRAST = 4.6   -- the least a text on the paper reads at (WCAG AA is 4.5)
 
--- r, g, b darkened (hue kept) until it reads at PAPER_CONTRAST against the paper; unchanged when it does.
+-- r, g, b made to read at PAPER_CONTRAST against the paper (and its light field), hue kept: darkened on the
+-- parchment, lightened on the dark mode's paper (GuildOS.PaperReadable, Core/Data.lua); unchanged when it does.
 function Helpers.PaperSafe(r, g, b)
-    local paper = C.paper
-    local k = 1
-    for _ = 1, 40 do
-        if Helpers.Contrast({ r = r * k, g = g * k, b = b * k }, paper) >= Helpers.PAPER_CONTRAST then break end
-        k = k * 0.94
-    end
-    return r * k, g * k, b * k
+    return GuildOS.PaperReadable(r or 0, g or 0, b or 0)
 end
 
-local function hexInk(s)
-    local r, g, b = tonumber(s:sub(1, 2), 16) / 255, tonumber(s:sub(3, 4), 16) / 255, tonumber(s:sub(5, 6), 16) / 255
-    r, g, b = Helpers.PaperSafe(r, g, b)
-    return { r = r, g = g, b = b, a = 1 }
+local function hexRGB(s)
+    return tonumber(s:sub(1, 2), 16) / 255, tonumber(s:sub(3, 4), 16) / 255, tonumber(s:sub(5, 6), 16) / 255
 end
+-- Write an ink into t[key] (the table is kept: the screens hold it): on the parchment `light` (hex) made safe; on
+-- the dark paper `wood` ({ r, g, b }, the colour the game or the wood draws it in) made safe, `light` without one.
+local function putInk(t, key, light, wood)
+    local r, g, b
+    if GuildOS:IsDarkPaper() and wood and wood.r then r, g, b = wood.r, wood.g, wood.b else r, g, b = hexRGB(light) end
+    r, g, b = Helpers.PaperSafe(r, g, b)
+    local c = t[key] or {}
+    c.r, c.g, c.b, c.a = r, g, b, 1
+    t[key] = c
+end
+
 -- An item's quality on the paper: poor dark grey, common the paper's ink, uncommon dark green, rare blue,
--- epic purple, legendary dark orange, artifact dark gold, heirloom dark cyan.
-Helpers.QUALITY_INK = {
-    [0] = hexInk("5f5a52"), [1] = hexInk("3a2a17"), [2] = hexInk("1a6e00"), [3] = hexInk("0b4fa0"),
-    [4] = hexInk("6c2fb0"), [5] = hexInk("a34a00"), [6] = hexInk("7a6326"), [7] = hexInk("0a6e8a"),
-    [8] = hexInk("0a6e8a"),
-}
+-- epic purple, legendary dark orange, artifact dark gold, heirloom dark cyan. On the dark paper, the game's own
+-- colours (a common item the paper's ink), lightened where they would not read.
+Helpers.QUALITY_INK = {}
+local QUALITY_LIGHT = { [0] = "5f5a52", [1] = "3a2a17", [2] = "1a6e00", [3] = "0b4fa0", [4] = "6c2fb0",
+    [5] = "a34a00", [6] = "7a6326", [7] = "0a6e8a", [8] = "0a6e8a" }
 -- The game's quality colours as their codes read (lower case), to know a quality from a link's colour.
 local QUALITY_HEX = {
     ["9d9d9d"] = 0, ["ffffff"] = 1, ["1eff00"] = 2, ["0070dd"] = 3, ["0070de"] = 3, ["a335ee"] = 4,
     ["ff8000"] = 5, ["e6cc80"] = 6, ["00ccff"] = 7,
 }
 Helpers.QUALITY_HEX = QUALITY_HEX
--- The statuses on the paper (the kit's badges' inks).
-Helpers.STATUS_INK = {
-    ok = hexInk("2f6e33"), warn = hexInk("8f4a0c"), bad = hexInk("8f1b0b"), info = hexInk("1d4f99"),
-    mute = hexInk("6f6450"), epic = hexInk("6c2fb0"),
-}
+-- The statuses on the paper (the kit's badges' inks); on the dark paper, the wood's own.
+Helpers.STATUS_INK = {}
+local STATUS_LIGHT = { ok = "2f6e33", warn = "8f4a0c", bad = "8f1b0b", info = "1d4f99", mute = "6f6450", epic = "6c2fb0" }
+local STATUS_WOOD = { ok = "ok", warn = "warn", bad = "danger", info = "info", mute = "labelDim", epic = "epic" }
 -- A class on the paper (the mockup's `.card .c-*`): each made safe on the paper, a priest's white dark grey,
--- a rogue's yellow dark gold.
+-- a rogue's yellow dark gold. On the dark paper the game's class colours, lightened where they would not read.
 Helpers.CLASS_INK = {}
-for k, v in pairs({ PRIEST = "666666", ROGUE = "857612", HUNTER = "4f7319", MAGE = "16758d", PALADIN = "a8457a",
+local CLASS_LIGHT = { PRIEST = "666666", ROGUE = "857612", HUNTER = "4f7319", MAGE = "16758d", PALADIN = "a8457a",
     DRUID = "b35400", SHAMAN = "0b4fa0", WARRIOR = "7e5a33", WARLOCK = "4b4cb0", DEATHKNIGHT = "a3202f",
-    MONK = "00995a", DEMONHUNTER = "7a2a9a", EVOKER = "23705f" }) do
-    Helpers.CLASS_INK[k] = hexInk(v)
+    MONK = "00995a", DEMONHUNTER = "7a2a9a", EVOKER = "23705f" }
+
+local paperSwap   -- PaperRGB's table: made the first time it is asked, and again after the paper changes
+local function buildInks()
+    for q, h in pairs(QUALITY_LIGHT) do
+        local wood = GuildOS.QualityColors and GuildOS.QualityColors[q]
+        if q == 1 then wood = C.paperInk end
+        putInk(Helpers.QUALITY_INK, q, h, wood)
+    end
+    for k, h in pairs(STATUS_LIGHT) do putInk(Helpers.STATUS_INK, k, h, C[STATUS_WOOD[k]]) end
+    for k, h in pairs(CLASS_LIGHT) do putInk(Helpers.CLASS_INK, k, h, GuildOS.ClassColors and GuildOS.ClassColors[k]) end
+    paperSwap = nil
 end
+buildInks()
+GuildOS:OnPaperChange(buildInks)
 
 local function onPaperSurface(surface)
     if surface == "paper" or surface == true then return true end
@@ -360,7 +374,6 @@ local function hexOf(r, g, b)
     return string.format("%02x%02x%02x", math.floor((r or 0) * 255 + 0.5), math.floor((g or 0) * 255 + 0.5), math.floor((b or 0) * 255 + 0.5))
 end
 -- The wood's colours by their value, and what the paper prints for each.
-local paperSwap
 local function swapTable()
     if paperSwap then return paperSwap end
     local S = Helpers.STATUS_INK
@@ -557,7 +570,10 @@ function Helpers:CreateGlyph(parent, size)
     g.letter:SetPoint("CENTER", 0, 0)
     g.letter:SetTextColor(1, 1, 1)
     function g:Set(letter, color)
-        local c = color or C.paperSoft
+        local c = color or C.paperMark
+        -- The paper's inks as a fill under the white letter: their marks (the same on the parchment; on the dark
+        -- paper the inks are light, the marks stay deep).
+        if c == C.paperSoft then c = C.paperMark elseif c == C.paperTitle then c = C.paperMarkTitle end
         self.orb:SetVertexColor(c.r, c.g, c.b, 1)
         self.letter:SetText(letter or "")
     end
@@ -914,7 +930,7 @@ local function wear(btn, look)
 end
 
 -- A disabled button's label: about 60% of the contrast its ground allows, on the wood and on the paper.
-Helpers.DISABLED_INK = { wood = { r = 0.62, g = 0.57, b = 0.49 }, paper = { r = 0.45, g = 0.40, b = 0.33 } }
+Helpers.DISABLED_INK = { wood = { r = 0.62, g = 0.57, b = 0.49 }, paper = C.paperOffInk }
 
 -- Paint one button state: "rest", "hover", "pressed" or "disabled". Internal.
 -- Every colour lands in the same frame; there is no transition.
@@ -934,7 +950,7 @@ function Helpers:_ButtonState(btn, state)
         -- fill, a quiet line and a label at about 60% contrast. A crimson "Raid ready" went a dim red bar with
         -- an unreadable label, a dark button on the wood all but vanished.
         if key ~= "ghost" and key ~= "paperGhost" then
-            local fill = paper and { 0.835, 0.776, 0.651 } or { 0.20, 0.165, 0.125 }
+            local fill = paper and { C.paperOff.r, C.paperOff.g, C.paperOff.b } or { 0.20, 0.165, 0.125 }
             r, g, b, a = fill[1], fill[2], fill[3], 1
             border = paper and C.paperRule or C.lineHi
         end
@@ -1578,6 +1594,14 @@ function Helpers:CreateToolButton(parent, icon, size)
         t:SetSize(math.floor(size * 0.5), math.floor(size * 0.5))
         t:SetPoint("CENTER", 0, 0)
         btn.icon = t
+    elseif type(icon) == "string" and icon:find("\\", 1, true) then
+        -- A game icon (a path): drawn in its own colours, the edges trimmed, a little dim until hovered.
+        local t = btn:CreateTexture(nil, "ARTWORK", nil, 0)
+        t:SetTexture(icon)
+        t:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        t:SetSize(math.floor(size * 0.58), math.floor(size * 0.58))
+        t:SetPoint("CENTER", 0, 0)
+        btn.icon, btn.gameIcon = t, true
     else
         local fs = newText(btn, 13, "button")
         fs:SetPoint("CENTER", 0, 0)
@@ -1588,7 +1612,9 @@ function Helpers:CreateToolButton(parent, icon, size)
         local on = self.__pressed or self.__hovered
         local ringC, ink = on and C.gold2 or C.lineHi, on and C.gold2 or C.door
         self.ring:SetVertexColor(ringC.r, ringC.g, ringC.b, 1)
-        if self.glyph then self.glyph:SetTextColor(ink.r, ink.g, ink.b) else self.icon:SetVertexColor(ink.r, ink.g, ink.b, 1) end
+        if self.glyph then self.glyph:SetTextColor(ink.r, ink.g, ink.b)
+        elseif self.gameIcon then self.icon:SetAlpha(on and 1 or 0.8)
+        else self.icon:SetVertexColor(ink.r, ink.g, ink.b, 1) end
     end
     function btn:SetPressed(on) self.__pressed = on and true or nil; paint(self) end
     btn:SetScript("OnEnter", function(self) self.__hovered = true; paint(self) end)
@@ -1838,7 +1864,7 @@ function Helpers:CreateMetricChip(parent, value, caption, size)
     local fill = Style:Nine(chip, "card", 6, "BACKGROUND", -6)
     local line = Style:Nine(chip, "card-line", 6, "BACKGROUND", -5)
     if paper then
-        fill:SetRGBA(0.937, 0.878, 0.741, 1)
+        fill:SetColor(C.paperBox)
         line:SetColor(C.paperRule)
     else
         fill:SetRGBA(10 / 255, 5 / 255, 2 / 255, 0.5)

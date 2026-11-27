@@ -107,9 +107,9 @@ end
 ----------------------------------------------------------------------
 local PAD = type(UI.CARD_PAD) == "number" and UI.CARD_PAD or 14
 local CARD_TOP = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
-local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
 -- The paper's shades of a gear state, and a class's colour as the paper prints it (the mockup's .card .c-*).
-local PAPER_GEAR = { ready = hex("2f6e33"), gearing = hex("a0560f"), missing = hex("8f1b0b") }
+local PAPER_GEAR = { ready = GuildOS:PaperInk("2f6e33", C.ok), gearing = GuildOS:PaperInk("a0560f", C.warn),
+    missing = GuildOS:PaperInk("8f1b0b", C.danger) }
 local function paperClass(class)
     return GuildOS.UI:InkFor("paper", "class", class)   -- the paper's class inks (UI/Helpers.lua, #449)
 end

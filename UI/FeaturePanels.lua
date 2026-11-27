@@ -1385,7 +1385,7 @@ function GuildOS:RefreshTrialsPanel(parent)
             local detailFrame = pool.Take("detail", function()
                 local d = CreateFrame("Frame", nil, content, "BackdropTemplate")
                 d:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-                d:SetBackdropColor(0.937, 0.878, 0.741, 1)   -- the paper's light box
+                d:SetBackdropColor(C.paperBox.r, C.paperBox.g, C.paperBox.b, 1)   -- the paper's box
                 d.notePool = NewPool()
                 local function meta(col)
                     local fs = d:CreateFontString(nil, "OVERLAY")

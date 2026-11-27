@@ -141,12 +141,14 @@ local function cardWho(view, o)
     return string.format(L["from %s"], nameOf(o.who))
 end
 
+local DONE_INK = GuildOS:PaperInk("2f6e33", C.ok)   -- a done step on the paper
+
 local QUEUE_TABS = { { "forme", L["For me"] }, { "mine", L["Mine"] }, { "open", L["Open"] } }
 
 -- The paper's colours for the queue: on a parchment card (the Workshop's), else the wood's.
 local function inks(paper)
     if paper then
-        return { ink = C.paperInk, soft = C.paperSoft, line = C.paperRule, done = { r = 0.184, g = 0.431, b = 0.2 },
+        return { ink = C.paperInk, soft = C.paperSoft, line = C.paperRule, done = DONE_INK,
                  now = C.paperTitle, todo = C.paperLine, fill = C.paperLight, act = C.paperTitle }
     end
     return { ink = C.text, soft = C.label, line = C.line, done = C.ok, now = C.gold, todo = C.line, fill = C.bg, act = C.gold }

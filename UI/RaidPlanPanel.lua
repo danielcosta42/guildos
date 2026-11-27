@@ -44,8 +44,8 @@ local panel
 
 -- The plan reads as the mockup's raides-plano: a parchment sheet, the bosses in the title's red, my task on
 -- a pale green band. The paper's shades of the wood's colours.
-local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
-local MINE_FILL, MINE_INK, BAD_INK = hex("d6ecd0"), hex("2f6e33"), hex("8f1b0b")
+local MINE_FILL = GuildOS:PaperShade("d6ecd0", "2d3f27")
+local MINE_INK, BAD_INK = GuildOS:PaperInk("2f6e33", C.ok), GuildOS:PaperInk("8f1b0b", C.danger)
 
 local function build()
     local f = popup("GuildOSRaidPlan", W, H, L["Raid plan"])

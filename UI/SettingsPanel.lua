@@ -454,6 +454,10 @@ PAGES.profile = function(F)
             L["Only while a guildmate has the guild map open; never coordinates in an instance, nothing in combat there."],
             function() return GuildOS.GuildMap:IsSharing() end,
             function(checked) GuildOS.GuildMap:SetSharing(checked) end)
+        F:Check(L["Show guildmates on my map"],
+            L["Off: no guildmate on your world map or minimap, and Guild OS asks nobody for positions. Campfires stay."],
+            function() return GuildOS.GuildMap:IsShowingOthers() end,
+            function(checked) GuildOS.GuildMap:SetShowingOthers(checked) end)
     end
     -- The campfire beacon (ChehulNet v17, Modules/ChehulNetWire.lua): WoW: Forever only, where the camp kits are. On
     -- unless turned off ("default" counts as on); the realm bus carries an ownerless sighting, off by default on PvP.
@@ -553,6 +557,15 @@ PAGES.interface = function(F)
         end,
         { enabled = function() return not GuildOS.GameFontOnly end })
     if UI.RegisterTourAnchor then UI:RegisterTourAnchor("settings.font", fontCheck) end
+
+    -- Dark mode: ebony wood and a darker parchment with a light ink, the gold unchanged. Read once at load
+    -- (Style:Resolve, before anything is drawn), so it applies after a reload, as the font does.
+    F:Check(L["Dark mode"], L["Ebony wood and darker parchment cards, with the same gold."],
+        function() return GuildOS.Style:WantsDarkMode() end,
+        function(checked)
+            GuildOS.Style:SetDarkMode(checked)
+            markReload("dark", (checked and true or false) ~= boot.dark)
+        end)
 
     F:Section(L["In the game"])
     local minimapCheck = F:Check(L["Show minimap button"], nil,
@@ -1507,7 +1520,8 @@ end
 function GuildOS:RefreshSettingsPanel(content, key)
     key = OLD_KEYS[key] or key
     if not PAGES[key] then key = "profile" end
-    boot = boot or { font = (GuildOS.Style and GuildOS.Style.gameFont) == true, modules = {} }
+    boot = boot or { font = (GuildOS.Style and GuildOS.Style.gameFont) == true,
+                     dark = (GuildOS.Style and GuildOS.Style.darkMode) == true, modules = {} }
     local isOfficer = GuildOS:IsOfficer()
     local shape = shapeOf(key, isOfficer)
     local F = content.__settingsForm

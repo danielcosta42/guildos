@@ -306,7 +306,7 @@ function GuildOS:CreateAchievementsPanel(parent)
         local card = CreateFrame("Frame", nil, near)
         card:SetFrameLevel((near:GetFrameLevel() or 1) + 1)   -- before its children, so they sit on it
         local fill = GuildOS.Style:Nine(card, "card", 5, "BACKGROUND", 1)
-        fill:SetRGBA(0.937, 0.878, 0.741, 1)
+        fill:SetColor(C.paperBox)
         local edge = GuildOS.Style:Nine(card, "card-line", 5, "BORDER", 0)
         edge:SetColor(C.paperRule)
         card.title = UI:CreateText(card, "", 12, C.paperTitle.r, C.paperTitle.g, C.paperTitle.b)

@@ -36,7 +36,7 @@ local function hex(h)
 end
 -- The mockup's squares and glyphs: red for what is open now, the paper's brown for what is past.
 local SQUARE_OPEN, SQUARE_PAST = hex("b0261b"), hex("6f5a3c")
-local POLL_FILL = hex("ecd9a8")
+local POLL_FILL = GuildOS:PaperShade("ecd9a8", "5e4a2e")   -- a poll's bar on the light field
 
 -- A FontString in `color`, left-aligned; `wrap` lets it run over lines (give it a width).
 local function text(parent, size, color, role, wrap)
@@ -381,7 +381,10 @@ local function BuildActivitySub(panel)
         local color = Digest.Color(cat.color)
         for _, g in ipairs(d.clears or {}) do
             local line = string.format(L["%s — %d member(s)"], g.name, #g.names)
-            if g.first then line = line .. "  |cff6b1d0e" .. L["First clear"] .. "|r" end
+            if g.first then
+                local t = C.paperTitle
+                line = line .. string.format("  |cff%02x%02x%02x", t.r * 255 + 0.5, t.g * 255 + 0.5, t.b * 255 + 0.5) .. L["First clear"] .. "|r"
+            end
             local x
             y, x = row(P, card, y, w, "D", color, line)
             y = names(P, card, y - SP.UNIT, x, w, g.names, "clear" .. tostring(g.id)) + SP.UNIT

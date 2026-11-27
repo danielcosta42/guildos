@@ -31,6 +31,10 @@ end
 -- (UI:InkFor, UI/Helpers.lua), each made to read at 4.5:1 on the paper.
 Kit.INK = UI.STATUS_INK
 
+-- A row's wash under the cursor: a faint brown on the parchment, a faint light on the dark paper.
+local ROW_HOVER = GuildOS:PaperShade("9e7333", "c9a26a")
+ROW_HOVER.a = 0.12
+
 -- GuildOS.Colors as a card's text reads it: the ink, the softer ink and the statuses of the paper; every
 -- other key (a line, a fill, the gold of a selection) is the shared one.
 local SWAP = {
@@ -42,7 +46,7 @@ local SWAP = {
     offline = Kit.INK.mute, disabled = Kit.INK.mute,
     gold = C.paperTitle, accent = C.paperTitle, gold2 = C.paperTitle,
     row1 = { r = 0, g = 0, b = 0, a = 0 }, row2 = { r = 0, g = 0, b = 0, a = 0 },
-    rowHover = { r = 0.62, g = 0.45, b = 0.2, a = 0.12 },
+    rowHover = ROW_HOVER,
     border = C.paperLine, separator = C.paperLine, line = C.paperLine,
 }
 Kit.PAPER = setmetatable({}, { __index = function(_, k)
@@ -75,7 +79,7 @@ function Kit:Rule(row, color)
         UI:Hairline(t)
         row.__kitRule = t
     end
-    local c = color or { r = 0.878, g = 0.8, b = 0.624 }   -- #e0cc9f
+    local c = color or C.paperShade   -- #e0cc9f on the parchment
     t:SetVertexColor(c.r, c.g, c.b, 1)
     return t
 end

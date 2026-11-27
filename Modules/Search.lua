@@ -34,6 +34,7 @@ Search.SETTINGS_SECTIONS = {
     { sub = "profile",   label = L["Birthday"], cond = function() return GuildOS.Birthdays ~= nil end },
     { sub = "help",      label = L["Tours"], words = L["intro, tutorial, onboarding, help, tour, guide"] },
     { sub = "interface", label = L["Appearance"], words = L["font, game font, scale, size, look"] },
+    { sub = "interface", label = L["Dark mode"], words = L["dark, dark mode, theme, night, night mode, colours"] },
     { sub = "interface", label = L["In the game"], words = L["minimap, button, tooltip, alt-click, snow"] },
     { sub = "chat",      label = L["Guild chat"], words = L["whisper, timestamp, class colours, alt tag, chat tweaks"] },
     { sub = "chat",      label = L["Mentions"], cond = function() return GuildOS.db and GuildOS.db.mentions ~= nil end,

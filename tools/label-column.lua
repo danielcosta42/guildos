@@ -20,6 +20,10 @@ end
 
 GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), Colors = setmetatable({}, {
   __index = function() return { r = 0, g = 0, b = 0, a = 1 } end }) }
+-- The paper's switch (Core/Data.lua, dark mode), off.
+GuildOS.PaperReadable = function(r, g, b) return r, g, b end
+function GuildOS:IsDarkPaper() return false end
+function GuildOS:OnPaperChange() end
 dofile(ADDON .. "/UI/Spacing.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 local UI = GuildOS.UI

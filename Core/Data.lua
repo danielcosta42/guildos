@@ -64,6 +64,13 @@ local T = {
     paperLink  = hex("8a5a20"),
     quiet      = hex("fff6de"),  -- the quiet button, cream on the paper (its light falls to #e8d3a6)
     quietInk   = hex("5a3b17"),
+    -- The paper's own shades, named so dark mode reaches them (they were literals in the screens).
+    paperBox   = rgb(0.937, 0.878, 0.741),  -- the paper's darker box: a metric chip, a pinned notice, a first's card
+    paperShade = rgb(0.878, 0.8, 0.624),    -- a row's rule in the kit, a step's pill at rest
+    paperOff   = rgb(0.835, 0.776, 0.651),  -- a disabled button's fill on the paper
+    paperOffInk = rgb(0.45, 0.40, 0.33),    -- a disabled button's label on the paper (about 60% contrast)
+    paperMark  = hex("6f5a3c"),  -- a glyph's or a badge's fill under white, in the paper's brown
+    paperMarkTitle = hex("6b1d0e"),  -- a glyph's fill under white, in the paper's title red
 }
 
 local ACCENT_DIM  = 0.54  -- dimmed gold for secondary marks
@@ -82,6 +89,8 @@ GuildOS.Colors = {
     paper = T.paper, paperInk = T.paperInk, paperSoft = T.paperSoft, paperLine = T.paperLine,
     paperRule = T.paperRule, paperTitle = T.paperTitle, paperEdge = T.paperEdge, paperLight = T.paperLight,
     paperLink = T.paperLink, quiet = T.quiet, quietInk = T.quietInk,
+    paperBox = T.paperBox, paperShade = T.paperShade, paperOff = T.paperOff, paperOffInk = T.paperOffInk,
+    paperMark = T.paperMark, paperMarkTitle = T.paperMarkTitle,
 
     -- Legacy keys. Screens older than the Forever skin still read these; each
     -- one points at the token that plays its role now. New code uses the tokens.
@@ -129,6 +138,135 @@ function GuildOS:RepointColors(tokens)
         local src, t, k = C[how[1]], C[key], how.dim or 1
         t.r, t.g, t.b, t.a = src.r * k, src.g * k, src.b * k, how.a or src.a
     end
+end
+
+-- ── Dark mode (Settings > Interface, GuildOSDB.darkMode) ──────────────
+-- "Nothing changes but the white": the wood, the gold, the layout and the art stay; the parchment's tokens take a
+-- darker paper with a light ink. Style:Resolve switches them at ADDON_LOADED, before any frame is drawn, by
+-- writing into the very tables above, so every module that captured `C` or one of its colours sees it. A
+-- screen's own paper shade (one this file does not name) is made with GuildOS:PaperShade or GuildOS:PaperInk
+-- and follows the same switch.
+GuildOS.PAPER_KEYS = {
+    "paper", "paperInk", "paperSoft", "paperLine", "paperRule", "paperTitle", "paperEdge", "paperLight",
+    "paperLink", "quiet", "quietInk", "paperBox", "paperShade", "paperOff", "paperOffInk", "paperMark", "paperMarkTitle",
+}
+local LIGHT_PAPER = {}
+for _, k in ipairs(GuildOS.PAPER_KEYS) do LIGHT_PAPER[k] = rgb(T[k].r, T[k].g, T[k].b, T[k].a) end
+local DARK_PAPER = {
+    paper      = hex("3a2f22"),
+    paperLight = hex("463828"),  -- a field and a pinned note: a step lighter than the paper
+    paperInk   = hex("ecdcb8"),
+    paperSoft  = hex("c2ad85"),
+    paperLine  = hex("604c37"),
+    paperRule  = hex("6b5840"),
+    paperTitle = hex("f0b46a"),  -- the dark red title becomes a warm gold
+    paperEdge  = hex("241a10"),
+    paperLink  = hex("e6b866"),
+    quiet      = hex("4a3a28"),
+    quietInk   = hex("f2e2bc"),
+    paperBox   = hex("30261a"),  -- the darker box stays darker than the paper
+    paperShade = hex("54432f"),
+    paperOff   = hex("2e251a"),
+    paperOffInk = hex("8f7f64"),
+    paperMark  = hex("7a6040"),
+    paperMarkTitle = hex("a03c1e"),
+}
+GuildOS.PaperPalettes = { light = LIGHT_PAPER, dark = DARK_PAPER }
+
+-- The wood in dark mode: ebony. The boards' texture takes EBONY as its tint (Style:Texture) and the wood's flat
+-- tokens a near-black brown; the ink on the wood (text, textSoft, the gold) does not move, and reads better on it.
+GuildOS.WOOD_KEYS = { "bg", "panel", "popup", "well", "line" }
+local LIGHT_WOOD = {}
+for _, k in ipairs(GuildOS.WOOD_KEYS) do LIGHT_WOOD[k] = rgb(T[k].r, T[k].g, T[k].b, T[k].a) end
+local DARK_WOOD = {
+    bg    = hex("120c08"),
+    panel = hex("17100b"),
+    popup = hex("0e0906"),
+    well  = hex("090604"),
+    line  = hex("2b2017"),
+}
+GuildOS.WoodPalettes = { light = LIGHT_WOOD, dark = DARK_WOOD }
+GuildOS.EBONY = rgb(0.36, 0.31, 0.29)   -- the boards' tint: dark, a little cold, the grain still showing
+
+local function lin(v) return v <= 0.03928 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4 end
+local function lum(c) return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b) end
+local function contrast(a, b)
+    local la, lb = lum(a), lum(b)
+    if la < lb then la, lb = lb, la end
+    return (la + 0.05) / (lb + 0.05)
+end
+local READS = 4.6   -- UI/Helpers.lua's PAPER_CONTRAST: the least a text on the paper reads at
+
+-- Whether the paper is the dark one now.
+function GuildOS:IsDarkPaper() return GuildOS.darkPaper == true end
+
+-- r, g, b made to read at 4.6:1 on both the paper and its light field, hue kept: darkened on the light paper,
+-- lightened (towards white) on the dark one. Unchanged when it already reads.
+function GuildOS.PaperReadable(r, g, b)
+    local C = GuildOS.Colors
+    local c = { r = r or 0, g = g or 0, b = b or 0 }
+    local dark = GuildOS.darkPaper == true
+    for _ = 1, 60 do
+        if contrast(c, C.paper) >= READS and contrast(c, C.paperLight) >= READS then break end
+        if dark then
+            c.r, c.g, c.b = c.r + (1 - c.r) * 0.06, c.g + (1 - c.g) * 0.06, c.b + (1 - c.b) * 0.06
+        else
+            c.r, c.g, c.b = c.r * 0.94, c.g * 0.94, c.b * 0.94
+        end
+    end
+    return c.r, c.g, c.b
+end
+
+-- A screen's own paper shades: { c = the table it draws with, light = rgb, dark = rgb or nil, wood = token or nil }.
+GuildOS.PaperShades = {}
+local function follow(s)
+    local v
+    if GuildOS.darkPaper and s.wood then
+        local r, g, b = GuildOS.PaperReadable(s.wood.r, s.wood.g, s.wood.b)
+        v = rgb(r, g, b)
+    else
+        v = GuildOS.darkPaper and s.dark or s.light
+    end
+    s.c.r, s.c.g, s.c.b = v.r, v.g, v.b
+end
+
+-- A fill or a line of the paper's that has no token (a chosen day's warm paper, a poll's bar): `light` on the
+-- parchment, `dark` (hex) on the dark one. Returns the colour table to draw with; keep it, it follows the mode.
+function GuildOS:PaperShade(light, dark)
+    local s = { c = hex(light), light = hex(light), dark = hex(dark) }
+    GuildOS.PaperShades[#GuildOS.PaperShades + 1] = s
+    follow(s)
+    return s.c
+end
+
+-- An ink of the paper's (a state's deep green, a maybe's amber): `light` (hex) on the parchment; on the dark one
+-- the wood's own colour for it (`wood`, a token such as C.ok), lightened where it would not read.
+function GuildOS:PaperInk(light, wood)
+    local s = { c = hex(light), light = hex(light), wood = wood }
+    GuildOS.PaperShades[#GuildOS.PaperShades + 1] = s
+    follow(s)
+    return s.c
+end
+
+-- Who repaints a table of its own when the paper changes (UI/Helpers.lua's inks): fn(dark).
+GuildOS.PaperListeners = {}
+function GuildOS:OnPaperChange(fn) GuildOS.PaperListeners[#GuildOS.PaperListeners + 1] = fn end
+
+-- Switch the paper: every paper token, every screen's paper shade and every listener's table, in place. Nothing
+-- else in the palette moves. Called by Style:Resolve before anything is drawn; frames already drawn keep their
+-- colours until a reload.
+function GuildOS:SetDarkPaper(on)
+    GuildOS.darkPaper = on and true or false
+    local C, from = GuildOS.Colors, on and DARK_PAPER or LIGHT_PAPER
+    for _, k in ipairs(GuildOS.PAPER_KEYS) do
+        local t, v = C[k], from[k]
+        t.r, t.g, t.b, t.a = v.r, v.g, v.b, v.a or 1
+    end
+    -- The wood's tokens, then every legacy key copied from them (border, headerBg, row2…), as RepointColors does.
+    GuildOS:RepointColors(on and DARK_WOOD or LIGHT_WOOD)
+    for _, s in ipairs(GuildOS.PaperShades) do follow(s) end
+    for _, fn in ipairs(GuildOS.PaperListeners) do fn(GuildOS.darkPaper) end
+    return GuildOS.darkPaper
 end
 
 -- Fonts (specs/salao/fase3.md). The mockup's three, under the SIL Open Font License, in Media/Fonts with

@@ -37,6 +37,7 @@ local function deep(c)
     return GuildOS.UI:Ink("paper", c)   -- the one mapping of the paper's inks (UI/Helpers.lua, #449)
 end
 local function hexOf(c) return string.format("%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255) end
+local MINE_INK = GuildOS:PaperInk("2f6e33", C.ok)   -- an online crafter's dot, "you craft"
 
 ----------------------------------------------------------------------
 -- Profession icons (TBC tradeskill textures)
@@ -453,7 +454,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
 
                 -- Online status dot
                 if entry.hasOnline then
-                    row.statusDot:SetVertexColor(0.184, 0.431, 0.2, 1.0)
+                    row.statusDot:SetVertexColor(MINE_INK.r, MINE_INK.g, MINE_INK.b, 1.0)
                 else
                     row.statusDot:SetVertexColor(C.paperRule.r, C.paperRule.g, C.paperRule.b, 1)
                 end
@@ -462,7 +463,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
                 local marks = ""
                 for _, c in ipairs(entry.crafters or {}) do
                     if state.me and c.playerKey == state.me then
-                        marks = string.format("  |cff2f6e33%s|r", L["you craft"])
+                        marks = string.format("  |cff%s%s|r", hexOf(MINE_INK), L["you craft"])
                     end
                 end
                 local orders = entry.itemId and state.byItem and state.byItem[entry.itemId]

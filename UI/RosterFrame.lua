@@ -290,6 +290,8 @@ end
 -- online dot is drawn inside the name cell, so it is not something the
 -- user can lose to a narrow window.
 local DASH = "|cff666666-|r"
+-- A colour code for a paper ink (a token or UI.STATUS_INK's), so dark mode reaches the recruiting sheet's lines.
+local function paperCode(c) return string.format("|cff%02x%02x%02x", c.r * 255 + 0.5, c.g * 255 + 0.5, c.b * 255 + 0.5) end
 local function textOr(s) return (s and s ~= "") and s or nil end
 local function officer() return GuildOS:IsOfficer() end
 local function enabled(feature) return GuildOS:IsFeatureEnabled(feature) end
@@ -3395,7 +3397,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             end
 
             if not info or info.enabled == nil then
-                statusLabel:SetText("|cff6f5a3c" .. (lateOfficer and L["You became an officer after logging in. Type /reload to manage recruiting."]
+                statusLabel:SetText(paperCode(C.paperSoft) .. (lateOfficer and L["You became an officer after logging in. Type /reload to manage recruiting."]
                     or L["No recruitment data received yet."]) .. "|r")
                 updatedLabel:SetText("")
                 discordText:SetText("—")
@@ -3404,9 +3406,9 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             end
 
             if info.enabled then
-                statusLabel:SetText("|TInterface\\COMMON\\Indicator-Green:14|t |cff2f6e33" .. L["Guild is actively recruiting!"] .. "|r")
+                statusLabel:SetText("|TInterface\\COMMON\\Indicator-Green:14|t " .. paperCode(UI.STATUS_INK.ok) .. L["Guild is actively recruiting!"] .. "|r")
             else
-                statusLabel:SetText("|TInterface\\COMMON\\Indicator-Red:14|t |cff8f1b0b" .. L["Not currently recruiting"] .. "|r")
+                statusLabel:SetText("|TInterface\\COMMON\\Indicator-Red:14|t " .. paperCode(UI.STATUS_INK.bad) .. L["Not currently recruiting"] .. "|r")
             end
 
             if info.updatedBy then

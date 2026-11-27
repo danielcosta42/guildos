@@ -38,8 +38,7 @@ local HEAD_ABOVE = 20    -- room over a later section title for its rule (UI:Cre
 local PAD      = type(UI.CARD_PAD) == "number" and UI.CARD_PAD or 14
 local CARD_TOP = type(UI.CARD_TOP) == "number" and UI.CARD_TOP or 36
 local TWO_COLS = 760     -- px: two columns of cards from here
-local function hex(h) return { r = tonumber(h:sub(1, 2), 16) / 255, g = tonumber(h:sub(3, 4), 16) / 255, b = tonumber(h:sub(5, 6), 16) / 255 } end
-local PAPER_OK, PAPER_BAD = hex("2f6e33"), hex("8f1b0b")
+local PAPER_OK, PAPER_BAD = GuildOS:PaperInk("2f6e33", C.ok), GuildOS:PaperInk("8f1b0b", C.danger)
 -- A class's colour as the paper prints it (the mockup's .card .c-*).
 local function paperClass(class)
     return GuildOS.UI:InkFor("paper", "class", class)   -- the paper's class inks (UI/Helpers.lua, #449)
