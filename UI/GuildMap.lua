@@ -499,11 +499,12 @@ function GuildOS:ToggleGuildMap()
         list:Hide()
         return
     end
-    GM():SetListShown(true)
+    local showing = GM():IsShowingOthers()
+    if showing then GM():SetListShown(true) end
     Compat.OpenWorldMap()
     local function show()
         if not EnsureLayer() then return end
-        if list and Compat.GetWorldMapFrame() and Compat.GetWorldMapFrame():IsShown() then list:Show() end
+        if showing and list and Compat.GetWorldMapFrame() and Compat.GetWorldMapFrame():IsShown() then list:Show() end
         dirty = true
         WatchShownMap()
     end
@@ -519,7 +520,11 @@ function GuildOS:SetupGuildMapPresence()
     GuildOS._guildMapPresence = true
     GM().uiRefresh = function()
         dirty = true
-        if list and not GM():IsShowingOthers() then list:Hide() end
+        if list then
+            local wmf = Compat.GetWorldMapFrame()
+            if not GM():IsShowingOthers() then list:Hide()
+            elseif GM():IsListShown() and wmf and wmf:IsShown() then list:Show() end
+        end
         WatchShownMap()
     end
     if Minimap then

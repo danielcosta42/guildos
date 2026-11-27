@@ -167,6 +167,11 @@ for k, c in pairs(C) do
     if PAPER[k] then
       check(not same(c, before[k]), "dark mode changes C." .. k)
       check(hx(c) == hx(DARK[k]), ("dark C.%s is #%s"):format(k, hx(DARK[k])))
+    elseif ({ border = "line", separator = "line", headerBg = "panel", bg0 = "well", bg1 = "well", bg2 = "panel",
+              panelDark = "well", row1 = "well", row2 = "bg", rowHover = "panel" })[k] then
+      local src = ({ border = "line", separator = "line", headerBg = "panel", bg0 = "well", bg1 = "well", bg2 = "panel",
+              panelDark = "well", row1 = "well", row2 = "bg", rowHover = "panel" })[k]
+      check(hx(c) == hx(C[src]), ("dark C.%s follows its wood token %s"):format(k, src))
     elseif GuildOS.WoodPalettes.dark[k] then
       check(hx(c) == hx(GuildOS.WoodPalettes.dark[k]), ("dark C.%s is the ebony #%s"):format(k, hx(GuildOS.WoodPalettes.dark[k])))
     else
@@ -323,6 +328,11 @@ do
   local w2 = GuildOS.Style:Texture(f, "wood", "BACKGROUND", 0, true)
   check(w2.vc == nil, "light mode: the wood keeps its own colour")
   check(hx(C.bg) == hx(GuildOS.WoodPalettes.light.bg), "light mode: the wood's tokens come back")
+  GuildOS:SetDarkPaper(true)
+  check(hx(C.row2) == hx(C.bg) and hx(C.border) == hx(C.line) and hx(C.headerBg) == hx(C.panel),
+    "dark mode: the legacy wood keys (row2, border, headerBg) follow the ebony tokens")
+  GuildOS:SetDarkPaper(false)
+  check(hx(C.row2) == hx(C.bg) and hx(C.border) == hx(C.line), "light mode: and come back with them")
 end
 
 print(("dark-mode: %d checks passed"):format(checks))

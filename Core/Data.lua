@@ -262,11 +262,8 @@ function GuildOS:SetDarkPaper(on)
         local t, v = C[k], from[k]
         t.r, t.g, t.b, t.a = v.r, v.g, v.b, v.a or 1
     end
-    local wood = on and DARK_WOOD or LIGHT_WOOD
-    for _, k in ipairs(GuildOS.WOOD_KEYS) do
-        local t, v = C[k], wood[k]
-        if t then t.r, t.g, t.b = v.r, v.g, v.b end
-    end
+    -- The wood's tokens, then every legacy key copied from them (border, headerBg, row2…), as RepointColors does.
+    GuildOS:RepointColors(on and DARK_WOOD or LIGHT_WOOD)
     for _, s in ipairs(GuildOS.PaperShades) do follow(s) end
     for _, fn in ipairs(GuildOS.PaperListeners) do fn(GuildOS.darkPaper) end
     return GuildOS.darkPaper

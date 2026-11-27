@@ -1011,7 +1011,8 @@ local function createWindow()
     function f:DoorSpan(w)
         w = w or self:GetWidth() or 0
         local x0 = self.doorsX or (10 + CREST + 8 + NAME_MIN + 10)
-        local tools = 10 + CLOSE_SIZE + 4 * (TOOL + TOOL_GAP) + 8
+        -- The round tools left of the close: minimise, settings, help, search and the game's guild window.
+        local tools = 10 + CLOSE_SIZE + 5 * (TOOL + TOOL_GAP) + 8
         return x0, math.max(0, (w - 2 * EDGE) - tools - x0)
     end
 
