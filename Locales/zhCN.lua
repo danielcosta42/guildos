@@ -5144,3 +5144,6 @@ L["And %d more in the full changelog."] = "完整更新日志中还有 %d 条。
 L["1 chapter \194\183 %d steps"] = "1 章 \194\183 %d 步"
 L["%s whispered the keyword. The game lets no addon invite here: copy the line and send it (Ctrl+C, Enter, Ctrl+V, Enter)."] = "%s 密语了关键词。此游戏不允许插件邀请：复制这一行并发送（Ctrl+C、回车、Ctrl+V、回车）。"
 L["The game does not let addons invite here. Requests wait in the queue: copy the /ginvite line and send it."] = "此游戏不允许插件邀请。请求在队列中等待：复制 /ginvite 这一行并发送。"
+L["Dark mode"] = "深色模式"
+L["Darker parchment cards, same wood and gold."] = "更深的羊皮纸卡片，木纹与金色不变。"
+L["dark, dark mode, theme, night, night mode, colours"] = "深色, 深色模式, 暗色, 主题, 夜间, 夜间模式, 颜色, dark, theme, night"

@@ -5144,3 +5144,6 @@ L["And %d more in the full changelog."] = "И ещё %d в полном спис
 L["1 chapter \194\183 %d steps"] = "Глав: 1 \194\183 шагов: %d"
 L["%s whispered the keyword. The game lets no addon invite here: copy the line and send it (Ctrl+C, Enter, Ctrl+V, Enter)."] = "%s шепнул ключевое слово. Здесь игра не позволяет аддонам приглашать: скопируйте строку и отправьте её (Ctrl+C, Enter, Ctrl+V, Enter)."
 L["The game does not let addons invite here. Requests wait in the queue: copy the /ginvite line and send it."] = "Здесь игра не позволяет аддонам приглашать. Запросы ждут в очереди: скопируйте строку /ginvite и отправьте её."
+L["Dark mode"] = "Тёмный режим"
+L["Darker parchment cards, same wood and gold."] = "Более тёмные пергаментные карточки, то же дерево и золото."
+L["dark, dark mode, theme, night, night mode, colours"] = "тёмный, тёмный режим, тема, ночь, ночной режим, цвета, dark, theme, night"

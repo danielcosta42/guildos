@@ -5265,3 +5265,6 @@ L["And %d more in the full changelog."] = "Y %d más en el registro de cambios c
 L["1 chapter \194\183 %d steps"] = "1 capítulo \194\183 %d pasos"
 L["%s whispered the keyword. The game lets no addon invite here: copy the line and send it (Ctrl+C, Enter, Ctrl+V, Enter)."] = "%s susurró la palabra clave. El juego no deja que ningún addon invite aquí: copia la línea y envíala (Ctrl+C, Enter, Ctrl+V, Enter)."
 L["The game does not let addons invite here. Requests wait in the queue: copy the /ginvite line and send it."] = "El juego no deja que los addons inviten aquí. Las solicitudes esperan en la cola: copia la línea /ginvite y envíala."
+L["Dark mode"] = "Modo oscuro"
+L["Darker parchment cards, same wood and gold."] = "Tarjetas de pergamino más oscuras, la misma madera y el mismo dorado."
+L["dark, dark mode, theme, night, night mode, colours"] = "oscuro, modo oscuro, tema, noche, modo nocturno, colores, dark, theme, night"

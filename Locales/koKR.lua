@@ -5144,3 +5144,6 @@ L["And %d more in the full changelog."] = "전체 변경 사항에 %d개 더 있
 L["1 chapter \194\183 %d steps"] = "1개 장 \194\183 %d단계"
 L["%s whispered the keyword. The game lets no addon invite here: copy the line and send it (Ctrl+C, Enter, Ctrl+V, Enter)."] = "%s 님이 키워드를 귓속말했습니다. 이 게임에서는 애드온이 초대할 수 없습니다: 줄을 복사해서 보내세요 (Ctrl+C, Enter, Ctrl+V, Enter)."
 L["The game does not let addons invite here. Requests wait in the queue: copy the /ginvite line and send it."] = "이 게임에서는 애드온이 초대할 수 없습니다. 요청은 대기열에서 기다립니다: /ginvite 줄을 복사해서 보내세요."
+L["Dark mode"] = "다크 모드"
+L["Darker parchment cards, same wood and gold."] = "더 어두운 양피지 카드, 같은 나무와 금색."
+L["dark, dark mode, theme, night, night mode, colours"] = "다크, 다크 모드, 어두운, 테마, 밤, 야간 모드, 색상, dark, theme, night"
