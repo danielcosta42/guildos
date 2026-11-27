@@ -5141,3 +5141,4 @@ L["Share the group quests in my log with the guild LFG"] = "Делиться г�
 L["Your quest log has no quest."] = "В вашем журнале нет заданий."
 L["Elite"] = "Элитное"
 L["And %d more in the full changelog."] = "И ещё %d в полном списке изменений."
+L["1 chapter \194\183 %d steps"] = "Глав: 1 \194\183 шагов: %d"

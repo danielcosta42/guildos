@@ -5141,3 +5141,4 @@ L["Share the group quests in my log with the guild LFG"] = "내 퀘스트 목록
 L["Your quest log has no quest."] = "퀘스트 목록에 퀘스트가 없습니다."
 L["Elite"] = "정예"
 L["And %d more in the full changelog."] = "전체 변경 사항에 %d개 더 있습니다."
+L["1 chapter \194\183 %d steps"] = "1개 장 \194\183 %d단계"

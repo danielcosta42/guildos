@@ -184,13 +184,14 @@ local function trackRow(F, id)
             pct = Ob:Pending() and 0 or 100
             local n = #Ob:Cards(Ob:Arrival())
             sub = string.format(L["%d cards"], n)
-            self.name:SetText(string.format(L["What's new in %s"], Ob.WHATS_NEW_ID))
+            self.name:SetText(string.format(L["What's new in %s"], Ob:Version()))
             label = pct == 100 and L["Replay"] or L["Open"]
         else
             local steps = Ob:Steps(self.id)
             local chapters = Ob:Chapters(self.id, steps)
             pct = Ob:Percent(self.id, steps)
-            sub = string.format(L["%d chapters \194\183 %d steps"], #chapters, #steps)
+            sub = #chapters == 1 and string.format(L["1 chapter \194\183 %d steps"], #steps)
+                or string.format(L["%d chapters \194\183 %d steps"], #chapters, #steps)
             self.name:SetText(Ob.TRACKS[self.id].label)
             label = (pct == 0 and L["Start"]) or (pct >= 100 and L["Replay"]) or L["Resume"]
             local done = Ob:Progress(self.id).chapters

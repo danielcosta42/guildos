@@ -5141,3 +5141,4 @@ L["Share the group quests in my log with the guild LFG"] = "與公會隊伍搜�
 L["Your quest log has no quest."] = "你的任務日誌中沒有任務。"
 L["Elite"] = "精英"
 L["And %d more in the full changelog."] = "完整更新日誌中還有 %d 條。"
+L["1 chapter \194\183 %d steps"] = "1 章 \194\183 %d 步"

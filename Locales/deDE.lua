@@ -5261,3 +5261,4 @@ L["Share the group quests in my log with the guild LFG"] = "Die Gruppenquests me
 L["Your quest log has no quest."] = "Dein Questlog enthält keine Quest."
 L["Elite"] = "Elite"
 L["And %d more in the full changelog."] = "Und %d weitere im vollständigen Changelog."
+L["1 chapter \194\183 %d steps"] = "1 Kapitel \194\183 %d Schritte"
