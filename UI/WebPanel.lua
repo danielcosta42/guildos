@@ -550,7 +550,7 @@ function GuildOS:CreateWebPanel(parent, _win)
         local co = GuildOS.Companion
         if not co then return end
         co:SetEnabled(not co:IsEnabled())
-        panel:Refresh()
+        panel:Refresh(true)
     end)
 
     publishBtn:SetScript("OnClick", function()
@@ -613,7 +613,10 @@ function GuildOS:CreateWebPanel(parent, _win)
         list.rest = rest
     end
 
-    function panel:Refresh()
+    -- `recount` counts who goes out again (BuildPayload: the guild walked, nothing encoded or compressed). Only the
+    -- panel opening and the switch ask for it; combat, the group and the ticker repaint with the count kept, since
+    -- a full Build here, a deflate at level 9, cost ~160 ms of one frame at every combat edge (#449).
+    function panel:Refresh(recount)
         local co = GuildOS.Companion
         local on = (co and co:IsEnabled()) and true or false
         self.publishing = on
@@ -626,8 +629,12 @@ function GuildOS:CreateWebPanel(parent, _win)
         local I = GuildOS.CompanionImport
 
         if on then
-            -- Build walks the whole guild, so it runs here and nowhere else.
-            local _, count = co:Build()
+            if recount or self.outCount == nil then
+                local ok, payload = pcall(co.BuildPayload, co)
+                self.outCount = ok and type(payload) == "table" and (tonumber(payload.count) or 0) > 0
+                    and payload.count or false
+            end
+            local count = self.outCount
             -- A retail region the site has no world for says so here (issue #182).
             countText:SetText(type(count) == "number"
                 and string.format(L["%d members go out next time"], count) or co:Refused() or "")
@@ -935,8 +942,10 @@ function GuildOS:CreateWebPanel(parent, _win)
     GuildOS.Compat.RegisterEvent(panel, "PLAYER_REGEN_ENABLED")
     GuildOS.Compat.RegisterEvent(panel, "GROUP_ROSTER_UPDATE")
     -- Combat at once; the group in a burst (forty accepts, issue #400) as one Refresh every WEB_GROUP_GAP seconds.
+    -- IsVisible, not IsShown: the window and its tabs hide the panel's parent, never the panel, so IsShown stayed
+    -- true for the rest of the session once the tab had been opened (#449).
     local function visibleRefresh()
-        if panel:IsShown() then panel:Refresh() end
+        if panel:IsVisible() then panel:Refresh() end
     end
     panel:SetScript("OnEvent", function(_, event)
         if event == "GROUP_ROSTER_UPDATE" then
@@ -946,10 +955,15 @@ function GuildOS:CreateWebPanel(parent, _win)
         end
     end)
     panel:SetScript("OnShow", function(self)
-        self:Refresh()
+        self:Refresh(true)
         if self.__ticker then return end
         self.__ticker = C_Timer.NewTicker(10, function()
-            if self:IsShown() then self:Refresh() end
+            if self:IsVisible() then
+                self:Refresh()
+            elseif self.__ticker then
+                -- The parent went away (another tab, the window closed): OnHide never fires for that.
+                self.__ticker:Cancel(); self.__ticker = nil
+            end
         end)
     end)
     panel:SetScript("OnHide", function(self)
