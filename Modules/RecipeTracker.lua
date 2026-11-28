@@ -1202,7 +1202,7 @@ function RecipeTracker:HookTooltips()
         if not GuildOS.db then return end
 
         local _, spellId = GuildOS.Compat.TooltipSpell(tooltip)
-        if not spellId then return end
+        if not spellId or GuildOS.Compat.IsSecret(spellId) then return end
 
         local crafters = RecipeTracker:GetCraftersForSpell(spellId)
         AppendCrafters(tooltip, crafters, L["Enchanted by:"])
