@@ -631,6 +631,7 @@ function GuildOS:CreateWebPanel(parent, _win)
         if on then
             if recount or self.outCount == nil then
                 local ok, payload = pcall(co.BuildPayload, co)
+                if not ok and GuildOS.RecordError then GuildOS:RecordError("web count: " .. tostring(payload)) end
                 self.outCount = ok and type(payload) == "table" and (tonumber(payload.count) or 0) > 0
                     and payload.count or false
             end
@@ -959,9 +960,10 @@ function GuildOS:CreateWebPanel(parent, _win)
         if self.__ticker then return end
         self.__ticker = C_Timer.NewTicker(10, function()
             if self:IsVisible() then
-                self:Refresh()
+                -- Recounted while nobody was counted yet: opened before the guild roster came, right after login.
+                self:Refresh(self.outCount == false)
             elseif self.__ticker then
-                -- The parent went away (another tab, the window closed): OnHide never fires for that.
+                -- A safety net: OnHide already stops it when the parent hides.
                 self.__ticker:Cancel(); self.__ticker = nil
             end
         end)
