@@ -107,6 +107,13 @@ function GuildOS:MinimapMenuItems()
         if (type(g) == "table" and g.collapsed) or f.band == "bar" then f:ToggleCollapsed() end
         f:OpenRoom(id, true)
     end
+    -- Groups, near the top (#449): Raids › Groups in one click, with how many are open when any is.
+    if UI.GetFeature and UI:GetFeature("groups") and GuildOS:IsFeatureEnabled("groups") then
+        local S = UI.Salao
+        local st = S and S.GroupsNow and S:GroupsNow()
+        local text = (st and st.open > 0) and string.format(L["Groups (%d open)"], st.open) or L["Groups"]
+        items[#items + 1] = { text = text, groups = true, func = function() close(); UI:OpenWindow("groups") end }
+    end
     local first = true
     for _, room in ipairs(UI.VisibleRooms and UI:VisibleRooms() or {}) do
         local id = room.id

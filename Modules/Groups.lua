@@ -27,6 +27,7 @@ local LEVEL_SLACK    = 5     -- levels past an activity's range it still reads a
 local PARTY_MAX      = 5
 local EXTEND_BY      = 1800  -- "+30 min" on a listing, never past the longest duration (#378)
 local WARN_BEFORE    = 300   -- a listing of mine says it is about to end 5 minutes before (#378)
+local FIT_COOLDOWN   = 180   -- "a group fits you" on screen at most once every 3 minutes (#449)
 -- What a guildmate with no addon whispers a leader for an invite (#378): the whole message, any case.
 local INVITE_WORDS = { inv = true, invite = true, ["+"] = true, ["+1"] = true }
 local LETTERS = { "T", "H", "D" }
@@ -36,6 +37,7 @@ Groups.REQUESTS_MAX = REQUESTS_MAX
 -- When a group starts, from the moment it is listed (#378): now, or in 15, 30 or 60 minutes.
 Groups.STARTS = { 0, 900, 1800, 3600 }
 Groups.EXTEND_BY = EXTEND_BY
+Groups.FIT_COOLDOWN = FIT_COOLDOWN
 
 local function board() return GuildOS.LFGBoard end
 local function quests() return GuildOS.GroupQuests end
@@ -46,7 +48,7 @@ local function state()
     local s = GuildOS.State.groups
     if not s then
         s = { requests = {}, asked = {}, askedAt = {}, askPending = {}, groupCd = {}, joinCd = {}, whisperCd = {},
-              lastPublish = 0 }
+              lastPublish = 0, noticed = {} }
         GuildOS.State.groups = s
     end
     return s
@@ -273,6 +275,54 @@ function Groups:Counts(now, onlineSet, groupStore, seekerStore)
         for _, q in ipairs(e.quests) do at(q.id).seekers = at(q.id).seekers + 1 end
         for _, id in ipairs(e.shared) do at(id).seekers = at(id).seekers + 1 end
     end
+    return out
+end
+
+-- "Groups now", the Hall's card, the compact bar's tooltip and the minimap's menu (#449): how many guildmates'
+-- groups are open and how many guildmates are looking (me left out of both), and the `max` most relevant open
+-- groups: those that fit me (Groups:FitReason) first, then the newest. Read straight from the saved stores,
+-- which the minute's sweep keeps to who is online (SweepOffline). `out` is the caller's, refilled: no table is
+-- made per call. out.open, out.looking, out.n, then out[i] the listing as stored, out.keys[i] its leader's key
+-- and out.fit[i] "quest", "role" or false.
+function Groups:Now(out, now, max)
+    out = out or {}
+    out.keys, out.fit = out.keys or {}, out.fit or {}
+    max = max or 3
+    now = now or GetServerTime()
+    local B, me = board(), myKey()
+    local level = UnitLevel and UnitLevel("player") or nil
+    local roles = B:Pref("roles") or ""
+    local keys, fit = out.keys, out.fit
+    local open, n = 0, 0
+    for key, g in pairs(GuildOS.db.lfgGroups or {}) do
+        if key ~= me and B:_IsActive(g, now) and self:OpenSpots(g.need) > 0 then
+            open = open + 1
+            local why = self:FitReason(g, level, roles) or false
+            local ts, at = g.ts or 0, n + 1
+            for i = 1, n do
+                local o = out[i]
+                local mine, theirs = why and 1 or 0, fit[i] and 1 or 0
+                local ots = o.ts or 0
+                if mine > theirs or (mine == theirs and (ts > ots or (ts == ots and key < keys[i]))) then
+                    at = i
+                    break
+                end
+            end
+            if at <= max then
+                for i = math.min(n, max - 1), at, -1 do
+                    out[i + 1], keys[i + 1], fit[i + 1] = out[i], keys[i], fit[i]
+                end
+                out[at], keys[at], fit[at] = g, key, why
+                if n < max then n = n + 1 end
+            end
+        end
+    end
+    for i = n + 1, #keys do out[i], keys[i], fit[i] = nil, nil, nil end
+    local looking = 0
+    for key, e in pairs(GuildOS.db.lfgBoard or {}) do
+        if key ~= me and B:_IsActive(e, now) then looking = looking + 1 end
+    end
+    out.open, out.looking, out.n = open, looking, n
     return out
 end
 
@@ -632,17 +682,38 @@ end
 -- and it checks the group still has my spot when it shows.
 function Groups:_ShouldToast(g, level, inGroup)
     if pref("toast") == false or inGroup or self:Mine() then return false end
-    return self:FitsLevel(g.act, level) and self:BestRole(g.need, board():Pref("roles") or "") ~= nil
+    return self:FitReason(g, level, board():Pref("roles") or "") ~= nil
+end
+
+-- Why a guildmate's open group fits me (#449, "Tell me when a group fits"): "quest" for a quest in my log
+-- ("My quests", #450), "role" for my level with a spot in a role I play (no roles set: any spot); nil
+-- otherwise, and for my own. The Hall's card, the notice and the tab's "for you" read the same answer.
+function Groups:FitReason(g, level, myRoles)
+    if type(g) ~= "table" or self:OpenSpots(g.need) == 0 then return nil end
+    local Q = quests()
+    if g.quest and Q and Q:Has(g.quest.id) then return "quest" end
+    if self:FitsLevel(g.act, level) and self:BestRole(g.need, myRoles or "") ~= nil then return "role" end
+    return nil
 end
 
 -- A guildmate just listed a group: a small notice that goes away by itself where it fits me, the
--- chat line of #341 otherwise (when notices in chat are on).
-function Groups:_Announce(key, short, g)
+-- chat line of #341 otherwise (when notices in chat are on). The notice, for every player (#449): once a
+-- group, at most one every FIT_COOLDOWN (a group past it gets the chat line, as one that does not fit), and
+-- nothing at all in combat or in an instance: the group is still on the Hall's card and in the tab.
+function Groups:_Announce(key, short, g, now)
+    now = now or GetServerTime()
     local inGroup = (GetNumGroupMembers and (GetNumGroupMembers() or 0) > 1) or false
     if GuildOS.GroupsToast and self:_ShouldToast(g, UnitLevel and UnitLevel("player"), inGroup) then
-        GuildOS:SafeCall(GuildOS.GroupsToast, GuildOS, { kind = "group", key = key, name = short, act = g.act,
-            need = g.need, note = g.note, quest = g.quest })
-        return "toast"
+        if GuildOS:InCombat() or GuildOS.Compat.InstanceState() then return "quiet" end
+        local s = state()
+        s.noticed = s.noticed or {}
+        if s.noticed[key] ~= nil and s.noticed[key] == g.ts then return "quiet" end
+        if now - (s.fitAt or -FIT_COOLDOWN) >= FIT_COOLDOWN then
+            s.noticed[key], s.fitAt = g.ts or now, now
+            GuildOS:SafeCall(GuildOS.GroupsToast, GuildOS, { kind = "group", key = key, name = short, act = g.act,
+                need = g.need, note = g.note, quest = g.quest })
+            return "toast"
+        end
     end
     if pref("notify") then
         GuildOS:Print(string.format(L["%s is forming a group for %s."], short, self:Title(g)))
@@ -660,6 +731,7 @@ function Groups:StillTrue(n, now)
     if n.kind == "group" then
         local g = GuildOS.db.lfgGroups and GuildOS.db.lfgGroups[n.key]
         if not board():_IsActive(g, now) or self:Mine() or self:Asked(n.key) then return false end
+        if g.quest and quests() and quests():Has(g.quest.id) and self:OpenSpots(g.need) > 0 then return true end
         return self:BestRole(g.need, board():Pref("roles") or "") ~= nil
     elseif n.kind == "request" then
         local r = state().requests[n.key]

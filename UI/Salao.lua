@@ -8,7 +8,8 @@
 -- outlining each, and the newest notice under them) and, filling the column's height under it, the Guild chat
 -- (a dark card: the last lines of /g, an officer's channel too for an officer, and a box to answer). On the right: the countdown to the raids (Forever),
 -- the Chimney while a Winter Veil event is on, By the fire (a dark card of round class avatars and a "+n"
--- disc) and the Guild wall (a glyph, the line, its time). Every line opens the screen that owns it.
+-- disc), Groups now (the guild's open groups and who is looking, those that fit this player first, and Find a
+-- group: #449) and the Guild wall (a glyph, the line, its time). Every line opens the screen that owns it.
 --
 -- The data half is frame-free (tools/salao.lua tests it); it reads what UI/Agora.lua, Calendar and
 -- WinterVeil already know and decides nothing of its own.
@@ -46,6 +47,9 @@ local CHAT_MIN     = 180        -- its least height beside the right column
 local CHAT_STACKED = 260        -- its height in one column
 local CHAT_AV      = 18
 local CHAT_FIELD   = 24
+local MAX_GROUPS   = 3          -- Groups now: the most relevant open groups, at most (#449)
+local GROUP_ROW_H  = 22
+local GROUP_BTN_H  = 24
 
 local function now() return (GetServerTime and GetServerTime()) or time() end
 local function short(full) return full and (full:match("^([^-]+)") or full) or "?" end
@@ -221,6 +225,25 @@ function Salao:ChatLines(max, pool)
         lines = cut
     end
     return lines
+end
+
+-- Groups now (#449): what the card says, from Groups:Now (the same stores the Groups tab draws; guild only).
+-- `out` is the caller's, refilled. Nil while the Groups feature is off or not started: the card does not show.
+function Salao:GroupsNow(out)
+    local G = GuildOS.Groups
+    if not (G and G.Now and GuildOS.LFGBoard and GuildOS.db and GuildOS.db.lfgGroups) then return nil end
+    if not GuildOS:IsFeatureEnabled("groups") then return nil end
+    return G:Now(out, now(), MAX_GROUPS)
+end
+
+-- The card's one-line summary: "2 groups open · 5 looking", or "No group open right now" (and who is looking).
+function Salao:GroupsSummary(st)
+    local looking = st.looking > 0 and string.format(L["%d looking"], st.looking) or nil
+    if st.open == 0 then
+        return looking and (L["No group open right now"] .. " \194\183 " .. looking) or L["No group open right now"]
+    end
+    local open = st.open == 1 and L["1 group open"] or string.format(L["%d groups open"], st.open)
+    return looking and (open .. " \194\183 " .. looking) or open
 end
 
 -- WoW: Forever's countdown to the raids (issue #207), until a week after they open: Readiness:Countdown counts
@@ -596,9 +619,10 @@ function GuildOS:CreateSalaoPanel(panel)
     local wall     = UI:CreateCard(content, L["Guild wall"], { link = L["Activity"] })
     local raidsIn  = UI:CreateCard(content, "", { dark = true })
     local chat     = UI:CreateCard(content, L["Guild chat"], { dark = true, link = L["Chat"] })
-    for _, c in ipairs({ setup, forYou, board, chimney, fire, wall, raidsIn, chat }) do c.rows = {} end
+    local groupsNow = UI:CreateCard(content, L["Groups now"])
+    for _, c in ipairs({ setup, forYou, board, chimney, fire, wall, raidsIn, chat, groupsNow }) do c.rows = {} end
     panel.cards = { setup = setup, forYou = forYou, board = board, chimney = chimney, fire = fire, wall = wall,
-                    countdown = raidsIn, chat = chat }
+                    countdown = raidsIn, chat = chat, groups = groupsNow }
     chat.link:SetScript("OnClick", open({ id = "guild", sub = "chat" }))
     board.link:SetScript("OnClick", open({ id = "guild", sub = "calendar" }))
     fire.link:SetScript("OnClick", open({ id = "roster" }))
@@ -634,6 +658,7 @@ function GuildOS:CreateSalaoPanel(panel)
         UI:RegisterTourAnchor("salao.fire", fire)
         UI:RegisterTourAnchor("salao.wall", wall)
         UI:RegisterTourAnchor("salao.chat", chat)
+        UI:RegisterTourAnchor("salao.groups", groupsNow)
     end
 
     -- Start raid (#400), under the notes, while this player may lead the invites of the site's raid in its window:
@@ -687,6 +712,27 @@ function GuildOS:CreateSalaoPanel(panel)
     chimney.stockings = {}
     chimney.line = text(chimney, 12, { r = 0.949, g = 0.843, b = 0.690 })
     chimney.line:SetPoint("TOPLEFT", CARD_PAD, -(CARD_PAD + TITLE_H - 4))
+
+    -- Groups now (#449): the guild's open groups seen from the Hall, without the Raids room. A summary line, up
+    -- to MAX_GROUPS lines (those that fit this player first: a role of theirs, a quest in their log) and Find a
+    -- group, which opens Raids › Groups. Its lines are made once and kept.
+    local openGroups = function() UI:OpenWindow("groups") end
+    groupsNow.summary = text(groupsNow, 12, C.paperSoft)
+    groupsNow.find = UI:SetButtonVariant(UI:CreateButton(groupsNow, L["Find a group"], 110, GROUP_BTN_H), "primary")
+    groupsNow.find:SetWidth(math.max(110, math.ceil(groupsNow.find.label:GetStringWidth() or 90) + 24))
+    groupsNow.find:SetScript("OnClick", openGroups)
+    for i = 1, MAX_GROUPS do
+        local r = CreateFrame("Button", nil, groupsNow)
+        r:SetHeight(GROUP_ROW_H)
+        r.main = text(r, 12, groupsNow.ink)
+        r.main:SetPoint("LEFT", 0, 0)
+        r.side = text(r, 11, groupsNow.soft)
+        r.side:SetJustifyH("RIGHT")
+        r.side:SetPoint("RIGHT", 0, 0)
+        r:SetScript("OnClick", openGroups)
+        r:Hide()
+        groupsNow.rows[i] = r
+    end
 
     -- The Guild chat (#449): the last lines of /g under the Notice board, newest at the bottom, a box to answer.
     -- The feed follows new lines while the reader is at its bottom, never pulling one who scrolled up.
@@ -1076,6 +1122,49 @@ function GuildOS:CreateSalaoPanel(panel)
         return y + CARD_PAD - 4
     end
 
+    -- Groups now: drawn from Salao:GroupsNow into one kept table; 0 (no card) while the feature is off.
+    local groupsState = {}
+    local function fillGroups(width)
+        local st = Salao:GroupsNow(groupsState)
+        if not st then
+            for _, r in ipairs(groupsNow.rows) do r:Hide() end
+            return 0
+        end
+        local inner = width - 2 * CARD_PAD
+        local y = CARD_PAD + TITLE_H
+        groupsNow.summary:ClearAllPoints()
+        groupsNow.summary:SetPoint("TOPLEFT", CARD_PAD, -y)
+        groupsNow.summary:SetWidth(inner)
+        groupsNow.summary:SetText(Salao:GroupsSummary(st))
+        y = y + 20
+        local G = GuildOS.Groups
+        for i, r in ipairs(groupsNow.rows) do
+            local g = i <= st.n and st[i] or nil
+            if g then
+                local why = st.fit[i]
+                r:ClearAllPoints()
+                r:SetPoint("TOPLEFT", CARD_PAD, -y)
+                r:SetWidth(inner)
+                local need = G:NeedText(g.need)
+                r.main:SetText(need ~= "" and (clean(G:Title(g)) .. " \194\183 " .. need) or clean(G:Title(g)))
+                local side = why == "quest" and L["you have this quest"] or why == "role" and L["for you"]
+                    or short(st.keys[i])
+                r.side:SetText(side)
+                local sc = why and ANSWER_INK.yes or groupsNow.soft
+                r.side:SetTextColor(sc.r, sc.g, sc.b)
+                r.main:SetWidth(math.max(40, inner - math.ceil(r.side:GetStringWidth() or 0) - 8))
+                r:Show()
+                y = y + GROUP_ROW_H
+            else
+                r:Hide()
+            end
+        end
+        groupsNow.find:ClearAllPoints()
+        groupsNow.find:SetPoint("TOPLEFT", CARD_PAD, -(y + 6))
+        return y + 6 + GROUP_BTN_H + CARD_PAD
+    end
+    panel.FillGroups = fillGroups
+
     local function fillChimney(width)
         local c = Salao:Chimney()
         for _, sk in ipairs(chimney.stockings) do sk:SetAll(false) end
@@ -1182,6 +1271,8 @@ function GuildOS:CreateSalaoPanel(panel)
         end
         local hChimney = fillChimney(rightW)
         local hFire = fillFire(rightW)
+        local hGroups = fillGroups(rightW)
+        groupsNow.laidW = rightW
 
         local function place(f, x, y, width, h)
             f:ClearAllPoints()
@@ -1200,7 +1291,7 @@ function GuildOS:CreateSalaoPanel(panel)
         local yc = yl
         if two then
             local yr0 = 2 + (hCount > 0 and hCount + GUTTER or 0) + (hChimney > 0 and hChimney + GUTTER or 0)
-                + hFire + GUTTER + hWall
+                + hFire + GUTTER + (hGroups > 0 and hGroups + GUTTER or 0) + hWall
             local view = UI:LaidWidth(panel) > 0 and (panel:GetHeight() or 0) or 0
             hChat = math.max(CHAT_MIN, math.max(yr0, view - 10) - yc)
         end
@@ -1210,10 +1301,26 @@ function GuildOS:CreateSalaoPanel(panel)
         yr = place(raidsIn, xr, yr, rightW, hCount)
         yr = place(chimney, xr, yr, rightW, hChimney)
         yr = place(fire, xr, yr, rightW, hFire)
+        -- Under By the fire, above the wall: in the first view at the window's usual size (#449).
+        yr = place(groupsNow, xr, yr, rightW, hGroups)
         yr = place(wall, xr, yr, rightW, hWall)
         content:SetHeight(math.max(yl, yr) + 8)
     end
     panel.Refresh = refresh
+
+    -- Groups now follows the board (LFGBoard:Refresh, which every listing, request and sweep goes through), a
+    -- second after the first of a burst, while the Hall shows: its lines alone when the card keeps its height,
+    -- the whole Hall when it grows or shrinks. One function, made once.
+    if GuildOS.LFGBoard and GuildOS.LFGBoard.OnRefresh then
+        local function repaintGroups()
+            if not (panel:IsVisible() and groupsNow.laidW) then return end
+            local h = fillGroups(groupsNow.laidW)
+            if h ~= (groupsNow:IsShown() and (groupsNow:GetHeight() or 0) or 0) then refresh() end
+        end
+        GuildOS.LFGBoard:OnRefresh(function()
+            if panel:IsVisible() then GuildOS:Coalesce("salaoGroups", 1, repaintGroups) end
+        end)
+    end
 
     panel:SetScript("OnShow", function()
         chat.follow = true

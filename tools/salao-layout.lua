@@ -601,6 +601,110 @@ do
   check(seen > 20, "game font: the Home's texts were checked (" .. seen .. ")")
 end
 
+-- Groups now (#449): the guild's open groups on the Hall, from the real Modules/LFGBoard.lua, Modules/Groups.lua
+-- and Modules/GroupQuests.lua: a summary, the groups that fit first (a role of mine at my level, a quest in my
+-- log), Find a group opening Raids › Groups; with none open a line and the button, never an empty card. Under By
+-- the fire, in the first view, the Guild chat where it was. Its lines are made once; a change on the board
+-- repaints it, a second after the first of a burst.
+for _, style in ipairs({ "guildos", "forever" }) do
+  kit.client({ style = style, officer = true })
+  GuildOS.SafeCall = function(_, fn, ...) return true, fn(...) end
+  fixture()
+  local P0 = build(976, 516)
+  check(not P0.cards.groups.shown, style .. ": no Groups module, no Groups now card")
+  local chatY0, fireY0 = P0.cards.chat.points[1][3], P0.cards.fire.points[1][3]
+
+  function tContains(t, v) for _, x in ipairs(t) do if x == v then return true end end return false end
+  local passThrough = { Serialize = function(_, t) return t end, Deserialize = function(_, d) return true, d end }
+  LibStub = function() return passThrough end
+  C_QuestLog = {
+    GetNumQuestLogEntries = function() return 1 end,
+    GetInfo = function() return { title = "Wanted: Worg Master Kruush", questID = 10809, level = 60, suggestedGroup = 3 } end,
+  }
+  GuildOS.CommSystem = { MSG_TYPES = { LFG = "LG", LFG_GROUP = "GF", LFG_JOIN = "GJ" }, SendMessage = function() end }
+  dofile(ADDON .. "/Data/GroupActivities.lua")
+  dofile(ADDON .. "/Modules/LFGBoard.lua")
+  dofile(ADDON .. "/Modules/GroupQuests.lua")
+  dofile(ADDON .. "/Modules/Groups.lua")
+  local B, G = GuildOS.LFGBoard, GuildOS.Groups
+  B:Initialize()
+  G:Initialize()
+  local function key(n) return GuildOS:GetPlayerKey(n, "Realm") end
+
+  local P = build(976, 516)
+  local card, fire, chat = P.cards.groups, P.cards.fire, P.cards.chat
+  local function rows() local out = {} for _, r in ipairs(card.rows) do if r.shown then out[#out + 1] = r end end return out end
+  check(card.shown and card.__paper and card.title.text == "Groups now", style .. ": Groups now is a parchment card")
+  check(card.summary.text == "No group open right now" and #rows() == 0 and card.find.shown
+    and card.find.label.text == "Find a group" and card.find.variant == "primary",
+    style .. ": none open: one line and Find a group, never an empty card")
+  card.find.scripts.OnClick(card.find)
+  check(kit.opened and kit.opened[1] == "groups", style .. ": Find a group opens Raids › Groups")
+  check(card.points[1][2] == fire.points[1][2] and card.points[1][3] < fire.points[1][3] - fire.h + 1,
+    style .. ": in the right column, right under By the fire")
+  check(-card.points[1][3] + card.h <= 516, style .. ": all of it in the first view at 516px (" .. (-card.points[1][3] + card.h) .. ")")
+  check(chat.points[1][3] == chatY0 and fire.points[1][3] == fireY0, style .. ": the Guild chat and By the fire where they were")
+  local made = #card.rows
+
+  -- This client's catalogue: an activity for my level (60) and one for another.
+  local fitAct, otherAct
+  for _, sec in ipairs(GuildOS.GroupActivities.sections) do
+    for _, it in ipairs(sec.items) do
+      if it.min and G:FitsLevel(it.id, 60) then fitAct = fitAct or it end
+      if it.min and not G:FitsLevel(it.id, 60) then otherAct = otherAct or it end
+    end
+  end
+  check(fitAct and otherAct, style .. ": the catalogue has an activity for level 60 and one for another")
+  local store = GuildOS.db.lfgGroups
+  local NOW0 = GetServerTime()
+  store[key("Bea")] = G:_BuildGroup({ act = otherAct.id, need = { D = 1 }, ttl = 3600 }, NOW0 - 5)
+  store[key("Cid")] = G:_BuildGroup({ act = fitAct.id, need = { T = 1, D = 2 }, ttl = 3600 }, NOW0 - 60)
+  store[key("Dan")] = G:_BuildGroup({ act = "elite-quests", need = { H = 1 }, ttl = 3600,
+                                      quest = { id = 10809, t = "Theirs" } }, NOW0 - 600)
+  store[key("Eva")] = G:_BuildGroup({ act = otherAct.id, need = { H = 1 }, ttl = 3600 }, NOW0 - 1)
+  B:HandleEntry("Fay-Realm", { roles = "D", acts = { otherAct.id }, ttl = 3600 }, "GUILD")
+  B:SetPref("roles", "T")
+  B:Refresh()
+  flush()
+  local r = rows()
+  check(card.summary.text == "4 groups open \194\183 1 looking", style .. ": the summary counts the groups open and who is looking: "
+    .. tostring(card.summary.text))
+  check(#r == 3, style .. ": three lines at most (" .. #r .. ")")
+  check(r[1].main.text:find(fitAct.name, 1, true) and r[1].side.text == "for you"
+    and r[2].main.text:find("Wanted: Worg Master Kruush", 1, true) and r[2].side.text == "you have this quest"
+    and r[3].main.text:find(otherAct.name, 1, true) and r[3].side.text == "Eva",
+    style .. ": the groups that fit first (my role, my quest), then the newest with its leader: "
+    .. tostring(r[1].main.text) .. " / " .. tostring(r[2].main.text) .. " / " .. tostring(r[3].main.text))
+  check(r[1].main.text:find("1 Tank, 2 DPS", 1, true) ~= nil, style .. ": each with its open spots")
+  check(r[1].side.color[2] > r[1].side.color[1], style .. ": what fits me is in the green")
+  check(card.find.shown and card.find.points[1][3] < r[3].points[1][3], style .. ": Find a group under the lines")
+  r[2].scripts.OnClick(r[2])
+  check(kit.opened[1] == "groups", style .. ": a line opens Raids › Groups too")
+  check(-card.points[1][3] + card.h <= 516, style .. ": with three lines still all in the first view (" .. (-card.points[1][3] + card.h) .. ")")
+  check(chat.points[1][3] == chatY0, style .. ": the Guild chat still where it was")
+
+  -- One open, nobody looking.
+  store[key("Bea")], store[key("Cid")], store[key("Dan")] = nil, nil, nil
+  GuildOS.db.lfgBoard[key("Fay")] = nil
+  B:Refresh()
+  flush()
+  check(card.summary.text == "1 group open" and #rows() == 1, style .. ": one group: one line, said so")
+  store[key("Eva")] = nil
+  B:Refresh()
+  flush()
+  check(card.summary.text == "No group open right now" and #rows() == 0 and card.find.shown,
+    style .. ": the last one gone: the empty line and the button again")
+  check(#card.rows == made, style .. ": no line made after the first drawing (" .. #card.rows .. ")")
+
+  -- Switched off in Settings, the card goes.
+  GuildOS.db.settings.modules.groups = false
+  P.Refresh()
+  check(not card.shown, style .. ": with Groups switched off there is no card")
+  GuildOS.db.settings.modules.groups = nil
+  for i = #B.listeners, 1, -1 do B.listeners[i] = nil end
+  C_QuestLog, LibStub, GuildOS.CommSystem = nil, nil, nil
+end
+
 -- One happening, one line on the wall (#449): the game's "left the guild" and this client's roster diff file the
 -- same leave twice, minutes apart; two officers' copies too. One line each.
 do

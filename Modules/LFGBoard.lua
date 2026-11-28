@@ -388,8 +388,15 @@ function LFGBoard:HandleEntry(sender, data, channel)
     self:Refresh()
 end
 
+-- Every change to the board or the groups lands here (Groups calls it too): the Groups tab's paint, then
+-- whoever else listens (the Hall's "Groups now" card, #449), each guarded.
+LFGBoard.listeners = {}
+function LFGBoard:OnRefresh(fn)
+    if type(fn) == "function" then self.listeners[#self.listeners + 1] = fn end
+end
 function LFGBoard:Refresh()
     if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
+    for i = 1, #self.listeners do GuildOS:SafeCall(self.listeners[i]) end
 end
 
 ----------------------------------------------------------------------

@@ -436,10 +436,14 @@ fire(mm, "OnClick", "LeftButton")
 check(not f:IsShown(), "and closes it")
 fire(mm, "OnClick", "RightButton")
 check(GuildOSMinimapMenu and GuildOSMinimapMenu:IsShown(), "a right click opens the minimap menu, GuildOS's own popup")
-local raidsItem, settingsItem, pugItem
+-- The Groups tab's screen is tools/groups-panel.lua's; here it only has to open.
+GuildOS.CreateGroupsPanel = GuildOS.CreateGroupsPanel or function() end
+local raidsItem, settingsItem, pugItem, groupsItem, groupsAt, firstRoomAt
 local menuTexts = {}
-for _, item in ipairs(GuildOS:MinimapMenuItems()) do
+for i, item in ipairs(GuildOS:MinimapMenuItems()) do
   menuTexts[item.text] = true
+  if item.groups then groupsItem, groupsAt = item, i end
+  if item.text == "Salão" and not firstRoomAt then firstRoomAt = i end
   if item.text == "Raids" then raidsItem = item end
   if item.text == "Settings" then settingsItem = item end
   if item.text == "Do I know this pug?" then pugItem = item end
@@ -452,10 +456,16 @@ end
 local roomLabel = {}
 for _, room in ipairs(UI.ROOMS) do roomLabel[room.label] = true end
 for _, def in ipairs(UI:VisibleFeatures("tab")) do
-  check(roomLabel[def.label] or not menuTexts[def.label],
+  check(roomLabel[def.label] or not menuTexts[def.label] or def.id == "groups",
     "the minimap menu no longer lists the feature " .. tostring(def.label))
 end
 check(settingsItem ~= nil and pugItem ~= nil, "and Settings, which the gear opens, and the pug inspector")
+-- Groups near the top (#449): right under the title (and an officer's counted lines), before the rooms.
+check(groupsItem ~= nil and groupsItem.text == "Groups" and groupsAt <= 4 and (firstRoomAt == nil or groupsAt < firstRoomAt),
+  "the minimap menu has Groups near its top, before the rooms (" .. tostring(groupsAt) .. ")")
+groupsItem.func()
+check(f:IsShown() and f.activeRoom == "raids" and f.activeEntry and f.activeEntry.id == "groups",
+  "Groups picked there opens Raids › Groups")
 raidsItem.func()
 check(f:IsShown() and f.activeRoom == "raids", "a room picked there opens in the window")
 settingsItem.func()
@@ -465,6 +475,9 @@ f:ToggleCollapsed()
 check(f.band == "bar", "folded to the bar")
 raidsItem.func()
 check(f.band ~= "bar" and f.activeRoom == "raids", "a room picked while folded unfolds the window")
+f:ToggleCollapsed()
+groupsItem.func()
+check(f.band ~= "bar" and f.activeRoom == "raids" and f.activeEntry.id == "groups", "and Groups too")
 -- A click elsewhere closes the menu without a full-screen catcher (#449): GLOBAL_MOUSE_DOWN where it exists.
 fire(mm, "OnClick", "RightButton")
 local menu = GuildOSMinimapMenu
@@ -1117,6 +1130,28 @@ check(f.h == 28 and g.collapsed and g.restoreW == 1000 and g.restoreH == 620, "2
 check(g.h == 28 and g.left and g.top, "and the fold is saved")
 check(f.points[1][1] == "TOPLEFT", "it folds from its top-left corner")
 check(f.summaryHit and f.summaryHit.shown, "the numbers take the pointer")
+-- Groups on the folded bar (#449): a round tool like the fold beside it, its tooltip, and a click opens Raids ›
+-- Groups with the window unfolded, as the numbers do.
+do
+  local gb = f.groupsButton
+  check(gb and gb.shown and gb.parent == f.titleBar and gb.level > f.titleBar.level and gb.w == f.minimise.w
+    and gb.w == 20 and gb.ring ~= nil, "folded, Groups is a round tool on the bar, the fold's size")
+  check(point(gb) == "RIGHT,-6,0" and gb.points[1][2] == f.minimise and f.summaryText.points[2][2] == gb,
+    "left of the fold, the numbers ending short of it")
+  fire(gb, "OnEnter")
+  check(tip[1] == "Groups" and tip[#tip]:find("Raids", 1, true), "its tooltip says what it is and where it goes")
+  fire(gb, "OnClick")
+  check(not g.collapsed and f.band ~= "bar" and f.activeRoom == "raids" and f.activeEntry.id == "groups",
+    "a click opens Raids › Groups, the window unfolded")
+  check(not gb.shown, "and open, it waits on the bar again")
+  fire(f.minimise, "OnClick")
+  GuildOS.db.settings.modules = GuildOS.db.settings.modules or {}
+  GuildOS.db.settings.modules.groups = false
+  f:LayoutTitle()
+  check(not gb.shown and f.summaryText.points[2][2] == f.minimise, "with Groups switched off it is not on the bar")
+  GuildOS.db.settings.modules.groups = nil
+  f:LayoutTitle()
+end
 fire(f.summaryHit, "OnEnter")
 fire(f.summaryHit, "OnClick")
 check(not g.collapsed and f.band ~= "bar", "and a click on them opens the window back up")
@@ -2004,6 +2039,14 @@ do
   check(win.band == "bar" and win.summaryText.shown and point(win.summaryText, 2) == "RIGHT,-6,0"
     and not (win.metaText.shown or win.nameText.shown or win.crest.shown or win.searchButton.shown or win.helpButton.shown or win.settingsButton.shown),
     "at MIN_W, folded to the bar, the three numbers end short of the fold and the tools wait")
+  -- The bar's width budget at MIN_W (#449): the grip, close, the fold and Groups at the right, and what is left
+  -- for the three numbers still holds them at their longest.
+  local gb = win.groupsButton
+  check(gb.shown and win.summaryText.points[2][2] == gb, "at MIN_W Groups is on the bar")
+  local right = (GRIP_W or 16) + 2 + win.closeButton.w + 6 + win.minimise.w + 6 + gb.w + 6
+  local room = 320 - 10 - right
+  local longest = ("180 \194\183 13d 23h \194\183 99"):len() * 6
+  check(room >= longest, "at MIN_W the numbers keep " .. room .. "px, enough for their longest (" .. longest .. "px)")
   win:Hide()
   GetGuildInfo = realInfo
 end

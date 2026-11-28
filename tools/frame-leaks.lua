@@ -958,6 +958,30 @@ do
   end
 end
 
+-- The Hall's Groups now card (#449): groups opening and closing on the board repaint it (LFGBoard:Refresh, its
+-- listener), and the Hall redraws; its lines are made once.
+do
+  local G, B = GuildOS.Groups, GuildOS.LFGBoard
+  if G and B and db.lfgGroups then
+    local _, home = open("salao", "home")
+    local card = home and home.cards and home.cards.groups
+    check(card ~= nil and card.shown, "the Hall shows Groups now")
+    local keys = {}
+    for i = 1, 4 do keys[i] = PEOPLE[i + 1][1] .. "-MundodeForever" end
+    local flip = 0
+    steady("the Hall's Groups now (the board changing)", function()
+      flip = flip + 1
+      for i, k in ipairs(keys) do
+        db.lfgGroups[k] = (i <= (flip % 4) + 1) and G:_BuildGroup({ act = "elite-quests", need = { T = 1, D = i }, ttl = 3600 }, NOW - i) or nil
+      end
+      B:Refresh()
+      if home and home.Refresh then home.Refresh() end
+    end)
+    for _, k in ipairs(keys) do db.lfgGroups[k] = nil end
+    B:Refresh()
+  end
+end
+
 -- Every other module hook, fired while the window is closed, makes nothing.
 do
   closeWindow()

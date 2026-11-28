@@ -639,21 +639,35 @@ GuildOS.db.lfgPrefs.toast = true
 Groups:Create("steamvault", { T = 1 }, "", 3600, false)
 check(not Groups:_ShouldToast(dm, 70, false), "nor while I lead a group of my own")
 Groups:Disband()
-check(Groups:_Announce(key("Bea"), "Bea", Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 3600 }, NOW)) == "toast"
+-- Combat and instances are silent (#449, "Tell me when a group fits"): no notice and no chat line, the group
+-- still on the board.
+function InCombatLockdown() return true end
+check(Groups:_Announce(key("Cid"), "Cid", Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 3600 }, NOW)) == "quiet"
+  and #toasts == 0 and #printed == 0, "in combat a group that fits says nothing at all")
+InCombatLockdown = nil
+function IsInInstance() return true, "party" end
+check(Groups:_Announce(key("Cid"), "Cid", Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 3600 }, NOW)) == "quiet"
+  and #toasts == 0 and #printed == 0, "nor in an instance")
+IsInInstance = nil
+local kz = Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 3600 }, NOW)
+check(Groups:_Announce(key("Bea"), "Bea", kz) == "toast"
   and toasts[1].kind == "group" and toasts[1].act == "karazhan" and #printed == 0,
   "a new group that fits a level-less client is a notice, not a chat line")
--- In combat the notice is still asked for (#449): GuildOS:ShowWhenClear holds it until combat ends,
--- where before it was dropped for good.
-function InCombatLockdown() return true end
-toasts = {}
-check(Groups:_Announce(key("Cid"), "Cid", Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 3600 }, NOW)) == "toast"
-  and #toasts == 1, "in combat a group that fits is still a notice, held for after it")
-InCombatLockdown = nil
+check(Groups:_Announce(key("Bea"), "Bea", kz) == "quiet" and #toasts == 1 and #printed == 0,
+  "one notice a group: the same group heard again says nothing")
+-- At most one every FIT_COOLDOWN: a second group inside it is the chat line, as one that does not fit.
+GuildOS.db.lfgPrefs.notify = true
+check(Groups:_Announce(key("Dan"), "Dan", Groups:_BuildGroup({ act = "karazhan", need = { D = 1 }, ttl = 3600 }, NOW), NOW + 10) == "chat"
+  and #toasts == 1 and #printed == 1, "a second group inside the cooldown is no second notice")
+check(Groups:_Announce(key("Eva"), "Eva", Groups:_BuildGroup({ act = "karazhan", need = { H = 1 }, ttl = 3600 }, NOW),
+  NOW + Groups.FIT_COOLDOWN) == "toast" and #toasts == 2, "past the cooldown the next group that fits gets its notice")
+printed = {}
 local panelSrc = assert(io.open(ADDON .. "/UI/GroupsPanel.lua", "rb")):read("*a")
 check(panelSrc:find("self:ShowWhenClear(\"groups:\"", 1, true) ~= nil, "and the notice opens through ShowWhenClear, never in combat")
 check(panelSrc:find("G:StillTrue(n)", 1, true) ~= nil, "and checks, when it shows, that it is still true")
 GuildOS.db.lfgPrefs.toast = false
-check(Groups:_Announce(key("Bea"), "Bea", dm) == "chat" and #printed == 1, "with the notices off it is the chat line")
+check(Groups:_Announce(key("Bea"), "Bea", dm, NOW + 9999) == "chat" and #printed == 1, "with the notices off it is the chat line")
+GuildOS.db.lfgPrefs.toast = true
 GuildOS.GroupsToast = nil
 
 -- A notice that waited behind combat says only what is still true (#449)
@@ -1013,6 +1027,72 @@ do
   Groups:HandleGroup("Bea-Realm", { act = "elite-quests", need = { D = 1 }, ttl = 3600, quest = { id = 155, t = "Theirs" } }, "GUILD")
   check(GuildOS.db.lfgGroups[key("Bea")].quest.id == 155 and Groups:Title(GuildOS.db.lfgGroups[key("Bea")]) == "The Defias Brotherhood",
     "a group heard is named by my log's title for its quest")
+
+  -- "Tell me when a group fits" (#449): a group for a quest in my log is one for me, whatever my roles, and it
+  -- gets one notice.
+  local qToasts = {}
+  GuildOS.GroupsToast = function(_, n) qToasts[#qToasts + 1] = n end
+  fresh()
+  Q:Refresh()
+  Board:SetPref("roles", "H")
+  local qg = Groups:_BuildGroup({ act = "elite-quests", need = { D = 1 }, ttl = 3600, quest = { id = 155, t = "x" } }, NOW)
+  check(Groups:FitReason(qg, 1, "H") == "quest", "a group for a quest in my log fits me, as \"quest\"")
+  check(Groups:_ShouldToast(qg, 1, false), "and is worth a notice, with no spot in a role of mine")
+  local notMine = Groups:_BuildGroup({ act = "karazhan", need = { D = 1 }, ttl = 3600, quest = { id = 777, t = "x" } }, NOW)
+  check(Groups:FitReason(notMine, 70, "H") == nil and not Groups:_ShouldToast(notMine, 70, false),
+    "a quest not in my log and no spot in my role: no fit, no notice")
+  Groups:HandleGroup("Cid-Realm", { act = "elite-quests", need = { D = 1 }, ttl = 3600, quest = { id = 155, t = "x" } }, "GUILD")
+  check(#qToasts == 1 and qToasts[1].kind == "group" and qToasts[1].quest.id == 155, "a guildmate's group for my quest: one notice")
+  check(Groups:StillTrue(qToasts[1], NOW), "still true when it shows, though my roles have no spot in it")
+  CLOCK = CLOCK + 10
+  Groups:HandleGroup("Cid-Realm", { act = "elite-quests", need = { D = 1 }, ttl = 3600, quest = { id = 155, t = "x" } }, "GUILD")
+  check(#qToasts == 1, "the same group said again is no second notice")
+  GuildOS.GroupsToast = nil
+  Board:SetPref("roles", "")
+
+  -- Groups now (#449): the Hall's card, the bar's tooltip and the minimap's menu read this. Guildmates' open
+  -- groups and who is looking, me left out; those that fit me first, then the newest; the caller's table refilled.
+  fresh()
+  Q:Refresh()
+  Board:SetPref("roles", "T")
+  local store = GuildOS.db.lfgGroups
+  store[key("Bea")] = Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 3600 }, NOW - 100)
+  store[key("Cid")] = Groups:_BuildGroup({ act = "elite-quests", need = { D = 1 }, ttl = 3600, quest = { id = 155, t = "x" } }, NOW - 300)
+  store[key("Dan")] = Groups:_BuildGroup({ act = "karazhan", need = { D = 1 }, ttl = 3600 }, NOW - 5)
+  store[key("Eva")] = Groups:_BuildGroup({ act = "karazhan", need = { T = 1, D = 1 }, ttl = 3600 }, NOW - 10)
+  store[key("Fay")] = Groups:_BuildGroup({ act = "karazhan", need = { T = 1 }, ttl = 1800 }, NOW - 4000)   -- ended
+  store[key("Gus")] = { act = "karazhan", need = { T = 0, H = 0, D = 0 }, ts = NOW, ttl = 3600, n = 5, max = 5 }   -- full
+  Groups:Create("steamvault", { T = 1 }, "", 3600, false)   -- mine
+  Board:HandleEntry("Bea-Realm", { roles = "D", acts = { "karazhan" }, ttl = 3600 }, "GUILD")
+  Board:HandleEntry("Hal-Realm", { roles = "H", acts = {}, ttl = 3600 }, "GUILD")
+  Board:SetAvailable(nil, "", 3600, false, "T", { "karazhan" })
+  local now1 = Groups:Now(nil, NOW)
+  check(now1.open == 4 and now1.looking == 2, "four guildmates' groups open, two looking: mine, an ended and a full one left out ("
+    .. now1.open .. ", " .. now1.looking .. ")")
+  check(now1.n == 3 and now1.keys[1] == key("Eva") and now1.keys[2] == key("Bea") and now1.keys[3] == key("Cid"),
+    "the three that fit me first, newest first: " .. tostring(now1.keys[1]) .. ", " .. tostring(now1.keys[2]) .. ", " .. tostring(now1.keys[3]))
+  check(now1.fit[1] == "role" and now1.fit[3] == "quest" and now1[1] == store[key("Eva")], "each with why it fits, the listing as stored")
+  Board:SetPref("roles", "D")
+  local again = Groups:Now(now1, NOW)
+  check(again == now1 and again.keys[1] == key("Dan") and again.fit[1] == "role", "the same table refilled: my roles changed the order")
+  store[key("Bea")], store[key("Cid")], store[key("Eva")] = nil, nil, nil
+  again = Groups:Now(now1, NOW)
+  check(again.n == 1 and again[2] == nil and again.keys[2] == nil and again.fit[2] == nil and again.open == 1,
+    "fewer groups: what was drawn before is cleared")
+  store[key("Dan")] = nil
+  again = Groups:Now(now1, NOW)
+  check(again.open == 0 and again.n == 0 and again[1] == nil, "none open: nothing")
+  Groups:Disband()
+  Board:SetPref("roles", "")
+
+  -- Whoever listens hears every change to the board (the Hall's card), the Groups tab's paint still first.
+  local order = {}
+  Board.uiRefresh = function() order[#order + 1] = "tab" end
+  Board:OnRefresh(function() order[#order + 1] = "hall" end)
+  Board:Refresh()
+  check(order[1] == "tab" and order[2] == "hall", "LFGBoard:Refresh paints the tab, then tells its listeners")
+  Board.uiRefresh = nil
+  for i = #Board.listeners, 1, -1 do Board.listeners[i] = nil end
   issecretvalue = nil
 end
 

@@ -18,7 +18,7 @@
 -- It reorganises by width through the resize ladder (UI/Layout.lua). Doors
 -- and pills that do not fit fold into "»n"; under 520px the doors become a
 -- one-line selector and the content switches to Home; under 420px only the
--- 28px bar stays, with three numbers. Nothing animates.
+-- 28px bar stays, with three numbers and Groups (#449). Nothing animates.
 -- Position, size and the active tab persist in settings.window.
 ----------------------------------------------------------------------
 local CreateFrame = rawget(GuildOS, "CountedCreateFrame") or function(...) return _G.CreateFrame(...) end   -- counted: /gos debug mem
@@ -63,6 +63,7 @@ local TOOL         = 28
 local CLOSE_SIZE   = 24
 local TOOL_GAP     = 6
 local GRIP         = 16
+local BAR_TOOL     = 20      -- a round tool on the folded bar (the fold, Groups)
 local HOME         = "home"  -- the Now tab
 local DASH         = "\226\128\148"
 local DOT          = " \194\183 "
@@ -496,6 +497,27 @@ local function createWindow()
         function() if GuildOS.OpenBlizzardGuildUI then GuildOS:OpenBlizzardGuildUI() end end)
     f.searchButton, f.settingsButton, f.helpButton, f.blizzardButton = searchBtn, gearBtn, helpBtn, blizzBtn
 
+    -- Groups on the folded bar (#449): a round tool left of the fold, as small as it is there. It opens Raids ›
+    -- Groups, which unfolds the window (UI:OpenWindow); its tooltip says how many groups are open now.
+    local groupsBtn = UI:TitleBarButton(bar, "tool", "Interface\\Icons\\INV_Misc_GroupNeedMore", BAR_TOOL)
+    groupsBtn:SetScript("OnClick", function() UI:OpenWindow("groups") end)
+    groupsBtn:HookScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine(L["Groups"], C.text.r, C.text.g, C.text.b)
+        local S = UI.Salao
+        local st = S and S.GroupsNow and S:GroupsNow(f.groupsTip)
+        if st then
+            f.groupsTip = st
+            GameTooltip:AddLine(S:GroupsSummary(st), 1, 1, 1)
+        end
+        GameTooltip:AddLine(L["Click to find a group in Raids \226\128\186 Groups."], C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        GameTooltip:Show()
+    end)
+    groupsBtn:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    groupsBtn:Hide()
+    f.groupsButton = groupsBtn
+
     -- The help hub, or with `here` the tour chapter or guide for the screen on show.
     function f:OpenHelp(here)
         local O = GuildOS.Onboarding
@@ -515,7 +537,7 @@ local function createWindow()
 
     local summary = text(bar, 11, nil, C.text)
     summary:SetPoint("LEFT", 10, 0)
-    summary:SetPoint("RIGHT", minimise, "LEFT", -6, 0)
+    summary:SetPoint("RIGHT", minimise, "LEFT", -6, 0)   -- laid again by LayoutTitle: short of Groups on the bar
     summary:Hide()
     f.summaryText = summary
     -- The folded bar's three numbers, unlabelled to fit: the pointer on them says what they are, and a
@@ -1267,6 +1289,10 @@ local function createWindow()
         gearBtn:SetShown(not isBar)
         blizzBtn:SetShown(not isBar)
         rule:SetShown(not isBar)
+        -- Groups waits on the bar while the feature is on (#449); the three numbers end short of it.
+        local groupsOn = isBar and UI.GetFeature ~= nil and UI:GetFeature("groups") ~= nil
+            and GuildOS:IsFeatureEnabled("groups") or false
+        groupsBtn:SetShown(groupsOn)
         close:ClearAllPoints()
         close:SetPoint("RIGHT", bar, "RIGHT", isBar and -(GRIP + 2) or -10, 0)
         minimise:ClearAllPoints()
@@ -1280,7 +1306,12 @@ local function createWindow()
         blizzBtn:ClearAllPoints()
         blizzBtn:SetPoint("RIGHT", searchBtn, "LEFT", -TOOL_GAP, 0)
         if isBar then
-            minimise:SetSize(20, 20)
+            minimise:SetSize(BAR_TOOL, BAR_TOOL)
+            groupsBtn:ClearAllPoints()
+            groupsBtn:SetPoint("RIGHT", minimise, "LEFT", -TOOL_GAP, 0)
+            summary:ClearAllPoints()
+            summary:SetPoint("LEFT", 10, 0)
+            summary:SetPoint("RIGHT", groupsOn and groupsBtn or minimise, "LEFT", -6, 0)
             return
         end
         minimise:SetSize(TOOL, TOOL)
