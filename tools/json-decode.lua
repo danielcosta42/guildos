@@ -55,4 +55,32 @@ for _, text in ipairs({
 end
 check(decode(nil) == nil and decode(7) == nil and decode({}) == nil, "nothing that is not text is read")
 
+-- Strings are read to the next quote or backslash in one find (#449): what the character loop before it read.
+check(decode('"a\\nb\\tc\\rd"') == "a\nb\tc\rd" and decode('"x\\"y\\\\z"') == 'x"y\\z', "escapes")
+check(decode('"\\u0041"') == "u0041" and decode('""') == "" and decode('["", "a"]')[2] == "a", "the rest as it was")
+check(decode('"abc') == "" and decode('"ab\\ncd') == "ab\n" and decode('"ab\\') == "ab",
+  "a string left open: the pieces before its last escape, as before")
+check(decode('{"k":"v\\"w","n":[1,"two",{"x":"y"}]}').n[3].x == "y", "an escaped quote does not end the string")
+
+-- The paced read (a coroutine spreading a big block over frames): the same values, `pace` called as it goes. No step
+-- budget here (LuaJIT keeps one hook for every coroutine).
+debug.sethook()
+do
+  local parts = {}
+  for i = 1, 3000 do parts[i] = string.format('{"key":"Member%d","n":%d,"t":"a\\"b","l":[%d,true,null,false]}', i, i, i) end
+  local text = '{"fmt":"X","list":[' .. table.concat(parts, ",") .. ']}'
+  local paces = 0
+  local paced = GuildOS.JsonDecodePaced(text, function() paces = paces + 1 end)
+  local whole = decode(text)
+  local same = paced and #paced.list == 3000 and paces > 0
+  for i = 1, 3000 do
+    local a, b = paced.list[i], whole.list[i]
+    same = same and a.key == b.key and a.n == b.n and a.t == b.t and a.t == 'a"b' and a.l[1] == b.l[1] and a.l[2] == true
+      and a.l[3] == false and b.l[3] == false   -- a null in a list leaves no hole, as always
+  end
+  check(same, "the paced read reads what the whole read reads, pacing as it goes")
+  check(not pcall(GuildOS.JsonDecodePaced, "[1 2]", function() end) and GuildOS.JsonDecodePaced(7) == nil,
+    "the paced read raises on text that is not JSON (its coroutine's resume catches it)")
+end
+
 print(("json-decode: %d checks passed"):format(checks))

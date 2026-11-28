@@ -856,9 +856,21 @@ end
 
 --- Whether two names are one guild's, as the site takes them (guildos-web's sameGuildName): the brackets aside, and
 --- capitals aside past ASCII (FoldCase). An accent is another letter.
+-- Each name's folded form is kept (#449): the inbox's raids and blocks ask on every addon message and roster update
+-- with the same few names, and folding made new strings and closures each time. Bounded: emptied past GUILD_FOLD_MAX.
+local GUILD_FOLD_MAX = 256
+local guildFold, guildFoldN = {}, 0
+local function foldedGuild(s)
+    local f = guildFold[s]
+    if f then return f end
+    f = GuildOS.FoldCase(GuildOS.BareGuildName(s))
+    if guildFoldN >= GUILD_FOLD_MAX then guildFold, guildFoldN = {}, 0 end
+    guildFold[s], guildFoldN = f, guildFoldN + 1
+    return f
+end
 function GuildOS.SameGuildName(a, b)
     if type(a) ~= "string" or type(b) ~= "string" then return false end
-    return GuildOS.FoldCase(GuildOS.BareGuildName(a)) == GuildOS.FoldCase(GuildOS.BareGuildName(b))
+    return foldedGuild(a) == foldedGuild(b)
 end
 
 function GuildOS:SanitizeUserText(text, maxBytes)
@@ -920,8 +932,11 @@ end
 ----------------------------------------------------------------------
 local function malformed() error("json", 0) end
 
-local function decodeJson(s)
+local JSON_PACE_EVERY = 512   -- values between two calls of a paced read's `pace`
+
+local function decodeJson(s, pace)
     local pos = 1
+    local count = 0
 
     local function skip()
         local np = s:match("^%s*()", pos)
@@ -930,28 +945,34 @@ local function decodeJson(s)
 
     local parseValue  -- forward declaration (used by parseArray/parseObject)
 
+    -- To the next quote or backslash in one find, not a character at a time (#449: a megabyte of the alliance's
+    -- directory took a quarter of a second here). What it reads is what the loop it replaced read: an escape keeps
+    -- the character after it (n, r and t as their control characters), and a string left open ends the text with
+    -- only the pieces before its last escape.
     local function parseString()
         pos = pos + 1  -- consume opening "
-        local parts, start = {}, pos
-        while pos <= #s do
-            local c = s:sub(pos, pos)
-            if c == '"' then
-                parts[#parts+1] = s:sub(start, pos - 1)
-                pos = pos + 1
-                return table.concat(parts)
-            elseif c == '\\' then
-                parts[#parts+1] = s:sub(start, pos - 1)
-                pos = pos + 1
-                local e = s:sub(pos, pos)
-                parts[#parts+1] = (e == 'n' and '\n') or (e == 'r' and '\r')
-                              or  (e == 't' and '\t') or e
-                pos   = pos + 1
-                start = pos
-            else
-                pos = pos + 1
+        local parts, start = nil, pos
+        while true do
+            local q = s:find('["\\]', pos)
+            if not q then
+                if pos <= #s then pos = #s + 1 end
+                return parts and table.concat(parts) or ""
             end
+            if s:byte(q) == 34 then   -- "
+                pos = q + 1
+                if not parts then return s:sub(start, q - 1) end
+                parts[#parts+1] = s:sub(start, q - 1)
+                return table.concat(parts)
+            end
+            parts = parts or {}
+            parts[#parts+1] = s:sub(start, q - 1)
+            pos = q + 1
+            local e = s:sub(pos, pos)
+            parts[#parts+1] = (e == 'n' and '\n') or (e == 'r' and '\r')
+                          or  (e == 't' and '\t') or e
+            pos   = pos + 1
+            start = pos
         end
-        return table.concat(parts)
     end
 
     local function parseNumber()
@@ -1005,6 +1026,10 @@ local function decodeJson(s)
     end
 
     parseValue = function()
+        if pace then
+            count = count + 1
+            if count >= JSON_PACE_EVERY then count = 0; pace() end
+        end
         skip()
         local c = s:sub(pos, pos)
         if     c == '"' then return parseString()
@@ -1032,6 +1057,14 @@ end
 -- Shared: SoftRes reads Gargul's JSON with it and the companion import the site's. It lives here,
 -- loaded on every client, because SoftRes is absent on retail and the import is not (issue #182).
 GuildOS.JsonDecode = JsonDecode
+
+-- The same read with `pace` called every JSON_PACE_EVERY values (#449), for a coroutine that spreads a big block over
+-- frames by yielding there. No pcall around it (Lua 5.1 cannot yield across one): text that is not JSON raises, and
+-- the coroutine's resume is what catches it. Nil for what is not a string.
+function GuildOS.JsonDecodePaced(s, pace)
+    if type(s) ~= "string" then return nil end
+    return decodeJson(s, pace)
+end
 
 function GuildOS:RegisterUtilTests()
     if not self.SelfTest then return end
