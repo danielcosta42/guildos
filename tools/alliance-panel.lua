@@ -113,7 +113,23 @@ local A, Chat = GuildOS.Alliance, GuildOS.AllianceChat
 Chat:Prefs()
 
 local pact, siteSays, joinErr = nil, false, nil
+-- The leader's switches (site spec 123), as AllianceLink:Shares answers them: everything received unless a check
+-- says otherwise.
+local ITEMS = { "chat", "room", "raids", "directory", "crafters", "candidates", "bans", "map" }
+local shareOn = {}
+for _, item in ipairs(ITEMS) do shareOn[item] = { send = item == "chat" or item == "room", recv = true } end
 GuildOS.AllianceLink = {
+  Shares = function(_, item, dir) local v = shareOn[item]; return v ~= nil and v[dir] == true end,
+  ShareLists = function(self)
+    local s, r = {}, {}
+    for _, item in ipairs(ITEMS) do
+      if item ~= "candidates" then
+        if self:Shares(item, "send") then s[#s + 1] = item end
+        if self:Shares(item, "recv") then r[#r + 1] = item end
+      end
+    end
+    return s, r
+  end,
   Pact = function() return pact end,
   Active = function() return pact ~= nil end,
   ChannelName = function() return pact and "GOSANUCLEO" end,
@@ -190,6 +206,20 @@ check(t:find("Online now", 1, true) and t:find("Bob |cff", 1, true) and not t:fi
 check(t:find("Best effort: only who spoke on the alliance channel or runs GuildOS is seen.", 1, true),
   "saying it is a best effort")
 check(t:find("Alliance room", 1, true), "the alliance room")
+check(t:find("This guild sends: the shared /g, the alliance room.", 1, true)
+  and t:find("This guild receives: the shared /g, the alliance room, open raids, the directory, crafters, bans, positions on the map.", 1, true),
+  "what this guild sends and receives, as the site set it (site spec 123)")
+shareOn.chat.send, shareOn.room.send = false, false
+for _, item in ipairs(ITEMS) do shareOn[item].recv = false end
+parent.SelectSub("hall")
+t = texts(hall)
+check(t:find("This guild sends: nothing.", 1, true) and t:find("This guild receives: nothing.", 1, true), "and nothing, said so")
+parent.SelectSub("setup")
+check(texts(setup):find("This guild sends: nothing.", 1, true), "the Officers' Room says it too")
+shareOn.chat.send, shareOn.room.send = true, true
+for _, item in ipairs(ITEMS) do shareOn[item].recv = true end
+parent.SelectSub("hall")
+t = texts(hall)
 check(t:find("apart from /g. Every member of every allied guild can read it.", 1, true), "what the room is, under its title")
 check(t:find("connecting...", 1, true), "joining: the room says connecting")
 joinErr = { name = "GOSANUCLEO", reason = "WRONG_PASSWORD" }

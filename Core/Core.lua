@@ -389,6 +389,8 @@ local MODULE_START = {
     { "Groups" },
     -- The live guild map (issue #449, specs/salao/mapa.md): positions only while somebody looks.
     { "GuildMap" },
+    -- The alliance's guilds on the world map, same zone only, when the site shares the map (site spec 123).
+    { "AllianceMap" },
     { "PugInspector" },
     -- The Crafts switch stops every crafts module and its sync, not only the tab (audit B25).
     { "RecipeTracker", feature = "recipes", ui = "recipes", drop = true },

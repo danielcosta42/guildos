@@ -191,10 +191,20 @@ end
 -- GOSALLY1 (alianca.md §3.2): the site's directory and its open raids, read by CompanionImport
 -- (AllianceBlock, every field checked there) and kept in memory only. A block counts only for the
 -- alliance in force, and only when that alliance is the site's: same tag, same key version as the
--- GOSGILD1's code. A pasted code gets the chat only (§3.3): nothing here.
+-- GOSGILD1's code. A pasted code gets the chat only (§3.3): nothing here. And only what this guild receives
+-- (the leader's switches, GOSGILD1.alliance.share, site spec 123): the directory with directory.recv, its recipes
+-- with crafters.recv, the open raids with raids.recv. An old site's block, with no switches, receives none of them.
 ----------------------------------------------------------------------
 Alliance.RAID_GRACE = 3 * 3600   -- an open raid that began up to three hours ago is still shown
 Alliance.MAP_TTL    = 60         -- seconds the recipe → item map built from the guild's own scans holds
+
+-- Whether this guild receives `item` of the alliance (the leader's switches on guildos.me, site spec 123:
+-- AllianceLink:Shares). GOSALLY1 is read exactly as before; what this guild does not receive is not shown.
+local function receives(item)
+    local link = GuildOS.AllianceLink
+    return link ~= nil and link.Shares ~= nil and link:Shares(item, "recv")
+end
+Alliance._Receives = receives
 
 function Alliance:SiteBlock()
     local pact = self:Get()
@@ -284,9 +294,11 @@ end
 -- never in the site's block. Rebuilt only when the block or the recipe map changes.
 function Alliance:Directory()
     local block = self:SiteBlock()
-    if not block then return {} end
+    -- The members only when this guild receives the directory, and their recipes only when it receives crafters.
+    if not block or not receives("directory") then return {} end
+    local crafters = receives("crafters")
     local map, rev = self:_RecipeMap()
-    if self._dirOf == block and self._dirRev == rev then return self._dir end
+    if self._dirOf == block and self._dirRev == rev and self._dirCrafters == crafters then return self._dir end
     local mine = self:MyGuildName()
     local out = {}
     for _, g in ipairs(block.guilds) do
@@ -294,7 +306,7 @@ function Alliance:Directory()
             local members = {}
             for _, m in ipairs(g.members) do
                 local recipes, profs, seen = {}, {}, {}
-                for _, id in ipairs(m.spells or {}) do
+                for _, id in ipairs(crafters and m.spells or {}) do
                     local item, prof = map(id)
                     if item and not recipes[item] then recipes[item] = prof or true end
                     if prof and not seen[prof] then
@@ -308,7 +320,7 @@ function Alliance:Directory()
             out[#out + 1] = { guild = g.name, realm = g.realm, via = g.via, members = members }
         end
     end
-    self._dirOf, self._dirRev, self._dir = block, rev, out
+    self._dirOf, self._dirRev, self._dir, self._dirCrafters = block, rev, out, crafters
     return out
 end
 
@@ -317,7 +329,7 @@ end
 function Alliance:OpenRaids(at)
     local block = self:SiteBlock()
     local out = {}
-    if not block then return out end
+    if not block or not receives("raids") then return out end
     at = at or now()
     for _, r in ipairs(block.raids) do
         if r.startsAt >= at - Alliance.RAID_GRACE and not self:IsBlocked(r.guild) then
@@ -503,7 +515,7 @@ end
 -- whisper, online }, the ones on now first. `recipes` in a directory row is keyed by the item it makes.
 function Alliance:FindCrafters(itemId)
     local out = {}
-    if not self:Get() or not itemId then return out end
+    if not self:Get() or not itemId or not receives("crafters") then return out end
     local mine = self:MyGuildName()
     local onNow = {}
     for _, p in ipairs(self:OnlineNow()) do onNow[p.name:lower()] = true end

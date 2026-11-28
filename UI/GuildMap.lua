@@ -12,6 +12,9 @@
 --     Warmth, which draws the circle and builds camps.
 --   * On the minimap: a dot per guildmate in the zone, at their bearing and distance (held at the edge when
 --     out of range), turning with a rotating minimap; none in an instance.
+--   * Allies (the alliance's other guilds, Modules/AllianceMap.lua, site spec 123): on the WORLD MAP only, only those
+--     in the zone this client is in, a smaller avatar ringed in their guild's colour with the guild's initials under
+--     it; hover names the guild. Never on the minimap, never in the guild list.
 -- While the world map is open this client watches the shown map (GuildMap:SetWatch), and that is what makes
 -- guildmates send.
 --
@@ -89,6 +92,11 @@ local dirty = true
 local flashKey, flashUntil
 local camps = {}           -- the last GuildMap:GetCamps() drawn on the shown map
 local campPins, nCampPins = {}, 0
+local allyPins, nAllyPins = {}, 0   -- allies in this zone (AllianceMap), world map only
+local allyOf = {}          -- an ally's key -> its pin
+local ALLY_SIZE = 16
+
+local function AM() return rawget(GuildOS, "AllianceMap") end
 
 ----------------------------------------------------------------------
 -- World map pins
@@ -108,6 +116,96 @@ local function AcquirePin(i)
     pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
     pins[i] = pin
     return pin
+end
+
+----------------------------------------------------------------------
+-- Allies' pins: the alliance's other guilds in this zone (AllianceMap), on the world map only
+----------------------------------------------------------------------
+-- A guild's own colour (Alliance.GuildColor), the gold where there is none.
+local function guildRGB(guild)
+    local A = GuildOS.Alliance
+    if A and A.GuildColor then return A.GuildColor(guild) end
+    return C.gold2.r, C.gold2.g, C.gold2.b
+end
+
+local function ShowAllyTooltip(owner, a)
+    if not a then return end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    local cc = GuildOS.ClassColors[a.class or ""] or C.text
+    GameTooltip:AddLine(a.name or "?", cc.r, cc.g, cc.b)
+    local gr, gg, gb = guildRGB(a.guild)
+    GameTooltip:AddLine(string.format(L["Allied guild: %s"], tostring(a.guild or "?")), gr, gg, gb)
+    if a.level and a.class then
+        GameTooltip:AddLine(string.format(L["Level %d %s"], a.level, className(a.class)), C.text.r, C.text.g, C.text.b)
+    end
+    GameTooltip:AddLine(a.zone or L["Unknown zone"], C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    GameTooltip:AddLine(string.format(L["Updated %d s ago"], math.floor((a.age or 0) + 0.5)),
+        C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    GameTooltip:Show()
+end
+
+local function AcquireAllyPin(i)
+    local pin = allyPins[i]
+    if pin then return pin end
+    pin = UI:CreateAvatar(layer, ALLY_SIZE, false)
+    pin:EnableMouse(true)
+    pin.tag = pin:CreateFontString(nil, "OVERLAY")
+    if pin.tag.SetFontObject and _G.GameFontNormalSmall then pin.tag:SetFontObject(_G.GameFontNormalSmall) end
+    pin.tag:SetPoint("TOP", pin, "BOTTOM", 0, -1)
+    pin:SetScript("OnEnter", function(self)
+        local a
+        local A = AM()
+        for _, row in ipairs(A and A:GetAllies() or {}) do if row.key == self.key then a = row end end
+        ShowAllyTooltip(self, a)
+    end)
+    pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    allyPins[i] = pin
+    return pin
+end
+
+-- The allies of this zone: an avatar each (class from the directory, when it names them), ringed in the guild's
+-- colour, the guild's initials under it.
+local function LayoutAllyPins(shown)
+    local A = AM()
+    local rows = (A and shown) and A:GetAllies() or {}
+    allyOf = {}
+    local used = 0
+    for _, a in ipairs(rows) do
+        if a.x and GM():_PlaceOn(shown, a.mapID, a.x, a.y) then
+            used = used + 1
+            local pin = AcquireAllyPin(used)
+            pin.key = a.key
+            allyOf[a.key] = pin
+            pin:SetMember(a.name, a.class, false)
+            local gr, gg, gb = guildRGB(a.guild)
+            if pin.ring then pin.ring:SetVertexColor(gr, gg, gb, 1) end
+            pin.tag:SetText(A.GuildTag(a.guild))
+            pin.tag:SetTextColor(gr, gg, gb)
+        end
+    end
+    for i = used + 1, #allyPins do allyPins[i]:Hide(); allyPins[i].key = nil end
+    nAllyPins = used
+end
+
+local function MoveAllyPins(shown, w, h, scale, t)
+    local A = AM()
+    if nAllyPins == 0 or not A then return end
+    for i = 1, nAllyPins do allyPins[i].seen = false end
+    local G = GM()
+    A:ForEachAlly(t, function(a, x, y, alpha)
+        local pin = allyOf[a.key]
+        if not pin then return end
+        local sx, sy
+        if x then sx, sy = G:_PlaceOn(shown, a.mapID, x, y) end
+        if not sx then return end
+        pin.seen = true
+        pin:SetScale(scale)
+        pin:ClearAllPoints()
+        pin:SetPoint("CENTER", layer, "TOPLEFT", sx * w / scale, -sy * h / scale)
+        pin:SetAlpha(alpha)
+        pin:Show()
+    end)
+    for i = 1, nAllyPins do if not allyPins[i].seen then allyPins[i]:Hide() end end
 end
 
 ----------------------------------------------------------------------
@@ -177,15 +275,16 @@ end
 -- Moves every drawn pin to where its guildmate is now (the glide), at the zoom's size. Cheap: affine maths on
 -- cached transforms, our own frames only.
 local function MovePins()
-    if not layer or (nPins == 0 and nCampPins == 0) then return end
+    if not layer or (nPins == 0 and nCampPins == 0 and nAllyPins == 0) then return end
     local w, h = layer:GetWidth(), layer:GetHeight()
     if not w or w <= 0 or not h or h <= 0 then return end
     local shown = Compat.GetShownMapID()
     local canvasScale, pct = Compat.WorldMapZoom()
     local scale = (1 + (PIN_ZOOM - 1) * pct) / canvasScale
     MoveCampPins(shown, w, h, scale)
-    if nPins == 0 then return end
     local t = GetTime()
+    MoveAllyPins(shown, w, h, scale, t)
+    if nPins == 0 then return end
     local G = GM()
     for i = 1, nPins do pins[i].seen = false end
     G:ForEachLive(t, function(p, x, y, alpha)
@@ -227,6 +326,7 @@ local function LayoutPins()
     for i = used + 1, #pins do pins[i]:Hide(); pins[i].key = nil end
     nPins = used
     LayoutCampPins(shown)
+    LayoutAllyPins(shown)
     MovePins()
 end
 

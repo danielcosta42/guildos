@@ -84,6 +84,16 @@
 -- from guildos.me through the companion (specs/salao/alianca.md); nothing goes
 -- between guilds by whisper any more (audit #448).
 --
+-- WHAT FLOWS, the leader's switches (site spec 123): GOSGILD1.alliance.share says, for this guild, whether it
+-- sends and whether it receives each item (Link.ReadShare, Link:Shares). Here: the /g is said on the channel only
+-- when chat.send, an ally's /g shown only when chat.recv, and the same for the room with room.*; Modules/Alliance.lua
+-- shows GOSALLY1's directory, crafters and open raids only when their recv is on (GOSALLY1 itself is read as
+-- before: the site already filters what the others send); Modules/AllianceMap.lua sends this client's position on
+-- the channel when map.send and draws allies in the same zone when map.recv. A pasted code, or an old site's block
+-- with no `share`, is the chat and the room both ways and nothing else. The shared bans keep coming in
+-- GOSGILD1.allianceBans, already filtered by the site (BanList reads them). The candidate pool lives on the site
+-- (Applications, "referred by", a /ginvite line to copy) and never reaches the game.
+--
 -- HONEST LIMITS, the same as GreenWall's: who does not run Guild OS does not
 -- see the other guilds; the key is readable by every member of every guild in
 -- it; a line sent by a macro does not cross, since no key was pressed.
@@ -360,7 +370,88 @@ function Link.ReadSiteCode(v)
     end
     local name = type(v.name) == "string" and not v.name:find("[|\r\n]") and GuildOS:SanitizeUserText(v.name, 144) or ""
     if GuildOS:Utf8Len(name) < 2 or GuildOS:Utf8Len(name) > 48 then return nil end
-    return { line = v.code, name = name, version = version }
+    -- The leader's switches (site spec 123), additive: a block without them (or with a broken `share`) reads as an
+    -- old site's, and the code itself stands either way.
+    return { line = v.code, name = name, version = version, share = Link.ReadShare(v.share) }
+end
+
+----------------------------------------------------------------------
+-- What the alliance shares (site spec 123): GOSGILD1.alliance.share
+----------------------------------------------------------------------
+-- Each item as the leader set it on guildos.me, for THIS guild: whether it sends it and whether it receives it. An
+-- item flows from guild A to guild B when the leader turned it on, A sends and B receives; the site already sends
+-- { send = false, recv = false } for an item the leader turned off, so this client only reads its own guild's two.
+--   chat       the shared /g (relayed into the channel / shown as /g)
+--   room       the alliance room (Modules/AllianceChat.lua)
+--   raids, directory, crafters   GOSALLY1's open raids, members and their recipes (the site filters what the
+--              others send; this client shows them only when it receives them)
+--   map        positions on the world map, same zone only (Modules/AllianceMap.lua)
+--   bans       the alliance's bans: they come in GOSGILD1.allianceBans, which the site already filters by this
+--              switch; nothing more to gate here
+--   candidates the shared candidate pool: it lives on the site (Applications, "referred by"), never in game
+-- With no `share` (an old site) or a pasted code, the chat and the room go both ways and nothing else does.
+Link.SHARE_ITEMS = { "chat", "room", "raids", "directory", "crafters", "candidates", "bans", "map" }
+Link.SHARE_DEFAULT = {
+    chat = { send = true, recv = true }, room = { send = true, recv = true },
+    raids = { send = false, recv = false }, directory = { send = false, recv = false },
+    crafters = { send = false, recv = false }, candidates = { send = false, recv = false },
+    bans = { send = false, recv = false }, map = { send = false, recv = false },
+}
+
+-- Pure. `share` as the site sent it, held to its shape (the inbox is untrusted): a table of the known items, each a
+-- table of `send` and `recv`, true only when they are the boolean true; unknown keys ignored; a known item that is
+-- missing reads as off (a partial block). Nil (treat as absent: the defaults) when `share` is not a table, or a
+-- known item is there and is not a table.
+function Link.ReadShare(share)
+    if type(share) ~= "table" then return nil end
+    local out = {}
+    for _, item in ipairs(Link.SHARE_ITEMS) do
+        local v = share[item]
+        if v ~= nil and type(v) ~= "table" then return nil end
+        out[item] = { send = v ~= nil and v.send == true, recv = v ~= nil and v.recv == true }
+    end
+    return out
+end
+
+-- Pure. A share as a short string (two of "0"/"1" per item, send then recv, in SHARE_ITEMS' order), to compare two.
+function Link.ShareKey(share)
+    if type(share) ~= "table" then return "" end
+    local out = {}
+    for i, item in ipairs(Link.SHARE_ITEMS) do
+        local v = type(share[item]) == "table" and share[item] or {}
+        out[i] = (v.send == true and "1" or "0") .. (v.recv == true and "1" or "0")
+    end
+    return table.concat(out)
+end
+
+-- The switches in force: the site's for the site's code (this client's block, or an officer's relay of it), the
+-- defaults for a pasted code, an old site's block, or no alliance at all.
+function Link:Share()
+    local cfg = self:Config()
+    local site = cfg and cfg.site and GuildOS.db and GuildOS.db.allianceLinkSite
+    local s = type(site) == "table" and site.share or nil
+    if type(s) ~= "table" then return Link.SHARE_DEFAULT end
+    if self._shareOf ~= s then self._shareOf, self._share = s, Link.ReadShare(s) or Link.SHARE_DEFAULT end
+    return self._share
+end
+
+-- Whether this guild sends ("send") or receives ("recv") `item` now.
+function Link:Shares(item, dir)
+    local v = self:Share()[item]
+    return v ~= nil and v[dir] == true
+end
+
+-- For the screens: the items this guild sends and receives, in SHARE_ITEMS' order, never "candidates" (it lives on
+-- the site). Two lists of item names.
+function Link:ShareLists()
+    local sends, recvs = {}, {}
+    for _, item in ipairs(Link.SHARE_ITEMS) do
+        if item ~= "candidates" then
+            if self:Shares(item, "send") then sends[#sends + 1] = item end
+            if self:Shares(item, "recv") then recvs[#recvs + 1] = item end
+        end
+    end
+    return sends, recvs
 end
 
 -- The site's code as the companion's block says it now: (code) when it names one, (false) when a block was read
@@ -381,7 +472,8 @@ function Link:SyncSite()
     if site == nil then return false end
     local held = GuildOS.db.allianceLinkSite
     if site then
-        if held and held.line == site.line and held.name == site.name and held.version == site.version then
+        if held and held.line == site.line and held.name == site.name and held.version == site.version
+           and Link.ShareKey(held.share) == Link.ShareKey(site.share) then
             -- This client's own block names it now: no longer only a relay's, so its end is told (SyncSite).
             if held.relayed then held.relayed = nil end
             return false
@@ -424,8 +516,8 @@ function Link:PublishSite()
     local site = self:SiteCode()
     if site == nil then return false end
     if site then
-        GuildOS.SyncService:Publish("allylink", "site", { line = site.line, name = site.name, version = site.version },
-            { priority = "ALERT" })
+        GuildOS.SyncService:Publish("allylink", "site", { line = site.line, name = site.name, version = site.version,
+            share = site.share }, { priority = "ALERT" })
         return true
     end
     local db = GuildOS.db
@@ -457,13 +549,14 @@ function Link:_TakeSite(d, sender)
         self:_Changed()
         return true
     end
-    local site = Link.ReadSiteCode({ code = d.line, name = d.name, version = d.version })
+    local site = Link.ReadSiteCode({ code = d.line, name = d.name, version = d.version, share = d.share })
     if not site then return false end
     if site.line == db.allianceLinkSiteGone and site.version <= (tonumber(db.allianceLinkSiteGoneV) or math.huge) then
         return false
     end
     if held and (site.version < held.version
-                 or (held.line == site.line and held.name == site.name and held.version == site.version)) then
+                 or (held.line == site.line and held.name == site.name and held.version == site.version
+                     and Link.ShareKey(held.share) == Link.ShareKey(site.share))) then
         return false
     end
     site.relayed = true   -- not this client's own block's: SyncSite never relays its end
@@ -859,6 +952,12 @@ function Link:_MarkThrottled()
 end
 
 function Link:Say(kind, text)
+    -- The leader's switches (site spec 123): this guild says its /g only when it sends the chat, the room's lines
+    -- only when it sends the room.
+    if not self:Shares(kind == "A" and "room" or "chat", "send") then
+        self.stats.withheld = (self.stats.withheld or 0) + 1
+        return false
+    end
     local pact = self:Pact()
     local index = self:ChannelIndex()
     local mine = GuildOS.Alliance:MyGuildName()
@@ -991,6 +1090,12 @@ function Link:_OnChannel(msg, author, lang, _, target, flags, _, _, chanBaseName
     local who = Link.Speaker(author)
     Link.last[guild] = { t = GetServerTime(), who = who, kind = kind, proto = proto }
     if GuildOS.Compat.IsIgnored(author) then
+        return
+    end
+    -- The leader's switches (site spec 123): what this guild does not receive is not shown, before the player's
+    -- own hide and block (which stay).
+    if not self:Shares(kind == "A" and "room" or "chat", "recv") then
+        self.stats.withheld = (self.stats.withheld or 0) + 1
         return
     end
     local chat = GuildOS.AllianceChat
@@ -1353,6 +1458,12 @@ function Link:StatusReport(at)
     out[#out + 1] = string.format("channel: %s · joined: %s%s", tostring(self:ChannelName() or "-"),
         index and ("yes (#" .. index .. ")") or "no", err and (" · refused: " .. err.reason
         .. (Link.JOIN_REFUSED[err.reason] and " (not retried: /gos ally join)" or "")) or "")
+    local key = Link.ShareKey(self:Share())
+    local parts = {}
+    for i, item in ipairs(Link.SHARE_ITEMS) do parts[i] = item .. " " .. key:sub(2 * i - 1, 2 * i) end
+    out[#out + 1] = "share (send/recv): " .. table.concat(parts, " · ")
+        .. ((cfg.site and type(db.allianceLinkSite) == "table" and type(db.allianceLinkSite.share) == "table")
+            and "" or " (defaults)") .. string.format(" · withheld %d", self.stats.withheld or 0)
     local chat = GuildOS.AllianceChat
     local prefs = chat and chat:Prefs() or {}
     local st = self.stats

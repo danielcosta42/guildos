@@ -173,6 +173,7 @@ Modules\GroupQuests.lua
 Data\GroupActivities.lua
 Modules\Groups.lua
 Modules\GuildMap.lua
+Modules\AllianceMap.lua
 Modules\PugInspector.lua
 
 # UI

@@ -453,6 +453,20 @@ check(A:Get() == nil and #A:Directory() == 0, "a GOSALLY1 beside a GOSGILD1 with
 GuildOSInbox = { ALLY_GILD, ALLY }
 Link:SyncSite()
 check(A:Get() and A:FromSite() and A:Name() == "Pacto do Sul", "the GOSGILD1's code is the alliance")
+-- What this guild receives (GOSGILD1.alliance.share, site spec 123): GOSALLY1 is read as ever, shown as received.
+check(#A:Directory() == 0 and #A:OpenRaids() == 0 and #A:FindCrafters(2302) == 0,
+  "an old site's GOSGILD1 (no share): GOSALLY1 is read, and none of it shown")
+GuildOS.db.allianceLinkSite.share = Link.ReadShare({ directory = { recv = true }, raids = { recv = true } })
+local d0 = A:Directory()
+check(#d0 == 2 and next(d0[1].members[1].recipes) == nil and #d0[1].members[1].profs == 0 and #A:FindCrafters(2302) == 0
+  and #A:OpenRaids() == 2, "the directory and the raids received, the crafters not: members without their recipes")
+GuildOS.db.allianceLinkSite.share = Link.ReadShare({ directory = { recv = true }, crafters = { recv = true } })
+check(#A:Directory() == 2 and #A:FindCrafters(2302) == 1 and #A:OpenRaids() == 0, "the raids not received: none shown")
+GuildOS.db.allianceLinkSite.share = Link.ReadShare({ crafters = { recv = true }, raids = { recv = true } })
+check(#A:Directory() == 0 and #A:FindCrafters(2302) == 0 and #A:OpenRaids() == 2,
+  "the directory not received: no members, so no crafters either")
+GuildOS.db.allianceLinkSite.share = Link.ReadShare({ directory = { send = false, recv = true },
+  crafters = { send = false, recv = true }, raids = { send = false, recv = true } })
 local dir = A:Directory()
 check(#dir == 2 and dir[1].guild == "Iron Pact" and dir[2].guild == "Silver Hand", "the directory: the allied guilds, never ours")
 local mira = dir[1].members[1]

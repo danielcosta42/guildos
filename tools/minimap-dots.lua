@@ -295,4 +295,55 @@ lastWatch = nil
 for _, m in ipairs(sent) do if m.code == "MW" then lastWatch = m.data end end
 check(lastWatch ~= "1945", "closing the map ends its watch")
 
+-- ── 4. Allies (site spec 123): on the world map, in my zone, never on the minimap ──────────────────────
+local allyShare = true
+GuildOS.Alliance = { MyGuildName = function() return "Guilda A" end, MemberInfo = function() end,
+  GuildColor = function() return 0.2, 0.4, 0.6 end }
+GuildOS.AllianceLink = {
+  Active = function() return true end,
+  Shares = function(_, item, dir) return item == "map" and (dir == "send" or allyShare) end,
+  ChannelIndex = function() return 5 end, ChannelName = function() return "GOSAPACTOabc123" end,
+  Throttled = function() return false end,
+  Code = function(g) return g == "Guilda A" and "aaa" or "bbb" end,
+  IsMe = function() return false end,
+  Speaker = function(a) return (a:gsub("%-Realm$", "")) end,
+  GuildOfLine = function(_, code) return code == "bbb" and "Guilda B" or nil end,
+}
+dofile(ADDON .. "/Modules/AllianceMap.lua")
+local AM = GuildOS.AllianceMap
+GM:HandlePosition("Ann", "1955,5500,4000,,0", "GUILD")
+check(AM:HandleLine("Bia-Realm", "1,bbb,1955,2500,2500"), "an ally's line in my zone is kept")
+WorldMapFrame:Show()
+WorldMapFrame:SetMapID(1955)
+layer.scripts.OnUpdate(layer, 1)
+local allyPin
+for _, f in ipairs(made) do
+  if f.parent == layer and f.member and f.member[1] == "Bia" and f.shown then allyPin = f end
+end
+check(allyPin ~= nil, "the world map draws the ally")
+check(allyPin.tag and allyPin.tag.text == "GB", "in its own style: the guild's initials under the pin")
+pt = allyPin.points[#allyPin.points]
+check(near(pt[4], 0.25 * 1000, 0.5) and near(pt[5], -0.25 * 800, 0.5), "at the ally's spot on the zone")
+allyPin.scripts.OnEnter(allyPin)
+tip = table.concat(GameTooltip.lines, "|")
+check(tip:find("Bia", 1, true) and tip:find("Allied guild: Guilda B", 1, true), "hover names the ally and the guild (" .. tip .. ")")
+local dotKeys = {}
+for _, dd in ipairs(dotsNow()) do dotKeys[#dotKeys + 1] = tostring(dd.key) end
+local annKey = next(GM.peers)
+check(#dotKeys == 1 and dotKeys[1] == annKey, "the minimap draws the guildmate only, never the ally ("
+  .. table.concat(dotKeys, ",") .. ")")
+for _, k in ipairs(dotKeys) do check(not k:find("^ally:"), "no minimap dot for an ally") end
+allyShare = false
+layer.scripts.OnUpdate(layer, 1)
+check(not allyPin.shown, "map.recv off: the ally's pin goes")
+allyShare = true
+WorldMapFrame:SetMapID(1945)
+layer.scripts.OnUpdate(layer, 1)
+check(allyPin.shown, "on the continent too, while the ally is in my zone")
+me.map = 1945
+layer.scripts.OnUpdate(layer, 1)
+check(not allyPin.shown, "out of the ally's zone: no pin")
+me.map = 1955
+WorldMapFrame:Hide()
+
 print(("minimap-dots: %d checks passed"):format(checks))

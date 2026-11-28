@@ -507,7 +507,12 @@ local RAIDS = { { id = "r1", guild = GB, title = "Karazhan", where = "Karazhan",
                   lead = "Bia-Realm", going = 7 } }
 local BANS = { { id = "b1", key = "Trapaceiro-Realm", name = "Trapaceiro", guild = GB, reason = "scam", at = W.t - 100 } }
 
-local site1 = { code = CODE1, name = ALLY_NAME, version = 1 }
+-- The leader turned everything on (GOSGILD1.alliance.share, site spec 123).
+local ALL_ON = {}
+for _, item in ipairs({ "chat", "room", "raids", "directory", "crafters", "bans", "map" }) do
+  ALL_ON[item] = { send = true, recv = true }
+end
+local site1 = { code = CODE1, name = ALLY_NAME, version = 1, share = ALL_ON }
 local aGM  = newClient({ id = "aGM",  name = "Ana",  guild = GA, rank = 0, companion = true,
                          inbox = { gild(GA, site1, BANS), ally(GA, 1, MEMBERS, RAIDS) } })
 local aMem = newClient({ id = "aMem", name = "Duda", guild = GA, rank = 4 })
@@ -802,7 +807,7 @@ check(G(aGM).AllianceLink:ChannelName() == CH1, "the others are untouched")
 
 -- (f) Key rotation: B is removed on the site. A gets a new key; B's block names no alliance.
 logout(bX)   -- away during the rotation: comes back later holding the old code
-local site2 = { code = CODE2, name = ALLY_NAME, version = 2 }
+local site2 = { code = CODE2, name = ALLY_NAME, version = 2, share = ALL_ON }
 aGM.inbox[1] = gild(GA, site2, {})
 aGM.inbox[2] = ally(GA, 2, { [GB] = {} }, {})
 bOff.inbox[1] = gild(GB, nil)

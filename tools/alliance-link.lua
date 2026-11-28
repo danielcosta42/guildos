@@ -468,13 +468,94 @@ A.Directory = function() return { { guild = "Guilda C", members = {
 local info = A:MemberInfo("Zeca-Realm")
 check(info and info.guild == "Guilda C" and info.class == "MAGE" and A:GuildOfMember("Zeca") == "Guilda C",
   "a directory row names the guild and the class")
+check(#A:FindCrafters(1234) == 0, "a pasted code receives no crafters (site spec 123: the defaults)")
+local realShare = Link.Share
+Link.Share = function() return Link.ReadShare({ chat = { send = true, recv = true }, crafters = { recv = true } }) end
 local crafters = A:FindCrafters(1234)
 check(#crafters == 1 and crafters[1].name == "Zeca" and crafters[1].guild == "Guilda C" and not crafters[1].online,
-  "and who crafts an item")
+  "and who crafts an item, once this guild receives crafters")
+Link.Share = realShare
 -- A channel line whose guild the key's list doesn't know is named from the directory, not "Allied guild" (#449).
 check(Link:GuildOfLine(Link.Code("Guilda C"), "Zeca-Realm", "G") == "Guilda C",
   "a line from a guild only the site's directory knows carries that guild's name")
 A.Directory = realDir
+
+-- ── 6b. What the alliance shares (site spec 123): the reader, and the chat and the room gated both ways ──
+check(Link.ReadShare(nil) == nil, "share absent: nil (the defaults)")
+check(Link.ReadShare("all") == nil and Link.ReadShare(7) == nil and Link.ReadShare(true) == nil,
+  "share not a table: malformed, read as absent")
+check(Link.ReadShare({ chat = "yes" }) == nil and Link.ReadShare({ map = true }) == nil,
+  "a known item that is not a table: malformed, read as absent")
+local rs = Link.ReadShare({ chat = { send = true, recv = 1 }, room = { send = "true", recv = true },
+  map = { send = true, recv = false, extra = true }, nonsense = { send = true }, [1] = "x" })
+check(rs and rs.chat.send == true and rs.chat.recv == false and rs.room.send == false and rs.room.recv == true,
+  "non-boolean values are false, only the boolean true counts")
+check(rs.map.send == true and rs.map.recv == false and rs.nonsense == nil, "unknown keys ignored")
+check(rs.raids.send == false and rs.raids.recv == false and rs.directory and rs.crafters and rs.bans and rs.candidates,
+  "a partial share: the items it leaves out are off")
+check(Link.ShareKey(rs) == "1001000000000010", "the share's key: send and recv per item, in order")
+check(Link.ShareKey(Link.SHARE_DEFAULT) == "1111000000000000", "the defaults: chat and room both ways, nothing else")
+-- ReadSiteCode keeps its checks, and carries the share beside them.
+local SITE = "GOS=PACTO:AbCdE12345"
+local withShare = Link.ReadSiteCode({ code = SITE, name = "Pacto do Sul", version = 3,
+  share = { chat = { send = false, recv = true }, map = { send = true, recv = true } } })
+check(withShare and withShare.line == SITE and withShare.share and withShare.share.chat.send == false
+  and withShare.share.map.recv == true, "the site's code carries its share")
+check(Link.ReadSiteCode({ code = SITE, name = "Pacto do Sul", version = 3, share = "broken" }).share == nil,
+  "a broken share leaves the code standing, with the defaults")
+check(Link.ReadSiteCode({ code = "GOS=bad", name = "Pacto do Sul", version = 3, share = {} }) == nil
+  and Link.ReadSiteCode({ code = SITE, name = "P", version = 3, share = {} }) == nil
+  and Link.ReadSiteCode({ code = SITE, name = "Pacto do Sul", version = 0, share = {} }) == nil,
+  "a share never makes a bad code good")
+-- The pasted code in force here: the defaults.
+check(not Link:FromSite() and Link:Share() == Link.SHARE_DEFAULT, "a pasted code: the defaults")
+check(Link:Shares("chat", "send") and Link:Shares("chat", "recv") and Link:Shares("room", "send")
+  and Link:Shares("room", "recv") and not Link:Shares("map", "send") and not Link:Shares("directory", "recv"),
+  "chat and room both ways, the map and the directory not")
+do
+  local cur
+  Link.Share = function() return cur end
+  local function set(t) cur = Link.ReadShare(t) end
+  -- chat.send off: this guild's /g stays home; the room still goes.
+  set({ chat = { send = false, recv = true }, room = { send = true, recv = true } })
+  sent = {}
+  box.attrs.chatType, box.text = "GUILD", "fica em casa"
+  box:ParseText(1)
+  check(#sent == 0, "chat.send off: the /g is not said on the channel")
+  check(Chat:Send("sala ainda") and #sent == 1 and sent[1].msg:sub(1, 1) == "a", "but the room, sent, still goes")
+  -- chat.recv on: allies' /g still shown.
+  reset()
+  hear("G" .. Link.Code("Guilda B") .. " chega", "Bob-Realm")
+  check(#replayed[1] == 1, "chat.recv on: an ally's /g is shown")
+  -- chat.recv off, send on: ours goes, theirs is not shown.
+  set({ chat = { send = true, recv = false }, room = { send = true, recv = true } })
+  sent = {}
+  box:ParseText(1)
+  check(#sent == 1 and sent[1].chatType == "CHANNEL", "chat.send on: the /g goes")
+  reset()
+  hear("G" .. Link.Code("Guilda B") .. " nao chega", "Bob-Realm")
+  check(#replayed[1] == 0, "chat.recv off: an ally's /g is not shown")
+  -- room.send off: the room's Send fails, nothing goes, nothing in our feed.
+  set({ chat = { send = true, recv = true }, room = { send = false, recv = true } })
+  sent = {}
+  local n0 = #Chat:Log()
+  check(not Chat:Send("nao vai") and #sent == 0 and #Chat:Log() == n0, "room.send off: nothing is said in the room")
+  hear("A" .. Link.Code("Guilda C") .. " ouvido", "Cy-Realm")
+  check(#Chat:Log() == n0 + 1, "room.recv on: an ally's room line reaches the feed")
+  set({ chat = { send = true, recv = true }, room = { send = true, recv = false } })
+  n0 = #Chat:Log()
+  hear("A" .. Link.Code("Guilda C") .. " nao ouvido", "Cy-Realm")
+  check(#Chat:Log() == n0, "room.recv off: an ally's room line is not shown")
+  check(Chat:Send("vai") and #Chat:Log() == n0 + 1, "room.send on: ours goes")
+  -- The player's own hide stays on top of the switches.
+  set({ chat = { send = true, recv = true }, room = { send = true, recv = true } })
+  ignored["Bob-Realm"] = true
+  reset()
+  hear("G" .. Link.Code("Guilda B") .. " ignorado", "Bob-Realm")
+  check(#replayed[1] == 0, "an ignored speaker stays hidden whatever the switches")
+  ignored["Bob-Realm"] = nil
+  Link.Share = realShare
+end
 
 -- ── 7. Officers save the code, the guild hands it on ──────────────────
 published = {}
@@ -925,6 +1006,49 @@ do
   local told = false
   for _, m in ipairs(published) do if m.data and m.data.gone == SITE4 then told = true end end
   check(told and GuildOS.db.allianceLinkSiteGoneOwn, "and when it ends, the guild is told")
+  GuildOS.CompanionImport = realCI
+end
+
+-- The site's share in force, and through the guild to members without the companion (site spec 123).
+do
+  officer = true
+  GuildOS.db.allianceLinkSite = nil; Link.ForgetGone()
+  local realCI = GuildOS.CompanionImport
+  local SHARE = { chat = { send = false, recv = true }, room = { send = true, recv = true },
+                  map = { send = true, recv = true }, directory = { send = true, recv = true } }
+  local blk = { guild = "Guilda A", alliance = { code = SITE4, name = "Pacto do Sul", version = 7, share = SHARE } }
+  GuildOS.CompanionImport = { GuildBlock = function() return blk end }
+  published = {}
+  Link:SyncSite()
+  check(Link:FromSite() and not Link:Shares("chat", "send") and Link:Shares("chat", "recv") and Link:Shares("map", "send")
+    and Link:Shares("directory", "recv") and not Link:Shares("raids", "recv"), "the site's switches are in force")
+  local relayed
+  for _, m in ipairs(published) do if m.act == "site" then relayed = m.data end end
+  check(relayed and type(relayed.share) == "table" and relayed.share.chat.send == false, "and an officer relays them with the code")
+  -- The leader flips one switch: same code and version, a new share; it is taken and relayed.
+  blk = { guild = "Guilda A", alliance = { code = SITE4, name = "Pacto do Sul", version = 7,
+          share = { chat = { send = true, recv = true }, room = { send = true, recv = true } } } }
+  published = {}
+  check(Link:SyncSite() and Link:Shares("chat", "send") and not Link:Shares("map", "send"), "a new share at the same version is taken")
+  check(#published == 1, "and told to the guild")
+  check(not Link:SyncSite(), "the same share again changes nothing")
+  -- An old site: no share in the block, the defaults.
+  blk = { guild = "Guilda A", alliance = { code = SITE4, name = "Pacto do Sul", version = 7 } }
+  Link:SyncSite()
+  check(Link:Share() == Link.SHARE_DEFAULT and not Link:Shares("directory", "recv"), "an old site's block: the defaults")
+  -- A member without the companion: the relay carries the switches, held to their shape again.
+  GuildOS.CompanionImport = nil
+  GuildOS.db.allianceLinkSite = nil; Link.ForgetGone()
+  sync(env("site", { line = SITE4, name = "Pacto do Sul", version = 7, share = { map = { send = true, recv = "yes" } } }),
+    "Ofi-Realm")
+  check(GuildOS.db.allianceLinkSite and GuildOS.db.allianceLinkSite.relayed and Link:Shares("map", "send")
+    and not Link:Shares("map", "recv") and not Link:Shares("chat", "send"), "a relayed share is read as strictly as the block's")
+  sync(env("site", { line = SITE4, name = "Pacto do Sul", version = 7, share = { chat = { send = true, recv = true } } }),
+    "Ofi-Realm")
+  check(Link:Shares("chat", "send") and not Link:Shares("map", "send"), "a relayed new share at the same version is taken")
+  sync(env("site", { line = SITE4, name = "Pacto do Sul", version = 7, share = "broken" }), "Ofi-Realm")
+  check(Link:Share() == Link.SHARE_DEFAULT, "a relayed broken share: the defaults")
+  check(table.concat(Link:StatusReport(), "\n"):find("share (send/recv): chat 11", 1, true), "/gos ally status says the switches")
   GuildOS.CompanionImport = realCI
 end
 print(("alliance-link: %d checks passed"):format(checks))

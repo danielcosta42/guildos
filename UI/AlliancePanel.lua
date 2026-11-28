@@ -54,6 +54,25 @@ local function fillScroll(scroll, content)
     UI:BindScrollChildWidth(scroll, content)
 end
 
+-- What this guild sends and receives of the alliance (the leader's switches on guildos.me, site spec 123), as two
+-- lines for the officers: read from AllianceLink:ShareLists, nil while there is no alliance.
+local SHARE_LABEL = {
+    chat = L["the shared /g"], room = L["the alliance room"], raids = L["open raids"], directory = L["the directory"],
+    crafters = L["crafters"], bans = L["bans"], map = L["positions on the map"],
+}
+local function shareText(link)
+    if not (link and link.ShareLists and link:Pact()) then return nil end
+    local sends, recvs = link:ShareLists()
+    local function names(list)
+        if #list == 0 then return L["nothing"] end
+        local out = {}
+        for i, item in ipairs(list) do out[i] = SHARE_LABEL[item] or item end
+        return table.concat(out, ", ")
+    end
+    return string.format(L["This guild sends: %s."], names(sends)) .. "\n"
+        .. string.format(L["This guild receives: %s."], names(recvs))
+end
+
 local function wrapText(parent, size, col)
     local fs = UI:CreateText(parent, "", size, col.r, col.g, col.b)
     fs:SetJustifyH("LEFT")
@@ -387,6 +406,7 @@ local function BuildHall(panel)
     local title = UI:CreateSectionTitle(info, "", true)
     local empty = wrapText(info, 12, C.textSoft)
     local guildsFS = wrapText(info, 12, C.text)
+    local shareFS = wrapText(info, 11, C.textSoft)
     local raidsHdr = UI:CreateSectionTitle(info, L["Open raids"], true)
     local raidsFS = wrapText(info, 12, C.text)
     local onlineHdr = UI:CreateSectionTitle(onlineCard, L["Online now"], true)
@@ -431,7 +451,7 @@ local function BuildHall(panel)
         local two = W >= HALL_TWO
         local lw = two and math.floor((W - HALL_GUTTER) * HALL_SHARE) or W
         local rw = two and (W - HALL_GUTTER - lw) or W
-        for _, w in ipairs({ guildsFS, raidsHdr, raidsFS, onlineCard, roomCard, room }) do
+        for _, w in ipairs({ guildsFS, shareFS, raidsHdr, raidsFS, onlineCard, roomCard, room }) do
             w:Hide()
         end
         setShown(empty, not inPact)
@@ -473,6 +493,12 @@ local function BuildHall(panel)
         end
         guildsFS:SetText(table.concat(parts, "\n"))
         y = place(guildsFS, y + 2, lw - 2 * HALL_PAD)
+        -- What flows, as the leader set it on guildos.me (site spec 123).
+        local shared = shareText(GuildOS.AllianceLink)
+        if shared then
+            shareFS:SetText(shared)
+            y = place(shareFS, y + 2, lw - 2 * HALL_PAD)
+        end
 
         -- Raids open to the alliance, from guildos.me (GOSALLY1): nothing until the site sends them.
         local raids = ally:OpenRaids()
@@ -546,7 +572,7 @@ end })
 local function BuildSetup(panel)
     local LINK = function() return GuildOS.AllianceLink end
     local board = UI:CreateBoard(panel, { name = "GuildOSAllianceSetupBoard" })
-    local state = { officer = false, site = false, blocking = false, bans = false }
+    local state = { officer = false, site = false, blocking = false, bans = false, share = false }
 
     -- The code (the mockup's "Alliance code"): where it stands, the tag and Generate, the code, and Save for
     -- the guild at the card's bottom right. Pasted by hand the code gives the chat only (alianca.md §3.3).
@@ -557,6 +583,10 @@ local function BuildSetup(panel)
     local chatOnly = wrapText(codeCard, UI.SP.META, P.textSoft)
     chatOnly:SetText(L["Chat only: the shared /g and the alliance room. Members, crafters, raids and bans come from guildos.me."])
     codeCard:Add(chatOnly, { gap = 4, place = function(fs, w) fs:SetWidth(w); return math.ceil(tonumber(fs:GetStringHeight()) or 12) end })
+    -- What this guild sends and receives (the leader's switches, site spec 123), while there is an alliance.
+    local shareLine = wrapText(codeCard, UI.SP.META, P.textSoft)
+    codeCard:Add(shareLine, { gap = 4, shown = function() return state.share end,
+        place = function(fs, w) fs:SetWidth(w); return math.ceil(tonumber(fs:GetStringHeight()) or 12) end })
     local editing = function() return state.officer and not state.site end
 
     local tagBox = makeInput(codeCard, 110)
@@ -711,6 +741,10 @@ local function BuildSetup(panel)
         if chatState == "failed" and chatErr then
             status:SetText((status:GetText() or "") .. "\n|cff" .. hex(P.red) .. link.JoinErrorText(chatErr) .. "|r")
         end
+        local shared = shareText(link)
+        state.share = shared ~= nil
+        shareLine:SetText(shared or "")
+        setShown(shareLine, shared ~= nil)
         local officer = GuildOS:IsOfficer()
         state.officer, state.site = officer and true or false, site and true or false
         for _, w in ipairs({ tagLbl, tagBox, genBtn, lineBox, writeBtn, removeBtn, hint }) do
