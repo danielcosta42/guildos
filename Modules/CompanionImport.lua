@@ -27,18 +27,29 @@ GuildOS.CompanionImport = Import
 --- same with the keys it receives (the site's specs/036). Retail takes the same path: a
 --- "Name-Realm" on this character's realm comes back plain, one on another connected realm
 --- keeps its realm, which is what an invite there needs (issue #182).
-function Import.PlainName(name)
-    if GuildOS.Client.isAnniversary then return name:match("^([^-]+)") or name end
+-- The two suffixes, made once per realm (#449): the raid's buttons read the whole guild roster through here on every
+-- roster update, and a table and three strings a member were a big guild's garbage.
+local suffixRealm, suffixFull, suffixCompact
+local function realmSuffixes()
     local realm = GuildOS:GetClientRealm()
-    if realm and realm ~= "" then
-        local compact = (realm:gsub("%s", ""))
-        for _, suffix in ipairs({ "-" .. realm, "-" .. compact }) do
-            if #name > #suffix and name:sub(-#suffix) == suffix then
-                return name:sub(1, #name - #suffix)
-            end
+    if not realm or realm == "" then return nil end
+    if realm ~= suffixRealm then
+        suffixRealm, suffixFull, suffixCompact = realm, "-" .. realm, "-" .. (realm:gsub("%s", ""))
+    end
+    return suffixFull, suffixCompact
+end
+local function plainWith(name, full, compact)
+    for i = 1, full and 2 or 0 do
+        local suffix = i == 1 and full or compact
+        if #name > #suffix and name:find(suffix, #name - #suffix + 1, true) then
+            return name:sub(1, #name - #suffix)
         end
     end
     return name
+end
+function Import.PlainName(name)
+    if GuildOS.Client.isAnniversary then return name:match("^([^-]+)") or name end
+    return plainWith(name, realmSuffixes())
 end
 
 local L = GuildOS.L
@@ -75,18 +86,44 @@ end
 -- for; nil when it is damaged or another kind.
 -- `maxJson`, when given, is how many bytes the inflated text may take: the inflating itself stops there
 -- (LibDeflate:DecompressDeflateLimited), so a small string made to inflate a thousandfold costs no more than the cap.
-local function unwrap(body, fmt, maxJson)
+-- `pace`, when given (with `maxJson`), is called between pieces of the work, for a coroutine that spreads a big block
+-- over frames (Import:WarmAlliance): the inflating every 32 KiB, the parse every few hundred values. Errors then reach
+-- the caller (the coroutine's resume), since Lua 5.1 cannot yield across the pcall that holds them otherwise.
+local PACED_SLICE = 16384   -- characters of the print alphabet decoded at a time when paced: a multiple of 4
+local function decodePaced(LibDeflate, body, pace)
+    if #body <= PACED_SLICE or body:find("[^A-Za-z0-9()]") then return LibDeflate:DecodeForPrint(body) end
+    -- Four characters are three bytes, so slices of whole fours decode to the whole's bytes, in order. A last slice
+    -- of one character is six bits, no byte: the whole's decoding drops them too.
+    local parts = {}
+    for i = 1, #body, PACED_SLICE do
+        local piece = body:sub(i, i + PACED_SLICE - 1)
+        if #piece == 1 then break end
+        local bytes = LibDeflate:DecodeForPrint(piece)
+        if not bytes then return nil end
+        parts[#parts + 1] = bytes
+        pace()
+    end
+    return table.concat(parts)
+end
+
+local function unwrap(body, fmt, maxJson, pace)
     local LibDeflate = LibStub and LibStub("LibDeflate", true)
     if not LibDeflate then return nil end
-    local compressed = LibDeflate:DecodeForPrint(body)
+    local compressed
+    if pace then compressed = decodePaced(LibDeflate, body, pace) else compressed = LibDeflate:DecodeForPrint(body) end
     local json
     if compressed and maxJson and LibDeflate.DecompressDeflateLimited then
-        json = LibDeflate:DecompressDeflateLimited(compressed, maxJson)
+        json = LibDeflate:DecompressDeflateLimited(compressed, maxJson, pace)
     elseif compressed then
         json = LibDeflate:DecompressDeflate(compressed)
     end
     if not json or (maxJson and #json > maxJson) then return nil end
-    local ok, data = pcall(GuildOS.JsonDecode, json)
+    local ok, data
+    if pace and GuildOS.JsonDecodePaced then
+        ok, data = true, GuildOS.JsonDecodePaced(json, pace)
+    else
+        ok, data = pcall(GuildOS.JsonDecode, json)
+    end
     if ok and type(data) == "table" and data.fmt == fmt then return data end
     return nil
 end
@@ -635,7 +672,9 @@ function Import:ConsumeInbox()
     -- every logout.
     local planned, foreign = {}, nil
     for _, raw in ipairs(raws) do
-        local roster = self:Parse(raw)
+        -- Only a string with a roster's prefix is one (Parse's own first test): the alliance's quarter-megabyte block
+        -- is not trimmed and copied at login to be told so (#449).
+        local roster = raw:find(WIRE_PREFIX, 1, true) and self:Parse(raw) or nil
         -- Another guild's raid (the owner's own list, read on a character of another guild) is not read at all: not
         -- kept, not matched to a night, not on the calendar, no button and no prompt (OfThisGuild, issue #400). An
         -- inbox of nothing else is, to this character, an inbox with no raid, and that is said (SayForeign).
@@ -750,25 +789,28 @@ end
 -- the inbox's count only when they are this guild's (OfThisGuild).
 local BUTTON_BEFORE = 3 * 3600   -- seconds a start may lie behind now: three hours into the raid
 local BUTTON_AHEAD = 3600        -- seconds a start may lie ahead of now: an hour before the raid
+-- No closure per call (#449): the loot system in force asks through here on every addon message.
+local function consider(roster, now, best, bestGap, bestBegun)
+    local startsAt = type(roster) == "table" and tonumber(roster.startsAt)
+    if not startsAt or startsAt <= 0 then return best, bestGap, bestBegun end
+    if not roster.pasted and not Import.OfThisGuild(roster) then return best, bestGap, bestBegun end
+    local gap = startsAt - now
+    if gap < -BUTTON_BEFORE or gap > BUTTON_AHEAD then return best, bestGap, bestBegun end
+    local away, begun = math.abs(gap), gap <= 0
+    if not best or away < bestGap or (away == bestGap and begun and not bestBegun) then
+        return roster, away, begun
+    end
+    return best, bestGap, bestBegun
+end
 function Import:ButtonRaid(now)
     now = now or GetServerTime()
-    local best, bestGap, bestBegun
-    local function consider(roster)
-        local startsAt = type(roster) == "table" and tonumber(roster.startsAt)
-        if not startsAt or startsAt <= 0 then return end
-        if not roster.pasted and not Import.OfThisGuild(roster) then return end
-        local gap = startsAt - now
-        if gap < -BUTTON_BEFORE or gap > BUTTON_AHEAD then return end
-        local away, begun = math.abs(gap), gap <= 0
-        if not best or away < bestGap or (away == bestGap and begun and not bestBegun) then
-            best, bestGap, bestBegun = roster, away, begun
-        end
-    end
     local kept = self:Current()
-    consider(kept)
+    local best, bestGap, bestBegun = consider(kept, now)
     local keptId = type(kept) == "table" and kept.raidId or nil
     for _, roster in ipairs(self._webRaids or {}) do
-        if not (keptId ~= nil and roster.raidId == keptId) then consider(roster) end
+        if not (keptId ~= nil and roster.raidId == keptId) then
+            best, bestGap, bestBegun = consider(roster, now, best, bestGap, bestBegun)
+        end
     end
     return best
 end
@@ -1023,7 +1065,7 @@ end
 --     guilds = { { name, realm?, self?, via?, members = { { key, name, class, level, role?, main?, spells? } } } },
 --     raids = { { id, guild, title, where?, startsAt, size, lead?, going } } }
 -- `spells` is the member's recipe spell ids, as the site sends them; Alliance maps them to what they make.
-function Import.ReadAlliance(data)
+function Import.ReadAlliance(data, pace)
     local A = Import.ALLY
     if type(data) ~= "table" or data.fmt ~= "GOSALLY1" or data.v ~= 1 then return nil end
     local guild = allyWord(data.guild, A.guildName)
@@ -1040,6 +1082,7 @@ function Import.ReadAlliance(data)
     for i = 1, n or 0 do
         local g = list[i]
         local gname = type(g) == "table" and allyWord(g.name, A.guildName)
+        if pace then pace() end   -- one guild's thousand members at a time (Import:WarmAlliance)
         if gname and not names[gname:lower()] then
             names[gname:lower()] = true
             local og = { name = gname, realm = allyWord(g.realm, A.guildName), self = g.self == true or nil,
@@ -1123,27 +1166,96 @@ local function sameRealm(realm)
     return bare(realm) == bare(mine) or bare(realm) == bare(GetRealmName())
 end
 
-function Import:AllianceBlock()
+-- The GOSALLY1 string `v` decoded and cleaned (ReadAlliance), or false when it is not one. With `pace`, the work
+-- pauses there between its pieces (Import:WarmAlliance), and an error raises.
+local function readAlly(v, pace)
+    local body = v:sub(#ALLY_PREFIX + 1)
+    local ok = body ~= "" and #body <= Import.ALLY_MAX and not body:find("[^A-Za-z0-9()]")
+    return ok and Import.ReadAlliance(unwrap(body, "GOSALLY1", Import.ALLY_JSON_MAX, pace), pace) or false
+end
+
+-- The inbox's GOSALLY1 string while the companion is on, or nil.
+local function allyString()
     local inbox = _G.GuildOSInbox
     if type(inbox) ~= "table" or not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then return nil end
     for _, v in ipairs(inbox) do
-        if type(v) == "string" and v:sub(1, #ALLY_PREFIX) == ALLY_PREFIX then
-            -- Decoded and cleaned once per string: the file only changes on a reload.
+        if type(v) == "string" and v:sub(1, #ALLY_PREFIX) == ALLY_PREFIX then return v end
+    end
+    return nil
+end
+
+-- A full GOSALLY1 is about a megabyte inflated: decoding, inflating, parsing and cleaning it took about 420 ms of
+-- one frame in the client's Lua (#449), in whatever asked first (the Hall opening, a whisper's chat filter in
+-- combat). So it is read ahead, ALLY_WARM_DELAY seconds after login (past the login's own work), in a coroutine that
+-- works at most ALLY_PACE_MS a frame and waits out combat. Whatever asks before it is done finishes it there and
+-- then: the same block, read the same way, as before.
+Import.ALLY_WARM_DELAY = 12
+Import.ALLY_PACE_MS = 4
+local warm             -- { raw, co, started } while the read ahead runs
+local warmer = CreateFrame("Frame")
+
+local function msNow()
+    if debugprofilestop then return debugprofilestop() end
+    return (GetTime and GetTime() or 0) * 1000
+end
+
+local function pace()
+    if warm and not warm.rush and coroutine.running() == warm.co and msNow() - warm.started >= Import.ALLY_PACE_MS then
+        coroutine.yield()
+    end
+end
+
+-- One more piece of the read ahead; true once it is over (read, or no longer wanted).
+local function warmStep(rush)
+    local job = warm
+    if not job then return true end
+    if allyString() ~= job.raw or Import._allyRaw == job.raw then
+        warm = nil
+        return true
+    end
+    job.rush, job.started = rush, msNow()
+    local ok, data = coroutine.resume(job.co)
+    if coroutine.status(job.co) ~= "dead" then return false end
+    warm = nil
+    Import._allyRaw, Import._allyData = job.raw, ok and data or false
+    return true
+end
+
+local function onUpdate(self)
+    if InCombatLockdown and InCombatLockdown() then return end
+    if warmStep(false) then self:SetScript("OnUpdate", nil) end
+end
+
+--- Starts reading the inbox's GOSALLY1 ahead, a few milliseconds a frame (see ALLY_WARM_DELAY). Nothing when there
+--- is none, the companion is off, or it is read already.
+function Import:WarmAlliance()
+    local v = allyString()
+    if not v or self._allyRaw == v or (warm and warm.raw == v) then return end
+    warm = { raw = v, co = coroutine.create(function() return readAlly(v, pace) end) }
+    warmer:SetScript("OnUpdate", onUpdate)
+end
+
+function Import:AllianceBlock()
+    local v = allyString()
+    if v then
+        -- Decoded and cleaned once per string: the file only changes on a reload. A read ahead of this string
+        -- still under way is finished now, in one go.
+        if self._allyRaw ~= v then
+            if warm and warm.raw == v then
+                while not warmStep(true) do end
+            end
             if self._allyRaw ~= v then
-                local body = v:sub(#ALLY_PREFIX + 1)
-                local ok = body ~= "" and #body <= Import.ALLY_MAX and not body:find("[^A-Za-z0-9()]")
-                self._allyRaw = v
-                self._allyData = ok and Import.ReadAlliance(unwrap(body, "GOSALLY1", Import.ALLY_JSON_MAX)) or false
+                self._allyRaw, self._allyData = v, readAlly(v)
             end
-            local data = self._allyData
-            local mine = GetGuildInfo("player")
-            if not data or not mine or mine == "" or not GuildOS.SameGuildName(data.guild, mine)
-               or not sameRealm(data.realm) then
-                return nil
-            end
-            if GetServerTime() - data.at > BLOCK_MAX_AGE then return nil end
-            return data
         end
+        local data = self._allyData
+        local mine = GetGuildInfo("player")
+        if not data or not mine or mine == "" or not GuildOS.SameGuildName(data.guild, mine)
+           or not sameRealm(data.realm) then
+            return nil
+        end
+        if GetServerTime() - data.at > BLOCK_MAX_AGE then return nil end
+        return data
     end
     return nil
 end
@@ -1566,8 +1678,16 @@ end
 --- And beside it, who the roster shows offline, by who they are (presence): the raid's invites pass
 --- them over and name them (issue #400). Only a plain `false` is offline: a line that says nothing,
 --- or says it secret, is somebody who may be online, and an invite to them costs nothing.
+-- The two lists are refilled, not made anew, at every read (#449: a guild of 500 on every roster update): they never
+-- leave the read that asked for them (planned, Rescued, survey).
+local namesBuf, offlineBuf = {}, {}
 local function guildNames()
-    local names, offline, retail = {}, {}, GuildOS.Client.isRetail
+    local names, offline, retail = namesBuf, offlineBuf, GuildOS.Client.isRetail
+    for k in pairs(names) do names[k] = nil end
+    for k in pairs(offline) do offline[k] = nil end
+    local anniversary = GuildOS.Client.isAnniversary
+    local full_, compact_
+    if not retail and not anniversary then full_, compact_ = realmSuffixes() end
     for i = 1, (GetNumGuildMembers() or 0) do
         local full, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
         if full then
@@ -1577,7 +1697,7 @@ local function guildNames()
                 key = GuildOS:KeyOfRosterName(full)
                 if names[short] == nil then names[short] = key else names[short] = false end
             else
-                key = Import.PlainName(full)
+                key = anniversary and Import.PlainName(full) or plainWith(full, full_, compact_)
                 names[key] = key
             end
             if not GuildOS.Compat.IsSecret(online) and online == false and key then offline[key] = true end
@@ -2272,6 +2392,10 @@ function Import:ReadInbox()
             GuildOS:Print(string.format(L["Roster from the website: %d signed up."], count))
         end
     end)
+    -- The alliance's directory, read ahead once the login's work is done (#449).
+    if GuildOS.Compat and GuildOS.Compat.After then
+        GuildOS.Compat.After(Import.ALLY_WARM_DELAY, function() GuildOS:SafeCall(Import.WarmAlliance, Import) end)
+    end
 end
 
 local INBOX_TRUST = 86400   -- the companion rewrites the inbox every hour: a day older is one that stopped
