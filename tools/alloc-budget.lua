@@ -82,7 +82,7 @@ C_Timer = {
 -- dispatches the harness may collect, which counts nowhere.
 local TRIG = {}               -- [label] = KB
 TRIGN = {}                    -- [label] = dispatches
-local measuring = false
+local measuring = ALLOC_MEASURE_LOGIN == true   -- tools/inbox-perf.lua times the login burst too
 local gcount = collectgarbage
 local function where(fn)
   local i = debug.getinfo(fn, "S")
@@ -103,13 +103,21 @@ local function run(kind, fn, ...)
     if not ok then ERRS[#ERRS + 1] = kind .. ": " .. tostring(e) end
     return ok, e
   end
-  local key = PROFILE and label(kind, fn) or kind
+  local key = (PROFILE or ALLOC_LABEL) and label(kind, fn) or kind
   depth, CURRENT = 1, key
   local a = gcount("count")
+  local t0 = ALLOC_TIME and os.clock()
   local ok, e = pcall(fn, ...)
   local d = gcount("count") - a
   depth, CURRENT = 0, nil
   if not ok then ERRS[#ERRS + 1] = kind .. ": " .. tostring(e) end
+  if t0 then
+    -- tools/inbox-perf.lua: CPU time per trigger, and its longest single dispatch (a frame's spike)
+    local dt, row = os.clock() - t0, ALLOC_TIME[key]
+    if not row then row = { n = 0, total = 0, max = 0 }; ALLOC_TIME[key] = row end
+    row.n, row.total = row.n + 1, row.total + dt
+    if dt > row.max then row.max = dt end
+  end
   TRIG[key] = (TRIG[key] or 0) + d
   TRIGN[key] = (TRIGN[key] or 0) + 1
   return ok, e
@@ -515,7 +523,7 @@ end })
 
 -- ── The guild: 180 members, 35 online ────────────────────────────────────
 local CLASSES = { "WARRIOR", "MAGE", "PRIEST", "ROGUE", "DRUID", "HUNTER", "WARLOCK", "PALADIN", "SHAMAN" }
-local N, ONLINE = 180, 35
+local N, ONLINE = ALLOC_GUILD_N or 180, ALLOC_ONLINE or 35   -- tools/inbox-perf.lua: a guild of 500
 for i = 1, N do
   ROSTER_ROWS[i] = { name = i == 1 and "Me" or ("Member" .. i), rank = "Rank" .. (i % 8), rankIndex = i % 8,
     level = 50 + i % 11, class = "Class", classFile = CLASSES[i % 9 + 1], zone = "Zone" .. (i % 40),
@@ -540,6 +548,8 @@ for _, f in ipairs(tocFiles()) do
   local ok, e = pcall(chunk, "GuildOS", {})
   check(ok, "run " .. f .. ": " .. tostring(e))
 end
+-- tools/inbox-perf.lua puts the companion's Inbox.lua in place here, as the client loads it with the addon.
+if ALLOC_BEFORE_LOGIN then ALLOC_BEFORE_LOGIN() end
 
 -- ── Driving the client ───────────────────────────────────────────────────
 local frameDt = 1 / FPS
@@ -835,6 +845,13 @@ local function goActive()
   local ok, e = pcall(GuildOS.UI.OpenWindow, GuildOS.UI, "home")
   check(ok, "the window opens on the Hall: " .. tostring(e))
   for _ = 1, 30 do simSecond(SC.active) end
+end
+
+-- tools/inbox-perf.lua drives its own play from here, on this client.
+if ALLOC_HARNESS then
+  return ALLOC_HARNESS({ simSecond = simSecond, stepFrame = stepFrame, SC = SC, FIRE = FIRE, chat = chat, chatArgs = chatArgs, check = check,
+    scenario = scenario, profiled = profiled, goActive = goActive, fullKB = fullKB, errors = function() return ERRS end,
+    checks = function() return checks end })
 end
 
 if PROFILE then
